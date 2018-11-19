@@ -11,17 +11,17 @@ import sys, os
 import time
 import pickle
 
-sys.path.insert(0,'{}/../lib-python'.format(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0,'{}/lib-python'.format(os.path.dirname(os.path.abspath(__file__))))
 import utils
-import geometry
+import mrc
 
 log = utils.log
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('mrcs', help='Input')
+    parser.add_argument('mrcs', help='Input MRCs stack')
     parser.add_argument('pkl', help='EMAN euler angles')
-    parser.add_argument('-o', help='Output prefix')
+    parser.add_argument('-o', help='Output MRC file')
     return parser
 
 def add_slice(V, counts, ff_coord, ff, D):
@@ -50,8 +50,11 @@ def fft2_center(img):
     return np.fft.fftshift(np.fft.fft2(np.fft.fftshift(img)))
 
 def main(args):
+    if not os.path.exists(os.path.dirname(args.o)):
+        os.makedirs(os.path.dirname(args.o))
+
     t1 = time.time()    
-    images = utils.readMRClazy(args.mrcs)
+    images, _ , _ = mrc.parse_mrc(args.mrcs,lazy=True)
     N = len(images)
     angles = pickle.load(open(args.pkl,'rb'))
     assert len(angles) == N, 'Nparticles != Nangles, {}!={}'.format(N,len(angles))
@@ -69,11 +72,10 @@ def main(args):
     MASK = np.where(np.sum(COORD**2,axis=0)**.5 <=(D/2-1))
     COORD = COORD[:,MASK[0]]
 
-
     for ii in range(N):
         log('image {}'.format(ii))
         ff = fft2_center(images[ii].get()[::-1]).ravel()[MASK]
-        rot = geometry.R_from_eman(angles[ii,0],angles[ii,1],angles[ii,2])
+        rot = utils.R_from_eman(angles[ii,0],angles[ii,1],angles[ii,2])
         ff_coord = np.dot(rot.T,COORD)
         add_slice(V,counts,ff_coord,ff,D)
     z = np.where(counts == 0.0)
@@ -82,14 +84,14 @@ def main(args):
     log('{}% voxels missing data'.format(100*len(z[0])/D**3))
     counts[z] = 1.0
     V /= counts
-    f = open(args.o+'.pkl','wb')
-    pickle.dump(V,f)
-    pickle.dump(counts,f)
+    #f = open(args.o+'.pkl','wb')
+    #pickle.dump(V,f)
+    #pickle.dump(counts,f)
     V = np.fft.ifftshift(V)
     V = np.fft.ifftn(V)
     V = np.fft.ifftshift(V)
     V = np.asarray([x[::-1] for x in V])
-    utils.writeMRC(args.o+'.mrc',V.astype('float32'))
+    mrc.write(args.o,V.astype('float32'))
 
 
 if __name__ == '__main__':

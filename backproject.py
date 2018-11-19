@@ -69,10 +69,9 @@ def main(args):
     COORD = np.array([xx.ravel(), yy.ravel(), zz.ravel()])
     MASK = np.where(np.sum(COORD**2,axis=0)**.5 <=(D/2-1))
     COORD = COORD[:,MASK[0]]
-
     for ii in range(N):
-        log('image {}'.format(ii))
-        ff = fft.fft2_center(images[ii].get()[::-1]).ravel()[MASK]
+        if ii%100==0: log('image {}'.format(ii))
+        ff = fft.fft2_center(images[ii].get()).ravel()[MASK]
         rot = utils.R_from_eman(angles[ii,0],angles[ii,1],angles[ii,2])
         ff_coord = np.dot(rot.T,COORD)
         add_slice(V,counts,ff_coord,ff,D)
@@ -82,11 +81,7 @@ def main(args):
     log('{}% voxels missing data'.format(100*len(z[0])/D**3))
     counts[z] = 1.0
     V /= counts
-    #f = open(args.o+'.pkl','wb')
-    #pickle.dump(V,f)
-    #pickle.dump(counts,f)
     V = fft.ifftn(V)
-    V = np.asarray([x[::-1] for x in V])
     mrc.write(args.o,V.astype('float32'))
 
 

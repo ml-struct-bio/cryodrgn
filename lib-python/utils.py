@@ -30,5 +30,11 @@ def R_from_eman(a,b,y):
     Ra = np.array([[ca,-sa,0],[sa,ca,0],[0,0,1]])
     Rb = np.array([[1,0,0],[0,cb,-sb],[0,sb,cb]])
     Ry = np.array(([cy,-sy,0],[sy,cy,0],[0,0,1]))
-    return np.dot(np.dot(Ry,Rb),Ra)
+    R = np.dot(np.dot(Ry,Rb),Ra)
+    # handling EMAN convention mismatch for where the origin of an image is (bottom right vs top right)
+    R[0,1] *= -1
+    R[1,0] *= -1
+    R[1,2] *= -1
+    R[2,1] *= -1
+    return R
 

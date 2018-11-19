@@ -56,7 +56,7 @@ def main(args):
     t1 = time.time()    
     images, _ , _ = mrc.parse_mrc(args.mrcs,lazy=True)
     N = len(images)
-    angles = pickle.load(open(args.pkl,'rb'))
+    angles = utils.load_angles(args.pkl)
     assert len(angles) == N, 'Nparticles != Nangles, {}!={}'.format(N,len(angles))
 
     n, m = images[0].get().shape

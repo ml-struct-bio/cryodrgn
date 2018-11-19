@@ -1,6 +1,7 @@
 from datetime import datetime as dt
 import os, sys
 import numpy as np
+import pickle
 
 _verbose = False
 
@@ -12,6 +13,12 @@ def vlog(msg):
     if _verbose:
         print('{}     {}'.format(dt.now().strftime('%Y-%m-%d %H:%M:%S'), msg))
         sys.stdout.flush()
+
+def load_angles(pkl):
+    with open(pkl,'rb') as f:
+        ang = pickle.load(f)
+    return ang
+
 
 def R_from_eman(a,b,y):
     a *= np.pi/180.

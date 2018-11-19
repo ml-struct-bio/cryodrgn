@@ -20,18 +20,9 @@ log = utils.log
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mrcs', help='Input')
-    parser.add_argument('log', help='eman log file with euler angles')
+    parser.add_argument('pkl', help='EMAN euler angles')
     parser.add_argument('-o', help='Output prefix')
     return parser
-
-def parse_eman_log(logfile,n):
-    with open(logfile,'r') as f:
-        text = f.read()
-    lines = text[text.find('0\t'):].split('\n')
-    lines = lines[:n] 
-    a = [x.split() for x in lines]
-    a = np.asarray(a, dtype=float)
-    return a[:,1:]
 
 def add_slice(V, counts, ff_coord, ff, D):
     d2 = int(D/2)
@@ -62,7 +53,8 @@ def main(args):
     t1 = time.time()    
     images = utils.readMRClazy(args.mrcs)
     N = len(images)
-    angles = parse_eman_log(args.log, N)
+    angles = pickle.load(open(args.pkl,'rb'))
+    assert len(angles) == N, 'Nparticles != Nangles, {}!={}'.format(N,len(angles))
 
     n, m = images[0].get().shape
     assert n == m, "Image dimensions must be square"

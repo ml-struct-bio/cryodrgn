@@ -14,6 +14,7 @@ import pickle
 sys.path.insert(0,'{}/lib-python'.format(os.path.dirname(os.path.abspath(__file__))))
 import utils
 import mrc
+import fft
 
 log = utils.log
 
@@ -46,9 +47,6 @@ def add_slice(V, counts, ff_coord, ff, D):
     add_for_corner(xc,yc,zc)
     return V, counts
 
-def fft2_center(img):
-    return np.fft.fftshift(np.fft.fft2(np.fft.fftshift(img)))
-
 def main(args):
     if not os.path.exists(os.path.dirname(args.o)):
         os.makedirs(os.path.dirname(args.o))
@@ -74,7 +72,7 @@ def main(args):
 
     for ii in range(N):
         log('image {}'.format(ii))
-        ff = fft2_center(images[ii].get()[::-1]).ravel()[MASK]
+        ff = fft.fft2_center(images[ii].get()[::-1]).ravel()[MASK]
         rot = utils.R_from_eman(angles[ii,0],angles[ii,1],angles[ii,2])
         ff_coord = np.dot(rot.T,COORD)
         add_slice(V,counts,ff_coord,ff,D)
@@ -87,9 +85,7 @@ def main(args):
     #f = open(args.o+'.pkl','wb')
     #pickle.dump(V,f)
     #pickle.dump(counts,f)
-    V = np.fft.ifftshift(V)
-    V = np.fft.ifftn(V)
-    V = np.fft.ifftshift(V)
+    V = fft.ifftn(V)
     V = np.asarray([x[::-1] for x in V])
     mrc.write(args.o,V.astype('float32'))
 

@@ -44,23 +44,6 @@ class ResidLinear(nn.Module):
         z = self.linear(x) + x
         return z
 
-def R_from_eman(a,b,y):
-    a *= np.pi/180.
-    b *= np.pi/180.
-    y *= np.pi/180.
-    ca, sa = np.cos(a), np.sin(a)
-    cb, sb = np.cos(b), np.sin(b)
-    cy, sy = np.cos(y), np.sin(y)
-    Ra = np.array([[ca,-sa,0],[sa,ca,0],[0,0,1]])
-    Rb = np.array([[1,0,0],[0,cb,-sb],[0,sb,cb]])
-    Ry = np.array(([cy,-sy,0],[sy,cy,0],[0,0,1]))
-    return np.dot(np.dot(Ry,Rb),Ra)
-
-def load_angles(pkl):
-    with open(pkl,'rb') as f:
-        ang = pickle.load(f)
-    return ang
-
 def fft2_center(img):
     '''input: centered realspace image (M x N)
     output: (M x N x 2) real and imag components of image ft'''
@@ -82,14 +65,6 @@ def eval_volume(model, nz, ny, nx, x_coord, use_cuda, rnorm, inorm):
     vol = np.asarray([x[::-1] for x in vol])
     return vol, vol_f
 
-def weighted_mse_loss(y_hat, y, w):
-    '''
-    y_hat: FloatTensor of dim ny x nx x 2
-    y: FloatTensor of dim ny x nx x 2
-    w: FloatTensor of dim ny x nx
-    '''
-    return (((y_hat-y) ** 2).sum(dim=2) * w).sum() / w.sum()
-
 def main(args):
     t1 = dt.now()
     if args.outdir is not None and not os.path.exists(args.outdir):
@@ -98,7 +73,7 @@ def main(args):
     # load the particles
     with open(args.particles, 'rb') as f:
         content = f.read()
-    particles, _, _ = mrc.parse(content)
+    particles, _, _ = mrc.parse_mrc(content)
     Nimg, ny, nx = particles.shape
     log('Loaded {} {}x{} images'.format(Nimg, ny, nx))
     particles = np.stack([fft2_center(img[::-1]) for img in particles],0)
@@ -111,7 +86,7 @@ def main(args):
     particles[:,:,:,1] = (particles[:,:,:,1]-inorm[0])/inorm[1]
 
     # load the metadata
-    eman_eulers = load_angles(args.metadata)
+    eman_eulers = utils.load_angles(args.metadata)
     assert len(eman_eulers) == len(particles)
 
     # centered and scaled xy plane, values between -1 and 1
@@ -121,12 +96,7 @@ def main(args):
     x1, x0 = np.meshgrid(np.linspace(-1, 1, ny, endpoint=False), np.linspace(-1, 1, nx, endpoint=False), indexing='ij')
     x_coord = np.stack([x0.ravel(),x1.ravel(),np.zeros(ny*nx)],1).astype(np.float32)
 
-    # weights for weighted mse loss
-    x_w = x0**2 + x1**2
-    x_w[int(ny/2), int(nx/2)] = x_w[int(ny/2), int(nx/2)+1] # replace the 0 weight at the origin
-    x_w = Variable(torch.from_numpy(x_w.astype(np.float32)))
-
-    Rs = [R_from_eman(*ang).astype(np.float32) for ang in eman_eulers]
+    Rs = [utils.R_from_eman(*ang).astype(np.float32) for ang in eman_eulers]
 
     hidden_dim = args.dim # 512
     activation = nn.ReLU
@@ -169,7 +139,6 @@ def main(args):
     log('Use cuda {}'.format(use_cuda))
     if use_cuda:
         model.cuda()
-        x_w = x_w.cuda()
 
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
@@ -186,7 +155,6 @@ def main(args):
                 y = y.cuda()
             y_hat = model(x)
             y_hat = y_hat.view(ny, nx, 2)
-            #loss = weighted_mse_loss(y_hat, y, x_w)
             loss = F.mse_loss(y_hat, y)
 
             loss.backward()

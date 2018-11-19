@@ -16,6 +16,7 @@ from torch.autograd import Variable
 sys.path.insert(0,os.path.abspath(os.path.dirname(__file__))+'/lib-python')
 import mrc
 import utils
+import fft
 
 log = utils.log
 vlog = utils.vlog
@@ -27,12 +28,15 @@ def parse_args():
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
     parser.add_argument('-d', '--device', type=int, default=-2, help='Compute device to use')
     parser.add_argument('--load-weights', type=os.path.abspath, help='Initialize network with existing weights')
+    parser.add_argument('--save-intermediates', action='store_true', help='Save out structure each epoch')
+    parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
 
     group = parser.add_argument_group('NN parameters')
     group.add_argument('-n', '--num-epochs', type=int, default=10, help='Number of training epochs (default: %(default)s)')
+    group.add_argument('--layers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--dim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
     group.add_argument('--wd', type=float, default=0, help='Weight decay in Adam optimizer (default: %(default)s)')
-    group.add_argument('--lr', type=float, default=1e-5, help='Learning rate in Adam optimizer (default: %(default)s)')
+    group.add_argument('--lr', type=float, default=1e-3, help='Learning rate in Adam optimizer (default: %(default)s)')
     return parser
 
 class ResidLinear(nn.Module):
@@ -43,6 +47,14 @@ class ResidLinear(nn.Module):
     def forward(self, x):
         z = self.linear(x) + x
         return z
+
+def define_model(nlayers, hidden_dim, activation):
+    layers = [nn.Linear(3, hidden_dim), activation()]
+    for n in range(nlayers):
+        layers.append(ResidLinear(hidden_dim, hidden_dim))
+        layers.append(activation())
+    layers.append(nn.Linear(hidden_dim,2))
+    return nn.Sequential(*layers)
 
 def fft2_center(img):
     '''input: centered realspace image (M x N)
@@ -61,8 +73,7 @@ def eval_volume(model, nz, ny, nx, x_coord, use_cuda, rnorm, inorm):
             y = model(x)
             y = y.view(ny, nx, 2).cpu().numpy()
         vol_f[i] = (y[:,:,0]*rnorm[1]+rnorm[0]) + 1j*(y[:,:,1]*inorm[1]+inorm[0])
-    vol = np.fft.ifftshift(np.fft.ifftn(np.fft.ifftshift(vol_f)))
-    vol = np.asarray([x[::-1] for x in vol])
+    vol = fft.ifftn(vol_f)
     return vol, vol_f
 
 def main(args):
@@ -71,12 +82,10 @@ def main(args):
         os.makedirs(args.outdir)
 
     # load the particles
-    with open(args.particles, 'rb') as f:
-        content = f.read()
-    particles, _, _ = mrc.parse_mrc(content)
+    particles, _, _ = mrc.parse_mrc(args.particles)
     Nimg, ny, nx = particles.shape
     log('Loaded {} {}x{} images'.format(Nimg, ny, nx))
-    particles = np.stack([fft2_center(img[::-1]) for img in particles],0)
+    particles = np.stack([fft2_center(img) for img in particles],0)
     assert particles.shape == (Nimg,ny,nx,2)
     rnorm  = np.mean(particles[:,:,:,0]), np.std(particles[:,:,:,0])
     inorm = np.mean(particles[:,:,:,1]), np.std(particles[:,:,:,1])
@@ -90,41 +99,11 @@ def main(args):
     assert len(eman_eulers) == len(particles)
 
     # centered and scaled xy plane, values between -1 and 1
-    # use a left-handed coordinate system -- this is necessary for compatibility
-    # with eman2 projection data.
     nz = max(nx,ny)
-    x1, x0 = np.meshgrid(np.linspace(-1, 1, ny, endpoint=False), np.linspace(-1, 1, nx, endpoint=False), indexing='ij')
+    x0, x1 = np.meshgrid(np.linspace(-1, 1, nx, endpoint=False), np.linspace(-1, 1, ny, endpoint=False))
     x_coord = np.stack([x0.ravel(),x1.ravel(),np.zeros(ny*nx)],1).astype(np.float32)
 
-    Rs = [utils.R_from_eman(*ang).astype(np.float32) for ang in eman_eulers]
-
-    hidden_dim = args.dim # 512
-    activation = nn.ReLU
-    model = nn.Sequential( nn.Linear(3, hidden_dim)
-                         #, nn.BatchNorm1d(hidden_dim)
-                         , activation()
-                         , ResidLinear(hidden_dim, hidden_dim)
-                         , activation()
-                         , ResidLinear(hidden_dim, hidden_dim)
-                         , activation()
-                         , ResidLinear(hidden_dim, hidden_dim)
-                         , activation()
-                         , ResidLinear(hidden_dim, hidden_dim)
-                         , activation()
-                         , ResidLinear(hidden_dim, hidden_dim)
-                         , activation()
-                         , ResidLinear(hidden_dim, hidden_dim)
-                         , activation()
-                         , ResidLinear(hidden_dim, hidden_dim)
-                         , activation()
-                         , ResidLinear(hidden_dim, hidden_dim)
-                         , activation()
-                         , ResidLinear(hidden_dim, hidden_dim)
-                         , activation()
-                         , ResidLinear(hidden_dim, hidden_dim)
-                         , activation()
-                         , nn.Linear(hidden_dim, 2)
-                         )
+    model = define_model(args.layers, args.dim, nn.ReLU)
 
     if args.load_weights:
         log('Initializing weights from {}'.format(args.load_weights))
@@ -147,8 +126,8 @@ def main(args):
         loss_accum = 0
         ii = 0
         for i in np.random.permutation(Nimg):
-            rot = Rs[i]
-            x = Variable(torch.from_numpy(np.dot(x_coord, rot))) # this is R.T * x, if x is a column vec
+            rot = utils.R_from_eman(*eman_eulers[i]).astype(np.float32)
+            x = Variable(torch.from_numpy(np.dot(x_coord, rot))) 
             y = Variable(torch.from_numpy(particles[i]))
             if use_cuda:
                 x = x.cuda()
@@ -167,13 +146,14 @@ def main(args):
                 loss_accum = 0
             ii += 1
 
-        model.eval()
-        vol, vol_f = eval_volume(model, nz, ny, nx, x_coord, use_cuda, rnorm, inorm)
-        with open('{}/reconstruct.{}.mrc'.format(args.outdir,epoch), 'wb') as f:
-            mrc.write(f, vol.astype(np.float32))
-        with open('{}/reconstruct.{}.pkl'.format(args.outdir,epoch), 'wb') as f:
-            pickle.dump(vol_f, f)
-        model.train()
+        if args.save_intermediates:
+            model.eval()
+            vol, vol_f = eval_volume(model, nz, ny, nx, x_coord, use_cuda, rnorm, inorm)
+            with open('{}/reconstruct.{}.mrc'.format(args.outdir,epoch), 'wb') as f:
+                mrc.write(f, vol.astype(np.float32))
+            with open('{}/reconstruct.{}.pkl'.format(args.outdir,epoch), 'wb') as f:
+                pickle.dump(vol_f, f)
+            model.train()
 
     ## save model weights and evaluate the image model 
     model.eval()
@@ -181,12 +161,12 @@ def main(args):
         pickle.dump(model.state_dict(), f)
 
     vol, vol_f = eval_volume(model, nz, ny, nx, x_coord, use_cuda, rnorm, inorm)
-    with open('{}/reconstruct.mrc'.format(args.outdir), 'wb') as f:
-        mrc.write(f, vol.astype(np.float32))
-    with open('{}/reconstruct.pkl'.format(args.outdir,epoch), 'wb') as f:
+    mrc.write('{}/reconstruct.mrc'.format(args.outdir), vol.astype(np.float32))
+    with open('{}/reconstruct.pkl'.format(args.outdir), 'wb') as f:
         pickle.dump(vol_f, f)
     
-    log('Finsihed in {}'.format(dt.now()-t1))
+    td = dt.now()-t1
+    log('Finsihed in {} ({} per epoch)'.format(td, td/num_epochs))
 
 if __name__ == '__main__':
     main(parse_args().parse_args())

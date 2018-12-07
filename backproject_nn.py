@@ -169,7 +169,6 @@ def main(args):
     log('Finsihed in {} ({} per epoch)'.format(td, td/num_epochs))
 
 if __name__ == '__main__':
-    main(parse_args().parse_args())
     args = parse_args().parse_args()
     utils._verbose = args.verbose
     main(args)

@@ -39,6 +39,7 @@ def parse_args():
     group.add_argument('-n', '--num-epochs', type=int, default=10, help='Number of training epochs (default: %(default)s)')
     group.add_argument('--wd', type=float, default=0, help='Weight decay in Adam optimizer (default: %(default)s)')
     group.add_argument('--lr', type=float, default=1e-3, help='Learning rate in Adam optimizer (default: %(default)s)')
+    group.add_argument('--beta', type=float, default=1.0,help='Weight of latent loss (default: %(default)s)')
 
     group = parser.add_argument_group('Encoder Network')
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
@@ -256,14 +257,14 @@ def main(args):
 
             y_recon, w_eps, z_std = model(y) 
             gen_loss, kld = loss_function(y_recon, y, w_eps, z_std)
-            loss = gen_loss + kld
+            loss = gen_loss + args.beta*kld/(nx*ny)
             loss.backward()
             optim.step()
             optim.zero_grad()
 
             loss_accum += loss.item()
             if ii > 0 and ii % args.log_interval == 0:
-                log('# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.4f}, kld={:.4f}'.format(epoch+1, num_epochs, ii, Nimg, gen_loss.item(), kld.item()))
+                log('# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.4f}, kld={:.4f}, loss={:.4f}'.format(epoch+1, num_epochs, ii, Nimg, gen_loss.item(), kld.item(), loss.item()))
             ii += 1
         log('# =====> Epoch: {} Average loss: {:.4f}'.format(epoch+1, loss_accum/Nimg))
 

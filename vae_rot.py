@@ -20,6 +20,7 @@ sys.path.insert(0,os.path.abspath(os.path.dirname(__file__))+'/lib-python')
 import mrc
 import utils
 import fft
+import lie_tools
 
 log = utils.log
 vlog = utils.vlog
@@ -27,19 +28,19 @@ vlog = utils.vlog
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('particles', help='Particle stack file (.mrc)')
-    parser.add_argument('metadata', help='Eman euler angles (.pkl)')
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
     parser.add_argument('-d', '--device', type=int, default=-2, help='Compute device to use')
     parser.add_argument('--load-weights', type=os.path.abspath, help='Initialize network with existing weights')
     parser.add_argument('--save-intermediates', action='store_true', help='Save out structure each epoch')
-    parser.add_argument('--log-interval', type=int, default=100, help='Log loss every X data points')
+    parser.add_argument('--log-interval', type=int, default=2, help='Logging interval in batches')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
 
     group = parser.add_argument_group('Training parameters')
     group.add_argument('-n', '--num-epochs', type=int, default=10, help='Number of training epochs (default: %(default)s)')
+    group.add_argument('-b','--batch-size', type=int, default=100, help='Minibatch size (default: %(default)s)')
     group.add_argument('--wd', type=float, default=0, help='Weight decay in Adam optimizer (default: %(default)s)')
     group.add_argument('--lr', type=float, default=1e-3, help='Learning rate in Adam optimizer (default: %(default)s)')
-    group.add_argument('--beta', type=float, default=1.0,help='Weight of latent loss (default: %(default)s)')
+    group.add_argument('--beta', type=float, default=1.0, help='Weight of latent loss (default: %(default)s)')
 
     group = parser.add_argument_group('Encoder Network')
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
@@ -96,25 +97,6 @@ class VAE(nn.Module):
         layers.append(nn.Linear(hidden_dim,1))
         return nn.Sequential(*layers)
 
-    def expmap(self, w):
-        theta = w.norm() # need to mod by 2pi?
-        if theta < 1e-16: # not sure if this will mess up backprop
-            return torch.eye(3)
-        K = torch.tensor([[0,-w[2],w[1]],[w[2],0,-w[0]],[-w[1],w[0],0]], device=w.device)
-        I = torch.eye(3, device=w.device, dtype=w.dtype)
-        R = I + torch.sin(theta)/theta*K + (1-torch.cos(theta))/theta**2*torch.mm(K,K)
-        return R
-    
-    def s2s2_to_SO3(self, v1, v2):
-        '''Normalize 2 3-vectors. Project second to orthogonal component.
-        Take cross product for third. Stack to form SO matrix.'''
-        u1 = v1
-        e1 = u1 / u1.norm(p=2, dim=-1, keepdim=True).clamp(min=1E-5)
-        u2 = v2 - (e1 * v2).sum(-1, keepdim=True) * e1
-        e2 = u2 / u2.norm(p=2, dim=-1, keepdim=True).clamp(min=1E-5)
-        e3 = torch.cross(e1, e2)
-        return torch.stack([e1, e2, e3], 1)
-
     def reparameterize(self, z):
         '''
         Reparameterize SO(3) latent variable
@@ -122,77 +104,34 @@ class VAE(nn.Module):
         # See section 2.5 of http://ethaneade.com/lie.pdf
         # convert so3 to SO3 with exponential map
         '''
-        z_mu = self.s2s2_to_SO3(z[:3], z[3:6])
-        z_log_var = z[6:]
+        z_mu = lie_tools.s2s2_to_SO3(z[:, :3], z[:, 3:6])
+        z_log_var = z[:, 6:]
         z_std = torch.exp(.5*z_log_var) # or could do softplus z[6:]
         
         # resampling trick
         eps = torch.randn_like(z_std)
         w_eps = eps*z_std
-        rot_sampled = torch.mm(z_mu, self.expmap(w_eps))
+        rot_eps = lie_tools.expmap(w_eps)
+        rot_sampled = z_mu @ rot_eps
         return rot_sampled, w_eps, z_std
 
     def forward(self, img):
-        z = self.encoder(img.view(-1))
+        z = self.encoder(img.view(-1,self.in_dim))
         rot, w_eps, z_std = self.reparameterize(z)
 
         # transform lattice by rot
-        x = torch.mm(self.lattice,rot) # R.T*x
+        x = self.lattice @ rot # R.T*x
         y_hat = self.decoder(x)
-        y_hat = y_hat.view(self.ny, self.nx)
+        y_hat = y_hat.view(-1, self.ny, self.nx)
         return y_hat, w_eps, z_std
-
-def logsumexp(inputs, dim=None, keepdim=False):
-    '''Numerically stable logsumexp.
-    https://github.com/pytorch/pytorch/issues/2591
-
-    Args:
-        inputs: A Variable with any shape.
-        dim: An integer.
-        keepdim: A boolean.
-
-    Returns:
-        Equivalent of log(sum(exp(inputs), dim=dim, keepdim=keepdim)).
-    '''
-    # For a 1-D array x (any array along a single dimension),
-    # log sum exp(x) = s + log sum exp(x - s)
-    # with s = max(x) being a common choice.
-    if dim is None:
-        inputs = inputs.view(-1)
-        dim = 0
-    s, _ = torch.max(inputs, dim=dim, keepdim=True)
-    outputs = s + (inputs - s).exp().sum(dim=dim, keepdim=True).log()
-    if not keepdim:
-        outputs = outputs.squeeze(dim)
-    return outputs
-
-def so3_entropy(w_eps, std, k=10):
-    '''
-    w_eps(Tensor of dim 3): sample from so3
-    covar(Tensor of dim 3x3): covariance of distribution on so3
-    k: 2k+1 samples for truncated summation
-    '''
-    # entropy of gaussian distribution on so3
-    # see appendix C of https://arxiv.org/pdf/1807.04689.pdf
-    theta = w_eps.norm(p=2)
-    u = w_eps/theta # 3
-    angles = 2*np.pi*torch.arange(-k,k+1,dtype=w_eps.dtype,device=w_eps.device) # 2k+1
-    theta_hat = theta + angles # 2k+1
-    x = u[None,:] * theta_hat[:,None] # 2k+1 , 3
-    log_p = Normal(torch.zeros(3,device=w_eps.device),std).log_prob(x) # 2k+1
-    clamp = 1e-3
-    log_vol = torch.log((theta_hat**2).clamp(min=clamp)/(2-2*torch.cos(theta)).clamp(min=clamp)) # 2k+1
-    log_p = log_p.sum(-1) + log_vol
-    entropy = -logsumexp(log_p)
-    return entropy
 
 def loss_function(recon_y, y, w_eps, z_std):
     gen_loss = F.mse_loss(recon_y, y)  
     cross_entropy = torch.tensor([np.log(8*np.pi**2)], device=y.device) # cross entropy between gaussian and uniform on SO3
-    entropy = so3_entropy(w_eps,z_std)
+    entropy = lie_tools.so3_entropy(w_eps,z_std)
     kld = cross_entropy - entropy
     #assert kld > 0
-    return gen_loss, kld
+    return gen_loss, kld.mean()
 
 def eval_volume(model, nz, ny, nx, rnorm):
     '''Evaluate the model on a nz x ny x nx lattice'''
@@ -249,9 +188,9 @@ def main(args):
     for epoch in range(num_epochs):
         loss_accum = 0
         ii = 0
-        for i in np.random.permutation(Nimg):
-
-            y = Variable(torch.from_numpy(particles[i]))
+        num_batches = np.ceil(Nimg / args.batch_size).astype(int)
+        for minibatch_i in np.array_split(np.random.permutation(Nimg),num_batches):
+            y = Variable(torch.from_numpy(np.asarray([particles[i] for i in minibatch_i])))
             if use_cuda:
                 y = y.cuda()
 
@@ -262,9 +201,9 @@ def main(args):
             optim.step()
             optim.zero_grad()
 
-            loss_accum += loss.item()
+            loss_accum += loss.item()*len(minibatch_i)
             if ii > 0 and ii % args.log_interval == 0:
-                log('# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.4f}, kld={:.4f}, loss={:.4f}'.format(epoch+1, num_epochs, ii, Nimg, gen_loss.item(), kld.item(), loss.item()))
+                log('# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.4f}, kld={:.4f}, loss={:.4f}'.format(epoch+1, num_epochs, ii*args.batch_size, Nimg, gen_loss.item(), kld.item(), loss.item()))
             ii += 1
         log('# =====> Epoch: {} Average loss: {:.4f}'.format(epoch+1, loss_accum/Nimg))
 

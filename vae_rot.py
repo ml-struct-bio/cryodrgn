@@ -31,8 +31,8 @@ def parse_args():
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
     parser.add_argument('-d', '--device', type=int, default=-2, help='Compute device to use')
     parser.add_argument('--load-weights', type=os.path.abspath, help='Initialize network with existing weights')
-    parser.add_argument('--save-intermediates', action='store_true', help='Save out structure each epoch')
-    parser.add_argument('--log-interval', type=int, default=2, help='Logging interval in batches')
+    parser.add_argument('--save-weights', type=int, help='Save interval for model weights/structure (default: %(default)s epochs)')
+    parser.add_argument('--log-interval', type=int, default=2, help='Logging interval (default: %(default)s batches)')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
 
     group = parser.add_argument_group('Training parameters')
@@ -148,6 +148,7 @@ def eval_volume(model, nz, ny, nx, rnorm):
     return vol, vol_f
 
 def main(args):
+    log(args)
     t1 = dt.now()
     if args.outdir is not None and not os.path.exists(args.outdir):
         os.makedirs(args.outdir)
@@ -207,7 +208,7 @@ def main(args):
             ii += 1
         log('# =====> Epoch: {} Average loss: {:.4f}'.format(epoch+1, loss_accum/Nimg))
 
-        if args.save_intermediates:
+        if epoch % args.save_intermediates == 0:
             model.eval()
             vol, vol_f = eval_volume(model, nz, ny, nx, rnorm)
             mrc.write('{}/reconstruct.{}.mrc'.format(args.outdir,epoch), vol.astype(np.float32))

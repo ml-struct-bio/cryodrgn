@@ -154,16 +154,21 @@ def main(args):
         os.makedirs(args.outdir)
 
     # load the particles
-    particles, _, _ = mrc.parse_mrc(args.particles)
-    Nimg, ny, nx = particles.shape
+    particles_real, _, _ = mrc.parse_mrc(args.particles)
+    particles_real = particles_real.astype(np.float32)
+    Nimg, ny, nx = particles_real.shape
     nz = max(nx,ny)
     log('Loaded {} {}x{} images'.format(Nimg, ny, nx))
-    particles = np.asarray([fft.ht2_center(img).astype(np.float32) for img in particles])
-    assert particles.shape == (Nimg,ny,nx)
-    rnorm  = [np.mean(particles), np.std(particles)]
+    particles_ft = np.asarray([fft.ht2_center(img).astype(np.float32) for img in particles_real])
+    assert particles_ft.shape == (Nimg,ny,nx)
+    rnorm  = [np.mean(particles_real), np.std(particles_real)]
+    particles_real = (particles_real - rnorm[0])/rnorm[1]
+
+    rnorm  = [np.mean(particles_ft), np.std(particles_ft)]
+    log('Particle stack mean, std: {} +/- {}'.format(*rnorm))
     rnorm[0] = 0
-    log('Normalizing by mean, std: {} +/- {}'.format(*rnorm))
-    particles = (particles - rnorm[0])/rnorm[1]
+    log('Normalizing FT by mean, std: {} +/- {}'.format(*rnorm))
+    particles_ft = (particles_ft - rnorm[0])/rnorm[1]
 
     model = VAE(nx, ny, args.qlayers, args.qdim, args.players, args.pdim)
 
@@ -187,33 +192,36 @@ def main(args):
     # training loop
     num_epochs = args.num_epochs
     for epoch in range(num_epochs):
+        gen_loss_accum = 0
         loss_accum = 0
         ii = 0
         num_batches = np.ceil(Nimg / args.batch_size).astype(int)
         for minibatch_i in np.array_split(np.random.permutation(Nimg),num_batches):
-            y = Variable(torch.from_numpy(np.asarray([particles[i] for i in minibatch_i])))
-            if use_cuda:
-                y = y.cuda()
-
+            # inference with real space image
+            y = Variable(torch.from_numpy(np.asarray([particles_real[i] for i in minibatch_i])))
+            if use_cuda: y = y.cuda()
             y_recon, w_eps, z_std = model(y) 
+
+            # reconstruct fourier space image (projection slice theorem)
+            y = Variable(torch.from_numpy(np.asarray([particles_ft[i] for i in minibatch_i])))
+            if use_cuda: y = y.cuda()
             gen_loss, kld = loss_function(y_recon, y, w_eps, z_std)
             loss = gen_loss + args.beta*kld/(nx*ny)
             loss.backward()
             optim.step()
             optim.zero_grad()
 
+            gen_loss_accum += gen_loss.item()*len(minibatch_i)
             loss_accum += loss.item()*len(minibatch_i)
             if ii > 0 and ii % args.log_interval == 0:
                 log('# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.4f}, kld={:.4f}, loss={:.4f}'.format(epoch+1, num_epochs, ii*args.batch_size, Nimg, gen_loss.item(), kld.item(), loss.item()))
             ii += 1
-        log('# =====> Epoch: {} Average loss: {:.4f}'.format(epoch+1, loss_accum/Nimg))
+        log('# =====> Epoch: {} Average gen loss = {:.4}, KLD = {:.4f}, total loss = {:.4f}'.format(epoch+1, gen_loss_accum/Nimg, (loss_accum-gen_loss_accum)/Nimg*nx*ny/args.beta, loss_accum/Nimg))
 
-        if epoch % args.save_intermediates == 0:
+        if args.save_weights and epoch % args.save_weights== 0:
             model.eval()
             vol, vol_f = eval_volume(model, nz, ny, nx, rnorm)
             mrc.write('{}/reconstruct.{}.mrc'.format(args.outdir,epoch), vol.astype(np.float32))
-            with open('{}/reconstruct.{}.pkl'.format(args.outdir,epoch), 'wb') as f:
-                pickle.dump(vol_f, f)
             with open('{}/weights.{}.pkl'.format(args.outdir,epoch), 'wb') as f:
                 pickle.dump(model.state_dict(), f)
             model.train()
@@ -222,11 +230,8 @@ def main(args):
     model.eval()
     with open('{}/weights.pkl'.format(args.outdir), 'wb') as f:
         pickle.dump(model.state_dict(), f)
-
     vol, vol_f = eval_volume(model, nz, ny, nx, rnorm)
     mrc.write('{}/reconstruct.mrc'.format(args.outdir), vol.astype(np.float32))
-    with open('{}/reconstruct.pkl'.format(args.outdir), 'wb') as f:
-        pickle.dump(vol_f, f)
     
     td = dt.now()-t1
     log('Finsihed in {} ({} per epoch)'.format(td, td/num_epochs))

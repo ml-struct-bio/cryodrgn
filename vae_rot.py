@@ -135,6 +135,10 @@ def main(args):
             if use_cuda: y = y.cuda()
             gen_loss, kld = loss_function(y_recon, y, w_eps, z_std)
             loss = gen_loss + args.beta*kld/(nx*ny)
+            if np.isnan(loss.item()):
+                log(w_eps[0])
+                log(z_std[0])
+                sys.exit(1)
             loss.backward()
             optim.step()
             optim.zero_grad()

@@ -30,7 +30,6 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('particles', help='Particle stack file (.mrc)')
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
-    parser.add_argument('-d', '--device', type=int, default=-2, help='Compute device to use')
     parser.add_argument('--load-weights', type=os.path.abspath, help='Initialize network with existing weights')
     parser.add_argument('--save-weights', type=int, help='Save interval for model weights/structure (default: %(default)s epochs)')
     parser.add_argument('--log-interval', type=int, default=2, help='Logging interval (default: %(default)s batches)')
@@ -80,6 +79,10 @@ def main(args):
     if args.outdir is not None and not os.path.exists(args.outdir):
         os.makedirs(args.outdir)
 
+    ## set the device
+    use_cuda = torch.cuda.is_available()
+    log('Use cuda {}'.format(use_cuda))
+
     # load the particles
     particles_real, _, _ = mrc.parse_mrc(args.particles)
     particles_real = particles_real.astype(np.float32)
@@ -98,21 +101,15 @@ def main(args):
     particles_ft = (particles_ft - rnorm[0])/rnorm[1]
 
     model = VAE(nx, ny, args.qlayers, args.qdim, args.players, args.pdim)
+    if use_cuda:
+        model.cuda()
+        model.lattice = model.lattice.cuda()
 
     if args.load_weights:
         log('Initializing weights from {}'.format(args.load_weights))
         with open(args.load_weights,'rb') as f:
             model.load_state_dict(pickle.load(f))
 
-    ## set the device
-    d = args.device
-    use_cuda = (d != -1) and torch.cuda.is_available()
-    if d >= 0:
-        torch.cuda.set_device(d)
-    log('Use cuda {}'.format(use_cuda))
-    if use_cuda:
-        model.cuda()
-        model.lattice = model.lattice.cuda()
 
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
     

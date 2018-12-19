@@ -30,9 +30,9 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('particles', help='Particle stack file (.mrc)')
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
-    parser.add_argument('--load-weights', type=os.path.abspath, help='Initialize network with existing weights')
-    parser.add_argument('--save-weights', type=int, help='Save interval for model weights/structure (default: %(default)s epochs)')
-    parser.add_argument('--log-interval', type=int, default=2, help='Logging interval (default: %(default)s batches)')
+    parser.add_argument('--load', type=os.path.abspath, help='Initialize training from a checkpoint')
+    parser.add_argument('--checkpoint', type=int, help='Checkpointing interval in N_EPOCHS (default: %(default)s)')
+    parser.add_argument('--log-interval', type=int, default=10, help='Logging interval in N_MINIBATCHES (default: %(default)s)')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
 
     group = parser.add_argument_group('Training parameters')
@@ -105,17 +105,21 @@ def main(args):
         model.cuda()
         model.lattice = model.lattice.cuda()
 
-    if args.load_weights:
-        log('Initializing weights from {}'.format(args.load_weights))
-        with open(args.load_weights,'rb') as f:
-            model.load_state_dict(pickle.load(f))
-
-
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
-    
+
+    if args.load:
+        log('Loading checkpoint from {}'.format(args.load))
+        checkpoint = torch.load(args.load)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optim.load_state_dict(checkpoint['optimizer_state_dict'])
+        start_epoch = checkpoint['epoch']+1
+        model.train()
+    else:
+        start_epoch = 0
+
     # training loop
     num_epochs = args.num_epochs
-    for epoch in range(num_epochs):
+    for epoch in range(start_epoch, num_epochs):
         gen_loss_accum = 0
         loss_accum = 0
         ii = 0
@@ -142,20 +146,29 @@ def main(args):
             ii += 1
         log('# =====> Epoch: {} Average gen loss = {:.4}, KLD = {:.4f}, total loss = {:.4f}'.format(epoch+1, gen_loss_accum/Nimg, (loss_accum-gen_loss_accum)/Nimg*nx*ny/args.beta, loss_accum/Nimg))
 
-        if args.save_weights and epoch % args.save_weights== 0:
+        if args.checkpoint and epoch % args.checkpoint == 0:
             model.eval()
             vol, vol_f = eval_volume(model, nz, ny, nx, rnorm)
             mrc.write('{}/reconstruct.{}.mrc'.format(args.outdir,epoch), vol.astype(np.float32))
-            with open('{}/weights.{}.pkl'.format(args.outdir,epoch), 'wb') as f:
-                pickle.dump(model.state_dict(), f)
+            path = '{}/weights.{}.pkl'.format(args.outdir,epoch)
+            torch.save({
+                'epoch':epoch,
+                'model_state_dict':model.state_dict(),
+                'optimizer_state_dict':optim.state_dict(),
+                }, path)
             model.train()
 
     ## save model weights and evaluate the model on 3D lattice
     model.eval()
-    with open('{}/weights.pkl'.format(args.outdir), 'wb') as f:
-        pickle.dump(model.state_dict(), f)
     vol, vol_f = eval_volume(model, nz, ny, nx, rnorm)
     mrc.write('{}/reconstruct.mrc'.format(args.outdir), vol.astype(np.float32))
+    path = '{}/weights.pkl'.format(args.outdir,epoch)
+    torch.save({
+        'epoch':epoch,
+        'model_state_dict':model.state_dict(),
+        'optimizer_state_dict':optim.state_dict(),
+        }, path)
+
     
     td = dt.now()-t1
     log('Finsihed in {} ({} per epoch)'.format(td, td/num_epochs))

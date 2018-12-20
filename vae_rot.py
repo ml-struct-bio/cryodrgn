@@ -22,6 +22,7 @@ import utils
 import fft
 import lie_tools
 from models import VAE
+from beta_schedule import get_beta_schedule
 
 log = utils.log
 vlog = utils.vlog
@@ -32,7 +33,7 @@ def parse_args():
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
     parser.add_argument('--load', type=os.path.abspath, help='Initialize training from a checkpoint')
     parser.add_argument('--checkpoint', type=int, help='Checkpointing interval in N_EPOCHS (default: %(default)s)')
-    parser.add_argument('--log-interval', type=int, default=10, help='Logging interval in N_MINIBATCHES (default: %(default)s)')
+    parser.add_argument('--log-interval', type=int, default=1000, help='Logging interval in N_IMGS (default: %(default)s)')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
 
     group = parser.add_argument_group('Training parameters')
@@ -40,7 +41,8 @@ def parse_args():
     group.add_argument('-b','--batch-size', type=int, default=100, help='Minibatch size (default: %(default)s)')
     group.add_argument('--wd', type=float, default=0, help='Weight decay in Adam optimizer (default: %(default)s)')
     group.add_argument('--lr', type=float, default=1e-3, help='Learning rate in Adam optimizer (default: %(default)s)')
-    group.add_argument('--beta', type=float, default=1.0, help='Weight of latent loss (default: %(default)s)')
+    group.add_argument('--beta', default=1.0, help='Choice of beta schedule or a constant for KLD weight (default: %(default)s)')
+    group.add_argument('--beta-control', type=float, help='KL-Controlled VAE gamma. Beta is KL target. (default: %(default)s)')
 
     group = parser.add_argument_group('Encoder Network')
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
@@ -83,6 +85,10 @@ def main(args):
     use_cuda = torch.cuda.is_available()
     log('Use cuda {}'.format(use_cuda))
 
+    ## set beta schedule
+    beta_schedule = get_beta_schedule(args.beta)
+    if type(args.beta) == str: assert args.beta_control, "Need to set beta control weight for schedule {}".format(args.beta)
+
     # load the particles
     particles_real, _, _ = mrc.parse_mrc(args.particles)
     particles_real = particles_real.astype(np.float32)
@@ -122,9 +128,13 @@ def main(args):
     for epoch in range(start_epoch, num_epochs):
         gen_loss_accum = 0
         loss_accum = 0
-        ii = 0
+        kld_accum = 0
+        batch_it = 0 
         num_batches = np.ceil(Nimg / args.batch_size).astype(int)
         for minibatch_i in np.array_split(np.random.permutation(Nimg),num_batches):
+            batch_it += len(minibatch_i)
+            global_it = Nimg*epoch + batch_it
+
             # inference with real space image
             y = Variable(torch.from_numpy(np.asarray([particles_real[i] for i in minibatch_i])))
             if use_cuda: y = y.cuda()
@@ -134,21 +144,28 @@ def main(args):
             y = Variable(torch.from_numpy(np.asarray([particles_ft[i] for i in minibatch_i])))
             if use_cuda: y = y.cuda()
             gen_loss, kld = loss_function(y_recon, y, w_eps, z_std)
-            loss = gen_loss + args.beta*kld/(nx*ny)
-            if np.isnan(loss.item()):
+
+            beta = beta_schedule(global_it)
+            if args.beta_control is None:
+                loss = gen_loss + beta*kld/(nx*ny)
+            else:
+                loss = gen_loss + args.beta_control*(beta-kld)**2/(nx*ny)
+
+            if torch.isnan(kld):
                 log(w_eps[0])
                 log(z_std[0])
-                sys.exit(1)
+                raise RuntimeError('KLD is nan')
+
             loss.backward()
             optim.step()
             optim.zero_grad()
-
+            
+            kld_accum += kld.item()*len(minibatch_i)
             gen_loss_accum += gen_loss.item()*len(minibatch_i)
             loss_accum += loss.item()*len(minibatch_i)
-            if ii > 0 and ii % args.log_interval == 0:
-                log('# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.4f}, kld={:.4f}, loss={:.4f}'.format(epoch+1, num_epochs, ii*args.batch_size, Nimg, gen_loss.item(), kld.item(), loss.item()))
-            ii += 1
-        log('# =====> Epoch: {} Average gen loss = {:.4}, KLD = {:.4f}, total loss = {:.4f}'.format(epoch+1, gen_loss_accum/Nimg, (loss_accum-gen_loss_accum)/Nimg*nx*ny/args.beta, loss_accum/Nimg))
+            if batch_it % args.log_interval == 0:
+                log('# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.4f}, kld={:.4f}, beta={:.4f}, loss={:.4f}'.format(epoch+1, num_epochs, batch_it, Nimg, gen_loss.item(), kld.item(), beta, loss.item()))
+        log('# =====> Epoch: {} Average gen loss = {:.4}, KLD = {:.4f}, total loss = {:.4f}'.format(epoch+1, gen_loss_accum/Nimg, kld_accum/Nimg, loss_accum/Nimg))
 
         if args.checkpoint and epoch % args.checkpoint == 0:
             model.eval()
@@ -166,7 +183,7 @@ def main(args):
     model.eval()
     vol, vol_f = eval_volume(model, nz, ny, nx, rnorm)
     mrc.write('{}/reconstruct.mrc'.format(args.outdir), vol.astype(np.float32))
-    path = '{}/weights.pkl'.format(args.outdir,epoch)
+    path = '{}/weights.pkl'.format(args.outdir)
     torch.save({
         'epoch':epoch,
         'model_state_dict':model.state_dict(),

@@ -32,7 +32,7 @@ def parse_args():
     parser.add_argument('particles', help='Particle stack file (.mrc)')
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
     parser.add_argument('--load', type=os.path.abspath, help='Initialize training from a checkpoint')
-    parser.add_argument('--checkpoint', type=int, help='Checkpointing interval in N_EPOCHS (default: %(default)s)')
+    parser.add_argument('--checkpoint', type=int, default=5, help='Checkpointing interval in N_EPOCHS (default: %(default)s)')
     parser.add_argument('--log-interval', type=int, default=1000, help='Logging interval in N_IMGS (default: %(default)s)')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
 
@@ -47,6 +47,7 @@ def parse_args():
     group = parser.add_argument_group('Encoder Network')
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--qdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
+    group.add_argument('--encode-mode', default='resid', choices=('conv','resid','mlp'), help='Type of encoder network')
 
     group = parser.add_argument_group('Decoder Network')
     group.add_argument('--players', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
@@ -106,7 +107,9 @@ def main(args):
     log('Normalizing FT by mean, std: {} +/- {}'.format(*rnorm))
     particles_ft = (particles_ft - rnorm[0])/rnorm[1]
 
-    model = VAE(nx, ny, args.qlayers, args.qdim, args.players, args.pdim)
+    model = VAE(nx, ny, args.qlayers, args.qdim, args.players, args.pdim,
+                group_reparam_in_dims=args.qdim,
+                encode_mode=args.encode_mode)
     if use_cuda:
         model.cuda()
         model.lattice = model.lattice.cuda()

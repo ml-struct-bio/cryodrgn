@@ -76,13 +76,7 @@ class VAE(nn.Module):
         x = self.lattice @ rot # R.T*x
         y_hat = self.decoder(x)
         y_hat = y_hat.view(-1, self.ny, self.nx)
-
-        d = rot.new_tensor([1.,-1.,-1.])
-        rot_mirror = d * rot
-        x = self.lattice @ rot_mirror # R.T*x
-        y_hat_mirror= self.decoder(x)
-        y_hat_mirror = y_hat_mirror.view(-1, self.ny, self.nx)
-        return y_hat, y_hat_mirror, w_eps, z_std
+        return y_hat, w_eps, z_std
 
 class ResidLinearEncoder(nn.Module):
     def __init__(self, in_dim, nlayers, hidden_dim, out_dim, activation):

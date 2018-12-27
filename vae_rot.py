@@ -99,10 +99,14 @@ def main(args):
     particles_ft = np.asarray([fft.ht2_center(img).astype(np.float32) for img in particles_real])
     assert particles_ft.shape == (Nimg,ny,nx)
     rnorm  = [np.mean(particles_real), np.std(particles_real)]
+    log('Particle stack mean, std: {} +/- {}'.format(*rnorm))
+    rnorm[0] = 0
+    rnorm[1] = np.median([np.max(x) for x in particles_real])
+    log('Normalizing particles by mean, std: {} +/- {}'.format(*rnorm))
     particles_real = (particles_real - rnorm[0])/rnorm[1]
 
     rnorm  = [np.mean(particles_ft), np.std(particles_ft)]
-    log('Particle stack mean, std: {} +/- {}'.format(*rnorm))
+    log('Particle FT stack mean, std: {} +/- {}'.format(*rnorm))
     rnorm[0] = 0
     log('Normalizing FT by mean, std: {} +/- {}'.format(*rnorm))
     particles_ft = (particles_ft - rnorm[0])/rnorm[1]

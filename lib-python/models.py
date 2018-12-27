@@ -151,8 +151,8 @@ class SO3reparameterize(nn.Module):
         self.so3var = nn.Linear(input_dims, 3)
 
         # start with big outputs
-        self.s2s2map.weight.data.uniform_(-5,5)
-        self.s2s2map.bias.data.uniform_(-5,5)
+        #self.s2s2map.weight.data.uniform_(-5,5)
+        #self.s2s2map.bias.data.uniform_(-5,5)
 
     def reparameterize(self, z, logvar):
         '''

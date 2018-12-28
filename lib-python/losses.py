@@ -1,5 +1,6 @@
 """Equivariance loss for Encoder."""
 from math import pi
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -15,6 +16,8 @@ class EquivarianceLoss(nn.Module):
                              np.linspace(-1, 1, ny, endpoint=False))
         lattice = np.stack([x0.ravel(),x1.ravel()],1).astype(np.float32)
         self.lattice = torch.from_numpy(lattice)
+        self.ny = ny
+        self.nx = nx
 
     def forward(self, img, encoding):
         assert encoding.shape[-2:] == (3, 3), "Rotation matrix input required"

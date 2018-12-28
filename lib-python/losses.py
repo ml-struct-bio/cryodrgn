@@ -8,9 +8,13 @@ from lie_tools import s2s1rodrigues
 class EquivarianceLoss(nn.Module):
     """Equivariance Loss for SO(2) subgroup."""
 
-    def __init__(self, model):
+    def __init__(self, model, ny, nx):
         super().__init__()
         self.model = model
+        x0, x1 = np.meshgrid(np.linspace(-1, 1, nx, endpoint=False), # FT is not symmetric around origin
+                             np.linspace(-1, 1, ny, endpoint=False))
+        lattice = np.stack([x0.ravel(),x1.ravel()],1).astype(np.float32)
+        self.lattice = torch.from_numpy(lattice)
 
     def forward(self, img, encoding):
         assert encoding.shape[-2:] == (3, 3), "Rotation matrix input required"
@@ -29,13 +33,12 @@ class EquivarianceLoss(nn.Module):
         diffs = (enc_rot - img_rot_enc).pow(2).view(n, -1).sum(-1)
         return diffs.mean()
 
-    @staticmethod
-    def rotate(img, theta):
+    def rotate(self, img, theta):
         cos = torch.cos(theta)
         sin = torch.sin(theta)
-        zero = torch.zeros_like(theta)
-        affine = torch.stack([cos, -sin, zero, sin, cos, zero], 1).view(-1, 2, 3)
-        grid = F.affine_grid(affine, img.size())
+        rotT = torch.stack([cos, sin, -sin, cos], 1).view(-1, 2, 2)
+        grid = self.lattice @ rotT
+        grid = grid.view(-1, self.ny, self.nx, 2)
         return F.grid_sample(img, grid)
 
 def expand_dim(x, n, dim=0):

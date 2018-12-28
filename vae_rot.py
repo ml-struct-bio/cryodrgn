@@ -125,7 +125,7 @@ def main(args):
     if args.equivariance:
         assert args.equivariance > 0, 'Regularization weight must be positive'
         equivariance_lambda = LinearSchedule(0, args.equivariance, 1000, args.equivariance_end_it)
-        equivariance_loss = EquivarianceLoss(model)
+        equivariance_loss = EquivarianceLoss(model,ny,nx)
 
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 

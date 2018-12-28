@@ -69,14 +69,15 @@ class VAE(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, img):
-        z = self.encoder(img)
-        rot, w_eps, z_std = self.latent_encoder(z)
+        z_mu, z_std = self.latent_encoder(self.encoder(img))
+        rot, w_eps = self.latent_encoder.sampleSO3(z_mu, z_std)
 
         # transform lattice by rot
         x = self.lattice @ rot # R.T*x
         y_hat = self.decoder(x)
         y_hat = y_hat.view(-1, self.ny, self.nx)
-        return y_hat, w_eps, z_std
+        return y_hat, z_mu, z_std, w_eps
+
 
 class ResidLinearEncoder(nn.Module):
     def __init__(self, in_dim, nlayers, hidden_dim, out_dim, activation):
@@ -154,26 +155,25 @@ class SO3reparameterize(nn.Module):
         #self.s2s2map.weight.data.uniform_(-5,5)
         #self.s2s2map.bias.data.uniform_(-5,5)
 
-    def reparameterize(self, z, logvar):
+    def sampleSO3(self, z_mu, z_std):
         '''
         Reparameterize SO(3) latent variable
         # z represents mean on S2xS2 and variance on so3, which enocdes a Gaussian distribution on SO3
         # See section 2.5 of http://ethaneade.com/lie.pdf
         '''
-        z_mu = lie_tools.s2s2_to_SO3(z[:, :3], z[:, 3:]).float()
-        z_std = torch.exp(.5*logvar) # or could do softplus
-        
         # resampling trick
         eps = torch.randn_like(z_std)
         w_eps = eps*z_std
         rot_eps = lie_tools.expmap(w_eps)
         rot_sampled = z_mu @ rot_eps
-        return rot_sampled, w_eps, z_std
+        return rot_sampled, w_eps
 
     def forward(self, x):
         z = self.s2s2map(x).double()
         logvar = self.so3var(x)
-        return self.reparameterize(z, logvar)
+        z_mu = lie_tools.s2s2_to_SO3(z[:, :3], z[:, 3:]).float()
+        z_std = torch.exp(.5*logvar) # or could do softplus
+        return z_mu, z_std 
 
         
 

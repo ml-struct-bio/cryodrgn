@@ -22,7 +22,8 @@ import utils
 import fft
 import lie_tools
 from models import VAE
-from beta_schedule import get_beta_schedule
+from beta_schedule import get_beta_schedule, LinearSchedule
+from losses import EquivarianceLoss
 
 log = utils.log
 vlog = utils.vlog
@@ -43,11 +44,14 @@ def parse_args():
     group.add_argument('--lr', type=float, default=1e-3, help='Learning rate in Adam optimizer (default: %(default)s)')
     group.add_argument('--beta', default=1.0, help='Choice of beta schedule or a constant for KLD weight (default: %(default)s)')
     group.add_argument('--beta-control', type=float, help='KL-Controlled VAE gamma. Beta is KL target. (default: %(default)s)')
+    group.add_argument('--equivariance', type=float, help='Strength of equivariance loss (default: %(default)s)')
+    group.add_argument('--equivariance_end_it', type=int, default=100000, help='It at which equivariance max')
+            
 
     group = parser.add_argument_group('Encoder Network')
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--qdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
-    group.add_argument('--encode-mode', default='resid', choices=('conv','resid','mlp'), help='Type of encoder network')
+    group.add_argument('--encode-mode', default='resid', choices=('conv','resid','mlp'), help='Type of encoder network (default: %(default)s)')
 
     group = parser.add_argument_group('Decoder Network')
     group.add_argument('--players', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
@@ -118,6 +122,11 @@ def main(args):
         model.cuda()
         model.lattice = model.lattice.cuda()
 
+    if args.equivariance:
+        assert args.equivariance > 0, 'Regularization weight must be positive'
+        equivariance_lambda = LinearSchedule(0, args.equivariance, 1000, args.equivariance_end_it)
+        equivariance_loss = EquivarianceLoss(model)
+
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
     if args.load:
@@ -136,6 +145,7 @@ def main(args):
         gen_loss_accum = 0
         loss_accum = 0
         kld_accum = 0
+        eq_loss_accum = 0
         batch_it = 0 
         num_batches = np.ceil(Nimg / args.batch_size).astype(int)
         for minibatch_i in np.array_split(np.random.permutation(Nimg),num_batches):
@@ -145,7 +155,14 @@ def main(args):
             # inference with real space image
             y = Variable(torch.from_numpy(np.asarray([particles_real[i] for i in minibatch_i])))
             if use_cuda: y = y.cuda()
-            y_recon, w_eps, z_std = model(y) 
+            y_recon, z_mu, z_std, w_eps = model(y) 
+
+            # equivariance loss
+            if args.equivariance:
+                lamb = equivariance_lambda(global_it)
+                eq_loss = equivariance_loss(y, z_mu)
+            else:
+                lamb, eq_loss = 0, 0 
 
             # reconstruct fourier space image (projection slice theorem)
             y = Variable(torch.from_numpy(np.asarray([particles_ft[i] for i in minibatch_i])))
@@ -158,6 +175,9 @@ def main(args):
             else:
                 loss = gen_loss + args.beta_control*(beta-kld)**2/(nx*ny)
 
+            if args.equivariance:
+                loss += lamb*eq_loss
+
             if torch.isnan(kld):
                 log(w_eps[0])
                 log(z_std[0])
@@ -167,12 +187,17 @@ def main(args):
             optim.step()
             optim.zero_grad()
             
+            # logging
             kld_accum += kld.item()*len(minibatch_i)
             gen_loss_accum += gen_loss.item()*len(minibatch_i)
             loss_accum += loss.item()*len(minibatch_i)
+            if args.equivariance:eq_loss_accum += eq_loss.item()*len(minibatch_i)
+
             if batch_it % args.log_interval == 0:
-                log('# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.4f}, kld={:.4f}, beta={:.4f}, loss={:.4f}'.format(epoch+1, num_epochs, batch_it, Nimg, gen_loss.item(), kld.item(), beta, loss.item()))
-        log('# =====> Epoch: {} Average gen loss = {:.4}, KLD = {:.4f}, total loss = {:.4f}'.format(epoch+1, gen_loss_accum/Nimg, kld_accum/Nimg, loss_accum/Nimg))
+                eq_log = 'equivariance={:.4f}, lambda={:.4f}, '.format(eq_loss.item(), lamb) if args.equivariance else ''
+                log('# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.4f}, kld={:.4f}, beta={:.4f}, {}loss={:.4f}'.format(epoch+1, num_epochs, batch_it, Nimg, gen_loss.item(), kld.item(), beta, eq_log, loss.item()))
+        eq_log = 'equivariance = {:.4f}, '.format(eq_loss_accum/Nimg) if args.equivariance else ''
+        log('# =====> Epoch: {} Average gen loss = {:.4}, KLD = {:.4f}, {}total loss = {:.4f}'.format(epoch+1, gen_loss_accum/Nimg, kld_accum/Nimg, eq_log, loss_accum/Nimg))
 
         if args.checkpoint and epoch % args.checkpoint == 0:
             model.eval()

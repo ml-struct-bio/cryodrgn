@@ -46,6 +46,15 @@ def expmap(v):
         + (1. - torch.cos(theta))[..., None]*(K@K)
     return R
 
+def s2s1rodrigues(s2_el, s1_el):
+    K = map_to_lie_algebra(s2_el)
+    cos_theta = s1_el[...,0]
+    sin_theta = s1_el[...,1]
+    I = torch.eye(3, device=s2_el.device, dtype=s2_el.dtype)
+    R = I + sin_theta[..., None, None]*K \
+        + (1. - cos_theta)[..., None, None]*(K@K)
+    return R
+
 def s2s2_to_SO3(v1, v2):
     '''Normalize 2 3-vectors. Project second to orthogonal component.
     Take cross product for third. Stack to form SO matrix.'''

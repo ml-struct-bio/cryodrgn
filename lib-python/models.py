@@ -22,7 +22,8 @@ class VAE(nn.Module):
             encode_layers, encode_dim, 
             decode_layers, decode_dim,
             group_reparam_in_dims=128,
-            encode_mode = 'mlp'
+            encode_mode = 'mlp',
+            flip_hand = False
             ):
         super(VAE, self).__init__()
         self.nx = nx
@@ -44,7 +45,7 @@ class VAE(nn.Module):
                             nn.ReLU) #in_dim -> hidden_dim
         else:
             raise RuntimeError('Encoder mode {} not recognized'.format(encode_mode))
-        self.latent_encoder = SO3reparameterize(group_reparam_in_dims) # hidden_dim -> SO(3) latent variable
+        self.latent_encoder = SO3reparameterize(group_reparam_in_dims, flip_hand) # hidden_dim -> SO(3) latent variable
         self.decoder = self.get_decoder(decode_layers, 
                             decode_dim, 
                             nn.ReLU) #R3 -> R1
@@ -146,10 +147,13 @@ class ConvEncoder(nn.Module):
 
 class SO3reparameterize(nn.Module):
     '''Reparameterize R^N encoder output to SO(3) latent variable'''
-    def __init__(self, input_dims):
+    def __init__(self, input_dims, flip_hand=False):
         super().__init__()
         self.s2s2map = nn.Linear(input_dims, 6)
         self.so3var = nn.Linear(input_dims, 3)
+        self.handedness = nn.Linear(input_dims, 1)
+        self.bn = nn.BatchNorm1d(1)
+        self.flip_hand = flip_hand
 
         # start with big outputs
         #self.s2s2map.weight.data.uniform_(-5,5)
@@ -173,6 +177,12 @@ class SO3reparameterize(nn.Module):
         logvar = self.so3var(x)
         z_mu = lie_tools.s2s2_to_SO3(z[:, :3], z[:, 3:]).float()
         z_std = torch.exp(.5*logvar) # or could do softplus
+
+        if self.flip_hand:
+            flip_hand = nn.Sigmoid()(self.bn(self.handedness(x)))
+            flip = torch.tensor([[1,1,1],[-1,-1,-1],[-1,-1,-1]], dtype=torch.float32, device=z_mu.device)
+            ind = (flip_hand > .5).view(-1)
+            z_mu[ind] *= flip
         return z_mu, z_std 
 
         

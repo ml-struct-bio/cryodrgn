@@ -46,6 +46,7 @@ def parse_args():
     group.add_argument('--beta-control', type=float, help='KL-Controlled VAE gamma. Beta is KL target. (default: %(default)s)')
     group.add_argument('--equivariance', type=float, help='Strength of equivariance loss (default: %(default)s)')
     group.add_argument('--equivariance-end-it', type=int, default=100000, help='It at which equivariance max')
+    group.add_argument('--flip-hand', action='store_true', help='Latent variable to flip handedness of image rotation')
             
 
     group = parser.add_argument_group('Encoder Network')
@@ -120,7 +121,8 @@ def main(args):
 
     model = VAE(nx, ny, args.qlayers, args.qdim, args.players, args.pdim,
                 group_reparam_in_dims=args.qdim,
-                encode_mode=args.encode_mode)
+                encode_mode=args.encode_mode,
+                flip_hand=args.flip_hand)
     if use_cuda:
         model.cuda()
         model.lattice = model.lattice.cuda()

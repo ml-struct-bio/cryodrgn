@@ -45,7 +45,7 @@ def parse_args():
     group.add_argument('--beta', default=1.0, help='Choice of beta schedule or a constant for KLD weight (default: %(default)s)')
     group.add_argument('--beta-control', type=float, help='KL-Controlled VAE gamma. Beta is KL target. (default: %(default)s)')
     group.add_argument('--equivariance', type=float, help='Strength of equivariance loss (default: %(default)s)')
-    group.add_argument('--equivariance_end_it', type=int, default=100000, help='It at which equivariance max')
+    group.add_argument('--equivariance-end-it', type=int, default=100000, help='It at which equivariance max')
             
 
     group = parser.add_argument_group('Encoder Network')
@@ -91,8 +91,11 @@ def main(args):
     log('Use cuda {}'.format(use_cuda))
 
     ## set beta schedule
+    try:
+        args.beta = float(args.beta)
+    except ValueError: 
+        assert args.beta_control, "Need to set beta control weight for schedule {}".format(args.beta)
     beta_schedule = get_beta_schedule(args.beta)
-    if type(args.beta) == str: assert args.beta_control, "Need to set beta control weight for schedule {}".format(args.beta)
 
     # load the particles
     particles_real, _, _ = mrc.parse_mrc(args.particles)
@@ -124,7 +127,7 @@ def main(args):
 
     if args.equivariance:
         assert args.equivariance > 0, 'Regularization weight must be positive'
-        equivariance_lambda = LinearSchedule(0, args.equivariance, 1000, args.equivariance_end_it)
+        equivariance_lambda = LinearSchedule(0, args.equivariance, 10000, args.equivariance_end_it)
         equivariance_loss = EquivarianceLoss(model,ny,nx)
         if use_cuda: equivariance_loss.lattice = equivariance_loss.lattice.cuda()
 

@@ -23,7 +23,7 @@ class EquivarianceLoss(nn.Module):
         assert encoding.shape[-2:] == (3, 3), "Rotation matrix input required"
         n = img.shape[0]
         theta = torch.rand(n, device=encoding.device) * 2 * pi
-        v = torch.tensor([1, 0, 0], dtype=torch.float32, device=encoding.device)
+        v = torch.tensor([0, 0, 1], dtype=torch.float32, device=encoding.device)
         s1 = torch.stack((torch.cos(theta), torch.sin(theta)), 1)
         g = s2s1rodrigues(expand_dim(v, n), s1)
 
@@ -34,6 +34,11 @@ class EquivarianceLoss(nn.Module):
         img_rot_enc = self.model.latent_encoder(self.model.encoder(img_rot))[0]
 
         diffs = (enc_rot - img_rot_enc).pow(2).view(n, -1).sum(-1)
+        #import pickle
+        #local = locals()
+        #debug = {kk:local[kk] for kk in ['diffs', 'img_rot_enc', 'img_rot', 'enc_rot', 'g', 's1', 'v', 'theta', 'n', 'encoding', 'img']}
+        #pickle.dump(debug, open('debug_equiv.pkl','wb'))
+        #sys.exit(1)
         return diffs.mean()
 
     def rotate(self, img, theta):

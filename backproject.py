@@ -22,7 +22,9 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mrcs', help='Input MRCs stack')
     parser.add_argument('pkl', help='EMAN euler angles')
-    parser.add_argument('-o', help='Output MRC file')
+    parser.add_argument('-o', type=os.path.abspath,help='Output MRC file')
+    parser.add_argument('--is-rot',action='store_true',help='Input angles are rotation matrices')
+    parser.add_argument('--indices',help='Indices to iterator over (pkl)')
     return parser
 
 def add_slice(V, counts, ff_coord, ff, D):
@@ -69,10 +71,17 @@ def main(args):
     COORD = np.array([xx.ravel(), yy.ravel(), zz.ravel()])
     MASK = np.where(np.sum(COORD**2,axis=0)**.5 <=(D/2-1))
     COORD = COORD[:,MASK[0]]
-    for ii in range(N):
+    if args.indices:
+        iterator = pickle.load(open(args.indices,'rb'))
+    else:
+        iterator = range(N)
+    for ii in iterator:
         if ii%100==0: log('image {}'.format(ii))
         ff = fft.fft2_center(images[ii].get()).ravel()[MASK]
-        rot = utils.R_from_eman(angles[ii,0],angles[ii,1],angles[ii,2])
+        if args.is_rot:
+            rot = angles[ii]
+        else:
+            rot = utils.R_from_eman(angles[ii,0],angles[ii,1],angles[ii,2])
         ff_coord = np.dot(rot.T,COORD)
         add_slice(V,counts,ff_coord,ff,D)
     z = np.where(counts == 0.0)

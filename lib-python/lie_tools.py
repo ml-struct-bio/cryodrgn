@@ -65,6 +65,17 @@ def s2s2_to_SO3(v1, v2):
     e3 = torch.cross(e1, e2)
     return torch.stack([e1, e2, e3], 1)
 
+def quaternions_to_SO3(q):
+    '''Normalizes q and maps to group matrix.'''
+    q = q / q.norm(p=2, dim=-1, keepdim=True)
+    r, i, j, k = q[..., 0], q[..., 1], q[..., 2], q[..., 3]
+
+    return torch.stack([
+        r*r - i*i - j*j + k*k, 2*(r*i + j*k), 2*(r*j - i*k),
+        2*(r*i - j*k), -r*r + i*i - j*j + k*k, 2*(i*j + r*k),
+        2*(r*j + i*k), 2*(i*j - r*k), -r*r - i*i + j*j + k*k
+        ], -1).view(*q.shape[:-1], 3, 3)
+
 def logsumexp(inputs, dim=None, keepdim=False):
     '''Numerically stable logsumexp.
     https://github.com/pytorch/pytorch/issues/2591

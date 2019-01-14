@@ -175,14 +175,14 @@ class SO3reparameterize(nn.Module):
     def forward(self, x):
         z = self.s2s2map(x).double()
         logvar = self.so3var(x)
-        z_mu = lie_tools.s2s2_to_SO3(z[:, :3], z[:, 3:]).float()
-        z_std = torch.exp(.5*logvar) # or could do softplus
 
         if self.flip_hand:
-            flip_hand = nn.Sigmoid()(self.bn(self.handedness(x)))
-            flip = torch.tensor([[1,1,1],[-1,-1,-1],[-1,-1,-1]], dtype=torch.float32, device=z_mu.device)
-            ind = (flip_hand > .5).view(-1)
-            z_mu[ind] *= flip
+            f = nn.Tanh()(self.bn(self.handedness(x))).double()
+            z[:,2:] *= f
+
+        z_mu = lie_tools.s2s2_to_SO3(z[:, 0::2], z[:, 1::2]).float()
+        z_std = torch.exp(.5*logvar) # or could do softplus
+
         return z_mu, z_std 
 
         

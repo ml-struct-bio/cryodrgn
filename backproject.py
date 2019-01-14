@@ -57,7 +57,9 @@ def main(args):
     images, _ , _ = mrc.parse_mrc(args.mrcs,lazy=True)
     N = len(images)
     angles = utils.load_angles(args.pkl)
-    assert len(angles) == N, 'Nparticles != Nangles, {}!={}'.format(N,len(angles))
+    if len(angles) < N:
+        log('Warning: # images != # angles. Backprojecting first {} images'.format(len(angles)))
+        N = len(angles)
 
     n, m = images[0].get().shape
     assert n == m, "Image dimensions must be square"

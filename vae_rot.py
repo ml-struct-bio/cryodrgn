@@ -58,17 +58,12 @@ def parse_args():
     group.add_argument('--pdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
     return parser
 
-def loss_function(recon_y, recon_y2, y, w_eps, z_std, pmirror):
-    B = recon_y.size(0)
-    gen_loss = (recon_y-y).pow(2).view(B,-1).mean(-1,keepdim=True)
-    gen_loss2 = (recon_y2-y).pow(2).view(B,-1).mean(-1,keepdim=True)
-    print(gen_loss[-1],gen_loss2[-1],pmirror[-1])
+def loss_function(recon_y, y, w_eps, z_std):
+    gen_loss = F.mse_loss(recon_y, y)  
     cross_entropy = torch.tensor([np.log(8*np.pi**2)], device=y.device) # cross entropy between gaussian and uniform on SO3
     entropy = lie_tools.so3_entropy(w_eps,z_std)
     kld = cross_entropy - entropy
     #assert kld > 0
-    gen_loss = pmirror*gen_loss + (1-pmirror)*gen_loss2
-    gen_loss = gen_loss.mean()
     return gen_loss, kld.mean()
 
 def eval_volume(model, nz, ny, nx, rnorm):
@@ -164,7 +159,7 @@ def main(args):
             # inference with real space image
             y = Variable(torch.from_numpy(np.asarray([particles_real[i] for i in minibatch_i])))
             if use_cuda: y = y.cuda()
-            y_recon, y_recon2, z_mu, z_std, w_eps, pmirror = model(y) 
+            y_recon, z_mu, z_std, w_eps = model(y) 
 
             # equivariance loss
             if args.equivariance:
@@ -176,7 +171,7 @@ def main(args):
             # reconstruct fourier space image (projection slice theorem)
             y = Variable(torch.from_numpy(np.asarray([particles_ft[i] for i in minibatch_i])))
             if use_cuda: y = y.cuda()
-            gen_loss, kld = loss_function(y_recon, y_recon2, y, w_eps, z_std, pmirror)
+            gen_loss, kld = loss_function(y_recon, y, w_eps, z_std)
 
             beta = beta_schedule(global_it)
             if args.beta_control is None:

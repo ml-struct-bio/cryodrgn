@@ -69,14 +69,21 @@ class VAE(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, img):
-        z_mu, z_std = self.latent_encoder(self.encoder(img))
+        z_mu, z_std, hand = self.latent_encoder(self.encoder(img))
         rot, w_eps = self.latent_encoder.sampleSO3(z_mu, z_std)
 
         # transform lattice by rot
         x = self.lattice @ rot # R.T*x
         y_hat = self.decoder(x)
         y_hat = y_hat.view(-1, self.ny, self.nx)
-        return y_hat, z_mu, z_std, w_eps
+
+        # mirror
+        flip = torch.tensor([[-1,-1,-1],[-1,-1,-1],[1,1,1]],dtype=torch.float32, device=img.device)
+        rot2 = rot*flip
+        x = self.lattice @ rot2
+        y_hat2 = self.decoder(x)
+        y_hat2 = y_hat2.view(-1,self.ny,self.nx)
+        return y_hat, y_hat2, z_mu, z_std, w_eps, hand
 
 
 class ResidLinearEncoder(nn.Module):
@@ -150,6 +157,7 @@ class SO3reparameterize(nn.Module):
         super().__init__()
         self.s2s2map = nn.Linear(input_dims, 6)
         self.so3var = nn.Linear(input_dims, 3)
+        self.handedness = nn.Linear(input_dims, 1)
 
         # start with big outputs
         #self.s2s2map.weight.data.uniform_(-5,5)
@@ -173,7 +181,8 @@ class SO3reparameterize(nn.Module):
         logvar = self.so3var(x)
         z_mu = lie_tools.s2s2_to_SO3(z[:, :3], z[:, 3:]).float()
         z_std = torch.exp(.5*logvar) # or could do softplus
-        return z_mu, z_std 
+        hand = nn.Sigmoid()(self.handedness(x))
+        return z_mu, z_std, hand
 
         
 

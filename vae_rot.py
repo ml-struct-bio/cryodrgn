@@ -59,12 +59,15 @@ def parse_args():
     return parser
 
 def loss_function(recon_y, y, w_eps, z_std):
-    gen_loss = F.mse_loss(recon_y, y)  
+    mu = recon_y[:,:,:,0]
+    var = recon_y[:,:,:,1]
+    gen_loss = (mu-y).pow(2)/var + torch.log(2*np.pi*var)
+    #gen_loss = F.mse_loss(recon_y, y)  
     cross_entropy = torch.tensor([np.log(8*np.pi**2)], device=y.device) # cross entropy between gaussian and uniform on SO3
     entropy = lie_tools.so3_entropy(w_eps,z_std)
     kld = cross_entropy - entropy
     #assert kld > 0
-    return gen_loss, kld.mean()
+    return gen_loss.mean(), kld.mean()
 
 def eval_volume(model, nz, ny, nx, rnorm):
     '''Evaluate the model on a nz x ny x nx lattice'''
@@ -75,7 +78,7 @@ def eval_volume(model, nz, ny, nx, rnorm):
         x = model.lattice + torch.tensor([0,0,z], device=model.lattice.device, dtype=model.lattice.dtype)
         with torch.no_grad():
             y = model.decoder(x)
-            y = y.view(ny, nx).cpu().numpy()
+            y = y.view(ny, nx, 2).cpu().numpy()[:,:,0]
         vol_f[i] = y*rnorm[1]+rnorm[0]
     vol = fft.ihtn_center(vol_f)
     return vol, vol_f

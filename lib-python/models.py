@@ -47,7 +47,7 @@ class VAE(nn.Module):
         self.latent_encoder = SO3reparameterize(group_reparam_in_dims) # hidden_dim -> SO(3) latent variable
         self.decoder = self.get_decoder(decode_layers, 
                             decode_dim, 
-                            nn.ReLU) #R3 -> R2
+                            nn.ReLU) #R3 -> R1
         
         # centered and scaled xy plane, values between -1 and 1
         x0, x1 = np.meshgrid(np.linspace(-1, 1, nx, endpoint=False), # FT is not symmetric around origin
@@ -65,7 +65,7 @@ class VAE(nn.Module):
         for n in range(nlayers):
             layers.append(ResidLinear(hidden_dim, hidden_dim))
             layers.append(activation())
-        layers.append(nn.Linear(hidden_dim,2))
+        layers.append(nn.Linear(hidden_dim,1))
         return nn.Sequential(*layers)
 
     def forward(self, img):
@@ -75,9 +75,7 @@ class VAE(nn.Module):
         # transform lattice by rot
         x = self.lattice @ rot # R.T*x
         y_hat = self.decoder(x)
-        y_hat = torch.cat((y_hat[...,0:1],F.softplus(y_hat[...,1:2])), dim=2)
-        y_hat = y_hat.view(-1, self.ny, self.nx, 2)
-        
+        y_hat = y_hat.view(-1, self.ny, self.nx)
         return y_hat, z_mu, z_std, w_eps
 
 
@@ -177,4 +175,5 @@ class SO3reparameterize(nn.Module):
         z_std = torch.exp(.5*logvar) # or could do softplus
         return z_mu, z_std 
 
+        
 

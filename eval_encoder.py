@@ -37,6 +37,7 @@ def parse_args():
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
     parser.add_argument('--ref',type=int, default=0,help='Reference image to align by')
     parser.add_argument('--angles',help='euler angles (.pkl)')
+    parser.add_argument('--flip-hand', action='store_true', help='Flip hand of reference euler angles')
     parser.add_argument('--save-recon')
 
     group = parser.add_argument_group('Training parameters')
@@ -46,7 +47,6 @@ def parse_args():
     group.add_argument('--encode-mode', default='resid', choices=('conv','resid','mlp'), help='Type of encoder network')
     group.add_argument('--players', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--pdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
-    group.add_argument('--flip-hand', action='store_true', help='Latent variable to flip handedness of image rotation')
     return parser
 
 def loss_function(recon_y, y, w_eps, z_std):
@@ -56,6 +56,22 @@ def loss_function(recon_y, y, w_eps, z_std):
     kld = cross_entropy - entropy
     #assert kld > 0
     return gen_loss, kld.mean()
+
+def fast_dist(a,b):
+    return np.sum((a-b)**2)
+
+def align_rot(rotA,rotB,i,flip=False):
+    x = -1*np.ones((3,3))
+    x[2] = 1
+    if flip:
+        rotB = [x*r for r in rotB]
+                            
+    ref = rotA[i]
+    rot = np.array([np.dot(x, ref.T) for x in rotA])
+    ref = rotB[i]
+    rot_hat = np.array([np.dot(x, ref.T) for x in rotB])
+    return rot, rot_hat
+
 
 def main(args):
     log(args)
@@ -88,8 +104,7 @@ def main(args):
 
     model = VAE(nx, ny, args.qlayers, args.qdim, args.players, args.pdim,
                 group_reparam_in_dims=args.qdim,
-                encode_mode=args.encode_mode,
-                flip_hand=args.flip_hand)
+                encode_mode=args.encode_mode)
     if use_cuda:
         model.cuda()
         model.lattice = model.lattice.cuda()
@@ -147,13 +162,11 @@ def main(args):
     
         rot = [utils.R_from_eman(*x) for x in angles] # ground truth
         rot_hat = rot_all # predicted
-    
-        i = args.ref # choose a frame to align by
-        ref = rot[i]
-        rot = [np.dot(x, ref.T) for x in rot]
-        ref = rot_hat[i]
-        rot_hat = [np.dot(x, ref.T) for x in rot_hat]
-        dists = np.asarray([geodesic_so3(a,b) for a,b in zip(rot, rot_hat)])
+        rot, rot_hat = align_rot(rot, rot_hat, args.ref, args.flip_hand)
+
+        #dists = np.asarray([geodesic_so3(a,b) for a,b in zip(rot, rot_hat)])
+        dists = np.asarray([fast_dist(a,b) for a,b in zip(rot, rot_hat)])
+
         print('Median: ', np.median(dists))
         w = np.where(np.asarray(dists)<1)
         print('Dist < 1: ', w[:10])

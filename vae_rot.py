@@ -119,7 +119,6 @@ def main(args):
     particles_ft = (particles_ft - rnorm[0])/rnorm[1]
 
     model = VAE(nx, ny, args.qlayers, args.qdim, args.players, args.pdim,
-                group_reparam_in_dims=args.qdim,
                 encode_mode=args.encode_mode)
     if use_cuda:
         model.cuda()

@@ -21,7 +21,6 @@ class VAE(nn.Module):
             nx, ny, 
             encode_layers, encode_dim, 
             decode_layers, decode_dim,
-            group_reparam_in_dims=128,
             encode_mode = 'mlp'
             ):
         super(VAE, self).__init__()
@@ -29,22 +28,22 @@ class VAE(nn.Module):
         self.ny = ny
         self.in_dim = nx*ny
         if encode_mode == 'conv':
-            self.encoder = ConvEncoder(group_reparam_in_dims, encode_dim)
+            self.encoder = ConvEncoder(encode_dim, encode_dim)
         elif encode_mode == 'resid':
             self.encoder = ResidLinearEncoder(nx*ny, 
                             encode_layers, 
-                            encode_dim, 
-                            group_reparam_in_dims,
+                            encode_dim,  # hidden_dim
+                            encode_dim, # out_dim
                             nn.ReLU) #in_dim -> hidden_dim
         elif encode_mode == 'mlp':
             self.encoder = MLPEncoder(nx*ny, 
                             encode_layers, 
-                            encode_dim, 
-                            group_reparam_in_dims,
+                            encode_dim, # hidden_dim
+                            encode_dim, # out_dim
                             nn.ReLU) #in_dim -> hidden_dim
         else:
             raise RuntimeError('Encoder mode {} not recognized'.format(encode_mode))
-        self.latent_encoder = SO3reparameterize(group_reparam_in_dims) # hidden_dim -> SO(3) latent variable
+        self.latent_encoder = SO3reparameterize(encode_dim) # hidden_dim -> SO(3) latent variable
         self.decoder = self.get_decoder(decode_layers, 
                             decode_dim, 
                             nn.ReLU) #R3 -> R1
@@ -113,7 +112,7 @@ class MLPEncoder(nn.Module):
       
 # Adapted from soumith DCGAN
 class ConvEncoder(nn.Module):
-    def __init__(self, out_dim, hidden_dim):
+    def __init__(self, hidden_dim, out_dim):
         super(ConvEncoder, self).__init__()
         ndf = hidden_dim
         self.main = nn.Sequential(
@@ -141,8 +140,6 @@ class ConvEncoder(nn.Module):
         x = torch.unsqueeze(x,1)
         x = self.main(x)
         return x.view(x.size(0), -1) # flatten
-
-#torch.nn.Conv2d(in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True)
 
 class SO3reparameterize(nn.Module):
     '''Reparameterize R^N encoder output to SO(3) latent variable'''

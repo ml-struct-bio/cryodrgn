@@ -24,7 +24,7 @@ class EquivarianceLoss(nn.Module):
         n = img.shape[0]
         theta = torch.rand(n, device=encoding.device) * 2 * pi
         v = torch.tensor([0, 0, 1], dtype=torch.float32, device=encoding.device)
-        s1 = torch.stack((torch.cos(theta), torch.sin(theta)), 1)
+        s1 = torch.stack((torch.cos(theta), -torch.sin(theta)), 1)
         g = s2s1rodrigues(expand_dim(v, n), s1)
 
         enc_rot = g.bmm(encoding)

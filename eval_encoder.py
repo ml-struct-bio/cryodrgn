@@ -114,6 +114,7 @@ def main(args):
         model.load_state_dict(checkpoint['model_state_dict'])
 
     model.eval()
+    torch.no_grad().__enter__()
 
     rot_all = []
     recon_all = []
@@ -128,18 +129,44 @@ def main(args):
             if use_cuda: y = y.cuda()
 
             rot, z_std = model.latent_encoder(model.encoder(y))
-            rot_all.append(rot.detach().cpu().numpy())
 
-            if args.save_recon:
-                x = model.lattice @ rot # R.T*x
-                y_hat = model.decoder(x)
-                y_hat = y_hat.view(-1, ny, nx)
-                recon_all.append(y_hat.detach().cpu().numpy())
+            flip = torch.tensor([[-1,-1,-1],[-1,-1,-1],[1,1,1]],dtype=torch.float32, device=y.device)
+            rot2 = rot*flip
+            align = lie_tools.s2s2_to_SO3(model.align[:3], model.align[3:])
+            rot2 = rot2 @ align
+
+            x = model.lattice @ rot # R.T*x
+            y_hat = model.decoder(x)
+            y_hat = y_hat.view(-1, ny, nx)
+            
+            x = model.lattice @ rot2 # R.T*x
+            y_hat2 = model.decoder(x)
+            y_hat2 = y_hat2.view(-1, ny, nx)
     
-                y = Variable(torch.from_numpy(np.asarray([particles_ft[i] for i in minibatch_i])))
-                if use_cuda: y = y.cuda()
-                gen_loss = F.mse_loss(y_hat, y)  
-                log('# [Batch {}/{}] gen loss={:4f}'.format(ii, num_batches, gen_loss.item()))
+            y = Variable(torch.from_numpy(np.asarray([particles_ft[i] for i in minibatch_i])))
+            if use_cuda: y = y.cuda()
+
+            B = y.size(0)
+            gen_loss = (y_hat - y).pow(2).view(B, -1).mean(-1)
+            gen_loss_mirror = (y_hat2 - y).pow(2).view(B, -1).mean(-1)
+            total = torch.min(gen_loss, gen_loss_mirror)
+            log('# [Batch {}/{}] gen loss={:4f}'.format(ii, num_batches, total.mean().item()))
+
+            rot=rot.detach().cpu().numpy()
+            rot2=rot2.detach().cpu().numpy()
+            gen_loss=gen_loss.detach().cpu().numpy()
+            gen_loss_mirror=gen_loss_mirror.detach().cpu().numpy()
+            minn=np.argmin(np.vstack((gen_loss,gen_loss_mirror)),axis=0)
+            print(np.sum(minn))
+            tmp=np.stack((rot,rot2))
+            rot3 = np.array([tmp[x,i] for i,x in enumerate(minn)])
+            rot_all.append(rot3)
+            if args.save_recon:
+                y_hat=y_hat.detach().cpu().numpy() 
+                y_hat2=y_hat2.detach().cpu().numpy() 
+                tmp = np.stack((y_hat,y_hat2))
+                y_hat3 = np.array([tmp[x,i] for i,x in enumerate(minn)])
+                recon_all.append(y_hat3)
 
     rot_all = np.vstack(rot_all)
     if args.o:

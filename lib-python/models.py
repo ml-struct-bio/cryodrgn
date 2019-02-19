@@ -53,7 +53,8 @@ class VAE(nn.Module):
                              np.linspace(-1, 1, ny, endpoint=False))
         lattice = np.stack([x0.ravel(),x1.ravel(),np.zeros(ny*nx)],1).astype(np.float32)
         self.lattice = torch.from_numpy(lattice)
-    
+
+        self.align = nn.Parameter(torch.randn(6), requires_grad=True)
    
     def get_decoder(self, nlayers, hidden_dim, activation):
         '''
@@ -75,8 +76,16 @@ class VAE(nn.Module):
         x = self.lattice @ rot # R.T*x
         y_hat = self.decoder(x)
         y_hat = y_hat.view(-1, self.ny, self.nx)
-        return y_hat, z_mu, z_std, w_eps
 
+        # mirror
+        flip = torch.tensor([[-1,-1,-1],[-1,-1,-1],[1,1,1]],dtype=torch.float32, device=img.device)
+        rot2 = rot*flip
+        align = lie_tools.s2s2_to_SO3(self.align[:3], self.align[3:])
+        rot2 = rot2 @ align
+        x = self.lattice @ rot2
+        y_hat2 = self.decoder(x)
+        y_hat2 = y_hat2.view(-1,self.ny,self.nx)
+        return y_hat, y_hat2, z_mu, z_std, w_eps
 
 class ResidLinearEncoder(nn.Module):
     def __init__(self, in_dim, nlayers, hidden_dim, out_dim, activation):

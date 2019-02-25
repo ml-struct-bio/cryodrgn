@@ -6,6 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 import lie_tools
+import so3_grid
 
 class ResidLinear(nn.Module):
     def __init__(self, nin, nout):
@@ -44,7 +45,7 @@ class VAE(nn.Module):
         else:
             raise RuntimeError('Encoder mode {} not recognized'.format(encode_mode))
         self.latent_encoder = SO3reparameterize(encode_dim) # hidden_dim -> SO(3) latent variable
-        self.decoder = self.get_decoder(decode_layers, 
+        self.decoder = ResidLinearDecoder(decode_layers, 
                             decode_dim, 
                             nn.ReLU) #R3 -> R1
         
@@ -54,12 +55,7 @@ class VAE(nn.Module):
         lattice = np.stack([x0.ravel(),x1.ravel(),np.zeros(ny*nx)],1).astype(np.float32)
         self.lattice = torch.from_numpy(lattice)
     
-   
     def get_decoder(self, nlayers, hidden_dim, activation):
-        '''
-        Return a NN mapping R3 cartesian coordinates to R1 electron density
-        (represented in Hartley reciprocal space)
-        '''
         layers = [nn.Linear(3, hidden_dim), activation()]
         for n in range(nlayers):
             layers.append(ResidLinear(hidden_dim, hidden_dim))
@@ -77,6 +73,73 @@ class VAE(nn.Module):
         y_hat = y_hat.view(-1, self.ny, self.nx)
         return y_hat, z_mu, z_std, w_eps
 
+class BNBOpt():
+    def __init__(self, model, ny, nx):
+        super(BNBOpt, self).__init__()
+        self.ny = ny
+        self.nx = nx
+        self.model = model
+        x0, x1 = np.meshgrid(np.linspace(-1, 1, nx, endpoint=False), # FT is not symmetric around origin
+                             np.linspace(-1, 1, ny, endpoint=False))
+        lattice = np.stack([x0.ravel(),x1.ravel(),np.zeros(ny*nx)],1).astype(np.float32)
+        self.lattice = torch.tensor(lattice)
+        
+    def eval_base_grid(self, images, quat):
+        '''Evaluate the base grid for a batch of imges'''
+        rot = lie_tools.quaternions_to_SO3(torch.tensor(quat))
+        x = self.lattice @ rot
+        y_hat = self.model(x)
+        y_hat = y_hat.view(-1, self.ny, self.nx)
+        y_hat = y_hat.unsqueeze(0) # 1xQxYxX
+        images = images.unsqueeze(0).transpose(0,1) # Bx1xYxX
+        err = torch.sum((images-y_hat).pow(2),(-1,-2)) # BxQ
+        mini = torch.argmin(err,1) # B
+        return mini.cpu().numpy()
+        
+    def eval_incremental_grid(self, images, quat_for_image):
+        rot = lie_tools.quaternions_to_SO3(torch.tensor(np.concatenate(quat_for_image)))
+        x = self.lattice @ rot
+        y_hat = self.model(x)
+        y_hat = y_hat.view(-1, 8, self.ny, self.nx)
+        images = images.unsqueeze(1)
+        err = torch.sum((images-y_hat).pow(2),(-1,-2)) # BxQ
+        mini = torch.argmin(err,1) # B
+        return mini.cpu().numpy()
+
+    def opt_theta(self, images, niter=6):
+        B = images.size(0)
+        assert not self.model.training
+        with torch.no_grad():
+            quat = so3_grid.base_SO3_grid()
+            min_i = self.eval_base_grid(images,quat) # 72 model iterations
+            min_quat = quat[min_i]
+            s2i, s1i = so3_grid.get_base_indr(min_i)
+            for iter_ in range(niter):
+                neighbors = [so3_grid.get_neighbor(min_quat[i], s2i[i], s1i[i], iter_) for i in range(B)]
+                quat = [x[0] for x in neighbors]
+                ind = [x[1] for x in neighbors]
+                min_i = self.eval_incremental_grid(images, quat)
+                min_ind = np.stack(ind)[np.arange(B), min_i]
+                s2i, s1i = min_ind.T
+                min_quat = np.stack(quat)[np.arange(B),min_i]
+        return lie_tools.quaternions_to_SO3(torch.tensor(min_quat))
+
+class ResidLinearDecoder(nn.Module):
+    '''
+    A NN mapping R3 cartesian coordinates to R1 electron density
+    (represented in Hartley reciprocal space)
+    '''
+    def __init__(self, nlayers, hidden_dim, activation):
+        super(ResidLinearDecoder, self).__init__()
+        layers = [nn.Linear(3, hidden_dim), activation()]
+        for n in range(nlayers):
+            layers.append(ResidLinear(hidden_dim, hidden_dim))
+            layers.append(activation())
+        layers.append(nn.Linear(hidden_dim,1))
+        self.main = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.main(x)
 
 class ResidLinearEncoder(nn.Module):
     def __init__(self, in_dim, nlayers, hidden_dim, out_dim, activation):

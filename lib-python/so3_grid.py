@@ -34,7 +34,7 @@ def hopf_to_quat(theta, phi, psi):
 					 ct*np.sin(psi/2),
 					 st*np.cos(phi+psi/2),
 					 st*np.sin(phi+psi/2)])
-	return quat.T
+	return quat.T.astype(np.float32)
 
 def grid_SO3(resol):
 	theta, phi = grid_s2(resol)
@@ -68,9 +68,17 @@ def get_s2_neighbor(mini, curr_res):
 	return hp.pix2ang(Nside, ind, nest=True), ind
 
 def get_base_ind(mini):
+	'''mini: int'''
 	psii = mini%6
 	thetai = int(mini/6)
 	return thetai, psii
+
+def get_base_indr(mini):
+	'''mini: np array of ints'''
+	psii = mini%6
+	thetai = (mini/6).astype(int)
+	return thetai, psii
+
 
 def get_neighbor(quat, s2i, s1i, curr_res):
 	(theta, phi), s2_nexti = get_s2_neighbor(s2i, curr_res)

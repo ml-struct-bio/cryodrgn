@@ -1,8 +1,5 @@
 '''
-VAE-based neural reconstruction with orientational inference
-
-Ellen Zhong
-12/7/2018
+NN reconstruction with direct optimization of orientation
 '''
 import numpy as np
 import sys, os
@@ -21,7 +18,7 @@ import mrc
 import utils
 import fft
 import lie_tools
-from models import VAE
+from models import BNBOpt, ResidLinearDecoder
 from beta_schedule import get_beta_schedule, LinearSchedule
 from losses import EquivarianceLoss
 
@@ -49,32 +46,20 @@ def parse_args():
             
 
     group = parser.add_argument_group('Encoder Network')
-    group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
-    group.add_argument('--qdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
-    group.add_argument('--encode-mode', default='resid', choices=('conv','resid','mlp'), help='Type of encoder network (default: %(default)s)')
+    group.add_argument('--layers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
+    group.add_argument('--dim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
 
-    group = parser.add_argument_group('Decoder Network')
-    group.add_argument('--players', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
-    group.add_argument('--pdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
     return parser
 
-def loss_function(recon_y, y, w_eps, z_std):
-    gen_loss = F.mse_loss(recon_y, y)  
-    cross_entropy = torch.tensor([np.log(8*np.pi**2)], device=y.device) # cross entropy between gaussian and uniform on SO3
-    entropy = lie_tools.so3_entropy(w_eps,z_std)
-    kld = cross_entropy - entropy
-    #assert kld > 0
-    return gen_loss, kld.mean()
-
-def eval_volume(model, nz, ny, nx, rnorm):
+def eval_volume(model, bnb, nz, ny, nx, rnorm):
     '''Evaluate the model on a nz x ny x nx lattice'''
     vol_f = np.zeros((nz,ny,nx),dtype=complex)
     assert not model.training
     # evaluate the volume by zslice to avoid memory overflows
     for i, z in enumerate(np.linspace(-1,1,nz,endpoint=False)):
-        x = model.lattice + torch.tensor([0,0,z], device=model.lattice.device, dtype=model.lattice.dtype)
+        x = bnb.lattice + torch.tensor([0,0,z])
         with torch.no_grad():
-            y = model.decoder(x)
+            y = model(x)
             y = y.view(ny, nx).cpu().numpy()
         vol_f[i] = y*rnorm[1]+rnorm[0]
     vol = fft.ihtn_center(vol_f)
@@ -89,6 +74,8 @@ def main(args):
     ## set the device
     use_cuda = torch.cuda.is_available()
     log('Use cuda {}'.format(use_cuda))
+    if use_cuda:
+        torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
     ## set beta schedule
     try:
@@ -105,30 +92,16 @@ def main(args):
     log('Loaded {} {}x{} images'.format(Nimg, ny, nx))
     particles_ft = np.asarray([fft.ht2_center(img).astype(np.float32) for img in particles_real])
     assert particles_ft.shape == (Nimg,ny,nx)
-    rnorm  = [np.mean(particles_real), np.std(particles_real)]
-    log('Particle stack mean, std: {} +/- {}'.format(*rnorm))
-    rnorm[0] = 0
-    rnorm[1] = np.median([np.max(x) for x in particles_real])
-    log('Normalizing particles by mean, std: {} +/- {}'.format(*rnorm))
-    particles_real = (particles_real - rnorm[0])/rnorm[1]
-
     rnorm  = [np.mean(particles_ft), np.std(particles_ft)]
     log('Particle FT stack mean, std: {} +/- {}'.format(*rnorm))
     rnorm[0] = 0
     log('Normalizing FT by mean, std: {} +/- {}'.format(*rnorm))
     particles_ft = (particles_ft - rnorm[0])/rnorm[1]
 
-    model = VAE(nx, ny, args.qlayers, args.qdim, args.players, args.pdim,
-                encode_mode=args.encode_mode)
+    model = ResidLinearDecoder(args.layers, args.dim, nn.ReLU)
+    bnb = BNBOpt(model,ny,nx)
     if use_cuda:
         model.cuda()
-        model.lattice = model.lattice.cuda()
-
-    if args.equivariance:
-        assert args.equivariance > 0, 'Regularization weight must be positive'
-        equivariance_lambda = LinearSchedule(0, args.equivariance, 10000, args.equivariance_end_it)
-        equivariance_loss = EquivarianceLoss(model,ny,nx)
-        if use_cuda: equivariance_loss.lattice = equivariance_loss.lattice.cuda()
 
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
@@ -145,10 +118,7 @@ def main(args):
     # training loop
     num_epochs = args.num_epochs
     for epoch in range(start_epoch, num_epochs):
-        gen_loss_accum = 0
         loss_accum = 0
-        kld_accum = 0
-        eq_loss_accum = 0
         batch_it = 0 
         num_batches = np.ceil(Nimg / args.batch_size).astype(int)
         for minibatch_i in np.array_split(np.random.permutation(Nimg),num_batches):
@@ -156,55 +126,30 @@ def main(args):
             global_it = Nimg*epoch + batch_it
 
             # inference with real space image
-            y = Variable(torch.from_numpy(np.asarray([particles_real[i] for i in minibatch_i])))
-            if use_cuda: y = y.cuda()
-            y_recon, z_mu, z_std, w_eps = model(y) 
-
-            # equivariance loss
-            if args.equivariance:
-                lamb = equivariance_lambda(global_it)
-                eq_loss = equivariance_loss(y, z_mu)
-            else:
-                lamb, eq_loss = 0, 0 
-
-            # reconstruct fourier space image (projection slice theorem)
             y = Variable(torch.from_numpy(np.asarray([particles_ft[i] for i in minibatch_i])))
             if use_cuda: y = y.cuda()
-            gen_loss, kld = loss_function(y_recon, y, w_eps, z_std)
+            model.eval()
+            rot = bnb.opt_theta(y)
+            model.train()
+            y_recon = model(bnb.lattice @ rot)
+            y_recon = y_recon.view(-1, ny, nx)
 
-            beta = beta_schedule(global_it)
-            if args.beta_control is None:
-                loss = gen_loss + beta*kld/(nx*ny)
-            else:
-                loss = gen_loss + args.beta_control*(beta-kld)**2/(nx*ny)
-
-            if args.equivariance:
-                loss += lamb*eq_loss
-
-            if torch.isnan(kld):
-                log(w_eps[0])
-                log(z_std[0])
-                raise RuntimeError('KLD is nan')
-
+            loss = F.mse_loss(y_recon,y)
+            
             loss.backward()
             optim.step()
             optim.zero_grad()
             
             # logging
-            kld_accum += kld.item()*len(minibatch_i)
-            gen_loss_accum += gen_loss.item()*len(minibatch_i)
             loss_accum += loss.item()*len(minibatch_i)
-            if args.equivariance:eq_loss_accum += eq_loss.item()*len(minibatch_i)
 
             if batch_it % args.log_interval == 0:
-                eq_log = 'equivariance={:.4f}, lambda={:.4f}, '.format(eq_loss.item(), lamb) if args.equivariance else ''
-                log('# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.4f}, kld={:.4f}, beta={:.4f}, {}loss={:.4f}'.format(epoch+1, num_epochs, batch_it, Nimg, gen_loss.item(), kld.item(), beta, eq_log, loss.item()))
-        eq_log = 'equivariance = {:.4f}, '.format(eq_loss_accum/Nimg) if args.equivariance else ''
-        log('# =====> Epoch: {} Average gen loss = {:.4}, KLD = {:.4f}, {}total loss = {:.4f}'.format(epoch+1, gen_loss_accum/Nimg, kld_accum/Nimg, eq_log, loss_accum/Nimg))
+                log('# [Train Epoch: {}/{}] [{}/{} images] loss={:.4f}'.format(epoch+1, num_epochs, batch_it, Nimg, loss.item()))
+        log('# =====> Epoch: {} Average loss = {:.4}'.format(epoch+1, loss_accum/Nimg))
 
         if args.checkpoint and epoch % args.checkpoint == 0:
             model.eval()
-            vol, vol_f = eval_volume(model, nz, ny, nx, rnorm)
+            vol, vol_f = eval_volume(model, bnb, nz, ny, nx, rnorm)
             mrc.write('{}/reconstruct.{}.mrc'.format(args.outdir,epoch), vol.astype(np.float32))
             path = '{}/weights.{}.pkl'.format(args.outdir,epoch)
             torch.save({
@@ -216,7 +161,7 @@ def main(args):
 
     ## save model weights and evaluate the model on 3D lattice
     model.eval()
-    vol, vol_f = eval_volume(model, nz, ny, nx, rnorm)
+    vol, vol_f = eval_volume(model, bnb, nz, ny, nx, rnorm)
     mrc.write('{}/reconstruct.mrc'.format(args.outdir), vol.astype(np.float32))
     path = '{}/weights.pkl'.format(args.outdir)
     torch.save({
@@ -224,7 +169,6 @@ def main(args):
         'model_state_dict':model.state_dict(),
         'optimizer_state_dict':optim.state_dict(),
         }, path)
-
     
     td = dt.now()-t1
     log('Finsihed in {} ({} per epoch)'.format(td, td/num_epochs))

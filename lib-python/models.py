@@ -106,15 +106,15 @@ class BNBOpt():
         mini = torch.argmin(err,1) # B
         return mini.cpu().numpy()
 
-    def opt_theta(self, images, niter=6):
+    def opt_theta(self, images, niter=5):
         B = images.size(0)
         assert not self.model.training
         with torch.no_grad():
             quat = so3_grid.base_SO3_grid()
-            min_i = self.eval_base_grid(images,quat) # 72 model iterations
+            min_i = self.eval_base_grid(images,quat) # 576  model iterations
             min_quat = quat[min_i]
             s2i, s1i = so3_grid.get_base_indr(min_i)
-            for iter_ in range(niter):
+            for iter_ in range(1,niter+1):
                 neighbors = [so3_grid.get_neighbor(min_quat[i], s2i[i], s1i[i], iter_) for i in range(B)]
                 quat = [x[0] for x in neighbors]
                 ind = [x[1] for x in neighbors]

@@ -45,7 +45,7 @@ def grid_SO3(resol):
 	return quat #hmm convert to rot matrix?
 
 def base_SO3_grid():
-	return grid_SO3(0)
+	return grid_SO3(1)
 
 #### Neighbor finding ####
 
@@ -69,14 +69,14 @@ def get_s2_neighbor(mini, curr_res):
 
 def get_base_ind(mini):
 	'''mini: int'''
-	psii = mini%6
-	thetai = int(mini/6)
+	psii = mini%12
+	thetai = int(mini/12)
 	return thetai, psii
 
 def get_base_indr(mini):
 	'''mini: np array of ints'''
-	psii = mini%6
-	thetai = (mini/6).astype(int)
+	psii = mini%12
+	thetai = (mini/12).astype(int)
 	return thetai, psii
 
 

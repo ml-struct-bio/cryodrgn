@@ -19,7 +19,6 @@ import utils
 import fft
 import lie_tools
 from models import BNBOpt, ResidLinearDecoder
-from beta_schedule import get_beta_schedule, LinearSchedule
 from losses import EquivarianceLoss
 
 log = utils.log
@@ -39,13 +38,8 @@ def parse_args():
     group.add_argument('-b','--batch-size', type=int, default=100, help='Minibatch size (default: %(default)s)')
     group.add_argument('--wd', type=float, default=0, help='Weight decay in Adam optimizer (default: %(default)s)')
     group.add_argument('--lr', type=float, default=1e-3, help='Learning rate in Adam optimizer (default: %(default)s)')
-    group.add_argument('--beta', default=1.0, help='Choice of beta schedule or a constant for KLD weight (default: %(default)s)')
-    group.add_argument('--beta-control', type=float, help='KL-Controlled VAE gamma. Beta is KL target. (default: %(default)s)')
-    group.add_argument('--equivariance', type=float, help='Strength of equivariance loss (default: %(default)s)')
-    group.add_argument('--equivariance-end-it', type=int, default=100000, help='It at which equivariance max (default: %(default)s)')
-            
 
-    group = parser.add_argument_group('Encoder Network')
+    group = parser.add_argument_group('Network Architecture')
     group.add_argument('--layers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--dim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
 
@@ -77,13 +71,6 @@ def main(args):
     if use_cuda:
         torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
-    ## set beta schedule
-    try:
-        args.beta = float(args.beta)
-    except ValueError: 
-        assert args.beta_control, "Need to set beta control weight for schedule {}".format(args.beta)
-    beta_schedule = get_beta_schedule(args.beta)
-
     # load the particles
     particles_real, _, _ = mrc.parse_mrc(args.particles)
     particles_real = particles_real.astype(np.float32)
@@ -100,8 +87,6 @@ def main(args):
 
     model = ResidLinearDecoder(args.layers, args.dim, nn.ReLU)
     bnb = BNBOpt(model,ny,nx)
-    if use_cuda:
-        model.cuda()
 
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
@@ -125,17 +110,18 @@ def main(args):
             batch_it += len(minibatch_i)
             global_it = Nimg*epoch + batch_it
 
-            # inference with real space image
-            y = Variable(torch.from_numpy(np.asarray([particles_ft[i] for i in minibatch_i])))
+            # find the optimal orientation for each image
+            y = torch.from_numpy(particles_ft[minibatch_i])
             if use_cuda: y = y.cuda()
             model.eval()
             rot = bnb.opt_theta(y)
             model.train()
+
+            # train the decoder
             y_recon = model(bnb.lattice @ rot)
             y_recon = y_recon.view(-1, ny, nx)
 
             loss = F.mse_loss(y_recon,y)
-            
             loss.backward()
             optim.step()
             optim.zero_grad()

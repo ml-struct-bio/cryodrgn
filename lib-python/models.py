@@ -83,11 +83,12 @@ class BNBOpt():
                              np.linspace(-1, 1, ny, endpoint=False))
         lattice = np.stack([x0.ravel(),x1.ravel(),np.zeros(ny*nx)],1).astype(np.float32)
         self.lattice = torch.tensor(lattice)
+        self.base_quat = so3_grid.base_SO3_grid()
+        self.base_rot = lie_tools.quaternions_to_SO3(torch.tensor(self.base_quat))
         
-    def eval_base_grid(self, images, quat):
+    def eval_base_grid(self, images):
         '''Evaluate the base grid for a batch of imges'''
-        rot = lie_tools.quaternions_to_SO3(torch.tensor(quat))
-        x = self.lattice @ rot
+        x = self.lattice @ self.base_rot
         y_hat = self.model(x)
         y_hat = y_hat.view(-1, self.ny, self.nx)
         y_hat = y_hat.unsqueeze(0) # 1xQxYxX
@@ -110,9 +111,8 @@ class BNBOpt():
         B = images.size(0)
         assert not self.model.training
         with torch.no_grad():
-            quat = so3_grid.base_SO3_grid()
-            min_i = self.eval_base_grid(images,quat) # 576  model iterations
-            min_quat = quat[min_i]
+            min_i = self.eval_base_grid(images) # 576  model iterations
+            min_quat = self.base_quat[min_i]
             s2i, s1i = so3_grid.get_base_indr(min_i)
             for iter_ in range(1,niter+1):
                 neighbors = [so3_grid.get_neighbor(min_quat[i], s2i[i], s1i[i], iter_) for i in range(B)]

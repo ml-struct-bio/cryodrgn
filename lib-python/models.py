@@ -17,35 +17,36 @@ class ResidLinear(nn.Module):
         z = self.linear(x) + x
         return z
 
-class VAE(nn.Module):
+class HetVAE(nn.Module):
     def __init__(self, 
             nx, ny, 
             encode_layers, encode_dim, 
             decode_layers, decode_dim,
-            encode_mode = 'mlp'
+            z_dim = 1,
+            encode_mode = 'mlp',
             ):
-        super(VAE, self).__init__()
+        super(HetVAE, self).__init__()
         self.nx = nx
         self.ny = ny
         self.in_dim = nx*ny
+        self.z_dim = z_dim
         if encode_mode == 'conv':
-            self.encoder = ConvEncoder(encode_dim, encode_dim)
+            self.encoder = ConvEncoder(encode_dim, z_dim*2)
         elif encode_mode == 'resid':
             self.encoder = ResidLinearEncoder(nx*ny, 
                             encode_layers, 
                             encode_dim,  # hidden_dim
-                            encode_dim, # out_dim
+                            z_dim*2, # out_dim
                             nn.ReLU) #in_dim -> hidden_dim
         elif encode_mode == 'mlp':
             self.encoder = MLPEncoder(nx*ny, 
                             encode_layers, 
                             encode_dim, # hidden_dim
-                            encode_dim, # out_dim
+                            z_dim*2, # out_dim
                             nn.ReLU) #in_dim -> hidden_dim
         else:
             raise RuntimeError('Encoder mode {} not recognized'.format(encode_mode))
-        self.latent_encoder = SO3reparameterize(encode_dim) # hidden_dim -> SO(3) latent variable
-        self.decoder = ResidLinearDecoder(decode_layers, 
+        self.decoder = ResidLinearDecoder(3+z_dim, decode_layers, 
                             decode_dim, 
                             nn.ReLU) #R3 -> R1
         
@@ -53,25 +54,35 @@ class VAE(nn.Module):
         x0, x1 = np.meshgrid(np.linspace(-1, 1, nx, endpoint=False), # FT is not symmetric around origin
                              np.linspace(-1, 1, ny, endpoint=False))
         lattice = np.stack([x0.ravel(),x1.ravel(),np.zeros(ny*nx)],1).astype(np.float32)
-        self.lattice = torch.from_numpy(lattice)
+        self.lattice = torch.tensor(lattice)
     
-    def get_decoder(self, nlayers, hidden_dim, activation):
-        layers = [nn.Linear(3, hidden_dim), activation()]
-        for n in range(nlayers):
-            layers.append(ResidLinear(hidden_dim, hidden_dim))
-            layers.append(activation())
-        layers.append(nn.Linear(hidden_dim,1))
-        return nn.Sequential(*layers)
+    def reparameterize(self, mu, logvar):
+        if not self.training:
+            return mu
+        std = torch.exp(.5*logvar)
+        eps = torch.randn_like(std)
+        return eps*std + mu
 
-    def forward(self, img):
-        z_mu, z_std = self.latent_encoder(self.encoder(img))
-        rot, w_eps = self.latent_encoder.sampleSO3(z_mu, z_std)
+    def encode(self, img):
+        z = self.encoder(img)
+        return z[:,:self.z_dim], z[:,self.z_dim:]
 
+    def decode(self, coords, z):
+        z = z.view(z.size(0), *([1]*(coords.ndimension()-1)))
+        z = torch.cat((coords,z.expand(*coords.shape[:-1],1)),dim=-1)
+
+        #z = torch.cat((coords, z[:,None,:].expand(-1,self.in_dim,-1)), dim=-1)
+        y_hat = self.decoder(z)
+        y_hat = y_hat.view(-1, self.ny, self.nx)
+        return y_hat
+
+    def forward(self, rot, z):
+        #mu, logvar = self.encode(img)
+        #z = self.reparameterize(mu, logvar)
         # transform lattice by rot
         x = self.lattice @ rot # R.T*x
-        y_hat = self.decoder(x)
-        y_hat = y_hat.view(-1, self.ny, self.nx)
-        return y_hat, z_mu, z_std, w_eps
+        y_hat = self.decode(x,z)
+        return y_hat
 
 class BNBOpt():
     def __init__(self, model, ny, nx):
@@ -124,14 +135,65 @@ class BNBOpt():
                 min_quat = np.stack(quat)[np.arange(B),min_i]
         return lie_tools.quaternions_to_SO3(torch.tensor(min_quat))
 
+class BNBHetOpt():
+    def __init__(self, model, ny, nx):
+        super(BNBHetOpt, self).__init__()
+        self.ny = ny
+        self.nx = nx
+        self.model = model # this is the VAE module
+        self.base_quat = so3_grid.base_SO3_grid()
+        self.nbase = len(self.base_quat)
+        self.base_rot = lie_tools.quaternions_to_SO3(torch.tensor(self.base_quat))
+        
+    def eval_base_grid(self, images, z):
+        '''Evaluate the base grid for a batch of imges'''
+        B = z.size(0) 
+        x = self.model.lattice @ self.base_rot # Q x (Y*X) x 3
+        x = x.expand(B, self.nbase, self.ny*self.nx, 3) # B x Q x (Y*X) x 3
+        #x = x.view(B, self.nbase*self.ny*self.nx, 3)
+        y_hat = self.model.decode(x, z) 
+        y_hat = y_hat.view(B, self.nbase, self.ny, self.nx) # B x Q x Y x X
+        images = images.unsqueeze(0).transpose(0,1) # Bx1xYxX
+        err = torch.sum((images-y_hat).pow(2),(-1,-2)) # BxQ
+        mini = torch.argmin(err,1) # B
+        return mini.cpu().numpy()
+        
+    def eval_incremental_grid(self, images, quat_for_image, z):
+        rot = lie_tools.quaternions_to_SO3(torch.tensor(np.concatenate(quat_for_image)))
+        x = self.model.lattice @ rot
+        x = x.view(-1, 8, self.ny*self.nx, 3)
+        y_hat = self.model.decode(x, z) 
+        y_hat = y_hat.view(-1, 8, self.ny, self.nx)
+        images = images.unsqueeze(1)
+        err = torch.sum((images-y_hat).pow(2),(-1,-2)) # BxQ
+        mini = torch.argmin(err,1) # B
+        return mini.cpu().numpy()
+
+    def opt_theta(self, images, z, niter=5):
+        B = images.size(0)
+        assert not self.model.training
+        with torch.no_grad():
+            min_i = self.eval_base_grid(images, z) # 576  model iterations
+            min_quat = self.base_quat[min_i]
+            s2i, s1i = so3_grid.get_base_indr(min_i)
+            for iter_ in range(1,niter+1):
+                neighbors = [so3_grid.get_neighbor(min_quat[i], s2i[i], s1i[i], iter_) for i in range(B)]
+                quat = [x[0] for x in neighbors]
+                ind = [x[1] for x in neighbors]
+                min_i = self.eval_incremental_grid(images, quat, z)
+                min_ind = np.stack(ind)[np.arange(B), min_i]
+                s2i, s1i = min_ind.T
+                min_quat = np.stack(quat)[np.arange(B),min_i]
+        return lie_tools.quaternions_to_SO3(torch.tensor(min_quat))
+
 class ResidLinearDecoder(nn.Module):
     '''
     A NN mapping R3 cartesian coordinates to R1 electron density
     (represented in Hartley reciprocal space)
     '''
-    def __init__(self, nlayers, hidden_dim, activation):
+    def __init__(self, in_dim, nlayers, hidden_dim, activation):
         super(ResidLinearDecoder, self).__init__()
-        layers = [nn.Linear(3, hidden_dim), activation()]
+        layers = [nn.Linear(in_dim, hidden_dim), activation()]
         for n in range(nlayers):
             layers.append(ResidLinear(hidden_dim, hidden_dim))
             layers.append(activation())
@@ -150,8 +212,7 @@ class ResidLinearEncoder(nn.Module):
         for n in range(nlayers-1):
             layers.append(ResidLinear(hidden_dim, hidden_dim))
             layers.append(activation())
-        layers.append(ResidLinear(hidden_dim, out_dim))
-        layers.append(activation()) # include this?
+        layers.append(nn.Linear(hidden_dim, out_dim))
         self.main = nn.Sequential(*layers)
 
     def forward(self, img):
@@ -167,7 +228,6 @@ class MLPEncoder(nn.Module):
             layers.append(nn.Linear(hidden_dim, hidden_dim))
             layers.append(activation())
         layers.append(nn.Linear(hidden_dim, out_dim))
-        layers.append(activation()) # include this?
         self.main = nn.Sequential(*layers)
 
     def forward(self, img):
@@ -196,13 +256,14 @@ class ConvEncoder(nn.Module):
             nn.LeakyReLU(0.2, inplace=True),
             # state size. (ndf*8) x 4 x 4
             nn.Conv2d(ndf * 8, out_dim, 4, 1, 0, bias=False),
-            nn.LeakyReLU(0.2, inplace=True), #include this?
             # state size. out_dims x 1 x 1
         )
     def forward(self, x):
         x = torch.unsqueeze(x,1)
         x = self.main(x)
         return x.view(x.size(0), -1) # flatten
+
+### not used in this branch ###
 
 class SO3reparameterize(nn.Module):
     '''Reparameterize R^N encoder output to SO(3) latent variable'''

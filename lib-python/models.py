@@ -149,19 +149,24 @@ class BNBHetOpt():
         '''Evaluate the base grid for a batch of imges'''
         B = z.size(0) 
         x = self.model.lattice @ self.base_rot # Q x (Y*X) x 3
-        x = x.expand(B, self.nbase, self.ny*self.nx, 3) # B x Q x (Y*X) x 3
-        #x = x.view(B, self.nbase*self.ny*self.nx, 3)
-        y_hat = self.model.decode(x, z) 
-        y_hat = y_hat.view(B, self.nbase, self.ny, self.nx) # B x Q x Y x X
         images = images.unsqueeze(0).transpose(0,1) # Bx1xYxX
-        err = torch.sum((images-y_hat).pow(2),(-1,-2)) # BxQ
-        mini = torch.argmin(err,1) # B
-        return mini.cpu().numpy()
+
+        # the mini-mini-batch size, since we need to evaluate the whole 576 point grid for each image
+        nB = int(9000/self.ny/self.nx) # huge hack to avoid out of memory error
+        assert B % nB == 0, 'Batch size needs to be a multiple of {}'.format(nB) # TODO
+        mini = []
+        for i in range(int(B/nB)):
+            xx = x.expand(nB, self.nbase, self.ny*self.nx, 3) # B x Q x (Y*X) x 3
+            y_hat = self.model.decode(xx, z[nB*i:nB*(i+1)]) 
+            y_hat = y_hat.view(nB, self.nbase, self.ny, self.nx) # B x Q x Y x X
+            img = images[nB*i:nB*(i+1)]
+            err = torch.sum((img-y_hat).pow(2),(-1,-2)) # BxQ
+            mini.append(torch.argmin(err,1)) # B
+        return torch.cat(mini).cpu().numpy()
         
     def eval_incremental_grid(self, images, quat_for_image, z):
-        rot = lie_tools.quaternions_to_SO3(torch.tensor(np.concatenate(quat_for_image)))
+        rot = lie_tools.quaternions_to_SO3(torch.tensor(np.array(quat_for_image)))
         x = self.model.lattice @ rot
-        x = x.view(-1, 8, self.ny*self.nx, 3)
         y_hat = self.model.decode(x, z) 
         y_hat = y_hat.view(-1, 8, self.ny, self.nx)
         images = images.unsqueeze(1)

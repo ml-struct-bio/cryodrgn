@@ -19,11 +19,7 @@ import mrc
 import utils
 import fft
 import lie_tools
-from models import VAE
-
-from scipy.linalg import logm
-def geodesic_so3(A,B):
-    return np.sum(logm(np.dot(A.T,B))**2)**.5
+from models import BNBHetOpt, HetVAE
 
 log = utils.log
 vlog = utils.vlog
@@ -31,47 +27,29 @@ vlog = utils.vlog
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('particles', help='Particle stack file (.mrc)')
-    parser.add_argument('weights', help='Particle stack file (.mrc)')
-    parser.add_argument('-N', type=int, default=1000, help='First N images (default: %(default)s)')
+    parser.add_argument('weights', help='Model weights')
+    parser.add_argument('-N', type=int, help='First N images (default: all images)')
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Output pickle')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
     parser.add_argument('--ref',type=int, default=0,help='Reference image to align by')
-    parser.add_argument('--angles',help='euler angles (.pkl)')
-    parser.add_argument('--flip-hand', action='store_true', help='Flip hand of reference euler angles')
-    parser.add_argument('--save-recon')
 
-    group = parser.add_argument_group('Training parameters')
+    group = parser.add_argument_group('Architecture parameters')
     group.add_argument('-b','--batch-size', type=int, default=100, help='Minibatch size (default: %(default)s)')
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--qdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
+    group.add_argument('--zdim', type=int, default=1, help='Dimension of latent variable')
     group.add_argument('--encode-mode', default='resid', choices=('conv','resid','mlp'), help='Type of encoder network')
     group.add_argument('--players', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--pdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
     return parser
 
-def loss_function(recon_y, y, w_eps, z_std):
+def loss_function(recon_y, y, w_eps, z_std, mu, logvar):
     gen_loss = F.mse_loss(recon_y, y)  
     cross_entropy = torch.tensor([np.log(8*np.pi**2)], device=y.device) # cross entropy between gaussian and uniform on SO3
     entropy = lie_tools.so3_entropy(w_eps,z_std)
-    kld = cross_entropy - entropy
-    #assert kld > 0
-    return gen_loss, kld.mean()
-
-def fast_dist(a,b):
-    return np.sum((a-b)**2)
-
-def align_rot(rotA,rotB,i,flip=False):
-    x = -1*np.ones((3,3))
-    x[2] = 1
-    if flip:
-        rotB = [x*r for r in rotB]
-                            
-    ref = rotA[i]
-    rot = np.array([np.dot(x, ref.T) for x in rotA])
-    ref = rotB[i]
-    rot_hat = np.array([np.dot(x, ref.T) for x in rotB])
-    return rot, rot_hat
-
+    kld_rot = cross_entropy - entropy
+    kld_conf = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
+    return gen_loss, kld_rot.mean(), kld_conf
 
 def main(args):
     log(args)
@@ -80,10 +58,12 @@ def main(args):
     ## set the device
     use_cuda = torch.cuda.is_available()
     log('Use cuda {}'.format(use_cuda))
+    if use_cuda:
+        torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
     # load the particles
     particles_real, _, _ = mrc.parse_mrc(args.particles,lazy=True)
-    particles_real = np.asarray([x.get() for x in particles_real[:args.N]])
+    particles_real = np.asarray([x.get() for x in particles_real])
     particles_real = particles_real.astype(np.float32)
     Nimg, ny, nx = particles_real.shape
     nz = max(nx,ny)
@@ -102,90 +82,43 @@ def main(args):
     log('Normalizing FT by mean, std: {} +/- {}'.format(*rnorm))
     particles_ft = (particles_ft - rnorm[0])/rnorm[1]
 
-    model = VAE(nx, ny, args.qlayers, args.qdim, args.players, args.pdim,
-                encode_mode=args.encode_mode)
-    if use_cuda:
-        model.cuda()
-        model.lattice = model.lattice.cuda()
+    if args.N:
+        log('Using first {} images'.format(args.N))
+        particles_real = particles_real[:args.N]
+        particles_ft = particles_ft[:args.N]
+        Nimg = args.N
 
-    if args.weights:
-        log('Loading weights from {}'.format(args.weights))
-        checkpoint = torch.load(args.weights)
-        model.load_state_dict(checkpoint['model_state_dict'])
+    model = HetVAE(nx, ny, args.qlayers, args.qdim, args.players, args.pdim,
+                args.zdim, encode_mode=args.encode_mode)
+    bnb = BNBHetOpt(model,ny,nx)
+
+    log('Loading weights from {}'.format(args.weights))
+    checkpoint = torch.load(args.weights)
+    model.load_state_dict(checkpoint['model_state_dict'])
 
     model.eval()
 
-    rot_all = []
     recon_all = []
-    for epoch in range(1):
-        ii = 0
-        num_batches = np.ceil(Nimg / args.batch_size).astype(int)
-        for minibatch_i in np.array_split(np.arange(Nimg),num_batches):
-            ii += 1
+    z_all = []
 
-            # inference with real space image
-            y = Variable(torch.from_numpy(np.asarray([particles_real[i] for i in minibatch_i])))
-            if use_cuda: y = y.cuda()
+    num_batches = np.ceil(Nimg / args.batch_size).astype(int)
+    for minibatch_i in np.array_split(np.arange(Nimg),num_batches):
+        # inference with real space image
+        y = torch.from_numpy(particles_ft[minibatch_i])
+        if use_cuda: 
+            y = y.cuda()
+        mu, logvar = model.encode(y) 
 
-            rot, z_std = model.latent_encoder(model.encoder(y))
-            rot_all.append(rot.detach().cpu().numpy())
+        z_all.append(mu.detach().cpu().numpy())
 
-            if args.save_recon:
-                x = model.lattice @ rot # R.T*x
-                y_hat = model.decoder(x)
-                y_hat = y_hat.view(-1, ny, nx)
-                recon_all.append(y_hat.detach().cpu().numpy())
-    
-                y = Variable(torch.from_numpy(np.asarray([particles_ft[i] for i in minibatch_i])))
-                if use_cuda: y = y.cuda()
-                gen_loss = F.mse_loss(y_hat, y)  
-                log('# [Batch {}/{}] gen loss={:4f}'.format(ii, num_batches, gen_loss.item()))
-
-    rot_all = np.vstack(rot_all)
     if args.o:
+        z_all = np.vstack(z_all)
+        log(np.mean(z_all))
         with open(args.o,'wb') as f:
-            pickle.dump(rot_all, f)
-    if args.save_recon:
-        recon_all = np.vstack(recon_all)
-        with open(args.save_recon,'wb') as f:
-            pickle.dump(recon_all, f)
+            pickle.dump(z_all, f)
 
     td = dt.now()-t1
     log('Finsihed in {}'.format(td))
-
-    if args.angles:
-
-        # compare angles with ground truth  
-        angles = pickle.load(open(args.angles,'rb'))
-        angles = angles[:Nimg]
-    
-        rot = [utils.R_from_eman(*x) for x in angles] # ground truth
-        rot_hat = rot_all # predicted
-        rot, rot_hat = align_rot(rot, rot_hat, args.ref, args.flip_hand)
-
-        #dists = np.asarray([geodesic_so3(a,b) for a,b in zip(rot, rot_hat)])
-        dists = np.asarray([fast_dist(a,b) for a,b in zip(rot, rot_hat)])
-
-        print('Median: ', np.median(dists))
-        w = np.where(np.asarray(dists)<1)
-        print('Dist < 1: ', w[:10])
-
-        with open(args.o+'.ind.pkl','wb') as f:
-            pickle.dump(w[0], f)
-        w = np.where(np.asarray(dists)>4)
-        print('Dist > 4:', w[:10])
-
-        i = w[0][-1]
-        print('Image ',i)
-        print('Ground truth rot: ',rot[i])
-        print('Predicted rot: ',rot_hat[i])
-
-        i = w[0][-2]
-        print('Image ',i)
-        print('Ground truth rot: ',rot[i])
-        print('Predicted rot: ',rot_hat[i])
-        plt.hist(dists,10)
-        plt.show()
 
 if __name__ == '__main__':
     args = parse_args().parse_args()

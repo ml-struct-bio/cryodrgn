@@ -5,3 +5,4 @@ python ../backproject_hartley.py data/toy_projections.mrcs data/toy_angles.pkl -
 python ../vae_rot.py  data/toy_projections.mrcs -o output/toy_recon_vae --lr .0001 
 python ../vae_rot.py  data/aic_projections_small.mrc -o output/aic_projections --lr .0001 -n 10
 
+python ../backproject_tilt.py /home/zhonge/research/cryoem/vae3d/00_data/hand/tilt_series/test/projections.mrcs /home/zhonge/research/cryoem/vae3d/00_data/hand/tilt_series/test/projections_tilt.mrcs /home/zhonge/research/cryoem/vae3d/00_data/hand/tilt_series/test/angles.pkl -o output/tilt/test.mrc --tilt -45

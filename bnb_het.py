@@ -41,6 +41,9 @@ def parse_args():
     group.add_argument('--lr', type=float, default=1e-3, help='Learning rate in Adam optimizer (default: %(default)s)')
     group.add_argument('--beta', default=1.0, help='Choice of beta schedule or a constant for KLD weight (default: %(default)s)')
     group.add_argument('--beta-control', type=float, help='KL-Controlled VAE gamma. Beta is KL target. (default: %(default)s)')
+    group.add_argument('--equivariance', type=float, help='Strength of equivariance loss (default: %(default)s)')
+    group.add_argument('--equivariance-end-it', type=int, default=100000, help='It at which equivariance max (default: %(default)s)')
+
     group = parser.add_argument_group('Encoder Network')
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--qdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
@@ -109,6 +112,11 @@ def main(args):
                 args.zdim, encode_mode=args.encode_mode)
     bnb = BNBHetOpt(model,ny,nx)
 
+    if args.equivariance:
+        assert args.equivariance > 0, 'Regularization weight must be positive'
+        equivariance_lambda = LinearSchedule(0, args.equivariance, 10000, args.equivariance_end_it)
+        equivariance_loss = EquivarianceLoss(model,ny,nx)
+
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
     if args.load:
@@ -127,6 +135,7 @@ def main(args):
         kld_accum = 0
         gen_loss_accum = 0
         loss_accum = 0
+        eq_loss_accum = 0
         batch_it = 0 
         num_batches = np.ceil(Nimg / args.batch_size).astype(int)
         z_accum = np.zeros(args.zdim)
@@ -140,6 +149,14 @@ def main(args):
             # predict encoding
             mu, logvar = model.encode(y)
             z = model.reparameterize(mu, logvar)
+
+            # equivariance loss
+            if args.equivariance:
+                lamb = equivariance_lambda(global_it)
+                eq_loss = equivariance_loss(y, mu)
+            else:
+                lamb, eq_loss = 0, 0 
+
 
             # find the optimal orientation for each image
             model.eval()
@@ -159,6 +176,9 @@ def main(args):
             else:
                 loss = gen_loss + args.beta_control*(beta-kld)**2/(nx*ny)
 
+            if args.equivariance:
+                loss += lamb*eq_loss
+
             if torch.isnan(kld):
                 log(mu[0])
                 log(logvar[0])
@@ -173,10 +193,13 @@ def main(args):
             kld_accum += kld.item()*len(minibatch_i)
             gen_loss_accum += gen_loss.item()*len(minibatch_i)
             loss_accum += loss.item()*len(minibatch_i)
+            if args.equivariance:eq_loss_accum += eq_loss.item()*len(minibatch_i)
 
             if batch_it % args.log_interval == 0:
-                log('# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.4f}, kld={:.4f}, beta={:.4f}, loss={:.4f}'.format(epoch+1, num_epochs, batch_it, Nimg, gen_loss.item(), kld.item(), beta, loss.item()))
-        log('# =====> Epoch: {} Average gen loss = {:.4}, KLD = {:.4f}, total loss = {:.4f}'.format(epoch+1, gen_loss_accum/Nimg, kld_accum/Nimg, loss_accum/Nimg))
+                eq_log = 'equivariance={:.4f}, lambda={:.4f}, '.format(eq_loss.item(), lamb) if args.equivariance else ''
+                log('# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.4f}, kld={:.4f}, beta={:.4f}, {}loss={:.4f}'.format(epoch+1, num_epochs, batch_it, Nimg, gen_loss.item(), kld.item(), beta, eq_log, loss.item()))
+        eq_log = 'equivariance = {:.4f}, '.format(eq_loss_accum/Nimg) if args.equivariance else ''
+        log('# =====> Epoch: {} Average gen loss = {:.4}, KLD = {:.4f}, {}total loss = {:.4f}'.format(epoch+1, gen_loss_accum/Nimg, kld_accum/Nimg, eq_log, loss_accum/Nimg))
 
         if args.checkpoint and epoch % args.checkpoint == 0:
             model.eval()

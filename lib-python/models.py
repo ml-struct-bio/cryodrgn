@@ -16,27 +16,27 @@ class ResidLinear(nn.Module):
         z = self.linear(x) + x
         return z
 
-class VAE(nn.Module):
+class TiltVAE(nn.Module):
     def __init__(self, 
-            nx, ny, 
+            nx, ny, tilt,
             encode_layers, encode_dim, 
             decode_layers, decode_dim,
-            encode_mode = 'mlp'
+            encode_mode = 'mlp',
             ):
-        super(VAE, self).__init__()
+        super(TiltVAE, self).__init__()
         self.nx = nx
         self.ny = ny
-        self.in_dim = nx*ny
+        self.in_dim = nx*ny*2 # tilt series
         if encode_mode == 'conv':
             self.encoder = ConvEncoder(encode_dim, encode_dim)
         elif encode_mode == 'resid':
-            self.encoder = ResidLinearEncoder(nx*ny, 
+            self.encoder = ResidLinearEncoder(2*nx*ny, 
                             encode_layers, 
                             encode_dim,  # hidden_dim
                             encode_dim, # out_dim
                             nn.ReLU) #in_dim -> hidden_dim
         elif encode_mode == 'mlp':
-            self.encoder = MLPEncoder(nx*ny, 
+            self.encoder = MLPEncoder(2*nx*ny, 
                             encode_layers, 
                             encode_dim, # hidden_dim
                             encode_dim, # out_dim
@@ -52,7 +52,9 @@ class VAE(nn.Module):
         x0, x1 = np.meshgrid(np.linspace(-1, 1, nx, endpoint=False), # FT is not symmetric around origin
                              np.linspace(-1, 1, ny, endpoint=False))
         lattice = np.stack([x0.ravel(),x1.ravel(),np.zeros(ny*nx)],1).astype(np.float32)
-        self.lattice = torch.from_numpy(lattice)
+        self.lattice = torch.tensor(lattice)
+        assert tilt.shape == (3,3), 'Rotation matrix input required'
+        self.tilt = torch.tensor(tilt)
     
    
     def get_decoder(self, nlayers, hidden_dim, activation):
@@ -67,15 +69,20 @@ class VAE(nn.Module):
         layers.append(nn.Linear(hidden_dim,1))
         return nn.Sequential(*layers)
 
-    def forward(self, img):
-        z_mu, z_std = self.latent_encoder(self.encoder(img))
+    def forward(self, img, img_tilt):
+        z_mu, z_std = self.latent_encoder(self.encoder(torch.stack((img, img_tilt),1)))
         rot, w_eps = self.latent_encoder.sampleSO3(z_mu, z_std)
 
         # transform lattice by rot
         x = self.lattice @ rot # R.T*x
         y_hat = self.decoder(x)
         y_hat = y_hat.view(-1, self.ny, self.nx)
-        return y_hat, z_mu, z_std, w_eps
+
+        # tilt series pair
+        x = x @ self.tilt
+        y_hat2 = self.decoder(x)
+        y_hat2 = y_hat.view(-1, self.ny, self.nx)
+        return y_hat, y_hat2, z_mu, z_std, w_eps
 
 
 class ResidLinearEncoder(nn.Module):
@@ -159,6 +166,8 @@ class SO3reparameterize(nn.Module):
         # See section 2.5 of http://ethaneade.com/lie.pdf
         '''
         # resampling trick
+        if not self.training:
+            return z_mu, z_std
         eps = torch.randn_like(z_std)
         w_eps = eps*z_std
         rot_eps = lie_tools.expmap(w_eps)

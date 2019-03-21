@@ -84,8 +84,8 @@ def main(args):
         mkbasedir(out)
         warnexists(out)
 
-    if args.seed:
-        torch.seed(args.seed)
+    if args.seed is not None:
+        torch.manual_seed(args.seed)
 
     t1 = time.time()    
     vol, _ , _ = mrc.parse_mrc(args.mrc)

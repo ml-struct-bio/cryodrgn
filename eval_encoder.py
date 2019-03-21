@@ -19,7 +19,7 @@ import mrc
 import utils
 import fft
 import lie_tools
-from models import VAE
+from models import TiltVAE
 
 from scipy.linalg import logm
 def geodesic_so3(A,B):
@@ -31,7 +31,9 @@ vlog = utils.vlog
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('particles', help='Particle stack file (.mrc)')
+    parser.add_argument('particles_tilt', help='Particle stack file (.mrc)')
     parser.add_argument('weights', help='Particle stack file (.mrc)')
+    parser.add_argument('--tilt', type=float, default=-45, help='Right-handed x-axis tilt offset in degrees (default: %(default)s)')
     parser.add_argument('-N', type=int, default=1000, help='First N images (default: %(default)s)')
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Output pickle')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
@@ -80,30 +82,51 @@ def main(args):
     ## set the device
     use_cuda = torch.cuda.is_available()
     log('Use cuda {}'.format(use_cuda))
+    if use_cuda:
+        torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
     # load the particles
-    particles_real, _, _ = mrc.parse_mrc(args.particles,lazy=True)
-    particles_real = np.asarray([x.get() for x in particles_real[:args.N]])
+    particles_real, _, _ = mrc.parse_mrc(args.particles)
     particles_real = particles_real.astype(np.float32)
     Nimg, ny, nx = particles_real.shape
     nz = max(nx,ny)
     log('Loaded {} {}x{} images'.format(Nimg, ny, nx))
     particles_ft = np.asarray([fft.ht2_center(img).astype(np.float32) for img in particles_real])
     assert particles_ft.shape == (Nimg,ny,nx)
-    rnorm  = [np.mean(particles_real), np.std(particles_real)]
-    rnorm[0] = 0
-    rnorm[1] = np.median([np.max(x) for x in particles_real])
-    particles_real = (particles_real - rnorm[0])/rnorm[1]
-    log('Normalizing particles by mean, std: {} +/- {}'.format(*rnorm))
+    real_norm  = [np.mean(particles_real), np.std(particles_real)]
+    log('Particle stack mean, std: {} +/- {}'.format(*real_norm))
+    real_norm[0] = 0
+    real_norm[1] = np.median([np.max(x) for x in particles_real])
+    log('Normalizing particles by mean, std: {} +/- {}'.format(*real_norm))
+    particles_real = (particles_real - real_norm[0])/real_norm[1]
 
-    rnorm  = [np.mean(particles_ft), np.std(particles_ft)]
-    log('Particle stack mean, std: {} +/- {}'.format(*rnorm))
-    rnorm[0] = 0
-    log('Normalizing FT by mean, std: {} +/- {}'.format(*rnorm))
-    particles_ft = (particles_ft - rnorm[0])/rnorm[1]
+    ft_norm  = [np.mean(particles_ft), np.std(particles_ft)]
+    log('Particle FT stack mean, std: {} +/- {}'.format(*ft_norm))
+    ft_norm[0] = 0
+    log('Normalizing FT by mean, std: {} +/- {}'.format(*ft_norm))
+    particles_ft = (particles_ft - ft_norm[0])/ft_norm[1]
 
-    model = VAE(nx, ny, args.qlayers, args.qdim, args.players, args.pdim,
+    Nimg = args.N
+    particles_real = particles_real[:args.N]
+    particles_ft = particles_ft[:args.N]
+
+    # load particles from tilt series
+    particles_tilt, _, _ = mrc.parse_mrc(args.particles_tilt, lazy=True)
+    particles_tilt = np.asarray([x.get() for x in particles_tilt[:args.N]])
+    particles_tilt = particles_tilt.astype(np.float32)
+    assert particles_tilt.shape == (Nimg, ny, nx), 'Tilt series pair must have same dimensions as untilted particles'
+    particles_tilt_ft = np.asarray([fft.ht2_center(img).astype(np.float32) for img in particles_tilt])
+    particles_tilt = (particles_tilt - real_norm[0])/real_norm[1]
+    particles_tilt_ft = (particles_tilt_ft - ft_norm[0])/ft_norm[1]
+
+    theta = args.tilt*np.pi/180
+    tilt = np.array([[1.,0.,0.],
+                    [0, np.cos(theta), -np.sin(theta)],
+                    [0, np.sin(theta), np.cos(theta)]]).astype(np.float32)
+
+    model = TiltVAE(nx, ny, tilt, args.qlayers, args.qdim, args.players, args.pdim,
                 encode_mode=args.encode_mode)
+
     if use_cuda:
         model.cuda()
         model.lattice = model.lattice.cuda()
@@ -117,6 +140,7 @@ def main(args):
 
     rot_all = []
     recon_all = []
+    recon_tilt_all = []
     for epoch in range(1):
         ii = 0
         num_batches = np.ceil(Nimg / args.batch_size).astype(int)
@@ -136,10 +160,18 @@ def main(args):
                 y_hat = y_hat.view(-1, ny, nx)
                 recon_all.append(y_hat.detach().cpu().numpy())
     
+                x = x @ model.tilt # R.T*x
+                y_hat2 = model.decoder(x)
+                y_hat2 = y_hat2.view(-1, ny, nx)
+                recon_tilt_all.append(y_hat2.detach().cpu().numpy())
+
                 y = Variable(torch.from_numpy(np.asarray([particles_ft[i] for i in minibatch_i])))
                 if use_cuda: y = y.cuda()
                 gen_loss = F.mse_loss(y_hat, y)  
-                log('# [Batch {}/{}] gen loss={:4f}'.format(ii, num_batches, gen_loss.item()))
+                y = Variable(torch.from_numpy(np.asarray([particles_tilt_ft[i] for i in minibatch_i])))
+                if use_cuda: y = y.cuda()
+                gen_loss2 = F.mse_loss(y_hat2, y)  
+                log('# [Batch {}/{}] gen loss={:4f}, gen loss tilt={:4f}'.format(ii, num_batches, gen_loss.item(), gen_loss2.item()))
 
     rot_all = np.vstack(rot_all)
     if args.o:
@@ -147,8 +179,10 @@ def main(args):
             pickle.dump(rot_all, f)
     if args.save_recon:
         recon_all = np.vstack(recon_all)
+        recon_tilt_all = np.vstack(recon_tilt_all)
         with open(args.save_recon,'wb') as f:
             pickle.dump(recon_all, f)
+            pickle.dump(recon_tilt_all, f)
 
     td = dt.now()-t1
     log('Finsihed in {}'.format(td))

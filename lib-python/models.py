@@ -79,7 +79,7 @@ class TiltVAE(nn.Module):
         y_hat = y_hat.view(-1, self.ny, self.nx)
 
         # tilt series pair
-        x = x @ self.tilt
+        x = self.lattice @ self.tilt @ rot
         y_hat2 = self.decoder(x)
         y_hat2 = y_hat2.view(-1, self.ny, self.nx)
         return y_hat, y_hat2, z_mu, z_std, w_eps

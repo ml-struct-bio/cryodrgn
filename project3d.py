@@ -31,11 +31,12 @@ def parse_args():
     parser.add_argument('-N', type=int, required=True, help='Number of random projections')
     parser.add_argument('-b', type=int, default=100, help='Minibatch size (default: %(default)s)')
     parser.add_argument('--grid', type=int, help='Generate projections on a uniform deterministic grid on SO3. Specify resolution level')
+    parser.add_argument('--tilt', type=float, help='Right-handed x-axis tilt offset in degrees')
     parser.add_argument('--seed', type=int, help='Random seed')
     return parser
 
 class ProjectorFT:
-    def __init__(self, vol):
+    def __init__(self, vol, tilt=None):
         nz, ny, nx = vol.shape
         assert nz==ny==nx, 'Volume must be cubic'
         x0, x1 = np.meshgrid(np.linspace(-1, 1, nx, endpoint=True), 
@@ -56,7 +57,14 @@ class ProjectorFT:
         c = 2/(D-1)*(D/2) -1 
         self.center = torch.tensor([c,c,c]) # pixel coordinate for vol[D/2,D/2,D/2]
 
+        if tilt is not None:
+            assert tilt.shape == (3,3)
+            tilt = torch.tensor(tilt)
+        self.tilt = tilt
+
     def project(self, rot):
+        if self.tilt is not None:
+            rot = self.tilt @ rot
         grid = self.lattice @ rot # rot.T * coord
         grid = grid.view(1, -1, self.ny, self.nx, 3)
         offset = self.center - grid[0,:,int(self.ny/2),int(self.nx/2)]
@@ -91,7 +99,14 @@ def main(args):
     vol, _ , _ = mrc.parse_mrc(args.mrc)
     log('Loaded {} volume'.format(vol.shape))
 
-    projector = ProjectorFT(vol)
+    if args.tilt:
+        theta = args.tilt*np.pi/180
+        args.tilt = np.array([[1.,0.,0.],
+                        [0, np.cos(theta), -np.sin(theta)],
+                        [0, np.sin(theta), np.cos(theta)]]).astype(np.float32)
+
+
+    projector = ProjectorFT(vol, args.tilt)
 
     if args.grid:
         raise NotImplementedError

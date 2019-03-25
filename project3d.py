@@ -35,20 +35,23 @@ def parse_args():
     parser.add_argument('--seed', type=int, help='Random seed')
     return parser
 
-class ProjectorFT:
+class Projector:
     def __init__(self, vol, tilt=None):
         nz, ny, nx = vol.shape
         assert nz==ny==nx, 'Volume must be cubic'
-        x0, x1 = np.meshgrid(np.linspace(-1, 1, nx, endpoint=True), 
-                             np.linspace(-1, 1, ny, endpoint=True))
-        x2 = np.zeros(ny*nx)
-        lattice = np.stack([x0.ravel(), x1.ravel(), x2],1).astype(np.float32)
+        x2, x1, x0 = np.meshgrid(np.linspace(-1, 1, nz, endpoint=True), 
+                             np.linspace(-1, 1, ny, endpoint=True),
+                             np.linspace(-1, 1, nx, endpoint=True),
+                             indexing='ij')
+
+        lattice = np.stack([x0.ravel(), x1.ravel(), x2.ravel()],1).astype(np.float32)
         self.lattice = torch.from_numpy(lattice)
 
-        self.vol_ft = torch.from_numpy(fft.htn_center(vol).astype(np.float32))
-        self.vol_ft = self.vol_ft.unsqueeze(0)
-        self.vol_ft = self.vol_ft.unsqueeze(0)
+        self.vol = torch.from_numpy(vol.astype(np.float32))
+        self.vol = self.vol.unsqueeze(0)
+        self.vol = self.vol.unsqueeze(0)
 
+        self.nz = nz
         self.ny = ny
         self.nx = nx
 
@@ -63,14 +66,18 @@ class ProjectorFT:
         self.tilt = tilt
 
     def project(self, rot):
+        B = rot.size(0)
         if self.tilt is not None:
             rot = self.tilt @ rot
-        grid = self.lattice @ rot # rot.T * coord
+        grid = self.lattice @ rot # B x D^3 x 3 
+        grid = grid.view(-1, self.nz, self.ny, self.nx, 3)
+        offset = self.center - grid[:,int(self.nz/2),int(self.ny/2),int(self.nx/2)]
+        grid += offset[:,None,None,None,:]
         grid = grid.view(1, -1, self.ny, self.nx, 3)
-        offset = self.center - grid[0,:,int(self.ny/2),int(self.nx/2)]
-        grid += offset[None,:,None,None,:]
-        return F.grid_sample(self.vol_ft, grid)
-    
+        vol = F.grid_sample(self.vol, grid)
+        vol = vol.view(B,self.nz,self.ny,self.nx)
+        return vol.sum(dim=1)
+   
 def plot_projections(out_png, imgs):
     fig, axes = plt.subplots(nrows=3, ncols=3, figsize=(10,10))
     axes = axes.ravel()
@@ -106,7 +113,7 @@ def main(args):
                         [0, np.sin(theta), np.cos(theta)]]).astype(np.float32)
 
 
-    projector = ProjectorFT(vol, args.tilt)
+    projector = Projector(vol, args.tilt)
 
     if args.grid:
         raise NotImplementedError
@@ -130,7 +137,6 @@ def main(args):
 
     rots = np.vstack(rots)
     imgs = np.vstack(imgs)
-    imgs = np.asarray([fft.ihtn_center(x) for x in imgs])
     td = time.time()-t1
     log('Projected {} images in {}s ({}s per image)'.format(args.N, td, td/args.N ))
 

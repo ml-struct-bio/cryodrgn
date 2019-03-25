@@ -18,6 +18,8 @@ import mrc
 import fft
 import lie_tools
 
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 log = utils.log
@@ -102,6 +104,11 @@ def main(args):
     if args.seed is not None:
         torch.manual_seed(args.seed)
 
+    use_cuda = torch.cuda.is_available()
+    log('Use cuda {}'.format(use_cuda))
+    if use_cuda:
+        torch.set_default_tensor_type(torch.cuda.FloatTensor)
+
     t1 = time.time()    
     vol, _ , _ = mrc.parse_mrc(args.mrc)
     log('Loaded {} volume'.format(vol.shape))
@@ -112,8 +119,10 @@ def main(args):
                         [0, np.cos(theta), -np.sin(theta)],
                         [0, np.sin(theta), np.cos(theta)]]).astype(np.float32)
 
-
     projector = Projector(vol, args.tilt)
+    if use_cuda:
+        projector.lattice = projector.lattice.cuda()
+        projector.vol = projector.vol.cuda()
 
     if args.grid:
         raise NotImplementedError
@@ -123,17 +132,17 @@ def main(args):
     for mb in range(int(args.N/args.b)):
         log('Projecting {}/{}'.format((mb+1)*args.b, args.N))
         rot = lie_tools.random_SO3(args.b)
-        test = projector.project(rot)
-        test = test.squeeze().numpy()
+        projections = projector.project(rot)
+        projections = projections.cpu().numpy()
         rots.append(rot)
-        imgs.append(test)
+        imgs.append(projections)
     if args.N % args.b:
         log('Projecting {}/{}'.format(args.N, args.N))
         rot = lie_tools.random_SO3(args.N % args.b)
-        test = projector.project(rot)
-        test = test.squeeze().numpy()
+        projections = projector.project(rot)
+        projections = projections.cpu().numpy()
         rots.append(rot)
-        imgs.append(test)
+        imgs.append(projections)
 
     rots = np.vstack(rots)
     imgs = np.vstack(imgs)

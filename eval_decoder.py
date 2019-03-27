@@ -77,7 +77,7 @@ def main(args):
         torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
     nz, ny, nx = args.dim
-    model = HetVAE(nx, ny, args.qlayers, args.qdim, args.players, args.pdim,
+    model = HetVAE(nx, ny, nx*ny, args.qlayers, args.qdim, args.players, args.pdim,
                 args.zdim, encode_mode=args.encode_mode)
 
     log('Loading weights from {}'.format(args.weights))

@@ -19,7 +19,7 @@ class ResidLinear(nn.Module):
 
 class HetVAE(nn.Module):
     def __init__(self, 
-            nx, ny, 
+            nx, ny, in_dim,
             encode_layers, encode_dim, 
             decode_layers, decode_dim,
             z_dim = 1,
@@ -28,18 +28,18 @@ class HetVAE(nn.Module):
         super(HetVAE, self).__init__()
         self.nx = nx
         self.ny = ny
-        self.in_dim = nx*ny
+        self.in_dim = in_dim # nx*ny for single image or 2*nx*ny for tilt series
         self.z_dim = z_dim
         if encode_mode == 'conv':
             self.encoder = ConvEncoder(encode_dim, z_dim*2)
         elif encode_mode == 'resid':
-            self.encoder = ResidLinearEncoder(nx*ny, 
+            self.encoder = ResidLinearEncoder(in_dim, 
                             encode_layers, 
                             encode_dim,  # hidden_dim
                             z_dim*2, # out_dim
                             nn.ReLU) #in_dim -> hidden_dim
         elif encode_mode == 'mlp':
-            self.encoder = MLPEncoder(nx*ny, 
+            self.encoder = MLPEncoder(in_dim, 
                             encode_layers, 
                             encode_dim, # hidden_dim
                             z_dim*2, # out_dim
@@ -70,19 +70,89 @@ class HetVAE(nn.Module):
     def decode(self, coords, z):
         z = z.view(z.size(0), *([1]*(coords.ndimension()-1)))
         z = torch.cat((coords,z.expand(*coords.shape[:-1],1)),dim=-1)
-
-        #z = torch.cat((coords, z[:,None,:].expand(-1,self.in_dim,-1)), dim=-1)
         y_hat = self.decoder(z)
         y_hat = y_hat.view(-1, self.ny, self.nx)
         return y_hat
 
     def forward(self, rot, z):
-        #mu, logvar = self.encode(img)
-        #z = self.reparameterize(mu, logvar)
-        # transform lattice by rot
         x = self.lattice @ rot # R.T*x
         y_hat = self.decode(x,z)
         return y_hat
+
+class BNBHetTilt():
+    def __init__(self, model, ny, nx, tilt):
+        super(BNBHetTilt, self).__init__()
+        self.ny = ny
+        self.nx = nx
+        self.model = model # this is the VAE module
+        self.base_quat = so3_grid.base_SO3_grid()
+        self.nbase = len(self.base_quat)
+        self.base_rot = lie_tools.quaternions_to_SO3(torch.tensor(self.base_quat))
+        
+        assert tilt.shape == (3,3)
+        self.tilt = torch.tensor(tilt)
+
+    def eval_base_grid(self, images, images_tilt, z):
+        '''Evaluate the base grid for a batch of imges'''
+        B = z.size(0) 
+        x = self.model.lattice @ self.base_rot # Q x (Y*X) x 3
+        xt = self.model.lattice @ self.tilt @ self.base_rot # Q x (Y*X) x 3
+        images = images.unsqueeze(0).transpose(0,1) # Bx1xYxX
+        images_tilt = images_tilt.unsqueeze(0).transpose(0,1) # Bx1xYxX
+
+        # the mini-mini-batch size, since we need to evaluate the whole 576 point grid for each image
+        nB = int(9000/self.ny/self.nx) # huge hack to avoid out of memory error
+        assert B % nB == 0, 'Batch size needs to be a multiple of {}'.format(nB) # TODO
+        mini = []
+        for i in range(int(B/nB)):
+            xx = x.expand(nB, self.nbase, self.ny*self.nx, 3) # B x Q x (Y*X) x 3
+            y_hat = self.model.decode(xx, z[nB*i:nB*(i+1)]) 
+            y_hat = y_hat.view(nB, self.nbase, self.ny, self.nx) # B x Q x Y x X
+            img = images[nB*i:nB*(i+1)]
+            err = torch.sum((img-y_hat).pow(2),(-1,-2)) # BxQ
+            
+            xx = xt.expand(nB, self.nbase, self.ny*self.nx, 3) # B x Q x (Y*X) x 3
+            y_hat = self.model.decode(xx, z[nB*i:nB*(i+1)]) 
+            y_hat = y_hat.view(nB, self.nbase, self.ny, self.nx) # B x Q x Y x X
+            img = images_tilt[nB*i:nB*(i+1)]
+            err_tilt = torch.sum((img-y_hat).pow(2),(-1,-2)) # BxQ
+
+            mini.append(torch.argmin(err+err_tilt,1)) # B
+        return torch.cat(mini).cpu().numpy()
+        
+    def eval_incremental_grid(self, images, images_tilt, quat_for_image, z):
+        rot = lie_tools.quaternions_to_SO3(torch.tensor(np.array(quat_for_image)))
+        x = self.model.lattice @ rot
+        y_hat = self.model.decode(x, z) 
+        y_hat = y_hat.view(-1, 8, self.ny, self.nx)
+        images = images.unsqueeze(1)
+        err = torch.sum((images-y_hat).pow(2),(-1,-2)) # BxQ
+
+        x = self.model.lattice @ self.tilt @ rot
+        y_hat = self.model.decode(x, z)
+        y_hat = y_hat.view(-1, 8, self.ny, self.nx)
+        images_tilt = images_tilt.unsqueeze(1)
+        err_tilt = torch.sum((images_tilt-y_hat).pow(2),(-1,-2)) # BxQ
+
+        mini = torch.argmin(err+err_tilt,1) # B
+        return mini.cpu().numpy()
+
+    def opt_theta(self, images, images_tilt, z, niter=5):
+        B = images.size(0)
+        assert not self.model.training
+        with torch.no_grad():
+            min_i = self.eval_base_grid(images, images_tilt, z) # 576  model iterations
+            min_quat = self.base_quat[min_i]
+            s2i, s1i = so3_grid.get_base_indr(min_i)
+            for iter_ in range(1,niter+1):
+                neighbors = [so3_grid.get_neighbor(min_quat[i], s2i[i], s1i[i], iter_) for i in range(B)]
+                quat = [x[0] for x in neighbors]
+                ind = [x[1] for x in neighbors]
+                min_i = self.eval_incremental_grid(images, images_tilt, quat, z)
+                min_ind = np.stack(ind)[np.arange(B), min_i]
+                s2i, s1i = min_ind.T
+                min_quat = np.stack(quat)[np.arange(B),min_i]
+        return lie_tools.quaternions_to_SO3(torch.tensor(min_quat))
 
 class BNBOptTilt():
     def __init__(self, model, ny, nx, tilt):

@@ -88,7 +88,7 @@ def main(args):
         particles_ft = particles_ft[:args.N]
         Nimg = args.N
 
-    model = HetVAE(nx, ny, args.qlayers, args.qdim, args.players, args.pdim,
+    model = HetVAE(nx, ny, nx*ny, args.qlayers, args.qdim, args.players, args.pdim,
                 args.zdim, encode_mode=args.encode_mode)
     bnb = BNBHetOpt(model,ny,nx)
 

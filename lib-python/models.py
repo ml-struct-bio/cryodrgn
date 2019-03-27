@@ -167,7 +167,7 @@ class BNBOptTilt():
         self.base_quat = so3_grid.base_SO3_grid()
         self.base_rot = lie_tools.quaternions_to_SO3(torch.tensor(self.base_quat))
  
-        assert tilt.y2yshape == (3,3)
+        assert tilt.shape == (3,3)
         self.tilt = torch.tensor(tilt)
 
     def eval_base_grid(self, images, images_tilt):

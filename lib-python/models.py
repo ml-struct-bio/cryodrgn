@@ -204,8 +204,8 @@ class BNBOpt():
             s2i, s1i = so3_grid.get_base_indr(min_i)
             for iter_ in range(1,niter+1):
                 neighbors = [so3_grid.get_neighbor(min_quat[i], s2i[i], s1i[i], iter_) for i in range(B)]
-                quat = np.stack([x[0] for x in neighbors]) # can I do np.stack here?
-                ind = np.stack([x[1] for x in neighbors])
+                quat = np.array([x[0] for x in neighbors])
+                ind = np.array([x[1] for x in neighbors])
                 rot = lie_tools.quaternions_to_SO3(torch.tensor(quat))
                 min_i = self.eval_grid(images, rot, 8, images_tilt=images_tilt)
                 min_ind = ind[np.arange(B), min_i]
@@ -214,7 +214,7 @@ class BNBOpt():
         return lie_tools.quaternions_to_SO3(torch.tensor(min_quat))
 
 class BNBHetOpt():
-    def __init__(self, model, ny, nx):
+    def __init__(self, model, ny, nx, tilt=None):
         super(BNBHetOpt, self).__init__()
         self.ny = ny
         self.nx = nx
@@ -222,6 +222,27 @@ class BNBHetOpt():
         self.base_quat = so3_grid.base_SO3_grid()
         self.nbase = len(self.base_quat)
         self.base_rot = lie_tools.quaternions_to_SO3(torch.tensor(self.base_quat))
+
+        if tilt is not None:
+            assert tilt.shape == (3,3)
+            self.tilt = torch.tensor(tilt)
+
+    def eval_grid(self, images, rot, z, NQ, images_tilt=None):
+        B = z.size(0)
+        images = images.view(B,1,self.ny,self.nx) # Bx1xYxX
+        y_hat = self.model.decode(self.model.lattice @ rot, z)
+        y_hat = y_hat.view(B, NQ, self.ny, self.nx) # don't think we need to do this
+        err = torch.sum((images-y_hat).pow(2),(-1,-2)) # B x Q
+
+        if images_tilt is not None:
+            images_tilt = images_tilt.view(B,1,self.ny,self.nx) # Bx1xYxX
+            y_hat = self.model.decode(self.model.lattice @ self.tilt @ rot, z)
+            y_hat = y_hat.view(B, NQ, self.ny, self.nx) # don't think we need to do this
+            err_tilt = torch.sum((images_tilt-y_hat).pow(2),(-1,-2)) # B x Q
+            mini = torch.argmin(err+err_tilt, 1)
+        else:
+            mini = torch.argmin(err,1)
+        return mini.cpu().numpy()
         
     def eval_base_grid(self, images, z):
         '''Evaluate the base grid for a batch of imges'''
@@ -252,21 +273,25 @@ class BNBHetOpt():
         mini = torch.argmin(err,1) # B
         return mini.cpu().numpy()
 
-    def opt_theta(self, images, z, niter=5):
+    def opt_theta(self, images, z, images_tilt=None, niter=5):
         B = images.size(0)
         assert not self.model.training
         with torch.no_grad():
-            min_i = self.eval_base_grid(images, z) # 576  model iterations
+            # expand the base grid B times since each image has a different z
+            base_rot = self.base_rot.expand(B,*self.base_rot.shape) # B x 576 x 3 x 3
+            min_i = self.eval_grid(images, base_rot, z, self.nbase,
+                                   images_tilt=images_tilt) # B x 576 slices
             min_quat = self.base_quat[min_i]
             s2i, s1i = so3_grid.get_base_indr(min_i)
             for iter_ in range(1,niter+1):
                 neighbors = [so3_grid.get_neighbor(min_quat[i], s2i[i], s1i[i], iter_) for i in range(B)]
-                quat = [x[0] for x in neighbors]
-                ind = [x[1] for x in neighbors]
-                min_i = self.eval_incremental_grid(images, quat, z)
-                min_ind = np.stack(ind)[np.arange(B), min_i]
+                quat = np.array([x[0] for x in neighbors])
+                ind = np.array([x[1] for x in neighbors])
+                rot = lie_tools.quaternions_to_SO3(torch.tensor(quat))
+                min_i = self.eval_grid(images, rot, z, 8, images_tilt=images_tilt)
+                min_ind = ind[np.arange(B), min_i]
                 s2i, s1i = min_ind.T
-                min_quat = np.stack(quat)[np.arange(B),min_i]
+                min_quat = quat[np.arange(B),min_i]
         return lie_tools.quaternions_to_SO3(torch.tensor(min_quat))
 
 class ResidLinearDecoder(nn.Module):

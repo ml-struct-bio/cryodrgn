@@ -35,6 +35,10 @@ def parse_args():
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
     parser.add_argument('--seed', type=int, default=np.random.randint(0,100000), help='Random seed')
 
+    group = parser.add_argument_group('Tilt series')
+    group.add_argument('--tilt', help='Particle stack file (.mrcs)')
+    group.add_argument('--tilt-deg', type=float, default=45, help='X-axis tilt offset in degrees (default: %(default)s)')
+
     group = parser.add_argument_group('Training parameters')
     group.add_argument('-n', '--num-epochs', type=int, default=10, help='Number of training epochs (default: %(default)s)')
     group.add_argument('-b','--batch-size', type=int, default=100, help='Minibatch size (default: %(default)s)')
@@ -100,22 +104,38 @@ def main(args):
     beta_schedule = get_beta_schedule(args.beta)
 
     # load the particles
-    particles_real, _, _ = mrc.parse_mrc(args.particles)
-    particles_real = particles_real.astype(np.float32)
-    Nimg, ny, nx = particles_real.shape
+    particles, _, _ = mrc.parse_mrc(args.particles)
+    Nimg, ny, nx = particles.shape
     nz = max(nx,ny)
     log('Loaded {} {}x{} images'.format(Nimg, ny, nx))
-    particles_ft = np.asarray([fft.ht2_center(img).astype(np.float32) for img in particles_real])
-    assert particles_ft.shape == (Nimg,ny,nx)
-    rnorm  = [np.mean(particles_ft), np.std(particles_ft)]
+    particles = np.asarray([fft.ht2_center(img).astype(np.float32) for img in particles])
+    assert particles.shape == (Nimg,ny,nx)
+    rnorm  = [np.mean(particles), np.std(particles)]
     log('Particle FT stack mean, std: {} +/- {}'.format(*rnorm))
     rnorm[0] = 0
     log('Normalizing FT by mean, std: {} +/- {}'.format(*rnorm))
-    particles_ft = (particles_ft - rnorm[0])/rnorm[1]
+    particles = (particles - rnorm[0])/rnorm[1]
 
-    model = HetVAE(nx, ny, nx*ny, args.qlayers, args.qdim, args.players, args.pdim,
+    # load particles from tilt series
+    if args.tilt is not None:
+        particles_tilt, _, _ = mrc.parse_mrc(args.tilt)
+        assert particles_tilt.shape == (Nimg, ny, nx), 'Tilt series pair must have same dimensions as untilted particles'
+        log('Loaded {} {}x{} tilt series images'.format(Nimg, ny, nx))
+        particles_tilt = np.asarray([fft.ht2_center(img).astype(np.float32) for img in particles_tilt])
+        particles_tilt = (particles_tilt - rnorm[0])/rnorm[1]
+    
+        theta = args.tilt_deg*np.pi/180
+        tilt = np.array([[1.,0.,0.],
+                        [0, np.cos(theta), -np.sin(theta)],
+                        [0, np.sin(theta), np.cos(theta)]]).astype(np.float32)
+        in_dim = 2*nx*ny
+    else:
+        tilt = None
+        in_dim = nx*ny
+
+    model = HetVAE(nx, ny, in_dim, args.qlayers, args.qdim, args.players, args.pdim,
                 args.zdim, encode_mode=args.encode_mode)
-    bnb = BNBHetOpt(model,ny,nx)
+    bnb = BNBHetOpt(model, ny, nx, tilt)
 
     if args.equivariance:
         assert args.equivariance > 0, 'Regularization weight must be positive'
@@ -148,11 +168,15 @@ def main(args):
             batch_it += len(minibatch_i)
             global_it = Nimg*epoch + batch_it
 
-            y = torch.from_numpy(particles_ft[minibatch_i])
+            y = torch.from_numpy(particles[minibatch_i])
             if use_cuda: y = y.cuda()
+            if tilt is not None:
+                yt = torch.from_numpy(particles_tilt[minibatch_i])
+                if use_cuda: yt = yt.cuda()
 
             # predict encoding
-            mu, logvar = model.encode(y)
+            input_ = torch.stack((y, yt),1) if tilt is not None else y
+            mu, logvar = model.encode(input_)
             z = model.reparameterize(mu, logvar)
 
             # equivariance loss
@@ -162,17 +186,20 @@ def main(args):
             else:
                 lamb, eq_loss = 0, 0 
 
-
             # find the optimal orientation for each image
             model.eval()
-            rot = bnb.opt_theta(y, z)
+            rot = bnb.opt_theta(y, z, yt)
             model.train()
 
             # train the decoder
             y_recon = model(rot, z)
             y_recon = y_recon.view(-1, ny, nx)
-
             gen_loss = F.mse_loss(y_recon,y)
+            if tilt is not None:
+                y_recon_tilt = model(bnb.tilt @ rot, z)
+                y_recon_tilt = y_recon_tilt.view(-1, ny, nx)
+                gen_loss = .5*gen_loss + F.mse_loss(y_recon_tilt,yt)
+
             kld = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
 
             beta = beta_schedule(global_it)

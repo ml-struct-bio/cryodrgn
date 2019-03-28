@@ -46,7 +46,7 @@ class HetVAE(nn.Module):
                             nn.ReLU) #in_dim -> hidden_dim
         else:
             raise RuntimeError('Encoder mode {} not recognized'.format(encode_mode))
-        self.decoder = ResidLinearDecoder(3+z_dim, decode_layers, 
+        self.decoder = ResidLinearDecoder(3+z_dim, 1, decode_layers, 
                             decode_dim, 
                             nn.ReLU) #R3 -> R1
         
@@ -294,18 +294,73 @@ class BNBHetOpt():
                 min_quat = quat[np.arange(B),min_i]
         return lie_tools.quaternions_to_SO3(torch.tensor(min_quat))
 
+class FTSliceDecoder(nn.Module):
+    '''
+    Evaluate a central slice out of a 3D FT of a model, returns representation in
+    Hartley reciprocal space
+
+    Exploits the symmetry of the FT where F*(x,y) = F(-x,-y) and only
+    evaluates half of the lattice. The decoder is f(x,y,z) => real, imag
+    '''
+    def __init__(self, in_dim, D, nlayers, hidden_dim, activation):
+        '''D: image width or height'''
+        super(FTSliceDecoder, self).__init__()
+        self.decoder = ResidLinearDecoder(in_dim, 2, nlayers, hidden_dim, activation)
+        D2 = int(D/2)
+
+        ### various pixel indices to keep track of 
+        self.center = D2*D + D2 
+        self.extra = np.arange((D2+1)*D, D**2, D) # bottom-left column without conjugate pair
+        # evalute the top half of the image up through the center pixel 
+        # and extra bottom-left column (todo: just evaluate a D-1 x D-1 image so 
+        # we don't have to worry about this)
+        self.all_eval = np.concatenate((np.arange(self.center+1), self.extra))
+        
+        # pixel indices for the top half of the image up to (but not incl) 
+        # the center pixel and excluding the top row and left-most column
+        i, j = np.meshgrid(np.arange(1,D),np.arange(1,D2+1))
+        self.top = (j*D+i).ravel()[:-D2]
+
+        # pixel indices for bottom half of the image after the center pixel
+        # excluding left-most column and given in reverse order
+        i, j =np.meshgrid(np.arange(1,D),np.arange(D2,D))
+        self.bottom_rev = (j*D+i).ravel()[D2:][::-1].copy()
+
+        self.D = D
+        self.D2 = D2
+
+    def forward(self, lattice):
+        '''Call forward on central slices only'''
+        #assert lattice.shape[-2:] == (self.D**2,3)
+        #assert torch.nonzero(lattice[...,self.center,:]).size(0) == 0
+        image = torch.empty(lattice.shape[:-1])
+        top_half = self.decode(lattice[...,self.all_eval,:])
+        image[..., self.all_eval] = top_half[...,0] - top_half[...,1] # hartley transform
+        # the bottom half of the image is the complex conjugate of the top half
+        image[...,self.bottom_rev] = top_half[...,self.top,0] + top_half[...,self.top,1]
+        return image
+
+    def decode(self, lattice):
+        '''Return FT transform'''
+        # convention: only evalute the -z points
+        w = lattice[...,2] > 0.0
+        lattice[w] = -lattice[w] # negate lattice coordinates where z > 0
+        result = self.decoder(lattice)
+        result[...,1][w] *= -1 # replace with complex conjugate to get correct values for original lattice positions
+        return result
+
 class ResidLinearDecoder(nn.Module):
     '''
     A NN mapping R3 cartesian coordinates to R1 electron density
     (represented in Hartley reciprocal space)
     '''
-    def __init__(self, in_dim, nlayers, hidden_dim, activation):
+    def __init__(self, in_dim, out_dim, nlayers, hidden_dim, activation):
         super(ResidLinearDecoder, self).__init__()
         layers = [nn.Linear(in_dim, hidden_dim), activation()]
         for n in range(nlayers):
             layers.append(ResidLinear(hidden_dim, hidden_dim))
             layers.append(activation())
-        layers.append(nn.Linear(hidden_dim,1))
+        layers.append(nn.Linear(hidden_dim,out_dim))
         self.main = nn.Sequential(*layers)
 
     def forward(self, x):

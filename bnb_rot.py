@@ -18,7 +18,7 @@ import mrc
 import utils
 import fft
 import lie_tools
-from models import BNBOpt, ResidLinearDecoder
+from models import BNBOpt, FTSliceDecoder, ResidLinearDecoder
 from losses import EquivarianceLoss
 
 log = utils.log
@@ -58,7 +58,9 @@ def eval_volume(model, bnb, nz, ny, nx, rnorm):
     for i, z in enumerate(np.linspace(-1,1,nz,endpoint=False)):
         x = bnb.lattice + torch.tensor([0,0,z])
         with torch.no_grad():
-            y = model(x)
+            y = model.decode(x)
+            y = y[...,0] - y[...,1]
+            #y = model(x)
             y = y.view(ny, nx).cpu().numpy()
         vol_f[i] = y*rnorm[1]+rnorm[0]
     vol = fft.ihtn_center(vol_f)
@@ -97,6 +99,7 @@ def main(args):
     if args.tilt is not None:
         particles_tilt, _, _ = mrc.parse_mrc(args.tilt)
         assert particles_tilt.shape == (Nimg, ny, nx), 'Tilt series pair must have same dimensions as untilted particles'
+        log('Loaded {} {}x{} tilt series images'.format(Nimg, ny, nx))
         particles_tilt = np.asarray([fft.ht2_center(img).astype(np.float32) for img in particles_tilt])
         particles_tilt = (particles_tilt - rnorm[0])/rnorm[1]
     
@@ -107,7 +110,9 @@ def main(args):
     else:
         tilt = None
 
-    model = ResidLinearDecoder(3, args.layers, args.dim, nn.ReLU)
+    model = FTSliceDecoder(3, nx, args.layers, args.dim, nn.ReLU)
+    #model = ResidLinearDecoder(3, 1, args.layers, args.dim, nn.ReLU)
+
     bnb = BNBOpt(model,ny,nx,tilt)
 
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)

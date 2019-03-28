@@ -26,12 +26,17 @@ vlog = utils.vlog
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('particles', help='Particle stack file (.mrc)')
+    parser.add_argument('particles', help='Particle stack file (.mrcs)')
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
     parser.add_argument('--load', type=os.path.abspath, help='Initialize training from a checkpoint')
     parser.add_argument('--checkpoint', type=int, default=5, help='Checkpointing interval in N_EPOCHS (default: %(default)s)')
     parser.add_argument('--log-interval', type=int, default=1000, help='Logging interval in N_IMGS (default: %(default)s)')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
+    parser.add_argument('--seed', type=int, default=np.random.randint(0,100000), help='Random seed')
+
+    group = parser.add_argument_group('Tilt series')
+    group.add_argument('--tilt', help='Particle stack file (.mrcs)')
+    group.add_argument('--tilt-deg', type=float, default=45, help='X-axis tilt offset in degrees (default: %(default)s)')
 
     group = parser.add_argument_group('Training parameters')
     group.add_argument('-n', '--num-epochs', type=int, default=10, help='Number of training epochs (default: %(default)s)')
@@ -65,6 +70,10 @@ def main(args):
     if args.outdir is not None and not os.path.exists(args.outdir):
         os.makedirs(args.outdir)
 
+    # set the random seed
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+
     ## set the device
     use_cuda = torch.cuda.is_available()
     log('Use cuda {}'.format(use_cuda))
@@ -72,21 +81,34 @@ def main(args):
         torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
     # load the particles
-    particles_real, _, _ = mrc.parse_mrc(args.particles)
-    particles_real = particles_real.astype(np.float32)
-    Nimg, ny, nx = particles_real.shape
+    particles, _, _ = mrc.parse_mrc(args.particles)
+    Nimg, ny, nx = particles.shape
     nz = max(nx,ny)
     log('Loaded {} {}x{} images'.format(Nimg, ny, nx))
-    particles_ft = np.asarray([fft.ht2_center(img).astype(np.float32) for img in particles_real])
-    assert particles_ft.shape == (Nimg,ny,nx)
-    rnorm  = [np.mean(particles_ft), np.std(particles_ft)]
+    particles = np.asarray([fft.ht2_center(img).astype(np.float32) for img in particles])
+    assert particles.shape == (Nimg,ny,nx)
+    rnorm  = [np.mean(particles), np.std(particles)]
     log('Particle FT stack mean, std: {} +/- {}'.format(*rnorm))
     rnorm[0] = 0
     log('Normalizing FT by mean, std: {} +/- {}'.format(*rnorm))
-    particles_ft = (particles_ft - rnorm[0])/rnorm[1]
+    particles = (particles - rnorm[0])/rnorm[1]
+
+    # load particles from tilt series
+    if args.tilt is not None:
+        particles_tilt, _, _ = mrc.parse_mrc(args.tilt)
+        assert particles_tilt.shape == (Nimg, ny, nx), 'Tilt series pair must have same dimensions as untilted particles'
+        particles_tilt = np.asarray([fft.ht2_center(img).astype(np.float32) for img in particles_tilt])
+        particles_tilt = (particles_tilt - rnorm[0])/rnorm[1]
+    
+        theta = args.tilt_deg*np.pi/180
+        tilt = np.array([[1.,0.,0.],
+                        [0, np.cos(theta), -np.sin(theta)],
+                        [0, np.sin(theta), np.cos(theta)]]).astype(np.float32)
+    else:
+        tilt = None
 
     model = ResidLinearDecoder(3, args.layers, args.dim, nn.ReLU)
-    bnb = BNBOpt(model,ny,nx)
+    bnb = BNBOpt(model,ny,nx,tilt)
 
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
@@ -111,17 +133,26 @@ def main(args):
             global_it = Nimg*epoch + batch_it
 
             # find the optimal orientation for each image
-            y = torch.from_numpy(particles_ft[minibatch_i])
+            y = torch.from_numpy(particles[minibatch_i])
             if use_cuda: y = y.cuda()
+            if tilt is not None:
+                yt = torch.from_numpy(particles_tilt[minibatch_i])
+                if use_cuda: yt = yt.cuda()
+            else: yt=None
             model.eval()
-            rot = bnb.opt_theta(y)
+            rot = bnb.opt_theta(y,yt)
             model.train()
 
             # train the decoder
             y_recon = model(bnb.lattice @ rot)
             y_recon = y_recon.view(-1, ny, nx)
-
             loss = F.mse_loss(y_recon,y)
+
+            if tilt is not None:
+                y_recon_tilt = model(bnb.lattice @ bnb.tilt @ rot)
+                y_recon_tilt = y_recon_tilt.view(-1, ny, nx)
+                loss = .5*loss + .5*F.mse_loss(y_recon_tilt,yt)
+
             loss.backward()
             optim.step()
             optim.zero_grad()

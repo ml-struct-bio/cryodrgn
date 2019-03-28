@@ -154,76 +154,6 @@ class BNBHetTilt():
                 min_quat = np.stack(quat)[np.arange(B),min_i]
         return lie_tools.quaternions_to_SO3(torch.tensor(min_quat))
 
-class BNBOptTilt():
-    def __init__(self, model, ny, nx, tilt):
-        super(BNBOptTilt, self).__init__()
-        self.ny = ny
-        self.nx = nx
-        self.model = model
-        x0, x1 = np.meshgrid(np.linspace(-1, 1, nx, endpoint=False), # FT is not symmetric around origin
-                             np.linspace(-1, 1, ny, endpoint=False))
-        lattice = np.stack([x0.ravel(),x1.ravel(),np.zeros(ny*nx)],1).astype(np.float32)
-        self.lattice = torch.tensor(lattice)
-        self.base_quat = so3_grid.base_SO3_grid()
-        self.base_rot = lie_tools.quaternions_to_SO3(torch.tensor(self.base_quat))
- 
-        assert tilt.shape == (3,3)
-        self.tilt = torch.tensor(tilt)
-
-    def eval_base_grid(self, images, images_tilt):
-        '''Evaluate the base grid for a batch of imges'''
-        x = self.lattice @ self.base_rot
-        y_hat = self.model(x)
-        y_hat = y_hat.view(-1, self.ny, self.nx)
-        y_hat = y_hat.unsqueeze(0) # 1xQxYxX
-        images = images.unsqueeze(0).transpose(0,1) # Bx1xYxX
-        err = torch.sum((images-y_hat).pow(2),(-1,-2)) # BxQ
-
-        x = self.lattice @ self.tilt @ self.base_rot
-        y_hat = self.model(x)
-        y_hat = y_hat.view(-1, self.ny, self.nx)
-        y_hat = y_hat.unsqueeze(0) # 1xQxYxX
-        images_tilt = images_tilt.unsqueeze(0).transpose(0,1) # Bx1xYxX
-        err_tilt = torch.sum((images_tilt-y_hat).pow(2),(-1,-2)) # BxQ
-
-        mini = torch.argmin(err+err_tilt,1) # B
-        return mini.cpu().numpy()
-        
-    def eval_incremental_grid(self, images, images_tilt, quat_for_image):
-        rot = lie_tools.quaternions_to_SO3(torch.tensor(np.concatenate(quat_for_image)))
-        x = self.lattice @ rot
-        y_hat = self.model(x)
-        y_hat = y_hat.view(-1, 8, self.ny, self.nx)
-        images = images.unsqueeze(1)
-        err = torch.sum((images-y_hat).pow(2),(-1,-2)) # BxQ
-
-        x = self.lattice @ self.tilt @ rot
-        y_hat = self.model(x)
-        y_hat = y_hat.view(-1, 8, self.ny, self.nx)
-        images_tilt = images_tilt.unsqueeze(1)
-        err_tilt = torch.sum((images_tilt-y_hat).pow(2),(-1,-2)) # BxQ
-
-        mini = torch.argmin(err+err_tilt,1) # B
-        return mini.cpu().numpy()
-
-    def opt_theta(self, images, images_tilt, niter=5):
-        B = images.size(0)
-        assert not self.model.training
-        with torch.no_grad():
-            min_i = self.eval_base_grid(images, images_tilt) # 576  model iterations
-            min_quat = self.base_quat[min_i]
-            s2i, s1i = so3_grid.get_base_indr(min_i)
-            for iter_ in range(1,niter+1):
-                neighbors = [so3_grid.get_neighbor(min_quat[i], s2i[i], s1i[i], iter_) for i in range(B)]
-                quat = [x[0] for x in neighbors]
-                ind = [x[1] for x in neighbors]
-                min_i = self.eval_incremental_grid(images, images_tilt, quat)
-                min_ind = np.stack(ind)[np.arange(B), min_i]
-                s2i, s1i = min_ind.T
-                min_quat = np.stack(quat)[np.arange(B),min_i]
-        return lie_tools.quaternions_to_SO3(torch.tensor(min_quat))
-
-
 class BNBOpt():
     def __init__(self, model, ny, nx, tilt=None):
         super(BNBOpt, self).__init__()
@@ -236,43 +166,51 @@ class BNBOpt():
         self.lattice = torch.tensor(lattice)
         self.base_quat = so3_grid.base_SO3_grid()
         self.base_rot = lie_tools.quaternions_to_SO3(torch.tensor(self.base_quat))
+        self.nbase = len(self.base_quat)
         
-    def eval_base_grid(self, images):
-        '''Evaluate the base grid for a batch of imges'''
-        x = self.lattice @ self.base_rot
-        y_hat = self.model(x)
-        y_hat = y_hat.view(-1, self.ny, self.nx)
-        y_hat = y_hat.unsqueeze(0) # 1xQxYxX
-        images = images.unsqueeze(0).transpose(0,1) # Bx1xYxX
-        err = torch.sum((images-y_hat).pow(2),(-1,-2)) # BxQ
-        mini = torch.argmin(err,1) # B
-        return mini.cpu().numpy()
+        if tilt is not None:
+            assert tilt.shape == (3,3)
+            self.tilt = torch.tensor(tilt)
         
-    def eval_incremental_grid(self, images, quat_for_image):
-        rot = lie_tools.quaternions_to_SO3(torch.tensor(np.concatenate(quat_for_image)))
-        x = self.lattice @ rot
-        y_hat = self.model(x)
-        y_hat = y_hat.view(-1, 8, self.ny, self.nx)
-        images = images.unsqueeze(1)
+    def eval_grid(self, images, rot, NQ, images_tilt=None):
+        '''
+        images: B x NY x NX 
+        rot: (NxQ) x 3 x 3 rotation matrics (N=1 for base grid, N=B for incremental grid)
+        NQ: number of slices evaluated for each image
+        '''
+        B = images.size(0)
+        y_hat = self.model(self.lattice @ rot)
+        y_hat = y_hat.view(-1,NQ,self.ny,self.nx) #1xQxYxX for base grid, Bx8xYxX for incremental grid
+        images = images.view(B,1,self.ny,self.nx) # Bx1xYxX
         err = torch.sum((images-y_hat).pow(2),(-1,-2)) # BxQ
-        mini = torch.argmin(err,1) # B
+
+        if images_tilt is not None:
+            y_hat = self.model(self.lattice @ self.tilt @ rot)
+            y_hat = y_hat.view(-1,NQ,self.ny,self.nx) #1xQxYxX for base grid, Bx8xYxX for incremental grid
+            images_tilt = images_tilt.view(B,1,self.ny,self.nx) # Bx1xYxX
+            err_tilt = torch.sum((images_tilt-y_hat).pow(2),(-1,-2)) # BxQ
+            mini = torch.argmin(err+err_tilt,1) # B
+        else:
+            mini = torch.argmin(err,1) # B
         return mini.cpu().numpy()
 
-    def opt_theta(self, images, niter=5):
+    def opt_theta(self, images, images_tilt=None, niter=5):
         B = images.size(0)
         assert not self.model.training
         with torch.no_grad():
-            min_i = self.eval_base_grid(images) # 576  model iterations
+            min_i = self.eval_grid(images, self.base_rot, self.nbase, 
+                                   images_tilt=images_tilt) # 576 slices
             min_quat = self.base_quat[min_i]
             s2i, s1i = so3_grid.get_base_indr(min_i)
             for iter_ in range(1,niter+1):
                 neighbors = [so3_grid.get_neighbor(min_quat[i], s2i[i], s1i[i], iter_) for i in range(B)]
-                quat = [x[0] for x in neighbors]
-                ind = [x[1] for x in neighbors]
-                min_i = self.eval_incremental_grid(images, quat)
-                min_ind = np.stack(ind)[np.arange(B), min_i]
+                quat = np.stack([x[0] for x in neighbors]) # can I do np.stack here?
+                ind = np.stack([x[1] for x in neighbors])
+                rot = lie_tools.quaternions_to_SO3(torch.tensor(quat))
+                min_i = self.eval_grid(images, rot, 8, images_tilt=images_tilt)
+                min_ind = ind[np.arange(B), min_i]
                 s2i, s1i = min_ind.T
-                min_quat = np.stack(quat)[np.arange(B),min_i]
+                min_quat = quat[np.arange(B),min_i]
         return lie_tools.quaternions_to_SO3(torch.tensor(min_quat))
 
 class BNBHetOpt():

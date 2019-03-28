@@ -46,7 +46,7 @@ class HetVAE(nn.Module):
                             nn.ReLU) #in_dim -> hidden_dim
         else:
             raise RuntimeError('Encoder mode {} not recognized'.format(encode_mode))
-        self.decoder = ResidLinearDecoder(3+z_dim, 1, decode_layers, 
+        self.decoder = FTSliceDecoder(3+z_dim, nx, decode_layers, 
                             decode_dim, 
                             nn.ReLU) #R3 -> R1
         
@@ -68,6 +68,7 @@ class HetVAE(nn.Module):
         return z[:,:self.z_dim], z[:,self.z_dim:]
 
     def decode(self, coords, z):
+        '''coords much be lattice(s) of central slices'''
         z = z.view(z.size(0), *([1]*(coords.ndimension()-1)))
         z = torch.cat((coords,z.expand(*coords.shape[:-1],1)),dim=-1)
         y_hat = self.decoder(z)
@@ -344,7 +345,7 @@ class FTSliceDecoder(nn.Module):
         '''Return FT transform'''
         # convention: only evalute the -z points
         w = lattice[...,2] > 0.0
-        lattice[w] = -lattice[w] # negate lattice coordinates where z > 0
+        lattice[...,0:3][w] = -lattice[...,0:3][w] # negate lattice coordinates where z > 0
         result = self.decoder(lattice)
         result[...,1][w] *= -1 # replace with complex conjugate to get correct values for original lattice positions
         return result

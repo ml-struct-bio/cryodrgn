@@ -74,7 +74,8 @@ def eval_volume(model, nz, ny, nx, zval, rnorm):
                                                    dtype=model.lattice.dtype)
         x = torch.cat((x,z),dim=-1)
         with torch.no_grad():
-            y = model.decoder(x)
+            y = model.decoder.decode(x)
+            y = y[...,0] - y[...,1]
             y = y.view(ny, nx).cpu().numpy()
         vol_f[i] = y
     vol = fft.ihtn_center(vol_f*rnorm[1]+rnorm[0])

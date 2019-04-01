@@ -17,6 +17,7 @@ import utils
 import mrc
 import fft
 import lie_tools
+import so3_grid
 
 import matplotlib
 matplotlib.use('Agg')
@@ -30,7 +31,7 @@ def parse_args():
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Output projection stack (.mrcs)')
     parser.add_argument('--out-rot', type=os.path.abspath, required=True, help='Output rotations (.pkl)')
     parser.add_argument('--out-png', type=os.path.abspath, help='Montage of first 9 projections')
-    parser.add_argument('-N', type=int, required=True, help='Number of random projections')
+    parser.add_argument('-N', type=int, help='Number of random projections')
     parser.add_argument('-b', type=int, default=100, help='Minibatch size (default: %(default)s)')
     parser.add_argument('--grid', type=int, help='Generate projections on a uniform deterministic grid on SO3. Specify resolution level')
     parser.add_argument('--tilt', type=float, help='Right-handed x-axis tilt offset in degrees')
@@ -86,7 +87,7 @@ def plot_projections(out_png, imgs):
     for i in range(min(len(imgs),9)):
         axes[i].imshow(imgs[i])
     plt.savefig(out_png)
-
+/
 def mkbasedir(out):
     if not os.path.exists(os.path.dirname(out)):
         os.makedirs(os.path.dirname(out))
@@ -124,27 +125,40 @@ def main(args):
         projector.lattice = projector.lattice.cuda()
         projector.vol = projector.vol.cuda()
 
-    if args.grid:
-        raise NotImplementedError
+    if args.grid is not None:
+        quats = so3_grid.grid_SO3(args.grid)
+        rots = lie_tools.quaternions_to_SO3(torch.tensor(quats))
+        args.N = len(rots)
+        log('Generating {} rotations at resolution level {}'.format(len(rots), args.grid))
+    else:
+        rots = []
     
-    rots = []
     imgs = []
     for mb in range(int(args.N/args.b)):
         log('Projecting {}/{}'.format((mb+1)*args.b, args.N))
-        rot = lie_tools.random_SO3(args.b)
+        if args.grid is not None:
+            rot = rots[mb*args.b:(mb+1)*args.b]
+        else:
+            rot = lie_tools.random_SO3(args.b)
+            rots.append(rot)
         projections = projector.project(rot)
         projections = projections.cpu().numpy()
-        rots.append(rot)
         imgs.append(projections)
     if args.N % args.b:
         log('Projecting {}/{}'.format(args.N, args.N))
-        rot = lie_tools.random_SO3(args.N % args.b)
+        if args.grid is not None:
+            rot = rots[(mb+1)*args.b:]
+        else:
+            rot = lie_tools.random_SO3(args.N % args.b)
+            rots.append(rot)
         projections = projector.project(rot)
         projections = projections.cpu().numpy()
-        rots.append(rot)
         imgs.append(projections)
 
-    rots = np.vstack(rots)
+    if args.grid is not None:
+        rots = rots.cpu().numpy()
+    else:
+        rots = np.vstack(rots)
     imgs = np.vstack(imgs)
     td = time.time()-t1
     log('Projected {} images in {}s ({}s per image)'.format(args.N, td, td/args.N ))

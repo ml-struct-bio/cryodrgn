@@ -32,7 +32,7 @@ def parse_args():
     parser.add_argument('-z', type=np.float32, nargs='*', help='')
     parser.add_argument('-z-start', type=np.float32, nargs='*', help='')
     parser.add_argument('-z-end', type=np.float32, nargs='*', help='')
-    parser.add_argument('-o', type=os.path.abspath, required=True, help='Output MRC')
+    parser.add_argument('-o', type=os.path.abspath, required=True, help='Output MRC or directory')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
 
     group = parser.add_argument_group('Architecture parameters')
@@ -43,6 +43,7 @@ def parse_args():
     group.add_argument('--encode-mode', default='resid', choices=('conv','resid','mlp'), help='Type of encoder network')
     group.add_argument('--players', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--pdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
+    group.add_argument('--tilt', action='store_true', help='Flag if trained with a tilt series')
     return parser
 
 def eval_volume(model, nz, ny, nx, zval, rnorm):
@@ -77,7 +78,8 @@ def main(args):
         torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
     nz, ny, nx = args.dim
-    model = HetVAE(nx, ny, nx*ny, args.qlayers, args.qdim, args.players, args.pdim,
+    in_dim = 2*nx*ny if args.tilt else nx*nt
+    model = HetVAE(nx, ny, in_dim, args.qlayers, args.qdim, args.players, args.pdim,
                 args.zdim, encode_mode=args.encode_mode)
 
     log('Loading weights from {}'.format(args.weights))
@@ -92,7 +94,7 @@ def main(args):
         args.z_start = np.array(args.z_start)
         args.z_end = np.array(args.z_end)
         z = np.repeat(np.arange(10,dtype=np.float32), args.zdim).reshape((10,args.zdim))
-        z *= ((args.z_end - args.z_start)/10.)
+        z *= ((args.z_end - args.z_start)/9.)
         z += args.z_start
         if not os.path.exists(args.o):
             os.makedirs(args.o)

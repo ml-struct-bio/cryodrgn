@@ -174,6 +174,8 @@ def main(args):
             if tilt is not None:
                 yt = torch.from_numpy(particles_tilt[minibatch_i])
                 if use_cuda: yt = yt.cuda()
+            else:
+                yt = None
 
             # predict encoding
             input_ = torch.stack((y, yt),1) if tilt is not None else y

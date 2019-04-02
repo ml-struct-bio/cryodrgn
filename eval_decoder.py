@@ -78,7 +78,7 @@ def main(args):
         torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
     nz, ny, nx = args.dim
-    in_dim = 2*nx*ny if args.tilt else nx*nt
+    in_dim = 2*nx*ny if args.tilt else nx*ny
     model = HetVAE(nx, ny, in_dim, args.qlayers, args.qdim, args.players, args.pdim,
                 args.zdim, encode_mode=args.encode_mode)
 

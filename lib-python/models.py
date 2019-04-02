@@ -93,11 +93,58 @@ class BNBOpt():
         self.base_quat = so3_grid.base_SO3_grid()
         self.base_rot = lie_tools.quaternions_to_SO3(torch.tensor(self.base_quat))
         self.nbase = len(self.base_quat)
+        assert self.nbase == 576, "Base resolution changed?"
         
         if tilt is not None:
             assert tilt.shape == (3,3)
             self.tilt = torch.tensor(tilt)
-        
+
+        # FT is not symmetric around origin
+        assert ny == nx
+        D = ny
+        c = 2/(D-1)*(D/2) -1
+        self.center = torch.tensor([c,c]) # pixel coordinate for img[D/2, D/2]
+
+    def rotate(self, images, theta):
+        '''
+        images: BxYxX
+        theta: Q, in radians
+        '''
+        images = images.expand(len(theta), *images.shape) # QxBxYxX
+        cos = torch.cos(theta)
+        sin = torch.sin(theta)
+        rot = torch.stack([cos, sin, -sin, cos], 1).view(-1, 2, 2)
+        grid = self.lattice[:,0:2] @ rot
+        grid = grid.view(len(rot), self.ny, self.nx, 2) # QxYxXx2
+        offset = self.center - grid[:,int(self.ny/2),int(self.nx/2)] # Qx2
+        grid += offset[:,None,None,:]
+        rotated = F.grid_sample(images, grid) # QxBxYxX
+        return rotated.transpose(0,1) # BxQxYxX
+
+    def eval_base_grid(self, images, images_tilt=None):
+        B = images.size(0)
+        def compute_err(rot, images):
+            y_hat = self.model(self.lattice @ rot) # 1x48xYxX
+            y_hat = y_hat.view(1,1,len(rot),self.ny,self.nx) # 1x1x48xYxX
+    
+            theta = torch.arange(1,12,dtype=torch.float32)*2*np.pi/12 # 11 angles
+            img_rot = self.rotate(images, theta) # Bx11xYxX
+            images = images.unsqueeze(1) # Bx1xYxX
+            images = torch.cat((images, img_rot), 1) # Bx12xYxX
+            images = images.view(B,12,1,self.ny,self.nx) # Bx12x1xYxX
+    
+            err = torch.sum((images-y_hat).pow(2),(-1,-2)) # Bx12x48
+            err = err.transpose(1,2).contiguous() # Bx48x12, since psi's are the fast dimension
+            err = err.view(B,self.nbase) # Bx576
+            return err
+        rot = self.base_rot[::12] # 576/12 = 48 images
+        err = compute_err(rot, images)
+        if images_tilt is not None:
+            err_tilt = compute_err(self.tilt @ rot, images_tilt)
+            err += err_tilt
+        mini = torch.argmin(err,1)
+        return mini.cpu().numpy()
+
     def eval_grid(self, images, rot, NQ, images_tilt=None):
         '''
         images: B x NY x NX 
@@ -124,8 +171,9 @@ class BNBOpt():
         B = images.size(0)
         assert not self.model.training
         with torch.no_grad():
-            min_i = self.eval_grid(images, self.base_rot, self.nbase, 
-                                   images_tilt=images_tilt) # 576 slices
+            #min_i = self.eval_grid(images, self.base_rot, self.nbase,
+            #                          images_tilt=images_tilt)
+            min_i = self.eval_base_grid(images, images_tilt=images_tilt) # 576 slices
             min_quat = self.base_quat[min_i]
             s2i, s1i = so3_grid.get_base_indr(min_i)
             for iter_ in range(1,niter+1):
@@ -153,6 +201,54 @@ class BNBHetOpt():
             assert tilt.shape == (3,3)
             self.tilt = torch.tensor(tilt)
 
+        # FT is not symmetric around origin
+        assert ny == nx
+        D = ny
+        c = 2/(D-1)*(D/2) -1
+        self.center = torch.tensor([c,c]) # pixel coordinate for img[D/2, D/2]
+
+    def rotate(self, images, theta):
+        '''
+        images: BxYxX
+        theta: Q, in radians
+        '''
+        images = images.expand(len(theta), *images.shape) # QxBxYxX
+        cos = torch.cos(theta)
+        sin = torch.sin(theta)
+        rot = torch.stack([cos, sin, -sin, cos], 1).view(-1, 2, 2)
+        grid = self.model.lattice[:,0:2] @ rot
+        grid = grid.view(len(rot), self.ny, self.nx, 2) # QxYxXx2
+        offset = self.center - grid[:,int(self.ny/2),int(self.nx/2)] # Qx2
+        grid += offset[:,None,None,:]
+        rotated = F.grid_sample(images, grid) # QxBxYxX
+        return rotated.transpose(0,1) # BxQxYxX
+
+    def eval_base_grid(self, images, z, images_tilt=None):
+        B = images.size(0)
+        def compute_err(rot, images):
+            lattice_eval = (self.model.lattice @ rot) # 48 x (NxY) x 3
+            lattice_eval = lattice_eval.expand(B,*lattice_eval.shape) # B x 48 x (XxY) x 3
+            y_hat = self.model.decode(lattice_eval, z) # (Bx48)xYxX
+            y_hat = y_hat.view(B,1,len(rot),self.ny,self.nx) # Bx1x48xYxX
+
+            theta = torch.arange(1,12,dtype=torch.float32)*2*np.pi/12 # 11 angles
+            img_rot = self.rotate(images, theta) # Bx11xYxX
+            images = images.unsqueeze(1) # Bx1xYxX
+            images = torch.cat((images, img_rot), 1) # Bx12xYxX
+            images = images.view(B,12,1,self.ny,self.nx) # Bx12x1xYxX
+
+            err = torch.sum((images-y_hat).pow(2),(-1,-2)) # Bx12x48
+            err = err.transpose(1,2).contiguous() # Bx48x12, since psi's are the fast dimension
+            err = err.view(B,self.nbase) # Bx576
+            return err
+        rot = self.base_rot[::12] # 576/12 = 48 images
+        err = compute_err(rot, images)
+        if images_tilt is not None:
+            err_tilt = compute_err(self.tilt @ rot, images_tilt)
+            err += err_tilt
+        mini = torch.argmin(err,1)
+        return mini.cpu().numpy()
+
     def eval_grid(self, images, rot, z, NQ, images_tilt=None):
         B = z.size(0)
         images = images.view(B,1,self.ny,self.nx) # Bx1xYxX
@@ -175,9 +271,10 @@ class BNBHetOpt():
         assert not self.model.training
         with torch.no_grad():
             # expand the base grid B times since each image has a different z
-            base_rot = self.base_rot.expand(B,*self.base_rot.shape) # B x 576 x 3 x 3
-            min_i = self.eval_grid(images, base_rot, z, self.nbase,
-                                   images_tilt=images_tilt) # B x 576 slices
+            #base_rot = self.base_rot.expand(B,*self.base_rot.shape) # B x 576 x 3 x 3
+            #min_i = self.eval_grid(images, base_rot, z, self.nbase,
+            #                       images_tilt=images_tilt) # B x 576 slices
+            min_i = self.eval_base_grid(images, z, images_tilt)
             min_quat = self.base_quat[min_i]
             s2i, s1i = so3_grid.get_base_indr(min_i)
             for iter_ in range(1,niter+1):

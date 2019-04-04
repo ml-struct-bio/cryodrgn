@@ -5,4 +5,5 @@ python ../backproject_hartley.py data/toy_projections.mrcs data/toy_angles.pkl -
 python ../vae_rot.py  data/toy_projections.mrcs -o output/toy_recon_vae --lr .0001 
 python ../vae_rot.py  data/aic_projections_small.mrc -o output/aic_projections --lr .0001 -n 10
 
-python ../bnb_rot.py data/toy_projections.mrcs -o output/toy_recon_bnb
+python ../bnb_rot.py data/toy_projections.mrcs -o output/toy_recon_bnb --seed 0
++python ../bnb_rot.py data/hand_projections.mrcs --load /red/zhonge/cryoem/vae3d/07_tilt/06_bnb/1/weights.pkl -o output/hand_bnb -n 11 --seed 82717

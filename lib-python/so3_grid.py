@@ -37,9 +37,9 @@ def hopf_to_quat(theta, phi, psi):
 def grid_SO3(resol):
     theta, phi = grid_s2(resol)
     psi = grid_s1(resol)
-    quat = hopf_to_quat(np.repeat(theta,len(psi)),
-                        np.repeat(phi,len(psi)),
-                        np.tile(psi,len(theta)))
+    quat = hopf_to_quat(np.repeat(theta,len(psi)), # repeats each element by len(psi)
+                        np.repeat(phi,len(psi)), # tiles the array len(theta) times
+                        np.tile(psi,len(theta))) # tiles the array len(theta) times
     return quat #hmm convert to rot matrix?
 
 def base_SO3_grid():

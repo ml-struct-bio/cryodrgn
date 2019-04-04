@@ -47,6 +47,7 @@ class HetVAE(nn.Module):
         else:
             raise RuntimeError('Encoder mode {} not recognized'.format(encode_mode))
         self.decoder = FTSliceDecoder(3+z_dim, nx, decode_layers, 
+        #self.decoder = ResidLinearDecoder(3+z_dim, 1, decode_layers, 
                             decode_dim, 
                             nn.ReLU) #R3 -> R1
         
@@ -105,6 +106,13 @@ class BNBOpt():
         c = 2/(D-1)*(D/2) -1
         self.center = torch.tensor([c,c]) # pixel coordinate for img[D/2, D/2]
 
+        L = min(int(nx/4),12)
+        b, e = int(nx/2-L), int(nx/2+L)
+        center_lattice = self.lattice.view(ny,nx,3)[b:e,b:e,:].contiguous().view(-1,3)
+        self.L = L
+        self.center_slice = (b,e)
+        self.center_lattice = center_lattice
+
     def rotate(self, images, theta):
         '''
         images: BxYxX
@@ -123,24 +131,32 @@ class BNBOpt():
 
     def eval_base_grid(self, images, images_tilt=None):
         B = images.size(0)
-        def compute_err(rot, images):
-            y_hat = self.model(self.lattice @ rot) # 1x48xYxX
-            y_hat = y_hat.view(1,1,len(rot),self.ny,self.nx) # 1x1x48xYxX
+        b,e = self.center_slice
+        def compute_err(rot, rot_center, images):
+            lattice_eval = self.lattice @ rot # 48 x (Y*X) x 3
+            center_lattice_eval = self.center_lattice @ rot_center # 48x11x(L*L)x3
+            center_lattice_eval = center_lattice_eval.view(-1,3)
+            y_hat = self.model(torch.cat((lattice_eval.view(-1,3),center_lattice_eval),0))
+            y_hat_center = y_hat[-self.L**2*4*528:].view(1, 48, 11, 2*self.L, 2*self.L) # 1x 48 x 11 x L x L
+            y_hat = y_hat[:-self.L**2*4*528].view(1,48,1,self.ny,self.nx) # 1x48x1xYxX
     
             theta = torch.arange(1,12,dtype=torch.float32)*2*np.pi/12 # 11 angles
             img_rot = self.rotate(images, theta) # Bx11xYxX
             images = images.unsqueeze(1) # Bx1xYxX
             images = torch.cat((images, img_rot), 1) # Bx12xYxX
-            images = images.view(B,12,1,self.ny,self.nx) # Bx12x1xYxX
-    
-            err = torch.sum((images-y_hat).pow(2),(-1,-2)) # Bx12x48
-            err = err.transpose(1,2).contiguous() # Bx48x12, since psi's are the fast dimension
+            images = images.view(B,1,12,self.ny,self.nx) # Bx1x12xYxX
+            err = torch.sum((images-y_hat).pow(2),(-1,-2)) # Bx48x12
+            center_err_rot = torch.sum((images[:,:,1:,b:e,b:e]-y_hat[...,b:e,b:e]).pow(2),(-1,-2)) # Bx48x11
+            center_err = torch.sum((images[:,:,0:1,b:e,b:e]-y_hat_center).pow(2),(-1,-2)) # Bx48x11
+            err[:,:,1:] += (center_err-center_err_rot)
             err = err.view(B,self.nbase) # Bx576
             return err
-        rot = self.base_rot[::12] # 576/12 = 48 images
-        err = compute_err(rot, images)
+        base_rot = self.base_rot.view(48,12,3,3)
+        rot = base_rot[:,0,...] 
+        rot_center = base_rot[:,1:,...]
+        err = compute_err(rot, rot_center, images)
         if images_tilt is not None:
-            err_tilt = compute_err(self.tilt @ rot, images_tilt)
+            err_tilt = compute_err(self.tilt @ rot, self.tilt @ rot_center, images_tilt)
             err += err_tilt
         mini = torch.argmin(err,1)
         return mini.cpu().numpy()
@@ -171,8 +187,9 @@ class BNBOpt():
         B = images.size(0)
         assert not self.model.training
         with torch.no_grad():
-            #min_i = self.eval_grid(images, self.base_rot, self.nbase,
+            #min_i2 = self.eval_grid(images, self.base_rot, self.nbase,
             #                          images_tilt=images_tilt)
+        
             min_i = self.eval_base_grid(images, images_tilt=images_tilt) # 576 slices
             min_quat = self.base_quat[min_i]
             s2i, s1i = so3_grid.get_base_indr(min_i)

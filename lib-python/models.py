@@ -187,10 +187,9 @@ class BNBOpt():
         B = images.size(0)
         assert not self.model.training
         with torch.no_grad():
-            #min_i2 = self.eval_grid(images, self.base_rot, self.nbase,
-            #                          images_tilt=images_tilt)
-        
-            min_i = self.eval_base_grid(images, images_tilt=images_tilt) # 576 slices
+            min_i = self.eval_grid(images, self.base_rot, self.nbase,
+                                      images_tilt=images_tilt)
+            #min_i = self.eval_base_grid(images, images_tilt=images_tilt) # 576 slices
             min_quat = self.base_quat[min_i]
             s2i, s1i = so3_grid.get_base_indr(min_i)
             for iter_ in range(1,niter+1):
@@ -288,10 +287,10 @@ class BNBHetOpt():
         assert not self.model.training
         with torch.no_grad():
             # expand the base grid B times since each image has a different z
-            #base_rot = self.base_rot.expand(B,*self.base_rot.shape) # B x 576 x 3 x 3
-            #min_i = self.eval_grid(images, base_rot, z, self.nbase,
-            #                       images_tilt=images_tilt) # B x 576 slices
-            min_i = self.eval_base_grid(images, z, images_tilt)
+            base_rot = self.base_rot.expand(B,*self.base_rot.shape) # B x 576 x 3 x 3
+            min_i = self.eval_grid(images, base_rot, z, self.nbase,
+                                   images_tilt=images_tilt) # B x 576 slices
+            #min_i = self.eval_base_grid(images, z, images_tilt)
             min_quat = self.base_quat[min_i]
             s2i, s1i = so3_grid.get_base_indr(min_i)
             for iter_ in range(1,niter+1):

@@ -48,6 +48,9 @@ def parse_args():
     group.add_argument('--beta-control', type=float, help='KL-Controlled VAE gamma. Beta is KL target. (default: %(default)s)')
     group.add_argument('--equivariance', type=float, help='Strength of equivariance loss (default: %(default)s)')
     group.add_argument('--equivariance-end-it', type=int, default=100000, help='It at which equivariance max (default: %(default)s)')
+    group.add_argument('--l-start', type=int,default=12, help='Starting L radius (default: %(default)s)')
+    group.add_argument('--l-end', type=int, default=20, help='End L radius (default: %(default)s)')
+    group.add_argument('--l-end-it',type=int,default=50000, help='default: %(default)s')
 
     group = parser.add_argument_group('Encoder Network')
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
@@ -74,8 +77,9 @@ def eval_volume(model, nz, ny, nx, zval, rnorm):
                                                    dtype=model.lattice.dtype)
         x = torch.cat((x,z),dim=-1)
         with torch.no_grad():
-            y = model.decoder.decode(x)
-            y = y[...,0] - y[...,1]
+            #y = model.decoder.decode(x)
+            #y = y[...,0] - y[...,1]
+            y = model.decoder(x)
             y = y.view(ny, nx).cpu().numpy()
         vol_f[i] = y
     vol = fft.ihtn_center(vol_f*rnorm[1]+rnorm[0])
@@ -155,6 +159,8 @@ def main(args):
     else:
         start_epoch = 0
 
+    Lsched = LinearSchedule(args.l_start,args.l_end,0,args.l_end_it)
+
     # training loop
     num_epochs = args.num_epochs
     for epoch in range(start_epoch, num_epochs):
@@ -190,8 +196,12 @@ def main(args):
                 lamb, eq_loss = 0, 0 
 
             # find the optimal orientation for each image
+            if args.l_start == -1:
+                L = None
+            else:
+                L = int(Lsched(global_it))
             model.eval()
-            rot = bnb.opt_theta(y, z, yt)
+            rot = bnb.opt_theta(y, z, yt, L=L)
             model.train()
 
             # train the decoder

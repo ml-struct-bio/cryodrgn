@@ -20,6 +20,7 @@ import fft
 import lie_tools
 from models import BNBOpt, FTSliceDecoder, ResidLinearDecoder
 from losses import EquivarianceLoss
+from beta_schedule import LinearSchedule
 
 log = utils.log
 vlog = utils.vlog
@@ -43,6 +44,9 @@ def parse_args():
     group.add_argument('-b','--batch-size', type=int, default=100, help='Minibatch size (default: %(default)s)')
     group.add_argument('--wd', type=float, default=0, help='Weight decay in Adam optimizer (default: %(default)s)')
     group.add_argument('--lr', type=float, default=1e-3, help='Learning rate in Adam optimizer (default: %(default)s)')
+    group.add_argument('--l-start', type=int,default=12, help='Starting L radius (default: %(default)s)')
+    group.add_argument('--l-end', type=int, default=20, help='End L radius (default: %(default)s)')
+    group.add_argument('--l-end-it',type=int,default=50000, help='default: %(default)s')
 
     group = parser.add_argument_group('Network Architecture')
     group.add_argument('--layers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
@@ -58,9 +62,9 @@ def eval_volume(model, bnb, nz, ny, nx, rnorm):
     for i, z in enumerate(np.linspace(-1,1,nz,endpoint=False)):
         x = bnb.lattice + torch.tensor([0,0,z])
         with torch.no_grad():
-            y = model.decode(x)
-            y = y[...,0] - y[...,1]
-            #y = model(x)
+            #y = model.decode(x)
+            #y = y[...,0] - y[...,1]
+            y = model(x)
             y = y.view(ny, nx).cpu().numpy()
         vol_f[i] = y*rnorm[1]+rnorm[0]
     vol = fft.ihtn_center(vol_f)
@@ -110,8 +114,8 @@ def main(args):
     else:
         tilt = None
 
-    model = FTSliceDecoder(3, nx, args.layers, args.dim, nn.ReLU)
-    #model = ResidLinearDecoder(3, 1, args.layers, args.dim, nn.ReLU)
+    #model = FTSliceDecoder(3, nx, args.layers, args.dim, nn.ReLU)
+    model = ResidLinearDecoder(3, 1, args.layers, args.dim, nn.ReLU)
 
     bnb = BNBOpt(model,ny,nx,tilt)
 
@@ -127,6 +131,8 @@ def main(args):
     else:
         start_epoch = 0
 
+    Lsched = LinearSchedule(args.l_start,args.l_end,0,args.l_end_it)
+
     # training loop
     num_epochs = args.num_epochs
     for epoch in range(start_epoch, num_epochs):
@@ -137,15 +143,20 @@ def main(args):
             batch_it += len(minibatch_i)
             global_it = Nimg*epoch + batch_it
 
-            # find the optimal orientation for each image
             y = torch.from_numpy(particles[minibatch_i])
             if use_cuda: y = y.cuda()
             if tilt is not None:
                 yt = torch.from_numpy(particles_tilt[minibatch_i])
                 if use_cuda: yt = yt.cuda()
             else: yt=None
+
+            # find the optimal orientation for each image
+            if args.l_start == -1:
+                L = None
+            else:
+                L = int(Lsched(global_it))
             model.eval()
-            rot = bnb.opt_theta(y,yt)
+            rot = bnb.opt_theta(y,yt,L=L)
             model.train()
 
             # train the decoder

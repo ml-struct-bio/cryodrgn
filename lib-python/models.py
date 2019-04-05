@@ -277,10 +277,20 @@ class FTSliceDecoder(nn.Module):
         self.D = D
         self.D2 = D2
 
+    def forward_symmetric(self, lattice, c):
+        '''
+        lattice: -1 x (2*c+1) x 3+zdim
+        c: index of center pixel
+        '''
+        image = torch.empty(lattice.shape[:-1]) 
+        top_half = self.decode(lattice[...,0:c+1,:])
+        image[..., 0:c+1] = top_half[...,0] - top_half[...,1] # hartley transform
+        # the bottom half of the image is the complex conjugate of the top half
+        image[...,c+1:] = (top_half[...,0] + top_half[...,1])[::-1][1:]
+        return image
+
     def forward(self, lattice):
         '''Call forward on central slices only'''
-        #assert lattice.shape[-2:] == (self.D**2,3)
-        #assert torch.nonzero(lattice[...,self.center,:]).size(0) == 0
         image = torch.empty(lattice.shape[:-1])
         top_half = self.decode(lattice[...,self.all_eval,:])
         image[..., self.all_eval] = top_half[...,0] - top_half[...,1] # hartley transform

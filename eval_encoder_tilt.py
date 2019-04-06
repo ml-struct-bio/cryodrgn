@@ -19,7 +19,7 @@ import mrc
 import utils
 import fft
 import lie_tools
-from models import BNBHetOpt, HetVAE
+from models import BNBHetOpt, HetVAE, Lattice
 
 log = utils.log
 vlog = utils.vlog
@@ -87,7 +87,8 @@ def main(args):
         particles_tilt = particles_tilt[:args.N]
         Nimg = args.N
 
-    model = HetVAE(nx, ny, 2*ny*nx, args.qlayers, args.qdim, args.players, args.pdim,
+    lattice = Lattice(nx)
+    model = HetVAE(lattice, 2*ny*nx, args.qlayers, args.qdim, args.players, args.pdim,
                 args.zdim, encode_mode=args.encode_mode)
 
     log('Loading weights from {}'.format(args.weights))

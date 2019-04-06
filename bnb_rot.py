@@ -46,7 +46,7 @@ def parse_args():
     group.add_argument('--lr', type=float, default=1e-3, help='Learning rate in Adam optimizer (default: %(default)s)')
     group.add_argument('--l-start', type=int,default=12, help='Starting L radius (default: %(default)s)')
     group.add_argument('--l-end', type=int, default=20, help='End L radius (default: %(default)s)')
-    group.add_argument('--l-end-it',type=int,default=50000, help='default: %(default)s')
+    group.add_argument('--l-end-it',type=int,default=100000, help='default: %(default)s')
 
     group = parser.add_argument_group('Network Architecture')
     group.add_argument('--layers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
@@ -159,7 +159,8 @@ def main(args):
             L = Lsched(global_it)
             if L: L = int(L)
             model.eval()
-            rot = bnb.opt_theta(y,L,yt)
+            with torch.no_grad():
+                rot = bnb.opt_theta(y,L,yt)
             model.train()
 
             # train the decoder

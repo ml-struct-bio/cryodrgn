@@ -8,10 +8,10 @@ import pickle
 from datetime import datetime as dt
 
 import torch
+#torch.backends.cudnn.enabled=False
+#torch.backends.cudnn.benchmark = True
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.autograd import Variable
-from torch.distributions import Normal
 
 sys.path.insert(0,os.path.abspath(os.path.dirname(__file__))+'/lib-python')
 import mrc
@@ -50,7 +50,7 @@ def parse_args():
     group.add_argument('--equivariance-end-it', type=int, default=100000, help='It at which equivariance max (default: %(default)s)')
     group.add_argument('--l-start', type=int,default=12, help='Starting L radius (default: %(default)s)')
     group.add_argument('--l-end', type=int, default=20, help='End L radius (default: %(default)s)')
-    group.add_argument('--l-end-it',type=int,default=50000, help='default: %(default)s')
+    group.add_argument('--l-end-it',type=int,default=100000, help='default: %(default)s')
 
     group = parser.add_argument_group('Encoder Network')
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
@@ -133,6 +133,7 @@ def main(args):
         tilt = np.array([[1.,0.,0.],
                         [0, np.cos(theta), -np.sin(theta)],
                         [0, np.sin(theta), np.cos(theta)]]).astype(np.float32)
+        tilt = torch.tensor(tilt)
         in_dim = 2*nx*ny
     else:
         tilt = None
@@ -203,7 +204,8 @@ def main(args):
             L = Lsched(global_it)
             if L: L = int(L)
             model.eval()
-            rot = bnb.opt_theta(y, z, yt, L=L)
+            with torch.no_grad():
+                rot = bnb.opt_theta(y, z, yt, L=L)
             model.train()
 
             # train the decoder
@@ -231,6 +233,7 @@ def main(args):
                 log(logvar[0])
                 raise RuntimeError('KLD is nan')
 
+
             loss.backward()
             optim.step()
             optim.zero_grad()
@@ -247,6 +250,7 @@ def main(args):
                 log('# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.4f}, kld={:.4f}, beta={:.4f}, {}loss={:.4f}'.format(epoch+1, num_epochs, batch_it, Nimg, gen_loss.item(), kld.item(), beta, eq_log, loss.item()))
         eq_log = 'equivariance = {:.4f}, '.format(eq_loss_accum/Nimg) if args.equivariance else ''
         log('# =====> Epoch: {} Average gen loss = {:.4}, KLD = {:.4f}, {}total loss = {:.4f}'.format(epoch+1, gen_loss_accum/Nimg, kld_accum/Nimg, eq_log, loss_accum/Nimg))
+
 
         if args.checkpoint and epoch % args.checkpoint == 0:
             model.eval()

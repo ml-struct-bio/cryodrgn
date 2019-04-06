@@ -18,7 +18,7 @@ import mrc
 import utils
 import fft
 import lie_tools
-from models import BNBHetOpt, HetVAE
+from models import BNBHetOpt, HetVAE, Lattice
 from beta_schedule import get_beta_schedule, LinearSchedule
 from losses import EquivarianceLoss
 
@@ -63,24 +63,23 @@ def parse_args():
     group.add_argument('--pdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
     return parser
 
-def eval_volume(model, nz, ny, nx, zval, rnorm):
+def eval_volume(model, lattice, D, zval, rnorm):
     '''Evaluate the model on a nz x ny x nx lattice'''
     zdim = len(zval)
-    z = torch.zeros(nx*ny,zdim,device=model.lattice.device, dtype=model.lattice.dtype)
-    z += torch.Tensor(zval).to(model.lattice.device)
+    z = torch.zeros(D**2,zdim, dtype=torch.float32)
+    z += torch.tensor(zval)
 
-    vol_f = np.zeros((nz,ny,nx),dtype=complex)
+    vol_f = np.zeros((D,D,D),dtype=np.float32)
     assert not model.training
     # evaluate the volume by zslice to avoid memory overflows
-    for i, dz in enumerate(np.linspace(-1,1,nz,endpoint=False)):
-        x = model.lattice + torch.tensor([0,0,dz], device=model.lattice.device, 
-                                                   dtype=model.lattice.dtype)
+    for i, dz in enumerate(np.linspace(-1,1,D,endpoint=False)):
+        x = lattice.coords + torch.tensor([0,0,dz], dtype=torch.float32)
         x = torch.cat((x,z),dim=-1)
         with torch.no_grad():
-            #y = model.decoder.decode(x)
-            #y = y[...,0] - y[...,1]
-            y = model.decoder(x)
-            y = y.view(ny, nx).cpu().numpy()
+            y = model.decoder.decode(x)
+            y = y[...,0] - y[...,1]
+            #y = model.decoder(x)
+            y = y.view(D,D).cpu().numpy()
         vol_f[i] = y
     vol = fft.ihtn_center(vol_f*rnorm[1]+rnorm[0])
     return vol, vol_f
@@ -111,6 +110,7 @@ def main(args):
     # load the particles
     particles, _, _ = mrc.parse_mrc(args.particles)
     Nimg, ny, nx = particles.shape
+    assert ny == nx
     nz = max(nx,ny)
     log('Loaded {} {}x{} images'.format(Nimg, ny, nx))
     particles = np.asarray([fft.ht2_center(img).astype(np.float32) for img in particles])
@@ -138,9 +138,10 @@ def main(args):
         tilt = None
         in_dim = nx*ny
 
-    model = HetVAE(nx, ny, in_dim, args.qlayers, args.qdim, args.players, args.pdim,
+    lattice = Lattice(nx)
+    model = HetVAE(lattice, in_dim, args.qlayers, args.qdim, args.players, args.pdim,
                 args.zdim, encode_mode=args.encode_mode)
-    bnb = BNBHetOpt(model, ny, nx, tilt)
+    bnb = BNBHetOpt(model, lattice, tilt)
 
     if args.equivariance:
         assert args.equivariance > 0, 'Regularization weight must be positive'
@@ -159,7 +160,10 @@ def main(args):
     else:
         start_epoch = 0
 
-    Lsched = LinearSchedule(args.l_start,args.l_end,0,args.l_end_it)
+    if args.l_start == -1:
+        Lsched = lambda x: None
+    else:
+        Lsched = LinearSchedule(args.l_start,args.l_end,0,args.l_end_it)
 
     # training loop
     num_epochs = args.num_epochs
@@ -196,10 +200,8 @@ def main(args):
                 lamb, eq_loss = 0, 0 
 
             # find the optimal orientation for each image
-            if args.l_start == -1:
-                L = None
-            else:
-                L = int(Lsched(global_it))
+            L = Lsched(global_it)
+            if L: L = int(L)
             model.eval()
             rot = bnb.opt_theta(y, z, yt, L=L)
             model.train()
@@ -248,10 +250,11 @@ def main(args):
 
         if args.checkpoint and epoch % args.checkpoint == 0:
             model.eval()
-            vol, vol_f = eval_volume(model, nz, ny, nx, z_accum/Nimg, rnorm)
+            vol, vol_f = eval_volume(model, lattice, nx, z_accum/Nimg, rnorm)
             mrc.write('{}/reconstruct.{}.mrc'.format(args.outdir,epoch), vol.astype(np.float32))
             path = '{}/weights.{}.pkl'.format(args.outdir,epoch)
             torch.save({
+                'norm':rnorm,
                 'epoch':epoch,
                 'model_state_dict':model.state_dict(),
                 'optimizer_state_dict':optim.state_dict(),
@@ -260,10 +263,11 @@ def main(args):
 
     ## save model weights and evaluate the model on 3D lattice
     model.eval()
-    vol, vol_f = eval_volume(model, nz, ny, nx, z_accum/Nimg, rnorm)
+    vol, vol_f = eval_volume(model, lattice, nx, z_accum/Nimg, rnorm)
     mrc.write('{}/reconstruct.mrc'.format(args.outdir), vol.astype(np.float32))
     path = '{}/weights.pkl'.format(args.outdir)
     torch.save({
+        'norm':rnorm,
         'epoch':epoch,
         'model_state_dict':model.state_dict(),
         'optimizer_state_dict':optim.state_dict(),

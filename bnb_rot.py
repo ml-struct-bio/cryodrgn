@@ -18,7 +18,7 @@ import mrc
 import utils
 import fft
 import lie_tools
-from models import BNBOpt, FTSliceDecoder, ResidLinearDecoder
+from models import Lattice, BNBOpt, FTSliceDecoder, ResidLinearDecoder
 from losses import EquivarianceLoss
 from beta_schedule import LinearSchedule
 
@@ -54,20 +54,20 @@ def parse_args():
 
     return parser
 
-def eval_volume(model, bnb, nz, ny, nx, rnorm):
+def eval_volume(model, lattice, D, rnorm):
     '''Evaluate the model on a nz x ny x nx lattice'''
-    vol_f = np.zeros((nz,ny,nx),dtype=complex)
+    vol_f = np.zeros((D,D,D),dtype=np.float32)
     assert not model.training
     # evaluate the volume by zslice to avoid memory overflows
-    for i, z in enumerate(np.linspace(-1,1,nz,endpoint=False)):
-        x = bnb.lattice + torch.tensor([0,0,z])
+    for i, z in enumerate(np.linspace(-1,1,D,endpoint=False)):
+        x = lattice.coords + torch.tensor([0,0,z])
         with torch.no_grad():
-            #y = model.decode(x)
-            #y = y[...,0] - y[...,1]
-            y = model(x)
-            y = y.view(ny, nx).cpu().numpy()
-        vol_f[i] = y*rnorm[1]+rnorm[0]
-    vol = fft.ihtn_center(vol_f)
+            y = model.decode(x)
+            y = y[...,0] - y[...,1]
+            #y = model(x)
+            y = y.view(D,D).cpu().numpy()
+        vol_f[i] = y
+    vol = fft.ihtn_center(vol_f*rnorm[1]+rnorm[0])
     return vol, vol_f
 
 def main(args):
@@ -89,6 +89,7 @@ def main(args):
     # load the particles
     particles, _, _ = mrc.parse_mrc(args.particles)
     Nimg, ny, nx = particles.shape
+    assert nx == ny
     nz = max(nx,ny)
     log('Loaded {} {}x{} images'.format(Nimg, ny, nx))
     particles = np.asarray([fft.ht2_center(img).astype(np.float32) for img in particles])
@@ -111,13 +112,14 @@ def main(args):
         tilt = np.array([[1.,0.,0.],
                         [0, np.cos(theta), -np.sin(theta)],
                         [0, np.sin(theta), np.cos(theta)]]).astype(np.float32)
+        tilt = torch.tensor(tilt)
     else:
         tilt = None
 
-    #model = FTSliceDecoder(3, nx, args.layers, args.dim, nn.ReLU)
-    model = ResidLinearDecoder(3, 1, args.layers, args.dim, nn.ReLU)
-
-    bnb = BNBOpt(model,ny,nx,tilt)
+    lattice = Lattice(nx)
+    model = FTSliceDecoder(3, nx, args.layers, args.dim, nn.ReLU)
+    #model = ResidLinearDecoder(3, 1, args.layers, args.dim, nn.ReLU)
+    bnb = BNBOpt(model, lattice, tilt)
 
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
@@ -131,7 +133,10 @@ def main(args):
     else:
         start_epoch = 0
 
-    Lsched = LinearSchedule(args.l_start,args.l_end,0,args.l_end_it)
+    if args.l_start == -1:
+        Lsched = lambda x: None
+    else:
+        Lsched = LinearSchedule(args.l_start,args.l_end,0,args.l_end_it)
 
     # training loop
     num_epochs = args.num_epochs
@@ -151,21 +156,19 @@ def main(args):
             else: yt=None
 
             # find the optimal orientation for each image
-            if args.l_start == -1:
-                L = None
-            else:
-                L = int(Lsched(global_it))
+            L = Lsched(global_it)
+            if L: L = int(L)
             model.eval()
-            rot = bnb.opt_theta(y,yt,L=L)
+            rot = bnb.opt_theta(y,L,yt)
             model.train()
 
             # train the decoder
-            y_recon = model(bnb.lattice @ rot)
+            y_recon = model(lattice @ rot)
             y_recon = y_recon.view(-1, ny, nx)
             loss = F.mse_loss(y_recon,y)
 
             if tilt is not None:
-                y_recon_tilt = model(bnb.lattice @ bnb.tilt @ rot)
+                y_recon_tilt = model(lattice @ tilt @ rot)
                 y_recon_tilt = y_recon_tilt.view(-1, ny, nx)
                 loss = .5*loss + .5*F.mse_loss(y_recon_tilt,yt)
 
@@ -182,10 +185,11 @@ def main(args):
 
         if args.checkpoint and epoch % args.checkpoint == 0:
             model.eval()
-            vol, vol_f = eval_volume(model, bnb, nz, ny, nx, rnorm)
+            vol, vol_f = eval_volume(model, lattice, nx, rnorm)
             mrc.write('{}/reconstruct.{}.mrc'.format(args.outdir,epoch), vol.astype(np.float32))
             path = '{}/weights.{}.pkl'.format(args.outdir,epoch)
             torch.save({
+                'norm': rnorm,
                 'epoch':epoch,
                 'model_state_dict':model.state_dict(),
                 'optimizer_state_dict':optim.state_dict(),
@@ -194,10 +198,11 @@ def main(args):
 
     ## save model weights and evaluate the model on 3D lattice
     model.eval()
-    vol, vol_f = eval_volume(model, bnb, nz, ny, nx, rnorm)
+    vol, vol_f = eval_volume(model, lattice, nx, rnorm)
     mrc.write('{}/reconstruct.mrc'.format(args.outdir), vol.astype(np.float32))
     path = '{}/weights.pkl'.format(args.outdir)
     torch.save({
+        'norm': rnorm,
         'epoch':epoch,
         'model_state_dict':model.state_dict(),
         'optimizer_state_dict':optim.state_dict(),

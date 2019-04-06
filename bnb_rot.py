@@ -163,7 +163,7 @@ def main(args):
             model.train()
 
             # train the decoder
-            y_recon = model(lattice @ rot)
+            y_recon = model(lattice.coords @ rot)
             y_recon = y_recon.view(-1, ny, nx)
             loss = F.mse_loss(y_recon,y)
 

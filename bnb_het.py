@@ -67,7 +67,7 @@ def eval_volume(model, lattice, D, zval, rnorm):
     '''Evaluate the model on a nz x ny x nx lattice'''
     zdim = len(zval)
     z = torch.zeros(D**2,zdim, dtype=torch.float32)
-    z += torch.tensor(zval)
+    z += torch.tensor(zval, dtype=torch.float32)
 
     vol_f = np.zeros((D,D,D),dtype=np.float32)
     assert not model.training

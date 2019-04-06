@@ -169,7 +169,7 @@ def main(args):
             loss = F.mse_loss(y_recon,y)
 
             if tilt is not None:
-                y_recon_tilt = model(lattice @ tilt @ rot)
+                y_recon_tilt = model(lattice.coords @ tilt @ rot)
                 y_recon_tilt = y_recon_tilt.view(-1, ny, nx)
                 loss = .5*loss + .5*F.mse_loss(y_recon_tilt,yt)
 

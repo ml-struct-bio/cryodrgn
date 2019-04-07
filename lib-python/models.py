@@ -72,6 +72,12 @@ class HetVAE(nn.Module):
                             encode_dim, # hidden_dim
                             z_dim*2, # out_dim
                             nn.ReLU) #in_dim -> hidden_dim
+        elif encode_mode == 'tilt':
+            self.encoder = TiltEncoder(in_dim,
+                            encode_layers,
+                            encode_dim,
+                            z_dim*2,
+                            nn.ReLU)
         else:
             raise RuntimeError('Encoder mode {} not recognized'.format(encode_mode))
         #self.decoder = ResidLinearDecoder(3+z_dim, 1, decode_layers, 
@@ -297,6 +303,20 @@ class ResidLinearDecoder(nn.Module):
 
     def forward(self, x):
         return self.main(x)
+
+class TiltEncoder(nn.Module):
+    def __init__(self, in_dim, nlayers, hidden_dim, out_dim, activation):
+        super(TiltEncoder, self).__init__()
+        assert nlayers > 2
+        self.encoder1 = ResidLinearEncoder(in_dim, nlayers-2, hidden_dim, hidden_dim, activation)
+        self.encoder2 = ResidLinearEncoder(hidden_dim*2, 2, hidden_dim, out_dim, activation)
+
+    def forward(self, img):
+        x, x_tilt = img
+        x_enc = self.encoder1(x)
+        x_tilt_enc = self.encoder1(x_tilt)
+        z = self.encoder2(torch.cat((x_enc,x_tilt_enc),-1))
+        return z
 
 class ResidLinearEncoder(nn.Module):
     def __init__(self, in_dim, nlayers, hidden_dim, out_dim, activation):

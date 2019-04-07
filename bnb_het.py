@@ -55,7 +55,7 @@ def parse_args():
     group = parser.add_argument_group('Encoder Network')
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--qdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
-    group.add_argument('--encode-mode', default='resid', choices=('conv','resid','mlp'), help='Type of encoder network (default: %(default)s)')
+    group.add_argument('--encode-mode', default='resid', choices=('conv','resid','mlp','tilt'), help='Type of encoder network (default: %(default)s)')
     group.add_argument('--zdim', type=int, default=1, help='Dimension of latent variable')
 
     group = parser.add_argument_group('Decoder Network')
@@ -134,13 +134,12 @@ def main(args):
                         [0, np.cos(theta), -np.sin(theta)],
                         [0, np.sin(theta), np.cos(theta)]]).astype(np.float32)
         tilt = torch.tensor(tilt)
-        in_dim = 2*nx*ny
+        assert args.encode_mode == 'tilt'
     else:
         tilt = None
-        in_dim = nx*ny
 
     lattice = Lattice(nx)
-    model = HetVAE(lattice, in_dim, args.qlayers, args.qdim, args.players, args.pdim,
+    model = HetVAE(lattice, nx*ny, args.qlayers, args.qdim, args.players, args.pdim,
                 args.zdim, encode_mode=args.encode_mode)
     bnb = BNBHetOpt(model, lattice, tilt)
 
@@ -176,6 +175,7 @@ def main(args):
         batch_it = 0 
         num_batches = np.ceil(Nimg / args.batch_size).astype(int)
         z_accum = np.zeros(args.zdim)
+        bnb_result = []
         for minibatch_i in np.array_split(np.random.permutation(Nimg),num_batches):
             batch_it += len(minibatch_i)
             global_it = Nimg*epoch + batch_it
@@ -189,7 +189,8 @@ def main(args):
                 yt = None
 
             # predict encoding
-            input_ = torch.stack((y, yt),1) if tilt is not None else y
+            #input_ = torch.stack((y, yt),1) if tilt is not None else y
+            input_ = (y,yt) if tilt is not None else y
             mu, logvar = model.encode(input_)
             z = model.reparameterize(mu, logvar)
 
@@ -239,6 +240,7 @@ def main(args):
             optim.zero_grad()
             
             # logging
+            bnb_result.append((minibatch_i,rot.detach().cpu().numpy()))
             z_accum += mu.detach().cpu().numpy().mean()*len(minibatch_i)
             kld_accum += kld.item()*len(minibatch_i)
             gen_loss_accum += gen_loss.item()*len(minibatch_i)
@@ -262,6 +264,7 @@ def main(args):
                 'epoch':epoch,
                 'model_state_dict':model.state_dict(),
                 'optimizer_state_dict':optim.state_dict(),
+                'bnb_result':bnb_result
                 }, path)
             model.train()
 
@@ -275,6 +278,7 @@ def main(args):
         'epoch':epoch,
         'model_state_dict':model.state_dict(),
         'optimizer_state_dict':optim.state_dict(),
+        'bnb_result':bnb_result
         }, path)
     
     td = dt.now()-t1

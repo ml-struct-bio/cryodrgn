@@ -39,7 +39,7 @@ def parse_args():
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--qdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
     group.add_argument('--zdim', type=int, default=1, help='Dimension of latent variable')
-    group.add_argument('--encode-mode', default='resid', choices=('conv','resid','mlp'), help='Type of encoder network')
+    group.add_argument('--encode-mode', default='resid', choices=('conv','resid','mlp','tilt'), help='Type of encoder network')
     group.add_argument('--players', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--pdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
     return parser
@@ -88,7 +88,7 @@ def main(args):
         Nimg = args.N
 
     lattice = Lattice(nx)
-    model = HetVAE(lattice, 2*ny*nx, args.qlayers, args.qdim, args.players, args.pdim,
+    model = HetVAE(lattice, ny*nx, args.qlayers, args.qdim, args.players, args.pdim,
                 args.zdim, encode_mode=args.encode_mode)
 
     log('Loading weights from {}'.format(args.weights))
@@ -108,7 +108,7 @@ def main(args):
         if use_cuda: 
             y = y.cuda()
             yt = yt.cuda()
-        mu, logvar = model.encode(torch.stack((y,yt),1))
+        mu, logvar = model.encode((y,yt))
 
         z_all.append(mu.detach().cpu().numpy())
 

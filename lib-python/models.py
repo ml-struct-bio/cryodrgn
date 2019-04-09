@@ -132,7 +132,7 @@ class HetVAE(nn.Module):
         y_hat = self.decoder(self.cat_z(x,z))
         return y_hat
 
-class BNBOpt:
+class BNNBHomo:
     '''Branch and no bound for homogeneous reconstruction'''
     def __init__(self, decoder, lattice, tilt=None):
         self.decoder = decoder
@@ -191,7 +191,7 @@ class BNBOpt:
                 min_quat = quat[np.arange(B),min_i]
         return lie_tools.quaternions_to_SO3(torch.tensor(min_quat))
 
-class BNBHetOpt:
+class BNNBHet:
     def __init__(self, model, lattice, tilt=None):
         self.model = model
         self.lattice = lattice

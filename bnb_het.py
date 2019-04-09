@@ -18,7 +18,7 @@ import mrc
 import utils
 import fft
 import lie_tools
-from models import BNBHetOpt, HetVAE, Lattice
+from models import BNNBHet, HetVAE, Lattice
 from beta_schedule import get_beta_schedule, LinearSchedule
 from losses import EquivarianceLoss
 
@@ -141,7 +141,7 @@ def main(args):
     lattice = Lattice(nx)
     model = HetVAE(lattice, nx*ny, args.qlayers, args.qdim, args.players, args.pdim,
                 args.zdim, encode_mode=args.encode_mode)
-    bnb = BNBHetOpt(model, lattice, tilt)
+    bnb = BNNBHet(model, lattice, tilt)
 
     if args.equivariance:
         assert args.equivariance > 0, 'Regularization weight must be positive'
@@ -250,6 +250,10 @@ def main(args):
             if batch_it % args.log_interval == 0:
                 eq_log = 'equivariance={:.4f}, lambda={:.4f}, '.format(eq_loss.item(), lamb) if args.equivariance else ''
                 log('# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.4f}, kld={:.4f}, beta={:.4f}, {}loss={:.4f}'.format(epoch+1, num_epochs, batch_it, Nimg, gen_loss.item(), kld.item(), beta, eq_log, loss.item()))
+
+            del y, rot, y_recon, gen_loss, kld, loss, input_, mu, logvar, z
+            if tilt is not None:
+                del yt, y_recon_tilt
         eq_log = 'equivariance = {:.4f}, '.format(eq_loss_accum/Nimg) if args.equivariance else ''
         log('# =====> Epoch: {} Average gen loss = {:.4}, KLD = {:.4f}, {}total loss = {:.4f}'.format(epoch+1, gen_loss_accum/Nimg, kld_accum/Nimg, eq_log, loss_accum/Nimg))
 

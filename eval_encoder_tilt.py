@@ -19,7 +19,7 @@ import mrc
 import utils
 import fft
 import lie_tools
-from models import BNBHetOpt, HetVAE, Lattice
+from models import HetVAE, Lattice
 
 log = utils.log
 vlog = utils.vlog

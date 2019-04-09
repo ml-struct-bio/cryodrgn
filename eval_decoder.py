@@ -19,7 +19,7 @@ import mrc
 import utils
 import fft
 import lie_tools
-from models import HetVAE
+from models import HetVAE, Lattice
 
 log = utils.log
 vlog = utils.vlog
@@ -43,7 +43,6 @@ def parse_args():
     group.add_argument('--encode-mode', default='resid', choices=('conv','resid','mlp'), help='Type of encoder network')
     group.add_argument('--players', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--pdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
-    group.add_argument('--tilt', action='store_true', help='Flag if trained with a tilt series')
     return parser
 
 def eval_volume(model, nz, ny, nx, zval, rnorm):
@@ -78,8 +77,8 @@ def main(args):
         torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
     nz, ny, nx = args.dim
-    in_dim = 2*nx*ny if args.tilt else nx*ny
-    model = HetVAE(nx, ny, in_dim, args.qlayers, args.qdim, args.players, args.pdim,
+    lattice = Lattice(nx)
+    model = HetVAE(lattice, nx*ny, args.qlayers, args.qdim, args.players, args.pdim,
                 args.zdim, encode_mode=args.encode_mode)
 
     log('Loading weights from {}'.format(args.weights))

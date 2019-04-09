@@ -154,11 +154,10 @@ class BNNBHomo:
         L: radius of fourier components to evaluate
         '''
         B = images.size(0)
-        mask = self.lattice.get_square_mask(L)
+        mask = self.lattice.get_circular_mask(L)
         coords = self.lattice.coords[mask]
         c = int(coords.size(-2)/2)
         YX = coords.size(-2)
-        assert YX == (2*L+1)**2
         def compute_err(images, rot):
             images = images.view(B,-1)[:,mask]
             y_hat = self.decoder.forward_symmetric(coords @ rot, c)
@@ -202,7 +201,7 @@ class BNNBHet:
 
     def eval_grid(self, images, rot, z, NQ, L, images_tilt=None):
         B = z.size(0)
-        mask = self.lattice.get_square_mask(L)
+        mask = self.lattice.get_circular_mask(L)
         coords = self.lattice.coords[mask]
         c = int(coords.size(-2)/2)
         YX = coords.size(-2)

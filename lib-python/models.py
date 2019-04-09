@@ -34,17 +34,38 @@ class Lattice:
         self.square_mask = {}
         self.circle_mask = {}
 
-    def get_square_mask(self, L):
-        if L in self.square_mask:
-            return self.square_mask[L]
-        log('Using radius of size {}'.format(L))
+    def get_square_lattice(self, L):
         b,e = self.D2-L, self.D2+L+1
         center_lattice = self.coords.view(self.D,self.D,3)[b:e,b:e,:].contiguous().view(-1,3)
-        self.square_mask[L] = center_lattice
         return center_lattice
 
-    def circular_mask(self, R):
-        raise NotImplementedError
+    def get_square_mask(self, L):
+        '''Return a binary mask for self.coords which restricts coordinates to a centered square lattice'''
+        if L in self.square_mask:
+            return self.square_mask[L]
+        assert 2*L+1 < self.D, 'Mask with size {} too large for lattice with size {}'.format(L,D)
+        log('Using square lattice of size {}x{}'.format(2*L+1,2*L+1))
+        b,e = self.D2-L, self.D2+L
+        c1 = self.coords.view(self.D,self.D,3)[b,b]
+        c2 = self.coords.view(self.D,self.D,3)[e,e]
+        m1 = self.coords[:,0] >= c1[0]
+        m2 = self.coords[:,0] <= c2[0]
+        m3 = self.coords[:,1] >= c1[1]
+        m4 = self.coords[:,1] <= c2[1]
+        mask = m1*m2*m3*m4
+        self.square_mask[L] = mask
+        return mask
+
+    def get_circular_mask(self, R):
+        '''Return a binary mask for self.coords which restricts coordinates to a centered circular lattice'''
+        if R in self.circle_mask:
+            return self.circle_mask[R]
+        assert 2*R+1 < self.D, 'Mask with radius {} too large for lattice with size {}'.format(R,D)
+        log('Using circular lattice with radius {}'.format(R))
+        r = 2*R/self.D
+        mask = self.coords.pow(2).sum(-1) < r**2
+        self.circle_mask[R] = mask
+        return mask
         
 class HetVAE(nn.Module):
     def __init__(self, lattice, # Lattice object
@@ -112,6 +133,7 @@ class HetVAE(nn.Module):
         return y_hat
 
 class BNBOpt:
+    '''Branch and no bound for homogeneous reconstruction'''
     def __init__(self, decoder, lattice, tilt=None):
         self.decoder = decoder
         self.lattice = lattice
@@ -121,9 +143,8 @@ class BNBOpt:
         assert self.nbase == 576, "Base resolution changed?"
         self.tilt = tilt
 
-    def mask_image(self, images, L):
-        b,e = self.lattice.D2-L, self.lattice.D2+L+1
-        return images[:,b:e,b:e]
+    def mask_image(self, images, mask):
+        return images[:,mask]
 
     def eval_grid(self, images, rot, NQ, L, images_tilt=None):
         '''
@@ -132,15 +153,18 @@ class BNBOpt:
         NQ: number of slices evaluated for each image
         L: radius of fourier components to evaluate
         '''
-        D = 2*L+1
-        c = int(D**2/2)
-        coords = self.lattice.get_square_mask(L)
+        B = images.size(0)
+        mask = self.lattice.get_square_mask(L)
+        coords = self.lattice.coords[mask]
+        c = int(coords.size(-2)/2)
+        YX = coords.size(-2)
+        assert YX == (2*L+1)**2
         def compute_err(images, rot):
-            images = self.mask_image(images, L)
+            images = images.view(B,-1)[:,mask]
             y_hat = self.decoder.forward_symmetric(coords @ rot, c)
-            y_hat = y_hat.view(-1,NQ,D,D) #1xQxYxX for base grid, Bx8xYxX for incremental grid
-            images = images.unsqueeze(1) # Bx1xYxX
-            err = torch.sum((images-y_hat).pow(2),(-1,-2)) # BxQ
+            y_hat = y_hat.view(-1,NQ,YX) #1xQxYX for base grid, Bx8xYX for incremental grid
+            images = images.unsqueeze(1) # Bx1xYX
+            err = torch.sum((images-y_hat).pow(2),-1) # BxQ
             return err
         err = compute_err(images, rot)
         if images_tilt is not None:
@@ -176,22 +200,19 @@ class BNBHetOpt:
         self.base_rot = lie_tools.quaternions_to_SO3(torch.tensor(self.base_quat))
         self.tilt = tilt
 
-    def mask_image(self, images, L):
-        b,e = self.lattice.D2-L, self.lattice.D2+L+1
-        return images[:,b:e,b:e]
-
     def eval_grid(self, images, rot, z, NQ, L, images_tilt=None):
         B = z.size(0)
-        D = 2*L+1
-        coords = self.lattice.get_square_mask(L)
-        c = int(D**2/2)
+        mask = self.lattice.get_square_mask(L)
+        coords = self.lattice.coords[mask]
+        c = int(coords.size(-2)/2)
+        YX = coords.size(-2)
         def compute_err(images, rot):
-            images = self.mask_image(images, L)
-            images = images.unsqueeze(1) # Bx1xYxX
+            images = images.view(B,-1)[:,mask]
             x = self.model.cat_z(coords @ rot, z)
             y_hat = self.model.decoder.forward_symmetric(x,c)
-            y_hat = y_hat.view(B, NQ, D, D) 
-            err = torch.sum((images-y_hat).pow(2),(-1,-2)) # B x Q
+            y_hat = y_hat.view(B, NQ, YX) # BxQxYX
+            images = images.unsqueeze(1) # Bx1xYX
+            err = torch.sum((images-y_hat).pow(2),-1) # BxQ
             return err
         err = compute_err(images,rot)
         if images_tilt is not None:

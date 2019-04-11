@@ -38,7 +38,8 @@ def parse_args():
     group = parser.add_argument_group('Tilt series')
     group.add_argument('--tilt', help='Particle stack file (.mrcs)')
     group.add_argument('--tilt-deg', type=float, default=45, help='X-axis tilt offset in degrees (default: %(default)s)')
-
+    group.add_argument('--enc-only', action='store_true', help='Use the tilt pair only for the encoder')
+    
     group = parser.add_argument_group('Training parameters')
     group.add_argument('-n', '--num-epochs', type=int, default=10, help='Number of training epochs (default: %(default)s)')
     group.add_argument('-b','--batch-size', type=int, default=100, help='Minibatch size (default: %(default)s)')
@@ -205,15 +206,14 @@ def main(args):
             L = Lsched(global_it)
             if L: L = int(L)
             model.eval()
-            with torch.no_grad():
-                rot = bnb.opt_theta(y, z, yt, L=L)
+            rot = bnb.opt_theta(y, z, None if args.enc_only else yt, L=L)
             model.train()
 
             # train the decoder
             y_recon = model(rot, z)
             y_recon = y_recon.view(-1, ny, nx)
             gen_loss = F.mse_loss(y_recon,y)
-            if tilt is not None:
+            if tilt is not None and not args.enc_only: # todo: better control flow if args.enc_only
                 y_recon_tilt = model(bnb.tilt @ rot, z)
                 y_recon_tilt = y_recon_tilt.view(-1, ny, nx)
                 gen_loss = .5*gen_loss + .5*F.mse_loss(y_recon_tilt,yt)
@@ -251,8 +251,9 @@ def main(args):
                 eq_log = 'equivariance={:.4f}, lambda={:.4f}, '.format(eq_loss.item(), lamb) if args.equivariance else ''
                 log('# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.4f}, kld={:.4f}, beta={:.4f}, {}loss={:.4f}'.format(epoch+1, num_epochs, batch_it, Nimg, gen_loss.item(), kld.item(), beta, eq_log, loss.item()))
 
+            # todo: put training loop in its own scope
             del y, rot, y_recon, gen_loss, kld, loss, input_, mu, logvar, z
-            if tilt is not None:
+            if tilt is not None and not args.enc_only:
                 del yt, y_recon_tilt
         eq_log = 'equivariance = {:.4f}, '.format(eq_loss_accum/Nimg) if args.equivariance else ''
         log('# =====> Epoch: {} Average gen loss = {:.4}, KLD = {:.4f}, {}total loss = {:.4f}'.format(epoch+1, gen_loss_accum/Nimg, kld_accum/Nimg, eq_log, loss_accum/Nimg))

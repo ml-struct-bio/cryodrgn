@@ -216,7 +216,7 @@ def main(args):
             if tilt is not None:
                 y_recon_tilt = model(bnb.tilt @ rot, z)
                 y_recon_tilt = y_recon_tilt.view(-1, ny, nx)
-                gen_loss = .5*gen_loss + F.mse_loss(y_recon_tilt,yt)
+                gen_loss = .5*gen_loss + .5*F.mse_loss(y_recon_tilt,yt)
 
             kld = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
 

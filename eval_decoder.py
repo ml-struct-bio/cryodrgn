@@ -27,7 +27,7 @@ vlog = utils.vlog
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('weights', help='Model weights')
-    parser.add_argument('--norm', nargs=2, type=float)
+    parser.add_argument('--norm', nargs=2, type=float, required=True)
     parser.add_argument('--dim', nargs=3, default=[64,64,64], type=int)
     parser.add_argument('-z', type=np.float32, nargs='*', help='')
     parser.add_argument('-z-start', type=np.float32, nargs='*', help='')
@@ -45,23 +45,23 @@ def parse_args():
     group.add_argument('--pdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
     return parser
 
-def eval_volume(model, nz, ny, nx, zval, rnorm):
+def eval_volume(model, lattice, D, zval, rnorm):
     '''Evaluate the model on a nz x ny x nx lattice'''
     zdim = len(zval)
-    z = torch.zeros(nx*ny,zdim,device=model.lattice.device, dtype=model.lattice.dtype)
-    zval = torch.Tensor(zval).to(model.lattice.device)
-    z = z + zval
+    z = torch.zeros(D**2,zdim, dtype=torch.float32)
+    z += torch.tensor(zval, dtype=torch.float32)
 
-    vol_f = np.zeros((nz,ny,nx),dtype=complex)
+    vol_f = np.zeros((D,D,D),dtype=np.float32)
     assert not model.training
     # evaluate the volume by zslice to avoid memory overflows
-    for i, dz in enumerate(np.linspace(-1,1,nz,endpoint=False)):
-        x = model.lattice + torch.tensor([0,0,dz], device=model.lattice.device, 
-                                                   dtype=model.lattice.dtype)
+    for i, dz in enumerate(np.linspace(-1,1,D,endpoint=False)):
+        x = lattice.coords + torch.tensor([0,0,dz], dtype=torch.float32)
         x = torch.cat((x,z),dim=-1)
         with torch.no_grad():
-            y = model.decoder(x)
-            y = y.view(ny, nx).cpu().numpy()
+            y = model.decoder.decode(x)
+            y = y[...,0] - y[...,1]
+            #y = model.decoder(x)
+            y = y.view(D,D).cpu().numpy()
         vol_f[i] = y
     vol = fft.ihtn_center(vol_f*rnorm[1]+rnorm[0])
     return vol, vol_f
@@ -100,14 +100,14 @@ def main(args):
 
         for i,zz in enumerate(z):
             log(zz)
-            vol, _ = eval_volume(model, nz, ny, nx, zz, args.norm) 
+            vol, _ = eval_volume(model, lattice, lattice.D, zz, args.norm) 
             out_mrc = '{}/traj{}.mrc'.format(args.o,i)
             mrc.write(out_mrc, vol.astype(np.float32))
 
     else:
         z = np.array(args.z)
         log(z)
-        vol, _ = eval_volume(model, nz, ny, nx, z, args.norm) 
+        vol, _ = eval_volume(model, lattice, lattice.D, z, args.norm) 
         mrc.write(args.o, vol.astype(np.float32))
 
     td = dt.now()-t1

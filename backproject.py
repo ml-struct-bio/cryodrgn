@@ -10,6 +10,7 @@ import numpy as np
 import sys, os
 import time
 import pickle
+from scipy.ndimage.fourier import fourier_shift
 
 sys.path.insert(0,'{}/lib-python'.format(os.path.dirname(os.path.abspath(__file__))))
 import utils
@@ -25,6 +26,7 @@ def parse_args():
     parser.add_argument('-o', type=os.path.abspath,help='Output MRC file')
     parser.add_argument('--is-rot',action='store_true',help='Input angles are rotation matrices')
     parser.add_argument('--indices',help='Indices to iterator over (pkl)')
+    parser.add_argument('--trans', type=os.path.abspath, help='Optionally provide translations (.pkl)')
     return parser
 
 def add_slice(V, counts, ff_coord, ff, D):
@@ -60,6 +62,10 @@ def main(args):
     if len(angles) < N:
         log('Warning: # images != # angles. Backprojecting first {} images'.format(len(angles)))
         N = len(angles)
+    if args.trans:
+        trans = utils.load_angles(args.trans)
+    else:
+        trans = None
 
     n, m = images[0].get().shape
     assert n == m, "Image dimensions must be square"
@@ -79,7 +85,12 @@ def main(args):
         iterator = range(N)
     for ii in iterator:
         if ii%100==0: log('image {}'.format(ii))
-        ff = fft.fft2_center(images[ii].get()).ravel()[MASK]
+        if trans is not None:
+            ff = np.fft.fft2(np.fft.fftshift(images[ii].get()))
+            ff = fourier_shift(ff, -trans[ii])
+            ff = np.fft.fftshift(ff).ravel()[MASK]
+        else:
+            ff = fft.fft2_center(images[ii].get()).ravel()[MASK]
         if args.is_rot:
             rot = angles[ii]
         else:

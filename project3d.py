@@ -7,6 +7,7 @@ import numpy as np
 import sys, os
 import time
 import pickle
+from scipy.ndimage.fourier import fourier_shift
 
 import torch
 import torch.nn as nn
@@ -30,9 +31,11 @@ def parse_args():
     parser.add_argument('mrc', help='Input volume')
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Output projection stack (.mrcs)')
     parser.add_argument('--out-rot', type=os.path.abspath, required=True, help='Output rotations (.pkl)')
+    parser.add_argument('--out-trans', type=os.path.abspath, help='Output translations (.pkl)')
     parser.add_argument('--out-png', type=os.path.abspath, help='Montage of first 9 projections')
     parser.add_argument('-N', type=int, help='Number of random projections')
     parser.add_argument('-b', type=int, default=100, help='Minibatch size (default: %(default)s)')
+    parser.add_argument('--t-extent', type=float, default=5, help='Extent of image translation (default: +/-%(default)s pixels)')
     parser.add_argument('--grid', type=int, help='Generate projections on a uniform deterministic grid on SO3. Specify resolution level')
     parser.add_argument('--tilt', type=float, help='Right-handed x-axis tilt offset in degrees')
     parser.add_argument('--seed', type=int, help='Random seed')
@@ -96,11 +99,22 @@ def warnexists(out):
     if os.path.exists(out):
         log('Warning: {} already exists. Overwriting.'.format(out))
 
+def translate_img(img, t):
+    ff = np.fft.fft2(np.fft.fftshift(img))
+    ff = fourier_shift(ff, t)
+    return np.fft.fftshift(np.fft.ifft2(ff)).real
+
 def main(args):
-    for out in (args.o, args.out_rot, args.out_png):
+    for out in (args.o, args.out_rot, args.out_png, args.out_trans):
         if not out: continue
         mkbasedir(out)
         warnexists(out)
+
+    if args.out_trans is None:
+        log('Not shifting images')
+        args.t_extent = 0
+    else:
+        assert args.t_extent > 0
 
     if args.seed is not None:
         torch.manual_seed(args.seed)
@@ -140,7 +154,7 @@ def main(args):
             rot = rots[mb*args.b:(mb+1)*args.b]
         else:
             rot = lie_tools.random_SO3(args.b)
-            rots.append(rot)
+            rots.append(rot.cpu())
         projections = projector.project(rot)
         projections = projections.cpu().numpy()
         imgs.append(projections)
@@ -150,7 +164,7 @@ def main(args):
             rot = rots[-(args.N%args.b):]
         else:
             rot = lie_tools.random_SO3(args.N % args.b)
-            rots.append(rot)
+            rots.append(rot.cpu())
         projections = projector.project(rot)
         projections = projections.cpu().numpy()
         imgs.append(projections)
@@ -163,11 +177,20 @@ def main(args):
     td = time.time()-t1
     log('Projected {} images in {}s ({}s per image)'.format(args.N, td, td/args.N ))
 
+    if args.t_extent:
+        log('Shifting images between +/- {}'.format(args.t_extent))
+        trans = np.random.rand(args.N,2)*2*args.t_extent - args.t_extent
+        imgs = np.asarray([translate_img(img, t) for img,t in zip(imgs,trans)])
+
     log('Saving {}'.format(args.o))
     mrc.write(args.o,imgs.astype(np.float32))
     log('Saving {}'.format(args.out_rot))
     with open(args.out_rot,'wb') as f:
         pickle.dump(rots, f)
+    if args.out_trans:
+        log('Saving {}'.format(args.out_trans))
+        with open(args.out_trans,'wb') as f:
+            pickle.dump(trans,f)
     if args.out_png:
         log('Saving {}'.format(args.out_png))
         plot_projections(args.out_png, imgs[:9])

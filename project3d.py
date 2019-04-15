@@ -87,7 +87,7 @@ def plot_projections(out_png, imgs):
     for i in range(min(len(imgs),9)):
         axes[i].imshow(imgs[i])
     plt.savefig(out_png)
-/
+
 def mkbasedir(out):
     if not os.path.exists(os.path.dirname(out)):
         os.makedirs(os.path.dirname(out))
@@ -147,7 +147,7 @@ def main(args):
     if args.N % args.b:
         log('Projecting {}/{}'.format(args.N, args.N))
         if args.grid is not None:
-            rot = rots[(mb+1)*args.b:]
+            rot = rots[-(args.N%args.b):]
         else:
             rot = lie_tools.random_SO3(args.N % args.b)
             rots.append(rot)

@@ -230,7 +230,7 @@ def main(args):
             y_recon = model(rot, z)
             y_recon = y_recon.view(-1, ny, nx)
             gen_loss = F.mse_loss(y_recon,y)
-            if tilt is not None and not args.enc_only: # todo: better control flow if args.enc_only
+            if tilt is not None: 
                 y_recon_tilt = model(bnb.tilt @ rot, z)
                 y_recon_tilt = y_recon_tilt.view(-1, ny, nx)
                 gen_loss = .5*gen_loss + .5*F.mse_loss(y_recon_tilt,yt)

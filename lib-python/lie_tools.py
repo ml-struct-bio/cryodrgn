@@ -76,6 +76,18 @@ def quaternions_to_SO3(q):
         2*(r*j + i*k), 2*(i*j - r*k), -r*r - i*i + j*j + k*k
         ], -1).view(*q.shape[:-1], 3, 3)
 
+def random_quaternions(n, dtype=torch.float32, device=None):
+    u1, u2, u3 = torch.rand(3, n, dtype=dtype, device=device)
+    return torch.stack((
+        torch.sqrt(1-u1) * torch.sin(2 * np.pi * u2),
+        torch.sqrt(1-u1) * torch.cos(2 * np.pi * u2),
+        torch.sqrt(u1) * torch.sin(2 * np.pi * u3),
+        torch.sqrt(u1) * torch.cos(2 * np.pi * u3),
+    ), 1)
+
+def random_SO3(n, dtype=torch.float32, device=None):
+    return quaternions_to_SO3(random_quaternions(n, dtype, device))
+
 def logsumexp(inputs, dim=None, keepdim=False):
     '''Numerically stable logsumexp.
     https://github.com/pytorch/pytorch/issues/2591

@@ -13,6 +13,10 @@ def ht2_center(img):
     f = np.fft.fftshift(np.fft.fft2(np.fft.fftshift(img)))
     return f.real-f.imag
 
+def htn_center(img):
+    f = np.fft.fftshift(np.fft.fftn(np.fft.fftshift(img)))
+    return f.real-f.imag
+
 def ihtn_center(V):
     V = np.fft.fftshift(V)
     V = np.fft.fftn(V)

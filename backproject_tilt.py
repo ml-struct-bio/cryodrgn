@@ -97,7 +97,7 @@ def main(args):
         add_slice(V,counts,ff_coord,ff,D)
 
         ff = fft.fft2_center(images_tilt[ii].get()).ravel()[MASK]
-        ff_coord = np.dot(tilt.T, ff_coord)
+        ff_coord = np.dot(np.dot(rot.T, tilt.T), COORD)
         add_slice(V,counts,ff_coord,ff,D)
 
     z = np.where(counts == 0.0)

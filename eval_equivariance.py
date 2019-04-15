@@ -1,5 +1,5 @@
 '''
-Evaluate VAE on an image stack
+Compute equivariance loss on an image stack
 '''
 import numpy as np
 import sys, os
@@ -20,6 +20,7 @@ import utils
 import fft
 import lie_tools
 from models import HetVAE, Lattice
+from losses import EquivarianceLoss
 
 log = utils.log
 vlog = utils.vlog
@@ -27,7 +28,6 @@ vlog = utils.vlog
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('particles', help='Particle stack file (.mrc)')
-    parser.add_argument('particles_tilt', help='Particle stack file (.mrc)')
     parser.add_argument('weights', help='Model weights')
     parser.add_argument('-N', type=int, help='First N images (default: all images)')
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Output pickle')
@@ -39,7 +39,7 @@ def parse_args():
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--qdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
     group.add_argument('--zdim', type=int, default=1, help='Dimension of latent variable')
-    group.add_argument('--encode-mode', default='resid', choices=('conv','resid','mlp','tilt'), help='Type of encoder network')
+    group.add_argument('--encode-mode', default='resid', choices=('conv','resid','mlp'), help='Type of encoder network')
     group.add_argument('--players', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--pdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
     return parser
@@ -63,33 +63,36 @@ def main(args):
         torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
     # load the particles
-    particles, _, _ = mrc.parse_mrc(args.particles)
-    particles = particles.astype(np.float32)
-    Nimg, ny, nx = particles.shape
+    particles_real, _, _ = mrc.parse_mrc(args.particles,lazy=True)
+    particles_real = np.asarray([x.get() for x in particles_real])
+    particles_real = particles_real.astype(np.float32)
+    Nimg, ny, nx = particles_real.shape
     nz = max(nx,ny)
     log('Loaded {} {}x{} images'.format(Nimg, ny, nx))
-    particles = np.asarray([fft.ht2_center(img).astype(np.float32) for img in particles])
-    rnorm  = [np.mean(particles), np.std(particles)]
-    log('Particle FT stack mean, std: {} +/- {}'.format(*rnorm))
+    particles_ft = np.asarray([fft.ht2_center(img).astype(np.float32) for img in particles_real])
+    assert particles_ft.shape == (Nimg,ny,nx)
+    rnorm  = [np.mean(particles_real), np.std(particles_real)]
+    rnorm[0] = 0
+    rnorm[1] = np.median([np.max(x) for x in particles_real])
+    particles_real = (particles_real - rnorm[0])/rnorm[1]
+    log('Normalizing particles by mean, std: {} +/- {}'.format(*rnorm))
+
+    rnorm  = [np.mean(particles_ft), np.std(particles_ft)]
+    log('Particle stack mean, std: {} +/- {}'.format(*rnorm))
     rnorm[0] = 0
     log('Normalizing FT by mean, std: {} +/- {}'.format(*rnorm))
-    particles = (particles - rnorm[0])/rnorm[1]
-
-    # load particles from tilt series
-    particles_tilt, _, _ = mrc.parse_mrc(args.particles_tilt)
-    assert particles_tilt.shape == (Nimg, ny, nx), 'Tilt series pair must have same dimensions as untilted particles'
-    particles_tilt = np.asarray([fft.ht2_center(img).astype(np.float32) for img in particles_tilt])
-    particles_tilt = (particles_tilt - rnorm[0])/rnorm[1]
+    particles_ft = (particles_ft - rnorm[0])/rnorm[1]
 
     if args.N:
         log('Using first {} images'.format(args.N))
-        particles = particles[:args.N]
-        particles_tilt = particles_tilt[:args.N]
+        particles_real = particles_real[:args.N]
+        particles_ft = particles_ft[:args.N]
         Nimg = args.N
 
     lattice = Lattice(nx)
-    model = HetVAE(lattice, ny*nx, args.qlayers, args.qdim, args.players, args.pdim,
+    model = HetVAE(lattice, nx*ny, args.qlayers, args.qdim, args.players, args.pdim,
                 args.zdim, encode_mode=args.encode_mode)
+    equiv = EquivarianceLoss(model, ny, nx)
 
     log('Loading weights from {}'.format(args.weights))
     checkpoint = torch.load(args.weights)
@@ -99,24 +102,33 @@ def main(args):
 
     recon_all = []
     z_all = []
+    z_rot_all = []
 
     num_batches = np.ceil(Nimg / args.batch_size).astype(int)
     for minibatch_i in np.array_split(np.arange(Nimg),num_batches):
         # inference with real space image
-        y = torch.from_numpy(particles[minibatch_i])
-        yt = torch.from_numpy(particles_tilt[minibatch_i])
+        y = torch.from_numpy(particles_ft[minibatch_i])
         if use_cuda: 
             y = y.cuda()
-            yt = yt.cuda()
-        mu, logvar = model.encode((y,yt))
+        mu, logvar = model.encode(y) 
+
+        n = len(minibatch_i)
+        theta = torch.rand(n)*2*np.pi
+        y = torch.unsqueeze(y, 1)
+        img_rot = equiv.rotate(y, theta)
+        img_rot = torch.squeeze(img_rot)
+        mu_rot, _ = model.encode(img_rot)
 
         z_all.append(mu.detach().cpu().numpy())
+        z_rot_all.append(mu_rot.detach().cpu().numpy())
 
     if args.o:
         z_all = np.vstack(z_all)
+        z_rot_all = np.vstack(z_rot_all)
         log(np.mean(z_all))
         with open(args.o,'wb') as f:
             pickle.dump(z_all, f)
+            pickle.dump(z_rot_all, f)
 
     td = dt.now()-t1
     log('Finsihed in {}'.format(td))

@@ -11,3 +11,6 @@ python ../project3d.py /home/zhonge/research/cryoem/vae3d/00_data/hand/hand_poin
 python ../project3d.py /home/zhonge/research/cryoem/vae3d/00_data/hand/hand_pointer.mrc -N 1000 -o output/project/projections_tilt.mrcs --out-rot output/project/rot_tilt.pkl --seed 0 --tilt 45
 python ../backproject.py output/project/projections.mrcs output/project/rot.pkl -o output/project/backproject.mrc --is-rot
 python ../backproject_tilt.py output/project/projections.mrcs output/project/projections_tilt.mrcs output/project/rot.pkl --tilt 45 -o output/project/tilt_backproject.mrc --is-rot
+
+python ../bnb_rot.py data/toy_projections.mrcs -o output/toy_recon_bnb --seed 0
+python ../bnb_rot.py data/hand_projections.mrcs --load /red/zhonge/cryoem/vae3d/07_tilt/06_bnb/1/weights.pkl -o output/hand_bnb -n 11 --seed 82717

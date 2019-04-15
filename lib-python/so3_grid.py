@@ -1,4 +1,4 @@
-'''
+'
 Implementation of Yershova et al. "Generating uniform incremental 
 grids on SO(3) using the Hopf fribration"
 '''
@@ -7,9 +7,9 @@ import numpy as np
 import healpy as hp
 import lie_tools
 
-def grid_s1(resol, extent=2*np.pi):
+def grid_s1(resol):
     Npix = 6*2**resol
-    dt = extent/Npix
+    dt = 2*np.pi/Npix
     grid = np.arange(Npix)*dt + dt/2
     return grid
 

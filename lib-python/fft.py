@@ -1,7 +1,7 @@
 import numpy as np
 
 def fft2_center(img):
-    return np.fft.fftshift(np.fft.fft2(np.fft.fftshift(img)))
+    return np.fft.fftshift(np.fft.fft2(np.fft.fftshift(img,axes=(-1,-2))),axes=(-1,-2))
 
 def ifftn(V):
     V = np.fft.ifftshift(V)
@@ -10,7 +10,7 @@ def ifftn(V):
     return V
 
 def ht2_center(img):
-    f = np.fft.fftshift(np.fft.fft2(np.fft.fftshift(img)))
+    f = fft2_center(img)
     return f.real-f.imag
 
 def htn_center(img):

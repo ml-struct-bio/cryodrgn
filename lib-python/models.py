@@ -30,6 +30,8 @@ class Lattice:
         self.coords = torch.tensor(coords)
         self.D = D
         self.D2 = int(D/2)
+        c = 2/(D-1)*(D/2) -1 
+        self.center = torch.tensor([c,c]) # pixel coordinate for img[D/2,D/2]
         
         self.square_mask = {}
         self.circle_mask = {}
@@ -66,7 +68,23 @@ class Lattice:
         mask = self.coords.pow(2).sum(-1) < r**2
         self.circle_mask[R] = mask
         return mask
-        
+
+    def rotate(self, images, theta):
+        '''
+        images: BxYxX
+        theta: Q, in radians
+        '''
+        images = images.expand(len(theta), *images.shape) # QxBxYxX
+        cos = torch.cos(theta)
+        sin = torch.sin(theta)
+        rot = torch.stack([cos, sin, -sin, cos], 1).view(-1, 2, 2)
+        grid = self.coords[:,0:2] @ rot
+        grid = grid.view(len(rot), self.D, self.D, 2) # QxYxXx2
+        offset = self.center - grid[:,self.D2,self.D2] # Qx2
+        grid += offset[:,None,None,:]
+        rotated = F.grid_sample(images, grid) # QxBxYxX
+        return rotated.transpose(0,1) # BxQxYxX
+
 class HetVAE(nn.Module):
     def __init__(self, lattice, # Lattice object
             in_dim, # nx*ny for single image or 2*nx*ny for tilt series
@@ -220,6 +238,51 @@ class BNNBHet:
         mini = torch.argmin(err,1)
         return mini.cpu().numpy()
         
+    def eval_base_grid(self, images, rotated_images, z, L):
+        '''
+        images: BxYxX
+        rotated_images:Bx11xYxX
+        '''
+        B = z.size(0)
+        mask = self.lattice.get_circular_mask(L)
+        coords = self.lattice.coords[mask]
+        c = int(coords.size(-2)/2)
+        YX = coords.size(-2)
+
+        # only evaluate every 12 points (different points on the sphere)
+        rot = self.base_rot[::12] # 48x3x3
+        rot = rot.expand(B,*rot.shape) # Bx48x3x3
+        x = self.model.cat_z(coords @ rot, z)
+        y_hat = self.model.decoder.forward_symmetric(x,c) # Bx48xYX
+        y_hat = y_hat.unsqueeze(2) # Bx48x1xYX
+
+        images = images.unsqueeze(1) # Bx1xYxX
+        images = torch.cat((images,rotated_images),1) # Bx12xYxX
+        images = images.view(B,1,12,-1)[...,mask] # Bx1x12xYX
+
+        err = torch.sum((images-y_hat).pow(2),-1).view(B,self.nbase)
+        mini = torch.argmin(err,1)
+        return mini.cpu().numpy()
+
+    def opt_theta_rot(self, images, rotated_images, z, niter=5, L=None):
+        B = images.size(0)
+        assert not self.model.training
+        with torch.no_grad():
+            min_i = self.eval_base_grid(images, rotated_images, z, L)
+            min_quat = self.base_quat[min_i]
+            s2i, s1i = so3_grid.get_base_indr(min_i)
+            for iter_ in range(1,niter+1):
+                neighbors = [so3_grid.get_neighbor(min_quat[i], s2i[i], s1i[i], iter_) for i in range(B)]
+                quat = np.array([x[0] for x in neighbors])
+                ind = np.array([x[1] for x in neighbors])
+                rot = lie_tools.quaternions_to_SO3(torch.tensor(quat))
+                min_i = self.eval_grid(images, rot, z, 8, L)
+                min_ind = ind[np.arange(B), min_i]
+                s2i, s1i = min_ind.T
+                min_quat = quat[np.arange(B),min_i]
+        return lie_tools.quaternions_to_SO3(torch.tensor(min_quat))
+
+
     def opt_theta(self, images, z, images_tilt=None, niter=5, L=None):
         B = images.size(0)
         assert not self.model.training

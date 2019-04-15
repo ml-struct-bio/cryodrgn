@@ -49,9 +49,12 @@ def parse_args():
     group.add_argument('--beta-control', type=float, help='KL-Controlled VAE gamma. Beta is KL target. (default: %(default)s)')
     group.add_argument('--equivariance', type=float, help='Strength of equivariance loss (default: %(default)s)')
     group.add_argument('--equivariance-end-it', type=int, default=100000, help='It at which equivariance max (default: %(default)s)')
+
+    group = parser.add_argument_group('Branch and bound')
     group.add_argument('--l-start', type=int,default=12, help='Starting L radius (default: %(default)s)')
     group.add_argument('--l-end', type=int, default=20, help='End L radius (default: %(default)s)')
     group.add_argument('--l-end-it',type=int,default=100000, help='default: %(default)s')
+    group.add_argument('--rotate', action='store_true', help='Speedup BNB with image rotation')
 
     group = parser.add_argument_group('Encoder Network')
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
@@ -109,12 +112,12 @@ def main(args):
     beta_schedule = get_beta_schedule(args.beta)
 
     # load the particles
-    particles, _, _ = mrc.parse_mrc(args.particles)
-    Nimg, ny, nx = particles.shape
+    particles_real, _, _ = mrc.parse_mrc(args.particles)
+    Nimg, ny, nx = particles_real.shape
     assert ny == nx
     nz = max(nx,ny)
     log('Loaded {} {}x{} images'.format(Nimg, ny, nx))
-    particles = np.asarray([fft.ht2_center(img).astype(np.float32) for img in particles])
+    particles = np.asarray([fft.ht2_center(img).astype(np.float32) for img in particles_real])
     assert particles.shape == (Nimg,ny,nx)
     rnorm  = [np.mean(particles), np.std(particles)]
     log('Particle FT stack mean, std: {} +/- {}'.format(*rnorm))
@@ -143,6 +146,9 @@ def main(args):
     model = HetVAE(lattice, nx*ny, args.qlayers, args.qdim, args.players, args.pdim,
                 args.zdim, encode_mode=args.encode_mode)
     bnb = BNNBHet(model, lattice, tilt)
+    if args.rotate: 
+        assert args.enc_only
+        theta = torch.arange(1,12,dtype=torch.float32)*2*np.pi/12 # 11 angles 
 
     if args.equivariance:
         assert args.equivariance > 0, 'Regularization weight must be positive'
@@ -165,6 +171,7 @@ def main(args):
         Lsched = lambda x: None
     else:
         Lsched = LinearSchedule(args.l_start,args.l_end,0,args.l_end_it)
+
 
     # training loop
     num_epochs = args.num_epochs
@@ -206,7 +213,17 @@ def main(args):
             L = Lsched(global_it)
             if L: L = int(L)
             model.eval()
-            rot = bnb.opt_theta(y, z, None if args.enc_only else yt, L=L)
+            if args.rotate:
+                yr = torch.from_numpy(particles_real[minibatch_i])
+                if use_cuda: yr = yr.cuda()
+                yr = lattice.rotate(yr, theta)
+                yr = fft.ht2_center(yr)
+                yr = (yr-rnorm[0])/rnorm[1]
+                yr = torch.from_numpy(yr.astype(np.float32))
+                if use_cuda: yr = yr.cuda()
+                rot = bnb.opt_theta_rot(y, yr, z, L=L)
+            else:
+                rot = bnb.opt_theta(y, z, None if args.enc_only else yt, L=L)
             model.train()
 
             # train the decoder

@@ -20,29 +20,16 @@ class TiltVAE(nn.Module):
     def __init__(self, 
             nx, ny, tilt,
             encode_layers, encode_dim, 
-            decode_layers, decode_dim,
-            encode_mode = 'mlp',
+            decode_layers, decode_dim
             ):
         super(TiltVAE, self).__init__()
         self.nx = nx
         self.ny = ny
-        self.in_dim = nx*ny*2 # tilt series
-        if encode_mode == 'conv':
-            self.encoder = ConvEncoder(encode_dim, encode_dim)
-        elif encode_mode == 'resid':
-            self.encoder = ResidLinearEncoder(2*nx*ny, 
-                            encode_layers, 
-                            encode_dim,  # hidden_dim
-                            encode_dim, # out_dim
-                            nn.ReLU) #in_dim -> hidden_dim
-        elif encode_mode == 'mlp':
-            self.encoder = MLPEncoder(2*nx*ny, 
-                            encode_layers, 
-                            encode_dim, # hidden_dim
-                            encode_dim, # out_dim
-                            nn.ReLU) #in_dim -> hidden_dim
-        else:
-            raise RuntimeError('Encoder mode {} not recognized'.format(encode_mode))
+        self.encoder = TiltEncoder(nx*ny,
+                            encode_layers,
+                            encode_dim, # hidden dim
+                            encode_dim, # output dim
+                            nn.ReLU)
         self.latent_encoder = SO3reparameterize(encode_dim) # hidden_dim -> SO(3) latent variable
         self.decoder = self.get_decoder(decode_layers, 
                             decode_dim, 
@@ -70,7 +57,7 @@ class TiltVAE(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, img, img_tilt):
-        z_mu, z_std = self.latent_encoder(self.encoder(torch.stack((img, img_tilt),1)))
+        z_mu, z_std = self.latent_encoder(self.encoder((img, img_tilt)))
         rot, w_eps = self.latent_encoder.sampleSO3(z_mu, z_std)
 
         # transform lattice by rot
@@ -84,6 +71,19 @@ class TiltVAE(nn.Module):
         y_hat2 = y_hat2.view(-1, self.ny, self.nx)
         return y_hat, y_hat2, z_mu, z_std, w_eps
 
+class TiltEncoder(nn.Module):
+    def __init__(self, in_dim, nlayers, hidden_dim, out_dim, activation):
+        super(TiltEncoder, self).__init__()
+        assert nlayers > 2
+        self.encoder1 = ResidLinearEncoder(in_dim, nlayers-2, hidden_dim, hidden_dim, activation)
+        self.encoder2 = ResidLinearEncoder(hidden_dim*2, 2, hidden_dim, out_dim, activation)
+
+    def forward(self, img):
+        x, x_tilt = img
+        x_enc = self.encoder1(x)
+        x_tilt_enc = self.encoder1(x_tilt)
+        z = self.encoder2(torch.cat((x_enc,x_tilt_enc),-1))
+        return z
 
 class ResidLinearEncoder(nn.Module):
     def __init__(self, in_dim, nlayers, hidden_dim, out_dim, activation):

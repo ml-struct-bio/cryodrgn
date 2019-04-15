@@ -1,8 +1,5 @@
 '''
-VAE-based neural reconstruction with orientational inference
-
-Ellen Zhong
-12/7/2018
+VAE-based homogeneous reconstruction with a tilt series
 '''
 import numpy as np
 import sys, os
@@ -38,6 +35,7 @@ def parse_args():
     parser.add_argument('--checkpoint', type=int, default=5, help='Checkpointing interval in N_EPOCHS (default: %(default)s)')
     parser.add_argument('--log-interval', type=int, default=1000, help='Logging interval in N_IMGS (default: %(default)s)')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
+    parser.add_argument('--seed', type=int, default=np.random.randint(0,100000), help='Random seed')
 
     group = parser.add_argument_group('Training parameters')
     group.add_argument('-n', '--num-epochs', type=int, default=10, help='Number of training epochs (default: %(default)s)')
@@ -53,7 +51,6 @@ def parse_args():
     group = parser.add_argument_group('Encoder Network')
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--qdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
-    group.add_argument('--encode-mode', default='resid', choices=('conv','resid','mlp'), help='Type of encoder network (default: %(default)s)')
 
     group = parser.add_argument_group('Decoder Network')
     group.add_argument('--players', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
@@ -87,6 +84,10 @@ def main(args):
     t1 = dt.now()
     if args.outdir is not None and not os.path.exists(args.outdir):
         os.makedirs(args.outdir)
+
+    # set the random seed
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
 
     ## set the device
     use_cuda = torch.cuda.is_available()
@@ -135,8 +136,7 @@ def main(args):
                     [0, np.cos(theta), -np.sin(theta)],
                     [0, np.sin(theta), np.cos(theta)]]).astype(np.float32)
 
-    model = TiltVAE(nx, ny, tilt, args.qlayers, args.qdim, args.players, args.pdim,
-                encode_mode=args.encode_mode)
+    model = TiltVAE(nx, ny, tilt, args.qlayers, args.qdim, args.players, args.pdim)
 
     if args.equivariance:
         assert args.equivariance > 0, 'Regularization weight must be positive'
@@ -175,7 +175,7 @@ def main(args):
             if use_cuda: 
                 y = y.cuda()
                 yt = yt.cuda()
-            y_recon, y_recon_tilt, z_mu, z_std, w_eps = model(y, yt) 
+            y_recon, y_recon_tilt, z_mu, z_std, w_eps = model(y, yt)
 
             # equivariance loss
             if args.equivariance:

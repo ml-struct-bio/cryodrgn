@@ -1,4 +1,4 @@
-'
+'''
 Implementation of Yershova et al. "Generating uniform incremental 
 grids on SO(3) using the Hopf fribration"
 '''

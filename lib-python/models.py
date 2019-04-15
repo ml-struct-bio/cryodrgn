@@ -387,6 +387,68 @@ class ResidLinearDecoder(nn.Module):
     def forward(self, x):
         return self.main(x)
 
+class VAE(nn.Module):
+    def __init__(self, 
+            nx, ny, 
+            encode_layers, encode_dim, 
+            decode_layers, decode_dim,
+            encode_mode = 'mlp'
+            ):
+        super(VAE, self).__init__()
+        self.nx = nx
+        self.ny = ny
+        self.in_dim = nx*ny
+        if encode_mode == 'conv':
+            self.encoder = ConvEncoder(encode_dim, encode_dim)
+        elif encode_mode == 'resid':
+            self.encoder = ResidLinearEncoder(nx*ny, 
+                            encode_layers, 
+                            encode_dim,  # hidden_dim
+                            encode_dim, # out_dim
+                            nn.ReLU) #in_dim -> hidden_dim
+        elif encode_mode == 'mlp':
+            self.encoder = MLPEncoder(nx*ny, 
+                            encode_layers, 
+                            encode_dim, # hidden_dim
+                            encode_dim, # out_dim
+                            nn.ReLU) #in_dim -> hidden_dim
+        else:
+            raise RuntimeError('Encoder mode {} not recognized'.format(encode_mode))
+        self.latent_encoder = SO3reparameterize(encode_dim) # hidden_dim -> SO(3) latent variable
+        self.decoder = self.get_decoder(decode_layers, 
+                            decode_dim, 
+                            nn.ReLU) #R3 -> R1
+        
+        # centered and scaled xy plane, values between -1 and 1
+        x0, x1 = np.meshgrid(np.linspace(-1, 1, nx, endpoint=False), # FT is not symmetric around origin
+                             np.linspace(-1, 1, ny, endpoint=False))
+        lattice = np.stack([x0.ravel(),x1.ravel(),np.zeros(ny*nx)],1).astype(np.float32)
+        self.lattice = torch.from_numpy(lattice)
+    
+   
+    def get_decoder(self, nlayers, hidden_dim, activation):
+        '''
+        Return a NN mapping R3 cartesian coordinates to R1 electron density
+        (represented in Hartley reciprocal space)
+        '''
+        layers = [nn.Linear(3, hidden_dim), activation()]
+        for n in range(nlayers):
+            layers.append(ResidLinear(hidden_dim, hidden_dim))
+            layers.append(activation())
+        layers.append(nn.Linear(hidden_dim,1))
+        return nn.Sequential(*layers)
+
+    def forward(self, img):
+        z_mu, z_std = self.latent_encoder(self.encoder(img))
+        rot, w_eps = self.latent_encoder.sampleSO3(z_mu, z_std)
+
+        # transform lattice by rot
+        x = self.lattice @ rot # R.T*x
+        y_hat = self.decoder(x)
+        y_hat = y_hat.view(-1, self.ny, self.nx)
+        return y_hat, z_mu, z_std, w_eps
+
+
 class TiltVAE(nn.Module):
     def __init__(self, 
             nx, ny, tilt,

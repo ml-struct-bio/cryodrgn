@@ -13,26 +13,26 @@ log = utils.log
 
 class HetOnlyVAE(nn.Module):
     def __init__(self, lattice, # Lattice object
-            in_dim, # nx*ny for single image or 2*nx*ny for tilt series
+            in_dim, # nx*ny for single image
             encode_layers, encode_dim, 
             decode_layers, decode_dim,
-            z_dim = 1,
-            encode_mode = 'mlp',
-            ):
+            z_dim = 1, 
+            encode_mode = 'resid'):
         super(HetOnlyVAE, self).__init__()
         self.lattice = lattice
         self.in_dim = in_dim 
         self.z_dim = z_dim
         if encode_mode == 'conv':
+            assert lattice.D == 64, "CNN encoder is hard-coded for 64x64 images"
             self.encoder = ConvEncoder(encode_dim, z_dim*2)
         elif encode_mode == 'resid':
-            self.encoder = ResidLinearEncoder(in_dim, 
-                            encode_layers, 
+            self.encoder = ResidLinearMLP(in_dim, 
+                            encode_layers, # nlayers
                             encode_dim,  # hidden_dim
                             z_dim*2, # out_dim
-                            nn.ReLU) #in_dim -> hidden_dim
+                            nn.ReLU) 
         elif encode_mode == 'mlp':
-            self.encoder = MLPEncoder(in_dim, 
+            self.encoder = MLP(in_dim, 
                             encode_layers, 
                             encode_dim, # hidden_dim
                             z_dim*2, # out_dim
@@ -45,9 +45,10 @@ class HetOnlyVAE(nn.Module):
                             nn.ReLU)
         else:
             raise RuntimeError('Encoder mode {} not recognized'.format(encode_mode))
-        #self.decoder = ResidLinearDecoder(3+z_dim, 1, decode_layers, 
-        self.decoder = FTSliceDecoder(3+z_dim, lattice.D, decode_layers, 
-                            decode_dim, 
+        self.decoder = FTSliceDecoder(3+z_dim, # input dim
+                            lattice.D, # lattice size
+                            decode_layers, # nlayers
+                            decode_dim, # hidden dim
                             nn.ReLU) #R3 -> R1
    
     def reparameterize(self, mu, logvar):
@@ -87,7 +88,7 @@ class FTSliceDecoder(nn.Module):
     def __init__(self, in_dim, D, nlayers, hidden_dim, activation):
         '''D: image width or height'''
         super(FTSliceDecoder, self).__init__()
-        self.decoder = ResidLinearDecoder(in_dim, 2, nlayers, hidden_dim, activation)
+        self.decoder = ResidLinearMLP(in_dim, nlayers, hidden_dim, 2, activation)
         D2 = int(D/2)
 
         ### various pixel indices to keep track of 
@@ -157,13 +158,13 @@ class VAE(nn.Module):
         if encode_mode == 'conv':
             self.encoder = ConvEncoder(encode_dim, encode_dim)
         elif encode_mode == 'resid':
-            self.encoder = ResidLinearEncoder(nx*ny, 
+            self.encoder = ResidLinearMLP(nx*ny, 
                             encode_layers, 
                             encode_dim,  # hidden_dim
                             encode_dim, # out_dim
                             nn.ReLU) #in_dim -> hidden_dim
         elif encode_mode == 'mlp':
-            self.encoder = MLPEncoder(nx*ny, 
+            self.encoder = MLP(nx*ny, 
                             encode_layers, 
                             encode_dim, # hidden_dim
                             encode_dim, # out_dim
@@ -171,9 +172,7 @@ class VAE(nn.Module):
         else:
             raise RuntimeError('Encoder mode {} not recognized'.format(encode_mode))
         self.latent_encoder = SO3reparameterize(encode_dim) # hidden_dim -> SO(3) latent variable
-        self.decoder = self.get_decoder(decode_layers, 
-                            decode_dim, 
-                            nn.ReLU) #R3 -> R1
+        self.decoder = ResidLinearMLP(3, decode_layers, decode_dim, 1, nn.ReLU)
         
         # centered and scaled xy plane, values between -1 and 1
         x0, x1 = np.meshgrid(np.linspace(-1, 1, nx, endpoint=False), # FT is not symmetric around origin
@@ -181,21 +180,8 @@ class VAE(nn.Module):
         lattice = np.stack([x0.ravel(),x1.ravel(),np.zeros(ny*nx)],1).astype(np.float32)
         self.lattice = torch.from_numpy(lattice)
     
-   
-    def get_decoder(self, nlayers, hidden_dim, activation):
-        '''
-        Return a NN mapping R3 cartesian coordinates to R1 electron density
-        (represented in Hartley reciprocal space)
-        '''
-        layers = [nn.Linear(3, hidden_dim), activation()]
-        for n in range(nlayers):
-            layers.append(ResidLinear(hidden_dim, hidden_dim))
-            layers.append(activation())
-        layers.append(nn.Linear(hidden_dim,1))
-        return nn.Sequential(*layers)
-
     def forward(self, img):
-        z_mu, z_std = self.latent_encoder(self.encoder(img))
+        z_mu, z_std = self.latent_encoder(self.encoder(img.view(-1,self.in_dim)))
         rot, w_eps = self.latent_encoder.sampleSO3(z_mu, z_std)
 
         # transform lattice by rot
@@ -219,9 +205,7 @@ class TiltVAE(nn.Module):
                             encode_dim, # output dim
                             nn.ReLU)
         self.latent_encoder = SO3reparameterize(encode_dim) # hidden_dim -> SO(3) latent variable
-        self.decoder = self.get_decoder(decode_layers, 
-                            decode_dim, 
-                            nn.ReLU) #R3 -> R1
+        self.decoder = ResidLinearMLP(3, decode_layers, decode_dim, 1, nn.ReLU)
         
         # centered and scaled xy plane, values between -1 and 1
         x0, x1 = np.meshgrid(np.linspace(-1, 1, nx, endpoint=False), # FT is not symmetric around origin
@@ -230,19 +214,6 @@ class TiltVAE(nn.Module):
         self.lattice = torch.tensor(lattice)
         assert tilt.shape == (3,3), 'Rotation matrix input required'
         self.tilt = torch.tensor(tilt)
-    
-   
-    def get_decoder(self, nlayers, hidden_dim, activation):
-        '''
-        Return a NN mapping R3 cartesian coordinates to R1 electron density
-        (represented in Hartley reciprocal space)
-        '''
-        layers = [nn.Linear(3, hidden_dim), activation()]
-        for n in range(nlayers):
-            layers.append(ResidLinear(hidden_dim, hidden_dim))
-            layers.append(activation())
-        layers.append(nn.Linear(hidden_dim,1))
-        return nn.Sequential(*layers)
 
     def forward(self, img, img_tilt):
         z_mu, z_std = self.latent_encoder(self.encoder((img, img_tilt)))
@@ -263,47 +234,29 @@ class TiltEncoder(nn.Module):
     def __init__(self, in_dim, nlayers, hidden_dim, out_dim, activation):
         super(TiltEncoder, self).__init__()
         assert nlayers > 2
-        self.encoder1 = ResidLinearEncoder(in_dim, nlayers-2, hidden_dim, hidden_dim, activation)
-        self.encoder2 = ResidLinearEncoder(hidden_dim*2, 2, hidden_dim, out_dim, activation)
+        self.encoder1 = ResidLinearMLP(in_dim, nlayers-2, hidden_dim, hidden_dim, activation)
+        self.encoder2 = ResidLinearMLP(hidden_dim*2, 2, hidden_dim, out_dim, activation)
+        self.in_dim = in_dim
 
     def forward(self, img):
         x, x_tilt = img
-        x_enc = self.encoder1(x)
-        x_tilt_enc = self.encoder1(x_tilt)
+        x_enc = self.encoder1(x.view(-1,self.in_dim))
+        x_tilt_enc = self.encoder1(x_tilt.view(-1,self.in_dim))
         z = self.encoder2(torch.cat((x_enc,x_tilt_enc),-1))
         return z
 
-class ResidLinearDecoder(nn.Module):
-    '''
-    A NN mapping R3 cartesian coordinates to R1 electron density
-    (represented in Hartley reciprocal space)
-    '''
-    def __init__(self, in_dim, out_dim, nlayers, hidden_dim, activation):
-        super(ResidLinearDecoder, self).__init__()
-        layers = [nn.Linear(in_dim, hidden_dim), activation()]
+class ResidLinearMLP(nn.Module):
+    def __init__(self, in_dim, nlayers, hidden_dim, out_dim, activation):
+        super(ResidLinearMLP, self).__init__()
+        layers = [ResidLinear(in_dim, hidden_dim) if in_dim == hidden_dim else nn.Linear(in_dim, hidden_dim), activation()]
         for n in range(nlayers):
             layers.append(ResidLinear(hidden_dim, hidden_dim))
             layers.append(activation())
-        layers.append(nn.Linear(hidden_dim,out_dim))
+        layers.append(ResidLinear(hidden_dim, out_dim) if out_dim == hidden_dim else nn.Linear(hidden_dim, out_dim))
         self.main = nn.Sequential(*layers)
 
     def forward(self, x):
         return self.main(x)
-
-class ResidLinearEncoder(nn.Module):
-    def __init__(self, in_dim, nlayers, hidden_dim, out_dim, activation):
-        super(ResidLinearEncoder, self).__init__()
-        self.in_dim = in_dim
-        # define network
-        layers = [nn.Linear(in_dim, hidden_dim), activation()]
-        for n in range(nlayers-1):
-            layers.append(ResidLinear(hidden_dim, hidden_dim))
-            layers.append(activation())
-        layers.append(nn.Linear(hidden_dim, out_dim))
-        self.main = nn.Sequential(*layers)
-
-    def forward(self, img):
-        return self.main(img.view(-1,self.in_dim))
 
 class ResidLinear(nn.Module):
     def __init__(self, nin, nout):
@@ -314,20 +267,18 @@ class ResidLinear(nn.Module):
         z = self.linear(x) + x
         return z
 
-class MLPEncoder(nn.Module):
+class MLP(nn.Module):
     def __init__(self, in_dim, nlayers, hidden_dim, out_dim, activation):
-        super(MLPEncoder, self).__init__()
-        self.in_dim = in_dim
-        # define network
+        super(MLP, self).__init__()
         layers = [nn.Linear(in_dim, hidden_dim), activation()]
-        for n in range(nlayers-1):
+        for n in range(nlayers):
             layers.append(nn.Linear(hidden_dim, hidden_dim))
             layers.append(activation())
         layers.append(nn.Linear(hidden_dim, out_dim))
         self.main = nn.Sequential(*layers)
 
-    def forward(self, img):
-        return self.main(img.view(-1,self.in_dim))
+    def forward(self, x):
+        return self.main(x)
       
 # Adapted from soumith DCGAN
 class ConvEncoder(nn.Module):
@@ -355,7 +306,7 @@ class ConvEncoder(nn.Module):
             # state size. out_dims x 1 x 1
         )
     def forward(self, x):
-        x = torch.unsqueeze(x,1)
+        x = x.view(-1,1,64,64)
         x = self.main(x)
         return x.view(x.size(0), -1) # flatten
 

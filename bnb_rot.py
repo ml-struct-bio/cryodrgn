@@ -20,7 +20,7 @@ import fft
 import lie_tools
 from lattice import Lattice
 from bnb import BNNBHomo
-from models import FTSliceDecoder, ResidLinearDecoder
+from models import FTSliceDecoder
 from losses import EquivarianceLoss
 from beta_schedule import LinearSchedule
 
@@ -120,7 +120,6 @@ def main(args):
 
     lattice = Lattice(nx)
     model = FTSliceDecoder(3, nx, args.layers, args.dim, nn.ReLU)
-    #model = ResidLinearDecoder(3, 1, args.layers, args.dim, nn.ReLU)
     bnb = BNNBHomo(model, lattice, tilt)
 
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)

@@ -200,7 +200,7 @@ def main(args):
 
             # predict encoding
             #input_ = torch.stack((y, yt),1) if tilt is not None else y
-            input_ = (y,yt) if tilt is not None else y
+            input_ = (y.view(-1,nx*ny), yt.view(-1,nx*ny)) if tilt is not None else y.view(-1,nx*ny)
             mu, logvar = model.encode(input_)
             z = model.reparameterize(mu, logvar)
 

@@ -20,7 +20,7 @@ import utils
 import fft
 import lie_tools
 from lattice import Lattice
-from models import HetVAE
+from models import HetOnlyVAE
 
 log = utils.log
 vlog = utils.vlog
@@ -89,7 +89,7 @@ def main(args):
         Nimg = args.N
 
     lattice = Lattice(nx)
-    model = HetVAE(lattice, ny*nx, args.qlayers, args.qdim, args.players, args.pdim,
+    model = HetOnlyVAE(lattice, ny*nx, args.qlayers, args.qdim, args.players, args.pdim,
                 args.zdim, encode_mode=args.encode_mode)
 
     log('Loading weights from {}'.format(args.weights))

@@ -20,7 +20,7 @@ import fft
 import lie_tools
 from lattice import Lattice
 from bnb import BNNBHet
-from models import HetVAE
+from models import HetOnlyVAE
 from beta_schedule import get_beta_schedule, LinearSchedule
 from losses import EquivarianceLoss
 
@@ -145,7 +145,7 @@ def main(args):
         tilt = None
 
     lattice = Lattice(nx)
-    model = HetVAE(lattice, nx*ny, args.qlayers, args.qdim, args.players, args.pdim,
+    model = HetOnlyVAE(lattice, nx*ny, args.qlayers, args.qdim, args.players, args.pdim,
                 args.zdim, encode_mode=args.encode_mode)
     bnb = BNNBHet(model, lattice, tilt)
     if args.rotate: 
@@ -229,11 +229,11 @@ def main(args):
             model.train()
 
             # train the decoder
-            y_recon = model(rot, z)
+            y_recon = model.decode(rot, z)
             y_recon = y_recon.view(-1, ny, nx)
             gen_loss = F.mse_loss(y_recon,y)
             if tilt is not None: 
-                y_recon_tilt = model(bnb.tilt @ rot, z)
+                y_recon_tilt = model.decode(bnb.tilt @ rot, z)
                 y_recon_tilt = y_recon_tilt.view(-1, ny, nx)
                 gen_loss = .5*gen_loss + .5*F.mse_loss(y_recon_tilt,yt)
 

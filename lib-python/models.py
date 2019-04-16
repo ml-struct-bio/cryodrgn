@@ -11,7 +11,7 @@ import utils
 
 log = utils.log
 
-class HetVAE(nn.Module):
+class HetOnlyVAE(nn.Module):
     def __init__(self, lattice, # Lattice object
             in_dim, # nx*ny for single image or 2*nx*ny for tilt series
             encode_layers, encode_dim, 
@@ -19,7 +19,7 @@ class HetVAE(nn.Module):
             z_dim = 1,
             encode_mode = 'mlp',
             ):
-        super(HetVAE, self).__init__()
+        super(HetOnlyVAE, self).__init__()
         self.lattice = lattice
         self.in_dim = in_dim 
         self.z_dim = z_dim
@@ -67,7 +67,7 @@ class HetVAE(nn.Module):
         z = torch.cat((coords,z.expand(*coords.shape[:-1],1)),dim=-1)
         return z
 
-    def forward(self, rot, z):
+    def decode(self, rot, z):
         '''
         rot: Bx3x3 rotation matrices
         z: Bxzdim latent coordinate

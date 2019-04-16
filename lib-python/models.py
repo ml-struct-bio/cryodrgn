@@ -181,7 +181,7 @@ class VAE(nn.Module):
         self.lattice = torch.from_numpy(lattice)
     
     def forward(self, img):
-        z_mu, z_std = self.latent_encoder(self.encoder(img.view(-1,self.in_dim)))
+        z_mu, z_std = self.latent_encoder(nn.ReLU()(self.encoder(img.view(-1,self.in_dim))))
         rot, w_eps = self.latent_encoder.sampleSO3(z_mu, z_std)
 
         # transform lattice by rot
@@ -216,7 +216,7 @@ class TiltVAE(nn.Module):
         self.tilt = torch.tensor(tilt)
 
     def forward(self, img, img_tilt):
-        z_mu, z_std = self.latent_encoder(self.encoder((img, img_tilt)))
+        z_mu, z_std = self.latent_encoder(nn.ReLU()(self.encoder((img, img_tilt))))
         rot, w_eps = self.latent_encoder.sampleSO3(z_mu, z_std)
 
         # transform lattice by rot

@@ -18,7 +18,9 @@ import mrc
 import utils
 import fft
 import lie_tools
-from models import BNNBHet, HetVAE, Lattice
+from lattice import Lattice
+from bnb import BNNBHet
+from models import HetVAE
 from beta_schedule import get_beta_schedule, LinearSchedule
 from losses import EquivarianceLoss
 

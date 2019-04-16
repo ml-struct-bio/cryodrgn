@@ -11,80 +11,6 @@ import utils
 
 log = utils.log
 
-class ResidLinear(nn.Module):
-    def __init__(self, nin, nout):
-        super(ResidLinear, self).__init__()
-        self.linear = nn.Linear(nin, nout)
-
-    def forward(self, x):
-        z = self.linear(x) + x
-        return z
-
-class Lattice:
-    def __init__(self, D):
-        # centered and scaled xy plane, values between -1 and 1
-        # endpoint=False since FT is not symmetric around origin
-        x0, x1 = np.meshgrid(np.linspace(-1, 1, D, endpoint=False), 
-                             np.linspace(-1, 1, D, endpoint=False))
-        coords = np.stack([x0.ravel(),x1.ravel(),np.zeros(D**2)],1).astype(np.float32)
-        self.coords = torch.tensor(coords)
-        self.D = D
-        self.D2 = int(D/2)
-        c = 2/(D-1)*(D/2) -1 
-        self.center = torch.tensor([c,c]) # pixel coordinate for img[D/2,D/2]
-        
-        self.square_mask = {}
-        self.circle_mask = {}
-
-    def get_square_lattice(self, L):
-        b,e = self.D2-L, self.D2+L+1
-        center_lattice = self.coords.view(self.D,self.D,3)[b:e,b:e,:].contiguous().view(-1,3)
-        return center_lattice
-
-    def get_square_mask(self, L):
-        '''Return a binary mask for self.coords which restricts coordinates to a centered square lattice'''
-        if L in self.square_mask:
-            return self.square_mask[L]
-        assert 2*L+1 < self.D, 'Mask with size {} too large for lattice with size {}'.format(L,D)
-        log('Using square lattice of size {}x{}'.format(2*L+1,2*L+1))
-        b,e = self.D2-L, self.D2+L
-        c1 = self.coords.view(self.D,self.D,3)[b,b]
-        c2 = self.coords.view(self.D,self.D,3)[e,e]
-        m1 = self.coords[:,0] >= c1[0]
-        m2 = self.coords[:,0] <= c2[0]
-        m3 = self.coords[:,1] >= c1[1]
-        m4 = self.coords[:,1] <= c2[1]
-        mask = m1*m2*m3*m4
-        self.square_mask[L] = mask
-        return mask
-
-    def get_circular_mask(self, R):
-        '''Return a binary mask for self.coords which restricts coordinates to a centered circular lattice'''
-        if R in self.circle_mask:
-            return self.circle_mask[R]
-        assert 2*R+1 < self.D, 'Mask with radius {} too large for lattice with size {}'.format(R,D)
-        log('Using circular lattice with radius {}'.format(R))
-        r = 2*R/self.D
-        mask = self.coords.pow(2).sum(-1) < r**2
-        self.circle_mask[R] = mask
-        return mask
-
-    def rotate(self, images, theta):
-        '''
-        images: BxYxX
-        theta: Q, in radians
-        '''
-        images = images.expand(len(theta), *images.shape) # QxBxYxX
-        cos = torch.cos(theta)
-        sin = torch.sin(theta)
-        rot = torch.stack([cos, sin, -sin, cos], 1).view(-1, 2, 2)
-        grid = self.coords[:,0:2] @ rot
-        grid = grid.view(len(rot), self.D, self.D, 2) # QxYxXx2
-        offset = self.center - grid[:,self.D2,self.D2] # Qx2
-        grid += offset[:,None,None,:]
-        rotated = F.grid_sample(images, grid) # QxBxYxX
-        return rotated.transpose(0,1) # BxQxYxX
-
 class HetVAE(nn.Module):
     def __init__(self, lattice, # Lattice object
             in_dim, # nx*ny for single image or 2*nx*ny for tilt series
@@ -149,159 +75,6 @@ class HetVAE(nn.Module):
         x = self.lattice.coords @ rot # R.T*x
         y_hat = self.decoder(self.cat_z(x,z))
         return y_hat
-
-class BNNBHomo:
-    '''Branch and no bound for homogeneous reconstruction'''
-    def __init__(self, decoder, lattice, tilt=None):
-        self.decoder = decoder
-        self.lattice = lattice
-        self.base_quat = so3_grid.base_SO3_grid()
-        self.base_rot = lie_tools.quaternions_to_SO3(torch.tensor(self.base_quat))
-        self.nbase = len(self.base_quat)
-        assert self.nbase == 576, "Base resolution changed?"
-        self.tilt = tilt
-
-    def mask_image(self, images, mask):
-        return images[:,mask]
-
-    def eval_grid(self, images, rot, NQ, L, images_tilt=None):
-        '''
-        images: B x NY x NX 
-        rot: (NxQ) x 3 x 3 rotation matrics (N=1 for base grid, N=B for incremental grid)
-        NQ: number of slices evaluated for each image
-        L: radius of fourier components to evaluate
-        '''
-        B = images.size(0)
-        mask = self.lattice.get_circular_mask(L)
-        coords = self.lattice.coords[mask]
-        c = int(coords.size(-2)/2)
-        YX = coords.size(-2)
-        def compute_err(images, rot):
-            images = images.view(B,-1)[:,mask]
-            y_hat = self.decoder.forward_symmetric(coords @ rot, c)
-            y_hat = y_hat.view(-1,NQ,YX) #1xQxYX for base grid, Bx8xYX for incremental grid
-            images = images.unsqueeze(1) # Bx1xYX
-            err = torch.sum((images-y_hat).pow(2),-1) # BxQ
-            return err
-        err = compute_err(images, rot)
-        if images_tilt is not None:
-            err_tilt = compute_err(images_tilt, self.tilt @ rot)
-            err += err_tilt
-        mini = torch.argmin(err,1) # B
-        return mini.cpu().numpy()
-
-    def opt_theta(self, images, L, images_tilt=None, niter=5):
-        B = images.size(0)
-        assert not self.decoder.training
-        with torch.no_grad():
-            min_i = self.eval_grid(images, self.base_rot, self.nbase, L, images_tilt=images_tilt)
-            min_quat = self.base_quat[min_i]
-            s2i, s1i = so3_grid.get_base_indr(min_i)
-            for iter_ in range(1,niter+1):
-                neighbors = [so3_grid.get_neighbor(min_quat[i], s2i[i], s1i[i], iter_) for i in range(B)]
-                quat = np.array([x[0] for x in neighbors])
-                ind = np.array([x[1] for x in neighbors])
-                rot = lie_tools.quaternions_to_SO3(torch.tensor(quat))
-                min_i = self.eval_grid(images, rot, 8, L, images_tilt=images_tilt)
-                min_ind = ind[np.arange(B), min_i]
-                s2i, s1i = min_ind.T
-                min_quat = quat[np.arange(B),min_i]
-        return lie_tools.quaternions_to_SO3(torch.tensor(min_quat))
-
-class BNNBHet:
-    def __init__(self, model, lattice, tilt=None):
-        self.model = model
-        self.lattice = lattice
-        self.base_quat = so3_grid.base_SO3_grid()
-        self.nbase = len(self.base_quat)
-        self.base_rot = lie_tools.quaternions_to_SO3(torch.tensor(self.base_quat))
-        self.tilt = tilt
-
-    def eval_grid(self, images, rot, z, NQ, L, images_tilt=None):
-        B = z.size(0)
-        mask = self.lattice.get_circular_mask(L)
-        coords = self.lattice.coords[mask]
-        c = int(coords.size(-2)/2)
-        YX = coords.size(-2)
-        def compute_err(images, rot):
-            images = images.view(B,-1)[:,mask]
-            x = self.model.cat_z(coords @ rot, z)
-            y_hat = self.model.decoder.forward_symmetric(x,c)
-            y_hat = y_hat.view(B, NQ, YX) # BxQxYX
-            images = images.unsqueeze(1) # Bx1xYX
-            err = torch.sum((images-y_hat).pow(2),-1) # BxQ
-            return err
-        err = compute_err(images,rot)
-        if images_tilt is not None:
-            err_tilt = compute_err(images_tilt, self.tilt @ rot)
-            err += err_tilt
-        mini = torch.argmin(err,1)
-        return mini.cpu().numpy()
-        
-    def eval_base_grid(self, images, rotated_images, z, L):
-        '''
-        images: BxYxX
-        rotated_images:Bx11xYxX
-        '''
-        B = z.size(0)
-        mask = self.lattice.get_circular_mask(L)
-        coords = self.lattice.coords[mask]
-        c = int(coords.size(-2)/2)
-        YX = coords.size(-2)
-
-        # only evaluate every 12 points (different points on the sphere)
-        rot = self.base_rot[::12] # 48x3x3
-        rot = rot.expand(B,*rot.shape) # Bx48x3x3
-        x = self.model.cat_z(coords @ rot, z)
-        y_hat = self.model.decoder.forward_symmetric(x,c) # Bx48xYX
-        y_hat = y_hat.unsqueeze(2) # Bx48x1xYX
-
-        images = images.unsqueeze(1) # Bx1xYxX
-        images = torch.cat((images,rotated_images),1) # Bx12xYxX
-        images = images.view(B,1,12,-1)[...,mask] # Bx1x12xYX
-
-        err = torch.sum((images-y_hat).pow(2),-1).view(B,self.nbase)
-        mini = torch.argmin(err,1)
-        return mini.cpu().numpy()
-
-    def opt_theta_rot(self, images, rotated_images, z, niter=5, L=None):
-        B = images.size(0)
-        assert not self.model.training
-        with torch.no_grad():
-            min_i = self.eval_base_grid(images, rotated_images, z, L)
-            min_quat = self.base_quat[min_i]
-            s2i, s1i = so3_grid.get_base_indr(min_i)
-            for iter_ in range(1,niter+1):
-                neighbors = [so3_grid.get_neighbor(min_quat[i], s2i[i], s1i[i], iter_) for i in range(B)]
-                quat = np.array([x[0] for x in neighbors])
-                ind = np.array([x[1] for x in neighbors])
-                rot = lie_tools.quaternions_to_SO3(torch.tensor(quat))
-                min_i = self.eval_grid(images, rot, z, 8, L)
-                min_ind = ind[np.arange(B), min_i]
-                s2i, s1i = min_ind.T
-                min_quat = quat[np.arange(B),min_i]
-        return lie_tools.quaternions_to_SO3(torch.tensor(min_quat))
-
-
-    def opt_theta(self, images, z, images_tilt=None, niter=5, L=None):
-        B = images.size(0)
-        assert not self.model.training
-        with torch.no_grad():
-            # expand the base grid B times since each image has a different z
-            base_rot = self.base_rot.expand(B,*self.base_rot.shape) # B x 576 x 3 x 3
-            min_i = self.eval_grid(images, base_rot, z, self.nbase, L, images_tilt=images_tilt) # B x 576 slices
-            min_quat = self.base_quat[min_i]
-            s2i, s1i = so3_grid.get_base_indr(min_i)
-            for iter_ in range(1,niter+1):
-                neighbors = [so3_grid.get_neighbor(min_quat[i], s2i[i], s1i[i], iter_) for i in range(B)]
-                quat = np.array([x[0] for x in neighbors])
-                ind = np.array([x[1] for x in neighbors])
-                rot = lie_tools.quaternions_to_SO3(torch.tensor(quat))
-                min_i = self.eval_grid(images, rot, z, 8, L, images_tilt=images_tilt)
-                min_ind = ind[np.arange(B), min_i]
-                s2i, s1i = min_ind.T
-                min_quat = quat[np.arange(B),min_i]
-        return lie_tools.quaternions_to_SO3(torch.tensor(min_quat))
 
 class FTSliceDecoder(nn.Module):
     '''
@@ -370,23 +143,6 @@ class FTSliceDecoder(nn.Module):
         result[...,1][w] *= -1 # replace with complex conjugate to get correct values for original lattice positions
         return result
 
-class ResidLinearDecoder(nn.Module):
-    '''
-    A NN mapping R3 cartesian coordinates to R1 electron density
-    (represented in Hartley reciprocal space)
-    '''
-    def __init__(self, in_dim, out_dim, nlayers, hidden_dim, activation):
-        super(ResidLinearDecoder, self).__init__()
-        layers = [nn.Linear(in_dim, hidden_dim), activation()]
-        for n in range(nlayers):
-            layers.append(ResidLinear(hidden_dim, hidden_dim))
-            layers.append(activation())
-        layers.append(nn.Linear(hidden_dim,out_dim))
-        self.main = nn.Sequential(*layers)
-
-    def forward(self, x):
-        return self.main(x)
-
 class VAE(nn.Module):
     def __init__(self, 
             nx, ny, 
@@ -447,7 +203,6 @@ class VAE(nn.Module):
         y_hat = self.decoder(x)
         y_hat = y_hat.view(-1, self.ny, self.nx)
         return y_hat, z_mu, z_std, w_eps
-
 
 class TiltVAE(nn.Module):
     def __init__(self, 
@@ -518,6 +273,23 @@ class TiltEncoder(nn.Module):
         z = self.encoder2(torch.cat((x_enc,x_tilt_enc),-1))
         return z
 
+class ResidLinearDecoder(nn.Module):
+    '''
+    A NN mapping R3 cartesian coordinates to R1 electron density
+    (represented in Hartley reciprocal space)
+    '''
+    def __init__(self, in_dim, out_dim, nlayers, hidden_dim, activation):
+        super(ResidLinearDecoder, self).__init__()
+        layers = [nn.Linear(in_dim, hidden_dim), activation()]
+        for n in range(nlayers):
+            layers.append(ResidLinear(hidden_dim, hidden_dim))
+            layers.append(activation())
+        layers.append(nn.Linear(hidden_dim,out_dim))
+        self.main = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.main(x)
+
 class ResidLinearEncoder(nn.Module):
     def __init__(self, in_dim, nlayers, hidden_dim, out_dim, activation):
         super(ResidLinearEncoder, self).__init__()
@@ -532,6 +304,15 @@ class ResidLinearEncoder(nn.Module):
 
     def forward(self, img):
         return self.main(img.view(-1,self.in_dim))
+
+class ResidLinear(nn.Module):
+    def __init__(self, nin, nout):
+        super(ResidLinear, self).__init__()
+        self.linear = nn.Linear(nin, nout)
+
+    def forward(self, x):
+        z = self.linear(x) + x
+        return z
 
 class MLPEncoder(nn.Module):
     def __init__(self, in_dim, nlayers, hidden_dim, out_dim, activation):

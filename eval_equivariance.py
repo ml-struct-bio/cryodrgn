@@ -19,7 +19,8 @@ import mrc
 import utils
 import fft
 import lie_tools
-from models import HetVAE, Lattice
+from lattice import Lattice
+from models import HetVAE
 from losses import EquivarianceLoss
 
 log = utils.log

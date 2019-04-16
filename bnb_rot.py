@@ -18,7 +18,9 @@ import mrc
 import utils
 import fft
 import lie_tools
-from models import Lattice, BNNBHomo, FTSliceDecoder, ResidLinearDecoder
+from lattice import Lattice
+from bnb import BNNBHomo
+from models import FTSliceDecoder, ResidLinearDecoder
 from losses import EquivarianceLoss
 from beta_schedule import LinearSchedule
 

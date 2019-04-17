@@ -178,7 +178,7 @@ class VAE(nn.Module):
         x0, x1 = np.meshgrid(np.linspace(-1, 1, nx, endpoint=False), # FT is not symmetric around origin
                              np.linspace(-1, 1, ny, endpoint=False))
         lattice = np.stack([x0.ravel(),x1.ravel(),np.zeros(ny*nx)],1).astype(np.float32)
-        self.lattice = torch.from_numpy(lattice)
+        self.lattice = torch.tensor(lattice)
     
     def forward(self, img):
         z_mu, z_std = self.latent_encoder(nn.ReLU()(self.encoder(img.view(-1,self.in_dim))))

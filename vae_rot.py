@@ -13,14 +13,15 @@ from datetime import datetime as dt
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.autograd import Variable
-from torch.distributions import Normal
+from torch.utils.data import DataLoader
 
 sys.path.insert(0,os.path.abspath(os.path.dirname(__file__))+'/lib-python')
 import mrc
 import utils
 import fft
 import lie_tools
+import dataset
+
 from models import VAE
 from beta_schedule import get_beta_schedule, LinearSchedule
 from losses import EquivarianceLoss
@@ -36,6 +37,7 @@ def parse_args():
     parser.add_argument('--checkpoint', type=int, default=5, help='Checkpointing interval in N_EPOCHS (default: %(default)s)')
     parser.add_argument('--log-interval', type=int, default=1000, help='Logging interval in N_IMGS (default: %(default)s)')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
+    parser.add_argument('--seed', type=int, default=np.random.randint(0,100000), help='Random seed')
 
     group = parser.add_argument_group('Training parameters')
     group.add_argument('-n', '--num-epochs', type=int, default=10, help='Number of training epochs (default: %(default)s)')
@@ -46,7 +48,6 @@ def parse_args():
     group.add_argument('--beta-control', type=float, help='KL-Controlled VAE gamma. Beta is KL target. (default: %(default)s)')
     group.add_argument('--equivariance', type=float, help='Strength of equivariance loss (default: %(default)s)')
     group.add_argument('--equivariance-end-it', type=int, default=100000, help='It at which equivariance max (default: %(default)s)')
-            
 
     group = parser.add_argument_group('Encoder Network')
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
@@ -80,15 +81,55 @@ def eval_volume(model, nz, ny, nx, rnorm):
     vol = fft.ihtn_center(vol_f)
     return vol, vol_f
 
+def train(model, optim, D, y, beta, beta_control=None, equivariance=None):
+    model.train()
+    optim.zero_grad()
+    # train the model
+    y_recon, z_mu, z_std, w_eps = model(y) 
+    gen_loss, kld = loss_function(y_recon, y, w_eps, z_std)
+    if torch.isnan(kld):
+        log(w_eps[0])
+        log(z_std[0])
+        raise RuntimeError('KLD is nan')
+    if args.beta_control is None:
+        loss = gen_loss + beta*kld/D**2
+    else:
+        loss = gen_loss + args.beta_control*(beta-kld)**2/D**2
+    # equivariance loss
+    if equivariance is not None:
+        lamb, equivariance_loss = equivariance
+        eq_loss = equivariance_loss(y, z_mu)
+        loss += lamb*eq_loss
+    loss.backward()
+    optim.step()
+    return gen_loss.item(), kld.item(), loss.item(), eq_loss.item() if equivariance else None
+
+def save_checkpoint(model, optim, D, epoch, norm, out_mrc, out_weights):
+    model.eval()
+    vol, vol_f = eval_volume(model, D, D, D, norm)
+    mrc.write(out_mrc, vol.astype(np.float32))
+    torch.save({
+        'epoch':epoch,
+        'model_state_dict':model.state_dict(),
+        'optimizer_state_dict':optim.state_dict(),
+        }, out_weights)
+
 def main(args):
     log(args)
     t1 = dt.now()
     if args.outdir is not None and not os.path.exists(args.outdir):
         os.makedirs(args.outdir)
 
+    # set the random seed
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+
     ## set the device
     use_cuda = torch.cuda.is_available()
+    device = torch.device('cuda' if use_cuda else 'cpu')
     log('Use cuda {}'.format(use_cuda))
+    if use_cuda:
+        torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
     ## set beta schedule
     try:
@@ -98,37 +139,19 @@ def main(args):
     beta_schedule = get_beta_schedule(args.beta)
 
     # load the particles
-    particles_real, _, _ = mrc.parse_mrc(args.particles)
-    particles_real = particles_real.astype(np.float32)
-    Nimg, ny, nx = particles_real.shape
-    nz = max(nx,ny)
-    log('Loaded {} {}x{} images'.format(Nimg, ny, nx))
-    particles_ft = np.asarray([fft.ht2_center(img).astype(np.float32) for img in particles_real])
-    assert particles_ft.shape == (Nimg,ny,nx)
-    rnorm  = [np.mean(particles_real), np.std(particles_real)]
-    log('Particle stack mean, std: {} +/- {}'.format(*rnorm))
-    rnorm[0] = 0
-    rnorm[1] = np.median([np.max(x) for x in particles_real])
-    log('Normalizing particles by mean, std: {} +/- {}'.format(*rnorm))
-    particles_real = (particles_real - rnorm[0])/rnorm[1]
+    data = dataset.MRCData(args.particles)
+    Nimg = data.N
+    D = data.D
+    log('Loaded {} {}x{} images'.format(Nimg, D, D))
+    log('Normalized FT by {} +/- {}'.format(*data.norm))
 
-    rnorm  = [np.mean(particles_ft), np.std(particles_ft)]
-    log('Particle FT stack mean, std: {} +/- {}'.format(*rnorm))
-    rnorm[0] = 0
-    log('Normalizing FT by mean, std: {} +/- {}'.format(*rnorm))
-    particles_ft = (particles_ft - rnorm[0])/rnorm[1]
-
-    model = VAE(nx, ny, args.qlayers, args.qdim, args.players, args.pdim,
+    model = VAE(D, D, args.qlayers, args.qdim, args.players, args.pdim,
                 encode_mode=args.encode_mode)
-    if use_cuda:
-        model.cuda()
-        model.lattice = model.lattice.cuda()
 
     if args.equivariance:
         assert args.equivariance > 0, 'Regularization weight must be positive'
         equivariance_lambda = LinearSchedule(0, args.equivariance, 10000, args.equivariance_end_it)
-        equivariance_loss = EquivarianceLoss(model,ny,nx)
-        if use_cuda: equivariance_loss.lattice = equivariance_loss.lattice.cuda()
+        equivariance_loss = EquivarianceLoss(model,D,D)
 
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
@@ -143,6 +166,7 @@ def main(args):
         start_epoch = 0
 
     # training loop
+    data_generator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
     num_epochs = args.num_epochs
     for epoch in range(start_epoch, num_epochs):
         gen_loss_accum = 0
@@ -150,81 +174,42 @@ def main(args):
         kld_accum = 0
         eq_loss_accum = 0
         batch_it = 0 
-        num_batches = np.ceil(Nimg / args.batch_size).astype(int)
-        for minibatch_i in np.array_split(np.random.permutation(Nimg),num_batches):
-            batch_it += len(minibatch_i)
+        for minibatch in data_generator:
+            minibatch = minibatch.to(device)
+            batch_it += len(minibatch)
             global_it = Nimg*epoch + batch_it
-
-            # inference with real space image
-            y = Variable(torch.from_numpy(np.asarray([particles_real[i] for i in minibatch_i])))
-            if use_cuda: y = y.cuda()
-            y_recon, z_mu, z_std, w_eps = model(y) 
-
-            # equivariance loss
-            if args.equivariance:
-                lamb = equivariance_lambda(global_it)
-                eq_loss = equivariance_loss(y, z_mu)
-            else:
-                lamb, eq_loss = 0, 0 
-
-            # reconstruct fourier space image (projection slice theorem)
-            y = Variable(torch.from_numpy(np.asarray([particles_ft[i] for i in minibatch_i])))
-            if use_cuda: y = y.cuda()
-            gen_loss, kld = loss_function(y_recon, y, w_eps, z_std)
+            
 
             beta = beta_schedule(global_it)
-            if args.beta_control is None:
-                loss = gen_loss + beta*kld/(nx*ny)
-            else:
-                loss = gen_loss + args.beta_control*(beta-kld)**2/(nx*ny)
-
             if args.equivariance:
-                loss += lamb*eq_loss
+                lamb = equivariance_lambda(global_it)
+                equivariance_tuple = (lamb, equivariance_loss)
+            else:
+                equivariance_tuple = None
 
-            if torch.isnan(kld):
-                log(w_eps[0])
-                log(z_std[0])
-                raise RuntimeError('KLD is nan')
+            gen_loss, kld, loss, eq_loss = train(model, optim, D, minibatch, beta, args.beta_control, equivariance_tuple)
 
-            loss.backward()
-            optim.step()
-            optim.zero_grad()
-            
             # logging
-            kld_accum += kld.item()*len(minibatch_i)
-            gen_loss_accum += gen_loss.item()*len(minibatch_i)
-            loss_accum += loss.item()*len(minibatch_i)
-            if args.equivariance:eq_loss_accum += eq_loss.item()*len(minibatch_i)
+            gen_loss_accum += gen_loss*len(minibatch)
+            kld_accum += kld*len(minibatch)
+            loss_accum += loss*len(minibatch)
+            if args.equivariance: eq_loss_accum += eq_loss*len(minibatch)
 
             if batch_it % args.log_interval == 0:
-                eq_log = 'equivariance={:.4f}, lambda={:.4f}, '.format(eq_loss.item(), lamb) if args.equivariance else ''
-                log('# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.4f}, kld={:.4f}, beta={:.4f}, {}loss={:.4f}'.format(epoch+1, num_epochs, batch_it, Nimg, gen_loss.item(), kld.item(), beta, eq_log, loss.item()))
+                eq_log = 'equivariance={:.4f}, lambda={:.4f}, '.format(eq_loss, lamb) if args.equivariance else ''
+                log('# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.4f}, kld={:.4f}, beta={:.4f}, {}loss={:.4f}'.format(epoch+1, num_epochs, batch_it, Nimg, gen_loss, kld, beta, eq_log, loss))
         eq_log = 'equivariance = {:.4f}, '.format(eq_loss_accum/Nimg) if args.equivariance else ''
         log('# =====> Epoch: {} Average gen loss = {:.4}, KLD = {:.4f}, {}total loss = {:.4f}'.format(epoch+1, gen_loss_accum/Nimg, kld_accum/Nimg, eq_log, loss_accum/Nimg))
 
         if args.checkpoint and epoch % args.checkpoint == 0:
-            model.eval()
-            vol, vol_f = eval_volume(model, nz, ny, nx, rnorm)
-            mrc.write('{}/reconstruct.{}.mrc'.format(args.outdir,epoch), vol.astype(np.float32))
-            path = '{}/weights.{}.pkl'.format(args.outdir,epoch)
-            torch.save({
-                'epoch':epoch,
-                'model_state_dict':model.state_dict(),
-                'optimizer_state_dict':optim.state_dict(),
-                }, path)
-            model.train()
+            out_mrc = '{}/reconstruct.{}.mrc'.format(args.outdir,epoch)
+            out_weights = '{}/weights.{}.pkl'.format(args.outdir,epoch)
+            save_checkpoint(model, optim, D, epoch, data.norm, out_mrc, out_weights)
 
     ## save model weights and evaluate the model on 3D lattice
-    model.eval()
-    vol, vol_f = eval_volume(model, nz, ny, nx, rnorm)
-    mrc.write('{}/reconstruct.mrc'.format(args.outdir), vol.astype(np.float32))
-    path = '{}/weights.pkl'.format(args.outdir)
-    torch.save({
-        'epoch':epoch,
-        'model_state_dict':model.state_dict(),
-        'optimizer_state_dict':optim.state_dict(),
-        }, path)
-
+    out_mrc = '{}/reconstruct.mrc'.format(args.outdir)
+    out_weights = '{}/weights.pkl'.format(args.outdir)
+    save_checkpoint(model, optim, D, epoch, data.norm, out_mrc, out_weights)
     
     td = dt.now()-t1
     log('Finsihed in {} ({} per epoch)'.format(td, td/num_epochs))

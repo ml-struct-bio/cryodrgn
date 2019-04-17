@@ -10,14 +10,15 @@ from datetime import datetime as dt
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.autograd import Variable
-from torch.distributions import Normal
+from torch.utils.data import DataLoader
 
 sys.path.insert(0,os.path.abspath(os.path.dirname(__file__))+'/lib-python')
 import mrc
 import utils
 import fft
 import lie_tools
+import dataset
+
 from models import TiltVAE
 from beta_schedule import get_beta_schedule, LinearSchedule
 from losses import EquivarianceLoss
@@ -79,6 +80,41 @@ def eval_volume(model, nz, ny, nx, ft_norm):
     vol = fft.ihtn_center(vol_f*ft_norm[1]+ft_norm[0])
     return vol, vol_f
 
+def train(model, optim, D, minibatch, beta, beta_control=None, equivariance=None):
+    y, yt = minibatch
+    model.train()
+    optim.zero_grad()
+    # train the model
+    y_recon, y_recon_tilt, z_mu, z_std, w_eps = model(y, yt) 
+    gen_loss, kld = loss_function(y_recon, y_recon_tilt, y, yt, w_eps, z_std)
+    if torch.isnan(kld):
+        log(w_eps[0])
+        log(z_std[0])
+        raise RuntimeError('KLD is nan')
+    if args.beta_control is None:
+        loss = gen_loss + beta*kld/D**2
+    else:
+        loss = gen_loss + args.beta_control*(beta-kld)**2/D**2
+    # equivariance loss
+    if equivariance is not None:
+        lamb, equivariance_loss = equivariance
+        eq_loss = equivariance_loss(y, z_mu)
+        loss += lamb*eq_loss
+    loss.backward()
+    optim.step()
+    return gen_loss.item(), kld.item(), loss.item(), eq_loss.item() if equivariance else None
+
+def save_checkpoint(model, optim, D, epoch, norm, out_mrc, out_weights):
+    model.eval()
+    vol, vol_f = eval_volume(model, D, D, D, norm)
+    mrc.write(out_mrc, vol.astype(np.float32))
+    torch.save({
+        'epoch':epoch,
+        'model_state_dict':model.state_dict(),
+        'optimizer_state_dict':optim.state_dict(),
+        }, out_weights)
+
+
 def main(args):
     log(args)
     t1 = dt.now()
@@ -91,6 +127,7 @@ def main(args):
 
     ## set the device
     use_cuda = torch.cuda.is_available()
+    device = torch.device('cuda' if use_cuda else 'cpu')
     log('Use cuda {}'.format(use_cuda))
     if use_cuda:
         torch.set_default_tensor_type(torch.cuda.FloatTensor)
@@ -103,46 +140,23 @@ def main(args):
     beta_schedule = get_beta_schedule(args.beta)
 
     # load the particles
-    particles_real, _, _ = mrc.parse_mrc(args.particles)
-    particles_real = particles_real.astype(np.float32)
-    Nimg, ny, nx = particles_real.shape
-    nz = max(nx,ny)
-    log('Loaded {} {}x{} images'.format(Nimg, ny, nx))
-    particles_ft = np.asarray([fft.ht2_center(img).astype(np.float32) for img in particles_real])
-    assert particles_ft.shape == (Nimg,ny,nx)
-    real_norm  = [np.mean(particles_real), np.std(particles_real)]
-    log('Particle stack mean, std: {} +/- {}'.format(*real_norm))
-    real_norm[0] = 0
-    real_norm[1] = np.median([np.max(x) for x in particles_real])
-    log('Normalizing particles by mean, std: {} +/- {}'.format(*real_norm))
-    particles_real = (particles_real - real_norm[0])/real_norm[1]
-
-    ft_norm  = [np.mean(particles_ft), np.std(particles_ft)]
-    log('Particle FT stack mean, std: {} +/- {}'.format(*ft_norm))
-    ft_norm[0] = 0
-    log('Normalizing FT by mean, std: {} +/- {}'.format(*ft_norm))
-    particles_ft = (particles_ft - ft_norm[0])/ft_norm[1]
-
-    # load particles from tilt series
-    particles_tilt, _, _ = mrc.parse_mrc(args.particles_tilt)
-    particles_tilt = particles_tilt.astype(np.float32)
-    assert particles_tilt.shape == (Nimg, ny, nx), 'Tilt series pair must have same dimensions as untilted particles'
-    particles_tilt_ft = np.asarray([fft.ht2_center(img).astype(np.float32) for img in particles_tilt])
-    particles_tilt = (particles_tilt - real_norm[0])/real_norm[1]
-    particles_tilt_ft = (particles_tilt_ft - ft_norm[0])/ft_norm[1]
+    data = dataset.TiltMRCData(args.particles, args.particles_tilt)
+    Nimg = data.N
+    D = data.D
+    log('Loaded {} {}x{} images'.format(Nimg, D, D))
+    log('Normalized FT by {} +/- {}'.format(*data.norm))
 
     theta = args.tilt*np.pi/180
     tilt = np.array([[1.,0.,0.],
                     [0, np.cos(theta), -np.sin(theta)],
                     [0, np.sin(theta), np.cos(theta)]]).astype(np.float32)
 
-    model = TiltVAE(nx, ny, tilt, args.qlayers, args.qdim, args.players, args.pdim)
+    model = TiltVAE(D, D, tilt, args.qlayers, args.qdim, args.players, args.pdim)
 
     if args.equivariance:
         assert args.equivariance > 0, 'Regularization weight must be positive'
         equivariance_lambda = LinearSchedule(0, args.equivariance, 10000, args.equivariance_end_it)
-        equivariance_loss = EquivarianceLoss(model,ny,nx)
-        if use_cuda: equivariance_loss.lattice = equivariance_loss.lattice.cuda()
+        equivariance_loss = EquivarianceLoss(model,D,D)
 
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
@@ -157,6 +171,7 @@ def main(args):
         start_epoch = 0
 
     # training loop
+    data_generator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
     num_epochs = args.num_epochs
     for epoch in range(start_epoch, num_epochs):
         gen_loss_accum = 0
@@ -164,87 +179,40 @@ def main(args):
         kld_accum = 0
         eq_loss_accum = 0
         batch_it = 0 
-        num_batches = np.ceil(Nimg / args.batch_size).astype(int)
-        for minibatch_i in np.array_split(np.random.permutation(Nimg),num_batches):
-            batch_it += len(minibatch_i)
+        for minibatch in data_generator:
+            minibatch = (minibatch[0].to(device), minibatch[1].to(device))
+            batch_it += len(minibatch[0])
             global_it = Nimg*epoch + batch_it
 
-            # inference with real space image
-            y = torch.from_numpy(particles_real[minibatch_i])
-            yt = torch.from_numpy(particles_tilt[minibatch_i])
-            if use_cuda: 
-                y = y.cuda()
-                yt = yt.cuda()
-            y_recon, y_recon_tilt, z_mu, z_std, w_eps = model(y, yt)
-
-            # equivariance loss
+            beta = beta_schedule(global_it)
             if args.equivariance:
                 lamb = equivariance_lambda(global_it)
-                eq_loss = equivariance_loss(y, z_mu)
+                equivariance_tuple = (lamb, equivariance_loss)
             else:
-                lamb, eq_loss = 0, 0 
+                equivariance_tuple = None
 
-            # reconstruct fourier space image (projection slice theorem)
-            y = torch.from_numpy(particles_ft[minibatch_i])
-            yt = torch.from_numpy(particles_tilt_ft[minibatch_i])
-            if use_cuda: 
-                y = y.cuda()
-                yt = yt.cuda()
-            gen_loss, kld = loss_function(y_recon, y_recon_tilt, y, yt, w_eps, z_std)
-
-            beta = beta_schedule(global_it)
-            if args.beta_control is None:
-                loss = gen_loss + beta*kld/(nx*ny)
-            else:
-                loss = gen_loss + args.beta_control*(beta-kld)**2/(nx*ny)
-
-            if args.equivariance:
-                loss += lamb*eq_loss
-
-            if torch.isnan(kld):
-                log(w_eps[0])
-                log(z_std[0])
-                raise RuntimeError('KLD is nan')
-
-            loss.backward()
-            optim.step()
-            optim.zero_grad()
-            
+            gen_loss, kld, loss, eq_loss = train(model, optim, D, minibatch, beta, args.beta_control, equivariance_tuple)
             # logging
-            kld_accum += kld.item()*len(minibatch_i)
-            gen_loss_accum += gen_loss.item()*len(minibatch_i)
-            loss_accum += loss.item()*len(minibatch_i)
-            if args.equivariance:eq_loss_accum += eq_loss.item()*len(minibatch_i)
+            gen_loss_accum += gen_loss*len(minibatch)
+            kld_accum += kld*len(minibatch)
+            loss_accum += loss*len(minibatch)
+            if args.equivariance: eq_loss_accum += eq_loss*len(minibatch)
 
             if batch_it % args.log_interval == 0:
-                eq_log = 'equivariance={:.4f}, lambda={:.4f}, '.format(eq_loss.item(), lamb) if args.equivariance else ''
-                log('# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.4f}, kld={:.4f}, beta={:.4f}, {}loss={:.4f}'.format(epoch+1, num_epochs, batch_it, Nimg, gen_loss.item(), kld.item(), beta, eq_log, loss.item()))
+                eq_log = 'equivariance={:.4f}, lambda={:.4f}, '.format(eq_loss, lamb) if args.equivariance else ''
+                log('# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.4f}, kld={:.4f}, beta={:.4f}, {}loss={:.4f}'.format(epoch+1, num_epochs, batch_it, Nimg, gen_loss, kld, beta, eq_log, loss))
         eq_log = 'equivariance = {:.4f}, '.format(eq_loss_accum/Nimg) if args.equivariance else ''
         log('# =====> Epoch: {} Average gen loss = {:.4}, KLD = {:.4f}, {}total loss = {:.4f}'.format(epoch+1, gen_loss_accum/Nimg, kld_accum/Nimg, eq_log, loss_accum/Nimg))
 
         if args.checkpoint and epoch % args.checkpoint == 0:
-            model.eval()
-            vol, vol_f = eval_volume(model, nz, ny, nx, ft_norm)
-            mrc.write('{}/reconstruct.{}.mrc'.format(args.outdir,epoch), vol.astype(np.float32))
-            path = '{}/weights.{}.pkl'.format(args.outdir,epoch)
-            torch.save({
-                'epoch':epoch,
-                'model_state_dict':model.state_dict(),
-                'optimizer_state_dict':optim.state_dict(),
-                }, path)
-            model.train()
+            out_mrc = '{}/reconstruct.{}.mrc'.format(args.outdir,epoch)
+            out_weights = '{}/weights.{}.pkl'.format(args.outdir,epoch)
+            save_checkpoint(model, optim, D, epoch, data.norm, out_mrc, out_weights)
 
     ## save model weights and evaluate the model on 3D lattice
-    model.eval()
-    vol, vol_f = eval_volume(model, nz, ny, nx, ft_norm)
-    mrc.write('{}/reconstruct.mrc'.format(args.outdir), vol.astype(np.float32))
-    path = '{}/weights.pkl'.format(args.outdir)
-    torch.save({
-        'epoch':epoch,
-        'model_state_dict':model.state_dict(),
-        'optimizer_state_dict':optim.state_dict(),
-        }, path)
-
+    out_mrc = '{}/reconstruct.mrc'.format(args.outdir)
+    out_weights = '{}/weights.pkl'.format(args.outdir)
+    save_checkpoint(model, optim, D, epoch, data.norm, out_mrc, out_weights)
     
     td = dt.now()-t1
     log('Finsihed in {} ({} per epoch)'.format(td, td/num_epochs))

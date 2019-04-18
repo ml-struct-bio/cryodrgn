@@ -32,7 +32,7 @@ def parse_args():
     parser.add_argument('particles', help='Particle stack file (.mrc)')
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
     parser.add_argument('--load', type=os.path.abspath, help='Initialize training from a checkpoint')
-    parser.add_argument('--checkpoint', type=int, default=5, help='Checkpointing interval in N_EPOCHS (default: %(default)s)')
+    parser.add_argument('--checkpoint', type=int, default=1, help='Checkpointing interval in N_EPOCHS (default: %(default)s)')
     parser.add_argument('--log-interval', type=int, default=1000, help='Logging interval in N_IMGS (default: %(default)s)')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
     parser.add_argument('--seed', type=int, default=np.random.randint(0,100000), help='Random seed')
@@ -101,10 +101,10 @@ def train(model, lattice, bnb, optim, minibatch, L, beta, beta_control=None, equ
     z = model.reparameterize(mu, logvar)
 
     model.eval()
-    if rotated_images:
-        rot = bnb.opt_theta_rot(y, rotated_images, z, L=L)
-    else:
+    if rotated_images is None:
         rot = bnb.opt_theta(y, z, None if enc_only else yt, L=L)
+    else:
+        rot = bnb.opt_theta_rot(y, rotated_images, z, L=L)
     model.train()
 
     y_recon = model.decode(rot, z)
@@ -168,10 +168,10 @@ def main(args):
 
     # load the particles
     if args.tilt is None:
-        data = dataset.MRCData(args.particles)
+        data = dataset.MRCData(args.particles, keepreal=args.rotate)
         tilt = None
     else:
-        data = dataset.TiltMRCData(args.particles, args.tilt)
+        data = dataset.TiltMRCData(args.particles, args.tilt, keepreal=args.rotate)
         theta = args.tilt_deg*np.pi/180
         tilt = np.array([[1.,0.,0.],
                         [0, np.cos(theta), -np.sin(theta)],
@@ -241,7 +241,7 @@ def main(args):
                 yr = torch.from_numpy(data.particles_real[ind]).to(device)
                 yr = lattice.rotate(yr, theta)
                 yr = fft.ht2_center(yr)
-                yr = (yr-data.norm[0])/data.rnorm[1]
+                yr = (yr-data.norm[0])/data.norm[1]
                 yr = torch.from_numpy(yr.astype(np.float32)).to(device)
             else: yr = None
 

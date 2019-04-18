@@ -100,6 +100,10 @@ def warnexists(out):
         log('Warning: {} already exists. Overwriting.'.format(out))
 
 def translate_img(img, t):
+    '''
+    img: BxYxX real space image
+    t: Bx2 shift in pixels
+    '''
     ff = np.fft.fft2(np.fft.fftshift(img))
     ff = fourier_shift(ff, t)
     return np.fft.fftshift(np.fft.ifft2(ff)).real
@@ -110,10 +114,10 @@ def main(args):
         mkbasedir(out)
         warnexists(out)
 
-    if args.out_trans is None:
+    if args.t_extent == 0.:
         log('Not shifting images')
-        args.t_extent = 0
     else:
+        assert args.out_trans, "Must provide output pickle for translations"
         assert args.t_extent > 0
 
     if args.seed is not None:
@@ -181,6 +185,10 @@ def main(args):
         log('Shifting images between +/- {}'.format(args.t_extent))
         trans = np.random.rand(args.N,2)*2*args.t_extent - args.t_extent
         imgs = np.asarray([translate_img(img, t) for img,t in zip(imgs,trans)])
+        # convention: we want the first column to be x shift and second column to be y shift
+        # reverse columns since current implementation of translate_img uses scipy's 
+        # fourier_shift, which is flipped the other way
+        trans = trans[:,::-1]
 
     log('Saving {}'.format(args.o))
     mrc.write(args.o,imgs.astype(np.float32))

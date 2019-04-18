@@ -1,5 +1,5 @@
 '''
-NN reconstruction with direct optimization of orientation
+Heterogeneous NN reconstruction with BNB optimization of orientation
 '''
 import numpy as np
 import sys, os
@@ -8,16 +8,16 @@ import pickle
 from datetime import datetime as dt
 
 import torch
-#torch.backends.cudnn.enabled=False
-#torch.backends.cudnn.benchmark = True
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.data import DataLoader
 
 sys.path.insert(0,os.path.abspath(os.path.dirname(__file__))+'/lib-python')
 import mrc
 import utils
 import fft
-import lie_tools
+import dataset
+
 from lattice import Lattice
 from bnb import BNNBHet
 from models import HetOnlyVAE
@@ -90,6 +90,58 @@ def eval_volume(model, lattice, D, zval, rnorm):
     vol = fft.ihtn_center(vol_f*rnorm[1]+rnorm[0])
     return vol, vol_f
 
+def train(model, lattice, bnb, optim, minibatch, L, beta, beta_control=None, equivariance=None, rotated_images=None, enc_only=False):
+    y, yt = minibatch
+    model.train()
+    optim.zero_grad()
+
+    D = lattice.D
+    input_ = (y.view(-1,D*D), yt.view(-1,D*D)) if yt is not None else y.view(-1,D*D)
+    mu, logvar = model.encode(input_)
+    z = model.reparameterize(mu, logvar)
+
+    model.eval()
+    if rotated_images:
+        rot = bnb.opt_theta_rot(y, rotated_images, z, L=L)
+    else:
+        rot = bnb.opt_theta(y, z, None if enc_only else yt, L=L)
+    model.train()
+
+    y_recon = model.decode(rot, z)
+    y_recon = y_recon.view(-1, D, D)
+    gen_loss = F.mse_loss(y_recon, y)
+    if yt is not None: 
+        y_recon_tilt = model.decode(bnb.tilt @ rot, z)
+        y_recon_tilt = y_recon_tilt.view(-1, D, D)
+        gen_loss = .5*gen_loss + .5*F.mse_loss(y_recon_tilt, yt)
+
+    kld = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
+
+    if beta_control is None:
+        loss = gen_loss + beta*kld/(D*D)
+    else:
+        loss = gen_loss + args.beta_control*(beta-kld)**2/(D*D)
+
+    if equivariance is not None:
+        lamb, equivariance_loss = equivariance
+        eq_loss = equivariance_loss(y, mu)
+        loss += lamb*eq_loss
+    loss.backward()
+    optim.step()
+    return gen_loss.item(), kld.item(), loss.item(), eq_loss.item() if equivariance else None, mu.detach().cpu().numpy().mean(0), rot.detach().cpu().numpy()
+
+def save_checkpoint(model, lattice, z, bnb_result, optim, epoch, norm, out_mrc, out_weights):
+    model.eval()
+    vol, vol_f = eval_volume(model, lattice, lattice.D, z, norm)
+    mrc.write(out_mrc, vol.astype(np.float32))
+    torch.save({
+        'norm': norm,
+        'epoch':epoch,
+        'model_state_dict':model.state_dict(),
+        'optimizer_state_dict':optim.state_dict(),
+        'bnb_result': bnb_result
+        }, out_weights)
+
 def main(args):
     log(args)
     t1 = dt.now()
@@ -102,6 +154,7 @@ def main(args):
 
     ## set the device
     use_cuda = torch.cuda.is_available()
+    device = torch.device('cuda' if use_cuda else 'cpu')
     log('Use cuda {}'.format(use_cuda))
     if use_cuda:
         torch.set_default_tensor_type(torch.cuda.FloatTensor)
@@ -114,38 +167,23 @@ def main(args):
     beta_schedule = get_beta_schedule(args.beta)
 
     # load the particles
-    particles_real, _, _ = mrc.parse_mrc(args.particles)
-    Nimg, ny, nx = particles_real.shape
-    assert ny == nx
-    nz = max(nx,ny)
-    log('Loaded {} {}x{} images'.format(Nimg, ny, nx))
-    particles = np.asarray([fft.ht2_center(img).astype(np.float32) for img in particles_real])
-    assert particles.shape == (Nimg,ny,nx)
-    rnorm  = [np.mean(particles), np.std(particles)]
-    log('Particle FT stack mean, std: {} +/- {}'.format(*rnorm))
-    rnorm[0] = 0
-    log('Normalizing FT by mean, std: {} +/- {}'.format(*rnorm))
-    particles = (particles - rnorm[0])/rnorm[1]
-
-    # load particles from tilt series
-    if args.tilt is not None:
-        particles_tilt, _, _ = mrc.parse_mrc(args.tilt)
-        assert particles_tilt.shape == (Nimg, ny, nx), 'Tilt series pair must have same dimensions as untilted particles'
-        log('Loaded {} {}x{} tilt series images'.format(Nimg, ny, nx))
-        particles_tilt = np.asarray([fft.ht2_center(img).astype(np.float32) for img in particles_tilt])
-        particles_tilt = (particles_tilt - rnorm[0])/rnorm[1]
-    
+    if args.tilt is None:
+        data = dataset.MRCData(args.particles)
+        tilt = None
+    else:
+        data = dataset.TiltMRCData(args.particles, args.tilt)
         theta = args.tilt_deg*np.pi/180
         tilt = np.array([[1.,0.,0.],
                         [0, np.cos(theta), -np.sin(theta)],
                         [0, np.sin(theta), np.cos(theta)]]).astype(np.float32)
         tilt = torch.tensor(tilt)
-        assert args.encode_mode == 'tilt'
-    else:
-        tilt = None
+    log('Loaded {} {}x{} images'.format(data.N, data.D, data.D))
+    log('Normalized FT by {} +/- {}'.format(*data.norm))
+    D = data.D
+    Nimg = data.N
 
-    lattice = Lattice(nx)
-    model = HetOnlyVAE(lattice, nx*ny, args.qlayers, args.qdim, args.players, args.pdim,
+    lattice = Lattice(D)
+    model = HetOnlyVAE(lattice, D*D, args.qlayers, args.qdim, args.players, args.pdim,
                 args.zdim, encode_mode=args.encode_mode)
     bnb = BNNBHet(model, lattice, tilt)
     if args.rotate: 
@@ -155,7 +193,7 @@ def main(args):
     if args.equivariance:
         assert args.equivariance > 0, 'Regularization weight must be positive'
         equivariance_lambda = LinearSchedule(0, args.equivariance, 10000, args.equivariance_end_it)
-        equivariance_loss = EquivarianceLoss(model,ny,nx)
+        equivariance_loss = EquivarianceLoss(model,D,D)
 
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
@@ -174,136 +212,67 @@ def main(args):
     else:
         Lsched = LinearSchedule(args.l_start,args.l_end,0,args.l_end_it)
 
-
     # training loop
     num_epochs = args.num_epochs
+    data_iterator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
     for epoch in range(start_epoch, num_epochs):
         kld_accum = 0
         gen_loss_accum = 0
         loss_accum = 0
         eq_loss_accum = 0
         batch_it = 0 
-        num_batches = np.ceil(Nimg / args.batch_size).astype(int)
         z_accum = np.zeros(args.zdim)
         bnb_result = []
-        for minibatch_i in np.array_split(np.random.permutation(Nimg),num_batches):
-            batch_it += len(minibatch_i)
+        for batch in data_iterator:
+            ind = batch[-1]
+            batch = (batch[0].to(device), None) if tilt is None else (batch[0].to(device), batch[1].to(device))
+            batch_it += len(batch[0])
             global_it = Nimg*epoch + batch_it
 
-            y = torch.from_numpy(particles[minibatch_i])
-            if use_cuda: y = y.cuda()
-            if tilt is not None:
-                yt = torch.from_numpy(particles_tilt[minibatch_i])
-                if use_cuda: yt = yt.cuda()
-            else:
-                yt = None
-
-            # predict encoding
-            #input_ = torch.stack((y, yt),1) if tilt is not None else y
-            input_ = (y.view(-1,nx*ny), yt.view(-1,nx*ny)) if tilt is not None else y.view(-1,nx*ny)
-            mu, logvar = model.encode(input_)
-            z = model.reparameterize(mu, logvar)
-
-            # equivariance loss
-            if args.equivariance:
-                lamb = equivariance_lambda(global_it)
-                eq_loss = equivariance_loss(y, mu)
-            else:
-                lamb, eq_loss = 0, 0 
-
-            # find the optimal orientation for each image
             L = Lsched(global_it)
             if L: L = int(L)
-            model.eval()
+            beta = beta_schedule(global_it)
+            if args.equivariance:
+                lamb = equivariance_lambda(global_it)
+                equivariance_tuple = (lamb, equivariance_loss)
+            else: equivariance_tuple = None
+
             if args.rotate:
-                yr = torch.from_numpy(particles_real[minibatch_i])
-                if use_cuda: yr = yr.cuda()
+                yr = torch.from_numpy(data.particles_real[ind]).to(device)
                 yr = lattice.rotate(yr, theta)
                 yr = fft.ht2_center(yr)
-                yr = (yr-rnorm[0])/rnorm[1]
-                yr = torch.from_numpy(yr.astype(np.float32))
-                if use_cuda: yr = yr.cuda()
-                rot = bnb.opt_theta_rot(y, yr, z, L=L)
-            else:
-                rot = bnb.opt_theta(y, z, None if args.enc_only else yt, L=L)
-            model.train()
+                yr = (yr-data.norm[0])/data.rnorm[1]
+                yr = torch.from_numpy(yr.astype(np.float32)).to(device)
+            else: yr = None
 
-            # train the decoder
-            y_recon = model.decode(rot, z)
-            y_recon = y_recon.view(-1, ny, nx)
-            gen_loss = F.mse_loss(y_recon,y)
-            if tilt is not None: 
-                y_recon_tilt = model.decode(bnb.tilt @ rot, z)
-                y_recon_tilt = y_recon_tilt.view(-1, ny, nx)
-                gen_loss = .5*gen_loss + .5*F.mse_loss(y_recon_tilt,yt)
-
-            kld = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
-
-            beta = beta_schedule(global_it)
-            if args.beta_control is None:
-                loss = gen_loss + beta*kld/(nx*ny)
-            else:
-                loss = gen_loss + args.beta_control*(beta-kld)**2/(nx*ny)
-
-            if args.equivariance:
-                loss += lamb*eq_loss
-
-            if torch.isnan(kld):
-                log(mu[0])
-                log(logvar[0])
-                raise RuntimeError('KLD is nan')
-
-
-            loss.backward()
-            optim.step()
-            optim.zero_grad()
-            
+            # train the model
+            gen_loss, kld, loss, eq_loss, z, rot = train(model, lattice, bnb, optim, batch, L, beta, args.beta_control, equivariance_tuple, rotated_images=yr, enc_only=args.enc_only)
             # logging
-            bnb_result.append((minibatch_i,rot.detach().cpu().numpy()))
-            z_accum += mu.detach().cpu().numpy().mean()*len(minibatch_i)
-            kld_accum += kld.item()*len(minibatch_i)
-            gen_loss_accum += gen_loss.item()*len(minibatch_i)
-            loss_accum += loss.item()*len(minibatch_i)
-            if args.equivariance:eq_loss_accum += eq_loss.item()*len(minibatch_i)
+            bnb_result.append((ind.cpu().numpy(),rot))
+            z_accum += z*len(ind)
+            kld_accum += kld*len(ind)
+            gen_loss_accum += gen_loss*len(ind)
+            loss_accum += loss*len(ind)
+            if args.equivariance:eq_loss_accum += eq_loss*len(ind)
 
             if batch_it % args.log_interval == 0:
-                eq_log = 'equivariance={:.4f}, lambda={:.4f}, '.format(eq_loss.item(), lamb) if args.equivariance else ''
-                log('# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.4f}, kld={:.4f}, beta={:.4f}, {}loss={:.4f}'.format(epoch+1, num_epochs, batch_it, Nimg, gen_loss.item(), kld.item(), beta, eq_log, loss.item()))
+                eq_log = 'equivariance={:.4f}, lambda={:.4f}, '.format(eq_loss, lamb) if args.equivariance else ''
+                log('# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.4f}, kld={:.4f}, beta={:.4f}, {}loss={:.4f}'.format(epoch+1, num_epochs, batch_it, Nimg, gen_loss, kld, beta, eq_log, loss))
 
-            # todo: put training loop in its own scope
-            del y, rot, y_recon, gen_loss, kld, loss, input_, mu, logvar, z
-            if tilt is not None and not args.enc_only:
-                del yt, y_recon_tilt
         eq_log = 'equivariance = {:.4f}, '.format(eq_loss_accum/Nimg) if args.equivariance else ''
         log('# =====> Epoch: {} Average gen loss = {:.4}, KLD = {:.4f}, {}total loss = {:.4f}'.format(epoch+1, gen_loss_accum/Nimg, kld_accum/Nimg, eq_log, loss_accum/Nimg))
 
-
+        # TODO:
         if args.checkpoint and epoch % args.checkpoint == 0:
-            model.eval()
-            vol, vol_f = eval_volume(model, lattice, nx, z_accum/Nimg, rnorm)
-            mrc.write('{}/reconstruct.{}.mrc'.format(args.outdir,epoch), vol.astype(np.float32))
-            path = '{}/weights.{}.pkl'.format(args.outdir,epoch)
-            torch.save({
-                'norm':rnorm,
-                'epoch':epoch,
-                'model_state_dict':model.state_dict(),
-                'optimizer_state_dict':optim.state_dict(),
-                'bnb_result':bnb_result
-                }, path)
-            model.train()
+            out_mrc = '{}/reconstruct.{}.mrc'.format(args.outdir,epoch)
+            out_weights = '{}/weights.{}.pkl'.format(args.outdir,epoch)
+            save_checkpoint(model, lattice, z_accum/Nimg, bnb_result, optim, epoch, data.norm, out_mrc, out_weights)
 
     ## save model weights and evaluate the model on 3D lattice
     model.eval()
-    vol, vol_f = eval_volume(model, lattice, nx, z_accum/Nimg, rnorm)
-    mrc.write('{}/reconstruct.mrc'.format(args.outdir), vol.astype(np.float32))
-    path = '{}/weights.pkl'.format(args.outdir)
-    torch.save({
-        'norm':rnorm,
-        'epoch':epoch,
-        'model_state_dict':model.state_dict(),
-        'optimizer_state_dict':optim.state_dict(),
-        'bnb_result':bnb_result
-        }, path)
+    out_mrc = '{}/reconstruct.mrc'.format(args.outdir)
+    out_weights = '{}/weights.pkl'.format(args.outdir)
+    save_checkpoint(model, lattice, z_accum/Nimg, bnb_result, optim, epoch, data.norm, out_mrc, out_weights)
     
     td = dt.now()-t1
     log('Finsihed in {} ({} per epoch)'.format(td, td/num_epochs))

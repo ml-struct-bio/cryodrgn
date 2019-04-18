@@ -12,6 +12,7 @@ from scipy.ndimage.fourier import fourier_shift
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.utils.data as data
 
 sys.path.insert(0,'{}/lib-python'.format(os.path.dirname(os.path.abspath(__file__))))
 import utils
@@ -25,6 +26,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 log = utils.log
+vlog = utils.vlog
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -39,6 +41,7 @@ def parse_args():
     parser.add_argument('--grid', type=int, help='Generate projections on a uniform deterministic grid on SO3. Specify resolution level')
     parser.add_argument('--tilt', type=float, help='Right-handed x-axis tilt offset in degrees')
     parser.add_argument('--seed', type=int, help='Random seed')
+    parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
     return parser
 
 class Projector:
@@ -84,6 +87,25 @@ class Projector:
         vol = vol.view(B,self.nz,self.ny,self.nx)
         return vol.sum(dim=1)
    
+class RandomRot(data.Dataset):
+    def __init__(self, N):
+        self.N = N
+        self.rots = lie_tools.random_SO3(N)
+    def __len__(self):
+        return self.N
+    def __getitem__(self, index):
+        return self.rots[index]
+
+class GridRot(data.Dataset):
+    def __init__(self, resol):
+        quats = so3_grid.grid_SO3(resol)
+        self.rots = lie_tools.quaternions_to_SO3(torch.tensor(quats))
+        self.N = len(rots)
+    def __len__(self):
+        return self.N
+    def __getitem__(self, index):
+        return self.rots[index]
+
 def plot_projections(out_png, imgs):
     fig, axes = plt.subplots(nrows=3, ncols=3, figsize=(10,10))
     axes = axes.ravel()
@@ -145,39 +167,22 @@ def main(args):
         projector.vol = projector.vol.cuda()
 
     if args.grid is not None:
-        quats = so3_grid.grid_SO3(args.grid)
-        rots = lie_tools.quaternions_to_SO3(torch.tensor(quats))
-        args.N = len(rots)
+        rots = GridRot(args.grid)
         log('Generating {} rotations at resolution level {}'.format(len(rots), args.grid))
     else:
-        rots = []
+        log('Generating {} random rotations'.format(args.N))
+        rots = RandomRot(args.N)
     
+    log('Projecting...')
     imgs = []
-    for mb in range(int(args.N/args.b)):
-        log('Projecting {}/{}'.format((mb+1)*args.b, args.N))
-        if args.grid is not None:
-            rot = rots[mb*args.b:(mb+1)*args.b]
-        else:
-            rot = lie_tools.random_SO3(args.b)
-            rots.append(rot.cpu())
-        projections = projector.project(rot)
-        projections = projections.cpu().numpy()
-        imgs.append(projections)
-    if args.N % args.b:
-        log('Projecting {}/{}'.format(args.N, args.N))
-        if args.grid is not None:
-            rot = rots[-(args.N%args.b):]
-        else:
-            rot = lie_tools.random_SO3(args.N % args.b)
-            rots.append(rot.cpu())
+    iterator = data.DataLoader(rots, batch_size=args.b)
+    for i, rot in enumerate(iterator):
+        vlog('Projecting {}/{}'.format((i+1)*len(rot), args.N))
         projections = projector.project(rot)
         projections = projections.cpu().numpy()
         imgs.append(projections)
 
-    if args.grid is not None:
-        rots = rots.cpu().numpy()
-    else:
-        rots = np.vstack(rots)
+    rots = rots.rots.cpu().numpy()
     imgs = np.vstack(imgs)
     td = time.time()-t1
     log('Projected {} images in {}s ({}s per image)'.format(args.N, td, td/args.N ))
@@ -205,4 +210,6 @@ def main(args):
         plot_projections(args.out_png, imgs[:9])
 
 if __name__ == '__main__':
-    main(parse_args().parse_args())
+    args = parse_args().parse_args()
+    utils._verbose = args.verbose
+    main(args)

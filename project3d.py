@@ -121,6 +121,7 @@ def main(args):
         assert args.t_extent > 0
 
     if args.seed is not None:
+        np.random.seed(args.seed)
         torch.manual_seed(args.seed)
 
     use_cuda = torch.cuda.is_available()

@@ -193,10 +193,10 @@ def main(args):
 
             gen_loss, kld, loss, eq_loss = train(model, optim, D, minibatch, beta, args.beta_control, equivariance_tuple)
             # logging
-            gen_loss_accum += gen_loss*len(minibatch)
-            kld_accum += kld*len(minibatch)
-            loss_accum += loss*len(minibatch)
-            if args.equivariance: eq_loss_accum += eq_loss*len(minibatch)
+            gen_loss_accum += gen_loss*len(minibatch[0])
+            kld_accum += kld*len(minibatch[0])
+            loss_accum += loss*len(minibatch[0])
+            if args.equivariance: eq_loss_accum += eq_loss*len(minibatch[0])
 
             if batch_it % args.log_interval == 0:
                 eq_log = 'equivariance={:.4f}, lambda={:.4f}, '.format(eq_loss, lamb) if args.equivariance else ''

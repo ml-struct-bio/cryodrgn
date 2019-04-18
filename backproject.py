@@ -103,7 +103,7 @@ def main(args):
     log('{}% voxels missing data'.format(100*len(z[0])/D**3))
     counts[z] = 1.0
     V /= counts
-    V = fft.ifftn(V)
+    V = fft.ifftn_center(V)
     mrc.write(args.o,V.astype('float32'))
 
 

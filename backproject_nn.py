@@ -73,7 +73,7 @@ def eval_volume(model, nz, ny, nx, x_coord, use_cuda, rnorm, inorm):
             y = model(x)
             y = y.view(ny, nx, 2).cpu().numpy()
         vol_f[i] = (y[:,:,0]*rnorm[1]+rnorm[0]) + 1j*(y[:,:,1]*inorm[1]+inorm[0])
-    vol = fft.ifftn(vol_f)
+    vol = fft.ifftn_center(vol_f)
     return vol, vol_f
 
 def main(args):

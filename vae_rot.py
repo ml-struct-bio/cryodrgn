@@ -174,7 +174,7 @@ def main(args):
         kld_accum = 0
         eq_loss_accum = 0
         batch_it = 0 
-        for minibatch in data_generator:
+        for minibatch, _ in data_generator:
             minibatch = minibatch.to(device)
             batch_it += len(minibatch)
             global_it = Nimg*epoch + batch_it

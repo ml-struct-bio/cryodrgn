@@ -1,5 +1,5 @@
 '''
-NN reconstruction with direct optimization of orientation
+Homogeneous NN reconstruction with BNB optimization of orientation
 '''
 import numpy as np
 import sys, os
@@ -162,7 +162,7 @@ def main(args):
         batch_it = 0
         loss_accum = 0
         for batch in data_generator:
-            batch = (batch.to(device), None) if tilt is None else (batch[0].to(device), batch[1].to(device))
+            batch = (batch[0].to(device), None) if tilt is None else (batch[0].to(device), batch[1].to(device))
             batch_it += len(batch[0])
             global_it = Nimg*epoch+batch_it
             L = Lsched(global_it)

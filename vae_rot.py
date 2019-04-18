@@ -34,7 +34,7 @@ def parse_args():
     parser.add_argument('particles', help='Particle stack file (.mrc)')
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
     parser.add_argument('--load', type=os.path.abspath, help='Initialize training from a checkpoint')
-    parser.add_argument('--checkpoint', type=int, default=5, help='Checkpointing interval in N_EPOCHS (default: %(default)s)')
+    parser.add_argument('--checkpoint', type=int, default=1, help='Checkpointing interval in N_EPOCHS (default: %(default)s)')
     parser.add_argument('--log-interval', type=int, default=1000, help='Logging interval in N_IMGS (default: %(default)s)')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
     parser.add_argument('--seed', type=int, default=np.random.randint(0,100000), help='Random seed')

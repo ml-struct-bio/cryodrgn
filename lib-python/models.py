@@ -119,20 +119,20 @@ class FTSliceDecoder(nn.Module):
         lattice: -1 x (2*c+1) x 3+zdim
         c: index of center pixel
         '''
-        image = torch.empty(lattice.shape[:-1]) 
+        image = torch.empty((*lattice.shape[:-1],2)) 
         top_half = self.decode(lattice[...,0:c+1,:])
-        image[..., 0:c+1] = top_half[...,0] - top_half[...,1] # hartley transform
+        image[..., 0:c+1,:] = top_half 
         # the bottom half of the image is the complex conjugate of the top half
-        image[...,c+1:] = (top_half[...,0] + top_half[...,1])[...,np.arange(c-1,-1,-1)]
+        image[...,c+1:,:] = top_half[...,np.arange(c-1,-1,-1)]*torch.tensor([1.,-1.])
         return image
 
     def forward(self, lattice):
         '''Call forward on DxD central slices only'''
-        image = torch.empty(lattice.shape[:-1])
+        image = torch.empty((*lattice.shape[:-1],2))
         top_half = self.decode(lattice[...,self.all_eval,:])
-        image[..., self.all_eval] = top_half[...,0] - top_half[...,1] # hartley transform
+        image[..., self.all_eval, :] = top_half
         # the bottom half of the image is the complex conjugate of the top half
-        image[...,self.bottom_rev] = top_half[...,self.top,0] + top_half[...,self.top,1]
+        image[...,self.bottom_rev, :] = top_half[...,self.top,:]*torch.tensor([1.,-1.])
         return image
 
     def decode(self, lattice):
@@ -172,7 +172,7 @@ class VAE(nn.Module):
         else:
             raise RuntimeError('Encoder mode {} not recognized'.format(encode_mode))
         self.latent_encoder = SO3reparameterize(encode_dim) # hidden_dim -> SO(3) latent variable
-        self.decoder = ResidLinearMLP(3, decode_layers, decode_dim, 1, nn.ReLU)
+        self.decoder = FTSliceDecoder(3, nx, decode_layers, decode_dim, nn.ReLU)
         
         # centered and scaled xy plane, values between -1 and 1
         x0, x1 = np.meshgrid(np.linspace(-1, 1, nx, endpoint=False), # FT is not symmetric around origin
@@ -181,13 +181,14 @@ class VAE(nn.Module):
         self.lattice = torch.tensor(lattice)
     
     def forward(self, img):
+        img = img[...,0] - img[...,1]
         z_mu, z_std = self.latent_encoder(nn.ReLU()(self.encoder(img.view(-1,self.in_dim))))
         rot, w_eps = self.latent_encoder.sampleSO3(z_mu, z_std)
 
         # transform lattice by rot
         x = self.lattice @ rot # R.T*x
         y_hat = self.decoder(x)
-        y_hat = y_hat.view(-1, self.ny, self.nx)
+        y_hat = y_hat.view(-1, self.ny, self.nx, 2)
         return y_hat, z_mu, z_std, w_eps
 
 class TiltVAE(nn.Module):
@@ -205,7 +206,8 @@ class TiltVAE(nn.Module):
                             encode_dim, # output dim
                             nn.ReLU)
         self.latent_encoder = SO3reparameterize(encode_dim) # hidden_dim -> SO(3) latent variable
-        self.decoder = ResidLinearMLP(3, decode_layers, decode_dim, 1, nn.ReLU)
+        #self.decoder = ResidLinearMLP(3, decode_layers, decode_dim, 2, nn.ReLU)
+        self.decoder = FTSliceDecoder(3, nx, decode_layers, decode_dim, nn.ReLU)
         
         # centered and scaled xy plane, values between -1 and 1
         x0, x1 = np.meshgrid(np.linspace(-1, 1, nx, endpoint=False), # FT is not symmetric around origin
@@ -216,18 +218,20 @@ class TiltVAE(nn.Module):
         self.tilt = torch.tensor(tilt)
 
     def forward(self, img, img_tilt):
+        img = img[...,0] - img[...,1]
+        img_tilt = img_tilt[...,0] - img_tilt[...,1]
         z_mu, z_std = self.latent_encoder(nn.ReLU()(self.encoder((img, img_tilt))))
         rot, w_eps = self.latent_encoder.sampleSO3(z_mu, z_std)
 
         # transform lattice by rot
         x = self.lattice @ rot # R.T*x
         y_hat = self.decoder(x)
-        y_hat = y_hat.view(-1, self.ny, self.nx)
+        y_hat = y_hat.view(-1, self.ny, self.nx, 2)
 
         # tilt series pair
         x = self.lattice @ self.tilt @ rot
         y_hat2 = self.decoder(x)
-        y_hat2 = y_hat2.view(-1, self.ny, self.nx)
+        y_hat2 = y_hat2.view(-1, self.ny, self.nx, 2)
         return y_hat, y_hat2, z_mu, z_std, w_eps
 
 class TiltEncoder(nn.Module):

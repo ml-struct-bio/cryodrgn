@@ -19,7 +19,8 @@ class MRCData(data.Dataset):
         assert ny == nx, "Images must be square"
         assert ny % 2 == 0, "Image size must be even"
         # compute FT
-        particles = np.asarray([fft.ht2_center(img).astype(np.float32) for img in particles_real])
+        particles = np.asarray([fft.fft2_center(img) for img in particles_real])
+        particles = np.stack([particles.real.astype(np.float32), particles.imag.astype(np.float32)], -1)
         # normalize
         if norm is None:
             norm  = [np.mean(particles), np.std(particles)]
@@ -52,8 +53,10 @@ class TiltMRCData(data.Dataset):
         particles_tilt, _, _ = mrc.parse_mrc(mrcfile_tilt)
         assert particles_tilt.shape == (N, ny, nx), "Tilt series pair must have same dimensions as untilted particles"
         # compute FT
-        particles = np.asarray([fft.ht2_center(img).astype(np.float32) for img in particles_real])
-        particles_tilt = np.asarray([fft.ht2_center(img).astype(np.float32) for img in particles_tilt])
+        particles = np.asarray([fft.fft2_center(img) for img in particles_real])
+        particles = np.stack([particles.real.astype(np.float32), particles.imag.astype(np.float32)], -1)
+        particles_tilt = np.asarray([fft.fft2_center(img) for img in particles_tilt])
+        particles_tilt = np.stack([particles_tilt.real.astype(np.float32), particles_tilt.imag.astype(np.float32)], -1)
         # normalize
         if norm is None:
             norm  = [np.mean(particles), np.std(particles)]

@@ -59,7 +59,10 @@ def parse_args():
     return parser
 
 def loss_function(recon_y, recon_y_tilt, y, yt, w_eps, z_std):
-    gen_loss = F.mse_loss(recon_y, y)*.5 + F.mse_loss(recon_y_tilt, yt)*.5   
+    #gen_loss = F.mse_loss(recon_y, y)*.5 + F.mse_loss(recon_y_tilt, yt)*.5   
+    # compute loss on half the image since other half is complex conjugate
+    i = int(y.shape[-2]/2+1) # D/2+1
+    gen_loss = F.mse_loss(recon_y[...,0:i,:], y[...,0:i,:])*.5 + F.mse_loss(recon_y_tilt[...,0:i,:], yt[...,0:i,:])*.5   
     cross_entropy = torch.tensor([np.log(8*np.pi**2)], device=y.device) # cross entropy between gaussian and uniform on SO3
     entropy = lie_tools.so3_entropy(w_eps,z_std)
     kld = cross_entropy - entropy
@@ -74,9 +77,9 @@ def eval_volume(model, nz, ny, nx, ft_norm):
     for i, z in enumerate(np.linspace(-1,1,nz,endpoint=False)):
         x = model.lattice + torch.tensor([0,0,z], device=model.lattice.device, dtype=model.lattice.dtype)
         with torch.no_grad():
-            y = model.decoder(x)
-            y = y.view(ny, nx).cpu().numpy()
-        vol_f[i] = y
+            y = model.decoder.decode(x)
+            y = y.view(ny, nx, 2).cpu().numpy()
+        vol_f[i] = y[...,0] + y[...,1]*1j
     vol = fft.ihtn_center(vol_f*ft_norm[1]+ft_norm[0])
     return vol, vol_f
 
@@ -113,7 +116,6 @@ def save_checkpoint(model, optim, D, epoch, norm, out_mrc, out_weights):
         'model_state_dict':model.state_dict(),
         'optimizer_state_dict':optim.state_dict(),
         }, out_weights)
-
 
 def main(args):
     log(args)

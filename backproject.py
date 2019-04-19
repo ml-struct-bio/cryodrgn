@@ -81,7 +81,7 @@ def main(args):
     COORD = COORD[:,MASK[0]]
 
     # we need a 2D lattice (normalized differently) for implementing the fourier shift 
-    TCOORD = np.array([xx.ravel(), yy.ravel()])/D
+    TCOORD = np.stack([xx, yy],axis=2)/D # DxDx2
 
     if args.indices:
         iterator = pickle.load(open(args.indices,'rb'))
@@ -89,11 +89,12 @@ def main(args):
         iterator = range(N)
     for ii in iterator:
         if ii%100==0: log('image {}'.format(ii))
-        ff = fft.fft2_center(images[ii].get()).ravel()[MASK]
+        ff = fft.fft2_center(images[ii].get())
         if trans is not None:
             tfilt = np.dot(TCOORD,-trans[ii])*-2*np.pi
             tfilt = np.cos(tfilt) + np.sin(tfilt)*1j
             ff *= tfilt
+        ff = ff.ravel()[MASK]
         if args.is_rot:
             rot = angles[ii]
         else:

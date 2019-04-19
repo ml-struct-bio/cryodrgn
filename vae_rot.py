@@ -59,15 +59,17 @@ def parse_args():
     group.add_argument('--pdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
     return parser
 
-def loss_function(recon_y, y, w_eps, z_std):
+def loss_function(recon_y, y, w_eps, z_std, t_mu, t_logvar):
     # compute loss on half the image since other half is complex conjugate
     i = int(y.shape[-2]/2+1) # D/2+1
-    gen_loss = F.mse_loss(recon_y[...,0:i,:], y[...,0:i,:])  
+    #gen_loss = F.mse_loss(recon_y[...,0:i,:], y[...,0:i,:])  
+    gen_loss = F.mse_loss(recon_y,y)
     cross_entropy = torch.tensor([np.log(8*np.pi**2)], device=y.device) # cross entropy between gaussian and uniform on SO3
     entropy = lie_tools.so3_entropy(w_eps,z_std)
-    kld = cross_entropy - entropy
+    kld1 = (cross_entropy - entropy).mean()
+    kld2 = -0.5 * torch.mean(1 + t_logvar - t_mu.pow(2) - t_logvar.exp())
     #assert kld > 0
-    return gen_loss, kld.mean()
+    return gen_loss, kld1 + kld2
 
 def eval_volume(model, nz, ny, nx, rnorm):
     '''Evaluate the model on a nz x ny x nx lattice'''
@@ -87,8 +89,8 @@ def train(model, optim, D, y, beta, beta_control=None, equivariance=None):
     model.train()
     optim.zero_grad()
     # train the model
-    y_recon, z_mu, z_std, w_eps = model(y) 
-    gen_loss, kld = loss_function(y_recon, y, w_eps, z_std)
+    y_recon, z_mu, z_std, w_eps, t_mu, t_logvar = model(y) 
+    gen_loss, kld = loss_function(y_recon, y, w_eps, z_std, t_mu, t_logvar)
     if torch.isnan(kld):
         log(w_eps[0])
         log(z_std[0])

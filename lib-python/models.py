@@ -144,6 +144,23 @@ class FTSliceDecoder(nn.Module):
         result[...,1][w] *= -1 # replace with complex conjugate to get correct values for original lattice positions
         return result
 
+    def translate(self, coords, img, t):
+        '''
+        Translate an image by phase shifting its Fourier transform
+        
+        coords: wavevectors between [-.5,.5] (img_dims x 2)
+        img: FT of image (B x img_dims x 2)
+        t: shift in pixels (B x 2)
+
+        img_dims can either be 2D or 1D (unraveled image) 
+        '''
+        t = t.unsqueeze(2) # Bx2x1 to be able to do bmm
+        tfilt = coords @ -t * -2 * np.pi
+        tfilt = tfilt.squeeze()
+        c = torch.cos(tfilt) # BxN
+        s = torch.sin(tfilt) # BxN
+        return torch.stack([img[...,0]*c-img[...,1]*s,img[...,0]*s+img[...,1]*c],-1)
+
 class VAE(nn.Module):
     def __init__(self, 
             nx, ny, 
@@ -155,23 +172,25 @@ class VAE(nn.Module):
         self.nx = nx
         self.ny = ny
         self.in_dim = nx*ny
+        assert encode_layers > 2
         if encode_mode == 'conv':
             self.encoder = ConvEncoder(encode_dim, encode_dim)
         elif encode_mode == 'resid':
             self.encoder = ResidLinearMLP(nx*ny, 
-                            encode_layers, 
+                            encode_layers-2, 
                             encode_dim,  # hidden_dim
                             encode_dim, # out_dim
                             nn.ReLU) #in_dim -> hidden_dim
         elif encode_mode == 'mlp':
             self.encoder = MLP(nx*ny, 
-                            encode_layers, 
+                            encode_layers-2, 
                             encode_dim, # hidden_dim
                             encode_dim, # out_dim
                             nn.ReLU) #in_dim -> hidden_dim
         else:
             raise RuntimeError('Encoder mode {} not recognized'.format(encode_mode))
-        self.latent_encoder = SO3reparameterize(encode_dim) # hidden_dim -> SO(3) latent variable
+        self.so3_encoder = SO3reparameterize(encode_dim, 1) # hidden_dim -> SO(3) latent variable
+        self.trans_encoder = ResidLinearMLP(encode_dim, 1, encode_dim, 4, nn.ReLU)
         self.decoder = FTSliceDecoder(3, nx, decode_layers, decode_dim, nn.ReLU)
         
         # centered and scaled xy plane, values between -1 and 1
@@ -179,17 +198,29 @@ class VAE(nn.Module):
                              np.linspace(-1, 1, ny, endpoint=False))
         lattice = np.stack([x0.ravel(),x1.ravel(),np.zeros(ny*nx)],1).astype(np.float32)
         self.lattice = torch.tensor(lattice)
-    
+
+    def reparameterize(self, mu, logvar):
+        if not self.training:
+            return mu
+        std = torch.exp(.5*logvar)
+        eps = torch.randn_like(std)
+        return eps*std + mu
+
     def forward(self, img):
         img = img[...,0] - img[...,1]
-        z_mu, z_std = self.latent_encoder(nn.ReLU()(self.encoder(img.view(-1,self.in_dim))))
-        rot, w_eps = self.latent_encoder.sampleSO3(z_mu, z_std)
-
+        enc = nn.ReLU()(self.encoder(img.view(-1,self.in_dim)))
+        z_mu, z_std = self.so3_encoder(enc)
+        rot, w_eps = self.so3_encoder.sampleSO3(z_mu, z_std)
+        z = self.trans_encoder(enc)
+        tmu, tlogvar = z[:,:2], z[:,2:]
+        t = self.reparameterize(tmu, tlogvar)
         # transform lattice by rot
         x = self.lattice @ rot # R.T*x
         y_hat = self.decoder(x)
+        # translate image
+        y_hat = self.decoder.translate(self.lattice[:,0:2]/2, y_hat, t)
         y_hat = y_hat.view(-1, self.ny, self.nx, 2)
-        return y_hat, z_mu, z_std, w_eps
+        return y_hat, z_mu, z_std, w_eps, tmu, tlogvar
 
 class TiltVAE(nn.Module):
     def __init__(self, 
@@ -316,10 +347,12 @@ class ConvEncoder(nn.Module):
 
 class SO3reparameterize(nn.Module):
     '''Reparameterize R^N encoder output to SO(3) latent variable'''
-    def __init__(self, input_dims):
+    def __init__(self, input_dims, nlayers=None):
         super().__init__()
-        self.s2s2map = nn.Linear(input_dims, 6)
-        self.so3var = nn.Linear(input_dims, 3)
+        if nlayers is not None:
+            self.main = ResidLinearMLP(input_dims, nlayers, input_dims, 9, nn.ReLU)
+        else:
+            self.main = nn.Linear(input_dims, 9)
 
         # start with big outputs
         #self.s2s2map.weight.data.uniform_(-5,5)
@@ -341,9 +374,11 @@ class SO3reparameterize(nn.Module):
         return rot_sampled, w_eps
 
     def forward(self, x):
-        z = self.s2s2map(x).double()
-        logvar = self.so3var(x)
-        z_mu = lie_tools.s2s2_to_SO3(z[:, :3], z[:, 3:]).float()
+        z = self.main(x)
+        z1 = z[:,:3].double()
+        z2 = z[:,3:6].double()
+        logvar = z[:,6:]
+        z_mu = lie_tools.s2s2_to_SO3(z1,z2).float()
         z_std = torch.exp(.5*logvar) # or could do softplus
         return z_mu, z_std 
 

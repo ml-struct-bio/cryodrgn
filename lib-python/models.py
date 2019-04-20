@@ -189,7 +189,7 @@ class VAE(nn.Module):
                             nn.ReLU) #in_dim -> hidden_dim
         else:
             raise RuntimeError('Encoder mode {} not recognized'.format(encode_mode))
-        self.so3_encoder = SO3reparameterize(encode_dim, 1) # hidden_dim -> SO(3) latent variable
+        self.so3_encoder = SO3reparameterize(encode_dim, 1, encode_dim) # hidden_dim -> SO(3) latent variable
         self.trans_encoder = ResidLinearMLP(encode_dim, 1, encode_dim, 4, nn.ReLU)
         self.decoder = FTSliceDecoder(3, nx, decode_layers, decode_dim, nn.ReLU)
         
@@ -231,13 +231,15 @@ class TiltVAE(nn.Module):
         super(TiltVAE, self).__init__()
         self.nx = nx
         self.ny = ny
-        self.encoder = TiltEncoder(nx*ny,
-                            encode_layers,
-                            encode_dim, # hidden dim
-                            encode_dim, # output dim
-                            nn.ReLU)
-        self.latent_encoder = SO3reparameterize(encode_dim) # hidden_dim -> SO(3) latent variable
-        #self.decoder = ResidLinearMLP(3, decode_layers, decode_dim, 2, nn.ReLU)
+        self.in_dim = nx*ny
+        assert encode_layers > 2
+        self.encoder = ResidLinearMLP(nx*ny,
+                                      encode_layers-3,
+                                      encode_dim,
+                                      encode_dim,
+                                      nn.ReLU)
+        self.so3_encoder = SO3reparameterize(2*encode_dim, 3, encode_dim) # hidden_dim -> SO(3) latent variable
+        self.trans_encoder = ResidLinearMLP(2*encode_dim, 2, encode_dim, 4, nn.ReLU)
         self.decoder = FTSliceDecoder(3, nx, decode_layers, decode_dim, nn.ReLU)
         
         # centered and scaled xy plane, values between -1 and 1
@@ -248,22 +250,38 @@ class TiltVAE(nn.Module):
         assert tilt.shape == (3,3), 'Rotation matrix input required'
         self.tilt = torch.tensor(tilt)
 
+    def reparameterize(self, mu, logvar):
+        if not self.training:
+            return mu
+        std = torch.exp(.5*logvar)
+        eps = torch.randn_like(std)
+        return eps*std + mu
+
     def forward(self, img, img_tilt):
         img = img[...,0] - img[...,1]
         img_tilt = img_tilt[...,0] - img_tilt[...,1]
-        z_mu, z_std = self.latent_encoder(nn.ReLU()(self.encoder((img, img_tilt))))
-        rot, w_eps = self.latent_encoder.sampleSO3(z_mu, z_std)
+        enc1 = self.encoder(img.view(-1,self.in_dim))
+        enc2 = self.encoder(img_tilt.view(-1,self.in_dim))
+        enc = torch.cat((enc1,enc2), -1) # then nn.ReLU?
+        z_mu, z_std = self.so3_encoder(enc)
+        rot, w_eps = self.so3_encoder.sampleSO3(z_mu, z_std)
+
+        z = self.trans_encoder(enc)
+        tmu, tlogvar = z[:,:2], z[:,2:]
+        t = self.reparameterize(tmu, tlogvar)
 
         # transform lattice by rot
         x = self.lattice @ rot # R.T*x
         y_hat = self.decoder(x)
+        y_hat = self.decoder.translate(self.lattice[:,0:2]/2, y_hat, t)
         y_hat = y_hat.view(-1, self.ny, self.nx, 2)
 
         # tilt series pair
         x = self.lattice @ self.tilt @ rot
         y_hat2 = self.decoder(x)
+        y_hat2 = self.decoder.translate(self.lattice[:,0:2]/2, y_hat2, t)
         y_hat2 = y_hat2.view(-1, self.ny, self.nx, 2)
-        return y_hat, y_hat2, z_mu, z_std, w_eps
+        return y_hat, y_hat2, z_mu, z_std, w_eps, tmu, tlogvar
 
 class TiltEncoder(nn.Module):
     def __init__(self, in_dim, nlayers, hidden_dim, out_dim, activation):
@@ -347,10 +365,10 @@ class ConvEncoder(nn.Module):
 
 class SO3reparameterize(nn.Module):
     '''Reparameterize R^N encoder output to SO(3) latent variable'''
-    def __init__(self, input_dims, nlayers=None):
+    def __init__(self, input_dims, nlayers=None, hidden_dim=None):
         super().__init__()
         if nlayers is not None:
-            self.main = ResidLinearMLP(input_dims, nlayers, input_dims, 9, nn.ReLU)
+            self.main = ResidLinearMLP(input_dims, nlayers, hidden_dim, 9, nn.ReLU)
         else:
             self.main = nn.Linear(input_dims, 9)
 

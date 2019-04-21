@@ -14,10 +14,13 @@ def vlog(msg):
         print('{}     {}'.format(dt.now().strftime('%Y-%m-%d %H:%M:%S'), msg))
         sys.stdout.flush()
 
-def load_angles(pkl):
+def load_pkl(pkl):
     with open(pkl,'rb') as f:
-        ang = pickle.load(f)
-    return ang
+        x = pickle.load(f)
+    return x
+
+def load_angles(pkl):
+    return load_pkl(pkl)
 
 def R_from_eman(a,b,y):
     a *= np.pi/180.

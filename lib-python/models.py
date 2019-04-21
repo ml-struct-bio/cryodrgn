@@ -214,7 +214,7 @@ class VAE(nn.Module):
         if return_s2s2: # z_mu returned in s2s2 representation instead of SO3
             z = self.so3_encoder.main(enc)
             z_mu = z[:,:6]
-            z_std = torch.exp(.5*z[:,6:])
+            z_std = z[:,6:] # return z_logvar
         else:
             z_mu, z_std = self.so3_encoder(enc)
         z = self.trans_encoder(enc)

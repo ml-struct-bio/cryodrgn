@@ -31,8 +31,10 @@ vlog = utils.vlog
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
+
     parser.add_argument('particles', help='Particle stack file (.mrc)')
-    parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
+    parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory two save model')
+    parser.add_argument('--priors', type=os.path.abspath, nargs=2, help='Priors on rotation, translation')
     parser.add_argument('--load', type=os.path.abspath, help='Initialize training from a checkpoint')
     parser.add_argument('--checkpoint', type=int, default=1, help='Checkpointing interval in N_EPOCHS (default: %(default)s)')
     parser.add_argument('--log-interval', type=int, default=1000, help='Logging interval in N_IMGS (default: %(default)s)')
@@ -62,13 +64,21 @@ def parse_args():
 def loss_function(recon_y, y, w_eps, z_std, t_mu, t_logvar):
     # compute loss on half the image since other half is complex conjugate
     i = int(y.shape[-2]/2+1) # D/2+1
-    #gen_loss = F.mse_loss(recon_y[...,0:i,:], y[...,0:i,:])  
-    gen_loss = F.mse_loss(recon_y,y)
+    gen_loss = F.mse_loss(recon_y[...,0:i,:], y[...,0:i,:])  
+    #gen_loss = F.mse_loss(recon_y,y)
     cross_entropy = torch.tensor([np.log(8*np.pi**2)], device=y.device) # cross entropy between gaussian and uniform on SO3
     entropy = lie_tools.so3_entropy(w_eps,z_std)
     kld1 = (cross_entropy - entropy).mean()
     kld2 = -0.5 * torch.mean(1 + t_logvar - t_mu.pow(2) - t_logvar.exp())
     #assert kld > 0
+    return gen_loss, kld1 + kld2
+
+def loss_function_priors(recon_y, y, z_mu, z_std, t_mu, t_logvar, priors):
+    i = int(y.shape[-2]/2+1) # D/2+1
+    gen_loss = F.mse_loss(recon_y[...,0:i,:], y[...,0:i,:])  
+    dist = ((z_mu-priors[0]).pow(2)[:,:,0:2]).sum((-1,-2)) # HACK
+    kld1 = -0.5 * torch.mean(3 + torch.log(z_std.pow(2).prod(-1)) - z_std.pow(2).sum(-1) - dist)
+    kld2 = -0.5 * torch.mean(torch.sum(1 + t_logvar - t_logvar.exp() - (t_mu - priors[1]).pow(2),-1))
     return gen_loss, kld1 + kld2
 
 def eval_volume(model, nz, ny, nx, rnorm):
@@ -85,12 +95,15 @@ def eval_volume(model, nz, ny, nx, rnorm):
     vol = fft.ifftn_center(vol_f*rnorm[1]+rnorm[0])
     return vol, vol_f
 
-def train(model, optim, D, y, beta, beta_control=None, equivariance=None):
+def train(model, optim, D, y, beta, beta_control=None, equivariance=None, priors=None):
     model.train()
     optim.zero_grad()
     # train the model
-    y_recon, z_mu, z_std, w_eps, t_mu, t_logvar = model(y) 
-    gen_loss, kld = loss_function(y_recon, y, w_eps, z_std, t_mu, t_logvar)
+    y_recon, z_mu, z_std, w_eps, t_mu, t_logvar = model(y)
+    if priors is not None:
+        gen_loss, kld = loss_function_priors(y_recon, y, z_mu, z_std, t_mu, t_logvar, priors)
+    else:
+        gen_loss, kld = loss_function(y_recon, y, w_eps, z_std, t_mu, t_logvar)
     if torch.isnan(kld):
         log(w_eps[0])
         log(z_std[0])
@@ -117,6 +130,28 @@ def save_checkpoint(model, optim, D, epoch, norm, out_mrc, out_weights):
         'model_state_dict':model.state_dict(),
         'optimizer_state_dict':optim.state_dict(),
         }, out_weights)
+
+def pretrain_encoder(model, optim, data, priors, device, num_epochs=10, log_interval=1000):
+    model.train()
+    rot_priors = priors[0].transpose(-1,-2)[:,0:2,:].contiguous().view(-1,6) # HACK, s2s2 representation
+    assert rot_priors.shape == (data.N,6)
+    data_generator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
+    for epoch in range(num_epochs):
+        it = 0
+        for mb, ind in data_generator:
+            mb = mb.to(device)
+            it += len(ind)
+            r_priors = rot_priors[ind]
+            t_priors = priors[1][ind]
+            optim.zero_grad()
+            z_mu, z_logvar, tmu, tlogvar = model.encode(mb, return_s2s2=True)
+            mean_loss = 4*F.mse_loss(tmu, t_priors) + 9*F.mse_loss(z_mu, r_priors)
+            logvar_loss = F.mse_loss(z_logvar, torch.tensor([-3.0])) + F.mse_loss(tlogvar, torch.tensor([-3.0]))
+            loss = mean_loss + logvar_loss
+            loss.backward()
+            optim.step()
+            if it % log_interval == 0:
+                log('[Pretrain epoch {}/{}] ({}/{} images) mean loss = {:.4f}, loss = {:.4f}'.format(epoch+1, num_epochs, it, len(data), mean_loss.item(), loss.item()))
 
 def main(args):
     log(args)
@@ -149,6 +184,13 @@ def main(args):
     log('Loaded {} {}x{} images'.format(Nimg, D, D))
     log('Normalized FT by {} +/- {}'.format(*data.norm))
 
+    if args.priors:
+        priors = (torch.tensor(utils.load_pkl(args.priors[0])).float(), 
+                  torch.tensor(utils.load_pkl(args.priors[1])).float())
+        assert priors[0].shape == (Nimg,3,3)
+        assert priors[1].shape == (Nimg,2)
+    else: priors = None
+
     model = VAE(D, D, args.qlayers, args.qdim, args.players, args.pdim,
                 encode_mode=args.encode_mode)
 
@@ -158,6 +200,7 @@ def main(args):
         equivariance_loss = EquivarianceLoss(model,D,D)
 
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
+    decoder_optim = torch.optim.Adam(model.decoder.parameters(), lr=args.lr, weight_decay=args.wd)
 
     if args.load:
         log('Loading checkpoint from {}'.format(args.load))
@@ -168,6 +211,15 @@ def main(args):
         model.train()
     else:
         start_epoch = 0
+        if args.priors:
+            enc_optim = torch.optim.Adam(model.parameters(), lr=.001, weight_decay=args.wd)
+            pretrain_encoder(model, enc_optim, data, priors, device)
+            out_weights = '{}/pretrain_weights.pkl'.format(args.outdir)
+            torch.save({
+            'epoch':-1,
+            'model_state_dict':model.state_dict(),
+            'optimizer_state_dict':optim.state_dict(),
+            }, out_weights)
 
     # training loop
     data_generator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
@@ -178,7 +230,7 @@ def main(args):
         kld_accum = 0
         eq_loss_accum = 0
         batch_it = 0 
-        for minibatch, _ in data_generator:
+        for minibatch, ind in data_generator:
             minibatch = minibatch.to(device)
             batch_it += len(minibatch)
             global_it = Nimg*epoch + batch_it
@@ -191,7 +243,10 @@ def main(args):
             else:
                 equivariance_tuple = None
 
-            gen_loss, kld, loss, eq_loss = train(model, optim, D, minibatch, beta, args.beta_control, equivariance_tuple)
+            if epoch < 1: # HACK
+                gen_loss, kld, loss, eq_loss = train(model, decoder_optim, D, minibatch, beta, args.beta_control, equivariance_tuple, (priors[0][ind],priors[1][ind]))
+            else:
+                gen_loss, kld, loss, eq_loss = train(model, optim, D, minibatch, beta, args.beta_control, equivariance_tuple, (priors[0][ind],priors[1][ind]))
 
             # logging
             gen_loss_accum += gen_loss*len(minibatch)

@@ -76,7 +76,8 @@ def loss_function(recon_y, y, w_eps, z_std, t_mu, t_logvar):
 def loss_function_priors(recon_y, y, z_mu, z_std, t_mu, t_logvar, priors):
     i = int(y.shape[-2]/2+1) # D/2+1
     gen_loss = F.mse_loss(recon_y[...,0:i,:], y[...,0:i,:])  
-    dist = ((z_mu-priors[0]).pow(2)[:,:,0:2]).sum((-1,-2)) # HACK
+    #dist = ((z_mu-priors[0]).pow(2)[:,:,0:2]).sum((-1,-2)) # HACK
+    dist = (z_mu-priors[0]).pow(2).sum(-1)
     kld1 = -0.5 * torch.mean(3 + torch.log(z_std.pow(2).prod(-1)) - z_std.pow(2).sum(-1) - dist)
     kld2 = -0.5 * torch.mean(torch.sum(1 + t_logvar - t_logvar.exp() - (t_mu - priors[1]).pow(2),-1))
     return gen_loss, kld1 + kld2
@@ -133,15 +134,15 @@ def save_checkpoint(model, optim, D, epoch, norm, out_mrc, out_weights):
 
 def pretrain_encoder(model, optim, data, priors, device, num_epochs=10, log_interval=1000):
     model.train()
-    rot_priors = priors[0].transpose(-1,-2)[:,0:2,:].contiguous().view(-1,6) # HACK, s2s2 representation
-    assert rot_priors.shape == (data.N,6)
+    #rot_priors = priors[0].transpose(-1,-2)[:,0:2,:].contiguous().view(-1,6) # HACK, s2s2 representation
+    #assert rot_priors.shape == (data.N,6)
     data_generator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
     for epoch in range(num_epochs):
         it = 0
         for mb, ind in data_generator:
             mb = mb.to(device)
             it += len(ind)
-            r_priors = rot_priors[ind]
+            r_priors = priors[0][ind]
             t_priors = priors[1][ind]
             optim.zero_grad()
             z_mu, z_logvar, tmu, tlogvar = model.encode(mb, return_s2s2=True)
@@ -185,9 +186,9 @@ def main(args):
     log('Normalized FT by {} +/- {}'.format(*data.norm))
 
     if args.priors:
-        priors = (torch.tensor(utils.load_pkl(args.priors[0])).float(), 
+        priors = (lie_tools.SO3_to_quaternions(torch.tensor(utils.load_pkl(args.priors[0])).float()),
                   torch.tensor(utils.load_pkl(args.priors[1])).float())
-        assert priors[0].shape == (Nimg,3,3)
+        assert priors[0].shape == (Nimg,4)
         assert priors[1].shape == (Nimg,2)
     else: priors = None
 

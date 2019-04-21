@@ -65,6 +65,54 @@ def s2s2_to_SO3(v1, v2):
     e3 = torch.cross(e1, e2)
     return torch.stack([e1, e2, e3], 1)
 
+def SO3_to_quaternions(r):
+    """Map batch of SO(3) matrices to quaternions."""
+    batch_dims = r.shape[:-2]
+    assert list(r.shape[-2:]) == [3, 3], 'Input must be 3x3 matrices'
+    r = r.view(-1, 3, 3)
+    n = r.shape[0]
+
+    diags = [r[:, 0, 0], r[:, 1, 1], r[:, 2, 2]]
+    denom_pre = torch.stack([
+        1 + diags[0] - diags[1] - diags[2],
+        1 - diags[0] + diags[1] - diags[2],
+        1 - diags[0] - diags[1] + diags[2],
+        1 + diags[0] + diags[1] + diags[2]
+    ], 1)
+    denom = 0.5 * torch.sqrt(1E-6 + torch.abs(denom_pre))
+
+    case0 = torch.stack([
+        denom[:, 0],
+        (r[:, 0, 1] + r[:, 1, 0]) / (4 * denom[:, 0]),
+        (r[:, 0, 2] + r[:, 2, 0]) / (4 * denom[:, 0]),
+        (r[:, 1, 2] - r[:, 2, 1]) / (4 * denom[:, 0])
+    ], 1)
+    case1 = torch.stack([
+        (r[:, 0, 1] + r[:, 1, 0]) / (4 * denom[:, 1]),
+        denom[:, 1],
+        (r[:, 1, 2] + r[:, 2, 1]) / (4 * denom[:, 1]),
+        (r[:, 2, 0] - r[:, 0, 2]) / (4 * denom[:, 1])
+    ], 1)
+    case2 = torch.stack([
+        (r[:, 0, 2] + r[:, 2, 0]) / (4 * denom[:, 2]),
+        (r[:, 1, 2] + r[:, 2, 1]) / (4 * denom[:, 2]),
+        denom[:, 2],
+        (r[:, 0, 1] - r[:, 1, 0]) / (4 * denom[:, 2])
+    ], 1)
+    case3 = torch.stack([
+        (r[:, 1, 2] - r[:, 2, 1]) / (4 * denom[:, 3]),
+        (r[:, 2, 0] - r[:, 0, 2]) / (4 * denom[:, 3]),
+        (r[:, 0, 1] - r[:, 1, 0]) / (4 * denom[:, 3]),
+        denom[:, 3]
+    ], 1)
+
+    cases = torch.stack([case0, case1, case2, case3], 1)
+
+    quaternions = cases[torch.arange(n, dtype=torch.long),
+                        torch.argmax(denom.detach(), 1)]
+    return quaternions.view(*batch_dims, 4)
+
+
 def quaternions_to_SO3(q):
     '''Normalizes q and maps to group matrix.'''
     q = q / q.norm(p=2, dim=-1, keepdim=True)

@@ -189,6 +189,8 @@ class VAE(nn.Module):
                             nn.ReLU) #in_dim -> hidden_dim
         else:
             raise RuntimeError('Encoder mode {} not recognized'.format(encode_mode))
+        #self.so3_encoder = SO3reparameterize(encode_dim) # hidden_dim -> SO(3) latent variable
+        #self.trans_encoder = ResidLinearMLP(nx*ny, 5, encode_dim, 4, nn.ReLU)
         self.so3_encoder = SO3reparameterize(encode_dim, 1, encode_dim) # hidden_dim -> SO(3) latent variable
         self.trans_encoder = ResidLinearMLP(encode_dim, 1, encode_dim, 4, nn.ReLU)
         self.decoder = FTSliceDecoder(3, nx, decode_layers, decode_dim, nn.ReLU)
@@ -206,20 +208,34 @@ class VAE(nn.Module):
         eps = torch.randn_like(std)
         return eps*std + mu
 
-    def forward(self, img):
+    def encode(self, img, return_s2s2=False):
         img = img[...,0] - img[...,1]
         enc = nn.ReLU()(self.encoder(img.view(-1,self.in_dim)))
-        z_mu, z_std = self.so3_encoder(enc)
-        rot, w_eps = self.so3_encoder.sampleSO3(z_mu, z_std)
+        if return_s2s2: # z_mu returned in s2s2 representation instead of SO3
+            z = self.so3_encoder.main(enc)
+            z_mu = z[:,:6]
+            z_std = torch.exp(.5*z[:,6:])
+        else:
+            z_mu, z_std = self.so3_encoder(enc)
         z = self.trans_encoder(enc)
         tmu, tlogvar = z[:,:2], z[:,2:]
-        t = self.reparameterize(tmu, tlogvar)
-        # transform lattice by rot
+        return z_mu, z_std, tmu, tlogvar
+
+    def decode(self, rot, t):
+        # transform lattice by rot.T
         x = self.lattice @ rot # R.T*x
         y_hat = self.decoder(x)
-        # translate image
-        y_hat = self.decoder.translate(self.lattice[:,0:2]/2, y_hat, t)
+        # translate image by -t
+        y_hat = self.decoder.translate(self.lattice[:,0:2]/2, y_hat, -t)
         y_hat = y_hat.view(-1, self.ny, self.nx, 2)
+        return y_hat
+
+    def forward(self, img):
+        z_mu, z_std, tmu, tlogvar = self.encode(img)
+        rot, w_eps = self.so3_encoder.sampleSO3(z_mu, z_std)
+        t = self.reparameterize(tmu, tlogvar)
+        # transform lattice by rot
+        y_hat = self.decode(rot, t)
         return y_hat, z_mu, z_std, w_eps, tmu, tlogvar
 
 class TiltVAE(nn.Module):
@@ -270,16 +286,16 @@ class TiltVAE(nn.Module):
         tmu, tlogvar = z[:,:2], z[:,2:]
         t = self.reparameterize(tmu, tlogvar)
 
-        # transform lattice by rot
+        # rotate lattice by rot.T, shift by -t
         x = self.lattice @ rot # R.T*x
         y_hat = self.decoder(x)
-        y_hat = self.decoder.translate(self.lattice[:,0:2]/2, y_hat, t)
+        y_hat = self.decoder.translate(self.lattice[:,0:2]/2, y_hat, -t)
         y_hat = y_hat.view(-1, self.ny, self.nx, 2)
 
         # tilt series pair
         x = self.lattice @ self.tilt @ rot
         y_hat2 = self.decoder(x)
-        y_hat2 = self.decoder.translate(self.lattice[:,0:2]/2, y_hat2, t)
+        y_hat2 = self.decoder.translate(self.lattice[:,0:2]/2, y_hat2, -t)
         y_hat2 = y_hat2.view(-1, self.ny, self.nx, 2)
         return y_hat, y_hat2, z_mu, z_std, w_eps, tmu, tlogvar
 

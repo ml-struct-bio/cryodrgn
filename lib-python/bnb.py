@@ -82,12 +82,12 @@ class BNNBHet:
         c = int(coords.size(-2)/2)
         YX = coords.size(-2)
         def compute_err(images, rot):
-            images = images.view(B,-1)[:,mask]
+            images = images.view(B,-1,2)[:,mask,:]
             x = self.model.cat_z(coords @ rot, z)
             y_hat = self.model.decoder.forward_symmetric(x,c)
-            y_hat = y_hat.view(B, NQ, YX) # BxQxYX
-            images = images.unsqueeze(1) # Bx1xYX
-            err = torch.sum((images-y_hat).pow(2),-1) # BxQ
+            y_hat = y_hat.view(B, NQ, YX,2) # BxQxYXx2
+            images = images.unsqueeze(1) # Bx1xYXx2
+            err = torch.sum((images-y_hat).pow(2),(-1,-2)) # BxQ
             return err
         err = compute_err(images,rot)
         if images_tilt is not None:
@@ -116,9 +116,9 @@ class BNNBHet:
 
         images = images.unsqueeze(1) # Bx1xYxX
         images = torch.cat((images,rotated_images),1) # Bx12xYxX
-        images = images.view(B,1,12,-1)[...,mask] # Bx1x12xYX
+        images = images.view(B,1,12,-1,2)[...,mask,:] # Bx1x12xYX
 
-        err = torch.sum((images-y_hat).pow(2),-1).view(B,self.nbase)
+        err = torch.sum((images-y_hat).pow(2),(-1,-2)).view(B,self.nbase)
         mini = torch.argmin(err,1)
         return mini.cpu().numpy()
 
@@ -139,7 +139,6 @@ class BNNBHet:
                 s2i, s1i = min_ind.T
                 min_quat = quat[np.arange(B),min_i]
         return lie_tools.quaternions_to_SO3(torch.tensor(min_quat))
-
 
     def opt_theta(self, images, z, images_tilt=None, niter=5, L=None):
         B = images.size(0)

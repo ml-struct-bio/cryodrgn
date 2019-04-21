@@ -75,7 +75,7 @@ def eval_volume(model, lattice, D, zval, rnorm):
     z = torch.zeros(D**2,zdim, dtype=torch.float32)
     z += torch.tensor(zval, dtype=torch.float32)
 
-    vol_f = np.zeros((D,D,D),dtype=np.float32)
+    vol_f = np.zeros((D,D,D),dtype=complex)
     assert not model.training
     # evaluate the volume by zslice to avoid memory overflows
     for i, dz in enumerate(np.linspace(-1,1,D,endpoint=False)):
@@ -83,10 +83,8 @@ def eval_volume(model, lattice, D, zval, rnorm):
         x = torch.cat((x,z),dim=-1)
         with torch.no_grad():
             y = model.decoder.decode(x)
-            y = y[...,0] - y[...,1]
-            #y = model.decoder(x)
-            y = y.view(D,D).cpu().numpy()
-        vol_f[i] = y
+            y = y.view(D, D, 2).cpu().numpy()
+        vol_f[i] = y[...,0] + y[...,1]*1j
     vol = fft.ihtn_center(vol_f*rnorm[1]+rnorm[0])
     return vol, vol_f
 
@@ -96,7 +94,7 @@ def train(model, lattice, bnb, optim, minibatch, L, beta, beta_control=None, equ
     optim.zero_grad()
 
     D = lattice.D
-    input_ = (y.view(-1,D*D), yt.view(-1,D*D)) if yt is not None else y.view(-1,D*D)
+    input_ = (y.view(-1,D*D,2), yt.view(-1,D*D,2)) if yt is not None else y.view(-1,D*D,2)
     mu, logvar = model.encode(input_)
     z = model.reparameterize(mu, logvar)
 
@@ -108,11 +106,11 @@ def train(model, lattice, bnb, optim, minibatch, L, beta, beta_control=None, equ
     model.train()
 
     y_recon = model.decode(rot, z)
-    y_recon = y_recon.view(-1, D, D)
+    y_recon = y_recon.view(-1, D, D, 2)
     gen_loss = F.mse_loss(y_recon, y)
     if yt is not None: 
         y_recon_tilt = model.decode(bnb.tilt @ rot, z)
-        y_recon_tilt = y_recon_tilt.view(-1, D, D)
+        y_recon_tilt = y_recon_tilt.view(-1, D, D, 2)
         gen_loss = .5*gen_loss + .5*F.mse_loss(y_recon_tilt, yt)
 
     kld = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())

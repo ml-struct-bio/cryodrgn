@@ -45,6 +45,7 @@ class HetOnlyVAE(nn.Module):
                             nn.ReLU)
         else:
             raise RuntimeError('Encoder mode {} not recognized'.format(encode_mode))
+        self.encode_mode = encode_mode
         self.decoder = FTSliceDecoder(3+z_dim, # input dim
                             lattice.D, # lattice size
                             decode_layers, # nlayers
@@ -59,6 +60,8 @@ class HetOnlyVAE(nn.Module):
         return eps*std + mu
 
     def encode(self, img):
+        if self.encode_mode != 'tilt': # ew
+            img = img[...,0] - img[...,1]
         z = self.encoder(img)
         return z[:,:self.z_dim], z[:,self.z_dim:]
 
@@ -309,6 +312,8 @@ class TiltEncoder(nn.Module):
 
     def forward(self, img):
         x, x_tilt = img
+        x = x[...,0] - x[...,1]
+        x_tilt = x_tilt[...,0] - x_tilt[...,1]
         x_enc = self.encoder1(x.view(-1,self.in_dim))
         x_tilt_enc = self.encoder1(x_tilt.view(-1,self.in_dim))
         z = self.encoder2(torch.cat((x_enc,x_tilt_enc),-1))

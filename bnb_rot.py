@@ -58,17 +58,16 @@ def parse_args():
 
 def eval_volume(model, lattice, D, norm):
     '''Evaluate the model on a DxDxD lattice'''
-    vol_f = np.zeros((D,D,D),dtype=np.float32)
+    vol_f = np.zeros((D,D,D),dtype=complex)
     assert not model.training
     # evaluate the volume by zslice to avoid memory overflows
     for i, z in enumerate(np.linspace(-1,1,D,endpoint=False)):
         x = lattice.coords + torch.tensor([0,0,z])
         with torch.no_grad():
             y = model.decode(x)
-            y = y[...,0] - y[...,1]
-            y = y.view(D,D).cpu().numpy()
-        vol_f[i] = y
-    vol = fft.ihtn_center(vol_f*norm[1]+norm[0])
+            y = y.view(D, D, 2).cpu().numpy()
+        vol_f[i] = y[...,0] + y[...,1]*1j
+    vol = fft.ifftn_center(vol_f*norm[1]+norm[0])
     return vol, vol_f
 
 def save_checkpoint(model, lattice, optim, epoch, norm, out_mrc, out_weights):
@@ -92,11 +91,11 @@ def train(model, lattice, bnb, optim, batch, L, tilt=None):
     model.train()
     optim.zero_grad()
     y_recon = model(lattice.coords @ rot)
-    y_recon = y_recon.view(-1, lattice.D, lattice.D)
+    y_recon = y_recon.view(-1, lattice.D, lattice.D, 2)
     loss = F.mse_loss(y_recon,y)
     if tilt is not None:
         y_recon_tilt = model(lattice.coords @ tilt @ rot)
-        y_recon_tilt = y_recon_tilt.view(-1, lattice.D, lattice.D)
+        y_recon_tilt = y_recon_tilt.view(-1, lattice.D, lattice.D, 2)
         loss = .5*loss + .5*F.mse_loss(y_recon_tilt,yt)
     loss.backward()
     optim.step()

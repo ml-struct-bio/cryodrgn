@@ -123,7 +123,7 @@ class FTSliceDecoder(nn.Module):
         top_half = self.decode(lattice[...,0:c+1,:])
         image[..., 0:c+1,:] = top_half 
         # the bottom half of the image is the complex conjugate of the top half
-        image[...,c+1:,:] = top_half[...,np.arange(c-1,-1,-1)]*torch.tensor([1.,-1.])
+        image[...,c+1:,:] = top_half[...,np.arange(c-1,-1,-1),:]*torch.tensor([1.,-1.])
         return image
 
     def forward(self, lattice):

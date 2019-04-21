@@ -22,9 +22,6 @@ class BNNBHomo:
         assert self.nbase == 576, "Base resolution changed?"
         self.tilt = tilt
 
-    def mask_image(self, images, mask):
-        return images[:,mask]
-
     def eval_grid(self, images, rot, NQ, L, images_tilt=None):
         '''
         images: B x NY x NX 
@@ -38,11 +35,11 @@ class BNNBHomo:
         c = int(coords.size(-2)/2)
         YX = coords.size(-2)
         def compute_err(images, rot):
-            images = images.view(B,-1)[:,mask]
+            images = images.view(B,-1,2)[:,mask,:]
             y_hat = self.decoder.forward_symmetric(coords @ rot, c)
-            y_hat = y_hat.view(-1,NQ,YX) #1xQxYX for base grid, Bx8xYX for incremental grid
-            images = images.unsqueeze(1) # Bx1xYX
-            err = torch.sum((images-y_hat).pow(2),-1) # BxQ
+            y_hat = y_hat.view(-1,NQ,YX,2) #1xQxYXx2 for base grid, Bx8xYXx2 for incremental grid
+            images = images.unsqueeze(1) # Bx1xYXx2
+            err = torch.sum((images-y_hat).pow(2),(-1,-2)) # BxQ
             return err
         err = compute_err(images, rot)
         if images_tilt is not None:

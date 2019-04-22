@@ -235,7 +235,6 @@ def main(args):
             minibatch = minibatch.to(device)
             batch_it += len(minibatch)
             global_it = Nimg*epoch + batch_it
-            
 
             beta = beta_schedule(global_it)
             if args.equivariance:
@@ -243,11 +242,15 @@ def main(args):
                 equivariance_tuple = (lamb, equivariance_loss)
             else:
                 equivariance_tuple = None
+            
+            if priors is not None:
+                priors_mb = (priors[0][ind], priors[1][ind])
+            else: priors_mb =  None
 
             if epoch < 1: # HACK
-                gen_loss, kld, loss, eq_loss = train(model, decoder_optim, D, minibatch, beta, args.beta_control, equivariance_tuple, (priors[0][ind],priors[1][ind]))
+                gen_loss, kld, loss, eq_loss = train(model, decoder_optim, D, minibatch, beta, args.beta_control, equivariance_tuple, priors_mb)
             else:
-                gen_loss, kld, loss, eq_loss = train(model, optim, D, minibatch, beta, args.beta_control, equivariance_tuple, (priors[0][ind],priors[1][ind]))
+                gen_loss, kld, loss, eq_loss = train(model, optim, D, minibatch, beta, args.beta_control, equivariance_tuple, priors_mb)
 
             # logging
             gen_loss_accum += gen_loss*len(minibatch)

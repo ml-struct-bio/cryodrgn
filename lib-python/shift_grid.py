@@ -1,35 +1,35 @@
 import numpy as np
 
-def grid_1d(resol, extent=10):
+def grid_1d(resol, extent=5):
     Npix = 6*2**resol
-    dt = extent/Npix
-    grid = np.arange(Npix)*dt + dt/2
+    dt = 2*extent/Npix
+    grid = np.arange(Npix)*dt + dt/2 - extent
     return grid
 
-def grid_2d(resol, extent=10):
+def grid_2d(resol, extent=5):
     x = grid_1d(resol, extent)
     y = grid_1d(resol, extent)
     # convention: x is fast dim, y is slow dim
     grid = np.stack(np.meshgrid(x,y),-1) 
     return grid.reshape(-1,2)
 
-def base_shift_grid(extent=10):
+def base_shift_grid(extent=5):
     return grid_2d(0, extent)
 
 ### Neighbor Finding ###
 
-def get_1d_neighbor(mini, curr_res, extent=10):
+def get_1d_neighbor(mini, curr_res, extent=5):
     Npix = 6*2**(curr_res+1)
-    dt = extent/Npix
+    dt = 2*extent/Npix
     ind = np.array([2*mini, 2*mini+1])
-    return dt*ind + dt/2, ind
+    return dt*ind + dt/2 - extent, ind
 
 def get_base_ind(ind):
     xi = ind % 6
     yi = int(ind/6)
     return xi, yi
 
-def get_neighbor(xi, yi, curr_res, extent=10):
+def get_neighbor(xi, yi, curr_res, extent=5):
     '''
     Return the 4 nearest neighbors at the next resolution level
     '''

@@ -7,6 +7,7 @@ import torch.nn.functional as F
 
 import lie_tools
 import so3_grid
+import shift_grid
 import utils
 
 log = utils.log
@@ -24,35 +25,39 @@ class BNNBHomo:
 
     def eval_grid(self, images, rot, NQ, L, images_tilt=None):
         '''
-        images: B x NY x NX 
+        images: B x T x NY x NX 
         rot: (NxQ) x 3 x 3 rotation matrics (N=1 for base grid, N=B for incremental grid)
         NQ: number of slices evaluated for each image
         L: radius of fourier components to evaluate
         '''
         B = images.size(0)
+        T = images.size(1) # translations
         mask = self.lattice.get_circular_mask(L)
         coords = self.lattice.coords[mask]
         c = int(coords.size(-2)/2)
         YX = coords.size(-2)
         def compute_err(images, rot):
-            images = images.view(B,-1,2)[:,mask,:]
+            images = images.view(B,T,-1,2)[...,mask,:]
             y_hat = self.decoder.forward_symmetric(coords @ rot, c)
-            y_hat = y_hat.view(-1,NQ,YX,2) #1xQxYXx2 for base grid, Bx8xYXx2 for incremental grid
-            images = images.unsqueeze(1) # Bx1xYXx2
-            err = torch.sum((images-y_hat).pow(2),(-1,-2)) # BxQ
+            y_hat = y_hat.view(-1,1,NQ,YX,2) #1x1xQxYXx2 for base grid, Bx1x8xYXx2 for incremental grid
+            images = images.unsqueeze(2) # BxTx1xYXx2
+            err = torch.sum((images-y_hat).pow(2),(-1,-2)) # BxTxQ
             return err
         err = compute_err(images, rot)
         if images_tilt is not None:
             err_tilt = compute_err(images_tilt, self.tilt @ rot)
             err += err_tilt
-        mini = torch.argmin(err,1) # B
-        return mini.cpu().numpy()
+        mini = torch.argmin(err.view(B,-1),1) # B
+        qi = mini % NQ
+        ti = mini / NQ # integer division
+        return qi.cpu().numpy(), ti.cpu().numpy()
 
     def opt_theta(self, images, L, images_tilt=None, niter=5):
         B = images.size(0)
+        images = images.unsqueeze(1) # not testing any translations
         assert not self.decoder.training
         with torch.no_grad():
-            min_i = self.eval_grid(images, self.base_rot, self.nbase, L, images_tilt=images_tilt)
+            min_i, _ = self.eval_grid(images, self.base_rot, self.nbase, L, images_tilt=images_tilt)
             min_quat = self.base_quat[min_i]
             s2i, s1i = so3_grid.get_base_indr(min_i)
             for iter_ in range(1,niter+1):
@@ -60,11 +65,19 @@ class BNNBHomo:
                 quat = np.array([x[0] for x in neighbors])
                 ind = np.array([x[1] for x in neighbors])
                 rot = lie_tools.quaternions_to_SO3(torch.tensor(quat))
-                min_i = self.eval_grid(images, rot, 8, L, images_tilt=images_tilt)
+                min_i, _ = self.eval_grid(images, rot, 8, L, images_tilt=images_tilt)
                 min_ind = ind[np.arange(B), min_i]
                 s2i, s1i = min_ind.T
                 min_quat = quat[np.arange(B),min_i]
         return lie_tools.quaternions_to_SO3(torch.tensor(min_quat))
+
+    def shift_images(self, images, shifts):
+        coords = self.lattice.coords/2 # wavevector between -.5 and .5
+        #self.model.translate(coords, images, shifts)
+        raise NotImplementedError
+
+    def opt_theta_trans(self, images, L, images_tilt=None, niter=5):
+        raise NotImplementedError
 
 class BNNBHet:
     def __init__(self, model, lattice, tilt=None):

@@ -151,17 +151,22 @@ class FTSliceDecoder(nn.Module):
         '''
         Translate an image by phase shifting its Fourier transform
         
-        coords: wavevectors between [-.5,.5] (img_dims x 2)
-        img: FT of image (B x img_dims x 2)
-        t: shift in pixels (B x 2)
+        Inputs:
+            coords: wavevectors between [-.5,.5] (img_dims x 2)
+            img: FT of image (B x img_dims x 2)
+            t: shift in pixels (B x T x 2)
+
+        Returns:
+            Shifted images (B x T x N x 2) 
 
         img_dims can either be 2D or 1D (unraveled image) 
         '''
-        t = t.unsqueeze(2) # Bx2x1 to be able to do bmm
-        tfilt = coords @ -t * -2 * np.pi
-        tfilt = tfilt.squeeze()
-        c = torch.cos(tfilt) # BxN
-        s = torch.sin(tfilt) # BxN
+        img = img.unsqueeze(1) # Bx1xNx2
+        t = t.unsqueeze(-1) # BxTx2x1 to be able to do bmm
+        tfilt = coords @ -t * -2 * np.pi # BxTxNx1
+        tfilt = tfilt.squeeze(-1) # BxTxN
+        c = torch.cos(tfilt) # BxTxN
+        s = torch.sin(tfilt) # BxTxN
         return torch.stack([img[...,0]*c-img[...,1]*s,img[...,0]*s+img[...,1]*c],-1)
 
 class VAE(nn.Module):
@@ -229,6 +234,7 @@ class VAE(nn.Module):
         x = self.lattice @ rot # R.T*x
         y_hat = self.decoder(x)
         # translate image by -t
+        t = t.unsqueeze(1) # B x 1 x 2
         y_hat = self.decoder.translate(self.lattice[:,0:2]/2, y_hat, -t)
         y_hat = y_hat.view(-1, self.ny, self.nx, 2)
         return y_hat
@@ -288,6 +294,7 @@ class TiltVAE(nn.Module):
         z = self.trans_encoder(enc)
         tmu, tlogvar = z[:,:2], z[:,2:]
         t = self.reparameterize(tmu, tlogvar)
+        t = t.unsqueeze(1) # B x 1 x 2
 
         # rotate lattice by rot.T, shift by -t
         x = self.lattice @ rot # R.T*x

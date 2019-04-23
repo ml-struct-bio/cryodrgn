@@ -42,6 +42,8 @@ def parse_args():
     group.add_argument('--tilt-deg', type=float, default=45, help='X-axis tilt offset in degrees (default: %(default)s)')
 
     group = parser.add_argument_group('Training parameters')
+    group.add_argument('--t-extent', type=float, default=5, help='+/- pixels to search over translations')
+    group.add_argument('--no-trans', action='store_true', help="Don't search over translations")
     group.add_argument('-n', '--num-epochs', type=int, default=10, help='Number of training epochs (default: %(default)s)')
     group.add_argument('-b','--batch-size', type=int, default=100, help='Minibatch size (default: %(default)s)')
     group.add_argument('--wd', type=float, default=0, help='Weight decay in Adam optimizer (default: %(default)s)')
@@ -81,16 +83,21 @@ def save_checkpoint(model, lattice, optim, epoch, norm, out_mrc, out_weights):
         'optimizer_state_dict':optim.state_dict(),
         }, out_weights)
 
-def train(model, lattice, bnb, optim, batch, L, tilt=None):
+def train(model, lattice, bnb, optim, batch, L, tilt=None, no_trans=False):
     y, yt = batch
     # BNB inference of orientation 
     model.eval()
     with torch.no_grad():
-        rot = bnb.opt_theta(y, L, yt)
+        if no_trans:
+            rot = bnb.opt_theta(y, L, yt)
+        else:
+            rot, trans = bnb.opt_theta_trans(y, L, yt)
     # Train model 
     model.train()
     optim.zero_grad()
     y_recon = model(lattice.coords @ rot)
+    if not no_trans:
+        y_recon = model.translate(lattice.coords[:,0:2]/2, y_recon, trans.unsqueeze(1))
     y_recon = y_recon.view(-1, lattice.D, lattice.D, 2)
     loss = F.mse_loss(y_recon,y)
     if tilt is not None:
@@ -136,7 +143,7 @@ def main(args):
 
     lattice = Lattice(D)
     model = FTSliceDecoder(3, D, args.layers, args.dim, nn.ReLU)
-    bnb = BNNBHomo(model, lattice, tilt)
+    bnb = BNNBHomo(model, lattice, tilt, t_extent=args.t_extent)
 
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
@@ -168,7 +175,7 @@ def main(args):
             if L: L = int(L)
             
             # train the model
-            loss_item = train(model, lattice, bnb, optim, batch, L, tilt)
+            loss_item = train(model, lattice, bnb, optim, batch, L, tilt, args.no_trans)
            
             # logging
             loss_accum += loss_item*len(batch[0])

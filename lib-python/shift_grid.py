@@ -3,7 +3,7 @@ import numpy as np
 def grid_1d(resol, extent):
     Npix = 6*2**resol
     dt = 2*extent/Npix
-    grid = np.arange(Npix)*dt + dt/2 - extent
+    grid = np.arange(Npix, dtype=np.float32)*dt + dt/2 - extent
     return grid
 
 def grid_2d(resol, extent):
@@ -21,12 +21,12 @@ def base_shift_grid(extent):
 def get_1d_neighbor(mini, curr_res, extent):
     Npix = 6*2**(curr_res+1)
     dt = 2*extent/Npix
-    ind = np.array([2*mini, 2*mini+1])
+    ind = np.array([2*mini, 2*mini+1], dtype=np.float32)
     return dt*ind + dt/2 - extent, ind
 
 def get_base_ind(ind):
     xi = ind % 6
-    yi = ind / 6
+    yi = ind // 6 # integer division
     return xi, yi
 
 def get_neighbor(xi, yi, curr_res, extent):

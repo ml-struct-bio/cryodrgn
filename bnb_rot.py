@@ -102,6 +102,8 @@ def train(model, lattice, bnb, optim, batch, L, tilt=None, no_trans=False):
     loss = F.mse_loss(y_recon,y)
     if tilt is not None:
         y_recon_tilt = model(lattice.coords @ tilt @ rot)
+        if not no_trans:
+            y_recon_tilt = model.translate(lattice.coords[:,0:2]/2, y_recon_tilt, trans.unsqueeze(1))
         y_recon_tilt = y_recon_tilt.view(-1, lattice.D, lattice.D, 2)
         loss = .5*loss + .5*F.mse_loss(y_recon_tilt,yt)
     loss.backward()

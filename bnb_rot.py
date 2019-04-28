@@ -85,6 +85,7 @@ def save_checkpoint(model, lattice, optim, epoch, norm, out_mrc, out_weights):
 
 def train(model, lattice, bnb, optim, batch, L, tilt=None, no_trans=False):
     y, yt = batch
+    B = y.size(0)
     # BNB inference of orientation 
     model.eval()
     with torch.no_grad():
@@ -96,15 +97,20 @@ def train(model, lattice, bnb, optim, batch, L, tilt=None, no_trans=False):
     model.train()
     optim.zero_grad()
     y_recon = model(lattice.coords @ rot)
-    if not no_trans:
-        y_recon = model.translate(lattice.coords[:,0:2]/2, y_recon, trans.unsqueeze(1))
     y_recon = y_recon.view(-1, lattice.D, lattice.D, 2)
+    if not no_trans:
+        y = model.translate(lattice.coords[:,0:2]/2, y.view(B,-1,2), trans.unsqueeze(1))
+        y = y.view(-1, lattice.D, lattice.D, 2)
+    #import pickle
+    #pickle.dump(dict(y=y,y_recon=y_recon),open('test.pkl','wb'))
+    #import pdb; pdb.set_trace()
     loss = F.mse_loss(y_recon,y)
     if tilt is not None:
         y_recon_tilt = model(lattice.coords @ tilt @ rot)
-        if not no_trans:
-            y_recon_tilt = model.translate(lattice.coords[:,0:2]/2, y_recon_tilt, trans.unsqueeze(1))
         y_recon_tilt = y_recon_tilt.view(-1, lattice.D, lattice.D, 2)
+        if not no_trans:
+            yt = model.translate(lattice.coords[:,0:2]/2, yt.view(B,-1,2), trans.unsqueeze(1))
+            yt = yt.view(-1, lattice.D, lattice.D, 2)
         loss = .5*loss + .5*F.mse_loss(y_recon_tilt,yt)
     loss.backward()
     optim.step()

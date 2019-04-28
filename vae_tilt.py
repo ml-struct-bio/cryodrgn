@@ -89,7 +89,7 @@ def train(model, optim, D, minibatch, beta, beta_control=None, equivariance=None
     model.train()
     optim.zero_grad()
     # train the model
-    y_recon, y_recon_tilt, z_mu, z_std, w_eps, t_mu, t_logvar = model(y, yt) 
+    y_recon, y_recon_tilt, y, yt, z_mu, z_std, w_eps, t_mu, t_logvar = model(y, yt) 
     gen_loss, kld = loss_function(y_recon, y_recon_tilt, y, yt, w_eps, z_std, t_mu, t_logvar)
     if torch.isnan(kld):
         log(w_eps[0])

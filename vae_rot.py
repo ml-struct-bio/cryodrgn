@@ -50,7 +50,6 @@ def parse_args():
     group.add_argument('--beta-control', type=float, help='KL-Controlled VAE gamma. Beta is KL target. (default: %(default)s)')
     group.add_argument('--equivariance', type=float, help='Strength of equivariance loss (default: %(default)s)')
     group.add_argument('--equivariance-end-it', type=int, default=100000, help='It at which equivariance max (default: %(default)s)')
-
     group = parser.add_argument_group('Encoder Network')
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--qdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
@@ -100,7 +99,7 @@ def train(model, optim, D, y, beta, beta_control=None, equivariance=None, priors
     model.train()
     optim.zero_grad()
     # train the model
-    y_recon, z_mu, z_std, w_eps, t_mu, t_logvar = model(y)
+    y_recon, y, z_mu, z_std, w_eps, t_mu, t_logvar = model(y)
     if priors is not None:
         gen_loss, kld = loss_function_priors(y_recon, y, z_mu, z_std, t_mu, t_logvar, priors)
     else:
@@ -186,8 +185,9 @@ def main(args):
     log('Normalized FT by {} +/- {}'.format(*data.norm))
 
     if args.priors:
+        # negate the target translation
         priors = (lie_tools.SO3_to_quaternions(torch.tensor(utils.load_pkl(args.priors[0])).float()),
-                  torch.tensor(utils.load_pkl(args.priors[1])).float())
+                  -torch.tensor(utils.load_pkl(args.priors[1])).float())
         assert priors[0].shape == (Nimg,4)
         assert priors[1].shape == (Nimg,2)
     else: priors = None

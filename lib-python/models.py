@@ -163,7 +163,7 @@ class FTSliceDecoder(nn.Module):
         '''
         img = img.unsqueeze(1) # Bx1xNx2
         t = t.unsqueeze(-1) # BxTx2x1 to be able to do bmm
-        tfilt = coords @ -t * -2 * np.pi # BxTxNx1
+        tfilt = coords @ t * -2 * np.pi # BxTxNx1
         tfilt = tfilt.squeeze(-1) # BxTxN
         c = torch.cos(tfilt) # BxTxN
         s = torch.sin(tfilt) # BxTxN
@@ -229,23 +229,25 @@ class VAE(nn.Module):
         tmu, tlogvar = z[:,:2], z[:,2:]
         return z_mu, z_std, tmu, tlogvar
 
-    def decode(self, rot, t):
+    def decode(self, rot):
         # transform lattice by rot.T
         x = self.lattice @ rot # R.T*x
         y_hat = self.decoder(x)
-        # translate image by -t
-        t = t.unsqueeze(1) # B x 1 x 2
-        y_hat = self.decoder.translate(self.lattice[:,0:2]/2, y_hat, -t)
         y_hat = y_hat.view(-1, self.ny, self.nx, 2)
         return y_hat
 
     def forward(self, img):
         z_mu, z_std, tmu, tlogvar = self.encode(img)
         rot, w_eps = self.so3_encoder.sampleSO3(z_mu, z_std)
-        t = self.reparameterize(tmu, tlogvar)
         # transform lattice by rot
-        y_hat = self.decode(rot, t)
-        return y_hat, z_mu, z_std, w_eps, tmu, tlogvar
+        y_hat = self.decode(rot)
+        # translate image by t
+        B = img.size(0)
+        t = self.reparameterize(tmu, tlogvar)
+        t = t.unsqueeze(1) # B x 1 x 2
+        img = self.decoder.translate(self.lattice[:,0:2]/2, img.view(B,-1,2), t)
+        img = img.view(B,self.ny, self.nx, 2)
+        return y_hat, img, z_mu, z_std, w_eps, tmu, tlogvar
 
 class TiltVAE(nn.Module):
     def __init__(self, 
@@ -282,7 +284,7 @@ class TiltVAE(nn.Module):
         eps = torch.randn_like(std)
         return eps*std + mu
 
-    def forward(self, img, img_tilt):
+    def encode(self, img, img_tilt):
         img = img[...,0] - img[...,1]
         img_tilt = img_tilt[...,0] - img_tilt[...,1]
         enc1 = self.encoder(img.view(-1,self.in_dim))
@@ -290,24 +292,30 @@ class TiltVAE(nn.Module):
         enc = torch.cat((enc1,enc2), -1) # then nn.ReLU?
         z_mu, z_std = self.so3_encoder(enc)
         rot, w_eps = self.so3_encoder.sampleSO3(z_mu, z_std)
-
         z = self.trans_encoder(enc)
         tmu, tlogvar = z[:,:2], z[:,2:]
         t = self.reparameterize(tmu, tlogvar)
+        return z_mu, z_std, w_eps, rot, tmu, tlogvar, t
+
+    def forward(self, img, img_tilt):
+        B = img.size(0)
+        z_mu, z_std, w_eps, rot, tmu, tlogvar, t = self.encode(img, img_tilt)
         t = t.unsqueeze(1) # B x 1 x 2
+        img = self.decoder.translate(self.lattice[:,0:2]/2, img.view(B,-1,2), -t)
+        img_tilt = self.decoder.translate(self.lattice[:,0:2]/2, img_tilt.view(B,-1,2), -t)
+        img = img.view(B, self.ny, self.nx, 2)
+        img_tilt = img_tilt.view(B, self.ny, self.nx, 2)
 
         # rotate lattice by rot.T, shift by -t
         x = self.lattice @ rot # R.T*x
         y_hat = self.decoder(x)
-        y_hat = self.decoder.translate(self.lattice[:,0:2]/2, y_hat, -t)
         y_hat = y_hat.view(-1, self.ny, self.nx, 2)
 
         # tilt series pair
         x = self.lattice @ self.tilt @ rot
         y_hat2 = self.decoder(x)
-        y_hat2 = self.decoder.translate(self.lattice[:,0:2]/2, y_hat2, -t)
         y_hat2 = y_hat2.view(-1, self.ny, self.nx, 2)
-        return y_hat, y_hat2, z_mu, z_std, w_eps, tmu, tlogvar
+        return y_hat, y_hat2, img, img_tilt, z_mu, z_std, w_eps, tmu, tlogvar
 
 class TiltEncoder(nn.Module):
     def __init__(self, in_dim, nlayers, hidden_dim, out_dim, activation):

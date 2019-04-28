@@ -132,7 +132,7 @@ class BNNBHomo:
                 min_quat = quat[np.arange(B),min_qi]
                 xi, yi = t_ind[np.arange(B),min_ti].T # check this
                 min_trans = trans[np.arange(B), min_ti] # check this, Bx2?
-        return lie_tools.quaternions_to_SO3(torch.tensor(min_quat)), -min_trans
+        return lie_tools.quaternions_to_SO3(torch.tensor(min_quat)), min_trans
 
 class BNNBHet:
     def __init__(self, model, lattice, tilt=None):

@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+import fft
 import lie_tools
 import so3_grid
 import utils
@@ -23,7 +24,6 @@ class HetOnlyVAE(nn.Module):
         self.in_dim = in_dim 
         self.z_dim = z_dim
         if encode_mode == 'conv':
-            assert lattice.D == 64, "CNN encoder is hard-coded for 64x64 images"
             self.encoder = ConvEncoder(encode_dim, z_dim*2)
         elif encode_mode == 'resid':
             self.encoder = ResidLinearMLP(in_dim, 
@@ -60,8 +60,6 @@ class HetOnlyVAE(nn.Module):
         return eps*std + mu
 
     def encode(self, img):
-        if self.encode_mode != 'tilt': # ew
-            img = img[...,0] - img[...,1]
         z = self.encoder(img)
         return z[:,:self.z_dim], z[:,self.z_dim:]
 
@@ -115,27 +113,29 @@ class FTSliceDecoder(nn.Module):
         self.D = D
         self.D2 = D2
 
-    def forward_symmetric(self, lattice, c):
+    def forward(self, lattice):
         '''
-        central slices with a symmetrizing mask
+        Call forward on central slices only
+            i.e. the middle pixel should be (0,0,0)
 
-        lattice: -1 x (2*c+1) x 3+zdim
-        c: index of center pixel
+        lattice: B x N x 3+zdim
         '''
-        image = torch.empty((*lattice.shape[:-1],2)) 
+        assert lattice.shape[-2] % 2 == 1
+        c = int(lattice.shape[-2]/2)
+        image = torch.empty(lattice.shape[:-1]) 
         top_half = self.decode(lattice[...,0:c+1,:])
-        image[..., 0:c+1,:] = top_half 
+        image[..., 0:c+1] = top_half[...,0] - top_half[...,1]
         # the bottom half of the image is the complex conjugate of the top half
-        image[...,c+1:,:] = top_half[...,np.arange(c-1,-1,-1),:]*torch.tensor([1.,-1.])
+        image[...,c+1:] = (top_half[...,0] + top_half[...,1])[...,np.arange(c-1,-1,-1)]
         return image
 
-    def forward(self, lattice):
-        '''Call forward on DxD central slices only'''
-        image = torch.empty((*lattice.shape[:-1],2))
+    def forward_even(self, lattice):
+        '''Extra bookkeeping with extra row/column for an even sized DFT'''
+        image = torch.empty(lattice.shape[:-1])
         top_half = self.decode(lattice[...,self.all_eval,:])
-        image[..., self.all_eval, :] = top_half
+        image[..., self.all_eval, :] = top_half[...,0] - top_half[...,1]
         # the bottom half of the image is the complex conjugate of the top half
-        image[...,self.bottom_rev, :] = top_half[...,self.top,:]*torch.tensor([1.,-1.])
+        image[...,self.bottom_rev, :] = top_half[...,self.top,0] + top_half[...,self.top,1]
         return image
 
     def decode(self, lattice):
@@ -147,7 +147,7 @@ class FTSliceDecoder(nn.Module):
         result[...,1][w] *= -1 # replace with complex conjugate to get correct values for original lattice positions
         return result
 
-    def translate(self, coords, img, t):
+    def translate_ft(self, coords, img, t):
         '''
         Translate an image by phase shifting its Fourier transform
         
@@ -157,10 +157,11 @@ class FTSliceDecoder(nn.Module):
             t: shift in pixels (B x T x 2)
 
         Returns:
-            Shifted images (B x T x N x 2) 
+            Shifted images (B x T x img_dims x 2) 
 
         img_dims can either be 2D or 1D (unraveled image) 
         '''
+        # F'(k) = exp(-2*pi*k*x0)*F(k)
         img = img.unsqueeze(1) # Bx1xNx2
         t = t.unsqueeze(-1) # BxTx2x1 to be able to do bmm
         tfilt = coords @ t * -2 * np.pi # BxTxNx1
@@ -169,28 +170,70 @@ class FTSliceDecoder(nn.Module):
         s = torch.sin(tfilt) # BxTxN
         return torch.stack([img[...,0]*c-img[...,1]*s,img[...,0]*s+img[...,1]*c],-1)
 
+    def translate_ht(self, coords, img, t):
+        '''
+        Translate an image by phase shifting its Hartley transform
+        
+        Inputs:
+            coords: wavevectors between [-.5,.5] (img_dims x 2)
+            img: HT of image (B x img_dims)
+            t: shift in pixels (B x T x 2)
+
+        Returns:
+            Shifted images (B x T x img_dims) 
+
+        img must be 1D unraveled image, symmetric around DC component
+        '''
+        #H'(k) = cos(2*pi*k*t0)H(k) + sin(2*pi*k*t0)H(-k)
+        center = int(len(coords)/2)
+        assert all(coords[center] == torch.tensor([0.,0.])), 'lattice must be symmetric around DC component'
+        img = img.unsqueeze(1) # Bx1xN
+        t = t.unsqueeze(-1) # BxTx2x1 to be able to do bmm
+        tfilt = coords @ t * 2 * np.pi # BxTxNx1
+        tfilt = tfilt.squeeze(-1) # BxTxN
+        c = torch.cos(tfilt) # BxTxN
+        s = torch.sin(tfilt) # BxTxN
+        return c*img + s*img[:,:,np.arange(len(coords)-1,-1,-1)]
+
+    def eval_volume(self, coords, D, norm):
+        '''Evaluate the model on a DxDxD volume'''
+        vol_f = np.zeros((D,D,D),dtype=np.float32)
+        assert not self.training
+        # evaluate the volume by zslice to avoid memory overflows
+        for i, z in enumerate(np.linspace(-1,1,D,endpoint=True)):
+            x = coords + torch.tensor([0,0,z])
+            with torch.no_grad():
+                y = self.decode(x)
+                y = y[...,0] - y[...,1]
+                y = y.view(D,D).cpu().numpy()
+            vol_f[i] = y
+        vol_f = vol_f*norm[1]+norm[0]
+        vol = fft.ihtn_center(vol_f[0:-1,0:-1,0:-1]) # remove last +k freq for inverse FFT
+        return vol
+
 class VAE(nn.Module):
     def __init__(self, 
-            nx, ny, 
+            lattice,
             encode_layers, encode_dim, 
             decode_layers, decode_dim,
-            encode_mode = 'mlp'
+            encode_mode = 'mlp',
+            no_trans = False
             ):
         super(VAE, self).__init__()
-        self.nx = nx
-        self.ny = ny
-        self.in_dim = nx*ny
+        self.lattice = lattice
+        self.D = lattice.D
+        self.in_dim = lattice.D*lattice.D
         assert encode_layers > 2
         if encode_mode == 'conv':
             self.encoder = ConvEncoder(encode_dim, encode_dim)
         elif encode_mode == 'resid':
-            self.encoder = ResidLinearMLP(nx*ny, 
+            self.encoder = ResidLinearMLP(self.in_dim, 
                             encode_layers-2, 
                             encode_dim,  # hidden_dim
                             encode_dim, # out_dim
                             nn.ReLU) #in_dim -> hidden_dim
         elif encode_mode == 'mlp':
-            self.encoder = MLP(nx*ny, 
+            self.encoder = MLP(self.in_dim, 
                             encode_layers-2, 
                             encode_dim, # hidden_dim
                             encode_dim, # out_dim
@@ -201,13 +244,8 @@ class VAE(nn.Module):
         #self.trans_encoder = ResidLinearMLP(nx*ny, 5, encode_dim, 4, nn.ReLU)
         self.so3_encoder = SO3reparameterize(encode_dim, 1, encode_dim) # hidden_dim -> SO(3) latent variable
         self.trans_encoder = ResidLinearMLP(encode_dim, 1, encode_dim, 4, nn.ReLU)
-        self.decoder = FTSliceDecoder(3, nx, decode_layers, decode_dim, nn.ReLU)
-        
-        # centered and scaled xy plane, values between -1 and 1
-        x0, x1 = np.meshgrid(np.linspace(-1, 1, nx, endpoint=False), # FT is not symmetric around origin
-                             np.linspace(-1, 1, ny, endpoint=False))
-        lattice = np.stack([x0.ravel(),x1.ravel(),np.zeros(ny*nx)],1).astype(np.float32)
-        self.lattice = torch.tensor(lattice)
+        self.decoder = FTSliceDecoder(3, self.D, decode_layers, decode_dim, nn.ReLU)
+        self.no_trans = no_trans
 
     def reparameterize(self, mu, logvar):
         if not self.training:
@@ -217,23 +255,29 @@ class VAE(nn.Module):
         return eps*std + mu
 
     def encode(self, img, return_s2s2=False):
-        img = img[...,0] - img[...,1]
         enc = nn.ReLU()(self.encoder(img.view(-1,self.in_dim)))
+        # fixme: this is ugly
         if return_s2s2: # z_mu returned in s2s2 representation instead of SO3
             z = self.so3_encoder.main(enc)
             z_mu = z[:,:4]
             z_std = z[:,4:] # return z_logvar
         else:
             z_mu, z_std = self.so3_encoder(enc)
-        z = self.trans_encoder(enc)
-        tmu, tlogvar = z[:,:2], z[:,2:]
+        if self.no_trans:
+            tmu, tlogvar = (None, None)
+        else:
+            z = self.trans_encoder(enc)
+            tmu, tlogvar = z[:,:2], z[:,2:]
         return z_mu, z_std, tmu, tlogvar
+
+    def eval_volume(self, norm):
+        return self.decoder.eval_volume(self.lattice.coords, self.D, norm)
 
     def decode(self, rot):
         # transform lattice by rot.T
-        x = self.lattice @ rot # R.T*x
+        x = self.lattice.coords @ rot # R.T*x
         y_hat = self.decoder(x)
-        y_hat = y_hat.view(-1, self.ny, self.nx, 2)
+        y_hat = y_hat.view(-1, self.D, self.D)
         return y_hat
 
     def forward(self, img):
@@ -241,41 +285,38 @@ class VAE(nn.Module):
         rot, w_eps = self.so3_encoder.sampleSO3(z_mu, z_std)
         # transform lattice by rot
         y_hat = self.decode(rot)
-        # translate image by t
-        B = img.size(0)
-        t = self.reparameterize(tmu, tlogvar)
-        t = t.unsqueeze(1) # B x 1 x 2
-        img = self.decoder.translate(self.lattice[:,0:2]/2, img.view(B,-1,2), t)
-        img = img.view(B,self.ny, self.nx, 2)
+        if not self.no_trans:
+            # translate image by t
+            B = img.size(0)
+            t = self.reparameterize(tmu, tlogvar)
+            t = t.unsqueeze(1) # B x 1 x 2
+            img = self.decoder.translate_ht(self.lattice.coords[:,0:2]/2, img.view(B,-1), t)
+            img = img.view(B,self.D, self.D)
         return y_hat, img, z_mu, z_std, w_eps, tmu, tlogvar
 
 class TiltVAE(nn.Module):
     def __init__(self, 
-            nx, ny, tilt,
+            lattice, tilt,
             encode_layers, encode_dim, 
-            decode_layers, decode_dim
+            decode_layers, decode_dim,
+            no_trans=False
             ):
         super(TiltVAE, self).__init__()
-        self.nx = nx
-        self.ny = ny
-        self.in_dim = nx*ny
+        self.lattice = lattice
+        self.D = lattice.D
+        self.in_dim = lattice.D*lattice.D
         assert encode_layers > 2
-        self.encoder = ResidLinearMLP(nx*ny,
+        self.encoder = ResidLinearMLP(self.in_dim,
                                       encode_layers-3,
                                       encode_dim,
                                       encode_dim,
                                       nn.ReLU)
         self.so3_encoder = SO3reparameterize(2*encode_dim, 3, encode_dim) # hidden_dim -> SO(3) latent variable
         self.trans_encoder = ResidLinearMLP(2*encode_dim, 2, encode_dim, 4, nn.ReLU)
-        self.decoder = FTSliceDecoder(3, nx, decode_layers, decode_dim, nn.ReLU)
-        
-        # centered and scaled xy plane, values between -1 and 1
-        x0, x1 = np.meshgrid(np.linspace(-1, 1, nx, endpoint=False), # FT is not symmetric around origin
-                             np.linspace(-1, 1, ny, endpoint=False))
-        lattice = np.stack([x0.ravel(),x1.ravel(),np.zeros(ny*nx)],1).astype(np.float32)
-        self.lattice = torch.tensor(lattice)
+        self.decoder = FTSliceDecoder(3, self.D, decode_layers, decode_dim, nn.ReLU)
         assert tilt.shape == (3,3), 'Rotation matrix input required'
         self.tilt = torch.tensor(tilt)
+        self.no_trans = no_trans
 
     def reparameterize(self, mu, logvar):
         if not self.training:
@@ -284,39 +325,45 @@ class TiltVAE(nn.Module):
         eps = torch.randn_like(std)
         return eps*std + mu
 
+    def eval_volume(self, norm):
+        return self.decoder.eval_volume(self.lattice.coords, self.D, norm)
+
     def encode(self, img, img_tilt):
-        img = img[...,0] - img[...,1]
-        img_tilt = img_tilt[...,0] - img_tilt[...,1]
         enc1 = self.encoder(img.view(-1,self.in_dim))
         enc2 = self.encoder(img_tilt.view(-1,self.in_dim))
         enc = torch.cat((enc1,enc2), -1) # then nn.ReLU?
         z_mu, z_std = self.so3_encoder(enc)
         rot, w_eps = self.so3_encoder.sampleSO3(z_mu, z_std)
-        z = self.trans_encoder(enc)
-        tmu, tlogvar = z[:,:2], z[:,2:]
-        t = self.reparameterize(tmu, tlogvar)
+        if self.no_trans:
+            tmu, tlogvar, t = (None,None,None)
+        else:
+            z = self.trans_encoder(enc)
+            tmu, tlogvar = z[:,:2], z[:,2:]
+            t = self.reparameterize(tmu, tlogvar)
         return z_mu, z_std, w_eps, rot, tmu, tlogvar, t
 
     def forward(self, img, img_tilt):
         B = img.size(0)
         z_mu, z_std, w_eps, rot, tmu, tlogvar, t = self.encode(img, img_tilt)
-        t = t.unsqueeze(1) # B x 1 x 2
-        img = self.decoder.translate(self.lattice[:,0:2]/2, img.view(B,-1,2), -t)
-        img_tilt = self.decoder.translate(self.lattice[:,0:2]/2, img_tilt.view(B,-1,2), -t)
-        img = img.view(B, self.ny, self.nx, 2)
-        img_tilt = img_tilt.view(B, self.ny, self.nx, 2)
+        if not self.no_trans:
+            t = t.unsqueeze(1) # B x 1 x 2
+            img = self.decoder.translate_ht(self.lattice.coords[:,0:2]/2, img.view(B,-1), -t)
+            img_tilt = self.decoder.translate_ht(self.lattice.coords[:,0:2]/2, img_tilt.view(B,-1), -t)
+            img = img.view(B, self.D, self.D)
+            img_tilt = img_tilt.view(B, self.D, self.D)
 
         # rotate lattice by rot.T, shift by -t
-        x = self.lattice @ rot # R.T*x
+        x = self.lattice.coords @ rot # R.T*x
         y_hat = self.decoder(x)
-        y_hat = y_hat.view(-1, self.ny, self.nx, 2)
+        y_hat = y_hat.view(-1, self.D, self.D)
 
         # tilt series pair
-        x = self.lattice @ self.tilt @ rot
+        x = self.lattice.coords @ self.tilt @ rot
         y_hat2 = self.decoder(x)
-        y_hat2 = y_hat2.view(-1, self.ny, self.nx, 2)
+        y_hat2 = y_hat2.view(-1, self.D, self.D)
         return y_hat, y_hat2, img, img_tilt, z_mu, z_std, w_eps, tmu, tlogvar
 
+# fixme: this is half-deprecated (still used in tilt BNB)
 class TiltEncoder(nn.Module):
     def __init__(self, in_dim, nlayers, hidden_dim, out_dim, activation):
         super(TiltEncoder, self).__init__()
@@ -327,8 +374,6 @@ class TiltEncoder(nn.Module):
 
     def forward(self, img):
         x, x_tilt = img
-        x = x[...,0] - x[...,1]
-        x_tilt = x_tilt[...,0] - x_tilt[...,1]
         x_enc = self.encoder1(x.view(-1,self.in_dim))
         x_tilt_enc = self.encoder1(x_tilt.view(-1,self.in_dim))
         z = self.encoder2(torch.cat((x_enc,x_tilt_enc),-1))

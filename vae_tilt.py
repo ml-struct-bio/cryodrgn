@@ -19,6 +19,7 @@ import fft
 import lie_tools
 import dataset
 
+from lattice import Lattice
 from models import TiltVAE
 from beta_schedule import get_beta_schedule, LinearSchedule
 from losses import EquivarianceLoss
@@ -47,8 +48,8 @@ def parse_args():
     group.add_argument('--beta-control', type=float, help='KL-Controlled VAE gamma. Beta is KL target. (default: %(default)s)')
     group.add_argument('--equivariance', type=float, help='Strength of equivariance loss (default: %(default)s)')
     group.add_argument('--equivariance-end-it', type=int, default=100000, help='It at which equivariance max (default: %(default)s)')
-            
-
+    group.add_argument('--no-trans', action='store_true', help="Don't translate images")
+       
     group = parser.add_argument_group('Encoder Network')
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--qdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
@@ -59,30 +60,15 @@ def parse_args():
     return parser
 
 def loss_function(recon_y, recon_y_tilt, y, yt, w_eps, z_std, t_mu, t_logvar):
-    #gen_loss = F.mse_loss(recon_y, y)*.5 + F.mse_loss(recon_y_tilt, yt)*.5   
-    # compute loss on half the image since other half is complex conjugate
-    i = int(y.shape[-2]/2+1) # D/2+1
-    gen_loss = F.mse_loss(recon_y[...,0:i,:], y[...,0:i,:])*.5 + F.mse_loss(recon_y_tilt[...,0:i,:], yt[...,0:i,:])*.5   
+    gen_loss = F.mse_loss(recon_y, y)*.5 + F.mse_loss(recon_y_tilt, yt)*.5   
     cross_entropy = torch.tensor([np.log(8*np.pi**2)], device=y.device) # cross entropy between gaussian and uniform on SO3
     entropy = lie_tools.so3_entropy(w_eps,z_std)
     kld1 = (cross_entropy - entropy).mean()
-    kld2 = -0.5 * torch.mean(1 + t_logvar - t_mu.pow(2) - t_logvar.exp())
+    if t_mu is not None:
+        kld2 = -0.5 * torch.mean(1 + t_logvar - t_mu.pow(2) - t_logvar.exp())
+    else: kld2 = 0.0
     #assert kld > 0
     return gen_loss, kld1 + kld2
-
-def eval_volume(model, nz, ny, nx, ft_norm):
-    '''Evaluate the model on a nz x ny x nx lattice'''
-    vol_f = np.zeros((nz,ny,nx),dtype=complex)
-    assert not model.training
-    # evaluate the volume by zslice to avoid memory overflows
-    for i, z in enumerate(np.linspace(-1,1,nz,endpoint=False)):
-        x = model.lattice + torch.tensor([0,0,z], device=model.lattice.device, dtype=model.lattice.dtype)
-        with torch.no_grad():
-            y = model.decoder.decode(x)
-            y = y.view(ny, nx, 2).cpu().numpy()
-        vol_f[i] = y[...,0] + y[...,1]*1j
-    vol = fft.ihtn_center(vol_f*ft_norm[1]+ft_norm[0])
-    return vol, vol_f
 
 def train(model, optim, D, minibatch, beta, beta_control=None, equivariance=None):
     y, yt = minibatch
@@ -110,7 +96,7 @@ def train(model, optim, D, minibatch, beta, beta_control=None, equivariance=None
 
 def save_checkpoint(model, optim, D, epoch, norm, out_mrc, out_weights):
     model.eval()
-    vol, vol_f = eval_volume(model, D, D, D, norm)
+    vol = model.eval_volume(norm)
     mrc.write(out_mrc, vol.astype(np.float32))
     torch.save({
         'epoch':epoch,
@@ -146,16 +132,17 @@ def main(args):
     data = dataset.TiltMRCData(args.particles, args.particles_tilt)
     Nimg = data.N
     D = data.D
-    log('Loaded {} {}x{} images'.format(Nimg, D, D))
-    log('Normalized FT by {} +/- {}'.format(*data.norm))
 
     theta = args.tilt*np.pi/180
     tilt = np.array([[1.,0.,0.],
                     [0, np.cos(theta), -np.sin(theta)],
                     [0, np.sin(theta), np.cos(theta)]]).astype(np.float32)
 
-    model = TiltVAE(D, D, tilt, args.qlayers, args.qdim, args.players, args.pdim)
+    lattice = Lattice(D)
+    model = TiltVAE(lattice, tilt, args.qlayers, args.qdim, args.players, args.pdim, no_trans=args.no_trans)
     log(model)
+    log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
+
 
     if args.equivariance:
         assert args.equivariance > 0, 'Regularization weight must be positive'

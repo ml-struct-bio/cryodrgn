@@ -23,6 +23,7 @@ import lie_tools
 import dataset
 
 from models import VAE
+from lattice import Lattice
 from beta_schedule import get_beta_schedule, LinearSchedule
 from losses import EquivarianceLoss
 
@@ -50,6 +51,8 @@ def parse_args():
     group.add_argument('--beta-control', type=float, help='KL-Controlled VAE gamma. Beta is KL target. (default: %(default)s)')
     group.add_argument('--equivariance', type=float, help='Strength of equivariance loss (default: %(default)s)')
     group.add_argument('--equivariance-end-it', type=int, default=100000, help='It at which equivariance max (default: %(default)s)')
+    group.add_argument('--no-trans', action='store_true', help="Don't translate images")
+
     group = parser.add_argument_group('Encoder Network')
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--qdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
@@ -61,39 +64,24 @@ def parse_args():
     return parser
 
 def loss_function(recon_y, y, w_eps, z_std, t_mu, t_logvar):
-    # compute loss on half the image since other half is complex conjugate
-    i = int(y.shape[-2]/2+1) # D/2+1
-    gen_loss = F.mse_loss(recon_y[...,0:i,:], y[...,0:i,:])  
-    #gen_loss = F.mse_loss(recon_y,y)
+    gen_loss = F.mse_loss(recon_y,y)
     cross_entropy = torch.tensor([np.log(8*np.pi**2)], device=y.device) # cross entropy between gaussian and uniform on SO3
     entropy = lie_tools.so3_entropy(w_eps,z_std)
     kld1 = (cross_entropy - entropy).mean()
-    kld2 = -0.5 * torch.mean(1 + t_logvar - t_mu.pow(2) - t_logvar.exp())
+    if t_mu is not None:
+        kld2 = -0.5 * torch.mean(1 + t_logvar - t_mu.pow(2) - t_logvar.exp())
+    else: kld2 = 0.0
     #assert kld > 0
     return gen_loss, kld1 + kld2
 
 def loss_function_priors(recon_y, y, z_mu, z_std, t_mu, t_logvar, priors):
-    i = int(y.shape[-2]/2+1) # D/2+1
-    gen_loss = F.mse_loss(recon_y[...,0:i,:], y[...,0:i,:])  
-    #dist = ((z_mu-priors[0]).pow(2)[:,:,0:2]).sum((-1,-2)) # HACK
+    gen_loss = F.mse_loss(recon_y,y)
     dist = (z_mu-priors[0]).pow(2).sum(-1)
     kld1 = -0.5 * torch.mean(3 + torch.log(z_std.pow(2).prod(-1)) - z_std.pow(2).sum(-1) - dist)
-    kld2 = -0.5 * torch.mean(torch.sum(1 + t_logvar - t_logvar.exp() - (t_mu - priors[1]).pow(2),-1))
+    if t_mu is not None:
+        kld2 = -0.5 * torch.mean(torch.sum(1 + t_logvar - t_logvar.exp() - (t_mu - priors[1]).pow(2),-1))
+    else: kld2 = 0.0
     return gen_loss, kld1 + kld2
-
-def eval_volume(model, nz, ny, nx, rnorm):
-    '''Evaluate the model on a nz x ny x nx lattice'''
-    vol_f = np.zeros((nz,ny,nx),dtype=complex)
-    assert not model.training
-    # evaluate the volume by zslice to avoid memory overflows
-    for i, z in enumerate(np.linspace(-1,1,nz,endpoint=False)):
-        x = model.lattice + torch.tensor([0,0,z], device=model.lattice.device, dtype=model.lattice.dtype)
-        with torch.no_grad():
-            y = model.decoder.decode(x)
-            y = y.view(ny, nx, 2).cpu().numpy()
-        vol_f[i] = y[..., 0] + y[..., 1]*1j
-    vol = fft.ifftn_center(vol_f*rnorm[1]+rnorm[0])
-    return vol, vol_f
 
 def train(model, optim, D, y, beta, beta_control=None, equivariance=None, priors=None):
     model.train()
@@ -123,7 +111,7 @@ def train(model, optim, D, y, beta, beta_control=None, equivariance=None, priors
 
 def save_checkpoint(model, optim, D, epoch, norm, out_mrc, out_weights):
     model.eval()
-    vol, vol_f = eval_volume(model, D, D, D, norm)
+    vol = model.eval_volume(norm)
     mrc.write(out_mrc, vol.astype(np.float32))
     torch.save({
         'epoch':epoch,
@@ -181,8 +169,6 @@ def main(args):
     data = dataset.MRCData(args.particles)
     Nimg = data.N
     D = data.D
-    log('Loaded {} {}x{} images'.format(Nimg, D, D))
-    log('Normalized FT by {} +/- {}'.format(*data.norm))
 
     if args.priors:
         # negate the target translation
@@ -192,8 +178,11 @@ def main(args):
         assert priors[1].shape == (Nimg,2)
     else: priors = None
 
-    model = VAE(D, D, args.qlayers, args.qdim, args.players, args.pdim,
-                encode_mode=args.encode_mode)
+    lattice = Lattice(D)
+    model = VAE(lattice, args.qlayers, args.qdim, args.players, args.pdim,
+                encode_mode=args.encode_mode, no_trans=args.no_trans)
+    log(model)
+    log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
 
     if args.equivariance:
         assert args.equivariance > 0, 'Regularization weight must be positive'

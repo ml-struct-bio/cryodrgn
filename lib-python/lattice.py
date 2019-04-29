@@ -16,14 +16,18 @@ class Lattice:
     def __init__(self, D):
         # centered and scaled xy plane, values between -1 and 1
         # endpoint=False since FT is not symmetric around origin
-        x0, x1 = np.meshgrid(np.linspace(-1, 1, D, endpoint=False), 
-                             np.linspace(-1, 1, D, endpoint=False))
+        assert D % 2 == 1, "Lattice size must be odd"
+        x0, x1 = np.meshgrid(np.linspace(-1, 1, D, endpoint=True), 
+                             np.linspace(-1, 1, D, endpoint=True))
         coords = np.stack([x0.ravel(),x1.ravel(),np.zeros(D**2)],1).astype(np.float32)
         self.coords = torch.tensor(coords)
         self.D = D
         self.D2 = int(D/2)
-        c = 2/(D-1)*(D/2) -1 
-        self.center = torch.tensor([c,c]) # pixel coordinate for img[D/2,D/2]
+
+        # todo: center should now just be 0,0; check Lattice.rotate...
+        # c = 2/(D-1)*(D/2) -1 
+        # self.center = torch.tensor([c,c]) # pixel coordinate for img[D/2,D/2]
+        self.center = torch.tensor([0.,0.])
         
         self.square_mask = {}
         self.circle_mask = {}

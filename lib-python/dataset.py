@@ -4,6 +4,9 @@ from torch.utils import data
 
 import fft
 import mrc
+import utils
+
+log = utils.log
 
 class LazyMRCData(data.Dataset):
     def __init__(self, *args):
@@ -18,17 +21,24 @@ class MRCData(data.Dataset):
         N, ny, nx = particles_real.shape
         assert ny == nx, "Images must be square"
         assert ny % 2 == 0, "Image size must be even"
-        # compute FT
-        particles = np.asarray([fft.fft2_center(img) for img in particles_real])
-        particles = np.stack([particles.real.astype(np.float32), particles.imag.astype(np.float32)], -1)
+        log('Loaded {} {}x{} images'.format(N, ny, nx))
+        # compute HT
+        particles = np.asarray([fft.ht2_center(img) for img in particles_real])
+        particles = particles.astype(np.float32)
+
+        # symmetrize HT
+        particles = fft.symmetrize_ht(particles)
+
         # normalize
         if norm is None:
             norm  = [np.mean(particles), np.std(particles)]
             norm[0] = 0
         particles = (particles - norm[0])/norm[1]
+        log('Normalized HT by {} +/- {}'.format(*norm))
+
         self.particles = particles
         self.N = N
-        self.D = ny
+        self.D = particles.shape[1] # ny + 1 after symmetrizing HT
         self.norm = norm
         self.keepreal = keepreal
         if keepreal:
@@ -50,24 +60,32 @@ class TiltMRCData(data.Dataset):
         N, ny, nx = particles_real.shape
         assert ny == nx, "Images must be square"
         assert ny % 2 == 0, "Image size must be even"
+        log('Loaded {} {}x{} images'.format(N, ny, nx))
         particles_tilt, _, _ = mrc.parse_mrc(mrcfile_tilt)
         assert particles_tilt.shape == (N, ny, nx), "Tilt series pair must have same dimensions as untilted particles"
-        # compute FT
-        particles = np.asarray([fft.fft2_center(img) for img in particles_real])
-        particles = np.stack([particles.real.astype(np.float32), particles.imag.astype(np.float32)], -1)
-        particles_tilt = np.asarray([fft.fft2_center(img) for img in particles_tilt])
-        particles_tilt = np.stack([particles_tilt.real.astype(np.float32), particles_tilt.imag.astype(np.float32)], -1)
+        log('Loaded {} {}x{} tilt pair images'.format(N, ny, nx))
+
+        # compute HT
+        particles = np.asarray([fft.ht2_center(img) for img in particles_real]).astype(np.float32)
+        particles_tilt = np.asarray([fft.ht2_center(img) for img in particles_tilt]).astype(np.float32)
+
+        # symmetrize HT
+        particles = fft.symmetrize_ht(particles)
+        particles_tilt = fft.symmetrize_ht(particles_tilt)
+
         # normalize
         if norm is None:
             norm  = [np.mean(particles), np.std(particles)]
             norm[0] = 0
         particles = (particles - norm[0])/norm[1]
         particles_tilt = (particles_tilt - norm[0])/norm[1]
+        log('Normalized HT by {} +/- {}'.format(*norm))
+
         self.particles = particles
         self.particles_tilt = particles_tilt
         self.norm = norm
         self.N = N
-        self.D = ny
+        self.D = particles.shape[1]
         self.keepreal = keepreal
         if keepreal:
             self.particles_real = particles_real
@@ -77,8 +95,3 @@ class TiltMRCData(data.Dataset):
 
     def __getitem__(self, index):
         return self.particles[index], self.particles_tilt[index], index
-
-
-
-   
-

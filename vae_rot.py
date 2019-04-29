@@ -236,7 +236,7 @@ def main(args):
                 priors_mb = (priors[0][ind], priors[1][ind])
             else: priors_mb =  None
 
-            if epoch < 1: # HACK
+            if priors_mb is not None and epoch < 1: # HACK
                 gen_loss, kld, loss, eq_loss = train(model, decoder_optim, D, minibatch, beta, args.beta_control, equivariance_tuple, priors_mb)
             else:
                 gen_loss, kld, loss, eq_loss = train(model, optim, D, minibatch, beta, args.beta_control, equivariance_tuple, priors_mb)

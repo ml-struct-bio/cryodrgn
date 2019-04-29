@@ -35,7 +35,7 @@ def parse_args():
 
     parser.add_argument('particles', help='Particle stack file (.mrc)')
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory two save model')
-    parser.add_argument('--priors', type=os.path.abspath, nargs=2, help='Priors on rotation, translation')
+    parser.add_argument('--priors', type=os.path.abspath, nargs='*', help='Priors on rotation, translation')
     parser.add_argument('--load', type=os.path.abspath, help='Initialize training from a checkpoint')
     parser.add_argument('--checkpoint', type=int, default=1, help='Checkpointing interval in N_EPOCHS (default: %(default)s)')
     parser.add_argument('--log-interval', type=int, default=1000, help='Logging interval in N_IMGS (default: %(default)s)')
@@ -52,6 +52,7 @@ def parse_args():
     group.add_argument('--equivariance', type=float, help='Strength of equivariance loss (default: %(default)s)')
     group.add_argument('--equivariance-end-it', type=int, default=100000, help='It at which equivariance max (default: %(default)s)')
     group.add_argument('--no-trans', action='store_true', help="Don't translate images")
+    group.add_argument('--pretrain', type=int, help='Number of epochs to pretrain encoder on priors')
 
     group = parser.add_argument_group('Encoder Network')
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
@@ -76,7 +77,7 @@ def loss_function(recon_y, y, w_eps, z_std, t_mu, t_logvar):
 
 def loss_function_priors(recon_y, y, z_mu, z_std, t_mu, t_logvar, priors):
     gen_loss = F.mse_loss(recon_y,y)
-    dist = (z_mu-priors[0]).pow(2).sum(-1)
+    dist = (z_mu-priors[0]).pow(2).sum((-1,-2))
     kld1 = -0.5 * torch.mean(3 + torch.log(z_std.pow(2).prod(-1)) - z_std.pow(2).sum(-1) - dist)
     if t_mu is not None:
         kld2 = -0.5 * torch.mean(torch.sum(1 + t_logvar - t_logvar.exp() - (t_mu - priors[1]).pow(2),-1))
@@ -121,21 +122,21 @@ def save_checkpoint(model, optim, D, epoch, norm, out_mrc, out_weights):
 
 def pretrain_encoder(model, optim, data, priors, device, num_epochs=10, log_interval=1000):
     model.train()
-    #rot_priors = priors[0].transpose(-1,-2)[:,0:2,:].contiguous().view(-1,6) # HACK, s2s2 representation
-    #assert rot_priors.shape == (data.N,6)
     data_generator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
     for epoch in range(num_epochs):
         it = 0
         for mb, ind in data_generator:
             mb = mb.to(device)
             it += len(ind)
-            r_priors = priors[0][ind]
-            t_priors = priors[1][ind]
             optim.zero_grad()
-            z_mu, z_logvar, tmu, tlogvar = model.encode(mb, return_s2s2=True)
-            mean_loss = 4*F.mse_loss(tmu, t_priors) + 9*F.mse_loss(z_mu, r_priors)
-            logvar_loss = F.mse_loss(z_logvar, torch.tensor([-3.0])) + F.mse_loss(tlogvar, torch.tensor([-3.0]))
-            loss = mean_loss + logvar_loss
+            z_mu, z_std, tmu, tlogvar = model.encode(mb)
+            mean_loss = 9*F.mse_loss(z_mu, priors[0][ind])
+            if tmu is not None:
+                mean_loss += 4*F.mse_loss(tmu, priors[1][ind])
+            std_loss = F.mse_loss(z_std, torch.tensor([0.05]))
+            if tlogvar is not None:
+                std_loss += F.mse_loss(tlogvar, torch.tensor([-3.0]))
+            loss = mean_loss + std_loss
             loss.backward()
             optim.step()
             if it % log_interval == 0:
@@ -171,11 +172,13 @@ def main(args):
     D = data.D
 
     if args.priors:
-        # negate the target translation
-        priors = (lie_tools.SO3_to_quaternions(torch.tensor(utils.load_pkl(args.priors[0])).float()),
-                  -torch.tensor(utils.load_pkl(args.priors[1])).float())
-        assert priors[0].shape == (Nimg,4)
-        assert priors[1].shape == (Nimg,2)
+        assert len(args.priors) in (1,2)
+        priors = [torch.tensor(utils.load_pkl(args.priors[0])).float()]
+        assert priors[0].shape == (Nimg,3,3)
+        if not args.no_trans:
+            # negate the target translation
+            priors.append(-torch.tensor(utils.load_pkl(args.priors[1])).float())
+            assert priors[1].shape == (Nimg,2)
     else: priors = None
 
     lattice = Lattice(D)
@@ -201,9 +204,9 @@ def main(args):
         model.train()
     else:
         start_epoch = 0
-        if args.priors:
+        if args.priors and args.pretrain:
             enc_optim = torch.optim.Adam(model.parameters(), lr=.001, weight_decay=args.wd)
-            pretrain_encoder(model, enc_optim, data, priors, device)
+            pretrain_encoder(model, enc_optim, data, priors, device, num_epochs=args.pretrain)
             out_weights = '{}/pretrain_weights.pkl'.format(args.outdir)
             torch.save({
             'epoch':-1,
@@ -233,10 +236,10 @@ def main(args):
                 equivariance_tuple = None
             
             if priors is not None:
-                priors_mb = (priors[0][ind], priors[1][ind])
+                priors_mb = [x[ind] for x in priors]
             else: priors_mb =  None
 
-            if priors_mb is not None and epoch < 1: # HACK
+            if args.pretrain and epoch < 1: # HACK
                 gen_loss, kld, loss, eq_loss = train(model, decoder_optim, D, minibatch, beta, args.beta_control, equivariance_tuple, priors_mb)
             else:
                 gen_loss, kld, loss, eq_loss = train(model, optim, D, minibatch, beta, args.beta_control, equivariance_tuple, priors_mb)

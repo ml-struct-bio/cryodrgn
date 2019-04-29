@@ -35,13 +35,12 @@ class BNNBHomo:
         B = images.size(0)
         mask = self.lattice.get_circular_mask(L)
         coords = self.lattice.coords[mask]
-        c = int(coords.size(-2)/2)
         YX = coords.size(-2)
         def compute_err(images, rot):
-            y_hat = self.decoder.forward_symmetric(coords @ rot, c)
-            y_hat = y_hat.view(-1,1,NQ,YX,2) #1x1xQxYXx2 for base grid, Bx1x8xYXx2 for incremental grid
+            y_hat = self.decoder(coords @ rot)
+            y_hat = y_hat.view(-1,1,NQ,YX) #1x1xQxYXx2 for base grid, Bx1x8xYXx2 for incremental grid
             images = images.unsqueeze(2) # BxTx1xYXx2
-            err = torch.sum((images-y_hat).pow(2),(-1,-2)) # BxTxQ
+            err = torch.sum((images-y_hat).pow(2),-1) # BxTxQ
             return err
         err = compute_err(images, rot)
         if images_tilt is not None:
@@ -83,7 +82,7 @@ class BNNBHomo:
             B x MaskPixels x 2
         '''
         mask = self.lattice.get_circular_mask(L)
-        images = images.view(images.size(0),-1,2)[:,mask,:]
+        images = images.view(images.size(0),-1)[:,mask]
         return images
 
     def shift_images(self, images, shifts, L):
@@ -95,7 +94,7 @@ class BNNBHomo:
         '''
         mask = self.lattice.get_circular_mask(L)
         coords = self.lattice.coords[mask,0:2]/2# 2D wavevector between -.5 and .5
-        return self.decoder.translate(coords, images, shifts)
+        return self.decoder.translate_ht(coords, images, shifts)
 
     def opt_theta_trans(self, images, L, images_tilt=None, niter=5):
         B = images.size(0)
@@ -147,15 +146,14 @@ class BNNBHet:
         B = z.size(0)
         mask = self.lattice.get_circular_mask(L)
         coords = self.lattice.coords[mask]
-        c = int(coords.size(-2)/2)
         YX = coords.size(-2)
         def compute_err(images, rot):
-            images = images.view(B,-1,2)[:,mask,:]
+            images = images.view(B,-1)[:,mask]
             x = self.model.cat_z(coords @ rot, z)
-            y_hat = self.model.decoder.forward_symmetric(x,c)
-            y_hat = y_hat.view(B, NQ, YX,2) # BxQxYXx2
+            y_hat = self.model.decoder(x)
+            y_hat = y_hat.view(B, NQ, YX) # BxQxYXx2
             images = images.unsqueeze(1) # Bx1xYXx2
-            err = torch.sum((images-y_hat).pow(2),(-1,-2)) # BxQ
+            err = torch.sum((images-y_hat).pow(2),-1) # BxQ
             return err
         err = compute_err(images,rot)
         if images_tilt is not None:
@@ -172,21 +170,20 @@ class BNNBHet:
         B = z.size(0)
         mask = self.lattice.get_circular_mask(L)
         coords = self.lattice.coords[mask]
-        c = int(coords.size(-2)/2)
         YX = coords.size(-2)
 
         # only evaluate every 12 points (different points on the sphere)
         rot = self.base_rot[::12] # 48x3x3
         rot = rot.expand(B,*rot.shape) # Bx48x3x3
         x = self.model.cat_z(coords @ rot, z)
-        y_hat = self.model.decoder.forward_symmetric(x,c) # Bx48xYX
+        y_hat = self.model.decoder(x) # Bx48xYX
         y_hat = y_hat.unsqueeze(2) # Bx48x1xYX
 
         images = images.unsqueeze(1) # Bx1xYxX
         images = torch.cat((images,rotated_images),1) # Bx12xYxX
-        images = images.view(B,1,12,-1,2)[...,mask,:] # Bx1x12xYX
+        images = images.view(B,1,12,-1)[...,mask] # Bx1x12xYX
 
-        err = torch.sum((images-y_hat).pow(2),(-1,-2)).view(B,self.nbase)
+        err = torch.sum((images-y_hat).pow(2),-1).view(B,self.nbase)
         mini = torch.argmin(err,1)
         return mini.cpu().numpy()
 

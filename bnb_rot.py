@@ -58,23 +58,9 @@ def parse_args():
 
     return parser
 
-def eval_volume(model, lattice, D, norm):
-    '''Evaluate the model on a DxDxD lattice'''
-    vol_f = np.zeros((D,D,D),dtype=complex)
-    assert not model.training
-    # evaluate the volume by zslice to avoid memory overflows
-    for i, z in enumerate(np.linspace(-1,1,D,endpoint=False)):
-        x = lattice.coords + torch.tensor([0,0,z])
-        with torch.no_grad():
-            y = model.decode(x)
-            y = y.view(D, D, 2).cpu().numpy()
-        vol_f[i] = y[...,0] + y[...,1]*1j
-    vol = fft.ifftn_center(vol_f*norm[1]+norm[0])
-    return vol, vol_f
-
 def save_checkpoint(model, lattice, optim, epoch, norm, out_mrc, out_weights):
     model.eval()
-    vol, vol_f = eval_volume(model, lattice, lattice.D, norm)
+    vol = model.eval_volume(lattice.coords, lattice.D, norm)
     mrc.write(out_mrc, vol.astype(np.float32))
     torch.save({
         'norm': norm,
@@ -97,20 +83,17 @@ def train(model, lattice, bnb, optim, batch, L, tilt=None, no_trans=False):
     model.train()
     optim.zero_grad()
     y_recon = model(lattice.coords @ rot)
-    y_recon = y_recon.view(-1, lattice.D, lattice.D, 2)
+    y_recon = y_recon.view(-1, lattice.D, lattice.D)
     if not no_trans:
-        y = model.translate(lattice.coords[:,0:2]/2, y.view(B,-1,2), trans.unsqueeze(1))
-        y = y.view(-1, lattice.D, lattice.D, 2)
-    #import pickle
-    #pickle.dump(dict(y=y,y_recon=y_recon),open('test.pkl','wb'))
-    #import pdb; pdb.set_trace()
+        y = model.translate_ht(lattice.coords[:,0:2]/2, y.view(B,-1), trans.unsqueeze(1))
+        y = y.view(-1, lattice.D, lattice.D)
     loss = F.mse_loss(y_recon,y)
     if tilt is not None:
         y_recon_tilt = model(lattice.coords @ tilt @ rot)
-        y_recon_tilt = y_recon_tilt.view(-1, lattice.D, lattice.D, 2)
+        y_recon_tilt = y_recon_tilt.view(-1, lattice.D, lattice.D)
         if not no_trans:
-            yt = model.translate(lattice.coords[:,0:2]/2, yt.view(B,-1,2), trans.unsqueeze(1))
-            yt = yt.view(-1, lattice.D, lattice.D, 2)
+            yt = model.translate_ht(lattice.coords[:,0:2]/2, yt.view(B,-1), trans.unsqueeze(1))
+            yt = yt.view(-1, lattice.D, lattice.D)
         loss = .5*loss + .5*F.mse_loss(y_recon_tilt,yt)
     loss.backward()
     optim.step()
@@ -144,8 +127,6 @@ def main(args):
                         [0, np.cos(theta), -np.sin(theta)],
                         [0, np.sin(theta), np.cos(theta)]]).astype(np.float32)
         tilt = torch.tensor(tilt)
-    log('Loaded {} {}x{} images'.format(data.N, data.D, data.D))
-    log('Normalized FT by {} +/- {}'.format(*data.norm))
     D = data.D
     Nimg = data.N
 

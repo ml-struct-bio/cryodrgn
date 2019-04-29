@@ -69,23 +69,25 @@ def parse_args():
     group.add_argument('--pdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
     return parser
 
-def eval_volume(model, lattice, D, zval, rnorm):
+def eval_volume(model, lattice, D, zval, norm):
     '''Evaluate the model on a nz x ny x nx lattice'''
     zdim = len(zval)
     z = torch.zeros(D**2,zdim, dtype=torch.float32)
     z += torch.tensor(zval, dtype=torch.float32)
 
-    vol_f = np.zeros((D,D,D),dtype=complex)
+    vol_f = np.zeros((D,D,D),dtype=np.float32)
     assert not model.training
     # evaluate the volume by zslice to avoid memory overflows
-    for i, dz in enumerate(np.linspace(-1,1,D,endpoint=False)):
+    for i, dz in enumerate(np.linspace(-1,1,D,endpoint=True)):
         x = lattice.coords + torch.tensor([0,0,dz], dtype=torch.float32)
         x = torch.cat((x,z),dim=-1)
         with torch.no_grad():
             y = model.decoder.decode(x)
-            y = y.view(D, D, 2).cpu().numpy()
-        vol_f[i] = y[...,0] + y[...,1]*1j
-    vol = fft.ihtn_center(vol_f*rnorm[1]+rnorm[0])
+            y = y[...,0] - y[...,1]
+            y = y.view(D, D).cpu().numpy()
+        vol_f[i] = y
+    vol_f = vol_f*norm[1] + norm[0]
+    vol = fft.ihtn_center(vol_f[0:-1,0:-1,0:-1])
     return vol, vol_f
 
 def train(model, lattice, bnb, optim, minibatch, L, beta, beta_control=None, equivariance=None, rotated_images=None, enc_only=False):
@@ -94,7 +96,7 @@ def train(model, lattice, bnb, optim, minibatch, L, beta, beta_control=None, equ
     optim.zero_grad()
 
     D = lattice.D
-    input_ = (y.view(-1,D*D,2), yt.view(-1,D*D,2)) if yt is not None else y.view(-1,D*D,2)
+    input_ = (y.view(-1,D*D), yt.view(-1,D*D)) if yt is not None else y.view(-1,D*D)
     mu, logvar = model.encode(input_)
     z = model.reparameterize(mu, logvar)
 
@@ -106,11 +108,11 @@ def train(model, lattice, bnb, optim, minibatch, L, beta, beta_control=None, equ
     model.train()
 
     y_recon = model.decode(rot, z)
-    y_recon = y_recon.view(-1, D, D, 2)
+    y_recon = y_recon.view(-1, D, D)
     gen_loss = F.mse_loss(y_recon, y)
     if yt is not None: 
         y_recon_tilt = model.decode(bnb.tilt @ rot, z)
-        y_recon_tilt = y_recon_tilt.view(-1, D, D, 2)
+        y_recon_tilt = y_recon_tilt.view(-1, D, D)
         gen_loss = .5*gen_loss + .5*F.mse_loss(y_recon_tilt, yt)
 
     kld = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
@@ -169,14 +171,13 @@ def main(args):
         data = dataset.MRCData(args.particles, keepreal=args.rotate)
         tilt = None
     else:
+        assert args.encode_mode == 'tilt'
         data = dataset.TiltMRCData(args.particles, args.tilt, keepreal=args.rotate)
         theta = args.tilt_deg*np.pi/180
         tilt = np.array([[1.,0.,0.],
                         [0, np.cos(theta), -np.sin(theta)],
                         [0, np.sin(theta), np.cos(theta)]]).astype(np.float32)
         tilt = torch.tensor(tilt)
-    log('Loaded {} {}x{} images'.format(data.N, data.D, data.D))
-    log('Normalized FT by {} +/- {}'.format(*data.norm))
     D = data.D
     Nimg = data.N
 
@@ -260,7 +261,6 @@ def main(args):
         eq_log = 'equivariance = {:.4f}, '.format(eq_loss_accum/Nimg) if args.equivariance else ''
         log('# =====> Epoch: {} Average gen loss = {:.4}, KLD = {:.4f}, {}total loss = {:.4f}'.format(epoch+1, gen_loss_accum/Nimg, kld_accum/Nimg, eq_log, loss_accum/Nimg))
 
-        # TODO:
         if args.checkpoint and epoch % args.checkpoint == 0:
             out_mrc = '{}/reconstruct.{}.mrc'.format(args.outdir,epoch)
             out_weights = '{}/weights.{}.pkl'.format(args.outdir,epoch)

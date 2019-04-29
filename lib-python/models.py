@@ -150,6 +150,142 @@ class HetVAE(nn.Module):
         y_hat = self.decoder(self.cat_z(x,z))
         return y_hat
 
+class BNBHomo:
+    '''Branch and bound for homogeneous reconstruction'''
+    def __init__(self, decoder, lattice, tilt=None):
+        self.decoder = decoder
+        self.lattice = lattice
+        self.base_quat = so3_grid.base_SO3_grid()
+        self.base_rot = lie_tools.quaternions_to_SO3(torch.tensor(self.base_quat))
+        self.nbase = len(self.base_quat)
+        assert self.nbase == 576, "Base resolution changed?"
+        self.tilt = tilt
+
+    def compute_B1(self, images, L, Lmax, images_tilt=None):
+        #mask = -(self.lattice.get_circular_mask(L)-1)
+        mask = self.lattice.get_circular_mask(Lmax) - self.lattice.get_circular_mask(L)
+        power = images.view(images.size(0),-1)[:,mask].pow(2).sum(-1)
+        if images_tilt:
+            power += images_tilt.view(images_tilt.size(0),-1)[:,mask].pow(2).sum(-1)
+        return power
+
+    def compute_B2(self, max_slice, L, Lmax):
+        #mask = -(self.lattice.get_circular_mask(L)-1)
+        mask = self.lattice.get_circular_mask(Lmax) - self.lattice.get_circular_mask(L)
+        power = max_slice[mask].pow(2).sum()
+        B2 = -power - 4*(power)**.5
+        return B2
+
+    def estimate_max_slice(self):
+        rot = self.base_rot[::24] # 48 slices
+        y_hat = self.decoder(self.lattice.coords @ rot)
+        return y_hat[y_hat.pow(2).sum(-1).argmax()] # YX
+
+    def eval_grid(self, images, rot, NQ, L, images_tilt=None):
+        '''
+        images: B x NY x NX 
+        rot: N x 3 x 3 rotation matrics (N=576 for base grid, N=B*8 for incremental grid)
+        NQ: number of slices evaluated for each image, int or array of len B
+        L: Max radius of fourier components to evaluate
+        '''
+        B = images.size(0)
+        mask = self.lattice.get_circular_mask(L)
+        coords = self.lattice.coords[mask]
+        c = int(coords.size(-2)/2)
+        YX = coords.size(-2)
+        def compute_err(images, rot):
+            images = images.view(B,-1)[:,mask]
+            y_hat = self.decoder.forward_symmetric(coords @ rot, c) # len(rot) x YX
+            if type(NQ) == int:
+                y_hat = y_hat.view(-1,NQ,YX) #1xQxYX for base grid, Bx8xYX for incremental grid
+            else:
+                # variable batch size for each image - create a tensor of B x max(NQ) x YX
+                assert len(NQ) == B
+                NQCS = NQ.cumsum(0)
+                y_hat_full = torch.empty(B,max(NQ),YX)
+                prev = 0
+                for i in range(B):
+                    y_hat_full[i,0:NQ[i],:] = y_hat[prev:NQCS[i],:]
+                    prev = NQCS[i]
+                y_hat = y_hat_full 
+            images = images.unsqueeze(1) # Bx1xYX
+            err = torch.sum((images-y_hat).pow(2),-1) # BxQ
+            return err
+        err = compute_err(images, rot)
+        if images_tilt is not None:
+            err_tilt = compute_err(images_tilt, self.tilt @ rot)
+            err += err_tilt
+        return err # B x Q
+
+    def compute_bound_base(self, images, L, Lmax, images_tilt=None):
+        A = self.eval_grid(images, self.base_rot, self.nbase, L, images_tilt) # B x Q
+        B1 = self.compute_B1(images, L, Lmax, images_tilt).unsqueeze(1) # Bx1
+        B2 = self.compute_B2(self.max_slice, L, Lmax) # 1
+        if images_tilt is not None: B2 *= 2
+        return A+B1+B2 # BxQ 
+    
+    def compute_bound_variable(self, images, rot, NQ, L, Lmax, images_tilt=None):
+        '''variable batch size per image'''
+        A = self.eval_grid(images, rot, NQ, L, images_tilt) # B x Q
+        if L == Lmax: return A
+        B1 = self.compute_B1(images, L, Lmax, images_tilt).unsqueeze(1) # Bx1
+        B2 = self.compute_B2(self.max_slice, L, Lmax) # 1
+        if images_tilt is not None: B2 *= 2
+        return A+B1+B2
+
+    def opt_theta(self, images, Lstart, Lstop, images_tilt=None, niter=5):
+        B = images.size(0)
+        assert not self.decoder.training
+        with torch.no_grad():
+            self.max_slice = self.estimate_max_slice() # where to put this?
+            bound = self.compute_bound_base(images, Lstart, Lstop, images_tilt=images_tilt)
+            Lstar = self.eval_grid(images, self.base_rot[torch.argmin(bound,1)], 1, Lstop, images_tilt=images_tilt)
+            keep = bound < Lstar
+            min_i = keep.nonzero()[:,1].cpu().numpy() # keep.nonzero() returns Nx2 with N 2D indices of nonzero elements
+            NQ = keep.sum(1) 
+            min_quat = self.base_quat[min_i]
+            s2i, s1i = so3_grid.get_base_indr(min_i)
+            k = int((Lstop-Lstart)/niter)
+            for iter_ in range(1,niter+1): # resolution level
+                NQ *= 8
+                L = min(Lstart + k*iter_, Lstop)
+                neighbors = [so3_grid.get_neighbor(min_quat[i], s2i[i], s1i[i], iter_) for i in range(len(min_i))]
+                quat = np.array([x[0] for x in neighbors])
+                ind = np.array([x[1] for x in neighbors])
+                rot = lie_tools.quaternions_to_SO3(torch.tensor(quat))
+                
+                bound = self.compute_bound_variable(images, rot.view(-1,3,3), NQ, L, Lstop, images_tilt=images_tilt)
+                mini = torch.argmin(bound, 1)
+                assert (mini < NQ).all()
+
+                NQCS = NQ.cumsum(0)
+                ind_all = np.zeros((B,max(NQ),2),dtype=int)
+                prev = 0
+                ind = ind.reshape(-1, 2)
+                for i in range(B):
+                    ind_all[i,:NQ[i]] = ind[prev:NQCS[i]]
+                    prev = NQCS[i]
+                quat_all = np.zeros((B,max(NQ),4),dtype=np.float32)
+                prev = 0
+                quat = quat.reshape(-1, 4)
+                for i in range(B):
+                    quat_all[i,:NQ[i]] = quat[prev:NQCS[i]]
+                    prev = NQCS[i]
+
+                import pdb; pdb.set_trace()
+                min_ind = ind_all[np.arange(B), mini]
+                min_quat = quat_all[np.arange(B),mini]
+                Lstar = self.eval_grid(images, lie_tools.quaternions_to_SO3(torch.tensor(min_quat)), 1, Lstop, images_tilt=images_tilt)
+
+                keep = bound < Lstar
+
+
+                min_i = self.eval_grid(images, rot, 8*NQ, L, images_tilt=images_tilt)
+                s2i, s1i = min_ind.T
+                min_quat = quat[np.arange(B),min_i]
+        return lie_tools.quaternions_to_SO3(torch.tensor(min_quat))
+
+
 class BNNBHomo:
     '''Branch and no bound for homogeneous reconstruction'''
     def __init__(self, decoder, lattice, tilt=None):
@@ -160,9 +296,6 @@ class BNNBHomo:
         self.nbase = len(self.base_quat)
         assert self.nbase == 576, "Base resolution changed?"
         self.tilt = tilt
-
-    def mask_image(self, images, mask):
-        return images[:,mask]
 
     def eval_grid(self, images, rot, NQ, L, images_tilt=None):
         '''
@@ -236,7 +369,7 @@ class BNNBHet:
             err_tilt = compute_err(images_tilt, self.tilt @ rot)
             err += err_tilt
         mini = torch.argmin(err,1)
-        return mini.cpu().numpy()
+        return mini
         
     def eval_base_grid(self, images, rotated_images, z, L):
         '''
@@ -291,9 +424,9 @@ class BNNBHet:
             base_rot = self.base_rot.expand(B,*self.base_rot.shape) # B x 576 x 3 x 3
             min_i = self.eval_grid(images, base_rot, z, self.nbase, L, images_tilt=images_tilt) # B x 576 slices
             min_quat = self.base_quat[min_i]
-            s2i, s1i = so3_grid.get_base_indr(min_i)
+            s2i, s1i = so3_grid.get_base_ind(min_i)
             for iter_ in range(1,niter+1):
-                neighbors = [so3_grid.get_neighbor(min_quat[i], s2i[i], s1i[i], iter_) for i in range(B)]
+                neighbors = [so3_grid.get_neighbor(min_quat[i], s2i[i].item(), s1i[i].item(), iter_) for i in range(B)]
                 quat = np.array([x[0] for x in neighbors])
                 ind = np.array([x[1] for x in neighbors])
                 rot = lie_tools.quaternions_to_SO3(torch.tensor(quat))

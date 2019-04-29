@@ -76,7 +76,7 @@ def get_base_ind(ind):
     Return the corresponding S2 and S1 grid index for an index on the base SO3 grid
     '''
     psii = ind%12
-    thetai = int(ind/12)
+    thetai = ind/12
     return thetai, psii
 
 def get_base_indr(ind):

@@ -449,9 +449,9 @@ class SO3reparameterize(nn.Module):
     def __init__(self, input_dims, nlayers=None, hidden_dim=None):
         super().__init__()
         if nlayers is not None:
-            self.main = ResidLinearMLP(input_dims, nlayers, hidden_dim, 7, nn.ReLU)
+            self.main = ResidLinearMLP(input_dims, nlayers, hidden_dim, 9, nn.ReLU)
         else:
-            self.main = nn.Linear(input_dims, 7)
+            self.main = nn.Linear(input_dims, 9)
 
         # start with big outputs
         #self.s2s2map.weight.data.uniform_(-5,5)
@@ -469,18 +469,18 @@ class SO3reparameterize(nn.Module):
         eps = torch.randn_like(z_std)
         w_eps = eps*z_std
         rot_eps = lie_tools.expmap(w_eps)
-        z_mu = lie_tools.quaternions_to_SO3(z_mu)
+        #z_mu = lie_tools.quaternions_to_SO3(z_mu)
         rot_sampled = z_mu @ rot_eps
         return rot_sampled, w_eps
 
     def forward(self, x):
         z = self.main(x)
-        #z1 = z[:,:3].double()
-        #z2 = z[:,3:6].double()
-        #z_mu = lie_tools.s2s2_to_SO3(z1,z2).float()
-        logvar = z[:,4:]
+        z1 = z[:,:3].double()
+        z2 = z[:,3:6].double()
+        z_mu = lie_tools.s2s2_to_SO3(z1,z2).float()
+        logvar = z[:,6:]
         z_std = torch.exp(.5*logvar) # or could do softplus
-        return z[:,:4], z_std
+        return z_mu, z_std
 
         
 

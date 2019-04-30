@@ -45,7 +45,7 @@ class Lattice:
         '''Return a binary mask for self.coords which restricts coordinates to a centered square lattice'''
         if L in self.square_mask:
             return self.square_mask[L]
-        assert 2*L+1 < self.D, 'Mask with size {} too large for lattice with size {}'.format(L,D)
+        assert 2*L+1 < self.D, 'Mask with size {} too large for lattice with size {}'.format(L,self.D)
         log('Using square lattice of size {}x{}'.format(2*L+1,2*L+1))
         b,e = self.D2-L, self.D2+L
         c1 = self.coords.view(self.D,self.D,3)[b,b]
@@ -62,7 +62,7 @@ class Lattice:
         '''Return a binary mask for self.coords which restricts coordinates to a centered circular lattice'''
         if R in self.circle_mask:
             return self.circle_mask[R]
-        assert 2*R+1 < self.D, 'Mask with radius {} too large for lattice with size {}'.format(R,D)
+        assert 2*R+1 < self.D, 'Mask with radius {} too large for lattice with size {}'.format(R,self.D)
         log('Using circular lattice with radius {}'.format(R))
         r = 2*R/self.D
         mask = self.coords.pow(2).sum(-1) < r**2
@@ -196,18 +196,19 @@ class BNBHomo:
         def compute_err(images, rot):
             images = images.view(B,-1)[:,mask]
             y_hat = self.decoder.forward_symmetric(coords @ rot, c) # len(rot) x YX
-            if type(NQ) == int:
+            if type(NQ) == int: # constant NQ per image
                 y_hat = y_hat.view(-1,NQ,YX) #1xQxYX for base grid, Bx8xYX for incremental grid
             else:
-                # variable batch size for each image - create a tensor of B x max(NQ) x YX
+                # variable number of poses for each image - create a tensor of B x max(NQ) x YX
+                # and tile y_hat into this tensor
                 assert len(NQ) == B
-                NQCS = NQ.cumsum(0)
                 y_hat_full = torch.empty(B,max(NQ),YX)
                 prev = 0
                 for i in range(B):
-                    y_hat_full[i,0:NQ[i],:] = y_hat[prev:NQCS[i],:]
-                    prev = NQCS[i]
+                    y_hat_full[i,0:NQ[i],:] = y_hat[prev:(prev+NQ[i]),:]
+                    prev += NQ[i]
                 y_hat = y_hat_full 
+                y_hat[torch.isnan(y_hat)] = float('inf')
             images = images.unsqueeze(1) # Bx1xYX
             err = torch.sum((images-y_hat).pow(2),-1) # BxQ
             return err
@@ -233,58 +234,88 @@ class BNBHomo:
         if images_tilt is not None: B2 *= 2
         return A+B1+B2
 
+    def bound_base(self, bound, Lstar):
+        '''Helper function to filter next poses to try'''
+        keep = bound <= Lstar # B x Q array of 0/1s
+        NQ = keep.sum(1) # B, array of Nposes per batch element
+        if (NQ > 72).any():
+            # filter keep with percentile heuristic
+            log('Warning: More than 72 poses below lower bound')
+            w = bound.argsort()[:,72:]
+            B,Q = bound.shape
+            keep[np.arange(B).repeat(Q-72), w.contiguous().view(-1)] *= 0
+            NQ = keep.sum(1) # B, array of Nposes per batch element
+        ### get squashed list of all poses to keep ###
+        # keep.nonzero() returns Nx2 with N 2D indices of nonzero elements
+        # we want the second index since that tells us the ind of the quat to keep
+        # there may be duplicates in this list...
+        min_i = keep.nonzero()[:,1].cpu().numpy() 
+        quat = self.base_quat[min_i] # Qx4, where Q=sum(NQ)
+        s2i, s1i = so3_grid.get_base_indr(min_i)
+        grid_ind = np.stack((s2i, s1i),1) # Qx2, where Q=sum(NQ)
+        assert len(quat) == NQ.sum()
+        return NQ, quat, grid_ind
+
+    def bound(self, bound, Lstar, quat_block, grid_ind_block):
+        '''Helper function to filter next poses to try'''
+        keep = bound <= Lstar # B x Q array of 0/1s
+        NQ = keep.sum(1) # B, array of Nposes per batch element
+        B,Q = bound.shape
+        NKEEP = int(Q*.125)
+        if (NQ > NKEEP).any():
+            # filter keep with percentile heuristic
+            log('Warning: More than {} poses below lower bound'.format(NKEEP))
+            w = bound.argsort()[:,NKEEP:]
+            keep[np.arange(B).repeat(Q-NKEEP), w.contiguous().view(-1)] *= 0
+            NQ = keep.sum(1) # B, array of Nposes per batch element
+        ### get squashed list of all poses to keep ###
+        w = np.where(keep)
+        quat = quat_block[w]
+        grid_ind = grid_ind_block[w]
+        assert len(quat) == NQ.sum()
+        return NQ, quat, grid_ind
+
+    def subdivide(self, NQ, quat, grid_ind, curr_res):
+        '''Get quaternions and grid indices for next resolution level'''
+        assert NQ.sum() == len(quat)
+        assert len(quat) == len(grid_ind)
+        NQ *= 8
+        neighbors = [so3_grid.get_neighbor(quat[i], grid_ind[i][0], grid_ind[i][1], curr_res) for i in range(len(quat))]
+        quat = np.array([x[0] for x in neighbors]).reshape(-1,4) # Qx8x4->8Qx4
+        grid_ind = np.array([x[1] for x in neighbors]).reshape(-1,2) # Qx8x2->8Qx2
+        assert NQ.sum() == len(quat)
+        B = len(NQ)
+        quat_block= np.empty((B,max(NQ),4),dtype=np.float32)
+        grid_ind_block = np.empty((B,max(NQ),2),dtype=int)
+        prev = 0
+        for i in range(B):
+            quat_block[i,:NQ[i]] = quat[prev:(prev+NQ[i])]
+            grid_ind_block[i,:NQ[i]] = grid_ind[prev:(prev+NQ[i])]
+            prev += NQ[i]
+        return NQ, quat, grid_ind, quat_block, grid_ind_block
+
     def opt_theta(self, images, Lstart, Lstop, images_tilt=None, niter=5):
         B = images.size(0)
         assert not self.decoder.training
         with torch.no_grad():
             self.max_slice = self.estimate_max_slice() # where to put this?
             bound = self.compute_bound_base(images, Lstart, Lstop, images_tilt=images_tilt)
-            Lstar = self.eval_grid(images, self.base_rot[torch.argmin(bound,1)], 1, Lstop, images_tilt=images_tilt)
-            keep = bound < Lstar
-            min_i = keep.nonzero()[:,1].cpu().numpy() # keep.nonzero() returns Nx2 with N 2D indices of nonzero elements
-            NQ = keep.sum(1) 
-            min_quat = self.base_quat[min_i]
-            s2i, s1i = so3_grid.get_base_indr(min_i)
+            Lstar = self.eval_grid(images, self.base_rot[torch.argmin(bound,1)], 1, Lstop, images_tilt=images_tilt) # expensive objective function
+            NQ, quat, grid_ind = self.bound_base(bound, Lstar)
             k = int((Lstop-Lstart)/niter)
             for iter_ in range(1,niter+1): # resolution level
-                NQ *= 8
                 L = min(Lstart + k*iter_, Lstop)
-                neighbors = [so3_grid.get_neighbor(min_quat[i], s2i[i], s1i[i], iter_) for i in range(len(min_i))]
-                quat = np.array([x[0] for x in neighbors])
-                ind = np.array([x[1] for x in neighbors])
+                NQ, quat, grid_ind, quat_block, grid_ind_block = self.subdivide(NQ, quat, grid_ind, iter_)
                 rot = lie_tools.quaternions_to_SO3(torch.tensor(quat))
+                bound = self.compute_bound_variable(images, rot, NQ, L, Lstop, images_tilt=images_tilt) # Bxmax(NQ)
+                min_i = torch.argmin(bound, 1)
+                if not (min_i < NQ).all():
+                    import pdb; pdb.set_trace()
                 
-                bound = self.compute_bound_variable(images, rot.view(-1,3,3), NQ, L, Lstop, images_tilt=images_tilt)
-                mini = torch.argmin(bound, 1)
-                assert (mini < NQ).all()
-
-                NQCS = NQ.cumsum(0)
-                ind_all = np.zeros((B,max(NQ),2),dtype=int)
-                prev = 0
-                ind = ind.reshape(-1, 2)
-                for i in range(B):
-                    ind_all[i,:NQ[i]] = ind[prev:NQCS[i]]
-                    prev = NQCS[i]
-                quat_all = np.zeros((B,max(NQ),4),dtype=np.float32)
-                prev = 0
-                quat = quat.reshape(-1, 4)
-                for i in range(B):
-                    quat_all[i,:NQ[i]] = quat[prev:NQCS[i]]
-                    prev = NQCS[i]
-
-                import pdb; pdb.set_trace()
-                min_ind = ind_all[np.arange(B), mini]
-                min_quat = quat_all[np.arange(B),mini]
+                min_quat = quat_block[np.arange(B),min_i]
                 Lstar = self.eval_grid(images, lie_tools.quaternions_to_SO3(torch.tensor(min_quat)), 1, Lstop, images_tilt=images_tilt)
-
-                keep = bound < Lstar
-
-
-                min_i = self.eval_grid(images, rot, 8*NQ, L, images_tilt=images_tilt)
-                s2i, s1i = min_ind.T
-                min_quat = quat[np.arange(B),min_i]
+                NQ, quat, grid_ind = self.bound(bound, Lstar, quat_block, grid_ind_block)
         return lie_tools.quaternions_to_SO3(torch.tensor(min_quat))
-
 
 class BNNBHomo:
     '''Branch and no bound for homogeneous reconstruction'''

@@ -250,16 +250,16 @@ class BNBHomo:
         if images_tilt is not None: B2 *= 2
         return A+B1+B2
 
-    def bound_base(self, bound, Lstar):
+    def bound_base(self, bound, Lstar, max_poses=24):
         '''Helper function to filter next poses to try'''
         keep = bound <= Lstar # B x Q array of 0/1s
         NQ = keep.sum(1) # B, array of Nposes per batch element
-        if (NQ > 72).any():
+        if (NQ > max_poses).any():
             # filter keep with percentile heuristic
-            vlog('Warning: More than 72 poses below lower bound')
-            w = bound.argsort()[:,72:]
+            vlog('Warning: More than {} poses below upper bound')
+            w = bound.argsort()[:,max_poses:]
             B,Q = bound.shape
-            keep[np.arange(B).repeat(Q-72), w.contiguous().view(-1)] *= 0
+            keep[np.arange(B).repeat(Q-max_poses), w.contiguous().view(-1)] *= 0
             NQ = keep.sum(1) # B, array of Nposes per batch element
         ### get squashed list of all poses to keep ###
         # keep.nonzero() returns Nx2 with N 2D indices of nonzero elements
@@ -280,7 +280,7 @@ class BNBHomo:
         NKEEP = int(Q*.125)
         if (NQ > NKEEP).any():
             # filter keep with percentile heuristic
-            vlog('Warning: More than {} poses below lower bound'.format(NKEEP))
+            vlog('Warning: More than {} poses below upper bound'.format(NKEEP))
             w = bound.argsort()[:,NKEEP:]
             keep[np.arange(B).repeat(Q-NKEEP), w.contiguous().view(-1)] *= 0
             NQ = keep.sum(1) # B, array of Nposes per batch element

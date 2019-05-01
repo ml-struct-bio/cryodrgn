@@ -41,7 +41,7 @@ class Lattice:
         '''Return a binary mask for self.coords which restricts coordinates to a centered square lattice'''
         if L in self.square_mask:
             return self.square_mask[L]
-        assert 2*L+1 < self.D, 'Mask with size {} too large for lattice with size {}'.format(L,D)
+        assert 2*L+1 <= self.D, 'Mask with size {} too large for lattice with size {}'.format(L,self.D)
         log('Using square lattice of size {}x{}'.format(2*L+1,2*L+1))
         b,e = self.D2-L, self.D2+L
         c1 = self.coords.view(self.D,self.D,3)[b,b]
@@ -58,7 +58,7 @@ class Lattice:
         '''Return a binary mask for self.coords which restricts coordinates to a centered circular lattice'''
         if R in self.circle_mask:
             return self.circle_mask[R]
-        assert 2*R+1 < self.D, 'Mask with radius {} too large for lattice with size {}'.format(R,D)
+        assert 2*R+1 <= self.D, 'Mask with radius {} too large for lattice with size {}'.format(R,self.D)
         log('Using circular lattice with radius {}'.format(R))
         r = 2*R/self.D
         mask = self.coords.pow(2).sum(-1) < r**2

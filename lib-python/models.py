@@ -10,6 +10,7 @@ import so3_grid
 import utils
 
 log = utils.log
+vlog = utils.vlog
 
 class ResidLinear(nn.Module):
     def __init__(self, nin, nout):
@@ -201,14 +202,7 @@ class BNBHomo:
             else:
                 # variable number of poses for each image - create a tensor of B x max(NQ) x YX
                 # and tile y_hat into this tensor
-                assert len(NQ) == B
-                y_hat_full = torch.empty(B,max(NQ),YX)
-                prev = 0
-                for i in range(B):
-                    y_hat_full[i,0:NQ[i],:] = y_hat[prev:(prev+NQ[i]),:]
-                    prev += NQ[i]
-                y_hat = y_hat_full 
-                y_hat[torch.isnan(y_hat)] = float('inf')
+                y_hat = self.batch_tile(y_hat, NQ)
             images = images.unsqueeze(1) # Bx1xYX
             err = torch.sum((images-y_hat).pow(2),-1) # BxQ
             return err
@@ -217,6 +211,28 @@ class BNBHomo:
             err_tilt = compute_err(images_tilt, self.tilt @ rot)
             err += err_tilt
         return err # B x Q
+
+    def batch_tile(self, squashed, NQ, nan_val=float('inf')):
+        '''Tile a squahsed, variable batch size data tensor into Bxmax(NQ)'''
+        B = len(NQ)
+        new = torch.empty((B,max(NQ),squashed.shape[-1]),dtype=squashed.dtype)
+        prev = 0
+        for i in range(B):
+            new[i,0:NQ[i],:] = squashed[prev:(prev+NQ[i]),:]
+            new[i,NQ[i]:,:] = nan_val 
+            prev += NQ[i]
+        return new
+    
+    def batch_tile_np(self, squashed, NQ, nan_val=float('inf')):
+        '''Tile a squahsed, variable batch size data tensor into Bxmax(NQ)'''
+        B = len(NQ)
+        new = np.empty((B,max(NQ),squashed.shape[-1]),dtype=squashed.dtype)
+        prev = 0
+        for i in range(B):
+            new[i,0:NQ[i],:] = squashed[prev:(prev+NQ[i]),:]
+            new[i,NQ[i]:,:] = nan_val 
+            prev += NQ[i]
+        return new
 
     def compute_bound_base(self, images, L, Lmax, images_tilt=None):
         A = self.eval_grid(images, self.base_rot, self.nbase, L, images_tilt) # B x Q
@@ -240,7 +256,7 @@ class BNBHomo:
         NQ = keep.sum(1) # B, array of Nposes per batch element
         if (NQ > 72).any():
             # filter keep with percentile heuristic
-            log('Warning: More than 72 poses below lower bound')
+            vlog('Warning: More than 72 poses below lower bound')
             w = bound.argsort()[:,72:]
             B,Q = bound.shape
             keep[np.arange(B).repeat(Q-72), w.contiguous().view(-1)] *= 0
@@ -264,12 +280,12 @@ class BNBHomo:
         NKEEP = int(Q*.125)
         if (NQ > NKEEP).any():
             # filter keep with percentile heuristic
-            log('Warning: More than {} poses below lower bound'.format(NKEEP))
+            vlog('Warning: More than {} poses below lower bound'.format(NKEEP))
             w = bound.argsort()[:,NKEEP:]
             keep[np.arange(B).repeat(Q-NKEEP), w.contiguous().view(-1)] *= 0
             NQ = keep.sum(1) # B, array of Nposes per batch element
         ### get squashed list of all poses to keep ###
-        w = np.where(keep)
+        w = np.where(keep.cpu())
         quat = quat_block[w]
         grid_ind = grid_ind_block[w]
         assert len(quat) == NQ.sum()
@@ -284,14 +300,8 @@ class BNBHomo:
         quat = np.array([x[0] for x in neighbors]).reshape(-1,4) # Qx8x4->8Qx4
         grid_ind = np.array([x[1] for x in neighbors]).reshape(-1,2) # Qx8x2->8Qx2
         assert NQ.sum() == len(quat)
-        B = len(NQ)
-        quat_block= np.empty((B,max(NQ),4),dtype=np.float32)
-        grid_ind_block = np.empty((B,max(NQ),2),dtype=int)
-        prev = 0
-        for i in range(B):
-            quat_block[i,:NQ[i]] = quat[prev:(prev+NQ[i])]
-            grid_ind_block[i,:NQ[i]] = grid_ind[prev:(prev+NQ[i])]
-            prev += NQ[i]
+        quat_block = self.batch_tile_np(quat, NQ)
+        grid_ind_block = self.batch_tile_np(grid_ind, NQ)
         return NQ, quat, grid_ind, quat_block, grid_ind_block
 
     def opt_theta(self, images, Lstart, Lstop, images_tilt=None, niter=5):
@@ -301,8 +311,10 @@ class BNBHomo:
             self.max_slice = self.estimate_max_slice() # where to put this?
             bound = self.compute_bound_base(images, Lstart, Lstop, images_tilt=images_tilt)
             Lstar = self.eval_grid(images, self.base_rot[torch.argmin(bound,1)], 1, Lstop, images_tilt=images_tilt) # expensive objective function
+            if ((bound<=Lstar).sum(1) == 0).any():
+                import pdb; pdb.set_trace()
             NQ, quat, grid_ind = self.bound_base(bound, Lstar)
-            k = int((Lstop-Lstart)/niter)
+            k = int((Lstop-Lstart)/(niter-1))
             for iter_ in range(1,niter+1): # resolution level
                 L = min(Lstart + k*iter_, Lstop)
                 NQ, quat, grid_ind, quat_block, grid_ind_block = self.subdivide(NQ, quat, grid_ind, iter_)
@@ -310,10 +322,13 @@ class BNBHomo:
                 bound = self.compute_bound_variable(images, rot, NQ, L, Lstop, images_tilt=images_tilt) # Bxmax(NQ)
                 min_i = torch.argmin(bound, 1)
                 if not (min_i < NQ).all():
-                    import pdb; pdb.set_trace()
-                
-                min_quat = quat_block[np.arange(B),min_i]
+                    if (NQ==0).any():
+                        import pdb; pdb.set_trace() # should not reach here
+                    raise RuntimeError('min_ind {}\n NQ {}'.format(min_i, NQ))
+                min_quat = quat_block[np.arange(B),min_i.cpu()]
                 Lstar = self.eval_grid(images, lie_tools.quaternions_to_SO3(torch.tensor(min_quat)), 1, Lstop, images_tilt=images_tilt)
+                if ((bound<=Lstar).sum(1) == 0).any():
+                    import pdb; pdb.set_trace()
                 NQ, quat, grid_ind = self.bound(bound, Lstar, quat_block, grid_ind_block)
         return lie_tools.quaternions_to_SO3(torch.tensor(min_quat))
 

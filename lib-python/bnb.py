@@ -11,27 +11,30 @@ import shift_grid
 import utils
 
 log = utils.log
+vlog = utils.vlog
 
 class BNBHomo:
     '''Branch and bound for homogeneous reconstruction'''
-    def __init__(self, decoder, lattice, tilt=None):
+    def __init__(self, decoder, lattice, Lmin, Lmax, tilt=None):
         self.decoder = decoder
         self.lattice = lattice
         self.base_quat = so3_grid.base_SO3_grid()
         self.base_rot = lie_tools.quaternions_to_SO3(torch.tensor(self.base_quat))
         self.nbase = len(self.base_quat)
         assert self.nbase == 576, "Base resolution changed?"
+        self.Lmin = Lmin
+        self.Lmax = Lmax
         self.tilt = tilt
 
-    def compute_B1(self, images, L, Lmax, images_tilt=None):
-        mask = self.lattice.get_circular_mask(Lmax) - self.lattice.get_circular_mask(L)
+    def compute_B1(self, images, L, images_tilt=None):
+        mask = self.lattice.get_circular_mask(self.Lmax) - self.lattice.get_circular_mask(L)
         power = images.view(images.size(0),-1)[:,mask].pow(2).sum(-1)
         if images_tilt:
             power += images_tilt.view(images_tilt.size(0),-1)[:,mask].pow(2).sum(-1)
         return power
 
-    def compute_B2(self, max_slice, L, Lmax):
-        mask = self.lattice.get_circular_mask(Lmax) - self.lattice.get_circular_mask(L)
+    def compute_B2(self, max_slice, L):
+        mask = self.lattice.get_circular_mask(self.Lmax) - self.lattice.get_circular_mask(L)
         power = max_slice[mask].pow(2).sum()
         B2 = -power - 4*(power)**.5
         return B2
@@ -51,11 +54,10 @@ class BNBHomo:
         B = images.size(0)
         mask = self.lattice.get_circular_mask(L)
         coords = self.lattice.coords[mask]
-        c = int(coords.size(-2)/2)
         YX = coords.size(-2)
         def compute_err(images, rot):
             images = images.view(B,-1)[:,mask]
-            y_hat = self.decoder.forward_symmetric(coords @ rot, c) # len(rot) x YX
+            y_hat = self.decoder(coords @ rot) # len(rot) x YX
             if type(NQ) == int: # constant NQ per image
                 y_hat = y_hat.view(-1,NQ,YX) #1xQxYX for base grid, Bx8xYX for incremental grid
             else:
@@ -93,18 +95,19 @@ class BNBHomo:
             prev += NQ[i]
         return new
 
-    def compute_bound(self, images, rot, NQ, L, Lmax, images_tilt=None, probabilistic=False):
+    def compute_bound(self, images, rot, NQ, L, images_tilt=None, probabilistic=False):
         '''Compute the lower bound'''
         A = self.eval_grid(images, rot, NQ, L, images_tilt) # B x Q
-        if L == Lmax: return A
+        if L == self.Lmax: return A
         if probabilistic:
-            B1 = self.compute_B1(images, L, Lmax, images_tilt).unsqueeze(1) # Bx1
-            B2 = self.compute_B2(self.max_slice, L, Lmax) # 1
+            B1 = self.compute_B1(images, L, images_tilt).unsqueeze(1) # Bx1
+            B2 = self.compute_B2(self.max_slice, L)  # 1
         else:
             B1 = B2 = 0
         if images_tilt is not None: B2 *= 2
         return A+B1+B2
 
+    # todo: clean up and rename this func
     def keep_matrix(self, bound, Lstar, max_poses, probabilistic=False):
         keep = bound <= Lstar # B x Q array of 0/1s
         NQ = keep.sum(1) # B, array of Nposes per batch element
@@ -160,24 +163,25 @@ class BNBHomo:
         grid_ind_block = self.batch_tile_np(grid_ind, NQ)
         return NQ, quat, grid_ind, quat_block, grid_ind_block
 
-    def opt_theta(self, images, Lstart, Lstop, images_tilt=None, niter=5, probabilistic=False):
+    def opt_theta(self, images, L, images_tilt=None, niter=5, probabilistic=False):
+        assert L is None # ew: to keep API consistent with BNNB
         B = images.size(0)
         assert not self.decoder.training
         with torch.no_grad():
             if probabilistic:
                 self.max_slice = self.estimate_max_slice() # where to put this?
-            bound = self.compute_bound(images, self.base_rot, self.nbase, Lstart, Lstop, images_tilt=images_tilt, probabilistic=probabilistic)
-            Lstar = self.eval_grid(images, self.base_rot[torch.argmin(bound,1)], 1, Lstop, images_tilt=images_tilt) # expensive objective function
+            bound = self.compute_bound(images, self.base_rot, self.nbase, self.Lmin, images_tilt=images_tilt, probabilistic=probabilistic)
+            Lstar = self.eval_grid(images, self.base_rot[torch.argmin(bound,1)], 1, self.Lmax, images_tilt=images_tilt) # expensive objective function
             NQ, quat, grid_ind = self.bound_base(bound, Lstar, probabilistic=probabilistic)
-            k = int((Lstop-Lstart)/(niter-1))
+            k = int((self.Lmax-self.Lmin)/(niter-1))
             for iter_ in range(1,niter+1): # resolution level
-                L = min(Lstart + k*iter_, Lstop)
+                L = min(self.Lmin + k*iter_, self.Lmax)
                 NQ, quat, grid_ind, quat_block, grid_ind_block = self.subdivide(NQ, quat, grid_ind, iter_)
                 rot = lie_tools.quaternions_to_SO3(torch.tensor(quat))
-                bound = self.compute_bound(images, rot, NQ, L, Lstop, images_tilt=images_tilt, probabilistic=probabilistic) # Bxmax(NQ)
+                bound = self.compute_bound(images, rot, NQ, L, images_tilt=images_tilt, probabilistic=probabilistic) # Bxmax(NQ)
                 min_i = torch.argmin(bound, 1)
                 min_quat = quat_block[np.arange(B),min_i.cpu()]
-                Lstar = self.eval_grid(images, lie_tools.quaternions_to_SO3(torch.tensor(min_quat)), 1, Lstop, images_tilt=images_tilt)
+                Lstar = self.eval_grid(images, lie_tools.quaternions_to_SO3(torch.tensor(min_quat)), 1, self.Lmax, images_tilt=images_tilt)
                 NQ, quat, grid_ind = self.bound(bound, Lstar, quat_block, grid_ind_block, probabilistic=probabilistic)
         return lie_tools.quaternions_to_SO3(torch.tensor(min_quat))
 

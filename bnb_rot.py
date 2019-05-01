@@ -19,7 +19,7 @@ import fft
 import dataset
 
 from lattice import Lattice
-from bnb import BNNBHomo
+from bnb import BNNBHomo, BNBHomo
 from models import FTSliceDecoder
 from losses import EquivarianceLoss
 from beta_schedule import LinearSchedule
@@ -105,6 +105,9 @@ def main(args):
     if not os.path.exists(args.outdir):
         os.makedirs(args.outdir)
 
+    if not args.no_trans:
+        raise NotImplementedError
+
     # set the random seed
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -132,7 +135,8 @@ def main(args):
 
     lattice = Lattice(D)
     model = FTSliceDecoder(3, D, args.layers, args.dim, nn.ReLU)
-    bnb = BNNBHomo(model, lattice, tilt, t_extent=args.t_extent)
+    bnnb = BNNBHomo(model, lattice, tilt, t_extent=args.t_extent)
+    bnb = BNBHomo(model, lattice, args.l_start, args.l_end, tilt)
 
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
@@ -164,7 +168,12 @@ def main(args):
             if L: L = int(L)
             
             # train the model
-            loss_item = train(model, lattice, bnb, optim, batch, L, tilt, args.no_trans)
+            if epoch < 1:
+                loss_item = train(model, lattice, bnnb, optim, batch, L, tilt, args.no_trans)
+            else:
+                L = None
+                loss_item = train(model, lattice, bnb, optim, batch, L, tilt, args.no_trans)
+
            
             # logging
             loss_accum += loss_item*len(batch[0])

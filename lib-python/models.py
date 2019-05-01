@@ -163,7 +163,6 @@ class BNBHomo:
         self.tilt = tilt
 
     def compute_B1(self, images, L, Lmax, images_tilt=None):
-        #mask = -(self.lattice.get_circular_mask(L)-1)
         mask = self.lattice.get_circular_mask(Lmax) - self.lattice.get_circular_mask(L)
         power = images.view(images.size(0),-1)[:,mask].pow(2).sum(-1)
         if images_tilt:
@@ -171,7 +170,6 @@ class BNBHomo:
         return power
 
     def compute_B2(self, max_slice, L, Lmax):
-        #mask = -(self.lattice.get_circular_mask(L)-1)
         mask = self.lattice.get_circular_mask(Lmax) - self.lattice.get_circular_mask(L)
         power = max_slice[mask].pow(2).sum()
         B2 = -power - 4*(power)**.5
@@ -213,7 +211,7 @@ class BNBHomo:
         return err # B x Q
 
     def batch_tile(self, squashed, NQ, nan_val=float('inf')):
-        '''Tile a squahsed, variable batch size data tensor into Bxmax(NQ)'''
+        '''Tile a squashed, variable batch size data tensor into Bxmax(NQ) tensor'''
         B = len(NQ)
         new = torch.empty((B,max(NQ),squashed.shape[-1]),dtype=squashed.dtype)
         prev = 0
@@ -224,7 +222,7 @@ class BNBHomo:
         return new
     
     def batch_tile_np(self, squashed, NQ, nan_val=float('inf')):
-        '''Tile a squahsed, variable batch size data tensor into Bxmax(NQ)'''
+        '''Tile a squashed, variable batch size data tensor into Bxmax(NQ) tensor'''
         B = len(NQ)
         new = np.empty((B,max(NQ),squashed.shape[-1]),dtype=squashed.dtype)
         prev = 0
@@ -235,7 +233,7 @@ class BNBHomo:
         return new
 
     def compute_bound(self, images, rot, NQ, L, Lmax, images_tilt=None, probabilistic=False):
-        '''variable batch size per image'''
+        '''Compute the lower bound'''
         A = self.eval_grid(images, rot, NQ, L, images_tilt) # B x Q
         if L == Lmax: return A
         if probabilistic:
@@ -246,8 +244,7 @@ class BNBHomo:
         if images_tilt is not None: B2 *= 2
         return A+B1+B2
 
-    def bound_base(self, bound, Lstar, max_poses=24, probabilistic=False):
-        '''Helper function to filter next poses to try'''
+    def keep_matrix(self, bound, Lstar, max_poses, probabilistic=False):
         keep = bound <= Lstar # B x Q array of 0/1s
         NQ = keep.sum(1) # B, array of Nposes per batch element
         if (NQ > max_poses).any():
@@ -262,6 +259,11 @@ class BNBHomo:
             w = bound.argmin(-1)
             keep[np.arange(B), w] = 1     
             NQ = keep.sum(1) # B, array of Nposes per batch element
+        return keep, NQ
+       
+    def bound_base(self, bound, Lstar, max_poses=24, probabilistic=False):
+        '''Helper function to filter next poses to try'''
+        keep, NQ = self.keep_matrix(bound, Lstar, max_poses, probabilistic)
         ### get squashed list of all poses to keep ###
         # keep.nonzero() returns Nx2 with N 2D indices of nonzero elements
         # we want the second index since that tells us the ind of the quat to keep
@@ -275,21 +277,8 @@ class BNBHomo:
 
     def bound(self, bound, Lstar, quat_block, grid_ind_block, probabilistic=False):
         '''Helper function to filter next poses to try'''
-        keep = bound <= Lstar # B x Q array of 0/1s
-        NQ = keep.sum(1) # B, array of Nposes per batch element
-        B,Q = bound.shape
-        NKEEP = int(Q*.125)
-        if (NQ > NKEEP).any():
-            # filter keep with percentile heuristic
-            vlog('Warning: More than {} poses below upper bound'.format(NKEEP))
-            w = bound.argsort()[:,NKEEP:]
-            keep[np.arange(B).repeat(Q-NKEEP), w.contiguous().view(-1)] *= 0
-            NQ = keep.sum(1) # B, array of Nposes per batch element
-        if (NQ == 0).any():
-            assert probabilistic
-            w = bound.argmin(-1)
-            keep[np.arange(B), w] = 1     
-            NQ = keep.sum(1) # B, array of Nposes per batch element
+        max_poses = int(bound.shape[1]*.125)
+        keep, NQ = self.keep_matrix(bound, Lstar, max_poses, probabilistic)
         ### get squashed list of all poses to keep ###
         w = np.where(keep.cpu())
         quat = quat_block[w]
@@ -318,8 +307,6 @@ class BNBHomo:
                 self.max_slice = self.estimate_max_slice() # where to put this?
             bound = self.compute_bound(images, self.base_rot, self.nbase, Lstart, Lstop, images_tilt=images_tilt, probabilistic=probabilistic)
             Lstar = self.eval_grid(images, self.base_rot[torch.argmin(bound,1)], 1, Lstop, images_tilt=images_tilt) # expensive objective function
-            #if ((bound<=Lstar).sum(1) == 0).any():
-            #    import pdb; pdb.set_trace()
             NQ, quat, grid_ind = self.bound_base(bound, Lstar, probabilistic=probabilistic)
             k = int((Lstop-Lstart)/(niter-1))
             for iter_ in range(1,niter+1): # resolution level
@@ -330,8 +317,6 @@ class BNBHomo:
                 min_i = torch.argmin(bound, 1)
                 min_quat = quat_block[np.arange(B),min_i.cpu()]
                 Lstar = self.eval_grid(images, lie_tools.quaternions_to_SO3(torch.tensor(min_quat)), 1, Lstop, images_tilt=images_tilt)
-                #if ((bound<=Lstar).sum(1) == 0).any():
-                #    import pdb; pdb.set_trace()
                 NQ, quat, grid_ind = self.bound(bound, Lstar, quat_block, grid_ind_block, probabilistic=probabilistic)
         return lie_tools.quaternions_to_SO3(torch.tensor(min_quat))
 

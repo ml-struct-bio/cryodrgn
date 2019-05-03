@@ -337,7 +337,7 @@ class BNBHomo:
                 quat, q_ind, rot, trans, t_ind = self.subdivide(quat, q_ind, t_ind, iter_)
                 batch_ind4 = batch_ind.unsqueeze(1).repeat(1,4).view(-1) # repeat each element 4 times
                 bound = self.eval_grid(self.shift_images(images[batch_ind4], trans.unsqueeze(1), L).view(len(batch_ind),4,-1), rot, 8, L,
-                                            images_tilt=self.shift_images(images_tilt[batch_ind4],trans.unsqueeze(1),L) if images_tilt is not None else None) # sum(NP),4x8
+                                            images_tilt=self.shift_images(images_tilt[batch_ind4],trans.unsqueeze(1),L).view(len(batch_ind),4,-1) if images_tilt is not None else None) # sum(NP),4x8
                 bound2 = self.tile(bound, Np) # Bxmax(Np)x4x8
                 min_i = bound2.view(B,-1).argmin(1) 
                 min_i[1:] += 32*Np.cumsum(0)[0:-1]
@@ -719,7 +719,7 @@ class BNBHet:
                 batch_ind4 = batch_ind.unsqueeze(1).repeat(1,4).view(-1) # repeat each element 4 times
                 batch_ind8 = batch_ind.unsqueeze(1).repeat(1,8).view(-1) # repeat each element 8 times
                 bound = self.eval_grid(self.shift_images(images[batch_ind4], trans.unsqueeze(1), L).view(len(batch_ind),4,-1), rot, z[batch_ind8], 8, L,
-                                            images_tilt=self.shift_images(images_tilt[batch_ind4],trans.unsqueeze(1),L) if images_tilt is not None else None) # sum(NP),4x8
+                                            images_tilt=self.shift_images(images_tilt[batch_ind4],trans.unsqueeze(1), L).view(len(batch_ind),4,-1) if images_tilt is not None else None) # sum(NP),4x8
                 bound2 = self.tile(bound, Np) # Bxmax(Np)x4x8
                 min_i = bound2.view(B,-1).argmin(1) 
                 min_i[1:] += 32*Np.cumsum(0)[0:-1]

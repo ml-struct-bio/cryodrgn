@@ -19,7 +19,7 @@ import fft
 import dataset
 
 from lattice import Lattice
-from bnb import BNNBHet
+from bnb import BNNBHet, BNBHet
 from models import HetOnlyVAE
 from beta_schedule import get_beta_schedule, LinearSchedule
 from losses import EquivarianceLoss
@@ -57,6 +57,8 @@ def parse_args():
     group.add_argument('--l-end', type=int, default=20, help='End L radius (default: %(default)s)')
     group.add_argument('--l-end-it',type=int,default=100000, help='default: %(default)s')
     group.add_argument('--rotate', action='store_true', help='Speedup BNB with image rotation')
+    group.add_argument('--t-extent', type=float, default=5, help='+/- pixels to search over translations')
+    group.add_argument('--no-trans', action='store_true', help="Don't search over translations")
 
     group = parser.add_argument_group('Encoder Network')
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
@@ -90,32 +92,44 @@ def eval_volume(model, lattice, D, zval, norm):
     vol = fft.ihtn_center(vol_f[0:-1,0:-1,0:-1])
     return vol, vol_f
 
-def train(model, lattice, bnb, optim, minibatch, L, beta, beta_control=None, equivariance=None, rotated_images=None, enc_only=False):
+def train(model, lattice, bnb, optim, minibatch, L, beta, beta_control=None, equivariance=None, rotated_images=None, enc_only=False, no_trans=False):
     y, yt = minibatch
+    B = y.size(0)
     model.train()
     optim.zero_grad()
 
+    # inference of z
     D = lattice.D
     input_ = (y.view(-1,D*D), yt.view(-1,D*D)) if yt is not None else y.view(-1,D*D)
-    mu, logvar = model.encode(input_)
-    z = model.reparameterize(mu, logvar)
+    z_mu, z_logvar = model.encode(input_)
+    z = model.reparameterize(z_mu, z_logvar)
 
+    # inference of pose
     model.eval()
-    if rotated_images is None:
-        rot = bnb.opt_theta(y, z, None if enc_only else yt, L=L)
+    if no_trans:
+        if rotated_images is None:
+            rot = bnb.opt_theta(y, z, None if enc_only else yt, L=L)
+        else:
+            rot = bnb.opt_theta_rot(y, rotated_images, z, L=L)
     else:
-        rot = bnb.opt_theta_rot(y, rotated_images, z, L=L)
+        rot, trans = bnb.opt_theta_trans(y, z, None if enc_only else yt, L=L)
     model.train()
 
     y_recon = model.decode(rot, z)
     y_recon = y_recon.view(-1, D, D)
+    if not no_trans:
+        y = model.decoder.translate_ht(lattice.coords[:,0:2]/2, y.view(B,-1), trans.unsqueeze(1))
+        y = y.view(-1, D, D)
     gen_loss = F.mse_loss(y_recon, y)
     if yt is not None: 
         y_recon_tilt = model.decode(bnb.tilt @ rot, z)
         y_recon_tilt = y_recon_tilt.view(-1, D, D)
+        if not no_trans:
+            yt = model.decoder.translate_ht(lattice.coords[:,0:2]/2, yt.view(B,-1), trans.unsqueeze(1))
+            yt = yt.view(-1, lattice.D, lattice.D)
         gen_loss = .5*gen_loss + .5*F.mse_loss(y_recon_tilt, yt)
 
-    kld = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
+    kld = -0.5 * torch.mean(1 + z_logvar - z_mu.pow(2) - z_logvar.exp())
 
     if beta_control is None:
         loss = gen_loss + beta*kld/(D*D)
@@ -124,13 +138,16 @@ def train(model, lattice, bnb, optim, minibatch, L, beta, beta_control=None, equ
 
     if equivariance is not None:
         lamb, equivariance_loss = equivariance
-        eq_loss = equivariance_loss(y, mu)
+        eq_loss = equivariance_loss(y, z_mu)
         loss += lamb*eq_loss
     loss.backward()
     optim.step()
-    return gen_loss.item(), kld.item(), loss.item(), eq_loss.item() if equivariance else None, mu.detach().cpu().numpy().mean(0), rot.detach().cpu().numpy()
+    save_pose = [rot.detach().cpu().numpy()]
+    if not no_trans:
+        save_pose.append(trans.detach().cpu().numpy())
+    return gen_loss.item(), kld.item(), loss.item(), eq_loss.item() if equivariance else None, z_mu.detach().cpu().numpy().mean(0), save_pose
 
-def save_checkpoint(model, lattice, z, bnb_result, optim, epoch, norm, out_mrc, out_weights):
+def save_checkpoint(model, lattice, z, bnb_pose, optim, epoch, norm, out_mrc, out_weights):
     model.eval()
     vol, vol_f = eval_volume(model, lattice, lattice.D, z, norm)
     mrc.write(out_mrc, vol.astype(np.float32))
@@ -139,10 +156,12 @@ def save_checkpoint(model, lattice, z, bnb_result, optim, epoch, norm, out_mrc, 
         'epoch':epoch,
         'model_state_dict':model.state_dict(),
         'optimizer_state_dict':optim.state_dict(),
-        'bnb_result': bnb_result
+        'bnb_pose': bnb_pose
         }, out_weights)
 
 def main(args):
+    assert not args.rotate, "Not implemented with new BNB"
+
     log(args)
     t1 = dt.now()
     if args.outdir is not None and not os.path.exists(args.outdir):
@@ -184,7 +203,8 @@ def main(args):
     lattice = Lattice(D)
     model = HetOnlyVAE(lattice, D*D, args.qlayers, args.qdim, args.players, args.pdim,
                 args.zdim, encode_mode=args.encode_mode)
-    bnb = BNNBHet(model, lattice, tilt)
+    bnnb = BNNBHet(model, lattice, tilt)
+    bnb = BNBHet(model, lattice, args.l_start, args.l_end, tilt, args.t_extent)
     if args.rotate: 
         assert args.enc_only
         theta = torch.arange(1,12,dtype=torch.float32)*2*np.pi/12 # 11 angles 
@@ -221,7 +241,7 @@ def main(args):
         eq_loss_accum = 0
         batch_it = 0 
         z_accum = np.zeros(args.zdim)
-        bnb_result = []
+        bnb_pose = []
         for batch in data_iterator:
             ind = batch[-1]
             batch = (batch[0].to(device), None) if tilt is None else (batch[0].to(device), batch[1].to(device))
@@ -245,9 +265,13 @@ def main(args):
             else: yr = None
 
             # train the model
-            gen_loss, kld, loss, eq_loss, z, rot = train(model, lattice, bnb, optim, batch, L, beta, args.beta_control, equivariance_tuple, rotated_images=yr, enc_only=args.enc_only)
+            if epoch < 1:
+                gen_loss, kld, loss, eq_loss, z, pose = train(model, lattice, bnnb, optim, batch, L, beta, args.beta_control, equivariance_tuple, rotated_images=yr, enc_only=args.enc_only, no_trans=True)
+            else:
+                gen_loss, kld, loss, eq_loss, z, pose = train(model, lattice, bnb, optim, batch, L, beta, args.beta_control, equivariance_tuple, rotated_images=yr, enc_only=args.enc_only, no_trans=args.no_trans)
+            
             # logging
-            bnb_result.append((ind.cpu().numpy(),rot))
+            bnb_pose.append((ind.cpu().numpy(),pose))
             z_accum += z*len(ind)
             kld_accum += kld*len(ind)
             gen_loss_accum += gen_loss*len(ind)
@@ -264,13 +288,13 @@ def main(args):
         if args.checkpoint and epoch % args.checkpoint == 0:
             out_mrc = '{}/reconstruct.{}.mrc'.format(args.outdir,epoch)
             out_weights = '{}/weights.{}.pkl'.format(args.outdir,epoch)
-            save_checkpoint(model, lattice, z_accum/Nimg, bnb_result, optim, epoch, data.norm, out_mrc, out_weights)
+            save_checkpoint(model, lattice, z_accum/Nimg, bnb_pose, optim, epoch, data.norm, out_mrc, out_weights)
 
     ## save model weights and evaluate the model on 3D lattice
     model.eval()
     out_mrc = '{}/reconstruct.mrc'.format(args.outdir)
     out_weights = '{}/weights.pkl'.format(args.outdir)
-    save_checkpoint(model, lattice, z_accum/Nimg, bnb_result, optim, epoch, data.norm, out_mrc, out_weights)
+    save_checkpoint(model, lattice, z_accum/Nimg, bnb_pose, optim, epoch, data.norm, out_mrc, out_weights)
     
     td = dt.now()-t1
     log('Finsihed in {} ({} per epoch)'.format(td, td/num_epochs))

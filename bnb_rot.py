@@ -105,9 +105,6 @@ def main(args):
     if not os.path.exists(args.outdir):
         os.makedirs(args.outdir)
 
-    if not args.no_trans:
-        raise NotImplementedError
-
     # set the random seed
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -136,7 +133,10 @@ def main(args):
     lattice = Lattice(D)
     model = FTSliceDecoder(3, D, args.layers, args.dim, nn.ReLU)
     bnnb = BNNBHomo(model, lattice, tilt, t_extent=args.t_extent)
-    bnb = BNBHomo(model, lattice, args.l_start, args.l_end, tilt)
+    if args.no_trans:
+        bnb = BNBHomoRot(model, lattice, args.l_start, args.l_end, tilt)
+    else:    
+        bnb = BNBHomo(model, lattice, args.l_start, args.l_end, tilt)
 
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 

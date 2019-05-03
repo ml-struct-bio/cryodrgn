@@ -99,9 +99,9 @@ def train(model, lattice, bnb, optim, batch, L, tilt=None, no_trans=False):
         loss = .5*loss + .5*F.mse_loss(y_recon_tilt,yt)
     loss.backward()
     optim.step()
-    save_pose = [rot.detatch().cpu().numpy()]
+    save_pose = [rot.detach().cpu().numpy()]
     if not no_trans:
-        save_pose.append(trans.detatch().cpu().numpy())
+        save_pose.append(trans.detach().cpu().numpy())
     return loss.item(), save_pose
 
 def main(args):

@@ -268,6 +268,7 @@ def main(args):
             if epoch < 1:
                 gen_loss, kld, loss, eq_loss, z, pose = train(model, lattice, bnnb, optim, batch, L, beta, args.beta_control, equivariance_tuple, rotated_images=yr, enc_only=args.enc_only, no_trans=True)
             else:
+                L = None
                 gen_loss, kld, loss, eq_loss, z, pose = train(model, lattice, bnb, optim, batch, L, beta, args.beta_control, equivariance_tuple, rotated_images=yr, enc_only=args.enc_only, no_trans=args.no_trans)
             
             # logging

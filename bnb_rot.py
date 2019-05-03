@@ -19,7 +19,7 @@ import fft
 import dataset
 
 from lattice import Lattice
-from bnb import BNNBHomo, BNBHomo
+from bnb import BNNBHomo, BNBHomo, BNBHomoRot
 from models import FTSliceDecoder
 from losses import EquivarianceLoss
 from beta_schedule import LinearSchedule
@@ -79,6 +79,7 @@ def train(model, lattice, bnb, optim, batch, L, tilt=None, no_trans=False):
             rot = bnb.opt_theta(y, L, yt)
         else:
             rot, trans = bnb.opt_theta_trans(y, L, yt)
+            vlog(trans[0])
     # Train model 
     model.train()
     optim.zero_grad()
@@ -136,7 +137,7 @@ def main(args):
     if args.no_trans:
         bnb = BNBHomoRot(model, lattice, args.l_start, args.l_end, tilt)
     else:    
-        bnb = BNBHomo(model, lattice, args.l_start, args.l_end, tilt)
+        bnb = BNBHomo(model, lattice, args.l_start, args.l_end, tilt, t_extent=args.t_extent)
 
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 

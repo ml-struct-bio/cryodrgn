@@ -1,7 +1,9 @@
 import numpy as np
 
+NGRID=7
+
 def grid_1d(resol, extent):
-    Npix = 7*2**resol
+    Npix = NGRID*2**resol
     dt = 2*extent/Npix
     grid = np.arange(Npix, dtype=np.float32)*dt + dt/2 - extent
     return grid
@@ -19,14 +21,14 @@ def base_shift_grid(extent):
 ### Neighbor Finding ###
 
 def get_1d_neighbor(mini, curr_res, extent):
-    Npix = 7*2**(curr_res+1)
+    Npix = NGRID*2**(curr_res+1)
     dt = 2*extent/Npix
     ind = np.array([2*mini, 2*mini+1], dtype=np.float32)
     return dt*ind + dt/2 - extent, ind
 
 def get_base_ind(ind):
-    xi = ind % 7
-    yi = ind // 7 # integer division
+    xi = ind % NGRID
+    yi = ind // NGRID # integer division
     return xi, yi
 
 def get_neighbor(xi, yi, curr_res, extent):

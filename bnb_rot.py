@@ -58,7 +58,7 @@ def parse_args():
 
     return parser
 
-def save_checkpoint(model, lattice, optim, epoch, norm, out_mrc, out_weights):
+def save_checkpoint(model, lattice, bnb_pose, optim, epoch, norm, out_mrc, out_weights):
     model.eval()
     vol = model.eval_volume(lattice.coords, lattice.D, norm)
     mrc.write(out_mrc, vol.astype(np.float32))
@@ -67,6 +67,7 @@ def save_checkpoint(model, lattice, optim, epoch, norm, out_mrc, out_weights):
         'epoch':epoch,
         'model_state_dict':model.state_dict(),
         'optimizer_state_dict':optim.state_dict(),
+        'bnb_pose': bnb_pose
         }, out_weights)
 
 def train(model, lattice, bnb, optim, batch, L, tilt=None, no_trans=False):
@@ -98,7 +99,10 @@ def train(model, lattice, bnb, optim, batch, L, tilt=None, no_trans=False):
         loss = .5*loss + .5*F.mse_loss(y_recon_tilt,yt)
     loss.backward()
     optim.step()
-    return loss.item()
+    save_pose = [rot.detatch().cpu().numpy()]
+    if not no_trans:
+        save_pose.append(trans.detatch().cpu().numpy())
+    return loss.item(), save_pose
 
 def main(args):
     log(args)
@@ -147,6 +151,7 @@ def main(args):
         model.load_state_dict(checkpoint['model_state_dict'])
         optim.load_state_dict(checkpoint['optimizer_state_dict'])
         start_epoch = checkpoint['epoch']+1
+        assert args.num_epochs > start_epoch
         model.train()
     else:
         start_epoch = 0
@@ -161,7 +166,9 @@ def main(args):
     for epoch in range(start_epoch, args.num_epochs):
         batch_it = 0
         loss_accum = 0
+        bnb_pose = []
         for batch in data_generator:
+            ind = batch[-1]
             batch = (batch[0].to(device), None) if tilt is None else (batch[0].to(device), batch[1].to(device))
             batch_it += len(batch[0])
             global_it = Nimg*epoch+batch_it
@@ -170,13 +177,13 @@ def main(args):
             
             # train the model
             if epoch < 1:
-                loss_item = train(model, lattice, bnnb, optim, batch, L, tilt, args.no_trans)
+                loss_item, pose = train(model, lattice, bnnb, optim, batch, L, tilt, args.no_trans)
             else:
                 L = None
-                loss_item = train(model, lattice, bnb, optim, batch, L, tilt, args.no_trans)
-
+                loss_item, pose = train(model, lattice, bnb, optim, batch, L, tilt, args.no_trans)
            
             # logging
+            bnb_pose.append((ind.cpu().numpy(),pose))
             loss_accum += loss_item*len(batch[0])
             if batch_it % args.log_interval == 0:
                 log('# [Train Epoch: {}/{}] [{}/{} images] loss={:.4f}'.format(epoch+1, args.num_epochs, batch_it, Nimg, loss_item))
@@ -185,12 +192,12 @@ def main(args):
         if args.checkpoint and epoch % args.checkpoint == 0:
             out_mrc = '{}/reconstruct.{}.mrc'.format(args.outdir,epoch)
             out_weights = '{}/weights.{}.pkl'.format(args.outdir,epoch)
-            save_checkpoint(model, lattice, optim, epoch, data.norm, out_mrc, out_weights)
+            save_checkpoint(model, lattice, bnb_pose, optim, epoch, data.norm, out_mrc, out_weights)
 
     ## save model weights and evaluate the model on 3D lattice
     out_mrc = '{}/reconstruct.mrc'.format(args.outdir)
     out_weights = '{}/weights.pkl'.format(args.outdir)
-    save_checkpoint(model, lattice, optim, epoch, data.norm, out_mrc, out_weights)
+    save_checkpoint(model, lattice, bnb_pose, optim, epoch, data.norm, out_mrc, out_weights)
    
     td = dt.now()-t1
     log('Finsihed in {} ({} per epoch)'.format(td, td/args.num_epochs))

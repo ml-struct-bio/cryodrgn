@@ -1,5 +1,5 @@
 '''
-Evaluate VAE decoder on an image stack
+Evaluate the decoder from bnb_het.py at specified values of z
 '''
 import numpy as np
 import sys, os
@@ -21,6 +21,7 @@ import fft
 import lie_tools
 from lattice import Lattice
 from models import HetOnlyVAE
+from bnb_het import eval_volume
 
 log = utils.log
 vlog = utils.vlog
@@ -37,7 +38,6 @@ def parse_args():
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
 
     group = parser.add_argument_group('Architecture parameters')
-    group.add_argument('-b','--batch-size', type=int, default=100, help='Minibatch size (default: %(default)s)')
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--qdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
     group.add_argument('--zdim', type=int, default=1, help='Dimension of latent variable')
@@ -45,27 +45,6 @@ def parse_args():
     group.add_argument('--players', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--pdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
     return parser
-
-def eval_volume(model, lattice, D, zval, rnorm):
-    '''Evaluate the model on a nz x ny x nx lattice'''
-    zdim = len(zval)
-    z = torch.zeros(D**2,zdim, dtype=torch.float32)
-    z += torch.tensor(zval, dtype=torch.float32)
-
-    vol_f = np.zeros((D,D,D),dtype=np.float32)
-    assert not model.training
-    # evaluate the volume by zslice to avoid memory overflows
-    for i, dz in enumerate(np.linspace(-1,1,D,endpoint=False)):
-        x = lattice.coords + torch.tensor([0,0,dz], dtype=torch.float32)
-        x = torch.cat((x,z),dim=-1)
-        with torch.no_grad():
-            y = model.decoder.decode(x)
-            y = y[...,0] - y[...,1]
-            #y = model.decoder(x)
-            y = y.view(D,D).cpu().numpy()
-        vol_f[i] = y
-    vol = fft.ihtn_center(vol_f*rnorm[1]+rnorm[0])
-    return vol, vol_f
 
 def main(args):
     log(args)
@@ -78,8 +57,10 @@ def main(args):
         torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
     nz, ny, nx = args.dim
-    lattice = Lattice(nx)
-    model = HetOnlyVAE(lattice, nx*ny, args.qlayers, args.qdim, args.players, args.pdim,
+    assert nz == ny == nx
+    D = nz+1
+    lattice = Lattice(D)
+    model = HetOnlyVAE(lattice, D*D, args.qlayers, args.qdim, args.players, args.pdim,
                 args.zdim, encode_mode=args.encode_mode)
 
     log('Loading weights from {}'.format(args.weights))

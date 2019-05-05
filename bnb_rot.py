@@ -51,6 +51,7 @@ def parse_args():
     group.add_argument('--l-start', type=int,default=12, help='Starting L radius (default: %(default)s)')
     group.add_argument('--l-end', type=int, default=20, help='End L radius (default: %(default)s)')
     group.add_argument('--l-end-it',type=int,default=100000, help='default: %(default)s')
+    group.add_argument('--bnb-start', type=int, default=1, help='Number of initial BNNB epochs')
 
     group = parser.add_argument_group('Network Architecture')
     group.add_argument('--layers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
@@ -176,7 +177,7 @@ def main(args):
             if L: L = int(L)
             
             # train the model
-            if epoch < 1:
+            if epoch < args.bnb_start:
                 loss_item, pose = train(model, lattice, bnnb, optim, batch, L, tilt, args.no_trans)
             else:
                 L = None

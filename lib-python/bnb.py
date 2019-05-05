@@ -352,9 +352,9 @@ class BNBHomo:
                 tmp[-1] = 0
                 w[:,1] += tmp[(w[:,0]-1)]
                 w=w.cpu()
-                quat = quat.reshape(-1,4)[w[:,1]]
-                q_ind = q_ind.reshape(-1,2)[w[:,1]]
-                t_ind = t_ind.reshape(-1,2)[w[:,1]]
+                quat = quat.reshape(-1,4)[w[:,1]].reshape(-1,4) # final reshape needed to keep 2D array if len(w) == 1
+                q_ind = q_ind.reshape(-1,2)[w[:,1]].reshape(-1,2)
+                t_ind = t_ind.reshape(-1,2)[w[:,1]].reshape(-1,2)
                 Np = keep.sum(1)
                 assert Np.sum() == len(t_ind)
         return min_rot, min_trans
@@ -815,9 +815,9 @@ class BNBHet:
                 tmp[-1] = 0
                 w[:,1] += tmp[(w[:,0]-1)]
                 w=w.cpu()
-                quat = quat.reshape(-1,4)[w[:,1]]
-                q_ind = q_ind.reshape(-1,2)[w[:,1]]
-                t_ind = t_ind.reshape(-1,2)[w[:,1]]
+                quat = quat.reshape(-1,4)[w[:,1]].reshape(-1,4) # final reshape needed to keep 2D array if len(w) == 1
+                q_ind = q_ind.reshape(-1,2)[w[:,1]].reshape(-1,2)
+                t_ind = t_ind.reshape(-1,2)[w[:,1]].reshape(-1,2)
                 Np = keep.sum(1)
                 assert Np.sum() == len(t_ind)
         return min_rot, min_trans

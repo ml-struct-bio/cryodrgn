@@ -14,7 +14,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.data as data
 
-sys.path.insert(0,'{}/lib-python'.format(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0,'{}/../lib-python'.format(os.path.dirname(os.path.abspath(__file__))))
 import utils
 import mrc
 import fft
@@ -194,7 +194,8 @@ def main(args):
         # convention: we want the first column to be x shift and second column to be y shift
         # reverse columns since current implementation of translate_img uses scipy's 
         # fourier_shift, which is flipped the other way
-        trans = trans[:,::-1]
+        # convension: save the translation that needs to be applied on the image to center
+        trans = -trans[:,::-1]
 
     log('Saving {}'.format(args.o))
     mrc.write(args.o,imgs.astype(np.float32))

@@ -11,7 +11,6 @@ import utils
 
 log = utils.log
 
-
 class Lattice:
     def __init__(self, D):
         # centered and scaled xy plane, values between -1 and 1
@@ -81,5 +80,21 @@ class Lattice:
         rotated = F.grid_sample(images, grid) # QxBxYxX
         return rotated.transpose(0,1) # BxQxYxX
 
+class EvenLattice(Lattice):
+    '''For a DxD lattice where D is even, we set D/2,D/2 pixel to the center'''
+    def __init__(self, D):
+        # centered and scaled xy plane, values between -1 and 1
+        # endpoint=False since FT is not symmetric around origin
+        assert D % 2 == 0, "Lattice size must be odd"
+        x0, x1 = np.meshgrid(np.linspace(-1, 1, D, endpoint=False), 
+                             np.linspace(-1, 1, D, endpoint=False))
+        coords = np.stack([x0.ravel(),x1.ravel(),np.zeros(D**2)],1).astype(np.float32)
+        self.coords = torch.tensor(coords)
+        self.D = D
+        self.D2 = int(D/2)
 
-
+        c = 2/(D-1)*(D/2) -1 
+        self.center = torch.tensor([c,c]) # pixel coordinate for img[D/2,D/2]
+        
+        self.square_mask = {}
+        self.circle_mask = {}

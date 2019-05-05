@@ -10,7 +10,6 @@ import numpy as np
 import sys, os
 import time
 import pickle
-from scipy.ndimage.fourier import fourier_shift
 
 sys.path.insert(0,'{}/lib-python'.format(os.path.dirname(os.path.abspath(__file__))))
 import utils
@@ -27,6 +26,7 @@ def parse_args():
     parser.add_argument('--is-rot',action='store_true',help='Input angles are rotation matrices')
     parser.add_argument('--indices',help='Indices to iterator over (pkl)')
     parser.add_argument('--trans', type=os.path.abspath, help='Optionally provide translations (.pkl)')
+    parser.add_argument('--tscale',type=float,help='Scale all translations by this amount')
     return parser
 
 def add_slice(V, counts, ff_coord, ff, D):
@@ -64,6 +64,8 @@ def main(args):
         N = len(angles)
     if args.trans:
         trans = utils.load_angles(args.trans)
+        if args.tscale:
+            trans *= args.tscale
     else:
         trans = None
 
@@ -91,7 +93,7 @@ def main(args):
         if ii%100==0: log('image {}'.format(ii))
         ff = fft.fft2_center(images[ii].get())
         if trans is not None:
-            tfilt = np.dot(TCOORD,-trans[ii])*-2*np.pi
+            tfilt = np.dot(TCOORD,trans[ii])*-2*np.pi
             tfilt = np.cos(tfilt) + np.sin(tfilt)*1j
             ff *= tfilt
         ff = ff.ravel()[MASK]

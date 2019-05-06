@@ -1,5 +1,5 @@
 '''
-Resize an image stack by clipping fourier frequencies
+Resize an image stack or volume by clipping fourier frequencies
 '''
 
 import argparse
@@ -22,6 +22,7 @@ def parse_args():
     parser.add_argument('mrcs', help='Input projection stack (.mrcs)')
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Output projection stack (.mrcs)')
     parser.add_argument('--out-png', type=os.path.abspath, help='Montage of first 9 projections')
+    parser.add_argument('--is-vol',action='store_true')
     parser.add_argument('-D', type=int, required=True, help='New image size, must be even')
     return parser
 
@@ -56,14 +57,22 @@ def main(args):
     start = int(oldD/2 - D/2)
     stop = int(oldD/2 + D/2)
 
-    oldft = np.array([fft.ht2_center(img) for img in old])
-    log(oldft.shape)
-    newft = oldft[:,start:stop, start:stop]
-    log(newft.shape)
+    if args.is_vol:
+        oldft = fft.htn_center(old)
+        log(oldft.shape)
+        newft = oldft[start:stop,start:stop,start:stop]
+        log(newft.shape)
+        new = fft.ihtn_center(newft)
 
-    assert oldft[0,int(oldD/2),int(oldD/2)] == newft[0,int(D/2),int(D/2)]
+    else:
+        oldft = np.array([fft.ht2_center(img) for img in old])
+        log(oldft.shape)
+        newft = oldft[:,start:stop, start:stop]
+        log(newft.shape)
 
-    new = np.array([fft.ihtn_center(img) for img in newft])
+        assert oldft[0,int(oldD/2),int(oldD/2)] == newft[0,int(D/2),int(D/2)]
+
+        new = np.array([fft.ihtn_center(img) for img in newft])
 
     log('Saving {}'.format(args.o))
     mrc.write(args.o,new.astype(np.float32))

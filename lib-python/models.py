@@ -311,12 +311,14 @@ class TiltVAE(nn.Module):
             lattice, tilt,
             encode_layers, encode_dim, 
             decode_layers, decode_dim,
-            no_trans=False
+            no_trans=False,
+            enc_mask=None
             ):
         super(TiltVAE, self).__init__()
         self.lattice = lattice
         self.D = lattice.D
-        self.in_dim = lattice.D*lattice.D
+        self.in_dim = lattice.D*lattice.D if enc_mask is None else enc_mask.sum()
+        self.enc_mask = enc_mask
         assert encode_layers > 3
         self.encoder = ResidLinearMLP(self.in_dim,
                                       encode_layers-3,
@@ -341,8 +343,13 @@ class TiltVAE(nn.Module):
         return self.decoder.eval_volume(self.lattice.coords, self.D, norm)
 
     def encode(self, img, img_tilt):
-        enc1 = self.encoder(img.view(-1,self.in_dim))
-        enc2 = self.encoder(img_tilt.view(-1,self.in_dim))
+        img = img.view(img.size(0), -1)
+        img_tilt = img_tilt.view(img_tilt.size(0), -1)
+        if self.enc_mask is not None:
+            img = img[:,self.enc_mask]
+            img_tilt = img_tilt[:,self.enc_mask]
+        enc1 = self.encoder(img)
+        enc2 = self.encoder(img_tilt)
         enc = torch.cat((enc1,enc2), -1) # then nn.ReLU?
         z_mu, z_std = self.so3_encoder(enc)
         rot, w_eps = self.so3_encoder.sampleSO3(z_mu, z_std)

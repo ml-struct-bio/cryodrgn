@@ -29,8 +29,8 @@ vlog = utils.vlog
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('particles', help='Particle stack file (.mrc)')
-    parser.add_argument('particles_tilt', help='Particle stack file (.mrc)')
+    parser.add_argument('particles', help='Particle stack file (.mrcs)')
+    parser.add_argument('particles_tilt', help='Particle stack file for tilt pair (.mrcs)')
     parser.add_argument('--tilt', type=float, default=45, help='Right-handed x-axis tilt offset in degrees (default: %(default)s)')
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
     parser.add_argument('--load', type=os.path.abspath, help='Initialize training from a checkpoint')
@@ -53,6 +53,7 @@ def parse_args():
     group = parser.add_argument_group('Encoder Network')
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--qdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
+    group.add_argument('--enc-mask', type=int, help='Radius of circular mask for image encoder')
 
     group = parser.add_argument_group('Decoder Network')
     group.add_argument('--players', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
@@ -139,7 +140,8 @@ def main(args):
                     [0, np.sin(theta), np.cos(theta)]]).astype(np.float32)
 
     lattice = Lattice(D)
-    model = TiltVAE(lattice, tilt, args.qlayers, args.qdim, args.players, args.pdim, no_trans=args.no_trans)
+    if args.enc_mask: args.enc_mask = lattice.get_circular_mask(args.enc_mask)
+    model = TiltVAE(lattice, tilt, args.qlayers, args.qdim, args.players, args.pdim, no_trans=args.no_trans, enc_mask=args.enc_mask)
     log(model)
     log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
 

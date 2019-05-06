@@ -52,6 +52,7 @@ def parse_args():
     group.add_argument('--l-end', type=int, default=20, help='End L radius (default: %(default)s)')
     group.add_argument('--l-end-it',type=int,default=100000, help='default: %(default)s')
     group.add_argument('--bnb-start', type=int, default=1, help='Number of initial BNNB epochs')
+    group.add_argument('--probabilistic', action='store_true', help='Use probabilistic bound')
 
     group = parser.add_argument_group('Network Architecture')
     group.add_argument('--layers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
@@ -107,6 +108,8 @@ def train(model, lattice, bnb, optim, batch, L, tilt=None, no_trans=False):
 
 def main(args):
     log(args)
+    if args.probabilistic:
+        assert args.no_trans, 'Probabilistic bound not implemented with translations yet'
     t1 = dt.now()
     if not os.path.exists(args.outdir):
         os.makedirs(args.outdir)
@@ -140,7 +143,7 @@ def main(args):
     model = FTSliceDecoder(3, D, args.layers, args.dim, nn.ReLU)
     bnnb = BNNBHomo(model, lattice, tilt, t_extent=args.t_extent)
     if args.no_trans:
-        bnb = BNBHomoRot(model, lattice, args.l_start, args.l_end, tilt)
+        bnb = BNBHomoRot(model, lattice, args.l_start, args.l_end, tilt, args.probabilistic)
     else:    
         bnb = BNBHomo(model, lattice, args.l_start, args.l_end, tilt, t_extent=args.t_extent)
 

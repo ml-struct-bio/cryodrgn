@@ -13,6 +13,7 @@ import utils
 log = utils.log
 
 class HetOnlyVAE(nn.Module):
+    # No pose inference
     def __init__(self, lattice, # Lattice object
             in_dim, # nx*ny for single image
             encode_layers, encode_dim, 
@@ -92,7 +93,7 @@ class FTSliceDecoder(nn.Module):
         self.decoder = ResidLinearMLP(in_dim, nlayers, hidden_dim, 2, activation)
         D2 = int(D/2)
 
-        ### various pixel indices to keep track of 
+        ### various pixel indices to keep track of for forward_even
         self.center = D2*D + D2 
         self.extra = np.arange((D2+1)*D, D**2, D) # bottom-left column without conjugate pair
         # evalute the top half of the image up through the center pixel 
@@ -147,6 +148,7 @@ class FTSliceDecoder(nn.Module):
         result[...,1][w] *= -1 # replace with complex conjugate to get correct values for original lattice positions
         return result
 
+    # todo: move this function elsewhere
     def translate_ft(self, coords, img, t):
         '''
         Translate an image by phase shifting its Fourier transform
@@ -170,6 +172,7 @@ class FTSliceDecoder(nn.Module):
         s = torch.sin(tfilt) # BxTxN
         return torch.stack([img[...,0]*c-img[...,1]*s,img[...,0]*s+img[...,1]*c],-1)
 
+    # todo: move this function elsewhere
     def translate_ht(self, coords, img, t):
         '''
         Translate an image by phase shifting its Hartley transform
@@ -228,7 +231,7 @@ class VAE(nn.Module):
             self.encoder = ConvEncoder(encode_dim, encode_dim)
         elif encode_mode == 'resid':
             self.encoder = ResidLinearMLP(self.in_dim, 
-                            encode_layers-2, 
+                            encode_layers-2, # -2 bc we add 2 more layers in the homeomorphic encoer
                             encode_dim,  # hidden_dim
                             encode_dim, # out_dim
                             nn.ReLU) #in_dim -> hidden_dim
@@ -240,10 +243,14 @@ class VAE(nn.Module):
                             nn.ReLU) #in_dim -> hidden_dim
         else:
             raise RuntimeError('Encoder mode {} not recognized'.format(encode_mode))
+        # predict rotation and translation in two completely separate NNs
         #self.so3_encoder = SO3reparameterize(encode_dim) # hidden_dim -> SO(3) latent variable
         #self.trans_encoder = ResidLinearMLP(nx*ny, 5, encode_dim, 4, nn.ReLU)
+
+        # or predict rotation/translations from encoding
         self.so3_encoder = SO3reparameterize(encode_dim, 1, encode_dim) # hidden_dim -> SO(3) latent variable
         self.trans_encoder = ResidLinearMLP(encode_dim, 1, encode_dim, 4, nn.ReLU)
+
         self.decoder = FTSliceDecoder(3, self.D, decode_layers, decode_dim, nn.ReLU)
         self.no_trans = no_trans
 
@@ -254,15 +261,9 @@ class VAE(nn.Module):
         eps = torch.randn_like(std)
         return eps*std + mu
 
-    def encode(self, img, return_s2s2=False):
+    def encode(self, img):
         enc = nn.ReLU()(self.encoder(img.view(-1,self.in_dim)))
-        # fixme: this is ugly
-        if return_s2s2: # z_mu returned in s2s2 representation instead of SO3
-            z = self.so3_encoder.main(enc)
-            z_mu = z[:,:4]
-            z_std = z[:,4:] # return z_logvar
-        else:
-            z_mu, z_std = self.so3_encoder(enc)
+        z_mu, z_std = self.so3_encoder(enc)
         if self.no_trans:
             tmu, tlogvar = (None, None)
         else:
@@ -283,7 +284,7 @@ class VAE(nn.Module):
     def forward(self, img):
         z_mu, z_std, tmu, tlogvar = self.encode(img)
         rot, w_eps = self.so3_encoder.sampleSO3(z_mu, z_std)
-        # transform lattice by rot
+        # transform lattice by rot and predict image
         y_hat = self.decode(rot)
         if not self.no_trans:
             # translate image by t
@@ -305,7 +306,7 @@ class TiltVAE(nn.Module):
         self.lattice = lattice
         self.D = lattice.D
         self.in_dim = lattice.D*lattice.D
-        assert encode_layers > 2
+        assert encode_layers > 3
         self.encoder = ResidLinearMLP(self.in_dim,
                                       encode_layers-3,
                                       encode_dim,
@@ -352,7 +353,7 @@ class TiltVAE(nn.Module):
             img = img.view(B, self.D, self.D)
             img_tilt = img_tilt.view(B, self.D, self.D)
 
-        # rotate lattice by rot.T, shift by -t
+        # rotate lattice by rot.T
         x = self.lattice.coords @ rot # R.T*x
         y_hat = self.decoder(x)
         y_hat = y_hat.view(-1, self.D, self.D)
@@ -363,7 +364,7 @@ class TiltVAE(nn.Module):
         y_hat2 = y_hat2.view(-1, self.D, self.D)
         return y_hat, y_hat2, img, img_tilt, z_mu, z_std, w_eps, tmu, tlogvar
 
-# fixme: this is half-deprecated (still used in tilt BNB)
+# fixme: this is half-deprecated (not used in TiltVAE, but still used in tilt BNB)
 class TiltEncoder(nn.Module):
     def __init__(self, in_dim, nlayers, hidden_dim, out_dim, activation):
         super(TiltEncoder, self).__init__()

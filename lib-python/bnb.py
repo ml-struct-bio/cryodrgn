@@ -17,7 +17,7 @@ vlog = utils.vlog
 
 class BNBHomoRot:
     '''Branch and bound of rotations for homogeneous reconstruction'''
-    def __init__(self, decoder, lattice, Lmin, Lmax, tilt=None):
+    def __init__(self, decoder, lattice, Lmin, Lmax, tilt=None, probabilistic=False):
         self.decoder = decoder
         self.lattice = lattice
         self.base_quat = so3_grid.base_SO3_grid()
@@ -27,6 +27,7 @@ class BNBHomoRot:
         self.Lmin = Lmin
         self.Lmax = Lmax
         self.tilt = tilt
+        self.probabilistic = probabilistic
 
     def compute_B1(self, images, L, images_tilt=None):
         mask = self.lattice.get_circular_mask(self.Lmax) - self.lattice.get_circular_mask(L)
@@ -97,11 +98,11 @@ class BNBHomoRot:
             prev += NQ[i]
         return new
 
-    def compute_bound(self, images, rot, NQ, L, images_tilt=None, probabilistic=False):
+    def compute_bound(self, images, rot, NQ, L, images_tilt=None):
         '''Compute the lower bound'''
         A = self.eval_grid(images, rot, NQ, L, images_tilt) # B x Q
         if L == self.Lmax: return A
-        if probabilistic:
+        if self.probabilistic:
             B1 = self.compute_B1(images, L, images_tilt).unsqueeze(1) # Bx1
             B2 = self.compute_B2(self.max_slice, L)  # 1
         else:
@@ -110,26 +111,26 @@ class BNBHomoRot:
         return A+B1+B2
 
     # todo: clean up and rename this func
-    def keep_matrix(self, bound, Lstar, max_poses, probabilistic=False):
+    def keep_matrix(self, bound, Lstar, max_poses):
+        B,Q = bound.shape
         keep = bound <= Lstar # B x Q array of 0/1s
         NQ = keep.sum(1) # B, array of Nposes per batch element
         if (NQ > max_poses).any():
             # filter keep with percentile heuristic
             vlog('Warning: More than {} poses below upper bound')
             w = bound.argsort()[:,max_poses:]
-            B,Q = bound.shape
             keep[np.arange(B).repeat(Q-max_poses), w.contiguous().view(-1)] *= 0
             NQ = keep.sum(1) # B, array of Nposes per batch element
         if (NQ == 0).any():
-            assert probabilistic
+            assert self.probabilistic
             w = bound.argmin(-1)
             keep[np.arange(B), w] = 1     
             NQ = keep.sum(1) # B, array of Nposes per batch element
         return keep, NQ
        
-    def bound_base(self, bound, Lstar, max_poses=24, probabilistic=False):
+    def bound_base(self, bound, Lstar, max_poses=24):
         '''Helper function to filter next poses to try'''
-        keep, NQ = self.keep_matrix(bound, Lstar, max_poses, probabilistic)
+        keep, NQ = self.keep_matrix(bound, Lstar, max_poses)
         ### get squashed list of all poses to keep ###
         # keep.nonzero() returns Nx2 with N 2D indices of nonzero elements
         # we want the second index since that tells us the ind of the quat to keep
@@ -141,10 +142,10 @@ class BNBHomoRot:
         assert len(quat) == NQ.sum()
         return NQ, quat, grid_ind
 
-    def bound(self, bound, Lstar, quat_block, grid_ind_block, probabilistic=False):
+    def bound(self, bound, Lstar, quat_block, grid_ind_block):
         '''Helper function to filter next poses to try'''
         max_poses = int(bound.shape[1]*.125)
-        keep, NQ = self.keep_matrix(bound, Lstar, max_poses, probabilistic)
+        keep, NQ = self.keep_matrix(bound, Lstar, max_poses)
         ### get squashed list of all poses to keep ###
         w = np.where(keep.cpu())
         quat = quat_block[w]
@@ -165,26 +166,26 @@ class BNBHomoRot:
         grid_ind_block = self.tile_np(grid_ind, NQ)
         return NQ, quat, grid_ind, quat_block, grid_ind_block
 
-    def opt_theta(self, images, L, images_tilt=None, niter=5, probabilistic=False):
+    def opt_theta(self, images, L, images_tilt=None, niter=5):
         assert L is None # ew: to keep API consistent with BNNB
         B = images.size(0)
         assert not self.decoder.training
         with torch.no_grad():
-            if probabilistic:
+            if self.probabilistic:
                 self.max_slice = self.estimate_max_slice() # where to put this?
-            bound = self.compute_bound(images, self.base_rot, self.nbase, self.Lmin, images_tilt=images_tilt, probabilistic=probabilistic)
+            bound = self.compute_bound(images, self.base_rot, self.nbase, self.Lmin, images_tilt=images_tilt)
             Lstar = self.eval_grid(images, self.base_rot[torch.argmin(bound,1)], 1, self.Lmax, images_tilt=images_tilt) # expensive objective function
-            NQ, quat, grid_ind = self.bound_base(bound, Lstar, probabilistic=probabilistic)
+            NQ, quat, grid_ind = self.bound_base(bound, Lstar)
             k = int((self.Lmax-self.Lmin)/(niter-1))
             for iter_ in range(1,niter+1): # resolution level
                 L = min(self.Lmin + k*iter_, self.Lmax)
                 NQ, quat, grid_ind, quat_block, grid_ind_block = self.subdivide(NQ, quat, grid_ind, iter_)
                 rot = lie_tools.quaternions_to_SO3(torch.tensor(quat))
-                bound = self.compute_bound(images, rot, NQ, L, images_tilt=images_tilt, probabilistic=probabilistic) # Bxmax(NQ)
+                bound = self.compute_bound(images, rot, NQ, L, images_tilt=images_tilt) # Bxmax(NQ)
                 min_i = torch.argmin(bound, 1)
                 min_quat = quat_block[np.arange(B),min_i.cpu()]
                 Lstar = self.eval_grid(images, lie_tools.quaternions_to_SO3(torch.tensor(min_quat)), 1, self.Lmax, images_tilt=images_tilt)
-                NQ, quat, grid_ind = self.bound(bound, Lstar, quat_block, grid_ind_block, probabilistic=probabilistic)
+                NQ, quat, grid_ind = self.bound(bound, Lstar, quat_block, grid_ind_block)
         return lie_tools.quaternions_to_SO3(torch.tensor(min_quat))
 
 class BNBHomo:
@@ -298,6 +299,8 @@ class BNBHomo:
         return keep
             
     def opt_theta_trans(self, images, L, images_tilt=None, niter=5, probabilistic=False):
+        if probabilistic: # bound += B1 + B2
+            raise NotImplementedError
         B = images.size(0)
         assert not self.decoder.training
         with torch.no_grad():
@@ -307,8 +310,6 @@ class BNBHomo:
             bound = self.eval_grid(self.shift_images(images, self.base_shifts, self.Lmin), 
                                             self.base_rot, self.nbase, self.Lmin, 
                                             images_tilt=self.shift_images(images_tilt, self.base_shifts, self.Lmin) if images_tilt is not None else None) # BxTxQ
-            if probabilistic: # bound += B1 + B2
-                raise NotImplementedError
             mini = torch.argmin(bound.view(B,-1),1)
             qi = mini % self.nbase
             ti = mini // self.nbase

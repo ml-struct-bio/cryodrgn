@@ -1,8 +1,5 @@
 '''
 VAE-based neural reconstruction with orientational inference
-
-Ellen Zhong
-12/7/2018
 '''
 import numpy as np
 import sys, os
@@ -34,7 +31,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
 
     parser.add_argument('particles', help='Particle stack file (.mrc)')
-    parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory two save model')
+    parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
     parser.add_argument('--priors', type=os.path.abspath, nargs='*', help='Priors on rotation, translation')
     parser.add_argument('--load', type=os.path.abspath, help='Initialize training from a checkpoint')
     parser.add_argument('--checkpoint', type=int, default=1, help='Checkpointing interval in N_EPOCHS (default: %(default)s)')
@@ -58,6 +55,7 @@ def parse_args():
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--qdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
     group.add_argument('--encode-mode', default='resid', choices=('conv','resid','mlp'), help='Type of encoder network (default: %(default)s)')
+    group.add_argument('--enc-mask', type=int, help='Circulask mask of image for encoder')
 
     group = parser.add_argument_group('Decoder Network')
     group.add_argument('--players', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
@@ -130,16 +128,20 @@ def pretrain_encoder(model, optim, data, priors, device, num_epochs=10, log_inte
             it += len(ind)
             optim.zero_grad()
             z_mu, z_std, tmu, tlogvar = model.encode(mb)
-            mean_loss = 9*F.mse_loss(z_mu, priors[0][ind])
+            mean_loss = F.mse_loss(z_mu, priors[0][ind])
             if tmu is not None:
-                mean_loss += 4*F.mse_loss(tmu, priors[1][ind])
-            std_loss = F.mse_loss(z_std, torch.tensor([0.05]))
+                mean_loss += F.mse_loss(tmu, priors[1][ind])
+            std_loss = F.mse_loss(z_std, torch.tensor([.1]))
             if tlogvar is not None:
-                std_loss += F.mse_loss(tlogvar, torch.tensor([-3.0]))
+                std_loss += F.mse_loss(tlogvar, torch.tensor([-2.3]))
             loss = mean_loss + std_loss
             loss.backward()
             optim.step()
             if it % log_interval == 0:
+                vlog(z_mu[0])
+                vlog(priors[0][ind][0])
+                vlog(tmu[0])
+                vlog(priors[1][ind][0])
                 log('[Pretrain epoch {}/{}] ({}/{} images) mean loss = {:.4f}, loss = {:.4f}'.format(epoch+1, num_epochs, it, len(data), mean_loss.item(), loss.item()))
 
 def main(args):
@@ -182,8 +184,9 @@ def main(args):
     else: priors = None
 
     lattice = Lattice(D)
+    if args.enc_mask: args.enc_mask = lattice.get_circular_mask(args.enc_mask)
     model = VAE(lattice, args.qlayers, args.qdim, args.players, args.pdim,
-                encode_mode=args.encode_mode, no_trans=args.no_trans)
+                encode_mode=args.encode_mode, no_trans=args.no_trans, enc_mask=args.enc_mask)
     log(model)
     log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
 

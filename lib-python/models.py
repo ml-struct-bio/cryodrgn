@@ -225,12 +225,14 @@ class VAE(nn.Module):
             encode_layers, encode_dim, 
             decode_layers, decode_dim,
             encode_mode = 'mlp',
-            no_trans = False
+            no_trans = False,
+            enc_mask = None
             ):
         super(VAE, self).__init__()
         self.lattice = lattice
         self.D = lattice.D
-        self.in_dim = lattice.D*lattice.D
+        self.in_dim = lattice.D*lattice.D if enc_mask is None else enc_mask.sum()
+        self.enc_mask = enc_mask
         assert encode_layers > 2
         if encode_mode == 'conv':
             self.encoder = ConvEncoder(encode_dim, encode_dim)
@@ -267,7 +269,11 @@ class VAE(nn.Module):
         return eps*std + mu
 
     def encode(self, img):
-        enc = nn.ReLU()(self.encoder(img.view(-1,self.in_dim)))
+        '''img: BxDxD'''
+        img = img.view(img.size(0),-1)
+        if self.enc_mask is not None:
+            img = img[:,self.enc_mask]
+        enc = nn.ReLU()(self.encoder(img))
         z_mu, z_std = self.so3_encoder(enc)
         if self.no_trans:
             tmu, tlogvar = (None, None)

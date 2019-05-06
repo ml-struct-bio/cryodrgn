@@ -11,154 +11,130 @@ from datetime import datetime as dt
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.autograd import Variable
+from torch.utils.data import DataLoader
 
 sys.path.insert(0,os.path.abspath(os.path.dirname(__file__))+'/lib-python')
 import mrc
 import utils
 import fft
+import dataset
+
+from lattice import Lattice
+from models import FTSliceDecoder
 
 log = utils.log
 vlog = utils.vlog
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('particles', help='Particle stack file (.mrc)')
-    parser.add_argument('metadata', help='Eman euler angles (.pkl)')
+    parser.add_argument('particles', help='Particle stack file (.mrcs)')
+    parser.add_argument('rot', help='Rotation matrix for each particle (.pkl)')
+    parser.add_argument('--trans', help='Optionally provide translations for each particle (.pkl)')
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
-    parser.add_argument('-d', '--device', type=int, default=-2, help='Compute device to use')
-    parser.add_argument('--load-weights', type=os.path.abspath, help='Initialize network with existing weights')
-    parser.add_argument('--save-intermediates', action='store_true', help='Save out structure each epoch')
+    parser.add_argument('--load', type=os.path.abspath, help='Initialize training from a checkpoint')
+    parser.add_argument('--checkpoint', type=int, default=1, help='Checkpointing interval in N_EPOCHS (default: %(default)s)')
+    parser.add_argument('--log-interval', type=int, default=1000, help='Logging interval in N_IMGS (default: %(default)s)')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
+    parser.add_argument('--seed', type=int, default=np.random.randint(0,100000), help='Random seed')
 
-    group = parser.add_argument_group('NN parameters')
+    group = parser.add_argument_group('Training parameters')
     group.add_argument('-n', '--num-epochs', type=int, default=10, help='Number of training epochs (default: %(default)s)')
-    group.add_argument('--layers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
-    group.add_argument('--dim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
+    group.add_argument('-b','--batch-size', type=int, default=100, help='Minibatch size (default: %(default)s)')
     group.add_argument('--wd', type=float, default=0, help='Weight decay in Adam optimizer (default: %(default)s)')
     group.add_argument('--lr', type=float, default=1e-3, help='Learning rate in Adam optimizer (default: %(default)s)')
+
+    group = parser.add_argument_group('Network Architecture')
+    group.add_argument('--layers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
+    group.add_argument('--dim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
+
     return parser
 
-class ResidLinear(nn.Module):
-    def __init__(self, nin, nout):
-        super(ResidLinear, self).__init__()
-        self.linear = nn.Linear(nin, nout)
+def save_checkpoint(model, lattice, optim, epoch, norm, out_mrc, out_weights):
+    model.eval()
+    vol = model.eval_volume(lattice.coords, lattice.D, norm)
+    mrc.write(out_mrc, vol.astype(np.float32))
+    torch.save({
+        'norm': norm,
+        'epoch':epoch,
+        'model_state_dict':model.state_dict(),
+        'optimizer_state_dict':optim.state_dict(),
+        }, out_weights)
 
-    def forward(self, x):
-        z = self.linear(x) + x
-        return z
-
-def define_model(nlayers, hidden_dim, activation):
-    layers = [nn.Linear(3, hidden_dim), activation()]
-    for n in range(nlayers):
-        layers.append(ResidLinear(hidden_dim, hidden_dim))
-        layers.append(activation())
-    layers.append(nn.Linear(hidden_dim,1))
-    return nn.Sequential(*layers)
-
-def eval_volume(model, nz, ny, nx, x_coord, use_cuda, rnorm):
-    vol_f = np.zeros((nz,ny,nx),dtype=complex)
-    assert not model.training
-    # evaluate the volume by zslice to avoid memory overflows
-    for i, z in enumerate(np.linspace(-1,1,nz,endpoint=False)):
-        x = Variable(torch.from_numpy(x_coord + np.array([0,0,z],dtype=np.float32)))
-        if use_cuda: x = x.cuda()
-        with torch.no_grad():
-            y = model(x)
-            y = y.view(ny, nx).cpu().numpy()
-        vol_f[i] = y*rnorm[1]+rnorm[0]
-    vol = fft.ihtn_center(vol_f)
-    return vol, vol_f
+def train(model, lattice, optim, y, rot, trans=None):
+    model.train()
+    B = y.size(0)
+    D = lattice.D
+    yt = model(lattice.coords @ rot)
+    yt = yt.view(-1, D, D)
+    if trans:
+        y = model.translate_ht(lattice.coords[:,0:2]/2, y.view(B,-1), trans.unsqueeze(1))
+        y = y.view(-1, D, D)
+    loss = F.mse_loss(yt, y)
+    loss.backward()
+    optim.step()
+    return loss.item()
 
 def main(args):
     t1 = dt.now()
-    if args.outdir is not None and not os.path.exists(args.outdir):
+    if not os.path.exists(args.outdir):
         os.makedirs(args.outdir)
 
-    # load the particles
-    particles, _, _ = mrc.parse_mrc(args.particles)
-    Nimg, ny, nx = particles.shape
-    log('Loaded {} {}x{} images'.format(Nimg, ny, nx))
-    particles = np.stack([fft.ht2_center(img).astype(np.float32) for img in particles],0)
-    assert particles.shape == (Nimg,ny,nx)
-    rnorm  = np.mean(particles), np.std(particles)
-    log('Normalizing by mean, std: {} +/- {}'.format(*rnorm))
-    particles -= rnorm[0]
-    particles /= rnorm[1]
-
-    # load the metadata
-    eman_eulers = utils.load_angles(args.metadata)
-    assert len(eman_eulers) == len(particles)
-
-    # centered and scaled xy plane, values between -1 and 1
-    nz = max(nx,ny)
-    x0, x1 = np.meshgrid(np.linspace(-1, 1, nx, endpoint=False), np.linspace(-1, 1, ny, endpoint=False))
-    x_coord = np.stack([x0.ravel(),x1.ravel(),np.zeros(ny*nx)],1).astype(np.float32)
-
-    model = define_model(args.layers, args.dim, nn.ReLU)
-
-    if args.load_weights:
-        log('Initializing weights from {}'.format(args.load_weights))
-        with open(args.load_weights,'rb') as f:
-            model.load_state_dict(pickle.load(f))
+    # set the random seed
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
 
     ## set the device
-    d = args.device
-    use_cuda = (d != -1) and torch.cuda.is_available()
-    if d >= 0:
-        torch.cuda.set_device(d)
+    use_cuda = torch.cuda.is_available()
+    device = torch.device('cuda' if use_cuda else 'cpu')
     log('Use cuda {}'.format(use_cuda))
     if use_cuda:
-        model.cuda()
+        torch.set_default_tensor_type(torch.cuda.FloatTensor)
+
+    # load the particles
+    data = dataset.MRCData(args.particles)
+    D = data.D
+    Nimg = data.N
+
+    lattice = Lattice(D)
+    model = FTSliceDecoder(3, D, args.layers, args.dim, nn.ReLU)
 
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
-    num_epochs = args.num_epochs
-    for epoch in range(num_epochs):
+    if args.load:
+        log('Loading model weights from {}'.format(args.load))
+        checkpoint = torch.load(args.load)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        #optim.load_state_dict(checkpoint['optimizer_state_dict'])
+
+    rot = torch.tensor(utils.load_pkl(args.rot))
+    if args.trans: trans = torch.tensor(utils.load_pkl(args.trans))
+
+    data_generator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
+    for epoch in range(args.num_epochs):
         loss_accum = 0
-        ii = 0
-        for i in np.random.permutation(Nimg):
-            rot = utils.R_from_eman(*eman_eulers[i]).astype(np.float32)
-            x = Variable(torch.from_numpy(np.dot(x_coord, rot))) 
-            y = Variable(torch.from_numpy(particles[i]))
-            if use_cuda:
-                x = x.cuda()
-                y = y.cuda()
-            y_hat = model(x)
-            y_hat = y_hat.view(ny, nx)
-            loss = F.mse_loss(y_hat, y)
+        batch_it = 0
+        for batch, ind in data_generator:
+            batch_it += len(ind)
+            y = batch.to(device)
+            r = rot[ind]
+            t = trans[ind] if args.trans else None
+            loss_item = train(model, lattice, optim, batch.to(device), r, t)
+            loss_accum += loss_item
+            if batch_it % args.log_interval == 0:
+                log('# [Train Epoch: {}/{}] [{}/{} images] loss={:.4f}'.format(epoch+1, args.num_epochs, batch_it, Nimg, loss_item))
+        log('# =====> Epoch: {} Average loss = {:.4}'.format(epoch+1, loss_accum/Nimg))
+        if args.checkpoint and epoch % args.checkpoint == 0:
+            out_mrc = '{}/reconstruct.{}.mrc'.format(args.outdir,epoch)
+            out_weights = '{}/weights.{}.pkl'.format(args.outdir,epoch)
+            save_checkpoint(model, lattice, optim, epoch, data.norm, out_mrc, out_weights)
 
-            loss.backward()
-            optim.step()
-            optim.zero_grad()
-
-            loss_accum += loss.item()
-            if ii > 0 and ii % 100 == 0:
-                log('# [{}/{} epochs] [{}/{} images] training mse={:.8f}'.format(epoch+1, num_epochs, ii, Nimg, loss_accum/100))
-                loss_accum = 0
-            ii += 1
-
-        if args.save_intermediates:
-            model.eval()
-            vol, vol_f = eval_volume(model, nz, ny, nx, x_coord, use_cuda, rnorm)
-            with open('{}/reconstruct.{}.mrc'.format(args.outdir,epoch), 'wb') as f:
-                mrc.write(f, vol.astype(np.float32))
-            with open('{}/reconstruct.{}.pkl'.format(args.outdir,epoch), 'wb') as f:
-                pickle.dump(vol_f, f)
-            model.train()
-
-    ## save model weights and evaluate the image model 
-    model.eval()
-    with open('{}/weights.pkl'.format(args.outdir), 'wb') as f:
-        pickle.dump(model.state_dict(), f)
-
-    vol, vol_f = eval_volume(model, nz, ny, nx, x_coord, use_cuda, rnorm)
-    mrc.write('{}/reconstruct.mrc'.format(args.outdir), vol.astype(np.float32))
-    with open('{}/reconstruct.pkl'.format(args.outdir), 'wb') as f:
-        pickle.dump(vol_f, f)
-    
+    ## save model weights and evaluate the model on 3D lattice
+    out_mrc = '{}/reconstruct.mrc'.format(args.outdir)
+    out_weights = '{}/weights.pkl'.format(args.outdir)
+    save_checkpoint(model, lattice, optim, epoch, data.norm, out_mrc, out_weights)
+   
     td = dt.now()-t1
-    log('Finsihed in {} ({} per epoch)'.format(td, td/num_epochs))
+    log('Finsihed in {} ({} per epoch)'.format(td, td/args.num_epochs))
 
 if __name__ == '__main__':
     args = parse_args().parse_args()

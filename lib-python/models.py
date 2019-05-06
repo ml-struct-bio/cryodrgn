@@ -15,15 +15,17 @@ log = utils.log
 class HetOnlyVAE(nn.Module):
     # No pose inference
     def __init__(self, lattice, # Lattice object
-            in_dim, # nx*ny for single image
             encode_layers, encode_dim, 
             decode_layers, decode_dim,
             z_dim = 1, 
-            encode_mode = 'resid'):
+            encode_mode = 'resid',
+            enc_mask = None):
         super(HetOnlyVAE, self).__init__()
         self.lattice = lattice
-        self.in_dim = in_dim 
         self.z_dim = z_dim
+        in_dim = lattice.D*lattice.D if enc_mask is None else enc_mask.sum()
+        self.in_dim = in_dim
+        self.enc_mask = enc_mask
         if encode_mode == 'conv':
             self.encoder = ConvEncoder(encode_dim, z_dim*2)
         elif encode_mode == 'resid':
@@ -60,8 +62,11 @@ class HetOnlyVAE(nn.Module):
         eps = torch.randn_like(std)
         return eps*std + mu
 
-    def encode(self, img):
-        z = self.encoder(img)
+    def encode(self, *img):
+        img = (x.view(x.shape[0],-1) for x in img)
+        if self.enc_mask is not None:
+            img = (x[:,self.enc_mask] for x in img)
+        z = self.encoder(*img)
         return z[:,:self.z_dim], z[:,self.z_dim:]
 
     def cat_z(self, coords, z):
@@ -373,10 +378,9 @@ class TiltEncoder(nn.Module):
         self.encoder2 = ResidLinearMLP(hidden_dim*2, 2, hidden_dim, out_dim, activation)
         self.in_dim = in_dim
 
-    def forward(self, img):
-        x, x_tilt = img
-        x_enc = self.encoder1(x.view(-1,self.in_dim))
-        x_tilt_enc = self.encoder1(x_tilt.view(-1,self.in_dim))
+    def forward(self, x, x_tilt):
+        x_enc = self.encoder1(x)
+        x_tilt_enc = self.encoder1(x_tilt)
         z = self.encoder2(torch.cat((x_enc,x_tilt_enc),-1))
         return z
 

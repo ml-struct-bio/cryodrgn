@@ -66,6 +66,7 @@ def parse_args():
     group.add_argument('--qdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
     group.add_argument('--encode-mode', default='resid', choices=('conv','resid','mlp','tilt'), help='Type of encoder network (default: %(default)s)')
     group.add_argument('--zdim', type=int, default=1, help='Dimension of latent variable')
+    group.add_argument('--enc-mask', type=int, help='Circulask mask of image for encoder')
 
     group = parser.add_argument_group('Decoder Network')
     group.add_argument('--players', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
@@ -101,8 +102,8 @@ def train(model, lattice, bnb, optim, minibatch, L, beta, beta_control=None, equ
 
     # inference of z
     D = lattice.D
-    input_ = (y.view(-1,D*D), yt.view(-1,D*D)) if yt is not None else y.view(-1,D*D)
-    z_mu, z_logvar = model.encode(input_)
+    input_ = (y,) if yt is None else (y,yt)
+    z_mu, z_logvar = model.encode(*input_)
     z = model.reparameterize(z_mu, z_logvar)
 
     # inference of pose
@@ -202,8 +203,9 @@ def main(args):
     Nimg = data.N
 
     lattice = Lattice(D)
-    model = HetOnlyVAE(lattice, D*D, args.qlayers, args.qdim, args.players, args.pdim,
-                args.zdim, encode_mode=args.encode_mode)
+    if args.enc_mask: args.enc_mask = lattice.get_circular_mask(args.enc_mask)
+    model = HetOnlyVAE(lattice, args.qlayers, args.qdim, args.players, args.pdim,
+                args.zdim, encode_mode=args.encode_mode, enc_mask=args.enc_mask)
     bnnb = BNNBHet(model, lattice, tilt)
     bnb = BNBHet(model, lattice, args.l_start, args.l_end, tilt, args.t_extent)
     if args.rotate: 

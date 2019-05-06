@@ -59,6 +59,7 @@ def parse_args():
     group.add_argument('--rotate', action='store_true', help='Speedup BNB with image rotation')
     group.add_argument('--t-extent', type=float, default=5, help='+/- pixels to search over translations')
     group.add_argument('--no-trans', action='store_true', help="Don't search over translations")
+    group.add_argument('--bnb-start', type=int, default=1, help='Number of initial BNNB epochs')
 
     group = parser.add_argument_group('Encoder Network')
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
@@ -265,7 +266,7 @@ def main(args):
             else: yr = None
 
             # train the model
-            if epoch < 1:
+            if epoch < args.bnb_start:
                 gen_loss, kld, loss, eq_loss, z, pose = train(model, lattice, bnnb, optim, batch, L, beta, args.beta_control, equivariance_tuple, rotated_images=yr, enc_only=args.enc_only, no_trans=True)
             else:
                 L = None

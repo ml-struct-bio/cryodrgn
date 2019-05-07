@@ -70,9 +70,13 @@ class HetOnlyVAE(nn.Module):
         return z[:,:self.z_dim], z[:,self.z_dim:]
 
     def cat_z(self, coords, z):
-        assert coords.shape[-1] == 3
-        z = z.view(z.size(0), *([1]*(coords.ndimension()-1)))
-        z = torch.cat((coords,z.expand(*coords.shape[:-1],1)),dim=-1)
+        '''
+        coords: Bx...x3
+        z: Bxzdim
+        '''
+        assert coords.size(0) == z.size(0)
+        z = z.view(z.size(0), *([1]*(coords.ndimension()-2)), self.z_dim)
+        z = torch.cat((coords,z.expand(*coords.shape[:-1],self.z_dim)),dim=-1)
         return z
 
     def decode(self, rot, z):
@@ -139,9 +143,9 @@ class FTSliceDecoder(nn.Module):
         '''Extra bookkeeping with extra row/column for an even sized DFT'''
         image = torch.empty(lattice.shape[:-1])
         top_half = self.decode(lattice[...,self.all_eval,:])
-        image[..., self.all_eval, :] = top_half[...,0] - top_half[...,1]
+        image[..., self.all_eval] = top_half[...,0] - top_half[...,1]
         # the bottom half of the image is the complex conjugate of the top half
-        image[...,self.bottom_rev, :] = top_half[...,self.top,0] + top_half[...,self.top,1]
+        image[...,self.bottom_rev] = top_half[...,self.top,0] + top_half[...,self.top,1]
         return image
 
     def decode(self, lattice):

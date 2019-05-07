@@ -37,6 +37,7 @@ def parse_args():
     group.add_argument('--encode-mode', default='resid', choices=('conv','resid','mlp','tilt'), help='Type of encoder network (default: %(default)s)')
     group.add_argument('--players', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--pdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
+    group.add_argument('--enc-mask', type=int, help='Circulask mask of image for encoder')
     return parser
 
 def main(args):
@@ -58,8 +59,9 @@ def main(args):
 
     Nimg, D = data.N, data.D
     lattice = Lattice(D)
-    model = HetOnlyVAE(lattice, D*D, args.qlayers, args.qdim, args.players, args.pdim,
-                args.zdim, encode_mode=args.encode_mode)
+    if args.enc_mask: args.enc_mask = lattice.get_circular_mask(args.enc_mask)
+    model = HetOnlyVAE(lattice, args.qlayers, args.qdim, args.players, args.pdim,
+                args.zdim, encode_mode=args.encode_mode, enc_mask=args.enc_mask)
 
     log('Loading weights from {}'.format(args.weights))
     checkpoint = torch.load(args.weights)
@@ -73,9 +75,9 @@ def main(args):
         y = batch[0].to(device)
         if args.tilt:
             yt = batch[0].to(device)
-            mu, logvar = model.encode((y.view(B,-1), yt.view(B,-1)))
+            mu, logvar = model.encode(y, yt)
         else:
-            mu, logvar = model.encode(y.view(B,-1))
+            mu, logvar = model.encode(y)
         z_all.append(mu.detach().cpu().numpy())
 
     if args.o:

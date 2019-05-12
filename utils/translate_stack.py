@@ -16,7 +16,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('input', type=os.path.abspath, help='Input particle stack')
     parser.add_argument('trans', help='Pickle with image shifts')
-    parser.add_argument('--tscale', type=float, 'Scale translations by this amount')
+    parser.add_argument('--tscale', type=float, help='Scale translations by this amount')
     parser.add_argument('-o', type=os.path.abspath, required=True, 
         help='Output particle stack')
     parser.add_argument('--out-png')

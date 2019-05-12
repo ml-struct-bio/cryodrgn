@@ -11,15 +11,17 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.autograd import Variable
-from torch.distributions import Normal
+from torch.utils.data import DataLoader
 
 sys.path.insert(0,os.path.abspath(os.path.dirname(__file__))+'/lib-python')
 import mrc
 import utils
 import fft
 import lie_tools
+import dataset
+
 from models import VAE
+from lattice import Lattice
 
 from scipy.linalg import logm
 def geodesic_so3(A,B):
@@ -31,20 +33,17 @@ vlog = utils.vlog
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('particles', help='Particle stack file (.mrc)')
-    parser.add_argument('weights', help='Particle stack file (.mrc)')
-    parser.add_argument('-N', type=int, default=1000, help='First N images (default: %(default)s)')
-    parser.add_argument('-o', type=os.path.abspath, required=True, help='Output pickle')
+    parser.add_argument('weights', help='Model weights')
+    parser.add_argument('-o', type=os.path.abspath, required=True, help='Output pickle for rotations')
+    parser.add_argument('--out-trans', type=os.path.abspath, help='Output pickle for translations (optional)')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
-    parser.add_argument('--ref',type=int, default=0,help='Reference image to align by')
-    parser.add_argument('--angles',help='euler angles (.pkl)')
-    parser.add_argument('--flip-hand', action='store_true', help='Flip hand of reference euler angles')
-    parser.add_argument('--save-recon')
 
     group = parser.add_argument_group('Training parameters')
     group.add_argument('-b','--batch-size', type=int, default=100, help='Minibatch size (default: %(default)s)')
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--qdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
-    group.add_argument('--encode-mode', default='resid', choices=('conv','resid','mlp'), help='Type of encoder network')
+    group.add_argument('--encode-mode', default='resid', choices=('conv','resid','mlp','tilt'), help='Type of encoder network (default: %(default)s)')
+    group.add_argument('--enc-mask', type=int, help='Circulask mask of image for encoder')
     group.add_argument('--players', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--pdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
     return parser
@@ -79,113 +78,48 @@ def main(args):
 
     ## set the device
     use_cuda = torch.cuda.is_available()
+    device = torch.device('cuda' if use_cuda else 'cpu')
     log('Use cuda {}'.format(use_cuda))
+    if use_cuda:
+        torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
     # load the particles
-    particles_real, _, _ = mrc.parse_mrc(args.particles,lazy=True)
-    particles_real = np.asarray([x.get() for x in particles_real[:args.N]])
-    particles_real = particles_real.astype(np.float32)
-    Nimg, ny, nx = particles_real.shape
-    nz = max(nx,ny)
-    log('Loaded {} {}x{} images'.format(Nimg, ny, nx))
-    particles_ft = np.asarray([fft.ht2_center(img).astype(np.float32) for img in particles_real])
-    assert particles_ft.shape == (Nimg,ny,nx)
-    rnorm  = [np.mean(particles_real), np.std(particles_real)]
-    rnorm[0] = 0
-    rnorm[1] = np.median([np.max(x) for x in particles_real])
-    particles_real = (particles_real - rnorm[0])/rnorm[1]
-    log('Normalizing particles by mean, std: {} +/- {}'.format(*rnorm))
+    data = dataset.MRCData(args.particles)
+    Nimg = data.N
+    D = data.D
 
-    rnorm  = [np.mean(particles_ft), np.std(particles_ft)]
-    log('Particle stack mean, std: {} +/- {}'.format(*rnorm))
-    rnorm[0] = 0
-    log('Normalizing FT by mean, std: {} +/- {}'.format(*rnorm))
-    particles_ft = (particles_ft - rnorm[0])/rnorm[1]
-
-    model = VAE(nx, ny, args.qlayers, args.qdim, args.players, args.pdim,
-                encode_mode=args.encode_mode)
-    if use_cuda:
-        model.cuda()
-        model.lattice = model.lattice.cuda()
-
-    if args.weights:
-        log('Loading weights from {}'.format(args.weights))
-        checkpoint = torch.load(args.weights)
-        model.load_state_dict(checkpoint['model_state_dict'])
+    lattice = Lattice(D)
+    if args.enc_mask: args.enc_mask = lattice.get_circular_mask(args.enc_mask)
+    model = VAE(lattice, args.qlayers, args.qdim, args.players, args.pdim,
+                encode_mode=args.encode_mode, no_trans=not bool(args.out_trans), enc_mask=args.enc_mask)
+    log('Loading weights from {}'.format(args.weights))
+    checkpoint = torch.load(args.weights)
+    model.load_state_dict(checkpoint['model_state_dict'])
 
     model.eval()
 
     rot_all = []
+    trans_all = []
     recon_all = []
-    for epoch in range(1):
-        ii = 0
-        num_batches = np.ceil(Nimg / args.batch_size).astype(int)
-        for minibatch_i in np.array_split(np.arange(Nimg),num_batches):
-            ii += 1
+    data_generator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
 
-            # inference with real space image
-            y = Variable(torch.from_numpy(np.asarray([particles_real[i] for i in minibatch_i])))
-            if use_cuda: y = y.cuda()
-
-            rot, z_std = model.latent_encoder(model.encoder(y))
-            rot_all.append(rot.detach().cpu().numpy())
-
-            if args.save_recon:
-                x = model.lattice @ rot # R.T*x
-                y_hat = model.decoder(x)
-                y_hat = y_hat.view(-1, ny, nx)
-                recon_all.append(y_hat.detach().cpu().numpy())
-    
-                y = Variable(torch.from_numpy(np.asarray([particles_ft[i] for i in minibatch_i])))
-                if use_cuda: y = y.cuda()
-                gen_loss = F.mse_loss(y_hat, y)  
-                log('# [Batch {}/{}] gen loss={:4f}'.format(ii, num_batches, gen_loss.item()))
+    for minibatch, ind in data_generator:
+        minibatch = minibatch.to(device)
+        z_mu, z_std, t_mu, t_logvar = model.encode(minibatch)
+        rot_all.append(z_mu.detach().cpu().numpy())
+        if args.out_trans:
+            trans_all.append(t_mu.detach().cpu().numpy())
 
     rot_all = np.vstack(rot_all)
-    if args.o:
-        with open(args.o,'wb') as f:
-            pickle.dump(rot_all, f)
-    if args.save_recon:
-        recon_all = np.vstack(recon_all)
-        with open(args.save_recon,'wb') as f:
-            pickle.dump(recon_all, f)
+    with open(args.o,'wb') as f:
+        pickle.dump(rot_all, f)
+    if args.out_trans:
+        trans_all = np.vstack(trans_all)
+        with open(args.out_trans,'wb') as f:
+            pickle.dump(trans_all, f)
 
     td = dt.now()-t1
     log('Finsihed in {}'.format(td))
-
-    if args.angles:
-
-        # compare angles with ground truth  
-        angles = pickle.load(open(args.angles,'rb'))
-        angles = angles[:Nimg]
-    
-        rot = [utils.R_from_eman(*x) for x in angles] # ground truth
-        rot_hat = rot_all # predicted
-        rot, rot_hat = align_rot(rot, rot_hat, args.ref, args.flip_hand)
-
-        #dists = np.asarray([geodesic_so3(a,b) for a,b in zip(rot, rot_hat)])
-        dists = np.asarray([fast_dist(a,b) for a,b in zip(rot, rot_hat)])
-
-        print('Median: ', np.median(dists))
-        w = np.where(np.asarray(dists)<1)
-        print('Dist < 1: ', w[:10])
-
-        with open(args.o+'.ind.pkl','wb') as f:
-            pickle.dump(w[0], f)
-        w = np.where(np.asarray(dists)>4)
-        print('Dist > 4:', w[:10])
-
-        i = w[0][-1]
-        print('Image ',i)
-        print('Ground truth rot: ',rot[i])
-        print('Predicted rot: ',rot_hat[i])
-
-        i = w[0][-2]
-        print('Image ',i)
-        print('Ground truth rot: ',rot[i])
-        print('Predicted rot: ',rot_hat[i])
-        plt.hist(dists,10)
-        plt.show()
 
 if __name__ == '__main__':
     args = parse_args().parse_args()

@@ -26,8 +26,12 @@ def main(args):
     rot = torch.tensor(rot)
     rot = lie_tools.expmap(rot)
     rot = rot.numpy()
+    log('Transposing rotation matrix')
+    rot = np.array([x.T for x in rot])
     log(rot.shape)
     trans = np.array([x['alignments3D/shift'] for x in data])
+    log('Scaling shifts by 2x')
+    trans *= 2
     log(trans.shape)
     
     out_rot = '{}.rot.pkl'.format(args.o)

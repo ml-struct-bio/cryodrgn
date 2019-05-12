@@ -34,6 +34,7 @@ def parse_args():
     parser.add_argument('-z', type=np.float32, nargs='*', help='')
     parser.add_argument('-z-start', type=np.float32, nargs='*', help='')
     parser.add_argument('-z-end', type=np.float32, nargs='*', help='')
+    parser.add_argument('-n', type=int, help='')
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Output MRC or directory')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
 
@@ -41,9 +42,11 @@ def parse_args():
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--qdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
     group.add_argument('--zdim', type=int, default=1, help='Dimension of latent variable')
-    group.add_argument('--encode-mode', default='resid', choices=('conv','resid','mlp'), help='Type of encoder network')
+    group.add_argument('--encode-mode', default='resid', choices=('conv','resid','mlp','tilt'), help='Type of encoder network')
     group.add_argument('--players', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--pdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
+    group.add_argument('--enc-mask', type=int, help='Circulask mask of image for encoder')
+
     return parser
 
 def main(args):
@@ -60,8 +63,9 @@ def main(args):
     assert nz == ny == nx
     D = nz+1
     lattice = Lattice(D)
-    model = HetOnlyVAE(lattice, D*D, args.qlayers, args.qdim, args.players, args.pdim,
-                args.zdim, encode_mode=args.encode_mode)
+    if args.enc_mask: args.enc_mask = lattice.get_circular_mask(args.enc_mask)
+    model = HetOnlyVAE(lattice, args.qlayers, args.qdim, args.players, args.pdim,
+                args.zdim, encode_mode=args.encode_mode, enc_mask=args.enc_mask)
 
     log('Loading weights from {}'.format(args.weights))
     checkpoint = torch.load(args.weights)
@@ -74,8 +78,8 @@ def main(args):
         assert not args.z
         args.z_start = np.array(args.z_start)
         args.z_end = np.array(args.z_end)
-        z = np.repeat(np.arange(10,dtype=np.float32), args.zdim).reshape((10,args.zdim))
-        z *= ((args.z_end - args.z_start)/9.)
+        z = np.repeat(np.arange(args.n,dtype=np.float32), args.zdim).reshape((args.n,args.zdim))
+        z *= ((args.z_end - args.z_start)/(args.n-1))
         z += args.z_start
         if not os.path.exists(args.o):
             os.makedirs(args.o)

@@ -30,6 +30,7 @@ def parse_args():
     parser.add_argument('particles', help='Particle stack file (.mrcs)')
     parser.add_argument('rot', help='Rotation matrix for each particle (.pkl)')
     parser.add_argument('--trans', help='Optionally provide translations for each particle (.pkl)')
+    parser.add_argument('--tscale', type=float, default=1.0)
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
     parser.add_argument('--load', type=os.path.abspath, help='Initialize training from a checkpoint')
     parser.add_argument('--checkpoint', type=int, default=1, help='Checkpointing interval in N_EPOCHS (default: %(default)s)')
@@ -62,11 +63,12 @@ def save_checkpoint(model, lattice, optim, epoch, norm, out_mrc, out_weights):
 
 def train(model, lattice, optim, y, rot, trans=None):
     model.train()
+    optim.zero_grad()
     B = y.size(0)
     D = lattice.D
     yt = model(lattice.coords @ rot)
     yt = yt.view(-1, D, D)
-    if trans:
+    if trans is not None:
         y = model.translate_ht(lattice.coords[:,0:2]/2, y.view(B,-1), trans.unsqueeze(1))
         y = y.view(-1, D, D)
     loss = F.mse_loss(yt, y)
@@ -107,7 +109,7 @@ def main(args):
         #optim.load_state_dict(checkpoint['optimizer_state_dict'])
 
     rot = torch.tensor(utils.load_pkl(args.rot))
-    if args.trans: trans = torch.tensor(utils.load_pkl(args.trans))
+    if args.trans: trans = args.tscale*torch.tensor(utils.load_pkl(args.trans))
 
     data_generator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
     for epoch in range(args.num_epochs):
@@ -119,7 +121,7 @@ def main(args):
             r = rot[ind]
             t = trans[ind] if args.trans else None
             loss_item = train(model, lattice, optim, batch.to(device), r, t)
-            loss_accum += loss_item
+            loss_accum += loss_item*len(ind)
             if batch_it % args.log_interval == 0:
                 log('# [Train Epoch: {}/{}] [{}/{} images] loss={:.4f}'.format(epoch+1, args.num_epochs, batch_it, Nimg, loss_item))
         log('# =====> Epoch: {} Average loss = {:.4}'.format(epoch+1, loss_accum/Nimg))

@@ -27,6 +27,7 @@ def parse_args():
     parser.add_argument('--indices',help='Indices to iterator over (pkl)')
     parser.add_argument('--trans', type=os.path.abspath, help='Optionally provide translations (.pkl)')
     parser.add_argument('--tscale',type=float,help='Scale all translations by this amount')
+    parser.add_argument('--first',type=int,help='Only use first N images')
     return parser
 
 def add_slice(V, counts, ff_coord, ff, D):
@@ -58,6 +59,7 @@ def main(args):
     t1 = time.time()    
     images, _ , _ = mrc.parse_mrc(args.mrcs,lazy=True)
     N = len(images)
+
     angles = utils.load_angles(args.pkl)
     if len(angles) < N:
         log('Warning: # images != # angles. Backprojecting first {} images'.format(len(angles)))
@@ -70,6 +72,7 @@ def main(args):
         trans = None
 
     n, m = images[0].get().shape
+    log('Loaded {} {}x{} images'.format(N,n,m))
     assert n == m, "Image dimensions must be square"
     D = n
 
@@ -87,6 +90,8 @@ def main(args):
 
     if args.indices:
         iterator = pickle.load(open(args.indices,'rb'))
+    elif args.first:
+        iterator = range(args.first)
     else:
         iterator = range(N)
     for ii in iterator:

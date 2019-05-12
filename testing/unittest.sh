@@ -13,3 +13,6 @@ python ../bnb_het.py data/toy_projections.mrcs -o output/toy_recon_bnb --seed 0 
 python ../bnb_het.py data/toy_projections.mrcs -o output/toy_recon_bnb --seed 0 -b 10 --tilt data/toy_projections.mrcs --tilt-deg 45 --encode-mode tilt -n 1
 python ../bnb_het.py data/toy_projections.mrcs -o output/toy_recon_bnb --seed 0 -b 10 --tilt data/toy_projections.mrcs --tilt-deg 45 --encode-mode tilt --rotate --enc-only -n 1
 python ../bnb_het.py data/toy_projections.mrcs -o output/toy_recon_bnb --seed 0 -b 10 --tilt data/toy_projections.mrcs --tilt-deg 45 --encode-mode tilt --enc-only -n 1
+python ../vae_priors.py  data/toy_projections.mrcs -o output/toy_recon_vae --lr .0001 --seed 0 --priors data/toy_angles.pkl --no-trans
+python ../vae_priors.py  data/toy_projections.mrcs -o output/toy_recon_vae --lr .0001 --seed 0 --priors data/toy_angles.pkl --no-trans --pretrain 2
+python ../vae_het.py  data/toy_projections.mrcs -o output/toy_recon_vae --lr .0001 --seed 0 --priors data/toy_angles.pkl

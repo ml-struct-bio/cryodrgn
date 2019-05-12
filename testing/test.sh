@@ -12,7 +12,7 @@ python ../project3d.py /home/zhonge/research/cryoem/vae3d/00_data/hand/hand_poin
 python ../backproject.py output/project/projections.mrcs output/project/rot.pkl -o output/project/backproject.mrc --is-rot
 python ../backproject_tilt.py output/project/projections.mrcs output/project/projections_tilt.mrcs output/project/rot.pkl --tilt 45 -o output/project/tilt_backproject.mrc --is-rot
 
-python ../bnb_rot.py data/toy_projections.mrcs -o output/toy_recon_bnb --seed 0
+python ../bnb_rot.py data/toy_projections.mrcs -o output/toy_recon_bnb --seed 0 --l-start 5 --l-end 10
 python ../bnb_rot.py data/hand_projections.mrcs --load /red/zhonge/cryoem/vae3d/07_tilt/06_bnb/1/weights.pkl -o output/hand_bnb -n 11 --seed 82717
 CUDA_VISIBLE_DEVICES=3 python ../vae_tilt.py data/tilt_series/projections.mrcs data/tilt_series/projections_tilt.mrcs --tilt 45 --lr .0005 -n 5 -o output/tilt > test1.log &
 

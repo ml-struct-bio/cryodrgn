@@ -58,6 +58,7 @@ def parse_args():
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--qdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
     group.add_argument('--encode-mode', default='resid', choices=('conv','resid','mlp','tilt'), help='Type of encoder network (default: %(default)s)')
+    group.add_argument('--zdim', type=int, default=1, help='Dimension of latent variable')
     group.add_argument('--enc-mask', type=int, help='Circulask mask of image for encoder')
 
     group = parser.add_argument_group('Decoder Network')
@@ -92,6 +93,12 @@ def train(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, equ
     B = y.size(0)
     D = lattice.D
 
+    # translate the image
+    if trans is not None:
+        y = model.decoder.translate_ht(lattice.coords[:,0:2]/2, y.view(B,-1), trans.unsqueeze(1)).view(B,D,D)
+        if yt is not None:
+            yt = model.decoder.translate_ht(lattice.coords[:,0:2]/2, yt.view(B,-1), trans.unsqueeze(1)).view(B,D,D)
+
     # inference of z
     if tilt is None:
         z_mu, z_logvar = model.encode(y)
@@ -101,15 +108,11 @@ def train(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, equ
 
     # decode 
     y_recon = model.decode(rot, z).view(B,D,D)
-    if trans is not None:
-        y = model.decoder.translate_ht(lattice.coords[:,0:2]/2, y.view(B,-1), trans.unsqueeze(1)).view(B,D,D)
     gen_loss = F.mse_loss(y_recon, y)
 
     # decode the tilt series
     if yt is not None: 
         y_recon_tilt = model.decode(tilt @ rot, z).view(B,D,D)
-        if trans is not None:
-            yt = model.decoder.translate_ht(lattice.coords[:,0:2]/2, yt.view(B,-1), trans.unsqueeze(1)).view(B,D,D)
         gen_loss = .5*gen_loss + .5*F.mse_loss(y_recon_tilt, yt)
 
     # latent loss
@@ -190,7 +193,7 @@ def main(args):
     lattice = Lattice(D)
     if args.enc_mask: args.enc_mask = lattice.get_circular_mask(args.enc_mask)
     model = HetOnlyVAE(lattice, args.qlayers, args.qdim, args.players, args.pdim,
-                encode_mode=args.encode_mode, enc_mask=args.enc_mask)
+                args.zdim, encode_mode=args.encode_mode, enc_mask=args.enc_mask)
     log(model)
     log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
 

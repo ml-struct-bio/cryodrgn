@@ -32,6 +32,7 @@ def parse_args():
 
     parser.add_argument('particles', help='Particle stack file (.mrc)')
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
+    parser.add_argument('--priors', type=os.path.abspath, nargs='*', help='Priors on rotation, translation')
     parser.add_argument('--load', type=os.path.abspath, help='Initialize training from a checkpoint')
     parser.add_argument('--checkpoint', type=int, default=1, help='Checkpointing interval in N_EPOCHS (default: %(default)s)')
     parser.add_argument('--log-interval', type=int, default=1000, help='Logging interval in N_IMGS (default: %(default)s)')
@@ -47,7 +48,8 @@ def parse_args():
     group.add_argument('--beta-control', type=float, help='KL-Controlled VAE gamma. Beta is KL target. (default: %(default)s)')
     group.add_argument('--equivariance', type=float, help='Strength of equivariance loss (default: %(default)s)')
     group.add_argument('--equivariance-end-it', type=int, default=100000, help='It at which equivariance max (default: %(default)s)')
-    group.add_argument('--no-trans', action='store_true', help="Inference over image rotation only")
+    group.add_argument('--no-trans', action='store_true', help="Don't translate images")
+    group.add_argument('--pretrain', type=int, nargs=2, default=[2,1], help='Number of epochs to pretrain encoder, decoder on priors')
 
     group = parser.add_argument_group('Encoder Network')
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
@@ -71,12 +73,41 @@ def loss_function(recon_y, y, w_eps, z_std, t_mu, t_logvar):
     #assert kld > 0
     return gen_loss, kld1 + kld2
 
-def train(model, optim, D, y, beta, beta_control=None, equivariance=None):
+def log_map(R):
+    """Map Matrix SO(3) element to Algebra element.
+
+    Input is taken to be 3x3 matrices of ordinary representation.
+    Output algebra element in 3x3 L_i representation.
+    Uses https://en.wikipedia.org/wiki/Rotation_group_SO(3)#Logarithm_map
+    """
+    anti_sym = .5 * (R - R.transpose(-1, -2))
+    theta = torch.acos(.5 * (torch.trace(R)-1))
+    return theta / torch.sin(theta) * anti_sym
+
+def compute_dist(R1,R2):
+    v1 = log_map(R1)
+    v2 = log_map(R2)
+    return (v1-v2).pow(2).sum(-1)
+
+def loss_function_priors(recon_y, y, z_mu, z_std, t_mu, t_logvar, priors):
+    gen_loss = F.mse_loss(recon_y,y)
+    dist = (z_mu-priors[0]).pow(2).sum((-1,-2))
+    #dist = compute_dist(z_mu,priors[0])
+    kld1 = -0.5 * torch.mean(3 + torch.log(z_std.pow(2).prod(-1)) - z_std.pow(2).sum(-1) - dist)
+    if t_mu is not None:
+        kld2 = -0.5 * torch.mean(torch.sum(1 + t_logvar - t_logvar.exp() - (t_mu - priors[1]).pow(2),-1))
+    else: kld2 = 0.0
+    return gen_loss, kld1 + kld2
+
+def train(model, optim, D, y, beta, beta_control=None, equivariance=None, priors=None):
     model.train()
     optim.zero_grad()
     # train the model
     y_recon, y, z_mu, z_std, w_eps, t_mu, t_logvar = model(y)
-    gen_loss, kld = loss_function(y_recon, y, w_eps, z_std, t_mu, t_logvar)
+    if priors is not None:
+        gen_loss, kld = loss_function_priors(y_recon, y, z_mu, z_std, t_mu, t_logvar, priors)
+    else:
+        gen_loss, kld = loss_function(y_recon, y, w_eps, z_std, t_mu, t_logvar)
     if torch.isnan(kld):
         log(w_eps[0])
         log(z_std[0])
@@ -103,6 +134,33 @@ def save_checkpoint(model, optim, D, epoch, norm, out_mrc, out_weights):
         'model_state_dict':model.state_dict(),
         'optimizer_state_dict':optim.state_dict(),
         }, out_weights)
+
+def pretrain_encoder(model, optim, data, priors, device, num_epochs=10, log_interval=1000):
+    model.train()
+    data_generator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
+    for epoch in range(num_epochs):
+        it = 0
+        for mb, ind in data_generator:
+            mb = mb.to(device)
+            it += len(ind)
+            optim.zero_grad()
+            z_mu, z_std, tmu, tlogvar = model.encode(mb)
+            mean_loss = F.mse_loss(z_mu, priors[0][ind])
+            if tmu is not None:
+                mean_loss += F.mse_loss(tmu, priors[1][ind])
+            std_loss = F.mse_loss(z_std, torch.tensor([.1]))
+            if tlogvar is not None:
+                std_loss += F.mse_loss(tlogvar, torch.tensor([-2.3]))
+            loss = mean_loss + std_loss
+            loss.backward()
+            optim.step()
+            if it % log_interval == 0:
+                vlog(z_mu[0])
+                vlog(priors[0][ind][0])
+                if tlogvar is not None:
+                    vlog(tmu[0])
+                    vlog(priors[1][ind][0])
+                log('[Pretrain epoch {}/{}] ({}/{} images) mean loss = {:.4f}, loss = {:.4f}'.format(epoch+1, num_epochs, it, len(data), mean_loss.item(), loss.item()))
 
 def main(args):
     log(args)
@@ -133,6 +191,16 @@ def main(args):
     Nimg = data.N
     D = data.D
 
+    if args.priors:
+        assert len(args.priors) in (1,2)
+        priors = [torch.tensor(utils.load_pkl(args.priors[0])).float()]
+        assert priors[0].shape == (Nimg,3,3)
+        if not args.no_trans:
+            # negate the target translation
+            priors.append(-torch.tensor(utils.load_pkl(args.priors[1])).float())
+            assert priors[1].shape == (Nimg,2)
+    else: priors = None
+
     lattice = Lattice(D)
     if args.enc_mask: args.enc_mask = lattice.get_circular_mask(args.enc_mask)
     model = VAE(lattice, args.qlayers, args.qdim, args.players, args.pdim,
@@ -146,6 +214,7 @@ def main(args):
         equivariance_loss = EquivarianceLoss(model,D,D)
 
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
+    decoder_optim = torch.optim.Adam(model.decoder.parameters(), lr=args.lr, weight_decay=args.wd)
 
     if args.load:
         log('Loading checkpoint from {}'.format(args.load))
@@ -156,8 +225,17 @@ def main(args):
         model.train()
     else:
         start_epoch = 0
-    # training loop
+        if args.priors and args.pretrain[0]:
+            enc_optim = torch.optim.Adam(model.parameters(), lr=.001, weight_decay=args.wd)
+            pretrain_encoder(model, enc_optim, data, priors, device, num_epochs=args.pretrain[0])
+            out_weights = '{}/pretrain_weights.pkl'.format(args.outdir)
+            torch.save({
+            'epoch':-1,
+            'model_state_dict':model.state_dict(),
+            'optimizer_state_dict':optim.state_dict(),
+            }, out_weights)
 
+    # training loop
     data_generator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
     num_epochs = args.num_epochs
     for epoch in range(start_epoch, num_epochs):
@@ -166,6 +244,8 @@ def main(args):
         kld_accum = 0
         eq_loss_accum = 0
         batch_it = 0 
+        if priors is not None and epoch < args.pretrain[1]:
+            log('Training decoder only')
 
         for minibatch, ind in data_generator:
             minibatch = minibatch.to(device)
@@ -179,7 +259,14 @@ def main(args):
             else:
                 equivariance_tuple = None
             
-            gen_loss, kld, loss, eq_loss = train(model, optim, D, minibatch, beta, args.beta_control, equivariance_tuple)
+            if priors is not None:
+                priors_mb = [x[ind] for x in priors]
+            else: priors_mb =  None
+
+            if args.priors and epoch < args.pretrain[1]:
+                gen_loss, kld, loss, eq_loss = train(model, decoder_optim, D, minibatch, beta, args.beta_control, equivariance_tuple, priors_mb)
+            else:
+                gen_loss, kld, loss, eq_loss = train(model, optim, D, minibatch, beta, args.beta_control, equivariance_tuple, priors_mb)
 
             # logging
             gen_loss_accum += gen_loss*len(minibatch)

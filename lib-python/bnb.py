@@ -293,7 +293,9 @@ class BNBHomo:
             maxQ = keep.shape[1]
             keep[np.arange(B).repeat(maxQ-max_poses), w] *= 0
         if (Np == 0).any():
-            assert probabilistic
+            if not probabilistic:
+                log('WARNING: NO POSES BELOW BOUND')
+                log(Np)
             w = bound.argmin(1)
             keep[np.arange(B),w] = 1
         return keep
@@ -695,7 +697,9 @@ class BNBHet:
             maxQ = keep.shape[1]
             keep[np.arange(B).repeat(maxQ-max_poses), w] *= 0
         if (Np == 0).any():
-            assert probabilistic
+            if not probabilistic:
+                log('WARNING: NO POSES BELOW BOUND')
+                log(Np)
             w = bound.argmin(1)
             keep[np.arange(B),w] = 1
         return keep

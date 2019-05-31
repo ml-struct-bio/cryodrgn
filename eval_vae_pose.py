@@ -36,6 +36,7 @@ def parse_args():
     parser.add_argument('weights', help='Model weights')
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Output pickle for rotations')
     parser.add_argument('--out-trans', type=os.path.abspath, help='Output pickle for translations (optional)')
+    parser.add_argument('--tilt', help='Particle stack file (.mrcs)')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
 
     group = parser.add_argument_group('Training parameters')
@@ -84,7 +85,10 @@ def main(args):
         torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
     # load the particles
-    data = dataset.MRCData(args.particles)
+    if args.tilt is None:
+        data = dataset.MRCData(args.particles)
+    else:
+        data = dataset.TiltMRCData(args.particles, args.tilt)
     Nimg = data.N
     D = data.D
 
@@ -103,9 +107,14 @@ def main(args):
     recon_all = []
     data_generator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
 
-    for minibatch, ind in data_generator:
-        minibatch = minibatch.to(device)
-        z_mu, z_std, t_mu, t_logvar = model.encode(minibatch)
+    for minibatch in data_generator:
+        if args.tilt is None:
+            minibatch = minibatch[0].to(device)
+            z_mu, z_std, t_mu, t_logvar = model.encode(minibatch)
+        else:
+            y = minibatch[0].to(device)
+            yt = minibatch[1].to(device)
+            z_mu, z_std, t_mu, t_logvar = model.encode(y,yt)
         rot_all.append(z_mu.detach().cpu().numpy())
         if args.out_trans:
             trans_all.append(t_mu.detach().cpu().numpy())

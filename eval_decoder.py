@@ -32,9 +32,10 @@ def parse_args():
     parser.add_argument('--norm', nargs=2, type=float, required=True)
     parser.add_argument('--dim', nargs=3, default=[64,64,64], type=int)
     parser.add_argument('-z', type=np.float32, nargs='*', help='')
-    parser.add_argument('-z-start', type=np.float32, nargs='*', help='')
-    parser.add_argument('-z-end', type=np.float32, nargs='*', help='')
-    parser.add_argument('-n', type=int, help='')
+    parser.add_argument('--z-start', type=np.float32, nargs='*', help='')
+    parser.add_argument('--z-end', type=np.float32, nargs='*', help='')
+    parser.add_argument('--zfile')
+    parser.add_argument('-n', type=int, default=10, help='')
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Output MRC or directory')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
 
@@ -73,14 +74,20 @@ def main(args):
 
     model.eval()
 
-    if args.z_start:
-        assert args.z_end
-        assert not args.z
-        args.z_start = np.array(args.z_start)
-        args.z_end = np.array(args.z_end)
-        z = np.repeat(np.arange(args.n,dtype=np.float32), args.zdim).reshape((args.n,args.zdim))
-        z *= ((args.z_end - args.z_start)/(args.n-1))
-        z += args.z_start
+    if args.z_start or args.zfile:
+        if args.z_start:
+            assert args.z_end
+            assert not args.z
+            assert not args.zfile
+            args.z_start = np.array(args.z_start)
+            args.z_end = np.array(args.z_end)
+            z = np.repeat(np.arange(args.n,dtype=np.float32), args.zdim).reshape((args.n,args.zdim))
+            z *= ((args.z_end - args.z_start)/(args.n-1))
+            z += args.z_start
+        else:
+            assert not args.z_start
+            z = np.loadtxt(args.zfile).reshape(-1,args.zdim)
+
         if not os.path.exists(args.o):
             os.makedirs(args.o)
 

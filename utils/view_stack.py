@@ -16,7 +16,7 @@ def plot_projections(out_png, imgs):
     fig, axes = plt.subplots(nrows=3, ncols=3, figsize=(10,10))
     axes = axes.ravel()
     for i in range(min(len(imgs),9)):
-        axes[i].imshow(imgs[i])
+        axes[i].imshow(imgs[i], cmap='Greys_r') 
     plt.savefig(out_png)
 
 def parse_args():

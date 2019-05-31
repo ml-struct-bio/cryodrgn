@@ -12,11 +12,12 @@ from scipy.linalg import logm
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('rot1', help='Input')
+    parser.add_argument('rot1', help='Input rotations')
     parser.add_argument('rot2', help='Input rotations')
-    parser.add_argument('-i', type=int, help='index to align on')
+    parser.add_argument('-i', type=int, default=0, help='Index to align on')
+    parser.add_argument('-N', type=int, 'Compare first N images')
     parser.add_argument('--flip',action='store_true',help='Flip hand')
-    parser.add_argument('-o', help='Output')
+    parser.add_argument('--show', action='store_true', help='Show histogram of errors')
     return parser
 
 def geodesic_so3(A,B):
@@ -53,13 +54,19 @@ def main(args):
     rot2 = utils.load_pkl(args.rot2)
     assert rot1.shape == rot2.shape
 
-    rot2 = align_rot2(rot1,rot2,args.i,args.flip)
+    #rot2 = align_rot2(rot1,rot2,args.i,args.flip)
+    rot1, rot2 = align_rot(rot1,rot2,args.i,args.flip)
+    if args.N:
+        rot1 = rot1[:args.N]
+        rot2 = rot2[:args.N]
     dists = np.asarray([fast_dist(a,b) for a,b in zip(rot1, rot2)])
+    #dists = np.asarray([geodesic_so3(a,b) for a,b in zip(rot1, rot2)])
 
     log('Mean error: {}'.format(np.mean(dists)))
     log('Median error: {}'.format(np.median(dists)))
-    plt.hist(dists)
-    plt.show()
+    if args.show:
+        plt.hist(dists)
+        plt.show()
 
 if __name__ == '__main__':
     main(parse_args().parse_args())

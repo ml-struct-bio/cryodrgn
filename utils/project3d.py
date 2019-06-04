@@ -74,7 +74,7 @@ class Projector:
             tilt = torch.tensor(tilt)
         self.tilt = tilt
 
-    def project(self, rot):
+    def rotate(self, rot):
         B = rot.size(0)
         if self.tilt is not None:
             rot = self.tilt @ rot
@@ -85,7 +85,10 @@ class Projector:
         grid = grid.view(1, -1, self.ny, self.nx, 3)
         vol = F.grid_sample(self.vol, grid)
         vol = vol.view(B,self.nz,self.ny,self.nx)
-        return vol.sum(dim=1)
+        return vol
+
+    def project(self, rot):
+        return self.rotate(rot).sum(dim=1)
    
 class RandomRot(data.Dataset):
     def __init__(self, N):

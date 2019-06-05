@@ -18,7 +18,7 @@ import utils
 import fft
 import dataset
 
-from lattice import Lattice
+from lattice import EvenLattice
 from bnb import BNNBHet, BNBHet
 from models import HetOnlyVAE
 from beta_schedule import get_beta_schedule, LinearSchedule
@@ -203,7 +203,7 @@ def main(args):
     D = data.D
     Nimg = data.N
 
-    lattice = Lattice(D)
+    lattice = EvenLattice(D)
     if args.enc_mask: args.enc_mask = lattice.get_circular_mask(args.enc_mask)
     model = HetOnlyVAE(lattice, args.qlayers, args.qdim, args.players, args.pdim,
                 args.zdim, encode_mode=args.encode_mode, enc_mask=args.enc_mask)

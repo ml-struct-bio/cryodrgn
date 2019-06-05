@@ -15,7 +15,7 @@ sys.path.insert(0,os.path.abspath(os.path.dirname(__file__))+'/lib-python')
 import mrc
 import utils
 import dataset
-from lattice import Lattice
+from lattice import EvenLattice
 from models import HetOnlyVAE
 
 log = utils.log
@@ -59,7 +59,7 @@ def main(args):
         data = dataset.MRCData(args.particles, norm=args.norm)
 
     Nimg, D = data.N, data.D
-    lattice = Lattice(D)
+    lattice = EvenLattice(D)
     if args.enc_mask: args.enc_mask = lattice.get_circular_mask(args.enc_mask)
     model = HetOnlyVAE(lattice, args.qlayers, args.qdim, args.players, args.pdim,
                 args.zdim, encode_mode=args.encode_mode, enc_mask=args.enc_mask)

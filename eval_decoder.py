@@ -19,7 +19,7 @@ import mrc
 import utils
 import fft
 import lie_tools
-from lattice import Lattice
+from lattice import EvenLattice
 from models import HetOnlyVAE
 from bnb_het import eval_volume
 
@@ -62,8 +62,8 @@ def main(args):
 
     nz, ny, nx = args.dim
     assert nz == ny == nx
-    D = nz+1
-    lattice = Lattice(D)
+    D = nz
+    lattice = EvenLattice(D)
     if args.enc_mask: args.enc_mask = lattice.get_circular_mask(args.enc_mask)
     model = HetOnlyVAE(lattice, args.qlayers, args.qdim, args.players, args.pdim,
                 args.zdim, encode_mode=args.encode_mode, enc_mask=args.enc_mask)

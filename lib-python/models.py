@@ -85,7 +85,7 @@ class HetOnlyVAE(nn.Module):
         z: Bxzdim latent coordinate
         '''
         x = self.lattice.coords @ rot # R.T*x
-        y_hat = self.decoder.forward_even(self.cat_z(x,z))
+        y_hat = self.decoder(self.cat_z(x,z))
         return y_hat
 
 class FTSliceDecoder(nn.Module):

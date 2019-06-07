@@ -70,8 +70,8 @@ class TiltMRCData(data.Dataset):
         particles_tilt = np.asarray([fft.ht2_center(img) for img in particles_tilt]).astype(np.float32)
 
         # symmetrize HT
-        #particles = fft.symmetrize_ht(particles)
-        #particles_tilt = fft.symmetrize_ht(particles_tilt)
+        particles = fft.symmetrize_ht(particles)
+        particles_tilt = fft.symmetrize_ht(particles_tilt)
 
         # normalize
         if norm is None:

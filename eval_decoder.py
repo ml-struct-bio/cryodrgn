@@ -21,7 +21,6 @@ import fft
 import lie_tools
 from lattice import Lattice
 from models import HetOnlyVAE
-from bnb_het import eval_volume
 
 log = utils.log
 vlog = utils.vlog
@@ -93,14 +92,14 @@ def main(args):
 
         for i,zz in enumerate(z):
             log(zz)
-            vol, _ = eval_volume(model, lattice, lattice.D, zz, args.norm) 
+            vol = model.decoder.eval_volume(lattice.coords, lattice.D, args.norm, zz) 
             out_mrc = '{}/traj{}.mrc'.format(args.o,i)
             mrc.write(out_mrc, vol.astype(np.float32))
 
     else:
         z = np.array(args.z)
         log(z)
-        vol, _ = eval_volume(model, lattice, lattice.D, z, args.norm) 
+        vol = model.decoder.eval_volume(lattice.coords, lattice.D, args.norm, z) 
         mrc.write(args.o, vol.astype(np.float32))
 
     td = dt.now()-t1

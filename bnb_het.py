@@ -74,27 +74,6 @@ def parse_args():
     group.add_argument('--pdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
     return parser
 
-def eval_volume(model, lattice, D, zval, norm):
-    '''Evaluate the model on a nz x ny x nx lattice'''
-    zdim = len(zval)
-    z = torch.zeros(D**2,zdim, dtype=torch.float32)
-    z += torch.tensor(zval, dtype=torch.float32)
-
-    vol_f = np.zeros((D,D,D),dtype=np.float32)
-    assert not model.training
-    # evaluate the volume by zslice to avoid memory overflows
-    for i, dz in enumerate(np.linspace(-1,1,D,endpoint=True)):
-        x = lattice.coords + torch.tensor([0,0,dz], dtype=torch.float32)
-        x = torch.cat((x,z),dim=-1)
-        with torch.no_grad():
-            y = model.decoder.decode(x)
-            y = y[...,0] - y[...,1]
-            y = y.view(D, D).cpu().numpy()
-        vol_f[i] = y
-    vol_f = vol_f*norm[1] + norm[0]
-    vol = fft.ihtn_center(vol_f[0:-1,0:-1,0:-1])
-    return vol, vol_f
-
 def train(model, lattice, bnb, optim, minibatch, L, beta, beta_control=None, equivariance=None, rotated_images=None, enc_only=False, no_trans=False):
     y, yt = minibatch
     B = y.size(0)
@@ -152,7 +131,7 @@ def train(model, lattice, bnb, optim, minibatch, L, beta, beta_control=None, equ
 
 def save_checkpoint(model, lattice, z, bnb_pose, optim, epoch, norm, out_mrc, out_weights):
     model.eval()
-    vol, vol_f = eval_volume(model, lattice, lattice.D, z, norm)
+    vol = model.decoder.eval_volume(lattice.coords, lattice.D, norm, z)
     mrc.write(out_mrc, vol.astype(np.float32))
     torch.save({
         'norm': norm,

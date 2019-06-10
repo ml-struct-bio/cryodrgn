@@ -131,7 +131,9 @@ class FTSliceDecoder(nn.Module):
         lattice: B x N x 3+zdim
         '''
         assert lattice.shape[-2] % 2 == 1
-        c = int(lattice.shape[-2]/2)
+        c = lattice.shape[-2]//2 # center pixel
+        assert lattice[...,c,0:3].sum() == 0.0, '{} != 0.0'.format(lattice[...,c,0:3].sum())
+        assert abs(lattice[...,0:3].mean()) < 1e-8, '{} != 0.0'.format(lattice[...,0:3].mean())
         image = torch.empty(lattice.shape[:-1]) 
         top_half = self.decode(lattice[...,0:c+1,:])
         image[..., 0:c+1] = top_half[...,0] - top_half[...,1]
@@ -207,13 +209,28 @@ class FTSliceDecoder(nn.Module):
         s = torch.sin(tfilt) # BxTxN
         return c*img + s*img[:,:,np.arange(len(coords)-1,-1,-1)]
 
-    def eval_volume(self, coords, D, norm):
-        '''Evaluate the model on a DxDxD volume'''
+    def eval_volume(self, coords, D, norm, zval=None):
+        '''
+        Evaluate the model on a DxDxD volume
+        
+        Inputs:
+            coords: lattice coords on the x-y plane (D^2 x 3)
+            D: size of lattice
+            norm: data normalization 
+            zval: value of latent (zdim x 1)
+        '''
+        if zval is not None:
+            zdim = len(zval)
+            z = torch.zeros(D**2, zdim, dtype=torch.float32)
+            z += torch.tensor(zval, dtype=torch.float32)
+
         vol_f = np.zeros((D,D,D),dtype=np.float32)
         assert not self.training
         # evaluate the volume by zslice to avoid memory overflows
-        for i, z in enumerate(np.linspace(-1,1,D,endpoint=True)):
-            x = coords + torch.tensor([0,0,z])
+        for i, dz in enumerate(np.linspace(-1,1,D,endpoint=True)):
+            x = coords + torch.tensor([0,0,dz])
+            if zval is not None:
+                x = torch.cat((x,z), dim=-1)
             with torch.no_grad():
                 y = self.decode(x)
                 y = y[...,0] - y[...,1]

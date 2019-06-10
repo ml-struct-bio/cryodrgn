@@ -35,6 +35,7 @@ def parse_args():
     parser.add_argument('particles', help='Particle stack file (.mrc)')
     parser.add_argument('weights', help='Model weights')
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Output pickle for rotations')
+    parser.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: mean, std of dataset)')
     parser.add_argument('--out-trans', type=os.path.abspath, help='Output pickle for translations (optional)')
     parser.add_argument('--tilt', help='Particle stack file (.mrcs)')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
@@ -86,9 +87,9 @@ def main(args):
 
     # load the particles
     if args.tilt is None:
-        data = dataset.MRCData(args.particles)
+        data = dataset.MRCData(args.particles, norm=args.norm)
     else:
-        data = dataset.TiltMRCData(args.particles, args.tilt)
+        data = dataset.TiltMRCData(args.particles, args.tilt, norm=args.norm)
     Nimg = data.N
     D = data.D
 

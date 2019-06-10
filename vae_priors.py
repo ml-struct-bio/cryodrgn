@@ -32,6 +32,7 @@ def parse_args():
 
     parser.add_argument('particles', help='Particle stack file (.mrc)')
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
+    parser.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: mean, std of dataset)')
     parser.add_argument('--priors', type=os.path.abspath, nargs='*', help='Priors on rotation, translation')
     parser.add_argument('--load', type=os.path.abspath, help='Initialize training from a checkpoint')
     parser.add_argument('--checkpoint', type=int, default=1, help='Checkpointing interval in N_EPOCHS (default: %(default)s)')
@@ -187,7 +188,7 @@ def main(args):
     beta_schedule = get_beta_schedule(args.beta)
 
     # load the particles
-    data = dataset.MRCData(args.particles)
+    data = dataset.MRCData(args.particles, norm=args.norm)
     Nimg = data.N
     D = data.D
 

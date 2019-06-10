@@ -31,6 +31,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('particles', help='Particle stack file (.mrcs)')
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
+    parser.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: mean, std of dataset)')
     parser.add_argument('--load', type=os.path.abspath, help='Initialize training from a checkpoint')
     parser.add_argument('--checkpoint', type=int, default=1, help='Checkpointing interval in N_EPOCHS (default: %(default)s)')
     parser.add_argument('--log-interval', type=int, default=1000, help='Logging interval in N_IMGS (default: %(default)s)')
@@ -127,10 +128,10 @@ def main(args):
 
     # load the particles
     if args.tilt is None:
-        data = dataset.MRCData(args.particles)
+        data = dataset.MRCData(args.particles, norm=args.norm)
         tilt = None
     else:
-        data = dataset.TiltMRCData(args.particles, args.tilt)
+        data = dataset.TiltMRCData(args.particles, args.tilt, norm=args.norm)
         theta = args.tilt_deg*np.pi/180
         tilt = np.array([[1.,0.,0.],
                         [0, np.cos(theta), -np.sin(theta)],

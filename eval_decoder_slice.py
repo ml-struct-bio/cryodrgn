@@ -26,10 +26,10 @@ def parse_args():
     parser.add_argument('weights', help='Model weights')
     parser.add_argument('rot', help='Orientations (.pkl)')
     parser.add_argument('-D', type=int, help='Image dimension D')
-    parser.add_argument('--norm', type=float, nargs=2, help='Image normalization constants')
-    parser.add_argument('--first', type=int)
+    parser.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: mean, std of dataset)')
+    parser.add_argument('--first', type=int, help='First N rotations')
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Output mrcs')
-    parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
+    parser.add_argument('-v','--verbose',action='store_true',help='Increase verbosity')
 
     group = parser.add_argument_group('Architecture parameters')
     group.add_argument('-b','--batch-size', type=int, default=100, help='Minibatch size (default: %(default)s)')

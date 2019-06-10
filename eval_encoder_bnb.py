@@ -75,7 +75,7 @@ def main(args):
         B = len(batch[0])
         y = batch[0].to(device)
         if args.tilt:
-            yt = batch[0].to(device)
+            yt = batch[1].to(device)
             mu, logvar = model.encode(y, yt)
         else:
             mu, logvar = model.encode(y)

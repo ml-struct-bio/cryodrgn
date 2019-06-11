@@ -76,7 +76,7 @@ def train(model, lattice, bnb, optim, batch, L, tilt=None, no_trans=False):
     y, yt = batch
     B = y.size(0)
 
-    # BNB inference of orientation 
+    # BNB inference of pose
     model.eval()
     with torch.no_grad():
         if no_trans:
@@ -94,10 +94,15 @@ def train(model, lattice, bnb, optim, batch, L, tilt=None, no_trans=False):
     # Train model 
     model.train()
     optim.zero_grad()
+
+    if not no_trans:
+        y = translate(y)
+        if tilt is not None: yt = translate(yt)
+
     if tilt is not None:
-        loss = .5*F.mse_loss(gen_slice(rot), translate(y)) + .5*F.mse_loss(gen_slice(tilt @ rot), translate(yt))
+        loss = .5*F.mse_loss(gen_slice(rot), y) + .5*F.mse_loss(gen_slice(tilt @ rot), yt)
     else:
-        loss = F.mse_loss(gen_slice(rot), translate(y)) 
+        loss = F.mse_loss(gen_slice(rot), y) 
     loss.backward()
     optim.step()
     save_pose = [rot.detach().cpu().numpy()]
@@ -167,6 +172,8 @@ def main(args):
     # training loop
     data_generator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
     for epoch in range(start_epoch, args.num_epochs):
+        if epoch < args.bnb_start:
+            log('[Train Epoch: {}/{}] Using branch and no bound'.format(epoch+1, args.num_epochs))
         batch_it = 0
         loss_accum = 0
         bnb_pose = []

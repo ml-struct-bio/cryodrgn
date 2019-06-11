@@ -76,25 +76,27 @@ def parse_args():
 
 def train(model, lattice, bnb, optim, minibatch, L, beta, beta_control=None, equivariance=None, rotated_images=None, enc_only=False, no_trans=False):
     y, yt = minibatch
+    use_tilt = yt is not None
+    D = lattice.D
     B = y.size(0)
+
+    # VAE inference of z
     model.train()
     optim.zero_grad()
-
-    # inference of z
-    D = lattice.D
-    input_ = (y,) if yt is None else (y,yt)
+    input_ = (y,yt) if use_tilt else (y,)
     z_mu, z_logvar = model.encode(*input_)
     z = model.reparameterize(z_mu, z_logvar)
 
-    # inference of pose
+    # BNB inference of pose
     model.eval()
-    if no_trans:
-        if rotated_images is None:
-            rot = bnb.opt_theta(y, z, None if enc_only else yt, L=L)
+    with torch.no_grad():
+        if no_trans:
+            if rotated_images is None:
+                rot = bnb.opt_theta(y, z, None if enc_only else yt, L=L)
+            else:
+                rot = bnb.opt_theta_rot(y, rotated_images, z, L=L)
         else:
-            rot = bnb.opt_theta_rot(y, rotated_images, z, L=L)
-    else:
-        rot, trans = bnb.opt_theta_trans(y, z, None if enc_only else yt, L=L)
+            rot, trans = bnb.opt_theta_trans(y, z, None if enc_only else yt, L=L)
     model.train()
 
     # train model  
@@ -104,10 +106,14 @@ def train(model, lattice, bnb, optim, minibatch, L, beta, beta_control=None, equ
         img = model.decoder.translate_ht(lattice.coords[:,0:2]/2, img.view(B,-1), trans.unsqueeze(1))
         return img.view(-1, D, D)
 
-    if yt is not None:
-        gen_loss = .5*F.mse_loss(gen_slice(rot), translate(y)) + .5*F.mse_loss(gen_slice(bnb.tilt @ rot), translate(yt))
+    if not no_trans:
+        y = translate(y)
+        if use_tilt: yt = translate(yt)    
+
+    if use_tilt:
+        gen_loss = .5*F.mse_loss(gen_slice(rot), y) + .5*F.mse_loss(gen_slice(bnb.tilt @ rot), yt)
     else:
-        gen_loss = F.mse_loss(gen_slice(rot), translate(y))
+        gen_loss = F.mse_loss(gen_slice(rot), y)
 
     kld = -0.5 * torch.mean(1 + z_logvar - z_mu.pow(2) - z_logvar.exp())
 
@@ -213,6 +219,8 @@ def main(args):
     num_epochs = args.num_epochs
     data_iterator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
     for epoch in range(start_epoch, num_epochs):
+        if epoch < args.bnb_start:
+            log('[Train Epoch: {}/{}] Using branch and no bound'.format(epoch+1, args.num_epochs))
         kld_accum = 0
         gen_loss_accum = 0
         loss_accum = 0

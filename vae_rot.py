@@ -46,8 +46,6 @@ def parse_args():
     group.add_argument('--lr', type=float, default=1e-3, help='Learning rate in Adam optimizer (default: %(default)s)')
     group.add_argument('--beta', default=1.0, help='Choice of beta schedule or a constant for KLD weight (default: %(default)s)')
     group.add_argument('--beta-control', type=float, help='KL-Controlled VAE gamma. Beta is KL target. (default: %(default)s)')
-    group.add_argument('--equivariance', type=float, help='Strength of equivariance loss (default: %(default)s)')
-    group.add_argument('--equivariance-end-it', type=int, default=100000, help='It at which equivariance max (default: %(default)s)')
     group.add_argument('--no-trans', action='store_true', help="Inference over image rotation only")
 
     group = parser.add_argument_group('Encoder Network')
@@ -72,7 +70,7 @@ def loss_function(recon_y, y, w_eps, z_std, t_mu, t_logvar):
     #assert kld > 0
     return gen_loss, kld1 + kld2
 
-def train(model, optim, D, y, beta, beta_control=None, equivariance=None):
+def train(model, optim, D, y, beta, beta_control=None)
     model.train()
     optim.zero_grad()
     # train the model
@@ -86,14 +84,9 @@ def train(model, optim, D, y, beta, beta_control=None, equivariance=None):
         loss = gen_loss + beta*kld/D**2
     else:
         loss = gen_loss + args.beta_control*(beta-kld)**2/D**2
-    # equivariance loss
-    if equivariance is not None:
-        lamb, equivariance_loss = equivariance
-        eq_loss = equivariance_loss(y, z_mu)
-        loss += lamb*eq_loss
     loss.backward()
     optim.step()
-    return gen_loss.item(), kld.item(), loss.item(), eq_loss.item() if equivariance else None
+    return gen_loss.item(), kld.item(), loss.item()
 
 def save_checkpoint(model, optim, D, epoch, norm, out_mrc, out_weights):
     model.eval()
@@ -141,11 +134,6 @@ def main(args):
     log(model)
     log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
 
-    if args.equivariance:
-        assert args.equivariance > 0, 'Regularization weight must be positive'
-        equivariance_lambda = LinearSchedule(0, args.equivariance, 10000, args.equivariance_end_it)
-        equivariance_loss = EquivarianceLoss(model,D,D)
-
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
     if args.load:
@@ -165,7 +153,6 @@ def main(args):
         gen_loss_accum = 0
         loss_accum = 0
         kld_accum = 0
-        eq_loss_accum = 0
         batch_it = 0 
 
         for minibatch, ind in data_generator:
@@ -174,25 +161,17 @@ def main(args):
             global_it = Nimg*epoch + batch_it
 
             beta = beta_schedule(global_it)
-            if args.equivariance:
-                lamb = equivariance_lambda(global_it)
-                equivariance_tuple = (lamb, equivariance_loss)
-            else:
-                equivariance_tuple = None
             
-            gen_loss, kld, loss, eq_loss = train(model, optim, D, minibatch, beta, args.beta_control, equivariance_tuple)
+            gen_loss, kld, loss = train(model, optim, D, minibatch, beta, args.beta_control)
 
             # logging
             gen_loss_accum += gen_loss*len(minibatch)
             kld_accum += kld*len(minibatch)
             loss_accum += loss*len(minibatch)
-            if args.equivariance: eq_loss_accum += eq_loss*len(minibatch)
 
             if batch_it % args.log_interval == 0:
-                eq_log = 'equivariance={:.4f}, lambda={:.4f}, '.format(eq_loss, lamb) if args.equivariance else ''
-                log('# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.4f}, kld={:.4f}, beta={:.4f}, {}loss={:.4f}'.format(epoch+1, num_epochs, batch_it, Nimg, gen_loss, kld, beta, eq_log, loss))
-        eq_log = 'equivariance = {:.4f}, '.format(eq_loss_accum/Nimg) if args.equivariance else ''
-        log('# =====> Epoch: {} Average gen loss = {:.4}, KLD = {:.4f}, {}total loss = {:.4f}'.format(epoch+1, gen_loss_accum/Nimg, kld_accum/Nimg, eq_log, loss_accum/Nimg))
+                log('# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.4f}, kld={:.4f}, beta={:.4f}, loss={:.4f}'.format(epoch+1, num_epochs, batch_it, Nimg, gen_loss, kld, beta, loss))
+        log('# =====> Epoch: {} Average gen loss = {:.4}, KLD = {:.4f}, total loss = {:.4f}'.format(epoch+1, gen_loss_accum/Nimg, kld_accum/Nimg, loss_accum/Nimg))
 
         if args.checkpoint and epoch % args.checkpoint == 0:
             out_mrc = '{}/reconstruct.{}.mrc'.format(args.outdir,epoch)

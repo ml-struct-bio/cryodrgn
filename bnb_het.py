@@ -116,6 +116,10 @@ def train(model, lattice, bnb, optim, minibatch, L, beta, beta_control=None, equ
         gen_loss = F.mse_loss(gen_slice(rot), y)
 
     kld = -0.5 * torch.mean(1 + z_logvar - z_mu.pow(2) - z_logvar.exp())
+    if torch.isnan(kld):
+        log(z_mu[0])
+        log(z_logvar[0])
+        raise RuntimeError('KLD is nan')
 
     if beta_control is None:
         loss = gen_loss + beta*kld/(D*D)
@@ -199,7 +203,7 @@ def main(args):
     if args.equivariance:
         assert args.equivariance > 0, 'Regularization weight must be positive'
         equivariance_lambda = LinearSchedule(0, args.equivariance, 10000, args.equivariance_end_it)
-        equivariance_loss = EquivarianceLoss(model,D,D)
+        equivariance_loss = EquivarianceLoss(model, D)
 
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 

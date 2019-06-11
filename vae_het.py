@@ -93,7 +93,7 @@ def train(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, equ
     def apply_ctf(img):
         for i in range(B): # TODO: torch/batch-ify 
             c = ctf.compute_ctf(lattice.coords[:,0:2]/2/ctf_params[i,0].numpy(), *ctf_params[i,1:]).reshape(D,D)
-            img *= torch.tensor(c)
+            img[i] *= torch.tensor(c)
         return img
     y_recon = model.decode(rot, z).view(B,D,D)
     if use_ctf: y_recon = apply_ctf(y_recon)

@@ -168,24 +168,23 @@ class BNBHomoRot:
 
     def opt_theta(self, images, L, images_tilt=None, niter=5):
         assert L is None # ew: to keep API consistent with BNNB
-        B = images.size(0)
         assert not self.decoder.training
-        with torch.no_grad():
-            if self.probabilistic:
-                self.max_slice = self.estimate_max_slice() # where to put this?
-            bound = self.compute_bound(images, self.base_rot, self.nbase, self.Lmin, images_tilt=images_tilt)
-            Lstar = self.eval_grid(images, self.base_rot[torch.argmin(bound,1)], 1, self.Lmax, images_tilt=images_tilt) # expensive objective function
-            NQ, quat, grid_ind = self.bound_base(bound, Lstar)
-            k = int((self.Lmax-self.Lmin)/(niter-1))
-            for iter_ in range(1,niter+1): # resolution level
-                L = min(self.Lmin + k*iter_, self.Lmax)
-                NQ, quat, grid_ind, quat_block, grid_ind_block = self.subdivide(NQ, quat, grid_ind, iter_)
-                rot = lie_tools.quaternions_to_SO3(torch.tensor(quat))
-                bound = self.compute_bound(images, rot, NQ, L, images_tilt=images_tilt) # Bxmax(NQ)
-                min_i = torch.argmin(bound, 1)
-                min_quat = quat_block[np.arange(B),min_i.cpu()]
-                Lstar = self.eval_grid(images, lie_tools.quaternions_to_SO3(torch.tensor(min_quat)), 1, self.Lmax, images_tilt=images_tilt)
-                NQ, quat, grid_ind = self.bound(bound, Lstar, quat_block, grid_ind_block)
+        B = images.size(0)
+        if self.probabilistic:
+            self.max_slice = self.estimate_max_slice() # where to put this?
+        bound = self.compute_bound(images, self.base_rot, self.nbase, self.Lmin, images_tilt=images_tilt)
+        Lstar = self.eval_grid(images, self.base_rot[torch.argmin(bound,1)], 1, self.Lmax, images_tilt=images_tilt) # expensive objective function
+        NQ, quat, grid_ind = self.bound_base(bound, Lstar)
+        k = int((self.Lmax-self.Lmin)/(niter-1))
+        for iter_ in range(1,niter+1): # resolution level
+            L = min(self.Lmin + k*iter_, self.Lmax)
+            NQ, quat, grid_ind, quat_block, grid_ind_block = self.subdivide(NQ, quat, grid_ind, iter_)
+            rot = lie_tools.quaternions_to_SO3(torch.tensor(quat))
+            bound = self.compute_bound(images, rot, NQ, L, images_tilt=images_tilt) # Bxmax(NQ)
+            min_i = torch.argmin(bound, 1)
+            min_quat = quat_block[np.arange(B),min_i.cpu()]
+            Lstar = self.eval_grid(images, lie_tools.quaternions_to_SO3(torch.tensor(min_quat)), 1, self.Lmax, images_tilt=images_tilt)
+            NQ, quat, grid_ind = self.bound(bound, Lstar, quat_block, grid_ind_block)
         return lie_tools.quaternions_to_SO3(torch.tensor(min_quat))
 
 class BNBHomo:
@@ -305,61 +304,60 @@ class BNBHomo:
             raise NotImplementedError
         B = images.size(0)
         assert not self.decoder.training
-        with torch.no_grad():
-            if probabilistic:
-                self.max_slice = self.estimate_max_slice()
-            # todo: check shift images
-            bound = self.eval_grid(self.shift_images(images, self.base_shifts, self.Lmin), 
-                                            self.base_rot, self.nbase, self.Lmin, 
-                                            images_tilt=self.shift_images(images_tilt, self.base_shifts, self.Lmin) if images_tilt is not None else None) # BxTxQ
-            mini = torch.argmin(bound.view(B,-1),1)
-            qi = mini % self.nbase
-            ti = mini // self.nbase
-            min_trans = self.base_shifts[ti] # unsqueeze by 1 to get right dim for translate_ht func
-            min_rot = self.base_rot[qi]
-            Lstar = self.eval_grid(self.shift_images(images, min_trans.unsqueeze(1), self.Lmax),
-                                        min_rot, 1, self.Lmax,
-                                        images_tilt = self.shift_images(images_tilt, min_trans.unsqueeze(1), self.Lmax) if images_tilt is not None else None)
-            keep = self.keep_matrix(bound, Lstar.view(B,1), 24, probabilistic) # B
-            keep = keep.view(B,len(self.base_shifts), self.nbase) # BxTxQ
-            Np = keep.sum((-1,-2)) # per image # todo: filter keep by Np to max_poses
-            w = keep.nonzero().cpu() # sum(Np) x 3
-            # todo: compare len(w) vs. len(set(w[:,2])) ... if much smaller then we should think about potential speedups
-            quat = self.base_quat[w[:,2]]
-            s2i, s1i = so3_grid.get_base_ind(w[:,2])
-            q_ind = np.stack((s2i,s1i),1) # Np x 2
-            trans = self.base_shifts[w[:,1]]
-            xi, yi = shift_grid.get_base_ind(w[:,1])
-            t_ind = np.stack((xi,yi),1) #Np x 2
-            batch_ind = w[:,0]
+        if probabilistic:
+            self.max_slice = self.estimate_max_slice()
+        # todo: check shift images
+        bound = self.eval_grid(self.shift_images(images, self.base_shifts, self.Lmin), 
+                                        self.base_rot, self.nbase, self.Lmin, 
+                                        images_tilt=self.shift_images(images_tilt, self.base_shifts, self.Lmin) if images_tilt is not None else None) # BxTxQ
+        mini = torch.argmin(bound.view(B,-1),1)
+        qi = mini % self.nbase
+        ti = mini // self.nbase
+        min_trans = self.base_shifts[ti] # unsqueeze by 1 to get right dim for translate_ht func
+        min_rot = self.base_rot[qi]
+        Lstar = self.eval_grid(self.shift_images(images, min_trans.unsqueeze(1), self.Lmax),
+                                    min_rot, 1, self.Lmax,
+                                    images_tilt = self.shift_images(images_tilt, min_trans.unsqueeze(1), self.Lmax) if images_tilt is not None else None)
+        keep = self.keep_matrix(bound, Lstar.view(B,1), 24, probabilistic) # B
+        keep = keep.view(B,len(self.base_shifts), self.nbase) # BxTxQ
+        Np = keep.sum((-1,-2)) # per image # todo: filter keep by Np to max_poses
+        w = keep.nonzero().cpu() # sum(Np) x 3
+        # todo: compare len(w) vs. len(set(w[:,2])) ... if much smaller then we should think about potential speedups
+        quat = self.base_quat[w[:,2]]
+        s2i, s1i = so3_grid.get_base_ind(w[:,2])
+        q_ind = np.stack((s2i,s1i),1) # Np x 2
+        trans = self.base_shifts[w[:,1]]
+        xi, yi = shift_grid.get_base_ind(w[:,1])
+        t_ind = np.stack((xi,yi),1) #Np x 2
+        batch_ind = w[:,0]
 
-            k = int((self.Lmax-self.Lmin)/(niter-1))
-            for iter_ in range(1,niter+1):
-                vlog(iter_); vlog(Np)
-                L = min(self.Lmin +k*iter_, self.Lmax)
-                quat, q_ind, rot, trans, t_ind = self.subdivide(quat, q_ind, t_ind, iter_)
-                batch_ind4 = batch_ind.unsqueeze(1).repeat(1,4).view(-1) # repeat each element 4 times
-                bound = self.eval_grid(self.shift_images(images[batch_ind4], trans.unsqueeze(1), L).view(len(batch_ind),4,-1), rot, 8, L,
-                                            images_tilt=self.shift_images(images_tilt[batch_ind4],trans.unsqueeze(1),L).view(len(batch_ind),4,-1) if images_tilt is not None else None) # sum(NP),4x8
-                bound2 = self.tile(bound, Np) # Bxmax(Np)x4x8
-                min_i = bound2.view(B,-1).argmin(1) 
-                min_i[1:] += 32*Np.cumsum(0)[0:-1]
-                min_rot = rot[min_i//32*8+min_i%8]
-                min_trans = trans[min_i/8]
-                Lstar = self.eval_grid(self.shift_images(images, min_trans.unsqueeze(1), self.Lmax), min_rot, 1, self.Lmax,
-                                        images_tilt=self.shift_images(images_tilt, min_trans.unsqueeze(1), self.Lmax) if images_tilt is not None else None) # Bx1x1
-                keep = self.keep_matrix(bound2, Lstar.view(B,1), bound2.shape[1], probabilistic) # Bx(max(Np)*32)
-                w = keep.nonzero() # sum(Np) x 2
-                batch_ind = w[:,0]
-                tmp = 32*Np.cumsum(0)
-                tmp[-1] = 0
-                w[:,1] += tmp[(w[:,0]-1)]
-                w=w.cpu()
-                quat = quat.reshape(-1,4)[w[:,1]].reshape(-1,4) # final reshape needed to keep 2D array if len(w) == 1
-                q_ind = q_ind.reshape(-1,2)[w[:,1]].reshape(-1,2)
-                t_ind = t_ind.reshape(-1,2)[w[:,1]].reshape(-1,2)
-                Np = keep.sum(1)
-                assert Np.sum() == len(t_ind)
+        k = int((self.Lmax-self.Lmin)/(niter-1))
+        for iter_ in range(1,niter+1):
+            vlog(iter_); vlog(Np)
+            L = min(self.Lmin +k*iter_, self.Lmax)
+            quat, q_ind, rot, trans, t_ind = self.subdivide(quat, q_ind, t_ind, iter_)
+            batch_ind4 = batch_ind.unsqueeze(1).repeat(1,4).view(-1) # repeat each element 4 times
+            bound = self.eval_grid(self.shift_images(images[batch_ind4], trans.unsqueeze(1), L).view(len(batch_ind),4,-1), rot, 8, L,
+                                        images_tilt=self.shift_images(images_tilt[batch_ind4],trans.unsqueeze(1),L).view(len(batch_ind),4,-1) if images_tilt is not None else None) # sum(NP),4x8
+            bound2 = self.tile(bound, Np) # Bxmax(Np)x4x8
+            min_i = bound2.view(B,-1).argmin(1) 
+            min_i[1:] += 32*Np.cumsum(0)[0:-1]
+            min_rot = rot[min_i//32*8+min_i%8]
+            min_trans = trans[min_i/8]
+            Lstar = self.eval_grid(self.shift_images(images, min_trans.unsqueeze(1), self.Lmax), min_rot, 1, self.Lmax,
+                                    images_tilt=self.shift_images(images_tilt, min_trans.unsqueeze(1), self.Lmax) if images_tilt is not None else None) # Bx1x1
+            keep = self.keep_matrix(bound2, Lstar.view(B,1), bound2.shape[1], probabilistic) # Bx(max(Np)*32)
+            w = keep.nonzero() # sum(Np) x 2
+            batch_ind = w[:,0]
+            tmp = 32*Np.cumsum(0)
+            tmp[-1] = 0
+            w[:,1] += tmp[(w[:,0]-1)]
+            w=w.cpu()
+            quat = quat.reshape(-1,4)[w[:,1]].reshape(-1,4) # final reshape needed to keep 2D array if len(w) == 1
+            q_ind = q_ind.reshape(-1,2)[w[:,1]].reshape(-1,2)
+            t_ind = t_ind.reshape(-1,2)[w[:,1]].reshape(-1,2)
+            Np = keep.sum(1)
+            assert Np.sum() == len(t_ind)
         return min_rot, min_trans
 
 class BNNBHomo:
@@ -410,19 +408,18 @@ class BNNBHomo:
             images_tilt = self.mask_images(images_tilt,L)
             images_tilt = images_tilt.unsqueeze(1) # not testing any translations
         assert not self.decoder.training
-        with torch.no_grad():
-            min_i, _ = self.eval_grid(images, self.base_rot, self.nbase, L, images_tilt=images_tilt)
-            min_quat = self.base_quat[min_i]
-            s2i, s1i = so3_grid.get_base_indr(min_i)
-            for iter_ in range(1,niter+1):
-                neighbors = [so3_grid.get_neighbor(min_quat[i], s2i[i], s1i[i], iter_) for i in range(B)]
-                quat = np.array([x[0] for x in neighbors])
-                ind = np.array([x[1] for x in neighbors])
-                rot = lie_tools.quaternions_to_SO3(torch.tensor(quat))
-                min_i, _ = self.eval_grid(images, rot, 8, L, images_tilt=images_tilt)
-                min_ind = ind[np.arange(B), min_i]
-                s2i, s1i = min_ind.T
-                min_quat = quat[np.arange(B),min_i]
+        min_i, _ = self.eval_grid(images, self.base_rot, self.nbase, L, images_tilt=images_tilt)
+        min_quat = self.base_quat[min_i]
+        s2i, s1i = so3_grid.get_base_indr(min_i)
+        for iter_ in range(1,niter+1):
+            neighbors = [so3_grid.get_neighbor(min_quat[i], s2i[i], s1i[i], iter_) for i in range(B)]
+            quat = np.array([x[0] for x in neighbors])
+            ind = np.array([x[1] for x in neighbors])
+            rot = lie_tools.quaternions_to_SO3(torch.tensor(quat))
+            min_i, _ = self.eval_grid(images, rot, 8, L, images_tilt=images_tilt)
+            min_ind = ind[np.arange(B), min_i]
+            s2i, s1i = min_ind.T
+            min_quat = quat[np.arange(B),min_i]
         return lie_tools.quaternions_to_SO3(torch.tensor(min_quat))
 
     def mask_images(self, images, L):
@@ -447,34 +444,33 @@ class BNNBHomo:
         if images_tilt is not None:
             images_tilt = self.mask_images(images_tilt,L)
         assert not self.decoder.training
-        with torch.no_grad():
-            min_qi, min_ti = self.eval_grid(self.shift_images(images, self.base_shifts, L), 
-                                            self.base_rot, self.nbase, L, 
-                                            images_tilt=self.shift_images(images_tilt, self.base_shifts, L) if images_tilt is not None else None)
-            min_quat = self.base_quat[min_qi]
-            min_t = self.base_shifts[min_ti]
-            s2i, s1i = so3_grid.get_base_ind(min_qi)
-            xi, yi = shift_grid.get_base_ind(min_ti) # check if we need to cast as int
-            for iter_ in range(1,niter+1):
-                # get neighboring SO3 elements at next resolution level -- todo: make this an array operation
-                neighbors = [so3_grid.get_neighbor(min_quat[i], s2i[i], s1i[i], iter_) for i in range(B)]
-                quat = np.array([x[0] for x in neighbors])
-                ind = np.array([x[1] for x in neighbors])
-                rot = lie_tools.quaternions_to_SO3(torch.tensor(quat))
-                # get neighboring shifts at next resolution level -- todo: make this an array operation
-                neighbors = [shift_grid.get_neighbor(xx,yy, iter_, self.t_extent) for xx,yy in zip(xi,yi)]
-                trans = torch.tensor(np.array([x[0] for x in neighbors]))
-                t_ind = np.array([x[1] for x in neighbors])
-                
-                min_qi, min_ti = self.eval_grid(self.shift_images(images, trans, L), rot, 8, L, 
-                                                images_tilt=self.shift_images(images_tilt, trans, L) if images_tilt is not None else None)
+        min_qi, min_ti = self.eval_grid(self.shift_images(images, self.base_shifts, L), 
+                                        self.base_rot, self.nbase, L, 
+                                        images_tilt=self.shift_images(images_tilt, self.base_shifts, L) if images_tilt is not None else None)
+        min_quat = self.base_quat[min_qi]
+        min_t = self.base_shifts[min_ti]
+        s2i, s1i = so3_grid.get_base_ind(min_qi)
+        xi, yi = shift_grid.get_base_ind(min_ti) # check if we need to cast as int
+        for iter_ in range(1,niter+1):
+            # get neighboring SO3 elements at next resolution level -- todo: make this an array operation
+            neighbors = [so3_grid.get_neighbor(min_quat[i], s2i[i], s1i[i], iter_) for i in range(B)]
+            quat = np.array([x[0] for x in neighbors])
+            ind = np.array([x[1] for x in neighbors])
+            rot = lie_tools.quaternions_to_SO3(torch.tensor(quat))
+            # get neighboring shifts at next resolution level -- todo: make this an array operation
+            neighbors = [shift_grid.get_neighbor(xx,yy, iter_, self.t_extent) for xx,yy in zip(xi,yi)]
+            trans = torch.tensor(np.array([x[0] for x in neighbors]))
+            t_ind = np.array([x[1] for x in neighbors])
+            
+            min_qi, min_ti = self.eval_grid(self.shift_images(images, trans, L), rot, 8, L, 
+                                            images_tilt=self.shift_images(images_tilt, trans, L) if images_tilt is not None else None)
 
-                # set new s2i, s1i, min_quat, xi, yi, min_trans
-                min_ind = ind[np.arange(B), min_qi]
-                s2i, s1i = min_ind.T
-                min_quat = quat[np.arange(B),min_qi]
-                xi, yi = t_ind[np.arange(B),min_ti].T # check this
-                min_trans = trans[np.arange(B), min_ti] # check this, Bx2?
+            # set new s2i, s1i, min_quat, xi, yi, min_trans
+            min_ind = ind[np.arange(B), min_qi]
+            s2i, s1i = min_ind.T
+            min_quat = quat[np.arange(B),min_qi]
+            xi, yi = t_ind[np.arange(B),min_ti].T # check this
+            min_trans = trans[np.arange(B), min_ti] # check this, Bx2?
         return lie_tools.quaternions_to_SO3(torch.tensor(min_quat)), min_trans
 
 class BNNBHet:
@@ -536,39 +532,37 @@ class BNNBHet:
     def opt_theta_rot(self, images, rotated_images, z, niter=5, L=None):
         B = images.size(0)
         assert not self.model.training
-        with torch.no_grad():
-            min_i = self.eval_base_grid(images, rotated_images, z, L)
-            min_quat = self.base_quat[min_i]
-            s2i, s1i = so3_grid.get_base_indr(min_i)
-            for iter_ in range(1,niter+1):
-                neighbors = [so3_grid.get_neighbor(min_quat[i], s2i[i], s1i[i], iter_) for i in range(B)]
-                quat = np.array([x[0] for x in neighbors])
-                ind = np.array([x[1] for x in neighbors])
-                rot = lie_tools.quaternions_to_SO3(torch.tensor(quat))
-                min_i = self.eval_grid(images, rot, z, 8, L)
-                min_ind = ind[np.arange(B), min_i]
-                s2i, s1i = min_ind.T
-                min_quat = quat[np.arange(B),min_i]
+        min_i = self.eval_base_grid(images, rotated_images, z, L)
+        min_quat = self.base_quat[min_i]
+        s2i, s1i = so3_grid.get_base_indr(min_i)
+        for iter_ in range(1,niter+1):
+            neighbors = [so3_grid.get_neighbor(min_quat[i], s2i[i], s1i[i], iter_) for i in range(B)]
+            quat = np.array([x[0] for x in neighbors])
+            ind = np.array([x[1] for x in neighbors])
+            rot = lie_tools.quaternions_to_SO3(torch.tensor(quat))
+            min_i = self.eval_grid(images, rot, z, 8, L)
+            min_ind = ind[np.arange(B), min_i]
+            s2i, s1i = min_ind.T
+            min_quat = quat[np.arange(B),min_i]
         return lie_tools.quaternions_to_SO3(torch.tensor(min_quat))
 
     def opt_theta(self, images, z, images_tilt=None, niter=5, L=None):
         B = images.size(0)
         assert not self.model.training
-        with torch.no_grad():
-            # expand the base grid B times since each image has a different z
-            base_rot = self.base_rot.expand(B,*self.base_rot.shape) # B x 576 x 3 x 3
-            min_i = self.eval_grid(images, base_rot, z, self.nbase, L, images_tilt=images_tilt) # B x 576 slices
-            min_quat = self.base_quat[min_i]
-            s2i, s1i = so3_grid.get_base_indr(min_i)
-            for iter_ in range(1,niter+1):
-                neighbors = [so3_grid.get_neighbor(min_quat[i], s2i[i], s1i[i], iter_) for i in range(B)]
-                quat = np.array([x[0] for x in neighbors])
-                ind = np.array([x[1] for x in neighbors])
-                rot = lie_tools.quaternions_to_SO3(torch.tensor(quat))
-                min_i = self.eval_grid(images, rot, z, 8, L, images_tilt=images_tilt)
-                min_ind = ind[np.arange(B), min_i]
-                s2i, s1i = min_ind.T
-                min_quat = quat[np.arange(B),min_i]
+        # expand the base grid B times since each image has a different z
+        base_rot = self.base_rot.expand(B,*self.base_rot.shape) # B x 576 x 3 x 3
+        min_i = self.eval_grid(images, base_rot, z, self.nbase, L, images_tilt=images_tilt) # B x 576 slices
+        min_quat = self.base_quat[min_i]
+        s2i, s1i = so3_grid.get_base_indr(min_i)
+        for iter_ in range(1,niter+1):
+            neighbors = [so3_grid.get_neighbor(min_quat[i], s2i[i], s1i[i], iter_) for i in range(B)]
+            quat = np.array([x[0] for x in neighbors])
+            ind = np.array([x[1] for x in neighbors])
+            rot = lie_tools.quaternions_to_SO3(torch.tensor(quat))
+            min_i = self.eval_grid(images, rot, z, 8, L, images_tilt=images_tilt)
+            min_ind = ind[np.arange(B), min_i]
+            s2i, s1i = min_ind.T
+            min_quat = quat[np.arange(B),min_i]
         return lie_tools.quaternions_to_SO3(torch.tensor(min_quat))
 
     def opt_theta_trans(self, *args, **kwargs):
@@ -710,55 +704,54 @@ class BNBHet:
             raise NotImplementedError
         B = images.size(0)
         assert not self.model.training
-        with torch.no_grad():
-            if probabilistic:
-                self.max_slice = self.estimate_max_slice()
-            # expand the base grid B times since each image has a different z
-            base_rot = self.base_rot.expand(B,*self.base_rot.shape) # B x 576 x 3 x 3
-            bound = self.eval_grid(self.mask_images(images, self.Lmin).unsqueeze(1), 
-                                            base_rot, z, self.nbase, self.Lmin, 
-                                            images_tilt=self.mask_images(images_tilt, self.Lmin).unsqueeze(1) if images_tilt is not None else None) # Bx1xQ
-            # TODO: if probabilistic: bound += B1 + B2
-            qi = torch.argmin(bound.view(B,self.nbase),1)
-            min_rot = self.base_rot[qi]
-            Lstar = self.eval_grid(self.mask_images(images, self.Lmax).unsqueeze(1),
-                                        min_rot, z, 1, self.Lmax,
-                                        images_tilt = self.mask_images(images_tilt, self.Lmax).unsqueeze(1) if images_tilt is not None else None)
-            keep = self.keep_matrix(bound, Lstar.view(B,1), 24, probabilistic) # BxQ
-            Np = keep.sum(-1) # per image # todo: filter keep by Np to max_poses
-            w = keep.nonzero().cpu() # sum(Np) x 2
-            quat = self.base_quat[w[:,1]]
-            s2i, s1i = so3_grid.get_base_ind(w[:,1])
-            q_ind = np.stack((s2i,s1i),1) # Np x 2
-            batch_ind = w[:,0]
+        if probabilistic:
+            self.max_slice = self.estimate_max_slice()
+        # expand the base grid B times since each image has a different z
+        base_rot = self.base_rot.expand(B,*self.base_rot.shape) # B x 576 x 3 x 3
+        bound = self.eval_grid(self.mask_images(images, self.Lmin).unsqueeze(1), 
+                                        base_rot, z, self.nbase, self.Lmin, 
+                                        images_tilt=self.mask_images(images_tilt, self.Lmin).unsqueeze(1) if images_tilt is not None else None) # Bx1xQ
+        # TODO: if probabilistic: bound += B1 + B2
+        qi = torch.argmin(bound.view(B,self.nbase),1)
+        min_rot = self.base_rot[qi]
+        Lstar = self.eval_grid(self.mask_images(images, self.Lmax).unsqueeze(1),
+                                    min_rot, z, 1, self.Lmax,
+                                    images_tilt = self.mask_images(images_tilt, self.Lmax).unsqueeze(1) if images_tilt is not None else None)
+        keep = self.keep_matrix(bound, Lstar.view(B,1), 24, probabilistic) # BxQ
+        Np = keep.sum(-1) # per image # todo: filter keep by Np to max_poses
+        w = keep.nonzero().cpu() # sum(Np) x 2
+        quat = self.base_quat[w[:,1]]
+        s2i, s1i = so3_grid.get_base_ind(w[:,1])
+        q_ind = np.stack((s2i,s1i),1) # Np x 2
+        batch_ind = w[:,0]
 
-            k = int((self.Lmax-self.Lmin)/(niter-1))
-            for iter_ in range(1,niter+1):
-                vlog(iter_); vlog(Np)
-                L = min(self.Lmin +k*iter_, self.Lmax)
-                quat, q_ind, rot, = self.subdivide_rotonly(quat, q_ind, iter_)
-                batch_ind8 = batch_ind.unsqueeze(1).repeat(1,8).view(-1) # repeat each element 8 times
-                bound = self.eval_grid(self.mask_images(images[batch_ind], L).unsqueeze(1), rot, z[batch_ind8], 8, L,
-                                            images_tilt=self.mask_images(images_tilt[batch_ind], L).unsqueeze(1) if images_tilt is not None else None) # sum(NP)x1x8
-                # TODO: if probabilistic: bound += B1 + B2
-                bound2 = self.tile(bound.view(-1,8), Np) # Bxmax(Np)x8?
-                min_i = bound2.view(B,-1).argmin(1) 
-                min_i[1:] += 8*Np.cumsum(0)[0:-1]
-                min_rot = rot[min_i] # CHECK THIS IDK
-                Lstar = self.eval_grid(self.mask_images(images, self.Lmax).unsqueeze(1), min_rot, z, 1, self.Lmax,
-                                        images_tilt=self.mask_images(images_tilt, self.Lmax).unsqueeze(1) if images_tilt is not None else None) # Bx1x1
-                keep = self.keep_matrix(bound2, Lstar.view(B,1), bound2.shape[1], probabilistic) # Bx(max(Np)*8)
-                w = keep.nonzero() # sum(Np) x 2
-                batch_ind = w[:,0]
-                # CHECK THIS IDK
-                tmp = 8*Np.cumsum(0)
-                tmp[-1] = 0
-                w[:,1] += tmp[(w[:,0]-1)]
-                w=w.cpu()
-                quat = quat.reshape(-1,4)[w[:,1]]
-                q_ind = q_ind.reshape(-1,2)[w[:,1]]
-                Np = keep.sum(1)
-                assert Np.sum() == len(q_ind)
+        k = int((self.Lmax-self.Lmin)/(niter-1))
+        for iter_ in range(1,niter+1):
+            vlog(iter_); vlog(Np)
+            L = min(self.Lmin +k*iter_, self.Lmax)
+            quat, q_ind, rot, = self.subdivide_rotonly(quat, q_ind, iter_)
+            batch_ind8 = batch_ind.unsqueeze(1).repeat(1,8).view(-1) # repeat each element 8 times
+            bound = self.eval_grid(self.mask_images(images[batch_ind], L).unsqueeze(1), rot, z[batch_ind8], 8, L,
+                                        images_tilt=self.mask_images(images_tilt[batch_ind], L).unsqueeze(1) if images_tilt is not None else None) # sum(NP)x1x8
+            # TODO: if probabilistic: bound += B1 + B2
+            bound2 = self.tile(bound.view(-1,8), Np) # Bxmax(Np)x8?
+            min_i = bound2.view(B,-1).argmin(1) 
+            min_i[1:] += 8*Np.cumsum(0)[0:-1]
+            min_rot = rot[min_i] # CHECK THIS IDK
+            Lstar = self.eval_grid(self.mask_images(images, self.Lmax).unsqueeze(1), min_rot, z, 1, self.Lmax,
+                                    images_tilt=self.mask_images(images_tilt, self.Lmax).unsqueeze(1) if images_tilt is not None else None) # Bx1x1
+            keep = self.keep_matrix(bound2, Lstar.view(B,1), bound2.shape[1], probabilistic) # Bx(max(Np)*8)
+            w = keep.nonzero() # sum(Np) x 2
+            batch_ind = w[:,0]
+            # CHECK THIS IDK
+            tmp = 8*Np.cumsum(0)
+            tmp[-1] = 0
+            w[:,1] += tmp[(w[:,0]-1)]
+            w=w.cpu()
+            quat = quat.reshape(-1,4)[w[:,1]]
+            q_ind = q_ind.reshape(-1,2)[w[:,1]]
+            Np = keep.sum(1)
+            assert Np.sum() == len(q_ind)
         return min_rot
 
     def opt_theta_trans(self, images, z, images_tilt=None, niter=5, L=None, probabilistic=False):
@@ -767,64 +760,63 @@ class BNBHet:
             raise NotImplementedError
         B = images.size(0)
         assert not self.model.training
-        with torch.no_grad():
-            if probabilistic:
-                self.max_slice = self.estimate_max_slice()
-            # expand the base grid B times since each image has a different z
-            base_rot = self.base_rot.expand(B,*self.base_rot.shape) # B x 576 x 3 x 3
-            bound = self.eval_grid(self.shift_images(images, self.base_shifts, self.Lmin), 
-                                            base_rot, z, self.nbase, self.Lmin, 
-                                            images_tilt=self.shift_images(images_tilt, self.base_shifts, self.Lmin) if images_tilt is not None else None) # BxTxQ
-            # TODO: if probabilistic: bound += B1 + B2
-            mini = torch.argmin(bound.view(B,-1),1)
-            qi = mini % self.nbase
-            ti = mini // self.nbase
-            min_trans = self.base_shifts[ti] # unsqueeze by 1 to get right dim for translate_ht func
-            min_rot = self.base_rot[qi]
-            Lstar = self.eval_grid(self.shift_images(images, min_trans.unsqueeze(1), self.Lmax),
-                                        min_rot, z, 1, self.Lmax,
-                                        images_tilt = self.shift_images(images_tilt, min_trans.unsqueeze(1), self.Lmax) if images_tilt is not None else None)
-            keep = self.keep_matrix(bound, Lstar.view(B,1), 24, probabilistic) # Bx-1
-            keep = keep.view(B,len(self.base_shifts), self.nbase) # BxTxQ
-            Np = keep.sum((-1,-2)) # per image # todo: filter keep by Np to max_poses
-            w = keep.nonzero().cpu() # sum(Np) x 3
-            quat = self.base_quat[w[:,2]]
-            s2i, s1i = so3_grid.get_base_ind(w[:,2])
-            q_ind = np.stack((s2i,s1i),1) # Np x 2
-            trans = self.base_shifts[w[:,1]]
-            xi, yi = shift_grid.get_base_ind(w[:,1])
-            t_ind = np.stack((xi,yi),1) #Np x 2
-            batch_ind = w[:,0]
+        if probabilistic:
+            self.max_slice = self.estimate_max_slice()
+        # expand the base grid B times since each image has a different z
+        base_rot = self.base_rot.expand(B,*self.base_rot.shape) # B x 576 x 3 x 3
+        bound = self.eval_grid(self.shift_images(images, self.base_shifts, self.Lmin), 
+                                        base_rot, z, self.nbase, self.Lmin, 
+                                        images_tilt=self.shift_images(images_tilt, self.base_shifts, self.Lmin) if images_tilt is not None else None) # BxTxQ
+        # TODO: if probabilistic: bound += B1 + B2
+        mini = torch.argmin(bound.view(B,-1),1)
+        qi = mini % self.nbase
+        ti = mini // self.nbase
+        min_trans = self.base_shifts[ti] # unsqueeze by 1 to get right dim for translate_ht func
+        min_rot = self.base_rot[qi]
+        Lstar = self.eval_grid(self.shift_images(images, min_trans.unsqueeze(1), self.Lmax),
+                                    min_rot, z, 1, self.Lmax,
+                                    images_tilt = self.shift_images(images_tilt, min_trans.unsqueeze(1), self.Lmax) if images_tilt is not None else None)
+        keep = self.keep_matrix(bound, Lstar.view(B,1), 24, probabilistic) # Bx-1
+        keep = keep.view(B,len(self.base_shifts), self.nbase) # BxTxQ
+        Np = keep.sum((-1,-2)) # per image # todo: filter keep by Np to max_poses
+        w = keep.nonzero().cpu() # sum(Np) x 3
+        quat = self.base_quat[w[:,2]]
+        s2i, s1i = so3_grid.get_base_ind(w[:,2])
+        q_ind = np.stack((s2i,s1i),1) # Np x 2
+        trans = self.base_shifts[w[:,1]]
+        xi, yi = shift_grid.get_base_ind(w[:,1])
+        t_ind = np.stack((xi,yi),1) #Np x 2
+        batch_ind = w[:,0]
 
-            k = int((self.Lmax-self.Lmin)/(niter-1))
-            for iter_ in range(1,niter+1):
-                vlog(iter_); vlog(Np)
-                L = min(self.Lmin +k*iter_, self.Lmax)
-                quat, q_ind, rot, trans, t_ind = self.subdivide(quat, q_ind, t_ind, iter_)
-                batch_ind4 = batch_ind.unsqueeze(1).repeat(1,4).view(-1) # repeat each element 4 times
-                batch_ind8 = batch_ind.unsqueeze(1).repeat(1,8).view(-1) # repeat each element 8 times
-                bound = self.eval_grid(self.shift_images(images[batch_ind4], trans.unsqueeze(1), L).view(len(batch_ind),4,-1), rot, z[batch_ind8], 8, L,
-                                            images_tilt=self.shift_images(images_tilt[batch_ind4],trans.unsqueeze(1), L).view(len(batch_ind),4,-1) if images_tilt is not None else None) # sum(NP),4x8
-                # TODO: if probabilistic: bound += B1 + B2
-                bound2 = self.tile(bound, Np) # Bxmax(Np)x4x8
-                min_i = bound2.view(B,-1).argmin(1) 
-                min_i[1:] += 32*Np.cumsum(0)[0:-1]
-                min_rot = rot[min_i//32*8+min_i%8]
-                min_trans = trans[min_i/8]
-                Lstar = self.eval_grid(self.shift_images(images, min_trans.unsqueeze(1), self.Lmax), min_rot, z, 1, self.Lmax,
-                                        images_tilt=self.shift_images(images_tilt, min_trans.unsqueeze(1), self.Lmax) if images_tilt is not None else None) # Bx1x1
-                keep = self.keep_matrix(bound2, Lstar.view(B,1), bound2.shape[1], probabilistic) # Bx(max(Np)*32)
-                w = keep.nonzero() # sum(Np) x 2
-                batch_ind = w[:,0]
-                tmp = 32*Np.cumsum(0)
-                tmp[-1] = 0
-                w[:,1] += tmp[(w[:,0]-1)]
-                w=w.cpu()
-                quat = quat.reshape(-1,4)[w[:,1]].reshape(-1,4) # final reshape needed to keep 2D array if len(w) == 1
-                q_ind = q_ind.reshape(-1,2)[w[:,1]].reshape(-1,2)
-                t_ind = t_ind.reshape(-1,2)[w[:,1]].reshape(-1,2)
-                Np = keep.sum(1)
-                assert Np.sum() == len(t_ind)
+        k = int((self.Lmax-self.Lmin)/(niter-1))
+        for iter_ in range(1,niter+1):
+            vlog(iter_); vlog(Np)
+            L = min(self.Lmin +k*iter_, self.Lmax)
+            quat, q_ind, rot, trans, t_ind = self.subdivide(quat, q_ind, t_ind, iter_)
+            batch_ind4 = batch_ind.unsqueeze(1).repeat(1,4).view(-1) # repeat each element 4 times
+            batch_ind8 = batch_ind.unsqueeze(1).repeat(1,8).view(-1) # repeat each element 8 times
+            bound = self.eval_grid(self.shift_images(images[batch_ind4], trans.unsqueeze(1), L).view(len(batch_ind),4,-1), rot, z[batch_ind8], 8, L,
+                                        images_tilt=self.shift_images(images_tilt[batch_ind4],trans.unsqueeze(1), L).view(len(batch_ind),4,-1) if images_tilt is not None else None) # sum(NP),4x8
+            # TODO: if probabilistic: bound += B1 + B2
+            bound2 = self.tile(bound, Np) # Bxmax(Np)x4x8
+            min_i = bound2.view(B,-1).argmin(1) 
+            min_i[1:] += 32*Np.cumsum(0)[0:-1]
+            min_rot = rot[min_i//32*8+min_i%8]
+            min_trans = trans[min_i/8]
+            Lstar = self.eval_grid(self.shift_images(images, min_trans.unsqueeze(1), self.Lmax), min_rot, z, 1, self.Lmax,
+                                    images_tilt=self.shift_images(images_tilt, min_trans.unsqueeze(1), self.Lmax) if images_tilt is not None else None) # Bx1x1
+            keep = self.keep_matrix(bound2, Lstar.view(B,1), bound2.shape[1], probabilistic) # Bx(max(Np)*32)
+            w = keep.nonzero() # sum(Np) x 2
+            batch_ind = w[:,0]
+            tmp = 32*Np.cumsum(0)
+            tmp[-1] = 0
+            w[:,1] += tmp[(w[:,0]-1)]
+            w=w.cpu()
+            quat = quat.reshape(-1,4)[w[:,1]].reshape(-1,4) # final reshape needed to keep 2D array if len(w) == 1
+            q_ind = q_ind.reshape(-1,2)[w[:,1]].reshape(-1,2)
+            t_ind = t_ind.reshape(-1,2)[w[:,1]].reshape(-1,2)
+            Np = keep.sum(1)
+            assert Np.sum() == len(t_ind)
         return min_rot, min_trans
 
 

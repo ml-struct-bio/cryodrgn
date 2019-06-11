@@ -1,8 +1,5 @@
 '''
-Reconstruct 3D density from 2D images with assigned angles
-
-Ellen Zhong
-8/8/18
+Backproject a stack of images via linear interpolation
 '''
 
 import argparse
@@ -21,13 +18,13 @@ log = utils.log
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mrcs', help='Input MRCs stack')
-    parser.add_argument('pkl', help='EMAN euler angles')
-    parser.add_argument('-o', type=os.path.abspath,help='Output MRC file')
-    parser.add_argument('--is-rot',action='store_true',help='Input angles are rotation matrices')
-    parser.add_argument('--indices',help='Indices to iterator over (pkl)')
+    parser.add_argument('pkl', help='Euler angles (EMAN convention) or rotation matrices')
+    parser.add_argument('-o', type=os.path.abspath, required=True, help='Output MRC file')
+    parser.add_argument('--is-rot', action='store_true', help='Input angles are rotation matrices')
+    parser.add_argument('--indices',help='Indices to iterate over (pkl)')
     parser.add_argument('--trans', type=os.path.abspath, help='Optionally provide translations (.pkl)')
-    parser.add_argument('--tscale',type=float,help='Scale all translations by this amount')
-    parser.add_argument('--first',type=int,help='Only use first N images')
+    parser.add_argument('--tscale', type=float, help='Scale all translations by this amount')
+    parser.add_argument('--first', type=int, help='Backproject the first N images')
     return parser
 
 def add_slice(V, counts, ff_coord, ff, D):
@@ -65,8 +62,9 @@ def main(args):
         log('Warning: # images != # angles. Backprojecting first {} images'.format(len(angles)))
         N = len(angles)
     if args.trans:
-        trans = utils.load_angles(args.trans)
-        if args.tscale:
+        trans = utils.load_pkl(args.trans)
+        if args.tscale is not None:
+            log('Scaling translations by {}'.format(args.tscale))
             trans *= args.tscale
     else:
         trans = None
@@ -85,7 +83,7 @@ def main(args):
     MASK = np.where(np.sum(COORD**2,axis=0)**.5 <=(D/2-1))
     COORD = COORD[:,MASK[0]]
 
-    # we need a 2D lattice (normalized differently) for implementing the fourier shift 
+    # we need a 2D lattice spanning [-.5,.5) for the fourier phase shift 
     TCOORD = np.stack([xx, yy],axis=2)/D # DxDx2
 
     if args.indices:
@@ -116,7 +114,6 @@ def main(args):
     V /= counts
     V = fft.ifftn_center(V)
     mrc.write(args.o,V.astype('float32'))
-
 
 if __name__ == '__main__':
     main(parse_args().parse_args())

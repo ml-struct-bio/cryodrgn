@@ -1,8 +1,5 @@
 '''
-Reconstruct 3D density from 2D images with assigned angles
-
-Ellen Zhong
-8/8/18
+Backproject a stack of images and a tilt series pair via linear interpolation
 '''
 
 import argparse
@@ -22,11 +19,14 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mrcs', help='Input MRCs stack')
     parser.add_argument('mrcs_tilt', help='Input MRCs stack')
-    parser.add_argument('pkl', help='EMAN euler angles')
+    parser.add_argument('pkl', help='Euler angles (EMAN convention) or rotation matrices')
+    parser.add_argument('-o', required=True, type=os.path.abspath,help='Output MRC file')
     parser.add_argument('--tilt', type=float, default=45, help='Right-handed x-axis tilt offset in degrees (default: %(default)s)')
-    parser.add_argument('-o', type=os.path.abspath,help='Output MRC file')
-    parser.add_argument('--is-rot',action='store_true',help='Input angles are rotation matrices')
-    parser.add_argument('--indices',help='Indices to iterator over (pkl)')
+    parser.add_argument('--is-rot', action='store_true', help='Input angles are rotation matrices')
+    parser.add_argument('--indices',help='Indices to iterate over (pkl)')
+    parser.add_argument('--trans', type=os.path.abspath, help='Optionally provide translations (.pkl)')
+    parser.add_argument('--tscale', type=float, help='Scale all translations by this amount')
+    parser.add_argument('--first', type=int, help='Backproject the first N images')
     return parser
 
 def add_slice(V, counts, ff_coord, ff, D):
@@ -71,6 +71,14 @@ def main(args):
         log('Warning: # images != # angles. Backprojecting first {} images'.format(len(angles)))
         N = len(angles)
 
+    if args.trans:
+        trans = utils.load_pkl(args.trans)
+        if args.tscale is not None:
+            log('Scaling translations by {}'.format(args.tscale))
+            trans *= args.tscale
+    else:
+        trans = None
+
     D, D2 = images[0].get().shape
     assert D == D2, "Image dimensions must be square"
 
@@ -84,21 +92,29 @@ def main(args):
     COORD = COORD[:,MASK[0]]
     if args.indices:
         iterator = pickle.load(open(args.indices,'rb'))
+    elif args.first:
+        iterator = range(args.first)
     else:
         iterator = range(N)
     for ii in iterator:
         if ii%100==0: log('image {}'.format(ii))
-        ff = fft.fft2_center(images[ii].get()).ravel()[MASK]
+        ff = fft.fft2_center(images[ii].get())
+        ff_tilt = fft.fft2_center(images_tilt[ii].get())
+        if trans is not None:
+            tfilt = np.dot(TCOORD,trans[ii])*-2*np.pi
+            tfilt = np.cos(tfilt) + np.sin(tfilt)*1j
+            ff *= tfilt
+            ff_tilt *= tfilt
+        ff = ff.ravel()[MASK]
+        ff_tilt = ff_tilt.ravel()[MASK]
         if args.is_rot:
             rot = angles[ii]
         else:
             rot = utils.R_from_eman(angles[ii,0],angles[ii,1],angles[ii,2])
         ff_coord = np.dot(rot.T,COORD)
         add_slice(V,counts,ff_coord,ff,D)
-
-        ff = fft.fft2_center(images_tilt[ii].get()).ravel()[MASK]
         ff_coord = np.dot(np.dot(rot.T, tilt.T), COORD)
-        add_slice(V,counts,ff_coord,ff,D)
+        add_slice(V,counts,ff_coord,ff_tilt,D)
 
     z = np.where(counts == 0.0)
     td = time.time()-t1

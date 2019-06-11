@@ -18,6 +18,7 @@ import utils
 import fft
 import lie_tools
 import dataset
+import ctf
 
 from models import HetOnlyVAE
 from lattice import Lattice
@@ -33,6 +34,7 @@ def parse_args():
     parser.add_argument('particles', help='Particle stack file (.mrc)')
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
     parser.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: mean, std of dataset)')
+    parser.add_argument('--ctf', metavar='pkl', type=os.path.abspath, help='CTF parameters (.pkl)')
     parser.add_argument('--priors', type=os.path.abspath, nargs='*', required=True, help='Priors on rotation, optionally provide translation (.pkl)')
     parser.add_argument('--tscale', type=float, default=1.0, help='Scale translations by this amount')
     parser.add_argument('--load', type=os.path.abspath, help='Initialize training from a checkpoint')
@@ -67,8 +69,9 @@ def parse_args():
     group.add_argument('--pdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
     return parser
 
-def train(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, equivariance=None, tilt=None):
+def train(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, equivariance=None, tilt=None, ctf_params=None):
     use_tilt = yt is not None
+    use_ctf = ctf_params is not None
     model.train()
     optim.zero_grad()
     B = y.size(0)
@@ -87,12 +90,19 @@ def train(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, equ
     z = model.reparameterize(z_mu, z_logvar)
 
     # decode 
+    def apply_ctf(img):
+        for i in range(B): # TODO: torch/batch-ify 
+            c = ctf.compute_ctf(lattice.coords[:,0:2]/2/ctf_params[i,0].numpy(), *ctf_params[i,1:]).reshape(D,D)
+            img *= torch.tensor(c)
+        return img
     y_recon = model.decode(rot, z).view(B,D,D)
+    if use_ctf: y_recon = apply_ctf(y_recon)
     gen_loss = F.mse_loss(y_recon, y)
 
     # decode the tilt series
     if use_tilt:
         y_recon_tilt = model.decode(tilt @ rot, z).view(B,D,D)
+        if use_ctf: y_recon_tilt = apply_ctf(y_recon_tilt)
         gen_loss = .5*gen_loss + .5*F.mse_loss(y_recon_tilt, yt)
 
     # latent loss
@@ -166,6 +176,13 @@ def main(args):
         assert trans.shape == (Nimg,2)
     else: trans = None
 
+    if args.ctf is not None:
+        log('Loading ctf params from {}'.format(args.ctf))
+        ctf_params = utils.load_pkl(args.ctf)
+        assert ctf_params.shape == (Nimg, 7)
+        ctf.print_ctf_params(ctf_params[0])
+    else: ctf_params = None
+
     lattice = Lattice(D)
     if args.enc_mask: args.enc_mask = lattice.get_circular_mask(args.enc_mask)
     model = HetOnlyVAE(lattice, args.qlayers, args.qdim, args.players, args.pdim,
@@ -217,7 +234,8 @@ def main(args):
             
             rot = rots[ind]
             tran = trans[ind] if trans is not None else None
-            gen_loss, kld, loss, eq_loss, z = train(model, lattice, y, yt, rot, tran, optim, beta, args.beta_control, equivariance_tuple, tilt)
+            if ctf_params is not None: ctf_param = ctf_params[ind]
+            gen_loss, kld, loss, eq_loss, z = train(model, lattice, y, yt, rot, tran, optim, beta, args.beta_control, equivariance_tuple, tilt, ctf_params=ctf_param)
 
             # logging
             gen_loss_accum += gen_loss*B

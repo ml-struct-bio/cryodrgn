@@ -18,6 +18,7 @@ import mrc
 import utils
 import fft
 import dataset
+import ctf
 
 from lattice import Lattice
 from models import FTSliceDecoder
@@ -31,6 +32,8 @@ def parse_args():
     parser.add_argument('rot', help='Rotation matrix for each particle (.pkl)')
     parser.add_argument('--trans', help='Optionally provide translations for each particle (.pkl)')
     parser.add_argument('--tscale', type=float, default=1.0)
+    parser.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: mean, std of dataset)')
+    parser.add_argument('--ctf', metavar='pkl', type=os.path.abspath, help='CTF parameters (.pkl)')
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
     parser.add_argument('--load', type=os.path.abspath, help='Initialize training from a checkpoint')
     parser.add_argument('--checkpoint', type=int, default=1, help='Checkpointing interval in N_EPOCHS (default: %(default)s)')
@@ -61,17 +64,22 @@ def save_checkpoint(model, lattice, optim, epoch, norm, out_mrc, out_weights):
         'optimizer_state_dict':optim.state_dict(),
         }, out_weights)
 
-def train(model, lattice, optim, y, rot, trans=None):
+def train(model, lattice, optim, y, rot, trans=None, ctf_params=None):
     model.train()
     optim.zero_grad()
     B = y.size(0)
     D = lattice.D
-    yt = model(lattice.coords @ rot)
-    yt = yt.view(-1, D, D)
+    yhat = model(lattice.coords @ rot)
+    if ctf_params is not None:
+        for i in range(B): # TODO: torch/batch-ify
+            freqs = lattice.coords[:,0:2]/2/ctf_params[i,0].numpy()
+            c = ctf.compute_ctf(freqs, *ctf_params[i,1:])
+            yhat[i] *= torch.tensor(c)
+    yhat = yhat.view(-1, D, D)
     if trans is not None:
         y = model.translate_ht(lattice.coords[:,0:2]/2, y.view(B,-1), trans.unsqueeze(1))
         y = y.view(-1, D, D)
-    loss = F.mse_loss(yt, y)
+    loss = F.mse_loss(yhat, y)
     loss.backward()
     optim.step()
     return loss.item()
@@ -93,7 +101,7 @@ def main(args):
         torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
     # load the particles
-    data = dataset.MRCData(args.particles)
+    data = dataset.MRCData(args.particles, norm=args.norm)
     D = data.D
     Nimg = data.N
 
@@ -106,10 +114,16 @@ def main(args):
         log('Loading model weights from {}'.format(args.load))
         checkpoint = torch.load(args.load)
         model.load_state_dict(checkpoint['model_state_dict'])
-        #optim.load_state_dict(checkpoint['optimizer_state_dict'])
 
     rot = torch.tensor(utils.load_pkl(args.rot))
     if args.trans: trans = args.tscale*torch.tensor(utils.load_pkl(args.trans))
+
+    if args.ctf is not None:
+        log('Loading ctf params from {}'.format(args.ctf))
+        ctf_params = utils.load_pkl(args.ctf)
+        assert ctf_params.shape == (Nimg, 7)
+        ctf.print_ctf_params(ctf_params[0])
+    else: ctf_params = None
 
     data_generator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
     for epoch in range(args.num_epochs):
@@ -120,7 +134,8 @@ def main(args):
             y = batch.to(device)
             r = rot[ind]
             t = trans[ind] if args.trans else None
-            loss_item = train(model, lattice, optim, batch.to(device), r, t)
+            c = ctf_params[ind] if ctf_params is not None else None
+            loss_item = train(model, lattice, optim, batch.to(device), r, t, c)
             loss_accum += loss_item*len(ind)
             if batch_it % args.log_interval == 0:
                 log('# [Train Epoch: {}/{}] [{}/{} images] loss={:.4f}'.format(epoch+1, args.num_epochs, batch_it, Nimg, loss_item))

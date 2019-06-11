@@ -40,3 +40,11 @@ def R_from_eman(a,b,y):
     R[2,1] *= -1
     return R
 
+def xrot(tilt_deg):
+    '''Return rotation matrix associated with rotation over the x-axis'''
+    theta = tilt_deg*np.pi/180
+    tilt = np.array([[1.,0.,0.],
+                     [0, np.cos(theta), -np.sin(theta)],
+                     [0, np.sin(theta), np.cos(theta)]])
+    return tilt
+    

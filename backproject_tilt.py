@@ -60,10 +60,7 @@ def main(args):
     images_tilt, _, _ = mrc.parse_mrc(args.mrcs_tilt,lazy=True)
     assert len(images) == len(images_tilt)
 
-    theta = args.tilt*np.pi/180
-    tilt = np.array([[1.,0.,0.],
-                    [0, np.cos(theta), -np.sin(theta)],
-                    [0, np.sin(theta), np.cos(theta)]])
+    tilt = utils.xrot(args.tilt)
 
     N = len(images)
     angles = utils.load_angles(args.pkl)

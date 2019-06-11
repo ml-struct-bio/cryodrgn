@@ -135,11 +135,7 @@ def main(args):
         tilt = None
     else:
         data = dataset.TiltMRCData(args.particles, args.tilt, norm=args.norm)
-        theta = args.tilt_deg*np.pi/180
-        tilt = np.array([[1.,0.,0.],
-                        [0, np.cos(theta), -np.sin(theta)],
-                        [0, np.sin(theta), np.cos(theta)]]).astype(np.float32)
-        tilt = torch.tensor(tilt)
+        tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32))
     D = data.D
     Nimg = data.N
 

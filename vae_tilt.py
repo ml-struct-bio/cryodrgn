@@ -126,12 +126,8 @@ def main(args):
     data = dataset.TiltMRCData(args.particles, args.particles_tilt, norm=args.norm)
     Nimg = data.N
     D = data.D
-
-    theta = args.tilt*np.pi/180
-    tilt = np.array([[1.,0.,0.],
-                    [0, np.cos(theta), -np.sin(theta)],
-                    [0, np.sin(theta), np.cos(theta)]]).astype(np.float32)
-
+    
+    tilt = utils.xrot(args.tilt).astype(np.float32)
     lattice = Lattice(D)
     if args.enc_mask: args.enc_mask = lattice.get_circular_mask(args.enc_mask)
     model = TiltVAE(lattice, tilt, args.qlayers, args.qdim, args.players, args.pdim, no_trans=args.no_trans, enc_mask=args.enc_mask)

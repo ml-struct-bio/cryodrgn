@@ -31,7 +31,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('particles', help='Particle stack file (.mrc)')
     parser.add_argument('weights', help='Model weights')
-    parser.add_argument('-N', type=int, help='First N images (default: all images)')
+    parser.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: mean, std of dataset)')
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Output pickle')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
 
@@ -43,6 +43,7 @@ def parse_args():
     group.add_argument('--encode-mode', default='resid', choices=('conv','resid','mlp'), help='Type of encoder network')
     group.add_argument('--players', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--pdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
+    group.add_argument('--enc-mask', type=int, help='Circulask mask of image for encoder')
     return parser
 
 def main(args):

@@ -97,19 +97,17 @@ def train(model, lattice, bnb, optim, minibatch, L, beta, beta_control=None, equ
         rot, trans = bnb.opt_theta_trans(y, z, None if enc_only else yt, L=L)
     model.train()
 
-    y_recon = model.decode(rot, z)
-    y_recon = y_recon.view(-1, D, D)
-    if not no_trans:
-        y = model.decoder.translate_ht(lattice.coords[:,0:2]/2, y.view(B,-1), trans.unsqueeze(1))
-        y = y.view(-1, D, D)
-    gen_loss = F.mse_loss(y_recon, y)
-    if yt is not None: 
-        y_recon_tilt = model.decode(bnb.tilt @ rot, z)
-        y_recon_tilt = y_recon_tilt.view(-1, D, D)
-        if not no_trans:
-            yt = model.decoder.translate_ht(lattice.coords[:,0:2]/2, yt.view(B,-1), trans.unsqueeze(1))
-            yt = yt.view(-1, lattice.D, lattice.D)
-        gen_loss = .5*gen_loss + .5*F.mse_loss(y_recon_tilt, yt)
+    # train model  
+    def gen_slice(R):
+        return model.decode(R, z)
+    def translate(img):
+        img = model.decoder.translate_ht(lattice.coords[:,0:2]/2, img.view(B,-1), trans.unsqueeze(1))
+        return img.view(-1, D, D)
+
+    if yt is not None:
+        gen_loss = .5*F.mse_loss(gen_slice(rot), translate(y)) + .5*F.mse_loss(gen_slice(bnb.tilt @ rot), translate(yt))
+    else:
+        gen_loss = F.mse_loss(gen_slice(rot), translate(y))
 
     kld = -0.5 * torch.mean(1 + z_logvar - z_mu.pow(2) - z_logvar.exp())
 
@@ -209,10 +207,7 @@ def main(args):
     else:
         start_epoch = 0
 
-    if args.l_start == -1:
-        Lsched = lambda x: None
-    else:
-        Lsched = LinearSchedule(args.l_start,args.l_end,0,args.l_end_it)
+    Lsched = LinearSchedule(args.l_start,args.l_end,0,args.l_end_it)
 
     # training loop
     num_epochs = args.num_epochs
@@ -281,7 +276,7 @@ def main(args):
     save_checkpoint(model, lattice, z_accum/Nimg, bnb_pose, optim, epoch, data.norm, out_mrc, out_weights)
     
     td = dt.now()-t1
-    log('Finsihed in {} ({} per epoch)'.format(td, td/num_epochs))
+    log('Finsihed in {} ({} per epoch)'.format(td, td/(num_epochs-start_epoch)))
 
 if __name__ == '__main__':
     args = parse_args().parse_args()

@@ -21,7 +21,6 @@ import dataset
 from lattice import Lattice
 from bnb import BNNBHomo, BNBHomo, BNBHomoRot
 from models import FTSliceDecoder
-from losses import EquivarianceLoss
 from beta_schedule import LinearSchedule
 
 log = utils.log
@@ -76,6 +75,7 @@ def save_checkpoint(model, lattice, bnb_pose, optim, epoch, norm, out_mrc, out_w
 def train(model, lattice, bnb, optim, batch, L, tilt=None, no_trans=False):
     y, yt = batch
     B = y.size(0)
+
     # BNB inference of orientation 
     model.eval()
     with torch.no_grad():
@@ -83,23 +83,21 @@ def train(model, lattice, bnb, optim, batch, L, tilt=None, no_trans=False):
             rot = bnb.opt_theta(y, L, yt)
         else:
             rot, trans = bnb.opt_theta_trans(y, L, yt)
-            vlog(trans[0])
+
+    def gen_slice(R):
+        slice_ = model(lattice.coords @ R)
+        return slice_.view(-1, lattice.D, lattice.D)
+    def translate(img):
+        img = model.translate_ht(lattice.coords[:,0:2]/2, img.view(B,-1), trans.unsqueeze(1))
+        return img.view(-1, lattice.D, lattice.D)
+
     # Train model 
     model.train()
     optim.zero_grad()
-    y_recon = model(lattice.coords @ rot)
-    y_recon = y_recon.view(-1, lattice.D, lattice.D)
-    if not no_trans:
-        y = model.translate_ht(lattice.coords[:,0:2]/2, y.view(B,-1), trans.unsqueeze(1))
-        y = y.view(-1, lattice.D, lattice.D)
-    loss = F.mse_loss(y_recon,y)
     if tilt is not None:
-        y_recon_tilt = model(lattice.coords @ tilt @ rot)
-        y_recon_tilt = y_recon_tilt.view(-1, lattice.D, lattice.D)
-        if not no_trans:
-            yt = model.translate_ht(lattice.coords[:,0:2]/2, yt.view(B,-1), trans.unsqueeze(1))
-            yt = yt.view(-1, lattice.D, lattice.D)
-        loss = .5*loss + .5*F.mse_loss(y_recon_tilt,yt)
+        loss = .5*F.mse_loss(gen_slice(rot), translate(y)) + .5*F.mse_loss(gen_slice(tilt @ rot), translate(yt))
+    else:
+        loss = F.mse_loss(gen_slice(rot), translate(y)) 
     loss.backward()
     optim.step()
     save_pose = [rot.detach().cpu().numpy()]
@@ -205,7 +203,7 @@ def main(args):
     save_checkpoint(model, lattice, bnb_pose, optim, epoch, data.norm, out_mrc, out_weights)
    
     td = dt.now()-t1
-    log('Finsihed in {} ({} per epoch)'.format(td, td/args.num_epochs))
+    log('Finsihed in {} ({} per epoch)'.format(td, td/(args.num_epochs-start_epoch)))
 
 if __name__ == '__main__':
     args = parse_args().parse_args()

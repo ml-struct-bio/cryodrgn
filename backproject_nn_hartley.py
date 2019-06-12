@@ -71,10 +71,9 @@ def train(model, lattice, optim, y, rot, trans=None, ctf_params=None):
     D = lattice.D
     yhat = model(lattice.coords @ rot)
     if ctf_params is not None:
-        for i in range(B): # TODO: torch/batch-ify
-            freqs = lattice.coords[:,0:2]/2/ctf_params[i,0].numpy()
-            c = ctf.compute_ctf(freqs, *ctf_params[i,1:])
-            yhat[i] *= torch.tensor(c)
+        freqs = lattice.coords[:,0:2]/2
+        freqs = freqs.unsqueeze(0).expand(B,*freqs.shape)/ctf_params[:,0]
+        y_hat *= ctf.compute_ctf(freqs, *torch.split(ctf_params[:,1:], 1, 1))
     yhat = yhat.view(-1, D, D)
     if trans is not None:
         y = model.translate_ht(lattice.coords[:,0:2]/2, y.view(B,-1), trans.unsqueeze(1))
@@ -123,6 +122,7 @@ def main(args):
         ctf_params = utils.load_pkl(args.ctf)
         assert ctf_params.shape == (Nimg, 7)
         ctf.print_ctf_params(ctf_params[0])
+        ctf_params = torch.tensor(ctf_params)
     else: ctf_params = None
 
     data_generator = DataLoader(data, batch_size=args.batch_size, shuffle=True)

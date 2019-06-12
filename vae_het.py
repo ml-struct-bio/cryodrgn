@@ -91,9 +91,9 @@ def train(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, equ
 
     # decode 
     def apply_ctf(img):
-        for i in range(B): # TODO: torch/batch-ify 
-            c = ctf.compute_ctf(lattice.coords[:,0:2]/2/ctf_params[i,0].numpy(), *ctf_params[i,1:]).reshape(D,D)
-            img[i] *= torch.tensor(c)
+        freqs = lattice.coords[:,0:2]/2
+        freqs = freqs.unsqueeze(0).expand(B,*freqs.shape)/ctf_params[:,0]
+        img *= ctf.compute_ctf(freqs, *torch.split(ctf_params[:,1:], 1, 1))
         return img
     y_recon = model.decode(rot, z).view(B,D,D)
     if use_ctf: y_recon = apply_ctf(y_recon)
@@ -181,6 +181,7 @@ def main(args):
         ctf_params = utils.load_pkl(args.ctf)
         assert ctf_params.shape == (Nimg, 7)
         ctf.print_ctf_params(ctf_params[0])
+        ctf_params = torch.tensor(ctf_params)
     else: ctf_params = None
 
     lattice = Lattice(D)

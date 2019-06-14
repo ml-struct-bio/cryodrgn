@@ -235,7 +235,7 @@ def main(args):
             
             rot = rots[ind]
             tran = trans[ind] if trans is not None else None
-            if ctf_params is not None: ctf_param = ctf_params[ind]
+            ctf_param = ctf_params[ind] if ctf_params is not None else None
             gen_loss, kld, loss, eq_loss, z = train(model, lattice, y, yt, rot, tran, optim, beta, args.beta_control, equivariance_tuple, tilt, ctf_params=ctf_param)
 
             # logging

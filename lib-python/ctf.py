@@ -26,14 +26,14 @@ def compute_ctf(freqs, dfu, dfv, dfang, volt, cs, w, phase_shift=0, bfactor=None
     phase_shift = phase_shift * np.pi / 180
     
     # lam = sqrt(h^2/(2*m*e*Vr)); Vr = V + (e/(2*m*c^2))*V^2
-    lam = 12.2639 / np.sqrt(volt + 0.97845e-6 * volt**2)
+    lam = 12.2639 / (volt + 0.97845e-6 * volt**2)**.5
     x = freqs[...,0]
     y = freqs[...,1]
-    ang = np.arctan2(y,x)
+    ang = torch.atan2(y,x)
     s2 = x**2 + y**2
     df = .5*(dfu + dfv + (dfu-dfv)*torch.cos(2*(ang-dfang)))
     gamma = 2*np.pi*(-.5*df*lam*s2 + .25*cs*lam**3*s2**2) + phase_shift
-    ctf = np.sqrt(1-w**2)*torch.sin(gamma) - w*torch.cos(gamma) 
+    ctf = (1-w**2)**.5*torch.sin(gamma) - w*torch.cos(gamma) 
     if bfactor is not None:
         ctf *= torch.exp(-bfactor/4*s2)
     return ctf

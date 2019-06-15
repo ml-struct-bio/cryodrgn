@@ -9,8 +9,52 @@ import utils
 log = utils.log
 
 class LazyMRCData(data.Dataset):
-    def __init__(self, *args):
-        raise NotImplementedError
+    '''
+    Class representing an .mrcs stack file -- images loaded on the fly
+    '''
+    def __init__(self, mrcfile, norm=None, keepreal=False, invert_data=False):
+        assert not keepreal, 'Not implemented error'
+        if mrcfile.endswith('.txt'):
+            particles = mrc.parse_mrc_list(mrcfile, lazy=True)
+        else:
+            particles, _, _ = mrc.parse_mrc(mrcfile, lazy=True)
+        N = len(particles)
+        ny, nx = particles[0].get().shape
+        assert ny == nx, "Images must be square"
+        assert ny % 2 == 0, "Image size must be even"
+        log('Loaded {} {}x{} images'.format(N, ny, nx))
+        self.particles = particles
+        self.N = N
+        self.D = ny + 1 # after symmetrizing HT
+        self.invert_data = invert_data
+        if norm is None:
+            norm = self.estimate_normalization()
+        self.norm = norm
+
+    def estimate_normalization(self, n=1000):
+        n = min(n,self.N)
+        imgs = np.asarray([fft.ht2_center(self.particles[i].get()) for i in range(0,self.N, self.N//n)])
+        if self.invert_data: imgs *= -1
+        imgs = fft.symmetrize_ht(imgs)
+        norm = [np.mean(imgs), np.std(imgs)]
+        norm[0] = 0
+        log('Normalizing HT by {} +/- {}'.format(*norm))
+        return norm
+
+    def get(self, i):
+        img = self.particles[i].get()
+        img = fft.ht2_center(img).astype(np.float32)
+        if self.invert_data: img *= -1
+        img = fft.symmetrize_ht(img)
+        img = (img - self.norm[0])/self.norm[1]
+        return img
+
+    def __len__(self):
+        return self.N
+
+    def __getitem__(self, index):
+        return self.get(index), index
+
 
 class MRCData(data.Dataset):
     '''
@@ -66,7 +110,7 @@ class TiltMRCData(data.Dataset):
             particles_real, _, _ = mrc.parse_mrc(mrcfile)
         if mrcfile_tilt.endswith('.txt'):
             particles_tilt = mrc.parse_mrc_list(mrcfile_tilt)
-        else;
+        else:
             particles_tilt, _, _ = mrc.parse_mrc(mrcfile_tilt)
         N, ny, nx = particles_real.shape
         assert ny == nx, "Images must be square"

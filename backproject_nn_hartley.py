@@ -41,6 +41,7 @@ def parse_args():
     parser.add_argument('--log-interval', type=int, default=1000, help='Logging interval in N_IMGS (default: %(default)s)')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
     parser.add_argument('--seed', type=int, default=np.random.randint(0,100000), help='Random seed')
+    parser.add_argument('--lazy', action='store_true', help='Use if full dataset is too large to fit in memory')
 
     group = parser.add_argument_group('Training parameters')
     group.add_argument('-n', '--num-epochs', type=int, default=10, help='Number of training epochs (default: %(default)s)')
@@ -101,7 +102,10 @@ def main(args):
         torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
     # load the particles
-    data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data)
+    if args.lazy:
+        data = dataset.LazyMRCData(args.particles, norm=args.norm, invert_data=args.invert_data)
+    else:
+        data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data)
     D = data.D
     Nimg = data.N
 

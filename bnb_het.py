@@ -58,9 +58,9 @@ def parse_args():
     group.add_argument('--l-end', type=int, default=20, help='End L radius (default: %(default)s)')
     group.add_argument('--l-end-it',type=int,default=100000, help='default: %(default)s')
     group.add_argument('--rotate', action='store_true', help='Speedup BNB with image rotation')
-    group.add_argument('--t-extent', type=float, default=5, help='+/- pixels to search over translations')
+    group.add_argument('--t-extent', type=float, default=5, help='+/- pixels to search over translations (default: %(default)s)')
     group.add_argument('--no-trans', action='store_true', help="Don't search over translations")
-    group.add_argument('--bnb-start', type=int, default=1, help='Number of initial BNNB epochs')
+    group.add_argument('--bnb-start', type=int, default=1, help='Number of initial BNNB epochs (default: %(default)s)')
 
     group = parser.add_argument_group('Encoder Network')
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')

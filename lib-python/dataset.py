@@ -16,7 +16,7 @@ class MRCData(data.Dataset):
     '''
     Class representing an .mrcs stack file
     '''
-    def __init__(self, mrcfile, norm=None, keepreal=False):
+    def __init__(self, mrcfile, norm=None, keepreal=False, invert_data=False):
         particles_real, _, _ = mrc.parse_mrc(mrcfile)
         N, ny, nx = particles_real.shape
         assert ny == nx, "Images must be square"
@@ -25,6 +25,7 @@ class MRCData(data.Dataset):
         # compute HT
         particles = np.asarray([fft.ht2_center(img) for img in particles_real])
         particles = particles.astype(np.float32)
+        if invert_data: particles *= -1
 
         # symmetrize HT
         particles = fft.symmetrize_ht(particles)
@@ -55,7 +56,7 @@ class TiltMRCData(data.Dataset):
     Class representing an .mrcs tilt series pair
     '''
 
-    def __init__(self, mrcfile, mrcfile_tilt, norm=None, keepreal=False):
+    def __init__(self, mrcfile, mrcfile_tilt, norm=None, keepreal=False, invert_data=False):
         particles_real, _, _ = mrc.parse_mrc(mrcfile)
         N, ny, nx = particles_real.shape
         assert ny == nx, "Images must be square"
@@ -68,6 +69,9 @@ class TiltMRCData(data.Dataset):
         # compute HT
         particles = np.asarray([fft.ht2_center(img) for img in particles_real]).astype(np.float32)
         particles_tilt = np.asarray([fft.ht2_center(img) for img in particles_tilt]).astype(np.float32)
+        if invert_data: 
+            particles *= -1
+            particles_tilt *= -1
 
         # symmetrize HT
         particles = fft.symmetrize_ht(particles)

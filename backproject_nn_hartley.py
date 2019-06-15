@@ -33,6 +33,7 @@ def parse_args():
     parser.add_argument('--trans', help='Optionally provide translations for each particle (.pkl)')
     parser.add_argument('--tscale', type=float, default=1.0)
     parser.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: mean, std of dataset)')
+    parser.add_argument('--invert-data', action='store_true', help='Invert data sign')
     parser.add_argument('--ctf', metavar='pkl', type=os.path.abspath, help='CTF parameters (.pkl)')
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
     parser.add_argument('--load', type=os.path.abspath, help='Initialize training from a checkpoint')
@@ -100,7 +101,7 @@ def main(args):
         torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
     # load the particles
-    data = dataset.MRCData(args.particles, norm=args.norm)
+    data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data)
     D = data.D
     Nimg = data.N
 

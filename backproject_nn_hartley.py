@@ -72,8 +72,8 @@ def train(model, lattice, optim, y, rot, trans=None, ctf_params=None):
     yhat = model(lattice.coords @ rot)
     if ctf_params is not None:
         freqs = lattice.coords[:,0:2]/2
-        freqs = freqs.unsqueeze(0).expand(B,*freqs.shape)/ctf_params[:,0]
-        y_hat *= ctf.compute_ctf(freqs, *torch.split(ctf_params[:,1:], 1, 1))
+        freqs = freqs.unsqueeze(0).expand(B,*freqs.shape)/ctf_params[:,0].view(B,1,1)
+        yhat *= ctf.compute_ctf(freqs, *torch.split(ctf_params[:,1:], 1, 1))
     yhat = yhat.view(-1, D, D)
     if trans is not None:
         y = model.translate_ht(lattice.coords[:,0:2]/2, y.view(B,-1), trans.unsqueeze(1))

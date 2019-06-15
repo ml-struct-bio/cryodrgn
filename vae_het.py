@@ -92,8 +92,8 @@ def train(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, equ
     # decode 
     def apply_ctf(img):
         freqs = lattice.coords[:,0:2]/2
-        freqs = freqs.unsqueeze(0).expand(B,*freqs.shape)/ctf_params[:,0]
-        img *= ctf.compute_ctf(freqs, *torch.split(ctf_params[:,1:], 1, 1))
+        freqs = freqs.unsqueeze(0).expand(B,*freqs.shape)/ctf_params[:,0].view(B,1,1)
+        img *= ctf.compute_ctf(freqs, *torch.split(ctf_params[:,1:], 1, 1)).view(B,D,D)
         return img
     y_recon = model.decode(rot, z).view(B,D,D)
     if use_ctf: y_recon = apply_ctf(y_recon)

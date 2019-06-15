@@ -103,6 +103,14 @@ names += ' nlabl labels'
 header_struct = struct.Struct(fstr)
 MRCHeader = namedtuple('MRCHeader', names)
 
+def parse_mrc_list(txtfile, lazy=False):
+    lines = open(txtfile,'r').readlines()
+    if not lazy:
+        particles = np.vstack([parse_mrc(x.strip(), lazy=False)[0] for x in lines])
+    else:
+        particles = [img for x in lines for img in parse_mrc(x.strip(), lazy=True)[0]]
+    return particles
+
 def parse_mrc(fname, lazy=False):
     ## parse the header
     fh = open(fname,'rb')

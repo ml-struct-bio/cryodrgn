@@ -17,7 +17,10 @@ class MRCData(data.Dataset):
     Class representing an .mrcs stack file
     '''
     def __init__(self, mrcfile, norm=None, keepreal=False, invert_data=False):
-        particles_real, _, _ = mrc.parse_mrc(mrcfile)
+        if mrcfile.endswith('.txt'):
+            particles_real = mrc.parse_mrc_list(mrcfile)
+        else:
+            particles_real, _, _ = mrc.parse_mrc(mrcfile)
         N, ny, nx = particles_real.shape
         assert ny == nx, "Images must be square"
         assert ny % 2 == 0, "Image size must be even"
@@ -57,12 +60,18 @@ class TiltMRCData(data.Dataset):
     '''
 
     def __init__(self, mrcfile, mrcfile_tilt, norm=None, keepreal=False, invert_data=False):
-        particles_real, _, _ = mrc.parse_mrc(mrcfile)
+        if mrcfile.endswith('.txt'):
+            particles_real = mrc.parse_mrc_list(mrcfile)
+        else:
+            particles_real, _, _ = mrc.parse_mrc(mrcfile)
+        if mrcfile_tilt.endswith('.txt'):
+            particles_tilt = mrc.parse_mrc_list(mrcfile_tilt)
+        else;
+            particles_tilt, _, _ = mrc.parse_mrc(mrcfile_tilt)
         N, ny, nx = particles_real.shape
         assert ny == nx, "Images must be square"
         assert ny % 2 == 0, "Image size must be even"
         log('Loaded {} {}x{} images'.format(N, ny, nx))
-        particles_tilt, _, _ = mrc.parse_mrc(mrcfile_tilt)
         assert particles_tilt.shape == (N, ny, nx), "Tilt series pair must have same dimensions as untilted particles"
         log('Loaded {} {}x{} tilt pair images'.format(N, ny, nx))
 

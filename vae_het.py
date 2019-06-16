@@ -76,6 +76,10 @@ def train(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, equ
     optim.zero_grad()
     B = y.size(0)
     D = lattice.D
+    if use_ctf:
+        freqs = lattice.coords[:,0:2]/2
+        freqs = freqs.unsqueeze(0).expand(B,*freqs.shape)/ctf_params[:,0].view(B,1,1)
+        c = ctf.compute_ctf(freqs, *torch.split(ctf_params[:,1:], 1, 1)).view(B,D,D)
 
     # translate the image
     if trans is not None:
@@ -83,26 +87,20 @@ def train(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, equ
         if use_tilt: yt = model.decoder.translate_ht(lattice.coords[:,0:2]/2, yt.view(B,-1), trans.unsqueeze(1)).view(B,D,D)
 
     # inference of z
-    if use_tilt:
-        z_mu, z_logvar = model.encode(y, yt)
-    else:
-        z_mu, z_logvar = model.encode(y)
+    input_ = (y,yt) if use_tilt else (y,)
+    if use_ctf: input_ = (x*c.sign() for x in input_)
+    z_mu, z_logvar = model.encode(*input_)
     z = model.reparameterize(z_mu, z_logvar)
 
     # decode 
-    def apply_ctf(img):
-        freqs = lattice.coords[:,0:2]/2
-        freqs = freqs.unsqueeze(0).expand(B,*freqs.shape)/ctf_params[:,0].view(B,1,1)
-        img *= ctf.compute_ctf(freqs, *torch.split(ctf_params[:,1:], 1, 1)).view(B,D,D)
-        return img
     y_recon = model.decode(rot, z).view(B,D,D)
-    if use_ctf: y_recon = apply_ctf(y_recon)
+    if use_ctf: y_recon *= c
     gen_loss = F.mse_loss(y_recon, y)
 
     # decode the tilt series
     if use_tilt:
         y_recon_tilt = model.decode(tilt @ rot, z).view(B,D,D)
-        if use_ctf: y_recon_tilt = apply_ctf(y_recon_tilt)
+        if use_ctf: y_recon_tilt *= c
         gen_loss = .5*gen_loss + .5*F.mse_loss(y_recon_tilt, yt)
 
     # latent loss

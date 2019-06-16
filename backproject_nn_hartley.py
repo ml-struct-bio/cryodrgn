@@ -42,6 +42,7 @@ def parse_args():
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
     parser.add_argument('--seed', type=int, default=np.random.randint(0,100000), help='Random seed')
     parser.add_argument('--lazy', action='store_true', help='Use if full dataset is too large to fit in memory')
+    parser.add_argument('--l-extent', type=float, default=1.0, help='Coordinate lattice size (default: %(default)s)')
 
     group = parser.add_argument_group('Training parameters')
     group.add_argument('-n', '--num-epochs', type=int, default=10, help='Number of training epochs (default: %(default)s)')
@@ -73,12 +74,11 @@ def train(model, lattice, optim, y, rot, trans=None, ctf_params=None):
     D = lattice.D
     yhat = model(lattice.coords @ rot)
     if ctf_params is not None:
-        freqs = lattice.coords[:,0:2]/2
-        freqs = freqs.unsqueeze(0).expand(B,*freqs.shape)/ctf_params[:,0].view(B,1,1)
+        freqs = lattice.freqs2d.unsqueeze(0).expand(B,*lattice.freqs2d.shape)/ctf_params[:,0].view(B,1,1)
         yhat *= ctf.compute_ctf(freqs, *torch.split(ctf_params[:,1:], 1, 1))
     yhat = yhat.view(-1, D, D)
     if trans is not None:
-        y = model.translate_ht(lattice.coords[:,0:2]/2, y.view(B,-1), trans.unsqueeze(1))
+        y = model.translate_ht(lattice.freqs2d, y.view(B,-1), trans.unsqueeze(1))
         y = y.view(-1, D, D)
     loss = F.mse_loss(yhat, y)
     loss.backward()
@@ -109,7 +109,7 @@ def main(args):
     D = data.D
     Nimg = data.N
 
-    lattice = Lattice(D)
+    lattice = Lattice(D, extent=args.l_extent)
     model = FTSliceDecoder(3, D, args.layers, args.dim, nn.ReLU)
 
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)

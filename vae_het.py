@@ -77,14 +77,13 @@ def train(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, equ
     B = y.size(0)
     D = lattice.D
     if use_ctf:
-        freqs = lattice.coords[:,0:2]/2
-        freqs = freqs.unsqueeze(0).expand(B,*freqs.shape)/ctf_params[:,0].view(B,1,1)
+        freqs = lattice.freqs2d.unsqueeze(0).expand(B,*lattice.freqs2d.shape)/ctf_params[:,0].view(B,1,1)
         c = ctf.compute_ctf(freqs, *torch.split(ctf_params[:,1:], 1, 1)).view(B,D,D)
 
     # translate the image
     if trans is not None:
-        y = model.decoder.translate_ht(lattice.coords[:,0:2]/2, y.view(B,-1), trans.unsqueeze(1)).view(B,D,D)
-        if use_tilt: yt = model.decoder.translate_ht(lattice.coords[:,0:2]/2, yt.view(B,-1), trans.unsqueeze(1)).view(B,D,D)
+        y = model.decoder.translate_ht(lattice.freqs2d, y.view(B,-1), trans.unsqueeze(1)).view(B,D,D)
+        if use_tilt: yt = model.decoder.translate_ht(lattice.freqs2d, yt.view(B,-1), trans.unsqueeze(1)).view(B,D,D)
 
     # inference of z
     input_ = (y,yt) if use_tilt else (y,)

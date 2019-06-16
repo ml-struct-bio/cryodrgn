@@ -12,14 +12,13 @@ import utils
 log = utils.log
 
 class Lattice:
-    def __init__(self, D):
-        # centered and scaled xy plane, values between -1 and 1
-        # endpoint=False since FT is not symmetric around origin
+    def __init__(self, D, extent=1.0):
         assert D % 2 == 1, "Lattice size must be odd"
-        x0, x1 = np.meshgrid(np.linspace(-1, 1, D, endpoint=True), 
-                             np.linspace(-1, 1, D, endpoint=True))
+        x0, x1 = np.meshgrid(np.linspace(-extent, extent, D, endpoint=True), 
+                             np.linspace(-extent, extent, D, endpoint=True))
         coords = np.stack([x0.ravel(),x1.ravel(),np.zeros(D**2)],1).astype(np.float32)
         self.coords = torch.tensor(coords)
+        self.extent = extent
         self.D = D
         self.D2 = int(D/2)
 
@@ -30,6 +29,8 @@ class Lattice:
         
         self.square_mask = {}
         self.circle_mask = {}
+
+        self.freqs2d = self.coords[:,0:2]/extent/2
 
     def get_square_lattice(self, L):
         b,e = self.D2-L, self.D2+L+1
@@ -59,7 +60,7 @@ class Lattice:
             return self.circle_mask[R]
         assert 2*R+1 <= self.D, 'Mask with radius {} too large for lattice with size {}'.format(R,self.D)
         log('Using circular lattice with radius {}'.format(R))
-        r = R/(self.D//2)
+        r = R/(self.D//2)*self.extent
         mask = self.coords.pow(2).sum(-1) <= r**2
         self.circle_mask[R] = mask
         return mask
@@ -73,7 +74,7 @@ class Lattice:
         cos = torch.cos(theta)
         sin = torch.sin(theta)
         rot = torch.stack([cos, sin, -sin, cos], 1).view(-1, 2, 2)
-        grid = self.coords[:,0:2] @ rot
+        grid = self.coords[:,0:2]/self.extent @ rot # grid between -1 and 1
         grid = grid.view(len(rot), self.D, self.D, 2) # QxYxXx2
         offset = self.center - grid[:,self.D2,self.D2] # Qx2
         grid += offset[:,None,None,:]

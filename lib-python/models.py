@@ -323,7 +323,7 @@ class VAE(nn.Module):
             B = img.size(0)
             t = self.reparameterize(tmu, tlogvar)
             t = t.unsqueeze(1) # B x 1 x 2
-            img = self.decoder.translate_ht(self.lattice.coords[:,0:2]/2, img.view(B,-1), t)
+            img = self.decoder.translate_ht(self.lattice.freqs2d, img.view(B,-1), t)
             img = img.view(B,self.D, self.D)
         return y_hat, img, z_mu, z_std, w_eps, tmu, tlogvar
 
@@ -387,8 +387,8 @@ class TiltVAE(nn.Module):
         z_mu, z_std, w_eps, rot, tmu, tlogvar, t = self.encode(img, img_tilt)
         if not self.no_trans:
             t = t.unsqueeze(1) # B x 1 x 2
-            img = self.decoder.translate_ht(self.lattice.coords[:,0:2]/2, img.view(B,-1), -t)
-            img_tilt = self.decoder.translate_ht(self.lattice.coords[:,0:2]/2, img_tilt.view(B,-1), -t)
+            img = self.decoder.translate_ht(self.lattice.freq2d, img.view(B,-1), -t)
+            img_tilt = self.decoder.translate_ht(self.lattice.freqs2d, img_tilt.view(B,-1), -t)
             img = img.view(B, self.D, self.D)
             img_tilt = img_tilt.view(B, self.D, self.D)
 

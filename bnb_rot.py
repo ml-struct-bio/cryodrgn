@@ -88,7 +88,7 @@ def train(model, lattice, bnb, optim, batch, L, tilt=None, no_trans=False):
         slice_ = model(lattice.coords @ R)
         return slice_.view(-1, lattice.D, lattice.D)
     def translate(img):
-        img = model.translate_ht(lattice.coords[:,0:2]/2, img.view(B,-1), trans.unsqueeze(1))
+        img = model.translate_ht(lattice.freqs2d, img.view(B,-1), trans.unsqueeze(1))
         return img.view(-1, lattice.D, lattice.D)
 
     # Train model 

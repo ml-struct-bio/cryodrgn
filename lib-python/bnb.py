@@ -251,7 +251,7 @@ class BNBHomo:
         '''
         B = images.size(0)
         mask = self.lattice.get_circular_mask(L)
-        coords = self.lattice.coords[mask,0:2]/2# 2D wavevector between -.5 and .5
+        coords = self.lattice.freqs2d[mask]# 2D wavevector between -.5 and .5
         return self.decoder.translate_ht(coords, images.view(B,-1)[:,mask], shifts)
 
     def tile(self, squashed, NQ, nan_val=float('inf')):
@@ -434,7 +434,7 @@ class BNNBHomo:
         Returns: B x T x N x 2
         '''
         mask = self.lattice.get_circular_mask(L)
-        coords = self.lattice.coords[mask,0:2]/2# 2D wavevector between -.5 and .5
+        coords = self.lattice.freqs2d[mask]# 2D wavevector between -.5 and .5
         return self.decoder.translate_ht(coords, images, shifts)
 
     def opt_theta_trans(self, images, L, images_tilt=None, niter=5):
@@ -642,7 +642,7 @@ class BNBHet:
         '''
         B = images.size(0)
         mask = self.lattice.get_circular_mask(L)
-        coords = self.lattice.coords[mask,0:2]/2# 2D wavevector between -.5 and .5
+        coords = self.lattice.freqs2d[mask]# 2D wavevector between -.5 and .5
         return self.model.decoder.translate_ht(coords, images.view(B,-1)[:,mask], shifts)
 
     def tile(self, squashed, NQ, nan_val=float('inf')):

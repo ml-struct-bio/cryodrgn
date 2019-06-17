@@ -209,13 +209,14 @@ class FTSliceDecoder(nn.Module):
         s = torch.sin(tfilt) # BxTxN
         return c*img + s*img[:,:,np.arange(len(coords)-1,-1,-1)]
 
-    def eval_volume(self, coords, D, norm, zval=None):
+    def eval_volume(self, coords, D, extent, norm, zval=None):
         '''
         Evaluate the model on a DxDxD volume
         
         Inputs:
             coords: lattice coords on the x-y plane (D^2 x 3)
             D: size of lattice
+            extent: extent of lattice [-extent, extent]
             norm: data normalization 
             zval: value of latent (zdim x 1)
         '''
@@ -227,7 +228,7 @@ class FTSliceDecoder(nn.Module):
         vol_f = np.zeros((D,D,D),dtype=np.float32)
         assert not self.training
         # evaluate the volume by zslice to avoid memory overflows
-        for i, dz in enumerate(np.linspace(-1,1,D,endpoint=True)):
+        for i, dz in enumerate(np.linspace(-extent,extent,D,endpoint=True)):
             x = coords + torch.tensor([0,0,dz])
             if zval is not None:
                 x = torch.cat((x,z), dim=-1)

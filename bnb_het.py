@@ -37,6 +37,7 @@ def parse_args():
     parser.add_argument('--log-interval', type=int, default=1000, help='Logging interval in N_IMGS (default: %(default)s)')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
     parser.add_argument('--seed', type=int, default=np.random.randint(0,100000), help='Random seed')
+    parser.add_argument('--l-extent', type=float, default=1.0, help='Coordinate lattice size (default: %(default)s)')
 
     group = parser.add_argument_group('Tilt series')
     group.add_argument('--tilt', help='Particle stack file (.mrcs)')
@@ -139,7 +140,7 @@ def train(model, lattice, bnb, optim, minibatch, L, beta, beta_control=None, equ
 
 def save_checkpoint(model, lattice, z, bnb_pose, optim, epoch, norm, out_mrc, out_weights):
     model.eval()
-    vol = model.decoder.eval_volume(lattice.coords, lattice.D, norm, z)
+    vol = model.decoder.eval_volume(lattice.coords, lattice.D, lattice.extent, norm, z)
     mrc.write(out_mrc, vol.astype(np.float32))
     torch.save({
         'norm': norm,
@@ -186,7 +187,7 @@ def main(args):
     D = data.D
     Nimg = data.N
 
-    lattice = Lattice(D)
+    lattice = Lattice(D, extent=args.l_extent)
     if args.enc_mask: args.enc_mask = lattice.get_circular_mask(args.enc_mask)
     model = HetOnlyVAE(lattice, args.qlayers, args.qdim, args.players, args.pdim,
                 args.zdim, encode_mode=args.encode_mode, enc_mask=args.enc_mask)

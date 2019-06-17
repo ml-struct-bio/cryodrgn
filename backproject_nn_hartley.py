@@ -58,7 +58,7 @@ def parse_args():
 
 def save_checkpoint(model, lattice, optim, epoch, norm, out_mrc, out_weights):
     model.eval()
-    vol = model.eval_volume(lattice.coords, lattice.D, norm)
+    vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, norm)
     mrc.write(out_mrc, vol.astype(np.float32))
     torch.save({
         'norm': norm,

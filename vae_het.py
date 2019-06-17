@@ -205,7 +205,7 @@ def main(args):
     else:
         assert args.encode_mode == 'tilt'
         data = dataset.TiltMRCData(args.particles, args.tilt, norm=args.norm)
-        tilt = torch.tensor(utils.xrot(args.tilt).astype(np.float32))
+        tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32))
     Nimg = data.N
     D = data.D
 
@@ -296,7 +296,7 @@ def main(args):
             out_z = '{}/z.{}.pkl'.format(args.outdir, epoch)
             model.eval()
             with torch.no_grad():
-                z_mu, z_logvar = eval_z(model, lattice, data, args.batch_size, device, trans, bool(tilt), ctf_params)
+                z_mu, z_logvar = eval_z(model, lattice, data, args.batch_size, device, trans, tilt is not None, ctf_params)
                 save_checkpoint(model, lattice, optim, epoch, data.norm, z_mu, z_logvar, out_mrc, out_weights, out_z)
 
     # save model weights, latent encoding, and evaluate the model on 3D lattice
@@ -305,7 +305,7 @@ def main(args):
     out_z = '{}/z.pkl'.format(args.outdir)
     model.eval()
     with torch.no_grad():
-        z_mu, z_logvar = eval_z(model, lattice, data, args.batch_size, device, trans, bool(tilt), ctf_params)
+        z_mu, z_logvar = eval_z(model, lattice, data, args.batch_size, device, trans, tilt is not None, ctf_params)
         save_checkpoint(model, lattice, optim, epoch, data.norm, z_mu, z_logvar, out_mrc, out_weights, out_z)
     
     td = dt.now()-t1

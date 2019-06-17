@@ -33,7 +33,6 @@ def parse_args():
 
     parser.add_argument('particles', help='Particle stack file (.mrc)')
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
-    parser.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: mean, std of dataset)')
     parser.add_argument('--ctf', metavar='pkl', type=os.path.abspath, help='CTF parameters (.pkl)')
     parser.add_argument('--priors', type=os.path.abspath, nargs='*', required=True, help='Priors on rotation, optionally provide translation (.pkl)')
     parser.add_argument('--tscale', type=float, default=1.0, help='Scale translations by this amount')
@@ -42,7 +41,6 @@ def parse_args():
     parser.add_argument('--log-interval', type=int, default=1000, help='Logging interval in N_IMGS (default: %(default)s)')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
     parser.add_argument('--seed', type=int, default=np.random.randint(0,100000), help='Random seed')
-    parser.add_argument('--l-extent', type=float, default=1.0, help='Coordinate lattice size (default: %(default)s)')
 
     group = parser.add_argument_group('Tilt series')
     group.add_argument('--tilt', help='Particle stack file (.mrcs)')
@@ -57,6 +55,8 @@ def parse_args():
     group.add_argument('--beta-control', type=float, help='KL-Controlled VAE gamma. Beta is KL target. (default: %(default)s)')
     group.add_argument('--equivariance', type=float, help='Strength of equivariance loss (default: %(default)s)')
     group.add_argument('--equivariance-end-it', type=int, default=100000, help='It at which equivariance max (default: %(default)s)')
+    group.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: mean, std of dataset)')
+    group.add_argument('--l-extent', type=float, default=3.0, help='Coordinate lattice size (default: %(default)s)')
 
     group = parser.add_argument_group('Encoder Network')
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
@@ -70,6 +70,19 @@ def parse_args():
     group.add_argument('--pdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
     return parser
 
+def _encode(model, lattice, y, yt=None, trans=None, c=None):
+    B = y.size(0)
+    D = lattice.D
+    # translate the image
+    if trans is not None:
+        y = model.decoder.translate_ht(lattice.freqs2d, y.view(B,-1), trans.unsqueeze(1)).view(B,D,D)
+        if yt is not None: yt = model.decoder.translate_ht(lattice.freqs2d, yt.view(B,-1), trans.unsqueeze(1)).view(B,D,D)
+    # phase flip by the CTF
+    input_ = (y,yt) if yt is not None else (y,)
+    if c is not None: input_ = (x*c.sign() for x in input_) 
+    return model.encode(*input_)
+
+
 def train(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, equivariance=None, tilt=None, ctf_params=None):
     use_tilt = yt is not None
     use_ctf = ctf_params is not None
@@ -80,16 +93,9 @@ def train(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, equ
     if use_ctf:
         freqs = lattice.freqs2d.unsqueeze(0).expand(B,*lattice.freqs2d.shape)/ctf_params[:,0].view(B,1,1)
         c = ctf.compute_ctf(freqs, *torch.split(ctf_params[:,1:], 1, 1)).view(B,D,D)
-
-    # translate the image
-    if trans is not None:
-        y = model.decoder.translate_ht(lattice.freqs2d, y.view(B,-1), trans.unsqueeze(1)).view(B,D,D)
-        if use_tilt: yt = model.decoder.translate_ht(lattice.freqs2d, yt.view(B,-1), trans.unsqueeze(1)).view(B,D,D)
-
+    
     # inference of z
-    input_ = (y,yt) if use_tilt else (y,)
-    if use_ctf: input_ = (x*c.sign() for x in input_)
-    z_mu, z_logvar = model.encode(*input_)
+    z_mu, z_logvar = _encode(model, lattice, y, yt, trans, c if use_ctf else None)
     z = model.reparameterize(z_mu, z_logvar)
 
     # decode 
@@ -119,17 +125,54 @@ def train(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, equ
 
     loss.backward()
     optim.step()
-    return gen_loss.item(), kld.item(), loss.item(), eq_loss.item() if equivariance else None, z_mu.detach().cpu().numpy().mean(0)
+    return gen_loss.item(), kld.item(), loss.item(), eq_loss.item() if equivariance else None
 
-def save_checkpoint(model, lattice, z, optim, epoch, norm, out_mrc, out_weights):
-    model.eval()
-    vol = model.decoder.eval_volume(lattice.coords, lattice.D, lattice.extent, norm, z)
-    mrc.write(out_mrc, vol.astype(np.float32))
+def eval_z(model, lattice, data, batch_size, device, trans=None, use_tilt=False, ctf_params=None):
+    assert not model.training
+    z_mu_all = []
+    z_logvar_all = []
+    data_generator = DataLoader(data, batch_size=batch_size, shuffle=False)
+    for minibatch in data_generator:
+        ind = minibatch[-1]
+        y = minibatch[0].to(device)
+        yt = minibatch[1].to(device) if use_tilt else None
+        B = len(ind)
+        D = lattice.D
+        if ctf_params is not None:
+            freqs = lattice.freqs2d.unsqueeze(0).expand(B,*lattice.freqs2d.shape)/ctf_params[ind,0].view(B,1,1)
+            c = ctf.compute_ctf(freqs, *torch.split(ctf_params[ind,1:], 1, 1)).view(B,D,D)
+        z_mu, z_logvar = _encode(model, lattice, y, yt, trans[ind] if trans is not None else None, c if ctf_params is not None else None)
+        z_mu_all.append(z_mu.detach().cpu().numpy())
+        z_logvar_all.append(z_logvar.detach().cpu().numpy())
+    z_mu_all = np.vstack(z_mu_all)
+    z_logvar_all = np.vstack(z_logvar_all)
+    return z_mu_all, z_logvar_all
+    
+def save_checkpoint(model, lattice, optim, epoch, norm, z_mu, z_logvar, out_mrc_dir, out_weights, out_z):
+    '''Save model weights, latent encoding z, and decoder volumes'''
+    # save model weights
     torch.save({
         'epoch':epoch,
         'model_state_dict':model.state_dict(),
         'optimizer_state_dict':optim.state_dict(),
         }, out_weights)
+    # save z
+    with open(out_z,'wb') as f:
+        pickle.dump(z_mu, f)
+        pickle.dump(z_logvar, f)
+    # save single structure at mean of z_mu
+    vol = model.decoder.eval_volume(lattice.coords, lattice.D, lattice.extent, norm, z_mu.mean(axis=0))
+    mrc.write(out_mrc_dir+'.mrc', vol.astype(np.float32))
+    log('Saved {} with z = {}'.format(out_mrc_dir+'.mrc', z_mu.mean(axis=0)))
+    # save trajectory of structures if zdim = 1
+    if z_mu.shape[1] == 1:
+        if not os.path.exists(out_mrc_dir): os.mkdir(out_mrc_dir)
+        for i in range(5):
+            pct = 10+i*20
+            zz = np.percentile(z_mu, pct, keepdims=True)
+            vol = model.decoder.eval_volume(lattice.coords, lattice.D, lattice.extent, norm, zz)
+            mrc.write('{}/traj{}.mrc'.format(out_mrc_dir,int(pct)),vol)
+            log('Saved {}/traj{}.mrc with z = {}'.format(out_mrc_dir, int(pct), zz))
 
 def main(args):
     log(args)
@@ -214,7 +257,6 @@ def main(args):
         loss_accum = 0
         kld_accum = 0
         eq_loss_accum = 0
-        z_accum = 0
         batch_it = 0 
         for minibatch in data_generator:
             ind = minibatch[-1]
@@ -234,14 +276,13 @@ def main(args):
             rot = rots[ind]
             tran = trans[ind] if trans is not None else None
             ctf_param = ctf_params[ind] if ctf_params is not None else None
-            gen_loss, kld, loss, eq_loss, z = train(model, lattice, y, yt, rot, tran, optim, beta, args.beta_control, equivariance_tuple, tilt, ctf_params=ctf_param)
+            gen_loss, kld, loss, eq_loss = train(model, lattice, y, yt, rot, tran, optim, beta, args.beta_control, equivariance_tuple, tilt, ctf_params=ctf_param)
 
             # logging
             gen_loss_accum += gen_loss*B
             kld_accum += kld*B
             loss_accum += loss*B
             if args.equivariance: eq_loss_accum += eq_loss*B
-            z_accum += z*B
 
             if batch_it % args.log_interval == 0:
                 eq_log = 'equivariance={:.4f}, lambda={:.4f}, '.format(eq_loss, lamb) if args.equivariance else ''
@@ -250,14 +291,22 @@ def main(args):
         log('# =====> Epoch: {} Average gen loss = {:.4}, KLD = {:.4f}, {}total loss = {:.4f}'.format(epoch+1, gen_loss_accum/Nimg, kld_accum/Nimg, eq_log, loss_accum/Nimg))
 
         if args.checkpoint and epoch % args.checkpoint == 0:
-            out_mrc = '{}/reconstruct.{}.mrc'.format(args.outdir,epoch)
+            out_mrc = '{}/reconstruct.{}'.format(args.outdir,epoch)
             out_weights = '{}/weights.{}.pkl'.format(args.outdir,epoch)
-            save_checkpoint(model, lattice, z_accum/Nimg, optim, epoch, data.norm, out_mrc, out_weights)
+            out_z = '{}/z.{}.pkl'.format(args.outdir, epoch)
+            model.eval()
+            with torch.no_grad():
+                z_mu, z_logvar = eval_z(model, lattice, data, args.batch_size, device, trans, bool(tilt), ctf_params)
+                save_checkpoint(model, lattice, optim, epoch, data.norm, z_mu, z_logvar, out_mrc, out_weights, out_z)
 
-    ## save model weights and evaluate the model on 3D lattice
-    out_mrc = '{}/reconstruct.mrc'.format(args.outdir)
+    # save model weights, latent encoding, and evaluate the model on 3D lattice
+    out_mrc = '{}/reconstruct'.format(args.outdir)
     out_weights = '{}/weights.pkl'.format(args.outdir)
-    save_checkpoint(model, lattice, z_accum/Nimg, optim, epoch, data.norm, out_mrc, out_weights)
+    out_z = '{}/z.pkl'.format(args.outdir)
+    model.eval()
+    with torch.no_grad():
+        z_mu, z_logvar = eval_z(model, lattice, data, args.batch_size, device, trans, bool(tilt), ctf_params)
+        save_checkpoint(model, lattice, optim, epoch, data.norm, z_mu, z_logvar, out_mrc, out_weights, out_z)
     
     td = dt.now()-t1
     log('Finsihed in {} ({} per epoch)'.format(td, td/num_epochs))

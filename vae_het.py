@@ -70,19 +70,6 @@ def parse_args():
     group.add_argument('--pdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
     return parser
 
-def _encode(model, lattice, y, yt=None, trans=None, c=None):
-    B = y.size(0)
-    D = lattice.D
-    # translate the image
-    if trans is not None:
-        y = model.decoder.translate_ht(lattice.freqs2d, y.view(B,-1), trans.unsqueeze(1)).view(B,D,D)
-        if yt is not None: yt = model.decoder.translate_ht(lattice.freqs2d, yt.view(B,-1), trans.unsqueeze(1)).view(B,D,D)
-    # phase flip by the CTF
-    input_ = (y,yt) if yt is not None else (y,)
-    if c is not None: input_ = (x*c.sign() for x in input_) 
-    return model.encode(*input_)
-
-
 def train(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, equivariance=None, tilt=None, ctf_params=None):
     use_tilt = yt is not None
     use_ctf = ctf_params is not None
@@ -94,8 +81,15 @@ def train(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, equ
         freqs = lattice.freqs2d.unsqueeze(0).expand(B,*lattice.freqs2d.shape)/ctf_params[:,0].view(B,1,1)
         c = ctf.compute_ctf(freqs, *torch.split(ctf_params[:,1:], 1, 1)).view(B,D,D)
     
+    # translate the image
+    if trans is not None:
+        y = model.decoder.translate_ht(lattice.freqs2d, y.view(B,-1), trans.unsqueeze(1)).view(B,D,D)
+        if yt is not None: yt = model.decoder.translate_ht(lattice.freqs2d, yt.view(B,-1), trans.unsqueeze(1)).view(B,D,D)
+
     # inference of z
-    z_mu, z_logvar = _encode(model, lattice, y, yt, trans, c if use_ctf else None)
+    input_ = (y,yt) if yt is not None else (y,)
+    if use_ctf: input_ = (x*c.sign() for x in input_) # phase flip by the ctf
+    z_mu, z_logvar = model.encode(*input_)
     z = model.reparameterize(z_mu, z_logvar)
 
     # decode 
@@ -141,7 +135,12 @@ def eval_z(model, lattice, data, batch_size, device, trans=None, use_tilt=False,
         if ctf_params is not None:
             freqs = lattice.freqs2d.unsqueeze(0).expand(B,*lattice.freqs2d.shape)/ctf_params[ind,0].view(B,1,1)
             c = ctf.compute_ctf(freqs, *torch.split(ctf_params[ind,1:], 1, 1)).view(B,D,D)
-        z_mu, z_logvar = _encode(model, lattice, y, yt, trans[ind] if trans is not None else None, c if ctf_params is not None else None)
+        if trans is not None:
+            y = model.decoder.translate_ht(lattice.freqs2d, y.view(B,-1), trans[ind].unsqueeze(1)).view(B,D,D)
+            if yt is not None: yt = model.decoder.translate_ht(lattice.freqs2d, yt.view(B,-1), trans[ind].unsqueeze(1)).view(B,D,D)
+        input_ = (y,yt) if yt is not None else (y,)
+        if ctf_params is not None: input_ = (x*c.sign() for x in input_) # phase flip by the ctf
+        z_mu, z_logvar = model.encode(*input_)
         z_mu_all.append(z_mu.detach().cpu().numpy())
         z_logvar_all.append(z_logvar.detach().cpu().numpy())
     z_mu_all = np.vstack(z_mu_all)

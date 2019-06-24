@@ -118,6 +118,11 @@ def main(args):
         log('Loading model weights from {}'.format(args.load))
         checkpoint = torch.load(args.load)
         model.load_state_dict(checkpoint['model_state_dict'])
+        optim.load_state_dict(checkpoint['optimizer_state_dict'])
+        start_epoch = checkpoint['epoch']+1
+        assert start_epoch < args.num_epochs
+    else:
+        start_epoch = 0
 
     rot = torch.tensor(utils.load_pkl(args.rot))
     if args.trans: trans = args.tscale*torch.tensor(utils.load_pkl(args.trans))
@@ -131,7 +136,7 @@ def main(args):
     else: ctf_params = None
 
     data_generator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
-    for epoch in range(args.num_epochs):
+    for epoch in range(start_epoch, args.num_epochs):
         loss_accum = 0
         batch_it = 0
         for batch, ind in data_generator:
@@ -156,7 +161,7 @@ def main(args):
     save_checkpoint(model, lattice, optim, epoch, data.norm, out_mrc, out_weights)
    
     td = dt.now()-t1
-    log('Finsihed in {} ({} per epoch)'.format(td, td/args.num_epochs))
+    log('Finsihed in {} ({} per epoch)'.format(td, td/(args.num_epochs-start_epoch)))
 
 if __name__ == '__main__':
     args = parse_args().parse_args()

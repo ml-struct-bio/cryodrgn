@@ -14,6 +14,7 @@ log = utils.log
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('input', help='Cryosparc .cs file')
+    parser.add_argument('--homorefine', action='store_true', help='Flag if results are from a homogeneous refinements (default: heterogeneous refinement)')
     parser.add_argument('-o', help='Output prefix for appending .rot.pkl and .trans.pkl')
     return parser
 
@@ -30,8 +31,9 @@ def main(args):
     rot = np.array([x.T for x in rot])
     log(rot.shape)
     trans = np.array([x['alignments3D/shift'] for x in data])
-    log('Scaling shifts by 2x')
-    trans *= 2
+    if not args.homorefine:
+        log('Scaling shifts by 2x')
+        trans *= 2
     log(trans.shape)
     
     out_rot = '{}.rot.pkl'.format(args.o)

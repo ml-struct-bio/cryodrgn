@@ -72,14 +72,16 @@ def train(model, lattice, optim, y, rot, trans=None, ctf_params=None):
     optim.zero_grad()
     B = y.size(0)
     D = lattice.D
-    yhat = model(lattice.coords @ rot)
+    # restrict to inscribed circle of pixels
+    mask = lattice.get_circular_mask(D//2)
+    yhat = model(lattice.coords[mask] @ rot)
     if ctf_params is not None:
-        freqs = lattice.freqs2d.unsqueeze(0).expand(B,*lattice.freqs2d.shape)/ctf_params[:,0].view(B,1,1)
+        freqs = lattice.freqs2d[mask]
+        freqs = freqs.unsqueeze(0).expand(B, *freqs.shape)/ctf_params[:,0].view(B,1,1)
         yhat *= ctf.compute_ctf(freqs, *torch.split(ctf_params[:,1:], 1, 1))
-    yhat = yhat.view(-1, D, D)
+    y = y.view(B,-1)[:, mask]
     if trans is not None:
-        y = model.translate_ht(lattice.freqs2d, y.view(B,-1), trans.unsqueeze(1))
-        y = y.view(-1, D, D)
+        y = model.translate_ht(lattice.freqs2d[mask], y, trans.unsqueeze(1)).view(B,-1)
     loss = F.mse_loss(yhat, y)
     loss.backward()
     optim.step()
@@ -125,7 +127,7 @@ def main(args):
         start_epoch = 0
 
     rot = torch.tensor(utils.load_pkl(args.rot))
-    if args.trans: trans = args.tscale*torch.tensor(utils.load_pkl(args.trans))
+    if args.trans: trans = args.tscale*torch.tensor(utils.load_pkl(args.trans).astype(np.float32))
 
     if args.ctf is not None:
         log('Loading ctf params from {}'.format(args.ctf))

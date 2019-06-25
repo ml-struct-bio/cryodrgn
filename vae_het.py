@@ -93,23 +93,24 @@ def train(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, equ
     z = model.reparameterize(z_mu, z_logvar)
 
     # decode 
-    y_recon = model.decode(rot, z).view(B,D,D)
-    if use_ctf: y_recon *= c
-    gen_loss = F.mse_loss(y_recon, y)
+    mask = lattice.get_circular_mask(D//2) # restrict to circular mask
+    y_recon = model.decode(lattice.coords[mask] @ rot, z)
+    if use_ctf: y_recon *= c.view(B,-1)[:,mask]
+    gen_loss = F.mse_loss(y_recon, y.view(B,-1)[:, mask])
 
     # decode the tilt series
     if use_tilt:
-        y_recon_tilt = model.decode(tilt @ rot, z).view(B,D,D)
-        if use_ctf: y_recon_tilt *= c
-        gen_loss = .5*gen_loss + .5*F.mse_loss(y_recon_tilt, yt)
+        y_recon_tilt = model.decode(lattice.coords[mask] @ tilt @ rot, z)
+        if use_ctf: y_recon_tilt *= c.view(B,-1)[:,mask]
+        gen_loss = .5*gen_loss + .5*F.mse_loss(y_recon_tilt, yt.view(B,-1)[:,mask])
 
     # latent loss
     kld = -0.5 * torch.mean(1 + z_logvar - z_mu.pow(2) - z_logvar.exp())
 
     if beta_control is None:
-        loss = gen_loss + beta*kld/(D*D)
+        loss = gen_loss + beta*kld/mask.sum()
     else:
-        loss = gen_loss + args.beta_control*(beta-kld)**2/(D*D)
+        loss = gen_loss + args.beta_control*(beta-kld)**2/mask.sum()
 
     # extra equivariance loss term
     if equivariance is not None:

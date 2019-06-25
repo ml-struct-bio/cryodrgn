@@ -79,14 +79,12 @@ class HetOnlyVAE(nn.Module):
         z = torch.cat((coords,z.expand(*coords.shape[:-1],self.z_dim)),dim=-1)
         return z
 
-    def decode(self, rot, z):
+    def decode(self, coords, z, mask=None):
         '''
-        rot: Bx3x3 rotation matrices
+        coords: BxNx3 image coordinates
         z: Bxzdim latent coordinate
         '''
-        x = self.lattice.coords @ rot # R.T*x
-        y_hat = self.decoder(self.cat_z(x,z))
-        return y_hat
+        return self.decoder(self.cat_z(coords,z))
 
 class FTSliceDecoder(nn.Module):
     '''

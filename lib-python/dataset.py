@@ -29,6 +29,7 @@ class LazyMRCData(data.Dataset):
         self.invert_data = invert_data
         if norm is None:
             norm = self.estimate_normalization()
+        log('Normalizing HT by {} +/- {}'.format(*norm))
         self.norm = norm
 
     def estimate_normalization(self, n=1000):
@@ -36,9 +37,7 @@ class LazyMRCData(data.Dataset):
         imgs = np.asarray([fft.ht2_center(self.particles[i].get()) for i in range(0,self.N, self.N//n)])
         if self.invert_data: imgs *= -1
         imgs = fft.symmetrize_ht(imgs)
-        norm = [np.mean(imgs), np.std(imgs)]
-        norm[0] = 0
-        log('Normalizing HT by {} +/- {}'.format(*norm))
+        norm = [0, np.max(np.abs(imgs))/10]
         return norm
 
     def get(self, i):
@@ -79,8 +78,7 @@ class MRCData(data.Dataset):
 
         # normalize
         if norm is None:
-            norm  = [np.mean(particles), np.std(particles)]
-            norm[0] = 0
+            norm = [0, np.max(np.abs(particles))/10]
         particles = (particles - norm[0])/norm[1]
         log('Normalized HT by {} +/- {}'.format(*norm))
 
@@ -132,8 +130,7 @@ class TiltMRCData(data.Dataset):
 
         # normalize
         if norm is None:
-            norm  = [np.mean(particles), np.std(particles)]
-            norm[0] = 0
+            norm = [0, np.max(np.abs(particles))/10]
         particles = (particles - norm[0])/norm[1]
         particles_tilt = (particles_tilt - norm[0])/norm[1]
         log('Normalized HT by {} +/- {}'.format(*norm))

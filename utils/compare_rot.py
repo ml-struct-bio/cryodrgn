@@ -15,7 +15,7 @@ def parse_args():
     parser.add_argument('rot1', help='Input rotations')
     parser.add_argument('rot2', help='Input rotations')
     parser.add_argument('-i', type=int, default=0, help='Index to align on')
-    parser.add_argument('-N', type=int, 'Compare first N images')
+    parser.add_argument('-N', type=int, help='Compare first N images')
     parser.add_argument('--flip',action='store_true',help='Flip hand')
     parser.add_argument('--show', action='store_true', help='Show histogram of errors')
     return parser

@@ -17,3 +17,4 @@ python ../vae_priors.py  data/toy_projections.mrcs -o output/toy_recon_vae --lr 
 python ../vae_priors.py  data/toy_projections.mrcs -o output/toy_recon_vae --lr .0001 --seed 0 --priors data/toy_angles.pkl --no-trans --pretrain 2
 python ../vae_het.py  data/toy_projections.mrcs -o output/toy_recon_vae --lr .0001 --seed 0 --priors data/toy_angles.pkl
 python ../backproject_nn_hartley.py data/toy_projections.mrcs data/toy_angles.pkl --l-extent 3 -o output/toy_recon
+python ../backproject_nn_hartley.py data/toy_projections.mrcs data/toy_angles.pkl --l-extent 3 -o output/toy_recon --trans data/tilt_series/trans.zero.pkl 

@@ -62,20 +62,20 @@ def main(args):
         log(oldft.shape)
         newft = oldft[start:stop,start:stop,start:stop]
         log(newft.shape)
-        new = fft.ihtn_center(newft)
+        new = fft.ihtn_center(newft).astype(np.float32)
 
     else:
-        oldft = np.array([fft.ht2_center(img) for img in old])
+        oldft = np.array([fft.ht2_center(img).astype(np.float32) for img in old])
         log(oldft.shape)
         newft = oldft[:,start:stop, start:stop]
         log(newft.shape)
 
         assert oldft[0,int(oldD/2),int(oldD/2)] == newft[0,int(D/2),int(D/2)]
 
-        new = np.array([fft.ihtn_center(img) for img in newft])
+        new = np.array([fft.ihtn_center(img).astype(np.float32) for img in newft])
 
     log('Saving {}'.format(args.o))
-    mrc.write(args.o,new.astype(np.float32))
+    mrc.write(args.o,new)
 
     if args.out_png:
         log('Saving {}'.format(args.out_png))

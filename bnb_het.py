@@ -36,6 +36,7 @@ def parse_args():
     parser.add_argument('--log-interval', type=int, default=1000, help='Logging interval in N_IMGS (default: %(default)s)')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
     parser.add_argument('--seed', type=int, default=np.random.randint(0,100000), help='Random seed')
+    parser.add_argument('--invert-data', action='store_true', help='Invert data sign')
 
     group = parser.add_argument_group('Tilt series')
     group.add_argument('--tilt', help='Particle stack file (.mrcs)')
@@ -209,11 +210,11 @@ def main(args):
 
     # load the particles
     if args.tilt is None:
-        data = dataset.MRCData(args.particles, keepreal=args.rotate, norm=args.norm)
+        data = dataset.MRCData(args.particles, keepreal=args.rotate, norm=args.norm, invert_data=args.invert_data)
         tilt = None
     else:
         assert args.encode_mode == 'tilt'
-        data = dataset.TiltMRCData(args.particles, args.tilt, keepreal=args.rotate, norm=args.norm)
+        data = dataset.TiltMRCData(args.particles, args.tilt, keepreal=args.rotate, norm=args.norm, invert_data=args.invert_data)
         tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32))
     D = data.D
     Nimg = data.N

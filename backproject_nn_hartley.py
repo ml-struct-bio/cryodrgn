@@ -88,6 +88,7 @@ def train(model, lattice, optim, y, rot, trans=None, ctf_params=None):
     return loss.item()
 
 def main(args):
+    log(args)
     t1 = dt.now()
     if not os.path.exists(args.outdir):
         os.makedirs(args.outdir)
@@ -113,6 +114,8 @@ def main(args):
 
     lattice = Lattice(D, extent=args.l_extent)
     model = FTSliceDecoder(3, D, args.layers, args.dim, nn.ReLU)
+    log(model)
+    log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
 
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 

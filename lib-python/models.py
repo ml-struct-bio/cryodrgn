@@ -86,6 +86,88 @@ class HetOnlyVAE(nn.Module):
         '''
         return self.decoder(self.cat_z(coords,z))
 
+class PositionalDecoder(nn.Module):
+    def __init__(self, in_dim, D, nlayers, hidden_dim, activation):
+        super(PositionalDecoder, self).__init__()
+        assert in_dim == 3, "Not Implemented Yet for Heterogeneous Structures"
+        self.decoder = ResidLinearMLP(in_dim*(D//2)*2, nlayers, hidden_dim, 1, activation)
+        self.D = D
+        self.D2 = D // 2
+        self.in_dim = in_dim * (D // 2) * 2
+    
+    def positional_encoding(self, coords):
+        '''Expand coordinates in the Fourier basis, i.e. cos(k*n/N), sin(k*n/N), n=0,...,N//2'''
+        freqs = torch.arange(self.D2, dtype=torch.float)
+        freqs = freqs.view(*[1]*len(coords.shape), -1) # 1 x 1 x D2
+        coords = coords.unsqueeze(-1) # B x 3 x 1
+        coords = coords * freqs # B x 3 x D2
+        s = torch.sin(coords) # B x 3 x D2
+        c = torch.cos(coords) # B x 3 x D2
+        x = torch.cat([s,c], -1) # B x 3 x D
+        return x.view(*coords.shape[:-2], self.in_dim) # B x in_dim
+
+    def forward(self, coords):
+        '''Input should be coordinates from [-.5,.5]'''
+        assert (coords.abs() <= 0.5).all()
+        return self.decoder(self.positional_encoding(coords))
+
+    # todo: move this function elsewhere
+    def translate_ht(self, coords, img, t):
+        '''
+        Translate an image by phase shifting its Hartley transform
+        
+        Inputs:
+            coords: wavevectors between [-.5,.5] (img_dims x 2)
+            img: HT of image (B x img_dims)
+            t: shift in pixels (B x T x 2)
+
+        Returns:
+            Shifted images (B x T x img_dims) 
+
+        img must be 1D unraveled image, symmetric around DC component
+        '''
+        #H'(k) = cos(2*pi*k*t0)H(k) + sin(2*pi*k*t0)H(-k)
+        center = int(len(coords)/2)
+        assert all(coords[center] == torch.tensor([0.,0.])), 'lattice must be symmetric around DC component'
+        img = img.unsqueeze(1) # Bx1xN
+        t = t.unsqueeze(-1) # BxTx2x1 to be able to do bmm
+        tfilt = coords @ t * 2 * np.pi # BxTxNx1
+        tfilt = tfilt.squeeze(-1) # BxTxN
+        c = torch.cos(tfilt) # BxTxN
+        s = torch.sin(tfilt) # BxTxN
+        return c*img + s*img[:,:,np.arange(len(coords)-1,-1,-1)]
+
+    def eval_volume(self, coords, D, extent, norm, zval=None):
+        '''
+        Evaluate the model on a DxDxD volume
+        
+        Inputs:
+            coords: lattice coords on the x-y plane (D^2 x 3)
+            D: size of lattice
+            extent: extent of lattice [-extent, extent]
+            norm: data normalization 
+            zval: value of latent (zdim x 1)
+        '''
+        if zval is not None:
+            zdim = len(zval)
+            z = torch.zeros(D**2, zdim, dtype=torch.float32)
+            z += torch.tensor(zval, dtype=torch.float32)
+
+        vol_f = np.zeros((D,D,D),dtype=np.float32)
+        assert not self.training
+        # evaluate the volume by zslice to avoid memory overflows
+        for i, dz in enumerate(np.linspace(-0.5,0.5,D,endpoint=True)):
+            x = coords/extent/2 + torch.tensor([0,0,dz])
+            if zval is not None:
+                x = torch.cat((x,z), dim=-1)
+            with torch.no_grad():
+                y = self.forward(x)
+                y = y.view(D,D).cpu().numpy()
+            vol_f[i] = y
+        vol_f = vol_f*norm[1]+norm[0]
+        vol = fft.ihtn_center(vol_f[0:-1,0:-1,0:-1]) # remove last +k freq for inverse FFT
+        return vol
+
 class FTSliceDecoder(nn.Module):
     '''
     Evaluate a central slice out of a 3D FT of a model, returns representation in

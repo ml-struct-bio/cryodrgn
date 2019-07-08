@@ -172,14 +172,26 @@ class FTPositionalDecoder(nn.Module):
     def __init__(self, in_dim, D, nlayers, hidden_dim, activation):
         super(FTPositionalDecoder, self).__init__()
         assert in_dim == 3, "Not Implemented Yet for Heterogeneous Structures"
-        self.decoder = ResidLinearMLP(in_dim*(D//2)*2, nlayers, hidden_dim, 2, activation)
+        self.in_dim = in_dim * (D // 2 + 1) * 2
+        self.decoder = ResidLinearMLP(self.in_dim, nlayers, hidden_dim, 2, activation)
         self.D = D
         self.D2 = D // 2
-        self.in_dim = in_dim * (D // 2) * 2
     
-    def positional_encoding(self, coords):
+    def positional_encoding_geom(self, coords):
+        '''Expand coordinates in the Fourier basis with geometrically spaced wavelengths from 2/D to 2pi'''
+        freqs = torch.arange(self.D2+1, dtype=torch.float)
+        freqs = self.D*np.pi*(1./self.D/np.pi)**(freqs/self.D2) # D*pi(1/(D*pi))^(i/D2)
+        freqs = freqs.view(*[1]*len(coords.shape), -1) # 1 x 1 x D2
+        coords = coords.unsqueeze(-1) # B x 3 x 1
+        k = coords * freqs # B x 3 x D2
+        s = torch.sin(k) # B x 3 x D2
+        c = torch.cos(k) # B x 3 x D2
+        x = torch.cat([s,c], -1) # B x 3 x D
+        return x.view(*coords.shape[:-2], self.in_dim) # B x in_dim
+
+    def positional_encoding_linear(self, coords):
         '''Expand coordinates in the Fourier basis, i.e. cos(k*n/N), sin(k*n/N), n=0,...,N//2'''
-        freqs = torch.arange(self.D2, dtype=torch.float)
+        freqs = torch.arange(self.D2+1, dtype=torch.float)
         freqs = freqs.view(*[1]*len(coords.shape), -1) # 1 x 1 x D2
         coords = coords.unsqueeze(-1) # B x 3 x 1
         coords = coords * freqs # B x 3 x D2
@@ -187,6 +199,7 @@ class FTPositionalDecoder(nn.Module):
         c = torch.cos(coords) # B x 3 x D2
         x = torch.cat([s,c], -1) # B x 3 x D
         return x.view(*coords.shape[:-2], self.in_dim) # B x in_dim
+
 
     def forward(self, lattice):
         '''
@@ -212,7 +225,7 @@ class FTPositionalDecoder(nn.Module):
         # convention: only evalute the -z points
         w = lattice[...,2] > 0.0
         lattice[...,0:3][w] = -lattice[...,0:3][w] # negate lattice coordinates where z > 0
-        result = self.decoder(self.positional_encoding(lattice))
+        result = self.decoder(self.positional_encoding_geom(lattice))
         result[...,1][w] *= -1 # replace with complex conjugate to get correct values for original lattice positions
         return result
 

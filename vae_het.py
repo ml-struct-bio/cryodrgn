@@ -94,13 +94,13 @@ def train(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, equ
 
     # decode 
     mask = lattice.get_circular_mask(D//2) # restrict to circular mask
-    y_recon = model.decode(lattice.coords[mask] @ rot, z)
+    y_recon = model.decode(lattice.coords[mask]/lattice.extent/2 @ rot, z)
     if use_ctf: y_recon *= c.view(B,-1)[:,mask]
     gen_loss = F.mse_loss(y_recon, y.view(B,-1)[:, mask])
 
     # decode the tilt series
     if use_tilt:
-        y_recon_tilt = model.decode(lattice.coords[mask] @ tilt @ rot, z)
+        y_recon_tilt = model.decode(lattice.coords[mask]/lattice.extent/2 @ tilt @ rot, z)
         if use_ctf: y_recon_tilt *= c.view(B,-1)[:,mask]
         gen_loss = .5*gen_loss + .5*F.mse_loss(y_recon_tilt, yt.view(B,-1)[:,mask])
 

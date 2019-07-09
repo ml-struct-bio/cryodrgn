@@ -49,7 +49,7 @@ class HetOnlyVAE(nn.Module):
         else:
             raise RuntimeError('Encoder mode {} not recognized'.format(encode_mode))
         self.encode_mode = encode_mode
-        self.decoder = FTSliceDecoder(3+z_dim, # input dim
+        self.decoder = FTPositionalDecoder(3+z_dim, # input dim
                             lattice.D, # lattice size
                             decode_layers, # nlayers
                             decode_dim, # hidden dim
@@ -171,8 +171,9 @@ class PositionalDecoder(nn.Module):
 class FTPositionalDecoder(nn.Module):
     def __init__(self, in_dim, D, nlayers, hidden_dim, activation):
         super(FTPositionalDecoder, self).__init__()
-        assert in_dim == 3, "Not Implemented Yet for Heterogeneous Structures"
-        self.in_dim = in_dim * (D // 2 + 1) * 2
+        assert in_dim >= 3
+        self.z_dim = in_dim - 3
+        self.in_dim = 3 * (D // 2 + 1) * 2 + self.z_dim
         self.decoder = ResidLinearMLP(self.in_dim, nlayers, hidden_dim, 2, activation)
         self.D = D
         self.D2 = D // 2
@@ -181,27 +182,35 @@ class FTPositionalDecoder(nn.Module):
     def positional_encoding_geom(self, coords):
         '''Expand coordinates in the Fourier basis with geometrically spaced wavelengths from 2/D to 2pi'''
         freqs = torch.arange(self.D2+1, dtype=torch.float)
+        #freqs = self.D2*(2./self.DD)**(freqs/self.D2) # option 3: 2/D*2pi to 2pi 
         #freqs = self.DD*np.pi*(2./self.DD)**(freqs/self.D2) # option 1: 2/D to 1 
         freqs = self.DD*np.pi*(1./self.DD/np.pi)**(freqs/self.D2) # option 2: 2/D to 2pi
+        freqs = freqs.view(*[1]*len(coords.shape), -1) # 1 x 1 x D2
+        coords = coords.unsqueeze(-1) # B x 3 x 1
+        k = coords[...,0:3,:] * freqs # B x 3 x D2
+        s = torch.sin(k) # B x 3 x D2
+        c = torch.cos(k) # B x 3 x D2
+        x = torch.cat([s,c], -1) # B x 3 x D
+        x = x.view(*coords.shape[:-2], self.in_dim-self.z_dim) # B x in_dim-z_dim
+        if self.z_dim > 0:
+            x = torch.cat([x,coords[...,3:,:].squeeze(-1)], -1)
+            assert x.shape[-1] == self.in_dim
+        return x
+
+    def positional_encoding_linear(self, coords):
+        '''Expand coordinates in the Fourier basis, i.e. cos(k*n/N), sin(k*n/N), n=0,...,N//2'''
+        freqs = torch.arange(self.D2+1, dtype=torch.float) 
         freqs = freqs.view(*[1]*len(coords.shape), -1) # 1 x 1 x D2
         coords = coords.unsqueeze(-1) # B x 3 x 1
         k = coords * freqs # B x 3 x D2
         s = torch.sin(k) # B x 3 x D2
         c = torch.cos(k) # B x 3 x D2
         x = torch.cat([s,c], -1) # B x 3 x D
-        return x.view(*coords.shape[:-2], self.in_dim) # B x in_dim
-
-    def positional_encoding_linear(self, coords):
-        '''Expand coordinates in the Fourier basis, i.e. cos(k*n/N), sin(k*n/N), n=0,...,N//2'''
-        freqs = torch.arange(self.D2+1, dtype=torch.float)
-        freqs = freqs.view(*[1]*len(coords.shape), -1) # 1 x 1 x D2
-        coords = coords.unsqueeze(-1) # B x 3 x 1
-        coords = coords * freqs # B x 3 x D2
-        s = torch.sin(coords) # B x 3 x D2
-        c = torch.cos(coords) # B x 3 x D2
-        x = torch.cat([s,c], -1) # B x 3 x D
-        return x.view(*coords.shape[:-2], self.in_dim) # B x in_dim
-
+        x = x.view(*coords.shape[:-2], self.in_dim-self.z_dim) # B x in_dim-z_dim
+        if self.z_dim > 0:
+            x = torch.cat([x,coords[...,3:,:].squeeze(-1)], -1)
+            assert x.shape[-1] == self.in_dim
+        return x
 
     def forward(self, lattice):
         '''
@@ -223,7 +232,7 @@ class FTPositionalDecoder(nn.Module):
 
     def decode(self, lattice):
         '''Return FT transform'''
-        assert (lattice.abs() <= 0.5).all()
+        assert (lattice[...,0:3].abs() <= 0.5).all()
         # convention: only evalute the -z points
         w = lattice[...,2] > 0.0
         lattice[...,0:3][w] = -lattice[...,0:3][w] # negate lattice coordinates where z > 0

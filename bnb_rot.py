@@ -20,7 +20,7 @@ import dataset
 
 from lattice import Lattice
 from bnb import BNNBHomo, BNBHomo, BNBHomoRot
-from models import FTSliceDecoder
+from models import FTPositionalDecoder
 from beta_schedule import LinearSchedule
 
 log = utils.log
@@ -62,7 +62,7 @@ def parse_args():
 
 def save_checkpoint(model, lattice, bnb_pose, optim, epoch, norm, out_mrc, out_weights):
     model.eval()
-    vol = model.eval_volume(lattice.coords, lattice.D, norm)
+    vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, norm)
     mrc.write(out_mrc, vol.astype(np.float32))
     torch.save({
         'norm': norm,
@@ -84,17 +84,20 @@ def train(model, lattice, bnb, optim, batch, L, tilt=None, no_trans=False):
         else:
             rot, trans = bnb.opt_theta_trans(y, L, yt)
 
+    # reconstruct circle of pixels instead of whole image
+    mask = lattice.get_circular_mask(lattice.D//2)
     def gen_slice(R):
-        slice_ = model(lattice.coords @ R)
-        return slice_.view(-1, lattice.D, lattice.D)
+        slice_ = model(lattice.coords[mask] @ R)
+        return slice_.view(B,-1)
     def translate(img):
-        img = model.translate_ht(lattice.freqs2d, img.view(B,-1), trans.unsqueeze(1))
-        return img.view(-1, lattice.D, lattice.D)
+        img = model.translate_ht(lattice.freqs2d[mask], img, trans.unsqueeze(1))
+        return img.view(B,-1)
 
     # Train model 
     model.train()
     optim.zero_grad()
 
+    y = y.view(B,-1)[:, mask]
     if not no_trans:
         y = translate(y)
         if tilt is not None: yt = translate(yt)
@@ -139,14 +142,15 @@ def main(args):
     D = data.D
     Nimg = data.N
 
-    lattice = Lattice(D)
-    model = FTSliceDecoder(3, D, args.layers, args.dim, nn.ReLU)
+    lattice = Lattice(D, extent=0.5)
+    model = FTPositionalDecoder(3, D, args.layers, args.dim, nn.ReLU)
     bnnb = BNNBHomo(model, lattice, tilt, t_extent=args.t_extent)
     if args.no_trans:
         bnb = BNBHomoRot(model, lattice, args.l_start, args.l_end, tilt, args.probabilistic)
     else:    
         bnb = BNBHomo(model, lattice, args.l_start, args.l_end, tilt, t_extent=args.t_extent)
-
+    log(model)
+    log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
     if args.load:

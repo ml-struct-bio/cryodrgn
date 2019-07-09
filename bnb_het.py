@@ -53,7 +53,6 @@ def parse_args():
     group.add_argument('--equivariance', type=float, help='Strength of equivariance loss (default: %(default)s)')
     group.add_argument('--equivariance-end-it', type=int, default=100000, help='It at which equivariance max (default: %(default)s)')
     group.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: mean, std of dataset)')
-    group.add_argument('--l-extent', type=float, default=1.0, help='Coordinate lattice size (default: %(default)s)')
 
     group = parser.add_argument_group('Branch and bound')
     group.add_argument('--l-start', type=int,default=12, help='Starting L radius (default: %(default)s)')
@@ -99,15 +98,18 @@ def train(model, lattice, bnb, optim, minibatch, L, beta, beta_control=None, equ
                 rot = bnb.opt_theta_rot(y, rotated_images, z, L=L)
         else:
             rot, trans = bnb.opt_theta_trans(y, z, None if enc_only else yt, L=L)
+
     model.train()
 
-    # train model  
+    # reconstruct circle of pixels instead of whole image
+    mask = lattice.get_circular_mask(lattice.D//2)
     def gen_slice(R):
-        return model.decode(lattice.coords @ R, z).view(-1, D, D)
+        return model.decode(lattice.coords[mask] @ R, z).view(B,-1)
     def translate(img):
-        img = model.decoder.translate_ht(lattice.freqs2d, img.view(B,-1), trans.unsqueeze(1))
-        return img.view(-1, D, D)
+        img = model.decoder.translate_ht(lattice.freqs2d[mask], img, trans.unsqueeze(1))
+        return img.view(B,-1)
 
+    y = y.view(B,-1)[:, mask]
     if not no_trans:
         y = translate(y)
         if use_tilt: yt = translate(yt)    
@@ -219,7 +221,7 @@ def main(args):
     D = data.D
     Nimg = data.N
 
-    lattice = Lattice(D, extent=args.l_extent)
+    lattice = Lattice(D, extent=0.5)
     if args.enc_mask: args.enc_mask = lattice.get_circular_mask(args.enc_mask)
     model = HetOnlyVAE(lattice, args.qlayers, args.qdim, args.players, args.pdim,
                 args.zdim, encode_mode=args.encode_mode, enc_mask=args.enc_mask)

@@ -169,7 +169,7 @@ class PositionalDecoder(nn.Module):
         return vol
 
 class FTPositionalDecoder(nn.Module):
-    def __init__(self, in_dim, D, nlayers, hidden_dim, activation):
+    def __init__(self, in_dim, D, nlayers, hidden_dim, activation, enc_type='geom_ft'):
         super(FTPositionalDecoder, self).__init__()
         assert in_dim >= 3
         self.z_dim = in_dim - 3
@@ -178,13 +178,21 @@ class FTPositionalDecoder(nn.Module):
         self.D = D
         self.D2 = D // 2
         self.DD = 2 * (D // 2)
+        self.enc_type = enc_type
     
     def positional_encoding_geom(self, coords):
         '''Expand coordinates in the Fourier basis with geometrically spaced wavelengths from 2/D to 2pi'''
         freqs = torch.arange(self.D2+1, dtype=torch.float)
-        #freqs = self.D2*(2./self.DD)**(freqs/self.D2) # option 3: 2/D*2pi to 2pi 
-        #freqs = self.DD*np.pi*(2./self.DD)**(freqs/self.D2) # option 1: 2/D to 1 
-        freqs = self.DD*np.pi*(1./self.DD/np.pi)**(freqs/self.D2) # option 2: 2/D to 2pi
+        if self.enc_type == 'geom_ft':
+            freqs = self.DD*np.pi*(2./self.DD)**(freqs/self.D2) # option 1: 2/D to 1 
+        elif self.enc_type == 'geom_full':
+            freqs = self.DD*np.pi*(1./self.DD/np.pi)**(freqs/self.D2) # option 2: 2/D to 2pi
+        elif self.enc_type == 'geom_lowf':
+            freqs = self.D2*(2./self.DD)**(freqs/self.D2) # option 3: 2/D*2pi to 2pi 
+        elif self.enc_type == 'linear_lowf':
+            return self.positional_encoding_linear(coords)
+        else:
+            raise RuntimeError('Encoding type {} not recognized'.format(self.enc_type))
         freqs = freqs.view(*[1]*len(coords.shape), -1) # 1 x 1 x D2
         coords = coords.unsqueeze(-1) # B x 3 x 1
         k = coords[...,0:3,:] * freqs # B x 3 x D2

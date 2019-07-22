@@ -19,7 +19,8 @@ class HetOnlyVAE(nn.Module):
             decode_layers, decode_dim,
             z_dim = 1, 
             encode_mode = 'resid',
-            enc_mask = None):
+            enc_mask = None,
+            enc_type = 'linear_lowf'):
         super(HetOnlyVAE, self).__init__()
         self.lattice = lattice
         self.z_dim = z_dim
@@ -53,7 +54,8 @@ class HetOnlyVAE(nn.Module):
                             lattice.D, # lattice size
                             decode_layers, # nlayers
                             decode_dim, # hidden dim
-                            nn.ReLU) #R3 -> R1
+                            nn.ReLU,
+                            enc_type=enc_type) #R3 -> R1
    
     def reparameterize(self, mu, logvar):
         if not self.training:
@@ -87,17 +89,48 @@ class HetOnlyVAE(nn.Module):
         return self.decoder(self.cat_z(coords,z))
 
 class PositionalDecoder(nn.Module):
-    def __init__(self, in_dim, D, nlayers, hidden_dim, activation):
+    def __init__(self, in_dim, D, nlayers, hidden_dim, activation, enc_type='linear_lowf'):
         super(PositionalDecoder, self).__init__()
         assert in_dim == 3, "Not Implemented Yet for Heterogeneous Structures"
         self.decoder = ResidLinearMLP(in_dim*(D//2)*2, nlayers, hidden_dim, 1, activation)
         self.D = D
         self.D2 = D // 2
-        self.in_dim = in_dim * (D // 2) * 2
-    
-    def positional_encoding(self, coords):
+        self.DD = 2 * (D // 2)
+        self.enc_dim = self.D2
+        self.in_dim = in_dim * (self.enc_dim) * 2
+        self.enc_type = enc_type
+        self.z_dim = 0
+     
+    def positional_encoding_geom(self, coords):
+        '''Expand coordinates in the Fourier basis with geometrically spaced wavelengths from 2/D to 2pi'''
+        freqs = torch.arange(self.enc_dim, dtype=torch.float)
+        if self.enc_type == 'geom_ft':
+            freqs = self.DD*np.pi*(2./self.DD)**(freqs/(self.enc_dim-1)) # option 1: 2/D to 1 
+        elif self.enc_type == 'geom_full':
+            freqs = self.DD*np.pi*(1./self.DD/np.pi)**(freqs/(self.enc_dim-1)) # option 2: 2/D to 2pi
+        elif self.enc_type == 'geom_lowf':
+            freqs = self.D2*(1./self.D2)**(freqs/(self.enc_dim-1)) # option 3: 2/D*2pi to 2pi 
+        elif self.enc_type == 'geom_nohighf':
+            freqs = self.D2*(2.*np.pi/self.D2)**(freqs/(self.enc_dim-1)) # option 4: 2/D*2pi to 1 
+        elif self.enc_type == 'linear_lowf':
+            return self.positional_encoding_linear(coords)
+        else:
+            raise RuntimeError('Encoding type {} not recognized'.format(self.enc_type))
+        freqs = freqs.view(*[1]*len(coords.shape), -1) # 1 x 1 x D2
+        coords = coords.unsqueeze(-1) # B x 3 x 1
+        k = coords[...,0:3,:] * freqs # B x 3 x D2
+        s = torch.sin(k) # B x 3 x D2
+        c = torch.cos(k) # B x 3 x D2
+        x = torch.cat([s,c], -1) # B x 3 x D
+        x = x.view(*coords.shape[:-2], self.in_dim-self.z_dim) # B x in_dim-z_dim
+        if self.z_dim > 0:
+            x = torch.cat([x,coords[...,3:,:].squeeze(-1)], -1)
+            assert x.shape[-1] == self.in_dim
+        return x
+
+    def positional_encoding_linear(self, coords):
         '''Expand coordinates in the Fourier basis, i.e. cos(k*n/N), sin(k*n/N), n=0,...,N//2'''
-        freqs = torch.arange(self.D2, dtype=torch.float)
+        freqs = torch.arange(1,self.D2+1, dtype=torch.float)
         freqs = freqs.view(*[1]*len(coords.shape), -1) # 1 x 1 x D2
         coords = coords.unsqueeze(-1) # B x 3 x 1
         coords = coords * freqs # B x 3 x D2
@@ -109,7 +142,7 @@ class PositionalDecoder(nn.Module):
     def forward(self, coords):
         '''Input should be coordinates from [-.5,.5]'''
         assert (coords.abs() <= 0.5).all()
-        return self.decoder(self.positional_encoding(coords))
+        return self.decoder(self.positional_encoding_geom(coords))
 
     # todo: move this function elsewhere
     def translate_ht(self, coords, img, t):
@@ -169,7 +202,7 @@ class PositionalDecoder(nn.Module):
         return vol
 
 class FTPositionalDecoder(nn.Module):
-    def __init__(self, in_dim, D, nlayers, hidden_dim, activation, enc_type='linear_lowf', enc_dim=50):
+    def __init__(self, in_dim, D, nlayers, hidden_dim, activation, enc_type='linear_lowf'):
         super(FTPositionalDecoder, self).__init__()
         assert in_dim >= 3
         self.z_dim = in_dim - 3
@@ -177,7 +210,8 @@ class FTPositionalDecoder(nn.Module):
         self.D2 = D // 2
         self.DD = 2 * (D // 2)
         self.enc_type = enc_type
-        self.enc_dim = self.D2 if enc_type == 'linear_lowf' else enc_dim
+        #self.enc_dim = max(100,self.D2)
+        self.enc_dim = self.D2
         self.in_dim = 3 * (self.enc_dim) * 2 + self.z_dim
         self.decoder = ResidLinearMLP(self.in_dim, nlayers, hidden_dim, 2, activation)
     
@@ -189,7 +223,9 @@ class FTPositionalDecoder(nn.Module):
         elif self.enc_type == 'geom_full':
             freqs = self.DD*np.pi*(1./self.DD/np.pi)**(freqs/(self.enc_dim-1)) # option 2: 2/D to 2pi
         elif self.enc_type == 'geom_lowf':
-            freqs = self.D2*(2./self.DD)**(freqs/(self.enc_dim-1)) # option 3: 2/D*2pi to 2pi 
+            freqs = self.D2*(1./self.D2)**(freqs/(self.enc_dim-1)) # option 3: 2/D*2pi to 2pi 
+        elif self.enc_type == 'geom_nohighf':
+            freqs = self.D2*(2.*np.pi/self.D2)**(freqs/(self.enc_dim-1)) # option 4: 2/D*2pi to 1 
         elif self.enc_type == 'linear_lowf':
             return self.positional_encoding_linear(coords)
         else:
@@ -211,7 +247,7 @@ class FTPositionalDecoder(nn.Module):
         freqs = torch.arange(1, self.D2+1, dtype=torch.float) 
         freqs = freqs.view(*[1]*len(coords.shape), -1) # 1 x 1 x D2
         coords = coords.unsqueeze(-1) # B x 3 x 1
-        k = coords * freqs # B x 3 x D2
+        k = coords[...,0:3,:] * freqs # B x 3 x D2
         s = torch.sin(k) # B x 3 x D2
         c = torch.cos(k) # B x 3 x D2
         x = torch.cat([s,c], -1) # B x 3 x D
@@ -299,11 +335,15 @@ class FTPositionalDecoder(nn.Module):
             if zval is not None:
                 x = torch.cat((x,z), dim=-1)
             with torch.no_grad():
-                y = self.decode(x)
-                y = y[...,0] - y[...,1]
+                if dz == 0.0:
+                    y = self.forward(x)
+                else:
+                    y = self.decode(x)
+                    y = y[...,0] - y[...,1]
                 y = y.view(D,D).cpu().numpy()
             vol_f[i] = y
         vol_f = vol_f*norm[1]+norm[0]
+        # TODO: mask corners of volume since we never train outside the sphere
         vol = fft.ihtn_center(vol_f[0:-1,0:-1,0:-1]) # remove last +k freq for inverse FFT
         return vol
 

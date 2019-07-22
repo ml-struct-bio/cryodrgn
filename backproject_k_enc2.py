@@ -52,7 +52,7 @@ def parse_args():
     group = parser.add_argument_group('Network Architecture')
     group.add_argument('--layers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--dim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
-    group.add_argument('--enc-type', choices=('geom_ft','geom_full','geom_lowf','linear_lowf'), default='geom_ft', help='Type of positional encoding')
+    group.add_argument('--enc-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf'), default='linear_lowf', help='Type of positional encoding')
     return parser
 
 def save_checkpoint(model, lattice, optim, epoch, norm, out_mrc, out_weights):

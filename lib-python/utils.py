@@ -48,3 +48,15 @@ def xrot(tilt_deg):
                      [0, np.sin(theta), np.cos(theta)]])
     return tilt
     
+def zero_sphere(vol):
+    '''Zero values of @vol outside the sphere'''
+    assert len(set(vol.shape)) == 1, 'volume must be a cube'
+    D = vol.shape[0]
+    xx = np.linspace(-1, 1, D, endpoint=True if D % 2 == 1 else False)
+    z,y,x = np.meshgrid(xx,xx,xx)
+    coords = np.stack((x,y,z),-1)
+    r = np.sum(coords**2,axis=-1)**.5
+    vlog('Zeroing {} pixels'.format(len(np.where(r>1)[0])))
+    vol[np.where(r>1)] = 0
+    return vol
+

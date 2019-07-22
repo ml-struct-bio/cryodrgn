@@ -343,8 +343,8 @@ class FTPositionalDecoder(nn.Module):
                 y = y.view(D,D).cpu().numpy()
             vol_f[i] = y
         vol_f = vol_f*norm[1]+norm[0]
-        # TODO: mask corners of volume since we never train outside the sphere
-        vol = fft.ihtn_center(vol_f[0:-1,0:-1,0:-1]) # remove last +k freq for inverse FFT
+        vol_f = utils.zero_sphere(vol_f)
+        vol = fft.ihtn_center(vol_f[:-1,:-1,:-1]) # remove last +k freq for inverse FFT
         return vol
 
 
@@ -498,7 +498,8 @@ class FTSliceDecoder(nn.Module):
                 y = y.view(D,D).cpu().numpy()
             vol_f[i] = y
         vol_f = vol_f*norm[1]+norm[0]
-        vol = fft.ihtn_center(vol_f[0:-1,0:-1,0:-1]) # remove last +k freq for inverse FFT
+        vol_f = utils.zero_sphere(vol_f)
+        vol = fft.ihtn_center(vol_f[:-1,:-1,:-1]) # remove last +k freq for inverse FFT
         return vol
 
 class VAE(nn.Module):

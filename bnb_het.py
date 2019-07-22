@@ -111,6 +111,7 @@ def train(model, lattice, bnb, optim, minibatch, L, beta, beta_control=None, equ
         return img.view(B,-1)
 
     y = y.view(B,-1)[:, mask]
+    if use_tilt: yt = yt.view(B,-1)[:, mask]
     if not no_trans:
         y = translate(y)
         if use_tilt: yt = translate(yt)    

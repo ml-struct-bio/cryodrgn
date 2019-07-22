@@ -57,6 +57,7 @@ def parse_args():
     group = parser.add_argument_group('Network Architecture')
     group.add_argument('--layers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--dim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
+    group.add_argument('--enc-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf'), default='linear_lowf', help='Type of positional encoding')
 
     return parser
 
@@ -143,7 +144,7 @@ def main(args):
     Nimg = data.N
 
     lattice = Lattice(D, extent=0.5)
-    model = FTPositionalDecoder(3, D, args.layers, args.dim, nn.ReLU)
+    model = FTPositionalDecoder(3, D, args.layers, args.dim, nn.ReLU, enc_type=args.enc_type)
     bnnb = BNNBHomo(model, lattice, tilt, t_extent=args.t_extent)
     if args.no_trans:
         bnb = BNBHomoRot(model, lattice, args.l_start, args.l_end, tilt, args.probabilistic)

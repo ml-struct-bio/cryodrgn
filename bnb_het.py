@@ -73,6 +73,7 @@ def parse_args():
     group = parser.add_argument_group('Decoder Network')
     group.add_argument('--players', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--pdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
+    group.add_argument('--enc-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf'), default='linear_lowf', help='Type of positional encoding')
     return parser
 
 def train(model, lattice, bnb, optim, minibatch, L, beta, beta_control=None, equivariance=None, rotated_images=None, enc_only=False, no_trans=False):
@@ -224,7 +225,7 @@ def main(args):
     lattice = Lattice(D, extent=0.5)
     if args.enc_mask: args.enc_mask = lattice.get_circular_mask(args.enc_mask)
     model = HetOnlyVAE(lattice, args.qlayers, args.qdim, args.players, args.pdim,
-                args.zdim, encode_mode=args.encode_mode, enc_mask=args.enc_mask)
+                args.zdim, encode_mode=args.encode_mode, enc_mask=args.enc_mask, enc_type=args.enc_type)
     bnnb = BNNBHet(model, lattice, tilt)
     bnb = BNBHet(model, lattice, args.l_start, args.l_end, tilt, args.t_extent)
     if args.rotate: 

@@ -127,9 +127,9 @@ def train(model, lattice, bnb, optim, minibatch, L, beta, beta_control=None, equ
         raise RuntimeError('KLD is nan')
 
     if beta_control is None:
-        loss = gen_loss + beta*kld/(D*D)
+        loss = gen_loss + beta*kld/mask.sum()
     else:
-        loss = gen_loss + args.beta_control*(beta-kld)**2/(D*D)
+        loss = gen_loss + args.beta_control*(beta-kld)**2/mask.sum()
 
     if equivariance is not None:
         lamb, equivariance_loss = equivariance

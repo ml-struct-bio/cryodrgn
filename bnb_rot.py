@@ -17,11 +17,11 @@ import mrc
 import utils
 import fft
 import dataset
+import lie_tools
 
 from lattice import Lattice
-from bnb import BNNBHomo, BNBHomo, BNBHomoRot
+from bnb import BNBHomo, BNBHomoRot
 from models import FTPositionalDecoder
-from beta_schedule import LinearSchedule
 
 log = utils.log
 vlog = utils.vlog
@@ -74,6 +74,30 @@ def save_checkpoint(model, lattice, bnb_pose, optim, epoch, norm, out_mrc, out_w
         'bnb_pose': bnb_pose
         }, out_weights)
 
+def pretrain(model, lattice, optim, batch, tilt=None):
+    y, yt = batch
+    B = y.size(0)
+    model.train()
+    optim.zero_grad()
+
+    mask = lattice.get_circular_mask(lattice.D//2)
+    def gen_slice(R):
+        slice_ = model(lattice.coords[mask] @ R)
+        return slice_.view(B,-1)
+
+    rot = lie_tools.random_SO3(B, device=y.device)
+
+    y = y.view(B,-1)[:, mask]
+    if tilt is not None:
+        yt = yt.view(B,-1)[:, mask]
+        loss = .5*F.mse_loss(gen_slice(rot), y) + .5*F.mse_loss(gen_slice(tilt @ rot), yt)
+    else:
+        loss = F.mse_loss(gen_slice(rot), y) 
+    loss.backward()
+    optim.step()
+    return loss.item()
+
+# TODO: Refactor & update API for BNB since we don't use BNNB anymore (no longer need L as an argument)
 def train(model, lattice, bnb, optim, batch, L, tilt=None, no_trans=False):
     y, yt = batch
     B = y.size(0)
@@ -146,7 +170,6 @@ def main(args):
 
     lattice = Lattice(D, extent=0.5)
     model = FTPositionalDecoder(3, D, args.layers, args.dim, nn.ReLU, enc_type=args.enc_type)
-    bnnb = BNNBHomo(model, lattice, tilt, t_extent=args.t_extent)
     if args.no_trans:
         bnb = BNBHomoRot(model, lattice, args.l_start, args.l_end, tilt, args.probabilistic)
     else:    
@@ -166,16 +189,11 @@ def main(args):
     else:
         start_epoch = 0
 
-    if args.l_start == -1:
-        Lsched = lambda x: None
-    else:
-        Lsched = LinearSchedule(args.l_start,args.l_end,0,args.l_end_it)
-
     # training loop
     data_generator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
     for epoch in range(start_epoch, args.num_epochs):
         if epoch < args.bnb_start:
-            log('[Train Epoch: {}/{}] Using branch and no bound'.format(epoch+1, args.num_epochs))
+            log('[Train Epoch: {}/{}] Pretraining decoder'.format(epoch+1, args.num_epochs))
         batch_it = 0
         loss_accum = 0
         bnb_pose = []
@@ -184,18 +202,15 @@ def main(args):
             batch = (batch[0].to(device), None) if tilt is None else (batch[0].to(device), batch[1].to(device))
             batch_it += len(batch[0])
             global_it = Nimg*epoch+batch_it
-            L = Lsched(global_it)
-            if L: L = int(L)
             
             # train the model
             if epoch < args.bnb_start:
-                loss_item, pose = train(model, lattice, bnnb, optim, batch, L, tilt, args.no_trans)
+                loss_item = pretrain(model, lattice, optim, batch, tilt=tilt)
             else:
-                L = None
-                loss_item, pose = train(model, lattice, bnb, optim, batch, L, tilt, args.no_trans)
+                loss_item, pose = train(model, lattice, bnb, optim, batch, None, tilt, args.no_trans) 
+                bnb_pose.append((ind.cpu().numpy(),pose))
            
             # logging
-            bnb_pose.append((ind.cpu().numpy(),pose))
             loss_accum += loss_item*len(batch[0])
             if batch_it % args.log_interval == 0:
                 log('# [Train Epoch: {}/{}] [{}/{} images] loss={:.4f}'.format(epoch+1, args.num_epochs, batch_it, Nimg, loss_item))

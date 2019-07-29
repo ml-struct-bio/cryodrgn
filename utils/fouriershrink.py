@@ -23,6 +23,7 @@ def parse_args():
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Output projection stack (.mrcs)')
     parser.add_argument('--out-png', type=os.path.abspath, help='Montage of first 9 projections')
     parser.add_argument('--is-vol',action='store_true')
+    parser.add_argument('--mem', action='store_true', help='Conserve memory footprint')
     parser.add_argument('-D', type=int, required=True, help='New image size, must be even')
     return parser
 
@@ -46,9 +47,12 @@ def main(args):
     mkbasedir(args.o)
     warnexists(args.o)
 
-    old, _, _ = mrc.parse_mrc(args.mrcs)
-    
-    oldD = old.shape[1]
+    if args.mem:
+        old, _, _ = mrc.parse_mrc(args.mrcs,lazy=True)
+        oldD = old[0].get().shape[0]
+    else:
+        old, _, _ = mrc.parse_mrc(args.mrcs)
+        oldD = old.shape[1]
     assert args.D < oldD
     assert args.D % 2 == 0
     
@@ -63,7 +67,15 @@ def main(args):
         newft = oldft[start:stop,start:stop,start:stop]
         log(newft.shape)
         new = fft.ihtn_center(newft).astype(np.float32)
-
+    elif args.mem:
+        new = []
+        for img in old:
+            oldft = fft.ht2_center(img.get()).astype(np.float32)
+            newft = oldft[start:stop, start:stop]
+            new.append(fft.ihtn_center(newft).astype(np.float32))
+        assert oldft[int(oldD/2),int(oldD/2)] == newft[int(D/2),int(D/2)]
+        new = np.asarray(new)
+        log(new.shape)
     else:
         oldft = np.array([fft.ht2_center(img).astype(np.float32) for img in old])
         log(oldft.shape)

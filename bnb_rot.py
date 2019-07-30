@@ -97,8 +97,7 @@ def pretrain(model, lattice, optim, batch, tilt=None):
     optim.step()
     return loss.item()
 
-# TODO: Refactor & update API for BNB since we don't use BNNB anymore (no longer need L as an argument)
-def train(model, lattice, bnb, optim, batch, L, tilt=None, no_trans=False):
+def train(model, lattice, bnb, optim, batch, tilt=None, no_trans=False):
     y, yt = batch
     B = y.size(0)
 
@@ -106,9 +105,9 @@ def train(model, lattice, bnb, optim, batch, L, tilt=None, no_trans=False):
     model.eval()
     with torch.no_grad():
         if no_trans:
-            rot = bnb.opt_theta(y, L, yt)
+            rot = bnb.opt_theta(y, yt)
         else:
-            rot, trans = bnb.opt_theta_trans(y, L, yt)
+            rot, trans = bnb.opt_theta_trans(y, yt)
 
     # reconstruct circle of pixels instead of whole image
     mask = lattice.get_circular_mask(lattice.D//2)
@@ -207,7 +206,7 @@ def main(args):
             if epoch < args.bnb_start:
                 loss_item = pretrain(model, lattice, optim, batch, tilt=tilt)
             else:
-                loss_item, pose = train(model, lattice, bnb, optim, batch, None, tilt, args.no_trans) 
+                loss_item, pose = train(model, lattice, bnb, optim, batch, tilt, args.no_trans) 
                 bnb_pose.append((ind.cpu().numpy(),pose))
            
             # logging

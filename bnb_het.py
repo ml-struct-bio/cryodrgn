@@ -104,7 +104,7 @@ def pretrain(model, lattice, optim, minibatch, tilt):
     optim.step()
     return gen_loss.item()
 
-def train(model, lattice, bnb, optim, minibatch, L, beta, beta_control=None, equivariance=None, rotated_images=None, enc_only=False, no_trans=False):
+def train(model, lattice, bnb, optim, minibatch, beta, beta_control=None, equivariance=None, rotated_images=None, enc_only=False, no_trans=False):
     y, yt = minibatch
     use_tilt = yt is not None
     D = lattice.D
@@ -122,11 +122,11 @@ def train(model, lattice, bnb, optim, minibatch, L, beta, beta_control=None, equ
     with torch.no_grad():
         if no_trans:
             if rotated_images is None:
-                rot = bnb.opt_theta(y, z, None if enc_only else yt, L=L)
+                rot = bnb.opt_theta(y, z, None if enc_only else yt)
             else:
-                rot = bnb.opt_theta_rot(y, rotated_images, z, L=L)
+                rot = bnb.opt_theta_rot(y, rotated_images, z)
         else:
-            rot, trans = bnb.opt_theta_trans(y, z, None if enc_only else yt, L=L)
+            rot, trans = bnb.opt_theta_trans(y, z, None if enc_only else yt)
 
     model.train()
 
@@ -314,8 +314,7 @@ def main(args):
                 loss = pretrain(model, lattice, optim, batch, bnb.tilt)
                 gen_loss = kld = eq_loss = -1
             else:
-                L = None
-                gen_loss, kld, loss, eq_loss, pose = train(model, lattice, bnb, optim, batch, L, beta, args.beta_control, equivariance_tuple, rotated_images=yr, enc_only=args.enc_only, no_trans=args.no_trans)
+                gen_loss, kld, loss, eq_loss, pose = train(model, lattice, bnb, optim, batch, beta, args.beta_control, equivariance_tuple, rotated_images=yr, enc_only=args.enc_only, no_trans=args.no_trans)
             
                 # logging
                 bnb_pose.append((ind.cpu().numpy(),pose))

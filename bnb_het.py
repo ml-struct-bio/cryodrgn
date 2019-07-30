@@ -17,9 +17,10 @@ import mrc
 import utils
 import fft
 import dataset
+import lie_tools
 
 from lattice import Lattice
-from bnb import BNNBHet, BNBHet
+from bnb import BNBHet
 from models import HetOnlyVAE
 from beta_schedule import get_beta_schedule, LinearSchedule
 from losses import EquivarianceLoss
@@ -75,6 +76,33 @@ def parse_args():
     group.add_argument('--pdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
     group.add_argument('--enc-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf'), default='linear_lowf', help='Type of positional encoding')
     return parser
+
+def pretrain(model, lattice, optim, minibatch, tilt):
+    y, yt = minibatch
+    use_tilt = yt is not None
+    B = y.size(0)
+
+    model.train()
+    optim.zero_grad()
+
+    rot = lie_tools.random_SO3(B, device=y.device)
+    z = torch.randn((B,1), device=y.device)
+
+    # reconstruct circle of pixels instead of whole image
+    mask = lattice.get_circular_mask(lattice.D//2)
+    def gen_slice(R):
+        return model.decode(lattice.coords[mask] @ R, z).view(B,-1)
+    
+    y = y.view(B,-1)[:, mask]
+    if use_tilt:
+        yt = yt.view(B,-1)[:, mask]
+        gen_loss = .5*F.mse_loss(gen_slice(rot), y) + .5*F.mse_loss(gen_slice(tilt @ rot), yt)
+    else:
+        gen_loss = F.mse_loss(gen_slice(rot), y)
+    
+    gen_loss.backward()
+    optim.step()
+    return gen_loss.item()
 
 def train(model, lattice, bnb, optim, minibatch, L, beta, beta_control=None, equivariance=None, rotated_images=None, enc_only=False, no_trans=False):
     y, yt = minibatch
@@ -227,7 +255,6 @@ def main(args):
     if args.enc_mask: args.enc_mask = lattice.get_circular_mask(args.enc_mask)
     model = HetOnlyVAE(lattice, args.qlayers, args.qdim, args.players, args.pdim,
                 args.zdim, encode_mode=args.encode_mode, enc_mask=args.enc_mask, enc_type=args.enc_type)
-    bnnb = BNNBHet(model, lattice, tilt)
     bnb = BNBHet(model, lattice, args.l_start, args.l_end, tilt, args.t_extent)
     if args.rotate: 
         assert args.enc_only
@@ -250,8 +277,6 @@ def main(args):
     else:
         start_epoch = 0
 
-    Lsched = LinearSchedule(args.l_start,args.l_end,0,args.l_end_it)
-
     # training loop
     num_epochs = args.num_epochs
     data_iterator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
@@ -270,8 +295,6 @@ def main(args):
             batch_it += len(batch[0])
             global_it = Nimg*epoch + batch_it
 
-            L = Lsched(global_it)
-            if L: L = int(L)
             beta = beta_schedule(global_it)
             if args.equivariance:
                 lamb = equivariance_lambda(global_it)
@@ -288,18 +311,19 @@ def main(args):
 
             # train the model
             if epoch < args.bnb_start:
-                gen_loss, kld, loss, eq_loss, pose = train(model, lattice, bnnb, optim, batch, L, beta, args.beta_control, equivariance_tuple, rotated_images=yr, enc_only=args.enc_only, no_trans=True)
+                loss = pretrain(model, lattice, optim, batch, bnb.tilt)
+                gen_loss = kld = eq_loss = -1
             else:
                 L = None
                 gen_loss, kld, loss, eq_loss, pose = train(model, lattice, bnb, optim, batch, L, beta, args.beta_control, equivariance_tuple, rotated_images=yr, enc_only=args.enc_only, no_trans=args.no_trans)
             
-            # logging
-            bnb_pose.append((ind.cpu().numpy(),pose))
-            kld_accum += kld*len(ind)
-            gen_loss_accum += gen_loss*len(ind)
-            loss_accum += loss*len(ind)
-            if args.equivariance:eq_loss_accum += eq_loss*len(ind)
+                # logging
+                bnb_pose.append((ind.cpu().numpy(),pose))
+                kld_accum += kld*len(ind)
+                gen_loss_accum += gen_loss*len(ind)
+                if args.equivariance:eq_loss_accum += eq_loss*len(ind)
 
+            loss_accum += loss*len(ind)
             if batch_it % args.log_interval == 0:
                 eq_log = 'equivariance={:.4f}, lambda={:.4f}, '.format(eq_loss, lamb) if args.equivariance else ''
                 log('# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.4f}, kld={:.4f}, beta={:.4f}, {}loss={:.4f}'.format(epoch+1, num_epochs, batch_it, Nimg, gen_loss, kld, beta, eq_log, loss))

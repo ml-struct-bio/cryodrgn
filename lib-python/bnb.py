@@ -189,15 +189,16 @@ class BNBHomoRot:
 
 class BNBHomo:
     '''Branch and bound of rotation and translation for homogeneous reconstruction'''
-    def __init__(self, decoder, lattice, Lmin, Lmax, tilt=None, t_extent=5):
+    def __init__(self, decoder, lattice, Lmin, Lmax, tilt=None, t_extent=5, t_ngrid=7):
         self.decoder = decoder
         self.lattice = lattice
         self.base_quat = so3_grid.base_SO3_grid()
         self.base_rot = lie_tools.quaternions_to_SO3(torch.tensor(self.base_quat))
         self.nbase = len(self.base_quat)
         assert self.nbase == 576, "Base resolution changed?"
-        self.base_shifts = torch.tensor(shift_grid.base_shift_grid(t_extent)).float()
+        self.base_shifts = torch.tensor(shift_grid.base_shift_grid(t_extent, t_ngrid)).float()
         self.t_extent = t_extent
+        self.t_ngrid = t_ngrid
         self.Lmin = Lmin
         self.Lmax = Lmax
         self.tilt = tilt
@@ -272,7 +273,7 @@ class BNBHomo:
         q_ind = np.array([x[1] for x in neighbors]) # Bx8x2
         rot = lie_tools.quaternions_to_SO3(torch.tensor(quat).view(-1,4))
         # get neighboring shifts at next resolution level -- todo: make this an array operation
-        neighbors = [shift_grid.get_neighbor(xx,yy, curr_res-1, self.t_extent) for xx,yy in t_ind]
+        neighbors = [shift_grid.get_neighbor(xx,yy, curr_res-1, self.t_extent, self.t_ngrid) for xx,yy in t_ind]
         trans = torch.tensor(np.array([x[0] for x in neighbors]).reshape(-1,2))
         t_ind = np.array([x[1] for x in neighbors]) # Bx4x2
 
@@ -327,7 +328,7 @@ class BNBHomo:
         s2i, s1i = so3_grid.get_base_ind(w[:,2])
         q_ind = np.stack((s2i,s1i),1) # Np x 2
         trans = self.base_shifts[w[:,1]]
-        xi, yi = shift_grid.get_base_ind(w[:,1])
+        xi, yi = shift_grid.get_base_ind(w[:,1], self.t_ngrid)
         t_ind = np.stack((xi,yi),1) #Np x 2
         batch_ind = w[:,0]
 
@@ -362,14 +363,15 @@ class BNBHomo:
 
 class BNNBHomo:
     '''Branch and no bound for homogeneous reconstruction'''
-    def __init__(self, decoder, lattice, tilt=None, t_extent=5):
+    def __init__(self, decoder, lattice, tilt=None, t_extent=5, t_ngrid=7):
         self.decoder = decoder
         self.lattice = lattice
         self.base_quat = so3_grid.base_SO3_grid()
         self.base_rot = lie_tools.quaternions_to_SO3(torch.tensor(self.base_quat))
         self.nbase = len(self.base_quat)
-        self.base_shifts = torch.tensor(shift_grid.base_shift_grid(t_extent)).float()
+        self.base_shifts = torch.tensor(shift_grid.base_shift_grid(t_extent, t_ngrid)).float()
         self.t_extent = t_extent
+        self.t_ngrid = t_ngrid
         assert self.nbase == 576, "Base resolution changed?"
         self.tilt = tilt
 
@@ -450,7 +452,7 @@ class BNNBHomo:
         min_quat = self.base_quat[min_qi]
         min_t = self.base_shifts[min_ti]
         s2i, s1i = so3_grid.get_base_ind(min_qi)
-        xi, yi = shift_grid.get_base_ind(min_ti) # check if we need to cast as int
+        xi, yi = shift_grid.get_base_ind(min_ti, self.t_ngrid) # check if we need to cast as int
         for iter_ in range(1,niter+1):
             # get neighboring SO3 elements at next resolution level -- todo: make this an array operation
             neighbors = [so3_grid.get_neighbor(min_quat[i], s2i[i], s1i[i], iter_) for i in range(B)]
@@ -458,7 +460,7 @@ class BNNBHomo:
             ind = np.array([x[1] for x in neighbors])
             rot = lie_tools.quaternions_to_SO3(torch.tensor(quat))
             # get neighboring shifts at next resolution level -- todo: make this an array operation
-            neighbors = [shift_grid.get_neighbor(xx,yy, iter_, self.t_extent) for xx,yy in zip(xi,yi)]
+            neighbors = [shift_grid.get_neighbor(xx,yy, iter_, self.t_extent, self.t_ngrid) for xx,yy in zip(xi,yi)]
             trans = torch.tensor(np.array([x[0] for x in neighbors]))
             t_ind = np.array([x[1] for x in neighbors])
             
@@ -570,15 +572,16 @@ class BNNBHet:
 
 class BNBHet:
     '''Branch and bound over rotation and translation for heterogeneous reconstruction'''
-    def __init__(self, model, lattice, Lmin, Lmax, tilt=None, t_extent=5):
+    def __init__(self, model, lattice, Lmin, Lmax, tilt=None, t_extent=5, t_ngrid=7):
         self.model = model
         self.lattice = lattice
         self.base_quat = so3_grid.base_SO3_grid()
         self.base_rot = lie_tools.quaternions_to_SO3(torch.tensor(self.base_quat))
         self.nbase = len(self.base_quat)
         assert self.nbase == 576, "Base resolution changed?"
-        self.base_shifts = torch.tensor(shift_grid.base_shift_grid(t_extent)).float()
+        self.base_shifts = torch.tensor(shift_grid.base_shift_grid(t_extent, t_ngrid)).float()
         self.t_extent = t_extent
+        self.t_ngrid = t_ngrid
         self.Lmin = Lmin
         self.Lmax = Lmax
         self.tilt = tilt
@@ -663,7 +666,7 @@ class BNBHet:
         q_ind = np.array([x[1] for x in neighbors]) # Bx8x2
         rot = lie_tools.quaternions_to_SO3(torch.tensor(quat).view(-1,4))
         # get neighboring shifts at next resolution level -- todo: make this an array operation
-        neighbors = [shift_grid.get_neighbor(xx,yy, curr_res-1, self.t_extent) for xx,yy in t_ind]
+        neighbors = [shift_grid.get_neighbor(xx,yy, curr_res-1, self.t_extent, self.t_ngrid) for xx,yy in t_ind]
         trans = torch.tensor(np.array([x[0] for x in neighbors]).reshape(-1,2))
         t_ind = np.array([x[1] for x in neighbors]) # Bx4x2
         quat = np.tile(quat,(1,4,1)) # Bx8x4 -> Bx32x4
@@ -784,7 +787,7 @@ class BNBHet:
         s2i, s1i = so3_grid.get_base_ind(w[:,2])
         q_ind = np.stack((s2i,s1i),1) # Np x 2
         trans = self.base_shifts[w[:,1]]
-        xi, yi = shift_grid.get_base_ind(w[:,1])
+        xi, yi = shift_grid.get_base_ind(w[:,1], self.t_ngrid)
         t_ind = np.stack((xi,yi),1) #Np x 2
         batch_ind = w[:,0]
 

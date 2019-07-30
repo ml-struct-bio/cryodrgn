@@ -36,7 +36,7 @@ def parse_args():
     parser.add_argument('--max-D', type=int, default=40, help='Box size to align')
     parser.add_argument('-rb', type=int, default=300, help='Rotation iterator batch size (default: %(default)s)')
     parser.add_argument('-tb', type=int, default=5, help='Translation iterator batch size (default: %(default)s)')
-    parser.add_argument('--t-extent', type=float, help='Extent of volume translation (default: +/-%(D/16)s pixels)')
+    parser.add_argument('--t-extent', type=float, help='Extent of volume translation (default: +/-D/16 pixels)')
     parser.add_argument('--t-grid', type=int, default=8, help='Gridsize per dimension')
     parser.add_argument('--r-resol', type=int, default=1, help='Starting resolution for SO3 grid (default: %(default)s')
     parser.add_argument('--keep-r', type=int, default=30, help='Rotations to keep per iteration')
@@ -295,7 +295,7 @@ def main(args):
     log('Best rot: {}'.format(r))
     log('Best trans: {}'.format(t))
     projector= VolumeAligner(vol, vol_ref=ref, maxD=vol.shape[0], flip=args.flip)
-    if use_cuda: projector.cuda()
+    if use_cuda: projector.use_cuda()
     vr, vi = projector.rotate(torch.tensor(r).unsqueeze(0))
     vr, vi = projector.translate(vr, vi, torch.tensor(t).view(1,1,3))
     vf = vr.squeeze().cpu().numpy() + vi.squeeze().cpu().numpy()*1j

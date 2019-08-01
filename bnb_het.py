@@ -86,7 +86,7 @@ def pretrain(model, lattice, optim, minibatch, tilt):
     optim.zero_grad()
 
     rot = lie_tools.random_SO3(B, device=y.device)
-    z = torch.randn((B,1), device=y.device)
+    z = torch.randn((B,model.z_dim), device=y.device)
 
     # reconstruct circle of pixels instead of whole image
     mask = lattice.get_circular_mask(lattice.D//2)

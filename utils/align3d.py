@@ -149,10 +149,15 @@ class VolumeAligner:
         vi = volr*s+voli*c 
         return vr.view(B,T,D,D,D), vi.view(B,T,D,D,D)
 
-    def compute_err(self, vr, vi):
+    def compute_err_old(self, vr, vi):
         err_r = (self.vol_refr - vr).pow(2).sum((-1,-2,-3))
         err_i = (self.vol_refi - vi).pow(2).sum((-1,-2,-3))
         return err_r + err_i
+
+    def compute_err(self, vr, vi):
+        r, i = self.vol_refr, self.vol_refi
+        corr = (r*vr+i*vi).sum((-1,-2,-3)) / ((vr*vr+vi*vi).sum((-1,-2,-3))*(r*r+i*i).sum((-1,-2,-3)))**.5
+        return -corr
 
 class GridPose(data.Dataset):
     def __init__(self, pose, pose_id):

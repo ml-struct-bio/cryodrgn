@@ -42,7 +42,6 @@ def parse_args():
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
     parser.add_argument('--seed', type=int, default=np.random.randint(0,100000), help='Random seed')
     parser.add_argument('--lazy', action='store_true', help='Use if full dataset is too large to fit in memory')
-    parser.add_argument('--l-extent', type=float, default=1.0, help='Coordinate lattice size (default: %(default)s)')
 
     group = parser.add_argument_group('Training parameters')
     group.add_argument('-n', '--num-epochs', type=int, default=10, help='Number of training epochs (default: %(default)s)')
@@ -53,7 +52,7 @@ def parse_args():
     group = parser.add_argument_group('Network Architecture')
     group.add_argument('--layers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--dim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
-
+    group.add_argument('--enc-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf'), default='linear_lowf', help='Type of positional encoding')
     return parser
 
 def save_checkpoint(model, lattice, optim, epoch, norm, out_mrc, out_weights):
@@ -72,9 +71,9 @@ def train(model, lattice, optim, y, rot, trans=None, ctf_params=None):
     optim.zero_grad()
     B = y.size(0)
     D = lattice.D
-    # restrict to inscribed circle of pixels
+    # reconstruct circle of pixels instead of whole image
     mask = lattice.get_circular_mask(D//2)
-    yhat = model(lattice.coords[mask]/lattice.extent/2 @ rot).view(B,-1)
+    yhat = model(lattice.coords[mask] @ rot).view(B,-1)
     if ctf_params is not None:
         freqs = lattice.freqs2d[mask]
         freqs = freqs.unsqueeze(0).expand(B, *freqs.shape)/ctf_params[:,0].view(B,1,1)
@@ -112,8 +111,8 @@ def main(args):
     D = data.D
     Nimg = data.N
 
-    lattice = Lattice(D, extent=args.l_extent)
-    model = PositionalDecoder(3, D, args.layers, args.dim, nn.ReLU)
+    lattice = Lattice(D, extent=0.5)
+    model = PositionalDecoder(3, D, args.layers, args.dim, nn.ReLU, enc_type=args.enc_type)
     log(model)
     log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
 

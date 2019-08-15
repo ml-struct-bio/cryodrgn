@@ -50,7 +50,14 @@ class HetOnlyVAE(nn.Module):
         else:
             raise RuntimeError('Encoder mode {} not recognized'.format(encode_mode))
         self.encode_mode = encode_mode
-        self.decoder = FTPositionalDecoder(3+z_dim, # input dim
+        if enc_type == 'none':
+            self.decoder = FTSliceDecoder(3+z_dim,
+                            lattice.D, # lattice size
+                            decode_layers, # nlayers
+                            decode_dim, # hidden dim
+                            nn.ReLU)
+        else:
+            self.decoder = FTPositionalDecoder(3+z_dim, # input dim
                             lattice.D, # lattice size
                             decode_layers, # nlayers
                             decode_dim, # hidden dim

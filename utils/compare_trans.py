@@ -35,7 +35,11 @@ def main(args):
     log('Mean error: {}'.format(np.mean(dists)))
     log('Median error: {}'.format(np.median(dists)))
     if args.show:
+        plt.figure(1)
         plt.hist(dists)
+        plt.figure(2)
+        plt.scatter(trans1[:,0],trans1[:,1], alpha=.1)
+        plt.scatter(trans2[:,0],trans2[:,1], alpha=.1)
         plt.show()
 
 if __name__ == '__main__':

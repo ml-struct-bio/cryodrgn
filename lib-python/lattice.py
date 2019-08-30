@@ -12,7 +12,7 @@ import utils
 log = utils.log
 
 class Lattice:
-    def __init__(self, D, extent=1.0):
+    def __init__(self, D, extent=0.5):
         assert D % 2 == 1, "Lattice size must be odd"
         x0, x1 = np.meshgrid(np.linspace(-extent, extent, D, endpoint=True), 
                              np.linspace(-extent, extent, D, endpoint=True))
@@ -83,7 +83,7 @@ class Lattice:
 
 class EvenLattice(Lattice):
     '''For a DxD lattice where D is even, we set D/2,D/2 pixel to the center'''
-    def __init__(self, D):
+    def __init__(self, D, extent=0.5):
         # centered and scaled xy plane, values between -1 and 1
         # endpoint=False since FT is not symmetric around origin
         assert D % 2 == 0, "Lattice size must be odd"
@@ -91,6 +91,7 @@ class EvenLattice(Lattice):
                              np.linspace(-1, 1, D, endpoint=False))
         coords = np.stack([x0.ravel(),x1.ravel(),np.zeros(D**2)],1).astype(np.float32)
         self.coords = torch.tensor(coords)
+        self.extent = extent
         self.D = D
         self.D2 = int(D/2)
 

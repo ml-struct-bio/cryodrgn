@@ -20,7 +20,8 @@ class HetOnlyVAE(nn.Module):
             z_dim = 1, 
             encode_mode = 'resid',
             enc_mask = None,
-            enc_type = 'linear_lowf'):
+            enc_type = 'linear_lowf',
+            domain = 'fourier'):
         super(HetOnlyVAE, self).__init__()
         self.lattice = lattice
         self.z_dim = z_dim
@@ -51,13 +52,15 @@ class HetOnlyVAE(nn.Module):
             raise RuntimeError('Encoder mode {} not recognized'.format(encode_mode))
         self.encode_mode = encode_mode
         if enc_type == 'none':
-            self.decoder = FTSliceDecoder(3+z_dim,
+            model = ResidLinearMLP if domain == 'hartley' else FTSliceDecoder
+            self.decoder = model(3+z_dim,
                             lattice.D, # lattice size
                             decode_layers, # nlayers
                             decode_dim, # hidden dim
                             nn.ReLU)
         else:
-            self.decoder = FTPositionalDecoder(3+z_dim, # input dim
+            model = PositionalDecoder if domain == 'hartley' else FTPositionalDecoder 
+            self.decoder = model(3+z_dim, # input dim
                             lattice.D, # lattice size
                             decode_layers, # nlayers
                             decode_dim, # hidden dim
@@ -98,15 +101,15 @@ class HetOnlyVAE(nn.Module):
 class PositionalDecoder(nn.Module):
     def __init__(self, in_dim, D, nlayers, hidden_dim, activation, enc_type='linear_lowf'):
         super(PositionalDecoder, self).__init__()
-        assert in_dim == 3, "Not Implemented Yet for Heterogeneous Structures"
-        self.decoder = ResidLinearMLP(in_dim*(D//2)*2, nlayers, hidden_dim, 1, activation)
+        assert in_dim >= 3 
+        self.z_dim = in_dim - 3
         self.D = D
         self.D2 = D // 2
         self.DD = 2 * (D // 2)
         self.enc_dim = self.D2
-        self.in_dim = in_dim * (self.enc_dim) * 2
         self.enc_type = enc_type
-        self.z_dim = 0
+        self.in_dim = 3 * (self.enc_dim) * 2 + self.z_dim
+        self.decoder = ResidLinearMLP(self.in_dim, nlayers, hidden_dim, 1, activation)
      
     def positional_encoding_geom(self, coords):
         '''Expand coordinates in the Fourier basis with geometrically spaced wavelengths from 2/D to 2pi'''
@@ -137,18 +140,22 @@ class PositionalDecoder(nn.Module):
 
     def positional_encoding_linear(self, coords):
         '''Expand coordinates in the Fourier basis, i.e. cos(k*n/N), sin(k*n/N), n=0,...,N//2'''
-        freqs = torch.arange(1,self.D2+1, dtype=torch.float)
+        freqs = torch.arange(1, self.D2+1, dtype=torch.float) 
         freqs = freqs.view(*[1]*len(coords.shape), -1) # 1 x 1 x D2
         coords = coords.unsqueeze(-1) # B x 3 x 1
-        coords = coords * freqs # B x 3 x D2
-        s = torch.sin(coords) # B x 3 x D2
-        c = torch.cos(coords) # B x 3 x D2
+        k = coords[...,0:3,:] * freqs # B x 3 x D2
+        s = torch.sin(k) # B x 3 x D2
+        c = torch.cos(k) # B x 3 x D2
         x = torch.cat([s,c], -1) # B x 3 x D
-        return x.view(*coords.shape[:-2], self.in_dim) # B x in_dim
+        x = x.view(*coords.shape[:-2], self.in_dim-self.z_dim) # B x in_dim-z_dim
+        if self.z_dim > 0:
+            x = torch.cat([x,coords[...,3:,:].squeeze(-1)], -1)
+            assert x.shape[-1] == self.in_dim
+        return x
 
     def forward(self, coords):
         '''Input should be coordinates from [-.5,.5]'''
-        assert (coords.abs() <= 0.5).all()
+        assert (coords[...,0:3].abs() <= 0.5).all()
         return self.decoder(self.positional_encoding_geom(coords))
 
     # todo: move this function elsewhere

@@ -69,6 +69,7 @@ def parse_args():
     group.add_argument('--players', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--pdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
     group.add_argument('--enc-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf','none'), default='linear_lowf', help='Type of positional encoding')
+    group.add_argument('--domain', choices=('hartley','fourier'), default='fourier')
     return parser
 
 def train(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, equivariance=None, tilt=None, ctf_params=None):
@@ -95,7 +96,7 @@ def train(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, equ
 
     # decode 
     mask = lattice.get_circular_mask(D//2) # restrict to circular mask
-    y_recon = model.decode(lattice.coords[mask]/lattice.extent/2 @ rot, z)
+    y_recon = model.decode(lattice.coords[mask]/lattice.extent/2 @ rot, z).view(B,-1)
     if use_ctf: y_recon *= c.view(B,-1)[:,mask]
     gen_loss = F.mse_loss(y_recon, y.view(B,-1)[:, mask])
 
@@ -230,7 +231,7 @@ def main(args):
     if args.enc_mask: args.enc_mask = lattice.get_circular_mask(args.enc_mask)
     model = HetOnlyVAE(lattice, args.qlayers, args.qdim, args.players, args.pdim,
                 args.zdim, encode_mode=args.encode_mode, enc_mask=args.enc_mask,
-                enc_type=args.enc_type)
+                enc_type=args.enc_type, domain=args.domain)
     log(model)
     log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
 

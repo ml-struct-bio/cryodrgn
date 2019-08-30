@@ -21,7 +21,7 @@ import lie_tools
 
 from lattice import Lattice
 from bnb import BNBHomo, BNBHomoRot
-from models import FTPositionalDecoder
+from models import FTPositionalDecoder, PositionalDecoder
 
 log = utils.log
 vlog = utils.vlog
@@ -44,6 +44,7 @@ def parse_args():
 
     group = parser.add_argument_group('Training parameters')
     group.add_argument('--t-extent', type=float, default=5, help='+/- pixels to search over translations')
+    group.add_argument('--t-ngrid', type=float, default=7, help='Initial grid size for translations')
     group.add_argument('--no-trans', action='store_true', help="Don't search over translations")
     group.add_argument('-n', '--num-epochs', type=int, default=10, help='Number of training epochs (default: %(default)s)')
     group.add_argument('-b','--batch-size', type=int, default=100, help='Minibatch size (default: %(default)s)')
@@ -59,6 +60,7 @@ def parse_args():
     group.add_argument('--layers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--dim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
     group.add_argument('--enc-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf'), default='linear_lowf', help='Type of positional encoding')
+    group.add_argument('--domain', choices=('hartley','fourier'), default='fourier')
 
     return parser
 
@@ -168,11 +170,15 @@ def main(args):
     Nimg = data.N
 
     lattice = Lattice(D, extent=0.5)
-    model = FTPositionalDecoder(3, D, args.layers, args.dim, nn.ReLU, enc_type=args.enc_type)
+    if args.domain == 'fourier':
+        model = FTPositionalDecoder(3, D, args.layers, args.dim, nn.ReLU, enc_type=args.enc_type)
+    else:
+        model = PositionalDecoder(3, D, args.layers, args.dim, nn.ReLU, enc_type=args.enc_type)
+
     if args.no_trans:
         bnb = BNBHomoRot(model, lattice, args.l_start, args.l_end, tilt, args.probabilistic)
     else:    
-        bnb = BNBHomo(model, lattice, args.l_start, args.l_end, tilt, t_extent=args.t_extent)
+        bnb = BNBHomo(model, lattice, args.l_start, args.l_end, tilt, t_extent=args.t_extent, t_ngrid=args.t_ngrid)
     log(model)
     log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)

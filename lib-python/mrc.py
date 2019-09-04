@@ -1,4 +1,5 @@
 import numpy as np
+import os
 import struct
 from collections import namedtuple
 
@@ -105,6 +106,12 @@ MRCHeader = namedtuple('MRCHeader', names)
 
 def parse_mrc_list(txtfile, lazy=False):
     lines = open(txtfile,'r').readlines()
+    def abspath(f):
+        if os.path.isabs(f):
+            return f
+        base = os.path.dirname(os.path.abspath(txtfile))
+        return os.path.join(base,f)
+    lines = [abspath(x) for x in lines]
     if not lazy:
         particles = np.vstack([parse_mrc(x.strip(), lazy=False)[0] for x in lines])
     else:

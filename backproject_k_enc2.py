@@ -1,6 +1,5 @@
 '''
-Train a NN to model a 3D EM density map
-    given 2D projections with angular assignments
+Train a NN to model a 3D EM density map given 2D projections with angular assignments
 '''
 import numpy as np
 import sys, os
@@ -21,7 +20,7 @@ import dataset
 import ctf
 
 from lattice import Lattice
-from models import FTPositionalDecoder 
+from models import PositionalDecoder, FTPositionalDecoder, FTSliceDecoder, ResidLinearMLP
 
 log = utils.log
 vlog = utils.vlog
@@ -47,12 +46,14 @@ def parse_args():
     group.add_argument('-n', '--num-epochs', type=int, default=10, help='Number of training epochs (default: %(default)s)')
     group.add_argument('-b','--batch-size', type=int, default=100, help='Minibatch size (default: %(default)s)')
     group.add_argument('--wd', type=float, default=0, help='Weight decay in Adam optimizer (default: %(default)s)')
-    group.add_argument('--lr', type=float, default=1e-3, help='Learning rate in Adam optimizer (default: %(default)s)')
+    group.add_argument('--lr', type=float, default=1e-4, help='Learning rate in Adam optimizer (default: %(default)s)')
 
     group = parser.add_argument_group('Network Architecture')
     group.add_argument('--layers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--dim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
-    group.add_argument('--enc-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf'), default='linear_lowf', help='Type of positional encoding')
+    group.add_argument('--l-extent', type=float, default=0.5, help='Coordinate lattice size (default: %(default)s)')
+    group.add_argument('--enc-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf','none'), default='geom_nohighf', help='Type of positional encoding')
+    group.add_argument('--domain', choices=('hartley','fourier'), default='fourier', help='Volume decoder representation (default: %(default)s)')
     return parser
 
 def save_checkpoint(model, lattice, optim, epoch, norm, out_mrc, out_weights):
@@ -111,13 +112,27 @@ def main(args):
     D = data.D
     Nimg = data.N
 
-    lattice = Lattice(D, extent=0.5)
-    model = FTPositionalDecoder(3, D, args.layers, args.dim, nn.ReLU, enc_type=args.enc_type)
+    # instantiate model
+    if args.enc_type != 'none': assert args.l_extent == 0.5
+    lattice = Lattice(D, extent=args.l_extent)
+    if args.enc_type == 'none':
+        if args.domain == 'fourier':
+            model = FTSliceDecoder(3, D, args.layers, args.dim, nn.ReLU)
+        else:
+            model = ResidLinearMLP(3, args.layers, args.dim, 1, nn.ReLU)
+            ResidLinearMLP.eval_volume = PositionalDecoder.eval_volume # ew, fixme
+    else:
+        if args.domain == 'fourier':
+            model = FTPositionalDecoder(3, D, args.layers, args.dim, nn.ReLU, enc_type=args.enc_type)
+        else:
+            model = PositionalDecoder(3, D, args.layers, args.dim, nn.ReLU, enc_type=args.enc_type)
     log(model)
     log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
 
+    # optimizer
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
+    # load weights
     if args.load:
         log('Loading model weights from {}'.format(args.load))
         checkpoint = torch.load(args.load)
@@ -128,9 +143,11 @@ def main(args):
     else:
         start_epoch = 0
 
+    # load poses
     rot = torch.tensor(utils.load_pkl(args.rot))
     if args.trans: trans = args.tscale*torch.tensor(utils.load_pkl(args.trans).astype(np.float32))
 
+    # load CTF
     if args.ctf is not None:
         log('Loading ctf params from {}'.format(args.ctf))
         ctf_params = utils.load_pkl(args.ctf)
@@ -139,6 +156,7 @@ def main(args):
         ctf_params = torch.tensor(ctf_params)
     else: ctf_params = None
 
+    # train
     data_generator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
     for epoch in range(start_epoch, args.num_epochs):
         loss_accum = 0
@@ -155,8 +173,8 @@ def main(args):
                 log('# [Train Epoch: {}/{}] [{}/{} images] loss={:.4f}'.format(epoch+1, args.num_epochs, batch_it, Nimg, loss_item))
         log('# =====> Epoch: {} Average loss = {:.4}'.format(epoch+1, loss_accum/Nimg))
         if args.checkpoint and epoch % args.checkpoint == 0:
-            out_mrc = '{}/reconstruct.{}.mrc'.format(args.outdir,epoch)
-            out_weights = '{}/weights.{}.pkl'.format(args.outdir,epoch)
+            out_mrc = '{}/reconstruct.{}.mrc'.format(args.outdir, epoch)
+            out_weights = '{}/weights.{}.pkl'.format(args.outdir, epoch)
             save_checkpoint(model, lattice, optim, epoch, data.norm, out_mrc, out_weights)
 
     ## save model weights and evaluate the model on 3D lattice

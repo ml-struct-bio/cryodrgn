@@ -118,6 +118,10 @@ def train(model, lattice, bnb, optim, minibatch, beta, beta_control=None, equiva
     z_mu, z_logvar = model.encode(*input_)
     z = model.reparameterize(z_mu, z_logvar)
 
+    if equivariance is not None:
+        lamb, equivariance_loss = equivariance
+        eq_loss = equivariance_loss(y, z_mu)
+
     # BNB inference of pose
     model.eval()
     with torch.no_grad():
@@ -162,9 +166,8 @@ def train(model, lattice, bnb, optim, minibatch, beta, beta_control=None, equiva
         loss = gen_loss + args.beta_control*(beta-kld)**2/mask.sum()
 
     if equivariance is not None:
-        lamb, equivariance_loss = equivariance
-        eq_loss = equivariance_loss(y, z_mu)
         loss += lamb*eq_loss
+
     loss.backward()
     optim.step()
     save_pose = [rot.detach().cpu().numpy()]

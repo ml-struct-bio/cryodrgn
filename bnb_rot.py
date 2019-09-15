@@ -125,6 +125,7 @@ def train(model, lattice, bnb, optim, batch, tilt=None, no_trans=False):
     optim.zero_grad()
 
     y = y.view(B,-1)[:, mask]
+    if tilt is not None: yt = yt.view(B,-1)[:, mask]
     if not no_trans:
         y = translate(y)
         if tilt is not None: yt = translate(yt)

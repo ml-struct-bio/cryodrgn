@@ -580,7 +580,7 @@ class VAE(nn.Module):
         return z_mu, z_std, tmu, tlogvar
 
     def eval_volume(self, norm):
-        return self.decoder.eval_volume(self.lattice.coords, self.D, norm)
+        return self.decoder.eval_volume(self.lattice.coords, self.D, self.lattice.extent, norm)
 
     def decode(self, rot):
         # transform lattice by rot.T
@@ -637,7 +637,7 @@ class TiltVAE(nn.Module):
         return eps*std + mu
 
     def eval_volume(self, norm):
-        return self.decoder.eval_volume(self.lattice.coords, self.D, norm)
+        return self.decoder.eval_volume(self.lattice.coords, self.D, self.lattice.extent, norm)
 
     def encode(self, img, img_tilt):
         img = img.view(img.size(0), -1)
@@ -663,7 +663,7 @@ class TiltVAE(nn.Module):
         z_mu, z_std, w_eps, rot, tmu, tlogvar, t = self.encode(img, img_tilt)
         if not self.no_trans:
             t = t.unsqueeze(1) # B x 1 x 2
-            img = self.decoder.translate_ht(self.lattice.freq2d, img.view(B,-1), -t)
+            img = self.decoder.translate_ht(self.lattice.freqs2d, img.view(B,-1), -t)
             img_tilt = self.decoder.translate_ht(self.lattice.freqs2d, img_tilt.view(B,-1), -t)
             img = img.view(B, self.D, self.D)
             img_tilt = img_tilt.view(B, self.D, self.D)

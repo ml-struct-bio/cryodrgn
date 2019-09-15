@@ -70,7 +70,7 @@ def loss_function(recon_y, y, w_eps, z_std, t_mu, t_logvar):
     #assert kld > 0
     return gen_loss, kld1 + kld2
 
-def train(model, optim, D, y, beta, beta_control=None)
+def train(model, optim, D, y, beta, beta_control=None):
     model.train()
     optim.zero_grad()
     # train the model

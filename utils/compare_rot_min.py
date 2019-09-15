@@ -14,7 +14,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('rot1', help='Input rotations')
     parser.add_argument('rot2', help='Input rotations')
-    parser.add_argument('-N', type=int, default=30)
+    parser.add_argument('-N', type=int, default=30, help='Test N alignments')
+    parser.add_argument('--first', type=int, help='Compare first X images')
     return parser
 
 def geodesic_so3(A,B):
@@ -49,6 +50,10 @@ def main(args):
     rot1 = utils.load_pkl(args.rot1)
     rot2 = utils.load_pkl(args.rot2)
     assert rot1.shape == rot2.shape
+    if args.first is not None:
+        log('Comparing first {} alignments'.format(args.first))
+        rot1 = rot1[:args.first]
+        rot2 = rot2[:args.first]
 
     mean = []
     med = []

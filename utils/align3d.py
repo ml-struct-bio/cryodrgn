@@ -51,9 +51,11 @@ class VolumeAligner:
         nz, ny, nx = vol.shape
         assert nz==ny==nx, 'Volume must be cubic'
         D = nz
+        self.vol_real = torch.from_numpy(vol.astype(np.float32)).view(1,1,D,D,D)
+
         vol = fft.fftn_center(vol)
-        self.vol_orig = vol
-        if D > maxD: # fourier clip
+        # fourier clip the volume
+        if D > maxD: 
             assert maxD % 2 == 0
             b, e = D//2 - maxD//2, D//2 + maxD//2
             vol = vol[b:e,b:e,b:e]
@@ -100,7 +102,22 @@ class VolumeAligner:
         self.voli = self.voli.cuda()
         self.vol_refr = self.vol_refr.cuda()
         self.vol_refi = self.vol_refi.cuda()
+        self.vol_real = self.vol_real.cuda()
         self.tcoords = self.tcoords.cuda()
+
+    def real_tform(self, rot, trans):
+        if rot.shape[-1] == 4:
+            rot = lie_tools.quaternions_to_SO3(rot)
+        B = rot.size(0)
+        D = self.D
+        grid = self.lattice @ rot # B x D^3 x 3 
+        grid = grid.view(-1, D, D, D, 3)
+        offset = self.center - grid[:,self.D2, self.D2, self.D2]
+        grid += offset[:,None,None,None,:]
+        grid -= trans 
+        grid = grid.view(1, -1, D, D, 3)
+        vol = F.grid_sample(self.vol_real, grid)
+        return vol.view(B,D,D,D)
 
     def rotate(self, rot_or_quat):
         rot = rot_or_quat
@@ -299,15 +316,13 @@ def main(args):
     t = trans.pose[t_err_argmin[0]]*vol.shape[0]/args.max_D
     log('Best rot: {}'.format(r))
     log('Best trans: {}'.format(t))
-    projector= VolumeAligner(vol, vol_ref=ref, maxD=vol.shape[0], flip=args.flip)
+    t *= 2/vol.shape[0]
+    projector = VolumeAligner(vol, vol_ref=ref, maxD=vol.shape[0], flip=args.flip)
     if use_cuda: projector.use_cuda()
-    vr, vi = projector.rotate(torch.tensor(r).unsqueeze(0))
-    vr, vi = projector.translate(vr, vi, torch.tensor(t).view(1,1,3))
-    vf = vr.squeeze().cpu().numpy() + vi.squeeze().cpu().numpy()*1j
-    v = fft.ifftn_center(vf)
+    vr = projector.real_tform(torch.tensor(r).unsqueeze(0),torch.tensor(t).view(1,1,3))
+    v = vr.squeeze().cpu().numpy()
     log('Saving {}'.format(args.o))
-    mrc.write(args.o, v.real.astype(np.float32))
-
+    mrc.write(args.o, v.astype(np.float32))
     
     td = time.time()-t1
     log('Finished in {}s'.format(td))

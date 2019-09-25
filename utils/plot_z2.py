@@ -21,7 +21,7 @@ def main(args):
         print(f)
         x = pickle.load(open(f,'rb'))
         #plt.plot(x[:,0],x[:,1], 'o', label=f, alpha=.01, ms=2)
-        plt.scatter(x[:,0], x[:,1], c=np.arange(len(x[:,0])), label=f, alpha=.02, s=4, cmap='hsv')
+        plt.scatter(x[:,0], x[:,1], c=np.arange(len(x[:,0])), label=f, alpha=.1, s=2, cmap='hsv')
     if args.sample1:
         d = len(x) // args.sample1
         xd = x[::d]
@@ -33,7 +33,7 @@ def main(args):
         xd = np.array([np.median(xs,axis=0) for xs in xsplit])
         print(len(xd))
         print(xd)
-        plt.scatter(xd[:,0],xd[:,1],c=np.arange(len(xd)),cmap='hsv')
+        plt.scatter(xd[:,0],xd[:,1],c='k')#np.arange(len(xd)),cmap='hsv')
     if args.out_s:
         np.savetxt(args.out_s, xd)
     plt.xlabel('z1')

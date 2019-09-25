@@ -11,14 +11,38 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('input', nargs='+', help='Input')
     parser.add_argument('-o', help='Output')
+    parser.add_argument('--sample1', type=int, help='Plot z value for N points')
+    parser.add_argument('--sample2', type=int, help='Plot median z after chunking into N chunks')
+    parser.add_argument('--out-s', help='Save sampled z values')
     return parser
 
 def main(args):
     for f in args.input:
         print(f)
         x = pickle.load(open(f,'rb'))
-        plt.plot(x, 'o', label=f, alpha=.01, ms=2)
-    plt.xlabel('image')
+        N = len(x)
+        #plt.scatter(np.arange(N),x, label=f, alpha=.02, s=4)
+        plt.scatter(np.arange(N), x, c=np.arange(len(x[:,0])), label=f, alpha=.1, s=2, cmap='hsv')
+        plt.xlim((0,N))
+    if args.sample1:
+        d = len(x) // args.sample1
+        t = np.arange(len(x))
+        t = t[::d]
+        xd = x[::d]
+        print(len(xd))
+        print(xd)
+        plt.plot(t,xd,'o')
+    if args.sample2:
+        t = np.array_split(np.arange(len(x)),args.sample2)
+        t = np.array([np.median(tt,axis=0) for tt in t])
+        xsplit = np.array_split(x,args.sample2)
+        xd = np.array([np.median(xs,axis=0) for xs in xsplit])
+        print(len(xd))
+        print(xd)
+        plt.plot(t,xd,'o',color='k')
+    if args.out_s:
+        np.savetxt(args.out_s, xd)
+    plt.xlabel('ground truth latent')
     plt.ylabel('latent encoding')
     plt.legend(loc='best')
     if args.o: 

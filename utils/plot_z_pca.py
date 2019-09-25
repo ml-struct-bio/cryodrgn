@@ -47,7 +47,7 @@ def main(args):
         #xd = np.array([np.mean(xs,axis=0) for xs in xsplit])
         print(len(xd))
         xd_pc = pca.transform(xd)
-        plt.scatter(xd_pc[:,0],xd_pc[:,1],c=np.arange(len(xd)),cmap='hsv')
+        plt.scatter(xd_pc[:,0],xd_pc[:,1],'k')#c=np.arange(len(xd)),cmap='hsv')
 
     if args.out_s:
         np.savetxt(args.out_s, xd)

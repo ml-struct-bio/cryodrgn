@@ -60,11 +60,13 @@ class MRCData(data.Dataset):
     '''
     Class representing an .mrcs stack file
     '''
-    def __init__(self, mrcfile, norm=None, keepreal=False, invert_data=False):
+    def __init__(self, mrcfile, norm=None, keepreal=False, invert_data=False, ind=None):
         if mrcfile.endswith('.txt'):
             particles_real = mrc.parse_mrc_list(mrcfile)
         else:
             particles_real, _, _ = mrc.parse_mrc(mrcfile)
+        if ind is not None:
+            particles_real = particles_real[ind]
         N, ny, nx = particles_real.shape
         assert ny == nx, "Images must be square"
         assert ny % 2 == 0, "Image size must be even"
@@ -102,8 +104,7 @@ class TiltMRCData(data.Dataset):
     '''
     Class representing an .mrcs tilt series pair
     '''
-
-    def __init__(self, mrcfile, mrcfile_tilt, norm=None, keepreal=False, invert_data=False):
+    def __init__(self, mrcfile, mrcfile_tilt, norm=None, keepreal=False, invert_data=False, ind=None):
         if mrcfile.endswith('.txt'):
             particles_real = mrc.parse_mrc_list(mrcfile)
         else:
@@ -112,6 +113,9 @@ class TiltMRCData(data.Dataset):
             particles_tilt = mrc.parse_mrc_list(mrcfile_tilt)
         else:
             particles_tilt, _, _ = mrc.parse_mrc(mrcfile_tilt)
+        if ind is not None:
+            particles_real = particles_real[ind]
+            particles_tilt = particles_tilt[ind]
         N, ny, nx = particles_real.shape
         assert ny == nx, "Images must be square"
         assert ny % 2 == 0, "Image size must be even"

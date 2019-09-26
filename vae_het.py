@@ -42,6 +42,7 @@ def parse_args():
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
     parser.add_argument('--seed', type=int, default=np.random.randint(0,100000), help='Random seed')
     parser.add_argument('--invert-data', action='store_true', help='Invert data sign')
+    parser.add_argument('--ind', type=os.path.abspath, help='Filter indices')
 
     group = parser.add_argument_group('Tilt series')
     group.add_argument('--tilt', help='Particle stack file (.mrcs)')
@@ -201,27 +202,33 @@ def main(args):
     beta_schedule = get_beta_schedule(args.beta)
 
     # load the particles
+    if args.ind is not None: 
+        log('Filtering image dataset with {}'.format(args.ind))
+        args.ind = pickle.load(open(args.ind,'rb'))
     if args.tilt is None:
-        data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data)
+        data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=args.ind)
         tilt = None
     else:
         assert args.encode_mode == 'tilt'
-        data = dataset.TiltMRCData(args.particles, args.tilt, norm=args.norm, invert_data=args.invert_data)
+        data = dataset.TiltMRCData(args.particles, args.tilt, norm=args.norm, invert_data=args.invert_data, ind=args.ind)
         tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32))
     Nimg = data.N
     D = data.D
 
     assert len(args.priors) in (1,2)
     rots = torch.tensor(utils.load_pkl(args.priors[0])).float()
+    if args.ind is not None: rots = rots[args.ind]
     assert rots.shape == (Nimg,3,3)
     if len(args.priors) == 2:
         trans = args.tscale * torch.tensor(utils.load_pkl(args.priors[1])).float()
+        if args.ind is not None: trans = trans[args.ind]
         assert trans.shape == (Nimg,2)
     else: trans = None
 
     if args.ctf is not None:
         log('Loading ctf params from {}'.format(args.ctf))
         ctf_params = utils.load_pkl(args.ctf)
+        if args.ind is not None: ctf_params = ctf_params[args.ind]
         assert ctf_params.shape == (Nimg, 7)
         ctf.print_ctf_params(ctf_params[0])
         ctf_params = torch.tensor(ctf_params)
@@ -312,7 +319,7 @@ def main(args):
         save_checkpoint(model, lattice, optim, epoch, data.norm, z_mu, z_logvar, out_mrc, out_weights, out_z)
     
     td = dt.now()-t1
-    log('Finsihed in {} ({} per epoch)'.format(td, td/num_epochs))
+    log('Finsihed in {} ({} per epoch)'.format(td, td/(num_epochs-start_epoch)))
 
 if __name__ == '__main__':
     args = parse_args().parse_args()

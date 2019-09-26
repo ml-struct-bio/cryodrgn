@@ -52,7 +52,8 @@ def parse_args():
     group.add_argument('--beta', default=1.0, help='Choice of beta schedule or a constant for KLD weight (default: %(default)s)')
     group.add_argument('--beta-control', type=float, help='KL-Controlled VAE gamma. Beta is KL target. (default: %(default)s)')
     group.add_argument('--equivariance', type=float, help='Strength of equivariance loss (default: %(default)s)')
-    group.add_argument('--equivariance-end-it', type=int, default=100000, help='It at which equivariance max (default: %(default)s)')
+    group.add_argument('--eq-start-it', type=int, default=100000, help='It at which equivariance turned on (default: %(default)s)')
+    group.add_argument('--eq-end-it', type=int, default=200000, help='It at which equivariance max (default: %(default)s)')
     group.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: mean, std of dataset)')
 
     group = parser.add_argument_group('Branch and bound')
@@ -259,6 +260,9 @@ def main(args):
     if args.enc_mask: args.enc_mask = lattice.get_circular_mask(args.enc_mask)
     model = HetOnlyVAE(lattice, args.qlayers, args.qdim, args.players, args.pdim,
                 args.zdim, encode_mode=args.encode_mode, enc_mask=args.enc_mask, enc_type=args.enc_type, domain=args.domain)
+    log(model)
+    log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
+
     bnb = BNBHet(model, lattice, args.l_start, args.l_end, tilt, args.t_extent)
     if args.rotate: 
         assert args.enc_only
@@ -266,7 +270,7 @@ def main(args):
 
     if args.equivariance:
         assert args.equivariance > 0, 'Regularization weight must be positive'
-        equivariance_lambda = LinearSchedule(0, args.equivariance, 10000, args.equivariance_end_it)
+        equivariance_lambda = LinearSchedule(0, args.equivariance, args.eq_start_it, args.eq_end_it)
         equivariance_loss = EquivarianceLoss(model, D)
 
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)

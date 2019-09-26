@@ -122,7 +122,7 @@ class BNBHomoRot:
             keep[np.arange(B).repeat(Q-max_poses), w.contiguous().view(-1)] *= 0
             NQ = keep.sum(1) # B, array of Nposes per batch element
         if (NQ == 0).any():
-            assert self.probabilistic
+            #assert self.probabilistic # actually this can be hit bc of FP ulps
             w = bound.argmin(-1)
             keep[np.arange(B), w] = 1     
             NQ = keep.sum(1) # B, array of Nposes per batch element
@@ -293,8 +293,8 @@ class BNBHomo:
             keep[np.arange(B).repeat(maxQ-max_poses), w] *= 0
         if (Np == 0).any():
             if not probabilistic:
-                log('WARNING: NO POSES BELOW BOUND')
-                log(Np)
+                vlog('WARNING: NO POSES BELOW BOUND') # this can be hit because of fl ulps
+                vlog(Np)
             w = bound.argmin(1)
             keep[np.arange(B),w] = 1
         return keep
@@ -346,6 +346,7 @@ class BNBHomo:
             min_trans = trans[min_i/8]
             Lstar = self.eval_grid(self.shift_images(images, min_trans.unsqueeze(1), self.Lmax), min_rot, 1, self.Lmax,
                                     images_tilt=self.shift_images(images_tilt, min_trans.unsqueeze(1), self.Lmax) if images_tilt is not None else None) # Bx1x1
+
             keep = self.keep_matrix(bound2, Lstar.view(B,1), bound2.shape[1], probabilistic) # Bx(max(Np)*32)
             w = keep.nonzero() # sum(Np) x 2
             batch_ind = w[:,0]
@@ -485,8 +486,8 @@ class BNBHet:
             keep[np.arange(B).repeat(maxQ-max_poses), w] *= 0
         if (Np == 0).any():
             if not probabilistic:
-                log('WARNING: NO POSES BELOW BOUND')
-                log(Np)
+                vlog('WARNING: NO POSES BELOW BOUND') # this can be hit from fp ulps
+                vlog(Np)
             w = bound.argmin(1)
             keep[np.arange(B),w] = 1
         return keep

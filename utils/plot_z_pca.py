@@ -12,7 +12,7 @@ from sklearn.decomposition import PCA
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('input', nargs='+', help='Input')
+    parser.add_argument('input',  help='Input')
     parser.add_argument('-o', help='Output')
     parser.add_argument('--sample1', type=int, help='Plot z value for N points')
     parser.add_argument('--sample2', type=int, help='Plot median z after chunking into N chunks')
@@ -20,19 +20,21 @@ def parse_args():
     return parser
 
 def main(args):
-    for f in args.input:
-        print(f)
-        x = pickle.load(open(f,'rb'))
-        assert x.shape[1] > 2
-        
-        # PCA
-        pca = PCA(2)
-        pca.fit(x)
-        print('Explained variance ratio:')
-        print(pca.explained_variance_ratio_)
-        pc = pca.transform(x)
+    f = args.input
+    print(f)
+    x = pickle.load(open(f,'rb'))
+    assert x.shape[1] > 2
+    
+    # PCA
+    pca = PCA(2)
+    pca.fit(x)
+    print('Explained variance ratio:')
+    print(pca.explained_variance_ratio_)
+    pc = pca.transform(x)
 
-        plt.scatter(pc[:,0], pc[:,1], c=np.arange(len(x)), label=f, alpha=.1, s=2, cmap='hsv')
+    plt.scatter(pc[:,0], pc[:,1], c=np.arange(len(x)), label=f, alpha=.1, s=2, cmap='hsv')
+    plt.xlabel('PC1 ({:3f})'.format(pca.explained_variance_ratio_[0]))
+    plt.ylabel('PC2 ({:3f})'.format(pca.explained_variance_ratio_[1]))
 
     if args.sample1:
         d = len(x) // args.sample1

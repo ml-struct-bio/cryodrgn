@@ -4,7 +4,7 @@ import argparse
 import numpy as np
 import sys, os
 
-sys.path.insert(0, '/home/zhonge/dev/cryovae/master/lib-python')
+sys.path.insert(0, '{}/../lib-python'.format(os.path.dirname(os.path.realpath(__file__))))
 
 import utils
 import mrc

@@ -1,17 +1,11 @@
-'''Skeleton script'''
+'''Plot FSC txtfile'''
 
 import argparse
 import numpy as np
 import sys, os
 import pickle
 
-sys.path.insert(0,'/home/zhonge/dev/cryovae/master/lib-python')
-import utils
-log = utils.log 
-
 import matplotlib.pyplot as plt
-
-
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)

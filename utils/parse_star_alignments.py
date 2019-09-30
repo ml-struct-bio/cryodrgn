@@ -11,7 +11,6 @@ log = utils.log
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('input', help='Cryosparc .cs file')
-    parser.add_argument('--Apix', type=float, help='Angstroms per pixel')
     parser.add_argument('-o', help='Output prefix for appending .rot.pkl and .trans.pkl')
     return parser
 
@@ -65,7 +64,6 @@ def main(args):
     # parse translations
     keys = ('_rlnOriginX','_rlnOriginY')
     trans = extract(header, body, keys)
-    trans *= 2/args.Apix
     log(trans[0])
     log(trans.shape)
     

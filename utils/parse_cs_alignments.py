@@ -1,4 +1,4 @@
-'''Parse out 3D alignment poses from cryosparc .cs metafiles'''
+'''Parse 3D alignments from cryosparc .cs metafiles'''
 
 import argparse
 import numpy as np
@@ -14,6 +14,7 @@ log = utils.log
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('input', help='Cryosparc .cs file')
+    parser.add_argument('--abinit', action='store_true', help='Flag if results are from ab-initio reconstruction') 
     parser.add_argument('--homorefine', action='store_true', help='Flag if results are from a homogeneous refinements (default: heterogeneous refinement)')
     parser.add_argument('-o', help='Output prefix for appending .rot.pkl and .trans.pkl')
     return parser
@@ -23,19 +24,31 @@ def main(args):
     # view the first row
     for i in range(len(data.dtype)):
         print(i, data.dtype.names[i], data[0][i])
-    rot = np.array([x['alignments3D/pose'] for x in data])
+
+    if args.abinit:
+        RKEY = 'alignments_class_0/pose'
+        TKEY = 'alignments_class_0/shift'
+    else:
+        RKEY = 'alignments3D/pose'
+        TKEY = 'alignments3D/shift'
+
+    # parse rotations
+    rot = np.array([x[RKEY] for x in data])
     rot = torch.tensor(rot)
     rot = lie_tools.expmap(rot)
     rot = rot.numpy()
     log('Transposing rotation matrix')
     rot = np.array([x.T for x in rot])
     log(rot.shape)
-    trans = np.array([x['alignments3D/shift'] for x in data])
+
+    # parse translations
+    trans = np.array([x[TKEY] for x in data])
     if not args.homorefine:
         log('Scaling shifts by 2x')
         trans *= 2
     log(trans.shape)
     
+    # write output
     out_rot = '{}.rot.pkl'.format(args.o)
     log('Writing {}'.format(out_rot))
     with open(out_rot,'wb') as f:

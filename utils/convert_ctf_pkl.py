@@ -35,7 +35,7 @@ def parse_star(starfile):
         else:
             break
     body = lines[i:]
-    body = [x for x in body if x != '\n'] # remove any empty lines
+    body = [x for x in body if x.strip()] # remove any empty lines
     return header, body
 
 def parse_ctf(starfile, N):

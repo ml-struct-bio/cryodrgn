@@ -40,6 +40,23 @@ def R_from_eman(a,b,y):
     R[2,1] *= -1
     return R
 
+def R_from_relion(a,b,y):
+    a *= np.pi/180.
+    b *= np.pi/180.
+    y *= np.pi/180.
+    ca, sa = np.cos(a), np.sin(a)
+    cb, sb = np.cos(b), np.sin(b)
+    cy, sy = np.cos(y), np.sin(y)
+    Ra = np.array([[ca,-sa,0],[sa,ca,0],[0,0,1]])
+    Rb = np.array([[cb,0,-sb],[0,1,0],[sb,0,cb]])
+    Ry = np.array(([cy,-sy,0],[sy,cy,0],[0,0,1]))
+    R = np.dot(np.dot(Ry,Rb),Ra)
+    R[0,1] *= -1
+    R[1,0] *= -1
+    R[1,2] *= -1
+    R[2,1] *= -1
+    return R
+
 def xrot(tilt_deg):
     '''Return rotation matrix associated with rotation over the x-axis'''
     theta = tilt_deg*np.pi/180

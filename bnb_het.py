@@ -300,7 +300,7 @@ def main(args):
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
     if args.load:
-        assert args.pretrain == 0
+        args.pretrain = 0
         log('Loading checkpoint from {}'.format(args.load))
         checkpoint = torch.load(args.load)
         model.load_state_dict(checkpoint['model_state_dict'])
@@ -323,6 +323,8 @@ def main(args):
             loss = pretrain(model, lattice, optim, batch, bnb.tilt)
             if global_it % args.log_interval == 0:
                 log(f'[Pretrain Iteration {global_it}] loss={loss:4f}')
+            if global_it > args.pretrain:
+                break
 
     # training loop
     num_epochs = args.num_epochs

@@ -14,14 +14,22 @@ def parse_args():
     parser.add_argument('--sample1', type=int, help='Plot z value for N points')
     parser.add_argument('--sample2', type=int, help='Plot median z after chunking into N chunks')
     parser.add_argument('--out-s', help='Save sampled z values')
+    parser.add_argument('--equiv', action='store_true')
     return parser
 
 def main(args):
     for f in args.input:
         print(f)
-        x = pickle.load(open(f,'rb'))
-        #plt.plot(x[:,0],x[:,1], 'o', label=f, alpha=.01, ms=2)
+        fi = open(f,'rb')
+        x = pickle.load(fi)
         plt.scatter(x[:,0], x[:,1], c=np.arange(len(x[:,0])), label=f, alpha=.1, s=2, cmap='hsv')
+        if args.equiv:
+            plt.figure()
+            y = pickle.load(fi)
+            plt.scatter(y[:,0], y[:,1], c=np.arange(len(x[:,0])), label=f, alpha=.1, s=2, cmap='hsv')
+            plt.figure()
+            z = x-y
+            plt.scatter(z[:,0], z[:,1], c=np.arange(len(x[:,0])), label=f, alpha=.1, s=2, cmap='hsv')
     if args.sample1:
         d = len(x) // args.sample1
         xd = x[::d]

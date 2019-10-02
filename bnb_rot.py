@@ -1,6 +1,7 @@
 '''
 Homogeneous NN reconstruction with BNB optimization of orientation
 '''
+
 import numpy as np
 import sys, os
 import argparse
@@ -46,6 +47,8 @@ def parse_args():
     group.add_argument('--t-extent', type=float, default=5, help='+/- pixels to search over translations')
     group.add_argument('--t-ngrid', type=float, default=7, help='Initial grid size for translations')
     group.add_argument('--no-trans', action='store_true', help="Don't search over translations")
+    group.add_argument('--pretrain', type=int, default=10000, help='Number of initial iterations with random poses (default: %(default)s)')
+    group.add_argument('--bnb-freq', type=int, default=1, help='Frequency of pose inference (default: every %(default)s epochs)')
     group.add_argument('-n', '--num-epochs', type=int, default=10, help='Number of training epochs (default: %(default)s)')
     group.add_argument('-b','--batch-size', type=int, default=100, help='Minibatch size (default: %(default)s)')
     group.add_argument('--wd', type=float, default=0, help='Weight decay in Adam optimizer (default: %(default)s)')
@@ -53,7 +56,6 @@ def parse_args():
     group.add_argument('--l-start', type=int,default=12, help='Starting L radius (default: %(default)s)')
     group.add_argument('--l-end', type=int, default=20, help='End L radius (default: %(default)s)')
     group.add_argument('--l-end-it',type=int,default=100000, help='default: %(default)s')
-    group.add_argument('--bnb-start', type=int, default=1, help='Number of initial BNNB epochs')
     group.add_argument('--probabilistic', action='store_true', help='Use probabilistic bound')
 
     group = parser.add_argument_group('Network Architecture')
@@ -64,7 +66,7 @@ def parse_args():
 
     return parser
 
-def save_checkpoint(model, lattice, bnb_pose, optim, epoch, norm, out_mrc, out_weights):
+def save_checkpoint(model, lattice, bnb_pose, optim, epoch, norm, out_mrc, out_weights, out_poses):
     model.eval()
     vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, norm)
     mrc.write(out_mrc, vol.astype(np.float32))
@@ -73,8 +75,9 @@ def save_checkpoint(model, lattice, bnb_pose, optim, epoch, norm, out_mrc, out_w
         'epoch':epoch,
         'model_state_dict':model.state_dict(),
         'optimizer_state_dict':optim.state_dict(),
-        'bnb_pose': bnb_pose
         }, out_weights)
+    with open(out_poses,'wb') as f:
+        pickle.dump(bnb_pose, f)
 
 def pretrain(model, lattice, optim, batch, tilt=None):
     y, yt = batch
@@ -99,17 +102,34 @@ def pretrain(model, lattice, optim, batch, tilt=None):
     optim.step()
     return loss.item()
 
-def train(model, lattice, bnb, optim, batch, tilt=None, no_trans=False):
+def sort_bnb_poses(bnb_pose):
+    ind = [x[0] for x in bnb_pose]
+    ind = np.concatenate(ind)
+    rot = [x[1][0] for x in bnb_pose]
+    rot = np.concatenate(rot)
+    rot = rot[np.argsort(ind)]
+    if len(bnb_pose[0][1]) == 2:
+        trans = [x[1][1] for x in bnb_pose]
+        trans = np.concatenate(trans)
+        trans = trans[np.argsort(ind)]
+        return (rot,trans)
+    return (rot,)
+
+def train(model, lattice, bnb, optim, batch, tilt=None, no_trans=False, poses=None):
     y, yt = batch
     B = y.size(0)
 
-    # BNB inference of pose
-    model.eval()
-    with torch.no_grad():
-        if no_trans:
-            rot = bnb.opt_theta(y, yt)
-        else:
-            rot, trans = bnb.opt_theta_trans(y, yt)
+    # pose inference
+    if poses is not None:
+        rot = poses[0]
+        if not no_trans: trans = poses[1]
+    else: # BNB
+        model.eval()
+        with torch.no_grad():
+            if no_trans:
+                rot = bnb.opt_theta(y, yt)
+            else:
+                rot, trans = bnb.opt_theta_trans(y, yt)
 
     # reconstruct circle of pixels instead of whole image
     mask = lattice.get_circular_mask(lattice.D//2)
@@ -185,6 +205,7 @@ def main(args):
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
     if args.load:
+        args.pretrain = 0
         log('Loading checkpoint from {}'.format(args.load))
         checkpoint = torch.load(args.load)
         model.load_state_dict(checkpoint['model_state_dict'])
@@ -195,42 +216,63 @@ def main(args):
     else:
         start_epoch = 0
 
+    data_iterator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
+
+    # pretrain decoder with random poses
+    global_it = 0
+    pretrain_epoch = 0
+    log('Using random poses for {} iterations'.format(args.pretrain))
+    while global_it < args.pretrain:
+        for batch in data_iterator:
+            global_it += len(batch[0])
+            batch = (batch[0].to(device), None) if tilt is None else (batch[0].to(device), batch[1].to(device))
+            loss = pretrain(model, lattice, optim, batch, tilt=bnb.tilt)
+            if global_it % args.log_interval == 0:
+                log(f'[Pretrain Iteration {global_it}] loss={loss:4f}')
+            if global_it > args.pretrain:
+                break
+
     # training loop
-    data_generator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
     for epoch in range(start_epoch, args.num_epochs):
-        if epoch < args.bnb_start:
-            log('[Train Epoch: {}/{}] Pretraining decoder'.format(epoch+1, args.num_epochs))
+        t2 = dt.now()
         batch_it = 0
         loss_accum = 0
         bnb_pose = []
-        for batch in data_generator:
+        if epoch % args.bnb_freq != 0:
+            log('Using previous iteration poses')
+        for batch in data_iterator:
             ind = batch[-1]
             batch = (batch[0].to(device), None) if tilt is None else (batch[0].to(device), batch[1].to(device))
             batch_it += len(batch[0])
-            global_it = Nimg*epoch+batch_it
             
             # train the model
-            if epoch < args.bnb_start:
-                loss_item = pretrain(model, lattice, optim, batch, tilt=tilt)
-            else:
-                loss_item, pose = train(model, lattice, bnb, optim, batch, tilt, args.no_trans) 
-                bnb_pose.append((ind.cpu().numpy(),pose))
+            if epoch % args.bnb_freq != 0:
+                p = [torch.tensor(x[ind]) for x in sorted_poses]
+            else: 
+                p = None
+            loss_item, pose = train(model, lattice, bnb, optim, batch, tilt, args.no_trans, poses=p) 
+            bnb_pose.append((ind.cpu().numpy(),pose))
            
             # logging
             loss_accum += loss_item*len(batch[0])
             if batch_it % args.log_interval == 0:
                 log('# [Train Epoch: {}/{}] [{}/{} images] loss={:.4f}'.format(epoch+1, args.num_epochs, batch_it, Nimg, loss_item))
-        log('# =====> Epoch: {} Average loss = {:.4}'.format(epoch+1, loss_accum/Nimg))
+        log('# =====> Epoch: {} Average loss = {:.4}; Finished in {}'.format(epoch+1, loss_accum/Nimg, dt.now() - t2))
+
+        # sort bnb_pose
+        sorted_poses = sort_bnb_poses(bnb_pose) if bnb_pose else None
 
         if args.checkpoint and epoch % args.checkpoint == 0:
             out_mrc = '{}/reconstruct.{}.mrc'.format(args.outdir,epoch)
             out_weights = '{}/weights.{}.pkl'.format(args.outdir,epoch)
-            save_checkpoint(model, lattice, bnb_pose, optim, epoch, data.norm, out_mrc, out_weights)
+            out_poses = '{}/pose.{}.pkl'.format(args.outdir, epoch)
+            save_checkpoint(model, lattice, sorted_poses, optim, epoch, data.norm, out_mrc, out_weights, out_poses)
 
     ## save model weights and evaluate the model on 3D lattice
     out_mrc = '{}/reconstruct.mrc'.format(args.outdir)
     out_weights = '{}/weights.pkl'.format(args.outdir)
-    save_checkpoint(model, lattice, bnb_pose, optim, epoch, data.norm, out_mrc, out_weights)
+    out_poses = '{}/pose.pkl'.format(args.outdir, epoch)
+    save_checkpoint(model, lattice, sorted_poses, optim, epoch, data.norm, out_mrc, out_weights, out_poses)
    
     td = dt.now()-t1
     log('Finsihed in {} ({} per epoch)'.format(td, td/(args.num_epochs-start_epoch)))

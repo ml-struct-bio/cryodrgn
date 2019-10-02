@@ -33,6 +33,7 @@ def parse_args():
     parser.add_argument('ref', help='Input volume to align on')
     parser.add_argument('vol', help='Input volume to align')
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Aligned mrc')
+    parser.add_argument('--niter', type=int, default=20, help='Number of iterations of grid search (default: %(default)s)')
     parser.add_argument('--max-D', type=int, default=40, help='Box size to align')
     parser.add_argument('-rb', type=int, default=300, help='Rotation iterator batch size (default: %(default)s)')
     parser.add_argument('-tb', type=int, default=5, help='Translation iterator batch size (default: %(default)s)')
@@ -255,7 +256,7 @@ def main(args):
     max_keep_t = args.keep_t
     #rot_tracker = MinPoseTracker(max_keep_r, 4, 2)
     #tr_tracker = MinPoseTracker(max_keep_t, 3, 3)
-    for it in range(20):
+    for it in range(args.niter):
         log('Iteration {}'.format(it))
         log('Generating {} rotations'.format(len(rots)))
         log('Generating {} translations'.format(len(trans)))

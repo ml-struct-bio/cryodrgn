@@ -12,7 +12,7 @@ import utils
 log = utils.log
 
 class Lattice:
-    def __init__(self, D, extent=0.5):
+    def __init__(self, D, extent=0.5, ignore_DC=True):
         assert D % 2 == 1, "Lattice size must be odd"
         x0, x1 = np.meshgrid(np.linspace(-extent, extent, D, endpoint=True), 
                              np.linspace(-extent, extent, D, endpoint=True))
@@ -31,6 +31,8 @@ class Lattice:
         self.circle_mask = {}
 
         self.freqs2d = self.coords[:,0:2]/extent/2
+
+        self.ignore_DC = ignore_DC
 
     def get_square_lattice(self, L):
         b,e = self.D2-L, self.D2+L+1
@@ -52,6 +54,8 @@ class Lattice:
         m4 = self.coords[:,1] <= c2[1]
         mask = m1*m2*m3*m4
         self.square_mask[L] = mask
+        if self.ignore_DC:
+            raise NotImplementedError
         return mask
 
     def get_circular_mask(self, R):
@@ -62,6 +66,9 @@ class Lattice:
         log('Using circular lattice with radius {}'.format(R))
         r = R/(self.D//2)*self.extent
         mask = self.coords.pow(2).sum(-1) <= r**2
+        if self.ignore_DC:
+            assert self.coords[self.D**2//2].sum() == 0.0
+            mask[self.D**2//2] = 0
         self.circle_mask[R] = mask
         return mask
 

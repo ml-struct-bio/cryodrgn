@@ -174,8 +174,6 @@ class PositionalDecoder(nn.Module):
         img must be 1D unraveled image, symmetric around DC component
         '''
         #H'(k) = cos(2*pi*k*t0)H(k) + sin(2*pi*k*t0)H(-k)
-        center = int(len(coords)/2)
-        assert all(coords[center] == torch.tensor([0.,0.])), 'lattice must be symmetric around DC component'
         img = img.unsqueeze(1) # Bx1xN
         t = t.unsqueeze(-1) # BxTx2x1 to be able to do bmm
         tfilt = coords @ t * 2 * np.pi # BxTxNx1
@@ -278,15 +276,16 @@ class FTPositionalDecoder(nn.Module):
 
         lattice: B x N x 3+zdim
         '''
-        assert lattice.shape[-2] % 2 == 1
-        c = lattice.shape[-2]//2 # center pixel
-        assert lattice[...,c,0:3].sum() == 0.0, '{} != 0.0'.format(lattice[...,c,0:3].sum())
+        # if ignore_DC = False, then the size of the lattice will be odd (since it
+        # includes the origin), so we need to evaluate one additional pixel
+        c = lattice.shape[-2]//2 # top half
+        cc = c + 1 if lattice.shape[-2] % 2 == 1 else c # include the origin
         assert abs(lattice[...,0:3].mean()) < 1e-8, '{} != 0.0'.format(lattice[...,0:3].mean())
         image = torch.empty(lattice.shape[:-1]) 
-        top_half = self.decode(lattice[...,0:c+1,:])
-        image[..., 0:c+1] = top_half[...,0] - top_half[...,1]
+        top_half = self.decode(lattice[...,0:cc,:])
+        image[..., 0:cc] = top_half[...,0] - top_half[...,1]
         # the bottom half of the image is the complex conjugate of the top half
-        image[...,c+1:] = (top_half[...,0] + top_half[...,1])[...,np.arange(c-1,-1,-1)]
+        image[...,cc:] = (top_half[...,0] + top_half[...,1])[...,np.arange(c-1,-1,-1)]
         return image
 
     def decode(self, lattice):
@@ -315,8 +314,6 @@ class FTPositionalDecoder(nn.Module):
         img must be 1D unraveled image, symmetric around DC component
         '''
         #H'(k) = cos(2*pi*k*t0)H(k) + sin(2*pi*k*t0)H(-k)
-        center = int(len(coords)/2)
-        assert all(coords[center] == torch.tensor([0.,0.])), 'lattice must be symmetric around DC component'
         img = img.unsqueeze(1) # Bx1xN
         t = t.unsqueeze(-1) # BxTx2x1 to be able to do bmm
         tfilt = coords @ t * 2 * np.pi # BxTxNx1

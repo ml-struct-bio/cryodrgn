@@ -30,7 +30,7 @@ class LazyMRCData(data.Dataset):
         if norm is None:
             norm = self.estimate_normalization()
         self.norm = norm
-        self.window = window_mask(ny, .85, .99) if self.window else None
+        self.window = window_mask(ny, .85, .99) if window else None
 
     def estimate_normalization(self, n=1000):
         n = min(n,self.N)

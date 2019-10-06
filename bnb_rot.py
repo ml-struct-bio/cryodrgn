@@ -137,7 +137,7 @@ def train(model, lattice, bnb, optim, batch, tilt=None, no_trans=False, poses=No
         slice_ = model(lattice.coords[mask] @ R)
         return slice_.view(B,-1)
     def translate(img):
-        img = model.translate_ht(lattice.freqs2d[mask], img, trans.unsqueeze(1))
+        img = lattice.translate_ht(img, trans.unsqueeze(1), mask)
         return img.view(B,-1)
 
     # Train model 

@@ -158,30 +158,6 @@ class PositionalDecoder(nn.Module):
         assert (coords[...,0:3].abs() <= 0.5).all()
         return self.decoder(self.positional_encoding_geom(coords))
 
-    # todo: move this function elsewhere
-    def translate_ht(self, coords, img, t):
-        '''
-        Translate an image by phase shifting its Hartley transform
-        
-        Inputs:
-            coords: wavevectors between [-.5,.5] (img_dims x 2)
-            img: HT of image (B x img_dims)
-            t: shift in pixels (B x T x 2)
-
-        Returns:
-            Shifted images (B x T x img_dims) 
-
-        img must be 1D unraveled image, symmetric around DC component
-        '''
-        #H'(k) = cos(2*pi*k*t0)H(k) + sin(2*pi*k*t0)H(-k)
-        img = img.unsqueeze(1) # Bx1xN
-        t = t.unsqueeze(-1) # BxTx2x1 to be able to do bmm
-        tfilt = coords @ t * 2 * np.pi # BxTxNx1
-        tfilt = tfilt.squeeze(-1) # BxTxN
-        c = torch.cos(tfilt) # BxTxN
-        s = torch.sin(tfilt) # BxTxN
-        return c*img + s*img[:,:,np.arange(len(coords)-1,-1,-1)]
-
     def eval_volume(self, coords, D, extent, norm, zval=None):
         '''
         Evaluate the model on a DxDxD volume
@@ -298,30 +274,6 @@ class FTPositionalDecoder(nn.Module):
         result[...,1][w] *= -1 # replace with complex conjugate to get correct values for original lattice positions
         return result
 
-    # todo: move this function elsewhere
-    def translate_ht(self, coords, img, t):
-        '''
-        Translate an image by phase shifting its Hartley transform
-        
-        Inputs:
-            coords: wavevectors between [-.5,.5] (img_dims x 2)
-            img: HT of image (B x img_dims)
-            t: shift in pixels (B x T x 2)
-
-        Returns:
-            Shifted images (B x T x img_dims) 
-
-        img must be 1D unraveled image, symmetric around DC component
-        '''
-        #H'(k) = cos(2*pi*k*t0)H(k) + sin(2*pi*k*t0)H(-k)
-        img = img.unsqueeze(1) # Bx1xN
-        t = t.unsqueeze(-1) # BxTx2x1 to be able to do bmm
-        tfilt = coords @ t * 2 * np.pi # BxTxNx1
-        tfilt = tfilt.squeeze(-1) # BxTxN
-        c = torch.cos(tfilt) # BxTxN
-        s = torch.sin(tfilt) # BxTxN
-        return c*img + s*img[:,:,np.arange(len(coords)-1,-1,-1)]
-
     def eval_volume(self, coords, D, extent, norm, zval=None):
         '''
         Evaluate the model on a DxDxD volume
@@ -429,56 +381,6 @@ class FTSliceDecoder(nn.Module):
         result = self.decoder(lattice)
         result[...,1][w] *= -1 # replace with complex conjugate to get correct values for original lattice positions
         return result
-
-    # todo: move this function elsewhere
-    def translate_ft(self, coords, img, t):
-        '''
-        Translate an image by phase shifting its Fourier transform
-        
-        Inputs:
-            coords: wavevectors between [-.5,.5] (img_dims x 2)
-            img: FT of image (B x img_dims x 2)
-            t: shift in pixels (B x T x 2)
-
-        Returns:
-            Shifted images (B x T x img_dims x 2) 
-
-        img_dims can either be 2D or 1D (unraveled image) 
-        '''
-        # F'(k) = exp(-2*pi*k*x0)*F(k)
-        img = img.unsqueeze(1) # Bx1xNx2
-        t = t.unsqueeze(-1) # BxTx2x1 to be able to do bmm
-        tfilt = coords @ t * -2 * np.pi # BxTxNx1
-        tfilt = tfilt.squeeze(-1) # BxTxN
-        c = torch.cos(tfilt) # BxTxN
-        s = torch.sin(tfilt) # BxTxN
-        return torch.stack([img[...,0]*c-img[...,1]*s,img[...,0]*s+img[...,1]*c],-1)
-
-    # todo: move this function elsewhere
-    def translate_ht(self, coords, img, t):
-        '''
-        Translate an image by phase shifting its Hartley transform
-        
-        Inputs:
-            coords: wavevectors between [-.5,.5] (img_dims x 2)
-            img: HT of image (B x img_dims)
-            t: shift in pixels (B x T x 2)
-
-        Returns:
-            Shifted images (B x T x img_dims) 
-
-        img must be 1D unraveled image, symmetric around DC component
-        '''
-        #H'(k) = cos(2*pi*k*t0)H(k) + sin(2*pi*k*t0)H(-k)
-        center = int(len(coords)/2)
-        assert all(coords[center] == torch.tensor([0.,0.])), 'lattice must be symmetric around DC component'
-        img = img.unsqueeze(1) # Bx1xN
-        t = t.unsqueeze(-1) # BxTx2x1 to be able to do bmm
-        tfilt = coords @ t * 2 * np.pi # BxTxNx1
-        tfilt = tfilt.squeeze(-1) # BxTxN
-        c = torch.cos(tfilt) # BxTxN
-        s = torch.sin(tfilt) # BxTxN
-        return c*img + s*img[:,:,np.arange(len(coords)-1,-1,-1)]
 
     def eval_volume(self, coords, D, extent, norm, zval=None):
         '''
@@ -596,7 +498,7 @@ class VAE(nn.Module):
             B = img.size(0)
             t = self.reparameterize(tmu, tlogvar)
             t = t.unsqueeze(1) # B x 1 x 2
-            img = self.decoder.translate_ht(self.lattice.freqs2d, img.view(B,-1), t)
+            img = self.lattice.translate_ht(img.view(B,-1), t)
             img = img.view(B,self.D, self.D)
         return y_hat, img, z_mu, z_std, w_eps, tmu, tlogvar
 
@@ -660,8 +562,8 @@ class TiltVAE(nn.Module):
         z_mu, z_std, w_eps, rot, tmu, tlogvar, t = self.encode(img, img_tilt)
         if not self.no_trans:
             t = t.unsqueeze(1) # B x 1 x 2
-            img = self.decoder.translate_ht(self.lattice.freqs2d, img.view(B,-1), -t)
-            img_tilt = self.decoder.translate_ht(self.lattice.freqs2d, img_tilt.view(B,-1), -t)
+            img = self.lattice.translate_ht(img.view(B,-1), -t)
+            img_tilt = self.lattice.translate_ht(img_tilt.view(B,-1), -t)
             img = img.view(B, self.D, self.D)
             img_tilt = img_tilt.view(B, self.D, self.D)
 

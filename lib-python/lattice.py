@@ -88,6 +88,56 @@ class Lattice:
         rotated = F.grid_sample(images, grid) # QxBxYxX
         return rotated.transpose(0,1) # BxQxYxX
 
+    def translate_ft(self, img, t, mask=None):
+        '''
+        Translate an image by phase shifting its Fourier transform
+        
+        Inputs:
+            img: FT of image (B x img_dims x 2)
+            t: shift in pixels (B x T x 2)
+            mask: Mask for lattice coords (img_dims x 1)
+
+        Returns:
+            Shifted images (B x T x img_dims x 2) 
+
+        img_dims can either be 2D or 1D (unraveled image) 
+        '''
+        # F'(k) = exp(-2*pi*k*x0)*F(k)
+        coords = self.freqs2d if mask is None else self.freqs2d[mask]
+        img = img.unsqueeze(1) # Bx1xNx2
+        t = t.unsqueeze(-1) # BxTx2x1 to be able to do bmm
+        tfilt = coords @ t * -2 * np.pi # BxTxNx1
+        tfilt = tfilt.squeeze(-1) # BxTxN
+        c = torch.cos(tfilt) # BxTxN
+        s = torch.sin(tfilt) # BxTxN
+        return torch.stack([img[...,0]*c-img[...,1]*s,img[...,0]*s+img[...,1]*c],-1)
+
+    def translate_ht(self, img, t, mask=None):
+        '''
+        Translate an image by phase shifting its Hartley transform
+        
+        Inputs:
+            img: HT of image (B x img_dims)
+            t: shift in pixels (B x T x 2)
+            mask: Mask for lattice coords (img_dims x 1)
+
+        Returns:
+            Shifted images (B x T x img_dims) 
+
+        img must be 1D unraveled image, symmetric around DC component
+        '''
+        #H'(k) = cos(2*pi*k*t0)H(k) + sin(2*pi*k*t0)H(-k)
+        coords = self.freqs2d if mask is None else self.freqs2d[mask]
+        center = int(len(coords)/2)
+        img = img.unsqueeze(1) # Bx1xN
+        t = t.unsqueeze(-1) # BxTx2x1 to be able to do bmm
+        tfilt = coords @ t * 2 * np.pi # BxTxNx1
+        tfilt = tfilt.squeeze(-1) # BxTxN
+        c = torch.cos(tfilt) # BxTxN
+        s = torch.sin(tfilt) # BxTxN
+        return c*img + s*img[:,:,np.arange(len(coords)-1,-1,-1)]
+
+
 class EvenLattice(Lattice):
     '''For a DxD lattice where D is even, we set D/2,D/2 pixel to the center'''
     def __init__(self, D, extent=0.5):

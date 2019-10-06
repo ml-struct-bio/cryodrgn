@@ -251,8 +251,7 @@ class BNBHomo:
         '''
         B = images.size(0)
         mask = self.lattice.get_circular_mask(L)
-        coords = self.lattice.freqs2d[mask]# 2D wavevector between -.5 and .5
-        return self.decoder.translate_ht(coords, images.view(B,-1)[:,mask], shifts)
+        return self.lattice.translate_ht(images.view(B,-1)[:,mask], shifts, mask)
 
     def tile(self, squashed, NQ, nan_val=float('inf')):
         '''Tile a squashed, variable batch size data tensor into Bxmax(NQ) tensor'''
@@ -436,8 +435,7 @@ class BNBHet:
         '''
         B = images.size(0)
         mask = self.lattice.get_circular_mask(L)
-        coords = self.lattice.freqs2d[mask]# 2D wavevector between -.5 and .5
-        return self.model.decoder.translate_ht(coords, images.view(B,-1)[:,mask], shifts)
+        return self.lattice.translate_ht(images.view(B,-1)[:,mask], shifts, mask)
 
     def tile(self, squashed, NQ, nan_val=float('inf')):
         '''Tile a squashed, variable batch size data tensor into Bxmax(NQ) tensor'''
@@ -688,8 +686,7 @@ class BNNBHomo:
         Returns: B x T x N x 2
         '''
         mask = self.lattice.get_circular_mask(L)
-        coords = self.lattice.freqs2d[mask]# 2D wavevector between -.5 and .5
-        return self.decoder.translate_ht(coords, images, shifts)
+        return self.lattice.translate_ht(images, shifts, mask)
 
     def opt_theta_trans(self, images, L, images_tilt=None, niter=5):
         B = images.size(0)

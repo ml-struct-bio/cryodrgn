@@ -146,7 +146,7 @@ def train(model, lattice, bnb, optim, minibatch, beta, beta_control=None, equiva
     def gen_slice(R):
         return model.decode(lattice.coords[mask] @ R, z).view(B,-1)
     def translate(img):
-        img = model.decoder.translate_ht(lattice.freqs2d[mask], img, trans.unsqueeze(1))
+        img = lattice.translate_ht(img, trans.unsqueeze(1), mask)
         return img.view(B,-1)
 
     y = y.view(B,-1)[:, mask]

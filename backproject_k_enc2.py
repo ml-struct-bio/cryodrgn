@@ -81,7 +81,7 @@ def train(model, lattice, optim, y, rot, trans=None, ctf_params=None):
         yhat *= ctf.compute_ctf(freqs, *torch.split(ctf_params[:,1:], 1, 1))
     y = y.view(B,-1)[:, mask]
     if trans is not None:
-        y = model.translate_ht(lattice.freqs2d[mask], y, trans.unsqueeze(1)).view(B,-1)
+        y = lattice.translate_ht(y, trans.unsqueeze(1), mask).view(B,-1)
     loss = F.mse_loss(yhat, y)
     loss.backward()
     optim.step()

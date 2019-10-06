@@ -86,8 +86,8 @@ def train(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, equ
     
     # translate the image
     if trans is not None:
-        y = model.decoder.translate_ht(lattice.freqs2d, y.view(B,-1), trans.unsqueeze(1)).view(B,D,D)
-        if yt is not None: yt = model.decoder.translate_ht(lattice.freqs2d, yt.view(B,-1), trans.unsqueeze(1)).view(B,D,D)
+        y = lattice.translate_ht(y.view(B,-1), trans.unsqueeze(1)).view(B,D,D)
+        if yt is not None: yt = lattice.translate_ht(yt.view(B,-1), trans.unsqueeze(1)).view(B,D,D)
 
     # inference of z
     input_ = (y,yt) if yt is not None else (y,)
@@ -140,8 +140,8 @@ def eval_z(model, lattice, data, batch_size, device, trans=None, use_tilt=False,
             freqs = lattice.freqs2d.unsqueeze(0).expand(B,*lattice.freqs2d.shape)/ctf_params[ind,0].view(B,1,1)
             c = ctf.compute_ctf(freqs, *torch.split(ctf_params[ind,1:], 1, 1)).view(B,D,D)
         if trans is not None:
-            y = model.decoder.translate_ht(lattice.freqs2d, y.view(B,-1), trans[ind].unsqueeze(1)).view(B,D,D)
-            if yt is not None: yt = model.decoder.translate_ht(lattice.freqs2d, yt.view(B,-1), trans[ind].unsqueeze(1)).view(B,D,D)
+            y = lattice.translate_ht(y.view(B,-1), trans[ind].unsqueeze(1)).view(B,D,D)
+            if yt is not None: yt = lattice.translate_ht(yt.view(B,-1), trans[ind].unsqueeze(1)).view(B,D,D)
         input_ = (y,yt) if yt is not None else (y,)
         if ctf_params is not None: input_ = (x*c.sign() for x in input_) # phase flip by the ctf
         z_mu, z_logvar = model.encode(*input_)

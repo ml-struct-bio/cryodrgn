@@ -34,7 +34,7 @@ def parse_args():
     parser.add_argument('particles', help='Particle stack file (.mrc)')
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
     parser.add_argument('--ctf', metavar='pkl', type=os.path.abspath, help='CTF parameters (.pkl)')
-    parser.add_argument('--priors', type=os.path.abspath, nargs='*', required=True, help='Priors on rotation, optionally provide translation (.pkl)')
+    parser.add_argument('--poses', type=os.path.abspath, nargs='*', required=True, help='Image rotations and optionally translations (.pkl)')
     parser.add_argument('--tscale', type=float, default=1.0, help='Scale translations by this amount')
     parser.add_argument('--load', type=os.path.abspath, help='Initialize training from a checkpoint')
     parser.add_argument('--checkpoint', type=int, default=1, help='Checkpointing interval in N_EPOCHS (default: %(default)s)')
@@ -42,6 +42,7 @@ def parse_args():
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
     parser.add_argument('--seed', type=int, default=np.random.randint(0,100000), help='Random seed')
     parser.add_argument('--invert-data', action='store_true', help='Invert data sign')
+    parser.add_argument('--no-window', dest='window', action='store_false', help='Do not window dataset')
     parser.add_argument('--ind', type=os.path.abspath, help='Filter indices')
 
     group = parser.add_argument_group('Tilt series')
@@ -64,12 +65,12 @@ def parse_args():
     group.add_argument('--qdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
     group.add_argument('--encode-mode', default='resid', choices=('conv','resid','mlp','tilt'), help='Type of encoder network (default: %(default)s)')
     group.add_argument('--zdim', type=int, default=1, help='Dimension of latent variable')
-    group.add_argument('--enc-mask', type=int, help='Circulask mask of image for encoder')
+    group.add_argument('--enc-mask', type=int, help='Circular mask of image for encoder')
 
     group = parser.add_argument_group('Decoder Network')
     group.add_argument('--players', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--pdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
-    group.add_argument('--enc-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf','none'), default='linear_lowf', help='Type of positional encoding')
+    group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf','none'), default='linear_lowf', help='Type of positional encoding')
     group.add_argument('--domain', choices=('hartley','fourier'), default='fourier')
     return parser
 
@@ -206,25 +207,29 @@ def main(args):
         log('Filtering image dataset with {}'.format(args.ind))
         args.ind = pickle.load(open(args.ind,'rb'))
     if args.tilt is None:
-        data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=args.ind)
+        data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=args.ind, keepreal=args.encode_mode=='conv', window=args.window)
         tilt = None
     else:
         assert args.encode_mode == 'tilt'
-        data = dataset.TiltMRCData(args.particles, args.tilt, norm=args.norm, invert_data=args.invert_data, ind=args.ind)
+        data = dataset.TiltMRCData(args.particles, args.tilt, norm=args.norm, invert_data=args.invert_data, ind=args.ind, window=args.window)
         tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32))
     Nimg = data.N
     D = data.D
+    if args.encode_mode == 'conv':
+        assert D == 64, "Image size must be 64x64 for convolutional encoder"
 
-    assert len(args.priors) in (1,2)
-    rots = torch.tensor(utils.load_pkl(args.priors[0])).float()
+    # load poses
+    assert len(args.poses) in (1,2)
+    rots = torch.tensor(utils.load_pkl(args.poses[0])).float()
     if args.ind is not None: rots = rots[args.ind]
     assert rots.shape == (Nimg,3,3)
-    if len(args.priors) == 2:
-        trans = args.tscale * torch.tensor(utils.load_pkl(args.priors[1])).float()
+    if len(args.poses) == 2:
+        trans = args.tscale * torch.tensor(utils.load_pkl(args.poses[1])).float()
         if args.ind is not None: trans = trans[args.ind]
         assert trans.shape == (Nimg,2)
     else: trans = None
 
+    # load ctf
     if args.ctf is not None:
         log('Loading ctf params from {}'.format(args.ctf))
         ctf_params = utils.load_pkl(args.ctf)
@@ -234,11 +239,12 @@ def main(args):
         ctf_params = torch.tensor(ctf_params)
     else: ctf_params = None
 
+    # instantiate model
     lattice = Lattice(D, extent=0.5)
     if args.enc_mask: args.enc_mask = lattice.get_circular_mask(args.enc_mask)
     model = HetOnlyVAE(lattice, args.qlayers, args.qdim, args.players, args.pdim,
                 args.zdim, encode_mode=args.encode_mode, enc_mask=args.enc_mask,
-                enc_type=args.enc_type, domain=args.domain)
+                enc_type=args.pe_type, domain=args.domain)
     log(model)
     log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
 
@@ -249,6 +255,7 @@ def main(args):
 
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
+    # restart from checkpoint
     if args.load:
         log('Loading checkpoint from {}'.format(args.load))
         checkpoint = torch.load(args.load)

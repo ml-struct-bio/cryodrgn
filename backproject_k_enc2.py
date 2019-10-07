@@ -33,6 +33,7 @@ def parse_args():
     parser.add_argument('--tscale', type=float, default=1.0)
     parser.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: mean, std of dataset)')
     parser.add_argument('--invert-data', action='store_true', help='Invert data sign')
+    parser.add_argument('--no-window', dest='window', action='store_false', help='Window dataset')
     parser.add_argument('--ctf', metavar='pkl', type=os.path.abspath, help='CTF parameters (.pkl)')
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
     parser.add_argument('--load', type=os.path.abspath, help='Initialize training from a checkpoint')
@@ -106,9 +107,9 @@ def main(args):
 
     # load the particles
     if args.lazy:
-        data = dataset.LazyMRCData(args.particles, norm=args.norm, invert_data=args.invert_data)
+        data = dataset.LazyMRCData(args.particles, norm=args.norm, invert_data=args.invert_data, window=args.window)
     else:
-        data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data)
+        data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, window=args.window)
     D = data.D
     Nimg = data.N
 
@@ -159,6 +160,7 @@ def main(args):
     # train
     data_generator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
     for epoch in range(start_epoch, args.num_epochs):
+        t2 = dt.now()
         loss_accum = 0
         batch_it = 0
         for batch, ind in data_generator:
@@ -171,7 +173,7 @@ def main(args):
             loss_accum += loss_item*len(ind)
             if batch_it % args.log_interval == 0:
                 log('# [Train Epoch: {}/{}] [{}/{} images] loss={:.4f}'.format(epoch+1, args.num_epochs, batch_it, Nimg, loss_item))
-        log('# =====> Epoch: {} Average loss = {:.4}'.format(epoch+1, loss_accum/Nimg))
+        log('# =====> Epoch: {} Average loss = {:.4}; Finished in {}'.format(epoch+1, loss_accum/Nimg, dt.now()-t2))
         if args.checkpoint and epoch % args.checkpoint == 0:
             out_mrc = '{}/reconstruct.{}.mrc'.format(args.outdir, epoch)
             out_weights = '{}/weights.{}.pkl'.format(args.outdir, epoch)

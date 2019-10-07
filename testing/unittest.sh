@@ -24,3 +24,5 @@ python ../backproject_k_enc2.py data/toy_projections.mrcs data/toy_angles.pkl -o
 python ../backproject_k_enc2.py data/toy_projections.mrcs data/toy_angles.pkl -o output/toy_recon --enc-type none
 python ../backproject_k_enc2.py data/toy_projections.mrcs data/toy_angles.pkl -o output/toy_recon --enc-type none --domain hartley
 
+python ../backproject.py data/hand.mrcs data/hand_rot.pkl -o output/backproject.mrc 
+python ../backproject.py data/hand.mrcs data/hand_rot.pkl -o output/backproject_tilt.mrc --tilt data/hand_tilt.mrcs

@@ -17,14 +17,15 @@ log = utils.log
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('mrcs', help='Input MRCs stack')
-    parser.add_argument('pkl', help='Euler angles (EMAN convention) or rotation matrices')
-    parser.add_argument('-o', type=os.path.abspath, required=True, help='Output MRC file')
-    parser.add_argument('--is-rot', action='store_true', help='Input angles are rotation matrices')
+    parser.add_argument('mrcs', help='Input .mrcs image stack')
+    parser.add_argument('pkl', help='Rotation matrices or Euler angles (EMAN convention)')
+    parser.add_argument('-o', type=os.path.abspath, required=True, help='Output .mrc file')
     parser.add_argument('--indices',help='Indices to iterate over (pkl)')
     parser.add_argument('--trans', type=os.path.abspath, help='Optionally provide translations (.pkl)')
     parser.add_argument('--tscale', type=float, help='Scale all translations by this amount')
     parser.add_argument('--first', type=int, help='Backproject the first N images')
+    parser.add_argument('--tilt', help='Tilt series .mrcs image stack')
+    parser.add_argument('--tilt-deg', type=float, default=45, help='Right-handed x-axis tilt offset in degrees (default: %(default)s)')
     return parser
 
 def add_slice(V, counts, ff_coord, ff, D):
@@ -57,10 +58,18 @@ def main(args):
     images, _ , _ = mrc.parse_mrc(args.mrcs,lazy=True)
     N = len(images)
 
-    angles = utils.load_angles(args.pkl)
-    if len(angles) < N:
-        log('Warning: # images != # angles. Backprojecting first {} images'.format(len(angles)))
-        N = len(angles)
+    if args.tilt is not None:
+        images_tilt, _, _ = mrc.parse_mrc(args.tilt,lazy=True)
+        assert len(images) == len(images_tilt)
+        assert images[0].get().shape == images_tilt[0].get().shape
+        tilt = utils.xrot(args.tilt_deg)
+
+
+    rot = utils.load_pkl(args.pkl)
+    if len(rot.shape) == 2:
+        log('Converting poses from EMAN euler angles to rotation matrices')
+        rot = np.array([utils.R_from_eman(*x) for x in rot])
+
     if args.trans:
         trans = utils.load_pkl(args.trans)
         if args.tscale is not None:
@@ -83,7 +92,7 @@ def main(args):
     MASK = np.where(np.sum(COORD**2,axis=0)**.5 <=(D/2-1))
     COORD = COORD[:,MASK[0]]
 
-    # we need a 2D lattice spanning [-.5,.5) for the fourier phase shift 
+    # 2D lattice spanning [-.5,.5) for FT phase shift 
     TCOORD = np.stack([xx, yy],axis=2)/D # DxDx2
 
     if args.indices:
@@ -100,12 +109,18 @@ def main(args):
             tfilt = np.cos(tfilt) + np.sin(tfilt)*1j
             ff *= tfilt
         ff = ff.ravel()[MASK]
-        if args.is_rot:
-            rot = angles[ii]
-        else:
-            rot = utils.R_from_eman(angles[ii,0],angles[ii,1],angles[ii,2])
-        ff_coord = np.dot(rot.T,COORD)
+        r = rot[ii]
+        ff_coord = np.dot(r.T,COORD)
         add_slice(V,counts,ff_coord,ff,D)
+
+        # tilt series
+        if args.tilt is not None:
+            ff_tilt = fft.fft2_center(images_tilt[ii].get())
+            if trans is not None: ff_tilt *= tfilt
+            ff_tilt = ff_tilt.ravel()[MASK]
+            ff_coord = np.dot(np.dot(r.T, tilt.T), COORD)
+            add_slice(V,counts,ff_coord,ff_tilt,D)
+
     z = np.where(counts == 0.0)
     td = time.time()-t1
     log('Backprojected {} images in {}s ({}s per image)'.format(N, td, td/N ))

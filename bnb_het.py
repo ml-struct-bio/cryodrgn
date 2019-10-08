@@ -90,7 +90,7 @@ def pretrain(model, lattice, optim, minibatch, tilt):
     optim.zero_grad()
 
     rot = lie_tools.random_SO3(B, device=y.device)
-    z = torch.randn((B,model.z_dim), device=y.device)
+    z = torch.randn((B,model.zdim), device=y.device)
 
     # reconstruct circle of pixels instead of whole image
     mask = lattice.get_circular_mask(lattice.D//2)
@@ -280,9 +280,13 @@ def main(args):
     D = data.D
 
     lattice = Lattice(D, extent=0.5)
-    if args.enc_mask: args.enc_mask = lattice.get_circular_mask(args.enc_mask)
+    if args.enc_mask: 
+        enc_mask = lattice.get_circular_mask(args.enc_mask)
+        in_dim = enc_mask.sum()
+    else:
+        in_dim = D**2
     model = HetOnlyVAE(lattice, args.qlayers, args.qdim, args.players, args.pdim,
-                args.zdim, encode_mode=args.encode_mode, enc_mask=args.enc_mask, 
+                in_dim, args.zdim, encode_mode=args.encode_mode, enc_mask=args.enc_mask, 
                 enc_type=args.enc_type, domain=args.domain)
     log(model)
     log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))

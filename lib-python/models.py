@@ -15,55 +15,54 @@ log = utils.log
 class HetOnlyVAE(nn.Module):
     # No pose inference
     def __init__(self, lattice, # Lattice object
-            encode_layers, encode_dim, 
-            decode_layers, decode_dim,
-            z_dim = 1, 
+            qlayers, qdim, 
+            players, pdim,
+            in_dim, zdim = 1, 
             encode_mode = 'resid',
             enc_mask = None,
             enc_type = 'linear_lowf',
             domain = 'fourier'):
         super(HetOnlyVAE, self).__init__()
         self.lattice = lattice
-        self.z_dim = z_dim
-        in_dim = lattice.D*lattice.D if enc_mask is None else enc_mask.sum()
+        self.zdim = zdim
         self.in_dim = in_dim
         self.enc_mask = enc_mask
         if encode_mode == 'conv':
-            self.encoder = ConvEncoder(encode_dim, z_dim*2)
+            self.encoder = ConvEncoder(qdim, zdim*2)
         elif encode_mode == 'resid':
             self.encoder = ResidLinearMLP(in_dim, 
-                            encode_layers, # nlayers
-                            encode_dim,  # hidden_dim
-                            z_dim*2, # out_dim
+                            qlayers, # nlayers
+                            qdim,  # hidden_dim
+                            zdim*2, # out_dim
                             nn.ReLU) 
         elif encode_mode == 'mlp':
             self.encoder = MLP(in_dim, 
-                            encode_layers, 
-                            encode_dim, # hidden_dim
-                            z_dim*2, # out_dim
+                            qlayers, 
+                            qdim, # hidden_dim
+                            zdim*2, # out_dim
                             nn.ReLU) #in_dim -> hidden_dim
         elif encode_mode == 'tilt':
             self.encoder = TiltEncoder(in_dim,
-                            encode_layers,
-                            encode_dim,
-                            z_dim*2,
+                            qlayers,
+                            qdim,
+                            zdim*2,
                             nn.ReLU)
         else:
             raise RuntimeError('Encoder mode {} not recognized'.format(encode_mode))
         self.encode_mode = encode_mode
         if enc_type == 'none':
             model = ResidLinearMLP if domain == 'hartley' else FTSliceDecoder
-            self.decoder = model(3+z_dim,
+            self.decoder = model(3+zdim,
                             lattice.D, # lattice size
-                            decode_layers, # nlayers
-                            decode_dim, # hidden dim
+                            players, # nlayers
+                            pdim, # hidden dim
                             nn.ReLU)
         else:
             model = PositionalDecoder if domain == 'hartley' else FTPositionalDecoder 
-            self.decoder = model(3+z_dim, # input dim
+            self.decoder = model(3+zdim, # input dim
                             lattice.D, # lattice size
-                            decode_layers, # nlayers
-                            decode_dim, # hidden dim
+                            players, # nlayers
+                            pdim, # hidden dim
                             nn.ReLU,
                             enc_type=enc_type) #R3 -> R1
    
@@ -79,7 +78,7 @@ class HetOnlyVAE(nn.Module):
         if self.enc_mask is not None:
             img = (x[:,self.enc_mask] for x in img)
         z = self.encoder(*img)
-        return z[:,:self.z_dim], z[:,self.z_dim:]
+        return z[:,:self.zdim], z[:,self.zdim:]
 
     def cat_z(self, coords, z):
         '''
@@ -87,8 +86,8 @@ class HetOnlyVAE(nn.Module):
         z: Bxzdim
         '''
         assert coords.size(0) == z.size(0)
-        z = z.view(z.size(0), *([1]*(coords.ndimension()-2)), self.z_dim)
-        z = torch.cat((coords,z.expand(*coords.shape[:-1],self.z_dim)),dim=-1)
+        z = z.view(z.size(0), *([1]*(coords.ndimension()-2)), self.zdim)
+        z = torch.cat((coords,z.expand(*coords.shape[:-1],self.zdim)),dim=-1)
         return z
 
     def decode(self, coords, z, mask=None):
@@ -102,13 +101,13 @@ class PositionalDecoder(nn.Module):
     def __init__(self, in_dim, D, nlayers, hidden_dim, activation, enc_type='linear_lowf'):
         super(PositionalDecoder, self).__init__()
         assert in_dim >= 3 
-        self.z_dim = in_dim - 3
+        self.zdim = in_dim - 3
         self.D = D
         self.D2 = D // 2
         self.DD = 2 * (D // 2)
         self.enc_dim = self.D2
         self.enc_type = enc_type
-        self.in_dim = 3 * (self.enc_dim) * 2 + self.z_dim
+        self.in_dim = 3 * (self.enc_dim) * 2 + self.zdim
         self.decoder = ResidLinearMLP(self.in_dim, nlayers, hidden_dim, 1, activation)
      
     def positional_encoding_geom(self, coords):
@@ -132,8 +131,8 @@ class PositionalDecoder(nn.Module):
         s = torch.sin(k) # B x 3 x D2
         c = torch.cos(k) # B x 3 x D2
         x = torch.cat([s,c], -1) # B x 3 x D
-        x = x.view(*coords.shape[:-2], self.in_dim-self.z_dim) # B x in_dim-z_dim
-        if self.z_dim > 0:
+        x = x.view(*coords.shape[:-2], self.in_dim-self.zdim) # B x in_dim-zdim
+        if self.zdim > 0:
             x = torch.cat([x,coords[...,3:,:].squeeze(-1)], -1)
             assert x.shape[-1] == self.in_dim
         return x
@@ -147,8 +146,8 @@ class PositionalDecoder(nn.Module):
         s = torch.sin(k) # B x 3 x D2
         c = torch.cos(k) # B x 3 x D2
         x = torch.cat([s,c], -1) # B x 3 x D
-        x = x.view(*coords.shape[:-2], self.in_dim-self.z_dim) # B x in_dim-z_dim
-        if self.z_dim > 0:
+        x = x.view(*coords.shape[:-2], self.in_dim-self.zdim) # B x in_dim-zdim
+        if self.zdim > 0:
             x = torch.cat([x,coords[...,3:,:].squeeze(-1)], -1)
             assert x.shape[-1] == self.in_dim
         return x
@@ -193,14 +192,14 @@ class FTPositionalDecoder(nn.Module):
     def __init__(self, in_dim, D, nlayers, hidden_dim, activation, enc_type='linear_lowf'):
         super(FTPositionalDecoder, self).__init__()
         assert in_dim >= 3
-        self.z_dim = in_dim - 3
+        self.zdim = in_dim - 3
         self.D = D
         self.D2 = D // 2
         self.DD = 2 * (D // 2)
         self.enc_type = enc_type
         #self.enc_dim = max(100,self.D2)
         self.enc_dim = self.D2
-        self.in_dim = 3 * (self.enc_dim) * 2 + self.z_dim
+        self.in_dim = 3 * (self.enc_dim) * 2 + self.zdim
         self.decoder = ResidLinearMLP(self.in_dim, nlayers, hidden_dim, 2, activation)
     
     def positional_encoding_geom(self, coords):
@@ -224,8 +223,8 @@ class FTPositionalDecoder(nn.Module):
         s = torch.sin(k) # B x 3 x D2
         c = torch.cos(k) # B x 3 x D2
         x = torch.cat([s,c], -1) # B x 3 x D
-        x = x.view(*coords.shape[:-2], self.in_dim-self.z_dim) # B x in_dim-z_dim
-        if self.z_dim > 0:
+        x = x.view(*coords.shape[:-2], self.in_dim-self.zdim) # B x in_dim-zdim
+        if self.zdim > 0:
             x = torch.cat([x,coords[...,3:,:].squeeze(-1)], -1)
             assert x.shape[-1] == self.in_dim
         return x
@@ -239,8 +238,8 @@ class FTPositionalDecoder(nn.Module):
         s = torch.sin(k) # B x 3 x D2
         c = torch.cos(k) # B x 3 x D2
         x = torch.cat([s,c], -1) # B x 3 x D
-        x = x.view(*coords.shape[:-2], self.in_dim-self.z_dim) # B x in_dim-z_dim
-        if self.z_dim > 0:
+        x = x.view(*coords.shape[:-2], self.in_dim-self.zdim) # B x in_dim-zdim
+        if self.zdim > 0:
             x = torch.cat([x,coords[...,3:,:].squeeze(-1)], -1)
             assert x.shape[-1] == self.in_dim
         return x
@@ -309,7 +308,6 @@ class FTPositionalDecoder(nn.Module):
         vol_f = utils.zero_sphere(vol_f)
         vol = fft.ihtn_center(vol_f[:-1,:-1,:-1]) # remove last +k freq for inverse FFT
         return vol
-
 
 class FTSliceDecoder(nn.Module):
     '''
@@ -418,8 +416,8 @@ class FTSliceDecoder(nn.Module):
 class VAE(nn.Module):
     def __init__(self, 
             lattice,
-            encode_layers, encode_dim, 
-            decode_layers, decode_dim,
+            qlayers, qdim, 
+            players, pdim,
             encode_mode = 'mlp',
             no_trans = False,
             enc_mask = None
@@ -429,32 +427,32 @@ class VAE(nn.Module):
         self.D = lattice.D
         self.in_dim = lattice.D*lattice.D if enc_mask is None else enc_mask.sum()
         self.enc_mask = enc_mask
-        assert encode_layers > 2
+        assert qlayers > 2
         if encode_mode == 'conv':
-            self.encoder = ConvEncoder(encode_dim, encode_dim)
+            self.encoder = ConvEncoder(qdim, qdim)
         elif encode_mode == 'resid':
             self.encoder = ResidLinearMLP(self.in_dim, 
-                            encode_layers-2, # -2 bc we add 2 more layers in the homeomorphic encoer
-                            encode_dim,  # hidden_dim
-                            encode_dim, # out_dim
+                            qlayers-2, # -2 bc we add 2 more layers in the homeomorphic encoer
+                            qdim,  # hidden_dim
+                            qdim, # out_dim
                             nn.ReLU) #in_dim -> hidden_dim
         elif encode_mode == 'mlp':
             self.encoder = MLP(self.in_dim, 
-                            encode_layers-2, 
-                            encode_dim, # hidden_dim
-                            encode_dim, # out_dim
+                            qlayers-2, 
+                            qdim, # hidden_dim
+                            qdim, # out_dim
                             nn.ReLU) #in_dim -> hidden_dim
         else:
             raise RuntimeError('Encoder mode {} not recognized'.format(encode_mode))
         # predict rotation and translation in two completely separate NNs
-        #self.so3_encoder = SO3reparameterize(encode_dim) # hidden_dim -> SO(3) latent variable
-        #self.trans_encoder = ResidLinearMLP(nx*ny, 5, encode_dim, 4, nn.ReLU)
+        #self.so3_encoder = SO3reparameterize(qdim) # hidden_dim -> SO(3) latent variable
+        #self.trans_encoder = ResidLinearMLP(nx*ny, 5, qdim, 4, nn.ReLU)
 
-        # or predict rotation/translations from encoding
-        self.so3_encoder = SO3reparameterize(encode_dim, 1, encode_dim) # hidden_dim -> SO(3) latent variable
-        self.trans_encoder = ResidLinearMLP(encode_dim, 1, encode_dim, 4, nn.ReLU)
+        # or predict rotation/translations from intermediate encoding
+        self.so3_encoder = SO3reparameterize(qdim, 1, qdim) # hidden_dim -> SO(3) latent variable
+        self.trans_encoder = ResidLinearMLP(qdim, 1, qdim, 4, nn.ReLU)
 
-        self.decoder = FTSliceDecoder(3, self.D, decode_layers, decode_dim, nn.ReLU)
+        self.decoder = FTSliceDecoder(3, self.D, players, pdim, nn.ReLU)
         self.no_trans = no_trans
 
     def reparameterize(self, mu, logvar):
@@ -505,8 +503,8 @@ class VAE(nn.Module):
 class TiltVAE(nn.Module):
     def __init__(self, 
             lattice, tilt,
-            encode_layers, encode_dim, 
-            decode_layers, decode_dim,
+            qlayers, qdim, 
+            players, pdim,
             no_trans=False,
             enc_mask=None
             ):
@@ -515,15 +513,15 @@ class TiltVAE(nn.Module):
         self.D = lattice.D
         self.in_dim = lattice.D*lattice.D if enc_mask is None else enc_mask.sum()
         self.enc_mask = enc_mask
-        assert encode_layers > 3
+        assert qlayers > 3
         self.encoder = ResidLinearMLP(self.in_dim,
-                                      encode_layers-3,
-                                      encode_dim,
-                                      encode_dim,
+                                      qlayers-3,
+                                      qdim,
+                                      qdim,
                                       nn.ReLU)
-        self.so3_encoder = SO3reparameterize(2*encode_dim, 3, encode_dim) # hidden_dim -> SO(3) latent variable
-        self.trans_encoder = ResidLinearMLP(2*encode_dim, 2, encode_dim, 4, nn.ReLU)
-        self.decoder = FTSliceDecoder(3, self.D, decode_layers, decode_dim, nn.ReLU)
+        self.so3_encoder = SO3reparameterize(2*qdim, 3, qdim) # hidden_dim -> SO(3) latent variable
+        self.trans_encoder = ResidLinearMLP(2*qdim, 2, qdim, 4, nn.ReLU)
+        self.decoder = FTSliceDecoder(3, self.D, players, pdim, nn.ReLU)
         assert tilt.shape == (3,3), 'Rotation matrix input required'
         self.tilt = torch.tensor(tilt)
         self.no_trans = no_trans

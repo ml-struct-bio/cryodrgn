@@ -6,6 +6,7 @@ import sys, os
 import argparse
 import pickle
 from datetime import datetime as dt
+import json
 
 import torch
 import torch.nn as nn
@@ -31,7 +32,7 @@ vlog = utils.vlog
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
 
-    parser.add_argument('particles', help='Particle stack file (.mrc)')
+    parser.add_argument('particles', type=os.path.abspath, help='Particles (.mrcs)')
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
     parser.add_argument('--ctf', metavar='pkl', type=os.path.abspath, help='CTF parameters (.pkl)')
     parser.add_argument('--poses', type=os.path.abspath, nargs='*', required=True, help='Image rotations and optionally translations (.pkl)')
@@ -46,14 +47,14 @@ def parse_args():
     parser.add_argument('--ind', type=os.path.abspath, help='Filter indices')
 
     group = parser.add_argument_group('Tilt series')
-    group.add_argument('--tilt', help='Particle stack file (.mrcs)')
+    group.add_argument('--tilt', help='Particles (.mrcs)')
     group.add_argument('--tilt-deg', type=float, default=45, help='X-axis tilt offset in degrees (default: %(default)s)')
 
     group = parser.add_argument_group('Training parameters')
     group.add_argument('-n', '--num-epochs', type=int, default=10, help='Number of training epochs (default: %(default)s)')
     group.add_argument('-b','--batch-size', type=int, default=100, help='Minibatch size (default: %(default)s)')
     group.add_argument('--wd', type=float, default=0, help='Weight decay in Adam optimizer (default: %(default)s)')
-    group.add_argument('--lr', type=float, default=1e-3, help='Learning rate in Adam optimizer (default: %(default)s)')
+    group.add_argument('--lr', type=float, default=1e-4, help='Learning rate in Adam optimizer (default: %(default)s)')
     group.add_argument('--beta', default=1.0, help='Choice of beta schedule or a constant for KLD weight (default: %(default)s)')
     group.add_argument('--beta-control', type=float, help='KL-Controlled VAE gamma. Beta is KL target. (default: %(default)s)')
     group.add_argument('--equivariance', type=float, help='Strength of equivariance loss (default: %(default)s)')
@@ -66,6 +67,7 @@ def parse_args():
     group.add_argument('--encode-mode', default='resid', choices=('conv','resid','mlp','tilt'), help='Type of encoder network (default: %(default)s)')
     group.add_argument('--zdim', type=int, default=1, help='Dimension of latent variable')
     group.add_argument('--enc-mask', type=int, help='Circular mask of image for encoder')
+    group.add_argument('--use-real', action='store_true', help='Use real space image for encoder')
 
     group = parser.add_argument_group('Decoder Network')
     group.add_argument('--players', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
@@ -74,7 +76,7 @@ def parse_args():
     group.add_argument('--domain', choices=('hartley','fourier'), default='fourier')
     return parser
 
-def train(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, equivariance=None, tilt=None, ctf_params=None):
+def train(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, equivariance=None, tilt=None, ctf_params=None, yr=None):
     use_tilt = yt is not None
     use_ctf = ctf_params is not None
     model.train()
@@ -91,8 +93,11 @@ def train(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, equ
         if yt is not None: yt = lattice.translate_ht(yt.view(B,-1), trans.unsqueeze(1)).view(B,D,D)
 
     # inference of z
-    input_ = (y,yt) if yt is not None else (y,)
-    if use_ctf: input_ = (x*c.sign() for x in input_) # phase flip by the ctf
+    if yr is not None:
+        input_ = (yr,)
+    else:
+        input_ = (y,yt) if yt is not None else (y,)
+        if use_ctf: input_ = (x*c.sign() for x in input_) # phase flip by the ctf
     z_mu, z_logvar = model.encode(*input_)
     z = model.reparameterize(z_mu, z_logvar)
 
@@ -126,7 +131,7 @@ def train(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, equ
     optim.step()
     return gen_loss.item(), kld.item(), loss.item(), eq_loss.item() if equivariance else None
 
-def eval_z(model, lattice, data, batch_size, device, trans=None, use_tilt=False, ctf_params=None):
+def eval_z(model, lattice, data, batch_size, device, trans=None, use_tilt=False, ctf_params=None, use_real=False):
     assert not model.training
     z_mu_all = []
     z_logvar_all = []
@@ -143,8 +148,13 @@ def eval_z(model, lattice, data, batch_size, device, trans=None, use_tilt=False,
         if trans is not None:
             y = lattice.translate_ht(y.view(B,-1), trans[ind].unsqueeze(1)).view(B,D,D)
             if yt is not None: yt = lattice.translate_ht(yt.view(B,-1), trans[ind].unsqueeze(1)).view(B,D,D)
-        input_ = (y,yt) if yt is not None else (y,)
-        if ctf_params is not None: input_ = (x*c.sign() for x in input_) # phase flip by the ctf
+        if use_real:
+            input_ = (torch.from_numpy(data.particles_real[ind]).to(device),)
+        else:
+            input_ = (y,yt) if yt is not None else (y,)
+        if ctf_params is not None: 
+            assert not use_real, "Not implemented"
+            input_ = (x*c.sign() for x in input_) # phase flip by the ctf
         z_mu, z_logvar = model.encode(*input_)
         z_mu_all.append(z_mu.detach().cpu().numpy())
         z_logvar_all.append(z_logvar.detach().cpu().numpy())
@@ -178,6 +188,32 @@ def save_checkpoint(model, lattice, optim, epoch, norm, z_mu, z_logvar, out_mrc_
             mrc.write('{}/traj{}.mrc'.format(out_mrc_dir,int(pct)),vol)
             log('Saved {}/traj{}.mrc with z = {}'.format(out_mrc_dir, int(pct), zz))
 
+def save_config(args, dataset, lattice, model, out_config):
+    dataset_args = dict(particles=args.particles,
+                        norm=dataset.norm,
+                        invert_data=args.invert_data,
+                        ind=args.ind,
+                        keepreal=args.use_real,
+                        window=args.window)
+    if args.tilt is not None:
+        dataset_args['particles_tilt'] = args.tilt
+    lattice_args = dict(D=lattice.D,
+                        extent=lattice.extent,
+                        ignore_DC=lattice.ignore_DC)
+    model_args = dict(qlayers=args.qlayers,
+                      qdim=args.qdim,
+                      players=args.players,
+                      pdim=args.pdim,
+                      zdim=args.zdim,
+                      encode_mode=args.encode_mode,
+                      enc_mask=args.enc_mask,
+                      pe_type=args.pe_type,
+                      domain=args.domain)
+    with open(out_config,'wb') as f:
+        pickle.dump(dict(dataset_args=dataset_args,
+                         lattice_args=lattice_args,
+                         model_args=model_args), f)
+
 def main(args):
     log(args)
     t1 = dt.now()
@@ -188,14 +224,14 @@ def main(args):
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
 
-    ## set the device
+    # set the device
     use_cuda = torch.cuda.is_available()
     device = torch.device('cuda' if use_cuda else 'cpu')
     log('Use cuda {}'.format(use_cuda))
     if use_cuda:
         torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
-    ## set beta schedule
+    # set beta schedule
     try:
         args.beta = float(args.beta)
     except ValueError: 
@@ -205,35 +241,41 @@ def main(args):
     # load the particles
     if args.ind is not None: 
         log('Filtering image dataset with {}'.format(args.ind))
-        args.ind = pickle.load(open(args.ind,'rb'))
+        ind = pickle.load(open(args.ind,'rb'))
+    else: ind = None
     if args.tilt is None:
-        data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=args.ind, keepreal=args.encode_mode=='conv', window=args.window)
+        if args.encode_mode == 'conv':
+            args.use_real = True
+        data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, keepreal=args.use_real, window=args.window)
         tilt = None
     else:
         assert args.encode_mode == 'tilt'
-        data = dataset.TiltMRCData(args.particles, args.tilt, norm=args.norm, invert_data=args.invert_data, ind=args.ind, window=args.window)
+        data = dataset.TiltMRCData(args.particles, args.tilt, norm=args.norm, invert_data=args.invert_data, ind=ind, window=args.window, keepreal=args.use_real)
         tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32))
     Nimg = data.N
     D = data.D
+
     if args.encode_mode == 'conv':
         assert D == 64, "Image size must be 64x64 for convolutional encoder"
 
     # load poses
     assert len(args.poses) in (1,2)
     rots = torch.tensor(utils.load_pkl(args.poses[0])).float()
-    if args.ind is not None: rots = rots[args.ind]
+    if args.ind is not None: rots = rots[ind]
     assert rots.shape == (Nimg,3,3)
     if len(args.poses) == 2:
         trans = args.tscale * torch.tensor(utils.load_pkl(args.poses[1])).float()
-        if args.ind is not None: trans = trans[args.ind]
+        if args.ind is not None: trans = trans[ind]
         assert trans.shape == (Nimg,2)
     else: trans = None
 
     # load ctf
     if args.ctf is not None:
+        if args.use_real:
+            raise NotImplementedError("Not implemented with real-space encoder. Use phase-flipped images instead")
         log('Loading ctf params from {}'.format(args.ctf))
         ctf_params = utils.load_pkl(args.ctf)
-        if args.ind is not None: ctf_params = ctf_params[args.ind]
+        if args.ind is not None: ctf_params = ctf_params[ind]
         assert ctf_params.shape == (Nimg, 7)
         ctf.print_ctf_params(ctf_params[0])
         ctf_params = torch.tensor(ctf_params)
@@ -241,12 +283,21 @@ def main(args):
 
     # instantiate model
     lattice = Lattice(D, extent=0.5)
-    if args.enc_mask: args.enc_mask = lattice.get_circular_mask(args.enc_mask)
+    if args.enc_mask: 
+        enc_mask = lattice.get_circular_mask(args.enc_mask)
+        in_dim = enc_mask.sum()
+    else:
+        enc_mask = None
+        in_dim = lattice.D**2 if not args.use_real else (lattice.D-1)**2
     model = HetOnlyVAE(lattice, args.qlayers, args.qdim, args.players, args.pdim,
-                args.zdim, encode_mode=args.encode_mode, enc_mask=args.enc_mask,
+                in_dim, args.zdim, encode_mode=args.encode_mode, enc_mask=enc_mask,
                 enc_type=args.pe_type, domain=args.domain)
     log(model)
     log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
+
+    # save configuration
+    out_config = '{}/config.pkl'.format(args.outdir)
+    save_config(args, data, lattice, model, out_config)
 
     if args.equivariance:
         assert args.equivariance > 0, 'Regularization weight must be positive'
@@ -289,11 +340,12 @@ def main(args):
                 equivariance_tuple = (lamb, equivariance_loss)
             else:
                 equivariance_tuple = None
-            
+           
+            yr = torch.from_numpy(data.particles_real[ind]).to(device) if args.use_real else None
             rot = rots[ind]
             tran = trans[ind] if trans is not None else None
             ctf_param = ctf_params[ind] if ctf_params is not None else None
-            gen_loss, kld, loss, eq_loss = train(model, lattice, y, yt, rot, tran, optim, beta, args.beta_control, equivariance_tuple, tilt, ctf_params=ctf_param)
+            gen_loss, kld, loss, eq_loss = train(model, lattice, y, yt, rot, tran, optim, beta, args.beta_control, equivariance_tuple, tilt, ctf_params=ctf_param, yr=yr)
 
             # logging
             gen_loss_accum += gen_loss*B
@@ -313,7 +365,7 @@ def main(args):
             out_z = '{}/z.{}.pkl'.format(args.outdir, epoch)
             model.eval()
             with torch.no_grad():
-                z_mu, z_logvar = eval_z(model, lattice, data, args.batch_size, device, trans, tilt is not None, ctf_params)
+                z_mu, z_logvar = eval_z(model, lattice, data, args.batch_size, device, trans, tilt is not None, ctf_params, args.use_real)
                 save_checkpoint(model, lattice, optim, epoch, data.norm, z_mu, z_logvar, out_mrc, out_weights, out_z)
 
     # save model weights, latent encoding, and evaluate the model on 3D lattice
@@ -322,7 +374,7 @@ def main(args):
     out_z = '{}/z.pkl'.format(args.outdir)
     model.eval()
     with torch.no_grad():
-        z_mu, z_logvar = eval_z(model, lattice, data, args.batch_size, device, trans, tilt is not None, ctf_params)
+        z_mu, z_logvar = eval_z(model, lattice, data, args.batch_size, device, trans, tilt is not None, ctf_params, args.use_real)
         save_checkpoint(model, lattice, optim, epoch, data.norm, z_mu, z_logvar, out_mrc, out_weights, out_z)
     
     td = dt.now()-t1

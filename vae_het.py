@@ -256,7 +256,7 @@ def main(args):
     D = data.D
 
     if args.encode_mode == 'conv':
-        assert D == 64, "Image size must be 64x64 for convolutional encoder"
+        assert D-1 == 64, "Image size must be 64x64 for convolutional encoder"
 
     # load poses
     assert len(args.poses) in (1,2)

@@ -260,11 +260,16 @@ def main(args):
 
     # load poses
     assert len(args.poses) in (1,2)
-    rots = torch.tensor(utils.load_pkl(args.poses[0])).float()
+    if len(args.poses) == 2: # rotation pickle, translation pickle
+        poses = (utils.load_pkl(args.poses[0]), utils.load_pkl(args.poses[1]))
+    else: # rotation pickle or poses pickle
+        poses = utils.load_pkl(args.poses[0])
+        if type(poses) != tuple: poses = (poses,)
+    rots = torch.tensor(poses[0]).float()
     if args.ind is not None: rots = rots[ind]
     assert rots.shape == (Nimg,3,3)
     if len(args.poses) == 2:
-        trans = args.tscale * torch.tensor(utils.load_pkl(args.poses[1])).float()
+        trans = args.tscale * torch.tensor(poses[1]).float()
         if args.ind is not None: trans = trans[ind]
         assert trans.shape == (Nimg,2)
     else: trans = None

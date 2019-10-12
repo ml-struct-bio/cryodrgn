@@ -24,29 +24,44 @@ vlog = utils.vlog
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('weights', help='Model weights')
-    parser.add_argument('--norm', nargs=2, type=float, required=True)
-    parser.add_argument('--dim', nargs=3, default=[64,64,64], type=int)
+    parser.add_argument('--config', metavar='PKL', help='CryoDRGN configuration')
     parser.add_argument('-z', type=np.float32, nargs='*', help='')
     parser.add_argument('--z-start', type=np.float32, nargs='*', help='')
     parser.add_argument('--z-end', type=np.float32, nargs='*', help='')
-    parser.add_argument('--zfile')
-    parser.add_argument('-n', type=int, default=10, help='')
+    parser.add_argument('-n', type=int, default=10, help='Number of structures between z_start and z_end')
+    parser.add_argument('--zfile', help='Text file witth values of z to evaluate')
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Output MRC or directory')
+    parser.add_argument('--Apix', type=float, help='Pixel size to add to mrc header')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
-    parser.add_argument('--l-extent', type=float, default=0.5, help='Coordinate lattice size (default: %(default)s)')
 
-    group = parser.add_argument_group('Architecture parameters')
-    group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
-    group.add_argument('--qdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
-    group.add_argument('--zdim', type=int, default=1, help='Dimension of latent variable')
-    group.add_argument('--encode-mode', default='resid', choices=('conv','resid','mlp','tilt'), help='Type of encoder network')
-    group.add_argument('--players', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
-    group.add_argument('--pdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
-    group.add_argument('--enc-mask', type=int, help='Circulask mask of image for encoder')
-    group.add_argument('--enc-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf','none'), default='linear_lowf', help='Type of positional encoding')
-    group.add_argument('--domain', choices=('hartley','fourier'), default='fourier')
-
+    group = parser.add_argument_group('Overwrite architecture hyperparameters in config.pkl')
+    group.add_argument('--norm', nargs=2, type=float)
+    group.add_argument('-D', type=int, help='Box size')
+    group.add_argument('--qlayers', type=int, help='Number of hidden layers')
+    group.add_argument('--qdim', type=int, help='Number of nodes in hidden layers')
+    group.add_argument('--zdim', type=int,  help='Dimension of latent variable')
+    group.add_argument('--encode-mode', choices=('conv','resid','mlp','tilt'), help='Type of encoder network')
+    group.add_argument('--players', type=int, help='Number of hidden layers')
+    group.add_argument('--pdim', type=int, help='Number of nodes in hidden layers')
+    group.add_argument('--enc-mask', type=int, help='Circular mask radius for image encoder')
+    group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf','none'), help='Type of positional encoding')
+    group.add_argument('--domain', choices=('hartley','fourier'))
+    parser.add_argument('--l-extent', type=float, help='Coordinate lattice size')
     return parser
+
+def load_config(config_pkl, args):
+    config = utils.load_pkl(config_pkl)
+    if args.norm is None:
+        args.norm = config['dataset_args']['norm']
+    if args.D is None:
+        args.D = config['lattice_args']['D'] - 1
+    if args.l_extent is None:
+        args.l_extent = config['lattice_args']['extent']
+    v = vars(args)
+    for arg in ('qlayers','qdim','zdim','encode_mode','players','pdim','enc_mask','pe_type','domain'):
+        if v[arg] is None:
+            v[arg] = config['model_args'][arg]
+    return args
 
 def main(args):
     log(args)
@@ -58,13 +73,19 @@ def main(args):
     if use_cuda:
         torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
-    nz, ny, nx = args.dim
-    assert nz == ny == nx
-    D = nz+1
+    if args.config is not None:
+        args = load_config(args.config, args)
+    log(args)
+
+    D = args.D + 1
     lattice = Lattice(D, extent=args.l_extent)
-    if args.enc_mask: args.enc_mask = lattice.get_circular_mask(args.enc_mask)
+    if args.enc_mask: 
+        args.enc_mask = lattice.get_circular_mask(args.enc_mask)
+        in_dim = args.enc_mask.sum()
+    else:
+        in_dim = lattice.D**2
     model = HetOnlyVAE(lattice, args.qlayers, args.qdim, args.players, args.pdim,
-                args.zdim, encode_mode=args.encode_mode, enc_mask=args.enc_mask, enc_type=args.enc_type, domain=args.domain)
+                in_dim, args.zdim, encode_mode=args.encode_mode, enc_mask=args.enc_mask, enc_type=args.pe_type, domain=args.domain)
 
     log('Loading weights from {}'.format(args.weights))
     checkpoint = torch.load(args.weights)

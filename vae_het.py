@@ -266,13 +266,19 @@ def main(args):
         poses = utils.load_pkl(args.poses[0])
         if type(poses) != tuple: poses = (poses,)
     rots = torch.tensor(poses[0]).float()
-    if args.ind is not None: rots = rots[ind]
+    if args.ind is not None: 
+        if len(rots) > Nimg: # HACK
+            rots = rots[ind]
     assert rots.shape == (Nimg,3,3)
     if len(poses) == 2:
         trans = args.tscale * torch.tensor(poses[1]).float()
-        if args.ind is not None: trans = trans[ind]
+        if args.ind is not None: 
+            if len(trans) > Nimg:
+                trans = trans[ind]
         assert trans.shape == (Nimg,2)
-    else: trans = None
+    else: 
+        log('WARNING: No translations provided')
+        trans = None
 
     # load ctf
     if args.ctf is not None:

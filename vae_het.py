@@ -268,7 +268,7 @@ def main(args):
     rots = torch.tensor(poses[0]).float()
     if args.ind is not None: rots = rots[ind]
     assert rots.shape == (Nimg,3,3)
-    if len(args.poses) == 2:
+    if len(poses) == 2:
         trans = args.tscale * torch.tensor(poses[1]).float()
         if args.ind is not None: trans = trans[ind]
         assert trans.shape == (Nimg,2)

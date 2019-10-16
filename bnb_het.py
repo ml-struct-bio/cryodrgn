@@ -33,11 +33,13 @@ def parse_args():
     parser.add_argument('particles', help='Particle stack file (.mrc)')
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
     parser.add_argument('--load', type=os.path.abspath, help='Initialize training from a checkpoint')
+    parser.add_argument('--load-poses', type=os.path.abspath, help='Initialize training from a checkpoint')
     parser.add_argument('--checkpoint', type=int, default=1, help='Checkpointing interval in N_EPOCHS (default: %(default)s)')
     parser.add_argument('--log-interval', type=int, default=1000, help='Logging interval in N_IMGS (default: %(default)s)')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
     parser.add_argument('--seed', type=int, default=np.random.randint(0,100000), help='Random seed')
     parser.add_argument('--invert-data', action='store_true', help='Invert data sign')
+    parser.add_argument('--no-window', dest='window', action='store_false', help='Do not window dataset')
     parser.add_argument('--ind', type=os.path.abspath, help='Filter indices')
 
     group = parser.add_argument_group('Tilt series')
@@ -270,11 +272,11 @@ def main(args):
         log('Filtering image dataset with {}'.format(args.ind))
         args.ind = pickle.load(open(args.ind,'rb'))
     if args.tilt is None:
-        data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=args.ind)
+        data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=args.ind, window=args.window)
         tilt = None
     else:
         assert args.encode_mode == 'tilt'
-        data = dataset.TiltMRCData(args.particles, args.tilt, norm=args.norm, invert_data=args.invert_data, ind=args.ind)
+        data = dataset.TiltMRCData(args.particles, args.tilt, norm=args.norm, invert_data=args.invert_data, ind=args.ind, window=args.window)
         tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32))
     Nimg = data.N
     D = data.D
@@ -286,7 +288,7 @@ def main(args):
     else:
         in_dim = D**2
     model = HetOnlyVAE(lattice, args.qlayers, args.qdim, args.players, args.pdim,
-                in_dim, args.zdim, encode_mode=args.encode_mode, enc_mask=args.enc_mask, 
+                in_dim, args.zdim, encode_mode=args.encode_mode, enc_mask=enc_mask, 
                 enc_type=args.enc_type, domain=args.domain)
     log(model)
     log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
@@ -311,6 +313,8 @@ def main(args):
         optim.load_state_dict(checkpoint['optimizer_state_dict'])
         start_epoch = checkpoint['epoch']+1
         model.train()
+        if args.load_poses:
+            sorted_poses = utils.load_pkl(args.load_poses)
     else:
         start_epoch = 0
 

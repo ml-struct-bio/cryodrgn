@@ -6,11 +6,13 @@ import numpy as np
 import sys, os
 import pickle
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('input', nargs='+', help='Input')
+    parser.add_argument('input',  help='Input')
     parser.add_argument('-o', help='Output')
+    parser.add_argument('--ylim', nargs=2, type=float)
     parser.add_argument('--sample1', type=int, help='Plot z value for N points')
     parser.add_argument('--sample2', type=int, help='Plot median z after chunking into N chunks')
     parser.add_argument('--out-s', help='Save sampled z values')
@@ -18,21 +20,21 @@ def parse_args():
     return parser
 
 def main(args):
-    for f in args.input:
-        print(f)
-        fi = open(f,'rb')
-        x = pickle.load(fi)
-        N = len(x)
-        #plt.scatter(np.arange(N),x, label=f, alpha=.02, s=4)
-        plt.scatter(np.arange(N), x, c=np.arange(len(x[:,0])), label=f, alpha=.1, s=2, cmap='hsv')
-        plt.xlim((0,N))
-        if args.equiv:
-            plt.figure()
-            y = pickle.load(fi)
-            plt.scatter(np.arange(N), y, c=np.arange(len(x[:,0])), label=f, alpha=.1, s=2, cmap='hsv')
-            plt.figure()
-            z = x-y
-            plt.scatter(np.arange(N), z, c=np.arange(len(x[:,0])), label=f, alpha=.1, s=2, cmap='hsv')
+    f = args.input
+    print(f)
+    fi = open(f,'rb')
+    x = pickle.load(fi)
+    N = len(x)
+    plt.scatter(np.arange(N),x, label=f, alpha=.01, s=2)
+    #plt.scatter(np.arange(N), x, c=np.arange(len(x[:,0])), label=f, alpha=.1, s=2, cmap='hsv')
+    plt.xlim((0,N))
+    if args.equiv:
+        plt.figure()
+        y = pickle.load(fi)
+        plt.scatter(np.arange(N), y, c=np.arange(len(x[:,0])), label=f, alpha=.1, s=2, cmap='hsv')
+        plt.figure()
+        z = x-y
+        plt.scatter(np.arange(N), z, c=np.arange(len(x[:,0])), label=f, alpha=.1, s=2, cmap='hsv')
     if args.sample1:
         d = len(x) // args.sample1
         t = np.arange(len(x))
@@ -51,13 +53,16 @@ def main(args):
         plt.plot(t,xd,'o',color='k')
     if args.out_s:
         np.savetxt(args.out_s, xd)
+    if args.ylim:
+        plt.ylim(args.ylim)
     plt.xlabel('ground truth latent')
     plt.ylabel('latent encoding')
     plt.legend(loc='best')
     if args.o: 
         plt.savefig(args.o)
-    else:
-        plt.show()
+    plt.figure()
+    sns.distplot(x)
+    plt.show()
 
 if __name__ == '__main__':
     main(parse_args().parse_args())

@@ -60,6 +60,7 @@ def parse_args():
     group.add_argument('--equivariance', type=float, help='Strength of equivariance loss (default: %(default)s)')
     group.add_argument('--equivariance-end-it', type=int, default=100000, help='It at which equivariance max (default: %(default)s)')
     group.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: mean, std of dataset)')
+    group.add_argument('--pretrain', type=int, default=np.inf, help='N epochs to pretrain with pose at initial values')
 
     group = parser.add_argument_group('Encoder Network')
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
@@ -280,6 +281,16 @@ def main(args):
         log('WARNING: No translations provided')
         trans = None
 
+    
+    rots_emb = nn.Embedding(rots.shape[0], 4, sparse=True)
+    rots_emb.weight.data.copy_(lie_tools.SO3_to_quaternions(rots))
+    params = [p for p in rots_emb.parameters()]
+    if trans is not None:
+        trans_emb = nn.Embedding(trans.shape[0], 2, sparse=True)
+        trans_emb.weight.data.copy_(trans)
+        params.extend([p for p in trans_emb.parameters()])
+    pose_optimizer = torch.optim.SparseAdam(params, lr=args.lr)
+
     # load ctf
     if args.ctf is not None:
         if args.use_real:
@@ -338,7 +349,7 @@ def main(args):
         eq_loss_accum = 0
         batch_it = 0 
         for minibatch in data_generator:
-            ind = minibatch[-1]
+            ind = minibatch[-1].to(device)
             y = minibatch[0].to(device)
             yt = minibatch[1].to(device) if tilt is not None else None
             B = len(ind)
@@ -353,10 +364,13 @@ def main(args):
                 equivariance_tuple = None
            
             yr = torch.from_numpy(data.particles_real[ind]).to(device) if args.use_real else None
-            rot = rots[ind]
-            tran = trans[ind] if trans is not None else None
+            pose_optimizer.zero_grad()
+            rot = lie_tools.quaternions_to_SO3(rots_emb(ind))
+            tran = trans_emb(ind) if trans is not None else None
             ctf_param = ctf_params[ind] if ctf_params is not None else None
             gen_loss, kld, loss, eq_loss = train(model, lattice, y, yt, rot, tran, optim, beta, args.beta_control, equivariance_tuple, tilt, ctf_params=ctf_param, yr=yr)
+            if epoch >= args.pretrain:
+                pose_optimizer.step()
 
             # logging
             gen_loss_accum += gen_loss*B
@@ -378,6 +392,11 @@ def main(args):
             with torch.no_grad():
                 z_mu, z_logvar = eval_z(model, lattice, data, args.batch_size, device, trans, tilt is not None, ctf_params, args.use_real)
                 save_checkpoint(model, lattice, optim, epoch, data.norm, z_mu, z_logvar, out_mrc, out_weights, out_z)
+            if epoch >= args.pretrain:
+                out_pose = '{}/pose.{}.pkl'.format(args.outdir, epoch)
+                r = lie_tools.quaternions_to_SO3(rots_emb.weight.data).cpu().numpy()
+                poses = (r, trans_emb.weight.data.cpu().numpy()) if trans is not None else (r,)
+                torch.save(poses, out_pose)
 
     # save model weights, latent encoding, and evaluate the model on 3D lattice
     out_mrc = '{}/reconstruct'.format(args.outdir)
@@ -388,6 +407,11 @@ def main(args):
         z_mu, z_logvar = eval_z(model, lattice, data, args.batch_size, device, trans, tilt is not None, ctf_params, args.use_real)
         save_checkpoint(model, lattice, optim, epoch, data.norm, z_mu, z_logvar, out_mrc, out_weights, out_z)
     
+    if epoch >= args.pretrain:
+        out_pose = '{}/pose.pkl'.format(args.outdir)
+        r = lie_tools.quaternions_to_SO3(rots_emb.weight.data).cpu().numpy()
+        poses = (r, trans_emb.weight.data.cpu().numpy()) if trans is not None else (r,)
+        torch.save(poses, out_pose)
     td = dt.now()-t1
     log('Finsihed in {} ({} per epoch)'.format(td, td/(num_epochs-start_epoch)))
 

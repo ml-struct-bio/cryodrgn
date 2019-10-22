@@ -55,15 +55,24 @@ def s2s1rodrigues(s2_el, s1_el):
         + (1. - cos_theta)[..., None, None]*(K@K)
     return R
 
-def s2s2_to_SO3(v1, v2):
+def s2s2_to_SO3(v1, v2=None):
     '''Normalize 2 3-vectors. Project second to orthogonal component.
     Take cross product for third. Stack to form SO matrix.'''
+    if v2 is None:
+        assert v1.shape[-1] == 6
+        v2 = v1[...,3:]
+        v1 = v1[...,0:3]
     u1 = v1
     e1 = u1 / u1.norm(p=2, dim=-1, keepdim=True).clamp(min=1E-5)
     u2 = v2 - (e1 * v2).sum(-1, keepdim=True) * e1
     e2 = u2 / u2.norm(p=2, dim=-1, keepdim=True).clamp(min=1E-5)
     e3 = torch.cross(e1, e2)
     return torch.stack([e1, e2, e3], 1)
+
+def SO3_to_s2s2(r):
+    '''Map batch of SO(3) matrices to s2s2 representation as first two
+    basis vectors, concatenated as Bx6'''
+    return r.view(*r.shape[:-2],9)[...,:6].contiguous()
 
 def SO3_to_quaternions(r):
     """Map batch of SO(3) matrices to quaternions."""

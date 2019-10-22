@@ -282,8 +282,8 @@ def main(args):
         trans = None
 
     
-    rots_emb = nn.Embedding(rots.shape[0], 4, sparse=True)
-    rots_emb.weight.data.copy_(lie_tools.SO3_to_quaternions(rots))
+    rots_emb = nn.Embedding(rots.shape[0], 6, sparse=True)
+    rots_emb.weight.data.copy_(lie_tools.SO3_to_s2s2(rots))
     params = [p for p in rots_emb.parameters()]
     if trans is not None:
         trans_emb = nn.Embedding(trans.shape[0], 2, sparse=True)
@@ -365,7 +365,7 @@ def main(args):
            
             yr = torch.from_numpy(data.particles_real[ind]).to(device) if args.use_real else None
             pose_optimizer.zero_grad()
-            rot = lie_tools.quaternions_to_SO3(rots_emb(ind))
+            rot = lie_tools.s2s2_to_SO3(rots_emb(ind))
             tran = trans_emb(ind) if trans is not None else None
             ctf_param = ctf_params[ind] if ctf_params is not None else None
             gen_loss, kld, loss, eq_loss = train(model, lattice, y, yt, rot, tran, optim, beta, args.beta_control, equivariance_tuple, tilt, ctf_params=ctf_param, yr=yr)

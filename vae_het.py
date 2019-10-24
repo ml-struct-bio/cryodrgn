@@ -21,6 +21,7 @@ import lie_tools
 import dataset
 import ctf
 
+from pose import PoseTracker
 from models import HetOnlyVAE
 from lattice import Lattice
 from beta_schedule import get_beta_schedule, LinearSchedule
@@ -260,36 +261,9 @@ def main(args):
         assert D-1 == 64, "Image size must be 64x64 for convolutional encoder"
 
     # load poses
-    assert len(args.poses) in (1,2)
-    if len(args.poses) == 2: # rotation pickle, translation pickle
-        poses = (utils.load_pkl(args.poses[0]), utils.load_pkl(args.poses[1]))
-    else: # rotation pickle or poses pickle
-        poses = utils.load_pkl(args.poses[0])
-        if type(poses) != tuple: poses = (poses,)
-    rots = torch.tensor(poses[0]).float()
-    if args.ind is not None: 
-        if len(rots) > Nimg: # HACK
-            rots = rots[ind]
-    assert rots.shape == (Nimg,3,3)
-    if len(poses) == 2:
-        trans = args.tscale * torch.tensor(poses[1]).float()
-        if args.ind is not None: 
-            if len(trans) > Nimg:
-                trans = trans[ind]
-        assert trans.shape == (Nimg,2)
-    else: 
-        log('WARNING: No translations provided')
-        trans = None
-
-    
-    rots_emb = nn.Embedding(rots.shape[0], 6, sparse=True)
-    rots_emb.weight.data.copy_(lie_tools.SO3_to_s2s2(rots))
-    params = [p for p in rots_emb.parameters()]
-    if trans is not None:
-        trans_emb = nn.Embedding(trans.shape[0], 2, sparse=True)
-        trans_emb.weight.data.copy_(trans)
-        params.extend([p for p in trans_emb.parameters()])
-    pose_optimizer = torch.optim.SparseAdam(params, lr=args.lr)
+    do_pose_sgd = args.pretrain < np.inf
+    posetracker = PoseTracker.load(args.poses, Nimg, 's2s2' if do_pose_sgd else None, args.tscale, ind)
+    pose_optimizer = torch.optim.SparseAdam(posetracker.parameters(), lr=args.lr) if do_pose_sgd else None
 
     # load ctf
     if args.ctf is not None:
@@ -369,12 +343,12 @@ def main(args):
                 equivariance_tuple = None
            
             yr = torch.from_numpy(data.particles_real[ind]).to(device) if args.use_real else None
-            pose_optimizer.zero_grad()
-            rot = lie_tools.s2s2_to_SO3(rots_emb(ind))
-            tran = trans_emb(ind) if trans is not None else None
+            if do_pose_sgd:
+                pose_optimizer.zero_grad()
+            rot, tran = posetracker.get_pose(ind)
             ctf_param = ctf_params[ind] if ctf_params is not None else None
             gen_loss, kld, loss, eq_loss = train(model, lattice, y, yt, rot, tran, optim, beta, args.beta_control, equivariance_tuple, tilt, ctf_params=ctf_param, yr=yr)
-            if epoch >= args.pretrain:
+            if do_pose_sgd and epoch >= args.pretrain:
                 pose_optimizer.step()
 
             # logging
@@ -395,13 +369,11 @@ def main(args):
             out_z = '{}/z.{}.pkl'.format(args.outdir, epoch)
             model.eval()
             with torch.no_grad():
-                z_mu, z_logvar = eval_z(model, lattice, data, args.batch_size, device, trans, tilt is not None, ctf_params, args.use_real)
+                z_mu, z_logvar = eval_z(model, lattice, data, args.batch_size, device, posetracker.trans, tilt is not None, ctf_params, args.use_real)
                 save_checkpoint(model, lattice, optim, epoch, data.norm, z_mu, z_logvar, out_mrc, out_weights, out_z)
             if epoch >= args.pretrain:
                 out_pose = '{}/pose.{}.pkl'.format(args.outdir, epoch)
-                r = lie_tools.quaternions_to_SO3(rots_emb.weight.data).cpu().numpy()
-                poses = (r, trans_emb.weight.data.cpu().numpy()) if trans is not None else (r,)
-                pickle.dump(poses, open(out_pose,'wb'))
+                posetracker.save(out_pose)
 
     # save model weights, latent encoding, and evaluate the model on 3D lattice
     out_mrc = '{}/reconstruct'.format(args.outdir)
@@ -409,14 +381,12 @@ def main(args):
     out_z = '{}/z.pkl'.format(args.outdir)
     model.eval()
     with torch.no_grad():
-        z_mu, z_logvar = eval_z(model, lattice, data, args.batch_size, device, trans, tilt is not None, ctf_params, args.use_real)
+        z_mu, z_logvar = eval_z(model, lattice, data, args.batch_size, device, posetracker.trans, tilt is not None, ctf_params, args.use_real)
         save_checkpoint(model, lattice, optim, epoch, data.norm, z_mu, z_logvar, out_mrc, out_weights, out_z)
     
     if epoch >= args.pretrain:
         out_pose = '{}/pose.pkl'.format(args.outdir)
-        r = lie_tools.quaternions_to_SO3(rots_emb.weight.data).cpu().numpy()
-        poses = (r, trans_emb.weight.data.cpu().numpy()) if trans is not None else (r,)
-        pickle.dump(poses, open(out_pose,'wb'))
+        posetracker.save(out_pose)
     td = dt.now()-t1
     log('Finsihed in {} ({} per epoch)'.format(td, td/(num_epochs-start_epoch)))
 

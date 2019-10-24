@@ -401,7 +401,7 @@ def main(args):
                 out_pose = '{}/pose.{}.pkl'.format(args.outdir, epoch)
                 r = lie_tools.quaternions_to_SO3(rots_emb.weight.data).cpu().numpy()
                 poses = (r, trans_emb.weight.data.cpu().numpy()) if trans is not None else (r,)
-                torch.save(poses, out_pose)
+                pickle.dump(poses, open(out_pose,'wb'))
 
     # save model weights, latent encoding, and evaluate the model on 3D lattice
     out_mrc = '{}/reconstruct'.format(args.outdir)
@@ -416,7 +416,7 @@ def main(args):
         out_pose = '{}/pose.pkl'.format(args.outdir)
         r = lie_tools.quaternions_to_SO3(rots_emb.weight.data).cpu().numpy()
         poses = (r, trans_emb.weight.data.cpu().numpy()) if trans is not None else (r,)
-        torch.save(poses, out_pose)
+        pickle.dump(poses, open(out_pose,'wb'))
     td = dt.now()-t1
     log('Finsihed in {} ({} per epoch)'.format(td, td/(num_epochs-start_epoch)))
 

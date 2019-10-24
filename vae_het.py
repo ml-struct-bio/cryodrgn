@@ -43,7 +43,7 @@ def parse_args():
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
     parser.add_argument('--seed', type=int, default=np.random.randint(0,100000), help='Random seed')
     parser.add_argument('--invert-data', action='store_true', help='Invert data sign')
-    parser.add_argument('--no-window', dest='window', action='store_false', help='Do not window dataset')
+    parser.add_argument('--window', action='store_true', help='Real space windowing of dataset')
     parser.add_argument('--ind', type=os.path.abspath, help='Filter indices')
 
     group = parser.add_argument_group('Tilt series')
@@ -52,7 +52,7 @@ def parse_args():
 
     group = parser.add_argument_group('Training parameters')
     group.add_argument('-n', '--num-epochs', type=int, default=10, help='Number of training epochs (default: %(default)s)')
-    group.add_argument('-b','--batch-size', type=int, default=100, help='Minibatch size (default: %(default)s)')
+    group.add_argument('-b','--batch-size', type=int, default=10, help='Minibatch size (default: %(default)s)')
     group.add_argument('--wd', type=float, default=0, help='Weight decay in Adam optimizer (default: %(default)s)')
     group.add_argument('--lr', type=float, default=1e-4, help='Learning rate in Adam optimizer (default: %(default)s)')
     group.add_argument('--beta', default=1.0, help='Choice of beta schedule or a constant for KLD weight (default: %(default)s)')
@@ -67,13 +67,13 @@ def parse_args():
     group.add_argument('--qdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
     group.add_argument('--encode-mode', default='resid', choices=('conv','resid','mlp','tilt'), help='Type of encoder network (default: %(default)s)')
     group.add_argument('--zdim', type=int, default=1, help='Dimension of latent variable')
-    group.add_argument('--enc-mask', type=int, help='Circular mask of image for encoder')
+    group.add_argument('--enc-mask', type=int, help='Circular mask of image for encoder (default: D/2; -1 for no mask)')
     group.add_argument('--use-real', action='store_true', help='Use real space image for encoder')
 
     group = parser.add_argument_group('Decoder Network')
     group.add_argument('--players', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--pdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
-    group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf','none'), default='linear_lowf', help='Type of positional encoding')
+    group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf','none'), default='geom_lowf', help='Type of positional encoding')
     group.add_argument('--domain', choices=('hartley','fourier'), default='fourier')
     return parser
 
@@ -305,12 +305,17 @@ def main(args):
 
     # instantiate model
     lattice = Lattice(D, extent=0.5)
-    if args.enc_mask: 
+    if args.enc_mask is None:
+        args.enc_mask = D//2
+    if args.enc_mask > 0:
+        assert args.enc_mask <= D//2
         enc_mask = lattice.get_circular_mask(args.enc_mask)
         in_dim = enc_mask.sum()
-    else:
+    elif args.enc_mask == -1:
         enc_mask = None
         in_dim = lattice.D**2 if not args.use_real else (lattice.D-1)**2
+    else: 
+        raise RuntimeError("Invalid argument for encoder mask radius {}".format(args.enc_mask))
     model = HetOnlyVAE(lattice, args.qlayers, args.qdim, args.players, args.pdim,
                 in_dim, args.zdim, encode_mode=args.encode_mode, enc_mask=enc_mask,
                 enc_type=args.pe_type, domain=args.domain)

@@ -38,6 +38,7 @@ def parse_args():
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
     parser.add_argument('--seed', type=int, default=np.random.randint(0,100000), help='Random seed')
     parser.add_argument('--invert-data', action='store_true', help='Invert data sign')
+    parser.add_argument('--window', action='store_true', help='Real space windowing of dataset')
 
     group = parser.add_argument_group('Tilt series')
     group.add_argument('--tilt', help='Particle stack file (.mrcs)')
@@ -50,9 +51,9 @@ def parse_args():
     group.add_argument('--pretrain', type=int, default=10000, help='Number of initial iterations with random poses (default: %(default)s)')
     group.add_argument('--bnb-freq', type=int, default=1, help='Frequency of pose inference (default: every %(default)s epochs)')
     group.add_argument('-n', '--num-epochs', type=int, default=10, help='Number of training epochs (default: %(default)s)')
-    group.add_argument('-b','--batch-size', type=int, default=100, help='Minibatch size (default: %(default)s)')
+    group.add_argument('-b','--batch-size', type=int, default=10, help='Minibatch size (default: %(default)s)')
     group.add_argument('--wd', type=float, default=0, help='Weight decay in Adam optimizer (default: %(default)s)')
-    group.add_argument('--lr', type=float, default=1e-3, help='Learning rate in Adam optimizer (default: %(default)s)')
+    group.add_argument('--lr', type=float, default=1e-4, help='Learning rate in Adam optimizer (default: %(default)s)')
     group.add_argument('--l-start', type=int,default=12, help='Starting L radius (default: %(default)s)')
     group.add_argument('--l-end', type=int, default=20, help='End L radius (default: %(default)s)')
     group.add_argument('--l-end-it',type=int,default=100000, help='default: %(default)s')
@@ -61,8 +62,8 @@ def parse_args():
     group = parser.add_argument_group('Network Architecture')
     group.add_argument('--layers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--dim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
-    group.add_argument('--enc-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf'), default='linear_lowf', help='Type of positional encoding')
-    group.add_argument('--domain', choices=('hartley','fourier'), default='fourier')
+    group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf'), default='geom_lowf', help='Type of positional encoding')
+    group.add_argument('--domain', choices=('hartley','fourier'), default='hartley')
 
     return parser
 
@@ -182,19 +183,19 @@ def main(args):
 
     # load the particles
     if args.tilt is None:
-        data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data)
+        data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, window=args.window)
         tilt = None
     else:
-        data = dataset.TiltMRCData(args.particles, args.tilt, norm=args.norm, invert_data=args.invert_data)
+        data = dataset.TiltMRCData(args.particles, args.tilt, norm=args.norm, invert_data=args.invert_data, window=args.window)
         tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32))
     D = data.D
     Nimg = data.N
 
     lattice = Lattice(D, extent=0.5)
     if args.domain == 'fourier':
-        model = FTPositionalDecoder(3, D, args.layers, args.dim, nn.ReLU, enc_type=args.enc_type)
+        model = FTPositionalDecoder(3, D, args.layers, args.dim, nn.ReLU, enc_type=args.pe_type)
     else:
-        model = PositionalDecoder(3, D, args.layers, args.dim, nn.ReLU, enc_type=args.enc_type)
+        model = PositionalDecoder(3, D, args.layers, args.dim, nn.ReLU, enc_type=args.pe_type)
 
     if args.no_trans:
         bnb = BNBHomoRot(model, lattice, args.l_start, args.l_end, tilt, args.probabilistic)

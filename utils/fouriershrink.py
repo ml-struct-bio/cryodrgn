@@ -23,8 +23,8 @@ def parse_args():
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Output projection stack (.mrcs)')
     parser.add_argument('--out-png', type=os.path.abspath, help='Montage of first 9 projections')
     parser.add_argument('--is-vol',action='store_true')
-    parser.add_argument('--mem', action='store_true', help='Conserve memory footprint')
     parser.add_argument('-D', type=int, required=True, help='New image size, must be even')
+    parser.add_argument('--chunk', type=int, help='Chunksize (# images) to split projection stack')
     return parser
 
 def mkbasedir(out):
@@ -35,24 +35,12 @@ def warnexists(out):
     if os.path.exists(out):
         log('Warning: {} already exists. Overwriting.'.format(out))
 
-def plot_projections(out_png, imgs):
-    fig, axes = plt.subplots(nrows=3, ncols=3, figsize=(10,10))
-    axes = axes.ravel()
-    for i in range(min(len(imgs),9)):
-        axes[i].imshow(imgs[i])
-    plt.savefig(out_png)
-
-
 def main(args):
     mkbasedir(args.o)
     warnexists(args.o)
 
-    if args.mem:
-        old, _, _ = mrc.parse_mrc(args.mrcs,lazy=True)
-        oldD = old[0].get().shape[0]
-    else:
-        old, _, _ = mrc.parse_mrc(args.mrcs)
-        oldD = old.shape[1]
+    old, _, _ = mrc.parse_mrc(args.mrcs,lazy=True)
+    oldD = old[0].get().shape[0]
     assert args.D < oldD
     assert args.D % 2 == 0
     
@@ -62,12 +50,13 @@ def main(args):
     stop = int(oldD/2 + D/2)
 
     if args.is_vol:
-        oldft = fft.htn_center(old)
+        oldft = fft.htn_center(np.array([x.get() for x in old]))
         log(oldft.shape)
         newft = oldft[start:stop,start:stop,start:stop]
         log(newft.shape)
         new = fft.ihtn_center(newft).astype(np.float32)
-    elif args.mem:
+
+    if args.chunk is None:
         new = []
         for img in old:
             oldft = fft.ht2_center(img.get()).astype(np.float32)
@@ -76,22 +65,23 @@ def main(args):
         assert oldft[int(oldD/2),int(oldD/2)] == newft[int(D/2),int(D/2)]
         new = np.asarray(new)
         log(new.shape)
+        log('Saving {}'.format(args.o))
+        mrc.write(args.o,new)
     else:
-        oldft = np.array([fft.ht2_center(img).astype(np.float32) for img in old])
-        log(oldft.shape)
-        newft = oldft[:,start:stop, start:stop]
-        log(newft.shape)
-
-        assert oldft[0,int(oldD/2),int(oldD/2)] == newft[0,int(D/2),int(D/2)]
-
-        new = np.array([fft.ihtn_center(img).astype(np.float32) for img in newft])
-
-    log('Saving {}'.format(args.o))
-    mrc.write(args.o,new)
-
-    if args.out_png:
-        log('Saving {}'.format(args.out_png))
-        plot_projections(args.out_png, new[:9])
+        nchunks = len(old) // args.chunk + 1
+        for i in range(nchunks):
+            log('Processing chunk {}'.format(i))
+            out = '.{}'.format(i).join(os.path.splitext(args.o))
+            new = []
+            for img in old[i*args.chunk:(i+1)*args.chunk]:
+                oldft = fft.ht2_center(img.get()).astype(np.float32)
+                newft = oldft[start:stop, start:stop]
+                new.append(fft.ihtn_center(newft).astype(np.float32))
+            assert oldft[int(oldD/2),int(oldD/2)] == newft[int(D/2),int(D/2)]
+            new = np.asarray(new)
+            log(new.shape)
+            log('Saving {}'.format(out))
+            mrc.write(out,new)
 
 if __name__ == '__main__':
     main(parse_args().parse_args())

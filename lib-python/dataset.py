@@ -109,6 +109,8 @@ class MRCData(data.Dataset):
         self.keepreal = keepreal
         if keepreal:
             self.particles_real = particles_real
+            log('Normalized real space images by {}'.format(particles_real.std()))
+            self.particles_real /= particles_real.std()
 
     def __len__(self):
         return self.N

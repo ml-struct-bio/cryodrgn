@@ -48,6 +48,9 @@ def parse_args():
     group.add_argument('-b','--batch-size', type=int, default=10, help='Minibatch size (default: %(default)s)')
     group.add_argument('--wd', type=float, default=0, help='Weight decay in Adam optimizer (default: %(default)s)')
     group.add_argument('--lr', type=float, default=1e-4, help='Learning rate in Adam optimizer (default: %(default)s)')
+    group.add_argument('--do-pose-sgd', action='store_true', help='Refine poses')
+    group.add_argument('--pretrain', type=int, default=5, help='Number of epochs with fixed poses before pose SGD')
+    group.add_argument('--emb-type', choices=('s2s2','quat'), default='s2s2', help='SO(3) embedding type for pose SGD')
 
     group = parser.add_argument_group('Network Architecture')
     group.add_argument('--layers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
@@ -145,7 +148,11 @@ def main(args):
         start_epoch = 0
 
     # load poses
-    posetracker = PoseTracker.load(args.poses, Nimg, None, args.tscale, None)
+    if args.do_pose_sgd:
+        posetracker = PoseTracker.load(args.poses, Nimg, args.emb_type, args.tscale, None)
+        pose_optimizer = torch.optim.SparseAdam(posetracker.parameters(), lr=args.lr)
+    else:
+        posetracker = PoseTracker.load(args.poses, Nimg, None, args.tscale, None)
 
     # load CTF
     if args.ctf is not None:
@@ -165,9 +172,14 @@ def main(args):
         for batch, ind in data_generator:
             batch_it += len(ind)
             y = batch.to(device)
+            ind = ind.to(device)
+            if args.do_pose_sgd:
+                pose_optimizer.zero_grad()
             r, t = posetracker.get_pose(ind)
             c = ctf_params[ind] if ctf_params is not None else None
             loss_item = train(model, lattice, optim, batch.to(device), r, t, c)
+            if args.do_pose_sgd and epoch >= args.pretrain:
+                pose_optimizer.step()
             loss_accum += loss_item*len(ind)
             if batch_it % args.log_interval == 0:
                 log('# [Train Epoch: {}/{}] [{}/{} images] loss={:.4f}'.format(epoch+1, args.num_epochs, batch_it, Nimg, loss_item))
@@ -176,11 +188,17 @@ def main(args):
             out_mrc = '{}/reconstruct.{}.mrc'.format(args.outdir, epoch)
             out_weights = '{}/weights.{}.pkl'.format(args.outdir, epoch)
             save_checkpoint(model, lattice, optim, epoch, data.norm, out_mrc, out_weights)
+            if args.do_pose_sgd and epoch >= args.pretrain:
+                out_pose = '{}/pose.{}.pkl'.format(args.outdir, epoch)
+                posetracker.save(out_pose)
 
     ## save model weights and evaluate the model on 3D lattice
     out_mrc = '{}/reconstruct.mrc'.format(args.outdir)
     out_weights = '{}/weights.pkl'.format(args.outdir)
     save_checkpoint(model, lattice, optim, epoch, data.norm, out_mrc, out_weights)
+    if args.do_pose_sgd and epoch >= args.pretrain:
+        out_pose = '{}/pose.pkl'.format(args.outdir)
+        posetracker.save(out_pose)
    
     td = dt.now()-t1
     log('Finsihed in {} ({} per epoch)'.format(td, td/(args.num_epochs-start_epoch)))

@@ -8,6 +8,7 @@ import utils
 log = utils.log
 import matplotlib.pyplot as plt
 from scipy.linalg import logm
+import pickle
 
 
 def parse_args():
@@ -18,6 +19,7 @@ def parse_args():
     parser.add_argument('-N', type=int, help='Compare first N images')
     parser.add_argument('--flip',action='store_true',help='Flip hand')
     parser.add_argument('--show', action='store_true', help='Show histogram of errors')
+    parser.add_argument('-o', help='Output pickle of distances')
     return parser
 
 def geodesic_so3(A,B):
@@ -50,8 +52,12 @@ def align_rot2(rotA,rotB,i,flip=False):
 
 def main(args):
     rot1 = utils.load_pkl(args.rot1)
+    if type(rot1) == tuple:
+        rot1 = rot1[0]
     #rot1 = np.array([utils.R_from_eman(*x) for x in rot1])
     rot2 = utils.load_pkl(args.rot2)
+    if type(rot2) == tuple:
+        rot2 = rot2[0]
     assert rot1.shape == rot2.shape
 
     #rot2 = align_rot2(rot1,rot2,args.i,args.flip)
@@ -59,7 +65,7 @@ def main(args):
     if args.N:
         rot1 = rot1[:args.N]
         rot2 = rot2[:args.N]
-    dists = np.asarray([fast_dist(a,b) for a,b in zip(rot1, rot2)])
+    dists = np.sum((rot1-rot2)**2, axis=(1,2))
     #dists = np.asarray([geodesic_so3(a,b) for a,b in zip(rot1, rot2)])
 
     log('Mean error: {}'.format(np.mean(dists)))
@@ -67,6 +73,9 @@ def main(args):
     if args.show:
         plt.hist(dists)
         plt.show()
+
+    if args.o:
+        pickle.dump(dists,open(args.o,'wb'))
 
 if __name__ == '__main__':
     main(parse_args().parse_args())

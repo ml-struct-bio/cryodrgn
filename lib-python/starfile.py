@@ -13,7 +13,7 @@ class Starfile():
         self.df = df
 
     @classmethod
-    def load_starfile(self, starfile):
+    def load(self, starfile):
         f = open(starfile,'r')
         # get to data block
         while 1:
@@ -46,7 +46,7 @@ class Starfile():
         words = [l.strip().split() for l in body]
         words = np.array(words)
         data = {h:words[:,i] for i,h in enumerate(headers)}
-        df = pd.DataFrame(data=d)
+        df = pd.DataFrame(data=data)
         return self(headers, df)
 
     def write(self, outstar):
@@ -57,7 +57,7 @@ class Starfile():
         f.write('loop_\n')
         f.write('\n'.join(self.headers))
         f.write('\n')
-        for i in range(len(self.df)):
+        for i in self.df.index:
             f.write(' '.join(self.df.loc[i]))
             f.write('\n')
         #f.write('\n'.join([' '.join(self.df.loc[i]) for i in range(len(self.df))]))

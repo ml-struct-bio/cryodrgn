@@ -20,6 +20,7 @@ def parse_args():
     parser.add_argument('mrcs', help='Input .mrcs image stack')
     parser.add_argument('pkl', help='Rotation matrices or Euler angles (EMAN convention)')
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Output .mrc file')
+    parser.add_argument('--invert-data', action='store_true')
     parser.add_argument('--indices',help='Indices to iterate over (pkl)')
     parser.add_argument('--trans', type=os.path.abspath, help='Optionally provide translations (.pkl)')
     parser.add_argument('--tscale', type=float, help='Scale all translations by this amount')
@@ -104,6 +105,8 @@ def main(args):
     for ii in iterator:
         if ii%100==0: log('image {}'.format(ii))
         ff = fft.fft2_center(images[ii].get())
+        if args.invert_data:
+            ff *= -1
         if trans is not None:
             tfilt = np.dot(TCOORD,trans[ii])*-2*np.pi
             tfilt = np.cos(tfilt) + np.sin(tfilt)*1j

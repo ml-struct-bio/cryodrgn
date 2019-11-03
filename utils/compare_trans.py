@@ -19,10 +19,16 @@ def parse_args():
     return parser
 
 def main(args):
-    trans1 = utils.load_pkl(args.trans1)*args.s1
+    trans1 = utils.load_pkl(args.trans1)
+    if type(trans1) == tuple:
+        trans1 = trans1[1]
+    trans1 *= args.s1
     log(trans1.shape)
     log(trans1)
-    trans2 = utils.load_pkl(args.trans2)*args.s2
+    trans2 = utils.load_pkl(args.trans2)
+    if type(trans2) == tuple:
+        trans2 = trans2[1]
+    trans2 *= args.s2
     log(trans2.shape)
     log(trans2)
     assert trans1.shape == trans2.shape

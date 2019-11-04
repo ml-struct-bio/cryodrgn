@@ -24,7 +24,7 @@ vlog = utils.vlog
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('weights', help='Model weights')
-    parser.add_argument('--config', metavar='PKL', help='CryoDRGN configuration')
+    parser.add_argument('-c', '--config', metavar='PKL', help='CryoDRGN configuration')
     parser.add_argument('-z', type=np.float32, nargs='*', help='')
     parser.add_argument('--z-start', type=np.float32, nargs='*', help='')
     parser.add_argument('--z-end', type=np.float32, nargs='*', help='')
@@ -32,6 +32,7 @@ def parse_args():
     parser.add_argument('--zfile', help='Text file witth values of z to evaluate')
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Output MRC or directory')
     parser.add_argument('--Apix', type=float, help='Pixel size to add to mrc header')
+    parser.add_argument('--prefix', default='vol', help='Prefix when writing out multiple .mrc files (default: %(default)s)')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
 
     group = parser.add_argument_group('Overwrite architecture hyperparameters in config.pkl')
@@ -64,7 +65,6 @@ def load_config(config_pkl, args):
     return args
 
 def main(args):
-    log(args)
     t1 = dt.now()
 
     ## set the device
@@ -113,7 +113,7 @@ def main(args):
         for i,zz in enumerate(z):
             log(zz)
             vol = model.decoder.eval_volume(lattice.coords, lattice.D, lattice.extent, args.norm, zz) 
-            out_mrc = '{}/traj{}.mrc'.format(args.o,i)
+            out_mrc = '{}/{}_{:03d}.mrc'.format(args.o, args.prefix, i)
             mrc.write(out_mrc, vol.astype(np.float32))
 
     else:

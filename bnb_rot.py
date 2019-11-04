@@ -27,6 +27,13 @@ from models import FTPositionalDecoder, PositionalDecoder
 log = utils.log
 vlog = utils.vlog
 
+def debug_signal_handler(signal, frame):
+    import pdb
+    pdb.set_trace()
+import signal
+signal.signal(signal.SIGINT, debug_signal_handler)
+    
+
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('particles', help='Particle stack file (.mrcs)')
@@ -164,8 +171,6 @@ def train(model, lattice, bnb, optim, batch, tilt=None, no_trans=False, poses=No
 
 def main(args):
     log(args)
-    if args.probabilistic:
-        assert args.no_trans, 'Probabilistic bound not implemented with translations yet'
     t1 = dt.now()
     if not os.path.exists(args.outdir):
         os.makedirs(args.outdir)
@@ -200,7 +205,7 @@ def main(args):
     if args.no_trans:
         bnb = BNBHomoRot(model, lattice, args.l_start, args.l_end, tilt, args.probabilistic)
     else:    
-        bnb = BNBHomo(model, lattice, args.l_start, args.l_end, tilt, t_extent=args.t_extent, t_ngrid=args.t_ngrid)
+        bnb = BNBHomo(model, lattice, args.l_start, args.l_end, tilt, t_extent=args.t_extent, t_ngrid=args.t_ngrid, probabilistic=args.probabilistic)
     log(model)
     log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)

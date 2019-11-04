@@ -154,7 +154,7 @@ class PositionalDecoder(nn.Module):
 
     def forward(self, coords):
         '''Input should be coordinates from [-.5,.5]'''
-        assert (coords[...,0:3].abs() <= 0.5).all()
+        assert (coords[...,0:3].abs() - 0.5 < 1e-4).all()
         return self.decoder(self.positional_encoding_geom(coords))
 
     def eval_volume(self, coords, D, extent, norm, zval=None):
@@ -265,7 +265,7 @@ class FTPositionalDecoder(nn.Module):
 
     def decode(self, lattice):
         '''Return FT transform'''
-        assert (lattice[...,0:3].abs() <= 0.5).all()
+        assert (lattice[...,0:3].abs() - 0.5 < 1e-4).all()
         # convention: only evalute the -z points
         w = lattice[...,2] > 0.0
         lattice[...,0:3][w] = -lattice[...,0:3][w] # negate lattice coordinates where z > 0

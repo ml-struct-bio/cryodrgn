@@ -35,9 +35,10 @@ def parse_args():
 
     parser.add_argument('particles', type=os.path.abspath, help='Particles (.mrcs)')
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
-    parser.add_argument('--ctf', metavar='pkl', type=os.path.abspath, help='CTF parameters (.pkl)')
+    parser.add_argument('--zdim', type=int, required=True, help='Dimension of latent variable')
     parser.add_argument('--poses', type=os.path.abspath, nargs='*', required=True, help='Image rotations and optionally translations (.pkl)')
     parser.add_argument('--tscale', type=float, default=1.0, help='Scale translations by this amount')
+    parser.add_argument('--ctf', metavar='pkl', type=os.path.abspath, help='CTF parameters (.pkl) if particle stack is not phase flipped')
     parser.add_argument('--load', type=os.path.abspath, help='Initialize training from a checkpoint')
     parser.add_argument('--checkpoint', type=int, default=1, help='Checkpointing interval in N_EPOCHS (default: %(default)s)')
     parser.add_argument('--log-interval', type=int, default=1000, help='Logging interval in N_IMGS (default: %(default)s)')
@@ -45,7 +46,7 @@ def parse_args():
     parser.add_argument('--seed', type=int, default=np.random.randint(0,100000), help='Random seed')
     parser.add_argument('--invert-data', action='store_true', help='Invert data sign')
     parser.add_argument('--window', action='store_true', help='Real space windowing of dataset')
-    parser.add_argument('--ind', type=os.path.abspath, help='Filter indices')
+    parser.add_argument('--ind', type=os.path.abspath, help='Filter particle stack by these indices')
 
     group = parser.add_argument_group('Tilt series')
     group.add_argument('--tilt', help='Particles (.mrcs)')
@@ -61,21 +62,22 @@ def parse_args():
     group.add_argument('--equivariance', type=float, help='Strength of equivariance loss (default: %(default)s)')
     group.add_argument('--equivariance-end-it', type=int, default=100000, help='It at which equivariance max (default: %(default)s)')
     group.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: mean, std of dataset)')
-    group.add_argument('--pretrain', type=int, default=np.inf, help='N epochs to pretrain with pose at initial values')
+    group.add_argument('--do-pose-sgd', action='store_true', help='Refine poses')
+    group.add_argument('--pretrain', type=int, default=5, help='Number of epochs with fixed poses before pose SGD')
+    group.add_argument('--emb-type', choices=('s2s2','quat'), default='s2s2', help='SO(3) embedding type for pose SGD')
 
     group = parser.add_argument_group('Encoder Network')
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--qdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
     group.add_argument('--encode-mode', default='resid', choices=('conv','resid','mlp','tilt'), help='Type of encoder network (default: %(default)s)')
-    group.add_argument('--zdim', type=int, default=1, help='Dimension of latent variable')
     group.add_argument('--enc-mask', type=int, help='Circular mask of image for encoder (default: D/2; -1 for no mask)')
     group.add_argument('--use-real', action='store_true', help='Use real space image for encoder')
 
     group = parser.add_argument_group('Decoder Network')
     group.add_argument('--players', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--pdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
-    group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf','none'), default='geom_lowf', help='Type of positional encoding')
-    group.add_argument('--domain', choices=('hartley','fourier'), default='fourier')
+    group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf','none'), default='geom_lowf', help='Type of positional encoding (default: %(default)s)')
+    group.add_argument('--domain', choices=('hartley','fourier'), default='fourier', help='Decoder representation (default: %(default)s)')
     return parser
 
 def train(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, equivariance=None, tilt=None, ctf_params=None, yr=None):
@@ -261,7 +263,7 @@ def main(args):
         assert D-1 == 64, "Image size must be 64x64 for convolutional encoder"
 
     # load poses
-    do_pose_sgd = args.pretrain < np.inf
+    do_pose_sgd = args.do_pose_sgd
     posetracker = PoseTracker.load(args.poses, Nimg, 's2s2' if do_pose_sgd else None, args.tscale, ind)
     pose_optimizer = torch.optim.SparseAdam(posetracker.parameters(), lr=args.lr) if do_pose_sgd else None
 

@@ -1,4 +1,4 @@
-# cryoDRGN -- Deep Reconstructing Generative Networks for cryo-EM heterogneous reconstruction
+# :snowflake::dragon:cryoDRGN: Deep Reconstructing Generative Networks for cryo-EM heterogeneous reconstruction
 
 CryoDRGN is a neural network based algorithm for heterogeneous cryo-EM reconstruction. In particular, the method models a *continuous* distribution over 3D structures by using a neural network based representation for the volume.
 
@@ -10,7 +10,7 @@ https://arxiv.org/abs/1909.05215
 
 ## Installation/dependencies:
 
-Until the cryoDRGN conda package is available, for now, git clone the source and install the dependencies with conda:
+Until the cryoDRGN conda package is available, for now, git clone the source code and install the following dependencies with anaconda, replacing the cudatoolkit version as necessary:
 
     conda create --name cryodrgn
     source activate cryodrgn
@@ -21,7 +21,7 @@ Until the cryoDRGN conda package is available, for now, git clone the source and
 
 ## Quickstart -- heterogeneous reconstruction from consensus alignments
 
-1. Preprocess image stack
+### 1. Preprocess image stack
 
 Training cryoDRGN networks has not been tested on image sizes above D=256. If your images are larger than D=256, use the following utility to downsample the images:
 
@@ -33,25 +33,26 @@ It is also recommended to create image stacks at lower resolution (e.g. D=80, 16
     $ python $SRC/utils/fouriershrink.py [input particle stack] -D 160 -o [output particle stack] --out-png projections.160.png
     $ python $SRC/utils/fouriershrink.py [input particle stack] -D 80 -o [output particle stack] --out-png projections.80.png
 
-2. Parse alignments from a consensus homogeneous reconstruction
+### 2. Parse alignments from a consensus homogeneous reconstruction
 
-    2.a Parse alignments from RELION starfile
+* Parse alignments from RELION starfile
 
-        $ python $SRC/utils/parse_star_alignments.py particles.star -o consensus
+    $ python $SRC/utils/parse_star_alignments.py particles.star -o consensus
 
-    2.b Parse alignments from cryoSPARC particles.cs file
+* Parse alignments from cryoSPARC particles.cs file
 
-        $ python $SRC/utils/parse_cs_alignments.py cryosparc_P27_J3_005_particles.cs --homorefine -o consensus
+    $ python $SRC/utils/parse_cs_alignments.py cryosparc_P27_J3_005_particles.cs --homorefine -o consensus
 
-    2.c Test parsing with backprojection
+* Test parsing with backprojection
 
-        $ python $SRC/backproject.py # TODO
+    $ python $SRC/backproject.py # TODO
 
-3. Parse CTF parameters from a .star file
+### 3. Parse CTF parameters from a .star file
 
 CryoDRGN currently takes CTF parameters in a pickle format (.pkl). Use the utility script `parse_ctf.py` to extract the relevant CTF parameters from a .star file. 
 
 Example usage:
+
     $ python $SRC/utils/parse_ctf.py particles.star -N 101845 -D 256 --Apix 1.7 -o ctf.256.pkl
 
 Note: the pixel size is saved in the CTF pickle. Run this script multiple times for each pixel size if cryoDRGN will be run on variable image size particles.
@@ -59,9 +60,9 @@ Note: the pixel size is saved in the CTF pickle. Run this script multiple times 
     $ python $SRC/utils/parse_ctf.py particles.star -N 101845 -D 160 --Apix 2.72 -o ctf.160.pkl
     $ python $SRC/utils/parse_ctf.py particles.star -N 101845 -D 80 --Apix 5.44 -o ctf.80.pkl
 
-4. Heterogeneous reconstruction
+### 4. Running cryoDRGN heterogeneous reconstruction
 
-When the input image stack (.mrcs/.txt), image poses (.pkl), and CTF parameters (.pkl) have been prepared, the cryoDRGN networks can be trained with following script:
+When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl) have been prepared, the cryoDRGN networks can be trained with following script:
 
     $ python $SRC/vae_het.py -h
     usage: vae_het.py [-h] -o OUTDIR --zdim ZDIM --poses [POSES [POSES ...]]
@@ -147,10 +148,7 @@ When the input image stack (.mrcs/.txt), image poses (.pkl), and CTF parameters 
 
 ### Example usage:
 
-Example command to train a 10D latent variable cryoDRGN model for 20 epochs on an image dataset `projections.256.mrcs` with poses `consensus.rot.pkl, consensus.trans.pkl` and ctf parameters `ctf.256.pkl`. 
-The encoder and decoder networks in this model contain 3 layers of dimension 1000. 
-Using the `--do-pose-sgd` flag and `--pretrain 1` will lead to local refinement of poses after the first epoch of training.
-Results will be saved in directory `00_vae256_z10`.
+Example command to train a 10D latent variable cryoDRGN model for 20 epochs on an image dataset `projections.256.mrcs` with poses `consensus.rot.pkl, consensus.trans.pkl` and ctf parameters `ctf.256.pkl`:
 
     $ python $SRC/vae_het.py projections.256.mrcs \
             --poses consensus.rot.pkl consensus.trans.pkl \
@@ -163,7 +161,10 @@ Results will be saved in directory `00_vae256_z10`.
             --qdim 1000 --qlayers 3 \
             -o 00_vae256_z10
 
-Note since translations are provided in units of pixels, `--tscale` may be used to renormalize translations e.g. if the consensus poses were obtained with a different box size.
+* The encoder and decoder networks in this model contain 3 layers of dimension 1000. 
+* Using the `--do-pose-sgd` flag and `--pretrain 1` will lead to local refinement of poses after the first epoch of training.
+* Results will be saved in directory `00_vae256_z10`.
+* NOTE: Since translations are provided in units of pixels, `--tscale` may be used to renormalize translations e.g. if the consensus poses were obtained with a different box size.
 
 ### Recommended settings:
 

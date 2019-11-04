@@ -59,10 +59,10 @@ def parse_args():
     group.add_argument('--lr', type=float, default=1e-4, help='Learning rate in Adam optimizer (default: %(default)s)')
     group.add_argument('--beta', default=1.0, help='Choice of beta schedule or a constant for KLD weight (default: %(default)s)')
     group.add_argument('--beta-control', type=float, help='KL-Controlled VAE gamma. Beta is KL target. (default: %(default)s)')
-    group.add_argument('--equivariance', type=float, help='Strength of equivariance loss (default: %(default)s)')
-    group.add_argument('--equivariance-end-it', type=int, default=100000, help='It at which equivariance max (default: %(default)s)')
+    #group.add_argument('--equivariance', type=float, help='Strength of equivariance loss (default: %(default)s)')
+    #group.add_argument('--equivariance-end-it', type=int, default=100000, help='It at which equivariance max (default: %(default)s)')
     group.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: mean, std of dataset)')
-    group.add_argument('--do-pose-sgd', action='store_true', help='Refine poses')
+    group.add_argument('--do-pose-sgd', action='store_true', help='Refine poses with gradient descent')
     group.add_argument('--pretrain', type=int, default=5, help='Number of epochs with fixed poses before pose SGD')
     group.add_argument('--emb-type', choices=('s2s2','quat'), default='s2s2', help='SO(3) embedding type for pose SGD')
 
@@ -77,7 +77,7 @@ def parse_args():
     group.add_argument('--players', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--pdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
     group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf','none'), default='geom_lowf', help='Type of positional encoding (default: %(default)s)')
-    group.add_argument('--domain', choices=('hartley','fourier'), default='fourier', help='Decoder representation (default: %(default)s)')
+    group.add_argument('--domain', choices=('hartley','fourier'), default='fourier', help='Decoder representation domain (default: %(default)s)')
     return parser
 
 def train(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, equivariance=None, tilt=None, ctf_params=None, yr=None):
@@ -301,7 +301,8 @@ def main(args):
     # save configuration
     out_config = '{}/config.pkl'.format(args.outdir)
     save_config(args, data, lattice, model, out_config)
-
+    
+    args.equivariance = None # FIXME
     if args.equivariance:
         assert args.equivariance > 0, 'Regularization weight must be positive'
         equivariance_lambda = LinearSchedule(0, args.equivariance, 10000, args.equivariance_end_it)

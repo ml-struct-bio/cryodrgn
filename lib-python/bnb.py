@@ -15,9 +15,124 @@ import utils
 log = utils.log
 vlog = utils.vlog
 
-class BNBHomoRot:
+
+class BNBHomoBase:
+
+    def __init__(self):
+        self.B2_counter = 0
+        self.B2_interval = 1
+        self.uniform_slices = None
+
+    def compute_B1(self, images, L, images_tilt=None):
+        mask = self.lattice.get_circular_mask(self.Lmax) - self.lattice.get_circular_mask(L)
+        if isinstance(self, BNBHomo):  # fml
+            images = images[:, 0]  # because all translations have the same power (FIXME)
+        power = images.view(images.size(0),-1)[:,mask].pow(2).sum(-1)
+        if images_tilt:
+            power += images_tilt.view(images_tilt.size(0),-1)[:,mask].pow(2).sum(-1)
+        if isinstance(self, BNBHomo):  # fml
+            power = power.unsqueeze(1)  # FIXME kill me
+        return power
+
+    def compute_B2(self, L):
+        mask = (1 - self.lattice.get_circular_mask(L).float())[self.Lmax_mask]
+        max_power = (self.uniform_slices * mask.unsqueeze(0)).pow(2).sum(-1).max()
+        B2 = -max_power - 4*(max_power)**.5
+        return B2
+
+    def update_uniform_slices(self, B):
+        self.B2_counter += B
+        if self.uniform_slices is None or self.B2_counter >= self.B2_interval:
+            self.B2_counter = 0
+            rot = self.base_rot[::4] # 576/4 = 144 rotations
+            y_hat = self.decoder(self.lattice.coords[self.Lmax_mask] @ rot).squeeze(-1)
+            self.uniform_slices = y_hat
+            self.B2_interval = min(100, 2 * self.B2_interval)
+
+    def compute_bound(self, images, rot, NQ, L, images_tilt=None):
+        '''Compute the lower bound'''
+        A = self.eval_grid(images, rot, NQ, L, images_tilt) # B x Q
+        if L == self.Lmax: return A
+        Amean = torch.empty(A.shape[0])
+        torch.set_printoptions(linewidth=150)
+        # for i in range(A.shape[0]):
+        #     Amean[i] = A[i, A[i]<1e9].mean()
+        if self.probabilistic:
+            B1 = self.compute_B1(images, L, images_tilt).unsqueeze(1) # Bx1
+            B2 = self.compute_B2(L)  # 1
+            # vlog(f"A=     {Amean}")
+            # vlog(f"A+B=   {Amean +B1.squeeze() + B2}")
+        else:
+            # vlog(f"A: {Amean}")
+            B1 = B2 = 0
+        if images_tilt is not None: B2 *= 2
+        return A+B1+B2
+
+
+    def tile(self, squashed, NQ, nan_val=float('inf')):
+        '''Tile a squashed, variable batch size data tensor into Bxmax(NQ) tensor'''
+        B = len(NQ)
+        #new = torch.empty((B,max(NQ),squashed.shape[-1]),dtype=squashed.dtype)
+        new = torch.empty(B,max(NQ),*squashed.shape[1:],dtype=squashed.dtype)
+        prev = 0
+        for i in range(B):
+            new[i,0:NQ[i],:] = squashed[prev:(prev+NQ[i]),:]
+            new[i,NQ[i]:,:] = nan_val 
+            prev += NQ[i]
+        return new
+    
+    def tile_np(self, squashed, NQ, nan_val=float('inf')):
+        '''Tile a squashed, variable batch size data tensor into Bxmax(NQ) tensor'''
+        B = len(NQ)
+        new = np.empty((B,max(NQ),*squashed.shape[1:]),dtype=squashed.dtype)
+        prev = 0
+        for i in range(B):
+            new[i,0:NQ[i],:] = squashed[prev:(prev+NQ[i]),:]
+            new[i,NQ[i]:,:] = nan_val 
+            prev += NQ[i]
+        return new
+
+    # todo: clean up and rename this func
+    '''def keep_matrix(self, bound, Lstar, max_poses):
+        B,Q = bound.shape
+        keep = bound <= Lstar # B x Q array of 0/1s
+        NQ = keep.sum(1) # B, array of Nposes per batch element
+        if NQ.max() > max_poses:
+            # filter keep with percentile heuristic
+            vlog(f'Warning: More than {max_poses} poses below upper bound ({NQ})')
+            w = bound.argsort()[:,max_poses:]
+            keep[np.arange(B).repeat(Q-max_poses), w.contiguous().view(-1)] *= 0
+            NQ = keep.sum(1) # B, array of Nposes per batch element
+        if (NQ == 0).any():
+            # this can be hit bc of FP ulps
+            vlog('Warning: No poses below upper bound')
+            w = bound.argmin(-1)
+            keep[np.arange(B), w] = 1     
+            NQ = keep.sum(1) # B, array of Nposes per batch element
+        return keep, NQ'''
+
+    def keep_matrix(self, bound, Lstar, max_poses):
+        B = bound.shape[0]
+        bound = bound.view(B,-1)
+        keep = bound <= Lstar
+        Np = keep.sum(1)
+        if (Np > max_poses).any():
+            vlog(f'Warning: More than {max_poses} poses below upper bound ({Np})')
+            w = bound.argsort(1)[:,max_poses:].cpu().contiguous().view(-1)
+            maxQ = keep.shape[1]
+            keep[np.arange(B).repeat(maxQ-max_poses), w] *= 0
+        if (Np == 0).any():
+            log('WARNING: NO POSES BELOW BOUND') # this can be hit because of fl ulps
+            log(Np)
+            w = bound.argmin(1)
+            keep[np.arange(B),w] = 1
+        return keep
+ 
+
+class BNBHomoRot(BNBHomoBase):
     '''Branch and bound of rotations for homogeneous reconstruction'''
     def __init__(self, decoder, lattice, Lmin, Lmax, tilt=None, probabilistic=False):
+        super().__init__()
         self.decoder = decoder
         self.lattice = lattice
         self.base_quat = so3_grid.base_SO3_grid()
@@ -28,24 +143,8 @@ class BNBHomoRot:
         self.Lmax = Lmax
         self.tilt = tilt
         self.probabilistic = probabilistic
+        self.Lmax_mask = self.lattice.get_circular_mask(self.Lmax)
 
-    def compute_B1(self, images, L, images_tilt=None):
-        mask = self.lattice.get_circular_mask(self.Lmax) - self.lattice.get_circular_mask(L)
-        power = images.view(images.size(0),-1)[:,mask].pow(2).sum(-1)
-        if images_tilt:
-            power += images_tilt.view(images_tilt.size(0),-1)[:,mask].pow(2).sum(-1)
-        return power
-
-    def compute_B2(self, max_slice, L):
-        mask = self.lattice.get_circular_mask(self.Lmax) - self.lattice.get_circular_mask(L)
-        power = max_slice[mask].pow(2).sum()
-        B2 = -power - 4*(power)**.5
-        return B2
-
-    def estimate_max_slice(self):
-        rot = self.base_rot[::24] # 48 slices
-        y_hat = self.decoder(self.lattice.coords @ rot)
-        return y_hat[y_hat.pow(2).sum(-1).argmax()] # YX
 
     def eval_grid(self, images, rot, NQ, L, images_tilt=None):
         '''
@@ -60,7 +159,7 @@ class BNBHomoRot:
         YX = coords.size(-2)
         def compute_err(images, rot):
             images = images.view(B,-1)[:,mask]
-            y_hat = self.decoder(coords @ rot) # len(rot) x YX
+            y_hat = self.decoder(coords @ rot).squeeze() # len(rot) x YX
             if type(NQ) == int: # constant NQ per image
                 y_hat = y_hat.view(-1,NQ,YX) #1xQxYX for base grid, Bx8xYX for incremental grid
             else:
@@ -76,58 +175,7 @@ class BNBHomoRot:
             err += err_tilt
         return err # B x Q
 
-    def tile(self, squashed, NQ, nan_val=float('inf')):
-        '''Tile a squashed, variable batch size data tensor into Bxmax(NQ) tensor'''
-        B = len(NQ)
-        new = torch.empty((B,max(NQ),squashed.shape[-1]),dtype=squashed.dtype)
-        prev = 0
-        for i in range(B):
-            new[i,0:NQ[i],:] = squashed[prev:(prev+NQ[i]),:]
-            new[i,NQ[i]:,:] = nan_val 
-            prev += NQ[i]
-        return new
-    
-    def tile_np(self, squashed, NQ, nan_val=float('inf')):
-        '''Tile a squashed, variable batch size data tensor into Bxmax(NQ) tensor'''
-        B = len(NQ)
-        new = np.empty((B,max(NQ),squashed.shape[-1]),dtype=squashed.dtype)
-        prev = 0
-        for i in range(B):
-            new[i,0:NQ[i],:] = squashed[prev:(prev+NQ[i]),:]
-            new[i,NQ[i]:,:] = nan_val 
-            prev += NQ[i]
-        return new
-
-    def compute_bound(self, images, rot, NQ, L, images_tilt=None):
-        '''Compute the lower bound'''
-        A = self.eval_grid(images, rot, NQ, L, images_tilt) # B x Q
-        if L == self.Lmax: return A
-        if self.probabilistic:
-            B1 = self.compute_B1(images, L, images_tilt).unsqueeze(1) # Bx1
-            B2 = self.compute_B2(self.max_slice, L)  # 1
-        else:
-            B1 = B2 = 0
-        if images_tilt is not None: B2 *= 2
-        return A+B1+B2
-
-    # todo: clean up and rename this func
-    def keep_matrix(self, bound, Lstar, max_poses):
-        B,Q = bound.shape
-        keep = bound <= Lstar # B x Q array of 0/1s
-        NQ = keep.sum(1) # B, array of Nposes per batch element
-        if (NQ > max_poses).any():
-            # filter keep with percentile heuristic
-            vlog('Warning: More than {} poses below upper bound')
-            w = bound.argsort()[:,max_poses:]
-            keep[np.arange(B).repeat(Q-max_poses), w.contiguous().view(-1)] *= 0
-            NQ = keep.sum(1) # B, array of Nposes per batch element
-        if (NQ == 0).any():
-            #assert self.probabilistic # actually this can be hit bc of FP ulps
-            w = bound.argmin(-1)
-            keep[np.arange(B), w] = 1     
-            NQ = keep.sum(1) # B, array of Nposes per batch element
-        return keep, NQ
-       
+      
     def bound_base(self, bound, Lstar, max_poses=24):
         '''Helper function to filter next poses to try'''
         keep, NQ = self.keep_matrix(bound, Lstar, max_poses)
@@ -170,25 +218,30 @@ class BNBHomoRot:
         assert not self.decoder.training
         B = images.size(0)
         if self.probabilistic:
-            self.max_slice = self.estimate_max_slice() # where to put this?
+            self.update_uniform_slices(B)
         bound = self.compute_bound(images, self.base_rot, self.nbase, self.Lmin, images_tilt=images_tilt)
         Lstar = self.eval_grid(images, self.base_rot[torch.argmin(bound,1)], 1, self.Lmax, images_tilt=images_tilt) # expensive objective function
+        vlog(f"Lstar= {Lstar.squeeze()}")
         NQ, quat, grid_ind = self.bound_base(bound, Lstar)
-        k = int((self.Lmax-self.Lmin)/(niter-1))
+        #k = int((self.Lmax-self.Lmin)/(niter-1))
+        L = self.Lmin
         for iter_ in range(1,niter+1): # resolution level
-            L = min(self.Lmin + k*iter_, self.Lmax)
+            vlog(f"Iter {iter_} : poses kept= {NQ.cpu().numpy()}")
+            L = min(2 * L, self.Lmax)
             NQ, quat, grid_ind, quat_block, grid_ind_block = self.subdivide(NQ, quat, grid_ind, iter_)
             rot = lie_tools.quaternions_to_SO3(torch.tensor(quat))
             bound = self.compute_bound(images, rot, NQ, L, images_tilt=images_tilt) # Bxmax(NQ)
             min_i = torch.argmin(bound, 1)
             min_quat = quat_block[np.arange(B),min_i.cpu()]
             Lstar = self.eval_grid(images, lie_tools.quaternions_to_SO3(torch.tensor(min_quat)), 1, self.Lmax, images_tilt=images_tilt)
+            vlog(f"Lstar= {Lstar.squeeze()}")
             NQ, quat, grid_ind = self.bound(bound, Lstar, quat_block, grid_ind_block)
         return lie_tools.quaternions_to_SO3(torch.tensor(min_quat))
 
-class BNBHomo:
+class BNBHomo(BNBHomoBase):
     '''Branch and bound of rotation and translation for homogeneous reconstruction'''
-    def __init__(self, decoder, lattice, Lmin, Lmax, tilt=None, t_extent=5, t_ngrid=7):
+    def __init__(self, decoder, lattice, Lmin, Lmax, tilt=None, t_extent=5, t_ngrid=7, probabilistic=False):
+        super().__init__()
         self.decoder = decoder
         self.lattice = lattice
         self.base_quat = so3_grid.base_SO3_grid()
@@ -201,28 +254,13 @@ class BNBHomo:
         self.Lmin = Lmin
         self.Lmax = Lmax
         self.tilt = tilt
-
-    def compute_B1(self, images, L, images_tilt=None):
-        mask = self.lattice.get_circular_mask(self.Lmax) - self.lattice.get_circular_mask(L)
-        power = images.view(images.size(0),-1)[:,mask].pow(2).sum(-1)
-        if images_tilt:
-            power += images_tilt.view(images_tilt.size(0),-1)[:,mask].pow(2).sum(-1)
-        return power
-
-    def compute_B2(self, max_slice, L):
-        mask = self.lattice.get_circular_mask(self.Lmax) - self.lattice.get_circular_mask(L)
-        power = max_slice[mask].pow(2).sum()
-        B2 = -power - 4*(power)**.5
-        return B2
-
-    def estimate_max_slice(self):
-        rot = self.base_rot[::24] # 48 slices
-        y_hat = self.decoder(self.lattice.coords @ rot)
-        return y_hat[y_hat.pow(2).sum(-1).argmax()] # YX
+        self.probabilistic = probabilistic
+        self.nkeptposes = 24
+        self.Lmax_mask = self.lattice.get_circular_mask(self.Lmax)
 
     def eval_grid(self, images, rot, NQ, L, images_tilt=None):
         '''
-        images: B x T x Npix x 2
+        images: B x T x Npix 
         rot: (NxQ) x 3 x 3 rotation matrics (N=1 for base grid, N=B for incremental grid)
         NQ: number of slices evaluated for each image
         L: radius of fourier components to evaluate
@@ -234,7 +272,7 @@ class BNBHomo:
         def compute_err(images, rot):
             y_hat = self.decoder(coords @ rot)
             y_hat = y_hat.view(-1,1,NQ,YX) #1x1xQxYX for base grid, Bx1x8xYXx2 for incremental grid
-            images = images.unsqueeze(2) # BxTx1xYX
+            images = images[...,mask].unsqueeze(2) # BxTx1xYX
             err = torch.sum((images-y_hat).pow(2),-1) # BxTxQ
             return err
         err = compute_err(images, rot)
@@ -243,18 +281,18 @@ class BNBHomo:
             err += err_tilt
         return err # BxTxQ
 
-    def shift_images(self, images, shifts, L):
+    def shift_images(self, images, shifts):
         '''
         images: B x NY x NX x 2
         shifts: B x T x 2 or B x 2
-        Returns: B x T x Npix x 2 at resolution L
+        Returns: B x T x Npix x 2
         '''
         B = images.size(0)
-        mask = self.lattice.get_circular_mask(L)
-        return self.lattice.translate_ht(images.view(B,-1)[:,mask], shifts, mask)
+        #mask = self.lattice.get_circular_mask(L)
+        #return self.lattice.translate_ht(images.view(B,-1)[:,mask], shifts, mask)
+        return self.lattice.translate_ht(images.view(B,-1), shifts)
 
-    def tile(self, squashed, NQ, nan_val=float('inf')):
-        '''Tile a squashed, variable batch size data tensor into Bxmax(NQ) tensor'''
+    '''def tile(self, squashed, NQ, nan_val=float('inf')):
         B = len(NQ)
         new = torch.empty(B,max(NQ),*squashed.shape[1:],dtype=squashed.dtype)
         prev = 0
@@ -263,9 +301,9 @@ class BNBHomo:
             new[i,NQ[i]:,:] = nan_val 
             prev += NQ[i]
         return new
- 
-    def subdivide(self, quat, q_ind, t_ind, curr_res):
-        # get neighboring SO3 elements at next resolution level -- todo: make this an array operation
+    ''' 
+
+    def subdivide(self, quat, q_ind, t_ind, curr_res):    # get neighboring SO3 elements at next resolution level -- todo: make this an array operation
         neighbors = [so3_grid.get_neighbor(quat[i], q_ind[i][0], q_ind[i][1], curr_res) for i in range(len(quat))]
         quat = np.array([x[0] for x in neighbors]) # Bx8x4
         q_ind = np.array([x[1] for x in neighbors]) # Bx8x2
@@ -280,7 +318,7 @@ class BNBHomo:
         t_ind = np.repeat(t_ind,8,1) # Bx4x2 -> Bx32x2
         return quat, q_ind, rot, trans, t_ind
 
-    def keep_matrix(self, bound, Lstar, max_poses, probabilistic):
+    '''def keep_matrix(self, bound, Lstar, max_poses, probabilistic):
         if probabilistic: raise NotImplementedError
         B = bound.shape[0]
         bound = bound.view(B,-1)
@@ -296,28 +334,27 @@ class BNBHomo:
                 vlog(Np)
             w = bound.argmin(1)
             keep[np.arange(B),w] = 1
-        return keep
+        return keep'''
             
-    def opt_theta_trans(self, images,  images_tilt=None, niter=5, probabilistic=False):
-        if probabilistic: # bound += B1 + B2
-            raise NotImplementedError
+    def opt_theta_trans(self, images,  images_tilt=None, niter=5):
         B = images.size(0)
         assert not self.decoder.training
-        if probabilistic:
-            self.max_slice = self.estimate_max_slice()
+        if self.probabilistic:
+            self.update_uniform_slices(B)
         # todo: check shift images
-        bound = self.eval_grid(self.shift_images(images, self.base_shifts, self.Lmin), 
-                                        self.base_rot, self.nbase, self.Lmin, 
-                                        images_tilt=self.shift_images(images_tilt, self.base_shifts, self.Lmin) if images_tilt is not None else None) # BxTxQ
+        bound = self.compute_bound(self.shift_images(images, self.base_shifts), 
+                                        self.base_rot , self.nbase, self.Lmin, 
+                                        images_tilt=self.shift_images(images_tilt, self.base_shifts) if images_tilt is not None else None) # BxTxQ
         mini = torch.argmin(bound.view(B,-1),1)
         qi = mini % self.nbase
         ti = mini // self.nbase
         min_trans = self.base_shifts[ti] # unsqueeze by 1 to get right dim for translate_ht func
         min_rot = self.base_rot[qi]
-        Lstar = self.eval_grid(self.shift_images(images, min_trans.unsqueeze(1), self.Lmax),
-                                    min_rot, 1, self.Lmax,
-                                    images_tilt = self.shift_images(images_tilt, min_trans.unsqueeze(1), self.Lmax) if images_tilt is not None else None)
-        keep = self.keep_matrix(bound, Lstar.view(B,1), 24, probabilistic) # B
+        Lstar = self.eval_grid(self.shift_images(images, min_trans.unsqueeze(1)),
+                                    min_rot  , 1, self.Lmax,
+                                    images_tilt = self.shift_images(images_tilt, min_trans.unsqueeze(1)) if images_tilt is not None else None)
+        # vlog(f"Lstar= {Lstar.squeeze()}")
+        keep = self.keep_matrix(bound, Lstar.view(B,1), self.nkeptposes) # B
         keep = keep.view(B,len(self.base_shifts), self.nbase) # BxTxQ
         Np = keep.sum((-1,-2)) # per image # todo: filter keep by Np to max_poses
         w = keep.nonzero().cpu() # sum(Np) x 3
@@ -330,23 +367,25 @@ class BNBHomo:
         t_ind = np.stack((xi,yi),1) #Np x 2
         batch_ind = w[:,0]
 
-        k = int((self.Lmax-self.Lmin)/(niter-1))
+        L = self.Lmin
+        #k = int((self.Lmax-self.Lmin)/(niter-1))
         for iter_ in range(1,niter+1):
-            vlog(iter_); vlog(Np)
-            L = min(self.Lmin +k*iter_, self.Lmax)
+            if Np.max() > 1:
+                vlog(f"Iter {iter_} : poses kept= {Np.cpu().numpy()}")
+            L = min(2 * L, self.Lmax)
             quat, q_ind, rot, trans, t_ind = self.subdivide(quat, q_ind, t_ind, iter_)
             batch_ind4 = batch_ind.unsqueeze(1).repeat(1,4).view(-1) # repeat each element 4 times
-            bound = self.eval_grid(self.shift_images(images[batch_ind4], trans.unsqueeze(1), L).view(len(batch_ind),4,-1), rot, 8, L,
-                                        images_tilt=self.shift_images(images_tilt[batch_ind4],trans.unsqueeze(1),L).view(len(batch_ind),4,-1) if images_tilt is not None else None) # sum(NP),4x8
+            bound = self.compute_bound(self.shift_images(images[batch_ind4], trans.unsqueeze(1)).view(len(batch_ind),4,-1), rot, 8, L,
+                                        images_tilt=self.shift_images(images_tilt[batch_ind4],trans.unsqueeze(1)).view(len(batch_ind),4,-1) if images_tilt is not None else None) # sum(NP),4x8
             bound2 = self.tile(bound, Np) # Bxmax(Np)x4x8
             min_i = bound2.view(B,-1).argmin(1) 
             min_i[1:] += 32*Np.cumsum(0)[0:-1]
             min_rot = rot[min_i//32*8+min_i%8]
             min_trans = trans[min_i/8]
-            Lstar = self.eval_grid(self.shift_images(images, min_trans.unsqueeze(1), self.Lmax), min_rot, 1, self.Lmax,
-                                    images_tilt=self.shift_images(images_tilt, min_trans.unsqueeze(1), self.Lmax) if images_tilt is not None else None) # Bx1x1
-
-            keep = self.keep_matrix(bound2, Lstar.view(B,1), bound2.shape[1], probabilistic) # Bx(max(Np)*32)
+            Lstar = self.eval_grid(self.shift_images(images, min_trans.unsqueeze(1)), min_rot, 1, self.Lmax,
+                                    images_tilt=self.shift_images(images_tilt, min_trans.unsqueeze(1)) if images_tilt is not None else None) # Bx1x1
+            # vlog(f"Lstar= {Lstar.squeeze()}")
+            keep = self.keep_matrix(bound2, Lstar.view(B,1), self.nkeptposes) # Bx(max(Np)*32)
             w = keep.nonzero() # sum(Np) x 2
             batch_ind = w[:,0]
             tmp = 32*Np.cumsum(0)
@@ -390,7 +429,7 @@ class BNBHet:
         return B2
 
     def estimate_max_slice(self):
-        rot = self.base_rot[::24] # 48 slices
+        rot = self.base_rot[::self.nkeptposes] # 48 slices
         y_hat = self.model.decoder(self.lattice.coords @ rot)
         return y_hat[y_hat.pow(2).sum(-1).argmax()] # YX
 

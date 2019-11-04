@@ -181,7 +181,7 @@ TODO: Document volume generation and analysis scripts
 
 ## Fully unsupervised reconstruction
 
-Please reach out to Ellen Zhong (zhonge[at]mit[dot]edu) if you'd like to collaborate on reconstruction of highly heterogeneous datasets.
+Please reach out to Ellen Zhong (zhonge[at]mit[dot]edu) if you'd like to collaborate on reconstruction of highly heterogeneous datasets where a consensus reconstruction is unavailable.  
 
 ## Contact
 

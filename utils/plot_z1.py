@@ -55,7 +55,7 @@ def main(args):
         np.savetxt(args.out_s, xd)
     if args.ylim:
         plt.ylim(args.ylim)
-    plt.xlabel('ground truth latent')
+    plt.xlabel('image')
     plt.ylabel('latent encoding')
     plt.legend(loc='best')
     if args.o: 

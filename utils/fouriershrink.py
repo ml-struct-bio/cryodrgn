@@ -55,8 +55,10 @@ def main(args):
         newft = oldft[start:stop,start:stop,start:stop]
         log(newft.shape)
         new = fft.ihtn_center(newft).astype(np.float32)
+        log('Saving {}'.format(args.o))
+        mrc.write(args.o,new)
 
-    if args.chunk is None:
+    elif args.chunk is None:
         new = []
         for img in old:
             oldft = fft.ht2_center(img.get()).astype(np.float32)

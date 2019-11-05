@@ -1,4 +1,4 @@
-# :snowflake::dragon:cryoDRGN: Deep Reconstructing Generative Networks for cryo-EM heterogeneous reconstruction
+# :snowflake::dragon: cryoDRGN: Deep Reconstructing Generative Networks for cryo-EM heterogeneous reconstruction
 
 CryoDRGN is a neural network based algorithm for heterogeneous cryo-EM reconstruction. In particular, the method models a *continuous* distribution over 3D structures by using a neural network based representation for the volume.
 
@@ -19,7 +19,7 @@ Until the cryoDRGN conda package is available, for now, git clone the source cod
     conda install -c conda-forge umap-learn
     pip install --user healpy
 
-## Quickstart -- heterogeneous reconstruction from consensus alignments
+## Quickstart: heterogeneous reconstruction with consensus alignments
 
 ### 1. Preprocess image stack
 

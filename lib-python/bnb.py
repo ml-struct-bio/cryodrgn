@@ -178,7 +178,8 @@ class BNBHomoRot(BNBHomoBase):
       
     def bound_base(self, bound, Lstar, max_poses=24):
         '''Helper function to filter next poses to try'''
-        keep, NQ = self.keep_matrix(bound, Lstar, max_poses)
+        keep = self.keep_matrix(bound, Lstar, max_poses)
+        NQ = keep.sum(1)
         ### get squashed list of all poses to keep ###
         # keep.nonzero() returns Nx2 with N 2D indices of nonzero elements
         # we want the second index since that tells us the ind of the quat to keep
@@ -193,7 +194,8 @@ class BNBHomoRot(BNBHomoBase):
     def bound(self, bound, Lstar, quat_block, grid_ind_block):
         '''Helper function to filter next poses to try'''
         max_poses = int(bound.shape[1]*.125)
-        keep, NQ = self.keep_matrix(bound, Lstar, max_poses)
+        keep = self.keep_matrix(bound, Lstar, max_poses)
+        NQ = keep.sum(1)
         ### get squashed list of all poses to keep ###
         w = np.where(keep.cpu())
         quat = quat_block[w]
@@ -223,11 +225,12 @@ class BNBHomoRot(BNBHomoBase):
         Lstar = self.eval_grid(images, self.base_rot[torch.argmin(bound,1)], 1, self.Lmax, images_tilt=images_tilt) # expensive objective function
         vlog(f"Lstar= {Lstar.squeeze()}")
         NQ, quat, grid_ind = self.bound_base(bound, Lstar)
-        #k = int((self.Lmax-self.Lmin)/(niter-1))
-        L = self.Lmin
+        k = int((self.Lmax-self.Lmin)/(niter-1))
+        #L = self.Lmin
         for iter_ in range(1,niter+1): # resolution level
             vlog(f"Iter {iter_} : poses kept= {NQ.cpu().numpy()}")
-            L = min(2 * L, self.Lmax)
+            #L = min(2 * L, self.Lmax)
+            L = min(self.Lmin +k*iter_, self.Lmax)
             NQ, quat, grid_ind, quat_block, grid_ind_block = self.subdivide(NQ, quat, grid_ind, iter_)
             rot = lie_tools.quaternions_to_SO3(torch.tensor(quat))
             bound = self.compute_bound(images, rot, NQ, L, images_tilt=images_tilt) # Bxmax(NQ)
@@ -367,12 +370,13 @@ class BNBHomo(BNBHomoBase):
         t_ind = np.stack((xi,yi),1) #Np x 2
         batch_ind = w[:,0]
 
-        L = self.Lmin
-        #k = int((self.Lmax-self.Lmin)/(niter-1))
+        #L = self.Lmin
+        k = int((self.Lmax-self.Lmin)/(niter-1))
         for iter_ in range(1,niter+1):
             if Np.max() > 1:
                 vlog(f"Iter {iter_} : poses kept= {Np.cpu().numpy()}")
-            L = min(2 * L, self.Lmax)
+            #L = min(2 * L, self.Lmax)
+            L = min(self.Lmin +k*iter_, self.Lmax)
             quat, q_ind, rot, trans, t_ind = self.subdivide(quat, q_ind, t_ind, iter_)
             batch_ind4 = batch_ind.unsqueeze(1).repeat(1,4).view(-1) # repeat each element 4 times
             bound = self.compute_bound(self.shift_images(images[batch_ind4], trans.unsqueeze(1)).view(len(batch_ind),4,-1), rot, 8, L,

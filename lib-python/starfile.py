@@ -5,6 +5,7 @@ Lightweight parser for starfiles
 import numpy as np
 import pandas as pd
 from datetime import datetime as dt
+import os
 
 class Starfile():
     
@@ -61,3 +62,41 @@ class Starfile():
             f.write(' '.join(self.df.loc[i]))
             f.write('\n')
         #f.write('\n'.join([' '.join(self.df.loc[i]) for i in range(len(self.df))]))
+
+    def get_particles(self, D, datadir=None, lazy=True):
+        '''
+        Return particles of the starfile
+
+        Input:
+            D (int): Image size along one dimension (npixels)
+            datadir (str): Overwrite base directories of particle .mrcs
+            If lazy=True, returns list of LazyImage instances, else np.array
+        '''
+        particles = self.df['_rlnImageName']
+
+        # format is index@path_to_mrc
+        particles = [x.split('@') for x in particles]
+        ind = [int(x[0])-1 for x in particles] # convert to 0-based indexing
+        if datadir is not None:
+            mrcs1 = ['{}/{}'.format(datadir, os.path.basename(x[1])) for x in particles]
+            mrcs2 = ['{}/{}'.format(datadir, x[1]) for x in particles]
+            try:
+                for path in set(mrcs1):
+                    assert os.path.exists(path)
+                mrcs = mrcs1
+            except:
+                for path in set(mrcs2):
+                    assert os.path.exists(path)
+                mrcs = mrcs2
+        else:
+            mrcs = [x[1] for x in particles]
+            for path in set(mrcs):
+                assert os.path.exists(path)
+
+        from mrc import LazyImage
+        dtype = np.float32
+        stride = np.float32().itemsize*D*D
+        dataset = [LazyImage(f, (D,D), dtype, 1024+ii*stride) for ii,f in zip(ind, mrcs)]
+        if not lazy:
+            dataset = np.array([x.get() for x in dataset])
+        return dataset

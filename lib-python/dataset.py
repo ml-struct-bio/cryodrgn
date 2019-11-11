@@ -12,12 +12,14 @@ class LazyMRCData(data.Dataset):
     '''
     Class representing an .mrcs stack file -- images loaded on the fly
     '''
-    def __init__(self, mrcfile, norm=None, keepreal=False, invert_data=False, window=True):
+    def __init__(self, mrcfile, norm=None, keepreal=False, invert_data=False, ind=None, window=True):
         assert not keepreal, 'Not implemented error'
         if mrcfile.endswith('.txt'):
             particles = mrc.parse_mrc_list(mrcfile, lazy=True)
         else:
             particles, _, _ = mrc.parse_mrc(mrcfile, lazy=True)
+        if ind is not None:
+            particles = [particles[x] for x in ind]
         N = len(particles)
         ny, nx = particles[0].get().shape
         assert ny == nx, "Images must be square"

@@ -56,7 +56,10 @@ def main(args):
         os.makedirs(os.path.dirname(args.o))
 
     t1 = time.time()    
-    images, _ , _ = mrc.parse_mrc(args.mrcs,lazy=True)
+    if args.mrcs.endswith('.txt'):
+        images = mrc.parse_mrc_list(args.mrcs, lazy=True)
+    else:
+        images, _ , _ = mrc.parse_mrc(args.mrcs,lazy=True)
     N = len(images)
 
     if args.tilt is not None:

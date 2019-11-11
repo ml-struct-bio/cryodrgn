@@ -5,6 +5,7 @@ from torch.utils import data
 import fft
 import mrc
 import utils
+import starfile
 
 log = utils.log
 
@@ -12,10 +13,12 @@ class LazyMRCData(data.Dataset):
     '''
     Class representing an .mrcs stack file -- images loaded on the fly
     '''
-    def __init__(self, mrcfile, norm=None, keepreal=False, invert_data=False, ind=None, window=True):
+    def __init__(self, mrcfile, norm=None, keepreal=False, invert_data=False, ind=None, window=True, datadir=None):
         assert not keepreal, 'Not implemented error'
         if mrcfile.endswith('.txt'):
             particles = mrc.parse_mrc_list(mrcfile, lazy=True)
+        elif mrcfile.endswith('.star'):
+            particles = starfile.Starfile.load(mrcfile).get_particles(datadir=datadir, lazy=True)
         else:
             particles, _, _ = mrc.parse_mrc(mrcfile, lazy=True)
         if ind is not None:
@@ -60,7 +63,6 @@ class LazyMRCData(data.Dataset):
     def __getitem__(self, index):
         return self.get(index), index
 
-
 def window_mask(D, in_rad, out_rad):
     assert D % 2 == 0
     x0, x1 = np.meshgrid(np.linspace(-1, 1, D, endpoint=False, dtype=np.float32), 
@@ -73,9 +75,11 @@ class MRCData(data.Dataset):
     '''
     Class representing an .mrcs stack file
     '''
-    def __init__(self, mrcfile, norm=None, keepreal=False, invert_data=False, ind=None, window=True):
+    def __init__(self, mrcfile, norm=None, keepreal=False, invert_data=False, ind=None, window=True, datadir=None):
         if mrcfile.endswith('.txt'):
             particles_real = mrc.parse_mrc_list(mrcfile)
+        elif mrcfile.endswith('.star'):
+            particles_real = starfile.Starfile.load(mrcfile).get_particles(datadir=datadir, lazy=False)
         else:
             particles_real, _, _ = mrc.parse_mrc(mrcfile)
         if ind is not None:

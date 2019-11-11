@@ -7,6 +7,9 @@ import pandas as pd
 from datetime import datetime as dt
 import os
 
+import mrc
+from mrc import LazyImage
+
 class Starfile():
     
     def __init__(self, headers, df):
@@ -63,13 +66,13 @@ class Starfile():
             f.write('\n')
         #f.write('\n'.join([' '.join(self.df.loc[i]) for i in range(len(self.df))]))
 
-    def get_particles(self, D, datadir=None, lazy=True):
+    def get_particles(self, datadir=None, lazy=True):
         '''
         Return particles of the starfile
 
         Input:
-            D (int): Image size along one dimension (npixels)
             datadir (str): Overwrite base directories of particle .mrcs
+                Tries both substituting the base path and prepending to the path
             If lazy=True, returns list of LazyImage instances, else np.array
         '''
         particles = self.df['_rlnImageName']
@@ -93,7 +96,7 @@ class Starfile():
             for path in set(mrcs):
                 assert os.path.exists(path)
 
-        from mrc import LazyImage
+        D = mrc.parse_header(mrcs[0]).nx # image size along one dimension in pixels
         dtype = np.float32
         stride = np.float32().itemsize*D*D
         dataset = [LazyImage(f, (D,D), dtype, 1024+ii*stride) for ii,f in zip(ind, mrcs)]

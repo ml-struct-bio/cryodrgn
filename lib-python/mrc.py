@@ -118,6 +118,11 @@ def parse_mrc_list(txtfile, lazy=False):
         particles = [img for x in lines for img in parse_mrc(x.strip(), lazy=True)[0]]
     return particles
 
+def parse_header(fname):
+    fh = open(fname, 'rb')
+    header = MRCHeader._make(header_struct.unpack(fh.read(1024)))
+    return header
+
 def parse_mrc(fname, lazy=False):
     ## parse the header
     fh = open(fname,'rb')

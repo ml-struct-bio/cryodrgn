@@ -21,7 +21,7 @@ import ctf
 
 from pose import PoseTracker
 from lattice import Lattice
-from models import PositionalDecoder, FTPositionalDecoder, FTSliceDecoder, ResidLinearMLP
+import models
 
 log = utils.log
 vlog = utils.vlog
@@ -119,17 +119,8 @@ def main(args):
     # instantiate model
     if args.pe_type != 'none': assert args.l_extent == 0.5
     lattice = Lattice(D, extent=args.l_extent)
-    if args.pe_type == 'none':
-        if args.domain == 'fourier':
-            model = FTSliceDecoder(3, D, args.layers, args.dim, nn.ReLU)
-        else:
-            model = ResidLinearMLP(3, args.layers, args.dim, 1, nn.ReLU)
-            ResidLinearMLP.eval_volume = PositionalDecoder.eval_volume # ew, fixme
-    else:
-        if args.domain == 'fourier':
-            model = FTPositionalDecoder(3, D, args.layers, args.dim, nn.ReLU, enc_type=args.pe_type)
-        else:
-            model = PositionalDecoder(3, D, args.layers, args.dim, nn.ReLU, enc_type=args.pe_type)
+
+    model = models.get_decoder(3, D, args.layers, args.dim, args.domain, args.pe_type, nn.ReLU)
     log(model)
     log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
 

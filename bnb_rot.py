@@ -22,7 +22,7 @@ import lie_tools
 
 from lattice import Lattice
 from bnb import BNBHomo, BNBHomoRot
-from models import FTPositionalDecoder, PositionalDecoder
+import models
 
 log = utils.log
 vlog = utils.vlog
@@ -69,7 +69,7 @@ def parse_args():
     group = parser.add_argument_group('Network Architecture')
     group.add_argument('--layers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--dim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
-    group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf'), default='geom_lowf', help='Type of positional encoding')
+    group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf','none'), default='geom_lowf', help='Type of positional encoding')
     group.add_argument('--domain', choices=('hartley','fourier'), default='hartley')
 
     return parser
@@ -197,10 +197,7 @@ def main(args):
     Nimg = data.N
 
     lattice = Lattice(D, extent=0.5)
-    if args.domain == 'fourier':
-        model = FTPositionalDecoder(3, D, args.layers, args.dim, nn.ReLU, enc_type=args.pe_type)
-    else:
-        model = PositionalDecoder(3, D, args.layers, args.dim, nn.ReLU, enc_type=args.pe_type)
+    model = models.get_decoder(3, D, args.layers, args.dim, args.domain, args.pe_type, nn.ReLU)
 
     if args.no_trans:
         bnb = BNBHomoRot(model, lattice, args.l_start, args.l_end, tilt, args.probabilistic)

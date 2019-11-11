@@ -50,21 +50,7 @@ class HetOnlyVAE(nn.Module):
         else:
             raise RuntimeError('Encoder mode {} not recognized'.format(encode_mode))
         self.encode_mode = encode_mode
-        if enc_type == 'none':
-            model = ResidLinearMLP if domain == 'hartley' else FTSliceDecoder
-            self.decoder = model(3+zdim,
-                            lattice.D, # lattice size
-                            players, # nlayers
-                            pdim, # hidden dim
-                            nn.ReLU)
-        else:
-            model = PositionalDecoder if domain == 'hartley' else FTPositionalDecoder 
-            self.decoder = model(3+zdim, # input dim
-                            lattice.D, # lattice size
-                            players, # nlayers
-                            pdim, # hidden dim
-                            nn.ReLU,
-                            enc_type=enc_type) #R3 -> R1
+        self.decoder = get_decoder(3+zdim, lattice.D, players, pdim, domain, enc_type, nn.ReLU)
    
     def reparameterize(self, mu, logvar):
         if not self.training:
@@ -97,6 +83,19 @@ class HetOnlyVAE(nn.Module):
         '''
         return self.decoder(self.cat_z(coords,z))
 
+
+def get_decoder(in_dim, D, layers, dim, domain, enc_type, activation=nn.ReLU):
+    if enc_type == 'none':
+        if domain == 'hartley':
+            model = ResidLinearMLP(in_dim, layers, dim, 1, activation)
+            ResidLinearMLP.eval_volume = PositionalDecoder.eval_volume # EW FIXME
+        else:
+            model = FTSliceDecoder(in_dim, D, layers, dim, activation)
+        return model
+    else:
+        model = PositionalDecoder if domain == 'hartley' else FTPositionalDecoder 
+        return model(in_dim, D, layers, dim, activation, enc_type=enc_type)
+ 
 class PositionalDecoder(nn.Module):
     def __init__(self, in_dim, D, nlayers, hidden_dim, activation, enc_type='linear_lowf'):
         super(PositionalDecoder, self).__init__()
@@ -608,6 +607,7 @@ class ResidLinear(nn.Module):
     def __init__(self, nin, nout):
         super(ResidLinear, self).__init__()
         self.linear = nn.Linear(nin, nout)
+        #self.linear = nn.utils.weight_norm(nn.Linear(nin, nout))
 
     def forward(self, x):
         z = self.linear(x) + x

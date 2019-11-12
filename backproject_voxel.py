@@ -17,6 +17,7 @@ import fft
 from pose import PoseTracker
 from lattice import Lattice
 import dataset
+import ctf
 
 log = utils.log
 
@@ -32,6 +33,7 @@ def parse_args():
     parser.add_argument('--first', type=int, help='Backproject the first N images')
     parser.add_argument('--tilt', help='Tilt series .mrcs image stack')
     parser.add_argument('--tilt-deg', type=float, default=45, help='Right-handed x-axis tilt offset in degrees (default: %(default)s)')
+    parser.add_argument('--ctf', metavar='pkl', type=os.path.abspath, help='CTF parameters (.pkl) if particle stack is not phase flipped')
     return parser
 
 def add_slice(V, counts, ff_coord, ff, D):
@@ -82,6 +84,14 @@ def main(args):
 
     posetracker = PoseTracker.load(args.poses, Nimg, None, args.tscale, None)
 
+    if args.ctf is not None:
+        log('Loading ctf params from {}'.format(args.ctf))
+        ctf_params = utils.load_pkl(args.ctf)
+        assert ctf_params.shape == (Nimg, 7)
+        ctf.print_ctf_params(ctf_params[0])
+        ctf_params = torch.tensor(ctf_params)
+    else: ctf_params = None
+
     V = torch.zeros((D,D,D))
     counts = torch.zeros((D,D,D))
     
@@ -102,6 +112,10 @@ def main(args):
             ff, ff_tilt = ff # EW
         ff = torch.tensor(ff)
         ff = ff.view(-1)[mask]
+        if ctf_params is not None:
+            freqs = lattice.freqs2d/ctf_params[ii,0]
+            c = ctf.compute_ctf(freqs, *ctf_params[ii,1:]).view(-1)[mask]
+            ff *= c.sign()
         if t is not None:
             ff = lattice.translate_ht(ff.view(1,-1),t.view(1,1,2), mask)
         ff_coord = lattice.coords[mask] @ r
@@ -111,6 +125,8 @@ def main(args):
         if args.tilt is not None:
             ff_tilt = torch.tensor(ff_tilt)
             ff_tilt = ff_tilt.view(-1)[mask]
+            if ff_tilt is not None:
+                ff_tilt *= c.sign()
             if t is not None:
                 ff_tilt = lattice.translate_ht(ff_tilt.view(1,-1), t.view(1,1,2), mask)
             ff_coord = lattice.coords[mask] @ tilt @ r

@@ -32,8 +32,6 @@ def parse_args():
     parser.add_argument('--poses', nargs='*', required=True, help='Image rotations and optionally translations (.pkl)')
     parser.add_argument('--tscale', type=float, default=1.0)
     parser.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: mean, std of dataset)')
-    parser.add_argument('--invert-data', action='store_true', help='Invert data sign')
-    parser.add_argument('--window', action='store_true', help='Real space windowing of dataset')
     parser.add_argument('--ctf', metavar='pkl', type=os.path.abspath, help='CTF parameters (.pkl)')
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
     parser.add_argument('--load', type=os.path.abspath, help='Initialize training from a checkpoint')
@@ -41,22 +39,28 @@ def parse_args():
     parser.add_argument('--log-interval', type=int, default=1000, help='Logging interval in N_IMGS (default: %(default)s)')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
     parser.add_argument('--seed', type=int, default=np.random.randint(0,100000), help='Random seed')
-    parser.add_argument('--lazy', action='store_true', help='Lazy loading if full dataset is too large to fit in memory')
+
+    group = parser.add_argument_group('Dataset loading')
+    group.add_argument('--invert-data', action='store_true', help='Invert data sign')
+    group.add_argument('--window', action='store_true', help='Real space windowing of dataset')
+    group.add_argument('--lazy', action='store_true', help='Lazy loading if full dataset is too large to fit in memory')
 
     group = parser.add_argument_group('Training parameters')
     group.add_argument('-n', '--num-epochs', type=int, default=10, help='Number of training epochs (default: %(default)s)')
     group.add_argument('-b','--batch-size', type=int, default=10, help='Minibatch size (default: %(default)s)')
     group.add_argument('--wd', type=float, default=0, help='Weight decay in Adam optimizer (default: %(default)s)')
     group.add_argument('--lr', type=float, default=1e-4, help='Learning rate in Adam optimizer (default: %(default)s)')
+
+    group = parser.add_argument_group('Pose SGD')
     group.add_argument('--do-pose-sgd', action='store_true', help='Refine poses')
-    group.add_argument('--pretrain', type=int, default=5, help='Number of epochs with fixed poses before pose SGD')
-    group.add_argument('--emb-type', choices=('s2s2','quat'), default='s2s2', help='SO(3) embedding type for pose SGD')
+    group.add_argument('--pretrain', type=int, default=5, help='Number of epochs with fixed poses before pose SGD (default: %(default)s)')
+    group.add_argument('--emb-type', choices=('s2s2','quat'), default='quat', help='SO(3) embedding type for pose SGD (default: %(default)s)')
 
     group = parser.add_argument_group('Network Architecture')
     group.add_argument('--layers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--dim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
-    group.add_argument('--l-extent', type=float, default=0.5, help='Coordinate lattice size (default: %(default)s)')
-    group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf','none'), default='geom_lowf', help='Type of positional encoding')
+    group.add_argument('--l-extent', type=float, default=0.5, help='Coordinate lattice size (if not using positional encoding) (default: %(default)s)')
+    group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf','none'), default='geom_lowf', help='Type of positional encoding (default: %(default)s)')
     group.add_argument('--domain', choices=('hartley','fourier'), default='fourier', help='Volume decoder representation (default: %(default)s)')
     return parser
 

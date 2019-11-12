@@ -8,17 +8,22 @@ import sys, os
 import time
 import pickle
 
+import torch
+
 sys.path.insert(0,'{}/lib-python'.format(os.path.dirname(os.path.abspath(__file__))))
 import utils
 import mrc
 import fft
+from pose import PoseTracker
+from lattice import Lattice
+import dataset
 
 log = utils.log
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mrcs', help='Input .mrcs image stack')
-    parser.add_argument('pkl', help='Rotation matrices or Euler angles (EMAN convention)')
+    parser.add_argument('--poses', type=os.path.abspath, nargs='*', required=True, help='Image rotations and optionally translations (.pkl)')
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Output .mrc file')
     parser.add_argument('--invert-data', action='store_true')
     parser.add_argument('--indices',help='Indices to iterate over (pkl)')
@@ -31,14 +36,13 @@ def parse_args():
 
 def add_slice(V, counts, ff_coord, ff, D):
     d2 = int(D/2)
-    xf, yf, zf = ff_coord.astype(int) # floor
-    xc, yc, zc = np.ceil(ff_coord).astype(int) # ceiling
+    ff_coord = ff_coord.transpose(0,1)
+    xf, yf, zf = ff_coord.floor().long()
+    xc, yc, zc = ff_coord.ceil().long()
     def add_for_corner(xi,yi,zi):
-        #f = (xi < 128) * (xi >= -128) * (yi < 128) * (yi >= -128) * (zi < 128) * (zi >= -128)
-        dist = np.array([xi,yi,zi]) - ff_coord
-        w = 1 - np.sum(dist**2, axis=0)**.5
+        dist = torch.stack([xi,yi,zi]).float() - ff_coord
+        w = 1 - dist.pow(2).sum(0).pow(.5)
         w[w<0]=0
-        #w = np.exp(-np.sum(dist**2,axis=0)/2/.05)/(np.pi*2*.05)**1.5 # pdf of 3d gaussian with covariance diag(0.05)
         V[(zi+d2,yi+d2,xi+d2)] += w*ff
         counts[(zi+d2,yi+d2,xi+d2)] += w
     add_for_corner(xf,yf,zf)
@@ -52,88 +56,73 @@ def add_slice(V, counts, ff_coord, ff, D):
     return V, counts
 
 def main(args):
+    t1 = time.time()    
+    log(args)
     if not os.path.exists(os.path.dirname(args.o)):
         os.makedirs(os.path.dirname(args.o))
 
-    t1 = time.time()    
-    if args.mrcs.endswith('.txt'):
-        images = mrc.parse_mrc_list(args.mrcs, lazy=True)
+    ## set the device
+    use_cuda = torch.cuda.is_available()
+    device = torch.device('cuda' if use_cuda else 'cpu')
+    log('Use cuda {}'.format(use_cuda))
+    if use_cuda:
+        torch.set_default_tensor_type(torch.cuda.FloatTensor)
+
+    # load the particles
+    if args.tilt is None:
+        data = dataset.LazyMRCData(args.mrcs, norm=(0,1), invert_data=args.invert_data)
+        tilt = None
     else:
-        images, _ , _ = mrc.parse_mrc(args.mrcs,lazy=True)
-    N = len(images)
+        data = dataset.TiltMRCData(args.mrcs, args.tilt, norm=(0,1), invert_data=args.invert_data)
+        tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32))
+    D = data.D
+    Nimg = data.N
 
-    if args.tilt is not None:
-        images_tilt, _, _ = mrc.parse_mrc(args.tilt,lazy=True)
-        assert len(images) == len(images_tilt)
-        assert images[0].get().shape == images_tilt[0].get().shape
-        tilt = utils.xrot(args.tilt_deg)
+    lattice = Lattice(D, extent=D//2)
 
+    posetracker = PoseTracker.load(args.poses, Nimg, None, args.tscale, None)
 
-    rot = utils.load_pkl(args.pkl)
-    if len(rot.shape) == 2:
-        log('Converting poses from EMAN euler angles to rotation matrices')
-        rot = np.array([utils.R_from_eman(*x) for x in rot])
-
-    if args.trans:
-        trans = utils.load_pkl(args.trans)
-        if args.tscale is not None:
-            log('Scaling translations by {}'.format(args.tscale))
-            trans *= args.tscale
-    else:
-        trans = None
-
-    n, m = images[0].get().shape
-    log('Loaded {} {}x{} images'.format(N,n,m))
-    assert n == m, "Image dimensions must be square"
-    D = n
-
-    V = np.zeros((D,D,D),dtype=complex)
-    counts = np.zeros((D,D,D))
-
-    xx,yy = np.meshgrid(np.arange(-D/2,D/2),np.arange(-D/2,D/2))
-    zz = np.zeros(xx.shape)
-    COORD = np.array([xx.ravel(), yy.ravel(), zz.ravel()])
-    MASK = np.where(np.sum(COORD**2,axis=0)**.5 <=(D/2-1))
-    COORD = COORD[:,MASK[0]]
-
-    # 2D lattice spanning [-.5,.5) for FT phase shift 
-    TCOORD = np.stack([xx, yy],axis=2)/D # DxDx2
+    V = torch.zeros((D,D,D))
+    counts = torch.zeros((D,D,D))
+    
+    mask = lattice.get_circular_mask(D//2)
 
     if args.indices:
         iterator = pickle.load(open(args.indices,'rb'))
     elif args.first:
         iterator = range(args.first)
     else:
-        iterator = range(N)
+        iterator = range(Nimg)
+
     for ii in iterator:
         if ii%100==0: log('image {}'.format(ii))
-        ff = fft.fft2_center(images[ii].get())
-        if args.invert_data:
-            ff *= -1
-        if trans is not None:
-            tfilt = np.dot(TCOORD,trans[ii])*-2*np.pi
-            tfilt = np.cos(tfilt) + np.sin(tfilt)*1j
-            ff *= tfilt
-        ff = ff.ravel()[MASK]
-        r = rot[ii]
-        ff_coord = np.dot(r.T,COORD)
-        add_slice(V,counts,ff_coord,ff,D)
+        r, t = posetracker.get_pose(ii)
+        ff = data.get(ii)
+        if tilt is not None:
+            ff, ff_tilt = ff # EW
+        ff = torch.tensor(ff)
+        ff = ff.view(-1)[mask]
+        if t is not None:
+            ff = lattice.translate_ht(ff.view(1,-1),t.view(1,1,2), mask)
+        ff_coord = lattice.coords[mask] @ r
+        add_slice(V, counts, ff_coord, ff, D)
 
         # tilt series
         if args.tilt is not None:
-            ff_tilt = fft.fft2_center(images_tilt[ii].get())
-            if trans is not None: ff_tilt *= tfilt
-            ff_tilt = ff_tilt.ravel()[MASK]
-            ff_coord = np.dot(np.dot(r.T, tilt.T), COORD)
-            add_slice(V,counts,ff_coord,ff_tilt,D)
+            ff_tilt = torch.tensor(ff_tilt)
+            ff_tilt = ff_tilt.view(-1)[mask]
+            if t is not None:
+                ff_tilt = lattice.translate_ht(ff_tilt.view(1,-1), t.view(1,1,2), mask)
+            ff_coord = lattice.coords[mask] @ tilt @ r
+            add_slice(V, counts, ff_coord, ff_tilt, D)
 
     z = np.where(counts == 0.0)
     td = time.time()-t1
-    log('Backprojected {} images in {}s ({}s per image)'.format(N, td, td/N ))
+    log('Backprojected {} images in {}s ({}s per image)'.format(Nimg, td, td/Nimg ))
     log('{}% voxels missing data'.format(100*len(z[0])/D**3))
     counts[z] = 1.0
     V /= counts
-    V = fft.ifftn_center(V)
+    V = fft.ihtn_center(V[0:-1,0:-1,0:-1].cpu().numpy())
     mrc.write(args.o,V.astype('float32'))
 
 if __name__ == '__main__':

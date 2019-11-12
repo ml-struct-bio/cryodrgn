@@ -124,17 +124,27 @@ class MRCData(data.Dataset):
     def __getitem__(self, index):
         return self.particles[index], index
 
+    def get(self, index):
+        return self.particles[index]
+
 class TiltMRCData(data.Dataset):
     '''
     Class representing an .mrcs tilt series pair
     '''
-    def __init__(self, mrcfile, mrcfile_tilt, norm=None, keepreal=False, invert_data=False, ind=None, window=True):
+    def __init__(self, mrcfile, mrcfile_tilt, norm=None, keepreal=False, invert_data=False, ind=None, window=True, datadir=None):
+        # load untilted
         if mrcfile.endswith('.txt'):
             particles_real = mrc.parse_mrc_list(mrcfile)
+        elif mrcfile.endswith('.star'):
+            particles_real = starfile.Starfile.load(mrcfile).get_particles(datadir=datadir, lazy=False)
         else:
             particles_real, _, _ = mrc.parse_mrc(mrcfile)
+
+        # load tilt series
         if mrcfile_tilt.endswith('.txt'):
             particles_tilt_real = mrc.parse_mrc_list(mrcfile_tilt)
+        elif mrcfile_tilt.endswith('.star'):
+            particles = starfile.Starfile.load(mrcfile_tilt).get_particles(datadir=datadir, lazy=False)
         else:
             particles_tilt_real, _, _ = mrc.parse_mrc(mrcfile_tilt)
         if ind is not None:
@@ -187,3 +197,8 @@ class TiltMRCData(data.Dataset):
 
     def __getitem__(self, index):
         return self.particles[index], self.particles_tilt[index], index
+
+    def get(self, index):
+        return self.particles[index], self.particles_tilt[index]
+
+# TODO: LazyTilt

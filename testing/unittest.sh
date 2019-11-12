@@ -30,8 +30,8 @@ python ../backproject_k_enc2.py data/toy_projections.mrcs --poses data/toy_angle
 python ../backproject_k_enc2.py data/toy_projections.mrcs --poses data/toy_angles.pkl -o output/toy_recon --pe-type none
 python ../backproject_k_enc2.py data/toy_projections.mrcs --poses data/toy_angles.pkl -o output/toy_recon --pe-type none --domain hartley
 
-python ../backproject.py data/hand.mrcs data/hand_rot.pkl -o output/backproject.mrc 
-python ../backproject.py data/hand.mrcs data/hand_rot.pkl -o output/backproject_tilt.mrc --tilt data/hand_tilt.mrcs
+python ../backproject.py data/hand.mrcs --poses data/hand_rot.pkl -o output/backproject.mrc
+python ../backproject.py data/hand.mrcs --poses data/hand_rot.pkl -o output/backproject_tilt.mrc --tilt data/hand_tilt.mrcs
 
 python ../vae_het.py  data/toy_projections.mrcs -o output/toy_recon_vae --lr .0001 --seed 0 --poses data/toy_angles.pkl
 python ../vae_het.py  data/hand.mrcs -o output/toy_recon_vae --lr .0001 --seed 0 --poses data/hand_rot.pkl 

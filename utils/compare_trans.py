@@ -6,6 +6,7 @@ import sys, os
 sys.path.insert(0,'{}/../lib-python'.format(os.path.dirname(os.path.abspath(__file__))))
 import utils
 log = utils.log
+vlog = utils.vlog
 import matplotlib.pyplot as plt
 
 
@@ -23,20 +24,20 @@ def main(args):
     if type(trans1) == tuple:
         trans1 = trans1[1]
     trans1 *= args.s1
-    log(trans1.shape)
-    log(trans1)
+    vlog(trans1.shape)
+    vlog(trans1)
     trans2 = utils.load_pkl(args.trans2)
     if type(trans2) == tuple:
         trans2 = trans2[1]
     trans2 *= args.s2
-    log(trans2.shape)
-    log(trans2)
+    vlog(trans2.shape)
+    vlog(trans2)
     assert trans1.shape == trans2.shape
-    log(np.mean(trans1,axis=0))
-    log(np.mean(trans2,axis=0))
+    vlog(np.mean(trans1,axis=0))
+    vlog(np.mean(trans2,axis=0))
 
     dists = np.sum((trans1-trans2)**2,axis=1)**.5
-    log(dists.shape)
+    vlog(dists.shape)
 
     log('Mean error: {}'.format(np.mean(dists)))
     log('Median error: {}'.format(np.median(dists)))

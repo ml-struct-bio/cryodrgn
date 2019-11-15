@@ -55,6 +55,7 @@ def parse_args():
     group.add_argument('--do-pose-sgd', action='store_true', help='Refine poses')
     group.add_argument('--pretrain', type=int, default=5, help='Number of epochs with fixed poses before pose SGD (default: %(default)s)')
     group.add_argument('--emb-type', choices=('s2s2','quat'), default='quat', help='SO(3) embedding type for pose SGD (default: %(default)s)')
+    group.add_argument('--pose-lr', type=float, default=1e-4, help='Learning rate in Adam optimizer (default: %(default)s)')
 
     group = parser.add_argument_group('Network Architecture')
     group.add_argument('--layers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
@@ -145,7 +146,7 @@ def main(args):
     # load poses
     if args.do_pose_sgd:
         posetracker = PoseTracker.load(args.poses, Nimg, args.emb_type, args.tscale, None)
-        pose_optimizer = torch.optim.SparseAdam(posetracker.parameters(), lr=args.lr)
+        pose_optimizer = torch.optim.SparseAdam(posetracker.parameters(), lr=args.pose_lr)
     else:
         posetracker = PoseTracker.load(args.poses, Nimg, None, args.tscale, None)
 

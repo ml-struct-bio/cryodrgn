@@ -43,6 +43,7 @@ def parse_args():
     group = parser.add_argument_group('Dataset loading')
     group.add_argument('--invert-data', action='store_true', help='Invert data sign')
     group.add_argument('--window', action='store_true', help='Real space windowing of dataset')
+    parser.add_argument('--ind', type=os.path.abspath, help='Filter particle stack by these indices')
     group.add_argument('--lazy', action='store_true', help='Lazy loading if full dataset is too large to fit in memory')
 
     group = parser.add_argument_group('Training parameters')
@@ -114,10 +115,14 @@ def main(args):
         torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
     # load the particles
+    if args.ind is not None: 
+        log('Filtering image dataset with {}'.format(args.ind))
+        ind = pickle.load(open(args.ind,'rb'))
+    else: ind = None
     if args.lazy:
-        data = dataset.LazyMRCData(args.particles, norm=args.norm, invert_data=args.invert_data, window=args.window)
+        data = dataset.LazyMRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, window=args.window)
     else:
-        data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, window=args.window)
+        data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, window=args.window)
     D = data.D
     Nimg = data.N
 
@@ -145,15 +150,16 @@ def main(args):
 
     # load poses
     if args.do_pose_sgd:
-        posetracker = PoseTracker.load(args.poses, Nimg, args.emb_type, args.tscale, None)
+        posetracker = PoseTracker.load(args.poses, Nimg, args.emb_type, args.tscale, ind)
         pose_optimizer = torch.optim.SparseAdam(posetracker.parameters(), lr=args.pose_lr)
     else:
-        posetracker = PoseTracker.load(args.poses, Nimg, None, args.tscale, None)
+        posetracker = PoseTracker.load(args.poses, Nimg, None, args.tscale, ind)
 
     # load CTF
     if args.ctf is not None:
         log('Loading ctf params from {}'.format(args.ctf))
         ctf_params = utils.load_pkl(args.ctf)
+        if args.ind is not None: ctf_params = ctf_params[ind]
         assert ctf_params.shape == (Nimg, 7)
         ctf.print_ctf_params(ctf_params[0])
         ctf_params = torch.tensor(ctf_params)

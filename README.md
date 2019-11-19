@@ -43,9 +43,9 @@ It is also recommended to create image stacks at lower resolution (e.g. D=80, 16
 
     $ python $SRC/utils/parse_cs_alignments.py cryosparc_P27_J3_005_particles.cs --homorefine -o consensus
 
-* Test parsing with backprojection
+* Test parsing with voxel-based backprojection
 
-    $ python $SRC/backproject.py # TODO
+    $ python $SRC/backproject_voxel.py -h
 
 ### 3. Parse CTF parameters from a .star file
 
@@ -73,7 +73,8 @@ When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl
                       [-b BATCH_SIZE] [--wd WD] [--lr LR] [--beta BETA]
                       [--beta-control BETA_CONTROL] [--norm NORM NORM]
                       [--do-pose-sgd] [--pretrain PRETRAIN]
-                      [--emb-type {s2s2,quat}] [--qlayers QLAYERS] [--qdim QDIM]
+                      [--emb-type {s2s2,quat}] [--pose-lr POSE_LR]
+                      [--qlayers QLAYERS] [--qdim QDIM]
                       [--encode-mode {conv,resid,mlp,tilt}] [--enc-mask ENC_MASK]
                       [--use-real] [--players PLAYERS] [--pdim PDIM]
                       [--pe-type {geom_ft,geom_full,geom_lowf,geom_nohighf,linear_lowf,none}]
@@ -126,8 +127,10 @@ When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl
                             std of dataset)
       --do-pose-sgd         Refine poses with gradient descent
       --pretrain PRETRAIN   Number of epochs with fixed poses before pose SGD
+                            (default: 1)
       --emb-type {s2s2,quat}
-                            SO(3) embedding type for pose SGD
+                            SO(3) embedding type for pose SGD (default: quat)
+      --pose-lr POSE_LR     Learning rate for pose optimizer (default: 0.0001)
     
     Encoder Network:
       --qlayers QLAYERS     Number of hidden layers (default: 10)
@@ -136,7 +139,8 @@ When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl
                             Type of encoder network (default: resid)
       --enc-mask ENC_MASK   Circular mask of image for encoder (default: D/2; -1
                             for no mask)
-      --use-real            Use real space image for encoder
+      --use-real            Use real space image for encoder (for convolutional
+                            encoder)
     
     Decoder Network:
       --players PLAYERS     Number of hidden layers (default: 10)
@@ -152,17 +156,17 @@ Example command to train a 10D latent variable cryoDRGN model for 20 epochs on a
 
     $ python $SRC/vae_het.py projections.256.mrcs \
             --poses consensus.rot.pkl consensus.trans.pkl \
-            --tscale .8 \
+            --tscale .8 \ 
             --ctf ctf.256.pkl \
             --zdim 10 \
-            --do-pose-sgd --pretrain 1 \ 
+            --do-pose-sgd \ 
             -n 20 \
             --pdim 1000 --players 3 \
             --qdim 1000 --qlayers 3 \
             -o 00_vae256_z10
 
 * The encoder and decoder networks in this model contain 3 layers of dimension 1000. 
-* Using the `--do-pose-sgd` flag and `--pretrain 1` will lead to local refinement of poses after the first epoch of training.
+* Using the `--do-pose-sgd` flag will lead to *local* refinement of poses.
 * Results will be saved in directory `00_vae256_z10`.
 * NOTE: Since translations are provided in units of pixels, `--tscale` may be used to renormalize translations e.g. if the consensus poses were obtained with a different box size.
 

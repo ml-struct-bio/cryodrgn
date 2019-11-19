@@ -117,7 +117,7 @@ def main(args):
             c = ctf.compute_ctf(freqs, *ctf_params[ii,1:]).view(-1)[mask]
             ff *= c.sign()
         if t is not None:
-            ff = lattice.translate_ht(ff.view(1,-1),t.view(1,1,2), mask)
+            ff = lattice.translate_ht(ff.view(1,-1),t.view(1,1,2), mask).view(-1)
         ff_coord = lattice.coords[mask] @ r
         add_slice(V, counts, ff_coord, ff, D)
 
@@ -128,15 +128,13 @@ def main(args):
             if ff_tilt is not None:
                 ff_tilt *= c.sign()
             if t is not None:
-                ff_tilt = lattice.translate_ht(ff_tilt.view(1,-1), t.view(1,1,2), mask)
+                ff_tilt = lattice.translate_ht(ff_tilt.view(1,-1), t.view(1,1,2), mask).view(-1)
             ff_coord = lattice.coords[mask] @ tilt @ r
             add_slice(V, counts, ff_coord, ff_tilt, D)
 
-    z = np.where(counts == 0.0)
     td = time.time()-t1
     log('Backprojected {} images in {}s ({}s per image)'.format(Nimg, td, td/Nimg ))
-    log('{}% voxels missing data'.format(100*len(z[0])/D**3))
-    counts[z] = 1.0
+    counts[counts == 0] = 1
     V /= counts
     V = fft.ihtn_center(V[0:-1,0:-1,0:-1].cpu().numpy())
     mrc.write(args.o,V.astype('float32'))

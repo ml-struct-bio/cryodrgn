@@ -17,6 +17,7 @@ def parse_args():
     parser.add_argument('--s1',type=float,default=1.0,help='Scale for trans1')
     parser.add_argument('--s2',type=float,default=1.0,help='Scale for trans2')
     parser.add_argument('--show', action='store_true', help='Show histogram')
+    parser.add_argument('-v', '--verbose', action='store_true', help='Verbosity')
     return parser
 
 def main(args):
@@ -45,9 +46,15 @@ def main(args):
         plt.figure(1)
         plt.hist(dists)
         plt.figure(2)
-        plt.scatter(trans1[:,0],trans1[:,1], alpha=.1)
-        plt.scatter(trans2[:,0],trans2[:,1], alpha=.1)
+        plt.scatter(trans1[:,0],trans1[:,1], s=1, alpha=.1)
+        plt.figure(3)
+        plt.scatter(trans2[:,0],trans2[:,1], s=1, alpha=.1)
+        plt.figure(4)
+        d = trans1 - trans2
+        plt.scatter(d[:,0],d[:,1], s=1, alpha=.1)
         plt.show()
 
 if __name__ == '__main__':
-    main(parse_args().parse_args())
+    args = parse_args().parse_args()
+    utils._verbose = args.verbose
+    main(args)

@@ -9,18 +9,29 @@ import starfile
 
 log = utils.log
 
+def load_particles(mrcs_txt_star, lazy=False, datadir=None):
+    '''
+    Load particle stack from either a .mrcs file, a .star file, or a .txt file containing paths to .mrcs files
+
+    lazy (bool): Return numpy array if True, or return list of LazyImages
+    datadir (str or None): Base directory overwrite for .star file parsing
+    '''
+    if mrcs_txt_star.endswith('.txt'):
+        particles = mrc.parse_mrc_list(mrcs_txt_star, lazy=lazy)
+    elif mrcs_txt_star.endswith('.star'):
+        particles = starfile.Starfile.load(mrcs_txt_star).get_particles(datadir=datadir, lazy=lazy)
+    else:
+        particles, _, _ = mrc.parse_mrc(mrcs_txt_star, lazy=lazy)
+    return particles
+
+
 class LazyMRCData(data.Dataset):
     '''
     Class representing an .mrcs stack file -- images loaded on the fly
     '''
     def __init__(self, mrcfile, norm=None, keepreal=False, invert_data=False, ind=None, window=True, datadir=None):
         assert not keepreal, 'Not implemented error'
-        if mrcfile.endswith('.txt'):
-            particles = mrc.parse_mrc_list(mrcfile, lazy=True)
-        elif mrcfile.endswith('.star'):
-            particles = starfile.Starfile.load(mrcfile).get_particles(datadir=datadir, lazy=True)
-        else:
-            particles, _, _ = mrc.parse_mrc(mrcfile, lazy=True)
+        particles = load_particles(mrcfile, True, datadir)
         if ind is not None:
             particles = [particles[x] for x in ind]
         N = len(particles)
@@ -76,12 +87,7 @@ class MRCData(data.Dataset):
     Class representing an .mrcs stack file
     '''
     def __init__(self, mrcfile, norm=None, keepreal=False, invert_data=False, ind=None, window=True, datadir=None):
-        if mrcfile.endswith('.txt'):
-            particles_real = mrc.parse_mrc_list(mrcfile)
-        elif mrcfile.endswith('.star'):
-            particles_real = starfile.Starfile.load(mrcfile).get_particles(datadir=datadir, lazy=False)
-        else:
-            particles_real, _, _ = mrc.parse_mrc(mrcfile)
+        particles_real = load_particles(mrcfile, False, datadir)
         if ind is not None:
             particles_real = particles_real[ind]
         N, ny, nx = particles_real.shape
@@ -133,20 +139,12 @@ class TiltMRCData(data.Dataset):
     '''
     def __init__(self, mrcfile, mrcfile_tilt, norm=None, keepreal=False, invert_data=False, ind=None, window=True, datadir=None):
         # load untilted
-        if mrcfile.endswith('.txt'):
-            particles_real = mrc.parse_mrc_list(mrcfile)
-        elif mrcfile.endswith('.star'):
-            particles_real = starfile.Starfile.load(mrcfile).get_particles(datadir=datadir, lazy=False)
-        else:
-            particles_real, _, _ = mrc.parse_mrc(mrcfile)
+        particles_real = load_particles(mrcfile, False, datadir)
 
         # load tilt series
-        if mrcfile_tilt.endswith('.txt'):
-            particles_tilt_real = mrc.parse_mrc_list(mrcfile_tilt)
-        elif mrcfile_tilt.endswith('.star'):
-            particles = starfile.Starfile.load(mrcfile_tilt).get_particles(datadir=datadir, lazy=False)
-        else:
-            particles_tilt_real, _, _ = mrc.parse_mrc(mrcfile_tilt)
+        particles_tilt_real = load_particles(mrcfile_tilt, False, datadir)
+
+        # filter dataset
         if ind is not None:
             particles_real = particles_real[ind]
             particles_tilt_real = particles_tilt_real[ind]

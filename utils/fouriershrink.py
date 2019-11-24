@@ -10,6 +10,7 @@ sys.path.insert(0,'{}/../lib-python'.format(os.path.dirname(os.path.abspath(__fi
 import utils
 import mrc
 import fft
+import dataset
 
 import matplotlib
 matplotlib.use('Agg')
@@ -19,12 +20,13 @@ log = utils.log
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('mrcs', help='Input projection stack (.mrcs)')
+    parser.add_argument('mrcs', help='Input particles (.mrcs, .star, or .txt)')
+    parser.add_argument('-D', type=int, required=True, help='New image size, must be even')
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Output projection stack (.mrcs)')
     parser.add_argument('--out-png', type=os.path.abspath, help='Montage of first 9 projections')
     parser.add_argument('--is-vol',action='store_true')
-    parser.add_argument('-D', type=int, required=True, help='New image size, must be even')
-    parser.add_argument('--chunk', type=int, help='Chunksize (# images) to split projection stack')
+    parser.add_argument('--chunk', type=int, help='Chunksize (in # of images) to split particle stack when saving')
+    parser.add_argument('--datadir', help='Optionally overwrite path to starfile .mrcs if loading from a starfile')
     return parser
 
 def mkbasedir(out):
@@ -39,7 +41,7 @@ def main(args):
     mkbasedir(args.o)
     warnexists(args.o)
 
-    old, _, _ = mrc.parse_mrc(args.mrcs,lazy=True)
+    old = dataset.load_particles(args.mrcs, lazy=True, datadir=args.datadir)
     oldD = old[0].get().shape[0]
     assert args.D < oldD
     assert args.D % 2 == 0

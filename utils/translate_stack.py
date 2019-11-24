@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0,'{}/../lib-python'.format(os.path.dirname(os.path.abspath(__file__))))
 import utils
+import dataset
 import mrc
 import fft
 
@@ -14,11 +15,11 @@ log = utils.log
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('input', type=os.path.abspath, help='Input particle stack')
+    parser.add_argument('mrcs', help='Input particles (.mrcs, .star, or .txt)')
     parser.add_argument('trans', help='Pickle with image shifts')
     parser.add_argument('--tscale', type=float, help='Scale translations by this amount')
-    parser.add_argument('-o', type=os.path.abspath, required=True, 
-        help='Output particle stack')
+    parser.add_argument('--datadir', help='Optionally overwrite path to starfile .mrcs if loading from a starfile')
+    parser.add_argument('-o', type=os.path.abspath, required=True, help='Output particle stack')
     parser.add_argument('--out-png')
     return parser
 
@@ -31,7 +32,7 @@ def plot_projections(out_png, imgs):
 
 def main(args):
     # load particles
-    particles, _, _ = mrc.parse_mrc(args.input)
+    particles = dataset.load_particles(args.mrcs, datadir=args.datadir)
     log(particles.shape)
     Nimg, D, D = particles.shape
 

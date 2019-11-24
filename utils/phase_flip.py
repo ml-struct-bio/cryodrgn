@@ -8,18 +8,20 @@ sys.path.insert(0, '{}/../lib-python'.format(os.path.dirname(os.path.realpath(__
 
 import utils
 import mrc
+import dataset
 import ctf
 import fft
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('particles', help='Input')
+    parser.add_argument('mrcs', help='Input particles (.mrcs, .star, or .txt)')
     parser.add_argument('ctf_params', help='Input')
+    parser.add_argument('--datadir', help='Optionally overwrite path to starfile .mrcs if loading from a starfile')
     parser.add_argument('-o', help='Output')
     return parser
 
 def main(args):
-    imgs, _, _ = mrc.parse_mrc(args.particles,lazy=True)
+    imgs = dataset.load_particles(args.mrcs, lazy=True, datadir=args.datadir)
     ctf_params = utils.load_pkl(args.ctf_params)
     assert len(imgs) == len(ctf_params)
     

@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 sys.path.insert(0,'{}/../lib-python'.format(os.path.dirname(os.path.abspath(__file__))))
 import utils
 import mrc
+import dataset
 from lattice import EvenLattice
 
 log = utils.log
@@ -15,13 +16,13 @@ log = utils.log
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('input', type=os.path.abspath, help='Input particle stack')
+    parser.add_argument('mrcs', help='Input particles (.mrcs, .star, or .txt)')
     parser.add_argument('--snr', type=float)
     parser.add_argument('--sigma', type=float)
     parser.add_argument('--mask', choices=('none','strict','circular'), help='Type of mask for computing signal variance')
     parser.add_argument('--mask-r', type=int, help='Radius for circular mask')
-    parser.add_argument('-o', type=os.path.abspath, required=True, 
-        help='Output particle stack')
+    parser.add_argument('--datadir', help='Optionally overwrite path to starfile .mrcs if loading from a starfile')
+    parser.add_argument('-o', type=os.path.abspath, required=True, help='Output particle stack')
     parser.add_argument('--out-png')
     return parser
 
@@ -36,7 +37,7 @@ def main(args):
     assert (args.snr is None) != (args.sigma is None) # xor
 
     # load particles
-    particles, _, _ = mrc.parse_mrc(args.input)
+    particles = dataset.load_particles(args.mrcs, datadir=args.datadir)
     log(particles.shape)
     Nimg, D, D = particles.shape
     

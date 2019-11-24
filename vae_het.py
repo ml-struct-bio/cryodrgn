@@ -375,7 +375,7 @@ def main(args):
             with torch.no_grad():
                 z_mu, z_logvar = eval_z(model, lattice, data, args.batch_size, device, posetracker.trans, tilt is not None, ctf_params, args.use_real)
                 save_checkpoint(model, lattice, optim, epoch, data.norm, z_mu, z_logvar, out_mrc, out_weights, out_z)
-            if epoch >= args.pretrain:
+            if args.do_pose_sgd and epoch >= args.pretrain:
                 out_pose = '{}/pose.{}.pkl'.format(args.outdir, epoch)
                 posetracker.save(out_pose)
 
@@ -388,7 +388,7 @@ def main(args):
         z_mu, z_logvar = eval_z(model, lattice, data, args.batch_size, device, posetracker.trans, tilt is not None, ctf_params, args.use_real)
         save_checkpoint(model, lattice, optim, epoch, data.norm, z_mu, z_logvar, out_mrc, out_weights, out_z)
     
-    if epoch >= args.pretrain:
+    if args.do_pose_sgd and epoch >= args.pretrain:
         out_pose = '{}/pose.pkl'.format(args.outdir)
         posetracker.save(out_pose)
     td = dt.now()-t1

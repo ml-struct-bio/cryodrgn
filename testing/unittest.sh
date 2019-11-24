@@ -12,6 +12,8 @@ python ../bnb_het.py data/toy_projections.mrcs -o output/toy_recon_bnb --seed 0 
 python ../bnb_het.py data/toy_projections.mrcs -o output/toy_recon_bnb --seed 0 -b 10 --tilt data/toy_projections.mrcs --tilt-deg 45 --encode-mode tilt --enc-only -n 1 --l-start 10 --l-end 14
 
 python ../backproject_nn.py data/toy_projections.mrcs --poses data/toy_angles.pkl -o output/toy_recon
+python ../backproject_nn.py data/toy_projections.star --poses data/toy_angles.pkl -o output/toy_recon
+python ../backproject_nn.py data/toy_projections.txt --poses data/toy_angles.pkl -o output/toy_recon
 python ../backproject_nn.py data/toy_projections.mrcs --poses data/toy_angles.pkl data/toy_trans.zero.pkl -o output/toy_recon
 python ../backproject_nn.py data/toy_projections.mrcs --poses data/toy_angles.pkl data/toy_trans.zero.pkl -o output/toy_recon --do-pose-sgd
 python ../backproject_nn.py data/toy_projections.mrcs --poses data/toy_angles.pkl -o output/toy_recon --domain hartley

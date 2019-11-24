@@ -69,7 +69,7 @@ def main(args):
         np.savetxt(args.out_s, xd)
     plt.legend(loc='best')
     if args.out_png: 
-        plt.savefig(args.o)
+        plt.savefig(args.out_png)
     else:
         plt.show()
 

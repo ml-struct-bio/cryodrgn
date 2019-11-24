@@ -30,7 +30,7 @@ vlog = utils.vlog
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('particles', help='Particle stack file (.mrc)')
+    parser.add_argument('particles', help='Input particles (.mrcs, .txt or .star)')
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
     parser.add_argument('--load', type=os.path.abspath, help='Initialize training from a checkpoint')
     parser.add_argument('--load-poses', type=os.path.abspath, help='Initialize training from a checkpoint')
@@ -228,6 +228,32 @@ def save_checkpoint(model, lattice, optim, epoch, norm, bnb_pose, z_mu, z_logvar
             mrc.write('{}/traj{}.mrc'.format(out_mrc_dir,int(pct)),vol)
             log('Saved {}/traj{}.mrc with z = {}'.format(out_mrc_dir, int(pct), zz))
 
+def save_config(args, dataset, lattice, model, out_config):
+    dataset_args = dict(particles=args.particles,
+                        norm=dataset.norm,
+                        invert_data=args.invert_data,
+                        ind=args.ind,
+                        #keepreal=args.use_real,
+                        window=args.window)
+    if args.tilt is not None:
+        dataset_args['particles_tilt'] = args.tilt
+    lattice_args = dict(D=lattice.D,
+                        extent=lattice.extent,
+                        ignore_DC=lattice.ignore_DC)
+    model_args = dict(qlayers=args.qlayers,
+                      qdim=args.qdim,
+                      players=args.players,
+                      pdim=args.pdim,
+                      zdim=args.zdim,
+                      encode_mode=args.encode_mode,
+                      enc_mask=args.enc_mask,
+                      pe_type=args.pe_type,
+                      domain=args.domain)
+    with open(out_config,'wb') as f:
+        pickle.dump(dict(dataset_args=dataset_args,
+                         lattice_args=lattice_args,
+                         model_args=model_args), f)
+
 def sort_bnb_poses(bnb_pose):
     ind = [x[0] for x in bnb_pose]
     ind = np.concatenate(ind)
@@ -298,6 +324,10 @@ def main(args):
                 enc_type=args.pe_type, domain=args.domain)
     log(model)
     log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
+
+    # save configuration
+    out_config = '{}/config.pkl'.format(args.outdir)
+    save_config(args, data, lattice, model, out_config)
 
     bnb = BNBHet(model, lattice, args.l_start, args.l_end, tilt, args.t_extent)
     if args.rotate: 

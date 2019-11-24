@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 from torch.utils import data
+import os
 
 import fft
 import mrc
@@ -19,7 +20,14 @@ def load_particles(mrcs_txt_star, lazy=False, datadir=None):
     if mrcs_txt_star.endswith('.txt'):
         particles = mrc.parse_mrc_list(mrcs_txt_star, lazy=lazy)
     elif mrcs_txt_star.endswith('.star'):
-        particles = starfile.Starfile.load(mrcs_txt_star).get_particles(datadir=datadir, lazy=lazy)
+        # not exactly sure what the default behavior should be for the data paths if parsing a starfile
+        try:
+            particles = starfile.Starfile.load(mrcs_txt_star).get_particles(datadir=datadir, lazy=lazy)
+        except Exception as e:
+            if datadir is None:
+                datadir = os.path.dirname(mrcs_txt_star) # assume .mrcs files are in the same director as the starfile
+                particles = starfile.Starfile.load(mrcs_txt_star).get_particles(datadir=datadir, lazy=lazy)
+            else: raise RuntimeError(e)
     else:
         particles, _, _ = mrc.parse_mrc(mrcs_txt_star, lazy=lazy)
     return particles

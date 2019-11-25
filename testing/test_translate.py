@@ -29,7 +29,7 @@ coords = lattice.coords[...,0:2]/2
 ht = torch.tensor(ht.astype(np.float32)).view(1,-1)
 
 trans = torch.tensor([5.,10.]).view(1,1,2)
-ht_shifted = model.translate_ht(coords, ht, trans)
+ht_shifted = lattice.translate_ht(ht, trans)
 ht_np = ht_shifted.view(D,D).numpy()[0:-1, 0:-1]
 
 img_shifted = fft.ihtn_center(ht_np)

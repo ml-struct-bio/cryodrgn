@@ -140,10 +140,11 @@ class Lattice:
 
 class EvenLattice(Lattice):
     '''For a DxD lattice where D is even, we set D/2,D/2 pixel to the center'''
-    def __init__(self, D, extent=0.5):
+    def __init__(self, D, extent=0.5, ignore_DC=False):
         # centered and scaled xy plane, values between -1 and 1
         # endpoint=False since FT is not symmetric around origin
-        assert D % 2 == 0, "Lattice size must be odd"
+        assert D % 2 == 0, "Lattice size must be even"
+        if ignore_DC: raise NotImplementedError
         x0, x1 = np.meshgrid(np.linspace(-1, 1, D, endpoint=False), 
                              np.linspace(-1, 1, D, endpoint=False))
         coords = np.stack([x0.ravel(),x1.ravel(),np.zeros(D**2)],1).astype(np.float32)
@@ -157,3 +158,5 @@ class EvenLattice(Lattice):
         
         self.square_mask = {}
         self.circle_mask = {}
+
+        self.ignore_DC = ignore_DC

@@ -254,7 +254,7 @@ class FTPositionalDecoder(nn.Module):
         # includes the origin), so we need to evaluate one additional pixel
         c = lattice.shape[-2]//2 # top half
         cc = c + 1 if lattice.shape[-2] % 2 == 1 else c # include the origin
-        assert abs(lattice[...,0:3].mean()) < 1e-8, '{} != 0.0'.format(lattice[...,0:3].mean())
+        assert abs(lattice[...,0:3].mean()) < 1e-4, '{} != 0.0'.format(lattice[...,0:3].mean())
         image = torch.empty(lattice.shape[:-1]) 
         top_half = self.decode(lattice[...,0:cc,:])
         image[..., 0:cc] = top_half[...,0] - top_half[...,1]
@@ -353,7 +353,7 @@ class FTSliceDecoder(nn.Module):
         assert lattice.shape[-2] % 2 == 1
         c = lattice.shape[-2]//2 # center pixel
         assert lattice[...,c,0:3].sum() == 0.0, '{} != 0.0'.format(lattice[...,c,0:3].sum())
-        assert abs(lattice[...,0:3].mean()) < 1e-8, '{} != 0.0'.format(lattice[...,0:3].mean())
+        assert abs(lattice[...,0:3].mean()) < 1e-4, '{} != 0.0'.format(lattice[...,0:3].mean())
         image = torch.empty(lattice.shape[:-1]) 
         top_half = self.decode(lattice[...,0:c+1,:])
         image[..., 0:c+1] = top_half[...,0] - top_half[...,1]

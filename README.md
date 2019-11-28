@@ -13,7 +13,7 @@ https://arxiv.org/abs/1909.05215
 Until the cryoDRGN conda package is available, for now, git clone the source code and install the following dependencies with anaconda, replacing the cudatoolkit version as necessary:
 
     conda create --name cryodrgn
-    source activate cryodrgn
+    conda activate cryodrgn
     conda install pytorch=1.0.1 torchvision cudatoolkit=10.0 -c pytorch
     conda install seaborn scikit-learn 
     conda install -c conda-forge umap-learn
@@ -28,7 +28,7 @@ Training cryoDRGN networks has not been tested on image sizes above D=256. If yo
     $ SRC=[path to source code]
     $ python $SRC/utils/fouriershrink.py [input particle stack] -D 256 -o [output particle stack] --out-png projections.256.png
 
-It is also recommended to create image stacks at lower resolution (e.g. D=80, 160) for initial testing and pilot experiments with cryoDRGN, as training runtime scales naively by D^2.
+It is also recommended to create image stacks at lower resolution (e.g. D=80, 160) for initial testing and pilot experiments with cryoDRGN.
 
     $ python $SRC/utils/fouriershrink.py [input particle stack] -D 160 -o [output particle stack] --out-png projections.160.png
     $ python $SRC/utils/fouriershrink.py [input particle stack] -D 80 -o [output particle stack] --out-png projections.80.png
@@ -43,7 +43,7 @@ It is also recommended to create image stacks at lower resolution (e.g. D=80, 16
 
     $ python $SRC/utils/parse_cs_alignments.py cryosparc_P27_J3_005_particles.cs --homorefine -o consensus
 
-* Test parsing with voxel-based backprojection
+* Test that alignments were parsed correctly using the voxel-based backprojection script:
 
     $ python $SRC/backproject_voxel.py -h
 
@@ -152,7 +152,7 @@ When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl
 
 ### Example usage:
 
-Example command to train a 10D latent variable cryoDRGN model for 20 epochs on an image dataset `projections.256.mrcs` with poses `consensus.rot.pkl, consensus.trans.pkl` and ctf parameters `ctf.256.pkl`:
+Example command to train a 10-D latent variable cryoDRGN model for 20 epochs on an image dataset `projections.256.mrcs` with poses `consensus.rot.pkl, consensus.trans.pkl` and ctf parameters `ctf.256.pkl`:
 
     $ python $SRC/vae_het.py projections.256.mrcs \
             --poses consensus.rot.pkl consensus.trans.pkl \
@@ -167,7 +167,7 @@ Example command to train a 10D latent variable cryoDRGN model for 20 epochs on a
 
 * The encoder and decoder networks in this model contain 3 layers of dimension 1000. 
 * Using the `--do-pose-sgd` flag will lead to *local* refinement of poses.
-* Results will be saved in directory `00_vae256_z10`.
+* Results will be saved in the specified directory `00_vae256_z10`.
 * NOTE: Since translations are provided in units of pixels, `--tscale` may be used to renormalize translations e.g. if the consensus poses were obtained with a different box size.
 
 ### Recommended settings:
@@ -181,7 +181,7 @@ After validation, pose optimization, and any necessary particle filtering, train
 
 Note these settings are highly experimental.
 
-TODO: Document volume generation and analysis scripts
+TODO: Document analysis scripts
 
 ## Fully unsupervised reconstruction
 

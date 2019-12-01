@@ -34,6 +34,14 @@ class Lattice:
 
         self.ignore_DC = ignore_DC
 
+    def get_downsample_coords(self, d):
+        assert d % 2 == 1
+        extent = self.extent * (d-1) / (self.D-1)
+        x0, x1 = np.meshgrid(np.linspace(-extent, extent, d, endpoint=True), 
+                             np.linspace(-extent, extent, d, endpoint=True))
+        coords = np.stack([x0.ravel(),x1.ravel(),np.zeros(d**2)],1).astype(np.float32)
+        return torch.tensor(coords)
+
     def get_square_lattice(self, L):
         b,e = self.D2-L, self.D2+L+1
         center_lattice = self.coords.view(self.D,self.D,3)[b:e,b:e,:].contiguous().view(-1,3)
@@ -160,3 +168,6 @@ class EvenLattice(Lattice):
         self.circle_mask = {}
 
         self.ignore_DC = ignore_DC
+
+    def get_downsampled_coords(self, d):
+        raise NotImplementedError

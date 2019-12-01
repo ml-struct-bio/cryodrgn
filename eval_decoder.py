@@ -33,6 +33,7 @@ def parse_args():
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Output MRC or directory')
     parser.add_argument('--Apix', type=float, help='Pixel size to add to mrc header')
     parser.add_argument('--prefix', default='vol', help='Prefix when writing out multiple .mrc files (default: %(default)s)')
+    parser.add_argument('-d','--downsample', type=int, help='Optionally downsample volumes to this box size')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
 
     group = parser.add_argument_group('Overwrite architecture hyperparameters in config.pkl')
@@ -77,6 +78,9 @@ def main(args):
         args = load_config(args.config, args)
     log(args)
 
+    if args.downsample:
+        assert args.downsample%2==0
+        assert args.downsample < args.D, "Must be smaller than original box size"
     D = args.D + 1
     lattice = Lattice(D, extent=args.l_extent)
     if args.enc_mask: 
@@ -112,14 +116,24 @@ def main(args):
 
         for i,zz in enumerate(z):
             log(zz)
-            vol = model.decoder.eval_volume(lattice.coords, lattice.D, lattice.extent, args.norm, zz) 
+            if args.downsample:
+                extent = lattice.extent * (args.downsample/args.D)
+                vol = model.decoder.eval_volume(lattice.get_downsample_coords(args.downsample+1), 
+                                                args.downsample+1, extent, args.norm, zz) 
+            else:
+                vol = model.decoder.eval_volume(lattice.coords, lattice.D, lattice.extent, args.norm, zz) 
             out_mrc = '{}/{}_{:03d}.mrc'.format(args.o, args.prefix, i)
             mrc.write(out_mrc, vol.astype(np.float32))
 
     else:
         z = np.array(args.z)
         log(z)
-        vol = model.decoder.eval_volume(lattice.coords, lattice.D, lattice.extent, args.norm, z) 
+        if args.downsample:
+            extent = lattice.extent * (args.downsample/args.D)
+            vol = model.decoder.eval_volume(lattice.get_downsample_coords(args.downsample+1), 
+                                            args.downsample+1, extent, args.norm, z) 
+        else:
+            vol = model.decoder.eval_volume(lattice.coords, lattice.D, lattice.extent, args.norm, z) 
         mrc.write(args.o, vol.astype(np.float32))
 
     td = dt.now()-t1

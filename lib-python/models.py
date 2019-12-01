@@ -167,6 +167,8 @@ class PositionalDecoder(nn.Module):
             norm: data normalization 
             zval: value of latent (zdim x 1)
         '''
+        # Note: extent should be 0.5 by default, except when a downsampled
+        # volume is generated
         if zval is not None:
             zdim = len(zval)
             z = torch.zeros(D**2, zdim, dtype=torch.float32)
@@ -175,8 +177,8 @@ class PositionalDecoder(nn.Module):
         vol_f = np.zeros((D,D,D),dtype=np.float32)
         assert not self.training
         # evaluate the volume by zslice to avoid memory overflows
-        for i, dz in enumerate(np.linspace(-0.5,0.5,D,endpoint=True)):
-            x = coords/extent/2 + torch.tensor([0,0,dz])
+        for i, dz in enumerate(np.linspace(-extent,extent,D,endpoint=True)):
+            x = coords + torch.tensor([0,0,dz])
             if zval is not None:
                 x = torch.cat((x,z), dim=-1)
             with torch.no_grad():
@@ -283,6 +285,7 @@ class FTPositionalDecoder(nn.Module):
             norm: data normalization 
             zval: value of latent (zdim x 1)
         '''
+        assert extent <= 0.5
         if zval is not None:
             zdim = len(zval)
             z = torch.zeros(D**2, zdim, dtype=torch.float32)
@@ -291,8 +294,8 @@ class FTPositionalDecoder(nn.Module):
         vol_f = np.zeros((D,D,D),dtype=np.float32)
         assert not self.training
         # evaluate the volume by zslice to avoid memory overflows
-        for i, dz in enumerate(np.linspace(-0.5,0.5,D,endpoint=True)):
-            x = coords/extent/2 + torch.tensor([0,0,dz])
+        for i, dz in enumerate(np.linspace(-extent,extent,D,endpoint=True)):
+            x = coords + torch.tensor([0,0,dz])
             if zval is not None:
                 x = torch.cat((x,z), dim=-1)
             with torch.no_grad():

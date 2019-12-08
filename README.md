@@ -181,7 +181,17 @@ After validation, pose optimization, and any necessary particle filtering, train
 
 Note these settings are highly experimental.
 
-TODO: Document analysis scripts
+### Analysis
+
+Once the model has finished training, the working directory will contain a configuration file `config.pkl`, neural network weights `weights.pkl`, image poses (if performing pose sgd) `pose.pkl`, and the predicted latent encoding for each image `z.pkl`. The directory will also contain a volume `reconstruct.mrc` evaluated at the mean z value of the dataset. 
+
+To analyze and visualize the learned latent space, use the scripts in the `utils/analysis` subdirectory (TODO: Document). Additional structures may be generated using the `eval_decoder.py` script. For example:
+
+    $ python $SRC/eval_decoder.py [WORKDIR]/weights.pkl --config [WORKDIR]/config.pkl -z ZVALUE -o reconstruct.sample1.mrc
+
+Or to generate a trajectory using values of z given in a file `zvalues.txt`:
+
+    $ python $SRC/eval_decoder.py [WORKDIR]/weights.pkl --config [WORKDIR]/config.pkl --zfile zvalues.txt -o [WORKDIR]/trajectory
 
 ## Fully unsupervised reconstruction
 

@@ -15,7 +15,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('input', help='Cryosparc .cs file')
     parser.add_argument('--abinit', action='store_true', help='Flag if results are from ab-initio reconstruction') 
-    parser.add_argument('--homorefine', action='store_true', help='Flag if results are from a homogeneous refinements (default: heterogeneous refinement)')
+    parser.add_argument('--hetrefine', action='store_true', help='Flag if results are from a heterogeneous refinements (default: homogeneous refinement)')
     parser.add_argument('-o', help='Output prefix for appending .rot.pkl and .trans.pkl')
     return parser
 
@@ -43,7 +43,7 @@ def main(args):
 
     # parse translations
     trans = np.array([x[TKEY] for x in data])
-    if not args.homorefine:
+    if args.hetrefine:
         log('Scaling shifts by 2x')
         trans *= 2
     log(trans.shape)

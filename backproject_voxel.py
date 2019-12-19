@@ -25,15 +25,20 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mrcs', help='Input .mrcs image stack')
     parser.add_argument('--poses', type=os.path.abspath, nargs='*', required=True, help='Image rotations and optionally translations (.pkl)')
-    parser.add_argument('-o', type=os.path.abspath, required=True, help='Output .mrc file')
-    parser.add_argument('--invert-data', action='store_true')
-    parser.add_argument('--indices',help='Indices to iterate over (pkl)')
-    parser.add_argument('--trans', type=os.path.abspath, help='Optionally provide translations (.pkl)')
     parser.add_argument('--tscale', type=float, help='Scale all translations by this amount')
-    parser.add_argument('--first', type=int, help='Backproject the first N images')
-    parser.add_argument('--tilt', help='Tilt series .mrcs image stack')
-    parser.add_argument('--tilt-deg', type=float, default=45, help='Right-handed x-axis tilt offset in degrees (default: %(default)s)')
     parser.add_argument('--ctf', metavar='pkl', type=os.path.abspath, help='CTF parameters (.pkl) if particle stack is not phase flipped')
+    parser.add_argument('-o', type=os.path.abspath, required=True, help='Output .mrc file')
+
+    group = parser.add_argument_group('Dataset loading options')
+    group.add_argument('--invert-data', action='store_true', help='Invert data sign')
+    group.add_argument('--datadir', type=os.path.abspath, help='Path prefix to particle stack if loading relative paths from a .star or .cs file')
+    group.add_argument('--ind',help='Indices to iterate over (pkl)')
+    group.add_argument('--first', type=int, default=5000, help='Backproject the first N images (default: %(default)s)')
+
+
+    group = parser.add_argument_group('Tilt series options')
+    group.add_argument('--tilt', help='Tilt series .mrcs image stack')
+    group.add_argument('--tilt-deg', type=float, default=45, help='Right-handed x-axis tilt offset in degrees (default: %(default)s)')
     return parser
 
 def add_slice(V, counts, ff_coord, ff, D):
@@ -72,10 +77,10 @@ def main(args):
 
     # load the particles
     if args.tilt is None:
-        data = dataset.LazyMRCData(args.mrcs, norm=(0,1), invert_data=args.invert_data)
+        data = dataset.LazyMRCData(args.mrcs, norm=(0,1), invert_data=args.invert_data, datadir=args.datadir)
         tilt = None
     else:
-        data = dataset.TiltMRCData(args.mrcs, args.tilt, norm=(0,1), invert_data=args.invert_data)
+        data = dataset.TiltMRCData(args.mrcs, args.tilt, norm=(0,1), invert_data=args.invert_data, datadir=args.datadir)
         tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32))
     D = data.D
     Nimg = data.N
@@ -99,9 +104,10 @@ def main(args):
     
     mask = lattice.get_circular_mask(D//2)
 
-    if args.indices:
-        iterator = pickle.load(open(args.indices,'rb'))
+    if args.ind:
+        iterator = pickle.load(open(args.ind,'rb'))
     elif args.first:
+        args.first = min(args.first, Nimg)
         iterator = range(args.first)
     else:
         iterator = range(Nimg)

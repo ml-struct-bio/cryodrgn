@@ -67,8 +67,8 @@ def main(args):
         plt.scatter(xd[:,0],xd[:,1],c='k')#np.arange(len(xd)),cmap='hsv')
     if args.out_s:
         np.savetxt(args.out_s, xd)
-    if args.o: 
-        plt.savefig(args.o)
+    if args.out_png: 
+        plt.savefig(args.out_png)
     else:
         plt.show()
 

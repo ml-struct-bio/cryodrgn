@@ -80,22 +80,8 @@ class Starfile():
         # format is index@path_to_mrc
         particles = [x.split('@') for x in particles]
         ind = [int(x[0])-1 for x in particles] # convert to 0-based indexing
-        if datadir is not None:
-            mrcs1 = ['{}/{}'.format(datadir, os.path.basename(x[1])) for x in particles]
-            mrcs2 = ['{}/{}'.format(datadir, x[1]) for x in particles]
-            try:
-                for path in set(mrcs1):
-                    assert os.path.exists(path)
-                mrcs = mrcs1
-            except:
-                for path in set(mrcs2):
-                    assert os.path.exists(path)
-                mrcs = mrcs2
-        else:
-            mrcs = [x[1] for x in particles]
-            for path in set(mrcs):
-                assert os.path.exists(path)
-
+        mrcs = [x[1] for x in particles]
+        mrcs = prefix_paths(mrcs, datadir)
         D = mrc.parse_header(mrcs[0]).nx # image size along one dimension in pixels
         dtype = np.float32
         stride = np.float32().itemsize*D*D
@@ -103,3 +89,37 @@ class Starfile():
         if not lazy:
             dataset = np.array([x.get() for x in dataset])
         return dataset
+
+def prefix_paths(mrcs, datadir):
+    if datadir is not None:
+        mrcs1 = ['{}/{}'.format(datadir, os.path.basename(x)) for x in mrcs]
+        mrcs2 = ['{}/{}'.format(datadir, x) for x in mrcs]
+        try:
+            for path in set(mrcs1):
+                assert os.path.exists(path)
+            mrcs = mrcs1
+        except:
+            for path in set(mrcs2):
+                assert os.path.exists(path)
+            mrcs = mrcs2
+    else:
+        for path in set(mrcs):
+            assert os.path.exists(path)
+    return mrcs
+
+def csparc_get_particles(csfile, datadir=None, lazy=True):
+    metadata = np.load(csfile)
+    ind = metadata['blob/idx'] # 0-based indexing
+    mrcs = list(metadata['blob/path'])
+    mrcs = prefix_paths(mrcs, datadir)
+    D = metadata[0]['blob/shape'][0]
+    dtype = np.float32
+    stride = np.float32().itemsize*D*D
+    dataset = [LazyImage(f, (D,D), dtype, 1024+ii*stride) for ii,f in zip(ind, mrcs)]
+    if not lazy:
+        dataset = np.array([x.get() for x in dataset])
+    return dataset
+
+
+
+

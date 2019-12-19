@@ -12,10 +12,10 @@ log = utils.log
 
 def load_particles(mrcs_txt_star, lazy=False, datadir=None):
     '''
-    Load particle stack from either a .mrcs file, a .star file, or a .txt file containing paths to .mrcs files
+    Load particle stack from either a .mrcs file, a .star file, a .txt file containing paths to .mrcs files, or a cryosparc particles.cs file
 
     lazy (bool): Return numpy array if True, or return list of LazyImages
-    datadir (str or None): Base directory overwrite for .star file parsing
+    datadir (str or None): Base directory overwrite for .star or .cs file parsing
     '''
     if mrcs_txt_star.endswith('.txt'):
         particles = mrc.parse_mrc_list(mrcs_txt_star, lazy=lazy)
@@ -28,6 +28,8 @@ def load_particles(mrcs_txt_star, lazy=False, datadir=None):
                 datadir = os.path.dirname(mrcs_txt_star) # assume .mrcs files are in the same director as the starfile
                 particles = starfile.Starfile.load(mrcs_txt_star).get_particles(datadir=datadir, lazy=lazy)
             else: raise RuntimeError(e)
+    elif mrcs_txt_star.endswith('.cs'):
+        particles = starfile.csparc_get_particles(mrcs_txt_star, datadir, lazy)
     else:
         particles, _, _ = mrc.parse_mrc(mrcs_txt_star, lazy=lazy)
     return particles

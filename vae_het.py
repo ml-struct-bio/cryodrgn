@@ -44,9 +44,12 @@ def parse_args():
     parser.add_argument('--log-interval', type=int, default=1000, help='Logging interval in N_IMGS (default: %(default)s)')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
     parser.add_argument('--seed', type=int, default=np.random.randint(0,100000), help='Random seed')
-    parser.add_argument('--invert-data', action='store_true', help='Invert data sign')
-    parser.add_argument('--window', action='store_true', help='Real space windowing of dataset')
+
+    group = parser.add_argument_group('Dataset loading')
+    group.add_argument('--invert-data', action='store_true', help='Invert data sign')
+    group.add_argument('--window', action='store_true', help='Real space windowing of dataset')
     parser.add_argument('--ind', type=os.path.abspath, help='Filter particle stack by these indices')
+    group.add_argument('--lazy', action='store_true', help='Lazy loading if full dataset is too large to fit in memory')
 
     group = parser.add_argument_group('Tilt series')
     group.add_argument('--tilt', help='Particles (.mrcs)')
@@ -251,10 +254,14 @@ def main(args):
     if args.tilt is None:
         if args.encode_mode == 'conv':
             args.use_real = True
-        data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, keepreal=args.use_real, window=args.window)
+        if args.lazy:
+            data = dataset.LazyMRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, keepreal=args.use_real, window=args.window)
+        else:
+            data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, keepreal=args.use_real, window=args.window)
         tilt = None
     else:
         assert args.encode_mode == 'tilt'
+        if args.lazy: raise NotImplementedError
         data = dataset.TiltMRCData(args.particles, args.tilt, norm=args.norm, invert_data=args.invert_data, ind=ind, window=args.window, keepreal=args.use_real)
         tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32))
     Nimg = data.N

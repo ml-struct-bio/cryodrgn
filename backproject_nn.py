@@ -43,8 +43,9 @@ def parse_args():
     group = parser.add_argument_group('Dataset loading')
     group.add_argument('--invert-data', action='store_true', help='Invert data sign')
     group.add_argument('--window', action='store_true', help='Real space windowing of dataset')
-    parser.add_argument('--ind', type=os.path.abspath, help='Filter particle stack by these indices')
+    group.add_argument('--ind', type=os.path.abspath, help='Filter particle stack by these indices')
     group.add_argument('--lazy', action='store_true', help='Lazy loading if full dataset is too large to fit in memory')
+    group.add_argument('--datadir', type=os.path.abspath, help='Path prefix to particle stack if loading relative paths from a .star or .cs file')
 
     group = parser.add_argument_group('Training parameters')
     group.add_argument('-n', '--num-epochs', type=int, default=10, help='Number of training epochs (default: %(default)s)')
@@ -120,9 +121,9 @@ def main(args):
         ind = pickle.load(open(args.ind,'rb'))
     else: ind = None
     if args.lazy:
-        data = dataset.LazyMRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, window=args.window)
+        data = dataset.LazyMRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, window=args.window, datadir=args.datadir)
     else:
-        data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, window=args.window)
+        data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, window=args.window, datadir=args.datadir)
     D = data.D
     Nimg = data.N
 

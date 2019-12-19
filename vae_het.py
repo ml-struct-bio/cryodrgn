@@ -50,6 +50,7 @@ def parse_args():
     group.add_argument('--window', action='store_true', help='Real space windowing of dataset')
     parser.add_argument('--ind', type=os.path.abspath, help='Filter particle stack by these indices')
     group.add_argument('--lazy', action='store_true', help='Lazy loading if full dataset is too large to fit in memory')
+    group.add_argument('--datadir', type=os.path.abspath, help='Path prefix to particle stack if loading relative paths from a .star or .cs file')
 
     group = parser.add_argument_group('Tilt series')
     group.add_argument('--tilt', help='Particles (.mrcs)')
@@ -202,7 +203,8 @@ def save_config(args, dataset, lattice, model, out_config):
                         invert_data=args.invert_data,
                         ind=args.ind,
                         keepreal=args.use_real,
-                        window=args.window)
+                        window=args.window,
+                        datadir=args.datadir)
     if args.tilt is not None:
         dataset_args['particles_tilt'] = args.tilt
     lattice_args = dict(D=lattice.D,
@@ -255,14 +257,14 @@ def main(args):
         if args.encode_mode == 'conv':
             args.use_real = True
         if args.lazy:
-            data = dataset.LazyMRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, keepreal=args.use_real, window=args.window)
+            data = dataset.LazyMRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, keepreal=args.use_real, window=args.window, datadir=args.datadir)
         else:
-            data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, keepreal=args.use_real, window=args.window)
+            data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, keepreal=args.use_real, window=args.window, datadir=args.datadir)
         tilt = None
     else:
         assert args.encode_mode == 'tilt'
         if args.lazy: raise NotImplementedError
-        data = dataset.TiltMRCData(args.particles, args.tilt, norm=args.norm, invert_data=args.invert_data, ind=ind, window=args.window, keepreal=args.use_real)
+        data = dataset.TiltMRCData(args.particles, args.tilt, norm=args.norm, invert_data=args.invert_data, ind=ind, window=args.window, keepreal=args.use_real, datadir=args.datadir)
         tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32))
     Nimg = data.N
     D = data.D

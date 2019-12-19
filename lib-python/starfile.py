@@ -81,7 +81,10 @@ class Starfile():
         particles = [x.split('@') for x in particles]
         ind = [int(x[0])-1 for x in particles] # convert to 0-based indexing
         mrcs = [x[1] for x in particles]
-        mrcs = prefix_paths(mrcs, datadir)
+        if datadir is not None:
+            mrcs = prefix_paths(mrcs, datadir)
+        for path in set(mrcs):
+            assert os.path.exists(path), f'{path} not found'
         D = mrc.parse_header(mrcs[0]).nx # image size along one dimension in pixels
         dtype = np.float32
         stride = np.float32().itemsize*D*D
@@ -91,27 +94,26 @@ class Starfile():
         return dataset
 
 def prefix_paths(mrcs, datadir):
-    if datadir is not None:
-        mrcs1 = ['{}/{}'.format(datadir, os.path.basename(x)) for x in mrcs]
-        mrcs2 = ['{}/{}'.format(datadir, x) for x in mrcs]
-        try:
-            for path in set(mrcs1):
-                assert os.path.exists(path)
-            mrcs = mrcs1
-        except:
-            for path in set(mrcs2):
-                assert os.path.exists(path)
-            mrcs = mrcs2
-    else:
-        for path in set(mrcs):
+    mrcs1 = ['{}/{}'.format(datadir, os.path.basename(x)) for x in mrcs]
+    mrcs2 = ['{}/{}'.format(datadir, x) for x in mrcs]
+    try:
+        for path in set(mrcs1):
             assert os.path.exists(path)
+        mrcs = mrcs1
+    except:
+        for path in set(mrcs2):
+            assert os.path.exists(path), f'{path} not found'
+        mrcs = mrcs2
     return mrcs
 
 def csparc_get_particles(csfile, datadir=None, lazy=True):
     metadata = np.load(csfile)
     ind = metadata['blob/idx'] # 0-based indexing
-    mrcs = list(metadata['blob/path'])
-    mrcs = prefix_paths(mrcs, datadir)
+    mrcs = metadata['blob/path'].astype(str).tolist()
+    if datadir is not None:
+        mrcs = prefix_paths(mrcs, datadir)
+    for path in set(mrcs):
+        assert os.path.exists(path), f'{path} not found'
     D = metadata[0]['blob/shape'][0]
     dtype = np.float32
     stride = np.float32().itemsize*D*D

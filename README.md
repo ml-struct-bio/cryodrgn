@@ -49,16 +49,16 @@ It is also recommended to create image stacks at lower resolution (e.g. D=80, 16
 
 ### 3. Parse CTF parameters from a .star file
 
-CryoDRGN currently takes CTF parameters in a pickle format (.pkl). Use the utility script `parse_ctf.py` to extract the relevant CTF parameters from a .star file. 
+CryoDRGN currently takes CTF parameters in a pickle format (.pkl). Use the utility script `parse_ctf_star.py` to extract the relevant CTF parameters from a .star file. 
 
 Example usage:
 
-    $ python $SRC/utils/parse_ctf.py particles.star -N 101845 -D 256 --Apix 1.7 -o ctf.256.pkl
+    $ python $SRC/utils/parse_ctf_star.py particles.star -N 101845 -D 256 --Apix 1.7 -o ctf.256.pkl
 
 Note: the pixel size is saved in the CTF pickle. Run this script multiple times for each pixel size if cryoDRGN will be run on variable image size particles.
 
-    $ python $SRC/utils/parse_ctf.py particles.star -N 101845 -D 160 --Apix 2.72 -o ctf.160.pkl
-    $ python $SRC/utils/parse_ctf.py particles.star -N 101845 -D 80 --Apix 5.44 -o ctf.80.pkl
+    $ python $SRC/utils/parse_ctf_star.py particles.star -N 101845 -D 160 --Apix 2.72 -o ctf.160.pkl
+    $ python $SRC/utils/parse_ctf_star.py particles.star -N 101845 -D 80 --Apix 5.44 -o ctf.80.pkl
 
 ### 4. Running cryoDRGN heterogeneous reconstruction
 

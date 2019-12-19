@@ -87,7 +87,9 @@ def main(args):
     if args.ctf is not None:
         log('Loading ctf params from {}'.format(args.ctf))
         ctf_params = utils.load_pkl(args.ctf)
-        assert ctf_params.shape == (Nimg, 7)
+        if ctf_params.shape[1] == 7: # backwards compatibility with no parsing of phase shift
+            ctf_params = np.concatenate([ctf_params,np.zeros((Nimg,1),dtype=np.float32)], axis=1)
+        assert ctf_params.shape == (Nimg, 8)
         ctf.print_ctf_params(ctf_params[0])
         ctf_params = torch.tensor(ctf_params)
     else: ctf_params = None

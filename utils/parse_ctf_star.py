@@ -42,14 +42,14 @@ def parse_ctf(starfile, N):
     header, body = parse_star(starfile)
     assert len(body) == N
     body = [x.split() for x in body]
-    ind = (header.index(x) for x in ('_rlnDefocusU', '_rlnDefocusV', '_rlnDefocusAngle', '_rlnVoltage', '_rlnSphericalAberration', '_rlnAmplitudeContrast'))
+    ind = (header.index(x) for x in ('_rlnDefocusU', '_rlnDefocusV', '_rlnDefocusAngle', '_rlnVoltage', '_rlnSphericalAberration', '_rlnAmplitudeContrast', '_rlnPhaseShift'))
     ind = tuple(ind)
     ctf_params = [[x[i] for i in ind] for x in body]
     ctf_params = np.asarray(ctf_params)
     return ctf_params
 
 def main(args):
-    ctf_params = np.zeros((args.N, 7))
+    ctf_params = np.zeros((args.N, 8))
     ctf_params[:,0] = args.Apix
     ctf_params[:,1:] = parse_ctf(args.star, args.N)
     ctf.print_ctf_params(ctf_params[0])

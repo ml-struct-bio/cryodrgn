@@ -73,11 +73,12 @@ def compute_ctf_np(freqs, dfu, dfv, dfang, volt, cs, w, phase_shift=0, bfactor=N
     return np.require(ctf,dtype=freqs.dtype)
 
 def print_ctf_params(params):
-    assert len(params) == 7
-    log('A/pix       : {}'.format(params[0]))
-    log('DefocusU (A): {}'.format(params[1]))
-    log('DefocusV (A): {}'.format(params[2]))
-    log('Dfang (deg) : {}'.format(params[3]))
-    log('voltage (kV): {}'.format(params[4]))
-    log('cs (mm)     : {}'.format(params[5]))
-    log('w           : {}'.format(params[6]))
+    assert len(params) == 8
+    log('A/pix             : {}'.format(params[0]))
+    log('DefocusU (A)      : {}'.format(params[1]))
+    log('DefocusV (A)      : {}'.format(params[2]))
+    log('Dfang (deg)       : {}'.format(params[3]))
+    log('voltage (kV)      : {}'.format(params[4]))
+    log('cs (mm)           : {}'.format(params[5]))
+    log('w                 : {}'.format(params[6]))
+    log('Phase shift (deg) : {}'.format(params[7]))

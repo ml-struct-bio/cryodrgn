@@ -141,7 +141,7 @@ def main(args):
             add_slice(V, counts, ff_coord, ff_tilt, D)
 
     td = time.time()-t1
-    log('Backprojected {} images in {}s ({}s per image)'.format(Nimg, td, td/Nimg ))
+    log('Backprojected {} images in {}s ({}s per image)'.format(len(iterator), td, td/Nimg ))
     counts[counts == 0] = 1
     V /= counts
     V = fft.ihtn_center(V[0:-1,0:-1,0:-1].cpu().numpy())

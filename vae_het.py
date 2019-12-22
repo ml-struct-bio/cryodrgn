@@ -204,7 +204,11 @@ def save_config(args, dataset, lattice, model, out_config):
                         ind=args.ind,
                         keepreal=args.use_real,
                         window=args.window,
-                        datadir=args.datadir)
+                        datadir=args.datadir,
+                        ctf=args.ctf,
+                        poses=args.poses,
+                        tscale=args.tscale,
+                        do_pose_sgd=args.do_pose_sgd)
     if args.tilt is not None:
         dataset_args['particles_tilt'] = args.tilt
     lattice_args = dict(D=lattice.D,
@@ -219,10 +223,12 @@ def save_config(args, dataset, lattice, model, out_config):
                       enc_mask=args.enc_mask,
                       pe_type=args.pe_type,
                       domain=args.domain)
+    config = dict(dataset_args=dataset_args,
+                  lattice_args=lattice_args,
+                  model_args=model_args)
+    config['seed'] = args.seed
     with open(out_config,'wb') as f:
-        pickle.dump(dict(dataset_args=dataset_args,
-                         lattice_args=lattice_args,
-                         model_args=model_args), f)
+        pickle.dump(config, f)
 
 def main(args):
     log(args)

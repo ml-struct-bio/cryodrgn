@@ -249,10 +249,12 @@ def save_config(args, dataset, lattice, model, out_config):
                       enc_mask=args.enc_mask,
                       pe_type=args.pe_type,
                       domain=args.domain)
+    config = dict(dataset_args=dataset_args,
+                  lattice_args=lattice_args,
+                  model_args=model_args)
+    config['seed'] = args.seed
     with open(out_config,'wb') as f:
-        pickle.dump(dict(dataset_args=dataset_args,
-                         lattice_args=lattice_args,
-                         model_args=model_args), f)
+        pickle.dump(config, f)
 
 def sort_bnb_poses(bnb_pose):
     ind = [x[0] for x in bnb_pose]

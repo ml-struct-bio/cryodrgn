@@ -10,6 +10,9 @@ import seaborn as sns
 import pickle
 import umap
 
+import warnings 
+warnings.filterwarnings('ignore') # ignore numba warnings from umap
+
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('input', help='Input z.pkl')

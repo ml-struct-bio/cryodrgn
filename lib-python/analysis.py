@@ -1,8 +1,10 @@
+import os
 import numpy as np
 import pickle
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
+import subprocess
 
 
 from scipy.spatial.distance import cdist, pdist
@@ -229,7 +231,7 @@ def plot_projections(imgs, labels=None):
     return fig, axes
 
 def gen_volumes(weights, config, zfile, outdir, cuda=None):
-    src = os.path.abspath(os.path.dirname(__file__) + '..')
+    src = os.path.abspath(os.path.dirname(__file__) + '/..')
     cmd = f'python {src}/eval_decoder.py {weights} --config {config} --zfile {zfile} -o {outdir}'
     if cuda is not None:
         cmd = f'CUDA_VISIBLE_DEVICES={cuda} {cmd}'

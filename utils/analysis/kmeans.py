@@ -34,9 +34,9 @@ def main(args):
     # k-means clustering
     kmeans = KMeans(n_clusters=args.k,
                     random_state=0,
-                    max_iter=10).fit(z)
+                    max_iter=10)
+    labels = kmeans.fit_predict(z)
     centers = kmeans.cluster_centers_
-    labels = kmeans.predict(z)
 
     # use the nearest data point instead of cluster centroid
     if args.on_data: 

@@ -42,9 +42,9 @@ def cluster_kmeans(z, K):
     '''
     kmeans = KMeans(n_clusters=K,
                     random_state=0,
-                    max_iter=10).fit(z)
+                    max_iter=10)
+    labels = kmeans.fit_predict(z)
     centers = kmeans.cluster_centers_
-    labels = kmeans.predict(z)
     return labels, centers
 
 def get_nearest_point(data, query):

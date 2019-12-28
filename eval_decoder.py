@@ -15,6 +15,7 @@ import mrc
 import utils
 import fft
 import lie_tools
+import config
 from lattice import Lattice
 from models import HetOnlyVAE
 
@@ -51,20 +52,6 @@ def parse_args():
     parser.add_argument('--l-extent', type=float, help='Coordinate lattice size')
     return parser
 
-def load_config(config_pkl, args):
-    config = utils.load_pkl(config_pkl)
-    if args.norm is None:
-        args.norm = config['dataset_args']['norm']
-    if args.D is None:
-        args.D = config['lattice_args']['D'] - 1
-    if args.l_extent is None:
-        args.l_extent = config['lattice_args']['extent']
-    v = vars(args)
-    for arg in ('qlayers','qdim','zdim','encode_mode','players','pdim','enc_mask','pe_type','domain'):
-        if v[arg] is None:
-            v[arg] = config['model_args'][arg]
-    return args
-
 def main(args):
     t1 = dt.now()
 
@@ -75,7 +62,7 @@ def main(args):
         torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
     if args.config is not None:
-        args = load_config(args.config, args)
+        args = config.load_config(args.config, args)
     log(args)
 
     if args.downsample:

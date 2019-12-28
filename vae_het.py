@@ -63,8 +63,6 @@ def parse_args():
     group.add_argument('--lr', type=float, default=1e-4, help='Learning rate in Adam optimizer (default: %(default)s)')
     group.add_argument('--beta', default=1.0, help='Choice of beta schedule or a constant for KLD weight (default: %(default)s)')
     group.add_argument('--beta-control', type=float, help='KL-Controlled VAE gamma. Beta is KL target. (default: %(default)s)')
-    #group.add_argument('--equivariance', type=float, help='Strength of equivariance loss (default: %(default)s)')
-    #group.add_argument('--equivariance-end-it', type=int, default=100000, help='It at which equivariance max (default: %(default)s)')
     group.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: mean, std of dataset)')
     group.add_argument('--do-pose-sgd', action='store_true', help='Refine poses with gradient descent')
     group.add_argument('--pretrain', type=int, default=1, help='Number of epochs with fixed poses before pose SGD (default: %(default)s)')
@@ -85,23 +83,35 @@ def parse_args():
     group.add_argument('--domain', choices=('hartley','fourier'), default='fourier', help='Decoder representation domain (default: %(default)s)')
     return parser
 
-def train(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, equivariance=None, tilt=None, ctf_params=None, yr=None):
+def train_batch(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, tilt=None, ctf_params=None, yr=None):
+    optim.zero_grad()
+    model.train()
+    if trans is not None:
+        y, yt = preprocess_input(y, yt, lattice, trans)
+    z_mu, z_logvar, z, y_recon, y_recon_tilt, mask = run_batch(model, lattice, y, yt, rot, tilt, ctf_params, yr)
+    loss, gen_loss, kld = loss_function(z_mu, z_logvar, y, yt, y_recon, mask, beta, y_recon_tilt, beta_control)
+    loss.backward()
+    optim.step()
+    return loss.item(), gen_loss.item(), kld.item()
+
+def preprocess_input(y, yt, lattice, trans):
+    # center the image
+    B = y.size(0)
+    D = lattice.D
+    y = lattice.translate_ht(y.view(B,-1), trans.unsqueeze(1)).view(B,D,D)
+    if yt is not None: yt = lattice.translate_ht(yt.view(B,-1), trans.unsqueeze(1)).view(B,D,D)
+    return y, yt
+
+def run_batch(model, lattice, y, yt, rot, tilt=None, ctf_params=None, yr=None):
     use_tilt = yt is not None
     use_ctf = ctf_params is not None
-    model.train()
-    optim.zero_grad()
     B = y.size(0)
     D = lattice.D
     if use_ctf:
         freqs = lattice.freqs2d.unsqueeze(0).expand(B,*lattice.freqs2d.shape)/ctf_params[:,0].view(B,1,1)
         c = ctf.compute_ctf(freqs, *torch.split(ctf_params[:,1:], 1, 1)).view(B,D,D)
     
-    # translate the image
-    if trans is not None:
-        y = lattice.translate_ht(y.view(B,-1), trans.unsqueeze(1)).view(B,D,D)
-        if yt is not None: yt = lattice.translate_ht(yt.view(B,-1), trans.unsqueeze(1)).view(B,D,D)
-
-    # inference of z
+    # encode
     if yr is not None:
         input_ = (yr,)
     else:
@@ -114,31 +124,30 @@ def train(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, equ
     mask = lattice.get_circular_mask(D//2) # restrict to circular mask
     y_recon = model.decode(lattice.coords[mask]/lattice.extent/2 @ rot, z).view(B,-1)
     if use_ctf: y_recon *= c.view(B,-1)[:,mask]
-    gen_loss = F.mse_loss(y_recon, y.view(B,-1)[:, mask])
 
     # decode the tilt series
     if use_tilt:
         y_recon_tilt = model.decode(lattice.coords[mask]/lattice.extent/2 @ tilt @ rot, z)
         if use_ctf: y_recon_tilt *= c.view(B,-1)[:,mask]
-        gen_loss = .5*gen_loss + .5*F.mse_loss(y_recon_tilt, yt.view(B,-1)[:,mask])
+    else:
+        y_recon_tilt = None
+    return z_mu, z_logvar, z, y_recon, y_recon_tilt, mask
 
+def loss_function(z_mu, z_logvar, y, yt, y_recon, mask, beta, y_recon_tilt=None, beta_control=None):
+    # reconstruction error
+    use_tilt = yt is not None
+    B = y.size(0)
+    gen_loss = F.mse_loss(y_recon, y.view(B,-1)[:, mask])
+    if use_tilt:
+        gen_loss = .5*gen_loss + .5*F.mse_loss(y_recon_tilt, yt.view(B,-1)[:,mask])
     # latent loss
     kld = -0.5 * torch.mean(1 + z_logvar - z_mu.pow(2) - z_logvar.exp())
-
+    # total loss
     if beta_control is None:
-        loss = gen_loss + beta*kld/mask.sum()
+        loss = gen_loss + beta*kld/mask.sum().float()
     else:
-        loss = gen_loss + args.beta_control*(beta-kld)**2/mask.sum()
-
-    # extra equivariance loss term
-    if equivariance is not None:
-        lamb, equivariance_loss = equivariance
-        eq_loss = equivariance_loss(y, z_mu)
-        loss += lamb*eq_loss
-
-    loss.backward()
-    optim.step()
-    return gen_loss.item(), kld.item(), loss.item(), eq_loss.item() if equivariance else None
+        loss = gen_loss + args.beta_control*(beta-kld)**2/mask.sum().float()
+    return loss, gen_loss, kld
 
 def eval_z(model, lattice, data, batch_size, device, trans=None, use_tilt=False, ctf_params=None, use_real=False):
     assert not model.training
@@ -320,12 +329,6 @@ def main(args):
     out_config = '{}/config.pkl'.format(args.outdir)
     save_config(args, data, lattice, model, out_config)
     
-    args.equivariance = None # FIXME
-    if args.equivariance:
-        assert args.equivariance > 0, 'Regularization weight must be positive'
-        equivariance_lambda = LinearSchedule(0, args.equivariance, 10000, args.equivariance_end_it)
-        equivariance_loss = EquivarianceLoss(model, D)
-
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
     # restart from checkpoint
@@ -357,18 +360,13 @@ def main(args):
             global_it = Nimg*epoch + batch_it
 
             beta = beta_schedule(global_it)
-            if args.equivariance:
-                lamb = equivariance_lambda(global_it)
-                equivariance_tuple = (lamb, equivariance_loss)
-            else:
-                equivariance_tuple = None
            
             yr = torch.from_numpy(data.particles_real[ind]).to(device) if args.use_real else None
             if do_pose_sgd:
                 pose_optimizer.zero_grad()
             rot, tran = posetracker.get_pose(ind)
             ctf_param = ctf_params[ind] if ctf_params is not None else None
-            gen_loss, kld, loss, eq_loss = train(model, lattice, y, yt, rot, tran, optim, beta, args.beta_control, equivariance_tuple, tilt, ctf_params=ctf_param, yr=yr)
+            loss, gen_loss, kld = train_batch(model, lattice, y, yt, rot, tran, optim, beta, args.beta_control, tilt, ctf_params=ctf_param, yr=yr)
             if do_pose_sgd and epoch >= args.pretrain:
                 pose_optimizer.step()
 
@@ -376,13 +374,10 @@ def main(args):
             gen_loss_accum += gen_loss*B
             kld_accum += kld*B
             loss_accum += loss*B
-            if args.equivariance: eq_loss_accum += eq_loss*B
 
             if batch_it % args.log_interval == 0:
-                eq_log = 'equivariance={:.4f}, lambda={:.4f}, '.format(eq_loss, lamb) if args.equivariance else ''
-                log('# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.4f}, kld={:.4f}, beta={:.4f}, {}loss={:.4f}'.format(epoch+1, num_epochs, batch_it, Nimg, gen_loss, kld, beta, eq_log, loss))
-        eq_log = 'equivariance = {:.4f}, '.format(eq_loss_accum/Nimg) if args.equivariance else ''
-        log('# =====> Epoch: {} Average gen loss = {:.4}, KLD = {:.4f}, {}total loss = {:.4f}'.format(epoch+1, gen_loss_accum/Nimg, kld_accum/Nimg, eq_log, loss_accum/Nimg))
+                log('# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.4f}, kld={:.4f}, beta={:.4f}, loss={:.4f}'.format(epoch+1, num_epochs, batch_it, Nimg, gen_loss, kld, beta, loss))
+        log('# =====> Epoch: {} Average gen loss = {:.4}, KLD = {:.4f}, total loss = {:.4f}'.format(epoch+1, gen_loss_accum/Nimg, kld_accum/Nimg, loss_accum/Nimg))
 
         if args.checkpoint and epoch % args.checkpoint == 0:
             out_mrc = '{}/reconstruct.{}'.format(args.outdir,epoch)

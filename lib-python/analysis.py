@@ -67,7 +67,7 @@ def _get_colors(K, cmap=None):
         colors = [colors[i%len(colors)] for i in range(K)]
     return colors
    
-def plot_by_cluster(x, y, K, labels, centers=None, centers_i=None, annotate=False, s=2, alpha=0.1, cmap=None):
+def plot_by_cluster(x, y, K, labels, centers=None, centers_ind=None, annotate=False, s=2, alpha=0.1, cmap=None):
     fig, ax = plt.subplots()
     colors = _get_colors(K, cmap)
 
@@ -79,9 +79,9 @@ def plot_by_cluster(x, y, K, labels, centers=None, centers_i=None, annotate=Fals
         plt.scatter(x_sub, y_sub, s=s, alpha=alpha, label='cluster {}'.format(i), color=colors[i], rasterized=True)
 
     # plot cluster centers
-    if centers_i is not None:
+    if centers_ind is not None:
         assert centers is None
-        centers = np.array([[x[i],y[i]] for i in centers_i])
+        centers = np.array([[x[i],y[i]] for i in centers_ind])
     if centers is not None:
         plt.scatter(centers[:,0], centers[:,1], c='k')
     if annotate:
@@ -162,7 +162,7 @@ def ipy_plot_interactive_annotate(df, ind, opacity=.3):
     widget = interactive(update_axes, 
                     yaxis = df.select_dtypes('number').columns[1:], 
                     xaxis = df.select_dtypes('number').columns,
-                    color_by = ['index','labels'],
+                    color_by = df.columns,
                     colorscale = [None,'hsv','plotly3','deep','portland','picnic','armyrose'])
     return widget, f
 
@@ -206,7 +206,7 @@ def ipy_plot_interactive(df, opacity=.3):
     widget = interactive(update_axes, 
                          yaxis=df.select_dtypes('number').columns[1:], 
                          xaxis=df.select_dtypes('number').columns,
-                         color_by = ['index','labels'],
+                         color_by = df.columns,
                          colorscale = [None,'hsv','plotly3','deep','portland','picnic','armyrose'])
 
     t = go.FigureWidget([go.Table(
@@ -269,6 +269,8 @@ def load_dataframe(z=None, pc=None, euler=None, trans=None, labels=None, tsne=No
             data[f'z{i}'] = z[:,i]
     for kk,vv in kwargs.items():
         data[kk] = vv
-    return pd.DataFrame(data=data)
+    df = pd.DataFrame(data=data)
+    df['index'] = df.index
+    return df
 
 

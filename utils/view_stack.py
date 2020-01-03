@@ -11,13 +11,7 @@ import matplotlib.pyplot as plt
 sys.path.insert(0,'{}/../lib-python'.format(os.path.dirname(os.path.abspath(__file__))))
 import utils
 import mrc
-
-def plot_projections(out_png, imgs):
-    fig, axes = plt.subplots(nrows=3, ncols=3, figsize=(10,10))
-    axes = axes.ravel()
-    for i in range(min(len(imgs),9)):
-        axes[i].imshow(imgs[i], cmap='Greys_r') 
-    plt.savefig(out_png)
+import analysis
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -29,7 +23,11 @@ def main(args):
     stack,_,_ = mrc.parse_mrc(args.input,lazy=True)
     print('{} {}x{} images'.format(len(stack), *stack[0].get().shape))
     stack = [stack[x].get() for x in range(9)]
-    plot_projections(args.o, stack)
+    analysis.plot_projections(stack)
+    if args.o:
+        plt.savefig(args.o)
+    else:
+        plt.show()
 
 if __name__ == '__main__':
     main(parse_args().parse_args())

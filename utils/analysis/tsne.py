@@ -13,7 +13,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('input', help='Input z.pkl')
     parser.add_argument('--stride', type=int, help='Stride the dataset')
-    parser.add_argument('-p', default=50.0, type=float, help='Perplexity (default: %(default)s)')
+    parser.add_argument('-p', default=1000.0, type=float, help='Perplexity (default: %(default)s)')
     parser.add_argument('-o', help='Output pickle')
     return parser
 def main(args):

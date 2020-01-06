@@ -24,7 +24,7 @@ def run_pca(z):
     pc = pca.transform(z)
     return pc, pca
 
-def run_tsne(z, n_components=2, perplexity=50):
+def run_tsne(z, n_components=2, perplexity=1000):
     if len(z) > 10000:
         log('WARNING: {} datapoints > {}. This may take awhile.'.format(len(z), 10000))
     z_embedded = TSNE(n_components=n_components, perplexity=perplexity).fit_transform(z)

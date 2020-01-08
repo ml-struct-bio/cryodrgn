@@ -1,16 +1,6 @@
 set -e
 set -x
 
-python ../bnb_rot.py data/toy_projections.mrcs -o output/toy_recon_bnb --seed 0 --l-start 10 --l-end 14 -b 10
-python ../bnb_rot.py data/toy_projections.mrcs -o output/toy_recon_bnb --seed 0 --no-trans --l-start 10 --l-end 14 -b 10
-python ../bnb_rot.py data/toy_projections.mrcs -o output/toy_recon_bnb --seed 0 --tilt data/toy_projections.mrcs --tilt-deg 45 --l-start 10 --l-end 14 -b 10
-python ../bnb_rot.py data/toy_projections.mrcs -o output/toy_recon_bnb --seed 0 --no-trans --tilt data/toy_projections.mrcs --tilt-deg 45 --l-start 10 --l-end 14 -b 10
-
-python ../bnb_het.py data/toy_projections.mrcs -o output/toy_recon_bnb --seed 0 -b 10 -n 1 --l-start 10 --l-end 14
-python ../bnb_het.py data/toy_projections.mrcs -o output/toy_recon_bnb --seed 0 -b 10 --tilt data/toy_projections.mrcs --tilt-deg 45 --encode-mode tilt -n 1 --l-start 10 --l-end 14
-python ../bnb_het.py data/toy_projections.mrcs -o output/toy_recon_bnb --seed 0 -b 10 --tilt data/toy_projections.mrcs --tilt-deg 45 --encode-mode tilt --rotate --enc-only -n 1 --l-start 10 --l-end 14
-python ../bnb_het.py data/toy_projections.mrcs -o output/toy_recon_bnb --seed 0 -b 10 --tilt data/toy_projections.mrcs --tilt-deg 45 --encode-mode tilt --enc-only -n 1 --l-start 10 --l-end 14
-
 python ../backproject_nn.py data/toy_projections.mrcs --poses data/toy_angles.pkl -o output/toy_recon
 python ../backproject_nn.py data/toy_projections.star --poses data/toy_angles.pkl -o output/toy_recon
 python ../backproject_nn.py data/toy_projections.txt --poses data/toy_angles.pkl -o output/toy_recon

@@ -24,7 +24,7 @@ def run_pca(z):
     pc = pca.transform(z)
     return pc, pca
 
-def run_tsne(z, n_components=2, perplexity=1000):
+def run_tsne(z, n_components=2, perplexity=50):
     if len(z) > 10000:
         log('WARNING: {} datapoints > {}. This may take awhile.'.format(len(z), 10000))
     z_embedded = TSNE(n_components=n_components, perplexity=perplexity).fit_transform(z)
@@ -120,7 +120,7 @@ def ipy_plot_interactive_annotate(df, ind, opacity=.3):
     if 'labels' in df.columns:
         text = [f'Class {k}: index {i}' for i,k in zip(df.index, df.labels)] # hovertext
     else:
-        text = [f'Class {k}' for i in (df.index)] # hovertext
+        text = [f'index {i}' for i in df.index] # hovertext
     xaxis, yaxis = df.columns[0], df.columns[1]
     scatter = go.Scattergl(x=df[xaxis], 
                            y=df[yaxis], 
@@ -160,7 +160,7 @@ def ipy_plot_interactive_annotate(df, ind, opacity=.3):
             f.layout.yaxis.title = yaxis
         
     widget = interactive(update_axes, 
-                    yaxis = df.select_dtypes('number').columns[1:], 
+                    yaxis = df.select_dtypes('number').columns, 
                     xaxis = df.select_dtypes('number').columns,
                     color_by = df.columns,
                     colorscale = [None,'hsv','plotly3','deep','portland','picnic','armyrose'])
@@ -172,7 +172,7 @@ def ipy_plot_interactive(df, opacity=.3):
     if 'labels' in df.columns:
         text = [f'Class {k}: index {i}' for i,k in zip(df.index, df.labels)] # hovertext
     else:
-        text = [f'Class {k}' for i in (df.index)] # hovertext
+        text = [f'index {i}' for i in df.index] # hovertext
     
     xaxis, yaxis = df.columns[0], df.columns[1]
     f = go.FigureWidget([go.Scattergl(x=df[xaxis],
@@ -204,7 +204,7 @@ def ipy_plot_interactive(df, opacity=.3):
             f.layout.yaxis.title = yaxis
  
     widget = interactive(update_axes, 
-                         yaxis=df.select_dtypes('number').columns[1:], 
+                         yaxis=df.select_dtypes('number').columns, 
                          xaxis=df.select_dtypes('number').columns,
                          color_by = df.columns,
                          colorscale = [None,'hsv','plotly3','deep','portland','picnic','armyrose'])

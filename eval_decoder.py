@@ -31,9 +31,10 @@ def parse_args():
     parser.add_argument('--z-end', type=np.float32, nargs='*', help='')
     parser.add_argument('-n', type=int, default=10, help='Number of structures between z_start and z_end')
     parser.add_argument('--zfile', help='Text file witth values of z to evaluate')
-    parser.add_argument('-o', type=os.path.abspath, required=True, help='Output MRC or directory')
-    parser.add_argument('--Apix', type=float, help='Pixel size to add to mrc header')
-    parser.add_argument('--prefix', default='vol', help='Prefix when writing out multiple .mrc files (default: %(default)s)')
+    parser.add_argument('-o', type=os.path.abspath, required=True, help='Output .mrc or directory')
+    parser.add_argument('--Apix', type=float, default=1, help='Pixel size to add to .mrc header (default: %(default)s A/pix)')
+    parser.add_argument('--flip', action='store_true', help='Flip handedness of output volume')
+    parser.add_argument('--prefix', default='vol_', help='Prefix when writing out multiple .mrc files (default: %(default)s)')
     parser.add_argument('-d','--downsample', type=int, help='Optionally downsample volumes to this box size')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
 
@@ -109,8 +110,10 @@ def main(args):
                                                 args.downsample+1, extent, args.norm, zz) 
             else:
                 vol = model.decoder.eval_volume(lattice.coords, lattice.D, lattice.extent, args.norm, zz) 
-            out_mrc = '{}/{}_{:03d}.mrc'.format(args.o, args.prefix, i)
-            mrc.write(out_mrc, vol.astype(np.float32))
+            out_mrc = '{}/{}{:03d}.mrc'.format(args.o, args.prefix, i)
+            if args.flip:
+                vol = vol[::-1]
+            mrc.write(out_mrc, vol.astype(np.float32), ax=args.Apix, ay=args.Apix, az=args.Apix)
 
     else:
         z = np.array(args.z)
@@ -121,7 +124,9 @@ def main(args):
                                             args.downsample+1, extent, args.norm, z) 
         else:
             vol = model.decoder.eval_volume(lattice.coords, lattice.D, lattice.extent, args.norm, z) 
-        mrc.write(args.o, vol.astype(np.float32))
+        if args.flip:
+            vol = vol[::-1]
+        mrc.write(args.o, vol.astype(np.float32), ax=args.Apix, ay=args.Apix, az=args.Apix)
 
     td = dt.now()-t1
     log('Finsihed in {}'.format(td))

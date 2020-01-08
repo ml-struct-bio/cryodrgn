@@ -34,7 +34,7 @@ vlog = utils.vlog
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('particles', type=os.path.abspath, help='Particles (.mrcs)')
+    parser.add_argument('particles', type=os.path.abspath, help='Input particles (.mrcs, .star, .cs, or .txt)')
     parser.add_argument('weights', help='Model weights')
     parser.add_argument('-c', '--config', metavar='PKL', help='CryoDRGN configuration')
     parser.add_argument('-o', metavar='PKL', help='Output pickle for z and losses')

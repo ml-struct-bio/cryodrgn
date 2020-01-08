@@ -32,8 +32,7 @@ vlog = utils.vlog
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-
-    parser.add_argument('particles', type=os.path.abspath, help='Particles (.mrcs)')
+    parser.add_argument('particles', type=os.path.abspath, help='Input particles (.mrcs, .star, .cs, or .txt)')
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
     parser.add_argument('--zdim', type=int, required=True, help='Dimension of latent variable')
     parser.add_argument('--poses', type=os.path.abspath, nargs='*', required=True, help='Image rotations and translations (.pkl)')
@@ -48,7 +47,7 @@ def parse_args():
     group = parser.add_argument_group('Dataset loading')
     group.add_argument('--invert-data', action='store_true', help='Invert data sign')
     group.add_argument('--window', action='store_true', help='Real space windowing of dataset')
-    parser.add_argument('--ind', type=os.path.abspath, help='Filter particle stack by these indices')
+    group.add_argument('--ind', type=os.path.abspath, help='Filter particle stack by these indices')
     group.add_argument('--lazy', action='store_true', help='Lazy loading if full dataset is too large to fit in memory')
     group.add_argument('--datadir', type=os.path.abspath, help='Path prefix to particle stack if loading relative paths from a .star or .cs file')
 

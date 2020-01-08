@@ -24,7 +24,7 @@ def run_pca(z):
     pc = pca.transform(z)
     return pc, pca
 
-def run_tsne(z, n_components=2, perplexity=50):
+def run_tsne(z, n_components=2, perplexity=1000):
     if len(z) > 10000:
         log('WARNING: {} datapoints > {}. This may take awhile.'.format(len(z), 10000))
     z_embedded = TSNE(n_components=n_components, perplexity=perplexity).fit_transform(z)
@@ -231,6 +231,14 @@ def plot_projections(imgs, labels=None):
     return fig, axes
 
 def gen_volumes(weights, config, zfile, outdir, cuda=None):
+    '''Call eval_decoder.py to generate volumes at specified z values
+    Input:
+        weights (str): Path to model weights .pkl
+        config (str): Path to config.pkl
+        zfile (str): Path to .txt file of z values
+        outdir (str): Path to output directory for volumes,
+        cuda (int or None): Specify cuda device
+    '''
     src = os.path.abspath(os.path.dirname(__file__) + '/..')
     cmd = f'python {src}/eval_decoder.py {weights} --config {config} --zfile {zfile} -o {outdir}'
     if cuda is not None:
@@ -238,11 +246,8 @@ def gen_volumes(weights, config, zfile, outdir, cuda=None):
     log(f'Running command:\n{cmd}')
     return subprocess.check_call(cmd, shell=True)
     
-def load_workdir_results(workdir, e):
-    '''Load results into a pandas dataframe for downstream analysis'''
-    pass
-
 def load_dataframe(z=None, pc=None, euler=None, trans=None, labels=None, tsne=None, umap=None, **kwargs):
+    '''Load results into a pandas dataframe for downstream analysis'''
     data = {}
     if umap is not None:
         data['UMAP1'] = umap[:,0]

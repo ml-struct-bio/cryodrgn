@@ -7,7 +7,6 @@ import torch.nn.functional as F
 
 import fft
 import lie_tools
-import so3_grid
 import utils
 
 log = utils.log

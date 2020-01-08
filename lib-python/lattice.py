@@ -5,8 +5,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import lie_tools
-import so3_grid
 import utils
 
 log = utils.log

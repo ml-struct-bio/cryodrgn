@@ -15,9 +15,16 @@ Until the cryoDRGN conda package is available, for now, git clone the source cod
     conda create --name cryodrgn
     conda activate cryodrgn
     conda install pytorch=1.0.1 torchvision cudatoolkit=10.0 -c pytorch
+
+Additional requirements for latent space analysis and interactive visualization:
+
+    export CDRGN_SRC="path/to/git/repo"
     conda install seaborn scikit-learn 
     conda install -c conda-forge umap-learn
-    pip install --user healpy
+    conda install -c conda-forge jupyterlab
+    pip install ipywidgets
+    jupyter nbextension enable --py widgetsnbextension
+    pip install cufflinks
 
 ## Quickstart: heterogeneous reconstruction with consensus alignments
 
@@ -28,10 +35,9 @@ Training cryoDRGN networks has not been tested on image sizes above D=256. If yo
     $ SRC=[path to source code]
     $ python $SRC/utils/fouriershrink.py [input particle stack] -D 256 -o [output particle stack] --out-png projections.256.png
 
-It is also recommended to create image stacks at lower resolution (e.g. D=80, 160) for initial testing and pilot experiments with cryoDRGN.
+It is also recommended to create image stacks at lower resolution (e.g. D=128) for initial testing and pilot experiments with cryoDRGN.
 
-    $ python $SRC/utils/fouriershrink.py [input particle stack] -D 160 -o [output particle stack] --out-png projections.160.png
-    $ python $SRC/utils/fouriershrink.py [input particle stack] -D 80 -o [output particle stack] --out-png projections.80.png
+    $ python $SRC/utils/fouriershrink.py [input particle stack] -D 128 -o [output particle stack] --out-png projections.128.png
 
 ### 2. Parse alignments from a consensus homogeneous reconstruction
 
@@ -39,17 +45,13 @@ It is also recommended to create image stacks at lower resolution (e.g. D=80, 16
 
     $ python $SRC/utils/parse_star_alignments.py particles.star -o consensus
 
-* Parse alignments from cryoSPARC particles.cs file
+* Parse alignments from cryoSPARC homogeneous refinement particles.cs file
 
-    $ python $SRC/utils/parse_cs_alignments.py cryosparc_P27_J3_005_particles.cs --homorefine -o consensus
-
-* Test that alignments were parsed correctly using the voxel-based backprojection script:
-
-    $ python $SRC/backproject_voxel.py -h
+    $ python $SRC/utils/parse_cs_alignments.py cryosparc_P27_J3_005_particles.cs -o consensus
 
 ### 3. Parse CTF parameters from a .star file
 
-CryoDRGN currently takes CTF parameters in a pickle format (.pkl). Use the utility script `parse_ctf_star.py` to extract the relevant CTF parameters from a .star file. 
+CryoDRGN currently takes CTF parameters in a binary pickle format (.pkl). Use the utility script `parse_ctf_star.py` to extract the relevant CTF parameters from a .star file. 
 
 Example usage:
 
@@ -57,12 +59,17 @@ Example usage:
 
 Note: the pixel size is saved in the CTF pickle. Run this script multiple times for each pixel size if cryoDRGN will be run on variable image size particles.
 
-    $ python $SRC/utils/parse_ctf_star.py particles.star -N 101845 -D 160 --Apix 2.72 -o ctf.160.pkl
-    $ python $SRC/utils/parse_ctf_star.py particles.star -N 101845 -D 80 --Apix 5.44 -o ctf.80.pkl
+    $ python $SRC/utils/parse_ctf_star.py particles.star -N 101845 -D 128 --Apix 3.4 -o ctf.128.pkl
 
-### 4. Running cryoDRGN heterogeneous reconstruction
+### 4. Test alignments/CTF parameters were parsed correctly
 
-When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl) have been prepared, the cryoDRGN networks can be trained with following script:
+Test that alignments and CTF parameters were parsed correctly using the voxel-based backprojection script:
+
+    $ python $SRC/backproject_voxel.py -h
+
+### 5. Running cryoDRGN heterogeneous reconstruction
+
+When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl) have been prepared, a cryoDRGN model can be trained with following script:
 
     $ python $SRC/vae_het.py -h
     usage: vae_het.py [-h] -o OUTDIR --zdim ZDIM --poses [POSES [POSES ...]]

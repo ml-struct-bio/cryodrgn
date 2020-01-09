@@ -32,22 +32,21 @@ Additional requirements for latent space analysis and interactive visualization:
 
 Training cryoDRGN networks has not been tested on image sizes above D=256. If your images are larger than D=256, use the following utility to downsample the images:
 
-    $ SRC=[path to source code]
-    $ python $SRC/utils/fouriershrink.py [input particle stack] -D 256 -o [output particle stack] --out-png projections.256.png
+    $ python $CDRGN_SRC/utils/fouriershrink.py [input particle stack] -D 256 -o [output particle stack] --out-png projections.256.png
 
 It is also recommended to create image stacks at lower resolution (e.g. D=128) for initial testing and pilot experiments with cryoDRGN.
 
-    $ python $SRC/utils/fouriershrink.py [input particle stack] -D 128 -o [output particle stack] --out-png projections.128.png
+    $ python $CDRGN_SRC/utils/fouriershrink.py [input particle stack] -D 128 -o [output particle stack] --out-png projections.128.png
 
 ### 2. Parse alignments from a consensus homogeneous reconstruction
 
 * Parse alignments from RELION starfile
 
-    $ python $SRC/utils/parse_star_alignments.py particles.star -o consensus
+    $ python $CDRGN_SRC/utils/parse_star_alignments.py particles.star -o consensus
 
 * Parse alignments from cryoSPARC homogeneous refinement particles.cs file
 
-    $ python $SRC/utils/parse_cs_alignments.py cryosparc_P27_J3_005_particles.cs -o consensus
+    $ python $CDRGN_SRC/utils/parse_cs_alignments.py cryosparc_P27_J3_005_particles.cs -o consensus
 
 ### 3. Parse CTF parameters from a .star file
 
@@ -55,29 +54,30 @@ CryoDRGN currently takes CTF parameters in a binary pickle format (.pkl). Use th
 
 Example usage:
 
-    $ python $SRC/utils/parse_ctf_star.py particles.star -N 101845 -D 256 --Apix 1.7 -o ctf.256.pkl
+    $ python $CDRGN_SRC/utils/parse_ctf_star.py particles.star -N 101845 -D 256 --Apix 1.7 -o ctf.256.pkl
 
 Note: the pixel size is saved in the CTF pickle. Run this script multiple times for each pixel size if cryoDRGN will be run on variable image size particles.
 
-    $ python $SRC/utils/parse_ctf_star.py particles.star -N 101845 -D 128 --Apix 3.4 -o ctf.128.pkl
+    $ python $CDRGN_SRC/utils/parse_ctf_star.py particles.star -N 101845 -D 128 --Apix 3.4 -o ctf.128.pkl
 
 ### 4. Test alignments/CTF parameters were parsed correctly
 
 Test that alignments and CTF parameters were parsed correctly using the voxel-based backprojection script:
 
-    $ python $SRC/backproject_voxel.py -h
+    $ python $CDRGN_SRC/backproject_voxel.py -h
 
 ### 5. Running cryoDRGN heterogeneous reconstruction
 
 When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl) have been prepared, a cryoDRGN model can be trained with following script:
 
-    $ python $SRC/vae_het.py -h
+    $ python $CDRGN_SRC/vae_het.py -h
     usage: vae_het.py [-h] -o OUTDIR --zdim ZDIM --poses [POSES [POSES ...]]
                       [--tscale TSCALE] [--ctf pkl] [--load LOAD]
                       [--checkpoint CHECKPOINT] [--log-interval LOG_INTERVAL] [-v]
                       [--seed SEED] [--invert-data] [--window] [--ind IND]
-                      [--tilt TILT] [--tilt-deg TILT_DEG] [-n NUM_EPOCHS]
-                      [-b BATCH_SIZE] [--wd WD] [--lr LR] [--beta BETA]
+                      [--lazy] [--datadir DATADIR] [--tilt TILT]
+                      [--tilt-deg TILT_DEG] [-n NUM_EPOCHS] [-b BATCH_SIZE]
+                      [--wd WD] [--lr LR] [--beta BETA]
                       [--beta-control BETA_CONTROL] [--norm NORM NORM]
                       [--do-pose-sgd] [--pretrain PRETRAIN]
                       [--emb-type {s2s2,quat}] [--pose-lr POSE_LR]
@@ -91,7 +91,7 @@ When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl
     Train a VAE for heterogeneous reconstruction with known pose
     
     positional arguments:
-      particles             Particles (.mrcs)
+      particles             Input particles (.mrcs, .star, .cs, or .txt)
     
     optional arguments:
       -h, --help            show this help message and exit
@@ -99,7 +99,7 @@ When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl
                             Output directory to save model
       --zdim ZDIM           Dimension of latent variable
       --poses [POSES [POSES ...]]
-                            Image rotations and optionally translations (.pkl)
+                            Image rotations and translations (.pkl)
       --tscale TSCALE       Scale translations by this amount
       --ctf pkl             CTF parameters (.pkl) if particle stack is not phase
                             flipped
@@ -110,9 +110,15 @@ When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl
                             Logging interval in N_IMGS (default: 1000)
       -v, --verbose         Increaes verbosity
       --seed SEED           Random seed
+    
+    Dataset loading:
       --invert-data         Invert data sign
       --window              Real space windowing of dataset
       --ind IND             Filter particle stack by these indices
+      --lazy                Lazy loading if full dataset is too large to fit in
+                            memory
+      --datadir DATADIR     Path prefix to particle stack if loading relative
+                            paths from a .star or .cs file
     
     Tilt series:
       --tilt TILT           Particles (.mrcs)
@@ -137,11 +143,11 @@ When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl
                             (default: 1)
       --emb-type {s2s2,quat}
                             SO(3) embedding type for pose SGD (default: quat)
-      --pose-lr POSE_LR     Learning rate for pose optimizer (default: 0.0001)
+      --pose-lr POSE_LR     Learning rate for pose optimizer (default: 0.0003)
     
     Encoder Network:
-      --qlayers QLAYERS     Number of hidden layers (default: 10)
-      --qdim QDIM           Number of nodes in hidden layers (default: 128)
+      --qlayers QLAYERS     Number of hidden layers (default: 3)
+      --qdim QDIM           Number of nodes in hidden layers (default: 256)
       --encode-mode {conv,resid,mlp,tilt}
                             Type of encoder network (default: resid)
       --enc-mask ENC_MASK   Circular mask of image for encoder (default: D/2; -1
@@ -150,18 +156,18 @@ When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl
                             encoder)
     
     Decoder Network:
-      --players PLAYERS     Number of hidden layers (default: 10)
-      --pdim PDIM           Number of nodes in hidden layers (default: 128)
+      --players PLAYERS     Number of hidden layers (default: 3)
+      --pdim PDIM           Number of nodes in hidden layers (default: 256)
       --pe-type {geom_ft,geom_full,geom_lowf,geom_nohighf,linear_lowf,none}
                             Type of positional encoding (default: geom_lowf)
       --domain {hartley,fourier}
                             Decoder representation domain (default: fourier)
-
+    
 ### Example usage:
 
 Example command to train a 10-D latent variable cryoDRGN model for 20 epochs on an image dataset `projections.256.mrcs` with poses `consensus.rot.pkl, consensus.trans.pkl` and ctf parameters `ctf.256.pkl`:
 
-    $ python $SRC/vae_het.py projections.256.mrcs \
+    $ python $CDRGN_SRC/vae_het.py projections.256.mrcs \
             --poses consensus.rot.pkl consensus.trans.pkl \
             --tscale .8 \ 
             --ctf ctf.256.pkl \
@@ -194,11 +200,11 @@ Once the model has finished training, the working directory will contain a confi
 
 To analyze and visualize the learned latent space, use the scripts in the `utils/analysis` subdirectory (TODO: Document). Additional structures may be generated using the `eval_decoder.py` script. For example:
 
-    $ python $SRC/eval_decoder.py [WORKDIR]/weights.pkl --config [WORKDIR]/config.pkl -z ZVALUE -o reconstruct.sample1.mrc
+    $ python $CDRGN_SRC/eval_decoder.py [WORKDIR]/weights.pkl --config [WORKDIR]/config.pkl -z ZVALUE -o reconstruct.sample1.mrc
 
 Or to generate a trajectory using values of z given in a file `zvalues.txt`:
 
-    $ python $SRC/eval_decoder.py [WORKDIR]/weights.pkl --config [WORKDIR]/config.pkl --zfile zvalues.txt -o [WORKDIR]/trajectory
+    $ python $CDRGN_SRC/eval_decoder.py [WORKDIR]/weights.pkl --config [WORKDIR]/config.pkl --zfile zvalues.txt -o [WORKDIR]/trajectory
 
 ## Fully unsupervised reconstruction
 

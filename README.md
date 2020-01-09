@@ -65,6 +65,50 @@ Note: the pixel size is saved in the CTF pickle. Run this script multiple times 
 Test that alignments and CTF parameters were parsed correctly using the voxel-based backprojection script:
 
     $ python $CDRGN_SRC/backproject_voxel.py -h
+    usage: backproject_voxel.py [-h] --poses [POSES [POSES ...]] [--tscale TSCALE]
+                                [--ctf pkl] -o O [--invert-data]
+                                [--datadir DATADIR] [--ind IND] [--first FIRST]
+                                [--tilt TILT] [--tilt-deg TILT_DEG]
+                                mrcs
+    
+    Backproject a stack of images via linear interpolation
+    
+    positional arguments:
+      mrcs                  Input .mrcs image stack
+    
+    optional arguments:
+      -h, --help            show this help message and exit
+      --poses [POSES [POSES ...]]
+                            Image rotations and optionally translations (.pkl)
+      --tscale TSCALE       Scale all translations by this amount (default: 1)
+      --ctf pkl             CTF parameters (.pkl) if particle stack is not phase
+                            flipped
+      -o O                  Output .mrc file
+    
+    Dataset loading options:
+      --invert-data         Invert data sign
+      --datadir DATADIR     Path prefix to particle stack if loading relative
+                            paths from a .star or .cs file
+      --ind IND             Indices to iterate over (pkl)
+      --first FIRST         Backproject the first N images (default: 5000)
+    
+    Tilt series options:
+      --tilt TILT           Tilt series .mrcs image stack
+      --tilt-deg TILT_DEG   Right-handed x-axis tilt offset in degrees (default:
+                            45)
+    
+Example usage:
+
+    $ python $CDRGN_SRC/backproject_voxel.py projections.128.mrcs \
+            --poses consensus.rot.pkl consensus.trans.pkl \
+            --tscale 0.4 \
+            --ctf ctf.128.pkl \
+            --invert-data \ # Invert sign of dataset; Use if particles are white on black
+            --first 10000 \
+            -o backproject.128.mrc
+
+Check that the output structure `backproject.128.mrc` resembles the structure from the consensus reconstruction. 
+It will not match exactly as the `backproject_voxel.py` script performs linear interpolation of phase-flipped particles onto the voxel grid.
 
 ### 5. Running cryoDRGN heterogeneous reconstruction
 
@@ -163,6 +207,7 @@ When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl
       --domain {hartley,fourier}
                             Decoder representation domain (default: fourier)
     
+
 ### Example usage:
 
 Example command to train a 10-D latent variable cryoDRGN model for 20 epochs on an image dataset `projections.256.mrcs` with poses `consensus.rot.pkl, consensus.trans.pkl` and ctf parameters `ctf.256.pkl`:
@@ -172,39 +217,47 @@ Example command to train a 10-D latent variable cryoDRGN model for 20 epochs on 
             --tscale .8 \ 
             --ctf ctf.256.pkl \
             --zdim 10 \
-            --do-pose-sgd \ 
             -n 20 \
-            --pdim 1000 --players 3 \
-            --qdim 1000 --qlayers 3 \
+            --pdim 1024 --players 3 \
+            --qdim 1024 --qlayers 3 \
             -o 00_vae256_z10
 
-* The encoder and decoder networks in this model contain 3 layers of dimension 1000. 
-* Using the `--do-pose-sgd` flag will lead to *local* refinement of poses.
+* The encoder and decoder networks in this model contain 3 layers of dimension 1024. 
 * Results will be saved in the specified directory `00_vae256_z10`.
-* NOTE: Since translations are provided in units of pixels, `--tscale` may be used to renormalize translations e.g. if the consensus poses were obtained with a different box size.
+* NOTE: Since translations are stored in units of pixels, `--tscale` may be used to renormalize translations if the consensus poses were obtained with a different box size. 
+E.g. Use `--tscale .8` if the consensus reconstruction was performed at a box size of 320 pixels and the cryoDRGN model is trained on 256x256 images.
 
 ### Recommended settings:
 
 Pilot experiments:
-* Run with small model, small image sizes, and zD=1
-* Run with small model, small image sizes, and zD=10
+* Train a model using the default architecture, small image sizes (e.g. D=128 or smaller), and zD=1
+* Train a model using the default architecture, small image sizes (e.g. D=128 or smaller), and zD=10
 
 After validation, pose optimization, and any necessary particle filtering, train the full resolution image stack (up to D=256) with a large model:
-* Run large model, large image sizes, zD=10
+* Large architecture (e.g. 1024 dim x 3 layer network), large image sizes, zD=10
 
 Note these settings are highly experimental.
+
+### Local pose refinement
+
+Depending on the quality of the consensus reconstruction, image poses may contain errors.
+Image poses may be *locally* refined using the `--do-pose-sgd` flag. 
 
 ### Analysis
 
 Once the model has finished training, the working directory will contain a configuration file `config.pkl`, neural network weights `weights.pkl`, image poses (if performing pose sgd) `pose.pkl`, and the predicted latent encoding for each image `z.pkl`. The directory will also contain a volume `reconstruct.mrc` evaluated at the mean z value of the dataset. 
 
-To analyze and visualize the learned latent space, use the scripts in the `utils/analysis` subdirectory (TODO: Document). Additional structures may be generated using the `eval_decoder.py` script. For example:
+To analyze and visualize the learned latent space, use the scripts in the `utils/analysis` subdirectory. Additional structures may be generated using the `eval_decoder.py` script. For example:
 
     $ python $CDRGN_SRC/eval_decoder.py [WORKDIR]/weights.pkl --config [WORKDIR]/config.pkl -z ZVALUE -o reconstruct.sample1.mrc
 
 Or to generate a trajectory using values of z given in a file `zvalues.txt`:
 
     $ python $CDRGN_SRC/eval_decoder.py [WORKDIR]/weights.pkl --config [WORKDIR]/config.pkl --zfile zvalues.txt -o [WORKDIR]/trajectory
+
+For models with higher dimensional latent variables (zD>2), a shell script is provided which samples 20 structures from the latent space, runs UMAP dimensionality reduction, and creates a template jupyter-notebook in the working directory, which may be used for interactive visualization of the results:
+
+    $ $CDRGN_SRC/utils/analysis/analyze.sh [WORKDIR] [EPOCH] # Use 0-based index for the epoch number
 
 ## Fully unsupervised reconstruction
 

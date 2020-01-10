@@ -40,11 +40,11 @@ It is also recommended to create image stacks at lower resolution (e.g. D=128) f
 
 ### 2. Parse alignments from a consensus homogeneous reconstruction
 
-* Parse alignments from RELION starfile
-
+To parse alignments from a RELION starfile:
+    
     $ python $CDRGN_SRC/utils/parse_star_alignments.py particles.star -o consensus
 
-* Parse alignments from cryoSPARC homogeneous refinement particles.cs file
+To parse alignments from a cryoSPARC homogeneous refinement particles.cs file:
 
     $ python $CDRGN_SRC/utils/parse_cs_alignments.py cryosparc_P27_J3_005_particles.cs -o consensus
 
@@ -109,6 +109,8 @@ Example usage:
 
 Check that the output structure `backproject.128.mrc` resembles the structure from the consensus reconstruction. 
 It will not match exactly as the `backproject_voxel.py` script performs linear interpolation of phase-flipped particles onto the voxel grid.
+
+NOTE: Parsed translations are given in units of pixels. Use the `--tscale` flag to renormalize the translations if the images you are backprojecting are a different size than the images used in the consensus reconstruction.
 
 ### 5. Running cryoDRGN heterogeneous reconstruction
 
@@ -207,31 +209,41 @@ When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl
       --domain {hartley,fourier}
                             Decoder representation domain (default: fourier)
     
+Many of the parameters of this script have sensisible defaults. The required arguments are:
+
+* an input image stack (.mrcs)
+* `--poses`, image poses (.pkl)
+* `--zdim`, the dimension of the latent variable
+* `-o`, a clean output directory for storing results
+
+Additional parameters which are typically set include:
+
+* `--ctf`, CTF parameters (.pkl), unless phase flipped images are used
+* `-n`, Number of epochs to train
+* `--invert-data`, depending on the data sign convention used in previous processing steps
+* `--t-scale`, for modifying the scale of the translations
 
 ### Example usage:
 
-Example command to train a 10-D latent variable cryoDRGN model for 20 epochs on an image dataset `projections.256.mrcs` with poses `consensus.rot.pkl, consensus.trans.pkl` and ctf parameters `ctf.256.pkl`:
+Example command to train a 10-D latent variable cryoDRGN model for 50 epochs on an image dataset `projections.128.mrcs` with poses `consensus.rot.pkl, consensus.trans.pkl` and ctf parameters `ctf.128.pkl`:
 
-    $ python $CDRGN_SRC/vae_het.py projections.256.mrcs \
+    $ python $CDRGN_SRC/vae_het.py projections.128.mrcs \
             --poses consensus.rot.pkl consensus.trans.pkl \
-            --tscale .8 \ 
-            --ctf ctf.256.pkl \
+            --tscale .4 \ 
+            --ctf ctf.128.pkl \
             --zdim 10 \
-            -n 20 \
-            --pdim 1024 --players 3 \
-            --qdim 1024 --qlayers 3 \
-            -o 00_vae256_z10
+            -n 50 \
+            -o 00_vae128_z10
 
-* The encoder and decoder networks in this model contain 3 layers of dimension 1024. 
-* Results will be saved in the specified directory `00_vae256_z10`.
+* Results will be saved in the specified directory `00_vae128_z10`.
 * NOTE: Since translations are stored in units of pixels, `--tscale` may be used to renormalize translations if the consensus poses were obtained with a different box size. 
-E.g. Use `--tscale .8` if the consensus reconstruction was performed at a box size of 320 pixels and the cryoDRGN model is trained on 256x256 images.
+E.g. Use `--tscale .4` if the consensus reconstruction was performed at a box size of 320 pixels and the cryoDRGN model is trained on 128x128 images.
 
 ### Recommended settings:
 
 Pilot experiments:
-* Train a model using the default architecture, small image sizes (e.g. D=128 or smaller), and zD=1
-* Train a model using the default architecture, small image sizes (e.g. D=128 or smaller), and zD=10
+* Train a model using the default neural network architecture, small image sizes (e.g. D=128 or smaller), and zD=1
+* Train a model using the default neural network architecture, small image sizes (e.g. D=128 or smaller), and zD=10
 
 After validation, pose optimization, and any necessary particle filtering, train the full resolution image stack (up to D=256) with a large model:
 * Large architecture (e.g. 1024 dim x 3 layer network), large image sizes, zD=10
@@ -258,6 +270,10 @@ Or to generate a trajectory using values of z given in a file `zvalues.txt`:
 For models with higher dimensional latent variables (zD>2), a shell script is provided which samples 20 structures from the latent space, runs UMAP dimensionality reduction, and creates a template jupyter-notebook in the working directory, which may be used for interactive visualization of the results:
 
     $ $CDRGN_SRC/utils/analysis/analyze.sh [WORKDIR] [EPOCH] # Use 0-based index for the epoch number
+
+The principle components of the learned heteorgeneity can be visualized with the `get_z_pcs.py` script to get the z-values along the PCS, followed by the `eval_decoder.py` script to generate the volumes.
+
+    $ python $CDRGN_SRC/utils/analysis/get_z_pcs.py -h
 
 ## Fully unsupervised reconstruction
 

@@ -67,9 +67,10 @@ def _get_colors(K, cmap=None):
         colors = [colors[i%len(colors)] for i in range(K)]
     return colors
    
-def plot_by_cluster(x, y, K, labels, centers=None, centers_ind=None, annotate=False, s=2, alpha=0.1, cmap=None):
+def plot_by_cluster(x, y, K, labels, centers=None, centers_ind=None, annotate=False, s=2, alpha=0.1, colors=None, cmap=None):
     fig, ax = plt.subplots()
-    colors = _get_colors(K, cmap)
+    if colors is None:
+        colors = _get_colors(K, cmap)
 
     # scatter by cluster
     for i in range(K):

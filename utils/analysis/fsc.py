@@ -18,6 +18,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('vol1', help='Input')
     parser.add_argument('vol2', help='Input')
+    parser.add_argument('--mask')
     parser.add_argument('--plot', action='store_true')
     parser.add_argument('--Apix', type=float, default=1)
     parser.add_argument('-o', help='Output')
@@ -26,6 +27,11 @@ def parse_args():
 def main(args):
     vol1 , _, _ = mrc.parse_mrc(args.vol1)
     vol2 , _, _ = mrc.parse_mrc(args.vol2)
+
+    if args.mask:
+        mask = mrc.parse_mrc(args.mask)[0]
+        vol1 *= mask
+        vol2 *= mask
     
     D = vol1.shape[0]
     x = np.arange(-D//2, D//2)

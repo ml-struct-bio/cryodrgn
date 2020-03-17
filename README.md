@@ -18,7 +18,7 @@ Until the cryoDRGN conda package is available, for now, git clone the source cod
 
 Additional requirements for latent space analysis and interactive visualization:
 
-    export CDRGN_SRC="path/to/git/repo"
+    conda env config vars set CDRGN_SRC="path/to/git/repo"
     conda install seaborn scikit-learn 
     conda install -c conda-forge umap-learn
     conda install -c conda-forge jupyterlab

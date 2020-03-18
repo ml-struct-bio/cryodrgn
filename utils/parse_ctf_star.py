@@ -1,4 +1,4 @@
-'''Parse CTF params from a RELION starfile'''
+'''Parse CTF parameters from a RELION .star file'''
 
 import argparse
 import numpy as np
@@ -15,12 +15,13 @@ def parse_args():
     parser.add_argument('star', help='Input')
     parser.add_argument('-N', type=int, required=True, help='Number of particles in image stack')
     parser.add_argument('--Apix', type=float, required=True, help='Angstroms per pixel')
-    parser.add_argument('-D', type=int, help='Image size (width of image in pixels)')
+    parser.add_argument('-D', type=int, help='Image size in pixels')
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Output pkl with CTF params')
-    parser.add_argument('--png', type=os.path.abspath)
+    parser.add_argument('--png', metavar='PNG', type=os.path.abspath, help='Optionally plot the CTF')
     return parser
 
 def parse_star(starfile):
+
     f = open(starfile,'r')
     for line in f:
         if line.startswith('loop_'):
@@ -49,6 +50,8 @@ def parse_ctf(starfile, N):
     return ctf_params
 
 def main(args):
+    assert args.o.endswith('.pkl'), "Output CTF parameters must be .pkl file"
+
     ctf_params = np.zeros((args.N, 8))
     ctf_params[:,0] = args.Apix
     ctf_params[:,1:] = parse_ctf(args.star, args.N)

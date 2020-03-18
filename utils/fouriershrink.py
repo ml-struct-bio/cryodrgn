@@ -20,13 +20,13 @@ log = utils.log
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('mrcs', help='Input particles (.mrcs, .star, or .txt)')
-    parser.add_argument('-D', type=int, required=True, help='New image size, must be even')
-    parser.add_argument('-o', type=os.path.abspath, required=True, help='Output projection stack (.mrcs)')
-    parser.add_argument('--out-png', type=os.path.abspath, help='Montage of first 9 projections')
-    parser.add_argument('--is-vol',action='store_true')
+    parser.add_argument('mrcs', help='Input particles or volume (.mrc, .mrcs, .star, or .txt)')
+    parser.add_argument('-D', type=int, required=True, help='New box size in pixels, must be even')
+    parser.add_argument('-o', metavar='MRCS', type=os.path.abspath, required=True, help='Output projection stack (.mrcs)')
+    parser.add_argument('--out-png', metavar='PNG', type=os.path.abspath, help='Optionally plot first 9 images')
+    parser.add_argument('--is-vol',action='store_true', help='Flag if input .mrc is a volume')
     parser.add_argument('--chunk', type=int, help='Chunksize (in # of images) to split particle stack when saving')
-    parser.add_argument('--datadir', help='Optionally overwrite path to starfile .mrcs if loading from a starfile')
+    parser.add_argument('--datadir', help='Optionally provide path to input .mrcs if loading from a .star or .cs file')
     return parser
 
 def mkbasedir(out):
@@ -40,6 +40,7 @@ def warnexists(out):
 def main(args):
     mkbasedir(args.o)
     warnexists(args.o)
+    assert (args.o.endswith('.mrcs') or args.o.endswith('mrc')), "Must specify output in .mrc(s) file format"
 
     old = dataset.load_particles(args.mrcs, lazy=True, datadir=args.datadir)
     oldD = old[0].get().shape[0]

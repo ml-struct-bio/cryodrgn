@@ -7,6 +7,7 @@ import pickle
 
 sys.path.insert(0, '{}/../lib-python'.format(os.path.dirname(os.path.realpath(__file__))))
 import utils
+import starfile
 import ctf
 log = utils.log 
 
@@ -20,41 +21,17 @@ def parse_args():
     parser.add_argument('--png', metavar='PNG', type=os.path.abspath, help='Optionally plot the CTF')
     return parser
 
-def parse_star(starfile):
-
-    f = open(starfile,'r')
-    for line in f:
-        if line.startswith('loop_'):
-            break
-    lines = f.readlines()
-    header = []
-    i = 0
-    for l in lines:
-        if l.startswith('_rln'):
-            header.append(l.strip().split()[0])
-            i += 1
-        else:
-            break
-    body = lines[i:]
-    body = [x for x in body if x.strip()] # remove any empty lines
-    return header, body
-
-def parse_ctf(starfile, N):
-    header, body = parse_star(starfile)
-    assert len(body) == N
-    body = [x.split() for x in body]
-    ind = (header.index(x) for x in ('_rlnDefocusU', '_rlnDefocusV', '_rlnDefocusAngle', '_rlnVoltage', '_rlnSphericalAberration', '_rlnAmplitudeContrast', '_rlnPhaseShift'))
-    ind = tuple(ind)
-    ctf_params = [[x[i] for i in ind] for x in body]
-    ctf_params = np.asarray(ctf_params)
-    return ctf_params
-
 def main(args):
     assert args.o.endswith('.pkl'), "Output CTF parameters must be .pkl file"
+    
+    s = starfile.Starfile.load(args.star)
+    assert args.N == len(s.df)
+    log('{} particles'.format(args.N))
 
     ctf_params = np.zeros((args.N, 8))
     ctf_params[:,0] = args.Apix
-    ctf_params[:,1:] = parse_ctf(args.star, args.N)
+    for i,header in enumerate(['_rlnDefocusU', '_rlnDefocusV', '_rlnDefocusAngle', '_rlnVoltage', '_rlnSphericalAberration', '_rlnAmplitudeContrast', '_rlnPhaseShift']):
+        ctf_params[:,i+1] = s.df[header]
     ctf.print_ctf_params(ctf_params[0])
     log('Saving {}'.format(args.o))
     with open(args.o,'wb') as f:

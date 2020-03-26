@@ -40,7 +40,7 @@ class PoseTracker(nn.Module):
         Return an instance of PoseTracker
 
         Inputs:
-            infile (tuple):     One or two files, with format options of:
+            infile (str or list):   One or two files, with format options of:
                                     single file with pose pickle
                                     two files with rot and trans pickle
                                     single file with rot pickle
@@ -50,6 +50,7 @@ class PoseTracker(nn.Module):
             ind:                Index array if poses are being filtered
         '''
         # load pickle
+        if type(infile) is str: infile = [infile]
         assert len(infile) in (1,2)
         if len(infile) == 2: # rotation pickle, translation pickle
             poses = (utils.load_pkl(infile[0]), utils.load_pkl(infile[1]))

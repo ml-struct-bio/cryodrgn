@@ -13,10 +13,7 @@ log = utils.log
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('cs', help='Input cryosparc particles.cs file')
-    parser.add_argument('-N', type=int, required=True, help='Number of particles in image stack')
-    parser.add_argument('--Apix', type=float, required=True, help='Angstroms per pixel')
-    parser.add_argument('-D', type=int, help='Image size in pixels')
-    parser.add_argument('-o', type=os.path.abspath, required=True, help='Output pkl with CTF params')
+    parser.add_argument('-o', type=os.path.abspath, required=True, help='Output pkl of CTF parameters')
     parser.add_argument('--png', metavar='PNG', type=os.path.abspath, help='Optionally plot the CTF')
     return parser
 
@@ -24,34 +21,28 @@ def parse_args():
 
 def main(args):
     assert args.o.endswith('.pkl'), "Output CTF parameters must be .pkl file"
+
     metadata = np.load(args.cs)
-    assert len(metadata) == args.N
-    ctf_params = np.zeros((len(metadata), 8))
+    N = len(metadata)
+    log('{} particles'.format(N))
+
+    ctf_params = np.zeros((N, 9))
+    ctf_params[:,0] = metadata['blob/shape'][0][0]
     fields = ('blob/psize_A','ctf/df1_A','ctf/df2_A','ctf/df_angle_rad','ctf/accel_kv','ctf/cs_mm','ctf/amp_contrast','ctf/phase_shift_rad')
     for i,f in enumerate(fields):
-        ctf_params[:,i] = metadata[f]
+        ctf_params[:,i+1] = metadata[f]
         if f in ('ctf/df_angle_rad', 'ctf/phase_shift_rad'): # convert to degrees
-            ctf_params[:,i] *= (180/np.pi) 
+            ctf_params[:,i+1] *= (180/np.pi) 
 
-    # check consistency of boxsize
-    assert metadata['blob/shape'][0][0]*metadata['blob/psize_A'][0] == args.D*args.Apix
-    ctf_params[:,0] = args.Apix
     ctf.print_ctf_params(ctf_params[0])
     log('Saving {}'.format(args.o))
     with open(args.o,'wb') as f:
         pickle.dump(ctf_params.astype(np.float32), f)
     if args.png:
         import matplotlib.pyplot as plt
-        import seaborn as sns
-        D = args.D
-        Apix = ctf_params[0][0]
-        freqs = np.stack(np.meshgrid(np.linspace(-.5,.5,D,endpoint=False),np.linspace(-.5,.5,D,endpoint=False)),-1)/Apix
-        freqs = freqs.reshape(-1,2)
-        c = ctf.compute_ctf_np(freqs, *ctf_params[0,1:])
-        sns.heatmap(c.reshape(D, D))
+        ctf.plot_ctf(int(ctf_params[0,0]), ctf_params[0,1], ctf_params[0,2:])
         plt.savefig(args.png)
         log(args.png)
-    
 
 if __name__ == '__main__':
     main(parse_args().parse_args())

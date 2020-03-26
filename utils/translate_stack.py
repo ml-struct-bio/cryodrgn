@@ -16,7 +16,7 @@ log = utils.log
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mrcs', help='Input particles (.mrcs, .cs, .star, or .txt)')
-    parser.add_argument('trans', help='Translations (.pkl)')
+    parser.add_argument('trans', help='Pose or translations pickle (.pkl)')
     parser.add_argument('--datadir', help='Optionally overwrite path to starfile .mrcs if loading from a starfile')
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Output particle stack')
     parser.add_argument('--out-png')
@@ -36,6 +36,8 @@ def main(args):
     Nimg, D, D = particles.shape
 
     trans = utils.load_pkl(args.trans)
+    if type(trans) is tuple:
+        trans = trans[1]
     assert np.all(trans <= 1), "ERROR: Old pose format detected. Translations must be in units of fraction of box."
     trans *= D # convert to pixels
     assert len(trans) == Nimg

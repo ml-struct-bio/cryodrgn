@@ -30,7 +30,6 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('particles', help='Particle stack file (.mrcs)')
     parser.add_argument('--poses', nargs='*', required=True, help='Image rotations and optionally translations (.pkl)')
-    parser.add_argument('--tscale', type=float, default=1.0)
     parser.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: mean, std of dataset)')
     parser.add_argument('--ctf', metavar='pkl', type=os.path.abspath, help='CTF parameters (.pkl)')
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
@@ -151,10 +150,10 @@ def main(args):
 
     # load poses
     if args.do_pose_sgd:
-        posetracker = PoseTracker.load(args.poses, Nimg, args.emb_type, args.tscale, ind)
+        posetracker = PoseTracker.load(args.poses, Nimg, D, args.emb_type, ind)
         pose_optimizer = torch.optim.SparseAdam(posetracker.parameters(), lr=args.pose_lr)
     else:
-        posetracker = PoseTracker.load(args.poses, Nimg, None, args.tscale, ind)
+        posetracker = PoseTracker.load(args.poses, Nimg, D, None, ind)
 
     # load CTF
     if args.ctf is not None:

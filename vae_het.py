@@ -36,7 +36,6 @@ def parse_args():
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
     parser.add_argument('--zdim', type=int, required=True, help='Dimension of latent variable')
     parser.add_argument('--poses', type=os.path.abspath, nargs='*', required=True, help='Image rotations and translations (.pkl)')
-    parser.add_argument('--tscale', type=float, default=1.0, help='Scale translations by this amount')
     parser.add_argument('--ctf', metavar='pkl', type=os.path.abspath, help='CTF parameters (.pkl) if particle stack is not phase flipped')
     parser.add_argument('--load', type=os.path.abspath, help='Initialize training from a checkpoint')
     parser.add_argument('--checkpoint', type=int, default=1, help='Checkpointing interval in N_EPOCHS (default: %(default)s)')
@@ -215,7 +214,6 @@ def save_config(args, dataset, lattice, model, out_config):
                         datadir=args.datadir,
                         ctf=args.ctf,
                         poses=args.poses,
-                        tscale=args.tscale,
                         do_pose_sgd=args.do_pose_sgd)
     if args.tilt is not None:
         dataset_args['particles_tilt'] = args.tilt
@@ -288,7 +286,7 @@ def main(args):
 
     # load poses
     do_pose_sgd = args.do_pose_sgd
-    posetracker = PoseTracker.load(args.poses, Nimg, 's2s2' if do_pose_sgd else None, args.tscale, ind)
+    posetracker = PoseTracker.load(args.poses, Nimg, D, 's2s2' if do_pose_sgd else None, ind)
     pose_optimizer = torch.optim.SparseAdam(posetracker.parameters(), lr=args.pose_lr) if do_pose_sgd else None
 
     # load ctf

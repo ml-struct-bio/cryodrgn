@@ -39,7 +39,6 @@ def parse_args():
     parser.add_argument('-c', '--config', metavar='PKL', help='CryoDRGN configuration')
     parser.add_argument('-o', metavar='PKL', help='Output pickle for z and losses')
     parser.add_argument('--poses', type=os.path.abspath, nargs='*', required=True, help='Image rotations and optionally translations (.pkl)')
-    parser.add_argument('--tscale', type=float, default=1.0, help='Scale translations by this amount')
     parser.add_argument('--ctf', metavar='pkl', type=os.path.abspath, help='CTF parameters (.pkl) if particle stack is not phase flipped')
     parser.add_argument('--log-interval', type=int, default=1000, help='Logging interval in N_IMGS (default: %(default)s)')
     parser.add_argument('-b','--batch-size', type=int, default=50, help='Minibatch size (default: %(default)s)')
@@ -119,7 +118,7 @@ def main(args):
         assert D-1 == 64, "Image size must be 64x64 for convolutional encoder"
 
     # load poses
-    posetracker = PoseTracker.load(args.poses, Nimg, None, args.tscale, ind)
+    posetracker = PoseTracker.load(args.poses, Nimg, D, None, ind)
 
     # load ctf
     if args.ctf is not None:

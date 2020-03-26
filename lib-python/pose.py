@@ -8,13 +8,14 @@ import utils
 log = utils.log
 
 class PoseTracker(nn.Module):
-    def __init__(self, rots_np, trans_np=None, emb_type=None):
+    def __init__(self, rots_np, trans_np=None, D=None, emb_type=None):
         super(PoseTracker, self).__init__()
         rots = torch.tensor(rots_np).float()
         trans = torch.tensor(trans_np).float() if trans_np is not None else None
         self.rots = rots
         self.trans = trans
         self.use_trans = trans_np is not None
+        self.D = D
         self.emb_type = emb_type
         if emb_type is None:
             pass
@@ -34,7 +35,7 @@ class PoseTracker(nn.Module):
             self.trans_emb = trans_emb if self.use_trans else None
 
     @classmethod
-    def load(cls, infile, Nimg, emb_type=None, tscale=1.0, ind=None):
+    def load(cls, infile, Nimg, D, emb_type=None, ind=None):
         '''
         Return an instance of PoseTracker
 
@@ -44,8 +45,8 @@ class PoseTracker(nn.Module):
                                     two files with rot and trans pickle
                                     single file with rot pickle
             Nimg:               Number of particles
+            D:                  Box size (pixels)
             emb_type:           SO(3) embedding type if refining poses
-            tscale:             Scale translations by this amount
             ind:                Index array if poses are being filtered
         '''
         # load pickle
@@ -65,7 +66,7 @@ class PoseTracker(nn.Module):
 
         # translations if they exist
         if len(poses) == 2:
-            trans = tscale * poses[1]
+            trans = D * poses[1] # convert from fraction to pixels
             if ind is not None: 
                 if len(trans) > Nimg: # HACK
                     trans = trans[ind]
@@ -74,7 +75,7 @@ class PoseTracker(nn.Module):
             log('WARNING: No translations provided')
             trans = None
 
-        return cls(rots, trans, emb_type)
+        return cls(rots, trans, D, emb_type)
 
     def save(self, out_pkl):
         if self.emb_type == 'quat':
@@ -89,6 +90,7 @@ class PoseTracker(nn.Module):
                 t = self.trans.cpu().numpy()
             else:
                 t = self.trans_emb.weight.data.cpu().numpy()
+            t /= self.D # convert from pixels to extent
             poses = (r,t)
         else:
             poses = (r,)

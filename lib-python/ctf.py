@@ -95,7 +95,7 @@ def plot_ctf(D,Apix,ctf_params):
 
 def load_ctf_for_training(D, ctf_params_pkl):
     ctf_params = utils.load_pkl(ctf_params_pkl)
-    assert ctf_params.shape == (Nimg, 9)
+    assert ctf_params.shape[1] == 9
     # Replace original image size with current dimensions
     Apix = ctf_params[0,0]*ctf_params[0,1]/D
     ctf_params[:,0] = D

@@ -1,4 +1,4 @@
-'''Parse 3D alignments from cryosparc .cs metafiles'''
+'''Parse pose from a cryoSPARC .cs metafile'''
 
 import argparse
 import numpy as np
@@ -16,7 +16,8 @@ def parse_args():
     parser.add_argument('input', help='Cryosparc .cs file')
     parser.add_argument('--abinit', action='store_true', help='Flag if results are from ab-initio reconstruction') 
     parser.add_argument('--hetrefine', action='store_true', help='Flag if results are from a heterogeneous refinements (default: homogeneous refinement)')
-    parser.add_argument('-o', help='Output prefix for appending .rot.pkl and .trans.pkl')
+    parser.add_argument('-D', type=int, required=True, help='Box size of reconstruction (pixels)')
+    parser.add_argument('-o', required=True, help='Output prefix for appending .rot.pkl and .trans.pkl')
     return parser
 
 def main(args):
@@ -33,6 +34,7 @@ def main(args):
         TKEY = 'alignments3D/shift'
 
     # parse rotations
+    log(f'Extracting rotations from {RKEY}')
     rot = np.array([x[RKEY] for x in data])
     rot = torch.tensor(rot)
     rot = lie_tools.expmap(rot)
@@ -42,12 +44,16 @@ def main(args):
     log(rot.shape)
 
     # parse translations
+    log(f'Extracting translations from {TKEY}')
     trans = np.array([x[TKEY] for x in data])
     if args.hetrefine:
         log('Scaling shifts by 2x')
         trans *= 2
     log(trans.shape)
     
+    # convert translations from pixels to fraction 
+    trans /= args.D
+
     # write output
     out_rot = '{}.rot.pkl'.format(args.o)
     log('Writing {}'.format(out_rot))
@@ -57,7 +63,6 @@ def main(args):
     log('Writing {}'.format(out_trans))
     with open(out_trans,'wb') as f:
         pickle.dump(trans,f)
-    
 
 if __name__ == '__main__':
     main(parse_args().parse_args())

@@ -6,13 +6,11 @@ python ../utils/parse_ctf_star.py data/FinalRefinement-OriginalParticles-PfCRT.s
 diff output/ctf1.pkl data/ctf1.pkl
 
 # Test 2: Parse poses from starfile
-python ../utils/parse_pose_star.py data/FinalRefinement-OriginalParticles-PfCRT.star -o output/parsed -D 300
-diff output/parsed.rot.pkl data/parsed.rot.pkl
-diff output/parsed.trans.pkl data/parsed.trans.pkl
+python ../utils/parse_pose_star.py data/FinalRefinement-OriginalParticles-PfCRT.star -o output/pose.star.pkl -D 300
+diff output/pose.star.pkl data/pose.star.pkl
 
 # Test 3: Parse poses from .cs file
-python ../utils/parse_pose_csparc.py data/cryosparc_P12_J24_001_particles.cs -D 180 -o output/parsed2
-diff output/parsed2.rot.pkl data/parsed2.rot.pkl
-diff output/parsed2.trans.pkl data/parsed2.trans.pkl
+python ../utils/parse_pose_csparc.py data/cryosparc_P12_J24_001_particles.cs -D 180 -o output/pose.cs.pkl
+diff output/pose.cs.pkl data/pose.cs.pkl
 
 echo All ok

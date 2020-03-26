@@ -12,14 +12,16 @@ log = utils.log
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('input', help='Input volume')
+    parser.add_argument('input', help='Input volume (.mrc)')
     parser.add_argument('--apix', type=float, default=1, help='Angstrom/pixel (default: %(default)s)')
     parser.add_argument('--flip', action='store_true', help='Flip handedness')
     parser.add_argument('--invert', action='store_true', help='Invert volume')
-    parser.add_argument('-o', help='Output volume')
+    parser.add_argument('-o', help='Output volume (.mrc)')
     return parser
 
 def main(args):
+    assert args.input.endwith('.mrc'), "Input volume must be .mrc file"
+    assert args.o.endwith('.mrc'), "Output volume must be .mrc file"
     x, _, _ = mrc.parse_mrc(args.input)
     D = args.apix
     if args.invert:

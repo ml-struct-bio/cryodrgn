@@ -11,6 +11,8 @@ import starfile
 import ctf
 log = utils.log 
 
+HEADERS = ['_rlnDefocusU', '_rlnDefocusV', '_rlnDefocusAngle', '_rlnVoltage', '_rlnSphericalAberration', '_rlnAmplitudeContrast', '_rlnPhaseShift']
+
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('star', help='Input')
@@ -19,6 +21,11 @@ def parse_args():
     parser.add_argument('-D', type=int, help='Image size in pixels')
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Output pkl with CTF params')
     parser.add_argument('--png', metavar='PNG', type=os.path.abspath, help='Optionally plot the CTF')
+
+    group = parser.add_argument_group('Overwrite CTF parameters')
+    group.add_argument('--kv', type=float, help='Accelerating voltage (kV)')
+    group.add_argument('--cs', type=float, help='Spherical abberation (mm)')
+    group.add_argument('-w', type=float, help='Amplitude contrast ratio')
     return parser
 
 def main(args):
@@ -27,23 +34,31 @@ def main(args):
     s = starfile.Starfile.load(args.star)
     assert args.N == len(s.df)
     log('{} particles'.format(args.N))
+    
+    overrides = {}
+    if args.kv is not None:
+        log(f'Overriding accerlating voltage with {args.kv} kV')
+        overrides[HEADERS[3]] = args.kv
+    if args.cs is not None:
+        log(f'Overriding spherical abberation with {args.cs} mm')
+        overrides[HEADERS[4]] = args.cs
+    if args.w is not None:
+        log(f'Overriding amplitude contrast ratio with {args.w}')
+        overrides[HEADERS[5]] = args.w
 
     ctf_params = np.zeros((args.N, 8))
     ctf_params[:,0] = args.Apix
     for i,header in enumerate(['_rlnDefocusU', '_rlnDefocusV', '_rlnDefocusAngle', '_rlnVoltage', '_rlnSphericalAberration', '_rlnAmplitudeContrast', '_rlnPhaseShift']):
-        ctf_params[:,i+1] = s.df[header]
+        ctf_params[:,i+1] = s.df[header] if header  not in overrides else overrides[header]
+    log('CTF parameters for first particle:')
     ctf.print_ctf_params(ctf_params[0])
     log('Saving {}'.format(args.o))
     with open(args.o,'wb') as f:
         pickle.dump(ctf_params.astype(np.float32), f)
     if args.png:
-        assert args.D, 'Need image size to plot CTF'
         import matplotlib.pyplot as plt
-        import seaborn as sns
-        freqs = np.stack(np.meshgrid(np.linspace(-.5,.5,args.D,endpoint=False),np.linspace(-.5,.5,args.D,endpoint=False)),-1)/args.Apix
-        freqs = freqs.reshape(-1,2)
-        c = ctf.compute_ctf_np(freqs, *ctf_params[0,1:])
-        sns.heatmap(c.reshape(args.D, args.D))
+        assert args.D, 'Need image size to plot CTF'
+        ctf.plot_ctf(args.D, args.Apix, ctf_params[0,1:])
         plt.savefig(args.png)
         log(args.png)
     

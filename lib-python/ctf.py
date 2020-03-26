@@ -82,3 +82,13 @@ def print_ctf_params(params):
     log('cs (mm)           : {}'.format(params[5]))
     log('w                 : {}'.format(params[6]))
     log('Phase shift (deg) : {}'.format(params[7]))
+
+def plot_ctf(D,Apix,ctf_params):
+    assert len(ctf_params) == 7
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    freqs = np.stack(np.meshgrid(np.linspace(-.5,.5,D,endpoint=False),np.linspace(-.5,.5,D,endpoint=False)),-1)/Apix
+    freqs = freqs.reshape(-1,2)
+    c = compute_ctf_np(freqs, *ctf_params)
+    sns.heatmap(c.reshape(D, D))
+

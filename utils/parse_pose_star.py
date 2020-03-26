@@ -13,10 +13,12 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('input', help='RELION .star file')
     parser.add_argument('-D', type=int, required=True, help='Box size of reconstruction (pixels)')
-    parser.add_argument('-o', required=True, help='Output prefix for appending .rot.pkl and .trans.pkl')
+    parser.add_argument('-o', metavar='PKL', type=os.path.abspath, required=True, help='Output pose.pkl')
     return parser
 
 def main(args):
+    assert args.o.endswith('.pkl'), "Output format must be .pkl"
+
     s = starfile.Starfile.load(args.input)
     N = len(s.df)
     log('{} particles'.format(N))
@@ -43,14 +45,9 @@ def main(args):
     trans /= args.D
 
     # write output
-    out_rot = '{}.rot.pkl'.format(args.o)
-    log('Writing {}'.format(out_rot))
-    with open(out_rot,'wb') as f:
-        pickle.dump(rot,f)
-    out_trans = '{}.trans.pkl'.format(args.o)
-    log('Writing {}'.format(out_trans))
-    with open(out_trans,'wb') as f:
-        pickle.dump(trans,f)
+    log(f'Writing {args.o}')
+    with open(args.o,'wb') as f:
+        pickle.dump((rot,trans),f)
 
 if __name__ == '__main__':
     main(parse_args().parse_args())

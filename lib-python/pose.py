@@ -66,11 +66,12 @@ class PoseTracker(nn.Module):
 
         # translations if they exist
         if len(poses) == 2:
-            trans = D * poses[1] # convert from fraction to pixels
             if ind is not None: 
                 if len(trans) > Nimg: # HACK
                     trans = trans[ind]
             assert trans.shape == (Nimg,2)
+            assert np.all(trans <= 1), "Old version of parsed pose detected. Translations must be in units of fraction of box. Try re-parsing the pose."
+            trans = D * poses[1] # convert from fraction to pixels
         else: 
             log('WARNING: No translations provided')
             trans = None

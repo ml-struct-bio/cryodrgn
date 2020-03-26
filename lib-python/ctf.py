@@ -93,3 +93,16 @@ def plot_ctf(D,Apix,ctf_params):
     c = compute_ctf_np(freqs, *ctf_params)
     sns.heatmap(c.reshape(D, D))
 
+def load_ctf_for_training(D, ctf_params_pkl):
+    ctf_params = utils.load_pkl(ctf_params_pkl)
+    assert ctf_params.shape == (Nimg, 9)
+    # Replace original image size with current dimensions
+    Apix = ctf_params[0,0]*ctf_params[0,1]/D
+    ctf_params[:,0] = D
+    ctf_params[:,1] = Apix
+    print_ctf_params(ctf_params[0])
+    # Slice out the first column (D)
+    return ctf_params[:,1:]
+    
+
+

@@ -32,12 +32,11 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mrc', help='Input volume')
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Output projection stack (.mrcs)')
-    parser.add_argument('--out-rot', type=os.path.abspath, required=True, help='Output rotations (.pkl)')
-    parser.add_argument('--out-trans', type=os.path.abspath, help='Output translations (.pkl)')
+    parser.add_argument('--out-pose', type=os.path.abspath, required=True, help='Output poses (.pkl)')
     parser.add_argument('--out-png', type=os.path.abspath, help='Montage of first 9 projections')
     parser.add_argument('-N', type=int, help='Number of random projections')
     parser.add_argument('-b', type=int, default=100, help='Minibatch size (default: %(default)s)')
-    parser.add_argument('--t-extent', type=float, default=5, help='Extent of image translation (default: +/-%(default)s pixels)')
+    parser.add_argument('--t-extent', type=float, default=5, help='Extent of image translation in pixels (default: +/-%(default)s)')
     parser.add_argument('--grid', type=int, help='Generate projections on a uniform deterministic grid on SO3. Specify resolution level')
     parser.add_argument('--tilt', type=float, help='Right-handed x-axis tilt offset in degrees')
     parser.add_argument('--seed', type=int, help='Random seed')
@@ -142,7 +141,6 @@ def main(args):
     if args.t_extent == 0.:
         log('Not shifting images')
     else:
-        assert args.out_trans, "Must provide output pickle for translations"
         assert args.t_extent > 0
 
     if args.seed is not None:
@@ -197,18 +195,17 @@ def main(args):
         # convention: we want the first column to be x shift and second column to be y shift
         # reverse columns since current implementation of translate_img uses scipy's 
         # fourier_shift, which is flipped the other way
-        # convension: save the translation that needs to be applied on the image to center
+        # convention: save the translation that centers the image
         trans = -trans[:,::-1]
 
     log('Saving {}'.format(args.o))
     mrc.write(args.o,imgs.astype(np.float32))
-    log('Saving {}'.format(args.out_rot))
-    with open(args.out_rot,'wb') as f:
-        pickle.dump(rots, f)
-    if args.out_trans:
-        log('Saving {}'.format(args.out_trans))
-        with open(args.out_trans,'wb') as f:
-            pickle.dump(trans,f)
+    log('Saving {}'.format(args.out_pose))
+    with open(args.out_pose,'wb') as f:
+        if args.t_extent:
+            pickle.dump((rots,trans),f)
+        else:
+            pickle.dump(rots, f)
     if args.out_png:
         log('Saving {}'.format(args.out_png))
         plot_projections(args.out_png, imgs[:9])

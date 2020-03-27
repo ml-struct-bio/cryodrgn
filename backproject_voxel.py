@@ -1,5 +1,5 @@
 '''
-Backproject a stack of images via linear interpolation
+Backproject cryo-EM images
 '''
 
 import argparse
@@ -25,15 +25,14 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mrcs', help='Input .mrcs image stack')
     parser.add_argument('--poses', type=os.path.abspath, required=True, help='Image poses (.pkl)')
-    parser.add_argument('--ctf', metavar='pkl', type=os.path.abspath, help='CTF parameters (.pkl) if particle stack is not phase flipped')
+    parser.add_argument('--ctf', metavar='pkl', type=os.path.abspath, help='CTF parameters (.pkl) for phase flipping images')
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Output .mrc file')
 
     group = parser.add_argument_group('Dataset loading options')
     group.add_argument('--invert-data', action='store_true', help='Invert data sign')
     group.add_argument('--datadir', type=os.path.abspath, help='Path prefix to particle stack if loading relative paths from a .star or .cs file')
     group.add_argument('--ind',help='Indices to iterate over (pkl)')
-    group.add_argument('--first', type=int, default=5000, help='Backproject the first N images (default: %(default)s)')
-
+    group.add_argument('--first', type=int, default=10000, help='Backproject the first N images (default: %(default)s)')
 
     group = parser.add_argument_group('Tilt series options')
     group.add_argument('--tilt', help='Tilt series .mrcs image stack')
@@ -62,6 +61,9 @@ def add_slice(V, counts, ff_coord, ff, D):
     return V, counts
 
 def main(args):
+    assert args.mrcs.endswith('.mrcs')
+    assert args.o.endswith('.mrc')
+
     t1 = time.time()    
     log(args)
     if not os.path.exists(os.path.dirname(args.o)):

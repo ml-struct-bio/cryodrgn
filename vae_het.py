@@ -178,7 +178,7 @@ def eval_z(model, lattice, data, batch_size, device, trans=None, use_tilt=False,
     z_logvar_all = np.vstack(z_logvar_all)
     return z_mu_all, z_logvar_all
     
-def save_checkpoint(model, lattice, optim, epoch, norm, z_mu, z_logvar, out_mrc_dir, out_weights, out_z):
+def save_checkpoint(model, optim, epoch, z_mu, z_logvar, out_weights, out_z):
     '''Save model weights, latent encoding z, and decoder volumes'''
     # save model weights
     torch.save({
@@ -190,23 +190,11 @@ def save_checkpoint(model, lattice, optim, epoch, norm, z_mu, z_logvar, out_mrc_
     with open(out_z,'wb') as f:
         pickle.dump(z_mu, f)
         pickle.dump(z_logvar, f)
-    # save single structure at mean of z_mu
-    vol = model.decoder.eval_volume(lattice.coords, lattice.D, lattice.extent, norm, z_mu.mean(axis=0))
-    mrc.write(out_mrc_dir+'.mrc', vol.astype(np.float32))
-    log('Saved {} with z = {}'.format(out_mrc_dir+'.mrc', z_mu.mean(axis=0)))
-    # save trajectory of structures if zdim = 1
-    if z_mu.shape[1] == 1:
-        if not os.path.exists(out_mrc_dir): os.mkdir(out_mrc_dir)
-        for i in range(5):
-            pct = 10+i*20
-            zz = np.percentile(z_mu, pct, keepdims=True)
-            vol = model.decoder.eval_volume(lattice.coords, lattice.D, lattice.extent, norm, zz)
-            mrc.write('{}/traj{}.mrc'.format(out_mrc_dir,int(pct)),vol)
-            log('Saved {}/traj{}.mrc with z = {}'.format(out_mrc_dir, int(pct), zz))
 
 def save_config(args, dataset, lattice, model, out_config):
     dataset_args = dict(particles=args.particles,
                         norm=dataset.norm,
+                        apix=dataset.apix,
                         invert_data=args.invert_data,
                         ind=args.ind,
                         keepreal=args.use_real,
@@ -373,25 +361,23 @@ def main(args):
         log('# =====> Epoch: {} Average gen loss = {:.4}, KLD = {:.4f}, total loss = {:.4f}'.format(epoch+1, gen_loss_accum/Nimg, kld_accum/Nimg, loss_accum/Nimg))
 
         if args.checkpoint and epoch % args.checkpoint == 0:
-            out_mrc = '{}/reconstruct.{}'.format(args.outdir,epoch)
             out_weights = '{}/weights.{}.pkl'.format(args.outdir,epoch)
             out_z = '{}/z.{}.pkl'.format(args.outdir, epoch)
             model.eval()
             with torch.no_grad():
                 z_mu, z_logvar = eval_z(model, lattice, data, args.batch_size, device, posetracker.trans, tilt is not None, ctf_params, args.use_real)
-                save_checkpoint(model, lattice, optim, epoch, data.norm, z_mu, z_logvar, out_mrc, out_weights, out_z)
+                save_checkpoint(model, optim, epoch, z_mu, z_logvar, out_weights, out_z)
             if args.do_pose_sgd and epoch >= args.pretrain:
                 out_pose = '{}/pose.{}.pkl'.format(args.outdir, epoch)
                 posetracker.save(out_pose)
 
     # save model weights, latent encoding, and evaluate the model on 3D lattice
-    out_mrc = '{}/reconstruct'.format(args.outdir)
     out_weights = '{}/weights.pkl'.format(args.outdir)
     out_z = '{}/z.pkl'.format(args.outdir)
     model.eval()
     with torch.no_grad():
         z_mu, z_logvar = eval_z(model, lattice, data, args.batch_size, device, posetracker.trans, tilt is not None, ctf_params, args.use_real)
-        save_checkpoint(model, lattice, optim, epoch, data.norm, z_mu, z_logvar, out_mrc, out_weights, out_z)
+        save_checkpoint(model, optim, epoch, z_mu, z_logvar, out_weights, out_z)
     
     if args.do_pose_sgd and epoch >= args.pretrain:
         out_pose = '{}/pose.pkl'.format(args.outdir)

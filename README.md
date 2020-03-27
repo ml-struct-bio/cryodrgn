@@ -2,7 +2,7 @@
 
 CryoDRGN is a neural network based algorithm for heterogeneous cryo-EM reconstruction. In particular, the method models a *continuous* distribution over 3D structures by using a neural network based representation for the volume.
 
-## Citation:
+## Manuscript:
 
 Reconstructing continuous distributions of 3D protein structure from cryo-EM images.
 Ellen D. Zhong, Tristan Bepler, Joseph H. Davis*, Bonnie Berger*.

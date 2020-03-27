@@ -183,8 +183,8 @@ def main(args):
                 pose_optimizer.step()
             loss_accum += loss_item*len(ind)
             if batch_it % args.log_interval == 0:
-                log('# [Train Epoch: {}/{}] [{}/{} images] loss={:.4f}'.format(epoch+1, args.num_epochs, batch_it, Nimg, loss_item))
-        log('# =====> Epoch: {} Average loss = {:.4}; Finished in {}'.format(epoch+1, loss_accum/Nimg, dt.now()-t2))
+                log('# [Train Epoch: {}/{}] [{}/{} images] loss={:.6f}'.format(epoch+1, args.num_epochs, batch_it, Nimg, loss_item))
+        log('# =====> Epoch: {} Average loss = {:.6}; Finished in {}'.format(epoch+1, loss_accum/Nimg, dt.now()-t2))
         if args.checkpoint and epoch % args.checkpoint == 0:
             out_mrc = '{}/reconstruct.{}.mrc'.format(args.outdir, epoch)
             out_weights = '{}/weights.{}.pkl'.format(args.outdir, epoch)

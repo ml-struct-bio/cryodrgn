@@ -194,7 +194,6 @@ def save_checkpoint(model, optim, epoch, z_mu, z_logvar, out_weights, out_z):
 def save_config(args, dataset, lattice, model, out_config):
     dataset_args = dict(particles=args.particles,
                         norm=dataset.norm,
-                        apix=dataset.apix,
                         invert_data=args.invert_data,
                         ind=args.ind,
                         keepreal=args.use_real,
@@ -357,8 +356,8 @@ def main(args):
             loss_accum += loss*B
 
             if batch_it % args.log_interval == 0:
-                log('# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.4f}, kld={:.4f}, beta={:.4f}, loss={:.4f}'.format(epoch+1, num_epochs, batch_it, Nimg, gen_loss, kld, beta, loss))
-        log('# =====> Epoch: {} Average gen loss = {:.4}, KLD = {:.4f}, total loss = {:.4f}'.format(epoch+1, gen_loss_accum/Nimg, kld_accum/Nimg, loss_accum/Nimg))
+                log('# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.6f}, kld={:.6f}, beta={:.6f}, loss={:.6f}'.format(epoch+1, num_epochs, batch_it, Nimg, gen_loss, kld, beta, loss))
+        log('# =====> Epoch: {} Average gen loss = {:.6}, KLD = {:.6f}, total loss = {:.6f}'.format(epoch+1, gen_loss_accum/Nimg, kld_accum/Nimg, loss_accum/Nimg))
 
         if args.checkpoint and epoch % args.checkpoint == 0:
             out_weights = '{}/weights.{}.pkl'.format(args.outdir,epoch)

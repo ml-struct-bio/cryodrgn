@@ -224,10 +224,14 @@ def save_config(args, dataset, lattice, model, out_config):
         pickle.dump(config, f)
 
 def main(args):
-    log(args)
     t1 = dt.now()
     if args.outdir is not None and not os.path.exists(args.outdir):
         os.makedirs(args.outdir)
+    LOG = f'{args.outdir}/run.log'
+    def flog(msg): # HACK: switch to logging module
+        return utils.flog(msg, LOG)
+    flog(' '.join(sys.argv))
+    flog(args)
 
     # set the random seed
     np.random.seed(args.seed)
@@ -236,7 +240,7 @@ def main(args):
     # set the device
     use_cuda = torch.cuda.is_available()
     device = torch.device('cuda' if use_cuda else 'cpu')
-    log('Use cuda {}'.format(use_cuda))
+    flog('Use cuda {}'.format(use_cuda))
     if use_cuda:
         torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
@@ -249,7 +253,7 @@ def main(args):
 
     # load the particles
     if args.ind is not None: 
-        log('Filtering image dataset with {}'.format(args.ind))
+        flog('Filtering image dataset with {}'.format(args.ind))
         ind = pickle.load(open(args.ind,'rb'))
     else: ind = None
     if args.tilt is None:
@@ -280,7 +284,7 @@ def main(args):
     if args.ctf is not None:
         if args.use_real:
             raise NotImplementedError("Not implemented with real-space encoder. Use phase-flipped images instead")
-        log('Loading ctf params from {}'.format(args.ctf))
+        flog('Loading ctf params from {}'.format(args.ctf))
         ctf_params = ctf.load_ctf_for_training(D, args.ctf)
         if args.ind is not None: ctf_params = ctf_params[ind]
         ctf_params = torch.tensor(ctf_params)
@@ -302,8 +306,8 @@ def main(args):
     model = HetOnlyVAE(lattice, args.qlayers, args.qdim, args.players, args.pdim,
                 in_dim, args.zdim, encode_mode=args.encode_mode, enc_mask=enc_mask,
                 enc_type=args.pe_type, domain=args.domain)
-    log(model)
-    log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
+    flog(model)
+    flog('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
 
     # save configuration
     out_config = '{}/config.pkl'.format(args.outdir)
@@ -313,7 +317,7 @@ def main(args):
 
     # restart from checkpoint
     if args.load:
-        log('Loading checkpoint from {}'.format(args.load))
+        flog('Loading checkpoint from {}'.format(args.load))
         checkpoint = torch.load(args.load)
         model.load_state_dict(checkpoint['model_state_dict'])
         optim.load_state_dict(checkpoint['optimizer_state_dict'])
@@ -326,6 +330,7 @@ def main(args):
     data_generator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
     num_epochs = args.num_epochs
     for epoch in range(start_epoch, num_epochs):
+        t2 = dt.now()
         gen_loss_accum = 0
         loss_accum = 0
         kld_accum = 0
@@ -357,7 +362,7 @@ def main(args):
 
             if batch_it % args.log_interval == 0:
                 log('# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.6f}, kld={:.6f}, beta={:.6f}, loss={:.6f}'.format(epoch+1, num_epochs, batch_it, Nimg, gen_loss, kld, beta, loss))
-        log('# =====> Epoch: {} Average gen loss = {:.6}, KLD = {:.6f}, total loss = {:.6f}'.format(epoch+1, gen_loss_accum/Nimg, kld_accum/Nimg, loss_accum/Nimg))
+        flog('# =====> Epoch: {} Average gen loss = {:.6}, KLD = {:.6f}, total loss = {:.6f}; Finished in {}'.format(epoch+1, gen_loss_accum/Nimg, kld_accum/Nimg, loss_accum/Nimg, dt.now()-t2))
 
         if args.checkpoint and epoch % args.checkpoint == 0:
             out_weights = '{}/weights.{}.pkl'.format(args.outdir,epoch)
@@ -382,7 +387,7 @@ def main(args):
         out_pose = '{}/pose.pkl'.format(args.outdir)
         posetracker.save(out_pose)
     td = dt.now()-t1
-    log('Finsihed in {} ({} per epoch)'.format(td, td/(num_epochs-start_epoch)))
+    flog('Finsihed in {} ({} per epoch)'.format(td, td/(num_epochs-start_epoch)))
 
 if __name__ == '__main__':
     args = parse_args().parse_args()

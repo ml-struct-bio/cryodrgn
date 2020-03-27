@@ -14,6 +14,16 @@ def vlog(msg):
         print('{}     {}'.format(dt.now().strftime('%Y-%m-%d %H:%M:%S'), msg))
         sys.stdout.flush()
 
+def flog(msg, outfile):
+    msg = '{}     {}'.format(dt.now().strftime('%Y-%m-%d %H:%M:%S'), msg)
+    print(msg)
+    sys.stdout.flush()
+    try:
+        with open(outfile,'a') as f:
+            f.write(msg+'\n')
+    except Exception as e:
+        log(e)
+
 def load_pkl(pkl):
     with open(pkl,'rb') as f:
         x = pickle.load(f)

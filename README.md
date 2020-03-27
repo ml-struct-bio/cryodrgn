@@ -38,7 +38,7 @@ It is also recommended to create image stacks at lower resolution (e.g. D=128) f
 
     $ python $CDRGN_SRC/utils/fouriershrink.py [input particle stack] -D 128 -o [output .mrcs]
     
-The input file format can be a single `.mrcs` file, a `.txt` file containing paths to multiple `.mrcs` files, a `.star` file, or a cryoSPARC `.cs` file. For the latter two options, if the relative paths to the `.mrcs` are broken, the arugment `--datadir` can be used to supply the path to where the `.mrcs` files are located. 
+The input file format can be a single `.mrcs` file, a `.txt` file containing paths to multiple `.mrcs` files, a `.star` file, or a cryoSPARC `.cs` file. For the latter two options, if the relative paths to the `.mrcs` are broken, the argument `--datadir` can be used to supply the path to where the `.mrcs` files are located. 
 
 If there are memory issues with large particle stacks, add the `--chunk 10000` argument to save out images as separate `.mrcs` files of 10k images. 
 
@@ -101,7 +101,7 @@ Additional parameters which are typically set include:
 
 ### Example usage:
 
-It is recommended to first train on lower resolution images (e.g. D=128) with a `--zdim 1` and with `--zdim 10` using the default architecture. After validation, pose optimization, and any necessary particle filtering, then train the full resolution image stack (up to D=256) with a large model. 
+It is recommended to first train on lower resolution images (e.g. D=128) with `--zdim 1` and with `--zdim 10` using the default architecture (fast). After validation, pose optimization, and any necessary particle filtering, then train on the full resolution image stack (up to D=256) with a large architecture (slow). 
 
 Example command to train a 1-D latent variable cryoDRGN model for 50 epochs on an image dataset `projections.128.mrcs` with poses `pose.pkl` and ctf parameters `ctf.pkl`:
 
@@ -130,6 +130,10 @@ Example command to train a 10-D latent variable cryoDRGN model for 20 epochs on 
             --qdim 1024 --qlayers 3 --pdim 1024 --players 3 \
             -o 02_vae256_z10
 
+The number of epochs `-n` should be modified depending on the number of particles in the dataset. The above parameters led to reasonable training times on datasets with ~100-300k particles (~hours on D=128 images, ~days on D=256 images). 
+
+Note: while these settings worked well for the datasets we've tested, they are highly experimental for the general case as different datasets have diverse sources of heterogeneity. Please reach out to the authors with questions/consult -- we'd love to learn more.
+
 ### Local pose refinement -- BETA!
 
 Depending on the quality of the consensus reconstruction, image poses may contain errors.
@@ -139,7 +143,9 @@ Image poses may be *locally* refined using the `--do-pose-sgd` flag.
 
 Once the model has finished training, the output directory will contain a configuration file `config.pkl`, neural network weights `weights.pkl`, image poses (if performing pose sgd) `pose.pkl`, and the predicted latent encoding for each image `z.pkl`. 
 
-To analyze and visualize the learned latent space, use the scripts in the `utils/analysis` subdirectory. Additional structures may be generated using the `eval_decoder.py` script. For example:
+To analyze and visualize the learned latent space, use the scripts in the `utils/analysis` subdirectory. 
+
+Additional structures may be generated using the `eval_decoder.py` script. For example:
 
     $ python $CDRGN_SRC/eval_decoder.py [WORKDIR]/weights.pkl --config [WORKDIR]/config.pkl -z ZVALUE -o reconstruct.sample1.mrc
 
@@ -147,7 +153,7 @@ Or to generate a trajectory using values of z given in a file `zvalues.txt`:
 
     $ python $CDRGN_SRC/eval_decoder.py [WORKDIR]/weights.pkl --config [WORKDIR]/config.pkl --zfile zvalues.txt -o [WORKDIR]/trajectory
 
-For models with higher dimensional latent variables (zD>2), a shell script is provided which samples 20 structures from the latent space, runs UMAP dimensionality reduction, and creates a template jupyter-notebook in the working directory, which may be used for interactive visualization of the results:
+For models with higher dimensional latent variables (zD>1), a shell script is provided which samples 20 structures from the latent space, runs UMAP dimensionality reduction, and creates a template jupyter-notebook in the working directory, which may be used for interactive visualization of the results:
 
     $ $CDRGN_SRC/utils/analysis/analyze.sh [WORKDIR] [EPOCH] # Use 0-based index for the epoch number
 

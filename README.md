@@ -2,23 +2,23 @@
 
 CryoDRGN is a neural network based algorithm for heterogeneous cryo-EM reconstruction. In particular, the method models a *continuous* distribution over 3D structures by using a neural network based representation for the volume.
 
-## Preprint:
+## Citation:
 
-Reconstructing continuously heterogeneous structures from single particle cryo-EM with deep generative models.
+Reconstructing continuous distributions of 3D protein structure from cryo-EM images
 Ellen D. Zhong, Tristan Bepler, Joseph H. Davis*, Bonnie Berger*
-https://arxiv.org/abs/1909.05215
+ICLR 2020, https://arxiv.org/abs/1909.05215
 
 ## Installation/dependencies:
 
 Until the cryoDRGN conda package is available, for now, git clone the source code and install the following dependencies with anaconda, replacing the cudatoolkit version as necessary:
 
-    conda create --name cryodrgn
+    conda create --name cryodrgn --python 3.7
     conda activate cryodrgn
     conda install pytorch=1.0.1 torchvision cudatoolkit=10.0 -c pytorch
 
 Additional requirements for latent space analysis and interactive visualization:
 
-    conda env config vars set CDRGN_SRC="path/to/git/repo"
+    export CDRGN_SRC="path/to/git/repo"
     conda install seaborn scikit-learn 
     conda install -c conda-forge umap-learn
     conda install -c conda-forge jupyterlab

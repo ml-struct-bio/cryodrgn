@@ -20,8 +20,8 @@ def parse_args():
     return parser
 
 def main(args):
-    assert args.input.endwith('.mrc'), "Input volume must be .mrc file"
-    assert args.o.endwith('.mrc'), "Output volume must be .mrc file"
+    assert args.input.endswith('.mrc'), "Input volume must be .mrc file"
+    assert args.o.endswith('.mrc'), "Output volume must be .mrc file"
     x, _, _ = mrc.parse_mrc(args.input)
     D = args.apix
     if args.invert:

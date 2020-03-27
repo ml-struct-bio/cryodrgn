@@ -66,10 +66,10 @@ def parse_args():
     group.add_argument('--domain', choices=('hartley','fourier'), default='fourier', help='Volume decoder representation (default: %(default)s)')
     return parser
 
-def save_checkpoint(model, lattice, optim, epoch, norm, out_mrc, out_weights):
+def save_checkpoint(model, lattice, optim, epoch, norm, apix, out_mrc, out_weights):
     model.eval()
     vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, norm)
-    mrc.write(out_mrc, vol.astype(np.float32))
+    mrc.write(out_mrc, vol.astype(np.float32), ax=apix, ay=apix, az=apix)
     torch.save({
         'norm': norm,
         'epoch':epoch,
@@ -162,6 +162,7 @@ def main(args):
         if args.ind is not None: ctf_params = ctf_params[ind]
         ctf_params = torch.tensor(ctf_params)
     else: ctf_params = None
+    apix = ctf_params[0,0] if ctf_params is not None else 1
 
     # train
     data_generator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
@@ -187,7 +188,7 @@ def main(args):
         if args.checkpoint and epoch % args.checkpoint == 0:
             out_mrc = '{}/reconstruct.{}.mrc'.format(args.outdir, epoch)
             out_weights = '{}/weights.{}.pkl'.format(args.outdir, epoch)
-            save_checkpoint(model, lattice, optim, epoch, data.norm, out_mrc, out_weights)
+            save_checkpoint(model, lattice, optim, epoch, data.norm, apix, out_mrc, out_weights)
             if args.do_pose_sgd and epoch >= args.pretrain:
                 out_pose = '{}/pose.{}.pkl'.format(args.outdir, epoch)
                 posetracker.save(out_pose)
@@ -195,7 +196,7 @@ def main(args):
     ## save model weights and evaluate the model on 3D lattice
     out_mrc = '{}/reconstruct.mrc'.format(args.outdir)
     out_weights = '{}/weights.pkl'.format(args.outdir)
-    save_checkpoint(model, lattice, optim, epoch, data.norm, out_mrc, out_weights)
+    save_checkpoint(model, lattice, optim, epoch, data.norm, apix, out_mrc, out_weights)
     if args.do_pose_sgd and epoch >= args.pretrain:
         out_pose = '{}/pose.pkl'.format(args.outdir)
         posetracker.save(out_pose)

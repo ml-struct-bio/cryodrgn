@@ -1,16 +1,4 @@
-0.0.1 Real space encoder
-0.0.5 Big refactor, merged all the branches
-0.0.6 Branch and bound, symmetrized HT
-0.0.7 NeurIPS version -- more helper scripts
-0.0.8 Slight change to lattice circular mask
-0.0.9 Switch back to non-symmetric HT
-0.0.10 Revert to symmetric HT, CTF correction
-0.0.11 Reconstruct the sphere in backproject
-0.0.12 Positional encoding
-0.0.13 Minor updates to utils scripts / pretrain / domain argument
-0.0.14 -- Dataset preprocessing / conv encoder
-0.0.15 -- SGD on pose
-0.0.16 -- probabilistic BNB
 0.0.17 -- prerelease
 0.0.18 -- beta relase
 0.0.19 -- Add support for phase shift
+0.1.0  -- Refactor pose and CTF file format

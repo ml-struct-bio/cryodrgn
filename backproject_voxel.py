@@ -92,7 +92,7 @@ def main(args):
 
     if args.ctf is not None:
         log('Loading ctf params from {}'.format(args.ctf))
-        ctf_params = ctf.load_ctf_for_training(D, args.ctf)
+        ctf_params = ctf.load_ctf_for_training(D-1, args.ctf)
         ctf_params = torch.tensor(ctf_params)
     else: ctf_params = None
     apix = ctf_params[0,0] if ctf_params is not None else 1

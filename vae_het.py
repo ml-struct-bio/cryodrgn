@@ -285,7 +285,7 @@ def main(args):
         if args.use_real:
             raise NotImplementedError("Not implemented with real-space encoder. Use phase-flipped images instead")
         flog('Loading ctf params from {}'.format(args.ctf))
-        ctf_params = ctf.load_ctf_for_training(D, args.ctf)
+        ctf_params = ctf.load_ctf_for_training(D-1, args.ctf)
         if args.ind is not None: ctf_params = ctf_params[ind]
         ctf_params = torch.tensor(ctf_params)
     else: ctf_params = None

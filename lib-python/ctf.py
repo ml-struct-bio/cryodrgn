@@ -94,6 +94,7 @@ def plot_ctf(D,Apix,ctf_params):
     sns.heatmap(c.reshape(D, D))
 
 def load_ctf_for_training(D, ctf_params_pkl):
+    assert D%2 == 0
     ctf_params = utils.load_pkl(ctf_params_pkl)
     assert ctf_params.shape[1] == 9
     # Replace original image size with current dimensions

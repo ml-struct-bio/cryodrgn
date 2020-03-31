@@ -12,9 +12,10 @@ ICLR 2020, https://arxiv.org/abs/1909.05215
 
 Until the cryoDRGN conda package is available, for now, git clone the source code and install the following dependencies with anaconda, replacing the cudatoolkit version as necessary:
 
-    conda create --name cryodrgn --python 3.7
+    conda create --name cryodrgn python=3.7
     conda activate cryodrgn
-    conda install pytorch=1.0.1 torchvision cudatoolkit=10.0 -c pytorch
+    conda install pytorch torchvision cudatoolkit=10.1 -c pytorch
+    conda install pandas
 
 Additional requirements for latent space analysis and interactive visualization:
 

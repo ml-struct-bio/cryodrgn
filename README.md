@@ -12,10 +12,9 @@ ICLR 2020, https://arxiv.org/abs/1909.05215
 
 Until the cryoDRGN conda package is available, for now, git clone the source code and install the following dependencies with anaconda, replacing the cudatoolkit version as necessary:
 
-    conda create --name cryodrgn python=3.7
+    conda create --name cryodrgn --python 3.7
     conda activate cryodrgn
-    conda install pytorch torchvision cudatoolkit=10.1 -c pytorch
-    conda install pandas
+    conda install pytorch=1.0.1 torchvision cudatoolkit=10.0 -c pytorch
 
 Additional requirements for latent space analysis and interactive visualization:
 
@@ -51,7 +50,9 @@ To parse image poses from a RELION starfile:
 
 To parse image poses from a cryoSPARC homogeneous refinement particles.cs file:
 
-    $ python $CDRGN_SRC/utils/parse_pose_csparc.py cryosparc_P27_J3_005_particles.cs -o pose.pkl
+    $ python $CDRGN_SRC/utils/parse_pose_csparc.py cryosparc_P27_J3_005_particles.cs -o pose.pkl -D 300
+
+The `-D` argument should be set to the box size of the original reconstruction (before any downsampling). 
 
 ### 3. Parse CTF parameters from a .star/.cs file
 
@@ -62,7 +63,7 @@ Example usage:
     # .star file
     $ python $CDRGN_SRC/utils/parse_ctf_star.py particles.star -D 300 --Apix 1.03 -o ctf.pkl
     # .cs file
-    $ python $CDRGN_SRC/utils/parse_ctf_star.py cryosparc_P27_J3_005_particles.cs -o ctf.pkl
+    $ python $CDRGN_SRC/utils/parse_ctf_csparc.py cryosparc_P27_J3_005_particles.cs -o ctf.pkl
 
 The `-D` and `--Apix` arguments should be set to the box size and Angstrom/pixel of the original `.mrcs` file (before any downsampling). 
 

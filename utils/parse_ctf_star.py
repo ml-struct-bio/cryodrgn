@@ -28,6 +28,7 @@ def parse_args():
     return parser
 
 def main(args):
+    assert args.star.endswith('.star'), "Input file must be .star file"
     assert args.o.endswith('.pkl'), "Output CTF parameters must be .pkl file"
     
     s = starfile.Starfile.load(args.star)

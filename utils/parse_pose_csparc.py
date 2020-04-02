@@ -21,6 +21,7 @@ def parse_args():
     return parser
 
 def main(args):
+    assert args.input.endswith('.cs'), "Input format must be .cs file"
     assert args.o.endswith('.pkl'), "Output format must be .pkl"
 
     data = np.load(args.input)

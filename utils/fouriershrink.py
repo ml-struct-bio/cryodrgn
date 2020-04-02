@@ -44,8 +44,8 @@ def main(args):
 
     old = dataset.load_particles(args.mrcs, lazy=True, datadir=args.datadir)
     oldD = old[0].get().shape[0]
-    assert args.D < oldD
-    assert args.D % 2 == 0
+    assert args.D < oldD, f'New box size {args.D} must be smaller than original box size {oldD}'
+    assert args.D % 2 == 0, 'New box size must be even'
     
     D = args.D
 
@@ -63,7 +63,10 @@ def main(args):
 
     elif args.chunk is None:
         new = []
-        for img in old:
+        for i in range(len(old)):
+            if i % 1000 == 0:
+                log(f'Processing image {i} of {len(old)}')
+            img = old[i]
             oldft = fft.ht2_center(img.get()).astype(np.float32)
             newft = oldft[start:stop, start:stop]
             new.append(fft.ihtn_center(newft).astype(np.float32))

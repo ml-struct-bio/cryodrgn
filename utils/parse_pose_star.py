@@ -17,6 +17,7 @@ def parse_args():
     return parser
 
 def main(args):
+    assert args.input.endswith('.star'), "Input file must be .star file"
     assert args.o.endswith('.pkl'), "Output format must be .pkl"
 
     s = starfile.Starfile.load(args.input)

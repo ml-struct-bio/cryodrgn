@@ -47,7 +47,7 @@ If there are memory issues with large particle stacks, add the `--chunk 10000` a
 
 To parse image poses from a RELION starfile:
     
-    $ python $CDRGN_SRC/utils/parse_pose_star.py particles.star -o pose.pkl
+    $ python $CDRGN_SRC/utils/parse_pose_star.py particles.star -o pose.pkl -D 300
 
 To parse image poses from a cryoSPARC homogeneous refinement particles.cs file:
 

@@ -5,6 +5,8 @@ from collections import OrderedDict
 
 # See ref:
 # MRC2014: Extensions to the MRC format header for electron cryo-microscopy and tomography
+# And:
+# https://www.ccpem.ac.uk/mrc_format/mrc2014.php
 
 DTYPE_FOR_MODE = {0:np.int8,
                   1:np.int16,
@@ -77,7 +79,7 @@ class MRCHeader:
                 0, 0, 0, 0, 0, 0, 0, 0,
                 0, 0, 0, 0, 0, 0,
                 xorg, yorg, zorg,
-                b'\x00'*4, b'\x00'*4, #cmap, stamp
+                b'MAP ' if is_vol else b'\x00'*4, b'\x00'*4, #cmap, stamp
                 rms, # rms
                 0, # nlabl
                 b'\x00'*800, # labels

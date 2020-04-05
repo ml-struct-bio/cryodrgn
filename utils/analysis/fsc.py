@@ -25,8 +25,8 @@ def parse_args():
     return parser
 
 def main(args):
-    vol1 , _, _ = mrc.parse_mrc(args.vol1)
-    vol2 , _, _ = mrc.parse_mrc(args.vol2)
+    vol1 , _ = mrc.parse_mrc(args.vol1)
+    vol2 , _ = mrc.parse_mrc(args.vol2)
 
     if args.mask:
         mask = mrc.parse_mrc(args.mask)[0]

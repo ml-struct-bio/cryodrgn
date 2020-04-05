@@ -230,9 +230,9 @@ def main(args):
         torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
     t1 = time.time()    
-    ref, _ , _ = mrc.parse_mrc(args.ref)
+    ref, _ = mrc.parse_mrc(args.ref)
     log('Loaded {} volume'.format(ref.shape))
-    vol, _ , _ = mrc.parse_mrc(args.vol)
+    vol, _ = mrc.parse_mrc(args.vol)
     log('Loaded {} volume'.format(vol.shape))
 
     projector = VolumeAligner(vol, vol_ref=ref, maxD=args.max_D, flip=args.flip)

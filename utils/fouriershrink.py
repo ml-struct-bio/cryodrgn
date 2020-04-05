@@ -59,7 +59,7 @@ def main(args):
         log(newft.shape)
         new = fft.ihtn_center(newft).astype(np.float32)
         log('Saving {}'.format(args.o))
-        mrc.write(args.o,new)
+        mrc.write(args.o, new, is_vol=True)
 
     elif args.chunk is None:
         new = []
@@ -74,7 +74,7 @@ def main(args):
         new = np.asarray(new)
         log(new.shape)
         log('Saving {}'.format(args.o))
-        mrc.write(args.o,new)
+        mrc.write(args.o, new, is_vol=False)
     else:
         nchunks = len(old) // args.chunk + 1
         for i in range(nchunks):
@@ -89,7 +89,7 @@ def main(args):
             new = np.asarray(new)
             log(new.shape)
             log('Saving {}'.format(out))
-            mrc.write(out,new)
+            mrc.write(out, new, is_vol=False)
 
 if __name__ == '__main__':
     main(parse_args().parse_args())

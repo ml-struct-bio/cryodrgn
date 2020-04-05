@@ -1,4 +1,5 @@
 0.0.17 -- prerelease
 0.0.18 -- beta relase
 0.0.19 -- Add support for phase shift
-0.1.0  -- Refactor pose and CTF file format
+0.1.0  -- Burn 
+0.1.1  -- Refactor pose and CTF file format

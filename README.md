@@ -4,6 +4,10 @@ CryoDRGN is a neural network based algorithm for heterogeneous cryo-EM reconstru
 
 ## Manuscript:
 
+CryoDRGN: Reconstruction of heterogeneous structures from cryo-electron micrographs using neural networks.
+Ellen D. Zhong, Tristan Bepler, Bonnie Berger*, Joseph H. Davis*.
+https://www.biorxiv.org/content/10.1101/2020.03.27.003871v1
+
 Reconstructing continuous distributions of 3D protein structure from cryo-EM images.
 Ellen D. Zhong, Tristan Bepler, Joseph H. Davis*, Bonnie Berger*.
 ICLR 2020, https://arxiv.org/abs/1909.05215

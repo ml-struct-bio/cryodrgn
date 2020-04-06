@@ -64,11 +64,11 @@ class MRCHeader:
             dmin, dmax, dmean, rms = data.min(), data.max(), data.mean(), data.std()
         else: # use undefined values for image stacks
             dmin, dmax, dmean, rms = -1, -2, -3, -1
-        vals = [nz, ny, nx,
+        vals = [nx, ny, nz,
                 2, # mode = 2 for 32-bit float
                 0, 0, 0, # nxstart, nystart, nzstart
                 nz, ny, nx, # mx, my, mz
-                Apix*nz, Apix*ny, Apix*nx, # cella
+                Apix*nx, Apix*ny, Apix*nz, # cella
                 90., 90., 90., # cellb
                 1, 2, 3, # mapc, mapr, maps
                 dmin, dmax, dmean,

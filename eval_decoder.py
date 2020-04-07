@@ -113,7 +113,7 @@ def main(args):
             out_mrc = '{}/{}{:03d}.mrc'.format(args.o, args.prefix, i)
             if args.flip:
                 vol = vol[::-1]
-            mrc.write(out_mrc, vol.astype(np.float32), ax=args.Apix, ay=args.Apix, az=args.Apix)
+            mrc.write(out_mrc, vol.astype(np.float32), Apix=args.Apix)
 
     else:
         z = np.array(args.z)
@@ -126,7 +126,7 @@ def main(args):
             vol = model.decoder.eval_volume(lattice.coords, lattice.D, lattice.extent, args.norm, z) 
         if args.flip:
             vol = vol[::-1]
-        mrc.write(args.o, vol.astype(np.float32), ax=args.Apix, ay=args.Apix, az=args.Apix)
+        mrc.write(args.o, vol.astype(np.float32), Apix=args.Apix)
 
     td = dt.now()-t1
     log('Finsihed in {}'.format(td))

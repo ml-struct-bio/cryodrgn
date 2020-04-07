@@ -95,7 +95,7 @@ def main(args):
         ctf_params = ctf.load_ctf_for_training(D-1, args.ctf)
         ctf_params = torch.tensor(ctf_params)
     else: ctf_params = None
-    apix = ctf_params[0,0] if ctf_params is not None else 1
+    Apix = ctf_params[0,0] if ctf_params is not None else 1
 
     V = torch.zeros((D,D,D))
     counts = torch.zeros((D,D,D))
@@ -143,7 +143,7 @@ def main(args):
     counts[counts == 0] = 1
     V /= counts
     V = fft.ihtn_center(V[0:-1,0:-1,0:-1].cpu().numpy())
-    mrc.write(args.o,V.astype('float32'), ax=apix, ay=apix, az=apix)
+    mrc.write(args.o,V.astype('float32'), Apix=Apix)
 
 if __name__ == '__main__':
     main(parse_args().parse_args())

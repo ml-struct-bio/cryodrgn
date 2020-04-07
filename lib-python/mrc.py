@@ -1,108 +1,128 @@
 import numpy as np
 import os
 import struct
-from collections import namedtuple
+from collections import OrderedDict
 
-#int nx
-#int ny
-#int nz
-fstr = '3i'
-names = 'nx ny nz'
+# See ref:
+# MRC2014: Extensions to the MRC format header for electron cryo-microscopy and tomography
+# And:
+# https://www.ccpem.ac.uk/mrc_format/mrc2014.php
 
-#int mode
-fstr += 'i'
-names += ' mode'
+DTYPE_FOR_MODE = {0:np.int8,
+                  1:np.int16,
+                  2:np.float32,
+                  3:'2h', # complex number from 2 shorts
+                  4:np.complex64,
+                  6:np.uint16,
+                  16:'3B'} # RBG values
+MODE_FOR_DTYPE = {vv:kk for kk,vv in DTYPE_FOR_MODE.items()}
 
-#int nxstart
-#int nystart
-#int nzstart
-fstr += '3i'
-names += ' nxstart nystart nzstart'
+class MRCHeader:
+    '''MRC header class'''
+    FIELDS = ['nx','ny','nz', # int
+              'mode', # int
+              'nxstart','nystart','nzstart', # int
+              'mx','my','mz', # int
+              'xlen','ylen','zlen', # float
+              'alpha','beta','gamma', # float
+              'mapc','mapr','maps',# int
+              'amin','amax','amean', # float
+              'ispg','next','creatid', # int, int, short, [pad 30]
+              'nint','nreal', # short, [pad 20]
+              'imodStamp','imodFlags', # int
+              'idtype','lens','nd1','nd2','vd1','vd2', # short
+              'tilt_ox','tilt_oy','tilt_oz', # float
+              'tilt_cx','tilt_cy','tilt_cz', # float
+              'xorg','yorg','zorg', # float
+              'cmap','stamp','rms', # char[4], float
+              'nlabl','labels'] # int, char[10][80]
+    FSTR = '3ii3i3i3f3f3i3f2ih30x2h20x2i6h6f3f4s4sfi800s'
+    STRUCT = struct.Struct(FSTR) 
 
-#int mx
-#int my
-#int mz
-fstr += '3i'
-names += ' mx my mz'
+    def __init__(self, header_values, extended_header=b''):
+        self.fields = OrderedDict(zip(self.FIELDS,header_values))
+        self.extended_header = extended_header
+        self.D = self.fields['nx']
 
-#float xlen
-#float ylen
-#float zlen
-fstr += '3f'
-names += ' xlen ylen zlen'
+    def __str__(self):
+        return f'Header: {self.fields}\nExtended header: {self.extended_header}'
 
-#float alpha
-#float beta
-#float gamma
-fstr += '3f'
-names += ' alpha beta gamma'
+    @classmethod
+    def parse(cls, fname):
+        with open(fname,'rb') as f:
+            header = cls(cls.STRUCT.unpack(f.read(1024)))
+            extbytes = header.fields['next']
+            extended_header = f.read(extbytes)
+            header.extended_header = extended_header
+        return header
+    
+    @classmethod
+    def make_default_header(cls, data, is_vol=True, Apix=1., xorg=0., yorg=0., zorg=0.):
+        nz, ny, nx = data.shape
+        ispg = 1 if is_vol else 0
+        if is_vol:
+            dmin, dmax, dmean, rms = data.min(), data.max(), data.mean(), data.std()
+        else: # use undefined values for image stacks
+            dmin, dmax, dmean, rms = -1, -2, -3, -1
+        vals = [nx, ny, nz,
+                2, # mode = 2 for 32-bit float
+                0, 0, 0, # nxstart, nystart, nzstart
+                nz, ny, nx, # mx, my, mz
+                Apix*nx, Apix*ny, Apix*nz, # cella
+                90., 90., 90., # cellb
+                1, 2, 3, # mapc, mapr, maps
+                dmin, dmax, dmean,
+                ispg,
+                0, # exthd_size
+                0, # creatid
+                0, 0, # nint, nreal
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0,
+                xorg, yorg, zorg,
+                b'MAP ' if is_vol else b'\x00'*4, b'\x00'*4, #cmap, stamp
+                rms, # rms
+                0, # nlabl
+                b'\x00'*800, # labels
+                ]
+        return cls(vals)
 
-#int mapc
-#int mapr
-#int maps
-fstr += '3i'
-names += ' mapc mapr maps'
+    def write(self, fh):
+        buf = self.STRUCT.pack(*list(self.fields.values()))
+        fh.write(buf)
+        fh.write(self.extended_header)
 
-#float amin
-#float amax
-#float amean
-fstr += '3f'
-names += ' amin amax amean'
+    def get_apix(self):
+        return self.fields['xlen']/self.fields['nx']
+    
+    def update_apix(self, Apix):
+        self.fields['xlen'] = self.fields['nx']*Apix
+        self.fields['ylen'] = self.fields['ny']*Apix
+        self.fields['zlen'] = self.fields['nz']*Apix
+    
+    def get_origin(self):
+        return self.fields['xorg'], self.fields['yorg'], self.fields['zorg']
 
-#int ispg
-#int next
-#short creatid
-fstr += '2ih'
-names += ' ispg next creatid'
+    def update_origin(self, xorg, yorg, zorg):
+        self.fields['xorg'] = xorg
+        self.fields['yorg'] = yorg
+        self.fields['zorg'] = zorg
 
-#pad 30 (extra data)
-# [98:128]
-fstr += '30x'
+class LazyImage:
+    '''On-the-fly image loading'''
 
-#short nint
-#short nreal
-fstr += '2h'
-names += ' nint nreal'
+    def __init__(self, fname, shape, dtype, offset):
+        self.fname = fname
+        self.shape = shape
+        self.dtype = dtype
+        self.offset = offset
+    def get(self):
+        with open(self.fname) as f:
+            f.seek(self.offset)
+            image = np.fromfile(f, dtype=self.dtype, count=np.product(self.shape)).reshape(self.shape)
+        return image
 
-#pad 20 (extra data)
-# [132:152]
-fstr += '20x'
-
-#int imodStamp
-#int imodFlags
-fstr += '2i'
-names += ' imodStamp imodFlags'
-
-#short idtype
-#short lens
-#short nd1
-#short nd2
-#short vd1
-#short vd2
-fstr += '6h'
-names += ' idtype lens nd1 nd2 vd1 vd2'
-
-#float[6] tiltangles
-fstr += '6f'
-names += ' tilt_ox tilt_oy tilt_oz tilt_cx tilt_cy tilt_cz'
-
-## NEW-STYLE MRC image2000 HEADER - IMOD 2.6.20 and above
-#float xorg
-#float yorg
-#float zorg
-#char[4] cmap
-#char[4] stamp
-#float rms
-fstr += '3f4s4sf'
-names += ' xorg yorg zorg cmap stamp rms'
-
-#int nlabl
-#char[10][80] labels
-fstr += 'i800s'
-names += ' nlabl labels'
-
-header_struct = struct.Struct(fstr)
-MRCHeader = namedtuple('MRCHeader', names)
+def parse_header(fname):
+    return MRCHeader.parse(fname)
 
 def parse_mrc_list(txtfile, lazy=False):
     lines = open(txtfile,'r').readlines()
@@ -118,134 +138,36 @@ def parse_mrc_list(txtfile, lazy=False):
         particles = [img for x in lines for img in parse_mrc(x.strip(), lazy=True)[0]]
     return particles
 
-def parse_header(fname):
-    fh = open(fname, 'rb')
-    header = MRCHeader._make(header_struct.unpack(fh.read(1024)))
-    return header
-
 def parse_mrc(fname, lazy=False):
-    ## parse the header
-    fh = open(fname,'rb')
-    header = MRCHeader._make(header_struct.unpack(fh.read(1024)))
-
+    # parse the header
+    header = MRCHeader.parse(fname)
+    
     ## get the number of bytes in extended header
-    extbytes = header.next
+    extbytes = header.fields['next']
     start = 1024+extbytes # start of image data
-    extended_header = fh.read(extbytes)
 
-    if header.mode == 0:
-        dtype = np.int8
-    elif header.mode == 1:
-        dtype = np.int16
-    elif header.mode == 2:
-        dtype = np.float32
-    elif header.mode == 3:
-        dtype = '2h' # complex number from 2 shorts
-    elif header.mode == 4:
-        dtype = np.complex64
-    elif header.mode == 6:
-        dtype = np.uint16
-    elif header.mode == 16:
-        dtype = '3B' # RGB values
-
+    dtype = DTYPE_FOR_MODE[header.fields['mode']]
+    nz, ny, nx = header.fields['nz'], header.fields['ny'], header.fields['nx']
+    
+    # load all in one block
     if not lazy:
-        array = np.fromfile(fh, dtype=dtype).reshape((header.nz,header.ny,header.nx))
+        with open(fname, 'rb') as fh:
+            fh.read(start) # skip the header + extended header
+            array = np.fromfile(fh, dtype=dtype).reshape((nz,ny,nx))
+
+    # or list of LazyImages
     else:
-        stride = dtype().itemsize*header.ny*header.nx
-        array = [LazyImage(fname, (header.ny, header.nx), dtype, start+i*stride) for i in range(header.nz)]
-    if header.nz == 1:
-        array = array[0]
-    return array, header, extended_header
-
-class LazyImage:
-    def __init__(self, fname, shape, dtype, offset):
-        self.fname = fname
-        self.shape = shape
-        self.dtype = dtype
-        self.offset = offset
-    def get(self):
-        with open(self.fname) as f:
-            f.seek(self.offset)
-            image = np.fromfile(f, dtype=self.dtype, count=np.product(self.shape)).reshape(self.shape)
-        return image
-
-def get_mode(dtype):
-    if dtype == np.int8:
-        return 0
-    elif dtype == np.int16:
-        return 1
-    elif dtype == np.float32:
-        return 2
-    elif dtype == np.dtype('2h'):
-        return 3
-    elif dtype == np.complex64:
-        return 4
-    elif dtype == np.uint16:
-        return 6
-    elif dtype == np.dtype('3B'):
-        return 16
-    
-    raise "MRC incompatible dtype: " + str(dtype)
-    
-
-def make_header(shape, cella, cellb, mz=1, dtype=np.float32, order=(1,2,3), dmin=0, dmax=-1, dmean=-2, rms=-1
-               , exthd_size=0, ispg=0):
-    mode = get_mode(dtype)
-    header = MRCHeader( shape[2], shape[1], shape[0], # nx, ny, nz
-                        mode, # mode = 32-bit signed real
-                        0, 0, 0, # nxstart, nystart, nzstart
-                        1, 1, mz, # mx, my, mz
-                        cella[0], cella[1], cella[2], # cella
-                        cellb[0], cellb[1], cellb[2], # cellb
-                        1, 2, 3, # mapc, mapr, maps
-                        dmin, dmax, dmean, # dmin, dmax, dmean
-                        ispg, # ispg, space group 0 means images or stack of images
-                        exthd_size,
-                        0, # creatid
-                        0, 0, # nint, nreal
-                        0, 0, 0, 0, 0, 0, 0, 0,
-                        0, 0, 0, 0, 0, 0,
-                        0, 0, 0, # xorg, yorg, zorg
-                        b'\x00'*4, b'\x00'*4, #cmap, stamp
-                        rms, # rms
-                        0, # nlabl
-                        b'\x00'*800, # labels
-                      )
-    return header
-
-
-
-def write(fname, array, header=None, extended_header=b'', ax=1, ay=1, az=1, alpha=0, beta=0, gamma=0):
-    f = open(fname,'wb')
-    exthd_size = len(extended_header)
+        stride = dtype().itemsize*ny*nx
+        array = [LazyImage(fname, (ny, nx), dtype, start+i*stride) for i in range(nz)]
+    return array, header
+   
+def write(fname, array, header=None, Apix=1., xorg=0., yorg=0., zorg=0., is_vol=None):
+    # get a default header
     if header is None:
-        header = MRCHeader( array.shape[2], array.shape[1], array.shape[0], # nx, ny, nz
-                            2, # mode = 32-bit signed real
-                            0, 0, 0, # nxstart, nystart, nzstart
-                            1, 1, 1, # mx, my, mz
-                            ax, ay, az, # cella
-                            alpha, beta, gamma, # cellb
-                            1, 2, 3, # mapc, mapr, maps
-                            array.min(), array.max(), array.mean(), # dmin, dmax, dmean
-                            0, # ispg, space group 0 means images or stack of images
-                            exthd_size,
-                            0, # creatid
-                            0, 0, # nint, nreal
-                            0, 0, 0, 0, 0, 0, 0, 0,
-                            0, 0, 0, 0, 0, 0,
-                            0, 0, 0, # xorg, yorg, zorg
-                            b'\x00'*4, b'\x00'*4, #cmap, stamp
-                            array.std(), # rms
-                            0, # nlabl
-                            b'\x00'*800, # labels
-                          )
-    ## write the header
-    buf = header_struct.pack(*list(header))
-    f.write(buf)
-
-    f.write(extended_header)
-
+        if is_vol is None:
+            is_vol = True if len(set(array.shape)) == 1 else False # Guess whether data is vol or image stack
+        header = MRCHeader.make_default_header(array, is_vol, Apix, xorg, yorg, zorg)
+    # write the header
+    f = open(fname,'wb')
+    header.write(f)
     f.write(array.tobytes())
-
-
-

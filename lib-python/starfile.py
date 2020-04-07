@@ -85,7 +85,7 @@ class Starfile():
             mrcs = prefix_paths(mrcs, datadir)
         for path in set(mrcs):
             assert os.path.exists(path), f'{path} not found'
-        D = mrc.parse_header(mrcs[0]).nx # image size along one dimension in pixels
+        D = mrc.parse_header(mrcs[0]).D # image size along one dimension in pixels
         dtype = np.float32
         stride = np.float32().itemsize*D*D
         dataset = [LazyImage(f, (D,D), dtype, 1024+ii*stride) for ii,f in zip(ind, mrcs)]

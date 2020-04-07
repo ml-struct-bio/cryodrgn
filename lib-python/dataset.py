@@ -31,7 +31,7 @@ def load_particles(mrcs_txt_star, lazy=False, datadir=None):
     elif mrcs_txt_star.endswith('.cs'):
         particles = starfile.csparc_get_particles(mrcs_txt_star, datadir, lazy)
     else:
-        particles, _, _ = mrc.parse_mrc(mrcs_txt_star, lazy=lazy)
+        particles, _ = mrc.parse_mrc(mrcs_txt_star, lazy=lazy)
     return particles
 
 

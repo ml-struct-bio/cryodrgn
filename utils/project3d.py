@@ -102,7 +102,7 @@ class GridRot(data.Dataset):
     def __init__(self, resol):
         quats = so3_grid.grid_SO3(resol)
         self.rots = lie_tools.quaternions_to_SO3(torch.tensor(quats))
-        self.N = len(rots)
+        self.N = len(self.rots)
     def __len__(self):
         return self.N
     def __getitem__(self, index):
@@ -153,7 +153,7 @@ def main(args):
         torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
     t1 = time.time()    
-    vol, _ , _ = mrc.parse_mrc(args.mrc)
+    vol, _ = mrc.parse_mrc(args.mrc)
     log('Loaded {} volume'.format(vol.shape))
 
     if args.tilt:

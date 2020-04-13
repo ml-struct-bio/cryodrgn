@@ -25,6 +25,7 @@ def parse_args():
     group.add_argument('--kv', type=float, help='Accelerating voltage (kV)')
     group.add_argument('--cs', type=float, help='Spherical abberation (mm)')
     group.add_argument('-w', type=float, help='Amplitude contrast ratio')
+    group.add_argument('--ps', type=float, help='Phase shift (deg)')
     return parser
 
 def main(args):
@@ -45,6 +46,9 @@ def main(args):
     if args.w is not None:
         log(f'Overriding amplitude contrast ratio with {args.w}')
         overrides[HEADERS[5]] = args.w
+    if args.ps is not None:
+        log(f'Overriding phase shift with {args.ps}')
+        overrides[HEADERS[6]] = args.ps
 
     ctf_params = np.zeros((N, 9))
     ctf_params[:,0] = args.D

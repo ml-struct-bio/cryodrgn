@@ -8,7 +8,7 @@ python ../backproject_nn.py data/toy_projections.txt --poses data/toy_angles.pkl
 
 # Test translations
 python ../utils/translate_stack.py data/toy_projections.mrcs data/toy_trans.pkl -o output/toy_projections.trans.mrcs --tscale -1
-python ../backproject_nn.py output/toy_projections.trans.mrcs --poses data/toy_poses_wtrans.pkl -o output/toy_recon
+python ../backproject_nn.py output/toy_projections.trans.mrcs --poses data/toy_rot_trans.pkl -o output/toy_recon
 python ../backproject_nn.py data/toy_projections.mrcs --poses data/toy_rot_zerotrans.pkl -o output/toy_recon
 
 # Do pose SGD

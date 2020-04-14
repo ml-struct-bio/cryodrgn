@@ -10,14 +10,14 @@ import pickle
 
 import torch
 
-sys.path.insert(0,'{}/lib-python'.format(os.path.dirname(os.path.abspath(__file__))))
-import utils
-import mrc
-import fft
-from pose import PoseTracker
-from lattice import Lattice
-import dataset
-import ctf
+from cryodrgn import utils
+from cryodrgn import mrc
+from cryodrgn import fft
+from cryodrgn import dataset
+from cryodrgn import ctf
+
+from cryodrgn.pose import PoseTracker
+from cryodrgn.lattice import Lattice
 
 log = utils.log
 

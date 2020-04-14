@@ -28,6 +28,10 @@ python ../vae_het.py  data/toy_projections.mrcs -o output/toy_recon_vae --lr .00
 python ../vae_het.py  data/hand.mrcs -o output/toy_recon_vae --lr .0001 --seed 0 --poses data/hand_rot.pkl --zdim 10 
 python ../vae_het.py  data/hand.mrcs -o output/toy_recon_vae --lr .0001 --seed 0 --poses data/hand_rot.pkl --encode-mode conv --zdim 10
 
+# Test evaluation scripts
+python ../eval_decoder.py output/toy_recon_vae/weights.pkl -c output/toy_recon_vae/config.pkl -z 0 0 0 0 0 0 0 0 0 0 -o output/toy_recon_vae/vol.mrc
+python ../vae_het_eval.py data/toy_projections.mrcs output/toy_recon_vae/weights.pkl -c output/toy_recon_vae/config.pkl -o output/toy_recon_vae/test.pkl --poses data/toy_angles.pkl
+
 # Test apex.amp
 python ../backproject_nn.py data/hand.mrcs --poses data/hand_rot.pkl -o output/hand_recon -b 8
 python ../backproject_nn.py data/hand.mrcs --poses data/hand_rot.pkl -o output/hand_recon --amp -b 8

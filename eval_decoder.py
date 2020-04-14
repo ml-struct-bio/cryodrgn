@@ -10,14 +10,13 @@ import matplotlib.pyplot as plt
 
 import torch
 
-sys.path.insert(0,os.path.abspath(os.path.dirname(__file__))+'/lib-python')
-import mrc
-import utils
-import fft
-import lie_tools
-import config
-from lattice import Lattice
-from models import HetOnlyVAE
+from cryodrgn import mrc
+from cryodrgn import utils
+from cryodrgn import fft
+from cryodrgn import lie_tools
+from cryodrgn import config
+from cryodrgn.lattice import Lattice
+from cryodrgn.models import HetOnlyVAE
 
 log = utils.log
 vlog = utils.vlog

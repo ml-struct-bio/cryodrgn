@@ -1,5 +1,5 @@
 '''
-Evaluate a stack of particles on a model trained on vae_het.py
+Evaluate cryoDRGN z and loss for a stack of images
 '''
 import numpy as np
 import sys, os
@@ -13,19 +13,18 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-sys.path.insert(0,os.path.abspath(os.path.dirname(__file__))+'/lib-python')
-import mrc
-import utils
-import fft
-import lie_tools
-import dataset
-import ctf
-import config
+from cryodrgn import mrc
+from cryodrgn import utils
+from cryodrgn import fft
+from cryodrgn import lie_tools
+from cryodrgn import dataset
+from cryodrgn import ctf
+from cryodrgn import config
 
-from pose import PoseTracker
-from models import HetOnlyVAE
-from lattice import Lattice
-from beta_schedule import get_beta_schedule, LinearSchedule
+from cryodrgn.pose import PoseTracker
+from cryodrgn.models import HetOnlyVAE
+from cryodrgn.lattice import Lattice
+from cryodrgn.beta_schedule import get_beta_schedule, LinearSchedule
 
 from vae_het import preprocess_input, run_batch, loss_function
 

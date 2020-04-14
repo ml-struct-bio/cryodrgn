@@ -12,16 +12,15 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-sys.path.insert(0,os.path.abspath(os.path.dirname(__file__))+'/lib-python')
-import mrc
-import utils
-import fft
-import dataset
-import ctf
+from cryodrgn import mrc
+from cryodrgn import utils
+from cryodrgn import fft
+from cryodrgn import dataset
+from cryodrgn import ctf
+from cryodrgn import models
 
-from pose import PoseTracker
-from lattice import Lattice
-import models
+from cryodrgn.pose import PoseTracker
+from cryodrgn.lattice import Lattice
 
 log = utils.log
 vlog = utils.vlog

@@ -29,8 +29,12 @@ def load_pkl(pkl):
         x = pickle.load(f)
     return x
 
-def load_angles(pkl):
-    return load_pkl(pkl)
+def save_pkl(data, out_pkl, append='False'):
+    mode = 'wb' if append is False else 'ab'
+    if mode == 'wb' and os.path.exists(out_pkl):
+        vlog(f'Warning: {out_pkl} already exists. Overwriting.')
+    with open(pkl, mode) as f:
+        x = pickle.dump(data, f)
 
 def R_from_eman(a,b,y):
     a *= np.pi/180.

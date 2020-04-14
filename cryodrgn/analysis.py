@@ -6,14 +6,13 @@ import seaborn as sns
 import pandas as pd
 import subprocess
 
-
 from scipy.spatial.distance import cdist, pdist
 import umap
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 
-import utils
+from . import utils
 log = utils.log
 
 def run_pca(z):

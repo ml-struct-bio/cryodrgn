@@ -7,8 +7,8 @@ import pandas as pd
 from datetime import datetime as dt
 import os
 
-import mrc
-from mrc import LazyImage
+from . import mrc
+from .mrc import LazyImage
 
 class Starfile():
     

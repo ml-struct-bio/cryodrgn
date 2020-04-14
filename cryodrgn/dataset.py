@@ -3,10 +3,10 @@ import torch
 from torch.utils import data
 import os
 
-import fft
-import mrc
-import utils
-import starfile
+from . import fft
+from . import mrc
+from . import utils
+from . import starfile
 
 log = utils.log
 

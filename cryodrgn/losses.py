@@ -1,10 +1,9 @@
-"""Equivariance loss for Encoder."""
+"""Equivariance loss for Encoder"""
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from lie_tools import s2s1rodrigues
 
 class EquivarianceLoss(nn.Module):
     """Equivariance loss for SO(2) subgroup."""

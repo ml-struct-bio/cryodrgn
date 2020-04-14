@@ -1,4 +1,4 @@
-import utils
+from . import utils
 
 def load_config(config_pkl, args):
     config = utils.load_pkl(config_pkl)

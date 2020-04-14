@@ -5,7 +5,7 @@ grids on SO(3) using the Hopf fribration"
 
 import numpy as np
 import healpy as hp
-import lie_tools
+from . import lie_tools
 
 def grid_s1(resol):
     Npix = 6*2**resol

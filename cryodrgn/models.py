@@ -5,9 +5,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import fft
-import lie_tools
-import utils
+from . import fft
+from . import lie_tools
+from . import utils
 
 log = utils.log
 

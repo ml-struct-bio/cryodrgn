@@ -1,18 +1,16 @@
 '''
-Resize an image stack or volume by clipping fourier frequencies
+Downsample an image stack or volume by clipping fourier frequencies
 '''
 
 import argparse
 import numpy as np
 import sys, os
+import math
 
 from cryodrgn import utils
 from cryodrgn import mrc
 from cryodrgn import fft
 from cryodrgn import dataset
-
-import matplotlib
-import matplotlib.pyplot as plt
 
 log = utils.log
 
@@ -40,22 +38,24 @@ def main(args):
 
     old = dataset.load_particles(args.mrcs, lazy=True, datadir=args.datadir)
     oldD = old[0].get().shape[0]
-    assert args.D < oldD, f'New box size {args.D} must be smaller than original box size {oldD}'
+    assert args.D <= oldD, f'New box size {args.D} cannot be larger than the original box size {oldD}'
     assert args.D % 2 == 0, 'New box size must be even'
     
     D = args.D
     start = int(oldD/2 - D/2)
     stop = int(oldD/2 + D/2)
 
+    ### Downsample volume ###
     if args.is_vol:
         oldft = fft.htn_center(np.array([x.get() for x in old]))
         log(oldft.shape)
         newft = oldft[start:stop,start:stop,start:stop]
         log(newft.shape)
         new = fft.ihtn_center(newft).astype(np.float32)
-        log('Saving {}'.format(args.o))
+        log(f'Saving {args.o}')
         mrc.write(args.o, new, is_vol=True)
 
+    ### Downsample images ###
     elif args.chunk is None:
         new = []
         for i in range(len(old)):
@@ -70,11 +70,14 @@ def main(args):
         log(new.shape)
         log('Saving {}'.format(args.o))
         mrc.write(args.o, new, is_vol=False)
+
+    ### Downsample images, saving chunks of N images ###
     else:
-        nchunks = len(old) // args.chunk + 1
+        chunk_names = []
+        nchunks = math.ceil(len(old)/args.chunk)
         for i in range(nchunks):
             log('Processing chunk {}'.format(i))
-            out = '.{}'.format(i).join(os.path.splitext(args.o))
+            out_mrcs = '.{}'.format(i).join(os.path.splitext(args.o))
             new = []
             for img in old[i*args.chunk:(i+1)*args.chunk]:
                 oldft = fft.ht2_center(img.get()).astype(np.float32)
@@ -83,8 +86,14 @@ def main(args):
             assert oldft[int(oldD/2),int(oldD/2)] == newft[int(D/2),int(D/2)]
             new = np.asarray(new)
             log(new.shape)
-            log('Saving {}'.format(out))
-            mrc.write(out, new, is_vol=False)
+            log(f'Saving {out_mrcs}'.format(out_mrcs))
+            mrc.write(out_mrcs, new, is_vol=False)
+            chunk_names.append(os.path.basename(out_mrcs))
+        # Write a text file with all chunks
+        out_txt = '{}.txt'.format(os.path.splitext(args.o)[0])
+        log(f'Saving {out_txt}')
+        with open(out_txt,'w') as f:
+            f.write('\n'.join(chunk_names))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)

@@ -1,11 +1,12 @@
+'''CryoDRGN neural network reconstruction'''
 
 def main():
     import argparse, os
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description=__doc__)
     import cryodrgn
     parser.add_argument('--version', action='version', version='cryoDRGN '+cryodrgn.__version__)
 
-    import cryodrgn.commands.resize_images
+    import cryodrgn.commands.downsample
     import cryodrgn.commands.parse_pose_star
     import cryodrgn.commands.parse_pose_csparc
     import cryodrgn.commands.parse_ctf_star
@@ -16,7 +17,7 @@ def main():
     import cryodrgn.commands.eval_vol
     import cryodrgn.commands.eval_images
 
-    modules = [cryodrgn.commands.resize_images,
+    modules = [cryodrgn.commands.downsample,
         cryodrgn.commands.parse_pose_csparc,
         cryodrgn.commands.parse_pose_star,
         cryodrgn.commands.parse_ctf_csparc,
@@ -28,7 +29,7 @@ def main():
         cryodrgn.commands.eval_images,
         ]
 
-    subparsers = parser.add_subparsers()#title='commands', metavar='<command>')
+    subparsers = parser.add_subparsers(title='commands')#, metavar='<command>')
     subparsers.required = 'True'
 
     def get_str_name(module):

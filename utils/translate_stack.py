@@ -5,11 +5,10 @@ import numpy as np
 import sys, os
 import matplotlib.pyplot as plt
 
-sys.path.insert(0,'{}/../lib-python'.format(os.path.dirname(os.path.abspath(__file__))))
-import utils
-import dataset
-import mrc
-import fft
+from cryodrgn import utils
+from cryodrgn import dataset
+from cryodrgn import mrc
+from cryodrgn import fft
 
 log = utils.log
 
@@ -17,7 +16,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mrcs', help='Input particles (.mrcs, .cs, .star, or .txt)')
     parser.add_argument('trans', help='Pose or translations pickle (.pkl)')
-    parser.add_argument('--tscale', type=float, default=1.0, help='Scale translations by this amount')
+    parser.add_argument('--tscale', type=float, default=1.0, help='Scale translations by this amount (default: %(default)s)')
     parser.add_argument('--datadir', help='Optionally overwrite path to starfile .mrcs if loading from a starfile')
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Output particle stack')
     parser.add_argument('--out-png')

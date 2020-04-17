@@ -5,12 +5,10 @@ import numpy as np
 import sys, os
 import matplotlib.pyplot as plt
 
-sys.path.insert(0,'{}/../../lib-python'.format(os.path.dirname(os.path.abspath(__file__))))
-
-import utils
-import mrc
-import ctf
-import fft
+from cryodrgn import utils
+from cryodrgn import mrc
+from cryodrgn import ctf
+from cryodrgn import fft
 
 log = utils.log
 

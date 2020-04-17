@@ -32,8 +32,8 @@ def add_args(parser):
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
     parser.add_argument('--zdim', type=int, required=True, help='Dimension of latent variable')
     parser.add_argument('--poses', type=os.path.abspath, required=True, help='Image poses (.pkl)')
-    parser.add_argument('--ctf', metavar='pkl', type=os.path.abspath, help='CTF parameters (.pkl) if particle stack is not phase flipped')
-    parser.add_argument('--load', type=os.path.abspath, help='Initialize training from a checkpoint')
+    parser.add_argument('--ctf', metavar='pkl', type=os.path.abspath, help='CTF parameters (.pkl)')
+    parser.add_argument('--load', type=os.path.abspath, metavar='WEIGHTS.PKL', help='Initialize training from a checkpoint')
     parser.add_argument('--checkpoint', type=int, default=1, help='Checkpointing interval in N_EPOCHS (default: %(default)s)')
     parser.add_argument('--log-interval', type=int, default=1000, help='Logging interval in N_IMGS (default: %(default)s)')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
@@ -58,6 +58,8 @@ def add_args(parser):
     group.add_argument('--beta', default=1.0, help='Choice of beta schedule or a constant for KLD weight (default: %(default)s)')
     group.add_argument('--beta-control', type=float, help='KL-Controlled VAE gamma. Beta is KL target. (default: %(default)s)')
     group.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: mean, std of dataset)')
+
+    group = parser.add_argument_group('Pose SGD')
     group.add_argument('--do-pose-sgd', action='store_true', help='Refine poses with gradient descent')
     group.add_argument('--pretrain', type=int, default=1, help='Number of epochs with fixed poses before pose SGD (default: %(default)s)')
     group.add_argument('--emb-type', choices=('s2s2','quat'), default='quat', help='SO(3) embedding type for pose SGD (default: %(default)s)')
@@ -272,6 +274,7 @@ def main(args):
         assert D-1 == 64, "Image size must be 64x64 for convolutional encoder"
 
     # load poses
+    if args.do_pose_sgd: assert args.domain == 'hartley', "Need to use --domain hartley if doing pose SGD"
     do_pose_sgd = args.do_pose_sgd
     posetracker = PoseTracker.load(args.poses, Nimg, D, 's2s2' if do_pose_sgd else None, ind)
     pose_optimizer = torch.optim.SparseAdam(posetracker.parameters(), lr=args.pose_lr) if do_pose_sgd else None

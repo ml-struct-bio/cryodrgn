@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from distutils.core import setup
+from setuptools import setup, find_packages
 
 setup(name='cryodrgn',
       version='0.2.0',
@@ -9,10 +9,15 @@ setup(name='cryodrgn',
       author_email='zhonge@mit.edu',
       url='https://github.com/zhonge/cryodrgn',
       license='GPLv3',
-      packages=['cryodrgn'],
+      packages=find_packages('cryodrgn/*'),
+      entry_points={
+          "console_scripts": [
+            "cryodrgn = cryodrgn.__main__:main",
+            ],
+      },
+      include_package_data = True,
       install_requires=[
         'torch>=1.0.0',
-        'torchvision',
         'pandas',
         ]
      )

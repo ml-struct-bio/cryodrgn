@@ -1,5 +1,5 @@
 '''
-Train a NN to model a 3D EM density map given 2D projections with angular assignments
+Train a NN to model a 3D density map given 2D images with pose assignments
 '''
 import numpy as np
 import sys, os
@@ -26,12 +26,11 @@ log = utils.log
 vlog = utils.vlog
 
 def add_args(parser):
-    parser.add_argument('particles', help='Particle stack file (.mrcs)')
-    parser.add_argument('--poses', type=os.path.abspath, required=True, help='Image poses (.pkl)')
-    parser.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: mean, std of dataset)')
-    parser.add_argument('--ctf', metavar='pkl', type=os.path.abspath, help='CTF parameters (.pkl)')
+    parser.add_argument('particles', type=os.path.abspath, help='Input particles (.mrcs, .star, .cs, or .txt)')
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
-    parser.add_argument('--load', type=os.path.abspath, help='Initialize training from a checkpoint')
+    parser.add_argument('--poses', type=os.path.abspath, required=True, help='Image poses (.pkl)')
+    parser.add_argument('--ctf', metavar='pkl', type=os.path.abspath, help='CTF parameters (.pkl)')
+    parser.add_argument('--load', type=os.path.abspath, metavar='WEIGHTS.PKL', help='Initialize training from a checkpoint')
     parser.add_argument('--checkpoint', type=int, default=1, help='Checkpointing interval in N_EPOCHS (default: %(default)s)')
     parser.add_argument('--log-interval', type=int, default=1000, help='Logging interval in N_IMGS (default: %(default)s)')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
@@ -49,6 +48,7 @@ def add_args(parser):
     group.add_argument('-b','--batch-size', type=int, default=8, help='Minibatch size (default: %(default)s)')
     group.add_argument('--wd', type=float, default=0, help='Weight decay in Adam optimizer (default: %(default)s)')
     group.add_argument('--lr', type=float, default=1e-4, help='Learning rate in Adam optimizer (default: %(default)s)')
+    group.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: mean, std of dataset)')
 
     group = parser.add_argument_group('Pose SGD')
     group.add_argument('--do-pose-sgd', action='store_true', help='Refine poses')
@@ -204,6 +204,6 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    args = parse_args(parser).parse_args()
+    args = add_args(parser).parse_args()
     utils._verbose = args.verbose
     main(args)

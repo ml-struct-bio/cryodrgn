@@ -1,18 +1,17 @@
-'''Parse pose from a cryoSPARC .cs metafile'''
+'''Parse image poses from a cryoSPARC .cs metafile'''
 
 import argparse
 import numpy as np
 import sys, os
 import pickle
 import torch
-sys.path.insert(0,'{}/../lib-python'.format(os.path.dirname(os.path.abspath(__file__))))
-import utils
-import lie_tools
+
+from cryodrgn import lie_tools
+from cryodrgn import utils
 
 log = utils.log
 
-def parse_args():
-    parser = argparse.ArgumentParser(description=__doc__)
+def add_args(parser):
     parser.add_argument('input', help='Cryosparc .cs file')
     parser.add_argument('--abinit', action='store_true', help='Flag if results are from ab-initio reconstruction') 
     parser.add_argument('--hetrefine', action='store_true', help='Flag if results are from a heterogeneous refinements (default: homogeneous refinement)')
@@ -63,4 +62,5 @@ def main(args):
         pickle.dump((rot,trans),f)
 
 if __name__ == '__main__':
-    main(parse_args().parse_args())
+    parser = argparse.ArgumentParser(description=__doc__)
+    main(add_args(parser).parse_args())

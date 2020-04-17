@@ -5,16 +5,14 @@ import numpy as np
 import sys, os
 import pickle
 
-sys.path.insert(0, '{}/../lib-python'.format(os.path.dirname(os.path.realpath(__file__))))
-import utils
-import starfile
-import ctf
+from cryodrgn import utils
+from cryodrgn import starfile
+from cryodrgn import ctf
 log = utils.log 
 
 HEADERS = ['_rlnDefocusU', '_rlnDefocusV', '_rlnDefocusAngle', '_rlnVoltage', '_rlnSphericalAberration', '_rlnAmplitudeContrast', '_rlnPhaseShift']
 
-def parse_args():
-    parser = argparse.ArgumentParser(description=__doc__)
+def add_args(parser):
     parser.add_argument('star', help='Input')
     parser.add_argument('--Apix', type=float, required=True, help='Angstroms per pixel')
     parser.add_argument('-D', type=int, required=True, help='Image size in pixels')
@@ -65,4 +63,5 @@ def main(args):
     
 
 if __name__ == '__main__':
-    main(parse_args().parse_args())
+    parser = argparse.ArgumentParser(description=__doc__)
+    main(add_args(parser).parse_args())

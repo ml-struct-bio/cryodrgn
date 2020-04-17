@@ -6,24 +6,20 @@ import argparse
 import numpy as np
 import sys, os
 
-sys.path.insert(0,'{}/../lib-python'.format(os.path.dirname(os.path.abspath(__file__))))
-import utils
-import mrc
-import fft
-import dataset
+from cryodrgn import utils
+from cryodrgn import mrc
+from cryodrgn import fft
+from cryodrgn import dataset
 
 import matplotlib
-matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 log = utils.log
 
-def parse_args():
-    parser = argparse.ArgumentParser(description=__doc__)
+def add_args(parser):
     parser.add_argument('mrcs', help='Input particles or volume (.mrc, .mrcs, .star, or .txt)')
     parser.add_argument('-D', type=int, required=True, help='New box size in pixels, must be even')
     parser.add_argument('-o', metavar='MRCS', type=os.path.abspath, required=True, help='Output projection stack (.mrcs)')
-    parser.add_argument('--out-png', metavar='PNG', type=os.path.abspath, help='Optionally plot first 9 images')
     parser.add_argument('--is-vol',action='store_true', help='Flag if input .mrc is a volume')
     parser.add_argument('--chunk', type=int, help='Chunksize (in # of images) to split particle stack when saving')
     parser.add_argument('--datadir', help='Optionally provide path to input .mrcs if loading from a .star or .cs file')
@@ -48,7 +44,6 @@ def main(args):
     assert args.D % 2 == 0, 'New box size must be even'
     
     D = args.D
-
     start = int(oldD/2 - D/2)
     stop = int(oldD/2 + D/2)
 
@@ -92,4 +87,5 @@ def main(args):
             mrc.write(out, new, is_vol=False)
 
 if __name__ == '__main__':
-    main(parse_args().parse_args())
+    parser = argparse.ArgumentParser(description=__doc__)
+    main(add_args(parser).parse_args())

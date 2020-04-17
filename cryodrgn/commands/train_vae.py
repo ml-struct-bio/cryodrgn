@@ -27,8 +27,7 @@ from cryodrgn.beta_schedule import get_beta_schedule, LinearSchedule
 log = utils.log
 vlog = utils.vlog
 
-def parse_args():
-    parser = argparse.ArgumentParser(description=__doc__)
+def add_args(parser):
     parser.add_argument('particles', type=os.path.abspath, help='Input particles (.mrcs, .star, .cs, or .txt)')
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
     parser.add_argument('--zdim', type=int, required=True, help='Dimension of latent variable')
@@ -387,7 +386,8 @@ def main(args):
     flog('Finsihed in {} ({} per epoch)'.format(td, td/(num_epochs-start_epoch)))
 
 if __name__ == '__main__':
-    args = parse_args().parse_args()
+    parser = argparse.ArgumentParser(description=__doc__)
+    args = add_args(parser).parse_args()
     utils._verbose = args.verbose
     main(args)
 

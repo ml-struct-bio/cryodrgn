@@ -4,13 +4,12 @@ import argparse
 import numpy as np
 import sys, os
 import pickle
-sys.path.insert(0,'{}/../lib-python'.format(os.path.dirname(os.path.abspath(__file__))))
-import utils
-import starfile
+
+from cryodrgn import utils
+from cryodrgn import starfile
 log = utils.log
 
-def parse_args():
-    parser = argparse.ArgumentParser(description=__doc__)
+def add_args(parser):
     parser.add_argument('input', help='RELION .star file')
     parser.add_argument('-D', type=int, required=True, help='Box size of reconstruction (pixels)')
     parser.add_argument('-o', metavar='PKL', type=os.path.abspath, required=True, help='Output pose.pkl')
@@ -32,6 +31,7 @@ def main(args):
     euler[:,2] = s.df['_rlnAnglePsi']
     log('Euler angles (Rot, Tilt, Psi):')
     log(euler[0])
+    log('Converting to rotation matrix:')
     rot = np.asarray([utils.R_from_relion(*x) for x in euler])
     log(rot[0])
 
@@ -51,4 +51,5 @@ def main(args):
         pickle.dump((rot,trans),f)
 
 if __name__ == '__main__':
-    main(parse_args().parse_args())
+    parser = argparse.ArgumentParser(description=__doc__)
+    main(add_args(parser).parse_args())

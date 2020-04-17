@@ -21,8 +21,7 @@ from cryodrgn.lattice import Lattice
 
 log = utils.log
 
-def parse_args():
-    parser = argparse.ArgumentParser(description=__doc__)
+def add_args(parser):
     parser.add_argument('mrcs', help='Input .mrcs image stack')
     parser.add_argument('--poses', type=os.path.abspath, required=True, help='Image poses (.pkl)')
     parser.add_argument('--ctf', metavar='pkl', type=os.path.abspath, help='CTF parameters (.pkl) for phase flipping images')
@@ -146,4 +145,5 @@ def main(args):
     mrc.write(args.o,V.astype('float32'), Apix=Apix)
 
 if __name__ == '__main__':
-    main(parse_args().parse_args())
+    parser = argparse.ArgumentParser(description=__doc__)
+    main(add_args(parser).parse_args())

@@ -26,13 +26,12 @@ from cryodrgn.models import HetOnlyVAE
 from cryodrgn.lattice import Lattice
 from cryodrgn.beta_schedule import get_beta_schedule, LinearSchedule
 
-from vae_het import preprocess_input, run_batch, loss_function
+from cryodrgn.commands.train_vae import preprocess_input, run_batch, loss_function
 
 log = utils.log
 vlog = utils.vlog
 
-def parse_args():
-    parser = argparse.ArgumentParser(description=__doc__)
+def add_args(parser):
     parser.add_argument('particles', type=os.path.abspath, help='Input particles (.mrcs, .star, .cs, or .txt)')
     parser.add_argument('weights', help='Model weights')
     parser.add_argument('-c', '--config', metavar='PKL', help='CryoDRGN configuration')
@@ -194,7 +193,8 @@ def main(args):
     log('Finsihed in {}'.format(dt.now()-t1))
 
 if __name__ == '__main__':
-    args = parse_args().parse_args()
+    parser = argparse.ArgumentParser(description=__doc__)
+    args = add_args(parser).parse_args()
     utils._verbose = args.verbose
     main(args)
 

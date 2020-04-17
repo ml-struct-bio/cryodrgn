@@ -5,19 +5,15 @@ import numpy as np
 import sys, os
 import pickle
 
-sys.path.insert(0, '{}/../lib-python'.format(os.path.dirname(os.path.realpath(__file__))))
-import utils
-import ctf
+from cryodrgn import utils
+from cryodrgn import ctf
 log = utils.log 
 
-def parse_args():
-    parser = argparse.ArgumentParser(description=__doc__)
+def add_args(parser):
     parser.add_argument('cs', help='Input cryosparc particles.cs file')
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Output pkl of CTF parameters')
     parser.add_argument('--png', metavar='PNG', type=os.path.abspath, help='Optionally plot the CTF')
     return parser
-
-#      dtype=[('uid', '<u8'), ('blob/path', 'S89'), ('blob/idx', '<u4'), ('blob/shape', '<u4', (2,)), ('blob/psize_A', '<f4'), ('blob/sign', '<f4'), ('ctf/type', 'S9'), ('ctf/exp_group_id', '<u4'), ('ctf/accel_kv', '<f4'), ('ctf/cs_mm', '<f4'), ('ctf/amp_contrast', '<f4'), ('ctf/df1_A', '<f4'), ('ctf/df2_A', '<f4'), ('ctf/df_angle_rad', '<f4'), ('ctf/phase_shift_rad', '<f4'), ('ctf/scale', '<f4'), ('ctf/scale_const', '<f4'), ('alignments3D/split', '<u4'), ('alignments3D/shift', '<f4', (2,)), ('alignments3D/pose', '<f4', (3,)), ('alignments3D/psize_A', '<f4'), ('alignments3D/error', '<f4'), ('alignments3D/error_min', '<f4'), ('alignments3D/resid_pow', '<f4'), ('alignments3D/slice_pow', '<f4'), ('alignments3D/image_pow', '<f4'), ('alignments3D/cross_cor', '<f4'), ('alignments3D/alpha', '<f4'), ('alignments3D/weight', '<f4'), ('alignments3D/pose_ess', '<f4'), ('alignments3D/shift_ess', '<f4'), ('alignments3D/class_posterior', '<f4'), ('alignments3D/class', '<u4'), ('alignments3D/class_ess', '<f4')])
 
 def main(args):
     assert args.cs.endswith('.cs'), "Input file must be a .cs file"
@@ -46,4 +42,5 @@ def main(args):
         log(args.png)
 
 if __name__ == '__main__':
-    main(parse_args().parse_args())
+    parser = argparse.ArgumentParser(description=__doc__)
+    main(add_args(parser).parse_args())

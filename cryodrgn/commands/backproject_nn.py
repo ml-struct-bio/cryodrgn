@@ -25,8 +25,7 @@ from cryodrgn.lattice import Lattice
 log = utils.log
 vlog = utils.vlog
 
-def parse_args():
-    parser = argparse.ArgumentParser(description=__doc__)
+def add_args(parser):
     parser.add_argument('particles', help='Particle stack file (.mrcs)')
     parser.add_argument('--poses', type=os.path.abspath, required=True, help='Image poses (.pkl)')
     parser.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: mean, std of dataset)')
@@ -204,6 +203,7 @@ def main(args):
     log('Finsihed in {} ({} per epoch)'.format(td, td/(args.num_epochs-start_epoch)))
 
 if __name__ == '__main__':
-    args = parse_args().parse_args()
+    parser = argparse.ArgumentParser(description=__doc__)
+    args = parse_args(parser).parse_args()
     utils._verbose = args.verbose
     main(args)

@@ -21,8 +21,7 @@ from cryodrgn.models import HetOnlyVAE
 log = utils.log
 vlog = utils.vlog
 
-def parse_args():
-    parser = argparse.ArgumentParser(description=__doc__)
+def add_args(parser):
     parser.add_argument('weights', help='Model weights')
     parser.add_argument('-c', '--config', metavar='PKL', help='CryoDRGN configuration')
     parser.add_argument('-z', type=np.float32, nargs='*', help='')
@@ -131,7 +130,8 @@ def main(args):
     log('Finsihed in {}'.format(td))
 
 if __name__ == '__main__':
-    args = parse_args().parse_args()
+    parser = argparse.ArgumentParser(description=__doc__)
+    args = add_args(parser).parse_args()
     utils._verbose = args.verbose
     main(args)
 

@@ -30,20 +30,11 @@ Until the cryoDRGN conda/pip package is available, for now, git clone the source
     git checkout 0.2.0
     python setup.py install --user 
 
-The dependencies for latent space analysis/visualization can be installed separately:
-
-    conda install seaborn scikit-learn 
-    conda install -c conda-forge umap-learn
-    conda install -c conda-forge jupyterlab
-    pip install ipywidgets
-    jupyter nbextension enable --py widgetsnbextension
-    pip install cufflinks
-
 ## Quickstart: heterogeneous reconstruction with consensus poses
 
 ### 1. Preprocess image stack
 
-It is first recommended to resize your particle images for initial pilot experiments with cryoDRGN, since larger images require longer training times.
+First resize your particle images for initial pilot experiments with cryoDRGN using the `cryodrgn downsample` command:
 
     $ cryodrgn downsample -h
     usage: cryodrgn downsample [-h] -D D -o MRCS [--is-vol] [--chunk CHUNK]
@@ -64,14 +55,14 @@ It is first recommended to resize your particle images for initial pilot experim
                          saving
       --datadir DATADIR  Optionally provide path to input .mrcs if loading from a
                          .star or .cs file
-    
-Example usage:
-    
-    # First create an image stack at low resolution, e.g. D=128
-    cryodrgn downsample [input particle stack] -D 128 -o [output .mrcs]
 
-    # The maximum recommended image size is D=256, so it is also recommended to downsample your images if your images are larger than 256x256:
-    $ cryodrgn downsample [input particle stack] -D 256 -o [output .mrcs]
+Since larger images require longer training times, it is recommended to first train cryoDRGN on images downsized to D=128, (128x128 pixel image):
+    
+    cryodrgn downsample [input particle stack] -D 128 -o particles.128.mrcs
+
+The maximum recommended image size is D=256, so it is also recommended to downsample your images to D=256 if your images are larger than 256x256:
+
+    $ cryodrgn downsample [input particle stack] -D 256 -o particles.256.mrcs
 
 The input file format can be a single `.mrcs` file, a `.txt` file containing paths to multiple `.mrcs` files, a `.star` file, or a cryoSPARC `.cs` file. For the latter two options, if the relative paths to the `.mrcs` are broken, the argument `--datadir` can be used to supply the path to where the `.mrcs` files are located. 
 
@@ -81,13 +72,11 @@ If there are memory issues with large particle stacks, add the `--chunk 10000` a
 
 CryoDRGN expects image poses in a binary pickle format (`.pkl`). Use the `parse_pose_star` or `parse_pose_csparc` command to extract the poses from a `.star` file or a `.cs` file, respectively.
 
-Example usage:
-
-To parse image poses from a RELION starfile:
+Example usage to parse image poses from a RELION starfile:
     
     $ cryodrgn parse_pose_star particles.star -o pose.pkl -D 300
 
-To parse image poses from a cryoSPARC homogeneous refinement particles.cs file:
+Example usage to parse image poses from a cryoSPARC homogeneous refinement particles.cs file:
 
     $ cryodrgn parse_pose_csparc cryosparc_P27_J3_005_particles.cs -o pose.pkl -D 300
 
@@ -110,7 +99,7 @@ Example usage for a .cs file:
 ### 4. Test pose/CTF parameters parsing
 
 Test that pose and CTF parameters were parsed correctly using the voxel-based backprojection script.
-The goal is to quickly verify that there are no major problems with the extracted values and that the output structure resembles the structure from the consensus reconstruction.
+The goal is to quickly verify that there are no major problems with the extracted values and that the output structure resembles the structure from the consensus reconstruction before beginning training.
 
 Example usage: 
 
@@ -121,8 +110,7 @@ Example usage:
             -o backproject.128.mrc
 
 Check that the output structure `backproject.128.mrc` resembles the structure from the consensus reconstruction. 
-It will not match exactly as the `backproject_voxel.py` script backprojects phase-flipped particles onto the voxel grid, and by default only uses the first 10k images. 
-You can increase the number of images that are used with the `--first` argument.
+It will not match exactly as the `backproject_voxel` command backprojects phase-flipped particles onto the voxel grid, and by default only uses the first 10k images. If the structure is too noisy, you can increase the number of images that are used with the `--first` argument.
 
 ### 5. Running cryoDRGN heterogeneous reconstruction
 
@@ -286,7 +274,10 @@ Image poses may be *locally* refined using the `--do-pose-sgd` flag. More detail
 
 ### 6. Analysis of results
 
-Once the model has finished training, the output directory will contain a configuration file `config.pkl`, neural network weights `weights.pkl`, image poses (if performing pose sgd) `pose.pkl`, and the predicted latent encoding for each image `z.pkl`. 
+Once the model has finished training, the output directory will contain a configuration file `config.pkl`, neural network weights `weights.pkl`, image poses (if performing pose sgd) `pose.pkl`, and the predicted latent encoding for each image `z.pkl`. There is also a `run.log` file containing the average loss for each epoch which can be used to plot the learning curve for model training.
+
+
+
 
 To analyze and visualize the learned latent space, use the scripts in the `utils/analysis` subdirectory. 
 

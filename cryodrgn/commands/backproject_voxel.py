@@ -22,7 +22,7 @@ from cryodrgn.lattice import Lattice
 log = utils.log
 
 def add_args(parser):
-    parser.add_argument('mrcs', help='Input .mrcs image stack')
+    parser.add_argument('particles', type=os.path.abspath, help='Input particles (.mrcs, .star, .cs, or .txt)')
     parser.add_argument('--poses', type=os.path.abspath, required=True, help='Image poses (.pkl)')
     parser.add_argument('--ctf', metavar='pkl', type=os.path.abspath, help='CTF parameters (.pkl) for phase flipping images')
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Output .mrc file')
@@ -60,7 +60,6 @@ def add_slice(V, counts, ff_coord, ff, D):
     return V, counts
 
 def main(args):
-    assert args.mrcs.endswith('.mrcs')
     assert args.o.endswith('.mrc')
 
     t1 = time.time()    
@@ -77,10 +76,10 @@ def main(args):
 
     # load the particles
     if args.tilt is None:
-        data = dataset.LazyMRCData(args.mrcs, norm=(0,1), invert_data=args.invert_data, datadir=args.datadir)
+        data = dataset.LazyMRCData(args.particles, norm=(0,1), invert_data=args.invert_data, datadir=args.datadir)
         tilt = None
     else:
-        data = dataset.TiltMRCData(args.mrcs, args.tilt, norm=(0,1), invert_data=args.invert_data, datadir=args.datadir)
+        data = dataset.TiltMRCData(args.particles, args.tilt, norm=(0,1), invert_data=args.invert_data, datadir=args.datadir)
         tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32))
     D = data.D
     Nimg = data.N

@@ -37,6 +37,26 @@ def run_pca(z):
     pc = pca.transform(z)
     return pc, pca
 
+def get_pc_traj(pca, zdim, numpoints, dim, start, end):
+    '''
+    Create trajectory along specified principle component
+    
+    Inputs:
+        pca: sklearn PCA object from run_pca
+        zdim (int)
+        numpoints (int): number of points between @start and @end
+        dim (int): PC dimension for the trajectory (1-based index)
+        start (float): Value of PC{dim} to start trajectory
+        end (float): Value of PC{dim} to stop trajectory
+    
+    Returns:
+        np.array (numpoints x zdim) of z values along PC
+    '''
+    traj_pca = np.zeros((numpoints,zdim))
+    traj_pca[:,dim-1] = np.linspace(start, end, numpoints)
+    ztraj_pca = pca.inverse_transform(traj_pca)
+    return ztraj_pca
+
 def run_tsne(z, n_components=2, perplexity=1000):
     if len(z) > 10000:
         log('WARNING: {} datapoints > {}. This may take awhile.'.format(len(z), 10000))

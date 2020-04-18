@@ -1,5 +1,5 @@
 '''
-Generate trrajectory along PCs
+Generate trajectory along PCs
 '''
 
 import argparse
@@ -10,28 +10,16 @@ from scipy.spatial.distance import cdist
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 
+from cryodrgn import analysis
+
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('z', help='Input z.pkl')
-    parser.add_argument('--dim', type=int, help='Choose PC (default: all)')
-    parser.add_argument('-n', type=int, default=10, help='Number of samples along PC')
+    parser.add_argument('--dim', type=int, help='Choose PC (1-based indexing) (default: all)')
+    parser.add_argument('-n', type=int, default=10, help='Number of samples along PC (default: %(default)s)')
     parser.add_argument('--lim', nargs=2, type=float, help='Start and end point of trajectory (default: 5/95th percentile)')
-    parser.add_argument('-o', help='Output txt file of z values or prefix to output .pc.txt files')
+    parser.add_argument('-o', type=os.path.abspath, help='Output directory for pc.X.txt files')
     return parser
-
-def pca_transform(z):
-    pca = PCA(z.shape[1])
-    pca.fit(z)
-    print('Explained variance ratio:')
-    print(pca.explained_variance_ratio_)
-    pc = pca.transform(z)
-    return pc, pca
-
-def get_pc_traj(pca, D, numpoints, dim, start, end):
-    traj_pca = np.zeros((numpoints,D))
-    traj_pca[:,dim] = np.linspace(start, end, numpoints)
-    ztraj_pca = pca.inverse_transform(traj_pca)
-    return ztraj_pca
 
 def analyze_data_support(z, traj, cutoff=3):
     d = cdist(traj,z)
@@ -39,36 +27,29 @@ def analyze_data_support(z, traj, cutoff=3):
     return count
 
 def main(args):
+    if not os.path.exists(args.o):
+        os.makedirs(args.o)
+    
     z = pickle.load(open(args.z,'rb'))
-    D = z.shape[1]
-    pc, pca = pca_transform(z)
+    zdim = z.shape[1]
+    pc, pca = analysis.run_pca(z)
 
-    if args.dim:
-        dim = args.dim
-        print('PC{}'.format(dim+1))
-        if args.lim:
-            start, stop = args.lim
-        else:
-            start = np.percentile(pc[:,dim], 5)
-            stop = np.percentile(pc[:,dim], 95)
+    # Use 1-based indexing
+    dims = [args.dim] if args.dim else list(range(1,zdim+1))
+    lim = args.lim if args.lim else (5,95)
+
+    for dim in dims:
+        print('PC{}'.format(dim))
+        start = np.percentile(pc[:,dim-1], lim[0])
+        stop = np.percentile(pc[:,dim-1], lim[1])
         print('Limits: {}, {}'.format(start, stop))
-        traj = get_pc_traj(pca, D, args.n, args.dim, start, stop)
+        traj = analysis.get_pc_traj(pca, zdim, args.n, dim, start, stop)
         print('Neighbor count along trajectory:')
         print(analyze_data_support(z, traj))
-        print(args.o)
-        np.savetxt(args.o, traj)
-    else:
-        for dim in range(D):
-            print('PC{}'.format(dim+1))
-            start = np.percentile(pc[:,dim], 5)
-            stop = np.percentile(pc[:,dim], 95)
-            print('Limits: {}, {}'.format(start, stop))
-            traj = get_pc_traj(pca, D, args.n, dim, start, stop)
-            print('Neighbor count along trajectory:')
-            print(analyze_data_support(z, traj))
-            out = '{}.pc{}.txt'.format(args.o,dim+1)
-            print(out)
-            np.savetxt(out, traj)
+
+        out = f'{args.o}/pc{dim}.txt'
+        print(out)
+        np.savetxt(out, traj)
 
 if __name__ == '__main__':
     main(parse_args().parse_args())

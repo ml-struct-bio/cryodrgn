@@ -15,6 +15,20 @@ from sklearn.cluster import KMeans
 from . import utils
 log = utils.log
 
+def parse_loss(f):
+    '''Parse loss from run.log'''
+    lines = open(f).readlines()
+    lines = [x for x in lines if '====' in x]
+    try:
+        loss = [x.strip().split()[-1] for x in lines]
+        loss = np.asarray(loss).astype(np.float32)
+    except:
+        loss = [x.split()[-4][:-1] for x in lines]
+        loss = np.asarray(loss).astype(np.float32)
+    return loss
+
+### Dimensionality reduction ###
+
 def run_pca(z):
     pca = PCA(z.shape[1])
     pca.fit(z)
@@ -33,6 +47,8 @@ def run_umap(z):
     reducer = umap.UMAP()
     z_embedded = reducer.fit_transform(z)
     return z_embedded
+
+### Clustering ###
 
 def cluster_kmeans(z, K):
     '''
@@ -230,17 +246,26 @@ def plot_projections(imgs, labels=None):
             axes[i].set_title(labels[i])
     return fig, axes
 
-def gen_volumes(weights, config, zfile, outdir, cuda=None):
-    '''Call eval_decoder.py to generate volumes at specified z values
+def gen_volumes(weights, config, zfile, outdir, cuda=None, 
+                Apix=None, flip=False, downsample=None):
+    '''Call cryodrgn eval_vol to generate volumes at specified z values
     Input:
         weights (str): Path to model weights .pkl
         config (str): Path to config.pkl
         zfile (str): Path to .txt file of z values
         outdir (str): Path to output directory for volumes,
         cuda (int or None): Specify cuda device
+        Apix (float or None): Apix of output volume
+        flip (bool): Flag to flip chirality of output volumes
+        downsample (int or None): Generate volumes at this box size
     '''
-    src = os.path.abspath(os.path.dirname(__file__) + '/..')
-    cmd = f'python {src}/eval_decoder.py {weights} --config {config} --zfile {zfile} -o {outdir}'
+    cmd = f'cryodrgn eval_vol {weights} --config {config} --zfile {zfile} -o {outdir}'
+    if Apix is not None:
+        cmd += f' --Apix {Apix}'
+    if flip:
+        cmd += f' --flip'
+    if downsample is not None:
+        cmd += f' -d {downsample}'
     if cuda is not None:
         cmd = f'CUDA_VISIBLE_DEVICES={cuda} {cmd}'
     log(f'Running command:\n{cmd}')

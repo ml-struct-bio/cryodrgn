@@ -24,17 +24,21 @@ vlog = utils.vlog
 def add_args(parser):
     parser.add_argument('weights', help='Model weights')
     parser.add_argument('-c', '--config', metavar='PKL', help='CryoDRGN configuration')
-    parser.add_argument('-z', type=np.float32, nargs='*', help='')
-    parser.add_argument('--z-start', type=np.float32, nargs='*', help='')
-    parser.add_argument('--z-end', type=np.float32, nargs='*', help='')
-    parser.add_argument('-n', type=int, default=10, help='Number of structures between z_start and z_end')
-    parser.add_argument('--zfile', help='Text file witth values of z to evaluate')
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Output .mrc or directory')
-    parser.add_argument('--Apix', type=float, default=1, help='Pixel size to add to .mrc header (default: %(default)s A/pix)')
-    parser.add_argument('--flip', action='store_true', help='Flip handedness of output volume')
     parser.add_argument('--prefix', default='vol_', help='Prefix when writing out multiple .mrc files (default: %(default)s)')
-    parser.add_argument('-d','--downsample', type=int, help='Optionally downsample volumes to this box size')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
+
+    group = parser.add_argument_group('Specify z values')
+    group.add_argument('-z', type=np.float32, nargs='*', help='Specify one z-value')
+    group.add_argument('--z-start', type=np.float32, nargs='*', help='Specify a starting z-value')
+    group.add_argument('--z-end', type=np.float32, nargs='*', help='Specify an ending z-value')
+    group.add_argument('-n', type=int, default=10, help='Number of structures between [z_start, z_end]')
+    group.add_argument('--zfile', help='Text file with z-values to evaluate')
+
+    group = parser.add_argument_group('Volume arguments')
+    group.add_argument('--Apix', type=float, default=1, help='Pixel size to add to .mrc header (default: %(default)s A/pix)')
+    group.add_argument('--flip', action='store_true', help='Flip handedness of output volume')
+    group.add_argument('-d','--downsample', type=int, help='Downsample volumes to this box size (pixels)')
 
     group = parser.add_argument_group('Overwrite architecture hyperparameters in config.pkl')
     group.add_argument('--norm', nargs=2, type=float)
@@ -48,10 +52,16 @@ def add_args(parser):
     group.add_argument('--enc-mask', type=int, help='Circular mask radius for image encoder')
     group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf','none'), help='Type of positional encoding')
     group.add_argument('--domain', choices=('hartley','fourier'))
-    parser.add_argument('--l-extent', type=float, help='Coordinate lattice size')
+    group.add_argument('--l-extent', type=float, help='Coordinate lattice size')
     return parser
 
+def check_inputs(args):
+    if args.z_start:
+        assert args.z_end, "Must provide --z-end with argument --z-start"
+    assert sum((bool(args.z), bool(args.z_start), bool(args.zfile))) == 1, "Must specify either -z OR --z-start/--z-end OR --zfile"
+
 def main(args):
+    check_inputs(args)
     t1 = dt.now()
 
     ## set the device
@@ -65,7 +75,7 @@ def main(args):
     log(args)
 
     if args.downsample:
-        assert args.downsample%2==0
+        assert args.downsample % 2==0, "Boxsize must be even"
         assert args.downsample < args.D, "Must be smaller than original box size"
     D = args.D + 1
     lattice = Lattice(D, extent=args.l_extent)
@@ -83,23 +93,23 @@ def main(args):
 
     model.eval()
 
+    ### Multiple z ###
     if args.z_start or args.zfile:
+        
+        ### Get z values
         if args.z_start:
-            assert args.z_end
-            assert not args.z
-            assert not args.zfile
             args.z_start = np.array(args.z_start)
             args.z_end = np.array(args.z_end)
             z = np.repeat(np.arange(args.n,dtype=np.float32), args.zdim).reshape((args.n,args.zdim))
             z *= ((args.z_end - args.z_start)/(args.n-1))
             z += args.z_start
         else:
-            assert not args.z_start
             z = np.loadtxt(args.zfile).reshape(-1,args.zdim)
 
         if not os.path.exists(args.o):
             os.makedirs(args.o)
 
+        log(f'Generating {len(z)} volumes')
         for i,zz in enumerate(z):
             log(zz)
             if args.downsample:
@@ -112,7 +122,8 @@ def main(args):
             if args.flip:
                 vol = vol[::-1]
             mrc.write(out_mrc, vol.astype(np.float32), Apix=args.Apix)
-
+    
+    ### Single z ###
     else:
         z = np.array(args.z)
         log(z)

@@ -11,8 +11,8 @@ def main():
     import cryodrgn.commands.parse_pose_csparc
     import cryodrgn.commands.parse_ctf_star
     import cryodrgn.commands.parse_ctf_csparc
-    import cryodrgn.commands.backproject_nn
     import cryodrgn.commands.backproject_voxel
+    import cryodrgn.commands.train_nn
     import cryodrgn.commands.train_vae
     import cryodrgn.commands.eval_vol
     import cryodrgn.commands.eval_images
@@ -25,7 +25,7 @@ def main():
         cryodrgn.commands.parse_pose_star,
         cryodrgn.commands.parse_ctf_csparc,
         cryodrgn.commands.parse_ctf_star,
-        cryodrgn.commands.backproject_nn,
+        cryodrgn.commands.train_nn,
         cryodrgn.commands.backproject_voxel,
         cryodrgn.commands.train_vae,
         cryodrgn.commands.eval_vol,

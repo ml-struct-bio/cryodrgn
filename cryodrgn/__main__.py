@@ -16,6 +16,7 @@ def main():
     import cryodrgn.commands.train_vae
     import cryodrgn.commands.eval_vol
     import cryodrgn.commands.eval_images
+    import cryodrgn.commands.analyze
 
     modules = [cryodrgn.commands.downsample,
         cryodrgn.commands.parse_pose_csparc,
@@ -27,6 +28,7 @@ def main():
         cryodrgn.commands.train_vae,
         cryodrgn.commands.eval_vol,
         cryodrgn.commands.eval_images,
+        cryodrgn.commands.analyze,
         ]
 
     subparsers = parser.add_subparsers(title='Choose a command')

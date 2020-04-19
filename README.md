@@ -226,18 +226,16 @@ Additional parameters which are typically set include:
 
 It is recommended to first train on lower resolution images (e.g. D=128) with `--zdim 1` and with `--zdim 10` using the default architecture (fast). After validation, pose optimization, and any necessary particle filtering, then train on the full resolution image stack (up to D=256) with a large architecture (slow). 
 
-Example command to train a 1-D latent variable cryoDRGN model for 50 epochs on an image dataset `projections.128.mrcs` with poses `pose.pkl` and ctf parameters `ctf.pkl`:
+Example command to train a cryoDRGN model for 50 epochs on an image dataset `projections.128.mrcs` with poses `pose.pkl` and ctf parameters `ctf.pkl`:
 
+    # 1-D latent variable model
     $ cryodrgn train_vae projections.128.mrcs 
             --poses pose.pkl \
             --ctf ctf.pkl \
             --zdim 1 -n 50 \
             -o 00_vae128_z1
-            
-* Results will be saved in the specified directory `00_vae128_z10`.
-            
-Example command to train a 10-D latent variable cryoDRGN model for 50 epochs on an image dataset `projections.128.mrcs` with poses `pose.pkl` and ctf parameters `ctf.pkl`:
 
+    # 10-D latent variable model
     $ cryodrgn train_vae projections.128.mrcs 
             --poses pose.pkl \
             --ctf ctf.pkl \
@@ -246,6 +244,7 @@ Example command to train a 10-D latent variable cryoDRGN model for 50 epochs on 
 
 Example command to train a 10-D latent variable cryoDRGN model for 20 epochs on an image dataset `projections.256.mrcs` with poses `pose.pkl` and ctf parameters `ctf.pkl`:
 
+    # 10-D latent variable model with a larger MLP architecture
     $ cryodrgn train_vae projections.256.mrcs 
             --poses pose.pkl \
             --ctf ctf.pkl \
@@ -253,9 +252,9 @@ Example command to train a 10-D latent variable cryoDRGN model for 20 epochs on 
             --qdim 1024 --qlayers 3 --pdim 1024 --players 3 \
             -o 02_vae256_z10
 
-The number of epochs `-n` refers to the number of full passes through the dataset for training, and should be modified depending on the number of particles in the dataset. For a 100k particle dataset, the above settings required ~10 min per epoch for D=128 images, and ~1 hour per epoch for D=256 images. 
+The number of epochs `-n` refers to the number of full passes through the dataset for training, and should be modified depending on the number of particles in the dataset. For a 100k particle dataset, the above settings required ~6 min per epoch for D=128 images + default architecture, ~12 min/epoch for D=128 images + large architecture, and ~47 min per epoch for D=256 images + large architecture. 
 
-If you would like to train longer, a training job can be extended with the `--load /path/to/weights.{last_epoch}.pkl` argument. For example to extend the training of the previous example to 50 epochs:
+If you would like to train longer, a training job can be extended with the `--load` argument. For example to extend the training of the previous example to 50 epochs:
 
     $ cryodrgn train_vae projections.256.mrcs
             --poses pose.pkl \
@@ -265,7 +264,7 @@ If you would like to train longer, a training job can be extended with the `--lo
             -o 02_vae256_z10
             --load 02_vae_256_z10/weights.19.pkl # 0-based indexing
 
-Note: while these settings worked well for the datasets we've tested, they are highly experimental for the general case as different datasets have diverse sources of heterogeneity. Please reach out to the authors with questions/consult -- we'd love to learn more.
+Note: While these settings worked well for the datasets we've tested, they are highly experimental for the general case as different datasets have diverse sources of heterogeneity. Please reach out to the authors with questions/consult -- we'd love to learn more.
 
 ### Local pose refinement -- BETA!
 
@@ -274,7 +273,7 @@ Image poses may be *locally* refined using the `--do-pose-sgd` flag. More detail
 
 ## 6. Analysis of results
 
-Once the model has finished training, the output directory will contain a configuration file `config.pkl`, neural network weights `weights.pkl`, image poses (if performing pose sgd) `pose.pkl`, and the predicted latent encoding for each image `z.pkl`. To analyze these results, first use the `cryodrgn analyze` command to visualize the latent space and generate structures. `cryodrgn analyze` will also provide a template jupyter notebook for further interactive visualization and analysis.
+Once the model has finished training, the output directory will contain a configuration file `config.pkl`, neural network weights `weights.pkl`, image poses (if performing pose sgd) `pose.pkl`, and the predicted latent encoding for each image `z.pkl`. To analyze these results, use the `cryodrgn analyze` command to visualize the latent space and generate structures. `cryodrgn analyze` will also provide a template jupyter notebook for further interactive visualization and analysis.
 
 ### cryodrgn analyze
 
@@ -317,8 +316,9 @@ Example usage to analyze results from the direction `02_vae_256_z10` containing 
 
 Notes:
 
-[1] By default, volumes are generated at K-means cluster centers with K=20. Note that we use k-means clustering here not to identify cluters, but to efficiently provide a diverse sample of structures that cover the latent space. For clustering of the latent space, we recommend performing this analysis in the jupyter notebook, using your favorite clustering algorithm (https://scikit-learn.org/stable/modules/clustering.html).
-[2] The `cryodrgn analyze` command chains together a series of calls to `cryodrgn eval_vol` and analysis that are provided as scripts that can be run separately for more flexibility. The scripts are located in the `analysis_scripts` directory within the source code.
+[1] By default, volumes are generated at k-means cluster centers with k=20. Note that we use k-means clustering here not to identify cluters, but to efficiently provide a diverse sample of structures that cover the latent space. For clustering of the latent space, we recommend performing this analysis in the jupyter notebook using your favorite clustering algorithm (https://scikit-learn.org/stable/modules/clustering.html).
+
+[2] The `cryodrgn analyze` command chains together a series of calls to `cryodrgn eval_vol` and scripts that can be run separately for more flexibility. The scripts are located in the `analysis_scripts` directory within the source code.
 
 ### Generating additional volumes
 
@@ -382,9 +382,9 @@ Additional structures may be generated using `cryodrgn eval_vol`:
       --domain {hartley,fourier}
       --l-extent L_EXTENT   Coordinate lattice size
 
-Example usage:
+**Example usage:**
 
-To generate a volume, `reconstruct.mrc` at a single value of the latent variable, `ZVALUE`:
+To generate a volume at a single value of the latent variable:
 
     $ cryodrgn eval_vol [YOUR_WORKDIR]/weights.pkl --config [YOUR_WORKDIR]/config.pkl -z ZVALUE -o reconstruct.mrc
 

@@ -1,4 +1,5 @@
 '''
+Visualize latent space and generate volumes
 '''
 
 import argparse
@@ -17,9 +18,10 @@ from cryodrgn import utils
 log = utils.log
 
 def add_args(parser):
-    parser.add_argument('workdir', type=os.path.abspath, help='')
-    parser.add_argument('epoch', type=int, help='')
-    parser.add_argument('--device', type=int, help='CUDA device')
+    parser.add_argument('workdir', type=os.path.abspath, help='Directory with cryoDRGN results')
+    parser.add_argument('epoch', type=int, help='Epoch number to analyze (z.N.pkl, weights.N.pkl)')
+    parser.add_argument('--device', type=int, help='Optionally specify CUDA device')
+    parser.add_argument('-o','--outdir', help='Output directory for analysis results (default: [workdir]/analyze.[epoch])')
 
     group = parser.add_argument_group('Extra arguments for volume generation')
     group.add_argument('--Apix', type=float, default=1, help='Pixel size to add to .mrc header (default: %(default)s A/pix)')
@@ -58,20 +60,44 @@ def analyze_zN(z, outdir, vg):
     z_pc2 = analysis.get_pc_traj(pca, z.shape[1], 10, 2, start, end)
 
     # kmeans clustering
-    kmeans_labels, centers = analysis.cluster_kmeans(z, 20)
+    K = 20
+    kmeans_labels, centers = analysis.cluster_kmeans(z, K)
     centers, centers_ind = analysis.get_nearest_point(z, centers)
 
+    # Generate volumes
     vg.gen_volumes('f{outdir}/pc1', z_pc1)
     vg.gen_volumes('f{outdir}/pc2', z_pc2)
     vg.gen_volumes('f{outdir}/kmeans20', centers)
 
-    # UMAP
+    # UMAP -- slow step
     if zdim > 2:
         umap_emb = analysis.run_umap(z)
+        utils.save_pkl(umap_emb, f'{outdir}/umap.pkl')
 
-    # Make some plots -- todo
-
+    # Make some plots
+    plt.figure(1)
+    plt.scatter(pc[:,0], pc[:,1], alpha=.1, s=2)
+    plt.xlabel('PC1')
+    plt.ylabel('PC2')
+    plt.savefig(f'{outdir}/z_pca.png')
     
+    if zdim > 2:
+        plt.figure(2)
+        plt.scatter(umap_emb[:,0], umap_emb[:,1], alpha=.1, s=2)
+        plt.xlabel('UMAP1')
+        plt.ylabel('UMAP2')
+        plt.savefig(f'{outdir}/umap.png')
+
+    analysis.plot_by_cluster(pc[:,0], pc[:,1], K, kmeans_labels, centers_ind=centers_ind, annotate=True)
+    plt.xlabel('PC1')
+    plt.ylabel('PC2')
+    plt.savefig('f{outdir}/kmeans20/z_pca.png')
+
+    if zdim > 2:
+        analysis.plot_by_cluster(umap_emb[:,0], umap_emb[:,1], K, kmeans_labels, centers_ind=centers_ind, annotate=True)
+        plt.xlabel('UMAP1')
+        plt.ylabel('UMAP2')
+        plt.savefig('f{outdir}/kmeans20/umap.png')
  
 class VolumeGenerator:
     '''Helper class to call analysis.gen_volumes'''
@@ -92,8 +118,15 @@ def main(args):
     zfile = f'{workdir}/z.{E}.pkl'
     weights = f'{workdir}/weights.{E}.pkl'
     config = f'{workdir}/config.pkl'
-    
     outdir = f'{workdir}/analyze.{E}'
+    if args.E == -1:
+        zfile = f'{workdir}/z.pkl'
+        weights = f'{workdir}/weights.pkl'
+        outdir = f'{workdir}/analyze'
+    
+    if args.outdir:
+        outdir = args.outdir
+    log(f'Saving results to {outdir}')
     if not os.path.exists(outdir):
         os.mkdir(outdir)
 

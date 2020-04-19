@@ -404,11 +404,12 @@ The input to `--zfile` is expected to be an array of dimension (N_volumes x zdim
 
 ### Making trajectories
 
-Two analysis scripts, `get_z_pcs.py` and `graph_traversal.py`, are provided in the source code that can be used in conjunction with `cryodrgn eval_vol` to generate trajectories.
-    
-The principle components of the learned heteorgeneity can be visualized with the `get_z_pcs.py` script to get the z-values along the PCS, followed by the `eval_decoder.py` script to generate the volumes.
+Two additional commands can be used in conjunction with `cryodrgn eval_vol` to generate trajectories:
 
-    $ python $CDRGN_SRC/utils/analysis/get_z_pcs.py -h
+    $ cryodrgn pc_traversal -h
+    $ cryodrgn graph_traversal -h
+    
+These scripts provide a text file of z values that can be input to `cryodrgn eval_vol` to generate a series of structures that can be visualized as a trajectory in ChimeraX (https://www.cgl.ucsf.edu/chimerax).
 
 ## Fully unsupervised reconstruction
 

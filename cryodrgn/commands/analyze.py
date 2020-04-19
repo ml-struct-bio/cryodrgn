@@ -19,7 +19,7 @@ log = utils.log
 
 def add_args(parser):
     parser.add_argument('workdir', type=os.path.abspath, help='Directory with cryoDRGN results')
-    parser.add_argument('epoch', type=int, help='Epoch number to analyze (z.N.pkl, weights.N.pkl)')
+    parser.add_argument('epoch', type=int, help='Epoch number N to analyze (0-based indexing, corresponding to z.N.pkl, weights.N.pkl)')
     parser.add_argument('--device', type=int, help='Optionally specify CUDA device')
     parser.add_argument('-o','--outdir', help='Output directory for analysis results (default: [workdir]/analyze.[epoch])')
 

@@ -9,8 +9,7 @@ import os
 
 from heapq import heappush, heappop
 
-def parse_args():
-    parser = argparse.ArgumentParser(description=__doc__)
+def add_args(parser):
     parser.add_argument('data', help='Input z.pkl embeddings')
     parser.add_argument('--anchors', type=int, nargs='+', help='Index of anchor points')
     parser.add_argument('--max-neighbors', type=int, default=10)
@@ -160,4 +159,6 @@ def main(args):
 
 
 if __name__ == '__main__':
-    main(parse_args().parse_args())
+    parser = argparse.ArgumentParser(description=__doc__)
+    add_args(parser)
+    main(parser.parse_args())

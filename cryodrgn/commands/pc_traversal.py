@@ -12,8 +12,7 @@ import matplotlib.pyplot as plt
 
 from cryodrgn import analysis
 
-def parse_args():
-    parser = argparse.ArgumentParser(description=__doc__)
+def add_args(parser):
     parser.add_argument('z', help='Input z.pkl')
     parser.add_argument('--dim', type=int, help='Choose PC (1-based indexing) (default: all)')
     parser.add_argument('-n', type=int, default=10, help='Number of samples along PC (default: %(default)s)')
@@ -52,5 +51,7 @@ def main(args):
         np.savetxt(out, traj)
 
 if __name__ == '__main__':
-    main(parse_args().parse_args())
+    parser = argparse.ArgumentParser(description=__doc__)
+    add_args(parser)
+    main(parser.parse_args())
 

@@ -58,7 +58,7 @@ First resize your particle images for initial pilot experiments with cryoDRGN us
 
 Since larger images require longer training times, it is recommended to first train cryoDRGN on images downsized to D=128, (128x128 pixel image):
     
-    cryodrgn downsample [input particle stack] -D 128 -o particles.128.mrcs
+    $ cryodrgn downsample [input particle stack] -D 128 -o particles.128.mrcs
 
 The maximum recommended image size is D=256, so it is also recommended to downsample your images to D=256 if your images are larger than 256x256:
 
@@ -99,7 +99,7 @@ Example usage for a .cs file:
 ### 4. Test pose/CTF parameters parsing
 
 Test that pose and CTF parameters were parsed correctly using the voxel-based backprojection script.
-The goal is to quickly verify that there are no major problems with the extracted values and that the output structure resembles the structure from the consensus reconstruction before beginning training.
+The goal is to quickly verify that there are no major problems with the extracted values  and that the output structure resembles the structure from the consensus reconstruction before beginning training.
 
 Example usage: 
 
@@ -272,27 +272,140 @@ Note: while these settings worked well for the datasets we've tested, they are h
 Depending on the quality of the consensus reconstruction, image poses may contain errors.
 Image poses may be *locally* refined using the `--do-pose-sgd` flag. More details on this method to come!
 
-### 6. Analysis of results
+## 6. Analysis of results
 
-Once the model has finished training, the output directory will contain a configuration file `config.pkl`, neural network weights `weights.pkl`, image poses (if performing pose sgd) `pose.pkl`, and the predicted latent encoding for each image `z.pkl`. There is also a `run.log` file containing the average loss for each epoch which can be used to plot the learning curve for model training.
+Once the model has finished training, the output directory will contain a configuration file `config.pkl`, neural network weights `weights.pkl`, image poses (if performing pose sgd) `pose.pkl`, and the predicted latent encoding for each image `z.pkl`. To analyze these results, first use the `cryodrgn analyze` command to visualize the latent space and generate structures. `cryodrgn analyze` will also provide a template jupyter notebook for further interactive visualization and analysis.
 
+### cryodrgn analyze
 
+    $ cryodrgn analyze -h
+    usage: cryodrgn analyze [-h] [--device DEVICE] [--Apix APIX] [--flip]
+                            [-d DOWNSAMPLE]
+                            workdir epoch
+    
+    Visualize latent space and generate volumes
 
+    positional arguments:
+      workdir               Directory with cryoDRGN results
+      epoch                 Epoch number N to analyze (0-based indexing,
+                            corresponding to z.N.pkl, weights.N.pkl)
+    
+    optional arguments:
+      -h, --help            show this help message and exit
+      --device DEVICE       Optionally specify CUDA device
+     -o OUTDIR, --outdir OUTDIR
+                            Output directory for analysis results (default:
+                            [workdir]/analyze.[epoch])
+    
+    Extra arguments for volume generation:
+      --Apix APIX           Pixel size to add to .mrc header (default: 1 A/pix)
+      --flip                Flip handedness of output volume
+      -d DOWNSAMPLE, --downsample DOWNSAMPLE
+                            Downsample volumes to this box size (pixels)
 
-To analyze and visualize the learned latent space, use the scripts in the `utils/analysis` subdirectory. 
+This script runs a series of standard analyses:
 
-Additional structures may be generated using the `gen_volumes` script. For example:
+* PCA of the latent space
+* UMAP embedding of the latent space
+* Generation of volumes from the latent space. See note [1].
+* Generation of trajectories along the first and second principal components
+* Generation of a template jupyter notebook that may be used for further interactive analyses and visualization
 
-    $ python $CDRGN_SRC/eval_decoder.py [WORKDIR]/weights.pkl --config [WORKDIR]/config.pkl -z ZVALUE -o reconstruct.sample1.mrc
+Example usage to analyze results from the direction `02_vae_256_z10` containing results after 50 epochs of training:
 
-Or to generate a trajectory using values of z given in a file `zvalues.txt`:
+    $ cryodrgn analyze 02_vae_256_z10 49 --Apix 1.31
 
-    $ python $CDRGN_SRC/eval_decoder.py [WORKDIR]/weights.pkl --config [WORKDIR]/config.pkl --zfile zvalues.txt -o [WORKDIR]/trajectory
+Notes:
 
-For models with higher dimensional latent variables (zD>1), a shell script is provided which samples 20 structures from the latent space, runs UMAP dimensionality reduction, and creates a template jupyter-notebook in the working directory, which may be used for interactive visualization of the results:
+[1] By default, volumes are generated at K-means cluster centers with K=20. Note that we use k-means clustering here not to identify cluters, but to efficiently provide a diverse sample of structures that cover the latent space. For clustering of the latent space, we recommend performing this analysis in the jupyter notebook, using your favorite clustering algorithm (https://scikit-learn.org/stable/modules/clustering.html).
+[2] The `cryodrgn analyze` command chains together a series of calls to `cryodrgn eval_vol` and analysis that are provided as scripts that can be run separately for more flexibility. The scripts are located in the `analysis_scripts` directory within the source code.
 
-    $ $CDRGN_SRC/utils/analysis/analyze.sh [WORKDIR] [EPOCH] # Use 0-based index for the epoch number
+### Generating additional volumes
 
+Additional structures may be generated using `cryodrgn eval_vol`:
+
+    $ cryodrgn eval_vol -h
+    usage: cryodrgn eval_vol [-h] [-c PKL] -o O [--prefix PREFIX] [-v]
+                             [-z [Z [Z ...]]] [--z-start [Z_START [Z_START ...]]]
+                             [--z-end [Z_END [Z_END ...]]] [-n N] [--zfile ZFILE]
+                             [--Apix APIX] [--flip] [-d DOWNSAMPLE]
+                             [--norm NORM NORM] [-D D] [--qlayers QLAYERS]
+                             [--qdim QDIM] [--zdim ZDIM]
+                             [--encode-mode {conv,resid,mlp,tilt}]
+                             [--players PLAYERS] [--pdim PDIM]
+                             [--enc-mask ENC_MASK]
+                             [--pe-type {geom_ft,geom_full,geom_lowf,geom_nohighf,linear_lowf,none}]
+                             [--domain {hartley,fourier}] [--l-extent L_EXTENT]
+                             weights
+    
+    Evaluate the decoder at specified values of z
+    
+    positional arguments:
+      weights               Model weights
+    
+    optional arguments:
+      -h, --help            show this help message and exit
+      -c PKL, --config PKL  CryoDRGN configuration
+      -o O                  Output .mrc or directory
+      --prefix PREFIX       Prefix when writing out multiple .mrc files (default:
+                            vol_)
+      -v, --verbose         Increaes verbosity
+    
+    Specify z values:
+      -z [Z [Z ...]]        Specify one z-value
+      --z-start [Z_START [Z_START ...]]
+                            Specify a starting z-value
+      --z-end [Z_END [Z_END ...]]
+                            Specify an ending z-value
+      -n N                  Number of structures between [z_start, z_end]
+      --zfile ZFILE         Text file with z-values to evaluate
+    
+    Volume arguments:
+      --Apix APIX           Pixel size to add to .mrc header (default: 1 A/pix)
+      --flip                Flip handedness of output volume
+      -d DOWNSAMPLE, --downsample DOWNSAMPLE
+                            Downsample volumes to this box size (pixels)
+    
+    Overwrite architecture hyperparameters in config.pkl:
+      --norm NORM NORM
+      -D D                  Box size
+      --qlayers QLAYERS     Number of hidden layers
+      --qdim QDIM           Number of nodes in hidden layers
+      --zdim ZDIM           Dimension of latent variable
+      --encode-mode {conv,resid,mlp,tilt}
+                            Type of encoder network
+      --players PLAYERS     Number of hidden layers
+      --pdim PDIM           Number of nodes in hidden layers
+      --enc-mask ENC_MASK   Circular mask radius for image encoder
+      --pe-type {geom_ft,geom_full,geom_lowf,geom_nohighf,linear_lowf,none}
+                            Type of positional encoding
+      --domain {hartley,fourier}
+      --l-extent L_EXTENT   Coordinate lattice size
+
+Example usage:
+
+To generate a volume, `reconstruct.mrc` at a single value of the latent variable, `ZVALUE`:
+
+    $ cryodrgn eval_vol [YOUR_WORKDIR]/weights.pkl --config [YOUR_WORKDIR]/config.pkl -z ZVALUE -o reconstruct.mrc
+
+The number of inputs for `-z` must match the dimension of your latent variable.
+
+Or to generate a trajectory of structures from a defined start and ending point, use the `--z-start` and `--z-end` arugments:
+
+    $ cryodrgn eval_vol [YOUR_WORKDIR]/weights.pkl --config [YOUR_WORKDIR]/config.pkl --z-start -3 --z-end 3 -n 20 -o [WORKDIR]/trajectory
+
+This example generates 20 structures at evenly spaced values between z=[-3,3]. 
+
+Finally, a series of structures can be generated using values of z given in a file specified by the arugment `--zfile`:
+
+    $ cryodrgn eval_vol [WORKDIR]/weights.pkl --config [WORKDIR]/config.pkl --zfile zvalues.txt -o [WORKDIR]/trajectory
+
+The input to `--zfile` is expected to be an array of dimension (N_volumes x zdim), loaded with np.loadtxt.
+
+### Making trajectories
+
+Two analysis scripts, `get_z_pcs.py` and `graph_traversal.py`, are provided in the source code that can be used in conjunction with `cryodrgn eval_vol` to generate trajectories.
+    
 The principle components of the learned heteorgeneity can be visualized with the `get_z_pcs.py` script to get the z-values along the PCS, followed by the `eval_decoder.py` script to generate the volumes.
 
     $ python $CDRGN_SRC/utils/analysis/get_z_pcs.py -h

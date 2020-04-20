@@ -156,13 +156,15 @@ def main(args):
         analyze_zN(z, outdir, vg, args.skip_umap)
        
     # copy over template if file doesn't exist
-    if not os.path.exists(f'{outdir}/cryoDRGN_viz_template.ipynb'):
-        log(f'Creating {outdir}/cryoDRGN_viz_template.ipynb...')
+    out_ipynb = f'{outdir}/cryoDRGN_viz.ipynb'
+    if not os.path.exists(out_ipynb):
+        log(f'Creating jupyter notebook...')
         ipynb = f'{cryodrgn._ROOT}/templates/cryoDRGN_viz_template.ipynb'
-        cmd = f'cp {ipynb} {outdir}'
+        cmd = f'cp {ipynb} {out_ipynb}'
         subprocess.check_call(cmd, shell=True)
     else:
-        log(f'{outdir}/cryoDRGN_viz_template.ipynb already exists. Skipping')
+        log(f'{out_ipynb} already exists. Skipping')
+    log(out_ipynb)
     
     log(f'Finished in {dt.now()-t1}')
 

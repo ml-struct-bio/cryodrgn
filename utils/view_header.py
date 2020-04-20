@@ -4,8 +4,10 @@ import argparse
 import numpy as np
 import sys, os
 
-sys.path.insert(0, '{}/../lib-python'.format(os.path.dirname(os.path.abspath(__file__))))
-import mrc
+from cryodrgn import mrc
+from cryodrgn import utils
+
+log = utils.log
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)

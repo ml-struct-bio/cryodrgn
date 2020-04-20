@@ -5,9 +5,8 @@ import numpy as np
 import sys, os
 import pickle
 
-sys.path.insert(0,'{}/../lib-python'.format(os.path.dirname(os.path.abspath(__file__))))
-import utils
-import mrc
+from cryodrgn import utils
+from cryodrgn import mrc
 log = utils.log 
 
 def parse_args():

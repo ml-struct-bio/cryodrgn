@@ -4,18 +4,16 @@ import argparse
 import numpy as np
 import sys, os
 
-sys.path.insert(0, '{}/../lib-python'.format(os.path.dirname(os.path.realpath(__file__))))
-
-import utils
-import mrc
-import dataset
-import ctf
-import fft
+from cryodrgn import utils
+from cryodrgn import mrc
+from cryodrgn import dataset
+from cryodrgn import ctf
+from cryodrgn import fft
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('mrcs', help='Input particles (.mrcs, .star, or .txt)')
-    parser.add_argument('ctf_params', help='Input')
+    parser.add_argument('mrcs', help='Input particles (.mrcs, .txt, .star, or .cs)')
+    parser.add_argument('ctf_params', help='Input CTF parameters (.pkl)')
     parser.add_argument('--datadir', help='Optionally overwrite path to starfile .mrcs if loading from a starfile')
     parser.add_argument('-o', help='Output')
     return parser

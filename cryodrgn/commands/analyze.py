@@ -70,6 +70,11 @@ def analyze_zN(z, outdir, vg, skip_umap=False):
     K = 20
     kmeans_labels, centers = analysis.cluster_kmeans(z, K)
     centers, centers_ind = analysis.get_nearest_point(z, centers)
+    if not os.path.exists(f'{outdir}/kmeans20'): 
+        os.mkdir(f'{outdir}/kmeans20')
+    utils.save_pkl(kmeans_labels, f'{outdir}/kmeans20/labels.pkl')
+    np.savetxt(f'{outdir}/kmeans20/centers.txt', centers)
+    np.savetxt(f'{outdir}/kmeans20/centers_ind.txt', centers_ind, fmt='%d')
 
     # Generate volumes
     log('Generating volumes...')

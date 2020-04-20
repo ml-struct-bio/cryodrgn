@@ -33,7 +33,7 @@ def save_pkl(data, out_pkl, append='False'):
     mode = 'wb' if append is False else 'ab'
     if mode == 'wb' and os.path.exists(out_pkl):
         vlog(f'Warning: {out_pkl} already exists. Overwriting.')
-    with open(pkl, mode) as f:
+    with open(out_pkl, mode) as f:
         x = pickle.dump(data, f)
 
 def R_from_eman(a,b,y):

@@ -12,6 +12,18 @@ Reconstructing continuous distributions of 3D protein structure from cryo-EM ima
 Ellen D. Zhong, Tristan Bepler, Joseph H. Davis*, Bonnie Berger*.
 ICLR 2020, https://arxiv.org/abs/1909.05215
 
+## New in v0.2
+
+0.2.0:
+* New interface and proper python packaing with setup.py. This version has identical functionality and argument usage as previous versions, however tools are now available from a common entry point. See:
+    
+    `$ cryodrgn <command> -h`
+
+* New analysis pipeline `$ cryodrgn analyze`
+* New latent space traversal scripts with `$ cryodrgn graph_traversal` and `$ cryodrgn pc_traversal`.
+
+*Last updated 4/20/2020.*
+
 ## Installation/dependencies:
 
 Until the cryoDRGN conda/pip package is available, for now, git clone the source code and install the following dependencies with anaconda, replacing the cudatoolkit version as necessary:

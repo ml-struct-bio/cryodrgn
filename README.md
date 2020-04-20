@@ -98,8 +98,8 @@ Example usage for a .cs file:
 
 ### 4. Test pose/CTF parameters parsing
 
-Test that pose and CTF parameters were parsed correctly using the voxel-based backprojection script.
-The goal is to quickly verify that there are no major problems with the extracted values  and that the output structure resembles the structure from the consensus reconstruction before beginning training.
+Next, test that pose and CTF parameters were parsed correctly using the voxel-based backprojection script.
+The goal is to quickly verify that there are no major problems with the extracted values and that the output structure resembles the structure from the consensus reconstruction before beginning training.
 
 Example usage: 
 
@@ -109,8 +109,7 @@ Example usage:
             --invert-data \ # Invert sign of dataset; Use if particles are white on black
             -o backproject.128.mrc
 
-Check that the output structure `backproject.128.mrc` resembles the structure from the consensus reconstruction. 
-It will not match exactly as the `backproject_voxel` command backprojects phase-flipped particles onto the voxel grid, and by default only uses the first 10k images. If the structure is too noisy, you can increase the number of images that are used with the `--first` argument.
+The output structure `backproject.128.mrc` will not match the consensus reconstruction exactly as the `backproject_voxel` command backprojects phase-flipped particles onto the voxel grid, and by default only uses the first 10k images. If the structure is too noisy, you can increase the number of images that are used with the `--first` argument.
 
 ### 5. Running cryoDRGN heterogeneous reconstruction
 
@@ -316,7 +315,7 @@ Example usage to analyze results from the direction `02_vae_256_z10` containing 
 
 Notes:
 
-[1] By default, volumes are generated at k-means cluster centers with k=20. Note that we use k-means clustering here not to identify cluters, but to efficiently provide a diverse sample of structures that cover the latent space. For clustering of the latent space, we recommend performing this analysis in the jupyter notebook using your favorite clustering algorithm (https://scikit-learn.org/stable/modules/clustering.html).
+[1] By default, volumes are generated at k-means cluster centers with k=20. Note that we use k-means clustering here not to identify cluters, but to efficiently provide a diverse sample of structures that cover the latent space. For clustering of the latent space, we recommend performing this analysis in the provided jupyter notebook using your favorite clustering algorithm (https://scikit-learn.org/stable/modules/clustering.html).
 
 [2] The `cryodrgn analyze` command chains together a series of calls to `cryodrgn eval_vol` and scripts that can be run separately for more flexibility. The scripts are located in the `analysis_scripts` directory within the source code.
 

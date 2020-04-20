@@ -345,7 +345,7 @@ def main(args):
 
             beta = beta_schedule(global_it)
            
-            yr = torch.from_numpy(data.particles_real[ind]).to(device) if args.use_real else None
+            yr = torch.from_numpy(data.particles_real[ind.numpy()]).to(device) if args.use_real else None
             if do_pose_sgd:
                 pose_optimizer.zero_grad()
             rot, tran = posetracker.get_pose(ind)

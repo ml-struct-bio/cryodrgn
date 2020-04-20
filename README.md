@@ -23,12 +23,19 @@ Until the cryoDRGN conda/pip package is available, for now, git clone the source
     # Install dependencies
     conda install pytorch cudatoolkit=10.1 -c pytorch # Replace cudatoolkit version if needed
     conda install pandas
+    
+    # Install dependencies for latent space visualization 
+    conda install seaborn scikit-learn 
+    conda install -c conda-forge umap-learn
+    conda install -c conda-forge jupyterlab
+    pip install ipywidgets
+    pip install cufflinks
 
     # Clone source code and install
     git clone https://github.com/zhonge/cryodrgn.git
     cd cryodrgn
     git checkout 0.2.0
-    python setup.py install --user 
+    python setup.py install
 
 ## Quickstart: heterogeneous reconstruction with consensus poses
 

@@ -129,7 +129,7 @@ def main(args):
         if args.tilt is not None:
             ff_tilt = torch.tensor(ff_tilt)
             ff_tilt = ff_tilt.view(-1)[mask]
-            if ff_tilt is not None:
+            if ctf_params is not None:
                 ff_tilt *= c.sign()
             if t is not None:
                 ff_tilt = lattice.translate_ht(ff_tilt.view(1,-1), t.view(1,1,2), mask).view(-1)

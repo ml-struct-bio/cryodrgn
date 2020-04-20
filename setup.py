@@ -18,7 +18,6 @@ setup(name='cryodrgn',
       include_package_data = True,
       install_requires=[
         'torch>=1.0.0',
-        'torchvision',
         'pandas',
         'numpy',
         'matplotlib',

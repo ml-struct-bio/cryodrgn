@@ -14,12 +14,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.data as data
 
-sys.path.insert(0,'{}/../lib-python'.format(os.path.dirname(os.path.abspath(__file__))))
-import utils
-import mrc
-import fft
-import lie_tools
-import so3_grid
+from cryodrgn import utils
+from cryodrgn import mrc
+from cryodrgn import fft
+from cryodrgn import lie_tools
+from cryodrgn import so3_grid
 
 import matplotlib
 matplotlib.use('Agg')

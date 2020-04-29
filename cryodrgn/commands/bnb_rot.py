@@ -14,15 +14,15 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 sys.path.insert(0,os.path.abspath(os.path.dirname(__file__))+'/lib-python')
-import mrc
-import utils
-import fft
-import dataset
-import lie_tools
+from cryodrgn import mrc
+from cryodrgn import utils
+from cryodrgn import fft
+from cryodrgn import dataset
+from cryodrgn import lie_tools
 
-from lattice import Lattice
-from bnb import BNBHomo, BNBHomoRot
-import models
+from cryodrgn.lattice import Lattice
+from cryodrgn.bnb import BNBHomo, BNBHomoRot
+from cryodrgn import models
 
 log = utils.log
 vlog = utils.vlog

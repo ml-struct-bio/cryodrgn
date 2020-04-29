@@ -7,10 +7,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import lie_tools
-import so3_grid
-import shift_grid
-import utils
+from cryodrgn import lie_tools
+from cryodrgn import so3_grid
+from cryodrgn import shift_grid
+from cryodrgn import utils
 
 log = utils.log
 vlog = utils.vlog

@@ -19,8 +19,12 @@ def main():
     import cryodrgn.commands.analyze
     import cryodrgn.commands.pc_traversal
     import cryodrgn.commands.graph_traversal
+    import cryodrgn.commands.bnb_rot
+    import cryodrgn.commands.bnb_het
 
-    modules = [cryodrgn.commands.downsample,
+
+    modules = [
+        cryodrgn.commands.downsample,
         cryodrgn.commands.parse_pose_csparc,
         cryodrgn.commands.parse_pose_star,
         cryodrgn.commands.parse_ctf_csparc,
@@ -33,7 +37,9 @@ def main():
         cryodrgn.commands.analyze,
         cryodrgn.commands.pc_traversal,
         cryodrgn.commands.graph_traversal,
-        ]
+        cryodrgn.commands.bnb_rot,
+        cryodrgn.commands.bnb_het,
+    ]
 
     subparsers = parser.add_subparsers(title='Choose a command')
     subparsers.required = 'True'

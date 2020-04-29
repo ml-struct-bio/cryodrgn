@@ -21,7 +21,7 @@ from cryodrgn import dataset
 from cryodrgn import lie_tools
 
 from cryodrgn.lattice import Lattice
-from cryodrgn.bnb import BNBHomo, BNBHomoRot
+from cryodrgn.pose_search import PoseSearch
 from cryodrgn import models
 
 log = utils.log
@@ -56,7 +56,7 @@ def parse_args():
     group.add_argument('--t-ngrid', type=float, default=7, help='Initial grid size for translations')
     group.add_argument('--no-trans', action='store_true', help="Don't search over translations")
     group.add_argument('--pretrain', type=int, default=10000, help='Number of initial iterations with random poses (default: %(default)s)')
-    group.add_argument('--bnb-freq', type=int, default=1, help='Frequency of pose inference (default: every %(default)s epochs)')
+    group.add_argument('--ps-freq', type=int, default=1, help='Frequency of pose inference (default: every %(default)s epochs)')
     group.add_argument('-n', '--num-epochs', type=int, default=10, help='Number of training epochs (default: %(default)s)')
     group.add_argument('-b','--batch-size', type=int, default=10, help='Minibatch size (default: %(default)s)')
     group.add_argument('--wd', type=float, default=0, help='Weight decay in Adam optimizer (default: %(default)s)')
@@ -75,7 +75,7 @@ def parse_args():
 
     return parser
 
-def save_checkpoint(model, lattice, bnb_pose, optim, epoch, norm, out_mrc, out_weights, out_poses):
+def save_checkpoint(model, lattice, pose, optim, epoch, norm, out_mrc, out_weights, out_poses):
     model.eval()
     vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, norm)
     mrc.write(out_mrc, vol.astype(np.float32))
@@ -86,7 +86,7 @@ def save_checkpoint(model, lattice, bnb_pose, optim, epoch, norm, out_mrc, out_w
         'optimizer_state_dict':optim.state_dict(),
         }, out_weights)
     with open(out_poses,'wb') as f:
-        pickle.dump(bnb_pose, f)
+        pickle.dump(pose, f)
 
 def pretrain(model, lattice, optim, batch, tilt=None):
     y, yt = batch
@@ -111,20 +111,20 @@ def pretrain(model, lattice, optim, batch, tilt=None):
     optim.step()
     return loss.item()
 
-def sort_bnb_poses(bnb_pose):
-    ind = [x[0] for x in bnb_pose]
+def sort_poses(pose):
+    ind = [x[0] for x in pose]
     ind = np.concatenate(ind)
-    rot = [x[1][0] for x in bnb_pose]
+    rot = [x[1][0] for x in pose]
     rot = np.concatenate(rot)
     rot = rot[np.argsort(ind)]
-    if len(bnb_pose[0][1]) == 2:
-        trans = [x[1][1] for x in bnb_pose]
+    if len(pose[0][1]) == 2:
+        trans = [x[1][1] for x in pose]
         trans = np.concatenate(trans)
         trans = trans[np.argsort(ind)]
         return (rot,trans)
     return (rot,)
 
-def train(model, lattice, bnb, optim, batch, tilt=None, no_trans=False, poses=None):
+def train(model, lattice, ps, optim, batch, tilt_rot=None, no_trans=False, poses=None):
     y, yt = batch
     B = y.size(0)
 
@@ -135,10 +135,7 @@ def train(model, lattice, bnb, optim, batch, tilt=None, no_trans=False, poses=No
     else: # BNB
         model.eval()
         with torch.no_grad():
-            if no_trans:
-                rot = bnb.opt_theta(y, yt)
-            else:
-                rot, trans = bnb.opt_theta_trans(y, yt)
+            rot, trans = ps.opt_theta_trans(y, images_tilt=yt)
 
     # reconstruct circle of pixels instead of whole image
     mask = lattice.get_circular_mask(lattice.D//2)
@@ -154,13 +151,13 @@ def train(model, lattice, bnb, optim, batch, tilt=None, no_trans=False, poses=No
     optim.zero_grad()
 
     y = y.view(B,-1)[:, mask]
-    if tilt is not None: yt = yt.view(B,-1)[:, mask]
+    if tilt_rot is not None: yt = yt.view(B,-1)[:, mask]
     if not no_trans:
         y = translate(y)
-        if tilt is not None: yt = translate(yt)
+        if tilt_rot is not None: yt = translate(yt)
 
-    if tilt is not None:
-        loss = .5*F.mse_loss(gen_slice(rot), y) + .5*F.mse_loss(gen_slice(tilt @ rot), yt)
+    if tilt_rot is not None:
+        loss = .5*F.mse_loss(gen_slice(rot), y) + .5*F.mse_loss(gen_slice(tilt_rot @ rot), yt)
     else:
         loss = F.mse_loss(gen_slice(rot), y) 
     loss.backward()
@@ -201,9 +198,11 @@ def main(args):
     model = models.get_decoder(3, D, args.layers, args.dim, args.domain, args.pe_type, nn.ReLU)
 
     if args.no_trans:
-        bnb = BNBHomoRot(model, lattice, args.l_start, args.l_end, tilt, args.probabilistic, nkeptposes=args.nkeptposes)
+        raise NotImplementedError()
     else:    
-        bnb = BNBHomo(model, lattice, args.l_start, args.l_end, tilt, t_extent=args.t_extent, t_ngrid=args.t_ngrid, probabilistic=args.probabilistic, nkeptposes=args.nkeptposes)
+        ps = PoseSearch(model, lattice, args.l_start, args.l_end, tilt, 
+                        t_extent=args.t_extent, t_ngrid=args.t_ngrid, 
+                        nkeptposes=args.nkeptposes)
     log(model)
     log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
@@ -230,7 +229,7 @@ def main(args):
         for batch in data_iterator:
             global_it += len(batch[0])
             batch = (batch[0].to(device), None) if tilt is None else (batch[0].to(device), batch[1].to(device))
-            loss = pretrain(model, lattice, optim, batch, tilt=bnb.tilt)
+            loss = pretrain(model, lattice, optim, batch, tilt=ps.tilt)
             if global_it % args.log_interval == 0:
                 log(f'[Pretrain Iteration {global_it}] loss={loss:4f}')
             if global_it > args.pretrain:
@@ -241,8 +240,8 @@ def main(args):
         t2 = dt.now()
         batch_it = 0
         loss_accum = 0
-        bnb_pose = []
-        if epoch % args.bnb_freq != 0:
+        poses = []
+        if epoch % args.ps_freq != 0:
             log('Using previous iteration poses')
         for batch in data_iterator:
             ind = batch[-1]
@@ -250,12 +249,12 @@ def main(args):
             batch_it += len(batch[0])
             
             # train the model
-            if epoch % args.bnb_freq != 0:
+            if epoch % args.ps_freq != 0:
                 p = [torch.tensor(x[ind]) for x in sorted_poses]
             else: 
                 p = None
-            loss_item, pose = train(model, lattice, bnb, optim, batch, tilt, args.no_trans, poses=p) 
-            bnb_pose.append((ind.cpu().numpy(),pose))
+            loss_item, pose = train(model, lattice, ps, optim, batch, tilt, args.no_trans, poses=p) 
+            poses.append((ind.cpu().numpy(),pose))
            
             # logging
             loss_accum += loss_item*len(batch[0])
@@ -263,8 +262,8 @@ def main(args):
                 log('# [Train Epoch: {}/{}] [{}/{} images] loss={:.4f}'.format(epoch+1, args.num_epochs, batch_it, Nimg, loss_item))
         log('# =====> Epoch: {} Average loss = {:.4}; Finished in {}'.format(epoch+1, loss_accum/Nimg, dt.now() - t2))
 
-        # sort bnb_pose
-        sorted_poses = sort_bnb_poses(bnb_pose) if bnb_pose else None
+        # sort pose
+        sorted_poses = sort_poses(poses) if poses else None
 
         if args.checkpoint and epoch % args.checkpoint == 0:
             out_mrc = '{}/reconstruct.{}.mrc'.format(args.outdir,epoch)

@@ -82,6 +82,9 @@ class HetOnlyVAE(nn.Module):
         '''
         return self.decoder(self.cat_z(coords,z))
 
+    def forward(self, x):
+        return self.decoder(x)
+
 
 def get_decoder(in_dim, D, layers, dim, domain, enc_type, activation=nn.ReLU):
     if enc_type == 'none':

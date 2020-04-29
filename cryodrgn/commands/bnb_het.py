@@ -68,6 +68,7 @@ def parse_args():
     group.add_argument('--no-trans', action='store_true', help="Don't search over translations")
     group.add_argument('--pretrain', type=int, default=10000, help='Number of initial iterations with random poses (default: %(default)s)')
     group.add_argument('--bnb-freq', type=int, default=1, help='Frequency of pose inference (default: every %(default)s epochs)')
+    group.add_argument('--nkeptposes', type=int, default=24, help="Number of poses to keep at each refinement interation during branch and bound")
 
     group = parser.add_argument_group('Encoder Network')
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
@@ -331,7 +332,7 @@ def main(args):
     out_config = '{}/config.pkl'.format(args.outdir)
     save_config(args, data, lattice, model, out_config)
 
-    bnb = BNBHet(model, lattice, args.l_start, args.l_end, tilt, args.t_extent)
+    bnb = BNBHet(model, lattice, args.l_start, args.l_end, tilt, args.t_extent, nkeptposes=args.nkeptposes)
     if args.rotate: 
         assert args.enc_only
         theta = torch.arange(1,12,dtype=torch.float32)*2*np.pi/12 # 11 angles 

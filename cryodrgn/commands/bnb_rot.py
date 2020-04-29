@@ -65,6 +65,7 @@ def parse_args():
     group.add_argument('--l-end', type=int, default=20, help='End L radius (default: %(default)s)')
     group.add_argument('--l-end-it',type=int,default=100000, help='default: %(default)s')
     group.add_argument('--probabilistic', action='store_true', help='Use probabilistic bound')
+    group.add_argument('--nkeptposes', type=int, default=24, help="Number of poses to keep at each refinement interation during branch and bound")
 
     group = parser.add_argument_group('Network Architecture')
     group.add_argument('--layers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
@@ -200,9 +201,9 @@ def main(args):
     model = models.get_decoder(3, D, args.layers, args.dim, args.domain, args.pe_type, nn.ReLU)
 
     if args.no_trans:
-        bnb = BNBHomoRot(model, lattice, args.l_start, args.l_end, tilt, args.probabilistic)
+        bnb = BNBHomoRot(model, lattice, args.l_start, args.l_end, tilt, args.probabilistic, nkeptposes=args.nkeptposes)
     else:    
-        bnb = BNBHomo(model, lattice, args.l_start, args.l_end, tilt, t_extent=args.t_extent, t_ngrid=args.t_ngrid, probabilistic=args.probabilistic)
+        bnb = BNBHomo(model, lattice, args.l_start, args.l_end, tilt, t_extent=args.t_extent, t_ngrid=args.t_ngrid, probabilistic=args.probabilistic, nkeptposes=args.nkeptposes)
     log(model)
     log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
@@ -281,6 +282,8 @@ def main(args):
     log('Finsihed in {} ({} per epoch)'.format(td, td/(args.num_epochs-start_epoch)))
 
 if __name__ == '__main__':
+    import warnings
+    warnings.filterwarnings("error")
     args = parse_args().parse_args()
     utils._verbose = args.verbose
     main(args)

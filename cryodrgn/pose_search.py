@@ -13,9 +13,15 @@ log = utils.log
 vlog = utils.vlog
 
 
+def to_tensor(x):
+    if isinstance(x, np.ndarray):
+        x = torch.from_numpy(x)
+    return x
+
+
 class PoseSearch:
     '''Pose search'''
-    def __init__(self, model, lattice, Lmin, Lmax, tilt=None, base_healpy=1, t_extent=5, t_ngrid=7, nkeptposes=24):
+    def __init__(self, model, lattice, Lmin, Lmax, tilt=None, base_healpy=1, t_extent=5, t_ngrid=7, nkeptposes=24, loss_fn="mse"):
         if base_healpy != 1:
             raise NotImplementedError() # TODO
 
@@ -32,6 +38,7 @@ class PoseSearch:
         self.Lmax = Lmax
         self.tilt = tilt
         self.nkeptposes = nkeptposes
+        self.loss_fn = loss_fn
 
     def eval_grid(self, *, images, rot, z, NQ, L, images_tilt=None):
         '''
@@ -51,7 +58,12 @@ class PoseSearch:
             y_hat = self.model(x)
             y_hat = y_hat.view(-1, 1, NQ, YX)  #1x1xNQxYX for base grid, Bx1x8xYX for incremental grid
             images = images.unsqueeze(2)  # BxTx1xYX
-            err = (images - y_hat).pow(2).sum(-1)  # BxTxQ  # FIXME switch to correlation
+            if self.loss_fn == "mse":
+                err = (images - y_hat).pow(2).sum(-1)  # BxTxQ  # FIXME switch to correlation
+            elif self.loss_fn == "cor":
+                err = -(images * y_hat).sum(-1) / y_hat.std(-1)
+            else:
+                raise NotImplementedError(f"Unknown loss_fn: {self.loss_fn}")
             return err
         err = compute_err(images, rot)
         if images_tilt is not None:
@@ -124,11 +136,15 @@ class PoseSearch:
             keep (loss.shape): bool tensor of poses to keep
         '''
         flat_loss = loss.view(B, -1)
-        keep_idx = flat_loss.topk(max_poses, dim=-1)[1]
+        keep_idx = flat_loss.topk(max_poses, dim=-1, largest=False, sorted=True)[1]
         keep = torch.zeros_like(flat_loss).scatter_(dim=-1, index=keep_idx, value=1)
         return keep.view(loss.shape)
 
     def opt_theta_trans(self, images, z=None, images_tilt=None, niter=5):
+        images = to_tensor(images)
+        images_tilt = to_tensor(images_tilt)
+        z = to_tensor(z)
+
         do_tilt = images_tilt is not None
 
         B = images.size(0)
@@ -156,8 +172,8 @@ class PoseSearch:
         trans = self.base_shifts[keepT]
         t_ind = shift_grid.get_base_ind(keepT, self.t_ngrid) #  Np x 2
         
-        keepB4 = torch.arange(B).repeat_interleave(4 * self.nkeptposes)
-        keepB8 = torch.arange(B).repeat_interleave(8 * self.nkeptposes)
+        keepB4 = keepB.unsqueeze(1).repeat(1,4).view(-1) # repeat each element 4 times
+        keepB8 = keepB.unsqueeze(1).repeat(1,8).view(-1) # repeat each element 8 times
         zb = z[keepB8] if z is not None else None
         k = int((self.Lmax - self.Lmin) / (niter - 1))
         for iter_ in range(1,niter+1):

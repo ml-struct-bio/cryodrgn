@@ -27,7 +27,7 @@ def get_1d_neighbor(mini, curr_res, extent, ngrid):
 def get_base_ind(ind, ngrid):
     xi = ind % ngrid
     yi = ind // ngrid
-    return xi, yi
+    return np.stack((xi, yi), axis=1)
 
 def get_neighbor(xi, yi, curr_res, extent, ngrid):
     '''

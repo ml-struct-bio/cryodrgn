@@ -281,8 +281,6 @@ def main(args):
     log('Finsihed in {} ({} per epoch)'.format(td, td/(args.num_epochs-start_epoch)))
 
 if __name__ == '__main__':
-    import warnings
-    warnings.filterwarnings("error")
     args = parse_args().parse_args()
     utils._verbose = args.verbose
     main(args)

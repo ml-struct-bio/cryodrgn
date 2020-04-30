@@ -77,7 +77,7 @@ def get_base_ind(ind):
     '''
     psii = ind%12
     thetai = ind // 12
-    return thetai, psii
+    return np.stack((thetai, psii), axis=1)
 
 def get_base_indr(ind):
     '''

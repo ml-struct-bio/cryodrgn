@@ -367,7 +367,7 @@ def main(args):
         for batch in data_iterator:
             global_it += len(batch[0])
             batch = (batch[0].to(device), None) if tilt is None else (batch[0].to(device), batch[1].to(device))
-            loss = pretrain(model, lattice, optim, batch, bnb.tilt)
+            loss = pretrain(model, lattice, optim, batch, tilt=bnb.tilt)
             if global_it % args.log_interval == 0:
                 log(f'[Pretrain Iteration {global_it}] loss={loss:4f}')
             if global_it > args.pretrain:
@@ -430,7 +430,7 @@ def main(args):
 
         # save checkpoint
         if args.checkpoint and epoch % args.checkpoint == 0:
-            out_mrc = '{}/reconstruct.{}'.format(args.outdir,epoch)
+            out_mrc = '{}/reconstruct.{}.mrc'.format(args.outdir,epoch)
             out_weights = '{}/weights.{}.pkl'.format(args.outdir,epoch)
             out_poses = '{}/pose.{}.pkl'.format(args.outdir, epoch)
             out_z = '{}/z.{}.pkl'.format(args.outdir, epoch)

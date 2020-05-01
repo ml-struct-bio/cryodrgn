@@ -58,6 +58,8 @@ class PoseSearch:
         self.tilt = tilt
         self.nkeptposes = nkeptposes
         self.loss_fn = loss_fn
+        self._so3_neighbor_cache = {}  # for memoization
+        self._shift_neighbor_cache = {}  # for memoization
 
     def eval_grid(self, *, images, rot, z, NQ, L, images_tilt=None, rot_inplane=None):
         '''
@@ -148,6 +150,22 @@ class PoseSearch:
         return res.view(B, 1, NQ * len(angles), YX)
 
 
+    def get_neighbor_so3(self, quat, s2i, s1i, res):
+        """Memoization of so3_grid.get_neighbor."""
+        key = (int(s2i), int(s1i), int(res))
+        if key not in self._so3_neighbor_cache:
+            self._so3_neighbor_cache[key] = so3_grid.get_neighbor(quat, s2i, s1i, res)
+        # FIXME: will this cache get too big? maybe don't do it when res is too
+        return self._so3_neighbor_cache[key]
+
+    def get_neighbor_shift(self, x, y, res):
+        """Memoization of shift_grid.get_neighbor."""
+        key = (int(x), int(y), int(res))
+        if key not in self._shift_neighbor_cache:
+            self._shift_neighbor_cache[key] = shift_grid.get_neighbor(x, y, res - 1, self.t_extent, self.t_ngrid)
+        # FIXME: will this cache get too big? maybe don't do it when res is too
+        return self._shift_neighbor_cache[key]
+
     def subdivide(self, quat, q_ind, t_ind, cur_res):
         '''
         Subdivides poses for next resolution level
@@ -172,13 +190,13 @@ class PoseSearch:
         assert len(t_ind.shape) == 2 and t_ind.shape == (N, 2), t_ind.shape
 
         # get neighboring SO3 elements at next resolution level -- todo: make this an array operation
-        neighbors = [so3_grid.get_neighbor(quat[i], q_ind[i][0], q_ind[i][1], cur_res) for i in range(len(quat))]
+        neighbors = [self.get_neighbor_so3(quat[i], q_ind[i][0], q_ind[i][1], cur_res) for i in range(len(quat))]
         quat = np.array([x[0] for x in neighbors]) # Bx8x4
         q_ind = np.array([x[1] for x in neighbors]) # Bx8x2
         rot = lie_tools.quaternions_to_SO3(torch.from_numpy(quat).view(-1,4))
        
         # get neighboring translations at next resolution level -- todo: make this an array operation
-        neighbors = [shift_grid.get_neighbor(xx, yy, cur_res-1, self.t_extent, self.t_ngrid) for xx, yy in t_ind]
+        neighbors = [self.get_neighbor_shift(xx, yy, cur_res) for xx, yy in t_ind]
         trans = torch.tensor(np.array([x[0] for x in neighbors]).reshape(-1,2))
         t_ind = np.array([x[1] for x in neighbors]) # Bx4x2
 

@@ -70,9 +70,9 @@ for nkp in (1, 4, 12, 24):
                      nkeptposes=nkp)
 
 
-# import cProfile
-# pr = cProfile.Profile()
-# pr.enable()
-# eval_pose_search(data, model, nkeptposes=24)
-# pr.disable()
-# pr.print_stats('cumtime')
+import cProfile
+pr = cProfile.Profile()
+pr.enable()
+eval_pose_search(data, model, nkeptposes=24)
+pr.disable()
+pr.print_stats('cumtime')

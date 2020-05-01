@@ -42,8 +42,10 @@ def grid_SO3(resol):
                         np.tile(psi,len(theta))) # tiles the array len(theta) times
     return quat #hmm convert to rot matrix?
 
-def base_SO3_grid():
-    return grid_SO3(1)
+def s2_grid_SO3(resol):
+    theta, phi = grid_s2(resol)
+    quat = hopf_to_quat(theta, phi, np.zeros((len(phi),)))
+    return quat
 
 #### Neighbor finding ####
 
@@ -88,15 +90,15 @@ def get_base_indr(ind):
     return thetai, psii
 
 
-def get_neighbor(quat, s2i, s1i, curr_res):
+def get_neighbor(quat, s2i, s1i, cur_res):
     '''
     Return the 8 nearest neighbors on SO3 at the next resolution level
     '''
-    (theta, phi), s2_nexti = get_s2_neighbor(s2i, curr_res)
-    psi, s1_nexti = get_s1_neighbor(s1i, curr_res)
+    (theta, phi), s2_nexti = get_s2_neighbor(s2i, cur_res)
+    psi, s1_nexti = get_s1_neighbor(s1i, cur_res)
     quat_n = hopf_to_quat(np.repeat(theta,len(psi)),
-                        np.repeat(phi,len(psi)),
-                        np.tile(psi,len(theta)))
+                          np.repeat(phi,len(psi)),
+                          np.tile(psi,len(theta)))
     ind = np.array([np.repeat(s2_nexti,len(psi)),
                     np.tile(s1_nexti, len(theta))])
     ind = ind.T

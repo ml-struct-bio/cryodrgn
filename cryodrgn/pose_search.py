@@ -47,7 +47,7 @@ class PoseSearch:
         self.base_healpy = base_healpy
         self.s2_base_quat = so3_grid.s2_grid_SO3(base_healpy)
         self.so3_base_quat = so3_grid.grid_SO3(base_healpy)
-        self.base_rot = lie_tools.quaternions_to_SO3(torch.tensor(self.s2_base_quat))
+        self.base_rot = lie_tools.quaternions_to_SO3(to_tensor(self.s2_base_quat))
         self.nbase = len(self.s2_base_quat)
         self.base_inplane = so3_grid.grid_s1(base_healpy)
         self.base_shifts = torch.tensor(shift_grid.base_shift_grid(t_extent, t_ngrid)).float()
@@ -68,7 +68,7 @@ class PoseSearch:
         '''
         B = images.size(0)
         mask = self.lattice.get_circular_mask(L)
-        coords = self.lattice.coords[mask]
+        coords = self.lattice.coords[mask]  # .to(rot.device)
         YX = coords.size(-2)
         def compute_err(images, rot):
             x = coords @ rot
@@ -203,7 +203,7 @@ class PoseSearch:
         images = to_tensor(images)
         images_tilt = to_tensor(images_tilt)
         z = to_tensor(z)
-
+        device = images.device
         do_tilt = images_tilt is not None
 
         B = images.size(0)
@@ -214,7 +214,7 @@ class PoseSearch:
             base_rot = self.base_rot.expand(B,*self.base_rot.shape) # B x 576 x 3 x 3
         else:
             base_rot = self.base_rot # 576 x 3 x 3
-
+        base_rot = base_rot.to(device)
         # Compute the loss for all poses
         loss = self.eval_grid(
             images=self.translate_images(images, self.base_shifts, self.Lmin),
@@ -240,7 +240,7 @@ class PoseSearch:
             vlog(iter_); # vlog(Np)
             L = min(self.Lmin +k*iter_, self.Lmax)
             quat, q_ind, t_ind, rot, trans = self.subdivide(quat, q_ind, t_ind, iter_ + self.base_healpy - 1)
-
+            rot = rot.to(device)
             loss = self.eval_grid(
                 images=self.translate_images(images[keepB4], trans.unsqueeze(1), L).view(len(keepB),4,-1),  # (B*24, 4, Npoints)
                 rot=rot,
@@ -250,8 +250,8 @@ class PoseSearch:
                 images_tilt=self.translate_images(images_tilt[keepB4],trans.unsqueeze(1), L).view(len(keepB),4,-1) if do_tilt else None # (B*24, 4, Npoints)
             ) # sum(NP),4x8
             keep = self.keep_matrix(loss, B, self.nkeptposes)  # B x (self.Nkeptposes*32)
-            keepB, keepT, keepQ = keep.nonzero().t() # NP x 4; (0-B * 24, 0-4, 0-8)
-            assert len(keepB) == B * self.nkeptposes, f"{len(w)} != {B} x {self.nkeptposes} at iter {iter_}"
+            keepB, keepT, keepQ = keep.nonzero().cpu().t() # NP x 4; (0-B * 24, 0-4, 0-8)
+            assert len(keepB) == B * self.nkeptposes, f"{len(keepB)} != {B} x {self.nkeptposes} at iter {iter_}"
             quat = quat[keepB, keepQ]
             q_ind = q_ind[keepB, keepQ]
             t_ind = t_ind[keepB, keepT]

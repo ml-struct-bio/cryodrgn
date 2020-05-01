@@ -62,10 +62,17 @@ def eval_pose_search(data, model, B=16, label="", **kwargs):
 
 print("=============================================")
 for nkp in (1, 4, 12):
-    eval_pose_search(data, model, label=f"nkp= {nkp}", nkeptposes=nkp, niter=2)
-    
+    eval_pose_search(data, model, label=f"nkp= {nkp}", nkeptposes=nkp)
 
 for nkp in (1, 4, 12, 24):
     eval_pose_search(data_noisy, model_noisy,
-                     label=f" noisy nkp= {nkp}", 
+                     label=f"noisy nkp= {nkp}", 
                      nkeptposes=nkp)
+
+
+# import cProfile
+# pr = cProfile.Profile()
+# pr.enable()
+# eval_pose_search(data, model, nkeptposes=24)
+# pr.disable()
+# pr.print_stats('cumtime')

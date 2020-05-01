@@ -19,7 +19,6 @@ def to_tensor(x):
     return x
 
 def interpolate(img, coords):
-    assert img.ndim == 2
     assert coords.ndim == 2
     assert coords.shape[-1] == 2
 
@@ -29,10 +28,11 @@ def interpolate(img, coords):
     cr = c - cf.float()
     ci = 1 - cr
     
-    res = img[cf[0], cf[1]] * ci[0] * ci[1] + \
-        img[cf[0], cc[1]] * ci[0] * cr[1] + \
-        img[cc[0], cf[1]] * cr[0] * ci[1] + \
-        img[cc[0], cc[1]] * cr[0] * cr[1]
+    res = \
+        img[..., cf[0], cf[1]] * ci[0] * ci[1] + \
+        img[..., cf[0], cc[1]] * ci[0] * cr[1] + \
+        img[..., cc[0], cf[1]] * cr[0] * ci[1] + \
+        img[..., cc[0], cc[1]] * cr[0] * cr[1]
     
     return res
 
@@ -122,36 +122,28 @@ class PoseSearch:
 
     def rotate_images(self, images, angles, L):
         B, d1, NQ, YX = images.shape
-        assert d1 == 1
+        BNQ = B * NQ
+        squeezed_images = images.view(BNQ, YX)
+
         D = self.lattice.D
         # images = torch.zeros((B * NQ, D, D), device=images.device)
         res = torch.zeros((B * NQ, len(angles), YX), device=images.device)
         # B x NQ x YX
         mask = self.lattice.get_circular_mask(L)
         
+        rot_matrices = torch.tensor([[[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]] for a in angles])
         lattice_coords = self.lattice.coords[mask][:, :2]
-        for image_idx, image in enumerate(images.view(-1, YX)):
-            for angle_idx, angle in enumerate(angles):
-                cos = np.cos(angle)
-                sin = np.sin(angle)
-                rot_mat = torch.tensor([[cos, -sin], [sin, cos]], dtype=torch.float32)
-                rot_coords = (lattice_coords @ rot_mat + 0.5) * (D - 1)
-                full_image = torch.zeros((D, D,), device=images.device)
-                full_image.view(D * D)[mask] = image
+        rot_coords = (lattice_coords @ rot_matrices + 0.5) * (D - 1)
 
-                # This doesn't seem necessary but I'll keep it anyway just in case :)
-                # full_image[32, 32] = full_image[31:34, 31:34].mean() * (9/8)  # ???
-                interpolated = interpolate(full_image, rot_coords)
-                
-                # full_interp = torch.zeros((D, D,), device=images.device)
-                # full_interp.view(D * D)[mask] = interpolated
-                # # print(full_interp[31:34, 31:34])
-                
-                # IMPORTANT: rotation blurs the images and thus changes their norm
-                # It's important that you either rescale like this, or use a correlation metric rather than MSE
-                interpolated *= image.std() / interpolated.std()  # FIXME
-                
-                res[image_idx, angle_idx] = interpolated
+        full_images = torch.zeros((BNQ, D, D), device=images.device)
+        full_images.view(BNQ, D * D)[:, mask] = squeezed_images
+
+        for angle_idx, interp_coords in enumerate(rot_coords):
+            interpolated = interpolate(full_images, interp_coords)
+            assert squeezed_images.shape == interpolated.shape
+            interpolated *= squeezed_images.std(-1, keepdim=True) / interpolated.std(-1, keepdim=True)  # FIXME
+            
+            res[:, angle_idx] = interpolated
 
         return res.view(B, 1, NQ * len(angles), YX)
 

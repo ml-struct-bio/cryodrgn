@@ -141,7 +141,7 @@ class Lattice:
         tfilt = tfilt.squeeze(-1) # BxTxN
         c = torch.cos(tfilt) # BxTxN
         s = torch.sin(tfilt) # BxTxN
-        return c*img + s*img[:,:,np.arange(len(coords)-1,-1,-1)]
+        return c*img + s*img[:,:,torch.arange(len(coords)-1,-1,-1)]
 
 
 class EvenLattice(Lattice):

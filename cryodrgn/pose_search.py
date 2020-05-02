@@ -44,7 +44,6 @@ class PoseSearch:
         self.lattice = lattice
 
         self.base_healpy = base_healpy
-        print('base_healpy', base_healpy)
         self.s2_base_quat = so3_grid.s2_grid_SO3(base_healpy)
         self.so3_base_quat = so3_grid.grid_SO3(base_healpy)
         self.s2_base_rot = lie_tools.quaternions_to_SO3(to_tensor(self.s2_base_quat))
@@ -52,8 +51,6 @@ class PoseSearch:
 
         self.nbase = len(self.s2_base_quat)
         self.base_inplane = so3_grid.grid_s1(base_healpy)
-        print("BASE_ROT", self.s2_base_quat.shape, self.so3_base_quat.shape)
-        print("BASE INPLANE", self.base_inplane.shape)
         self.base_shifts = torch.tensor(shift_grid.base_shift_grid(base_healpy - 1, t_extent, t_ngrid)).float()
         self.t_extent = t_extent
         self.t_ngrid = t_ngrid
@@ -92,9 +89,17 @@ class PoseSearch:
             images = images.unsqueeze(2)  # BxTx1xYX
             if self.loss_fn == "mse":
                 err = (images - y_hat).pow(2).sum(-1)  # BxTxQ
-            elif self.loss_fn == "msf":
-                err = -(images * y_hat).sum(-1) + (y_hat * y_hat).sum(-1) / 2   # BxTxQ
-                
+            elif self.loss_fn == "msf":    
+                B, T, _, Npix = images.shape
+                Npix = images.shape[-1]
+
+                dots = (images.view(B, -1, Npix) @ y_hat.view(y_hat.shape[0], -1, Npix).transpose(-1, -2)).view(B, T, -1)
+                norm = (y_hat * y_hat).sum(-1) / 2
+
+                err = -dots + norm   # BxTxQ
+
+                # err1 = -(images * y_hat).sum(-1) + (y_hat * y_hat).sum(-1) / 2   # BxTxQ
+                # delta = (err1 - err).abs().max() / (err1 + err).mean() < 1e-2
             elif self.loss_fn == "cor":
                 err = -(images * y_hat).sum(-1) / y_hat.std(-1)
             else:
@@ -260,16 +265,13 @@ class PoseSearch:
         t_ind = shift_grid.get_base_ind(keepT, self.t_ngrid * 2**(self.base_healpy - 1)) #  Np x 2
 
         for iter_ in range(niter):
-            log(f"iter {iter_}"); # vlog(Np)
             keepB4 = keepB.unsqueeze(1).repeat(1,4).view(-1) # repeat each element 4 times
             keepB8 = keepB.unsqueeze(1).repeat(1,8).view(-1) # repeat each element 8 times
             zb = z[keepB8] if z is not None else None
 
             L = self.Lmin + int((iter_ + 1) / niter * (self.Lmax - self.Lmin))
             grid_res = self.base_healpy + iter_
-            print('before', t_ind[0], trans[0])
             quat, q_ind, t_ind, rot, trans = self.subdivide(quat, q_ind, t_ind, grid_res)
-            print('before', t_ind[0], trans[0])
 
             rot = rot.to(device)
             loss = self.eval_grid(

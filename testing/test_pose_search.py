@@ -52,13 +52,13 @@ def do_pose_search(images, model, nkeptposes=24, Lmin=12, Lmax=24, niter=5, **kw
 
 def medse(x, y):
     B = x.shape[0]
-    return (x - y).pow(2).view(B, -1).sum(-1).median()
+    return (x - y).pow(2).view(B, -1).sum(-1).mean()
 
 def eval_pose_search(data, model, B=16, label="", **kwargs):
     rot_hat, trans_hat = do_pose_search(data.particles[:B], model, **kwargs)
     print(f"{label} "
-          f"Rot MedSE= {medse(rot_hat, pose_rot[:B]):.4f} "
-          f"Trans MedSE= {medse(trans_hat, pose_trans[:B]):.4f}")
+          f"Rot MSE= {medse(rot_hat, pose_rot[:B]):.4f} "
+          f"Trans MSE= {medse(trans_hat, pose_trans[:B]):.4f}")
 
 print("=============================================")
 # for nkp in (1, 4, 12):
@@ -69,16 +69,14 @@ print("=============================================")
 #                      label=f"noisy nkp= {nkp}", 
 #                      nkeptposes=nkp)
 
-for nkp in (4,):#(1, 4, 12, 24):
-    for bhp in (1,2):
-        for niter in range(4,5):
-            eval_pose_search(data_noisy, model_noisy,
-                            B=16,
-                            label=f"bhp={bhp} noisy nkp= {nkp} niter={niter}", 
-                            nkeptposes=nkp,
-                            base_healpy=bhp,
-                            # t_ngrid=5 * 2**bhp // 2,
-                            niter=niter)
+for bhp in (1,2):
+    for nkp in (1, 4, 12, 24):
+        eval_pose_search(data_noisy, model_noisy,
+                        B=16,
+                        label=f"bhp={bhp} noisy nkp= {nkp}", 
+                        nkeptposes=nkp,
+                        base_healpy=bhp)
+    print('--------------')                 
 
 
 # import cProfile

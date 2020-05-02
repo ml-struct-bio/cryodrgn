@@ -117,6 +117,7 @@ def sort_poses(pose):
     ind = np.concatenate(ind)
     rot = [x[1][0] for x in pose]
     rot = np.concatenate(rot)
+
     rot = rot[np.argsort(ind)]
     if len(pose[0][1]) == 2:
         trans = [x[1][1] for x in pose]
@@ -125,7 +126,15 @@ def sort_poses(pose):
         return (rot,trans)
     return (rot,)
 
-def train(model, lattice, ps, optim, batch, tilt_rot=None, no_trans=False, poses=None):
+
+def sort_base_poses(pose):
+    ind, data = zip(*pose)
+    ind = np.concatenate(ind)
+    data = np.concatenate(data)
+    return data[np.argsort(ind)]
+
+
+def train(model, lattice, ps, optim, batch, tilt_rot=None, no_trans=False, poses=None, base_poses=None):
     y, yt = batch
     B = y.size(0)
 
@@ -136,7 +145,7 @@ def train(model, lattice, ps, optim, batch, tilt_rot=None, no_trans=False, poses
     else: # BNB
         model.eval()
         with torch.no_grad():
-            rot, trans = ps.opt_theta_trans(y, images_tilt=yt)
+            rot, trans, base_pose = ps.opt_theta_trans(y, images_tilt=yt, init_poses=base_poses)
 
     # reconstruct circle of pixels instead of whole image
     mask = lattice.get_circular_mask(lattice.D//2)
@@ -166,7 +175,8 @@ def train(model, lattice, ps, optim, batch, tilt_rot=None, no_trans=False, poses
     save_pose = [rot.detach().cpu().numpy()]
     if not no_trans:
         save_pose.append(trans.detach().cpu().numpy())
-    return loss.item(), save_pose
+    return loss.item(), save_pose, base_pose.detach().cpu().numpy()
+
 
 def main(args):
 
@@ -242,22 +252,24 @@ def main(args):
         t2 = dt.now()
         batch_it = 0
         loss_accum = 0
-        poses = []
+        poses, base_poses = [], []
         if epoch % args.ps_freq != 0:
             log('Using previous iteration poses')
         for batch in data_iterator:
             ind = batch[-1]
+            ind_np = ind.cpu().numpy()
             batch = (batch[0].to(device), None) if tilt is None else (batch[0].to(device), batch[1].to(device))
             batch_it += len(batch[0])
 
             # train the model
             if epoch % args.ps_freq != 0:
-                p = [torch.tensor(x[ind]) for x in sorted_poses]
+                p = sorted_base_poses[ind_np]#[x[ind_np] for x in sorted_base_poses]
             else:
                 p = None
-            loss_item, pose = train(model, lattice, ps, optim, batch, tilt, args.no_trans, poses=p)
-            poses.append((ind.cpu().numpy(),pose))
+            loss_item, pose, base_pose = train(model, lattice, ps, optim, batch, tilt, args.no_trans, base_poses=p)
 
+            poses.append((ind_np, pose))
+            base_poses.append((ind_np, base_pose))
             # logging
             loss_accum += loss_item*len(batch[0])
             if batch_it % args.log_interval == 0:
@@ -266,6 +278,7 @@ def main(args):
 
         # sort pose
         sorted_poses = sort_poses(poses) if poses else None
+        sorted_base_poses = sort_base_poses(base_poses)
 
         if args.checkpoint and epoch % args.checkpoint == 0:
             out_mrc = '{}/reconstruct.{}.mrc'.format(args.outdir,epoch)

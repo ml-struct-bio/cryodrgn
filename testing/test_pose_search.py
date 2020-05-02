@@ -70,7 +70,8 @@ def eval_pose_search(data, model, B=128, label="", **kwargs):
     for chunk in torch.from_numpy(data.particles[S:S+B]).split(8):
         res.append( do_pose_search(chunk, model, **kwargs) )
     
-    rot_hat, trans_hat = [torch.cat(x) for x in zip(*res)]
+    rot_hat, trans_hat, _ = [torch.cat(x) for x in zip(*res)]
+
     print(f"{label} "
           f"Rot MedSE= {medse(rot_hat, pose_rot[S:S+B]):.4f} "
           f"Rot MSE= {mse(rot_hat, pose_rot[S:S+B]):.4f} "

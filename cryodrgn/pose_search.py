@@ -227,7 +227,6 @@ class PoseSearch:
         shape = loss.shape
         flat_loss = loss.view(B, -1)
         flat_idx = flat_loss.topk(max_poses, dim=-1, largest=False, sorted=True)[1]
-
         # add the batch index in, to make it completely flat
         flat_idx += torch.arange(B, device=loss.device).unsqueeze(1) * flat_loss.shape[1]
         flat_idx = flat_idx.view(-1)
@@ -243,9 +242,10 @@ class PoseSearch:
         # return self.Lmin + int(iter_ / niter * (self.Lmax - self.Lmin))
         return min(self.Lmin * 2 ** iter_, self.Lmax)
 
-    def opt_theta_trans(self, images, z=None, images_tilt=None, niter=5):
+    def opt_theta_trans(self, images, z=None, images_tilt=None, niter=5, init_poses=None):
         images = to_tensor(images)
         images_tilt = to_tensor(images_tilt)
+        init_poses = to_tensor(init_poses)
         z = to_tensor(z)
         device = images.device
         do_tilt = images_tilt is not None
@@ -253,24 +253,31 @@ class PoseSearch:
         B = images.size(0)
         assert not self.model.training
 
-        # Expand the base grid B times if each image has a different z
-        if z is not None:
-            base_rot = self.s2_base_rot.expand(B,*self.s2_base_rot.shape) # B x 576 x 3 x 3
+        if init_poses is None:
+            # Expand the base grid B times if each image has a different z
+            if z is not None:
+                base_rot = self.s2_base_rot.expand(B,*self.s2_base_rot.shape) # B x 576 x 3 x 3
+            else:
+                base_rot = self.s2_base_rot # 576 x 3 x 3
+            base_rot = base_rot.to(device)
+            # Compute the loss for all poses
+            L = self.getL(self.base_healpy - 1, niter)
+            loss = self.eval_grid(
+                images=self.translate_images(images, self.base_shifts, L),
+                rot=base_rot,
+                z=z,
+                NQ=self.nbase,
+                L=L,
+                images_tilt=self.translate_images(images_tilt, self.base_shifts, L) if do_tilt else None,
+                rot_inplane=self.base_inplane
+            )
+            keepB, keepT, keepQ = self.keep_matrix(loss, B, self.nkeptposes).cpu() # B x -1
         else:
-            base_rot = self.s2_base_rot # 576 x 3 x 3
-        base_rot = base_rot.to(device)
-        # Compute the loss for all poses
-        L = self.getL(self.base_healpy - 1, niter)
-        loss = self.eval_grid(
-            images=self.translate_images(images, self.base_shifts, L),
-            rot=base_rot,
-            z=z,
-            NQ=self.nbase,
-            L=L,
-            images_tilt=self.translate_images(images_tilt, self.base_shifts, L) if do_tilt else None,
-            rot_inplane=self.base_inplane
-        )
-        keepB, keepT, keepQ  = self.keep_matrix(loss, B, self.nkeptposes).cpu() # B x -1
+            # careful, overwrite the old batch index which is now invalid
+            keepB = torch.arange(B, device=init_poses.device).unsqueeze(1).repeat(1, self.nkeptposes).view(-1) 
+            keepT, keepQ = init_poses.reshape(-1, 2).t()
+
+        new_init_poses = torch.cat((keepT, keepQ), dim=-1).view(2, B, self.nkeptposes).permute(1, 2, 0)
 
         quat = self.so3_base_quat[keepQ]
         q_ind = so3_grid.get_base_ind(keepQ, self.base_healpy)  # Np x 2
@@ -279,8 +286,8 @@ class PoseSearch:
 
         for iter_ in range(self.base_healpy, niter + 1):
             # log(f"iter {iter_}")
-            keepB4 = keepB.unsqueeze(1).repeat(1,4).view(-1) # repeat each element 4 times
-            keepB8 = keepB.unsqueeze(1).repeat(1,8).view(-1) # repeat each element 8 times
+            keepB4 = keepB.unsqueeze(1).repeat(1, 4).view(-1)  # repeat each element 4 times
+            keepB8 = keepB.unsqueeze(1).repeat(1, 8).view(-1)  # repeat each element 8 times
             zb = z[keepB8] if z is not None else None
 
             # L = self.Lmin + int((iter_ + 1) / niter * (self.Lmax - self.Lmin))
@@ -317,6 +324,6 @@ class PoseSearch:
             best_rot = rot.view(-1, 8, 3, 3)[bestBN, bestQ]
             best_trans = trans.view(-1, 4, 2)[bestBN, bestT]
 
-        return best_rot, best_trans
+        return best_rot, best_trans, new_init_poses
 
 

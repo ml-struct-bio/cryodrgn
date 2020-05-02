@@ -65,29 +65,22 @@ def get_s1_neighbor(mini, curr_res):
         ind[0] += Npix
     return ind*dt+dt/2, ind
 
-def get_s2_neighbor(mini, curr_res):
+def get_s2_neighbor(mini, cur_res):
     '''
     Return the 4 nearest neighbors on S2 at the next resolution level
     '''
-    Nside = 2**(curr_res+1)
+    Nside = 2**(cur_res+1)
     ind = np.arange(4)+4*mini
     return hp.pix2ang(Nside, ind, nest=True), ind
 
-def get_base_ind(ind):
+def get_base_ind(ind, base):
     '''
     Return the corresponding S2 and S1 grid index for an index on the base SO3 grid
     '''
-    psii = ind%12
-    thetai = ind // 12
+    Np = 6 * 2**base
+    psii = ind % Np
+    thetai = ind // Np
     return np.stack((thetai, psii), axis=1)
-
-def get_base_indr(ind):
-    '''
-    Return the corresponding S2 and S1 grid index for an index on the base SO3 grid
-    '''
-    psii = ind%12
-    thetai = (ind/12).astype(int)
-    return thetai, psii
 
 
 def get_neighbor(quat, s2i, s1i, cur_res):

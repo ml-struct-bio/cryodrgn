@@ -61,18 +61,29 @@ def eval_pose_search(data, model, B=16, label="", **kwargs):
           f"Trans MedSE= {medse(trans_hat, pose_trans[:B]):.4f}")
 
 print("=============================================")
-for nkp in (1, 4, 12):
-    eval_pose_search(data, model, label=f"nkp= {nkp}", nkeptposes=nkp)
+# for nkp in (1, 4, 12):
+#     eval_pose_search(data, model, label=f"nkp= {nkp}", nkeptposes=nkp)
 
-for nkp in (1, 4, 12, 24):
-    eval_pose_search(data_noisy, model_noisy,
-                     label=f"noisy nkp= {nkp}", 
-                     nkeptposes=nkp)
+# for nkp in (1, 4, 12, 24):
+#     eval_pose_search(data_noisy, model_noisy,
+#                      label=f"noisy nkp= {nkp}", 
+#                      nkeptposes=nkp)
+
+for nkp in (4,):#(1, 4, 12, 24):
+    for bhp in (1,2):
+        for niter in range(4,5):
+            eval_pose_search(data_noisy, model_noisy,
+                            B=16,
+                            label=f"bhp={bhp} noisy nkp= {nkp} niter={niter}", 
+                            nkeptposes=nkp,
+                            base_healpy=bhp,
+                            # t_ngrid=5 * 2**bhp // 2,
+                            niter=niter)
 
 
-import cProfile
-pr = cProfile.Profile()
-pr.enable()
-eval_pose_search(data, model, nkeptposes=24)
-pr.disable()
-pr.print_stats('cumtime')
+# import cProfile
+# pr = cProfile.Profile()
+# pr.enable()
+# eval_pose_search(data, model, nkeptposes=24)
+# pr.disable()
+# pr.print_stats('cumtime')

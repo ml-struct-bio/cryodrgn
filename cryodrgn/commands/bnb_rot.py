@@ -169,6 +169,7 @@ def train(model, lattice, ps, optim, batch, tilt_rot=None, no_trans=False, poses
     return loss.item(), save_pose
 
 def main(args):
+
     log(args)
     t1 = dt.now()
     if not os.path.exists(args.outdir):
@@ -284,5 +285,11 @@ def main(args):
 if __name__ == '__main__':
     args = parse_args().parse_args()
     utils._verbose = args.verbose
+
+    # import cProfile
+    # pr = cProfile.Profile()
+    # pr.enable()
     main(args)
+    # pr.disable()
+    # pr.print_stats('cumtime')
 

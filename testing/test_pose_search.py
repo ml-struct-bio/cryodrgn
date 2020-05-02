@@ -76,10 +76,10 @@ print("=============================================")
 #                      label=f"noisy nkp= {nkp}",
 #                      nkeptposes=nkp)
 
-for bhp in (1, 2):
+for bhp in (3, 1, 2):
     for nkp in (1, 4, 12, 24):
         eval_pose_search(data_noisy, model_noisy,
-                        B=16,
+                        B=8,
                         label=f"noisy nkp= {nkp} bhp= {bhp}",
                         base_healpy=bhp,
                         nkeptposes=nkp)

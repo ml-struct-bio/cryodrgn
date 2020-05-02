@@ -6,7 +6,7 @@ import pickle
 _verbose = False
 
 def log(msg):
-    print('{}     {}'.format(dt.now().strftime('%Y-%m-%d %H:%M:%S'), msg))
+    print('{}     {}'.format(dt.now().strftime('%Y-%m-%d %H:%M:%S.%f'), msg))
     sys.stdout.flush()
 
 def vlog(msg):

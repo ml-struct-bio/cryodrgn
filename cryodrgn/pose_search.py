@@ -239,6 +239,10 @@ class PoseSearch:
         assert (flat_idx == 0).all()
         return keep_idx
 
+    def getL(self, iter_, niter):
+        # return self.Lmin + int(iter_ / niter * (self.Lmax - self.Lmin))
+        return min(self.Lmin * 2 ** iter_, self.Lmax)
+
     def opt_theta_trans(self, images, z=None, images_tilt=None, niter=5):
         images = to_tensor(images)
         images_tilt = to_tensor(images_tilt)
@@ -256,13 +260,14 @@ class PoseSearch:
             base_rot = self.s2_base_rot # 576 x 3 x 3
         base_rot = base_rot.to(device)
         # Compute the loss for all poses
+        L = self.getL(self.base_healpy - 1, niter)
         loss = self.eval_grid(
-            images=self.translate_images(images, self.base_shifts, self.Lmin),
+            images=self.translate_images(images, self.base_shifts, L),
             rot=base_rot,
             z=z,
             NQ=self.nbase,
-            L=self.Lmin,
-            images_tilt=self.translate_images(images_tilt, self.base_shifts, self.Lmin) if do_tilt else None,
+            L=L,
+            images_tilt=self.translate_images(images_tilt, self.base_shifts, L) if do_tilt else None,
             rot_inplane=self.base_inplane
         )
         keepB, keepT, keepQ  = self.keep_matrix(loss, B, self.nkeptposes).cpu() # B x -1
@@ -272,15 +277,15 @@ class PoseSearch:
         trans = self.base_shifts[keepT]
         t_ind = shift_grid.get_base_ind(keepT, self.t_ngrid * 2**(self.base_healpy - 1)) #  Np x 2
 
-        for iter_ in range(niter):
+        for iter_ in range(self.base_healpy, niter + 1):
             # log(f"iter {iter_}")
             keepB4 = keepB.unsqueeze(1).repeat(1,4).view(-1) # repeat each element 4 times
             keepB8 = keepB.unsqueeze(1).repeat(1,8).view(-1) # repeat each element 8 times
             zb = z[keepB8] if z is not None else None
 
-            L = self.Lmin + int((iter_ + 1) / niter * (self.Lmax - self.Lmin))
-            grid_res = self.base_healpy + iter_
-            quat, q_ind, t_ind, rot, trans = self.subdivide(quat, q_ind, t_ind, grid_res)
+            # L = self.Lmin + int((iter_ + 1) / niter * (self.Lmax - self.Lmin))
+            L = self.getL(iter_, niter)
+            quat, q_ind, t_ind, rot, trans = self.subdivide(quat, q_ind, t_ind, iter_)
 
             rot = rot.to(device)
             loss = self.eval_grid(
@@ -292,6 +297,7 @@ class PoseSearch:
                 images_tilt=self.translate_images(images_tilt[keepB4],trans.unsqueeze(1), L).view(len(keepB),4,-1) if do_tilt else None # (B*24, 4, Npoints)
             ) # sum(NP),4x8
 
+            # nkeptposes = 1
             # nkeptposes = max(1, math.ceil(self.nkeptposes / 2 ** (iter_-1)))
             nkeptposes = self.nkeptposes
 

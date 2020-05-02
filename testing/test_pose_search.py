@@ -18,6 +18,7 @@ basedir = "datasets/ribo_syn_64"
 data = dataset.MRCData(f'{basedir}/projections.1k.mrcs', window=False, keepreal=True)
 data_noisy = dataset.MRCData(f'{basedir}/noise_0.1/projections.1k.mrcs', window=False, keepreal=True)
 
+S = 456
 D = data.D
 lat = lattice.Lattice(D)
 
@@ -41,13 +42,14 @@ print(f"Device: {next(model.parameters()).device}")
 
 def do_pose_search(images, model, nkeptposes=24, Lmin=12, Lmax=24, niter=5, **kwargs):
     device = next(model.parameters()).device
-    images = torch.from_numpy(images).to(device)
+    images = images.to(device)
     ps = pose_search.PoseSearch(
         model=model,
         lattice=lat,
         Lmin=Lmin,
         Lmax=Lmax,
         nkeptposes=nkeptposes,
+        t_extent=5,
         **kwargs,
     )
 
@@ -55,21 +57,27 @@ def do_pose_search(images, model, nkeptposes=24, Lmin=12, Lmax=24, niter=5, **kw
 
 def mse(x, y):
     B = x.shape[0]
-    return (x - y).pow(2).view(B, -1).sum(-1).mean()
+    errors = (x - y).pow(2).view(B, -1).sum(-1)
+    # print('mse', errors)
+    return errors.mean()
 
 def medse(x, y):
     B = x.shape[0]
     return (x - y).pow(2).view(B, -1).sum(-1).median()
 
-def eval_pose_search(data, model, B=64, label="", **kwargs):
-    rot_hat, trans_hat = do_pose_search(data.particles[:B], model, **kwargs)
+def eval_pose_search(data, model, B=128, label="", **kwargs):
+    res = []
+    for chunk in torch.from_numpy(data.particles[S:S+B]).split(8):
+        res.append( do_pose_search(chunk, model, **kwargs) )
+    
+    rot_hat, trans_hat = [torch.cat(x) for x in zip(*res)]
     print(f"{label} "
-          f"Rot MedSE= {medse(rot_hat, pose_rot[:B]):.4f} "
-          f"Rot MSE= {mse(rot_hat, pose_rot[:B]):.4f} "
-          f"Trans MedSE= {medse(trans_hat, pose_trans[:B]):.4f} "
-          f"Trans MSE= {mse(trans_hat, pose_trans[:B]):.4f}")
+          f"Rot MedSE= {medse(rot_hat, pose_rot[S:S+B]):.4f} "
+          f"Rot MSE= {mse(rot_hat, pose_rot[S:S+B]):.4f} "
+          f"Trans MedSE= {medse(trans_hat, pose_trans[S:S+B]):.4f} "
+          f"Trans MSE= {mse(trans_hat, pose_trans[S:S+B]):.4f}")
 
-print("=============================================")
+print("=" * 80)
 # for nkp in (1, 4, 12):
 #     eval_pose_search(data, model, label=f"nkp= {nkp}", nkeptposes=nkp)
 
@@ -78,16 +86,16 @@ print("=============================================")
 #                      label=f"noisy nkp= {nkp}",
 #                      nkeptposes=nkp)
 
-
 tic = time.perf_counter()
+
 
 for bhp in (1, 2, 3):
     for nkp in (1, 4, 12, 24):
         eval_pose_search(data_noisy, model_noisy,
-                        B=8,
-                        label=f"noisy nkp= {nkp} bhp= {bhp}",
+                        label=f"noisy nkp= {nkp:2d} bhp= {bhp}",
                         base_healpy=bhp,
                         nkeptposes=nkp)
+    print('-' * 80)
 
 print(f"Finished in {time.perf_counter() - tic} s ")
 

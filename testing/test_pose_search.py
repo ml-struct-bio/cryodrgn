@@ -29,7 +29,8 @@ def load_model(path):
     model = models.get_decoder(3, 65, 3, 256, 'fourier', 'geom_lowf')
     model.load_state_dict(ckpt['model_state_dict'])
     model.eval()
-    model.cuda()
+    if use_cuda:
+        model.cuda()
     return model
 
 model = load_model('datasets/trained_model/weights.pkl')
@@ -50,15 +51,21 @@ def do_pose_search(images, model, nkeptposes=24, Lmin=12, Lmax=24, niter=5, **kw
 
     return ps.opt_theta_trans(images, niter=niter)
 
-def medse(x, y):
+def mse(x, y):
     B = x.shape[0]
     return (x - y).pow(2).view(B, -1).sum(-1).mean()
 
-def eval_pose_search(data, model, B=16, label="", **kwargs):
+def medse(x, y):
+    B = x.shape[0]
+    return (x - y).pow(2).view(B, -1).sum(-1).median()
+
+def eval_pose_search(data, model, B=64, label="", **kwargs):
     rot_hat, trans_hat = do_pose_search(data.particles[:B], model, **kwargs)
     print(f"{label} "
-          f"Rot MSE= {medse(rot_hat, pose_rot[:B]):.4f} "
-          f"Trans MSE= {medse(trans_hat, pose_trans[:B]):.4f}")
+          f"Rot MedSE= {medse(rot_hat, pose_rot[:B]):.4f} "
+          f"Rot MSE= {mse(rot_hat, pose_rot[:B]):.4f} "
+          f"Trans MedSE= {medse(trans_hat, pose_trans[:B]):.4f} "
+          f"Trans MSE= {mse(trans_hat, pose_trans[:B]):.4f}")
 
 print("=============================================")
 # for nkp in (1, 4, 12):
@@ -66,17 +73,16 @@ print("=============================================")
 
 # for nkp in (1, 4, 12, 24):
 #     eval_pose_search(data_noisy, model_noisy,
-#                      label=f"noisy nkp= {nkp}", 
+#                      label=f"noisy nkp= {nkp}",
 #                      nkeptposes=nkp)
 
-for bhp in (1,2):
+for bhp in (1, 2):
     for nkp in (1, 4, 12, 24):
         eval_pose_search(data_noisy, model_noisy,
                         B=16,
-                        label=f"bhp={bhp} noisy nkp= {nkp}", 
-                        nkeptposes=nkp,
-                        base_healpy=bhp)
-    print('--------------')                 
+                        label=f"noisy nkp= {nkp} bhp= {bhp}",
+                        base_healpy=bhp,
+                        nkeptposes=nkp)
 
 
 # import cProfile

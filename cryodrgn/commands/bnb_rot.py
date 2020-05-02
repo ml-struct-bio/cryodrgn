@@ -32,7 +32,7 @@ def debug_signal_handler(signal, frame):
     pdb.set_trace()
 import signal
 signal.signal(signal.SIGINT, debug_signal_handler)
-    
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -66,6 +66,7 @@ def parse_args():
     group.add_argument('--l-end-it',type=int,default=100000, help='default: %(default)s')
     group.add_argument('--probabilistic', action='store_true', help='Use probabilistic bound')
     group.add_argument('--nkeptposes', type=int, default=24, help="Number of poses to keep at each refinement interation during branch and bound")
+    group.add_argument('--base-healpy', type=int, default=1, help="Base healpy grid for pose search. Higher means exponentially higher resolution.")
 
     group = parser.add_argument_group('Network Architecture')
     group.add_argument('--layers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
@@ -106,7 +107,7 @@ def pretrain(model, lattice, optim, batch, tilt=None):
         yt = yt.view(B,-1)[:, mask]
         loss = .5*F.mse_loss(gen_slice(rot), y) + .5*F.mse_loss(gen_slice(tilt @ rot), yt)
     else:
-        loss = F.mse_loss(gen_slice(rot), y) 
+        loss = F.mse_loss(gen_slice(rot), y)
     loss.backward()
     optim.step()
     return loss.item()
@@ -146,7 +147,7 @@ def train(model, lattice, ps, optim, batch, tilt_rot=None, no_trans=False, poses
         img = lattice.translate_ht(img, trans.unsqueeze(1), mask)
         return img.view(B,-1)
 
-    # Train model 
+    # Train model
     model.train()
     optim.zero_grad()
 
@@ -159,7 +160,7 @@ def train(model, lattice, ps, optim, batch, tilt_rot=None, no_trans=False, poses
     if tilt_rot is not None:
         loss = .5*F.mse_loss(gen_slice(rot), y) + .5*F.mse_loss(gen_slice(tilt_rot @ rot), yt)
     else:
-        loss = F.mse_loss(gen_slice(rot), y) 
+        loss = F.mse_loss(gen_slice(rot), y)
     loss.backward()
     optim.step()
     save_pose = [rot.detach().cpu().numpy()]
@@ -199,10 +200,10 @@ def main(args):
 
     if args.no_trans:
         raise NotImplementedError()
-    else:    
-        ps = PoseSearch(model, lattice, args.l_start, args.l_end, tilt, 
-                        t_extent=args.t_extent, t_ngrid=args.t_ngrid, 
-                        nkeptposes=args.nkeptposes)
+    else:
+        ps = PoseSearch(model, lattice, args.l_start, args.l_end, tilt,
+                        t_extent=args.t_extent, t_ngrid=args.t_ngrid,
+                        nkeptposes=args.nkeptposes, base_healpy=args.base_healpy)
     log(model)
     log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
@@ -247,15 +248,15 @@ def main(args):
             ind = batch[-1]
             batch = (batch[0].to(device), None) if tilt is None else (batch[0].to(device), batch[1].to(device))
             batch_it += len(batch[0])
-            
+
             # train the model
             if epoch % args.ps_freq != 0:
                 p = [torch.tensor(x[ind]) for x in sorted_poses]
-            else: 
+            else:
                 p = None
-            loss_item, pose = train(model, lattice, ps, optim, batch, tilt, args.no_trans, poses=p) 
+            loss_item, pose = train(model, lattice, ps, optim, batch, tilt, args.no_trans, poses=p)
             poses.append((ind.cpu().numpy(),pose))
-           
+
             # logging
             loss_accum += loss_item*len(batch[0])
             if batch_it % args.log_interval == 0:
@@ -276,7 +277,7 @@ def main(args):
     out_weights = '{}/weights.pkl'.format(args.outdir)
     out_poses = '{}/pose.pkl'.format(args.outdir, epoch)
     save_checkpoint(model, lattice, sorted_poses, optim, epoch, data.norm, out_mrc, out_weights, out_poses)
-   
+
     td = dt.now()-t1
     log('Finsihed in {} ({} per epoch)'.format(td, td/(args.num_epochs-start_epoch)))
 

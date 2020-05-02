@@ -42,7 +42,6 @@ class PoseSearch:
 
         self.model = model
         self.lattice = lattice
-
         self.base_healpy = base_healpy
         self.s2_base_quat = so3_grid.s2_grid_SO3(base_healpy)
         self.so3_base_quat = so3_grid.grid_SO3(base_healpy)
@@ -258,7 +257,7 @@ class PoseSearch:
             rot_inplane=self.base_inplane
         )
         keep = self.keep_matrix(loss, B, self.nkeptposes) # B x -1
-        keepB, keepT, keepQ = keep.nonzero().cpu().t()
+        keepB, keepT, keepQ = keep.nonzero().cpu().t()  # FIXME: memory inefficient
         quat = self.so3_base_quat[keepQ]
         q_ind = so3_grid.get_base_ind(keepQ, self.base_healpy)  # Np x 2
         trans = self.base_shifts[keepT]

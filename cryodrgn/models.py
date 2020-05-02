@@ -176,7 +176,7 @@ class PositionalDecoder(nn.Module):
         vol_f = np.zeros((D,D,D),dtype=np.float32)
         assert not self.training
         # evaluate the volume by zslice to avoid memory overflows
-        for i, dz in enumerate(np.linspace(-extent,extent,D,endpoint=True)):
+        for i, dz in enumerate(np.linspace(-extent,extent,D,endpoint=True,dtype=np.float32)):
             x = coords + torch.tensor([0,0,dz])
             if zval is not None:
                 x = torch.cat((x,z), dim=-1)
@@ -293,7 +293,7 @@ class FTPositionalDecoder(nn.Module):
         vol_f = np.zeros((D,D,D),dtype=np.float32)
         assert not self.training
         # evaluate the volume by zslice to avoid memory overflows
-        for i, dz in enumerate(np.linspace(-extent,extent,D,endpoint=True)):
+        for i, dz in enumerate(np.linspace(-extent,extent,D,endpoint=True,dtype=np.float32)):
             x = coords + torch.tensor([0,0,dz])
             if zval is not None:
                 x = torch.cat((x,z), dim=-1)
@@ -400,7 +400,7 @@ class FTSliceDecoder(nn.Module):
         vol_f = np.zeros((D,D,D),dtype=np.float32)
         assert not self.training
         # evaluate the volume by zslice to avoid memory overflows
-        for i, dz in enumerate(np.linspace(-extent,extent,D,endpoint=True)):
+        for i, dz in enumerate(np.linspace(-extent,extent,D,endpoint=True,dtype=np.float32)):
             x = coords + torch.tensor([0,0,dz])
             if zval is not None:
                 x = torch.cat((x,z), dim=-1)

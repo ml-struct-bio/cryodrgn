@@ -13,6 +13,14 @@ log = utils.log
 vlog = utils.vlog
 
 
+def rot_2d(angle, outD, device=None):
+    rot = torch.zeros((outD, outD), device=device)
+    rot[0, 0] = np.cos(angle)
+    rot[0, 1] = -np.sin(angle)
+    rot[1, 0] = np.sin(angle)
+    rot[1, 1] = np.cos(angle)
+    return rot
+
 def to_tensor(x):
     if isinstance(x, np.ndarray):
         x = torch.from_numpy(x)
@@ -63,7 +71,7 @@ class PoseSearch:
         self._so3_neighbor_cache = {}  # for memoization
         self._shift_neighbor_cache = {}  # for memoization
 
-    def eval_grid(self, *, images, rot, z, NQ, L, images_tilt=None, rot_inplane=None):
+    def eval_grid(self, *, images, rot, z, NQ, L, images_tilt=None, angles_inplane=None):
         '''
         images: B x T x Npix
         rot: (NxQ) x 3 x 3 rotation matrics (N=1 for base grid, N=B for incremental grid)
@@ -76,6 +84,15 @@ class PoseSearch:
         YX = coords.size(-2)
         device = next(self.model.parameters()).device
         def compute_err(images, rot):
+
+            if angles_inplane is not None:
+                # apply a random in-plane rotation from the set
+                # to avoid artifacts due to grid alignment
+                rand_a = angles_inplane[np.random.randint(len(angles_inplane))]
+                rand_inplane_rot = rot_2d(rand_a, 3, rot.device)
+                rot = rand_inplane_rot @ rot
+                adj_angles_inplane = angles_inplane - rand_a
+
             x = coords @ rot
             if z is not None:
                 x = self.model.cat_z(x, z)
@@ -84,8 +101,8 @@ class PoseSearch:
             with torch.no_grad():
                 y_hat = self.model(x)
             y_hat = y_hat.view(-1, 1, NQ, YX)  #1x1xNQxYX for base grid, Bx1x8xYX for incremental grid
-            if rot_inplane is not None:
-                y_hat = self.rotate_images(y_hat, rot_inplane, L)
+            if angles_inplane is not None:
+                y_hat = self.rotate_images(y_hat, adj_angles_inplane, L)
             images = images.unsqueeze(2)  # BxTx1xYX
             if self.loss_fn == "mse":
                 err = (images - y_hat).pow(2).sum(-1)  # BxTxQ
@@ -144,7 +161,7 @@ class PoseSearch:
         # B x NQ x YX
         mask = self.lattice.get_circular_mask(L)
 
-        rot_matrices = torch.tensor([[[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]] for a in angles])
+        rot_matrices = torch.stack([rot_2d(a, 2, images.device) for a in angles], dim=0)
         lattice_coords = self.lattice.coords[mask][:, :2]
         rot_coords = (lattice_coords @ rot_matrices + 0.5) * (D - 1)
 
@@ -269,7 +286,7 @@ class PoseSearch:
                 NQ=self.nbase,
                 L=L,
                 images_tilt=self.translate_images(images_tilt, self.base_shifts, L) if do_tilt else None,
-                rot_inplane=self.base_inplane
+                angles_inplane=self.base_inplane
             )
             keepB, keepT, keepQ = self.keep_matrix(loss, B, self.nkeptposes).cpu() # B x -1
         else:

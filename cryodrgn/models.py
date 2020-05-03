@@ -75,15 +75,15 @@ class HetOnlyVAE(nn.Module):
         z = torch.cat((coords,z.expand(*coords.shape[:-1],self.zdim)),dim=-1)
         return z
 
-    def decode(self, coords, z, mask=None):
+    def decode(self, coords, z, mask=None, half_precision=False):
         '''
         coords: BxNx3 image coordinates
         z: Bxzdim latent coordinate
         '''
-        return self.decoder(self.cat_z(coords,z))
+        return self.decoder(self.cat_z(coords,z), half_precision=half_precision)
 
-    def forward(self, x):
-        return self.decoder(x)
+    def forward(self, x, half_precision=False):
+        return self.decoder(x, half_precision=half_precision)
 
 
 def get_decoder(in_dim, D, layers, dim, domain, enc_type, activation=nn.ReLU):
@@ -153,10 +153,10 @@ class PositionalDecoder(nn.Module):
             assert x.shape[-1] == self.in_dim
         return x
 
-    def forward(self, coords):
+    def forward(self, coords, half_precision=False,):
         '''Input should be coordinates from [-.5,.5]'''
         assert (coords[...,0:3].abs() - 0.5 < 1e-4).all()
-        return self.decoder(self.positional_encoding_geom(coords))
+        return self.decoder(self.positional_encoding_geom(coords), half_precision=half_precision)
 
     def eval_volume(self, coords, D, extent, norm, zval=None):
         '''
@@ -207,7 +207,7 @@ class FTPositionalDecoder(nn.Module):
     
     def positional_encoding_geom(self, coords):
         '''Expand coordinates in the Fourier basis with geometrically spaced wavelengths from 2/D to 2pi'''
-        freqs = torch.arange(self.enc_dim, dtype=torch.float)
+        freqs = torch.arange(self.enc_dim, dtype=coords.dtype)
         if self.enc_type == 'geom_ft':
             freqs = self.DD*np.pi*(2./self.DD)**(freqs/(self.enc_dim-1)) # option 1: 2/D to 1 
         elif self.enc_type == 'geom_full':
@@ -247,7 +247,7 @@ class FTPositionalDecoder(nn.Module):
             assert x.shape[-1] == self.in_dim
         return x
 
-    def forward(self, lattice):
+    def forward(self, lattice, half_precision=False):
         '''
         Call forward on central slices only
             i.e. the middle pixel should be (0,0,0)
@@ -259,20 +259,20 @@ class FTPositionalDecoder(nn.Module):
         c = lattice.shape[-2]//2 # top half
         cc = c + 1 if lattice.shape[-2] % 2 == 1 else c # include the origin
         assert abs(lattice[...,0:3].mean()) < 1e-4, '{} != 0.0'.format(lattice[...,0:3].mean())
-        image = torch.empty(lattice.shape[:-1]) 
-        top_half = self.decode(lattice[...,0:cc,:])
+        image = torch.empty(lattice.shape[:-1])
+        top_half = self.decode(lattice[...,0:cc,:], half_precision=half_precision)
         image[..., 0:cc] = top_half[...,0] - top_half[...,1]
         # the bottom half of the image is the complex conjugate of the top half
         image[...,cc:] = (top_half[...,0] + top_half[...,1])[...,np.arange(c-1,-1,-1)]
         return image
 
-    def decode(self, lattice):
+    def decode(self, lattice, half_precision=False):
         '''Return FT transform'''
         assert (lattice[...,0:3].abs() - 0.5 < 1e-4).all()
         # convention: only evalute the -z points
         w = lattice[...,2] > 0.0
         lattice[...,0:3][w] = -lattice[...,0:3][w] # negate lattice coordinates where z > 0
-        result = self.decoder(self.positional_encoding_geom(lattice))
+        result = self.decoder(self.positional_encoding_geom(lattice), half_precision=half_precision)
         result[...,1][w] *= -1 # replace with complex conjugate to get correct values for original lattice positions
         return result
 
@@ -598,21 +598,46 @@ class TiltEncoder(nn.Module):
 class ResidLinearMLP(nn.Module):
     def __init__(self, in_dim, nlayers, hidden_dim, out_dim, activation):
         super(ResidLinearMLP, self).__init__()
-        layers = [ResidLinear(in_dim, hidden_dim) if in_dim == hidden_dim else nn.Linear(in_dim, hidden_dim), activation()]
+        layers = [ResidLinear(in_dim, hidden_dim) if in_dim == hidden_dim else MyLinear(in_dim, hidden_dim), activation()]
         for n in range(nlayers):
             layers.append(ResidLinear(hidden_dim, hidden_dim))
             layers.append(activation())
-        layers.append(ResidLinear(hidden_dim, out_dim) if out_dim == hidden_dim else nn.Linear(hidden_dim, out_dim))
+        layers.append(ResidLinear(hidden_dim, out_dim) if out_dim == hidden_dim else MyLinear(hidden_dim, out_dim))
         self.main = nn.Sequential(*layers)
 
-    def forward(self, x):
-        return self.main(x)
+    def forward(self, x, half_precision=False):
+        flat = x.view(-1, x.shape[-1])
+        if half_precision:
+            if flat.shape[0] % 8 != 0:
+                print(f"Inefficient shape: {x.shape}")
+            flat = flat.half()
+        ret_flat = self.main(flat)
+        ret = ret_flat.view(*x.shape[:-1], ret_flat.shape[-1])
+        return ret
 
+
+def half_linear(input, weight, bias):
+    # print('half', input.shape, weight.shape)
+    return F.linear(input, weight.half(), bias.half())
+
+def single_linear(input, weight, bias):
+    # print('single', input.shape, weight.shape)
+    # assert input.shape[0] < 10000
+
+    return F.linear(input, weight, bias)
+
+class MyLinear(nn.Linear):
+    def forward(self, input):
+        if input.dtype == torch.half:
+            return half_linear(input, self.weight, self.bias)  # F.linear(input, self.weight.half(), self.bias.half())
+        else:
+            return single_linear(input, self.weight, self.bias)  # F.linear(input, self.weight, self.bias)
+    
 class ResidLinear(nn.Module):
     def __init__(self, nin, nout):
         super(ResidLinear, self).__init__()
-        self.linear = nn.Linear(nin, nout)
-        #self.linear = nn.utils.weight_norm(nn.Linear(nin, nout))
+        self.linear = MyLinear(nin, nout)
+        #self.linear = nn.utils.weight_norm(MyLinear(nin, nout))
 
     def forward(self, x):
         z = self.linear(x) + x
@@ -621,11 +646,11 @@ class ResidLinear(nn.Module):
 class MLP(nn.Module):
     def __init__(self, in_dim, nlayers, hidden_dim, out_dim, activation):
         super(MLP, self).__init__()
-        layers = [nn.Linear(in_dim, hidden_dim), activation()]
+        layers = [MyLinear(in_dim, hidden_dim), activation()]
         for n in range(nlayers):
-            layers.append(nn.Linear(hidden_dim, hidden_dim))
+            layers.append(MyLinear(hidden_dim, hidden_dim))
             layers.append(activation())
-        layers.append(nn.Linear(hidden_dim, out_dim))
+        layers.append(MyLinear(hidden_dim, out_dim))
         self.main = nn.Sequential(*layers)
 
     def forward(self, x):
@@ -668,7 +693,7 @@ class SO3reparameterize(nn.Module):
         if nlayers is not None:
             self.main = ResidLinearMLP(input_dims, nlayers, hidden_dim, 9, nn.ReLU)
         else:
-            self.main = nn.Linear(input_dims, 9)
+            self.main = MyLinear(input_dims, 9)
 
         # start with big outputs
         #self.s2s2map.weight.data.uniform_(-5,5)

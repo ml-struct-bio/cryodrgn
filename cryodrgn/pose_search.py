@@ -46,7 +46,7 @@ FAST_INPLANE = True
 
 class PoseSearch:
     '''Pose search'''
-    def __init__(self, model, lattice, Lmin, Lmax, tilt=None, base_healpy=1, t_extent=5, t_ngrid=7, niter=5, nkeptposes=24, loss_fn="msf"):
+    def __init__(self, model, lattice, Lmin, Lmax, tilt=None, base_healpy=1, t_extent=5, t_ngrid=7, niter=5, nkeptposes=24, loss_fn="msf", half_precision=False):
 
         self.model = model
         self.lattice = lattice
@@ -70,6 +70,8 @@ class PoseSearch:
         self.loss_fn = loss_fn
         self._so3_neighbor_cache = {}  # for memoization
         self._shift_neighbor_cache = {}  # for memoization
+        self.half_precision = half_precision
+
 
     def eval_grid(self, *, images, rot, z, NQ, L, images_tilt=None, angles_inplane=None):
         '''
@@ -99,17 +101,17 @@ class PoseSearch:
             x = x.to(device)
             # log(f"Evaluating model on {x.shape} = {x.nelement() // 3} points")
             with torch.no_grad():
-                y_hat = self.model(x)
+                y_hat = self.model(x, half_precision=self.half_precision)
+                y_hat = y_hat.float()
             y_hat = y_hat.view(-1, 1, NQ, YX)  #1x1xNQxYX for base grid, Bx1x8xYX for incremental grid
             if angles_inplane is not None:
                 y_hat = self.rotate_images(y_hat, adj_angles_inplane, L)
             images = images.unsqueeze(2)  # BxTx1xYX
             if self.loss_fn == "mse":
                 err = (images - y_hat).pow(2).sum(-1)  # BxTxQ
-            elif self.loss_fn == "msf":    
+            elif self.loss_fn == "msf":
                 B, T, _, Npix = images.shape
                 Npix = images.shape[-1]
-                # print('im', images.shape, 'B', B, 'Npix', Npix, 'y_hat', y_hat.shape, 'T', T)
                 dots = (images.view(B, -1, Npix) @ y_hat.view(y_hat.shape[0], -1, Npix).transpose(-1, -2)).view(B, T, -1)
                 norm = (y_hat * y_hat).sum(-1) / 2
 
@@ -284,7 +286,7 @@ class PoseSearch:
             keepB, keepT, keepQ = self.keep_matrix(loss, B, self.nkeptposes).cpu() # B x -1
         else:
             # careful, overwrite the old batch index which is now invalid
-            keepB = torch.arange(B, device=init_poses.device).unsqueeze(1).repeat(1, self.nkeptposes).view(-1) 
+            keepB = torch.arange(B, device=init_poses.device).unsqueeze(1).repeat(1, self.nkeptposes).view(-1)
             keepT, keepQ = init_poses.reshape(-1, 2).t()
 
         new_init_poses = torch.cat((keepT, keepQ), dim=-1).view(2, B, self.nkeptposes).permute(1, 2, 0)

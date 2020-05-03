@@ -71,6 +71,7 @@ def parse_args():
     group.add_argument('--probabilistic', action='store_true', help='Use probabilistic bound')
     group.add_argument('--nkeptposes', type=int, default=24, help="Number of poses to keep at each refinement interation during branch and bound")
     group.add_argument('--base-healpy', type=int, default=1, help="Base healpy grid for pose search. Higher means exponentially higher resolution.")
+    group.add_argument('--half-precision', type=int, default=0, help="If 1, use half-precision for pose search")
 
     group = parser.add_argument_group('Network Architecture')
     group.add_argument('--layers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
@@ -220,7 +221,8 @@ def main(args):
     else:
         ps = PoseSearch(model, lattice, args.l_start, args.l_end, tilt,
                         t_extent=args.t_extent, t_ngrid=args.t_ngrid, niter=args.niter,
-                        nkeptposes=args.nkeptposes, base_healpy=args.base_healpy)
+                        nkeptposes=args.nkeptposes, base_healpy=args.base_healpy,
+                        half_precision=half_precision)
     log(model)
     log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)

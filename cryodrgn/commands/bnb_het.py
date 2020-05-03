@@ -25,6 +25,11 @@ from cryodrgn.models import HetOnlyVAE
 from cryodrgn.beta_schedule import get_beta_schedule, LinearSchedule
 from cryodrgn.losses import EquivarianceLoss
 
+try:
+    import apex.amp as amp
+except ImportError:
+    pass
+
 log = utils.log
 vlog = utils.vlog
 
@@ -71,7 +76,8 @@ def parse_args():
     group.add_argument('--ps-freq', type=int, default=1, help='Frequency of pose inference (default: every %(default)s epochs)')
     group.add_argument('--nkeptposes', type=int, default=24, help="Number of poses to keep at each refinement interation during branch and bound")
     group.add_argument('--base-healpy', type=int, default=1, help="Base healpy grid for pose search. Higher means exponentially higher resolution.")
-    
+    group.add_argument('--half-precision', type=int, default=0, help="If 1, use half-precision for pose search")
+
     group = parser.add_argument_group('Encoder Network')
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--qdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
@@ -109,7 +115,11 @@ def pretrain(model, lattice, optim, minibatch, tilt):
     else:
         gen_loss = F.mse_loss(gen_slice(rot), y)
     
-    gen_loss.backward()
+    if args.half_precision:
+        with amp.scale_loss(gen_loss, optim) as scaled_loss:
+            scaled_loss.backward()
+    else:
+        gen_loss.backward()
     optim.step()
     return gen_loss.item()
 
@@ -175,7 +185,12 @@ def train(model, lattice, ps, optim, L, minibatch, beta, beta_control=None, equi
     if equivariance is not None:
         loss += lamb*eq_loss
 
-    loss.backward()
+    if args.half_precision:
+        with amp.scale_loss(loss, optim) as scaled_loss:
+            scaled_loss.backward()
+    else:
+        loss.backward()
+
     optim.step()
     save_pose = [rot.detach().cpu().numpy()]
     save_pose.append(trans.detach().cpu().numpy())
@@ -312,13 +327,15 @@ def main(args):
     log(model)
     log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
 
+    
     # save configuration
     out_config = '{}/config.pkl'.format(args.outdir)
     save_config(args, data, lattice, model, out_config)
 
     ps = PoseSearch(model, lattice, args.l_start, args.l_end, tilt,
                     t_extent=args.t_extent, t_ngrid=args.t_ngrid, niter=args.niter,
-                    nkeptposes=args.nkeptposes, base_healpy=args.base_healpy)
+                    nkeptposes=args.nkeptposes, base_healpy=args.base_healpy,
+                    half_precision=args.half_precision)
 
     if args.equivariance:
         assert args.equivariance > 0, 'Regularization weight must be positive'
@@ -339,6 +356,9 @@ def main(args):
             sorted_poses = utils.load_pkl(args.load_poses)
     else:
         start_epoch = 0
+
+    if args.half_precision:
+        model, optim = amp.initialize(model, optim, opt_level='O1')
 
     data_iterator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
 

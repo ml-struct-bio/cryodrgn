@@ -91,7 +91,6 @@ print("=" * 80)
 
 tic = time.perf_counter()
 
-
 for bhp in (1, 2, 3):
     for nkp in (1, 4, 12, 24):
         eval_pose_search(data_noisy, model_noisy,

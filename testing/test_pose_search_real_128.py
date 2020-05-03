@@ -115,6 +115,16 @@ eval_pose_search(
     niter=7,
 )
 
+eval_pose_search(
+    data,
+    model,
+    label=f"L= [12, 48], 7 iters, half",
+    Lmin=12,
+    Lmax=48,
+    niter=7,
+    half_precision=True,
+)
+
 for t_ngrid in (3, 14):
     eval_pose_search(
         data,

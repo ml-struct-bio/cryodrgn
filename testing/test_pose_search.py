@@ -3,6 +3,7 @@ from cryodrgn import mrc, dataset, models, lattice, fft, utils, pose_search
 import matplotlib.pyplot as plt
 import seaborn as sns
 import math
+import time
 import torch
 import numpy as np
 from scipy.spatial.transform import Rotation as RR
@@ -13,13 +14,14 @@ print('Use cuda {}'.format(use_cuda))
 if use_cuda:
     torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
-data = dataset.MRCData('datasets/projections.1k.mrcs', window=False, keepreal=True)
-data_noisy = dataset.MRCData('datasets/noise_0.1/projections.1k.mrcs', window=False, keepreal=True)
+basedir = "datasets/ribo_syn_64"
+data = dataset.MRCData(f'{basedir}/projections.1k.mrcs', window=False, keepreal=True)
+data_noisy = dataset.MRCData(f'{basedir}/noise_0.1/projections.1k.mrcs', window=False, keepreal=True)
 
 D = data.D
 lat = lattice.Lattice(D)
 
-pose = utils.load_pkl('datasets/pose.pkl')
+pose = utils.load_pkl(f'{basedir}/pose.pkl')
 pose_rot, pose_trans = pose
 pose_rot = torch.tensor(pose_rot)
 pose_trans = torch.tensor(pose_trans.astype(np.float32) * 64)
@@ -33,8 +35,8 @@ def load_model(path):
         model.cuda()
     return model
 
-model = load_model('datasets/trained_model/weights.pkl')
-model_noisy = load_model('datasets/trained_model_noise/weights.pkl')
+model = load_model(f'{basedir}/trained_model/weights.pkl')
+model_noisy = load_model(f'{basedir}/trained_model_noise/weights.pkl')
 print(f"Device: {next(model.parameters()).device}")
 
 def do_pose_search(images, model, nkeptposes=24, Lmin=12, Lmax=24, niter=5, **kwargs):
@@ -76,7 +78,10 @@ print("=============================================")
 #                      label=f"noisy nkp= {nkp}",
 #                      nkeptposes=nkp)
 
-for bhp in (3, 1, 2):
+
+tic = time.perf_counter()
+
+for bhp in (1, 2, 3):
     for nkp in (1, 4, 12, 24):
         eval_pose_search(data_noisy, model_noisy,
                         B=8,
@@ -84,6 +89,7 @@ for bhp in (3, 1, 2):
                         base_healpy=bhp,
                         nkeptposes=nkp)
 
+print(f"Finished in {time.perf_counter() - tic} s ")
 
 # import cProfile
 # pr = cProfile.Profile()

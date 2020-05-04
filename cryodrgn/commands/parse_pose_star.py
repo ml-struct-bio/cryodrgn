@@ -12,6 +12,8 @@ log = utils.log
 def add_args(parser):
     parser.add_argument('input', help='RELION .star file')
     parser.add_argument('-D', type=int, required=True, help='Box size of reconstruction (pixels)')
+    parser.add_argument('--relion31', action='store_true', help='Flag for relion3.1 star format')
+    parser.add_argument('--Apix', type=float, help='Pixel size (A); Required if translations are specified in Angstroms')
     parser.add_argument('-o', metavar='PKL', type=os.path.abspath, required=True, help='Output pose.pkl')
     return parser
 
@@ -19,7 +21,7 @@ def main(args):
     assert args.input.endswith('.star'), "Input file must be .star file"
     assert args.o.endswith('.pkl'), "Output format must be .pkl"
 
-    s = starfile.Starfile.load(args.input)
+    s = starfile.Starfile.load(args.input, relion31=args.relion31)
     N = len(s.df)
     log('{} particles'.format(N))
     
@@ -37,9 +39,16 @@ def main(args):
 
     # parse translations
     trans = np.empty((N,2))
-    trans[:,0] = s.df['_rlnOriginX']
-    trans[:,1] = s.df['_rlnOriginY']
-    log('Translations:')
+    if '_rlnOriginX' in s.headers and '_rlnOriginY' in s.headers:
+        trans[:,0] = s.df['_rlnOriginX']
+        trans[:,1] = s.df['_rlnOriginY']
+    elif '_rlnOriginXAngst' in s.headers and '_rlnOriginYAngst' in s.headers:
+        assert args.Apix is not None, "Must provide --Apix argument to convert _rlnOriginXAngst and _rlnOriginYAngst translation units"
+        trans[:,0] = s.df['_rlnOriginXAngst']
+        trans[:,1] = s.df['_rlnOriginYAngst']
+        trans /= args.Apix
+
+    log('Translations (pixels):')
     log(trans[0])
     
     # convert translations from pixels to fraction 

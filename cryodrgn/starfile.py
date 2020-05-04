@@ -17,7 +17,7 @@ class Starfile():
         self.df = df
 
     @classmethod
-    def load(self, starfile):
+    def load(self, starfile, relion31=True):
         f = open(starfile,'r')
         # get to data block
         while 1:
@@ -25,6 +25,14 @@ class Starfile():
                 if line.startswith('data_'):
                     break
             break
+        if relion31: # get to data_particles block
+            # assumes there is a data_optics block followed by a data_particles block
+            # only read in data_particles block... not sure if there is a spec for this file format
+            while 1:
+                for line in f:
+                    if line.startswith('data_'):
+                        break
+                break
         # get to header loop
         while 1:
             for line in f:
@@ -49,6 +57,8 @@ class Starfile():
         # put data into an array and instantiate as dataframe
         words = [l.strip().split() for l in body]
         words = np.array(words)
+        assert words.ndim == 2, "Uneven # columns detected in parsing. Is this a RELION 3.1 starfile?" 
+        assert words.shape[1] == len(headers), f"Error in parsing. Number of columns {words.shape[1]} != number of headers {len(headers)}" 
         data = {h:words[:,i] for i,h in enumerate(headers)}
         df = pd.DataFrame(data=data)
         return self(headers, df)

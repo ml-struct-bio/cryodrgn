@@ -63,7 +63,7 @@ class PoseTracker(nn.Module):
         if ind is not None: 
             if len(rots) > Nimg: # HACK
                 rots = rots[ind]
-        assert rots.shape == (Nimg,3,3)
+        assert rots.shape == (Nimg,3,3), f"Input rotations have shape {rots.shape} but expected ({Nimg},3,3)"
 
         # translations if they exist
         if len(poses) == 2:
@@ -71,7 +71,7 @@ class PoseTracker(nn.Module):
             if ind is not None: 
                 if len(trans) > Nimg: # HACK
                     trans = trans[ind]
-            assert trans.shape == (Nimg,2)
+            assert trans.shape == (Nimg,2), f"Input translations have shape {trans.shape} but expected ({Nimg},2)"
             assert np.all(trans <= 1), "ERROR: Old pose format detected. Translations must be in units of fraction of box."
             trans *= D # convert from fraction to pixels
         else: 

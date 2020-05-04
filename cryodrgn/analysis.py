@@ -7,7 +7,6 @@ import pandas as pd
 import subprocess
 
 from scipy.spatial.distance import cdist, pdist
-import umap
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
@@ -64,6 +63,7 @@ def run_tsne(z, n_components=2, perplexity=1000):
     return z_embedded
 
 def run_umap(z):
+    import umap # CAN GET STUCK IN INFINITE IMPORT LOOP
     reducer = umap.UMAP()
     z_embedded = reducer.fit_transform(z)
     return z_embedded

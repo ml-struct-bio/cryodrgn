@@ -267,7 +267,6 @@ def main(args):
             else:
                 p = None
             loss_item, pose, base_pose = train(model, lattice, ps, optim, batch, tilt, args.no_trans, base_poses=p)
-
             poses.append((ind_np, pose))
             base_poses.append((ind_np, base_pose))
             # logging

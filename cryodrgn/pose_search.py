@@ -293,7 +293,7 @@ class PoseSearch:
         quat = self.so3_base_quat[keepQ]
         q_ind = so3_grid.get_base_ind(keepQ, self.base_healpy)  # Np x 2
         trans = self.base_shifts[keepT]
-        shifts = self.base_shifts
+        shifts = self.base_shifts.clone()
         for iter_ in range(self.base_healpy, niter + 1):
             keepB8 = keepB.unsqueeze(1).repeat(1, 8).view(-1)  # repeat each element 8 times
             zb = z[keepB8] if z is not None else None
@@ -330,7 +330,7 @@ class PoseSearch:
             best_trans = self.base_shifts[bestT].to(device)
         else:
             best_rot = rot.view(-1, 8, 3, 3)[bestBN, bestQ]
-            best_trans = trans
+            best_trans = trans.to(device)
 
         return best_rot, best_trans, new_init_poses
 

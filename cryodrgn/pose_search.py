@@ -109,7 +109,7 @@ class PoseSearch:
             elif self.loss_fn == "msf":    
                 B, T, _, Npix = images.shape
                 Npix = images.shape[-1]
-
+                # print('im', images.shape, 'B', B, 'Npix', Npix, 'y_hat', y_hat.shape, 'T', T)
                 dots = (images.view(B, -1, Npix) @ y_hat.view(y_hat.shape[0], -1, Npix).transpose(-1, -2)).view(B, T, -1)
                 norm = (y_hat * y_hat).sum(-1) / 2
 
@@ -194,20 +194,18 @@ class PoseSearch:
         # FIXME: will this cache get too big? maybe don't do it when res is too
         return self._shift_neighbor_cache[key]
 
-    def subdivide(self, quat, q_ind, t_ind, cur_res):
+    def subdivide(self, quat, q_ind, cur_res):
         '''
         Subdivides poses for next resolution level
 
         Inputs:
             quat (N x 4 tensor): quaternions
             q_ind (N x 2 np.array): index of current S2xS1 grid
-            t_ind (N x 2 np.array): index of current trans grid
             cur_res (int): Current resolution level
 
         Returns:
             quat  (N x 8 x 4) np.array
             q_ind (N x 8 x 2) np.array
-            t_ind (N x 4 x 2) np.array
             rot   (N*8 x 3 x 3) tensor
             trans (N*4 x 2) tensor
         '''
@@ -215,7 +213,6 @@ class PoseSearch:
 
         assert len(quat.shape) == 2 and quat.shape == (N, 4), quat.shape
         assert len(q_ind.shape) == 2 and q_ind.shape == (N, 2), q_ind.shape
-        assert len(t_ind.shape) == 2 and t_ind.shape == (N, 2), t_ind.shape
 
         # get neighboring SO3 elements at next resolution level -- todo: make this an array operation
         neighbors = [self.get_neighbor_so3(quat[i], q_ind[i][0], q_ind[i][1], cur_res) for i in range(len(quat))]
@@ -223,36 +220,33 @@ class PoseSearch:
         q_ind = np.array([x[1] for x in neighbors]) # Bx8x2
         rot = lie_tools.quaternions_to_SO3(torch.from_numpy(quat).view(-1,4))
 
-        # get neighboring translations at next resolution level -- todo: make this an array operation
-        neighbors = [self.get_neighbor_shift(xx, yy, cur_res) for xx, yy in t_ind]
-        trans = torch.tensor(np.array([x[0] for x in neighbors]).reshape(-1,2))
-        t_ind = np.array([x[1] for x in neighbors]) # Bx4x2
-
         assert len(quat.shape) == 3 and quat.shape == (N, 8, 4), quat.shape
         assert len(q_ind.shape) == 3 and q_ind.shape == (N, 8, 2), q_ind.shape
-        assert len(t_ind.shape) == 3 and t_ind.shape == (N, 4, 2), t_ind.shape
         assert len(rot.shape) == 3 and rot.shape == (N * 8, 3, 3), rot.shape
-        assert len(trans.shape) == 2 and trans.shape == (N * 4, 2)
 
-        return quat, q_ind, t_ind, rot, trans
+        return quat, q_ind, rot
 
     def keep_matrix(self, loss, B, max_poses):
         '''
+        Inputs:
+            loss (B, T, Q): tensor of losses for each translation and rotation.
+
         Returns:
-            keep (loss.shape): bool tensor of poses to keep
+            keep (3, B * max_poses): bool tensor of rotations to keep, along with the best translation for each
         '''
         shape = loss.shape
-        flat_loss = loss.view(B, -1)
+        assert len(shape) == 3
+        best_loss, best_trans_idx = loss.min(1)
+        flat_loss = best_loss.view(B, -1)
         flat_idx = flat_loss.topk(max_poses, dim=-1, largest=False, sorted=True)[1]
         # add the batch index in, to make it completely flat
         flat_idx += torch.arange(B, device=loss.device).unsqueeze(1) * flat_loss.shape[1]
         flat_idx = flat_idx.view(-1)
 
         keep_idx = torch.empty(len(shape), B * max_poses, dtype=torch.long, device=loss.device)
-        for d in range(len(shape) - 1, -1, -1):
-            keep_idx[d] = flat_idx % shape[d]
-            flat_idx = flat_idx // shape[d]
-        assert (flat_idx == 0).all()
+        keep_idx[0] = flat_idx // shape[2]
+        keep_idx[2] = flat_idx % shape[2]
+        keep_idx[1] = best_trans_idx[keep_idx[0], keep_idx[2]]
         return keep_idx
 
     def getL(self, iter_, niter):
@@ -299,38 +293,35 @@ class PoseSearch:
         quat = self.so3_base_quat[keepQ]
         q_ind = so3_grid.get_base_ind(keepQ, self.base_healpy)  # Np x 2
         trans = self.base_shifts[keepT]
-        t_ind = shift_grid.get_base_ind(keepT, self.t_ngrid * 2**(self.base_healpy - 1)) #  Np x 2
-
+        shifts = self.base_shifts
         for iter_ in range(self.base_healpy, niter + 1):
-            # log(f"iter {iter_}")
-            keepB4 = keepB.unsqueeze(1).repeat(1, 4).view(-1)  # repeat each element 4 times
             keepB8 = keepB.unsqueeze(1).repeat(1, 8).view(-1)  # repeat each element 8 times
             zb = z[keepB8] if z is not None else None
 
-            # L = self.Lmin + int((iter_ + 1) / niter * (self.Lmax - self.Lmin))
             L = self.getL(iter_, niter)
-            quat, q_ind, t_ind, rot, trans = self.subdivide(quat, q_ind, t_ind, iter_)
-
+            quat, q_ind, rot = self.subdivide(quat, q_ind, iter_)
+            shifts /= 2
+            trans = (trans.unsqueeze(1) + shifts.unsqueeze(0))  # FIXME: scale
             rot = rot.to(device)
             loss = self.eval_grid(
-                images=self.translate_images(images[keepB4], trans.unsqueeze(1), L).view(len(keepB),4,-1),  # (B*24, 4, Npoints)
+                images=self.translate_images(images[keepB], trans, L),  # (B*24, 4, Npoints)
                 rot=rot,
                 z=zb,
                 NQ=8,
                 L=L,
-                images_tilt=self.translate_images(images_tilt[keepB4],trans.unsqueeze(1), L).view(len(keepB),4,-1) if do_tilt else None # (B*24, 4, Npoints)
-            ) # sum(NP),4x8
+                images_tilt=self.translate_images(images_tilt[keepB],trans, L) if do_tilt else None # (B*24, 4, Npoints)
+            ) # sum(NP), 8
 
             # nkeptposes = 1
             # nkeptposes = max(1, math.ceil(self.nkeptposes / 2 ** (iter_-1)))
-            nkeptposes = self.nkeptposes
+            nkeptposes = self.nkeptposes if iter_ < niter else 1
 
             keepBN, keepT, keepQ = self.keep_matrix(loss, B, nkeptposes).cpu()  # B x (self.Nkeptposes*32)
             keepB = keepBN * B // loss.shape[0]  # FIXME: expain
             assert len(keepB) == B * nkeptposes, f"{len(keepB)} != {B} x {nkeptposes} at iter {iter_}"
             quat = quat[keepBN, keepQ]
             q_ind = q_ind[keepBN, keepQ]
-            t_ind = t_ind[keepBN, keepT]
+            trans = trans[keepBN, keepT]
 
         bestBN, bestT, bestQ = self.keep_matrix(loss, B, 1).cpu()
         assert len(bestBN) == B
@@ -339,7 +330,7 @@ class PoseSearch:
             best_trans = self.base_shifts[bestT].to(device)
         else:
             best_rot = rot.view(-1, 8, 3, 3)[bestBN, bestQ]
-            best_trans = trans.view(-1, 4, 2)[bestBN, bestT]
+            best_trans = trans
 
         return best_rot, best_trans, new_init_poses
 

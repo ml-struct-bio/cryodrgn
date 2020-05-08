@@ -237,7 +237,6 @@ def get_latest(args):
     return args
 
 def main(args):
-    args = get_latest(args)
     t1 = dt.now()
     if args.outdir is not None and not os.path.exists(args.outdir):
         os.makedirs(args.outdir)

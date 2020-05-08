@@ -33,7 +33,7 @@ def add_args(parser):
     parser.add_argument('--zdim', type=int, required=True, help='Dimension of latent variable')
     parser.add_argument('--poses', type=os.path.abspath, required=True, help='Image poses (.pkl)')
     parser.add_argument('--ctf', metavar='pkl', type=os.path.abspath, help='CTF parameters (.pkl)')
-    parser.add_argument('--load', type=os.path.abspath, metavar='WEIGHTS.PKL', help='Initialize training from a checkpoint')
+    parser.add_argument('--load', metavar='WEIGHTS.PKL', help='Initialize training from a checkpoint')
     parser.add_argument('--checkpoint', type=int, default=1, help='Checkpointing interval in N_EPOCHS (default: %(default)s)')
     parser.add_argument('--log-interval', type=int, default=1000, help='Logging interval in N_IMGS (default: %(default)s)')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
@@ -221,13 +221,31 @@ def save_config(args, dataset, lattice, model, out_config):
     with open(out_config,'wb') as f:
         pickle.dump(config, f)
 
+def get_latest(args):
+    # Assumes checkpoint==1, todo: make this more robust
+    log('Detecting latest checkpoint...') 
+    for i in range(args.num_epochs):
+        weights = f'{args.outdir}/weights.{i}.pkl'
+        if not os.path.exists(weights):
+            break
+    args.load =  f'{args.outdir}/weights.{i-1}.pkl'
+    log(f'Loading {args.load}')
+    if args.do_pose_sgd:
+        args.poses = f'{args.outdir}/pose.{i-1}.pkl'
+        assert os.path.exists(args.poses)
+        log(f'Loading {args.poses}')
+    return args
+
 def main(args):
+    args = get_latest(args)
     t1 = dt.now()
     if args.outdir is not None and not os.path.exists(args.outdir):
         os.makedirs(args.outdir)
     LOG = f'{args.outdir}/run.log'
     def flog(msg): # HACK: switch to logging module
         return utils.flog(msg, LOG)
+    if args.load == 'latest':
+        args = get_latest(args)
     flog(' '.join(sys.argv))
     flog(args)
 

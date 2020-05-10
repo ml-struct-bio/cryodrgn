@@ -45,6 +45,8 @@ def interpolate(img, coords):
     return res
 
 
+FAST_INPLANE = True
+
 class PoseSearch:
     '''Pose search'''
     def __init__(self, model, lattice, Lmin, Lmax, tilt=None, base_healpy=1, t_extent=5, t_ngrid=7, nkeptposes=24, loss_fn="msf"):
@@ -52,12 +54,12 @@ class PoseSearch:
         self.model = model
         self.lattice = lattice
         self.base_healpy = base_healpy
-        self.s2_base_quat = so3_grid.s2_grid_SO3(base_healpy)
         self.so3_base_quat = so3_grid.grid_SO3(base_healpy)
-        self.s2_base_rot = lie_tools.quaternions_to_SO3(to_tensor(self.s2_base_quat))
+        self.base_quat = so3_grid.s2_grid_SO3(base_healpy) if FAST_INPLANE else self.so3_base_quat
         self.so3_base_rot = lie_tools.quaternions_to_SO3(to_tensor(self.so3_base_quat))
+        self.base_rot = lie_tools.quaternions_to_SO3(to_tensor(self.base_quat))
 
-        self.nbase = len(self.s2_base_quat)
+        self.nbase = len(self.base_quat)
         self.base_inplane = so3_grid.grid_s1(base_healpy)
         self.base_shifts = torch.tensor(shift_grid.base_shift_grid(base_healpy - 1, t_extent, t_ngrid)).float()
         self.t_extent = t_extent
@@ -267,9 +269,9 @@ class PoseSearch:
         if init_poses is None:
             # Expand the base grid B times if each image has a different z
             if z is not None:
-                base_rot = self.s2_base_rot.expand(B,*self.s2_base_rot.shape) # B x 576 x 3 x 3
+                base_rot = self.base_rot.expand(B,*self.base_rot.shape) # B x 576 x 3 x 3
             else:
-                base_rot = self.s2_base_rot # 576 x 3 x 3
+                base_rot = self.base_rot # 576 x 3 x 3
             base_rot = base_rot.to(device)
             # Compute the loss for all poses
             L = self.getL(self.base_healpy - 1, niter)
@@ -280,7 +282,7 @@ class PoseSearch:
                 NQ=self.nbase,
                 L=L,
                 images_tilt=self.translate_images(images_tilt, self.base_shifts, L) if do_tilt else None,
-                angles_inplane=self.base_inplane
+                angles_inplane=self.base_inplane if FAST_INPLANE else None
             )
             keepB, keepT, keepQ = self.keep_matrix(loss, B, self.nkeptposes).cpu() # B x -1
         else:

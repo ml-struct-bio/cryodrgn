@@ -20,16 +20,17 @@ data_noisy = dataset.MRCData(f'{basedir}/noise_0.1/projections.1k.mrcs', window=
 
 S = 456
 D = data.D
+assert D % 2 == 1
 lat = lattice.Lattice(D)
 
 pose = utils.load_pkl(f'{basedir}/pose.pkl')
 pose_rot, pose_trans = pose
 pose_rot = torch.tensor(pose_rot)
-pose_trans = torch.tensor(pose_trans.astype(np.float32) * 64)
+pose_trans = torch.tensor(pose_trans.astype(np.float32) * (D - 1))
 
 def load_model(path):
     ckpt = torch.load(path)
-    model = models.get_decoder(3, 65, 3, 256, 'fourier', 'geom_lowf')
+    model = models.get_decoder(3, D, 3, 256, 'fourier', 'geom_lowf')
     model.load_state_dict(ckpt['model_state_dict'])
     model.eval()
     if use_cuda:

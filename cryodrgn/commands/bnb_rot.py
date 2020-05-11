@@ -40,6 +40,7 @@ def parse_args():
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
     parser.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: mean, std of dataset)')
     parser.add_argument('--load', type=os.path.abspath, help='Initialize training from a checkpoint')
+    parser.add_argument('--load-poses', type=os.path.abspath, help='Initialize training from a checkpoint')
     parser.add_argument('--checkpoint', type=int, default=1, help='Checkpointing interval in N_EPOCHS (default: %(default)s)')
     parser.add_argument('--log-interval', type=int, default=1000, help='Logging interval in N_IMGS (default: %(default)s)')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
@@ -232,6 +233,9 @@ def main(args):
         start_epoch = checkpoint['epoch']+1
         assert args.num_epochs > start_epoch
         model.train()
+        if args.load_poses:
+            sorted_poses = utils.load_pkl(args.load_poses)
+            sorted_base_poses = None # TODO: need to save base_poses if we are going to use it
     else:
         start_epoch = 0
 
@@ -272,7 +276,8 @@ def main(args):
             # train the model
             if epoch % args.ps_freq != 0:
                 p = [torch.tensor(x[ind]) for x in sorted_poses]
-                bp = sorted_base_poses[ind_np]
+                #bp = sorted_base_poses[ind_np]
+                bp = None
             else:
                 p, bp = None, None
             loss_item, pose, base_pose = train(model, lattice, ps, optim, batch, tilt, args.no_trans, poses=p, base_pose=bp)
@@ -286,7 +291,7 @@ def main(args):
 
         # sort pose
         sorted_poses = sort_poses(poses) if poses else None
-        sorted_base_poses = sort_base_poses(base_poses)
+        #sorted_base_poses = sort_base_poses(base_poses)
 
         if args.checkpoint and epoch % args.checkpoint == 0:
             out_mrc = '{}/reconstruct.{}.mrc'.format(args.outdir,epoch)

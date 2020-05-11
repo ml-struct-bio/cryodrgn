@@ -63,7 +63,7 @@ def parse_args():
     group.add_argument('--lr', type=float, default=1e-4, help='Learning rate in Adam optimizer (default: %(default)s)')
     group.add_argument('--l-start', type=int,default=12, help='Starting L radius (default: %(default)s)')
     group.add_argument('--l-end', type=int, default=20, help='End L radius (default: %(default)s)')
-    group.add_argument('--l-end-it',type=int,default=100000, help='default: %(default)s')
+    group.add_argument('--l-ramp-epochs',type=int,default=0, help='default: %(default)s')
     group.add_argument('--probabilistic', action='store_true', help='Use probabilistic bound')
     group.add_argument('--nkeptposes', type=int, default=24, help="Number of poses to keep at each refinement interation during branch and bound")
     group.add_argument('--base-healpy', type=int, default=1, help="Base healpy grid for pose search. Higher means exponentially higher resolution.")
@@ -253,6 +253,10 @@ def main(args):
         batch_it = 0
         loss_accum = 0
         poses, base_poses = [], []
+       
+        if args.l_ramp_epochs > 0:
+            ps.Lmax = min(args.l_start + int(epoch / l_ramp_epochs * (args.l_end - args.l_start)), args.l_end)
+
         if epoch % args.ps_freq != 0:
             log('Using previous iteration poses')
         for batch in data_iterator:

@@ -258,7 +258,7 @@ def main(args):
         poses, base_poses = [], []
        
         if args.l_ramp_epochs > 0:
-            ps.Lmax = min(args.l_start + int(epoch / l_ramp_epochs * (args.l_end - args.l_start)), args.l_end)
+            ps.Lmax = min(args.l_start + int(epoch / args.l_ramp_epochs * (args.l_end - args.l_start)), args.l_end)
 
         if epoch % args.ps_freq != 0:
             log('Using previous iteration poses')

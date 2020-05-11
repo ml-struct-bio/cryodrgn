@@ -137,7 +137,7 @@ def sort_base_poses(pose):
     return data[np.argsort(ind)]
 
 
-def train(model, lattice, ps, optim, batch, tilt_rot=None, no_trans=False, poses=None, base_poses=None):
+def train(model, lattice, ps, optim, batch, tilt_rot=None, no_trans=False, poses=None, base_pose=None):
     y, yt = batch
     B = y.size(0)
 
@@ -148,7 +148,8 @@ def train(model, lattice, ps, optim, batch, tilt_rot=None, no_trans=False, poses
     else: # BNB
         model.eval()
         with torch.no_grad():
-            rot, trans, base_pose = ps.opt_theta_trans(y, images_tilt=yt, init_poses=base_poses)
+            rot, trans, base_pose = ps.opt_theta_trans(y, images_tilt=yt, init_poses=base_pose)
+            base_pose = base_pose.detach().cpu().numpy()
 
     # reconstruct circle of pixels instead of whole image
     mask = lattice.get_circular_mask(lattice.D//2)
@@ -178,7 +179,7 @@ def train(model, lattice, ps, optim, batch, tilt_rot=None, no_trans=False, poses
     save_pose = [rot.detach().cpu().numpy()]
     if not no_trans:
         save_pose.append(trans.detach().cpu().numpy())
-    return loss.item(), save_pose, base_pose.detach().cpu().numpy()
+    return loss.item(), save_pose, base_pose
 
 
 def main(args):
@@ -274,7 +275,7 @@ def main(args):
                 bp = sorted_base_poses[ind_np]
             else:
                 p, bp = None, None
-            loss_item, pose, base_pose = train(model, lattice, ps, optim, batch, tilt, args.no_trans, poses=p, base_poses=bp)
+            loss_item, pose, base_pose = train(model, lattice, ps, optim, batch, tilt, args.no_trans, poses=p, base_pose=bp)
             poses.append((ind.cpu().numpy(),pose))
             base_poses.append((ind_np, base_pose))
             # logging

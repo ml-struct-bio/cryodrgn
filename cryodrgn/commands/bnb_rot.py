@@ -263,11 +263,12 @@ def main(args):
 
             # train the model
             if epoch % args.ps_freq != 0:
-                p = sorted_base_poses[ind_np]#[x[ind_np] for x in sorted_base_poses]
+                p = [torch.tensor(x[ind]) for x in sorted_poses]
+                bp = sorted_base_poses[ind_np]
             else:
-                p = None
-            loss_item, pose, base_pose = train(model, lattice, ps, optim, batch, tilt, args.no_trans, base_poses=p)
-            poses.append((ind_np, pose))
+                p, bp = None, None
+            loss_item, pose, base_pose = train(model, lattice, ps, optim, batch, tilt, args.no_trans, poses=p, base_poses=bp)
+            poses.append((ind.cpu().numpy(),pose))
             base_poses.append((ind_np, base_pose))
             # logging
             loss_accum += loss_item*len(batch[0])

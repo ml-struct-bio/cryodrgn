@@ -61,8 +61,11 @@ def parse_args():
     group.add_argument('-b','--batch-size', type=int, default=10, help='Minibatch size (default: %(default)s)')
     group.add_argument('--wd', type=float, default=0, help='Weight decay in Adam optimizer (default: %(default)s)')
     group.add_argument('--lr', type=float, default=1e-4, help='Learning rate in Adam optimizer (default: %(default)s)')
+
+    group = parser.add_argument_group('Pose search parameters')
     group.add_argument('--l-start', type=int,default=12, help='Starting L radius (default: %(default)s)')
     group.add_argument('--l-end', type=int, default=20, help='End L radius (default: %(default)s)')
+    group.add_argument('--niter', type=int, default=5, help='Number of iterations of grid subdivision')
     group.add_argument('--l-ramp-epochs',type=int,default=0, help='default: %(default)s')
     group.add_argument('--probabilistic', action='store_true', help='Use probabilistic bound')
     group.add_argument('--nkeptposes', type=int, default=24, help="Number of poses to keep at each refinement interation during branch and bound")
@@ -213,7 +216,7 @@ def main(args):
         raise NotImplementedError()
     else:
         ps = PoseSearch(model, lattice, args.l_start, args.l_end, tilt,
-                        t_extent=args.t_extent, t_ngrid=args.t_ngrid,
+                        t_extent=args.t_extent, t_ngrid=args.t_ngrid, niter=args.niter,
                         nkeptposes=args.nkeptposes, base_healpy=args.base_healpy)
     log(model)
     log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))

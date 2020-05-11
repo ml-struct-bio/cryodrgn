@@ -27,7 +27,7 @@ def to_tensor(x):
     return x
 
 def interpolate(img, coords):
-    assert coords.ndim == 2
+    assert len(coords.shape)== 2
     assert coords.shape[-1] == 2
 
     c = torch.stack((coords[:, 1], coords[:, 0]), dim=0)  # careful here! coord is (y, x) but we need (row, col)
@@ -49,7 +49,7 @@ FAST_INPLANE = True
 
 class PoseSearch:
     '''Pose search'''
-    def __init__(self, model, lattice, Lmin, Lmax, tilt=None, base_healpy=1, t_extent=5, t_ngrid=7, nkeptposes=24, loss_fn="msf"):
+    def __init__(self, model, lattice, Lmin, Lmax, tilt=None, base_healpy=1, t_extent=5, t_ngrid=7, niter=5, nkeptposes=24, loss_fn="msf"):
 
         self.model = model
         self.lattice = lattice
@@ -67,6 +67,7 @@ class PoseSearch:
 
         self.Lmin = Lmin
         self.Lmax = Lmax
+        self.niter = niter
         self.tilt = tilt
         self.nkeptposes = nkeptposes
         self.loss_fn = loss_fn
@@ -251,11 +252,11 @@ class PoseSearch:
         keep_idx[1] = best_trans_idx[keep_idx[0], keep_idx[2]]
         return keep_idx
 
-    def getL(self, iter_, niter):
-        return self.Lmin + int(iter_ / niter * (self.Lmax - self.Lmin))
+    def getL(self, iter_):
+        return self.Lmin + int(iter_ / self.niter * (self.Lmax - self.Lmin))
         # return min(self.Lmin * 2 ** iter_, self.Lmax)
 
-    def opt_theta_trans(self, images, z=None, images_tilt=None, niter=5, init_poses=None):
+    def opt_theta_trans(self, images, z=None, images_tilt=None, init_poses=None):
         images = to_tensor(images)
         images_tilt = to_tensor(images_tilt)
         init_poses = to_tensor(init_poses)
@@ -274,7 +275,7 @@ class PoseSearch:
                 base_rot = self.base_rot # 576 x 3 x 3
             base_rot = base_rot.to(device)
             # Compute the loss for all poses
-            L = self.getL(0, niter)
+            L = self.getL(0)
             loss = self.eval_grid(
                 images=self.translate_images(images, self.base_shifts, L),
                 rot=base_rot,
@@ -296,11 +297,11 @@ class PoseSearch:
         q_ind = so3_grid.get_base_ind(keepQ, self.base_healpy)  # Np x 2
         trans = self.base_shifts[keepT]
         shifts = self.base_shifts.clone()
-        for iter_ in range(1, niter + 1):
+        for iter_ in range(1, self.niter + 1):
             keepB8 = keepB.unsqueeze(1).repeat(1, 8).view(-1)  # repeat each element 8 times
             zb = z[keepB8] if z is not None else None
 
-            L = self.getL(iter_, niter)
+            L = self.getL(iter_)
             quat, q_ind, rot = self.subdivide(quat, q_ind, iter_ + self.base_healpy - 1)
             shifts /= 2
             trans = (trans.unsqueeze(1) + shifts.unsqueeze(0))  # FIXME: scale
@@ -316,7 +317,7 @@ class PoseSearch:
 
             # nkeptposes = 1
             # nkeptposes = max(1, math.ceil(self.nkeptposes / 2 ** (iter_-1)))
-            nkeptposes = self.nkeptposes if iter_ < niter else 1
+            nkeptposes = self.nkeptposes if iter_ < self.niter else 1
 
             keepBN, keepT, keepQ = self.keep_matrix(loss, B, nkeptposes).cpu()  # B x (self.Nkeptposes*32)
             keepB = keepBN * B // loss.shape[0]  # FIXME: expain
@@ -327,7 +328,7 @@ class PoseSearch:
 
         bestBN, bestT, bestQ = self.keep_matrix(loss, B, 1).cpu()
         assert len(bestBN) == B
-        if niter == 0:
+        if self.niter == 0:
             best_rot = self.so3_base_rot[bestQ].to(device)
             best_trans = self.base_shifts[bestT].to(device)
         else:

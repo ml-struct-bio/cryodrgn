@@ -252,8 +252,8 @@ class PoseSearch:
         return keep_idx
 
     def getL(self, iter_, niter):
-        # return self.Lmin + int(iter_ / niter * (self.Lmax - self.Lmin))
-        return min(self.Lmin * 2 ** iter_, self.Lmax)
+        return self.Lmin + int(iter_ / niter * (self.Lmax - self.Lmin))
+        # return min(self.Lmin * 2 ** iter_, self.Lmax)
 
     def opt_theta_trans(self, images, z=None, images_tilt=None, niter=5, init_poses=None):
         images = to_tensor(images)
@@ -274,7 +274,7 @@ class PoseSearch:
                 base_rot = self.base_rot # 576 x 3 x 3
             base_rot = base_rot.to(device)
             # Compute the loss for all poses
-            L = self.getL(self.base_healpy - 1, niter)
+            L = self.getL(0, niter)
             loss = self.eval_grid(
                 images=self.translate_images(images, self.base_shifts, L),
                 rot=base_rot,
@@ -296,12 +296,12 @@ class PoseSearch:
         q_ind = so3_grid.get_base_ind(keepQ, self.base_healpy)  # Np x 2
         trans = self.base_shifts[keepT]
         shifts = self.base_shifts.clone()
-        for iter_ in range(self.base_healpy, niter + 1):
+        for iter_ in range(1, niter + 1):
             keepB8 = keepB.unsqueeze(1).repeat(1, 8).view(-1)  # repeat each element 8 times
             zb = z[keepB8] if z is not None else None
 
             L = self.getL(iter_, niter)
-            quat, q_ind, rot = self.subdivide(quat, q_ind, iter_)
+            quat, q_ind, rot = self.subdivide(quat, q_ind, iter_ + self.base_healpy - 1)
             shifts /= 2
             trans = (trans.unsqueeze(1) + shifts.unsqueeze(0))  # FIXME: scale
             rot = rot.to(device)

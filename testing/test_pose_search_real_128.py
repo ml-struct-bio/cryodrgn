@@ -70,7 +70,7 @@ def trans_offset(x, y):
     B = x.shape[0]
     return (x - y).view(-1, 2).mean(0).cpu().numpy()
 
-def eval_pose_search(data, model, B=128, label="", **kwargs):
+def eval_pose_search(data, model, B=512, label="", **kwargs):
     tic = time.perf_counter()
     res = []
     for chunk in torch.from_numpy(data.particles[S:S+B]).split(8):
@@ -114,18 +114,9 @@ eval_pose_search(
 eval_pose_search(
     data,
     model,
-    label=f"L= [6, 24]",
-    Lmin=6,
+    label=f"L= [12, 24]",
+    Lmin=12,
     Lmax=24,
-)
-
-eval_pose_search(
-    data,
-    model,
-    label=f"L= [6, 24], 7 iters",
-    Lmin=6,
-    Lmax=24,
-    niter=7,
 )
 
 eval_pose_search(
@@ -140,18 +131,18 @@ eval_pose_search(
 eval_pose_search(
     data,
     model,
-    label=f"L= [6, 48]",
-    Lmin=6,
-    Lmax=48,
+    label=f"L= [24, 24], 7 iters",
+    Lmin=24,
+    Lmax=24,
+    niter=7,
 )
 
 eval_pose_search(
     data,
     model,
-    label=f"L= [6, 48], 7 iters",
-    Lmin=6,
+    label=f"L= [12, 48]",
+    Lmin=12,
     Lmax=48,
-    niter=7,
 )
 
 eval_pose_search(
@@ -166,8 +157,17 @@ eval_pose_search(
 eval_pose_search(
     data,
     model,
-    label=f"L= [16, 48], 7 iters",
-    Lmin=16,
+    label=f"L= [24, 48], 7 iters",
+    Lmin=24,
+    Lmax=48,
+    niter=7,
+)
+
+eval_pose_search(
+    data,
+    model,
+    label=f"L= [32, 48], 7 iters",
+    Lmin=32,
     Lmax=48,
     niter=7,
 )

@@ -66,7 +66,7 @@ def medse(x, y):
     B = x.shape[0]
     return (x - y).pow(2).view(B, -1).sum(-1).median()
 
-def eval_pose_search(data, model, B=128, label="", **kwargs):
+def eval_pose_search(data, model, B=512, label="", **kwargs):
     res = []
     for chunk in torch.from_numpy(data.particles[S:S+B]).split(8):
         res.append( do_pose_search(chunk, model, **kwargs) )

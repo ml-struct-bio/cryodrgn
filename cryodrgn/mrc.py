@@ -67,7 +67,7 @@ class MRCHeader:
         vals = [nx, ny, nz,
                 2, # mode = 2 for 32-bit float
                 0, 0, 0, # nxstart, nystart, nzstart
-                nz, ny, nx, # mx, my, mz
+                nx, ny, nz, # mx, my, mz
                 Apix*nx, Apix*ny, Apix*nz, # cella
                 90., 90., 90., # cellb
                 1, 2, 3, # mapc, mapr, maps

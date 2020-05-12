@@ -154,6 +154,7 @@ def train(model, lattice, ps, optim, batch, tilt_rot=None, no_trans=False, poses
 
     # reconstruct circle of pixels instead of whole image
     mask = lattice.get_circular_mask(lattice.D//2)
+    # mask = lattice.get_circular_mask(ps.Lmax)
     def gen_slice(R):
         slice_ = model(lattice.coords[mask] @ R)
         return slice_.view(B,-1)
@@ -261,9 +262,11 @@ def main(args):
         batch_it = 0
         loss_accum = 0
         poses, base_poses = [], []
-       
+
         if args.l_ramp_epochs > 0:
-            ps.Lmax = min(args.l_start + int(epoch / args.l_ramp_epochs * (args.l_end - args.l_start)), args.l_end)
+            Lramp = args.l_start + int(epoch / args.l_ramp_epochs * (args.l_end - args.l_start))
+            ps.Lmin = min(Lramp, args.l_start)
+            ps.Lmax = min(Lramp, args.l_end)
 
         if epoch % args.ps_freq != 0:
             log('Using previous iteration poses')

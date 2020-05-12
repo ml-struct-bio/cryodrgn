@@ -100,46 +100,6 @@ eval_pose_search(data, model,
 eval_pose_search(
     data,
     model,
-    label=f"t_ngrid=3",
-    t_ngrid=3
-)
-
-eval_pose_search(
-    data,
-    model,
-    label=f"t_ngrid=14",
-    t_ngrid=14
-)
-
-eval_pose_search(
-    data,
-    model,
-    label=f"L= [12, 24]",
-    Lmin=12,
-    Lmax=24,
-)
-
-eval_pose_search(
-    data,
-    model,
-    label=f"L= [12, 24], 7 iters",
-    Lmin=12,
-    Lmax=24,
-    niter=7,
-)
-
-eval_pose_search(
-    data,
-    model,
-    label=f"L= [24, 24], 7 iters",
-    Lmin=24,
-    Lmax=24,
-    niter=7,
-)
-
-eval_pose_search(
-    data,
-    model,
     label=f"L= [12, 48]",
     Lmin=12,
     Lmax=48,
@@ -154,25 +114,15 @@ eval_pose_search(
     niter=7,
 )
 
-eval_pose_search(
-    data,
-    model,
-    label=f"L= [24, 48], 7 iters",
-    Lmin=24,
-    Lmax=48,
-    niter=7,
-)
+for t_ngrid in (3, 14):
+    eval_pose_search(
+        data,
+        model,
+        label=f"t_ngrid= {t_ngrid}",
+        t_ngrid=t_ngrid,
+    )
 
-eval_pose_search(
-    data,
-    model,
-    label=f"L= [32, 48], 7 iters",
-    Lmin=32,
-    Lmax=48,
-    niter=7,
-)
-
-for niter in (2, 4, 7):
+for niter in (2, 5, 7):
     eval_pose_search(
         data,
         model,
@@ -193,15 +143,6 @@ eval_pose_search(
         model,
         label=f"healpy= 3",
         base_healpy=3,
-    )
-
-for L in (12, 16, 24, 32, 40):
-    eval_pose_search(
-        data,
-        model,
-        label=f"L= {L}",
-        Lmin=L,
-        Lmax=L,
     )
 
 # for bhp in (1, 2, 3):

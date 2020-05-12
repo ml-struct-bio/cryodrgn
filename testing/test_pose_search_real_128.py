@@ -51,10 +51,11 @@ def do_pose_search(images, model, base_healpy=2, nkeptposes=8, Lmin=12, Lmax=24,
         nkeptposes=nkeptposes,
         t_extent=10,
         base_healpy=base_healpy,
+        niter=niter,
         **kwargs,
     )
 
-    return ps.opt_theta_trans(images, niter=niter)
+    return ps.opt_theta_trans(images)
 
 def mse(x, y):
     B = x.shape[0]

@@ -61,6 +61,7 @@ def add_args(parser):
     group.add_argument('--dim', type=int, default=256, help='Number of nodes in hidden layers (default: %(default)s)')
     group.add_argument('--l-extent', type=float, default=0.5, help='Coordinate lattice size (if not using positional encoding) (default: %(default)s)')
     group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf','none'), default='geom_lowf', help='Type of positional encoding (default: %(default)s)')
+    group.add_argument('--pe-dim', type=int, help='Num sinusoid features in positional encoding (default: D/2)')
     group.add_argument('--domain', choices=('hartley','fourier'), default='fourier', help='Volume decoder representation (default: %(default)s)')
     return parser
 
@@ -128,7 +129,7 @@ def main(args):
     if args.pe_type != 'none': assert args.l_extent == 0.5
     lattice = Lattice(D, extent=args.l_extent)
 
-    model = models.get_decoder(3, D, args.layers, args.dim, args.domain, args.pe_type, nn.ReLU)
+    model = models.get_decoder(3, D, args.layers, args.dim, args.domain, args.pe_type, enc_dim=args.pe_dim, activation=nn.ReLU)
     log(model)
     log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
 

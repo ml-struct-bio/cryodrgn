@@ -76,6 +76,7 @@ def add_args(parser):
     group.add_argument('--players', type=int, default=3, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--pdim', type=int, default=256, help='Number of nodes in hidden layers (default: %(default)s)')
     group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf','none'), default='geom_lowf', help='Type of positional encoding (default: %(default)s)')
+    group.add_argument('--pe-dim', type=int, help='Num sinusoid features in positional encoding (default: D/2)')
     group.add_argument('--domain', choices=('hartley','fourier'), default='fourier', help='Decoder representation domain (default: %(default)s)')
     return parser
 
@@ -213,6 +214,7 @@ def save_config(args, dataset, lattice, model, out_config):
                       encode_mode=args.encode_mode,
                       enc_mask=args.enc_mask,
                       pe_type=args.pe_type,
+                      pe_dim=args.pe_dim,
                       domain=args.domain)
     config = dict(dataset_args=dataset_args,
                   lattice_args=lattice_args,
@@ -321,7 +323,7 @@ def main(args):
         raise RuntimeError("Invalid argument for encoder mask radius {}".format(args.enc_mask))
     model = HetOnlyVAE(lattice, args.qlayers, args.qdim, args.players, args.pdim,
                 in_dim, args.zdim, encode_mode=args.encode_mode, enc_mask=enc_mask,
-                enc_type=args.pe_type, domain=args.domain)
+                enc_type=args.pe_type, enc_dim=args.pe_dim, domain=args.domain)
     flog(model)
     flog('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
 

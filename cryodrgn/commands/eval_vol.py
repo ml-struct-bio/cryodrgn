@@ -51,6 +51,7 @@ def add_args(parser):
     group.add_argument('--pdim', type=int, help='Number of nodes in hidden layers')
     group.add_argument('--enc-mask', type=int, help='Circular mask radius for image encoder')
     group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf','none'), help='Type of positional encoding')
+    group.add_argument('--pe-dim', type=int, help='Num sinusoid features in positional encoding (default: D/2)')
     group.add_argument('--domain', choices=('hartley','fourier'))
     group.add_argument('--l-extent', type=float, help='Coordinate lattice size')
     return parser
@@ -85,7 +86,7 @@ def main(args):
     else:
         in_dim = lattice.D**2
     model = HetOnlyVAE(lattice, args.qlayers, args.qdim, args.players, args.pdim,
-                in_dim, args.zdim, encode_mode=args.encode_mode, enc_mask=args.enc_mask, enc_type=args.pe_type, domain=args.domain)
+                in_dim, args.zdim, encode_mode=args.encode_mode, enc_mask=args.enc_mask, enc_type=args.pe_type, enc_dim=args.pe_dim, domain=args.domain)
 
     log('Loading weights from {}'.format(args.weights))
     checkpoint = torch.load(args.weights)

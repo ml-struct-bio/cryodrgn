@@ -20,6 +20,7 @@ class HetOnlyVAE(nn.Module):
             encode_mode = 'resid',
             enc_mask = None,
             enc_type = 'linear_lowf',
+            enc_dim = None,
             domain = 'fourier'):
         super(HetOnlyVAE, self).__init__()
         self.lattice = lattice
@@ -49,7 +50,7 @@ class HetOnlyVAE(nn.Module):
         else:
             raise RuntimeError('Encoder mode {} not recognized'.format(encode_mode))
         self.encode_mode = encode_mode
-        self.decoder = get_decoder(3+zdim, lattice.D, players, pdim, domain, enc_type, nn.ReLU)
+        self.decoder = get_decoder(3+zdim, lattice.D, players, pdim, domain, enc_type, enc_dim, nn.ReLU)
    
     def reparameterize(self, mu, logvar):
         if not self.training:
@@ -83,7 +84,7 @@ class HetOnlyVAE(nn.Module):
         return self.decoder(self.cat_z(coords,z))
 
 
-def get_decoder(in_dim, D, layers, dim, domain, enc_type, activation=nn.ReLU):
+def get_decoder(in_dim, D, layers, dim, domain, enc_type, enc_dim=None, activation=nn.ReLU):
     if enc_type == 'none':
         if domain == 'hartley':
             model = ResidLinearMLP(in_dim, layers, dim, 1, activation)
@@ -93,17 +94,17 @@ def get_decoder(in_dim, D, layers, dim, domain, enc_type, activation=nn.ReLU):
         return model
     else:
         model = PositionalDecoder if domain == 'hartley' else FTPositionalDecoder 
-        return model(in_dim, D, layers, dim, activation, enc_type=enc_type)
+        return model(in_dim, D, layers, dim, activation, enc_type=enc_type, enc_dim=enc_dim)
  
 class PositionalDecoder(nn.Module):
-    def __init__(self, in_dim, D, nlayers, hidden_dim, activation, enc_type='linear_lowf'):
+    def __init__(self, in_dim, D, nlayers, hidden_dim, activation, enc_type='linear_lowf', enc_dim=None):
         super(PositionalDecoder, self).__init__()
         assert in_dim >= 3 
         self.zdim = in_dim - 3
         self.D = D
         self.D2 = D // 2
         self.DD = 2 * (D // 2)
-        self.enc_dim = self.D2
+        self.enc_dim = self.D2 if enc_dim is None else enc_dim
         self.enc_type = enc_type
         self.in_dim = 3 * (self.enc_dim) * 2 + self.zdim
         self.decoder = ResidLinearMLP(self.in_dim, nlayers, hidden_dim, 1, activation)
@@ -189,7 +190,7 @@ class PositionalDecoder(nn.Module):
         return vol
 
 class FTPositionalDecoder(nn.Module):
-    def __init__(self, in_dim, D, nlayers, hidden_dim, activation, enc_type='linear_lowf'):
+    def __init__(self, in_dim, D, nlayers, hidden_dim, activation, enc_type='linear_lowf', enc_dim=None):
         super(FTPositionalDecoder, self).__init__()
         assert in_dim >= 3
         self.zdim = in_dim - 3
@@ -197,8 +198,7 @@ class FTPositionalDecoder(nn.Module):
         self.D2 = D // 2
         self.DD = 2 * (D // 2)
         self.enc_type = enc_type
-        #self.enc_dim = max(100,self.D2)
-        self.enc_dim = self.D2
+        self.enc_dim = self.D2 if enc_dim is None else enc_dim
         self.in_dim = 3 * (self.enc_dim) * 2 + self.zdim
         self.decoder = ResidLinearMLP(self.in_dim, nlayers, hidden_dim, 2, activation)
     

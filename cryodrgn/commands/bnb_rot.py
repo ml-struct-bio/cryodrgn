@@ -275,7 +275,7 @@ def main(args):
 
             # train the model
             if epoch % args.ps_freq != 0:
-                p = [torch.tensor(x[ind]) for x in sorted_poses]
+                p = [torch.tensor(x[ind_np]) for x in sorted_poses]
                 #bp = sorted_base_poses[ind_np]
                 bp = None
             else:

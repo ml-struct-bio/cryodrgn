@@ -72,7 +72,8 @@ def add_args(parser):
 
 def save_checkpoint(model, lattice, optim, epoch, norm, Apix, out_mrc, out_weights):
     model.eval()
-    vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, norm)
+    eval_volume = model.module.eval_volume if isinstance(model, nn.DataParallel) else model.eval_volume 
+    vol = eval_volume(lattice.coords, lattice.D, lattice.extent, norm)
     mrc.write(out_mrc, vol.astype(np.float32), Apix=Apix)
     torch.save({
         'norm': norm,
@@ -142,6 +143,7 @@ def main(args):
     log(model)
     log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
 
+
     # optimizer
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
@@ -179,6 +181,11 @@ def main(args):
         assert args.dim % 8 == 0
         # Also check zdim, enc_mask dim?
         model, optim = amp.initialize(model, optim, opt_level='O1')
+
+    # parallelize
+    if torch.cuda.device_count() > 1:
+        log(f'Using {torch.cuda.device_count()} GPUs!')
+        model = nn.DataParallel(model)
 
     # train
     data_generator = DataLoader(data, batch_size=args.batch_size, shuffle=True)

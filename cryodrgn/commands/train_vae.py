@@ -11,6 +11,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+try:
+    import apex.amp as amp
+except: 
+    pass
 
 from cryodrgn import mrc
 from cryodrgn import utils
@@ -58,6 +62,7 @@ def add_args(parser):
     group.add_argument('--beta', default=1.0, help='Choice of beta schedule or a constant for KLD weight (default: %(default)s)')
     group.add_argument('--beta-control', type=float, help='KL-Controlled VAE gamma. Beta is KL target. (default: %(default)s)')
     group.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: mean, std of dataset)')
+    group.add_argument('--amp', action='store_true', help='Use mixed-precision training')
 
     group = parser.add_argument_group('Pose SGD')
     group.add_argument('--do-pose-sgd', action='store_true', help='Refine poses with gradient descent')
@@ -76,18 +81,22 @@ def add_args(parser):
     group.add_argument('--players', type=int, default=3, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--pdim', type=int, default=256, help='Number of nodes in hidden layers (default: %(default)s)')
     group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf','none'), default='geom_lowf', help='Type of positional encoding (default: %(default)s)')
-    group.add_argument('--pe-dim', type=int, help='Num sinusoid features in positional encoding (default: D/2)')
+    group.add_argument('--pe-dim', type=int, help='Num features in positional encoding (default: image D)')
     group.add_argument('--domain', choices=('hartley','fourier'), default='fourier', help='Decoder representation domain (default: %(default)s)')
     return parser
 
-def train_batch(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, tilt=None, ctf_params=None, yr=None):
+def train_batch(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, tilt=None, ctf_params=None, yr=None, use_amp=False):
     optim.zero_grad()
     model.train()
     if trans is not None:
         y, yt = preprocess_input(y, yt, lattice, trans)
     z_mu, z_logvar, z, y_recon, y_recon_tilt, mask = run_batch(model, lattice, y, yt, rot, tilt, ctf_params, yr)
     loss, gen_loss, kld = loss_function(z_mu, z_logvar, y, yt, y_recon, mask, beta, y_recon_tilt, beta_control)
-    loss.backward()
+    if use_amp:
+        with amp.scale_loss(loss, optim) as scaled_loss:
+            scaled_loss.backward()
+    else:
+        loss.backward()
     optim.step()
     return loss.item(), gen_loss.item(), kld.item()
 
@@ -305,6 +314,7 @@ def main(args):
         flog('Loading ctf params from {}'.format(args.ctf))
         ctf_params = ctf.load_ctf_for_training(D-1, args.ctf)
         if args.ind is not None: ctf_params = ctf_params[ind]
+        assert ctf_params.shape == (Nimg, 8)
         ctf_params = torch.tensor(ctf_params)
     else: ctf_params = None
 
@@ -332,6 +342,15 @@ def main(args):
     save_config(args, data, lattice, model, out_config)
     
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
+
+    # Mixed precision training with AMP
+    if args.amp:
+        assert args.batch_size % 8 == 0
+        assert (D-1) % 8 == 0
+        assert args.pdim % 8 == 0
+        assert args.qdim % 8 == 0
+        # Also check zdim, enc_mask dim?
+        model, optim = amp.initialize(model, optim, opt_level='O1')
 
     # restart from checkpoint
     if args.load:
@@ -369,7 +388,7 @@ def main(args):
                 pose_optimizer.zero_grad()
             rot, tran = posetracker.get_pose(ind)
             ctf_param = ctf_params[ind] if ctf_params is not None else None
-            loss, gen_loss, kld = train_batch(model, lattice, y, yt, rot, tran, optim, beta, args.beta_control, tilt, ctf_params=ctf_param, yr=yr)
+            loss, gen_loss, kld = train_batch(model, lattice, y, yt, rot, tran, optim, beta, args.beta_control, tilt, ctf_params=ctf_param, yr=yr, use_amp=args.amp)
             if do_pose_sgd and epoch >= args.pretrain:
                 pose_optimizer.step()
 

@@ -25,7 +25,7 @@ cryodrgn backproject_voxel data/hand.mrcs --poses data/hand_rot.pkl -o output/ba
 
 # VAE
 cryodrgn train_vae data/toy_projections.mrcs -o output/toy_recon_vae --lr .0001 --seed 0 --poses data/toy_angles.pkl --zdim 10 -n 10
-cryodrgn train_vae data/hand.mrcs -o output/toy_recon_vae --lr .0001 --seed 0 --poses data/hand_rot.pkl --zdim 10 -n 10
+cryodrgn train_vae data/hand.mrcs -o output/hand_recon_vae --lr .0001 --seed 0 --poses data/hand_rot.pkl --zdim 10 -n 10
 #cryodrgn train_vae data/hand.mrcs -o output/toy_recon_vae --lr .0001 --seed 0 --poses data/hand_rot.pkl --encode-mode conv --zdim 10 -n 10
 
 # Test evaluation script
@@ -39,5 +39,5 @@ cryodrgn train_nn data/hand.mrcs --poses data/hand_rot.pkl -o output/hand_recon 
 
 # CTF testing
 cryodrgn parse_ctf_csparc data/cryosparc_P12_J24_001_particles.cs -o test_ctf.pkl
-cryodrgn parse_ctf_star data/toy_projections.star -N 1000 --Apix 1 -o test_ctf.pkl
+cryodrgn parse_ctf_star data/toy_projections.star -D 30 --Apix 1 -o test_ctf.pkl
 cryodrgn train_vae  data/toy_projections.mrcs -o output/toy_recon_vae --lr .0001 --seed 0 --poses data/toy_angles.pkl --ctf test_ctf.pkl --zdim 10

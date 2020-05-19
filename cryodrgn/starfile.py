@@ -17,7 +17,7 @@ class Starfile():
         self.df = df
 
     @classmethod
-    def load(self, starfile, relion31=True):
+    def load(self, starfile, relion31=False):
         f = open(starfile,'r')
         # get to data block
         while 1:

@@ -10,7 +10,7 @@ from . import starfile
 
 log = utils.log
 
-def load_particles(mrcs_txt_star, lazy=False, datadir=None):
+def load_particles(mrcs_txt_star, lazy=False, datadir=None, relion31=False):
     '''
     Load particle stack from either a .mrcs file, a .star file, a .txt file containing paths to .mrcs files, or a cryosparc particles.cs file
 
@@ -22,11 +22,11 @@ def load_particles(mrcs_txt_star, lazy=False, datadir=None):
     elif mrcs_txt_star.endswith('.star'):
         # not exactly sure what the default behavior should be for the data paths if parsing a starfile
         try:
-            particles = starfile.Starfile.load(mrcs_txt_star).get_particles(datadir=datadir, lazy=lazy)
+            particles = starfile.Starfile.load(mrcs_txt_star, relion31=relion31).get_particles(datadir=datadir, lazy=lazy)
         except Exception as e:
             if datadir is None:
                 datadir = os.path.dirname(mrcs_txt_star) # assume .mrcs files are in the same director as the starfile
-                particles = starfile.Starfile.load(mrcs_txt_star).get_particles(datadir=datadir, lazy=lazy)
+                particles = starfile.Starfile.load(mrcs_txt_star, relion31=relion31).get_particles(datadir=datadir, lazy=lazy)
             else: raise RuntimeError(e)
     elif mrcs_txt_star.endswith('.cs'):
         particles = starfile.csparc_get_particles(mrcs_txt_star, datadir, lazy)
@@ -39,9 +39,9 @@ class LazyMRCData(data.Dataset):
     '''
     Class representing an .mrcs stack file -- images loaded on the fly
     '''
-    def __init__(self, mrcfile, norm=None, keepreal=False, invert_data=False, ind=None, window=True, datadir=None):
+    def __init__(self, mrcfile, norm=None, keepreal=False, invert_data=False, ind=None, window=True, datadir=None, relion31=False):
         assert not keepreal, 'Not implemented error'
-        particles = load_particles(mrcfile, True, datadir)
+        particles = load_particles(mrcfile, True, datadir, relion31=False)
         if ind is not None:
             particles = [particles[x] for x in ind]
         N = len(particles)
@@ -96,8 +96,8 @@ class MRCData(data.Dataset):
     '''
     Class representing an .mrcs stack file
     '''
-    def __init__(self, mrcfile, norm=None, keepreal=False, invert_data=False, ind=None, window=True, datadir=None):
-        particles_real = load_particles(mrcfile, False, datadir)
+    def __init__(self, mrcfile, norm=None, keepreal=False, invert_data=False, ind=None, window=True, datadir=None, relion31=False):
+        particles_real = load_particles(mrcfile, False, datadir, relion31=False)
         if ind is not None:
             particles_real = particles_real[ind]
         N, ny, nx = particles_real.shape

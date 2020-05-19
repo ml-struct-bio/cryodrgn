@@ -11,13 +11,13 @@ from heapq import heappush, heappop
 
 def add_args(parser):
     parser.add_argument('data', help='Input z.pkl embeddings')
-    parser.add_argument('--anchors', type=int, nargs='+', help='Index of anchor points')
+    parser.add_argument('--anchors', type=int, nargs='+', required=True, help='Index of anchor points')
     parser.add_argument('--max-neighbors', type=int, default=10)
     parser.add_argument('--avg-neighbors', type=float, default=5)
     parser.add_argument('--batch-size', type=int, default=1000)
     parser.add_argument('--max-images', type=int, default=None)
-    parser.add_argument('-o', type=os.path.abspath, required=True, help='Output file path.txt')
-    parser.add_argument('--out-z', type=os.path.abspath, required=True, help='Output file z.path.txt')
+    parser.add_argument('-o', metavar='PATH.TXT', type=os.path.abspath, required=True, help='Output .txt file for path indices')
+    parser.add_argument('--out-z', metavar='Z.PATH.TXT', type=os.path.abspath, required=True, help='Output .txt file for path z-values')
     return parser
 
 class Graph(object):

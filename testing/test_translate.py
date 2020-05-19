@@ -15,7 +15,7 @@ import models
 import mrc
 from lattice import Lattice
 
-imgs,_,_ = mrc.parse_mrc('data/hand.mrcs')
+imgs,_ = mrc.parse_mrc('data/hand.mrcs')
 img = imgs[0]
 D = img.shape[0]
 ht = fft.ht2_center(img)

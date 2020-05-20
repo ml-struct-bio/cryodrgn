@@ -376,6 +376,7 @@ def main(args):
             log('Using previous iteration poses')
         for batch in data_iterator:
             ind = batch[-1]
+            ind_np = ind.cpu().numpy()
             batch = (batch[0].to(device), None) if tilt is None else (batch[0].to(device), batch[1].to(device))
             batch_it += len(batch[0])
             global_it = Nimg*epoch + batch_it
@@ -388,7 +389,7 @@ def main(args):
 
             # train the model
             if epoch % args.ps_freq != 0:
-                p = [torch.tensor(x[ind]) for x in sorted_poses]
+                p = [torch.tensor(x[ind_np]) for x in sorted_poses]
             else: 
                 p = None
             gen_loss, kld, loss, eq_loss, pose = train(model, lattice, ps, optim, batch, beta, args.beta_control, equivariance_tuple, enc_only=args.enc_only, poses=p)

@@ -13,17 +13,17 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 sys.path.insert(0,os.path.abspath(os.path.dirname(__file__))+'/lib-python')
-import mrc
-import utils
-import fft
-import dataset
-import lie_tools
+from cryodrgn import mrc
+from cryodrgn import utils
+from cryodrgn import fft
+from cryodrgn import dataset
+from cryodrgn import lie_tools
 
-from lattice import Lattice
-from bnb import BNBHet
-from models import HetOnlyVAE
-from beta_schedule import get_beta_schedule, LinearSchedule
-from losses import EquivarianceLoss
+from cryodrgn.lattice import Lattice
+from cryodrgn.pose_search import PoseSearch
+from cryodrgn.models import HetOnlyVAE
+from cryodrgn.beta_schedule import get_beta_schedule, LinearSchedule
+from cryodrgn.losses import EquivarianceLoss
 
 log = utils.log
 vlog = utils.vlog
@@ -59,17 +59,18 @@ def parse_args():
     group.add_argument('--eq-end-it', type=int, default=200000, help='It at which equivariance max (default: %(default)s)')
     group.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: mean, std of dataset)')
 
-    group = parser.add_argument_group('Branch and bound')
+    group = parser.add_argument_group('Pose Search parameters')
     group.add_argument('--l-start', type=int,default=12, help='Starting L radius (default: %(default)s)')
     group.add_argument('--l-end', type=int, default=20, help='End L radius (default: %(default)s)')
-    group.add_argument('--l-end-it',type=int,default=100000, help='default: %(default)s')
-    group.add_argument('--rotate', action='store_true', help='Speedup BNB with image rotation')
+    group.add_argument('--niter', type=int, default=5, help='Number of iterations of grid subdivision')
+    group.add_argument('--l-ramp-epochs',type=int,default=0, help='default: %(default)s')
     group.add_argument('--t-extent', type=float, default=5, help='+/- pixels to search over translations (default: %(default)s)')
-    group.add_argument('--no-trans', action='store_true', help="Don't search over translations")
+    group.add_argument('--t-ngrid', type=float, default=7, help='Initial grid size for translations')
     group.add_argument('--pretrain', type=int, default=10000, help='Number of initial iterations with random poses (default: %(default)s)')
-    group.add_argument('--bnb-freq', type=int, default=1, help='Frequency of pose inference (default: every %(default)s epochs)')
+    group.add_argument('--ps-freq', type=int, default=1, help='Frequency of pose inference (default: every %(default)s epochs)')
     group.add_argument('--nkeptposes', type=int, default=24, help="Number of poses to keep at each refinement interation during branch and bound")
-
+    group.add_argument('--base-healpy', type=int, default=1, help="Base healpy grid for pose search. Higher means exponentially higher resolution.")
+    
     group = parser.add_argument_group('Encoder Network')
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--qdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
@@ -111,7 +112,7 @@ def pretrain(model, lattice, optim, minibatch, tilt):
     optim.step()
     return gen_loss.item()
 
-def train(model, lattice, bnb, optim, minibatch, beta, beta_control=None, equivariance=None, rotated_images=None, enc_only=False, no_trans=False, poses = None):
+def train(model, lattice, ps, optim, minibatch, beta, beta_control=None, equivariance=None, enc_only=False, poses=None):
     y, yt = minibatch
     use_tilt = yt is not None
     D = lattice.D
@@ -131,17 +132,15 @@ def train(model, lattice, bnb, optim, minibatch, beta, beta_control=None, equiva
     # pose inference
     if poses is not None: # use provided poses
         rot = poses[0]
-        if not no_trans: trans = poses[1]
-    else: # BNB
+        trans = poses[1]
+    else: # pose search
         model.eval()
         with torch.no_grad():
-            if no_trans:
-                if rotated_images is None:
-                    rot = bnb.opt_theta(y, z, None if enc_only else yt)
-                else:
-                    rot = bnb.opt_theta_rot(y, rotated_images, z)
-            else:
-                rot, trans = bnb.opt_theta_trans(y, z, None if enc_only else yt)
+            rot, trans, _base_pose = ps.opt_theta_trans(
+                y,
+                z=z,
+                images_tilt=None if enc_only else yt,
+            )
         model.train()
 
     # reconstruct circle of pixels instead of whole image
@@ -154,9 +153,8 @@ def train(model, lattice, bnb, optim, minibatch, beta, beta_control=None, equiva
 
     y = y.view(B,-1)[:, mask]
     if use_tilt: yt = yt.view(B,-1)[:, mask]
-    if not no_trans:
-        y = translate(y)
-        if use_tilt: yt = translate(yt)    
+    y = translate(y)
+    if use_tilt: yt = translate(yt)    
 
     if use_tilt:
         gen_loss = .5*F.mse_loss(gen_slice(rot), y) + .5*F.mse_loss(gen_slice(bnb.tilt @ rot), yt)
@@ -180,8 +178,7 @@ def train(model, lattice, bnb, optim, minibatch, beta, beta_control=None, equiva
     loss.backward()
     optim.step()
     save_pose = [rot.detach().cpu().numpy()]
-    if not no_trans:
-        save_pose.append(trans.detach().cpu().numpy())
+    save_pose.append(trans.detach().cpu().numpy())
     return gen_loss.item(), kld.item(), loss.item(), eq_loss.item() if equivariance else None, save_pose
 
 def eval_z(model, lattice, data, batch_size, device, use_tilt=False):
@@ -215,19 +212,7 @@ def save_checkpoint(model, lattice, optim, epoch, norm, bnb_pose, z_mu, z_logvar
         pickle.dump(z_logvar, f)
     with open(out_poses,'wb') as f:
         pickle.dump(bnb_pose, f)
-    # save single structure at mean of z_mu
-    vol = model.decoder.eval_volume(lattice.coords, lattice.D, lattice.extent, norm, z_mu.mean(axis=0))
-    mrc.write(out_mrc_dir+'.mrc', vol.astype(np.float32))
-    log('Saved {} with z = {}'.format(out_mrc_dir+'.mrc', z_mu.mean(axis=0)))
-    # save trajectory of structures if zdim = 1
-    if z_mu.shape[1] == 1:
-        if not os.path.exists(out_mrc_dir): os.mkdir(out_mrc_dir)
-        for i in range(5):
-            pct = 10+i*20
-            zz = np.percentile(z_mu, pct, keepdims=True)
-            vol = model.decoder.eval_volume(lattice.coords, lattice.D, lattice.extent, norm, zz)
-            mrc.write('{}/traj{}.mrc'.format(out_mrc_dir,int(pct)),vol)
-            log('Saved {}/traj{}.mrc with z = {}'.format(out_mrc_dir, int(pct), zz))
+
 
 def save_config(args, dataset, lattice, model, out_config):
     dataset_args = dict(particles=args.particles,
@@ -257,21 +242,20 @@ def save_config(args, dataset, lattice, model, out_config):
     with open(out_config,'wb') as f:
         pickle.dump(config, f)
 
-def sort_bnb_poses(bnb_pose):
-    ind = [x[0] for x in bnb_pose]
+def sort_poses(poses):
+    ind = [x[0] for x in poses]
     ind = np.concatenate(ind)
-    rot = [x[1][0] for x in bnb_pose]
+    rot = [x[1][0] for x in poses]
     rot = np.concatenate(rot)
     rot = rot[np.argsort(ind)]
-    if len(bnb_pose[0][1]) == 2:
-        trans = [x[1][1] for x in bnb_pose]
+    if len(poses[0][1]) == 2:
+        trans = [x[1][1] for x in poses]
         trans = np.concatenate(trans)
         trans = trans[np.argsort(ind)]
         return (rot,trans)
     return (rot,)
 
 def main(args):
-    assert not args.rotate, "Not implemented with new BNB"
 
     log(args)
     t1 = dt.now()
@@ -332,10 +316,9 @@ def main(args):
     out_config = '{}/config.pkl'.format(args.outdir)
     save_config(args, data, lattice, model, out_config)
 
-    bnb = BNBHet(model, lattice, args.l_start, args.l_end, tilt, args.t_extent, nkeptposes=args.nkeptposes)
-    if args.rotate: 
-        assert args.enc_only
-        theta = torch.arange(1,12,dtype=torch.float32)*2*np.pi/12 # 11 angles 
+    ps = PoseSearch(model, lattice, args.l_start, args.l_end, tilt,
+                    t_extent=args.t_extent, t_ngrid=args.t_ngrid, niter=args.niter,
+                    nkeptposes=args.nkeptposes, base_healpy=args.base_healpy)
 
     if args.equivariance:
         assert args.equivariance > 0, 'Regularization weight must be positive'
@@ -367,7 +350,7 @@ def main(args):
         for batch in data_iterator:
             global_it += len(batch[0])
             batch = (batch[0].to(device), None) if tilt is None else (batch[0].to(device), batch[1].to(device))
-            loss = pretrain(model, lattice, optim, batch, tilt=bnb.tilt)
+            loss = pretrain(model, lattice, optim, batch, tilt=ps.tilt)
             if global_it % args.log_interval == 0:
                 log(f'[Pretrain Iteration {global_it}] loss={loss:4f}')
             if global_it > args.pretrain:
@@ -382,8 +365,14 @@ def main(args):
         loss_accum = 0
         eq_loss_accum = 0
         batch_it = 0 
-        bnb_pose = []
-        if epoch % args.bnb_freq != 0:
+        poses, base_poses = [], []
+
+        if args.l_ramp_epochs > 0:
+            Lramp = args.l_start + int(epoch / args.l_ramp_epochs * (args.l_end - args.l_start))
+            ps.Lmin = min(Lramp, args.l_start)
+            ps.Lmax = min(Lramp, args.l_end)
+
+        if epoch % args.ps_freq != 0:
             log('Using previous iteration poses')
         for batch in data_iterator:
             ind = batch[-1]
@@ -397,22 +386,14 @@ def main(args):
                 equivariance_tuple = (lamb, equivariance_loss)
             else: equivariance_tuple = None
 
-            if args.rotate:
-                yr = torch.from_numpy(data.particles_real[ind]).to(device)
-                yr = lattice.rotate(yr, theta)
-                yr = fft.ht2_center(yr)
-                yr = (yr-data.norm[0])/data.norm[1]
-                yr = torch.from_numpy(yr.astype(np.float32)).to(device)
-            else: yr = None
-
             # train the model
-            if epoch % args.bnb_freq != 0:
+            if epoch % args.ps_freq != 0:
                 p = [torch.tensor(x[ind]) for x in sorted_poses]
             else: 
                 p = None
-            gen_loss, kld, loss, eq_loss, pose = train(model, lattice, bnb, optim, batch, beta, args.beta_control, equivariance_tuple, rotated_images=yr, enc_only=args.enc_only, no_trans=args.no_trans, poses=p)
+            gen_loss, kld, loss, eq_loss, pose = train(model, lattice, ps, optim, batch, beta, args.beta_control, equivariance_tuple, enc_only=args.enc_only, poses=p)
             # logging
-            bnb_pose.append((ind.cpu().numpy(),pose))
+            poses.append((ind.cpu().numpy(),pose))
             kld_accum += kld*len(ind)
             gen_loss_accum += gen_loss*len(ind)
             if args.equivariance:eq_loss_accum += eq_loss*len(ind)
@@ -425,8 +406,7 @@ def main(args):
         eq_log = 'equivariance = {:.4f}, '.format(eq_loss_accum/Nimg) if args.equivariance else ''
         log('# =====> Epoch: {} Average gen loss = {:.4}, KLD = {:.4f}, {}total loss = {:.4f}; Finished in {}'.format(epoch+1, gen_loss_accum/Nimg, kld_accum/Nimg, eq_log, loss_accum/Nimg, dt.now() - t2))
 
-        # sort bnb_pose
-        sorted_poses = sort_bnb_poses(bnb_pose) if bnb_pose else None
+        sorted_poses = sort_poses(poses) if poses else None
 
         # save checkpoint
         if args.checkpoint and epoch % args.checkpoint == 0:

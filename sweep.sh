@@ -13,7 +13,7 @@ function run {
     mkdir -p $O/$N
     git log -1 > $O/$N/GITLOG
     git diff >> $O/$N/GITLOG
-    SETTINGS="-t 72:00:00 -J $N --partition learnfair \
+    SETTINGS="-t 72:00:00 -J $N --partition dev \
               --output $O/$N/stdout.log --error $O/$N/stderr.log \
               --gres=gpu:1 --mem-per-gpu=64G --cpus-per-task 8 \
               --open-mode=append --chdir=$O/$N"
@@ -39,12 +39,16 @@ DEFAULT="--t-extent 10 -n 5 --lr .0001 -b 8  --domain hartley --layers 3 --dim 2
 
 # N=real1_end24             run $SCRIPT $DREAL --t-extent 20 --lr .0001 -b 8 --domain hartley --layers 3 --dim 256 --base-healpy 2 --nkeptposes 4 --niter 7 --l-end 24 -n 5
 # N=real1_end48             run $SCRIPT $DREAL --t-extent 20 --lr .0001 -b 8 --domain hartley --layers 3 --dim 256 --base-healpy 2 --nkeptposes 4 --niter 7 --l-end 48 -n 5
-N=real1_end48_psf10       run $SCRIPT $DREAL --t-extent 20 --lr .0001 -b 8 --domain hartley --layers 3 --dim 256 --base-healpy 2 --nkeptposes 4 --niter 7 --l-end 48 -n 50 --ps-freq 10
+# N=real1_end48_psf10       run $SCRIPT $DREAL --t-extent 20 --lr .0001 -b 8 --domain hartley --layers 3 --dim 256 --base-healpy 2 --nkeptposes 4 --niter 7 --l-end 48 -n 50 --ps-freq 10
 # N=real1_end48_ramp5       run $SCRIPT $DREAL --t-extent 20 --lr .0001 -b 8 --domain hartley --layers 3 --dim 256 --base-healpy 2 --nkeptposes 4 --niter 7 --l-end 48 -n 10 --l-ramp-epochs 5
-N=real1_end48_ramp5_psf10 run $SCRIPT $DREAL --t-extent 20 --lr .0001 -b 8 --domain hartley --layers 3 --dim 256 --base-healpy 2 --nkeptposes 4 --niter 7 --l-end 48 -n 100 --ps-freq 10 --l-ramp-epochs 50
+# N=real1_end48_ramp5_psf10 run $SCRIPT $DREAL --t-extent 20 --lr .0001 -b 8 --domain hartley --layers 3 --dim 256 --base-healpy 2 --nkeptposes 4 --niter 7 --l-end 48 -n 100 --ps-freq 10 --l-ramp-epochs 50
 # N=real1_end24_ramp5       run $SCRIPT $DREAL --t-extent 20 --lr .0001 -b 8 --domain hartley --layers 3 --dim 256 --base-healpy 2 --nkeptposes 8 --niter 7 --l-end 24 -n 10 --l-ramp-epochs 5
-N=real1_end24_ramp5_psf10 run $SCRIPT $DREAL --t-extent 20 --lr .0001 -b 8 --domain hartley --layers 3 --dim 256 --base-healpy 2 --nkeptposes 8 --niter 7 --l-end 24 -n 100 --ps-freq 10 --l-ramp-epochs 50
+# N=real1_end24_ramp5_psf10 run $SCRIPT $DREAL --t-extent 20 --lr .0001 -b 8 --domain hartley --layers 3 --dim 256 --base-healpy 2 --nkeptposes 8 --niter 7 --l-end 24 -n 100 --ps-freq 10 --l-ramp-epochs 50
 # N=real1_end48_dim128        run $SCRIPT $DREAL --t-extent 20 --lr .0001 -b 8 --domain hartley --layers 3 --dim 128 --base-healpy 2 --nkeptposes 4 --niter 7 --l-end 48 -n 5
-N=real1_end48_dim128_psf10  run $SCRIPT $DREAL --t-extent 20 --lr .0001 -b 8 --domain hartley --layers 3 --dim 128 --base-healpy 2 --nkeptposes 4 --niter 7 --l-end 48 -n 50 --ps-freq 10
+# N=real1_end48_dim128_psf10  run $SCRIPT $DREAL --t-extent 20 --lr .0001 -b 8 --domain hartley --layers 3 --dim 128 --base-healpy 2 --nkeptposes 4 --niter 7 --l-end 48 -n 50 --ps-freq 10
 # N=real1_end48_rampP5       run $SCRIPT $DREAL --t-extent 20 --lr .0001 -b 8 --domain hartley --layers 3 --dim 256 --base-healpy 2 --nkeptposes 4 --niter 7 --l-end 48 -n 10 --l-ramp-epochs 5
-N=real1_end48_rampP5_psf10 run $SCRIPT $DREAL --t-extent 20 --lr .0001 -b 8 --domain hartley --layers 3 --dim 256 --base-healpy 2 --nkeptposes 4 --niter 7 --l-end 48 -n 100 --ps-freq 10 --l-ramp-epochs 50
+# N=real1_end48_rampP5_psf10 run $SCRIPT $DREAL --t-extent 20 --lr .0001 -b 8 --domain hartley --layers 3 --dim 256 --base-healpy 2 --nkeptposes 4 --niter 7 --l-end 48 -n 100 --ps-freq 10 --l-ramp-epochs 50
+
+SCRIPT="$(pwd)/cryodrgn/commands/bnb_het.py"
+
+N=het1_zdim10_end48_rampP5_psf10 run $SCRIPT $DREAL --t-extent 20 --lr .0001 -b 8 --domain hartley --players 3 --pdim 256 --base-healpy 2 --nkeptposes 4 --niter 7 --l-end 48 -n 59 --ps-freq 10 --l-ramp-epochs 50 --zdim 10

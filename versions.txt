@@ -5,3 +5,4 @@
 0.1.1  -- Refactor pose and CTF file format
 0.1.2  -- Refactor MRC header (no API changes)
 0.2.0  -- Properly packaged with commandline executable
+0.2.1  -- Relion 3.1 star file parsing

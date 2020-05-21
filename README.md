@@ -14,6 +14,10 @@ ICLR 2020, https://arxiv.org/abs/1909.05215
 
 ## New in v0.2
 
+**Version 0.2.1:**
+* New: Parsing of RELION 3.1 files
+* Fix: Compatibility with pytorch 1.5
+
 **Version 0.2.0:**
 * New interface and proper python packaing with setup.py. This version has identical functionality and argument usage as previous versions, however tools are now available from a common entry point. See:
     
@@ -46,7 +50,7 @@ Until the cryoDRGN conda/pip package is available, for now, git clone the source
     # Clone source code and install
     git clone https://github.com/zhonge/cryodrgn.git
     cd cryodrgn
-    git checkout 0.2.0
+    git checkout 0.2.1
     python setup.py install
 
 ## Quickstart: heterogeneous reconstruction with consensus poses

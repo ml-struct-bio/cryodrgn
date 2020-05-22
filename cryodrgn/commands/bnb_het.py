@@ -58,12 +58,13 @@ def parse_args():
     group.add_argument('--eq-start-it', type=int, default=100000, help='It at which equivariance turned on (default: %(default)s)')
     group.add_argument('--eq-end-it', type=int, default=200000, help='It at which equivariance max (default: %(default)s)')
     group.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: mean, std of dataset)')
+    group.add_argument('--l-ramp-epochs',type=int,default=0, help='default: %(default)s')
+    group.add_argument('--l-ramp-model', type=int, default=0, help="If 1, then during ramp only train the model up to l-max")
 
     group = parser.add_argument_group('Pose Search parameters')
     group.add_argument('--l-start', type=int,default=12, help='Starting L radius (default: %(default)s)')
     group.add_argument('--l-end', type=int, default=20, help='End L radius (default: %(default)s)')
     group.add_argument('--niter', type=int, default=5, help='Number of iterations of grid subdivision')
-    group.add_argument('--l-ramp-epochs',type=int,default=0, help='default: %(default)s')
     group.add_argument('--t-extent', type=float, default=5, help='+/- pixels to search over translations (default: %(default)s)')
     group.add_argument('--t-ngrid', type=float, default=7, help='Initial grid size for translations')
     group.add_argument('--pretrain', type=int, default=10000, help='Number of initial iterations with random poses (default: %(default)s)')
@@ -112,10 +113,9 @@ def pretrain(model, lattice, optim, minibatch, tilt):
     optim.step()
     return gen_loss.item()
 
-def train(model, lattice, ps, optim, minibatch, beta, beta_control=None, equivariance=None, enc_only=False, poses=None):
+def train(model, lattice, ps, optim, L, minibatch, beta, beta_control=None, equivariance=None, enc_only=False, poses=None):
     y, yt = minibatch
     use_tilt = yt is not None
-    D = lattice.D
     B = y.size(0)
 
     # VAE inference of z
@@ -144,7 +144,7 @@ def train(model, lattice, ps, optim, minibatch, beta, beta_control=None, equivar
         model.train()
 
     # reconstruct circle of pixels instead of whole image
-    mask = lattice.get_circular_mask(lattice.D//2)
+    mask = lattice.get_circular_mask(L)
     def gen_slice(R):
         return model.decode(lattice.coords[mask] @ R, z).view(B,-1)
     def translate(img):
@@ -367,10 +367,13 @@ def main(args):
         batch_it = 0 
         poses, base_poses = [], []
 
+        L_model = lattice.D // 2
         if args.l_ramp_epochs > 0:
             Lramp = args.l_start + int(epoch / args.l_ramp_epochs * (args.l_end - args.l_start))
             ps.Lmin = min(Lramp, args.l_start)
             ps.Lmax = min(Lramp, args.l_end)
+            if epoch < args.l_ramp_epochs and args.l_ramp_model:
+                L_model = ps.Lmax
 
         if epoch % args.ps_freq != 0:
             log('Using previous iteration poses')
@@ -392,7 +395,7 @@ def main(args):
                 p = [torch.tensor(x[ind_np]) for x in sorted_poses]
             else: 
                 p = None
-            gen_loss, kld, loss, eq_loss, pose = train(model, lattice, ps, optim, batch, beta, args.beta_control, equivariance_tuple, enc_only=args.enc_only, poses=p)
+            gen_loss, kld, loss, eq_loss, pose = train(model, lattice, ps, optim, L_model, batch, beta, args.beta_control, equivariance_tuple, enc_only=args.enc_only, poses=p)
             # logging
             poses.append((ind.cpu().numpy(),pose))
             kld_accum += kld*len(ind)

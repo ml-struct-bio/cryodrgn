@@ -20,19 +20,12 @@ class Starfile():
     def load(self, starfile, relion31=False):
         f = open(starfile,'r')
         # get to data block
+        BLOCK = 'data_particles' if relion31 else 'data_'
         while 1:
             for line in f:
-                if line.startswith('data_'):
+                if line.startswith(BLOCK):
                     break
             break
-        if relion31: # get to data_particles block
-            # assumes there is a data_optics block followed by a data_particles block
-            # only read in data_particles block... not sure if there is a spec for this file format
-            while 1:
-                for line in f:
-                    if line.startswith('data_'):
-                        break
-                break
         # get to header loop
         while 1:
             for line in f:

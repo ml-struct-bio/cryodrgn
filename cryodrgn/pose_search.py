@@ -8,6 +8,7 @@ from cryodrgn import lie_tools
 from cryodrgn import so3_grid
 from cryodrgn import shift_grid
 from cryodrgn import utils
+from cryodrgn.lattice import Lattice
 
 log = utils.log
 vlog = utils.vlog
@@ -27,20 +28,16 @@ def to_tensor(x):
     return x
 
 def interpolate(img, coords):
+    # print(f"Interpolating {img.shape} {coords.shape}")
     assert len(coords.shape)== 2
     assert coords.shape[-1] == 2
+    grid = coords * 2 # careful here! grid_sample expects [-1,1] instead of [-0.5,0.5]
+    grid = grid[None, None, ...].expand(img.shape[0], -1, -1, -1)
 
-    c = torch.stack((coords[:, 1], coords[:, 0]), dim=0)  # careful here! coord is (y, x) but we need (row, col)
-    cf = c.floor().long()
-    cc = c.ceil().long()
-    cr = c - cf.float()
-    ci = 1 - cr
-
-    res = \
-        img[..., cf[0], cf[1]] * ci[0] * ci[1] + \
-        img[..., cf[0], cc[1]] * ci[0] * cr[1] + \
-        img[..., cc[0], cf[1]] * cr[0] * ci[1] + \
-        img[..., cc[0], cc[1]] * cr[0] * cr[1]
+    res = F.grid_sample(
+        img.unsqueeze(1), 
+        grid,
+    ).squeeze(2).squeeze(1)
 
     return res
 
@@ -157,16 +154,14 @@ class PoseSearch:
         B, d1, NQ, YX = images.shape
         BNQ = B * NQ
         squeezed_images = images.view(BNQ, YX)
-
         D = self.lattice.D
-        # images = torch.zeros((B * NQ, D, D), device=images.device)
         res = torch.zeros((B * NQ, len(angles), YX), device=images.device)
         # B x NQ x YX
         mask = self.lattice.get_circular_mask(L)
 
         rot_matrices = torch.stack([rot_2d(a, 2, images.device) for a in angles], dim=0)
         lattice_coords = self.lattice.coords[mask][:, :2]
-        rot_coords = (lattice_coords @ rot_matrices + 0.5) * (D - 1)
+        rot_coords = (lattice_coords @ rot_matrices)
 
         full_images = torch.zeros((BNQ, D, D), device=images.device)
         full_images.view(BNQ, D * D)[:, mask] = squeezed_images
@@ -174,6 +169,7 @@ class PoseSearch:
         for angle_idx, interp_coords in enumerate(rot_coords):
             interpolated = interpolate(full_images, interp_coords)
             assert squeezed_images.shape == interpolated.shape
+            # IMPORTANT TRICK HERE!
             interpolated *= squeezed_images.std(-1, keepdim=True) / interpolated.std(-1, keepdim=True)  # FIXME
 
             res[:, angle_idx] = interpolated

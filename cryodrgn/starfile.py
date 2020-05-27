@@ -41,12 +41,13 @@ class Starfile():
                 else:
                     break
             break 
-        # assume the rest is the body
+        # assume all subsequent lines until empty line is the body
         headers = [h.strip().split()[0] for h in headers]
-        body = [line] + f.readlines()
-        # remove last line of body if empty
-        if body[-1].strip() == '':
-            body = body[:-1]
+        body = [line]
+        for line in f:
+            if line.strip() == '':
+                break
+            body.append(line)
         # put data into an array and instantiate as dataframe
         words = [l.strip().split() for l in body]
         words = np.array(words)

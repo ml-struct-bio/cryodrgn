@@ -20,6 +20,7 @@ def add_args(parser):
     parser.add_argument('-o', metavar='MRCS', type=os.path.abspath, required=True, help='Output projection stack (.mrcs)')
     parser.add_argument('--is-vol',action='store_true', help='Flag if input .mrc is a volume')
     parser.add_argument('--chunk', type=int, help='Chunksize (in # of images) to split particle stack when saving')
+    parser.add_argument('--relion31', action='store_true', help='Flag for relion3.1 star format')
     parser.add_argument('--datadir', help='Optionally provide path to input .mrcs if loading from a .star or .cs file')
     return parser
 
@@ -36,7 +37,7 @@ def main(args):
     warnexists(args.o)
     assert (args.o.endswith('.mrcs') or args.o.endswith('mrc')), "Must specify output in .mrc(s) file format"
 
-    old = dataset.load_particles(args.mrcs, lazy=True, datadir=args.datadir)
+    old = dataset.load_particles(args.mrcs, lazy=True, datadir=args.datadir, relion31=args.relion31)
     oldD = old[0].get().shape[0]
     assert args.D <= oldD, f'New box size {args.D} cannot be larger than the original box size {oldD}'
     assert args.D % 2 == 0, 'New box size must be even'

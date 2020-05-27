@@ -34,7 +34,6 @@ def main(args):
         assert args.kv is not None, "--kv must be set manually with RELION 3.1 file format"
         assert args.cs is not None, "--cs must be set manually with RELION 3.1 file format"
         assert args.w is not None, "--w must be set manually with RELION 3.1 file format"
-        assert args.ps is not None, "--ps must be set manually with RELION 3.1 file format"
     
     s = starfile.Starfile.load(args.star, relion31=args.relion31)
     N = len(s.df)

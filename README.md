@@ -50,7 +50,7 @@ Until the cryoDRGN conda/pip package is available, for now, git clone the source
     # Clone source code and install
     git clone https://github.com/zhonge/cryodrgn.git
     cd cryodrgn
-    git checkout 0.2.1
+    git checkout 0.2.1b
     python setup.py install
 
 ## Quickstart: heterogeneous reconstruction with consensus poses

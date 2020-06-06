@@ -72,8 +72,9 @@ def add_args(parser):
 
 def save_checkpoint(model, lattice, optim, epoch, norm, Apix, out_mrc, out_weights):
     model.eval()
-    eval_volume = model.module.eval_volume if isinstance(model, nn.DataParallel) else model.eval_volume 
-    vol = eval_volume(lattice.coords, lattice.D, lattice.extent, norm)
+    if isinstance(model, nn.DataParallel):
+        model = model.module
+    vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, norm)
     mrc.write(out_mrc, vol.astype(np.float32), Apix=Apix)
     torch.save({
         'norm': norm,

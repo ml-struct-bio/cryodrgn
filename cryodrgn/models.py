@@ -83,6 +83,10 @@ class HetOnlyVAE(nn.Module):
         '''
         return self.decoder(self.cat_z(coords,z))
 
+    # Need forward func for DataParallel -- TODO: refactor
+    def forward(self, *args, **kwargs):
+        return self.decode(*args, **kwargs)
+
 
 def get_decoder(in_dim, D, layers, dim, domain, enc_type, enc_dim=None, activation=nn.ReLU):
     if enc_type == 'none':

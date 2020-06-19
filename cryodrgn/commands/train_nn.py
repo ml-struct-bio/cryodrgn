@@ -11,6 +11,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+try:
+    import apex.amp as amp
+except: 
+    pass
 
 from cryodrgn import mrc
 from cryodrgn import utils
@@ -50,6 +54,7 @@ def add_args(parser):
     group.add_argument('--wd', type=float, default=0, help='Weight decay in Adam optimizer (default: %(default)s)')
     group.add_argument('--lr', type=float, default=1e-4, help='Learning rate in Adam optimizer (default: %(default)s)')
     group.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: mean, std of dataset)')
+    group.add_argument('--amp', action='store_true', help='Use mixed-precision training')
 
     group = parser.add_argument_group('Pose SGD')
     group.add_argument('--do-pose-sgd', action='store_true', help='Refine poses')
@@ -68,6 +73,8 @@ def add_args(parser):
 
 def save_checkpoint(model, lattice, optim, epoch, norm, Apix, out_mrc, out_weights):
     model.eval()
+    if isinstance(model, nn.DataParallel):
+        model = model.module
     vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, norm)
     mrc.write(out_mrc, vol.astype(np.float32), Apix=Apix)
     torch.save({
@@ -77,7 +84,7 @@ def save_checkpoint(model, lattice, optim, epoch, norm, Apix, out_mrc, out_weigh
         'optimizer_state_dict':optim.state_dict(),
         }, out_weights)
 
-def train(model, lattice, optim, y, rot, trans=None, ctf_params=None):
+def train(model, lattice, optim, y, rot, trans=None, ctf_params=None, use_amp=False):
     model.train()
     optim.zero_grad()
     B = y.size(0)
@@ -93,7 +100,11 @@ def train(model, lattice, optim, y, rot, trans=None, ctf_params=None):
     if trans is not None:
         y = lattice.translate_ht(y, trans.unsqueeze(1), mask).view(B,-1)
     loss = F.mse_loss(yhat, y)
-    loss.backward()
+    if use_amp:
+        with amp.scale_loss(loss, optim) as scaled_loss:
+            scaled_loss.backward()
+    else:
+        loss.backward()
     optim.step()
     return loss.item()
 
@@ -134,6 +145,7 @@ def main(args):
     log(model)
     log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
 
+
     # optimizer
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
@@ -164,6 +176,21 @@ def main(args):
     else: ctf_params = None
     Apix = ctf_params[0,0] if ctf_params is not None else 1
 
+    # Mixed precision training with AMP
+    if args.amp:
+        assert args.batch_size % 8 == 0
+        assert (D-1) % 8 == 0
+        assert args.dim % 8 == 0
+        # Also check zdim, enc_mask dim?
+        model, optim = amp.initialize(model, optim, opt_level='O1')
+
+    # parallelize
+    if torch.cuda.device_count() > 1:
+        log(f'Using {torch.cuda.device_count()} GPUs!')
+        args.batch_size *= torch.cuda.device_count()
+        log(f'Increasing batch size to {args.batch_size}')
+        model = nn.DataParallel(model)
+
     # train
     data_generator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
     for epoch in range(start_epoch, args.num_epochs):
@@ -178,7 +205,7 @@ def main(args):
                 pose_optimizer.zero_grad()
             r, t = posetracker.get_pose(ind)
             c = ctf_params[ind] if ctf_params is not None else None
-            loss_item = train(model, lattice, optim, batch.to(device), r, t, c)
+            loss_item = train(model, lattice, optim, batch.to(device), r, t, c, use_amp=args.amp)
             if args.do_pose_sgd and epoch >= args.pretrain:
                 pose_optimizer.step()
             loss_accum += loss_item*len(ind)

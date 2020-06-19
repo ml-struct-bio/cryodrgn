@@ -186,6 +186,8 @@ def main(args):
     # parallelize
     if torch.cuda.device_count() > 1:
         log(f'Using {torch.cuda.device_count()} GPUs!')
+        args.batch_size *= torch.cuda.device_count()
+        log(f'Increasing batch size to {args.batch_size}')
         model = nn.DataParallel(model)
 
     # train

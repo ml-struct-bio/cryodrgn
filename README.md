@@ -26,7 +26,7 @@ ICLR 2020, https://arxiv.org/abs/1909.05215
 * New analysis pipeline `cryodrgn analyze`
 * New latent space traversal scripts with `cryodrgn graph_traversal` and `cryodrgn pc_traversal`.
 
-*Last updated 4/20/2020.*
+*Last updated 6/19/2020.*
 
 ## Installation/dependencies:
 

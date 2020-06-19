@@ -76,6 +76,7 @@ First resize your particle images for initial pilot experiments with cryoDRGN us
       --is-vol           Flag if input .mrc is a volume
       --chunk CHUNK      Chunksize (in # of images) to split particle stack when
                          saving
+      --relion31         Flag for relion3.1 star format
       --datadir DATADIR  Optionally provide path to input .mrcs if loading from a
                          .star or .cs file
 
@@ -95,9 +96,9 @@ If there are memory issues with large particle stacks, add the `--chunk 10000` a
 
 CryoDRGN expects image poses in a binary pickle format (`.pkl`). Use the `parse_pose_star` or `parse_pose_csparc` command to extract the poses from a `.star` file or a `.cs` file, respectively.
 
-Example usage to parse image poses from a RELION starfile:
-    
-    $ cryodrgn parse_pose_star particles.star -o pose.pkl -D 300
+Example usage to parse image poses from a RELION 3.1 starfile:     
+
+    $ cryodrgn parse_pose_star particles.star -o pose.pkl -D 300 --relion31
 
 Example usage to parse image poses from a cryoSPARC homogeneous refinement particles.cs file:
 
@@ -111,7 +112,7 @@ CryoDRGN expects CTF parameters in a binary pickle format (`.pkl`). Use the `par
 
 Example usage for a .star file:
     
-    $ cryodrgn parse_ctf_star particles.star -D 300 --Apix 1.03 -o ctf.pkl
+    $ cryodrgn parse_ctf_star particles.star -D 300 --Apix 1.03 -o ctf.pkl --relion31
 
 The `-D` and `--Apix` arguments should be set to the box size and Angstrom/pixel of the original `.mrcs` file (before any downsampling). 
 
@@ -140,21 +141,21 @@ When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl
 
     $ cryodrgn train_vae -h
     usage: cryodrgn train_vae [-h] -o OUTDIR --zdim ZDIM --poses POSES [--ctf pkl]
-                              [--load LOAD] [--checkpoint CHECKPOINT]
+                              [--load WEIGHTS.PKL] [--checkpoint CHECKPOINT]
                               [--log-interval LOG_INTERVAL] [-v] [--seed SEED]
                               [--invert-data] [--window] [--ind IND] [--lazy]
-                              [--datadir DATADIR] [--tilt TILT]
+                              [--datadir DATADIR] [--relion31] [--tilt TILT]
                               [--tilt-deg TILT_DEG] [-n NUM_EPOCHS]
                               [-b BATCH_SIZE] [--wd WD] [--lr LR] [--beta BETA]
                               [--beta-control BETA_CONTROL] [--norm NORM NORM]
-                              [--do-pose-sgd] [--pretrain PRETRAIN]
+                              [--amp] [--do-pose-sgd] [--pretrain PRETRAIN]
                               [--emb-type {s2s2,quat}] [--pose-lr POSE_LR]
                               [--qlayers QLAYERS] [--qdim QDIM]
                               [--encode-mode {conv,resid,mlp,tilt}]
                               [--enc-mask ENC_MASK] [--use-real]
                               [--players PLAYERS] [--pdim PDIM]
                               [--pe-type {geom_ft,geom_full,geom_lowf,geom_nohighf,linear_lowf,none}]
-                              [--domain {hartley,fourier}]
+                              [--pe-dim PE_DIM] [--domain {hartley,fourier}]
                               particles
     
     Train a VAE for heterogeneous reconstruction with known pose
@@ -168,15 +169,15 @@ When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl
                             Output directory to save model
       --zdim ZDIM           Dimension of latent variable
       --poses POSES         Image poses (.pkl)
-      --ctf pkl             CTF parameters (.pkl) if particle stack is not phase
-                            flipped
-      --load LOAD           Initialize training from a checkpoint
+      --ctf pkl             CTF parameters (.pkl)
+      --load WEIGHTS.PKL    Initialize training from a checkpoint
       --checkpoint CHECKPOINT
                             Checkpointing interval in N_EPOCHS (default: 1)
       --log-interval LOG_INTERVAL
                             Logging interval in N_IMGS (default: 1000)
       -v, --verbose         Increaes verbosity
       --seed SEED           Random seed
+      --relion31            Flag if relion3.1 star format
     
     Dataset loading:
       --invert-data         Invert data sign
@@ -205,6 +206,9 @@ When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl
                             None)
       --norm NORM NORM      Data normalization as shift, 1/scale (default: mean,
                             std of dataset)
+      --amp                 Use mixed-precision training
+    
+    Pose SGD:
       --do-pose-sgd         Refine poses with gradient descent
       --pretrain PRETRAIN   Number of epochs with fixed poses before pose SGD
                             (default: 1)
@@ -227,9 +231,10 @@ When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl
       --pdim PDIM           Number of nodes in hidden layers (default: 256)
       --pe-type {geom_ft,geom_full,geom_lowf,geom_nohighf,linear_lowf,none}
                             Type of positional encoding (default: geom_lowf)
+      --pe-dim PE_DIM       Num features in positional encoding (default: image D)
       --domain {hartley,fourier}
                             Decoder representation domain (default: fourier)
-    
+
 Many of the parameters of this script have sensisible defaults. The required arguments are:
 
 * an input image stack (`.mrcs` or other listed file types)
@@ -330,7 +335,7 @@ This script runs a series of standard analyses:
 * UMAP embedding of the latent space
 * Generation of volumes from the latent space. See note [1].
 * Generation of trajectories along the first and second principal components
-* Generation of a template jupyter notebook that may be used for further interactive analyses and visualization
+* Generation of a template jupyter notebook that may be used for further interactive analyses, visualization, and volume generation
 
 Example usage to analyze results from the direction `02_vae_256_z10` containing results after 50 epochs of training:
 
@@ -416,7 +421,7 @@ Or to generate a trajectory of structures from a defined start and ending point,
 
     $ cryodrgn eval_vol [YOUR_WORKDIR]/weights.pkl --config [YOUR_WORKDIR]/config.pkl --z-start -3 --z-end 3 -n 20 -o [WORKDIR]/trajectory
 
-This example generates 20 structures at evenly spaced values between z=[-3,3]. 
+This example generates 20 structures at evenly spaced values between z=[-3,3], assuming a 1-dimensional latent variable model. 
 
 Finally, a series of structures can be generated using values of z given in a file specified by the arugment `--zfile`:
 

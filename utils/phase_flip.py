@@ -20,10 +20,10 @@ def parse_args():
 
 def main(args):
     imgs = dataset.load_particles(args.mrcs, lazy=True, datadir=args.datadir)
-    ctf_params = utils.load_pkl(args.ctf_params)
-    assert len(imgs) == len(ctf_params)
-    
     D = imgs[0].get().shape[0]
+    ctf_params = ctf.load_ctf_for_training(D,args.ctf_params)
+    assert len(imgs) == len(ctf_params), f'{len(imgs)} != {len(ctf_params)}'
+    
     fx, fy= np.meshgrid(np.linspace(-.5,.5,D,endpoint=False),np.linspace(-.5,.5,D,endpoint=False))
     freqs = np.stack([fx.ravel(), fy.ravel()],1)
     

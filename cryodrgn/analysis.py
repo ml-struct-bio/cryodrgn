@@ -62,9 +62,9 @@ def run_tsne(z, n_components=2, perplexity=1000):
     z_embedded = TSNE(n_components=n_components, perplexity=perplexity).fit_transform(z)
     return z_embedded
 
-def run_umap(z):
+def run_umap(z, **kwargs):
     import umap # CAN GET STUCK IN INFINITE IMPORT LOOP
-    reducer = umap.UMAP()
+    reducer = umap.UMAP(**kwargs)
     z_embedded = reducer.fit_transform(z)
     return z_embedded
 

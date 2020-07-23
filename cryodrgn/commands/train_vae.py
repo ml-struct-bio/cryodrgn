@@ -352,11 +352,15 @@ def main(args):
 
     # Mixed precision training with AMP
     if args.amp:
-        assert args.batch_size % 8 == 0
-        assert (D-1) % 8 == 0
-        assert args.pdim % 8 == 0
-        assert args.qdim % 8 == 0
-        # Also check zdim, enc_mask dim?
+        assert args.batch_size % 8 == 0, "Batch size must be divisible by 8 for AMP training"
+        assert (D-1) % 8 == 0, "Image size must be divisible by 8 for AMP training"
+        assert args.pdim % 8 == 0, "Decoder hidden layer dimension must be divisible by 8 for AMP training"
+        assert args.qdim % 8 == 0, "Encoder hidden layer dimension must be divisible by 8 for AMP training"
+        # Also check zdim, enc_mask dim? Add them as warnings for now.
+        if args.zdim % 8 != 0:
+            log('Warning: z dimension is not a multiple of 8 -- AMP training speedup is not optimized')
+        if in_dim % 8 != 0:
+            log('Warning: Masked input image dimension is not a mutiple of 8 -- AMP training speedup is not optimized')
         model, optim = amp.initialize(model, optim, opt_level='O1')
 
     # restart from checkpoint

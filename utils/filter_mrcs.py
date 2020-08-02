@@ -7,6 +7,7 @@ import pickle
 
 from cryodrgn import utils
 from cryodrgn import dataset
+from cryodrgn import mrc
 log = utils.log 
 
 def parse_args():
@@ -18,10 +19,10 @@ def parse_args():
 
 def main(args):
     x = dataset.load_particles(args.input, lazy=True)
-    log(x.shape)
+    log(f'Loaded {len(x)} particles')
     ind = utils.load_pkl(args.ind)
     x = np.array([x[i].get() for i in ind])
-    log(x.shape)
+    log(f'New stack dimensions: {x.shape}')
     mrc.write(args.o,x)
 
 if __name__ == '__main__':

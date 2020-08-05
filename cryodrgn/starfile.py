@@ -66,7 +66,7 @@ class Starfile():
         f.write('\n'.join(self.headers))
         f.write('\n')
         for i in self.df.index:
-            f.write(' '.join(self.df.loc[i]))
+            f.write(' '.join([str(v) for v in self.df.loc[i]]))
             f.write('\n')
         #f.write('\n'.join([' '.join(self.df.loc[i]) for i in range(len(self.df))]))
 

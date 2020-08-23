@@ -19,8 +19,8 @@ HEADERS = ['_rlnImageName',
            '_rlnDefocusV',
            '_rlnDefocusAngle',
            '_rlnVoltage',
-           '_rlnAmplitudeContrast',
            '_rlnSphericalAberration',
+           '_rlnAmplitudeContrast',
            '_rlnPhaseShift']
 
 def parse_args():

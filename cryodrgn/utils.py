@@ -29,8 +29,7 @@ def load_pkl(pkl):
         x = pickle.load(f)
     return x
 
-def save_pkl(data, out_pkl, append='False'):
-    mode = 'wb' if append == False else 'ab'
+def save_pkl(data, out_pkl, mode='wb'):
     if mode == 'wb' and os.path.exists(out_pkl):
         vlog(f'Warning: {out_pkl} already exists. Overwriting.')
     with open(out_pkl, mode) as f:

@@ -70,16 +70,28 @@ def run_umap(z, **kwargs):
 
 ### Clustering ###
 
-def cluster_kmeans(z, K):
+def cluster_kmeans(z, K, on_data=True, reorder=True):
     '''
     Cluster z by K means clustering
     Returns cluster labels, cluster centers
+    If reorder=True, reorders clusters according to agglomerative clustering of cluster centers
     '''
     kmeans = KMeans(n_clusters=K,
                     random_state=0,
                     max_iter=10)
     labels = kmeans.fit_predict(z)
     centers = kmeans.cluster_centers_
+
+    if on_data:
+        centers, centers_ind = get_nearest_point(z, centers)
+
+    if reorder:
+        g = sns.clustermap(centers)
+        reordered = g.dendrogram_row.reordered_ind
+        centers = centers[reordered]
+        if on_data: centers_ind = centers_ind[reordered]
+        tmp = {k:i for i,k in enumerate(reordered)}
+        labels = np.array([tmp[k] for k in labels])
     return labels, centers
 
 def get_nearest_point(data, query):
@@ -89,6 +101,42 @@ def get_nearest_point(data, query):
     '''
     ind = cdist(query, data).argmin(axis=1)
     return data[ind], ind
+
+### HELPER FUNCTIONS FOR INDEX ARRAY MANIPULATION
+
+def convert_original_indices(ind, N_orig, orig_ind):
+    '''
+    Convert index array into indices into the original particle stack
+    ''' # todo -- finish docstring
+    return np.arange(N_orig)[orig_ind][ind]
+
+def combine_ind(N, sel1, sel2, kind='intersection'):
+    # todo -- docstring
+    if kind == 'intersection':
+        ind_selected = set(sel1) & set(sel2)
+    elif kind == 'union':
+        ind_selected = set(sel1) | set(sel2)
+    else:
+        raise RuntimeError(f"Mode {kind} not recognized. Choose either 'intersection' or 'union'")
+    ind_selected_not = np.array(sorted(set(np.arange(N)) - ind_selected))
+    ind_selected = np.array(sorted(ind_selected))
+    return ind_selected, ind_selected_not
+
+def get_ind_for_cluster(labels, selected_clusters):
+    '''Return index array of the selected clusters
+    
+    Inputs:
+        labels: np.array of cluster labels for each particle
+        selected_clusters: list of cluster labels to select
+
+    Return:
+        ind_selected: np.array of particle indices with the desired cluster labels
+
+    Example usage:
+        ind_keep = get_ind_for_cluster(kmeans_labels, [0,4,6,14])
+    '''
+    ind_selected = np.array([i for i,label in enumerate(labels) if label in selected_clusters])
+    return ind_selected
 
 
 ### PLOTTING ###

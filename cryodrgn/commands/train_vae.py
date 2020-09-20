@@ -275,6 +275,8 @@ def main(args):
     flog('Use cuda {}'.format(use_cuda))
     if use_cuda:
         torch.set_default_tensor_type(torch.cuda.FloatTensor)
+    else:
+        log('WARNING: No GPUs detected')
 
     # set beta schedule
     try:

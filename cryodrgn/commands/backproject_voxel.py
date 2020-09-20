@@ -73,6 +73,8 @@ def main(args):
     log('Use cuda {}'.format(use_cuda))
     if use_cuda:
         torch.set_default_tensor_type(torch.cuda.FloatTensor)
+    else:
+        log('WARNING: No GPUs detected')
 
     # load the particles
     if args.tilt is None:

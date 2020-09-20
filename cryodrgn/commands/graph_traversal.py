@@ -82,6 +82,7 @@ def main(args):
         data = data[:args.max_images]
 
     use_cuda = torch.cuda.is_available()
+    log(f'Use cuda {use_cuda}')
     device = torch.device('cuda' if use_cuda else 'cpu')
     data = data.to(device)
 

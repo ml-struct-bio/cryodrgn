@@ -28,7 +28,7 @@ def add_args(parser):
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Output .mrc file')
 
     group = parser.add_argument_group('Dataset loading options')
-    group.add_argument('--invert-data', action='store_true', help='Invert data sign')
+    group.add_argument('--uninvert-data', dest='invert_data', action='store_false', help='Do not invert data sign')
     group.add_argument('--datadir', type=os.path.abspath, help='Path prefix to particle stack if loading relative paths from a .star or .cs file')
     group.add_argument('--ind',help='Indices to iterate over (pkl)')
     group.add_argument('--first', type=int, default=10000, help='Backproject the first N images (default: %(default)s)')

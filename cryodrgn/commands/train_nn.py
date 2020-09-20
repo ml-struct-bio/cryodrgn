@@ -41,7 +41,7 @@ def add_args(parser):
     parser.add_argument('--seed', type=int, default=np.random.randint(0,100000), help='Random seed')
 
     group = parser.add_argument_group('Dataset loading')
-    group.add_argument('--invert-data', action='store_true', help='Invert data sign')
+    group.add_argument('--uninvert-data', dest='invert_data', action='store_false', help='Do not invert data sign')
     group.add_argument('--window', action='store_true', help='Real space windowing of dataset')
     group.add_argument('--ind', type=os.path.abspath, help='Filter particle stack by these indices')
     group.add_argument('--lazy', action='store_true', help='Lazy loading if full dataset is too large to fit in memory')

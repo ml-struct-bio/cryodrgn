@@ -44,7 +44,7 @@ def add_args(parser):
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
 
     group = parser.add_argument_group('Dataset loading')
-    group.add_argument('--invert-data', action='store_true', help='Invert data sign')
+    group.add_argument('--uninvert-data', dest='invert_data', action='store_false', help='Do not invert data sign')
     group.add_argument('--window', action='store_true', help='Real space windowing of dataset')
     group.add_argument('--ind', type=os.path.abspath, help='Filter particle stack by these indices')
     group.add_argument('--lazy', action='store_true', help='Lazy loading if full dataset is too large to fit in memory')
@@ -57,13 +57,13 @@ def add_args(parser):
     group = parser.add_argument_group('Overwrite architecture hyperparameters in config.pkl')
     group.add_argument('--zdim', type=int,  help='Dimension of latent variable')
     group.add_argument('--norm', type=float, nargs=2, help='Data normalization as shift, 1/scale')
-    group.add_argument('--qlayers', type=int,  help='Number of hidden layers')
-    group.add_argument('--qdim', type=int, help='Number of nodes in hidden layers')
+    group.add_argument('--enc-layers', dest='qlayers', type=int, help='Number of hidden layers')
+    group.add_argument('--enc-dim', dest='qdim', type=int, help='Number of nodes in hidden layers')
     group.add_argument('--encode-mode', choices=('conv','resid','mlp','tilt'), help='Type of encoder network')
     group.add_argument('--enc-mask', type=int, help='Circular mask of image for encoder')
     group.add_argument('--use-real', action='store_true', help='Use real space image for encoder (for convolutional encoder)')
-    group.add_argument('--players', type=int, help='Number of hidden layers')
-    group.add_argument('--pdim', type=int, help='Number of nodes in hidden layers')
+    group.add_argument('--dec-layers', dest='players', type=int, help='Number of hidden layers')
+    group.add_argument('--dec-dim', dest='pdim', type=int, help='Number of nodes in hidden layers')
     group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf','none'),  help='Type of positional encoding')
     group.add_argument('--pe-dim', type=int, help='Num sinusoid features in positional encoding (default: D/2)')
     group.add_argument('--domain', choices=('hartley','fourier'), help='Decoder representation domain')
@@ -182,6 +182,7 @@ def main(args):
         if batch_it % args.log_interval == 0:
             log('# [{}/{} images] gen loss={:.4f}, kld={:.4f}, beta={:.4f}, loss={:.4f}'.format(batch_it, Nimg, gen_loss, kld, beta, loss))
     log('# =====> Average gen loss = {:.6}, KLD = {:.6f}, total loss = {:.6f}'.format(gen_loss_accum/Nimg, kld_accum/Nimg, loss_accum/Nimg))
+    
 
     z_mu_all = np.vstack(z_mu_all)
     z_logvar_all = np.vstack(z_logvar_all)

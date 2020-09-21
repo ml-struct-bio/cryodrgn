@@ -45,7 +45,7 @@ def add_args(parser):
 
     group = parser.add_argument_group('Dataset loading')
     group.add_argument('--uninvert-data', dest='invert_data', action='store_false', help='Do not invert data sign')
-    group.add_argument('--window', action='store_true', help='Real space windowing of dataset')
+    group.add_argument('--no-window', dest='window', action='store_false', help='Turn off real space windowing of dataset')
     group.add_argument('--ind', type=os.path.abspath, metavar='PKL', help='Filter particle stack by these indices')
     group.add_argument('--lazy', action='store_true', help='Lazy loading if full dataset is too large to fit in memory')
     group.add_argument('--datadir', type=os.path.abspath, help='Path prefix to particle stack if loading relative paths from a .star or .cs file')

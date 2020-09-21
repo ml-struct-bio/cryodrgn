@@ -92,22 +92,26 @@ def analyze_zN(z, outdir, vg, skip_umap=False, num_pcs=2, num_ksamples=20):
     plt.figure(1)
     g = sns.jointplot(pc[:,0], pc[:,1], alpha=.1, s=2)
     g.set_axis_labels('PC1','PC2')
+    plt.tight_layout()
     plt.savefig(f'{outdir}/z_pca.png')
     
     plt.figure(2)
     g = sns.jointplot(pc[:,0], pc[:,1], kind='hexbin')
     g.set_axis_labels('PC1','PC2')
+    plt.tight_layout()
     plt.savefig(f'{outdir}/z_pca_hexbin.png')
 
     if zdim > 2 and not skip_umap:
         plt.figure(3)
         g = sns.jointplot(umap_emb[:,0], umap_emb[:,1], alpha=.1, s=2)
         g.set_axis_labels('UMAP1','UMAP2')
+        plt.tight_layout()
         plt.savefig(f'{outdir}/umap.png')
 
         plt.figure(4)
         g = sns.jointplot(umap_emb[:,0], umap_emb[:,1], kind='hexbin')
         g.set_axis_labels('UMAP1','UMAP2')
+        plt.tight_layout()
         plt.savefig(f'{outdir}/umap_hexbin.png')
 
     analysis.plot_by_cluster(pc[:,0], pc[:,1], K, kmeans_labels, centers_ind=centers_ind, annotate=True)

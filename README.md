@@ -10,9 +10,24 @@ https://www.biorxiv.org/content/10.1101/2020.03.27.003871v1
 
 Reconstructing continuous distributions of 3D protein structure from cryo-EM images.
 Ellen D. Zhong, Tristan Bepler, Joseph H. Davis*, Bonnie Berger*.
-ICLR 2020, https://arxiv.org/abs/1909.05215
+ICLR 2020, Spotlight presentation, https://arxiv.org/abs/1909.05215
 
-## New in v0.2
+## New in v0.3
+* GPU parallelization
+* Mixed precision training
+* Interface update:
+    * Renamed encoder arguments `--qdim` and `--qlayers` to `--enc-dim` and `--enc-layers`
+    * Renamed decoder arguments `--pdim` and `--players` to `--dec-dim` and `--dec-layers`
+* Argument default changes:
+    * Flipped the default for `--invert-data` to True by default
+    * Flipped the default for `--window` to True by default
+* Updated training recommendations in below quick start guide
+* Updates to cryodrgn analyze
+    * More visualizations
+    * Order kmeans volumes according to distances in latent space (previously random) 
+    * More features for particle selection and filtering in the Jupiter notebook
+
+### Previous versions
 
 **Version 0.2.1:**
 * New: Parsing of RELION 3.1 files
@@ -26,11 +41,11 @@ ICLR 2020, https://arxiv.org/abs/1909.05215
 * New analysis pipeline `cryodrgn analyze`
 * New latent space traversal scripts with `cryodrgn graph_traversal` and `cryodrgn pc_traversal`.
 
-*Last updated 6/19/2020.*
+*Last updated 9/21/2020.*
 
 ## Installation/dependencies:
 
-Until the cryoDRGN conda/pip package is available, for now, git clone the source code and install the following dependencies with anaconda, replacing the cudatoolkit version as necessary:
+To install cryoDRGN, git clone the source code and install the following dependencies with anaconda, replacing the cudatoolkit version as necessary:
 
     # Create conda environment
     conda create --name cryodrgn python=3.7
@@ -106,6 +121,8 @@ Example usage to parse image poses from a cryoSPARC homogeneous refinement parti
 
 The `-D` argument should be set to the box size of the original reconstruction (before any downsampling). 
 
+**Note:** Poses should be obtained from a C1 consensus refinement! (See https://github.com/zhonge/cryodrgn/issues/21)
+
 ### 3. Parse CTF parameters from a .star/.cs file
 
 CryoDRGN expects CTF parameters in a binary pickle format (`.pkl`). Use the `parse_ctf_star` or `parse_ctf_csparc` command to extract the relevant CTF parameters from a `.star` file or a `.cs` file, respectively.
@@ -135,11 +152,14 @@ Example usage:
 
 The output structure `backproject.128.mrc` will not match the consensus reconstruction exactly as the `backproject_voxel` command backprojects phase-flipped particles onto the voxel grid, and by default only uses the first 10k images. If the structure is too noisy, you can increase the number of images that are used with the `--first` argument.
 
+**Note:** If the volume does not resemble your structure, you may need to use the flag `--uninvert-data` (recently updated from `--invert-data` in v0.3). This flips the data sign, which may be necessary since cryo-EM images can be stored as light-on-dark or dark-on-light, depending on the convention used in upstream processing tools. 
+
 ### 5. Running cryoDRGN heterogeneous reconstruction
 
 When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl) have been prepared, a cryoDRGN model can be trained with following script:
 
     $ cryodrgn train_vae -h
+    
     usage: cryodrgn train_vae [-h] -o OUTDIR --zdim ZDIM --poses POSES [--ctf pkl]
                               [--load WEIGHTS.PKL] [--checkpoint CHECKPOINT]
                               [--log-interval LOG_INTERVAL] [-v] [--seed SEED]
@@ -246,38 +266,32 @@ Additional parameters which are typically set include:
 
 * `--ctf`, ctf parameters (`.pkl`), unless phase-flipped images are used
 * `-n`, Number of epochs to train
-* `--invert-data`, Use if particles are white on black
-* Architecture parameters with `--qlayers`, `--qdim`, `--players`, `--pdim`
+* `--reinvert-data`, Use if particles are dark on light
+* Architecture parameters with `--enc-layers`, `--enc-dim`, `--dec-layers`, `--dec-dim`
+* `--amp` to enable mixed precision training (fast!)
 
 ### Example usage:
 
-It is recommended to first train on lower resolution images (e.g. D=128) with `--zdim 1` and with `--zdim 10` using the default architecture (fast). After validation, pose optimization, and any necessary particle filtering, then train on the full resolution image stack (up to D=256) with a large architecture (slow). 
+It is recommended to first train on lower resolution images (e.g. D=128) with `--zdim 8` using the default architecture (fast). After validation, pose optimization, and any necessary particle filtering, then train on the full resolution image stack (up to D=256) with a large architecture (slow). 
 
 Example command to train a cryoDRGN model for 50 epochs on an image dataset `projections.128.mrcs` with poses `pose.pkl` and ctf parameters `ctf.pkl`:
 
-    # 1-D latent variable model
+    # 8-D latent variable model
     $ cryodrgn train_vae projections.128.mrcs 
             --poses pose.pkl \
             --ctf ctf.pkl \
-            --zdim 1 -n 50 \
-            -o 00_vae128_z1
+            --zdim 8 -n 50 \
+            -o 00_vae128_z8
 
-    # 10-D latent variable model
-    $ cryodrgn train_vae projections.128.mrcs 
-            --poses pose.pkl \
-            --ctf ctf.pkl \
-            --zdim 10 -n 50 \
-            -o 01_vae128_z10
+Example command to train a 8-D latent variable cryoDRGN model for 25 epochs on an image dataset `projections.256.mrcs` with poses `pose.pkl` and ctf parameters `ctf.pkl`:
 
-Example command to train a 10-D latent variable cryoDRGN model for 20 epochs on an image dataset `projections.256.mrcs` with poses `pose.pkl` and ctf parameters `ctf.pkl`:
-
-    # 10-D latent variable model with a larger MLP architecture
+    # 8-D latent variable model with a larger MLP architecture
     $ cryodrgn train_vae projections.256.mrcs 
             --poses pose.pkl \
             --ctf ctf.pkl \
-            --zdim 10 -n 20 \
-            --qdim 1024 --qlayers 3 --pdim 1024 --players 3 \
-            -o 02_vae256_z10
+            --zdim 8 -n 25 \
+            --enc-dim 1024 --enc-layers 3 --dec-dim 1024 --dec-layers 3 \
+            -o 01_vae256_z8
 
 The number of epochs `-n` refers to the number of full passes through the dataset for training, and should be modified depending on the number of particles in the dataset. For a 100k particle dataset, the above settings required ~6 min per epoch for D=128 images + default architecture, ~12 min/epoch for D=128 images + large architecture, and ~47 min per epoch for D=256 images + large architecture. 
 
@@ -286,12 +300,22 @@ If you would like to train longer, a training job can be extended with the `--lo
     $ cryodrgn train_vae projections.256.mrcs
             --poses pose.pkl \
             --ctf ctf.pkl \
-            --zdim 10 -n 50 \
-            --qdim 1024 --qlayers 3 --pdim 1024 --players 3 \
-            -o 02_vae256_z10
-            --load 02_vae_256_z10/weights.19.pkl # 0-based indexing
+            --zdim 8 -n 50 \
+            --enc-dim 1024 --enc-layers 3 --dec-dim 1024 --dec-layers 3 \
+            -o 01_vae256_z8
+            --load 01_vae_256_z8/weights.24.pkl # 0-based indexing
 
 Note: While these settings worked well for the datasets we've tested, they are highly experimental for the general case as different datasets have diverse sources of heterogeneity. Please reach out to the authors with questions/consult -- we'd love to learn more.
+
+### GPU parallelization and mixed precision training
+
+As of v0.3, cryoDRGN will by default train on all available GPUs on the running machine. To select specific GPUs for cryoDRGN to run on, use the environmental variable `CUDA_VISIBLE_DEVICES`, e.g.:
+
+    $ CUDA_VISIBLE_DEVICES=0 cryodrgn train_vae ... # Run on GPU 0
+
+Mixed precision training with the `--amp` flag is available for Nvidia GPUs with tensor core architectures and can lead to order of magnitude speed ups in training. In order to use mixed precision training, Nvidia's apex library must first be installed into the cryodrgn anaconda environmenet (https://github.com/NVIDIA/apex#quick-start).  More details here: https://github.com/zhonge/cryodrgn/issues/3#issuecomment-658209280
+
+**Note:** GPU computation may not be the training bottleneck, especially for smaller architectures/images. In this case, GPU parallelization and mixed precision training may have a limited effect on the wall clock training time. 
 
 ### Local pose refinement -- BETA!
 
@@ -300,7 +324,7 @@ Image poses may be *locally* refined using the `--do-pose-sgd` flag. More detail
 
 ## 6. Analysis of results
 
-Once the model has finished training, the output directory will contain a configuration file `config.pkl`, neural network weights `weights.pkl`, image poses (if performing pose sgd) `pose.pkl`, and the predicted latent encoding for each image `z.pkl`. To analyze these results, use the `cryodrgn analyze` command to visualize the latent space and generate structures. `cryodrgn analyze` will also provide a template jupyter notebook for further interactive visualization and analysis.
+Once the model has finished training, the output directory will contain a configuration file `config.pkl`, neural network weights `weights.pkl`, image poses (if performing pose sgd) `pose.pkl`, and the predicted latent encoding for each image `z.pkl`. Note that the latent encodings are provided in the same order as the input particles. To analyze these results, use the `cryodrgn analyze` command to visualize the latent space and generate structures. `cryodrgn analyze` will also provide a template jupyter notebook for further interactive visualization and analysis.
 
 ### cryodrgn analyze
 
@@ -328,6 +352,9 @@ Once the model has finished training, the output directory will contain a config
       --flip                Flip handedness of output volume
       -d DOWNSAMPLE, --downsample DOWNSAMPLE
                             Downsample volumes to this box size (pixels)
+      --pc PC               Number of principal component traversals to generate
+                        (default: 2)
+      --ksample KSAMPLE     Number of kmeans samples to generate (default: 20)                      
 
 This script runs a series of standard analyses:
 
@@ -436,7 +463,9 @@ Two additional commands can be used in conjunction with `cryodrgn eval_vol` to g
     $ cryodrgn pc_traversal -h
     $ cryodrgn graph_traversal -h
     
-These scripts provide a text file of z values that can be input to `cryodrgn eval_vol` to generate a series of structures that can be visualized as a trajectory in ChimeraX (https://www.cgl.ucsf.edu/chimerax).
+These scripts produce a text file of z values that can be input to `cryodrgn eval_vol` to generate a series of structures that can be visualized as a trajectory in ChimeraX (https://www.cgl.ucsf.edu/chimerax).
+
+An example usage of the graph traversal algorithm is here (https://github.com/zhonge/cryodrgn/issues/16#issuecomment-668897007).
 
 ## Fully unsupervised reconstruction
 

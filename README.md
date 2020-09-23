@@ -13,8 +13,8 @@ Ellen D. Zhong, Tristan Bepler, Joseph H. Davis*, Bonnie Berger*.
 ICLR 2020, Spotlight presentation, https://arxiv.org/abs/1909.05215
 
 ## New in v0.3
-* New: GPU parallelization 
-* New: Mode for accelerated mixed precision training with NVIDIA tensor core GPUs
+* New: GPU parallelization with flag `--multigpu`
+* New: Mode for accelerated mixed precision training with flag `--amp`, available for NVIDIA tensor core GPUs
 * Interface update:
     * Renamed encoder arguments `--qdim` and `--qlayers` to `--enc-dim` and `--enc-layers`
     * Renamed decoder arguments `--pdim` and `--players` to `--dec-dim` and `--dec-layers`
@@ -67,6 +67,8 @@ To install cryoDRGN, git clone the source code and install the following depende
     cd cryodrgn
     git checkout 0.2.1b
     python setup.py install
+
+To use accelerated mixed precision training (available for Nvidia Volta, Turing, and Ampere architectures), install Nvidia's apex package into the conda environement (https://github.com/NVIDIA/apex#quick-start).
 
 ## Quickstart: heterogeneous reconstruction with consensus poses
 
@@ -307,15 +309,19 @@ If you would like to train longer, a training job can be extended with the `--lo
 
 Note: While these settings worked well for the datasets we've tested, they are highly experimental for the general case as different datasets have diverse sources of heterogeneity. Please reach out to the authors with questions/consult -- we'd love to learn more.
 
-### GPU parallelization and mixed precision training
+### Accelerated training with GPU parallelization and mixed precision training
 
-As of v0.3, cryoDRGN will by default train on all available GPUs on the running machine. To select specific GPUs for cryoDRGN to run on, use the environmental variable `CUDA_VISIBLE_DEVICES`, e.g.:
+Use cryoDRGN's `--multigpu` flag to enable parallelized training across all detected GPUs on the machine. To select specific GPUs for cryoDRGN to run on, use the environmental variable `CUDA_VISIBLE_DEVICES`, e.g.:
 
-    $ CUDA_VISIBLE_DEVICES=0 cryodrgn train_vae ... # Run on GPU 0
+    $ cryodrgn train_vae ... # Run on GPU 0 
+    $ cryodrgn train_vae ... --multigpu # Run on all GPUs on the machine
+    $ CUDA_VISIBLE_DEVICES=0,3 cryodrgn train_vae ... --multigpu # Run on GPU 0,3 
 
-Mixed precision training with the `--amp` flag is available for Nvidia GPUs with tensor core architectures and can lead to order of magnitude speed ups in training. In order to use mixed precision training, Nvidia's apex library must first be installed into the cryodrgn anaconda environmenet (https://github.com/NVIDIA/apex#quick-start).  More details here: https://github.com/zhonge/cryodrgn/issues/3#issuecomment-658209280
+When training is parallelized across multiple GPUs, the batch size (number of images trained in each mini-batch of SGD; default `-b 8`) will be automatically scaled by the number of available GPUs to better take advantage of parallelization. Depending on your compute resources, GPU utilization may be improved with `-b 16` (i.e. to achieve linear scaling of runtime with # GPUs). However, note that GPU parallelization, while leading to a faster wall-clock time per epoch, may require increasing the total number of epochs, since the training dynamics are affected (fewer model updates per epoch with larger `-b`).
 
-**Note:** GPU computation may not be the training bottleneck, especially for smaller architectures/images. In this case, GPU parallelization and mixed precision training may have a limited effect on the wall clock training time. 
+Mixed precision training with the `--amp` flag is available for Nvidia GPUs with tensor core architectures and can lead to _order of magnitude_ speed ups in training. In order to use mixed precision training, Nvidia's apex library must first be installed into the cryodrgn anaconda environmenet (https://github.com/NVIDIA/apex#quick-start).  
+
+**Note:** We recommend using `--multigpu` and `--amp` for larger architecture or images. GPU computation may not be the training bottleneck, especially for the default architecture (256x3) and smaller images (D=128). In this case, GPU parallelization and mixed precision training may have a limited effect on the wall clock training time, while taking up additional compute resources, however this behavior depends on your specific computing resources. 
 
 ### Local pose refinement -- BETA!
 

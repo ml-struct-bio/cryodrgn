@@ -13,8 +13,8 @@ Ellen D. Zhong, Tristan Bepler, Joseph H. Davis*, Bonnie Berger*.
 ICLR 2020, Spotlight presentation, https://arxiv.org/abs/1909.05215
 
 ## New in v0.3
-* GPU parallelization
-* Mixed precision training
+* New: GPU parallelization 
+* New: Mode for accelerated mixed precision training with NVIDIA tensor core GPUs
 * Interface update:
     * Renamed encoder arguments `--qdim` and `--qlayers` to `--enc-dim` and `--enc-layers`
     * Renamed decoder arguments `--pdim` and `--players` to `--dec-dim` and `--dec-layers`
@@ -255,16 +255,16 @@ When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl
       --domain {hartley,fourier}
                             Decoder representation domain (default: fourier)
 
-Many of the parameters of this script have sensisible defaults. The required arguments are:
+Many of the parameters of this script have sensible defaults. The required arguments are:
 
 * an input image stack (`.mrcs` or other listed file types)
 * `--poses`, image poses (`.pkl`) which correspond to the input images
+* `--ctf`, ctf parameters (`.pkl`), unless phase-flipped images are used
 * `--zdim`, the dimension of the latent variable
 * `-o`, a clean output directory for storing results
 
 Additional parameters which are typically set include:
 
-* `--ctf`, ctf parameters (`.pkl`), unless phase-flipped images are used
 * `-n`, Number of epochs to train
 * `--reinvert-data`, Use if particles are dark on light
 * Architecture parameters with `--enc-layers`, `--enc-dim`, `--dec-layers`, `--dec-dim`

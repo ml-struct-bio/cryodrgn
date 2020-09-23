@@ -64,6 +64,7 @@ def add_args(parser):
     group.add_argument('--beta-control', type=float, help='KL-Controlled VAE gamma. Beta is KL target. (default: %(default)s)')
     group.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: 0, std of dataset)')
     group.add_argument('--amp', action='store_true', help='Use mixed-precision training')
+    group.add_argument('--multigpu', action='store_true', help='Parallelize training across all detected GPUs')
 
     group = parser.add_argument_group('Pose SGD')
     group.add_argument('--do-pose-sgd', action='store_true', help='Refine poses with gradient descent')
@@ -377,11 +378,13 @@ def main(args):
         start_epoch = 0
 
     # parallelize
-    if torch.cuda.device_count() > 1:
+    if args.multigpu and torch.cuda.device_count() > 1:
         log(f'Using {torch.cuda.device_count()} GPUs!')
         args.batch_size *= torch.cuda.device_count()
         log(f'Increasing batch size to {args.batch_size}')
         model = nn.DataParallel(model)
+    elif args.multigpu:
+        log(f'WARNING: --multigpu selected, but {torch.cuda.device_count()} GPUs detected')
 
     # training loop
     data_generator = DataLoader(data, batch_size=args.batch_size, shuffle=True)

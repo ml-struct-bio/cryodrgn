@@ -350,12 +350,13 @@ Once the model has finished training, the output directory will contain a config
 ### cryodrgn analyze
 
     $ cryodrgn analyze -h
-    usage: cryodrgn analyze [-h] [--device DEVICE] [--Apix APIX] [--flip]
-                            [-d DOWNSAMPLE]
+    usage: cryodrgn analyze [-h] [--device DEVICE] [-o OUTDIR] [--skip-vol]
+                            [--skip-umap] [--Apix APIX] [--flip] [-d DOWNSAMPLE]
+                            [--pc PC] [--ksample KSAMPLE]
                             workdir epoch
     
     Visualize latent space and generate volumes
-
+    
     positional arguments:
       workdir               Directory with cryoDRGN results
       epoch                 Epoch number N to analyze (0-based indexing,
@@ -364,9 +365,11 @@ Once the model has finished training, the output directory will contain a config
     optional arguments:
       -h, --help            show this help message and exit
       --device DEVICE       Optionally specify CUDA device
-     -o OUTDIR, --outdir OUTDIR
+      -o OUTDIR, --outdir OUTDIR
                             Output directory for analysis results (default:
                             [workdir]/analyze.[epoch])
+      --skip-vol            Skip generation of volumes
+      --skip-umap           Skip running UMAP
     
     Extra arguments for volume generation:
       --Apix APIX           Pixel size to add to .mrc header (default: 1 A/pix)
@@ -374,9 +377,8 @@ Once the model has finished training, the output directory will contain a config
       -d DOWNSAMPLE, --downsample DOWNSAMPLE
                             Downsample volumes to this box size (pixels)
       --pc PC               Number of principal component traversals to generate
-                        (default: 2)
-      --ksample KSAMPLE     Number of kmeans samples to generate (default: 20)                      
-
+                            (default: 2)
+      --ksample KSAMPLE     Number of kmeans samples to generate (default: 20)
 This script runs a series of standard analyses:
 
 * PCA of the latent space

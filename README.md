@@ -65,7 +65,7 @@ To install cryoDRGN, git clone the source code and install the following depende
     # Clone source code and install
     git clone https://github.com/zhonge/cryodrgn.git
     cd cryodrgn
-    git checkout 0.2.1b
+    git checkout 0.3.0
     python setup.py install
 
 To use accelerated mixed precision training (available for Nvidia Volta, Turing, and Ampere architectures), install Nvidia's apex package into the conda environement (https://github.com/NVIDIA/apex#quick-start).
@@ -121,7 +121,7 @@ Example usage to parse image poses from a cryoSPARC homogeneous refinement parti
 
     $ cryodrgn parse_pose_csparc cryosparc_P27_J3_005_particles.cs -o pose.pkl -D 300
 
-The `-D` argument should be set to the box size of the original reconstruction (before any downsampling). 
+The `-D` argument should be set to the box size of the original consensus reconstruction (before any downsampling). 
 
 **Note:** Poses should be obtained from a C1 consensus refinement! (See https://github.com/zhonge/cryodrgn/issues/21)
 
@@ -271,31 +271,46 @@ Additional parameters which are typically set include:
 * `--reinvert-data`, Use if particles are dark on light
 * Architecture parameters with `--enc-layers`, `--enc-dim`, `--dec-layers`, `--dec-dim`
 * `--amp` to enable mixed precision training (fast!)
+* `--multigpu` to enable parallelized training across multiple GPUs
 
-### Example usage:
+### Recommended usage:
 
-It is recommended to first train on lower resolution images (e.g. D=128) with `--zdim 8` using the default architecture (fast). After validation, pose optimization, and any necessary particle filtering, then train on the full resolution image stack (up to D=256) with a large architecture (slow). 
+1) It is highly recommended to first train on lower resolution images (e.g. D=128) with `--zdim 8` using the default architecture (fast) as an initial pass to sanity check results and perform any particle filtering. 
 
 Example command to train a cryoDRGN model for 50 epochs on an image dataset `projections.128.mrcs` with poses `pose.pkl` and ctf parameters `ctf.pkl`:
 
-    # 8-D latent variable model
+    # 8-D latent variable model, default architecture
     $ cryodrgn train_vae projections.128.mrcs 
             --poses pose.pkl \
             --ctf ctf.pkl \
             --zdim 8 -n 50 \
             -o 00_vae128_z8
 
-Example command to train a 8-D latent variable cryoDRGN model for 25 epochs on an image dataset `projections.256.mrcs` with poses `pose.pkl` and ctf parameters `ctf.pkl`:
+2) After any particle filtering, then train a larger model on the downsampled images. Because the architecture parameters constrain the complexity of the learned function, a larger architecture will be capable of learning more heterogeneity.
 
-    # 8-D latent variable model with a larger MLP architecture
+Example command to train a larger cryoDRGN model for 25 epochs on an image dataset `projections.128.mrcs` with poses `pose.pkl` and ctf parameters `ctf.pkl`:
+
+    # 8-D latent variable model, large architecture
+    $ cryodrgn train_vae projections.128.mrcs 
+            --poses pose.pkl \
+            --ctf ctf.pkl \
+            --zdim 8 -n 25 \
+            --enc-dim 1024 --enc-layers 3 --dec-dim 1024 --dec-layers 3 \
+            -o 01_vae128_big_z8
+
+3) Finally, after validation, pose optimization, and any necessary particle filtering, then train on the full resolution image stack (up to D=256) with a large architecture (slow):
+
+Example command to train a larger cryoDRGN model for 25 epochs on an image dataset `projections.256.mrcs` with poses `pose.pkl` and ctf parameters `ctf.pkl`:
+
+    # 8-D latent variable model, larger images, large architecture
     $ cryodrgn train_vae projections.256.mrcs 
             --poses pose.pkl \
             --ctf ctf.pkl \
             --zdim 8 -n 25 \
             --enc-dim 1024 --enc-layers 3 --dec-dim 1024 --dec-layers 3 \
-            -o 01_vae256_z8
+            -o 02_vae256_big_z8
 
-The number of epochs `-n` refers to the number of full passes through the dataset for training, and should be modified depending on the number of particles in the dataset. For a 100k particle dataset, the above settings required ~6 min per epoch for D=128 images + default architecture, ~12 min/epoch for D=128 images + large architecture, and ~47 min per epoch for D=256 images + large architecture. 
+The number of epochs `-n` refers to the number of full passes through the dataset for training, and should be modified depending on the number of particles in the dataset. For a 100k particle dataset on 1 GPU, the above settings required ~6 min per epoch for D=128 images + default architecture, ~12 min/epoch for D=128 images + large architecture, and ~47 min per epoch for D=256 images + large architecture. 
 
 If you would like to train longer, a training job can be extended with the `--load` argument. For example to extend the training of the previous example to 50 epochs:
 

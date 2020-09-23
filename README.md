@@ -159,25 +159,25 @@ The output structure `backproject.128.mrc` will not match the consensus reconstr
 When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl) have been prepared, a cryoDRGN model can be trained with following script:
 
     $ cryodrgn train_vae -h
-    
+
     usage: cryodrgn train_vae [-h] -o OUTDIR --zdim ZDIM --poses POSES [--ctf pkl]
                               [--load WEIGHTS.PKL] [--checkpoint CHECKPOINT]
                               [--log-interval LOG_INTERVAL] [-v] [--seed SEED]
-                              [--invert-data] [--window] [--ind IND] [--lazy]
+                              [--uninvert-data] [--no-window] [--ind PKL] [--lazy]
                               [--datadir DATADIR] [--relion31] [--tilt TILT]
                               [--tilt-deg TILT_DEG] [-n NUM_EPOCHS]
                               [-b BATCH_SIZE] [--wd WD] [--lr LR] [--beta BETA]
                               [--beta-control BETA_CONTROL] [--norm NORM NORM]
                               [--amp] [--do-pose-sgd] [--pretrain PRETRAIN]
                               [--emb-type {s2s2,quat}] [--pose-lr POSE_LR]
-                              [--qlayers QLAYERS] [--qdim QDIM]
+                              [--enc-layers QLAYERS] [--enc-dim QDIM]
                               [--encode-mode {conv,resid,mlp,tilt}]
                               [--enc-mask ENC_MASK] [--use-real]
-                              [--players PLAYERS] [--pdim PDIM]
+                              [--dec-layers PLAYERS] [--dec-dim PDIM]
                               [--pe-type {geom_ft,geom_full,geom_lowf,geom_nohighf,linear_lowf,none}]
                               [--pe-dim PE_DIM] [--domain {hartley,fourier}]
                               particles
-    
+
     Train a VAE for heterogeneous reconstruction with known pose
     
     positional arguments:
@@ -200,9 +200,9 @@ When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl
       --relion31            Flag if relion3.1 star format
     
     Dataset loading:
-      --invert-data         Invert data sign
-      --window              Real space windowing of dataset
-      --ind IND             Filter particle stack by these indices
+      --uninvert-data       Do not invert data sign
+      --no-window           Turn off real space windowing of dataset
+      --ind PKL             Filter particle stack by these indices
       --lazy                Lazy loading if full dataset is too large to fit in
                             memory
       --datadir DATADIR     Path prefix to particle stack if loading relative
@@ -224,8 +224,8 @@ When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl
       --beta-control BETA_CONTROL
                             KL-Controlled VAE gamma. Beta is KL target. (default:
                             None)
-      --norm NORM NORM      Data normalization as shift, 1/scale (default: mean,
-                            std of dataset)
+      --norm NORM NORM      Data normalization as shift, 1/scale (default: 0, std
+                            of dataset)
       --amp                 Use mixed-precision training
     
     Pose SGD:
@@ -237,8 +237,8 @@ When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl
       --pose-lr POSE_LR     Learning rate for pose optimizer (default: 0.0003)
     
     Encoder Network:
-      --qlayers QLAYERS     Number of hidden layers (default: 3)
-      --qdim QDIM           Number of nodes in hidden layers (default: 256)
+      --enc-layers QLAYERS  Number of hidden layers (default: 3)
+      --enc-dim QDIM        Number of nodes in hidden layers (default: 256)
       --encode-mode {conv,resid,mlp,tilt}
                             Type of encoder network (default: resid)
       --enc-mask ENC_MASK   Circular mask of image for encoder (default: D/2; -1
@@ -247,8 +247,8 @@ When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl
                             encoder)
     
     Decoder Network:
-      --players PLAYERS     Number of hidden layers (default: 3)
-      --pdim PDIM           Number of nodes in hidden layers (default: 256)
+      --dec-layers PLAYERS  Number of hidden layers (default: 3)
+      --dec-dim PDIM        Number of nodes in hidden layers (default: 256)
       --pe-type {geom_ft,geom_full,geom_lowf,geom_nohighf,linear_lowf,none}
                             Type of positional encoding (default: geom_lowf)
       --pe-dim PE_DIM       Num features in positional encoding (default: image D)

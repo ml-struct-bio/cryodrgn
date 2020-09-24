@@ -3,7 +3,7 @@
 from setuptools import setup, find_packages
 
 setup(name='cryodrgn',
-      version='0.2.1b',
+      version='0.3.0',
       description='cryoDRGN heterogeneous reconstruction',
       author='Ellen Zhong',
       author_email='zhonge@mit.edu',

@@ -96,7 +96,6 @@ def analyze_zN(z, outdir, vg, skip_umap=False, num_pcs=2, num_ksamples=20):
     plt.savefig(f'{outdir}/z_pca.png')
     
     plt.figure(2)
-    print('hi2')
     g = sns.jointplot(pc[:,0], pc[:,1], kind='hex')
     g.set_axis_labels('PC1','PC2')
     plt.tight_layout()

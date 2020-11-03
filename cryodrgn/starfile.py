@@ -13,6 +13,7 @@ from .mrc import LazyImage
 class Starfile():
     
     def __init__(self, headers, df):
+        assert headers == list(df.columns), f'{headers} != {df.columns}'
         self.headers = headers
         self.df = df
 

@@ -70,6 +70,43 @@ def R_from_relion(a,b,y):
     R[2,1] *= -1
     return R
 
+def R_from_relion_scipy(euler_, degrees=True):
+    '''Nx3 array of RELION euler angles to rotation matrix'''
+    from scipy.spatial.transform import Rotation as RR
+    euler = euler_.copy()
+    if euler.shape == (3,):
+        euler = euler.reshape(1,3)
+    euler[:,0] += 90
+    euler[:,2] -= 90
+    f = np.ones((3,3))
+    f[0,1] = -1
+    f[1,0] = -1
+    f[1,2] = -1
+    f[2,1] = -1
+    rot = RR.from_euler('zxz', euler, degrees=degrees).as_matrix()*f
+    return rot
+
+def R_to_relion_scipy(rot, degrees=True):
+    '''Nx3x3 rotation matrices to RELION euler angles'''
+    from scipy.spatial.transform import Rotation as RR
+    if rot.shape == (3,3):
+        rot = rot.reshape(1,3,3)
+    assert len(rot.shape) == 3, "Input must have dim Nx3x3"
+    f = np.ones((3,3))
+    f[0,1] = -1
+    f[1,0] = -1
+    f[1,2] = -1
+    f[2,1] = -1
+    euler = RR.from_dcm(rot*f).as_euler('zxz', degrees=True)
+    euler[:,0] -= 90
+    euler[:,2] += 90
+    euler += 180
+    euler %= 360
+    euler -= 180
+    if not degrees:
+        euler *= np.pi/180
+    return euler
+
 def xrot(tilt_deg):
     '''Return rotation matrix associated with rotation over the x-axis'''
     theta = tilt_deg*np.pi/180

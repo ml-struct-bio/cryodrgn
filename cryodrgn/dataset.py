@@ -41,7 +41,7 @@ class LazyMRCData(data.Dataset):
     '''
     def __init__(self, mrcfile, norm=None, keepreal=False, invert_data=False, ind=None, window=True, datadir=None, relion31=False):
         assert not keepreal, 'Not implemented error'
-        particles = load_particles(mrcfile, True, datadir, relion31=False)
+        particles = load_particles(mrcfile, True, datadir=datadir, relion31=relion31)
         if ind is not None:
             particles = [particles[x] for x in ind]
         N = len(particles)
@@ -97,7 +97,7 @@ class MRCData(data.Dataset):
     Class representing an .mrcs stack file
     '''
     def __init__(self, mrcfile, norm=None, keepreal=False, invert_data=False, ind=None, window=True, datadir=None, relion31=False):
-        particles_real = load_particles(mrcfile, False, datadir, relion31=False)
+        particles_real = load_particles(mrcfile, False, datadir=datadir, relion31=relion31)
         if ind is not None:
             particles_real = particles_real[ind]
         N, ny, nx = particles_real.shape

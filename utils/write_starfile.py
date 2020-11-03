@@ -56,7 +56,7 @@ def main(args):
         log(f'Filtering to {len(ind)} particles')
         ctf = ctf[ind]
         if args.poses: 
-            poses = poses[ind]
+            poses = (poses[0][ind], poses[1][ind])
     else:
         ind = np.arange(len(particles))
 

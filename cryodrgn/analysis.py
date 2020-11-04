@@ -197,11 +197,12 @@ def plot_by_cluster(x, y, K, labels, centers=None, centers_ind=None, annotate=Fa
             ax.annotate(str(i), centers[i,0:2])
     return fig, ax
 
-def plot_by_cluster_subplot(x, y, K, labels, s=2, alpha=.1, cmap=None):
+def plot_by_cluster_subplot(x, y, K, labels, s=2, alpha=.1, colors=None, cmap=None):
     ncol = int(np.ceil(K**.5))
     nrow = int(np.ceil(K/ncol))
     fig, ax = plt.subplots(ncol, nrow, sharex=True, sharey=True, figsize=(10,10))
-    colors = _get_colors(K, cmap)
+    if colors is None:
+        colors = _get_colors(K, cmap)
     for i in range(K):
         ii = labels == i
         x_sub = x[ii]

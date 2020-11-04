@@ -223,6 +223,7 @@ def plot_euler(theta,phi,psi,plot_psi=True):
 
 
 def ipy_plot_interactive_annotate(df, ind, opacity=.3):
+    '''Interactive plotly widget for a cryoDRGN pandas dataframe with annotated points'''
     import plotly.graph_objs as go
     from ipywidgets import interactive
     if 'labels' in df.columns:
@@ -275,6 +276,7 @@ def ipy_plot_interactive_annotate(df, ind, opacity=.3):
     return widget, f
 
 def ipy_plot_interactive(df, opacity=.3):
+    '''Interactive plotly widget for a cryoDRGN pandas dataframe'''
     import plotly.graph_objs as go
     from ipywidgets import interactive
     if 'labels' in df.columns:

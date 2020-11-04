@@ -10,6 +10,7 @@ from scipy.spatial.distance import cdist, pdist
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
+from sklearn.mixture import GaussianMixture
 
 from . import utils
 log = utils.log
@@ -92,6 +93,28 @@ def cluster_kmeans(z, K, on_data=True, reorder=True):
         if on_data: centers_ind = centers_ind[reordered]
         tmp = {k:i for i,k in enumerate(reordered)}
         labels = np.array([tmp[k] for k in labels])
+    return labels, centers
+
+def cluster_gmm(z, K, on_data=True, random_state=None, **kwargs):
+    '''
+    Cluster z by a K-component full covariance Gaussian mixture model
+    
+    Inputs:
+        z (Ndata x zdim np.array): Latent encodings
+        K (int): Number of clusters
+        on_data (bool): Compute cluster center as nearest point on the data manifold
+        random_state (int or None): Random seed used for GMM clustering
+        **kwargs: Additional keyword arguments passed to sklearn.mixture.GaussianMixture
+
+    Returns: 
+        np.array (Ndata,) of cluster labels
+        np.array (K x zdim) of cluster centers
+    '''
+    clf = GaussianMixture(n_components=K, covariance_type='full', random_state=None, **kwargs)
+    labels = clf.fit_predict(z)
+    centers = clf.means_
+    if on_data:
+        centers, centers_ind = get_nearest_point(z, centers)
     return labels, centers
 
 def get_nearest_point(data, query):

@@ -173,13 +173,64 @@ def _get_colors(K, cmap=None):
         colors = [colors[i%len(colors)] for i in range(K)]
     return colors
    
-def plot_by_cluster(x, y, K, labels, centers=None, centers_ind=None, annotate=False, s=2, alpha=0.1, colors=None, cmap=None):
+def scatter_annotate(x, y, centers=None, centers_ind=None, annotate=True, labels=None, alpha=.1, s=1):
     fig, ax = plt.subplots()
+    plt.scatter(x, y, alpha=alpha, s=s, rasterized=True)
+
+    # plot cluster centers
+    if centers_ind is not None:
+        assert centers is None
+        centers = np.array([[x[i],y[i]] for i in centers_ind])
+    if centers is not None:
+        plt.scatter(centers[:,0], centers[:,1], c='k')
+    if annotate:
+        assert centers is not None
+        if labels is None:
+            labels = range(len(centers))
+        for i in labels:
+            ax.annotate(str(i), centers[i,0:2]+np.array([.1,.1]))
+    return fig, ax
+
+def scatter_annotate_hex(x, y, centers=None, centers_ind=None, annotate=True, labels=None):
+    g = sns.jointplot(x=x, y=y, kind='hex')
+
+    # plot cluster centers
+    if centers_ind is not None:
+        assert centers is None
+        centers = np.array([[x[i],y[i]] for i in centers_ind])
+    if centers is not None:
+        g.ax_joint.scatter(centers[:,0], centers[:,1], color='k', edgecolor='grey')
+    if annotate:
+        assert centers is not None
+        if labels is None:
+            labels = range(len(centers))
+        for i in labels:
+            g.ax_joint.annotate(str(i), centers[i,0:2]+np.array([.1,.1]), color='black',
+                                bbox=dict(boxstyle='square,pad=.1', ec='None', fc='1', alpha=.5))
+    return g
+
+def scatter_color(x, y, c, cmap='viridis', s=1, alpha=.1, label=None, figsize=None):
+    fig, ax = plt.subplots(figsize=figsize)
+    assert len(x) == len(y) == len(c)
+    sc = plt.scatter(x, y, s=s, alpha=alpha, rasterized=True, cmap=cmap, c=c)
+    cbar = plt.colorbar(sc)
+    cbar.set_alpha(1)
+    cbar.draw_all()
+    if label:
+        cbar.set_label(label)
+    return fig, ax
+
+def plot_by_cluster(x, y, K, labels, centers=None, centers_ind=None, annotate=False, 
+                    s=2, alpha=0.1, colors=None, cmap=None, figsize=None):
+    fig, ax = plt.subplots(figsize=figsize)
+    if type(K) is int:
+        K = list(range(K))
+
     if colors is None:
-        colors = _get_colors(K, cmap)
+        colors = _get_colors(len(K), cmap)
 
     # scatter by cluster
-    for i in range(K):
+    for i in K:
         ii = labels == i
         x_sub = x[ii]
         y_sub = y[ii]
@@ -193,17 +244,20 @@ def plot_by_cluster(x, y, K, labels, centers=None, centers_ind=None, annotate=Fa
         plt.scatter(centers[:,0], centers[:,1], c='k')
     if annotate:
         assert centers is not None
-        for i in range(K):
+        for i in K:
             ax.annotate(str(i), centers[i,0:2])
     return fig, ax
 
-def plot_by_cluster_subplot(x, y, K, labels, s=2, alpha=.1, colors=None, cmap=None):
-    ncol = int(np.ceil(K**.5))
-    nrow = int(np.ceil(K/ncol))
+def plot_by_cluster_subplot(x, y, K, labels, 
+                            s=2, alpha=.1, colors=None, cmap=None, figsize=None):
+    if type(K) is int:
+        K = list(range(K))
+    ncol = int(np.ceil(len(K)**.5))
+    nrow = int(np.ceil(len(K)/ncol))
     fig, ax = plt.subplots(ncol, nrow, sharex=True, sharey=True, figsize=(10,10))
     if colors is None:
-        colors = _get_colors(K, cmap)
-    for i in range(K):
+        colors = _get_colors(len(K), cmap)
+    for i in K:
         ii = labels == i
         x_sub = x[ii]
         y_sub = y[ii]
@@ -213,14 +267,13 @@ def plot_by_cluster_subplot(x, y, K, labels, s=2, alpha=.1, colors=None, cmap=No
     return fig, ax
 
 def plot_euler(theta,phi,psi,plot_psi=True):
-    sns.jointplot(theta,phi,kind='hex',
+    sns.jointplot(x=theta,y=phi,kind='hex',
               xlim=(-180,180),
               ylim=(0,180)).set_axis_labels("theta", "phi")
     if plot_psi:
         plt.figure()
         plt.hist(psi)
         plt.xlabel('psi')
-
 
 def ipy_plot_interactive_annotate(df, ind, opacity=.3):
     '''Interactive plotly widget for a cryoDRGN pandas dataframe with annotated points'''

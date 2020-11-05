@@ -90,40 +90,58 @@ def analyze_zN(z, outdir, vg, skip_umap=False, num_pcs=2, num_ksamples=20):
     # Make some plots
     log('Generating plots...')
     plt.figure(1)
-    g = sns.jointplot(pc[:,0], pc[:,1], alpha=.1, s=2)
+    g = sns.jointplot(x=pc[:,0], y=pc[:,1], alpha=.1, s=2)
     g.set_axis_labels('PC1','PC2')
     plt.tight_layout()
     plt.savefig(f'{outdir}/z_pca.png')
     
     plt.figure(2)
-    g = sns.jointplot(pc[:,0], pc[:,1], kind='hex')
+    g = sns.jointplot(x=pc[:,0], y=pc[:,1], kind='hex')
     g.set_axis_labels('PC1','PC2')
     plt.tight_layout()
     plt.savefig(f'{outdir}/z_pca_hexbin.png')
 
     if zdim > 2 and not skip_umap:
         plt.figure(3)
-        g = sns.jointplot(umap_emb[:,0], umap_emb[:,1], alpha=.1, s=2)
+        g = sns.jointplot(x=umap_emb[:,0], y=umap_emb[:,1], alpha=.1, s=2)
         g.set_axis_labels('UMAP1','UMAP2')
         plt.tight_layout()
         plt.savefig(f'{outdir}/umap.png')
 
         plt.figure(4)
-        g = sns.jointplot(umap_emb[:,0], umap_emb[:,1], kind='hex')
+        g = sns.jointplot(x=umap_emb[:,0], y=umap_emb[:,1], kind='hex')
         g.set_axis_labels('UMAP1','UMAP2')
         plt.tight_layout()
         plt.savefig(f'{outdir}/umap_hexbin.png')
 
-    analysis.plot_by_cluster(pc[:,0], pc[:,1], K, kmeans_labels, centers_ind=centers_ind, annotate=True)
+    analysis.scatter_annotate(pc[:,0], pc[:,1], centers_ind=centers_ind, annotate=True)
     plt.xlabel('PC1')
     plt.ylabel('PC2')
     plt.savefig(f'{outdir}/kmeans{K}/z_pca.png')
 
+    g = analysis.scatter_annotate_hex(pc[:,0], pc[:,1], centers_ind=centers_ind, annotate=True)
+    g.set_axis_labels('PC1','PC2')
+    plt.tight_layout()
+    plt.savefig(f'{outdir}/kmeans{K}/z_pca_hex.png')
+
     if zdim > 2 and not skip_umap:
-        analysis.plot_by_cluster(umap_emb[:,0], umap_emb[:,1], K, kmeans_labels, centers_ind=centers_ind, annotate=True)
+        analysis.scatter_annotate(umap_emb[:,0], umap_emb[:,1], centers_ind=centers_ind, annotate=True)
         plt.xlabel('UMAP1')
         plt.ylabel('UMAP2')
         plt.savefig(f'{outdir}/kmeans{K}/umap.png')
+
+        g = analysis.scatter_annotate_hex(umap_emb[:,0], umap_emb[:,1], centers_ind=centers_ind, annotate=True)
+        g.set_axis_labels('UMAP1','UMAP2')
+        plt.tight_layout()
+        plt.savefig(f'{outdir}/kmeans{K}/umap_hex.png')
+
+    for i in range(num_pcs):
+        if not skip_umap:
+            analysis.scatter_color(umap_emb[:,0], umap_emb[:,1], pc[:,i], label=f'PC{i+1}')
+            plt.xlabel('UMAP1')
+            plt.ylabel('UMAP2')
+            plt.tight_layout()
+            plt.savefig(f'{outdir}/pc{i+1}/umap.png')
  
 class VolumeGenerator:
     '''Helper class to call analysis.gen_volumes'''

@@ -115,11 +115,11 @@ def pretrain(model, lattice, optim, minibatch, tilt):
     else:
         gen_loss = F.mse_loss(gen_slice(rot), y)
     
-    if args.half_precision:
-        with amp.scale_loss(gen_loss, optim) as scaled_loss:
-            scaled_loss.backward()
-    else:
-        gen_loss.backward()
+    # if args.half_precision:
+    #     with amp.scale_loss(gen_loss, optim) as scaled_loss:
+    #         scaled_loss.backward()
+    # else:
+    gen_loss.backward()
     optim.step()
     return gen_loss.item()
 
@@ -185,11 +185,11 @@ def train(model, lattice, ps, optim, L, minibatch, beta, beta_control=None, equi
     if equivariance is not None:
         loss += lamb*eq_loss
 
-    if args.half_precision:
-        with amp.scale_loss(loss, optim) as scaled_loss:
-            scaled_loss.backward()
-    else:
-        loss.backward()
+    # if args.half_precision:
+    #     with amp.scale_loss(loss, optim) as scaled_loss:
+    #         scaled_loss.backward()
+    # else:
+    loss.backward()
 
     optim.step()
     save_pose = [rot.detach().cpu().numpy()]
@@ -357,8 +357,8 @@ def main(args):
     else:
         start_epoch = 0
 
-    if args.half_precision:
-        model, optim = amp.initialize(model, optim, opt_level='O1')
+    # if args.half_precision:
+    #     model, optim = amp.initialize(model, optim, opt_level='O1')
 
     data_iterator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
 
@@ -457,7 +457,15 @@ def main(args):
     log('Finsihed in {} ({} per epoch)'.format(td, td/(num_epochs-start_epoch)))
 
 if __name__ == '__main__':
+    import cProfile
+    pr = cProfile.Profile()
+    pr.enable()
+
+
     args = parse_args().parse_args()
     utils._verbose = args.verbose
     main(args)
+
+    pr.disable()
+    pr.print_stats('cumtime')
 

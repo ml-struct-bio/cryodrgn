@@ -4,7 +4,9 @@ grids on SO(3) using the Hopf fribration"
 '''
 
 import numpy as np
-import healpy as hp
+import os
+import json
+
 from . import lie_tools
 
 def grid_s1(resol):
@@ -102,7 +104,19 @@ def get_neighbor(quat, s2i, s1i, cur_res):
     return quat_n[ii], ind[ii]
 
 
+try:
+    with open(f"{os.path.dirname(__file__)}/healpy_grid.json") as hf:
+        _GRIDS = {int(k): np.array(v).T for k, v in json.load(hf).items()}
+except IOError as e:
+    print("WARNING: Couldn't load cached healpy grid; will fall back to importing healpy")
+    _GRIDS = None
 
-
-
-    
+def pix2ang(Nside, ipix, nest=False, lonlat=False):
+    if _GRIDS is not None and Nside in _GRIDS and nest and not lonlat:
+        return _GRIDS[Nside][ipix]    
+    else:
+        try:
+            import healpy
+        except ImportError:
+            raise RuntimeError("You need to `pip install healpy` to run with non-standard grid sizes.")
+        healpy.pix2ang(Nside, ipix, nest=nest, lonlat=lonlat)

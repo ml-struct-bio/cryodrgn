@@ -51,4 +51,6 @@ DEFAULT="--t-extent 10 -n 5 --lr .0001 -b 8  --domain hartley --layers 3 --dim 2
 
 SCRIPT="$(pwd)/cryodrgn/commands/bnb_het.py"
 
-N=het1_zdim10_end48_rampP5_psf10 run $SCRIPT $DREAL --t-extent 20 --lr .0001 -b 8 --domain hartley --players 3 --pdim 256 --base-healpy 2 --nkeptposes 4 --niter 7 --l-end 48 -n 59 --ps-freq 10 --l-ramp-epochs 50 --zdim 10
+N=het1_zdim10_end48_rampP5_psf10_half_seed1 run $SCRIPT $DREAL --t-extent 20 --lr .0001 -b 8 --domain hartley --players 3 --pdim 256 --base-healpy 2 --nkeptposes 4 --niter 7 --l-end 48 -n 59 --ps-freq 10 --l-ramp-epochs 50 --zdim 10 --half-precision 1 --seed 1
+N=het1_zdim10_end48_rampP5_psf10_half_seed2 run $SCRIPT $DREAL --t-extent 20 --lr .0001 -b 8 --domain hartley --players 3 --pdim 256 --base-healpy 2 --nkeptposes 4 --niter 7 --l-end 48 -n 59 --ps-freq 10 --l-ramp-epochs 50 --zdim 10 --half-precision 1 --seed 2
+N=het1_zdim10_end48_rampP5_psf10_half_seed3 run $SCRIPT $DREAL --t-extent 20 --lr .0001 -b 8 --domain hartley --players 3 --pdim 256 --base-healpy 2 --nkeptposes 4 --niter 7 --l-end 48 -n 59 --ps-freq 10 --l-ramp-epochs 50 --zdim 10 --half-precision 1 --seed 3 

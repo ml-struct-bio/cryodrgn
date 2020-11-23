@@ -1,5 +1,5 @@
 '''
-Implementation of Yershova et al. "Generating uniform incremental 
+Implementation of Yershova et al. "Generating uniform incremental
 grids on SO(3) using the Hopf fribration"
 '''
 
@@ -18,7 +18,7 @@ def grid_s1(resol):
 def grid_s2(resol):
     Nside = 2**resol
     Npix = 12*Nside*Nside
-    theta, phi = hp.pix2ang(Nside, np.arange(Npix), nest=True)
+    theta, phi = pix2ang(Nside, np.arange(Npix), nest=True)
     return theta, phi
 
 def hopf_to_quat(theta, phi, psi):
@@ -59,9 +59,9 @@ def get_s1_neighbor(mini, curr_res):
     dt = 2*np.pi/Npix
     #return np.array([2*mini, 2*mini+1])*dt + dt/2
     # the fiber bundle grid on SO3 is weird
-    # the next resolution level's nearest neighbors in SO3 are not 
+    # the next resolution level's nearest neighbors in SO3 are not
     # necessarily the nearest neighbor grid points in S1
-    # include the 13 neighbors for now... eventually learn/memoize the mapping 
+    # include the 13 neighbors for now... eventually learn/memoize the mapping
     ind = np.arange(2*mini-1, 2*mini+3)
     if ind[0] < 0:
         ind[0] += Npix
@@ -73,7 +73,7 @@ def get_s2_neighbor(mini, cur_res):
     '''
     Nside = 2**(cur_res+1)
     ind = np.arange(4)+4*mini
-    return hp.pix2ang(Nside, ind, nest=True), ind
+    return pix2ang(Nside, ind, nest=True), ind
 
 def get_base_ind(ind, base):
     '''
@@ -112,11 +112,12 @@ except IOError as e:
     _GRIDS = None
 
 def pix2ang(Nside, ipix, nest=False, lonlat=False):
-    if _GRIDS is not None and Nside in _GRIDS and nest and not lonlat:
-        return _GRIDS[Nside][ipix]    
+    if False or _GRIDS is not None and Nside in _GRIDS and nest and not lonlat:
+        return _GRIDS[Nside][ipix].T
+        return ret.T
     else:
         try:
             import healpy
         except ImportError:
             raise RuntimeError("You need to `pip install healpy` to run with non-standard grid sizes.")
-        healpy.pix2ang(Nside, ipix, nest=nest, lonlat=lonlat)
+        return healpy.pix2ang(Nside, ipix, nest=nest, lonlat=lonlat)

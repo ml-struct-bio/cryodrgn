@@ -6,3 +6,5 @@
 0.1.2  -- Refactor MRC header (no API changes)
 0.2.0  -- Properly packaged with commandline executable
 0.2.1  -- Relion 3.1 star file parsing
+0.3.0  -- GPU parallelization
+       -- Updated defaults for improved signal processing

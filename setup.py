@@ -1,9 +1,13 @@
 #!/usr/bin/env python
 
 from setuptools import setup, find_packages
+import os,sys
+sys.path.insert(0, f'{os.path.dirname(__file__)}/cryodrgn')
+import cryodrgn 
+version = cryodrgn.__version__
 
 setup(name='cryodrgn',
-      version='0.3.0b',
+      version=version,
       description='cryoDRGN heterogeneous reconstruction',
       author='Ellen Zhong',
       author_email='zhonge@mit.edu',

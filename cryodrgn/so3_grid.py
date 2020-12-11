@@ -112,7 +112,7 @@ except IOError as e:
     _GRIDS = None
 
 def pix2ang(Nside, ipix, nest=False, lonlat=False):
-    if False or _GRIDS is not None and Nside in _GRIDS and nest and not lonlat:
+    if _GRIDS is not None and Nside in _GRIDS and nest and not lonlat:
         return _GRIDS[Nside][ipix].T
         return ret.T
     else:

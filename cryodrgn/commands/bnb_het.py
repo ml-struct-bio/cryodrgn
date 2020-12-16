@@ -31,7 +31,7 @@ except ImportError:
     pass
 
 log = utils.log
-vlog = utils.vlog
+vlog = utils.vlog 
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -77,6 +77,7 @@ def parse_args():
     group.add_argument('--nkeptposes', type=int, default=24, help="Number of poses to keep at each refinement interation during branch and bound")
     group.add_argument('--base-healpy', type=int, default=1, help="Base healpy grid for pose search. Higher means exponentially higher resolution.")
     group.add_argument('--half-precision', type=int, default=0, help="If 1, use half-precision for pose search")
+    group.add_argument("--pose-model-update-freq", type=int, default=0, help="If >0, only update the model used for pose search every N examples.")
 
     group = parser.add_argument_group('Encoder Network')
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
@@ -91,6 +92,21 @@ def parse_args():
     group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf','none'), default='geom_lowf', help='Type of positional encoding')
     group.add_argument('--domain', choices=('hartley','fourier'), default='hartley')
     return parser
+
+def make_model(args, lattice, enc_mask, in_dim):
+    return HetOnlyVAE(
+        lattice,
+        args.qlayers,
+        args.qdim,
+        args.players,
+        args.pdim,
+        in_dim,
+        args.zdim,
+        encode_mode=args.encode_mode,
+        enc_mask=enc_mask,
+        enc_type=args.pe_type,
+        domain=args.domain,
+    )
 
 def pretrain(model, lattice, optim, minibatch, tilt):
     y, yt = minibatch
@@ -321,12 +337,15 @@ def main(args):
         in_dim = D**2
     else:
         raise RuntimeError("Invalid argument for encoder mask radius {}".format(args.enc_mask))
-    model = HetOnlyVAE(lattice, args.qlayers, args.qdim, args.players, args.pdim,
-                in_dim, args.zdim, encode_mode=args.encode_mode, enc_mask=enc_mask, 
-                enc_type=args.pe_type, domain=args.domain)
+    
+    model = make_model(args, lattice, enc_mask, in_dim)
     log(model)
     log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
 
+    if args.pose_model_update_freq > 0:
+        pose_model = make_model(args, lattice, enc_mask, in_dim)
+    else:
+        pose_model = model
     
     # save configuration
     out_config = '{}/config.pkl'.format(args.outdir)
@@ -378,6 +397,9 @@ def main(args):
 
     # training loop
     num_epochs = args.num_epochs
+    if args.pose_model_update_freq > 0:
+        pose_model.load_state_dict(model.state_dict())
+        cc = 0
     for epoch in range(start_epoch, num_epochs):
         t2 = dt.now()
         kld_accum = 0
@@ -415,6 +437,12 @@ def main(args):
                 p = [torch.tensor(x[ind_np]) for x in sorted_poses]
             else: 
                 p = None
+
+            cc += len(batch[0])
+            if args.pose_model_update_freq > 0 and cc > args.pose_model_update_freq:
+                pose_model.load_state_dict(model.state_dict())
+                cc = 0
+
             gen_loss, kld, loss, eq_loss, pose = train(model, lattice, ps, optim, L_model, batch, beta, args.beta_control, equivariance_tuple, enc_only=args.enc_only, poses=p)
             # logging
             poses.append((ind.cpu().numpy(),pose))

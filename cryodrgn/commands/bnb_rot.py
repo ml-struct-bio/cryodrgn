@@ -72,6 +72,7 @@ def parse_args():
     group.add_argument('--nkeptposes', type=int, default=24, help="Number of poses to keep at each refinement interation during branch and bound")
     group.add_argument('--base-healpy', type=int, default=1, help="Base healpy grid for pose search. Higher means exponentially higher resolution.")
     group.add_argument('--half-precision', type=int, default=0, help="If 1, use half-precision for pose search")
+    group.add_argument("--pose-model-update-freq", type=int, default=0, help="If >0, only update the model used for pose search every N examples.")
 
     group = parser.add_argument_group('Network Architecture')
     group.add_argument('--layers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
@@ -185,6 +186,9 @@ def train(model, lattice, ps, optim, batch, tilt_rot=None, no_trans=False, poses
     return loss.item(), save_pose, base_pose
 
 
+def make_model(args, D):
+    return models.get_decoder(3, D, args.layers, args.dim, args.domain, args.pe_type, nn.ReLU)
+
 def main(args):
 
     log(args)
@@ -214,7 +218,12 @@ def main(args):
     Nimg = data.N
 
     lattice = Lattice(D, extent=0.5)
-    model = models.get_decoder(3, D, args.layers, args.dim, args.domain, args.pe_type, nn.ReLU)
+    model = make_model(args, D)
+
+    if args.pose_model_update_freq > 0:
+        pose_model = make_model(args, D)
+    else:
+        pose_model = model
 
     if args.no_trans:
         raise NotImplementedError()
@@ -259,6 +268,9 @@ def main(args):
                 break
 
     # training loop
+    if args.pose_model_update_freq > 0:
+        pose_model.load_state_dict(model.state_dict())
+        cc = 0
     for epoch in range(start_epoch, args.num_epochs):
         t2 = dt.now()
         batch_it = 0
@@ -285,6 +297,12 @@ def main(args):
                 bp = None
             else:
                 p, bp = None, None
+            
+            cc += len(batch[0])
+            if args.pose_model_update_freq > 0 and cc > args.pose_model_update_freq:
+                pose_model.load_state_dict(model.state_dict())
+                cc = 0
+                
             loss_item, pose, base_pose = train(model, lattice, ps, optim, batch, tilt, args.no_trans, poses=p, base_pose=bp)
             poses.append((ind.cpu().numpy(),pose))
             base_poses.append((ind_np, base_pose))

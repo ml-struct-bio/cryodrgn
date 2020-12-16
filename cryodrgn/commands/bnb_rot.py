@@ -62,6 +62,9 @@ def parse_args():
     group.add_argument('-b','--batch-size', type=int, default=10, help='Minibatch size (default: %(default)s)')
     group.add_argument('--wd', type=float, default=0, help='Weight decay in Adam optimizer (default: %(default)s)')
     group.add_argument('--lr', type=float, default=1e-4, help='Learning rate in Adam optimizer (default: %(default)s)')
+    group.add_argument('--reset-model-every', type=int, help="If set, reset the model every N epochs")
+    group.add_argument('--reset-optim-every', type=int, help="If set, reset the optimizer every N epochs")
+    group.add_argument('--reset-optim-after-pretrain', type=int, help="If set, reset the optimizer every N epochs")
 
     group = parser.add_argument_group('Pose search parameters')
     group.add_argument('--l-start', type=int,default=12, help='Starting L radius (default: %(default)s)')
@@ -72,7 +75,7 @@ def parse_args():
     group.add_argument('--nkeptposes', type=int, default=24, help="Number of poses to keep at each refinement interation during branch and bound")
     group.add_argument('--base-healpy', type=int, default=1, help="Base healpy grid for pose search. Higher means exponentially higher resolution.")
     group.add_argument('--half-precision', type=int, default=0, help="If 1, use half-precision for pose search")
-    group.add_argument("--pose-model-update-freq", type=int, default=0, help="If >0, only update the model used for pose search every N examples.")
+    group.add_argument("--pose-model-update-freq", type=int, help="If set, only update the model used for pose search every N examples.")
 
     group = parser.add_argument_group('Network Architecture')
     group.add_argument('--layers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
@@ -220,7 +223,7 @@ def main(args):
     lattice = Lattice(D, extent=0.5)
     model = make_model(args, D)
 
-    if args.pose_model_update_freq > 0:
+    if args.pose_model_update_freq:
         pose_model = make_model(args, D)
     else:
         pose_model = model
@@ -231,7 +234,7 @@ def main(args):
         ps = PoseSearch(model, lattice, args.l_start, args.l_end, tilt,
                         t_extent=args.t_extent, t_ngrid=args.t_ngrid, niter=args.niter,
                         nkeptposes=args.nkeptposes, base_healpy=args.base_healpy,
-                        half_precision=half_precision)
+                        half_precision=args.half_precision)
     log(model)
     log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
@@ -267,8 +270,13 @@ def main(args):
             if global_it > args.pretrain:
                 break
 
+    # reset model after pretraining
+    if optim.reset_optim_after_pretrain:
+        log(">> Resetting optim after pretrain")
+        optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
+
     # training loop
-    if args.pose_model_update_freq > 0:
+    if args.pose_model_update_freq:
         pose_model.load_state_dict(model.state_dict())
         cc = 0
     for epoch in range(start_epoch, args.num_epochs):
@@ -281,6 +289,14 @@ def main(args):
             Lramp = args.l_start + int(epoch / args.l_ramp_epochs * (args.l_end - args.l_start))
             ps.Lmin = min(Lramp, args.l_start)
             ps.Lmax = min(Lramp, args.l_end)
+
+        if args.reset_model_every and (epoch - 1) % args.reset_model_every == 0:
+            log(">> Resetting model")
+            model = make_model(args, D)
+
+        if args.reset_optim_every and (epoch - 1) % args.reset_optim_every == 0:
+            log(">> Resetting optim")
+            optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
         if epoch % args.ps_freq != 0:
             log('Using previous iteration poses')
@@ -299,7 +315,7 @@ def main(args):
                 p, bp = None, None
             
             cc += len(batch[0])
-            if args.pose_model_update_freq > 0 and cc > args.pose_model_update_freq:
+            if args.pose_model_update_freq and cc > args.pose_model_update_freq:
                 pose_model.load_state_dict(model.state_dict())
                 cc = 0
                 

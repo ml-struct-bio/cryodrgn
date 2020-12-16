@@ -65,6 +65,9 @@ def parse_args():
     group.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: mean, std of dataset)')
     group.add_argument('--l-ramp-epochs',type=int,default=0, help='default: %(default)s')
     group.add_argument('--l-ramp-model', type=int, default=0, help="If 1, then during ramp only train the model up to l-max")
+    group.add_argument('--reset-model-every', type=int, help="If set, reset the model every N epochs")
+    group.add_argument('--reset-optim-every', type=int, help="If set, reset the optimizer every N epochs")
+    group.add_argument('--reset-optim-after-pretrain', type=int, help="If set, reset the optimizer every N epochs")
 
     group = parser.add_argument_group('Pose Search parameters')
     group.add_argument('--l-start', type=int,default=12, help='Starting L radius (default: %(default)s)')
@@ -77,7 +80,7 @@ def parse_args():
     group.add_argument('--nkeptposes', type=int, default=24, help="Number of poses to keep at each refinement interation during branch and bound")
     group.add_argument('--base-healpy', type=int, default=1, help="Base healpy grid for pose search. Higher means exponentially higher resolution.")
     group.add_argument('--half-precision', type=int, default=0, help="If 1, use half-precision for pose search")
-    group.add_argument("--pose-model-update-freq", type=int, default=0, help="If >0, only update the model used for pose search every N examples.")
+    group.add_argument("--pose-model-update-freq", type=int, help="If set, only update the model used for pose search every N examples.")
 
     group = parser.add_argument_group('Encoder Network')
     group.add_argument('--qlayers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
@@ -342,7 +345,7 @@ def main(args):
     log(model)
     log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
 
-    if args.pose_model_update_freq > 0:
+    if args.pose_model_update_freq:
         pose_model = make_model(args, lattice, enc_mask, in_dim)
     else:
         pose_model = model
@@ -395,9 +398,14 @@ def main(args):
             if global_it > args.pretrain:
                 break
 
+    # reset model after pretraining
+    if optim.reset_optim_after_pretrain:
+        log(">> Resetting optim after pretrain")
+        optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
+
     # training loop
     num_epochs = args.num_epochs
-    if args.pose_model_update_freq > 0:
+    if args.pose_model_update_freq:
         pose_model.load_state_dict(model.state_dict())
         cc = 0
     for epoch in range(start_epoch, num_epochs):
@@ -416,6 +424,14 @@ def main(args):
             ps.Lmax = min(Lramp, args.l_end)
             if epoch < args.l_ramp_epochs and args.l_ramp_model:
                 L_model = ps.Lmax
+
+        if args.reset_model_every and (epoch - 1) % args.reset_model_every == 0:
+            log(">> Resetting model")
+            model = make_model(args, lattice, enc_mask, in_dim)
+
+        if args.reset_optim_every and (epoch - 1) % args.reset_optim_every == 0:
+            log(">> Resetting optim")
+            optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
         if epoch % args.ps_freq != 0:
             log('Using previous iteration poses')
@@ -439,7 +455,7 @@ def main(args):
                 p = None
 
             cc += len(batch[0])
-            if args.pose_model_update_freq > 0 and cc > args.pose_model_update_freq:
+            if args.pose_model_update_freq and cc > args.pose_model_update_freq:
                 pose_model.load_state_dict(model.state_dict())
                 cc = 0
 

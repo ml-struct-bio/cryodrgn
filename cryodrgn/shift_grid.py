@@ -1,14 +1,14 @@
 import numpy as np
 
-def grid_1d(resol, extent, ngrid):
+def grid_1d(resol, extent, ngrid, shift=0):
     Npix = ngrid*2**resol
     dt = 2*extent/Npix
-    grid = np.arange(Npix, dtype=np.float32)*dt + dt/2 - extent
+    grid = np.arange(Npix, dtype=np.float32)*dt + dt/2 - extent + shift
     return grid
 
-def grid_2d(resol, extent, ngrid):
-    x = grid_1d(resol, extent, ngrid)
-    y = grid_1d(resol, extent, ngrid)
+def grid_2d(resol, extent, ngrid, xshift=0, yshift=0):
+    x = grid_1d(resol, extent, ngrid, shift=xshift)
+    y = grid_1d(resol, extent, ngrid, shift=yshift)
     # convention: x is fast dim, y is slow dim
     grid = np.stack(np.meshgrid(x,y),-1) 
     return grid.reshape(-1,2)

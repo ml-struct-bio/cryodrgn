@@ -75,6 +75,8 @@ def parse_args():
     group.add_argument('--niter', type=int, default=5, help='Number of iterations of grid subdivision')
     group.add_argument('--t-extent', type=float, default=5, help='+/- pixels to search over translations (default: %(default)s)')
     group.add_argument('--t-ngrid', type=float, default=7, help='Initial grid size for translations')
+    group.add_argument('--t-xshift', type=float, default=0)
+    group.add_argument('--t-yshift', type=float, default=0)
     group.add_argument('--pretrain', type=int, default=10000, help='Number of initial iterations with random poses (default: %(default)s)')
     group.add_argument('--ps-freq', type=int, default=1, help='Frequency of pose inference (default: every %(default)s epochs)')
     group.add_argument('--nkeptposes', type=int, default=24, help="Number of poses to keep at each refinement interation during branch and bound")
@@ -357,7 +359,7 @@ def main(args):
     ps = PoseSearch(model, lattice, args.l_start, args.l_end, tilt,
                     t_extent=args.t_extent, t_ngrid=args.t_ngrid, niter=args.niter,
                     nkeptposes=args.nkeptposes, base_healpy=args.base_healpy,
-                    half_precision=args.half_precision)
+                    half_precision=args.half_precision, t_xshift=args.t_xshift, t_yshift=args.t_yshift)
 
     if args.equivariance:
         assert args.equivariance > 0, 'Regularization weight must be positive'

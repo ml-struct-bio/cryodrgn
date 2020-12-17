@@ -68,6 +68,8 @@ class PoseSearch:
         nkeptposes=24,
         loss_fn="msf",
         half_precision=False,
+        t_xshift=0,
+        t_yshift=0,
     ):
 
         self.model = model
@@ -83,7 +85,7 @@ class PoseSearch:
         self.nbase = len(self.base_quat)
         self.base_inplane = so3_grid.grid_s1(base_healpy)
         self.base_shifts = torch.tensor(
-            shift_grid.base_shift_grid(base_healpy - 1, t_extent, t_ngrid)
+            shift_grid.base_shift_grid(base_healpy - 1, t_extent, t_ngrid, t_xshift=t_xshift, t_yshift=t_yshift)
         ).float()
         self.t_extent = t_extent
         self.t_ngrid = t_ngrid

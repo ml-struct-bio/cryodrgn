@@ -165,6 +165,7 @@ def main(args):
 
     # load poses
     if args.do_pose_sgd:
+        assert args.domain == 'hartley', "Need to use --domain hartley if doing pose SGD"
         posetracker = PoseTracker.load(args.poses, Nimg, D, args.emb_type, ind)
         pose_optimizer = torch.optim.SparseAdam(posetracker.parameters(), lr=args.pose_lr)
     else:

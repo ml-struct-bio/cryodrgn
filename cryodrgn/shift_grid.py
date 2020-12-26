@@ -13,8 +13,8 @@ def grid_2d(resol, extent, ngrid, xshift=0, yshift=0):
     grid = np.stack(np.meshgrid(x,y),-1) 
     return grid.reshape(-1,2)
 
-def base_shift_grid(resol, extent, ngrid):
-    return grid_2d(resol, extent, ngrid)
+def base_shift_grid(resol, extent, ngrid, xshift=0, yshift=0):
+    return grid_2d(resol, extent, ngrid, xshift, yshift)
 
 ### Neighbor Finding ###
 

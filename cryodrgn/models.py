@@ -14,13 +14,15 @@ log = utils.log
 class HetOnlyVAE(nn.Module):
     # No pose inference
     def __init__(self, lattice, # Lattice object
-            qlayers, qdim, 
+            qlayers, qdim,
             players, pdim,
-            in_dim, zdim = 1, 
+            in_dim, zdim = 1,
             encode_mode = 'resid',
             enc_mask = None,
             enc_type = 'linear_lowf',
-            domain = 'fourier'):
+            domain = 'fourier',
+            activation = nn.ReLU,
+        ):
         super(HetOnlyVAE, self).__init__()
         self.lattice = lattice
         self.zdim = zdim
@@ -29,28 +31,28 @@ class HetOnlyVAE(nn.Module):
         if encode_mode == 'conv':
             self.encoder = ConvEncoder(qdim, zdim*2)
         elif encode_mode == 'resid':
-            self.encoder = ResidLinearMLP(in_dim, 
+            self.encoder = ResidLinearMLP(in_dim,
                             qlayers, # nlayers
                             qdim,  # hidden_dim
                             zdim*2, # out_dim
-                            nn.ReLU) 
+                            activation)
         elif encode_mode == 'mlp':
-            self.encoder = MLP(in_dim, 
-                            qlayers, 
+            self.encoder = MLP(in_dim,
+                            qlayers,
                             qdim, # hidden_dim
                             zdim*2, # out_dim
-                            nn.ReLU) #in_dim -> hidden_dim
+                            activation) #in_dim -> hidden_dim
         elif encode_mode == 'tilt':
             self.encoder = TiltEncoder(in_dim,
                             qlayers,
                             qdim,
                             zdim*2,
-                            nn.ReLU)
+                            activation)
         else:
             raise RuntimeError('Encoder mode {} not recognized'.format(encode_mode))
         self.encode_mode = encode_mode
-        self.decoder = get_decoder(3+zdim, lattice.D, players, pdim, domain, enc_type, nn.ReLU)
-   
+        self.decoder = get_decoder(3+zdim, lattice.D, players, pdim, domain, enc_type, activation=activation)
+
     def reparameterize(self, mu, logvar):
         if not self.training:
             return mu
@@ -95,13 +97,13 @@ def get_decoder(in_dim, D, layers, dim, domain, enc_type, activation=nn.ReLU):
             model = FTSliceDecoder(in_dim, D, layers, dim, activation)
         return model
     else:
-        model = PositionalDecoder if domain == 'hartley' else FTPositionalDecoder 
+        model = PositionalDecoder if domain == 'hartley' else FTPositionalDecoder
         return model(in_dim, D, layers, dim, activation, enc_type=enc_type)
- 
+
 class PositionalDecoder(nn.Module):
     def __init__(self, in_dim, D, nlayers, hidden_dim, activation, enc_type='linear_lowf'):
         super(PositionalDecoder, self).__init__()
-        assert in_dim >= 3 
+        assert in_dim >= 3
         self.zdim = in_dim - 3
         self.D = D
         self.D2 = D // 2
@@ -110,18 +112,18 @@ class PositionalDecoder(nn.Module):
         self.enc_type = enc_type
         self.in_dim = 3 * (self.enc_dim) * 2 + self.zdim
         self.decoder = ResidLinearMLP(self.in_dim, nlayers, hidden_dim, 1, activation)
-     
+
     def positional_encoding_geom(self, coords):
         '''Expand coordinates in the Fourier basis with geometrically spaced wavelengths from 2/D to 2pi'''
         freqs = torch.arange(self.enc_dim, dtype=torch.float)
         if self.enc_type == 'geom_ft':
-            freqs = self.DD*np.pi*(2./self.DD)**(freqs/(self.enc_dim-1)) # option 1: 2/D to 1 
+            freqs = self.DD*np.pi*(2./self.DD)**(freqs/(self.enc_dim-1)) # option 1: 2/D to 1
         elif self.enc_type == 'geom_full':
             freqs = self.DD*np.pi*(1./self.DD/np.pi)**(freqs/(self.enc_dim-1)) # option 2: 2/D to 2pi
         elif self.enc_type == 'geom_lowf':
-            freqs = self.D2*(1./self.D2)**(freqs/(self.enc_dim-1)) # option 3: 2/D*2pi to 2pi 
+            freqs = self.D2*(1./self.D2)**(freqs/(self.enc_dim-1)) # option 3: 2/D*2pi to 2pi
         elif self.enc_type == 'geom_nohighf':
-            freqs = self.D2*(2.*np.pi/self.D2)**(freqs/(self.enc_dim-1)) # option 4: 2/D*2pi to 1 
+            freqs = self.D2*(2.*np.pi/self.D2)**(freqs/(self.enc_dim-1)) # option 4: 2/D*2pi to 1
         elif self.enc_type == 'linear_lowf':
             return self.positional_encoding_linear(coords)
         else:
@@ -140,7 +142,7 @@ class PositionalDecoder(nn.Module):
 
     def positional_encoding_linear(self, coords):
         '''Expand coordinates in the Fourier basis, i.e. cos(k*n/N), sin(k*n/N), n=0,...,N//2'''
-        freqs = torch.arange(1, self.D2+1, dtype=torch.float) 
+        freqs = torch.arange(1, self.D2+1, dtype=torch.float)
         freqs = freqs.view(*[1]*len(coords.shape), -1) # 1 x 1 x D2
         coords = coords.unsqueeze(-1) # B x 3 x 1
         k = coords[...,0:3,:] * freqs # B x 3 x D2
@@ -161,12 +163,12 @@ class PositionalDecoder(nn.Module):
     def eval_volume(self, coords, D, extent, norm, zval=None):
         '''
         Evaluate the model on a DxDxD volume
-        
+
         Inputs:
             coords: lattice coords on the x-y plane (D^2 x 3)
             D: size of lattice
             extent: extent of lattice [-extent, extent]
-            norm: data normalization 
+            norm: data normalization
             zval: value of latent (zdim x 1)
         '''
         # Note: extent should be 0.5 by default, except when a downsampled
@@ -204,18 +206,18 @@ class FTPositionalDecoder(nn.Module):
         self.enc_dim = self.D2
         self.in_dim = 3 * (self.enc_dim) * 2 + self.zdim
         self.decoder = ResidLinearMLP(self.in_dim, nlayers, hidden_dim, 2, activation)
-    
+
     def positional_encoding_geom(self, coords):
         '''Expand coordinates in the Fourier basis with geometrically spaced wavelengths from 2/D to 2pi'''
         freqs = torch.arange(self.enc_dim, dtype=coords.dtype)
         if self.enc_type == 'geom_ft':
-            freqs = self.DD*np.pi*(2./self.DD)**(freqs/(self.enc_dim-1)) # option 1: 2/D to 1 
+            freqs = self.DD*np.pi*(2./self.DD)**(freqs/(self.enc_dim-1)) # option 1: 2/D to 1
         elif self.enc_type == 'geom_full':
             freqs = self.DD*np.pi*(1./self.DD/np.pi)**(freqs/(self.enc_dim-1)) # option 2: 2/D to 2pi
         elif self.enc_type == 'geom_lowf':
-            freqs = self.D2*(1./self.D2)**(freqs/(self.enc_dim-1)) # option 3: 2/D*2pi to 2pi 
+            freqs = self.D2*(1./self.D2)**(freqs/(self.enc_dim-1)) # option 3: 2/D*2pi to 2pi
         elif self.enc_type == 'geom_nohighf':
-            freqs = self.D2*(2.*np.pi/self.D2)**(freqs/(self.enc_dim-1)) # option 4: 2/D*2pi to 1 
+            freqs = self.D2*(2.*np.pi/self.D2)**(freqs/(self.enc_dim-1)) # option 4: 2/D*2pi to 1
         elif self.enc_type == 'linear_lowf':
             return self.positional_encoding_linear(coords)
         else:
@@ -234,7 +236,7 @@ class FTPositionalDecoder(nn.Module):
 
     def positional_encoding_linear(self, coords):
         '''Expand coordinates in the Fourier basis, i.e. cos(k*n/N), sin(k*n/N), n=0,...,N//2'''
-        freqs = torch.arange(1, self.D2+1, dtype=torch.float) 
+        freqs = torch.arange(1, self.D2+1, dtype=torch.float)
         freqs = freqs.view(*[1]*len(coords.shape), -1) # 1 x 1 x D2
         coords = coords.unsqueeze(-1) # B x 3 x 1
         k = coords[...,0:3,:] * freqs # B x 3 x D2
@@ -279,12 +281,12 @@ class FTPositionalDecoder(nn.Module):
     def eval_volume(self, coords, D, extent, norm, zval=None):
         '''
         Evaluate the model on a DxDxD volume
-        
+
         Inputs:
             coords: lattice coords on the x-y plane (D^2 x 3)
             D: size of lattice
             extent: extent of lattice [-extent, extent]
-            norm: data normalization 
+            norm: data normalization
             zval: value of latent (zdim x 1)
         '''
         assert extent <= 0.5
@@ -328,14 +330,14 @@ class FTSliceDecoder(nn.Module):
         D2 = int(D/2)
 
         ### various pixel indices to keep track of for forward_even
-        self.center = D2*D + D2 
+        self.center = D2*D + D2
         self.extra = np.arange((D2+1)*D, D**2, D) # bottom-left column without conjugate pair
-        # evalute the top half of the image up through the center pixel 
-        # and extra bottom-left column (todo: just evaluate a D-1 x D-1 image so 
+        # evalute the top half of the image up through the center pixel
+        # and extra bottom-left column (todo: just evaluate a D-1 x D-1 image so
         # we don't have to worry about this)
         self.all_eval = np.concatenate((np.arange(self.center+1), self.extra))
-        
-        # pixel indices for the top half of the image up to (but not incl) 
+
+        # pixel indices for the top half of the image up to (but not incl)
         # the center pixel and excluding the top row and left-most column
         i, j = np.meshgrid(np.arange(1,D),np.arange(1,D2+1))
         self.top = (j*D+i).ravel()[:-D2]
@@ -359,7 +361,7 @@ class FTSliceDecoder(nn.Module):
         c = lattice.shape[-2]//2 # center pixel
         assert lattice[...,c,0:3].sum() == 0.0, '{} != 0.0'.format(lattice[...,c,0:3].sum())
         assert abs(lattice[...,0:3].mean()) < 1e-4, '{} != 0.0'.format(lattice[...,0:3].mean())
-        image = torch.empty(lattice.shape[:-1]) 
+        image = torch.empty(lattice.shape[:-1])
         top_half = self.decode(lattice[...,0:c+1,:])
         image[..., 0:c+1] = top_half[...,0] - top_half[...,1]
         # the bottom half of the image is the complex conjugate of the top half
@@ -387,12 +389,12 @@ class FTSliceDecoder(nn.Module):
     def eval_volume(self, coords, D, extent, norm, zval=None):
         '''
         Evaluate the model on a DxDxD volume
-        
+
         Inputs:
             coords: lattice coords on the x-y plane (D^2 x 3)
             D: size of lattice
             extent: extent of lattice [-extent, extent]
-            norm: data normalization 
+            norm: data normalization
             zval: value of latent (zdim x 1)
         '''
         if zval is not None:
@@ -418,9 +420,9 @@ class FTSliceDecoder(nn.Module):
         return vol
 
 class VAE(nn.Module):
-    def __init__(self, 
+    def __init__(self,
             lattice,
-            qlayers, qdim, 
+            qlayers, qdim,
             players, pdim,
             encode_mode = 'mlp',
             no_trans = False,
@@ -435,14 +437,14 @@ class VAE(nn.Module):
         if encode_mode == 'conv':
             self.encoder = ConvEncoder(qdim, qdim)
         elif encode_mode == 'resid':
-            self.encoder = ResidLinearMLP(self.in_dim, 
+            self.encoder = ResidLinearMLP(self.in_dim,
                             qlayers-2, # -2 bc we add 2 more layers in the homeomorphic encoer
                             qdim,  # hidden_dim
                             qdim, # out_dim
                             nn.ReLU) #in_dim -> hidden_dim
         elif encode_mode == 'mlp':
-            self.encoder = MLP(self.in_dim, 
-                            qlayers-2, 
+            self.encoder = MLP(self.in_dim,
+                            qlayers-2,
                             qdim, # hidden_dim
                             qdim, # out_dim
                             nn.ReLU) #in_dim -> hidden_dim
@@ -505,9 +507,9 @@ class VAE(nn.Module):
         return y_hat, img, z_mu, z_std, w_eps, tmu, tlogvar
 
 class TiltVAE(nn.Module):
-    def __init__(self, 
+    def __init__(self,
             lattice, tilt,
-            qlayers, qdim, 
+            qlayers, qdim,
             players, pdim,
             no_trans=False,
             enc_mask=None
@@ -632,7 +634,7 @@ class MyLinear(nn.Linear):
             return half_linear(input, self.weight, self.bias)  # F.linear(input, self.weight.half(), self.bias.half())
         else:
             return single_linear(input, self.weight, self.bias)  # F.linear(input, self.weight, self.bias)
-    
+
 class ResidLinear(nn.Module):
     def __init__(self, nin, nout):
         super(ResidLinear, self).__init__()
@@ -655,7 +657,7 @@ class MLP(nn.Module):
 
     def forward(self, x):
         return self.main(x)
-      
+
 # Adapted from soumith DCGAN
 class ConvEncoder(nn.Module):
     def __init__(self, hidden_dim, out_dim):
@@ -724,5 +726,5 @@ class SO3reparameterize(nn.Module):
         z_std = torch.exp(.5*logvar) # or could do softplus
         return z_mu, z_std
 
-        
+
 

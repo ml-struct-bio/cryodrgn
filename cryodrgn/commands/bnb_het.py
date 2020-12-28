@@ -31,7 +31,7 @@ except ImportError:
     pass
 
 log = utils.log
-vlog = utils.vlog 
+vlog = utils.vlog
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -51,7 +51,7 @@ def parse_args():
     group.add_argument('--tilt', help='Particle stack file (.mrcs)')
     group.add_argument('--tilt-deg', type=float, default=45, help='X-axis tilt offset in degrees (default: %(default)s)')
     group.add_argument('--enc-only', action='store_true', help='Use the tilt pair only in VAE and not in BNB search')
-    
+
     group = parser.add_argument_group('Training parameters')
     group.add_argument('-n', '--num-epochs', type=int, default=10, help='Number of training epochs (default: %(default)s)')
     group.add_argument('-b','--batch-size', type=int, default=10, help='Minibatch size (default: %(default)s)')
@@ -96,6 +96,7 @@ def parse_args():
     group.add_argument('--pdim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
     group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf','none'), default='geom_lowf', help='Type of positional encoding')
     group.add_argument('--domain', choices=('hartley','fourier'), default='hartley')
+    group.add_argument('--activation', choices=('relu','leaky_relu'), default='relu')
     return parser
 
 def make_model(args, lattice, enc_mask, in_dim):
@@ -111,6 +112,7 @@ def make_model(args, lattice, enc_mask, in_dim):
         enc_mask=enc_mask,
         enc_type=args.pe_type,
         domain=args.domain,
+        activation={"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[args.activation],
     )
 
 def pretrain(model, lattice, optim, minibatch, tilt):
@@ -128,14 +130,14 @@ def pretrain(model, lattice, optim, minibatch, tilt):
     mask = lattice.get_circular_mask(lattice.D//2)
     def gen_slice(R):
         return model.decode(lattice.coords[mask] @ R, z).view(B,-1)
-    
+
     y = y.view(B,-1)[:, mask]
     if use_tilt:
         yt = yt.view(B,-1)[:, mask]
         gen_loss = .5*F.mse_loss(gen_slice(rot), y) + .5*F.mse_loss(gen_slice(tilt @ rot), yt)
     else:
         gen_loss = F.mse_loss(gen_slice(rot), y)
-    
+
     # if args.half_precision:
     #     with amp.scale_loss(gen_loss, optim) as scaled_loss:
     #         scaled_loss.backward()
@@ -185,7 +187,7 @@ def train(model, lattice, ps, optim, L, minibatch, beta, beta_control=None, equi
     y = y.view(B,-1)[:, mask]
     if use_tilt: yt = yt.view(B,-1)[:, mask]
     y = translate(y)
-    if use_tilt: yt = translate(yt)    
+    if use_tilt: yt = translate(yt)
 
     if use_tilt:
         gen_loss = .5*F.mse_loss(gen_slice(rot), y) + .5*F.mse_loss(gen_slice(bnb.tilt @ rot), yt)
@@ -312,12 +314,12 @@ def main(args):
     ## set beta schedule
     try:
         args.beta = float(args.beta)
-    except ValueError: 
+    except ValueError:
         assert args.beta_control, "Need to set beta control weight for schedule {}".format(args.beta)
     beta_schedule = get_beta_schedule(args.beta)
 
     # load the particles
-    if args.ind is not None: 
+    if args.ind is not None:
         log('Filtering image dataset with {}'.format(args.ind))
         args.ind = pickle.load(open(args.ind,'rb'))
     if args.tilt is None:
@@ -342,7 +344,7 @@ def main(args):
         in_dim = D**2
     else:
         raise RuntimeError("Invalid argument for encoder mask radius {}".format(args.enc_mask))
-    
+
     model = make_model(args, lattice, enc_mask, in_dim)
     log(model)
     log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
@@ -351,7 +353,7 @@ def main(args):
         pose_model = make_model(args, lattice, enc_mask, in_dim)
     else:
         pose_model = model
-    
+
     # save configuration
     out_config = '{}/config.pkl'.format(args.outdir)
     save_config(args, data, lattice, model, out_config)
@@ -416,7 +418,7 @@ def main(args):
         gen_loss_accum = 0
         loss_accum = 0
         eq_loss_accum = 0
-        batch_it = 0 
+        batch_it = 0
         poses, base_poses = [], []
 
         L_model = lattice.D // 2
@@ -453,7 +455,7 @@ def main(args):
             # train the model
             if epoch % args.ps_freq != 0:
                 p = [torch.tensor(x[ind_np]) for x in sorted_poses]
-            else: 
+            else:
                 p = None
 
             cc += len(batch[0])
@@ -498,7 +500,7 @@ def main(args):
     with torch.no_grad():
         z_mu, z_logvar = eval_z(model, lattice, data, args.batch_size, device, tilt is not None)
         save_checkpoint(model, lattice, optim, epoch, data.norm, sorted_poses, z_mu, z_logvar, out_mrc, out_weights, out_z, out_poses)
-    
+
     td = dt.now() - t1
     log('Finsihed in {} ({} per epoch)'.format(td, td/(num_epochs-start_epoch)))
 

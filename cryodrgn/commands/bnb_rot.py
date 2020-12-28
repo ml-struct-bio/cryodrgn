@@ -84,6 +84,7 @@ def parse_args():
     group.add_argument('--dim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
     group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf','none'), default='geom_lowf', help='Type of positional encoding')
     group.add_argument('--domain', choices=('hartley','fourier'), default='hartley')
+    group.add_argument('--activation', choices=('relu','leaky_relu'), default='relu')
 
     return parser
 
@@ -192,7 +193,8 @@ def train(model, lattice, ps, optim, batch, tilt_rot=None, no_trans=False, poses
 
 
 def make_model(args, D):
-    return models.get_decoder(3, D, args.layers, args.dim, args.domain, args.pe_type, nn.ReLU)
+    activation={"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[args.activation],
+    return models.get_decoder(3, D, args.layers, args.dim, args.domain, args.pe_type, activation)
 
 def main(args):
 
@@ -316,12 +318,12 @@ def main(args):
                 bp = None
             else:
                 p, bp = None, None
-            
+
             cc += len(batch[0])
             if args.pose_model_update_freq and cc > args.pose_model_update_freq:
                 pose_model.load_state_dict(model.state_dict())
                 cc = 0
-                
+
             loss_item, pose, base_pose = train(model, lattice, ps, optim, batch, tilt, args.no_trans, poses=p, base_pose=bp)
             poses.append((ind.cpu().numpy(),pose))
             base_poses.append((ind_np, base_pose))

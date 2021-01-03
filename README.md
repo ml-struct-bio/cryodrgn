@@ -12,7 +12,13 @@ Reconstructing continuous distributions of 3D protein structure from cryo-EM ima
 Ellen D. Zhong, Tristan Bepler, Joseph H. Davis*, Bonnie Berger*.
 ICLR 2020, Spotlight presentation, https://arxiv.org/abs/1909.05215
 
-## New in v0.3
+## New in v0.3.1
+* New: Script `write_starfile.py` to convert (filtered) particle selection to a .star file
+* More visualizations in `cryodrgn analyze`
+
+### Previous versions
+
+**Version 0.3.0:**
 * New: GPU parallelization with flag `--multigpu`
 * New: Mode for accelerated mixed precision training with flag `--amp`, available for NVIDIA tensor core GPUs
 * Interface update:
@@ -27,8 +33,6 @@ ICLR 2020, Spotlight presentation, https://arxiv.org/abs/1909.05215
     * Order kmeans volumes according to distances in latent space (previously random) 
     * More features for particle selection and filtering in the Jupiter notebook
 
-### Previous versions
-
 **Version 0.2.1:**
 * New: Parsing of RELION 3.1 files
 * Fix: Compatibility with pytorch 1.5
@@ -41,7 +45,7 @@ ICLR 2020, Spotlight presentation, https://arxiv.org/abs/1909.05215
 * New analysis pipeline `cryodrgn analyze`
 * New latent space traversal scripts with `cryodrgn graph_traversal` and `cryodrgn pc_traversal`.
 
-*Last updated 9/21/2020.*
+*Last updated 1/02/2021.*
 
 ## Installation/dependencies:
 

@@ -193,7 +193,7 @@ def train(model, lattice, ps, optim, batch, tilt_rot=None, no_trans=False, poses
 
 
 def make_model(args, D):
-    activation={"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[args.activation],
+    activation={"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[args.activation]
     return models.get_decoder(3, D, args.layers, args.dim, args.domain, args.pe_type, activation)
 
 def main(args):
@@ -229,13 +229,14 @@ def main(args):
 
     if args.pose_model_update_freq:
         pose_model = make_model(args, D)
+        pose_model.eval()
     else:
         pose_model = model
 
     if args.no_trans:
         raise NotImplementedError()
     else:
-        ps = PoseSearch(model, lattice, args.l_start, args.l_end, tilt,
+        ps = PoseSearch(pose_model, lattice, args.l_start, args.l_end, tilt,
                         t_extent=args.t_extent, t_ngrid=args.t_ngrid, niter=args.niter,
                         nkeptposes=args.nkeptposes, base_healpy=args.base_healpy,
                         half_precision=args.half_precision,
@@ -276,14 +277,14 @@ def main(args):
                 break
 
     # reset model after pretraining
-    if optim.reset_optim_after_pretrain:
+    if args.reset_optim_after_pretrain:
         log(">> Resetting optim after pretrain")
         optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
     # training loop
+    cc = 0
     if args.pose_model_update_freq:
         pose_model.load_state_dict(model.state_dict())
-        cc = 0
     for epoch in range(start_epoch, args.num_epochs):
         t2 = dt.now()
         batch_it = 0

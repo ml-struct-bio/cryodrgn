@@ -351,6 +351,7 @@ def main(args):
 
     if args.pose_model_update_freq:
         pose_model = make_model(args, lattice, enc_mask, in_dim)
+        pose_model.eval()
     else:
         pose_model = model
 
@@ -358,7 +359,7 @@ def main(args):
     out_config = '{}/config.pkl'.format(args.outdir)
     save_config(args, data, lattice, model, out_config)
 
-    ps = PoseSearch(model, lattice, args.l_start, args.l_end, tilt,
+    ps = PoseSearch(pose_model, lattice, args.l_start, args.l_end, tilt,
                     t_extent=args.t_extent, t_ngrid=args.t_ngrid, niter=args.niter,
                     nkeptposes=args.nkeptposes, base_healpy=args.base_healpy,
                     half_precision=args.half_precision, t_xshift=args.t_xshift, t_yshift=args.t_yshift)
@@ -403,15 +404,15 @@ def main(args):
                 break
 
     # reset model after pretraining
-    if optim.reset_optim_after_pretrain:
+    if args.reset_optim_after_pretrain:
         log(">> Resetting optim after pretrain")
         optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
     # training loop
     num_epochs = args.num_epochs
+    cc = 0
     if args.pose_model_update_freq:
         pose_model.load_state_dict(model.state_dict())
-        cc = 0
     for epoch in range(start_epoch, num_epochs):
         t2 = dt.now()
         kld_accum = 0

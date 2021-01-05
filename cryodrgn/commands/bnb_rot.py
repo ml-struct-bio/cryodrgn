@@ -47,6 +47,7 @@ def parse_args():
     parser.add_argument('--seed', type=int, default=np.random.randint(0,100000), help='Random seed')
     parser.add_argument('--invert-data', action='store_true', help='Invert data sign')
     parser.add_argument('--window', action='store_true', help='Real space windowing of dataset')
+    parser.add_argument('--ind', type=os.path.abspath, help='Filter indices')
 
     group = parser.add_argument_group('Tilt series')
     group.add_argument('--tilt', help='Particle stack file (.mrcs)')
@@ -215,11 +216,14 @@ def main(args):
         torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
     # load the particles
+    if args.ind is not None: 
+        log('Filtering image dataset with {}'.format(args.ind))
+        args.ind = pickle.load(open(args.ind,'rb'))
     if args.tilt is None:
-        data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, window=args.window)
+        data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=args.ind, window=args.window)
         tilt = None
     else:
-        data = dataset.TiltMRCData(args.particles, args.tilt, norm=args.norm, invert_data=args.invert_data, window=args.window)
+        data = dataset.TiltMRCData(args.particles, args.tilt, norm=args.norm, invert_data=args.invert_data, ind=args.ind, window=args.window)
         tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32))
     D = data.D
     Nimg = data.N

@@ -173,10 +173,10 @@ def train(model, lattice, ps, optim, batch, tilt_rot=None, no_trans=False, poses
     mask = lattice.get_circular_mask(lattice.D//2)
     # mask = lattice.get_circular_mask(ps.Lmax)
     def gen_slice(R):
-        slice_ = model(lattice.coords[mask] @ R)
+        slice_ = model(lattice.coords[mask] @ R).view(B,-1)
         if ctf_params is not None:
             slice_ *= ctf_i.view(B,-1)[:,mask]
-        return slice_.view(B,-1)
+        return slice_
     def translate(img):
         img = lattice.translate_ht(img, trans.unsqueeze(1), mask)
         return img.view(B,-1)

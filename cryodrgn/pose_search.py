@@ -374,7 +374,7 @@ class PoseSearch:
                 NQ=8,
                 L=L,
                 images_tilt=self.translate_images(images_tilt[keepB],trans, L) if do_tilt else None, # (B*24, 4, Npoints)
-                ctf_i=ctf_i
+                ctf_i=ctf_i[keepB]
             ) # sum(NP), 8
 
             # nkeptposes = 1

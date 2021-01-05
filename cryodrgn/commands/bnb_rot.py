@@ -1,11 +1,12 @@
 '''
-Homogeneous NN reconstruction with BNB optimization of orientation
+Ab-initio homogeneous NN reconstruction
 '''
 
 import numpy as np
 import sys, os
 import argparse
 import pickle
+import glob
 from datetime import datetime as dt
 
 import torch
@@ -13,7 +14,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-sys.path.insert(0,os.path.abspath(os.path.dirname(__file__))+'/lib-python')
 from cryodrgn import mrc
 from cryodrgn import utils
 from cryodrgn import fft
@@ -248,6 +248,14 @@ def main(args):
     log(model)
     log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
+
+    if not args.load and glob.glob(f'{args.outdir}/weights*pkl'):
+        weight_pkls = glob.glob(f'{args.outdir}/weights.*.pkl')
+        _epochs = [int(x.split('.')[-2]) for x in weight_pkls]
+        args.load = weight_pkls[np.argmax(_epochs)]
+        pose_pkls = glob.glob(f'{args.outdir}/pose.*.pkl')
+        _epochs = [int(x.split('.')[-2]) for x in pose_pkls]
+        args.load_poses = pose_pkls[np.argmax(_epochs)]
 
     if args.load:
         args.pretrain = 0

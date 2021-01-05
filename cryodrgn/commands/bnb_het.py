@@ -5,6 +5,7 @@ import numpy as np
 import sys, os
 import argparse
 import pickle
+import glob
 from datetime import datetime as dt
 
 import torch
@@ -370,6 +371,14 @@ def main(args):
         equivariance_loss = EquivarianceLoss(model, D)
 
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
+
+    if not args.load and glob.glob(f'{args.outdir}/weights*pkl'):
+        weight_pkls = glob.glob(f'{args.outdir}/weights.*.pkl')
+        _epochs = [int(x.split('.')[-2]) for x in weight_pkls]
+        args.load = weight_pkls[np.argmax(_epochs)]
+        pose_pkls = glob.glob(f'{args.outdir}/pose.*.pkl')
+        _epochs = [int(x.split('.')[-2]) for x in pose_pkls]
+        args.load_poses = pose_pkls[np.argmax(_epochs)]
 
     if args.load:
         args.pretrain = 0

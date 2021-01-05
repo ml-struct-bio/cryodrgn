@@ -80,8 +80,8 @@ def parse_args():
     group.add_argument("--pose-model-update-freq", type=int, help="If set, only update the model used for pose search every N examples.")
 
     group = parser.add_argument_group('Network Architecture')
-    group.add_argument('--layers', type=int, default=10, help='Number of hidden layers (default: %(default)s)')
-    group.add_argument('--dim', type=int, default=128, help='Number of nodes in hidden layers (default: %(default)s)')
+    group.add_argument('--layers', type=int, default=3, help='Number of hidden layers (default: %(default)s)')
+    group.add_argument('--dim', type=int, default=256, help='Number of nodes in hidden layers (default: %(default)s)')
     group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf','none'), default='geom_lowf', help='Type of positional encoding')
     group.add_argument('--domain', choices=('hartley','fourier'), default='hartley')
     group.add_argument('--activation', choices=('relu','leaky_relu'), default='relu')

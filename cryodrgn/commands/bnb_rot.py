@@ -19,6 +19,7 @@ from cryodrgn import utils
 from cryodrgn import fft
 from cryodrgn import dataset
 from cryodrgn import lie_tools
+from cryodrgn import ctf
 
 from cryodrgn.lattice import Lattice
 from cryodrgn.pose_search import PoseSearch
@@ -38,6 +39,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('particles', help='Particle stack file (.mrcs)')
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
+    parser.add_argument('--ctf', metavar='pkl', type=os.path.abspath, help='CTF parameters (.pkl)')
     parser.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: mean, std of dataset)')
     parser.add_argument('--load', type=os.path.abspath, help='Initialize training from a checkpoint')
     parser.add_argument('--load-poses', type=os.path.abspath, help='Initialize training from a checkpoint')
@@ -147,9 +149,15 @@ def sort_base_poses(pose):
     return data[np.argsort(ind)]
 
 
-def train(model, lattice, ps, optim, batch, tilt_rot=None, no_trans=False, poses=None, base_pose=None):
+def train(model, lattice, ps, optim, batch, tilt_rot=None, no_trans=False, poses=None, base_pose=None, ctf_params=None):
     y, yt = batch
     B = y.size(0)
+    D = lattice.D
+
+    if ctf_params is not None:
+        freqs = lattice.freqs2d.unsqueeze(0).expand(B,*lattice.freqs2d.shape)/ctf_params[:,0].view(B,1,1)
+        ctf_i = ctf.compute_ctf(freqs, *torch.split(ctf_params[:,1:], 1, 1)).view(B,D,D)
+    else: ctf_i = None
 
     # pose inference
     if poses is not None:
@@ -158,7 +166,7 @@ def train(model, lattice, ps, optim, batch, tilt_rot=None, no_trans=False, poses
     else: # BNB
         model.eval()
         with torch.no_grad():
-            rot, trans, base_pose = ps.opt_theta_trans(y, images_tilt=yt, init_poses=base_pose)
+            rot, trans, base_pose = ps.opt_theta_trans(y, images_tilt=yt, init_poses=base_pose, ctf_i=ctf_i)
             base_pose = base_pose.detach().cpu().numpy()
 
     # reconstruct circle of pixels instead of whole image
@@ -166,6 +174,8 @@ def train(model, lattice, ps, optim, batch, tilt_rot=None, no_trans=False, poses
     # mask = lattice.get_circular_mask(ps.Lmax)
     def gen_slice(R):
         slice_ = model(lattice.coords[mask] @ R)
+        if ctf_params is not None:
+            slice_ *= ctf_i.view(B,-1)[:,mask]
         return slice_.view(B,-1)
     def translate(img):
         img = lattice.translate_ht(img, trans.unsqueeze(1), mask)
@@ -228,6 +238,16 @@ def main(args):
     D = data.D
     Nimg = data.N
 
+    # load ctf
+    if args.ctf is not None:
+        log('Loading ctf params from {}'.format(args.ctf))
+        ctf_params = ctf.load_ctf_for_training(D-1, args.ctf)
+        if args.ind is not None: ctf_params = ctf_params[ind] 
+        assert ctf_params.shape == (Nimg, 8)
+        ctf_params = torch.tensor(ctf_params)
+    else: ctf_params = None
+
+    # instantiate model
     lattice = Lattice(D, extent=0.5)
     model = make_model(args, D)
 
@@ -336,8 +356,9 @@ def main(args):
             if args.pose_model_update_freq and cc > args.pose_model_update_freq:
                 pose_model.load_state_dict(model.state_dict())
                 cc = 0
-
-            loss_item, pose, base_pose = train(model, lattice, ps, optim, batch, tilt, args.no_trans, poses=p, base_pose=bp)
+                
+            c = ctf_params[ind] if ctf_params is not None else None
+            loss_item, pose, base_pose = train(model, lattice, ps, optim, batch, tilt, args.no_trans, poses=p, base_pose=bp, ctf_params=c)
             poses.append((ind.cpu().numpy(),pose))
             base_poses.append((ind_np, base_pose))
             # logging

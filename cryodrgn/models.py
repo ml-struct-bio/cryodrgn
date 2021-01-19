@@ -291,26 +291,28 @@ class FTPositionalDecoder(nn.Module):
         assert extent <= 0.5
         if zval is not None:
             zdim = len(zval)
-            z = torch.zeros(D**2, zdim, dtype=torch.float32)
-            z += torch.tensor(zval, dtype=torch.float32)
+            z = torch.tensor(zval, dtype=torch.float32)
 
         vol_f = np.zeros((D,D,D),dtype=np.float32)
         assert not self.training
         # evaluate the volume by zslice to avoid memory overflows
         for i, dz in enumerate(np.linspace(-extent,extent,D,endpoint=True,dtype=np.float32)):
             x = coords + torch.tensor([0,0,dz])
+            keep = x.pow(2).sum(dim=1) <= extent**2
+            x = x[keep]
             if zval is not None:
-                x = torch.cat((x,z), dim=-1)
+                x = torch.cat((x,z.expand(x.shape[0],zdim)), dim=-1)
             with torch.no_grad():
                 if dz == 0.0:
                     y = self.forward(x)
                 else:
                     y = self.decode(x)
                     y = y[...,0] - y[...,1]
-                y = y.view(D,D).cpu().numpy()
-            vol_f[i] = y
+                slice_ = torch.zeros(D**2, device='cpu')
+                slice_[keep] = y.cpu()
+                slice_ = slice_.view(D,D).numpy()
+            vol_f[i] = slice_
         vol_f = vol_f*norm[1]+norm[0]
-        vol_f = utils.zero_sphere(vol_f)
         vol = fft.ihtn_center(vol_f[:-1,:-1,:-1]) # remove last +k freq for inverse FFT
         return vol
 

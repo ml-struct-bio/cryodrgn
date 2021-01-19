@@ -35,11 +35,12 @@ def add_args(parser):
     parser.add_argument('particles', type=os.path.abspath, help='Input particles (.mrcs, .star, .cs, or .txt)')
     parser.add_argument('weights', help='Model weights')
     parser.add_argument('-c', '--config', metavar='PKL', help='CryoDRGN configuration')
-    parser.add_argument('-o', metavar='PKL', help='Output pickle for z and losses')
+    parser.add_argument('-o', metavar='PKL', type=os.path.abspath, required=True, help='Output pickle for losses')
+    parser.add_argument('--out-z', metavar='PKL', type=os.path.abspath, required=True, help='Output pickle for z')
     parser.add_argument('--poses', type=os.path.abspath, required=True, help='Image poses (.pkl)')
     parser.add_argument('--ctf', metavar='pkl', type=os.path.abspath, help='CTF parameters (.pkl) if particle stack is not phase flipped')
     parser.add_argument('--log-interval', type=int, default=1000, help='Logging interval in N_IMGS (default: %(default)s)')
-    parser.add_argument('-b','--batch-size', type=int, default=50, help='Minibatch size (default: %(default)s)')
+    parser.add_argument('-b','--batch-size', type=int, default=64, help='Minibatch size (default: %(default)s)')
     parser.add_argument('--beta', default=1.0, type=float, help='KLD weight (default: %(default)s)')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
 
@@ -78,6 +79,12 @@ def eval_batch(model, lattice, y, yt, rot, trans, beta, tilt=None, ctf_params=No
 
 def main(args):
     t1 = dt.now()
+
+    # make output directories
+    if not os.path.exists(os.path.dirname(args.o)):
+        os.makedirs(os.path.dirname(args.o))
+    if not os.path.exists(os.path.dirname(args.out_z)):
+        os.makedirs(os.path.dirname(args.out_z))
 
     # set the device
     use_cuda = torch.cuda.is_available()
@@ -189,10 +196,14 @@ def main(args):
     z_mu_all = np.vstack(z_mu_all)
     z_logvar_all = np.vstack(z_logvar_all)
     
-    with open(args.o,'wb') as f:
+    with open(args.out_z,'wb') as f:
         pickle.dump(z_mu_all, f)
         pickle.dump(z_logvar_all, f)
-        pickle.dump([loss_accum, gen_loss_accum, kld_accum], f)
+    with open(args.o, 'wb') as f:
+        pickle.dump({
+            'loss':loss_accum/Nimg, 
+            'recon':gen_loss_accum/Nimg, 
+            'kld':kld_accum/Nimg}, f)
 
     log('Finsihed in {}'.format(dt.now()-t1))
 

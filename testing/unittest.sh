@@ -31,7 +31,7 @@ cryodrgn train_vae data/hand.mrcs -o output/hand_recon_vae --lr .0001 --seed 0 -
 # Test evaluation script
 cryodrgn analyze output/toy_recon_vae 9
 cryodrgn eval_vol output/toy_recon_vae/weights.pkl -c output/toy_recon_vae/config.pkl -z 0 0 0 0 0 0 0 0 0 0 -o output/toy_recon_vae/vol.mrc
-cryodrgn eval_images data/toy_projections.mrcs output/toy_recon_vae/weights.pkl -c output/toy_recon_vae/config.pkl -o output/toy_recon_vae/test.pkl --poses data/toy_angles.pkl
+cryodrgn eval_images data/toy_projections.mrcs output/toy_recon_vae/weights.pkl -c output/toy_recon_vae/config.pkl -o output/toy_recon_vae/losses.pkl --out-z output/toy_recon_vae/z_eval.pkl --poses data/toy_angles.pkl
 cryodrgn pc_traversal output/toy_recon_vae/z.pkl -o output/toy_recon_vae/pc_traversal
 cryodrgn graph_traversal output/toy_recon_vae/z.pkl --anchors 0 10 100 -o output/toy_recon_vae/graph_traversal/path.txt --out-z output/toy_recon_vae/graph_traversal/z.path.txt
 

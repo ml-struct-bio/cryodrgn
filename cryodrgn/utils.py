@@ -2,6 +2,8 @@ from datetime import datetime as dt
 import os, sys
 import numpy as np
 import pickle
+import collections
+import functools
 
 _verbose = False
 
@@ -23,6 +25,32 @@ def flog(msg, outfile):
             f.write(msg+'\n')
     except Exception as e:
         log(e)
+
+class memoized(object):
+   '''Decorator. Caches a function's return value each time it is called.
+   If called later with the same arguments, the cached value is returned
+   (not reevaluated).
+   '''
+   def __init__(self, func):
+      self.func = func
+      self.cache = {}
+   def __call__(self, *args):
+      if not isinstance(args, collections.Hashable):
+         # uncacheable. a list, for instance.
+         # better to not cache than blow up.
+         return self.func(*args)
+      if args in self.cache:
+         return self.cache[args]
+      else:
+         value = self.func(*args)
+         self.cache[args] = value
+         return value
+   def __repr__(self):
+      '''Return the function's docstring.'''
+      return self.func.__doc__
+   def __get__(self, obj, objtype):
+      '''Support instance methods.'''
+      return functools.partial(self.__call__, obj)
 
 def load_pkl(pkl):
     with open(pkl,'rb') as f:
@@ -114,16 +142,21 @@ def xrot(tilt_deg):
                      [0, np.cos(theta), -np.sin(theta)],
                      [0, np.sin(theta), np.cos(theta)]])
     return tilt
-    
-def zero_sphere(vol):
-    '''Zero values of @vol outside the sphere'''
-    assert len(set(vol.shape)) == 1, 'volume must be a cube'
-    D = vol.shape[0]
+
+@memoized
+def _zero_sphere_helper(D):
     xx = np.linspace(-1, 1, D, endpoint=True if D % 2 == 1 else False)
     z,y,x = np.meshgrid(xx,xx,xx)
     coords = np.stack((x,y,z),-1)
     r = np.sum(coords**2,axis=-1)**.5
-    vlog('Zeroing {} pixels'.format(len(np.where(r>1)[0])))
-    vol[np.where(r>1)] = 0
+    return np.where(r>1)
+
+def zero_sphere(vol):
+    '''Zero values of @vol outside the sphere'''
+    assert len(set(vol.shape)) == 1, 'volume must be a cube'
+    D = vol.shape[0]
+    tmp = _zero_sphere_helper(D)
+    vlog('Zeroing {} pixels'.format(len(tmp[0])))
+    vol[tmp] = 0
     return vol
 

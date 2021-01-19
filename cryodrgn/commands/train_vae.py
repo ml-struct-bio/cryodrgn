@@ -60,7 +60,7 @@ def add_args(parser):
     group.add_argument('-b','--batch-size', type=int, default=8, help='Minibatch size (default: %(default)s)')
     group.add_argument('--wd', type=float, default=0, help='Weight decay in Adam optimizer (default: %(default)s)')
     group.add_argument('--lr', type=float, default=1e-4, help='Learning rate in Adam optimizer (default: %(default)s)')
-    group.add_argument('--beta', default=1.0, help='Choice of beta schedule or a constant for KLD weight (default: %(default)s)')
+    group.add_argument('--beta', default=None, help='Choice of beta schedule or a constant for KLD weight (default: 1/zdim)')
     group.add_argument('--beta-control', type=float, help='KL-Controlled VAE gamma. Beta is KL target. (default: %(default)s)')
     group.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: 0, std of dataset)')
     group.add_argument('--amp', action='store_true', help='Use mixed-precision training')
@@ -154,7 +154,7 @@ def loss_function(z_mu, z_logvar, y, yt, y_recon, mask, beta, y_recon_tilt=None,
     if use_tilt:
         gen_loss = .5*gen_loss + .5*F.mse_loss(y_recon_tilt, yt.view(B,-1)[:,mask])
     # latent loss
-    kld = -0.5 * torch.mean(1 + z_logvar - z_mu.pow(2) - z_logvar.exp())
+    kld = torch.mean(-0.5 * torch.sum(1 + z_logvar - z_mu.pow(2) - z_logvar.exp(), dim=1), dim=0)
     # total loss
     if beta_control is None:
         loss = gen_loss + beta*kld/mask.sum().float()
@@ -280,6 +280,8 @@ def main(args):
         log('WARNING: No GPUs detected')
 
     # set beta schedule
+    if args.beta is None:
+        args.beta = 1./args.zdim
     try:
         args.beta = float(args.beta)
     except ValueError: 

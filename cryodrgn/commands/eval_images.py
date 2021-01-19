@@ -41,7 +41,7 @@ def add_args(parser):
     parser.add_argument('--ctf', metavar='pkl', type=os.path.abspath, help='CTF parameters (.pkl) if particle stack is not phase flipped')
     parser.add_argument('--log-interval', type=int, default=1000, help='Logging interval in N_IMGS (default: %(default)s)')
     parser.add_argument('-b','--batch-size', type=int, default=64, help='Minibatch size (default: %(default)s)')
-    parser.add_argument('--beta', default=1.0, type=float, help='KLD weight (default: %(default)s)')
+    parser.add_argument('--beta', type=float, help='KLD weight (default: 1/zdim)')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
 
     group = parser.add_argument_group('Dataset loading')
@@ -98,7 +98,7 @@ def main(args):
     if args.config is not None:
         args = config.load_config(args.config, args)
     log(args)
-    beta = args.beta
+    beta = 1./args.zdim if args.beta is None else args.beta
 
     # load the particles
     if args.ind is not None: 

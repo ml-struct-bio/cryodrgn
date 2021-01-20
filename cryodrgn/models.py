@@ -90,7 +90,7 @@ class HetOnlyVAE(nn.Module):
             model.load_state_dict(ckpt['model_state_dict'])
         if device is not None:
             model.to(device)
-        return model, lattice
+        return model, lat
 
     def reparameterize(self, mu, logvar):
         if not self.training:

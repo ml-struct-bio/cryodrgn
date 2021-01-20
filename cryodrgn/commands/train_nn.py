@@ -27,7 +27,7 @@ from cryodrgn.pose import PoseTracker
 from cryodrgn.lattice import Lattice
 
 log = utils.log
-vflog = utils.vflog
+vlog = utils.vlog
 
 def add_args(parser):
     parser.add_argument('particles', type=os.path.abspath, help='Input particles (.mrcs, .star, .cs, or .txt)')
@@ -134,7 +134,7 @@ def save_config(args, dataset, lattice, model, out_config):
     with open(out_config,'wb') as f:
         pickle.dump(config, f)
 
-def get_latest(args):
+def get_latest(args, flog):
     # Assumes checkpoint==1, todo: make this more robust
     flog('Detecting latest checkpoint...') 
     for i in range(args.num_epochs):
@@ -150,10 +150,16 @@ def get_latest(args):
     return args
 
 def main(args):
-    flog(args)
     t1 = dt.now()
-    if not os.path.exists(args.outdir):
+    if args.outdir is not None and not os.path.exists(args.outdir):
         os.makedirs(args.outdir)
+    LOG = f'{args.outdir}/run.log'
+    def flog(msg): # HACK: switch to logging module
+        return utils.flog(msg, LOG)
+    if args.load == 'latest':
+        args = get_latest(args, flog)
+    flog(' '.join(sys.argv))
+    flog(args)
 
     # set the random seed
     np.random.seed(args.seed)

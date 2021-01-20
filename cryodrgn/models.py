@@ -8,6 +8,7 @@ import torch.nn.functional as F
 from . import fft
 from . import lie_tools
 from . import utils
+from . import lattice
 
 log = utils.log
 
@@ -52,6 +53,39 @@ class HetOnlyVAE(nn.Module):
         self.encode_mode = encode_mode
         self.decoder = get_decoder(3+zdim, lattice.D, players, pdim, domain, enc_type, enc_dim, nn.ReLU)
    
+    @classmethod
+    def load(self, config, weights=None, device=None):
+        '''Instantiate a model from a config.pkl
+
+        Inputs:
+            config (str): Path to config.pkl
+            weights (str): Path to weights.pkl
+            device: torch.device object
+
+        Returns:
+            HetOnlyVAE instance, Lattice instance
+        '''
+        cfg = utils.load_pkl(config)
+        c = cfg['lattice_args']
+        lat = lattice.Lattice(c['D'], extent=c['extent'])
+        c = cfg['model_args']
+        enc_mask = lat.get_circular_mask(c['enc_mask'])
+        model = HetOnlyVAE(lat, 
+                          c['qlayers'], c['qdim'],
+                          c['players'], c['pdim'],
+                          int(enc_mask.sum()), c['zdim'],
+                          encode_mode=c['encode_mode'],
+                          enc_mask=enc_mask,
+                          enc_type=c['pe_type'],
+                          enc_dim=c['pe_dim'],
+                          domain=c['domain'])
+        if weights is not None:
+            ckpt = torch.load(weights)
+            model.load_state_dict(ckpt['model_state_dict'])
+        if device is not None:
+            model.to(device)
+        return model, lattice
+
     def reparameterize(self, mu, logvar):
         if not self.training:
             return mu

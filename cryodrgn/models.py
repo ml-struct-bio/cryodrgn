@@ -69,11 +69,17 @@ class HetOnlyVAE(nn.Module):
         c = cfg['lattice_args']
         lat = lattice.Lattice(c['D'], extent=c['extent'])
         c = cfg['model_args']
-        enc_mask = lat.get_circular_mask(c['enc_mask'])
+        if c['enc_mask'] > 0:
+            enc_mask = lat.get_circular_mask(c['enc_mask'])
+            in_dim = int(enc_mask.sum())
+        else:
+            assert c['enc_mask'] == -1
+            enc_mask = None
+            in_dim = lat.D**2
         model = HetOnlyVAE(lat, 
                           c['qlayers'], c['qdim'],
                           c['players'], c['pdim'],
-                          int(enc_mask.sum()), c['zdim'],
+                          in_dim, c['zdim'],
                           encode_mode=c['encode_mode'],
                           enc_mask=enc_mask,
                           enc_type=c['pe_type'],

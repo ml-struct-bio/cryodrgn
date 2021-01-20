@@ -27,7 +27,7 @@ from cryodrgn.pose import PoseTracker
 from cryodrgn.lattice import Lattice
 
 log = utils.log
-vlog = utils.vlog
+vflog = utils.vflog
 
 def add_args(parser):
     parser.add_argument('particles', type=os.path.abspath, help='Input particles (.mrcs, .star, .cs, or .txt)')
@@ -109,8 +109,48 @@ def train(model, lattice, optim, y, rot, trans=None, ctf_params=None, use_amp=Fa
     optim.step()
     return loss.item()
 
+def save_config(args, dataset, lattice, model, out_config):
+    dataset_args = dict(particles=args.particles,
+                        norm=dataset.norm,
+                        invert_data=args.invert_data,
+                        ind=args.ind,
+                        window=args.window,
+                        datadir=args.datadir,
+                        ctf=args.ctf,
+                        poses=args.poses,
+                        do_pose_sgd=args.do_pose_sgd)
+    lattice_args = dict(D=lattice.D,
+                        extent=lattice.extent,
+                        ignore_DC=lattice.ignore_DC)
+    model_args = dict(layers=args.layers,
+                      dim=args.dim,
+                      pe_type=args.pe_type,
+                      pe_dim=args.pe_dim,
+                      domain=args.domain)
+    config = dict(dataset_args=dataset_args,
+                  lattice_args=lattice_args,
+                  model_args=model_args)
+    config['seed'] = args.seed
+    with open(out_config,'wb') as f:
+        pickle.dump(config, f)
+
+def get_latest(args):
+    # Assumes checkpoint==1, todo: make this more robust
+    flog('Detecting latest checkpoint...') 
+    for i in range(args.num_epochs):
+        weights = f'{args.outdir}/weights.{i}.pkl'
+        if not os.path.exists(weights):
+            break
+    args.load =  f'{args.outdir}/weights.{i-1}.pkl'
+    flog(f'Loading {args.load}')
+    if args.do_pose_sgd:
+        args.poses = f'{args.outdir}/pose.{i-1}.pkl'
+        assert os.path.exists(args.poses)
+        flog(f'Loading {args.poses}')
+    return args
+
 def main(args):
-    log(args)
+    flog(args)
     t1 = dt.now()
     if not os.path.exists(args.outdir):
         os.makedirs(args.outdir)
@@ -122,15 +162,15 @@ def main(args):
     ## set the device
     use_cuda = torch.cuda.is_available()
     device = torch.device('cuda' if use_cuda else 'cpu')
-    log('Use cuda {}'.format(use_cuda))
+    flog('Use cuda {}'.format(use_cuda))
     if use_cuda:
         torch.set_default_tensor_type(torch.cuda.FloatTensor)
     else:
-        log('WARNING: No GPUs detected')
+        flog('WARNING: No GPUs detected')
 
     # load the particles
     if args.ind is not None: 
-        log('Filtering image dataset with {}'.format(args.ind))
+        flog('Filtering image dataset with {}'.format(args.ind))
         ind = pickle.load(open(args.ind,'rb'))
     else: ind = None
     if args.lazy:
@@ -144,9 +184,10 @@ def main(args):
     if args.pe_type != 'none': assert args.l_extent == 0.5
     lattice = Lattice(D, extent=args.l_extent)
 
+    print(D)
     model = models.get_decoder(3, D, args.layers, args.dim, args.domain, args.pe_type, enc_dim=args.pe_dim, activation=nn.ReLU)
-    log(model)
-    log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
+    flog(model)
+    flog('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
 
 
     # optimizer
@@ -154,7 +195,7 @@ def main(args):
 
     # load weights
     if args.load:
-        log('Loading model weights from {}'.format(args.load))
+        flog('Loading model weights from {}'.format(args.load))
         checkpoint = torch.load(args.load)
         model.load_state_dict(checkpoint['model_state_dict'])
         optim.load_state_dict(checkpoint['optimizer_state_dict'])
@@ -173,12 +214,16 @@ def main(args):
 
     # load CTF
     if args.ctf is not None:
-        log('Loading ctf params from {}'.format(args.ctf))
+        flog('Loading ctf params from {}'.format(args.ctf))
         ctf_params = ctf.load_ctf_for_training(D-1, args.ctf)
         if args.ind is not None: ctf_params = ctf_params[ind]
         ctf_params = torch.tensor(ctf_params)
     else: ctf_params = None
     Apix = ctf_params[0,0] if ctf_params is not None else 1
+
+    # save configuration
+    out_config = f'{args.outdir}/config.pkl'
+    save_config(args, data, lattice, model, out_config)
 
     # Mixed precision training with AMP
     if args.amp:
@@ -190,12 +235,12 @@ def main(args):
 
     # parallelize
     if args.multigpu and torch.cuda.device_count() > 1:
-        log(f'Using {torch.cuda.device_count()} GPUs!')
+        flog(f'Using {torch.cuda.device_count()} GPUs!')
         args.batch_size *= torch.cuda.device_count()
-        log(f'Increasing batch size to {args.batch_size}')
+        flog(f'Increasing batch size to {args.batch_size}')
         model = nn.DataParallel(model)
     elif args.multigpu:
-        log(f'WARNING: --multigpu selected, but {torch.cuda.device_count()} GPUs detected')
+        flog(f'WARNING: --multigpu selected, but {torch.cuda.device_count()} GPUs detected')
 
 
     # train
@@ -217,8 +262,8 @@ def main(args):
                 pose_optimizer.step()
             loss_accum += loss_item*len(ind)
             if batch_it % args.log_interval == 0:
-                log('# [Train Epoch: {}/{}] [{}/{} images] loss={:.6f}'.format(epoch+1, args.num_epochs, batch_it, Nimg, loss_item))
-        log('# =====> Epoch: {} Average loss = {:.6}; Finished in {}'.format(epoch+1, loss_accum/Nimg, dt.now()-t2))
+                flog('# [Train Epoch: {}/{}] [{}/{} images] loss={:.6f}'.format(epoch+1, args.num_epochs, batch_it, Nimg, loss_item))
+        flog('# =====> Epoch: {} Average loss = {:.6}; Finished in {}'.format(epoch+1, loss_accum/Nimg, dt.now()-t2))
         if args.checkpoint and epoch % args.checkpoint == 0:
             out_mrc = '{}/reconstruct.{}.mrc'.format(args.outdir, epoch)
             out_weights = '{}/weights.{}.pkl'.format(args.outdir, epoch)
@@ -236,7 +281,7 @@ def main(args):
         posetracker.save(out_pose)
    
     td = dt.now()-t1
-    log('Finsihed in {} ({} per epoch)'.format(td, td/(args.num_epochs-start_epoch)))
+    flog('Finsihed in {} ({} per epoch)'.format(td, td/(args.num_epochs-start_epoch)))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)

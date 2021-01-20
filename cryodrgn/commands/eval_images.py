@@ -6,7 +6,7 @@ import sys, os
 import argparse
 import pickle
 from datetime import datetime as dt
-import json
+import pprint
 
 import torch
 import torch.nn as nn
@@ -95,10 +95,13 @@ def main(args):
     else:
         log('WARNING: No GPUs detected')
 
-    if args.config is not None:
-        args = config.load_config(args.config, args)
     log(args)
-    beta = 1./args.zdim if args.beta is None else args.beta
+    cfg = config.overwrite_config(args.config, args)
+    log('Loaded configuration:')
+    pprint.pprint(cfg)
+
+    zdim = cfg['model_args']['zdim']
+    beta = 1./zdim if args.beta is None else args.beta
 
     # load the particles
     if args.ind is not None: 
@@ -106,6 +109,7 @@ def main(args):
         ind = pickle.load(open(args.ind,'rb'))
     else: ind = None
 
+    # TODO: extract dataset arguments from cfg
     if args.tilt is None:
         if args.encode_mode == 'conv':
             args.use_real = True
@@ -139,26 +143,7 @@ def main(args):
     else: ctf_params = None
 
     # instantiate model
-    lattice = Lattice(D, extent=0.5)
-    if args.enc_mask is None:
-        args.enc_mask = D//2
-    if args.enc_mask > 0:
-        assert args.enc_mask <= D//2
-        enc_mask = lattice.get_circular_mask(args.enc_mask)
-        in_dim = enc_mask.sum()
-    elif args.enc_mask == -1:
-        enc_mask = None
-        in_dim = lattice.D**2 if not args.use_real else (lattice.D-1)**2
-    else: 
-        raise RuntimeError("Invalid argument for encoder mask radius {}".format(args.enc_mask))
-    model = HetOnlyVAE(lattice, args.qlayers, args.qdim, args.players, args.pdim,
-                in_dim, args.zdim, encode_mode=args.encode_mode, enc_mask=enc_mask,
-                enc_type=args.pe_type, enc_dim=args.pe_dim, domain=args.domain)
-
-    log('Loading weights from {}'.format(args.weights))
-    checkpoint = torch.load(args.weights)
-    model.load_state_dict(checkpoint['model_state_dict'])
-
+    model, lattice = HetOnlyVAE.load(cfg, args.weights)
     model.eval()
     z_mu_all = []
     z_logvar_all = []

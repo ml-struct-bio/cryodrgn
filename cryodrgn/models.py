@@ -128,6 +128,28 @@ class HetOnlyVAE(nn.Module):
         return self.decode(*args, **kwargs)
 
 
+def load_decoder(config, weights=None, device=None):
+    '''
+    Instantiate a decoder model from a config.pkl
+
+    Inputs:
+        config (str, dict): Path to config.pkl or loaded config.pkl
+        weights (str): Path to weights.pkl
+        device: torch.device object
+
+    Returns a decoder model 
+    '''
+    cfg = utils.load_pkl(config) if type(config) is str else config
+    c = cfg['model_args']
+    D = cfg['lattice_args']['D']
+    model = get_decoder(3, D, c['layers'], c['dim'], c['domain'], c['pe_type'], c['pe_dim'], nn.ReLU) 
+    if weights is not None:
+        ckpt = torch.load(weights)
+        model.load_state_dict(ckpt['model_state_dict'])
+    if device is not None:
+        model.to(device)
+    return model
+
 def get_decoder(in_dim, D, layers, dim, domain, enc_type, enc_dim=None, activation=nn.ReLU):
     if enc_type == 'none':
         if domain == 'hartley':

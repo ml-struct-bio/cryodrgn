@@ -58,14 +58,14 @@ class HetOnlyVAE(nn.Module):
         '''Instantiate a model from a config.pkl
 
         Inputs:
-            config (str): Path to config.pkl
+            config (str, dict): Path to config.pkl or loaded config.pkl
             weights (str): Path to weights.pkl
             device: torch.device object
 
         Returns:
             HetOnlyVAE instance, Lattice instance
         '''
-        cfg = utils.load_pkl(config)
+        cfg = utils.load_pkl(config) if type(config) is str else config
         c = cfg['lattice_args']
         lat = lattice.Lattice(c['D'], extent=c['extent'])
         c = cfg['model_args']

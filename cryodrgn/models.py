@@ -22,7 +22,8 @@ class HetOnlyVAE(nn.Module):
             enc_mask = None,
             enc_type = 'linear_lowf',
             enc_dim = None,
-            domain = 'fourier'):
+            domain = 'fourier',
+            activation = nn.ReLU):
         super(HetOnlyVAE, self).__init__()
         self.lattice = lattice
         self.zdim = zdim
@@ -35,23 +36,23 @@ class HetOnlyVAE(nn.Module):
                             qlayers, # nlayers
                             qdim,  # hidden_dim
                             zdim*2, # out_dim
-                            nn.ReLU) 
+                            activation) 
         elif encode_mode == 'mlp':
             self.encoder = MLP(in_dim, 
                             qlayers, 
                             qdim, # hidden_dim
                             zdim*2, # out_dim
-                            nn.ReLU) #in_dim -> hidden_dim
+                            activation) #in_dim -> hidden_dim
         elif encode_mode == 'tilt':
             self.encoder = TiltEncoder(in_dim,
                             qlayers,
                             qdim,
                             zdim*2,
-                            nn.ReLU)
+                            activation)
         else:
             raise RuntimeError('Encoder mode {} not recognized'.format(encode_mode))
         self.encode_mode = encode_mode
-        self.decoder = get_decoder(3+zdim, lattice.D, players, pdim, domain, enc_type, enc_dim, nn.ReLU)
+        self.decoder = get_decoder(3+zdim, lattice.D, players, pdim, domain, enc_type, enc_dim, activation)
    
     @classmethod
     def load(self, config, weights=None, device=None):
@@ -76,6 +77,7 @@ class HetOnlyVAE(nn.Module):
             assert c['enc_mask'] == -1
             enc_mask = None
             in_dim = lat.D**2
+        activation={"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[c['activation']]
         model = HetOnlyVAE(lat, 
                           c['qlayers'], c['qdim'],
                           c['players'], c['pdim'],
@@ -84,7 +86,8 @@ class HetOnlyVAE(nn.Module):
                           enc_mask=enc_mask,
                           enc_type=c['pe_type'],
                           enc_dim=c['pe_dim'],
-                          domain=c['domain'])
+                          domain=c['domain'],
+                          activation=activation)
         if weights is not None:
             ckpt = torch.load(weights)
             model.load_state_dict(ckpt['model_state_dict'])
@@ -142,7 +145,8 @@ def load_decoder(config, weights=None, device=None):
     cfg = utils.load_pkl(config) if type(config) is str else config
     c = cfg['model_args']
     D = cfg['lattice_args']['D']
-    model = get_decoder(3, D, c['layers'], c['dim'], c['domain'], c['pe_type'], c['pe_dim'], nn.ReLU) 
+    activation={"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[c['activation']]
+    model = get_decoder(3, D, c['layers'], c['dim'], c['domain'], c['pe_type'], c['pe_dim'], activation) 
     if weights is not None:
         ckpt = torch.load(weights)
         model.load_state_dict(ckpt['model_state_dict'])

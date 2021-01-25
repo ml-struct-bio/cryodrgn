@@ -68,6 +68,7 @@ def add_args(parser):
     group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf','none'),  help='Type of positional encoding')
     group.add_argument('--pe-dim', type=int, help='Num sinusoid features in positional encoding (default: D/2)')
     group.add_argument('--domain', choices=('hartley','fourier'), help='Decoder representation domain')
+    group.add_argument('--activation', choices=('relu','leaky_relu'), default='relu', help='Activation (default: %(default)s)')
     return parser
   
 def eval_batch(model, lattice, y, yt, rot, trans, beta, tilt=None, ctf_params=None, yr=None):

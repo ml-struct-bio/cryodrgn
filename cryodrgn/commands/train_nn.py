@@ -70,6 +70,7 @@ def add_args(parser):
     group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf','none'), default='geom_lowf', help='Type of positional encoding (default: %(default)s)')
     group.add_argument('--pe-dim', type=int, help='Num sinusoid features in positional encoding (default: D/2)')
     group.add_argument('--domain', choices=('hartley','fourier'), default='fourier', help='Volume decoder representation (default: %(default)s)')
+    group.add_argument('--activation', choices=('relu','leaky_relu'), default='relu', help='Activation (default: %(default)s)')
     return parser
 
 def save_checkpoint(model, lattice, optim, epoch, norm, Apix, out_mrc, out_weights):
@@ -126,7 +127,8 @@ def save_config(args, dataset, lattice, model, out_config):
                       dim=args.dim,
                       pe_type=args.pe_type,
                       pe_dim=args.pe_dim,
-                      domain=args.domain)
+                      domain=args.domain,
+                      activation=args.activation)
     config = dict(dataset_args=dataset_args,
                   lattice_args=lattice_args,
                   model_args=model_args)
@@ -190,8 +192,8 @@ def main(args):
     if args.pe_type != 'none': assert args.l_extent == 0.5
     lattice = Lattice(D, extent=args.l_extent)
 
-    print(D)
-    model = models.get_decoder(3, D, args.layers, args.dim, args.domain, args.pe_type, enc_dim=args.pe_dim, activation=nn.ReLU)
+    activation={"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[args.activation]
+    model = models.get_decoder(3, D, args.layers, args.dim, args.domain, args.pe_type, enc_dim=args.pe_dim, activation=activation)
     flog(model)
     flog('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
 

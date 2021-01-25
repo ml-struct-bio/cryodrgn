@@ -199,6 +199,17 @@ def main(args):
     else:
         log(f'{out_ipynb} already exists. Skipping')
     log(out_ipynb)
+
+    # copy over template if file doesn't exist
+    out_ipynb = f'{outdir}/cryoDRGN_filtering.ipynb'
+    if not os.path.exists(out_ipynb):
+        log(f'Creating jupyter notebook...')
+        ipynb = f'{cryodrgn._ROOT}/templates/cryoDRGN_filtering_template.ipynb'
+        cmd = f'cp {ipynb} {out_ipynb}'
+        subprocess.check_call(cmd, shell=True)
+    else:
+        log(f'{out_ipynb} already exists. Skipping')
+    log(out_ipynb)
     
     log(f'Finished in {dt.now()-t1}')
 

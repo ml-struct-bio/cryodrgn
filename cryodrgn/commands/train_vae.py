@@ -345,7 +345,7 @@ def main(args):
         in_dim = lattice.D**2 if not args.use_real else (lattice.D-1)**2
     else: 
         raise RuntimeError("Invalid argument for encoder mask radius {}".format(args.enc_mask))
-    activation={"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[c['activation']]
+    activation={"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[args.activation]
     model = HetOnlyVAE(lattice, args.qlayers, args.qdim, args.players, args.pdim,
                 in_dim, args.zdim, encode_mode=args.encode_mode, enc_mask=enc_mask,
                 enc_type=args.pe_type, enc_dim=args.pe_dim, domain=args.domain,

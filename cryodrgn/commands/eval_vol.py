@@ -55,6 +55,7 @@ def add_args(parser):
     group.add_argument('--pe-dim', type=int, help='Num sinusoid features in positional encoding (default: D/2)')
     group.add_argument('--domain', choices=('hartley','fourier'))
     group.add_argument('--l-extent', type=float, help='Coordinate lattice size')
+    group.add_argument('--activation', choices=('relu','leaky_relu'), default='relu', help='Activation (default: %(default)s)')
     return parser
 
 def check_inputs(args):

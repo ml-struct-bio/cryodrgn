@@ -11,14 +11,17 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('input', nargs='*', help='Input')
     parser.add_argument('-t', type=float, default=.143, help='Cutoff for resolution estimation (default: %(default)s)')
+    parser.add_argument('--labels', nargs='*', help='Labels for plotting')
     parser.add_argument('-o')
     return parser
 
 def main(args):
-    for f in args.input:
+    labels = args.labels if args.labels is not None else args.input
+    assert len(labels) == len(args.input)
+    for i, f in enumerate(args.input):
         print(f)
         x = np.loadtxt(f)
-        plt.plot(x[:,0],x[:,1], label=f)
+        plt.plot(x[:,0],x[:,1], label=labels[i])
         w = np.where(x[:,1]<args.t)
         print(w)
         print(x[:,0][w])

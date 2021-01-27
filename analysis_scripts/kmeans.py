@@ -21,6 +21,7 @@ def parse_args():
     parser.add_argument('--out-png', help='Output image (.png)')
     parser.add_argument('--out-k', help='Output cluster centers z values (.txt)')
     parser.add_argument('--on-data', action='store_true', help='Use nearest data point instead of cluster center')
+    parser.add_argument('--out-k-ind', help='Output cluster center indices (.txt)')
     return parser
 
 def main(args):
@@ -44,6 +45,8 @@ def main(args):
         print(centers_zi)
         centers_z = z[centers_zi]
         centers = centers_z
+        if args.out_k_ind:
+            np.savetxt(args.out_k_ind, centers_zi, fmt='%d')
 
     if args.o:
         with open(args.o, 'wb') as f:

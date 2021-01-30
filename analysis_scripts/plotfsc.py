@@ -16,7 +16,7 @@ def parse_args():
     return parser
 
 def main(args):
-    labels = args.labels if args.labels is not None else args.input
+    labels = args.labels if args.labels else args.input
     assert len(labels) == len(args.input)
     for i, f in enumerate(args.input):
         print(f)

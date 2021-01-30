@@ -86,7 +86,7 @@ def main(args):
 
     if args.downsample:
         assert args.downsample % 2 == 0, "Boxsize must be even"
-        assert args.downsample < D - 1, "Must be smaller than original box size"
+        assert args.downsample <= D - 1, "Must be smaller than original box size"
     
     model, lattice = HetOnlyVAE.load(cfg, args.weights)
     model.eval()
@@ -111,7 +111,7 @@ def main(args):
         for i,zz in enumerate(z):
             log(zz)
             if args.downsample:
-                extent = lattice.extent * (args.downsample/D)
+                extent = lattice.extent * (args.downsample/(D-1))
                 vol = model.decoder.eval_volume(lattice.get_downsample_coords(args.downsample+1), 
                                                 args.downsample+1, extent, norm, zz) 
             else:

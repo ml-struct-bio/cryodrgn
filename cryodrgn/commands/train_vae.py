@@ -16,6 +16,7 @@ try:
 except: 
     pass
 
+import cryodrgn
 from cryodrgn import mrc
 from cryodrgn import utils
 from cryodrgn import fft
@@ -240,6 +241,10 @@ def save_config(args, dataset, lattice, model, out_config):
     config['seed'] = args.seed
     with open(out_config,'wb') as f:
         pickle.dump(config, f)
+        meta = dict(time=dt.now(),
+                    cmd=sys.argv,
+                    version=cryodrgn.__version__)
+        pickle.dump(meta, f)
 
 def get_latest(args):
     # Assumes checkpoint==1, todo: make this more robust

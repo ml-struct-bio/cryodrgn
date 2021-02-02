@@ -19,6 +19,7 @@ def main():
     import cryodrgn.commands.analyze
     import cryodrgn.commands.pc_traversal
     import cryodrgn.commands.graph_traversal
+    import cryodrgn.commands.view_config
 
     modules = [cryodrgn.commands.downsample,
         cryodrgn.commands.parse_pose_csparc,
@@ -33,6 +34,7 @@ def main():
         cryodrgn.commands.analyze,
         cryodrgn.commands.pc_traversal,
         cryodrgn.commands.graph_traversal,
+        cryodrgn.commands.view_config,
         ]
 
     subparsers = parser.add_subparsers(title='Choose a command')

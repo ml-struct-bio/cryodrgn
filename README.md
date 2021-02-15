@@ -2,11 +2,11 @@
 
 CryoDRGN is a neural network based algorithm for heterogeneous cryo-EM reconstruction. In particular, the method models a *continuous* distribution over 3D structures by using a neural network based representation for the volume.
 
-## Manuscript:
+## Manuscripts:
 
-CryoDRGN: Reconstruction of heterogeneous structures from cryo-electron micrographs using neural networks.
+CryoDRGN: reconstruction of heterogeneous cryo-EM structures using neural networks.
 Ellen D. Zhong, Tristan Bepler, Bonnie Berger*, Joseph H. Davis*.
-https://www.biorxiv.org/content/10.1101/2020.03.27.003871v1
+https://www.nature.com/articles/s41592-020-01049-4
 
 Reconstructing continuous distributions of 3D protein structure from cryo-EM images.
 Ellen D. Zhong, Tristan Bepler, Joseph H. Davis*, Bonnie Berger*.
@@ -143,7 +143,7 @@ Example usage for a .cs file:
 
     $ cryodrgn parse_ctf_csparc cryosparc_P27_J3_005_particles.cs -o ctf.pkl
 
-### 4. Test pose/CTF parameters parsing
+### 4. (Optional) Test pose/CTF parameters parsing
 
 Next, test that pose and CTF parameters were parsed correctly using the voxel-based backprojection script.
 The goal is to quickly verify that there are no major problems with the extracted values and that the output structure resembles the structure from the consensus reconstruction before beginning training.
@@ -153,7 +153,6 @@ Example usage:
     $ cryodrgn backproject_voxel projections.128.mrcs \
             --poses pose.pkl \
             --ctf ctf.pkl \
-            --invert-data \ # Invert sign of dataset; Use if particles are white on black
             -o backproject.128.mrc
 
 The output structure `backproject.128.mrc` will not match the consensus reconstruction exactly as the `backproject_voxel` command backprojects phase-flipped particles onto the voxel grid, and by default only uses the first 10k images. If the structure is too noisy, you can increase the number of images that are used with the `--first` argument.

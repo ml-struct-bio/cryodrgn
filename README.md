@@ -165,105 +165,111 @@ When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl
 
     $ cryodrgn train_vae -h
 
-    usage: cryodrgn train_vae [-h] -o OUTDIR --zdim ZDIM --poses POSES [--ctf pkl]
-                              [--load WEIGHTS.PKL] [--checkpoint CHECKPOINT]
-                              [--log-interval LOG_INTERVAL] [-v] [--seed SEED]
-                              [--uninvert-data] [--no-window] [--ind PKL] [--lazy]
-                              [--datadir DATADIR] [--relion31] [--tilt TILT]
-                              [--tilt-deg TILT_DEG] [-n NUM_EPOCHS]
-                              [-b BATCH_SIZE] [--wd WD] [--lr LR] [--beta BETA]
-                              [--beta-control BETA_CONTROL] [--norm NORM NORM]
-                              [--amp] [--do-pose-sgd] [--pretrain PRETRAIN]
-                              [--emb-type {s2s2,quat}] [--pose-lr POSE_LR]
-                              [--enc-layers QLAYERS] [--enc-dim QDIM]
-                              [--encode-mode {conv,resid,mlp,tilt}]
-                              [--enc-mask ENC_MASK] [--use-real]
-                              [--dec-layers PLAYERS] [--dec-dim PDIM]
-                              [--pe-type {geom_ft,geom_full,geom_lowf,geom_nohighf,linear_lowf,none}]
-                              [--pe-dim PE_DIM] [--domain {hartley,fourier}]
-                              particles
+	usage: cryodrgn train_vae [-h] -o OUTDIR --zdim ZDIM --poses POSES [--ctf pkl]
+	                          [--load WEIGHTS.PKL] [--checkpoint CHECKPOINT]
+	                          [--log-interval LOG_INTERVAL] [-v] [--seed SEED]
+	                          [--uninvert-data] [--no-window] [--ind PKL] [--lazy]
+	                          [--datadir DATADIR] [--relion31] [--tilt TILT]
+	                          [--tilt-deg TILT_DEG] [-n NUM_EPOCHS]
+	                          [-b BATCH_SIZE] [--wd WD] [--lr LR] [--beta BETA]
+	                          [--beta-control BETA_CONTROL] [--norm NORM NORM]
+	                          [--amp] [--multigpu] [--do-pose-sgd]
+	                          [--pretrain PRETRAIN] [--emb-type {s2s2,quat}]
+	                          [--pose-lr POSE_LR] [--enc-layers QLAYERS]
+	                          [--enc-dim QDIM]
+	                          [--encode-mode {conv,resid,mlp,tilt}]
+	                          [--enc-mask ENC_MASK] [--use-real]
+	                          [--dec-layers PLAYERS] [--dec-dim PDIM]
+	                          [--pe-type {geom_ft,geom_full,geom_lowf,geom_nohighf,linear_lowf,none}]
+	                          [--pe-dim PE_DIM] [--domain {hartley,fourier}]
+	                          [--activation {relu,leaky_relu}]
+	                          particles
+	
+	Train a VAE for heterogeneous reconstruction with known pose
+	
+	positional arguments:
+	  particles             Input particles (.mrcs, .star, .cs, or .txt)
+	
+	optional arguments:
+	  -h, --help            show this help message and exit
+	  -o OUTDIR, --outdir OUTDIR
+	                        Output directory to save model
+	  --zdim ZDIM           Dimension of latent variable
+	  --poses POSES         Image poses (.pkl)
+	  --ctf pkl             CTF parameters (.pkl)
+	  --load WEIGHTS.PKL    Initialize training from a checkpoint
+	  --checkpoint CHECKPOINT
+	                        Checkpointing interval in N_EPOCHS (default: 1)
+	  --log-interval LOG_INTERVAL
+	                        Logging interval in N_IMGS (default: 1000)
+	  -v, --verbose         Increaes verbosity
+	  --seed SEED           Random seed
+	  --relion31            Flag if relion3.1 star format
+	
+	Dataset loading:
+	  --uninvert-data       Do not invert data sign
+	  --no-window           Turn off real space windowing of dataset
+	  --ind PKL             Filter particle stack by these indices
+	  --lazy                Lazy loading if full dataset is too large to fit in
+	                        memory
+	  --datadir DATADIR     Path prefix to particle stack if loading relative
+	                        paths from a .star or .cs file
+	
+	Tilt series:
+	  --tilt TILT           Particles (.mrcs)
+	  --tilt-deg TILT_DEG   X-axis tilt offset in degrees (default: 45)
+	
+	Training parameters:
+	  -n NUM_EPOCHS, --num-epochs NUM_EPOCHS
+	                        Number of training epochs (default: 20)
+	  -b BATCH_SIZE, --batch-size BATCH_SIZE
+	                        Minibatch size (default: 8)
+	  --wd WD               Weight decay in Adam optimizer (default: 0)
+	  --lr LR               Learning rate in Adam optimizer (default: 0.0001)
+	  --beta BETA           Choice of beta schedule or a constant for KLD weight
+	                        (default: 1/zdim)
+	  --beta-control BETA_CONTROL
+	                        KL-Controlled VAE gamma. Beta is KL target. (default:
+	                        None)
+	  --norm NORM NORM      Data normalization as shift, 1/scale (default: 0, std
+	                        of dataset)
+	  --amp                 Use mixed-precision training
+	  --multigpu            Parallelize training across all detected GPUs
+	
+	Pose SGD:
+	  --do-pose-sgd         Refine poses with gradient descent
+	  --pretrain PRETRAIN   Number of epochs with fixed poses before pose SGD
+	                        (default: 1)
+	  --emb-type {s2s2,quat}
+	                        SO(3) embedding type for pose SGD (default: quat)
+	  --pose-lr POSE_LR     Learning rate for pose optimizer (default: 0.0003)
+	
+	Encoder Network:
+	  --enc-layers QLAYERS  Number of hidden layers (default: 3)
+	  --enc-dim QDIM        Number of nodes in hidden layers (default: 256)
+	  --encode-mode {conv,resid,mlp,tilt}
+	                        Type of encoder network (default: resid)
+	  --enc-mask ENC_MASK   Circular mask of image for encoder (default: D/2; -1
+	                        for no mask)
+	  --use-real            Use real space image for encoder (for convolutional
+	                        encoder)
+	
+	Decoder Network:
+	  --dec-layers PLAYERS  Number of hidden layers (default: 3)
+	  --dec-dim PDIM        Number of nodes in hidden layers (default: 256)
+	  --pe-type {geom_ft,geom_full,geom_lowf,geom_nohighf,linear_lowf,none}
+	                        Type of positional encoding (default: geom_lowf)
+	  --pe-dim PE_DIM       Num features in positional encoding (default: image D)
+	  --domain {hartley,fourier}
+	                        Decoder representation domain (default: fourier)
+	  --activation {relu,leaky_relu}
+	                        Activation (default: relu)
 
-    Train a VAE for heterogeneous reconstruction with known pose
-    
-    positional arguments:
-      particles             Input particles (.mrcs, .star, .cs, or .txt)
-    
-    optional arguments:
-      -h, --help            show this help message and exit
-      -o OUTDIR, --outdir OUTDIR
-                            Output directory to save model
-      --zdim ZDIM           Dimension of latent variable
-      --poses POSES         Image poses (.pkl)
-      --ctf pkl             CTF parameters (.pkl)
-      --load WEIGHTS.PKL    Initialize training from a checkpoint
-      --checkpoint CHECKPOINT
-                            Checkpointing interval in N_EPOCHS (default: 1)
-      --log-interval LOG_INTERVAL
-                            Logging interval in N_IMGS (default: 1000)
-      -v, --verbose         Increaes verbosity
-      --seed SEED           Random seed
-      --relion31            Flag if relion3.1 star format
-    
-    Dataset loading:
-      --uninvert-data       Do not invert data sign
-      --no-window           Turn off real space windowing of dataset
-      --ind PKL             Filter particle stack by these indices
-      --lazy                Lazy loading if full dataset is too large to fit in
-                            memory
-      --datadir DATADIR     Path prefix to particle stack if loading relative
-                            paths from a .star or .cs file
-    
-    Tilt series:
-      --tilt TILT           Particles (.mrcs)
-      --tilt-deg TILT_DEG   X-axis tilt offset in degrees (default: 45)
-    
-    Training parameters:
-      -n NUM_EPOCHS, --num-epochs NUM_EPOCHS
-                            Number of training epochs (default: 20)
-      -b BATCH_SIZE, --batch-size BATCH_SIZE
-                            Minibatch size (default: 8)
-      --wd WD               Weight decay in Adam optimizer (default: 0)
-      --lr LR               Learning rate in Adam optimizer (default: 0.0001)
-      --beta BETA           Choice of beta schedule or a constant for KLD weight
-                            (default: 1.0)
-      --beta-control BETA_CONTROL
-                            KL-Controlled VAE gamma. Beta is KL target. (default:
-                            None)
-      --norm NORM NORM      Data normalization as shift, 1/scale (default: 0, std
-                            of dataset)
-      --amp                 Use mixed-precision training
-    
-    Pose SGD:
-      --do-pose-sgd         Refine poses with gradient descent
-      --pretrain PRETRAIN   Number of epochs with fixed poses before pose SGD
-                            (default: 1)
-      --emb-type {s2s2,quat}
-                            SO(3) embedding type for pose SGD (default: quat)
-      --pose-lr POSE_LR     Learning rate for pose optimizer (default: 0.0003)
-    
-    Encoder Network:
-      --enc-layers QLAYERS  Number of hidden layers (default: 3)
-      --enc-dim QDIM        Number of nodes in hidden layers (default: 256)
-      --encode-mode {conv,resid,mlp,tilt}
-                            Type of encoder network (default: resid)
-      --enc-mask ENC_MASK   Circular mask of image for encoder (default: D/2; -1
-                            for no mask)
-      --use-real            Use real space image for encoder (for convolutional
-                            encoder)
-    
-    Decoder Network:
-      --dec-layers PLAYERS  Number of hidden layers (default: 3)
-      --dec-dim PDIM        Number of nodes in hidden layers (default: 256)
-      --pe-type {geom_ft,geom_full,geom_lowf,geom_nohighf,linear_lowf,none}
-                            Type of positional encoding (default: geom_lowf)
-      --pe-dim PE_DIM       Num features in positional encoding (default: image D)
-      --domain {hartley,fourier}
-                            Decoder representation domain (default: fourier)
 
 Many of the parameters of this script have sensible defaults. The required arguments are:
 
 * an input image stack (`.mrcs` or other listed file types)
-* `--poses`, image poses (`.pkl`) which correspond to the input images
+* `--poses`, image poses (`.pkl`) that correspond to the input images
 * `--ctf`, ctf parameters (`.pkl`), unless phase-flipped images are used
 * `--zdim`, the dimension of the latent variable
 * `-o`, a clean output directory for storing results
@@ -405,62 +411,68 @@ Notes:
 Additional structures may be generated using `cryodrgn eval_vol`:
 
     $ cryodrgn eval_vol -h
-    usage: cryodrgn eval_vol [-h] [-c PKL] -o O [--prefix PREFIX] [-v]
-                             [-z [Z [Z ...]]] [--z-start [Z_START [Z_START ...]]]
-                             [--z-end [Z_END [Z_END ...]]] [-n N] [--zfile ZFILE]
-                             [--Apix APIX] [--flip] [-d DOWNSAMPLE]
-                             [--norm NORM NORM] [-D D] [--qlayers QLAYERS]
-                             [--qdim QDIM] [--zdim ZDIM]
-                             [--encode-mode {conv,resid,mlp,tilt}]
-                             [--players PLAYERS] [--pdim PDIM]
-                             [--enc-mask ENC_MASK]
-                             [--pe-type {geom_ft,geom_full,geom_lowf,geom_nohighf,linear_lowf,none}]
-                             [--domain {hartley,fourier}] [--l-extent L_EXTENT]
-                             weights
-    
-    Evaluate the decoder at specified values of z
-    
-    positional arguments:
-      weights               Model weights
-    
-    optional arguments:
-      -h, --help            show this help message and exit
-      -c PKL, --config PKL  CryoDRGN configuration
-      -o O                  Output .mrc or directory
-      --prefix PREFIX       Prefix when writing out multiple .mrc files (default:
-                            vol_)
-      -v, --verbose         Increaes verbosity
-    
-    Specify z values:
-      -z [Z [Z ...]]        Specify one z-value
-      --z-start [Z_START [Z_START ...]]
-                            Specify a starting z-value
-      --z-end [Z_END [Z_END ...]]
-                            Specify an ending z-value
-      -n N                  Number of structures between [z_start, z_end]
-      --zfile ZFILE         Text file with z-values to evaluate
-    
-    Volume arguments:
-      --Apix APIX           Pixel size to add to .mrc header (default: 1 A/pix)
-      --flip                Flip handedness of output volume
-      -d DOWNSAMPLE, --downsample DOWNSAMPLE
-                            Downsample volumes to this box size (pixels)
-    
-    Overwrite architecture hyperparameters in config.pkl:
-      --norm NORM NORM
-      -D D                  Box size
-      --qlayers QLAYERS     Number of hidden layers
-      --qdim QDIM           Number of nodes in hidden layers
-      --zdim ZDIM           Dimension of latent variable
-      --encode-mode {conv,resid,mlp,tilt}
-                            Type of encoder network
-      --players PLAYERS     Number of hidden layers
-      --pdim PDIM           Number of nodes in hidden layers
-      --enc-mask ENC_MASK   Circular mask radius for image encoder
-      --pe-type {geom_ft,geom_full,geom_lowf,geom_nohighf,linear_lowf,none}
-                            Type of positional encoding
-      --domain {hartley,fourier}
-      --l-extent L_EXTENT   Coordinate lattice size
+	usage: cryodrgn eval_vol [-h] -c PKL -o O [--prefix PREFIX] [-v]
+	                         [-z [Z [Z ...]]] [--z-start [Z_START [Z_START ...]]]
+	                         [--z-end [Z_END [Z_END ...]]] [-n N] [--zfile ZFILE]
+	                         [--Apix APIX] [--flip] [-d DOWNSAMPLE]
+	                         [--norm NORM NORM] [-D D] [--enc-layers QLAYERS]
+	                         [--enc-dim QDIM] [--zdim ZDIM]
+	                         [--encode-mode {conv,resid,mlp,tilt}]
+	                         [--dec-layers PLAYERS] [--dec-dim PDIM]
+	                         [--enc-mask ENC_MASK]
+	                         [--pe-type {geom_ft,geom_full,geom_lowf,geom_nohighf,linear_lowf,none}]
+	                         [--pe-dim PE_DIM] [--domain {hartley,fourier}]
+	                         [--l-extent L_EXTENT]
+	                         [--activation {relu,leaky_relu}]
+	                         weights
+	
+	Evaluate the decoder at specified values of z
+	
+	positional arguments:
+	  weights               Model weights
+	
+	optional arguments:
+	  -h, --help            show this help message and exit
+	  -c PKL, --config PKL  CryoDRGN config.pkl file
+	  -o O                  Output .mrc or directory
+	  --prefix PREFIX       Prefix when writing out multiple .mrc files (default:
+	                        vol_)
+	  -v, --verbose         Increaes verbosity
+	
+	Specify z values:
+	  -z [Z [Z ...]]        Specify one z-value
+	  --z-start [Z_START [Z_START ...]]
+	                        Specify a starting z-value
+	  --z-end [Z_END [Z_END ...]]
+	                        Specify an ending z-value
+	  -n N                  Number of structures between [z_start, z_end]
+	  --zfile ZFILE         Text file with z-values to evaluate
+	
+	Volume arguments:
+	  --Apix APIX           Pixel size to add to .mrc header (default: 1 A/pix)
+	  --flip                Flip handedness of output volume
+	  -d DOWNSAMPLE, --downsample DOWNSAMPLE
+	                        Downsample volumes to this box size (pixels)
+	
+	Overwrite architecture hyperparameters in config.pkl:
+	  --norm NORM NORM
+	  -D D                  Box size
+	  --enc-layers QLAYERS  Number of hidden layers
+	  --enc-dim QDIM        Number of nodes in hidden layers
+	  --zdim ZDIM           Dimension of latent variable
+	  --encode-mode {conv,resid,mlp,tilt}
+	                        Type of encoder network
+	  --dec-layers PLAYERS  Number of hidden layers
+	  --dec-dim PDIM        Number of nodes in hidden layers
+	  --enc-mask ENC_MASK   Circular mask radius for image encoder
+	  --pe-type {geom_ft,geom_full,geom_lowf,geom_nohighf,linear_lowf,none}
+	                        Type of positional encoding
+	  --pe-dim PE_DIM       Num sinusoid features in positional encoding (default:
+	                        D/2)
+	  --domain {hartley,fourier}
+	  --l-extent L_EXTENT   Coordinate lattice size
+	  --activation {relu,leaky_relu}
+	                        Activation (default: relu)
 
 **Example usage:**
 

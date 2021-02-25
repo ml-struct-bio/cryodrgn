@@ -37,7 +37,7 @@ def run_pca(z):
     pc = pca.transform(z)
     return pc, pca
 
-def get_pc_traj(pca, zdim, numpoints, dim, start, end):
+def get_pc_traj(pca, zdim, numpoints, dim, start, end, percentiles=None):
     '''
     Create trajectory along specified principle component
     
@@ -48,12 +48,15 @@ def get_pc_traj(pca, zdim, numpoints, dim, start, end):
         dim (int): PC dimension for the trajectory (1-based index)
         start (float): Value of PC{dim} to start trajectory
         end (float): Value of PC{dim} to stop trajectory
+        percentiles (np.array or None): Define percentile array instead of np.linspace(start,stop,numpoints)
     
     Returns:
         np.array (numpoints x zdim) of z values along PC
     '''
+    if percentiles is not None:
+        assert len(percentiles) == numpoints
     traj_pca = np.zeros((numpoints,zdim))
-    traj_pca[:,dim-1] = np.linspace(start, end, numpoints)
+    traj_pca[:,dim-1] = np.linspace(start, end, numpoints) if percentiles is None else percentiles
     ztraj_pca = pca.inverse_transform(traj_pca)
     return ztraj_pca
 

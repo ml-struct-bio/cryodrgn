@@ -17,7 +17,8 @@ def add_args(parser):
     parser.add_argument('--dim', type=int, help='Choose PC (1-based indexing) (default: all)')
     parser.add_argument('-n', type=int, default=10, help='Number of samples along PC (default: %(default)s)')
     parser.add_argument('--lim', nargs=2, type=float, help='Start and end point of trajectory (default: 5/95th percentile)')
-    parser.add_argument('-o', type=os.path.abspath, help='Output directory for pc.X.txt files')
+    parser.add_argument('--use-percentile-spacing', action='store_true', help='Use equally spaced percentiles of the distribution instead of equally spaced points along the PC')
+    parser.add_argument('-o', type=os.path.abspath, required=True, help='Output directory for pc.X.txt files')
     return parser
 
 def analyze_data_support(z, traj, cutoff=3):
@@ -39,10 +40,16 @@ def main(args):
 
     for dim in dims:
         print('PC{}'.format(dim))
-        start = np.percentile(pc[:,dim-1], lim[0])
-        stop = np.percentile(pc[:,dim-1], lim[1])
-        print('Limits: {}, {}'.format(start, stop))
-        traj = analysis.get_pc_traj(pca, zdim, args.n, dim, start, stop)
+        if args.use_percentile_spacing:
+            pc_values = np.percentile(pc[:,dim-1], np.linspace(lim[0],lim[1],args.n))
+            print('Limits: {}, {}'.format(pc_values[0], pc_values[-1]))
+            traj = analysis.get_pc_traj(pca, zdim, args.n, dim, None, None, pc_values)
+        else:
+            start = np.percentile(pc[:,dim-1], lim[0])
+            stop = np.percentile(pc[:,dim-1], lim[1])
+            print('Limits: {}, {}'.format(start, stop))
+            traj = analysis.get_pc_traj(pca, zdim, args.n, dim, start, stop)
+        
         print('Neighbor count along trajectory:')
         print(analyze_data_support(z, traj))
 

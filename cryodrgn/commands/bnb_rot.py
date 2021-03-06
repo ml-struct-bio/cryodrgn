@@ -41,7 +41,7 @@ def parse_args():
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
     parser.add_argument('--ctf', metavar='pkl', type=os.path.abspath, help='CTF parameters (.pkl)')
     parser.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: mean, std of dataset)')
-    parser.add_argument('--load', type=os.path.abspath, help='Initialize training from a checkpoint')
+    parser.add_argument('--load', help='Initialize training from a checkpoint')
     parser.add_argument('--load-poses', type=os.path.abspath, help='Initialize training from a checkpoint')
     parser.add_argument('--checkpoint', type=int, default=1, help='Checkpointing interval in N_EPOCHS (default: %(default)s)')
     parser.add_argument('--log-interval', type=int, default=1000, help='Logging interval in N_IMGS (default: %(default)s)')
@@ -269,13 +269,12 @@ def main(args):
     log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
-    if not args.load and glob.glob(f'{args.outdir}/weights*pkl'):
+    if args.load == 'latest':
         weight_pkls = glob.glob(f'{args.outdir}/weights.*.pkl')
         _epochs = [int(x.split('.')[-2]) for x in weight_pkls]
-        args.load = weight_pkls[np.argmax(_epochs)]
-        pose_pkls = glob.glob(f'{args.outdir}/pose.*.pkl')
-        _epochs = [int(x.split('.')[-2]) for x in pose_pkls]
-        args.load_poses = pose_pkls[np.argmax(_epochs)]
+        last_epoch = np.max(_epochs)
+        args.load = f'{args.outdir}/weights.{last_epoch}.pkl'
+        args.load_poses = f'{args.outdir}/pose.{last_epoch}.pkl'
 
     if args.load:
         args.pretrain = 0

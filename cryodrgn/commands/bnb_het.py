@@ -15,6 +15,7 @@ from torch.utils.data import DataLoader
 
 sys.path.insert(0,os.path.abspath(os.path.dirname(__file__))+'/lib-python')
 from cryodrgn import mrc
+from cryodrgn import ctf 
 from cryodrgn import utils
 from cryodrgn import fft
 from cryodrgn import dataset
@@ -38,8 +39,9 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('particles', help='Input particles (.mrcs, .txt or .star)')
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
-    parser.add_argument('--load', type=os.path.abspath, help='Initialize training from a checkpoint')
-    parser.add_argument('--load-poses', type=os.path.abspath, help='Initialize training from a checkpoint')
+    parser.add_argument('--ctf', metavar='pkl', type=os.path.abspath, help='CTF parameters (.pkl)')
+    parser.add_argument('--load', help='Initialize training from a checkpoint')
+    parser.add_argument('--load-poses', help='Initialize training from a checkpoint')
     parser.add_argument('--checkpoint', type=int, default=1, help='Checkpointing interval in N_EPOCHS (default: %(default)s)')
     parser.add_argument('--log-interval', type=int, default=1000, help='Logging interval in N_IMGS (default: %(default)s)')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
@@ -147,15 +149,27 @@ def pretrain(model, lattice, optim, minibatch, tilt):
     optim.step()
     return gen_loss.item()
 
-def train(model, lattice, ps, optim, L, minibatch, beta, beta_control=None, equivariance=None, enc_only=False, poses=None):
+def train(model, lattice, ps, optim, L, minibatch, beta, beta_control=None, equivariance=None, enc_only=False, poses=None, ctf_params=None):
     y, yt = minibatch
     use_tilt = yt is not None
+    use_ctf = ctf_params is not None
     B = y.size(0)
+    D = lattice.D
 
+    if use_ctf:
+        freqs = lattice.freqs2d.unsqueeze(0).expand(B,*lattice.freqs2d.shape)/ctf_params[:,0].view(B,1,1)
+        ctf_i = ctf.compute_ctf(freqs, *torch.split(ctf_params[:,1:], 1, 1)).view(B,D,D)
+    else: ctf_i = None
+
+    # TODO: Center image?
+    # We do this in pose-supervised train_vae
+    
     # VAE inference of z
     model.train()
     optim.zero_grad()
     input_ = (y,yt) if use_tilt else (y,)
+    if use_ctf:
+        input_ = (x*ctf_i.sign() for x in input_) # phase flip by the ctf
     z_mu, z_logvar = model.encode(*input_)
     z = model.reparameterize(z_mu, z_logvar)
 
@@ -174,13 +188,17 @@ def train(model, lattice, ps, optim, L, minibatch, beta, beta_control=None, equi
                 y,
                 z=z,
                 images_tilt=None if enc_only else yt,
+                ctf_i=ctf_i,
             )
         model.train()
 
     # reconstruct circle of pixels instead of whole image
     mask = lattice.get_circular_mask(L)
     def gen_slice(R):
-        return model.decode(lattice.coords[mask] @ R, z).view(B,-1)
+        slice_ = model.decode(lattice.coords[mask] @ R, z).view(B,-1)
+        if use_ctf:
+            slice_ *= ctf_i.view(B,-1)[:,mask]
+        return slice_
     def translate(img):
         img = lattice.translate_ht(img, trans.unsqueeze(1), mask)
         return img.view(B,-1)
@@ -220,15 +238,26 @@ def train(model, lattice, ps, optim, L, minibatch, beta, beta_control=None, equi
     save_pose.append(trans.detach().cpu().numpy())
     return gen_loss.item(), kld.item(), loss.item(), eq_loss.item() if equivariance else None, save_pose
 
-def eval_z(model, lattice, data, batch_size, device, use_tilt=False):
+def eval_z(model, lattice, data, batch_size, device, trans=None, use_tilt=False, ctf_params=None):
     assert not model.training
     z_mu_all = []
     z_logvar_all = []
     data_generator = DataLoader(data, batch_size=batch_size, shuffle=False)
     for minibatch in data_generator:
+        ind = minibatch[-1]
         y = minibatch[0].to(device)
         if use_tilt: yt = minibatch[1].to(device)
+        B = len(ind)
+        D = lattice.D
+        if ctf_params is not None:
+            freqs = lattice.freqs2d.unsqueeze(0).expand(B,*lattice.freqs2d.shape)/ctf_params[ind,0].view(B,1,1)
+            c = ctf.compute_ctf(freqs, *torch.split(ctf_params[ind,1:], 1, 1)).view(B,D,D)
+        #if trans is not None:
+        #    y = lattice.translate_ht(y.view(B,-1), trans[ind].unsqueeze(1)).view(B,D,D)
+        #    if yt is not None: yt = lattice.translate_ht(yt.view(B,-1), trans[ind].unsqueeze(1)).view(B,D,D)
         input_ = (y,yt) if use_tilt else (y,)
+        if ctf_params is not None: 
+            input_ = (x*c.sign() for x in input_) # phase flip by the ctf
         z_mu, z_logvar = model.encode(*input_)
         z_mu_all.append(z_mu.detach().cpu().numpy())
         z_logvar_all.append(z_logvar.detach().cpu().numpy())
@@ -294,6 +323,18 @@ def sort_poses(poses):
         return (rot,trans)
     return (rot,)
 
+def get_latest(args):
+    log('Detecting latest checkpoint...') 
+    weights = [f'{args.outdir}/weights.{i}.pkl' for i in range(args.num_epochs)]
+    weights = [f for f in weights if os.path.exists(f)]
+    args.load = weights[-1]
+    log(f'Loading {args.load}')
+    i = args.load.split('.')[-2]
+    args.load_poses = f'{args.outdir}/pose.{i}.pkl'
+    assert os.path.exists(args.load_poses)
+    log(f'Loading {args.load_poses}')
+    return args
+
 def main(args):
 
     log(args)
@@ -332,6 +373,15 @@ def main(args):
         tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32))
     Nimg = data.N
     D = data.D
+    
+    # load ctf
+    if args.ctf is not None:
+        log('Loading ctf params from {}'.format(args.ctf))
+        ctf_params = ctf.load_ctf_for_training(D-1, args.ctf)
+        if args.ind is not None: ctf_params = ctf_params[args.ind] 
+        assert ctf_params.shape == (Nimg, 8), ctf_params.shape
+        ctf_params = torch.tensor(ctf_params)
+    else: ctf_params = None
 
     lattice = Lattice(D, extent=0.5)
     if args.enc_mask is None:
@@ -372,14 +422,9 @@ def main(args):
 
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
-    if not args.load and glob.glob(f'{args.outdir}/weights*pkl'):
-        weight_pkls = glob.glob(f'{args.outdir}/weights.*.pkl')
-        _epochs = [int(x.split('.')[-2]) for x in weight_pkls]
-        args.load = weight_pkls[np.argmax(_epochs)]
-        pose_pkls = glob.glob(f'{args.outdir}/pose.*.pkl')
-        _epochs = [int(x.split('.')[-2]) for x in pose_pkls]
-        args.load_poses = pose_pkls[np.argmax(_epochs)]
-
+    if args.load == 'latest':
+        args = get_latest(args)
+    
     if args.load:
         args.pretrain = 0
         log('Loading checkpoint from {}'.format(args.load))
@@ -473,7 +518,8 @@ def main(args):
                 pose_model.load_state_dict(model.state_dict())
                 cc = 0
 
-            gen_loss, kld, loss, eq_loss, pose = train(model, lattice, ps, optim, L_model, batch, beta, args.beta_control, equivariance_tuple, enc_only=args.enc_only, poses=p)
+            ctf_i = ctf_params[ind] if ctf_params is not None else None
+            gen_loss, kld, loss, eq_loss, pose = train(model, lattice, ps, optim, L_model, batch, beta, args.beta_control, equivariance_tuple, enc_only=args.enc_only, poses=p, ctf_params=ctf_i)
             # logging
             poses.append((ind.cpu().numpy(),pose))
             kld_accum += kld*len(ind)

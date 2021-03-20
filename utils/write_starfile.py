@@ -9,6 +9,7 @@ import pickle
 
 import pandas as pd
 
+from cryodrgn import dataset
 from cryodrgn import utils
 from cryodrgn import starfile
 from cryodrgn import mrc
@@ -31,18 +32,18 @@ POSE_HDRS = ['_rlnAngleRot',
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('particles', type=os.path.abspath, help='Input .mrcs')
+    parser.add_argument('particles', help='Input particles (.mrcs, .txt, .star, .cs)')
     parser.add_argument('ctf', help='Input ctf.pkl')
     parser.add_argument('--poses', help='Optionally include pose.pkl') 
     parser.add_argument('--ind', help='Optionally filter by selected index array (.pkl)')
-    parser.add_argument('--full-path', action='store_true', help='Write the full path to particles (default: filename only)')
+    parser.add_argument('--datadir', type=os.path.abspath, help='Path prefix to particle stack if loading relative paths from a .star or .cs file')
+    parser.add_argument('--full-path', action='store_true', help='Write the full path to particles (default: relative paths)')
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Output .star file')
     return parser
 
 def main(args):
     assert args.o.endswith('.star')
-    assert args.particles.endswith('.mrcs'), "Only a single particle stack as an .mrcs is currently supported"
-    particles = mrc.parse_mrc(args.particles,lazy=True)[0]
+    particles = dataset.load_particles(args.particles, lazy=True, datadir=args.datadir)
     ctf = utils.load_pkl(args.ctf)
     assert ctf.shape[1] == 9, "Incorrect CTF pkl format"
     assert len(particles) == len(ctf), f"{len(particles)} != {len(ctf)}, Number of particles != number of CTF paraameters"
@@ -54,17 +55,19 @@ def main(args):
     if args.ind:
         ind = utils.load_pkl(args.ind)
         log(f'Filtering to {len(ind)} particles')
+        particles = [particles[ii] for ii in ind]
         ctf = ctf[ind]
         if args.poses: 
             poses = (poses[0][ind], poses[1][ind])
     else:
         ind = np.arange(len(particles))
 
-    # _rlnImageName
     ind += 1 # CHANGE TO 1-BASED INDEXING
-    image_name = os.path.basename(args.particles) if not args.full_path else args.particles
-    names = [f'{i}@{image_name}' for i in ind]
-    
+    image_names = [img.fname for img in particles]
+    if args.full_path:
+        image_names = [os.path.abspath(img.fname) for img in particles]
+    names = [f'{i}@{name}' for i,name in zip(ind, image_names)]
+
     ctf = ctf[:,2:]
 
     # convert poses

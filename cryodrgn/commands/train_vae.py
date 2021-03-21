@@ -247,16 +247,15 @@ def save_config(args, dataset, lattice, model, out_config):
         pickle.dump(meta, f)
 
 def get_latest(args):
-    # Assumes checkpoint==1, todo: make this more robust
+    # assumes args.num_epochs > latest checkpoint
     log('Detecting latest checkpoint...') 
-    for i in range(args.num_epochs):
-        weights = f'{args.outdir}/weights.{i}.pkl'
-        if not os.path.exists(weights):
-            break
-    args.load =  f'{args.outdir}/weights.{i-1}.pkl'
+    weights = [f'{args.outdir}/weights.{i}.pkl' for i in range(args.num_epochs)]
+    weights = [f for f in weights if os.path.exists(f)]
+    args.load = weights[-1]
     log(f'Loading {args.load}')
     if args.do_pose_sgd:
-        args.poses = f'{args.outdir}/pose.{i-1}.pkl'
+        i = args.load.split('.')[-2]
+        args.poses = f'{args.outdir}/pose.{i}.pkl'
         assert os.path.exists(args.poses)
         log(f'Loading {args.poses}')
     return args

@@ -141,19 +141,18 @@ def save_config(args, dataset, lattice, model, out_config):
                     version=cryodrgn.__version__)
         pickle.dump(meta, f)
 
-def get_latest(args, flog):
-    # Assumes checkpoint==1, todo: make this more robust
-    flog('Detecting latest checkpoint...') 
-    for i in range(args.num_epochs):
-        weights = f'{args.outdir}/weights.{i}.pkl'
-        if not os.path.exists(weights):
-            break
-    args.load =  f'{args.outdir}/weights.{i-1}.pkl'
-    flog(f'Loading {args.load}')
+def get_latest(args):
+    # assumes args.num_epochs > latest checkpoint
+    log('Detecting latest checkpoint...') 
+    weights = [f'{args.outdir}/weights.{i}.pkl' for i in range(args.num_epochs)]
+    weights = [f for f in weights if os.path.exists(f)]
+    args.load = weights[-1]
+    log(f'Loading {args.load}')
     if args.do_pose_sgd:
-        args.poses = f'{args.outdir}/pose.{i-1}.pkl'
+        i = args.load.split('.')[-2]
+        args.poses = f'{args.outdir}/pose.{i}.pkl'
         assert os.path.exists(args.poses)
-        flog(f'Loading {args.poses}')
+        log(f'Loading {args.poses}')
     return args
 
 def main(args):
@@ -194,7 +193,7 @@ def main(args):
     Nimg = data.N
 
     # instantiate model
-    if args.pe_type != 'none': assert args.l_extent == 0.5
+    #if args.pe_type != 'none': assert args.l_extent == 0.5
     lattice = Lattice(D, extent=args.l_extent)
 
     activation={"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[args.activation]

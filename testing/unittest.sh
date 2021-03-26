@@ -12,7 +12,7 @@ cryodrgn train_nn output/toy_projections.trans.mrcs --poses data/toy_rot_trans.p
 cryodrgn train_nn data/toy_projections.mrcs --poses data/toy_rot_zerotrans.pkl -o output/toy_recon -n 10
 
 # Do pose SGD
-cryodrgn train_nn data/toy_projections.mrcs --poses data/toy_rot_zerotrans.pkl -o output/toy_recon --do-pose-sgd
+cryodrgn train_nn data/toy_projections.mrcs --poses data/toy_rot_zerotrans.pkl -o output/toy_recon --do-pose-sgd --domain hartley
 
 # Other decoder architectures
 cryodrgn train_nn data/toy_projections.mrcs --poses data/toy_angles.pkl -o output/toy_recon --domain hartley -n 2
@@ -37,7 +37,7 @@ cryodrgn graph_traversal output/toy_recon_vae/z.pkl --anchors 0 10 100 -o output
 
 # Test apex.amp
 cryodrgn train_nn data/hand.mrcs --poses data/hand_rot.pkl -o output/hand_recon -b 8
-#cryodrgn train_nn data/hand.mrcs --poses data/hand_rot.pkl -o output/hand_recon --amp -b 8
+cryodrgn train_nn data/hand.mrcs --poses data/hand_rot.pkl -o output/hand_recon --amp -b 8
 
 # CTF testing
 cryodrgn parse_ctf_csparc data/cryosparc_P12_J24_001_particles.cs -o test_ctf.pkl

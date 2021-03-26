@@ -12,11 +12,16 @@ Reconstructing continuous distributions of 3D protein structure from cryo-EM ima
 Ellen D. Zhong, Tristan Bepler, Joseph H. Davis*, Bonnie Berger*.
 ICLR 2020, Spotlight presentation, https://arxiv.org/abs/1909.05215
 
-## New in v0.3.1
-* New: Script `write_starfile.py` to convert (filtered) particle selection to a .star file
-* More visualizations in `cryodrgn analyze`
+## New in v0.3.2
+* New: cryoDRGN_filtering.ipynb for interactive filtering/selection of images from the dataset
+* New: `cryodrgn view_config`
+* Minor performance improvements and compatibility fixes
 
 ### Previous versions
+
+**Version 0.3.1:**
+* New: Script `write_starfile.py` to convert (filtered) particle selection to a .star file
+* More visualizations in `cryodrgn analyze`
 
 **Version 0.3.0:**
 * New: GPU parallelization with flag `--multigpu`
@@ -157,7 +162,7 @@ Example usage:
 
 The output structure `backproject.128.mrc` will not match the consensus reconstruction exactly as the `backproject_voxel` command backprojects phase-flipped particles onto the voxel grid, and by default only uses the first 10k images. If the structure is too noisy, you can increase the number of images that are used with the `--first` argument.
 
-**Note:** If the volume does not resemble your structure, you may need to use the flag `--uninvert-data` (recently updated from `--invert-data` in v0.3). This flips the data sign, which may be necessary since cryo-EM images can be stored as light-on-dark or dark-on-light, depending on the convention used in upstream processing tools. 
+**Note:** If the volume does not resemble your structure, you may need to use the flag `--uninvert-data`. This flips the data sign (e.g. light-on-dark or dark-on-light), which may be needed depending on the convention used in upstream processing tools. 
 
 ### 5. Running cryoDRGN heterogeneous reconstruction
 
@@ -277,7 +282,7 @@ Many of the parameters of this script have sensible defaults. The required argum
 Additional parameters which are typically set include:
 
 * `-n`, Number of epochs to train
-* `--reinvert-data`, Use if particles are dark on light
+* `--uninvert-data`, Use if particles are dark on light
 * Architecture parameters with `--enc-layers`, `--enc-dim`, `--dec-layers`, `--dec-dim`
 * `--amp` to enable mixed precision training (fast!)
 * `--multigpu` to enable parallelized training across multiple GPUs
@@ -295,7 +300,7 @@ Example command to train a cryoDRGN model for 50 epochs on an image dataset `pro
             --zdim 8 -n 50 \
             -o 00_vae128_z8
 
-2) After any particle filtering, then train a larger model on the downsampled images. Because the architecture parameters constrain the complexity of the learned function, a larger architecture will be capable of learning more heterogeneity.
+2) After any particle filtering, then train a larger model on the downsampled images. Because model size constrains the representation capacity, a larger architecture may  be capable of learning more heterogeneity.
 
 Example command to train a larger cryoDRGN model for 25 epochs on an image dataset `projections.128.mrcs` with poses `pose.pkl` and ctf parameters `ctf.pkl`:
 
@@ -319,7 +324,7 @@ Example command to train a larger cryoDRGN model for 25 epochs on an image datas
             --enc-dim 1024 --enc-layers 3 --dec-dim 1024 --dec-layers 3 \
             -o 02_vae256_big_z8
 
-The number of epochs `-n` refers to the number of full passes through the dataset for training, and should be modified depending on the number of particles in the dataset. For a 100k particle dataset on 1 GPU, the above settings required ~6 min per epoch for D=128 images + default architecture, ~12 min/epoch for D=128 images + large architecture, and ~47 min per epoch for D=256 images + large architecture. 
+The number of epochs `-n` refers to the number of full passes through the dataset for training, and should be modified depending on the number of particles in the dataset. For a 100k particle dataset on 1 V100 GPU, the above settings required ~6 min/epoch for D=128 images + default architecture, ~12 min/epoch for D=128 images + large architecture, and ~47 min/epoch for D=256 images + large architecture. 
 
 If you would like to train longer, a training job can be extended with the `--load` argument. For example to extend the training of the previous example to 50 epochs:
 
@@ -395,6 +400,7 @@ This script runs a series of standard analyses:
 * Generation of volumes from the latent space. See note [1].
 * Generation of trajectories along the first and second principal components
 * Generation of a template jupyter notebook that may be used for further interactive analyses, visualization, and volume generation
+* Generation of a template jupyter notebook for particle filtering and selection 
 
 Example usage to analyze results from the direction `02_vae_256_z10` containing results after 50 epochs of training:
 
@@ -402,7 +408,7 @@ Example usage to analyze results from the direction `02_vae_256_z10` containing 
 
 Notes:
 
-[1] By default, volumes are generated at k-means cluster centers with k=20. Note that we use k-means clustering here not to identify cluters, but to efficiently provide a diverse sample of structures that cover the latent space. For clustering of the latent space, we recommend performing this analysis in the provided jupyter notebook using your favorite clustering algorithm (https://scikit-learn.org/stable/modules/clustering.html).
+[1] By default, volumes are generated at k-means cluster centers with k=20. Note that we use k-means clustering here not to identify clusters, but to segment the latent space into k chunks and generate structures from different regions of the latent space. For clustering of the latent space, we recommend performing this analysis in the provided jupyter notebook using your favorite clustering algorithm (https://scikit-learn.org/stable/modules/clustering.html).
 
 [2] The `cryodrgn analyze` command chains together a series of calls to `cryodrgn eval_vol` and scripts that can be run separately for more flexibility. The scripts are located in the `analysis_scripts` directory within the source code.
 

@@ -544,7 +544,7 @@ def main(args):
             out_z = '{}/z.{}.pkl'.format(args.outdir, epoch)
             model.eval()
             with torch.no_grad():
-                z_mu, z_logvar = eval_z(model, lattice, data, args.batch_size, device, tilt is not None)
+                z_mu, z_logvar = eval_z(model, lattice, data, args.batch_size, device, tilt is not None, ctf_params)
                 save_checkpoint(model, lattice, optim, epoch, data.norm, sorted_poses, z_mu, z_logvar, out_mrc, out_weights, out_z, out_poses)
 
     ## save model weights and evaluate the model on 3D lattice
@@ -554,7 +554,7 @@ def main(args):
     out_poses = '{}/pose.pkl'.format(args.outdir)
     out_z = '{}/z.pkl'.format(args.outdir)
     with torch.no_grad():
-        z_mu, z_logvar = eval_z(model, lattice, data, args.batch_size, device, tilt is not None)
+        z_mu, z_logvar = eval_z(model, lattice, data, args.batch_size, device, tilt is not None, ctf_params)
         save_checkpoint(model, lattice, optim, epoch, data.norm, sorted_poses, z_mu, z_logvar, out_mrc, out_weights, out_z, out_poses)
 
     td = dt.now() - t1

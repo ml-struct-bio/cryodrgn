@@ -125,7 +125,7 @@ def R_to_relion_scipy(rot, degrees=True):
     f[1,0] = -1
     f[1,2] = -1
     f[2,1] = -1
-    euler = RR.from_dcm(rot*f).as_euler('zxz', degrees=True)
+    euler = RR.from_matrix(rot*f).as_euler('zxz', degrees=True)
     euler[:,0] -= 90
     euler[:,2] += 90
     euler += 180

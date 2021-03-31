@@ -70,13 +70,11 @@ To install cryoDRGN, git clone the source code and install the following depende
     conda install -c conda-forge jupyterlab
     conda install -c conda-forge ipywidgets
     conda install -c conda-forge cufflinks-py
-    conda install -c conda-forge nodejs=12.1.0
-    jupyter labextension install @jupyter-widgets/jupyterlab-manager
-    export NODE_OPTIONS=--max-old-space-size=4096
+    conda install -c conda-forge nodejs=15.12.0
+    jupyter labextension install @jupyter-widgets/jupyterlab-manager --no-build
     jupyter labextension install jupyterlab-plotly --no-build
     jupyter labextension install plotlywidget --no-build
     jupyter lab build
-    unset NODE_OPTIONS
 
     # Clone source code and install
     git clone https://github.com/zhonge/cryodrgn.git

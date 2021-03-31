@@ -68,8 +68,8 @@ To install cryoDRGN, git clone the source code and install the following depende
     conda install seaborn scikit-learn 
     conda install -c conda-forge umap-learn
     conda install -c conda-forge jupyterlab
-    pip install ipywidgets
-    pip install cufflinks
+    conda install -c conda-forge ipywidgets
+    conda install -c conda-forge cufflinks-py
 
     # Clone source code and install
     git clone https://github.com/zhonge/cryodrgn.git

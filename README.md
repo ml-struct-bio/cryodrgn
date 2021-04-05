@@ -50,7 +50,10 @@ ICLR 2020, Spotlight presentation, https://arxiv.org/abs/1909.05215
 * New analysis pipeline `cryodrgn analyze`
 * New latent space traversal scripts with `cryodrgn graph_traversal` and `cryodrgn pc_traversal`.
 
-*Last updated 1/02/2021.*
+## Tutorial:
+
+A detailed walkthrough of installaion and cryoDRGN processing is available here:
+https://www.notion.so/cryoDRGN-tutorial-b932c021cb2c415282f182048bac16ff
 
 ## Installation/dependencies:
 

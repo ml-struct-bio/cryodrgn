@@ -14,6 +14,7 @@ DTYPE_FOR_MODE = {0:np.int8,
                   3:'2h', # complex number from 2 shorts
                   4:np.complex64,
                   6:np.uint16,
+                  12:np.float16,
                   16:'3B'} # RBG values
 MODE_FOR_DTYPE = {vv:kk for kk,vv in DTYPE_FOR_MODE.items()}
 
@@ -43,6 +44,7 @@ class MRCHeader:
         self.fields = OrderedDict(zip(self.FIELDS,header_values))
         self.extended_header = extended_header
         self.D = self.fields['nx']
+        self.dtype = DTYPE_FOR_MODE[self.fields['mode']]
 
     def __str__(self):
         return f'Header: {self.fields}\nExtended header: {self.extended_header}'
@@ -146,7 +148,7 @@ def parse_mrc(fname, lazy=False):
     extbytes = header.fields['next']
     start = 1024+extbytes # start of image data
 
-    dtype = DTYPE_FOR_MODE[header.fields['mode']]
+    dtype = header.dtype
     nz, ny, nx = header.fields['nz'], header.fields['ny'], header.fields['nx']
     
     # load all in one block

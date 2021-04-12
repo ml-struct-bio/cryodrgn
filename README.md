@@ -69,11 +69,7 @@ To install cryoDRGN, git clone the source code and install the following depende
     
     # Install dependencies for latent space visualization 
     conda install seaborn scikit-learn 
-    conda install -c conda-forge umap-learn
-    conda install -c conda-forge jupyterlab
-    conda install -c conda-forge ipywidgets
-    conda install -c conda-forge cufflinks-py
-    conda install -c conda-forge nodejs=15.12.0
+    conda install umap-learn jupyterlab ipywidgets cufflinks-py "nodejs>=15.12.0" -c conda-forge
     jupyter labextension install @jupyter-widgets/jupyterlab-manager --no-build
     jupyter labextension install jupyterlab-plotly --no-build
     jupyter labextension install plotlywidget --no-build

@@ -13,6 +13,10 @@ def add_args(parser):
     parser.add_argument('cs', help='Input cryosparc particles.cs file')
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Output pkl of CTF parameters')
     parser.add_argument('--png', metavar='PNG', type=os.path.abspath, help='Optionally plot the CTF')
+
+    group = parser.add_argument_group('Optionally provide missing image parameters')
+    group.add_argument('-D', type=int, help='Image size in pixels')
+    group.add_argument('--Apix', type=float, help='Angstroms per pixel')
     return parser
 
 def main(args):
@@ -23,13 +27,23 @@ def main(args):
     N = len(metadata)
     log('{} particles'.format(N))
 
+    # sometimes blob/shape, blob/psize_A are missing from the .cs file
+    try:
+        D = metadata['blob/shape'][0][0]
+        Apix = metadata['blob/psize_A']
+    except ValueError:
+        assert args.D, "Must provide image size with -D"
+        D = args.D
+        Apix = args.Apix
+
     ctf_params = np.zeros((N, 9))
-    ctf_params[:,0] = metadata['blob/shape'][0][0]
-    fields = ('blob/psize_A','ctf/df1_A','ctf/df2_A','ctf/df_angle_rad','ctf/accel_kv','ctf/cs_mm','ctf/amp_contrast','ctf/phase_shift_rad')
+    ctf_params[:,0] = D
+    ctf_params[:,1] = Apix
+    fields = ('ctf/df1_A','ctf/df2_A','ctf/df_angle_rad','ctf/accel_kv','ctf/cs_mm','ctf/amp_contrast','ctf/phase_shift_rad')
     for i,f in enumerate(fields):
-        ctf_params[:,i+1] = metadata[f]
+        ctf_params[:,i+2] = metadata[f]
         if f in ('ctf/df_angle_rad', 'ctf/phase_shift_rad'): # convert to degrees
-            ctf_params[:,i+1] *= (180/np.pi) 
+            ctf_params[:,i+2] *= (180/np.pi) 
 
     ctf.print_ctf_params(ctf_params[0])
     log('Saving {}'.format(args.o))

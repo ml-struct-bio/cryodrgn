@@ -136,7 +136,7 @@ def analyze_zN(z, outdir, vg, skip_umap=False, num_pcs=2, num_ksamples=20):
         plt.savefig(f'{outdir}/kmeans{K}/umap_hex.png')
 
     for i in range(num_pcs):
-        if not skip_umap:
+        if zdim > 2 and not skip_umap:
             analysis.scatter_color(umap_emb[:,0], umap_emb[:,1], pc[:,i], label=f'PC{i+1}')
             plt.xlabel('UMAP1')
             plt.ylabel('UMAP2')

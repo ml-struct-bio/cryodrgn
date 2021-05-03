@@ -6,7 +6,7 @@ import argparse
 import numpy as np
 import sys, os
 import pickle
-import subprocess
+import shutil
 from datetime import datetime as dt
 
 import matplotlib
@@ -194,8 +194,7 @@ def main(args):
     if not os.path.exists(out_ipynb):
         log(f'Creating jupyter notebook...')
         ipynb = f'{cryodrgn._ROOT}/templates/cryoDRGN_viz_template.ipynb'
-        cmd = f'cp {ipynb} {out_ipynb}'
-        subprocess.check_call(cmd, shell=True)
+        shutil.copyfile(ipynb, out_ipynb)
     else:
         log(f'{out_ipynb} already exists. Skipping')
     log(out_ipynb)
@@ -205,8 +204,7 @@ def main(args):
     if not os.path.exists(out_ipynb):
         log(f'Creating jupyter notebook...')
         ipynb = f'{cryodrgn._ROOT}/templates/cryoDRGN_filtering_template.ipynb'
-        cmd = f'cp {ipynb} {out_ipynb}'
-        subprocess.check_call(cmd, shell=True)
+        shutil.copyfile(ipynb, out_ipynb)
     else:
         log(f'{out_ipynb} already exists. Skipping')
     log(out_ipynb)

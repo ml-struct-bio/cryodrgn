@@ -19,11 +19,15 @@ ICLR 2020, Spotlight presentation, https://arxiv.org/abs/1909.05215
 
 ### Previous versions
 
-**Version 0.3.1:**
+<details><summary>Version 0.3.1</summary>
+	
 * New: Script `write_starfile.py` to convert (filtered) particle selection to a .star file
 * More visualizations in `cryodrgn analyze`
 
-**Version 0.3.0:**
+</details>
+
+<details><summary>Version 0.3.0</summary>
+	
 * New: GPU parallelization with flag `--multigpu`
 * New: Mode for accelerated mixed precision training with flag `--amp`, available for NVIDIA tensor core GPUs
 * Interface update:
@@ -38,17 +42,28 @@ ICLR 2020, Spotlight presentation, https://arxiv.org/abs/1909.05215
     * Order kmeans volumes according to distances in latent space (previously random) 
     * More features for particle selection and filtering in the Jupiter notebook
 
-**Version 0.2.1:**
+</details>
+
+
+<details><summary>Version 0.2.1</summary>
+	
 * New: Parsing of RELION 3.1 files
 * Fix: Compatibility with pytorch 1.5
 
-**Version 0.2.0:**
+</details>
+
+
+<details><summary>Version 0.2.0</summary>
+	
 * New interface and proper python packaing with setup.py. This version has identical functionality and argument usage as previous versions, however tools are now available from a common entry point. See:
     
     `$ cryodrgn <command> -h`
 
 * New analysis pipeline `cryodrgn analyze`
 * New latent space traversal scripts with `cryodrgn graph_traversal` and `cryodrgn pc_traversal`.
+
+</details>
+
 
 ## Tutorial:
 

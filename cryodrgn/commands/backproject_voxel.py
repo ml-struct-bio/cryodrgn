@@ -77,23 +77,26 @@ def main(args):
         log('WARNING: No GPUs detected')
 
     # load the particles
+    if args.ind is not None:
+        args.ind = utils.load_pkl(args.ind).astype(int)
     if args.tilt is None:
-        data = dataset.LazyMRCData(args.particles, norm=(0,1), invert_data=args.invert_data, datadir=args.datadir)
+        data = dataset.LazyMRCData(args.particles, norm=(0,1), invert_data=args.invert_data, datadir=args.datadir, ind=args.ind)
         tilt = None
     else:
-        data = dataset.TiltMRCData(args.particles, args.tilt, norm=(0,1), invert_data=args.invert_data, datadir=args.datadir)
+        data = dataset.TiltMRCData(args.particles, args.tilt, norm=(0,1), invert_data=args.invert_data, datadir=args.datadir, ind=args.ind)
         tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32))
     D = data.D
     Nimg = data.N
 
     lattice = Lattice(D, extent=D//2)
 
-    posetracker = PoseTracker.load(args.poses, Nimg, D, None, None)
+    posetracker = PoseTracker.load(args.poses, Nimg, D, None, args.ind)
 
     if args.ctf is not None:
         log('Loading ctf params from {}'.format(args.ctf))
         ctf_params = ctf.load_ctf_for_training(D-1, args.ctf)
         ctf_params = torch.tensor(ctf_params)
+        if args.ind is not None: ctf_params = ctf_params[ind]
     else: ctf_params = None
     Apix = ctf_params[0,0] if ctf_params is not None else 1
 
@@ -102,9 +105,7 @@ def main(args):
     
     mask = lattice.get_circular_mask(D//2)
 
-    if args.ind:
-        iterator = pickle.load(open(args.ind,'rb'))
-    elif args.first:
+    if args.first:
         args.first = min(args.first, Nimg)
         iterator = range(args.first)
     else:

@@ -109,14 +109,17 @@ class MRCData(data.Dataset):
 
         # Real space window
         if window:
+            log('Windowing images with radius 0.85')
             particles_real *= window_mask(ny, .85, .99)
 
         # compute HT
+        log('Computing HT')
         particles = np.asarray([fft.ht2_center(img) for img in particles_real])
         particles = particles.astype(np.float32)
         if invert_data: particles *= -1
 
         # symmetrize HT
+        log('Symmetrizing HT')
         particles = fft.symmetrize_ht(particles)
 
         # normalize

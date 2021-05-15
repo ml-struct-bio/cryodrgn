@@ -67,7 +67,7 @@ ICLR 2020, Spotlight presentation, https://arxiv.org/abs/1909.05215
 
 ## Tutorial:
 
-A detailed walkthrough of installaion and cryoDRGN processing is available here:
+A step-by-step walkthrough of cryoDRGN installaion and processing is now available here:
 https://www.notion.so/cryoDRGN-tutorial-b932c021cb2c415282f182048bac16ff
 
 ## Installation/dependencies:
@@ -97,6 +97,12 @@ To install cryoDRGN, git clone the source code and install the following depende
     python setup.py install
 
 To use accelerated mixed precision training (available for Nvidia Volta, Turing, and Ampere architectures), install Nvidia's apex package into the conda environement (https://github.com/NVIDIA/apex#quick-start).
+
+    git clone https://github.com/NVIDIA/apex
+    cd apex
+    pip install -v --disable-pip-version-check --no-cache-dir ./
+
+A detailed installation and testing guide is provided here: https://www.notion.so/cryoDRGN-installation-with-anaconda-4cff0367d9b241bb8d902efe339d01e6
 
 ## Quickstart: heterogeneous reconstruction with consensus poses
 

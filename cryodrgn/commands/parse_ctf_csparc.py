@@ -33,6 +33,7 @@ def main(args):
         Apix = metadata['blob/psize_A']
     except ValueError:
         assert args.D, "Must provide image size with -D"
+        assert args.Apix, "Must provide pixel size with --Apix"
         D = args.D
         Apix = args.Apix
 

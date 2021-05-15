@@ -97,9 +97,11 @@ class MRCData(data.Dataset):
     Class representing an .mrcs stack file
     '''
     def __init__(self, mrcfile, norm=None, keepreal=False, invert_data=False, ind=None, window=True, datadir=None, relion31=False):
-        particles_real = load_particles(mrcfile, False, datadir=datadir, relion31=relion31)
         if ind is not None:
-            particles_real = particles_real[ind]
+            particles_real = load_particles(mrcfile, True, datadir=datadir, relion31=relion31)
+            particles_real = np.array([particles_real[i].get() for i in ind])
+        else:
+            particles_real = load_particles(mrcfile, False, datadir=datadir, relion31=relion31)
         N, ny, nx = particles_real.shape
         assert ny == nx, "Images must be square"
         assert ny % 2 == 0, "Image size must be even"
@@ -148,16 +150,15 @@ class TiltMRCData(data.Dataset):
     Class representing an .mrcs tilt series pair
     '''
     def __init__(self, mrcfile, mrcfile_tilt, norm=None, keepreal=False, invert_data=False, ind=None, window=True, datadir=None):
-        # load untilted
-        particles_real = load_particles(mrcfile, False, datadir)
-
-        # load tilt series
-        particles_tilt_real = load_particles(mrcfile_tilt, False, datadir)
-
-        # filter dataset
         if ind is not None:
-            particles_real = particles_real[ind]
-            particles_tilt_real = particles_tilt_real[ind]
+            particles_real = load_particles(mrcfile, True, datadir)
+            particles_tilt_real = load_particles(mrcfile_tilt, True, datadir)
+            particles_real = np.array([particles_real[i].get() for i in ind], dtype=np.float32)
+            particles_tilt_real = np.array([particles_tilt_real[i].get() for i in ind], dtype=np.float32)
+        else:
+            particles_real = load_particles(mrcfile, False, datadir)
+            particles_tilt_real = load_particles(mrcfile_tilt, False, datadir)
+
         N, ny, nx = particles_real.shape
         assert ny == nx, "Images must be square"
         assert ny % 2 == 0, "Image size must be even"

@@ -58,14 +58,15 @@ def main(args):
 
     ### Downsample images ###
     elif args.chunk is None:
-        new = []
+        Nimg = len(old)
+        new = np.empty((Nimg, D, D), dtype=np.float32)
         for i in range(len(old)):
             if i % 1000 == 0:
                 log(f'Processing image {i} of {len(old)}')
             img = old[i]
             oldft = fft.ht2_center(img.get()).astype(np.float32)
             newft = oldft[start:stop, start:stop]
-            new.append(fft.ihtn_center(newft).astype(np.float32))
+            new[i] = fft.ihtn_center(newft).astype(np.float32)
         assert oldft[int(oldD/2),int(oldD/2)] == newft[int(D/2),int(D/2)]
         new = np.asarray(new)
         log(new.shape)
@@ -80,10 +81,12 @@ def main(args):
             log('Processing chunk {}'.format(i))
             out_mrcs = '.{}'.format(i).join(os.path.splitext(args.o))
             new = []
-            for img in old[i*args.chunk:(i+1)*args.chunk]:
+            chunk = old[i*args.chunk:(i+1)*args.chunk]
+            new = np.empty((len(chunk),D,D), dtype=np.float32)
+            for i, img in enumerate(chunk):
                 oldft = fft.ht2_center(img.get()).astype(np.float32)
                 newft = oldft[start:stop, start:stop]
-                new.append(fft.ihtn_center(newft).astype(np.float32))
+                new[i] = fft.ihtn_center(newft).astype(np.float32)
             assert oldft[int(oldD/2),int(oldD/2)] == newft[int(D/2),int(D/2)]
             new = np.asarray(new)
             log(new.shape)

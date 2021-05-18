@@ -2,6 +2,8 @@ import numpy as np
 import torch
 from torch.utils import data
 import os
+import multiprocessing as mp
+from multiprocessing import Pool
 
 from . import fft
 from . import mrc
@@ -96,13 +98,15 @@ class MRCData(data.Dataset):
     '''
     Class representing an .mrcs stack file
     '''
-    def __init__(self, mrcfile, norm=None, keepreal=False, invert_data=False, ind=None, window=True, datadir=None, relion31=False):
+    def __init__(self, mrcfile, norm=None, keepreal=False, invert_data=False, ind=None, window=True, datadir=None, relion31=False, max_threads=16):
+        if keepreal:
+            raise NotImplementedError
         if ind is not None:
-            particles_real = load_particles(mrcfile, True, datadir=datadir, relion31=relion31)
-            particles_real = np.array([particles_real[i].get() for i in ind])
+            particles = load_particles(mrcfile, True, datadir=datadir, relion31=relion31)
+            particles = np.array([particles[i].get() for i in ind])
         else:
-            particles_real = load_particles(mrcfile, False, datadir=datadir, relion31=relion31)
-        N, ny, nx = particles_real.shape
+            particles = load_particles(mrcfile, False, datadir=datadir, relion31=relion31)
+        N, ny, nx = particles.shape
         assert ny == nx, "Images must be square"
         assert ny % 2 == 0, "Image size must be even"
         log('Loaded {} {}x{} images'.format(N, ny, nx))
@@ -110,16 +114,23 @@ class MRCData(data.Dataset):
         # Real space window
         if window:
             log('Windowing images with radius 0.85')
-            particles_real *= window_mask(ny, .85, .99)
+            particles *= window_mask(ny, .85, .99)
 
         # compute HT
-        log('Computing HT')
-        particles = np.asarray([fft.ht2_center(img) for img in particles_real])
-        particles = particles.astype(np.float32)
+        log('Computing FFT')
+        max_threads = min(max_threads, mp.cpu_count())
+        if max_threads > 1:
+            log(f'Spawning {max_threads} processes')
+            with Pool(max_threads) as p:
+                particles = np.asarray(p.map(fft.ht2_center, particles), dtype=np.float32)
+        else:
+            particles = np.asarray([fft.ht2_center(img) for img in particles])
+            particles = particles.astype(np.float32)
+            
         if invert_data: particles *= -1
 
         # symmetrize HT
-        log('Symmetrizing HT')
+        log('Symmetrizing image data')
         particles = fft.symmetrize_ht(particles)
 
         # normalize

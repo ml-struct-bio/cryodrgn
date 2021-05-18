@@ -32,17 +32,19 @@ def ihtn_center(V):
     V /= np.product(V.shape)
     return V.real - V.imag
 
-def symmetrize_ht(ht):
-    if len(ht.shape) == 2:
-        D = ht.shape[0]
-        ht = ht.reshape(1,*ht.shape)
+def symmetrize_ht(ht, preallocated=False):
+    if preallocated:
+        D = ht.shape[-1] - 1
+        sym_ht = ht
     else:
+        if len(ht.shape) == 2:
+            ht = ht.reshape(1,*ht.shape)
         assert len(ht.shape) == 3
-        D = ht.shape[1]
+        D = ht.shape[-1]
+        B = ht.shape[0]
+        sym_ht = np.empty((B,D+1,D+1),dtype=ht.dtype)
+        sym_ht[:,0:-1,0:-1] = ht
     assert D % 2 == 0
-    B = ht.shape[0]
-    sym_ht = np.empty((B,D+1,D+1),dtype=ht.dtype)
-    sym_ht[:,0:-1,0:-1] = ht
     sym_ht[:,-1,:] = sym_ht[:,0] # last row is the first row
     sym_ht[:,:,-1] = sym_ht[:,:,0] # last col is the first col
     sym_ht[:,-1,-1] = sym_ht[:,0,0]

@@ -66,9 +66,7 @@ def main(args):
     def downsample_images(imgs):
         if lazy:
             imgs = _combine_imgs(imgs)
-            import pdb; pdb.set_trace()
             imgs = np.concatenate([i.get() for i in imgs])
-            import pdb; pdb.set_trace()
         oldft = fft.ht2_center(imgs)
         newft = oldft[:, start:stop, start:stop]
         return fft.iht2_center(newft)

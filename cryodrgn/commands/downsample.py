@@ -6,6 +6,8 @@ import argparse
 import numpy as np
 import sys, os
 import math
+import multiprocessing as mp
+from multiprocessing import Pool
 
 from cryodrgn import utils
 from cryodrgn import mrc
@@ -18,11 +20,12 @@ def add_args(parser):
     parser.add_argument('mrcs', help='Input particles or volume (.mrc, .mrcs, .star, or .txt)')
     parser.add_argument('-D', type=int, required=True, help='New box size in pixels, must be even')
     parser.add_argument('-o', metavar='MRCS', type=os.path.abspath, required=True, help='Output projection stack (.mrcs)')
-    parser.add_argument('-b', type=int, default=1000, help='Batch size for processing images (default: %(default)s)')
+    parser.add_argument('-b', type=int, default=5000, help='Batch size for processing images (default: %(default)s)')
     parser.add_argument('--is-vol',action='store_true', help='Flag if input .mrc is a volume')
     parser.add_argument('--chunk', type=int, help='Chunksize (in # of images) to split particle stack when saving')
     parser.add_argument('--relion31', action='store_true', help='Flag for relion3.1 star format')
     parser.add_argument('--datadir', help='Optionally provide path to input .mrcs if loading from a .star or .cs file')
+    parser.add_argument('--max-threads', type=int, default=16, help='Maximum number of CPU cores for parallelization (default: %(default)s)')
     return parser
 
 def mkbasedir(out):
@@ -67,13 +70,16 @@ def main(args):
         if lazy:
             imgs = _combine_imgs(imgs)
             imgs = np.concatenate([i.get() for i in imgs])
-        oldft = np.asarray([fft.ht2_center(i) for i in imgs])
-        newft = oldft[:, start:stop, start:stop]
-        return np.asarray([fft.iht2_center(i) for i in newft])
+        with Pool(min(args.max_threads, mp.cpu_count())) as p:
+            oldft = np.asarray(p.map(fft.ht2_center, imgs))
+            newft = oldft[:, start:stop, start:stop]
+            new = np.asarray(p.map(fft.iht2_center, newft))
+        return new
 
     def downsample_in_batches(old, b):
         new = np.empty((len(old), D, D), dtype=np.float32)
         for ii in range(math.ceil(len(old)/b)):
+            log(f'Processing batch {ii}')
             new[ii*b:(ii+1)*b,:,:] = downsample_images(old[ii*b:(ii+1)*b])
         return new
 

@@ -105,7 +105,7 @@ def main(args):
             new = downsample_in_batches(chunk, args.b)
             log(new.shape)
             log(f'Saving {out_mrcs[i]}')
-            mrc.write(out_mrcs, new, is_vol=False)
+            mrc.write(out_mrcs[i], new, is_vol=False)
         # Write a text file with all chunks
         out_txt = '{}.txt'.format(os.path.splitext(args.o)[0])
         log(f'Saving {out_txt}')

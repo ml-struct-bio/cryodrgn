@@ -18,6 +18,7 @@ def add_args(parser):
     parser.add_argument('mrcs', help='Input particles or volume (.mrc, .mrcs, .star, or .txt)')
     parser.add_argument('-D', type=int, required=True, help='New box size in pixels, must be even')
     parser.add_argument('-o', metavar='MRCS', type=os.path.abspath, required=True, help='Output projection stack (.mrcs)')
+    parser.add_argument('-b', type=int, default=1000, help='Batch size for processing images (default: %(default)s)')
     parser.add_argument('--is-vol',action='store_true', help='Flag if input .mrc is a volume')
     parser.add_argument('--chunk', type=int, help='Chunksize (in # of images) to split particle stack when saving')
     parser.add_argument('--relion31', action='store_true', help='Flag for relion3.1 star format')
@@ -37,8 +38,10 @@ def main(args):
     warnexists(args.o)
     assert (args.o.endswith('.mrcs') or args.o.endswith('mrc')), "Must specify output in .mrc(s) file format"
 
-    old = dataset.load_particles(args.mrcs, lazy=True, datadir=args.datadir, relion31=args.relion31)
-    oldD = old[0].get().shape[0]
+    lazy = not args.is_vol
+    old = dataset.load_particles(args.mrcs, lazy=lazy, datadir=args.datadir, relion31=args.relion31)
+
+    oldD = old[0].get().shape[0] if lazy else old.shape[-1]
     assert args.D <= oldD, f'New box size {args.D} cannot be larger than the original box size {oldD}'
     assert args.D % 2 == 0, 'New box size must be even'
     
@@ -46,9 +49,39 @@ def main(args):
     start = int(oldD/2 - D/2)
     stop = int(oldD/2 + D/2)
 
+    def _combine_imgs(imgs):
+        ret = []
+        for img in imgs:
+            img.shape = (1,*img.shape) # (D,D) -> (1,D,D)
+        cur = imgs[0]
+        for img in imgs[1:]:
+            if img.fname == cur.fname and img.offset == cur.offset + 4*np.product(cur.shape):
+                cur.shape = (cur.shape[0] + 1, *cur.shape[1:])
+            else:
+                ret.append(cur)
+                cur = img
+        ret.append(cur)
+        return ret
+
+    def downsample_images(imgs):
+        if lazy:
+            imgs = _combine_imgs(imgs)
+            import pdb; pdb.set_trace()
+            imgs = np.concatenate([i.get() for i in imgs])
+            import pdb; pdb.set_trace()
+        oldft = fft.ht2_center(imgs)
+        newft = oldft[:, start:stop, start:stop]
+        return fft.iht2_center(newft)
+
+    def downsample_in_batches(old, b):
+        new = np.empty((len(old), D, D), dtype=np.float32)
+        for ii in range(math.ceil(len(old)/b)):
+            new[ii*b:(ii+1)*b,:,:] = downsample_images(old[ii*b:(ii+1)*b])
+        return new
+
     ### Downsample volume ###
     if args.is_vol:
-        oldft = fft.htn_center(np.array([x.get() for x in old]))
+        oldft = fft.htn_center(old)
         log(oldft.shape)
         newft = oldft[start:stop,start:stop,start:stop]
         log(newft.shape)
@@ -58,41 +91,23 @@ def main(args):
 
     ### Downsample images ###
     elif args.chunk is None:
-        Nimg = len(old)
-        new = np.empty((Nimg, D, D), dtype=np.float32)
-        for i in range(len(old)):
-            if i % 1000 == 0:
-                log(f'Processing image {i} of {len(old)}')
-            img = old[i]
-            oldft = fft.ht2_center(img.get()).astype(np.float32)
-            newft = oldft[start:stop, start:stop]
-            new[i] = fft.ihtn_center(newft).astype(np.float32)
-        assert oldft[int(oldD/2),int(oldD/2)] == newft[int(D/2),int(D/2)]
-        new = np.asarray(new)
+        new = downsample_in_batches(old, args.b)
         log(new.shape)
         log('Saving {}'.format(args.o))
-        mrc.write(args.o, new, is_vol=False)
+        mrc.write(args.o, new.astype(np.float32), is_vol=False)
 
     ### Downsample images, saving chunks of N images ###
     else:
-        chunk_names = []
         nchunks = math.ceil(len(old)/args.chunk)
+        out_mrcs = ['.{}'.format(i).join(os.path.splitext(args.o)) for i in range(nchunks)]
+        chunk_names = [os.path.basename(x) for x in out_mrcs]
         for i in range(nchunks):
             log('Processing chunk {}'.format(i))
-            out_mrcs = '.{}'.format(i).join(os.path.splitext(args.o))
-            new = []
             chunk = old[i*args.chunk:(i+1)*args.chunk]
-            new = np.empty((len(chunk),D,D), dtype=np.float32)
-            for i, img in enumerate(chunk):
-                oldft = fft.ht2_center(img.get()).astype(np.float32)
-                newft = oldft[start:stop, start:stop]
-                new[i] = fft.ihtn_center(newft).astype(np.float32)
-            assert oldft[int(oldD/2),int(oldD/2)] == newft[int(D/2),int(D/2)]
-            new = np.asarray(new)
+            new = downsample_in_batches(chunk, args.b)
             log(new.shape)
-            log(f'Saving {out_mrcs}'.format(out_mrcs))
+            log(f'Saving {out_mrcs[i]}')
             mrc.write(out_mrcs, new, is_vol=False)
-            chunk_names.append(os.path.basename(out_mrcs))
         # Write a text file with all chunks
         out_txt = '{}.txt'.format(os.path.splitext(args.o)[0])
         log(f'Saving {out_txt}')

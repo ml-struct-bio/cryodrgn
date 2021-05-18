@@ -67,9 +67,9 @@ def main(args):
         if lazy:
             imgs = _combine_imgs(imgs)
             imgs = np.concatenate([i.get() for i in imgs])
-        oldft = fft.ht2_center(imgs)
+        oldft = np.asarray([fft.ht2_center(i) for i in imgs])
         newft = oldft[:, start:stop, start:stop]
-        return fft.iht2_center(newft)
+        return np.asarray([fft.iht2_center(i) for i in newft])
 
     def downsample_in_batches(old, b):
         new = np.empty((len(old), D, D), dtype=np.float32)

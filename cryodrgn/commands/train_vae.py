@@ -53,6 +53,7 @@ def add_args(parser):
     group.add_argument('--lazy-single', action='store_true', help='Lazy loading if full dataset is too large to fit in memory')
     group.add_argument('--lazy', action='store_true', help='Memory efficient training by loading data in chunks')
     group.add_argument('--skip-fft', action='store_true', help='Skip preprocessing steps if input data is from cryodrgn preprocess_mrcs') # todo: shorten flag
+    group.add_argument('--max-threads', type=int, default=16, help='Maximum number of CPU cores for FFT parallelization (default: %(default)s)')
 
     group = parser.add_argument_group('Tilt series')
     group.add_argument('--tilt', help='Particles (.mrcs)')
@@ -317,7 +318,7 @@ def main(args):
         elif args.skip_fft:
             data = dataset.PreprocessedMRCData(args.particles, norm=args.norm, ind=ind)
         else:
-            data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, keepreal=args.use_real, window=args.window, datadir=args.datadir, relion31=args.relion31)
+            data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, keepreal=args.use_real, window=args.window, datadir=args.datadir, relion31=args.relion31, max_threads=args.max_threads)
 
     # Tilt series data -- lots of unsupported features
     else:

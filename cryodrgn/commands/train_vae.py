@@ -52,7 +52,7 @@ def add_args(parser):
     group.add_argument('--relion31', action='store_true', help='Flag if relion3.1 star format')
     group.add_argument('--lazy-single', action='store_true', help='Lazy loading if full dataset is too large to fit in memory')
     group.add_argument('--lazy', action='store_true', help='Memory efficient training by loading data in chunks')
-    group.add_argument('--skip-fft', action='store_true', help='Skip preprocessing steps if input data is from cryodrgn preprocess_mrcs') # todo: shorten flag
+    group.add_argument('--preprocessed', action='store_true', help='Skip preprocessing steps if input data is from cryodrgn preprocess_mrcs') 
     group.add_argument('--max-threads', type=int, default=16, help='Maximum number of CPU cores for FFT parallelization (default: %(default)s)')
 
     group = parser.add_argument_group('Tilt series')
@@ -304,18 +304,20 @@ def main(args):
     else: ind = None
 
     # load dataset
+    flog(f'Loading dataset from {args.particles}')
     if args.tilt is None:
         tilt = None
         args.use_real = args.encode_mode == 'conv'
     
         if args.lazy:
-            assert args.skip_fft, "Dataset must be preprocesed with `cryodrgn preprocess_mrcs` in order to use --lazy data loading"
-            assert not args.ind, "Can't use --ind with --lazy. Dataset must be filtered in `cryodrgn preprocess_mrcs`"
+            assert args.preprocessed, "Dataset must be preprocesed with `cryodrgn preprocess_mrcs` in order to use --lazy data loading"
+            assert not args.ind, "For --lazy data loading, dataset must be filtered by `cryodrgn preprocess_mrcs`"
             #data = dataset.PreprocessedMRCData(args.particles, norm=args.norm)
             raise NotImplementedError
         elif args.lazy_single:
             data = dataset.LazyMRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, keepreal=args.use_real, window=args.window, datadir=args.datadir, relion31=args.relion31)
-        elif args.skip_fft:
+        elif args.preprocessed:
+            flog(f'Ignoring any --window/--invert-data options')
             data = dataset.PreprocessedMRCData(args.particles, norm=args.norm, ind=ind)
         else:
             data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, keepreal=args.use_real, window=args.window, datadir=args.datadir, relion31=args.relion31, max_threads=args.max_threads)
@@ -325,7 +327,7 @@ def main(args):
         assert args.encode_mode == 'tilt'
         if args.lazy_single: raise NotImplementedError
         if args.lazy: raise NotImplementedError
-        if args.skip_fft: raise NotImplementedError
+        if args.preprocessed: raise NotImplementedError
         if args.relion31: raise NotImplementedError
         data = dataset.TiltMRCData(args.particles, args.tilt, norm=args.norm, invert_data=args.invert_data, ind=ind, window=args.window, keepreal=args.use_real, datadir=args.datadir)
         tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32))

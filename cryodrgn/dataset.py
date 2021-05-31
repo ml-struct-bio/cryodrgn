@@ -124,8 +124,8 @@ class MRCData(data.Dataset):
             with Pool(max_threads) as p:
                 particles = np.asarray(p.map(fft.ht2_center, particles), dtype=np.float32)
         else:
-            particles = np.asarray([fft.ht2_center(img) for img in particles])
-            particles = particles.astype(np.float32)
+            particles = np.asarray([fft.ht2_center(img) for img in particles], dtype=np.float32)
+            log('Converted to FFT')
             
         if invert_data: particles *= -1
 
@@ -149,6 +149,33 @@ class MRCData(data.Dataset):
             self.particles_real = particles_real
             log('Normalized real space images by {}'.format(particles_real.std()))
             self.particles_real /= particles_real.std()
+
+    def __len__(self):
+        return self.N
+
+    def __getitem__(self, index):
+        return self.particles[index], index
+
+    def get(self, index):
+        return self.particles[index]
+
+class PreprocessedMRCData(data.Dataset):
+    '''
+    '''
+    def __init__(self, mrcfile, norm=None, ind=None):
+        particles = load_particles(mrcfile, False)
+        if ind is not None:
+            particles = particles[ind]
+        log(f'Loaded {len(particles)} {particles.shape[1]}x{particles.shape[1]} images')
+        if norm is None:
+            norm  = [np.mean(particles), np.std(particles)]
+            norm[0] = 0
+        particles = (particles - norm[0])/norm[1]
+        log('Normalized HT by {} +/- {}'.format(*norm))
+        self.particles = particles
+        self.N = len(particles)
+        self.D = particles.shape[1] # ny + 1 after symmetrizing HT
+        self.norm = norm
 
     def __len__(self):
         return self.N

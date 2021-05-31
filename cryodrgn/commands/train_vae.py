@@ -45,12 +45,14 @@ def add_args(parser):
     parser.add_argument('--seed', type=int, default=np.random.randint(0,100000), help='Random seed')
 
     group = parser.add_argument_group('Dataset loading')
+    group.add_argument('--ind', type=os.path.abspath, metavar='PKL', help='Filter particle stack by these indices')
     group.add_argument('--uninvert-data', dest='invert_data', action='store_false', help='Do not invert data sign')
     group.add_argument('--no-window', dest='window', action='store_false', help='Turn off real space windowing of dataset')
-    group.add_argument('--ind', type=os.path.abspath, metavar='PKL', help='Filter particle stack by these indices')
-    group.add_argument('--lazy', action='store_true', help='Lazy loading if full dataset is too large to fit in memory')
     group.add_argument('--datadir', type=os.path.abspath, help='Path prefix to particle stack if loading relative paths from a .star or .cs file')
-    parser.add_argument('--relion31', action='store_true', help='Flag if relion3.1 star format')
+    group.add_argument('--relion31', action='store_true', help='Flag if relion3.1 star format')
+    group.add_argument('--lazy-single', action='store_true', help='Lazy loading if full dataset is too large to fit in memory')
+    group.add_argument('--lazy', action='store_true', help='Memory efficient training by loading data in chunks')
+    group.add_argument('--skip-fft', action='store_true', help='Skip preprocessing steps if input data is from cryodrgn preprocess_mrcs') # todo: shorten flag
 
     group = parser.add_argument_group('Tilt series')
     group.add_argument('--tilt', help='Particles (.mrcs)')
@@ -294,22 +296,35 @@ def main(args):
         assert args.beta_control, "Need to set beta control weight for schedule {}".format(args.beta)
     beta_schedule = get_beta_schedule(args.beta)
 
-    # load the particles
+    # load index filter
     if args.ind is not None: 
         flog('Filtering image dataset with {}'.format(args.ind))
         ind = pickle.load(open(args.ind,'rb'))
     else: ind = None
+
+    # load dataset
     if args.tilt is None:
-        if args.encode_mode == 'conv':
-            args.use_real = True
+        tilt = None
+        args.use_real = args.encode_mode == 'conv'
+    
         if args.lazy:
+            assert args.skip_fft, "Dataset must be preprocesed with `cryodrgn preprocess_mrcs` in order to use --lazy data loading"
+            assert not args.ind, "Can't use --ind with --lazy. Dataset must be filtered in `cryodrgn preprocess_mrcs`"
+            #data = dataset.PreprocessedMRCData(args.particles, norm=args.norm)
+            raise NotImplementedError
+        elif args.lazy_single:
             data = dataset.LazyMRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, keepreal=args.use_real, window=args.window, datadir=args.datadir, relion31=args.relion31)
+        elif args.skip_fft:
+            data = dataset.PreprocessedMRCData(args.particles, norm=args.norm, ind=ind)
         else:
             data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, keepreal=args.use_real, window=args.window, datadir=args.datadir, relion31=args.relion31)
-        tilt = None
+
+    # Tilt series data -- lots of unsupported features
     else:
         assert args.encode_mode == 'tilt'
+        if args.lazy_single: raise NotImplementedError
         if args.lazy: raise NotImplementedError
+        if args.skip_fft: raise NotImplementedError
         if args.relion31: raise NotImplementedError
         data = dataset.TiltMRCData(args.particles, args.tilt, norm=args.norm, invert_data=args.invert_data, ind=ind, window=args.window, keepreal=args.use_real, datadir=args.datadir)
         tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32))

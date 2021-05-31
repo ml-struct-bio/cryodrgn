@@ -9,7 +9,8 @@ log = print
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('input', help='Input data .pkl')
-    parser.add_argument('--ind', required=True, help='Selected indices array (.pkl)')
+    parser.add_argument('--ind', help='Selected indices array (.pkl)')
+    parser.add_argument('--first', type=int, help='First N datapoints')
     parser.add_argument('-o', type=os.path.abspath, help='Output data .pkl')
     return parser
 
@@ -18,7 +19,12 @@ def load_pkl(x):
 
 def main(args):
     x = load_pkl(args.input)
-    ind = load_pkl(args.ind)
+    if args.first:
+        assert args.ind is None
+        ind = np.arange(args.first)
+    else:
+        assert args.first is None
+        ind = load_pkl(args.ind)
 
     # pose.pkl contains a tuple of rotations and translations
     if type(x) == tuple:

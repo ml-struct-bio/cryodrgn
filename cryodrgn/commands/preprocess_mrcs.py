@@ -18,15 +18,21 @@ log = utils.log
 
 def add_args(parser):
     parser.add_argument('mrcs', help='Input particles or volume (.mrc, .mrcs, .star, or .txt)')
-    parser.add_argument('-D', type=int, help='New box size in pixels (if downsampling), must be even')
-    parser.add_argument('-o', metavar='MRCS', type=os.path.abspath, required=True, help='Output projection stack (.mrcs)')
-    parser.add_argument('-b', type=int, default=5000, help='Batch size for processing images (default: %(default)s)')
-    parser.add_argument('--chunk', type=int, default=100000, help='Chunksize (in # of images) to split particle stack when saving')
-    parser.add_argument('--no-window', dest='window', action='store_false', help='Flag for relion3.1 star format')
-    parser.add_argument('--uninvert-data', dest='invert_data', action='store_false', help='Flag for relion3.1 star format')
+    parser.add_argument('-o', metavar='MRCS', type=os.path.abspath, required=True, help='Output .mrcs')
     parser.add_argument('--relion31', action='store_true', help='Flag for relion3.1 star format')
     parser.add_argument('--datadir', help='Optionally provide path to input .mrcs if loading from a .star or .cs file')
-    parser.add_argument('--max-threads', type=int, default=16, help='Maximum number of CPU cores for parallelization (default: %(default)s)')
+
+    group = parser.add_argument_group('Image preprocessing settings')
+    group.add_argument('--ind', type=os.path.abspath, metavar='PKL', help='Filter particle stack by these indices')
+    group.add_argument('-D', type=int, help='New box size in pixels (if downsampling), must be even')
+    group.add_argument('--uninvert-data', dest='invert_data', action='store_false', help='Do not invert data sign')
+    group.add_argument('--no-window', dest='window', action='store_false', help='Turn off real space windowing of dataset')
+
+    group = parser.add_argument_group('Extra arguments for volume generation')
+    group.add_argument('-b', type=int, default=5000, help='Batch size for processing images (default: %(default)s)')
+    group.add_argument('--chunk', type=int, default=100000, help='Chunksize (in # of images) to split particle stack when saving')
+    group.add_argument('--no-lazy', dest='lazy', action='store_false', help='Load whole dataset (faster than loading in batches)')
+    group.add_argument('--max-threads', type=int, default=16, help='Maximum number of CPU cores for parallelization (default: %(default)s)')
     return parser
 
 def mkbasedir(out):
@@ -42,9 +48,15 @@ def main(args):
     warnexists(args.o)
     assert (args.o.endswith('.mrcs') or args.o.endswith('.txt')), "Must specify output in .mrcs file format"
 
-    lazy = True
-
+    # load images
+    lazy = args.lazy
     images = dataset.load_particles(args.mrcs, lazy=lazy, datadir=args.datadir, relion31=args.relion31)
+    
+    # filter images
+    if args.ind is not None: 
+        log(f'Filtering image dataset with {args.ind}')
+        ind = utils.load_pkl(args.ind).astype(int)
+        images = [images[i] for i in ind] if lazy else images[ind]
 
     D = images[0].get().shape[0] if lazy else images.shape[-1]
     window = args.window
@@ -56,6 +68,7 @@ def main(args):
         start = int(D/2 - args.D/2)
         stop = int(D/2 + args.D/2)
         D = args.D
+    log(f'Loaded {len(images)} {D}x{D} images')
 
     def _combine_imgs(imgs):
         ret = []
@@ -101,12 +114,12 @@ def main(args):
         log(f'Processing chunk {i}')
         chunk = images[i*args.chunk:(i+1)*args.chunk]
         new = preprocess_in_batches(chunk, args.b)
-        log(new.shape)
+        log(f'New shape: {new.shape}')
         log(f'Saving {out_mrcs[i]}')
         mrc.write(out_mrcs[i], new, is_vol=False)
 
     out_txt = f'{os.path.splitext(args.o)[0]}.ft.txt'
-    log(f'Saving {out_txt}')
+    log(f'Saving summary txt file {out_txt}')
     with open(out_txt,'w') as f:
         f.write('\n'.join(chunk_names))
 

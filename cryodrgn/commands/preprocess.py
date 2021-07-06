@@ -1,5 +1,5 @@
 '''
-Preprocess a dataset for more streamlined training
+Preprocess a dataset for more streamlined cryoDRGN training
 '''
 
 import argparse
@@ -26,6 +26,7 @@ def add_args(parser):
     group.add_argument('--ind', type=os.path.abspath, metavar='PKL', help='Filter particle stack by these indices')
     group.add_argument('-D', type=int, help='New box size in pixels (if downsampling), must be even')
     group.add_argument('--uninvert-data', dest='invert_data', action='store_false', help='Do not invert data sign')
+    group.add_argument('--mask-r', default=0.85, type=float, help='Circular windowing mask inner radius (default: %(default)s)')
     group.add_argument('--no-window', dest='window', action='store_false', help='Turn off real space windowing of dataset')
 
     group = parser.add_argument_group('Extra arguments for volume generation')
@@ -58,17 +59,20 @@ def main(args):
         ind = utils.load_pkl(args.ind).astype(int)
         images = [images[i] for i in ind] if lazy else images[ind]
 
-    D = images[0].get().shape[0] if lazy else images.shape[-1]
+    original_D = images[0].get().shape[0] if lazy else images.shape[-1]
+    log(f'Loading {len(images)} {original_D}x{original_D} images')
     window = args.window
     invert_data = args.invert_data
-    downsample = (args.D and args.D < D)
+    downsample = (args.D and args.D < original_D)
     if downsample:
-        assert args.D <= D, f'New box size {args.D} cannot be larger than the original box size {D}'
+        assert args.D <= original_D, f'New box size {args.D} cannot be larger than the original box size {D}'
         assert args.D % 2 == 0, 'New box size must be even'
-        start = int(D/2 - args.D/2)
-        stop = int(D/2 + args.D/2)
+        start = int(original_D/2 - args.D/2)
+        stop = int(original_D/2 + args.D/2)
         D = args.D
-    log(f'Loaded {len(images)} {D}x{D} images')
+        log(f'Downsampling images to {D}x{D}')
+    else:
+        D = original_D
 
     def _combine_imgs(imgs):
         ret = []
@@ -90,8 +94,11 @@ def main(args):
             imgs = np.concatenate([i.get() for i in imgs])
         with Pool(min(args.max_threads, mp.cpu_count())) as p:
             # todo: refactor as a routine in dataset.py
+
+            # note: applying the window before downsampling is slightly 
+            # different than in the original workflow
             if window:
-                imgs *= dataset.window_mask(D, .85, .99)
+                imgs *= dataset.window_mask(original_D, args.mask_r, .99)
             ret = np.asarray(p.map(fft.ht2_center, imgs))
             if invert_data:
                 ret *= -1
@@ -102,8 +109,9 @@ def main(args):
 
     def preprocess_in_batches(imgs, b):
         ret = np.empty((len(imgs), D+1, D+1), dtype=np.float32)
-        for ii in range(math.ceil(len(imgs)/b)):
-            log(f'Processing batch {ii}')
+        Nbatches = math.ceil(len(imgs)/b)
+        for ii in range(Nbatches):
+            log(f'Processing batch of {b} images ({ii+1} of {Nbatches})')
             ret[ii*b:(ii+1)*b,:,:] = preprocess(imgs[ii*b:(ii+1)*b])
         return ret
 
@@ -111,7 +119,7 @@ def main(args):
     out_mrcs = [f'.{i}.ft'.join(os.path.splitext(args.o)) for i in range(nchunks)]
     chunk_names = [os.path.basename(x) for x in out_mrcs]
     for i in range(nchunks):
-        log(f'Processing chunk {i}')
+        log(f'Processing chunk {i+1} of {nchunks}')
         chunk = images[i*args.chunk:(i+1)*args.chunk]
         new = preprocess_in_batches(chunk, args.b)
         log(f'New shape: {new.shape}')
@@ -126,3 +134,4 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     main(add_args(parser).parse_args())
+

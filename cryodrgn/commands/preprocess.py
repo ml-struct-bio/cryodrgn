@@ -26,7 +26,7 @@ def add_args(parser):
     group.add_argument('--ind', type=os.path.abspath, metavar='PKL', help='Filter particle stack by these indices')
     group.add_argument('-D', type=int, help='New box size in pixels (if downsampling), must be even')
     group.add_argument('--uninvert-data', dest='invert_data', action='store_false', help='Do not invert data sign')
-    group.add_argument('--mask-r', default=0.85, type=float, help='Circular windowing mask inner radius (default: %(default)s)')
+    group.add_argument('--window-r', default=0.85, type=float, help='Circular windowing mask inner radius (default: %(default)s)')
     group.add_argument('--no-window', dest='window', action='store_false', help='Turn off real space windowing of dataset')
 
     group = parser.add_argument_group('Extra arguments for volume generation')
@@ -98,7 +98,7 @@ def main(args):
             # note: applying the window before downsampling is slightly 
             # different than in the original workflow
             if window:
-                imgs *= dataset.window_mask(original_D, args.mask_r, .99)
+                imgs *= dataset.window_mask(original_D, args.window_r, .99)
             ret = np.asarray(p.map(fft.ht2_center, imgs))
             if invert_data:
                 ret *= -1

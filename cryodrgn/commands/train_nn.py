@@ -44,6 +44,7 @@ def add_args(parser):
     group = parser.add_argument_group('Dataset loading')
     group.add_argument('--uninvert-data', dest='invert_data', action='store_false', help='Do not invert data sign')
     group.add_argument('--no-window', dest='window', action='store_false', help='Turn off real space windowing of dataset')
+    group.add_argument('--window-r', type=float, default=.85,  help='Windowing radius (default: %(default)s)')
     group.add_argument('--ind', type=os.path.abspath, help='Filter particle stack by these indices')
     group.add_argument('--lazy', action='store_true', help='Lazy loading if full dataset is too large to fit in memory')
     group.add_argument('--datadir', type=os.path.abspath, help='Path prefix to particle stack if loading relative paths from a .star or .cs file')
@@ -117,6 +118,7 @@ def save_config(args, dataset, lattice, model, out_config):
                         invert_data=args.invert_data,
                         ind=args.ind,
                         window=args.window,
+                        window_r=args.window_r,
                         datadir=args.datadir,
                         ctf=args.ctf,
                         poses=args.poses,
@@ -186,9 +188,9 @@ def main(args):
         ind = pickle.load(open(args.ind,'rb'))
     else: ind = None
     if args.lazy:
-        data = dataset.LazyMRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, window=args.window, datadir=args.datadir, relion31=args.relion31)
+        data = dataset.LazyMRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, window=args.window, datadir=args.datadir, relion31=args.relion31, window_r=args.window_r)
     else:
-        data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, window=args.window, datadir=args.datadir, relion31=args.relion31)
+        data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, window=args.window, datadir=args.datadir, relion31=args.relion31, window_r=args.window_r)
     D = data.D
     Nimg = data.N
 

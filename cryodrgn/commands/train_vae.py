@@ -48,6 +48,7 @@ def add_args(parser):
     group.add_argument('--ind', type=os.path.abspath, metavar='PKL', help='Filter particle stack by these indices')
     group.add_argument('--uninvert-data', dest='invert_data', action='store_false', help='Do not invert data sign')
     group.add_argument('--no-window', dest='window', action='store_false', help='Turn off real space windowing of dataset')
+    group.add_argument('--window-r', type=float, default=.85,  help='Windowing radius (default: %(default)s)')
     group.add_argument('--datadir', type=os.path.abspath, help='Path prefix to particle stack if loading relative paths from a .star or .cs file')
     group.add_argument('--relion31', action='store_true', help='Flag if relion3.1 star format')
     group.add_argument('--lazy-single', action='store_true', help='Lazy loading if full dataset is too large to fit in memory')
@@ -218,6 +219,7 @@ def save_config(args, dataset, lattice, model, out_config):
                         ind=args.ind,
                         keepreal=args.use_real,
                         window=args.window,
+                        window_r=args.window_r,
                         datadir=args.datadir,
                         ctf=args.ctf,
                         poses=args.poses,
@@ -315,12 +317,12 @@ def main(args):
             #data = dataset.PreprocessedMRCData(args.particles, norm=args.norm)
             raise NotImplementedError
         elif args.lazy_single:
-            data = dataset.LazyMRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, keepreal=args.use_real, window=args.window, datadir=args.datadir, relion31=args.relion31)
+            data = dataset.LazyMRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, keepreal=args.use_real, window=args.window, datadir=args.datadir, relion31=args.relion31, window_r=args.window_r)
         elif args.preprocessed:
             flog(f'Ignoring any --window/--invert-data options')
             data = dataset.PreprocessedMRCData(args.particles, norm=args.norm, ind=ind)
         else:
-            data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, keepreal=args.use_real, window=args.window, datadir=args.datadir, relion31=args.relion31, max_threads=args.max_threads)
+            data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, keepreal=args.use_real, window=args.window, datadir=args.datadir, relion31=args.relion31, max_threads=args.max_threads, window_r=args.window_r)
 
     # Tilt series data -- lots of unsupported features
     else:
@@ -329,7 +331,7 @@ def main(args):
         if args.lazy: raise NotImplementedError
         if args.preprocessed: raise NotImplementedError
         if args.relion31: raise NotImplementedError
-        data = dataset.TiltMRCData(args.particles, args.tilt, norm=args.norm, invert_data=args.invert_data, ind=ind, window=args.window, keepreal=args.use_real, datadir=args.datadir)
+        data = dataset.TiltMRCData(args.particles, args.tilt, norm=args.norm, invert_data=args.invert_data, ind=ind, window=args.window, keepreal=args.use_real, datadir=args.datadir, window_r=args.window_r)
         tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32))
     Nimg = data.N
     D = data.D

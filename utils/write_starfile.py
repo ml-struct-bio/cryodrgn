@@ -30,6 +30,10 @@ POSE_HDRS = ['_rlnAngleRot',
              '_rlnOriginX',
              '_rlnOriginY']
 
+MICROGRAPH_HDRS = ['_rlnMicrographName',
+                   '_rlnCoordinateX',
+                   '_rlnCoordinateY']
+
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('particles', help='Input particles (.mrcs, .txt, .star, .cs)')
@@ -39,6 +43,11 @@ def parse_args():
     parser.add_argument('--datadir', type=os.path.abspath, help='Path prefix to particle stack if loading relative paths from a .star or .cs file')
     parser.add_argument('--full-path', action='store_true', help='Write the full path to particles (default: relative paths)')
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Output .star file')
+
+    group = parser.add_argument_group('Optionally include additional star file columns')
+    group.add_argument('--ref-star', help='Reference star file from original import')
+    group.add_argument('--ref-star-relion31', action='store_true', help='Flag for relion3.1 star format')
+    group.add_argument('--keep-micrograph', action='store_true', help='Include micrograph coordinate headers')
     return parser
 
 def main(args):
@@ -52,6 +61,10 @@ def main(args):
         assert len(particles) == len(poses[0]), f"{len(particles)} != {len(poses)}, Number of particles != number of poses"
     log('{} particles'.format(len(particles)))
 
+    if args.ref_star:
+        ref_star = starfile.Starfile.load(args.ref_star, relion31=args.ref_star_relion31)
+        assert len(ref_star) == len(particles), f"Particles in {args.particles} must match {args.ref_star}"
+
     if args.ind:
         ind = utils.load_pkl(args.ind)
         log(f'Filtering to {len(ind)} particles')
@@ -59,6 +72,8 @@ def main(args):
         ctf = ctf[ind]
         if args.poses: 
             poses = (poses[0][ind], poses[1][ind])
+        if args.ref_star:
+            ref_star.df = ref_star.df.loc[ind] # note this does not reset the indexing 
     else:
         ind = np.arange(len(particles))
 
@@ -84,9 +99,16 @@ def main(args):
             data[POSE_HDRS[i]] = eulers[:,i]
         for i in range(2):
             data[POSE_HDRS[3+i]] = trans[:,i]
-    df = pd.DataFrame(data=data)
-
+    df = pd.DataFrame(data=data) 
     headers = HEADERS + POSE_HDRS if args.poses else HEADERS
+    if args.keep_micrograph:
+        assert args.ref_star, "Must provide reference .star file with micrograph coordinates"
+        log(f'Copying micrograph coordinates from {args.ref_star}')
+        # TODO: Prepend path from args.ref_star to MicrographName?
+        for h in MICROGRAPH_HDRS:
+            df[h] = ref_star.df[h]
+        headers += MICROGRAPH_HDRS
+
     s = starfile.Starfile(headers,df)
     s.write(args.o)
 

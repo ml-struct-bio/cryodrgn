@@ -17,6 +17,9 @@ class Starfile():
         self.headers = headers
         self.df = df
 
+    def __len__(self):
+        return len(self.df)
+
     @classmethod
     def load(self, starfile, relion31=False):
         f = open(starfile,'r')
@@ -67,6 +70,7 @@ class Starfile():
         f.write('\n'.join(self.headers))
         f.write('\n')
         for i in self.df.index:
+            # TODO: Assumes header and df ordering is consistent
             f.write(' '.join([str(v) for v in self.df.loc[i]]))
             f.write('\n')
         #f.write('\n'.join([' '.join(self.df.loc[i]) for i in range(len(self.df))]))

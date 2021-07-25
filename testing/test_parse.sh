@@ -17,4 +17,9 @@ diff output/pose.star.pkl data/pose.star.pkl
 cryodrgn parse_pose_csparc data/cryosparc_P12_J24_001_particles.cs -D 180 -o output/pose.cs.pkl
 diff output/pose.cs.pkl data/pose.cs.pkl
 
+# Test write_starfile.py
+python ../utils/write_starfile.py data/hand.5.mrcs output/ctf1.pkl -o output/test5.star
+
+python ../utils/write_starfile.py data/hand.5.mrcs output/ctf1.pkl --ref-star data/FinalRefinement-OriginalParticles-PfCRT.star --keep-micrograph -o output/test6.star
+
 echo All ok

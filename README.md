@@ -79,7 +79,7 @@ To install cryoDRGN, git clone the source code and install the following depende
     conda activate cryodrgn
 
     # Install dependencies
-    conda install pytorch cudatoolkit=10.1 -c pytorch # Replace cudatoolkit version if needed
+    conda install 'pytorch<1.9.0' cudatoolkit=10.1 -c pytorch # PyTorch 1.9 is not working for now. Replace cudatoolkit version if needed
     conda install pandas
     
     # Install dependencies for latent space visualization 

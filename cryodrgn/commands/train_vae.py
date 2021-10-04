@@ -315,7 +315,7 @@ def main(args):
             assert args.preprocessed, "Dataset must be preprocesed with `cryodrgn preprocess_mrcs` in order to use --lazy data loading"
             assert not args.ind, "For --lazy data loading, dataset must be filtered by `cryodrgn preprocess_mrcs`"
             #data = dataset.PreprocessedMRCData(args.particles, norm=args.norm)
-            raise NotImplementedError, "Use --lazy-single for on-the-fly image loading"
+            raise NotImplementedError("Use --lazy-single for on-the-fly image loading")
         elif args.lazy_single:
             data = dataset.LazyMRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, keepreal=args.use_real, window=args.window, datadir=args.datadir, relion31=args.relion31, window_r=args.window_r)
         elif args.preprocessed:

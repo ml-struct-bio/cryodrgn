@@ -67,7 +67,7 @@ ICLR 2020, Spotlight presentation, https://arxiv.org/abs/1909.05215
 
 ## Tutorial:
 
-A step-by-step walkthrough of cryoDRGN installaion and processing is now available here:
+A step-by-step walkthrough of cryoDRGN installation and processing is now available here:
 https://www.notion.so/cryoDRGN-tutorial-b932c021cb2c415282f182048bac16ff
 
 ## Installation/dependencies:

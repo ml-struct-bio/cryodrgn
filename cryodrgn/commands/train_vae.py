@@ -87,10 +87,11 @@ def add_args(parser):
     group = parser.add_argument_group('Decoder Network')
     group.add_argument('--dec-layers', dest='players', type=int, default=3, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--dec-dim', dest='pdim', type=int, default=256, help='Number of nodes in hidden layers (default: %(default)s)')
-    group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf','none'), default='geom_lowf', help='Type of positional encoding (default: %(default)s)')
+    group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf', 'gaussian', 'none'), default='geom_lowf', help='Type of positional encoding (default: %(default)s)')
     group.add_argument('--pe-dim', type=int, help='Num features in positional encoding (default: image D)')
     group.add_argument('--domain', choices=('hartley','fourier'), default='fourier', help='Decoder representation domain (default: %(default)s)')
     group.add_argument('--activation', choices=('relu','leaky_relu'), default='relu', help='Activation (default: %(default)s)')
+    group.add_argument('--feat-sigma', type=float, default=25, help="Scale for random Gaussian features")
     return parser
 
 def train_batch(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, tilt=None, ctf_params=None, yr=None, use_amp=False):
@@ -373,7 +374,7 @@ def main(args):
     model = HetOnlyVAE(lattice, args.qlayers, args.qdim, args.players, args.pdim,
                 in_dim, args.zdim, encode_mode=args.encode_mode, enc_mask=enc_mask,
                 enc_type=args.pe_type, enc_dim=args.pe_dim, domain=args.domain,
-                activation=activation)
+                activation=activation, feat_sigma=args.feat_sigma)
     flog(model)
     flog('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
     flog('{} parameters in encoder'.format(sum(p.numel() for p in model.encoder.parameters() if p.requires_grad)))

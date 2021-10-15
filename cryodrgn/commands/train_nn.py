@@ -73,7 +73,7 @@ def add_args(parser):
     group.add_argument('--pe-dim', type=int, help='Num sinusoid features in positional encoding (default: D/2)')
     group.add_argument('--domain', choices=('hartley','fourier'), default='fourier', help='Volume decoder representation (default: %(default)s)')
     group.add_argument('--activation', choices=('relu','leaky_relu'), default='relu', help='Activation (default: %(default)s)')
-    group.add_argument('--feat-sigma', type=float, default=25, help="Scale for random Gaussian features")
+    group.add_argument('--feat-sigma', type=float, default=1, help="Scale for random Gaussian features")
 
     return parser
 

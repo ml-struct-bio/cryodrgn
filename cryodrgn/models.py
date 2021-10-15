@@ -317,7 +317,7 @@ class FTPositionalDecoder(nn.Module):
 
     def random_fourier_encoding(self, coords):
         assert self.rand_feats is not None
-        freqs = self.rand_feats.view(*[1]*(len(coords.shape)-1), -1, 3)
+        freqs = self.rand_feats.view(*[1]*(len(coords.shape)-1), -1, 3) * self.D2
 
         k = (coords[..., None, 0:3] * freqs).sum(-1) # B x in_dim-zdim
         s = torch.sin(k)

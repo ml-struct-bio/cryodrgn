@@ -91,7 +91,7 @@ def add_args(parser):
     group.add_argument('--pe-dim', type=int, help='Num features in positional encoding (default: image D)')
     group.add_argument('--domain', choices=('hartley','fourier'), default='fourier', help='Decoder representation domain (default: %(default)s)')
     group.add_argument('--activation', choices=('relu','leaky_relu'), default='relu', help='Activation (default: %(default)s)')
-    group.add_argument('--feat-sigma', type=float, default=25, help="Scale for random Gaussian features")
+    group.add_argument('--feat-sigma', type=float, default=1, help="Scale for random Gaussian features")
     return parser
 
 def train_batch(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, tilt=None, ctf_params=None, yr=None, use_amp=False):

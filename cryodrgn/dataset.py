@@ -39,7 +39,7 @@ class LazyMRCData(data.Dataset):
     '''
     Class representing an .mrcs stack file -- images loaded on the fly
     '''
-    def __init__(self, mrcfile, norm=None, keepreal=False, invert_data=False, ind=None, window=True, datadir=None):
+    def __init__(self, mrcfile, norm=None, keepreal=False, invert_data=False, ind=None, window=True, datadir=None, window_r=.85):
         assert not keepreal, 'Not implemented error'
         particles = load_particles(mrcfile, True, datadir)
         if ind is not None:
@@ -56,7 +56,7 @@ class LazyMRCData(data.Dataset):
         if norm is None:
             norm = self.estimate_normalization()
         self.norm = norm
-        self.window = window_mask(ny, .85, .99) if window else None
+        self.window = window_mask(ny, window_r, .99) if window else None
 
     def estimate_normalization(self, n=1000):
         n = min(n,self.N)
@@ -96,7 +96,7 @@ class MRCData(data.Dataset):
     '''
     Class representing an .mrcs stack file
     '''
-    def __init__(self, mrcfile, norm=None, keepreal=False, invert_data=False, ind=None, window=True, datadir=None):
+    def __init__(self, mrcfile, norm=None, keepreal=False, invert_data=False, ind=None, window=True, datadir=None, window_r=.85):
         particles_real = load_particles(mrcfile, False, datadir)
         if ind is not None:
             particles_real = particles_real[ind]
@@ -107,7 +107,7 @@ class MRCData(data.Dataset):
 
         # Real space window
         if window:
-            particles_real *= window_mask(ny, .85, .99)
+            particles_real *= window_mask(ny, window_r, .99)
 
         # compute HT
         particles = np.asarray([fft.ht2_center(img) for img in particles_real])
@@ -147,7 +147,7 @@ class TiltMRCData(data.Dataset):
     '''
     Class representing an .mrcs tilt series pair
     '''
-    def __init__(self, mrcfile, mrcfile_tilt, norm=None, keepreal=False, invert_data=False, ind=None, window=True, datadir=None):
+    def __init__(self, mrcfile, mrcfile_tilt, norm=None, keepreal=False, invert_data=False, ind=None, window=True, datadir=None, window_r=.85):
         # load untilted
         particles_real = load_particles(mrcfile, False, datadir)
 
@@ -167,7 +167,7 @@ class TiltMRCData(data.Dataset):
 
         # Real space window
         if window:
-            m = window_mask(ny, .85, .99)
+            m = window_mask(ny, window_r, .99)
             particles_real *= m
             particles_tilt_real *= m 
 

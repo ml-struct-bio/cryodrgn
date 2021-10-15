@@ -306,6 +306,10 @@ def main(args):
                 log(f'[Pretrain Iteration {global_it}] loss={loss:4f}')
             if global_it > args.pretrain:
                 break
+    out_mrc = '{}/pretrain.reconstruct.mrc'.format(args.outdir)
+    model.eval()
+    vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, data.norm)
+    mrc.write(out_mrc, vol.astype(np.float32))
 
     # reset model after pretraining
     if args.reset_optim_after_pretrain:

@@ -12,12 +12,17 @@ Reconstructing continuous distributions of 3D protein structure from cryo-EM ima
 Ellen D. Zhong, Tristan Bepler, Joseph H. Davis*, Bonnie Berger*.
 ICLR 2020, Spotlight presentation, https://arxiv.org/abs/1909.05215
 
-## New in v0.3.2
+## New in v0.3.3
+* Faster image preprocessing and smaller memory footprint
+* New: `cryodrgn preprocess` (beta)
+* Known issue with pytorch 1.9+
+
+### Previous versions
+
+<details><summary>Version 0.3.2</summary>
 * New: cryoDRGN_filtering.ipynb for interactive filtering/selection of images from the dataset
 * New: `cryodrgn view_config`
 * Minor performance improvements and compatibility fixes
-
-### Previous versions
 
 <details><summary>Version 0.3.1</summary>
 	

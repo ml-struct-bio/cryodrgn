@@ -14,8 +14,8 @@ ICLR 2020, Spotlight presentation, https://arxiv.org/abs/1909.05215
 
 ## New in v0.3.3
 * Faster image preprocessing and smaller memory footprint
-* New: `cryodrgn preprocess` (beta)
-* Known issue with pytorch 1.9+
+* New: `cryodrgn preprocess` for large datasets (_in beta testing_ - see <a href="https://www.notion.so/cryodrgn-preprocess-d84a9d9df8634a6a8bfd32d6b5e737ef">here</a> for details)
+* Known issue with PyTorch version 1.9+
 
 ### Previous versions
 
@@ -86,7 +86,7 @@ To install cryoDRGN, git clone the source code and install the following depende
     conda activate cryodrgn
 
     # Install dependencies
-    conda install 'pytorch<1.9.0' cudatoolkit=10.1 -c pytorch # PyTorch 1.9 is not working for now. Replace cudatoolkit version if needed
+    conda install 'pytorch<1.9.0' -c pytorch # PyTorch 1.9+ is not working for now.
     conda install pandas
     
     # Install dependencies for latent space visualization 
@@ -100,7 +100,7 @@ To install cryoDRGN, git clone the source code and install the following depende
     # Clone source code and install
     git clone https://github.com/zhonge/cryodrgn.git
     cd cryodrgn
-    git checkout 0.3.2b # or latest version
+    git checkout 0.3.3 # or latest version
     python setup.py install
 
 To use accelerated mixed precision training (available for Nvidia Volta, Turing, and Ampere architectures), install Nvidia's apex package into the conda environement (https://github.com/NVIDIA/apex#quick-start).

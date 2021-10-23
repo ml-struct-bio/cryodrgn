@@ -24,6 +24,8 @@ ICLR 2020, Spotlight presentation, https://arxiv.org/abs/1909.05215
 * New: `cryodrgn view_config`
 * Minor performance improvements and compatibility fixes
 
+</details>
+
 <details><summary>Version 0.3.1</summary>
 	
 * New: Script `write_starfile.py` to convert (filtered) particle selection to a .star file

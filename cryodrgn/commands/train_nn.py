@@ -145,18 +145,18 @@ def save_config(args, dataset, lattice, model, out_config):
                     version=cryodrgn.__version__)
         pickle.dump(meta, f)
 
-def get_latest(args):
+def get_latest(args, flog):
     # assumes args.num_epochs > latest checkpoint
-    log('Detecting latest checkpoint...') 
+    flog('Detecting latest checkpoint...') 
     weights = [f'{args.outdir}/weights.{i}.pkl' for i in range(args.num_epochs)]
     weights = [f for f in weights if os.path.exists(f)]
     args.load = weights[-1]
-    log(f'Loading {args.load}')
+    flog(f'Loading {args.load}')
     if args.do_pose_sgd:
         i = args.load.split('.')[-2]
         args.poses = f'{args.outdir}/pose.{i}.pkl'
         assert os.path.exists(args.poses)
-        log(f'Loading {args.poses}')
+        flog(f'Loading {args.poses}')
     return args
 
 def main(args):
@@ -201,7 +201,7 @@ def main(args):
     lattice = Lattice(D, extent=args.l_extent)
 
     activation={"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[args.activation]
-    model = models.get_decoder(3, D, args.layers, args.dim, args.domain, args.pe_type, enc_dim=args.pe_dim, activation=activation)
+    model = models.get_decoder(3, D, args.layers, args.dim, args.domain, args.pe_type, enc_dim=args.pe_dim, activation=activation, feat_sigma=args.feat_sigma)
     flog(model)
     flog('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
 

@@ -39,6 +39,7 @@ def add_args(parser):
     group = parser.add_argument_group('Volume arguments')
     group.add_argument('--Apix', type=float, default=1, help='Pixel size to add to .mrc header (default: %(default)s A/pix)')
     group.add_argument('--flip', action='store_true', help='Flip handedness of output volume')
+    group.add_argument('--invert', action='store_true', help='Invert contrast of output volume')
     group.add_argument('-d','--downsample', type=int, help='Downsample volumes to this box size (pixels)')
 
     group = parser.add_argument_group('Overwrite architecture hyperparameters in config.pkl')
@@ -112,27 +113,31 @@ def main(args):
             log(zz)
             if args.downsample:
                 extent = lattice.extent * (args.downsample/(D-1))
-                vol = model.decoder.eval_volume(lattice.get_downsample_coords(args.downsample+1), 
-                                                args.downsample+1, extent, norm, zz) 
+                vol = model.decoder.eval_volume(lattice.get_downsample_coords(args.downsample+1),
+                                                args.downsample+1, extent, norm, zz)
             else:
-                vol = model.decoder.eval_volume(lattice.coords, lattice.D, lattice.extent, norm, zz) 
+                vol = model.decoder.eval_volume(lattice.coords, lattice.D, lattice.extent, norm, zz)
             out_mrc = '{}/{}{:03d}.mrc'.format(args.o, args.prefix, i)
             if args.flip:
                 vol = vol[::-1]
+            if args.invert:
+                vol *= -1
             mrc.write(out_mrc, vol.astype(np.float32), Apix=args.Apix)
-    
+
     ### Single z ###
     else:
         z = np.array(args.z)
         log(z)
         if args.downsample:
             extent = lattice.extent * (args.downsample/(D-1))
-            vol = model.decoder.eval_volume(lattice.get_downsample_coords(args.downsample+1), 
-                                            args.downsample+1, extent, norm, z) 
+            vol = model.decoder.eval_volume(lattice.get_downsample_coords(args.downsample+1),
+                                            args.downsample+1, extent, norm, z)
         else:
-            vol = model.decoder.eval_volume(lattice.coords, lattice.D, lattice.extent, norm, z) 
+            vol = model.decoder.eval_volume(lattice.coords, lattice.D, lattice.extent, norm, z)
         if args.flip:
             vol = vol[::-1]
+        if args.invert:
+            vol *= -1
         mrc.write(args.o, vol.astype(np.float32), Apix=args.Apix)
 
     td = dt.now()-t1

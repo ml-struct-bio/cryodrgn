@@ -32,6 +32,7 @@ def add_args(parser):
     group.add_argument('--datadir', type=os.path.abspath, help='Path prefix to particle stack if loading relative paths from a .star or .cs file')
     group.add_argument('--ind',help='Indices to iterate over (pkl)')
     group.add_argument('--first', type=int, default=10000, help='Backproject the first N images (default: %(default)s)')
+    group.add_argument('--relion31', action='store_true', help='Flag if relion3.1 star format')
 
     group = parser.add_argument_group('Tilt series options')
     group.add_argument('--tilt', help='Tilt series .mrcs image stack')
@@ -80,9 +81,10 @@ def main(args):
     if args.ind is not None:
         args.ind = utils.load_pkl(args.ind).astype(int)
     if args.tilt is None:
-        data = dataset.LazyMRCData(args.particles, norm=(0,1), invert_data=args.invert_data, datadir=args.datadir, ind=args.ind)
+        data = dataset.LazyMRCData(args.particles, norm=(0,1), invert_data=args.invert_data, datadir=args.datadir, ind=args.ind, relion31=args.relion31)
         tilt = None
     else:
+        if args.relion31: raise NotImplementedError
         data = dataset.TiltMRCData(args.particles, args.tilt, norm=(0,1), invert_data=args.invert_data, datadir=args.datadir, ind=args.ind)
         tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32))
     D = data.D

@@ -36,6 +36,13 @@ def map_to_lie_algebra(v):
         R_z * v[..., 2, None, None]
     return R
 
+def map_to_lie_vector(X):
+    """Map Lie algebra in ordinary (3, 3) matrix rep to vector.
+    In literature known as 'vee' map.
+    inverse of map_to_lie_algebra
+    """
+    return torch.stack((-X[..., 1, 2], X[..., 0, 2], -X[..., 0, 1]), -1)
+
 def expmap(v):
     theta = v.norm(p=2, dim=-1, keepdim=True)
     # normalize K
@@ -45,6 +52,11 @@ def expmap(v):
     R = I + torch.sin(theta)[..., None]*K \
         + (1. - torch.cos(theta))[..., None]*(K@K)
     return R
+
+def logmap(R):
+    anti_sym = .5 * (R - R.transpose(-1, -2))
+    theta = torch.acos(.5 * (torch.trace(R)-1))
+    return theta / torch.sin(theta) * anti_sym
 
 def s2s1rodrigues(s2_el, s1_el):
     K = map_to_lie_algebra(s2_el)

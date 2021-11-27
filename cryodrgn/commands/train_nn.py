@@ -131,6 +131,7 @@ def save_config(args, dataset, lattice, model, out_config):
     model_args = dict(layers=args.layers,
                       dim=args.dim,
                       pe_type=args.pe_type,
+                      feat_sigma=args.feat_sigma,
                       pe_dim=args.pe_dim,
                       domain=args.domain,
                       activation=args.activation)

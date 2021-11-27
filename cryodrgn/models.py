@@ -89,7 +89,8 @@ class HetOnlyVAE(nn.Module):
                           enc_type=c['pe_type'],
                           enc_dim=c['pe_dim'],
                           domain=c['domain'],
-                          activation=activation)
+                          activation=activation,
+                          feat_sigma=c['feat_sigma'])
         if weights is not None:
             ckpt = torch.load(weights)
             model.load_state_dict(ckpt['model_state_dict'])

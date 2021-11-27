@@ -80,15 +80,17 @@ def parse_args():
     group.add_argument('--probabilistic', action='store_true', help='Use probabilistic bound')
     group.add_argument('--nkeptposes', type=int, default=24, help="Number of poses to keep at each refinement interation during branch and bound")
     group.add_argument('--base-healpy', type=int, default=1, help="Base healpy grid for pose search. Higher means exponentially higher resolution.")
-    group.add_argument('--half-precision', type=int, default=0, help="If 1, use half-precision for pose search")
     group.add_argument("--pose-model-update-freq", type=int, help="If set, only update the model used for pose search every N examples.")
 
     group = parser.add_argument_group('Network Architecture')
     group.add_argument('--layers', type=int, default=3, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--dim', type=int, default=256, help='Number of nodes in hidden layers (default: %(default)s)')
-    group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf','none'), default='geom_lowf', help='Type of positional encoding')
-    group.add_argument('--domain', choices=('hartley','fourier'), default='hartley')
-    group.add_argument('--activation', choices=('relu','leaky_relu'), default='relu')
+    group.add_argument('--l-extent', type=float, default=0.5, help='Coordinate lattice size (if not using positional encoding) (default: %(default)s)')
+    group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf','gaussian','none'), default='gaussian', help='Type of positional encoding (default: %(default)s)')
+    group.add_argument('--pe-dim', type=int, help='Num sinusoid features in positional encoding (default: D/2)')
+    group.add_argument('--domain', choices=('hartley','fourier'), default='fourier', help='Volume decoder representation (default: %(default)s)')
+    group.add_argument('--activation', choices=('relu','leaky_relu'), default='relu', help='Activation (default: %(default)s)')
+    group.add_argument('--feat-sigma', type=float, default=0.5, help="Scale for random Gaussian features")
 
     return parser
 
@@ -206,7 +208,7 @@ def train(model, lattice, ps, optim, batch, tilt_rot=None, no_trans=False, poses
 
 def make_model(args, D):
     activation={"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[args.activation]
-    return models.get_decoder(3, D, args.layers, args.dim, args.domain, args.pe_type, activation=activation)
+    return models.get_decoder(3, D, args.layers, args.dim, args.domain, args.pe_type, enc_dim=args.pe_dim, activation=activation, feat_sigma=args.feat_sigma)
 
 def main(args):
 

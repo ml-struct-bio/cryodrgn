@@ -13,7 +13,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-sys.path.insert(0,os.path.abspath(os.path.dirname(__file__))+'/lib-python')
+#sys.path.insert(0,os.path.abspath(os.path.dirname(__file__))+'/lib-python')
+import cryodrgn
 from cryodrgn import mrc
 from cryodrgn import ctf 
 from cryodrgn import utils
@@ -39,6 +40,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('particles', help='Input particles (.mrcs, .txt or .star)')
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
+    parser.add_argument('--zdim', type=int, required=True, help='Dimension of latent variable')
     parser.add_argument('--ctf', metavar='pkl', type=os.path.abspath, help='CTF parameters (.pkl)')
     parser.add_argument('--load', help='Initialize training from a checkpoint')
     parser.add_argument('--load-poses', help='Initialize training from a checkpoint')
@@ -46,10 +48,18 @@ def parse_args():
     parser.add_argument('--log-interval', type=int, default=1000, help='Logging interval in N_IMGS (default: %(default)s)')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
     parser.add_argument('--seed', type=int, default=np.random.randint(0,100000), help='Random seed')
-    parser.add_argument('--invert-data', action='store_true', help='Invert data sign')
-    parser.add_argument('--window', action='store_true', help='Real space windowing of dataset')
-    parser.add_argument('--window-r', type=float, default=.85,  help='Windowing radius (default: %(default)s)')
-    parser.add_argument('--ind', type=os.path.abspath, help='Filter indices')
+
+    group = parser.add_argument_group('Dataset loading')
+    group.add_argument('--ind', type=os.path.abspath, metavar='PKL', help='Filter particle stack by these indices')
+    group.add_argument('--uninvert-data', dest='invert_data', action='store_false', help='Do not invert data sign')
+    group.add_argument('--no-window', dest='window', action='store_false', help='Turn off real space windowing of dataset')
+    group.add_argument('--window-r', type=float, default=.85,  help='Windowing radius (default: %(default)s)')
+    group.add_argument('--datadir', type=os.path.abspath, help='Path prefix to particle stack if loading relative paths from a .star or .cs file')
+    group.add_argument('--relion31', action='store_true', help='Flag if relion3.1 star format')
+    group.add_argument('--lazy-single', action='store_true', help='Lazy loading if full dataset is too large to fit in memory')
+    group.add_argument('--lazy', action='store_true', help='Memory efficient training by loading data in chunks')
+    group.add_argument('--preprocessed', action='store_true', help='Skip preprocessing steps if input data is from cryodrgn preprocess_mrcs') 
+    group.add_argument('--max-threads', type=int, default=16, help='Maximum number of CPU cores for FFT parallelization (default: %(default)s)')
 
     group = parser.add_argument_group('Tilt series')
     group.add_argument('--tilt', help='Particle stack file (.mrcs)')
@@ -85,22 +95,23 @@ def parse_args():
     group.add_argument('--ps-freq', type=int, default=1, help='Frequency of pose inference (default: every %(default)s epochs)')
     group.add_argument('--nkeptposes', type=int, default=24, help="Number of poses to keep at each refinement interation during branch and bound")
     group.add_argument('--base-healpy', type=int, default=1, help="Base healpy grid for pose search. Higher means exponentially higher resolution.")
-    group.add_argument('--half-precision', type=int, default=0, help="If 1, use half-precision for pose search")
     group.add_argument("--pose-model-update-freq", type=int, help="If set, only update the model used for pose search every N examples.")
 
     group = parser.add_argument_group('Encoder Network')
-    group.add_argument('--qlayers', type=int, default=3, help='Number of hidden layers (default: %(default)s)')
-    group.add_argument('--qdim', type=int, default=256, help='Number of nodes in hidden layers (default: %(default)s)')
+    group.add_argument('--enc-layers', dest='qlayers', type=int, default=3, help='Number of hidden layers (default: %(default)s)')
+    group.add_argument('--enc-dim', dest='qdim', type=int, default=256, help='Number of nodes in hidden layers (default: %(default)s)')
     group.add_argument('--encode-mode', default='resid', choices=('conv','resid','mlp','tilt'), help='Type of encoder network (default: %(default)s)')
-    group.add_argument('--zdim', type=int, default=8, help='Dimension of latent variable')
     group.add_argument('--enc-mask', type=int, help='Circular mask of image for encoder (default: D/2; -1 for no mask)')
+    group.add_argument('--use-real', action='store_true', help='Use real space image for encoder (for convolutional encoder)')
 
     group = parser.add_argument_group('Decoder Network')
-    group.add_argument('--players', type=int, default=3, help='Number of hidden layers (default: %(default)s)')
-    group.add_argument('--pdim', type=int, default=256, help='Number of nodes in hidden layers (default: %(default)s)')
-    group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf','none'), default='geom_lowf', help='Type of positional encoding')
-    group.add_argument('--domain', choices=('hartley','fourier'), default='hartley')
-    group.add_argument('--activation', choices=('relu','leaky_relu'), default='relu')
+    group.add_argument('--dec-layers', dest='players', type=int, default=3, help='Number of hidden layers (default: %(default)s)')
+    group.add_argument('--dec-dim', dest='pdim', type=int, default=256, help='Number of nodes in hidden layers (default: %(default)s)')
+    group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf', 'gaussian', 'none'), default='gaussian', help='Type of positional encoding (default: %(default)s)')
+    group.add_argument('--feat-sigma', type=float, default=0.5, help="Scale for random Gaussian features")
+    group.add_argument('--pe-dim', type=int, help='Num features in positional encoding (default: image D)')
+    group.add_argument('--domain', choices=('hartley','fourier'), default='fourier', help='Decoder representation domain (default: %(default)s)')
+    group.add_argument('--activation', choices=('relu','leaky_relu'), default='relu', help='Activation (default: %(default)s)')
     return parser
 
 def make_model(args, lattice, enc_mask, in_dim):
@@ -115,8 +126,10 @@ def make_model(args, lattice, enc_mask, in_dim):
         encode_mode=args.encode_mode,
         enc_mask=enc_mask,
         enc_type=args.pe_type,
+        enc_dim=args.pe_dim,
         domain=args.domain,
         activation={"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[args.activation],
+        feat_sigma=args.feat_sigma,
     )
 
 def pretrain(model, lattice, optim, minibatch, tilt):
@@ -274,14 +287,16 @@ def save_checkpoint(model, lattice, optim, epoch, norm, bnb_pose, z_mu, z_logvar
     with open(out_poses,'wb') as f:
         pickle.dump(bnb_pose, f)
 
-
 def save_config(args, dataset, lattice, model, out_config):
     dataset_args = dict(particles=args.particles,
                         norm=dataset.norm,
                         invert_data=args.invert_data,
                         ind=args.ind,
-                        #keepreal=args.use_real,
-                        window=args.window)
+                        keepreal=args.use_real,
+                        window=args.window,
+                        window_r=args.window_r,
+                        datadir=args.datadir,
+                        ctf=args.ctf)
     if args.tilt is not None:
         dataset_args['particles_tilt'] = args.tilt
     lattice_args = dict(D=lattice.D,
@@ -295,13 +310,20 @@ def save_config(args, dataset, lattice, model, out_config):
                       encode_mode=args.encode_mode,
                       enc_mask=args.enc_mask,
                       pe_type=args.pe_type,
-                      domain=args.domain)
+                      feat_sigma=args.feat_sigma,
+                      pe_dim=args.pe_dim,
+                      domain=args.domain,
+                      activation=args.activation)
     config = dict(dataset_args=dataset_args,
                   lattice_args=lattice_args,
                   model_args=model_args)
     config['seed'] = args.seed
     with open(out_config,'wb') as f:
         pickle.dump(config, f)
+        meta = dict(time=dt.now(),
+                    cmd=sys.argv,
+                    version=cryodrgn.__version__)
+        pickle.dump(meta, f)
 
 def sort_poses(poses):
     ind = [x[0] for x in poses]
@@ -329,11 +351,16 @@ def get_latest(args):
     return args
 
 def main(args):
-
-    log(args)
     t1 = dt.now()
     if args.outdir is not None and not os.path.exists(args.outdir):
         os.makedirs(args.outdir)
+    LOG = f'{args.outdir}/run.log'
+    def flog(msg): # HACK: switch to logging module
+        return utils.flog(msg, LOG)
+    if args.load == 'latest':
+        args = get_latest(args)
+    flog(' '.join(sys.argv))
+    flog(args)
 
     # set the random seed
     np.random.seed(args.seed)
@@ -342,7 +369,7 @@ def main(args):
     ## set the device
     use_cuda = torch.cuda.is_available()
     device = torch.device('cuda' if use_cuda else 'cpu')
-    log('Use cuda {}'.format(use_cuda))
+    flog('Use cuda {}'.format(use_cuda))
     if use_cuda:
         torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
@@ -353,20 +380,46 @@ def main(args):
         assert args.beta_control, "Need to set beta control weight for schedule {}".format(args.beta)
     beta_schedule = get_beta_schedule(args.beta)
 
-    # load the particles
-    if args.ind is not None:
-        log('Filtering image dataset with {}'.format(args.ind))
-        args.ind = pickle.load(open(args.ind,'rb'))
+    # load index filter
+    if args.ind is not None: 
+        flog('Filtering image dataset with {}'.format(args.ind))
+        ind = pickle.load(open(args.ind,'rb'))
+    else: ind = None
+
+    # load dataset
+    flog(f'Loading dataset from {args.particles}')
     if args.tilt is None:
-        data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=args.ind, window=args.window, window_r=args.window_r)
         tilt = None
+        args.use_real = args.encode_mode == 'conv'
+    
+        if args.lazy:
+            assert args.preprocessed, "Dataset must be preprocesed with `cryodrgn preprocess_mrcs` in order to use --lazy data loading"
+            assert not args.ind, "For --lazy data loading, dataset must be filtered by `cryodrgn preprocess_mrcs`"
+            #data = dataset.PreprocessedMRCData(args.particles, norm=args.norm)
+            raise NotImplementedError("Use --lazy-single for on-the-fly image loading")
+        elif args.lazy_single:
+            data = dataset.LazyMRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, keepreal=args.use_real, window=args.window, datadir=args.datadir, relion31=args.relion31, window_r=args.window_r)
+        elif args.preprocessed:
+            flog(f'Using preprocessed inputs. Ignoring any --window/--invert-data options')
+            data = dataset.PreprocessedMRCData(args.particles, norm=args.norm, ind=ind)
+        else:
+            data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, keepreal=args.use_real, window=args.window, datadir=args.datadir, relion31=args.relion31, max_threads=args.max_threads, window_r=args.window_r)
+
+    # Tilt series data -- lots of unsupported features
     else:
         assert args.encode_mode == 'tilt'
-        data = dataset.TiltMRCData(args.particles, args.tilt, norm=args.norm, invert_data=args.invert_data, ind=args.ind, window=args.window, window_r=args.window_r)
+        if args.lazy_single: raise NotImplementedError
+        if args.lazy: raise NotImplementedError
+        if args.preprocessed: raise NotImplementedError
+        if args.relion31: raise NotImplementedError
+        data = dataset.TiltMRCData(args.particles, args.tilt, norm=args.norm, invert_data=args.invert_data, ind=ind, window=args.window, keepreal=args.use_real, datadir=args.datadir, window_r=args.window_r)
         tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32))
     Nimg = data.N
     D = data.D
-    
+
+    if args.encode_mode == 'conv':
+        assert D-1 == 64, "Image size must be 64x64 for convolutional encoder"
+
     # load ctf
     if args.ctf is not None:
         log('Loading ctf params from {}'.format(args.ctf))

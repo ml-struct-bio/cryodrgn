@@ -424,7 +424,7 @@ def main(args):
     if args.ctf is not None:
         log('Loading ctf params from {}'.format(args.ctf))
         ctf_params = ctf.load_ctf_for_training(D-1, args.ctf)
-        if args.ind is not None: ctf_params = ctf_params[args.ind] 
+        if args.ind is not None: ctf_params = ctf_params[ind] 
         assert ctf_params.shape == (Nimg, 8), ctf_params.shape
         ctf_params = torch.tensor(ctf_params)
     else: ctf_params = None

@@ -93,7 +93,9 @@ def main(args):
         if args.poses: 
             poses = (poses[0][ind], poses[1][ind])
         if args.ref_star:
-            ref_star.df = ref_star.df.loc[ind] # note this does not reset the indexing 
+            ref_star.df = ref_star.df.loc[ind] 
+            # reset the index to avoid any downstream indexing issues
+            ref_star.df.reset_index(inplace=True)
         particle_ind = particle_ind[ind]
 
     particle_ind += 1 # CHANGE TO 1-BASED INDEXING
@@ -110,6 +112,7 @@ def main(args):
         D = particles[0].get().shape[0]
         trans = poses[1] * D # convert from fraction to pixels
 
+    # Create a new dataframe with required star file headers
     data = {HEADERS[0]:names}
     for i in range(7):
         data[HEADERS[i+1]] = ctf[:,i]

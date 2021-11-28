@@ -250,18 +250,18 @@ def save_config(args, dataset, lattice, model, out_config):
                     version=cryodrgn.__version__)
         pickle.dump(meta, f)
 
-def get_latest(args):
+def get_latest(args, flog):
     # assumes args.num_epochs > latest checkpoint
-    log('Detecting latest checkpoint...') 
+    flog('Detecting latest checkpoint...') 
     weights = [f'{args.outdir}/weights.{i}.pkl' for i in range(args.num_epochs)]
     weights = [f for f in weights if os.path.exists(f)]
     args.load = weights[-1]
-    log(f'Loading {args.load}')
+    flog(f'Loading {args.load}')
     if args.do_pose_sgd:
         i = args.load.split('.')[-2]
         args.poses = f'{args.outdir}/pose.{i}.pkl'
         assert os.path.exists(args.poses)
-        log(f'Loading {args.poses}')
+        flog(f'Loading {args.poses}')
     return args
 
 def main(args):
@@ -272,7 +272,7 @@ def main(args):
     def flog(msg): # HACK: switch to logging module
         return utils.flog(msg, LOG)
     if args.load == 'latest':
-        args = get_latest(args)
+        args = get_latest(args, flog)
     flog(' '.join(sys.argv))
     flog(args)
 

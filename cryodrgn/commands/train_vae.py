@@ -472,7 +472,7 @@ def main(args):
         out_pose = '{}/pose.pkl'.format(args.outdir)
         posetracker.save(out_pose)
     td = dt.now()-t1
-    flog('Finsihed in {} ({} per epoch)'.format(td, td/(num_epochs-start_epoch)))
+    flog('Finished in {} ({} per epoch)'.format(td, td/(num_epochs-start_epoch)))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)

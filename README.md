@@ -326,7 +326,7 @@ Additional parameters which are typically set include:
 Example command to train a cryoDRGN model for 50 epochs on an image dataset `projections.128.mrcs` with poses `pose.pkl` and ctf parameters `ctf.pkl`:
 
     # 8-D latent variable model, default architecture
-    $ cryodrgn train_vae projections.128.mrcs 
+    $ cryodrgn train_vae projections.128.mrcs \
             --poses pose.pkl \
             --ctf ctf.pkl \
             --zdim 8 -n 50 \
@@ -337,7 +337,7 @@ Example command to train a cryoDRGN model for 50 epochs on an image dataset `pro
 Example command to train a larger cryoDRGN model for 25 epochs on an image dataset `projections.128.mrcs` with poses `pose.pkl` and ctf parameters `ctf.pkl`:
 
     # 8-D latent variable model, large architecture
-    $ cryodrgn train_vae projections.128.mrcs 
+    $ cryodrgn train_vae projections.128.mrcs \
             --poses pose.pkl \
             --ctf ctf.pkl \
             --zdim 8 -n 25 \
@@ -349,7 +349,7 @@ Example command to train a larger cryoDRGN model for 25 epochs on an image datas
 Example command to train a larger cryoDRGN model for 25 epochs on an image dataset `projections.256.mrcs` with poses `pose.pkl` and ctf parameters `ctf.pkl`:
 
     # 8-D latent variable model, larger images, large architecture
-    $ cryodrgn train_vae projections.256.mrcs 
+    $ cryodrgn train_vae projections.256.mrcs \
             --poses pose.pkl \
             --ctf ctf.pkl \
             --zdim 8 -n 25 \
@@ -360,12 +360,12 @@ The number of epochs `-n` refers to the number of full passes through the datase
 
 If you would like to train longer, a training job can be extended with the `--load` argument. For example to extend the training of the previous example to 50 epochs:
 
-    $ cryodrgn train_vae projections.256.mrcs
+    $ cryodrgn train_vae projections.256.mrcs \
             --poses pose.pkl \
             --ctf ctf.pkl \
             --zdim 8 -n 50 \
             --enc-dim 1024 --enc-layers 3 --dec-dim 1024 --dec-layers 3 \
-            -o 01_vae256_z8
+            -o 01_vae256_z8 \
             --load 01_vae_256_z8/weights.24.pkl # 0-based indexing
 
 Note: While these settings worked well for the datasets we've tested, they are highly experimental for the general case as different datasets have diverse sources of heterogeneity. Please reach out to the authors with questions/consult -- we'd love to learn more.

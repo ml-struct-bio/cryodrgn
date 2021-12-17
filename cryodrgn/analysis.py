@@ -417,7 +417,7 @@ def gen_volumes(weights, config, zfile, outdir, cuda=None,
         cmd += f' --flip'
     if downsample is not None:
         cmd += f' -d {downsample}'
-    if invert is not None:
+    if invert:
         cmd += f' --invert'
     if cuda is not None:
         cmd = f'CUDA_VISIBLE_DEVICES={cuda} {cmd}'

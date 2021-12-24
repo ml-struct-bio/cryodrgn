@@ -29,7 +29,7 @@ def add_args(parser):
     parser.add_argument('-o', '--outdir', type=os.path.abspath, help='Output directory for convergence analysis results (default: [workdir]/convergence.[epoch])')
     parser.add_argument('--epoch-interval', type=int, default=5, help='Interval of epochs between calculating most convergence heuristics')
 
-    group = parser.add_argument_group('UMAP  calculation arguments')
+    group = parser.add_argument_group('UMAP calculation arguments')
     group.add_argument('--force-umap-cpu', action='store_true', help='Override default UMAP GPU-bound implementation via cuML to use umap-learn library instead')
     group.add_argument('--subset', default = 50000, help='Max number of particles to be used for UMAP calculations. \'None\' means use all ptcls')
     group.add_argument('--random-seed', default = None, help='Manually specify the seed used for selection of subset particles')
@@ -113,7 +113,7 @@ def encoder_latent_umaps(workdir, outdir, epochs, n_particles_total, subset, ran
         n_particles_subset = n_particles_total
         flog('Using full particle stack for UMAP', LOG)
     else:
-        if random_seed == None:
+        if random_seed is None:
             random_seed = random.randint(0, 100000)
             random.seed(random_seed)
         else:
@@ -743,20 +743,8 @@ def main(args):
 
     # Get total number of particles, latent space dimensionality, input image size
     n_particles_total, n_dim = utils.load_pkl(workdir + f'/z.{E}.pkl').shape
-    particles_path = utils.load_pkl(config)['dataset_args']['particles']
-    if particles_path.endswith('.txt'):
-        with open(particles_path) as f:
-            particles_path = os.path.join(os.path.dirname(particles_path), f.read().splitlines()[0])
-    if particles_path.endswith('.star'):
-        metadata = starfile.Starfile.load(particles_path)
-        img_size = int(metadata.df['_rlnImageSize'])
-    elif particles_path.endswith('.cs'):
-        metadata = np.load(particles_path)
-        img_size = metadata['blob/shape'][0][0]
-    elif particles_path.endswith('.mrcs'):
-        img_size = mrc.parse_header(particles_path).fields['ny']
-    else:
-        flog('ERROR: could not determine image size based on provided file format', LOG)
+    cfg  = utils.load_pkl(config)
+    img_size = cfg['lattice_args']['D'] - 1
 
     # Commonly used variables
     #plt.rcParams.update({'font.size': 16})

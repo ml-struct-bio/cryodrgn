@@ -1,5 +1,5 @@
 '''
-Visualize convergence and training dynamics
+Visualize convergence and training dynamics (BETA)
 '''
 
 import argparse
@@ -132,7 +132,7 @@ def encoder_latent_umaps(workdir, outdir, epochs, n_particles_total, subset, ran
         else: #using umap-learn library CPU-bound UMAP
             reducer = umap.UMAP(random_state=random_state)
             umap_embedding = reducer.fit_transform(z)
-        utils.save_pkl(umap_embedding, outdir + f'/umaps/umap.{epoch}.pkl')
+        utils.save_pkl(umap_embedding, f'{outdir}/umaps/umap.{epoch}.pkl')
 
 
     n_cols = int(np.ceil(len(epochs) ** 0.5))
@@ -143,9 +143,9 @@ def encoder_latent_umaps(workdir, outdir, epochs, n_particles_total, subset, ran
 
     for i, ax in enumerate(axes.flat):
         try:
-            umap_embedding = utils.load_pkl(outdir + '/umaps/umap.{}.pkl'.format(epochs[i]))
+            umap_embedding = utils.load_pkl(f'{outdir}/umaps/umap.{epochs[i]}.pkl')
             toplot = ax.hexbin(umap_embedding[:, 0], umap_embedding[:, 1], bins='log', mincnt=1)
-            ax.set_title('epoch {}'.format(epochs[i]))
+            ax.set_title(f'epoch {epochs[i]}')
         except IndexError:
             pass
         except FileNotFoundError:
@@ -166,7 +166,7 @@ def encoder_latent_umaps(workdir, outdir, epochs, n_particles_total, subset, ran
 
     plt.subplots_adjust(wspace=0.1)
     plt.subplots_adjust(hspace=0.3)
-    plt.savefig(outdir + '/plots/01_encoder_umaps.png', dpi=300, format='png', transparent=True, bbox_inches='tight')
+    plt.savefig(f'{outdir}/plots/01_encoder_umaps.png', dpi=300, format='png', transparent=True, bbox_inches='tight')
     flog(f'Saved UMAP distribution plot to {outdir}/plots/01_encoder_umaps.png', LOG)
 
 
@@ -191,9 +191,9 @@ def encoder_latent_shifts(workdir, outdir, epochs, E, LOG):
     for i in np.arange(E-1):
         flog(f'Calculating vector metrics for epochs {i}-{i+1} and {i+1}-{i+2}', LOG)
         if i == 0:
-            z1 = utils.load_pkl(workdir + f'/z.{i}.pkl')
-            z2 = utils.load_pkl(workdir + f'/z.{i+1}.pkl')
-            z3 = utils.load_pkl(workdir + f'/z.{i+2}.pkl')
+            z1 = utils.load_pkl(f'{workdir}/z.{i}.pkl')
+            z2 = utils.load_pkl(f'{workdir}/z.{i+1}.pkl')
+            z3 = utils.load_pkl(f'{workdir}/z.{i+2}.pkl')
         else:
             z1 = z2.copy()
             z2 = z3.copy()
@@ -209,7 +209,7 @@ def encoder_latent_shifts(workdir, outdir, epochs, E, LOG):
         vv = np.sum(diff21 * diff21, axis=1)
         vector_metrics[i, 2] = np.median(1 - uv / (np.sqrt(uu) * np.sqrt(vv))) #median vector cosine distance
 
-    utils.save_pkl(vector_metrics, outdir + '/vector_metrics.pkl')
+    utils.save_pkl(vector_metrics, f'{outdir}/vector_metrics.pkl')
 
     fig, axes = plt.subplots(1, len(metrics), figsize=(10,3))
     fig.tight_layout()
@@ -217,7 +217,7 @@ def encoder_latent_shifts(workdir, outdir, epochs, E, LOG):
         ax.plot(np.arange(2,E+1), vector_metrics[:,i])
         ax.set_xlabel('epoch')
         ax.set_ylabel(metrics[i])
-    plt.savefig(outdir+'/plots/02_encoder_latent_vector_shifts.png', dpi=300, format='png', transparent=True, bbox_inches='tight')
+    plt.savefig(f'{outdir}/plots/02_encoder_latent_vector_shifts.png', dpi=300, format='png', transparent=True, bbox_inches='tight')
 
     flog(f'Saved latent vector shifts plots to {outdir}/plots/02_encoder_latent_vector_shifts.png', LOG)
 
@@ -393,7 +393,7 @@ def sketch_via_umap_local_maxima(outdir, E, LOG, n_bins=30, smooth=True, smooth_
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
 
-    plt.savefig(outdir + '/plots/03_decoder_UMAP-sketching.png', dpi=300, format='png', transparent=True, bbox_inches='tight')
+    plt.savefig(f'{outdir}/plots/03_decoder_UMAP-sketching.png', dpi=300, format='png', transparent=True, bbox_inches='tight')
     flog(f'Saved latent sketching plot to {outdir}/plots/03_decoder_UMAP-sketching.png', LOG)
 
     return binned_ptcls_mask, labels
@@ -423,11 +423,11 @@ def follow_candidate_particles(workdir, outdir, epochs, n_dim, binned_ptcls_mask
     fig, axes = plt.subplots(n_rows, n_cols, figsize=(2 * n_cols, 2 * n_rows), sharex='all', sharey='all')
     fig.tight_layout()
 
-    ind_subset = utils.load_pkl(outdir + '/ind_subset.pkl')
+    ind_subset = utils.load_pkl(f'{outdir}/ind_subset.pkl')
     for i, ax in enumerate(axes.flat):
         try:
-            umap = utils.load_pkl(outdir + f'/umaps/umap.{epochs[i]}.pkl')
-            z = utils.load_pkl(workdir + f'/z.{epochs[i]}.pkl')[ind_subset,:]
+            umap = utils.load_pkl(f'{outdir}/umaps/umap.{epochs[i]}.pkl')
+            z = utils.load_pkl(f'{workdir}/z.{epochs[i]}.pkl')[ind_subset,:]
             z_maxima_median = np.zeros((len(labels), n_dim))
 
             for k in range(len(labels)):
@@ -437,7 +437,7 @@ def follow_candidate_particles(workdir, outdir, epochs, n_dim, binned_ptcls_mask
             umap_maxima_median_ondata = umap[z_maxima_median_ondata_ind] # find on-data UMAP embedding of each median latent encoding
 
             # Write out the on-data median latent values of each labeled set of particles for each epoch in epochs
-            with open(outdir + f'/repr_particles/latent_representative.{epochs[i]}.txt', 'w') as f:
+            with open(f'{outdir}/repr_particles/latent_representative.{epochs[i]}.txt', 'w') as f:
                 np.savetxt(f, z_maxima_median_ondata, delimiter=' ', newline='\n', header='', footer='', comments='# ')
             flog(f'Saved representative latent encodings for epoch {epochs[i]} to {outdir}/repr_particles/latent_representative.{epochs[i]}.txt', LOG)
 
@@ -468,7 +468,7 @@ def follow_candidate_particles(workdir, outdir, epochs, n_dim, binned_ptcls_mask
     plt.subplots_adjust(wspace=0.1)
     plt.subplots_adjust(hspace=0.25)
 
-    plt.savefig(outdir + '/plots/04_decoder_maxima-sketch-consistency.png', dpi=300, format='png', transparent=True, bbox_inches='tight')
+    plt.savefig(f'{outdir}/plots/04_decoder_maxima-sketch-consistency.png', dpi=300, format='png', transparent=True, bbox_inches='tight')
     flog(f'Saved plot tracking representative latent encodings through epochs {epochs} to {outdir}/plots/04_decoder_maxima-sketch-consistency.png', LOG)
 
 
@@ -477,10 +477,10 @@ def generate_volumes(workdir, outdir, epochs, Apix, flip, invert, downsample, cu
     Helper function to call cryodrgn.analysis.gen_volumes on all representative latent values in selected epochs
     '''
     for epoch in epochs:
-        weights = workdir + f'/weights.{epoch}.pkl'
-        config = workdir + '/config.pkl'
-        zfile = outdir + f'/repr_particles/latent_representative.{epoch}.txt'
-        volsdir = outdir + f'/vols.{epoch}'
+        weights = f'{workdir}/weights.{epoch}.pkl'
+        config = f'{workdir}/config.pkl'
+        zfile = f'{outdir}/repr_particles/latent_representative.{epoch}.txt'
+        volsdir = f'{outdir}/vols.{epoch}'
 
         analysis.gen_volumes(weights, config, zfile, volsdir, Apix=Apix, flip=flip, invert=invert, downsample=downsample, cuda=cuda)
 
@@ -540,8 +540,8 @@ def mask_volumes(outdir, epochs, labels, max_threads, LOG, Apix, thresh=None, di
         flog(f'Generating and applying masks for epoch {epoch}', LOG)
         volsdir = outdir + f'/vols.{epoch}'
         for cluster in range(len(labels)):
-            volpath = volsdir + '/vol_{0:03d}.mrc'.format(cluster)
-            outpath = volsdir + '/vol_{0:03d}.masked.mrc'.format(cluster)
+            volpath = f'{volsdir}/vol_{0:03d}.mrc'.format(cluster)
+            outpath = f'{volsdir}/vol_{0:03d}.masked.mrc'.format(cluster)
 
             volpaths.append(volpath)
             outpaths.append(outpath)
@@ -578,12 +578,12 @@ def calculate_CCs(outdir, epochs, labels, chimerax_colors, LOG):
 
     for i in range(len(epochs) - 1):
         for cluster in np.arange(len(labels)):
-            vol1, _ = mrc.parse_mrc(outdir + '/vols.{}/vol_{:03d}.masked.mrc'.format(epochs[i], cluster))
-            vol2, _ = mrc.parse_mrc(outdir + '/vols.{}/vol_{:03d}.masked.mrc'.format(epochs[i + 1], cluster))
+            vol1, _ = mrc.parse_mrc(f'{outdir}/vols.{epochs[i]}/vol_{cluster:03d}.masked.mrc')
+            vol2, _ = mrc.parse_mrc(f'{outdir}/vols.{epochs[i+1]}/vol_{cluster:03d}.masked.mrc')
 
             cc_masked[cluster, i] = calc_cc(vol1, vol2)
 
-    utils.save_pkl(cc_masked, outdir + '/cc_masked.pkl')
+    utils.save_pkl(cc_masked, f'{outdir}/cc_masked.pkl')
 
     fig, ax = plt.subplots(1, 1)
 
@@ -593,7 +593,7 @@ def calculate_CCs(outdir, epochs, labels, chimerax_colors, LOG):
         ax.plot(epochs[1:], cc_masked[i,:], c=chimerax_colors[i] * 0.75, linewidth=2.5)
     ax.legend(labels, ncol=3, fontsize='x-small')
 
-    plt.savefig(outdir + '/plots/05_decoder_CC.png', dpi=300, format='png', transparent=True, bbox_inches='tight')
+    plt.savefig(f'{outdir}/plots/05_decoder_CC.png', dpi=300, format='png', transparent=True, bbox_inches='tight')
     flog(f'Saved map-map correlation plot to {outdir}/plots/05_decoder_CC.png', LOG)
 
 
@@ -653,13 +653,13 @@ def calculate_FSCs(outdir, epochs, labels, img_size, chimerax_colors, LOG):
         flog(f'Calculating all FSCs for cluster {cluster}', LOG)
 
         for i in range(len(epochs) - 1):
-            vol1_path = outdir + '/vols.{}/vol_{:03d}.masked.mrc'.format(epochs[i], cluster)
-            vol2_path = outdir + '/vols.{}/vol_{:03d}.masked.mrc'.format(epochs[i + 1], cluster)
+            vol1_path = f'{outdir}/vols.{epochs[i]}/vol_{cluster:03d}.masked.mrc'
+            vol2_path = f'{outdir}/vols.{epochs[i+1]}/vol_{cluster:03d}.masked.mrc'
 
             x, fsc_masked[cluster, i, :] = calc_fsc(vol1_path, vol2_path)
 
-    utils.save_pkl(fsc_masked, outdir + '/fsc_masked.pkl')
-    utils.save_pkl(x, outdir + '/fsc_xaxis.pkl')
+    utils.save_pkl(fsc_masked, f'{outdir}/fsc_masked.pkl')
+    utils.save_pkl(x, f'{outdir}/fsc_xaxis.pkl')
 
     # plot all fscs
     n_cols = int(np.ceil(len(labels) ** 0.5))
@@ -684,7 +684,7 @@ def calculate_FSCs(outdir, epochs, labels, img_size, chimerax_colors, LOG):
     axes[-1, 0].legend(legend, loc='lower left', ncol=2, fontsize=6.5)
     plt.subplots_adjust(hspace=0.3)
     plt.subplots_adjust(wspace=0.1)
-    plt.savefig(outdir + '/plots/06_decoder_FSC.png', dpi=300, format='png', transparent=True, bbox_inches='tight')
+    plt.savefig(f'{outdir}/plots/06_decoder_FSC.png', dpi=300, format='png', transparent=True, bbox_inches='tight')
     flog(f'Saved map-map FSC plot to {outdir}/plots/06_decoder_FSC.png', LOG)
 
     # plot all FSCs at Nyquist only
@@ -696,7 +696,7 @@ def calculate_FSCs(outdir, epochs, labels, img_size, chimerax_colors, LOG):
         ax.plot(epochs[1:], fsc_masked[i, :, -1], c=chimerax_colors[i] * 0.75, linewidth=2.5)
     ax.legend(labels, ncol=3, fontsize='x-small')
 
-    plt.savefig(outdir + '/plots/07_decoder_FSC-nyquist.png', dpi=300, format='png', transparent=True, bbox_inches='tight')
+    plt.savefig(f'{outdir}/plots/07_decoder_FSC-nyquist.png', dpi=300, format='png', transparent=True, bbox_inches='tight')
     flog(f'Saved map-map FSC (Nyquist) plot to {outdir}/plots/07_decoder_FSC-nyquist.png', LOG)
 
 
@@ -715,9 +715,9 @@ def main(args):
 
     # assert all required files are locatable
     for i in range(E):
-        assert os.path.exists(workdir + f'/z.{i}.pkl'), f'Could not find training file {workdir}/z.{i}.pkl'
+        assert os.path.exists(f'{workdir}/z.{i}.pkl'), f'Could not find training file {workdir}/z.{i}.pkl'
     for epoch in epochs:
-        assert os.path.exists(workdir + f'/weights.{epoch}.pkl'), f'Could not find training file {workdir}/weights.{epoch}.pkl'
+        assert os.path.exists(f'{workdir}/weights.{epoch}.pkl'), f'Could not find training file {workdir}/weights.{epoch}.pkl'
     assert os.path.exists(config), f'Could not find training file {config}'
     assert os.path.exists(logfile), f'Could not find training file {logfile}'
 
@@ -729,9 +729,9 @@ def main(args):
     else:
         outdir = f'{workdir}/convergence.{E}'
     os.makedirs(outdir, exist_ok=True)
-    os.makedirs(outdir + '/plots', exist_ok=True)
-    os.makedirs(outdir + '/umaps', exist_ok=True)
-    os.makedirs(outdir + '/repr_particles', exist_ok=True)
+    os.makedirs(f'{outdir}/plots', exist_ok=True)
+    os.makedirs(f'{outdir}/umaps', exist_ok=True)
+    os.makedirs(f'{outdir}/repr_particles', exist_ok=True)
     LOG = f'{outdir}/convergence.log'
     flog(args, LOG)
     if len(epochs) < 3:
@@ -742,7 +742,7 @@ def main(args):
     flog(f'Saving all results to {outdir}', LOG)
 
     # Get total number of particles, latent space dimensionality, input image size
-    n_particles_total, n_dim = utils.load_pkl(workdir + f'/z.{E}.pkl').shape
+    n_particles_total, n_dim = utils.load_pkl(f'{workdir}/z.{E}.pkl').shape
     cfg  = utils.load_pkl(config)
     img_size = cfg['lattice_args']['D'] - 1
 

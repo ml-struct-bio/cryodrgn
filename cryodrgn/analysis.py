@@ -1,4 +1,5 @@
 import os
+import re
 import numpy as np
 import pickle
 import matplotlib.pyplot as plt
@@ -19,12 +20,10 @@ def parse_loss(f):
     '''Parse loss from run.log'''
     lines = open(f).readlines()
     lines = [x for x in lines if '====' in x]
-    try:
-        loss = [x.strip().split()[-1] for x in lines]
-        loss = np.asarray(loss).astype(np.float32)
-    except:
-        loss = [x.split()[-4][:-1] for x in lines]
-        loss = np.asarray(loss).astype(np.float32)
+    regex = "total\sloss\s=\s(\d.\d+)"
+    loss = [re.search(regex, x).group(1) for x in lines]
+    loss = np.asarray(loss).astype(np.float32)
+
     return loss
 
 ### Dimensionality reduction ###

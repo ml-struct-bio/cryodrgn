@@ -1,5 +1,7 @@
 '''
-Visualize convergence and training dynamics (BETA)
+Visualize convergence and training dynamics 
+
+(BETA -- contributed by Barrett Powell bmp@mit.edu)
 '''
 
 import argparse
@@ -832,7 +834,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__,
-                                     epilog='Example usage: $ cryodrgn analyze_convergence 01_128_8D_256 49',
+                                     epilog='Example usage: $ python analyze_convergence.py [workdir] [epoch]'
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     add_args(parser)
     main(parser.parse_args())

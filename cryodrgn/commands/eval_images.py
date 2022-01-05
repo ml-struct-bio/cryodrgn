@@ -192,7 +192,7 @@ def main(args):
             'recon':gen_loss_accum/Nimg, 
             'kld':kld_accum/Nimg}, f)
 
-    log('Finsihed in {}'.format(dt.now()-t1))
+    log('Finished in {}'.format(dt.now()-t1))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)

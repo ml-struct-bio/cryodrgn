@@ -141,7 +141,7 @@ def main(args):
         mrc.write(args.o, vol.astype(np.float32), Apix=args.Apix)
 
     td = dt.now()-t1
-    log('Finsihed in {}'.format(td))
+    log('Finished in {}'.format(td))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)

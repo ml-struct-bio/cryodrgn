@@ -12,11 +12,18 @@ Reconstructing continuous distributions of 3D protein structure from cryo-EM ima
 Ellen D. Zhong, Tristan Bepler, Joseph H. Davis*, Bonnie Berger*.
 ICLR 2020, Spotlight presentation, https://arxiv.org/abs/1909.05215
 
+## Tutorial:
+
+An in-depth overview and walkthrough of cryoDRGN installation, training, and analysis is available here:
+https://www.notion.so/cryoDRGN-tutorial-b932c021cb2c415282f182048bac16ff
+
+A quick start is provided below.
+
 ## New in v0.3.3/4
 
 ### v0.3.4
 
-* FIX: Bug fix in `write_starfile.py` when provided particle stack is chunked (.txt file)
+* FIX: Bug in `write_starfile.py` when provided particle stack is chunked (.txt file)
 * Support micrograph coordinates and additional column headers to `write_starfile.py`
 * New helper scripts: `analyze_convergence.py` (_in beta testing_) contributed by <a href="bmp@mit.edu">Barrett Powell</a> (thanks!) and `make_train_test.py` for splitting up particle stacks for training 
 
@@ -79,12 +86,6 @@ ICLR 2020, Spotlight presentation, https://arxiv.org/abs/1909.05215
 * New latent space traversal scripts with `cryodrgn graph_traversal` and `cryodrgn pc_traversal`.
 
 </details>
-
-
-## Tutorial:
-
-A step-by-step walkthrough of cryoDRGN installation and processing is now available here:
-https://www.notion.so/cryoDRGN-tutorial-b932c021cb2c415282f182048bac16ff
 
 ## Installation/dependencies:
 

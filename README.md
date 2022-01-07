@@ -12,9 +12,18 @@ Reconstructing continuous distributions of 3D protein structure from cryo-EM ima
 Ellen D. Zhong, Tristan Bepler, Joseph H. Davis*, Bonnie Berger*.
 ICLR 2020, Spotlight presentation, https://arxiv.org/abs/1909.05215
 
-## New in v0.3.3
+## New in v0.3.3/4
+
+### v0.3.4
+
+* FIX: Bug fix in `write_starfile.py` when provided particle stack is chunked (.txt file)
+* Support micrograph coordinates and additional column headers to `write_starfile.py`
+* New helper scripts: `analyze_convergence.py` (_in beta testing_) contributed by <a href="bmp@mit.edu">Barrett Powell</a> (thanks!) and `make_train_test.py` for splitting up particle stacks for training 
+
+### v0.3.3
+
 * Faster image preprocessing and smaller memory footprint
-* New: `cryodrgn preprocess` for large datasets (_in beta testing_ - see <a href="https://www.notion.so/cryodrgn-preprocess-d84a9d9df8634a6a8bfd32d6b5e737ef">here</a> for details)
+* New: `cryodrgn preprocess` for large datasets (_in beta testing_ - see <a href="https://www.notion.so/cryodrgn-preprocess-d84a9d9df8634a6a8bfd32d6b5e737ef">this Notion doc</a> for details)
 * Known <a href="https://github.com/zhonge/cryodrgn/issues/66">issue</a> with PyTorch version 1.9+
 
 ### Previous versions

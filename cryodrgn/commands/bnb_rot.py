@@ -47,7 +47,7 @@ def parse_args():
     parser.add_argument('--log-interval', type=int, default=1000, help='Logging interval in N_IMGS (default: %(default)s)')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
     parser.add_argument('--seed', type=int, default=np.random.randint(0,100000), help='Random seed')
-    parser.add_argument('--invert-data', action='store_true', help='Invert data sign')
+    parser.add_argument('--uninvert-data', dest='invert_data', action='store_false', help='Do not invert data sign')
     parser.add_argument('--window', action='store_true', help='Real space windowing of dataset')
     parser.add_argument('--window-r', type=float, default=.85,  help='Windowing radius (default: %(default)s)')
     parser.add_argument('--ind', type=os.path.abspath, help='Filter indices')

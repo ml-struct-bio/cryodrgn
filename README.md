@@ -553,11 +553,11 @@ These scripts produce a text file of z values that can be input to `cryodrgn eva
 
 An example usage of the graph traversal algorithm is here (https://github.com/zhonge/cryodrgn/issues/16#issuecomment-668897007).
 
-## Fully unsupervised reconstruction
+## CryoDRGN2 -- Coming Soon...
 
-Please reach out to Ellen Zhong (zhonge[at]mit[dot]edu) if you'd like to collaborate on reconstruction of highly heterogeneous datasets where a consensus reconstruction is unavailable.  
+Please reach out to Ellen Zhong (zhonge[at]mit[dot]edu) if you'd like to beta test cryoDRGN2.
 
 ## Contact
 
-More documentation and tutorials to come! Bugs reports, feature requests, or general usage feedback to zhonge[at]mit[dot]edu.
+Please send any bug reports, feature requests, or general usage feedback to zhonge[at]mit[dot]edu, file a github issue, or start a discussion!
 

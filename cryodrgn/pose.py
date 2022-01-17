@@ -8,10 +8,10 @@ from . import utils
 log = utils.log
 
 class PoseTracker(nn.Module):
-    def __init__(self, rots_np, trans_np=None, D=None, emb_type=None):
+    def __init__(self, rots_np, trans_np=None, D=None, emb_type=None, device=None):
         super(PoseTracker, self).__init__()
-        rots = torch.tensor(rots_np).float()
-        trans = torch.tensor(trans_np).float() if trans_np is not None else None
+        rots = torch.tensor(rots_np.astype(np.float32), device=device)
+        trans = torch.tensor(trans_np.astype(np.float32), device=device) if trans_np is not None else None
         self.rots = rots
         self.trans = trans
         self.use_trans = trans_np is not None
@@ -35,7 +35,7 @@ class PoseTracker(nn.Module):
             self.trans_emb = trans_emb if self.use_trans else None
 
     @classmethod
-    def load(cls, infile, Nimg, D, emb_type=None, ind=None):
+    def load(cls, infile, Nimg, D, emb_type=None, ind=None, device=None):
         '''
         Return an instance of PoseTracker
 
@@ -78,7 +78,7 @@ class PoseTracker(nn.Module):
             log('WARNING: No translations provided')
             trans = None
 
-        return cls(rots, trans, D, emb_type)
+        return cls(rots, trans, D, emb_type, device=device)
 
     def save(self, out_pkl):
         if self.emb_type == 'quat':

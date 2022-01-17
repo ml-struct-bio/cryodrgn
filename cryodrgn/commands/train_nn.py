@@ -177,9 +177,7 @@ def main(args):
     use_cuda = torch.cuda.is_available()
     device = torch.device('cuda' if use_cuda else 'cpu')
     flog('Use cuda {}'.format(use_cuda))
-    if use_cuda:
-        torch.set_default_tensor_type(torch.cuda.FloatTensor)
-    else:
+    if not use_cuda:
         flog('WARNING: No GPUs detected')
 
     # load the particles
@@ -196,10 +194,11 @@ def main(args):
 
     # instantiate model
     #if args.pe_type != 'none': assert args.l_extent == 0.5
-    lattice = Lattice(D, extent=args.l_extent)
+    lattice = Lattice(D, extent=args.l_extent, device=device)
 
     activation={"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[args.activation]
     model = models.get_decoder(3, D, args.layers, args.dim, args.domain, args.pe_type, enc_dim=args.pe_dim, activation=activation)
+    model.to(device)
     flog(model)
     flog('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
 
@@ -221,17 +220,17 @@ def main(args):
     # load poses
     if args.do_pose_sgd:
         assert args.domain == 'hartley', "Need to use --domain hartley if doing pose SGD"
-        posetracker = PoseTracker.load(args.poses, Nimg, D, args.emb_type, ind)
+        posetracker = PoseTracker.load(args.poses, Nimg, D, args.emb_type, ind, device=device)
         pose_optimizer = torch.optim.SparseAdam(list(posetracker.parameters()), lr=args.pose_lr)
     else:
-        posetracker = PoseTracker.load(args.poses, Nimg, D, None, ind)
+        posetracker = PoseTracker.load(args.poses, Nimg, D, None, ind, device=device)
 
     # load CTF
     if args.ctf is not None:
         flog('Loading ctf params from {}'.format(args.ctf))
         ctf_params = ctf.load_ctf_for_training(D-1, args.ctf)
         if args.ind is not None: ctf_params = ctf_params[ind]
-        ctf_params = torch.tensor(ctf_params)
+        ctf_params = torch.tensor(ctf_params, device=device)
     else: ctf_params = None
     Apix = ctf_params[0,0] if ctf_params is not None else 1
 
@@ -265,7 +264,6 @@ def main(args):
         batch_it = 0
         for batch, ind in data_generator:
             batch_it += len(ind)
-            y = batch.to(device)
             ind = ind.to(device)
             if args.do_pose_sgd:
                 pose_optimizer.zero_grad()

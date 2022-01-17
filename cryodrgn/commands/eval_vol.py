@@ -70,10 +70,9 @@ def main(args):
 
     ## set the device
     use_cuda = torch.cuda.is_available()
+    device = torch.device('cuda' if use_cuda else 'cpu')
     log('Use cuda {}'.format(use_cuda))
-    if use_cuda:
-        torch.set_default_tensor_type(torch.cuda.FloatTensor)
-    else:
+    if not use_cuda:
         log('WARNING: No GPUs detected')
 
     log(args)
@@ -89,7 +88,7 @@ def main(args):
         assert args.downsample % 2 == 0, "Boxsize must be even"
         assert args.downsample <= D - 1, "Must be smaller than original box size"
     
-    model, lattice = HetOnlyVAE.load(cfg, args.weights)
+    model, lattice = HetOnlyVAE.load(cfg, args.weights, device=device)
     model.eval()
 
     ### Multiple z ###

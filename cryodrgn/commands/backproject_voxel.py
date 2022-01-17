@@ -72,9 +72,7 @@ def main(args):
     use_cuda = torch.cuda.is_available()
     device = torch.device('cuda' if use_cuda else 'cpu')
     log('Use cuda {}'.format(use_cuda))
-    if use_cuda:
-        torch.set_default_tensor_type(torch.cuda.FloatTensor)
-    else:
+    if not use_cuda:
         log('WARNING: No GPUs detected')
 
     # load the particles
@@ -86,24 +84,24 @@ def main(args):
     else:
         if args.relion31: raise NotImplementedError
         data = dataset.TiltMRCData(args.particles, args.tilt, norm=(0,1), invert_data=args.invert_data, datadir=args.datadir, ind=args.ind)
-        tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32))
+        tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32), device=device)
     D = data.D
     Nimg = data.N
 
-    lattice = Lattice(D, extent=D//2)
+    lattice = Lattice(D, extent=D//2, device=device)
 
-    posetracker = PoseTracker.load(args.poses, Nimg, D, None, args.ind)
+    posetracker = PoseTracker.load(args.poses, Nimg, D, None, args.ind, device=device)
 
     if args.ctf is not None:
         log('Loading ctf params from {}'.format(args.ctf))
         ctf_params = ctf.load_ctf_for_training(D-1, args.ctf)
-        ctf_params = torch.tensor(ctf_params)
+        ctf_params = torch.tensor(ctf_params, device=device)
         if args.ind is not None: ctf_params = ctf_params[ind]
     else: ctf_params = None
     Apix = ctf_params[0,0] if ctf_params is not None else 1
 
-    V = torch.zeros((D,D,D))
-    counts = torch.zeros((D,D,D))
+    V = torch.zeros((D,D,D), device=device)
+    counts = torch.zeros((D,D,D), device=device)
     
     mask = lattice.get_circular_mask(D//2)
 
@@ -119,7 +117,7 @@ def main(args):
         ff = data.get(ii)
         if tilt is not None:
             ff, ff_tilt = ff # EW
-        ff = torch.tensor(ff)
+        ff = torch.tensor(ff, device=device)
         ff = ff.view(-1)[mask]
         if ctf_params is not None:
             freqs = lattice.freqs2d/ctf_params[ii,0]
@@ -132,7 +130,7 @@ def main(args):
 
         # tilt series
         if args.tilt is not None:
-            ff_tilt = torch.tensor(ff_tilt)
+            ff_tilt = torch.tensor(ff_tilt, device=device)
             ff_tilt = ff_tilt.view(-1)[mask]
             if ctf_params is not None:
                 ff_tilt *= c.sign()

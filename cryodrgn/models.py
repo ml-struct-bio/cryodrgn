@@ -68,7 +68,7 @@ class HetOnlyVAE(nn.Module):
         '''
         cfg = utils.load_pkl(config) if type(config) is str else config
         c = cfg['lattice_args']
-        lat = lattice.Lattice(c['D'], extent=c['extent'])
+        lat = lattice.Lattice(c['D'], extent=c['extent'], device=device)
         c = cfg['model_args']
         if c['enc_mask'] > 0:
             enc_mask = lat.get_circular_mask(c['enc_mask'])
@@ -181,7 +181,7 @@ class PositionalDecoder(nn.Module):
      
     def positional_encoding_geom(self, coords):
         '''Expand coordinates in the Fourier basis with geometrically spaced wavelengths from 2/D to 2pi'''
-        freqs = torch.arange(self.enc_dim, dtype=torch.float)
+        freqs = torch.arange(self.enc_dim, dtype=torch.float, device=coords.device)
         if self.enc_type == 'geom_ft':
             freqs = self.DD*np.pi*(2./self.DD)**(freqs/(self.enc_dim-1)) # option 1: 2/D to 1 
         elif self.enc_type == 'geom_full':
@@ -208,7 +208,7 @@ class PositionalDecoder(nn.Module):
 
     def positional_encoding_linear(self, coords):
         '''Expand coordinates in the Fourier basis, i.e. cos(k*n/N), sin(k*n/N), n=0,...,N//2'''
-        freqs = torch.arange(1, self.D2+1, dtype=torch.float) 
+        freqs = torch.arange(1, self.D2+1, dtype=torch.float, device=coords.device) 
         freqs = freqs.view(*[1]*len(coords.shape), -1) # 1 x 1 x D2
         coords = coords.unsqueeze(-1) # B x 3 x 1
         k = coords[...,0:3,:] * freqs # B x 3 x D2
@@ -242,13 +242,13 @@ class PositionalDecoder(nn.Module):
         if zval is not None:
             zdim = len(zval)
             z = torch.zeros(D**2, zdim, dtype=torch.float32)
-            z += torch.tensor(zval, dtype=torch.float32)
+            z += torch.tensor(zval, dtype=torch.float32, device=coords.device)
 
         vol_f = np.zeros((D,D,D),dtype=np.float32)
         assert not self.training
         # evaluate the volume by zslice to avoid memory overflows
         for i, dz in enumerate(np.linspace(-extent,extent,D,endpoint=True,dtype=np.float32)):
-            x = coords + torch.tensor([0,0,dz])
+            x = coords + torch.tensor([0,0,dz], device=coords.device)
             if zval is not None:
                 x = torch.cat((x,z), dim=-1)
             with torch.no_grad():
@@ -274,7 +274,7 @@ class FTPositionalDecoder(nn.Module):
     
     def positional_encoding_geom(self, coords):
         '''Expand coordinates in the Fourier basis with geometrically spaced wavelengths from 2/D to 2pi'''
-        freqs = torch.arange(self.enc_dim, dtype=torch.float)
+        freqs = torch.arange(self.enc_dim, dtype=torch.float, device=coords.device)
         if self.enc_type == 'geom_ft':
             freqs = self.DD*np.pi*(2./self.DD)**(freqs/(self.enc_dim-1)) # option 1: 2/D to 1 
         elif self.enc_type == 'geom_full':
@@ -301,7 +301,7 @@ class FTPositionalDecoder(nn.Module):
 
     def positional_encoding_linear(self, coords):
         '''Expand coordinates in the Fourier basis, i.e. cos(k*n/N), sin(k*n/N), n=0,...,N//2'''
-        freqs = torch.arange(1, self.D2+1, dtype=torch.float) 
+        freqs = torch.arange(1, self.D2+1, dtype=torch.float, device=coords.device) 
         freqs = freqs.view(*[1]*len(coords.shape), -1) # 1 x 1 x D2
         coords = coords.unsqueeze(-1) # B x 3 x 1
         k = coords[...,0:3,:] * freqs # B x 3 x D2
@@ -326,7 +326,7 @@ class FTPositionalDecoder(nn.Module):
         c = lattice.shape[-2]//2 # top half
         cc = c + 1 if lattice.shape[-2] % 2 == 1 else c # include the origin
         assert abs(lattice[...,0:3].mean()) < 1e-4, '{} != 0.0'.format(lattice[...,0:3].mean())
-        image = torch.empty(lattice.shape[:-1]) 
+        image = torch.empty(lattice.shape[:-1], device=lattice.device) 
         top_half = self.decode(lattice[...,0:cc,:])
         image[..., 0:cc] = top_half[...,0] - top_half[...,1]
         # the bottom half of the image is the complex conjugate of the top half
@@ -357,13 +357,13 @@ class FTPositionalDecoder(nn.Module):
         assert extent <= 0.5
         if zval is not None:
             zdim = len(zval)
-            z = torch.tensor(zval, dtype=torch.float32)
+            z = torch.tensor(zval, dtype=torch.float32, device=coords.device)
 
         vol_f = np.zeros((D,D,D),dtype=np.float32)
         assert not self.training
         # evaluate the volume by zslice to avoid memory overflows
         for i, dz in enumerate(np.linspace(-extent,extent,D,endpoint=True,dtype=np.float32)):
-            x = coords + torch.tensor([0,0,dz])
+            x = coords + torch.tensor([0,0,dz], device=coords.device)
             keep = x.pow(2).sum(dim=1) <= extent**2
             x = x[keep]
             if zval is not None:
@@ -428,7 +428,7 @@ class FTSliceDecoder(nn.Module):
         c = lattice.shape[-2]//2 # center pixel
         assert lattice[...,c,0:3].sum() == 0.0, '{} != 0.0'.format(lattice[...,c,0:3].sum())
         assert abs(lattice[...,0:3].mean()) < 1e-4, '{} != 0.0'.format(lattice[...,0:3].mean())
-        image = torch.empty(lattice.shape[:-1]) 
+        image = torch.empty(lattice.shape[:-1], device=lattice.device) 
         top_half = self.decode(lattice[...,0:c+1,:])
         image[..., 0:c+1] = top_half[...,0] - top_half[...,1]
         # the bottom half of the image is the complex conjugate of the top half
@@ -437,7 +437,7 @@ class FTSliceDecoder(nn.Module):
 
     def forward_even(self, lattice):
         '''Extra bookkeeping with extra row/column for an even sized DFT'''
-        image = torch.empty(lattice.shape[:-1])
+        image = torch.empty(lattice.shape[:-1], device=lattice.device)
         top_half = self.decode(lattice[...,self.all_eval,:])
         image[..., self.all_eval] = top_half[...,0] - top_half[...,1]
         # the bottom half of the image is the complex conjugate of the top half
@@ -467,13 +467,13 @@ class FTSliceDecoder(nn.Module):
         if zval is not None:
             zdim = len(zval)
             z = torch.zeros(D**2, zdim, dtype=torch.float32)
-            z += torch.tensor(zval, dtype=torch.float32)
+            z += torch.tensor(zval, dtype=torch.float32, device=coords.device)
 
         vol_f = np.zeros((D,D,D),dtype=np.float32)
         assert not self.training
         # evaluate the volume by zslice to avoid memory overflows
         for i, dz in enumerate(np.linspace(-extent,extent,D,endpoint=True,dtype=np.float32)):
-            x = coords + torch.tensor([0,0,dz])
+            x = coords + torch.tensor([0,0,dz], device=coords.device)
             if zval is not None:
                 x = torch.cat((x,z), dim=-1)
             with torch.no_grad():

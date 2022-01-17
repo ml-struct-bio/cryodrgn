@@ -186,9 +186,9 @@ def main(args):
         ind = pickle.load(open(args.ind,'rb'))
     else: ind = None
     if args.lazy:
-        data = dataset.LazyMRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, window=args.window, datadir=args.datadir, relion31=args.relion31, window_r=args.window_r)
+        data = dataset.LazyMRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, window=args.window, datadir=args.datadir, relion31=args.relion31, window_r=args.window_r, flog=flog)
     else:
-        data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, window=args.window, datadir=args.datadir, relion31=args.relion31, window_r=args.window_r)
+        data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, window=args.window, datadir=args.datadir, relion31=args.relion31, window_r=args.window_r, flog=flog)
     D = data.D
     Nimg = data.N
 

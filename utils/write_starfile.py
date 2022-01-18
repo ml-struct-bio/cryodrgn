@@ -36,7 +36,7 @@ MICROGRAPH_HDRS = ['_rlnMicrographName',
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('particles', help='Input particles (.mrcs, .txt, .star, .cs)')
+    parser.add_argument('particles', help='Input particles (.mrcs, .txt)')
     parser.add_argument('ctf', help='Input ctf.pkl')
     parser.add_argument('--poses', help='Optionally include pose.pkl') 
     parser.add_argument('--ind', help='Optionally filter by selected index array (.pkl)')
@@ -50,8 +50,20 @@ def parse_args():
     group.add_argument('--keep-micrograph', action='store_true', help='Include micrograph coordinate headers')
     return parser
 
+def parse_chunk_size(txtfile):
+    lines = open(txtfile,'r').readlines()
+    def abspath(f):
+        if os.path.isabs(f):
+            return f
+        base = os.path.dirname(os.path.abspath(txtfile))
+        return os.path.join(base,f)
+    lines = [abspath(x).strip() for x in lines]
+    return [mrc.parse_header(f).fields['nz'] for f in lines]
+
 def main(args):
-    assert args.o.endswith('.star')
+    assert args.o.endswith('.star'), "Output file must be .star file"
+    assert args.particles.endswith('.mrcs') or args.particles.endswith('.txt'), "Input file must be .mrcs or .txt"
+
     particles = dataset.load_particles(args.particles, lazy=True, datadir=args.datadir)
     ctf = utils.load_pkl(args.ctf)
     assert ctf.shape[1] == 9, "Incorrect CTF pkl format"
@@ -65,6 +77,14 @@ def main(args):
         ref_star = starfile.Starfile.load(args.ref_star, relion31=args.ref_star_relion31)
         assert len(ref_star) == len(particles), f"Particles in {args.particles} must match {args.ref_star}"
 
+    # Explicit index of particles in .mrcs file
+    if args.particles.endswith('.txt'):
+        N_per_chunk = parse_chunk_size(args.particles)
+        particle_ind = np.concatenate([np.arange(nn) for nn in N_per_chunk])
+        assert len(particle_ind) == len(particles)
+    else: # single .mrcs file
+        particle_ind = np.arange(len(particles))
+
     if args.ind:
         ind = utils.load_pkl(args.ind)
         log(f'Filtering to {len(ind)} particles')
@@ -73,15 +93,16 @@ def main(args):
         if args.poses: 
             poses = (poses[0][ind], poses[1][ind])
         if args.ref_star:
-            ref_star.df = ref_star.df.loc[ind] # note this does not reset the indexing 
-    else:
-        ind = np.arange(len(particles))
+            ref_star.df = ref_star.df.loc[ind] 
+            # reset the index to avoid any downstream indexing issues
+            ref_star.df.reset_index(inplace=True)
+        particle_ind = particle_ind[ind]
 
-    ind += 1 # CHANGE TO 1-BASED INDEXING
+    particle_ind += 1 # CHANGE TO 1-BASED INDEXING
     image_names = [img.fname for img in particles]
     if args.full_path:
         image_names = [os.path.abspath(img.fname) for img in particles]
-    names = [f'{i}@{name}' for i,name in zip(ind, image_names)]
+    names = [f'{i}@{name}' for i,name in zip(particle_ind, image_names)]
 
     ctf = ctf[:,2:]
 
@@ -91,6 +112,7 @@ def main(args):
         D = particles[0].get().shape[0]
         trans = poses[1] * D # convert from fraction to pixels
 
+    # Create a new dataframe with required star file headers
     data = {HEADERS[0]:names}
     for i in range(7):
         data[HEADERS[i+1]] = ctf[:,i]

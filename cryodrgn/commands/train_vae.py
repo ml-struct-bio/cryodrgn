@@ -51,9 +51,8 @@ def add_args(parser):
     group.add_argument('--window-r', type=float, default=.85,  help='Windowing radius (default: %(default)s)')
     group.add_argument('--datadir', type=os.path.abspath, help='Path prefix to particle stack if loading relative paths from a .star or .cs file')
     group.add_argument('--relion31', action='store_true', help='Flag if relion3.1 star format')
-    group.add_argument('--lazy-single', action='store_true', help='Lazy loading if full dataset is too large to fit in memory')
-    group.add_argument('--lazy', action='store_true', help='Memory efficient training by loading data in chunks')
-    group.add_argument('--preprocessed', action='store_true', help='Skip preprocessing steps if input data is from cryodrgn preprocess_mrcs') 
+    group.add_argument('--lazy', action='store_true', help='Lazy loading if full dataset is too large to fit in memory (Should copy dataset to SSD)')
+    group.add_argument('--preprocessed', action='store_true', help='Skip preprocessing steps if input data is from cryodrgn preprocess_mrcs')
     group.add_argument('--max-threads', type=int, default=16, help='Maximum number of CPU cores for FFT parallelization (default: %(default)s)')
 
     group = parser.add_argument_group('Tilt series')
@@ -68,7 +67,7 @@ def add_args(parser):
     group.add_argument('--beta', default=None, help='Choice of beta schedule or a constant for KLD weight (default: 1/zdim)')
     group.add_argument('--beta-control', type=float, help='KL-Controlled VAE gamma. Beta is KL target. (default: %(default)s)')
     group.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: 0, std of dataset)')
-    group.add_argument('--amp', action='store_true', help='Use mixed-precision training')
+    group.add_argument('--amp', action='store_true', help='Accelerate training speed with mixed-precision training')
     group.add_argument('--multigpu', action='store_true', help='Parallelize training across all detected GPUs')
 
     group = parser.add_argument_group('Pose SGD')
@@ -94,19 +93,31 @@ def add_args(parser):
     group.add_argument('--activation', choices=('relu','leaky_relu'), default='relu', help='Activation (default: %(default)s)')
     return parser
 
-def train_batch(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, tilt=None, ctf_params=None, yr=None, use_amp=False):
+def train_batch(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, tilt=None, ctf_params=None, yr=None, use_amp=False, scaler=None):
     optim.zero_grad()
     model.train()
     if trans is not None:
         y, yt = preprocess_input(y, yt, lattice, trans)
-    z_mu, z_logvar, z, y_recon, y_recon_tilt, mask = run_batch(model, lattice, y, yt, rot, tilt, ctf_params, yr)
-    loss, gen_loss, kld = loss_function(z_mu, z_logvar, y, yt, y_recon, mask, beta, y_recon_tilt, beta_control)
+    # Cast operations to mixed precision if using torch.cuda.amp.GradScaler()
+    if scaler is not None:
+        with torch.cuda.amp.autocast():
+            z_mu, z_logvar, z, y_recon, y_recon_tilt, mask = run_batch(model, lattice, y, yt, rot, tilt, ctf_params, yr)
+            loss, gen_loss, kld = loss_function(z_mu, z_logvar, y, yt, y_recon, mask, beta, y_recon_tilt, beta_control)
+    else:
+        z_mu, z_logvar, z, y_recon, y_recon_tilt, mask = run_batch(model, lattice, y, yt, rot, tilt, ctf_params, yr)
+        loss, gen_loss, kld = loss_function(z_mu, z_logvar, y, yt, y_recon, mask, beta, y_recon_tilt, beta_control)
     if use_amp:
-        with amp.scale_loss(loss, optim) as scaled_loss:
-            scaled_loss.backward()
+        if scaler is not None: # torch mixed precision
+            scaler.scale(loss).backward()
+            scaler.step(optim)
+            scaler.update()
+        else: # apex.amp mixed precision
+            with amp.scale_loss(loss, optim) as scaled_loss:
+                scaled_loss.backward()
+            optim.step()
     else:
         loss.backward()
-    optim.step()
+        optim.step()
     return loss.item(), gen_loss.item(), kld.item()
 
 def preprocess_input(y, yt, lattice, trans):
@@ -253,18 +264,18 @@ def save_config(args, dataset, lattice, model, out_config):
                     version=cryodrgn.__version__)
         pickle.dump(meta, f)
 
-def get_latest(args):
+def get_latest(args, flog):
     # assumes args.num_epochs > latest checkpoint
-    log('Detecting latest checkpoint...') 
+    flog('Detecting latest checkpoint...') 
     weights = [f'{args.outdir}/weights.{i}.pkl' for i in range(args.num_epochs)]
     weights = [f for f in weights if os.path.exists(f)]
     args.load = weights[-1]
-    log(f'Loading {args.load}')
+    flog(f'Loading {args.load}')
     if args.do_pose_sgd:
         i = args.load.split('.')[-2]
         args.poses = f'{args.outdir}/pose.{i}.pkl'
         assert os.path.exists(args.poses)
-        log(f'Loading {args.poses}')
+        flog(f'Loading {args.poses}')
     return args
 
 def main(args):
@@ -275,7 +286,7 @@ def main(args):
     def flog(msg): # HACK: switch to logging module
         return utils.flog(msg, LOG)
     if args.load == 'latest':
-        args = get_latest(args)
+        args = get_latest(args, flog)
     flog(' '.join(sys.argv))
     flog(args)
 
@@ -287,9 +298,7 @@ def main(args):
     use_cuda = torch.cuda.is_available()
     device = torch.device('cuda' if use_cuda else 'cpu')
     flog('Use cuda {}'.format(use_cuda))
-    if use_cuda:
-        torch.set_default_tensor_type(torch.cuda.FloatTensor)
-    else:
+    if not use_cuda:
         log('WARNING: No GPUs detected')
 
     # set beta schedule
@@ -312,29 +321,23 @@ def main(args):
     if args.tilt is None:
         tilt = None
         args.use_real = args.encode_mode == 'conv'
-    
+
         if args.lazy:
-            assert args.preprocessed, "Dataset must be preprocesed with `cryodrgn preprocess_mrcs` in order to use --lazy data loading"
-            assert not args.ind, "For --lazy data loading, dataset must be filtered by `cryodrgn preprocess_mrcs`"
-            #data = dataset.PreprocessedMRCData(args.particles, norm=args.norm)
-            raise NotImplementedError("Use --lazy-single for on-the-fly image loading")
-        elif args.lazy_single:
-            data = dataset.LazyMRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, keepreal=args.use_real, window=args.window, datadir=args.datadir, relion31=args.relion31, window_r=args.window_r)
+            data = dataset.LazyMRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, keepreal=args.use_real, window=args.window, datadir=args.datadir, relion31=args.relion31, window_r=args.window_r, flog=flog)
         elif args.preprocessed:
             flog(f'Using preprocessed inputs. Ignoring any --window/--invert-data options')
-            data = dataset.PreprocessedMRCData(args.particles, norm=args.norm, ind=ind)
+            data = dataset.PreprocessedMRCData(args.particles, norm=args.norm, ind=ind, flog=flog)
         else:
-            data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, keepreal=args.use_real, window=args.window, datadir=args.datadir, relion31=args.relion31, max_threads=args.max_threads, window_r=args.window_r)
+            data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, keepreal=args.use_real, window=args.window, datadir=args.datadir, relion31=args.relion31, max_threads=args.max_threads, window_r=args.window_r, flog=flog)
 
     # Tilt series data -- lots of unsupported features
     else:
         assert args.encode_mode == 'tilt'
-        if args.lazy_single: raise NotImplementedError
         if args.lazy: raise NotImplementedError
         if args.preprocessed: raise NotImplementedError
         if args.relion31: raise NotImplementedError
-        data = dataset.TiltMRCData(args.particles, args.tilt, norm=args.norm, invert_data=args.invert_data, ind=ind, window=args.window, keepreal=args.use_real, datadir=args.datadir, window_r=args.window_r)
-        tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32))
+        data = dataset.TiltMRCData(args.particles, args.tilt, norm=args.norm, invert_data=args.invert_data, ind=ind, window=args.window, keepreal=args.use_real, datadir=args.datadir, window_r=args.window_r, flog=flog)
+        tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32), device=device)
     Nimg = data.N
     D = data.D
 
@@ -344,7 +347,7 @@ def main(args):
     # load poses
     if args.do_pose_sgd: assert args.domain == 'hartley', "Need to use --domain hartley if doing pose SGD"
     do_pose_sgd = args.do_pose_sgd
-    posetracker = PoseTracker.load(args.poses, Nimg, D, 's2s2' if do_pose_sgd else None, ind)
+    posetracker = PoseTracker.load(args.poses, Nimg, D, 's2s2' if do_pose_sgd else None, ind, device=device)
     pose_optimizer = torch.optim.SparseAdam(list(posetracker.parameters()), lr=args.pose_lr) if do_pose_sgd else None
 
     # load ctf
@@ -355,11 +358,11 @@ def main(args):
         ctf_params = ctf.load_ctf_for_training(D-1, args.ctf)
         if args.ind is not None: ctf_params = ctf_params[ind]
         assert ctf_params.shape == (Nimg, 8)
-        ctf_params = torch.tensor(ctf_params)
+        ctf_params = torch.tensor(ctf_params, device=device)
     else: ctf_params = None
 
     # instantiate model
-    lattice = Lattice(D, extent=0.5)
+    lattice = Lattice(D, extent=0.5, device=device)
     if args.enc_mask is None:
         args.enc_mask = D//2
     if args.enc_mask > 0:
@@ -376,10 +379,11 @@ def main(args):
                 in_dim, args.zdim, encode_mode=args.encode_mode, enc_mask=enc_mask,
                 enc_type=args.pe_type, enc_dim=args.pe_dim, domain=args.domain,
                 activation=activation, feat_sigma=args.feat_sigma)
+    model.to(device)
     flog(model)
     flog('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
     flog('{} parameters in encoder'.format(sum(p.numel() for p in model.encoder.parameters() if p.requires_grad)))
-    flog('{} parameters in decoder'.format(sum(p.numel() for p in model.decoder.parameters() if p.requires_grad)))
+    flog('{} parameters in deoder'.format(sum(p.numel() for p in model.decoder.parameters() if p.requires_grad)))
 
     # save configuration
     out_config = '{}/config.pkl'.format(args.outdir)
@@ -387,7 +391,8 @@ def main(args):
     
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
-    # Mixed precision training with AMP
+    # Mixed precision training
+    scaler = None
     if args.amp:
         assert args.batch_size % 8 == 0, "Batch size must be divisible by 8 for AMP training"
         assert (D-1) % 8 == 0, "Image size must be divisible by 8 for AMP training"
@@ -398,7 +403,10 @@ def main(args):
             log('Warning: z dimension is not a multiple of 8 -- AMP training speedup is not optimized')
         if in_dim % 8 != 0:
             log('Warning: Masked input image dimension is not a mutiple of 8 -- AMP training speedup is not optimized')
-        model, optim = amp.initialize(model, optim, opt_level='O1')
+        try: # Mixed precision with apex.amp
+            model, optim = amp.initialize(model, optim, opt_level='O1')
+        except: # Mixed precision with pytorch (v1.6+)
+            scaler = torch.cuda.amp.GradScaler()
 
     # restart from checkpoint
     if args.load:
@@ -445,7 +453,7 @@ def main(args):
                 pose_optimizer.zero_grad()
             rot, tran = posetracker.get_pose(ind)
             ctf_param = ctf_params[ind] if ctf_params is not None else None
-            loss, gen_loss, kld = train_batch(model, lattice, y, yt, rot, tran, optim, beta, args.beta_control, tilt, ctf_params=ctf_param, yr=yr, use_amp=args.amp)
+            loss, gen_loss, kld = train_batch(model, lattice, y, yt, rot, tran, optim, beta, args.beta_control, tilt, ctf_params=ctf_param, yr=yr, use_amp=args.amp, scaler=scaler)
             if do_pose_sgd and epoch >= args.pretrain:
                 pose_optimizer.step()
 
@@ -481,7 +489,7 @@ def main(args):
         out_pose = '{}/pose.pkl'.format(args.outdir)
         posetracker.save(out_pose)
     td = dt.now()-t1
-    flog('Finsihed in {} ({} per epoch)'.format(td, td/(num_epochs-start_epoch)))
+    flog('Finished in {} ({} per epoch)'.format(td, td/(num_epochs-start_epoch)))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)

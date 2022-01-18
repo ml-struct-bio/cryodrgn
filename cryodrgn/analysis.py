@@ -1,4 +1,5 @@
 import os
+import re
 import numpy as np
 import pickle
 import matplotlib.pyplot as plt
@@ -19,12 +20,10 @@ def parse_loss(f):
     '''Parse loss from run.log'''
     lines = open(f).readlines()
     lines = [x for x in lines if '====' in x]
-    try:
-        loss = [x.strip().split()[-1] for x in lines]
-        loss = np.asarray(loss).astype(np.float32)
-    except:
-        loss = [x.split()[-4][:-1] for x in lines]
-        loss = np.asarray(loss).astype(np.float32)
+    regex = "total\sloss\s=\s(\d.\d+)"
+    loss = [re.search(regex, x).group(1) for x in lines]
+    loss = np.asarray(loss).astype(np.float32)
+
     return loss
 
 ### Dimensionality reduction ###
@@ -390,14 +389,14 @@ def plot_projections(imgs, labels=None):
     fig, axes = plt.subplots(nrows=3, ncols=3, figsize=(10,10))
     axes = axes.ravel()
     for i in range(min(len(imgs),9)):
-        axes[i].imshow(imgs[i], cmap='Greys_r') 
+        axes[i].imshow(imgs[i], cmap='Greys_r')
         axes[i].axis('off')
         if labels is not None:
             axes[i].set_title(labels[i])
     return fig, axes
 
-def gen_volumes(weights, config, zfile, outdir, cuda=None, 
-                Apix=None, flip=False, downsample=None):
+def gen_volumes(weights, config, zfile, outdir, cuda=None,
+                Apix=None, flip=False, downsample=None, invert=None):
     '''Call cryodrgn eval_vol to generate volumes at specified z values
     Input:
         weights (str): Path to model weights .pkl
@@ -408,6 +407,7 @@ def gen_volumes(weights, config, zfile, outdir, cuda=None,
         Apix (float or None): Apix of output volume
         flip (bool): Flag to flip chirality of output volumes
         downsample (int or None): Generate volumes at this box size
+        invert (bool): Invert contrast of output volumes
     '''
     cmd = f'cryodrgn eval_vol {weights} --config {config} --zfile {zfile} -o {outdir}'
     if Apix is not None:
@@ -416,11 +416,13 @@ def gen_volumes(weights, config, zfile, outdir, cuda=None,
         cmd += f' --flip'
     if downsample is not None:
         cmd += f' -d {downsample}'
+    if invert:
+        cmd += f' --invert'
     if cuda is not None:
         cmd = f'CUDA_VISIBLE_DEVICES={cuda} {cmd}'
     log(f'Running command:\n{cmd}')
     return subprocess.check_call(cmd, shell=True)
-    
+
 def load_dataframe(z=None, pc=None, euler=None, trans=None, labels=None, tsne=None, umap=None, **kwargs):
     '''Load results into a pandas dataframe for downstream analysis'''
     data = {}

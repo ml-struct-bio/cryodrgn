@@ -93,9 +93,7 @@ def main(args):
     use_cuda = torch.cuda.is_available()
     device = torch.device('cuda' if use_cuda else 'cpu')
     log('Use cuda {}'.format(use_cuda))
-    if use_cuda:
-        torch.set_default_tensor_type(torch.cuda.FloatTensor)
-    else:
+    if not use_cuda:
         log('WARNING: No GPUs detected')
 
     log(args)
@@ -133,7 +131,7 @@ def main(args):
         assert D-1 == 64, "Image size must be 64x64 for convolutional encoder"
 
     # load poses
-    posetracker = PoseTracker.load(args.poses, Nimg, D, None, ind)
+    posetracker = PoseTracker.load(args.poses, Nimg, D, None, ind, device=device)
 
     # load ctf
     if args.ctf is not None:
@@ -142,11 +140,11 @@ def main(args):
         log('Loading ctf params from {}'.format(args.ctf))
         ctf_params = ctf.load_ctf_for_training(D-1, args.ctf)
         if args.ind is not None: ctf_params = ctf_params[ind]
-        ctf_params = torch.tensor(ctf_params)
+        ctf_params = torch.tensor(ctf_params, device=device)
     else: ctf_params = None
 
     # instantiate model
-    model, lattice = HetOnlyVAE.load(cfg, args.weights)
+    model, lattice = HetOnlyVAE.load(cfg, args.weights, device=device)
     model.eval()
     z_mu_all = []
     z_logvar_all = []
@@ -193,7 +191,7 @@ def main(args):
             'recon':gen_loss_accum/Nimg, 
             'kld':kld_accum/Nimg}, f)
 
-    log('Finsihed in {}'.format(dt.now()-t1))
+    log('Finished in {}'.format(dt.now()-t1))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)

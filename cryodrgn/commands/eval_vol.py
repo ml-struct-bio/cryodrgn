@@ -39,6 +39,7 @@ def add_args(parser):
     group = parser.add_argument_group('Volume arguments')
     group.add_argument('--Apix', type=float, default=1, help='Pixel size to add to .mrc header (default: %(default)s A/pix)')
     group.add_argument('--flip', action='store_true', help='Flip handedness of output volume')
+    group.add_argument('--invert', action='store_true', help='Invert contrast of output volume')
     group.add_argument('-d','--downsample', type=int, help='Downsample volumes to this box size (pixels)')
 
     group = parser.add_argument_group('Overwrite architecture hyperparameters in config.pkl')
@@ -70,10 +71,9 @@ def main(args):
 
     ## set the device
     use_cuda = torch.cuda.is_available()
+    device = torch.device('cuda' if use_cuda else 'cpu')
     log('Use cuda {}'.format(use_cuda))
-    if use_cuda:
-        torch.set_default_tensor_type(torch.cuda.FloatTensor)
-    else:
+    if not use_cuda:
         log('WARNING: No GPUs detected')
 
     log(args)
@@ -89,7 +89,7 @@ def main(args):
         assert args.downsample % 2 == 0, "Boxsize must be even"
         assert args.downsample <= D - 1, "Must be smaller than original box size"
     
-    model, lattice = HetOnlyVAE.load(cfg, args.weights)
+    model, lattice = HetOnlyVAE.load(cfg, args.weights, device=device)
     model.eval()
 
     ### Multiple z ###
@@ -113,31 +113,35 @@ def main(args):
             log(zz)
             if args.downsample:
                 extent = lattice.extent * (args.downsample/(D-1))
-                vol = model.decoder.eval_volume(lattice.get_downsample_coords(args.downsample+1), 
-                                                args.downsample+1, extent, norm, zz) 
+                vol = model.decoder.eval_volume(lattice.get_downsample_coords(args.downsample+1),
+                                                args.downsample+1, extent, norm, zz)
             else:
-                vol = model.decoder.eval_volume(lattice.coords, lattice.D, lattice.extent, norm, zz) 
+                vol = model.decoder.eval_volume(lattice.coords, lattice.D, lattice.extent, norm, zz)
             out_mrc = '{}/{}{:03d}.mrc'.format(args.o, args.prefix, i)
             if args.flip:
                 vol = vol[::-1]
+            if args.invert:
+                vol *= -1
             mrc.write(out_mrc, vol.astype(np.float32), Apix=args.Apix)
-    
+
     ### Single z ###
     else:
         z = np.array(args.z)
         log(z)
         if args.downsample:
             extent = lattice.extent * (args.downsample/(D-1))
-            vol = model.decoder.eval_volume(lattice.get_downsample_coords(args.downsample+1), 
-                                            args.downsample+1, extent, norm, z) 
+            vol = model.decoder.eval_volume(lattice.get_downsample_coords(args.downsample+1),
+                                            args.downsample+1, extent, norm, z)
         else:
-            vol = model.decoder.eval_volume(lattice.coords, lattice.D, lattice.extent, norm, z) 
+            vol = model.decoder.eval_volume(lattice.coords, lattice.D, lattice.extent, norm, z)
         if args.flip:
             vol = vol[::-1]
+        if args.invert:
+            vol *= -1
         mrc.write(args.o, vol.astype(np.float32), Apix=args.Apix)
 
     td = dt.now()-t1
-    log('Finsihed in {}'.format(td))
+    log('Finished in {}'.format(td))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)

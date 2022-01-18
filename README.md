@@ -12,12 +12,35 @@ Reconstructing continuous distributions of 3D protein structure from cryo-EM ima
 Ellen D. Zhong, Tristan Bepler, Joseph H. Davis*, Bonnie Berger*.
 ICLR 2020, Spotlight presentation, https://arxiv.org/abs/1909.05215
 
-## New in v0.3.2
+## Tutorial:
+
+An in-depth overview and walkthrough of cryoDRGN installation, training, and analysis is available here:
+https://www.notion.so/cryoDRGN-tutorial-b932c021cb2c415282f182048bac16ff
+
+A quick start is provided below.
+
+## New in v0.3.3/4
+
+### v0.3.4
+
+* FIX: Bug in `write_starfile.py` when provided particle stack is chunked (.txt file)
+* Support micrograph coordinates and additional column headers to `write_starfile.py`
+* New helper scripts: `analyze_convergence.py` (_in beta testing_) contributed by <a href="bmp@mit.edu">Barrett Powell</a> (thanks!) and `make_train_test.py` for splitting up particle stacks for training 
+
+### v0.3.3
+
+* Faster image preprocessing and smaller memory footprint
+* New: `cryodrgn preprocess` for large datasets (_in beta testing_ - see <a href="https://www.notion.so/cryodrgn-preprocess-d84a9d9df8634a6a8bfd32d6b5e737ef">this Notion doc</a> for details)
+* Known <a href="https://github.com/zhonge/cryodrgn/issues/66">issue</a> with PyTorch version 1.9+
+
+### Previous versions
+
+<details><summary>Version 0.3.2</summary>
 * New: cryoDRGN_filtering.ipynb for interactive filtering/selection of images from the dataset
 * New: `cryodrgn view_config`
 * Minor performance improvements and compatibility fixes
 
-### Previous versions
+</details>
 
 <details><summary>Version 0.3.1</summary>
 	
@@ -64,12 +87,6 @@ ICLR 2020, Spotlight presentation, https://arxiv.org/abs/1909.05215
 
 </details>
 
-
-## Tutorial:
-
-A step-by-step walkthrough of cryoDRGN installation and processing is now available here:
-https://www.notion.so/cryoDRGN-tutorial-b932c021cb2c415282f182048bac16ff
-
 ## Installation/dependencies:
 
 To install cryoDRGN, git clone the source code and install the following dependencies with anaconda, replacing the cudatoolkit version as necessary:
@@ -79,7 +96,7 @@ To install cryoDRGN, git clone the source code and install the following depende
     conda activate cryodrgn
 
     # Install dependencies
-    conda install 'pytorch<1.9.0' cudatoolkit=10.1 -c pytorch # PyTorch 1.9 is not working for now. Replace cudatoolkit version if needed
+    conda install 'pytorch<1.9.0' -c pytorch # PyTorch 1.9+ is not working for now.
     conda install pandas
     
     # Install dependencies for latent space visualization 
@@ -93,7 +110,7 @@ To install cryoDRGN, git clone the source code and install the following depende
     # Clone source code and install
     git clone https://github.com/zhonge/cryodrgn.git
     cd cryodrgn
-    git checkout 0.3.2b # or latest version
+    git checkout 0.3.3b # or latest version
     python setup.py install
 
 To use accelerated mixed precision training (available for Nvidia Volta, Turing, and Ampere architectures), install Nvidia's apex package into the conda environement (https://github.com/NVIDIA/apex#quick-start).
@@ -319,7 +336,7 @@ Additional parameters which are typically set include:
 Example command to train a cryoDRGN model for 50 epochs on an image dataset `projections.128.mrcs` with poses `pose.pkl` and ctf parameters `ctf.pkl`:
 
     # 8-D latent variable model, default architecture
-    $ cryodrgn train_vae projections.128.mrcs 
+    $ cryodrgn train_vae projections.128.mrcs \
             --poses pose.pkl \
             --ctf ctf.pkl \
             --zdim 8 -n 50 \
@@ -330,7 +347,7 @@ Example command to train a cryoDRGN model for 50 epochs on an image dataset `pro
 Example command to train a larger cryoDRGN model for 25 epochs on an image dataset `projections.128.mrcs` with poses `pose.pkl` and ctf parameters `ctf.pkl`:
 
     # 8-D latent variable model, large architecture
-    $ cryodrgn train_vae projections.128.mrcs 
+    $ cryodrgn train_vae projections.128.mrcs \
             --poses pose.pkl \
             --ctf ctf.pkl \
             --zdim 8 -n 25 \
@@ -342,7 +359,7 @@ Example command to train a larger cryoDRGN model for 25 epochs on an image datas
 Example command to train a larger cryoDRGN model for 25 epochs on an image dataset `projections.256.mrcs` with poses `pose.pkl` and ctf parameters `ctf.pkl`:
 
     # 8-D latent variable model, larger images, large architecture
-    $ cryodrgn train_vae projections.256.mrcs 
+    $ cryodrgn train_vae projections.256.mrcs \
             --poses pose.pkl \
             --ctf ctf.pkl \
             --zdim 8 -n 25 \
@@ -353,12 +370,12 @@ The number of epochs `-n` refers to the number of full passes through the datase
 
 If you would like to train longer, a training job can be extended with the `--load` argument. For example to extend the training of the previous example to 50 epochs:
 
-    $ cryodrgn train_vae projections.256.mrcs
+    $ cryodrgn train_vae projections.256.mrcs \
             --poses pose.pkl \
             --ctf ctf.pkl \
             --zdim 8 -n 50 \
             --enc-dim 1024 --enc-layers 3 --dec-dim 1024 --dec-layers 3 \
-            -o 01_vae256_z8
+            -o 01_vae256_z8 \
             --load 01_vae_256_z8/weights.24.pkl # 0-based indexing
 
 Note: While these settings worked well for the datasets we've tested, they are highly experimental for the general case as different datasets have diverse sources of heterogeneity. Please reach out to the authors with questions/consult -- we'd love to learn more.
@@ -536,11 +553,11 @@ These scripts produce a text file of z values that can be input to `cryodrgn eva
 
 An example usage of the graph traversal algorithm is here (https://github.com/zhonge/cryodrgn/issues/16#issuecomment-668897007).
 
-## Fully unsupervised reconstruction
+## CryoDRGN2 -- Coming Soon...
 
-Please reach out to Ellen Zhong (zhonge[at]mit[dot]edu) if you'd like to collaborate on reconstruction of highly heterogeneous datasets where a consensus reconstruction is unavailable.  
+Please reach out to Ellen Zhong (zhonge[at]mit[dot]edu) if you'd like to beta test cryoDRGN2.
 
 ## Contact
 
-More documentation and tutorials to come! Bugs reports, feature requests, or general usage feedback to zhonge[at]mit[dot]edu.
+Please send any bug reports, feature requests, or general usage feedback to zhonge[at]mit[dot]edu, file a github issue, or start a discussion!
 

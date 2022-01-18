@@ -67,7 +67,7 @@ def add_args(parser):
     group.add_argument('--beta', default=None, help='Choice of beta schedule or a constant for KLD weight (default: 1/zdim)')
     group.add_argument('--beta-control', type=float, help='KL-Controlled VAE gamma. Beta is KL target. (default: %(default)s)')
     group.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: 0, std of dataset)')
-    group.add_argument('--amp', action='store_true', help='Use mixed-precision training')
+    group.add_argument('--amp', action='store_true', help='Accelerate training speed with mixed-precision training')
     group.add_argument('--multigpu', action='store_true', help='Parallelize training across all detected GPUs')
 
     group = parser.add_argument_group('Pose SGD')
@@ -92,19 +92,31 @@ def add_args(parser):
     group.add_argument('--activation', choices=('relu','leaky_relu'), default='relu', help='Activation (default: %(default)s)')
     return parser
 
-def train_batch(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, tilt=None, ctf_params=None, yr=None, use_amp=False):
+def train_batch(model, lattice, y, yt, rot, trans, optim, beta, beta_control=None, tilt=None, ctf_params=None, yr=None, use_amp=False, scaler=None):
     optim.zero_grad()
     model.train()
     if trans is not None:
         y, yt = preprocess_input(y, yt, lattice, trans)
-    z_mu, z_logvar, z, y_recon, y_recon_tilt, mask = run_batch(model, lattice, y, yt, rot, tilt, ctf_params, yr)
-    loss, gen_loss, kld = loss_function(z_mu, z_logvar, y, yt, y_recon, mask, beta, y_recon_tilt, beta_control)
+    # Cast operations to mixed precision if using torch.cuda.amp.GradScaler()
+    if scaler is not None:
+        with torch.cuda.amp.autocast():
+            z_mu, z_logvar, z, y_recon, y_recon_tilt, mask = run_batch(model, lattice, y, yt, rot, tilt, ctf_params, yr)
+            loss, gen_loss, kld = loss_function(z_mu, z_logvar, y, yt, y_recon, mask, beta, y_recon_tilt, beta_control)
+    else:
+        z_mu, z_logvar, z, y_recon, y_recon_tilt, mask = run_batch(model, lattice, y, yt, rot, tilt, ctf_params, yr)
+        loss, gen_loss, kld = loss_function(z_mu, z_logvar, y, yt, y_recon, mask, beta, y_recon_tilt, beta_control)
     if use_amp:
-        with amp.scale_loss(loss, optim) as scaled_loss:
-            scaled_loss.backward()
+        if scaler is not None: # torch mixed precision
+            scaler.scale(loss).backward()
+            scaler.step(optim)
+            scaler.update()
+        else: # apex.amp mixed precision
+            with amp.scale_loss(loss, optim) as scaled_loss:
+                scaled_loss.backward()
+            optim.step()
     else:
         loss.backward()
-    optim.step()
+        optim.step()
     return loss.item(), gen_loss.item(), kld.item()
 
 def preprocess_input(y, yt, lattice, trans):
@@ -369,7 +381,7 @@ def main(args):
     flog(model)
     flog('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
     flog('{} parameters in encoder'.format(sum(p.numel() for p in model.encoder.parameters() if p.requires_grad)))
-    flog('{} parameters in decoder'.format(sum(p.numel() for p in model.decoder.parameters() if p.requires_grad)))
+    flog('{} parameters in deoder'.format(sum(p.numel() for p in model.decoder.parameters() if p.requires_grad)))
 
     # save configuration
     out_config = '{}/config.pkl'.format(args.outdir)
@@ -377,7 +389,8 @@ def main(args):
     
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
-    # Mixed precision training with AMP
+    # Mixed precision training
+    scaler = None
     if args.amp:
         assert args.batch_size % 8 == 0, "Batch size must be divisible by 8 for AMP training"
         assert (D-1) % 8 == 0, "Image size must be divisible by 8 for AMP training"
@@ -388,7 +401,10 @@ def main(args):
             log('Warning: z dimension is not a multiple of 8 -- AMP training speedup is not optimized')
         if in_dim % 8 != 0:
             log('Warning: Masked input image dimension is not a mutiple of 8 -- AMP training speedup is not optimized')
-        model, optim = amp.initialize(model, optim, opt_level='O1')
+        try: # Mixed precision with apex.amp
+            model, optim = amp.initialize(model, optim, opt_level='O1')
+        except: # Mixed precision with pytorch (v1.6+)
+            scaler = torch.cuda.amp.GradScaler()
 
     # restart from checkpoint
     if args.load:
@@ -435,7 +451,7 @@ def main(args):
                 pose_optimizer.zero_grad()
             rot, tran = posetracker.get_pose(ind)
             ctf_param = ctf_params[ind] if ctf_params is not None else None
-            loss, gen_loss, kld = train_batch(model, lattice, y, yt, rot, tran, optim, beta, args.beta_control, tilt, ctf_params=ctf_param, yr=yr, use_amp=args.amp)
+            loss, gen_loss, kld = train_batch(model, lattice, y, yt, rot, tran, optim, beta, args.beta_control, tilt, ctf_params=ctf_param, yr=yr, use_amp=args.amp, scaler=scaler)
             if do_pose_sgd and epoch >= args.pretrain:
                 pose_optimizer.step()
 

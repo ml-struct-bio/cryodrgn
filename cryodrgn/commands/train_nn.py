@@ -56,7 +56,7 @@ def add_args(parser):
     group.add_argument('--wd', type=float, default=0, help='Weight decay in Adam optimizer (default: %(default)s)')
     group.add_argument('--lr', type=float, default=1e-4, help='Learning rate in Adam optimizer (default: %(default)s)')
     group.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: mean, std of dataset)')
-    group.add_argument('--amp', action='store_true', help='Use mixed-precision training')
+    group.add_argument('--amp', action='store_true', help='Accelerate training speed with mixed-precision training')
     group.add_argument('--multigpu', action='store_true', help='Parallelize training across all detected GPUs')
 
     group = parser.add_argument_group('Pose SGD')
@@ -88,28 +88,44 @@ def save_checkpoint(model, lattice, optim, epoch, norm, Apix, out_mrc, out_weigh
         'optimizer_state_dict':optim.state_dict(),
         }, out_weights)
 
-def train(model, lattice, optim, y, rot, trans=None, ctf_params=None, use_amp=False):
+def train(model, lattice, optim, y, rot, trans=None, ctf_params=None, use_amp=False, scaler=None):
     model.train()
     optim.zero_grad()
     B = y.size(0)
     D = lattice.D
-    # reconstruct circle of pixels instead of whole image
-    mask = lattice.get_circular_mask(D//2)
-    yhat = model(lattice.coords[mask] @ rot).view(B,-1)
-    if ctf_params is not None:
-        freqs = lattice.freqs2d[mask]
-        freqs = freqs.unsqueeze(0).expand(B, *freqs.shape)/ctf_params[:,0].view(B,1,1)
-        yhat *= ctf.compute_ctf(freqs, *torch.split(ctf_params[:,1:], 1, 1))
-    y = y.view(B,-1)[:, mask]
-    if trans is not None:
-        y = lattice.translate_ht(y, trans.unsqueeze(1), mask).view(B,-1)
-    loss = F.mse_loss(yhat, y)
+    def run_model(y):
+        '''Helper function'''
+        # reconstruct circle of pixels instead of whole image
+        mask = lattice.get_circular_mask(D//2)
+        yhat = model(lattice.coords[mask] @ rot).view(B,-1)
+        if ctf_params is not None:
+            freqs = lattice.freqs2d[mask]
+            freqs = freqs.unsqueeze(0).expand(B, *freqs.shape)/ctf_params[:,0].view(B,1,1)
+            yhat *= ctf.compute_ctf(freqs, *torch.split(ctf_params[:,1:], 1, 1))
+        y = y.view(B,-1)[:, mask]
+        if trans is not None:
+            y = lattice.translate_ht(y, trans.unsqueeze(1), mask).view(B,-1)
+        return F.mse_loss(yhat, y)
+    
+    # Cast operations to mixed precision if using torch.cuda.amp.GradScaler()
+    if scaler is not None:
+        with torch.cuda.amp.autocast():
+            loss = run_model(y)
+    else:
+        loss = run_model(y)
+
     if use_amp:
-        with amp.scale_loss(loss, optim) as scaled_loss:
-            scaled_loss.backward()
+        if scaler is not None: # torch mixed precision
+            scaler.scale(loss).backward()
+            scaler.step(optim)
+            scaler.update()
+        else: # apex.amp mixed precision
+            with amp.scale_loss(loss, optim) as scaled_loss:
+                scaled_loss.backward()
+            optim.step()
     else:
         loss.backward()
-    optim.step()
+        optim.step()
     return loss.item()
 
 def save_config(args, dataset, lattice, model, out_config):
@@ -239,12 +255,16 @@ def main(args):
     save_config(args, data, lattice, model, out_config)
 
     # Mixed precision training with AMP
+    scaler = None
     if args.amp:
-        assert args.batch_size % 8 == 0
-        assert (D-1) % 8 == 0
-        assert args.dim % 8 == 0
+        assert args.batch_size % 8 == 0, "Batch size must be divisible by 8 for AMP training"
+        assert (D-1) % 8 == 0, "Image size must be divisible by 8 for AMP training"
+        assert args.dim % 8 == 0, "Decoder hidden layer dimension must be divisible by 8 for AMP training"
         # Also check zdim, enc_mask dim?
-        model, optim = amp.initialize(model, optim, opt_level='O1')
+        try: # Mixed precision with apex.amp
+            model, optim = amp.initialize(model, optim, opt_level='O1')
+        except: # Mixed precision with pytorch (v1.6+)
+            scaler = torch.cuda.amp.GradScaler()
 
     # parallelize
     if args.multigpu and torch.cuda.device_count() > 1:
@@ -269,7 +289,7 @@ def main(args):
                 pose_optimizer.zero_grad()
             r, t = posetracker.get_pose(ind)
             c = ctf_params[ind] if ctf_params is not None else None
-            loss_item = train(model, lattice, optim, batch.to(device), r, t, c, use_amp=args.amp)
+            loss_item = train(model, lattice, optim, batch.to(device), r, t, c, use_amp=args.amp, scaler=scaler)
             if args.do_pose_sgd and epoch >= args.pretrain:
                 pose_optimizer.step()
             loss_accum += loss_item*len(ind)

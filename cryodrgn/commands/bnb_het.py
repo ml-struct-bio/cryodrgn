@@ -38,7 +38,7 @@ vlog = utils.vlog
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('particles', help='Input particles (.mrcs, .txt or .star)')
+    parser.add_argument('particles', type=os.path.abspath, help='Input particles (.mrcs, .txt or .star)')
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
     parser.add_argument('--zdim', type=int, required=True, help='Dimension of latent variable')
     parser.add_argument('--ctf', metavar='pkl', type=os.path.abspath, help='CTF parameters (.pkl)')

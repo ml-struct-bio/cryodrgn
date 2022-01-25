@@ -37,7 +37,7 @@ signal.signal(signal.SIGINT, debug_signal_handler)
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('particles', help='Particle stack file (.mrcs)')
+    parser.add_argument('particles', type=os.path.abspath, help='Particle stack file (.mrcs)')
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
     parser.add_argument('--ctf', metavar='pkl', type=os.path.abspath, help='CTF parameters (.pkl)')
     parser.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: mean, std of dataset)')

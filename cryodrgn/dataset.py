@@ -42,8 +42,7 @@ class LazyMRCData(data.Dataset):
     Class representing an .mrcs stack file -- images loaded on the fly
     '''
     def __init__(self, mrcfile, norm=None, keepreal=False, invert_data=False, ind=None, window=True, datadir=None, relion31=False, window_r=0.85, flog=None):
-        if flog is not None: 
-            log = flog
+        log = flog if flog is not None else utils.log
         assert not keepreal, 'Not implemented error'
         particles = load_particles(mrcfile, True, datadir=datadir, relion31=relion31)
         if ind is not None:
@@ -101,8 +100,7 @@ class MRCData(data.Dataset):
     Class representing an .mrcs stack file
     '''
     def __init__(self, mrcfile, norm=None, keepreal=False, invert_data=False, ind=None, window=True, datadir=None, relion31=False, max_threads=16, window_r=0.85, flog=None):
-        if flog is not None: 
-            log = flog
+        log = flog if flog is not None else utils.log
         if keepreal:
             raise NotImplementedError
         if ind is not None:
@@ -167,8 +165,7 @@ class PreprocessedMRCData(data.Dataset):
     '''
     '''
     def __init__(self, mrcfile, norm=None, ind=None, flog=None):
-        if flog is not None: 
-            log = flog
+        log = flog if flog is not None else utils.log
         particles = load_particles(mrcfile, False)
         if ind is not None:
             particles = particles[ind]
@@ -197,8 +194,7 @@ class TiltMRCData(data.Dataset):
     Class representing an .mrcs tilt series pair
     '''
     def __init__(self, mrcfile, mrcfile_tilt, norm=None, keepreal=False, invert_data=False, ind=None, window=True, datadir=None, window_r=0.85, flog=None):
-        if flog is not None: 
-            log = flog
+        log = flog if flog is not None else utils.log
         if ind is not None:
             particles_real = load_particles(mrcfile, True, datadir)
             particles_tilt_real = load_particles(mrcfile_tilt, True, datadir)

@@ -69,6 +69,7 @@ class PoseSearch:
         loss_fn="msf",
         t_xshift=0,
         t_yshift=0,
+        device=None,
     ):
 
         self.model = model
@@ -78,14 +79,14 @@ class PoseSearch:
         self.base_quat = (
             so3_grid.s2_grid_SO3(base_healpy) if FAST_INPLANE else self.so3_base_quat
         )
-        self.so3_base_rot = lie_tools.quaternions_to_SO3(to_tensor(self.so3_base_quat))
-        self.base_rot = lie_tools.quaternions_to_SO3(to_tensor(self.base_quat))
+        self.so3_base_rot = lie_tools.quaternions_to_SO3(to_tensor(self.so3_base_quat)).to(device)
+        self.base_rot = lie_tools.quaternions_to_SO3(to_tensor(self.base_quat)).to(device)
 
         self.nbase = len(self.base_quat)
         self.base_inplane = so3_grid.grid_s1(base_healpy)
         self.base_shifts = torch.tensor(
-            shift_grid.base_shift_grid(base_healpy - 1, t_extent, t_ngrid, xshift=t_xshift, yshift=t_yshift)
-        ).float()
+            shift_grid.base_shift_grid(base_healpy - 1, t_extent, t_ngrid, xshift=t_xshift, yshift=t_yshift),
+            device=device).float()
         self.t_extent = t_extent
         self.t_ngrid = t_ngrid
 
@@ -97,6 +98,8 @@ class PoseSearch:
         self.loss_fn = loss_fn
         self._so3_neighbor_cache = {}  # for memoization
         self._shift_neighbor_cache = {}  # for memoization
+
+        self.device = device
 
     def eval_grid(self, *, images, rot, z, NQ, L, images_tilt=None, angles_inplane=None, ctf_i=None):
         '''
@@ -258,7 +261,7 @@ class PoseSearch:
         ]
         quat = np.array([x[0] for x in neighbors])  # Bx8x4
         q_ind = np.array([x[1] for x in neighbors])  # Bx8x2
-        rot = lie_tools.quaternions_to_SO3(torch.from_numpy(quat).view(-1, 4))
+        rot = lie_tools.quaternions_to_SO3(torch.from_numpy(quat).view(-1, 4)).to(self.device)
 
         assert len(quat.shape) == 3 and quat.shape == (N, 8, 4), quat.shape
         assert len(q_ind.shape) == 3 and q_ind.shape == (N, 8, 2), q_ind.shape

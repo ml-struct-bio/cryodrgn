@@ -108,7 +108,7 @@ def parse_args():
     group.add_argument('--dec-layers', dest='players', type=int, default=3, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--dec-dim', dest='pdim', type=int, default=256, help='Number of nodes in hidden layers (default: %(default)s)')
     group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf', 'gaussian', 'none'), default='gaussian', help='Type of positional encoding (default: %(default)s)')
-    group.add_argument('--feat-sigma', type=float, default=0.5, help="Scale for random Gaussian features")
+    group.add_argument('--feat-sigma', type=float, default=0.5, help="Scale for random Gaussian features (default: %(default)s)")
     group.add_argument('--pe-dim', type=int, help='Num features in positional encoding (default: image D)')
     group.add_argument('--domain', choices=('hartley','fourier'), default='fourier', help='Decoder representation domain (default: %(default)s)')
     group.add_argument('--activation', choices=('relu','leaky_relu'), default='relu', help='Activation (default: %(default)s)')
@@ -338,16 +338,16 @@ def sort_poses(poses):
         return (rot,trans)
     return (rot,)
 
-def get_latest(args):
-    log('Detecting latest checkpoint...') 
+def get_latest(args, flog):
+    flog('Detecting latest checkpoint...') 
     weights = [f'{args.outdir}/weights.{i}.pkl' for i in range(args.num_epochs)]
     weights = [f for f in weights if os.path.exists(f)]
     args.load = weights[-1]
-    log(f'Loading {args.load}')
+    flog(f'Loading {args.load}')
     i = args.load.split('.')[-2]
     args.load_poses = f'{args.outdir}/pose.{i}.pkl'
     assert os.path.exists(args.load_poses)
-    log(f'Loading {args.load_poses}')
+    flog(f'Loading {args.load_poses}')
     return args
 
 def main(args):
@@ -358,7 +358,7 @@ def main(args):
     def flog(msg): # HACK: switch to logging module
         return utils.flog(msg, LOG)
     if args.load == 'latest':
-        args = get_latest(args)
+        args = get_latest(args, flog)
     flog(' '.join(sys.argv))
     flog(args)
 
@@ -370,8 +370,8 @@ def main(args):
     use_cuda = torch.cuda.is_available()
     device = torch.device('cuda' if use_cuda else 'cpu')
     flog('Use cuda {}'.format(use_cuda))
-    if use_cuda:
-        torch.set_default_tensor_type(torch.cuda.FloatTensor)
+    if not use_cuda:
+        log('WARNING: No GPUs detected')
 
     ## set beta schedule
     try:
@@ -398,12 +398,12 @@ def main(args):
             #data = dataset.PreprocessedMRCData(args.particles, norm=args.norm)
             raise NotImplementedError("Use --lazy-single for on-the-fly image loading")
         elif args.lazy_single:
-            data = dataset.LazyMRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, keepreal=args.use_real, window=args.window, datadir=args.datadir, relion31=args.relion31, window_r=args.window_r)
+            data = dataset.LazyMRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, keepreal=args.use_real, window=args.window, datadir=args.datadir, relion31=args.relion31, window_r=args.window_r, flog=flog)
         elif args.preprocessed:
             flog(f'Using preprocessed inputs. Ignoring any --window/--invert-data options')
-            data = dataset.PreprocessedMRCData(args.particles, norm=args.norm, ind=ind)
+            data = dataset.PreprocessedMRCData(args.particles, norm=args.norm, ind=ind, flog=flog)
         else:
-            data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, keepreal=args.use_real, window=args.window, datadir=args.datadir, relion31=args.relion31, max_threads=args.max_threads, window_r=args.window_r)
+            data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, keepreal=args.use_real, window=args.window, datadir=args.datadir, relion31=args.relion31, max_threads=args.max_threads, window_r=args.window_r, flog=flog)
 
     # Tilt series data -- lots of unsupported features
     else:
@@ -412,8 +412,8 @@ def main(args):
         if args.lazy: raise NotImplementedError
         if args.preprocessed: raise NotImplementedError
         if args.relion31: raise NotImplementedError
-        data = dataset.TiltMRCData(args.particles, args.tilt, norm=args.norm, invert_data=args.invert_data, ind=ind, window=args.window, keepreal=args.use_real, datadir=args.datadir, window_r=args.window_r)
-        tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32))
+        data = dataset.TiltMRCData(args.particles, args.tilt, norm=args.norm, invert_data=args.invert_data, ind=ind, window=args.window, keepreal=args.use_real, datadir=args.datadir, window_r=args.window_r, flog=flog)
+        tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32), device=device)
     Nimg = data.N
     D = data.D
 
@@ -422,14 +422,14 @@ def main(args):
 
     # load ctf
     if args.ctf is not None:
-        log('Loading ctf params from {}'.format(args.ctf))
+        flog('Loading ctf params from {}'.format(args.ctf))
         ctf_params = ctf.load_ctf_for_training(D-1, args.ctf)
         if args.ind is not None: ctf_params = ctf_params[ind] 
         assert ctf_params.shape == (Nimg, 8), ctf_params.shape
-        ctf_params = torch.tensor(ctf_params)
+        ctf_params = torch.tensor(ctf_params, device=device)
     else: ctf_params = None
 
-    lattice = Lattice(D, extent=0.5)
+    lattice = Lattice(D, extent=0.5, device=device)
     if args.enc_mask is None:
         args.enc_mask = D//2
     if args.enc_mask > 0:
@@ -443,11 +443,13 @@ def main(args):
         raise RuntimeError("Invalid argument for encoder mask radius {}".format(args.enc_mask))
 
     model = make_model(args, lattice, enc_mask, in_dim)
-    log(model)
-    log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
+    model.to(device)
+    flog(model)
+    flog('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
 
     if args.pose_model_update_freq:
         pose_model = make_model(args, lattice, enc_mask, in_dim)
+        pose_model.to(device)
         pose_model.eval()
     else:
         pose_model = model
@@ -459,7 +461,7 @@ def main(args):
     ps = PoseSearch(pose_model, lattice, args.l_start, args.l_end, tilt,
                     t_extent=args.t_extent, t_ngrid=args.t_ngrid, niter=args.niter,
                     nkeptposes=args.nkeptposes, base_healpy=args.base_healpy,
-                    t_xshift=args.t_xshift, t_yshift=args.t_yshift)
+                    t_xshift=args.t_xshift, t_yshift=args.t_yshift, device=device)
 
     if args.equivariance:
         assert args.equivariance > 0, 'Regularization weight must be positive'
@@ -473,7 +475,7 @@ def main(args):
     
     if args.load:
         args.pretrain = 0
-        log('Loading checkpoint from {}'.format(args.load))
+        flog('Loading checkpoint from {}'.format(args.load))
         checkpoint = torch.load(args.load)
         model.load_state_dict(checkpoint['model_state_dict'])
         optim.load_state_dict(checkpoint['optimizer_state_dict'])
@@ -489,20 +491,20 @@ def main(args):
     # pretrain decoder with random poses
     global_it = 0
     pretrain_epoch = 0
-    log('Using random poses for {} iterations'.format(args.pretrain))
+    flog('Using random poses for {} iterations'.format(args.pretrain))
     while global_it < args.pretrain:
         for batch in data_iterator:
             global_it += len(batch[0])
             batch = (batch[0].to(device), None) if tilt is None else (batch[0].to(device), batch[1].to(device))
             loss = pretrain(model, lattice, optim, batch, tilt=ps.tilt)
             if global_it % args.log_interval == 0:
-                log(f'[Pretrain Iteration {global_it}] loss={loss:4f}')
+                flog(f'[Pretrain Iteration {global_it}] loss={loss:4f}')
             if global_it > args.pretrain:
                 break
 
     # reset model after pretraining
     if args.reset_optim_after_pretrain:
-        log(">> Resetting optim after pretrain")
+        flog(">> Resetting optim after pretrain")
         optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
     # training loop
@@ -528,15 +530,15 @@ def main(args):
                 L_model = ps.Lmax
 
         if args.reset_model_every and (epoch - 1) % args.reset_model_every == 0:
-            log(">> Resetting model")
+            flog(">> Resetting model")
             model = make_model(args, lattice, enc_mask, in_dim)
 
         if args.reset_optim_every and (epoch - 1) % args.reset_optim_every == 0:
-            log(">> Resetting optim")
+            flog(">> Resetting optim")
             optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
         if epoch % args.ps_freq != 0:
-            log('Using previous iteration poses')
+            flog('Using previous iteration poses')
         for batch in data_iterator:
             ind = batch[-1]
             ind_np = ind.cpu().numpy()
@@ -552,7 +554,7 @@ def main(args):
 
             # train the model
             if epoch % args.ps_freq != 0:
-                p = [torch.tensor(x[ind_np]) for x in sorted_poses]
+                p = [torch.tensor(x[ind_np], device=device) for x in sorted_poses]
             else:
                 p = None
 
@@ -575,7 +577,7 @@ def main(args):
                 log(f'# [Train Epoch: {epoch+1}/{num_epochs}] [{batch_it}/{Nimg} images] gen loss={gen_loss:.4f}, kld={kld:.4f}, beta={beta:.4f}, {eq_log}loss={loss:.4f}')
 
         eq_log = 'equivariance = {:.4f}, '.format(eq_loss_accum/Nimg) if args.equivariance else ''
-        log('# =====> Epoch: {} Average gen loss = {:.4}, KLD = {:.4f}, {}total loss = {:.4f}; Finished in {}'.format(epoch+1, gen_loss_accum/Nimg, kld_accum/Nimg, eq_log, loss_accum/Nimg, dt.now() - t2))
+        flog('# =====> Epoch: {} Average gen loss = {:.4}, KLD = {:.4f}, {}total loss = {:.4f}; Finished in {}'.format(epoch+1, gen_loss_accum/Nimg, kld_accum/Nimg, eq_log, loss_accum/Nimg, dt.now() - t2))
 
         sorted_poses = sort_poses(poses) if poses else None
 
@@ -601,7 +603,7 @@ def main(args):
         save_checkpoint(model, lattice, optim, epoch, data.norm, sorted_poses, z_mu, z_logvar, out_mrc, out_weights, out_z, out_poses)
 
     td = dt.now() - t1
-    log('Finsihed in {} ({} per epoch)'.format(td, td/(num_epochs-start_epoch)))
+    flog('Finished in {} ({} per epoch)'.format(td, td/(num_epochs-start_epoch)))
 
 if __name__ == '__main__':
     import cProfile

@@ -205,17 +205,34 @@ def train(model, lattice, ps, optim, batch, tilt_rot=None, no_trans=False, poses
         save_pose.append(trans.detach().cpu().numpy())
     return loss.item(), save_pose, base_pose
 
+def get_latest(args, flog):
+    # assumes args.num_epochs > latest checkpoint
+    flog('Detecting latest checkpoint...') 
+    weights = [f'{args.outdir}/weights.{i}.pkl' for i in range(args.num_epochs)]
+    weights = [f for f in weights if os.path.exists(f)]
+    args.load = weights[-1]
+    flog(f'Loading {args.load}')
+    i = args.load.split('.')[-2]
+    args.load_poses = f'{args.outdir}/pose.{i}.pkl'
+    assert os.path.exists(args.load_poses) # Might need to relax this assert
+    flog(f'Loading {args.load_poses}')
+    return args
 
 def make_model(args, D):
     activation={"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[args.activation]
     return models.get_decoder(3, D, args.layers, args.dim, args.domain, args.pe_type, enc_dim=args.pe_dim, activation=activation, feat_sigma=args.feat_sigma)
 
 def main(args):
-
-    log(args)
     t1 = dt.now()
     if not os.path.exists(args.outdir):
         os.makedirs(args.outdir)
+    LOG = f'{args.outdir}/run.log'
+    def flog(msg): # HACK: switch to logging module
+        return utils.flog(msg, LOG)
+    if args.load == 'latest':
+        args = get_latest(args, flog)
+    flog(' '.join(sys.argv))
+    flog(args)
 
     # set the random seed
     np.random.seed(args.seed)
@@ -224,38 +241,40 @@ def main(args):
     ## set the device
     use_cuda = torch.cuda.is_available()
     device = torch.device('cuda' if use_cuda else 'cpu')
-    log('Use cuda {}'.format(use_cuda))
-    if use_cuda:
-        torch.set_default_tensor_type(torch.cuda.FloatTensor)
+    flog('Use cuda {}'.format(use_cuda))
+    if not use_cuda:
+        flog('WARNING: No GPUs detected')
 
     # load the particles
     if args.ind is not None: 
-        log('Filtering image dataset with {}'.format(args.ind))
+        flog('Filtering image dataset with {}'.format(args.ind))
         args.ind = pickle.load(open(args.ind,'rb'))
     if args.tilt is None:
-        data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=args.ind, window=args.window, window_r=args.window_r)
+        data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=args.ind, window=args.window, window_r=args.window_r, flog=flog)
         tilt = None
     else:
-        data = dataset.TiltMRCData(args.particles, args.tilt, norm=args.norm, invert_data=args.invert_data, ind=args.ind, window=args.window, window_r=args.window_r)
-        tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32))
+        data = dataset.TiltMRCData(args.particles, args.tilt, norm=args.norm, invert_data=args.invert_data, ind=args.ind, window=args.window, window_r=args.window_r, flog=flog)
+        tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32), device=device)
     D = data.D
     Nimg = data.N
 
     # load ctf
     if args.ctf is not None:
-        log('Loading ctf params from {}'.format(args.ctf))
+        flog('Loading ctf params from {}'.format(args.ctf))
         ctf_params = ctf.load_ctf_for_training(D-1, args.ctf)
         if args.ind is not None: ctf_params = ctf_params[args.ind] 
         assert ctf_params.shape == (Nimg, 8)
-        ctf_params = torch.tensor(ctf_params)
+        ctf_params = torch.tensor(ctf_params, device=device)
     else: ctf_params = None
 
     # instantiate model
-    lattice = Lattice(D, extent=0.5)
+    lattice = Lattice(D, extent=0.5, device=device)
     model = make_model(args, D)
+    model.to(device)
 
     if args.pose_model_update_freq:
         pose_model = make_model(args, D)
+        pose_model.to(device)
         pose_model.eval()
     else:
         pose_model = model
@@ -266,21 +285,14 @@ def main(args):
         ps = PoseSearch(pose_model, lattice, args.l_start, args.l_end, tilt,
                         t_extent=args.t_extent, t_ngrid=args.t_ngrid, niter=args.niter,
                         nkeptposes=args.nkeptposes, base_healpy=args.base_healpy,
-                        t_xshift=args.t_xshift, t_yshift=args.t_yshift)
-    log(model)
-    log('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
+                        t_xshift=args.t_xshift, t_yshift=args.t_yshift, device=device)
+    flog(model)
+    flog('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
-
-    if args.load == 'latest':
-        weight_pkls = glob.glob(f'{args.outdir}/weights.*.pkl')
-        _epochs = [int(x.split('.')[-2]) for x in weight_pkls]
-        last_epoch = np.max(_epochs)
-        args.load = f'{args.outdir}/weights.{last_epoch}.pkl'
-        args.load_poses = f'{args.outdir}/pose.{last_epoch}.pkl'
 
     if args.load:
         args.pretrain = 0
-        log('Loading checkpoint from {}'.format(args.load))
+        flog('Loading checkpoint from {}'.format(args.load))
         checkpoint = torch.load(args.load)
         model.load_state_dict(checkpoint['model_state_dict'])
         optim.load_state_dict(checkpoint['optimizer_state_dict'])
@@ -298,14 +310,14 @@ def main(args):
     # pretrain decoder with random poses
     global_it = 0
     pretrain_epoch = 0
-    log('Using random poses for {} iterations'.format(args.pretrain))
+    flog('Using random poses for {} iterations'.format(args.pretrain))
     while global_it < args.pretrain:
         for batch in data_iterator:
             global_it += len(batch[0])
             batch = (batch[0].to(device), None) if tilt is None else (batch[0].to(device), batch[1].to(device))
             loss = pretrain(model, lattice, optim, batch, tilt=ps.tilt)
             if global_it % args.log_interval == 0:
-                log(f'[Pretrain Iteration {global_it}] loss={loss:4f}')
+                flog(f'[Pretrain Iteration {global_it}] loss={loss:4f}')
             if global_it > args.pretrain:
                 break
     out_mrc = '{}/pretrain.reconstruct.mrc'.format(args.outdir)
@@ -315,7 +327,7 @@ def main(args):
 
     # reset model after pretraining
     if args.reset_optim_after_pretrain:
-        log(">> Resetting optim after pretrain")
+        flog(">> Resetting optim after pretrain")
         optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
     # training loop
@@ -334,15 +346,15 @@ def main(args):
             ps.Lmax = min(Lramp, args.l_end)
 
         if args.reset_model_every and (epoch - 1) % args.reset_model_every == 0:
-            log(">> Resetting model")
+            flog(">> Resetting model")
             model = make_model(args, D)
 
         if args.reset_optim_every and (epoch - 1) % args.reset_optim_every == 0:
-            log(">> Resetting optim")
+            flog(">> Resetting optim")
             optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
         if epoch % args.ps_freq != 0:
-            log('Using previous iteration poses')
+            flog('Using previous iteration poses')
         for batch in data_iterator:
             ind = batch[-1]
             ind_np = ind.cpu().numpy()
@@ -351,7 +363,7 @@ def main(args):
 
             # train the model
             if epoch % args.ps_freq != 0:
-                p = [torch.tensor(x[ind_np]) for x in sorted_poses]
+                p = [torch.tensor(x[ind_np], device=device) for x in sorted_poses]
                 #bp = sorted_base_poses[ind_np]
                 bp = None
             else:
@@ -370,7 +382,7 @@ def main(args):
             loss_accum += loss_item*len(batch[0])
             if batch_it % args.log_interval == 0:
                 log('# [Train Epoch: {}/{}] [{}/{} images] loss={:.4f}'.format(epoch+1, args.num_epochs, batch_it, Nimg, loss_item))
-        log('# =====> Epoch: {} Average loss = {:.4}; Finished in {}'.format(epoch+1, loss_accum/Nimg, dt.now() - t2))
+        flog('# =====> Epoch: {} Average loss = {:.4}; Finished in {}'.format(epoch+1, loss_accum/Nimg, dt.now() - t2))
 
         # sort pose
         sorted_poses = sort_poses(poses) if poses else None
@@ -389,7 +401,7 @@ def main(args):
     save_checkpoint(model, lattice, sorted_poses, optim, epoch, data.norm, out_mrc, out_weights, out_poses)
 
     td = dt.now()-t1
-    log('Finsihed in {} ({} per epoch)'.format(td, td/(args.num_epochs-start_epoch)))
+    flog('Finished in {} ({} per epoch)'.format(td, td/(args.num_epochs-start_epoch)))
 
 if __name__ == '__main__':
     args = parse_args().parse_args()

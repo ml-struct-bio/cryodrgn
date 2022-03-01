@@ -50,7 +50,7 @@ class LazyMRCData(data.Dataset):
         N = len(particles)
         ny, nx = particles[0].get().shape
         assert ny == nx, "Images must be square"
-        assert ny % 2 == 0, "Image size must be even"
+        assert ny % 2 == 0, "Image size must be even. Is this a preprocessed dataset? Use the --preprocessed flag if so."
         log('Loaded {} {}x{} images'.format(N, ny, nx))
         self.particles = particles
         self.N = N
@@ -110,7 +110,7 @@ class MRCData(data.Dataset):
             particles = load_particles(mrcfile, False, datadir=datadir, relion31=relion31)
         N, ny, nx = particles.shape
         assert ny == nx, "Images must be square"
-        assert ny % 2 == 0, "Image size must be even"
+        assert ny % 2 == 0, "Image size must be even. Is this a preprocessed dataset? Use the --preprocessed flag if so."
         log('Loaded {} {}x{} images'.format(N, ny, nx))
 
         # Real space window
@@ -206,7 +206,7 @@ class TiltMRCData(data.Dataset):
 
         N, ny, nx = particles_real.shape
         assert ny == nx, "Images must be square"
-        assert ny % 2 == 0, "Image size must be even"
+        assert ny % 2 == 0, "Image size must be even. Is this a preprocessed dataset? Use the --preprocessed flag if so."
         log('Loaded {} {}x{} images'.format(N, ny, nx))
         assert particles_tilt_real.shape == (N, ny, nx), "Tilt series pair must have same dimensions as untilted particles"
         log('Loaded {} {}x{} tilt pair images'.format(N, ny, nx))

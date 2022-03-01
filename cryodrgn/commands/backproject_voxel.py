@@ -33,6 +33,7 @@ def add_args(parser):
     group.add_argument('--ind',help='Indices to iterate over (pkl)')
     group.add_argument('--first', type=int, default=10000, help='Backproject the first N images (default: %(default)s)')
     group.add_argument('--relion31', action='store_true', help='Flag if relion3.1 star format')
+    group.add_argument('--preprocessed', action='store_true', help='Skip preprocessing steps if input data is from cryodrgn preprocess_mrcs')
 
     group = parser.add_argument_group('Tilt series options')
     group.add_argument('--tilt', help='Tilt series .mrcs image stack')
@@ -79,10 +80,14 @@ def main(args):
     if args.ind is not None:
         args.ind = utils.load_pkl(args.ind).astype(int)
     if args.tilt is None:
-        data = dataset.LazyMRCData(args.particles, norm=(0,1), invert_data=args.invert_data, datadir=args.datadir, ind=args.ind, relion31=args.relion31)
+        if args.preprocessed:
+            data = dataset.PreprocessedMRCData(args.particles, norm=(0,1), ind=args.ind)
+        else:
+            data = dataset.LazyMRCData(args.particles, norm=(0,1), invert_data=args.invert_data, datadir=args.datadir, ind=args.ind, relion31=args.relion31)
         tilt = None
-    else:
+    else: # tilt series 
         if args.relion31: raise NotImplementedError
+        if args.preprocessed: raise NotImplementedError
         data = dataset.TiltMRCData(args.particles, args.tilt, norm=(0,1), invert_data=args.invert_data, datadir=args.datadir, ind=args.ind)
         tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32), device=device)
     D = data.D

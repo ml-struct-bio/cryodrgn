@@ -34,8 +34,7 @@ MICROGRAPH_HDRS = ['_rlnMicrographName',
                    '_rlnCoordinateX',
                    '_rlnCoordinateY']
 
-def parse_args():
-    parser = argparse.ArgumentParser(description=__doc__)
+def add_args(parser):
     parser.add_argument('particles', help='Input particles (.mrcs, .txt)')
     parser.add_argument('ctf', help='Input ctf.pkl')
     parser.add_argument('--poses', help='Optionally include pose.pkl') 
@@ -71,13 +70,13 @@ def main(args):
     if args.poses:
         poses = utils.load_pkl(args.poses)
         assert len(particles) == len(poses[0]), f"{len(particles)} != {len(poses)}, Number of particles != number of poses"
-    log('{} particles'.format(len(particles)))
+    log(f'{len(particles)} particles in {args.particles}')
 
     if args.ref_star:
         ref_star = starfile.Starfile.load(args.ref_star, relion31=args.ref_star_relion31)
-        assert len(ref_star) == len(particles), f"Particles in {args.particles} must match {args.ref_star}"
+        assert len(ref_star) == len(particles), f"Particle ordering in {args.particles} must match {args.ref_star}"
 
-    # Explicit index of particles in .mrcs file
+    # Get index for particles in each .mrcs file
     if args.particles.endswith('.txt'):
         N_per_chunk = parse_chunk_size(args.particles)
         particle_ind = np.concatenate([np.arange(nn) for nn in N_per_chunk])
@@ -94,7 +93,7 @@ def main(args):
             poses = (poses[0][ind], poses[1][ind])
         if args.ref_star:
             ref_star.df = ref_star.df.loc[ind] 
-            # reset the index to avoid any downstream indexing issues
+            # reset the index in the dataframe to avoid any downstream indexing issues
             ref_star.df.reset_index(inplace=True)
         particle_ind = particle_ind[ind]
 
@@ -135,4 +134,6 @@ def main(args):
     s.write(args.o)
 
 if __name__ == '__main__':
-    main(parse_args().parse_args())
+    parser = argparse.ArgumentParser(description=__doc__)
+    args = add_args(parser).parse_args()
+    main(args)

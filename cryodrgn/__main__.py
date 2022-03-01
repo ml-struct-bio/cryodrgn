@@ -21,6 +21,7 @@ def main():
     import cryodrgn.commands.pc_traversal
     import cryodrgn.commands.graph_traversal
     import cryodrgn.commands.view_config
+    import cryodrgn.commands.write_starfile
 
     modules = [cryodrgn.commands.downsample,
         cryodrgn.commands.preprocess,
@@ -37,6 +38,7 @@ def main():
         cryodrgn.commands.pc_traversal,
         cryodrgn.commands.graph_traversal,
         cryodrgn.commands.view_config,
+        cryodrgn.commands.write_starfile,
         ]
 
     subparsers = parser.add_subparsers(title='Choose a command')

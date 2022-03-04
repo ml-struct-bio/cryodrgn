@@ -542,8 +542,8 @@ def mask_volumes(outdir, epochs, labels, max_threads, LOG, Apix, thresh=None, di
         flog(f'Generating and applying masks for epoch {epoch}', LOG)
         volsdir = outdir + f'/vols.{epoch}'
         for cluster in range(len(labels)):
-            volpath = f'{volsdir}/vol_{0:03d}.mrc'.format(cluster)
-            outpath = f'{volsdir}/vol_{0:03d}.masked.mrc'.format(cluster)
+            volpath = f'{volsdir}/vol_{cluster:03d}.mrc'
+            outpath = f'{volsdir}/vol_{cluster:03d}.masked.mrc'
 
             volpaths.append(volpath)
             outpaths.append(outpath)

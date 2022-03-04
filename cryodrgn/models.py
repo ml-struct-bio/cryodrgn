@@ -23,7 +23,9 @@ class HetOnlyVAE(nn.Module):
             enc_type = 'linear_lowf',
             enc_dim = None,
             domain = 'fourier',
-            activation = nn.ReLU):
+            activation = nn.ReLU,
+            feat_sigma = None
+        ):
         super(HetOnlyVAE, self).__init__()
         self.lattice = lattice
         self.zdim = zdim
@@ -52,7 +54,7 @@ class HetOnlyVAE(nn.Module):
         else:
             raise RuntimeError('Encoder mode {} not recognized'.format(encode_mode))
         self.encode_mode = encode_mode
-        self.decoder = get_decoder(3+zdim, lattice.D, players, pdim, domain, enc_type, enc_dim, activation)
+        self.decoder = get_decoder(3+zdim, lattice.D, players, pdim, domain, enc_type, enc_dim, activation, feat_sigma)
    
     @classmethod
     def load(self, config, weights=None, device=None):
@@ -87,7 +89,8 @@ class HetOnlyVAE(nn.Module):
                           enc_type=c['pe_type'],
                           enc_dim=c['pe_dim'],
                           domain=c['domain'],
-                          activation=activation)
+                          activation=activation,
+                          feat_sigma=c['feat_sigma'])
         if weights is not None:
             ckpt = torch.load(weights)
             model.load_state_dict(ckpt['model_state_dict'])
@@ -146,7 +149,7 @@ def load_decoder(config, weights=None, device=None):
     c = cfg['model_args']
     D = cfg['lattice_args']['D']
     activation={"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[c['activation']]
-    model = get_decoder(3, D, c['layers'], c['dim'], c['domain'], c['pe_type'], c['pe_dim'], activation) 
+    model = get_decoder(3, D, c['layers'], c['dim'], c['domain'], c['pe_type'], c['pe_dim'], activation, c['feat_sigma']) 
     if weights is not None:
         ckpt = torch.load(weights)
         model.load_state_dict(ckpt['model_state_dict'])
@@ -154,7 +157,7 @@ def load_decoder(config, weights=None, device=None):
         model.to(device)
     return model
 
-def get_decoder(in_dim, D, layers, dim, domain, enc_type, enc_dim=None, activation=nn.ReLU):
+def get_decoder(in_dim, D, layers, dim, domain, enc_type, enc_dim=None, activation=nn.ReLU, feat_sigma=None):
     if enc_type == 'none':
         if domain == 'hartley':
             model = ResidLinearMLP(in_dim, layers, dim, 1, activation)
@@ -164,10 +167,10 @@ def get_decoder(in_dim, D, layers, dim, domain, enc_type, enc_dim=None, activati
         return model
     else:
         model = PositionalDecoder if domain == 'hartley' else FTPositionalDecoder 
-        return model(in_dim, D, layers, dim, activation, enc_type=enc_type, enc_dim=enc_dim)
+        return model(in_dim, D, layers, dim, activation, enc_type=enc_type, enc_dim=enc_dim, feat_sigma=feat_sigma)
  
 class PositionalDecoder(nn.Module):
-    def __init__(self, in_dim, D, nlayers, hidden_dim, activation, enc_type='linear_lowf', enc_dim=None):
+    def __init__(self, in_dim, D, nlayers, hidden_dim, activation, enc_type='linear_lowf', enc_dim=None, feat_sigma=None):
         super(PositionalDecoder, self).__init__()
         assert in_dim >= 3 
         self.zdim = in_dim - 3
@@ -205,6 +208,7 @@ class PositionalDecoder(nn.Module):
             x = torch.cat([x,coords[...,3:,:].squeeze(-1)], -1)
             assert x.shape[-1] == self.in_dim
         return x
+        
 
     def positional_encoding_linear(self, coords):
         '''Expand coordinates in the Fourier basis, i.e. cos(k*n/N), sin(k*n/N), n=0,...,N//2'''
@@ -260,7 +264,7 @@ class PositionalDecoder(nn.Module):
         return vol
 
 class FTPositionalDecoder(nn.Module):
-    def __init__(self, in_dim, D, nlayers, hidden_dim, activation, enc_type='linear_lowf', enc_dim=None):
+    def __init__(self, in_dim, D, nlayers, hidden_dim, activation, enc_type='linear_lowf', enc_dim=None, feat_sigma=None):
         super(FTPositionalDecoder, self).__init__()
         assert in_dim >= 3
         self.zdim = in_dim - 3
@@ -271,9 +275,24 @@ class FTPositionalDecoder(nn.Module):
         self.enc_dim = self.D2 if enc_dim is None else enc_dim
         self.in_dim = 3 * (self.enc_dim) * 2 + self.zdim
         self.decoder = ResidLinearMLP(self.in_dim, nlayers, hidden_dim, 2, activation)
+
+        if enc_type == "gaussian" is not None:
+            # We construct 3 * self.enc_dim random vector frequences, to match the original positional encoding:
+            # In the positional encoding we produce self.enc_dim features for each of the x,y,z dimensions,
+            # whereas in gaussian encoding we produce self.enc_dim features each with random x,y,z components
+            # 
+            # Each of the random feats is the sine/cosine of the dot product of the coordinates with a frequency
+            # vector sampled from a gaussian with std of feat_sigma
+            rand_freqs = torch.randn((3 * self.enc_dim, 3), dtype=torch.float) * feat_sigma
+            # make rand_feats a parameter so it is saved in the checkpoint, but do not perform SGD on it
+            self.rand_freqs = nn.Parameter(rand_freqs, requires_grad=False)
+        else:
+            self.rand_feats = None
     
     def positional_encoding_geom(self, coords):
         '''Expand coordinates in the Fourier basis with geometrically spaced wavelengths from 2/D to 2pi'''
+        if self.enc_type == "gaussian":
+            return self.random_fourier_encoding(coords)
         freqs = torch.arange(self.enc_dim, dtype=torch.float, device=coords.device)
         if self.enc_type == 'geom_ft':
             freqs = self.DD*np.pi*(2./self.DD)**(freqs/(self.enc_dim-1)) # option 1: 2/D to 1 
@@ -296,6 +315,25 @@ class FTPositionalDecoder(nn.Module):
         x = x.view(*coords.shape[:-2], self.in_dim-self.zdim) # B x in_dim-zdim
         if self.zdim > 0:
             x = torch.cat([x,coords[...,3:,:].squeeze(-1)], -1)
+            assert x.shape[-1] == self.in_dim
+        return x
+
+
+    def random_fourier_encoding(self, coords):
+        assert self.rand_freqs is not None
+        # k = coords . rand_freqs
+        # expand rand_freqs with singleton dimension along the batch dimensions
+        # e.g. dim (1, ..., 1, n_rand_feats, 3)
+        freqs = self.rand_freqs.view(*[1]*(len(coords.shape)-1), -1, 3) * self.D2
+
+        kxkykz = (coords[..., None, 0:3] * freqs)  # compute the x,y,z components of k
+        k = kxkykz.sum(-1)  # compute k
+        s = torch.sin(k)
+        c = torch.cos(k)
+        x = torch.cat([s,c], -1)
+        x = x.view(*coords.shape[:-1], self.in_dim - self.zdim)
+        if self.zdim > 0:
+            x = torch.cat([x,coords[...,3:]], -1)
             assert x.shape[-1] == self.in_dim
         return x
 

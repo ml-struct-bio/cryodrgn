@@ -69,10 +69,12 @@ def add_args(parser):
     group.add_argument('--layers', type=int, default=3, help='Number of hidden layers (default: %(default)s)')
     group.add_argument('--dim', type=int, default=256, help='Number of nodes in hidden layers (default: %(default)s)')
     group.add_argument('--l-extent', type=float, default=0.5, help='Coordinate lattice size (if not using positional encoding) (default: %(default)s)')
-    group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf','none'), default='geom_lowf', help='Type of positional encoding (default: %(default)s)')
+    group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf','gaussian','none'), default='geom_lowf', help='Type of positional encoding (default: %(default)s)')
     group.add_argument('--pe-dim', type=int, help='Num sinusoid features in positional encoding (default: D/2)')
     group.add_argument('--domain', choices=('hartley','fourier'), default='fourier', help='Volume decoder representation (default: %(default)s)')
     group.add_argument('--activation', choices=('relu','leaky_relu'), default='relu', help='Activation (default: %(default)s)')
+    group.add_argument('--feat-sigma', type=float, default=0.5, help="Scale for random Gaussian features")
+
     return parser
 
 def save_checkpoint(model, lattice, optim, epoch, norm, Apix, out_mrc, out_weights):
@@ -145,6 +147,7 @@ def save_config(args, dataset, lattice, model, out_config):
     model_args = dict(layers=args.layers,
                       dim=args.dim,
                       pe_type=args.pe_type,
+                      feat_sigma=args.feat_sigma,
                       pe_dim=args.pe_dim,
                       domain=args.domain,
                       activation=args.activation)
@@ -213,7 +216,7 @@ def main(args):
     lattice = Lattice(D, extent=args.l_extent, device=device)
 
     activation={"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[args.activation]
-    model = models.get_decoder(3, D, args.layers, args.dim, args.domain, args.pe_type, enc_dim=args.pe_dim, activation=activation)
+    model = models.get_decoder(3, D, args.layers, args.dim, args.domain, args.pe_type, enc_dim=args.pe_dim, activation=activation, feat_sigma=args.feat_sigma)
     model.to(device)
     flog(model)
     flog('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))

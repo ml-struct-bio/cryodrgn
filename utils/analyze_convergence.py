@@ -834,7 +834,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__,
-                                     epilog='Example usage: $ python analyze_convergence.py [workdir] [epoch]'
+                                     epilog='Example usage: $ python analyze_convergence.py [workdir] [epoch]',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     add_args(parser)
     main(parser.parse_args())

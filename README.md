@@ -19,21 +19,30 @@ https://www.notion.so/cryoDRGN-tutorial-b932c021cb2c415282f182048bac16ff
 
 A quick start is provided below.
 
-## New in v0.3.3/4
+## New in version 1.0.0
 
-### v0.3.4
+* NEW: `cryodrgn analyze_landscape` for automatic classification and energy landscape inference (Tutorial here)
+* NEW: Faster training and higher resolution model with Gaussian Fourier featurization (Use `--pe-type gaussian`)
+* NEW: `cryodrgn write_starfile` for converting cryoDRGN particle selections to `.star` files
+* Add pytorch native mixed precision training and fix support for pytorch 1.9+
+
+### Previous versions
+
+<details><summary>Version 0.3.4</summary>
 
 * FIX: Bug in `write_starfile.py` when provided particle stack is chunked (.txt file)
 * Support micrograph coordinates and additional column headers to `write_starfile.py`
-* New helper scripts: `analyze_convergence.py` (_in beta testing_) contributed by <a href="bmp@mit.edu">Barrett Powell</a> (thanks!) and `make_train_test.py` for splitting up particle stacks for training 
+* New helper scripts: `analyze_convergence.py` (_in beta testing_) contributed by <a href="bmp@mit.edu">Barrett Powell</a> (thanks!) and `make_random_selection.py` for splitting up particle stacks for training 
 
-### v0.3.3
+</details>
+
+<details><summary>Version 0.3.3</summary>
 
 * Faster image preprocessing and smaller memory footprint
 * New: `cryodrgn preprocess` for large datasets (_in beta testing_ - see <a href="https://www.notion.so/cryodrgn-preprocess-d84a9d9df8634a6a8bfd32d6b5e737ef">this Notion doc</a> for details)
 * Known <a href="https://github.com/zhonge/cryodrgn/issues/66">issue</a> with PyTorch version 1.9+
 
-### Previous versions
+</details>
 
 <details><summary>Version 0.3.2</summary>
 * New: cryoDRGN_filtering.ipynb for interactive filtering/selection of images from the dataset

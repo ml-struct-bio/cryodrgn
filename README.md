@@ -101,11 +101,11 @@ A quick start is provided below.
 To install cryoDRGN, git clone the source code and install the following dependencies with anaconda, replacing the cudatoolkit version as necessary:
 
     # Create conda environment
-    conda create --name cryodrgn python=3.7
-    conda activate cryodrgn
+    conda create --name cryodrgn1 python=3.9
+    conda activate cryodrgn1
 
     # Install dependencies
-    conda install 'pytorch<1.9.0' -c pytorch # PyTorch 1.9+ is not working for now.
+    conda install pytorch -c pytorch
     conda install pandas
     
     # Install dependencies for latent space visualization 
@@ -119,7 +119,7 @@ To install cryoDRGN, git clone the source code and install the following depende
     # Clone source code and install
     git clone https://github.com/zhonge/cryodrgn.git
     cd cryodrgn
-    git checkout 0.3.3b # or latest version
+    git checkout 0.3.5 # or latest version
     python setup.py install
 
 To use accelerated mixed precision training (available for Nvidia Volta, Turing, and Ampere architectures), install Nvidia's apex package into the conda environement (https://github.com/NVIDIA/apex#quick-start).

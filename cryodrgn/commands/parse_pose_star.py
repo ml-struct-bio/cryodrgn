@@ -11,19 +11,28 @@ log = utils.log
 
 def add_args(parser):
     parser.add_argument('input', help='RELION .star file')
-    parser.add_argument('-D', type=int, required=True, help='Box size of reconstruction (pixels)')
-    parser.add_argument('--relion31', action='store_true', help='Flag for relion3.1 star format')
-    parser.add_argument('--Apix', type=float, help='Pixel size (A); Required if translations are specified in Angstroms')
     parser.add_argument('-o', metavar='PKL', type=os.path.abspath, required=True, help='Output pose.pkl')
+
+    group = parser.add_argument_group('Optionally provide missing image parameters')
+    group.add_argument('-D', type=int, help='Box size of reconstruction (pixels)')
+    group.add_argument('--Apix', type=float, help='Pixel size (A); Required if translations are specified in Angstroms')
     return parser
 
 def main(args):
     assert args.input.endswith('.star'), "Input file must be .star file"
     assert args.o.endswith('.pkl'), "Output format must be .pkl"
 
-    s = starfile.Starfile.load(args.input, relion31=args.relion31)
+    s = starfile.Starfile.load(args.input)
+    if s.relion31: # Get image stats from data_optics table
+        assert len(s.data_optics.df) == 1, "Datasets with only one optics group are supported."
+        args.Apix = float(s.data_optics.df['_rlnImagePixelSize'][0])
+        args.D = int(s.data_optics.df['_rlnImageSize'][0])
+    if args.D is None and '_rlnImageSize' in s.headers:
+        args.D = int(s.df['_rlnImageSize'][0]) 
+    assert args.D is not None, "Must provide image size with -D"
+
     N = len(s.df)
-    log('{} particles'.format(N))
+    log(f'{N} particles')
     
     # parse rotations
     keys = ('_rlnAngleRot','_rlnAngleTilt','_rlnAnglePsi')

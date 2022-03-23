@@ -45,7 +45,6 @@ def add_args(parser):
 
     group = parser.add_argument_group('Optionally include additional star file columns')
     group.add_argument('--ref-star', help='Reference star file from original import')
-    group.add_argument('--ref-star-relion31', action='store_true', help='Flag for relion3.1 star format')
     group.add_argument('--keep-micrograph', action='store_true', help='Include micrograph coordinate headers')
     return parser
 
@@ -73,7 +72,7 @@ def main(args):
     log(f'{len(particles)} particles in {args.particles}')
 
     if args.ref_star:
-        ref_star = starfile.Starfile.load(args.ref_star, relion31=args.ref_star_relion31)
+        ref_star = starfile.Starfile.load(args.ref_star)
         assert len(ref_star) == len(particles), f"Particle ordering in {args.particles} must match {args.ref_star}"
 
     # Get index for particles in each .mrcs file

@@ -1,7 +1,5 @@
 '''
 Filter a .star file
-
-(Note: RELION 3.1 star files are not supported)
 '''
 
 import argparse
@@ -21,7 +19,7 @@ def parse_args():
     return parser
 
 def main(args):
-    s = starfile.Starfile.load(args.input, relion31=False)
+    s = starfile.Starfile.load(args.input)
     ind = utils.load_pkl(args.ind)
     log('{} particles'.format(len(s.df)))
     s.df = s.df.loc[ind]

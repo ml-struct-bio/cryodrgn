@@ -175,8 +175,8 @@ CryoDRGN expects image poses in a binary pickle format (`.pkl`). Use the `parse_
 
 Example usage to parse image poses from a RELION 3.1 starfile:     
 
-    $ cryodrgn parse_pose_star particles.star -o pose.pkl -D 300 --relion31
-
+    $ cryodrgn parse_pose_star particles.star -o pose.pkl -D 300
+    
 Example usage to parse image poses from a cryoSPARC homogeneous refinement particles.cs file:
 
     $ cryodrgn parse_pose_csparc cryosparc_P27_J3_005_particles.cs -o pose.pkl -D 300
@@ -191,7 +191,7 @@ CryoDRGN expects CTF parameters in a binary pickle format (`.pkl`). Use the `par
 
 Example usage for a .star file:
     
-    $ cryodrgn parse_ctf_star particles.star -D 300 --Apix 1.03 -o ctf.pkl --relion31
+    $ cryodrgn parse_ctf_star particles.star -D 300 --Apix 1.03 -o ctf.pkl
 
 The `-D` and `--Apix` arguments should be set to the box size and Angstrom/pixel of the original `.mrcs` file (before any downsampling). 
 
@@ -333,7 +333,7 @@ Many of the parameters of this script have sensible defaults. The required argum
 Additional parameters which are typically set include:
 
 * `-n`, Number of epochs to train
-* `--uninvert-data`, Use if particles are dark on light
+* `--uninvert-data`, Use if particles are dark on light (negative stain format)
 * Architecture parameters with `--enc-layers`, `--enc-dim`, `--dec-layers`, `--dec-dim`
 * `--amp` to enable mixed precision training (fast!)
 * `--multigpu` to enable parallelized training across multiple GPUs
@@ -348,10 +348,10 @@ Example command to train a cryoDRGN model for 50 epochs on an image dataset `pro
     $ cryodrgn train_vae projections.128.mrcs \
             --poses pose.pkl \
             --ctf ctf.pkl \
-            --zdim 8 -n 50 \
+            --zdim 8 -n 25 \
             -o 00_vae128_z8
 
-2) After any particle filtering, then train a larger model on the downsampled images. Because model size constrains the representation capacity, a larger architecture may  be capable of learning more heterogeneity.
+2) After any particle filtering, then train a larger model, which may capture more heterogeneity, on the downsampled images.
 
 Example command to train a larger cryoDRGN model for 25 epochs on an image dataset `projections.128.mrcs` with poses `pose.pkl` and ctf parameters `ctf.pkl`:
 
@@ -387,7 +387,7 @@ If you would like to train longer, a training job can be extended with the `--lo
             -o 01_vae256_z8 \
             --load 01_vae_256_z8/weights.24.pkl # 0-based indexing
 
-Note: While these settings worked well for the datasets we've tested, they are highly experimental for the general case as different datasets have diverse sources of heterogeneity. Please reach out to the authors with questions/consult -- we'd love to learn more.
+Note: While these settings worked well for the datasets we've tested, they are highly experimental for the general case as different datasets have diverse sources of heterogeneity. Please reach out to the authors with questions -- we'd love to learn more.
 
 ### Accelerated training with GPU parallelization and mixed precision training
 
@@ -397,9 +397,9 @@ Use cryoDRGN's `--multigpu` flag to enable parallelized training across all dete
     $ cryodrgn train_vae ... --multigpu # Run on all GPUs on the machine
     $ CUDA_VISIBLE_DEVICES=0,3 cryodrgn train_vae ... --multigpu # Run on GPU 0,3 
 
-When training is parallelized across multiple GPUs, the batch size (number of images trained in each mini-batch of SGD; default `-b 8`) will be automatically scaled by the number of available GPUs to better take advantage of parallelization. Depending on your compute resources, GPU utilization may be improved with `-b 16` (i.e. to achieve linear scaling of runtime with # GPUs). However, note that GPU parallelization, while leading to a faster wall-clock time per epoch, may require increasing the total number of epochs, since the training dynamics are affected (fewer model updates per epoch with larger `-b`).
+When training is parallelized across multiple GPUs, the batch size (number of images trained in each mini-batch of SGD; default `-b 8`) will be automatically scaled by the number of available GPUs to better take advantage of parallelization. Depending on your compute resources, GPU utilization may be improved with `-b 16`. However, note that GPU parallelization, while leading to a faster wall-clock time per epoch, may require increasing the total number of epochs, since the training dynamics are affected (fewer model updates per epoch with larger `-b`).
 
-Mixed precision training with the `--amp` flag is available for Nvidia GPUs with tensor core architectures and can lead to _order of magnitude_ speed ups in training. In order to use mixed precision training, Nvidia's apex library must first be installed into the cryodrgn anaconda environmenet (https://github.com/NVIDIA/apex#quick-start).  
+Mixed precision training with the `--amp` flag is available for Nvidia GPUs with tensor core architectures and can lead to an _order of magnitude_ speed up in training. In order to use mixed precision training, either upgrade to pytorch v1.6 or later, or separately install Nvidia's apex library into the cryodrgn anaconda environment (https://github.com/NVIDIA/apex#quick-start).  
 
 **Note:** We recommend using `--multigpu` and `--amp` for larger architecture or images. GPU computation may not be the training bottleneck, especially for the default architecture (256x3) and smaller images (D=128). In this case, GPU parallelization and mixed precision training may have a limited effect on the wall clock training time, while taking up additional compute resources, however this behavior depends on your specific computing resources. 
 
@@ -410,7 +410,7 @@ Image poses may be *locally* refined using the `--do-pose-sgd` flag. More detail
 
 ## 6. Analysis of results
 
-Once the model has finished training, the output directory will contain a configuration file `config.pkl`, neural network weights `weights.pkl`, image poses (if performing pose sgd) `pose.pkl`, and the predicted latent encoding for each image `z.pkl`. Note that the latent encodings are provided in the same order as the input particles. To analyze these results, use the `cryodrgn analyze` command to visualize the latent space and generate structures. `cryodrgn analyze` will also provide a template jupyter notebook for further interactive visualization and analysis.
+Once the model has finished training, the output directory will contain a configuration file `config.pkl`, neural network weights `weights.pkl`, image poses (if performing pose sgd) `pose.pkl`, and the latent embeddings for each image `z.pkl`. Note that the latent embeddings are provided in the same order as the input particles. To analyze these results, use the `cryodrgn analyze` command to visualize the latent space and generate structures. `cryodrgn analyze` will also provide a template jupyter notebook for further interactive visualization and analysis.
 
 ### cryodrgn analyze
 
@@ -444,12 +444,13 @@ Once the model has finished training, the output directory will contain a config
       --pc PC               Number of principal component traversals to generate
                             (default: 2)
       --ksample KSAMPLE     Number of kmeans samples to generate (default: 20)
+      
 This script runs a series of standard analyses:
 
-* PCA of the latent space
-* UMAP embedding of the latent space
-* Generation of volumes from the latent space. See note [1].
-* Generation of trajectories along the first and second principal components
+* PCA visualization of the latent embeddings
+* UMAP visualization of the latent embeddings
+* Generation of volumes. See note [1].
+* Generation of trajectories along the first and second principal components of the latent embeddings
 * Generation of a template jupyter notebook that may be used for further interactive analyses, visualization, and volume generation
 * Generation of a template jupyter notebook for particle filtering and selection 
 

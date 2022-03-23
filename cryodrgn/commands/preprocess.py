@@ -19,7 +19,6 @@ log = utils.log
 def add_args(parser):
     parser.add_argument('mrcs', help='Input particles or volume (.mrc, .mrcs, .star, or .txt)')
     parser.add_argument('-o', metavar='MRCS', type=os.path.abspath, required=True, help='Output .mrcs')
-    parser.add_argument('--relion31', action='store_true', help='Flag for relion3.1 star format')
     parser.add_argument('--datadir', help='Optionally provide path to input .mrcs if loading from a .star or .cs file')
 
     group = parser.add_argument_group('Image preprocessing settings')
@@ -51,7 +50,7 @@ def main(args):
 
     # load images
     lazy = args.lazy
-    images = dataset.load_particles(args.mrcs, lazy=lazy, datadir=args.datadir, relion31=args.relion31)
+    images = dataset.load_particles(args.mrcs, lazy=lazy, datadir=args.datadir)
     
     # filter images
     if args.ind is not None: 

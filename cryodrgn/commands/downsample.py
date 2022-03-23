@@ -23,7 +23,6 @@ def add_args(parser):
     parser.add_argument('-b', type=int, default=5000, help='Batch size for processing images (default: %(default)s)')
     parser.add_argument('--is-vol',action='store_true', help='Flag if input .mrc is a volume')
     parser.add_argument('--chunk', type=int, help='Chunksize (in # of images) to split particle stack when saving')
-    parser.add_argument('--relion31', action='store_true', help='Flag for relion3.1 star format')
     parser.add_argument('--datadir', help='Optionally provide path to input .mrcs if loading from a .star or .cs file')
     parser.add_argument('--max-threads', type=int, default=16, help='Maximum number of CPU cores for parallelization (default: %(default)s)')
     return parser
@@ -42,7 +41,7 @@ def main(args):
     assert (args.o.endswith('.mrcs') or args.o.endswith('mrc')), "Must specify output in .mrc(s) file format"
 
     lazy = not args.is_vol
-    old = dataset.load_particles(args.mrcs, lazy=lazy, datadir=args.datadir, relion31=args.relion31)
+    old = dataset.load_particles(args.mrcs, lazy=lazy, datadir=args.datadir)
 
     oldD = old[0].get().shape[0] if lazy else old.shape[-1]
     assert args.D <= oldD, f'New box size {args.D} cannot be larger than the original box size {oldD}'

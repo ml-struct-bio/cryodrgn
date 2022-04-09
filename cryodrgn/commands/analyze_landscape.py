@@ -34,7 +34,6 @@ def add_args(parser):
     parser.add_argument('-o','--outdir', type=os.path.abspath, help='Output directory for landscape analysis results (default: [workdir]/landscape.[epoch])')
     parser.add_argument('--skip-vol', action='store_true', help='Skip generation of volumes')
     parser.add_argument('--skip-umap', action='store_true', help='Skip running UMAP')
-    parser.add_argument('--skip-mask', action='store_true', help='Skip generating mask')
     parser.add_argument('--vol-ind', type=os.path.abspath, help='Index .pkl for filtering volumes')
 
     group = parser.add_argument_group('Extra arguments for clustering')
@@ -54,12 +53,13 @@ def add_args(parser):
     group = parser.add_argument_group('Extra arguments for mask generation')
     group.add_argument('--thresh', type=float, help='Density value to threshold for masking (default: half of max density value)')
     group.add_argument('--dilate', type=int, default=5, help='Dilate initial mask by this amount (default: %(default)s pixels)')
+    group.add_argument('--mask', metavar='MRC', type=os.path.abspath, help='Path to a custom mask. Must be same box size as generated volumes.')
 
     return parser
 
 def generate_volumes(z, outdir, vg, K):
     # kmeans clustering
-    log('K-means clustering...')
+    log('Sketching distribution...')
     kmeans_labels, centers = analysis.cluster_kmeans(z, K, on_data=True, reorder=True)
     centers, centers_ind = analysis.get_nearest_point(z, centers)
     if not os.path.exists(f'{outdir}/kmeans{K}'): 
@@ -87,28 +87,33 @@ class VolumeGenerator:
         analysis.gen_volumes(self.weights, self.config, zfile, outdir, **self.vol_args)
 
 
-def make_mask(outdir, K, dilate, thresh):
-    if thresh is None:
-        thresh = []
-        for i in range(K):
-            vol = mrc.parse_mrc(f'{outdir}/kmeans{K}/vol_{i:03d}.mrc')[0]
-            thresh.append(np.percentile(vol, 99.99)/2)
-        thresh = np.mean(thresh)
-    log(f'Threshold: {thresh}')
-    log(f'Dilating mask by: {dilate}')
-
-    def binary_mask(vol):
-        x = (vol>=thresh).astype(bool)
-        x = binary_dilation(x, iterations=dilate)
-        return x
+def make_mask(outdir, K, dilate, thresh, in_mrc=None):
+    if in_mrc is None:
+        if thresh is None:
+            thresh = []
+            for i in range(K):
+                vol = mrc.parse_mrc(f'{outdir}/kmeans{K}/vol_{i:03d}.mrc')[0]
+                thresh.append(np.percentile(vol, 99.99)/2)
+            thresh = np.mean(thresh)
+        log(f'Threshold: {thresh}')
+        log(f'Dilating mask by: {dilate}')
     
-    # combine all masks by taking their union
-    vol = mrc.parse_mrc(f'{outdir}/kmeans{K}/vol_000.mrc')[0]
-    mask = ~binary_mask(vol)
-    for i in range(1,K):
-        vol = mrc.parse_mrc(f'{outdir}/kmeans{K}/vol_{i:03d}.mrc')[0]
-        mask *= ~binary_mask(vol)
-    mask = ~mask
+        def binary_mask(vol):
+            x = (vol>=thresh).astype(bool)
+            x = binary_dilation(x, iterations=dilate)
+            return x
+        
+        # combine all masks by taking their union
+        vol = mrc.parse_mrc(f'{outdir}/kmeans{K}/vol_000.mrc')[0]
+        mask = ~binary_mask(vol)
+        for i in range(1,K):
+            vol = mrc.parse_mrc(f'{outdir}/kmeans{K}/vol_{i:03d}.mrc')[0]
+            mask *= ~binary_mask(vol)
+        mask = ~mask
+    else:
+        # Load provided mrc and convert to a boolean mask
+        mask, _ = mrc.parse_mrc(in_mrc)
+        mask = mask.astype(bool)
 
     # save mask
     out_mrc = f'{outdir}/mask.mrc'
@@ -123,9 +128,6 @@ def make_mask(outdir, K, dilate, thresh):
     ax[1].imshow(mask[:,D//2,:])
     ax[2].imshow(mask[:,:,D//2])
     plt.savefig(out_png)
-
-def regenerate_plots(outdir, K, dim, M):
-    pc = utils.load_pkl(f'{outdir}/vol_embeddings_500.pkl')
 
 def choose_cmap(M):
     if M <= 10:
@@ -174,14 +176,14 @@ def analyze_volumes(outdir, K, dim, M, linkage, vol_ind=None, plot_dim=5, partic
     pca = PCA(dim)
     pca.fit(vols)
     pc = pca.transform(vols)
-    utils.save_pkl(pc, f'{outdir}/vol_pc_embeddings_{K}.pkl')
-    utils.save_pkl(pca, f'{outdir}/pca.pkl')
+    utils.save_pkl(pc, f'{outdir}/vol_pca_{K}.pkl')
+    utils.save_pkl(pca, f'{outdir}/vol_pca_obj.pkl')
     log('Explained variance ratio:')
     log(pca.explained_variance_ratio_)
 
     # save rxn coordinates
     for i in range(plot_dim):
-        subdir = f'{outdir}/pcs/pc{i+1}'
+        subdir = f'{outdir}/vol_pcs/pc{i+1}'
         if not os.path.exists(subdir):
             os.makedirs(subdir)
         min_, max_ = pc[:,i].min(), pc[:,i].max()
@@ -197,7 +199,7 @@ def analyze_volumes(outdir, K, dim, M, linkage, vol_ind=None, plot_dim=5, partic
         plt.scatter(pc[:,i],pc[:,j])
         plt.xlabel(f'Volume PC{i+1} (EV: {pca.explained_variance_ratio_[i]:03f})')
         plt.ylabel(f'Volume PC{j+1} (EV: {pca.explained_variance_ratio_[j]:03f})')
-        plt.savefig(f'{outdir}/vol_pc_embeddings_{K}_{i+1}_{j+1}.png')
+        plt.savefig(f'{outdir}/vol_pca_{K}_{i+1}_{j+1}.png')
     for i in range(plot_dim-1):
         plot(i,i+1)
 
@@ -207,7 +209,7 @@ def analyze_volumes(outdir, K, dim, M, linkage, vol_ind=None, plot_dim=5, partic
         os.makedirs(subdir)
     cluster = AgglomerativeClustering(n_clusters=M, affinity='euclidean', linkage=linkage)
     labels = cluster.fit_predict(vols)
-    utils.save_pkl(labels, f'{subdir}/cluster_labels.pkl')
+    utils.save_pkl(labels, f'{subdir}/state_labels.pkl')
 
     kmeans_labels = utils.load_pkl(f'{outdir}/kmeans{K}/labels.pkl')
     kmeans_counts = Counter(kmeans_labels)
@@ -220,18 +222,18 @@ def analyze_volumes(outdir, K, dim, M, linkage, vol_ind=None, plot_dim=5, partic
         nparticles = np.array([kmeans_counts[i] for i in vol_i]) 
         vol_i_mean = np.average(vol_i_all, axis=0, weights=nparticles)
         vol_i_std = np.average((vol_i_all-vol_i_mean)**2, axis=0, weights=nparticles)**.5
-        mrc.write(f'{subdir}/{i}_mean.mrc', vol_i_mean.astype(np.float32))
-        mrc.write(f'{subdir}/{i}_std.mrc', vol_i_std.astype(np.float32))
-        if not os.path.exists(f'{subdir}/{i}'):
-            os.makedirs(f'{subdir}/{i}')
+        mrc.write(f'{subdir}/state_{i}_mean.mrc', vol_i_mean.astype(np.float32))
+        mrc.write(f'{subdir}/state_{i}_std.mrc', vol_i_std.astype(np.float32))
+        if not os.path.exists(f'{subdir}/state_{i}'):
+            os.makedirs(f'{subdir}/state_{i}')
         for v in vol_i:
-            os.symlink(f'{outdir}/kmeans{K}/vol_{v:03d}.mrc', f'{subdir}/{i}/vol_{v:03d}.mrc')
+            os.symlink(f'{outdir}/kmeans{K}/vol_{v:03d}.mrc', f'{subdir}/state_{i}/vol_{v:03d}.mrc')
         particle_ind = analysis.get_ind_for_cluster(kmeans_labels, vol_i)
         log(f'State {i}: {len(particle_ind)} particles')
         if particle_ind_orig is not None:
-            utils.save_pkl(particle_ind_orig[particle_ind], f'{subdir}/{i}_particle_ind.pkl')
+            utils.save_pkl(particle_ind_orig[particle_ind], f'{subdir}/state_{i}_particle_ind.pkl')
         else:
-            utils.save_pkl(particle_ind, f'{subdir}/{i}_particle_ind.pkl')  
+            utils.save_pkl(particle_ind, f'{subdir}/state_{i}_particle_ind.pkl')  
 
 
     # plot clustering results
@@ -240,7 +242,7 @@ def analyze_volumes(outdir, K, dim, M, linkage, vol_ind=None, plot_dim=5, partic
             with sns.color_palette(cmap):
                 g = sns.barplot(np.arange(M), counts_)
         else: # default is husl
-            g = sns.barplot(np.arange(M), count_)
+            g = sns.barplot(np.arange(M), counts_)
         return g
         
     plt.figure()
@@ -248,18 +250,18 @@ def analyze_volumes(outdir, K, dim, M, linkage, vol_ind=None, plot_dim=5, partic
     g = hack_barplot([counts[i] for i in range(M)])
     for i in range(M):
         g.text(i-.1, counts[i]+2, counts[i])
-    plt.xlabel('Cluster')
+    plt.xlabel('State')
     plt.ylabel('Count')
-    plt.savefig(f'{subdir}/volume_counts.png')
+    plt.savefig(f'{subdir}/state_volume_counts.png')
 
     plt.figure()
     particle_counts = [np.sum([kmeans_counts[ii] for ii in np.where(labels == i)[0]]) for i in range(M)]
     g = hack_barplot(particle_counts)
     for i in range(M):
         g.text(i-.1, particle_counts[i]+2, particle_counts[i])
-    plt.xlabel('Cluster')
+    plt.xlabel('State')
     plt.ylabel('Count')
-    plt.savefig(f'{subdir}/particle_counts.png')
+    plt.savefig(f'{subdir}/state_particle_counts.png')
 
 
     def plot_w_labels(i,j):
@@ -267,7 +269,7 @@ def analyze_volumes(outdir, K, dim, M, linkage, vol_ind=None, plot_dim=5, partic
         plt.scatter(pc[:,i],pc[:,j],c=labels, cmap=cmap)
         plt.xlabel(f'Volume PC{i+1} (EV: {pca.explained_variance_ratio_[i]:03f})')
         plt.ylabel(f'Volume PC{j+1} (EV: {pca.explained_variance_ratio_[j]:03f})')
-        plt.savefig(f'{subdir}/vol_embeddings_{K}_clusters_{i+1}_{j+1}.png')
+        plt.savefig(f'{subdir}/vol_pca_{K}_{i+1}_{j+1}.png')
     for i in range(plot_dim-1):
         plot_w_labels(i,i+1)
 
@@ -281,7 +283,7 @@ def analyze_volumes(outdir, K, dim, M, linkage, vol_ind=None, plot_dim=5, partic
             ax.annotate(str(k), pc[ii,[i,j]]+np.array([.1,.1]))
         plt.xlabel(f'Volume PC{i+1} (EV: {pca.explained_variance_ratio_[i]:03f})')
         plt.ylabel(f'Volume PC{j+1} (EV: {pca.explained_variance_ratio_[j]:03f})')
-        plt.savefig(f'{subdir}/vol_embeddings_{K}_annotated_{i+1}_{j+1}.png')
+        plt.savefig(f'{subdir}/vol_pca_{K}_annotated_{i+1}_{j+1}.png')
     for i in range(plot_dim-1):
         plot_w_labels_annotated(i,i+1)
 
@@ -352,11 +354,9 @@ def main(args):
         else:
             raise NotImplementedError
         
-    if args.skip_mask:
-        log('Skipping mask generation')
-        assert os.path.exists(f'{outdir}/mask.mrc')
-    else:
-        make_mask(outdir, K, args.dilate, args.thresh)
+    if args.mask:
+        log(f'Using custom mask {args.mask}')
+    make_mask(outdir, K, args.dilate, args.thresh, args.mask)
 
     log('Analyzing volumes...')
     # get particle indices if the dataset was originally filtered

@@ -39,7 +39,6 @@ def add_args(parser):
     parser.add_argument('ctf', help='Input ctf.pkl')
     parser.add_argument('--poses', help='Optionally include pose.pkl') 
     parser.add_argument('--ind', help='Optionally filter by selected index array (.pkl)')
-    parser.add_argument('--datadir', type=os.path.abspath, help='Path prefix to particle stack if loading relative paths from a .star or .cs file')
     parser.add_argument('--full-path', action='store_true', help='Write the full path to particles (default: relative paths)')
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Output .star file')
 
@@ -73,7 +72,7 @@ def main(args):
 
     if args.ref_star:
         ref_star = starfile.Starfile.load(args.ref_star)
-        assert len(ref_star) == len(particles), f"Particle ordering in {args.particles} must match {args.ref_star}"
+        assert len(ref_star) == len(particles), f"{len(particles)} != {len(ref_star)}, Number of particles in {args.particles} != number of particles in {args.ref_star}"
 
     # Get index for particles in each .mrcs file
     if args.particles.endswith('.txt'):

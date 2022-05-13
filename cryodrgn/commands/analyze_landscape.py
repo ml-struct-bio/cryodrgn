@@ -36,14 +36,6 @@ def add_args(parser):
     parser.add_argument('--skip-umap', action='store_true', help='Skip running UMAP')
     parser.add_argument('--vol-ind', type=os.path.abspath, help='Index .pkl for filtering volumes')
 
-    group = parser.add_argument_group('Extra arguments for clustering')
-    group.add_argument('--linkage', default='average', help='Linkage for agglomerative clustering (e.g. average, ward) (default: %(default)s)')
-    group.add_argument('-M', type=int, default=10, help='Number of clusters (default: %(default)s)')
-
-    group = parser.add_argument_group('Extra arguments for visualization')
-    group.add_argument('--pc-dim', default=20, help='PCA dimensionality reduction (default: %(default)s)')
-    group.add_argument('--plot-dim', type=int, default=5, help='Number of dimensions to plot (default: %(default)s)')
-
     group = parser.add_argument_group('Extra arguments for volume generation')
     group.add_argument('--Apix', type=float, default=1, help='Pixel size to add to .mrc header (default: %(default)s A/pix)')
     group.add_argument('--flip', action='store_true', help='Flip handedness of output volume')
@@ -54,6 +46,14 @@ def add_args(parser):
     group.add_argument('--thresh', type=float, help='Density value to threshold for masking (default: half of max density value)')
     group.add_argument('--dilate', type=int, default=5, help='Dilate initial mask by this amount (default: %(default)s pixels)')
     group.add_argument('--mask', metavar='MRC', type=os.path.abspath, help='Path to a custom mask. Must be same box size as generated volumes.')
+
+    group = parser.add_argument_group('Extra arguments for clustering')
+    group.add_argument('--linkage', default='average', help='Linkage for agglomerative clustering (e.g. average, ward) (default: %(default)s)')
+    group.add_argument('-M', type=int, default=10, help='Number of clusters (default: %(default)s)')
+
+    group = parser.add_argument_group('Extra arguments for landscape visualization')
+    group.add_argument('--pc-dim', default=20, help='PCA dimensionality reduction (default: %(default)s)')
+    group.add_argument('--plot-dim', type=int, default=5, help='Number of dimensions to plot (default: %(default)s)')
 
     return parser
 
@@ -330,7 +330,7 @@ def main(args):
 
     z = utils.load_pkl(zfile)
     zdim = z.shape[1]
-    K = args.ksample
+    K = args.sketch_size
 
     vol_args = dict(Apix=args.Apix, downsample=args.downsample, flip=args.flip, cuda=args.device)
     vg = VolumeGenerator(weights, config, vol_args, skip_vol=args.skip_vol)

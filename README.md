@@ -124,7 +124,9 @@ To install cryoDRGN, git clone the source code and install the following depende
     git checkout 1.0.0-beta # or latest version
     python setup.py install
 
-To use accelerated mixed precision training (available for Nvidia Volta, Turing, and Ampere architectures), install Nvidia's apex package into the conda environement (https://github.com/NVIDIA/apex#quick-start).
+### Accelerated training 
+
+Accelerated mixed precision training is available for GPUs with tensor core architecutres (Nvidia Volta, Turing, and Ampere architectures). For earlier versions of pytorch (up to version 1.6), you will also need to install Nvidia's apex package into the conda environement (https://github.com/NVIDIA/apex#quick-start):
 
     git clone https://github.com/NVIDIA/apex
     cd apex

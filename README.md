@@ -121,7 +121,7 @@ To install cryoDRGN, git clone the source code and install the following depende
     # Clone source code and install
     git clone https://github.com/zhonge/cryodrgn.git
     cd cryodrgn
-    git checkout 0.3.5 # or latest version
+    git checkout 1.0.0-beta # or latest version
     python setup.py install
 
 To use accelerated mixed precision training (available for Nvidia Volta, Turing, and Ampere architectures), install Nvidia's apex package into the conda environement (https://github.com/NVIDIA/apex#quick-start).

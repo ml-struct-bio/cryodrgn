@@ -21,7 +21,9 @@ A quick start is provided below.
 
 ## New in version 1.0.0
 
-* NEW: `cryodrgn analyze_landscape` for automatic classification and energy landscape inference (Tutorial here)
+_Currently in beta testing as version 1.0.0-beta_
+
+* NEW: `cryodrgn analyze_landscape` for automatic classification and energy landscape inference
 * NEW: Faster training and higher resolution model with Gaussian Fourier featurization (Use `--pe-type gaussian`)
 * NEW: `cryodrgn write_starfile` for converting cryoDRGN particle selections to `.star` files
 * Add pytorch native mixed precision training and fix support for pytorch 1.9+

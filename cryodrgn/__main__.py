@@ -6,6 +6,8 @@ def main():
     import cryodrgn
     parser.add_argument('--version', action='version', version='cryoDRGN '+cryodrgn.__version__)
 
+    import cryodrgn.commands.analyze_landscape
+    import cryodrgn.commands.analyze_landscape_full
     import cryodrgn.commands.downsample
     import cryodrgn.commands.preprocess
     import cryodrgn.commands.parse_pose_star
@@ -24,8 +26,10 @@ def main():
     import cryodrgn.commands.view_config
     import cryodrgn.commands.write_starfile
 
-    modules = [cryodrgn.commands.downsample,
+    modules = [cryodrgn.commands.analyze_landscape,
+        cryodrgn.commands.analyze_landscape_full,
         cryodrgn.commands.preprocess,
+        cryodrgn.commands.downsample,
         cryodrgn.commands.parse_pose_csparc,
         cryodrgn.commands.parse_pose_star,
         cryodrgn.commands.parse_ctf_csparc,

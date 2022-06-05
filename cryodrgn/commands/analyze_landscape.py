@@ -32,15 +32,15 @@ def add_args(parser):
     parser.add_argument('epoch', type=int, help='Epoch number N to analyze (0-based indexing, corresponding to z.N.pkl, weights.N.pkl)')
     parser.add_argument('--device', type=int, help='Optionally specify CUDA device')
     parser.add_argument('-o','--outdir', type=os.path.abspath, help='Output directory for landscape analysis results (default: [workdir]/landscape.[epoch])')
-    parser.add_argument('--skip-vol', action='store_true', help='Skip generation of volumes')
     parser.add_argument('--skip-umap', action='store_true', help='Skip running UMAP')
     parser.add_argument('--vol-ind', type=os.path.abspath, help='Index .pkl for filtering volumes')
 
     group = parser.add_argument_group('Extra arguments for volume generation')
+    group.add_argument('-N','--sketch-size', type=int, default=1000, help='Number of volumes to generate for analysis (default: %(default)s)')
     group.add_argument('--Apix', type=float, default=1, help='Pixel size to add to .mrc header (default: %(default)s A/pix)')
     group.add_argument('--flip', action='store_true', help='Flip handedness of output volume')
     group.add_argument('-d','--downsample', type=int, default=128, help='Downsample volumes to this box size (pixels) (default: %(default)s)')
-    group.add_argument('-n','--sketch-size', type=int, default=1000, help='Number of volumes to generate for analysis (default: %(default)s)')
+    group.add_argument('--skip-vol', action='store_true', help='Skip generation of volumes')
 
     group = parser.add_argument_group('Extra arguments for mask generation')
     group.add_argument('--thresh', type=float, help='Density value to threshold for masking (default: half of max density value)')

@@ -1,5 +1,14 @@
 from . import utils
 
+
+def update_config_v1(config_pkl):
+    config = utils.load_pkl(config_pkl)
+    arg = 'feat_sigma'
+    if arg not in config['model_args']:
+        assert config['model_args']['pe_type'] != 'gaussian'
+        config['model_args'][arg] = None
+    return config
+
 def overwrite_config(config_pkl, args):
     config = utils.load_pkl(config_pkl)
     if args.norm is not None:

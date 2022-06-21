@@ -381,7 +381,7 @@ def main(args):
     flog(model)
     flog('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
     flog('{} parameters in encoder'.format(sum(p.numel() for p in model.encoder.parameters() if p.requires_grad)))
-    flog('{} parameters in deoder'.format(sum(p.numel() for p in model.decoder.parameters() if p.requires_grad)))
+    flog('{} parameters in decoder'.format(sum(p.numel() for p in model.decoder.parameters() if p.requires_grad)))
 
     # save configuration
     out_config = '{}/config.pkl'.format(args.outdir)

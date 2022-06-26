@@ -17,6 +17,7 @@ setup(name='cryodrgn',
       entry_points={
           "console_scripts": [
             "cryodrgn = cryodrgn.__main__:main",
+            "cryodrgn_utils = cryodrgn.utils_exec:main",
             ],
       },
       include_package_data = True,

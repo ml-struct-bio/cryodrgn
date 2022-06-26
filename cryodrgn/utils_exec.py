@@ -7,9 +7,11 @@ def main():
     parser.add_argument('--version', action='version', version='cryoDRGN '+cryodrgn.__version__)
 
     import cryodrgn.commands_utils.filter_star
+    import cryodrgn.commands_utils.write_star
 
     modules = [
         cryodrgn.commands_utils.filter_star,
+        cryodrgn.commands_utils.write_star,
         ]
 
     subparsers = parser.add_subparsers(title='Choose a command')

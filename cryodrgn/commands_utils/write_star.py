@@ -38,7 +38,7 @@ def add_args(parser):
     parser.add_argument('particles', help='Input particles (.mrcs, .txt)')
     parser.add_argument('ctf', help='Input ctf.pkl')
     parser.add_argument('--poses', help='Optionally include pose.pkl') 
-    parser.add_argument('--ind', help='Optionally filter by selected index array (.pkl)')
+    parser.add_argument('--ind', help='Optionally filter by array of selected indices (.pkl)')
     parser.add_argument('--full-path', action='store_true', help='Write the full path to particles (default: relative paths)')
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Output .star file')
 

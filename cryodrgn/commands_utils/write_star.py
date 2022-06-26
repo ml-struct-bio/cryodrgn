@@ -45,6 +45,7 @@ def add_args(parser):
     group = parser.add_argument_group('Optionally include additional star file columns')
     group.add_argument('--ref-star', help='Reference star file from original import')
     group.add_argument('--keep-micrograph', action='store_true', help='Include micrograph coordinate headers')
+    group.add_argument('--copy-header', nargs='*', help='Additional headers to copy from the reference star file')
     return parser
 
 def parse_chunk_size(txtfile):
@@ -61,7 +62,7 @@ def main(args):
     assert args.o.endswith('.star'), "Output file must be .star file"
     assert args.particles.endswith('.mrcs') or args.particles.endswith('.txt'), "Input file must be .mrcs or .txt"
 
-    particles = dataset.load_particles(args.particles, lazy=True, datadir=args.datadir)
+    particles = dataset.load_particles(args.particles, lazy=True)
     ctf = utils.load_pkl(args.ctf)
     assert ctf.shape[1] == 9, "Incorrect CTF pkl format"
     assert len(particles) == len(ctf), f"{len(particles)} != {len(ctf)}, Number of particles != number of CTF paraameters"
@@ -120,13 +121,23 @@ def main(args):
             data[POSE_HDRS[3+i]] = trans[:,i]
     df = pd.DataFrame(data=data) 
     headers = HEADERS + POSE_HDRS if args.poses else HEADERS
+
     if args.keep_micrograph:
         assert args.ref_star, "Must provide reference .star file with micrograph coordinates"
         log(f'Copying micrograph coordinates from {args.ref_star}')
         # TODO: Prepend path from args.ref_star to MicrographName?
         for h in MICROGRAPH_HDRS:
+            log(f'  Copying {h}')
             df[h] = ref_star.df[h]
         headers += MICROGRAPH_HDRS
+
+    if args.copy_header is not None:
+        assert args.ref_star, "Must provide reference .star file"
+        log(f'Copying additional columns from {args.ref_star}')
+        for h in args.copy_header:
+            log(f'  Copying {h}')
+            df[h] = ref_star.df[h]
+            headers.append(h)
 
     s = starfile.Starfile(headers,df)
     s.write(args.o)

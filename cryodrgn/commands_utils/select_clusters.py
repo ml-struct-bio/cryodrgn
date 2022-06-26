@@ -1,4 +1,4 @@
-'''Select particles based on kmeans cluster labels'''
+'''Select particle or volume data based on (kmeans) cluster labels'''
 
 import argparse
 import numpy as np
@@ -8,10 +8,9 @@ import pickle
 from cryodrgn import utils, analysis
 log = utils.log 
 
-def parse_args():
-    parser = argparse.ArgumentParser(description=__doc__)
+def add_args(parser):
     parser.add_argument('labels', help='Input labels.pkl')
-    parser.add_argument('--sel', nargs='+', type=int, help='Cluster ids')
+    parser.add_argument('--sel', nargs='+', type=int, help='Ids of clusters to select')
     parser.add_argument('-o', type=os.path.abspath, help='Output particle index selection (.pkl)')
 
     group = parser.add_argument_group('Get original particle selection (if trained on a subset of the dataset with --ind)')
@@ -21,19 +20,21 @@ def parse_args():
 
 def main(args):
     labels = utils.load_pkl(args.labels)
-    print(f'{len(labels)} particles')
-    print(f'Selecting clusters {args.sel}')
+    log(f'{len(labels)} particles')
+    log(f'Selecting clusters {args.sel}')
     ind = analysis.get_ind_for_cluster(labels, args.sel)
-    print(f'Selected {len(ind)} particles')
-    print(ind)
+    log(f'Selected {len(ind)} particles')
+    log(ind)
     if args.parent_ind is not None:
+        log('Converting to original indices')
         parent_ind = utils.load_pkl(args.parent_ind)
         assert args.N_orig
         ind = convert_original_indices(ind, N_orig, parent_ind)
-        print('Converted to original indices')
-        print(ind)
-    print(f'Saved {args.o}')
+        log(ind)
     utils.save_pkl(ind, args.o)
+    log(f'Saved {args.o}')
 
 if __name__ == '__main__':
-    main(parse_args().parse_args())
+    parser = argparse.ArgumentParser(description=__doc__)
+    args = add_args(parser).parse_args()
+    main(args)

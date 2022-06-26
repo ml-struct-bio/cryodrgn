@@ -5,8 +5,7 @@ import numpy as np
 import sys, os
 import pickle
 
-def parse_args():
-    parser = argparse.ArgumentParser(description=__doc__)
+def add_args(parser):
     parser.add_argument('input', help='Input')
     return parser
 
@@ -18,4 +17,6 @@ def main(args):
         print(f'{a:{w}}:    {b}')
 
 if __name__ == '__main__':
-    main(parse_args().parse_args())
+    parser = argparse.ArgumentParser(description=__doc__)
+    args = add_args(parser).parse_args()
+    main(args)

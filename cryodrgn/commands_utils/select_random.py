@@ -1,17 +1,16 @@
-'''Get an index selection (.pkl) for a random subset of particles'''
+'''Select a random subset of particles'''
 
 import argparse
 import numpy as np
 import sys, os
 import pickle
 
-def parse_args():
-    parser = argparse.ArgumentParser(description=__doc__)
+def add_args(parser):
     parser.add_argument('N', type=int, help='Total number of particles')
     parser.add_argument('-o', required=True, help='Output selection (.pkl)')
-    parser.add_argument('-s', help='Optionally save out inverted selection (.pkl)')
-    parser.add_argument('--frac', type=float, help='Fraction of particles to select')
     parser.add_argument('-n', type=int, help='Number of particles to select')
+    parser.add_argument('-s', help='Optionally save out inverted selection (.pkl)')
+    parser.add_argument('--frac', type=float, help='Optionally specify fraction of particles to select')
     parser.add_argument('--seed', type=int, default=0, help='Random seed (default: %(default)s)')
     return parser
 
@@ -36,4 +35,6 @@ def main(args):
         pickle.dump(test, open(args.s,'wb'))
 
 if __name__ == '__main__':
-    main(parse_args().parse_args())
+    parser = argparse.ArgumentParser(description=__doc__)
+    args = add_args(parser).parse_args()
+    main(args)

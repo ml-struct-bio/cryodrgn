@@ -1,4 +1,4 @@
-'''Translate a particle stack'''
+'''Translate a particle stack by 2D shifts'''
 
 import argparse
 import numpy as np
@@ -12,13 +12,12 @@ from cryodrgn import fft
 
 log = utils.log
 
-def parse_args():
-    parser = argparse.ArgumentParser(description=__doc__)
+def add_args(parser):
     parser.add_argument('mrcs', help='Input particles (.mrcs, .cs, .star, or .txt)')
     parser.add_argument('trans', help='Pose or translations pickle (.pkl)')
     parser.add_argument('--tscale', type=float, default=1.0, help='Scale translations by this amount (default: %(default)s)')
     parser.add_argument('--datadir', help='Optionally overwrite path to starfile .mrcs if loading from a starfile')
-    parser.add_argument('-o', type=os.path.abspath, required=True, help='Output particle stack')
+    parser.add_argument('-o', type=os.path.abspath, required=True, help='Output particle stack (.mrcs)')
     parser.add_argument('--out-png')
     return parser
 
@@ -46,20 +45,23 @@ def main(args):
     xx,yy = np.meshgrid(np.arange(-D/2,D/2),np.arange(-D/2,D/2))
     TCOORD = np.stack([xx, yy],axis=2)/D # DxDx2
     
-    imgs = []
+    imgs = np.empty((Nimg,D,D), dtype=np.float32)
     for ii in range(Nimg):
+        if i % 1000 == 0: 
+            log(f'Processing image {i}')
         ff = fft.fft2_center(particles[ii])
         tfilt = np.dot(TCOORD,trans[ii])*-2*np.pi
         tfilt = np.cos(tfilt) + np.sin(tfilt)*1j
         ff *= tfilt
-        img = fft.ifftn_center(ff)
-        imgs.append(img)
+        imgs[ii] = fft.ifftn_center(ff).astype(np.float32)
 
-    imgs = np.asarray(imgs).astype(np.float32)
+    log(f'Writing {args.o}')
     mrc.write(args.o, imgs)
 
     if args.out_png:
         plot_projections(args.out_png, imgs[:9])
 
 if __name__ == '__main__':
-    main(parse_args().parse_args())
+    parser = argparse.ArgumentParser(description=__doc__)
+    args = add_args(parser).parse_args()
+    main(args)

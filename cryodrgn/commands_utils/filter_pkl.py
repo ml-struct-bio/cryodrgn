@@ -6,12 +6,11 @@ import sys, os
 import pickle
 log = print
 
-def parse_args():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('input', help='Input data .pkl')
-    parser.add_argument('--ind', help='Selected indices array (.pkl)')
-    parser.add_argument('--first', type=int, help='First N datapoints')
-    parser.add_argument('-o', type=os.path.abspath, help='Output data .pkl')
+def add_args(parser):
+    parser.add_argument('input', help='Input data (.pkl)')
+    parser.add_argument('--ind', help='Array of selected indices (.pkl)')
+    parser.add_argument('--first', type=int, help='Alternatively, save the first N datapoints')
+    parser.add_argument('-o', type=os.path.abspath, help='Output data (.pkl)')
     return parser
 
 def load_pkl(x):
@@ -43,4 +42,6 @@ def main(args):
     pickle.dump(x, open(args.o,'wb'))
 
 if __name__ == '__main__':
-    main(parse_args().parse_args())
+    parser = argparse.ArgumentParser(description=__doc__)
+    args = add_args(parser).parse_args()
+    main(args)

@@ -7,8 +7,7 @@ import pickle
 
 log = print
 
-def parse_args():
-    parser = argparse.ArgumentParser(description=__doc__)
+def add_args(parser):
     parser.add_argument('input', nargs='+', help='Input .pkl files')
     parser.add_argument('-o', required=True, help='Output .pkl file')
     return parser
@@ -31,4 +30,6 @@ def main(args):
     pickle.dump(x2, open(args.o,'wb'))
 
 if __name__ == '__main__':
-    main(parse_args().parse_args())
+    parser = argparse.ArgumentParser(description=__doc__)
+    args = add_args(parser).parse_args()
+    main(args)

@@ -19,13 +19,12 @@ https://www.notion.so/cryoDRGN-tutorial-b932c021cb2c415282f182048bac16ff
 
 A quick start is provided below.
 
-## New in version 1.0.0
+## New in version 1.0
 
-_Currently in beta testing as version 1.0.0-beta_
-
-* NEW: `cryodrgn analyze_landscape` for automatic classification and energy landscape inference
+* NEW: `cryodrgn analyze_landscape` and `cryodrgn analyze_landscape_full` for conformational landscape analysis
 * NEW: Faster training and higher resolution model with Gaussian Fourier featurization (Use `--pe-type gaussian`)
-* NEW: `cryodrgn write_starfile` for converting cryoDRGN particle selections to `.star` files
+* NEW: `cryodrgn_utils <command> -h` for standalone utility scripts 
+* NEW: `cryodrgn_utils write_star` for converting cryoDRGN particle selections to `.star` files
 * Add pytorch native mixed precision training and fix support for pytorch 1.9+
 
 ### Previous versions

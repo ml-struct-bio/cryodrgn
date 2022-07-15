@@ -122,7 +122,7 @@ def make_mask(outdir, K, dilate, thresh, in_mrc=None):
 
     # view slices
     out_png = f'{outdir}/mask_slices.png'
-    D = vol.shape[0]
+    D = mask.shape[0]
     fig,ax = plt.subplots(1,3, figsize=(10,8))
     ax[0].imshow(mask[D//2,:,:])
     ax[1].imshow(mask[:,D//2,:])

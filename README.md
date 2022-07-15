@@ -228,20 +228,22 @@ When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl
 	usage: cryodrgn train_vae [-h] -o OUTDIR --zdim ZDIM --poses POSES [--ctf pkl]
 	                          [--load WEIGHTS.PKL] [--checkpoint CHECKPOINT]
 	                          [--log-interval LOG_INTERVAL] [-v] [--seed SEED]
-	                          [--uninvert-data] [--no-window] [--ind PKL] [--lazy]
-	                          [--datadir DATADIR] [--relion31] [--tilt TILT]
-	                          [--tilt-deg TILT_DEG] [-n NUM_EPOCHS]
+	                          [--ind PKL] [--uninvert-data] [--no-window]
+	                          [--window-r WINDOW_R] [--datadir DATADIR] [--lazy]
+	                          [--preprocessed] [--max-threads MAX_THREADS]
+	                          [--tilt TILT] [--tilt-deg TILT_DEG] [-n NUM_EPOCHS]
 	                          [-b BATCH_SIZE] [--wd WD] [--lr LR] [--beta BETA]
 	                          [--beta-control BETA_CONTROL] [--norm NORM NORM]
-	                          [--amp] [--multigpu] [--do-pose-sgd]
+	                          [--no-amp] [--multigpu] [--do-pose-sgd]
 	                          [--pretrain PRETRAIN] [--emb-type {s2s2,quat}]
 	                          [--pose-lr POSE_LR] [--enc-layers QLAYERS]
 	                          [--enc-dim QDIM]
 	                          [--encode-mode {conv,resid,mlp,tilt}]
 	                          [--enc-mask ENC_MASK] [--use-real]
 	                          [--dec-layers PLAYERS] [--dec-dim PDIM]
-	                          [--pe-type {geom_ft,geom_full,geom_lowf,geom_nohighf,linear_lowf,none}]
-	                          [--pe-dim PE_DIM] [--domain {hartley,fourier}]
+	                          [--pe-type {geom_ft,geom_full,geom_lowf,geom_nohighf,linear_lowf,gaussian,none}]
+	                          [--feat-sigma FEAT_SIGMA] [--pe-dim PE_DIM]
+	                          [--domain {hartley,fourier}]
 	                          [--activation {relu,leaky_relu}]
 	                          particles
 	
@@ -264,16 +266,21 @@ When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl
 	                        Logging interval in N_IMGS (default: 1000)
 	  -v, --verbose         Increaes verbosity
 	  --seed SEED           Random seed
-	  --relion31            Flag if relion3.1 star format
 	
 	Dataset loading:
+	  --ind PKL             Filter particle stack by these indices
 	  --uninvert-data       Do not invert data sign
 	  --no-window           Turn off real space windowing of dataset
-	  --ind PKL             Filter particle stack by these indices
-	  --lazy                Lazy loading if full dataset is too large to fit in
-	                        memory
+	  --window-r WINDOW_R   Windowing radius (default: 0.85)
 	  --datadir DATADIR     Path prefix to particle stack if loading relative
 	                        paths from a .star or .cs file
+	  --lazy                Lazy loading if full dataset is too large to fit in
+	                        memory (Should copy dataset to SSD)
+	  --preprocessed        Skip preprocessing steps if input data is from
+	                        cryodrgn preprocess_mrcs
+	  --max-threads MAX_THREADS
+	                        Maximum number of CPU cores for FFT parallelization
+	                        (default: 16)
 	
 	Tilt series:
 	  --tilt TILT           Particles (.mrcs)
@@ -293,7 +300,7 @@ When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl
 	                        None)
 	  --norm NORM NORM      Data normalization as shift, 1/scale (default: 0, std
 	                        of dataset)
-	  --amp                 Use mixed-precision training
+	  --no-amp              Do not use mixed-precision training
 	  --multigpu            Parallelize training across all detected GPUs
 	
 	Pose SGD:
@@ -306,7 +313,7 @@ When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl
 	
 	Encoder Network:
 	  --enc-layers QLAYERS  Number of hidden layers (default: 3)
-	  --enc-dim QDIM        Number of nodes in hidden layers (default: 256)
+	  --enc-dim QDIM        Number of nodes in hidden layers (default: 1024)
 	  --encode-mode {conv,resid,mlp,tilt}
 	                        Type of encoder network (default: resid)
 	  --enc-mask ENC_MASK   Circular mask of image for encoder (default: D/2; -1
@@ -316,9 +323,11 @@ When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl
 	
 	Decoder Network:
 	  --dec-layers PLAYERS  Number of hidden layers (default: 3)
-	  --dec-dim PDIM        Number of nodes in hidden layers (default: 256)
-	  --pe-type {geom_ft,geom_full,geom_lowf,geom_nohighf,linear_lowf,none}
-	                        Type of positional encoding (default: geom_lowf)
+	  --dec-dim PDIM        Number of nodes in hidden layers (default: 1024)
+	  --pe-type {geom_ft,geom_full,geom_lowf,geom_nohighf,linear_lowf,gaussian,none}
+	                        Type of positional encoding (default: gaussian)
+	  --feat-sigma FEAT_SIGMA
+	                        Scale for random Gaussian features
 	  --pe-dim PE_DIM       Num features in positional encoding (default: image D)
 	  --domain {hartley,fourier}
 	                        Decoder representation domain (default: fourier)
@@ -398,39 +407,43 @@ Image poses may be *locally* refined using the `--do-pose-sgd` flag. Please cons
 
 Once the model has finished training, the output directory will contain a configuration file `config.pkl`, neural network weights `weights.pkl`, image poses (if performing pose sgd) `pose.pkl`, and the latent embeddings for each image `z.pkl`. Note that the latent embeddings are provided in the same order as the input particles. To analyze these results, use the `cryodrgn analyze` command to visualize the latent space and generate structures. `cryodrgn analyze` will also provide a template jupyter notebook for further interactive visualization and analysis.
 
+NEW in version 1.0: There are two additional tools `cryodrgn analyze_landscape` and `cryodrgn analyze_landscape_full` for more comprehensive and auomated analyses of cryodrgn results.
+
 ### cryodrgn analyze
 
     $ cryodrgn analyze -h
-    usage: cryodrgn analyze [-h] [--device DEVICE] [-o OUTDIR] [--skip-vol]
-                            [--skip-umap] [--Apix APIX] [--flip] [-d DOWNSAMPLE]
-                            [--pc PC] [--ksample KSAMPLE]
-                            workdir epoch
-    
-    Visualize latent space and generate volumes
-    
-    positional arguments:
-      workdir               Directory with cryoDRGN results
-      epoch                 Epoch number N to analyze (0-based indexing,
-                            corresponding to z.N.pkl, weights.N.pkl)
-    
-    optional arguments:
-      -h, --help            show this help message and exit
-      --device DEVICE       Optionally specify CUDA device
-      -o OUTDIR, --outdir OUTDIR
-                            Output directory for analysis results (default:
-                            [workdir]/analyze.[epoch])
-      --skip-vol            Skip generation of volumes
-      --skip-umap           Skip running UMAP
-    
-    Extra arguments for volume generation:
-      --Apix APIX           Pixel size to add to .mrc header (default: 1 A/pix)
-      --flip                Flip handedness of output volume
-      -d DOWNSAMPLE, --downsample DOWNSAMPLE
-                            Downsample volumes to this box size (pixels)
-      --pc PC               Number of principal component traversals to generate
-                            (default: 2)
-      --ksample KSAMPLE     Number of kmeans samples to generate (default: 20)
-      
+	usage: cryodrgn analyze [-h] [--device DEVICE] [-o OUTDIR] [--skip-vol]
+	                        [--skip-umap] [--Apix APIX] [--flip] [--invert]
+	                        [-d DOWNSAMPLE] [--pc PC] [--ksample KSAMPLE]
+	                        workdir epoch
+	
+	Visualize latent space and generate volumes
+	
+	positional arguments:
+	  workdir               Directory with cryoDRGN results
+	  epoch                 Epoch number N to analyze (0-based indexing,
+	                        corresponding to z.N.pkl, weights.N.pkl)
+	
+	optional arguments:
+	  -h, --help            show this help message and exit
+	  --device DEVICE       Optionally specify CUDA device
+	  -o OUTDIR, --outdir OUTDIR
+	                        Output directory for analysis results (default:
+	                        [workdir]/analyze.[epoch])
+	  --skip-vol            Skip generation of volumes
+	  --skip-umap           Skip running UMAP
+	
+	Extra arguments for volume generation:
+	  --Apix APIX           Pixel size to add to .mrc header (default: 1 A/pix)
+	  --flip                Flip handedness of output volumes
+	  --invert              Invert contrast of output volumes
+	  -d DOWNSAMPLE, --downsample DOWNSAMPLE
+	                        Downsample volumes to this box size (pixels)
+	  --pc PC               Number of principal component traversals to generate
+	                        (default: 2)
+	  --ksample KSAMPLE     Number of kmeans samples to generate (default: 20)
+
+     
 This script runs a series of standard analyses:
 
 * PCA visualization of the latent embeddings
@@ -446,7 +459,7 @@ Example usage to analyze results from the direction `01_cryodrgn256` containing 
 
 Notes:
 
-[1] Volumes are generated after k-means clustering of the latent embeddings with k=20 by default. Note that we use k-means clustering here not to identify clusters, but to segment the latent space and generate structures from different regions of the latent space. The number of structures that are generated may be increased with the option `--ksample`. 
+[1] Volumes are generated after k-means clustering of the latent embeddings with k=20 by default. Note that we use k-means clustering here not to identify clusters, but to segment the latent space and generate structures from different regions of the latent space. The number of structures that are generated may be changed with the option `--ksample`. 
 
 [2] The `cryodrgn analyze` command chains together a series of calls to `cryodrgn eval_vol` and scripts that can be run separately for more flexibility. These scripts are located in the `analysis_scripts` directory within the source code.
 

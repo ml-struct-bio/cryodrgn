@@ -66,7 +66,7 @@ def add_args(parser):
     group.add_argument('--beta', default=None, help='Choice of beta schedule or a constant for KLD weight (default: 1/zdim)')
     group.add_argument('--beta-control', type=float, help='KL-Controlled VAE gamma. Beta is KL target. (default: %(default)s)')
     group.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: 0, std of dataset)')
-    group.add_argument('--amp', action='store_true', help='Accelerate training speed with mixed-precision training')
+    group.add_argument('--no-amp', action='store_false', dest='amp', help='Do not use mixed-precision training')
     group.add_argument('--multigpu', action='store_true', help='Parallelize training across all detected GPUs')
 
     group = parser.add_argument_group('Pose SGD')
@@ -77,15 +77,15 @@ def add_args(parser):
 
     group = parser.add_argument_group('Encoder Network')
     group.add_argument('--enc-layers', dest='qlayers', type=int, default=3, help='Number of hidden layers (default: %(default)s)')
-    group.add_argument('--enc-dim', dest='qdim', type=int, default=256, help='Number of nodes in hidden layers (default: %(default)s)')
+    group.add_argument('--enc-dim', dest='qdim', type=int, default=1024, help='Number of nodes in hidden layers (default: %(default)s)')
     group.add_argument('--encode-mode', default='resid', choices=('conv','resid','mlp','tilt'), help='Type of encoder network (default: %(default)s)')
     group.add_argument('--enc-mask', type=int, help='Circular mask of image for encoder (default: D/2; -1 for no mask)')
     group.add_argument('--use-real', action='store_true', help='Use real space image for encoder (for convolutional encoder)')
 
     group = parser.add_argument_group('Decoder Network')
     group.add_argument('--dec-layers', dest='players', type=int, default=3, help='Number of hidden layers (default: %(default)s)')
-    group.add_argument('--dec-dim', dest='pdim', type=int, default=256, help='Number of nodes in hidden layers (default: %(default)s)')
-    group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf', 'gaussian', 'none'), default='geom_lowf', help='Type of positional encoding (default: %(default)s)')
+    group.add_argument('--dec-dim', dest='pdim', type=int, default=1024, help='Number of nodes in hidden layers (default: %(default)s)')
+    group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf', 'gaussian', 'none'), default='gaussian', help='Type of positional encoding (default: %(default)s)')
     group.add_argument('--feat-sigma', type=float, default=0.5, help="Scale for random Gaussian features")
     group.add_argument('--pe-dim', type=int, help='Num features in positional encoding (default: image D)')
     group.add_argument('--domain', choices=('hartley','fourier'), default='fourier', help='Decoder representation domain (default: %(default)s)')

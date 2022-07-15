@@ -55,7 +55,7 @@ def add_args(parser):
     group.add_argument('--wd', type=float, default=0, help='Weight decay in Adam optimizer (default: %(default)s)')
     group.add_argument('--lr', type=float, default=1e-4, help='Learning rate in Adam optimizer (default: %(default)s)')
     group.add_argument('--norm', type=float, nargs=2, default=None, help='Data normalization as shift, 1/scale (default: mean, std of dataset)')
-    group.add_argument('--amp', action='store_true', help='Accelerate training speed with mixed-precision training')
+    group.add_argument('--no-amp', action='store_false', dest='amp', help='Do not use mixed-precision training')
     group.add_argument('--multigpu', action='store_true', help='Parallelize training across all detected GPUs')
 
     group = parser.add_argument_group('Pose SGD')
@@ -66,9 +66,9 @@ def add_args(parser):
 
     group = parser.add_argument_group('Network Architecture')
     group.add_argument('--layers', type=int, default=3, help='Number of hidden layers (default: %(default)s)')
-    group.add_argument('--dim', type=int, default=256, help='Number of nodes in hidden layers (default: %(default)s)')
+    group.add_argument('--dim', type=int, default=1024, help='Number of nodes in hidden layers (default: %(default)s)')
     group.add_argument('--l-extent', type=float, default=0.5, help='Coordinate lattice size (if not using positional encoding) (default: %(default)s)')
-    group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf','gaussian','none'), default='geom_lowf', help='Type of positional encoding (default: %(default)s)')
+    group.add_argument('--pe-type', choices=('geom_ft','geom_full','geom_lowf','geom_nohighf','linear_lowf','gaussian','none'), default='gaussian', help='Type of positional encoding (default: %(default)s)')
     group.add_argument('--pe-dim', type=int, help='Num sinusoid features in positional encoding (default: D/2)')
     group.add_argument('--domain', choices=('hartley','fourier'), default='fourier', help='Volume decoder representation (default: %(default)s)')
     group.add_argument('--activation', choices=('relu','leaky_relu'), default='relu', help='Activation (default: %(default)s)')

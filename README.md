@@ -23,12 +23,14 @@ A quick start is provided below.
 
 ### Version 1.1
 
-This version is identical to the version 1.0 release with updated default parameters for `cryodrgn train_vae`. In particular, this version uses a larger model architecture and has accelerated mixed-precision training turned on by default. Summary of changes (and flags to revert behavior):
+This version is identical to the Version 1.0 release with updated default parameters for `cryodrgn train_vae`. In particular, this version uses a larger model architecture and has accelerated mixed-precision training turned on by default. Summary of changes (and flags to revert behavior):
 * Mixed precision training is now turned on by default (Use `--no-amp` to revert to single precision training)
 * Encoder/decoder architecture is now 1024x3 by default (Use `--enc-dim 256` and `--dec-dim 256` to revert)
 * Gaussian Fourier featurization for faster training and higher resolution density maps (Use `--pe-type geom_lowf` to revert)
 
 ### Version 1.0
+
+The official Version 1.0 release signifies the stability of the cryodrgn codebase. This version introduces several new tools for analysis of the reconstructed ensembles, and adds functionality for calling utility scripts with `cryodrgn_utils <command>`. 
 
 * NEW: `cryodrgn analyze_landscape` and `cryodrgn analyze_landscape_full` for conformational landscape analysis
 * NEW: Faster training and higher resolution model with Gaussian Fourier featurization (Use `--pe-type gaussian`)
@@ -108,7 +110,7 @@ This version is identical to the version 1.0 release with updated default parame
 
 ## Installation/dependencies:
 
-To install cryoDRGN, git clone the source code and install the following dependencies with anaconda, replacing the cudatoolkit version as necessary:
+To install cryoDRGN, git clone the source code and install the following dependencies with anaconda:
 
     # Create conda environment
     conda create --name cryodrgn1 python=3.9

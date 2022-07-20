@@ -23,7 +23,7 @@ A quick start is provided below.
 
 ### Version 1.1
 
-Updated default settings to larger model architecture and accelerated training:
+This version is identical to the version 1.0 release with updated default parameters for `cryodrgn train_vae`. In particular, this version uses a larger model architecture and has accelerated mixed-precision training turned on by default. Summary of changes (and flags to revert behavior):
 * Mixed precision training is now turned on by default (Use `--no-amp` to revert to single precision training)
 * Encoder/decoder architecture is now 1024x3 by default (Use `--enc-dim 256` and `--dec-dim 256` to revert)
 * Gaussian Fourier featurization for faster training and higher resolution density maps (Use `--pe-type geom_lowf` to revert)

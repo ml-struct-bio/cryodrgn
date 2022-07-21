@@ -30,7 +30,7 @@ This version is identical to the Version 1.0 release with updated default parame
 
 ### Version 1.0
 
-The official Version 1.0 release signifies the stability of the cryodrgn codebase. This version introduces several new tools for analysis of the reconstructed ensembles, and adds functionality for calling utility scripts with `cryodrgn_utils <command>`. 
+The official Version 1.0 release. This version introduces several new tools for analysis of the reconstructed ensembles, and adds functionality for calling utility scripts with `cryodrgn_utils <command>`. 
 
 * NEW: `cryodrgn analyze_landscape` and `cryodrgn analyze_landscape_full` for conformational landscape analysis
 * NEW: Faster training and higher resolution model with Gaussian Fourier featurization (Use `--pe-type gaussian`)
@@ -398,7 +398,7 @@ Image poses may be *locally* refined using the `--do-pose-sgd` flag. Please cons
 
 ## 6. Analysis of results
 
-Once the model has finished training, the output directory will contain a configuration file `config.pkl`, neural network weights `weights.pkl`, image poses (if performing pose sgd) `pose.pkl`, and the latent embeddings for each image `z.pkl`. Note that the latent embeddings are provided in the same order as the input particles. To analyze these results, use the `cryodrgn analyze` command to visualize the latent space and generate structures. `cryodrgn analyze` will also provide a template jupyter notebook for further interactive visualization and analysis.
+Once the model has finished training, the output directory will contain a configuration file `config.pkl`, neural network weights `weights.pkl`, image poses (if performing pose sgd) `pose.pkl`, and the latent embeddings for each image `z.pkl`. The latent embeddings are provided in the same order as the input particles. To analyze these results, use the `cryodrgn analyze` command to visualize the latent space and generate structures. `cryodrgn analyze` will also provide a template jupyter notebook for further interactive visualization and analysis.
 
 ### cryodrgn analyze
 

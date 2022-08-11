@@ -23,7 +23,7 @@ A quick start is provided below.
 
 ### Version 1.1
 
-This version is identical to the Version 1.0 release with updated default parameters for `cryodrgn train_vae`. In particular, this version uses a larger model architecture and has accelerated mixed-precision training turned on by default. Summary of changes (and flags to revert behavior):
+Updated default parameters for `cryodrgn train_vae` with modified positional encoding, larger model architecture, and accelerated mixed-precision training turned on by default:
 * Mixed precision training is now turned on by default (Use `--no-amp` to revert to single precision training)
 * Encoder/decoder architecture is now 1024x3 by default (Use `--enc-dim 256` and `--dec-dim 256` to revert)
 * Gaussian Fourier featurization for faster training and higher resolution density maps (Use `--pe-type geom_lowf` to revert)
@@ -32,7 +32,7 @@ This version is identical to the Version 1.0 release with updated default parame
 
 The official Version 1.0 release. This version introduces several new tools for analysis of the reconstructed ensembles, and adds functionality for calling utility scripts with `cryodrgn_utils <command>`. 
 
-* NEW: `cryodrgn analyze_landscape` and `cryodrgn analyze_landscape_full` for conformational landscape analysis
+* NEW: `cryodrgn analyze_landscape` and `cryodrgn analyze_landscape_full` for automatic assignment of classes and conformational landscape visualization. Documentation for this new feature is here: https://www.notion.so/cryodrgn-conformational-landscape-analysis-a5af129288d54d1aa95388bdac48235a.
 * NEW: Faster training and higher resolution model with Gaussian Fourier featurization (Use `--pe-type gaussian`)
 * NEW: `cryodrgn_utils <command> -h` for standalone utility scripts 
 * NEW: `cryodrgn_utils write_star` for converting cryoDRGN particle selections to `.star` files

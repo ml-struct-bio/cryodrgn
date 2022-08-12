@@ -245,7 +245,7 @@ class PositionalDecoder(nn.Module):
         # volume is generated
         if zval is not None:
             zdim = len(zval)
-            z = torch.zeros(D**2, zdim, dtype=torch.float32)
+            z = torch.zeros(D**2, zdim, dtype=torch.float32, device=coords.device)
             z += torch.tensor(zval, dtype=torch.float32, device=coords.device)
 
         vol_f = np.zeros((D,D,D),dtype=np.float32)

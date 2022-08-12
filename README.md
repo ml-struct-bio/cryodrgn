@@ -17,6 +17,10 @@ ICLR 2020, Spotlight presentation, https://arxiv.org/abs/1909.05215
 An in-depth overview and walkthrough of cryoDRGN installation, training, and analysis is available here:
 https://www.notion.so/cryoDRGN-tutorial-b932c021cb2c415282f182048bac16ff
 
+Kinman LF, Powell BM, Zhong ED, Berger B & Davis JH (2022) Uncovering structural
+ensembles from single particle cryo-EM data using cryoDRGN. 2022.08.09.503342
+[doi:10.1101/2022.08.09.503342](https://doi.org/10.1101/2022.08.09.503342)
+
 A quick start is provided below.
 
 ## New in Version 1.x

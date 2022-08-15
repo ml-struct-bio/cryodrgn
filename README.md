@@ -1,3 +1,5 @@
+[![CI](https://github.com/vineetbansal/cryodrgn/actions/workflows/main.yml/badge.svg)](https://github.com/vineetbansal/cryodrgn/actions/workflows/main.yml)
+
 # :snowflake::dragon: cryoDRGN: Deep Reconstructing Generative Networks for cryo-EM heterogeneous reconstruction
 
 CryoDRGN is a neural network based algorithm for heterogeneous cryo-EM reconstruction. In particular, the method models a *continuous* distribution over 3D structures by using a neural network based representation for the volume.

@@ -4,6 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cryodrgn"
+dynamic = ["version"]
 authors = [
   { name="Ellen Zhong", email="zhonge@mit.edu" }
 ]

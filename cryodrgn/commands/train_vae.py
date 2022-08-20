@@ -375,7 +375,7 @@ def main(args):
     activation={"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[args.activation]
     model = HetOnlyVAE(lattice, args.qlayers, args.qdim, args.players, args.pdim,
                 in_dim, args.zdim, encode_mode=args.encode_mode, enc_mask=enc_mask,
-                enc_type=args.pe_type, enc_dim=args.pe_dim, domain=args.domain,
+                pe_type=args.pe_type, pe_dim=args.pe_dim, domain=args.domain,
                 activation=activation, feat_sigma=args.feat_sigma)
     model.to(device)
     flog(model)

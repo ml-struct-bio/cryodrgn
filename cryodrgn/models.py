@@ -20,8 +20,8 @@ class HetOnlyVAE(nn.Module):
             in_dim, zdim = 1, 
             encode_mode = 'resid',
             enc_mask = None,
-            enc_type = 'linear_lowf',
-            enc_dim = None,
+            pe_type = 'linear_lowf',
+            pe_dim = None,
             domain = 'fourier',
             activation = nn.ReLU,
             feat_sigma = None
@@ -54,7 +54,7 @@ class HetOnlyVAE(nn.Module):
         else:
             raise RuntimeError('Encoder mode {} not recognized'.format(encode_mode))
         self.encode_mode = encode_mode
-        self.decoder = get_decoder(3+zdim, lattice.D, players, pdim, domain, enc_type, enc_dim, activation, feat_sigma)
+        self.decoder = get_decoder(3+zdim, lattice.D, players, pdim, domain, pe_type, pe_dim, activation, feat_sigma)
    
     @classmethod
     def load(self, config, weights=None, device=None):
@@ -86,8 +86,8 @@ class HetOnlyVAE(nn.Module):
                           in_dim, c['zdim'],
                           encode_mode=c['encode_mode'],
                           enc_mask=enc_mask,
-                          enc_type=c['pe_type'],
-                          enc_dim=c['pe_dim'],
+                          pe_type=c['pe_type'],
+                          pe_dim=c['pe_dim'],
                           domain=c['domain'],
                           activation=activation,
                           feat_sigma=c['feat_sigma'])
@@ -157,8 +157,8 @@ def load_decoder(config, weights=None, device=None):
         model.to(device)
     return model
 
-def get_decoder(in_dim, D, layers, dim, domain, enc_type, enc_dim=None, activation=nn.ReLU, feat_sigma=None):
-    if enc_type == 'none':
+def get_decoder(in_dim, D, layers, dim, domain, pe_type, pe_dim=None, activation=nn.ReLU, feat_sigma=None):
+    if pe_type == 'none':
         if domain == 'hartley':
             model = ResidLinearMLP(in_dim, layers, dim, 1, activation)
             ResidLinearMLP.eval_volume = PositionalDecoder.eval_volume # EW FIXME
@@ -167,36 +167,36 @@ def get_decoder(in_dim, D, layers, dim, domain, enc_type, enc_dim=None, activati
         return model
     else:
         model = PositionalDecoder if domain == 'hartley' else FTPositionalDecoder 
-        return model(in_dim, D, layers, dim, activation, enc_type=enc_type, enc_dim=enc_dim, feat_sigma=feat_sigma)
+        return model(in_dim, D, layers, dim, activation, pe_type=pe_type, pe_dim=pe_dim, feat_sigma=feat_sigma)
  
 class PositionalDecoder(nn.Module):
-    def __init__(self, in_dim, D, nlayers, hidden_dim, activation, enc_type='linear_lowf', enc_dim=None, feat_sigma=None):
+    def __init__(self, in_dim, D, nlayers, hidden_dim, activation, pe_type='linear_lowf', pe_dim=None, feat_sigma=None):
         super(PositionalDecoder, self).__init__()
         assert in_dim >= 3 
         self.zdim = in_dim - 3
         self.D = D
         self.D2 = D // 2
         self.DD = 2 * (D // 2)
-        self.enc_dim = self.D2 if enc_dim is None else enc_dim
-        self.enc_type = enc_type
-        self.in_dim = 3 * (self.enc_dim) * 2 + self.zdim
+        self.pe_dim = self.D2 if pe_dim is None else pe_dim
+        self.pe_type = pe_type
+        self.in_dim = 3 * (self.pe_dim) * 2 + self.zdim
         self.decoder = ResidLinearMLP(self.in_dim, nlayers, hidden_dim, 1, activation)
      
     def positional_encoding_geom(self, coords):
         '''Expand coordinates in the Fourier basis with geometrically spaced wavelengths from 2/D to 2pi'''
-        freqs = torch.arange(self.enc_dim, dtype=torch.float, device=coords.device)
-        if self.enc_type == 'geom_ft':
-            freqs = self.DD*np.pi*(2./self.DD)**(freqs/(self.enc_dim-1)) # option 1: 2/D to 1 
-        elif self.enc_type == 'geom_full':
-            freqs = self.DD*np.pi*(1./self.DD/np.pi)**(freqs/(self.enc_dim-1)) # option 2: 2/D to 2pi
-        elif self.enc_type == 'geom_lowf':
-            freqs = self.D2*(1./self.D2)**(freqs/(self.enc_dim-1)) # option 3: 2/D*2pi to 2pi 
-        elif self.enc_type == 'geom_nohighf':
-            freqs = self.D2*(2.*np.pi/self.D2)**(freqs/(self.enc_dim-1)) # option 4: 2/D*2pi to 1 
-        elif self.enc_type == 'linear_lowf':
+        freqs = torch.arange(self.pe_dim, dtype=torch.float, device=coords.device)
+        if self.pe_type == 'geom_ft':
+            freqs = self.DD*np.pi*(2./self.DD)**(freqs/(self.pe_dim-1)) # option 1: 2/D to 1 
+        elif self.pe_type == 'geom_full':
+            freqs = self.DD*np.pi*(1./self.DD/np.pi)**(freqs/(self.pe_dim-1)) # option 2: 2/D to 2pi
+        elif self.pe_type == 'geom_lowf':
+            freqs = self.D2*(1./self.D2)**(freqs/(self.pe_dim-1)) # option 3: 2/D*2pi to 2pi 
+        elif self.pe_type == 'geom_nohighf':
+            freqs = self.D2*(2.*np.pi/self.D2)**(freqs/(self.pe_dim-1)) # option 4: 2/D*2pi to 1 
+        elif self.pe_type == 'linear_lowf':
             return self.positional_encoding_linear(coords)
         else:
-            raise RuntimeError('Encoding type {} not recognized'.format(self.enc_type))
+            raise RuntimeError('Encoding type {} not recognized'.format(self.pe_type))
         freqs = freqs.view(*[1]*len(coords.shape), -1) # 1 x 1 x D2
         coords = coords.unsqueeze(-1) # B x 3 x 1
         k = coords[...,0:3,:] * freqs # B x 3 x D2
@@ -264,26 +264,26 @@ class PositionalDecoder(nn.Module):
         return vol
 
 class FTPositionalDecoder(nn.Module):
-    def __init__(self, in_dim, D, nlayers, hidden_dim, activation, enc_type='linear_lowf', enc_dim=None, feat_sigma=None):
+    def __init__(self, in_dim, D, nlayers, hidden_dim, activation, pe_type='linear_lowf', pe_dim=None, feat_sigma=None):
         super(FTPositionalDecoder, self).__init__()
         assert in_dim >= 3
         self.zdim = in_dim - 3
         self.D = D
         self.D2 = D // 2
         self.DD = 2 * (D // 2)
-        self.enc_type = enc_type
-        self.enc_dim = self.D2 if enc_dim is None else enc_dim
-        self.in_dim = 3 * (self.enc_dim) * 2 + self.zdim
+        self.pe_type = pe_type
+        self.pe_dim = self.D2 if pe_dim is None else pe_dim
+        self.in_dim = 3 * (self.pe_dim) * 2 + self.zdim
         self.decoder = ResidLinearMLP(self.in_dim, nlayers, hidden_dim, 2, activation)
 
-        if enc_type == "gaussian":
-            # We construct 3 * self.enc_dim random vector frequences, to match the original positional encoding:
-            # In the positional encoding we produce self.enc_dim features for each of the x,y,z dimensions,
-            # whereas in gaussian encoding we produce self.enc_dim features each with random x,y,z components
+        if pe_type == "gaussian":
+            # We construct 3 * self.pe_dim random vector frequences, to match the original positional encoding:
+            # In the positional encoding we produce self.pe_dim features for each of the x,y,z dimensions,
+            # whereas in gaussian encoding we produce self.pe_dim features each with random x,y,z components
             # 
             # Each of the random feats is the sine/cosine of the dot product of the coordinates with a frequency
             # vector sampled from a gaussian with std of feat_sigma
-            rand_freqs = torch.randn((3 * self.enc_dim, 3), dtype=torch.float) * feat_sigma
+            rand_freqs = torch.randn((3 * self.pe_dim, 3), dtype=torch.float) * feat_sigma
             # make rand_feats a parameter so it is saved in the checkpoint, but do not perform SGD on it
             self.rand_freqs = nn.Parameter(rand_freqs, requires_grad=False)
         else:
@@ -291,21 +291,21 @@ class FTPositionalDecoder(nn.Module):
     
     def positional_encoding_geom(self, coords):
         '''Expand coordinates in the Fourier basis with geometrically spaced wavelengths from 2/D to 2pi'''
-        if self.enc_type == "gaussian":
+        if self.pe_type == "gaussian":
             return self.random_fourier_encoding(coords)
-        freqs = torch.arange(self.enc_dim, dtype=torch.float, device=coords.device)
-        if self.enc_type == 'geom_ft':
-            freqs = self.DD*np.pi*(2./self.DD)**(freqs/(self.enc_dim-1)) # option 1: 2/D to 1 
-        elif self.enc_type == 'geom_full':
-            freqs = self.DD*np.pi*(1./self.DD/np.pi)**(freqs/(self.enc_dim-1)) # option 2: 2/D to 2pi
-        elif self.enc_type == 'geom_lowf':
-            freqs = self.D2*(1./self.D2)**(freqs/(self.enc_dim-1)) # option 3: 2/D*2pi to 2pi 
-        elif self.enc_type == 'geom_nohighf':
-            freqs = self.D2*(2.*np.pi/self.D2)**(freqs/(self.enc_dim-1)) # option 4: 2/D*2pi to 1 
-        elif self.enc_type == 'linear_lowf':
+        freqs = torch.arange(self.pe_dim, dtype=torch.float, device=coords.device)
+        if self.pe_type == 'geom_ft':
+            freqs = self.DD*np.pi*(2./self.DD)**(freqs/(self.pe_dim-1)) # option 1: 2/D to 1 
+        elif self.pe_type == 'geom_full':
+            freqs = self.DD*np.pi*(1./self.DD/np.pi)**(freqs/(self.pe_dim-1)) # option 2: 2/D to 2pi
+        elif self.pe_type == 'geom_lowf':
+            freqs = self.D2*(1./self.D2)**(freqs/(self.pe_dim-1)) # option 3: 2/D*2pi to 2pi 
+        elif self.pe_type == 'geom_nohighf':
+            freqs = self.D2*(2.*np.pi/self.D2)**(freqs/(self.pe_dim-1)) # option 4: 2/D*2pi to 1 
+        elif self.pe_type == 'linear_lowf':
             return self.positional_encoding_linear(coords)
         else:
-            raise RuntimeError('Encoding type {} not recognized'.format(self.enc_type))
+            raise RuntimeError('Encoding type {} not recognized'.format(self.pe_type))
         freqs = freqs.view(*[1]*len(coords.shape), -1) # 1 x 1 x D2
         coords = coords.unsqueeze(-1) # B x 3 x 1
         k = coords[...,0:3,:] * freqs # B x 3 x D2

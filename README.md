@@ -1,4 +1,4 @@
-[![CI](https://github.com/zhonge/cryodrgn/actions/workflows/main.yml/badge.svg)](https://github.com/zhonge/cryodrgn/actions/workflows/main.yml)
+[![CI](https://github.com/vineetbansal/cryodrgn/actions/workflows/main.yml/badge.svg)](https://github.com/vineetbansal/cryodrgn/actions/workflows/main.yml)
 
 # :snowflake::dragon: cryoDRGN: Deep Reconstructing Generative Networks for cryo-EM heterogeneous reconstruction
 

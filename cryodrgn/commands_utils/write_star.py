@@ -120,7 +120,7 @@ def main(args):
         for i in range(2):
             data[POSE_HDRS[3+i]] = trans[:,i]
     df = pd.DataFrame(data=data) 
-    headers = HEADERS + POSE_HDRS if args.poses else HEADERS
+    headers = HEADERS + POSE_HDRS if args.poses else HEADERS.copy()
 
     if args.keep_micrograph:
         assert args.ref_star, "Must provide reference .star file with micrograph coordinates"

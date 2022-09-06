@@ -16,8 +16,11 @@ ICLR 2020, Spotlight presentation, https://arxiv.org/abs/1909.05215
 
 ## Tutorial:
 
-An in-depth overview and walkthrough of cryoDRGN installation, training, and analysis is available here:
+An online overview and walkthrough of cryoDRGN installation, training, and analysis is available here:
 https://www.notion.so/cryoDRGN-tutorial-b932c021cb2c415282f182048bac16ff
+
+A more in-depth manuscript version of the tutorial is available here: 
+https://www.biorxiv.org/content/10.1101/2022.08.09.503342v1
 
 A quick start is provided below.
 
@@ -32,7 +35,7 @@ Updated default parameters for `cryodrgn train_vae` with modified positional enc
 
 ### Version 1.0
 
-The official Version 1.0 release. This version introduces several new tools for analysis of the reconstructed ensembles, and adds functionality for calling utility scripts with `cryodrgn_utils <command>`. 
+The official version 1.0 release. This version introduces several new tools for analysis of the reconstructed ensembles, and adds functionality for calling utility scripts with `cryodrgn_utils <command>`. 
 
 * NEW: `cryodrgn analyze_landscape` and `cryodrgn analyze_landscape_full` for automatic assignment of classes and conformational landscape visualization. Documentation for this new feature is here: https://www.notion.so/cryodrgn-conformational-landscape-analysis-a5af129288d54d1aa95388bdac48235a.
 * NEW: Faster training and higher resolution model with Gaussian Fourier featurization (Use `--pe-type gaussian`)

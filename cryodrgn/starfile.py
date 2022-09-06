@@ -152,6 +152,8 @@ def csparc_get_particles(csfile, datadir=None, lazy=True):
     metadata = np.load(csfile)
     ind = metadata['blob/idx'] # 0-based indexing
     mrcs = metadata['blob/path'].astype(str).tolist()
+    if mrcs[0].startswith('>'): # Remove '>' prefix from paths
+        mrcs = [x[1:] for x in mrcs]
     if datadir is not None:
         mrcs = prefix_paths(mrcs, datadir)
     for path in set(mrcs):

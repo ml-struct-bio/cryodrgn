@@ -17,7 +17,7 @@ from cryodrgn import dataset
 log = utils.log
 
 def add_args(parser):
-    parser.add_argument('mrcs', help='Input particles or volume (.mrc, .mrcs, .star, or .txt)')
+    parser.add_argument('mrcs', help='Input particles or volume (.mrc, .mrcs, .star, .cs, or .txt)')
     parser.add_argument('-D', type=int, required=True, help='New box size in pixels, must be even')
     parser.add_argument('-o', metavar='MRCS', type=os.path.abspath, required=True, help='Output projection stack (.mrcs)')
     parser.add_argument('-b', type=int, default=5000, help='Batch size for processing images (default: %(default)s)')

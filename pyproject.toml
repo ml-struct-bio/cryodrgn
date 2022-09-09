@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "cryodrgn"
 dynamic = ["version"]
 authors = [
-  { name="Ellen Zhong", email="zhonge@mit.edu" }
+  { name="Ellen Zhong", email="zhonge@princeton.edu" }
 ]
 description = "cryoDRGN heterogeneous reconstruction"
 readme = "README.md"

@@ -33,14 +33,12 @@ jobs:
           cd docs && make html && touch _build/html/.nojekyll
 
       - uses: actions/checkout@v2
-        if: false
         with:
           ref: docs2
           path: docs2
           clean: false
 
       - name: Build docs on docs2
-        if: false
         run: |
           rm -rf docs2/.git
           cd docs2/docs && make HTMLCOPYDIR=../../docs/_build/html/docs2 html 

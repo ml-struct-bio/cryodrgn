@@ -28,10 +28,9 @@ jobs:
 
       - name: Build docs
         run: |
-          cd docs && make html
           # Unless we add a .nojekyll to the base of the deployment folder, the underscores in foldernames
           # like _static/ etc. pose problems on GH Pages.
-          touch docs/_build/html/.nojekyll
+          cd docs && make html && touch _build/html/.nojekyll
 
       - name: Deploy
         uses: JamesIves/github-pages-deploy-action@v4

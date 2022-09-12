@@ -7,10 +7,11 @@ Welcome to CryoDRGN's documentation!
 ====================================
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
    :caption: Contents:
 
    usage/empiar_tutorial
+   usage/faq
 
 
 Indices and tables

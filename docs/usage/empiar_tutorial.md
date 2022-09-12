@@ -23,9 +23,9 @@ This walkthrough of cryoDRGN analysis of the **assembling ribosome dataset (EMPI
 
 ---
 
-# Preparing cryoDRGN inputs
+## Preparing cryoDRGN inputs
 
-## Step 1) Obtain the dataset
+### Step 1) Obtain the dataset
 
 - Download EMPIAR-10076 (~51GB) from [https://www.ebi.ac.uk/pdbe/emdb/empiar/entry/10076/](https://www.ebi.ac.uk/pdbe/emdb/empiar/entry/10076/)
     - You can download it directly from the browser, or from the command line using Aspera Connect ([More info here](https://www.ebi.ac.uk/pdbe/emdb/empiar/faq#question_CLDownload))
@@ -67,7 +67,7 @@ This walkthrough of cryoDRGN analysis of the **assembling ribosome dataset (EMPI
 
 ---
 
-## Step 2) Consensus reconstruction (optional)
+### Step 2) Consensus reconstruction (optional)
 
 - Perform a **C1 homogeneous refinement** in your favorite cryo-EM software package. We will be using the poses from this "consensus reconstruction".
 - To skip this step, download the poses from [https://github.com/zhonge/cryodrgn_empiar/blob/main/empiar10076/inputs/cryosparc_P4_J33_004_particles.cs](https://github.com/zhonge/cryodrgn_empiar/blob/main/empiar10076/inputs/cryosparc_P4_J33_004_particles.cs)
@@ -87,7 +87,7 @@ This walkthrough of cryoDRGN analysis of the **assembling ribosome dataset (EMPI
 ![](assets/Untitled_5.png)
 *CryoSPARC's metadata file (a .cs file) that contains particle poses and CTF parameters can be downloaded from the web interface as the "alignments3D" output or found in the job directory in the filesystem where cryoSPARC is running.*
 
-## Step 3) Preprocess inputs
+### Step 3) Preprocess inputs
 
 In this step, we will first extract poses ([Step 3.1](https://www.notion.so/cryoDRGN-EMPIAR-10076-tutorial-c8728dcc88e744c8827447c3ff094d19)), then extract CTF parameters ([Step 3.2](https://www.notion.so/cryoDRGN-EMPIAR-10076-tutorial-c8728dcc88e744c8827447c3ff094d19)), then downsample our images ([Step 3.3](https://www.notion.so/cryoDRGN-EMPIAR-10076-tutorial-c8728dcc88e744c8827447c3ff094d19)).
 
@@ -104,7 +104,7 @@ Pose and CTF parameters ****are stored in various formats depending on the upstr
     ```
     
 
-### **Step 3.1) Convert poses to cryoDRGN format**
+#### **Step 3.1) Convert poses to cryoDRGN format**
 
 - CryoDRGN has two executables for parsing pose information (i.e. particle alignments) from either a cryoSPARC `.cs` file or a RELION `.star` file.
     - `cryodrgn parse_pose_star -h`
@@ -203,7 +203,7 @@ Pose and CTF parameters ****are stored in various formats depending on the upstr
 
 ---
 
-### **Step 3.2) Convert CTF parameters to cryoDRGN format**
+#### **Step 3.2) Convert CTF parameters to cryoDRGN format**
 
 - CryoDRGN has two executables for parsing CTF information from either a cryoSPARC `.cs` file or a RELION `.star` file.
     - `cryodrgn parse_ctf_star -h`
@@ -302,7 +302,7 @@ Pose and CTF parameters ****are stored in various formats depending on the upstr
 
 ---
 
-### **Step 3.3) Downsample images**
+#### **Step 3.3) Downsample images**
 
 CryoDRGN training time is highly dependent on the image size (See Fig. 2E in Zhong et al.). We will downsample images to an image size of **D=128** (where D is the image dimension in pixels, i.e. a 128x128 image) using `cryodrgn downsample`. Later on, we will train a higher resolution model using larger images (**D=256**). 
 
@@ -364,7 +364,7 @@ Because of the tradeoffs between training time and representation capacity of th
 
 ---
 
-# CryoDRGN training
+## CryoDRGN training
 
 When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl) have been prepared, a cryoDRGN model can be trained with the following executable:
 
@@ -477,7 +477,7 @@ Additional parameters which are typically set include:
 - `--amp` to enable mixed precision training (fast!)
 - `--multigpu` to enable parallelized training across multiple GPUs (fast!)
 
-### General r**ecommended workflow**
+### General recommended workflow**
 
 1. First, train on lower resolution images (e.g. D=128) using the default architecture (fast) as an initial pass to sanity check results and remove junk particles. **(D=128, default 256x3 architecture)**
 2. After any particle filtering, then train a larger model with the `--enc-dim 1024` and `--dec-dim 1024` arguments, which in theory can learn more heterogeneity. **(D=128, large 1024x3 architecture)**
@@ -485,7 +485,7 @@ Additional parameters which are typically set include:
 
 In this tutorial we will walk through the commands and analysis for Step 1 and Step 3 in the above workflow. You can run step 2 on your own to see how the results compare. 
 
-### Step 4) CryoDRGN initial training
+#### Step 4) CryoDRGN initial training
 
 - Run `cryodrgn train_vae` on the full particle stack of D=128 particles (1 GPU; 64GB memory requirement)
     
@@ -606,7 +606,7 @@ In this tutorial we will walk through the commands and analysis for Step 1 and S
      Note you can use `cryodrgn analyze` to analyze intermediate epochs during training.
     
 
-### Extending or restarting from a checkpoint
+#### Extending or restarting from a checkpoint
 
 If the run was interrupted before it reached the desired number of epochs or you would like to train longer, a training job can be extended with the `--load` argument. For example, to resume training that was interrupted at epoch 24:
 
@@ -622,7 +622,7 @@ $ cryodrgn train_vae data/128/particles.128.mrcs \
     -o tutorial/00_vae128 >> tutorial.00.log
 ```
 
-# Overview of cryoDRGN analysis
+## Overview of cryoDRGN analysis
 
 ### Step 5) cryodrgn analyze
 
@@ -974,7 +974,7 @@ vol_000.mrc  vol_002.mrc  vol_004.mrc  vol_006.mrc  vol_008.mrc  z_values.txt
 
 The `umap.png` plot within the `pcX` subdirectories shows the UMAP embedding of each particle, colored by its PCX value. This helps give a sense of the layout of the latent space and how the UMAP embedding is related to the PCA projection.
 
-# Step 6) Particle filtering with the cryoDRGN Jupyter notebook
+## Step 6) Particle filtering with the cryoDRGN Jupyter notebook
 
 This section will walk through how to use the cryoDRGN Jupyter notebook, `cryoDRGN_filtering.ipynb`, to filter junk particles out of the dataset. The Jupyter notebook provides an interactive environment for running Python code blocks to analyze the cryoDRGN results.
 
@@ -1022,7 +1022,7 @@ Then click cryoDRGN_filtering.ipynb to start the jupyter notebook:
 
 ![](assets/Untitled_17.png)
 
-## Step 6.2) Run the jupyter-notebook for particle filtering
+### Step 6.2) Run the jupyter-notebook for particle filtering
 
 The jupyter notebook has template code for performing all the analysis and plotting and should require minimal intervention. For a general overview of running jupyter notebooks, see their documentation here: [https://jupyter.readthedocs.io/en/latest/running.html](https://jupyter.readthedocs.io/en/latest/running.html).
 
@@ -1046,7 +1046,7 @@ Set the variable EPOCH = N to the appropriate value.
 
 Then run the cells of the notebook to load the relevant results until the first "Filtering by Cluster" section.
 
-### **Published filtering results**
+#### **Published filtering results**
 
 This section shows the tutorial results colored by the filtered particles in the original publication of the dataset (Davis et al) and in the cryoDRGN paper (Zhong et al). For prospective analysis, the "junk" is usually identified by visualizing the reconstructed volumes and/or the particles images, and especially straightforward for edge/ice artifacts. The filtering may be validated by 2D classification or other traditional tools. In this dataset, the junk particles also have a very different pose distribution (not shown, but you can view this in the interactive visualization section of the jupyter notebook).
 
@@ -1106,7 +1106,7 @@ Kept particles are shown in orange
 
 In the next section, we will show the steps to remove the center cluster in the UMAP corresponding to the junk particles (the brown cluster in the 3D classification labels).
 
-## Step 6.3) **Filtering by GMM cluster label**
+### Step 6.3) **Filtering by GMM cluster label**
 
 In this section, we demo the steps and outputs for filtering out the junk cluster using a Gaussian mixture model (GMM) clustering algorithm. 
 
@@ -1138,7 +1138,7 @@ Select particles from clusters 2 and 5.
 
 ![assets/Untitled_30.png](assets/Untitled_30.png)
 
-### Alternative method: **Filtering by z-score**
+#### Alternative method: **Filtering by z-score**
 
 In practice, we often find that junk particles are located as outliers in the distribution of latent embeddings. This section selects outlier particles by the magnitude of the embedding.
 
@@ -1154,7 +1154,7 @@ These plots will be automatically generated that help visualize which particles 
 
 ![assets/Untitled_34.png](assets/Untitled_34.png)
 
-### Alternative method: **Filtering with an interactive lasso tool**
+#### Alternative method: **Filtering with an interactive lasso tool**
 
 Sometimes, the best clustering algorithm is the human eye (e.g. kmeans/GMM clustering algorithms can fail especially for small/oddly-shaped clusters). The cryoDRGN_filtering.ipynb notebook also provides an interactive widget that lets you interactively select regions of the latent space using a lasso tool. 
 
@@ -1170,7 +1170,7 @@ Note: There have been installation issues with jupyter widgets on some linux sys
 
 ![assets/Untitled_37.png](assets/Untitled_37.png)
 
-### View the raw particles
+#### View the raw particles
 
 The second to last section of the jupyter notebook contains code blocks for viewing the raw particle images. This section will visualize 9 images at random from the selected particles. This is sometimes useful for verifying that the selected particles are problematic in obvious cases of junk particles. 
 
@@ -1186,29 +1186,25 @@ Cell 89 can be rerun to view a different selection of particles.
 
 Location of the particles in latent space
 
-### Saving the selection
+#### Saving the selection
 
 The last section of the notebook has cells that will help save the selected indices to use in downstream processing.
 
 ![Screenshot of the section](assets/Untitled_41.png)
-
-Screenshot of the section
+*Screenshot of the section*
 
 In the filtering sections, the selected particles are tracked in the variable `ind_selected` and `ind_selected_not`. Because we selected the *bad particles*, we will now switch what the `ind_keep` and `ind_bad` variables are set to in the first cell. This is purely for organizational/file naming purposes.
 
 ![Screen shot of the final section in cryoDRGN_filtering.ipynb](assets/Untitled_42.png)
-
-Screen shot of the final section in cryoDRGN_filtering.ipynb
+*Screenshot of the final section in cryoDRGN_filtering.ipynb*
 
 Visualization of our kept particles, `ind_keep`:
 
 ![Viewing the kept particles (orange) in PCA space](assets/Untitled_43.png)
-
-Viewing the kept particles (orange) in PCA space
+*Viewing the kept particles (orange) in PCA space*
 
 ![Viewing the kept particles (orange) in UMAP space](assets/Untitled_44.png)
-
-Viewing the kept particles (orange) in UMAP space
+*Viewing the kept particles (orange) in UMAP space*
 
 The last three cells will print out a summary of the selection and where the indices were saved:
 
@@ -1221,15 +1217,15 @@ After running these cells, there should be two files saved in the workdir of the
 
 These `.pkl` files contain a numpy array of indices into the particle stack, which can be provided to `cryodrgn train_vae` with the `--ind` flag to restrict training on the subset of the desired particle. This avoids having to extract a new particle stack.
 
-### (Additional Functionality) Writing a new .star file
+#### (Additional Functionality) Writing a new .star file
 
 - The selected particles can be converted to a .star file using `cryodrgn write_starfile`. See Section 8.3 for more details on this script.
 
-### (Additional Functionality) Extracting a new particle stack
+#### (Additional Functionality) Extracting a new particle stack
 
 - A new particle stack can be extracted using the script `filter_mrcs.py` found in the `utils` subdirectory of the cryodrgn repository.
 
-# Step 7) CryoDRGN high-resolution training
+## Step 7) CryoDRGN high-resolution training
 
 Now that we have identified the junk particles, we will rerun `cryodrgn train_vae` on larger, higher resolution images (D=256) using a larger neural network model (1024 dim x 3 layer architecture).
 
@@ -1270,11 +1266,11 @@ Mixed precision training is available for Nvidia GPUs with tensor core architect
 
 **Note:** We recommend using `--multigpu` and `--amp` for larger architectures (1024x3) or larger images (D=256). For smaller models/images, GPU computation may not be the training bottleneck. In this case, GPU parallelization and mixed-precision training may have a limited effect on the wall clock training time, while taking up additional compute resources.
 
-# Step 8) Analysis
+## Step 8) Analysis
 
 We will first walk through the default outputs from `cryodrgn analyze` (Section 8.1), then we will use the cryoDRGN jupyter notebook to visualize and generate assembly state density maps (Section 8.2), extract the particles for newly identified state C4 (Section 8.3), and use cryoDRGN's graph traversal algorithm to generate trajectories of a ribosome assembly pathways (Section 8.4).
 
-## 8.1) cryodrgn analyze
+### 8.1) cryodrgn analyze
 
 Similar to Step 5 above, we first run the default analysis pipeline with `cryodrgn analyze` :
 
@@ -1526,7 +1522,7 @@ Additional usage notes:
 - More PCs (up to the dimension of the latent variable) can be generated with `--pc N`
 - The pixel size and handedness of a `.mrc` file can also be modified later with the scripts `add_psize.py` and `flip_hand.py` in the `utils` subdirectory of the cryodrgn repository.
 
-### Visualization of the latent space
+#### Visualization of the latent space
 
 Because we trained an 8-dimensional latent variable model (`—-zdim 8`),  PCA (a linear dimensionality reduction technique) and UMAP (a nonlinear dimensionality technique) are used to visualize the distribution of particle latent embeddings.
 
@@ -1552,7 +1548,7 @@ umap_hexbin.png
 
 The layout of the latent space reproduces the original results shown in Fig 5F of Zhong et al up to the trivial inversion of UMAP2 axis.
 
-### Default sampled density maps
+#### Default sampled density maps
 
 `cryodrgn analyze` uses the k-means clustering algorithm to *partition* the latent space into regions (by default k=20 regions), and generate a density map from the center of each of these regions. The goal is to provide a tractable number of representative density maps to visually inspect. 
 
@@ -1570,14 +1566,12 @@ umap_hex.png     vol_002.mrc  vol_006.mrc  vol_010.mrc  vol_014.mrc  vol_018.mrc
 ```
 
 [Viewed at isosurface .03](assets/kmeans20.iso0.03.mp4)
-
-Viewed at isosurface .03
+*Viewed at isosurface .03*
 
 ![Location of the twenty volumes in the UMAP visualization](assets/Untitled_50.png)
+*Location of the twenty volumes in the UMAP visualization*
 
-Location of the twenty volumes in the UMAP visualization
-
-### PC trajectories
+#### PC trajectories
 
 There are two subdirectories in the analysis directory that will contain volumes generated along the first and second principal components (PC) of the latent space. By default, the volumes are generated at equally spaced points between the first and 99th percentile of the distribution projected onto each principal component (e.g. Fig 6c of Zhong et al).
 
@@ -1601,12 +1595,10 @@ vol_000.mrc  vol_002.mrc  vol_004.mrc  vol_006.mrc  vol_008.mrc  z_values.txt
 PC1 volumes
 
 [PC1: vol_000.mrc to vol_009.mrc; Viewed at isosurface .03](assets/pc1.iso0.03.mp4)
-
-PC1: vol_000.mrc to vol_009.mrc; Viewed at isosurface .03
+*PC1: vol_000.mrc to vol_009.mrc; Viewed at isosurface .03*
 
 ![UMAP embeddings colored by PC1 value (pc1/umap.png)](assets/Untitled_51.png)
-
-UMAP embeddings colored by PC1 value (pc1/umap.png)
+*UMAP embeddings colored by PC1 value (pc1/umap.png)*
 
 PC2 volumes
 
@@ -1620,15 +1612,15 @@ UMAP embeddings colored by PC2 value (pc2/umap.png)
 
 The umap.png plots within the pcX subdirectories show the UMAP embedding colored by each particle's projected value along PCX. This helps give a sense of the layout of the latent space and how the UMAP embedding (a nonlinear 8D → 2D embedding) is related to the PCA projection (a linear projection from 8D → 2D).
 
-## 8.2) The cryoDRGN jupyter notebook
+### 8.2) The cryoDRGN jupyter notebook
 
 CryoDRGN provides a jupyter notebook, `cryoDRGN_viz.ipynb`, which contains more visualization tools to facilitate interactive exploration of the trained model.
 
-### Starting the jupyter notebook
+#### Starting the jupyter notebook
 
 See Section 6.1.
 
-### Running the jupyter notebook
+#### Running the jupyter notebook
 
 - Make sure the epoch number specified in the third cell is set to the correct epoch that we are analyzing. Since we have trained for 50 epochs, it should be 49 here (0-based indexing).
 - Then, you can run each cell one by one to see the outputs. Alternatively, you can run the entire notebook in one go with Cell → Run All.
@@ -1666,11 +1658,11 @@ index: particle ordering
 
 As a debugging tool, it is sometimes useful to visualize the latent space colored by pose or CTF parameters. Regions of the latent space are enriched in particular viewing directions or defocus values may be a sign that the latent variable is modeling these imaging variations instead of structural heterogeneity.
 
-![assets/Untitled_59.png](assets/Untitled_59.png)
+![](assets/Untitled_59.png)
 
-![assets/Untitled_60.png](assets/Untitled_60.png)
+![](assets/Untitled_60.png)
 
-### Comparing to 3D classification labels
+#### Comparing to 3D classification labels
 
 (Optional) Add these code blocks in the jupyter notebook after the data loading sectio to plot by 3D classification labels for major states and minor assembly states.
 
@@ -1712,7 +1704,7 @@ minor_centers2, minor_centers_i = analysis.get_nearest_point(z,minor_centers)
 analysis.plot_by_cluster(umap[:,0],umap[:,1],5,pub_labels_major,centers_ind=major_centers_i,annotate=True)
 ```
 
-![assets/Untitled_61.png](assets/Untitled_61.png)
+![](assets/Untitled_61.png)
 
 ```bash
 colors = ['C0','C1',
@@ -1723,32 +1715,32 @@ colors = ['C0','C1',
 analysis.plot_by_cluster(umap[:,0],umap[:,1],14,pub_labels,centers_ind=minor_centers_i,annotate=True,colors=colors)
 ```
 
-![assets/Untitled_62.png](assets/Untitled_62.png)
+![](assets/Untitled_62.png)
 
-### Generating additional volumes
+#### Generating additional volumes
 
 To generate the volumes associated with each of these assembly states, we can use the last section of the jupyter notebook:
 
 - For the variable `vol_ind`, replace the empty list with the indices corresponding to the assembly state cluster centers:
 
-![assets/Untitled_63.png](assets/Untitled_63.png)
+![](assets/Untitled_63.png)
 
 - The next cell automatically creates a clean output directory, but you can also define your own, e.g. `outdir = "major_states"` .
 - Then run the final cell to generate volumes at the values of `z` at the indices defined with `vol_ind`. The volumes will be saved in the specified directory. The cell will also return links to directly download the file into your Downloads folder, which is helpful if accessing the jupyter notebook via ssh.
 
-![assets/Untitled_64.png](assets/Untitled_64.png)
+![](assets/Untitled_64.png)
 
-## 8.3) Extracting particles for traditional refinement
+### 8.3) Extracting particles for traditional refinement
 
 In [Zhong et al](https://www.nature.com/articles/s41592-020-01049-4), we identified a new assembly state, C4, which was validated with traditional refinement (see Figure 5F). This section shows how to use the interactive lasso tool to select particles from a region of the latent space and save the particles in .star file format.
 
-### Interactive selection
+#### Interactive selection
 
 Use the interactive lasso tool to select the small cluster of particles near the class C megacluster. The table below the plot will update with the indices of the selected datapoints.
 
-![assets/Untitled_65.png](assets/Untitled_65.png)
+![](assets/Untitled_65.png)
 
-![assets/Untitled_66.png](assets/Untitled_66.png)
+![](assets/Untitled_66.png)
 
 Then, evaluate the next cell to save the selected particles into the variable `ind_selected`. In this example, 1146 particles were selected.
 
@@ -1756,11 +1748,11 @@ Note: A representative C4 structure from cryoDRGN can be generated with the **Vo
 
 Evaluate the next few cells to view the selection in PCA and UMAP space:
 
-![assets/Untitled_67.png](assets/Untitled_67.png)
+![](assets/Untitled_67.png)
 
 In the next section of the jupyter notebook, there is template code for saving the index selection. Rename the path as `ind_selected_classC4.pkl` and evaluate the cells to save the selection as an index .pkl file.  We will convert it to a .star file in the next step.
 
-![assets/Untitled_68.png](assets/Untitled_68.png)
+![](assets/Untitled_68.png)
 
 **Note:** An index selection saved as a .pkl file can also be generated from clustering tools in the `cryoDRGN_filtering.ipnyb` jupyter notebook. See Section 6.3.
 
@@ -1799,10 +1791,10 @@ Example command:
 
 ```bash
 $ cryodrgn write_starfile data/128/particles.128.mrcs data/ctf.pkl \
-														--poses data/poses.pkl
-														--ind tutorial/01_vae256/ind_selected_classC4.pkl	\	
-														--full-path \
-														-o class_C4.128.star
+    --poses data/poses.pkl
+    --ind tutorial/01_vae256/ind_selected_classC4.pkl	\	
+    --full-path \
+    -o class_C4.128.star
 ```
 
 ### Re-extracting particles from the micrograph
@@ -1811,23 +1803,23 @@ To re-extract particles from the original micrograph (e.g. at full resolution)
 
 ```bash
 $ cryodrgn write_starfile data/128/particles.128.mrcs data/ctf.pkl \
-														--poses data/poses.pkl
-														--ind tutorial/01_vae256/ind_selected_classC4.pkl	\	
-														--full-path \
-														-o class_C4.128.star \
-														--ref-star original_particles.star \
-														--keep-micrograph
+    --poses data/poses.pkl
+    --ind tutorial/01_vae256/ind_selected_classC4.pkl	\	
+    --full-path \
+    -o class_C4.128.star \
+    --ref-star original_particles.star \
+    --keep-micrograph
 ```
 
 Note to create a filtered 
 
-## 8.4) Generating trajectories
+### 8.4) Generating trajectories
 
 `cryodrgn eval_vol` can be used to generate additional density maps given a list of z values. (See the [Github README](https://github.com/zhonge/cryodrgn) for more complete documentation).
 
 In this section, we will use cryoDRGN's graph traversal algorithm to find paths through latent space (`cryodrgn graph_traversal`), and then generate volumes along this path (`cryodrgn eval_vol`).
 
-### cryodrgn graph_traversal
+#### cryodrgn graph_traversal
 
 - `$ cryodrgn graph_traversal -h`
     
@@ -1877,7 +1869,7 @@ $ cd graph_traversal
 $ cryodrgn eval_vol ../../weights.49.pkl -c ../../config.pkl --zfile z.path.txt -o .
 ```
 
-### Generating assembly trajectories
+#### Generating assembly trajectories
 
 In [section 8.2](https://www.notion.so/cryoDRGN-EMPIAR-10076-tutorial-c8728dcc88e744c8827447c3ff094d19) above, we identified the representative particles corresponding to each minor assembly state:
 
@@ -1902,33 +1894,5 @@ $ cd assembly_path_A
 $ cryodrgn eval_vol ../../weights.49.pkl -c ../../config.pkl --zfile z.path.txt -o .
 ```
 
-[CryoDRGN's graph traversal algorithm through LSU assembly states B→D1→D2→D3→D4→E3→E5](assets/L17_path1.iso0.027_30volumes_wturn.mp4)
-
-CryoDRGN's graph traversal algorithm through LSU assembly states B→D1→D2→D3→D4→E3→E5
-
-# FAQ / Troubleshooting
-
-- The expected heterogeneity is not present in the cryoDRGN reconstruction.
-    - There may be too many junk particles or other imaging outliers in your dataset.
-- How do I update cryoDRGN versions?
-    - See this section of the installation instructions here: [https://www.notion.so/cryoDRGN-installation-with-anaconda-4cff0367d9b241bb8d902efe339d01e6#3e0eed7f61214c55902ad8752716abf4](https://www.notion.so/cryoDRGN-installation-with-anaconda-4cff0367d9b241bb8d902efe339d01e6)
-- How can I check on intermediate results during training?
-    - See the run.log that is in the output directory. The cryodrgn analyze command may be run at any time on the intermediate epochs.
-- Can I use the loss function or learning curve to tell when my training has converged?
-    - The training curve is plotted in the Jupiter notebook. We usually use this to diagnose any training instabilities (spikes in the training curve). The loss function on the training set does not generally indicate convergence of the model.
-- Do I need to use backproject_voxel? (Step 4 in the GitHub)
-    - This step is used as a brief sanity check that the poses/CTF parameters have been parsed correctly.
-- I am seeing weird artifacts (e.g. spherical ringing) in the reconstructed volumes.
-    - This is most likely an issue with the input CTF parameters, or some type of aliasing from signal pre-processing, e.g. in signal-subtracted particle stacks. Please reach out if you run into these artifacts or file a github issue.
-- Does cryoDRGN work with membrane protein complexes?
-    - It does! However, we find that cryoDRGN can capture the heterogeneity of the micelle instead of the protein complex. You can try training on signal subtracted images.
-- Does *particle crowdedness* affect the training result?
-    - *Particle crowdedness* means signals from adjacent particles are included in cryoDRGN training. Particle crowding does affect the results (e.g. learning heterogeneity of neighboring particles). If you notice that this is a concern, you can reduce the reals-space windowing that is applied, by adding something like `--window .6` when using `cryodrgn train_vae`.
-- Is cryoDRGN sensitive to orientation bias?
-    - As long as sufficient orientational coverage exists, cryoDRGN should give reasonable results.
-- How does one generally recognize a cluster as a junk cluster?  Are there any visible features in the UMAP that can be used?
-    - This requires some digging into the results and images. You might be able to tell by looking at the maps or images in obvious cases. Sometimes you'll need to do follow up analysis to validate, e.g. 2D classification.
-- Do better separated clusters more likely mean distinct conformational states?  If a UMAP shows clusters that are close to one another (but with clear boundaries), can one interpret it as a set of conformational states that are very close to one another?
-    - No, not in general. Sometimes there is "repetition" in the latent space where homogeneous states split into multiple clusters (maybe there is something subtle going on in the background). You may want to try out the new [landscape analysis tool](https://www.notion.so/cryodrgn-conformational-landscape-analysis-a5af129288d54d1aa95388bdac48235a) if you want to more quantitatively define conformational states.
-
-More resources can be found by searching the [github issues](https://github.com/zhonge/cryodrgn/issues) page.
+[CryoDRGN's graph traversal algorithm](assets/L17_path1.iso0.027_30volumes_wturn.mp4)
+*CryoDRGN's graph traversal algorithm through LSU assembly states B→D1→D2→D3→D4→E3→E5*

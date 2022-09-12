@@ -2,7 +2,7 @@ name: Docs
 
 on:
   push:
-    branches: [ master, develop, docs1 ]
+    branches: [ master, develop, docs1, docs2, docs3 ]
     tags:
       - '*'
 
@@ -15,8 +15,6 @@ jobs:
         python: [3.9]
 
     steps:
-      - uses: actions/checkout@v2
-
       - name: Setup Python
         uses: actions/setup-python@v2
         with:
@@ -26,7 +24,10 @@ jobs:
         run: |
           pip install sphinx sphinx-rtd-theme myst-parser
 
+      - uses: actions/checkout@v2
+
       - name: Build docs
+        if: github.ref != 'refs/heads/docs2'
         run: |
           # Unless we add a .nojekyll to the base of the deployment folder, the underscores in foldernames
           # like _static/ etc. pose problems on GH Pages.

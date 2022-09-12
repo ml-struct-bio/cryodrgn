@@ -2,7 +2,7 @@ name: Docs
 
 on:
   push:
-    branches: [ master, develop, docs1, docs2 ]
+    branches: [ master, develop, docs1 ]
     tags:
       - '*'
 
@@ -31,6 +31,19 @@ jobs:
           # Unless we add a .nojekyll to the base of the deployment folder, the underscores in foldernames
           # like _static/ etc. pose problems on GH Pages.
           cd docs && make html && touch _build/html/.nojekyll
+
+      - uses: actions/checkout@v2
+        if: false
+        with:
+          ref: docs2
+          path: docs2
+          clean: false
+
+      - name: Build docs on docs2
+        if: false
+        run: |
+          rm -rf docs2/.git
+          cd docs2/docs && make HTMLCOPYDIR=../../docs/_build/html/docs2 html 
 
       - name: Deploy
         uses: JamesIves/github-pages-deploy-action@v4

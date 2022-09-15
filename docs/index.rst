@@ -10,8 +10,11 @@ Welcome to CryoDRGN's documentation!
    :maxdepth: 1
    :caption: Contents:
 
-   usage/empiar_tutorial
-   usage/faq
+   pages/tutorial
+   pages/installation
+   pages/empiar_tutorial
+   pages/preprocess
+   pages/faq
 
 
 Indices and tables

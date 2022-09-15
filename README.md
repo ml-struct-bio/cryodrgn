@@ -14,10 +14,10 @@ Reconstructing continuous distributions of 3D protein structure from cryo-EM ima
 Ellen D. Zhong, Tristan Bepler, Joseph H. Davis*, Bonnie Berger*.
 ICLR 2020, Spotlight presentation, https://arxiv.org/abs/1909.05215
 
-## Tutorial:
 
-An online overview and walkthrough of cryoDRGN installation, training, and analysis is available here:
-https://www.notion.so/cryoDRGN-tutorial-b932c021cb2c415282f182048bac16ff
+## Documentation:
+
+The latest documentation for cryoDRGN is available [here](https://zhonge.github.io/cryodrgn/). This includes an overview and walkthrough of cryoDRGN installation, training and analysis.
 
 A more in-depth manuscript version of the tutorial is available here: 
 https://www.biorxiv.org/content/10.1101/2022.08.09.503342v1

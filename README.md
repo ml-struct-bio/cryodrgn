@@ -17,12 +17,7 @@ ICLR 2020, Spotlight presentation, https://arxiv.org/abs/1909.05215
 
 ## Documentation:
 
-The latest documentation for cryoDRGN is available [here](https://vineetbansal.github.io/cryodrgn/).
-
-## Tutorial:
-
-An online overview and walkthrough of cryoDRGN installation, training, and analysis is available here:
-https://www.notion.so/cryoDRGN-tutorial-b932c021cb2c415282f182048bac16ff
+The latest documentation for cryoDRGN is available [here](https://zhonge.github.io/cryodrgn/). This includes an overview and walkthrough of cryoDRGN installation, training and analysis.
 
 A more in-depth manuscript version of the tutorial is available here: 
 https://www.biorxiv.org/content/10.1101/2022.08.09.503342v1

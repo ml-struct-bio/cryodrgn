@@ -72,13 +72,13 @@ Example usage:
                             Downsample volumes to this box size (pixels) (default:
                             128)
       --ksample KSAMPLE     Number of volumes to generate for analysis (default:
-                            500)
+                            1000)
     ```
     
 
 By default, the script will: 
 
-1. **Generate 500 volumes** at a box size of 128^3
+1. **Generate 1000 volumes** at a box size of 128^3
 2. **Perform PCA**  on the volumes to map conformational coordinates. The goal is for the volume PCA coordinates to provide a more visually interpretable representation of the dataset than the VAE latent space.
 3. **Cluster the volumes** and provide summary volumes and the constituent particles for each cluster.
 
@@ -88,7 +88,7 @@ The expected runtime is ~30 min (1 GPU) which is mostly spent on volume generati
 
 ### Outputs at a glance
 
-- `kmeans500`: 500 generated volumes
+- `kmeans1000`: 1000 generated volumes
 - `clustering_L2_average_10`: clustering of the sketched volume ensemble as summary conformational states with:
     - The mean and std volume for each cluster
     - The constituent particles for each cluster (.pkl), which can be converted to a .star file
@@ -96,7 +96,7 @@ The expected runtime is ~30 min (1 GPU) which is mostly spent on volume generati
 
 ## 2. Assigning 3D conformational states (”classes”)
 
-Once 500 volumes are generated, they are clustered to summarize the major conformational states of the reconstructed ensemble. This clustering approach mirrors some of the assumptions in 3D classification (i.e. that particles fall in 1 of K discrete classes). The resulting clusters can be interpreted as the main conformational states, and this tool provided the constituent particles as a .star file can be exported to other tools for further refinement. 
+Once 1000 volumes are generated, they are clustered to summarize the major conformational states of the reconstructed ensemble. This clustering approach mirrors some of the assumptions in 3D classification (i.e. that particles fall in 1 of K discrete classes). The resulting clusters can be interpreted as the main conformational states, and this tool provided the constituent particles as a .star file can be exported to other tools for further refinement. 
 
 We use agglomerative clustering, a bottom-up clustering algorithm that does not impose any geometric priors on the shape or size of the clusters. Through testing on several datasets, we find that this is effective at **identifying rare states.** We also use a **mask** around the particle to reduce the effect of noise in the background of the density map. A mask may also be manually provided to focus on a specific region (see Section 3). 
 
@@ -110,19 +110,19 @@ The outputs of clustering will be located in a subdirectory `clustering_L2_avera
     - A mean volume and standard deviation volume, e.g. 0_mean.mrc, 0_std.mrc, 1_mean.mrc, 1_std.mrc, ...
     - A numbered subdirectory (`0`, `1`, `2`, etc.) containing the volumes in each cluster
     - A list of the underlying particles (as an index `.pkl` file) that may be converted to a .star file with `cryodrgn_utils write_star`
-- Visualization of the 500 volumes colored by cluster label in the VAE latent space (umap.png, umap_annotated.png) and in the volume PCA space (vol_embeddings_500*png).
+- Visualization of the 1000 volumes colored by cluster label in the VAE latent space (umap.png, umap_annotated.png) and in the volume PCA space (vol_embeddings_1000*png).
 - Volume and particle counts for each cluster (volume_counts.png, particle_counts.png)
 
 ```bash
 (cryodrgn) $ ls clustering_L2_average_10/
-0                   2_std.mrc           5_particle_ind.pkl  8_mean.mrc           vol_embeddings_500_annotated_1_2.png
-0_mean.mrc          3                   5_std.mrc           8_particle_ind.pkl   vol_embeddings_500_annotated_2_3.png
-0_particle_ind.pkl  3_mean.mrc          6                   8_std.mrc            vol_embeddings_500_annotated_3_4.png
-0_std.mrc           3_particle_ind.pkl  6_mean.mrc          9                    vol_embeddings_500_annotated_4_5.png
-1                   3_std.mrc           6_particle_ind.pkl  9_mean.mrc           vol_embeddings_500_clusters_1_2.png
-1_mean.mrc          4                   6_std.mrc           9_particle_ind.pkl   vol_embeddings_500_clusters_2_3.png
-1_particle_ind.pkl  4_mean.mrc          7                   9_std.mrc            vol_embeddings_500_clusters_3_4.png
-1_std.mrc           4_particle_ind.pkl  7_mean.mrc          cluster_labels.pkl   vol_embeddings_500_clusters_4_5.png
+0                   2_std.mrc           5_particle_ind.pkl  8_mean.mrc           vol_embeddings_1000_annotated_1_2.png
+0_mean.mrc          3                   5_std.mrc           8_particle_ind.pkl   vol_embeddings_1000_annotated_2_3.png
+0_particle_ind.pkl  3_mean.mrc          6                   8_std.mrc            vol_embeddings_1000_annotated_3_4.png
+0_std.mrc           3_particle_ind.pkl  6_mean.mrc          9                    vol_embeddings_1000_annotated_4_5.png
+1                   3_std.mrc           6_particle_ind.pkl  9_mean.mrc           vol_embeddings_1000_clusters_1_2.png
+1_mean.mrc          4                   6_std.mrc           9_particle_ind.pkl   vol_embeddings_1000_clusters_2_3.png
+1_particle_ind.pkl  4_mean.mrc          7                   9_std.mrc            vol_embeddings_1000_clusters_3_4.png
+1_std.mrc           4_particle_ind.pkl  7_mean.mrc          cluster_labels.pkl   vol_embeddings_1000_clusters_4_5.png
 2                   4_std.mrc           7_particle_ind.pkl  particle_counts.png  volume_counts.png
 2_mean.mrc          5                   7_std.mrc           umap_annotated.png
 2_particle_ind.pkl  5_mean.mrc          8                   umap.png
@@ -133,7 +133,7 @@ The outputs of clustering will be located in a subdirectory `clustering_L2_avera
 The default number of clusters is 10. If your dataset is very heterogeneous or if you want a finer resolution, you can increase the number of clusters with the `-M` flag. Changing `M` corresponds to changing the cut point in the dendrogram of agglomerative clustering. Clustering can be repeated by re-running `cryodrgn analyze_landscape` and using the `--skip-vol` flag to skip volume generation, for example: 
 
 ```
-(cryodgn) $ cryodrgn analyze_landscape [workdir] [epoch] --skip-vol -M 20 # use --skip-vol to skip regenerating 500 volumes
+(cryodgn) $ cryodrgn analyze_landscape [workdir] [epoch] --skip-vol -M 20 # use --skip-vol to skip regenerating 1000 volumes
 
 # Results will be found in a new subdirectory, clustering_L2_average_[M] 
 ```
@@ -149,7 +149,7 @@ The updated clustering results will be a new subdirectory, `clustering_L2_averag
 The linkage type affects how volumes are merged in the agglomerative clustering algorithm. The default setting is `--linkage average`, which, we have found to be sensitive to outliers (e.g. junk/artifacts or rare states of interest). For more evenly populated clusters (e.g. discretizing a structural continuum), try `--linkage ward`.  
 
 ```
-(cryodgn) $ cryodrgn analyze_landscape [workdir] [epoch] --skip-vol --linkage ward # use --skip-vol to skip regenerating 500 volumes
+(cryodgn) $ cryodrgn analyze_landscape [workdir] [epoch] --skip-vol --linkage ward # use --skip-vol to skip regenerating 1000 volumes
 ```
 
 ![Left: Clustering results with average linkage (M=10); Right: Clustering results with ward linkage (M=10)](assets/landscape_analysis_clustering_results2.png)
@@ -178,7 +178,7 @@ Note: rerunning with `—-vol-ind` will change the volume PCA results since volu
 
 ## 3. Masking (optional)
 
-This tool applies a mask on all 500 volumes before PCA/clustering analysis. The default mask is generated by thresholding all 500 generated volumes at half of their max density values and then combining all masks (by their union). The masking settings may be adjusted with the `--thresh` and `--dilate` arguments if this automated mask generation leaves in undesired regions (e.g. extra background) or leaves out heterogeneous regions of the particle. To check the mask, see the `mask.mrc` and `mask_slices.png` file in the output directory.
+This tool applies a mask on all 1000 volumes before PCA/clustering analysis. The default mask is generated by thresholding all 1000 generated volumes at half of their max density values and then combining all masks (by their union). The masking settings may be adjusted with the `--thresh` and `--dilate` arguments if this automated mask generation leaves in undesired regions (e.g. extra background) or leaves out heterogeneous regions of the particle. To check the mask, see the `mask.mrc` and `mask_slices.png` file in the output directory.
 
 ![A user-defined mask around the heterogeneous region of the complex](assets/landscape_analysis_user_defined_mask.png)
 
@@ -203,18 +203,18 @@ The output of `cryodrgn analyze_landscape` will include a directory containing t
 
 ![Left: Visualization of the dataset in the cryoDRGN VAE latent space](assets/landscape_analysis_latent_space.png)
 
-*Left: Visualization of the dataset in the cryoDRGN VAE latent space, colored points correspond to 500 sampled volumes colored by their cluster label. Center/right: Visualization of 500 sampled volumes in their PCA feature space. In this example, PC1, PC2, and PC3 correspond to biologically relevant motions and thus the overall organization of the ensemble is more easily interpretable.* 
+*Left: Visualization of the dataset in the cryoDRGN VAE latent space, colored points correspond to 1000 sampled volumes colored by their cluster label. Center/right: Visualization of 1000 sampled volumes in their PCA feature space. In this example, PC1, PC2, and PC3 correspond to biologically relevant motions and thus the overall organization of the ensemble is more easily interpretable.* 
 
 ## 5. Visualizing the full conformational landscape
 
-The initial mapping of the volumes is performed on the set of 500 sketched volumes. A second tool, `cryodrgn analyze_landscape_full`, maps all particles to the volume PCA space to visualize a conformational landscape for the full dataset.  This tool will take longer to run (~4 hours on 1 GPU for volume generation, 1 min for mapping). 
+The initial mapping of the volumes is performed on the set of 1000 sketched volumes. A second tool, `cryodrgn analyze_landscape_full`, maps all particles to the volume PCA space to visualize a conformational landscape for the full dataset.  This tool will take longer to run (~4 hours on 1 GPU for volume generation, 1 min for mapping). 
 
 ```bash
 (cryodrgn) $ cryodrgn analyze_landscape_full [workdir] [epoch] > landscape_full.log
 ```
 
-![Left: Visualization of the 500 volumes in the volume PCA feature space where each volume is a point.](assets/landscape_analysis_feature_space.png)
+![Left: Visualization of the 1000 volumes in the volume PCA feature space where each volume is a point.](assets/landscape_analysis_feature_space.png)
 
-Left: Visualization of the 500 volumes in the volume PCA feature space where each volume is a point. Center: Mapping the entire dataset of ~10^5 volumes to the PCA feature space (grey points). Right: Visualizing the conformational landscape as a heatmap on a logscale (i.e. a free energy landscape)
+Left: Visualization of the 1000 volumes in the volume PCA feature space where each volume is a point. Center: Mapping the entire dataset of ~10^5 volumes to the PCA feature space (grey points). Right: Visualizing the conformational landscape as a heatmap on a logscale (i.e. a free energy landscape)
 
 This command produces a jupyter notebook, `cryoDRGN_landscape_viz.ipynb`, for plotting the inferred conformational landscape.

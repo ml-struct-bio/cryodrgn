@@ -1,7 +1,5 @@
 # cryoDRGN EMPIAR-10076 tutorial
 
----
-
 This walkthrough of cryoDRGN analysis of the **assembling ribosome dataset (EMPIAR-10076)** from Figure 5 of [Zhong et al.](https://www.nature.com/articles/s41592-020-01049-4) covers: 
 
 1. preprocessing of inputs, 
@@ -14,7 +12,7 @@ This walkthrough of cryoDRGN analysis of the **assembling ribosome dataset (EMPI
 ![Figure 5 from Zhong et al 2021.](assets/Untitled.png)
 *Figure 5 from Zhong et al 2021.*
 
-[SI Video 3 from Zhong et al 2021](assets/S3_video_assembling_50S.mp4)
+<iframe src="https://widgets.figshare.com/articles/21170908/embed?show_title=1" width="568" height="351" allowfullscreen frameborder="0"></iframe>
 
 - For an abbreviated overview of the steps for running cryoDRGN, see the README on the github page: [https://github.com/zhonge/cryodrgn](https://github.com/zhonge/cryodrgn)
 - All pre-processed inputs that are generated in this tutorial (except particle images) are also located here:  [https://github.com/zhonge/cryodrgn_empiar](https://github.com/zhonge/cryodrgn_empiar)
@@ -23,9 +21,7 @@ This walkthrough of cryoDRGN analysis of the **assembling ribosome dataset (EMPI
 
 ---
 
-## Preparing cryoDRGN inputs
-
-### Step 1) Obtain the dataset
+## 1) Obtain the dataset
 
 - Download EMPIAR-10076 (~51GB) from [https://www.ebi.ac.uk/pdbe/emdb/empiar/entry/10076/](https://www.ebi.ac.uk/pdbe/emdb/empiar/entry/10076/)
     - You can download it directly from the browser, or from the command line using Aspera Connect ([More info here](https://www.ebi.ac.uk/pdbe/emdb/empiar/faq#question_CLDownload))
@@ -37,10 +33,10 @@ This walkthrough of cryoDRGN analysis of the **assembling ribosome dataset (EMPI
     
 - The **particle images** are in the file `L17Combine_weight_local.mrc`. There is a typo in the file extension, so rename this file with the `.mrcs` extension.
     - `$ mv L17Combine_weight_local.mrc L17Combine_weight_local.mrcs`
-- The **CTF parameters** for each particle are in the metadata file, `Parameters.star`. We will extract the CTF parameters from this file later in [Step 3](#step3).
+- The **CTF parameters** for each particle are in the metadata file, `Parameters.star`. We will extract the CTF parameters from this file later in [Step 3](step3).
     - `$ head Parameters.star -n 20`
         
-        ```python
+        ```
         data_
         
         loop_
@@ -66,8 +62,8 @@ This walkthrough of cryoDRGN analysis of the **assembling ribosome dataset (EMPI
 - Poses (i.e. particle alignments) are **not** present in the deposited data, so we will next run a consensus reconstruction.
 
 ---
-<a name="step2"></a>
-### Step 2) Consensus reconstruction (optional)
+(step2)=
+## 2) Consensus reconstruction (optional)
 
 - Perform a **C1 homogeneous refinement** in your favorite cryo-EM software package. We will be using the poses from this "consensus reconstruction".
 - To skip this step, download the poses from [https://github.com/zhonge/cryodrgn_empiar/blob/main/empiar10076/inputs/cryosparc_P4_J33_004_particles.cs](https://github.com/zhonge/cryodrgn_empiar/blob/main/empiar10076/inputs/cryosparc_P4_J33_004_particles.cs)
@@ -87,10 +83,10 @@ This walkthrough of cryoDRGN analysis of the **assembling ribosome dataset (EMPI
 ![](assets/Untitled_5.png)
 *CryoSPARC's metadata file (a .cs file) that contains particle poses and CTF parameters can be downloaded from the web interface as the "alignments3D" output or found in the job directory in the filesystem where cryoSPARC is running.*
 
-<a name="step3"></a>
-### Step 3) Preprocess inputs
+(step3)=
+## 3) Preprocess inputs
 
-In this step, we will first extract poses ([Step 3.1](#step3.1)), then extract CTF parameters ([Step 3.2](#step3.2)), then downsample our images ([Step 3.3](#step3.3)).
+In this step, we will first extract poses ([Step 3.1](step3-1)), then extract CTF parameters ([Step 3.2](step3-2)), then downsample our images ([Step 3.3](step3-3)).
 
 Pose and CTF parameters ****are stored in various formats depending on the upstream processing software. CryoDRGN contains scripts to convert this information to a `.pkl` file format. 
 
@@ -104,13 +100,13 @@ Pose and CTF parameters ****are stored in various formats depending on the upstr
     utils.save_pkl(z, 'z.copy.pkl')
     ```
     
-<a name="step3.1"></a>
-#### **Step 3.1) Convert poses to cryoDRGN format**
+(step3-1)=
+### 3.1) Convert poses to cryoDRGN format
 
 - CryoDRGN has two executables for parsing pose information (i.e. particle alignments) from either a cryoSPARC `.cs` file or a RELION `.star` file.
     - `cryodrgn parse_pose_star -h`
         
-        ```python
+        ```
         (cryodrgn) $ cryodrgn parse_pose_star -h
         usage: cryodrgn parse_pose_star [-h] -o PKL [-D D] [--Apix APIX] input
         
@@ -132,7 +128,7 @@ Pose and CTF parameters ****are stored in various formats depending on the upstr
         - Note: the flag  `--relion31` and the argument  `--Apix X.XX` are required if the .star file from RELION version 3.1 or later (e.g. if the .star file contains the `data_optics` group). The pixel size should be the pixel size of the refinement.
     - `cryodrgn parse_pose_csparc -h`
         
-        ```python
+        ```
         (cryodrgn) $ cryodrgn parse_pose_csparc -h
         usage: cryodrgn parse_pose_csparc [-h] [--abinit] [--hetrefine] -D D -o PKL input
         
@@ -149,11 +145,11 @@ Pose and CTF parameters ****are stored in various formats depending on the upstr
           -o PKL       Output pose.pkl
         ```
         
-- For this tutorial, we will use `cryodrgn parse_pose_csparc`  to extract poses from the cryoSPARC refinement output `cryosparc_P4_J33_004_particles.cs` from [Step 2](#step2).
+- For this tutorial, we will use `cryodrgn parse_pose_csparc`  to extract poses from the cryoSPARC refinement output `cryosparc_P4_J33_004_particles.cs` from [Step 2](step2).
     - Example command and output:
         - `$ cryodrgn parse_pose_csparc cryosparc_P4_J33_004_particles.cs -D 320 -o poses.pkl`
             
-            ```python
+            ```
             (cryodrgn) [Wed Feb 03 17:12 het] cryodrgn parse_pose_csparc empiar10076/P4/J33/cryosparc_P4_J33_004_particles.cs -D 320 -o poses.pkl
             0 uid 3300296402854382810
             1 blob/path b'J3/imported/L17Combine_weight_local.mrcs'
@@ -203,13 +199,13 @@ Pose and CTF parameters ****are stored in various formats depending on the upstr
 - Note: `-D` should be set to the box size of the refinement, which was 320 in this case
 
 ---
-<a name="step3.2"></a>
-#### **Step 3.2) Convert CTF parameters to cryoDRGN format**
+(step3-2)=
+### 3.2) Convert CTF parameters to cryoDRGN format
 
 - CryoDRGN has two executables for parsing CTF information from either a cryoSPARC `.cs` file or a RELION `.star` file.
     - `cryodrgn parse_ctf_star -h`
         
-        ```python
+        ```
         (cryodrgn) $ cryodrgn parse_ctf_star -h
         usage: cryodrgn parse_ctf_star [-h] -o O [--png PNG] [-D D] [--Apix APIX] [--kv KV] [--cs CS] [-w W] [--ps PS] star
         
@@ -234,7 +230,7 @@ Pose and CTF parameters ****are stored in various formats depending on the upstr
         
     - `cryodrgn parse_ctf_csparc -h`
         
-        ```python
+        ```
         (cryodrgn) $ cryodrgn parse_ctf_csparc -h
         usage: cryodrgn parse_ctf_csparc [-h] -o O [--png PNG] [-D D] [--Apix APIX] cs
         
@@ -260,7 +256,7 @@ Pose and CTF parameters ****are stored in various formats depending on the upstr
         
         - Example output
             
-            ```python
+            ```
             (cryodrgn) [Wed Feb 03 17:02 empiar10076] cryodrgn parse_ctf_star Parameters.star --Apix 1.31 -D 320 -o ctf.pkl --ps 0
             2021-02-03 17:02:33     131899 particles
             2021-02-03 17:02:33     Overriding phase shift with 0.0
@@ -285,7 +281,7 @@ Pose and CTF parameters ****are stored in various formats depending on the upstr
         
         - Example output
             
-            ```python
+            ```
             (cryodrgn) [Wed Feb 03 17:13 het] cryodrgn parse_ctf_csparc empiar10076/P4/J33/cryosparc_P4_J33_004_particles.cs -o ctf.pkl
             2021-02-03 17:16:52     131899 particles
             2021-02-03 17:16:52     Image size (pix)  : 320
@@ -302,8 +298,8 @@ Pose and CTF parameters ****are stored in various formats depending on the upstr
             
 
 ---
-<a name="step3.3"></a>
-#### **Step 3.3) Downsample images**
+(step3-3)=
+### 3.3) Downsample images
 
 CryoDRGN training time is highly dependent on the image size (See Fig. 2E in Zhong et al.). We will downsample images to an image size of **D=128** (where D is the image dimension in pixels, i.e. a 128x128 image) using `cryodrgn downsample`. Later on, we will train a higher resolution model using larger images (**D=256**). 
 
@@ -311,7 +307,7 @@ Because of the tradeoffs between training time and representation capacity of th
 
 - `cryodrgn downsample -h`
     
-    ```python
+    ```
     (cryodrgn) $ cryodrgn downsample -h
     usage: cryodrgn downsample [-h] -D D -o MRCS [-b B] [--is-vol] [--chunk CHUNK] [--datadir DATADIR] [--max-threads MAX_THREADS] mrcs
     
@@ -365,13 +361,13 @@ Because of the tradeoffs between training time and representation capacity of th
 
 ---
 
-## CryoDRGN training
+## 4) CryoDRGN training
 
 When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl) have been prepared, a cryoDRGN model can be trained with the following executable:
 
 - `cryodrgn train_vae -h`
     
-    ```python
+    ```
     (cryodrgn) $ cryodrgn train_vae -h
     usage: cryodrgn train_vae [-h] -o OUTDIR --zdim ZDIM --poses POSES [--ctf pkl] [--load WEIGHTS.PKL] [--checkpoint CHECKPOINT]
                               [--log-interval LOG_INTERVAL] [-v] [--seed SEED] [--ind PKL] [--uninvert-data] [--no-window] [--window-r WINDOW_R]
@@ -465,8 +461,8 @@ When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl
 Many of the parameters of this script have sensible defaults. The required arguments are:
 
 - an input image stack (`.mrcs` or other listed file types)
-- `--poses`, image poses (`.pkl`) that correspond to the input images (see [Step 3.1](#step3.1))
-- `--ctf`, ctf parameters (`.pkl`), unless phase-flipped images are used (see [Step 3.2](#step3.2))
+- `--poses`, image poses (`.pkl`) that correspond to the input images (see [Step 3.1](step3-1))
+- `--ctf`, ctf parameters (`.pkl`), unless phase-flipped images are used (see [Step 3.2](step3-2))
 - `--zdim`, the dimension of the latent variable
 - `-o`, a clean output directory for storing results
 
@@ -486,7 +482,7 @@ Additional parameters which are typically set include:
 
 In this tutorial we will walk through the commands and analysis for Step 1 and Step 3 in the above workflow. You can run step 2 on your own to see how the results compare. 
 
-#### Step 4) CryoDRGN initial training
+#### CryoDRGN initial training
 
 - Run `cryodrgn train_vae` on the full particle stack of D=128 particles (1 GPU; 64GB memory requirement)
     
@@ -519,7 +515,7 @@ In this tutorial we will walk through the commands and analysis for Step 1 and S
     
     - Log
         
-        ```python
+        ```
         2021-02-03 17:46:01     /nobackup/users/zhonge/anaconda3/envs/cryodrgn4/bin/cryodrgn train_vae data/128/projections.128.mrcs --ctf data/ctf.new.pkl --poses data/pose.pkl --zdim 8 -n 50 -o tutorial/00
         2021-02-03 17:46:01     Namespace(activation='relu', amp=False, batch_size=8, beta=None, beta_control=None, checkpoint=1, ctf='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/data/ctf.new.pkl', datadir=None, do_pose_sgd=False, domain='fourier', emb_type='quat', enc_mask=None, encode_mode='resid', func=<function main at 0x2000ab052840>, ind=None, invert_data=True, lazy=False, load=None, log_interval=1000, lr=0.0001, multigpu=False, norm=None, num_epochs=50, outdir='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00', particles='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/data/128/projections.128.mrcs', pdim=256, pe_dim=None, pe_type='geom_lowf', players=3, pose_lr=0.0003, poses='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/data/pose.pkl', pretrain=1, qdim=256, qlayers=3, relion31=False, seed=43266, tilt=None, tilt_deg=45, use_real=False, verbose=False, wd=0, window=True, zdim=8)
         2021-02-03 17:46:01     Use cuda True
@@ -623,15 +619,13 @@ $ cryodrgn train_vae data/128/particles.128.mrcs \
     -o tutorial/00_vae128 >> tutorial.00.log
 ```
 
-## Overview of cryoDRGN analysis
-
-### Step 5) cryodrgn analyze
+## 5) cryoDRGN analysis
 
 Once the model has finished training, use the `cryodrgn analyze` command to visualize the latent space, generate density maps, and generate template Jupyter notebooks for further interactive filtering, visualization, and analysis.
 
 - `$ cryodrgn analyze -h`
     
-    ```python
+    ```
     (cryodrgn) $ cryodrgn analyze -h
     usage: cryodrgn analyze [-h] [--device DEVICE] [-o OUTDIR] [--skip-vol]
                             [--skip-umap] [--Apix APIX] [--flip] [-d DOWNSAMPLE]
@@ -682,7 +676,7 @@ $ cryodrgn analyze tutorial/00_vae128 49 --flip --Apix 3.275
 
 - Example output log
     
-    ```python
+    ```
     (cryodrgn4) [Thu Feb 04 02:57 00] cryodrgn analyze . 49
     2021-02-04 02:57:18     Saving results to /nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/analyze.49
     2021-02-04 02:57:18     Perfoming principal component analysis...
@@ -928,7 +922,7 @@ umap_hex.png     vol_002.mrc  vol_006.mrc  vol_010.mrc  vol_014.mrc  vol_018.mrc
 
 **Note:** The number of volumes can be modified with the argument `--ksample 50`. 
 
-[kmeans20 volumes: vol_000.mrc to vol_019.mrc](assets/kmeans20.iso0.2.mp4)
+<iframe src="https://widgets.figshare.com/articles/21171049/embed?show_title=1" width="568" height="351" allowfullscreen frameborder="0"></iframe>
 
 The directory will also contain PCA and UMAP visualizations with annotations of where the 20 density maps were generated from.
 
@@ -964,22 +958,24 @@ vol_000.mrc  vol_002.mrc  vol_004.mrc  vol_006.mrc  vol_008.mrc  z_values.txt
 ![UMAP embeddings colored by PC1 value (pc1/umap.png)](assets/Untitled_14.png)
 *UMAP embeddings colored by PC1 value (pc1/umap.png)*
 
-[](assets/pc1.iso0.2.mp4)
+<iframe src="https://widgets.figshare.com/articles/21171568/embed?show_title=1" width="568" height="351" allowfullscreen frameborder="0"></iframe>
+
 *PC1: vol_000.mrc to vol_009.mrc; This shows one of the assembly pathways from Davis et al where the central protuberance is built before the rest of the complex.*
 
 ![UMAP embeddings colored by PC2 value (pc2/umap.png)](assets/Untitled_15.png)
 *UMAP embeddings colored by PC2 value (pc2/umap.png)*
 
-[](assets/pc2.iso0.2.mp4)
+<iframe src="https://widgets.figshare.com/articles/21171571/embed?show_title=1" width="568" height="351" allowfullscreen frameborder="0"></iframe>
+
 *PC2: vol_000.mrc to vol_009.mrc; This shows another assembly pathway from Davis et al where the base is built before the rest of the complex.*
 
 The `umap.png` plot within the `pcX` subdirectories shows the UMAP embedding of each particle, colored by its PCX value. This helps give a sense of the layout of the latent space and how the UMAP embedding is related to the PCA projection.
 
-## Step 6) Particle filtering with the cryoDRGN Jupyter notebook
+## 6) Particle filtering with the cryoDRGN Jupyter notebook
 
 This section will walk through how to use the cryoDRGN Jupyter notebook, `cryoDRGN_filtering.ipynb`, to filter junk particles out of the dataset. The Jupyter notebook provides an interactive environment for running Python code blocks to analyze the cryoDRGN results.
 
-### Step 6.1) Accessing the jupyter notebook
+### 6.1) Accessing the jupyter notebook
 
 Jupyter is a web application that requires a browser to use. If you have browser access on the machine where you ran the cryodrgn experiment, you can start the jupyter notebook from the command line with the command `jupyter-notebook`:
 
@@ -1023,7 +1019,7 @@ Then click cryoDRGN_filtering.ipynb to start the jupyter notebook:
 
 ![](assets/Untitled_17.png)
 
-### Step 6.2) Run the jupyter-notebook for particle filtering
+### 6.2) Run the jupyter-notebook for particle filtering
 
 The jupyter notebook has template code for performing all the analysis and plotting and should require minimal intervention. For a general overview of running jupyter notebooks, see their documentation here: [https://jupyter.readthedocs.io/en/latest/running.html](https://jupyter.readthedocs.io/en/latest/running.html).
 
@@ -1107,7 +1103,7 @@ Kept particles are shown in orange
 
 In the next section, we will show the steps to remove the center cluster in the UMAP corresponding to the junk particles (the brown cluster in the 3D classification labels).
 
-### Step 6.3) **Filtering by GMM cluster label**
+### 6.3) **Filtering by GMM cluster label**
 
 In this section, we demo the steps and outputs for filtering out the junk cluster using a Gaussian mixture model (GMM) clustering algorithm. 
 
@@ -1192,6 +1188,7 @@ Location of the particles in latent space
 The last section of the notebook has cells that will help save the selected indices to use in downstream processing.
 
 ![Screenshot of the section](assets/Untitled_41.png)
+
 *Screenshot of the section*
 
 In the filtering sections, the selected particles are tracked in the variable `ind_selected` and `ind_selected_not`. Because we selected the *bad particles*, we will now switch what the `ind_keep` and `ind_bad` variables are set to in the first cell. This is purely for organizational/file naming purposes.
@@ -1202,9 +1199,11 @@ In the filtering sections, the selected particles are tracked in the variable `i
 Visualization of our kept particles, `ind_keep`:
 
 ![Viewing the kept particles (orange) in PCA space](assets/Untitled_43.png)
+
 *Viewing the kept particles (orange) in PCA space*
 
 ![Viewing the kept particles (orange) in UMAP space](assets/Untitled_44.png)
+
 *Viewing the kept particles (orange) in UMAP space*
 
 The last three cells will print out a summary of the selection and where the indices were saved:
@@ -1226,7 +1225,7 @@ These `.pkl` files contain a numpy array of indices into the particle stack, whi
 
 - A new particle stack can be extracted using the script `filter_mrcs.py` found in the `utils` subdirectory of the cryodrgn repository.
 
-## Step 7) CryoDRGN high-resolution training
+## 7) CryoDRGN high-resolution training
 
 Now that we have identified the junk particles, we will rerun `cryodrgn train_vae` on larger, higher resolution images (D=256) using a larger neural network model (1024 dim x 3 layer architecture).
 
@@ -1267,7 +1266,7 @@ Mixed precision training is available for Nvidia GPUs with tensor core architect
 
 **Note:** We recommend using `--multigpu` and `--amp` for larger architectures (1024x3) or larger images (D=256). For smaller models/images, GPU computation may not be the training bottleneck. In this case, GPU parallelization and mixed-precision training may have a limited effect on the wall clock training time, while taking up additional compute resources.
 
-## Step 8) Analysis
+## 8) Analysis
 
 We will first walk through the default outputs from `cryodrgn analyze` (Section 8.1), then we will use the cryoDRGN jupyter notebook to visualize and generate assembly state density maps (Section 8.2), extract the particles for newly identified state C4 (Section 8.3), and use cryoDRGN's graph traversal algorithm to generate trajectories of a ribosome assembly pathways (Section 8.4).
 
@@ -1277,7 +1276,7 @@ Similar to Step 5 above, we first run the default analysis pipeline with `cryodr
 
 - `$ cryodrgn analyze -h`
     
-    ```python
+    ```
     (cryodrgn) $ cryodrgn analyze -h
     usage: cryodrgn analyze [-h] [--device DEVICE] [-o OUTDIR] [--skip-vol]
                             [--skip-umap] [--Apix APIX] [--flip] [-d DOWNSAMPLE]
@@ -1512,7 +1511,6 @@ We flip the handedness of the output volumes with the flag `--flip` and set the 
     2021-02-28 14:33:14     /nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/analyze.49/cryoDRGN_filtering.ipynb
     2021-02-28 14:33:14     Finished in 0:08:25.218678
     ```
-    
 
 As before, this will create a new directory `analyze.49` in the workdir of the cryodrgn job containing UMAP/PCA visualizations of the latent space, 20 sampled density maps at kmeans cluster centers, 10 density maps along PC1 and PC2, and jupyter notebooks for interactive analysis.
 
@@ -1566,8 +1564,7 @@ labels.pkl       vol_001.mrc  vol_005.mrc  vol_009.mrc  vol_013.mrc  vol_017.mrc
 umap_hex.png     vol_002.mrc  vol_006.mrc  vol_010.mrc  vol_014.mrc  vol_018.mrc  z_values.txt
 ```
 
-[Viewed at isosurface .03](assets/kmeans20.iso0.03.mp4)
-*Viewed at isosurface .03*
+<iframe src="https://widgets.figshare.com/articles/21171025/embed?show_title=1" width="568" height="351" allowfullscreen frameborder="0"></iframe>
 
 ![Location of the twenty volumes in the UMAP visualization](assets/Untitled_50.png)
 *Location of the twenty volumes in the UMAP visualization*
@@ -1593,27 +1590,28 @@ umap.png     vol_001.mrc  vol_003.mrc  vol_005.mrc  vol_007.mrc  vol_009.mrc
 vol_000.mrc  vol_002.mrc  vol_004.mrc  vol_006.mrc  vol_008.mrc  z_values.txt
 ```
 
-PC1 volumes
+##### PC1 volumes
 
-[PC1: vol_000.mrc to vol_009.mrc; Viewed at isosurface .03](assets/pc1.iso0.03.mp4)
-*PC1: vol_000.mrc to vol_009.mrc; Viewed at isosurface .03*
+<iframe src="https://widgets.figshare.com/articles/21171079/embed?show_title=1" width="568" height="351" allowfullscreen frameborder="0"></iframe>
+
+*PC1: vol_000.mrc to vol_009.mrc; This shows one of the assembly pathways from Davis et al where the central protuberance is built before the rest of the complex.*
 
 ![UMAP embeddings colored by PC1 value (pc1/umap.png)](assets/Untitled_51.png)
 *UMAP embeddings colored by PC1 value (pc1/umap.png)*
 
-PC2 volumes
+##### PC2 volumes
 
-[PC2: vol_000.mrc to vol_009.mrc; Viewed at isosurface .03](assets/pc2.iso0.03.mp4)
+<iframe src="https://widgets.figshare.com/articles/21171088/embed?show_title=1" width="568" height="351" allowfullscreen frameborder="0"></iframe>
 
-PC2: vol_000.mrc to vol_009.mrc; Viewed at isosurface .03
+*PC2: vol_000.mrc to vol_009.mrc; This shows another assembly pathway from Davis et al where the base is built before the rest of the complex.*
 
 ![UMAP embeddings colored by PC2 value (pc2/umap.png)](assets/Untitled_52.png)
 
-UMAP embeddings colored by PC2 value (pc2/umap.png)
+*UMAP embeddings colored by PC2 value*
 
 The umap.png plots within the pcX subdirectories show the UMAP embedding colored by each particle's projected value along PCX. This helps give a sense of the layout of the latent space and how the UMAP embedding (a nonlinear 8D → 2D embedding) is related to the PCA projection (a linear projection from 8D → 2D).
 
-<a name="step8.2"></a>
+(step8-2)=
 ### 8.2) The cryoDRGN jupyter notebook
 
 CryoDRGN provides a jupyter notebook, `cryoDRGN_viz.ipynb`, which contains more visualization tools to facilitate interactive exploration of the trained model.
@@ -1873,7 +1871,7 @@ $ cryodrgn eval_vol ../../weights.49.pkl -c ../../config.pkl --zfile z.path.txt 
 
 #### Generating assembly trajectories
 
-In [section 8.2](#step8.2) above, we identified the representative particles corresponding to each minor assembly state:
+In [section 8.2](step8-2) above, we identified the representative particles corresponding to each minor assembly state:
 
 ```bash
 # Representative indices for minor assembly states, note these indices will vary between different runs
@@ -1896,5 +1894,6 @@ $ cd assembly_path_A
 $ cryodrgn eval_vol ../../weights.49.pkl -c ../../config.pkl --zfile z.path.txt -o .
 ```
 
-[CryoDRGN's graph traversal algorithm](assets/L17_path1.iso0.027_30volumes_wturn.mp4)
+<iframe src="https://widgets.figshare.com/articles/21170974/embed?show_title=1" width="568" height="351" allowfullscreen frameborder="0"></iframe>
+
 *CryoDRGN's graph traversal algorithm through LSU assembly states B→D1→D2→D3→D4→E3→E5*

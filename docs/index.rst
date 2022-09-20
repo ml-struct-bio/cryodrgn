@@ -10,10 +10,11 @@ Welcome to CryoDRGN's documentation!
    :maxdepth: 1
    :caption: Contents:
 
-   pages/tutorial
+   pages/intro
    pages/installation
    pages/empiar_tutorial
-   pages/preprocess
+   pages/landscape_analysis
+   pages/large_datasets
    pages/faq
 
 

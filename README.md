@@ -104,7 +104,7 @@ The official version 1.0 release. This version introduces several new tools for 
 
 <details><summary>Version 0.2.0</summary>
 	
-* New interface and proper python packaing with setup.py. This version has identical functionality and argument usage as previous versions, however tools are now available from a common entry point. See:
+* New interface and proper python packaging with `setup.py`. This version has identical functionality and argument usage as previous versions, however tools are now available from a common entry point. See:
     
     `$ cryodrgn <command> -h`
 
@@ -137,7 +137,7 @@ To install cryoDRGN, git clone the source code and install the following depende
     git clone https://github.com/zhonge/cryodrgn.git
     cd cryodrgn
     git checkout 1.1.0 # or latest version
-    python setup.py install
+    pip install .
 
 A detailed installation and testing guide is provided here: https://www.notion.so/cryoDRGN-installation-with-anaconda-4cff0367d9b241bb8d902efe339d01e6
 

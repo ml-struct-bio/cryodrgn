@@ -32,6 +32,6 @@ setup(name='cryodrgn',
         'cufflinks',
         'jupyterlab',
         'umap-learn',
-        'ipywidgets'
+        'ipywidgets<8'
         ]
      )

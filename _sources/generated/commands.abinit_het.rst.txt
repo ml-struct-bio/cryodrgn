@@ -1,0 +1,38 @@
+﻿commands.abinit\_het
+====================
+
+.. automodule:: commands.abinit_het
+
+   
+   
+   
+
+   
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      add_args
+      eval_z
+      get_latest
+      main
+      make_model
+      pretrain
+      save_checkpoint
+      save_config
+      sort_poses
+      train
+   
+   
+
+   
+   
+   
+
+   
+   
+   
+
+
+

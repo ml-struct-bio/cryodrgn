@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>❄️🐉 cryoDRGN Introduction &mdash; CryoDRGN  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../_static/documentation_options.js?v=5929fcd5"></script>
+        <script src="../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="cryoDRGN Installation" href="installation.html" />
+    <link rel="prev" title="Welcome to CryoDRGN’s documentation!" href="../index.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            CryoDRGN
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">❄️🐉 cryoDRGN Introduction</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#background">Background</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#input-data-requirements">Input data requirements</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#tutorial-overview">Tutorial overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#references">References</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="installation.html">cryoDRGN Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="empiar_tutorial.html">cryoDRGN EMPIAR-10076 tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="landscape_analysis.html">cryoDRGN Conformational Landscape Analysis</a></li>
+<li class="toctree-l1"><a class="reference internal" href="large_datasets.html">cryoDRGN preprocess for large datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="cryodrgn2.html">CryoDRGN2 quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="faq.html">FAQ / Troubleshooting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../api.html">API</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">CryoDRGN</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">❄️🐉 cryoDRGN Introduction</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/pages/intro.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="cryodrgn-introduction">
+<h1>❄️🐉 cryoDRGN Introduction<a class="headerlink" href="#cryodrgn-introduction" title="Link to this heading"></a></h1>
+<p>This document contains a guide for installing and running <strong>cryoDRGN</strong> 🐉 ❄️. In particular, we follow the processing steps for <strong>particle filtering</strong> and <strong>heterogeneous reconstruction</strong> of the <strong>assembling ribosome dataset (EMPIAR-10076)</strong> used in <a class="reference external" href="https://www.nature.com/articles/s41592-020-01049-4">Zhong et al</a>. This is meant as a general guide — submission commands may need to be updated depending on your workstation or cluster setup.</p>
+<p>For any feedback, issues, or typos, please file a Github <a class="reference external" href="https://github.com/zhonge/cryodrgn/issues">issue</a> or send an email to the cryodrgn user <a class="reference external" href="https://groups.google.com/g/cryodrgn">google group</a>.</p>
+<hr class="docutils" />
+<section id="background">
+<h2>Background<a class="headerlink" href="#background" title="Link to this heading"></a></h2>
+<p>CryoDRGN is a neural network-based method for heterogeneous reconstruction. Instead of <em>discrete</em> methods like 3D classification that produce an ensemble of K density maps, cryoDRGN performs heterogeneous reconstruction by learning a <em>continuous distribution</em> of density maps parameterized by a coordinate-based neural network.</p>
+<iframe src="https://widgets.figshare.com/articles/21170578/embed?show_title=1" width="568" height="351" allowfullscreen frameborder="0"></iframe>
+<p><em>Principal component trajectories and graph traversal trajectories of the pre-catalyic spliceosome. SI Video 4 from <a class="reference external" href="https://www.nature.com/articles/s41592-020-01049-4">Zhong et al 2021</a></em></p>
+<p>The inputs to a cryoDRGN training run are <strong>1) extracted particle images</strong>, <strong>2) the CTF parameters</strong> associated with each particle, and <strong>3) poses</strong> for each particle from a 3D refinement. Note that cryoDRGN treats the reconstruction as C1 (asymmetric). For a few thoughts on (pseudo-)symmetric complexes, see this <a class="reference external" href="https://github.com/zhonge/cryodrgn/issues/21">note</a>.</p>
+<p>The final result of the software will be <strong>1) latent embeddings</strong> for each particle image in the form of a real-valued vector (usually denoted with z, and output as a <code class="docutils literal notranslate"><span class="pre">z.pkl</span></code> file by the software), and <strong>2) neural network weights</strong> modeling the distribution of density maps (parameterizing the function from z→V). Once trained, the software can reconstruct a 3D density map given a value of z.</p>
+<p>How do you interpret the resulting distribution of structures? Since different datasets have diverse sources of heterogeneity (e.g. discrete vs. continuous), cryoDRGN contains a variety of automated and interactive tools to analyze the reconstructed distribution of structures. The starting point for analysis is the <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">analyze</span></code> pipeline, which generates a sample of 3D density maps and visualizations of the latent space. Specifically, the <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">analyze</span></code> pipeline will produce <strong>1) N density maps</strong> sampled from different regions of the latent space (N=20, by default), <strong>2) continuous trajectories</strong> along the principal components axes of the latent space embeddings, and <strong>3) visualizations of the latent space</strong> with PCA and UMAP**.**</p>
+<p>CryoDRGN also provides interactive tools to further explore the learned ensemble, implemented as <strong>Jupyter notebooks</strong> with interactive widgets for visualizing the dataset, extracting particles, and generating more volumes. Additional tools are also available that can generate trajectories given user-defined end points and convert particle selections to <code class="docutils literal notranslate"><span class="pre">.star</span></code> files for further refinement in other tools. An overview of these functionalities will be demonstrated in the tutorial.</p>
+<p>Furthermore, because the model is trained to reconstruct <em>image heterogeneity,</em> any non-structural image heterogeneity that is not captured by the image formation model <strong>(e.g. junk particles and artifacts)</strong> can be reflected in the latent embeddings. In practice, junk particles are often easily identified in the latent embeddings and can then be filtered out. A jupyter notebook is provided to filter particle stacks.</p>
+<p>What settings should I use for training cryoDRGN networks? Common hyperparameters when training a cryoDRGN model are: <strong>1) the size of the neural network</strong>, which controls the capacity of the model, <strong>2) the input image size</strong>, which bounds the resolution information and greatly impacts the training speed and <strong>3) the latent variable dimension</strong>, which is the bottleneck layer that bounds the expressiveness of the model. The three parameters together all affect the expressiveness/complexity of the learned model. After exploring many real datasets, we provide reasonable defaults and recommended settings of these parameters for training.</p>
+</section>
+<section id="input-data-requirements">
+<h2>Input data requirements<a class="headerlink" href="#input-data-requirements" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p>Extracted single particle images (in .mrcs/.cs/.star format), clean from edge, ice, or hot pixel artifacts</p></li>
+<li><p>A C1 consensus reconstruction with:</p>
+<ul>
+<li><p>High quality CTF parameters</p></li>
+<li><p>High quality image poses (particle alignments)</p></li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="tutorial-overview">
+<h2>Tutorial overview<a class="headerlink" href="#tutorial-overview" title="Link to this heading"></a></h2>
+<p>See <a class="reference internal" href="empiar_tutorial.html"><span class="std std-doc">cryoDRGN EMPIAR-10076 tutorial</span></a> for a step-by-step guide for running cryoDRGN.</p>
+<p>This walkthrough of cryoDRGN analysis of the <strong>assembling ribosome dataset (EMPIAR-10076)</strong> covers:</p>
+<ol class="arabic simple">
+<li><p>preprocessing of inputs,</p></li>
+<li><p>initial cryoDRGN training and explanation of outputs,</p></li>
+<li><p>particle filtering to remove junk particles,</p></li>
+<li><p>high-resolution cryoDRGN training,</p></li>
+<li><p>extracting particle subsets for traditional refinement, and</p></li>
+<li><p>generation of trajectories.</p></li>
+</ol>
+<p>For an abbreviated overview of the steps for running cryoDRGN, see the github <a class="reference external" href="https://github.com/zhonge/cryodrgn">README</a></p>
+<p>A protocols paper that describes the analysis of the assembling ribosome dataset is now published. See <a class="reference external" href="https://www.nature.com/articles/s41596-022-00763-x">Kinman*, Powell*, Zhong* et al.</a></p>
+<iframe src="https://widgets.figshare.com/articles/21170908/embed?show_title=1" width="568" height="351" allowfullscreen frameborder="0"></iframe>
+<p><em>SI Video 3 from <a class="reference external" href="https://www.nature.com/articles/s41592-020-01049-4">Zhong et al 2021</a></em></p>
+</section>
+<section id="references">
+<h2>References<a class="headerlink" href="#references" title="Link to this heading"></a></h2>
+<p>For a complete description of the method, see our paper here:</p>
+<p><strong>CryoDRGN: reconstruction of heterogeneous cryo-EM structures using neural networks</strong></p>
+<p>Ellen Zhong, Tristan Bepler, Bonnie Berger*, Joey Davis*</p>
+<p>Nature Methods 2021, <a class="reference external" href="https://doi.org/10.1038/s41592-020-01049-4">https://doi.org/10.1038/s41592-020-01049-4</a></p>
+<hr class="docutils" />
+<p>An earlier version of this work appeared at the International Conference of Learning Representations (ICLR):</p>
+<p><strong>Reconstructing continuous distributions of protein structure from cryo-EM images</strong></p>
+<p>Ellen Zhong, Tristan Bepler, Joey Davis*, Bonnie Berger*</p>
+<p>ICLR 2020, Spotlight, <a class="reference external" href="https://arxiv.org/abs/1909.05215">https://arxiv.org/abs/1909.05215</a></p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="../index.html" class="btn btn-neutral float-left" title="Welcome to CryoDRGN’s documentation!" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="installation.html" class="btn btn-neutral float-right" title="cryoDRGN Installation" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, Ellen Zhong.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

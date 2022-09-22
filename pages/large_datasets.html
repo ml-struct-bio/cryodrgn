@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>cryoDRGN preprocess for large datasets &mdash; CryoDRGN  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../_static/documentation_options.js?v=5929fcd5"></script>
+        <script src="../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="CryoDRGN2 quickstart" href="cryodrgn2.html" />
+    <link rel="prev" title="cryoDRGN Conformational Landscape Analysis" href="landscape_analysis.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            CryoDRGN
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="intro.html">❄️🐉 cryoDRGN Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="installation.html">cryoDRGN Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="empiar_tutorial.html">cryoDRGN EMPIAR-10076 tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="landscape_analysis.html">cryoDRGN Conformational Landscape Analysis</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">cryoDRGN preprocess for large datasets</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#numbers">Numbers</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#technicalities">Technicalities</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#still-too-large">Still too large</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="cryodrgn2.html">CryoDRGN2 quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="faq.html">FAQ / Troubleshooting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../api.html">API</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">CryoDRGN</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">cryoDRGN preprocess for large datasets</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/pages/large_datasets.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="cryodrgn-preprocess-for-large-datasets">
+<h1>cryoDRGN preprocess for large datasets<a class="headerlink" href="#cryodrgn-preprocess-for-large-datasets" title="Link to this heading"></a></h1>
+<p>CryoDRGN by default loads the entire dataset into memory for fast data access during training. However, large cryo-EM datasets can easily exceed the amount of memory available on standard workstations. For these datasets that do not fit into memory, <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">train_vae</span></code> can be run with the additional <code class="docutils literal notranslate"><span class="pre">--lazy</span></code> flag, which loads images on-the-fly instead of all at once at the beginning of training. This can, however, be very slow due to the filesystem access pattern for on-the-fly image loading, especially if the data is not located on a SSD drive.</p>
+<p>To reduce the memory requirement of loading the whole dataset, as of version 0.3.3, cryoDRGN contains a tool <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">preprocess</span></code> that performs some of the image preprocessing done at the beginning of training. Separating out image preprocessing significantly reduces the memory requirement of <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">train_vae</span></code>, potentially leading to major training speedups ⚡ ⚡ ⚡ .</p>
+<p>The new workflow replaces <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">downsample</span></code> with <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">preprocess</span></code> in the standard cryoDRGN workflow. Note that a new preprocessed particle stack will be created:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Replace `cryodrgn downsample` with `cryodrgn preprocess`</span>
+cryodrgn<span class="w"> </span>preprocess<span class="w"> </span>P10_J712_particles_exported.cs<span class="w"> </span><span class="se">\</span>
+<span class="w">		</span>--datadir<span class="w"> </span>P10/exports/groups/P10_J628_particles/J626/extract<span class="w"> </span><span class="se">\</span>
+<span class="w">		</span>-D<span class="w"> </span><span class="m">128</span><span class="w"> </span><span class="se">\</span>
+<span class="w">		</span>-o<span class="w"> </span>data/preprocessed/128/particles.mrcs
+
+<span class="c1"># Parse pose information as usual, specifying the refinement box size with -D</span>
+cryodrgn<span class="w"> </span>parse_pose_csparc<span class="w"> </span>P10_J712_particles_exported.cs<span class="w"> </span><span class="se">\</span>
+<span class="w">		</span>-D<span class="w"> </span><span class="m">256</span><span class="w"> </span><span class="se">\</span>
+<span class="w">		</span>-o<span class="w"> </span>data/pose.pkl
+
+<span class="c1"># Parse CTF information as usual</span>
+cryodrgn<span class="w"> </span>parse_ctf_csparc<span class="w"> </span>P10_J712_particles_exported.cs<span class="w"> </span>-o<span class="w"> </span>data/ctf.pkl
+
+<span class="c1"># Run cryoDRGN with preprocessed particles.ft.txt and extra flag --preprocessed</span>
+cryodrgn<span class="w"> </span>train_vae<span class="w"> </span>data/preprocessed/128/particles.ft.txt<span class="w"> </span><span class="se">\</span>
+<span class="w">		</span>--preprocessed<span class="w"> </span><span class="se">\</span>
+<span class="w">		</span>--ctf<span class="w"> </span>data/ctf.pkl<span class="w"> </span><span class="se">\</span>
+<span class="w">		</span>--poses<span class="w"> </span>data/pose.pkl<span class="w"> </span><span class="se">\</span>
+<span class="w">		</span>--zdim<span class="w"> </span><span class="m">8</span><span class="w"> </span><span class="se">\</span>
+<span class="w">		</span>-n<span class="w"> </span><span class="m">50</span><span class="w"> </span><span class="se">\</span>
+<span class="w">		</span>-o<span class="w"> </span>00_vae128<span class="w"> </span>&gt;&gt;<span class="w"> </span><span class="m">00</span>.log
+</pre></div>
+</div>
+<section id="numbers">
+<h2>Numbers<a class="headerlink" href="#numbers" title="Link to this heading"></a></h2>
+<p>Some numbers for training on a 1,375,854, 128x128 particle dataset (86 GB)</p>
+<p>Baseline:</p>
+<ul class="simple">
+<li><p>607 GB maximum memory requirement</p></li>
+<li><p>18.5 min to load the dataset in <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">train_vae</span></code></p></li>
+</ul>
+<p>With new <code class="docutils literal notranslate"><span class="pre">--preprocessed</span></code>:</p>
+<ul class="simple">
+<li><p>200 GB maximum memory requirement</p></li>
+<li><p>3.2 min to load the dataset in <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">train_vae</span></code></p></li>
+</ul>
+<p>On a single Nvidia V100 GPU, this dataset trained in approximately 2h,3min per epoch (large 1024x3 model) when fully loaded into memory. Training with on-the-fly data loading (<code class="docutils literal notranslate"><span class="pre">--lazy</span></code>) was 4x slower, though this can vary widely depending on your filesystem/network. Recent tests on cached filesystems do not have a large penalty for <code class="docutils literal notranslate"><span class="pre">--lazy</span></code> image loading.</p>
+</section>
+<section id="technicalities">
+<h2>Technicalities<a class="headerlink" href="#technicalities" title="Link to this heading"></a></h2>
+<ul>
+<li><p>Using <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">preprocess</span></code> in place of <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">downsample</span></code> means that images will be windowed (circular mask applied in real space) <em>before</em> they are downsampled. This is slightly different than in the original workflow where images are first downsampled, then the mask is applied during training. To exactly replicate the previous behavior, run <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">downsample</span></code> as usual, then run <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">preprocess</span></code> on the downsampled dataset.</p></li>
+<li><p>Viewing particle images in cryoDRGN_viz.ipynb and cryoDRGN_filtering.ipynb will now show Fourier space images. A current workaround is to overwrite the path with the original particles when loading particle images in the jupyter notebook:</p>
+<ul>
+<li><p>Before</p>
+<p><img alt="preprocess1.png" src="../_images/preprocess1.png" /></p>
+</li>
+<li><p>After (modifications to dataset.load_particles arguments)</p>
+<p><img alt="preprocess2.png" src="../_images/preprocess2.png" /></p>
+</li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="still-too-large">
+<h2>Still too large<a class="headerlink" href="#still-too-large" title="Link to this heading"></a></h2>
+<p>If your dataset is still too large to load into memory, we recommend training on a subset of the images such that the dataset can fit into memory (e.g. split your dataset into two halves and run independent training jobs on each half). A random selection of a subset of your dataset can be generated with the utility <code class="docutils literal notranslate"><span class="pre">cryodrgn_utils</span> <span class="pre">select_random</span></code>:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span># select 200k random particles out of a dataset containing 1,375,854 particles
+(cryodrgn) $ cryodrgn_utils select_random 1375854 -n 200000 -o ind200k.pkl
+</pre></div>
+</div>
+<p>We are currently implementing a large refactor of lazy data loading. Additional updates and information on chunked data loading are tracked here <a class="reference external" href="https://github.com/zhonge/cryodrgn/issues/17">https://github.com/zhonge/cryodrgn/issues/17</a>. Beta code is available in the <code class="docutils literal notranslate"><span class="pre">vb/imagesource</span></code> pull request <a class="reference external" href="https://github.com/zhonge/cryodrgn/pull/221">https://github.com/zhonge/cryodrgn/pull/221</a>.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="landscape_analysis.html" class="btn btn-neutral float-left" title="cryoDRGN Conformational Landscape Analysis" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="cryodrgn2.html" class="btn btn-neutral float-right" title="CryoDRGN2 quickstart" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, Ellen Zhong.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>cryoDRGN Installation &mdash; CryoDRGN  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../_static/documentation_options.js?v=5929fcd5"></script>
+        <script src="../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="cryoDRGN EMPIAR-10076 tutorial" href="empiar_tutorial.html" />
+    <link rel="prev" title="❄️🐉 cryoDRGN Introduction" href="intro.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            CryoDRGN
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="intro.html">❄️🐉 cryoDRGN Introduction</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">cryoDRGN Installation</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#install-anaconda">1) Install anaconda</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#setting-up-the-cryodrgn-environment">2) Setting up the cryoDRGN environment</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#install-cryodrgn">3) Install cryoDRGN</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#testing-the-installation">4) Testing the Installation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#updating-cryodrgn">Updating cryoDRGN</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#known-issues">Known Issues</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="empiar_tutorial.html">cryoDRGN EMPIAR-10076 tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="landscape_analysis.html">cryoDRGN Conformational Landscape Analysis</a></li>
+<li class="toctree-l1"><a class="reference internal" href="large_datasets.html">cryoDRGN preprocess for large datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="cryodrgn2.html">CryoDRGN2 quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="faq.html">FAQ / Troubleshooting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../api.html">API</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">CryoDRGN</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">cryoDRGN Installation</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/pages/installation.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="cryodrgn-installation">
+<h1>cryoDRGN Installation<a class="headerlink" href="#cryodrgn-installation" title="Link to this heading"></a></h1>
+<p>We provide installation instructions assuming an <strong>Anaconda</strong> environment for managing dependencies. Anaconda is a
+python package/environment manager which can handle complex dependencies between Python packages through the creation
+of python environments. We recommended creating a separate environment for cryodrgn to prevent any conflicts among
+dependencies with other software packages.</p>
+<p><strong>Compute/hardware requirements:</strong></p>
+<ul class="simple">
+<li><p>High performance linux workstation or cluster</p></li>
+<li><p>NVIDIA GPUs</p></li>
+</ul>
+<p><strong>Dependencies:</strong></p>
+<ul class="simple">
+<li><p>python</p></li>
+<li><p>pytorch</p></li>
+<li><p>cudatoolkit</p></li>
+<li><p>numpy</p></li>
+<li><p>pandas</p></li>
+</ul>
+<p><strong>Additional dependencies for visualization:</strong></p>
+<ul class="simple">
+<li><p>matplotlib</p></li>
+<li><p>seaborn</p></li>
+<li><p>scipy 1.4.0+</p></li>
+<li><p>scikit-learn</p></li>
+<li><p>umap</p></li>
+<li><p>jupterlab</p></li>
+<li><p>ipywidgets</p></li>
+<li><p>plotly and cufflinks</p></li>
+</ul>
+<p>The software has been tested on Python 3.7-3.9 and pytorch 1.0-1.7, 1.12.</p>
+<hr class="docutils" />
+<section id="install-anaconda">
+<h2>1) Install anaconda<a class="headerlink" href="#install-anaconda" title="Link to this heading"></a></h2>
+<ul>
+<li><p>For most platforms, the installation typically consists of a shell script
+(e.g. <a class="reference external" href="https://www.anaconda.com/products/distribution">Anaconda Installers</a>) that you execute on the command line
+which will prompt you to install and choose a base directory where all the downloaded software and environments will
+go.</p>
+<p>See the official Anaconda documentation and follow their installation instructions
+<a class="reference external" href="https://docs.anaconda.com/anaconda/install/">here</a>.</p>
+</li>
+<li><p>Once your anaconda environment is activated, your anaconda environment should be indicated on the command line, e.g.:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">(base)</span> <span class="pre">$</span></code></p></li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="setting-up-the-cryodrgn-environment">
+<h2>2) Setting up the cryoDRGN environment<a class="headerlink" href="#setting-up-the-cryodrgn-environment" title="Link to this heading"></a></h2>
+<ul>
+<li><p>First, create a new conda environment named <code class="docutils literal notranslate"><span class="pre">cryodrgn</span></code> (or renamed as appropriate):</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="o">(</span>base<span class="o">)</span><span class="w"> </span>$<span class="w"> </span>conda<span class="w"> </span>create<span class="w"> </span>--name<span class="w"> </span>cryodrgn<span class="w"> </span><span class="nv">python</span><span class="o">=</span><span class="m">3</span>.9
+</pre></div>
+</div>
+</li>
+<li><p>Activate the environment. Your command prompt will usually indicate the environment you are in with
+<code class="docutils literal notranslate"><span class="pre">(environment</span> <span class="pre">name)</span></code> before the prompt:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="o">(</span>base<span class="o">)</span><span class="w"> </span>$<span class="w"> </span>conda<span class="w"> </span>activate<span class="w"> </span>cryodrgn
+<span class="o">(</span>cryodrgn<span class="o">)</span><span class="w"> </span>$
+</pre></div>
+</div>
+</li>
+<li><p>Install pytorch and cudatoolkit into your new cryodrgn environment:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="o">(</span>cryodrgn<span class="o">)</span><span class="w"> </span>$<span class="w"> </span>conda<span class="w"> </span>install<span class="w"> </span>pytorch<span class="w"> </span><span class="nv">cudatoolkit</span><span class="o">=</span><span class="m">11</span>.7<span class="w"> </span>-c<span class="w"> </span>pytorch
+</pre></div>
+</div>
+</li>
+<li><p>Replace the cudatoolkit version with the appropriate version of CUDA installed with the GPU drivers. You can
+check the CUDA version with <code class="docutils literal notranslate"><span class="pre">nvidia-smi</span></code>.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">+-----------------------------------------------------------------------------+</span>
+<span class="o">|</span> <span class="n">NVIDIA</span><span class="o">-</span><span class="n">SMI</span> <span class="mf">515.65.01</span>    <span class="n">Driver</span> <span class="n">Version</span><span class="p">:</span> <span class="mf">515.65.01</span>    <span class="n">CUDA</span> <span class="n">Version</span><span class="p">:</span> <span class="mf">11.7</span>     <span class="o">|</span>
+<span class="o">|-------------------------------+----------------------+----------------------+</span>
+<span class="o">|</span> <span class="n">GPU</span>  <span class="n">Name</span>        <span class="n">Persistence</span><span class="o">-</span><span class="n">M</span><span class="o">|</span> <span class="n">Bus</span><span class="o">-</span><span class="n">Id</span>        <span class="n">Disp</span><span class="o">.</span><span class="n">A</span> <span class="o">|</span> <span class="n">Volatile</span> <span class="n">Uncorr</span><span class="o">.</span> <span class="n">ECC</span> <span class="o">|</span>
+<span class="o">|</span> <span class="n">Fan</span>  <span class="n">Temp</span>  <span class="n">Perf</span>  <span class="n">Pwr</span><span class="p">:</span><span class="n">Usage</span><span class="o">/</span><span class="n">Cap</span><span class="o">|</span>         <span class="n">Memory</span><span class="o">-</span><span class="n">Usage</span> <span class="o">|</span> <span class="n">GPU</span><span class="o">-</span><span class="n">Util</span>  <span class="n">Compute</span> <span class="n">M</span><span class="o">.</span> <span class="o">|</span>
+<span class="o">|</span>                               <span class="o">|</span>                      <span class="o">|</span>               <span class="n">MIG</span> <span class="n">M</span><span class="o">.</span> <span class="o">|</span>
+<span class="o">|===============================+======================+======================|</span>
+<span class="o">|</span>   <span class="mi">0</span>  <span class="n">NVIDIA</span> <span class="n">GeForce</span> <span class="o">...</span>  <span class="n">Off</span>  <span class="o">|</span> <span class="mi">00000000</span><span class="p">:</span><span class="mi">01</span><span class="p">:</span><span class="mf">00.0</span> <span class="n">Off</span> <span class="o">|</span>                  <span class="n">N</span><span class="o">/</span><span class="n">A</span> <span class="o">|</span>
+<span class="o">|</span> <span class="n">N</span><span class="o">/</span><span class="n">A</span>   <span class="mi">41</span><span class="n">C</span>    <span class="n">P0</span>    <span class="n">N</span><span class="o">/</span><span class="n">A</span> <span class="o">/</span>  <span class="n">N</span><span class="o">/</span><span class="n">A</span> <span class="o">|</span>      <span class="mi">5</span><span class="n">MiB</span> <span class="o">/</span>  <span class="mi">4096</span><span class="n">MiB</span> <span class="o">|</span>      <span class="mi">0</span><span class="o">%</span>      <span class="n">Default</span> <span class="o">|</span>
+<span class="o">|</span>                               <span class="o">|</span>                      <span class="o">|</span>                  <span class="n">N</span><span class="o">/</span><span class="n">A</span> <span class="o">|</span>
+<span class="o">+-------------------------------+----------------------+----------------------+</span>
+
+<span class="o">+-----------------------------------------------------------------------------+</span>
+<span class="o">|</span> <span class="n">Processes</span><span class="p">:</span>                                                                  <span class="o">|</span>
+<span class="o">|</span>  <span class="n">GPU</span>   <span class="n">GI</span>   <span class="n">CI</span>        <span class="n">PID</span>   <span class="n">Type</span>   <span class="n">Process</span> <span class="n">name</span>                  <span class="n">GPU</span> <span class="n">Memory</span> <span class="o">|</span>
+<span class="o">|</span>        <span class="n">ID</span>   <span class="n">ID</span>                                                   <span class="n">Usage</span>      <span class="o">|</span>
+<span class="o">|=============================================================================|</span>
+<span class="o">|</span>    <span class="mi">0</span>   <span class="n">N</span><span class="o">/</span><span class="n">A</span>  <span class="n">N</span><span class="o">/</span><span class="n">A</span>      <span class="mi">1420</span>      <span class="n">G</span>   <span class="o">/</span><span class="n">usr</span><span class="o">/</span><span class="n">lib</span><span class="o">/</span><span class="n">xorg</span><span class="o">/</span><span class="n">Xorg</span>                  <span class="mi">4</span><span class="n">MiB</span> <span class="o">|</span>
+<span class="o">+-----------------------------------------------------------------------------+</span>
+</pre></div>
+</div>
+<ul class="simple">
+<li><p>Don’t forget to include <code class="docutils literal notranslate"><span class="pre">-c</span> <span class="pre">pytorch</span></code> to get the software from the official pytorch channel</p></li>
+<li><p>To customize the installation line depending on your situation, look at Pytorch’s
+<a class="reference external" href="https://pytorch.org/get-started/locally/">Start locally</a>.</p></li>
+</ul>
+</li>
+<li><p>Optional step for older pytorch versions (pre-version 1.6). (Newer versions of pytorch natively support mixed
+precision training.)</p>
+<ul class="simple">
+<li><p>For accelerated training speeds (~3x faster) on GPUs with tensor cores (Nvidia Volta, Turing, and Ampere GPU
+architectures), install the apex package into the active conda environment. See their official documentation and
+installation instructions <a class="reference external" href="https://github.com/NVIDIA/apex#quick-start">here</a>.</p></li>
+</ul>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/NVIDIA/apex
+<span class="nb">cd</span><span class="w"> </span>apex
+pip<span class="w"> </span>install<span class="w"> </span>-v<span class="w"> </span>--disable-pip-version-check<span class="w"> </span>--no-cache-dir<span class="w"> </span>./
+</pre></div>
+</div>
+</li>
+</ul>
+</section>
+<section id="install-cryodrgn">
+<h2>3) Install cryoDRGN<a class="headerlink" href="#install-cryodrgn" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p>Obtain cryodrgn source code by cloning the git repository, and then doing a <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">.</span></code> in the checkout folder.
+This will also install dependencies that <code class="docutils literal notranslate"><span class="pre">cryoDRGN</span></code> depends on.</p></li>
+</ul>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Clone source code and install</span>
+<span class="o">(</span>cryodrgn<span class="o">)</span><span class="w"> </span>$<span class="w"> </span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/zhonge/cryodrgn.git
+<span class="o">(</span>cryodrgn<span class="o">)</span><span class="w"> </span>$<span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cryodrgn
+<span class="o">(</span>cryodrgn<span class="o">)</span><span class="w"> </span>$<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>.
+</pre></div>
+</div>
+<ul class="simple">
+<li><p>Alternatively, if you prefer not to use git, you can directly download a ZIP file of the latest release from
+<a class="reference external" href="https://github.com/zhonge/cryodrgn/releases">https://github.com/zhonge/cryodrgn/releases</a>. For example, if the latest
+release is <code class="docutils literal notranslate"><span class="pre">cryodrgn-1.1.0.zip</span></code>:</p></li>
+</ul>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="o">(</span>cryodrgn<span class="o">)</span><span class="w"> </span>$<span class="w"> </span>unzip<span class="w"> </span>cryodrgn-1.1.0.zip
+<span class="o">(</span>cryodrgn<span class="o">)</span><span class="w"> </span>$<span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cryodrgn-1.1.0
+<span class="o">(</span>cryodrgn<span class="o">)</span><span class="w"> </span>$<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>.
+</pre></div>
+</div>
+</section>
+<section id="testing-the-installation">
+<h2>4) Testing the Installation<a class="headerlink" href="#testing-the-installation" title="Link to this heading"></a></h2>
+<p>Once installed, you should be able to call the <code class="docutils literal notranslate"><span class="pre">cryodrgn</span></code> executable and see a list of commands:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="o">(</span>cryodrgn<span class="o">)</span><span class="w"> </span>$<span class="w"> </span>cryodrgn<span class="w"> </span>-h
+</pre></div>
+</div>
+<p>There is a small testing dataset in the source code that you can use to run cryodrgn and verify that all the
+dependencies were installed correctly:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="o">(</span>cryodrgn<span class="o">)</span><span class="w"> </span>$<span class="w"> </span><span class="nb">cd</span><span class="w"> </span><span class="o">[</span>sourcecode<span class="w"> </span>directory<span class="o">]</span>/testing
+<span class="o">(</span>cryodrgn<span class="o">)</span><span class="w"> </span>$<span class="w"> </span>./quicktest.sh
+</pre></div>
+</div>
+<p>It should take ~20 seconds to run and reach a final loss around 0.08 in version 1.0 and 0.03 in version 1.1+. The
+output should look something like:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">+</span> <span class="n">cryodrgn</span> <span class="n">train_vae</span> <span class="n">data</span><span class="o">/</span><span class="n">hand</span><span class="o">.</span><span class="n">mrcs</span> <span class="o">-</span><span class="n">o</span> <span class="n">output</span><span class="o">/</span><span class="n">toy_recon_vae</span> <span class="o">--</span><span class="n">lr</span> <span class="mf">.0001</span> <span class="o">--</span><span class="n">seed</span> <span class="mi">0</span> <span class="o">--</span><span class="n">poses</span> <span class="n">data</span><span class="o">/</span><span class="n">hand_rot</span><span class="o">.</span><span class="n">pkl</span> <span class="o">--</span><span class="n">zdim</span> <span class="mi">10</span> <span class="o">--</span><span class="n">pe</span><span class="o">-</span><span class="nb">type</span> <span class="n">gaussian</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">05</span>     <span class="o">/</span><span class="n">home</span><span class="o">/</span><span class="n">vineetb</span><span class="o">/.</span><span class="n">conda</span><span class="o">/</span><span class="n">envs</span><span class="o">/</span><span class="n">cryodrgn</span><span class="o">/</span><span class="nb">bin</span><span class="o">/</span><span class="n">cryodrgn</span> <span class="n">train_vae</span> <span class="n">data</span><span class="o">/</span><span class="n">hand</span><span class="o">.</span><span class="n">mrcs</span> <span class="o">-</span><span class="n">o</span> <span class="n">output</span><span class="o">/</span><span class="n">toy_recon_vae</span> <span class="o">--</span><span class="n">lr</span> <span class="mf">.0001</span> <span class="o">--</span><span class="n">seed</span> <span class="mi">0</span> <span class="o">--</span><span class="n">poses</span> <span class="n">data</span><span class="o">/</span><span class="n">hand_rot</span><span class="o">.</span><span class="n">pkl</span> <span class="o">--</span><span class="n">zdim</span> <span class="mi">10</span> <span class="o">--</span><span class="n">pe</span><span class="o">-</span><span class="nb">type</span> <span class="n">gaussian</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">05</span>     <span class="n">Namespace</span><span class="p">(</span><span class="n">particles</span><span class="o">=</span><span class="s1">&#39;/home/vineetb/cryodrgn/cryodrgn/testing/data/hand.mrcs&#39;</span><span class="p">,</span> <span class="n">outdir</span><span class="o">=</span><span class="s1">&#39;/home/vineetb/cryodrgn/cryodrgn/testing/output/toy_recon_vae&#39;</span><span class="p">,</span> <span class="n">zdim</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">poses</span><span class="o">=</span><span class="s1">&#39;/home/vineetb/cryodrgn/cryodrgn/testing/data/hand_rot.pkl&#39;</span><span class="p">,</span> <span class="n">ctf</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">load</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">checkpoint</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">log_interval</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">ind</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">invert_data</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">window</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">window_r</span><span class="o">=</span><span class="mf">0.85</span><span class="p">,</span> <span class="n">datadir</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">lazy</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">preprocessed</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">max_threads</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span> <span class="n">tilt</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">tilt_deg</span><span class="o">=</span><span class="mi">45</span><span class="p">,</span> <span class="n">num_epochs</span><span class="o">=</span><span class="mi">20</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">wd</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">lr</span><span class="o">=</span><span class="mf">0.0001</span><span class="p">,</span> <span class="n">beta</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">beta_control</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">norm</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">amp</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">multigpu</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">do_pose_sgd</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">pretrain</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">emb_type</span><span class="o">=</span><span class="s1">&#39;quat&#39;</span><span class="p">,</span> <span class="n">pose_lr</span><span class="o">=</span><span class="mf">0.0003</span><span class="p">,</span> <span class="n">qlayers</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">qdim</span><span class="o">=</span><span class="mi">1024</span><span class="p">,</span> <span class="n">encode_mode</span><span class="o">=</span><span class="s1">&#39;resid&#39;</span><span class="p">,</span> <span class="n">enc_mask</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">use_real</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">players</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">pdim</span><span class="o">=</span><span class="mi">1024</span><span class="p">,</span> <span class="n">pe_type</span><span class="o">=</span><span class="s1">&#39;gaussian&#39;</span><span class="p">,</span> <span class="n">feat_sigma</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">pe_dim</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">domain</span><span class="o">=</span><span class="s1">&#39;fourier&#39;</span><span class="p">,</span> <span class="n">activation</span><span class="o">=</span><span class="s1">&#39;relu&#39;</span><span class="p">,</span> <span class="n">func</span><span class="o">=&lt;</span><span class="n">function</span> <span class="n">main</span> <span class="n">at</span> <span class="mh">0x7f47d8676790</span><span class="o">&gt;</span><span class="p">)</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">06</span>     <span class="n">Use</span> <span class="n">cuda</span> <span class="kc">True</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">06</span>     <span class="n">Loading</span> <span class="n">dataset</span> <span class="kn">from</span> <span class="o">/</span><span class="n">home</span><span class="o">/</span><span class="n">vineetb</span><span class="o">/</span><span class="n">cryodrgn</span><span class="o">/</span><span class="n">cryodrgn</span><span class="o">/</span><span class="n">testing</span><span class="o">/</span><span class="n">data</span><span class="o">/</span><span class="n">hand</span><span class="o">.</span><span class="n">mrcs</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">06</span>     <span class="n">Loaded</span> <span class="mi">100</span> <span class="mi">64</span><span class="n">x64</span> <span class="n">images</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">06</span>     <span class="n">Windowing</span> <span class="n">images</span> <span class="k">with</span> <span class="n">radius</span> <span class="mf">0.85</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">06</span>     <span class="n">Computing</span> <span class="n">FFT</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">06</span>     <span class="n">Spawning</span> <span class="mi">16</span> <span class="n">processes</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">06</span>     <span class="n">Symmetrizing</span> <span class="n">image</span> <span class="n">data</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">06</span>     <span class="n">Normalized</span> <span class="n">HT</span> <span class="n">by</span> <span class="mi">0</span> <span class="o">+/-</span> <span class="mf">94.426513671875</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">06</span>     <span class="n">WARNING</span><span class="p">:</span> <span class="n">No</span> <span class="n">translations</span> <span class="n">provided</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">07</span>     <span class="n">Using</span> <span class="n">circular</span> <span class="n">lattice</span> <span class="k">with</span> <span class="n">radius</span> <span class="mi">32</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">07</span>     <span class="n">HetOnlyVAE</span><span class="p">(</span>
+  <span class="p">(</span><span class="n">encoder</span><span class="p">):</span> <span class="n">ResidLinearMLP</span><span class="p">(</span>
+    <span class="p">(</span><span class="n">main</span><span class="p">):</span> <span class="n">Sequential</span><span class="p">(</span>
+      <span class="p">(</span><span class="mi">0</span><span class="p">):</span> <span class="n">Linear</span><span class="p">(</span><span class="n">in_features</span><span class="o">=</span><span class="mi">3208</span><span class="p">,</span> <span class="n">out_features</span><span class="o">=</span><span class="mi">1024</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+      <span class="p">(</span><span class="mi">1</span><span class="p">):</span> <span class="n">ReLU</span><span class="p">()</span>
+      <span class="p">(</span><span class="mi">2</span><span class="p">):</span> <span class="n">ResidLinear</span><span class="p">(</span>
+        <span class="p">(</span><span class="n">linear</span><span class="p">):</span> <span class="n">Linear</span><span class="p">(</span><span class="n">in_features</span><span class="o">=</span><span class="mi">1024</span><span class="p">,</span> <span class="n">out_features</span><span class="o">=</span><span class="mi">1024</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+      <span class="p">)</span>
+      <span class="p">(</span><span class="mi">3</span><span class="p">):</span> <span class="n">ReLU</span><span class="p">()</span>
+      <span class="p">(</span><span class="mi">4</span><span class="p">):</span> <span class="n">ResidLinear</span><span class="p">(</span>
+        <span class="p">(</span><span class="n">linear</span><span class="p">):</span> <span class="n">Linear</span><span class="p">(</span><span class="n">in_features</span><span class="o">=</span><span class="mi">1024</span><span class="p">,</span> <span class="n">out_features</span><span class="o">=</span><span class="mi">1024</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+      <span class="p">)</span>
+      <span class="p">(</span><span class="mi">5</span><span class="p">):</span> <span class="n">ReLU</span><span class="p">()</span>
+      <span class="p">(</span><span class="mi">6</span><span class="p">):</span> <span class="n">ResidLinear</span><span class="p">(</span>
+        <span class="p">(</span><span class="n">linear</span><span class="p">):</span> <span class="n">Linear</span><span class="p">(</span><span class="n">in_features</span><span class="o">=</span><span class="mi">1024</span><span class="p">,</span> <span class="n">out_features</span><span class="o">=</span><span class="mi">1024</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+      <span class="p">)</span>
+      <span class="p">(</span><span class="mi">7</span><span class="p">):</span> <span class="n">ReLU</span><span class="p">()</span>
+      <span class="p">(</span><span class="mi">8</span><span class="p">):</span> <span class="n">Linear</span><span class="p">(</span><span class="n">in_features</span><span class="o">=</span><span class="mi">1024</span><span class="p">,</span> <span class="n">out_features</span><span class="o">=</span><span class="mi">20</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="p">)</span>
+  <span class="p">)</span>
+  <span class="p">(</span><span class="n">decoder</span><span class="p">):</span> <span class="n">FTPositionalDecoder</span><span class="p">(</span>
+    <span class="p">(</span><span class="n">decoder</span><span class="p">):</span> <span class="n">ResidLinearMLP</span><span class="p">(</span>
+      <span class="p">(</span><span class="n">main</span><span class="p">):</span> <span class="n">Sequential</span><span class="p">(</span>
+        <span class="p">(</span><span class="mi">0</span><span class="p">):</span> <span class="n">Linear</span><span class="p">(</span><span class="n">in_features</span><span class="o">=</span><span class="mi">202</span><span class="p">,</span> <span class="n">out_features</span><span class="o">=</span><span class="mi">1024</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="p">(</span><span class="mi">1</span><span class="p">):</span> <span class="n">ReLU</span><span class="p">()</span>
+        <span class="p">(</span><span class="mi">2</span><span class="p">):</span> <span class="n">ResidLinear</span><span class="p">(</span>
+          <span class="p">(</span><span class="n">linear</span><span class="p">):</span> <span class="n">Linear</span><span class="p">(</span><span class="n">in_features</span><span class="o">=</span><span class="mi">1024</span><span class="p">,</span> <span class="n">out_features</span><span class="o">=</span><span class="mi">1024</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="p">(</span><span class="mi">3</span><span class="p">):</span> <span class="n">ReLU</span><span class="p">()</span>
+        <span class="p">(</span><span class="mi">4</span><span class="p">):</span> <span class="n">ResidLinear</span><span class="p">(</span>
+          <span class="p">(</span><span class="n">linear</span><span class="p">):</span> <span class="n">Linear</span><span class="p">(</span><span class="n">in_features</span><span class="o">=</span><span class="mi">1024</span><span class="p">,</span> <span class="n">out_features</span><span class="o">=</span><span class="mi">1024</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="p">(</span><span class="mi">5</span><span class="p">):</span> <span class="n">ReLU</span><span class="p">()</span>
+        <span class="p">(</span><span class="mi">6</span><span class="p">):</span> <span class="n">ResidLinear</span><span class="p">(</span>
+          <span class="p">(</span><span class="n">linear</span><span class="p">):</span> <span class="n">Linear</span><span class="p">(</span><span class="n">in_features</span><span class="o">=</span><span class="mi">1024</span><span class="p">,</span> <span class="n">out_features</span><span class="o">=</span><span class="mi">1024</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="p">(</span><span class="mi">7</span><span class="p">):</span> <span class="n">ReLU</span><span class="p">()</span>
+        <span class="p">(</span><span class="mi">8</span><span class="p">):</span> <span class="n">Linear</span><span class="p">(</span><span class="n">in_features</span><span class="o">=</span><span class="mi">1024</span><span class="p">,</span> <span class="n">out_features</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+      <span class="p">)</span>
+    <span class="p">)</span>
+  <span class="p">)</span>
+<span class="p">)</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">07</span>     <span class="mi">9814038</span> <span class="n">parameters</span> <span class="ow">in</span> <span class="n">model</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">07</span>     <span class="mi">6455316</span> <span class="n">parameters</span> <span class="ow">in</span> <span class="n">encoder</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">07</span>     <span class="mi">3358722</span> <span class="n">parameters</span> <span class="ow">in</span> <span class="n">decoder</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">07</span>     <span class="ne">Warning</span><span class="p">:</span> <span class="n">z</span> <span class="n">dimension</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">a</span> <span class="n">multiple</span> <span class="n">of</span> <span class="mi">8</span> <span class="o">--</span> <span class="n">AMP</span> <span class="n">training</span> <span class="n">speedup</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">optimized</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">08</span>     <span class="c1"># =====&gt; Epoch: 1 Average gen loss = 1.10873, KLD = 3.386924, total loss = 1.108840; Finished in 0:00:01.346893</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">09</span>     <span class="c1"># =====&gt; Epoch: 2 Average gen loss = 0.740441, KLD = 8.101010, total loss = 0.740694; Finished in 0:00:00.542031</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">09</span>     <span class="c1"># =====&gt; Epoch: 3 Average gen loss = 0.535575, KLD = 10.675920, total loss = 0.535908; Finished in 0:00:00.541637</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">10</span>     <span class="c1"># =====&gt; Epoch: 4 Average gen loss = 0.368407, KLD = 13.592397, total loss = 0.368831; Finished in 0:00:00.541102</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">11</span>     <span class="c1"># =====&gt; Epoch: 5 Average gen loss = 0.234344, KLD = 16.974737, total loss = 0.234873; Finished in 0:00:00.544139</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">11</span>     <span class="c1"># =====&gt; Epoch: 6 Average gen loss = 0.140454, KLD = 19.307134, total loss = 0.141056; Finished in 0:00:00.541751</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">12</span>     <span class="c1"># =====&gt; Epoch: 7 Average gen loss = 0.0899037, KLD = 20.093284, total loss = 0.090530; Finished in 0:00:00.544378</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">13</span>     <span class="c1"># =====&gt; Epoch: 8 Average gen loss = 0.0641149, KLD = 20.714445, total loss = 0.064761; Finished in 0:00:00.543761</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">13</span>     <span class="c1"># =====&gt; Epoch: 9 Average gen loss = 0.0496119, KLD = 20.798030, total loss = 0.050260; Finished in 0:00:00.545478</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">14</span>     <span class="c1"># =====&gt; Epoch: 10 Average gen loss = 0.0408589, KLD = 21.089181, total loss = 0.041516; Finished in 0:00:00.548600</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">15</span>     <span class="c1"># =====&gt; Epoch: 11 Average gen loss = 0.0338546, KLD = 21.053582, total loss = 0.034511; Finished in 0:00:00.560902</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">15</span>     <span class="c1"># =====&gt; Epoch: 12 Average gen loss = 0.0290218, KLD = 21.509603, total loss = 0.029692; Finished in 0:00:00.549171</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">16</span>     <span class="c1"># =====&gt; Epoch: 13 Average gen loss = 0.0252569, KLD = 21.402734, total loss = 0.025924; Finished in 0:00:00.554416</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">17</span>     <span class="c1"># =====&gt; Epoch: 14 Average gen loss = 0.0222708, KLD = 21.686829, total loss = 0.022947; Finished in 0:00:00.549451</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">17</span>     <span class="c1"># =====&gt; Epoch: 15 Average gen loss = 0.0196031, KLD = 21.829715, total loss = 0.020284; Finished in 0:00:00.547152</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">18</span>     <span class="c1"># =====&gt; Epoch: 16 Average gen loss = 0.0175662, KLD = 21.648027, total loss = 0.018241; Finished in 0:00:00.548684</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">19</span>     <span class="c1"># =====&gt; Epoch: 17 Average gen loss = 0.0159719, KLD = 21.876881, total loss = 0.016654; Finished in 0:00:00.540562</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">19</span>     <span class="c1"># =====&gt; Epoch: 18 Average gen loss = 0.0147737, KLD = 21.754937, total loss = 0.015452; Finished in 0:00:00.541675</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">20</span>     <span class="c1"># =====&gt; Epoch: 19 Average gen loss = 0.0133148, KLD = 21.684366, total loss = 0.013991; Finished in 0:00:00.543656</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">20</span>     <span class="c1"># =====&gt; Epoch: 20 Average gen loss = 0.0124398, KLD = 21.621814, total loss = 0.013114; Finished in 0:00:00.543454</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">09</span><span class="o">-</span><span class="mi">20</span> <span class="mi">16</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mi">21</span>     <span class="n">Finished</span> <span class="ow">in</span> <span class="mi">0</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">15.839427</span> <span class="p">(</span><span class="mi">0</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.791971</span> <span class="n">per</span> <span class="n">epoch</span><span class="p">)</span>
+</pre></div>
+</div>
+<ul class="simple">
+<li><p>You will want to verify that the output contains  <code class="docutils literal notranslate"><span class="pre">Use</span> <span class="pre">cuda</span> <span class="pre">True</span></code> in the first few lines to ensure that <code class="docutils literal notranslate"><span class="pre">cryoDRGN</span></code>
+will be using your GPU for training.</p></li>
+</ul>
+</section>
+<section id="updating-cryodrgn">
+<h2>Updating cryoDRGN<a class="headerlink" href="#updating-cryodrgn" title="Link to this heading"></a></h2>
+<p>To update to a later version, you need to obtain the updated software either with <code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">checkout</span> <span class="pre">&lt;version&gt;</span></code> or direct
+download from <a class="reference external" href="https://github.com/zhonge/cryodrgn">https://github.com/zhonge/cryodrgn</a>, then rerun <code class="docutils literal notranslate"><span class="pre">$</span> <span class="pre">pip</span> <span class="pre">install</span> <span class="pre">.</span></code>
+in your cryodrgn anaconda environment:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="o">(</span>cryodrgn<span class="o">)</span><span class="w"> </span>$<span class="w"> </span><span class="nb">cd</span><span class="w"> </span>/path/to/repo
+<span class="o">(</span>cryodrgn<span class="o">)</span><span class="w"> </span>$<span class="w"> </span>git<span class="w"> </span>checkout<span class="w"> </span><span class="m">1</span>.1.0<span class="w">  </span><span class="c1"># or `git pull origin master` to get the latest sw</span>
+<span class="o">(</span>cryodrgn<span class="o">)</span><span class="w"> </span>$<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>.
+</pre></div>
+</div>
+<p>To keep multiple versions of cryoDRGN in parallel, you will need to create a new anaconda environment and re-install
+all the dependencies.</p>
+</section>
+<section id="known-issues">
+<h2>Known Issues<a class="headerlink" href="#known-issues" title="Link to this heading"></a></h2>
+<ol class="arabic simple">
+<li><p><a class="reference external" href="https://github.com/zhonge/cryodrgn/issues/34">Jupyter notebook widget not showing up</a></p></li>
+<li><p>In the jupyter notebook: no attribute <code class="docutils literal notranslate"><span class="pre">from_dcm</span></code> or <code class="docutils literal notranslate"><span class="pre">from_matrix</span></code>:</p>
+<ul class="simple">
+<li><p>e.g. <code class="docutils literal notranslate"><span class="pre">AttributeError:</span> <span class="pre">type</span> <span class="pre">object</span> <span class="pre">'scipy.spatial.transform.rotation.Rotation'</span> <span class="pre">has</span> <span class="pre">no</span> <span class="pre">attribute</span> <span class="pre">'from_dcm'</span></code></p></li>
+<li><p>Make sure you are using scipy version 1.4.0 or later.</p></li>
+<li><p>If you are using scipy version 1.6.0 or later, make sure you are using cryodrgn version 0.3.2 or later.</p></li>
+<li><p><a class="reference external" href="https://github.com/zhonge/cryodrgn/issues/39">https://github.com/zhonge/cryodrgn/issues/39</a></p></li>
+</ul>
+</li>
+<li><p>In <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">analyze</span></code>: Running UMAP hangs for certain versions of umap</p>
+<ul class="simple">
+<li><p>Under active investigation <a class="reference external" href="https://github.com/zhonge/cryodrgn/issues/53">here</a></p></li>
+</ul>
+</li>
+</ol>
+<p>If you run into any issues getting cryoDRGN installed, please file a
+<a class="reference external" href="http://www.github.com/zhonge/cryodrgn">github issue</a>, including all the commands you used and their output.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="intro.html" class="btn btn-neutral float-left" title="❄️🐉 cryoDRGN Introduction" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="empiar_tutorial.html" class="btn btn-neutral float-right" title="cryoDRGN EMPIAR-10076 tutorial" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, Ellen Zhong.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

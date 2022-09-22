@@ -1,0 +1,38 @@
+﻿commands.abinit\_homo
+=====================
+
+.. automodule:: commands.abinit_homo
+
+   
+   
+   
+
+   
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      add_args
+      get_latest
+      main
+      make_model
+      pretrain
+      save_checkpoint
+      save_config
+      sort_base_poses
+      sort_poses
+      train
+   
+   
+
+   
+   
+   
+
+   
+   
+   
+
+
+

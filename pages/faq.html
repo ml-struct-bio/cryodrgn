@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FAQ / Troubleshooting &mdash; CryoDRGN  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../_static/documentation_options.js?v=5929fcd5"></script>
+        <script src="../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="API" href="../api.html" />
+    <link rel="prev" title="CryoDRGN2 quickstart" href="cryodrgn2.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            CryoDRGN
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="intro.html">❄️🐉 cryoDRGN Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="installation.html">cryoDRGN Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="empiar_tutorial.html">cryoDRGN EMPIAR-10076 tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="landscape_analysis.html">cryoDRGN Conformational Landscape Analysis</a></li>
+<li class="toctree-l1"><a class="reference internal" href="large_datasets.html">cryoDRGN preprocess for large datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="cryodrgn2.html">CryoDRGN2 quickstart</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">FAQ / Troubleshooting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../api.html">API</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">CryoDRGN</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">FAQ / Troubleshooting</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/pages/faq.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="faq-troubleshooting">
+<h1>FAQ / Troubleshooting<a class="headerlink" href="#faq-troubleshooting" title="Link to this heading"></a></h1>
+<ul class="simple">
+<li><p>The expected heterogeneity is not present in the cryoDRGN reconstruction.</p>
+<ul>
+<li><p>There may be too many junk particles or other imaging outliers in your dataset.
+ </p></li>
+</ul>
+</li>
+<li><p>How do I update cryoDRGN versions?</p>
+<ul>
+<li><p>See this section of the installation instructions
+<a class="reference internal" href="installation.html"><span class="std std-doc">here</span></a>.</p></li>
+</ul>
+</li>
+<li><p>How can I check on intermediate results during training?</p>
+<ul>
+<li><p>See the run.log that is in the output directory. The <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">analyze</span></code> command may be run at any time on the
+intermediate epochs.</p></li>
+</ul>
+</li>
+<li><p>Can I use the loss function or learning curve to tell when my training has converged?</p>
+<ul>
+<li><p>The training curve is plotted in the Jupiter notebook. We usually use this to diagnose any training instabilities
+(spikes in the training curve). The loss function on the training set does not generally indicate convergence of
+the model.</p></li>
+</ul>
+</li>
+<li><p>Do I need to use backproject_voxel? (Step 4 in the GitHub)</p>
+<ul>
+<li><p>This step is used as a brief sanity check that the poses/CTF parameters have been parsed correctly.</p></li>
+</ul>
+</li>
+<li><p>I am seeing weird artifacts (e.g. spherical ringing) in the reconstructed volumes.</p>
+<ul>
+<li><p>This is most likely an issue with the input CTF parameters, or some type of aliasing from signal pre-processing,
+e.g. in signal-subtracted particle stacks. Please reach out if you run into these artifacts or file a github issue.</p></li>
+</ul>
+</li>
+<li><p>Does cryoDRGN work with membrane protein complexes?</p>
+<ul>
+<li><p>It does! However, we find that cryoDRGN can capture the heterogeneity of the micelle instead of the protein
+complex. You can try training on signal subtracted images.</p></li>
+</ul>
+</li>
+<li><p>Does <em>particle crowdedness</em> affect the training result?</p>
+<ul>
+<li><p><em>Particle crowdedness</em> means signals from adjacent particles are included in cryoDRGN training.
+Particle crowding does affect the results (e.g. learning heterogeneity of neighboring particles).
+If you notice that this is a concern, you can reduce the reals-space windowing that is applied, by adding
+something like <code class="docutils literal notranslate"><span class="pre">--window</span> <span class="pre">.6</span></code> when using <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">train_vae</span></code>.</p></li>
+</ul>
+</li>
+<li><p>Is cryoDRGN sensitive to orientation bias?</p>
+<ul>
+<li><p>As long as sufficient orientational coverage exists, cryoDRGN should give reasonable results.</p></li>
+</ul>
+</li>
+<li><p>How does one generally recognize a cluster as a junk cluster?  Are there any visible features in the UMAP that can
+be used?</p>
+<ul>
+<li><p>This requires some digging into the results and images. You might be able to tell by looking at the maps or images
+in obvious cases. Sometimes you’ll need to do follow-up analysis to validate, e.g. 2D classification.</p></li>
+</ul>
+</li>
+<li><p>Do better separated clusters more likely mean distinct conformational states?  If a UMAP shows clusters that are
+close to one another (but with clear boundaries), can one interpret it as a set of conformational states that are very
+close to one another?</p>
+<ul>
+<li><p>No, not in general. Sometimes there is “repetition” in the latent space where homogeneous states split into
+multiple clusters (maybe there is something subtle going on in the background). You may want to try out the new
+<a class="reference internal" href="landscape_analysis.html"><span class="std std-doc">landscape analysis tool</span></a>
+if you want to more quantitatively define conformational states.</p></li>
+</ul>
+</li>
+</ul>
+<p>More resources can be found by searching the <a class="reference external" href="https://github.com/zhonge/cryodrgn/issues">github issues</a> page.</p>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="cryodrgn2.html" class="btn btn-neutral float-left" title="CryoDRGN2 quickstart" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="../api.html" class="btn btn-neutral float-right" title="API" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, Ellen Zhong.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

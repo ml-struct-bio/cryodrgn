@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Welcome to CryoDRGN’s documentation! &mdash; CryoDRGN  documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=19f00094" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="_static/jquery.js?v=5d32c60e"></script>
+        <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="_static/documentation_options.js?v=5929fcd5"></script>
+        <script src="_static/doctools.js?v=9a2dae69"></script>
+        <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="❄️🐉 cryoDRGN Introduction" href="pages/intro.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="#" class="icon icon-home">
+            CryoDRGN
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="pages/intro.html">❄️🐉 cryoDRGN Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pages/installation.html">cryoDRGN Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pages/empiar_tutorial.html">cryoDRGN EMPIAR-10076 tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pages/landscape_analysis.html">cryoDRGN Conformational Landscape Analysis</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pages/large_datasets.html">cryoDRGN preprocess for large datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pages/cryodrgn2.html">CryoDRGN2 quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pages/faq.html">FAQ / Troubleshooting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">API</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="#">CryoDRGN</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="#" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Welcome to CryoDRGN’s documentation!</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/index.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="welcome-to-cryodrgn-s-documentation">
+<h1>Welcome to CryoDRGN’s documentation!<a class="headerlink" href="#welcome-to-cryodrgn-s-documentation" title="Link to this heading"></a></h1>
+<p>Welcome to ❄️🐉  <strong>cryoDRGN</strong>’s documentation! This page contains user guides for the <code class="docutils literal notranslate"><span class="pre">cryodrgn</span></code> open source software package, including in-depth tutorials for training and analyzing cryoDRGN models.</p>
+<section id="quick-start">
+<h2>Quick start<a class="headerlink" href="#quick-start" title="Link to this heading"></a></h2>
+<p>CryoDRGN can be installed with <code class="docutils literal notranslate"><span class="pre">pip</span></code>.
+We recommend installing <code class="docutils literal notranslate"><span class="pre">cryodrgn</span></code> in a separate anaconda environment.
+See <a class="reference internal" href="pages/installation.html"><span class="doc">cryoDRGN Installation</span></a> for more details and advanced installation instructions.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>$ pip install cryodrgn
+</pre></div>
+</div>
+<p>The entry point for all cryoDRGN commands are the <code class="docutils literal notranslate"><span class="pre">cryodrgn</span></code> and <code class="docutils literal notranslate"><span class="pre">cryodrgn_utils</span></code> executables:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>(cryodrgn) $ cryodrgn -h
+(cryodrgn) $ cryodrgn_utils -h
+</pre></div>
+</div>
+<p>Use the <code class="docutils literal notranslate"><span class="pre">-h</span></code> flag for help, e.g. to display all available subcommands or <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">&lt;command&gt;</span> <span class="pre">-h</span></code> to see the available parameters to each command.</p>
+<div class="toctree-wrapper compound">
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="pages/intro.html">❄️🐉 cryoDRGN Introduction</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="pages/intro.html#background">Background</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/intro.html#input-data-requirements">Input data requirements</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/intro.html#tutorial-overview">Tutorial overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/intro.html#references">References</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="pages/installation.html">cryoDRGN Installation</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="pages/installation.html#install-anaconda">1) Install anaconda</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/installation.html#setting-up-the-cryodrgn-environment">2) Setting up the cryoDRGN environment</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/installation.html#install-cryodrgn">3) Install cryoDRGN</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/installation.html#testing-the-installation">4) Testing the Installation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/installation.html#updating-cryodrgn">Updating cryoDRGN</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/installation.html#known-issues">Known Issues</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="pages/empiar_tutorial.html">cryoDRGN EMPIAR-10076 tutorial</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="pages/empiar_tutorial.html#obtain-the-dataset">1) Obtain the dataset</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/empiar_tutorial.html#consensus-reconstruction-optional">2) Consensus reconstruction (optional)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/empiar_tutorial.html#preprocess-inputs">3) Preprocess inputs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/empiar_tutorial.html#cryodrgn-training">4) CryoDRGN training</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/empiar_tutorial.html#cryodrgn-analysis">5) cryoDRGN analysis</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/empiar_tutorial.html#particle-filtering-with-the-cryodrgn-jupyter-notebook">6) Particle filtering with the cryoDRGN Jupyter notebook</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/empiar_tutorial.html#cryodrgn-high-resolution-training">7) CryoDRGN high-resolution training</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/empiar_tutorial.html#analysis">8) Analysis</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="pages/landscape_analysis.html">cryoDRGN Conformational Landscape Analysis</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="pages/landscape_analysis.html#quickstart">1. Quickstart</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/landscape_analysis.html#assigning-3d-conformational-states-classes">2. Assigning 3D conformational states (”classes”)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/landscape_analysis.html#masking-optional">3. Masking (optional)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/landscape_analysis.html#visualizing-conformational-landscapes">4. Visualizing conformational landscapes</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/landscape_analysis.html#visualizing-the-full-conformational-landscape">5. Visualizing the full conformational landscape</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="pages/large_datasets.html">cryoDRGN preprocess for large datasets</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="pages/large_datasets.html#numbers">Numbers</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/large_datasets.html#technicalities">Technicalities</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/large_datasets.html#still-too-large">Still too large</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="pages/cryodrgn2.html">CryoDRGN2 quickstart</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="pages/cryodrgn2.html#setup">Setup</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/cryodrgn2.html#example-usage">Example usage</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/cryodrgn2.html#note-on-training-settings">Note on training settings</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/cryodrgn2.html#questions-and-contact">Questions and contact</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pages/cryodrgn2.html#reference">Reference</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="pages/faq.html">FAQ / Troubleshooting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">API</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="generated/commands.train_nn.html">commands.train_nn</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/commands.train_vae.html">commands.train_vae</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/commands.abinit_homo.html">commands.abinit_homo</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/commands.abinit_het.html">commands.abinit_het</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</section>
+</section>
+<section id="indices-and-tables">
+<h1>Indices and tables<a class="headerlink" href="#indices-and-tables" title="Link to this heading"></a></h1>
+<ul class="simple">
+<li><p><a class="reference internal" href="genindex.html"><span class="std std-ref">Index</span></a></p></li>
+<li><p><a class="reference internal" href="py-modindex.html"><span class="std std-ref">Module Index</span></a></p></li>
+<li><p><a class="reference internal" href="search.html"><span class="std std-ref">Search Page</span></a></p></li>
+</ul>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="pages/intro.html" class="btn btn-neutral float-right" title="❄️🐉 cryoDRGN Introduction" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, Ellen Zhong.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

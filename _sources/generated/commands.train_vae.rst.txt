@@ -1,0 +1,38 @@
+﻿commands.train\_vae
+===================
+
+.. automodule:: commands.train_vae
+
+   
+   
+   
+
+   
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      add_args
+      eval_z
+      get_latest
+      loss_function
+      main
+      preprocess_input
+      run_batch
+      save_checkpoint
+      save_config
+      train_batch
+   
+   
+
+   
+   
+   
+
+   
+   
+   
+
+
+

@@ -1,0 +1,34 @@
+﻿commands.train\_nn
+==================
+
+.. automodule:: commands.train_nn
+
+   
+   
+   
+
+   
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      add_args
+      get_latest
+      main
+      save_checkpoint
+      save_config
+      train
+   
+   
+
+   
+   
+   
+
+   
+   
+   
+
+
+

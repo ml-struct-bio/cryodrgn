@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CryoDRGN2 quickstart &mdash; CryoDRGN  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../_static/documentation_options.js?v=5929fcd5"></script>
+        <script src="../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="FAQ / Troubleshooting" href="faq.html" />
+    <link rel="prev" title="cryoDRGN preprocess for large datasets" href="large_datasets.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            CryoDRGN
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="intro.html">❄️🐉 cryoDRGN Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="installation.html">cryoDRGN Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="empiar_tutorial.html">cryoDRGN EMPIAR-10076 tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="landscape_analysis.html">cryoDRGN Conformational Landscape Analysis</a></li>
+<li class="toctree-l1"><a class="reference internal" href="large_datasets.html">cryoDRGN preprocess for large datasets</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">CryoDRGN2 quickstart</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#setup">Setup</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#example-usage">Example usage</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#note-on-training-settings">Note on training settings</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#questions-and-contact">Questions and contact</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#reference">Reference</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="faq.html">FAQ / Troubleshooting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../api.html">API</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">CryoDRGN</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">CryoDRGN2 quickstart</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/pages/cryodrgn2.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="cryodrgn2-quickstart">
+<h1>CryoDRGN2 quickstart<a class="headerlink" href="#cryodrgn2-quickstart" title="Link to this heading"></a></h1>
+<p>There are two commands for ab initio reconstruction, <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">abinit_homo</span></code> and <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">abinit_het</span></code> for homogeneous and heterogeneous ab initio reconstruction, respectively:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># homogeneous ab initio reconstruction</span>
+<span class="o">(</span>cryodrgn<span class="o">)</span><span class="w"> </span>$<span class="w"> </span>cryodrgn<span class="w"> </span>abinit_homo<span class="w"> </span>-h
+
+<span class="c1"># heterogeneous ab initio reconstruction</span>
+<span class="o">(</span>cryodrgn<span class="o">)</span><span class="w"> </span>$<span class="w"> </span>cryodrgn<span class="w"> </span>abinit_het<span class="w"> </span>-h
+</pre></div>
+</div>
+<section id="setup">
+<h2>Setup<a class="headerlink" href="#setup" title="Link to this heading"></a></h2>
+<ul>
+<li><p>Downsample your particles to a box size of 128 either with <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">downsample</span></code> or with other tools.</p></li>
+<li><p>If you have a large dataset (&gt;500k images), we recommend training on a subset of particles for initial testing. Use <code class="docutils literal notranslate"><span class="pre">cryodrgn_utils</span> <span class="pre">select_random</span></code> to select a random subset of particles.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># get a random selection of 200k particles from a dataset of 1,423,124 particles</span>
+<span class="o">(</span>cryodrgn<span class="o">)</span><span class="w"> </span>$<span class="w"> </span>cryodrgn_utils<span class="w"> </span>select_random<span class="w"> </span><span class="m">1423124</span><span class="w"> </span>-n<span class="w"> </span><span class="m">200000</span><span class="w"> </span>-o<span class="w"> </span>ind200k.pkl
+</pre></div>
+</div>
+<ul class="simple">
+<li><p>You can then train on only the random subset with the argument <code class="docutils literal notranslate"><span class="pre">--ind</span> <span class="pre">ind200k.pkl</span></code></p></li>
+</ul>
+</li>
+<li><p>For reference, ab initio heterogeneous reconstruction on a dataset containing 218k 128x128 particles took 20 hours to train on a single V100 GPU.</p></li>
+</ul>
+</section>
+<section id="example-usage">
+<h2>Example usage<a class="headerlink" href="#example-usage" title="Link to this heading"></a></h2>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># homogeneous reconstruction</span>
+<span class="o">(</span>cryodrgn<span class="o">)</span><span class="w"> </span>$<span class="w"> </span>cryodrgn<span class="w"> </span>abinit_homo<span class="w"> </span><span class="o">[</span>particles<span class="o">]</span><span class="w"> </span>--ctf<span class="w"> </span><span class="o">[</span>ctf.pkl<span class="o">]</span><span class="w"> </span>-o<span class="w"> </span><span class="o">[</span>output_directory<span class="o">]</span><span class="w">  </span>&gt;&gt;<span class="w"> </span>output.log
+
+<span class="c1"># heterogeneous reconstruction</span>
+<span class="o">(</span>cryodrgn<span class="o">)</span><span class="w"> </span>$<span class="w"> </span>cryodrgn<span class="w"> </span>abinit_het<span class="w"> </span><span class="o">[</span>particles<span class="o">]</span><span class="w"> </span>--ctf<span class="w"> </span><span class="o">[</span>ctf.pkl<span class="o">]</span><span class="w"> </span>--zdim<span class="w"> </span><span class="m">8</span><span class="w"> </span>-o<span class="w"> </span><span class="o">[</span>output_directory<span class="o">]</span><span class="w">  </span>&gt;&gt;<span class="w"> </span>output.log
+</pre></div>
+</div>
+</section>
+<section id="note-on-training-settings">
+<h2>Note on training settings<a class="headerlink" href="#note-on-training-settings" title="Link to this heading"></a></h2>
+<ul>
+<li><p>The default translational search extent is +/- 10 pixels (<code class="docutils literal notranslate"><span class="pre">--t-extent</span> <span class="pre">10</span></code>). If your particles are not well-centered, you can use a wider search extent, e.g. +/- 40 pixels ( <code class="docutils literal notranslate"><span class="pre">--t-extent</span> <span class="pre">40</span></code>).</p></li>
+<li><p>Poses are updated every 5 epochs (<code class="docutils literal notranslate"><span class="pre">--ps-freq</span> <span class="pre">5</span></code>) to alternate between pose search (slow) and standard cryodrgn1 training (fast) using the last iteration’s poses.</p></li>
+<li><p>The default pose search settings are not tuned for high accuracy alignments (a tradeoff of accuracy vs. compute speed). You can increase the resolution of the pose search with `</p></li>
+<li><p>The default training time is 30 epochs. A typical use case is to run for 30 epochs, check the results (<code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">analyze</span></code>), then extend training to 60 epochs. You can extend by rerunning with <code class="docutils literal notranslate"><span class="pre">-n</span> <span class="pre">60</span> <span class="pre">--load</span> <span class="pre">latest</span></code>. If your dataset is very large, you may want to reduce the pose search freqency <code class="docutils literal notranslate"><span class="pre">--ps-freq</span></code> and the number of epochs <code class="docutils literal notranslate"><span class="pre">-n</span></code>.</p></li>
+<li><p>During training, pose search epochs will get successively slower. This is because the parameter <code class="docutils literal notranslate"><span class="pre">--l-ramp-epochs</span> <span class="pre">25</span></code> increases the max resolution from a Fourier radius of 12 pixels (<code class="docutils literal notranslate"><span class="pre">--l-start</span></code>) to 32 pix (<code class="docutils literal notranslate"><span class="pre">--l-end</span></code>) over the first 25 epochs of training.</p>
+<ul>
+<li><p>Example training time course (1 V100 GPU)</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="m">2022</span>-01-20<span class="w"> </span><span class="m">18</span>:00:59<span class="w">     </span><span class="c1"># =====&gt; Epoch: 1 Average gen loss = 0.8816, KLD = 0.8981, total loss = 0.8817; Finished in 1:13:20.758477</span>
+<span class="m">2022</span>-01-20<span class="w"> </span><span class="m">18</span>:02:07<span class="w">     </span>Using<span class="w"> </span>previous<span class="w"> </span>iteration<span class="w"> </span>poses
+<span class="m">2022</span>-01-20<span class="w"> </span><span class="m">18</span>:15:20<span class="w">     </span><span class="c1"># =====&gt; Epoch: 2 Average gen loss = 0.8825, KLD = 1.6127, total loss = 0.8826; Finished in 0:13:13.168348</span>
+<span class="m">2022</span>-01-20<span class="w"> </span><span class="m">18</span>:16:27<span class="w">     </span>Using<span class="w"> </span>previous<span class="w"> </span>iteration<span class="w"> </span>poses
+<span class="m">2022</span>-01-20<span class="w"> </span><span class="m">18</span>:29:41<span class="w">     </span><span class="c1"># =====&gt; Epoch: 3 Average gen loss = 0.8818, KLD = 1.8766, total loss = 0.8819; Finished in 0:13:14.378679</span>
+<span class="m">2022</span>-01-20<span class="w"> </span><span class="m">18</span>:30:48<span class="w">     </span>Using<span class="w"> </span>previous<span class="w"> </span>iteration<span class="w"> </span>poses
+<span class="m">2022</span>-01-20<span class="w"> </span><span class="m">18</span>:44:02<span class="w">     </span><span class="c1"># =====&gt; Epoch: 4 Average gen loss = 0.8811, KLD = 2.0323, total loss = 0.8812; Finished in 0:13:13.887047</span>
+<span class="m">2022</span>-01-20<span class="w"> </span><span class="m">18</span>:45:09<span class="w">     </span>Using<span class="w"> </span>previous<span class="w"> </span>iteration<span class="w"> </span>poses
+<span class="m">2022</span>-01-20<span class="w"> </span><span class="m">18</span>:58:23<span class="w">     </span><span class="c1"># =====&gt; Epoch: 5 Average gen loss = 0.8808, KLD = 2.1141, total loss = 0.8809; Finished in 0:13:14.298884</span>
+<span class="m">2022</span>-01-20<span class="w"> </span><span class="m">20</span>:30:25<span class="w">     </span><span class="c1"># =====&gt; Epoch: 6 Average gen loss = 0.8783, KLD = 2.0354, total loss = 0.8784; Finished in 1:30:55.173547</span>
+<span class="m">2022</span>-01-20<span class="w"> </span><span class="m">20</span>:31:46<span class="w">     </span>Using<span class="w"> </span>previous<span class="w"> </span>iteration<span class="w"> </span>poses
+<span class="m">2022</span>-01-20<span class="w"> </span><span class="m">20</span>:45:00<span class="w">     </span><span class="c1"># =====&gt; Epoch: 7 Average gen loss = 0.878, KLD = 2.1416, total loss = 0.8782; Finished in 0:13:14.021982</span>
+<span class="m">2022</span>-01-20<span class="w"> </span><span class="m">20</span>:46:20<span class="w">     </span>Using<span class="w"> </span>previous<span class="w"> </span>iteration<span class="w"> </span>poses
+<span class="m">2022</span>-01-20<span class="w"> </span><span class="m">20</span>:59:35<span class="w">     </span><span class="c1"># =====&gt; Epoch: 8 Average gen loss = 0.8778, KLD = 2.1859, total loss = 0.8780; Finished in 0:13:14.906471</span>
+<span class="m">2022</span>-01-20<span class="w"> </span><span class="m">21</span>:00:43<span class="w">     </span>Using<span class="w"> </span>previous<span class="w"> </span>iteration<span class="w"> </span>poses
+<span class="m">2022</span>-01-20<span class="w"> </span><span class="m">21</span>:13:57<span class="w">     </span><span class="c1"># =====&gt; Epoch: 9 Average gen loss = 0.8776, KLD = 2.2222, total loss = 0.8778; Finished in 0:13:14.233966</span>
+<span class="m">2022</span>-01-20<span class="w"> </span><span class="m">21</span>:15:04<span class="w">     </span>Using<span class="w"> </span>previous<span class="w"> </span>iteration<span class="w"> </span>poses
+<span class="m">2022</span>-01-20<span class="w"> </span><span class="m">21</span>:28:19<span class="w">     </span><span class="c1"># =====&gt; Epoch: 10 Average gen loss = 0.8775, KLD = 2.2439, total loss = 0.8776; Finished in 0:13:14.907938</span>
+<span class="m">2022</span>-01-20<span class="w"> </span><span class="m">23</span>:28:54<span class="w">     </span><span class="c1"># =====&gt; Epoch: 11 Average gen loss = 0.8769, KLD = 2.2428, total loss = 0.8771; Finished in 1:59:27.793799</span>
+<span class="m">2022</span>-01-20<span class="w"> </span><span class="m">23</span>:30:01<span class="w">     </span>Using<span class="w"> </span>previous<span class="w"> </span>iteration<span class="w"> </span>poses
+<span class="m">2022</span>-01-20<span class="w"> </span><span class="m">23</span>:43:15<span class="w">     </span><span class="c1"># =====&gt; Epoch: 12 Average gen loss = 0.8769, KLD = 2.3463, total loss = 0.8770; Finished in 0:13:14.289931</span>
+<span class="m">2022</span>-01-20<span class="w"> </span><span class="m">23</span>:44:23<span class="w">     </span>Using<span class="w"> </span>previous<span class="w"> </span>iteration<span class="w"> </span>poses
+<span class="m">2022</span>-01-20<span class="w"> </span><span class="m">23</span>:57:37<span class="w">     </span><span class="c1"># =====&gt; Epoch: 13 Average gen loss = 0.8767, KLD = 2.3692, total loss = 0.8769; Finished in 0:13:14.531232</span>
+<span class="m">2022</span>-01-20<span class="w"> </span><span class="m">23</span>:58:45<span class="w">     </span>Using<span class="w"> </span>previous<span class="w"> </span>iteration<span class="w"> </span>poses
+<span class="m">2022</span>-01-21<span class="w"> </span><span class="m">00</span>:11:59<span class="w">     </span><span class="c1"># =====&gt; Epoch: 14 Average gen loss = 0.8766, KLD = 2.3928, total loss = 0.8768; Finished in 0:13:14.821960</span>
+<span class="m">2022</span>-01-21<span class="w"> </span><span class="m">00</span>:13:07<span class="w">     </span>Using<span class="w"> </span>previous<span class="w"> </span>iteration<span class="w"> </span>poses
+<span class="m">2022</span>-01-21<span class="w"> </span><span class="m">00</span>:26:22<span class="w">     </span><span class="c1"># =====&gt; Epoch: 15 Average gen loss = 0.8765, KLD = 2.4063, total loss = 0.8767; Finished in 0:13:15.422771</span>
+<span class="m">2022</span>-01-21<span class="w"> </span><span class="m">02</span>:58:58<span class="w">     </span><span class="c1"># =====&gt; Epoch: 16 Average gen loss = 0.8762, KLD = 2.3726, total loss = 0.8764; Finished in 2:31:28.195825</span>
+<span class="m">2022</span>-01-21<span class="w"> </span><span class="m">03</span>:00:05<span class="w">     </span>Using<span class="w"> </span>previous<span class="w"> </span>iteration<span class="w"> </span>poses
+<span class="m">2022</span>-01-21<span class="w"> </span><span class="m">03</span>:13:07<span class="w">     </span><span class="c1"># =====&gt; Epoch: 17 Average gen loss = 0.8762, KLD = 2.4672, total loss = 0.8764; Finished in 0:13:02.429271</span>
+<span class="m">2022</span>-01-21<span class="w"> </span><span class="m">03</span>:14:14<span class="w">     </span>Using<span class="w"> </span>previous<span class="w"> </span>iteration<span class="w"> </span>poses
+<span class="m">2022</span>-01-21<span class="w"> </span><span class="m">03</span>:27:17<span class="w">     </span><span class="c1"># =====&gt; Epoch: 18 Average gen loss = 0.876, KLD = 2.4911, total loss = 0.8762; Finished in 0:13:02.989886</span>
+<span class="m">2022</span>-01-21<span class="w"> </span><span class="m">03</span>:28:24<span class="w">     </span>Using<span class="w"> </span>previous<span class="w"> </span>iteration<span class="w"> </span>poses
+<span class="m">2022</span>-01-21<span class="w"> </span><span class="m">03</span>:41:27<span class="w">     </span><span class="c1"># =====&gt; Epoch: 19 Average gen loss = 0.876, KLD = 2.5077, total loss = 0.8762; Finished in 0:13:02.990354</span>
+<span class="m">2022</span>-01-21<span class="w"> </span><span class="m">03</span>:42:34<span class="w">     </span>Using<span class="w"> </span>previous<span class="w"> </span>iteration<span class="w"> </span>poses
+<span class="m">2022</span>-01-21<span class="w"> </span><span class="m">03</span>:55:37<span class="w">     </span><span class="c1"># =====&gt; Epoch: 20 Average gen loss = 0.8759, KLD = 2.5235, total loss = 0.8761; Finished in 0:13:02.651984</span>
+<span class="m">2022</span>-01-21<span class="w"> </span><span class="m">07</span>:09:20<span class="w">     </span><span class="c1"># =====&gt; Epoch: 21 Average gen loss = 0.8756, KLD = 2.4737, total loss = 0.8758; Finished in 3:12:35.716970</span>
+<span class="m">2022</span>-01-21<span class="w"> </span><span class="m">07</span>:10:27<span class="w">     </span>Using<span class="w"> </span>previous<span class="w"> </span>iteration<span class="w"> </span>poses
+<span class="m">2022</span>-01-21<span class="w"> </span><span class="m">07</span>:23:30<span class="w">     </span><span class="c1"># =====&gt; Epoch: 22 Average gen loss = 0.8757, KLD = 2.5532, total loss = 0.8759; Finished in 0:13:02.696251</span>
+<span class="m">2022</span>-01-21<span class="w"> </span><span class="m">07</span>:24:37<span class="w">     </span>Using<span class="w"> </span>previous<span class="w"> </span>iteration<span class="w"> </span>poses
+<span class="m">2022</span>-01-21<span class="w"> </span><span class="m">07</span>:37:40<span class="w">     </span><span class="c1"># =====&gt; Epoch: 23 Average gen loss = 0.8756, KLD = 2.5753, total loss = 0.8758; Finished in 0:13:03.271111</span>
+<span class="m">2022</span>-01-21<span class="w"> </span><span class="m">07</span>:38:47<span class="w">     </span>Using<span class="w"> </span>previous<span class="w"> </span>iteration<span class="w"> </span>poses
+<span class="m">2022</span>-01-21<span class="w"> </span><span class="m">07</span>:51:52<span class="w">     </span><span class="c1"># =====&gt; Epoch: 24 Average gen loss = 0.8755, KLD = 2.5935, total loss = 0.8757; Finished in 0:13:05.296650</span>
+<span class="m">2022</span>-01-21<span class="w"> </span><span class="m">07</span>:52:59<span class="w">     </span>Using<span class="w"> </span>previous<span class="w"> </span>iteration<span class="w"> </span>poses
+<span class="m">2022</span>-01-21<span class="w"> </span><span class="m">08</span>:06:03<span class="w">     </span><span class="c1"># =====&gt; Epoch: 25 Average gen loss = 0.8755, KLD = 2.6057, total loss = 0.8757; Finished in 0:13:03.414230</span>
+<span class="m">2022</span>-01-21<span class="w"> </span><span class="m">12</span>:13:51<span class="w">     </span><span class="c1"># =====&gt; Epoch: 26 Average gen loss = 0.8753, KLD = 2.5529, total loss = 0.8755; Finished in 4:06:41.267859</span>
+<span class="m">2022</span>-01-21<span class="w"> </span><span class="m">12</span>:14:59<span class="w">     </span>Using<span class="w"> </span>previous<span class="w"> </span>iteration<span class="w"> </span>poses
+<span class="m">2022</span>-01-21<span class="w"> </span><span class="m">12</span>:28:01<span class="w">     </span><span class="c1"># =====&gt; Epoch: 27 Average gen loss = 0.8753, KLD = 2.6321, total loss = 0.8755; Finished in 0:13:02.813657</span>
+<span class="m">2022</span>-01-21<span class="w"> </span><span class="m">12</span>:29:09<span class="w">     </span>Using<span class="w"> </span>previous<span class="w"> </span>iteration<span class="w"> </span>poses
+<span class="m">2022</span>-01-21<span class="w"> </span><span class="m">12</span>:42:11<span class="w">     </span><span class="c1"># =====&gt; Epoch: 28 Average gen loss = 0.8752, KLD = 2.6528, total loss = 0.8754; Finished in 0:13:02.511731</span>
+<span class="m">2022</span>-01-21<span class="w"> </span><span class="m">12</span>:43:18<span class="w">     </span>Using<span class="w"> </span>previous<span class="w"> </span>iteration<span class="w"> </span>poses
+<span class="m">2022</span>-01-21<span class="w"> </span><span class="m">12</span>:56:21<span class="w">     </span><span class="c1"># =====&gt; Epoch: 29 Average gen loss = 0.8752, KLD = 2.6635, total loss = 0.8754; Finished in 0:13:02.821824</span>
+<span class="m">2022</span>-01-21<span class="w"> </span><span class="m">12</span>:57:28<span class="w">     </span>Using<span class="w"> </span>previous<span class="w"> </span>iteration<span class="w"> </span>poses
+<span class="m">2022</span>-01-21<span class="w"> </span><span class="m">13</span>:10:31<span class="w">     </span><span class="c1"># =====&gt; Epoch: 30 Average gen loss = 0.8751, KLD = 2.6744, total loss = 0.8753; Finished in 0:13:02.737088</span>
+</pre></div>
+</div>
+</li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="questions-and-contact">
+<h2>Questions and contact<a class="headerlink" href="#questions-and-contact" title="Link to this heading"></a></h2>
+<p>If you have any questions about the method or software, please file a GitHub issue:</p>
+<p><a class="reference external" href="https://github.com/zhonge/cryodrgn/issues">https://github.com/zhonge/cryodrgn/issues</a></p>
+<p>Or post in the cryoDRGN Google Group: <a class="reference external" href="https://groups.google.com/g/cryodrgn">https://groups.google.com/g/cryodrgn</a>.</p>
+</section>
+<section id="reference">
+<h2>Reference<a class="headerlink" href="#reference" title="Link to this heading"></a></h2>
+<p>CryoDRGN2 software was developed by Ellen Zhong &amp; Adam Lerer with software support from Vineet Bansal.
+If you find the ab initio tools in cryoDRGN useful, please cite:</p>
+<p>Zhong, Lerer, Davis, Berger. ICCV 2021.</p>
+<p><a class="reference external" href="https://openaccess.thecvf.com/content/ICCV2021/html/Zhong_CryoDRGN2_Ab_Initio_Neural_Reconstruction_of_3D_Protein_Structures_From_ICCV_2021_paper.html">https://openaccess.thecvf.com/content/ICCV2021/html/Zhong_CryoDRGN2_Ab_Initio_Neural_Reconstruction_of_3D_Protein_Structures_From_ICCV_2021_paper.html</a></p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="large_datasets.html" class="btn btn-neutral float-left" title="cryoDRGN preprocess for large datasets" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="faq.html" class="btn btn-neutral float-right" title="FAQ / Troubleshooting" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, Ellen Zhong.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

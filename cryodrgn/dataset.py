@@ -12,7 +12,7 @@ from . import starfile
 
 log = utils.log
 
-def load_particles(mrcs_txt_star, lazy=False, datadir=None, relion31=False):
+def load_particles(mrcs_txt_star, lazy=False, datadir=None):
     '''
     Load particle stack from either a .mrcs file, a .star file, a .txt file containing paths to .mrcs files, or a cryosparc particles.cs file
 
@@ -24,11 +24,11 @@ def load_particles(mrcs_txt_star, lazy=False, datadir=None, relion31=False):
     elif mrcs_txt_star.endswith('.star'):
         # not exactly sure what the default behavior should be for the data paths if parsing a starfile
         try:
-            particles = starfile.Starfile.load(mrcs_txt_star, relion31=relion31).get_particles(datadir=datadir, lazy=lazy)
+            particles = starfile.Starfile.load(mrcs_txt_star).get_particles(datadir=datadir, lazy=lazy)
         except Exception as e:
             if datadir is None:
                 datadir = os.path.dirname(mrcs_txt_star) # assume .mrcs files are in the same director as the starfile
-                particles = starfile.Starfile.load(mrcs_txt_star, relion31=relion31).get_particles(datadir=datadir, lazy=lazy)
+                particles = starfile.Starfile.load(mrcs_txt_star).get_particles(datadir=datadir, lazy=lazy)
             else: raise RuntimeError(e)
     elif mrcs_txt_star.endswith('.cs'):
         particles = starfile.csparc_get_particles(mrcs_txt_star, datadir, lazy)
@@ -41,16 +41,16 @@ class LazyMRCData(data.Dataset):
     '''
     Class representing an .mrcs stack file -- images loaded on the fly
     '''
-    def __init__(self, mrcfile, norm=None, keepreal=False, invert_data=False, ind=None, window=True, datadir=None, relion31=False, window_r=0.85, flog=None):
+    def __init__(self, mrcfile, norm=None, keepreal=False, invert_data=False, ind=None, window=True, datadir=None, window_r=0.85, flog=None):
         log = flog if flog is not None else utils.log
         assert not keepreal, 'Not implemented error'
-        particles = load_particles(mrcfile, True, datadir=datadir, relion31=relion31)
+        particles = load_particles(mrcfile, True, datadir=datadir)
         if ind is not None:
             particles = [particles[x] for x in ind]
         N = len(particles)
         ny, nx = particles[0].get().shape
         assert ny == nx, "Images must be square"
-        assert ny % 2 == 0, "Image size must be even"
+        assert ny % 2 == 0, "Image size must be even. Is this a preprocessed dataset? Use the --preprocessed flag if so."
         log('Loaded {} {}x{} images'.format(N, ny, nx))
         self.particles = particles.astype(np.float32)
         self.N = N
@@ -99,18 +99,18 @@ class MRCData(data.Dataset):
     '''
     Class representing an .mrcs stack file
     '''
-    def __init__(self, mrcfile, norm=None, keepreal=False, invert_data=False, ind=None, window=True, datadir=None, relion31=False, max_threads=16, window_r=0.85, flog=None):
+    def __init__(self, mrcfile, norm=None, keepreal=False, invert_data=False, ind=None, window=True, datadir=None, max_threads=16, window_r=0.85, flog=None):
         log = flog if flog is not None else utils.log
         if keepreal:
             raise NotImplementedError
         if ind is not None:
-            particles = load_particles(mrcfile, True, datadir=datadir, relion31=relion31)
+            particles = load_particles(mrcfile, True, datadir=datadir)
             particles = np.array([particles[i].get() for i in ind])
         else:
-            particles = load_particles(mrcfile, False, datadir=datadir, relion31=relion31)
+            particles = load_particles(mrcfile, False, datadir=datadir)
         N, ny, nx = particles.shape
         assert ny == nx, "Images must be square"
-        assert ny % 2 == 0, "Image size must be even"
+        assert ny % 2 == 0, "Image size must be even. Is this a preprocessed dataset? Use the --preprocessed flag if so."
         log('Loaded {} {}x{} images'.format(N, ny, nx))
 
         # Real space window
@@ -206,7 +206,7 @@ class TiltMRCData(data.Dataset):
 
         N, ny, nx = particles_real.shape
         assert ny == nx, "Images must be square"
-        assert ny % 2 == 0, "Image size must be even"
+        assert ny % 2 == 0, "Image size must be even. Is this a preprocessed dataset? Use the --preprocessed flag if so."
         log('Loaded {} {}x{} images'.format(N, ny, nx))
         assert particles_tilt_real.shape == (N, ny, nx), "Tilt series pair must have same dimensions as untilted particles"
         log('Loaded {} {}x{} tilt pair images'.format(N, ny, nx))

@@ -18,6 +18,8 @@ def main():
     import cryodrgn.commands.eval_vol
     import cryodrgn.commands.eval_images
     import cryodrgn.commands.analyze
+    import cryodrgn.commands.analyze_landscape
+    import cryodrgn.commands.analyze_landscape_full
     import cryodrgn.commands.pc_traversal
     import cryodrgn.commands.graph_traversal
     import cryodrgn.commands.view_config
@@ -27,6 +29,7 @@ def main():
     modules = [
         cryodrgn.commands.downsample,
         cryodrgn.commands.preprocess,
+        cryodrgn.commands.downsample,
         cryodrgn.commands.parse_pose_csparc,
         cryodrgn.commands.parse_pose_star,
         cryodrgn.commands.parse_ctf_csparc,
@@ -37,6 +40,8 @@ def main():
         cryodrgn.commands.eval_vol,
         cryodrgn.commands.eval_images,
         cryodrgn.commands.analyze,
+        cryodrgn.commands.analyze_landscape,
+        cryodrgn.commands.analyze_landscape_full,
         cryodrgn.commands.pc_traversal,
         cryodrgn.commands.graph_traversal,
         cryodrgn.commands.view_config,

@@ -542,8 +542,8 @@ def mask_volumes(outdir, epochs, labels, max_threads, LOG, Apix, thresh=None, di
         flog(f'Generating and applying masks for epoch {epoch}', LOG)
         volsdir = outdir + f'/vols.{epoch}'
         for cluster in range(len(labels)):
-            volpath = f'{volsdir}/vol_{0:03d}.mrc'.format(cluster)
-            outpath = f'{volsdir}/vol_{0:03d}.masked.mrc'.format(cluster)
+            volpath = f'{volsdir}/vol_{cluster:03d}.mrc'
+            outpath = f'{volsdir}/vol_{cluster:03d}.masked.mrc'
 
             volpaths.append(volpath)
             outpaths.append(outpath)
@@ -834,7 +834,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__,
-                                     epilog='Example usage: $ python analyze_convergence.py [workdir] [epoch]'
+                                     epilog='Example usage: $ python analyze_convergence.py [workdir] [epoch]',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     add_args(parser)
     main(parser.parse_args())

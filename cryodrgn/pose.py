@@ -31,8 +31,8 @@ class PoseTracker(nn.Module):
                 rots_emb.weight.data.copy_(lie_tools.SO3_to_quaternions(rots))
             else:
                 raise RuntimeError('Embedding type {} not recognized'.format(emb_type))
-            self.rots_emb = rots_emb
-            self.trans_emb = trans_emb if self.use_trans else None
+            self.rots_emb = rots_emb.to(device)
+            self.trans_emb = trans_emb.to(device) if self.use_trans else None
 
     @classmethod
     def load(cls, infile, Nimg, D, emb_type=None, ind=None, device=None):

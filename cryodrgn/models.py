@@ -246,7 +246,7 @@ class PositionalDecoder(nn.Module):
         # volume is generated
         if zval is not None:
             zdim = len(zval)
-            z = torch.zeros(D**2, zdim, dtype=torch.float32)
+            z = torch.zeros(D**2, zdim, dtype=torch.float32, device=coords.device)
             z += torch.tensor(zval, dtype=torch.float32, device=coords.device)
 
         vol_f = np.zeros((D,D,D),dtype=np.float32)
@@ -277,7 +277,7 @@ class FTPositionalDecoder(nn.Module):
         self.in_dim = 3 * (self.enc_dim) * 2 + self.zdim
         self.decoder = ResidLinearMLP(self.in_dim, nlayers, hidden_dim, 2, activation)
 
-        if enc_type == "gaussian" is not None:
+        if enc_type == "gaussian":
             # We construct 3 * self.enc_dim random vector frequences, to match the original positional encoding:
             # In the positional encoding we produce self.enc_dim features for each of the x,y,z dimensions,
             # whereas in gaussian encoding we produce self.enc_dim features each with random x,y,z components

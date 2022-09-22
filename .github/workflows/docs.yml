@@ -1,0 +1,39 @@
+name: Docs 
+
+on:
+  push:
+    branches: [ master, develop, docs ]
+    tags:
+      - '*'
+
+jobs:
+
+  build_docs:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: [3.9]
+
+    steps:
+      - name: Setup Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install Python dependencies
+        run: |
+          pip install sphinx myst-parser sphinx-book-theme
+
+      - uses: actions/checkout@v2
+
+      - name: Build docs
+        run: |
+          # Unless we add a .nojekyll to the base of the deployment folder, the underscores in foldernames
+          # like _static/ etc. pose problems on GH Pages.
+          cd docs && make html && touch _build/html/.nojekyll
+
+      - name: Deploy
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: docs/_build/html
+          branch: gh-pages

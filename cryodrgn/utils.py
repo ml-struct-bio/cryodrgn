@@ -160,3 +160,11 @@ def zero_sphere(vol):
     vol[tmp] = 0
     return vol
 
+def assert_pkl_close(pkl_a, pkl_b, atol=1e-4):
+    a = pickle.load(open(pkl_a, 'rb'))
+    b = pickle.load(open(pkl_b, 'rb'))
+    if isinstance(a, tuple):
+        for _a, _b in zip(a, b):
+            assert np.linalg.norm(_a - _b) < atol
+    else:
+        assert np.linalg.norm(a - b) < atol

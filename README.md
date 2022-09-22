@@ -1,3 +1,5 @@
+[![CI](https://github.com/zhonge/cryodrgn/actions/workflows/main.yml/badge.svg)](https://github.com/zhonge/cryodrgn/actions/workflows/main.yml)
+
 # :snowflake::dragon: cryoDRGN: Deep Reconstructing Generative Networks for cryo-EM heterogeneous reconstruction
 
 CryoDRGN is a neural network based algorithm for heterogeneous cryo-EM reconstruction. In particular, the method models a *continuous* distribution over 3D structures by using a neural network based representation for the volume.
@@ -12,13 +14,14 @@ Reconstructing continuous distributions of 3D protein structure from cryo-EM ima
 Ellen D. Zhong, Tristan Bepler, Joseph H. Davis*, Bonnie Berger*.
 ICLR 2020, Spotlight presentation, https://arxiv.org/abs/1909.05215
 
-## Tutorial:
 
-An online overview and walkthrough of cryoDRGN installation, training, and analysis is available here:
-https://www.notion.so/cryoDRGN-tutorial-b932c021cb2c415282f182048bac16ff
+## Documentation:
 
-A more in-depth manuscript version of the tutorial is available here: 
-https://www.biorxiv.org/content/10.1101/2022.08.09.503342v1
+The latest documentation for cryoDRGN is available [here](https://zhonge.github.io/cryodrgn/). This includes an overview and walkthrough of cryoDRGN installation, training and analysis.
+
+A more in-depth manuscript version of the tutorial is available [here](https://www.biorxiv.org/content/10.1101/2022.08.09.503342v1).
+
+Old Documentation pages are available at [notion.so](https://www.notion.so/cryoDRGN-tutorial-b932c021cb2c415282f182048bac16ff).
 
 A quick start is provided below.
 
@@ -102,7 +105,7 @@ The official version 1.0 release. This version introduces several new tools for 
 
 <details><summary>Version 0.2.0</summary>
 	
-* New interface and proper python packaing with setup.py. This version has identical functionality and argument usage as previous versions, however tools are now available from a common entry point. See:
+* New interface and proper python packaging with `setup.py`. This version has identical functionality and argument usage as previous versions, however tools are now available from a common entry point. See:
     
     `$ cryodrgn <command> -h`
 
@@ -135,7 +138,7 @@ To install cryoDRGN, git clone the source code and install the following depende
     git clone https://github.com/zhonge/cryodrgn.git
     cd cryodrgn
     git checkout 1.1.0 # or latest version
-    python setup.py install
+    pip install .
 
 A detailed installation and testing guide is provided here: https://www.notion.so/cryoDRGN-installation-with-anaconda-4cff0367d9b241bb8d902efe339d01e6
 

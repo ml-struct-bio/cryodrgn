@@ -12,6 +12,11 @@ from . import lattice
 
 log = utils.log
 
+def unparallelize(model):
+    if isinstance(model, nn.DataParallel):
+        return model.module
+    return model
+    
 class HetOnlyVAE(nn.Module):
     # No pose inference
     def __init__(self, lattice, # Lattice object

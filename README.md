@@ -557,9 +557,168 @@ These scripts produce a text file of z values that can be input to `cryodrgn eva
 
 An example usage of the graph traversal algorithm is here (https://github.com/zhonge/cryodrgn/issues/16#issuecomment-668897007).
 
-## CryoDRGN2 -- Coming Soon...
+## CryoDRGN2 -- Ab Initio Reconstruction
 
-Please reach out to Ellen Zhong (zhonge[at]princeton[dot]edu) if you'd like to beta test cryoDRGN2.
+To perform ab initio heterogeneous reconstruction, use `cryodrgn abinit_het`. The arguments are similar to `cryodrgn train_vae`, but the `--poses` argument is not required.
+
+The defaults match the settings reported in the [CryoDRGN2 manuscript](https://openaccess.thecvf.com/content/ICCV2021/html/Zhong_CryoDRGN2_Ab_Initio_Neural_Reconstruction_of_3D_Protein_Structures_From_ICCV_2021_paper.html).
+
+```
+usage: cryodrgn abinit_het [-h] -o OUTDIR --zdim ZDIM [--ctf pkl]
+                           [--load LOAD] [--load-poses LOAD_POSES]
+                           [--checkpoint CHECKPOINT]
+                           [--log-interval LOG_INTERVAL] [-v] [--seed SEED]
+                           [--ind PKL] [--uninvert-data] [--no-window]
+                           [--window-r WINDOW_R] [--datadir DATADIR]
+                           [--lazy-single] [--lazy] [--preprocessed]
+                           [--max-threads MAX_THREADS] [--tilt TILT]
+                           [--tilt-deg TILT_DEG] [--enc-only] [-n NUM_EPOCHS]
+                           [-b BATCH_SIZE] [--wd WD] [--lr LR] [--beta BETA]
+                           [--beta-control BETA_CONTROL]
+                           [--equivariance EQUIVARIANCE]
+                           [--eq-start-it EQ_START_IT] [--eq-end-it EQ_END_IT]
+                           [--norm NORM NORM] [--l-ramp-epochs L_RAMP_EPOCHS]
+                           [--l-ramp-model L_RAMP_MODEL]
+                           [--reset-model-every RESET_MODEL_EVERY]
+                           [--reset-optim-every RESET_OPTIM_EVERY]
+                           [--reset-optim-after-pretrain RESET_OPTIM_AFTER_PRETRAIN]
+                           [--l-start L_START] [--l-end L_END] [--niter NITER]
+                           [--t-extent T_EXTENT] [--t-ngrid T_NGRID]
+                           [--t-xshift T_XSHIFT] [--t-yshift T_YSHIFT]
+                           [--pretrain PRETRAIN] [--ps-freq PS_FREQ]
+                           [--nkeptposes NKEPTPOSES]
+                           [--base-healpy BASE_HEALPY]
+                           [--pose-model-update-freq POSE_MODEL_UPDATE_FREQ]
+                           [--enc-layers QLAYERS] [--enc-dim QDIM]
+                           [--encode-mode {conv,resid,mlp,tilt}]
+                           [--enc-mask ENC_MASK] [--use-real]
+                           [--dec-layers PLAYERS] [--dec-dim PDIM]
+                           [--pe-type {geom_ft,geom_full,geom_lowf,geom_nohighf,linear_lowf,gaussian,none}]
+                           [--feat-sigma FEAT_SIGMA] [--pe-dim PE_DIM]
+                           [--domain {hartley,fourier}]
+                           [--activation {relu,leaky_relu}]
+                           particles
+
+Heterogeneous NN reconstruction with hierarchical pose optimization
+
+positional arguments:
+  particles             Input particles (.mrcs, .txt or .star)
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -o OUTDIR, --outdir OUTDIR
+                        Output directory to save model
+  --zdim ZDIM           Dimension of latent variable
+  --ctf pkl             CTF parameters (.pkl)
+  --load LOAD           Initialize training from a checkpoint
+  --load-poses LOAD_POSES
+                        Initialize training from a checkpoint
+  --checkpoint CHECKPOINT
+                        Checkpointing interval in N_EPOCHS (default: 1)
+  --log-interval LOG_INTERVAL
+                        Logging interval in N_IMGS (default: 1000)
+  -v, --verbose         Increaes verbosity
+  --seed SEED           Random seed
+
+Dataset loading:
+  --ind PKL             Filter particle stack by these indices
+  --uninvert-data       Do not invert data sign
+  --no-window           Turn off real space windowing of dataset
+  --window-r WINDOW_R   Windowing radius (default: 0.85)
+  --datadir DATADIR     Path prefix to particle stack if loading relative
+                        paths from a .star or .cs file
+  --lazy-single         Lazy loading if full dataset is too large to fit in
+                        memory
+  --lazy                Memory efficient training by loading data in chunks
+  --preprocessed        Skip preprocessing steps if input data is from
+                        cryodrgn preprocess_mrcs
+  --max-threads MAX_THREADS
+                        Maximum number of CPU cores for FFT parallelization
+                        (default: 16)
+
+Tilt series:
+  --tilt TILT           Particle stack file (.mrcs)
+  --tilt-deg TILT_DEG   X-axis tilt offset in degrees (default: 45)
+  --enc-only            Use the tilt pair only in VAE and not in BNB search
+
+Training parameters:
+  -n NUM_EPOCHS, --num-epochs NUM_EPOCHS
+                        Number of training epochs (default: 30)
+  -b BATCH_SIZE, --batch-size BATCH_SIZE
+                        Minibatch size (default: 8)
+  --wd WD               Weight decay in Adam optimizer (default: 0)
+  --lr LR               Learning rate in Adam optimizer (default: 0.0001)
+  --beta BETA           Choice of beta schedule or a constant for KLD weight
+                        (default: 1.0)
+  --beta-control BETA_CONTROL
+                        KL-Controlled VAE gamma. Beta is KL target. (default:
+                        None)
+  --equivariance EQUIVARIANCE
+                        Strength of equivariance loss (default: None)
+  --eq-start-it EQ_START_IT
+                        It at which equivariance turned on (default: 100000)
+  --eq-end-it EQ_END_IT
+                        It at which equivariance max (default: 200000)
+  --norm NORM NORM      Data normalization as shift, 1/scale (default: mean,
+                        std of dataset)
+  --l-ramp-epochs L_RAMP_EPOCHS
+                        default: 0
+  --l-ramp-model L_RAMP_MODEL
+                        If 1, then during ramp only train the model up to
+                        l-max
+  --reset-model-every RESET_MODEL_EVERY
+                        If set, reset the model every N epochs
+  --reset-optim-every RESET_OPTIM_EVERY
+                        If set, reset the optimizer every N epochs
+  --reset-optim-after-pretrain RESET_OPTIM_AFTER_PRETRAIN
+                        If set, reset the optimizer every N epochs
+
+Pose Search parameters:
+  --l-start L_START     Starting L radius (default: 12)
+  --l-end L_END         End L radius (default: 32)
+  --niter NITER         Number of iterations of grid subdivision
+  --t-extent T_EXTENT   +/- pixels to search over translations (default: 10)
+  --t-ngrid T_NGRID     Initial grid size for translations
+  --t-xshift T_XSHIFT
+  --t-yshift T_YSHIFT
+  --pretrain PRETRAIN   Number of initial iterations with random poses
+                        (default: 10000)
+  --ps-freq PS_FREQ     Frequency of pose inference (default: every 5 epochs)
+  --nkeptposes NKEPTPOSES
+                        Number of poses to keep at each refinement interation
+                        during branch and bound
+  --base-healpy BASE_HEALPY
+                        Base healpy grid for pose search. Higher means
+                        exponentially higher resolution.
+  --pose-model-update-freq POSE_MODEL_UPDATE_FREQ
+                        If set, only update the model used for pose search
+                        every N examples.
+
+Encoder Network:
+  --enc-layers QLAYERS  Number of hidden layers (default: 3)
+  --enc-dim QDIM        Number of nodes in hidden layers (default: 256)
+  --encode-mode {conv,resid,mlp,tilt}
+                        Type of encoder network (default: resid)
+  --enc-mask ENC_MASK   Circular mask of image for encoder (default: D/2; -1
+                        for no mask)
+  --use-real            Use real space image for encoder (for convolutional
+                        encoder)
+
+Decoder Network:
+  --dec-layers PLAYERS  Number of hidden layers (default: 3)
+  --dec-dim PDIM        Number of nodes in hidden layers (default: 256)
+  --pe-type {geom_ft,geom_full,geom_lowf,geom_nohighf,linear_lowf,gaussian,none}
+                        Type of positional encoding (default: gaussian)
+  --feat-sigma FEAT_SIGMA
+                        Scale for random Gaussian features (default: 0.5)
+  --pe-dim PE_DIM       Num features in positional encoding (default: image D)
+  --domain {hartley,fourier}
+                        Decoder representation domain (default: fourier)
+  --activation {relu,leaky_relu}
+                        Activation (default: relu)
+```
+
+For homogeneous reconstruction, run `cryodrgn abinit_homo`.
 
 ## Contact
 

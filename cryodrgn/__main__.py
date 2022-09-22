@@ -23,8 +23,11 @@ def main():
     import cryodrgn.commands.pc_traversal
     import cryodrgn.commands.graph_traversal
     import cryodrgn.commands.view_config
+    import cryodrgn.commands.abinit_homo
+    import cryodrgn.commands.abinit_het
 
     modules = [
+        cryodrgn.commands.downsample,
         cryodrgn.commands.preprocess,
         cryodrgn.commands.downsample,
         cryodrgn.commands.parse_pose_csparc,
@@ -42,10 +45,12 @@ def main():
         cryodrgn.commands.pc_traversal,
         cryodrgn.commands.graph_traversal,
         cryodrgn.commands.view_config,
-        ]
+        cryodrgn.commands.abinit_homo,
+        cryodrgn.commands.abinit_het,
+    ]
 
     subparsers = parser.add_subparsers(title='Choose a command')
-    subparsers.required = 'True'
+    subparsers.required = True
 
     def get_str_name(module):
         return os.path.splitext(os.path.basename(module.__file__))[0]

@@ -52,7 +52,7 @@ class LazyMRCData(data.Dataset):
         assert ny == nx, "Images must be square"
         assert ny % 2 == 0, "Image size must be even. Is this a preprocessed dataset? Use the --preprocessed flag if so."
         log('Loaded {} {}x{} images'.format(N, ny, nx))
-        self.particles = particles
+        self.particles = particles.astype(np.float32)
         self.N = N
         self.D = ny + 1 # after symmetrizing HT
         self.invert_data = invert_data

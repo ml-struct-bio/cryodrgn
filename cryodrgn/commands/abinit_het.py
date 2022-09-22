@@ -1,5 +1,5 @@
 '''
-Heterogeneous NN reconstruction with BNB optimization of orientation
+Heterogeneous NN reconstruction with hierarchical pose optimization
 '''
 import numpy as np
 import sys, os
@@ -36,8 +36,7 @@ except ImportError:
 log = utils.log
 vlog = utils.vlog
 
-def parse_args():
-    parser = argparse.ArgumentParser(description=__doc__)
+def add_args(parser):
     parser.add_argument('particles', type=os.path.abspath, help='Input particles (.mrcs, .txt or .star)')
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
     parser.add_argument('--zdim', type=int, required=True, help='Dimension of latent variable')
@@ -55,7 +54,6 @@ def parse_args():
     group.add_argument('--no-window', dest='window', action='store_false', help='Turn off real space windowing of dataset')
     group.add_argument('--window-r', type=float, default=.85,  help='Windowing radius (default: %(default)s)')
     group.add_argument('--datadir', type=os.path.abspath, help='Path prefix to particle stack if loading relative paths from a .star or .cs file')
-    group.add_argument('--relion31', action='store_true', help='Flag if relion3.1 star format')
     group.add_argument('--lazy-single', action='store_true', help='Lazy loading if full dataset is too large to fit in memory')
     group.add_argument('--lazy', action='store_true', help='Memory efficient training by loading data in chunks')
     group.add_argument('--preprocessed', action='store_true', help='Skip preprocessing steps if input data is from cryodrgn preprocess_mrcs') 
@@ -271,21 +269,21 @@ def eval_z(model, lattice, data, batch_size, device, trans=None, use_tilt=False,
     z_logvar_all = np.vstack(z_logvar_all)
     return z_mu_all, z_logvar_all
 
-def save_checkpoint(model, lattice, optim, epoch, norm, bnb_pose, z_mu, z_logvar, out_mrc_dir, out_weights, out_z, out_poses):
+def save_checkpoint(model, lattice, optim, epoch, norm, search_pose, z_mu, z_logvar, out_mrc_dir, out_weights, out_z, out_poses):
     '''Save model weights, latent encoding z, and decoder volumes'''
     # save model weights
     torch.save({
         'epoch':epoch,
         'model_state_dict':model.state_dict(),
         'optimizer_state_dict':optim.state_dict(),
-        'bnb_pose': bnb_pose
+        'search_pose': search_pose
         }, out_weights)
     # save z
     with open(out_z,'wb') as f:
         pickle.dump(z_mu, f)
         pickle.dump(z_logvar, f)
     with open(out_poses,'wb') as f:
-        pickle.dump(bnb_pose, f)
+        pickle.dump(search_pose, f)
 
 def save_config(args, dataset, lattice, model, out_config):
     dataset_args = dict(particles=args.particles,
@@ -398,12 +396,12 @@ def main(args):
             #data = dataset.PreprocessedMRCData(args.particles, norm=args.norm)
             raise NotImplementedError("Use --lazy-single for on-the-fly image loading")
         elif args.lazy_single:
-            data = dataset.LazyMRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, keepreal=args.use_real, window=args.window, datadir=args.datadir, relion31=args.relion31, window_r=args.window_r, flog=flog)
+            data = dataset.LazyMRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, keepreal=args.use_real, window=args.window, datadir=args.datadir, window_r=args.window_r, flog=flog)
         elif args.preprocessed:
             flog(f'Using preprocessed inputs. Ignoring any --window/--invert-data options')
             data = dataset.PreprocessedMRCData(args.particles, norm=args.norm, ind=ind, flog=flog)
         else:
-            data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, keepreal=args.use_real, window=args.window, datadir=args.datadir, relion31=args.relion31, max_threads=args.max_threads, window_r=args.window_r, flog=flog)
+            data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, keepreal=args.use_real, window=args.window, datadir=args.datadir, max_threads=args.max_threads, window_r=args.window_r, flog=flog)
 
     # Tilt series data -- lots of unsupported features
     else:
@@ -411,7 +409,6 @@ def main(args):
         if args.lazy_single: raise NotImplementedError
         if args.lazy: raise NotImplementedError
         if args.preprocessed: raise NotImplementedError
-        if args.relion31: raise NotImplementedError
         data = dataset.TiltMRCData(args.particles, args.tilt, norm=args.norm, invert_data=args.invert_data, ind=ind, window=args.window, keepreal=args.use_real, datadir=args.datadir, window_r=args.window_r, flog=flog)
         tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32), device=device)
     Nimg = data.N
@@ -606,15 +603,7 @@ def main(args):
     flog('Finished in {} ({} per epoch)'.format(td, td/(num_epochs-start_epoch)))
 
 if __name__ == '__main__':
-    import cProfile
-    pr = cProfile.Profile()
-    pr.enable()
-
-
-    args = parse_args().parse_args()
+    parser = argparse.ArgumentParser(description=__doc__)
+    args = add_args(parser).parse_args()
     utils._verbose = args.verbose
     main(args)
-
-    pr.disable()
-    pr.print_stats('cumtime')
-

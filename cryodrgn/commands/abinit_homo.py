@@ -1,5 +1,5 @@
 '''
-Ab-initio homogeneous NN reconstruction
+Homogeneous NN reconstruction with hierarchical pose optimization
 '''
 
 import numpy as np
@@ -35,8 +35,7 @@ import signal
 signal.signal(signal.SIGINT, debug_signal_handler)
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(description=__doc__)
+def add_args(parser):
     parser.add_argument('particles', type=os.path.abspath, help='Particle stack file (.mrcs)')
     parser.add_argument('-o', '--outdir', type=os.path.abspath, required=True, help='Output directory to save model')
     parser.add_argument('--ctf', metavar='pkl', type=os.path.abspath, help='CTF parameters (.pkl)')
@@ -404,13 +403,8 @@ def main(args):
     flog('Finished in {} ({} per epoch)'.format(td, td/(args.num_epochs-start_epoch)))
 
 if __name__ == '__main__':
-    args = parse_args().parse_args()
+    parser = argparse.ArgumentParser(description=__doc__)
+    args = add_args(parser).parse_args()
     utils._verbose = args.verbose
-
-    # import cProfile
-    # pr = cProfile.Profile()
-    # pr.enable()
     main(args)
-    # pr.disable()
-    # pr.print_stats('cumtime')
 

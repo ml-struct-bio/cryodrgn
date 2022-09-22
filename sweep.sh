@@ -21,7 +21,7 @@ function run {
     OMP_NUM_THREADS=1 srun $SETTINGS -- python $@ -o $O/$N &
 }
 
-SCRIPT="$(pwd)/cryodrgn/commands/bnb_rot.py"
+SCRIPT="$(pwd)/cryodrgn/commands/abinit_homo.py"
 D128="$(pwd)/datasets/ribo_syn_128/projections.noise.wtrans.mrcs"
 DREAL="$(pwd)/datasets/ribo_real_128/particles.128.phaseflip.mrcs"
 DEFAULT="--t-extent 10 -n 5 --lr .0001 -b 8  --domain hartley --layers 3 --dim 256"
@@ -49,7 +49,7 @@ DEFAULT="--t-extent 10 -n 5 --lr .0001 -b 8  --domain hartley --layers 3 --dim 2
 # N=real1_end48_rampP5       run $SCRIPT $DREAL --t-extent 20 --lr .0001 -b 8 --domain hartley --layers 3 --dim 256 --base-healpy 2 --nkeptposes 4 --niter 7 --l-end 48 -n 10 --l-ramp-epochs 5
 # N=real1_end48_rampP5_psf10 run $SCRIPT $DREAL --t-extent 20 --lr .0001 -b 8 --domain hartley --layers 3 --dim 256 --base-healpy 2 --nkeptposes 4 --niter 7 --l-end 48 -n 100 --ps-freq 10 --l-ramp-epochs 50
 
-SCRIPT="$(pwd)/cryodrgn/commands/bnb_het.py"
+SCRIPT="$(pwd)/cryodrgn/commands/abinit_het.py"
 
 N=het1_zdim10_end48_rampP5_psf10_half_seed1 run $SCRIPT $DREAL --t-extent 20 --lr .0001 -b 8 --domain hartley --players 3 --pdim 256 --base-healpy 2 --nkeptposes 4 --niter 7 --l-end 48 -n 59 --ps-freq 10 --l-ramp-epochs 50 --zdim 10 --half-precision 1 --seed 1
 N=het1_zdim10_end48_rampP5_psf10_half_seed2 run $SCRIPT $DREAL --t-extent 20 --lr .0001 -b 8 --domain hartley --players 3 --pdim 256 --base-healpy 2 --nkeptposes 4 --niter 7 --l-end 48 -n 59 --ps-freq 10 --l-ramp-epochs 50 --zdim 10 --half-precision 1 --seed 2

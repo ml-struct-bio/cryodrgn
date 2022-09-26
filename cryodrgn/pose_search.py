@@ -1,6 +1,7 @@
 import math
 import numpy as np
 import torch
+from cryodrgn.models import unparallelize
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -127,7 +128,7 @@ class PoseSearch:
 
             x = coords @ rot
             if z is not None:
-                x = self.model.cat_z(x, z)
+                x = unparallelize(self.model).cat_z(x, z)
             x = x.to(device)
             # log(f"Evaluating model on {x.shape} = {x.nelement() // 3} points")
             with torch.no_grad():
@@ -297,7 +298,8 @@ class PoseSearch:
         return keep_idx
 
     def getL(self, iter_):
-        return self.Lmin + int(iter_ / self.niter * (self.Lmax - self.Lmin))
+        L = self.Lmin + int(iter_ / self.niter * (self.Lmax - self.Lmin))
+        return min(L, self.lattice.D // 2)
         # return min(self.Lmin * 2 ** iter_, self.Lmax)
 
     def opt_theta_trans(self, images, z=None, images_tilt=None, init_poses=None, ctf_i=None):

@@ -25,7 +25,7 @@ from cryodrgn import dataset
 from cryodrgn import ctf
 
 from cryodrgn.pose import PoseTracker
-from cryodrgn.models import HetOnlyVAE
+from cryodrgn.models import HetOnlyVAE, unparallelize
 from cryodrgn.lattice import Lattice
 from cryodrgn.beta_schedule import get_beta_schedule, LinearSchedule
 
@@ -127,11 +127,6 @@ def preprocess_input(y, yt, lattice, trans):
     if yt is not None: yt = lattice.translate_ht(yt.view(B,-1), trans.unsqueeze(1)).view(B,D,D)
     return y, yt
 
-def _unparallelize(model):
-    if isinstance(model, nn.DataParallel):
-        return model.module
-    return model
-
 def run_batch(model, lattice, y, yt, rot, tilt=None, ctf_params=None, yr=None):
     use_tilt = yt is not None
     use_ctf = ctf_params is not None
@@ -147,8 +142,8 @@ def run_batch(model, lattice, y, yt, rot, tilt=None, ctf_params=None, yr=None):
     else:
         input_ = (y,yt) if yt is not None else (y,)
         if use_ctf: input_ = (x*c.sign() for x in input_) # phase flip by the ctf
-    z_mu, z_logvar = _unparallelize(model).encode(*input_)
-    z = _unparallelize(model).reparameterize(z_mu, z_logvar)
+    z_mu, z_logvar = unparallelize(model).encode(*input_)
+    z = unparallelize(model).reparameterize(z_mu, z_logvar)
 
     # decode 
     mask = lattice.get_circular_mask(D//2) # restrict to circular mask
@@ -203,7 +198,7 @@ def eval_z(model, lattice, data, batch_size, device, trans=None, use_tilt=False,
         if ctf_params is not None: 
             assert not use_real, "Not implemented"
             input_ = (x*c.sign() for x in input_) # phase flip by the ctf
-        z_mu, z_logvar = _unparallelize(model).encode(*input_)
+        z_mu, z_logvar = unparallelize(model).encode(*input_)
         z_mu_all.append(z_mu.detach().cpu().numpy())
         z_logvar_all.append(z_logvar.detach().cpu().numpy())
     z_mu_all = np.vstack(z_mu_all)
@@ -215,7 +210,7 @@ def save_checkpoint(model, optim, epoch, z_mu, z_logvar, out_weights, out_z):
     # save model weights
     torch.save({
         'epoch':epoch,
-        'model_state_dict':_unparallelize(model).state_dict(),
+        'model_state_dict':unparallelize(model).state_dict(),
         'optimizer_state_dict':optim.state_dict(),
         }, out_weights)
     # save z

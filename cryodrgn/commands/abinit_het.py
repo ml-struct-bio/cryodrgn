@@ -24,7 +24,7 @@ from cryodrgn import lie_tools
 
 from cryodrgn.lattice import Lattice
 from cryodrgn.pose_search import PoseSearch
-from cryodrgn.models import HetOnlyVAE
+from cryodrgn.models import HetOnlyVAE, unparallelize
 from cryodrgn.beta_schedule import get_beta_schedule, LinearSchedule
 from cryodrgn.losses import EquivarianceLoss
 
@@ -80,6 +80,7 @@ def add_args(parser):
     group.add_argument('--reset-model-every', type=int, help="If set, reset the model every N epochs")
     group.add_argument('--reset-optim-every', type=int, help="If set, reset the optimizer every N epochs")
     group.add_argument('--reset-optim-after-pretrain', type=int, help="If set, reset the optimizer every N epochs")
+    group.add_argument('--multigpu', action='store_true', help='Parallelize training across all detected GPUs')
 
     group = parser.add_argument_group('Pose Search parameters')
     group.add_argument('--l-start', type=int,default=12, help='Starting L radius (default: %(default)s)')
@@ -139,12 +140,12 @@ def pretrain(model, lattice, optim, minibatch, tilt):
     optim.zero_grad()
 
     rot = lie_tools.random_SO3(B, device=y.device)
-    z = torch.randn((B,model.zdim), device=y.device)
+    z = torch.randn((B,args.zdim), device=y.device)
 
     # reconstruct circle of pixels instead of whole image
     mask = lattice.get_circular_mask(lattice.D//2)
     def gen_slice(R):
-        return model.decode(lattice.coords[mask] @ R, z).view(B,-1)
+        return unparallelize(model).decode(lattice.coords[mask] @ R, z).view(B,-1)
 
     y = y.view(B,-1)[:, mask]
     if use_tilt:
@@ -178,8 +179,8 @@ def train(model, lattice, ps, optim, L, minibatch, beta, beta_control=None, equi
     input_ = (y,yt) if use_tilt else (y,)
     if use_ctf:
         input_ = (x*ctf_i.sign() for x in input_) # phase flip by the ctf
-    z_mu, z_logvar = model.encode(*input_)
-    z = model.reparameterize(z_mu, z_logvar)
+    z_mu, z_logvar = unparallelize(model).encode(*input_)
+    z = unparallelize(model).reparameterize(z_mu, z_logvar)
 
     if equivariance is not None:
         lamb, equivariance_loss = equivariance
@@ -203,7 +204,7 @@ def train(model, lattice, ps, optim, L, minibatch, beta, beta_control=None, equi
     # reconstruct circle of pixels instead of whole image
     mask = lattice.get_circular_mask(L)
     def gen_slice(R):
-        slice_ = model.decode(lattice.coords[mask] @ R, z).view(B,-1)
+        slice_ = model(lattice.coords[mask] @ R, z).view(B,-1)
         if use_ctf:
             slice_ *= ctf_i.view(B,-1)[:,mask]
         return slice_
@@ -262,7 +263,7 @@ def eval_z(model, lattice, data, batch_size, device, trans=None, use_tilt=False,
         input_ = (y,yt) if use_tilt else (y,)
         if ctf_params is not None: 
             input_ = (x*c.sign() for x in input_) # phase flip by the ctf
-        z_mu, z_logvar = model.encode(*input_)
+        z_mu, z_logvar = unparallelize(model).encode(*input_)
         z_mu_all.append(z_mu.detach().cpu().numpy())
         z_logvar_all.append(z_logvar.detach().cpu().numpy())
     z_mu_all = np.vstack(z_mu_all)
@@ -444,22 +445,6 @@ def main(args):
     flog(model)
     flog('{} parameters in model'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
 
-    if args.pose_model_update_freq:
-        pose_model = make_model(args, lattice, enc_mask, in_dim)
-        pose_model.to(device)
-        pose_model.eval()
-    else:
-        pose_model = model
-
-    # save configuration
-    out_config = '{}/config.pkl'.format(args.outdir)
-    save_config(args, data, lattice, model, out_config)
-
-    ps = PoseSearch(pose_model, lattice, args.l_start, args.l_end, tilt,
-                    t_extent=args.t_extent, t_ngrid=args.t_ngrid, niter=args.niter,
-                    nkeptposes=args.nkeptposes, base_healpy=args.base_healpy,
-                    t_xshift=args.t_xshift, t_yshift=args.t_yshift, device=device)
-
     if args.equivariance:
         assert args.equivariance > 0, 'Regularization weight must be positive'
         equivariance_lambda = LinearSchedule(0, args.equivariance, args.eq_start_it, args.eq_end_it)
@@ -482,6 +467,32 @@ def main(args):
             sorted_poses = utils.load_pkl(args.load_poses)
     else:
         start_epoch = 0
+
+    # parallelize
+    if args.multigpu and torch.cuda.device_count() > 1:
+        log(f'Using {torch.cuda.device_count()} GPUs!')
+        args.batch_size *= torch.cuda.device_count()
+        log(f'Increasing batch size to {args.batch_size}')
+        model = nn.DataParallel(model)
+    elif args.multigpu:
+        log(f'WARNING: --multigpu selected, but {torch.cuda.device_count()} GPUs detected')
+
+    if args.pose_model_update_freq:
+        assert not args.multigpu, "TODO"
+        pose_model = make_model(args, lattice, enc_mask, in_dim)
+        pose_model.to(device)
+        pose_model.eval()
+    else:
+        pose_model = model
+
+    # save configuration
+    out_config = '{}/config.pkl'.format(args.outdir)
+    save_config(args, data, lattice, model, out_config)
+
+    ps = PoseSearch(pose_model, lattice, args.l_start, args.l_end, tilt,
+                    t_extent=args.t_extent, t_ngrid=args.t_ngrid, niter=args.niter,
+                    nkeptposes=args.nkeptposes, base_healpy=args.base_healpy,
+                    t_xshift=args.t_xshift, t_yshift=args.t_yshift, device=device)
 
     data_iterator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
 

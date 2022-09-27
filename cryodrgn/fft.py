@@ -1,7 +1,7 @@
 import numpy as np
 try:
     import cupy as cp
-except:
+except ImportError:
     cp = None
 
 def fft2_center(img):
@@ -61,7 +61,6 @@ def symmetrize_ht(ht, preallocated=False):
         D = ht.shape[-1]
         B = ht.shape[0]
         sym_ht = pp.empty((B,D+1,D+1),dtype=ht.dtype)
-        #print("sym_ht:", type(sym_ht))
         sym_ht[:,0:-1,0:-1] = ht
     assert D % 2 == 0
     sym_ht[:,-1,:] = sym_ht[:,0] # last row is the first row

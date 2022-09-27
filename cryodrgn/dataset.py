@@ -1,7 +1,7 @@
 import numpy as np
 try:
     import cupy as cp
-except:
+except ImportError:
     cp = None
 
 import torch
@@ -9,7 +9,6 @@ from torch.utils import data
 import os
 import multiprocessing as mp
 from multiprocessing import Pool
-from tqdm.auto import tqdm
 
 from . import fft
 from . import mrc
@@ -197,8 +196,7 @@ class PreprocessedMRCData(data.Dataset):
 
         log(f'Loaded {len(particles)} {self.D}x{self.D} images')
         if norm is None:
-            norm = self.calc_statistic()
-            #norm  = [np.mean(particles), np.std(particles)]
+            norm = list(self.calc_statistic())
             norm[0] = 0
         
         if not lazy:
@@ -215,14 +213,14 @@ class PreprocessedMRCData(data.Dataset):
             sample_index = pp.sort(pp.random.choice(pp.arange(self.N), max(int(0.1*self.N), max_size), replace=False))
             print(f"--lazy mode, sample 10% of samples to calculate standard error...")
             data = []
-            for d in tqdm(sample_index, leave=False):
+            for d in sample_index:
                 data.append( self.particles[d].get() )
             data = pp.stack(data, 0)
-            MEAN, STD = pp.mean(data), pp.std(data)
-            print(f"STD={STD}, MEAN={MEAN}")
+            mean, std = pp.mean(data), pp.std(data)
         else:
-            MEAN, STD = pp.mean(self.particles), pp.std(self.particles)
-        return [MEAN, STD]
+            mean, std = pp.mean(self.particles), pp.std(self.particles)
+        # print(f"std={std}, mean={mean}")
+        return mean, std
         
     def __len__(self):
         return self.N

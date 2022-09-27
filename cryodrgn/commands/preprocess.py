@@ -6,7 +6,7 @@ import argparse
 import numpy as np
 try:
     import cupy as cp
-except:
+except ImportError:
     cp = None
 import sys, os
 import math
@@ -52,8 +52,7 @@ def warnexists(out):
 
 def main(args):
     if cp is None and args.use_cupy:
-        print("Warning: import cupy failed, set --use_cupy to False automatically")
-        args.use_cupy = False
+        raise RuntimeError("Error: import cupy failed, please unset --use_cupy and try again")
 
     mkbasedir(args.o)
     warnexists(args.o)
@@ -132,12 +131,12 @@ def main(args):
         ret = fft.symmetrize_ht(ret)
         return ret    
 
-    def preprocess_in_batches(imgs, b):
+    def preprocess_in_batches(imgs, b, use_cupy=False):
         ret = np.empty((len(imgs), D+1, D+1), dtype=np.float32)
         Nbatches = math.ceil(len(imgs)/b)
         for ii in range(Nbatches):
             log(f'Processing batch of {b} images ({ii+1} of {Nbatches})')
-            if args.use_cupy:
+            if use_cupy:
                 ret[ii*b:(ii+1)*b,:,:] = cp.asnumpy(preprocess_cupy(imgs[ii*b:(ii+1)*b]))
             else:
                 ret[ii*b:(ii+1)*b,:,:] = preprocess_numpy(imgs[ii*b:(ii+1)*b])
@@ -149,7 +148,7 @@ def main(args):
     for i in range(nchunks):
         log(f'Processing chunk {i+1} of {nchunks}')
         chunk = images[i*args.chunk:(i+1)*args.chunk]
-        new = preprocess_in_batches(chunk, args.b)
+        new = preprocess_in_batches(chunk, args.b, use_cupy=args.use_cupy)
         log(f'New shape: {new.shape}')
         log(f'Saving {out_mrcs[i]}')
         mrc.write(out_mrcs[i], new, is_vol=False)

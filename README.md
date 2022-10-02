@@ -169,21 +169,21 @@ First resize your particle images using the `cryodrgn downsample` command:
       --datadir DATADIR  Optionally provide path to input .mrcs if loading from a
                          .star or .cs file
 
-Since larger images require longer training times, it is recommended to first train cryoDRGN on images downsized to D=128, (128x128 pixel image):
+Since larger images take (much) longer to train, we recommend first downsampling images to 128x128:
     
     $ cryodrgn downsample [input particle stack] -D 128 -o particles.128.mrcs
 
-The maximum recommended image size is D=256, so it is also recommended to downsample your images to D=256 if your images are larger than 256x256:
+The maximum recommended image size is D=256, so we also recommend downsampling your images to D=256 if your images are larger than 256x256:
 
     $ cryodrgn downsample [input particle stack] -D 256 -o particles.256.mrcs
 
 The input file format can be a single `.mrcs` file, a `.txt` file containing paths to multiple `.mrcs` files, a `.star` file, or a cryoSPARC `.cs` file. For the latter two options, if the relative paths to the `.mrcs` are broken, the argument `--datadir` can be used to supply the path to where the `.mrcs` files are located. 
 
-If there are memory issues with large particle stacks, add the `--chunk 10000` argument to save out images as separate `.mrcs` files of 10k images. 
+If there are memory issues with downsampling large particle stacks, add the `--chunk 10000` argument to save images as separate `.mrcs` files of 10k images. 
 
 ### 2. Parse image poses from a consensus homogeneous reconstruction
 
-CryoDRGN expects image poses in a binary pickle format (`.pkl`). Use the `parse_pose_star` or `parse_pose_csparc` command to extract the poses from a `.star` file or a `.cs` file, respectively.
+CryoDRGN expects image poses to be stored in a binary pickle format (`.pkl`). Use the `parse_pose_star` or `parse_pose_csparc` command to extract the poses from a `.star` file or a `.cs` file, respectively.
 
 Example usage to parse image poses from a RELION 3.1 starfile:     
 
@@ -199,7 +199,7 @@ The `-D` argument should be set to the box size of the original consensus recons
 
 ### 3. Parse CTF parameters from a .star/.cs file
 
-CryoDRGN expects CTF parameters in a binary pickle format (`.pkl`). Use the `parse_ctf_star` or `parse_ctf_csparc` command to extract the relevant CTF parameters from a `.star` file or a `.cs` file, respectively.
+CryoDRGN expects CTF parameters in be stored a binary pickle format (`.pkl`). Use the `parse_ctf_star` or `parse_ctf_csparc` command to extract the relevant CTF parameters from a `.star` file or a `.cs` file, respectively.
 
 Example usage for a .star file:
     
@@ -229,7 +229,7 @@ The output structure `backproject.128.mrc` will not match the consensus reconstr
 
 ### 5. Running cryoDRGN heterogeneous reconstruction
 
-When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl) have been prepared, a cryoDRGN model can be trained with following script:
+When the input images (.mrcs), poses (.pkl), and CTF parameters (.pkl) have been prepared, a cryoDRGN model can be trained with following command:
 
     $ cryodrgn train_vae -h
 
@@ -347,7 +347,6 @@ Additional parameters which are typically set include:
 * `-n`, Number of epochs to train
 * `--uninvert-data`, Use if particles are dark on light (negative stain format)
 * Architecture parameters with `--enc-layers`, `--enc-dim`, `--dec-layers`, `--dec-dim`
-* `--amp` to enable mixed precision training (fast!)
 * `--multigpu` to enable parallelized training across multiple GPUs
 
 ### Recommended usage:

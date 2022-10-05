@@ -25,6 +25,8 @@ Old Documentation pages are available at [notion.so](https://www.notion.so/cryoD
 
 A quick start is provided below.
 
+Post any questions as an Github issue or to our google group: https://groups.google.com/g/cryodrgn.
+
 ## New in Version 1.x
 
 ### Version 1.1

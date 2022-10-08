@@ -52,7 +52,7 @@ def add_args(parser):
     group.add_argument('-M', type=int, default=10, help='Number of clusters (default: %(default)s)')
 
     group = parser.add_argument_group('Extra arguments for landscape visualization')
-    group.add_argument('--pc-dim', default=20, help='PCA dimensionality reduction (default: %(default)s)')
+    group.add_argument('--pc-dim', type=int, default=20, help='PCA dimensionality reduction (default: %(default)s)')
     group.add_argument('--plot-dim', type=int, default=5, help='Number of dimensions to plot (default: %(default)s)')
 
     return parser
@@ -87,7 +87,7 @@ class VolumeGenerator:
         analysis.gen_volumes(self.weights, self.config, zfile, outdir, **self.vol_args)
 
 
-def make_mask(outdir, K, dilate, thresh, in_mrc=None):
+def make_mask(outdir, K, dilate, thresh, in_mrc=None, Apix=1):
     if in_mrc is None:
         if thresh is None:
             thresh = []
@@ -118,7 +118,7 @@ def make_mask(outdir, K, dilate, thresh, in_mrc=None):
     # save mask
     out_mrc = f'{outdir}/mask.mrc'
     log(f'Saving {out_mrc}')
-    mrc.write(out_mrc, mask.astype(np.float32))
+    mrc.write(out_mrc, mask.astype(np.float32), Apix=Apix)
 
     # view slices
     out_png = f'{outdir}/mask_slices.png'
@@ -145,13 +145,13 @@ def get_colors_for_cmap(cmap, M):
         colors = plt.cm.get_cmap(cmap)(np.linspace(0,1,M))
     return colors
 
-def analyze_volumes(outdir, K, dim, M, linkage, vol_ind=None, plot_dim=5, particle_ind_orig=None):
+def analyze_volumes(outdir, K, dim, M, linkage, vol_ind=None, plot_dim=5, particle_ind_orig=None, Apix=1):
     cmap = choose_cmap(M)
 
     # load mean volume, compute it if it does not exist
     if not os.path.exists(f'{outdir}/kmeans{K}/vol_mean.mrc'):
         volm = np.array([mrc.parse_mrc(f'{outdir}/kmeans{K}/vol_{i:03d}.mrc')[0] for i in range(K)]).mean(axis=0)
-        mrc.write(f'{outdir}/kmeans{K}/vol_mean.mrc', volm)
+        mrc.write(f'{outdir}/kmeans{K}/vol_mean.mrc', volm, Apix=Apix)
     else:
         volm = mrc.parse_mrc(f'{outdir}/kmeans{K}/vol_mean.mrc')[0]
 
@@ -191,7 +191,7 @@ def analyze_volumes(outdir, K, dim, M, linkage, vol_ind=None, plot_dim=5, partic
         for j, val in enumerate(np.linspace(min_,max_,10,endpoint=True)):
             v = volm.copy()
             v[mask] += pca.components_[i]*val
-            mrc.write(f'{subdir}/{j}.mrc', v)
+            mrc.write(f'{subdir}/{j}.mrc', v, Apix=Apix)
 
     # which plots to show???
     def plot(i,j):
@@ -222,8 +222,8 @@ def analyze_volumes(outdir, K, dim, M, linkage, vol_ind=None, plot_dim=5, partic
         nparticles = np.array([kmeans_counts[i] for i in vol_i]) 
         vol_i_mean = np.average(vol_i_all, axis=0, weights=nparticles)
         vol_i_std = np.average((vol_i_all-vol_i_mean)**2, axis=0, weights=nparticles)**.5
-        mrc.write(f'{subdir}/state_{i}_mean.mrc', vol_i_mean.astype(np.float32))
-        mrc.write(f'{subdir}/state_{i}_std.mrc', vol_i_std.astype(np.float32))
+        mrc.write(f'{subdir}/state_{i}_mean.mrc', vol_i_mean.astype(np.float32), Apix=Apix)
+        mrc.write(f'{subdir}/state_{i}_std.mrc', vol_i_std.astype(np.float32), Apix=Apix)
         if not os.path.exists(f'{subdir}/state_{i}'):
             os.makedirs(f'{subdir}/state_{i}')
         for v in vol_i:
@@ -356,13 +356,13 @@ def main(args):
         
     if args.mask:
         log(f'Using custom mask {args.mask}')
-    make_mask(outdir, K, args.dilate, args.thresh, args.mask)
+    make_mask(outdir, K, args.dilate, args.thresh, args.mask, Apix=args.Apix)
 
     log('Analyzing volumes...')
     # get particle indices if the dataset was originally filtered
     c = utils.load_pkl(config)
     particle_ind = utils.load_pkl(c['dataset_args']['ind']) if c['dataset_args']['ind'] is not None else None
-    analyze_volumes(outdir, K, args.pc_dim, args.M, args.linkage, vol_ind=args.vol_ind, plot_dim=args.plot_dim, particle_ind_orig=particle_ind)
+    analyze_volumes(outdir, K, args.pc_dim, args.M, args.linkage, vol_ind=args.vol_ind, plot_dim=args.plot_dim, particle_ind_orig=particle_ind, Apix=args.Apix)
     td = dt.now()-t1
     log(f'Finished in {td}')
 

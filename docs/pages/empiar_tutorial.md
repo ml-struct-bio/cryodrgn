@@ -490,12 +490,12 @@ In this tutorial we will walk through the commands and analysis for Step 1 and S
     
     ```bash
     $ cryodrgn train_vae data/128/particles.128.mrcs \
-    										--ctf data/ctf.pkl \
-    										--poses data/poses.pkl \
-    										--zdim 8 \
-    										-n 50 \
-    										--uninvert-data \ # NOTE: Use this flag only if particles are dark-on-light (negative stain format)
-    										-o tutorial/00_vae128 > tutorial_00.log
+        --ctf data/ctf.pkl \
+    	--poses data/poses.pkl \
+    	--zdim 8 \
+    	-n 50 \
+    	--uninvert-data \ # NOTE: Use this flag only if particles are dark-on-light (negative stain format)
+    	-o tutorial/00_vae128 > tutorial_00.log
     ```
     
     Inputs:
@@ -656,6 +656,8 @@ Once the model has finished training, use the `cryodrgn analyze` command to visu
       --pc PC               Number of principal component traversals to generate
                             (default: 2)
       --ksample KSAMPLE     Number of kmeans samples to generate (default: 20)
+      --vol-start-index VOL_START_INDEX
+                            Default value of start index for volume generation (default: 0)
     ```
     
 
@@ -1307,6 +1309,8 @@ Similar to Step 5 above, we first run the default analysis pipeline with `cryodr
       --pc PC               Number of principal component traversals to generate
                             (default: 2)
       --ksample KSAMPLE     Number of kmeans samples to generate (default: 20)
+      --vol-start-index VOL_START_INDEX
+                            Default value of start index for volume generation (default: 0)  
     ```
     
 
@@ -1520,6 +1524,7 @@ Additional usage notes:
 - More volumes can be generated with `--ksample N`
 - More PCs (up to the dimension of the latent variable) can be generated with `--pc N`
 - The pixel size and handedness of a `.mrc` file can also be modified later with the scripts `add_psize.py` and `flip_hand.py` in the `utils` subdirectory of the cryodrgn repository.
+- The argument `--vol-start-index` (default `0`) dictates the starting index of `.mrc` filenames for generated volumes (`vol_nnn.mrc`). You may want to set this to `1` if, for example you are using `ChimeraX` to visualize these maps, which by convention numbers all maps that it opens from `1`.
 
 #### Visualization of the latent space
 

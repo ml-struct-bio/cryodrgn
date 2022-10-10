@@ -490,12 +490,12 @@ In this tutorial we will walk through the commands and analysis for Step 1 and S
     
     ```bash
     $ cryodrgn train_vae data/128/particles.128.mrcs \
-    										--ctf data/ctf.pkl \
-    										--poses data/poses.pkl \
-    										--zdim 8 \
-    										-n 50 \
-    										--uninvert-data \ # NOTE: Use this flag only if particles are dark-on-light (negative stain format)
-    										-o tutorial/00_vae128 > tutorial_00.log
+        --ctf data/ctf.pkl \
+    	--poses data/poses.pkl \
+    	--zdim 8 \
+    	-n 50 \
+    	--uninvert-data \ # NOTE: Use this flag only if particles are dark-on-light (negative stain format)
+    	-o tutorial/00_vae128 > tutorial_00.log
     ```
     
     Inputs:

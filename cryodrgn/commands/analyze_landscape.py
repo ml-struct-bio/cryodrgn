@@ -41,6 +41,7 @@ def add_args(parser):
     group.add_argument('--flip', action='store_true', help='Flip handedness of output volume')
     group.add_argument('-d','--downsample', type=int, default=128, help='Downsample volumes to this box size (pixels) (default: %(default)s)')
     group.add_argument('--skip-vol', action='store_true', help='Skip generation of volumes')
+    group.add_argument('--vol-start-index', type=int, default=0, help='Default value of start index for volume generation (default: %(default)s)')
 
     group = parser.add_argument_group('Extra arguments for mask generation')
     group.add_argument('--thresh', type=float, help='Density value to threshold for masking (default: half of max density value)')
@@ -87,12 +88,12 @@ class VolumeGenerator:
         analysis.gen_volumes(self.weights, self.config, zfile, outdir, **self.vol_args)
 
 
-def make_mask(outdir, K, dilate, thresh, in_mrc=None, Apix=1):
+def make_mask(outdir, K, dilate, thresh, in_mrc=None, Apix=1, vol_start_index=0):
     if in_mrc is None:
         if thresh is None:
             thresh = []
             for i in range(K):
-                vol = mrc.parse_mrc(f'{outdir}/kmeans{K}/vol_{i:03d}.mrc')[0]
+                vol = mrc.parse_mrc(f'{outdir}/kmeans{K}/vol_{vol_start_index+i:03d}.mrc')[0]
                 thresh.append(np.percentile(vol, 99.99)/2)
             thresh = np.mean(thresh)
         log(f'Threshold: {thresh}')
@@ -104,10 +105,10 @@ def make_mask(outdir, K, dilate, thresh, in_mrc=None, Apix=1):
             return x
         
         # combine all masks by taking their union
-        vol = mrc.parse_mrc(f'{outdir}/kmeans{K}/vol_000.mrc')[0]
+        vol = mrc.parse_mrc(f'{outdir}/kmeans{K}/vol_{vol_start_index:03d}.mrc')[0]
         mask = ~binary_mask(vol)
         for i in range(1,K):
-            vol = mrc.parse_mrc(f'{outdir}/kmeans{K}/vol_{i:03d}.mrc')[0]
+            vol = mrc.parse_mrc(f'{outdir}/kmeans{K}/vol_{vol_start_index+i:03d}.mrc')[0]
             mask *= ~binary_mask(vol)
         mask = ~mask
     else:
@@ -145,12 +146,12 @@ def get_colors_for_cmap(cmap, M):
         colors = plt.cm.get_cmap(cmap)(np.linspace(0,1,M))
     return colors
 
-def analyze_volumes(outdir, K, dim, M, linkage, vol_ind=None, plot_dim=5, particle_ind_orig=None, Apix=1):
+def analyze_volumes(outdir, K, dim, M, linkage, vol_ind=None, plot_dim=5, particle_ind_orig=None, Apix=1, vol_start_index=0):
     cmap = choose_cmap(M)
 
     # load mean volume, compute it if it does not exist
     if not os.path.exists(f'{outdir}/kmeans{K}/vol_mean.mrc'):
-        volm = np.array([mrc.parse_mrc(f'{outdir}/kmeans{K}/vol_{i:03d}.mrc')[0] for i in range(K)]).mean(axis=0)
+        volm = np.array([mrc.parse_mrc(f'{outdir}/kmeans{K}/vol_{vol_start_index+i:03d}.mrc')[0] for i in range(K)]).mean(axis=0)
         mrc.write(f'{outdir}/kmeans{K}/vol_mean.mrc', volm, Apix=Apix)
     else:
         volm = mrc.parse_mrc(f'{outdir}/kmeans{K}/vol_mean.mrc')[0]
@@ -160,7 +161,7 @@ def analyze_volumes(outdir, K, dim, M, linkage, vol_ind=None, plot_dim=5, partic
     log(f'{mask.sum()} voxels in mask')
 
     # load volumes
-    vols = np.array([mrc.parse_mrc(f'{outdir}/kmeans{K}/vol_{i:03d}.mrc')[0][mask] for i in range(K)])
+    vols = np.array([mrc.parse_mrc(f'{outdir}/kmeans{K}/vol_{vol_start_index+i:03d}.mrc')[0][mask] for i in range(K)])
     vols[vols<0] = 0
 
     # load umap
@@ -188,7 +189,7 @@ def analyze_volumes(outdir, K, dim, M, linkage, vol_ind=None, plot_dim=5, partic
             os.makedirs(subdir)
         min_, max_ = pc[:,i].min(), pc[:,i].max()
         log((min_, max_))
-        for j, val in enumerate(np.linspace(min_,max_,10,endpoint=True)):
+        for j, val in enumerate(np.linspace(min_,max_,10,endpoint=True), start=vol_start_index):
             v = volm.copy()
             v[mask] += pca.components_[i]*val
             mrc.write(f'{subdir}/{j}.mrc', v, Apix=Apix)
@@ -218,7 +219,7 @@ def analyze_volumes(outdir, K, dim, M, linkage, vol_ind=None, plot_dim=5, partic
         log(f'State {i}: {len(vol_i)} volumes')
         if vol_ind is not None:
             vol_i = np.arange(K)[vol_ind][vol_i]
-        vol_i_all = np.array([mrc.parse_mrc(f'{outdir}/kmeans{K}/vol_{i:03d}.mrc')[0] for i in vol_i])
+        vol_i_all = np.array([mrc.parse_mrc(f'{outdir}/kmeans{K}/vol_{vol_start_index+i:03d}.mrc')[0] for i in vol_i])
         nparticles = np.array([kmeans_counts[i] for i in vol_i]) 
         vol_i_mean = np.average(vol_i_all, axis=0, weights=nparticles)
         vol_i_std = np.average((vol_i_all-vol_i_mean)**2, axis=0, weights=nparticles)**.5
@@ -227,7 +228,7 @@ def analyze_volumes(outdir, K, dim, M, linkage, vol_ind=None, plot_dim=5, partic
         if not os.path.exists(f'{subdir}/state_{i}'):
             os.makedirs(f'{subdir}/state_{i}')
         for v in vol_i:
-            os.symlink(f'{outdir}/kmeans{K}/vol_{v:03d}.mrc', f'{subdir}/state_{i}/vol_{v:03d}.mrc')
+            os.symlink(f'{outdir}/kmeans{K}/vol_{vol_start_index+v:03d}.mrc', f'{subdir}/state_{i}/vol_{vol_start_index+v:03d}.mrc')
         particle_ind = analysis.get_ind_for_cluster(kmeans_labels, vol_i)
         log(f'State {i}: {len(particle_ind)} particles')
         if particle_ind_orig is not None:
@@ -332,7 +333,7 @@ def main(args):
     zdim = z.shape[1]
     K = args.sketch_size
 
-    vol_args = dict(Apix=args.Apix, downsample=args.downsample, flip=args.flip, cuda=args.device)
+    vol_args = dict(Apix=args.Apix, downsample=args.downsample, flip=args.flip, device=args.device, vol_start_index=args.vol_start_index)
     vg = VolumeGenerator(weights, config, vol_args, skip_vol=args.skip_vol)
 
     if args.vol_ind is not None:
@@ -356,13 +357,13 @@ def main(args):
         
     if args.mask:
         log(f'Using custom mask {args.mask}')
-    make_mask(outdir, K, args.dilate, args.thresh, args.mask, Apix=args.Apix)
+    make_mask(outdir, K, args.dilate, args.thresh, args.mask, Apix=args.Apix, vol_start_index=args.vol_start_index)
 
     log('Analyzing volumes...')
     # get particle indices if the dataset was originally filtered
     c = utils.load_pkl(config)
     particle_ind = utils.load_pkl(c['dataset_args']['ind']) if c['dataset_args']['ind'] is not None else None
-    analyze_volumes(outdir, K, args.pc_dim, args.M, args.linkage, vol_ind=args.vol_ind, plot_dim=args.plot_dim, particle_ind_orig=particle_ind, Apix=args.Apix)
+    analyze_volumes(outdir, K, args.pc_dim, args.M, args.linkage, vol_ind=args.vol_ind, plot_dim=args.plot_dim, particle_ind_orig=particle_ind, Apix=args.Apix, vol_start_index=args.vol_start_index)
     td = dt.now()-t1
     log(f'Finished in {td}')
 

@@ -1,11 +1,11 @@
 import os
 import re
+import argparse
 import numpy as np
 import pickle
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
-import subprocess
 
 from scipy.spatial.distance import cdist, pdist
 from sklearn.manifold import TSNE
@@ -13,8 +13,8 @@ from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 from sklearn.mixture import GaussianMixture
 
-from . import utils
-log = utils.log
+from cryodrgn.utils import log
+from cryodrgn.commands import eval_vol
 
 def parse_loss(f):
     '''Parse loss from run.log'''
@@ -395,33 +395,42 @@ def plot_projections(imgs, labels=None):
             axes[i].set_title(labels[i])
     return fig, axes
 
-def gen_volumes(weights, config, zfile, outdir, cuda=None,
-                Apix=None, flip=False, downsample=None, invert=None):
+def gen_volumes(weights, config, zfile, outdir, device=None,
+                Apix=None, flip=False, downsample=None, invert=None, vol_start_index=0):
     '''Call cryodrgn eval_vol to generate volumes at specified z values
     Input:
         weights (str): Path to model weights .pkl
         config (str): Path to config.pkl
         zfile (str): Path to .txt file of z values
         outdir (str): Path to output directory for volumes,
-        cuda (int or None): Specify cuda device
+        device (int or None): Specify cuda device
         Apix (float or None): Apix of output volume
         flip (bool): Flag to flip chirality of output volumes
         downsample (int or None): Generate volumes at this box size
         invert (bool): Invert contrast of output volumes
+        vol_start_index (int): Start index for generated volumes
     '''
-    cmd = f'cryodrgn eval_vol {weights} --config {config} --zfile {zfile} -o {outdir}'
+    args = [
+        weights,
+        '--config', config,
+        '--zfile', zfile,
+        '-o', outdir
+    ]
     if Apix is not None:
-        cmd += f' --Apix {Apix}'
+        args += ['--Apix', f'{Apix}']
     if flip:
-        cmd += f' --flip'
+        args += ['--flip']
     if downsample is not None:
-        cmd += f' -d {downsample}'
+        args += ['-d', f'{downsample}']
     if invert:
-        cmd += f' --invert'
-    if cuda is not None:
-        cmd = f'CUDA_VISIBLE_DEVICES={cuda} {cmd}'
-    log(f'Running command:\n{cmd}')
-    return subprocess.check_call(cmd, shell=True)
+        args += ['--invert']
+    if device is not None:
+        args += ['--device', f'{device}']
+    if vol_start_index is not None:
+        args += ['--vol-start-index', f'{vol_start_index}']
+
+    args = eval_vol.add_args(argparse.ArgumentParser()).parse_args(args)
+    return eval_vol.main(args)
 
 def load_dataframe(z=None, pc=None, euler=None, trans=None, labels=None, tsne=None, umap=None, **kwargs):
     '''Load results into a pandas dataframe for downstream analysis'''

@@ -27,6 +27,7 @@ def add_args(parser):
     parser.add_argument('-c', '--config', metavar='PKL', required=True, help='CryoDRGN config.pkl file')
     parser.add_argument('-o', type=os.path.abspath, required=True, help='Output .mrc or directory')
     parser.add_argument('--prefix', default='vol_', help='Prefix when writing out multiple .mrc files (default: %(default)s)')
+    parser.add_argument('--device', type=int, default=0, help='Optionally specify CUDA device')
     parser.add_argument('-v','--verbose',action='store_true',help='Increaes verbosity')
 
     group = parser.add_argument_group('Specify z values')
@@ -41,6 +42,7 @@ def add_args(parser):
     group.add_argument('--flip', action='store_true', help='Flip handedness of output volume')
     group.add_argument('--invert', action='store_true', help='Invert contrast of output volume')
     group.add_argument('-d','--downsample', type=int, help='Downsample volumes to this box size (pixels)')
+    group.add_argument('--vol-start-index', type=int, default=0, help='Default value of start index for volume generation (default: %(default)s)')
 
     group = parser.add_argument_group('Overwrite architecture hyperparameters in config.pkl')
     group.add_argument('--norm', nargs=2, type=float)
@@ -70,11 +72,14 @@ def main(args):
     t1 = dt.now()
 
     ## set the device
-    use_cuda = torch.cuda.is_available()
-    device = torch.device('cuda' if use_cuda else 'cpu')
-    log('Use cuda {}'.format(use_cuda))
-    if not use_cuda:
-        log('WARNING: No GPUs detected')
+    if args.device is not None:
+        use_cuda = torch.cuda.is_available()
+        device = torch.device(f'cuda:{args.device}' if use_cuda else 'cpu')
+        log('Use cuda device {}'.format(args.device))
+        if not use_cuda:
+            log('WARNING: No GPUs used')
+    else:
+        device = 'cpu'
 
     log(args)
     cfg = config.overwrite_config(args.config, args)
@@ -109,7 +114,7 @@ def main(args):
             os.makedirs(args.o)
 
         log(f'Generating {len(z)} volumes')
-        for i,zz in enumerate(z):
+        for i,zz in enumerate(z, start=args.vol_start_index):
             log(zz)
             if args.downsample:
                 extent = lattice.extent * (args.downsample/(D-1))

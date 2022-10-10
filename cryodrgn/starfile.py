@@ -13,8 +13,9 @@ from .mrc import LazyImage
 class Starfile():
     
     def __init__(self, headers, df, data_optics=None, relion31=False):
-        assert headers == list(df.columns), f'{headers} != {df.columns}'
-        self.headers = headers
+        if headers:
+            assert headers == list(df.columns), f'{headers} != {df.columns}'
+        self.headers = headers or list(df.columns)
         self.df = df
         self.data_optics = data_optics
         self.relion31 = relion31

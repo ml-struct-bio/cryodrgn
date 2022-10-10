@@ -1219,7 +1219,7 @@ These `.pkl` files contain a numpy array of indices into the particle stack, whi
 
 #### (Additional Functionality) Writing a new .star file
 
-- The selected particles can be converted to a .star file using `cryodrgn write_starfile`. See Section 8.3 for more details on this script.
+- The selected particles can be converted to a .star file using `cryodrgn_utils write_star`. See Section 8.3 for more details on this script.
 
 #### (Additional Functionality) Extracting a new particle stack
 
@@ -1758,13 +1758,13 @@ In the next section of the jupyter notebook, there is template code for saving t
 
 ### Converting to a .star file
 
-The `cryodrgn write_starfile` tool can be used to convert the index `.pkl` of selected particles (and the input particles `.mrcs`, CTF `.pkl`, and optionally the pose `.pkl`) to `.star` file format:
+The `cryodrgn_utils write_star` tool can be used to convert the index `.pkl` of selected particles (and the input particles `.mrcs`, CTF `.pkl`, and optionally the pose `.pkl`) to `.star` file format:
 
-- `$ cryodrgn write_starfile -h`
+- `$ cryodrgn_utils write_star -h`
     
     ```bash
-    (cryodrgn) $ cryodrgn write_starfile -h
-    usage: cryodrgn write_starfile [-h] [--poses POSES] [--ind IND] [--full-path] -o O [--ref-star REF_STAR] [--keep-micrograph] particles ctf
+    (cryodrgn) $ cryodrgn_utils write_star -h
+    usage: cryodrgn_utils write_star [-h] [--poses POSES] [--ind IND] [--full-path] -o O [--ref-star REF_STAR] [--keep-micrograph] particles ctf
     
     Create a Relion 3.0 star file from a particle stack and ctf parameters
     
@@ -1790,7 +1790,7 @@ Note: The output .star file will only contain CTF (and optionally pose informati
 Example command:
 
 ```bash
-$ cryodrgn write_starfile data/128/particles.128.mrcs data/ctf.pkl \
+$ cryodrgn_utils write_star data/128/particles.128.mrcs data/ctf.pkl \
     --poses data/poses.pkl
     --ind tutorial/01_vae256/ind_selected_classC4.pkl	\	
     --full-path \
@@ -1802,7 +1802,7 @@ $ cryodrgn write_starfile data/128/particles.128.mrcs data/ctf.pkl \
 To re-extract particles from the original micrograph (e.g. at full resolution) 
 
 ```bash
-$ cryodrgn write_starfile data/128/particles.128.mrcs data/ctf.pkl \
+$ cryodrgn_utils write_star data/128/particles.128.mrcs data/ctf.pkl \
     --poses data/poses.pkl
     --ind tutorial/01_vae256/ind_selected_classC4.pkl	\	
     --full-path \

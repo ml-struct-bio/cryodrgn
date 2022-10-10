@@ -73,7 +73,7 @@ def main(args):
 
     if args.ref_star:
         ref_star = starfile.Starfile.load(args.ref_star)
-        assert len(ref_star) == len(particles), f"{len(particles)} != {len(ref_star)}, Number of particles in {args.particles} != number of particles in {args.ref_star}"
+        #assert len(ref_star) == len(particles), f"{len(particles)} != {len(ref_star)}, Number of particles in {args.particles} != number of particles in {args.ref_star}"
 
     # Get index for particles in each .mrcs file
     if args.particles.endswith('.txt'):
@@ -128,7 +128,7 @@ def main(args):
         # TODO: Prepend path from args.ref_star to MicrographName?
         for h in MICROGRAPH_HDRS:
             log(f'  Copying {h}')
-            df[h] = ref_star.df[h]
+            df[h] = ref_star.df[h] if h in ref_star.df.columns else 'NA'
         headers += MICROGRAPH_HDRS
 
     if args.copy_header is not None:

@@ -562,6 +562,10 @@ An example usage of the graph traversal algorithm is here (https://github.com/zh
 
 To perform ab initio heterogeneous reconstruction, use `cryodrgn abinit_het`. The arguments are similar to `cryodrgn train_vae`, but the `--poses` argument is not required.
 
+For homogeneous reconstruction, run `cryodrgn abinit_homo`.
+
+Documentation: https://www.notion.so/CryoDRGN2-quickstart-322823599fce4bd7a391d00bf749ab1f.
+
 The defaults match the settings reported in the [CryoDRGN2 manuscript](https://openaccess.thecvf.com/content/ICCV2021/html/Zhong_CryoDRGN2_Ab_Initio_Neural_Reconstruction_of_3D_Protein_Structures_From_ICCV_2021_paper.html).
 
 ```
@@ -719,9 +723,8 @@ Decoder Network:
                         Activation (default: relu)
 ```
 
-For homogeneous reconstruction, run `cryodrgn abinit_homo`.
 
 ## Contact
 
-Please submit any bug reports, feature requests, or general usage feedback as a github issue, or start a github discussion!
+Please submit any bug reports, feature requests, or general usage feedback as a github issue, or post in the Google Group: https://groups.google.com/g/cryodrgn.
 

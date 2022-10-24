@@ -18,8 +18,8 @@ cryodrgn parse_pose_csparc data/cryosparc_P12_J24_001_particles.cs -D 180 -o out
 python diff_cryodrgn_pkl.py output/pose.cs.pkl data/pose.cs.pkl
 
 # Test write_starfile.py
-cryodrgn write_starfile data/hand.5.mrcs output/ctf1.pkl -o output/test5.star
+cryodrgn_utils write_star data/hand.5.mrcs --ctf output/ctf1.pkl -o output/test5.star
 
-cryodrgn write_starfile data/hand.5.mrcs output/ctf1.pkl --ref-star data/FinalRefinement-OriginalParticles-PfCRT.star --keep-micrograph -o output/test6.star
+cryodrgn_utils write_star data/hand.5.mrcs --ctf output/ctf1.pkl -o output/test6.star
 
 echo All ok

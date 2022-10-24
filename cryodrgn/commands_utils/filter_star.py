@@ -17,7 +17,10 @@ def add_args(parser):
     return parser
 
 def main(args):
-    warnings.warn('cryodrgn_utils filter_star is deprecated. Please use cryodrgn-utils write_star', DeprecationWarning)
+    warning_msg = 'cryodrgn_utils filter_star is deprecated. Please use cryodrgn_utils write_star instead.'
+    warnings.warn(warning_msg, DeprecationWarning)
+    log(f'WARNING: {warning_msg}')
+
     args = write_star.add_args(argparse.ArgumentParser()).parse_args([
         args.input,
         '-o', args.o,

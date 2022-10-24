@@ -1,13 +1,1 @@
-toy_projections.0.mrcs
-toy_projections.1.mrcs
-toy_projections.2.mrcs
-toy_projections.3.mrcs
-toy_projections.4.mrcs
-toy_projections.5.mrcs
-toy_projections.6.mrcs
-toy_projections.7.mrcs
-toy_projections.8.mrcs
-toy_projections.9.mrcs
-toy_projections.10.mrcs
-toy_projections.11.mrcs
-toy_projections.12.mrcs
+toy_projections.mrcs

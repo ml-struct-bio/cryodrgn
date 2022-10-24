@@ -39,7 +39,7 @@ def add_args(parser):
     group.add_argument('--max-threads', type=int, default=16, help='Maximum number of CPU cores for parallelization (default: %(default)s)')
 
     group = parser.add_argument_group('GPU acceleratation')
-    group.add_argument('--use_cupy', action='store_true', help='Use cupy to replace numpy')
+    group.add_argument('--use-cupy', action='store_true', help='Use cupy to replace numpy')
     return parser
 
 def mkbasedir(out):

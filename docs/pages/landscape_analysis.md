@@ -38,41 +38,41 @@ Example usage:
     
     Pipeline to analyze cryoDRGN volume distribution
     
-    positional arguments:
-      workdir               Directory with cryoDRGN results
-      epoch                 Epoch number N to analyze (0-based indexing,
-                            corresponding to z.N.pkl, weights.N.pkl)
-    
-    optional arguments:
-      -h, --help            show this help message and exit
-      --device DEVICE       Optionally specify CUDA device
-      -o OUTDIR, --outdir OUTDIR
-                            Output directory for analysis results (default:
-                            [workdir]/landscape.[epoch])
-      --skip-vol            Skip generation of volumes
-      --skip-umap           Skip running UMAP
-      --skip-mask           Skip generating mask
-      --vol-ind VOL_IND
-      --thresh THRESH       Density value to threshold for masking (default: half
-                            of max density value)
-      --dilate DILATE       Dilate initial mask by this amount (default: 5 pixels)
-    
-    Extra arguments for clustering:
-      --linkage LINKAGE     Linkage for agglomerative clustering (default: average
-      -M M                  Number of clusters (default: 10)
-    
-    Extra arguments for visualization:
-      --pc-dim PC_DIM       PCA dimensionality reduction (default: 50)
-      --plot-dim PLOT_DIM   Number of dimensions to plot (default: 5)
-    
-    Extra arguments for volume generation:
-      --Apix APIX           Pixel size to add to .mrc header (default: 1 A/pix)
-      --flip                Flip handedness of output volume
-      -d DOWNSAMPLE, --downsample DOWNSAMPLE
-                            Downsample volumes to this box size (pixels) (default:
-                            128)
-      --ksample KSAMPLE     Number of volumes to generate for analysis (default:
-                            1000)
+  positional arguments:
+    workdir               Directory with cryoDRGN results
+    epoch                 Epoch number N to analyze (0-based indexing, corresponding to z.N.pkl, weights.N.pkl)
+  
+  optional arguments:
+    -h, --help            show this help message and exit
+    --device DEVICE       Optionally specify CUDA device
+    -o OUTDIR, --outdir OUTDIR
+                          Output directory for landscape analysis results (default: [workdir]/landscape.[epoch])
+    --skip-umap           Skip running UMAP
+    --vol-ind VOL_IND     Index .pkl for filtering volumes
+  
+  Extra arguments for volume generation:
+    -N SKETCH_SIZE, --sketch-size SKETCH_SIZE
+                          Number of volumes to generate for analysis (default: 1000)
+    --Apix APIX           Pixel size to add to .mrc header (default: 1 A/pix)
+    --flip                Flip handedness of output volume
+    -d DOWNSAMPLE, --downsample DOWNSAMPLE
+                          Downsample volumes to this box size (pixels) (default: 128)
+    --skip-vol            Skip generation of volumes
+    --vol-start-index VOL_START_INDEX
+                          Default value of start index for volume generation (default: 0)
+  
+  Extra arguments for mask generation:
+    --thresh THRESH       Density value to threshold for masking (default: half of max density value)
+    --dilate DILATE       Dilate initial mask by this amount (default: 5 pixels)
+    --mask MRC            Path to a custom mask. Must be same box size as generated volumes.
+  
+  Extra arguments for clustering:
+    --linkage LINKAGE     Linkage for agglomerative clustering (e.g. average, ward) (default: average)
+    -M M                  Number of clusters (default: 10)
+  
+  Extra arguments for landscape visualization:
+    --pc-dim PC_DIM       PCA dimensionality reduction (default: 20)
+    --plot-dim PLOT_DIM   Number of dimensions to plot (default: 5)
     ```
     
 

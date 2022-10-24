@@ -52,7 +52,7 @@ def warnexists(out):
 
 def main(args):
     if cp is None and args.use_cupy:
-        raise RuntimeError("Error: import cupy failed, please unset --use_cupy and try again")
+        raise RuntimeError("Error: import cupy failed, please unset --use-cupy and try again")
 
     mkbasedir(args.o)
     warnexists(args.o)

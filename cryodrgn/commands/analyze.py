@@ -35,6 +35,8 @@ def add_args(parser):
     group.add_argument('-d','--downsample', type=int, help='Downsample volumes to this box size (pixels)')
     group.add_argument('--pc', type=int, default=2, help='Number of principal component traversals to generate (default: %(default)s)')
     group.add_argument('--ksample', type=int, default=20, help='Number of kmeans samples to generate (default: %(default)s)')
+    group.add_argument('--vol-start-index', type=int, default=0, help='Default value of start index for volume generation (default: %(default)s)')
+
     return parser
 
 def analyze_z1(z, outdir, vg):
@@ -182,7 +184,7 @@ def main(args):
     z = utils.load_pkl(zfile)
     zdim = z.shape[1]
 
-    vol_args = dict(Apix=args.Apix, downsample=args.downsample, flip=args.flip, cuda=args.device, invert=args.invert)
+    vol_args = dict(Apix=args.Apix, downsample=args.downsample, flip=args.flip, device=args.device, invert=args.invert, vol_start_index=args.vol_start_index)
     vg = VolumeGenerator(weights, config, vol_args, skip_vol=args.skip_vol)
 
     if zdim == 1:

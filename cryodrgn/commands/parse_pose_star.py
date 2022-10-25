@@ -36,7 +36,7 @@ def main(args):
     
     # parse rotations
     keys = ('_rlnAngleRot','_rlnAngleTilt','_rlnAnglePsi')
-    euler = np.empty((N,3))
+    euler = np.zeros((N,3))
     euler[:,0] = s.df['_rlnAngleRot']
     euler[:,1] = s.df['_rlnAngleTilt']
     euler[:,2] = s.df['_rlnAnglePsi']
@@ -44,18 +44,23 @@ def main(args):
     log(euler[0])
     log('Converting to rotation matrix:')
     rot = np.asarray([utils.R_from_relion(*x) for x in euler])
+
     log(rot[0])
 
     # parse translations
-    trans = np.empty((N,2))
+    trans = np.zeros((N,2))
     if '_rlnOriginX' in s.headers and '_rlnOriginY' in s.headers:
+        # translations in pixels
         trans[:,0] = s.df['_rlnOriginX']
         trans[:,1] = s.df['_rlnOriginY']
     elif '_rlnOriginXAngst' in s.headers and '_rlnOriginYAngst' in s.headers:
+        # translation in Angstroms (Relion 3.1)
         assert args.Apix is not None, "Must provide --Apix argument to convert _rlnOriginXAngst and _rlnOriginYAngst translation units"
         trans[:,0] = s.df['_rlnOriginXAngst']
         trans[:,1] = s.df['_rlnOriginYAngst']
         trans /= args.Apix
+    else:
+        log('Warning: Neither _rlnOriginX/Y nor _rlnOriginX/YAngst found. Defaulting to 0s.')
 
     log('Translations (pixels):')
     log(trans[0])

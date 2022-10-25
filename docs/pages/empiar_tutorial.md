@@ -490,12 +490,12 @@ In this tutorial we will walk through the commands and analysis for Step 1 and S
     
     ```bash
     $ cryodrgn train_vae data/128/particles.128.mrcs \
-    										--ctf data/ctf.pkl \
-    										--poses data/poses.pkl \
-    										--zdim 8 \
-    										-n 50 \
-    										--uninvert-data \ # NOTE: Use this flag only if particles are dark-on-light (negative stain format)
-    										-o tutorial/00_vae128 > tutorial_00.log
+        --ctf data/ctf.pkl \
+    	--poses data/poses.pkl \
+    	--zdim 8 \
+    	-n 50 \
+    	--uninvert-data \ # NOTE: Use this flag only if particles are dark-on-light (negative stain format)
+    	-o tutorial/00_vae128 > tutorial_00.log
     ```
     
     Inputs:
@@ -656,6 +656,8 @@ Once the model has finished training, use the `cryodrgn analyze` command to visu
       --pc PC               Number of principal component traversals to generate
                             (default: 2)
       --ksample KSAMPLE     Number of kmeans samples to generate (default: 20)
+      --vol-start-index VOL_START_INDEX
+                            Default value of start index for volume generation (default: 0)
     ```
     
 
@@ -1219,7 +1221,7 @@ These `.pkl` files contain a numpy array of indices into the particle stack, whi
 
 #### (Additional Functionality) Writing a new .star file
 
-- The selected particles can be converted to a .star file using `cryodrgn write_starfile`. See Section 8.3 for more details on this script.
+- The selected particles can be converted to a .star file using `cryodrgn_utils write_star`. See Section 8.3 for more details on this script.
 
 #### (Additional Functionality) Extracting a new particle stack
 
@@ -1307,6 +1309,8 @@ Similar to Step 5 above, we first run the default analysis pipeline with `cryodr
       --pc PC               Number of principal component traversals to generate
                             (default: 2)
       --ksample KSAMPLE     Number of kmeans samples to generate (default: 20)
+      --vol-start-index VOL_START_INDEX
+                            Default value of start index for volume generation (default: 0)  
     ```
     
 
@@ -1520,6 +1524,7 @@ Additional usage notes:
 - More volumes can be generated with `--ksample N`
 - More PCs (up to the dimension of the latent variable) can be generated with `--pc N`
 - The pixel size and handedness of a `.mrc` file can also be modified later with the scripts `add_psize.py` and `flip_hand.py` in the `utils` subdirectory of the cryodrgn repository.
+- The argument `--vol-start-index` (default `0`) dictates the starting index of `.mrc` filenames for generated volumes (`vol_nnn.mrc`). You may want to set this to `1` if, for example you are using `ChimeraX` to visualize these maps, which by convention numbers all maps that it opens from `1`.
 
 #### Visualization of the latent space
 
@@ -1758,13 +1763,13 @@ In the next section of the jupyter notebook, there is template code for saving t
 
 ### Converting to a .star file
 
-The `cryodrgn write_starfile` tool can be used to convert the index `.pkl` of selected particles (and the input particles `.mrcs`, CTF `.pkl`, and optionally the pose `.pkl`) to `.star` file format:
+The `cryodrgn_utils write_star` tool can be used to convert the index `.pkl` of selected particles (and the input particles `.mrcs`, CTF `.pkl`, and optionally the pose `.pkl`) to `.star` file format:
 
-- `$ cryodrgn write_starfile -h`
+- `$ cryodrgn_utils write_star -h`
     
     ```bash
-    (cryodrgn) $ cryodrgn write_starfile -h
-    usage: cryodrgn write_starfile [-h] [--poses POSES] [--ind IND] [--full-path] -o O [--ref-star REF_STAR] [--keep-micrograph] particles ctf
+    (cryodrgn) $ cryodrgn_utils write_star -h
+    usage: cryodrgn_utils write_star [-h] [--poses POSES] [--ind IND] [--full-path] -o O [--ref-star REF_STAR] [--keep-micrograph] particles ctf
     
     Create a Relion 3.0 star file from a particle stack and ctf parameters
     
@@ -1790,7 +1795,7 @@ Note: The output .star file will only contain CTF (and optionally pose informati
 Example command:
 
 ```bash
-$ cryodrgn write_starfile data/128/particles.128.mrcs data/ctf.pkl \
+$ cryodrgn_utils write_star data/128/particles.128.mrcs data/ctf.pkl \
     --poses data/poses.pkl
     --ind tutorial/01_vae256/ind_selected_classC4.pkl	\	
     --full-path \
@@ -1802,7 +1807,7 @@ $ cryodrgn write_starfile data/128/particles.128.mrcs data/ctf.pkl \
 To re-extract particles from the original micrograph (e.g. at full resolution) 
 
 ```bash
-$ cryodrgn write_starfile data/128/particles.128.mrcs data/ctf.pkl \
+$ cryodrgn_utils write_star data/128/particles.128.mrcs data/ctf.pkl \
     --poses data/poses.pkl
     --ind tutorial/01_vae256/ind_selected_classC4.pkl	\	
     --full-path \

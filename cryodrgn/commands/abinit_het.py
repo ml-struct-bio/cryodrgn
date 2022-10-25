@@ -131,7 +131,7 @@ def make_model(args, lattice, enc_mask, in_dim):
         feat_sigma=args.feat_sigma,
     )
 
-def pretrain(model, lattice, optim, minibatch, tilt):
+def pretrain(model, lattice, optim, minibatch, tilt, zdim):
     y, yt = minibatch
     use_tilt = yt is not None
     B = y.size(0)
@@ -140,7 +140,7 @@ def pretrain(model, lattice, optim, minibatch, tilt):
     optim.zero_grad()
 
     rot = lie_tools.random_SO3(B, device=y.device)
-    z = torch.randn((B,args.zdim), device=y.device)
+    z = torch.randn((B, zdim), device=y.device)
 
     # reconstruct circle of pixels instead of whole image
     mask = lattice.get_circular_mask(lattice.D//2)
@@ -231,7 +231,7 @@ def train(model, lattice, ps, optim, L, minibatch, beta, beta_control=None, equi
     if beta_control is None:
         loss = gen_loss + beta*kld/mask.sum()
     else:
-        loss = gen_loss + args.beta_control*(beta-kld)**2/mask.sum()
+        loss = gen_loss + beta_control*(beta-kld)**2/mask.sum()
 
     if equivariance is not None:
         loss += lamb*eq_loss
@@ -504,7 +504,7 @@ def main(args):
         for batch in data_iterator:
             global_it += len(batch[0])
             batch = (batch[0].to(device), None) if tilt is None else (batch[0].to(device), batch[1].to(device))
-            loss = pretrain(model, lattice, optim, batch, tilt=ps.tilt)
+            loss = pretrain(model, lattice, optim, batch, tilt=ps.tilt, zdim=args.zdim)
             if global_it % args.log_interval == 0:
                 flog(f'[Pretrain Iteration {global_it}] loss={loss:4f}')
             if global_it > args.pretrain:

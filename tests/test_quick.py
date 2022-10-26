@@ -1,5 +1,6 @@
 import os.path
 import argparse
+import shutil
 import pytest
 from cryodrgn.commands import train_vae, analyze, analyze_landscape, graph_traversal, eval_vol
 
@@ -49,6 +50,7 @@ def test_run(mrcs_file, poses_file):
         '--pc-dim', '5',
         '--vol-start-index', '1'
     ])
+    shutil.rmtree('output/landscape.19', ignore_errors=True)
     analyze_landscape.main(args)
 
     args = graph_traversal.add_args(argparse.ArgumentParser()).parse_args([

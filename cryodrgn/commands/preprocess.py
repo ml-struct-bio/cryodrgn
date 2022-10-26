@@ -117,6 +117,7 @@ def main(args):
         return ret
 
     def preprocess_cupy(imgs):
+        imgs = cp.asarray(imgs)
         if lazy:
             imgs = _combine_imgs(imgs)
             imgs = cp.concatenate([cp.asarray(i.get()) for i in imgs])

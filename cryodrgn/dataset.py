@@ -61,11 +61,11 @@ class LazyMRCData(data.Dataset):
         self.N = N
         self.D = ny + 1 # after symmetrizing HT
         self.invert_data = invert_data
+        self.use_cupy = use_cupy  # estimate_normalization may need access to self.use_cupy, so save it first
         if norm is None:
             norm = self.estimate_normalization()
         self.norm = norm
         self.window = window_mask(ny, window_r, .99) if window else None
-        self.use_cupy = use_cupy
 
     def estimate_normalization(self, n=1000):
         pp = cp if (self.use_cupy and cp is not None) else np

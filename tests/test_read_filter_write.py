@@ -163,10 +163,6 @@ def test_write_star2(input_mrcs, input_star_all):
 
 
 def test_write_cs(input_cs_all, input_cs_proj_dir):
-
-    if input_cs_proj_dir is None:
-        pytest.skip('Project directory corresponding to the .cs file is not set')
-
     # Test writing out a .cs file from an input .cs file, with filtering
     os.makedirs('output', exist_ok=True)
 

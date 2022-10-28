@@ -28,12 +28,12 @@ def main(args):
     assert input_ext in ('.mrcs', '.txt', '.cs'), 'Input file must be .mrcs/.txt/.cs'
 
     # Either accept an input cs file, or an input .mrcs/.txt with optional ctf/pose pkl file(s)
-    particles = dataset.load_particles(args.particles, lazy=False, datadir=args.datadir)
-
     if input_ext == '.cs':
+        particles = np.load(args.particles)
         assert args.poses is None, '--poses cannot be specified when input is a cs file (poses are obtained from cs file)'
         assert args.ctf is None, '--ctf cannot be specified when input is a cs file (ctf information are obtained from cs file)'
     else:
+        particles = dataset.load_particles(args.particles, lazy=True, datadir=args.datadir)
         if args.ctf:
             ctf = utils.load_pkl(args.ctf)
             assert ctf.shape[1] == 9, "Incorrect CTF pkl format"
@@ -46,7 +46,7 @@ def main(args):
     if args.ind:
         ind = utils.load_pkl(args.ind)
         log(f'Filtering to {len(ind)} particles')
-        particles = particles[ind, :, :]
+        particles = np.array(particles)[ind]
 
     if input_ext == '.cs':
         pass  # Nothing to be done - we've already sub-setted the .cs data

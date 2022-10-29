@@ -52,6 +52,7 @@ def add_args(parser):
     group.add_argument('--datadir', type=os.path.abspath, help='Path prefix to particle stack if loading relative paths from a .star or .cs file')
     group.add_argument('--lazy', action='store_true', help='Lazy loading if full dataset is too large to fit in memory (Should copy dataset to SSD)')
     group.add_argument('--preprocessed', action='store_true', help='Skip preprocessing steps if input data is from cryodrgn preprocess_mrcs')
+    group.add_argument('--num-workers-per-gpu', type=int, default=4, help='Number of num_workers of Dataloader (default: %(default)s)')
     group.add_argument('--max-threads', type=int, default=16, help='Maximum number of CPU cores for FFT parallelization (default: %(default)s)')
 
     group = parser.add_argument_group('Tilt series')
@@ -124,7 +125,8 @@ def preprocess_input(y, yt, lattice, trans):
     B = y.size(0)
     D = lattice.D
     y = lattice.translate_ht(y.view(B,-1), trans.unsqueeze(1)).view(B,D,D)
-    if yt is not None: yt = lattice.translate_ht(yt.view(B,-1), trans.unsqueeze(1)).view(B,D,D)
+    if yt is not None: 
+        yt = lattice.translate_ht(yt.view(B,-1), trans.unsqueeze(1)).view(B,D,D)
     return y, yt
 
 def run_batch(model, lattice, y, yt, rot, tilt=None, ctf_params=None, yr=None):
@@ -314,13 +316,13 @@ def main(args):
     flog(f'Loading dataset from {args.particles}')
     if args.tilt is None:
         tilt = None
-        args.use_real = args.encode_mode == 'conv'
+        args.use_real = (args.encode_mode == 'conv') # Must be False
 
-        if args.lazy:
+        if args.lazy and not args.preprocessed:
             data = dataset.LazyMRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, keepreal=args.use_real, window=args.window, datadir=args.datadir, window_r=args.window_r, flog=flog)
         elif args.preprocessed:
             flog(f'Using preprocessed inputs. Ignoring any --window/--invert-data options')
-            data = dataset.PreprocessedMRCData(args.particles, norm=args.norm, ind=ind, flog=flog)
+            data = dataset.PreprocessedMRCData(args.particles, norm=args.norm, ind=ind, flog=flog, lazy=args.lazy)
         else:
             data = dataset.MRCData(args.particles, norm=args.norm, invert_data=args.invert_data, ind=ind, keepreal=args.use_real, window=args.window, datadir=args.datadir, max_threads=args.max_threads, window_r=args.window_r, flog=flog)
 
@@ -351,7 +353,7 @@ def main(args):
         ctf_params = ctf.load_ctf_for_training(D-1, args.ctf)
         if args.ind is not None: ctf_params = ctf_params[ind]
         assert ctf_params.shape == (Nimg, 8)
-        ctf_params = torch.tensor(ctf_params, device=device)
+        ctf_params = torch.tensor(ctf_params, device=device) # Nx8
     else: ctf_params = None
 
     # instantiate model
@@ -413,16 +415,19 @@ def main(args):
         start_epoch = 0
 
     # parallelize
+    num_workers_per_gpu = args.num_workers_per_gpu
     if args.multigpu and torch.cuda.device_count() > 1:
         log(f'Using {torch.cuda.device_count()} GPUs!')
         args.batch_size *= torch.cuda.device_count()
+        if num_workers_per_gpu * torch.cuda.device_count() > os.cpu_count():
+            num_workers_per_gpu = max(1, os.cpu_count()//torch.cuda.device_count() )
         log(f'Increasing batch size to {args.batch_size}')
         model = nn.DataParallel(model)
     elif args.multigpu:
         log(f'WARNING: --multigpu selected, but {torch.cuda.device_count()} GPUs detected')
 
     # training loop
-    data_generator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
+    data_generator = DataLoader(data, batch_size=args.batch_size, shuffle=True, num_workers=num_workers_per_gpu)
     num_epochs = args.num_epochs
     for epoch in range(start_epoch, num_epochs):
         t2 = dt.now()
@@ -431,7 +436,7 @@ def main(args):
         kld_accum = 0
         eq_loss_accum = 0
         batch_it = 0 
-        for minibatch in data_generator:
+        for minibatch in data_generator: # minibatch: [y, ind]
             ind = minibatch[-1].to(device)
             y = minibatch[0].to(device)
             yt = minibatch[1].to(device) if tilt is not None else None

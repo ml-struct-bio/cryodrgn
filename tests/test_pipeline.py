@@ -48,7 +48,7 @@ def test_pipeline(toy_projections_star, toy_projections_txt, toy_particles_mrcs,
     # Write starfile from an input .mrcs, with ALL particles selected
     args = write_star.add_args(argparse.ArgumentParser()).parse_args([
         toy_particles_mrcs,
-        'output/pipeline_ctf.pkl',
+        '--ctf', 'output/pipeline_ctf.pkl',
         '-o', 'output/pipeline_test.star'
     ])
     write_star.main(args)
@@ -56,7 +56,7 @@ def test_pipeline(toy_projections_star, toy_projections_txt, toy_particles_mrcs,
     # Write starfile from an input .mrcs, with 100 particles selected
     args = write_star.add_args(argparse.ArgumentParser()).parse_args([
         toy_particles_mrcs,
-        'output/pipeline_ctf.pkl',
+        '--ctf', 'output/pipeline_ctf.pkl',
         '--ind', f'{DATA_FOLDER}/ind100.pkl',
         '-o', 'output/pipeline_test100.star'
     ])
@@ -65,7 +65,7 @@ def test_pipeline(toy_projections_star, toy_projections_txt, toy_particles_mrcs,
     # Write starfile from an input .mrcs, with poses, with ALL particles selected
     args = write_star.add_args(argparse.ArgumentParser()).parse_args([
         toy_particles_mrcs,
-        'output/pipeline_ctf.pkl',
+        '--ctf', 'output/pipeline_ctf.pkl',
         '--poses', f'{DATA_FOLDER}/toy_rot_trans.pkl',
         '-o', 'output/pipeline_test.star'
     ])
@@ -92,7 +92,7 @@ def test_pipeline(toy_projections_star, toy_projections_txt, toy_particles_mrcs,
     # Write starfile from an input .txt file with 100 particles selected
     args = write_star.add_args(argparse.ArgumentParser()).parse_args([
         toy_projections_txt,
-        'output/pipeline_ctf.pkl',
+        '--ctf', 'output/pipeline_ctf.pkl',
         '--ind', f'{DATA_FOLDER}/ind100.pkl',
         '-o', 'output/pipeline_test2.star'
     ])
@@ -101,9 +101,7 @@ def test_pipeline(toy_projections_star, toy_projections_txt, toy_particles_mrcs,
     # Test copying micrograph coordinates
     args = write_star.add_args(argparse.ArgumentParser()).parse_args([
         relion_mrcs,
-        f'{DATA_FOLDER}/ctf1.pkl',
-        '--ref-star', relion_starfile,
-        '--keep-micrograph',
+        '--ctf', f'{DATA_FOLDER}/ctf1.pkl',
         '-o', 'output/pipeline_test3.star'
     ])
     write_star.main(args)
@@ -111,10 +109,8 @@ def test_pipeline(toy_projections_star, toy_projections_txt, toy_particles_mrcs,
     # Test copying micrograph coordinates, with filtering
     args = write_star.add_args(argparse.ArgumentParser()).parse_args([
         relion_mrcs,
-        f'{DATA_FOLDER}/ctf1.pkl',
-        '--ref-star', relion_starfile,
+        '--ctf', f'{DATA_FOLDER}/ctf1.pkl',
         '--ind', f'{DATA_FOLDER}/ind3.pkl',
-        '--keep-micrograph',
         '-o', 'output/pipeline_test3_filtered.star',
     ])
     write_star.main(args)

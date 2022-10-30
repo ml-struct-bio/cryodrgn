@@ -21,6 +21,7 @@ def main():
     import cryodrgn.commands_utils.view_header
     import cryodrgn.commands_utils.view_mrcs
     import cryodrgn.commands_utils.write_star
+    import cryodrgn.commands_utils.write_cs
 
     modules = [
         cryodrgn.commands_utils.add_psize,
@@ -38,6 +39,7 @@ def main():
         cryodrgn.commands_utils.view_header,
         cryodrgn.commands_utils.view_mrcs,
         cryodrgn.commands_utils.write_star,
+        cryodrgn.commands_utils.write_cs,
         ]
 
     subparsers = parser.add_subparsers(title='Choose a command')

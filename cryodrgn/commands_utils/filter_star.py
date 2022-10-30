@@ -3,13 +3,12 @@ Filter a .star file
 '''
 
 import argparse
-import numpy as np
-import sys, os
-import pickle
+import os
+import warnings
 
 from cryodrgn import utils
-from cryodrgn import starfile
-log = utils.log 
+from cryodrgn.commands_utils import write_star
+log = utils.log
 
 def add_args(parser):
     parser.add_argument('input', help='Input .star file')
@@ -18,14 +17,17 @@ def add_args(parser):
     return parser
 
 def main(args):
-    s = starfile.Starfile.load(args.input)
-    ind = utils.load_pkl(args.ind)
-    log('Loaded {} particles'.format(len(s.df)))
-    log(f'Index array: {ind}')
-    s.df = s.df.loc[ind]
-    log('Filtered to {} particles'.format(len(s.df)))
-    s.write(args.o)
-    log(f'Saved {args.o}')
+    warning_msg = 'cryodrgn_utils filter_star is deprecated. Please use cryodrgn_utils write_star instead.'
+    warnings.warn(warning_msg, DeprecationWarning)
+    log(f'WARNING: {warning_msg}')
+
+    args = write_star.add_args(argparse.ArgumentParser()).parse_args([
+        args.input,
+        '-o', args.o,
+        '--ind', args.ind,
+    ])
+    write_star.main(args)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)

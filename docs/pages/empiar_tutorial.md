@@ -1763,34 +1763,30 @@ In the next section of the jupyter notebook, there is template code for saving t
 
 ### Converting to a .star file
 
-The `cryodrgn_utils write_star` tool can be used to convert the index `.pkl` of selected particles (and the input particles `.mrcs`, CTF `.pkl`, and optionally the pose `.pkl`) to `.star` file format:
+The `cryodrgn_utils write_star` tool can be used to convert the index `.pkl` of selected particles (and the input particles `.mrcs`, and optionally the ctf and/or pose `.pkl`) to `.star` file format:
 
 - `$ cryodrgn_utils write_star -h`
     
     ```bash
     (cryodrgn) $ cryodrgn_utils write_star -h
-    usage: cryodrgn_utils write_star [-h] [--poses POSES] [--ind IND] [--full-path] -o O [--ref-star REF_STAR] [--keep-micrograph] particles ctf
+    usage: cryodrgn_utils write_star [-h] [--ctf CTF] [--poses POSES] [--ind IND] [--full-path] -o O particles
     
     Create a Relion 3.0 star file from a particle stack and ctf parameters
     
     positional arguments:
       particles            Input particles (.mrcs, .txt)
-      ctf                  Input ctf.pkl
     
     optional arguments:
       -h, --help           show this help message and exit
-      --poses POSES        Optionally include pose.pkl
+      --ctf CTF            Optionally include ctf information from a .pkl file
+      --poses POSES        Optionally include pose information from a .pkl file
       --ind IND            Optionally filter by selected index array (.pkl)
       --full-path          Write the full path to particles (default: relative paths)
       -o O                 Output .star file
-    
-    Optionally include additional star file columns:
-      --ref-star REF_STAR  Reference star file from original import
-      --keep-micrograph    Include micrograph coordinate headers
     ```
     
 
-Note: The output .star file will only contain CTF (and optionally pose information). Any additional fields in the input .cs/.star file will not be preserved — please file a github issue if this functionality is desired.
+Note: This command will add ctf/pose information from the corresponding .pkl files, if provided. Any additional fields in the input .star file will be preserved as-is.
 
 Example command:
 
@@ -1811,9 +1807,7 @@ $ cryodrgn_utils write_star data/128/particles.128.mrcs data/ctf.pkl \
     --poses data/poses.pkl
     --ind tutorial/01_vae256/ind_selected_classC4.pkl	\	
     --full-path \
-    -o class_C4.128.star \
-    --ref-star original_particles.star \
-    --keep-micrograph
+    -o class_C4.128.star
 ```
 
 Note to create a filtered 

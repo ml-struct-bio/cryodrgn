@@ -1,3 +1,4 @@
+import shutil
 import os.path
 import argparse
 import shutil
@@ -41,6 +42,7 @@ def test_run(mrcs_file, poses_file):
     ])
     analyze.main(args)
 
+    shutil.rmtree('output/landscape.19', ignore_errors=True)
     args = analyze_landscape.add_args(argparse.ArgumentParser()).parse_args([
         'output',
         '19',                     # Epoch number to analyze - 0-indexed

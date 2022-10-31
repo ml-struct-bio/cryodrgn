@@ -20,7 +20,7 @@ cryodrgn train_nn data/toy_projections.mrcs --poses data/toy_angles.pkl -o outpu
 cryodrgn train_nn data/toy_projections.mrcs --poses data/toy_angles.pkl -o output/toy_recon --pe-type none --domain hartley -n 2
 
 # Voxel-based backprojection
-cryodrgn backproject_voxel data/hand.mrcs --poses data/hand_rot.pkl -o output/backproject.mrc 
+cryodrgn backproject_voxel data/hand.mrcs --poses data/hand_rot.pkl -o output/backproject.mrc
 cryodrgn backproject_voxel data/hand.mrcs --poses data/hand_rot.pkl -o output/backproject_tilt.mrc --tilt data/hand_tilt.mrcs
 
 # VAE
@@ -43,4 +43,3 @@ cryodrgn train_nn data/hand.mrcs --poses data/hand_rot.pkl -o output/hand_recon 
 cryodrgn parse_ctf_csparc data/cryosparc_P12_J24_001_particles.cs -o test_ctf.pkl
 cryodrgn parse_ctf_star data/toy_projections.star -D 30 --Apix 1 -o test_ctf.pkl
 cryodrgn train_vae  data/toy_projections.mrcs -o output/toy_recon_vae --lr .0001 --seed 0 --poses data/toy_angles.pkl --ctf test_ctf.pkl --zdim 10
-

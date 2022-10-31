@@ -1,13 +1,13 @@
 # cryoDRGN EMPIAR-10076 tutorial
 
-This walkthrough of cryoDRGN analysis of the **assembling ribosome dataset (EMPIAR-10076)** from Figure 5 of [Zhong et al.](https://www.nature.com/articles/s41592-020-01049-4) covers: 
+This walkthrough of cryoDRGN analysis of the **assembling ribosome dataset (EMPIAR-10076)** from Figure 5 of [Zhong et al.](https://www.nature.com/articles/s41592-020-01049-4) covers:
 
-1. preprocessing of inputs, 
+1. preprocessing of inputs,
 2. initial cryoDRGN training and analysis,
-3. removing junk particles, 
-4. high-resolution cryoDRGN training and analysis, 
-5. extracting particles for traditional refinement, and 
-6. generation of trajectories. 
+3. removing junk particles,
+4. high-resolution cryoDRGN training and analysis,
+5. extracting particles for traditional refinement, and
+6. generation of trajectories.
 
 ![Figure 5 from Zhong et al 2021.](assets/Untitled.png)
 *Figure 5 from Zhong et al 2021.*
@@ -27,18 +27,18 @@ This walkthrough of cryoDRGN analysis of the **assembling ribosome dataset (EMPI
     - You can download it directly from the browser, or from the command line using Aspera Connect ([More info here](https://www.ebi.ac.uk/pdbe/emdb/empiar/faq#question_CLDownload))
         - `$ ascp -QT -l 200M -P33001 -i ~/.aspera/connect/etc/asperaweb_id_dsa.openssh [emp_ext3@hx-fasp-1.ebi.ac.uk](mailto:emp_ext3@hx-fasp-1.ebi.ac.uk):/10076 .`
 - This dataset contains 131,899 extracted particles with box size of 320 and pixel size of 1.31 A/pix.
-    
+
     ![Screenshot from the EMPIAR entry](assets/Untitled_1.png)
     *Screenshot from the EMPIAR entry*
-    
+
 - The **particle images** are in the file `L17Combine_weight_local.mrc`. There is a typo in the file extension, so rename this file with the `.mrcs` extension.
     - `$ mv L17Combine_weight_local.mrc L17Combine_weight_local.mrcs`
 - The **CTF parameters** for each particle are in the metadata file, `Parameters.star`. We will extract the CTF parameters from this file later in [Step 3](step3).
     - `$ head Parameters.star -n 20`
-        
+
         ```
         data_
-        
+
         loop_
         _rlnImageName #1
         _rlnMicrographName #2
@@ -58,7 +58,7 @@ This walkthrough of cryoDRGN analysis of the **assembling ribosome dataset (EMPI
         6@L17Combine_weight_local.mrcs 6 15305.0 14920.3 5.28  300 2.7 0.07 38168 5
         7@L17Combine_weight_local.mrcs 7 15177.4 14792.7 5.28  300 2.7 0.07 38168 5
         ```
-        
+
 - Poses (i.e. particle alignments) are **not** present in the deposited data, so we will next run a consensus reconstruction.
 
 ---
@@ -88,55 +88,55 @@ This walkthrough of cryoDRGN analysis of the **assembling ribosome dataset (EMPI
 
 In this step, we will first extract poses ([Step 3.1](step3-1)), then extract CTF parameters ([Step 3.2](step3-2)), then downsample our images ([Step 3.3](step3-3)).
 
-Pose and CTF parameters ****are stored in various formats depending on the upstream processing software. CryoDRGN contains scripts to convert this information to a `.pkl` file format. 
+Pose and CTF parameters ****are stored in various formats depending on the upstream processing software. CryoDRGN contains scripts to convert this information to a `.pkl` file format.
 
 - What are `.pkl` files?
-    
+
     A [pickle](https://docs.python.org/3/library/pickle.html) is a python module/format that allows you to serialize most python data objects to disk and re-load without any type conversion or file parsing. You can view any .pkl object using the cryoDRGN API :
-    
+
     ```python
     from cryodrgn import utils
     z = utils.load_pkl('z.pkl')
     utils.save_pkl(z, 'z.copy.pkl')
     ```
-    
+
 (step3-1)=
 ### 3.1) Convert poses to cryoDRGN format
 
 - CryoDRGN has two executables for parsing pose information (i.e. particle alignments) from either a cryoSPARC `.cs` file or a RELION `.star` file.
     - `cryodrgn parse_pose_star -h`
-        
+
         ```
         (cryodrgn) $ cryodrgn parse_pose_star -h
         usage: cryodrgn parse_pose_star [-h] -o PKL [-D D] [--Apix APIX] input
-        
+
         Parse image poses from RELION .star file
-        
+
         positional arguments:
           input        RELION .star file
-        
+
         optional arguments:
           -h, --help   show this help message and exit
           -o PKL       Output pose.pkl
-        
+
         Optionally provide missing image parameters:
           -D D         Box size of reconstruction (pixels)
           --Apix APIX  Pixel size (A); Required if translations are specified in Angstroms
         ```
-        
+
         - `-D` should be set to the box size of the refinement
         - Note: the flag  `--relion31` and the argument  `--Apix X.XX` are required if the .star file from RELION version 3.1 or later (e.g. if the .star file contains the `data_optics` group). The pixel size should be the pixel size of the refinement.
     - `cryodrgn parse_pose_csparc -h`
-        
+
         ```
         (cryodrgn) $ cryodrgn parse_pose_csparc -h
         usage: cryodrgn parse_pose_csparc [-h] [--abinit] [--hetrefine] -D D -o PKL input
-        
+
         Parse image poses from a cryoSPARC .cs metafile
-        
+
         positional arguments:
           input        Cryosparc .cs file
-        
+
         optional arguments:
           -h, --help   show this help message and exit
           --abinit     Flag if results are from ab-initio reconstruction
@@ -144,11 +144,11 @@ Pose and CTF parameters ****are stored in various formats depending on the upstr
           -D D         Box size of reconstruction (pixels)
           -o PKL       Output pose.pkl
         ```
-        
+
 - For this tutorial, we will use `cryodrgn parse_pose_csparc`  to extract poses from the cryoSPARC refinement output `cryosparc_P4_J33_004_particles.cs` from [Step 2](step2).
     - Example command and output:
         - `$ cryodrgn parse_pose_csparc cryosparc_P4_J33_004_particles.cs -D 320 -o poses.pkl`
-            
+
             ```
             (cryodrgn) [Wed Feb 03 17:12 het] cryodrgn parse_pose_csparc empiar10076/P4/J33/cryosparc_P4_J33_004_particles.cs -D 320 -o poses.pkl
             0 uid 3300296402854382810
@@ -195,7 +195,7 @@ Pose and CTF parameters ****are stored in various formats depending on the upstr
             2021-02-03 17:13:13     (131899, 2)
             2021-02-03 17:13:13     Writing /red/zhonge/cryoem/vae3d/00_data/empiar10076/het/poses.pkl
             ```
-            
+
 - Note: `-D` should be set to the box size of the refinement, which was 320 in this case
 
 ---
@@ -204,21 +204,21 @@ Pose and CTF parameters ****are stored in various formats depending on the upstr
 
 - CryoDRGN has two executables for parsing CTF information from either a cryoSPARC `.cs` file or a RELION `.star` file.
     - `cryodrgn parse_ctf_star -h`
-        
+
         ```
         (cryodrgn) $ cryodrgn parse_ctf_star -h
         usage: cryodrgn parse_ctf_star [-h] -o O [--png PNG] [-D D] [--Apix APIX] [--kv KV] [--cs CS] [-w W] [--ps PS] star
-        
+
         Parse CTF parameters from a RELION .star file
-        
+
         positional arguments:
           star         Input
-        
+
         optional arguments:
           -h, --help   show this help message and exit
           -o O         Output pkl of CTF parameters
           --png PNG    Optionally plot the CTF
-        
+
         Optionally provide missing image parameters:
           -D D         Image size in pixels
           --Apix APIX  Angstroms per pixel
@@ -227,35 +227,35 @@ Pose and CTF parameters ****are stored in various formats depending on the upstr
           -w W         Amplitude contrast ratio
           --ps PS      Phase shift (deg)
         ```
-        
+
     - `cryodrgn parse_ctf_csparc -h`
-        
+
         ```
         (cryodrgn) $ cryodrgn parse_ctf_csparc -h
         usage: cryodrgn parse_ctf_csparc [-h] -o O [--png PNG] [-D D] [--Apix APIX] cs
-        
+
         Parse CTF parameters from a cryoSPARC particles.cs file
-        
+
         positional arguments:
           cs           Input cryosparc particles.cs file
-        
+
         optional arguments:
           -h, --help   show this help message and exit
           -o O         Output pkl of CTF parameters
           --png PNG    Optionally plot the CTF
-        
+
         Optionally provide missing image parameters:
           -D D         Image size in pixels
           --Apix APIX  Angstroms per pixel
         ```
-        
+
 - We can extract the CTF parameters from the deposited Parameters.star file:
     - Example command:
-        
+
         `$ cryodrgn parse_ctf_star Parameters.star --Apix 1.31 -D 320 -o ctf.pkl --ps 0`
-        
+
         - Example output
-            
+
             ```
             (cryodrgn) [Wed Feb 03 17:02 empiar10076] cryodrgn parse_ctf_star Parameters.star --Apix 1.31 -D 320 -o ctf.pkl --ps 0
             2021-02-03 17:02:33     131899 particles
@@ -272,15 +272,15 @@ Pose and CTF parameters ****are stored in various formats depending on the upstr
             2021-02-03 17:02:33     Phase shift (deg) : 0.0
             2021-02-03 17:02:33     Saving /red/sparky/data/cryosparc/l17_davis_cell/raw_stack/ctf.pkl
             ```
-            
+
         - The pixel size ( `--Apix 1.31`), image size (`-D 320`), and phase shift (`--ps 0`) are provided separately since they are not present in the .star file.
 - This metadata is also present in the cryoSPARC refinement .cs file. Below is an example usage of `cryodrgn parse_ctf_csparc` to extract the CTF information from the `cryosparc_P4_J33_004_particles.cs` file:
     - Example command:
-        
+
         `$ cryodrgn parse_ctf_csparc cryosparc_P4_J33_004_particles.cs -o ctf.pkl`
-        
+
         - Example output
-            
+
             ```
             (cryodrgn) [Wed Feb 03 17:13 het] cryodrgn parse_ctf_csparc empiar10076/P4/J33/cryosparc_P4_J33_004_particles.cs -o ctf.pkl
             2021-02-03 17:16:52     131899 particles
@@ -295,27 +295,27 @@ Pose and CTF parameters ****are stored in various formats depending on the upstr
             2021-02-03 17:16:52     Phase shift (deg) : 0.0
             2021-02-03 17:16:52     Saving /red/zhonge/cryoem/vae3d/00_data/empiar10076/het/ctf.pkl
             ```
-            
+
 
 ---
 (step3-3)=
 ### 3.3) Downsample images
 
-CryoDRGN training time is highly dependent on the image size (See Fig. 2E in Zhong et al.). We will downsample images to an image size of **D=128** (where D is the image dimension in pixels, i.e. a 128x128 image) using `cryodrgn downsample`. Later on, we will train a higher resolution model using larger images (**D=256**). 
+CryoDRGN training time is highly dependent on the image size (See Fig. 2E in Zhong et al.). We will downsample images to an image size of **D=128** (where D is the image dimension in pixels, i.e. a 128x128 image) using `cryodrgn downsample`. Later on, we will train a higher resolution model using larger images (**D=256**).
 
 Because of the tradeoffs between training time and representation capacity of the neural networks, we recommend training on images with a maximum of D=256. In general, to optimize training time, we encourage using the smallest possible image size given the desired/expected resolution of the final density maps and their motions. Here, using an image size of (256x256) corresponds to a pixel size of 1.31*320/256 = 1.6375 A/pix and a Nyquist resolution of 3.275 A, which is still below the resolutions of the published density maps (~4-5 A).
 
 - `cryodrgn downsample -h`
-    
+
     ```
     (cryodrgn) $ cryodrgn downsample -h
     usage: cryodrgn downsample [-h] -D D -o MRCS [-b B] [--is-vol] [--chunk CHUNK] [--datadir DATADIR] [--max-threads MAX_THREADS] mrcs
-    
+
     Downsample an image stack or volume by clipping fourier frequencies
-    
+
     positional arguments:
       mrcs                  Input particles or volume (.mrc, .mrcs, .star, or .txt)
-    
+
     optional arguments:
       -h, --help            show this help message and exit
       -D D                  New box size in pixels, must be even
@@ -327,28 +327,28 @@ Because of the tradeoffs between training time and representation capacity of th
       --max-threads MAX_THREADS
                             Maximum number of CPU cores for parallelization (default: 16)
     ```
-    
+
 
 **Downsample to D=256**
 
 - First downsample our input file `L17Combine_weight_local.mrcs` to an image size of D=256, saved as the output file `particles.256.mrcs`.
     - Example command:
-        
+
         ```bash
         (cryodrgn) $ cryodrgn downsample L17Combine_weight_local.mrcs -D 256 -o particles.256.mrcs --chunk 50000
         ```
-        
+
         - Use the `--chunk 50000` flag to chunk the output into separate .mrcs containing 50k images each to avoid out-of-memory errors when saving out a large particle stack. Now, instead of a single output file, downsampled images will be stored in three separate .mrcs files  (`particles.256.0.mrcs`, `particles.256.1.mrcs`, and `particles.256.2.mrcs`), the first two containing 50k images, and the third with the remaining 31,899 images, and a text file, `particles.256.txt` listing the three .mrcs files.
         - Note: Chunked .mrcs files that are listed in a .txt file can contain either absolute paths or relative paths. By default the .txt file will only contain the file names (therefore it must remain in the same directory as the .mrcs).
 
 **Downsample to D=128**
 
 - Next downsample our D=256 particles to D=128. Example command:
-    
+
     ```bash
     (cryodrgn) $ $ cryodrgn downsample particles.256.txt -D 128 -o particles.128.mrcs
     ```
-    
+
     - The downsampled image stack will be 8.1GB
     - Note: You can also downsample from the original particles; it is faster (and equivalent) to do so from the smaller D=256 images.
 
@@ -357,7 +357,7 @@ Because of the tradeoffs between training time and representation capacity of th
 - `cryodrgn downsample` can also be used to downsample volumes using the `--is-vol` argument.
 - The input format to specify the particle stack may also be a `.star` file or a `.cs` file.
     - If the paths to the .mrcs particles given by the .star/.cs file are broken, you can overwrite them using the argument `--datadir [PATH TO DIRECTORY WITH .MRCS]` . In some cases, the `--datadir` path should point to the *project directory* in order to complete relative file paths given in the .star/.cs file.
-    
+
 
 ---
 
@@ -366,7 +366,7 @@ Because of the tradeoffs between training time and representation capacity of th
 When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl) have been prepared, a cryoDRGN model can be trained with the following executable:
 
 - `cryodrgn train_vae -h`
-    
+
     ```
     (cryodrgn) $ cryodrgn train_vae -h
     usage: cryodrgn train_vae [-h] -o OUTDIR --zdim ZDIM --poses POSES [--ctf pkl] [--load WEIGHTS.PKL] [--checkpoint CHECKPOINT]
@@ -378,12 +378,12 @@ When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl
                               [--pe-type {geom_ft,geom_full,geom_lowf,geom_nohighf,linear_lowf,gaussian,none}] [--feat-sigma FEAT_SIGMA] [--pe-dim PE_DIM]
                               [--domain {hartley,fourier}] [--activation {relu,leaky_relu}]
                               particles
-    
+
     Train a VAE for heterogeneous reconstruction with known pose
-    
+
     positional arguments:
       particles             Input particles (.mrcs, .star, .cs, or .txt)
-    
+
     optional arguments:
       -h, --help            show this help message and exit
       -o OUTDIR, --outdir OUTDIR
@@ -398,7 +398,7 @@ When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl
                             Logging interval in N_IMGS (default: 1000)
       -v, --verbose         Increaes verbosity
       --seed SEED           Random seed
-    
+
     Dataset loading:
       --ind PKL             Filter particle stack by these indices
       --uninvert-data       Do not invert data sign
@@ -409,11 +409,11 @@ When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl
       --preprocessed        Skip preprocessing steps if input data is from cryodrgn preprocess_mrcs
       --max-threads MAX_THREADS
                             Maximum number of CPU cores for FFT parallelization (default: 16)
-    
+
     Tilt series:
       --tilt TILT           Particles (.mrcs)
       --tilt-deg TILT_DEG   X-axis tilt offset in degrees (default: 45)
-    
+
     Training parameters:
       -n NUM_EPOCHS, --num-epochs NUM_EPOCHS
                             Number of training epochs (default: 20)
@@ -427,14 +427,14 @@ When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl
       --norm NORM NORM      Data normalization as shift, 1/scale (default: 0, std of dataset)
       --amp                 Accelerate training speed with mixed-precision training
       --multigpu            Parallelize training across all detected GPUs
-    
+
     Pose SGD:
       --do-pose-sgd         Refine poses with gradient descent
       --pretrain PRETRAIN   Number of epochs with fixed poses before pose SGD (default: 1)
       --emb-type {s2s2,quat}
                             SO(3) embedding type for pose SGD (default: quat)
       --pose-lr POSE_LR     Learning rate for pose optimizer (default: 0.0003)
-    
+
     Encoder Network:
       --enc-layers QLAYERS  Number of hidden layers (default: 3)
       --enc-dim QDIM        Number of nodes in hidden layers (default: 256)
@@ -442,7 +442,7 @@ When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl
                             Type of encoder network (default: resid)
       --enc-mask ENC_MASK   Circular mask of image for encoder (default: D/2; -1 for no mask)
       --use-real            Use real space image for encoder (for convolutional encoder)
-    
+
     Decoder Network:
       --dec-layers PLAYERS  Number of hidden layers (default: 3)
       --dec-dim PDIM        Number of nodes in hidden layers (default: 256)
@@ -456,7 +456,7 @@ When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl
       --activation {relu,leaky_relu}
                             Activation (default: relu)
     ```
-    
+
 
 Many of the parameters of this script have sensible defaults. The required arguments are:
 
@@ -480,14 +480,14 @@ Additional parameters which are typically set include:
 2. After any particle filtering, then train a larger model with the `--enc-dim 1024` and `--dec-dim 1024` arguments, which in theory can learn more heterogeneity. **(D=128, large 1024x3 architecture)**
 3. Finally, after validation, pose optimization, and any necessary particle filtering, then train on the full resolution image stack (up to D=256) with a large architecture. **(D=256, large 1024x3 architecture)**
 
-In this tutorial we will walk through the commands and analysis for Step 1 and Step 3 in the above workflow. You can run step 2 on your own to see how the results compare. 
+In this tutorial we will walk through the commands and analysis for Step 1 and Step 3 in the above workflow. You can run step 2 on your own to see how the results compare.
 
 #### CryoDRGN initial training
 
 - Run `cryodrgn train_vae` on the full particle stack of D=128 particles (1 GPU; 64GB memory requirement)
-    
+
     Example command:
-    
+
     ```bash
     $ cryodrgn train_vae data/128/particles.128.mrcs \
         --ctf data/ctf.pkl \
@@ -497,24 +497,24 @@ In this tutorial we will walk through the commands and analysis for Step 1 and S
     	--uninvert-data \ # NOTE: Use this flag only if particles are dark-on-light (negative stain format)
     	-o tutorial/00_vae128 > tutorial_00.log
     ```
-    
+
     Inputs:
-    
+
     - particles (.mrcs, .star, .txt, or .cs) format, here `data/128/particles.128.mrcs`
     - `--ctf` ctf parameters in a cryodrgn .pkl file, here `data/ctf.pkl`
     - `--poses` poses in a cryodrgn .pkl file, here `data/poses.pkl`
-    
+
     Arguments:
-    
+
     - `--zdim 8` to specify the dimension of the latent variable (i.e. each particle will get assigned an 8-dimensional vector as its *latent embedding*)
     - `-n 50` to specify 50 epochs of training (i.e. 50 iterations through the dataset)
     - `-o tutorial/00`, a clean output directory (will get created if it does not already exist)
     - Use the `--uninvert-data` flag to flip the data sign of the particles dataset (This flag is not needed for the majority of cryo-EM datasets)
-    
+
     Outputs:
-    
+
     - Log
-        
+
         ```
         2021-02-03 17:46:01     /nobackup/users/zhonge/anaconda3/envs/cryodrgn4/bin/cryodrgn train_vae data/128/projections.128.mrcs --ctf data/ctf.new.pkl --poses data/pose.pkl --zdim 8 -n 50 -o tutorial/00
         2021-02-03 17:46:01     Namespace(activation='relu', amp=False, batch_size=8, beta=None, beta_control=None, checkpoint=1, ctf='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/data/ctf.new.pkl', datadir=None, do_pose_sgd=False, domain='fourier', emb_type='quat', enc_mask=None, encode_mode='resid', func=<function main at 0x2000ab052840>, ind=None, invert_data=True, lazy=False, load=None, log_interval=1000, lr=0.0001, multigpu=False, norm=None, num_epochs=50, outdir='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00', particles='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/data/128/projections.128.mrcs', pdim=256, pe_dim=None, pe_type='geom_lowf', players=3, pose_lr=0.0003, poses='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/data/pose.pkl', pretrain=1, qdim=256, qlayers=3, relion31=False, seed=43266, tilt=None, tilt_deg=45, use_real=False, verbose=False, wd=0, window=True, zdim=8)
@@ -578,11 +578,11 @@ In this tutorial we will walk through the commands and analysis for Step 1 and S
         2021-02-03 17:48:11     # [Train Epoch: 1/50] [1000/131899 images] gen loss=1.044404, kld=2.817325, beta=0.125000, loss=1.044431
         2021-02-03 17:48:14     # [Train Epoch: 1/50] [2000/131899 images] gen loss=1.039896, kld=7.318097, beta=0.125000, loss=1.039967
         2021-02-03 17:48:17     # [Train Epoch: 1/50] [3000/131899 images] gen loss=1.010868, kld=8.658796, beta=0.125000, loss=1.010953
-        
+
         .
         .
         .
-        
+
         2021-02-04 00:39:24     # [Train Epoch: 50/50] [126000/131899 images] gen loss=0.989016, kld=26.381516, beta=0.125000, loss=0.989272
         2021-02-04 00:39:28     # [Train Epoch: 50/50] [127000/131899 images] gen loss=0.948055, kld=24.869091, beta=0.125000, loss=0.948297
         2021-02-04 00:39:31     # [Train Epoch: 50/50] [128000/131899 images] gen loss=1.017258, kld=25.462738, beta=0.125000, loss=1.017505
@@ -592,16 +592,16 @@ In this tutorial we will walk through the commands and analysis for Step 1 and S
         2021-02-04 00:39:44     # =====> Epoch: 50 Average gen loss = 0.998177, KLD = 26.589939, total loss = 0.998435; Finished in 0:07:27.660706
         2021-02-04 00:41:18     Finsihed in 6:55:17.244481 (0:08:18.344890 per epoch)
         ```
-        
-    
+
+
     The training will take ~7.5 min/epoch on a V100 GPU, requiring ~7 hours total. The output directory will contain the following files:
-    
+
     - `config.pkl` a configuration file containing all inputs and settings for the job
     - `weights.pkl` the final neural network weights (and intermediate checkpoints `weights.n.pkl`)
     - `z.pkl` the final per-particle latent embeddings (and embeddings from intermediate epochs `z.n.pkl`)
-    
+
      Note you can use `cryodrgn analyze` to analyze intermediate epochs during training.
-    
+
 
 #### Extending or restarting from a checkpoint
 
@@ -624,21 +624,21 @@ $ cryodrgn train_vae data/128/particles.128.mrcs \
 Once the model has finished training, use the `cryodrgn analyze` command to visualize the latent space, generate density maps, and generate template Jupyter notebooks for further interactive filtering, visualization, and analysis.
 
 - `$ cryodrgn analyze -h`
-    
+
     ```
     (cryodrgn) $ cryodrgn analyze -h
     usage: cryodrgn analyze [-h] [--device DEVICE] [-o OUTDIR] [--skip-vol]
                             [--skip-umap] [--Apix APIX] [--flip] [-d DOWNSAMPLE]
                             [--pc PC] [--ksample KSAMPLE]
                             workdir epoch
-    
+
     Visualize latent space and generate volumes
-    
+
     positional arguments:
       workdir               Directory with cryoDRGN results
       epoch                 Epoch number N to analyze (0-based indexing,
                             corresponding to z.N.pkl, weights.N.pkl)
-    
+
     optional arguments:
       -h, --help            show this help message and exit
       --device DEVICE       Optionally specify CUDA device
@@ -647,7 +647,7 @@ Once the model has finished training, use the `cryodrgn analyze` command to visu
                             [workdir]/analyze.[epoch])
       --skip-vol            Skip generation of volumes
       --skip-umap           Skip running UMAP
-    
+
     Extra arguments for volume generation:
       --Apix APIX           Pixel size to add to .mrc header (default: 1 A/pix)
       --flip                Flip handedness of output volume
@@ -659,7 +659,7 @@ Once the model has finished training, use the `cryodrgn analyze` command to visu
       --vol-start-index VOL_START_INDEX
                             Default value of start index for volume generation (default: 0)
     ```
-    
+
 
 This script runs a series of standard analyses that will be further described below:
 
@@ -677,7 +677,7 @@ $ cryodrgn analyze tutorial/00_vae128 49 --flip --Apix 3.275
 ```
 
 - Example output log
-    
+
     ```
     (cryodrgn4) [Thu Feb 04 02:57 00] cryodrgn analyze . 49
     2021-02-04 02:57:18     Saving results to /nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/analyze.49
@@ -869,7 +869,7 @@ $ cryodrgn analyze tutorial/00_vae128 49 --flip --Apix 3.275
     2021-02-04 03:02:38     /nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/analyze.49/cryoDRGN_filtering.ipynb
     2021-02-04 03:02:38     Finished in 0:05:19.831017
     ```
-    
+
 
 ### **What's in the analysis directory?**
 
@@ -905,7 +905,7 @@ umap.png
 
 umap_hexbin.png
 
-We can see there are 5 major clusters in the latent space similar to Figure 5A in Zhong et al. We will show how these align with the 4 major classes of the LSU ribosome + a fifth junk class, and how to remove the fifth junk class from the particle stack. 
+We can see there are 5 major clusters in the latent space similar to Figure 5A in Zhong et al. We will show how these align with the 4 major classes of the LSU ribosome + a fifth junk class, and how to remove the fifth junk class from the particle stack.
 
 ### Sampled density maps
 
@@ -920,9 +920,9 @@ labels.pkl       vol_001.mrc  vol_005.mrc  vol_009.mrc  vol_013.mrc  vol_017.mrc
 umap_hex.png     vol_002.mrc  vol_006.mrc  vol_010.mrc  vol_014.mrc  vol_018.mrc  z_values.txt
 ```
 
-`cryodrgn analyze` uses the *k*-means clustering algorithm to *partition* the latent space into  k regions (by default k=20), and generate a density map from the center of each of these clusters. The goal is to provide an initial set of summary density maps to visually inspect, not to assign clusters. 
+`cryodrgn analyze` uses the *k*-means clustering algorithm to *partition* the latent space into  k regions (by default k=20), and generate a density map from the center of each of these clusters. The goal is to provide an initial set of summary density maps to visually inspect, not to assign clusters.
 
-**Note:** The number of volumes can be modified with the argument `--ksample 50`. 
+**Note:** The number of volumes can be modified with the argument `--ksample 50`.
 
 <iframe src="https://widgets.figshare.com/articles/21171049/embed?show_title=1" width="568" height="351" allowfullscreen frameborder="0"></iframe>
 
@@ -1107,9 +1107,9 @@ In the next section, we will show the steps to remove the center cluster in the 
 
 ### 6.3) **Filtering by GMM cluster label**
 
-In this section, we demo the steps and outputs for filtering out the junk cluster using a Gaussian mixture model (GMM) clustering algorithm. 
+In this section, we demo the steps and outputs for filtering out the junk cluster using a Gaussian mixture model (GMM) clustering algorithm.
 
-The "Filtering by cluster" section of the Jupyter notebook has two subsections — filtering by kmeans clustering and by GMM clustering. You can try both options and play around with the cluster # and the random seed. 
+The "Filtering by cluster" section of the Jupyter notebook has two subsections — filtering by kmeans clustering and by GMM clustering. You can try both options and play around with the cluster # and the random seed.
 
 In the GMM-clustering section, change the cluster number (G=6 here) and rerun as necessary to get the desired clustering. Because GMM is a non-deterministic algorithm, the results are sensitive to the initial random seed. You can rerun the cells to try a different random seed.
 
@@ -1155,7 +1155,7 @@ These plots will be automatically generated that help visualize which particles 
 
 #### Alternative method: **Filtering with an interactive lasso tool**
 
-Sometimes, the best clustering algorithm is the human eye (e.g. kmeans/GMM clustering algorithms can fail especially for small/oddly-shaped clusters). The cryoDRGN_filtering.ipynb notebook also provides an interactive widget that lets you interactively select regions of the latent space using a lasso tool. 
+Sometimes, the best clustering algorithm is the human eye (e.g. kmeans/GMM clustering algorithms can fail especially for small/oddly-shaped clusters). The cryoDRGN_filtering.ipynb notebook also provides an interactive widget that lets you interactively select regions of the latent space using a lasso tool.
 
 When the widget first shows up, you will need to change the x-axis and y-axis labels to plot the particles by their UMAP embeddings. You can also change the plotting colors.
 
@@ -1171,7 +1171,7 @@ Note: There have been installation issues with jupyter widgets on some linux sys
 
 #### View the raw particles
 
-The second to last section of the jupyter notebook contains code blocks for viewing the raw particle images. This section will visualize 9 images at random from the selected particles. This is sometimes useful for verifying that the selected particles are problematic in obvious cases of junk particles. 
+The second to last section of the jupyter notebook contains code blocks for viewing the raw particle images. This section will visualize 9 images at random from the selected particles. This is sometimes useful for verifying that the selected particles are problematic in obvious cases of junk particles.
 
 ![Cell 89 can be rerun to view a different selection of particles.](assets/Untitled_38.png)
 
@@ -1231,7 +1231,7 @@ These `.pkl` files contain a numpy array of indices into the particle stack, whi
 
 Now that we have identified the junk particles, we will rerun `cryodrgn train_vae` on larger, higher resolution images (D=256) using a larger neural network model (1024 dim x 3 layer architecture).
 
-Example command to run on 1 GPU 
+Example command to run on 1 GPU
 
 ```bash
 $ cryodrgn train_vae data/256/particles.256.txt \
@@ -1248,16 +1248,16 @@ $ cryodrgn train_vae data/256/particles.256.txt \
 
 By providing the `--ind` argument, cryoDRGN will filter the list of particles, ctf parameters, and poses by the provided index array.
 
-This is the most compute-intensive step of the tutorial. The training will take ~25 min/epoch on a single V100 GPU, requiring ~21 hours total for 50 epochs.  
+This is the most compute-intensive step of the tutorial. The training will take ~25 min/epoch on a single V100 GPU, requiring ~21 hours total for 50 epochs.
 
 ### **Accelerated training with GPU parallelization**
 
 Use cryoDRGN's `--multigpu` flag to enable parallelized training across all detected GPUs on the machine. To select specific GPUs for cryoDRGN to run on, use the environmental variable `CUDA_VISIBLE_DEVICES`, e.g.:
 
 ```
-$ cryodrgn train_vae ... # Run on GPU 0 
+$ cryodrgn train_vae ... # Run on GPU 0
 $ cryodrgn train_vae ... --multigpu # Run on all GPUs on the machine
-$ CUDA_VISIBLE_DEVICES=0,3 cryodrgn train_vae ... --multigpu # Run on GPU 0,3 
+$ CUDA_VISIBLE_DEVICES=0,3 cryodrgn train_vae ... --multigpu # Run on GPU 0,3
 ```
 
 When training is parallelized across multiple GPUs, the batch size (number of images trained in each mini-batch of SGD; default `-b 8`) will be automatically scaled by the number of available GPUs to better take advantage of parallelization. Depending on your compute resources, GPU utilization may be improved with `-b 16` (i.e. to achieve linear scaling of runtime with # GPUs). However, note that GPU parallelization, while leading to a faster wall-clock time per epoch, may require increasing the total number of epochs, since the training dynamics are affected (fewer model updates per epoch with larger `-b`).
@@ -1277,21 +1277,21 @@ We will first walk through the default outputs from `cryodrgn analyze` (Section 
 Similar to Step 5 above, we first run the default analysis pipeline with `cryodrgn analyze` :
 
 - `$ cryodrgn analyze -h`
-    
+
     ```
     (cryodrgn) $ cryodrgn analyze -h
     usage: cryodrgn analyze [-h] [--device DEVICE] [-o OUTDIR] [--skip-vol]
                             [--skip-umap] [--Apix APIX] [--flip] [-d DOWNSAMPLE]
                             [--pc PC] [--ksample KSAMPLE]
                             workdir epoch
-    
+
     Visualize latent space and generate volumes
-    
+
     positional arguments:
       workdir               Directory with cryoDRGN results
       epoch                 Epoch number N to analyze (0-based indexing,
                             corresponding to z.N.pkl, weights.N.pkl)
-    
+
     optional arguments:
       -h, --help            show this help message and exit
       --device DEVICE       Optionally specify CUDA device
@@ -1300,7 +1300,7 @@ Similar to Step 5 above, we first run the default analysis pipeline with `cryodr
                             [workdir]/analyze.[epoch])
       --skip-vol            Skip generation of volumes
       --skip-umap           Skip running UMAP
-    
+
     Extra arguments for volume generation:
       --Apix APIX           Pixel size to add to .mrc header (default: 1 A/pix)
       --flip                Flip handedness of output volume
@@ -1310,9 +1310,9 @@ Similar to Step 5 above, we first run the default analysis pipeline with `cryodr
                             (default: 2)
       --ksample KSAMPLE     Number of kmeans samples to generate (default: 20)
       --vol-start-index VOL_START_INDEX
-                            Default value of start index for volume generation (default: 0)  
+                            Default value of start index for volume generation (default: 0)
     ```
-    
+
 
 Example command: (1 GPU, ~10 min)
 
@@ -1324,7 +1324,7 @@ $ cryodrgn analyze tutorial/01_vae256 49 --Apix 1.6375 --flip
 We flip the handedness of the output volumes with the flag `--flip` and set the pixel size in the mrc header with `--Apix`:
 
 - Output log
-    
+
     ```bash
     2021-02-28 14:24:49     Saving results to /nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/analyze.49
     2021-02-28 14:24:49     Perfoming principal component analysis...
@@ -1554,11 +1554,11 @@ The layout of the latent space reproduces the original results shown in Fig 5F o
 
 #### Default sampled density maps
 
-`cryodrgn analyze` uses the k-means clustering algorithm to *partition* the latent space into regions (by default k=20 regions), and generate a density map from the center of each of these regions. The goal is to provide a tractable number of representative density maps to visually inspect. 
+`cryodrgn analyze` uses the k-means clustering algorithm to *partition* the latent space into regions (by default k=20 regions), and generate a density map from the center of each of these regions. The goal is to provide a tractable number of representative density maps to visually inspect.
 
 Additional usage notes:
 
-The number of partitions can be updated with the argument `--ksample 50` to change the number of density maps to e.g. 50. 
+The number of partitions can be updated with the argument `--ksample 50` to change the number of density maps to e.g. 50.
 
 ```bash
 # contents of the directory
@@ -1631,17 +1631,17 @@ See Section 6.1.
 - Then, you can run each cell one by one to see the outputs. Alternatively, you can run the entire notebook in one go with Cell → Run All.
 - Additional plots in the Jupyter notebook include:
     - Plot of the learning curve (i.e. average loss per epoch)
-        
+
         ![assets/Untitled_53.png](assets/Untitled_53.png)
-        
+
     - Plot of the pose distribution
-        
+
         ![assets/Untitled_54.png](assets/Untitled_54.png)
-        
+
         ![assets/Untitled_55.png](assets/Untitled_55.png)
-        
+
         ![assets/Untitled_56.png](assets/Untitled_56.png)
-        
+
 - In the "Interactive visualization" section, any per-particle cryoDRGN data are loaded into an interactive widget for visualization.
 - Advanced usage: Additional data series may be added to the pandas dataframe and will automatically show up in the widget.
 
@@ -1766,16 +1766,16 @@ In the next section of the jupyter notebook, there is template code for saving t
 The `cryodrgn_utils write_star` tool can be used to convert the index `.pkl` of selected particles (and the input particles `.mrcs`, and optionally the ctf and/or pose `.pkl`) to `.star` file format:
 
 - `$ cryodrgn_utils write_star -h`
-    
+
     ```bash
     (cryodrgn) $ cryodrgn_utils write_star -h
     usage: cryodrgn_utils write_star [-h] [--ctf CTF] [--poses POSES] [--ind IND] [--full-path] -o O particles
-    
+
     Create a Relion 3.0 star file from a particle stack and ctf parameters
-    
+
     positional arguments:
       particles            Input particles (.mrcs, .txt)
-    
+
     optional arguments:
       -h, --help           show this help message and exit
       --ctf CTF            Optionally include ctf information from a .pkl file
@@ -1784,7 +1784,7 @@ The `cryodrgn_utils write_star` tool can be used to convert the index `.pkl` of 
       --full-path          Write the full path to particles (default: relative paths)
       -o O                 Output .star file
     ```
-    
+
 
 Note: This command will add ctf/pose information from the corresponding .pkl files, if provided. Any additional fields in the input .star file will be preserved as-is.
 
@@ -1793,24 +1793,24 @@ Example command:
 ```bash
 $ cryodrgn_utils write_star data/128/particles.128.mrcs data/ctf.pkl \
     --poses data/poses.pkl
-    --ind tutorial/01_vae256/ind_selected_classC4.pkl	\	
+    --ind tutorial/01_vae256/ind_selected_classC4.pkl	\
     --full-path \
     -o class_C4.128.star
 ```
 
 ### Re-extracting particles from the micrograph
 
-To re-extract particles from the original micrograph (e.g. at full resolution) 
+To re-extract particles from the original micrograph (e.g. at full resolution)
 
 ```bash
 $ cryodrgn_utils write_star data/128/particles.128.mrcs data/ctf.pkl \
     --poses data/poses.pkl
-    --ind tutorial/01_vae256/ind_selected_classC4.pkl	\	
+    --ind tutorial/01_vae256/ind_selected_classC4.pkl	\
     --full-path \
     -o class_C4.128.star
 ```
 
-Note to create a filtered 
+Note to create a filtered
 
 ### 8.4) Generating trajectories
 
@@ -1821,7 +1821,7 @@ In this section, we will use cryoDRGN's graph traversal algorithm to find paths 
 #### cryodrgn graph_traversal
 
 - `$ cryodrgn graph_traversal -h`
-    
+
     ```bash
     (cryodrgn) $ cryodrgn graph_traversal -h
     usage: cryodrgn graph_traversal [-h] --anchors ANCHORS [ANCHORS ...]
@@ -1831,12 +1831,12 @@ In this section, we will use cryoDRGN's graph traversal algorithm to find paths 
                                     [--max-images MAX_IMAGES] -o PATH.TXT --out-z
                                     Z.PATH.TXT
                                     data
-    
+
     Find shortest path along nearest neighbor graph
-    
+
     positional arguments:
       data                  Input z.pkl embeddings
-    
+
     optional arguments:
       -h, --help            show this help message and exit
       --anchors ANCHORS [ANCHORS ...]
@@ -1848,7 +1848,7 @@ In this section, we will use cryoDRGN's graph traversal algorithm to find paths 
       -o PATH.TXT           Output .txt file for path indices
       --out-z Z.PATH.TXT    Output .txt file for path z-values
     ```
-    
+
 
 CryoDRGN's graph traversal algorithm builds a nearest neighbor graph between all the latent embeddings, and then performs dijkstra's algorithm to find the shortest path on the graph between the anchors nodes. The idea is to find a path between the anchors points in latent space while remaining on the data manifold since we don't want to generate structures from empty regions of the latent space.
 

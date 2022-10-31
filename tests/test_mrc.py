@@ -1,8 +1,9 @@
 import os.path
-import pytest
-import numpy as np
-from cryodrgn import mrc, dataset
 
+import numpy as np
+import pytest
+
+from cryodrgn import dataset, mrc
 
 DATA_FOLDER = os.path.join(os.path.dirname(__file__), '..', 'testing', 'data')
 

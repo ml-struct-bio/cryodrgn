@@ -1,14 +1,15 @@
-'''K-means clustering'''
+"""K-means clustering"""
 
 import argparse
-import numpy as np
-import sys, os
-import matplotlib.pyplot as plt
-import seaborn as sns
 import pickle
-from cryodrgn import analysis
-from sklearn.decomposition import PCA
+
+import matplotlib.pyplot as plt
+import numpy as np
 from scipy.spatial.distance import cdist
+from sklearn.decomposition import PCA
+
+from cryodrgn import analysis
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -23,19 +24,20 @@ def parse_args():
     parser.add_argument('--reorder', action='store_true', help='Reorder cluster centers')
     return parser
 
+
 def main(args):
     fig, ax = plt.subplots()
     print(args)
-    z = pickle.load(open(args.input,'rb'))
+    z = pickle.load(open(args.input, 'rb'))
     if args.stride:
-        z = z[::args.stride]
+        z = z[:: args.stride]
     print('{} points'.format(len(z)))
-    
+
     # k-means clustering
     labels, centers = analysis.cluster_kmeans(z, args.k, on_data=args.on_data, reorder=args.reorder)
 
     # use the nearest data point instead of cluster centroid
-    if args.on_data: 
+    if args.on_data:
         centers_zi = cdist(centers, z).argmin(axis=1)
         print(centers_zi)
         centers_z = z[centers_zi]
@@ -60,16 +62,16 @@ def main(args):
     for i in range(args.k):
         ii = np.where(labels == i)
         pc_sub = pc[ii]
-        plt.scatter(pc_sub[:,0], pc_sub[:,1], s=2, alpha=0.1, label='cluster {}'.format(i))
+        plt.scatter(pc_sub[:, 0], pc_sub[:, 1], s=2, alpha=0.1, label='cluster {}'.format(i))
 
     c = pca.transform(centers)
-    plt.scatter(c[:,0], c[:,1], c='k')
+    plt.scatter(c[:, 0], c[:, 1], c='k')
     for i in range(args.k):
-        ax.annotate(str(i), c[i,0:2])
+        ax.annotate(str(i), c[i, 0:2])
 
     xx, yy = 0, 1
-    plt.xlabel('PC{} ({:3f})'.format(xx+1, pca.explained_variance_ratio_[xx]))
-    plt.ylabel('PC{} ({:3f})'.format(yy+1, pca.explained_variance_ratio_[yy]))
+    plt.xlabel('PC{} ({:3f})'.format(xx + 1, pca.explained_variance_ratio_[xx]))
+    plt.ylabel('PC{} ({:3f})'.format(yy + 1, pca.explained_variance_ratio_[yy]))
 
     if args.out_png:
         plt.savefig(args.out_png)
@@ -77,7 +79,5 @@ def main(args):
         plt.show()
 
 
-
 if __name__ == '__main__':
     main(parse_args().parse_args())
-

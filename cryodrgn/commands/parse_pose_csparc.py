@@ -1,27 +1,33 @@
-'''Parse image poses from a cryoSPARC .cs metafile'''
+"""Parse image poses from a cryoSPARC .cs metafile"""
 
 import argparse
-import numpy as np
-import sys, os
+import os
 import pickle
+
+import numpy as np
 import torch
 
-from cryodrgn import lie_tools
-from cryodrgn import utils
+from cryodrgn import lie_tools, utils
 
 log = utils.log
 
+
 def add_args(parser):
     parser.add_argument('input', help='Cryosparc .cs file')
-    parser.add_argument('--abinit', action='store_true', help='Flag if results are from ab-initio reconstruction') 
-    parser.add_argument('--hetrefine', action='store_true', help='Flag if results are from a heterogeneous refinements (default: homogeneous refinement)')
+    parser.add_argument('--abinit', action='store_true', help='Flag if results are from ab-initio reconstruction')
+    parser.add_argument(
+        '--hetrefine',
+        action='store_true',
+        help='Flag if results are from a heterogeneous refinements (default: homogeneous refinement)',
+    )
     parser.add_argument('-D', type=int, required=True, help='Box size of reconstruction (pixels)')
     parser.add_argument('-o', metavar='PKL', type=os.path.abspath, required=True, help='Output pose.pkl')
     return parser
 
+
 def main(args):
-    assert args.input.endswith('.cs'), "Input format must be .cs file"
-    assert args.o.endswith('.pkl'), "Output format must be .pkl"
+    assert args.input.endswith('.cs'), 'Input format must be .cs file'
+    assert args.o.endswith('.pkl'), 'Output format must be .pkl'
 
     data = np.load(args.input)
     # view the first row
@@ -52,14 +58,15 @@ def main(args):
         log('Scaling shifts by 2x')
         trans *= 2
     log(trans.shape)
-    
-    # convert translations from pixels to fraction 
+
+    # convert translations from pixels to fraction
     trans /= args.D
 
     # write output
     log(f'Writing {args.o}')
-    with open(args.o,'wb') as f:
-        pickle.dump((rot,trans),f)
+    with open(args.o, 'wb') as f:
+        pickle.dump((rot, trans), f)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)

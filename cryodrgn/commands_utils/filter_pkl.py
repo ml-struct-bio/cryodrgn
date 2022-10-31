@@ -1,10 +1,13 @@
-'''Filter cryodrgn data stored in a .pkl file'''
+"""Filter cryodrgn data stored in a .pkl file"""
 
 import argparse
-import numpy as np
-import sys, os
+import os
 import pickle
+
+import numpy as np
+
 log = print
+
 
 def add_args(parser):
     parser.add_argument('input', help='Input data (.pkl)')
@@ -13,8 +16,10 @@ def add_args(parser):
     parser.add_argument('-o', type=os.path.abspath, help='Output data (.pkl)')
     return parser
 
+
 def load_pkl(x):
-    return pickle.load(open(x,'rb'))
+    return pickle.load(open(x, 'rb'))
+
 
 def main(args):
     x = load_pkl(args.input)
@@ -33,13 +38,14 @@ def main(args):
         x = tuple(x)
         log(f'New shape: {[xx.shape for xx in x]}')
 
-    # all other cryodrgn pkls 
+    # all other cryodrgn pkls
     else:
         log(f'Old shape: {x.shape}')
         x = x[ind]
         log(f'New shape: {x.shape}')
     log(f'Saving {args.o}')
-    pickle.dump(x, open(args.o,'wb'))
+    pickle.dump(x, open(args.o, 'wb'))
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)

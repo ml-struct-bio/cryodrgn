@@ -1,9 +1,10 @@
 import os.path
-import torch
+
 import numpy as np
+import torch
+
 from cryodrgn import fft, mrc
 from cryodrgn.lattice import Lattice
-
 
 DATA_FOLDER = os.path.join(os.path.dirname(__file__), '..', 'testing', 'data')
 
@@ -20,7 +21,7 @@ def test_shifted_image():
     lattice = Lattice(D)
     ht = torch.tensor(ht.astype(np.float32)).view(1, -1)
 
-    trans = torch.tensor([5., 10.]).view(1, 1, 2)
+    trans = torch.tensor([5.0, 10.0]).view(1, 1, 2)
     ht_shifted = lattice.translate_ht(ht, trans)
     ht_np = ht_shifted.view(D, D).numpy()[0:-1, 0:-1]
 

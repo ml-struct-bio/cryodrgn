@@ -1,7 +1,7 @@
 set -e
 set -x
 
-# todo -- convert this starfile to 3.0 and compare outputs 
+# todo -- convert this starfile to 3.0 and compare outputs
 cryodrgn downsample data/relion31.star -D 32 -o output/tmp.mrcs --relion31
 cryodrgn downsample data/relion31.v2.star -D 32 -o output/tmp.mrcs --relion31
 cryodrgn parse_pose_star data/relion31.star -D 256 -o output/pose.pkl --relion31 --Apix 1

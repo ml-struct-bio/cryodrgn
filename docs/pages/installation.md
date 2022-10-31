@@ -49,25 +49,25 @@ The software has been tested on Python 3.7-3.9 and pytorch 1.0-1.7, 1.12.
 ## 2) Setting up the cryoDRGN environment
 
 - First, create a new conda environment named `cryodrgn` (or renamed as appropriate):
-    
+
     ```bash
     (base) $ conda create --name cryodrgn python=3.9
     ```
-    
+
 - Activate the environment. Your command prompt will usually indicate the environment you are in with
   `(environment name)` before the prompt:
-    
+
     ```bash
     (base) $ conda activate cryodrgn
     (cryodrgn) $
     ```
-    
+
 - Install pytorch and cudatoolkit into your new cryodrgn environment:
-    
+
     ```bash
     (cryodrgn) $ conda install pytorch cudatoolkit=11.7 -c pytorch
     ```
-    
+
 - Replace the cudatoolkit version with the appropriate version of CUDA installed with the GPU drivers. You can
   check the CUDA version with `nvidia-smi`.
   ```
@@ -82,7 +82,7 @@ The software has been tested on Python 3.7-3.9 and pytorch 1.0-1.7, 1.12.
   | N/A   41C    P0    N/A /  N/A |      5MiB /  4096MiB |      0%      Default |
   |                               |                      |                  N/A |
   +-------------------------------+----------------------+----------------------+
-                                                                                   
+
   +-----------------------------------------------------------------------------+
   | Processes:                                                                  |
   |  GPU   GI   CI        PID   Type   Process name                  GPU Memory |
@@ -94,13 +94,13 @@ The software has been tested on Python 3.7-3.9 and pytorch 1.0-1.7, 1.12.
   - Don't forget to include `-c pytorch` to get the software from the official pytorch channel
   - To customize the installation line depending on your situation, look at Pytorch's
     [Start locally](https://pytorch.org/get-started/locally/).
-  
+
 - Optional step for older pytorch versions (pre-version 1.6). (Newer versions of pytorch natively support mixed
   precision training.)
     - For accelerated training speeds (~3x faster) on GPUs with tensor cores (Nvidia Volta, Turing, and Ampere GPU
       architectures), install the apex package into the active conda environment. See their official documentation and
       installation instructions [here](https://github.com/NVIDIA/apex#quick-start).
-    
+
     ```bash
     git clone https://github.com/NVIDIA/apex
     cd apex
@@ -138,7 +138,7 @@ Once installed, you should be able to call the `cryodrgn` executable and see a l
 ```
 
 There is a small testing dataset in the source code that you can use to run cryodrgn and verify that all the
-dependencies were installed correctly: 
+dependencies were installed correctly:
 
 ```bash
 (cryodrgn) $ cd [sourcecode directory]/testing
@@ -230,7 +230,7 @@ output should look something like:
 2022-09-20 16:30:20     # =====> Epoch: 20 Average gen loss = 0.0124398, KLD = 21.621814, total loss = 0.013114; Finished in 0:00:00.543454
 2022-09-20 16:30:21     Finished in 0:00:15.839427 (0:00:00.791971 per epoch)
 ```
-    
+
 - You will want to verify that the output contains  `Use cuda True` in the first few lines to ensure that `cryoDRGN`
   will be using your GPU for training.
 

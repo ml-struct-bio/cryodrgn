@@ -1,5 +1,6 @@
 import numpy as np
 
+
 def get_beta_schedule(schedule):
     if type(schedule) == float:
         return ConstantSchedule(schedule)
@@ -12,8 +13,8 @@ def get_beta_schedule(schedule):
     elif schedule == 'd':
         return LinearSchedule(5, 18, 1000000, 5000000)
     else:
-        raise RuntimeError('Wrong beta schedule. Schedule={}'
-                           .format(schedule))
+        raise RuntimeError('Wrong beta schedule. Schedule={}'.format(schedule))
+
 
 class ConstantSchedule:
     def __init__(self, value):
@@ -32,7 +33,4 @@ class LinearSchedule:
         self.coef = (end_y - start_y) / (end_x - start_x)
 
     def __call__(self, x):
-        return np.clip((x - self.start_x) * self.coef + self.start_y,
-                       self.min_y, self.max_y).item(0)
-
-
+        return np.clip((x - self.start_x) * self.coef + self.start_y, self.min_y, self.max_y).item(0)

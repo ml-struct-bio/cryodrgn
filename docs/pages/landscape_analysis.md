@@ -1,6 +1,6 @@
 # cryoDRGN Conformational Landscape Analysis
 
-CryoDRGN is a machine learning system for heterogenous cryo-EM reconstruction. In cryoDRGN’s framework of *generative modeling*, once a model is trained, an arbitrary number of volumes may be reconstructed, thus tools are needed to comprehensively explore the reconstructed distribution. This page describes a new “landscape analysis” tool for comprehensive and quantitative analysis of a trained cryodrgn model, including **1) assigning discrete conformational states (and providing their particle lists for refinement)** and **2) visualizing continuous conformational landscapes**. This tool also allows the user to focus their analysis on specific regions of interest by providing custom masks. 
+CryoDRGN is a machine learning system for heterogenous cryo-EM reconstruction. In cryoDRGN’s framework of *generative modeling*, once a model is trained, an arbitrary number of volumes may be reconstructed, thus tools are needed to comprehensively explore the reconstructed distribution. This page describes a new “landscape analysis” tool for comprehensive and quantitative analysis of a trained cryodrgn model, including **1) assigning discrete conformational states (and providing their particle lists for refinement)** and **2) visualizing continuous conformational landscapes**. This tool also allows the user to focus their analysis on specific regions of interest by providing custom masks.
 
 Landscape analysis is implemented in the executables, `cryodrgn analyze_landscape` and `cryodrgn analyze_landscape_full`  available in version 1.0+ of the cryoDRGN [software](https://github.com/zhonge/cryodrgn). The analysis pipeline is fully automated, though there are many command line arguments that can be experimented with, and we provide a jupyter notebook for interactive visualization.
 
@@ -25,7 +25,7 @@ Example usage:
 ```
 
 - `(cryodrgn) $ cryodrgn analyze_landscape -h`
-    
+
     ```
     (cryodrgn) $ cryodrgn analyze_landscape -h
     usage: analyze_landscape.py [-h] [--device DEVICE] [-o OUTDIR] [--skip-vol]
@@ -35,13 +35,13 @@ Example usage:
                                 [-d DOWNSAMPLE] [--ksample KSAMPLE]
                                 [--thresh THRESH] [--dilate DILATE]
                                 workdir epoch
-    
+
     Pipeline to analyze cryoDRGN volume distribution
-    
+
   positional arguments:
     workdir               Directory with cryoDRGN results
     epoch                 Epoch number N to analyze (0-based indexing, corresponding to z.N.pkl, weights.N.pkl)
-  
+
   optional arguments:
     -h, --help            show this help message and exit
     --device DEVICE       Optionally specify CUDA device
@@ -49,7 +49,7 @@ Example usage:
                           Output directory for landscape analysis results (default: [workdir]/landscape.[epoch])
     --skip-umap           Skip running UMAP
     --vol-ind VOL_IND     Index .pkl for filtering volumes
-  
+
   Extra arguments for volume generation:
     -N SKETCH_SIZE, --sketch-size SKETCH_SIZE
                           Number of volumes to generate for analysis (default: 1000)
@@ -60,31 +60,31 @@ Example usage:
     --skip-vol            Skip generation of volumes
     --vol-start-index VOL_START_INDEX
                           Default value of start index for volume generation (default: 0)
-  
+
   Extra arguments for mask generation:
     --thresh THRESH       Density value to threshold for masking (default: half of max density value)
     --dilate DILATE       Dilate initial mask by this amount (default: 5 pixels)
     --mask MRC            Path to a custom mask. Must be same box size as generated volumes.
-  
+
   Extra arguments for clustering:
     --linkage LINKAGE     Linkage for agglomerative clustering (e.g. average, ward) (default: average)
     -M M                  Number of clusters (default: 10)
-  
+
   Extra arguments for landscape visualization:
     --pc-dim PC_DIM       PCA dimensionality reduction (default: 20)
     --plot-dim PLOT_DIM   Number of dimensions to plot (default: 5)
     ```
-    
 
-By default, the script will: 
+
+By default, the script will:
 
 1. **Generate 1000 volumes** at a box size of 128^3
 2. **Perform PCA**  on the volumes to map conformational coordinates. The goal is for the volume PCA coordinates to provide a more visually interpretable representation of the dataset than the VAE latent space.
 3. **Cluster the volumes** and provide summary volumes and the constituent particles for each cluster.
 
-By default, all outputs will be located in a subdirectory `[workdir]/landscape.[epoch]`. 
+By default, all outputs will be located in a subdirectory `[workdir]/landscape.[epoch]`.
 
-The expected runtime is ~30 min (1 GPU) which is mostly spent on volume generation); Rerunning the tool without volume generation (`--skip-vol`) should take less than 5 min (no GPU) 
+The expected runtime is ~30 min (1 GPU) which is mostly spent on volume generation); Rerunning the tool without volume generation (`--skip-vol`) should take less than 5 min (no GPU)
 
 ### Outputs at a glance
 
@@ -96,9 +96,9 @@ The expected runtime is ~30 min (1 GPU) which is mostly spent on volume generati
 
 ## 2. Assigning 3D conformational states (”classes”)
 
-Once 1000 volumes are generated, they are clustered to summarize the major conformational states of the reconstructed ensemble. This clustering approach mirrors some of the assumptions in 3D classification (i.e. that particles fall in 1 of K discrete classes). The resulting clusters can be interpreted as the main conformational states, and this tool provided the constituent particles as a .star file can be exported to other tools for further refinement. 
+Once 1000 volumes are generated, they are clustered to summarize the major conformational states of the reconstructed ensemble. This clustering approach mirrors some of the assumptions in 3D classification (i.e. that particles fall in 1 of K discrete classes). The resulting clusters can be interpreted as the main conformational states, and this tool provided the constituent particles as a .star file can be exported to other tools for further refinement.
 
-We use agglomerative clustering, a bottom-up clustering algorithm that does not impose any geometric priors on the shape or size of the clusters. Through testing on several datasets, we find that this is effective at **identifying rare states.** We also use a **mask** around the particle to reduce the effect of noise in the background of the density map. A mask may also be manually provided to focus on a specific region (see Section 3). 
+We use agglomerative clustering, a bottom-up clustering algorithm that does not impose any geometric priors on the shape or size of the clusters. Through testing on several datasets, we find that this is effective at **identifying rare states.** We also use a **mask** around the particle to reduce the effect of noise in the background of the density map. A mask may also be manually provided to focus on a specific region (see Section 3).
 
 There are many hyperparameters of the clustering algorithm. As a best practice, one should experiment with the number of clusters (`-M`) and the agglomerative clustering affinity type (e.g. `--linkage average` or `--linkage ward`).  See the below subsections for some examples of changing these parameters.
 
@@ -130,12 +130,12 @@ The outputs of clustering will be located in a subdirectory `clustering_L2_avera
 
 ### Optional: Change the number of clusters with -M:
 
-The default number of clusters is 10. If your dataset is very heterogeneous or if you want a finer resolution, you can increase the number of clusters with the `-M` flag. Changing `M` corresponds to changing the cut point in the dendrogram of agglomerative clustering. Clustering can be repeated by re-running `cryodrgn analyze_landscape` and using the `--skip-vol` flag to skip volume generation, for example: 
+The default number of clusters is 10. If your dataset is very heterogeneous or if you want a finer resolution, you can increase the number of clusters with the `-M` flag. Changing `M` corresponds to changing the cut point in the dendrogram of agglomerative clustering. Clustering can be repeated by re-running `cryodrgn analyze_landscape` and using the `--skip-vol` flag to skip volume generation, for example:
 
 ```
 (cryodgn) $ cryodrgn analyze_landscape [workdir] [epoch] --skip-vol -M 20 # use --skip-vol to skip regenerating 1000 volumes
 
-# Results will be found in a new subdirectory, clustering_L2_average_[M] 
+# Results will be found in a new subdirectory, clustering_L2_average_[M]
 ```
 
 ![Left: Clustering results with M=10; Right: Clustering results with M=20](assets/landscape_analysis_clustering_results1.png)
@@ -146,7 +146,7 @@ The updated clustering results will be a new subdirectory, `clustering_L2_averag
 
 ### Optional: Change agglomerative clustering linkage with —linkage:
 
-The linkage type affects how volumes are merged in the agglomerative clustering algorithm. The default setting is `--linkage average`, which, we have found to be sensitive to outliers (e.g. junk/artifacts or rare states of interest). For more evenly populated clusters (e.g. discretizing a structural continuum), try `--linkage ward`.  
+The linkage type affects how volumes are merged in the agglomerative clustering algorithm. The default setting is `--linkage average`, which, we have found to be sensitive to outliers (e.g. junk/artifacts or rare states of interest). For more evenly populated clusters (e.g. discretizing a structural continuum), try `--linkage ward`.
 
 ```
 (cryodgn) $ cryodrgn analyze_landscape [workdir] [epoch] --skip-vol --linkage ward # use --skip-vol to skip regenerating 1000 volumes
@@ -156,7 +156,7 @@ The linkage type affects how volumes are merged in the agglomerative clustering 
 
 Left: Clustering results with average linkage (M=10); Right: Clustering results with ward linkage (M=10)
 
-Rerunning landscape analysis with `--linkage ward` will produce a new subdirectory, `clustering_L2_ward_10`. 
+Rerunning landscape analysis with `--linkage ward` will produce a new subdirectory, `clustering_L2_ward_10`.
 
 ### Optional: Remove junk clusters/volumes
 
@@ -169,12 +169,12 @@ Some datasets will contain "junk" volumes that can interfere with clustering/PCA
 ```
 # e.g. keep the volumes from clusters 0, 1, 2, 4, 9
 (cryodrgn) $ cryodrgn_utils select_clusters clustering_L2_average_10/cluster_labels.pkl --sel 0 1 2 4 9 -o vol_keep.pkl
- 
+
 # rerun cryodrgn analyze_landscape with --vol-ind
-(cryodrgn) $ cryodrgn analyze_landscape [workdir] [epoch] --skip-vol --skip-mask --vol-ind vol_keep.pkl 
+(cryodrgn) $ cryodrgn analyze_landscape [workdir] [epoch] --skip-vol --skip-mask --vol-ind vol_keep.pkl
 ```
 
-Note: rerunning with `—-vol-ind` will change the volume PCA results since volumes have now been removed from the analysis. 
+Note: rerunning with `—-vol-ind` will change the volume PCA results since volumes have now been removed from the analysis.
 
 ## 3. Masking (optional)
 
@@ -199,15 +199,15 @@ Taking inspiration from [previous work](https://www.sciencedirect.com/science/ar
 
 ### Output
 
-The output of `cryodrgn analyze_landscape` will include a directory containing the top 5 principal components (.mrc trajectories showing interpolations along the "eigenvolumes"). These principal component trajectories can be interpreted as reaction coordinates for describing the full ensemble, which can provide a more interpretable visualization of the dataset than the latent variable representation. 
+The output of `cryodrgn analyze_landscape` will include a directory containing the top 5 principal components (.mrc trajectories showing interpolations along the "eigenvolumes"). These principal component trajectories can be interpreted as reaction coordinates for describing the full ensemble, which can provide a more interpretable visualization of the dataset than the latent variable representation.
 
 ![Left: Visualization of the dataset in the cryoDRGN VAE latent space](assets/landscape_analysis_latent_space.png)
 
-*Left: Visualization of the dataset in the cryoDRGN VAE latent space, colored points correspond to 1000 sampled volumes colored by their cluster label. Center/right: Visualization of 1000 sampled volumes in their PCA feature space. In this example, PC1, PC2, and PC3 correspond to biologically relevant motions and thus the overall organization of the ensemble is more easily interpretable.* 
+*Left: Visualization of the dataset in the cryoDRGN VAE latent space, colored points correspond to 1000 sampled volumes colored by their cluster label. Center/right: Visualization of 1000 sampled volumes in their PCA feature space. In this example, PC1, PC2, and PC3 correspond to biologically relevant motions and thus the overall organization of the ensemble is more easily interpretable.*
 
 ## 5. Visualizing the full conformational landscape
 
-The initial mapping of the volumes is performed on the set of 1000 sketched volumes. A second tool, `cryodrgn analyze_landscape_full`, maps all particles to the volume PCA space to visualize a conformational landscape for the full dataset.  This tool will take longer to run (~4 hours on 1 GPU for volume generation, 1 min for mapping). 
+The initial mapping of the volumes is performed on the set of 1000 sketched volumes. A second tool, `cryodrgn analyze_landscape_full`, maps all particles to the volume PCA space to visualize a conformational landscape for the full dataset.  This tool will take longer to run (~4 hours on 1 GPU for volume generation, 1 min for mapping).
 
 ```bash
 (cryodrgn) $ cryodrgn analyze_landscape_full [workdir] [epoch] > landscape_full.log

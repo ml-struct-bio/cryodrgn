@@ -1,17 +1,18 @@
-'''
+"""
 Lightweight parser for starfiles
-'''
+"""
+
+import os
+from datetime import datetime as dt
 
 import numpy as np
 import pandas as pd
-from datetime import datetime as dt
-import os
 
-from . import mrc
-from .mrc import LazyImage
+from cryodrgn import mrc
+from cryodrgn.mrc import LazyImage
 
-class Starfile():
-    
+
+class Starfile:
     def __init__(self, headers, df, data_optics=None, relion31=False):
         if headers:
             assert headers == list(df.columns), f'{headers} != {df.columns}'
@@ -26,7 +27,7 @@ class Starfile():
     @classmethod
     def load(cls, starfile):
         # detect star file type
-        f = open(starfile,'r')
+        f = open(starfile, 'r')
         BLOCK = 'data_'
         while 1:
             for line in f:
@@ -37,7 +38,7 @@ class Starfile():
             return cls._parse_relion31(starfile)
         else:
             return cls._parse_block(starfile, block_header='data_')
-  
+
     @classmethod
     def _parse_relion31(cls, starfile):
         data_optics = cls._parse_block(starfile, block_header='data_optics')
@@ -48,7 +49,7 @@ class Starfile():
 
     @classmethod
     def _parse_block(self, starfile, block_header='data_'):
-        f = open(starfile,'r')
+        f = open(starfile, 'r')
         # get to data block
         while 1:
             for line in f:
@@ -69,7 +70,7 @@ class Starfile():
                     headers.append(line)
                 else:
                     break
-            break 
+            break
         # assume all subsequent lines until empty line is the body
         headers = [h.strip().split()[0] for h in headers]
         body = [line]
@@ -78,11 +79,15 @@ class Starfile():
                 break
             body.append(line)
         # put data into an array and instantiate as dataframe
-        words = [l.strip().split() for l in body]
+        words = [line.strip().split() for line in body]
         words = np.array(words)
-        assert words.ndim == 2, f"Error in parsing. Uneven # columns detected in parsing {set([len(x) for x in words])}." 
-        assert words.shape[1] == len(headers), f"Error in parsing. Number of columns {words.shape[1]} != number of headers {len(headers)}" 
-        data = {h:words[:,i] for i,h in enumerate(headers)}
+        assert (
+            words.ndim == 2
+        ), f'Error in parsing. Uneven # columns detected in parsing {set([len(x) for x in words])}.'
+        assert words.shape[1] == len(
+            headers
+        ), f'Error in parsing. Number of columns {words.shape[1]} != number of headers {len(headers)}'
+        data = {h: words[:, i] for i, h in enumerate(headers)}
         df = pd.DataFrame(data=data)
         return self(headers, df)
 
@@ -97,10 +102,10 @@ class Starfile():
             f.write('\n')
 
     def write(self, outstar):
-        f = open(outstar,'w')
+        f = open(outstar, 'w')
         f.write('# Created {}\n'.format(dt.now()))
         f.write('\n')
-        
+
         if self.relion31:
             self._write_block(f, self.data_optics.headers, self.data_optics.df, block_header='data_optics')
             f.write('\n\n')
@@ -109,32 +114,33 @@ class Starfile():
             self._write_block(f, self.headers, self.df, block_header='data_')
 
     def get_particles(self, datadir=None, lazy=True):
-        '''
+        """
         Return particles of the starfile
 
         Input:
             datadir (str): Overwrite base directories of particle .mrcs
                 Tries both substituting the base path and prepending to the path
             If lazy=True, returns list of LazyImage instances, else np.array
-        '''
+        """
         particles = self.df['_rlnImageName']
 
         # format is index@path_to_mrc
         particles = [x.split('@') for x in particles]
-        ind = [int(x[0])-1 for x in particles] # convert to 0-based indexing
+        ind = [int(x[0]) - 1 for x in particles]   # convert to 0-based indexing
         mrcs = [x[1] for x in particles]
         if datadir is not None:
             mrcs = prefix_paths(mrcs, datadir)
         for path in set(mrcs):
             assert os.path.exists(path), f'{path} not found'
         header = mrc.parse_header(mrcs[0])
-        D = header.D # image size along one dimension in pixels
+        D = header.D   # image size along one dimension in pixels
         dtype = header.dtype
-        stride = dtype().itemsize*D*D
-        dataset = [LazyImage(f, (D,D), dtype, 1024+ii*stride) for ii,f in zip(ind, mrcs)]
+        stride = dtype().itemsize * D * D
+        dataset = [LazyImage(f, (D, D), dtype, 1024 + ii * stride) for ii, f in zip(ind, mrcs)]
         if not lazy:
             dataset = np.array([x.get() for x in dataset])
         return dataset
+
 
 def prefix_paths(mrcs, datadir):
     mrcs1 = ['{}/{}'.format(datadir, os.path.basename(x)) for x in mrcs]
@@ -143,17 +149,18 @@ def prefix_paths(mrcs, datadir):
         for path in set(mrcs1):
             assert os.path.exists(path)
         mrcs = mrcs1
-    except:
+    except AssertionError:
         for path in set(mrcs2):
             assert os.path.exists(path), f'{path} not found'
         mrcs = mrcs2
     return mrcs
 
+
 def csparc_get_particles(csfile, datadir=None, lazy=True):
     metadata = np.load(csfile)
-    ind = metadata['blob/idx'] # 0-based indexing
+    ind = metadata['blob/idx']   # 0-based indexing
     mrcs = metadata['blob/path'].astype(str).tolist()
-    if mrcs[0].startswith('>'): # Remove '>' prefix from paths
+    if mrcs[0].startswith('>'):   # Remove '>' prefix from paths
         mrcs = [x[1:] for x in mrcs]
     if datadir is not None:
         mrcs = prefix_paths(mrcs, datadir)
@@ -161,12 +168,8 @@ def csparc_get_particles(csfile, datadir=None, lazy=True):
         assert os.path.exists(path), f'{path} not found'
     D = metadata[0]['blob/shape'][0]
     dtype = np.float32
-    stride = np.float32().itemsize*D*D
-    dataset = [LazyImage(f, (D,D), dtype, 1024+ii*stride) for ii,f in zip(ind, mrcs)]
+    stride = np.float32().itemsize * D * D
+    dataset = [LazyImage(f, (D, D), dtype, 1024 + ii * stride) for ii, f in zip(ind, mrcs)]
     if not lazy:
         dataset = np.array([x.get() for x in dataset])
     return dataset
-
-
-
-

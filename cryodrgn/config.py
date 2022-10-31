@@ -1,4 +1,4 @@
-from . import utils
+from cryodrgn import utils
 
 
 def update_config_v1(config_pkl):
@@ -7,10 +7,11 @@ def update_config_v1(config_pkl):
     if arg not in config['model_args']:
         assert config['model_args']['pe_type'] != 'gaussian'
         config['model_args'][arg] = None
-    arg = 'activation' # older version used relu
+    arg = 'activation'   # older version used relu
     if arg not in config['model_args']:
         config['model_args'][arg] = 'relu'
     return config
+
 
 def overwrite_config(config_pkl, args):
     config = utils.load_pkl(config_pkl)
@@ -22,9 +23,22 @@ def overwrite_config(config_pkl, args):
     if 'l_extent' in v and args.l_extent is not None:
         config['lattice_args']['extent'] = args.l_extent
     # Overwrite any arguments that are not None
-    for arg in ('qlayers','qdim','zdim','encode_mode','players','pdim','enc_mask','pe_type','feat_sigma','pe_dim','domain','activation'):
+    for arg in (
+        'qlayers',
+        'qdim',
+        'zdim',
+        'encode_mode',
+        'players',
+        'pdim',
+        'enc_mask',
+        'pe_type',
+        'feat_sigma',
+        'pe_dim',
+        'domain',
+        'activation',
+    ):
         # Set default to None to maintain backwards compatibility
-        if arg in ('pe_dim','feat_sigma') and arg not in config['model_args']:
+        if arg in ('pe_dim', 'feat_sigma') and arg not in config['model_args']:
             assert v[arg] is None, f'Should not reach here. Something is wrong: {arg}'
             config['model_args'][arg] = None
             continue
@@ -36,5 +50,3 @@ def overwrite_config(config_pkl, args):
         if v[arg] is not None:
             config['model_args'][arg] = v[arg]
     return config
-
-

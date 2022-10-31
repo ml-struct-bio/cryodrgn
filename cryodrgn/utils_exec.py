@@ -1,10 +1,14 @@
-'''CryoDRGN utilities'''
+"""CryoDRGN utilities"""
+
 
 def main():
-    import argparse, os
+    import argparse
+    import os
+
     parser = argparse.ArgumentParser(description=__doc__)
     import cryodrgn
-    parser.add_argument('--version', action='version', version='cryoDRGN '+cryodrgn.__version__)
+
+    parser.add_argument('--version', action='version', version='cryoDRGN ' + cryodrgn.__version__)
 
     import cryodrgn.commands_utils.add_psize
     import cryodrgn.commands_utils.concat_pkls
@@ -20,8 +24,8 @@ def main():
     import cryodrgn.commands_utils.view_cs_header
     import cryodrgn.commands_utils.view_header
     import cryodrgn.commands_utils.view_mrcs
-    import cryodrgn.commands_utils.write_star
     import cryodrgn.commands_utils.write_cs
+    import cryodrgn.commands_utils.write_star
 
     modules = [
         cryodrgn.commands_utils.add_psize,
@@ -40,7 +44,7 @@ def main():
         cryodrgn.commands_utils.view_mrcs,
         cryodrgn.commands_utils.write_star,
         cryodrgn.commands_utils.write_cs,
-        ]
+    ]
 
     subparsers = parser.add_subparsers(title='Choose a command')
     subparsers.required = 'True'
@@ -56,6 +60,6 @@ def main():
     args = parser.parse_args()
     args.func(args)
 
+
 if __name__ == '__main__':
     main()
-

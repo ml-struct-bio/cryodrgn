@@ -1,6 +1,6 @@
-'''
+"""
 Filter a .star file
-'''
+"""
 
 import argparse
 import os
@@ -8,7 +8,9 @@ import warnings
 
 from cryodrgn import utils
 from cryodrgn.commands_utils import write_star
+
 log = utils.log
+
 
 def add_args(parser):
     parser.add_argument('input', help='Input .star file')
@@ -16,16 +18,21 @@ def add_args(parser):
     parser.add_argument('-o', type=os.path.abspath, help='Output .star file')
     return parser
 
+
 def main(args):
     warning_msg = 'cryodrgn_utils filter_star is deprecated. Please use cryodrgn_utils write_star instead.'
     warnings.warn(warning_msg, DeprecationWarning)
     log(f'WARNING: {warning_msg}')
 
-    args = write_star.add_args(argparse.ArgumentParser()).parse_args([
-        args.input,
-        '-o', args.o,
-        '--ind', args.ind,
-    ])
+    args = write_star.add_args(argparse.ArgumentParser()).parse_args(
+        [
+            args.input,
+            '-o',
+            args.o,
+            '--ind',
+            args.ind,
+        ]
+    )
     write_star.main(args)
 
 

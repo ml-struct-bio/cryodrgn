@@ -1,12 +1,13 @@
-import os.path
 import argparse
+import os.path
 import pickle
-import pytest
+
 import numpy as np
-from cryodrgn import mrc, dataset
-from cryodrgn.commands import downsample, parse_ctf_star, parse_pose_star, parse_ctf_csparc, parse_pose_csparc
-from cryodrgn.commands_utils import filter_star, write_star, write_cs
-from cryodrgn.utils import assert_pkl_close
+import pytest
+
+from cryodrgn import dataset, mrc
+from cryodrgn.commands import downsample, parse_ctf_star
+from cryodrgn.commands_utils import filter_star, write_cs, write_star
 
 DATA_FOLDER = os.path.join(os.path.dirname(__file__), '..', 'testing', 'data')
 
@@ -20,6 +21,7 @@ def input_star_all():
 def input_cs_all():
     # cs file with 2019 particle entries
     return f'{DATA_FOLDER}/cryosparc_P12_J24_001_particles.cs'
+
 
 @pytest.fixture
 def input_cs_proj_dir():
@@ -60,12 +62,17 @@ def test_downsample(input_star):
     os.makedirs('output', exist_ok=True)
 
     # Note - no filtering is possible in downsample currently
-    args = downsample.add_args(argparse.ArgumentParser()).parse_args([
-        input_star,  # 13 particles
-        '-D', '28',
-        '--datadir', DATA_FOLDER,  # If specified, prefixed to each _rlnImageName in starfile
-        '-o', 'output/issue150_downsampled.mrcs'
-    ])
+    args = downsample.add_args(argparse.ArgumentParser()).parse_args(
+        [
+            input_star,  # 13 particles
+            '-D',
+            '28',
+            '--datadir',
+            DATA_FOLDER,  # If specified, prefixed to each _rlnImageName in starfile
+            '-o',
+            'output/issue150_downsampled.mrcs',
+        ]
+    )
     downsample.main(args)
 
     # mrc.parse_mrc returns (ndarray, mrc headers)
@@ -83,11 +90,9 @@ def test_filter(input_star):
         #   the index of the individual particle in the MRCS file (e.g. 00042@mymrcs.mrcs)
         pickle.dump([11, 3, 2, 4], f)
 
-    args = filter_star.add_args(argparse.ArgumentParser()).parse_args([
-        input_star,  # 13 particles
-        '--ind', indices_pkl,
-        '-o', 'output/issue150_filtered.star'
-    ])
+    args = filter_star.add_args(argparse.ArgumentParser()).parse_args(
+        [input_star, '--ind', indices_pkl, '-o', 'output/issue150_filtered.star']  # 13 particles
+    )
     filter_star.main(args)
 
     data = dataset.load_particles('output/issue150_filtered.star', lazy=False, datadir=DATA_FOLDER)
@@ -97,12 +102,17 @@ def test_filter(input_star):
 def test_parse_ctf_star(input_star):
     os.makedirs('output', exist_ok=True)
 
-    args = parse_ctf_star.add_args(argparse.ArgumentParser()).parse_args([
-        input_star,  # 13 particles
-        '-o', 'output/ctf.pkl',
-        '-D', '300',
-        '--Apix', '1.035',
-    ])
+    args = parse_ctf_star.add_args(argparse.ArgumentParser()).parse_args(
+        [
+            input_star,  # 13 particles
+            '-o',
+            'output/ctf.pkl',
+            '-D',
+            '300',
+            '--Apix',
+            '1.035',
+        ]
+    )
     parse_ctf_star.main(args)
 
     with open('output/ctf.pkl', 'rb') as f:
@@ -119,12 +129,17 @@ def test_write_star(input_mrcs, input_star_all):
     os.makedirs('output', exist_ok=True)
 
     # The CTF pkl file is required for write_star, for ALL particles in the .mrcs we provide it, so we create it here
-    args = parse_ctf_star.add_args(argparse.ArgumentParser()).parse_args([
-        input_star_all,  # 1000 particles
-        '-o', 'output/ctf.pkl',
-        '-D', '300',
-        '--Apix', '1.035',
-    ])
+    args = parse_ctf_star.add_args(argparse.ArgumentParser()).parse_args(
+        [
+            input_star_all,  # 1000 particles
+            '-o',
+            'output/ctf.pkl',
+            '-D',
+            '300',
+            '--Apix',
+            '1.035',
+        ]
+    )
     parse_ctf_star.main(args)
     with open('output/ctf.pkl', 'rb') as f:
         ctf = pickle.load(f)
@@ -135,13 +150,18 @@ def test_write_star(input_mrcs, input_star_all):
     with open(indices_pkl, 'wb') as f:
         pickle.dump([11, 3, 2, 4], f)
 
-    args = write_star.add_args(argparse.ArgumentParser()).parse_args([
-        input_mrcs,           # 1000 particles
-        '--ctf', 'output/ctf.pkl',     # 1000 ctf params
-        '-o', 'output/issue150_written1.star',
-        '--ind', 'output/indices.pkl',
-        '--full-path'
-    ])
+    args = write_star.add_args(argparse.ArgumentParser()).parse_args(
+        [
+            input_mrcs,  # 1000 particles
+            '--ctf',
+            'output/ctf.pkl',  # 1000 ctf params
+            '-o',
+            'output/issue150_written1.star',
+            '--ind',
+            'output/indices.pkl',
+            '--full-path',
+        ]
+    )
     write_star.main(args)
 
 
@@ -153,12 +173,16 @@ def test_write_star2(input_mrcs, input_star_all):
     with open(indices_pkl, 'wb') as f:
         pickle.dump([11, 3, 2, 4], f)
 
-    args = write_star.add_args(argparse.ArgumentParser()).parse_args([
-        input_star_all,           # 1000 particles
-        '-o', 'output/issue150_written2.star',
-        '--ind', 'output/indices.pkl',
-        '--full-path'
-    ])
+    args = write_star.add_args(argparse.ArgumentParser()).parse_args(
+        [
+            input_star_all,  # 1000 particles
+            '-o',
+            'output/issue150_written2.star',
+            '--ind',
+            'output/indices.pkl',
+            '--full-path',
+        ]
+    )
     write_star.main(args)
 
 
@@ -171,11 +195,16 @@ def test_write_cs(input_cs_all, input_cs_proj_dir):
     with open(indices_pkl, 'wb') as f:
         pickle.dump([11, 3, 2, 4], f)
 
-    args = write_cs.add_args(argparse.ArgumentParser()).parse_args([
-        input_cs_all,           # 1000 particles
-        '--datadir', input_cs_proj_dir,
-        '-o', 'output/cs_filtered.cs',
-        '--ind', 'output/indices.pkl',
-        '--full-path'
-    ])
+    args = write_cs.add_args(argparse.ArgumentParser()).parse_args(
+        [
+            input_cs_all,  # 1000 particles
+            '--datadir',
+            input_cs_proj_dir,
+            '-o',
+            'output/cs_filtered.cs',
+            '--ind',
+            'output/indices.pkl',
+            '--full-path',
+        ]
+    )
     write_cs.main(args)

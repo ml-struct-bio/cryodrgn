@@ -8,10 +8,15 @@ import numpy as np
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('input', nargs='*', help='Input')
-    parser.add_argument('-t', type=float, default=0.143, help='Cutoff for resolution estimation (default: %(default)s)')
-    parser.add_argument('--labels', nargs='*', help='Labels for plotting')
-    parser.add_argument('-o')
+    parser.add_argument("input", nargs="*", help="Input")
+    parser.add_argument(
+        "-t",
+        type=float,
+        default=0.143,
+        help="Cutoff for resolution estimation (default: %(default)s)",
+    )
+    parser.add_argument("--labels", nargs="*", help="Labels for plotting")
+    parser.add_argument("-o")
     return parser
 
 
@@ -26,15 +31,15 @@ def main(args):
         print(w)
         print(x[:, 0][w])
         print(1 / x[:, 0][w])
-    plt.legend(loc='best')
+    plt.legend(loc="best")
     plt.ylim((0, 1))
-    plt.ylabel('FSC')
-    plt.xlabel('frequency')
+    plt.ylabel("FSC")
+    plt.xlabel("frequency")
     if args.o:
         plt.savefig(args.o)
     else:
         plt.show()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main(parse_args().parse_args())

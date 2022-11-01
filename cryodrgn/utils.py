@@ -11,23 +11,23 @@ _verbose = False
 
 
 def log(msg):
-    print('{}     {}'.format(dt.now().strftime('%Y-%m-%d %H:%M:%S.%f'), msg))
+    print("{}     {}".format(dt.now().strftime("%Y-%m-%d %H:%M:%S.%f"), msg))
     sys.stdout.flush()
 
 
 def vlog(msg):
     if _verbose:
-        print('{}     {}'.format(dt.now().strftime('%Y-%m-%d %H:%M:%S'), msg))
+        print("{}     {}".format(dt.now().strftime("%Y-%m-%d %H:%M:%S"), msg))
         sys.stdout.flush()
 
 
 def flog(msg, outfile):
-    msg = '{}     {}'.format(dt.now().strftime('%Y-%m-%d %H:%M:%S'), msg)
+    msg = "{}     {}".format(dt.now().strftime("%Y-%m-%d %H:%M:%S"), msg)
     print(msg)
     sys.stdout.flush()
     try:
-        with open(outfile, 'a') as f:
-            f.write(msg + '\n')
+        with open(outfile, "a") as f:
+            f.write(msg + "\n")
     except Exception as e:
         log(e)
 
@@ -64,14 +64,14 @@ class memoized(object):
 
 
 def load_pkl(pkl):
-    with open(pkl, 'rb') as f:
+    with open(pkl, "rb") as f:
         x = pickle.load(f)
     return x
 
 
-def save_pkl(data, out_pkl, mode='wb'):
-    if mode == 'wb' and os.path.exists(out_pkl):
-        vlog(f'Warning: {out_pkl} already exists. Overwriting.')
+def save_pkl(data, out_pkl, mode="wb"):
+    if mode == "wb" and os.path.exists(out_pkl):
+        vlog(f"Warning: {out_pkl} already exists. Overwriting.")
     with open(out_pkl, mode) as f:
         pickle.dump(data, f)
 
@@ -127,7 +127,7 @@ def R_from_relion_scipy(euler_, degrees=True):
     f[1, 0] = -1
     f[1, 2] = -1
     f[2, 1] = -1
-    rot = RR.from_euler('zxz', euler, degrees=degrees).as_matrix() * f
+    rot = RR.from_euler("zxz", euler, degrees=degrees).as_matrix() * f
     return rot
 
 
@@ -137,13 +137,13 @@ def R_to_relion_scipy(rot, degrees=True):
 
     if rot.shape == (3, 3):
         rot = rot.reshape(1, 3, 3)
-    assert len(rot.shape) == 3, 'Input must have dim Nx3x3'
+    assert len(rot.shape) == 3, "Input must have dim Nx3x3"
     f = np.ones((3, 3))
     f[0, 1] = -1
     f[1, 0] = -1
     f[1, 2] = -1
     f[2, 1] = -1
-    euler = RR.from_matrix(rot * f).as_euler('zxz', degrees=True)
+    euler = RR.from_matrix(rot * f).as_euler("zxz", degrees=True)
     euler[:, 0] -= 90
     euler[:, 2] += 90
     euler += 180
@@ -157,7 +157,13 @@ def R_to_relion_scipy(rot, degrees=True):
 def xrot(tilt_deg):
     """Return rotation matrix associated with rotation over the x-axis"""
     theta = tilt_deg * np.pi / 180
-    tilt = np.array([[1.0, 0.0, 0.0], [0, np.cos(theta), -np.sin(theta)], [0, np.sin(theta), np.cos(theta)]])
+    tilt = np.array(
+        [
+            [1.0, 0.0, 0.0],
+            [0, np.cos(theta), -np.sin(theta)],
+            [0, np.sin(theta), np.cos(theta)],
+        ]
+    )
     return tilt
 
 
@@ -172,17 +178,17 @@ def _zero_sphere_helper(D):
 
 def zero_sphere(vol):
     """Zero values of @vol outside the sphere"""
-    assert len(set(vol.shape)) == 1, 'volume must be a cube'
+    assert len(set(vol.shape)) == 1, "volume must be a cube"
     D = vol.shape[0]
     tmp = _zero_sphere_helper(D)
-    vlog('Zeroing {} pixels'.format(len(tmp[0])))
+    vlog("Zeroing {} pixels".format(len(tmp[0])))
     vol[tmp] = 0
     return vol
 
 
 def assert_pkl_close(pkl_a, pkl_b, atol=1e-4):
-    a = pickle.load(open(pkl_a, 'rb'))
-    b = pickle.load(open(pkl_b, 'rb'))
+    a = pickle.load(open(pkl_a, "rb"))
+    b = pickle.load(open(pkl_b, "rb"))
     if isinstance(a, tuple):
         for _a, _b in zip(a, b):
             assert np.linalg.norm(_a - _b) < atol

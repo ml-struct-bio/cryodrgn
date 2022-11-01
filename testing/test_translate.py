@@ -8,7 +8,7 @@ import cryodrgn.models
 import cryodrgn.mrc
 from cryodrgn.lattice import Lattice
 
-imgs, _ = cryodrgn.mrc.parse_mrc('data/hand.mrcs')
+imgs, _ = cryodrgn.mrc.parse_mrc("data/hand.mrcs")
 img = imgs[0]
 D = img.shape[0]
 ht = cryodrgn.fft.ht2_center(img)

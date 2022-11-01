@@ -23,9 +23,11 @@ std = torch.tensor([2.3407, 1.0999, 1.2962])
 std2 = torch.tensor([1.0, 1.0, 1.0])
 e = cryodrgn.lie_tools.so3_entropy_old(w_eps2, std2)
 print(e)
-e = cryodrgn.lie_tools.so3_entropy(torch.stack([w_eps, w_eps2]), torch.stack([std, std2]))
+e = cryodrgn.lie_tools.so3_entropy(
+    torch.stack([w_eps, w_eps2]), torch.stack([std, std2])
+)
 print(e)
 
 a = torch.mean(torch.Tensor(avg))
-print('average: {}'.format(a))
+print("average: {}".format(a))
 print(np.log(8 * np.pi**2))

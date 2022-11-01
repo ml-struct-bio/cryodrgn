@@ -13,30 +13,30 @@ log = utils.log
 
 
 def add_args(parser):
-    parser.add_argument('input', help='Input .star file')
-    parser.add_argument('--ind', required=True, help='Array of selected indices (.pkl)')
-    parser.add_argument('-o', type=os.path.abspath, help='Output .star file')
+    parser.add_argument("input", help="Input .star file")
+    parser.add_argument("--ind", required=True, help="Array of selected indices (.pkl)")
+    parser.add_argument("-o", type=os.path.abspath, help="Output .star file")
     return parser
 
 
 def main(args):
-    warning_msg = 'cryodrgn_utils filter_star is deprecated. Please use cryodrgn_utils write_star instead.'
+    warning_msg = "cryodrgn_utils filter_star is deprecated. Please use cryodrgn_utils write_star instead."
     warnings.warn(warning_msg, DeprecationWarning)
-    log(f'WARNING: {warning_msg}')
+    log(f"WARNING: {warning_msg}")
 
     args = write_star.add_args(argparse.ArgumentParser()).parse_args(
         [
             args.input,
-            '-o',
+            "-o",
             args.o,
-            '--ind',
+            "--ind",
             args.ind,
         ]
     )
     write_star.main(args)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     args = add_args(parser).parse_args()
     main(args)

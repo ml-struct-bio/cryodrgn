@@ -12,12 +12,12 @@ log = utils.log
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('vol1', help='Input')
-    parser.add_argument('vol2', help='Input')
-    parser.add_argument('--mask')
-    parser.add_argument('--plot', action='store_true')
-    parser.add_argument('--Apix', type=float, default=1)
-    parser.add_argument('-o', help='Output')
+    parser.add_argument("vol1", help="Input")
+    parser.add_argument("vol2", help="Input")
+    parser.add_argument("--mask")
+    parser.add_argument("--plot", action="store_true")
+    parser.add_argument("--Apix", type=float, default=1)
+    parser.add_argument("-o", help="Output")
     return parser
 
 
@@ -32,7 +32,7 @@ def main(args):
 
     D = vol1.shape[0]
     x = np.arange(-D // 2, D // 2)
-    x2, x1, x0 = np.meshgrid(x, x, x, indexing='ij')
+    x2, x1, x0 = np.meshgrid(x, x, x, indexing="ij")
     coords = np.stack((x0, x1, x2), -1)
     r = (coords**2).sum(-1) ** 0.5
 
@@ -63,11 +63,11 @@ def main(args):
 
     w = np.where(fsc < 0.5)
     if w:
-        log('0.5: {}'.format(1 / x[w[0]] * args.Apix))
+        log("0.5: {}".format(1 / x[w[0]] * args.Apix))
 
     w = np.where(fsc < 0.143)
     if w:
-        log('0.143: {}'.format(1 / x[w[0]] * args.Apix))
+        log("0.143: {}".format(1 / x[w[0]] * args.Apix))
 
     if args.plot:
         plt.plot(x, fsc)
@@ -75,5 +75,5 @@ def main(args):
         plt.show()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main(parse_args().parse_args())

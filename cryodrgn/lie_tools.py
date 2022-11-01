@@ -26,7 +26,11 @@ def map_to_lie_algebra(v):
 
     R_z = v.new_tensor([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
 
-    R = R_x * v[..., 0, None, None] + R_y * v[..., 1, None, None] + R_z * v[..., 2, None, None]
+    R = (
+        R_x * v[..., 0, None, None]
+        + R_y * v[..., 1, None, None]
+        + R_z * v[..., 2, None, None]
+    )
     return R
 
 
@@ -44,7 +48,11 @@ def expmap(v):
     K = map_to_lie_algebra(v / theta)
 
     I = torch.eye(3, device=v.device, dtype=v.dtype)  # noqa: E741
-    R = I + torch.sin(theta)[..., None] * K + (1.0 - torch.cos(theta))[..., None] * (K @ K)
+    R = (
+        I
+        + torch.sin(theta)[..., None] * K
+        + (1.0 - torch.cos(theta))[..., None] * (K @ K)
+    )
     return R
 
 
@@ -59,7 +67,11 @@ def s2s1rodrigues(s2_el, s1_el):
     cos_theta = s1_el[..., 0]
     sin_theta = s1_el[..., 1]
     I = torch.eye(3, device=s2_el.device, dtype=s2_el.dtype)  # noqa: E741
-    R = I + sin_theta[..., None, None] * K + (1.0 - cos_theta)[..., None, None] * (K @ K)
+    R = (
+        I
+        + sin_theta[..., None, None] * K
+        + (1.0 - cos_theta)[..., None, None] * (K @ K)
+    )
     return R
 
 
@@ -87,7 +99,7 @@ def SO3_to_s2s2(r):
 def SO3_to_quaternions(r):
     """Map batch of SO(3) matrices to quaternions."""
     batch_dims = r.shape[:-2]
-    assert list(r.shape[-2:]) == [3, 3], 'Input must be 3x3 matrices'
+    assert list(r.shape[-2:]) == [3, 3], "Input must be 3x3 matrices"
     r = r.view(-1, 3, 3)
     n = r.shape[0]
 
@@ -142,7 +154,9 @@ def SO3_to_quaternions(r):
 
     cases = torch.stack([case0, case1, case2, case3], 1)
 
-    quaternions = cases[torch.arange(n, dtype=torch.long), torch.argmax(denom.detach(), 1)]
+    quaternions = cases[
+        torch.arange(n, dtype=torch.long), torch.argmax(denom.detach(), 1)
+    ]
     return quaternions.view(*batch_dims, 4)
 
 
@@ -218,13 +232,17 @@ def so3_entropy_old(w_eps, std, k=10):
     # entropy of gaussian distribution on so3
     # see appendix C of https://arxiv.org/pdf/1807.04689.pdf
     theta = w_eps.norm(p=2)
-    u = w_eps / theta   # 3
-    angles = 2 * np.pi * torch.arange(-k, k + 1, dtype=w_eps.dtype, device=w_eps.device)   # 2k+1
-    theta_hat = theta + angles   # 2k+1
-    x = u[None, :] * theta_hat[:, None]   # 2k+1 , 3
-    log_p = Normal(torch.zeros(3, device=w_eps.device), std).log_prob(x)   # 2k+1,3
+    u = w_eps / theta  # 3
+    angles = (
+        2 * np.pi * torch.arange(-k, k + 1, dtype=w_eps.dtype, device=w_eps.device)
+    )  # 2k+1
+    theta_hat = theta + angles  # 2k+1
+    x = u[None, :] * theta_hat[:, None]  # 2k+1 , 3
+    log_p = Normal(torch.zeros(3, device=w_eps.device), std).log_prob(x)  # 2k+1,3
     clamp = 1e-3
-    log_vol = torch.log((theta_hat**2).clamp(min=clamp) / (2 - 2 * torch.cos(theta)).clamp(min=clamp))   # 2k+1
+    log_vol = torch.log(
+        (theta_hat**2).clamp(min=clamp) / (2 - 2 * torch.cos(theta)).clamp(min=clamp)
+    )  # 2k+1
     log_p = log_p.sum(-1) + log_vol
     entropy = -logsumexp(log_p)
     return entropy
@@ -238,17 +256,22 @@ def so3_entropy(w_eps, std, k=10):
     """
     # entropy of gaussian distribution on so3
     # see appendix C of https://arxiv.org/pdf/1807.04689.pdf
-    theta = w_eps.norm(p=2, dim=-1, keepdim=True)   # [B, 1]
-    u = w_eps / theta   # [B, 3]
-    angles = 2 * np.pi * torch.arange(-k, k + 1, dtype=w_eps.dtype, device=w_eps.device)   # 2k+1
-    theta_hat = theta[:, None, :] + angles[:, None]   # [B, 2k+1, 1]
-    x = u[:, None, :] * theta_hat   # [B, 2k+1 , 3]
-    log_p = Normal(torch.zeros(3, device=w_eps.device), std).log_prob(x.permute([1, 0, 2]))   # [2k+1, B, 3]
-    log_p = log_p.permute([1, 0, 2])   # [B, 2k+1, 3]
+    theta = w_eps.norm(p=2, dim=-1, keepdim=True)  # [B, 1]
+    u = w_eps / theta  # [B, 3]
+    angles = (
+        2 * np.pi * torch.arange(-k, k + 1, dtype=w_eps.dtype, device=w_eps.device)
+    )  # 2k+1
+    theta_hat = theta[:, None, :] + angles[:, None]  # [B, 2k+1, 1]
+    x = u[:, None, :] * theta_hat  # [B, 2k+1 , 3]
+    log_p = Normal(torch.zeros(3, device=w_eps.device), std).log_prob(
+        x.permute([1, 0, 2])
+    )  # [2k+1, B, 3]
+    log_p = log_p.permute([1, 0, 2])  # [B, 2k+1, 3]
     clamp = 1e-3
     log_vol = torch.log(
-        (theta_hat**2).clamp(min=clamp) / (2 - 2 * torch.cos(theta_hat)).clamp(min=clamp)
-    )   # [B, 2k+1, 1]
-    log_p = log_p.sum(-1) + log_vol.sum(-1)   # [B, 2k+1]
+        (theta_hat**2).clamp(min=clamp)
+        / (2 - 2 * torch.cos(theta_hat)).clamp(min=clamp)
+    )  # [B, 2k+1, 1]
+    log_p = log_p.sum(-1) + log_vol.sum(-1)  # [B, 2k+1]
     entropy = -logsumexp(log_p, -1)
     return entropy

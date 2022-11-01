@@ -11,17 +11,27 @@ import torch
 
 
 def add_args(parser):
-    parser.add_argument('data', help='Input z.pkl embeddings')
-    parser.add_argument('--anchors', type=int, nargs='+', required=True, help='Index of anchor points')
-    parser.add_argument('--max-neighbors', type=int, default=10)
-    parser.add_argument('--avg-neighbors', type=float, default=5)
-    parser.add_argument('--batch-size', type=int, default=1000)
-    parser.add_argument('--max-images', type=int, default=None)
+    parser.add_argument("data", help="Input z.pkl embeddings")
     parser.add_argument(
-        '-o', metavar='PATH.TXT', type=os.path.abspath, required=True, help='Output .txt file for path indices'
+        "--anchors", type=int, nargs="+", required=True, help="Index of anchor points"
+    )
+    parser.add_argument("--max-neighbors", type=int, default=10)
+    parser.add_argument("--avg-neighbors", type=float, default=5)
+    parser.add_argument("--batch-size", type=int, default=1000)
+    parser.add_argument("--max-images", type=int, default=None)
+    parser.add_argument(
+        "-o",
+        metavar="PATH.TXT",
+        type=os.path.abspath,
+        required=True,
+        help="Output .txt file for path indices",
     )
     parser.add_argument(
-        '--out-z', metavar='Z.PATH.TXT', type=os.path.abspath, required=True, help='Output .txt file for path z-values'
+        "--out-z",
+        metavar="Z.PATH.TXT",
+        type=os.path.abspath,
+        required=True,
+        help="Output .txt file for path z-values",
     )
     return parser
 
@@ -69,7 +79,7 @@ class Graph(object):
             for idx, neighbor in enumerate(neighbors):
                 if neighbor not in visited:
                     new_distance = dist + self.edge_length[(v, neighbor)]
-                    if new_distance < distances.get(neighbor, float('inf')):
+                    if new_distance < distances.get(neighbor, float("inf")):
                         distances[neighbor] = new_distance
                         heappush(unvisited, (new_distance, neighbor))
                         predecessors[neighbor] = v
@@ -79,15 +89,15 @@ class Graph(object):
 
 
 def main(args):
-    data_np = pickle.load(open(args.data, 'rb'))
+    data_np = pickle.load(open(args.data, "rb"))
     data = torch.from_numpy(data_np)
 
     if args.max_images is not None:
         data = data[: args.max_images]
 
     use_cuda = torch.cuda.is_available()
-    print(f'Use cuda {use_cuda}')
-    device = torch.device('cuda' if use_cuda else 'cpu')
+    print(f"Use cuda {use_cuda}")
+    device = torch.device("cuda" if use_cuda else "cpu")
     data = data.to(device)
 
     N, D = data.shape
@@ -98,12 +108,16 @@ def main(args):
     n2 = (data * data).sum(-1, keepdim=True)
     B = args.batch_size
     ndist = torch.empty(data.shape[0], args.max_neighbors, device=device)
-    neighbors = torch.empty(data.shape[0], args.max_neighbors, dtype=torch.long, device=device)
+    neighbors = torch.empty(
+        data.shape[0], args.max_neighbors, dtype=torch.long, device=device
+    )
     for i in range(0, data.shape[0], B):
         # (a-b)^2 = a^2 + b^2 - 2ab
-        print(f'Working on images {i}-{i+B}')
+        print(f"Working on images {i}-{i+B}")
         batch_dist = n2[i : i + B] + n2.t() - 2 * torch.mm(data[i : i + B], data.t())
-        ndist[i : i + B], neighbors[i : i + B] = batch_dist.topk(args.max_neighbors, dim=-1, largest=False)
+        ndist[i : i + B], neighbors[i : i + B] = batch_dist.topk(
+            args.max_neighbors, dim=-1, largest=False
+        )
 
     assert ndist.min() >= -1e-3, ndist.min()
 
@@ -114,11 +128,13 @@ def main(args):
         max_dist = ndist.view(-1).topk(total_neighbors, largest=False)[0][-1]
     else:
         max_dist = None
-    print(f'Max dist between neighbors: {max_dist}  (to enforce average of {args.avg_neighbors} neighbors)')
+    print(
+        f"Max dist between neighbors: {max_dist}  (to enforce average of {args.avg_neighbors} neighbors)"
+    )
 
-    max_dist = max_dist.to('cpu')
-    neighbors = neighbors.to('cpu')
-    ndist = ndist.to('cpu')
+    max_dist = max_dist.to("cpu")
+    neighbors = neighbors.to("cpu")
+    ndist = ndist.to("cpu")
     edges = []
     for i in range(neighbors.shape[0]):
         for j in range(neighbors.shape[1]):
@@ -141,29 +157,29 @@ def main(args):
 
         print()
         if path is not None:
-            print('Path:')
+            print("Path:")
             for id in path:
                 print(id)
             print()
-            print(f'Total distance: {total_distance}')
+            print(f"Total distance: {total_distance}")
             print()
-            print('Neighbor distance:')
+            print("Neighbor distance:")
             for d in dists:
                 print(d)
             print()
-            print('Euclidean distance: {}'.format(((dd[0] - dd[-1]) ** 2).sum() ** 0.5))
+            print("Euclidean distance: {}".format(((dd[0] - dd[-1]) ** 2).sum() ** 0.5))
         else:
-            print('Could not find path!')
+            print("Could not find path!")
 
     if not os.path.exists(os.path.dirname(args.o)):
         os.makedirs(os.path.dirname(args.o))
     print(args.o)
-    np.savetxt(args.o, full_path, fmt='%d')
+    np.savetxt(args.o, full_path, fmt="%d")
     print(args.out_z)
     np.savetxt(args.out_z, data_np[full_path])
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     add_args(parser)
     main(parser.parse_args())

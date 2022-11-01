@@ -11,7 +11,7 @@ def grid_1d(resol, extent, ngrid):
 def grid_3d(resol, extent, ngrid):
     w = grid_1d(resol, extent, ngrid)
     # convention: x is fastest dim, z is slowest dim
-    z, y, x = np.meshgrid(w, w, w, indexing='ij')
+    z, y, x = np.meshgrid(w, w, w, indexing="ij")
     grid = np.stack([x, y, z], -1)
     return grid.reshape(-1, 3)
 
@@ -44,8 +44,8 @@ def get_neighbor(xi, yi, zi, curr_res, extent, ngrid):
     x_next, xii = get_1d_neighbor(xi, curr_res, extent, ngrid)
     y_next, yii = get_1d_neighbor(yi, curr_res, extent, ngrid)
     z_next, zii = get_1d_neighbor(zi, curr_res, extent, ngrid)
-    z, y, x = np.meshgrid(z_next, y_next, x_next, indexing='ij')
+    z, y, x = np.meshgrid(z_next, y_next, x_next, indexing="ij")
     t_next = np.stack((x, y, z), -1).reshape(-1, 3)
-    zi, yi, xi = np.meshgrid(zii, yii, xii, indexing='ij')
+    zi, yi, xi = np.meshgrid(zii, yii, xii, indexing="ij")
     id_next = np.stack((xi, yi, zi), -1).reshape(-1, 3)
     return t_next, id_next.astype(int)

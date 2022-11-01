@@ -8,17 +8,17 @@ import torch
 from cryodrgn import dataset, lattice, models, pose_search, utils
 
 use_cuda = torch.cuda.is_available()
-device = torch.device('cuda' if use_cuda else 'cpu')
-print('Use cuda {}'.format(use_cuda))
+device = torch.device("cuda" if use_cuda else "cpu")
+print("Use cuda {}".format(use_cuda))
 if use_cuda:
     torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
 
 def load_model(path, D):
-    print(f'Loading model from {path}')
+    print(f"Loading model from {path}")
     ckpt = torch.load(path)
-    model = models.get_decoder(3, D, 3, 256, 'hartley', 'geom_lowf')
-    model.load_state_dict(ckpt['model_state_dict'])
+    model = models.get_decoder(3, D, 3, 256, "hartley", "geom_lowf")
+    model.load_state_dict(ckpt["model_state_dict"])
     model.eval()
     if use_cuda:
         model.cuda()
@@ -26,7 +26,7 @@ def load_model(path, D):
 
 
 def get_poses(path, D):
-    print(f'Loading poses from {path}')
+    print(f"Loading poses from {path}")
     pose = utils.load_pkl(path)
     pose_rot, pose_trans = pose
     pose_rot = torch.tensor(pose_rot)
@@ -53,10 +53,12 @@ def trans_offset(x, y):
 def run(args):
     GPU_BATCH = 4
 
-    print(f'Loading particle images from {args.particles}')
-    data = dataset.MRCData(args.particles, window=False, keepreal=False, invert_data=True)
+    print(f"Loading particle images from {args.particles}")
+    data = dataset.MRCData(
+        args.particles, window=False, keepreal=False, invert_data=True
+    )
 
-    LB = ''
+    LB = ""
     D = data.D
     assert D % 2 == 1
 
@@ -91,7 +93,7 @@ def run(args):
         ret = ps.opt_theta_trans(images)
         return ret
 
-    def eval_pose_search(B=256, S=0, label='', **kwargs):
+    def eval_pose_search(B=256, S=0, label="", **kwargs):
         tic = time.perf_counter()
         res = []
         for chunk in torch.from_numpy(data.particles[S : S + B]).split(GPU_BATCH):
@@ -109,23 +111,23 @@ def run(args):
         # print(trans_hat[:10])
 
         print(
-            f'{label:20s}| '
-            f'Rot MedSE= {medse(rot_hat, batch_rot):.5f} '
-            f'Rot MSE= {mse(rot_hat, batch_rot):.5f} '
-            f'Trans MedSE= {medse(trans_hat, batch_trans):.5f} '
-            f'Trans MSE= {mse(trans_hat, batch_trans):.5f} '
-            f'Trans offset= {trans_offset(trans_hat, batch_trans)} '
-            f'time= {delta:.2f} s'
+            f"{label:20s}| "
+            f"Rot MedSE= {medse(rot_hat, batch_rot):.5f} "
+            f"Rot MSE= {mse(rot_hat, batch_rot):.5f} "
+            f"Trans MedSE= {medse(trans_hat, batch_trans):.5f} "
+            f"Trans MSE= {mse(trans_hat, batch_trans):.5f} "
+            f"Trans offset= {trans_offset(trans_hat, batch_trans)} "
+            f"time= {delta:.2f} s"
         )
 
-    print(f'Device: {next(model.parameters()).device}')
+    print(f"Device: {next(model.parameters()).device}")
 
-    print('=' * 80)
+    print("=" * 80)
 
     tic = time.perf_counter()
 
     eval_pose_search(
-        label=f'{LB}base',
+        label=f"{LB}base",
     )
 
     # eval_pose_search(
@@ -172,25 +174,25 @@ def run(args):
     #     base_healpy=3,
     # )
 
-    print(f'Finished in {time.perf_counter() - tic} s ')
+    print(f"Finished in {time.perf_counter() - tic} s ")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        '--particles',
-        default=f'{os.path.dirname(__file__)}/../datasets/rag12_128/particles.128.phaseflip.1k.mrcs',
+        "--particles",
+        default=f"{os.path.dirname(__file__)}/../datasets/rag12_128/particles.128.phaseflip.1k.mrcs",
     )
     parser.add_argument(
-        '--model',
-        default=f'{os.path.dirname(__file__)}/../datasets/rag12_128/good_model/weights.50.pkl',
+        "--model",
+        default=f"{os.path.dirname(__file__)}/../datasets/rag12_128/good_model/weights.50.pkl",
     )
     parser.add_argument(
-        '--poses',
-        default=f'{os.path.dirname(__file__)}/../datasets/rag12_128/good_model/pose.v2.pkl',
+        "--poses",
+        default=f"{os.path.dirname(__file__)}/../datasets/rag12_128/good_model/pose.v2.pkl",
     )
 
-    parser.add_argument('--B', type=int, default=512)
+    parser.add_argument("--B", type=int, default=512)
     args = parser.parse_args()
 
     run(args)

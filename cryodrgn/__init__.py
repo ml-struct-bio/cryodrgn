@@ -6,6 +6,6 @@ try:
     from cryodrgn._version import version as __version__
 except ModuleNotFoundError:
     # We're likely running as a source package without installation
-    __version__ = 'src'
+    __version__ = "src"
 
 _ROOT = os.path.abspath(os.path.dirname(__file__))

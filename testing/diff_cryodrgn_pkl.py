@@ -4,8 +4,8 @@ import sys
 a = sys.argv[1]
 b = sys.argv[2]
 
-a = pickle.load(open(a, 'rb'))
-b = pickle.load(open(b, 'rb'))
+a = pickle.load(open(a, "rb"))
+b = pickle.load(open(b, "rb"))
 
 if type(a) is tuple:
     diff_r = ((a[0] - b[0]) ** 2).sum()

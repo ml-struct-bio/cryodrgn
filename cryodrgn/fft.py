@@ -9,7 +9,9 @@ except ImportError:
 def fft2_center(img):
     pp = np if isinstance(img, np.ndarray) else cp
 
-    return pp.fft.fftshift(pp.fft.fft2(pp.fft.fftshift(img, axes=(-1, -2))), axes=(-1, -2))
+    return pp.fft.fftshift(
+        pp.fft.fft2(pp.fft.fftshift(img, axes=(-1, -2))), axes=(-1, -2)
+    )
 
 
 def fftn_center(img):
@@ -70,8 +72,8 @@ def symmetrize_ht(ht, preallocated=False):
         sym_ht = pp.empty((B, D + 1, D + 1), dtype=ht.dtype)
         sym_ht[:, 0:-1, 0:-1] = ht
     assert D % 2 == 0
-    sym_ht[:, -1, :] = sym_ht[:, 0]   # last row is the first row
-    sym_ht[:, :, -1] = sym_ht[:, :, 0]   # last col is the first col
+    sym_ht[:, -1, :] = sym_ht[:, 0]  # last row is the first row
+    sym_ht[:, :, -1] = sym_ht[:, :, 0]  # last col is the first col
     sym_ht[:, -1, -1] = sym_ht[:, 0, 0]
     if len(sym_ht) == 1:
         sym_ht = sym_ht[0]

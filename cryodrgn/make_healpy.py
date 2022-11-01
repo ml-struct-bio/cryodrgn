@@ -10,5 +10,5 @@ for r in range(7):
     theta, phi = healpy.pix2ang(Nside, np.arange(Npix), nest=True, lonlat=False)
     x[Nside] = [theta.tolist(), phi.tolist()]
 
-with open('healpy_grid.json', 'w') as hf:
+with open("healpy_grid.json", "w") as hf:
     json.dump(x, hf)

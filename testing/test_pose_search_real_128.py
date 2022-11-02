@@ -1,12 +1,9 @@
-import cryodrgn
-from cryodrgn import mrc, dataset, models, lattice, fft, utils, pose_search
-import matplotlib.pyplot as plt
-import seaborn as sns
-import math
 import time
-import torch
+
 import numpy as np
-from scipy.spatial.transform import Rotation as RR
+import torch
+
+from cryodrgn import dataset, lattice, models, pose_search, utils
 
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda" if use_cuda else "cpu")
@@ -78,7 +75,6 @@ def medse(x, y):
 
 
 def trans_offset(x, y):
-    B = x.shape[0]
     return (x - y).view(-1, 2).mean(0).cpu().numpy()
 
 
@@ -111,13 +107,13 @@ tic = time.perf_counter()
 eval_pose_search(
     data,
     model,
-    label=f"base",
+    label="base",
 )
 
 eval_pose_search(
     data,
     model,
-    label=f"L= [12, 48]",
+    label="L= [12, 48]",
     Lmin=12,
     Lmax=48,
 )
@@ -125,7 +121,7 @@ eval_pose_search(
 eval_pose_search(
     data,
     model,
-    label=f"L= [12, 48], 7 iters",
+    label="L= [12, 48], 7 iters",
     Lmin=12,
     Lmax=48,
     niter=7,
@@ -134,7 +130,7 @@ eval_pose_search(
 eval_pose_search(
     data,
     model,
-    label=f"L= [12, 48], 7 iters, half",
+    label="L= [12, 48], 7 iters, half",
     Lmin=12,
     Lmax=48,
     niter=7,
@@ -168,7 +164,7 @@ for nkp in (1, 2, 4, 24):
 eval_pose_search(
     data,
     model,
-    label=f"healpy= 3",
+    label="healpy= 3",
     base_healpy=3,
 )
 

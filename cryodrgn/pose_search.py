@@ -1,15 +1,9 @@
-import math
 import numpy as np
 import torch
-from cryodrgn.models import unparallelize
-import torch.nn as nn
 import torch.nn.functional as F
 
-from cryodrgn import lie_tools
-from cryodrgn import so3_grid
-from cryodrgn import shift_grid
-from cryodrgn import utils
-from cryodrgn.lattice import Lattice
+from cryodrgn import lie_tools, shift_grid, so3_grid, utils
+from cryodrgn.models import unparallelize
 
 log = utils.log
 vlog = utils.vlog
@@ -80,14 +74,21 @@ class PoseSearch:
         self.base_quat = (
             so3_grid.s2_grid_SO3(base_healpy) if FAST_INPLANE else self.so3_base_quat
         )
-        self.so3_base_rot = lie_tools.quaternions_to_SO3(to_tensor(self.so3_base_quat)).to(device)
-        self.base_rot = lie_tools.quaternions_to_SO3(to_tensor(self.base_quat)).to(device)
+        self.so3_base_rot = lie_tools.quaternions_to_SO3(
+            to_tensor(self.so3_base_quat)
+        ).to(device)
+        self.base_rot = lie_tools.quaternions_to_SO3(to_tensor(self.base_quat)).to(
+            device
+        )
 
         self.nbase = len(self.base_quat)
         self.base_inplane = so3_grid.grid_s1(base_healpy)
         self.base_shifts = torch.tensor(
-            shift_grid.base_shift_grid(base_healpy - 1, t_extent, t_ngrid, xshift=t_xshift, yshift=t_yshift),
-            device=device).float()
+            shift_grid.base_shift_grid(
+                base_healpy - 1, t_extent, t_ngrid, xshift=t_xshift, yshift=t_yshift
+            ),
+            device=device,
+        ).float()
         self.t_extent = t_extent
         self.t_ngrid = t_ngrid
 
@@ -102,20 +103,32 @@ class PoseSearch:
 
         self.device = device
 
-    def eval_grid(self, *, images, rot, z, NQ, L, images_tilt=None, angles_inplane=None, ctf_i=None):
-        '''
+    def eval_grid(
+        self,
+        *,
+        images,
+        rot,
+        z,
+        NQ,
+        L,
+        images_tilt=None,
+        angles_inplane=None,
+        ctf_i=None,
+    ):
+        """
         images: B x T x Npix
         rot: (NxQ) x 3 x 3 rotation matrics (N=1 for base grid, N=B for incremental grid)
         NQ: number of slices evaluated for each image
         L: radius of fourier components to evaluate
-        '''
+        """
         B = images.size(0)
         mask = self.lattice.get_circular_mask(L)
         coords = self.lattice.coords[mask]  # .to(rot.device)
         YX = coords.size(-2)
         device = next(self.model.parameters()).device
         if ctf_i is not None:
-            ctf_i = ctf_i.view(B,1,1,-1)[...,mask] # Bx1x1xYX
+            ctf_i = ctf_i.view(B, 1, 1, -1)[..., mask]  # Bx1x1xYX
+
         def compute_err(images, rot):
 
             if angles_inplane is not None:
@@ -134,7 +147,9 @@ class PoseSearch:
             with torch.no_grad():
                 y_hat = self.model(x)
                 y_hat = y_hat.float()
-            y_hat = y_hat.view(-1, 1, NQ, YX)  #1x1xNQxYX for base grid, Bx1x8xYX for incremental grid
+            y_hat = y_hat.view(
+                -1, 1, NQ, YX
+            )  # 1x1xNQxYX for base grid, Bx1x8xYX for incremental grid
             if ctf_i is not None:
                 y_hat = y_hat * ctf_i
             if angles_inplane is not None:
@@ -262,7 +277,9 @@ class PoseSearch:
         ]
         quat = np.array([x[0] for x in neighbors])  # Bx8x4
         q_ind = np.array([x[1] for x in neighbors])  # Bx8x2
-        rot = lie_tools.quaternions_to_SO3(torch.from_numpy(quat).view(-1, 4)).to(self.device)
+        rot = lie_tools.quaternions_to_SO3(torch.from_numpy(quat).view(-1, 4)).to(
+            self.device
+        )
 
         assert len(quat.shape) == 3 and quat.shape == (N, 8, 4), quat.shape
         assert len(q_ind.shape) == 3 and q_ind.shape == (N, 8, 2), q_ind.shape
@@ -302,7 +319,9 @@ class PoseSearch:
         return min(L, self.lattice.D // 2)
         # return min(self.Lmin * 2 ** iter_, self.Lmax)
 
-    def opt_theta_trans(self, images, z=None, images_tilt=None, init_poses=None, ctf_i=None):
+    def opt_theta_trans(
+        self, images, z=None, images_tilt=None, init_poses=None, ctf_i=None
+    ):
         images = to_tensor(images)
         images_tilt = to_tensor(images_tilt)
         init_poses = to_tensor(init_poses)
@@ -330,9 +349,11 @@ class PoseSearch:
                 z=z,
                 NQ=self.nbase,
                 L=L,
-                images_tilt=self.translate_images(images_tilt, self.base_shifts, L) if do_tilt else None,
+                images_tilt=self.translate_images(images_tilt, self.base_shifts, L)
+                if do_tilt
+                else None,
                 angles_inplane=self.base_inplane if FAST_INPLANE else None,
-                ctf_i=ctf_i
+                ctf_i=ctf_i,
             )
             keepB, keepT, keepQ = self.keep_matrix(
                 loss, B, self.nkeptposes
@@ -376,9 +397,11 @@ class PoseSearch:
                 z=zb,
                 NQ=8,
                 L=L,
-                images_tilt=self.translate_images(images_tilt[keepB],trans, L) if do_tilt else None, # (B*24, 4, Npoints)
-                ctf_i=ctf_i[keepB] if ctf_i is not None else ctf_i
-            ) # sum(NP), 8
+                images_tilt=self.translate_images(images_tilt[keepB], trans, L)
+                if do_tilt
+                else None,  # (B*24, 4, Npoints)
+                ctf_i=ctf_i[keepB] if ctf_i is not None else ctf_i,
+            )  # sum(NP), 8
 
             # nkeptposes = 1
             # nkeptposes = max(1, math.ceil(self.nkeptposes / 2 ** (iter_-1)))

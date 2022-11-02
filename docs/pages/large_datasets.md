@@ -1,10 +1,10 @@
 # Dealing with large datasets
 
-Large datasets that do not fit into memory can be trained with the `--lazy` flag, which loads images on-the-fly instead of all at once at the beginning of training. This can, however, be very slow due to the filesystem access pattern for on-the-fly image loading, especially if the data is not located on a SSD drive. 
+Large datasets that do not fit into memory can be trained with the `--lazy` flag, which loads images on-the-fly instead of all at once at the beginning of training. This can, however, be very slow due to the filesystem access pattern for on-the-fly image loading, especially if the data is not located on a SSD drive.
 
 To reduce the memory requirement of loading the whole dataset, cryoDRGN contains a new tool `cryodrgn preprocess` that performs some of the image preprocessing done at the beginning of training. Separating out image preprocessing significantly reduces the memory requirement of `cryodrgn train_vae`, potentially leading to major training speedups ⚡ ⚡ ⚡ .
 
-The new workflow replaces `cryodrgn downsample` with `cryodrgn preprocess`: 
+The new workflow replaces `cryodrgn downsample` with `cryodrgn preprocess`:
 
 ```bash
 # Replace `cryodrgn downsample` with `cryodrgn preprocess`
@@ -15,7 +15,7 @@ cryodrgn preprocess P10_J712_particles_exported.cs \
 
 # Parse pose information as usual, specifying the refinement box size with -D
 cryodrgn parse_pose_csparc P10_J712_particles_exported.cs \
-		-D 256 \ 
+		-D 256 \
 		-o data/pose.pkl
 
 # Parse CTF information as usual
@@ -45,20 +45,20 @@ With new `--preprocessed`:
 - 200 GB maximum memory requirement
 - 3.2 min to load the dataset in `cryodrgn train_vae`
 
-On a single V100 GPU, this dataset trained in approximately 2h,3min per epoch (large 1024x3 model) when fully loaded into memory. Training with on-the-fly data loading (`--lazy`) was 4x slower, though this can vary widely depending on your filesystem/network. 
+On a single V100 GPU, this dataset trained in approximately 2h,3min per epoch (large 1024x3 model) when fully loaded into memory. Training with on-the-fly data loading (`--lazy`) was 4x slower, though this can vary widely depending on your filesystem/network.
 
 ## Technicalities
 
 - Using `cryodrgn preprocess` in place of `cryodrgn downsample` means that images will be windowed (circular mask applied in real space) *before* they are downsampled. This is slightly different than in the original workflow where images are first downsampled, then the mask is applied during training. To exactly replicate the previous behavior, run `cryodrgn downsample` as usual, then run `cryodrgn preprocess` on the downsampled dataset.
 - Viewing particle images in cryoDRGN_viz.ipynb and cryoDRGN_filtering.ipynb will now show Fourier space images. A current workaround is to overwrite the path with the original particles when loading particle images in the jupyter notebook:
     - Before
-        
+
         ![preprocess1.png](assets/preprocess1.png)
-        
+
     - After (modifications to dataset.load_particles arguments)
-        
+
         ![preprocess2.png](assets/preprocess2.png)
-        
+
 
 ## Still too large
 

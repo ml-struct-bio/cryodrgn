@@ -38,11 +38,11 @@ Updated default parameters for `cryodrgn train_vae` with modified positional enc
 
 ### Version 1.0
 
-The official version 1.0 release. This version introduces several new tools for analysis of the reconstructed ensembles, and adds functionality for calling utility scripts with `cryodrgn_utils <command>`. 
+The official version 1.0 release. This version introduces several new tools for analysis of the reconstructed ensembles, and adds functionality for calling utility scripts with `cryodrgn_utils <command>`.
 
 * NEW: `cryodrgn analyze_landscape` and `cryodrgn analyze_landscape_full` for automatic assignment of classes and conformational landscape visualization. Documentation for this new feature is here: https://www.notion.so/cryodrgn-conformational-landscape-analysis-a5af129288d54d1aa95388bdac48235a.
 * NEW: Faster training and higher resolution model with Gaussian Fourier featurization (Use `--pe-type gaussian`)
-* NEW: `cryodrgn_utils <command> -h` for standalone utility scripts 
+* NEW: `cryodrgn_utils <command> -h` for standalone utility scripts
 * NEW: `cryodrgn_utils write_star` for converting cryoDRGN particle selections to `.star` files
 * Add pytorch native mixed precision training and fix support for pytorch 1.9+
 
@@ -52,7 +52,7 @@ The official version 1.0 release. This version introduces several new tools for 
 
 * FIX: Bug in `write_starfile.py` when provided particle stack is chunked (.txt file)
 * Support micrograph coordinates and additional column headers to `write_starfile.py`
-* New helper scripts: `analyze_convergence.py` (_in beta testing_) contributed by <a href="bmp@mit.edu">Barrett Powell</a> (thanks!) and `make_random_selection.py` for splitting up particle stacks for training 
+* New helper scripts: `analyze_convergence.py` (_in beta testing_) contributed by <a href="bmp@mit.edu">Barrett Powell</a> (thanks!) and `make_random_selection.py` for splitting up particle stacks for training
 
 </details>
 
@@ -72,14 +72,14 @@ The official version 1.0 release. This version introduces several new tools for 
 </details>
 
 <details><summary>Version 0.3.1</summary>
-	
+
 * New: Script `write_starfile.py` to convert (filtered) particle selection to a .star file
 * More visualizations in `cryodrgn analyze`
 
 </details>
 
 <details><summary>Version 0.3.0</summary>
-	
+
 * New: GPU parallelization with flag `--multigpu`
 * New: Mode for accelerated mixed precision training with flag `--amp`, available for NVIDIA tensor core GPUs
 * Interface update:
@@ -91,14 +91,14 @@ The official version 1.0 release. This version introduces several new tools for 
 * Updated training recommendations in below quick start guide
 * Updates to cryodrgn analyze
     * More visualizations
-    * Order kmeans volumes according to distances in latent space (previously random) 
+    * Order kmeans volumes according to distances in latent space (previously random)
     * More features for particle selection and filtering in the Jupiter notebook
 
 </details>
 
 
 <details><summary>Version 0.2.1</summary>
-	
+
 * New: Parsing of RELION 3.1 files
 * Fix: Compatibility with pytorch 1.5
 
@@ -106,9 +106,9 @@ The official version 1.0 release. This version introduces several new tools for 
 
 
 <details><summary>Version 0.2.0</summary>
-	
+
 * New interface and proper python packaging with `setup.py`. This version has identical functionality and argument usage as previous versions, however tools are now available from a common entry point. See:
-    
+
     `$ cryodrgn <command> -h`
 
 * New analysis pipeline `cryodrgn analyze`
@@ -127,9 +127,9 @@ To install cryoDRGN, git clone the source code and install the following depende
     # Install dependencies
     conda install pytorch -c pytorch
     conda install pandas
-    
-    # Install dependencies for latent space visualization 
-    conda install seaborn scikit-learn 
+
+    # Install dependencies for latent space visualization
+    conda install seaborn scikit-learn
     conda install umap-learn jupyterlab ipywidgets cufflinks-py "nodejs>=15.12.0" -c conda-forge
     jupyter labextension install @jupyter-widgets/jupyterlab-manager --no-build
     jupyter labextension install jupyterlab-plotly --no-build
@@ -153,12 +153,12 @@ First resize your particle images using the `cryodrgn downsample` command:
     usage: cryodrgn downsample [-h] -D D -o MRCS [--is-vol] [--chunk CHUNK]
                                [--datadir DATADIR]
                                mrcs
-    
+
     Downsample an image stack or volume by clipping fourier frequencies
-    
+
     positional arguments:
       mrcs               Input particles or volume (.mrc, .mrcs, .star, or .txt)
-    
+
     optional arguments:
       -h, --help         show this help message and exit
       -D D               New box size in pixels, must be even
@@ -171,30 +171,30 @@ First resize your particle images using the `cryodrgn downsample` command:
                          .star or .cs file
 
 Since larger images take (much) longer to train, we recommend first downsampling images to 128x128:
-    
+
     $ cryodrgn downsample [input particle stack] -D 128 -o particles.128.mrcs
 
 The maximum recommended image size is D=256, so we also recommend downsampling your images to D=256 if your images are larger than 256x256:
 
     $ cryodrgn downsample [input particle stack] -D 256 -o particles.256.mrcs
 
-The input file format can be a single `.mrcs` file, a `.txt` file containing paths to multiple `.mrcs` files, a `.star` file, or a cryoSPARC `.cs` file. For the latter two options, if the relative paths to the `.mrcs` are broken, the argument `--datadir` can be used to supply the path to where the `.mrcs` files are located. 
+The input file format can be a single `.mrcs` file, a `.txt` file containing paths to multiple `.mrcs` files, a `.star` file, or a cryoSPARC `.cs` file. For the latter two options, if the relative paths to the `.mrcs` are broken, the argument `--datadir` can be used to supply the path to where the `.mrcs` files are located.
 
-If there are memory issues with downsampling large particle stacks, add the `--chunk 10000` argument to save images as separate `.mrcs` files of 10k images. 
+If there are memory issues with downsampling large particle stacks, add the `--chunk 10000` argument to save images as separate `.mrcs` files of 10k images.
 
 ### 2. Parse image poses from a consensus homogeneous reconstruction
 
 CryoDRGN expects image poses to be stored in a binary pickle format (`.pkl`). Use the `parse_pose_star` or `parse_pose_csparc` command to extract the poses from a `.star` file or a `.cs` file, respectively.
 
-Example usage to parse image poses from a RELION 3.1 starfile:     
+Example usage to parse image poses from a RELION 3.1 starfile:
 
     $ cryodrgn parse_pose_star particles.star -o pose.pkl -D 300
-    
+
 Example usage to parse image poses from a cryoSPARC homogeneous refinement particles.cs file:
 
     $ cryodrgn parse_pose_csparc cryosparc_P27_J3_005_particles.cs -o pose.pkl -D 300
 
-The `-D` argument should be set to the box size of the original consensus reconstruction (before any downsampling). 
+The `-D` argument should be set to the box size of the original consensus reconstruction (before any downsampling).
 
 **Note:** Poses should be obtained from a C1 consensus refinement! (See https://github.com/zhonge/cryodrgn/issues/21)
 
@@ -203,10 +203,10 @@ The `-D` argument should be set to the box size of the original consensus recons
 CryoDRGN expects CTF parameters in be stored a binary pickle format (`.pkl`). Use the `parse_ctf_star` or `parse_ctf_csparc` command to extract the relevant CTF parameters from a `.star` file or a `.cs` file, respectively.
 
 Example usage for a .star file:
-    
+
     $ cryodrgn parse_ctf_star particles.star -D 300 --Apix 1.03 -o ctf.pkl
 
-The `-D` and `--Apix` arguments should be set to the box size and Angstrom/pixel of the original `.mrcs` file (before any downsampling). 
+The `-D` and `--Apix` arguments should be set to the box size and Angstrom/pixel of the original `.mrcs` file (before any downsampling).
 
 Example usage for a .cs file:
 
@@ -217,7 +217,7 @@ Example usage for a .cs file:
 Next, test that pose and CTF parameters were parsed correctly using the voxel-based backprojection script.
 The goal is to quickly verify that there are no major problems with the extracted values and that the output structure resembles the structure from the consensus reconstruction before beginning training.
 
-Example usage: 
+Example usage:
 
     $ cryodrgn backproject_voxel projections.128.mrcs \
             --poses pose.pkl \
@@ -226,7 +226,7 @@ Example usage:
 
 The output structure `backproject.128.mrc` will not match the consensus reconstruction exactly as the `backproject_voxel` command backprojects phase-flipped particles onto the voxel grid, and by default only uses the first 10k images. If the structure is too noisy, you can increase the number of images that are used with the `--first` argument.
 
-**Note:** If the volume does not resemble your structure, you may need to use the flag `--uninvert-data`. This flips the data sign (e.g. light-on-dark or dark-on-light), which may be needed depending on the convention used in upstream processing tools. 
+**Note:** If the volume does not resemble your structure, you may need to use the flag `--uninvert-data`. This flips the data sign (e.g. light-on-dark or dark-on-light), which may be needed depending on the convention used in upstream processing tools.
 
 ### 5. Running cryoDRGN heterogeneous reconstruction
 
@@ -253,12 +253,12 @@ When the input images (.mrcs), poses (.pkl), and CTF parameters (.pkl) have been
 	                          [--pe-dim PE_DIM] [--domain {hartley,fourier}]
 	                          [--activation {relu,leaky_relu}]
 	                          particles
-	
+
 	Train a VAE for heterogeneous reconstruction with known pose
-	
+
 	positional arguments:
 	  particles             Input particles (.mrcs, .star, .cs, or .txt)
-	
+
 	optional arguments:
 	  -h, --help            show this help message and exit
 	  -o OUTDIR, --outdir OUTDIR
@@ -274,7 +274,7 @@ When the input images (.mrcs), poses (.pkl), and CTF parameters (.pkl) have been
 	  -v, --verbose         Increaes verbosity
 	  --seed SEED           Random seed
 	  --relion31            Flag if relion3.1 star format
-	
+
 	Dataset loading:
 	  --uninvert-data       Do not invert data sign
 	  --no-window           Turn off real space windowing of dataset
@@ -283,11 +283,11 @@ When the input images (.mrcs), poses (.pkl), and CTF parameters (.pkl) have been
 	                        memory
 	  --datadir DATADIR     Path prefix to particle stack if loading relative
 	                        paths from a .star or .cs file
-	
+
 	Tilt series:
 	  --tilt TILT           Particles (.mrcs)
 	  --tilt-deg TILT_DEG   X-axis tilt offset in degrees (default: 45)
-	
+
 	Training parameters:
 	  -n NUM_EPOCHS, --num-epochs NUM_EPOCHS
 	                        Number of training epochs (default: 20)
@@ -304,7 +304,7 @@ When the input images (.mrcs), poses (.pkl), and CTF parameters (.pkl) have been
 	                        of dataset)
 	  --amp                 Use mixed-precision training
 	  --multigpu            Parallelize training across all detected GPUs
-	
+
 	Pose SGD:
 	  --do-pose-sgd         Refine poses with gradient descent
 	  --pretrain PRETRAIN   Number of epochs with fixed poses before pose SGD
@@ -312,7 +312,7 @@ When the input images (.mrcs), poses (.pkl), and CTF parameters (.pkl) have been
 	  --emb-type {s2s2,quat}
 	                        SO(3) embedding type for pose SGD (default: quat)
 	  --pose-lr POSE_LR     Learning rate for pose optimizer (default: 0.0003)
-	
+
 	Encoder Network:
 	  --enc-layers QLAYERS  Number of hidden layers (default: 3)
 	  --enc-dim QDIM        Number of nodes in hidden layers (default: 256)
@@ -322,7 +322,7 @@ When the input images (.mrcs), poses (.pkl), and CTF parameters (.pkl) have been
 	                        for no mask)
 	  --use-real            Use real space image for encoder (for convolutional
 	                        encoder)
-	
+
 	Decoder Network:
 	  --dec-layers PLAYERS  Number of hidden layers (default: 3)
 	  --dec-dim PDIM        Number of nodes in hidden layers (default: 256)
@@ -352,7 +352,7 @@ Additional parameters which are typically set include:
 
 ### Recommended usage:
 
-1) It is highly recommended to first train on lower resolution images (e.g. D=128) to sanity check results and perform any particle filtering. 
+1) It is highly recommended to first train on lower resolution images (e.g. D=128) to sanity check results and perform any particle filtering.
 
 Example command to train a cryoDRGN model for 25 epochs on an image dataset `projections.128.mrcs` with poses `pose.pkl` and ctf parameters `ctf.pkl`:
 
@@ -374,7 +374,7 @@ Example command to train a cryoDRGN model for 25 epochs on an image dataset `pro
             --zdim 8 -n 25 \
             -o 01_cryodrgn256
 
-The number of epochs `-n` refers to the number of full passes through the dataset for training, and should be modified depending on the number of particles in the dataset. For a 100k particle dataset on 1 V100 GPU, the above settings required ~12 min/epoch for D=128 images and ~47 min/epoch for D=256 images.  
+The number of epochs `-n` refers to the number of full passes through the dataset for training, and should be modified depending on the number of particles in the dataset. For a 100k particle dataset on 1 V100 GPU, the above settings required ~12 min/epoch for D=128 images and ~47 min/epoch for D=256 images.
 
 If you would like to train longer, a training job can be extended with the `--load` argument. For example to extend the training of the previous example to 50 epochs:
 
@@ -389,13 +389,13 @@ If you would like to train longer, a training job can be extended with the `--lo
 
 Use cryoDRGN's `--multigpu` flag to enable parallelized training across all detected GPUs on the machine. To select specific GPUs for cryoDRGN to run on, use the environmental variable `CUDA_VISIBLE_DEVICES`, e.g.:
 
-    $ cryodrgn train_vae ... # Run on GPU 0 
+    $ cryodrgn train_vae ... # Run on GPU 0
     $ cryodrgn train_vae ... --multigpu # Run on all GPUs on the machine
-    $ CUDA_VISIBLE_DEVICES=0,3 cryodrgn train_vae ... --multigpu # Run on GPU 0,3 
+    $ CUDA_VISIBLE_DEVICES=0,3 cryodrgn train_vae ... --multigpu # Run on GPU 0,3
 
 When training is parallelized across multiple GPUs, the batch size (number of images trained in each mini-batch of SGD; default `-b 8`) will be automatically scaled by the number of available GPUs to better take advantage of parallelization. Depending on your compute resources, GPU utilization may be improved with `-b 16`. However, note that GPU parallelization, while leading to a faster wall-clock time per epoch, may require increasing the total number of epochs, since the training dynamics are affected (fewer model updates per epoch with larger `-b`).
 
-**Note:** We recommend using `--multigpu` for large images, e.g. D=256. GPU computation may not be the training bottleneck for smaller images (D=128). In this case, GPU parallelization may have a limited effect on the wall clock training time (while taking up additional compute resources). 
+**Note:** We recommend using `--multigpu` for large images, e.g. D=256. GPU computation may not be the training bottleneck for smaller images (D=128). In this case, GPU parallelization may have a limited effect on the wall clock training time (while taking up additional compute resources).
 
 ### Local pose refinement -- EXPERIMENTAL!
 
@@ -413,14 +413,14 @@ Once the model has finished training, the output directory will contain a config
                             [--skip-umap] [--Apix APIX] [--flip] [-d DOWNSAMPLE]
                             [--pc PC] [--ksample KSAMPLE]
                             workdir epoch
-    
+
     Visualize latent space and generate volumes
-    
+
     positional arguments:
       workdir               Directory with cryoDRGN results
       epoch                 Epoch number N to analyze (0-based indexing,
                             corresponding to z.N.pkl, weights.N.pkl)
-    
+
     optional arguments:
       -h, --help            show this help message and exit
       --device DEVICE       Optionally specify CUDA device
@@ -429,7 +429,7 @@ Once the model has finished training, the output directory will contain a config
                             [workdir]/analyze.[epoch])
       --skip-vol            Skip generation of volumes
       --skip-umap           Skip running UMAP
-    
+
     Extra arguments for volume generation:
       --Apix APIX           Pixel size to add to .mrc header (default: 1 A/pix)
       --flip                Flip handedness of output volume
@@ -438,7 +438,7 @@ Once the model has finished training, the output directory will contain a config
       --pc PC               Number of principal component traversals to generate
                             (default: 2)
       --ksample KSAMPLE     Number of kmeans samples to generate (default: 20)
-      
+
 This script runs a series of standard analyses:
 
 * PCA visualization of the latent embeddings
@@ -446,7 +446,7 @@ This script runs a series of standard analyses:
 * Generation of volumes. See note [1].
 * Generation of trajectories along the first and second principal components of the latent embeddings
 * Generation of a template jupyter notebook that may be used for further interactive analyses, visualization, and volume generation
-* Generation of a template jupyter notebook for particle filtering and selection 
+* Generation of a template jupyter notebook for particle filtering and selection
 
 Example usage to analyze results from the direction `01_cryodrgn256` containing results after 25 epochs of training:
 
@@ -454,7 +454,7 @@ Example usage to analyze results from the direction `01_cryodrgn256` containing 
 
 Notes:
 
-[1] Volumes are generated after k-means clustering of the latent embeddings with k=20 by default. Note that we use k-means clustering here not to identify clusters, but to segment the latent space and generate structures from different regions of the latent space. The number of structures that are generated may be increased with the option `--ksample`. 
+[1] Volumes are generated after k-means clustering of the latent embeddings with k=20 by default. Note that we use k-means clustering here not to identify clusters, but to segment the latent space and generate structures from different regions of the latent space. The number of structures that are generated may be increased with the option `--ksample`.
 
 [2] The `cryodrgn analyze` command chains together a series of calls to `cryodrgn eval_vol` and scripts that can be run separately for more flexibility. These scripts are located in the `analysis_scripts` directory within the source code.
 
@@ -477,12 +477,12 @@ Additional structures may be generated using `cryodrgn eval_vol`:
 	                         [--l-extent L_EXTENT]
 	                         [--activation {relu,leaky_relu}]
 	                         weights
-	
+
 	Evaluate the decoder at specified values of z
-	
+
 	positional arguments:
 	  weights               Model weights
-	
+
 	optional arguments:
 	  -h, --help            show this help message and exit
 	  -c PKL, --config PKL  CryoDRGN config.pkl file
@@ -490,7 +490,7 @@ Additional structures may be generated using `cryodrgn eval_vol`:
 	  --prefix PREFIX       Prefix when writing out multiple .mrc files (default:
 	                        vol_)
 	  -v, --verbose         Increaes verbosity
-	
+
 	Specify z values:
 	  -z [Z [Z ...]]        Specify one z-value
 	  --z-start [Z_START [Z_START ...]]
@@ -499,13 +499,13 @@ Additional structures may be generated using `cryodrgn eval_vol`:
 	                        Specify an ending z-value
 	  -n N                  Number of structures between [z_start, z_end]
 	  --zfile ZFILE         Text file with z-values to evaluate
-	
+
 	Volume arguments:
 	  --Apix APIX           Pixel size to add to .mrc header (default: 1 A/pix)
 	  --flip                Flip handedness of output volume
 	  -d DOWNSAMPLE, --downsample DOWNSAMPLE
 	                        Downsample volumes to this box size (pixels)
-	
+
 	Overwrite architecture hyperparameters in config.pkl:
 	  --norm NORM NORM
 	  -D D                  Box size
@@ -538,7 +538,7 @@ Or to generate a trajectory of structures from a defined start and ending point,
 
     $ cryodrgn eval_vol [YOUR_WORKDIR]/weights.pkl --config [YOUR_WORKDIR]/config.pkl --z-start -3 --z-end 3 -n 20 -o [WORKDIR]/trajectory
 
-This example generates 20 structures at evenly spaced values between z=[-3,3], assuming a 1-dimensional latent variable model. 
+This example generates 20 structures at evenly spaced values between z=[-3,3], assuming a 1-dimensional latent variable model.
 
 Finally, a series of structures can be generated using values of z given in a file specified by the arugment `--zfile`:
 
@@ -552,7 +552,7 @@ Two additional commands can be used in conjunction with `cryodrgn eval_vol` to g
 
     $ cryodrgn pc_traversal -h
     $ cryodrgn graph_traversal -h
-    
+
 These scripts produce a text file of z values that can be input to `cryodrgn eval_vol` to generate a series of structures that can be visualized as a trajectory in ChimeraX (https://www.cgl.ucsf.edu/chimerax).
 
 An example usage of the graph traversal algorithm is here (https://github.com/zhonge/cryodrgn/issues/16#issuecomment-668897007).
@@ -726,4 +726,3 @@ Decoder Network:
 ## Contact
 
 Please submit any bug reports, feature requests, or general usage feedback as a github issue, or post in the Google Group: https://groups.google.com/g/cryodrgn.
-

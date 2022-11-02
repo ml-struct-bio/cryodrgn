@@ -32,7 +32,13 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=6"
+    "build",
+    "myst-parser",
+    "pre-commit",
+    "pytest>=6",
+    "sphinx",
+    "sphinx-book-theme",
+    "twine"
 ]
 
 [project.scripts]

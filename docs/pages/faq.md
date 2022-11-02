@@ -41,7 +41,7 @@
     - This requires some digging into the results and images. You might be able to tell by looking at the maps or images
       in obvious cases. Sometimes you'll need to do follow-up analysis to validate, e.g. 2D classification.
 
-- Do better separated clusters more likely mean distinct conformational states?  If a UMAP shows clusters that are 
+- Do better separated clusters more likely mean distinct conformational states?  If a UMAP shows clusters that are
   close to one another (but with clear boundaries), can one interpret it as a set of conformational states that are very
   close to one another?
     - No, not in general. Sometimes there is "repetition" in the latent space where homogeneous states split into

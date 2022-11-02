@@ -1,12 +1,10 @@
-import pytest
-
-import numpy as np
-from numpy.testing import assert_equal, assert_array_almost_equal
-from numpy.testing import assert_allclose, assert_array_less
-from scipy.spatial.transform import Rotation
 import subprocess
 
+import numpy as np
+from numpy.testing import assert_array_almost_equal
+
 from cryodrgn import utils
+
 
 def test_convert_from_relion_scipy():
     x = np.array([[-147.9485, 22.58999, 162.539]])
@@ -14,13 +12,21 @@ def test_convert_from_relion_scipy():
     r2 = utils.R_from_relion(*x[0])
     assert_array_almost_equal(r1, r2)
 
+
 def test_convert_from_relion():
     x = np.array([[-147.9485, 22.58999, 162.539]])
-    y = np.array([[[ 0.90571941,  0.21306972,  0.36643367],
-                   [-0.27142096,  0.95553406,  0.11526193],
-                   [-0.32558103, -0.20385275,  0.92327734]]])
+    y = np.array(
+        [
+            [
+                [0.90571941, 0.21306972, 0.36643367],
+                [-0.27142096, 0.95553406, 0.11526193],
+                [-0.32558103, -0.20385275, 0.92327734],
+            ]
+        ]
+    )
     r1 = utils.R_from_relion_scipy(x)
     assert_array_almost_equal(r1, y)
+
 
 def test_convert_to_relion():
     x = np.array([[-147.9485, 22.58999, 162.539]])
@@ -28,9 +34,10 @@ def test_convert_to_relion():
     euler = utils.R_to_relion_scipy(r1)
     assert_array_almost_equal(x, euler)
 
+
 def test_write_starfile():
-    subprocess.check_call('./test_utils.sh', shell=True)
-    r1 = utils.load_pkl('data/toy_rot_trans.pkl')
-    r2 = utils.load_pkl('output/test_pose.pkl')
+    subprocess.check_call("./test_utils.sh", shell=True)
+    r1 = utils.load_pkl("data/toy_rot_trans.pkl")
+    r2 = utils.load_pkl("output/test_pose.pkl")
     assert_array_almost_equal(r1[0], r2[0])
     assert_array_almost_equal(r1[1], r2[1])

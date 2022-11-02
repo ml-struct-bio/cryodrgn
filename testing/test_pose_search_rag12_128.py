@@ -1,14 +1,11 @@
-import cryodrgn
-from cryodrgn import mrc, dataset, models, lattice, fft, utils, pose_search
 import argparse
-import matplotlib.pyplot as plt
-import seaborn as sns
-import math
-import time
-import torch
 import os
+import time
+
 import numpy as np
-from scipy.spatial.transform import Rotation as RR
+import torch
+
+from cryodrgn import dataset, lattice, models, pose_search, utils
 
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda" if use_cuda else "cpu")
@@ -50,7 +47,6 @@ def medse(x, y):
 
 
 def trans_offset(x, y):
-    B = x.shape[0]
     return (x - y).view(-1, 2).mean(0).cpu().numpy()
 
 
@@ -63,8 +59,6 @@ def run(args):
     )
 
     LB = ""
-    B = args.B
-    S = 0
     D = data.D
     assert D % 2 == 1
 

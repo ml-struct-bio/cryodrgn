@@ -323,7 +323,7 @@ def train_batch(
         y, yt = preprocess_input(y, yt, lattice, trans)
     # Cast operations to mixed precision if using torch.cuda.amp.GradScaler()
     if scaler is not None:
-        with torch.cuda.amp.autocast():
+        with torch.cuda.amp.autocast():  # type: ignore
             z_mu, z_logvar, z, y_recon, y_recon_tilt, mask = run_batch(
                 model, lattice, y, yt, rot, tilt, ctf_params, yr
             )
@@ -362,7 +362,9 @@ def preprocess_input(y, yt, lattice, trans):
     return y, yt
 
 
-def run_batch(model, lattice, y, yt, rot, tilt=None, ctf_params=None, yr=None):
+def run_batch(
+    model: nn.Module, lattice: Lattice, y, yt, rot, tilt=None, ctf_params=None, yr=None
+):
     use_tilt = yt is not None
     use_ctf = ctf_params is not None
     B = y.size(0)
@@ -691,7 +693,7 @@ def main(args):
     if args.enc_mask > 0:
         assert args.enc_mask <= D // 2
         enc_mask = lattice.get_circular_mask(args.enc_mask)
-        in_dim = enc_mask.sum()
+        in_dim = int(enc_mask.sum())
     elif args.enc_mask == -1:
         enc_mask = None
         in_dim = lattice.D**2 if not args.use_real else (lattice.D - 1) ** 2
@@ -766,7 +768,7 @@ def main(args):
             model, optim = amp.initialize(model, optim, opt_level="O1")
         except:  # noqa: E722
             # Mixed precision with pytorch (v1.6+)
-            scaler = torch.cuda.amp.GradScaler()
+            scaler = torch.cuda.amp.GradScaler()  # type: ignore
 
     # restart from checkpoint
     if args.load:
@@ -787,7 +789,7 @@ def main(args):
         if num_workers_per_gpu * torch.cuda.device_count() > os.cpu_count():
             num_workers_per_gpu = max(1, os.cpu_count() // torch.cuda.device_count())
         log(f"Increasing batch size to {args.batch_size}")
-        model = nn.DataParallel(model)
+        model = nn.DataParallel(model)  # type: ignore
     elif args.multigpu:
         log(
             f"WARNING: --multigpu selected, but {torch.cuda.device_count()} GPUs detected"
@@ -798,6 +800,7 @@ def main(args):
         data, batch_size=args.batch_size, shuffle=True, num_workers=num_workers_per_gpu
     )
     num_epochs = args.num_epochs
+    epoch = start_epoch
     for epoch in range(start_epoch, num_epochs):
         t2 = dt.now()
         gen_loss_accum = 0
@@ -819,7 +822,7 @@ def main(args):
                 if args.use_real
                 else None
             )
-            if do_pose_sgd:
+            if pose_optimizer is not None:
                 pose_optimizer.zero_grad()
             rot, tran = posetracker.get_pose(ind)
             ctf_param = ctf_params[ind] if ctf_params is not None else None
@@ -839,7 +842,7 @@ def main(args):
                 use_amp=args.amp,
                 scaler=scaler,
             )
-            if do_pose_sgd and epoch >= args.pretrain:
+            if pose_optimizer is not None and epoch >= args.pretrain:
                 pose_optimizer.step()
 
             # logging

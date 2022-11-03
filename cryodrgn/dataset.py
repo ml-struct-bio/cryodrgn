@@ -16,7 +16,7 @@ from cryodrgn import fft, mrc, starfile, utils
 log = utils.log
 
 
-def load_particles(mrcs_txt_star, lazy=False, datadir=None):
+def load_particles(mrcs_txt_star: str, lazy: bool = False, datadir: bool = None):
     """
     Load particle stack from either a .mrcs file, a .star file, a .txt file containing paths to .mrcs files, or a
     cryosparc particles.cs file.

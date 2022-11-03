@@ -1,6 +1,7 @@
 import os
 import struct
 from collections import OrderedDict
+from typing import Any, List, Optional, Tuple, Union
 
 import numpy as np
 
@@ -182,16 +183,20 @@ class MRCHeader:
         self.fields["zorg"] = zorg
 
 
+def parse_header(fname: str) -> MRCHeader:
+    return MRCHeader.parse(fname)
+
+
 class LazyImage:
     """On-the-fly image loading"""
 
-    def __init__(self, fname, shape, dtype, offset):
+    def __init__(self, fname: str, shape: Tuple[int, int], dtype: Any, offset: int):
         self.fname = fname
         self.shape = shape
         self.dtype = dtype
         self.offset = offset
 
-    def get(self):
+    def get(self) -> np.ndarray:
         with open(self.fname) as f:
             f.seek(self.offset)
             image = np.fromfile(
@@ -200,11 +205,10 @@ class LazyImage:
         return image
 
 
-def parse_header(fname):
-    return MRCHeader.parse(fname)
+ImageArray = Union[np.ndarray, List[LazyImage]]
 
 
-def parse_mrc_list(txtfile, lazy=False):
+def parse_mrc_list(txtfile: str, lazy: bool = False) -> ImageArray:
     lines = open(txtfile, "r").readlines()
 
     def abspath(f):
@@ -215,13 +219,13 @@ def parse_mrc_list(txtfile, lazy=False):
 
     lines = [abspath(x) for x in lines]
     if not lazy:
-        particles = np.vstack([parse_mrc(x.strip(), lazy=False)[0] for x in lines])
+        particles = np.vstack([parse_mrc(x.strip(), lazy=False)[0] for x in lines])  # type: ignore
     else:
         particles = [img for x in lines for img in parse_mrc(x.strip(), lazy=True)[0]]
     return particles
 
 
-def parse_mrc(fname, lazy=False):
+def parse_mrc(fname: str, lazy: bool = False) -> Tuple[ImageArray, MRCHeader]:
     # parse the header
     header = MRCHeader.parse(fname)
 
@@ -248,7 +252,14 @@ def parse_mrc(fname, lazy=False):
 
 
 def write(
-    fname, array, header=None, Apix=1.0, xorg=0.0, yorg=0.0, zorg=0.0, is_vol=None
+    fname,
+    array: np.ndarray,
+    header: Optional[MRCHeader] = None,
+    Apix: float = 1.0,
+    xorg: float = 0.0,
+    yorg: float = 0.0,
+    zorg: float = 0.0,
+    is_vol: Optional[bool] = None,
 ):
     # get a default header
     if header is None:

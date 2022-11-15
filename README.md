@@ -275,7 +275,7 @@ When the input images (.mrcs), poses (.pkl), and CTF parameters (.pkl) have been
 	                        Logging interval in N_IMGS (default: 1000)
 	  -v, --verbose         Increaes verbosity
 	  --seed SEED           Random seed
-	
+
 	Dataset loading:
 	  --ind PKL             Filter particle stack by these indices
 	  --uninvert-data       Do not invert data sign
@@ -290,7 +290,7 @@ When the input images (.mrcs), poses (.pkl), and CTF parameters (.pkl) have been
 	  --max-threads MAX_THREADS
 	                        Maximum number of CPU cores for FFT parallelization
 	                        (default: 16)
-	
+
 	Tilt series:
 	  --tilt TILT           Particles (.mrcs)
 	  --tilt-deg TILT_DEG   X-axis tilt offset in degrees (default: 45)
@@ -424,14 +424,14 @@ NEW in version 1.0: There are two additional tools `cryodrgn analyze_landscape` 
 	                        [--skip-umap] [--Apix APIX] [--flip] [--invert]
 	                        [-d DOWNSAMPLE] [--pc PC] [--ksample KSAMPLE]
 	                        workdir epoch
-	
+
 	Visualize latent space and generate volumes
-	
+
 	positional arguments:
 	  workdir               Directory with cryoDRGN results
 	  epoch                 Epoch number N to analyze (0-based indexing,
 	                        corresponding to z.N.pkl, weights.N.pkl)
-	
+
 	optional arguments:
 	  -h, --help            show this help message and exit
 	  --device DEVICE       Optionally specify CUDA device
@@ -440,7 +440,7 @@ NEW in version 1.0: There are two additional tools `cryodrgn analyze_landscape` 
 	                        [workdir]/analyze.[epoch])
 	  --skip-vol            Skip generation of volumes
 	  --skip-umap           Skip running UMAP
-	
+
 	Extra arguments for volume generation:
 	  --Apix APIX           Pixel size to add to .mrc header (default: 1 A/pix)
 	  --flip                Flip handedness of output volumes

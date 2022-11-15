@@ -30,10 +30,10 @@ def add_args(parser):
         help="Prefix when writing out multiple .mrc files (default: %(default)s)",
     )
     parser.add_argument(
-        "--device", type=int, default=0, help="Optionally specify CUDA device"
+        "--device", type=int, default=None, help="Optionally specify CUDA device"
     )
     parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Increaes verbosity"
+        "-v", "--verbose", action="store_true", help="Increase verbosity"
     )
 
     group = parser.add_argument_group("Specify z values")

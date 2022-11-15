@@ -17,8 +17,8 @@ import numpy as np
 import umap
 from matplotlib import pyplot as plt
 from scipy import ndimage, stats
-from scipy.ndimage.filters import gaussian_filter, maximum_filter
-from scipy.ndimage.morphology import binary_dilation, distance_transform_edt
+from scipy.ndimage import gaussian_filter, maximum_filter
+from scipy.ndimage import binary_dilation, distance_transform_edt
 from scipy.spatial import distance_matrix
 
 from cryodrgn import analysis, fft, mrc, utils
@@ -143,10 +143,10 @@ def add_args(parser):
         help="Downsample volumes to this box size (pixels). Recommended for boxes > 250-300px",
     )
     group.add_argument(
-        "--cuda",
+        "--device",
         type=int,
         default=None,
-        help="Specify cuda device for volume generation",
+        help="Specify cuda device for volume generation, None to skip cuda.",
     )
     group.add_argument(
         "--skip-volgen",
@@ -747,7 +747,7 @@ def follow_candidate_particles(
 
 
 def generate_volumes(
-    workdir, outdir, epochs, Apix, flip, invert, downsample, cuda, LOG
+    workdir, outdir, epochs, Apix, flip, invert, downsample, device, LOG
 ):
     """
     Helper function to call cryodrgn.analysis.gen_volumes on all representative latent values in selected epochs
@@ -767,7 +767,7 @@ def generate_volumes(
             flip=flip,
             invert=invert,
             downsample=downsample,
-            cuda=cuda,
+            device=device,
         )
 
 
@@ -1198,9 +1198,9 @@ def main(args):
         flip = args.flip
         invert = True if args.invert else None
         downsample = args.downsample
-        cuda = args.cuda
+        device = args.device
         generate_volumes(
-            workdir, outdir, epochs, Apix, flip, invert, downsample, cuda, LOG
+            workdir, outdir, epochs, Apix, flip, invert, downsample, device, LOG
         )
 
         flog(

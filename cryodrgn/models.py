@@ -112,7 +112,7 @@ class HetOnlyVAE(nn.Module):
             feat_sigma=c["feat_sigma"],
         )
         if weights is not None:
-            ckpt = torch.load(weights)
+            ckpt = torch.load(weights, map_location=device)
             model.load_state_dict(ckpt["model_state_dict"])
         if device is not None:
             model.to(device)

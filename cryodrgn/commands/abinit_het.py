@@ -597,7 +597,10 @@ def save_checkpoint(
         pickle.dump(z_mu, f)
         pickle.dump(z_logvar, f)
     with open(out_poses, "wb") as f:
-        pickle.dump(search_pose, f)
+        rot, trans = search_pose
+        # When saving translations, save in box units (fractional)
+        trans /= model.lattice.D
+        pickle.dump((rot, trans), f)
 
 
 def save_config(args, dataset, lattice, model, out_config):
@@ -839,7 +842,12 @@ def main(args):
         start_epoch = checkpoint["epoch"] + 1
         model.train()
         if args.load_poses:
-            sorted_poses = utils.load_pkl(args.load_poses)
+            rot, trans = utils.load_pkl(args.load_poses)
+            assert np.all(
+                trans <= 1
+            ), "ERROR: Old pose format detected. Translations must be in units of fraction of box."
+            # Convert translations to pixel units to feed back to the model
+            sorted_poses = (rot, trans * model.lattice.D)
     else:
         start_epoch = 0
 
@@ -911,6 +919,8 @@ def main(args):
     cc = 0
     if args.pose_model_update_freq:
         pose_model.load_state_dict(model.state_dict())
+
+    epoch = None
     for epoch in range(start_epoch, num_epochs):
         t2 = dt.now()
         kld_accum = 0
@@ -1055,39 +1065,43 @@ def main(args):
                     out_poses,
                 )
 
-    # save model weights and evaluate the model on 3D lattice
-    model.eval()
-    out_mrc = "{}/reconstruct".format(args.outdir)
-    out_weights = "{}/weights.pkl".format(args.outdir)
-    out_poses = "{}/pose.pkl".format(args.outdir)
-    out_z = "{}/z.pkl".format(args.outdir)
-    with torch.no_grad():
-        z_mu, z_logvar = eval_z(
-            model,
-            lattice,
-            data,
-            args.batch_size,
-            device,
-            use_tilt=tilt is not None,
-            ctf_params=ctf_params,
-        )
-        save_checkpoint(
-            model,
-            lattice,
-            optim,
-            epoch,
-            data.norm,
-            sorted_poses,
-            z_mu,
-            z_logvar,
-            out_mrc,
-            out_weights,
-            out_z,
-            out_poses,
-        )
+    if epoch is not None:
+        # save model weights and evaluate the model on 3D lattice
+        model.eval()
 
-    td = dt.now() - t1
-    flog("Finished in {} ({} per epoch)".format(td, td / (num_epochs - start_epoch)))
+        out_mrc = "{}/reconstruct".format(args.outdir)
+        out_weights = "{}/weights.pkl".format(args.outdir)
+        out_poses = "{}/pose.pkl".format(args.outdir)
+        out_z = "{}/z.pkl".format(args.outdir)
+        with torch.no_grad():
+            z_mu, z_logvar = eval_z(
+                model,
+                lattice,
+                data,
+                args.batch_size,
+                device,
+                use_tilt=tilt is not None,
+                ctf_params=ctf_params,
+            )
+            save_checkpoint(
+                model,
+                lattice,
+                optim,
+                epoch,
+                data.norm,
+                sorted_poses,
+                z_mu,
+                z_logvar,
+                out_mrc,
+                out_weights,
+                out_z,
+                out_poses,
+            )
+
+        td = dt.now() - t1
+        flog(
+            "Finished in {} ({} per epoch)".format(td, td / (num_epochs - start_epoch))
+        )
 
 
 if __name__ == "__main__":

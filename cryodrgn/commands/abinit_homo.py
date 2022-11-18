@@ -286,7 +286,10 @@ def save_checkpoint(
         out_weights,
     )
     with open(out_poses, "wb") as f:
-        pickle.dump(pose, f)
+        rot, trans = pose
+        # When saving translations, save in box units (fractional)
+        trans /= model.D
+        pickle.dump((rot, trans), f)
 
 
 def pretrain(model, lattice, optim, batch, tilt=None):
@@ -560,7 +563,13 @@ def main(args):
         assert args.num_epochs > start_epoch
         model.train()
         if args.load_poses:
-            sorted_poses = utils.load_pkl(args.load_poses)
+            rot, trans = utils.load_pkl(args.load_poses)
+            assert np.all(
+                trans <= 1
+            ), "ERROR: Old pose format detected. Translations must be in units of fraction of box."
+            # Convert translations to pixel units to feed back to the model
+            sorted_poses = (rot, trans * model.D)
+
             # sorted_base_poses = None   # TODO: need to save base_poses if we are going to use it
     else:
         start_epoch = 0
@@ -597,6 +606,8 @@ def main(args):
     cc = 0
     if args.pose_model_update_freq:
         pose_model.load_state_dict(model.state_dict())
+
+    epoch = None
     for epoch in range(start_epoch, args.num_epochs):
         t2 = dt.now()
         batch_it = 0
@@ -694,26 +705,29 @@ def main(args):
                 out_poses,
             )
 
-    # save model weights and evaluate the model on 3D lattice
-    out_mrc = "{}/reconstruct.mrc".format(args.outdir)
-    out_weights = "{}/weights.pkl".format(args.outdir)
-    out_poses = "{}/pose.pkl".format(args.outdir)
-    save_checkpoint(
-        model,
-        lattice,
-        sorted_poses,
-        optim,
-        epoch,
-        data.norm,
-        out_mrc,
-        out_weights,
-        out_poses,
-    )
+    if epoch is not None:
+        # save model weights and evaluate the model on 3D lattice
+        out_mrc = "{}/reconstruct.mrc".format(args.outdir)
+        out_weights = "{}/weights.pkl".format(args.outdir)
+        out_poses = "{}/pose.pkl".format(args.outdir)
+        save_checkpoint(
+            model,
+            lattice,
+            sorted_poses,
+            optim,
+            epoch,
+            data.norm,
+            out_mrc,
+            out_weights,
+            out_poses,
+        )
 
-    td = dt.now() - t1
-    flog(
-        "Finished in {} ({} per epoch)".format(td, td / (args.num_epochs - start_epoch))
-    )
+        td = dt.now() - t1
+        flog(
+            "Finished in {} ({} per epoch)".format(
+                td, td / (args.num_epochs - start_epoch)
+            )
+        )
 
 
 if __name__ == "__main__":

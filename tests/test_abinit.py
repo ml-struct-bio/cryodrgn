@@ -104,7 +104,7 @@ def test_abinit_homo_and_backproject():
             "--poses",
             "output/abinit_homo/pose.pkl",
             "-o",
-            "output/abinit_het/backproject/vol.mrc",
+            "output/abinit_homo/backproject/vol.mrc",
         ]
     )
     backproject_voxel.main(args)

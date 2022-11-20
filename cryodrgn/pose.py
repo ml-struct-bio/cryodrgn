@@ -1,8 +1,10 @@
 import pickle
+from typing import Optional, Tuple
 
 import numpy as np
 import torch
 import torch.nn as nn
+from torch import Tensor
 
 from cryodrgn import lie_tools, utils
 
@@ -10,7 +12,14 @@ log = utils.log
 
 
 class PoseTracker(nn.Module):
-    def __init__(self, rots_np, trans_np=None, D=None, emb_type=None, device=None):
+    def __init__(
+        self,
+        rots_np: np.ndarray,
+        trans_np: Optional[np.ndarray] = None,
+        D: Optional[int] = None,
+        emb_type: Optional[str] = None,
+        device=None,
+    ):
         super(PoseTracker, self).__init__()
         rots = torch.tensor(rots_np.astype(np.float32), device=device)
         trans = (
@@ -26,9 +35,12 @@ class PoseTracker(nn.Module):
         if emb_type is None:
             pass
         else:
-            if self.use_trans:
+            if trans is not None:
                 trans_emb = nn.Embedding(trans.shape[0], 2, sparse=True)
                 trans_emb.weight.data.copy_(trans)
+                self.trans_emb = trans_emb.to(device)
+            else:
+                self.trans_emb = None
             if emb_type == "s2s2":
                 rots_emb = nn.Embedding(rots.shape[0], 6, sparse=True)
                 rots_emb.weight.data.copy_(lie_tools.SO3_to_s2s2(rots))
@@ -38,7 +50,6 @@ class PoseTracker(nn.Module):
             else:
                 raise RuntimeError("Embedding type {} not recognized".format(emb_type))
             self.rots_emb = rots_emb.to(device)
-            self.trans_emb = trans_emb.to(device) if self.use_trans else None
 
     @classmethod
     def load(cls, infile, Nimg, D, emb_type=None, ind=None, device=None):
@@ -107,8 +118,10 @@ class PoseTracker(nn.Module):
 
         if self.use_trans:
             if self.emb_type is None:
+                assert self.trans is not None
                 t = self.trans.cpu().numpy()
             else:
+                assert self.trans_emb is not None
                 t = self.trans_emb.weight.data.cpu().numpy()
             t /= self.D  # convert from pixels to extent
             poses = (r, t)
@@ -117,10 +130,10 @@ class PoseTracker(nn.Module):
 
         pickle.dump(poses, open(out_pkl, "wb"))
 
-    def get_pose(self, ind):
+    def get_pose(self, ind: Tensor) -> Tuple[Tensor, Optional[Tensor]]:
         if self.emb_type is None:
             rot = self.rots[ind]
-            tran = self.trans[ind] if self.use_trans else None
+            tran = self.trans[ind] if self.trans is not None else None
         else:
             if self.emb_type == "s2s2":
                 rot = lie_tools.s2s2_to_SO3(self.rots_emb(ind))
@@ -128,5 +141,5 @@ class PoseTracker(nn.Module):
                 rot = lie_tools.quaternions_to_SO3(self.rots_emb(ind))
             else:
                 raise RuntimeError  # should not reach here
-            tran = self.trans_emb(ind) if self.use_trans else None
+            tran = self.trans_emb(ind) if self.trans_emb is not None else None
         return rot, tran

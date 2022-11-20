@@ -3,7 +3,7 @@ import numpy as np
 try:
     import cupy as cp
 except ImportError:
-    cp = None
+    cp = np
 
 
 def fft2_center(img):

@@ -1,4 +1,19 @@
-data_images
+data_optics
+
+loop_
+_rlnOpticsGroup #1
+_rlnOpticsGroupName #2
+_rlnAmplitudeContrast #3
+_rlnSphericalAberration #4
+_rlnVoltage #5
+_rlnImagePixelSize #6
+_rlnMicrographOriginalPixelSize #7
+_rlnImageSize #8
+_rlnImageDimensionality #9
+1 opticsGroup1     0.100000     0.010000   300.000000     1.035     1.403000          300            2
+
+data_particles
+
 loop_
 _rlnImageName
 _rlnDefocusU

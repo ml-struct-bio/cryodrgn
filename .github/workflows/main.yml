@@ -36,6 +36,11 @@ jobs:
         run: |
           pre-commit run --all-files
 
+      - name: Pyright
+        run: |
+          pyright
+        continue-on-error: true
+
       - name: Pytest
         run: |
           pytest

@@ -19,8 +19,12 @@ def parse_loss(f):
     """Parse loss from run.log"""
     lines = open(f).readlines()
     lines = [x for x in lines if "====" in x]
-    regex = "total\sloss\s=\s(\d.\d+)"  # noqa: W605
-    loss = [re.search(regex, x).group(1) for x in lines]
+    regex = "total\sloss\s=\s(\d.\d+)"  # type: ignore  # noqa: W605
+    matches = [re.search(regex, x) for x in lines]
+    loss = []
+    for m in matches:
+        assert m is not None
+        loss.append(m.group(1))
     loss = np.asarray(loss).astype(np.float32)
 
     return loss
@@ -92,6 +96,7 @@ def cluster_kmeans(z, K, on_data=True, reorder=True):
     labels = kmeans.fit_predict(z)
     centers = kmeans.cluster_centers_
 
+    centers_ind = None
     if on_data:
         centers, centers_ind = get_nearest_point(z, centers)
 
@@ -99,7 +104,7 @@ def cluster_kmeans(z, K, on_data=True, reorder=True):
         g = sns.clustermap(centers)
         reordered = g.dendrogram_row.reordered_ind
         centers = centers[reordered]
-        if on_data:
+        if centers_ind is not None:
             centers_ind = centers_ind[reordered]
         tmp = {k: i for i, k in enumerate(reordered)}
         labels = np.array([tmp[k] for k in labels])

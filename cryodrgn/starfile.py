@@ -1,13 +1,11 @@
 """
 Lightweight parser for starfiles
 """
-
 import os
 from datetime import datetime as dt
-
 import numpy as np
 import pandas as pd
-
+import cryodrgn.types as types
 from cryodrgn import mrc
 from cryodrgn.mrc import LazyImage
 
@@ -29,6 +27,7 @@ class Starfile:
         # detect star file type
         f = open(starfile, "r")
         BLOCK = "data_"
+        line = ""
         while 1:
             for line in f:
                 if line.startswith(BLOCK):
@@ -48,22 +47,24 @@ class Starfile:
         return s
 
     @classmethod
-    def _parse_block(self, starfile, block_header="data_"):
+    def _parse_block(cls, starfile, block_header="data_"):
+        headers = []
+        line = ""
         f = open(starfile, "r")
         # get to data block
-        while 1:
+        while True:
             for line in f:
                 if line.startswith(block_header):
                     break
             break
         # get to header loop
-        while 1:
+        while True:
             for line in f:
                 if line.startswith("loop_"):
                     break
             break
         # get list of column headers
-        while 1:
+        while True:
             headers = []
             for line in f:
                 if line.startswith("_"):
@@ -89,7 +90,7 @@ class Starfile:
         ), f"Error in parsing. Number of columns {words.shape[1]} != number of headers {len(headers)}"
         data = {h: words[:, i] for i, h in enumerate(headers)}
         df = pd.DataFrame(data=data)
-        return self(headers, df)
+        return cls(headers, df)
 
     def _write_block(self, f, headers, df, block_header="data_"):
         f.write(f"{block_header}\n\n")
@@ -107,6 +108,7 @@ class Starfile:
         f.write("\n")
 
         if self.relion31:
+            assert self.data_optics is not None
             self._write_block(
                 f,
                 self.data_optics.headers,
@@ -163,7 +165,7 @@ def prefix_paths(mrcs, datadir):
     return mrcs
 
 
-def csparc_get_particles(csfile, datadir=None, lazy=True):
+def csparc_get_particles(csfile, datadir=None, lazy=True) -> types.ImageArray:
     metadata = np.load(csfile)
     ind = metadata["blob/idx"]  # 0-based indexing
     mrcs = metadata["blob/path"].astype(str).tolist()

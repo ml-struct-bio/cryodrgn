@@ -131,6 +131,7 @@ class PoseSearch:
 
         def compute_err(images, rot):
 
+            adj_angles_inplane = None
             if angles_inplane is not None:
                 # apply a random in-plane rotation from the set
                 # to avoid artifacts due to grid alignment
@@ -141,7 +142,7 @@ class PoseSearch:
 
             x = coords @ rot
             if z is not None:
-                x = unparallelize(self.model).cat_z(x, z)
+                x = unparallelize(self.model).cat_z(x, z)  # type: ignore
             x = x.to(device)
             # log(f"Evaluating model on {x.shape} = {x.nelement() // 3} points")
             with torch.no_grad():
@@ -152,7 +153,7 @@ class PoseSearch:
             )  # 1x1xNQxYX for base grid, Bx1x8xYX for incremental grid
             if ctf_i is not None:
                 y_hat = y_hat * ctf_i
-            if angles_inplane is not None:
+            if adj_angles_inplane is not None:
                 y_hat = self.rotate_images(y_hat, adj_angles_inplane, L)
             images = images.unsqueeze(2)  # BxTx1xYX
             if self.loss_fn == "mse":
@@ -332,6 +333,7 @@ class PoseSearch:
         B = images.size(0)
         assert not self.model.training
 
+        loss = rot = None
         if init_poses is None:
             # Expand the base grid B times if each image has a different z
             if z is not None:
@@ -418,12 +420,14 @@ class PoseSearch:
             q_ind = q_ind[keepBN, keepQ]
             trans = trans[keepBN, keepT]
 
+        assert loss is not None
         bestBN, bestT, bestQ = self.keep_matrix(loss, B, 1).cpu()
         assert len(bestBN) == B
         if self.niter == 0:
             best_rot = self.so3_base_rot[bestQ].to(device)
             best_trans = self.base_shifts[bestT].to(device)
         else:
+            assert rot is not None
             best_rot = rot.view(-1, 8, 3, 3)[bestBN, bestQ]
             best_trans = trans.to(device)
 

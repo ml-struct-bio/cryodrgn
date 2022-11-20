@@ -1,0 +1,15 @@
+{
+    "include":  [
+        "cryodrgn/analysis.py",
+        "cryodrgn/ctf.py",
+        "cryodrgn/fft.py",
+        "cryodrgn/lattice.py",
+        "cryodrgn/models.py",
+        "cryodrgn/mrc.py",
+        "cryodrgn/pose.py",
+        "cryodrgn/pose_search.py",
+        "cryodrgn/source.py",
+        "cryodrgn/starfile.py",
+        "tests/test_source.py"
+    ]
+}

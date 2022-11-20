@@ -1,3 +1,4 @@
+from typing import Union
 import numpy as np
 import seaborn as sns
 import torch
@@ -7,7 +8,17 @@ from cryodrgn import utils
 log = utils.log
 
 
-def compute_ctf(freqs, dfu, dfv, dfang, volt, cs, w, phase_shift=0, bfactor=None):
+def compute_ctf(
+    freqs,
+    dfu,
+    dfv,
+    dfang,
+    volt,
+    cs,
+    w,
+    phase_shift: Union[torch.Tensor, float] = 0,
+    bfactor=None,
+) -> torch.Tensor:
     """
     Compute the 2D CTF
 
@@ -46,7 +57,9 @@ def compute_ctf(freqs, dfu, dfv, dfang, volt, cs, w, phase_shift=0, bfactor=None
     return ctf
 
 
-def compute_ctf_np(freqs, dfu, dfv, dfang, volt, cs, w, phase_shift=0, bfactor=None):
+def compute_ctf_np(
+    freqs, dfu, dfv, dfang, volt, cs, w, phase_shift=0, bfactor=None
+) -> np.ndarray:
     """
     Compute the 2D CTF
 

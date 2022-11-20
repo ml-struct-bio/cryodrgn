@@ -1,7 +1,7 @@
 import numpy as np
 
 try:
-    import cupy as cp
+    import cupy as cp  # type: ignore
 except ImportError:
     cp = np
 

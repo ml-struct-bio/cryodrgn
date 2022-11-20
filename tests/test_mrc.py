@@ -21,9 +21,11 @@ def test_lazy_loading(mrcs_data):
 
 def test_star(mrcs_data):
     data = dataset.load_particles(f"{DATA_FOLDER}/toy_projections.star")
+    assert isinstance(data, np.ndarray)
     assert np.allclose(data, mrcs_data)
 
 
 def test_txt(mrcs_data):
     data = dataset.load_particles(f"{DATA_FOLDER}/toy_projections.txt")
+    assert isinstance(data, np.ndarray)
     assert np.allclose(data, mrcs_data)

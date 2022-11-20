@@ -1,10 +1,9 @@
 import argparse
+import os
 import os.path
 import pickle
-
 import numpy as np
 import pytest
-
 from cryodrgn import dataset, mrc
 from cryodrgn.commands import downsample, parse_ctf_star
 from cryodrgn.commands_utils import filter_star, write_cs, write_star
@@ -47,6 +46,7 @@ def input_mrcs():
 def test_read_mrcs(input_mrcs):
     # dataset.loadparticles can be used to read mrcs/starfile/txt, and returns an ndarray
     data = dataset.load_particles(input_mrcs, lazy=False, datadir=DATA_FOLDER)
+    assert isinstance(data, np.ndarray)
     # We have total 1000 particles of size 30x30 to begin with
     assert data.shape == (1000, 30, 30)
 
@@ -54,6 +54,7 @@ def test_read_mrcs(input_mrcs):
 def test_read_starfile(input_star):
     # dataset.loadparticles can be used to read mrcs/starfile/txt, and returns an ndarray
     data = dataset.load_particles(input_star, lazy=False, datadir=DATA_FOLDER)
+    assert isinstance(data, np.ndarray)
     # We have 13 particles in our starfile, of size 30x30 to begin with
     assert data.shape == (13, 30, 30)
 
@@ -77,6 +78,7 @@ def test_downsample(input_star):
 
     # mrc.parse_mrc returns (ndarray, mrc headers)
     output_data, _ = mrc.parse_mrc("output/issue150_downsampled.mrcs", lazy=False)
+    assert isinstance(output_data, np.ndarray)
     assert output_data.shape == (13, 28, 28)
 
 
@@ -104,6 +106,7 @@ def test_filter(input_star):
     data = dataset.load_particles(
         "output/issue150_filtered.star", lazy=False, datadir=DATA_FOLDER
     )
+    assert isinstance(data, np.ndarray)
     assert data.shape == (4, 30, 30)
 
 

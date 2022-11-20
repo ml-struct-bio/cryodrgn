@@ -85,6 +85,7 @@ def main(args):
     plt.xlabel("PC{} ({:3f})".format(ii + 1, pca.explained_variance_ratio_[ii]))
     plt.ylabel("PC{} ({:3f})".format(jj + 1, pca.explained_variance_ratio_[jj]))
 
+    xd = None
     if args.sample1:
         s = np.random.choice(len(x), args.sample1)
         print(s)
@@ -103,7 +104,7 @@ def main(args):
         xd_pc = pca.transform(xd)
         plt.scatter(xd_pc[:, ii], xd_pc[:, jj], c="k")  # np.arange(len(xd)),cmap='hsv')
 
-    if args.out_s:
+    if args.out_s and xd is not None:
         np.savetxt(args.out_s, xd)
     plt.legend(loc="best")
     if args.out_png:

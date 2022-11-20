@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ master, develop ]
+    branches: [ master, develop, vb/pyright ]
   pull_request:
-    branches: [ master, develop ]
+    branches: [ master, develop, vb/pyright ]
 
 jobs:
   run_tests:
@@ -35,6 +35,10 @@ jobs:
       - name: Pre-commit checks
         run: |
           pre-commit run --all-files
+
+      - name: Pyright
+        run: |
+          pyright
 
       - name: Pytest
         run: |

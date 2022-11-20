@@ -49,7 +49,7 @@ def main():
     ]
 
     subparsers = parser.add_subparsers(title="Choose a command")
-    subparsers.required = "True"
+    subparsers.required = True
 
     def get_str_name(module):
         return os.path.splitext(os.path.basename(module.__file__))[0]

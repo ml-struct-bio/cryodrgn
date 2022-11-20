@@ -180,7 +180,7 @@ def main(args):
             z = np.repeat(np.arange(args.n, dtype=np.float32), zdim).reshape(
                 (args.n, zdim)
             )
-            z *= (args.z_end - args.z_start) / (args.n - 1)
+            z *= (args.z_end - args.z_start) / (args.n - 1)  # type: ignore
             z += args.z_start
         else:
             z = np.loadtxt(args.zfile).reshape(-1, zdim)
@@ -193,7 +193,7 @@ def main(args):
             log(zz)
             if args.downsample:
                 extent = lattice.extent * (args.downsample / (D - 1))
-                vol = model.decoder.eval_volume(
+                vol = model.decoder.eval_volume(  # type: ignore  # PYR00
                     lattice.get_downsample_coords(args.downsample + 1),
                     args.downsample + 1,
                     extent,
@@ -201,7 +201,7 @@ def main(args):
                     zz,
                 )
             else:
-                vol = model.decoder.eval_volume(
+                vol = model.decoder.eval_volume(  # type: ignore  # PYR00
                     lattice.coords, lattice.D, lattice.extent, norm, zz
                 )
             out_mrc = "{}/{}{:03d}.mrc".format(args.o, args.prefix, i)
@@ -217,7 +217,7 @@ def main(args):
         log(z)
         if args.downsample:
             extent = lattice.extent * (args.downsample / (D - 1))
-            vol = model.decoder.eval_volume(
+            vol = model.decoder.eval_volume(  # type: ignore  # PYR00
                 lattice.get_downsample_coords(args.downsample + 1),
                 args.downsample + 1,
                 extent,
@@ -225,7 +225,7 @@ def main(args):
                 z,
             )
         else:
-            vol = model.decoder.eval_volume(
+            vol = model.decoder.eval_volume(  # type: ignore  # PYR00
                 lattice.coords, lattice.D, lattice.extent, norm, z
             )
         if args.flip:

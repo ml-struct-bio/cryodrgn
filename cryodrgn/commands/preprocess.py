@@ -3,18 +3,17 @@ Preprocess a dataset for more streamlined cryoDRGN training
 """
 
 import argparse
-
 import numpy as np
 
 try:
-    import cupy as cp
+    import cupy as cp  # type: ignore
 except ImportError:
-    cp = None
+    cp = np
 import math
 import multiprocessing as mp
 import os
 from multiprocessing import Pool
-
+from typing import List
 from cryodrgn import dataset, fft, mrc, utils
 
 log = utils.log
@@ -126,7 +125,13 @@ def main(args):
         ind = utils.load_pkl(args.ind).astype(int)
         images = [images[i] for i in ind] if lazy else images[ind]
 
-    original_D = images[0].get().shape[0] if lazy else images.shape[-1]
+    if lazy:
+        assert isinstance(images, List)
+        original_D = images[0].get().shape[0]
+    else:
+        assert isinstance(images, np.ndarray)
+        original_D = images.shape[-1]
+
     log(f"Loading {len(images)} {original_D}x{original_D} images")
     window = args.window
     invert_data = args.invert_data
@@ -202,7 +207,7 @@ def main(args):
         for ii in range(Nbatches):
             log(f"Processing batch of {b} images ({ii+1} of {Nbatches})")
             if use_cupy:
-                ret[ii * b : (ii + 1) * b, :, :] = cp.asnumpy(
+                ret[ii * b : (ii + 1) * b, :, :] = cp.asnumpy(  # type: ignore
                     preprocess_cupy(imgs[ii * b : (ii + 1) * b])
                 )
             else:

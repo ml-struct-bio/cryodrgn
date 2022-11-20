@@ -1,19 +1,24 @@
 """
 Lightweight parser for starfiles
 """
-
 import os
 from datetime import datetime as dt
-
 import numpy as np
 import pandas as pd
-
+from typing import Optional, List
+import cryodrgn.types as types
 from cryodrgn import mrc
 from cryodrgn.mrc import LazyImage
 
 
 class Starfile:
-    def __init__(self, headers, df, data_optics=None, relion31=False):
+    def __init__(
+        self,
+        headers: Optional[List],
+        df: pd.DataFrame,
+        data_optics=None,
+        relion31=False,
+    ):
         if headers:
             assert headers == list(df.columns), f"{headers} != {df.columns}"
         self.headers = headers or list(df.columns)
@@ -25,10 +30,11 @@ class Starfile:
         return len(self.df)
 
     @classmethod
-    def load(cls, starfile):
+    def load(cls, starfile: str):
         # detect star file type
         f = open(starfile, "r")
         BLOCK = "data_"
+        line = ""
         while 1:
             for line in f:
                 if line.startswith(BLOCK):
@@ -40,7 +46,7 @@ class Starfile:
             return cls._parse_block(starfile, block_header="data_")
 
     @classmethod
-    def _parse_relion31(cls, starfile):
+    def _parse_relion31(cls, starfile: str):
         data_optics = cls._parse_block(starfile, block_header="data_optics")
         s = cls._parse_block(starfile, block_header="data_particles")
         s.data_optics = data_optics
@@ -48,22 +54,24 @@ class Starfile:
         return s
 
     @classmethod
-    def _parse_block(self, starfile, block_header="data_"):
+    def _parse_block(cls, starfile: str, block_header: str = "data_"):
+        headers = []
+        line = ""
         f = open(starfile, "r")
         # get to data block
-        while 1:
+        while True:
             for line in f:
                 if line.startswith(block_header):
                     break
             break
         # get to header loop
-        while 1:
+        while True:
             for line in f:
                 if line.startswith("loop_"):
                     break
             break
         # get list of column headers
-        while 1:
+        while True:
             headers = []
             for line in f:
                 if line.startswith("_"):
@@ -89,7 +97,7 @@ class Starfile:
         ), f"Error in parsing. Number of columns {words.shape[1]} != number of headers {len(headers)}"
         data = {h: words[:, i] for i, h in enumerate(headers)}
         df = pd.DataFrame(data=data)
-        return self(headers, df)
+        return cls(headers, df)
 
     def _write_block(self, f, headers, df, block_header="data_"):
         f.write(f"{block_header}\n\n")
@@ -101,12 +109,13 @@ class Starfile:
             f.write(" ".join([str(v) for v in df.loc[i]]))
             f.write("\n")
 
-    def write(self, outstar):
+    def write(self, outstar: str):
         f = open(outstar, "w")
         f.write("# Created {}\n".format(dt.now()))
         f.write("\n")
 
         if self.relion31:
+            assert self.data_optics is not None
             self._write_block(
                 f,
                 self.data_optics.headers,
@@ -118,7 +127,7 @@ class Starfile:
         else:
             self._write_block(f, self.headers, self.df, block_header="data_")
 
-    def get_particles(self, datadir=None, lazy=True):
+    def get_particles(self, datadir: Optional[str] = None, lazy: bool = True):
         """
         Return particles of the starfile
 
@@ -149,7 +158,7 @@ class Starfile:
         return dataset
 
 
-def prefix_paths(mrcs, datadir):
+def prefix_paths(mrcs: List, datadir: str):
     mrcs1 = ["{}/{}".format(datadir, os.path.basename(x)) for x in mrcs]
     mrcs2 = ["{}/{}".format(datadir, x) for x in mrcs]
     try:
@@ -163,7 +172,9 @@ def prefix_paths(mrcs, datadir):
     return mrcs
 
 
-def csparc_get_particles(csfile, datadir=None, lazy=True):
+def csparc_get_particles(
+    csfile: str, datadir: Optional[str] = None, lazy: bool = True
+) -> types.ImageArray:
     metadata = np.load(csfile)
     ind = metadata["blob/idx"]  # 0-based indexing
     mrcs = metadata["blob/path"].astype(str).tolist()

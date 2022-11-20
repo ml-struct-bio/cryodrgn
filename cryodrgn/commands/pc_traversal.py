@@ -73,7 +73,9 @@ def main(args):
             start = np.percentile(pc[:, dim - 1], lim[0])
             stop = np.percentile(pc[:, dim - 1], lim[1])
             print("Limits: {}, {}".format(start, stop))
-            traj = analysis.get_pc_traj(pca, zdim, args.n, dim, start, stop)
+            traj = analysis.get_pc_traj(
+                pca, zdim, args.n, dim, float(start), float(stop)
+            )
 
         print("Neighbor count along trajectory:")
         print(analyze_data_support(z, traj))

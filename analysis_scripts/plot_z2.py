@@ -86,6 +86,7 @@ def main(args):
         plt.ylabel("z2")
         plt.legend(loc="best")
 
+    xd = None
     if args.sample1:
         ii = np.random.choice(len(x), args.sample1)
         print(ii)
@@ -101,7 +102,7 @@ def main(args):
         print(len(xd))
         print(xd)
         plt.scatter(xd[:, 0], xd[:, 1], c="k")  # np.arange(len(xd)),cmap='hsv')
-    if args.out_s:
+    if args.out_s and xd is not None:
         np.savetxt(args.out_s, xd)
     if args.out_png:
         plt.savefig(args.out_png)

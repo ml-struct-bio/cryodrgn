@@ -154,7 +154,7 @@ def main(args):
             ctf_params = ctf_params[args.ind]
     else:
         ctf_params = None
-    Apix = ctf_params[0, 0] if ctf_params is not None else 1
+    Apix = float(ctf_params[0, 0]) if ctf_params is not None else 1.0
 
     V = torch.zeros((D, D, D), device=device)
     counts = torch.zeros((D, D, D), device=device)
@@ -173,9 +173,13 @@ def main(args):
         r, t = posetracker.get_pose(ii)
         ff = data.get(ii)
         if tilt is not None:
+            assert isinstance(ff, tuple) and len(ff) == 2
             ff, ff_tilt = ff  # EW
+        else:
+            ff_tilt = None
         ff = torch.tensor(ff, device=device)
         ff = ff.view(-1)[mask]
+        c = None
         if ctf_params is not None:
             freqs = lattice.freqs2d / ctf_params[ii, 0]
             c = ctf.compute_ctf(freqs, *ctf_params[ii, 1:]).view(-1)[mask]
@@ -186,10 +190,10 @@ def main(args):
         add_slice(V, counts, ff_coord, ff, D)
 
         # tilt series
-        if args.tilt is not None:
+        if ff_tilt is not None:
             ff_tilt = torch.tensor(ff_tilt, device=device)
             ff_tilt = ff_tilt.view(-1)[mask]
-            if ctf_params is not None:
+            if c is not None:
                 ff_tilt *= c.sign()
             if t is not None:
                 ff_tilt = lattice.translate_ht(

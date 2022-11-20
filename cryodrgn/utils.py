@@ -1,27 +1,27 @@
-import collections
+from collections.abc import Hashable
 import functools
 import os
 import pickle
 import sys
 from datetime import datetime as dt
-
+from typing import Tuple
 import numpy as np
 
 _verbose = False
 
 
-def log(msg):
+def log(msg: object) -> None:
     print("{}     {}".format(dt.now().strftime("%Y-%m-%d %H:%M:%S.%f"), msg))
     sys.stdout.flush()
 
 
-def vlog(msg):
+def vlog(msg: str) -> None:
     if _verbose:
         print("{}     {}".format(dt.now().strftime("%Y-%m-%d %H:%M:%S"), msg))
         sys.stdout.flush()
 
 
-def flog(msg, outfile):
+def flog(msg: str, outfile: str) -> None:
     msg = "{}     {}".format(dt.now().strftime("%Y-%m-%d %H:%M:%S"), msg)
     print(msg)
     sys.stdout.flush()
@@ -43,7 +43,7 @@ class memoized(object):
         self.cache = {}
 
     def __call__(self, *args):
-        if not isinstance(args, collections.Hashable):
+        if not isinstance(args, Hashable):
             # uncacheable. a list, for instance.
             # better to not cache than blow up.
             return self.func(*args)
@@ -63,20 +63,20 @@ class memoized(object):
         return functools.partial(self.__call__, obj)
 
 
-def load_pkl(pkl):
+def load_pkl(pkl: str):
     with open(pkl, "rb") as f:
         x = pickle.load(f)
     return x
 
 
-def save_pkl(data, out_pkl, mode="wb"):
+def save_pkl(data, out_pkl: str, mode: str = "wb") -> None:
     if mode == "wb" and os.path.exists(out_pkl):
         vlog(f"Warning: {out_pkl} already exists. Overwriting.")
     with open(out_pkl, mode) as f:
         pickle.dump(data, f)
 
 
-def R_from_eman(a, b, y):
+def R_from_eman(a: np.ndarray, b: np.ndarray, y: np.ndarray) -> np.ndarray:
     a *= np.pi / 180.0
     b *= np.pi / 180.0
     y *= np.pi / 180.0
@@ -95,7 +95,7 @@ def R_from_eman(a, b, y):
     return R
 
 
-def R_from_relion(a, b, y):
+def R_from_relion(a: np.ndarray, b: np.ndarray, y: np.ndarray) -> np.ndarray:
     a *= np.pi / 180.0
     b *= np.pi / 180.0
     y *= np.pi / 180.0
@@ -113,7 +113,7 @@ def R_from_relion(a, b, y):
     return R
 
 
-def R_from_relion_scipy(euler_, degrees=True):
+def R_from_relion_scipy(euler_: np.ndarray, degrees: bool = True) -> np.ndarray:
     """Nx3 array of RELION euler angles to rotation matrix"""
     from scipy.spatial.transform import Rotation as RR
 
@@ -131,7 +131,7 @@ def R_from_relion_scipy(euler_, degrees=True):
     return rot
 
 
-def R_to_relion_scipy(rot, degrees=True):
+def R_to_relion_scipy(rot: np.ndarray, degrees: bool = True) -> np.ndarray:
     """Nx3x3 rotation matrices to RELION euler angles"""
     from scipy.spatial.transform import Rotation as RR
 
@@ -168,15 +168,16 @@ def xrot(tilt_deg):
 
 
 @memoized
-def _zero_sphere_helper(D):
+def _zero_sphere_helper(D: int) -> Tuple[np.ndarray, np.ndarray]:
     xx = np.linspace(-1, 1, D, endpoint=True if D % 2 == 1 else False)
     z, y, x = np.meshgrid(xx, xx, xx)
     coords = np.stack((x, y, z), -1)
     r = np.sum(coords**2, axis=-1) ** 0.5
-    return np.where(r > 1)
+    retval = np.where(r > 1)
+    return retval
 
 
-def zero_sphere(vol):
+def zero_sphere(vol: np.ndarray) -> np.ndarray:
     """Zero values of @vol outside the sphere"""
     assert len(set(vol.shape)) == 1, "volume must be a cube"
     D = vol.shape[0]
@@ -186,7 +187,7 @@ def zero_sphere(vol):
     return vol
 
 
-def assert_pkl_close(pkl_a, pkl_b, atol=1e-4):
+def assert_pkl_close(pkl_a: str, pkl_b: str, atol: float = 1e-4) -> None:
     a = pickle.load(open(pkl_a, "rb"))
     b = pickle.load(open(pkl_b, "rb"))
     if isinstance(a, tuple):

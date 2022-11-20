@@ -4,10 +4,8 @@ Create a Relion 3.0 star file from a particle stack and ctf parameters
 
 import argparse
 import os
-
 import numpy as np
 import pandas as pd
-
 from cryodrgn import dataset, mrc, utils
 from cryodrgn.starfile import Starfile
 
@@ -74,7 +72,7 @@ def main(args):
     ), "Input file must be .mrcs/.txt/.star"
 
     # Either accept an input star file, or an input .mrcs/.txt with optional ctf/pose pkl file(s)
-    starfile = None
+    starfile = ctf = poses = eulers = trans = None
     if input_ext == ".star":
         assert (
             args.poses is None
@@ -117,13 +115,13 @@ def main(args):
         ind = utils.load_pkl(args.ind)
         log(f"Filtering to {len(ind)} particles")
         particles = [particles[ii] for ii in ind]
-        if args.ctf:
+        if ctf is not None:
             ctf = ctf[ind]
-        if args.poses:
+        if poses is not None:
             poses = (poses[0][ind], poses[1][ind])
         particle_ind = particle_ind[ind]
 
-    if input_ext == ".star":
+    if starfile is not None:
         df = starfile.df.loc[particle_ind]
     else:
         particle_ind += 1  # CHANGE TO 1-BASED INDEXING
@@ -132,24 +130,24 @@ def main(args):
             image_names = [os.path.abspath(img.fname) for img in particles]
         names = [f"{i}@{name}" for i, name in zip(particle_ind, image_names)]
 
-        if args.ctf:
+        if ctf is not None:
             ctf = ctf[:, 2:]
 
         # convert poses
-        if args.poses:
+        if poses is not None:
             eulers = utils.R_to_relion_scipy(poses[0])
             D = particles[0].get().shape[0]
             trans = poses[1] * D  # convert from fraction to pixels
 
         # Create a new dataframe with required star file headers
         data = {"_rlnImageName": names}
-        if args.ctf:
+        if ctf is not None:
             for i in range(7):
                 data[CTF_HEADERS[i]] = ctf[:, i]
 
-        if args.poses:
+        if eulers is not None and trans is not None:
             for i in range(3):
-                data[POSE_HDRS[i]] = eulers[:, i]
+                data[POSE_HDRS[i]] = eulers[:, i]  # type: ignore
             for i in range(2):
                 data[POSE_HDRS[3 + i]] = trans[:, i]
         df = pd.DataFrame(data=data)

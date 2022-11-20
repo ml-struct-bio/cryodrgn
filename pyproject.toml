@@ -35,6 +35,7 @@ dev = [
     "build",
     "myst-parser",
     "pre-commit",
+    "pyright",
     "pytest>=6",
     "sphinx",
     "sphinx-book-theme",

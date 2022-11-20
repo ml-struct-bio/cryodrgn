@@ -1,7 +1,7 @@
 """Flip handedness of an .mrc file"""
 
 import argparse
-
+import numpy as np
 from cryodrgn import mrc, utils
 
 log = utils.log
@@ -17,6 +17,7 @@ def main(args):
     assert args.input.endswith(".mrc"), "Input volume must be .mrc file"
     assert args.o.endswith(".mrc"), "Output volume must be .mrc file"
     x, h = mrc.parse_mrc(args.input)
+    assert isinstance(x, np.ndarray)
     x = x[::-1]
     mrc.write(args.o, x, header=h)
     log(f"Wrote {args.o}")

@@ -1,8 +1,7 @@
 import argparse
 import os.path
-
 import pytest
-
+import numpy as np
 from cryodrgn import dataset
 from cryodrgn.commands import preprocess
 
@@ -35,4 +34,5 @@ def test_preprocess(mrcs_file):
     preprocess.main(args)
 
     data = dataset.load_particles("output/preprocessed.ft.txt")
+    assert isinstance(data, np.ndarray)
     assert data.shape == (100, 21, 21)

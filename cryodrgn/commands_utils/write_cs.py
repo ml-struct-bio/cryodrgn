@@ -4,9 +4,7 @@ Create a CryoSparc .cs file from a particle stack and ctf parameters, or an inpu
 
 import argparse
 import os
-
 import numpy as np
-
 from cryodrgn import dataset, utils
 
 log = utils.log
@@ -76,6 +74,7 @@ def main(args):
             "Generation of a .cs file from input .mrcs/.txt file is coming soon"
         )
 
+    assert isinstance(particles, np.ndarray)
     with open(args.o, "wb") as f:
         np.save(f, particles)
 

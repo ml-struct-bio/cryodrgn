@@ -49,6 +49,7 @@ def main(args):
     plt.scatter(np.arange(N), x, label=f, alpha=args.alpha, s=args.ms)
     # plt.scatter(np.arange(N), x, c=np.arange(len(x[:,0])), label=f, alpha=.1, s=2, cmap='hsv')
     plt.xlim((0, N))
+    xd = None
     if args.sample1:
         s = np.random.choice(len(x), args.sample1)
         xd = x[s]
@@ -63,7 +64,7 @@ def main(args):
         print(len(xd))
         print(xd)
         plt.plot(t, xd, "o", color="k")
-    if args.out_s:
+    if args.out_s and xd is not None:
         np.savetxt(args.out_s, xd)
     if args.ylim:
         plt.ylim(args.ylim)

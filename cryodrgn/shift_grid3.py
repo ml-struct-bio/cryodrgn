@@ -8,7 +8,7 @@ def grid_1d(resol, extent, ngrid):
     return grid
 
 
-def grid_3d(resol, extent, ngrid):
+def grid_3d(resol: int, extent: int, ngrid: int) -> np.ndarray:
     w = grid_1d(resol, extent, ngrid)
     # convention: x is fastest dim, z is slowest dim
     z, y, x = np.meshgrid(w, w, w, indexing="ij")
@@ -16,7 +16,7 @@ def grid_3d(resol, extent, ngrid):
     return grid.reshape(-1, 3)
 
 
-def base_shift_grid(extent, ngrid):
+def base_shift_grid(extent: int, ngrid: int) -> np.ndarray:
     return grid_3d(0, extent, ngrid)
 
 

@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ master, develop ]
+    branches: [ master, develop, vb/pyright ]
   pull_request:
-    branches: [ master, develop ]
+    branches: [ master, develop, vb/pyright ]
 
 jobs:
   run_tests:
@@ -39,7 +39,6 @@ jobs:
       - name: Pyright
         run: |
           pyright
-        continue-on-error: true
 
       - name: Pytest
         run: |

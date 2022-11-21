@@ -62,7 +62,7 @@ class ImageSource:
         if np.isscalar(indices):
             indices = np.array([indices])
         elif isinstance(indices, Iterable):
-            indices = np.fromiter(indices, int)
+            indices = np.array(np.fromiter(indices, int))
         elif isinstance(indices, slice):
             start, stop, step = indices.start, indices.stop, indices.step
             start = start or 0
@@ -71,7 +71,7 @@ class ImageSource:
             assert (
                 start >= 0 and stop >= 0 and step >= 0
             ), "Only positive start/stop/step supported"
-            indices = np.arange(start, stop, step)
+            indices = np.array(np.arange(start, stop, step))
         else:
             raise TypeError("Unsupported Type for indices")
 

@@ -251,6 +251,7 @@ def scatter_annotate(
         assert centers is not None
         if labels is None:
             labels = np.arange(len(centers))
+        assert labels is not None
         for i in labels:
             ax.annotate(str(i), centers[i, 0:2] + np.array([0.1, 0.1]))
     return fig, ax
@@ -276,6 +277,7 @@ def scatter_annotate_hex(
         assert centers is not None
         if labels is None:
             labels = np.arange(len(centers))
+        assert labels is not None
         for i in labels:
             g.ax_joint.annotate(
                 str(i),

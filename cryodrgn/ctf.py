@@ -1,4 +1,4 @@
-from typing import Union
+from typing import Union, Optional
 import numpy as np
 import seaborn as sns
 import torch
@@ -9,15 +9,15 @@ log = utils.log
 
 
 def compute_ctf(
-    freqs,
-    dfu,
-    dfv,
-    dfang,
-    volt,
-    cs,
-    w,
-    phase_shift: Union[torch.Tensor, float] = 0,
-    bfactor=None,
+    freqs: torch.Tensor,
+    dfu: torch.Tensor,
+    dfv: torch.Tensor,
+    dfang: torch.Tensor,
+    volt: torch.Tensor,
+    cs: torch.Tensor,
+    w: torch.Tensor,
+    phase_shift: torch.Tensor = torch.Tensor([0]),
+    bfactor: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     """
     Compute the 2D CTF
@@ -58,7 +58,15 @@ def compute_ctf(
 
 
 def compute_ctf_np(
-    freqs, dfu, dfv, dfang, volt, cs, w, phase_shift=0, bfactor=None
+    freqs: np.ndarray,
+    dfu: float,
+    dfv: float,
+    dfang: float,
+    volt: float,
+    cs: float,
+    w: float,
+    phase_shift: float = 0,
+    bfactor: Optional[float] = None,
 ) -> np.ndarray:
     """
     Compute the 2D CTF
@@ -97,7 +105,7 @@ def compute_ctf_np(
     return np.require(ctf, dtype=freqs.dtype)
 
 
-def print_ctf_params(params):
+def print_ctf_params(params: np.ndarray) -> None:
     assert len(params) == 9
     log("Image size (pix)  : {}".format(int(params[0])))
     log("A/pix             : {}".format(params[1]))
@@ -110,7 +118,7 @@ def print_ctf_params(params):
     log("Phase shift (deg) : {}".format(params[8]))
 
 
-def plot_ctf(D, Apix, ctf_params):
+def plot_ctf(D: int, Apix: float, ctf_params: np.ndarray) -> None:
     assert len(ctf_params) == 7
 
     freqs = (
@@ -128,7 +136,7 @@ def plot_ctf(D, Apix, ctf_params):
     sns.heatmap(c.reshape(D, D))
 
 
-def load_ctf_for_training(D, ctf_params_pkl):
+def load_ctf_for_training(D: int, ctf_params_pkl: str) -> np.ndarray:
     assert D % 2 == 0
     ctf_params = utils.load_pkl(ctf_params_pkl)
     assert ctf_params.shape[1] == 9

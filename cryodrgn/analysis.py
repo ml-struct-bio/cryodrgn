@@ -1,7 +1,7 @@
 import argparse
 import re
-
 import matplotlib.pyplot as plt
+from matplotlib.figure import Figure, Axes
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -10,12 +10,12 @@ from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from sklearn.mixture import GaussianMixture
-
+from typing import Optional, Union, Tuple, List
 from cryodrgn.commands import eval_vol
 from cryodrgn.utils import log
 
 
-def parse_loss(f):
+def parse_loss(f: str) -> np.ndarray:
     """Parse loss from run.log"""
     lines = open(f).readlines()
     lines = [x for x in lines if "====" in x]
@@ -33,7 +33,7 @@ def parse_loss(f):
 # Dimensionality reduction
 
 
-def run_pca(z):
+def run_pca(z: np.ndarray) -> Tuple[np.ndarray, PCA]:
     pca = PCA(z.shape[1])
     pca.fit(z)
     log("Explained variance ratio:")
@@ -42,7 +42,15 @@ def run_pca(z):
     return pc, pca
 
 
-def get_pc_traj(pca, zdim, numpoints, dim, start, end, percentiles=None):
+def get_pc_traj(
+    pca: PCA,
+    zdim: int,
+    numpoints: int,
+    dim: int,
+    start: float,
+    end: float,
+    percentiles: Optional[np.ndarray] = None,
+) -> np.ndarray:
     """
     Create trajectory along specified principal component
 
@@ -68,14 +76,16 @@ def get_pc_traj(pca, zdim, numpoints, dim, start, end, percentiles=None):
     return ztraj_pca
 
 
-def run_tsne(z, n_components=2, perplexity=1000):
+def run_tsne(
+    z: np.ndarray, n_components: int = 2, perplexity: float = 1000
+) -> np.ndarray:
     if len(z) > 10000:
         log("WARNING: {} datapoints > {}. This may take awhile.".format(len(z), 10000))
     z_embedded = TSNE(n_components=n_components, perplexity=perplexity).fit_transform(z)
     return z_embedded
 
 
-def run_umap(z, **kwargs):
+def run_umap(z: np.ndarray, **kwargs) -> np.ndarray:
     import umap  # CAN GET STUCK IN INFINITE IMPORT LOOP
 
     reducer = umap.UMAP(**kwargs)
@@ -86,7 +96,9 @@ def run_umap(z, **kwargs):
 # Clustering
 
 
-def cluster_kmeans(z, K, on_data=True, reorder=True):
+def cluster_kmeans(
+    z: np.ndarray, K: int, on_data: bool = True, reorder: bool = True
+) -> Tuple[np.ndarray, np.ndarray]:
     """
     Cluster z by K means clustering
     Returns cluster labels, cluster centers
@@ -111,7 +123,13 @@ def cluster_kmeans(z, K, on_data=True, reorder=True):
     return labels, centers
 
 
-def cluster_gmm(z, K, on_data=True, random_state=None, **kwargs):
+def cluster_gmm(
+    z,
+    K: int,
+    on_data: bool = True,
+    random_state: Union[int, np.random.RandomState, None] = None,
+    **kwargs,
+) -> Tuple[np.ndarray, np.ndarray]:
     """
     Cluster z by a K-component full covariance Gaussian mixture model
 
@@ -127,7 +145,7 @@ def cluster_gmm(z, K, on_data=True, random_state=None, **kwargs):
         np.array (K x zdim) of cluster centers
     """
     clf = GaussianMixture(
-        n_components=K, covariance_type="full", random_state=None, **kwargs
+        n_components=K, covariance_type="full", random_state=random_state, **kwargs
     )
     labels = clf.fit_predict(z)
     centers = clf.means_
@@ -136,7 +154,9 @@ def cluster_gmm(z, K, on_data=True, random_state=None, **kwargs):
     return labels, centers
 
 
-def get_nearest_point(data, query):
+def get_nearest_point(
+    data: np.ndarray, query: np.ndarray
+) -> Tuple[np.ndarray, np.ndarray]:
     """
     Find closest point in @data to @query
     Return datapoint, index
@@ -148,14 +168,18 @@ def get_nearest_point(data, query):
 # HELPER FUNCTIONS FOR INDEX ARRAY MANIPULATION
 
 
-def convert_original_indices(ind, N_orig, orig_ind):
+def convert_original_indices(
+    ind: np.ndarray, N_orig: int, orig_ind: np.ndarray
+) -> np.ndarray:
     """
     Convert index array into indices into the original particle stack
     """  # todo -- finish docstring
     return np.arange(N_orig)[orig_ind][ind]
 
 
-def combine_ind(N, sel1, sel2, kind="intersection"):
+def combine_ind(
+    N: int, sel1: np.ndarray, sel2: np.ndarray, kind: str = "intersection"
+) -> Tuple[np.ndarray, np.ndarray]:
     # todo -- docstring
     if kind == "intersection":
         ind_selected = set(sel1) & set(sel2)
@@ -170,7 +194,9 @@ def combine_ind(N, sel1, sel2, kind="intersection"):
     return ind_selected, ind_selected_not
 
 
-def get_ind_for_cluster(labels, selected_clusters):
+def get_ind_for_cluster(
+    labels: np.ndarray, selected_clusters: np.ndarray
+) -> np.ndarray:
     """Return index array of the selected clusters
 
     Inputs:
@@ -192,7 +218,7 @@ def get_ind_for_cluster(labels, selected_clusters):
 # PLOTTING
 
 
-def _get_colors(K, cmap=None):
+def _get_colors(K: int, cmap: Optional[str] = None) -> List:
     if cmap is not None:
         cm = plt.get_cmap(cmap)
         colors = [cm(i / float(K)) for i in range(K)]
@@ -203,8 +229,15 @@ def _get_colors(K, cmap=None):
 
 
 def scatter_annotate(
-    x, y, centers=None, centers_ind=None, annotate=True, labels=None, alpha=0.1, s=1
-):
+    x: np.ndarray,
+    y: np.ndarray,
+    centers: Optional[np.ndarray] = None,
+    centers_ind: Optional[np.ndarray] = None,
+    annotate: bool = True,
+    labels: Optional[np.ndarray] = None,
+    alpha: Union[float, np.ndarray, None] = 0.1,
+    s: Union[float, np.ndarray, None] = 1,
+) -> Tuple[Figure, Axes]:
     fig, ax = plt.subplots()
     plt.scatter(x, y, alpha=alpha, s=s, rasterized=True)
 
@@ -217,15 +250,20 @@ def scatter_annotate(
     if annotate:
         assert centers is not None
         if labels is None:
-            labels = range(len(centers))
+            labels = np.arange(len(centers))
         for i in labels:
             ax.annotate(str(i), centers[i, 0:2] + np.array([0.1, 0.1]))
     return fig, ax
 
 
 def scatter_annotate_hex(
-    x, y, centers=None, centers_ind=None, annotate=True, labels=None
-):
+    x: np.ndarray,
+    y: np.ndarray,
+    centers: Optional[np.ndarray] = None,
+    centers_ind: Optional[np.ndarray] = None,
+    annotate: bool = True,
+    labels: Optional[np.ndarray] = None,
+) -> sns.JointGrid:
     g = sns.jointplot(x=x, y=y, kind="hex")
 
     # plot cluster centers
@@ -237,7 +275,7 @@ def scatter_annotate_hex(
     if annotate:
         assert centers is not None
         if labels is None:
-            labels = range(len(centers))
+            labels = np.arange(len(centers))
         for i in labels:
             g.ax_joint.annotate(
                 str(i),
@@ -248,7 +286,16 @@ def scatter_annotate_hex(
     return g
 
 
-def scatter_color(x, y, c, cmap="viridis", s=1, alpha=0.1, label=None, figsize=None):
+def scatter_color(
+    x: np.ndarray,
+    y: np.ndarray,
+    c: np.ndarray,
+    cmap: str = "viridis",
+    s=1,
+    alpha: float = 0.1,
+    label: Optional[str] = None,
+    figsize: Optional[Tuple[float, float]] = None,
+) -> Tuple[Figure, Axes]:
     fig, ax = plt.subplots(figsize=figsize)
     assert len(x) == len(y) == len(c)
     sc = plt.scatter(x, y, s=s, alpha=alpha, rasterized=True, cmap=cmap, c=c)

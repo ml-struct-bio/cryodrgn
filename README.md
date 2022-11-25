@@ -65,6 +65,7 @@ The official version 1.0 release. This version introduces several new tools for 
 </details>
 
 <details><summary>Version 0.3.2</summary>
+
 * New: cryoDRGN_filtering.ipynb for interactive filtering/selection of images from the dataset
 * New: `cryodrgn view_config`
 * Minor performance improvements and compatibility fixes

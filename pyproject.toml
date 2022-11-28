@@ -27,7 +27,8 @@ dependencies = [
     "cufflinks",
     "jupyterlab",
     "umap-learn",
-    "ipywidgets<8"
+    "ipywidgets<8",
+    "healpy"
 ]
 
 [project.optional-dependencies]

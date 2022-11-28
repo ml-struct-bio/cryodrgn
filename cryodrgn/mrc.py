@@ -249,7 +249,7 @@ def parse_mrc(fname: str, lazy: bool = False) -> Tuple[types.ImageArray, MRCHead
         array = [
             LazyImage(fname, (ny, nx), dtype, start + i * stride) for i in range(nz)
         ]
-    return array, header
+    return array, header  # type: ignore
 
 
 def write(

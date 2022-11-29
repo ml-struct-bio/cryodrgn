@@ -599,7 +599,12 @@ def save_checkpoint(
     with open(out_poses, "wb") as f:
         rot, trans = search_pose
         # When saving translations, save in box units (fractional)
-        trans /= model.lattice.D
+        D = (
+            model.module.lattice.D
+            if isinstance(model, nn.DataParallel)
+            else model.lattice.D
+        )
+        trans /= D
         pickle.dump((rot, trans), f)
 
 
@@ -821,6 +826,17 @@ def main(args):
         )
     )
 
+    # parallelize
+    if args.multigpu and torch.cuda.device_count() > 1:
+        log(f"Using {torch.cuda.device_count()} GPUs!")
+        args.batch_size *= torch.cuda.device_count()
+        log(f"Increasing batch size to {args.batch_size}")
+        model = nn.DataParallel(model)
+    elif args.multigpu:
+        log(
+            f"WARNING: --multigpu selected, but {torch.cuda.device_count()} GPUs detected"
+        )
+
     if args.equivariance:
         assert args.equivariance > 0, "Regularization weight must be positive"
         equivariance_lambda = LinearSchedule(
@@ -847,20 +863,14 @@ def main(args):
                 trans <= 1
             ), "ERROR: Old pose format detected. Translations must be in units of fraction of box."
             # Convert translations to pixel units to feed back to the model
-            sorted_poses = (rot, trans * model.lattice.D)
+            D = (
+                model.module.lattice.D
+                if isinstance(model, nn.DataParallel)
+                else model.lattice.D
+            )
+            sorted_poses = (rot, trans * D)
     else:
         start_epoch = 0
-
-    # parallelize
-    if args.multigpu and torch.cuda.device_count() > 1:
-        log(f"Using {torch.cuda.device_count()} GPUs!")
-        args.batch_size *= torch.cuda.device_count()
-        log(f"Increasing batch size to {args.batch_size}")
-        model = nn.DataParallel(model)
-    elif args.multigpu:
-        log(
-            f"WARNING: --multigpu selected, but {torch.cuda.device_count()} GPUs detected"
-        )
 
     if args.pose_model_update_freq:
         assert not args.multigpu, "TODO"

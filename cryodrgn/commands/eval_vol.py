@@ -193,7 +193,8 @@ def main(args):
             log(zz)
             if args.downsample:
                 extent = lattice.extent * (args.downsample / (D - 1))
-                vol = model.decoder.eval_volume(  # type: ignore  # PYR00
+                decoder = model.decoder
+                vol = decoder.eval_volume(
                     lattice.get_downsample_coords(args.downsample + 1),
                     args.downsample + 1,
                     extent,
@@ -201,7 +202,7 @@ def main(args):
                     zz,
                 )
             else:
-                vol = model.decoder.eval_volume(  # type: ignore  # PYR00
+                vol = model.decoder.eval_volume(
                     lattice.coords, lattice.D, lattice.extent, norm, zz
                 )
             out_mrc = "{}/{}{:03d}.mrc".format(args.o, args.prefix, i)
@@ -217,7 +218,7 @@ def main(args):
         log(z)
         if args.downsample:
             extent = lattice.extent * (args.downsample / (D - 1))
-            vol = model.decoder.eval_volume(  # type: ignore  # PYR00
+            vol = model.decoder.eval_volume(
                 lattice.get_downsample_coords(args.downsample + 1),
                 args.downsample + 1,
                 extent,
@@ -225,7 +226,7 @@ def main(args):
                 z,
             )
         else:
-            vol = model.decoder.eval_volume(  # type: ignore  # PYR00
+            vol = model.decoder.eval_volume(
                 lattice.coords, lattice.D, lattice.extent, norm, z
             )
         if args.flip:

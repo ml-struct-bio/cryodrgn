@@ -381,8 +381,10 @@ def run_batch(model, lattice, y, yt, rot, tilt=None, ctf_params=None, yr=None):
         input_ = (y, yt) if yt is not None else (y,)
         if c is not None:
             input_ = (x * c.sign() for x in input_)  # phase flip by the ctf
-    z_mu, z_logvar = unparallelize(model).encode(*input_)  # type: ignore  # PYR00
-    z = unparallelize(model).reparameterize(z_mu, z_logvar)  # type: ignore  # PYR00
+    _model = unparallelize(model)
+    assert isinstance(_model, HetOnlyVAE)
+    z_mu, z_logvar = _model.encode(*input_)
+    z = _model.reparameterize(z_mu, z_logvar)
 
     # decode
     mask = lattice.get_circular_mask(D // 2)  # restrict to circular mask
@@ -468,7 +470,9 @@ def eval_z(
         if c is not None:
             assert not use_real, "Not implemented"
             input_ = (x * c.sign() for x in input_)  # phase flip by the ctf
-        z_mu, z_logvar = unparallelize(model).encode(*input_)  # type: ignore  # PYR00
+        _model = unparallelize(model)
+        assert isinstance(_model, HetOnlyVAE)
+        z_mu, z_logvar = _model.encode(*input_)
         z_mu_all.append(z_mu.detach().cpu().numpy())
         z_logvar_all.append(z_logvar.detach().cpu().numpy())
     z_mu_all = np.vstack(z_mu_all)

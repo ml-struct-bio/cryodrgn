@@ -6,14 +6,13 @@ import os
 import pickle
 import sys
 from datetime import datetime as dt
-
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.parallel import DataParallel
 from torch.utils.data import DataLoader
-
+from typing import Union
 import cryodrgn
 from cryodrgn import ctf, dataset, lie_tools, utils
 from cryodrgn.beta_schedule import LinearSchedule, get_beta_schedule
@@ -360,7 +359,7 @@ def add_args(parser):
     return parser
 
 
-def make_model(args, lattice, enc_mask, in_dim):
+def make_model(args, lattice, enc_mask, in_dim) -> HetOnlyVAE:
     return HetOnlyVAE(
         lattice,
         args.qlayers,
@@ -394,7 +393,9 @@ def pretrain(model, lattice, optim, minibatch, tilt, zdim):
     mask = lattice.get_circular_mask(lattice.D // 2)
 
     def gen_slice(R):
-        return unparallelize(model).decode(lattice.coords[mask] @ R, z).view(B, -1)  # type: ignore  # PYR00
+        _model = unparallelize(model)
+        assert isinstance(_model, HetOnlyVAE)
+        return _model.decode(lattice.coords[mask] @ R, z).view(B, -1)
 
     y = y.view(B, -1)[:, mask]
     if use_tilt:
@@ -411,7 +412,7 @@ def pretrain(model, lattice, optim, minibatch, tilt, zdim):
 
 
 def train(
-    model,
+    model: Union[DataParallel, HetOnlyVAE],
     lattice,
     ps,
     optim,
@@ -448,8 +449,11 @@ def train(
     input_ = (y, yt) if use_tilt else (y,)
     if ctf_i is not None:
         input_ = (x * ctf_i.sign() for x in input_)  # phase flip by the ctf
-    z_mu, z_logvar = unparallelize(model).encode(*input_)  # type: ignore  # PYR00
-    z = unparallelize(model).reparameterize(z_mu, z_logvar)  # type: ignore  # PYR00
+
+    _model = unparallelize(model)
+    assert isinstance(_model, HetOnlyVAE)
+    z_mu, z_logvar = _model.encode(*input_)
+    z = _model.reparameterize(z_mu, z_logvar)
 
     lamb = eq_loss = None
     if equivariance is not None:
@@ -562,7 +566,9 @@ def eval_z(
         input_ = (y, yt) if yt is not None else (y,)
         if c is not None:
             input_ = (x * c.sign() for x in input_)  # phase flip by the ctf
-        z_mu, z_logvar = unparallelize(model).encode(*input_)  # type: ignore  # PYR00
+        _model = unparallelize(model)
+        assert isinstance(_model, HetOnlyVAE)
+        z_mu, z_logvar = _model.encode(*input_)
         z_mu_all.append(z_mu.detach().cpu().numpy())
         z_logvar_all.append(z_logvar.detach().cpu().numpy())
     z_mu_all = np.vstack(z_mu_all)

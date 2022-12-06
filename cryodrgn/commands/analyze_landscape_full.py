@@ -213,7 +213,7 @@ def generate_and_map_volumes(
             log(i)
         if args.downsample:
             extent = lattice.extent * (args.downsample / (D - 1))
-            vol = model.decoder.eval_volume(  # type: ignore  # PYR00
+            vol = model.decoder.eval_volume(
                 lattice.get_downsample_coords(args.downsample + 1),
                 args.downsample + 1,
                 extent,
@@ -221,7 +221,7 @@ def generate_and_map_volumes(
                 zz,
             )
         else:
-            vol = model.decoder.eval_volume(  # type: ignore  # PYR00
+            vol = model.decoder.eval_volume(
                 lattice.coords, lattice.D, lattice.extent, norm, zz
             )
         if args.flip:

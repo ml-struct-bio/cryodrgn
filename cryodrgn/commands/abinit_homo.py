@@ -594,7 +594,7 @@ def main(args):
                 break
     out_mrc = "{}/pretrain.reconstruct.mrc".format(args.outdir)
     model.eval()
-    vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, data.norm)  # type: ignore  # PYR00
+    vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, tuple(data.norm))
     mrc.write(out_mrc, vol.astype(np.float32))
 
     # reset model after pretraining

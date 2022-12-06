@@ -1,10 +1,10 @@
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from typing import Optional, Union, Tuple
+from cryodrgn.types import UnParallelizableModels
 from cryodrgn import lie_tools, shift_grid, so3_grid, utils
-from cryodrgn.models import unparallelize
+from cryodrgn.models import unparallelize, HetOnlyVAE
 from cryodrgn.lattice import Lattice
 
 log = utils.log
@@ -53,7 +53,7 @@ class PoseSearch:
 
     def __init__(
         self,
-        model: nn.Module,
+        model: UnParallelizableModels,
         lattice: Lattice,
         Lmin: int,
         Lmax: int,
@@ -144,7 +144,9 @@ class PoseSearch:
 
             x = coords @ rot
             if z is not None:
-                x = unparallelize(self.model).cat_z(x, z)  # type: ignore
+                _model = unparallelize(self.model)
+                assert isinstance(_model, HetOnlyVAE)
+                x = _model.cat_z(x, z)
             x = x.to(device)
             # log(f"Evaluating model on {x.shape} = {x.nelement() // 3} points")
             with torch.no_grad():

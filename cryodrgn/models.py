@@ -1,6 +1,6 @@
 """Pytorch models"""
 
-from typing import Optional, Tuple, Type
+from typing import Optional, Tuple, Type, Union
 import numpy as np
 import torch
 from torch import Tensor
@@ -8,6 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.parameter import Parameter
 from torch.nn.parallel import DataParallel
+import cryodrgn.types as types
 from cryodrgn import fft, lie_tools, utils
 from cryodrgn.lattice import Lattice
 
@@ -15,9 +16,9 @@ log = utils.log
 Norm = Tuple[float, float]  # mean, std
 
 
-def unparallelize(model) -> nn.Module:
+def unparallelize(model: types.UnParallelizableModels) -> types.UnParallelizedModels:
     if isinstance(model, DataParallel):
-        return model.module
+        return model.module  # type: ignore
     return model
 
 
@@ -130,14 +131,14 @@ class HetOnlyVAE(nn.Module):
         eps = torch.randn_like(std)
         return eps * std + mu
 
-    def encode(self, *img):
+    def encode(self, *img) -> Tuple[Tensor, Tensor]:
         img = (x.view(x.shape[0], -1) for x in img)
         if self.enc_mask is not None:
             img = (x[:, self.enc_mask] for x in img)
         z = self.encoder(*img)
         return z[:, : self.zdim], z[:, self.zdim :]
 
-    def cat_z(self, coords, z):
+    def cat_z(self, coords, z) -> Tensor:
         """
         coords: Bx...x3
         z: Bxzdim
@@ -276,7 +277,14 @@ class PositionalDecoder(nn.Module):
         assert (coords[..., 0:3].abs() - 0.5 < 1e-4).all()
         return self.decoder(self.positional_encoding_geom(coords))
 
-    def eval_volume(self, coords: Tensor, D: int, extent: float, norm: Norm, zval=None):
+    def eval_volume(
+        self,
+        coords: Tensor,
+        D: int,
+        extent: float,
+        norm: Norm,
+        zval: Optional[np.ndarray] = None,
+    ) -> np.ndarray:
         """
         Evaluate the model on a DxDxD volume
 
@@ -463,7 +471,14 @@ class FTPositionalDecoder(nn.Module):
         )  # replace with complex conjugate to get correct values for original lattice positions
         return result
 
-    def eval_volume(self, coords: Tensor, D: int, extent: float, norm: Norm, zval=None):
+    def eval_volume(
+        self,
+        coords: Tensor,
+        D: int,
+        extent: float,
+        norm: Norm,
+        zval: Optional[np.ndarray] = None,
+    ) -> np.ndarray:
         """
         Evaluate the model on a DxDxD volume
 
@@ -603,8 +618,8 @@ class FTSliceDecoder(nn.Module):
         D: int,
         extent: float,
         norm: Norm,
-        zval: Optional[Tensor] = None,
-    ):
+        zval: Optional[np.ndarray] = None,
+    ) -> np.ndarray:
         """
         Evaluate the model on a DxDxD volume
 
@@ -655,11 +670,15 @@ def get_decoder(
     enc_dim: Optional[int] = None,
     activation: Type = nn.ReLU,
     feat_sigma: Optional[float] = None,
-) -> nn.Module:
+) -> Union[
+    types.ResidLinearMLP,
+    types.FTSliceDecoder,
+    types.PositionalDecoder,
+    types.FTPositionalDecoder,
+]:
     if enc_type == "none":
         if domain == "hartley":
             model = ResidLinearMLP(in_dim, layers, dim, 1, activation)
-            ResidLinearMLP.eval_volume = PositionalDecoder.eval_volume  # type: ignore  # EW FIXME
         else:
             model = FTSliceDecoder(in_dim, D, layers, dim, activation)
         return model
@@ -748,7 +767,7 @@ class VAE(nn.Module):
             tmu, tlogvar = z[:, :2], z[:, 2:]
         return z_mu, z_std, tmu, tlogvar
 
-    def eval_volume(self, norm):
+    def eval_volume(self, norm) -> np.ndarray:
         return self.decoder.eval_volume(
             self.lattice.coords, self.D, self.lattice.extent, norm
         )
@@ -803,7 +822,7 @@ class TiltVAE(nn.Module):
         eps = torch.randn_like(std)
         return eps * std + mu
 
-    def eval_volume(self, norm):
+    def eval_volume(self, norm) -> np.ndarray:
         return self.decoder.eval_volume(
             self.lattice.coords, self.D, self.lattice.extent, norm
         )
@@ -901,6 +920,45 @@ class ResidLinearMLP(nn.Module):
         ret_flat = self.main(flat)
         ret = ret_flat.view(*x.shape[:-1], ret_flat.shape[-1])
         return ret
+
+    def eval_volume(
+        self, coords: Tensor, D: int, extent: float, norm: Norm, zval=None
+    ) -> np.ndarray:
+        """
+        Evaluate the model on a DxDxD volume
+
+        Inputs:
+            coords: lattice coords on the x-y plane (D^2 x 3)
+            D: size of lattice
+            extent: extent of lattice [-extent, extent]
+            norm: data normalization
+            zval: value of latent (zdim x 1)
+        """
+        # Note: extent should be 0.5 by default, except when a downsampled
+        # volume is generated
+        if zval is not None:
+            zdim = len(zval)
+            z = torch.zeros(D**2, zdim, dtype=torch.float32, device=coords.device)
+            z += torch.tensor(zval, dtype=torch.float32, device=coords.device)
+
+        vol_f = np.zeros((D, D, D), dtype=np.float32)
+        assert not self.training
+        # evaluate the volume by zslice to avoid memory overflows
+        for i, dz in enumerate(
+            np.linspace(-extent, extent, D, endpoint=True, dtype=np.float32)
+        ):
+            x = coords + torch.tensor([0, 0, dz], device=coords.device)
+            if zval is not None:
+                x = torch.cat((x, zval), dim=-1)
+            with torch.no_grad():
+                y = self.forward(x)
+                y = y.view(D, D).cpu().numpy()
+            vol_f[i] = y
+        vol_f = vol_f * norm[1] + norm[0]
+        vol = fft.ihtn_center(
+            vol_f[0:-1, 0:-1, 0:-1]
+        )  # remove last +k freq for inverse FFT
+        return vol
 
 
 def half_linear(input, weight, bias):

@@ -885,7 +885,6 @@ def main(args):
             sorted_poses = (rot, trans * D)
     else:
         start_epoch = 0
-        model = DataParallel(model)
 
     if args.pose_model_update_freq:
         assert not args.multigpu, "TODO"

@@ -608,11 +608,12 @@ def save_checkpoint(
     with open(out_poses, "wb") as f:
         rot, trans = search_pose
         # When saving translations, save in box units (fractional)
-        D = (
-            model.module.lattice.D
-            if isinstance(model, nn.DataParallel)
-            else model.lattice.D
-        )
+        if isinstance(model, DataParallel):
+            _model = model.module
+            assert isinstance(_model, HetOnlyVAE)
+            D = _model.lattice.D
+        else:
+            D = model.lattice.D
         trans /= D
         pickle.dump((rot, trans), f)
 
@@ -840,7 +841,7 @@ def main(args):
         log(f"Using {torch.cuda.device_count()} GPUs!")
         args.batch_size *= torch.cuda.device_count()
         log(f"Increasing batch size to {args.batch_size}")
-        model = nn.DataParallel(model)
+        model = DataParallel(model)
     elif args.multigpu:
         log(
             f"WARNING: --multigpu selected, but {torch.cuda.device_count()} GPUs detected"
@@ -875,15 +876,16 @@ def main(args):
                 trans <= 1
             ), "ERROR: Old pose format detected. Translations must be in units of fraction of box."
             # Convert translations to pixel units to feed back to the model
-            D = (
-                model.module.lattice.D
-                if isinstance(model, nn.DataParallel)
-                else model.lattice.D
-            )
+            if isinstance(model, DataParallel):
+                _model = model.module
+                assert isinstance(_model, HetOnlyVAE)
+                D = _model.lattice.D
+            else:
+                D = model.lattice.D
             sorted_poses = (rot, trans * D)
     else:
         start_epoch = 0
-        model = nn.DataParallel(model)
+        model = DataParallel(model)
 
     if args.pose_model_update_freq:
         assert not args.multigpu, "TODO"

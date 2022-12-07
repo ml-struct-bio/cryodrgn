@@ -1,3 +1,5 @@
+# type: ignore
+
 import numpy as np
 
 try:
@@ -46,6 +48,7 @@ def load_particles(mrcs_txt_star, lazy=False, datadir=None):
         particles = starfile.csparc_get_particles(mrcs_txt_star, datadir, lazy)
     else:
         particles, _ = mrc.parse_mrc(mrcs_txt_star, lazy=lazy)
+
     return particles
 
 

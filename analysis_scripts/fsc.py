@@ -25,8 +25,12 @@ def main(args):
     vol1, _ = mrc.parse_mrc(args.vol1)
     vol2, _ = mrc.parse_mrc(args.vol2)
 
+    assert isinstance(vol1, np.ndarray)
+    assert isinstance(vol2, np.ndarray)
+
     if args.mask:
         mask = mrc.parse_mrc(args.mask)[0]
+        assert isinstance(mask, np.ndarray)
         vol1 *= mask
         vol2 *= mask
 
@@ -50,7 +54,7 @@ def main(args):
         v1 = vol1[shell]
         v2 = vol2[shell]
         p = np.vdot(v1, v2) / (np.vdot(v1, v1) * np.vdot(v2, v2)) ** 0.5
-        fsc.append(p.real)
+        fsc.append(float(p.real))
         prev_mask = mask
     fsc = np.asarray(fsc)
     x = np.arange(D // 2) / D

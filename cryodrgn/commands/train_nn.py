@@ -10,18 +10,26 @@ from datetime import datetime as dt
 import numpy as np
 import torch
 import torch.nn as nn
+from torch.nn.parallel import DataParallel
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 try:
-    import apex.amp as amp
+    import apex.amp as amp  # type: ignore
 except ImportError:
     pass
 
 import cryodrgn
+import cryodrgn.types as types
 from cryodrgn import ctf, dataset, models, mrc, utils
 from cryodrgn.lattice import Lattice
 from cryodrgn.pose import PoseTracker
+from cryodrgn.models import (
+    ResidLinearMLP,
+    FTSliceDecoder,
+    PositionalDecoder,
+    FTPositionalDecoder,
+)
 
 log = utils.log
 vlog = utils.vlog
@@ -230,8 +238,17 @@ def add_args(parser):
 
 def save_checkpoint(model, lattice, optim, epoch, norm, Apix, out_mrc, out_weights):
     model.eval()
-    if isinstance(model, nn.DataParallel):
+    if isinstance(model, DataParallel):
         model = model.module
+    assert isinstance(
+        model,
+        (
+            ResidLinearMLP,
+            FTSliceDecoder,
+            PositionalDecoder,
+            FTPositionalDecoder,
+        ),
+    )
     vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, norm)
     mrc.write(out_mrc, vol.astype(np.float32), Apix=Apix)
     torch.save(
@@ -279,7 +296,7 @@ def train(
 
     # Cast operations to mixed precision if using torch.cuda.amp.GradScaler()
     if scaler is not None:
-        with torch.cuda.amp.autocast():
+        with torch.cuda.amp.autocast_mode.autocast():
             loss = run_model(y)
     else:
         loss = run_model(y)
@@ -442,6 +459,7 @@ def main(args):
         start_epoch = 0
 
     # load poses
+    pose_optimizer = None
     if args.do_pose_sgd:
         assert (
             args.domain == "hartley"
@@ -485,14 +503,14 @@ def main(args):
             model, optim = amp.initialize(model, optim, opt_level="O1")
         except:  # noqa: E722
             # Mixed precision with pytorch (v1.6+)
-            scaler = torch.cuda.amp.GradScaler()
+            scaler = torch.cuda.amp.grad_scaler.GradScaler()
 
     # parallelize
     if args.multigpu and torch.cuda.device_count() > 1:
         flog(f"Using {torch.cuda.device_count()} GPUs!")
         args.batch_size *= torch.cuda.device_count()
         flog(f"Increasing batch size to {args.batch_size}")
-        model = nn.DataParallel(model)
+        model = DataParallel(model)
     elif args.multigpu:
         flog(
             f"WARNING: --multigpu selected, but {torch.cuda.device_count()} GPUs detected"
@@ -500,6 +518,7 @@ def main(args):
 
     # train
     data_generator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
+    epoch = None
     for epoch in range(start_epoch, args.num_epochs):
         t2 = dt.now()
         loss_accum = 0
@@ -507,7 +526,7 @@ def main(args):
         for batch, ind in data_generator:
             batch_it += len(ind)
             ind = ind.to(device)
-            if args.do_pose_sgd:
+            if pose_optimizer is not None:
                 pose_optimizer.zero_grad()
             r, t = posetracker.get_pose(ind)
             c = ctf_params[ind] if ctf_params is not None else None
@@ -522,7 +541,7 @@ def main(args):
                 use_amp=args.amp,
                 scaler=scaler,
             )
-            if args.do_pose_sgd and epoch >= args.pretrain:
+            if pose_optimizer is not None and epoch >= args.pretrain:
                 pose_optimizer.step()
             loss_accum += loss_item * len(ind)
             if batch_it % args.log_interval == 0:

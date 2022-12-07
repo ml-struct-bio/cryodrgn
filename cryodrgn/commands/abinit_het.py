@@ -6,13 +6,13 @@ import os
 import pickle
 import sys
 from datetime import datetime as dt
-
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.parallel import DataParallel
 from torch.utils.data import DataLoader
-
+from typing import Union
 import cryodrgn
 from cryodrgn import ctf, dataset, lie_tools, utils
 from cryodrgn.beta_schedule import LinearSchedule, get_beta_schedule
@@ -359,7 +359,7 @@ def add_args(parser):
     return parser
 
 
-def make_model(args, lattice, enc_mask, in_dim):
+def make_model(args, lattice, enc_mask, in_dim) -> HetOnlyVAE:
     return HetOnlyVAE(
         lattice,
         args.qlayers,
@@ -393,7 +393,9 @@ def pretrain(model, lattice, optim, minibatch, tilt, zdim):
     mask = lattice.get_circular_mask(lattice.D // 2)
 
     def gen_slice(R):
-        return unparallelize(model).decode(lattice.coords[mask] @ R, z).view(B, -1)
+        _model = unparallelize(model)
+        assert isinstance(_model, HetOnlyVAE)
+        return _model.decode(lattice.coords[mask] @ R, z).view(B, -1)
 
     y = y.view(B, -1)[:, mask]
     if use_tilt:
@@ -410,7 +412,7 @@ def pretrain(model, lattice, optim, minibatch, tilt, zdim):
 
 
 def train(
-    model,
+    model: Union[DataParallel, HetOnlyVAE],
     lattice,
     ps,
     optim,
@@ -429,6 +431,7 @@ def train(
     B = y.size(0)
     D = lattice.D
 
+    ctf_i = None
     if use_ctf:
         freqs = lattice.freqs2d.unsqueeze(0).expand(
             B, *lattice.freqs2d.shape
@@ -436,8 +439,6 @@ def train(
         ctf_i = ctf.compute_ctf(freqs, *torch.split(ctf_params[:, 1:], 1, 1)).view(
             B, D, D
         )
-    else:
-        ctf_i = None
 
     # TODO: Center image?
     # We do this in pose-supervised train_vae
@@ -446,11 +447,15 @@ def train(
     model.train()
     optim.zero_grad()
     input_ = (y, yt) if use_tilt else (y,)
-    if use_ctf:
+    if ctf_i is not None:
         input_ = (x * ctf_i.sign() for x in input_)  # phase flip by the ctf
-    z_mu, z_logvar = unparallelize(model).encode(*input_)
-    z = unparallelize(model).reparameterize(z_mu, z_logvar)
 
+    _model = unparallelize(model)
+    assert isinstance(_model, HetOnlyVAE)
+    z_mu, z_logvar = _model.encode(*input_)
+    z = _model.reparameterize(z_mu, z_logvar)
+
+    lamb = eq_loss = None
     if equivariance is not None:
         lamb, equivariance_loss = equivariance
         eq_loss = equivariance_loss(y, z_mu)
@@ -475,7 +480,7 @@ def train(
 
     def gen_slice(R):
         slice_ = model(lattice.coords[mask] @ R, z).view(B, -1)
-        if use_ctf:
+        if ctf_i is not None:
             slice_ *= ctf_i.view(B, -1)[:, mask]
         return slice_
 
@@ -492,7 +497,7 @@ def train(
 
     if use_tilt:
         gen_loss = 0.5 * F.mse_loss(gen_slice(rot), y) + 0.5 * F.mse_loss(
-            gen_slice(bnb.tilt @ rot), yt
+            gen_slice(bnb.tilt @ rot), yt  # type: ignore
         )  # noqa: F821
     else:
         gen_loss = F.mse_loss(gen_slice(rot), y)
@@ -508,7 +513,7 @@ def train(
     else:
         loss = gen_loss + beta_control * (beta - kld) ** 2 / mask.sum()
 
-    if equivariance is not None:
+    if loss is not None and eq_loss is not None:
         loss += lamb * eq_loss
 
     loss.backward()
@@ -520,7 +525,7 @@ def train(
         gen_loss.item(),
         kld.item(),
         loss.item(),
-        eq_loss.item() if equivariance else None,
+        eq_loss.item() if eq_loss else None,
         save_pose,
     )
 
@@ -542,10 +547,12 @@ def eval_z(
     for minibatch in data_generator:
         ind = minibatch[-1]
         y = minibatch[0].to(device)
+        yt = None
         if use_tilt:
             yt = minibatch[1].to(device)
         B = len(ind)
         D = lattice.D
+        c = None
         if ctf_params is not None:
             freqs = lattice.freqs2d.unsqueeze(0).expand(
                 B, *lattice.freqs2d.shape
@@ -556,10 +563,12 @@ def eval_z(
         # if trans is not None:
         #    y = lattice.translate_ht(y.view(B,-1), trans[ind].unsqueeze(1)).view(B,D,D)
         #    if yt is not None: yt = lattice.translate_ht(yt.view(B,-1), trans[ind].unsqueeze(1)).view(B,D,D)
-        input_ = (y, yt) if use_tilt else (y,)
-        if ctf_params is not None:
+        input_ = (y, yt) if yt is not None else (y,)
+        if c is not None:
             input_ = (x * c.sign() for x in input_)  # phase flip by the ctf
-        z_mu, z_logvar = unparallelize(model).encode(*input_)
+        _model = unparallelize(model)
+        assert isinstance(_model, HetOnlyVAE)
+        z_mu, z_logvar = _model.encode(*input_)
         z_mu_all.append(z_mu.detach().cpu().numpy())
         z_logvar_all.append(z_logvar.detach().cpu().numpy())
     z_mu_all = np.vstack(z_mu_all)
@@ -599,11 +608,12 @@ def save_checkpoint(
     with open(out_poses, "wb") as f:
         rot, trans = search_pose
         # When saving translations, save in box units (fractional)
-        D = (
-            model.module.lattice.D
-            if isinstance(model, nn.DataParallel)
-            else model.lattice.D
-        )
+        if isinstance(model, DataParallel):
+            _model = model.module
+            assert isinstance(_model, HetOnlyVAE)
+            D = _model.lattice.D
+        else:
+            D = model.lattice.D
         trans /= D
         pickle.dump((rot, trans), f)
 
@@ -831,11 +841,13 @@ def main(args):
         log(f"Using {torch.cuda.device_count()} GPUs!")
         args.batch_size *= torch.cuda.device_count()
         log(f"Increasing batch size to {args.batch_size}")
-        model = nn.DataParallel(model)
+        model = DataParallel(model)
     elif args.multigpu:
         log(
             f"WARNING: --multigpu selected, but {torch.cuda.device_count()} GPUs detected"
         )
+
+    equivariance_lambda = equivariance_loss = None
 
     if args.equivariance:
         assert args.equivariance > 0, "Regularization weight must be positive"
@@ -847,8 +859,9 @@ def main(args):
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
     if args.load == "latest":
-        args = get_latest(args)
+        args = get_latest(args, flog)
 
+    sorted_poses = []
     if args.load:
         args.pretrain = 0
         flog("Loading checkpoint from {}".format(args.load))
@@ -863,11 +876,12 @@ def main(args):
                 trans <= 1
             ), "ERROR: Old pose format detected. Translations must be in units of fraction of box."
             # Convert translations to pixel units to feed back to the model
-            D = (
-                model.module.lattice.D
-                if isinstance(model, nn.DataParallel)
-                else model.lattice.D
-            )
+            if isinstance(model, DataParallel):
+                _model = model.module
+                assert isinstance(_model, HetOnlyVAE)
+                D = _model.lattice.D
+            else:
+                D = model.lattice.D
             sorted_poses = (rot, trans * D)
     else:
         start_epoch = 0
@@ -973,8 +987,9 @@ def main(args):
             batch_it += len(batch[0])
             global_it = Nimg * epoch + batch_it
 
+            lamb = None
             beta = beta_schedule(global_it)
-            if args.equivariance:
+            if equivariance_lambda is not None and equivariance_loss is not None:
                 lamb = equivariance_lambda(global_it)
                 equivariance_tuple = (lamb, equivariance_loss)
             else:
@@ -982,7 +997,7 @@ def main(args):
 
             # train the model
             if epoch % args.ps_freq != 0:
-                p = [torch.tensor(x[ind_np], device=device) for x in sorted_poses]
+                p = [torch.tensor(x[ind_np], device=device) for x in sorted_poses]  # type: ignore
             else:
                 p = None
 
@@ -1011,13 +1026,14 @@ def main(args):
             kld_accum += kld * len(ind)
             gen_loss_accum += gen_loss * len(ind)
             if args.equivariance:
+                assert eq_loss is not None
                 eq_loss_accum += eq_loss * len(ind)
 
             loss_accum += loss * len(ind)
             if batch_it % args.log_interval == 0:
                 eq_log = (
                     f"equivariance={eq_loss:.4f}, lambda={lamb:.4f}, "
-                    if args.equivariance
+                    if eq_loss is not None and lamb is not None
                     else ""
                 )
                 log(

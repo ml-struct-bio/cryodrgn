@@ -76,7 +76,11 @@ def main(args):
     lazy = not args.is_vol
     old = dataset.load_particles(args.mrcs, lazy=lazy, datadir=args.datadir)
 
-    oldD = old[0].get().shape[0] if lazy else old.shape[-1]
+    if lazy:
+        oldD = old[0].get().shape[0]
+    else:
+        assert isinstance(old, np.ndarray)
+        oldD = old.shape[-1]
     assert (
         args.D <= oldD
     ), f"New box size {args.D} cannot be larger than the original box size {oldD}"

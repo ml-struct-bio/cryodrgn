@@ -1,18 +1,24 @@
 """Pytorch models"""
 
+from typing import Optional, Tuple, Type, Union, Sequence, Any
 import numpy as np
 import torch
+from torch import Tensor
 import torch.nn as nn
 import torch.nn.functional as F
-
-from cryodrgn import fft, lattice, lie_tools, utils
+from torch.nn.parameter import Parameter
+from torch.nn.parallel import DataParallel
+import cryodrgn.types as types
+from cryodrgn import fft, lie_tools, utils
+from cryodrgn.lattice import Lattice
 
 log = utils.log
+Norm = Sequence[Any]  # mean, std
 
 
-def unparallelize(model):
-    if isinstance(model, nn.DataParallel):
-        return model.module
+def unparallelize(model: types.UnParallelizableModels) -> types.UnParallelizedModels:
+    if isinstance(model, DataParallel):
+        return model.module  # type: ignore
     return model
 
 
@@ -20,20 +26,20 @@ class HetOnlyVAE(nn.Module):
     # No pose inference
     def __init__(
         self,
-        lattice,  # Lattice object
-        qlayers,
-        qdim,
-        players,
-        pdim,
-        in_dim,
-        zdim=1,
-        encode_mode="resid",
+        lattice: Lattice,
+        qlayers: int,
+        qdim: int,
+        players: int,
+        pdim: int,
+        in_dim: int,
+        zdim: int = 1,
+        encode_mode: str = "resid",
         enc_mask=None,
         enc_type="linear_lowf",
         enc_dim=None,
         domain="fourier",
         activation=nn.ReLU,
-        feat_sigma=None,
+        feat_sigma: Optional[float] = None,
     ):
         super(HetOnlyVAE, self).__init__()
         self.lattice = lattice
@@ -72,7 +78,7 @@ class HetOnlyVAE(nn.Module):
         )
 
     @classmethod
-    def load(self, config, weights=None, device=None):
+    def load(cls, config, weights=None, device=None):
         """Instantiate a model from a config.pkl
 
         Inputs:
@@ -85,7 +91,7 @@ class HetOnlyVAE(nn.Module):
         """
         cfg = utils.load_pkl(config) if type(config) is str else config
         c = cfg["lattice_args"]
-        lat = lattice.Lattice(c["D"], extent=c["extent"], device=device)
+        lat = Lattice(c["D"], extent=c["extent"], device=device)
         c = cfg["model_args"]
         if c["enc_mask"] > 0:
             enc_mask = lat.get_circular_mask(c["enc_mask"])
@@ -125,14 +131,14 @@ class HetOnlyVAE(nn.Module):
         eps = torch.randn_like(std)
         return eps * std + mu
 
-    def encode(self, *img):
+    def encode(self, *img) -> Tuple[Tensor, Tensor]:
         img = (x.view(x.shape[0], -1) for x in img)
         if self.enc_mask is not None:
             img = (x[:, self.enc_mask] for x in img)
         z = self.encoder(*img)
         return z[:, : self.zdim], z[:, self.zdim :]
 
-    def cat_z(self, coords, z):
+    def cat_z(self, coords, z) -> Tensor:
         """
         coords: Bx...x3
         z: Bxzdim
@@ -142,12 +148,15 @@ class HetOnlyVAE(nn.Module):
         z = torch.cat((coords, z.expand(*coords.shape[:-1], self.zdim)), dim=-1)
         return z
 
-    def decode(self, coords, z=None):
+    def decode(self, coords, z=None) -> torch.Tensor:
         """
         coords: BxNx3 image coordinates
         z: Bxzdim latent coordinate
         """
-        return self.decoder(self.cat_z(coords, z) if z is not None else coords)
+        decoder = self.decoder
+        assert isinstance(decoder, nn.Module)
+        retval = decoder(self.cat_z(coords, z) if z is not None else coords)
+        return retval
 
     # Need forward func for DataParallel -- TODO: refactor
     def forward(self, *args, **kwargs):
@@ -188,38 +197,6 @@ def load_decoder(config, weights=None, device=None):
     return model
 
 
-def get_decoder(
-    in_dim,
-    D,
-    layers,
-    dim,
-    domain,
-    enc_type,
-    enc_dim=None,
-    activation=nn.ReLU,
-    feat_sigma=None,
-):
-    if enc_type == "none":
-        if domain == "hartley":
-            model = ResidLinearMLP(in_dim, layers, dim, 1, activation)
-            ResidLinearMLP.eval_volume = PositionalDecoder.eval_volume  # EW FIXME
-        else:
-            model = FTSliceDecoder(in_dim, D, layers, dim, activation)
-        return model
-    else:
-        model = PositionalDecoder if domain == "hartley" else FTPositionalDecoder
-        return model(
-            in_dim,
-            D,
-            layers,
-            dim,
-            activation,
-            enc_type=enc_type,
-            enc_dim=enc_dim,
-            feat_sigma=feat_sigma,
-        )
-
-
 class PositionalDecoder(nn.Module):
     def __init__(
         self,
@@ -230,7 +207,7 @@ class PositionalDecoder(nn.Module):
         activation,
         enc_type="linear_lowf",
         enc_dim=None,
-        feat_sigma=None,
+        feat_sigma: Optional[float] = None,
     ):
         super(PositionalDecoder, self).__init__()
         assert in_dim >= 3
@@ -295,12 +272,19 @@ class PositionalDecoder(nn.Module):
             assert x.shape[-1] == self.in_dim
         return x
 
-    def forward(self, coords):
+    def forward(self, coords: Tensor) -> Tensor:
         """Input should be coordinates from [-.5,.5]"""
         assert (coords[..., 0:3].abs() - 0.5 < 1e-4).all()
         return self.decoder(self.positional_encoding_geom(coords))
 
-    def eval_volume(self, coords, D, extent, norm, zval=None):
+    def eval_volume(
+        self,
+        coords: Tensor,
+        D: int,
+        extent: float,
+        norm: Norm,
+        zval: Optional[np.ndarray] = None,
+    ) -> np.ndarray:
         """
         Evaluate the model on a DxDxD volume
 
@@ -326,7 +310,7 @@ class PositionalDecoder(nn.Module):
         ):
             x = coords + torch.tensor([0, 0, dz], device=coords.device)
             if zval is not None:
-                x = torch.cat((x, z), dim=-1)
+                x = torch.cat((x, zval), dim=-1)
             with torch.no_grad():
                 y = self.forward(x)
                 y = y.view(D, D).cpu().numpy()
@@ -341,14 +325,14 @@ class PositionalDecoder(nn.Module):
 class FTPositionalDecoder(nn.Module):
     def __init__(
         self,
-        in_dim,
-        D,
-        nlayers,
-        hidden_dim,
-        activation,
-        enc_type="linear_lowf",
-        enc_dim=None,
-        feat_sigma=None,
+        in_dim: int,
+        D: int,
+        nlayers: int,
+        hidden_dim: int,
+        activation: Type,
+        enc_type: str = "linear_lowf",
+        enc_dim: Optional[int] = None,
+        feat_sigma: Optional[float] = None,
     ):
         super(FTPositionalDecoder, self).__init__()
         assert in_dim >= 3
@@ -372,11 +356,11 @@ class FTPositionalDecoder(nn.Module):
                 torch.randn((3 * self.enc_dim, 3), dtype=torch.float) * feat_sigma
             )
             # make rand_feats a parameter so it is saved in the checkpoint, but do not perform SGD on it
-            self.rand_freqs = nn.Parameter(rand_freqs, requires_grad=False)
+            self.rand_freqs = Parameter(rand_freqs, requires_grad=False)
         else:
             self.rand_feats = None
 
-    def positional_encoding_geom(self, coords):
+    def positional_encoding_geom(self, coords: Tensor) -> Tensor:
         """Expand coordinates in the Fourier basis with geometrically spaced wavelengths from 2/D to 2pi"""
         if self.enc_type == "gaussian":
             return self.random_fourier_encoding(coords)
@@ -433,7 +417,7 @@ class FTPositionalDecoder(nn.Module):
             assert x.shape[-1] == self.in_dim
         return x
 
-    def positional_encoding_linear(self, coords):
+    def positional_encoding_linear(self, coords: Tensor) -> Tensor:
         """Expand coordinates in the Fourier basis, i.e. cos(k*n/N), sin(k*n/N), n=0,...,N//2"""
         freqs = torch.arange(1, self.D2 + 1, dtype=torch.float, device=coords.device)
         freqs = freqs.view(*[1] * len(coords.shape), -1)  # 1 x 1 x D2
@@ -448,7 +432,7 @@ class FTPositionalDecoder(nn.Module):
             assert x.shape[-1] == self.in_dim
         return x
 
-    def forward(self, lattice):
+    def forward(self, lattice: Tensor) -> Tensor:
         """
         Call forward on central slices only
             i.e. the middle pixel should be (0,0,0)
@@ -471,7 +455,7 @@ class FTPositionalDecoder(nn.Module):
         ]
         return image
 
-    def decode(self, lattice):
+    def decode(self, lattice: Tensor):
         """Return FT transform"""
         assert (lattice[..., 0:3].abs() - 0.5 < 1e-4).all()
         # convention: only evalute the -z points
@@ -487,7 +471,14 @@ class FTPositionalDecoder(nn.Module):
         )  # replace with complex conjugate to get correct values for original lattice positions
         return result
 
-    def eval_volume(self, coords, D, extent, norm, zval=None):
+    def eval_volume(
+        self,
+        coords: Tensor,
+        D: int,
+        extent: float,
+        norm: Norm,
+        zval: Optional[np.ndarray] = None,
+    ) -> np.ndarray:
         """
         Evaluate the model on a DxDxD volume
 
@@ -499,6 +490,8 @@ class FTPositionalDecoder(nn.Module):
             zval: value of latent (zdim x 1)
         """
         assert extent <= 0.5
+        zdim = 0
+        z = torch.tensor([])
         if zval is not None:
             zdim = len(zval)
             z = torch.tensor(zval, dtype=torch.float32, device=coords.device)
@@ -540,7 +533,7 @@ class FTSliceDecoder(nn.Module):
     evaluates half of the lattice. The decoder is f(x,y,z) => real, imag
     """
 
-    def __init__(self, in_dim, D, nlayers, hidden_dim, activation):
+    def __init__(self, in_dim: int, D: int, nlayers: int, hidden_dim: int, activation):
         """D: image width or height"""
         super(FTSliceDecoder, self).__init__()
         self.decoder = ResidLinearMLP(in_dim, nlayers, hidden_dim, 2, activation)
@@ -619,7 +612,14 @@ class FTSliceDecoder(nn.Module):
         )  # replace with complex conjugate to get correct values for original lattice positions
         return result
 
-    def eval_volume(self, coords, D, extent, norm, zval=None):
+    def eval_volume(
+        self,
+        coords: Tensor,
+        D: int,
+        extent: float,
+        norm: Norm,
+        zval: Optional[np.ndarray] = None,
+    ) -> np.ndarray:
         """
         Evaluate the model on a DxDxD volume
 
@@ -634,6 +634,8 @@ class FTSliceDecoder(nn.Module):
             zdim = len(zval)
             z = torch.zeros(D**2, zdim, dtype=torch.float32)
             z += torch.tensor(zval, dtype=torch.float32, device=coords.device)
+        else:
+            z = None
 
         vol_f = np.zeros((D, D, D), dtype=np.float32)
         assert not self.training
@@ -643,6 +645,7 @@ class FTSliceDecoder(nn.Module):
         ):
             x = coords + torch.tensor([0, 0, dz], device=coords.device)
             if zval is not None:
+                assert z is not None
                 x = torch.cat((x, z), dim=-1)
             with torch.no_grad():
                 y = self.decode(x)
@@ -657,22 +660,61 @@ class FTSliceDecoder(nn.Module):
         return vol
 
 
+def get_decoder(
+    in_dim: int,
+    D: int,
+    layers: int,
+    dim: int,
+    domain: str,
+    enc_type: str,
+    enc_dim: Optional[int] = None,
+    activation: Type = nn.ReLU,
+    feat_sigma: Optional[float] = None,
+) -> Union[
+    types.ResidLinearMLP,
+    types.FTSliceDecoder,
+    types.PositionalDecoder,
+    types.FTPositionalDecoder,
+]:
+    if enc_type == "none":
+        if domain == "hartley":
+            model = ResidLinearMLP(in_dim, layers, dim, 1, activation)
+        else:
+            model = FTSliceDecoder(in_dim, D, layers, dim, activation)
+        return model
+    else:
+        model = PositionalDecoder if domain == "hartley" else FTPositionalDecoder
+        return model(
+            in_dim,
+            D,
+            layers,
+            dim,
+            activation,
+            enc_type=enc_type,
+            enc_dim=enc_dim,
+            feat_sigma=feat_sigma,
+        )
+
+
 class VAE(nn.Module):
     def __init__(
         self,
         lattice,
-        qlayers,
-        qdim,
-        players,
-        pdim,
-        encode_mode="mlp",
-        no_trans=False,
-        enc_mask=None,
+        qlayers: int,
+        qdim: int,
+        players: int,
+        pdim: int,
+        encode_mode: str = "mlp",
+        no_trans: bool = False,
+        enc_mask: Optional[Tensor] = None,
     ):
         super(VAE, self).__init__()
         self.lattice = lattice
         self.D = lattice.D
-        self.in_dim = lattice.D * lattice.D if enc_mask is None else enc_mask.sum()
+        if enc_mask is not None:
+            self.in_dim = (
+                lattice.D * lattice.D if enc_mask is None else int(enc_mask.sum())
+            )
         self.enc_mask = enc_mask
         assert qlayers > 2
         if encode_mode == "conv":
@@ -704,14 +746,14 @@ class VAE(nn.Module):
         self.decoder = FTSliceDecoder(3, self.D, players, pdim, nn.ReLU)
         self.no_trans = no_trans
 
-    def reparameterize(self, mu, logvar):
+    def reparameterize(self, mu: Tensor, logvar: Tensor) -> Tensor:
         if not self.training:
             return mu
         std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
         return eps * std + mu
 
-    def encode(self, img):
+    def encode(self, img) -> Tuple[Tensor, Tensor, Optional[Tensor], Optional[Tensor]]:
         """img: BxDxD"""
         img = img.view(img.size(0), -1)
         if self.enc_mask is not None:
@@ -725,7 +767,7 @@ class VAE(nn.Module):
             tmu, tlogvar = z[:, :2], z[:, 2:]
         return z_mu, z_std, tmu, tlogvar
 
-    def eval_volume(self, norm):
+    def eval_volume(self, norm) -> np.ndarray:
         return self.decoder.eval_volume(
             self.lattice.coords, self.D, self.lattice.extent, norm
         )
@@ -737,13 +779,14 @@ class VAE(nn.Module):
         y_hat = y_hat.view(-1, self.D, self.D)
         return y_hat
 
-    def forward(self, img):
+    def forward(self, img: Tensor):
         z_mu, z_std, tmu, tlogvar = self.encode(img)
         rot, w_eps = self.so3_encoder.sampleSO3(z_mu, z_std)
         # transform lattice by rot and predict image
         y_hat = self.decode(rot)
         if not self.no_trans:
             # translate image by t
+            assert tmu is not None and tlogvar is not None
             B = img.size(0)
             t = self.reparameterize(tmu, tlogvar)
             t = t.unsqueeze(1)  # B x 1 x 2
@@ -779,7 +822,7 @@ class TiltVAE(nn.Module):
         eps = torch.randn_like(std)
         return eps * std + mu
 
-    def eval_volume(self, norm):
+    def eval_volume(self, norm) -> np.ndarray:
         return self.decoder.eval_volume(
             self.lattice.coords, self.D, self.lattice.extent, norm
         )
@@ -807,6 +850,7 @@ class TiltVAE(nn.Module):
         B = img.size(0)
         z_mu, z_std, w_eps, rot, tmu, tlogvar, t = self.encode(img, img_tilt)
         if not self.no_trans:
+            assert t is not None
             t = t.unsqueeze(1)  # B x 1 x 2
             img = self.lattice.translate_ht(img.view(B, -1), -t)
             img_tilt = self.lattice.translate_ht(img_tilt.view(B, -1), -t)
@@ -846,7 +890,14 @@ class TiltEncoder(nn.Module):
 
 
 class ResidLinearMLP(nn.Module):
-    def __init__(self, in_dim, nlayers, hidden_dim, out_dim, activation):
+    def __init__(
+        self,
+        in_dim: int,
+        nlayers: int,
+        hidden_dim: int,
+        out_dim: int,
+        activation: Type,
+    ):
         super(ResidLinearMLP, self).__init__()
         layers = [
             ResidLinear(in_dim, hidden_dim)
@@ -869,6 +920,45 @@ class ResidLinearMLP(nn.Module):
         ret_flat = self.main(flat)
         ret = ret_flat.view(*x.shape[:-1], ret_flat.shape[-1])
         return ret
+
+    def eval_volume(
+        self, coords: Tensor, D: int, extent: float, norm: Norm, zval=None
+    ) -> np.ndarray:
+        """
+        Evaluate the model on a DxDxD volume
+
+        Inputs:
+            coords: lattice coords on the x-y plane (D^2 x 3)
+            D: size of lattice
+            extent: extent of lattice [-extent, extent]
+            norm: data normalization
+            zval: value of latent (zdim x 1)
+        """
+        # Note: extent should be 0.5 by default, except when a downsampled
+        # volume is generated
+        if zval is not None:
+            zdim = len(zval)
+            z = torch.zeros(D**2, zdim, dtype=torch.float32, device=coords.device)
+            z += torch.tensor(zval, dtype=torch.float32, device=coords.device)
+
+        vol_f = np.zeros((D, D, D), dtype=np.float32)
+        assert not self.training
+        # evaluate the volume by zslice to avoid memory overflows
+        for i, dz in enumerate(
+            np.linspace(-extent, extent, D, endpoint=True, dtype=np.float32)
+        ):
+            x = coords + torch.tensor([0, 0, dz], device=coords.device)
+            if zval is not None:
+                x = torch.cat((x, zval), dim=-1)
+            with torch.no_grad():
+                y = self.forward(x)
+                y = y.view(D, D).cpu().numpy()
+            vol_f[i] = y
+        vol_f = vol_f * norm[1] + norm[0]
+        vol = fft.ihtn_center(
+            vol_f[0:-1, 0:-1, 0:-1]
+        )  # remove last +k freq for inverse FFT
+        return vol
 
 
 def half_linear(input, weight, bias):
@@ -907,7 +997,14 @@ class ResidLinear(nn.Module):
 
 
 class MLP(nn.Module):
-    def __init__(self, in_dim, nlayers, hidden_dim, out_dim, activation):
+    def __init__(
+        self,
+        in_dim: int,
+        nlayers: int,
+        hidden_dim: int,
+        out_dim: int,
+        activation: Type,
+    ):
         super(MLP, self).__init__()
         layers = [MyLinear(in_dim, hidden_dim), activation()]
         for n in range(nlayers):
@@ -955,7 +1052,7 @@ class ConvEncoder(nn.Module):
 class SO3reparameterize(nn.Module):
     """Reparameterize R^N encoder output to SO(3) latent variable"""
 
-    def __init__(self, input_dims, nlayers=None, hidden_dim=None):
+    def __init__(self, input_dims, nlayers: int, hidden_dim: int):
         super().__init__()
         if nlayers is not None:
             self.main = ResidLinearMLP(input_dims, nlayers, hidden_dim, 9, nn.ReLU)
@@ -966,7 +1063,9 @@ class SO3reparameterize(nn.Module):
         # self.s2s2map.weight.data.uniform_(-5,5)
         # self.s2s2map.bias.data.uniform_(-5,5)
 
-    def sampleSO3(self, z_mu, z_std):
+    def sampleSO3(
+        self, z_mu: torch.Tensor, z_std: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Reparameterize SO(3) latent variable
         # z represents mean on S2xS2 and variance on so3, which enocdes a Gaussian distribution on SO3
@@ -982,7 +1081,7 @@ class SO3reparameterize(nn.Module):
         rot_sampled = z_mu @ rot_eps
         return rot_sampled, w_eps
 
-    def forward(self, x):
+    def forward(self, x) -> Tuple[torch.Tensor, torch.Tensor]:
         z = self.main(x)
         z1 = z[:, :3].double()
         z2 = z[:, 3:6].double()

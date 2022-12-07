@@ -49,12 +49,14 @@ def main(args):
 
     overrides = {}
     if s.relion31:
-        assert len(s.data_optics.df) == 1, "Only one optics group supported"
-        args.D = int(s.data_optics.df["_rlnImageSize"][0])
-        args.Apix = float(s.data_optics.df["_rlnImagePixelSize"][0])
-        overrides[HEADERS[3]] = float(s.data_optics.df[HEADERS[3]][0])
-        overrides[HEADERS[4]] = float(s.data_optics.df[HEADERS[4]][0])
-        overrides[HEADERS[5]] = float(s.data_optics.df[HEADERS[5]][0])
+        assert s.data_optics is not None
+        df = s.data_optics.df
+        assert len(df) == 1, "Only one optics group supported"
+        args.D = int(df["_rlnImageSize"][0])
+        args.Apix = float(df["_rlnImagePixelSize"][0])
+        overrides[HEADERS[3]] = float(df[HEADERS[3]][0])
+        overrides[HEADERS[4]] = float(df[HEADERS[4]][0])
+        overrides[HEADERS[5]] = float(df[HEADERS[5]][0])
     else:
         assert args.D is not None, "Must provide image size with -D"
         assert args.Apix is not None, "Must provide pixel size with --Apix"

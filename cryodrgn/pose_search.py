@@ -1,15 +1,17 @@
 import numpy as np
 import torch
 import torch.nn.functional as F
-
+from typing import Optional, Union, Tuple
+from cryodrgn.types import UnParallelizableModels
 from cryodrgn import lie_tools, shift_grid, so3_grid, utils
-from cryodrgn.models import unparallelize
+from cryodrgn.models import unparallelize, HetOnlyVAE
+from cryodrgn.lattice import Lattice
 
 log = utils.log
 vlog = utils.vlog
 
 
-def rot_2d(angle, outD, device=None):
+def rot_2d(angle: float, outD: int, device: torch.device) -> torch.Tensor:
     rot = torch.zeros((outD, outD), device=device)
     rot[0, 0] = np.cos(angle)
     rot[0, 1] = -np.sin(angle)
@@ -18,13 +20,13 @@ def rot_2d(angle, outD, device=None):
     return rot
 
 
-def to_tensor(x):
+def to_tensor(x: Union[np.ndarray, torch.Tensor, None]):
     if isinstance(x, np.ndarray):
         x = torch.from_numpy(x)
     return x
 
 
-def interpolate(img, coords):
+def interpolate(img: torch.Tensor, coords: torch.Tensor) -> torch.Tensor:
     # print(f"Interpolating {img.shape} {coords.shape}")
     assert len(coords.shape) == 2
     assert coords.shape[-1] == 2
@@ -51,20 +53,20 @@ class PoseSearch:
 
     def __init__(
         self,
-        model,
-        lattice,
-        Lmin,
-        Lmax,
+        model: UnParallelizableModels,
+        lattice: Lattice,
+        Lmin: int,
+        Lmax: int,
         tilt=None,
-        base_healpy=1,
-        t_extent=5,
-        t_ngrid=7,
-        niter=5,
-        nkeptposes=24,
-        loss_fn="msf",
-        t_xshift=0,
-        t_yshift=0,
-        device=None,
+        base_healpy: int = 1,
+        t_extent: int = 5,
+        t_ngrid: int = 7,
+        niter: int = 5,
+        nkeptposes: int = 24,
+        loss_fn: str = "msf",
+        t_xshift: int = 0,
+        t_yshift: int = 0,
+        device: Optional[torch.device] = None,
     ):
 
         self.model = model
@@ -106,15 +108,15 @@ class PoseSearch:
     def eval_grid(
         self,
         *,
-        images,
-        rot,
-        z,
-        NQ,
-        L,
-        images_tilt=None,
-        angles_inplane=None,
-        ctf_i=None,
-    ):
+        images: torch.Tensor,
+        rot: torch.Tensor,
+        z: Optional[torch.Tensor],
+        NQ: int,
+        L: int,
+        images_tilt: Optional[torch.Tensor] = None,
+        angles_inplane: Optional[np.ndarray] = None,
+        ctf_i: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
         """
         images: B x T x Npix
         rot: (NxQ) x 3 x 3 rotation matrics (N=1 for base grid, N=B for incremental grid)
@@ -131,6 +133,7 @@ class PoseSearch:
 
         def compute_err(images, rot):
 
+            adj_angles_inplane = None
             if angles_inplane is not None:
                 # apply a random in-plane rotation from the set
                 # to avoid artifacts due to grid alignment
@@ -141,7 +144,9 @@ class PoseSearch:
 
             x = coords @ rot
             if z is not None:
-                x = unparallelize(self.model).cat_z(x, z)
+                _model = unparallelize(self.model)
+                assert isinstance(_model, HetOnlyVAE)
+                x = _model.cat_z(x, z)
             x = x.to(device)
             # log(f"Evaluating model on {x.shape} = {x.nelement() // 3} points")
             with torch.no_grad():
@@ -152,7 +157,7 @@ class PoseSearch:
             )  # 1x1xNQxYX for base grid, Bx1x8xYX for incremental grid
             if ctf_i is not None:
                 y_hat = y_hat * ctf_i
-            if angles_inplane is not None:
+            if adj_angles_inplane is not None:
                 y_hat = self.rotate_images(y_hat, adj_angles_inplane, L)
             images = images.unsqueeze(2)  # BxTx1xYX
             if self.loss_fn == "mse":
@@ -191,7 +196,9 @@ class PoseSearch:
         mask = self.lattice.get_circular_mask(L)
         return images.view(B, -1)[:, mask]
 
-    def translate_images(self, images, shifts, L):
+    def translate_images(
+        self, images: torch.Tensor, shifts: torch.Tensor, L: int
+    ) -> torch.Tensor:
         """
         images: B x NY x NX
         shifts: B x T x 2 or B
@@ -204,7 +211,9 @@ class PoseSearch:
 
         return res
 
-    def rotate_images(self, images, angles, L):
+    def rotate_images(
+        self, images: torch.Tensor, angles: np.ndarray, L: int
+    ) -> torch.Tensor:
         B, d1, NQ, YX = images.shape
         BNQ = B * NQ
         squeezed_images = images.view(BNQ, YX)
@@ -232,7 +241,7 @@ class PoseSearch:
 
         return res.view(B, 1, NQ * len(angles), YX)
 
-    def get_neighbor_so3(self, quat, s2i, s1i, res):
+    def get_neighbor_so3(self, quat: np.ndarray, s2i: int, s1i: int, res: int):
         """Memoization of so3_grid.get_neighbor."""
         key = (int(s2i), int(s1i), int(res))
         if key not in self._so3_neighbor_cache:
@@ -250,7 +259,9 @@ class PoseSearch:
         # FIXME: will this cache get too big? maybe don't do it when res is too
         return self._shift_neighbor_cache[key]
 
-    def subdivide(self, quat, q_ind, cur_res):
+    def subdivide(
+        self, quat: np.ndarray, q_ind: np.ndarray, cur_res: int
+    ) -> Tuple[np.ndarray, np.ndarray, torch.Tensor]:
         """
         Subdivides poses for next resolution level
 
@@ -263,7 +274,6 @@ class PoseSearch:
             quat  (N x 8 x 4) np.array
             q_ind (N x 8 x 2) np.array
             rot   (N*8 x 3 x 3) tensor
-            trans (N*4 x 2) tensor
         """
         N = quat.shape[0]
 
@@ -287,7 +297,7 @@ class PoseSearch:
 
         return quat, q_ind, rot
 
-    def keep_matrix(self, loss, B, max_poses):
+    def keep_matrix(self, loss: torch.Tensor, B: int, max_poses: int) -> torch.Tensor:
         """
         Inputs:
             loss (B, T, Q): tensor of losses for each translation and rotation.
@@ -314,15 +324,20 @@ class PoseSearch:
         keep_idx[1] = best_trans_idx[keep_idx[0], keep_idx[2]]
         return keep_idx
 
-    def getL(self, iter_):
+    def getL(self, iter_: int) -> int:
         L = self.Lmin + int(iter_ / self.niter * (self.Lmax - self.Lmin))
         return min(L, self.lattice.D // 2)
         # return min(self.Lmin * 2 ** iter_, self.Lmax)
 
     def opt_theta_trans(
-        self, images, z=None, images_tilt=None, init_poses=None, ctf_i=None
-    ):
-        images = to_tensor(images)
+        self,
+        images: torch.Tensor,
+        z: Optional[torch.Tensor] = None,
+        images_tilt: Optional[torch.Tensor] = None,
+        init_poses: Optional[torch.Tensor] = None,
+        ctf_i=None,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        images = to_tensor(images)  # type: ignore
         images_tilt = to_tensor(images_tilt)
         init_poses = to_tensor(init_poses)
         z = to_tensor(z)
@@ -332,6 +347,7 @@ class PoseSearch:
         B = images.size(0)
         assert not self.model.training
 
+        loss = rot = None
         if init_poses is None:
             # Expand the base grid B times if each image has a different z
             if z is not None:
@@ -418,12 +434,14 @@ class PoseSearch:
             q_ind = q_ind[keepBN, keepQ]
             trans = trans[keepBN, keepT]
 
+        assert loss is not None
         bestBN, bestT, bestQ = self.keep_matrix(loss, B, 1).cpu()
         assert len(bestBN) == B
         if self.niter == 0:
             best_rot = self.so3_base_rot[bestQ].to(device)
             best_trans = self.base_shifts[bestT].to(device)
         else:
+            assert rot is not None
             best_rot = rot.view(-1, 8, 3, 3)[bestBN, bestQ]
             best_trans = trans.to(device)
 

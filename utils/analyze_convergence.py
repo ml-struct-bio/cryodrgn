@@ -24,7 +24,7 @@ from scipy.spatial import distance_matrix
 from cryodrgn import analysis, fft, mrc, utils
 
 try:
-    from cuml.manifold.umap import UMAP as cuUMAP
+    from cuml.manifold.umap import UMAP as cuUMAP  # type: ignore
 except ImportError:
     pass
 flog = utils.flog
@@ -265,6 +265,7 @@ def encoder_latent_umaps(
     )
     utils.save_pkl(ind_subset, outdir + "/ind_subset.pkl")
 
+    epoch = None
     for epoch in epochs:
         flog(
             f"Now calculating UMAP for epoch {epoch} with random_state {random_state}",
@@ -287,6 +288,7 @@ def encoder_latent_umaps(
     )
     fig.tight_layout()
 
+    toplot = None
     for i, ax in enumerate(axes.flat):
         try:
             umap_embedding = utils.load_pkl(f"{outdir}/umaps/umap.{epochs[i]}.pkl")
@@ -327,7 +329,7 @@ def encoder_latent_umaps(
     flog(f"Saved UMAP distribution plot to {outdir}/plots/01_encoder_umaps.png", LOG)
 
 
-def encoder_latent_shifts(workdir, outdir, epochs, E, LOG):
+def encoder_latent_shifts(workdir: str, outdir: str, E: int, LOG: str):
     """
     Calculates and plots various metrics characterizing the per-particle latent vectors between successive epochs.
 
@@ -345,13 +347,12 @@ def encoder_latent_shifts(workdir, outdir, epochs, E, LOG):
     metrics = ["dot product", "magnitude", "cosine distance"]
 
     vector_metrics = np.zeros((E - 1, len(metrics)))
+    z1 = utils.load_pkl(f"{workdir}/z.0.pkl")
+    z2 = utils.load_pkl(f"{workdir}/z.1.pkl")
+    z3 = utils.load_pkl(f"{workdir}/z.2.pkl")
     for i in np.arange(E - 1):
         flog(f"Calculating vector metrics for epochs {i}-{i+1} and {i+1}-{i+2}", LOG)
-        if i == 0:
-            z1 = utils.load_pkl(f"{workdir}/z.{i}.pkl")
-            z2 = utils.load_pkl(f"{workdir}/z.{i+1}.pkl")
-            z3 = utils.load_pkl(f"{workdir}/z.{i+2}.pkl")
-        else:
+        if i > 0:
             z1 = z2.copy()
             z2 = z3.copy()
             z3 = utils.load_pkl(workdir + f"/z.{i+2}.pkl")
@@ -523,6 +524,7 @@ def sketch_via_umap_local_maxima(
     to_plot = ["umap", "hist"]
 
     # optionally smooth the histogram to reduce the number of peaks with sigma=width of two bins
+    hist_smooth = None
     if smooth:
         hist_smooth = gaussian_filter(
             hist, smooth_width * np.abs(xedges[1] - xedges[0])
@@ -587,6 +589,7 @@ def sketch_via_umap_local_maxima(
             ax.imshow(np.rot90(hist))
             ax.set_title("UMAP histogram")
         elif to_plot[i] == "hist_smooth":
+            assert hist_smooth is not None
             ax.imshow(np.rot90(hist_smooth))
             ax.set_title("UMAP smoothed histogram")
         elif to_plot[i] == "peaks_img_top":
@@ -653,6 +656,7 @@ def follow_candidate_particles(
     )
     fig.tight_layout()
 
+    toplot = None
     ind_subset = utils.load_pkl(f"{outdir}/ind_subset.pkl")
     for i, ax in enumerate(axes.flat):
         try:
@@ -787,6 +791,7 @@ def mask_volume(volpath, outpath, Apix, thresh=None, dilate=3, dist=10):
        volume.masked.mrc written to outdir
     """
     vol = mrc.parse_mrc(volpath)[0]
+    assert isinstance(vol, np.ndarray)
     thresh = np.percentile(vol, 99.99) / 2 if thresh is None else thresh
     x = (vol >= thresh).astype(bool)
     x = binary_dilation(x, iterations=dilate)
@@ -929,7 +934,7 @@ def calculate_FSCs(outdir, epochs, labels, img_size, chimerax_colors, LOG):
 
     """
 
-    def calc_fsc(vol1_path, vol2_path):
+    def calc_fsc(vol1_path: str, vol2_path: str):
         """
         Helper function to calculate the FSC between two (assumed masked) volumes
         vol1 and vol2 should be maps of the same box size, structured as numpy arrays with ndim=3, i.e. by loading with
@@ -938,6 +943,8 @@ def calculate_FSCs(outdir, epochs, labels, img_size, chimerax_colors, LOG):
         # load masked volumes in fourier space
         vol1, _ = mrc.parse_mrc(vol1_path)
         vol2, _ = mrc.parse_mrc(vol2_path)
+        assert isinstance(vol1, np.ndarray)
+        assert isinstance(vol2, np.ndarray)
 
         vol1_ft = fft.fftn_center(vol1)
         vol2_ft = fft.fftn_center(vol2)
@@ -964,6 +971,7 @@ def calculate_FSCs(outdir, epochs, labels, img_size, chimerax_colors, LOG):
         return x, fsc
 
     # calculate masked FSCs for all volumes
+    x = None
     fsc_masked = np.zeros((len(labels), len(epochs) - 1, img_size // 2))
 
     for cluster in range(len(labels)):
@@ -985,6 +993,7 @@ def calculate_FSCs(outdir, epochs, labels, img_size, chimerax_colors, LOG):
         n_rows, n_cols, figsize=(2 * n_cols, 2 * n_rows), sharex="all", sharey="all"
     )
     fig.tight_layout()
+    legend = []
     for cluster, ax in enumerate(axes.flat):
         try:
             colors = plt.cm.viridis(np.linspace(0, 1, len(epochs - 1)))
@@ -1098,17 +1107,19 @@ def main(args):
     # plt.rcParams.update({'font.size': 16})
     plt.rcParams.update({"axes.linewidth": 1.5})
     chimerax_colors = np.divide(
-        (
-            (192, 192, 192),
-            (255, 255, 178),
-            (178, 255, 255),
-            (178, 178, 255),
-            (255, 178, 255),
-            (255, 178, 178),
-            (178, 255, 178),
-            (229, 191, 153),
-            (153, 191, 229),
-            (204, 204, 153),
+        np.array(
+            [
+                (192, 192, 192),
+                (255, 255, 178),
+                (178, 255, 255),
+                (178, 178, 255),
+                (255, 178, 255),
+                (255, 178, 178),
+                (178, 255, 178),
+                (229, 191, 153),
+                (153, 191, 229),
+                (204, 204, 153),
+            ]
         ),
         255,
     )
@@ -1157,7 +1168,7 @@ def main(args):
         f"Convergence 3: calculating and plotting latent encoding vector shifts for all epochs up to epoch {E} ...",
         LOG,
     )
-    encoder_latent_shifts(workdir, outdir, epochs, E, LOG)
+    encoder_latent_shifts(workdir, outdir, E, LOG)
 
     # Convergence 4: correlation of generated volumes
     flog(

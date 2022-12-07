@@ -312,11 +312,11 @@ def main(args):
         B = len(ind)
         batch_it += B
 
-        yr = (
-            torch.from_numpy(data.particles_real[ind]).to(device)
-            if args.use_real
-            else None
-        )
+        yr = None
+        if args.use_real:
+            assert hasattr(data, "particles_real")
+            yr = torch.from_numpy(data.particles_real[ind]).to(device)  # type: ignore  # PYR02
+
         rot, tran = posetracker.get_pose(ind)
         ctf_param = ctf_params[ind] if ctf_params is not None else None
 

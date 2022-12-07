@@ -10,7 +10,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from sklearn.model_selection import train_test_split
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 
 import cryodrgn
 from cryodrgn import config, mrc, utils
@@ -167,7 +167,7 @@ def generate_and_map_volumes(
     log(f"Sampling {args.N} particles from {zfile}")
     np.random.seed(args.seed)
     z_all = utils.load_pkl(zfile)
-    ind = np.array(sorted(np.random.choice(len(z_all), args.N, replace=False)))
+    ind = np.array(sorted(np.random.choice(len(z_all), args.N, replace=False)))  # type: ignore
     z_sample = z_all[ind]
     utils.save_pkl(z_sample, f"{outdir}/z.sampled.pkl")
     utils.save_pkl(ind, f"{outdir}/ind.sampled.pkl")
@@ -175,7 +175,7 @@ def generate_and_map_volumes(
 
     # Set the device
     assert torch.cuda.is_available(), "No GPUs detected"
-    torch.set_default_tensor_type(torch.cuda.FloatTensor)
+    torch.set_default_tensor_type(torch.cuda.FloatTensor)  # type: ignore
 
     cfg = config.update_config_v1(cfg_pkl)
     log("Loaded configuration:")
@@ -186,6 +186,7 @@ def generate_and_map_volumes(
 
     # Load landscape analysis inputs
     mask, _ = mrc.parse_mrc(mask_mrc)
+    assert isinstance(mask, np.ndarray)
     mask = mask.astype(bool)
     if args.downsample:
         assert mask.shape == (args.downsample,) * 3
@@ -254,8 +255,8 @@ def train_model(x, y, outdir, zfile, args):
     train_dataset = MyDataset(x_train, y_train)
     test_dataset = MyDataset(x_test, y_test)
 
-    train_loader = torch.utils.data.DataLoader(train_dataset, **train_kwargs)
-    test_loader = torch.utils.data.DataLoader(test_dataset, **test_kwargs)
+    train_loader = DataLoader(train_dataset, **train_kwargs)
+    test_loader = DataLoader(test_dataset, **test_kwargs)
 
     model = ResidLinearMLP(x.shape[1], args.layers, args.dim, y.shape[1], nn.ReLU).to(
         device

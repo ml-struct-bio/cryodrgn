@@ -1,14 +1,16 @@
 import numpy as np
 
 
-def grid_1d(resol, extent, ngrid, shift=0):
+def grid_1d(resol: int, extent: int, ngrid: int, shift: int = 0) -> np.ndarray:
     Npix = ngrid * 2**resol
     dt = 2 * extent / Npix
     grid = np.arange(Npix, dtype=np.float32) * dt + dt / 2 - extent + shift
     return grid
 
 
-def grid_2d(resol, extent, ngrid, xshift=0, yshift=0):
+def grid_2d(
+    resol: int, extent: int, ngrid: int, xshift: int = 0, yshift: int = 0
+) -> np.ndarray:
     x = grid_1d(resol, extent, ngrid, shift=xshift)
     y = grid_1d(resol, extent, ngrid, shift=yshift)
     # convention: x is fast dim, y is slow dim
@@ -16,7 +18,9 @@ def grid_2d(resol, extent, ngrid, xshift=0, yshift=0):
     return grid.reshape(-1, 2)
 
 
-def base_shift_grid(resol, extent, ngrid, xshift=0, yshift=0):
+def base_shift_grid(
+    resol: int, extent: int, ngrid: int, xshift: int = 0, yshift: int = 0
+) -> np.ndarray:
     return grid_2d(resol, extent, ngrid, xshift, yshift)
 
 

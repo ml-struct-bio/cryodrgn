@@ -1,8 +1,7 @@
 import argparse
+import os
 import os.path
-
 import pytest
-
 from cryodrgn.commands import downsample, parse_ctf_star, parse_pose_star
 from cryodrgn.commands_utils import write_star
 from cryodrgn.utils import assert_pkl_close

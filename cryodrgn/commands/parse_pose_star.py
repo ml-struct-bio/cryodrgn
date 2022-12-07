@@ -33,6 +33,7 @@ def main(args):
 
     s = starfile.Starfile.load(args.input)
     if s.relion31:  # Get image stats from data_optics table
+        assert s.data_optics is not None
         assert (
             len(s.data_optics.df) == 1
         ), "Datasets with only one optics group are supported."

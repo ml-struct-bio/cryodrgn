@@ -163,6 +163,7 @@ def make_mask(outdir, K, dilate, thresh, in_mrc=None, Apix=1, vol_start_index=0)
                 vol = mrc.parse_mrc(
                     f"{outdir}/kmeans{K}/vol_{vol_start_index+i:03d}.mrc"
                 )[0]
+                assert isinstance(vol, np.ndarray)
                 thresh.append(np.percentile(vol, 99.99) / 2)
             thresh = np.mean(thresh)
         log(f"Threshold: {thresh}")
@@ -185,6 +186,7 @@ def make_mask(outdir, K, dilate, thresh, in_mrc=None, Apix=1, vol_start_index=0)
     else:
         # Load provided mrc and convert to a boolean mask
         mask, _ = mrc.parse_mrc(in_mrc)
+        assert isinstance(mask, np.ndarray)
         mask = mask.astype(bool)
 
     # save mask
@@ -246,8 +248,12 @@ def analyze_volumes(
     else:
         volm = mrc.parse_mrc(f"{outdir}/kmeans{K}/vol_mean.mrc")[0]
 
+    assert isinstance(volm, np.ndarray)
+
     # load mask
-    mask = mrc.parse_mrc(f"{outdir}/mask.mrc")[0].astype(bool)
+    mask = mrc.parse_mrc(f"{outdir}/mask.mrc")[0]
+    assert isinstance(mask, np.ndarray)
+    mask = mask.astype(bool)
     log(f"{mask.sum()} voxels in mask")
 
     # load volumes

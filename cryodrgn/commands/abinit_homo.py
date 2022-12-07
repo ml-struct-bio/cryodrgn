@@ -357,6 +357,7 @@ def train(
     B = y.size(0)
     D = lattice.D
 
+    ctf_i = None
     if ctf_params is not None:
         freqs = lattice.freqs2d.unsqueeze(0).expand(
             B, *lattice.freqs2d.shape
@@ -364,8 +365,6 @@ def train(
         ctf_i = ctf.compute_ctf(freqs, *torch.split(ctf_params[:, 1:], 1, 1)).view(
             B, D, D
         )
-    else:
-        ctf_i = None
 
     # pose inference
     if poses is not None:
@@ -386,7 +385,7 @@ def train(
 
     def gen_slice(R):
         slice_ = model(lattice.coords[mask] @ R).view(B, -1)
-        if ctf_params is not None:
+        if ctf_i is not None:
             slice_ *= ctf_i.view(B, -1)[:, mask]
         return slice_
 
@@ -434,7 +433,7 @@ def get_latest(args, flog):
     return args
 
 
-def make_model(args, D):
+def make_model(args, D: int):
     activation = {"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[args.activation]
     return models.get_decoder(
         3,
@@ -553,6 +552,7 @@ def main(args):
     )
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
+    sorted_poses = []
     if args.load:
         args.pretrain = 0
         flog("Loading checkpoint from {}".format(args.load))
@@ -594,7 +594,7 @@ def main(args):
                 break
     out_mrc = "{}/pretrain.reconstruct.mrc".format(args.outdir)
     model.eval()
-    vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, data.norm)
+    vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, tuple(data.norm))
     mrc.write(out_mrc, vol.astype(np.float32))
 
     # reset model after pretraining
@@ -645,7 +645,7 @@ def main(args):
 
             # train the model
             if epoch % args.ps_freq != 0:
-                p = [torch.tensor(x[ind_np], device=device) for x in sorted_poses]
+                p = [torch.tensor(x[ind_np], device=device) for x in sorted_poses]  # type: ignore
                 # bp = sorted_base_poses[ind_np]
                 bp = None
             else:

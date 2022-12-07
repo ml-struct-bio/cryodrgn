@@ -132,7 +132,8 @@ def main(args):
         f"Max dist between neighbors: {max_dist}  (to enforce average of {args.avg_neighbors} neighbors)"
     )
 
-    max_dist = max_dist.to("cpu")
+    if max_dist is not None:
+        max_dist = max_dist.to("cpu")
     neighbors = neighbors.to("cpu")
     ndist = ndist.to("cpu")
     edges = []

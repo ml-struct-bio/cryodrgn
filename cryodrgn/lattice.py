@@ -3,6 +3,7 @@
 import numpy as np
 import torch
 import torch.nn.functional as F
+from torch import Tensor
 
 from cryodrgn import utils
 
@@ -11,7 +12,9 @@ vlog = utils.vlog
 
 
 class Lattice:
-    def __init__(self, D, extent=0.5, ignore_DC=True, device=None):
+    def __init__(
+        self, D: int, extent: float = 0.5, ignore_DC: bool = True, device=None
+    ):
         assert D % 2 == 1, "Lattice size must be odd"
         x0, x1 = np.meshgrid(
             np.linspace(-extent, extent, D, endpoint=True),
@@ -38,7 +41,7 @@ class Lattice:
         self.ignore_DC = ignore_DC
         self.device = device
 
-    def get_downsample_coords(self, d):
+    def get_downsample_coords(self, d: int) -> Tensor:
         assert d % 2 == 1
         extent = self.extent * (d - 1) / (self.D - 1)
         x0, x1 = np.meshgrid(
@@ -50,14 +53,14 @@ class Lattice:
         )
         return torch.tensor(coords, device=self.device)
 
-    def get_square_lattice(self, L):
+    def get_square_lattice(self, L: int) -> Tensor:
         b, e = self.D2 - L, self.D2 + L + 1
         center_lattice = (
             self.coords.view(self.D, self.D, 3)[b:e, b:e, :].contiguous().view(-1, 3)
         )
         return center_lattice
 
-    def get_square_mask(self, L):
+    def get_square_mask(self, L: int) -> Tensor:
         """Return a binary mask for self.coords which restricts coordinates to a centered square lattice"""
         if L in self.square_mask:
             return self.square_mask[L]
@@ -78,7 +81,7 @@ class Lattice:
             raise NotImplementedError
         return mask
 
-    def get_circular_mask(self, R):
+    def get_circular_mask(self, R: float) -> Tensor:
         """Return a binary mask for self.coords which restricts coordinates to a centered circular lattice"""
         if R in self.circle_mask:
             return self.circle_mask[R]
@@ -95,7 +98,7 @@ class Lattice:
         self.circle_mask[R] = mask
         return mask
 
-    def rotate(self, images, theta):
+    def rotate(self, images: Tensor, theta: Tensor) -> Tensor:
         """
         images: BxYxX
         theta: Q, in radians
@@ -165,7 +168,13 @@ class Lattice:
 class EvenLattice(Lattice):
     """For a DxD lattice where D is even, we set D/2,D/2 pixel to the center"""
 
-    def __init__(self, D, extent=0.5, ignore_DC=False, device=None):
+    def __init__(
+        self,
+        D: int,
+        extent: float = 0.5,
+        ignore_DC: bool = False,
+        device=None,
+    ):
         # centered and scaled xy plane, values between -1 and 1
         # endpoint=False since FT is not symmetric around origin
         assert D % 2 == 0, "Lattice size must be even"

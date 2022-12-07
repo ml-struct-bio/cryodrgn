@@ -1,8 +1,7 @@
 import argparse
+import os
 import os.path
-
 import pytest
-
 from cryodrgn.commands_utils import write_star
 
 DATA_FOLDER = os.path.join(os.path.dirname(__file__), "..", "testing", "data")

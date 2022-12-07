@@ -6,15 +6,15 @@ import os
 import pickle
 import sys
 from datetime import datetime as dt
-
 import numpy as np
 import torch
 import torch.nn as nn
+from torch.nn.parallel import DataParallel
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 try:
-    import apex.amp as amp
+    import apex.amp as amp  # type: ignore  # PYR01
 except ImportError:
     pass
 
@@ -323,7 +323,7 @@ def train_batch(
         y, yt = preprocess_input(y, yt, lattice, trans)
     # Cast operations to mixed precision if using torch.cuda.amp.GradScaler()
     if scaler is not None:
-        with torch.cuda.amp.autocast():
+        with torch.cuda.amp.autocast_mode.autocast():
             z_mu, z_logvar, z, y_recon, y_recon_tilt, mask = run_batch(
                 model, lattice, y, yt, rot, tilt, ctf_params, yr
             )
@@ -367,6 +367,7 @@ def run_batch(model, lattice, y, yt, rot, tilt=None, ctf_params=None, yr=None):
     use_ctf = ctf_params is not None
     B = y.size(0)
     D = lattice.D
+    c = None
     if use_ctf:
         freqs = lattice.freqs2d.unsqueeze(0).expand(
             B, *lattice.freqs2d.shape
@@ -378,21 +379,23 @@ def run_batch(model, lattice, y, yt, rot, tilt=None, ctf_params=None, yr=None):
         input_ = (yr,)
     else:
         input_ = (y, yt) if yt is not None else (y,)
-        if use_ctf:
+        if c is not None:
             input_ = (x * c.sign() for x in input_)  # phase flip by the ctf
-    z_mu, z_logvar = unparallelize(model).encode(*input_)
-    z = unparallelize(model).reparameterize(z_mu, z_logvar)
+    _model = unparallelize(model)
+    assert isinstance(_model, HetOnlyVAE)
+    z_mu, z_logvar = _model.encode(*input_)
+    z = _model.reparameterize(z_mu, z_logvar)
 
     # decode
     mask = lattice.get_circular_mask(D // 2)  # restrict to circular mask
     y_recon = model(lattice.coords[mask] / lattice.extent / 2 @ rot, z).view(B, -1)
-    if use_ctf:
+    if c is not None:
         y_recon *= c.view(B, -1)[:, mask]
 
     # decode the tilt series
     if use_tilt:
         y_recon_tilt = model(lattice.coords[mask] / lattice.extent / 2 @ tilt @ rot, z)
-        if use_ctf:
+        if c is not None:
             y_recon_tilt *= c.view(B, -1)[:, mask]
     else:
         y_recon_tilt = None
@@ -407,6 +410,7 @@ def loss_function(
     B = y.size(0)
     gen_loss = F.mse_loss(y_recon, y.view(B, -1)[:, mask])
     if use_tilt:
+        assert y_recon_tilt is not None
         gen_loss = 0.5 * gen_loss + 0.5 * F.mse_loss(
             y_recon_tilt, yt.view(B, -1)[:, mask]
         )
@@ -443,6 +447,7 @@ def eval_z(
         yt = minibatch[1].to(device) if use_tilt else None
         B = len(ind)
         D = lattice.D
+        c = None
         if ctf_params is not None:
             freqs = lattice.freqs2d.unsqueeze(0).expand(
                 B, *lattice.freqs2d.shape
@@ -462,10 +467,12 @@ def eval_z(
             input_ = (torch.from_numpy(data.particles_real[ind]).to(device),)
         else:
             input_ = (y, yt) if yt is not None else (y,)
-        if ctf_params is not None:
+        if c is not None:
             assert not use_real, "Not implemented"
             input_ = (x * c.sign() for x in input_)  # phase flip by the ctf
-        z_mu, z_logvar = unparallelize(model).encode(*input_)
+        _model = unparallelize(model)
+        assert isinstance(_model, HetOnlyVAE)
+        z_mu, z_logvar = _model.encode(*input_)
         z_mu_all.append(z_mu.detach().cpu().numpy())
         z_logvar_all.append(z_logvar.detach().cpu().numpy())
     z_mu_all = np.vstack(z_mu_all)
@@ -655,6 +662,7 @@ def main(args):
         assert D - 1 == 64, "Image size must be 64x64 for convolutional encoder"
 
     # load poses
+    pose_optimizer = None
     if args.do_pose_sgd:
         assert (
             args.domain == "hartley"
@@ -691,7 +699,7 @@ def main(args):
     if args.enc_mask > 0:
         assert args.enc_mask <= D // 2
         enc_mask = lattice.get_circular_mask(args.enc_mask)
-        in_dim = enc_mask.sum()
+        in_dim = int(enc_mask.sum())
     elif args.enc_mask == -1:
         enc_mask = None
         in_dim = lattice.D**2 if not args.use_real else (lattice.D - 1) ** 2
@@ -766,7 +774,7 @@ def main(args):
             model, optim = amp.initialize(model, optim, opt_level="O1")
         except:  # noqa: E722
             # Mixed precision with pytorch (v1.6+)
-            scaler = torch.cuda.amp.GradScaler()
+            scaler = torch.cuda.amp.grad_scaler.GradScaler()
 
     # restart from checkpoint
     if args.load:
@@ -784,10 +792,11 @@ def main(args):
     if args.multigpu and torch.cuda.device_count() > 1:
         log(f"Using {torch.cuda.device_count()} GPUs!")
         args.batch_size *= torch.cuda.device_count()
-        if num_workers_per_gpu * torch.cuda.device_count() > os.cpu_count():
-            num_workers_per_gpu = max(1, os.cpu_count() // torch.cuda.device_count())
+        cpu_count = os.cpu_count() or 1
+        if num_workers_per_gpu * torch.cuda.device_count() > cpu_count:
+            num_workers_per_gpu = max(1, cpu_count // torch.cuda.device_count())
         log(f"Increasing batch size to {args.batch_size}")
-        model = nn.DataParallel(model)
+        model = DataParallel(model)
     elif args.multigpu:
         log(
             f"WARNING: --multigpu selected, but {torch.cuda.device_count()} GPUs detected"
@@ -798,6 +807,7 @@ def main(args):
         data, batch_size=args.batch_size, shuffle=True, num_workers=num_workers_per_gpu
     )
     num_epochs = args.num_epochs
+    epoch = None
     for epoch in range(start_epoch, num_epochs):
         t2 = dt.now()
         gen_loss_accum = 0
@@ -814,12 +824,11 @@ def main(args):
 
             beta = beta_schedule(global_it)
 
-            yr = (
-                torch.from_numpy(data.particles_real[ind.numpy()]).to(device)
-                if args.use_real
-                else None
-            )
-            if do_pose_sgd:
+            yr = None
+            if args.use_real:
+                assert hasattr(data, "particles_real")
+                yr = torch.from_numpy(data.particles_real[ind.numpy()]).to(device)  # type: ignore  # PYR02
+            if pose_optimizer is not None:
                 pose_optimizer.zero_grad()
             rot, tran = posetracker.get_pose(ind)
             ctf_param = ctf_params[ind] if ctf_params is not None else None
@@ -839,7 +848,7 @@ def main(args):
                 use_amp=args.amp,
                 scaler=scaler,
             )
-            if do_pose_sgd and epoch >= args.pretrain:
+            if pose_optimizer is not None and epoch >= args.pretrain:
                 pose_optimizer.step()
 
             # logging

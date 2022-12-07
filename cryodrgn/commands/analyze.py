@@ -96,9 +96,7 @@ def analyze_z1(z, outdir, vg):
     plt.xlabel("z")
     plt.savefig(f"{outdir}/z_hist.png")
 
-    ztraj = np.linspace(
-        *np.percentile(z, (5, 95)), 10
-    )  # or np.percentile(z, np.linspace(5,95,10)) ?
+    ztraj = np.percentile(z, np.linspace(5, 95, 10))
     vg.gen_volumes(outdir, ztraj)
 
 
@@ -128,6 +126,7 @@ def analyze_zN(z, outdir, vg, skip_umap=False, num_pcs=2, num_ksamples=20):
     vg.gen_volumes(f"{outdir}/kmeans{K}", centers)
 
     # UMAP -- slow step
+    umap_emb = None
     if zdim > 2 and not skip_umap:
         log("Running UMAP...")
         umap_emb = analysis.run_umap(z)
@@ -147,7 +146,7 @@ def analyze_zN(z, outdir, vg, skip_umap=False, num_pcs=2, num_ksamples=20):
     plt.tight_layout()
     plt.savefig(f"{outdir}/z_pca_hexbin.png")
 
-    if zdim > 2 and not skip_umap:
+    if umap_emb is not None:
         plt.figure(3)
         g = sns.jointplot(x=umap_emb[:, 0], y=umap_emb[:, 1], alpha=0.1, s=2)
         g.set_axis_labels("UMAP1", "UMAP2")
@@ -174,7 +173,7 @@ def analyze_zN(z, outdir, vg, skip_umap=False, num_pcs=2, num_ksamples=20):
     plt.tight_layout()
     plt.savefig(f"{outdir}/kmeans{K}/z_pca_hex.png")
 
-    if zdim > 2 and not skip_umap:
+    if umap_emb is not None:
         analysis.scatter_annotate(
             umap_emb[:, 0], umap_emb[:, 1], centers_ind=centers_ind, annotate=True
         )
@@ -190,7 +189,7 @@ def analyze_zN(z, outdir, vg, skip_umap=False, num_pcs=2, num_ksamples=20):
         plt.savefig(f"{outdir}/kmeans{K}/umap_hex.png")
 
     for i in range(num_pcs):
-        if zdim > 2 and not skip_umap:
+        if umap_emb is not None:
             analysis.scatter_color(
                 umap_emb[:, 0], umap_emb[:, 1], pc[:, i], label=f"PC{i+1}"
             )

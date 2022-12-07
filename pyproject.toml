@@ -27,7 +27,8 @@ dependencies = [
     "cufflinks",
     "jupyterlab",
     "umap-learn",
-    "ipywidgets<8"
+    "ipywidgets<8",
+    "healpy"
 ]
 
 [project.optional-dependencies]
@@ -35,6 +36,7 @@ dev = [
     "build",
     "myst-parser",
     "pre-commit",
+    "pyright",
     "pytest>=6",
     "sphinx",
     "sphinx-book-theme",
@@ -65,3 +67,6 @@ addopts = "-rA"
 testpaths = [
     "tests"
 ]
+
+[tool.pyright]
+exclude = ["build/**"]

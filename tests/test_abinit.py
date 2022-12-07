@@ -1,6 +1,6 @@
 import argparse
+import os
 import os.path
-import pytest
 from cryodrgn.commands import abinit_het, abinit_homo, backproject_voxel
 
 DATA_FOLDER = os.path.join(os.path.dirname(__file__), "..", "testing", "data")

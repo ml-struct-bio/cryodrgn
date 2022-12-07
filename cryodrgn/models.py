@@ -1,6 +1,6 @@
 """Pytorch models"""
 
-from typing import Optional, Tuple, Type, Union
+from typing import Optional, Tuple, Type, Union, Sequence, Any
 import numpy as np
 import torch
 from torch import Tensor
@@ -13,7 +13,7 @@ from cryodrgn import fft, lie_tools, utils
 from cryodrgn.lattice import Lattice
 
 log = utils.log
-Norm = Tuple[float, float]  # mean, std
+Norm = Sequence[Any]  # mean, std
 
 
 def unparallelize(model: types.UnParallelizableModels) -> types.UnParallelizedModels:

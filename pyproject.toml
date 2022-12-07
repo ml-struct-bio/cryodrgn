@@ -67,3 +67,6 @@ addopts = "-rA"
 testpaths = [
     "tests"
 ]
+
+[tool.pyright]
+exclude = ["build/**"]

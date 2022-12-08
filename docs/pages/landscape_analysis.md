@@ -29,7 +29,7 @@ Example usage:
     ```
     (cryodrgn) $ cryodrgn analyze_landscape -h
     usage: analyze_landscape.py [-h] [--device DEVICE] [-o OUTDIR] [--skip-vol]
-                                [--skip-umap] [--skip-mask] [--vol-ind VOL_IND]
+                                [--skip-umap] [--vol-ind VOL_IND]
                                 [--linkage LINKAGE] [-M M] [--pc-dim PC_DIM]
                                 [--plot-dim PLOT_DIM] [--Apix APIX] [--flip]
                                 [-d DOWNSAMPLE] [--ksample KSAMPLE]
@@ -122,7 +122,7 @@ The outputs of clustering will be located in a subdirectory `clustering_L2_avera
 1                   3_std.mrc           6_particle_ind.pkl  9_mean.mrc           vol_embeddings_1000_clusters_1_2.png
 1_mean.mrc          4                   6_std.mrc           9_particle_ind.pkl   vol_embeddings_1000_clusters_2_3.png
 1_particle_ind.pkl  4_mean.mrc          7                   9_std.mrc            vol_embeddings_1000_clusters_3_4.png
-1_std.mrc           4_particle_ind.pkl  7_mean.mrc          cluster_labels.pkl   vol_embeddings_1000_clusters_4_5.png
+1_std.mrc           4_particle_ind.pkl  7_mean.mrc          state_labels.pkl     vol_embeddings_1000_clusters_4_5.png
 2                   4_std.mrc           7_particle_ind.pkl  particle_counts.png  volume_counts.png
 2_mean.mrc          5                   7_std.mrc           umap_annotated.png
 2_particle_ind.pkl  5_mean.mrc          8                   umap.png
@@ -168,10 +168,10 @@ Some datasets will contain "junk" volumes that can interfere with clustering/PCA
 
 ```
 # e.g. keep the volumes from clusters 0, 1, 2, 4, 9
-(cryodrgn) $ cryodrgn_utils select_clusters clustering_L2_average_10/cluster_labels.pkl --sel 0 1 2 4 9 -o vol_keep.pkl
+(cryodrgn) $ cryodrgn_utils select_clusters clustering_L2_average_10/state_labels.pkl --sel 0 1 2 4 9 -o vol_keep.pkl
 
 # rerun cryodrgn analyze_landscape with --vol-ind
-(cryodrgn) $ cryodrgn analyze_landscape [workdir] [epoch] --skip-vol --skip-mask --vol-ind vol_keep.pkl
+(cryodrgn) $ cryodrgn analyze_landscape [workdir] [epoch] --skip-vol --vol-ind vol_keep.pkl
 ```
 
 Note: rerunning with `—-vol-ind` will change the volume PCA results since volumes have now been removed from the analysis.
@@ -187,7 +187,7 @@ This tool applies a mask on all 1000 volumes before PCA/clustering analysis. The
 Alternatively, a custom mask can be provided with the flag `--mask`. Note, the mask will be converted to a *binary mask*, where any nonzero voxel will be included in the analysis:
 
 ```
-# rerun cryodrgn analyze_landscape with --skip-mask
+# rerun cryodrgn analyze_landscape with custom mask
 (cryodrgn) $ cryodrgn analyze_lanscape [workdir] [epoch] --skip-vol --mask /path/to/your/mask/eg/job008.mrc
 ```
 

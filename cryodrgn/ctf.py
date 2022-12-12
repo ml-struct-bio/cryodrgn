@@ -17,6 +17,7 @@ def compute_ctf(
     cs: torch.Tensor,
     w: torch.Tensor,
     phase_shift: torch.Tensor = torch.Tensor([0]),
+    scalefactor: Optional[torch.Tensor] = None,
     bfactor: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     """
@@ -31,6 +32,7 @@ def compute_ctf(
         cs (float or Bx1 tensor): spherical aberration (mm)
         w (float or Bx1 tensor): amplitude contrast ratio
         phase_shift (float or Bx1 tensor): degrees
+        scalefactor (float or Bx1 tensor): scale factor
         bfactor (float or Bx1 tensor): envelope fcn B-factor (Angstrom^2)
     """
     assert freqs.shape[-1] == 2
@@ -52,6 +54,8 @@ def compute_ctf(
         - phase_shift
     )
     ctf = (1 - w**2) ** 0.5 * torch.sin(gamma) - w * torch.cos(gamma)
+    if scalefactor is not None:
+        ctf *= scalefactor
     if bfactor is not None:
         ctf *= torch.exp(-bfactor / 4 * s2)
     return ctf
@@ -66,6 +70,7 @@ def compute_ctf_np(
     cs: float,
     w: float,
     phase_shift: float = 0,
+    scalefactor: Optional[float] = None,
     bfactor: Optional[float] = None,
 ) -> np.ndarray:
     """
@@ -80,6 +85,7 @@ def compute_ctf_np(
         cs (float): spherical aberration (mm)
         w (float): amplitude contrast ratio
         phase_shift (float): degrees
+        scalefactor (float): scale factor
         bfactor (float): envelope fcn B-factor (Angstrom^2)
     """
     # convert units
@@ -100,6 +106,8 @@ def compute_ctf_np(
         - phase_shift
     )
     ctf = np.sqrt(1 - w**2) * np.sin(gamma) - w * np.cos(gamma)
+    if scalefactor is not None:
+        ctf *= scalefactor
     if bfactor is not None:
         ctf *= np.exp(-bfactor / 4 * s2)
     return np.require(ctf, dtype=freqs.dtype)

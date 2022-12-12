@@ -53,6 +53,92 @@ def load_particles(mrcs_txt_star, lazy=False, datadir=None):
     return particles
 
 
+class TiltSeriesData(data.Dataset):
+    """
+    Class representing tilt series
+    """
+
+    def __init__(
+        self,
+        tiltstar,
+        ntilts,
+        random_tilts=False,
+        norm=None,
+        keepreal=False,
+        invert_data=False,
+        ind=None,
+        window=True,
+        datadir=None,
+        max_threads=16,
+        window_r=0.85,
+        flog=None,
+        preprocessed=None,
+    ):
+        log = flog if flog is not None else utils.log
+        # First parse particle stack
+        if preprocessed:
+            tilts = PreprocessedMRCData(tiltstar, norm=norm, ind=ind, flog=flog)
+        else:
+            tilts = MRCData(
+                tiltstar,
+                norm=norm,
+                keepreal=keepreal,
+                invert_data=invert_data,
+                ind=ind,
+                window=window,
+                datadir=datadir,
+                max_threads=max_threads,
+                window_r=window_r,
+                flog=flog,
+            )
+        self.tilts = tilts
+
+        # Parse unique particles from _rlnGroupName
+        s = starfile.Starfile.load(tiltstar)
+        if ind is not None:
+            s.df = s.df.loc[ind]
+        group_name = list(s.df["_rlnGroupName"])
+        particles = OrderedDict()
+        for ii, gn in enumerate(group_name):
+            if gn not in particles:
+                particles[gn] = []
+            particles[gn].append(ii)
+        self.particles = np.array(
+            [np.asarray(pp, dtype=int) for pp in particles.values()]
+        )
+        self.N = len(particles)
+        self.D = self.tilts.D
+        self.norm = self.tilts.norm
+        self.ctfscalefactor = np.asarray(s.df["_rlnCtfScalefactor"], dtype=np.float32)
+        log(f"Loaded {self.tilts.N} tilts for {self.N} particles")
+        counts = Counter(group_name)
+        unique_counts = set(counts.values())
+        log(f"{unique_counts} tilts per particle")
+        self.counts = counts
+        assert ntilts <= min(unique_counts)
+        self.ntilts = ntilts
+        self.random_tilts = random_tilts
+
+    def __len__(self):
+        return self.N
+
+    def __getitem__(self, index):
+        # TODO: Figure out a better place to select the subset of tilts
+        # and optionally remove randomness
+        # Esp. when we want to evaluate the whole tilt stack
+        if self.random_tilts:
+            tilt_index = np.random.choice(
+                self.particles[index], self.ntilts, replace=False
+            )
+        else:
+            i = (len(self.particles[index]) - self.ntilts) // 2
+            tilt_index = self.particles[index][i : i + self.ntilts]
+        return self.tilts.get(tilt_index), tilt_index, index
+
+    def get(self, index):
+        return self.tilts.get(self.particles[index])
+
+
 class LazyMRCData(data.Dataset):
     """
     Class representing an .mrcs stack file -- images loaded on the fly

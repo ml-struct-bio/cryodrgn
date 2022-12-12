@@ -7,9 +7,10 @@ def update_config_v1(config_pkl):
     if arg not in config["model_args"]:
         assert config["model_args"]["pe_type"] != "gaussian"
         config["model_args"][arg] = None
-    arg = "activation"  # older version used relu
-    if arg not in config["model_args"]:
-        config["model_args"][arg] = "relu"
+
+    # older version used relu
+    config["model_args"].setdefault("activation", "relu")
+    config["model_args"].setdefault("tilt_params", {})
     return config
 
 

@@ -6,6 +6,7 @@ import os
 import pickle
 import sys
 from datetime import datetime as dt
+from typing import Optional
 
 import numpy as np
 import torch
@@ -13,6 +14,7 @@ import torch.nn as nn
 from torch.nn.parallel import DataParallel
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+from cryodrgn.amp_utils import backwards_step_amp
 
 try:
     import apex.amp as amp  # type: ignore
@@ -132,6 +134,12 @@ def add_args(parser):
         help="Learning rate in Adam optimizer (default: %(default)s)",
     )
     group.add_argument(
+        "--lbfgs",
+        action="store_true",
+        default=False,
+        help="Use L-BFGS optimizer instead of Adam. Only for dec-type=voxel.",
+    )
+    group.add_argument(
         "--norm",
         type=float,
         nargs=2,
@@ -183,6 +191,12 @@ def add_args(parser):
         type=int,
         default=1024,
         help="Number of nodes in hidden layers (default: %(default)s)",
+    )
+    group.add_argument(
+        "--dec-type",
+        choices=("mlp", "voxel"),
+        default="mlp",
+        help="Decoder model type.",
     )
     group.add_argument(
         "--l-extent",
@@ -248,19 +262,21 @@ def save_checkpoint(
     )
 
 
-def train(
-    model,
-    lattice,
-    optim,
+def train_batch(
+    model: Decoder,
+    lattice: Lattice,
     y,
-    rot,
-    trans=None,
+    *,
+    rot: torch.Tensor,
+    trans: Optional[torch.Tensor] = None,
     ctf_params=None,
-    use_amp=False,
+    optim: Optional[torch.optim.Optimizer],
+    use_amp: bool = False,
     scaler=None,
 ):
     model.train()
-    optim.zero_grad()
+    if optim:
+        optim.zero_grad()
     B = y.size(0)
     D = lattice.D
 
@@ -287,18 +303,7 @@ def train(
     else:
         loss = run_model(y)
 
-    if use_amp:
-        if scaler is not None:  # torch mixed precision
-            scaler.scale(loss).backward()
-            scaler.step(optim)
-            scaler.update()
-        else:  # apex.amp mixed precision
-            with amp.scale_loss(loss, optim) as scaled_loss:
-                scaled_loss.backward()
-            optim.step()
-    else:
-        loss.backward()
-        optim.step()
+    backwards_step_amp(loss, optim, use_amp, scaler)
     return loss.item()
 
 
@@ -418,6 +423,7 @@ def main(args):
         args.dim,
         args.domain,
         args.pe_type,
+        dec_type=args.dec_type,
         enc_dim=args.pe_dim,
         activation=activation,
         feat_sigma=args.feat_sigma,
@@ -431,7 +437,10 @@ def main(args):
     )
 
     # optimizer
-    optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
+    if args.lbfgs:
+        optim = torch.optim.LBFGS(model.parameters(), lr=args.lr, max_iter=20)
+    else:
+        optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
     # load weights
     if args.load:
@@ -504,11 +513,12 @@ def main(args):
 
     # train
     data_generator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
-    epoch = None
-    for epoch in range(start_epoch, args.num_epochs):
+
+    def train_epoch(epoch: int):
         t2 = dt.now()
         loss_accum = 0
         batch_it = 0
+        optim.zero_grad()
         for batch, ind in data_generator:
             batch_it += len(ind)
             ind = ind.to(device)
@@ -516,17 +526,18 @@ def main(args):
                 pose_optimizer.zero_grad()
             r, t = posetracker.get_pose(ind)
             c = ctf_params[ind] if ctf_params is not None else None
-            loss_item = train(
+            loss_item = train_batch(
                 model,
                 lattice,
-                optim,
                 batch.to(device),
-                r,
-                t,
-                c,
+                rot=r,
+                trans=t,
+                ctf_params=c,
+                optim=None if args.lbfgs else optim,
                 use_amp=args.amp,
                 scaler=scaler,
             )
+
             if pose_optimizer is not None and epoch >= args.pretrain:
                 pose_optimizer.step()
             loss_accum += loss_item * len(ind)
@@ -541,6 +552,14 @@ def main(args):
                 epoch + 1, loss_accum / Nimg, dt.now() - t2
             )
         )
+        return loss_accum / Nimg
+
+    for epoch in range(start_epoch, args.num_epochs):
+        if args.lbfgs:
+            optim.step(lambda: train_epoch(epoch))
+        else:
+            train_epoch(epoch)
+
         if args.checkpoint and epoch % args.checkpoint == 0:
             out_mrc = "{}/reconstruct.{}.mrc".format(args.outdir, epoch)
             out_weights = "{}/weights.{}.pkl".format(args.outdir, epoch)

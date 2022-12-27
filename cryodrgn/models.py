@@ -1,6 +1,6 @@
 """Pytorch models"""
 
-from typing import Optional, Tuple, Type, Union, Sequence, Any
+from typing import List, Optional, Tuple, Type, Union, Sequence, Any
 import numpy as np
 import torch
 from torch import Tensor
@@ -37,6 +37,7 @@ class HetOnlyVAE(nn.Module):
         zdim: int = 1,
         encode_mode: str = "resid",
         enc_mask=None,
+        dec_type="mlp",
         enc_type="linear_lowf",
         enc_dim=None,
         domain="fourier",
@@ -77,6 +78,7 @@ class HetOnlyVAE(nn.Module):
             enc_dim,
             activation,
             feat_sigma,
+            dec_type=dec_type,
         )
 
     @classmethod
@@ -113,6 +115,7 @@ class HetOnlyVAE(nn.Module):
             c["zdim"],
             encode_mode=c["encode_mode"],
             enc_mask=enc_mask,
+            dec_type=c["dec_type"],
             enc_type=c["pe_type"],
             enc_dim=c["pe_dim"],
             domain=c["domain"],
@@ -181,15 +184,16 @@ def load_decoder(config, weights=None, device=None):
     D = cfg["lattice_args"]["D"]
     activation = {"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[c["activation"]]
     model = get_decoder(
-        3,
-        D,
-        c["layers"],
-        c["dim"],
-        c["domain"],
-        c["pe_type"],
-        c["pe_dim"],
-        activation,
-        c["feat_sigma"],
+        in_dim=3,
+        D=D,
+        layers=c["layers"],
+        dim=c["dim"],
+        domain=c["domain"],
+        dec_type=c["dec_type"],
+        enc_type=c["pe_type"],
+        enc_dim=c["pe_dim"],
+        activation=activation,
+        feat_sigma=c["feat_sigma"],
     )
     if weights is not None:
         ckpt = torch.load(weights)
@@ -232,6 +236,74 @@ class DataParallelDecoder(Decoder):
         module = self.dp.module
         assert isinstance(module, Decoder)
         return module.eval_volume(*args, **kwargs)
+
+
+class VoxelArrayDecoder(Decoder):
+    def __init__(
+        self,
+        D,
+        scale_factor: float = 1,
+    ):
+        super(VoxelArrayDecoder, self).__init__()
+        self.D = D
+        self.D2 = D // 2
+        self.DD = self.D2 * 2
+        self.grid = nn.parameter.Parameter(torch.zeros((self.D, self.D, self.D)))
+        self.scale_factor = scale_factor
+
+    def forward(self, coords: Tensor) -> Tensor:
+        """Input should be coordinates from [-.5,.5]"""
+        assert (coords[..., 0:3].abs() - 0.5 < 1e-4).all()
+
+        voxel_coords = coords[..., 0:3].view(-1, 3) * self.DD + self.D2
+        # print(voxel_coords)
+        voxel_floor = voxel_coords.floor()
+        xf, yf, zf = voxel_floor.t().long().clamp(min=0, max=self.DD - 1)
+        xr, yr, zr = (voxel_coords - voxel_floor).t()
+        ret = (
+            0
+            + self.grid[xf + 0, yf + 0, zf + 0] * (1 - xr) * (1 - yr) * (1 - zr)
+            + self.grid[xf + 0, yf + 0, zf + 1] * (1 - xr) * (1 - yr) * zr
+            + self.grid[xf + 0, yf + 1, zf + 0] * (1 - xr) * yr * (1 - zr)
+            + self.grid[xf + 0, yf + 1, zf + 1] * (1 - xr) * yr * zr
+            + self.grid[xf + 1, yf + 0, zf + 0] * xr * (1 - yr) * (1 - zr)
+            + self.grid[xf + 1, yf + 0, zf + 1] * xr * (1 - yr) * zr
+            + self.grid[xf + 1, yf + 1, zf + 0] * xr * yr * (1 - zr)
+            + self.grid[xf + 1, yf + 1, zf + 1] * xr * yr * zr
+        ) * self.scale_factor
+        assert (coords[..., 0:3].abs() - 0.5 < 1e-4).all()
+        return ret.view(coords.shape[:-1])  # ..., dim --> ...
+
+    def eval_volume(
+        self,
+        coords: Tensor,
+        D: int,
+        extent: float,
+        norm: Norm,
+        zval: Optional[np.ndarray] = None,
+    ) -> np.ndarray:
+        """
+        Evaluate the model on a DxDxD volume
+        Inputs:
+            coords: lattice coords on the x-y plane (D^2 x 3)
+            D: size of lattice
+            extent: extent of lattice [-extent, extent]
+            norm: data normalization
+            zval: value of latent (zdim x 1)
+        """
+        vol_f = self.grid.data.cpu().numpy() * self.scale_factor
+        vol_f = vol_f * norm[1] + norm[0]
+        vol = fft.ihtn_center(
+            vol_f[0:-1, 0:-1, 0:-1]
+        )  # remove last +k freq for inverse FFT
+
+        # volumes are in zyx format
+        vol = vol.transpose((2, 1, 0))
+
+        return vol
+
+    def get_voxel_decoder(self) -> Optional[Decoder]:
+        return self
 
 
 class PositionalDecoder(Decoder):
@@ -702,6 +774,7 @@ def get_decoder(
     enc_dim: Optional[int] = None,
     activation: Type = nn.ReLU,
     feat_sigma: Optional[float] = None,
+    dec_type: str = "mlp",
 ) -> Decoder:
     if enc_type == "none":
         if domain == "hartley":
@@ -720,7 +793,43 @@ def get_decoder(
             enc_dim=enc_dim,
             feat_sigma=feat_sigma,
         )
+
+    if dec_type == "voxel":
+        model = VoxelArrayDecoder(D)
+    elif dec_type == "voxel+mlp":
+        model = SumDecoder([VoxelArrayDecoder(D), model])
+    else:
+        assert dec_type == "mlp"
     return model
+
+
+class SumDecoder(Decoder):
+    """A decoder whose output is the sum of the outputs from k sub-decoders."""
+
+    def __init__(self, decoders: List[Decoder]):
+        super(SumDecoder, self).__init__()
+        self.decoders = nn.ModuleList(decoders)
+
+    def forward(self, x):
+        return sum([d(x) for d in self.decoders])
+
+    def eval_volume(
+        self,
+        coords: Tensor,
+        D: int,
+        extent: float,
+        norm: Norm,
+        zval: Optional[np.ndarray] = None,
+    ) -> np.ndarray:
+        ret = sum([d.eval_volume(coords, D, extent, norm, zval) for d in self.decoders])  # type: ignore
+        return ret  # type: ignore
+
+    def get_voxel_decoder(self) -> Optional[Decoder]:
+        for d in self.decoders:
+            assert isinstance(d, Decoder)
+            ret = d.get_voxel_decoder()
+            if ret is not None:
+                return ret
 
 
 class VAE(nn.Module):

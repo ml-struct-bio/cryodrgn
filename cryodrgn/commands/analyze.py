@@ -24,7 +24,7 @@ def add_args(parser):
     )
     parser.add_argument(
         "epoch",
-        type=int,
+        type=str,
         help="Epoch number N to analyze (0-based indexing, corresponding to z.N.pkl, weights.N.pkl)",
     )
     parser.add_argument("--device", type=int, help="Optionally specify CUDA device")

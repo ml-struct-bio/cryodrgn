@@ -13,6 +13,8 @@ from torch.nn.parallel import DataParallel
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
+from cryodrgn.amp_utils import backwards_step_amp
+
 try:
     import apex.amp as amp  # type: ignore  # PYR01
 except ImportError:
@@ -24,6 +26,7 @@ from cryodrgn.beta_schedule import get_beta_schedule
 from cryodrgn.lattice import Lattice
 from cryodrgn.models import HetOnlyVAE, unparallelize
 from cryodrgn.pose import PoseTracker
+from cryodrgn.commands.train_nn import train_batch as train_batch_nn
 
 log = utils.log
 vlog = utils.vlog
@@ -262,6 +265,18 @@ def add_args(parser):
         help="Number of nodes in hidden layers (default: %(default)s)",
     )
     group.add_argument(
+        "--dec-type",
+        choices=("voxel", "mlp", "voxel+mlp"),
+        default="mlp",
+        help="Decoder model type.",
+    )
+    group.add_argument(
+        "--pretrain-voxel-lbfgs",
+        type=int,
+        default=0,
+        help="Train voxel decoder with L-BFGS for this many steps before training full model.",
+    )
+    group.add_argument(
         "--pe-type",
         choices=(
             "geom_ft",
@@ -317,7 +332,8 @@ def train_batch(
     use_amp=False,
     scaler=None,
 ):
-    optim.zero_grad()
+    if optim:
+        optim.zero_grad()
     model.train()
     if trans is not None:
         y, yt = preprocess_input(y, yt, lattice, trans)
@@ -337,18 +353,7 @@ def train_batch(
         loss, gen_loss, kld = loss_function(
             z_mu, z_logvar, y, yt, y_recon, mask, beta, y_recon_tilt, beta_control
         )
-    if use_amp:
-        if scaler is not None:  # torch mixed precision
-            scaler.scale(loss).backward()
-            scaler.step(optim)
-            scaler.update()
-        else:  # apex.amp mixed precision
-            with amp.scale_loss(loss, optim) as scaled_loss:
-                scaled_loss.backward()
-            optim.step()
-    else:
-        loss.backward()
-        optim.step()
+    backwards_step_amp(loss, optim, use_amp, scaler)
     return loss.item(), gen_loss.item(), kld.item()
 
 
@@ -524,6 +529,7 @@ def save_config(args, dataset, lattice, model, out_config):
         enc_mask=args.enc_mask,
         pe_type=args.pe_type,
         feat_sigma=args.feat_sigma,
+        dec_type=args.dec_type,
         pe_dim=args.pe_dim,
         domain=args.domain,
         activation=args.activation,
@@ -717,6 +723,7 @@ def main(args):
         in_dim,
         args.zdim,
         encode_mode=args.encode_mode,
+        dec_type=args.dec_type,
         enc_mask=enc_mask,
         enc_type=args.pe_type,
         enc_dim=args.pe_dim,
@@ -806,6 +813,70 @@ def main(args):
     data_generator = DataLoader(
         data, batch_size=args.batch_size, shuffle=True, num_workers=num_workers_per_gpu
     )
+
+    if args.pretrain_voxel_lbfgs:
+        voxel_decoder = unparallelize(model).decoder.get_voxel_decoder()  # type: ignore
+        assert voxel_decoder, "Don't have a voxel decoder to pretrain with LBFGS"
+        lbfgs = torch.optim.LBFGS(
+            voxel_decoder.parameters(), lr=1, max_iter=args.pretrain_voxel_lbfgs
+        )
+
+        def closure():
+            lbfgs.zero_grad()
+            t2 = dt.now()
+
+            gen_loss_accum = 0
+            for minibatch in data_generator:  # minibatch: [y, ind]
+                ind = minibatch[-1].to(device)
+                y = minibatch[0].to(device)
+                B = len(ind)
+
+                if args.encode_mode == "tilt":
+                    tilt_ind = minibatch[1].to(device)
+                    rot, tran = posetracker.get_pose(tilt_ind.view(-1))
+                    ctf_param = (
+                        ctf_params[tilt_ind.view(-1)]
+                        if ctf_params is not None
+                        else None
+                    )
+                    y = y.view(-1, D, D)
+                else:
+                    rot, tran = posetracker.get_pose(ind)
+                    ctf_param = ctf_params[ind] if ctf_params is not None else None
+
+                assert args.encode_mode != "tilt"  # FIXME
+                loss = train_batch_nn(
+                    voxel_decoder,  # type: ignore
+                    lattice,
+                    y,
+                    rot=rot,
+                    trans=tran,
+                    ctf_params=ctf_param,
+                    optim=None,
+                )
+
+                # logging
+                gen_loss_accum += loss * B
+            flog(
+                f"# =====> PRETRAIN:  Average gen loss = {gen_loss_accum / Nimg:.6}; Finished in {dt.now() - t2}"
+            )
+            return gen_loss_accum / Nimg
+
+        lbfgs.step(closure)
+
+        if args.checkpoint:
+            out_weights = f"{args.outdir}/weights.pretrain.pkl"
+            out_z = f"{args.outdir}/z.pretrain.pkl"
+            save_checkpoint(
+                voxel_decoder,
+                optim,
+                "pretrain",
+                None,
+                None,
+                out_weights,
+                out_z,
+            )
+
     num_epochs = args.num_epochs
     epoch = None
     for epoch in range(start_epoch, num_epochs):

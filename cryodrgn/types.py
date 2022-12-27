@@ -10,43 +10,13 @@ import numpy as np
 
 if TYPE_CHECKING:  # Set if type-checking
     # Avoid importing any cryodrgn-specific submodules outside this block.
-    from torch.nn.parallel import DataParallel
     from cryodrgn.mrc import LazyImage
-    from cryodrgn.models import (
-        HetOnlyVAE,
-        ResidLinearMLP,
-        FTSliceDecoder,
-        PositionalDecoder,
-        FTPositionalDecoder,
-    )
 
     ImageArray = Union[np.ndarray, List[LazyImage]]
-    UnParallelizableModels = Union[
-        DataParallel,
-        ResidLinearMLP,
-        HetOnlyVAE,
-        PositionalDecoder,
-        FTPositionalDecoder,
-        FTSliceDecoder,
-    ]
-    UnParallelizedModels = Union[
-        ResidLinearMLP,
-        HetOnlyVAE,
-        PositionalDecoder,
-        FTPositionalDecoder,
-        FTSliceDecoder,
-    ]
 
 else:
     """
     Any names declared above should also be declared here.
     This is to cover us in cases where client codes reaches in to get a hold of specific types.
     """
-    HetOnlyVAE = None
-    ResidLinearMLP = None
-    FTSliceDecoder = None
-    PositionalDecoder = None
-    FTPositionalDecoder = None
     ImageArray = None
-    UnParallelizableModels = None
-    UnParallelizedModels = None

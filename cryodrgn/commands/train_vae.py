@@ -12,6 +12,7 @@ import torch.nn as nn
 from torch.nn.parallel import DataParallel
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 try:
     import apex.amp as amp  # type: ignore  # PYR01
@@ -573,6 +574,7 @@ def main(args):
 
     # set the device
     use_cuda = torch.cuda.is_available()
+    use_cuda = False
     device = torch.device("cuda" if use_cuda else "cpu")
     flog("Use cuda {}".format(use_cuda))
     if not use_cuda:
@@ -633,6 +635,7 @@ def main(args):
                 max_threads=args.max_threads,
                 window_r=args.window_r,
                 flog=flog,
+                use_cupy=True,
             )
 
     # Tilt series data -- lots of unsupported features
@@ -686,7 +689,7 @@ def main(args):
         flog("Loading ctf params from {}".format(args.ctf))
         ctf_params = ctf.load_ctf_for_training(D - 1, args.ctf)
         if args.ind is not None:
-            ctf_params = ctf_params[ind]
+            ctf_params = ctf_params[ind, ...]
         assert ctf_params.shape == (Nimg, 8)
         ctf_params = torch.tensor(ctf_params, device=device)  # Nx8
     else:
@@ -809,60 +812,63 @@ def main(args):
     num_epochs = args.num_epochs
     epoch = None
     for epoch in range(start_epoch, num_epochs):
-        t2 = dt.now()
-        gen_loss_accum = 0
-        loss_accum = 0
-        kld_accum = 0
-        batch_it = 0
-        for minibatch in data_generator:  # minibatch: [y, ind]
-            ind = minibatch[-1].to(device)
-            y = minibatch[0].to(device)
-            yt = minibatch[1].to(device) if tilt is not None else None
-            B = len(ind)
-            batch_it += B
-            global_it = Nimg * epoch + batch_it
+        with tqdm(total=data.N) as pbar:
+            t2 = dt.now()
+            gen_loss_accum = 0
+            loss_accum = 0
+            kld_accum = 0
+            batch_it = 0
+            for minibatch in data_generator:  # minibatch: [y, ind]
+                ind = minibatch[-1].to(device)
+                y = minibatch[0].to(device)
+                yt = minibatch[1].to(device) if tilt is not None else None
+                B = len(ind)
+                batch_it += B
+                global_it = Nimg * epoch + batch_it
 
-            beta = beta_schedule(global_it)
+                beta = beta_schedule(global_it)
 
-            yr = None
-            if args.use_real:
-                assert hasattr(data, "particles_real")
-                yr = torch.from_numpy(data.particles_real[ind.numpy()]).to(device)  # type: ignore  # PYR02
-            if pose_optimizer is not None:
-                pose_optimizer.zero_grad()
-            rot, tran = posetracker.get_pose(ind)
-            ctf_param = ctf_params[ind] if ctf_params is not None else None
-            loss, gen_loss, kld = train_batch(
-                model,
-                lattice,
-                y,
-                yt,
-                rot,
-                tran,
-                optim,
-                beta,
-                args.beta_control,
-                tilt,
-                ctf_params=ctf_param,
-                yr=yr,
-                use_amp=args.amp,
-                scaler=scaler,
-            )
-            if pose_optimizer is not None and epoch >= args.pretrain:
-                pose_optimizer.step()
-
-            # logging
-            gen_loss_accum += gen_loss * B
-            kld_accum += kld * B
-            loss_accum += loss * B
-
-            if batch_it % args.log_interval == 0:
-                log(
-                    "# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.6f}, kld={:.6f}, beta={:.6f}, "
-                    "loss={:.6f}".format(
-                        epoch + 1, num_epochs, batch_it, Nimg, gen_loss, kld, beta, loss
-                    )
+                yr = None
+                if args.use_real:
+                    assert hasattr(data, "particles_real")
+                    yr = torch.from_numpy(data.particles_real[ind.numpy()]).to(device)  # type: ignore  # PYR02
+                if pose_optimizer is not None:
+                    pose_optimizer.zero_grad()
+                rot, tran = posetracker.get_pose(ind)
+                ctf_param = ctf_params[ind] if ctf_params is not None else None
+                loss, gen_loss, kld = train_batch(
+                    model,
+                    lattice,
+                    y,
+                    yt,
+                    rot,
+                    tran,
+                    optim,
+                    beta,
+                    args.beta_control,
+                    tilt,
+                    ctf_params=ctf_param,
+                    yr=yr,
+                    use_amp=args.amp,
+                    scaler=scaler,
                 )
+                if pose_optimizer is not None and epoch >= args.pretrain:
+                    pose_optimizer.step()
+
+                # logging
+                gen_loss_accum += gen_loss * B
+                kld_accum += kld * B
+                loss_accum += loss * B
+
+                pbar.update(B)
+
+                # if batch_it % args.log_interval == 0:
+                #     log(
+                #         "# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.6f}, kld={:.6f}, beta={:.6f}, "
+                #         "loss={:.6f}".format(
+                #             epoch + 1, num_epochs, batch_it, Nimg, gen_loss, kld, beta, loss
+                #         )
+                #     )
         flog(
             "# =====> Epoch: {} Average gen loss = {:.6}, KLD = {:.6f}, total loss = {:.6f}; Finished in {}".format(
                 epoch + 1,

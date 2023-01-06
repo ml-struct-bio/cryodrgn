@@ -205,7 +205,9 @@ class LazyImage:
         return image
 
 
-def parse_mrc_list(txtfile: str, lazy: bool = False) -> types.ImageArray:
+def parse_mrc_list(
+    txtfile: str, lazy: bool = False, extra: bool = False
+) -> types.ImageArray:
     lines = open(txtfile, "r").readlines()
 
     def abspath(f):
@@ -216,11 +218,36 @@ def parse_mrc_list(txtfile: str, lazy: bool = False) -> types.ImageArray:
 
     lines = [abspath(x) for x in lines]
     if not lazy:
-        arrays = []
+        # Iterate through the images lazily to get the shape of the ndarray we will want to allocate
+        total_images = 0
         for line in lines:
-            array = parse_mrc(line.strip(), lazy=False)[0]
-            arrays.append(array)
-        particles = np.vstack(arrays)
+            lazy_images = parse_mrc(line.strip(), lazy=True)[0]
+            total_images += len(lazy_images)
+
+        _lazy_image = lazy_images[
+            0
+        ]  # A handle on the first LazyImage of the last iteration, to get the shapes
+        padding = 1 if extra else 0
+
+        # Note that particles may not take up memory (yet) if the OS defers memory allocation
+        particles = np.empty(
+            (
+                total_images,
+                _lazy_image.shape[0] + padding,
+                _lazy_image.shape[1] + padding,
+            ),
+            dtype=_lazy_image.dtype,
+        )
+
+        count = 0
+        for line in lines:
+            im = parse_mrc(line.strip(), lazy=False)[0]
+            particles[
+                count : count + len(im), : _lazy_image.shape[0], : _lazy_image.shape[1]
+            ] = im
+            count += len(im)
+            # in case im and particles do not share memory, this should free up the memory exclusively owned by im
+            im = None
     else:
         particles = [img for x in lines for img in parse_mrc(x.strip(), lazy=True)[0]]
     return particles

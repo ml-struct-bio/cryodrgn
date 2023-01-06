@@ -1,3 +1,7 @@
+from time import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from itertools import repeat
+from multiprocessing.pool import ThreadPool as Pool
 import numpy as np
 
 try:
@@ -29,22 +33,83 @@ def ifftn_center(V):
     return V
 
 
-def ht2_center(img):
+def transform_in_chunks(
+    f, data, chunksize=None, n_workers=1, inplace=False, *args, **kwargs
+):
+    def g(src, dest, indices):
+        dest[indices, ...] = f(src[indices, ...], *args, **kwargs)
+
+    ndim = data.ndim
+    n = data.shape[0] if ndim == 3 else 1
+    indices = np.arange(n)
+    chunksize = min(n, chunksize) if chunksize is not None else n
+    chunk_indices = np.array_split(indices, n // chunksize)
+    n_chunks = len(chunk_indices)
+
+    if data.ndim == 2:
+        src = data[np.newaxis, ...]
+    elif data.ndim == 3:
+        src = data
+    else:
+        raise NotImplementedError
+
+    dest = src if inplace else src.copy()
+    with Pool(n_workers) as pool:
+        pool.starmap(
+            g, zip(repeat(src, n_chunks), repeat(dest, n_chunks), chunk_indices)
+        )
+        return dest.reshape(data.shape)
+
+
+def normalize(
+    img, mean=0, std=None, std_n=1000, inplace=False, chunksize=None, n_workers=1
+):
+    def _normalize(img, mean, std):
+        return (img - mean) / std
+
+    if std is None:
+        # Since std is a memory consuming process, use the first std_n samples for std determination
+        pp = np if isinstance(img, np.ndarray) else cp
+        std = pp.std(img[:std_n, ...])
+
+    return transform_in_chunks(
+        _normalize,
+        img,
+        chunksize=chunksize,
+        n_workers=n_workers,
+        inplace=inplace,
+        mean=mean,
+        std=std,
+    )
+
+
+def ht2_center(img, inplace=False, chunksize=None, n_workers=1):
+    def _ht2_center(img):
+        _img = fft2_center(img)
+        return (_img.real - _img.imag).astype(img.dtype)
+
+    return transform_in_chunks(
+        _ht2_center, img, chunksize=chunksize, n_workers=n_workers, inplace=inplace
+    )
+
+
+def ht2_center2(img):  # VHACK - NOT USED ANYMORE
     f = fft2_center(img)
-    return f.real - f.imag
+    retval = f.real - f.imag
+    return retval
 
 
 def htn_center(img):
     pp = np if isinstance(img, np.ndarray) else cp
 
     f = pp.fft.fftshift(pp.fft.fftn(pp.fft.fftshift(img)))
-    return f.real - f.imag
+    return (f.real - f.imag).astype(img.dtype)
 
 
 def iht2_center(img):
     img = fft2_center(img)
     img /= img.shape[-1] * img.shape[-2]
-    return img.real - img.imag
+    return (img.real - img.imag).astype(img.dtype)
 
 
 def ihtn_center(V):
@@ -54,7 +119,7 @@ def ihtn_center(V):
     V = pp.fft.fftn(V)
     V = pp.fft.fftshift(V)
     V /= pp.product(V.shape)
-    return V.real - V.imag
+    return (V.real - V.imag).astype(V.dtype)
 
 
 def symmetrize_ht(ht, preallocated=False):

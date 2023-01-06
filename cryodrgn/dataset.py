@@ -9,8 +9,8 @@ except ImportError:
 
 import multiprocessing as mp
 import os
-from multiprocessing import Pool
-
+from multiprocessing.pool import ThreadPool as Pool
+import time
 from torch.utils import data
 
 from cryodrgn import fft, mrc, starfile, utils
@@ -18,16 +18,18 @@ from cryodrgn import fft, mrc, starfile, utils
 log = utils.log
 
 
-def load_particles(mrcs_txt_star, lazy=False, datadir=None):
+def load_particles(mrcs_txt_star, lazy=False, datadir=None, extra=False):
     """
     Load particle stack from either a .mrcs file, a .star file, a .txt file containing paths to .mrcs files, or a
     cryosparc particles.cs file.
 
     lazy (bool): Return numpy array if True, or return list of LazyImages
     datadir (str or None): Base directory overwrite for .star or .cs file parsing
+    extra (bool): Whether to add an extra row/col in image dimensions, for use with symmetrizing the fft-space
+    representation of the image in downstream processing.
     """
     if mrcs_txt_star.endswith(".txt"):
-        particles = mrc.parse_mrc_list(mrcs_txt_star, lazy=lazy)
+        particles = mrc.parse_mrc_list(mrcs_txt_star, lazy=lazy, extra=extra)
     elif mrcs_txt_star.endswith(".star"):
         # not exactly sure what the default behavior should be for the data paths if parsing a starfile
         try:
@@ -163,54 +165,65 @@ class MRCData(data.Dataset):
         use_cupy=False,
     ):
         pp = cp if (use_cupy and cp is not None) else np
+        pp = np  # VHACK
+        extra = True  # VHACK
 
         log = flog if flog is not None else utils.log
         if keepreal:
             raise NotImplementedError
+
         if ind is not None:
-            particles = load_particles(mrcfile, True, datadir=datadir)
+            particles = load_particles(mrcfile, True, datadir=datadir, extra=extra)
             particles = pp.array([particles[i].get() for i in ind])
         else:
-            particles = load_particles(mrcfile, False, datadir=datadir)
+            particles = load_particles(mrcfile, False, datadir=datadir, extra=extra)
+
         N, ny, nx = particles.shape
+        if extra:
+            ny -= 1
+            nx -= 1
+
         assert ny == nx, "Images must be square"
-        assert (
-            ny % 2 == 0
-        ), "Image size must be even. Is this a preprocessed dataset? Use the --preprocessed flag if so."
+        # assert (
+        #     ny % 2 == 0
+        # ), "Image size must be even. Is this a preprocessed dataset? Use the --preprocessed flag if so."
         log("Loaded {} {}x{} images".format(N, ny, nx))
 
         # Real space window
         if window:
             log(f"Windowing images with radius {window_r}")
-            particles *= window_mask(ny, window_r, 0.99)
+            particles[:, :ny, :nx] *= window_mask(ny, window_r, 0.99)
 
         # compute HT
         log("Computing FFT")
         max_threads = min(max_threads, mp.cpu_count())
-        if max_threads > 1:
-            log(f"Spawning {max_threads} processes")
-            with Pool(max_threads) as p:
-                particles = pp.asarray(
-                    p.map(fft.ht2_center, particles), dtype=pp.float32
-                )
-        else:
-            particles = pp.asarray(
-                [fft.ht2_center(img) for img in particles], dtype=pp.float32
-            )
-            log("Converted to FFT")
+
+        _start = time.perf_counter()
+        fft.ht2_center(particles, inplace=True, chunksize=1000, n_workers=max_threads)
+        _end = time.perf_counter()
+        log(f"Converted to FFT in {_end-_start}")
 
         if invert_data:
             particles *= -1
 
         # symmetrize HT
         log("Symmetrizing image data")
-        particles = fft.symmetrize_ht(particles)
+        fft.symmetrize_ht(particles, preallocated=True)
 
         # normalize
         if norm is None:
-            norm = [pp.mean(particles), pp.std(particles)]
-            norm[0] = 0
-        particles = (particles - norm[0]) / norm[1]
+            norm = [0, None]
+
+        log("Normalizing image data")
+        # particles = (particles - norm[0]) / norm[1]
+        fft.normalize(
+            particles,
+            mean=norm[0],
+            std=norm[1],
+            inplace=True,
+            chunksize=1000,
+            n_workers=1,
+        )
         log("Normalized HT by {} +/- {}".format(*norm))
 
         self.particles = particles

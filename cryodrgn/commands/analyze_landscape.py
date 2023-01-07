@@ -27,7 +27,7 @@ def add_args(parser):
     )
     parser.add_argument(
         "epoch",
-        type=int,
+        type=str,
         help="Epoch number N to analyze (0-based indexing, corresponding to z.N.pkl, weights.N.pkl)",
     )
     parser.add_argument("--device", type=int, help="Optionally specify CUDA device")
@@ -371,9 +371,9 @@ def analyze_volumes(
 
     plt.figure()
     counts = Counter(labels)
-    g = hack_barplot([counts[i] for i in range(M)])
+    g = hack_barplot([counts[i] for i in range(M)])  # type: ignore  (bug in Counter type-checking?)
     for i in range(M):
-        g.text(i - 0.1, counts[i] + 2, counts[i])
+        g.text(i - 0.1, counts[i] + 2, counts[i])  # type: ignore  (bug in Counter type-checking?)
     plt.xlabel("State")
     plt.ylabel("Count")
     plt.savefig(f"{subdir}/state_volume_counts.png")

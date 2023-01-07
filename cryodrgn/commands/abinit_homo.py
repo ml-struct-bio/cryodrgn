@@ -23,13 +23,13 @@ log = utils.log
 vlog = utils.vlog
 
 
-def debug_signal_handler(signal, frame):
-    import pdb
+# def debug_signal_handler(signal, frame):
+#     import pdb
 
-    pdb.set_trace()
+#     pdb.set_trace()
 
 
-signal.signal(signal.SIGINT, debug_signal_handler)
+# signal.signal(signal.SIGINT, debug_signal_handler)
 
 
 def add_args(parser):

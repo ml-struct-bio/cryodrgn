@@ -24,12 +24,7 @@ import cryodrgn.types as types
 from cryodrgn import ctf, dataset, models, mrc, utils
 from cryodrgn.lattice import Lattice
 from cryodrgn.pose import PoseTracker
-from cryodrgn.models import (
-    ResidLinearMLP,
-    FTSliceDecoder,
-    PositionalDecoder,
-    FTPositionalDecoder,
-)
+from cryodrgn.models import DataParallelDecoder, Decoder
 
 log = utils.log
 vlog = utils.vlog
@@ -236,19 +231,10 @@ def add_args(parser):
     return parser
 
 
-def save_checkpoint(model, lattice, optim, epoch, norm, Apix, out_mrc, out_weights):
+def save_checkpoint(
+    model: Decoder, lattice, optim, epoch, norm, Apix, out_mrc, out_weights
+):
     model.eval()
-    if isinstance(model, DataParallel):
-        model = model.module
-    assert isinstance(
-        model,
-        (
-            ResidLinearMLP,
-            FTSliceDecoder,
-            PositionalDecoder,
-            FTPositionalDecoder,
-        ),
-    )
     vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, norm)
     mrc.write(out_mrc, vol.astype(np.float32), Apix=Apix)
     torch.save(
@@ -510,7 +496,7 @@ def main(args):
         flog(f"Using {torch.cuda.device_count()} GPUs!")
         args.batch_size *= torch.cuda.device_count()
         flog(f"Increasing batch size to {args.batch_size}")
-        model = DataParallel(model)
+        model = DataParallelDecoder(model)
     elif args.multigpu:
         flog(
             f"WARNING: --multigpu selected, but {torch.cuda.device_count()} GPUs detected"

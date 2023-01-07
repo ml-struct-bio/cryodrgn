@@ -2,10 +2,10 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from typing import Optional, Union, Tuple
-from cryodrgn.types import UnParallelizableModels
 from cryodrgn import lie_tools, shift_grid, so3_grid, utils
 from cryodrgn.models import unparallelize, HetOnlyVAE
 from cryodrgn.lattice import Lattice
+import torch.nn as nn
 
 log = utils.log
 vlog = utils.vlog
@@ -53,7 +53,7 @@ class PoseSearch:
 
     def __init__(
         self,
-        model: UnParallelizableModels,
+        model: nn.Module,
         lattice: Lattice,
         Lmin: int,
         Lmax: int,

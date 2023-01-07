@@ -16,9 +16,11 @@ log = utils.log
 Norm = Sequence[Any]  # mean, std
 
 
-def unparallelize(model: types.UnParallelizableModels) -> types.UnParallelizedModels:
+def unparallelize(model: nn.Module) -> nn.Module:
+    if isinstance(model, DataParallelDecoder):
+        return model.dp.module
     if isinstance(model, DataParallel):
-        return model.module  # type: ignore
+        return model.module
     return model
 
 
@@ -197,7 +199,42 @@ def load_decoder(config, weights=None, device=None):
     return model
 
 
-class PositionalDecoder(nn.Module):
+class Decoder(nn.Module):
+    def eval_volume(
+        self,
+        coords: Tensor,
+        D: int,
+        extent: float,
+        norm: Norm,
+        zval: Optional[np.ndarray] = None,
+    ) -> np.ndarray:
+        """
+        Evaluate the model on a DxDxD volume
+        Inputs:
+            coords: lattice coords on the x-y plane (D^2 x 3)
+            D: size of lattice
+            extent: extent of lattice [-extent, extent]
+            norm: data normalization
+            zval: value of latent (zdim x 1)
+        """
+        raise NotImplementedError
+
+    def get_voxel_decoder(self) -> Optional["Decoder"]:
+        return None
+
+
+class DataParallelDecoder(Decoder):
+    def __init__(self, decoder: Decoder):
+        super(DataParallelDecoder, self).__init__()
+        self.dp = torch.nn.parallel.DataParallel(decoder)
+
+    def eval_volume(self, *args, **kwargs):
+        module = self.dp.module
+        assert isinstance(module, Decoder)
+        return module.eval_volume(*args, **kwargs)
+
+
+class PositionalDecoder(Decoder):
     def __init__(
         self,
         in_dim,
@@ -322,7 +359,7 @@ class PositionalDecoder(nn.Module):
         return vol
 
 
-class FTPositionalDecoder(nn.Module):
+class FTPositionalDecoder(Decoder):
     def __init__(
         self,
         in_dim: int,
@@ -460,15 +497,12 @@ class FTPositionalDecoder(nn.Module):
         assert (lattice[..., 0:3].abs() - 0.5 < 1e-4).all()
         # convention: only evalute the -z points
         w = lattice[..., 2] > 0.0
-        lattice[..., 0:3][w] = -lattice[..., 0:3][
-            w
-        ]  # negate lattice coordinates where z > 0
-        result = self.decoder(self.positional_encoding_geom(lattice))
-        result[..., 1][
-            w
-        ] *= (
-            -1
-        )  # replace with complex conjugate to get correct values for original lattice positions
+        new_lattice = lattice.clone()
+        # negate lattice coordinates where z > 0
+        new_lattice[..., 0:3][w] *= -1
+        result = self.decoder(self.positional_encoding_geom(new_lattice))
+        # replace with complex conjugate to get correct values for original lattice positions
+        result[..., 1][w] *= -1
         return result
 
     def eval_volume(
@@ -524,7 +558,7 @@ class FTPositionalDecoder(nn.Module):
         return vol
 
 
-class FTSliceDecoder(nn.Module):
+class FTSliceDecoder(Decoder):
     """
     Evaluate a central slice out of a 3D FT of a model, returns representation in
     Hartley reciprocal space
@@ -601,15 +635,13 @@ class FTSliceDecoder(nn.Module):
         """Return FT transform"""
         # convention: only evalute the -z points
         w = lattice[..., 2] > 0.0
-        lattice[..., 0:3][w] = -lattice[..., 0:3][
-            w
-        ]  # negate lattice coordinates where z > 0
-        result = self.decoder(lattice)
-        result[..., 1][
-            w
-        ] *= (
-            -1
-        )  # replace with complex conjugate to get correct values for original lattice positions
+        new_lattice = lattice.clone()
+        # negate lattice coordinates where z > 0
+
+        new_lattice[..., 0:3][w] *= -1
+        result = self.decoder(new_lattice)
+        # replace with complex conjugate to get correct values for original lattice positions
+        result[..., 1][w] *= -1
         return result
 
     def eval_volume(
@@ -670,21 +702,15 @@ def get_decoder(
     enc_dim: Optional[int] = None,
     activation: Type = nn.ReLU,
     feat_sigma: Optional[float] = None,
-) -> Union[
-    types.ResidLinearMLP,
-    types.FTSliceDecoder,
-    types.PositionalDecoder,
-    types.FTPositionalDecoder,
-]:
+) -> Decoder:
     if enc_type == "none":
         if domain == "hartley":
             model = ResidLinearMLP(in_dim, layers, dim, 1, activation)
         else:
             model = FTSliceDecoder(in_dim, D, layers, dim, activation)
-        return model
     else:
-        model = PositionalDecoder if domain == "hartley" else FTPositionalDecoder
-        return model(
+        model_t = PositionalDecoder if domain == "hartley" else FTPositionalDecoder
+        model = model_t(
             in_dim,
             D,
             layers,
@@ -694,6 +720,7 @@ def get_decoder(
             enc_dim=enc_dim,
             feat_sigma=feat_sigma,
         )
+    return model
 
 
 class VAE(nn.Module):
@@ -889,7 +916,7 @@ class TiltEncoder(nn.Module):
         return z
 
 
-class ResidLinearMLP(nn.Module):
+class ResidLinearMLP(Decoder):
     def __init__(
         self,
         in_dim: int,

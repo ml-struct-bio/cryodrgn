@@ -347,7 +347,7 @@ def add_args(parser):
     group.add_argument(
         "--domain",
         choices=("hartley", "fourier"),
-        default="fourier",
+        default="hartley",
         help="Decoder representation domain (default: %(default)s)",
     )
     group.add_argument(

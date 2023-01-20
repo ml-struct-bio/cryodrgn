@@ -329,8 +329,6 @@ class PositionalDecoder(Decoder):
             assert x.shape[-1] == self.in_dim
         return x
 
-
-
     def positional_encoding_linear(self, coords):
         """Expand coordinates in the Fourier basis, i.e. cos(k*n/N), sin(k*n/N), n=0,...,N//2"""
         freqs = torch.arange(1, self.D2 + 1, dtype=torch.float, device=coords.device)

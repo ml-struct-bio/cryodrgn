@@ -33,7 +33,9 @@ def load_particles(mrcs_txt_star, lazy=False, datadir=None, extra=False):
     if USE_NEW_DATASET_API:
         from cryodrgn.source import ImageSource
 
-        src = ImageSource.from_file(mrcs_txt_star, datadir=datadir, extra=extra)
+        src = ImageSource.from_file(
+            mrcs_txt_star, lazy=lazy, datadir=datadir, extra=extra
+        )
         if lazy:
             return src
         else:
@@ -111,7 +113,10 @@ class LazyMRCData(data.Dataset):
 
         n = min(n, self.N)
         imgs = pp.asarray(
-            [fft.ht2_center(self.particles[i]) for i in range(0, self.N, self.N // n)]
+            [
+                fft.ht2_center(self.particles[i].get())
+                for i in range(0, self.N, self.N // n)
+            ]
         )
         if self.invert_data:
             imgs *= -1
@@ -124,7 +129,7 @@ class LazyMRCData(data.Dataset):
     def get(self, i):
         pp = cp if (self.use_cupy and cp is not None) else np
 
-        img = self.particles[i]
+        img = self.particles[i].get()
         if self.window is not None:
             img *= self.window
         img = fft.ht2_center(img).astype(pp.float32)

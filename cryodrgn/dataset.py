@@ -28,6 +28,18 @@ def load_particles(mrcs_txt_star, lazy=False, datadir=None, extra=False):
     extra (bool): Whether to add an extra row/col in image dimensions, for use with symmetrizing the fft-space
     representation of the image in downstream processing.
     """
+
+    # ---------- NEW API ---------- #
+    if True:
+        from cryodrgn.source import ImageSource
+
+        src = ImageSource.from_file(mrcs_txt_star, datadir=datadir, extra=extra)
+        if lazy:
+            return src
+        else:
+            return src[:]
+    # ---------- NEW API ---------- #
+
     if mrcs_txt_star.endswith(".txt"):
         particles = mrc.parse_mrc_list(mrcs_txt_star, lazy=lazy, extra=extra)
     elif mrcs_txt_star.endswith(".star"):
@@ -78,7 +90,7 @@ class LazyMRCData(data.Dataset):
         if ind is not None:
             particles = [particles[x] for x in ind]
         N = len(particles)
-        ny, nx = particles[0].get().shape
+        ny, nx = particles[0].shape
         assert ny == nx, "Images must be square"
         assert (
             ny % 2 == 0
@@ -99,10 +111,7 @@ class LazyMRCData(data.Dataset):
 
         n = min(n, self.N)
         imgs = pp.asarray(
-            [
-                fft.ht2_center(self.particles[i].get())
-                for i in range(0, self.N, self.N // n)
-            ]
+            [fft.ht2_center(self.particles[i]) for i in range(0, self.N, self.N // n)]
         )
         if self.invert_data:
             imgs *= -1
@@ -115,7 +124,7 @@ class LazyMRCData(data.Dataset):
     def get(self, i):
         pp = cp if (self.use_cupy and cp is not None) else np
 
-        img = self.particles[i].get()
+        img = self.particles[i]
         if self.window is not None:
             img *= self.window
         img = fft.ht2_center(img).astype(pp.float32)
@@ -163,10 +172,10 @@ class MRCData(data.Dataset):
         window_r=0.85,
         flog=None,
         use_cupy=False,
+        extra=False,
     ):
         pp = cp if (use_cupy and cp is not None) else np
         pp = np  # VHACK
-        extra = True  # VHACK
 
         log = flog if flog is not None else utils.log
         if keepreal:
@@ -208,7 +217,7 @@ class MRCData(data.Dataset):
 
         # symmetrize HT
         log("Symmetrizing image data")
-        fft.symmetrize_ht(particles, preallocated=True)
+        particles = fft.symmetrize_ht(particles, preallocated=extra)
 
         # normalize
         if norm is None:

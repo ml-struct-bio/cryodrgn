@@ -572,6 +572,8 @@ def main(args):
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
 
+    extra = False  # VHACK
+
     # set the device
     use_cuda = torch.cuda.is_available()
     use_cuda = False
@@ -636,6 +638,7 @@ def main(args):
                 window_r=args.window_r,
                 flog=flog,
                 use_cupy=True,
+                extra=extra,
             )
 
     # Tilt series data -- lots of unsupported features
@@ -805,10 +808,18 @@ def main(args):
             f"WARNING: --multigpu selected, but {torch.cuda.device_count()} GPUs detected"
         )
 
+    from torch.utils.data.sampler import BatchSampler, SequentialSampler
+
     # training loop
     data_generator = DataLoader(
-        data, batch_size=args.batch_size, shuffle=True, num_workers=num_workers_per_gpu
+        data,
+        shuffle=False,
+        num_workers=num_workers_per_gpu,
+        sampler=BatchSampler(
+            SequentialSampler(data), batch_size=args.batch_size, drop_last=False
+        ),
     )
+
     num_epochs = args.num_epochs
     epoch = None
     for epoch in range(start_epoch, num_epochs):
@@ -818,10 +829,13 @@ def main(args):
             loss_accum = 0
             kld_accum = 0
             batch_it = 0
+
             for minibatch in data_generator:  # minibatch: [y, ind]
-                ind = minibatch[-1].to(device)
+                ind = torch.tensor(minibatch[-1]).to(device)
                 y = minibatch[0].to(device)
-                yt = minibatch[1].to(device) if tilt is not None else None
+                if y.ndim == 4:
+                    y = y.squeeze(axis=0)
+                yt = torch.tensor(minibatch[1]).to(device) if tilt is not None else None
                 B = len(ind)
                 batch_it += B
                 global_it = Nimg * epoch + batch_it

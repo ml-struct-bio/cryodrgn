@@ -9,3 +9,6 @@ except ModuleNotFoundError:
     __version__ = "src"
 
 _ROOT = os.path.abspath(os.path.dirname(__file__))
+
+# Temporary - till everything works regardless of whether the following is True/False
+USE_NEW_DATASET_API = False

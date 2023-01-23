@@ -9,11 +9,11 @@ except ImportError:
 
 import multiprocessing as mp
 import os
-from multiprocessing.pool import ThreadPool as Pool
 import time
 from torch.utils import data
 
 from cryodrgn import fft, mrc, starfile, utils
+from cryodrgn import USE_NEW_DATASET_API
 
 log = utils.log
 
@@ -30,7 +30,7 @@ def load_particles(mrcs_txt_star, lazy=False, datadir=None, extra=False):
     """
 
     # ---------- NEW API ---------- #
-    if True:
+    if USE_NEW_DATASET_API:
         from cryodrgn.source import ImageSource
 
         src = ImageSource.from_file(mrcs_txt_star, datadir=datadir, extra=extra)

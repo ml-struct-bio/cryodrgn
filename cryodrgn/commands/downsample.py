@@ -112,11 +112,8 @@ def main(args):
             imgs = np.concatenate([i.get() for i in imgs])
         with Pool(min(args.max_threads, mp.cpu_count())) as p:
             oldft = np.asarray(p.map(fft.ht2_center, imgs))
-            print(oldft.shape)
             newft = oldft[:, start:stop, start:stop]
-            print(newft.shape)
             new = np.asarray(p.map(fft.iht2_center, newft))
-            print(newft.shape)
         return new
 
     def downsample_in_batches(old, b):

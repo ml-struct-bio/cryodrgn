@@ -257,8 +257,25 @@ class PositionalDecoder(Decoder):
         self.in_dim = 3 * (self.enc_dim) * 2 + self.zdim
         self.decoder = ResidLinearMLP(self.in_dim, nlayers, hidden_dim, 1, activation)
 
+        if enc_type == "gaussian":
+            # We construct 3 * self.enc_dim random vector frequences, to match the original positional encoding:
+            # In the positional encoding we produce self.enc_dim features for each of the x,y,z dimensions,
+            # whereas in gaussian encoding we produce self.enc_dim features each with random x,y,z components
+            #
+            # Each of the random feats is the sine/cosine of the dot product of the coordinates with a frequency
+            # vector sampled from a gaussian with std of feat_sigma
+            rand_freqs = (
+                torch.randn((3 * self.enc_dim, 3), dtype=torch.float) * feat_sigma
+            )
+            # make rand_feats a parameter so it is saved in the checkpoint, but do not perform SGD on it
+            self.rand_freqs = Parameter(rand_freqs, requires_grad=False)
+        else:
+            self.rand_feats = None
+
     def positional_encoding_geom(self, coords):
         """Expand coordinates in the Fourier basis with geometrically spaced wavelengths from 2/D to 2pi"""
+        if self.enc_type == "gaussian":
+            return self.random_fourier_encoding(coords)
         freqs = torch.arange(self.enc_dim, dtype=torch.float, device=coords.device)
         if self.enc_type == "geom_ft":
             freqs = (
@@ -291,6 +308,24 @@ class PositionalDecoder(Decoder):
         x = x.view(*coords.shape[:-2], self.in_dim - self.zdim)  # B x in_dim-zdim
         if self.zdim > 0:
             x = torch.cat([x, coords[..., 3:, :].squeeze(-1)], -1)
+            assert x.shape[-1] == self.in_dim
+        return x
+
+    def random_fourier_encoding(self, coords):
+        assert self.rand_freqs is not None
+        # k = coords . rand_freqs
+        # expand rand_freqs with singleton dimension along the batch dimensions
+        # e.g. dim (1, ..., 1, n_rand_feats, 3)
+        freqs = self.rand_freqs.view(*[1] * (len(coords.shape) - 1), -1, 3) * self.D2
+
+        kxkykz = coords[..., None, 0:3] * freqs  # compute the x,y,z components of k
+        k = kxkykz.sum(-1)  # compute k
+        s = torch.sin(k)
+        c = torch.cos(k)
+        x = torch.cat([s, c], -1)
+        x = x.view(*coords.shape[:-1], self.in_dim - self.zdim)
+        if self.zdim > 0:
+            x = torch.cat([x, coords[..., 3:]], -1)
             assert x.shape[-1] == self.in_dim
         return x
 

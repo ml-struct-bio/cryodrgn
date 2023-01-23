@@ -1,5 +1,3 @@
-from time import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from itertools import repeat
 from multiprocessing.pool import ThreadPool as Pool
 import numpy as np
@@ -91,12 +89,6 @@ def ht2_center(img, inplace=False, chunksize=None, n_workers=1):
     return transform_in_chunks(
         _ht2_center, img, chunksize=chunksize, n_workers=n_workers, inplace=inplace
     )
-
-
-def ht2_center2(img):  # VHACK - NOT USED ANYMORE
-    f = fft2_center(img)
-    retval = f.real - f.imag
-    return retval
 
 
 def htn_center(img):

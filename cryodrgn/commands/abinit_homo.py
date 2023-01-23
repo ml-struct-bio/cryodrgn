@@ -141,7 +141,7 @@ def add_args(parser):
         "-b",
         "--batch-size",
         type=int,
-        default=10,
+        default=8,
         help="Minibatch size (default: %(default)s)",
     )
     group.add_argument(
@@ -251,7 +251,7 @@ def add_args(parser):
     group.add_argument(
         "--domain",
         choices=("hartley", "fourier"),
-        default="fourier",
+        default="hartley",
         help="Volume decoder representation (default: %(default)s)",
     )
     group.add_argument(

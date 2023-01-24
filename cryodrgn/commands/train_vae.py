@@ -573,7 +573,7 @@ def main(args):
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
 
-    extra = False  # VHACK
+    extra = True  # VHACK
 
     # set the device
     use_cuda = torch.cuda.is_available()

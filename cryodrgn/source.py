@@ -3,11 +3,21 @@ from collections.abc import Iterable
 from concurrent import futures
 import numpy as np
 import pandas as pd
-from typing import Union, List
+from typing import Union, List, Optional
 
 import torch.utils.data
 from cryodrgn.starfile import Starfile
 from cryodrgn.mrc import MRCHeader
+
+
+class LazyImage:
+    def __init__(self, src, item):
+        self.src = src
+        self.item = item
+        self.shape = src.shape[0], src.shape[1]
+
+    def get(self):
+        return self.src.images(self.item)
 
 
 class ImageSource:
@@ -15,7 +25,13 @@ class ImageSource:
     def from_file(filepath: str, *args, **kwargs):
         ext = os.path.splitext(filepath)[-1][1:]
         assert ext in ("star", "mrcs", "txt", "cs"), f"Unknown file extension {ext}"
-        return getattr(ImageSource, f"from_{ext}")(filepath, *args, **kwargs)
+        source = getattr(ImageSource, f"from_{ext}")(filepath, *args, **kwargs)
+
+        lazy = kwargs.get("lazy", False)
+        if lazy:
+            return source
+        else:
+            return source.images(slice(0, None))
 
     @staticmethod
     def from_star(filepath: str, *args, **kwargs):
@@ -40,9 +56,12 @@ class ImageSource:
         filenames: Union[List[str], str, None] = None,
         n_workers: int = 1,
         dtype: str = "float32",
+        *args,
+        **kwargs,
     ):
-        self.L = L
+        self.L = L + (1 if kwargs.pop("extra", False) else 0)
         self.n = n
+        self.shape = self.L, self.L, self.n
 
         # Some client calls need to access the original filename(s) associated with a source
         # These are traditionally available as the 'fname' attribute of the LazyImage class, hence only used by
@@ -62,7 +81,10 @@ class ImageSource:
     def __len__(self):
         return self.n
 
-    def __getitem__(self, indices: Union[int, np.ndarray, slice]) -> np.ndarray:
+    def __getitem__(self, item):
+        return LazyImage(src=self, item=item)
+
+    def images(self, indices: Union[int, np.ndarray, slice]) -> np.ndarray:
         if np.isscalar(indices):
             indices = np.array([indices])
         elif isinstance(indices, Iterable):
@@ -105,15 +127,15 @@ class MRCFileSource(ImageSource):
             header.fields["nx"],
         )
         assert self.ny == self.nx, "Only square images supported"
-        self.shape = self.nz, self.ny, self.nx
         self.stride = self.dtype().itemsize * self.ny * self.nx
 
-        super().__init__(L=self.ny, n=self.nz, filenames=filepath)
+        super().__init__(L=self.ny, n=self.nz, filenames=filepath, *args, **kwargs)
 
-    def _images(self, indices: np.ndarray) -> np.ndarray:
+    def _images(self, indices: np.ndarray, data: Optional[np.ndarray]) -> np.ndarray:
         # TODO: Load array in contiguous chunks instead of using an iterative loop
         with open(self.mrcfile_path) as f:
-            data = np.empty((len(indices), self.ny, self.nx))
+            if data is None:
+                data = np.empty((len(indices), self.ny, self.nx), dtype=self.dtype)
             for i, index in enumerate(indices):
                 # TODO: Do this concurrently in several threads
                 f.seek(
@@ -124,7 +146,7 @@ class MRCFileSource(ImageSource):
                 _data = np.fromfile(
                     f, dtype=self.dtype, count=count, offset=offset
                 ).reshape(self.ny, self.nx)
-                data[i, ...] = _data
+                data[i, : self.ny, : self.nx] = _data
             return data
 
 
@@ -138,7 +160,7 @@ class TxtFileSource(ImageSource):
                 _paths.append(os.path.join(os.path.dirname(filepath), line))
             else:
                 _paths.append(line)
-        self.sources = [MRCFileSource(path) for path in _paths]
+        self.sources = [MRCFileSource(path, *args, **kwargs) for path in _paths]
 
         # We'll only look at the header from the first .mrcs file, and assume that all headers are compatible
         header = self.sources[0].header
@@ -159,17 +181,20 @@ class TxtFileSource(ImageSource):
         ]
         n_workers = min(n_workers, len(self.source_intervals))
 
-        super().__init__(L=self.ny, n=self.nz, n_workers=n_workers)
+        super().__init__(L=self.ny, n=self.nz, n_workers=n_workers, *args, **kwargs)
 
     def _images(self, indices: np.ndarray) -> np.ndarray:
         def load_single_mrcs(
+            data: np.ndarray,
             source: MRCFileSource,
             source_start_index: int,
             indices_for_source: np.ndarray,
         ):
-            return source[indices[indices_for_source] - source_start_index]
+            # return source._images(indices[indices_for_source] - source_start_index)
+            # data[indices_for_source] = source._images(indices[indices_for_source] - source_start_index, data=data)
+            source._images(indices[indices_for_source] - source_start_index, data=data)
 
-        data = np.empty((len(indices), self.L, self.L))
+        data = np.empty((len(indices), self.L, self.L), dtype=self.dtype)
 
         with futures.ThreadPoolExecutor(self.n_workers) as executor:
             to_do = {}
@@ -182,6 +207,7 @@ class TxtFileSource(ImageSource):
                 if indices_for_source.size > 0:
                     future = executor.submit(
                         load_single_mrcs,
+                        data,
                         self.sources[source_i],
                         source_start_index,
                         indices_for_source,
@@ -189,17 +215,15 @@ class TxtFileSource(ImageSource):
                     to_do[future] = indices_for_source
 
             for future in futures.as_completed(to_do):
-                data[to_do[future]] = future.result()
+                # data[to_do[future]] = future.result()
+                pass
 
         return data
 
 
 class _MRCDataFrameSource(ImageSource):
     def __init__(
-        self,
-        df: pd.DataFrame,
-        datadir: str = "",
-        n_workers: int = 1,
+        self, df: pd.DataFrame, datadir: str = "", n_workers: int = 1, *args, **kwargs
     ):
         assert "__mrc_index" in df.columns
         assert "__mrc_filename" in df.columns
@@ -212,7 +236,12 @@ class _MRCDataFrameSource(ImageSource):
         # Peek into the first mrc file to get image size
         L = MRCFileSource(self.df["__mrc_filepath"][0]).L
         super().__init__(
-            L=L, n=len(self.df), filenames=df["__mrc_filename"], n_workers=n_workers
+            L=L,
+            n=len(self.df),
+            filenames=df["__mrc_filename"],
+            n_workers=n_workers,
+            *args,
+            **kwargs,
         )
 
     def _images(self, indices: np.ndarray) -> np.ndarray:
@@ -221,7 +250,7 @@ class _MRCDataFrameSource(ImageSource):
             # df.index indicates the positions where the data needs to be inserted -> return for use by caller
             return df.index, arr
 
-        data = np.empty((len(indices), self.L, self.L))
+        data = np.empty((len(indices), self.L, self.L), dtype=self.dtype)
 
         # Create a DataFrame corresponding to the indices we're interested in
         df = self.df.iloc[indices].reset_index(drop=True)

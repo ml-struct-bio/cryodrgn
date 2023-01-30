@@ -12,6 +12,7 @@ Welcome to CryoDRGN's documentation!
 
    pages/intro
    pages/installation
+   pages/quickstart
    pages/empiar_tutorial
    pages/landscape_analysis
    pages/large_datasets

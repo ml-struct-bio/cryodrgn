@@ -3,12 +3,11 @@
 import argparse
 import os
 import pickle
-
+import logging
 import numpy as np
+from cryodrgn import ctf
 
-from cryodrgn import ctf, utils
-
-log = utils.log
+logger = logging.getLogger(__name__)
 
 
 def add_args(parser):
@@ -32,7 +31,7 @@ def main(args):
 
     metadata = np.load(args.cs)
     N = len(metadata)
-    log("{} particles".format(N))
+    logger.info("{} particles".format(N))
 
     # sometimes blob/shape, blob/psize_A are missing from the .cs file
     try:
@@ -62,7 +61,7 @@ def main(args):
             ctf_params[:, i + 2] *= 180 / np.pi
 
     ctf.print_ctf_params(ctf_params[0])
-    log("Saving {}".format(args.o))
+    logger.info("Saving {}".format(args.o))
     with open(args.o, "wb") as f:
         pickle.dump(ctf_params.astype(np.float32), f)
     if args.png:
@@ -70,7 +69,7 @@ def main(args):
 
         ctf.plot_ctf(int(ctf_params[0, 0]), ctf_params[0, 1], ctf_params[0, 2:])
         plt.savefig(args.png)
-        log(args.png)
+        logger.info(args.png)
 
 
 if __name__ == "__main__":

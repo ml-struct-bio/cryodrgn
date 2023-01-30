@@ -5,11 +5,10 @@ Filter a .star file
 import argparse
 import os
 import warnings
-
-from cryodrgn import utils
+import logging
 from cryodrgn.commands_utils import write_star
 
-log = utils.log
+logger = logging.getLogger(__name__)
 
 
 def add_args(parser):
@@ -22,7 +21,7 @@ def add_args(parser):
 def main(args):
     warning_msg = "cryodrgn_utils filter_star is deprecated. Please use cryodrgn_utils write_star instead."
     warnings.warn(warning_msg, DeprecationWarning)
-    log(f"WARNING: {warning_msg}")
+    logger.warning(f"WARNING: {warning_msg}")
 
     args = write_star.add_args(argparse.ArgumentParser()).parse_args(
         [

@@ -12,7 +12,6 @@ import cryodrgn.types as types
 from cryodrgn import fft, lie_tools, utils
 from cryodrgn.lattice import Lattice
 
-log = utils.log
 Norm = Sequence[Any]  # mean, std
 
 

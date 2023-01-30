@@ -2,12 +2,11 @@
 
 import argparse
 import os
-
+import logging
 import numpy as np
+from cryodrgn import ctf, dataset, fft, mrc
 
-from cryodrgn import ctf, dataset, fft, mrc, utils
-
-log = utils.log
+logger = logging.getLogger(__name__)
 
 
 def add_args(parser):
@@ -36,7 +35,7 @@ def main(args):
     imgs_flip = np.empty((len(imgs), D, D), dtype=np.float32)
     for i in range(len(imgs)):
         if i % 1000 == 0:
-            log(f"Processing image {i}")
+            logger.info(f"Processing image {i}")
         c = ctf.compute_ctf_np(freqs / ctf_params[i, 0], *ctf_params[i, 1:])
         c = c.reshape((D, D))
         ff = fft.fft2_center(imgs[i].get())
@@ -44,7 +43,7 @@ def main(args):
         img = fft.ifftn_center(ff)
         imgs_flip[i] = img.astype(np.float32)
 
-    log(f"Writing {args.o}")
+    logger.info(f"Writing {args.o}")
     mrc.write(args.o, imgs_flip)
 
 

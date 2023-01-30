@@ -4,11 +4,10 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import Tensor
-
+import logging
 from cryodrgn import utils
 
-log = utils.log
-vlog = utils.vlog
+logger = logging.getLogger(__name__)
 
 
 class Lattice:
@@ -67,7 +66,7 @@ class Lattice:
         assert (
             2 * L + 1 <= self.D
         ), "Mask with size {} too large for lattice with size {}".format(L, self.D)
-        log("Using square lattice of size {}x{}".format(2 * L + 1, 2 * L + 1))
+        logger.info("Using square lattice of size {}x{}".format(2 * L + 1, 2 * L + 1))
         b, e = self.D2 - L, self.D2 + L
         c1 = self.coords.view(self.D, self.D, 3)[b, b]
         c2 = self.coords.view(self.D, self.D, 3)[e, e]
@@ -88,7 +87,7 @@ class Lattice:
         assert (
             2 * R + 1 <= self.D
         ), "Mask with radius {} too large for lattice with size {}".format(R, self.D)
-        vlog("Using circular lattice with radius {}".format(R))
+        logger.debug("Using circular lattice with radius {}".format(R))
 
         r = R / (self.D // 2) * self.extent
         mask = self.coords.pow(2).sum(-1) <= r**2

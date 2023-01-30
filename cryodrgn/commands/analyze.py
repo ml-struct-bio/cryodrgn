@@ -6,16 +6,15 @@ import argparse
 import os
 import shutil
 from datetime import datetime as dt
-
+import logging
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
-
 import cryodrgn
 from cryodrgn import analysis, utils
 
-log = utils.log
+logger = logging.getLogger(__name__)
 
 
 def add_args(parser):
@@ -104,16 +103,16 @@ def analyze_zN(z, outdir, vg, skip_umap=False, num_pcs=2, num_ksamples=20):
     zdim = z.shape[1]
 
     # Principal component analysis
-    log("Perfoming principal component analysis...")
+    logger.info("Performing principal component analysis...")
     pc, pca = analysis.run_pca(z)
-    log("Generating volumes...")
+    logger.info("Generating volumes...")
     for i in range(num_pcs):
         start, end = np.percentile(pc[:, i], (5, 95))
         z_pc = analysis.get_pc_traj(pca, z.shape[1], 10, i + 1, start, end)
         vg.gen_volumes(f"{outdir}/pc{i+1}", z_pc)
 
     # kmeans clustering
-    log("K-means clustering...")
+    logger.info("K-means clustering...")
     K = num_ksamples
     kmeans_labels, centers = analysis.cluster_kmeans(z, K)
     centers, centers_ind = analysis.get_nearest_point(z, centers)
@@ -122,18 +121,18 @@ def analyze_zN(z, outdir, vg, skip_umap=False, num_pcs=2, num_ksamples=20):
     utils.save_pkl(kmeans_labels, f"{outdir}/kmeans{K}/labels.pkl")
     np.savetxt(f"{outdir}/kmeans{K}/centers.txt", centers)
     np.savetxt(f"{outdir}/kmeans{K}/centers_ind.txt", centers_ind, fmt="%d")
-    log("Generating volumes...")
+    logger.info("Generating volumes...")
     vg.gen_volumes(f"{outdir}/kmeans{K}", centers)
 
     # UMAP -- slow step
     umap_emb = None
     if zdim > 2 and not skip_umap:
-        log("Running UMAP...")
+        logger.info("Running UMAP...")
         umap_emb = analysis.run_umap(z)
         utils.save_pkl(umap_emb, f"{outdir}/umap.pkl")
 
     # Make some plots
-    log("Generating plots...")
+    logger.info("Generating plots...")
     plt.figure(1)
     g = sns.jointplot(x=pc[:, 0], y=pc[:, 1], alpha=0.1, s=2)
     g.set_axis_labels("PC1", "PC2")
@@ -233,7 +232,7 @@ def main(args):
 
     if args.outdir:
         outdir = args.outdir
-    log(f"Saving results to {outdir}")
+    logger.info(f"Saving results to {outdir}")
     if not os.path.exists(outdir):
         os.mkdir(outdir)
 
@@ -265,24 +264,24 @@ def main(args):
     # copy over template if file doesn't exist
     out_ipynb = f"{outdir}/cryoDRGN_viz.ipynb"
     if not os.path.exists(out_ipynb):
-        log("Creating jupyter notebook...")
+        logger.info("Creating jupyter notebook...")
         ipynb = f"{cryodrgn._ROOT}/templates/cryoDRGN_viz_template.ipynb"
         shutil.copyfile(ipynb, out_ipynb)
     else:
-        log(f"{out_ipynb} already exists. Skipping")
-    log(out_ipynb)
+        logger.info(f"{out_ipynb} already exists. Skipping")
+    logger.info(out_ipynb)
 
     # copy over template if file doesn't exist
     out_ipynb = f"{outdir}/cryoDRGN_filtering.ipynb"
     if not os.path.exists(out_ipynb):
-        log("Creating jupyter notebook...")
+        logger.info("Creating jupyter notebook...")
         ipynb = f"{cryodrgn._ROOT}/templates/cryoDRGN_filtering_template.ipynb"
         shutil.copyfile(ipynb, out_ipynb)
     else:
-        log(f"{out_ipynb} already exists. Skipping")
-    log(out_ipynb)
+        logger.info(f"{out_ipynb} already exists. Skipping")
+    logger.info(out_ipynb)
 
-    log(f"Finished in {dt.now()-t1}")
+    logger.info(f"Finished in {dt.now()-t1}")
 
 
 if __name__ == "__main__":

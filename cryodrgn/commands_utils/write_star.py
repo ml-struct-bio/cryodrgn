@@ -6,10 +6,12 @@ import argparse
 import os
 import numpy as np
 import pandas as pd
+import logging
 from cryodrgn import dataset, mrc, utils
 from cryodrgn.starfile import Starfile
 
-log = utils.log
+logger = logging.getLogger(__name__)
+
 
 CTF_HEADERS = [
     "_rlnDefocusU",
@@ -99,7 +101,7 @@ def main(args):
             assert len(particles) == len(
                 poses[0]
             ), f"{len(particles)} != {len(poses)}, Number of particles != number of poses"
-    log(f"{len(particles)} particles in {args.particles}")
+    logger.info(f"{len(particles)} particles in {args.particles}")
 
     if input_ext == ".star":
         particle_ind = np.arange(len(particles))
@@ -113,7 +115,7 @@ def main(args):
 
     if args.ind:
         ind = utils.load_pkl(args.ind)
-        log(f"Filtering to {len(ind)} particles")
+        logger.info(f"Filtering to {len(ind)} particles")
         particles = [particles[ii] for ii in ind]
         if ctf is not None:
             ctf = ctf[ind]

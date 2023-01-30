@@ -2,10 +2,10 @@ from typing import Union, Optional
 import numpy as np
 import seaborn as sns
 import torch
-
+import logging
 from cryodrgn import utils
 
-log = utils.log
+logger = logging.getLogger(__name__)
 
 
 def compute_ctf(
@@ -107,15 +107,15 @@ def compute_ctf_np(
 
 def print_ctf_params(params: np.ndarray) -> None:
     assert len(params) == 9
-    log("Image size (pix)  : {}".format(int(params[0])))
-    log("A/pix             : {}".format(params[1]))
-    log("DefocusU (A)      : {}".format(params[2]))
-    log("DefocusV (A)      : {}".format(params[3]))
-    log("Dfang (deg)       : {}".format(params[4]))
-    log("voltage (kV)      : {}".format(params[5]))
-    log("cs (mm)           : {}".format(params[6]))
-    log("w                 : {}".format(params[7]))
-    log("Phase shift (deg) : {}".format(params[8]))
+    logger.info("Image size (pix)  : {}".format(int(params[0])))
+    logger.info("A/pix             : {}".format(params[1]))
+    logger.info("DefocusU (A)      : {}".format(params[2]))
+    logger.info("DefocusV (A)      : {}".format(params[3]))
+    logger.info("Dfang (deg)       : {}".format(params[4]))
+    logger.info("voltage (kV)      : {}".format(params[5]))
+    logger.info("cs (mm)           : {}".format(params[6]))
+    logger.info("w                 : {}".format(params[7]))
+    logger.info("Phase shift (deg) : {}".format(params[8]))
 
 
 def plot_ctf(D: int, Apix: float, ctf_params: np.ndarray) -> None:

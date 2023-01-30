@@ -6,7 +6,7 @@ import argparse
 import os
 from collections import Counter
 from datetime import datetime as dt
-
+import logging
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
@@ -15,10 +15,9 @@ from matplotlib.colors import ListedColormap
 from scipy.ndimage.morphology import binary_dilation
 from sklearn.cluster import AgglomerativeClustering
 from sklearn.decomposition import PCA
-
 from cryodrgn import analysis, mrc, utils
 
-log = utils.log
+logger = logging.getLogger(__name__)
 
 
 def add_args(parser):
@@ -124,7 +123,7 @@ def add_args(parser):
 
 def generate_volumes(z, outdir, vg, K):
     # kmeans clustering
-    log("Sketching distribution...")
+    logger.info("Sketching distribution...")
     kmeans_labels, centers = analysis.cluster_kmeans(z, K, on_data=True, reorder=True)
     centers, centers_ind = analysis.get_nearest_point(z, centers)
     if not os.path.exists(f"{outdir}/kmeans{K}"):
@@ -132,7 +131,7 @@ def generate_volumes(z, outdir, vg, K):
     utils.save_pkl(kmeans_labels, f"{outdir}/kmeans{K}/labels.pkl")
     np.savetxt(f"{outdir}/kmeans{K}/centers.txt", centers)
     np.savetxt(f"{outdir}/kmeans{K}/centers_ind.txt", centers_ind, fmt="%d")
-    log("Generating volumes...")
+    logger.info("Generating volumes...")
     vg.gen_volumes(f"{outdir}/kmeans{K}", centers)
 
 
@@ -166,8 +165,8 @@ def make_mask(outdir, K, dilate, thresh, in_mrc=None, Apix=1, vol_start_index=0)
                 assert isinstance(vol, np.ndarray)
                 thresh.append(np.percentile(vol, 99.99) / 2)
             thresh = np.mean(thresh)
-        log(f"Threshold: {thresh}")
-        log(f"Dilating mask by: {dilate}")
+        logger.info(f"Threshold: {thresh}")
+        logger.info(f"Dilating mask by: {dilate}")
 
         def binary_mask(vol):
             x = (vol >= thresh).astype(bool)
@@ -191,7 +190,7 @@ def make_mask(outdir, K, dilate, thresh, in_mrc=None, Apix=1, vol_start_index=0)
 
     # save mask
     out_mrc = f"{outdir}/mask.mrc"
-    log(f"Saving {out_mrc}")
+    logger.info(f"Saving {out_mrc}")
     mrc.write(out_mrc, mask.astype(np.float32), Apix=Apix)
 
     # view slices
@@ -254,7 +253,7 @@ def analyze_volumes(
     mask = mrc.parse_mrc(f"{outdir}/mask.mrc")[0]
     assert isinstance(mask, np.ndarray)
     mask = mask.astype(bool)
-    log(f"{mask.sum()} voxels in mask")
+    logger.info(f"{mask.sum()} voxels in mask")
 
     # load volumes
     vols = np.array(
@@ -272,7 +271,7 @@ def analyze_volumes(
     ind = np.loadtxt(f"{outdir}/kmeans{K}/centers_ind.txt").astype(int)
 
     if vol_ind is not None:
-        log(f"Filtering to {len(vol_ind)} volumes")
+        logger.info(f"Filtering to {len(vol_ind)} volumes")
         vols = vols[vol_ind]
         ind = ind[vol_ind]
 
@@ -282,8 +281,8 @@ def analyze_volumes(
     pc = pca.transform(vols)
     utils.save_pkl(pc, f"{outdir}/vol_pca_{K}.pkl")
     utils.save_pkl(pca, f"{outdir}/vol_pca_obj.pkl")
-    log("Explained variance ratio:")
-    log(pca.explained_variance_ratio_)
+    logger.info("Explained variance ratio:")
+    logger.info(pca.explained_variance_ratio_)
 
     # save rxn coordinates
     for i in range(plot_dim):
@@ -291,7 +290,7 @@ def analyze_volumes(
         if not os.path.exists(subdir):
             os.makedirs(subdir)
         min_, max_ = pc[:, i].min(), pc[:, i].max()
-        log((min_, max_))
+        logger.info((min_, max_))
         for j, val in enumerate(
             np.linspace(min_, max_, 10, endpoint=True), start=vol_start_index
         ):
@@ -324,7 +323,7 @@ def analyze_volumes(
     kmeans_counts = Counter(kmeans_labels)
     for i in range(M):
         vol_i = np.where(labels == i)[0]
-        log(f"State {i}: {len(vol_i)} volumes")
+        logger.info(f"State {i}: {len(vol_i)} volumes")
         if vol_ind is not None:
             vol_i = np.arange(K)[vol_ind][vol_i]
         vol_i_all = np.array(
@@ -352,7 +351,7 @@ def analyze_volumes(
                 f"{subdir}/state_{i}/vol_{vol_start_index+v:03d}.mrc",
             )
         particle_ind = analysis.get_ind_for_cluster(kmeans_labels, vol_i)
-        log(f"State {i}: {len(particle_ind)} particles")
+        logger.info(f"State {i}: {len(particle_ind)} particles")
         if particle_ind_orig is not None:
             utils.save_pkl(
                 particle_ind_orig[particle_ind], f"{subdir}/state_{i}_particle_ind.pkl"
@@ -446,7 +445,7 @@ def analyze_volumes(
 
 def main(args):
     t1 = dt.now()
-    log(args)
+    logger.info(args)
     E = args.epoch
     workdir = args.workdir
     zfile = f"{workdir}/z.{E}.pkl"
@@ -456,7 +455,7 @@ def main(args):
 
     if args.outdir:
         outdir = args.outdir
-    log(f"Saving results to {outdir}")
+    logger.info(f"Saving results to {outdir}")
     if not os.path.exists(outdir):
         os.mkdir(outdir)
 
@@ -478,13 +477,13 @@ def main(args):
     if not args.skip_vol:
         generate_volumes(z, outdir, vg, K)
     else:
-        log("Skipping volume generation")
+        logger.info("Skipping volume generation")
 
     if args.skip_umap:
         assert os.path.exists(f"{outdir}/umap.pkl")
-        log("Skipping UMAP")
+        logger.info("Skipping UMAP")
     else:
-        log(f"Copying UMAP from {workdir}/analyze.{E}/umap.pkl")
+        logger.info(f"Copying UMAP from {workdir}/analyze.{E}/umap.pkl")
         if os.path.exists(f"{workdir}/analyze.{E}/umap.pkl"):
             from shutil import copyfile
 
@@ -493,7 +492,7 @@ def main(args):
             raise NotImplementedError
 
     if args.mask:
-        log(f"Using custom mask {args.mask}")
+        logger.info(f"Using custom mask {args.mask}")
     make_mask(
         outdir,
         K,
@@ -504,7 +503,7 @@ def main(args):
         vol_start_index=args.vol_start_index,
     )
 
-    log("Analyzing volumes...")
+    logger.info("Analyzing volumes...")
     # get particle indices if the dataset was originally filtered
     c = utils.load_pkl(config)
     particle_ind = (
@@ -525,7 +524,7 @@ def main(args):
         vol_start_index=args.vol_start_index,
     )
     td = dt.now() - t1
-    log(f"Finished in {td}")
+    logger.info(f"Finished in {td}")
 
 
 if __name__ == "__main__":

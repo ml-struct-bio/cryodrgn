@@ -26,6 +26,10 @@ jobs:
 
       - uses: actions/checkout@v2
 
+      - name: Setup Envvars
+        run: |
+            if [[ $GITHUB_REF = "refs/tags/"* ]] ; then echo "CRYODRGN_VERSION=${GITHUB_REF/refs\/tags\//}" ; else echo "CRYODRGN_VERSION=" ; fi >> $GITHUB_ENV
+
       - name: Build docs
         run: |
           # Unless we add a .nojekyll to the base of the deployment folder, the underscores in foldernames

@@ -3,13 +3,15 @@
 # For the full list of built-in configuration values, see the documentation:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
+import os
+
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = "CryoDRGN"
-copyright = "2022, Ellen Zhong"
+copyright = "2023, Ellen Zhong"
 author = "Ellen Zhong"
-release = "1.1.1"
+release = os.environ.get("CRYODRGN_VERSION", "")
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration

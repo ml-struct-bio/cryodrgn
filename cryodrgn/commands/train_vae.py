@@ -618,6 +618,8 @@ def main(args):
                 datadir=args.datadir,
                 window_r=args.window_r,
                 flog=flog,
+                use_cupy=True,
+                extra=extra,
             )
         elif args.preprocessed:
             flog(

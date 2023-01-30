@@ -85,10 +85,11 @@ class LazyMRCData(data.Dataset):
         window_r=0.85,
         flog=None,
         use_cupy=False,
+        extra=False,
     ):
         log = flog if flog is not None else utils.log
         assert not keepreal, "Not implemented error"
-        particles = load_particles(mrcfile, True, datadir=datadir)
+        particles = load_particles(mrcfile, True, datadir=datadir, extra=extra)
         if ind is not None:
             particles = [particles[x] for x in ind]
         N = len(particles)
@@ -180,7 +181,6 @@ class MRCData(data.Dataset):
         extra=False,
     ):
         pp = cp if (use_cupy and cp is not None) else np
-        pp = np  # VHACK
 
         log = flog if flog is not None else utils.log
         if keepreal:

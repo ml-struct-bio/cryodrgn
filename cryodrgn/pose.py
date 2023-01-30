@@ -1,14 +1,13 @@
 import pickle
 from typing import Optional, Tuple, Union, List
-
+import logging
 import numpy as np
 import torch
 import torch.nn as nn
 from torch import Tensor
-
 from cryodrgn import lie_tools, utils
 
-log = utils.log
+logger = logging.getLogger(__name__)
 
 
 class PoseTracker(nn.Module):
@@ -111,7 +110,7 @@ class PoseTracker(nn.Module):
             ), "ERROR: Old pose format detected. Translations must be in units of fraction of box."
             trans *= D  # convert from fraction to pixels
         else:
-            log("WARNING: No translations provided")
+            logger.warning("WARNING: No translations provided")
             trans = None
 
         return cls(rots, trans, D, emb_type, device=device)

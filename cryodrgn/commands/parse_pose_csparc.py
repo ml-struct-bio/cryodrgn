@@ -3,13 +3,12 @@
 import argparse
 import os
 import pickle
-
+import logging
 import numpy as np
 import torch
+from cryodrgn import lie_tools
 
-from cryodrgn import lie_tools, utils
-
-log = utils.log
+logger = logging.getLogger(__name__)
 
 
 def add_args(parser):
@@ -50,28 +49,28 @@ def main(args):
         TKEY = "alignments3D/shift"
 
     # parse rotations
-    log(f"Extracting rotations from {RKEY}")
+    logger.info(f"Extracting rotations from {RKEY}")
     rot = np.array([x[RKEY] for x in data])
     rot = torch.tensor(rot)
     rot = lie_tools.expmap(rot)
     rot = rot.numpy()
-    log("Transposing rotation matrix")
+    logger.info("Transposing rotation matrix")
     rot = np.array([x.T for x in rot])
-    log(rot.shape)
+    logger.info(rot.shape)
 
     # parse translations
-    log(f"Extracting translations from {TKEY}")
+    logger.info(f"Extracting translations from {TKEY}")
     trans = np.array([x[TKEY] for x in data])
     if args.hetrefine:
-        log("Scaling shifts by 2x")
+        logger.info("Scaling shifts by 2x")
         trans *= 2
-    log(trans.shape)
+    logger.info(trans.shape)
 
     # convert translations from pixels to fraction
     trans /= args.D
 
     # write output
-    log(f"Writing {args.o}")
+    logger.info(f"Writing {args.o}")
     with open(args.o, "wb") as f:
         pickle.dump((rot, trans), f)
 

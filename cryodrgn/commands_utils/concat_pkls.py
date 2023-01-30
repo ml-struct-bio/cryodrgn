@@ -2,10 +2,10 @@
 
 import argparse
 import pickle
-
+import logging
 import numpy as np
 
-log = print
+logger = logging.getLogger(__name__)
 
 
 def add_args(parser):
@@ -21,14 +21,14 @@ def main(args):
         t = [xx[1] for xx in x]
         r2 = np.concatenate(r)
         t2 = np.concatenate(t)
-        log(r2.shape)
-        log(t2.shape)
+        logger.info(r2.shape)
+        logger.info(t2.shape)
         x2 = (r2, t2)
     else:
         for i in x:
-            log(i.shape)
+            logger.info(i.shape)
         x2 = np.concatenate(x)
-        log(x2.shape)
+        logger.info(x2.shape)
     pickle.dump(x2, open(args.o, "wb"))
 
 

@@ -1,14 +1,14 @@
+import logging
 import numpy as np
 import torch
 import torch.nn.functional as F
 from typing import Optional, Union, Tuple
-from cryodrgn import lie_tools, shift_grid, so3_grid, utils
+from cryodrgn import lie_tools, shift_grid, so3_grid
 from cryodrgn.models import unparallelize, HetOnlyVAE
 from cryodrgn.lattice import Lattice
 import torch.nn as nn
 
-log = utils.log
-vlog = utils.vlog
+logger = logging.getLogger(__name__)
 
 
 def rot_2d(angle: float, outD: int, device: torch.device) -> torch.Tensor:
@@ -148,7 +148,7 @@ class PoseSearch:
                 assert isinstance(_model, HetOnlyVAE)
                 x = _model.cat_z(x, z)
             x = x.to(device)
-            # log(f"Evaluating model on {x.shape} = {x.nelement() // 3} points")
+            # logger.info(f"Evaluating model on {x.shape} = {x.nelement() // 3} points")
             with torch.no_grad():
                 y_hat = self.model(x)
                 y_hat = y_hat.float()

@@ -1,5 +1,6 @@
 import argparse
 import re
+import logging
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure, Axes
 import numpy as np
@@ -12,7 +13,8 @@ from sklearn.manifold import TSNE
 from sklearn.mixture import GaussianMixture
 from typing import Optional, Union, Tuple, List
 from cryodrgn.commands import eval_vol
-from cryodrgn.utils import log
+
+logger = logging.getLogger(__name__)
 
 
 def parse_loss(f: str) -> np.ndarray:
@@ -36,8 +38,8 @@ def parse_loss(f: str) -> np.ndarray:
 def run_pca(z: np.ndarray) -> Tuple[np.ndarray, PCA]:
     pca = PCA(z.shape[1])
     pca.fit(z)
-    log("Explained variance ratio:")
-    log(pca.explained_variance_ratio_)
+    logger.info("Explained variance ratio:")
+    logger.info(pca.explained_variance_ratio_)
     pc = pca.transform(z)
     return pc, pca
 
@@ -83,7 +85,9 @@ def run_tsne(
     z: np.ndarray, n_components: int = 2, perplexity: float = 1000
 ) -> np.ndarray:
     if len(z) > 10000:
-        log("WARNING: {} datapoints > {}. This may take awhile.".format(len(z), 10000))
+        logger.warning(
+            "WARNING: {} datapoints > {}. This may take awhile.".format(len(z), 10000)
+        )
     z_embedded = TSNE(n_components=n_components, perplexity=perplexity).fit_transform(z)
     return z_embedded
 

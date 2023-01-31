@@ -1,13 +1,12 @@
 """Compute FSC between two volumes"""
 
 import argparse
-
+import logging
 import matplotlib.pyplot as plt
 import numpy as np
+from cryodrgn import fft, mrc
 
-from cryodrgn import fft, mrc, utils
-
-log = utils.log
+logger = logging.getLogger(__name__)
 
 
 def parse_args():
@@ -45,7 +44,7 @@ def main(args):
     vol1 = fft.fftn_center(vol1)
     vol2 = fft.fftn_center(vol2)
 
-    # log(r[D//2, D//2, D//2:])
+    # logger.info(r[D//2, D//2, D//2:])
     prev_mask = np.zeros((D, D, D), dtype=bool)
     fsc = [1.0]
     for i in range(1, D // 2):
@@ -63,15 +62,15 @@ def main(args):
     if args.o:
         np.savetxt(args.o, res)
     else:
-        log(res)
+        logger.info(res)
 
     w = np.where(fsc < 0.5)
     if w:
-        log("0.5: {}".format(1 / x[w[0]] * args.Apix))
+        logger.info("0.5: {}".format(1 / x[w[0]] * args.Apix))
 
     w = np.where(fsc < 0.143)
     if w:
-        log("0.143: {}".format(1 / x[w[0]] * args.Apix))
+        logger.info("0.143: {}".format(1 / x[w[0]] * args.Apix))
 
     if args.plot:
         plt.plot(x, fsc)

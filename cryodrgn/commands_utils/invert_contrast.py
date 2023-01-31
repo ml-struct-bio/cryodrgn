@@ -1,10 +1,11 @@
 """Invert the contrast of an .mrc file"""
 
 import argparse
+import logging
 import numpy as np
-from cryodrgn import mrc, utils
+from cryodrgn import mrc
 
-log = utils.log
+logger = logging.getLogger(__name__)
 
 
 def add_args(parser):
@@ -20,7 +21,7 @@ def main(args):
     assert isinstance(x, np.ndarray)
     x *= -1
     mrc.write(args.o, x, header=h)
-    log(f"Wrote {args.o}")
+    logger.info(f"Wrote {args.o}")
 
 
 if __name__ == "__main__":

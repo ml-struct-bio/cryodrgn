@@ -3,7 +3,7 @@ import os
 import pprint
 import shutil
 from datetime import datetime as dt
-
+import logging
 import numpy as np
 import torch
 import torch.nn as nn
@@ -11,13 +11,11 @@ import torch.nn.functional as F
 import torch.optim as optim
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset, DataLoader
-
 import cryodrgn
 from cryodrgn import config, mrc, utils
 from cryodrgn.models import HetOnlyVAE, ResidLinearMLP
 
-log = utils.log
-vlog = utils.vlog
+logger = logging.getLogger(__name__)
 
 
 def add_args(parser):
@@ -164,21 +162,21 @@ def generate_and_map_volumes(
     zfile, cfg_pkl, weights, mask_mrc, pca_obj_pkl, landscape_dir, outdir, args
 ):
     # Sample z
-    log(f"Sampling {args.N} particles from {zfile}")
+    logger.info(f"Sampling {args.N} particles from {zfile}")
     np.random.seed(args.seed)
     z_all = utils.load_pkl(zfile)
     ind = np.array(sorted(np.random.choice(len(z_all), args.N, replace=False)))  # type: ignore
     z_sample = z_all[ind]
     utils.save_pkl(z_sample, f"{outdir}/z.sampled.pkl")
     utils.save_pkl(ind, f"{outdir}/ind.sampled.pkl")
-    log(f"Saved {outdir}/z.sampled.pkl")
+    logger.info(f"Saved {outdir}/z.sampled.pkl")
 
     # Set the device
     assert torch.cuda.is_available(), "No GPUs detected"
     torch.set_default_tensor_type(torch.cuda.FloatTensor)  # type: ignore
 
     cfg = config.update_config_v1(cfg_pkl)
-    log("Loaded configuration:")
+    logger.info("Loaded configuration:")
     pprint.pprint(cfg)
 
     D = cfg["lattice_args"]["D"]  # image size + 1
@@ -192,12 +190,12 @@ def generate_and_map_volumes(
         assert mask.shape == (args.downsample,) * 3
     else:
         assert mask.shape == (D - 1, D - 1, D - 1)
-    log(f"{mask.sum()} voxels in the mask")
+    logger.info(f"{mask.sum()} voxels in the mask")
 
     pca = utils.load_pkl(pca_obj_pkl)
 
     # Load model weights
-    log("Loading weights from {}".format(weights))
+    logger.info("Loading weights from {}".format(weights))
     model, lattice = HetOnlyVAE.load(cfg, weights)
     model.eval()
 
@@ -205,12 +203,12 @@ def generate_and_map_volumes(
     z = z_sample.astype(np.float32)
 
     # Generate volumes
-    log(f"Generating {len(z)} volume embeddings")
+    logger.info(f"Generating {len(z)} volume embeddings")
     t1 = dt.now()
     embeddings = []
     for i, zz in enumerate(z):
         if i % 100 == 0:
-            log(i)
+            logger.info(i)
         if args.downsample:
             extent = lattice.extent * (args.downsample / (D - 1))
             vol = model.decoder.eval_volume(
@@ -231,7 +229,7 @@ def generate_and_map_volumes(
     embeddings = np.array(embeddings).reshape(len(z), -1).astype(np.float32)
 
     td = dt.now() - t1
-    log(f"Finished generating {args.N} volumes in {td}")
+    logger.info(f"Finished generating {args.N} volumes in {td}")
     return z, embeddings
 
 
@@ -261,7 +259,7 @@ def train_model(x, y, outdir, zfile, args):
     model = ResidLinearMLP(x.shape[1], args.layers, args.dim, y.shape[1], nn.ReLU).to(
         device
     )
-    log(model)
+    logger.info(model)
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
     # Train
@@ -285,7 +283,7 @@ def train_model(x, y, outdir, zfile, args):
 
 def main(args):
     t1 = dt.now()
-    log(args)
+    logger.info(args)
     E = args.epoch
     workdir = args.workdir
     zfile = f"{workdir}/z.{E}.pkl"
@@ -305,7 +303,7 @@ def main(args):
         pca_obj_pkl
     ), f"{pca_obj_pkl} missing. Did you run cryodrgn analyze_landscape?"
 
-    log(f"Saving results to {outdir}")
+    logger.info(f"Saving results to {outdir}")
     if not os.path.exists(outdir):
         os.mkdir(outdir)
 
@@ -333,14 +331,14 @@ def main(args):
     # Copy viz notebook
     out_ipynb = f"{landscape_dir}/cryoDRGN_analyze_landscape.ipynb"
     if not os.path.exists(out_ipynb):
-        log("Creating jupyter notebook...")
+        logger.info("Creating jupyter notebook...")
         ipynb = f"{cryodrgn._ROOT}/templates/cryoDRGN_analyze_landscape_template.ipynb"
         shutil.copyfile(ipynb, out_ipynb)
     else:
-        log(f"{out_ipynb} already exists. Skipping")
-    log(out_ipynb)
+        logger.info(f"{out_ipynb} already exists. Skipping")
+    logger.info(out_ipynb)
 
-    log(f"Finished in {dt.now()-t1}")
+    logger.info(f"Finished in {dt.now()-t1}")
 
 
 if __name__ == "__main__":

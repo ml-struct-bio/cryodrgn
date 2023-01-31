@@ -10,12 +10,15 @@ except ImportError:
 import multiprocessing as mp
 import os
 import time
+from multiprocessing import Pool
+import logging
 from torch.utils import data
 
 from cryodrgn import fft, mrc, starfile, utils
 from cryodrgn import USE_NEW_DATASET_API
 
-log = utils.log
+
+logger = logging.getLogger(__name__)
 
 
 def load_particles(mrcs_txt_star, lazy=False, datadir=None, extra=False):
@@ -83,25 +86,27 @@ class LazyMRCData(data.Dataset):
         window=True,
         datadir=None,
         window_r=0.85,
-        flog=None,
         use_cupy=False,
         extra=False,
     ):
-        log = flog if flog is not None else utils.log
         assert not keepreal, "Not implemented error"
         particles = load_particles(mrcfile, True, datadir=datadir, extra=extra)
         if ind is not None:
             particles = [particles[x] for x in ind]
         N = len(particles)
         ny, nx = particles[0].shape
+        if extra:
+            ny -= 1
+            nx -= 1
         assert ny == nx, "Images must be square"
-        assert (
-            ny % 2 == 0
-        ), "Image size must be even. Is this a preprocessed dataset? Use the --preprocessed flag if so."
-        log("Loaded {} {}x{} images".format(N, ny, nx))
+        # assert (
+        #     ny % 2 == 0
+        # ), "Image size must be even. Is this a preprocessed dataset? Use the --preprocessed flag if so."
+        logger.info("Loaded {} {}x{} images".format(N, ny, nx))
         self.particles = particles
         self.N = N
-        self.D = ny + 1  # after symmetrizing HT
+        self.D = ny + int(extra)
+        self.preallocated = extra
         self.invert_data = invert_data
         self.use_cupy = use_cupy  # estimate_normalization may need access to self.use_cupy, so save it first
         if norm is None:
@@ -121,10 +126,10 @@ class LazyMRCData(data.Dataset):
         )
         if self.invert_data:
             imgs *= -1
-        imgs = fft.symmetrize_ht(imgs)
+        imgs = fft.symmetrize_ht(imgs, preallocated=self.preallocated)
         norm = [pp.mean(imgs), pp.std(imgs)]
         norm[0] = 0
-        log("Normalizing HT by {} +/- {}".format(*norm))
+        logger.info("Normalizing HT by {} +/- {}".format(*norm))
         return norm
 
     def get(self, i):
@@ -132,11 +137,13 @@ class LazyMRCData(data.Dataset):
 
         img = self.particles[i].get()
         if self.window is not None:
-            img *= self.window
+            img[
+                :, : self.D - int(self.preallocated), : self.D - int(self.preallocated)
+            ] *= self.window
         img = fft.ht2_center(img).astype(pp.float32)
         if self.invert_data:
             img *= -1
-        img = fft.symmetrize_ht(img)
+        img = fft.symmetrize_ht(img, preallocated=self.preallocated)
         img = (img - self.norm[0]) / self.norm[1]
         return img
 
@@ -176,13 +183,11 @@ class MRCData(data.Dataset):
         datadir=None,
         max_threads=16,
         window_r=0.85,
-        flog=None,
         use_cupy=False,
         extra=False,
     ):
         pp = cp if (use_cupy and cp is not None) else np
 
-        log = flog if flog is not None else utils.log
         if keepreal:
             raise NotImplementedError
 
@@ -198,37 +203,36 @@ class MRCData(data.Dataset):
             nx -= 1
 
         assert ny == nx, "Images must be square"
-        # assert (
-        #     ny % 2 == 0
-        # ), "Image size must be even. Is this a preprocessed dataset? Use the --preprocessed flag if so."
-        log("Loaded {} {}x{} images".format(N, ny, nx))
+        assert (
+            ny % 2 == 0
+        ), "Image size must be even. Is this a preprocessed dataset? Use the --preprocessed flag if so."
+        logger.info("Loaded {} {}x{} images".format(N, ny, nx))
 
         # Real space window
         if window:
-            log(f"Windowing images with radius {window_r}")
+            logger.info(f"Windowing images with radius {window_r}")
             particles[:, :ny, :nx] *= window_mask(ny, window_r, 0.99)
 
         # compute HT
-        log("Computing FFT")
+        logger.info("Computing FFT")
         max_threads = min(max_threads, mp.cpu_count())
-
         _start = time.perf_counter()
         fft.ht2_center(particles, inplace=True, chunksize=1000, n_workers=max_threads)
         _end = time.perf_counter()
-        log(f"Converted to FFT in {_end-_start}")
+        logger.info(f"Converted to FFT in {_end-_start}")
 
         if invert_data:
             particles *= -1
 
         # symmetrize HT
-        log("Symmetrizing image data")
+        logger.info("Symmetrizing image data")
         particles = fft.symmetrize_ht(particles, preallocated=extra)
 
         # normalize
         if norm is None:
             norm = [0, None]
 
-        log("Normalizing image data")
+        logger.info("Normalizing image data")
         # particles = (particles - norm[0]) / norm[1]
         fft.normalize(
             particles,
@@ -238,7 +242,7 @@ class MRCData(data.Dataset):
             chunksize=1000,
             n_workers=1,
         )
-        log("Normalized HT by {} +/- {}".format(*norm))
+        logger.info("Normalized HT by {} +/- {}".format(*norm))
 
         self.particles = particles
         self.N = N
@@ -248,7 +252,7 @@ class MRCData(data.Dataset):
         self.use_cupy = use_cupy
         if keepreal:
             self.particles_real = particles_real  # noqa: F821
-            log(
+            logger.info(
                 "Normalized real space images by {}".format(particles_real.std())
             )  # noqa: F821
             self.particles_real /= particles_real.std()  # noqa: F821
@@ -266,10 +270,7 @@ class MRCData(data.Dataset):
 class PreprocessedMRCData(data.Dataset):
     """ """
 
-    def __init__(
-        self, mrcfile, norm=None, ind=None, flog=None, lazy=False, use_cupy=False
-    ):
-        log = flog if flog is not None else utils.log
+    def __init__(self, mrcfile, norm=None, ind=None, lazy=False, use_cupy=False):
         self.use_cupy = use_cupy
         particles = load_particles(mrcfile, lazy=lazy)
         self.lazy = lazy
@@ -283,7 +284,7 @@ class PreprocessedMRCData(data.Dataset):
         else:
             self.D = particles.shape[1]  # ny + 1 after symmetrizing HT
 
-        log(f"Loaded {len(particles)} {self.D}x{self.D} images")
+        logger.info(f"Loaded {len(particles)} {self.D}x{self.D} images")
         if norm is None:
             norm = list(self.calc_statistic())
             norm[0] = 0
@@ -291,7 +292,7 @@ class PreprocessedMRCData(data.Dataset):
         if not lazy:
             self.particles = (self.particles - norm[0]) / norm[1]
 
-        log("Normalized HT by {} +/- {}".format(*norm))
+        logger.info("Normalized HT by {} +/- {}".format(*norm))
         self.norm = norm
 
     def calc_statistic(self):
@@ -347,12 +348,10 @@ class TiltMRCData(data.Dataset):
         window=True,
         datadir=None,
         window_r=0.85,
-        flog=None,
         use_cupy=False,
     ):
         pp = cp if (use_cupy and cp is not None) else np
 
-        log = flog if flog is not None else utils.log
         if ind is not None:
             particles_real = load_particles(mrcfile, True, datadir)
             particles_tilt_real = load_particles(mrcfile_tilt, True, datadir)
@@ -371,13 +370,13 @@ class TiltMRCData(data.Dataset):
         assert (
             ny % 2 == 0
         ), "Image size must be even. Is this a preprocessed dataset? Use the --preprocessed flag if so."
-        log("Loaded {} {}x{} images".format(N, ny, nx))
+        logger.info("Loaded {} {}x{} images".format(N, ny, nx))
         assert particles_tilt_real.shape == (
             N,
             ny,
             nx,
         ), "Tilt series pair must have same dimensions as untilted particles"
-        log("Loaded {} {}x{} tilt pair images".format(N, ny, nx))
+        logger.info("Loaded {} {}x{} tilt pair images".format(N, ny, nx))
 
         # Real space window
         if window:
@@ -406,7 +405,7 @@ class TiltMRCData(data.Dataset):
             norm[0] = 0
         particles = (particles - norm[0]) / norm[1]
         particles_tilt = (particles_tilt - norm[0]) / norm[1]
-        log("Normalized HT by {} +/- {}".format(*norm))
+        logger.info("Normalized HT by {} +/- {}".format(*norm))
 
         self.particles = particles
         self.particles_tilt = particles_tilt

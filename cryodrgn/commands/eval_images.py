@@ -6,18 +6,16 @@ import os
 import pickle
 import pprint
 from datetime import datetime as dt
-
+import logging
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
-
 from cryodrgn import config, ctf, dataset, utils
 from cryodrgn.commands.train_vae import loss_function, preprocess_input, run_batch
 from cryodrgn.models import HetOnlyVAE
 from cryodrgn.pose import PoseTracker
 
-log = utils.log
-vlog = utils.vlog
+logger = logging.getLogger(__name__)
 
 
 def add_args(parser):
@@ -199,6 +197,9 @@ def eval_batch(
 
 
 def main(args):
+    if args.verbose:
+        logger.setLevel(logging.DEBUG)
+
     t1 = dt.now()
 
     # make output directories
@@ -210,13 +211,13 @@ def main(args):
     # set the device
     use_cuda = torch.cuda.is_available()
     device = torch.device("cuda" if use_cuda else "cpu")
-    log("Use cuda {}".format(use_cuda))
+    logger.info("Use cuda {}".format(use_cuda))
     if not use_cuda:
-        log("WARNING: No GPUs detected")
+        logger.warning("WARNING: No GPUs detected")
 
-    log(args)
+    logger.info(args)
     cfg = config.overwrite_config(args.config, args)
-    log("Loaded configuration:")
+    logger.info("Loaded configuration:")
     pprint.pprint(cfg)
 
     zdim = cfg["model_args"]["zdim"]
@@ -224,7 +225,7 @@ def main(args):
 
     # load the particles
     if args.ind is not None:
-        log("Filtering image dataset with {}".format(args.ind))
+        logger.info("Filtering image dataset with {}".format(args.ind))
         ind = pickle.load(open(args.ind, "rb"))
     else:
         ind = None
@@ -287,7 +288,7 @@ def main(args):
             raise NotImplementedError(
                 "Not implemented with real-space encoder. Use phase-flipped images instead"
             )
-        log("Loading ctf params from {}".format(args.ctf))
+        logger.info("Loading ctf params from {}".format(args.ctf))
         ctf_params = ctf.load_ctf_for_training(D - 1, args.ctf)
         if args.ind is not None:
             ctf_params = ctf_params[ind]
@@ -333,12 +334,12 @@ def main(args):
         loss_accum += loss * B
 
         if batch_it % args.log_interval == 0:
-            log(
+            logger.info(
                 "# [{}/{} images] gen loss={:.4f}, kld={:.4f}, beta={:.4f}, loss={:.4f}".format(
                     batch_it, Nimg, gen_loss, kld, beta, loss
                 )
             )
-    log(
+    logger.info(
         "# =====> Average gen loss = {:.6}, KLD = {:.6f}, total loss = {:.6f}".format(
             gen_loss_accum / Nimg, kld_accum / Nimg, loss_accum / Nimg
         )
@@ -360,11 +361,10 @@ def main(args):
             f,
         )
 
-    log("Finished in {}".format(dt.now() - t1))
+    logger.info("Finished in {}".format(dt.now() - t1))
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     args = add_args(parser).parse_args()
-    utils._verbose = args.verbose
     main(args)

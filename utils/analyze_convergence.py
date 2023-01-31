@@ -12,7 +12,7 @@ import random
 import sys
 from datetime import datetime as dt
 from string import ascii_uppercase
-
+import logging
 import numpy as np
 import umap
 from matplotlib import pyplot as plt
@@ -27,7 +27,8 @@ try:
     from cuml.manifold.umap import UMAP as cuUMAP  # type: ignore
 except ImportError:
     pass
-flog = utils.flog
+
+logger = logging.getLogger(__name__)
 
 
 def add_args(parser):
@@ -183,7 +184,7 @@ def add_args(parser):
     return parser
 
 
-def plot_loss(logfile, outdir, E, LOG):
+def plot_loss(logfile, outdir, E):
     """
     Plots the total loss (reconstruction + regularization) per epoch
 
@@ -206,7 +207,7 @@ def plot_loss(logfile, outdir, E, LOG):
         transparent=True,
         bbox_inches="tight",
     )
-    flog(f"Saved total loss plot to {outdir}/plots/00_total_loss.png", LOG)
+    logger.info(f"Saved total loss plot to {outdir}/plots/00_total_loss.png")
 
 
 def encoder_latent_umaps(
@@ -219,7 +220,6 @@ def encoder_latent_umaps(
     use_umap_gpu,
     random_state,
     n_epochs_umap,
-    LOG,
 ):
     """
     Calculates UMAP embeddings of subset of particles' selected epochs' latent encodings
@@ -247,7 +247,7 @@ def encoder_latent_umaps(
 
     if subset == "None":
         n_particles_subset = n_particles_total
-        flog("Using full particle stack for UMAP", LOG)
+        logger.info("Using full particle stack for UMAP")
     else:
         if random_seed is None:
             random_seed = random.randint(0, 100000)
@@ -255,10 +255,9 @@ def encoder_latent_umaps(
         else:
             random.seed(random_seed)
         n_particles_subset = min(n_particles_total, int(subset))
-        flog(
+        logger.info(
             f"Randomly selecting {n_particles_subset} particle subset on which to run UMAP (with random seed "
-            f"{random_seed})",
-            LOG,
+            f"{random_seed})"
         )
     ind_subset = sorted(
         random.sample(range(0, n_particles_total), k=n_particles_subset)
@@ -267,9 +266,8 @@ def encoder_latent_umaps(
 
     epoch = None
     for epoch in epochs:
-        flog(
-            f"Now calculating UMAP for epoch {epoch} with random_state {random_state}",
-            LOG,
+        logger.info(
+            f"Now calculating UMAP for epoch {epoch} with random_state {random_state}"
         )
         z = utils.load_pkl(workdir + f"/z.{epoch}.pkl")[ind_subset, :]
         if use_umap_gpu:  # using cuML library GPU-accelerated UMAP
@@ -299,8 +297,7 @@ def encoder_latent_umaps(
         except IndexError:
             pass
         except FileNotFoundError:
-            flog(f"Could not find file {outdir}/umaps/umap.{epoch}.pkl", LOG)
-            pass
+            logger.info(f"Could not find file {outdir}/umaps/umap.{epoch}.pkl")
 
     if len(axes.shape) == 1:
         axes[0].set_ylabel("UMAP2")
@@ -326,10 +323,10 @@ def encoder_latent_umaps(
         transparent=True,
         bbox_inches="tight",
     )
-    flog(f"Saved UMAP distribution plot to {outdir}/plots/01_encoder_umaps.png", LOG)
+    logger.info(f"Saved UMAP distribution plot to {outdir}/plots/01_encoder_umaps.png")
 
 
-def encoder_latent_shifts(workdir: str, outdir: str, E: int, LOG: str):
+def encoder_latent_shifts(workdir: str, outdir: str, E: int):
     """
     Calculates and plots various metrics characterizing the per-particle latent vectors between successive epochs.
 
@@ -351,7 +348,7 @@ def encoder_latent_shifts(workdir: str, outdir: str, E: int, LOG: str):
     z2 = utils.load_pkl(f"{workdir}/z.1.pkl")
     z3 = utils.load_pkl(f"{workdir}/z.2.pkl")
     for i in np.arange(E - 1):
-        flog(f"Calculating vector metrics for epochs {i}-{i+1} and {i+1}-{i+2}", LOG)
+        logger.info(f"Calculating vector metrics for epochs {i}-{i+1} and {i+1}-{i+2}")
         if i > 0:
             z1 = z2.copy()
             z2 = z3.copy()
@@ -389,16 +386,14 @@ def encoder_latent_shifts(workdir: str, outdir: str, E: int, LOG: str):
         bbox_inches="tight",
     )
 
-    flog(
-        f"Saved latent vector shifts plots to {outdir}/plots/02_encoder_latent_vector_shifts.png",
-        LOG,
+    logger.info(
+        f"Saved latent vector shifts plots to {outdir}/plots/02_encoder_latent_vector_shifts.png"
     )
 
 
 def sketch_via_umap_local_maxima(
     outdir,
     E,
-    LOG,
     n_bins=30,
     smooth=True,
     smooth_width=1,
@@ -512,7 +507,7 @@ def sketch_via_umap_local_maxima(
             )
         return umap_median_peaks
 
-    flog("Using UMAP local maxima sketching", LOG)
+    logger.info("Using UMAP local maxima sketching")
     umap = utils.load_pkl(outdir + f"/umaps/umap.{E}.pkl")
     n_particles_sketch = umap.shape[0]
 
@@ -533,11 +528,11 @@ def sketch_via_umap_local_maxima(
         to_plot[-1] = "hist_smooth"
     else:
         coords, values = local_maxima_2D(hist)
-    flog(f"Found {len(values)} local maxima", LOG)
+    logger.info(f"Found {len(values)} local maxima")
 
     # prune local maxima that are densely packed and low in value
     coords, values = prune_local_maxima(coords, values, pruned_maxima, radius)
-    flog(f"Pruned to {len(values)} local maxima", LOG)
+    logger.info(f"Pruned to {len(values)} local maxima")
 
     # find subset of n_peaks highest local maxima
     indices = (-values).argsort()[:final_maxima]
@@ -545,7 +540,7 @@ def sketch_via_umap_local_maxima(
     peaks_img_top = gen_peaks_img(coords, values, edges)
     to_plot.append("peaks_img_top")
     to_plot.append("sketched_umap")
-    flog(f"Filtered to top {len(values)} local maxima", LOG)
+    logger.info(f"Filtered to top {len(values)} local maxima")
 
     # write list of lists containing indices of all particles within maxima bins + all 8 neighboring bins
     # (assumes footprint = (3,3))
@@ -620,16 +615,15 @@ def sketch_via_umap_local_maxima(
         transparent=True,
         bbox_inches="tight",
     )
-    flog(
-        f"Saved latent sketching plot to {outdir}/plots/03_decoder_UMAP-sketching.png",
-        LOG,
+    logger.info(
+        f"Saved latent sketching plot to {outdir}/plots/03_decoder_UMAP-sketching.png"
     )
 
     return binned_ptcls_mask, labels
 
 
 def follow_candidate_particles(
-    workdir, outdir, epochs, n_dim, binned_ptcls_mask, labels, LOG
+    workdir, outdir, epochs, n_dim, binned_ptcls_mask, labels
 ):
     """
     Monitor how the labeled set of particles migrates within latent space at selected epochs over training
@@ -692,10 +686,9 @@ def follow_candidate_particles(
                     footer="",
                     comments="# ",
                 )
-            flog(
+            logger.info(
                 f"Saved representative latent encodings for epoch {epochs[i]} to "
-                f"{outdir}/repr_particles/latent_representative.{epochs[i]}.txt",
-                LOG,
+                f"{outdir}/repr_particles/latent_representative.{epochs[i]}.txt"
             )
 
             for k in range(len(labels)):
@@ -743,16 +736,13 @@ def follow_candidate_particles(
         transparent=True,
         bbox_inches="tight",
     )
-    flog(
+    logger.info(
         f"Saved plot tracking representative latent encodings through epochs {epochs} to "
-        f"{outdir}/plots/04_decoder_maxima-sketch-consistency.png",
-        LOG,
+        f"{outdir}/plots/04_decoder_maxima-sketch-consistency.png"
     )
 
 
-def generate_volumes(
-    workdir, outdir, epochs, Apix, flip, invert, downsample, device, LOG
-):
+def generate_volumes(workdir, outdir, epochs, Apix, flip, invert, downsample, device):
     """
     Helper function to call cryodrgn.analysis.gen_volumes on all representative latent values in selected epochs
     """
@@ -810,7 +800,7 @@ def mask_volume(volpath, outpath, Apix, thresh=None, dilate=3, dist=10):
 
 
 def mask_volumes(
-    outdir, epochs, labels, max_threads, LOG, Apix, thresh=None, dilate=3, dist=10
+    outdir, epochs, labels, max_threads, Apix, thresh=None, dilate=3, dist=10
 ):
     """
     Generate a loose mask around each volume in outdir/vols.{epochs}
@@ -830,7 +820,7 @@ def mask_volumes(
     volpaths = []
     outpaths = []
     for epoch in epochs:
-        flog(f"Generating and applying masks for epoch {epoch}", LOG)
+        logger.info(f"Generating and applying masks for epoch {epoch}")
         volsdir = outdir + f"/vols.{epoch}"
         for cluster in range(len(labels)):
             volpath = f"{volsdir}/vol_{cluster:03d}.mrc"
@@ -851,7 +841,7 @@ def mask_volumes(
         p.starmap(mask_volume, args, 4)
 
 
-def calculate_CCs(outdir, epochs, labels, chimerax_colors, LOG):
+def calculate_CCs(outdir, epochs, labels, chimerax_colors):
     """
     Returns the masked map-map correlation between temporally sequential volume pairs outdir/vols.{epochs}, for each
     class in labels
@@ -912,10 +902,10 @@ def calculate_CCs(outdir, epochs, labels, chimerax_colors, LOG):
         transparent=True,
         bbox_inches="tight",
     )
-    flog(f"Saved map-map correlation plot to {outdir}/plots/05_decoder_CC.png", LOG)
+    logger.info(f"Saved map-map correlation plot to {outdir}/plots/05_decoder_CC.png")
 
 
-def calculate_FSCs(outdir, epochs, labels, img_size, chimerax_colors, LOG):
+def calculate_FSCs(outdir, epochs, labels, img_size, chimerax_colors):
     """
     Returns the masked FSC between temporally sequential volume pairs outdir/vols.{epochs}, for each class in labels
 
@@ -975,7 +965,7 @@ def calculate_FSCs(outdir, epochs, labels, img_size, chimerax_colors, LOG):
     fsc_masked = np.zeros((len(labels), len(epochs) - 1, img_size // 2))
 
     for cluster in range(len(labels)):
-        flog(f"Calculating all FSCs for cluster {cluster}", LOG)
+        logger.info(f"Calculating all FSCs for cluster {cluster}")
 
         for i in range(len(epochs) - 1):
             vol1_path = f"{outdir}/vols.{epochs[i]}/vol_{cluster:03d}.masked.mrc"
@@ -1019,7 +1009,7 @@ def calculate_FSCs(outdir, epochs, labels, img_size, chimerax_colors, LOG):
         transparent=True,
         bbox_inches="tight",
     )
-    flog(f"Saved map-map FSC plot to {outdir}/plots/06_decoder_FSC.png", LOG)
+    logger.info(f"Saved map-map FSC plot to {outdir}/plots/06_decoder_FSC.png")
 
     # plot all FSCs at Nyquist only
     fig, ax = plt.subplots(1, 1)
@@ -1039,9 +1029,8 @@ def calculate_FSCs(outdir, epochs, labels, img_size, chimerax_colors, LOG):
         transparent=True,
         bbox_inches="tight",
     )
-    flog(
-        f"Saved map-map FSC (Nyquist) plot to {outdir}/plots/07_decoder_FSC-nyquist.png",
-        LOG,
+    logger.info(
+        f"Saved map-map FSC (Nyquist) plot to {outdir}/plots/07_decoder_FSC-nyquist.png"
     )
 
 
@@ -1081,22 +1070,22 @@ def main(args):
     os.makedirs(f"{outdir}/plots", exist_ok=True)
     os.makedirs(f"{outdir}/umaps", exist_ok=True)
     os.makedirs(f"{outdir}/repr_particles", exist_ok=True)
-    LOG = f"{outdir}/convergence.log"
-    flog(args, LOG)
+
+    logger.addHandler(logging.FileHandler(f"{outdir}/convergence.log"))
+
+    logger.info(args)
     if len(epochs) < 3:
-        flog(
+        logger.info(
             "WARNING: Too few epochs have been selected for some analyses. Try decreasing --epoch-interval to a "
-            "shorter interval, or analyzing a later epoch.",
-            LOG,
+            "shorter interval, or analyzing a later epoch."
         )
     if len(epochs) < 2:
-        flog(
+        logger.info(
             "WARNING: Too few epochs have been selected for any analyses. Try decreasing --epoch-interval to a shorter "
-            "interval, or analyzing a later epoch.",
-            LOG,
+            "interval, or analyzing a later epoch."
         )
         sys.exit()
-    flog(f"Saving all results to {outdir}", LOG)
+    logger.info(f"Saving all results to {outdir}")
 
     # Get total number of particles, latent space dimensionality, input image size
     n_particles_total, n_dim = utils.load_pkl(f"{workdir}/z.{E}.pkl").shape
@@ -1125,16 +1114,15 @@ def main(args):
     )
 
     # Convergence 1: total loss
-    flog("Convergence 1: plotting total loss curve ...", LOG)
-    plot_loss(logfile, outdir, E, LOG)
+    logger.info("Convergence 1: plotting total loss curve ...")
+    plot_loss(logfile, outdir, E)
 
     # Convergence 2: UMAP latent embeddings
     if args.skip_umap:
-        flog("Skipping UMAP calculation ...", LOG)
+        logger.info("Skipping UMAP calculation ...")
     else:
-        flog(
-            f"Convergence 2: calculating and plotting UMAP embeddings of epochs {epochs} ...",
-            LOG,
+        logger.info(
+            f"Convergence 2: calculating and plotting UMAP embeddings of epochs {epochs} ..."
         )
         if "cuml.manifold.umap" in sys.modules:
             use_umap_gpu = True
@@ -1143,9 +1131,9 @@ def main(args):
         if args.force_umap_cpu:
             use_umap_gpu = False
         if use_umap_gpu:
-            flog("Using GPU-accelerated UMAP via cuML library", LOG)
+            logger.info("Using GPU-accelerated UMAP via cuML library")
         else:
-            flog("Using CPU-bound UMAP via umap-learn library", LOG)
+            logger.info("Using CPU-bound UMAP via umap-learn library")
         subset = args.subset
         random_state = args.random_state
         random_seed = args.random_seed
@@ -1160,21 +1148,18 @@ def main(args):
             use_umap_gpu,
             random_state,
             n_epochs_umap,
-            LOG,
         )
 
     # Convergence 3: latent encoding shifts
-    flog(
-        f"Convergence 3: calculating and plotting latent encoding vector shifts for all epochs up to epoch {E} ...",
-        LOG,
+    logger.info(
+        f"Convergence 3: calculating and plotting latent encoding vector shifts for all epochs up to epoch {E} ..."
     )
-    encoder_latent_shifts(workdir, outdir, E, LOG)
+    encoder_latent_shifts(workdir, outdir, E)
 
     # Convergence 4: correlation of generated volumes
-    flog(
+    logger.info(
         f"Convergence 4: sketching epoch {E}'s latent space to find representative and well-supported latent encodings "
-        "...",
-        LOG,
+        "..."
     )
     n_bins = args.n_bins
     smooth = args.smooth
@@ -1185,7 +1170,6 @@ def main(args):
     binned_ptcls_mask, labels = sketch_via_umap_local_maxima(
         outdir,
         E,
-        LOG,
         n_bins=n_bins,
         smooth=smooth,
         smooth_width=smooth_width,
@@ -1195,15 +1179,14 @@ def main(args):
     )
 
     follow_candidate_particles(
-        workdir, outdir, epochs, n_dim, binned_ptcls_mask, labels, LOG
+        workdir, outdir, epochs, n_dim, binned_ptcls_mask, labels
     )
 
     if args.skip_volgen:
-        flog("Skipping volume generation ...", LOG)
+        logger.info("Skipping volume generation ...")
     else:
-        flog(
-            f"Generating volumes at representative latent encodings for epochs {epochs} ...",
-            LOG,
+        logger.info(
+            f"Generating volumes at representative latent encodings for epochs {epochs} ..."
         )
         Apix = args.Apix
         flip = args.flip
@@ -1211,45 +1194,41 @@ def main(args):
         downsample = args.downsample
         device = args.device
         generate_volumes(
-            workdir, outdir, epochs, Apix, flip, invert, downsample, device, LOG
+            workdir, outdir, epochs, Apix, flip, invert, downsample, device
         )
 
-        flog(
-            f"Generating masked volumes at representative latent encodings for epochs {epochs} ...",
-            LOG,
+        logger.info(
+            f"Generating masked volumes at representative latent encodings for epochs {epochs} ..."
         )
         thresh = args.thresh
         dilate = args.dilate
         dist = args.dist
         max_threads = min(args.max_threads, multiprocessing.cpu_count())
-        flog(f"Using {max_threads} threads to parallelize masking", LOG)
+        logger.info(f"Using {max_threads} threads to parallelize masking")
         mask_volumes(
             outdir,
             epochs,
             labels,
             max_threads,
-            LOG,
             Apix,
             thresh=thresh,
             dilate=dilate,
             dist=dist,
         )
 
-    flog(
-        f"Calculating masked map-map CCs at representative latent encodings for epochs {epochs} ...",
-        LOG,
+    logger.info(
+        f"Calculating masked map-map CCs at representative latent encodings for epochs {epochs} ..."
     )
-    calculate_CCs(outdir, epochs, labels, chimerax_colors, LOG)
+    calculate_CCs(outdir, epochs, labels, chimerax_colors)
 
-    flog(
-        f"Calculating masked map-map FSCs at representative latent encodings for epochs {epochs} ...",
-        LOG,
+    logger.info(
+        f"Calculating masked map-map FSCs at representative latent encodings for epochs {epochs} ..."
     )
     if args.downsample:
         img_size = args.downsample
-    calculate_FSCs(outdir, epochs, labels, img_size, chimerax_colors, LOG)
+    calculate_FSCs(outdir, epochs, labels, img_size, chimerax_colors)
 
-    flog(f"Finished in {dt.now() - t1}", LOG)
+    logger.info(f"Finished in {dt.now() - t1}")
 
 
 if __name__ == "__main__":

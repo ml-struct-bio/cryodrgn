@@ -5,9 +5,10 @@ Create a CryoSparc .cs file from a particle stack and ctf parameters, or an inpu
 import argparse
 import os
 import numpy as np
+import logging
 from cryodrgn import dataset, utils
 
-log = utils.log
+logger = logging.getLogger(__name__)
 
 
 def add_args(parser):
@@ -59,11 +60,11 @@ def main(args):
             assert len(particles) == len(
                 poses[0]
             ), f"{len(particles)} != {len(poses)}, Number of particles != number of poses"
-    log(f"{len(particles)} particles in {args.particles}")
+    logger.info(f"{len(particles)} particles in {args.particles}")
 
     if args.ind:
         ind = utils.load_pkl(args.ind)
-        log(f"Filtering to {len(ind)} particles")
+        logger.info(f"Filtering to {len(ind)} particles")
         particles = np.array(particles)[ind]
 
     if input_ext == ".cs":

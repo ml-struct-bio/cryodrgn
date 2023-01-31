@@ -6,10 +6,9 @@ import argparse
 import os
 import pickle
 from pprint import pprint
+import logging
 
-from cryodrgn import utils
-
-log = utils.log
+logger = logging.getLogger(__name__)
 
 
 def add_args(parser):
@@ -24,13 +23,13 @@ def main(args):
     cfg = pickle.load(f)
     try:
         meta = pickle.load(f)
-        log(f'Version: {meta["version"]}')
-        log(f'Creation time: {meta["time"]}')
-        log("Command:")
+        logger.info(f'Version: {meta["version"]}')
+        logger.info(f'Creation time: {meta["time"]}')
+        logger.info("Command:")
         print(" ".join(meta["cmd"]))
     except:  # noqa: E722
         pass
-    log("Config:")
+    logger.info("Config:")
     pprint(cfg)
 
 

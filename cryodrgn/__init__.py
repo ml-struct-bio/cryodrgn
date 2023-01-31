@@ -1,4 +1,6 @@
 import os
+import logging.config
+
 
 # The _version.py file is managed by setuptools-scm
 #   and is not in version control.
@@ -10,5 +12,23 @@ except ModuleNotFoundError:
 
 _ROOT = os.path.abspath(os.path.dirname(__file__))
 
+logging.config.dictConfig(
+    {
+        "version": 1,
+        "formatters": {
+            "standard": {"format": "%(asctime)s %(message)s (%(filename)s:%(lineno)d)"}
+        },
+        "handlers": {
+            "default": {
+                "level": "NOTSET",
+                "formatter": "standard",
+                "class": "logging.StreamHandler",
+                "stream": "ext://sys.stdout",
+            }
+        },
+        "loggers": {"": {"handlers": ["default"], "level": "INFO"}},
+    }
+)
+
 # Temporary - till everything works regardless of whether the following is True/False
-USE_NEW_DATASET_API = True
+USE_NEW_DATASET_API = False

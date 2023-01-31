@@ -3,12 +3,11 @@
 import argparse
 import os
 import pickle
-
+import logging
 import numpy as np
-
 from cryodrgn import ctf, starfile, utils
 
-log = utils.log
+logger = logging.getLogger(__name__)
 
 HEADERS = [
     "_rlnDefocusU",
@@ -45,7 +44,7 @@ def main(args):
     assert args.o.endswith(".pkl"), "Output CTF parameters must be .pkl file"
     s = starfile.Starfile.load(args.star)
     N = len(s.df)
-    log(f"{N} particles")
+    logger.info(f"{N} particles")
 
     overrides = {}
     if s.relion31:
@@ -63,16 +62,16 @@ def main(args):
 
     # Sometimes CTF parameters are missing from the star file
     if args.kv is not None:
-        log(f"Overriding accerlating voltage with {args.kv} kV")
+        logger.info(f"Overriding accerlating voltage with {args.kv} kV")
         overrides[HEADERS[3]] = args.kv
     if args.cs is not None:
-        log(f"Overriding spherical abberation with {args.cs} mm")
+        logger.info(f"Overriding spherical abberation with {args.cs} mm")
         overrides[HEADERS[4]] = args.cs
     if args.w is not None:
-        log(f"Overriding amplitude contrast ratio with {args.w}")
+        logger.info(f"Overriding amplitude contrast ratio with {args.w}")
         overrides[HEADERS[5]] = args.w
     if args.ps is not None:
-        log(f"Overriding phase shift with {args.ps}")
+        logger.info(f"Overriding phase shift with {args.ps}")
         overrides[HEADERS[6]] = args.ps
 
     ctf_params = np.zeros((N, 9))
@@ -92,9 +91,9 @@ def main(args):
         ctf_params[:, i + 2] = (
             s.df[header] if header not in overrides else overrides[header]
         )
-    log("CTF parameters for first particle:")
+    logger.info("CTF parameters for first particle:")
     ctf.print_ctf_params(ctf_params[0])
-    log("Saving {}".format(args.o))
+    logger.info("Saving {}".format(args.o))
     with open(args.o, "wb") as f:
         pickle.dump(ctf_params.astype(np.float32), f)
     if args.png:
@@ -103,7 +102,7 @@ def main(args):
         assert args.D, "Need image size to plot CTF"
         ctf.plot_ctf(args.D, args.Apix, ctf_params[0, 2:])
         plt.savefig(args.png)
-        log(args.png)
+        logger.info(args.png)
 
 
 if __name__ == "__main__":

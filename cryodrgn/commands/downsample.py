@@ -7,12 +7,11 @@ import math
 import multiprocessing as mp
 import os
 from multiprocessing import Pool
-
+import logging
 import numpy as np
+from cryodrgn import dataset, fft, mrc
 
-from cryodrgn import dataset, fft, mrc, utils
-
-log = utils.log
+logger = logging.getLogger(__name__)
 
 
 def add_args(parser):
@@ -63,7 +62,7 @@ def mkbasedir(out):
 
 def warnexists(out):
     if os.path.exists(out):
-        log("Warning: {} already exists. Overwriting.".format(out))
+        logger.warning("Warning: {} already exists. Overwriting.".format(out))
 
 
 def main(args):
@@ -119,7 +118,7 @@ def main(args):
     def downsample_in_batches(old, b):
         new = np.empty((len(old), D, D), dtype=np.float32)
         for ii in range(math.ceil(len(old) / b)):
-            log(f"Processing batch {ii}")
+            logger.info(f"Processing batch {ii}")
             new[ii * b : (ii + 1) * b, :, :] = downsample_images(
                 old[ii * b : (ii + 1) * b]
             )
@@ -128,18 +127,18 @@ def main(args):
     # Downsample volume
     if args.is_vol:
         oldft = fft.htn_center(old)
-        log(oldft.shape)
+        logger.info(oldft.shape)
         newft = oldft[start:stop, start:stop, start:stop]
-        log(newft.shape)
+        logger.info(newft.shape)
         new = fft.ihtn_center(newft).astype(np.float32)
-        log(f"Saving {args.o}")
+        logger.info(f"Saving {args.o}")
         mrc.write(args.o, new, is_vol=True)
 
     # Downsample images
     elif args.chunk is None:
         new = downsample_in_batches(old, args.b)
-        log(new.shape)
-        log("Saving {}".format(args.o))
+        logger.info(new.shape)
+        logger.info("Saving {}".format(args.o))
         mrc.write(args.o, new.astype(np.float32), is_vol=False)
 
     # Downsample images, saving chunks of N images
@@ -150,15 +149,15 @@ def main(args):
         ]
         chunk_names = [os.path.basename(x) for x in out_mrcs]
         for i in range(nchunks):
-            log("Processing chunk {}".format(i))
+            logger.info("Processing chunk {}".format(i))
             chunk = old[i * args.chunk : (i + 1) * args.chunk]
             new = downsample_in_batches(chunk, args.b)
-            log(new.shape)
-            log(f"Saving {out_mrcs[i]}")
+            logger.info(new.shape)
+            logger.info(f"Saving {out_mrcs[i]}")
             mrc.write(out_mrcs[i], new, is_vol=False)
         # Write a text file with all chunks
         out_txt = "{}.txt".format(os.path.splitext(args.o)[0])
-        log(f"Saving {out_txt}")
+        logger.info(f"Saving {out_txt}")
         with open(out_txt, "w") as f:
             f.write("\n".join(chunk_names))
 

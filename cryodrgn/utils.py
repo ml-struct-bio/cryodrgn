@@ -159,7 +159,7 @@ def zero_sphere(vol: np.ndarray) -> np.ndarray:
     assert len(set(vol.shape)) == 1, "volume must be a cube"
     D = vol.shape[0]
     tmp = _zero_sphere_helper(D)
-    logger.info("Zeroing {} pixels".format(len(tmp[0])))
+    logger.debug("Zeroing {} pixels".format(len(tmp[0])))
     vol[tmp] = 0
     return vol
 

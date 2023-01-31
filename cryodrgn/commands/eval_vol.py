@@ -139,6 +139,9 @@ def check_inputs(args):
 
 
 def main(args):
+    if args.verbose:
+        logger.setLevel(logging.DEBUG)
+
     check_inputs(args)
     t1 = dt.now()
 
@@ -240,6 +243,4 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     args = add_args(parser).parse_args()
-    if args.verbose:
-        logger.setLevel(logging.DEBUG)
     main(args)

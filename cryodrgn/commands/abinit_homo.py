@@ -447,6 +447,9 @@ def make_model(args, D: int):
 
 
 def main(args):
+    if args.verbose:
+        logger.setLevel(logging.DEBUG)
+
     t1 = dt.now()
     if not os.path.exists(args.outdir):
         os.makedirs(args.outdir)
@@ -728,6 +731,4 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     args = add_args(parser).parse_args()
-    if args.verbose:
-        logger.setLevel(logging.DEBUG)
     main(args)

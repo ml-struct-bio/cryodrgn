@@ -2,13 +2,12 @@
 
 import argparse
 import os
-
+import logging
 import matplotlib.pyplot as plt
 import numpy as np
-
 from cryodrgn import dataset, fft, mrc, utils
 
-log = utils.log
+logger = logging.getLogger(__name__)
 
 
 def add_args(parser):
@@ -43,7 +42,7 @@ def main(args):
     # load particles
     particles = dataset.load_particles(args.mrcs, datadir=args.datadir)
     assert isinstance(particles, np.ndarray)
-    log(particles.shape)
+    logger.info(particles.shape)
     Nimg, D, D = particles.shape
 
     trans = utils.load_pkl(args.trans)
@@ -62,14 +61,14 @@ def main(args):
     imgs = np.empty((Nimg, D, D), dtype=np.float32)
     for ii in range(Nimg):
         if ii % 1000 == 0:
-            log(f"Processing image {ii}")
+            logger.info(f"Processing image {ii}")
         ff = fft.fft2_center(particles[ii])
         tfilt = np.dot(TCOORD, trans[ii]) * -2 * np.pi
         tfilt = np.cos(tfilt) + np.sin(tfilt) * 1j
         ff *= tfilt
         imgs[ii] = fft.ifftn_center(ff).astype(np.float32)
 
-    log(f"Writing {args.o}")
+    logger.info(f"Writing {args.o}")
     mrc.write(args.o, imgs)
 
     if args.out_png:

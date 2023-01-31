@@ -2,10 +2,10 @@
 
 import argparse
 import os
-
+import logging
 from cryodrgn import analysis, utils
 
-log = utils.log
+logger = logging.getLogger(__name__)
 
 
 def add_args(parser):
@@ -27,19 +27,19 @@ def add_args(parser):
 
 def main(args):
     labels = utils.load_pkl(args.labels)
-    log(f"{len(labels)} particles")
-    log(f"Selecting clusters {args.sel}")
+    logger.info(f"{len(labels)} particles")
+    logger.info(f"Selecting clusters {args.sel}")
     ind = analysis.get_ind_for_cluster(labels, args.sel)
-    log(f"Selected {len(ind)} particles")
-    log(ind)
+    logger.info(f"Selected {len(ind)} particles")
+    logger.info(ind)
     if args.parent_ind is not None:
-        log("Converting to original indices")
+        logger.info("Converting to original indices")
         parent_ind = utils.load_pkl(args.parent_ind)
         assert args.N_orig
         ind = analysis.convert_original_indices(ind, args.N_orig, parent_ind)
-        log(ind)
+        logger.info(ind)
     utils.save_pkl(ind, args.o)
-    log(f"Saved {args.o}")
+    logger.info(f"Saved {args.o}")
 
 
 if __name__ == "__main__":

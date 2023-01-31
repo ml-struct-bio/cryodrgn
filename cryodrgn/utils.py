@@ -2,34 +2,11 @@ from collections.abc import Hashable
 import functools
 import os
 import pickle
-import sys
-from datetime import datetime as dt
+import logging
 from typing import Tuple
 import numpy as np
 
-_verbose = False
-
-
-def log(msg: object) -> None:
-    print("{}     {}".format(dt.now().strftime("%Y-%m-%d %H:%M:%S.%f"), msg))
-    sys.stdout.flush()
-
-
-def vlog(msg: str) -> None:
-    if _verbose:
-        print("{}     {}".format(dt.now().strftime("%Y-%m-%d %H:%M:%S"), msg))
-        sys.stdout.flush()
-
-
-def flog(msg: str, outfile: str) -> None:
-    msg = "{}     {}".format(dt.now().strftime("%Y-%m-%d %H:%M:%S"), msg)
-    print(msg)
-    sys.stdout.flush()
-    try:
-        with open(outfile, "a") as f:
-            f.write(msg + "\n")
-    except Exception as e:
-        log(e)
+logger = logging.getLogger(__name__)
 
 
 class memoized(object):
@@ -71,7 +48,7 @@ def load_pkl(pkl: str):
 
 def save_pkl(data, out_pkl: str, mode: str = "wb") -> None:
     if mode == "wb" and os.path.exists(out_pkl):
-        vlog(f"Warning: {out_pkl} already exists. Overwriting.")
+        logger.warning(f"Warning: {out_pkl} already exists. Overwriting.")
     with open(out_pkl, mode) as f:
         pickle.dump(data, f)
 
@@ -182,7 +159,7 @@ def zero_sphere(vol: np.ndarray) -> np.ndarray:
     assert len(set(vol.shape)) == 1, "volume must be a cube"
     D = vol.shape[0]
     tmp = _zero_sphere_helper(D)
-    vlog("Zeroing {} pixels".format(len(tmp[0])))
+    logger.debug("Zeroing {} pixels".format(len(tmp[0])))
     vol[tmp] = 0
     return vol
 

@@ -14,9 +14,10 @@ import multiprocessing as mp
 import os
 from multiprocessing import Pool
 from typing import List
+import logging
 from cryodrgn import dataset, fft, mrc, utils
 
-log = utils.log
+logger = logging.getLogger(__name__)
 
 
 def add_args(parser):
@@ -100,7 +101,7 @@ def mkbasedir(out):
 
 def warnexists(out):
     if os.path.exists(out):
-        log(f"Warning: {out} already exists. Overwriting.")
+        logger.warning(f"Warning: {out} already exists. Overwriting.")
 
 
 def main(args):
@@ -121,7 +122,7 @@ def main(args):
 
     # filter images
     if args.ind is not None:
-        log(f"Filtering image dataset with {args.ind}")
+        logger.info(f"Filtering image dataset with {args.ind}")
         ind = utils.load_pkl(args.ind).astype(int)
         images = [images[i] for i in ind] if lazy else images[ind]
 
@@ -132,7 +133,7 @@ def main(args):
         assert isinstance(images, np.ndarray)
         original_D = images.shape[-1]
 
-    log(f"Loading {len(images)} {original_D}x{original_D} images")
+    logger.info(f"Loading {len(images)} {original_D}x{original_D} images")
     window = args.window
     invert_data = args.invert_data
     downsample = args.D and args.D < original_D
@@ -144,7 +145,7 @@ def main(args):
         start = int(original_D / 2 - args.D / 2)
         stop = int(original_D / 2 + args.D / 2)
         D = args.D
-        log(f"Downsampling images to {D}x{D}")
+        logger.info(f"Downsampling images to {D}x{D}")
     else:
         D = original_D
 
@@ -205,7 +206,7 @@ def main(args):
         ret = np.empty((len(imgs), D + 1, D + 1), dtype=np.float32)
         Nbatches = math.ceil(len(imgs) / b)
         for ii in range(Nbatches):
-            log(f"Processing batch of {b} images ({ii+1} of {Nbatches})")
+            logger.info(f"Processing batch of {b} images ({ii+1} of {Nbatches})")
             if use_cupy:
                 ret[ii * b : (ii + 1) * b, :, :] = cp.asnumpy(  # type: ignore
                     preprocess_cupy(imgs[ii * b : (ii + 1) * b])
@@ -220,15 +221,15 @@ def main(args):
     out_mrcs = [f".{i}.ft".join(os.path.splitext(args.o)) for i in range(nchunks)]
     chunk_names = [os.path.basename(x) for x in out_mrcs]
     for i in range(nchunks):
-        log(f"Processing chunk {i+1} of {nchunks}")
+        logger.info(f"Processing chunk {i+1} of {nchunks}")
         chunk = images[i * args.chunk : (i + 1) * args.chunk]
         new = preprocess_in_batches(chunk, args.b, use_cupy=args.use_cupy)
-        log(f"New shape: {new.shape}")
-        log(f"Saving {out_mrcs[i]}")
+        logger.info(f"New shape: {new.shape}")
+        logger.info(f"Saving {out_mrcs[i]}")
         mrc.write(out_mrcs[i], new, is_vol=False)
 
     out_txt = f"{os.path.splitext(args.o)[0]}.ft.txt"
-    log(f"Saving summary txt file {out_txt}")
+    logger.info(f"Saving summary txt file {out_txt}")
     with open(out_txt, "w") as f:
         f.write("\n".join(chunk_names))
 

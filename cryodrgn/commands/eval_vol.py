@@ -5,15 +5,13 @@ import argparse
 import os
 import pprint
 from datetime import datetime as dt
-
+import logging
 import numpy as np
 import torch
-
 from cryodrgn import config, mrc, utils
 from cryodrgn.models import HetOnlyVAE
 
-log = utils.log
-vlog = utils.vlog
+logger = logging.getLogger(__name__)
 
 
 def add_args(parser):
@@ -141,6 +139,9 @@ def check_inputs(args):
 
 
 def main(args):
+    if args.verbose:
+        logger.setLevel(logging.DEBUG)
+
     check_inputs(args)
     t1 = dt.now()
 
@@ -148,15 +149,15 @@ def main(args):
     if args.device is not None:
         use_cuda = torch.cuda.is_available()
         device = torch.device(f"cuda:{args.device}" if use_cuda else "cpu")
-        log("Use cuda device {}".format(args.device))
+        logger.info("Use cuda device {}".format(args.device))
         if not use_cuda:
-            log("WARNING: No GPUs used")
+            logger.warning("WARNING: No GPUs used")
     else:
         device = "cpu"
 
-    log(args)
+    logger.info(args)
     cfg = config.overwrite_config(args.config, args)
-    log("Loaded configuration:")
+    logger.info("Loaded configuration:")
     pprint.pprint(cfg)
 
     D = cfg["lattice_args"]["D"]  # image size + 1
@@ -188,9 +189,9 @@ def main(args):
         if not os.path.exists(args.o):
             os.makedirs(args.o)
 
-        log(f"Generating {len(z)} volumes")
+        logger.info(f"Generating {len(z)} volumes")
         for i, zz in enumerate(z, start=args.vol_start_index):
-            log(zz)
+            logger.info(zz)
             if args.downsample:
                 extent = lattice.extent * (args.downsample / (D - 1))
                 decoder = model.decoder
@@ -215,7 +216,7 @@ def main(args):
     # Single z
     else:
         z = np.array(args.z)
-        log(z)
+        logger.info(z)
         if args.downsample:
             extent = lattice.extent * (args.downsample / (D - 1))
             vol = model.decoder.eval_volume(
@@ -236,11 +237,10 @@ def main(args):
         mrc.write(args.o, vol.astype(np.float32), Apix=args.Apix)
 
     td = dt.now() - t1
-    log("Finished in {}".format(td))
+    logger.info("Finished in {}".format(td))
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     args = add_args(parser).parse_args()
-    utils._verbose = args.verbose
     main(args)

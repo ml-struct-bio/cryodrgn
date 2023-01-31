@@ -5,15 +5,14 @@ Backproject cryo-EM images
 import argparse
 import os
 import time
-
 import numpy as np
 import torch
-
+import logging
 from cryodrgn import ctf, dataset, fft, mrc, utils
 from cryodrgn.lattice import Lattice
 from cryodrgn.pose import PoseTracker
 
-log = utils.log
+logger = logging.getLogger(__name__)
 
 
 def add_args(parser):
@@ -99,16 +98,16 @@ def main(args):
     assert args.o.endswith(".mrc")
 
     t1 = time.time()
-    log(args)
+    logger.info(args)
     if not os.path.exists(os.path.dirname(args.o)):
         os.makedirs(os.path.dirname(args.o))
 
     # set the device
     use_cuda = torch.cuda.is_available()
     device = torch.device("cuda" if use_cuda else "cpu")
-    log("Use cuda {}".format(use_cuda))
+    logger.info("Use cuda {}".format(use_cuda))
     if not use_cuda:
-        log("WARNING: No GPUs detected")
+        logger.warning("WARNING: No GPUs detected")
 
     # load the particles
     if args.ind is not None:
@@ -147,7 +146,7 @@ def main(args):
     posetracker = PoseTracker.load(args.poses, Nimg, D, None, args.ind, device=device)
 
     if args.ctf is not None:
-        log("Loading ctf params from {}".format(args.ctf))
+        logger.info("Loading ctf params from {}".format(args.ctf))
         ctf_params = ctf.load_ctf_for_training(D - 1, args.ctf)
         ctf_params = torch.tensor(ctf_params, device=device)
         if args.ind is not None:
@@ -169,7 +168,7 @@ def main(args):
 
     for ii in iterator:
         if ii % 100 == 0:
-            log("image {}".format(ii))
+            logger.info("image {}".format(ii))
         r, t = posetracker.get_pose(ii)
         ff = data.get(ii)
         if tilt is not None:
@@ -203,7 +202,7 @@ def main(args):
             add_slice(V, counts, ff_coord, ff_tilt, D)
 
     td = time.time() - t1
-    log(
+    logger.info(
         "Backprojected {} images in {}s ({}s per image)".format(
             len(iterator), td, td / Nimg
         )

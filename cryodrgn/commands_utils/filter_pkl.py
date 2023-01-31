@@ -3,10 +3,10 @@
 import argparse
 import os
 import pickle
-
+import logging
 import numpy as np
 
-log = print
+logger = logging.getLogger(__name__)
 
 
 def add_args(parser):
@@ -34,18 +34,18 @@ def main(args):
 
     # pose.pkl contains a tuple of rotations and translations
     if type(x) == tuple:
-        log("Detected pose.pkl")
-        log(f"Old shape: {[xx.shape for xx in x]}")
+        logger.info("Detected pose.pkl")
+        logger.info(f"Old shape: {[xx.shape for xx in x]}")
         x = (xx[ind] for xx in x)
         x = tuple(x)
-        log(f"New shape: {[xx.shape for xx in x]}")
+        logger.info(f"New shape: {[xx.shape for xx in x]}")
 
     # all other cryodrgn pkls
     else:
-        log(f"Old shape: {x.shape}")
+        logger.info(f"Old shape: {x.shape}")
         x = x[ind]
-        log(f"New shape: {x.shape}")
-    log(f"Saving {args.o}")
+        logger.info(f"New shape: {x.shape}")
+    logger.info(f"Saving {args.o}")
     pickle.dump(x, open(args.o, "wb"))
 
 

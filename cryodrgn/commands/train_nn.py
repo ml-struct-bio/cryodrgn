@@ -6,7 +6,7 @@ import os
 import pickle
 import sys
 from datetime import datetime as dt
-
+import logging
 import numpy as np
 import torch
 import torch.nn as nn
@@ -26,8 +26,7 @@ from cryodrgn.lattice import Lattice
 from cryodrgn.pose import PoseTracker
 from cryodrgn.models import DataParallelDecoder, Decoder
 
-log = utils.log
-vlog = utils.vlog
+logger = logging.getLogger(__name__)
 
 
 def add_args(parser):
@@ -335,34 +334,35 @@ def save_config(args, dataset, lattice, model, out_config):
         pickle.dump(meta, f)
 
 
-def get_latest(args, flog):
+def get_latest(args):
     # assumes args.num_epochs > latest checkpoint
-    flog("Detecting latest checkpoint...")
+    logger.info("Detecting latest checkpoint...")
     weights = [f"{args.outdir}/weights.{i}.pkl" for i in range(args.num_epochs)]
     weights = [f for f in weights if os.path.exists(f)]
     args.load = weights[-1]
-    flog(f"Loading {args.load}")
+    logger.info(f"Loading {args.load}")
     if args.do_pose_sgd:
         i = args.load.split(".")[-2]
         args.poses = f"{args.outdir}/pose.{i}.pkl"
         assert os.path.exists(args.poses)
-        flog(f"Loading {args.poses}")
+        logger.info(f"Loading {args.poses}")
     return args
 
 
 def main(args):
+    if args.verbose:
+        logger.setLevel(logging.DEBUG)
+
     t1 = dt.now()
     if args.outdir is not None and not os.path.exists(args.outdir):
         os.makedirs(args.outdir)
-    LOG = f"{args.outdir}/run.log"
 
-    def flog(msg):  # HACK: switch to logging module
-        return utils.flog(msg, LOG)
+    logger.addHandler(logging.FileHandler(f"{args.outdir}/run.log"))
 
     if args.load == "latest":
-        args = get_latest(args, flog)
-    flog(" ".join(sys.argv))
-    flog(args)
+        args = get_latest(args)
+    logger.info(" ".join(sys.argv))
+    logger.info(args)
 
     # set the random seed
     np.random.seed(args.seed)
@@ -371,13 +371,13 @@ def main(args):
     # set the device
     use_cuda = torch.cuda.is_available()
     device = torch.device("cuda" if use_cuda else "cpu")
-    flog("Use cuda {}".format(use_cuda))
+    logger.info("Use cuda {}".format(use_cuda))
     if not use_cuda:
-        flog("WARNING: No GPUs detected")
+        logger.warning("WARNING: No GPUs detected")
 
     # load the particles
     if args.ind is not None:
-        flog("Filtering image dataset with {}".format(args.ind))
+        logger.info("Filtering image dataset with {}".format(args.ind))
         ind = pickle.load(open(args.ind, "rb"))
     else:
         ind = None
@@ -390,7 +390,6 @@ def main(args):
             window=args.window,
             datadir=args.datadir,
             window_r=args.window_r,
-            flog=flog,
         )
     else:
         data = dataset.MRCData(
@@ -401,7 +400,6 @@ def main(args):
             window=args.window,
             datadir=args.datadir,
             window_r=args.window_r,
-            flog=flog,
         )
     D = data.D
     Nimg = data.N
@@ -423,8 +421,8 @@ def main(args):
         feat_sigma=args.feat_sigma,
     )
     model.to(device)
-    flog(model)
-    flog(
+    logger.info(model)
+    logger.info(
         "{} parameters in model".format(
             sum(p.numel() for p in model.parameters() if p.requires_grad)
         )
@@ -435,7 +433,7 @@ def main(args):
 
     # load weights
     if args.load:
-        flog("Loading model weights from {}".format(args.load))
+        logger.info("Loading model weights from {}".format(args.load))
         checkpoint = torch.load(args.load)
         model.load_state_dict(checkpoint["model_state_dict"])
         optim.load_state_dict(checkpoint["optimizer_state_dict"])
@@ -461,7 +459,7 @@ def main(args):
 
     # load CTF
     if args.ctf is not None:
-        flog("Loading ctf params from {}".format(args.ctf))
+        logger.info("Loading ctf params from {}".format(args.ctf))
         ctf_params = ctf.load_ctf_for_training(D - 1, args.ctf)
         if args.ind is not None:
             ctf_params = ctf_params[ind]
@@ -493,12 +491,12 @@ def main(args):
 
     # parallelize
     if args.multigpu and torch.cuda.device_count() > 1:
-        flog(f"Using {torch.cuda.device_count()} GPUs!")
+        logger.info(f"Using {torch.cuda.device_count()} GPUs!")
         args.batch_size *= torch.cuda.device_count()
-        flog(f"Increasing batch size to {args.batch_size}")
+        logger.info(f"Increasing batch size to {args.batch_size}")
         model = DataParallelDecoder(model)
     elif args.multigpu:
-        flog(
+        logger.info(
             f"WARNING: --multigpu selected, but {torch.cuda.device_count()} GPUs detected"
         )
 
@@ -531,12 +529,12 @@ def main(args):
                 pose_optimizer.step()
             loss_accum += loss_item * len(ind)
             if batch_it % args.log_interval == 0:
-                flog(
+                logger.info(
                     "# [Train Epoch: {}/{}] [{}/{} images] loss={:.6f}".format(
                         epoch + 1, args.num_epochs, batch_it, Nimg, loss_item
                     )
                 )
-        flog(
+        logger.info(
             "# =====> Epoch: {} Average loss = {:.6}; Finished in {}".format(
                 epoch + 1, loss_accum / Nimg, dt.now() - t2
             )
@@ -560,7 +558,7 @@ def main(args):
         posetracker.save(out_pose)
 
     td = dt.now() - t1
-    flog(
+    logger.info(
         "Finished in {} ({} per epoch)".format(td, td / (args.num_epochs - start_epoch))
     )
 
@@ -568,5 +566,4 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     args = add_args(parser).parse_args()
-    utils._verbose = args.verbose
     main(args)

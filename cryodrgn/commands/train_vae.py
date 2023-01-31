@@ -5,6 +5,7 @@ import argparse
 import os
 import pickle
 import sys
+import logging
 from datetime import datetime as dt
 import numpy as np
 import torch
@@ -25,8 +26,7 @@ from cryodrgn.lattice import Lattice
 from cryodrgn.models import HetOnlyVAE, unparallelize
 from cryodrgn.pose import PoseTracker
 
-log = utils.log
-vlog = utils.vlog
+logger = logging.getLogger(__name__)
 
 
 def add_args(parser):
@@ -538,34 +538,35 @@ def save_config(args, dataset, lattice, model, out_config):
         pickle.dump(meta, f)
 
 
-def get_latest(args, flog):
+def get_latest(args):
     # assumes args.num_epochs > latest checkpoint
-    flog("Detecting latest checkpoint...")
+    logger.info("Detecting latest checkpoint...")
     weights = [f"{args.outdir}/weights.{i}.pkl" for i in range(args.num_epochs)]
     weights = [f for f in weights if os.path.exists(f)]
     args.load = weights[-1]
-    flog(f"Loading {args.load}")
+    logger.info(f"Loading {args.load}")
     if args.do_pose_sgd:
         i = args.load.split(".")[-2]
         args.poses = f"{args.outdir}/pose.{i}.pkl"
         assert os.path.exists(args.poses)
-        flog(f"Loading {args.poses}")
+        logger.info(f"Loading {args.poses}")
     return args
 
 
 def main(args):
+    if args.verbose:
+        logger.setLevel(logging.DEBUG)
+
     t1 = dt.now()
     if args.outdir is not None and not os.path.exists(args.outdir):
         os.makedirs(args.outdir)
-    LOG = f"{args.outdir}/run.log"
 
-    def flog(msg):  # HACK: switch to logging module
-        return utils.flog(msg, LOG)
+    logger.addHandler(logging.FileHandler(f"{args.outdir}/run.log"))
 
     if args.load == "latest":
-        args = get_latest(args, flog)
-    flog(" ".join(sys.argv))
-    flog(args)
+        args = get_latest(args)
+    logger.info(" ".join(sys.argv))
+    logger.info(args)
 
     # set the random seed
     np.random.seed(args.seed)
@@ -574,9 +575,9 @@ def main(args):
     # set the device
     use_cuda = torch.cuda.is_available()
     device = torch.device("cuda" if use_cuda else "cpu")
-    flog("Use cuda {}".format(use_cuda))
+    logger.info("Use cuda {}".format(use_cuda))
     if not use_cuda:
-        log("WARNING: No GPUs detected")
+        logger.warning("WARNING: No GPUs detected")
 
     # set beta schedule
     if args.beta is None:
@@ -591,13 +592,13 @@ def main(args):
 
     # load index filter
     if args.ind is not None:
-        flog("Filtering image dataset with {}".format(args.ind))
+        logger.info("Filtering image dataset with {}".format(args.ind))
         ind = pickle.load(open(args.ind, "rb"))
     else:
         ind = None
 
     # load dataset
-    flog(f"Loading dataset from {args.particles}")
+    logger.info(f"Loading dataset from {args.particles}")
     if args.tilt is None:
         tilt = None
         args.use_real = args.encode_mode == "conv"  # Must be False
@@ -612,14 +613,13 @@ def main(args):
                 window=args.window,
                 datadir=args.datadir,
                 window_r=args.window_r,
-                flog=flog,
             )
         elif args.preprocessed:
-            flog(
+            logger.info(
                 "Using preprocessed inputs. Ignoring any --window/--invert-data options"
             )
             data = dataset.PreprocessedMRCData(
-                args.particles, norm=args.norm, ind=ind, flog=flog, lazy=args.lazy
+                args.particles, norm=args.norm, ind=ind, lazy=args.lazy
             )
         else:
             data = dataset.MRCData(
@@ -632,7 +632,6 @@ def main(args):
                 datadir=args.datadir,
                 max_threads=args.max_threads,
                 window_r=args.window_r,
-                flog=flog,
             )
 
     # Tilt series data -- lots of unsupported features
@@ -652,7 +651,6 @@ def main(args):
             keepreal=args.use_real,
             datadir=args.datadir,
             window_r=args.window_r,
-            flog=flog,
         )
         tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32), device=device)
     Nimg = data.N
@@ -683,7 +681,7 @@ def main(args):
             raise NotImplementedError(
                 "Not implemented with real-space encoder. Use phase-flipped images instead"
             )
-        flog("Loading ctf params from {}".format(args.ctf))
+        logger.info("Loading ctf params from {}".format(args.ctf))
         ctf_params = ctf.load_ctf_for_training(D - 1, args.ctf)
         if args.ind is not None:
             ctf_params = ctf_params[ind]
@@ -725,18 +723,18 @@ def main(args):
         feat_sigma=args.feat_sigma,
     )
     model.to(device)
-    flog(model)
-    flog(
+    logger.info(model)
+    logger.info(
         "{} parameters in model".format(
             sum(p.numel() for p in model.parameters() if p.requires_grad)
         )
     )
-    flog(
+    logger.info(
         "{} parameters in encoder".format(
             sum(p.numel() for p in model.encoder.parameters() if p.requires_grad)
         )
     )
-    flog(
+    logger.info(
         "{} parameters in decoder".format(
             sum(p.numel() for p in model.decoder.parameters() if p.requires_grad)
         )
@@ -763,11 +761,11 @@ def main(args):
         ), "Encoder hidden layer dimension must be divisible by 8 for AMP training"
         # Also check zdim, enc_mask dim? Add them as warnings for now.
         if args.zdim % 8 != 0:
-            log(
+            logger.warning(
                 "Warning: z dimension is not a multiple of 8 -- AMP training speedup is not optimized"
             )
         if in_dim % 8 != 0:
-            log(
+            logger.warning(
                 "Warning: Masked input image dimension is not a mutiple of 8 -- AMP training speedup is not optimized"
             )
         try:  # Mixed precision with apex.amp
@@ -778,7 +776,7 @@ def main(args):
 
     # restart from checkpoint
     if args.load:
-        flog("Loading checkpoint from {}".format(args.load))
+        logger.info("Loading checkpoint from {}".format(args.load))
         checkpoint = torch.load(args.load)
         model.load_state_dict(checkpoint["model_state_dict"])
         optim.load_state_dict(checkpoint["optimizer_state_dict"])
@@ -790,15 +788,15 @@ def main(args):
     # parallelize
     num_workers_per_gpu = args.num_workers_per_gpu
     if args.multigpu and torch.cuda.device_count() > 1:
-        log(f"Using {torch.cuda.device_count()} GPUs!")
+        logger.info(f"Using {torch.cuda.device_count()} GPUs!")
         args.batch_size *= torch.cuda.device_count()
         cpu_count = os.cpu_count() or 1
         if num_workers_per_gpu * torch.cuda.device_count() > cpu_count:
             num_workers_per_gpu = max(1, cpu_count // torch.cuda.device_count())
-        log(f"Increasing batch size to {args.batch_size}")
+        logger.info(f"Increasing batch size to {args.batch_size}")
         model = DataParallel(model)
     elif args.multigpu:
-        log(
+        logger.warning(
             f"WARNING: --multigpu selected, but {torch.cuda.device_count()} GPUs detected"
         )
 
@@ -857,13 +855,13 @@ def main(args):
             loss_accum += loss * B
 
             if batch_it % args.log_interval == 0:
-                log(
+                logger.info(
                     "# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.6f}, kld={:.6f}, beta={:.6f}, "
                     "loss={:.6f}".format(
                         epoch + 1, num_epochs, batch_it, Nimg, gen_loss, kld, beta, loss
                     )
                 )
-        flog(
+        logger.info(
             "# =====> Epoch: {} Average gen loss = {:.6}, KLD = {:.6f}, total loss = {:.6f}; Finished in {}".format(
                 epoch + 1,
                 gen_loss_accum / Nimg,
@@ -916,11 +914,12 @@ def main(args):
         out_pose = "{}/pose.pkl".format(args.outdir)
         posetracker.save(out_pose)
     td = dt.now() - t1
-    flog("Finished in {} ({} per epoch)".format(td, td / (num_epochs - start_epoch)))
+    logger.info(
+        "Finished in {} ({} per epoch)".format(td, td / (num_epochs - start_epoch))
+    )
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     args = add_args(parser).parse_args()
-    utils._verbose = args.verbose
     main(args)

@@ -5,6 +5,7 @@ import argparse
 import os
 import pickle
 import sys
+import logging
 from datetime import datetime as dt
 import numpy as np
 import torch
@@ -21,8 +22,7 @@ from cryodrgn.losses import EquivarianceLoss
 from cryodrgn.models import HetOnlyVAE, unparallelize
 from cryodrgn.pose_search import PoseSearch
 
-log = utils.log
-vlog = utils.vlog
+logger = logging.getLogger(__name__)
 
 
 def add_args(parser):
@@ -57,7 +57,7 @@ def add_args(parser):
         help="Logging interval in N_IMGS (default: %(default)s)",
     )
     parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Increaes verbosity"
+        "-v", "--verbose", action="store_true", help="Increase verbosity"
     )
     parser.add_argument(
         "--seed", type=int, default=np.random.randint(0, 100000), help="Random seed"
@@ -504,8 +504,8 @@ def train(
 
     kld = -0.5 * torch.mean(1 + z_logvar - z_mu.pow(2) - z_logvar.exp())
     if torch.isnan(kld):
-        log(z_mu[0])
-        log(z_logvar[0])
+        logger.info(z_mu[0])
+        logger.info(z_logvar[0])
         raise RuntimeError("KLD is nan")
 
     if beta_control is None:
@@ -671,32 +671,33 @@ def sort_poses(poses):
     return (rot,)
 
 
-def get_latest(args, flog):
-    flog("Detecting latest checkpoint...")
+def get_latest(args):
+    logger.info("Detecting latest checkpoint...")
     weights = [f"{args.outdir}/weights.{i}.pkl" for i in range(args.num_epochs)]
     weights = [f for f in weights if os.path.exists(f)]
     args.load = weights[-1]
-    flog(f"Loading {args.load}")
+    logger.info(f"Loading {args.load}")
     i = args.load.split(".")[-2]
     args.load_poses = f"{args.outdir}/pose.{i}.pkl"
     assert os.path.exists(args.load_poses)
-    flog(f"Loading {args.load_poses}")
+    logger.info(f"Loading {args.load_poses}")
     return args
 
 
 def main(args):
+    if args.verbose:
+        logger.setLevel(logging.DEBUG)
+
     t1 = dt.now()
     if args.outdir is not None and not os.path.exists(args.outdir):
         os.makedirs(args.outdir)
-    LOG = f"{args.outdir}/run.log"
 
-    def flog(msg):  # HACK: switch to logging module
-        return utils.flog(msg, LOG)
+    logger.addHandler(logging.FileHandler(f"{args.outdir}/run.log"))
 
     if args.load == "latest":
-        args = get_latest(args, flog)
-    flog(" ".join(sys.argv))
-    flog(args)
+        args = get_latest(args)
+    logger.info(" ".join(sys.argv))
+    logger.info(args)
 
     # set the random seed
     np.random.seed(args.seed)
@@ -705,9 +706,9 @@ def main(args):
     # set the device
     use_cuda = torch.cuda.is_available()
     device = torch.device("cuda" if use_cuda else "cpu")
-    flog("Use cuda {}".format(use_cuda))
+    logger.info("Use cuda {}".format(use_cuda))
     if not use_cuda:
-        log("WARNING: No GPUs detected")
+        logger.warning("WARNING: No GPUs detected")
 
     # set beta schedule
     try:
@@ -720,13 +721,13 @@ def main(args):
 
     # load index filter
     if args.ind is not None:
-        flog("Filtering image dataset with {}".format(args.ind))
+        logger.info("Filtering image dataset with {}".format(args.ind))
         ind = pickle.load(open(args.ind, "rb"))
     else:
         ind = None
 
     # load dataset
-    flog(f"Loading dataset from {args.particles}")
+    logger.info(f"Loading dataset from {args.particles}")
     if args.tilt is None:
         tilt = None
         args.use_real = args.encode_mode == "conv"
@@ -750,15 +751,12 @@ def main(args):
                 window=args.window,
                 datadir=args.datadir,
                 window_r=args.window_r,
-                flog=flog,
             )
         elif args.preprocessed:
-            flog(
+            logger.info(
                 "Using preprocessed inputs. Ignoring any --window/--invert-data options"
             )
-            data = dataset.PreprocessedMRCData(
-                args.particles, norm=args.norm, ind=ind, flog=flog
-            )
+            data = dataset.PreprocessedMRCData(args.particles, norm=args.norm, ind=ind)
         else:
             data = dataset.MRCData(
                 args.particles,
@@ -770,7 +768,6 @@ def main(args):
                 datadir=args.datadir,
                 max_threads=args.max_threads,
                 window_r=args.window_r,
-                flog=flog,
             )
 
     # Tilt series data -- lots of unsupported features
@@ -792,7 +789,6 @@ def main(args):
             keepreal=args.use_real,
             datadir=args.datadir,
             window_r=args.window_r,
-            flog=flog,
         )
         tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32), device=device)
     Nimg = data.N
@@ -803,7 +799,7 @@ def main(args):
 
     # load ctf
     if args.ctf is not None:
-        flog("Loading ctf params from {}".format(args.ctf))
+        logger.info("Loading ctf params from {}".format(args.ctf))
         ctf_params = ctf.load_ctf_for_training(D - 1, args.ctf)
         if args.ind is not None:
             ctf_params = ctf_params[ind]
@@ -829,8 +825,8 @@ def main(args):
 
     model = make_model(args, lattice, enc_mask, in_dim)
     model.to(device)
-    flog(model)
-    flog(
+    logger.info(model)
+    logger.info(
         "{} parameters in model".format(
             sum(p.numel() for p in model.parameters() if p.requires_grad)
         )
@@ -838,12 +834,12 @@ def main(args):
 
     # parallelize
     if args.multigpu and torch.cuda.device_count() > 1:
-        log(f"Using {torch.cuda.device_count()} GPUs!")
+        logger.info(f"Using {torch.cuda.device_count()} GPUs!")
         args.batch_size *= torch.cuda.device_count()
-        log(f"Increasing batch size to {args.batch_size}")
+        logger.info(f"Increasing batch size to {args.batch_size}")
         model = DataParallel(model)
     elif args.multigpu:
-        log(
+        logger.warning(
             f"WARNING: --multigpu selected, but {torch.cuda.device_count()} GPUs detected"
         )
 
@@ -859,12 +855,12 @@ def main(args):
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
     if args.load == "latest":
-        args = get_latest(args, flog)
+        args = get_latest(args)
 
     sorted_poses = []
     if args.load:
         args.pretrain = 0
-        flog("Loading checkpoint from {}".format(args.load))
+        logger.info("Loading checkpoint from {}".format(args.load))
         checkpoint = torch.load(args.load)
         model.load_state_dict(checkpoint["model_state_dict"])
         optim.load_state_dict(checkpoint["optimizer_state_dict"])
@@ -918,7 +914,7 @@ def main(args):
 
     # pretrain decoder with random poses
     global_it = 0
-    flog("Using random poses for {} iterations".format(args.pretrain))
+    logger.info("Using random poses for {} iterations".format(args.pretrain))
     while global_it < args.pretrain:
         for batch in data_iterator:
             global_it += len(batch[0])
@@ -929,13 +925,13 @@ def main(args):
             )
             loss = pretrain(model, lattice, optim, batch, tilt=ps.tilt, zdim=args.zdim)
             if global_it % args.log_interval == 0:
-                flog(f"[Pretrain Iteration {global_it}] loss={loss:4f}")
+                logger.info(f"[Pretrain Iteration {global_it}] loss={loss:4f}")
             if global_it > args.pretrain:
                 break
 
     # reset model after pretraining
     if args.reset_optim_after_pretrain:
-        flog(">> Resetting optim after pretrain")
+        logger.info(">> Resetting optim after pretrain")
         optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
     # training loop
@@ -965,17 +961,17 @@ def main(args):
                 L_model = ps.Lmax
 
         if args.reset_model_every and (epoch - 1) % args.reset_model_every == 0:
-            flog(">> Resetting model")
+            logger.info(">> Resetting model")
             model = make_model(args, lattice, enc_mask, in_dim)
 
         if args.reset_optim_every and (epoch - 1) % args.reset_optim_every == 0:
-            flog(">> Resetting optim")
+            logger.info(">> Resetting optim")
             optim = torch.optim.Adam(
                 model.parameters(), lr=args.lr, weight_decay=args.wd
             )
 
         if epoch % args.ps_freq != 0:
-            flog("Using previous iteration poses")
+            logger.info("Using previous iteration poses")
         for batch in data_iterator:
             ind = batch[-1]
             ind_np = ind.cpu().numpy()
@@ -1036,7 +1032,7 @@ def main(args):
                     if eq_loss is not None and lamb is not None
                     else ""
                 )
-                log(
+                logger.info(
                     f"# [Train Epoch: {epoch+1}/{num_epochs}] [{batch_it}/{Nimg} images] gen loss={gen_loss:.4f}, "
                     f"kld={kld:.4f}, beta={beta:.4f}, {eq_log}loss={loss:.4f}"
                 )
@@ -1046,7 +1042,7 @@ def main(args):
             if args.equivariance
             else ""
         )
-        flog(
+        logger.info(
             "# =====> Epoch: {} Average gen loss = {:.4}, KLD = {:.4f}, {}total loss = {:.4f}; Finished in {}".format(
                 epoch + 1,
                 gen_loss_accum / Nimg,
@@ -1125,7 +1121,7 @@ def main(args):
             )
 
         td = dt.now() - t1
-        flog(
+        logger.info(
             "Finished in {} ({} per epoch)".format(td, td / (num_epochs - start_epoch))
         )
 
@@ -1133,5 +1129,4 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     args = add_args(parser).parse_args()
-    utils._verbose = args.verbose
     main(args)

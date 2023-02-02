@@ -153,10 +153,9 @@ class LazyMRCData(data.Dataset):
         return self.N
 
     def __getitem__(self, index):
-        first = self.get(index)
-        if type(index)==list:
+        if type(index) == list:
             index = np.array(index)
-        return first, index
+        return self.get(index), index
 
 
 def window_mask(D, in_rad, out_rad, use_cupy=False):

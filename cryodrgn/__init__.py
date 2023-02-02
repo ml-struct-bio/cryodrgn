@@ -31,9 +31,9 @@ logging.config.dictConfig(
 )
 
 # Temporary - till everything works regardless of whether the following is True/False
-USE_NEW_DATASET_API = True
+USE_NEW_DATASET_API = False
 # Use preallocated arrays with extra dimension in x/y to reduce memory footprint during fft symmetrizing operations?
-PREALLOCATED = False
+PREALLOCATED = True
 
 # train_vae /media/vineetb/t5/10076_128/particles.128.txt --poses /home/vineetb/cryodrgn/cryodrgn_empiar/empiar10076/inputs/poses.pkl --ctf /home/vineetb/cryodrgn/cryodrgn_empiar/empiar10076/inputs/ctf.pkl -o benchmark0 --zdim 16 --enc-dim 32 --dec-dim 32 -n 1 --max-threads 8 --no-amp --num-workers-per-gpu 1 --log-interval 1 --batch-size 32 --lazy
 # works

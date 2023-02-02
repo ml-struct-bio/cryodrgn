@@ -13,7 +13,7 @@ import torch.nn as nn
 from torch.nn.parallel import DataParallel
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from torch.utils.data.sampler import BatchSampler, SequentialSampler
+from torch.utils.data.sampler import BatchSampler, SequentialSampler, RandomSampler
 from tqdm import tqdm
 
 try:
@@ -811,10 +811,9 @@ def main(args):
     if cryodrgn.USE_NEW_DATASET_API:
         data_generator = DataLoader(
             data,
-            shuffle=False,
             num_workers=num_workers_per_gpu,
             sampler=BatchSampler(
-                SequentialSampler(data), batch_size=args.batch_size, drop_last=False
+                RandomSampler(data), batch_size=args.batch_size, drop_last=False
             ),
             batch_size=None
         )

@@ -3,6 +3,8 @@ import struct
 from collections import OrderedDict
 from typing import Any, Optional, Tuple
 import numpy as np
+
+import cryodrgn
 import cryodrgn.types as types
 
 # See ref:
@@ -190,23 +192,27 @@ def parse_header(fname: str) -> MRCHeader:
 class LazyImage:
     """On-the-fly image loading"""
 
-    def __init__(self, fname: str, shape: Tuple[int, int], dtype: Any, offset: int):
+    def __init__(self, fname: str, shape: Tuple[int, int], dtype: Any, offset: int, preallocated : bool = False):
         self.fname = fname
         self.shape = shape
         self.dtype = dtype
         self.offset = offset
+        self.preallocated = preallocated
+        self.read_shape = shape[0] - preallocated, shape[1] - preallocated
 
     def get(self) -> np.ndarray:
         with open(self.fname) as f:
             f.seek(self.offset)
             image = np.fromfile(
-                f, dtype=self.dtype, count=np.product(self.shape)
-            ).reshape(self.shape)
+                f, dtype=self.dtype, count=np.product(self.read_shape)
+            ).reshape(self.read_shape)
+        if self.preallocated:
+            image = np.pad(image, (0, 1))
         return image
 
 
 def parse_mrc_list(
-    txtfile: str, lazy: bool = False, extra: bool = False
+    txtfile: str, lazy: bool = False, preallocated: bool = False
 ) -> types.ImageArray:
     lines = open(txtfile, "r").readlines()
 
@@ -227,7 +233,7 @@ def parse_mrc_list(
         _lazy_image = lazy_images[
             0
         ]  # A handle on the first LazyImage of the last iteration, to get the shapes
-        padding = 1 if extra else 0
+        padding = 1 if preallocated else 0
 
         # Note that particles may not take up memory (yet) if the OS defers memory allocation
         particles = np.empty(
@@ -249,11 +255,11 @@ def parse_mrc_list(
             # in case im and particles do not share memory, this should free up the memory exclusively owned by im
             im = None
     else:
-        particles = [img for x in lines for img in parse_mrc(x.strip(), lazy=True)[0]]
+        particles = [img for x in lines for img in parse_mrc(x.strip(), lazy=True, preallocated=preallocated)[0]]
     return particles
 
 
-def parse_mrc(fname: str, lazy: bool = False) -> Tuple[types.ImageArray, MRCHeader]:  # type: ignore
+def parse_mrc(fname: str, lazy: bool = False, preallocated: bool = False) -> Tuple[types.ImageArray, MRCHeader]:  # type: ignore
     # parse the header
     header = MRCHeader.parse(fname)
 
@@ -274,7 +280,7 @@ def parse_mrc(fname: str, lazy: bool = False) -> Tuple[types.ImageArray, MRCHead
     else:
         stride = dtype().itemsize * ny * nx
         array = [
-            LazyImage(fname, (ny, nx), dtype, start + i * stride) for i in range(nz)
+            LazyImage(fname, (ny + int(preallocated), nx + int(preallocated)), dtype, start + i * stride, preallocated=preallocated) for i in range(nz)
         ]
     return array, header  # type: ignore
 

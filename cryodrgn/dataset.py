@@ -2,6 +2,8 @@
 
 import numpy as np
 
+import cryodrgn
+
 try:
     import cupy as cp
 except ImportError:
@@ -21,15 +23,13 @@ from cryodrgn import USE_NEW_DATASET_API
 logger = logging.getLogger(__name__)
 
 
-def load_particles(mrcs_txt_star, lazy=False, datadir=None, extra=False):
+def load_particles(mrcs_txt_star, lazy=False, datadir=None, preallocated=False):
     """
     Load particle stack from either a .mrcs file, a .star file, a .txt file containing paths to .mrcs files, or a
     cryosparc particles.cs file.
 
     lazy (bool): Return numpy array if True, or return list of LazyImages
     datadir (str or None): Base directory overwrite for .star or .cs file parsing
-    extra (bool): Whether to add an extra row/col in image dimensions, for use with symmetrizing the fft-space
-    representation of the image in downstream processing.
     """
 
     # ---------- NEW API ---------- #
@@ -37,7 +37,7 @@ def load_particles(mrcs_txt_star, lazy=False, datadir=None, extra=False):
         from cryodrgn.source import ImageSource
 
         src = ImageSource.from_file(
-            mrcs_txt_star, lazy=lazy, datadir=datadir, extra=extra
+            mrcs_txt_star, lazy=lazy, datadir=datadir, preallocated=preallocated
         )
         if lazy:
             return src
@@ -46,7 +46,7 @@ def load_particles(mrcs_txt_star, lazy=False, datadir=None, extra=False):
     # ---------- NEW API ---------- #
 
     if mrcs_txt_star.endswith(".txt"):
-        particles = mrc.parse_mrc_list(mrcs_txt_star, lazy=lazy, extra=extra)
+        particles = mrc.parse_mrc_list(mrcs_txt_star, lazy=lazy, preallocated=preallocated)
     elif mrcs_txt_star.endswith(".star"):
         # not exactly sure what the default behavior should be for the data paths if parsing a starfile
         try:
@@ -87,32 +87,34 @@ class LazyMRCData(data.Dataset):
         datadir=None,
         window_r=0.85,
         use_cupy=False,
-        extra=False,
+        preallocated=False,
     ):
         assert not keepreal, "Not implemented error"
-        particles = load_particles(mrcfile, True, datadir=datadir, extra=extra)
+        particles = load_particles(mrcfile, True, datadir=datadir, preallocated=preallocated)
         if ind is not None:
             particles = [particles[x] for x in ind]
         N = len(particles)
-        ny, nx = particles[0].shape
-        if extra:
-            ny -= 1
-            nx -= 1
+        ny, nx = particles[0].get().shape
         assert ny == nx, "Images must be square"
-        # assert (
-        #     ny % 2 == 0
-        # ), "Image size must be even. Is this a preprocessed dataset? Use the --preprocessed flag if so."
+        if preallocated:
+            assert (
+                (ny - 1) % 2 == 0
+            ), "Image size must be even. Is this a preprocessed dataset? Use the --preprocessed flag if so."
+        else:
+            assert (
+                ny % 2 == 0
+            ), "Image size must be even. Is this a preprocessed dataset? Use the --preprocessed flag if so."
         logger.info("Loaded {} {}x{} images".format(N, ny, nx))
         self.particles = particles
         self.N = N
-        self.D = ny + int(extra)
-        self.preallocated = extra
+        self.preallocated = preallocated
+        self.D = ny if preallocated else (ny + 1)  # after symmetrizing HT
         self.invert_data = invert_data
         self.use_cupy = use_cupy  # estimate_normalization may need access to self.use_cupy, so save it first
         if norm is None:
             norm = self.estimate_normalization()
         self.norm = norm
-        self.window = window_mask(ny, window_r, 0.99) if window else None
+        self.window = window_mask(ny - int(preallocated), window_r, 0.99) if window else None
 
     def estimate_normalization(self, n=1000):
         pp = cp if (self.use_cupy and cp is not None) else np
@@ -136,10 +138,10 @@ class LazyMRCData(data.Dataset):
         pp = cp if (self.use_cupy and cp is not None) else np
 
         img = self.particles[i].get()
+        if img.ndim == 2:
+            img = img[np.newaxis, ...]
         if self.window is not None:
-            img[
-                :, : self.D - int(self.preallocated), : self.D - int(self.preallocated)
-            ] *= self.window
+            img[..., :self.D-1, :self.D-1] *= self.window
         img = fft.ht2_center(img).astype(pp.float32)
         if self.invert_data:
             img *= -1
@@ -151,7 +153,10 @@ class LazyMRCData(data.Dataset):
         return self.N
 
     def __getitem__(self, index):
-        return self.get(index), index
+        first = self.get(index)
+        if type(index)==list:
+            index = np.array(index)
+        return first, index
 
 
 def window_mask(D, in_rad, out_rad, use_cupy=False):
@@ -184,7 +189,7 @@ class MRCData(data.Dataset):
         max_threads=16,
         window_r=0.85,
         use_cupy=False,
-        extra=False,
+        preallocated=False,
     ):
         pp = cp if (use_cupy and cp is not None) else np
 
@@ -192,16 +197,12 @@ class MRCData(data.Dataset):
             raise NotImplementedError
 
         if ind is not None:
-            particles = load_particles(mrcfile, True, datadir=datadir, extra=extra)
+            particles = load_particles(mrcfile, True, datadir=datadir, preallocated=preallocated)
             particles = pp.array([particles[i].get() for i in ind])
         else:
-            particles = load_particles(mrcfile, False, datadir=datadir, extra=extra)
+            particles = load_particles(mrcfile, False, datadir=datadir, preallocated=preallocated)
 
         N, ny, nx = particles.shape
-        if extra:
-            ny -= 1
-            nx -= 1
-
         assert ny == nx, "Images must be square"
         assert (
             ny % 2 == 0
@@ -211,7 +212,7 @@ class MRCData(data.Dataset):
         # Real space window
         if window:
             logger.info(f"Windowing images with radius {window_r}")
-            particles[:, :ny, :nx] *= window_mask(ny, window_r, 0.99)
+            particles *= window_mask(ny, window_r, 0.99)
 
         # compute HT
         logger.info("Computing FFT")
@@ -226,7 +227,7 @@ class MRCData(data.Dataset):
 
         # symmetrize HT
         logger.info("Symmetrizing image data")
-        particles = fft.symmetrize_ht(particles, preallocated=extra)
+        particles = fft.symmetrize_ht(particles, preallocated=preallocated)
 
         # normalize
         if norm is None:

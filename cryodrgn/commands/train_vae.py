@@ -574,8 +574,6 @@ def main(args):
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
 
-    extra = True  # VHACK
-
     # set the device
     use_cuda = torch.cuda.is_available()
     use_cuda = False
@@ -619,7 +617,7 @@ def main(args):
                 datadir=args.datadir,
                 window_r=args.window_r,
                 use_cupy=True,
-                extra=extra,
+                preallocated=cryodrgn.PREALLOCATED,
             )
         elif args.preprocessed:
             logger.info(
@@ -640,7 +638,7 @@ def main(args):
                 max_threads=args.max_threads,
                 window_r=args.window_r,
                 use_cupy=True,
-                extra=extra,
+                preallocated=cryodrgn.PREALLOCATED,
             )
 
     # Tilt series data -- lots of unsupported features
@@ -818,6 +816,7 @@ def main(args):
             sampler=BatchSampler(
                 SequentialSampler(data), batch_size=args.batch_size, drop_last=False
             ),
+            batch_size=None
         )
     else:
         data_generator = DataLoader(
@@ -881,19 +880,20 @@ def main(args):
                 pbar.update(B)
 
                 if batch_it % args.log_interval == 0:
-                    logger.info(
-                        "# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.6f}, kld={:.6f}, beta={:.6f}, "
-                        "loss={:.6f}".format(
-                            epoch + 1,
-                            num_epochs,
-                            batch_it,
-                            Nimg,
-                            gen_loss,
-                            kld,
-                            beta,
-                            loss,
-                        )
-                    )
+                    pass
+                    # logger.info(
+                    #     "# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.6f}, kld={:.6f}, beta={:.6f}, "
+                    #     "loss={:.6f}".format(
+                    #         epoch + 1,
+                    #         num_epochs,
+                    #         batch_it,
+                    #         Nimg,
+                    #         gen_loss,
+                    #         kld,
+                    #         beta,
+                    #         loss,
+                    #     )
+                    # )
             logger.info(
                 "# =====> Epoch: {} Average gen loss = {:.6}, KLD = {:.6f}, total loss = {:.6f}; Finished in {}".format(
                     epoch + 1,

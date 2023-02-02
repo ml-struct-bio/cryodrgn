@@ -120,6 +120,9 @@ def symmetrize_ht(ht, preallocated=False):
     if preallocated:
         D = ht.shape[-1] - 1
         sym_ht = ht
+        if len(sym_ht.shape) == 2:
+            sym_ht = sym_ht.reshape(1, *sym_ht.shape)
+        assert len(sym_ht.shape) == 3
     else:
         if len(ht.shape) == 2:
             ht = ht.reshape(1, *ht.shape)

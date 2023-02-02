@@ -56,12 +56,14 @@ class ImageSource:
         filenames: Union[List[str], str, None] = None,
         n_workers: int = 1,
         dtype: str = "float32",
-        *args,
-        **kwargs,
+        lazy: bool = True,  # remove after old API is gone - everything is lazy
+        preallocated: bool = False,
+        **kwargs
     ):
-        self.L = L + (1 if kwargs.pop("extra", False) else 0)
+        self.L = L + int(preallocated)
         self.n = n
         self.shape = self.L, self.L, self.n
+        self.lazy = lazy
 
         # Some client calls need to access the original filename(s) associated with a source
         # These are traditionally available as the 'fname' attribute of the LazyImage class, hence only used by

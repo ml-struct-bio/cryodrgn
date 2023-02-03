@@ -8,6 +8,7 @@ from typing import Union, List, Optional
 import torch.utils.data
 from cryodrgn.starfile import Starfile
 from cryodrgn.mrc import MRCHeader
+from cryodrgn.numeric import xp
 
 
 class LazyImage:
@@ -110,7 +111,7 @@ class ImageSource:
         if images.ndim == 3 and images.shape[0] == 1:
             images = images.squeeze(axis=0)
 
-        return images
+        return xp.array(images)
 
     def _images(self, indices: np.ndarray):
         raise NotImplementedError("Subclasses must implement this")
@@ -129,24 +130,23 @@ class MRCFileSource(ImageSource):
             header.fields["nx"],
         )
         assert self.ny == self.nx, "Only square images supported"
+        self.count = self.ny * self.nx
         self.stride = self.dtype().itemsize * self.ny * self.nx
 
         super().__init__(L=self.ny, n=self.nz, filenames=filepath, *args, **kwargs)
 
     def _images(self, indices: np.ndarray, data: Optional[np.ndarray]) -> np.ndarray:
-        # TODO: Load array in contiguous chunks instead of using an iterative loop
+
         with open(self.mrcfile_path) as f:
             if data is None:
                 data = np.empty((len(indices), self.ny, self.nx), dtype=self.dtype)
             for i, index in enumerate(indices):
-                # TODO: Do this concurrently in several threads
                 f.seek(
                     self.start
-                )  # TODO: Do not seek in every iteration - find a better way!
-                count = self.ny * self.nx
+                )
                 offset = index * self.stride
                 _data = np.fromfile(
-                    f, dtype=self.dtype, count=count, offset=offset
+                    f, dtype=self.dtype, count=self.count, offset=offset
                 ).reshape(self.ny, self.nx)
                 data[i, : self.ny, : self.nx] = _data
             return data

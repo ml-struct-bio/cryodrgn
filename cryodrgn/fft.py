@@ -1,34 +1,25 @@
 from itertools import repeat
+import logging
 from multiprocessing.pool import ThreadPool as Pool
 import numpy as np
+import torch
 
-try:
-    import cupy as cp  # type: ignore
-except ImportError:
-    cp = np
+from cryodrgn.numeric import xp, fft
+
+
+logger = logging.getLogger(__name__)
 
 
 def fft2_center(img):
-    pp = np if isinstance(img, np.ndarray) else cp
-
-    return pp.fft.fftshift(
-        pp.fft.fft2(pp.fft.fftshift(img, axes=(-1, -2))), axes=(-1, -2)
-    )
+    return fft.fftshift(fft.fft2(fft.fftshift(img, axes=(-1, -2))), axes=(-1, -2))
 
 
 def fftn_center(img):
-    pp = np if isinstance(img, np.ndarray) else cp
-
-    return pp.fft.fftshift(pp.fft.fftn(pp.fft.fftshift(img)))
+    return fft.fftshift(fft.fftn(fft.fftshift(img)))
 
 
-def ifftn_center(V):
-    pp = np if isinstance(V, np.ndarray) else cp
-
-    V = pp.fft.ifftshift(V)
-    V = pp.fft.ifftn(V)
-    V = pp.fft.ifftshift(V)
-    return V
+def ifftn_center(img):
+    return fft.ifftshift(fft.ifftn(fft.ifftshift(img)))
 
 
 def transform_in_chunks(
@@ -51,7 +42,14 @@ def transform_in_chunks(
     else:
         raise NotImplementedError
 
-    dest = src if inplace else src.copy()
+    if inplace:
+        dest = src
+    else:
+        if isinstance(src, np.ndarray):
+            dest = src.copy()
+        elif isinstance(src, torch.Tensor):
+            dest = src.detach()
+
     with Pool(n_workers) as pool:
         pool.starmap(
             g, zip(repeat(src, n_chunks), repeat(dest, n_chunks), chunk_indices)
@@ -67,8 +65,7 @@ def normalize(
 
     if std is None:
         # Since std is a memory consuming process, use the first std_n samples for std determination
-        pp = np if isinstance(img, np.ndarray) else cp
-        std = pp.std(img[:std_n, ...])
+        std = xp.std(img[:std_n, ...])
 
     return transform_in_chunks(
         _normalize,
@@ -84,7 +81,11 @@ def normalize(
 def ht2_center(img, inplace=False, chunksize=None, n_workers=1):
     def _ht2_center(img):
         _img = fft2_center(img)
-        return (_img.real - _img.imag).astype(img.dtype)
+        _img = _img.real - _img.imag
+        if isinstance(_img, np.ndarray):
+            return _img.astype(img.dtype)
+        else:
+            return _img
 
     return transform_in_chunks(
         _ht2_center, img, chunksize=chunksize, n_workers=n_workers, inplace=inplace
@@ -92,9 +93,7 @@ def ht2_center(img, inplace=False, chunksize=None, n_workers=1):
 
 
 def htn_center(img):
-    pp = np if isinstance(img, np.ndarray) else cp
-
-    f = pp.fft.fftshift(pp.fft.fftn(pp.fft.fftshift(img)))
+    f = fft.fftshift(fft.fftn(fft.fftshift(img)))
     return (f.real - f.imag).astype(img.dtype)
 
 
@@ -105,18 +104,14 @@ def iht2_center(img):
 
 
 def ihtn_center(V):
-    pp = np if isinstance(V, np.ndarray) else cp
-
-    V = pp.fft.fftshift(V)
-    V = pp.fft.fftn(V)
-    V = pp.fft.fftshift(V)
-    V /= pp.product(V.shape)
+    V = fft.fftshift(V)
+    V = fft.fftn(V)
+    V = fft.fftshift(V)
+    V /= xp.product(V.shape)
     return (V.real - V.imag).astype(V.dtype)
 
 
 def symmetrize_ht(ht, preallocated=False):
-    pp = np if isinstance(ht, np.ndarray) else cp
-
     if preallocated:
         D = ht.shape[-1] - 1
         sym_ht = ht
@@ -129,7 +124,7 @@ def symmetrize_ht(ht, preallocated=False):
         assert len(ht.shape) == 3
         D = ht.shape[-1]
         B = ht.shape[0]
-        sym_ht = pp.empty((B, D + 1, D + 1), dtype=ht.dtype)
+        sym_ht = xp.empty((B, D + 1, D + 1), dtype=ht.dtype)
         sym_ht[:, 0:-1, 0:-1] = ht
     assert D % 2 == 0
     sym_ht[:, -1, :] = sym_ht[:, 0]  # last row is the first row

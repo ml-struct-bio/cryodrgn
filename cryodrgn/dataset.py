@@ -1,14 +1,6 @@
 # type: ignore
 
 import numpy as np
-
-import cryodrgn
-
-try:
-    import cupy as cp
-except ImportError:
-    cp = None
-
 import multiprocessing as mp
 import os
 import time
@@ -18,7 +10,7 @@ from torch.utils import data
 
 from cryodrgn import fft, mrc, starfile, utils
 from cryodrgn import USE_NEW_DATASET_API
-
+from cryodrgn.numeric import xp
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +78,6 @@ class LazyMRCData(data.Dataset):
         window=True,
         datadir=None,
         window_r=0.85,
-        use_cupy=False,
         preallocated=False,
     ):
         assert not keepreal, "Not implemented error"
@@ -110,17 +101,14 @@ class LazyMRCData(data.Dataset):
         self.preallocated = preallocated
         self.D = ny if preallocated else (ny + 1)  # after symmetrizing HT
         self.invert_data = invert_data
-        self.use_cupy = use_cupy  # estimate_normalization may need access to self.use_cupy, so save it first
         if norm is None:
             norm = self.estimate_normalization()
         self.norm = norm
         self.window = window_mask(ny - int(preallocated), window_r, 0.99) if window else None
 
     def estimate_normalization(self, n=1000):
-        pp = cp if (self.use_cupy and cp is not None) else np
-
         n = min(n, self.N)
-        imgs = pp.asarray(
+        imgs = xp.stack(
             [
                 fft.ht2_center(self.particles[i].get())
                 for i in range(0, self.N, self.N // n)
@@ -129,20 +117,18 @@ class LazyMRCData(data.Dataset):
         if self.invert_data:
             imgs *= -1
         imgs = fft.symmetrize_ht(imgs, preallocated=self.preallocated)
-        norm = [pp.mean(imgs), pp.std(imgs)]
+        norm = [xp.mean(imgs), xp.std(imgs)]
         norm[0] = 0
         logger.info("Normalizing HT by {} +/- {}".format(*norm))
         return norm
 
     def get(self, i):
-        pp = cp if (self.use_cupy and cp is not None) else np
-
         img = self.particles[i].get()
         if img.ndim == 2:
             img = img[np.newaxis, ...]
         if self.window is not None:
             img[..., :self.D-1, :self.D-1] *= self.window
-        img = fft.ht2_center(img).astype(pp.float32)
+        img = fft.ht2_center(img)
         if self.invert_data:
             img *= -1
         img = fft.symmetrize_ht(img, preallocated=self.preallocated)
@@ -158,16 +144,14 @@ class LazyMRCData(data.Dataset):
         return self.get(index), index
 
 
-def window_mask(D, in_rad, out_rad, use_cupy=False):
-    pp = cp if (use_cupy and cp is not None) else np
-
+def window_mask(D, in_rad, out_rad):
     assert D % 2 == 0
-    x0, x1 = pp.meshgrid(
-        pp.linspace(-1, 1, D, endpoint=False, dtype=pp.float32),
-        pp.linspace(-1, 1, D, endpoint=False, dtype=pp.float32),
+    x0, x1 = xp.meshgrid(
+        xp.linspace(-1, 1, D, endpoint=False, dtype=xp.float32),
+        xp.linspace(-1, 1, D, endpoint=False, dtype=xp.float32),
     )
     r = (x0**2 + x1**2) ** 0.5
-    mask = pp.minimum(1.0, pp.maximum(0.0, 1 - (r - in_rad) / (out_rad - in_rad)))
+    mask = xp.minimum(xp.array(1.0), xp.maximum(xp.array(0.0), 1 - (r - in_rad) / (out_rad - in_rad)))
     return mask
 
 
@@ -187,31 +171,37 @@ class MRCData(data.Dataset):
         datadir=None,
         max_threads=16,
         window_r=0.85,
-        use_cupy=False,
         preallocated=False,
     ):
-        pp = cp if (use_cupy and cp is not None) else np
-
         if keepreal:
             raise NotImplementedError
 
         if ind is not None:
             particles = load_particles(mrcfile, True, datadir=datadir, preallocated=preallocated)
-            particles = pp.array([particles[i].get() for i in ind])
+            particles = xp.array([particles[i].get() for i in ind])
         else:
             particles = load_particles(mrcfile, False, datadir=datadir, preallocated=preallocated)
 
         N, ny, nx = particles.shape
         assert ny == nx, "Images must be square"
-        assert (
-            ny % 2 == 0
-        ), "Image size must be even. Is this a preprocessed dataset? Use the --preprocessed flag if so."
+        if preallocated:
+            assert (
+                (ny - 1) % 2 == 0
+            ), "Image size must be even. Is this a preprocessed dataset? Use the --preprocessed flag if so."
+        else:
+            assert (
+                ny % 2 == 0
+            ), "Image size must be even. Is this a preprocessed dataset? Use the --preprocessed flag if so."
         logger.info("Loaded {} {}x{} images".format(N, ny, nx))
+
+        self.N = N
+        self.preallocated = preallocated
+        self.D = ny if preallocated else (ny + 1)
 
         # Real space window
         if window:
             logger.info(f"Windowing images with radius {window_r}")
-            particles *= window_mask(ny, window_r, 0.99)
+            particles[..., :self.D-1, :self.D-1] *= window_mask(ny - int(preallocated), window_r, 0.99)
 
         # compute HT
         logger.info("Computing FFT")
@@ -245,11 +235,8 @@ class MRCData(data.Dataset):
         logger.info("Normalized HT by {} +/- {}".format(*norm))
 
         self.particles = particles
-        self.N = N
-        self.D = particles.shape[1]  # ny + 1 after symmetrizing HT
         self.norm = norm
         self.keepreal = keepreal
-        self.use_cupy = use_cupy
         if keepreal:
             self.particles_real = particles_real  # noqa: F821
             logger.info(
@@ -261,6 +248,8 @@ class MRCData(data.Dataset):
         return self.N
 
     def __getitem__(self, index):
+        if type(index) == list:
+            index = np.array(index)
         return self.particles[index], index
 
     def get(self, index):
@@ -270,8 +259,7 @@ class MRCData(data.Dataset):
 class PreprocessedMRCData(data.Dataset):
     """ """
 
-    def __init__(self, mrcfile, norm=None, ind=None, lazy=False, use_cupy=False):
-        self.use_cupy = use_cupy
+    def __init__(self, mrcfile, norm=None, ind=None, lazy=False):
         particles = load_particles(mrcfile, lazy=lazy)
         self.lazy = lazy
         if ind is not None:
@@ -296,23 +284,21 @@ class PreprocessedMRCData(data.Dataset):
         self.norm = norm
 
     def calc_statistic(self):
-        pp = cp if (self.use_cupy and cp is not None) else np
-
         if self.lazy:
             max_size = min(10000, self.N)
-            sample_index = pp.sort(
-                pp.random.choice(
-                    pp.arange(self.N), max(int(0.1 * self.N), max_size), replace=False
+            sample_index = xp.sort(
+                xp.random.choice(
+                    xp.arange(self.N), max(int(0.1 * self.N), max_size), replace=False
                 )
             )
             print("--lazy mode, sample 10% of samples to calculate standard error...")
             data = []
             for d in sample_index:
                 data.append(self.particles[d].get())
-            data = pp.stack(data, 0)
-            mean, std = pp.mean(data), pp.std(data)
+            data = xp.stack(data, 0)
+            mean, std = xp.mean(data), xp.std(data)
         else:
-            mean, std = pp.mean(self.particles), pp.std(self.particles)
+            mean, std = xp.mean(self.particles), xp.std(self.particles)
         # print(f"std={std}, mean={mean}")
         return mean, std
 
@@ -347,19 +333,16 @@ class TiltMRCData(data.Dataset):
         ind=None,
         window=True,
         datadir=None,
-        window_r=0.85,
-        use_cupy=False,
+        window_r=0.85
     ):
-        pp = cp if (use_cupy and cp is not None) else np
-
         if ind is not None:
             particles_real = load_particles(mrcfile, True, datadir)
             particles_tilt_real = load_particles(mrcfile_tilt, True, datadir)
-            particles_real = pp.array(
-                [particles_real[i].get() for i in ind], dtype=pp.float32
+            particles_real = xp.array(
+                [particles_real[i].get() for i in ind], dtype=xp.float32
             )
-            particles_tilt_real = pp.array(
-                [particles_tilt_real[i].get() for i in ind], dtype=pp.float32
+            particles_tilt_real = xp.array(
+                [particles_tilt_real[i].get() for i in ind], dtype=xp.float32
             )
         else:
             particles_real = load_particles(mrcfile, False, datadir)
@@ -385,12 +368,12 @@ class TiltMRCData(data.Dataset):
             particles_tilt_real *= m
 
         # compute HT
-        particles = pp.asarray([fft.ht2_center(img) for img in particles_real]).astype(
-            pp.float32
+        particles = xp.asarray([fft.ht2_center(img) for img in particles_real]).astype(
+            xp.float32
         )
-        particles_tilt = pp.asarray(
+        particles_tilt = xp.asarray(
             [fft.ht2_center(img) for img in particles_tilt_real]
-        ).astype(pp.float32)
+        ).astype(xp.float32)
         if invert_data:
             particles *= -1
             particles_tilt *= -1
@@ -401,7 +384,7 @@ class TiltMRCData(data.Dataset):
 
         # normalize
         if norm is None:
-            norm = [pp.mean(particles), pp.std(particles)]
+            norm = [xp.mean(particles), xp.std(particles)]
             norm[0] = 0
         particles = (particles - norm[0]) / norm[1]
         particles_tilt = (particles_tilt - norm[0]) / norm[1]
@@ -413,7 +396,6 @@ class TiltMRCData(data.Dataset):
         self.N = N
         self.D = particles.shape[1]
         self.keepreal = keepreal
-        self.use_cupy = use_cupy
         if keepreal:
             self.particles_real = particles_real
             self.particles_tilt_real = particles_tilt_real

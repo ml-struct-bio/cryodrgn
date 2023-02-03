@@ -22,7 +22,7 @@ except ImportError:
     pass
 
 import cryodrgn
-from cryodrgn import ctf, dataset, utils
+from cryodrgn import __version__, ctf, dataset, utils
 from cryodrgn.beta_schedule import get_beta_schedule
 from cryodrgn.lattice import Lattice
 from cryodrgn.models import HetOnlyVAE, unparallelize
@@ -439,46 +439,54 @@ def eval_z(
     ctf_params=None,
     use_real=False,
 ):
+    logger.info("Evaluating z")
     assert not model.training
-    z_mu_all = []
-    z_logvar_all = []
+
+    z_mu_all = np.empty((data.N, model.zdim), dtype=np.float32)
+    z_logvar_all = np.empty((data.N, model.zdim), dtype=np.float32)
+
     data_generator = DataLoader(data, batch_size=batch_size, shuffle=False)
-    for minibatch in data_generator:
-        ind = minibatch[-1]
-        y = minibatch[0].to(device)
-        yt = minibatch[1].to(device) if use_tilt else None
-        B = len(ind)
-        D = lattice.D
-        c = None
-        if ctf_params is not None:
-            freqs = lattice.freqs2d.unsqueeze(0).expand(
-                B, *lattice.freqs2d.shape
-            ) / ctf_params[ind, 0].view(B, 1, 1)
-            c = ctf.compute_ctf(freqs, *torch.split(ctf_params[ind, 1:], 1, 1)).view(
-                B, D, D
-            )
-        if trans is not None:
-            y = lattice.translate_ht(y.view(B, -1), trans[ind].unsqueeze(1)).view(
-                B, D, D
-            )
-            if yt is not None:
-                yt = lattice.translate_ht(yt.view(B, -1), trans[ind].unsqueeze(1)).view(
+    _count = 0
+    with tqdm(total=data.N, disable=not cryodrgn.PROGRESS) as pbar:
+        for i, minibatch in enumerate(data_generator):
+            ind = minibatch[-1]
+            y = minibatch[0].to(device)
+            yt = minibatch[1].to(device) if use_tilt else None
+            B = len(ind)
+            D = lattice.D
+            c = None
+            if ctf_params is not None:
+                freqs = lattice.freqs2d.unsqueeze(0).expand(
+                    B, *lattice.freqs2d.shape
+                ) / ctf_params[ind, 0].view(B, 1, 1)
+                c = ctf.compute_ctf(freqs, *torch.split(ctf_params[ind, 1:], 1, 1)).view(
                     B, D, D
                 )
-        if use_real:
-            input_ = (torch.from_numpy(data.particles_real[ind]).to(device),)
-        else:
-            input_ = (y, yt) if yt is not None else (y,)
-        if c is not None:
-            assert not use_real, "Not implemented"
-            input_ = (x * c.sign() for x in input_)  # phase flip by the ctf
-        _model = unparallelize(model)
-        assert isinstance(_model, HetOnlyVAE)
-        z_mu, z_logvar = _model.encode(*input_)
-        z_mu_all.append(z_mu.detach().cpu().numpy())
-        z_logvar_all.append(z_logvar.detach().cpu().numpy())
-    z_mu_all = np.vstack(z_mu_all)
-    z_logvar_all = np.vstack(z_logvar_all)
+            if trans is not None:
+                y = lattice.translate_ht(y.view(B, -1), trans[ind].unsqueeze(1)).view(
+                    B, D, D
+                )
+                if yt is not None:
+                    yt = lattice.translate_ht(yt.view(B, -1), trans[ind].unsqueeze(1)).view(
+                        B, D, D
+                    )
+            if use_real:
+                input_ = (torch.from_numpy(data.particles_real[ind]).to(device),)
+            else:
+                input_ = (y, yt) if yt is not None else (y,)
+            if c is not None:
+                assert not use_real, "Not implemented"
+                input_ = (x * c.sign() for x in input_)  # phase flip by the ctf
+            _model = unparallelize(model)
+            assert isinstance(_model, HetOnlyVAE)
+            z_mu, z_logvar = _model.encode(*input_)
+
+            z_mu_all[_count:_count+B, ...] = z_mu.detach().cpu().numpy()
+            z_logvar_all[_count:_count+B, ...] = z_logvar.detach().cpu().numpy()
+
+            _count += B
+            pbar.update(B)
+
     return z_mu_all, z_logvar_all
 
 
@@ -556,6 +564,7 @@ def get_latest(args):
 
 
 def main(args):
+    args.lazy = cryodrgn.LAZY
     if args.verbose:
         logger.setLevel(logging.DEBUG)
 
@@ -568,6 +577,7 @@ def main(args):
     if args.load == "latest":
         args = get_latest(args)
     logger.info(" ".join(sys.argv))
+    logger.info(f"cryoDRGN {__version__}")
     logger.info(args)
 
     # set the random seed
@@ -576,7 +586,6 @@ def main(args):
 
     # set the device
     use_cuda = torch.cuda.is_available()
-    use_cuda = False
     device = torch.device("cuda" if use_cuda else "cpu")
     logger.info("Use cuda {}".format(use_cuda))
     if not use_cuda:
@@ -616,7 +625,6 @@ def main(args):
                 window=args.window,
                 datadir=args.datadir,
                 window_r=args.window_r,
-                use_cupy=True,
                 preallocated=cryodrgn.PREALLOCATED,
             )
         elif args.preprocessed:
@@ -637,7 +645,6 @@ def main(args):
                 datadir=args.datadir,
                 max_threads=args.max_threads,
                 window_r=args.window_r,
-                use_cupy=True,
                 preallocated=cryodrgn.PREALLOCATED,
             )
 
@@ -828,7 +835,7 @@ def main(args):
     num_epochs = args.num_epochs
     epoch = None
     for epoch in range(start_epoch, num_epochs):
-        with tqdm(total=data.N) as pbar:
+        with tqdm(total=data.N, disable=not cryodrgn.PROGRESS) as pbar:
             t2 = dt.now()
             gen_loss_accum = 0
             loss_accum = 0
@@ -879,20 +886,20 @@ def main(args):
                 pbar.update(B)
 
                 if batch_it % args.log_interval == 0:
-                    pass
-                    # logger.info(
-                    #     "# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.6f}, kld={:.6f}, beta={:.6f}, "
-                    #     "loss={:.6f}".format(
-                    #         epoch + 1,
-                    #         num_epochs,
-                    #         batch_it,
-                    #         Nimg,
-                    #         gen_loss,
-                    #         kld,
-                    #         beta,
-                    #         loss,
-                    #     )
-                    # )
+                    if not cryodrgn.PROGRESS:
+                        logger.info(
+                            "# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.6f}, kld={:.6f}, beta={:.6f}, "
+                            "loss={:.6f}".format(
+                                epoch + 1,
+                                num_epochs,
+                                batch_it,
+                                Nimg,
+                                gen_loss,
+                                kld,
+                                beta,
+                                loss,
+                            )
+                        )
             logger.info(
                 "# =====> Epoch: {} Average gen loss = {:.6}, KLD = {:.6f}, total loss = {:.6f}; Finished in {}".format(
                     epoch + 1,
@@ -926,6 +933,7 @@ def main(args):
                     out_pose = "{}/pose.{}.pkl".format(args.outdir, epoch)
                     posetracker.save(out_pose)
 
+    logger.info("Training complete")
     # save model weights, latent encoding, and evaluate the model on 3D lattice
     out_weights = "{}/weights.pkl".format(args.outdir)
     out_z = "{}/z.pkl".format(args.outdir)

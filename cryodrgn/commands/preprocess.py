@@ -4,11 +4,6 @@ Preprocess a dataset for more streamlined cryoDRGN training
 
 import argparse
 import numpy as np
-
-try:
-    import cupy as cp  # type: ignore
-except ImportError:
-    cp = np
 import math
 import multiprocessing as mp
 import os
@@ -16,6 +11,7 @@ from multiprocessing import Pool
 from typing import List
 import logging
 from cryodrgn import dataset, fft, mrc, utils
+from cryodrgn.numeric import xp
 
 logger = logging.getLogger(__name__)
 
@@ -105,11 +101,6 @@ def warnexists(out):
 
 
 def main(args):
-    if cp is None and args.use_cupy:
-        raise RuntimeError(
-            "Error: import cupy failed, please unset --use-cupy and try again"
-        )
-
     mkbasedir(args.o)
     warnexists(args.o)
     assert args.o.endswith(".mrcs") or args.o.endswith(
@@ -165,36 +156,15 @@ def main(args):
         ret.append(cur)
         return ret
 
-    def preprocess_numpy(imgs):
+    def preprocess(imgs):
+        imgs = xp.asarray(imgs)
         if lazy:
             imgs = _combine_imgs(imgs)
-            imgs = np.concatenate([i.get() for i in imgs])
-        with Pool(min(args.max_threads, mp.cpu_count())) as p:
-            # todo: refactor as a routine in dataset.py
-
-            # note: applying the window before downsampling is slightly
-            # different than in the original workflow
-            if window:
-                imgs *= dataset.window_mask(
-                    original_D, args.window_r, 0.99, use_cupy=False
-                )
-            ret = np.asarray(p.map(fft.ht2_center, imgs))
-            if invert_data:
-                ret *= -1
-            if downsample:
-                ret = ret[:, start:stop, start:stop]
-            ret = fft.symmetrize_ht(ret)
-        return ret
-
-    def preprocess_cupy(imgs):
-        imgs = cp.asarray(imgs)
-        if lazy:
-            imgs = _combine_imgs(imgs)
-            imgs = cp.concatenate([cp.asarray(i.get()) for i in imgs])
+            imgs = xp.concatenate([xp.asarray(i.get()) for i in imgs])
         if window:
-            imgs *= dataset.window_mask(original_D, args.window_r, 0.99, use_cupy=True)
+            imgs *= dataset.window_mask(original_D, args.window_r, 0.99)
 
-        ret = cp.asarray([fft.ht2_center(img) for img in imgs])
+        ret = xp.asarray([fft.ht2_center(img) for img in imgs])
         if invert_data:
             ret *= -1
         if downsample:
@@ -202,19 +172,14 @@ def main(args):
         ret = fft.symmetrize_ht(ret)
         return ret
 
-    def preprocess_in_batches(imgs, b, use_cupy=False):
+    def preprocess_in_batches(imgs, b):
         ret = np.empty((len(imgs), D + 1, D + 1), dtype=np.float32)
         Nbatches = math.ceil(len(imgs) / b)
         for ii in range(Nbatches):
             logger.info(f"Processing batch of {b} images ({ii+1} of {Nbatches})")
-            if use_cupy:
-                ret[ii * b : (ii + 1) * b, :, :] = cp.asnumpy(  # type: ignore
-                    preprocess_cupy(imgs[ii * b : (ii + 1) * b])
-                )
-            else:
-                ret[ii * b : (ii + 1) * b, :, :] = preprocess_numpy(
-                    imgs[ii * b : (ii + 1) * b]
-                )
+            ret[ii * b : (ii + 1) * b, :, :] = xp.asnumpy(  # type: ignore
+                preprocess(imgs[ii * b : (ii + 1) * b])
+            )
         return ret
 
     nchunks = math.ceil(len(images) / args.chunk)
@@ -223,7 +188,7 @@ def main(args):
     for i in range(nchunks):
         logger.info(f"Processing chunk {i+1} of {nchunks}")
         chunk = images[i * args.chunk : (i + 1) * args.chunk]
-        new = preprocess_in_batches(chunk, args.b, use_cupy=args.use_cupy)
+        new = preprocess_in_batches(chunk, args.b)
         logger.info(f"New shape: {new.shape}")
         logger.info(f"Saving {out_mrcs[i]}")
         mrc.write(out_mrcs[i], new, is_vol=False)

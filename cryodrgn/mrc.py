@@ -6,6 +6,7 @@ import numpy as np
 
 import cryodrgn
 import cryodrgn.types as types
+from cryodrgn.numeric import xp
 
 # See ref:
 # MRC2014: Extensions to the MRC format header for electron cryo-microscopy and tomography
@@ -208,7 +209,7 @@ class LazyImage:
             ).reshape(self.read_shape)
         if self.preallocated:
             image = np.pad(image, (0, 1))
-        return image
+        return xp.array(image)
 
 
 def parse_mrc_list(
@@ -236,13 +237,17 @@ def parse_mrc_list(
         padding = 1 if preallocated else 0
 
         # Note that particles may not take up memory (yet) if the OS defers memory allocation
-        particles = np.empty(
+        np_dtype = _lazy_image.dtype
+        dtype_name = np.dtype(np_dtype).name
+        dtype = getattr(xp, dtype_name)
+
+        particles = xp.empty(
             (
                 total_images,
                 _lazy_image.shape[0] + padding,
                 _lazy_image.shape[1] + padding,
             ),
-            dtype=_lazy_image.dtype,
+            dtype=dtype,
         )
 
         count = 0
@@ -267,20 +272,23 @@ def parse_mrc(fname: str, lazy: bool = False, preallocated: bool = False) -> Tup
     extbytes = header.fields["next"]
     start = 1024 + extbytes  # start of image data
 
-    dtype = header.dtype
+    np_dtype = header.dtype
+    dtype_name = np.dtype(np_dtype).name
+    dtype = getattr(xp, dtype_name)
     nz, ny, nx = header.fields["nz"], header.fields["ny"], header.fields["nx"]
 
     # load all in one block
     if not lazy:
         with open(fname, "rb") as fh:
             fh.read(start)  # skip the header + extended header
-            array = np.fromfile(fh, dtype=dtype).reshape((nz, ny, nx))
+            array = np.fromfile(fh, dtype=np_dtype).reshape((nz, ny, nx))
+            array = xp.asarray(array)
 
     # or list of LazyImages
     else:
-        stride = dtype().itemsize * ny * nx
+        stride = np_dtype().itemsize * ny * nx
         array = [
-            LazyImage(fname, (ny + int(preallocated), nx + int(preallocated)), dtype, start + i * stride, preallocated=preallocated) for i in range(nz)
+            LazyImage(fname, (ny + int(preallocated), nx + int(preallocated)), np_dtype, start + i * stride, preallocated=preallocated) for i in range(nz)
         ]
     return array, header  # type: ignore
 

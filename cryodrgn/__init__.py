@@ -17,7 +17,10 @@ logging.config.dictConfig(
     {
         "version": 1,
         "formatters": {
-            "standard": {"format": "%(asctime)s %(message)s (%(filename)s:%(lineno)d)"}
+            "standard": {
+                "format": "(%(levelname)s) (%(filename)s) (%(asctime)s) %(message)s",
+                "datefmt": "%d-%b-%y %H:%M:%S",
+            }
         },
         "handlers": {
             "default": {

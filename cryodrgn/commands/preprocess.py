@@ -5,13 +5,12 @@ Preprocess a dataset for more streamlined cryoDRGN training
 import argparse
 import numpy as np
 import math
-import multiprocessing as mp
 import os
-from multiprocessing import Pool
 from typing import List
 import logging
+import torch
 from cryodrgn import dataset, fft, mrc, utils
-from cryodrgn.numeric import xp
+
 
 logger = logging.getLogger(__name__)
 
@@ -157,14 +156,14 @@ def main(args):
         return ret
 
     def preprocess(imgs):
-        imgs = xp.asarray(imgs)
+        imgs = torch.tensor(imgs)
         if lazy:
             imgs = _combine_imgs(imgs)
-            imgs = xp.concatenate([xp.asarray(i.get()) for i in imgs])
+            imgs = torch.concatenate([torch.tensor(i.get()) for i in imgs])
         if window:
             imgs *= dataset.window_mask(original_D, args.window_r, 0.99)
 
-        ret = xp.asarray([fft.ht2_center(img) for img in imgs])
+        ret = torch.tensor([fft.ht2_center(img) for img in imgs])
         if invert_data:
             ret *= -1
         if downsample:
@@ -177,7 +176,7 @@ def main(args):
         Nbatches = math.ceil(len(imgs) / b)
         for ii in range(Nbatches):
             logger.info(f"Processing batch of {b} images ({ii+1} of {Nbatches})")
-            ret[ii * b : (ii + 1) * b, :, :] = xp.asnumpy(  # type: ignore
+            ret[ii * b : (ii + 1) * b, :, :] = torch.asnumpy(  # type: ignore
                 preprocess(imgs[ii * b : (ii + 1) * b])
             )
         return ret

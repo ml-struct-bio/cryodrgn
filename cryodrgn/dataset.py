@@ -6,11 +6,9 @@ import os
 import time
 from multiprocessing import Pool
 import logging
+import torch
 from torch.utils import data
-
 from cryodrgn import fft, mrc, starfile, utils
-from cryodrgn import USE_NEW_DATASET_API
-from cryodrgn.numeric import xp
 
 logger = logging.getLogger(__name__)
 
@@ -24,43 +22,15 @@ def load_particles(mrcs_txt_star, lazy=False, datadir=None, preallocated=False):
     datadir (str or None): Base directory overwrite for .star or .cs file parsing
     """
 
-    # ---------- NEW API ---------- #
-    if USE_NEW_DATASET_API:
-        from cryodrgn.source import ImageSource
+    from cryodrgn.source import ImageSource
 
-        src = ImageSource.from_file(
-            mrcs_txt_star, lazy=lazy, datadir=datadir, preallocated=preallocated
-        )
-        if lazy:
-            return src
-        else:
-            return src[:]
-    # ---------- NEW API ---------- #
-
-    if mrcs_txt_star.endswith(".txt"):
-        particles = mrc.parse_mrc_list(mrcs_txt_star, lazy=lazy, preallocated=preallocated)
-    elif mrcs_txt_star.endswith(".star"):
-        # not exactly sure what the default behavior should be for the data paths if parsing a starfile
-        try:
-            particles = starfile.Starfile.load(mrcs_txt_star).get_particles(
-                datadir=datadir, lazy=lazy
-            )
-        except Exception as e:
-            if datadir is None:
-                datadir = os.path.dirname(
-                    mrcs_txt_star
-                )  # assume .mrcs files are in the same director as the starfile
-                particles = starfile.Starfile.load(mrcs_txt_star).get_particles(
-                    datadir=datadir, lazy=lazy
-                )
-            else:
-                raise RuntimeError(e)
-    elif mrcs_txt_star.endswith(".cs"):
-        particles = starfile.csparc_get_particles(mrcs_txt_star, datadir, lazy)
+    src = ImageSource.from_file(
+        mrcs_txt_star, lazy=lazy, datadir=datadir, preallocated=preallocated
+    )
+    if lazy:
+        return src
     else:
-        particles, _ = mrc.parse_mrc(mrcs_txt_star, lazy=lazy)
-
-    return particles
+        return src[:]
 
 
 class LazyMRCData(data.Dataset):
@@ -82,10 +52,11 @@ class LazyMRCData(data.Dataset):
     ):
         assert not keepreal, "Not implemented error"
         particles = load_particles(mrcfile, True, datadir=datadir, preallocated=preallocated)
+
         if ind is not None:
             particles = [particles[x] for x in ind]
         N = len(particles)
-        ny, nx = particles[0].get().shape
+        ny, nx = particles[0].shape
         assert ny == nx, "Images must be square"
         if preallocated:
             assert (
@@ -108,30 +79,32 @@ class LazyMRCData(data.Dataset):
 
     def estimate_normalization(self, n=1000):
         n = min(n, self.N)
-        imgs = xp.stack(
+        imgs = torch.stack(
             [
-                fft.ht2_center(self.particles[i].get())
+                fft.ht2_center(self.particles[i][:-int(self.preallocated), :-int(self.preallocated)])
                 for i in range(0, self.N, self.N // n)
             ]
         )
+
         if self.invert_data:
             imgs *= -1
-        imgs = fft.symmetrize_ht(imgs, preallocated=self.preallocated)
-        norm = [xp.mean(imgs), xp.std(imgs)]
+
+        imgs = fft.symmetrize_ht(imgs, preallocated=False)
+        norm = [torch.mean(imgs), torch.std(imgs)]
         norm[0] = 0
         logger.info("Normalizing HT by {} +/- {}".format(*norm))
         return norm
 
     def get(self, i):
-        img = self.particles[i].get()
+        img = self.particles[i]
         if img.ndim == 2:
             img = img[np.newaxis, ...]
         if self.window is not None:
             img[..., :self.D-1, :self.D-1] *= self.window
-        img = fft.ht2_center(img)
+        fft.ht2_center(img[..., :-int(self.preallocated), :-int(self.preallocated)], inplace=True)
         if self.invert_data:
             img *= -1
-        img = fft.symmetrize_ht(img, preallocated=self.preallocated)
+        fft.symmetrize_ht(img, preallocated=self.preallocated)
         img = (img - self.norm[0]) / self.norm[1]
         return img
 
@@ -146,12 +119,12 @@ class LazyMRCData(data.Dataset):
 
 def window_mask(D, in_rad, out_rad):
     assert D % 2 == 0
-    x0, x1 = xp.meshgrid(
-        xp.linspace(-1, 1, D, endpoint=False, dtype=xp.float32),
-        xp.linspace(-1, 1, D, endpoint=False, dtype=xp.float32),
+    x0, x1 = torch.meshgrid(
+        torch.linspace(-1, 1, D+1, dtype=torch.float32)[:-1],
+        torch.linspace(-1, 1, D+1, dtype=torch.float32)[:-1],
     )
     r = (x0**2 + x1**2) ** 0.5
-    mask = xp.minimum(xp.array(1.0), xp.maximum(xp.array(0.0), 1 - (r - in_rad) / (out_rad - in_rad)))
+    mask = torch.minimum(torch.tensor(1.0), torch.maximum(torch.tensor(0.0), 1 - (r - in_rad) / (out_rad - in_rad)))
     return mask
 
 
@@ -178,7 +151,7 @@ class MRCData(data.Dataset):
 
         if ind is not None:
             particles = load_particles(mrcfile, True, datadir=datadir, preallocated=preallocated)
-            particles = xp.array([particles[i].get() for i in ind])
+            particles = torch.tensor([particles[i].get() for i in ind])
         else:
             particles = load_particles(mrcfile, False, datadir=datadir, preallocated=preallocated)
 
@@ -207,7 +180,7 @@ class MRCData(data.Dataset):
         logger.info("Computing FFT")
         max_threads = min(max_threads, mp.cpu_count())
         _start = time.perf_counter()
-        fft.ht2_center(particles, inplace=True, chunksize=1000, n_workers=max_threads)
+        fft.ht2_center(particles[..., :-int(preallocated), :-int(preallocated)], inplace=True, chunksize=1000, n_workers=max_threads)
         _end = time.perf_counter()
         logger.info(f"Converted to FFT in {_end-_start}")
 
@@ -232,7 +205,6 @@ class MRCData(data.Dataset):
             chunksize=1000,
             n_workers=1,
         )
-        logger.info("Normalized HT by {} +/- {}".format(*norm))
 
         self.particles = particles
         self.norm = norm
@@ -286,19 +258,19 @@ class PreprocessedMRCData(data.Dataset):
     def calc_statistic(self):
         if self.lazy:
             max_size = min(10000, self.N)
-            sample_index = xp.sort(
-                xp.random.choice(
-                    xp.arange(self.N), max(int(0.1 * self.N), max_size), replace=False
+            sample_index = torch.sort(
+                torch.random.choice(
+                    torch.arange(self.N), max(int(0.1 * self.N), max_size), replace=False
                 )
             )
             print("--lazy mode, sample 10% of samples to calculate standard error...")
             data = []
             for d in sample_index:
                 data.append(self.particles[d].get())
-            data = xp.stack(data, 0)
-            mean, std = xp.mean(data), xp.std(data)
+            data = torch.stack(data, 0)
+            mean, std = torch.mean(data), torch.std(data)
         else:
-            mean, std = xp.mean(self.particles), xp.std(self.particles)
+            mean, std = torch.mean(self.particles), torch.std(self.particles)
         # print(f"std={std}, mean={mean}")
         return mean, std
 
@@ -338,11 +310,11 @@ class TiltMRCData(data.Dataset):
         if ind is not None:
             particles_real = load_particles(mrcfile, True, datadir)
             particles_tilt_real = load_particles(mrcfile_tilt, True, datadir)
-            particles_real = xp.array(
-                [particles_real[i].get() for i in ind], dtype=xp.float32
+            particles_real = torch.tensor(
+                [particles_real[i].get() for i in ind], dtype=torch.float32
             )
-            particles_tilt_real = xp.array(
-                [particles_tilt_real[i].get() for i in ind], dtype=xp.float32
+            particles_tilt_real = torch.array(
+                [particles_tilt_real[i].get() for i in ind], dtype=torch.float32
             )
         else:
             particles_real = load_particles(mrcfile, False, datadir)
@@ -368,12 +340,12 @@ class TiltMRCData(data.Dataset):
             particles_tilt_real *= m
 
         # compute HT
-        particles = xp.asarray([fft.ht2_center(img) for img in particles_real]).astype(
-            xp.float32
+        particles = torch.tensor([fft.ht2_center(img) for img in particles_real]).astype(
+            torch.float32
         )
-        particles_tilt = xp.asarray(
+        particles_tilt = torch.tensor(
             [fft.ht2_center(img) for img in particles_tilt_real]
-        ).astype(xp.float32)
+        ).astype(torch.float32)
         if invert_data:
             particles *= -1
             particles_tilt *= -1
@@ -384,7 +356,7 @@ class TiltMRCData(data.Dataset):
 
         # normalize
         if norm is None:
-            norm = [xp.mean(particles), xp.std(particles)]
+            norm = [torch.mean(particles), torch.std(particles)]
             norm[0] = 0
         particles = (particles - norm[0]) / norm[1]
         particles_tilt = (particles_tilt - norm[0]) / norm[1]

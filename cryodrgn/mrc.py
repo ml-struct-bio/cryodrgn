@@ -3,10 +3,8 @@ import struct
 from collections import OrderedDict
 from typing import Any, Optional, Tuple
 import numpy as np
-
-import cryodrgn
+import torch
 import cryodrgn.types as types
-from cryodrgn.numeric import xp
 
 # See ref:
 # MRC2014: Extensions to the MRC format header for electron cryo-microscopy and tomography
@@ -202,14 +200,23 @@ class LazyImage:
         self.read_shape = shape[0] - preallocated, shape[1] - preallocated
 
     def get(self) -> np.ndarray:
+        if len(self.shape) == 2:
+            n = 1
+        else:
+            n = self.shape[0]
+
         with open(self.fname) as f:
             f.seek(self.offset)
             image = np.fromfile(
-                f, dtype=self.dtype, count=np.product(self.read_shape)
-            ).reshape(self.read_shape)
+                f, dtype=self.dtype, count=np.product(self.read_shape) * n
+            ).reshape((n, self.read_shape[0], self.read_shape[1]))
         if self.preallocated:
             image = np.pad(image, (0, 1))
-        return xp.array(image)
+
+        if image.ndim == 3 and image.shape[0] == 1:
+            image = image.squeeze(axis=0)
+
+        return image
 
 
 def parse_mrc_list(
@@ -273,16 +280,14 @@ def parse_mrc(fname: str, lazy: bool = False, preallocated: bool = False) -> Tup
     start = 1024 + extbytes  # start of image data
 
     np_dtype = header.dtype
-    dtype_name = np.dtype(np_dtype).name
-    dtype = getattr(xp, dtype_name)
     nz, ny, nx = header.fields["nz"], header.fields["ny"], header.fields["nx"]
 
     # load all in one block
     if not lazy:
         with open(fname, "rb") as fh:
             fh.read(start)  # skip the header + extended header
-            array = np.fromfile(fh, dtype=np_dtype).reshape((nz, ny, nx))
-            array = xp.asarray(array)
+            np_array = np.fromfile(fh, dtype=np_dtype).reshape((nz, ny, nx))
+            array = torch.tensor(np_array)
 
     # or list of LazyImages
     else:

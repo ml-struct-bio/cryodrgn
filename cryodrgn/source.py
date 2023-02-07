@@ -4,21 +4,13 @@ from concurrent import futures
 import numpy as np
 import pandas as pd
 from typing import Union, List, Optional
-
-import torch.utils.data
+import logging
+import torch
 from cryodrgn.starfile import Starfile
 from cryodrgn.mrc import MRCHeader
-from cryodrgn.numeric import xp
 
 
-class LazyImage:
-    def __init__(self, src, item):
-        self.src = src
-        self.item = item
-        self.shape = src.shape[0], src.shape[1]
-
-    def get(self):
-        return self.src.images(self.item)
+logger = logging.getLogger(__name__)
 
 
 class ImageSource:
@@ -27,12 +19,7 @@ class ImageSource:
         ext = os.path.splitext(filepath)[-1][1:]
         assert ext in ("star", "mrcs", "txt", "cs"), f"Unknown file extension {ext}"
         source = getattr(ImageSource, f"from_{ext}")(filepath, *args, **kwargs)
-
-        lazy = kwargs.get("lazy", False)
-        if lazy:
-            return source
-        else:
-            return source.images(slice(0, None))
+        return source
 
     @staticmethod
     def from_star(filepath: str, *args, **kwargs):
@@ -85,10 +72,12 @@ class ImageSource:
         return self.n
 
     def __getitem__(self, item):
-        return LazyImage(src=self, item=item)
+        return self.images(item)
 
-    def images(self, indices: Union[int, np.ndarray, slice]) -> np.ndarray:
-        if np.isscalar(indices):
+    def images(self, indices: Optional[Union[int, np.ndarray, slice]] = None) -> np.ndarray:
+        if indices is None:
+            indices = np.arange(self.n)
+        elif np.isscalar(indices):
             indices = np.array([indices])
         elif isinstance(indices, Iterable):
             indices = np.array(np.fromiter(indices, int))
@@ -111,7 +100,7 @@ class ImageSource:
         if images.ndim == 3 and images.shape[0] == 1:
             images = images.squeeze(axis=0)
 
-        return xp.array(images)
+        return torch.tensor(images)
 
     def _images(self, indices: np.ndarray):
         raise NotImplementedError("Subclasses must implement this")
@@ -130,25 +119,38 @@ class MRCFileSource(ImageSource):
             header.fields["nx"],
         )
         assert self.ny == self.nx, "Only square images supported"
-        self.count = self.ny * self.nx
-        self.stride = self.dtype().itemsize * self.ny * self.nx
+        self.size = self.ny * self.nx
+        self.stride = self.dtype().itemsize * self.size
 
         super().__init__(L=self.ny, n=self.nz, filenames=filepath, *args, **kwargs)
 
-    def _images(self, indices: np.ndarray, data: Optional[np.ndarray]) -> np.ndarray:
+    def _images(self, indices: np.ndarray, data: Optional[np.ndarray] = None, tgt_indices : Optional[np.ndarray] = None) -> np.ndarray:
 
         with open(self.mrcfile_path) as f:
             if data is None:
                 data = np.empty((len(indices), self.ny, self.nx), dtype=self.dtype)
-            for i, index in enumerate(indices):
+                assert tgt_indices is None, "Target indices can only be specified when passing in a preallocated array"
+                tgt_indices = np.arange(len(indices))
+            else:
+                if tgt_indices is not None:
+                    assert len(tgt_indices) == len(indices), 'indices/tgt_indices length mismatch'
+                else:
+                    tgt_indices = np.arange(len(indices))
+
+            for (index, tgt_index) in zip(indices, tgt_indices):
                 f.seek(
                     self.start
                 )
                 offset = index * self.stride
+                # 'offset' in the call below is w.r.t the current position of f
                 _data = np.fromfile(
-                    f, dtype=self.dtype, count=self.count, offset=offset
+                    f, dtype=self.dtype, count=self.size, offset=offset
                 ).reshape(self.ny, self.nx)
-                data[i, : self.ny, : self.nx] = _data
+                try:
+                    data[tgt_index, : self.ny, : self.nx] = _data
+                except Exception as e:
+                    raise
+
             return data
 
 
@@ -188,37 +190,41 @@ class TxtFileSource(ImageSource):
     def _images(self, indices: np.ndarray) -> np.ndarray:
         def load_single_mrcs(
             data: np.ndarray,
-            source: MRCFileSource,
-            source_start_index: int,
-            indices_for_source: np.ndarray,
+            src: MRCFileSource,
+            src_indices: np.ndarray,
+            tgt_indices: np.ndarray,
         ):
-            # return source._images(indices[indices_for_source] - source_start_index)
-            # data[indices_for_source] = source._images(indices[indices_for_source] - source_start_index, data=data)
-            source._images(indices[indices_for_source] - source_start_index, data=data)
+            src._images(indices=src_indices, data=data, tgt_indices=tgt_indices)
 
         data = np.empty((len(indices), self.L, self.L), dtype=self.dtype)
 
         with futures.ThreadPoolExecutor(self.n_workers) as executor:
-            to_do = {}
+            to_do = []
+            tgt_start_index = 0
             for source_i, (source_start_index, source_end_index) in enumerate(
                 self.source_intervals
             ):
-                indices_for_source = np.where(
+                tgt_indices = np.where(
                     (source_start_index <= indices) & (indices < source_end_index)
                 )[0]
-                if indices_for_source.size > 0:
+                src_indices = indices[tgt_indices] - source_start_index
+                src_images = src_indices.size
+
+                if src_images > 0:
                     future = executor.submit(
                         load_single_mrcs,
-                        data,
-                        self.sources[source_i],
-                        source_start_index,
-                        indices_for_source,
+                        data=data,
+                        src=self.sources[source_i],
+                        src_indices=src_indices,
+                        tgt_indices=tgt_indices
                     )
-                    to_do[future] = indices_for_source
+                    tgt_start_index += src_images
+                    to_do.append(future)
 
             for future in futures.as_completed(to_do):
-                # data[to_do[future]] = future.result()
-                pass
+                res, exc = future.result(), future.exception()
+                if exc is not None:
+                    raise exc
 
         return data
 
@@ -248,9 +254,9 @@ class _MRCDataFrameSource(ImageSource):
 
     def _images(self, indices: np.ndarray) -> np.ndarray:
         def load_single_mrcs(filepath, df):
-            arr = MRCFileSource(filepath)[df["__mrc_index"]]
+            src = MRCFileSource(filepath)
             # df.index indicates the positions where the data needs to be inserted -> return for use by caller
-            return df.index, arr
+            return df.index, src.images(df["__mrc_index"])
 
         data = np.empty((len(indices), self.L, self.L), dtype=self.dtype)
 

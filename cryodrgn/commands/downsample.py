@@ -4,11 +4,10 @@ Downsample an image stack or volume by clipping fourier frequencies
 
 import argparse
 import math
-import multiprocessing as mp
 import os
-from multiprocessing import Pool
 import logging
 import numpy as np
+import torch
 from cryodrgn import dataset, fft, mrc
 
 logger = logging.getLogger(__name__)
@@ -73,6 +72,7 @@ def main(args):
     ), "Must specify output in .mrc(s) file format"
 
     lazy = not args.is_vol
+    lazy = False
     old = dataset.load_particles(args.mrcs, lazy=lazy, datadir=args.datadir)
 
     if lazy:
@@ -109,10 +109,12 @@ def main(args):
         if lazy:
             imgs = _combine_imgs(imgs)
             imgs = np.concatenate([i.get() for i in imgs])
-        with Pool(min(args.max_threads, mp.cpu_count())) as p:
-            oldft = np.asarray(p.map(fft.ht2_center, imgs))
-            newft = oldft[:, start:stop, start:stop]
-            new = np.asarray(p.map(fft.iht2_center, newft))
+            imgs = torch.tensor(imgs)
+
+        oldft = fft.ht2_center(imgs)
+        newft = oldft[:, start:stop, start:stop]
+        new = fft.iht2_center(newft)
+
         return new
 
     def downsample_in_batches(old, b):

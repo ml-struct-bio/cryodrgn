@@ -22,6 +22,7 @@ def add_args(parser):
     parser.add_argument(
         "-o", type=os.path.abspath, required=True, help="Output .mrc or directory"
     )
+    parser.add_argument("--device", type=int, help="Optionally specify CUDA device")
     parser.add_argument(
         "--prefix",
         default="vol_",
@@ -143,11 +144,14 @@ def main(args):
     t1 = dt.now()
 
     # set the device
-    use_cuda = torch.cuda.is_available()
-    device = torch.device("cuda" if use_cuda else "cpu")
-    logger.info("Use cuda {}".format(use_cuda))
-    if not use_cuda:
-        logger.warning("WARNING: No GPUs detected")
+    if args.device is not None:
+        device = torch.device(f"cuda:{args.device}")
+    else:
+        use_cuda = torch.cuda.is_available()
+        device = torch.device("cuda" if use_cuda else "cpu")
+        logger.info("Use cuda {}".format(use_cuda))
+        if not use_cuda:
+            logger.warning("WARNING: No GPUs detected")
 
     logger.info(args)
     cfg = config.overwrite_config(args.config, args)

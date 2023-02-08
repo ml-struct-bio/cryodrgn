@@ -55,8 +55,6 @@ def test_run(mrcs_file, poses_file):
             "3",  # Number of principal component traversals to generate
             "--ksample",
             "14",  # Number of kmeans samples to generate
-            "--device",
-            "0",
             "--vol-start-index",
             "1",
         ]
@@ -68,8 +66,6 @@ def test_run(mrcs_file, poses_file):
         [
             "output",
             "19",  # Epoch number to analyze - 0-indexed
-            "--device",
-            "0",
             "--sketch-size",
             "10",  # Number of volumes to generate for analysis
             "--downsample",

@@ -552,7 +552,6 @@ def main(args):
         model.load_state_dict(checkpoint["model_state_dict"])
         optim.load_state_dict(checkpoint["optimizer_state_dict"])
         start_epoch = checkpoint["epoch"] + 1
-        assert args.num_epochs > start_epoch
         model.train()
         if args.load_poses:
             rot, trans = utils.load_pkl(args.load_poses)

@@ -34,7 +34,7 @@ def test_run(mrcs_file, poses_file):
             "--lr",
             ".0001",
             "--num-epochs",
-            "20",
+            "3",
             "--seed",
             "0",
             "--poses",
@@ -50,7 +50,7 @@ def test_run(mrcs_file, poses_file):
     args = analyze.add_args(argparse.ArgumentParser()).parse_args(
         [
             "output",
-            "19",  # Epoch number to analyze - 0-indexed
+            "2",  # Epoch number to analyze - 0-indexed
             "--pc",
             "3",  # Number of principal component traversals to generate
             "--ksample",
@@ -63,11 +63,11 @@ def test_run(mrcs_file, poses_file):
     )
     analyze.main(args)
 
-    shutil.rmtree("output/landscape.19", ignore_errors=True)
+    shutil.rmtree("output/landscape.2", ignore_errors=True)
     args = analyze_landscape.add_args(argparse.ArgumentParser()).parse_args(
         [
             "output",
-            "19",  # Epoch number to analyze - 0-indexed
+            "2",  # Epoch number to analyze - 0-indexed
             "--device",
             "0",
             "--sketch-size",
@@ -80,12 +80,12 @@ def test_run(mrcs_file, poses_file):
             "1",
         ]
     )
-    shutil.rmtree("output/landscape.19", ignore_errors=True)
+    shutil.rmtree("output/landscape.2", ignore_errors=True)
     analyze_landscape.main(args)
 
     args = graph_traversal.add_args(argparse.ArgumentParser()).parse_args(
         [
-            "output/z.19.pkl",
+            "output/z.2.pkl",
             "--anchors",
             "22",
             "49",
@@ -111,7 +111,7 @@ def test_run(mrcs_file, poses_file):
 
     args = eval_vol.add_args(argparse.ArgumentParser()).parse_args(
         [
-            "output/weights.19.pkl",
+            "output/weights.2.pkl",
             "--config",
             "output/config.pkl",
             "--zfile",

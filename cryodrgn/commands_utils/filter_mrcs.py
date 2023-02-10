@@ -3,7 +3,9 @@
 import argparse
 import logging
 import numpy as np
-from cryodrgn import dataset, mrc, utils
+from cryodrgn import utils
+from cryodrgn.mrc import MRCFile
+from cryodrgn.source import ImageSource
 
 logger = logging.getLogger(__name__)
 
@@ -16,12 +18,12 @@ def add_args(parser):
 
 
 def main(args):
-    x = dataset.load_particles(args.input, lazy=True)
+    x = ImageSource.from_file(args.input, lazy=True)
     logger.info(f"Loaded {len(x)} particles")
     ind = utils.load_pkl(args.ind)
-    x = np.array([x[i].get() for i in ind])
+    x = np.array([x.images(i) for i in ind])
     logger.info(f"New dimensions: {x.shape}")
-    mrc.write(args.o, x)
+    MRCFile.write(args.o, x)
 
 
 if __name__ == "__main__":

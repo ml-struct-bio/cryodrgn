@@ -5,7 +5,6 @@ Homogeneous NN reconstruction with hierarchical pose optimization
 import argparse
 import os
 import pickle
-import signal
 import sys
 from datetime import datetime as dt
 import logging
@@ -15,7 +14,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from cryodrgn import ctf, dataset, lie_tools, models, mrc, utils
+from cryodrgn import ctf, dataset, lie_tools, models, utils
+from cryodrgn.mrc import MRCFile
 from cryodrgn.lattice import Lattice
 from cryodrgn.pose_search import PoseSearch
 
@@ -273,7 +273,7 @@ def save_checkpoint(
 ):
     model.eval()
     vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, norm)
-    mrc.write(out_mrc, vol.astype(np.float32))
+    MRCFile.write(out_mrc, np.array(vol).astype(np.float32))
     torch.save(
         {
             "norm": norm,
@@ -478,26 +478,20 @@ def main(args):
         logger.info("Filtering image dataset with {}".format(args.ind))
         args.ind = pickle.load(open(args.ind, "rb"))
     if args.tilt is None:
-        data = dataset.MRCData(
-            args.particles,
-            norm=args.norm,
-            invert_data=args.invert_data,
-            ind=args.ind,
-            window=args.window,
-            window_r=args.window_r,
-        )
         tilt = None
     else:
-        data = dataset.TiltMRCData(
-            args.particles,
-            args.tilt,
-            norm=args.norm,
-            invert_data=args.invert_data,
-            ind=args.ind,
-            window=args.window,
-            window_r=args.window_r,
-        )
         tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32), device=device)
+
+    data = dataset.MyMRCData(
+        mrcfile=args.particles,
+        tilt_mrcfile=args.tilt,
+        norm=args.norm,
+        invert_data=args.invert_data,
+        ind=args.ind,
+        window=args.window,
+        window_r=args.window_r,
+    )
+
     D = data.D
     Nimg = data.N
 
@@ -593,7 +587,7 @@ def main(args):
     out_mrc = "{}/pretrain.reconstruct.mrc".format(args.outdir)
     model.eval()
     vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, tuple(data.norm))
-    mrc.write(out_mrc, vol.astype(np.float32))
+    MRCFile.write(out_mrc, np.array(vol).astype(np.float32))
 
     # reset model after pretraining
     if args.reset_optim_after_pretrain:

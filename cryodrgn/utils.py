@@ -5,8 +5,23 @@ import pickle
 import logging
 from typing import Tuple
 import numpy as np
+import torch
 
 logger = logging.getLogger(__name__)
+
+
+def window_mask(D, in_rad, out_rad):
+    assert D % 2 == 0
+    x0, x1 = torch.meshgrid(
+        torch.linspace(-1, 1, D + 1, dtype=torch.float32)[:-1],
+        torch.linspace(-1, 1, D + 1, dtype=torch.float32)[:-1],
+    )
+    r = (x0**2 + x1**2) ** 0.5
+    mask = torch.minimum(
+        torch.tensor(1.0),
+        torch.maximum(torch.tensor(0.0), 1 - (r - in_rad) / (out_rad - in_rad)),
+    )
+    return mask
 
 
 class memoized(object):

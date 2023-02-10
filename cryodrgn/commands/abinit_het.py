@@ -94,19 +94,9 @@ def add_args(parser):
         help="Path prefix to particle stack if loading relative paths from a .star or .cs file",
     )
     group.add_argument(
-        "--lazy-single",
-        action="store_true",
-        help="Lazy loading if full dataset is too large to fit in memory",
-    )
-    group.add_argument(
         "--lazy",
         action="store_true",
         help="Memory efficient training by loading data in chunks",
-    )
-    group.add_argument(
-        "--preprocessed",
-        action="store_true",
-        help="Skip preprocessing steps if input data is from cryodrgn preprocess_mrcs",
     )
     group.add_argument(
         "--max-threads",
@@ -731,66 +721,22 @@ def main(args):
     if args.tilt is None:
         tilt = None
         args.use_real = args.encode_mode == "conv"
-
-        if args.lazy:
-            assert (
-                args.preprocessed
-            ), "Dataset must be preprocesed with `cryodrgn preprocess_mrcs` in order to use --lazy data loading"
-            assert (
-                not args.ind
-            ), "For --lazy data loading, dataset must be filtered by `cryodrgn preprocess_mrcs`"
-            # data = dataset.PreprocessedMRCData(args.particles, norm=args.norm)
-            raise NotImplementedError("Use --lazy-single for on-the-fly image loading")
-        elif args.lazy_single:
-            data = dataset.LazyMRCData(
-                args.particles,
-                norm=args.norm,
-                invert_data=args.invert_data,
-                ind=ind,
-                keepreal=args.use_real,
-                window=args.window,
-                datadir=args.datadir,
-                window_r=args.window_r,
-            )
-        elif args.preprocessed:
-            logger.info(
-                "Using preprocessed inputs. Ignoring any --window/--invert-data options"
-            )
-            data = dataset.PreprocessedMRCData(args.particles, norm=args.norm, ind=ind)
-        else:
-            data = dataset.MRCData(
-                args.particles,
-                norm=args.norm,
-                invert_data=args.invert_data,
-                ind=ind,
-                keepreal=args.use_real,
-                window=args.window,
-                datadir=args.datadir,
-                max_threads=args.max_threads,
-                window_r=args.window_r,
-            )
-
-    # Tilt series data -- lots of unsupported features
     else:
         assert args.encode_mode == "tilt"
-        if args.lazy_single:
-            raise NotImplementedError
-        if args.lazy:
-            raise NotImplementedError
-        if args.preprocessed:
-            raise NotImplementedError
-        data = dataset.TiltMRCData(
-            args.particles,
-            args.tilt,
-            norm=args.norm,
-            invert_data=args.invert_data,
-            ind=ind,
-            window=args.window,
-            keepreal=args.use_real,
-            datadir=args.datadir,
-            window_r=args.window_r,
-        )
         tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32), device=device)
+
+    data = dataset.MyMRCData(
+        mrcfile=args.particles,
+        tilt_mrcfile=args.tilt,
+        norm=args.norm,
+        invert_data=args.invert_data,
+        ind=ind,
+        window=args.window,
+        keepreal=args.use_real,
+        datadir=args.datadir,
+        window_r=args.window_r,
+    )
+
     Nimg = data.N
     D = data.D
 
@@ -992,10 +938,9 @@ def main(args):
                 equivariance_tuple = None
 
             # train the model
+            p = None
             if epoch % args.ps_freq != 0:
                 p = [torch.tensor(x[ind_np], device=device) for x in sorted_poses]  # type: ignore
-            else:
-                p = None
 
             cc += len(batch[0])
             if args.pose_model_update_freq and cc > args.pose_model_update_freq:

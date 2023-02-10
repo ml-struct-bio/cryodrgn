@@ -6,13 +6,14 @@ It is recommended that client code use `import cryodrgn.types` instead of reachi
 """
 from typing import TYPE_CHECKING, Union, List
 import numpy as np
+import torch
 
 
 if TYPE_CHECKING:  # Set if type-checking
     # Avoid importing any cryodrgn-specific submodules outside this block.
     from cryodrgn.mrc import LazyImage
 
-    ImageArray = Union[np.ndarray, List[LazyImage]]
+    ImageArray = Union[np.ndarray, List[LazyImage], torch.Tensor]
 
 else:
     """

@@ -21,7 +21,8 @@ except ImportError:
 
 import cryodrgn
 import cryodrgn.types as types
-from cryodrgn import ctf, dataset, models, mrc, utils
+from cryodrgn import ctf, dataset, models
+from cryodrgn.mrc import MRCFile
 from cryodrgn.lattice import Lattice
 from cryodrgn.pose import PoseTracker
 from cryodrgn.models import DataParallelDecoder, Decoder
@@ -235,7 +236,7 @@ def save_checkpoint(
 ):
     model.eval()
     vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, norm)
-    mrc.write(out_mrc, vol.astype(np.float32), Apix=Apix)
+    MRCFile.write(out_mrc, vol.astype(np.float32), Apix=Apix)
     torch.save(
         {
             "norm": norm,
@@ -381,26 +382,18 @@ def main(args):
         ind = pickle.load(open(args.ind, "rb"))
     else:
         ind = None
-    if args.lazy:
-        data = dataset.LazyMRCData(
-            args.particles,
-            norm=args.norm,
-            invert_data=args.invert_data,
-            ind=ind,
-            window=args.window,
-            datadir=args.datadir,
-            window_r=args.window_r,
-        )
-    else:
-        data = dataset.MRCData(
-            args.particles,
-            norm=args.norm,
-            invert_data=args.invert_data,
-            ind=ind,
-            window=args.window,
-            datadir=args.datadir,
-            window_r=args.window_r,
-        )
+
+    data = dataset.MyMRCData(
+        args.particles,
+        lazy=args.lazy,
+        norm=args.norm,
+        invert_data=args.invert_data,
+        ind=ind,
+        window=args.window,
+        datadir=args.datadir,
+        window_r=args.window_r,
+    )
+
     D = data.D
     Nimg = data.N
 

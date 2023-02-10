@@ -13,6 +13,8 @@ import torch.nn as nn
 from torch.nn.parallel import DataParallel
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+from torch.utils.data.sampler import BatchSampler, SequentialSampler, RandomSampler
+from tqdm import tqdm
 
 try:
     import apex.amp as amp  # type: ignore  # PYR01
@@ -20,7 +22,7 @@ except ImportError:
     pass
 
 import cryodrgn
-from cryodrgn import ctf, dataset, utils
+from cryodrgn import __version__, ctf, dataset, utils
 from cryodrgn.beta_schedule import get_beta_schedule
 from cryodrgn.lattice import Lattice
 from cryodrgn.models import HetOnlyVAE, unparallelize
@@ -437,11 +439,15 @@ def eval_z(
     ctf_params=None,
     use_real=False,
 ):
+    logger.info("Evaluating z")
     assert not model.training
-    z_mu_all = []
-    z_logvar_all = []
+
+    z_mu_all = np.empty((data.N, model.zdim), dtype=np.float32)
+    z_logvar_all = np.empty((data.N, model.zdim), dtype=np.float32)
+
     data_generator = DataLoader(data, batch_size=batch_size, shuffle=False)
-    for minibatch in data_generator:
+    _count = 0
+    for i, minibatch in enumerate(data_generator):
         ind = minibatch[-1]
         y = minibatch[0].to(device)
         yt = minibatch[1].to(device) if use_tilt else None
@@ -473,10 +479,12 @@ def eval_z(
         _model = unparallelize(model)
         assert isinstance(_model, HetOnlyVAE)
         z_mu, z_logvar = _model.encode(*input_)
-        z_mu_all.append(z_mu.detach().cpu().numpy())
-        z_logvar_all.append(z_logvar.detach().cpu().numpy())
-    z_mu_all = np.vstack(z_mu_all)
-    z_logvar_all = np.vstack(z_logvar_all)
+
+        z_mu_all[_count : _count + B, ...] = z_mu.detach().cpu().numpy()
+        z_logvar_all[_count : _count + B, ...] = z_logvar.detach().cpu().numpy()
+
+        _count += B
+
     return z_mu_all, z_logvar_all
 
 
@@ -566,6 +574,7 @@ def main(args):
     if args.load == "latest":
         args = get_latest(args)
     logger.info(" ".join(sys.argv))
+    logger.info(f"cryoDRGN {__version__}")
     logger.info(args)
 
     # set the random seed
@@ -599,60 +608,26 @@ def main(args):
 
     # load dataset
     logger.info(f"Loading dataset from {args.particles}")
+    data = dataset.MyMRCData(
+        mrcfile=args.particles,
+        tilt_mrcfile=args.tilt,
+        lazy=args.lazy,
+        norm=args.norm,
+        invert_data=args.invert_data,
+        ind=ind,
+        keepreal=args.use_real,
+        window=args.window,
+        datadir=args.datadir,
+        window_r=args.window_r,
+    )
+
     if args.tilt is None:
         tilt = None
         args.use_real = args.encode_mode == "conv"  # Must be False
-
-        if args.lazy and not args.preprocessed:
-            data = dataset.LazyMRCData(
-                args.particles,
-                norm=args.norm,
-                invert_data=args.invert_data,
-                ind=ind,
-                keepreal=args.use_real,
-                window=args.window,
-                datadir=args.datadir,
-                window_r=args.window_r,
-            )
-        elif args.preprocessed:
-            logger.info(
-                "Using preprocessed inputs. Ignoring any --window/--invert-data options"
-            )
-            data = dataset.PreprocessedMRCData(
-                args.particles, norm=args.norm, ind=ind, lazy=args.lazy
-            )
-        else:
-            data = dataset.MRCData(
-                args.particles,
-                norm=args.norm,
-                invert_data=args.invert_data,
-                ind=ind,
-                keepreal=args.use_real,
-                window=args.window,
-                datadir=args.datadir,
-                max_threads=args.max_threads,
-                window_r=args.window_r,
-            )
-
-    # Tilt series data -- lots of unsupported features
     else:
         assert args.encode_mode == "tilt"
-        if args.lazy:
-            raise NotImplementedError
-        if args.preprocessed:
-            raise NotImplementedError
-        data = dataset.TiltMRCData(
-            args.particles,
-            args.tilt,
-            norm=args.norm,
-            invert_data=args.invert_data,
-            ind=ind,
-            window=args.window,
-            keepreal=args.use_real,
-            datadir=args.datadir,
-            window_r=args.window_r,
-        )
         tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32), device=device)
+
     Nimg = data.N
     D = data.D
 
@@ -684,7 +659,7 @@ def main(args):
         logger.info("Loading ctf params from {}".format(args.ctf))
         ctf_params = ctf.load_ctf_for_training(D - 1, args.ctf)
         if args.ind is not None:
-            ctf_params = ctf_params[ind]
+            ctf_params = ctf_params[ind, ...]
         assert ctf_params.shape == (Nimg, 8)
         ctf_params = torch.tensor(ctf_params, device=device)  # Nx8
     else:
@@ -802,8 +777,14 @@ def main(args):
 
     # training loop
     data_generator = DataLoader(
-        data, batch_size=args.batch_size, shuffle=True, num_workers=num_workers_per_gpu
+        data,
+        num_workers=num_workers_per_gpu,
+        sampler=BatchSampler(
+            RandomSampler(data), batch_size=args.batch_size, drop_last=False
+        ),
+        batch_size=None,
     )
+
     num_epochs = args.num_epochs
     epoch = None
     for epoch in range(start_epoch, num_epochs):
@@ -812,7 +793,7 @@ def main(args):
         loss_accum = 0
         kld_accum = 0
         batch_it = 0
-        for minibatch in data_generator:  # minibatch: [y, ind]
+        for i, minibatch in enumerate(data_generator):  # minibatch: [y, ind]
             ind = minibatch[-1].to(device)
             y = minibatch[0].to(device)
             yt = minibatch[1].to(device) if tilt is not None else None
@@ -858,7 +839,14 @@ def main(args):
                 logger.info(
                     "# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.6f}, kld={:.6f}, beta={:.6f}, "
                     "loss={:.6f}".format(
-                        epoch + 1, num_epochs, batch_it, Nimg, gen_loss, kld, beta, loss
+                        epoch + 1,
+                        num_epochs,
+                        batch_it,
+                        Nimg,
+                        gen_loss,
+                        kld,
+                        beta,
+                        loss,
                     )
                 )
         logger.info(
@@ -892,6 +880,7 @@ def main(args):
                 out_pose = "{}/pose.{}.pkl".format(args.outdir, epoch)
                 posetracker.save(out_pose)
 
+    logger.info("Training complete")
     # save model weights, latent encoding, and evaluate the model on 3D lattice
     out_weights = "{}/weights.pkl".format(args.outdir)
     out_z = "{}/z.pkl".format(args.outdir)

@@ -4,12 +4,13 @@ Downsample an image stack or volume by clipping fourier frequencies
 
 import argparse
 import math
-import multiprocessing as mp
 import os
-from multiprocessing import Pool
 import logging
 import numpy as np
-from cryodrgn import dataset, fft, mrc
+import torch
+from cryodrgn import fft, mrc
+from cryodrgn.mrc import MRCHeader, MRCFile
+from cryodrgn.source import ImageSource
 
 logger = logging.getLogger(__name__)
 
@@ -73,13 +74,9 @@ def main(args):
     ), "Must specify output in .mrc(s) file format"
 
     lazy = not args.is_vol
-    old = dataset.load_particles(args.mrcs, lazy=lazy, datadir=args.datadir)
+    old = ImageSource.from_file(args.mrcs, lazy=lazy, datadir=args.datadir)
 
-    if lazy:
-        oldD = old[0].get().shape[0]
-    else:
-        assert isinstance(old, np.ndarray)
-        oldD = old.shape[-1]
+    oldD = old.L
     assert (
         args.D <= oldD
     ), f"New box size {args.D} cannot be larger than the original box size {oldD}"
@@ -89,30 +86,13 @@ def main(args):
     start = int(oldD / 2 - D / 2)
     stop = int(oldD / 2 + D / 2)
 
-    def _combine_imgs(imgs):
-        ret = []
-        for img in imgs:
-            img.shape = (1, *img.shape)  # (D,D) -> (1,D,D)
-        cur = imgs[0]
-        for img in imgs[1:]:
-            if img.fname == cur.fname and img.offset == cur.offset + 4 * np.product(
-                cur.shape
-            ):
-                cur.shape = (cur.shape[0] + 1, *cur.shape[1:])
-            else:
-                ret.append(cur)
-                cur = img
-        ret.append(cur)
-        return ret
-
     def downsample_images(imgs):
         if lazy:
-            imgs = _combine_imgs(imgs)
-            imgs = np.concatenate([i.get() for i in imgs])
-        with Pool(min(args.max_threads, mp.cpu_count())) as p:
-            oldft = np.asarray(p.map(fft.ht2_center, imgs))
-            newft = oldft[:, start:stop, start:stop]
-            new = np.asarray(p.map(fft.iht2_center, newft))
+            print("debug")
+        oldft = fft.ht2_center(imgs)
+        newft = oldft[:, start:stop, start:stop]
+        new = fft.iht2_center(newft)
+
         return new
 
     def downsample_in_batches(old, b):
@@ -130,16 +110,15 @@ def main(args):
         logger.info(oldft.shape)
         newft = oldft[start:stop, start:stop, start:stop]
         logger.info(newft.shape)
-        new = fft.ihtn_center(newft).astype(np.float32)
+        new = np.array(fft.ihtn_center(newft)).astype(np.float32)
         logger.info(f"Saving {args.o}")
-        mrc.write(args.o, new, is_vol=True)
+        MRCFile.write(args.o, array=new, is_vol=True)
 
     # Downsample images
     elif args.chunk is None:
         new = downsample_in_batches(old, args.b)
-        logger.info(new.shape)
         logger.info("Saving {}".format(args.o))
-        mrc.write(args.o, new.astype(np.float32), is_vol=False)
+        MRCFile.write(args.o, array=new, is_vol=False)
 
     # Downsample images, saving chunks of N images
     else:
@@ -154,7 +133,8 @@ def main(args):
             new = downsample_in_batches(chunk, args.b)
             logger.info(new.shape)
             logger.info(f"Saving {out_mrcs[i]}")
-            mrc.write(out_mrcs[i], new, is_vol=False)
+            MRCFile.write(out_mrcs[i], new, is_vol=False)
+
         # Write a text file with all chunks
         out_txt = "{}.txt".format(os.path.splitext(args.o)[0])
         logger.info(f"Saving {out_txt}")

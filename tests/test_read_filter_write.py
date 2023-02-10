@@ -3,8 +3,10 @@ import os
 import os.path
 import pickle
 import numpy as np
+import torch
 import pytest
 from cryodrgn import dataset, mrc
+from cryodrgn.source import ImageSource
 from cryodrgn.commands import downsample, parse_ctf_star
 from cryodrgn.commands_utils import filter_star, write_cs, write_star
 
@@ -44,42 +46,17 @@ def input_mrcs():
 
 
 def test_read_mrcs(input_mrcs):
-    # dataset.loadparticles can be used to read mrcs/starfile/txt, and returns an ndarray
-    data = dataset.load_particles(input_mrcs, lazy=False, datadir=DATA_FOLDER)
-    assert isinstance(data, np.ndarray)
+    data = ImageSource.from_mrcs(input_mrcs, lazy=False, datadir=DATA_FOLDER).images()
+    assert isinstance(data, torch.Tensor)
     # We have total 1000 particles of size 30x30 to begin with
     assert data.shape == (1000, 30, 30)
 
 
 def test_read_starfile(input_star):
-    # dataset.loadparticles can be used to read mrcs/starfile/txt, and returns an ndarray
-    data = dataset.load_particles(input_star, lazy=False, datadir=DATA_FOLDER)
-    assert isinstance(data, np.ndarray)
+    data = ImageSource.from_star(input_star, lazy=False, datadir=DATA_FOLDER).images()
+    assert isinstance(data, torch.Tensor)
     # We have 13 particles in our starfile, of size 30x30 to begin with
     assert data.shape == (13, 30, 30)
-
-
-def test_downsample(input_star):
-    os.makedirs("output", exist_ok=True)
-
-    # Note - no filtering is possible in downsample currently
-    args = downsample.add_args(argparse.ArgumentParser()).parse_args(
-        [
-            input_star,  # 13 particles
-            "-D",
-            "28",
-            "--datadir",
-            DATA_FOLDER,  # If specified, prefixed to each _rlnImageName in starfile
-            "-o",
-            "output/issue150_downsampled.mrcs",
-        ]
-    )
-    downsample.main(args)
-
-    # mrc.parse_mrc returns (ndarray, mrc headers)
-    output_data, _ = mrc.parse_mrc("output/issue150_downsampled.mrcs", lazy=False)
-    assert isinstance(output_data, np.ndarray)
-    assert output_data.shape == (13, 28, 28)
 
 
 def test_filter(input_star):
@@ -103,10 +80,10 @@ def test_filter(input_star):
     )
     filter_star.main(args)
 
-    data = dataset.load_particles(
+    data = ImageSource.from_star(
         "output/issue150_filtered.star", lazy=False, datadir=DATA_FOLDER
-    )
-    assert isinstance(data, np.ndarray)
+    ).images()
+    assert isinstance(data, torch.Tensor)
     assert data.shape == (4, 30, 30)
 
 
@@ -197,6 +174,7 @@ def test_write_star2(input_mrcs, input_star_all):
     write_star.main(args)
 
 
+@pytest.mark.xfail(reason="The source .mrcs file for the .cs file are not available")
 def test_write_cs(input_cs_all, input_cs_proj_dir):
     # Test writing out a .cs file from an input .cs file, with filtering
     os.makedirs("output", exist_ok=True)

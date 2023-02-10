@@ -3,7 +3,8 @@
 import argparse
 import logging
 import matplotlib.pyplot as plt
-from cryodrgn import analysis, mrc
+from cryodrgn import analysis
+from cryodrgn.source import ImageSource
 
 logger = logging.getLogger(__name__)
 
@@ -16,9 +17,9 @@ def add_args(parser):
 
 
 def main(args):
-    stack, _ = mrc.parse_mrc(args.input, lazy=True)
-    logger.info("{} {}x{} images".format(len(stack), *stack[0].get().shape))
-    stack = [stack[x].get() for x in range(9)]
+    src = ImageSource.from_file(args.input)
+    logger.info("{n} {L}x{L} images".format(n=len(src), L=src.images(0).shape[-1]))
+    stack = [src.images(x).squeeze(axis=0) for x in range(9)]
     if args.invert:
         stack = [-1 * x for x in stack]
     analysis.plot_projections(stack)

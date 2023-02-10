@@ -12,8 +12,11 @@ if use_cuda:
     torch.set_default_tensor_type(torch.cuda.FloatTensor)  # type: ignore
 
 basedir = "datasets/ribo_real_128"
-data = dataset.MRCData(
-    f"{basedir}/particles.128.phaseflip.1000.mrcs", window=False, keepreal=True
+data = dataset.MyMRCData(
+    f"{basedir}/particles.128.phaseflip.1000.mrcs",
+    lazy=False,
+    window=False,
+    keepreal=True,
 )
 
 

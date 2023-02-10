@@ -1,9 +1,9 @@
 import argparse
 import os.path
 import pytest
-import numpy as np
-from cryodrgn import dataset
+import torch
 from cryodrgn.commands import preprocess
+from cryodrgn.source import ImageSource
 
 DATA_FOLDER = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
 
@@ -33,6 +33,6 @@ def test_preprocess(mrcs_file):
     )
     preprocess.main(args)
 
-    data = dataset.load_particles("output/preprocessed.ft.txt")
-    assert isinstance(data, np.ndarray)
+    data = ImageSource.from_file("output/preprocessed.ft.txt").images()
+    assert isinstance(data, torch.Tensor)
     assert data.shape == (100, 21, 21)

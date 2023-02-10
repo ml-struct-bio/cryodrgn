@@ -3,7 +3,8 @@
 import argparse
 import logging
 import numpy as np
-from cryodrgn import mrc
+from cryodrgn.mrc import MRCHeader
+from cryodrgn.source import ImageSource
 
 logger = logging.getLogger(__name__)
 
@@ -17,10 +18,14 @@ def add_args(parser):
 def main(args):
     assert args.input.endswith(".mrc"), "Input volume must be .mrc file"
     assert args.o.endswith(".mrc"), "Output volume must be .mrc file"
-    x, h = mrc.parse_mrc(args.input)
-    assert isinstance(x, np.ndarray)
-    x *= -1
-    mrc.write(args.o, x, header=h)
+    header = MRCHeader.parse(args.input)
+    src = ImageSource.from_mrcs(args.input)
+
+    with open(args.o, "wb") as f:
+        header.write(f)
+        for chunk in src:
+            chunk *= -1
+            f.write(np.array(chunk).tobytes())
     logger.info(f"Wrote {args.o}")
 
 

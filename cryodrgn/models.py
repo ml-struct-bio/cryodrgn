@@ -373,7 +373,7 @@ class PositionalDecoder(Decoder):
             z = torch.zeros(D**2, zdim, dtype=torch.float32, device=coords.device)
             z += torch.tensor(zval, dtype=torch.float32, device=coords.device)
 
-        vol_f = np.zeros((D, D, D), dtype=np.float32)
+        vol_f = torch.zeros((D, D, D), dtype=torch.float32)
         assert not self.training
         # evaluate the volume by zslice to avoid memory overflows
         for i, dz in enumerate(
@@ -384,7 +384,7 @@ class PositionalDecoder(Decoder):
                 x = torch.cat((x, zval), dim=-1)
             with torch.no_grad():
                 y = self.forward(x)
-                y = y.view(D, D).cpu().numpy()
+                y = y.view(D, D)
             vol_f[i] = y
         vol_f = vol_f * norm[1] + norm[0]
         vol = fft.ihtn_center(
@@ -564,7 +564,7 @@ class FTPositionalDecoder(Decoder):
             zdim = len(zval)
             z = torch.tensor(zval, dtype=torch.float32, device=coords.device)
 
-        vol_f = np.zeros((D, D, D), dtype=np.float32)
+        vol_f = torch.zeros((D, D, D), dtype=torch.float32)
         assert not self.training
         # evaluate the volume by zslice to avoid memory overflows
         for i, dz in enumerate(
@@ -583,7 +583,7 @@ class FTPositionalDecoder(Decoder):
                     y = y[..., 0] - y[..., 1]
                 slice_ = torch.zeros(D**2, device="cpu")
                 slice_[keep] = y.cpu()
-                slice_ = slice_.view(D, D).numpy()
+                slice_ = slice_.view(D, D)
             vol_f[i] = slice_
         vol_f = vol_f * norm[1] + norm[0]
         vol = fft.ihtn_center(
@@ -703,7 +703,7 @@ class FTSliceDecoder(Decoder):
         else:
             z = None
 
-        vol_f = np.zeros((D, D, D), dtype=np.float32)
+        vol_f = torch.zeros((D, D, D), dtype=torch.float32)
         assert not self.training
         # evaluate the volume by zslice to avoid memory overflows
         for i, dz in enumerate(
@@ -716,7 +716,7 @@ class FTSliceDecoder(Decoder):
             with torch.no_grad():
                 y = self.decode(x)
                 y = y[..., 0] - y[..., 1]
-                y = y.view(D, D).cpu().numpy()
+                y = y.view(D, D).cpu()
             vol_f[i] = y
         vol_f = vol_f * norm[1] + norm[0]
         vol_f = utils.zero_sphere(vol_f)
@@ -1002,7 +1002,7 @@ class ResidLinearMLP(Decoder):
             z = torch.zeros(D**2, zdim, dtype=torch.float32, device=coords.device)
             z += torch.tensor(zval, dtype=torch.float32, device=coords.device)
 
-        vol_f = np.zeros((D, D, D), dtype=np.float32)
+        vol_f = torch.zeros((D, D, D), dtype=torch.float32)
         assert not self.training
         # evaluate the volume by zslice to avoid memory overflows
         for i, dz in enumerate(
@@ -1013,7 +1013,7 @@ class ResidLinearMLP(Decoder):
                 x = torch.cat((x, zval), dim=-1)
             with torch.no_grad():
                 y = self.forward(x)
-                y = y.view(D, D).cpu().numpy()
+                y = y.view(D, D).cpu()
             vol_f[i] = y
         vol_f = vol_f * norm[1] + norm[0]
         vol = fft.ihtn_center(

@@ -9,6 +9,7 @@ import numpy as np
 import torch
 import logging
 from cryodrgn import ctf, dataset, fft, mrc, utils
+from cryodrgn.mrc import MRCFile
 from cryodrgn.lattice import Lattice
 from cryodrgn.pose import PoseTracker
 
@@ -53,12 +54,6 @@ def add_args(parser):
         default=10000,
         help="Backproject the first N images (default: %(default)s)",
     )
-    group.add_argument(
-        "--preprocessed",
-        action="store_true",
-        help="Skip preprocessing steps if input data is from cryodrgn preprocess_mrcs",
-    )
-
     group = parser.add_argument_group("Tilt series options")
     group.add_argument("--tilt", help="Tilt series .mrcs image stack")
     group.add_argument(
@@ -113,31 +108,19 @@ def main(args):
     if args.ind is not None:
         args.ind = utils.load_pkl(args.ind).astype(int)
     if args.tilt is None:
-        if args.preprocessed:
-            data = dataset.PreprocessedMRCData(
-                args.particles, norm=(0, 1), ind=args.ind
-            )
-        else:
-            data = dataset.LazyMRCData(
-                args.particles,
-                norm=(0, 1),
-                invert_data=args.invert_data,
-                datadir=args.datadir,
-                ind=args.ind,
-            )
         tilt = None
     else:  # tilt series
-        if args.preprocessed:
-            raise NotImplementedError
-        data = dataset.TiltMRCData(
-            args.particles,
-            args.tilt,
-            norm=(0, 1),
-            invert_data=args.invert_data,
-            datadir=args.datadir,
-            ind=args.ind,
-        )
         tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32), device=device)
+
+    data = dataset.MyMRCData(
+        mrcfile=args.particles,
+        tilt_mrcfile=args.tilt,
+        norm=(0, 1),
+        invert_data=args.invert_data,
+        datadir=args.datadir,
+        ind=args.ind,
+    )
+
     D = data.D
     Nimg = data.N
 
@@ -170,13 +153,15 @@ def main(args):
         if ii % 100 == 0:
             logger.info("image {}".format(ii))
         r, t = posetracker.get_pose(ii)
-        ff = data.get(ii)
+        ff = data[ii]
+        assert isinstance(ff, tuple)
         if tilt is not None:
-            assert isinstance(ff, tuple) and len(ff) == 2
+            assert len(ff) > 1
             ff, ff_tilt = ff  # EW
         else:
             ff_tilt = None
-        ff = torch.tensor(ff, device=device)
+
+        ff = torch.tensor(ff[0], device=device)
         ff = ff.view(-1)[mask]
         c = None
         if ctf_params is not None:
@@ -209,8 +194,8 @@ def main(args):
     )
     counts[counts == 0] = 1
     V /= counts
-    V = fft.ihtn_center(V[0:-1, 0:-1, 0:-1].cpu().numpy())
-    mrc.write(args.o, V.astype("float32"), Apix=Apix)
+    V = fft.ihtn_center(V[0:-1, 0:-1, 0:-1].cpu())
+    MRCFile.write(args.o, np.array(V).astype("float32"), Apix=Apix)
 
 
 if __name__ == "__main__":

@@ -8,7 +8,8 @@ from datetime import datetime as dt
 import logging
 import numpy as np
 import torch
-from cryodrgn import config, mrc, utils
+from cryodrgn import config
+from cryodrgn.mrc import MRCFile
 from cryodrgn.models import HetOnlyVAE
 
 logger = logging.getLogger(__name__)
@@ -22,11 +23,13 @@ def add_args(parser):
     parser.add_argument(
         "-o", type=os.path.abspath, required=True, help="Output .mrc or directory"
     )
-    parser.add_argument("--device", type=int, help="Optionally specify CUDA device")
     parser.add_argument(
         "--prefix",
         default="vol_",
         help="Prefix when writing out multiple .mrc files (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--device", type=int, default=None, help="Optionally specify CUDA device"
     )
     parser.add_argument(
         "-v", "--verbose", action="store_true", help="Increase verbosity"
@@ -145,13 +148,13 @@ def main(args):
 
     # set the device
     if args.device is not None:
-        device = torch.device(f"cuda:{args.device}")
-    else:
         use_cuda = torch.cuda.is_available()
-        device = torch.device("cuda" if use_cuda else "cpu")
-        logger.info("Use cuda {}".format(use_cuda))
+        device = torch.device(f"cuda:{args.device}" if use_cuda else "cpu")
+        logger.info("Use cuda device {}".format(args.device))
         if not use_cuda:
-            logger.warning("WARNING: No GPUs detected")
+            logger.warning("WARNING: No GPUs used")
+    else:
+        device = "cpu"
 
     logger.info(args)
     cfg = config.overwrite_config(args.config, args)
@@ -209,7 +212,7 @@ def main(args):
                 vol = vol[::-1]
             if args.invert:
                 vol *= -1
-            mrc.write(out_mrc, vol.astype(np.float32), Apix=args.Apix)
+            MRCFile.write(out_mrc, np.array(vol).astype(np.float32), Apix=args.Apix)
 
     # Single z
     else:
@@ -232,7 +235,7 @@ def main(args):
             vol = vol[::-1]
         if args.invert:
             vol *= -1
-        mrc.write(args.o, vol.astype(np.float32), Apix=args.Apix)
+        MRCFile.write(args.o, np.array(vol).astype(np.float32), Apix=args.Apix)
 
     td = dt.now() - t1
     logger.info("Finished in {}".format(td))

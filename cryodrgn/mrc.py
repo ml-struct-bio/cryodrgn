@@ -1,9 +1,8 @@
-import os
 import struct
 from collections import OrderedDict
-from typing import Any, Optional, Tuple
+from typing import Optional, Union
 import numpy as np
-import cryodrgn.types as types
+from cryodrgn.source import ImageSource
 
 # See ref:
 # MRC2014: Extensions to the MRC format header for electron cryo-microscopy and tomography
@@ -92,7 +91,10 @@ class MRCHeader:
     @classmethod
     def parse(cls, fname):
         with open(fname, "rb") as f:
-            header = cls(cls.STRUCT.unpack(f.read(1024)))
+            try:
+                header = cls(cls.STRUCT.unpack(f.read(1024)))
+            except Exception as e:
+                print("debug")
             extbytes = header.fields["next"]
             extended_header = f.read(extbytes)
             header.extended_header = extended_header
@@ -183,93 +185,30 @@ class MRCHeader:
         self.fields["zorg"] = zorg
 
 
-def parse_header(fname: str) -> MRCHeader:
-    return MRCHeader.parse(fname)
-
-
-class LazyImage:
-    """On-the-fly image loading"""
-
-    def __init__(self, fname: str, shape: Tuple[int, int], dtype: Any, offset: int):
-        self.fname = fname
-        self.shape = shape
-        self.dtype = dtype
-        self.offset = offset
-
-    def get(self) -> np.ndarray:
-        with open(self.fname) as f:
-            f.seek(self.offset)
-            image = np.fromfile(
-                f, dtype=self.dtype, count=np.product(self.shape)
-            ).reshape(self.shape)
-        return image
-
-
-def parse_mrc_list(txtfile: str, lazy: bool = False) -> types.ImageArray:
-    lines = open(txtfile, "r").readlines()
-
-    def abspath(f):
-        if os.path.isabs(f):
-            return f
-        base = os.path.dirname(os.path.abspath(txtfile))
-        return os.path.join(base, f)
-
-    lines = [abspath(x) for x in lines]
-    if not lazy:
-        arrays = []
-        for line in lines:
-            array = parse_mrc(line.strip(), lazy=False)[0]
-            arrays.append(array)
-        particles = np.vstack(arrays)
-    else:
-        particles = [img for x in lines for img in parse_mrc(x.strip(), lazy=True)[0]]
-    return particles
-
-
-def parse_mrc(fname: str, lazy: bool = False) -> Tuple[types.ImageArray, MRCHeader]:  # type: ignore
-    # parse the header
-    header = MRCHeader.parse(fname)
-
-    # get the number of bytes in extended header
-    extbytes = header.fields["next"]
-    start = 1024 + extbytes  # start of image data
-
-    dtype = header.dtype
-    nz, ny, nx = header.fields["nz"], header.fields["ny"], header.fields["nx"]
-
-    # load all in one block
-    if not lazy:
-        with open(fname, "rb") as fh:
-            fh.read(start)  # skip the header + extended header
-            array = np.fromfile(fh, dtype=dtype).reshape((nz, ny, nx))
-
-    # or list of LazyImages
-    else:
-        stride = dtype().itemsize * ny * nx
-        array = [
-            LazyImage(fname, (ny, nx), dtype, start + i * stride) for i in range(nz)
-        ]
-    return array, header  # type: ignore
-
-
-def write(
-    fname,
-    array: np.ndarray,
-    header: Optional[MRCHeader] = None,
-    Apix: float = 1.0,
-    xorg: float = 0.0,
-    yorg: float = 0.0,
-    zorg: float = 0.0,
-    is_vol: Optional[bool] = None,
-):
-    # get a default header
-    if header is None:
+class MRCFile:
+    @staticmethod
+    def write(
+        filename: str,
+        array: Union[np.ndarray, ImageSource],
+        header: Optional[MRCHeader] = None,
+        Apix: float = 1.0,
+        xorg: float = 0.0,
+        yorg: float = 0.0,
+        zorg: float = 0.0,
+        is_vol: Optional[bool] = None,
+    ):
         if is_vol is None:
             is_vol = (
                 True if len(set(array.shape)) == 1 else False
             )  # Guess whether data is vol or image stack
-        header = MRCHeader.make_default_header(array, is_vol, Apix, xorg, yorg, zorg)
-    # write the header
-    f = open(fname, "wb")
-    header.write(f)
-    f.write(array.tobytes())
+        header = header or MRCHeader.make_default_header(
+            array, is_vol, Apix, xorg, yorg, zorg
+        )
+
+        with open(filename, "wb") as f:
+            header.write(f)
+            if isinstance(array, ImageSource):
+                for chunk in array:
+                    f.write(np.array(chunk).tobytes())
+            else:
+                f.write(array.tobytes())

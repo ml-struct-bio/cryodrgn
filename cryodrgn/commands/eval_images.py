@@ -234,45 +234,23 @@ def main(args):
     if args.tilt is None:
         if args.encode_mode == "conv":
             args.use_real = True
-        if args.lazy:
-            data = dataset.LazyMRCData(
-                args.particles,
-                norm=args.norm,
-                invert_data=args.invert_data,
-                ind=ind,
-                keepreal=args.use_real,
-                window=args.window,
-                datadir=args.datadir,
-                window_r=args.window_r,
-            )
-        else:
-            data = dataset.MRCData(
-                args.particles,
-                norm=args.norm,
-                invert_data=args.invert_data,
-                ind=ind,
-                keepreal=args.use_real,
-                window=args.window,
-                datadir=args.datadir,
-                window_r=args.window_r,
-            )
         tilt = None
     else:
         assert args.encode_mode == "tilt"
-        if args.lazy:
-            raise NotImplementedError
-        data = dataset.TiltMRCData(
-            args.particles,
-            args.tilt,
-            norm=args.norm,
-            invert_data=args.invert_data,
-            ind=ind,
-            window=args.window,
-            keepreal=args.use_real,
-            datadir=args.datadir,
-            window_r=args.window_r,
-        )
         tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32))
+
+    data = dataset.MyMRCData(
+        mrcfile=args.particles,
+        tilt_mrcfile=args.tilt,
+        norm=args.norm,
+        invert_data=args.invert_data,
+        ind=ind,
+        window=args.window,
+        keepreal=args.use_real,
+        datadir=args.datadir,
+        window_r=args.window_r,
+    )
+
     Nimg = data.N
     D = data.D
 

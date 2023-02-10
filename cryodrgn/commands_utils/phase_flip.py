@@ -4,7 +4,9 @@ import argparse
 import os
 import logging
 import numpy as np
-from cryodrgn import ctf, dataset, fft, mrc
+from cryodrgn import ctf, fft
+from cryodrgn.mrc import MRCFile
+from cryodrgn.source import ImageSource
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +23,8 @@ def add_args(parser):
 
 
 def main(args):
-    imgs = dataset.load_particles(args.mrcs, lazy=True, datadir=args.datadir)
-    D = imgs[0].get().shape[0]
+    imgs = ImageSource.from_file(args.mrcs, lazy=True, datadir=args.datadir)
+    D = imgs.images(0).shape[-1]
     ctf_params = ctf.load_ctf_for_training(D, args.ctf_params)
     assert len(imgs) == len(ctf_params), f"{len(imgs)} != {len(ctf_params)}"
 
@@ -38,13 +40,13 @@ def main(args):
             logger.info(f"Processing image {i}")
         c = ctf.compute_ctf_np(freqs / ctf_params[i, 0], *ctf_params[i, 1:])
         c = c.reshape((D, D))
-        ff = fft.fft2_center(imgs[i].get())
+        ff = fft.fft2_center(imgs.images(i))
         ff *= np.sign(c)
         img = fft.ifftn_center(ff)
-        imgs_flip[i] = img.astype(np.float32)
+        imgs_flip[i] = np.array(img).astype(np.float32)
 
     logger.info(f"Writing {args.o}")
-    mrc.write(args.o, imgs_flip)
+    MRCFile.write(args.o, imgs_flip)
 
 
 if __name__ == "__main__":

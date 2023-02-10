@@ -608,7 +608,7 @@ def main(args):
 
     # load dataset
     logger.info(f"Loading dataset from {args.particles}")
-    data = dataset.MyMRCData(
+    data = dataset.ImageDataset(
         mrcfile=args.particles,
         tilt_mrcfile=args.tilt,
         lazy=args.lazy,

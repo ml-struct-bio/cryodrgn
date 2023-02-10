@@ -10,7 +10,7 @@ from cryodrgn.utils import window_mask
 logger = logging.getLogger(__name__)
 
 
-class MyMRCData(data.Dataset):
+class ImageDataset(data.Dataset):
     def __init__(
         self,
         mrcfile,

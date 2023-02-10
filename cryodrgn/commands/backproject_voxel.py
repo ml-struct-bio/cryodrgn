@@ -112,7 +112,7 @@ def main(args):
     else:  # tilt series
         tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32), device=device)
 
-    data = dataset.MyMRCData(
+    data = dataset.ImageDataset(
         mrcfile=args.particles,
         tilt_mrcfile=args.tilt,
         norm=(0, 1),

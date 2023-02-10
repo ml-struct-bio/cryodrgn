@@ -725,7 +725,7 @@ def main(args):
         assert args.encode_mode == "tilt"
         tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32), device=device)
 
-    data = dataset.MyMRCData(
+    data = dataset.ImageDataset(
         mrcfile=args.particles,
         tilt_mrcfile=args.tilt,
         norm=args.norm,

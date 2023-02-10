@@ -12,10 +12,10 @@ if use_cuda:
     torch.set_default_tensor_type(torch.cuda.FloatTensor)  # type: ignore
 
 basedir = "datasets/ribo_syn_64"
-data = dataset.MyMRCData(
+data = dataset.ImageDataset(
     f"{basedir}/projections.1k.mrcs", lazy=False, window=False, keepreal=True
 )
-data_noisy = dataset.MyMRCData(
+data_noisy = dataset.ImageDataset(
     f"{basedir}/noise_0.1/projections.1k.mrcs", lazy=False, window=False, keepreal=True
 )
 

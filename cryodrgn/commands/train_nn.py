@@ -383,7 +383,7 @@ def main(args):
     else:
         ind = None
 
-    data = dataset.MyMRCData(
+    data = dataset.ImageDataset(
         args.particles,
         lazy=args.lazy,
         norm=args.norm,

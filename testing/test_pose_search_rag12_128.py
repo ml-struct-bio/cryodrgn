@@ -54,7 +54,7 @@ def run(args):
     GPU_BATCH = 4
 
     print(f"Loading particle images from {args.particles}")
-    data = dataset.MyMRCData(
+    data = dataset.ImageDataset(
         args.particles, window=False, keepreal=False, invert_data=True
     )
 

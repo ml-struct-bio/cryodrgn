@@ -368,10 +368,12 @@ class PositionalDecoder(Decoder):
         """
         # Note: extent should be 0.5 by default, except when a downsampled
         # volume is generated
+        assert extent <= 0.5
+        zdim = 0
+        z = torch.tensor([])
         if zval is not None:
             zdim = len(zval)
-            z = torch.zeros(D**2, zdim, dtype=torch.float32, device=coords.device)
-            z += torch.tensor(zval, dtype=torch.float32, device=coords.device)
+            z = torch.tensor(zval, dtype=torch.float32, device=coords.device)
 
         vol_f = np.zeros((D, D, D), dtype=np.float32)
         assert not self.training
@@ -381,7 +383,7 @@ class PositionalDecoder(Decoder):
         ):
             x = coords + torch.tensor([0, 0, dz], device=coords.device)
             if zval is not None:
-                x = torch.cat((x, zval), dim=-1)
+                x = torch.cat((x, z.expand(x.shape[0], zdim)), dim=-1)
             with torch.no_grad():
                 y = self.forward(x)
                 y = y.view(D, D).cpu().numpy()

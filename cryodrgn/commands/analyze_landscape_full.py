@@ -8,6 +8,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.data.dataloader import default_collate
 import torch.optim as optim
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset, DataLoader
@@ -173,8 +174,8 @@ def generate_and_map_volumes(
     logger.info(f"Saved {outdir}/z.sampled.pkl")
 
     # Set the device
-    if torch.cuda.is_available():
-        torch.set_default_tensor_type(torch.cuda.FloatTensor)  # type: ignore
+    # if torch.cuda.is_available():
+    #     torch.set_default_tensor_type(torch.cuda.FloatTensor)  # type: ignore
 
     cfg = config.update_config_v1(cfg_pkl)
     logger.info("Loaded configuration:")
@@ -235,8 +236,6 @@ def generate_and_map_volumes(
 
 
 def train_model(x, y, outdir, zfile, args):
-    from torch.utils.data.dataloader import default_collate
-
     use_cuda = torch.cuda.is_available()
     torch.manual_seed(args.seed)
     device = torch.device("cuda" if use_cuda else "cpu")

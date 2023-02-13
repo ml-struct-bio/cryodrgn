@@ -3,6 +3,7 @@ import struct
 from collections import OrderedDict
 from typing import Optional, Union
 import numpy as np
+import torch
 from cryodrgn.source import ImageSource
 
 # See ref:
@@ -190,7 +191,7 @@ class MRCFile:
     @staticmethod
     def write(
         filename: str,
-        array: Union[np.ndarray, ImageSource],
+        array: Union[np.ndarray, torch.Tensor, ImageSource],
         header: Optional[MRCHeader] = None,
         Apix: float = 1.0,
         xorg: float = 0.0,
@@ -216,6 +217,13 @@ class MRCFile:
             header.write(f)
             if isinstance(array, ImageSource):
                 for indices, chunk in array.chunks(chunksize=chunksize):
-                    f.write(np.array(transform_fn(chunk, indices)).tobytes())
+                    chunk = transform_fn(chunk, indices)
+                    if isinstance(chunk, torch.Tensor):
+                        chunk = np.array(chunk.cpu()).astype(np.float32)
+                    f.write(chunk.tobytes())
             else:
-                f.write(transform_fn(array, np.arange(array.shape[0])).tobytes())
+                indices = np.arange(array.shape[0])
+                array = transform_fn(array, indices)
+                if isinstance(array, torch.Tensor):
+                    array = np.array(array.cpu()).astype(np.float32)
+                f.write(transform_fn(array, indices).tobytes())

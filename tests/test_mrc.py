@@ -21,16 +21,16 @@ def test_lazy_loading(mrcs_data):
         f"{DATA_FOLDER}/toy_projections.mrcs", lazy=True
     ).images()
     assert isinstance(data, torch.Tensor)
-    assert np.allclose(data, mrcs_data)
+    assert torch.allclose(data, mrcs_data)
 
 
 def test_star(mrcs_data):
     data = ImageSource.from_star(f"{DATA_FOLDER}/toy_projections.star").images()
     assert isinstance(data, torch.Tensor)
-    assert np.allclose(data, mrcs_data)
+    assert torch.allclose(data, mrcs_data)
 
 
 def test_txt(mrcs_data):
     data = ImageSource.from_txt(f"{DATA_FOLDER}/toy_projections.txt").images()
     assert isinstance(data, torch.Tensor)
-    assert np.allclose(data, mrcs_data)
+    assert torch.allclose(data, mrcs_data)

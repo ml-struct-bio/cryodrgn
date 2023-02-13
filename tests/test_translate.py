@@ -1,8 +1,6 @@
 import os.path
-
 import numpy as np
 import torch
-
 from cryodrgn import fft
 from cryodrgn.source import ImageSource
 from cryodrgn.lattice import Lattice
@@ -27,4 +25,6 @@ def test_shifted_image():
     ht_np = ht_shifted.view(D, D)[0:-1, 0:-1]
 
     img_shifted = fft.ihtn_center(ht_np)
-    assert np.allclose(np.load(f"{DATA_FOLDER}/im_shifted.npy"), img_shifted, atol=1e-4)
+    assert torch.allclose(
+        torch.Tensor(np.load(f"{DATA_FOLDER}/im_shifted.npy")), img_shifted, atol=1e-4
+    )

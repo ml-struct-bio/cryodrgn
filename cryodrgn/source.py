@@ -310,7 +310,7 @@ class _MRCDataFrameSource(ImageSource):
         def load_single_mrcs(filepath, df):
             src = MRCFileSource(filepath)
             # df.index indicates the positions where the data needs to be inserted -> return for use by caller
-            return df.index, src.images(df["__mrc_index"])
+            return df.index, src._images(df["__mrc_index"])
 
         data = np.empty((len(indices), self.L, self.L), dtype=self.dtype)
 

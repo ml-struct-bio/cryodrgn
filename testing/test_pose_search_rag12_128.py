@@ -10,8 +10,8 @@ from cryodrgn import dataset, lattice, models, pose_search, utils
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda" if use_cuda else "cpu")
 print("Use cuda {}".format(use_cuda))
-if use_cuda:
-    torch.set_default_tensor_type(torch.cuda.FloatTensor)  # type: ignore
+# if use_cuda:
+#     torch.set_default_tensor_type(torch.cuda.FloatTensor)  # type: ignore
 
 
 def load_model(path, D):

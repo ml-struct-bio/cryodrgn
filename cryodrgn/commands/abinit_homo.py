@@ -273,7 +273,7 @@ def save_checkpoint(
 ):
     model.eval()
     vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, norm)
-    MRCFile.write(out_mrc, np.array(vol).astype(np.float32))
+    MRCFile.write(out_mrc, vol)
     torch.save(
         {
             "norm": norm,
@@ -585,7 +585,7 @@ def main(args):
     out_mrc = "{}/pretrain.reconstruct.mrc".format(args.outdir)
     model.eval()
     vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, tuple(data.norm))
-    MRCFile.write(out_mrc, np.array(vol).astype(np.float32))
+    MRCFile.write(out_mrc, vol)
 
     # reset model after pretraining
     if args.reset_optim_after_pretrain:

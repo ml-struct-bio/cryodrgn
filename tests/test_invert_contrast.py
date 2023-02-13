@@ -1,9 +1,7 @@
 import os.path
 import argparse
-import numpy as np
 import torch
 import pytest
-from cryodrgn import dataset, mrc
 from cryodrgn.source import ImageSource
 from cryodrgn.commands_utils import invert_contrast
 
@@ -28,4 +26,4 @@ def test_invert_contrast(mrcs_data):
     inverted_data = ImageSource.from_mrcs(
         "output/toy_projections_inverted.mrc"
     ).images()
-    assert np.allclose(inverted_data, -mrcs_data)
+    assert torch.allclose(inverted_data, -mrcs_data)

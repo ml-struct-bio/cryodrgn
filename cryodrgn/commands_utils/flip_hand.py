@@ -24,7 +24,7 @@ def main(args):
     MRCFile.write(
         args.o,
         src,
-        transform_fn=lambda data, indices: np.array(data)[::-1],
+        transform_fn=lambda data, indices: np.array(data.cpu())[::-1],
         chunksize=src.n,
     )
     logger.info(f"Wrote {args.o}")

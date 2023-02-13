@@ -1,5 +1,4 @@
 import os.path
-import numpy as np
 import torch
 import pytest
 from cryodrgn.source import ImageSource
@@ -16,10 +15,10 @@ def mrcs_data():
 
 def test_loading_mrcs(mrcs_data):
     src = ImageSource.from_file(f"{DATA_FOLDER}/toy_projections.mrcs")
-    # Indexing inside the 'images' attributes causes the hitherto lazy data to turn into an ndarray
-    assert np.allclose(src[:], mrcs_data)
+    # Indexing inside the 'images' attributes causes the hitherto lazy data to turn into a Tensor
+    assert torch.allclose(src[:], mrcs_data)
     # We can, of course, do selective indexing to avoid realizing ALL the underlying data to memory
-    assert np.allclose(src[10:15], mrcs_data[10:15])
+    assert torch.allclose(src[10:15], mrcs_data[10:15])
 
 
 def test_loading_starfile(mrcs_data):
@@ -35,8 +34,8 @@ def test_loading_txtfile(mrcs_data):
     # Each line of the txt file points to an .mrcs file with 1000 particles. Try to get a slice across the two.
     arr = src[990:1005]
     assert arr.shape == (15, 30, 30)
-    assert np.allclose(arr[:10], mrcs_data[-10:])
-    assert np.allclose(arr[10:], mrcs_data[:5])
+    assert torch.allclose(arr[:10], mrcs_data[-10:])
+    assert torch.allclose(arr[10:], mrcs_data[:5])
 
 
 def test_loading_csfile(mrcs_data):
@@ -47,7 +46,7 @@ def test_loading_csfile(mrcs_data):
         f"{DATA_FOLDER}/empiar_10076_7.star", datadir=DATA_FOLDER, lazy=False
     )[:]
 
-    assert np.allclose(arr, starfile_data)
+    assert torch.allclose(arr, starfile_data)
 
 
 def test_source_iteration():

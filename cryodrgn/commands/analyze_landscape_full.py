@@ -245,8 +245,7 @@ def train_model(x, y, outdir, zfile, args):
     if use_cuda:
         cuda_kwargs = {
             "num_workers": 0,
-            "pin_memory": False,
-            "shuffle": False,
+            "shuffle": True,
             "collate_fn": lambda x: tuple(x_.to(device) for x_ in default_collate(x)),
         }
         train_kwargs.update(cuda_kwargs)

@@ -18,11 +18,15 @@ def add_args(parser):
 def main(args):
     assert args.input.endswith(".mrc"), "Input volume must be .mrc file"
     assert args.o.endswith(".mrc"), "Output volume must be .mrc file"
-    header = MRCHeader.parse(args.input)
-    data = np.array(ImageSource.from_mrcs(args.input).images())
-    assert isinstance(data, np.ndarray)
-    data = data[::-1]
-    MRCFile.write(args.o, data, header=header)
+
+    src = ImageSource.from_mrcs(args.input)
+    # Note: Proper flipping (compatible with legacy implementation) only happens when chunksize is equal to src.n
+    MRCFile.write(
+        args.o,
+        src,
+        transform_fn=lambda data, indices: np.array(data)[::-1],
+        chunksize=src.n,
+    )
     logger.info(f"Wrote {args.o}")
 
 

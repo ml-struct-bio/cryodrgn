@@ -1,3 +1,4 @@
+import os
 import struct
 from collections import OrderedDict
 from typing import Optional, Union
@@ -196,6 +197,8 @@ class MRCFile:
         yorg: float = 0.0,
         zorg: float = 0.0,
         is_vol: Optional[bool] = None,
+        transform_fn=None,
+        chunksize=1000,
     ):
         if is_vol is None:
             is_vol = (
@@ -205,10 +208,14 @@ class MRCFile:
             array, is_vol, Apix, xorg, yorg, zorg
         )
 
+        if transform_fn is None:
+            transform_fn = lambda chunk, indices: chunk
+
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
         with open(filename, "wb") as f:
             header.write(f)
             if isinstance(array, ImageSource):
-                for chunk in array:
-                    f.write(np.array(chunk).tobytes())
+                for indices, chunk in array.chunks(chunksize=chunksize):
+                    f.write(np.array(transform_fn(chunk, indices)).tobytes())
             else:
-                f.write(array.tobytes())
+                f.write(transform_fn(array, np.arange(array.shape[0])).tobytes())

@@ -24,9 +24,10 @@ class ImageSourceIterator:
     def __next__(self):
         if self.i >= self.n:
             raise StopIteration()
-        images = self.src.images(slice(self.i, self.i + self.chunksize))
+        indices = np.arange(self.i, min(self.n, self.i + self.chunksize))
+        images = self.src.images(indices)
         self.i += self.chunksize
-        return images
+        return indices, images
 
 
 class ImageSource:
@@ -71,7 +72,6 @@ class ImageSource:
         n_workers: int = 1,
         dtype: str = "float32",
         lazy: bool = True,
-        chunksize: int = 1000,
         preallocated: bool = False,
         **kwargs,
     ):
@@ -94,7 +94,6 @@ class ImageSource:
 
         self.n_workers = n_workers
         self.dtype = dtype
-        self.chunksize = chunksize
 
         self.cache = None
         if not self.lazy:
@@ -105,9 +104,6 @@ class ImageSource:
 
     def __getitem__(self, item):
         return self.images(item)
-
-    def __iter__(self):
-        return ImageSourceIterator(self, chunksize=self.chunksize)
 
     def images(
         self, indices: Optional[Union[int, np.ndarray, slice]] = None
@@ -141,6 +137,9 @@ class ImageSource:
 
     def _images(self, indices: np.ndarray):
         raise NotImplementedError("Subclasses must implement this")
+
+    def chunks(self, chunksize=1000):
+        return ImageSourceIterator(self, chunksize=chunksize)
 
 
 class ArraySource(ImageSource):

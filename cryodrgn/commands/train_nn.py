@@ -65,7 +65,7 @@ def add_args(parser):
         help="Logging interval in N_IMGS (default: %(default)s)",
     )
     parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Increaes verbosity"
+        "-v", "--verbose", action="store_true", help="Increase verbosity"
     )
     parser.add_argument(
         "--seed", type=int, default=np.random.randint(0, 100000), help="Random seed"
@@ -236,7 +236,7 @@ def save_checkpoint(
 ):
     model.eval()
     vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, norm)
-    MRCFile.write(out_mrc, vol.astype(np.float32), Apix=Apix)
+    MRCFile.write(out_mrc, np.array(vol).astype(np.float32), Apix=Apix)
     torch.save(
         {
             "norm": norm,
@@ -500,7 +500,7 @@ def main(args):
         t2 = dt.now()
         loss_accum = 0
         batch_it = 0
-        for batch, ind in data_generator:
+        for batch, _, ind in data_generator:
             batch_it += len(ind)
             ind = ind.to(device)
             if pose_optimizer is not None:

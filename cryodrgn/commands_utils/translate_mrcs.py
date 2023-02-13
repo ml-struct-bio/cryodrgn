@@ -43,7 +43,6 @@ def plot_projections(out_png, imgs):
 def main(args):
     # load particles
     particles = ImageSource.from_file(args.mrcs, datadir=args.datadir).images()
-    assert isinstance(particles, np.ndarray)
     logger.info(particles.shape)
     Nimg, D, D = particles.shape
 

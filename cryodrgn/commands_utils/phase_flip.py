@@ -24,7 +24,7 @@ def add_args(parser):
 
 def main(args):
     imgs = ImageSource.from_file(args.mrcs, lazy=True, datadir=args.datadir)
-    D = imgs.images(0).shape[-1]
+    D = imgs.shape[-1]
     ctf_params = ctf.load_ctf_for_training(D, args.ctf_params)
     assert len(imgs) == len(ctf_params), f"{len(imgs)} != {len(ctf_params)}"
 
@@ -34,19 +34,35 @@ def main(args):
     )
     freqs = np.stack([fx.ravel(), fy.ravel()], 1)
 
-    imgs_flip = np.empty((len(imgs), D, D), dtype=np.float32)
-    for i in range(len(imgs)):
-        if i % 1000 == 0:
-            logger.info(f"Processing image {i}")
-        c = ctf.compute_ctf_np(freqs / ctf_params[i, 0], *ctf_params[i, 1:])
-        c = c.reshape((D, D))
-        ff = fft.fft2_center(imgs.images(i))
+    def compute_ctf(freqs, ctf_params):
+        dfu = ctf_params[:, [0]]
+        dfv = ctf_params[:, [1]]
+        dfang = ctf_params[:, [2]]
+        volt = ctf_params[:, [3]]
+        cs = ctf_params[:, [4]]
+        w = ctf_params[:, [5]]
+        phase_shift = ctf_params[:, [6]]
+
+        bfactor = None
+        if ctf_params.shape[1] >= 8:
+            bfactor = ctf_params[:, [7]]
+
+        return ctf.compute_ctf_np(
+            freqs, dfu, dfv, dfang, volt, cs, w, phase_shift, bfactor
+        )
+
+    def transform_fn(img, indices):
+        _freqs = np.repeat(freqs[np.newaxis, ...], len(indices), axis=0)
+        _ctf_params = ctf_params[..., np.newaxis, np.newaxis]
+        c = compute_ctf(_freqs / _ctf_params[indices, 0], ctf_params[indices, 1:])
+        c = c.reshape((-1, D, D))
+        ff = fft.fft2_center(img)
         ff *= np.sign(c)
         img = fft.ifftn_center(ff)
-        imgs_flip[i] = np.array(img).astype(np.float32)
+        return np.array(img).astype(np.float32)
 
     logger.info(f"Writing {args.o}")
-    MRCFile.write(args.o, imgs_flip)
+    MRCFile.write(args.o, imgs, transform_fn=transform_fn)
 
 
 if __name__ == "__main__":

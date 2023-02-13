@@ -7,6 +7,7 @@ import pytest
 from cryodrgn.commands import (
     analyze,
     analyze_landscape,
+    analyze_landscape_full,
     eval_vol,
     graph_traversal,
     train_vae,
@@ -55,21 +56,16 @@ def test_run(mrcs_file, poses_file):
             "3",  # Number of principal component traversals to generate
             "--ksample",
             "14",  # Number of kmeans samples to generate
-            "--device",
-            "0",
             "--vol-start-index",
             "1",
         ]
     )
     analyze.main(args)
 
-    shutil.rmtree("output/landscape.2", ignore_errors=True)
     args = analyze_landscape.add_args(argparse.ArgumentParser()).parse_args(
         [
             "output",
             "2",  # Epoch number to analyze - 0-indexed
-            "--device",
-            "0",
             "--sketch-size",
             "10",  # Number of volumes to generate for analysis
             "--downsample",
@@ -82,6 +78,19 @@ def test_run(mrcs_file, poses_file):
     )
     shutil.rmtree("output/landscape.2", ignore_errors=True)
     analyze_landscape.main(args)
+
+    args = analyze_landscape_full.add_args(argparse.ArgumentParser()).parse_args(
+        [
+            "output",
+            "2",  # Epoch number to analyze - 0-indexed
+            "-N",
+            "10",  # Number of training volumes to generate
+            "--downsample",
+            "64",
+        ]
+    )
+    shutil.rmtree("output/landscape.2/landscape_full", ignore_errors=True)
+    analyze_landscape_full.main(args)
 
     args = graph_traversal.add_args(argparse.ArgumentParser()).parse_args(
         [

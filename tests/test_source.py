@@ -51,9 +51,9 @@ def test_loading_csfile(mrcs_data):
 
 
 def test_source_iteration():
-    # An ImageSource can be iterated over, with an optional chunksize (default 1000, specified during construction)
-    src = ImageSource.from_file(f"{DATA_FOLDER}/toy_projections.mrcs", chunksize=300)
-    for chunk in src:
+    # An ImageSource can be iterated over, with an optional chunksize (default 1000
+    src = ImageSource.from_file(f"{DATA_FOLDER}/toy_projections.mrcs")
+    for indices, chunk in src.chunks(chunksize=300):
         assert isinstance(chunk, torch.Tensor)
         assert chunk.ndim == 3
         # chunk will be (300, L, L) in shape except the last iteration where it may be (<300, L, L)

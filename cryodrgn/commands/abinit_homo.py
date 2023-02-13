@@ -286,8 +286,7 @@ def save_checkpoint(
     with open(out_poses, "wb") as f:
         rot, trans = pose
         # When saving translations, save in box units (fractional)
-        trans /= model.D
-        pickle.dump((rot, trans), f)
+        pickle.dump((rot, trans / model.D), f)
 
 
 def pretrain(model, lattice, optim, batch, tilt=None):

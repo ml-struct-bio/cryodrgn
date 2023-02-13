@@ -614,8 +614,7 @@ def save_checkpoint(
             D = _model.lattice.D
         else:
             D = model.lattice.D
-        trans /= D
-        pickle.dump((rot, trans), f)
+        pickle.dump((rot, trans / D), f)
 
 
 def save_config(args, dataset, lattice, model, out_config):

@@ -22,10 +22,11 @@ def main(args):
     assert args.input.endswith(".mrc"), "Input volume must be .mrc file"
     assert args.o.endswith(".mrc"), "Output volume must be .mrc file"
     header = MRCHeader.parse(args.input)
-    data = np.array(ImageSource.from_mrcs(args.input).images())
-    assert isinstance(data, np.ndarray)
     header.update_apix(args.Apix)
-    MRCFile.write(args.o, data, header=header)
+
+    src = ImageSource.from_mrcs(args.input)
+    MRCFile.write(args.o, src, header=header)
+
     logger.info(f"Wrote {args.o}")
 
 

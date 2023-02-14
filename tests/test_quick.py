@@ -44,6 +44,7 @@ def test_run(mrcs_file, poses_file):
             "10",
             "--pe-type",
             "gaussian",
+            "--verbose",
         ]
     )
     train_vae.main(args)

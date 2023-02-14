@@ -73,12 +73,20 @@ class ImageSource:
         dtype: str = "float32",
         lazy: bool = True,
         preallocated: bool = False,
+        indices: Optional[np.ndarray] = None,
         **kwargs,
     ):
-        self.L = L + int(preallocated)
         self.n = n
+
+        if indices is None:
+            self.indices = np.arange(self.n)
+        else:
+            self.indices = indices
+            # If indices is provided, it overrides self.n
+            self.n = len(indices)
+
+        self.L = L + int(preallocated)
         self.shape = self.n, self.L, self.L
-        self.lazy = lazy
 
         # Some client calls need to access the original filename(s) associated with a source
         # These are traditionally available as the 'fname' attribute of the LazyImage class, hence only used by
@@ -92,6 +100,7 @@ class ImageSource:
             filenames = list(filenames)
         self.filenames = np.array(filenames)
 
+        self.lazy = lazy
         self.n_workers = n_workers
         self.dtype = dtype
 
@@ -128,6 +137,9 @@ class ImageSource:
 
         if np.any(indices >= self.n):
             raise ValueError(f"indices should be < {self.n}")
+
+        # Convert incoming caller indices to indices that this ImageSource will use
+        indices = self.indices[indices]
 
         if self.cache:
             images = self.cache._images(indices)

@@ -19,7 +19,7 @@ class ImageDataset(data.Dataset):
         norm=None,
         keepreal=False,
         invert_data=False,
-        ind=None,  # TODO
+        ind=None,
         window=True,
         datadir=None,
         window_r=0.85,
@@ -28,7 +28,7 @@ class ImageDataset(data.Dataset):
         assert ind is None, "ind not supported yet"
         assert not keepreal, "Not implemented yet"
         self.src = ImageSource.from_file(
-            mrcfile, lazy=lazy, datadir=datadir, preallocated=True
+            mrcfile, lazy=lazy, datadir=datadir, preallocated=True, indices=ind
         )
         if tilt_mrcfile is None:
             self.tilt_src = None

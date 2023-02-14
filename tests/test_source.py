@@ -1,4 +1,5 @@
 import os.path
+import numpy as np
 import torch
 import pytest
 from cryodrgn.source import ImageSource
@@ -14,7 +15,9 @@ def mrcs_data():
 
 
 def test_loading_mrcs(mrcs_data):
-    src = ImageSource.from_file(f"{DATA_FOLDER}/toy_projections.mrcs")
+    src = ImageSource.from_file(
+        f"{DATA_FOLDER}/toy_projections.mrcs"
+    )  # 100 30x30 images
     # Indexing inside the 'images' attributes causes the hitherto lazy data to turn into a Tensor
     assert torch.allclose(src[:], mrcs_data)
     # We can, of course, do selective indexing to avoid realizing ALL the underlying data to memory
@@ -50,10 +53,28 @@ def test_loading_csfile(mrcs_data):
 
 
 def test_source_iteration():
-    # An ImageSource can be iterated over, with an optional chunksize (default 1000
+    # An ImageSource can be iterated over, with an optional chunksize (default 1000)
     src = ImageSource.from_file(f"{DATA_FOLDER}/toy_projections.mrcs")
-    for indices, chunk in src.chunks(chunksize=300):
+    chunk_sizes = []
+    for i, (indices, chunk) in enumerate(src.chunks(chunksize=300)):
         assert isinstance(chunk, torch.Tensor)
         assert chunk.ndim == 3
-        # chunk will be (300, L, L) in shape except the last iteration where it may be (<300, L, L)
-        assert chunk.shape[0] <= 300
+        chunk_sizes.append(chunk.shape[0])
+
+    # chunk sizes will be (300, L, L) in shape except the last iteration where it may be (<300, L, L)
+    assert all(chunk_sizes[i] == 300 for i in range(len(chunk_sizes) - 1))
+    assert chunk_sizes[-1] <= 300
+
+
+def test_prespecified_indices(mrcs_data):
+    # An ImageSource can have pre-specified indices, which will be the only ones used when reading underlying data.
+    src = ImageSource.from_file(
+        f"{DATA_FOLDER}/toy_projections.mrcs", indices=np.array([0, 1, 5, 304])
+    )
+    assert src.shape == (4, 30, 30)  # Not (100, 30, 30)
+
+    # Once read, caller-side indexing can be done as usual (i.e. going from 0 to src.n),
+    # and we can forget about what indices were originally passed in.
+    data = src.images(np.array([2, 3]))
+
+    assert torch.allclose(mrcs_data[np.array([5, 304]), :, :], data)

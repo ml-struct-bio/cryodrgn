@@ -1,7 +1,7 @@
 import argparse
 import os
 import os.path
-from cryodrgn.commands import abinit_het, abinit_homo, backproject_voxel
+from cryodrgn.commands import abinit_het, abinit_homo, backproject_voxel, view_config
 
 DATA_FOLDER = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
 
@@ -64,6 +64,13 @@ def test_abinit_het_and_backproject():
         ]
     )
     backproject_voxel.main(args)
+
+    args = view_config.add_args(argparse.ArgumentParser()).parse_args(
+        [
+            "output/abinit_het",
+        ]
+    )
+    view_config.main(args)
 
 
 def test_abinit_homo_and_backproject():

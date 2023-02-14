@@ -18,12 +18,10 @@ def add_args(parser):
 
 
 def main(args):
-    x = ImageSource.from_file(args.input, lazy=True)
-    logger.info(f"Loaded {len(x)} particles")
     ind = utils.load_pkl(args.ind)
-    x = np.array([x.images(i) for i in ind])
-    logger.info(f"New dimensions: {x.shape}")
-    MRCFile.write(args.o, x)
+    src = ImageSource.from_file(args.input, lazy=True, indices=ind)
+    logger.info(f"Loaded {len(src)} particles")
+    MRCFile.write(args.o, src)
 
 
 if __name__ == "__main__":

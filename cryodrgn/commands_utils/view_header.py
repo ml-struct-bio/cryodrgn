@@ -3,7 +3,7 @@
 import argparse
 from pprint import pprint
 import logging
-from cryodrgn.mrc import MRCFile
+from cryodrgn.mrc import MRCHeader
 
 logger = logging.getLogger(__name__)
 
@@ -16,9 +16,9 @@ def add_args(parser):
 def main(args):
     if not (args.input.endswith(".mrc") or args.input.endswith(".mrcs")):
         logger.warning(f"Warning: {args.input} does not appear to be a .mrc(s) file")
-    mrc = MRCFile(args.input)
-    pprint(mrc.header.fields)
-    pprint(mrc.header.extended_header)
+    header = MRCHeader.parse(args.input)
+    pprint(header.fields)
+    pprint(header.extended_header)
 
 
 if __name__ == "__main__":

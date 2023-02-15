@@ -18,7 +18,7 @@ def fftn_center(img):
 
 
 def ifftn_center(img):
-    return ifftshift(ifftn(ifftshift(img, dim=(-1, -2)), dim=(-1, -2)), dim=(-1, -2))
+    return ifftshift(ifftn(ifftshift(img)))
 
 
 def transform_in_chunks(

@@ -32,3 +32,7 @@ logging.config.dictConfig(
         "loggers": {"": {"handlers": ["default"], "level": "INFO"}},
     }
 )
+
+import torch
+
+torch.set_default_tensor_type(torch.cuda.FloatTensor)  # type: ignore

@@ -15,7 +15,7 @@ def mrcs_data():
     return ImageSource.from_mrcs(f"{DATA_FOLDER}/toy_projections.mrcs").images()
 
 
-def test_invert_contrast(mrcs_data):
+def test_phase_flip(mrcs_data):
     args = phase_flip.add_args(argparse.ArgumentParser()).parse_args(
         [
             f"{DATA_FOLDER}/relion31.mrcs",

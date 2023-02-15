@@ -59,14 +59,14 @@ def compute_ctf(
 
 def compute_ctf_np(
     freqs: np.ndarray,
-    dfu: float,
-    dfv: float,
-    dfang: float,
-    volt: float,
-    cs: float,
-    w: float,
-    phase_shift: float = 0,
-    bfactor: Optional[float] = None,
+    dfu: Union[float, np.ndarray],
+    dfv: Union[float, np.ndarray],
+    dfang: Union[float, np.ndarray],
+    volt: Union[float, np.ndarray],
+    cs: Union[float, np.ndarray],
+    w: Union[float, np.ndarray],
+    phase_shift: Union[float, np.ndarray] = 0,
+    bfactor: Union[float, np.ndarray, None] = None,
 ) -> np.ndarray:
     """
     Compute the 2D CTF
@@ -105,17 +105,17 @@ def compute_ctf_np(
     return np.require(ctf, dtype=freqs.dtype)
 
 
-def compute_ctf_np2(
+def compute_ctf_torch(
     freqs: np.ndarray,
-    dfu: float,
-    dfv: float,
-    dfang: float,
-    volt: float,
-    cs: float,
-    w: float,
-    phase_shift: float = 0,
-    bfactor: Optional[float] = None,
-) -> np.ndarray:
+    dfu: Union[float, torch.Tensor],
+    dfv: Union[float, torch.Tensor],
+    dfang: Union[float, torch.Tensor],
+    volt: Union[float, torch.Tensor],
+    cs: Union[float, torch.Tensor],
+    w: Union[float, torch.Tensor],
+    phase_shift: Union[float, torch.Tensor] = 0,
+    bfactor: Union[float, torch.Tensor, None] = None,
+) -> torch.Tensor:
     """
     Compute the 2D CTF
 
@@ -137,20 +137,20 @@ def compute_ctf_np2(
     phase_shift = phase_shift * np.pi / 180
 
     # lam = sqrt(h^2/(2*m*e*Vr)); Vr = V + (e/(2*m*c^2))*V^2
-    lam = 12.2639 / np.sqrt(volt + 0.97845e-6 * volt**2)
+    lam = 12.2639 / torch.sqrt(volt + 0.97845e-6 * volt**2)
     x = freqs[..., 0]
     y = freqs[..., 1]
-    ang = np.arctan2(y, x)
+    ang = torch.arctan2(y, x)
     s2 = x**2 + y**2
-    df = 0.5 * (dfu + dfv + (dfu - dfv) * np.cos(2 * (ang - dfang)))
+    df = 0.5 * (dfu + dfv + (dfu - dfv) * torch.cos(2 * (ang - dfang)))
     gamma = (
-        2 * np.pi * (-0.5 * df * lam * s2 + 0.25 * cs * lam**3 * s2**2)
+        2 * torch.pi * (-0.5 * df * lam * s2 + 0.25 * cs * lam**3 * s2**2)
         - phase_shift
     )
-    ctf = np.sqrt(1 - w**2) * np.sin(gamma) - w * np.cos(gamma)
+    ctf = torch.sqrt(1 - w**2) * torch.sin(gamma) - w * torch.cos(gamma)
     if bfactor is not None:
-        ctf *= np.exp(-bfactor / 4 * s2)
-    return np.require(ctf, dtype=freqs.dtype)
+        ctf *= torch.exp(-bfactor / 4 * s2)
+    return ctf
 
 
 def print_ctf_params(params: np.ndarray) -> None:

@@ -86,24 +86,6 @@ def main(args):
     start = int(oldD / 2 - D / 2)
     stop = int(oldD / 2 + D / 2)
 
-    def downsample_images(imgs):
-        if lazy:
-            print("debug")
-        oldft = fft.ht2_center(imgs)
-        newft = oldft[:, start:stop, start:stop]
-        new = fft.iht2_center(newft)
-
-        return new
-
-    def downsample_in_batches(old, b):
-        new = np.empty((len(old), D, D), dtype=np.float32)
-        for ii in range(math.ceil(len(old) / b)):
-            logger.info(f"Processing batch {ii}")
-            new[ii * b : (ii + 1) * b, :, :] = downsample_images(
-                old[ii * b : (ii + 1) * b]
-            )
-        return new
-
     # Downsample volume
     if args.is_vol:
         oldft = fft.htn_center(old)
@@ -115,31 +97,55 @@ def main(args):
         MRCFile.write(args.o, array=new, is_vol=True)
 
     # Downsample images
-    elif args.chunk is None:
-        new = downsample_in_batches(old, args.b)
-        logger.info("Saving {}".format(args.o))
-        MRCFile.write(args.o, array=new, is_vol=False)
-
-    # Downsample images, saving chunks of N images
     else:
-        nchunks = math.ceil(len(old) / args.chunk)
-        out_mrcs = [
-            ".{}".format(i).join(os.path.splitext(args.o)) for i in range(nchunks)
-        ]
-        chunk_names = [os.path.basename(x) for x in out_mrcs]
-        for i in range(nchunks):
-            logger.info("Processing chunk {}".format(i))
-            chunk = old[i * args.chunk : (i + 1) * args.chunk]
-            new = downsample_in_batches(chunk, args.b)
-            logger.info(new.shape)
-            logger.info(f"Saving {out_mrcs[i]}")
-            MRCFile.write(out_mrcs[i], new, is_vol=False)
 
-        # Write a text file with all chunks
-        out_txt = "{}.txt".format(os.path.splitext(args.o)[0])
-        logger.info(f"Saving {out_txt}")
-        with open(out_txt, "w") as f:
-            f.write("\n".join(chunk_names))
+        def transform_fn(chunk, indices):
+            oldft = fft.ht2_center(chunk)
+            newft = oldft[:, start:stop, start:stop]
+            new = fft.iht2_center(newft)
+            return new
+
+        if args.chunk is None:
+            logger.info("Saving {}".format(args.o))
+            header = MRCHeader.make_default_header(old.n, D, D, None, args.is_vol)
+            MRCFile.write(
+                filename=args.o,
+                array=old,
+                header=header,
+                is_vol=args.is_vol,
+                transform_fn=transform_fn,
+                chunksize=args.b,
+            )
+
+        else:
+            # Downsample images, saving chunks of N images
+            nchunks = math.ceil(len(old) / args.chunk)
+            out_mrcs = [
+                ".{}".format(i).join(os.path.splitext(args.o)) for i in range(nchunks)
+            ]
+            chunk_names = [os.path.basename(x) for x in out_mrcs]
+            for i in range(nchunks):
+                logger.info("Processing chunk {}".format(i))
+                chunk = old[i * args.chunk : (i + 1) * args.chunk]
+
+                header = MRCHeader.make_default_header(
+                    len(chunk), D, D, None, args.is_vol
+                )
+                logger.info(f"Saving {out_mrcs[i]}")
+                MRCFile.write(
+                    filename=out_mrcs[i],
+                    array=chunk,
+                    header=header,
+                    is_vol=args.is_vol,
+                    transform_fn=transform_fn,
+                    chunksize=args.b,
+                )
+
+            # Write a text file with all chunks
+            out_txt = "{}.txt".format(os.path.splitext(args.o)[0])
+            logger.info(f"Saving {out_txt}")
+            with open(out_txt, "w") as f:
+                f.write("\n".join(chunk_names))
 
 
 if __name__ == "__main__":

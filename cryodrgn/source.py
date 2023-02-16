@@ -25,6 +25,7 @@ class ImageSourceIterator:
         if self.i >= self.n:
             raise StopIteration()
         indices = np.arange(self.i, min(self.n, self.i + self.chunksize))
+        logger.info(f"Returning chunk starting at index {self.i}")
         images = self.src.images(indices)
         self.i += self.chunksize
         return indices, images

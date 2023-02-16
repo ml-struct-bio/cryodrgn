@@ -9,44 +9,35 @@ from torch.fft import fftshift, ifftshift, fft2, fftn, ifftn
 logger = logging.getLogger(__name__)
 
 
-def fft2_center(img):
-    return fftshift(fft2(fftshift(img, dim=(-1, -2)), dim=(-1, -2)), dim=(-1, -2))
-
-
-def fftn_center(img):
-    return fftshift(fftn(fftshift(img)))
-
-
-def ifftn_center(img):
-    return ifftshift(ifftn(ifftshift(img, dim=(-1, -2)), dim=(-1, -2)), dim=(-1, -2))
-
-
 def transform_in_chunks(
     f, data, chunksize=None, n_workers=1, inplace=False, *args, **kwargs
 ):
     def g(src, dest, indices):
+        logger.debug(f"Transforming chunk of size {len(indices)}")
         dest[indices, ...] = f(src[indices, ...], *args, **kwargs)
 
     ndim = data.ndim
-    n = data.shape[0] if ndim == 3 else 1
+    if data.ndim == 2:
+        n = 1
+        src = data[np.newaxis, ...]
+    elif data.ndim == 3:
+        n = data.shape[0]
+        src = data
+    else:
+        raise RuntimeError(f"Unsupported data ndim {ndim}")
+
     indices = np.arange(n)
     chunksize = min(n, chunksize) if chunksize is not None else n
     chunk_indices = np.array_split(indices, n // chunksize)
     n_chunks = len(chunk_indices)
 
-    if data.ndim == 2:
-        src = data[np.newaxis, ...]
-    elif data.ndim == 3:
-        src = data
+    if inplace:
+        dest = src
     else:
-        raise RuntimeError
-
-    dest = src
-    if not inplace:
         if isinstance(src, np.ndarray):
             dest = src.copy()
         elif isinstance(src, torch.Tensor):
-            dest = src.detach()
+            dest = src.detach().clone()
 
     with Pool(n_workers) as pool:
         pool.starmap(
@@ -75,8 +66,20 @@ def normalize(
         std=std,
     )
 
-    logger.info(f"Normalized HT by {mean} +/- {std}")
+    logger.info(f"Normalized by {mean} +/- {std}")
     return retVal
+
+
+def fft2_center(img):
+    return fftshift(fft2(fftshift(img, dim=(-1, -2))), dim=(-1, -2))
+
+
+def fftn_center(img):
+    return fftshift(fftn(fftshift(img)))
+
+
+def ifftn_center(img):
+    return ifftshift(ifftn(ifftshift(img)))
 
 
 def ht2_center(img, inplace=False, chunksize=None, n_workers=1):
@@ -90,8 +93,8 @@ def ht2_center(img, inplace=False, chunksize=None, n_workers=1):
 
 
 def htn_center(img):
-    f = fftshift(fftn(fftshift(img)))
-    return (f.real - f.imag).astype(img.dtype)
+    _img = fftshift(fftn(fftshift(img)))
+    return _img.real - _img.imag
 
 
 def iht2_center(img):
@@ -100,33 +103,34 @@ def iht2_center(img):
     return img.real - img.imag
 
 
-def ihtn_center(V):
-    V = fftshift(V)
-    V = fftn(V)
-    V = fftshift(V)
-    V /= torch.prod(torch.tensor(V.shape))
-    return V.real - V.imag
+def ihtn_center(img):
+    img = fftshift(img)
+    img = fftn(img)
+    img = fftshift(img)
+    img /= torch.prod(torch.tensor(img.shape))
+    return img.real - img.imag
 
 
 def symmetrize_ht(ht, preallocated=False):
+    if ht.ndim == 2:
+        ht = ht[np.newaxis, ...]
+    assert ht.ndim == 3
+    n = ht.shape[0]
+
     if preallocated:
         D = ht.shape[-1] - 1
         sym_ht = ht
-        if len(sym_ht.shape) == 2:
-            sym_ht = sym_ht.reshape(1, *sym_ht.shape)
-        assert len(sym_ht.shape) == 3
     else:
-        if len(ht.shape) == 2:
-            ht = ht.reshape(1, *ht.shape)
-        assert len(ht.shape) == 3
         D = ht.shape[-1]
-        B = ht.shape[0]
-        sym_ht = torch.empty((B, D + 1, D + 1), dtype=ht.dtype)
+        sym_ht = torch.empty((n, D + 1, D + 1), dtype=ht.dtype)
         sym_ht[:, 0:-1, 0:-1] = ht
+
     assert D % 2 == 0
-    sym_ht[:, -1, :] = sym_ht[:, 0]  # last row is the first row
+    sym_ht[:, -1, :] = sym_ht[:, 0, :]  # last row is the first row
     sym_ht[:, :, -1] = sym_ht[:, :, 0]  # last col is the first col
-    sym_ht[:, -1, -1] = sym_ht[:, 0, 0]
-    if len(sym_ht) == 1:
-        sym_ht = sym_ht[0]
+    sym_ht[:, -1, -1] = sym_ht[:, 0, 0]  # last corner is first corner
+
+    if n == 1:
+        sym_ht = sym_ht[0, ...]
+
     return sym_ht

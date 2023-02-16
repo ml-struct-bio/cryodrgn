@@ -20,23 +20,25 @@ def input_star():
 
 
 def test_downsample(input_star):
-    os.makedirs("output", exist_ok=True)
+    os.makedirs("output/downsampled", exist_ok=True)
 
     # Note - no filtering is possible in downsample currently
     args = downsample.add_args(argparse.ArgumentParser()).parse_args(
         [
             input_star,  # 13 particles
             "-D",
-            "28",
+            "28",  # downsampled from 30x30
             "--datadir",
             DATA_FOLDER,  # If specified, prefixed to each _rlnImageName in starfile
             "-o",
-            "output/downsampled.mrcs",
+            "output/downsampled/downsampled.mrcs",
         ]
     )
     downsample.main(args)
 
-    output_data = ImageSource.from_mrcs("output/downsampled.mrcs", lazy=False).images()
+    output_data = ImageSource.from_mrcs(
+        "output/downsampled/downsampled.mrcs", lazy=False
+    ).images()
     assert isinstance(output_data, torch.Tensor)
     assert output_data.shape == (13, 28, 28)
 
@@ -44,7 +46,7 @@ def test_downsample(input_star):
 def test_downsample_in_chunks(input_star):
     os.makedirs("output", exist_ok=True)
 
-    # Note - no filtering is possible in downsample currently
+    # TODO - no filtering is possible in downsample currently
     args = downsample.add_args(argparse.ArgumentParser()).parse_args(
         [
             input_star,  # 13 particles
@@ -53,13 +55,29 @@ def test_downsample_in_chunks(input_star):
             "--datadir",
             DATA_FOLDER,  # If specified, prefixed to each _rlnImageName in starfile
             "--chunk",
-            "4",
+            "5",
             "-o",
-            "output/downsampled.mrcs",
+            "output/downsampled/downsampled.mrcs",
         ]
     )
     downsample.main(args)
 
-    output_data = ImageSource.from_txt("output/downsampled.txt", lazy=False).images()
-    assert isinstance(output_data, torch.Tensor)
-    assert output_data.shape == (13, 28, 28)
+    assert ImageSource.from_txt(
+        "output/downsampled/downsampled.txt", lazy=False
+    ).shape == (13, 28, 28)
+
+    assert ImageSource.from_mrcs("output/downsampled/downsampled.0.mrcs").shape == (
+        5,
+        28,
+        28,
+    )
+    assert ImageSource.from_mrcs("output/downsampled/downsampled.1.mrcs").shape == (
+        5,
+        28,
+        28,
+    )
+    assert ImageSource.from_mrcs("output/downsampled/downsampled.2.mrcs").shape == (
+        3,
+        28,
+        28,
+    )

@@ -1,3 +1,4 @@
+import logging
 import os
 import struct
 from collections import OrderedDict
@@ -5,6 +6,8 @@ from typing import Optional, Union
 import numpy as np
 import torch
 from cryodrgn.source import ImageSource
+
+logger = logging.getLogger(__name__)
 
 # See ref:
 # MRC2014: Extensions to the MRC format header for electron cryo-microscopy and tomography
@@ -104,14 +107,31 @@ class MRCHeader:
 
     @classmethod
     def make_default_header(
-        cls, data, is_vol=True, Apix=1.0, xorg=0.0, yorg=0.0, zorg=0.0
+        cls,
+        nz=None,
+        ny=None,
+        nx=None,
+        data=None,
+        is_vol=True,
+        Apix=1.0,
+        xorg=0.0,
+        yorg=0.0,
+        zorg=0.0,
     ):
-        nz, ny, nx = data.shape
+        if data is None:
+            assert all(
+                [nz, ny, nx]
+            ), "If data array is unspecified, nz/ny/nx must be specified"
+        else:
+            nz, ny, nx = data.shape
+
         ispg = 1 if is_vol else 0
         if is_vol:
+            assert data is not None, "If is_vol=True, data array must be specified"
             dmin, dmax, dmean, rms = data.min(), data.max(), data.mean(), data.std()
         else:  # use undefined values for image stacks
             dmin, dmax, dmean, rms = -1, -2, -3, -1
+
         vals = [
             nx,
             ny,
@@ -191,7 +211,7 @@ class MRCFile:
     @staticmethod
     def write(
         filename: str,
-        array: Union[np.ndarray, torch.Tensor, ImageSource],
+        array: Union[np.ndarray, torch.Tensor, ImageSource, None] = None,
         header: Optional[MRCHeader] = None,
         Apix: float = 1.0,
         xorg: float = 0.0,
@@ -199,14 +219,14 @@ class MRCFile:
         zorg: float = 0.0,
         is_vol: Optional[bool] = None,
         transform_fn=None,
-        chunksize=1000,
+        chunksize: int = 1000,
     ):
         if is_vol is None:
             is_vol = (
-                True if len(set(array.shape)) == 1 else False
+                len(set(array.shape)) == 1
             )  # Guess whether data is vol or image stack
         header = header or MRCHeader.make_default_header(
-            array, is_vol, Apix, xorg, yorg, zorg
+            None, None, None, array, is_vol, Apix, xorg, yorg, zorg
         )
 
         if transform_fn is None:
@@ -216,7 +236,8 @@ class MRCFile:
         with open(filename, "wb") as f:
             header.write(f)
             if isinstance(array, ImageSource):
-                for indices, chunk in array.chunks(chunksize=chunksize):
+                for i, (indices, chunk) in enumerate(array.chunks(chunksize=chunksize)):
+                    logger.debug(f"Processing chunk {i}")
                     chunk = transform_fn(chunk, indices)
                     if isinstance(chunk, torch.Tensor):
                         chunk = np.array(chunk.cpu()).astype(np.float32)
@@ -226,4 +247,4 @@ class MRCFile:
                 array = transform_fn(array, indices)
                 if isinstance(array, torch.Tensor):
                     array = np.array(array.cpu()).astype(np.float32)
-                f.write(transform_fn(array, indices).tobytes())
+                f.write(array.tobytes())

@@ -13,7 +13,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-
+from torch.utils.data.sampler import BatchSampler, RandomSampler
 from cryodrgn import ctf, dataset, lie_tools, models, utils
 from cryodrgn.mrc import MRCFile
 from cryodrgn.lattice import Lattice
@@ -564,7 +564,13 @@ def main(args):
     else:
         start_epoch = 0
 
-    data_iterator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
+    data_iterator = DataLoader(
+        data,
+        sampler=BatchSampler(
+            RandomSampler(data), batch_size=args.batch_size, drop_last=False
+        ),
+        batch_size=None,
+    )
 
     # pretrain decoder with random poses
     global_it = 0

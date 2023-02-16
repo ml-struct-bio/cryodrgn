@@ -13,6 +13,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.parallel import DataParallel
 from torch.utils.data import DataLoader
+from torch.utils.data.sampler import BatchSampler, RandomSampler
 from typing import Union
 import cryodrgn
 from cryodrgn import ctf, dataset, lie_tools, utils
@@ -533,7 +534,14 @@ def eval_z(
     assert not model.training
     z_mu_all = []
     z_logvar_all = []
-    data_generator = DataLoader(data, batch_size=batch_size, shuffle=False)
+    data_generator = DataLoader(
+        data,
+        sampler=BatchSampler(
+            RandomSampler(data), batch_size=batch_size, drop_last=False
+        ),
+        batch_size=None,
+    )
+
     for minibatch in data_generator:
         ind = minibatch[-1]
         y = minibatch[0].to(device)
@@ -855,7 +863,13 @@ def main(args):
         device=device,
     )
 
-    data_iterator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
+    data_iterator = DataLoader(
+        data,
+        sampler=BatchSampler(
+            RandomSampler(data), batch_size=args.batch_size, drop_last=False
+        ),
+        batch_size=None,
+    )
 
     # pretrain decoder with random poses
     global_it = 0

@@ -14,7 +14,6 @@ from torch.nn.parallel import DataParallel
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import BatchSampler, SequentialSampler, RandomSampler
-from tqdm import tqdm
 
 try:
     import apex.amp as amp  # type: ignore  # PYR01
@@ -445,7 +444,14 @@ def eval_z(
     z_mu_all = np.empty((data.N, model.zdim), dtype=np.float32)
     z_logvar_all = np.empty((data.N, model.zdim), dtype=np.float32)
 
-    data_generator = DataLoader(data, batch_size=batch_size, shuffle=False)
+    data_generator = DataLoader(
+        data,
+        sampler=BatchSampler(
+            SequentialSampler(data), batch_size=batch_size, drop_last=False
+        ),
+        batch_size=None,
+    )
+
     _count = 0
     for i, minibatch in enumerate(data_generator):
         ind = minibatch[-1]

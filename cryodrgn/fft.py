@@ -113,7 +113,7 @@ def ihtn_center(img):
     img = fftshift(img)
     img = fftn(img)
     img = fftshift(img)
-    img /= torch.prod(torch.tensor(img.shape))
+    img /= torch.prod(torch.tensor(img.shape, device=img.device))
     return img.real - img.imag
 
 

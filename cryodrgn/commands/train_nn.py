@@ -11,6 +11,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.nn.parallel import DataParallel
+from torch.utils.data.sampler import BatchSampler, RandomSampler
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
@@ -494,7 +495,14 @@ def main(args):
         )
 
     # train
-    data_generator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
+    data_generator = DataLoader(
+        data,
+        sampler=BatchSampler(
+            RandomSampler(data), batch_size=args.batch_size, drop_last=False
+        ),
+        batch_size=None,
+    )
+
     epoch = None
     for epoch in range(start_epoch, args.num_epochs):
         t2 = dt.now()

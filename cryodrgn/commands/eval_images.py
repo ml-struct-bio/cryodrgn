@@ -10,6 +10,7 @@ import logging
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
+from torch.utils.data.sampler import BatchSampler, SequentialSampler
 from cryodrgn import config, ctf, dataset, utils
 from cryodrgn.commands.train_vae import loss_function, preprocess_input, run_batch
 from cryodrgn.models import HetOnlyVAE
@@ -283,7 +284,14 @@ def main(args):
     kld_accum = 0
     loss_accum = 0
     batch_it = 0
-    data_generator = DataLoader(data, batch_size=args.batch_size, shuffle=False)
+    data_generator = DataLoader(
+        data,
+        sampler=BatchSampler(
+            SequentialSampler(data), batch_size=args.batch_size, drop_last=False
+        ),
+        batch_size=None,
+    )
+
     for minibatch in data_generator:
         ind = minibatch[-1].to(device)
         y = minibatch[0].to(device)

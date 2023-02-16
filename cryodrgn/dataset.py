@@ -24,6 +24,7 @@ class ImageDataset(data.Dataset):
         datadir=None,
         window_r=0.85,
         max_threads=16,
+        device: str = "cpu",
     ):
         assert ind is None, "ind not supported yet"
         assert not keepreal, "Not implemented yet"
@@ -46,6 +47,7 @@ class ImageDataset(data.Dataset):
         self.window = window_mask(ny - 1, window_r, 0.99) if window else None
         self.max_threads = min(max_threads, mp.cpu_count())
         self.norm = norm or self.estimate_normalization(n=1000)
+        self.device = device
 
     def estimate_normalization(self, n=None):
         n = min(n, self.N) if n is not None else self.N
@@ -102,4 +104,11 @@ class ImageDataset(data.Dataset):
         else:
             tilt = self._process(self.tilt_src.images(index))
 
-        return particles, tilt, index
+        if isinstance(index, int):
+            logger.debug(f"ImageDataset returning images at index ({index})")
+        else:
+            logger.debug(
+                f"ImageDataset returning images for {len(index)} indices ({index[0]}..{index[-1]})"
+            )
+
+        return particles.to(self.device), tilt.to(self.device), index

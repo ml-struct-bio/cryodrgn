@@ -10,6 +10,33 @@ import torch
 logger = logging.getLogger(__name__)
 
 
+def meshgrid_2d(lo, hi, n, endpoint=False):
+    """
+    Torch-compatible implementation of:
+    np.meshgrid(
+            np.linspace(-0.5, 0.5, D, endpoint=endpoint),
+            np.linspace(-0.5, 0.5, D, endpoint=endpoint),
+        )
+    Torch doesn't support the 'endpoint' argument (always assumed True)
+    and the behavior of torch.meshgrid is different unless the 'indexing' argument is supplied.
+    """
+    if endpoint:
+        values = torch.linspace(lo, hi, n)
+    else:
+        values = torch.linspace(lo, hi, n + 1)[:-1]
+
+    retval = torch.meshgrid(values, values, indexing="xy")
+
+    # Sanity Check - remove in production
+    check = np.meshgrid(
+        np.linspace(lo, hi, n, endpoint=endpoint),
+        np.linspace(lo, hi, n, endpoint=endpoint),
+    )
+    assert np.allclose(retval[0].cpu(), check[0], atol=1e-7)
+    assert np.allclose(retval[1].cpu(), check[1], atol=1e-7)
+    return retval
+
+
 def window_mask(D, in_rad, out_rad):
     assert D % 2 == 0
     x0, x1 = torch.meshgrid(

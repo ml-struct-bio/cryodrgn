@@ -4,9 +4,11 @@ import argparse
 import os
 import logging
 import numpy as np
+import torch
 from cryodrgn import ctf, fft
 from cryodrgn.mrc import MRCFile
 from cryodrgn.source import ImageSource
+from cryodrgn.utils import meshgrid_2d
 
 logger = logging.getLogger(__name__)
 
@@ -24,15 +26,13 @@ def add_args(parser):
 
 def main(args):
     imgs = ImageSource.from_file(args.mrcs, lazy=True, datadir=args.datadir)
-    D = imgs.shape[-1]
+    D = imgs.L
     ctf_params = ctf.load_ctf_for_training(D, args.ctf_params)
+    ctf_params = torch.Tensor(ctf_params)
     assert len(imgs) == len(ctf_params), f"{len(imgs)} != {len(ctf_params)}"
 
-    fx, fy = np.meshgrid(
-        np.linspace(-0.5, 0.5, D, endpoint=False),
-        np.linspace(-0.5, 0.5, D, endpoint=False),
-    )
-    freqs = np.stack([fx.ravel(), fy.ravel()], 1)
+    fx2, fy2 = meshgrid_2d(-0.5, 0.5, D, endpoint=False)
+    freqs = torch.stack((fx2.ravel(), fy2.ravel()), dim=1)
 
     def compute_ctf(freqs, ctf_params):
         dfu = ctf_params[:, [0]]
@@ -47,19 +47,20 @@ def main(args):
         if ctf_params.shape[1] >= 8:
             bfactor = ctf_params[:, [7]]
 
-        return ctf.compute_ctf_np(
+        return ctf.compute_ctf_torch(
             freqs, dfu, dfv, dfang, volt, cs, w, phase_shift, bfactor
         )
 
     def transform_fn(img, indices):
-        _freqs = np.repeat(freqs[np.newaxis, ...], len(indices), axis=0)
+        _freqs = freqs.expand(len(indices), -1, -1)
         _ctf_params = ctf_params[..., np.newaxis, np.newaxis]
         c = compute_ctf(_freqs / _ctf_params[indices, 0], ctf_params[indices, 1:])
         c = c.reshape((-1, D, D))
         ff = fft.fft2_center(img)
-        ff *= np.sign(c)
-        img = fft.ifftn_center(ff)
-        return np.array(img).astype(np.float32)
+        ff *= torch.sign(c)
+        img2 = fft.ifftn_center(ff)
+
+        return img2.cpu().numpy().astype(np.float32)
 
     logger.info(f"Writing {args.o}")
     MRCFile.write(args.o, imgs, transform_fn=transform_fn)

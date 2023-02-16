@@ -79,7 +79,13 @@ def fftn_center(img):
 
 
 def ifftn_center(img):
-    return ifftshift(ifftn(ifftshift(img)))
+    if isinstance(img, np.ndarray):
+        # Note: We can't just typecast a complex ndarray using torch.Tensor(array) !
+        img = torch.complex(torch.Tensor(img.real), torch.Tensor(img.imag))
+    x = ifftshift(img)
+    y = ifftn(x)
+    z = ifftshift(y)
+    return z
 
 
 def ht2_center(img, inplace=False, chunksize=None, n_workers=1):

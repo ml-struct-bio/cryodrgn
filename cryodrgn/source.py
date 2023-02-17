@@ -137,6 +137,8 @@ class ImageSource:
         else:
             raise TypeError("Unsupported Type for indices")
 
+        assert isinstance(indices, np.ndarray)
+
         if np.any(indices >= self.n):
             raise ValueError(f"indices should be < {self.n}")
 
@@ -218,6 +220,8 @@ class MRCFileSource(ImageSource):
                     ), "indices/tgt_indices length mismatch"
                 else:
                     tgt_indices = np.arange(len(indices))
+
+            assert isinstance(tgt_indices, np.ndarray)
 
             for (index, tgt_index) in zip(indices, tgt_indices):
                 f.seek(self.start)

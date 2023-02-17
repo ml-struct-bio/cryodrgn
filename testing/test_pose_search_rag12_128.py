@@ -96,7 +96,8 @@ def run(args):
     def eval_pose_search(B=256, S=0, label="", **kwargs):
         tic = time.perf_counter()
         res = []
-        for chunk in torch.from_numpy(data.particles[S : S + B]).split(GPU_BATCH):
+        particles, _, _ = data[S : S + B]
+        for chunk in particles.split(GPU_BATCH):
             res.append(do_pose_search(chunk, **kwargs))
         delta = time.perf_counter() - tic
         batch_rot = pose_rot[S : S + B]

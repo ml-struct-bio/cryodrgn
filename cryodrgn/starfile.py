@@ -141,26 +141,3 @@ def prefix_paths(mrcs: List, datadir: str):
             assert os.path.exists(path), f"{path} not found"
         mrcs = mrcs2
     return mrcs
-
-
-def csparc_get_particles(
-    csfile: str, datadir: Optional[str] = None, lazy: bool = True
-) -> types.ImageArray:
-    metadata = np.load(csfile)
-    ind = metadata["blob/idx"]  # 0-based indexing
-    mrcs = metadata["blob/path"].astype(str).tolist()
-    if mrcs[0].startswith(">"):  # Remove '>' prefix from paths
-        mrcs = [x[1:] for x in mrcs]
-    if datadir is not None:
-        mrcs = prefix_paths(mrcs, datadir)
-    for path in set(mrcs):
-        assert os.path.exists(path), f"{path} not found"
-    D = metadata[0]["blob/shape"][0]
-    dtype = np.float32
-    stride = np.float32().itemsize * D * D
-    dataset = [
-        LazyImage(f, (D, D), dtype, 1024 + ii * stride) for ii, f in zip(ind, mrcs)
-    ]
-    if not lazy:
-        dataset = np.array([x.get() for x in dataset])
-    return dataset

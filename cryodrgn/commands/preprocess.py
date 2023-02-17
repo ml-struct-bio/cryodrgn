@@ -110,15 +110,17 @@ def main(args):
 
     # load images
     lazy = args.lazy
-    images = ImageSource.from_file(args.mrcs, lazy=lazy, datadir=args.datadir)
 
     # filter images
+    ind = None
     if args.ind is not None:
         logger.info(f"Filtering image dataset with {args.ind}")
         ind = utils.load_pkl(args.ind).astype(int)
-        images = [images[i] for i in ind] if lazy else images[ind]
 
-    original_D = images.images(0).shape[-1]
+    images = ImageSource.from_file(
+        args.mrcs, lazy=lazy, datadir=args.datadir, indices=ind
+    )
+    original_D = images.L
 
     logger.info(f"Loading {len(images)} {original_D}x{original_D} images")
     window = args.window
@@ -136,30 +138,11 @@ def main(args):
     else:
         D = original_D
 
-    def _combine_imgs(imgs):
-        ret = []
-        for img in imgs:
-            img.shape = (1, *img.shape)  # (D,D) -> (1,D,D)
-        cur = imgs[0]
-        for img in imgs[1:]:
-            if img.fname == cur.fname and img.offset == cur.offset + 4 * np.product(
-                cur.shape
-            ):
-                cur.shape = (cur.shape[0] + 1, *cur.shape[1:])
-            else:
-                ret.append(cur)
-                cur = img
-        ret.append(cur)
-        return ret
-
-    def preprocess(imgs):
-        if lazy:
-            imgs = _combine_imgs(imgs)
-            imgs = torch.concatenate([torch.tensor(i.get()) for i in imgs])
+    def preprocess(imgs: torch.Tensor):
         if window:
             imgs *= window_mask(original_D, args.window_r, 0.99)
 
-        ret = torch.stack([fft.ht2_center(img) for img in imgs])
+        ret = fft.ht2_center(imgs)
         if invert_data:
             ret *= -1
         if downsample:

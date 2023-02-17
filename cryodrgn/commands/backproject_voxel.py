@@ -156,8 +156,8 @@ def main(args):
         ff = data[ii]
         assert isinstance(ff, tuple)
         if tilt is not None:
-            assert len(ff) > 1
-            ff, ff_tilt = ff  # EW
+            assert isinstance(ff, tuple)
+            ff_tilt = ff[1]
         else:
             ff_tilt = None
 

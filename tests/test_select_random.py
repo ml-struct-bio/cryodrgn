@@ -1,3 +1,4 @@
+import os
 import os.path
 import argparse
 from cryodrgn.commands_utils import select_random

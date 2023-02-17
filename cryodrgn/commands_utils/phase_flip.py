@@ -47,7 +47,7 @@ def main(args):
         if ctf_params.shape[1] >= 8:
             bfactor = ctf_params[:, [7]]
 
-        return ctf.compute_ctf_torch(
+        return ctf.compute_ctf(
             freqs, dfu, dfv, dfang, volt, cs, w, phase_shift, bfactor
         )
 

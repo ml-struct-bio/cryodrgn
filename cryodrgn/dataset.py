@@ -73,8 +73,6 @@ class ImageDataset(data.Dataset):
         return norm
 
     def _process(self, data):
-        if data is None:
-            return None
         if data.ndim == 2:
             data = data[np.newaxis, ...]
         if self.window is not None:

@@ -38,6 +38,8 @@ def transform_in_chunks(
             dest = src.copy()
         elif isinstance(src, torch.Tensor):
             dest = src.detach().clone()
+        else:
+            raise RuntimeError("Unsupported type for src")
 
     with Pool(n_workers) as pool:
         pool.starmap(

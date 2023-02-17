@@ -96,10 +96,7 @@ class MRCHeader:
     @classmethod
     def parse(cls, fname):
         with open(fname, "rb") as f:
-            try:
-                header = cls(cls.STRUCT.unpack(f.read(1024)))
-            except Exception as e:
-                print("debug")
+            header = cls(cls.STRUCT.unpack(f.read(1024)))
             extbytes = header.fields["next"]
             extended_header = f.read(extbytes)
             header.extended_header = extended_header
@@ -118,12 +115,11 @@ class MRCHeader:
         yorg=0.0,
         zorg=0.0,
     ):
-        if data is None:
-            assert all(
-                [nz, ny, nx]
-            ), "If data array is unspecified, nz/ny/nx must be specified"
-        else:
+        if data is not None:
             nz, ny, nx = data.shape
+        assert nz is not None
+        assert ny is not None
+        assert nx is not None
 
         ispg = 1 if is_vol else 0
         if is_vol:
@@ -211,7 +207,7 @@ class MRCFile:
     @staticmethod
     def write(
         filename: str,
-        array: Union[np.ndarray, torch.Tensor, ImageSource, None] = None,
+        array: Union[np.ndarray, torch.Tensor, ImageSource],
         header: Optional[MRCHeader] = None,
         Apix: float = 1.0,
         xorg: float = 0.0,
@@ -247,4 +243,6 @@ class MRCFile:
                 array = transform_fn(array, indices)
                 if isinstance(array, torch.Tensor):
                     array = np.array(array.cpu()).astype(np.float32)
+
+                assert isinstance(array, np.ndarray)
                 f.write(array.tobytes())

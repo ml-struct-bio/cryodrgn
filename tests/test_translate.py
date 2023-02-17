@@ -18,7 +18,7 @@ def test_shifted_image():
     D += 1
 
     lattice = Lattice(D)
-    ht = ht.view(1, -1)
+    ht = ht.view(1, -1)  # type: ignore
 
     trans = torch.tensor([5.0, 10.0]).view(1, 1, 2)
     ht_shifted = lattice.translate_ht(ht, trans)

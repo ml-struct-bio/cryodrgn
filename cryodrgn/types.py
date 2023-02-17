@@ -11,9 +11,8 @@ import torch
 
 if TYPE_CHECKING:  # Set if type-checking
     # Avoid importing any cryodrgn-specific submodules outside this block.
-    from cryodrgn.mrc import LazyImage
 
-    ImageArray = Union[np.ndarray, List[LazyImage], torch.Tensor]
+    ImageArray = Union[np.ndarray, torch.Tensor]
 
 else:
     """

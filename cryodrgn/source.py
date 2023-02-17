@@ -1,6 +1,7 @@
 import os.path
 from collections.abc import Iterable
 from concurrent import futures
+from typing_extensions import reveal_type
 import numpy as np
 import pandas as pd
 from typing import Union, List, Optional
@@ -107,7 +108,7 @@ class ImageSource:
 
         self.cache = None
         if not self.lazy:
-            self.cache = ArraySource(self.images())
+            self.cache = ArraySource(self._images(np.arange(self.n)))
 
     def __len__(self):
         return self.n
@@ -132,7 +133,7 @@ class ImageSource:
             assert (
                 start >= 0 and stop >= 0 and step >= 0
             ), "Only positive start/stop/step supported"
-            indices = np.array(np.arange(start, stop, step))
+            indices = np.arange(start, stop, step)
         else:
             raise TypeError("Unsupported Type for indices")
 
@@ -140,18 +141,22 @@ class ImageSource:
             raise ValueError(f"indices should be < {self.n}")
 
         # Convert incoming caller indices to indices that this ImageSource will use
-        indices = self.indices[indices]
+        indices = np.array(self.indices[indices])
 
-        logger.debug(
-            f"ImageSource returning images for {len(indices)} indices ({indices[0]}..{indices[-1]})"
-        )
+        if indices.size == 1:
+            logger.debug(f"ImageSource returning images for index {indices}")
+        else:
+            logger.debug(
+                f"ImageSource returning images for {len(indices)} indices ({indices[0]}..{indices[-1]})"
+            )
+
         if self.cache:
             images = self.cache._images(indices)
         else:
             images = self._images(indices).astype(self.dtype)
         return torch.tensor(images)
 
-    def _images(self, indices: np.ndarray):
+    def _images(self, indices: np.ndarray) -> np.ndarray:
         raise NotImplementedError("Subclasses must implement this")
 
     def chunks(self, chunksize=1000):

@@ -206,7 +206,7 @@ class Decoder(nn.Module):
         extent: float,
         norm: Norm,
         zval: Optional[np.ndarray] = None,
-    ) -> np.ndarray:
+    ) -> Tensor:
         """
         Evaluate the model on a DxDxD volume
         Inputs:
@@ -355,7 +355,7 @@ class PositionalDecoder(Decoder):
         extent: float,
         norm: Norm,
         zval: Optional[np.ndarray] = None,
-    ) -> np.ndarray:
+    ) -> Tensor:
         """
         Evaluate the model on a DxDxD volume
 
@@ -548,7 +548,7 @@ class FTPositionalDecoder(Decoder):
         extent: float,
         norm: Norm,
         zval: Optional[np.ndarray] = None,
-    ) -> np.ndarray:
+    ) -> Tensor:
         """
         Evaluate the model on a DxDxD volume
 
@@ -687,7 +687,7 @@ class FTSliceDecoder(Decoder):
         extent: float,
         norm: Norm,
         zval: Optional[np.ndarray] = None,
-    ) -> np.ndarray:
+    ) -> Tensor:
         """
         Evaluate the model on a DxDxD volume
 
@@ -830,7 +830,7 @@ class VAE(nn.Module):
             tmu, tlogvar = z[:, :2], z[:, 2:]
         return z_mu, z_std, tmu, tlogvar
 
-    def eval_volume(self, norm) -> np.ndarray:
+    def eval_volume(self, norm) -> Tensor:
         return self.decoder.eval_volume(
             self.lattice.coords, self.D, self.lattice.extent, norm
         )
@@ -885,7 +885,7 @@ class TiltVAE(nn.Module):
         eps = torch.randn_like(std)
         return eps * std + mu
 
-    def eval_volume(self, norm) -> np.ndarray:
+    def eval_volume(self, norm) -> Tensor:
         return self.decoder.eval_volume(
             self.lattice.coords, self.D, self.lattice.extent, norm
         )
@@ -986,7 +986,7 @@ class ResidLinearMLP(Decoder):
 
     def eval_volume(
         self, coords: Tensor, D: int, extent: float, norm: Norm, zval=None
-    ) -> np.ndarray:
+    ) -> Tensor:
         """
         Evaluate the model on a DxDxD volume
 

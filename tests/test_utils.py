@@ -31,3 +31,7 @@ def test_convert_to_relion():
     r1 = utils.R_from_relion_scipy(x)
     euler = utils.R_to_relion_scipy(r1)
     assert_array_almost_equal(x, euler)
+
+
+def test_trivial():
+    assert True

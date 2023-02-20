@@ -3,16 +3,13 @@ Preprocess a dataset for more streamlined cryoDRGN training
 """
 
 import argparse
-import numpy as np
 import math
 import os
-from typing import List
 import logging
-import torch
 from cryodrgn import fft, utils
 from cryodrgn.utils import window_mask
 from cryodrgn.source import ImageSource
-from cryodrgn.mrc import MRCFile
+from cryodrgn.mrc import MRCFile, MRCHeader
 
 logger = logging.getLogger(__name__)
 
@@ -91,27 +88,18 @@ def add_args(parser):
     return parser
 
 
-def mkbasedir(out):
-    if not os.path.exists(os.path.dirname(out)):
-        os.makedirs(os.path.dirname(out))
-
-
-def warnexists(out):
-    if os.path.exists(out):
-        logger.warning(f"Warning: {out} already exists. Overwriting.")
-
-
 def main(args):
-    mkbasedir(args.o)
-    warnexists(args.o)
+
+    if os.path.exists(args.o):
+        logger.warning(f"Warning: {args.o} already exists. Overwriting.")
+    os.makedirs(os.path.dirname(args.o), exist_ok=True)
+
     assert args.o.endswith(".mrcs") or args.o.endswith(
         ".txt"
-    ), "Must specify output in .mrcs file format"
+    ), "Must specify output in .mrcs/.txt file format"
 
-    # load images
     lazy = args.lazy
 
-    # filter images
     ind = None
     if args.ind is not None:
         logger.info(f"Filtering image dataset with {args.ind}")
@@ -122,7 +110,7 @@ def main(args):
     )
     original_D = images.L
 
-    logger.info(f"Loading {len(images)} {original_D}x{original_D} images")
+    logger.info(f"Loading {images.n} {original_D}x{original_D} images")
     window = args.window
     invert_data = args.invert_data
     downsample = args.D and args.D < original_D
@@ -138,7 +126,7 @@ def main(args):
     else:
         D = original_D
 
-    def preprocess(imgs: torch.Tensor):
+    def preprocess(imgs, indices):
         if window:
             imgs *= window_mask(original_D, args.window_r, 0.99)
 
@@ -147,17 +135,7 @@ def main(args):
             ret *= -1
         if downsample:
             ret = ret[:, start:stop, start:stop]
-        ret = fft.symmetrize_ht(ret)
-        return ret
-
-    def preprocess_in_batches(imgs, b):
-        ret = np.empty((len(imgs), D + 1, D + 1), dtype=np.float32)
-        Nbatches = math.ceil(len(imgs) / b)
-        for ii in range(Nbatches):
-            logger.info(f"Processing batch of {b} images ({ii+1} of {Nbatches})")
-            ret[ii * b : (ii + 1) * b, :, :] = torch.Tensor(  # type: ignore
-                preprocess(imgs[ii * b : (ii + 1) * b])
-            )
+        ret = fft.symmetrize_ht(ret, preallocated=False)
         return ret
 
     nchunks = math.ceil(len(images) / args.chunk)
@@ -166,10 +144,18 @@ def main(args):
     for i in range(nchunks):
         logger.info(f"Processing chunk {i+1} of {nchunks}")
         chunk = images[i * args.chunk : (i + 1) * args.chunk]
-        new = preprocess_in_batches(chunk, args.b)
-        logger.info(f"New shape: {new.shape}")
+        header = MRCHeader.make_default_header(
+            len(chunk), D + 1, D + 1, None, is_vol=False
+        )
         logger.info(f"Saving {out_mrcs[i]}")
-        MRCFile.write(out_mrcs[i], new, is_vol=False)
+        MRCFile.write(
+            filename=out_mrcs[i],
+            array=chunk,
+            header=header,
+            is_vol=False,
+            transform_fn=preprocess,
+            chunksize=args.b,
+        )
 
     out_txt = f"{os.path.splitext(args.o)[0]}.ft.txt"
     logger.info(f"Saving summary txt file {out_txt}")

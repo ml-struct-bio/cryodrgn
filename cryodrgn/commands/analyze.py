@@ -391,6 +391,16 @@ def main(args):
         logger.info(f"{out_ipynb} already exists. Skipping")
     logger.info(out_ipynb)
 
+    # copy over template if file doesn't exist
+    out_ipynb = f"{outdir}/cryoDRGN_figures.ipynb"
+    if not os.path.exists(out_ipynb):
+        logger.info("Creating jupyter notebook...")
+        ipynb = f"{cryodrgn._ROOT}/templates/cryoDRGN_figures_template.ipynb"
+        shutil.copyfile(ipynb, out_ipynb)
+    else:
+        logger.info(f"{out_ipynb} already exists. Skipping")
+    logger.info(out_ipynb)
+
     logger.info(f"Finished in {dt.now()-t1}")
 
 

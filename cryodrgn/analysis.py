@@ -238,12 +238,7 @@ def _get_chimerax_colors(K: int) -> List:
         "#99bfe5",
         "#cccc99",
     ]
-    if K < 10:
-        colors = colors[0:K]
-    else:
-        colors *= K // 10
-        if K % 10:
-            colors += colors[0 : (K % 10)]
+    colors = [colors[i % len(colors)] for i in range(K)]
     return colors
 
 
@@ -266,7 +261,7 @@ def scatter_annotate(
     labels: Optional[np.ndarray] = None,
     alpha: Union[float, np.ndarray, None] = 0.1,
     s: Union[float, np.ndarray, None] = 1,
-    colors: Optional[list] = None,
+    colors: Union[list, str, None] = None,
 ) -> Tuple[Figure, Axes]:
     fig, ax = plt.subplots(figsize=(4, 4))
     plt.scatter(x, y, alpha=alpha, s=s, rasterized=True)
@@ -296,7 +291,7 @@ def scatter_annotate_hex(
     centers_ind: Optional[np.ndarray] = None,
     annotate: bool = True,
     labels: Optional[np.ndarray] = None,
-    colors: Optional[List] = None,
+    colors: Union[list, str, None] = None,
 ) -> sns.JointGrid:
     g = sns.jointplot(x=x, y=y, kind="hex", height=4)
 

@@ -225,6 +225,28 @@ def get_ind_for_cluster(
 # PLOTTING
 
 
+def _get_chimerax_colors(K: int) -> List:
+    colors = [
+        "#b2b2b2",
+        "#ffffb2",
+        "#b2ffff",
+        "#b2b2ff",
+        "#ffb2ff",
+        "#ffb2b2",
+        "#b2ffb2",
+        "#e5bf99",
+        "#99bfe5",
+        "#cccc99",
+    ]
+    if K < 10:
+        colors = colors[0:K]
+    else:
+        colors *= K // 10
+        if K % 10:
+            colors += colors[0 : (K % 10)]
+    return colors
+
+
 def _get_colors(K: int, cmap: Optional[str] = None) -> List:
     if cmap is not None:
         cm = plt.get_cmap(cmap)
@@ -244,8 +266,9 @@ def scatter_annotate(
     labels: Optional[np.ndarray] = None,
     alpha: Union[float, np.ndarray, None] = 0.1,
     s: Union[float, np.ndarray, None] = 1,
+    colors: Optional[list] = None,
 ) -> Tuple[Figure, Axes]:
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=(4, 4))
     plt.scatter(x, y, alpha=alpha, s=s, rasterized=True)
 
     # plot cluster centers
@@ -253,7 +276,9 @@ def scatter_annotate(
         assert centers is None
         centers = np.array([[x[i], y[i]] for i in centers_ind])
     if centers is not None:
-        plt.scatter(centers[:, 0], centers[:, 1], c="k")
+        if colors is None:
+            colors = "k"
+        plt.scatter(centers[:, 0], centers[:, 1], c=colors, edgecolor="black")
     if annotate:
         assert centers is not None
         if labels is None:
@@ -271,15 +296,18 @@ def scatter_annotate_hex(
     centers_ind: Optional[np.ndarray] = None,
     annotate: bool = True,
     labels: Optional[np.ndarray] = None,
+    colors: Optional[List] = None,
 ) -> sns.JointGrid:
-    g = sns.jointplot(x=x, y=y, kind="hex")
+    g = sns.jointplot(x=x, y=y, kind="hex", height=4)
 
     # plot cluster centers
     if centers_ind is not None:
         assert centers is None
         centers = np.array([[x[i], y[i]] for i in centers_ind])
     if centers is not None:
-        g.ax_joint.scatter(centers[:, 0], centers[:, 1], color="k", edgecolor="grey")
+        if colors is None:
+            colors = "k"
+        g.ax_joint.scatter(centers[:, 0], centers[:, 1], c=colors, edgecolor="black")
     if annotate:
         assert centers is not None
         if labels is None:

@@ -4,6 +4,7 @@ import logging
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure, Axes
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 import seaborn as sns
 from scipy.spatial.distance import cdist
@@ -52,7 +53,7 @@ def get_pc_traj(
     start: Optional[float],
     end: Optional[float],
     percentiles: Optional[np.ndarray] = None,
-) -> np.ndarray:
+) -> npt.NDArray[np.float32]:
     """
     Create trajectory along specified principal component
 
@@ -163,7 +164,7 @@ def cluster_gmm(
 
 def get_nearest_point(
     data: np.ndarray, query: np.ndarray
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> Tuple[npt.NDArray[np.float32], np.ndarray]:
     """
     Find closest point in @data to @query
     Return datapoint, index

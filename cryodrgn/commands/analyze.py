@@ -156,16 +156,19 @@ def analyze_zN(z, outdir, vg, skip_umap=False, num_pcs=2, num_ksamples=20):
     plt.figure(figsize=(4, 4))
     plt.scatter(pc[:, 0], pc[:, 1], alpha=0.1, s=1, rasterized=True)
     plt_pc_labels()
+    plt.tight_layout()
     plt.savefig(f"{outdir}/z_pca.png")
 
     # PCA -- Style 2 -- Scatter, with marginals
     g = sns.jointplot(pc[:, 0], pc[:, 1], alpha=0.1, s=1, rasterized=True, height=4)
     plt_pc_labels_jointplot(g)
+    plt.tight_layout()
     plt.savefig(f"{outdir}/z_pca_marginals.png")
 
     # PCA -- Style 3 -- Hexbin
     g = sns.jointplot(pc[:, 0], pc[:, 1], height=4, kind="hex")
     plt_pc_labels_jointplot(g)
+    plt.tight_layout()
     plt.savefig(f"{outdir}/z_pca_hexbin.png")
 
     if umap_emb is not None:
@@ -173,6 +176,7 @@ def analyze_zN(z, outdir, vg, skip_umap=False, num_pcs=2, num_ksamples=20):
         plt.figure(figsize=(4, 4))
         plt.scatter(umap_emb[:, 0], umap_emb[:, 1], alpha=0.1, s=1, rasterized=True)
         plt_umap_labels()
+        plt.tight_layout()
         plt.savefig(f"{outdir}/umap.png")
 
         # Style 2 -- Scatter with marginal distributions
@@ -180,11 +184,13 @@ def analyze_zN(z, outdir, vg, skip_umap=False, num_pcs=2, num_ksamples=20):
             umap_emb[:, 0], umap_emb[:, 1], alpha=0.1, s=1, rasterized=True, height=4
         )
         plt_umap_labels_jointplot(g)
+        plt.tight_layout()
         plt.savefig(f"{outdir}/umap_marginals.png")
 
         # Style 3 -- Hexbin / heatmap
         g = sns.jointplot(umap_emb[:, 0], umap_emb[:, 1], kind="hex", height=4)
         plt_umap_labels_jointplot(g)
+        plt.tight_layout()
         plt.savefig(f"{outdir}/umap_hexbin.png")
 
     # Plot kmeans sample points
@@ -197,6 +203,7 @@ def analyze_zN(z, outdir, vg, skip_umap=False, num_pcs=2, num_ksamples=20):
         colors=colors,
     )
     plt_pc_labels()
+    plt.tight_layout()
     plt.savefig(f"{outdir}/kmeans{K}/z_pca.png")
 
     g = analysis.scatter_annotate_hex(
@@ -207,6 +214,7 @@ def analyze_zN(z, outdir, vg, skip_umap=False, num_pcs=2, num_ksamples=20):
         colors=colors,
     )
     plt_pc_labels_jointplot(g)
+    plt.tight_layout()
     plt.savefig(f"{outdir}/kmeans{K}/z_pca_hex.png")
 
     if umap_emb is not None:
@@ -218,6 +226,7 @@ def analyze_zN(z, outdir, vg, skip_umap=False, num_pcs=2, num_ksamples=20):
             colors=colors,
         )
         plt_umap_labels()
+        plt.tight_layout()
         plt.savefig(f"{outdir}/kmeans{K}/umap.png")
 
         g = analysis.scatter_annotate_hex(
@@ -228,6 +237,7 @@ def analyze_zN(z, outdir, vg, skip_umap=False, num_pcs=2, num_ksamples=20):
             colors=colors,
         )
         plt_umap_labels_jointplot(g)
+        plt.tight_layout()
         plt.savefig(f"{outdir}/kmeans{K}/umap_hex.png")
 
     # Plot PC trajectories
@@ -243,6 +253,7 @@ def analyze_zN(z, outdir, vg, skip_umap=False, num_pcs=2, num_ksamples=20):
                 label=f"PC{i+1}",
             )
             plt_umap_labels()
+            plt.tight_layout()
             plt.savefig(f"{outdir}/pc{i+1}/umap.png")
 
             # UMAP, with PC traversal
@@ -263,6 +274,7 @@ def analyze_zN(z, outdir, vg, skip_umap=False, num_pcs=2, num_ksamples=20):
                 edgecolor="black",
             )
             plt_umap_labels()
+            plt.tight_layout()
             plt.savefig(f"{outdir}/pc{i+1}/umap_traversal.png")
 
             # UMAP, with PC traversal, connected
@@ -278,6 +290,7 @@ def analyze_zN(z, outdir, vg, skip_umap=False, num_pcs=2, num_ksamples=20):
                 edgecolor="black",
             )
             plt_umap_labels()
+            plt.tight_layout()
             plt.savefig(f"{outdir}/pc{i+1}/umap_traversal_connected.png")
 
         # 10 points, from 5th to 95th percentile of PC1 values
@@ -291,6 +304,7 @@ def analyze_zN(z, outdir, vg, skip_umap=False, num_pcs=2, num_ksamples=20):
             plt.scatter(pc[:, i], pc[:, i + 1], alpha=0.1, s=1, rasterized=True)
             plt.scatter(t, np.zeros(10), c="cornflowerblue", edgecolor="white")
             plt_pc_labels(i, i + 1)
+        plt.tight_layout()
         plt.savefig(f"{outdir}/pc{i+1}/pca_traversal.png")
 
         if i > 0 and i == num_pcs - 1:
@@ -305,6 +319,7 @@ def analyze_zN(z, outdir, vg, skip_umap=False, num_pcs=2, num_ksamples=20):
             )
             g.ax_joint.scatter(t, np.zeros(10), c="cornflowerblue", edgecolor="white")
             plt_pc_labels_jointplot(g)
+        plt.tight_layout()
         plt.savefig(f"{outdir}/pc{i+1}/pca_traversal_hex.png")
 
 

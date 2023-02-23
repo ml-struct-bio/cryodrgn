@@ -108,7 +108,7 @@ class ImageSource:
 
         self.cache = None
         if not self.lazy:
-            self.cache = ArraySource(self._images(np.arange(self.n)))
+            self.cache = ArraySource(self._images(self.indices))
 
     def __len__(self):
         return self.n
@@ -116,9 +116,7 @@ class ImageSource:
     def __getitem__(self, item):
         return self.images(item)
 
-    def images(
-        self, indices: Optional[Union[int, np.ndarray, slice]] = None
-    ) -> torch.Tensor:
+    def _convert_to_ndarray(self, indices) -> np.ndarray:
         if indices is None:
             indices = np.arange(self.n)
         elif np.isscalar(indices):
@@ -137,25 +135,25 @@ class ImageSource:
         else:
             raise TypeError("Unsupported Type for indices")
 
-        assert isinstance(indices, np.ndarray)
-
         if np.any(indices >= self.n):
             raise ValueError(f"indices should be < {self.n}")
 
-        # Convert incoming caller indices to indices that this ImageSource will use
-        indices = np.array(self.indices[indices])
+        assert isinstance(indices, np.ndarray)
+        return indices
 
-        if indices.size == 1:
-            logger.debug(f"ImageSource returning images for index {indices}")
-        else:
-            logger.debug(
-                f"ImageSource returning images for {len(indices)} indices ({indices[0]}..{indices[-1]})"
-            )
+    def images(
+        self, indices: Optional[Union[int, np.ndarray, slice]] = None
+    ) -> torch.Tensor:
 
         if self.cache:
-            images = self.cache._images(indices)
+            return self.cache._images(indices)
         else:
+            indices = self._convert_to_ndarray(indices)
+            # Convert incoming caller indices to indices that this ImageSource will use
+            if self.indices is not None:
+                indices = np.array(self.indices[indices])
             images = self._images(indices).astype(self.dtype)
+
         return torch.tensor(images)
 
     def _images(self, indices: np.ndarray) -> np.ndarray:
@@ -171,11 +169,17 @@ class ArraySource(ImageSource):
             data = data[np.newaxis, ...]
         nz, ny, nx = data.shape
         assert ny == nx, "Only square arrays supported"
-        self.data = data
+        self.data = torch.tensor(data)
 
         super().__init__(L=ny, n=nz)
 
-    def _images(self, indices: np.ndarray):
+    def _images(self, indices: Optional[Union[int, np.ndarray, slice]] = None):
+        if isinstance(indices, np.ndarray):
+            logger.warning(
+                "Indexing inside an eager ImageSource with an ndarray creates a copy; consider using slice or scalar indexing instead"
+            )
+        if indices is None:
+            indices = slice(0, self.n)
         return self.data[indices, ...]
 
 

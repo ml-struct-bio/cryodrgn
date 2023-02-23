@@ -78,3 +78,19 @@ def test_prespecified_indices(mrcs_data):
     data = src.images(np.array([2, 3]))
 
     assert torch.allclose(mrcs_data[np.array([5, 304]), :, :], data)
+
+
+def test_prespecified_indices_eager(mrcs_data):
+    # An ImageSource can have pre-specified indices, which will be the only ones used when reading underlying data.
+    src = ImageSource.from_file(
+        f"{DATA_FOLDER}/toy_projections.mrcs",
+        indices=np.array([0, 1, 5, 304]),
+        lazy=False,
+    )
+    assert src.shape == (4, 30, 30)  # Not (100, 30, 30)
+
+    # Once read, caller-side indexing can be done as usual (i.e. going from 0 to src.n),
+    # and we can forget about what indices were originally passed in.
+    data = src.images(np.array([2, 3]))
+
+    assert torch.allclose(mrcs_data[np.array([5, 304]), :, :], data)

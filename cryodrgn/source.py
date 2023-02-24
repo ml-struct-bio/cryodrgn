@@ -221,12 +221,13 @@ class TxtFileSource(ImageSource):
     def __init__(self, filepath: str, n_workers: int = 1, *args, **kwargs):
 
         _paths = []
+        filepath_dir = os.path.dirname(filepath)
         for line in open(filepath).readlines():
-            line = line.strip()
-            if not os.path.isabs(line):
-                _paths.append(os.path.join(os.path.dirname(filepath), line))
+            path = line.strip()
+            if not os.path.isabs(path):
+                _paths.append(os.path.join(filepath_dir, path))
             else:
-                _paths.append(line)
+                _paths.append(path)
         self.sources = [MRCFileSource(path, *args, **kwargs) for path in _paths]
 
         # We'll only look at the header from the first .mrcs file, and assume that all headers are compatible
@@ -303,9 +304,9 @@ class _MRCDataFrameSource(ImageSource):
         )
 
         # Peek into the first mrc file to get image size
-        L = MRCFileSource(self.df["__mrc_filepath"][0]).D
+        D = MRCFileSource(self.df["__mrc_filepath"][0]).D
         super().__init__(
-            D=L,
+            D=D,
             n=len(self.df),
             filenames=df["__mrc_filename"],
             n_workers=n_workers,
@@ -322,8 +323,8 @@ class _MRCDataFrameSource(ImageSource):
         data = np.empty((len(indices), self.D, self.D), dtype=self.dtype)
 
         # Create a DataFrame corresponding to the indices we're interested in
-        df = self.df.iloc[indices].reset_index(drop=True)
-        groups = df.groupby("__mrc_filepath")
+        batch_df = self.df.iloc[indices].reset_index(drop=True)
+        groups = batch_df.groupby("__mrc_filepath")
         n_workers = min(self.n_workers, len(groups))
 
         with futures.ThreadPoolExecutor(n_workers) as executor:

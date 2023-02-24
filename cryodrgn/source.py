@@ -46,7 +46,7 @@ class ImageSource:
 
     def __init__(
         self,
-        L: int,
+        D: int,
         n: int,
         filenames: Union[List[str], str, None] = None,
         n_workers: int = 1,
@@ -64,8 +64,8 @@ class ImageSource:
             # If indices is provided, it overrides self.n
             self.n = len(indices)
 
-        self.L = L
-        self.shape = self.n, self.L, self.L
+        self.D = D
+        self.shape = self.n, self.D, self.D
 
         # Some client calls need to access the original filename(s) associated with a source
         # These are traditionally available as the 'fname' attribute of the LazyImage class, hence only used by
@@ -149,7 +149,7 @@ class ArraySource(ImageSource):
         assert ny == nx, "Only square arrays supported"
         self.data = torch.tensor(data)
 
-        super().__init__(L=ny, n=nz)
+        super().__init__(D=ny, n=nz)
 
     def _images(self, indices: Optional[Union[int, np.ndarray, slice]] = None):
         if isinstance(indices, np.ndarray):
@@ -179,7 +179,7 @@ class MRCFileSource(ImageSource):
         self.size = self.ny * self.nx
         self.stride = self.dtype().itemsize * self.size
 
-        super().__init__(L=self.ny, n=self.nz, filenames=filepath, *args, **kwargs)
+        super().__init__(D=self.ny, n=self.nz, filenames=filepath, *args, **kwargs)
 
     def _images(
         self,
@@ -190,7 +190,7 @@ class MRCFileSource(ImageSource):
 
         with open(self.mrcfile_path) as f:
             if data is None:
-                data = np.empty((len(indices), self.L, self.L), dtype=self.dtype)
+                data = np.empty((len(indices), self.D, self.D), dtype=self.dtype)
                 assert (
                     tgt_indices is None
                 ), "Target indices can only be specified when passing in a preallocated array"
@@ -248,7 +248,7 @@ class TxtFileSource(ImageSource):
         ]
         n_workers = min(n_workers, len(self.source_intervals))
 
-        super().__init__(L=self.ny, n=self.nz, n_workers=n_workers, *args, **kwargs)
+        super().__init__(D=self.ny, n=self.nz, n_workers=n_workers, *args, **kwargs)
 
     def _images(self, indices: np.ndarray):
         def load_single_mrcs(
@@ -259,7 +259,7 @@ class TxtFileSource(ImageSource):
         ):
             src._images(indices=src_indices, data=data, tgt_indices=tgt_indices)
 
-        data = np.empty((len(indices), self.L, self.L), dtype=self.dtype)
+        data = np.empty((len(indices), self.D, self.D), dtype=self.dtype)
 
         with futures.ThreadPoolExecutor(self.n_workers) as executor:
             to_do = []
@@ -303,9 +303,9 @@ class _MRCDataFrameSource(ImageSource):
         )
 
         # Peek into the first mrc file to get image size
-        L = MRCFileSource(self.df["__mrc_filepath"][0]).L
+        L = MRCFileSource(self.df["__mrc_filepath"][0]).D
         super().__init__(
-            L=L,
+            D=L,
             n=len(self.df),
             filenames=df["__mrc_filename"],
             n_workers=n_workers,
@@ -319,7 +319,7 @@ class _MRCDataFrameSource(ImageSource):
             # df.index indicates the positions where the data needs to be inserted -> return for use by caller
             return df.index, src._images(df["__mrc_index"])
 
-        data = np.empty((len(indices), self.L, self.L), dtype=self.dtype)
+        data = np.empty((len(indices), self.D, self.D), dtype=self.dtype)
 
         # Create a DataFrame corresponding to the indices we're interested in
         df = self.df.iloc[indices].reset_index(drop=True)

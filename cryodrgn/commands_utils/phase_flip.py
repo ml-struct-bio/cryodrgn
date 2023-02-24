@@ -26,7 +26,7 @@ def add_args(parser):
 
 def main(args):
     imgs = ImageSource.from_file(args.mrcs, lazy=True, datadir=args.datadir)
-    D = imgs.L
+    D = imgs.D
     ctf_params = ctf.load_ctf_for_training(D, args.ctf_params)
     ctf_params = torch.Tensor(ctf_params)
     assert len(imgs) == len(ctf_params), f"{len(imgs)} != {len(ctf_params)}"

@@ -108,7 +108,7 @@ def main(args):
     images = ImageSource.from_file(
         args.mrcs, lazy=lazy, datadir=args.datadir, indices=ind
     )
-    original_D = images.L
+    original_D = images.D
 
     logger.info(f"Loading {images.n} {original_D}x{original_D} images")
     window = args.window

@@ -76,7 +76,7 @@ def main(args):
     lazy = not args.is_vol
     old = ImageSource.from_file(args.mrcs, lazy=lazy, datadir=args.datadir)
 
-    oldD = old.L
+    oldD = old.D
     assert (
         args.D <= oldD
     ), f"New box size {args.D} cannot be larger than the original box size {oldD}"

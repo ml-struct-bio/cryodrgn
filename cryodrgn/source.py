@@ -137,7 +137,10 @@ class ImageSource:
         raise NotImplementedError("Subclasses must implement this")
 
     def chunks(self, chunksize=1000):
-        for chunk in torch.split(torch.arange(self.n), chunksize):
+        # Numpy's array_split insists on the number of chunks, and doesn't take in the chunksize.
+        # This slightly involved way gives us chunks of size chunksize each, except perhaps the last one.
+        split_indices = np.arange(chunksize, self.n, chunksize)
+        for chunk in np.array_split(np.arange(self.n), split_indices):
             yield chunk, self.images(chunk)
 
 

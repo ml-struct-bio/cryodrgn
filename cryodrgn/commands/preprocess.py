@@ -135,7 +135,7 @@ def main(args):
             ret *= -1
         if downsample:
             ret = ret[:, start:stop, start:stop]
-        ret = fft.symmetrize_ht(ret, preallocated=False)
+        ret = fft.symmetrize_ht(ret)
         return ret
 
     nchunks = math.ceil(len(images) / args.chunk)

@@ -1,4 +1,6 @@
 import os.path
+import numpy as np
+import torch
 from torch.utils.data.sampler import BatchSampler, RandomSampler
 from torch.utils.data import DataLoader
 from cryodrgn.dataset import ImageDataset
@@ -6,8 +8,22 @@ from cryodrgn.dataset import ImageDataset
 DATA_FOLDER = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
 
 
+def test_particles():
+    dataset = ImageDataset(mrcfile=f"{DATA_FOLDER}/hand.mrcs", invert_data=True)
+    # Compare data for some random indices against data generated from known correct values
+    # after normalization/fft/symmetrization etc.
+    indices = np.array([43, 12, 53, 64, 31, 56, 75, 63, 27, 62, 96])
+    particles, _, _ = dataset[indices]
+    # The atol of 1e-5 accounts for minor fft differences between numpy fft (legacy) and torch fft
+    assert np.allclose(
+        np.load(f"{DATA_FOLDER}/hand_11_particles.npy"),
+        particles.cpu().numpy(),
+        atol=1e-5,
+    )
+
+
 def test_loading_slow():
-    dataset = ImageDataset(mrcfile=f"{DATA_FOLDER}/toy_projections.mrcs")
+    dataset = ImageDataset(mrcfile=f"{DATA_FOLDER}/hand.mrcs")
     # We could use the following, but this will result in 7 independent calls to
     # the underlying ImageDataset's __getitem__ - not efficient
     data_loader = DataLoader(dataset, batch_size=7, shuffle=True)
@@ -16,21 +32,21 @@ def test_loading_slow():
         assert isinstance(minibatch, list)
         assert len(minibatch) == 3  # minibatch is a list of (particles, tilt, indices)
 
-        # We have 1000 particles. For all but the last iteration *
-        # for all but the last iteration (1000//7 = 142), we'll have 7 images each
-        if i < 142:
-            assert minibatch[0].shape == (7, 1, 31, 31)
-            assert minibatch[1].shape == (7, 1, 31, 31)
+        # We have 100 particles. For all but the last iteration *
+        # for all but the last iteration (100//7 = 14), we'll have 7 images each
+        if i < 14:
+            assert minibatch[0].shape == (7, 65, 65)
+            assert minibatch[1].shape == (7, 65, 65)
             assert minibatch[2].shape == (7,)
-        # and 1000 % 7 = 6 for the very last one
+        # and 100 % 7 = 2 for the very last one
         else:
-            assert minibatch[0].shape == (6, 1, 31, 31)
-            assert minibatch[1].shape == (6, 1, 31, 31)
-            assert minibatch[2].shape == (6,)
+            assert minibatch[0].shape == (2, 65, 65)
+            assert minibatch[1].shape == (2, 65, 65)
+            assert minibatch[2].shape == (2,)
 
 
 def test_loading_fast():
-    dataset = ImageDataset(mrcfile=f"{DATA_FOLDER}/toy_projections.mrcs")
+    dataset = ImageDataset(mrcfile=f"{DATA_FOLDER}/hand.mrcs")
     # A faster way to load is to use BatchSampler with RandomSampler
     # see https://stackoverflow.com/questions/61458305
     data_loader = DataLoader(
@@ -47,14 +63,14 @@ def test_loading_fast():
         assert isinstance(minibatch, list)
         assert len(minibatch) == 3  # minibatch is a list of (particles, tilt, indices)
 
-        # We have 1000 particles. For all but the last iteration *
-        # for all but the last iteration (1000//7 = 142), we'll have 7 images each
-        if i < 142:
-            assert minibatch[0].shape == (7, 31, 31)
-            assert minibatch[1].shape == (7, 31, 31)
+        # We have 100 particles. For all but the last iteration *
+        # for all but the last iteration (100//7 = 14), we'll have 7 images each
+        if i < 14:
+            assert minibatch[0].shape == (7, 65, 65)
+            assert minibatch[1].shape == (7, 65, 65)
             assert minibatch[2].shape == (7,)
-        # and 1000 % 7 = 6 for the very last one
+        # and 100 % 7 = 2 for the very last one
         else:
-            assert minibatch[0].shape == (6, 31, 31)
-            assert minibatch[1].shape == (6, 31, 31)
-            assert minibatch[2].shape == (6,)
+            assert minibatch[0].shape == (2, 65, 65)
+            assert minibatch[1].shape == (2, 65, 65)
+            assert minibatch[2].shape == (2,)

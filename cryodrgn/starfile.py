@@ -126,7 +126,9 @@ class Starfile:
             self._write_block(f, self.headers, self.df, block_header="data_")
 
     def get_particles(self, datadir: Optional[str] = None, lazy: bool = True):
-        raise NotImplementedError
+        raise NotImplementedError(
+            "get_particles is no longer supported. Use the `ImageSource` library."
+        )
 
 
 def prefix_paths(mrcs: List, datadir: str):

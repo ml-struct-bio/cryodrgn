@@ -23,12 +23,12 @@ def add_args(parser):
     parser.add_argument(
         "-o", type=os.path.abspath, required=True, help="Output .mrc or directory"
     )
+    parser.add_argument("--device", type=int, help="Optionally specify CUDA device")
     parser.add_argument(
         "--prefix",
         default="vol_",
         help="Prefix when writing out multiple .mrc files (default: %(default)s)",
     )
-    parser.add_argument("--device", type=int, help="Optionally specify CUDA device")
     parser.add_argument(
         "-v", "--verbose", action="store_true", help="Increase verbosity"
     )

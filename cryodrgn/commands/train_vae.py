@@ -440,10 +440,8 @@ def eval_z(
 ):
     logger.info("Evaluating z")
     assert not model.training
-
-    z_mu_all = np.empty((data.N, model.zdim), dtype=np.float32)
-    z_logvar_all = np.empty((data.N, model.zdim), dtype=np.float32)
-
+    z_mu_all = []
+    z_logvar_all = []
     data_generator = DataLoader(
         data,
         sampler=BatchSampler(
@@ -452,7 +450,6 @@ def eval_z(
         batch_size=None,
     )
 
-    _count = 0
     for i, minibatch in enumerate(data_generator):
         ind = minibatch[-1]
         y = minibatch[0].to(device)
@@ -485,12 +482,10 @@ def eval_z(
         _model = unparallelize(model)
         assert isinstance(_model, HetOnlyVAE)
         z_mu, z_logvar = _model.encode(*input_)
-
-        z_mu_all[_count : _count + B, ...] = z_mu.detach().cpu().numpy()
-        z_logvar_all[_count : _count + B, ...] = z_logvar.detach().cpu().numpy()
-
-        _count += B
-
+        z_mu_all.append(z_mu.detach().cpu().numpy())
+        z_logvar_all.append(z_logvar.detach().cpu().numpy())
+    z_mu_all = np.vstack(z_mu_all)
+    z_logvar_all = np.vstack(z_logvar_all)
     return z_mu_all, z_logvar_all
 
 

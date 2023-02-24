@@ -74,7 +74,6 @@ class ImageSource:
         n_workers: int = 1,
         dtype: str = "float32",
         lazy: bool = True,
-        preallocated: bool = False,
         indices: Optional[np.ndarray] = None,
         **kwargs,
     ):
@@ -87,7 +86,7 @@ class ImageSource:
             # If indices is provided, it overrides self.n
             self.n = len(indices)
 
-        self.L = L + int(preallocated)
+        self.L = L
         self.shape = self.n, self.L, self.L
 
         # Some client calls need to access the original filename(s) associated with a source

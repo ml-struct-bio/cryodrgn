@@ -29,24 +29,24 @@ class ImageDataset(data.Dataset):
         assert ind is None, "ind not supported yet"
         assert not keepreal, "Not implemented yet"
         self.src = ImageSource.from_file(
-            mrcfile, lazy=lazy, datadir=datadir, preallocated=True, indices=ind
+            mrcfile, lazy=lazy, datadir=datadir, indices=ind
         )
         if tilt_mrcfile is None:
             self.tilt_src = None
         else:
             self.tilt_src = ImageSource.from_file(
-                tilt_mrcfile, lazy=lazy, datadir=datadir, preallocated=True
+                tilt_mrcfile, lazy=lazy, datadir=datadir
             )
 
         ny, nx = self.src.L, self.src.L
-        assert (ny - 1) % 2 == 0, "Image size must be odd."
+        assert ny % 2 == 0, "Image size must be even."
 
         self.N = self.src.n
-        self.D = ny
+        self.D = ny + 1  # after symmetrization
         self.invert_data = invert_data
-        self.window = window_mask(ny - 1, window_r, 0.99) if window else None
+        self.window = window_mask(ny, window_r, 0.99) if window else None
         self.max_threads = min(max_threads, mp.cpu_count())
-        self.norm = norm or self.estimate_normalization(n=1000)
+        self.norm = norm or self.estimate_normalization()
         self.device = device
 
     def estimate_normalization(self, n=None):
@@ -55,19 +55,14 @@ class ImageDataset(data.Dataset):
         imgs = self.src.images(indices)
 
         if self.window is not None:
-            imgs[..., : self.D - 1, : self.D - 1] *= self.window
+            imgs *= self.window
 
-        fft.ht2_center(
-            imgs[..., :-1, :-1],
-            inplace=True,
-            chunksize=1000,
-            n_workers=self.max_threads,
-        )
+        imgs = fft.ht2_center(imgs)
 
         if self.invert_data:
             imgs *= -1
 
-        imgs = fft.symmetrize_ht(imgs, preallocated=True)
+        imgs = fft.symmetrize_ht(imgs)
         norm = (0, torch.std(imgs))
         logger.info("Normalizing HT by {} +/- {}".format(*norm))
         return norm
@@ -76,11 +71,11 @@ class ImageDataset(data.Dataset):
         if data.ndim == 2:
             data = data[np.newaxis, ...]
         if self.window is not None:
-            data[..., : self.D - 1, : self.D - 1] *= self.window
-        fft.ht2_center(data[..., :-1, :-1], inplace=True)
+            data *= self.window
+        data = fft.ht2_center(data)
         if self.invert_data:
             data *= -1
-        fft.symmetrize_ht(data, preallocated=True)
+        data = fft.symmetrize_ht(data)
         data = (data - self.norm[0]) / self.norm[1]
         return data
 

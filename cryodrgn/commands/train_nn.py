@@ -21,7 +21,6 @@ except ImportError:
     pass
 
 import cryodrgn
-import cryodrgn.types as types
 from cryodrgn import ctf, dataset, models
 from cryodrgn.mrc import MRCFile
 from cryodrgn.lattice import Lattice

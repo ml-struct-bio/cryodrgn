@@ -138,7 +138,7 @@ class ImageSource:
 
     def chunks(self, chunksize=1000):
         for i in range(0, self.n, chunksize):
-            _slice = slice(i, i + chunksize)
+            _slice = slice(i, min(self.n, i + chunksize))
             yield np.arange(_slice.start, _slice.stop), self.images(_slice)
 
 
@@ -213,7 +213,7 @@ class MRCFileSource(ImageSource):
                 _data = np.fromfile(
                     f, dtype=self.dtype, count=self.size, offset=offset
                 ).reshape(self.ny, self.nx)
-                data[tgt_index, : self.ny, : self.nx] = _data
+                data[tgt_index, ...] = _data
 
             return data
 

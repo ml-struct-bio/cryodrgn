@@ -6,7 +6,6 @@ from datetime import datetime as dt
 import numpy as np
 import pandas as pd
 from typing import Optional, List
-import cryodrgn.types as types
 
 
 class Starfile:

@@ -93,7 +93,11 @@ def test_prespecified_indices_eager(mrcs_data):
     # and we can forget about what indices were originally passed in.
     # Note that for lazy=False, we should prefer passing in slices instead of ndarrays to avoid making copies
     data = src.images(slice(2, 4))  # instead of src.images(np.array([2, 3]))
+    assert torch.allclose(mrcs_data[np.array([5, 304]), :, :], data)
 
+    # Since slices are permissive, here we intentionally bump up the slice 'stop' value to 100, even though
+    # it is semantically clamped to 4 (size of src + 1)
+    data = src.images(slice(2, 100))  # instead of src.images(np.array([2, 3]))
     assert torch.allclose(mrcs_data[np.array([5, 304]), :, :], data)
 
 
@@ -104,6 +108,7 @@ def test_prespecified_indices_chunked(mrcs_data):
     assert src.shape == (4, 30, 30)  # Not (100, 30, 30)
 
     for i, (indices, chunk) in enumerate(src.chunks(chunksize=2)):
+        assert len(indices) == chunk.shape[0]
         if i == 0:
             assert torch.allclose(mrcs_data[np.array([0, 1]), :, :], chunk)
         elif i == 1:
@@ -119,6 +124,7 @@ def test_prespecified_indices_eager_chunked(mrcs_data):
     assert src.shape == (4, 30, 30)  # Not (100, 30, 30)
 
     for i, (indices, chunk) in enumerate(src.chunks(chunksize=2)):
+        assert len(indices) == chunk.shape[0]
         if i == 0:
             assert torch.allclose(mrcs_data[np.array([0, 1]), :, :], chunk)
         elif i == 1:

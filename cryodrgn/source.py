@@ -1,35 +1,13 @@
 import os.path
 from collections.abc import Iterable
 from concurrent import futures
-from typing_extensions import reveal_type
 import numpy as np
 import pandas as pd
 from typing import Union, List, Optional
 import logging
 import torch
 
-
 logger = logging.getLogger(__name__)
-
-
-class ImageSourceIterator:
-    def __init__(self, src, chunksize=1000):
-        self.src = src
-        self.chunksize = chunksize
-        self.i = 0
-        self.n = self.src.n
-
-    def __iter__(self):
-        return self
-
-    def __next__(self):
-        if self.i >= self.n:
-            raise StopIteration()
-        indices = np.arange(self.i, min(self.n, self.i + self.chunksize))
-        logger.debug(f"ImageSource returning chunk starting at index {self.i}")
-        images = self.src.images(indices)
-        self.i += self.chunksize
-        return indices, images
 
 
 class ImageSource:
@@ -159,7 +137,8 @@ class ImageSource:
         raise NotImplementedError("Subclasses must implement this")
 
     def chunks(self, chunksize=1000):
-        return ImageSourceIterator(self, chunksize=chunksize)
+        for chunk in torch.split(torch.arange(self.n), chunksize):
+            yield chunk, self.images(chunk)
 
 
 class ArraySource(ImageSource):
@@ -287,7 +266,7 @@ class TxtFileSource(ImageSource):
             for source_i, (source_start_index, source_end_index) in enumerate(
                 self.source_intervals
             ):
-                tgt_indices = np.where(
+                tgt_indices = np.nonzero(
                     (source_start_index <= indices) & (indices < source_end_index)
                 )[0]
                 src_indices = indices[tgt_indices] - source_start_index

@@ -94,3 +94,31 @@ def test_prespecified_indices_eager(mrcs_data):
     data = src.images(np.array([2, 3]))
 
     assert torch.allclose(mrcs_data[np.array([5, 304]), :, :], data)
+
+
+def test_prespecified_indices_chunked(mrcs_data):
+    src = ImageSource.from_file(
+        f"{DATA_FOLDER}/toy_projections.mrcs", indices=np.array([0, 1, 5, 304])
+    )
+    assert src.shape == (4, 30, 30)  # Not (100, 30, 30)
+
+    for i, (indices, chunk) in enumerate(src.chunks(chunksize=2)):
+        if i == 0:
+            assert torch.allclose(mrcs_data[np.array([0, 1]), :, :], chunk)
+        elif i == 1:
+            assert torch.allclose(mrcs_data[np.array([5, 304]), :, :], chunk)
+
+
+def test_prespecified_indices_eager_chunked(mrcs_data):
+    src = ImageSource.from_file(
+        f"{DATA_FOLDER}/toy_projections.mrcs",
+        indices=np.array([0, 1, 5, 304]),
+        lazy=False,
+    )
+    assert src.shape == (4, 30, 30)  # Not (100, 30, 30)
+
+    for i, (indices, chunk) in enumerate(src.chunks(chunksize=2)):
+        if i == 0:
+            assert torch.allclose(mrcs_data[np.array([0, 1]), :, :], chunk)
+        elif i == 1:
+            assert torch.allclose(mrcs_data[np.array([5, 304]), :, :], chunk)

@@ -105,6 +105,7 @@ class MRCHeader:
     @classmethod
     def make_default_header(
         cls,
+        *,
         nz=None,
         ny=None,
         nx=None,
@@ -222,7 +223,15 @@ class MRCFile:
                 len(set(array.shape)) == 1
             )  # Guess whether data is vol or image stack
         header = header or MRCHeader.make_default_header(
-            None, None, None, array, is_vol, Apix, xorg, yorg, zorg
+            nz=None,
+            ny=None,
+            nx=None,
+            data=array,
+            is_vol=is_vol,
+            Apix=Apix,
+            xorg=xorg,
+            yorg=yorg,
+            zorg=zorg,
         )
 
         if transform_fn is None:

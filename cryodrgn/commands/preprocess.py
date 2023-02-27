@@ -145,7 +145,7 @@ def main(args):
         logger.info(f"Processing chunk {i+1} of {nchunks}")
         chunk = images[i * args.chunk : (i + 1) * args.chunk]
         header = MRCHeader.make_default_header(
-            len(chunk), D + 1, D + 1, None, is_vol=False
+            nz=len(chunk), ny=D + 1, nx=D + 1, data=None, is_vol=False
         )
         logger.info(f"Saving {out_mrcs[i]}")
         MRCFile.write(

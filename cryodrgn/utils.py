@@ -25,20 +25,23 @@ def meshgrid_2d(lo, hi, n, endpoint=False):
     else:
         values = torch.linspace(lo, hi, n + 1)[:-1]
 
-    retval = torch.meshgrid(values, values, indexing="xy")
-
-    # Sanity Check - remove in production
-    check = np.meshgrid(
-        np.linspace(lo, hi, n, endpoint=endpoint),
-        np.linspace(lo, hi, n, endpoint=endpoint),
-    )
-    assert np.allclose(retval[0].cpu(), check[0], atol=1e-7)
-    assert np.allclose(retval[1].cpu(), check[1], atol=1e-7)
-    return retval
+    return torch.meshgrid(values, values, indexing="xy")
 
 
-def window_mask(D, in_rad, out_rad):
+def window_mask(D, in_rad: float, out_rad: float):
+    """
+    Create a square radial mask of linearly-interpolated float values
+    from 1.0 (within in_rad of center) to 0.0 (beyond out_rad of center)
+    Args:
+        D: Side length of the (square) mask
+        in_rad: inner radius (fractional float between 0 and 1) inside which all values are 1.0
+        out_rad: outer radius (fractional float between 0 and 1) beyond which all values are 0.0
+
+    Returns:
+        A 2D Tensor of shape (D, D) of mask values between 0 (inclusive) and 1 (inclusive)
+    """
     assert D % 2 == 0
+    assert in_rad <= out_rad
     x0, x1 = torch.meshgrid(
         torch.linspace(-1, 1, D + 1, dtype=torch.float32)[:-1],
         torch.linspace(-1, 1, D + 1, dtype=torch.float32)[:-1],

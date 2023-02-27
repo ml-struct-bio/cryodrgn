@@ -107,7 +107,9 @@ def main(args):
 
         if args.chunk is None:
             logger.info("Saving {}".format(args.o))
-            header = MRCHeader.make_default_header(old.n, D, D, None, args.is_vol)
+            header = MRCHeader.make_default_header(
+                nz=old.n, ny=D, nx=D, data=None, is_vol=args.is_vol
+            )
             MRCFile.write(
                 filename=args.o,
                 array=old,
@@ -129,7 +131,7 @@ def main(args):
                 chunk = old[i * args.chunk : (i + 1) * args.chunk]
 
                 header = MRCHeader.make_default_header(
-                    len(chunk), D, D, None, args.is_vol
+                    nz=len(chunk), ny=D, nx=D, data=None, is_vol=args.is_vol
                 )
                 logger.info(f"Saving {out_mrcs[i]}")
                 MRCFile.write(

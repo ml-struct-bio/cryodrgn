@@ -51,16 +51,25 @@ class ImageSource:
         lazy: bool = True,
         indices: Optional[np.ndarray] = None,
         datadir: str = "",
+        n_workers: int = 1,
     ):
         ext = os.path.splitext(filepath)[-1][1:]
         if ext == "star":
-            return StarfileSource(filepath, lazy=lazy, datadir=datadir, indices=indices)
+            return StarfileSource(
+                filepath,
+                lazy=lazy,
+                datadir=datadir,
+                indices=indices,
+                n_workers=n_workers,
+            )
         elif ext in ("mrc", "mrcs"):
             return MRCFileSource(filepath, lazy=lazy, indices=indices)
         elif ext == "txt":
-            return TxtFileSource(filepath, lazy=lazy, indices=indices)
+            return TxtFileSource(
+                filepath, lazy=lazy, indices=indices, n_workers=n_workers
+            )
         elif ext == "cs":
-            return CsSource(filepath, lazy=lazy, indices=indices)
+            return CsSource(filepath, lazy=lazy, indices=indices, n_workers=n_workers)
         else:
             raise RuntimeError(f"Unrecognized file extension {ext}")
 
@@ -266,9 +275,9 @@ class TxtFileSource(ImageSource):
     def __init__(
         self,
         filepath: str,
-        n_workers: int = 1,
         lazy: bool = True,
         indices: Optional[np.ndarray] = None,
+        n_workers: int = 1,
     ):
 
         _paths = []

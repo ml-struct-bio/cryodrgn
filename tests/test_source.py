@@ -91,13 +91,7 @@ def test_prespecified_indices_eager(mrcs_data):
 
     # Once read, caller-side indexing can be done as usual (i.e. going from 0 to src.n),
     # and we can forget about what indices were originally passed in.
-    # Note that for lazy=False, we should prefer passing in slices instead of ndarrays to avoid making copies
-    data = src.images(slice(2, 4))  # instead of src.images(np.array([2, 3]))
-    assert torch.allclose(mrcs_data[np.array([5, 304]), :, :], data)
-
-    # Since slices are permissive, here we intentionally bump up the slice 'stop' value to 100, even though
-    # it is semantically clamped to 4 (size of src + 1)
-    data = src.images(slice(2, 100))  # instead of src.images(np.array([2, 3]))
+    data = src.images(np.array([2, 3]))
     assert torch.allclose(mrcs_data[np.array([5, 304]), :, :], data)
 
 

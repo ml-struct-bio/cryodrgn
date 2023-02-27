@@ -6,6 +6,7 @@ import pandas as pd
 from typing import Union, List, Optional
 import logging
 import torch
+from typing import Tuple, Union
 
 logger = logging.getLogger(__name__)
 
@@ -83,18 +84,22 @@ class ImageSource:
         self.n_workers = n_workers
         self.dtype = dtype
 
-        self.cache = None
+        self.data = None
         if not self.lazy:
-            self.cache = ArraySource(self._images(self.indices))
+            self.data = ArraySource(self._images(self.indices))
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self.n
 
-    def __getitem__(self, item):
+    def __getitem__(self, item) -> torch.Tensor:
         return self.images(item)
 
-    def _convert_to_ndarray(self, indices) -> np.ndarray:
-        if indices is None:
+    def _convert_to_ndarray(
+        self, indices: Optional[Union[np.ndarray, int, slice, Iterable]] = None
+    ) -> np.ndarray:
+        if isinstance(indices, np.ndarray):
+            pass
+        elif indices is None:
             indices = np.arange(self.n)
         elif np.isscalar(indices):
             indices = np.array([indices])
@@ -119,27 +124,26 @@ class ImageSource:
         return indices
 
     def images(
-        self, indices: Optional[Union[int, np.ndarray, slice]] = None
+        self, indices: Optional[Union[np.ndarray, int, slice, Iterable]] = None
     ) -> torch.Tensor:
-
-        if self.cache:
-            return self.cache._images(indices)
+        indices = self._convert_to_ndarray(indices)
+        if self.data:
+            images = self.data._images(indices)
         else:
-            indices = self._convert_to_ndarray(indices)
             # Convert incoming caller indices to indices that this ImageSource will use
             if self.indices is not None:
                 indices = np.array(self.indices[indices])
-            images = self._images(indices).astype(self.dtype)
+            images = self._images(indices)
 
-        return torch.tensor(images)
+        return torch.tensor(images.astype(self.dtype))
 
     def _images(self, indices: np.ndarray) -> np.ndarray:
         raise NotImplementedError("Subclasses must implement this")
 
-    def chunks(self, chunksize=1000):
+    def chunks(self, chunksize: int = 1000):
         for i in range(0, self.n, chunksize):
-            _slice = slice(i, min(self.n, i + chunksize))
-            yield np.arange(_slice.start, _slice.stop), self.images(_slice)
+            indices = np.arange(i, min(self.n, i + chunksize))
+            yield indices, self.images(indices)
 
 
 class ArraySource(ImageSource):
@@ -148,17 +152,11 @@ class ArraySource(ImageSource):
             data = data[np.newaxis, ...]
         nz, ny, nx = data.shape
         assert ny == nx, "Only square arrays supported"
-        self.data = torch.tensor(data)
+        self.data = data
 
         super().__init__(D=ny, n=nz)
 
-    def _images(self, indices: Optional[Union[int, np.ndarray, slice]] = None):
-        if isinstance(indices, np.ndarray):
-            logger.warning(
-                "Indexing inside an eager ImageSource with an ndarray creates a copy; consider using slice or scalar indexing instead"
-            )
-        if indices is None:
-            indices = slice(0, self.n)
+    def _images(self, indices: np.ndarray):
         return self.data[indices, ...]
 
 
@@ -187,7 +185,7 @@ class MRCFileSource(ImageSource):
         indices: np.ndarray,
         data: Optional[np.ndarray] = None,
         tgt_indices: Optional[np.ndarray] = None,
-    ):
+    ) -> np.ndarray:
 
         with open(self.mrcfile_path) as f:
             if data is None:

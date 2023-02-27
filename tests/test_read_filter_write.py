@@ -46,14 +46,14 @@ def input_mrcs():
 
 
 def test_read_mrcs(input_mrcs):
-    data = ImageSource.from_mrcs(input_mrcs, lazy=False, datadir=DATA_FOLDER).images()
+    data = ImageSource.from_file(input_mrcs, lazy=False, datadir=DATA_FOLDER).images()
     assert isinstance(data, torch.Tensor)
     # We have total 1000 particles of size 30x30 to begin with
     assert data.shape == (1000, 30, 30)
 
 
 def test_read_starfile(input_star):
-    data = ImageSource.from_star(input_star, lazy=False, datadir=DATA_FOLDER).images()
+    data = ImageSource.from_file(input_star, lazy=False, datadir=DATA_FOLDER).images()
     assert isinstance(data, torch.Tensor)
     # We have 13 particles in our starfile, of size 30x30 to begin with
     assert data.shape == (13, 30, 30)
@@ -80,7 +80,7 @@ def test_filter(input_star):
     )
     filter_star.main(args)
 
-    data = ImageSource.from_star(
+    data = ImageSource.from_file(
         "output/issue150_filtered.star", lazy=False, datadir=DATA_FOLDER
     ).images()
     assert isinstance(data, torch.Tensor)

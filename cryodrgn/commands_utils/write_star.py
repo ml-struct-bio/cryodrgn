@@ -7,8 +7,8 @@ import os
 import numpy as np
 import pandas as pd
 import logging
-from cryodrgn import mrc, utils
-from cryodrgn.source import ImageSource
+from cryodrgn import utils
+from cryodrgn.source import ImageSource, StarfileSource
 from cryodrgn.starfile import Starfile
 
 logger = logging.getLogger(__name__)
@@ -96,6 +96,7 @@ def main(args):
             poses = (poses[0][ind], poses[1][ind])
 
     if input_ext == ".star":
+        assert isinstance(particles, StarfileSource)
         df = particles.df.loc[ind]
     else:
         image_names = particles.filenames[ind]

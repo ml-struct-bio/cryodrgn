@@ -10,7 +10,7 @@ DATA_FOLDER = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
 
 @pytest.fixture
 def mrcs_data():
-    return ImageSource.from_mrcs(f"{DATA_FOLDER}/toy_projections.mrcs").images()
+    return ImageSource.from_file(f"{DATA_FOLDER}/toy_projections.mrcs").images()
 
 
 def test_invert_contrast(mrcs_data):
@@ -23,7 +23,7 @@ def test_invert_contrast(mrcs_data):
     )
     invert_contrast.main(args)
 
-    inverted_data = ImageSource.from_mrcs(
+    inverted_data = ImageSource.from_file(
         "output/toy_projections_inverted.mrc"
     ).images()
     assert torch.allclose(inverted_data, -mrcs_data)

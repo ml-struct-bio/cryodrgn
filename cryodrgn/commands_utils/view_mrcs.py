@@ -19,7 +19,7 @@ def add_args(parser):
 def main(args):
     src = ImageSource.from_file(args.input)
     logger.info("{n} {L}x{L} images".format(n=len(src), L=src.images(0).shape[-1]))
-    stack = [src.images(x).squeeze(axis=0) for x in range(9)]
+    stack = [src.images(x).squeeze(dim=0) for x in range(9)]
     if args.invert:
         stack = [-1 * x for x in stack]
     analysis.plot_projections(stack)

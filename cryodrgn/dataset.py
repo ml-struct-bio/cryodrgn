@@ -28,6 +28,7 @@ class ImageDataset(data.Dataset):
     ):
         assert ind is None, "ind not supported yet"
         assert not keepreal, "Not implemented yet"
+        datadir = datadir or ""
         self.src = ImageSource.from_file(
             mrcfile, lazy=lazy, datadir=datadir, indices=ind
         )

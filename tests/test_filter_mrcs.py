@@ -32,5 +32,5 @@ def test_filter_mrcs(mrcs_data):
     )
     filter_mrcs.main(args)
 
-    new_data = ImageSource.from_mrcs("output/toy_projections_filtered.mrc").images()
+    new_data = ImageSource.from_file("output/toy_projections_filtered.mrc").images()
     assert torch.allclose(new_data[:], mrcs_data[indices])

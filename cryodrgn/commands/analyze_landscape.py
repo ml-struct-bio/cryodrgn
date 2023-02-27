@@ -162,7 +162,7 @@ def make_mask(outdir, K, dilate, thresh, in_mrc=None, Apix=1, vol_start_index=0)
         if thresh is None:
             thresh = []
             for i in range(K):
-                vol = ImageSource.from_mrcs(
+                vol = ImageSource.from_file(
                     f"{outdir}/kmeans{K}/vol_{vol_start_index+i:03d}.mrc"
                 ).images()
                 assert isinstance(vol, torch.Tensor)
@@ -177,7 +177,7 @@ def make_mask(outdir, K, dilate, thresh, in_mrc=None, Apix=1, vol_start_index=0)
             return x
 
         # combine all masks by taking their union
-        vol = ImageSource.from_mrcs(
+        vol = ImageSource.from_file(
             f"{outdir}/kmeans{K}/vol_{vol_start_index:03d}.mrc"
         ).images()
         mask = ~binary_mask(vol)
@@ -189,7 +189,7 @@ def make_mask(outdir, K, dilate, thresh, in_mrc=None, Apix=1, vol_start_index=0)
         mask = ~mask
     else:
         # Load provided mrc and convert to a boolean mask
-        mask = np.array(ImageSource.from_mrcs(in_mrc).images())
+        mask = np.array(ImageSource.from_file(in_mrc).images())
         assert isinstance(mask, np.ndarray)
         mask = mask.astype(bool)
 
@@ -244,7 +244,7 @@ def analyze_volumes(
     if not os.path.exists(f"{outdir}/kmeans{K}/vol_mean.mrc"):
         volm = torch.stack(
             [
-                ImageSource.from_mrcs(
+                ImageSource.from_file(
                     f"{outdir}/kmeans{K}/vol_{vol_start_index+i:03d}.mrc"
                 ).images()
                 for i in range(K)
@@ -256,12 +256,12 @@ def analyze_volumes(
             Apix=Apix,
         )
     else:
-        volm = ImageSource.from_mrcs(f"{outdir}/kmeans{K}/vol_mean.mrc").images()
+        volm = ImageSource.from_file(f"{outdir}/kmeans{K}/vol_mean.mrc").images()
 
     assert isinstance(volm, torch.Tensor)
 
     # load mask
-    mask = ImageSource.from_mrcs(f"{outdir}/mask.mrc").images()
+    mask = ImageSource.from_file(f"{outdir}/mask.mrc").images()
     assert isinstance(mask, torch.Tensor)
     mask = mask.to(torch.bool)
     logger.info(f"{mask.sum()} voxels in mask")
@@ -269,7 +269,7 @@ def analyze_volumes(
     # load volumes
     vols = torch.stack(
         [
-            ImageSource.from_mrcs(
+            ImageSource.from_file(
                 f"{outdir}/kmeans{K}/vol_{vol_start_index+i:03d}.mrc"
             ).images()[mask]
             for i in range(K)
@@ -341,7 +341,7 @@ def analyze_volumes(
             vol_i = np.arange(K)[vol_ind][vol_i]
         vol_i_all = torch.stack(
             [
-                ImageSource.from_mrcs(
+                ImageSource.from_file(
                     f"{outdir}/kmeans{K}/vol_{vol_start_index+i:03d}.mrc"
                 ).images()
                 for i in vol_i

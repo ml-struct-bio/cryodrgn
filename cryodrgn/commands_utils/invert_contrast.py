@@ -18,7 +18,7 @@ def main(args):
     assert args.input.endswith(".mrc"), "Input volume must be .mrc file"
     assert args.o.endswith(".mrc"), "Output volume must be .mrc file"
 
-    src = ImageSource.from_mrcs(args.input)
+    src = ImageSource.from_file(args.input)
     MRCFile.write(args.o, src, transform_fn=lambda data, indices: -data)
     logger.info(f"Wrote {args.o}")
 

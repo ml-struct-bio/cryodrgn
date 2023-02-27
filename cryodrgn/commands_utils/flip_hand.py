@@ -19,7 +19,7 @@ def main(args):
     assert args.input.endswith(".mrc"), "Input volume must be .mrc file"
     assert args.o.endswith(".mrc"), "Output volume must be .mrc file"
 
-    src = ImageSource.from_mrcs(args.input)
+    src = ImageSource.from_file(args.input)
     # Note: Proper flipping (compatible with legacy implementation) only happens when chunksize is equal to src.n
     MRCFile.write(
         args.o,

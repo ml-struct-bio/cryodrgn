@@ -185,7 +185,7 @@ def generate_and_map_volumes(
     norm = cfg["dataset_args"]["norm"]
 
     # Load landscape analysis inputs
-    mask = np.array(ImageSource.from_mrcs(mask_mrc).images().cpu())
+    mask = np.array(ImageSource.from_file(mask_mrc).images().cpu())
     assert isinstance(mask, np.ndarray)
     mask = mask.astype(bool)
     if args.downsample:

@@ -9,7 +9,7 @@ DATA_FOLDER = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
 
 @pytest.fixture
 def mrcs_data():
-    return ImageSource.from_mrcs(
+    return ImageSource.from_file(
         f"{DATA_FOLDER}/toy_projections.mrcs", lazy=False
     ).images()
 
@@ -45,7 +45,7 @@ def test_loading_csfile(mrcs_data):
     src = ImageSource.from_file(f"{DATA_FOLDER}/empiar_10076_7.cs")
     arr = src[:]
     assert arr.shape == (7, 320, 320)
-    starfile_data = ImageSource.from_star(
+    starfile_data = ImageSource.from_file(
         f"{DATA_FOLDER}/empiar_10076_7.star", datadir=DATA_FOLDER, lazy=False
     )[:]
 
@@ -80,7 +80,7 @@ def test_prespecified_indices(mrcs_data):
     assert torch.allclose(mrcs_data[np.array([5, 304]), :, :], data)
 
 
-def test_prespecified_indices_eager(mrcs_data):
+def test_tprespecified_indices_eager(mrcs_data):
     # An ImageSource can have pre-specified indices, which will be the only ones used when reading underlying data.
     src = ImageSource.from_file(
         f"{DATA_FOLDER}/toy_projections.mrcs",
@@ -93,6 +93,43 @@ def test_prespecified_indices_eager(mrcs_data):
     # and we can forget about what indices were originally passed in.
     data = src.images(np.array([2, 3]))
     assert torch.allclose(mrcs_data[np.array([5, 304]), :, :], data)
+
+
+def test_txt_prespecified_indices(mrcs_data):
+    # Each line of the txt file points to an .mrcs file with 1000 particles.
+    # Specify indices that span these files.
+    src = ImageSource.from_file(
+        f"{DATA_FOLDER}/toy_projections_2.txt",
+        indices=np.array([35, 631, 1531, 363, 1693, 1875]),
+    )
+    assert src.shape == (6, 30, 30)  # Not (100, 30, 30)
+
+    # Once read, caller-side indexing can be done as usual (i.e. going from 0 to src.n),
+    # and we can forget about what indices were originally passed in.
+    data = src.images(np.array([2, 3, 5, 0, 1, 4]))
+
+    assert torch.allclose(
+        mrcs_data[np.array([531, 363, 875, 35, 631, 693]), :, :], data
+    )
+
+
+def test_txt_prespecified_indices_eager(mrcs_data):
+    # Each line of the txt file points to an .mrcs file with 1000 particles.
+    # Specify indices that span these files.
+    src = ImageSource.from_file(
+        f"{DATA_FOLDER}/toy_projections_2.txt",
+        indices=np.array([35, 631, 1531, 363, 1693, 1875]),
+        lazy=False,
+    )
+    assert src.shape == (6, 30, 30)  # Not (100, 30, 30)
+
+    # Once read, caller-side indexing can be done as usual (i.e. going from 0 to src.n),
+    # and we can forget about what indices were originally passed in.
+    data = src.images(np.array([2, 3, 5, 0, 1, 4]))
+
+    assert torch.allclose(
+        mrcs_data[np.array([531, 363, 875, 35, 631, 693]), :, :], data
+    )
 
 
 def test_prespecified_indices_chunked(mrcs_data):

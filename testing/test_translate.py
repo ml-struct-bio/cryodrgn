@@ -9,7 +9,7 @@ import cryodrgn.mrc
 from cryodrgn.lattice import Lattice
 from cryodrgn.source import ImageSource
 
-imgs = ImageSource.from_mrcs("data/hand.mrcs").images()
+imgs = ImageSource.from_file("data/hand.mrcs").images()
 img = imgs[0]
 D = img.shape[0]
 ht = cryodrgn.fft.ht2_center(img)

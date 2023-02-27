@@ -12,7 +12,7 @@ DATA_FOLDER = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
 
 @pytest.fixture
 def mrcs_data():
-    return ImageSource.from_mrcs(f"{DATA_FOLDER}/toy_projections.mrcs").images()
+    return ImageSource.from_file(f"{DATA_FOLDER}/toy_projections.mrcs").images()
 
 
 def test_phase_flip(mrcs_data):

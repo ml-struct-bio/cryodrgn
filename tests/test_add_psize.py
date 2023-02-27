@@ -24,5 +24,5 @@ def test_add_psize(mrcs_data):
     add_psize.main(args)
 
     # Data is unchanged
-    new_data = ImageSource.from_mrcs("output/toy_projections_added_psize.mrc").images()
+    new_data = ImageSource.from_file("output/toy_projections_added_psize.mrc").images()
     assert torch.allclose(new_data, mrcs_data)

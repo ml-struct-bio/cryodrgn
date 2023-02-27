@@ -12,7 +12,7 @@ DATA_FOLDER = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
 
 @pytest.fixture
 def mrcs_data():
-    return ImageSource.from_mrc(f"{DATA_FOLDER}/toy_projections.mrcs").images()
+    return ImageSource.from_file(f"{DATA_FOLDER}/toy_projections.mrcs").images()
 
 
 @pytest.fixture

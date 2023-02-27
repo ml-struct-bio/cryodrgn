@@ -10,7 +10,7 @@ DATA_FOLDER = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
 
 @pytest.fixture
 def mrcs_data():
-    return ImageSource.from_mrc(f"{DATA_FOLDER}/toy_projections.mrc").images()
+    return ImageSource.from_file(f"{DATA_FOLDER}/toy_projections.mrc").images()
 
 
 def test_flip_hand(mrcs_data):
@@ -23,6 +23,6 @@ def test_flip_hand(mrcs_data):
     )
     flip_hand.main(args)
 
-    flipped_data = ImageSource.from_mrcs("output/toy_projections_flipped.mrc").images()
+    flipped_data = ImageSource.from_file("output/toy_projections_flipped.mrc").images()
     # torch doesn't let us use a -ve stride, hence the conversion below
     assert np.allclose(np.array(flipped_data.cpu()), np.array(mrcs_data.cpu())[::-1])

@@ -24,7 +24,7 @@ def main(args):
     header = MRCHeader.parse(args.input)
     header.update_apix(args.Apix)
 
-    src = ImageSource.from_mrcs(args.input)
+    src = ImageSource.from_file(args.input)
     MRCFile.write(args.o, src, header=header)
 
     logger.info(f"Wrote {args.o}")

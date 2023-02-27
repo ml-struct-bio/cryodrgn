@@ -36,7 +36,7 @@ def test_downsample(input_star):
     )
     downsample.main(args)
 
-    output_data = ImageSource.from_mrcs(
+    output_data = ImageSource.from_file(
         "output/downsampled/downsampled.mrcs", lazy=False
     ).images()
     assert isinstance(output_data, torch.Tensor)
@@ -62,21 +62,21 @@ def test_downsample_in_chunks(input_star):
     )
     downsample.main(args)
 
-    assert ImageSource.from_txt(
+    assert ImageSource.from_file(
         "output/downsampled/downsampled.txt", lazy=False
     ).shape == (13, 28, 28)
 
-    assert ImageSource.from_mrcs("output/downsampled/downsampled.0.mrcs").shape == (
+    assert ImageSource.from_file("output/downsampled/downsampled.0.mrcs").shape == (
         5,
         28,
         28,
     )
-    assert ImageSource.from_mrcs("output/downsampled/downsampled.1.mrcs").shape == (
+    assert ImageSource.from_file("output/downsampled/downsampled.1.mrcs").shape == (
         5,
         28,
         28,
     )
-    assert ImageSource.from_mrcs("output/downsampled/downsampled.2.mrcs").shape == (
+    assert ImageSource.from_file("output/downsampled/downsampled.2.mrcs").shape == (
         3,
         28,
         28,

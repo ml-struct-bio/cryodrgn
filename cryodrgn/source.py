@@ -1,49 +1,68 @@
+"""This module provides an `ImageSource` class that makes it easy to work with Image data.
+
+An `ImageSource` can be instantiated with a path to a .star/.mrcs/.txt/.cs file, in either lazy or eager mode.
+An `images` method is used at runtime to retrieve 3D Tensors for image data at specified indices.
+Chunked access is possible using the `chunks()` method.
+
+Typical usage:
+  src = source.ImageSource("hand.mrcs", lazy=True)
+  im = src.images(np.arange(1000, 2000))
+  assert im.shape == (1000, 64, 64)
+  ...
+  for chunk in src.chunks(chunksize=20):
+    assert chunk.shape == (20, 64, 64)
+    ...
+"""
 import os.path
 from collections.abc import Iterable
 from concurrent import futures
 import numpy as np
 import pandas as pd
-from typing import Union, List, Optional
+from typing import List, Optional, Union
 import logging
 import torch
-from typing import Tuple, Union
 
 logger = logging.getLogger(__name__)
 
 
 class ImageSource:
+    """An ImageSource is a class that returns a copy of the underlying 3D image data, from a .mrcs/.txt/.star file.
+
+    The images(<indices>) method is used to read images at specified indices as torch Tensors.
+    <indices> can be a scalar, a slice, a numpy array, or an iterable of indices where we want to query the data.
+    Only square images are supported, of side length D pixels.
+    The dimensions of the returned Tensor is (<n_images>, D, D).
+
+    The underlying file can be loaded in lazy (default) mode, which is quick, but defers the actual reading of file(s)
+    till images(<indices>) is called. In non-lazy mode, the file(s) are read immediately.
+
+    The `images()` call always returns a copy of the data, whether the `ImageSource` is lazy or not.
+
+    Attributes:
+        D: An integer indicating the side length (pixels) of the square images in this `ImageSource`.
+        n: An integer indicting the total number of images in this `ImageSource`.
+        shape: The shape of the underlying data - (n, D, D).
+
+    """
+
     @staticmethod
-    def from_file(filepath: str, *args, **kwargs):
+    def from_file(
+        filepath: str,
+        lazy: bool = True,
+        indices: Optional[np.ndarray] = None,
+        datadir: str = "",
+    ):
         ext = os.path.splitext(filepath)[-1][1:]
-        assert ext in (
-            "star",
-            "mrcs",
-            "mrc",
-            "txt",
-            "cs",
-        ), f"Unknown file extension {ext}"
-        source = getattr(ImageSource, f"from_{ext}")(filepath, *args, **kwargs)
-        return source
-
-    @staticmethod
-    def from_star(filepath: str, *args, **kwargs):
-        return StarfileSource(filepath, *args, **kwargs)
-
-    @staticmethod
-    def from_mrcs(filepath: str, *args, **kwargs):
-        return MRCFileSource(filepath, *args, **kwargs)
-
-    @staticmethod
-    def from_mrc(filepath: str, *args, **kwargs):
-        return MRCFileSource(filepath, *args, **kwargs)
-
-    @staticmethod
-    def from_txt(filepath: str, *args, **kwargs):
-        return TxtFileSource(filepath, *args, **kwargs)
-
-    @staticmethod
-    def from_cs(filepath: str, *args, **kwargs):
-        return CsSource(filepath, *args, **kwargs)
+        if ext == "star":
+            return StarfileSource(filepath, lazy=lazy, datadir=datadir, indices=indices)
+        elif ext in ("mrc", "mrcs"):
+            return MRCFileSource(filepath, lazy=lazy, indices=indices)
+        elif ext == "txt":
+            return TxtFileSource(filepath, lazy=lazy, indices=indices)
+        elif ext == "cs":
+            return CsSource(filepath, lazy=lazy, indices=indices)
+        else:
+            raise RuntimeError(f"Unrecognized file extension {ext}")
 
     def __init__(
         self,
@@ -54,7 +73,6 @@ class ImageSource:
         dtype: str = "float32",
         lazy: bool = True,
         indices: Optional[np.ndarray] = None,
-        **kwargs,
     ):
         self.n = n
 
@@ -117,10 +135,10 @@ class ImageSource:
         else:
             raise TypeError("Unsupported Type for indices")
 
+        assert isinstance(indices, np.ndarray)
         if np.any(indices >= self.n):
             raise ValueError(f"indices should be < {self.n}")
 
-        assert isinstance(indices, np.ndarray)
         return indices
 
     def images(
@@ -138,30 +156,50 @@ class ImageSource:
         return torch.tensor(images.astype(self.dtype))
 
     def _images(self, indices: np.ndarray) -> np.ndarray:
+        """Subclasses must specify how to actually get the images at specific indices.
+        They may employ performance tricks (chunked loading from files) to do so.
+        """
         raise NotImplementedError("Subclasses must implement this")
 
     def chunks(self, chunksize: int = 1000):
+        """A generator that returns images in chunks of size `chunksize`.
+
+        Returns:
+            A 2-tuple of (<indices>, <torch.Tensor>).
+        """
         for i in range(0, self.n, chunksize):
             indices = np.arange(i, min(self.n, i + chunksize))
             yield indices, self.images(indices)
 
 
 class ArraySource(ImageSource):
-    def __init__(self, data: np.ndarray):
-        if data.ndim == 2:
-            data = data[np.newaxis, ...]
-        nz, ny, nx = data.shape
+    """A source that is consults an in-memory Numpy array for data.
+
+    An ArraySource is initialized with an ndarray, and indexes into it to return images at specified indices.
+    Note that the `indices` argument to `images()` is still a Numpy array, which means that fancy indexing is
+    used to get a fresh copy of the requested data. Callers should be mindful of memory usage by passing in a
+    reasonable number of indices, or use `chunks()` to iterate through the source.
+    """
+
+    def __init__(self, array: np.ndarray):
+        if array.ndim == 2:
+            array = array[np.newaxis, ...]
+        nz, ny, nx = array.shape
         assert ny == nx, "Only square arrays supported"
-        self.data = data
+        self.array = array
 
         super().__init__(D=ny, n=nz)
 
     def _images(self, indices: np.ndarray):
-        return self.data[indices, ...]
+        return self.array[indices, ...]
 
 
 class MRCFileSource(ImageSource):
-    def __init__(self, filepath: str, *args, **kwargs):
+    """An ImageSource that reads an .mrc/.mrcs particle stack."""
+
+    def __init__(
+        self, filepath: str, lazy: bool = True, indices: Optional[np.ndarray] = None
+    ):
         from cryodrgn.mrc import MRCHeader
 
         header = MRCHeader.parse(filepath)
@@ -178,7 +216,15 @@ class MRCFileSource(ImageSource):
         self.size = self.ny * self.nx
         self.stride = self.dtype().itemsize * self.size
 
-        super().__init__(D=self.ny, n=self.nz, filenames=filepath, *args, **kwargs)
+        super().__init__(
+            D=self.ny,
+            n=self.nz,
+            filenames=filepath,
+            n_workers=1,
+            dtype=self.dtype,
+            lazy=lazy,
+            indices=indices,
+        )
 
     def _images(
         self,
@@ -189,10 +235,10 @@ class MRCFileSource(ImageSource):
 
         with open(self.mrcfile_path) as f:
             if data is None:
-                data = np.empty((len(indices), self.D, self.D), dtype=self.dtype)
+                data = np.zeros((len(indices), self.D, self.D), dtype=self.dtype)
                 assert (
                     tgt_indices is None
-                ), "Target indices can only be specified when passing in a preallocated array"
+                ), "Target indices can only be specified when passing in a pre-allocated array"
                 tgt_indices = np.arange(len(indices))
             else:
                 if tgt_indices is not None:
@@ -217,7 +263,13 @@ class MRCFileSource(ImageSource):
 
 
 class TxtFileSource(ImageSource):
-    def __init__(self, filepath: str, n_workers: int = 1, *args, **kwargs):
+    def __init__(
+        self,
+        filepath: str,
+        n_workers: int = 1,
+        lazy: bool = True,
+        indices: Optional[np.ndarray] = None,
+    ):
 
         _paths = []
         filepath_dir = os.path.dirname(filepath)
@@ -227,7 +279,8 @@ class TxtFileSource(ImageSource):
                 _paths.append(os.path.join(filepath_dir, path))
             else:
                 _paths.append(path)
-        self.sources = [MRCFileSource(path, *args, **kwargs) for path in _paths]
+
+        self.sources = [MRCFileSource(path, lazy=lazy) for path in _paths]
 
         # We'll only look at the header from the first .mrcs file, and assume that all headers are compatible
         header = self.sources[0].header
@@ -248,7 +301,9 @@ class TxtFileSource(ImageSource):
         ]
         n_workers = min(n_workers, len(self.source_intervals))
 
-        super().__init__(D=self.ny, n=self.nz, n_workers=n_workers, *args, **kwargs)
+        super().__init__(
+            D=self.ny, n=self.nz, n_workers=n_workers, lazy=lazy, indices=indices
+        )
 
     def _images(self, indices: np.ndarray):
         def load_single_mrcs(
@@ -259,7 +314,7 @@ class TxtFileSource(ImageSource):
         ):
             src._images(indices=src_indices, data=data, tgt_indices=tgt_indices)
 
-        data = np.empty((len(indices), self.D, self.D), dtype=self.dtype)
+        data = np.zeros((len(indices), self.D, self.D), dtype=self.dtype)
 
         with futures.ThreadPoolExecutor(self.n_workers) as executor:
             to_do = []
@@ -292,7 +347,12 @@ class TxtFileSource(ImageSource):
 
 class _MRCDataFrameSource(ImageSource):
     def __init__(
-        self, df: pd.DataFrame, datadir: str = "", n_workers: int = 1, *args, **kwargs
+        self,
+        df: pd.DataFrame,
+        datadir: str = "",
+        lazy: bool = True,
+        indices: Optional[np.ndarray] = None,
+        n_workers: int = 1,
     ):
         assert "__mrc_index" in df.columns
         assert "__mrc_filename" in df.columns
@@ -309,8 +369,8 @@ class _MRCDataFrameSource(ImageSource):
             n=len(self.df),
             filenames=df["__mrc_filename"],
             n_workers=n_workers,
-            *args,
-            **kwargs,
+            lazy=lazy,
+            indices=indices,
         )
 
     def _images(self, indices: np.ndarray):
@@ -319,7 +379,7 @@ class _MRCDataFrameSource(ImageSource):
             # df.index indicates the positions where the data needs to be inserted -> return for use by caller
             return df.index, src._images(df["__mrc_index"])
 
-        data = np.empty((len(indices), self.D, self.D), dtype=self.dtype)
+        data = np.zeros((len(indices), self.D, self.D), dtype=self.dtype)
 
         # Create a DataFrame corresponding to the indices we're interested in
         batch_df = self.df.iloc[indices].reset_index(drop=True)
@@ -341,7 +401,14 @@ class _MRCDataFrameSource(ImageSource):
 
 
 class StarfileSource(_MRCDataFrameSource):
-    def __init__(self, filepath: str, datadir: str = "", *args, **kwargs):
+    def __init__(
+        self,
+        filepath: str,
+        datadir: str = "",
+        lazy: bool = True,
+        indices: Optional[np.ndarray] = None,
+        n_workers: int = 1,
+    ):
         from cryodrgn.starfile import Starfile
 
         df = Starfile.load(filepath).df
@@ -356,11 +423,20 @@ class StarfileSource(_MRCDataFrameSource):
         else:
             datadir = os.path.dirname(filepath)
 
-        super().__init__(df=df, datadir=datadir, *args, **kwargs)
+        super().__init__(
+            df=df, datadir=datadir, lazy=lazy, indices=indices, n_workers=n_workers
+        )
 
 
 class CsSource(_MRCDataFrameSource):
-    def __init__(self, filepath: str, datadir: str = "", *args, **kwargs):
+    def __init__(
+        self,
+        filepath: str,
+        datadir: str = "",
+        lazy: bool = True,
+        indices: Optional[np.ndarray] = None,
+        n_workers: int = 1,
+    ):
         metadata = np.load(filepath)
         blob_indices = metadata["blob/idx"]
         blob_paths = metadata["blob/path"].astype(str).tolist()
@@ -379,4 +455,6 @@ class CsSource(_MRCDataFrameSource):
         else:
             datadir = os.path.dirname(filepath)
 
-        super().__init__(df=df, datadir=datadir, *args, **kwargs)
+        super().__init__(
+            df=df, datadir=datadir, lazy=lazy, indices=indices, n_workers=n_workers
+        )

@@ -7,7 +7,7 @@ on:
       - '*'
 
 jobs:
-  run_tests:
+  release:
 
     runs-on: ubuntu-latest
 

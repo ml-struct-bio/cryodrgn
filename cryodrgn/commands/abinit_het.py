@@ -497,8 +497,8 @@ def train(
 
     if use_tilt:
         gen_loss = 0.5 * F.mse_loss(gen_slice(rot), y) + 0.5 * F.mse_loss(
-            gen_slice(bnb.tilt @ rot), yt  # type: ignore
-        )  # noqa: F821
+            gen_slice(bnb.tilt @ rot), yt  # type: ignore  # noqa: F821
+        )
     else:
         gen_loss = F.mse_loss(gen_slice(rot), y)
 

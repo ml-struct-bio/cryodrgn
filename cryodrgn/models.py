@@ -1,6 +1,6 @@
 """Pytorch models"""
 
-from typing import Optional, Tuple, Type, Union, Sequence, Any
+from typing import Optional, Tuple, Type, Sequence, Any
 import numpy as np
 import torch
 from torch import Tensor
@@ -8,7 +8,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.parameter import Parameter
 from torch.nn.parallel import DataParallel
-import cryodrgn.types as types
 from cryodrgn import fft, lie_tools, utils
 from cryodrgn.lattice import Lattice
 

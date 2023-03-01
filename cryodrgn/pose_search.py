@@ -68,7 +68,6 @@ class PoseSearch:
         t_yshift: int = 0,
         device: Optional[torch.device] = None,
     ):
-
         self.model = model
         self.lattice = lattice
         self.base_healpy = base_healpy
@@ -132,7 +131,6 @@ class PoseSearch:
             ctf_i = ctf_i.view(B, 1, 1, -1)[..., mask]  # Bx1x1xYX
 
         def compute_err(images, rot):
-
             adj_angles_inplane = None
             if angles_inplane is not None:
                 # apply a random in-plane rotation from the set

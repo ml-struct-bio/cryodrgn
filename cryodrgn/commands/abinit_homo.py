@@ -5,7 +5,6 @@ Homogeneous NN reconstruction with hierarchical pose optimization
 import argparse
 import os
 import pickle
-import signal
 import sys
 from datetime import datetime as dt
 import logging
@@ -20,14 +19,6 @@ from cryodrgn.lattice import Lattice
 from cryodrgn.pose_search import PoseSearch
 
 logger = logging.getLogger(__name__)
-
-# def debug_signal_handler(signal, frame):
-#     import pdb
-
-#     pdb.set_trace()
-
-
-# signal.signal(signal.SIGINT, debug_signal_handler)
 
 
 def add_args(parser):

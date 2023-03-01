@@ -10,7 +10,6 @@ import logging
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.nn.parallel import DataParallel
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
@@ -20,8 +19,7 @@ except ImportError:
     pass
 
 import cryodrgn
-import cryodrgn.types as types
-from cryodrgn import ctf, dataset, models, mrc, utils
+from cryodrgn import ctf, dataset, models, mrc
 from cryodrgn.lattice import Lattice
 from cryodrgn.pose import PoseTracker
 from cryodrgn.models import DataParallelDecoder, Decoder

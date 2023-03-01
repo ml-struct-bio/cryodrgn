@@ -3,8 +3,8 @@ name: Release
 on:
   push:
     branches: [ master ]
-  tags:
-    - '*'
+    tags:
+      - '*'
 
 jobs:
   run_tests:

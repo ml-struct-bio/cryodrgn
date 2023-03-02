@@ -1,6 +1,5 @@
 import os.path
 import argparse
-import torch
 import pytest
 from cryodrgn.source import ImageSource
 from cryodrgn.commands import pc_traversal

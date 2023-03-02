@@ -172,7 +172,6 @@ def main(args):
 
     # Multiple z
     if args.z_start or args.zfile:
-
         # Get z values
         if args.z_start:
             args.z_start = np.array(args.z_start)

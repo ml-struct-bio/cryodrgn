@@ -3,7 +3,7 @@
 import argparse
 import logging
 import numpy as np
-from cryodrgn.mrc import MRCFile, MRCHeader
+from cryodrgn.mrc import MRCFile
 from cryodrgn.source import ImageSource
 
 logger = logging.getLogger(__name__)

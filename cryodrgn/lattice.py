@@ -5,7 +5,6 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor
 import logging
-from cryodrgn import utils
 
 logger = logging.getLogger(__name__)
 

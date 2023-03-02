@@ -1,9 +1,6 @@
 import os.path
 import argparse
-import numpy as np
-import torch
 import pytest
-from cryodrgn import dataset, mrc
 from cryodrgn.source import ImageSource
 from cryodrgn.commands_utils import phase_flip
 

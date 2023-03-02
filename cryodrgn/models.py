@@ -1,6 +1,6 @@
 """Pytorch models"""
 
-from typing import Optional, Tuple, Type, Union, Sequence, Any
+from typing import Optional, Tuple, Type, Sequence, Any
 import numpy as np
 import torch
 from torch import Tensor

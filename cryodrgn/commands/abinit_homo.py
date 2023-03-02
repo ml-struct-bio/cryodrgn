@@ -21,14 +21,6 @@ from cryodrgn.pose_search import PoseSearch
 
 logger = logging.getLogger(__name__)
 
-# def debug_signal_handler(signal, frame):
-#     import pdb
-
-#     pdb.set_trace()
-
-
-# signal.signal(signal.SIGINT, debug_signal_handler)
-
 
 def add_args(parser):
     parser.add_argument(

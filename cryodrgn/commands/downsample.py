@@ -7,8 +7,7 @@ import math
 import os
 import logging
 import numpy as np
-import torch
-from cryodrgn import fft, mrc
+from cryodrgn import fft
 from cryodrgn.mrc import MRCHeader, MRCFile
 from cryodrgn.source import ImageSource
 

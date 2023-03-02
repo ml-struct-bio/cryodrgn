@@ -1,6 +1,5 @@
 import os.path
 import argparse
-import torch
 import pytest
 from cryodrgn.source import ImageSource
 from cryodrgn.commands import eval_images
@@ -21,9 +20,9 @@ def test_invert_contrast(mrcs_data):
             "--config",
             f"{DATA_FOLDER}/het_config.pkl",
             "-o",
-            f"output/out_eval_images_losses.pkl",
+            "output/out_eval_images_losses.pkl",
             "--out-z",
-            f"output/out_eval_images_z.pkl",
+            "output/out_eval_images_z.pkl",
             "--poses",
             f"{DATA_FOLDER}/hand_rot.pkl",
             "--log-interval",

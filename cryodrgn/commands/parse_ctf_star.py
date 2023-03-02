@@ -5,7 +5,7 @@ import os
 import pickle
 import logging
 import numpy as np
-from cryodrgn import ctf, starfile, utils
+from cryodrgn import ctf, starfile
 
 logger = logging.getLogger(__name__)
 

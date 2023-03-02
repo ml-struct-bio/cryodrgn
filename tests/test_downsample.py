@@ -1,14 +1,10 @@
 import argparse
 import os
 import os.path
-import pickle
-import numpy as np
 import torch
 import pytest
-from cryodrgn import dataset, mrc
 from cryodrgn.source import ImageSource
-from cryodrgn.commands import downsample, parse_ctf_star
-from cryodrgn.commands_utils import filter_star, write_cs, write_star
+from cryodrgn.commands import downsample
 
 DATA_FOLDER = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
 

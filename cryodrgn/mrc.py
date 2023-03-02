@@ -235,7 +235,7 @@ class MRCFile:
         )
 
         if transform_fn is None:
-            transform_fn = lambda chunk, indices: chunk
+            transform_fn = lambda chunk, indices: chunk  # noqa: E731
 
         os.makedirs(os.path.dirname(filename), exist_ok=True)
         with open(filename, "wb") as f:

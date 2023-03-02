@@ -1,8 +1,6 @@
 import os.path
 import argparse
-import pytest
 from unittest.mock import patch
-from cryodrgn.source import ImageSource
 from cryodrgn.commands_utils import view_mrcs
 
 DATA_FOLDER = os.path.join(os.path.dirname(__file__), "..", "testing", "data")

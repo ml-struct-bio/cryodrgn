@@ -8,7 +8,7 @@ import time
 import numpy as np
 import torch
 import logging
-from cryodrgn import ctf, dataset, fft, mrc, utils
+from cryodrgn import ctf, dataset, fft, utils
 from cryodrgn.mrc import MRCFile
 from cryodrgn.lattice import Lattice
 from cryodrgn.pose import PoseTracker

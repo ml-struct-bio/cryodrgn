@@ -347,7 +347,7 @@ class TxtFileSource(ImageSource):
                     to_do.append(future)
 
             for future in futures.as_completed(to_do):
-                res, exc = future.result(), future.exception()
+                exc = future.exception()
                 if exc is not None:
                     raise exc
 

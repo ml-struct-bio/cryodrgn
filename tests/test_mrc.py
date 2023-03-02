@@ -1,9 +1,6 @@
 import os.path
-
-import numpy as np
 import torch
 import pytest
-from cryodrgn import dataset, mrc
 from cryodrgn.source import ImageSource
 
 DATA_FOLDER = os.path.join(os.path.dirname(__file__), "..", "testing", "data")

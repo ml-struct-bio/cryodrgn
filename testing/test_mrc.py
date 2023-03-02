@@ -1,6 +1,4 @@
 import numpy as np
-
-from cryodrgn import mrc
 from cryodrgn.source import ImageSource
 
 data = ImageSource.from_file("data/toy_projections.mrcs", lazy=True)

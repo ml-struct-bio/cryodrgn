@@ -5,7 +5,7 @@ import torch
 import pytest
 from cryodrgn.source import ImageSource
 from cryodrgn.commands_utils import filter_mrcs
-from cryodrgn.utils import save_pkl, load_pkl
+from cryodrgn.utils import save_pkl
 
 DATA_FOLDER = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
 

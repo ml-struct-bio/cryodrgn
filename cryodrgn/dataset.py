@@ -39,7 +39,7 @@ class ImageDataset(data.Dataset):
                 tilt_mrcfile, lazy=lazy, datadir=datadir
             )
 
-        ny, nx = self.src.D, self.src.D
+        ny = self.src.D
         assert ny % 2 == 0, "Image size must be even."
 
         self.N = self.src.n

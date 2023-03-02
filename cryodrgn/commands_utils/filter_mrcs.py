@@ -2,7 +2,6 @@
 
 import argparse
 import logging
-import numpy as np
 from cryodrgn import utils
 from cryodrgn.mrc import MRCFile
 from cryodrgn.source import ImageSource

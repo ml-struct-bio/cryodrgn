@@ -1,8 +1,5 @@
 import os.path
 import argparse
-import torch
-import pytest
-from cryodrgn.source import ImageSource
 from cryodrgn.commands_utils import view_header
 
 DATA_FOLDER = os.path.join(os.path.dirname(__file__), "..", "testing", "data")

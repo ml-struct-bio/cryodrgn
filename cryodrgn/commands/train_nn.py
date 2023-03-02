@@ -10,7 +10,6 @@ import logging
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.nn.parallel import DataParallel
 from torch.utils.data.sampler import BatchSampler, RandomSampler
 import torch.nn.functional as F
 from torch.utils.data import DataLoader

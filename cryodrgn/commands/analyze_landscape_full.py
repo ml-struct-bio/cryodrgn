@@ -13,7 +13,7 @@ import torch.optim as optim
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset, DataLoader
 import cryodrgn
-from cryodrgn import config, mrc, utils
+from cryodrgn import config, utils
 from cryodrgn.models import HetOnlyVAE, ResidLinearMLP
 from cryodrgn.source import ImageSource
 

@@ -4,6 +4,7 @@ import logging
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure, Axes
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 import seaborn as sns
 from scipy.spatial.distance import cdist
@@ -52,7 +53,7 @@ def get_pc_traj(
     start: Optional[float],
     end: Optional[float],
     percentiles: Optional[np.ndarray] = None,
-) -> np.ndarray:
+) -> npt.NDArray[np.float32]:
     """
     Create trajectory along specified principal component
 
@@ -163,7 +164,7 @@ def cluster_gmm(
 
 def get_nearest_point(
     data: np.ndarray, query: np.ndarray
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> Tuple[npt.NDArray[np.float32], np.ndarray]:
     """
     Find closest point in @data to @query
     Return datapoint, index
@@ -225,6 +226,23 @@ def get_ind_for_cluster(
 # PLOTTING
 
 
+def _get_chimerax_colors(K: int) -> List:
+    colors = [
+        "#b2b2b2",
+        "#ffffb2",
+        "#b2ffff",
+        "#b2b2ff",
+        "#ffb2ff",
+        "#ffb2b2",
+        "#b2ffb2",
+        "#e5bf99",
+        "#99bfe5",
+        "#cccc99",
+    ]
+    colors = [colors[i % len(colors)] for i in range(K)]
+    return colors
+
+
 def _get_colors(K: int, cmap: Optional[str] = None) -> List:
     if cmap is not None:
         cm = plt.get_cmap(cmap)
@@ -244,8 +262,9 @@ def scatter_annotate(
     labels: Optional[np.ndarray] = None,
     alpha: Union[float, np.ndarray, None] = 0.1,
     s: Union[float, np.ndarray, None] = 1,
+    colors: Union[list, str, None] = None,
 ) -> Tuple[Figure, Axes]:
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=(4, 4))
     plt.scatter(x, y, alpha=alpha, s=s, rasterized=True)
 
     # plot cluster centers
@@ -253,7 +272,9 @@ def scatter_annotate(
         assert centers is None
         centers = np.array([[x[i], y[i]] for i in centers_ind])
     if centers is not None:
-        plt.scatter(centers[:, 0], centers[:, 1], c="k")
+        if colors is None:
+            colors = "k"
+        plt.scatter(centers[:, 0], centers[:, 1], c=colors, edgecolor="black")
     if annotate:
         assert centers is not None
         if labels is None:
@@ -271,15 +292,18 @@ def scatter_annotate_hex(
     centers_ind: Optional[np.ndarray] = None,
     annotate: bool = True,
     labels: Optional[np.ndarray] = None,
+    colors: Union[list, str, None] = None,
 ) -> sns.JointGrid:
-    g = sns.jointplot(x=x, y=y, kind="hex")
+    g = sns.jointplot(x=x, y=y, kind="hex", height=4)
 
     # plot cluster centers
     if centers_ind is not None:
         assert centers is None
         centers = np.array([[x[i], y[i]] for i in centers_ind])
     if centers is not None:
-        g.ax_joint.scatter(centers[:, 0], centers[:, 1], color="k", edgecolor="grey")
+        if colors is None:
+            colors = "k"
+        g.ax_joint.scatter(centers[:, 0], centers[:, 1], c=colors, edgecolor="black")
     if annotate:
         assert centers is not None
         if labels is None:

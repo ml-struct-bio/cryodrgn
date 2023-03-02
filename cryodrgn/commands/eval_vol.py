@@ -8,7 +8,7 @@ from datetime import datetime as dt
 import logging
 import numpy as np
 import torch
-from cryodrgn import config, mrc, utils
+from cryodrgn import config, mrc
 from cryodrgn.models import HetOnlyVAE
 
 logger = logging.getLogger(__name__)
@@ -171,7 +171,6 @@ def main(args):
 
     # Multiple z
     if args.z_start or args.zfile:
-
         # Get z values
         if args.z_start:
             args.z_start = np.array(args.z_start)

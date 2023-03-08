@@ -620,6 +620,7 @@ def main(args):
         window=args.window,
         datadir=args.datadir,
         window_r=args.window_r,
+        max_threads=args.max_threads,
     )
 
     if args.tilt is None:

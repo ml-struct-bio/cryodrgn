@@ -289,7 +289,7 @@ class TxtFileSource(ImageSource):
             else:
                 _paths.append(path)
 
-        self.sources = [MRCFileSource(path, lazy=lazy) for path in _paths]
+        self.sources = [MRCFileSource(path, lazy=True) for path in _paths]
 
         # We'll only look at the header from the first .mrcs file, and assume that all headers are compatible
         header = self.sources[0].header

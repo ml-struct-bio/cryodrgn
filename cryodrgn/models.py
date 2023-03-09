@@ -232,6 +232,12 @@ class DataParallelDecoder(Decoder):
         assert isinstance(module, Decoder)
         return module.eval_volume(*args, **kwargs)
 
+    def forward(self, *args, **kwargs):
+        return self.dp.module.forward(*args, **kwargs)
+
+    def state_dict(self, *args, **kwargs):
+        return self.dp.module.state_dict(*args, **kwargs)
+
 
 class PositionalDecoder(Decoder):
     def __init__(

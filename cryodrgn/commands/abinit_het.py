@@ -595,7 +595,7 @@ def save_checkpoint(
     torch.save(
         {
             "epoch": epoch,
-            "model_state_dict": model.state_dict(),
+            "model_state_dict": unparallelize(model).state_dict(),
             "optimizer_state_dict": optim.state_dict(),
             "search_pose": search_pose,
         },
@@ -831,17 +831,6 @@ def main(args):
         )
     )
 
-    # parallelize
-    if args.multigpu and torch.cuda.device_count() > 1:
-        logger.info(f"Using {torch.cuda.device_count()} GPUs!")
-        args.batch_size *= torch.cuda.device_count()
-        logger.info(f"Increasing batch size to {args.batch_size}")
-        model = DataParallel(model)
-    elif args.multigpu:
-        logger.warning(
-            f"WARNING: --multigpu selected, but {torch.cuda.device_count()} GPUs detected"
-        )
-
     equivariance_lambda = equivariance_loss = None
 
     if args.equivariance:
@@ -880,6 +869,17 @@ def main(args):
             sorted_poses = (rot, trans * D)
     else:
         start_epoch = 0
+
+    # parallelize
+    if args.multigpu and torch.cuda.device_count() > 1:
+        logger.info(f"Using {torch.cuda.device_count()} GPUs!")
+        args.batch_size *= torch.cuda.device_count()
+        logger.info(f"Increasing batch size to {args.batch_size}")
+        model = DataParallel(model)
+    elif args.multigpu:
+        logger.warning(
+            f"WARNING: --multigpu selected, but {torch.cuda.device_count()} GPUs detected"
+        )
 
     if args.pose_model_update_freq:
         assert not args.multigpu, "TODO"

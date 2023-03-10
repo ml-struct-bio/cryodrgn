@@ -58,14 +58,10 @@ class ImageDataset(data.Dataset):
         if self.window is not None:
             imgs *= self.window
 
-        if self.max_threads > 1:
-            with mp.Pool(self.max_threads) as p:
-                imgs = torch.asarray(p.map(fft.ht2_center, imgs), dtype=torch.float32)
-        else:
-            particleslist = []
-            for img in imgs:
-                particleslist.append(fft.ht2_center(img))
-            imgs = torch.stack(particleslist)
+        particleslist = []
+        for img in imgs:
+            particleslist.append(fft.ht2_center(img))
+        imgs = torch.stack(particleslist)
 
         if self.invert_data:
             imgs *= -1

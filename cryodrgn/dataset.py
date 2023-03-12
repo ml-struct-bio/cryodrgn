@@ -13,7 +13,7 @@ from multiprocessing import Pool
 import logging
 from torch.utils import data
 
-from cryodrgn import fft, mrc, starfile, utils
+from cryodrgn import fft, mrc, starfile
 
 
 logger = logging.getLogger(__name__)
@@ -219,8 +219,10 @@ class MRCData(data.Dataset):
         if keepreal:
             self.particles_real = particles_real  # noqa: F821
             logger.info(
-                "Normalized real space images by {}".format(particles_real.std())
-            )  # noqa: F821
+                "Normalized real space images by {}".format(
+                    particles_real.std()  # noqa: F821
+                )
+            )
             self.particles_real /= particles_real.std()  # noqa: F821
 
     def __len__(self):

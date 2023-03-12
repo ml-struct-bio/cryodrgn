@@ -533,11 +533,7 @@ def save_config(args, dataset, lattice, model, out_config):
         dataset_args=dataset_args, lattice_args=lattice_args, model_args=model_args
     )
     config["seed"] = args.seed
-    config["version"] = cryodrgn.__version__
-    config["time"] = dt.now()
-    config["cmd"] = sys.argv
-    with open(out_config, "w") as f:
-        yaml.dump(config, f)
+    cryodrgn.config.save(config, out_config)
 
 
 def get_latest(args):

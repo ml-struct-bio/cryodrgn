@@ -4,6 +4,7 @@ Visualize latent space and generate volumes
 
 import argparse
 import os
+import os.path
 import shutil
 from datetime import datetime as dt
 import logging
@@ -348,7 +349,11 @@ def main(args):
     workdir = args.workdir
     zfile = f"{workdir}/z.{E}.pkl"
     weights = f"{workdir}/weights.{E}.pkl"
-    config = f"{workdir}/config.yaml"
+    config = (
+        f"{workdir}/config.yaml"
+        if os.path.exists(f"{workdir}/config.yaml")
+        else f"{workdir}/config.pkl"
+    )
     outdir = f"{workdir}/analyze.{E}"
     if E == -1:
         zfile = f"{workdir}/z.pkl"

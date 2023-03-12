@@ -14,10 +14,9 @@ import torch.nn.functional as F
 from torch.nn.parallel import DataParallel
 from torch.utils.data import DataLoader
 from typing import Union
-import yaml
-import cryodrgn
 from cryodrgn import ctf, dataset, lie_tools, utils
 from cryodrgn.beta_schedule import LinearSchedule, get_beta_schedule
+import cryodrgn.config
 from cryodrgn.lattice import Lattice
 from cryodrgn.losses import EquivarianceLoss
 from cryodrgn.models import HetOnlyVAE, unparallelize
@@ -650,12 +649,8 @@ def save_config(args, dataset, lattice, model, out_config):
     config = dict(
         dataset_args=dataset_args, lattice_args=lattice_args, model_args=model_args
     )
-    config["seed"] = args.seed
-    config["version"] = cryodrgn.__version__
-    config["time"] = dt.now()
-    config["cmd"] = sys.argv
-    with open(out_config, "w") as f:
-        yaml.dump(config, f)
+
+    cryodrgn.config.save(config, out_config)
 
 
 def sort_poses(poses):

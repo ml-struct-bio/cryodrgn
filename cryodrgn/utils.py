@@ -60,28 +60,11 @@ def load_yaml(yamlfile: str):
         return yaml.safe_load(f)
 
 
-def save_yaml(data, out_yamlfile: str, mode: str = "wb"):
-    if mode == "wb" and os.path.exists(out_yamlfile):
+def save_yaml(data, out_yamlfile: str, mode: str = "w"):
+    if mode == "w" and os.path.exists(out_yamlfile):
         logger.warning(f"Warning: {out_yamlfile} already exists. Overwriting.")
     with open(out_yamlfile, mode) as f:
         yaml.dump(data, f)
-
-
-def load_config(config):
-    if isinstance(config, str):
-        ext = os.path.splitext(config)[-1]
-        if ext == ".pkl":
-            warnings.warn(
-                "Loading configuration from a .pkl file is deprecated. Please save/load configuration"
-                "as a .yaml file instead."
-            )
-            return load_pkl(config)
-        elif ext in (".yml", ".yaml"):
-            return load_yaml(config)
-        else:
-            raise RuntimeError(f"Unrecognized config extension {ext}")
-    else:
-        return config
 
 
 def R_from_eman(a: np.ndarray, b: np.ndarray, y: np.ndarray) -> np.ndarray:

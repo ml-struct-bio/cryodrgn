@@ -8,6 +8,7 @@ import argparse
 import itertools
 import multiprocessing
 import os
+import os.path
 import random
 import sys
 from datetime import datetime as dt
@@ -20,8 +21,8 @@ from scipy import ndimage, stats
 from scipy.ndimage import gaussian_filter, maximum_filter
 from scipy.ndimage import binary_dilation, distance_transform_edt
 from scipy.spatial import distance_matrix
-
 from cryodrgn import analysis, fft, mrc, utils
+import cryodrgn.config
 
 try:
     from cuml.manifold.umap import UMAP as cuUMAP  # type: ignore
@@ -748,7 +749,11 @@ def generate_volumes(workdir, outdir, epochs, Apix, flip, invert, downsample, de
     """
     for epoch in epochs:
         weights = f"{workdir}/weights.{epoch}.pkl"
-        config = f"{workdir}/config.yaml"
+        config = (
+            f"{workdir}/config.yaml"
+            if os.path.exists(f"{workdir}/config.yaml")
+            else f"{workdir}/config.pkl"
+        )
         zfile = f"{outdir}/repr_particles/latent_representative.{epoch}.txt"
         volsdir = f"{outdir}/vols.{epoch}"
 
@@ -1044,7 +1049,11 @@ def main(args):
     if epochs[-1] != E:
         epochs = np.append(epochs, E)
     workdir = args.workdir
-    config = f"{workdir}/config.yaml"
+    config = (
+        f"{workdir}/config.yaml"
+        if os.path.exists(f"{workdir}/config.yaml")
+        else f"{workdir}/config.pkl"
+    )
     logfile = f"{workdir}/run.log"
 
     # assert all required files are locatable
@@ -1089,7 +1098,7 @@ def main(args):
 
     # Get total number of particles, latent space dimensionality, input image size
     n_particles_total, n_dim = utils.load_pkl(f"{workdir}/z.{E}.pkl").shape
-    cfg = utils.load_config(config)
+    cfg = cryodrgn.config.load(config)
     img_size = cfg["lattice_args"]["D"] - 1
 
     # Commonly used variables

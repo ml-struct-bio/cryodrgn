@@ -1,8 +1,67 @@
+from datetime import datetime
+import os.path
+import sys
+from typing import Optional
+import warnings
+import cryodrgn
 from cryodrgn import utils
 
 
+def load(config):
+    if isinstance(config, str):
+        ext = os.path.splitext(config)[-1]
+        if ext == ".pkl":
+            warnings.warn(
+                "Loading configuration from a .pkl file is deprecated. Please save/load configuration"
+                "as a .yaml file instead."
+            )
+            return utils.load_pkl(config)
+        elif ext in (".yml", ".yaml"):
+            return utils.load_yaml(config)
+        else:
+            raise RuntimeError(f"Unrecognized config extension {ext}")
+    else:
+        return config
+
+
+def save(config: dict, filename: Optional[str] = None, folder: Optional[str] = None):
+    if not filename.endswith("config.yaml"):
+        raise AssertionError("noooooo")
+    filename = filename or "config.yaml"
+    if folder is not None:
+        filename = os.path.join(folder, filename)
+
+    # Add extra useful information to incoming config dict
+    if "version" not in config:
+        config["version"] = cryodrgn.__version__
+    if "time" not in config:
+        config["time"] = datetime.now()
+    if "cmd" not in config:
+        config["cmd"] = sys.argv
+
+    utils.save_yaml(config, filename)
+    return filename
+
+
+def save3(config: dict, filename: Optional[str] = None, folder: Optional[str] = None):
+    import pickle
+    from datetime import datetime as dt
+
+    if not filename.endswith("config.pkl"):
+        raise AssertionError("noooooo")
+    if folder is not None:
+        filename = os.path.join(folder, filename)
+
+    with open(filename, "wb") as f:
+        pickle.dump(config, f)
+        meta = dict(time=dt.now(), cmd=sys.argv, version=cryodrgn.__version__)
+        pickle.dump(meta, f)
+
+    return filename
+
+
 def update_config_v1(config):
-    config = utils.load_config(config)
+    config = load(config)
     arg = "feat_sigma"
     if arg not in config["model_args"]:
         assert config["model_args"]["pe_type"] != "gaussian"
@@ -14,7 +73,7 @@ def update_config_v1(config):
 
 
 def overwrite_config(config, args):
-    config = utils.load_config(config)
+    config = load(config)
     if args.norm is not None:
         config["dataset_args"]["norm"] = args.norm
     v = vars(args)

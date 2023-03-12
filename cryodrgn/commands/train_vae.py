@@ -13,7 +13,6 @@ import torch.nn as nn
 from torch.nn.parallel import DataParallel
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-import yaml
 
 try:
     import apex.amp as amp  # type: ignore  # PYR01
@@ -26,6 +25,7 @@ from cryodrgn.beta_schedule import get_beta_schedule
 from cryodrgn.lattice import Lattice
 from cryodrgn.models import HetOnlyVAE, unparallelize
 from cryodrgn.pose import PoseTracker
+import cryodrgn.config
 
 logger = logging.getLogger(__name__)
 

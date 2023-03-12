@@ -24,6 +24,7 @@ from cryodrgn import ctf, dataset, models, mrc
 from cryodrgn.lattice import Lattice
 from cryodrgn.pose import PoseTracker
 from cryodrgn.models import DataParallelDecoder, Decoder
+import cryodrgn.config
 
 logger = logging.getLogger(__name__)
 

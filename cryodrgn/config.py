@@ -25,8 +25,6 @@ def load(config):
 
 
 def save(config: dict, filename: Optional[str] = None, folder: Optional[str] = None):
-    if not filename.endswith("config.yaml"):
-        raise AssertionError("noooooo")
     filename = filename or "config.yaml"
     if folder is not None:
         filename = os.path.join(folder, filename)
@@ -40,23 +38,6 @@ def save(config: dict, filename: Optional[str] = None, folder: Optional[str] = N
         config["cmd"] = sys.argv
 
     utils.save_yaml(config, filename)
-    return filename
-
-
-def save3(config: dict, filename: Optional[str] = None, folder: Optional[str] = None):
-    import pickle
-    from datetime import datetime as dt
-
-    if not filename.endswith("config.pkl"):
-        raise AssertionError("noooooo")
-    if folder is not None:
-        filename = os.path.join(folder, filename)
-
-    with open(filename, "wb") as f:
-        pickle.dump(config, f)
-        meta = dict(time=dt.now(), cmd=sys.argv, version=cryodrgn.__version__)
-        pickle.dump(meta, f)
-
     return filename
 
 

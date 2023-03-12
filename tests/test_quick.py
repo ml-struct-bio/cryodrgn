@@ -34,7 +34,7 @@ def test_run(mrcs_file, poses_file):
             "--lr",
             ".0001",
             "--num-epochs",
-            "20",
+            "3",
             "--seed",
             "0",
             "--poses",
@@ -43,14 +43,40 @@ def test_run(mrcs_file, poses_file):
             "10",
             "--pe-type",
             "gaussian",
+            "--multigpu",
         ]
     )
     train_vae.main(args)
 
+    # Load a check-pointed model and run for another epoch, this time without --multigpu
+    train_vae.main(
+        train_vae.add_args(argparse.ArgumentParser()).parse_args(
+            [
+                mrcs_file,
+                "-o",
+                "output",
+                "--lr",
+                ".0001",
+                "--num-epochs",
+                "4",
+                "--seed",
+                "0",
+                "--poses",
+                poses_file,
+                "--zdim",
+                "10",
+                "--pe-type",
+                "gaussian",
+                "--load",
+                "output/weights.2.pkl",
+            ]
+        )
+    )
+
     args = analyze.add_args(argparse.ArgumentParser()).parse_args(
         [
             "output",
-            "19",  # Epoch number to analyze - 0-indexed
+            "2",  # Epoch number to analyze - 0-indexed
             "--pc",
             "3",  # Number of principal component traversals to generate
             "--ksample",
@@ -61,11 +87,11 @@ def test_run(mrcs_file, poses_file):
     )
     analyze.main(args)
 
-    shutil.rmtree("output/landscape.19", ignore_errors=True)
+    shutil.rmtree("output/landscape.3", ignore_errors=True)
     args = analyze_landscape.add_args(argparse.ArgumentParser()).parse_args(
         [
             "output",
-            "19",  # Epoch number to analyze - 0-indexed
+            "2",  # Epoch number to analyze - 0-indexed
             "--sketch-size",
             "10",  # Number of volumes to generate for analysis
             "--downsample",
@@ -76,12 +102,12 @@ def test_run(mrcs_file, poses_file):
             "1",
         ]
     )
-    shutil.rmtree("output/landscape.19", ignore_errors=True)
+    shutil.rmtree("output/landscape.3", ignore_errors=True)
     analyze_landscape.main(args)
 
     args = graph_traversal.add_args(argparse.ArgumentParser()).parse_args(
         [
-            "output/z.19.pkl",
+            "output/z.3.pkl",
             "--anchors",
             "22",
             "49",
@@ -107,7 +133,7 @@ def test_run(mrcs_file, poses_file):
 
     args = eval_vol.add_args(argparse.ArgumentParser()).parse_args(
         [
-            "output/weights.19.pkl",
+            "output/weights.3.pkl",
             "--config",
             "output/config.pkl",
             "--zfile",

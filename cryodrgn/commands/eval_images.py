@@ -110,7 +110,7 @@ def add_args(parser):
     )
 
     group = parser.add_argument_group(
-        "Overwrite architecture hyperparameters in config.pkl"
+        "Overwrite architecture hyperparameters in config.yaml"
     )
     group.add_argument("--zdim", type=int, help="Dimension of latent variable")
     group.add_argument(

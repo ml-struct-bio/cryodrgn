@@ -2,9 +2,11 @@ from collections.abc import Hashable
 import functools
 import os
 import pickle
+import yaml
 import logging
 from typing import Tuple
 import numpy as np
+import warnings
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +53,35 @@ def save_pkl(data, out_pkl: str, mode: str = "wb") -> None:
         logger.warning(f"Warning: {out_pkl} already exists. Overwriting.")
     with open(out_pkl, mode) as f:
         pickle.dump(data, f)
+
+
+def load_yaml(yamlfile: str):
+    with open(yamlfile, "r") as f:
+        return yaml.safe_load(f)
+
+
+def save_yaml(data, out_yamlfile: str, mode: str = "wb"):
+    if mode == "wb" and os.path.exists(out_yamlfile):
+        logger.warning(f"Warning: {out_yamlfile} already exists. Overwriting.")
+    with open(out_yamlfile, mode) as f:
+        yaml.dump(data, f)
+
+
+def load_config(config):
+    if isinstance(config, str):
+        ext = os.path.splitext(config)[-1]
+        if ext == ".pkl":
+            warnings.warn(
+                "Loading configuration from a .pkl file is deprecated. Please save/load configuration"
+                "as a .yaml file instead."
+            )
+            return load_pkl(config)
+        elif ext in (".yml", ".yaml"):
+            return load_yaml(config)
+        else:
+            raise RuntimeError(f"Unrecognized config extension {ext}")
+    else:
+        return config
 
 
 def R_from_eman(a: np.ndarray, b: np.ndarray, y: np.ndarray) -> np.ndarray:

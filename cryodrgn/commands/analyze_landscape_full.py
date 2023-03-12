@@ -288,7 +288,7 @@ def main(args):
     workdir = args.workdir
     zfile = f"{workdir}/z.{E}.pkl"
     weights = f"{workdir}/weights.{E}.pkl"
-    cfg_pkl = f"{workdir}/config.pkl"
+    cfg_pkl = f"{workdir}/config.yaml"
     landscape_dir = (
         f"{workdir}/landscape.{E}" if args.landscape_dir is None else args.landscape_dir
     )

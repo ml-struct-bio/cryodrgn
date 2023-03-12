@@ -1,8 +1,8 @@
 from cryodrgn import utils
 
 
-def update_config_v1(config_pkl):
-    config = utils.load_pkl(config_pkl)
+def update_config_v1(config):
+    config = utils.load_config(config)
     arg = "feat_sigma"
     if arg not in config["model_args"]:
         assert config["model_args"]["pe_type"] != "gaussian"
@@ -13,8 +13,8 @@ def update_config_v1(config_pkl):
     return config
 
 
-def overwrite_config(config_pkl, args):
-    config = utils.load_pkl(config_pkl)
+def overwrite_config(config, args):
+    config = utils.load_config(config)
     if args.norm is not None:
         config["dataset_args"]["norm"] = args.norm
     v = vars(args)

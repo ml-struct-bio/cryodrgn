@@ -13,6 +13,7 @@ import torch.nn as nn
 from torch.nn.parallel import DataParallel
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+import yaml
 
 try:
     import apex.amp as amp  # type: ignore  # PYR01
@@ -532,10 +533,11 @@ def save_config(args, dataset, lattice, model, out_config):
         dataset_args=dataset_args, lattice_args=lattice_args, model_args=model_args
     )
     config["seed"] = args.seed
-    with open(out_config, "wb") as f:
-        pickle.dump(config, f)
-        meta = dict(time=dt.now(), cmd=sys.argv, version=cryodrgn.__version__)
-        pickle.dump(meta, f)
+    config["version"] = cryodrgn.__version__
+    config["time"] = dt.now()
+    config["cmd"] = sys.argv
+    with open(out_config, "w") as f:
+        yaml.dump(config, f)
 
 
 def get_latest(args):
@@ -741,7 +743,7 @@ def main(args):
     )
 
     # save configuration
-    out_config = "{}/config.pkl".format(args.outdir)
+    out_config = "{}/config.yaml".format(args.outdir)
     save_config(args, data, lattice, model, out_config)
 
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)

@@ -748,7 +748,7 @@ def generate_volumes(workdir, outdir, epochs, Apix, flip, invert, downsample, de
     """
     for epoch in epochs:
         weights = f"{workdir}/weights.{epoch}.pkl"
-        config = f"{workdir}/config.pkl"
+        config = f"{workdir}/config.yaml"
         zfile = f"{outdir}/repr_particles/latent_representative.{epoch}.txt"
         volsdir = f"{outdir}/vols.{epoch}"
 
@@ -1044,7 +1044,7 @@ def main(args):
     if epochs[-1] != E:
         epochs = np.append(epochs, E)
     workdir = args.workdir
-    config = f"{workdir}/config.pkl"
+    config = f"{workdir}/config.yaml"
     logfile = f"{workdir}/run.log"
 
     # assert all required files are locatable
@@ -1089,7 +1089,7 @@ def main(args):
 
     # Get total number of particles, latent space dimensionality, input image size
     n_particles_total, n_dim = utils.load_pkl(f"{workdir}/z.{E}.pkl").shape
-    cfg = utils.load_pkl(config)
+    cfg = utils.load_config(config)
     img_size = cfg["lattice_args"]["D"] - 1
 
     # Commonly used variables

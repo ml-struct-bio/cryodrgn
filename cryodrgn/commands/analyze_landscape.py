@@ -450,7 +450,7 @@ def main(args):
     workdir = args.workdir
     zfile = f"{workdir}/z.{E}.pkl"
     weights = f"{workdir}/weights.{E}.pkl"
-    config = f"{workdir}/config.pkl"
+    config = f"{workdir}/config.yaml"
     outdir = f"{workdir}/landscape.{E}"
 
     if args.outdir:
@@ -505,7 +505,7 @@ def main(args):
 
     logger.info("Analyzing volumes...")
     # get particle indices if the dataset was originally filtered
-    c = utils.load_pkl(config)
+    c = utils.load_config(config)
     particle_ind = (
         utils.load_pkl(c["dataset_args"]["ind"])
         if c["dataset_args"]["ind"] is not None

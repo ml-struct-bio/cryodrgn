@@ -10,9 +10,9 @@ import logging
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.nn.parallel import DataParallel
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+import yaml
 
 try:
     import apex.amp as amp  # type: ignore
@@ -20,8 +20,7 @@ except ImportError:
     pass
 
 import cryodrgn
-import cryodrgn.types as types
-from cryodrgn import ctf, dataset, models, mrc, utils
+from cryodrgn import ctf, dataset, models, mrc
 from cryodrgn.lattice import Lattice
 from cryodrgn.pose import PoseTracker
 from cryodrgn.models import DataParallelDecoder, Decoder
@@ -328,10 +327,11 @@ def save_config(args, dataset, lattice, model, out_config):
         dataset_args=dataset_args, lattice_args=lattice_args, model_args=model_args
     )
     config["seed"] = args.seed
-    with open(out_config, "wb") as f:
-        pickle.dump(config, f)
-        meta = dict(time=dt.now(), cmd=sys.argv, version=cryodrgn.__version__)
-        pickle.dump(meta, f)
+    config["version"] = cryodrgn.__version__
+    config["time"] = dt.now()
+    config["cmd"] = sys.argv
+    with open(out_config, "w") as f:
+        yaml.dump(config, f)
 
 
 def get_latest(args):
@@ -469,7 +469,7 @@ def main(args):
     Apix = ctf_params[0, 0] if ctf_params is not None else 1
 
     # save configuration
-    out_config = f"{args.outdir}/config.pkl"
+    out_config = f"{args.outdir}/config.yaml"
     save_config(args, data, lattice, model, out_config)
 
     # Mixed precision training with AMP

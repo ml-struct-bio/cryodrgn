@@ -348,7 +348,7 @@ def main(args):
     workdir = args.workdir
     zfile = f"{workdir}/z.{E}.pkl"
     weights = f"{workdir}/weights.{E}.pkl"
-    config = f"{workdir}/config.pkl"
+    config = f"{workdir}/config.yaml"
     outdir = f"{workdir}/analyze.{E}"
     if E == -1:
         zfile = f"{workdir}/z.pkl"

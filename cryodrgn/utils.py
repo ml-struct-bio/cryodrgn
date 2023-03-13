@@ -6,7 +6,6 @@ import yaml
 import logging
 from typing import Tuple
 import numpy as np
-import warnings
 
 logger = logging.getLogger(__name__)
 

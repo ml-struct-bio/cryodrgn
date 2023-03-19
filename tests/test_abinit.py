@@ -1,7 +1,13 @@
 import argparse
 import os
 import os.path
-from cryodrgn.commands import abinit_het, abinit_homo, backproject_voxel, view_config
+from cryodrgn.commands import (
+    abinit_het,
+    abinit_homo,
+    analyze,
+    backproject_voxel,
+    view_config,
+)
 
 DATA_FOLDER = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
 
@@ -53,6 +59,14 @@ def test_abinit_het_and_backproject():
             + abinit_args
         )
     )
+
+    args = analyze.add_args(argparse.ArgumentParser()).parse_args(
+        [
+            "output/abinit_het",
+            "29",  # Epoch number to analyze - 0-indexed
+        ]
+    )
+    analyze.main(args)
 
     args = backproject_voxel.add_args(argparse.ArgumentParser()).parse_args(
         [

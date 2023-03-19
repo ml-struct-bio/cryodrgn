@@ -1,3 +1,4 @@
+import os
 import os.path
 import argparse
 import numpy as np
@@ -16,6 +17,8 @@ def mrcs_data():
 
 
 def test_filter_mrcs(mrcs_data):
+
+    os.makedirs("output", exist_ok=True)
 
     # Generate 15 random indices into the input mrcs
     indices = np.random.randint(0, mrcs_data.shape[0], size=15)

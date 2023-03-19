@@ -50,13 +50,10 @@ class ImageDataset(data.Dataset):
         self.norm = norm or self.estimate_normalization()
         self.device = device
 
-    def estimate_normalization(self, n=None):
+    def estimate_normalization(self, n=1000):
         n = min(n, self.N) if n is not None else self.N
         indices = range(0, self.N, self.N // n)
         imgs = self.src.images(indices)
-
-        if self.window is not None:
-            imgs *= self.window
 
         particleslist = []
         for img in imgs:

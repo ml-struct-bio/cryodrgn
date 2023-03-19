@@ -63,7 +63,7 @@ def test_abinit_het_and_backproject():
     args = analyze.add_args(argparse.ArgumentParser()).parse_args(
         [
             "output/abinit_het",
-            "29",  # Epoch number to analyze - 0-indexed
+            "0",  # Epoch number to analyze - 0-indexed
         ]
     )
     analyze.main(args)

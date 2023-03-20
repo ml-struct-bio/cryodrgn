@@ -47,7 +47,8 @@ class ImageDataset(data.Dataset):
         self.invert_data = invert_data
         self.window = window_mask(ny, window_r, 0.99) if window else None
         self.max_threads = min(max_threads, mp.cpu_count())
-        self.norm = norm or self.estimate_normalization()
+        norm = norm or self.estimate_normalization()
+        self.norm = [float(x) for x in norm]
         self.device = device
 
     def estimate_normalization(self, n=1000):

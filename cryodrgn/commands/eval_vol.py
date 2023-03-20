@@ -161,7 +161,7 @@ def main(args):
 
     D = cfg["lattice_args"]["D"]  # image size + 1
     zdim = cfg["model_args"]["zdim"]
-    norm = cfg["dataset_args"]["norm"]
+    norm = [float(x) for x in cfg["dataset_args"]["norm"]]
 
     if args.downsample:
         assert args.downsample % 2 == 0, "Boxsize must be even"

@@ -182,7 +182,7 @@ def generate_and_map_volumes(
     pprint.pprint(cfg)
 
     D = cfg["lattice_args"]["D"]  # image size + 1
-    norm = cfg["dataset_args"]["norm"]
+    norm = [float(x) for x in cfg["dataset_args"]["norm"]]
 
     # Load landscape analysis inputs
     mask = np.array(ImageSource.from_file(mask_mrc).images().cpu())

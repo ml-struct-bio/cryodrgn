@@ -8,6 +8,7 @@ import shutil
 from datetime import datetime as dt
 import logging
 import matplotlib
+import pickle
 from collections import OrderedDict
 from cryodrgn import starfile
 import matplotlib.pyplot as plt
@@ -119,7 +120,7 @@ def analyze_zN(z, outdir, config, vg, skip_umap=False, num_pcs=2, num_ksamples=2
     config_data = pickle.load(open(config, "rb"))
     posefile = config_data["dataset_args"]["poses"]
     D = config_data["lattice_args"]["D"]
-    if config_data["model_args"]["tilt_params"]["ntilts"] is not None:
+    if config_data["dataset_args"].get("ntilts") is not None:
         # FUCK! the particles and poses don't match up for tomo data!
         log(f"Finding canonical images for tilt series")
         s = starfile.Starfile.load(config_data["dataset_args"]["particles"])
@@ -132,8 +133,7 @@ def analyze_zN(z, outdir, config, vg, skip_umap=False, num_pcs=2, num_ksamples=2
         indexes = np.array([idx for idx, scale in particles.values()])
     else:
         indexes = np.arange(z.shape[0])
-    posetracker = PoseTracker.load(posefile, None, D)
-    print(indexes)
+    posetracker = PoseTracker.load(posefile, len(indexes), D)
     assert len(indexes) == len(pc)
     rot, trans = posetracker.get_pose(indexes)
     euler = RR.from_matrix(rot).as_euler("zyz", degrees=True)

@@ -13,6 +13,7 @@ from collections import OrderedDict
 from cryodrgn import starfile
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
 import seaborn as sns
 import cryodrgn
 from cryodrgn import analysis, utils
@@ -130,16 +131,16 @@ def analyze_zN(z, outdir, config, vg, skip_umap=False, num_pcs=2, num_ksamples=2
         for ii, (gn, scale) in enumerate(zip(group_name, ctfscalefactor)):
             if gn not in particles or scale > particles[gn][1]:
                 particles[gn] = (ii, scale)
-        indexes = np.array([idx for idx, scale in particles.values()])
+        indexes = torch.tensor([idx for idx, scale in particles.values()])
     else:
-        indexes = np.arange(z.shape[0])
+        indexes = torch.arange(z.shape[0])
     posetracker = PoseTracker.load(posefile, len(indexes), D)
     assert len(indexes) == len(pc)
     rot, trans = posetracker.get_pose(indexes)
     euler = RR.from_matrix(rot).as_euler("zyz", degrees=True)
     for i in range(num_pcs):
         for dim in range(3):
-            print(f"Plotting {i} {dim}")
+            print(f"Plotting pc {i} vs pose dim {dim}")
             # ax = axs[i, dim]
             g = sns.jointplot(
                 kind="hex", x=euler[:, dim], y=pc[:, i], ylim=(-2, 2), gridsize=(16, 16)
@@ -147,7 +148,7 @@ def analyze_zN(z, outdir, config, vg, skip_umap=False, num_pcs=2, num_ksamples=2
             g.set_axis_labels(f"Angle{dim}", f"PC{i}")
             cax = g.fig.add_axes([0.90, 0.3, 0.05, 0.4])
             plt.colorbar(cax=cax)
-            plt.tight_layout()
+            # plt.tight_layout()
             plt.savefig(f"{outdir}/angle_pc{i}_dim{dim}.png")
 
     # kmeans clustering

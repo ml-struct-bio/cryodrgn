@@ -122,7 +122,7 @@ def analyze_zN(z, outdir, config, vg, skip_umap=False, num_pcs=2, num_ksamples=2
     D = config_data["lattice_args"]["D"]
     if config_data["dataset_args"].get("ntilts") is not None:
         # FUCK! the particles and poses don't match up for tomo data!
-        log(f"Finding canonical images for tilt series")
+        print("Finding canonical images for tilt series")
         s = starfile.Starfile.load(config_data["dataset_args"]["particles"])
         group_name = list(s.df["_rlnGroupName"])
         ctfscalefactor = np.asarray(s.df["_rlnCtfScalefactor"], dtype=np.float32)

@@ -9,7 +9,7 @@ import os
 from multiprocessing import Pool
 import logging
 import numpy as np
-from cryodrgn import dataset, fft, mrc
+from cryodrgn import dataset, fft, mrc, utils
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +52,12 @@ def add_args(parser):
         default=16,
         help="Maximum number of CPU cores for parallelization (default: %(default)s)",
     )
+    parser.add_argument(
+        "--ind",
+        type=os.path.abspath,
+        metavar="PKL",
+        help="Filter particle stack by these indices",
+    )
     return parser
 
 
@@ -74,6 +80,12 @@ def main(args):
 
     lazy = not args.is_vol
     old = dataset.load_particles(args.mrcs, lazy=lazy, datadir=args.datadir)
+
+    if args.ind is not None:
+        assert not args.is_vol
+        logger.info(f"Filtering image dataset with {args.ind}")
+        ind = utils.load_pkl(args.ind).astype(int)
+        old = [old[i] for i in ind] if lazy else old[ind]
 
     if lazy:
         oldD = old[0].get().shape[0]

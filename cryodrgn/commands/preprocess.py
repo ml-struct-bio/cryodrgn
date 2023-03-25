@@ -61,7 +61,7 @@ def add_args(parser):
         help="Turn off real space windowing of dataset",
     )
 
-    group = parser.add_argument_group("Extra arguments for volume generation")
+    group = parser.add_argument_group("Extra arguments for image downsampling")
     group.add_argument(
         "-b",
         type=int,

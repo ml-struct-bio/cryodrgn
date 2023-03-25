@@ -50,7 +50,7 @@ def save_pkl(data, out_pkl: str, mode: str = "wb") -> None:
     if mode == "wb" and os.path.exists(out_pkl):
         logger.warning(f"Warning: {out_pkl} already exists. Overwriting.")
     with open(out_pkl, mode) as f:
-        pickle.dump(data, f)
+        pickle.dump(data, f)  # type: ignore
 
 
 def R_from_eman(a: np.ndarray, b: np.ndarray, y: np.ndarray) -> np.ndarray:

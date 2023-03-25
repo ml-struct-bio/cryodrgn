@@ -1,3 +1,4 @@
+import sys
 import os
 import struct
 from collections import OrderedDict
@@ -154,7 +155,9 @@ class MRCHeader:
             yorg,
             zorg,
             b"MAP " if is_vol else b"\x00" * 4,
-            b"\x00" * 4,  # cmap, stamp
+            b"\x44\x44\x00\x00"
+            if sys.byteorder == "little"
+            else b"\x11\x11\x00\x00",  # machine stamp
             rms,  # rms
             0,  # nlabl
             b"\x00" * 800,  # labels

@@ -38,6 +38,7 @@ jobs:
 
       - name: Pyright
         run: |
+          pyright --version
           pyright
 
       - name: Pytest

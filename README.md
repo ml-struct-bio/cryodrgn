@@ -48,9 +48,7 @@ The official cryoDRGN2 release. This version includes new tools for ab initio re
 
 * Many codebase improvements with open-source software development practices (e.g. continuous integration tests, black, flake8, pyright, logging, and PyPi packaging).
 
-* Upcoming in the next minor version (v2.3):
-
-	* We are working on a major refactor of data loading for handling large datasets. This will entail an API change for the mrc.py library module
+* Note: we are working on a major refactor of data loading for handling large datasets for the next minor version (v2.3). This will entail an API change for the mrc.py library module
 
 
 ### Previous versions

@@ -29,7 +29,9 @@ Post any questions as an Github issue or to our google group: https://groups.goo
 
 ## New in Version 2.2
 
-* The official cryoDRGN2 release with new tools available for ab initio homogeneous and heterogeneous reconstruction:
+The official cryoDRGN2 release. This version includes new tools for ab initio reconstruction and significant codebase improvements.
+
+* New tools for ab initio homogeneous and heterogeneous reconstruction:
 
 ```
 (cryodrgn) $ cryodrgn abinit_homo -h

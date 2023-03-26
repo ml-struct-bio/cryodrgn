@@ -15,6 +15,7 @@ Welcome to CryoDRGN's documentation!
    pages/empiar_tutorial
    pages/landscape_analysis
    pages/large_datasets
+   pages/cryodrgn2
    pages/faq
 
 

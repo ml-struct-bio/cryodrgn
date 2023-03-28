@@ -12,7 +12,7 @@ Quick start
 -----------
 
 CryoDRGN can be installed with ``pip``.
-We recommend installing ``cryodrgn`` in a separate anaconda environment. 
+We recommend installing ``cryodrgn`` in a separate anaconda environment.
 See :doc:`/pages/installation` for more details and advanced installation instructions. ::
 
    $ pip install cryodrgn

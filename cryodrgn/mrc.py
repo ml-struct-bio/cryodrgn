@@ -23,10 +23,15 @@ DTYPE_FOR_MODE = {
 }  # RBG values
 MODE_FOR_DTYPE = {vv: kk for kk, vv in DTYPE_FOR_MODE.items()}
 
+MACHST_OFFSET = 213
+MACHST_FOR_ENDIANNESS = {"<": b"\x44\x44\x00\x00", ">": b"\x11\x11\x00\x00"}
+ENDIANNESS_FOR_MACHST = {v: k for k, v in MACHST_FOR_ENDIANNESS.items()}
+
 
 class MRCHeader:
     """MRC header class"""
 
+    ENDIANNESS = "="
     FIELDS = [
         "nx",
         "ny",
@@ -79,7 +84,6 @@ class MRCHeader:
         "labels",
     ]  # int, char[10][80]
     FSTR = "3ii3i3i3f3f3i3f2ih30x2h20x2i6h6f3f4s4sfi800s"
-    STRUCT = struct.Struct(FSTR)
 
     def __init__(self, header_values, extended_header=b""):
         self.fields = OrderedDict(zip(self.FIELDS, header_values))
@@ -93,7 +97,15 @@ class MRCHeader:
     @classmethod
     def parse(cls, fname):
         with open(fname, "rb") as f:
-            header = cls(cls.STRUCT.unpack(f.read(1024)))
+
+            f.seek(MACHST_OFFSET)
+            cls.ENDIANNESS = ENDIANNESS_FOR_MACHST.get(f.read(2), "=")
+
+            f.seek(0)
+            STRUCT = struct.Struct(
+                cls.ENDIANNESS + cls.FSTR
+            )  # prepend endianness specifier to python struct specification
+            header = cls(STRUCT.unpack(f.read(1024)))
             extbytes = header.fields["next"]
             extended_header = f.read(extbytes)
             header.extended_header = extended_header
@@ -154,10 +166,8 @@ class MRCHeader:
             xorg,
             yorg,
             zorg,
-            b"MAP " if is_vol else b"\x00" * 4,
-            b"\x44\x44\x00\x00"
-            if sys.byteorder == "little"
-            else b"\x11\x11\x00\x00",  # machine stamp
+            b"MAP ",
+            MACHST_FOR_ENDIANNESS["<" if sys.byteorder == "little" else ">"],
             rms,  # rms
             0,  # nlabl
             b"\x00" * 800,  # labels
@@ -165,7 +175,8 @@ class MRCHeader:
         return cls(vals)
 
     def write(self, fh):
-        buf = self.STRUCT.pack(*list(self.fields.values()))
+        STRUCT = struct.Struct(self.FSTR)
+        buf = STRUCT.pack(*list(self.fields.values()))
         fh.write(buf)
         fh.write(self.extended_header)
 
@@ -272,7 +283,21 @@ def write(
                 True if len(set(array.shape)) == 1 else False
             )  # Guess whether data is vol or image stack
         header = MRCHeader.make_default_header(array, is_vol, Apix, xorg, yorg, zorg)
+    else:
+        # Older versions of MRCHeader had incorrect cmap and stamp fields.
+        # Fix these before writing to disk.
+        header.fields["cmap"] = b"MAP "
+        if header.ENDIANNESS == "=":
+            endianness = {"little": "<", "big": ">"}.get(sys.byteorder)
+        else:
+            endianness = header.ENDIANNESS
+        header.fields["stamp"] = MACHST_FOR_ENDIANNESS[endianness]
+
     # write the header
     f = open(fname, "wb")
     header.write(f)
+
+    new_dtype = np.dtype(header.dtype).newbyteorder(header.ENDIANNESS)
+    array = array.astype(new_dtype)
+
     f.write(array.tobytes())

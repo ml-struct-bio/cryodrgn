@@ -26,7 +26,6 @@ class ImageDataset(data.Dataset):
         max_threads=16,
         device: str = "cpu",
     ):
-        assert ind is None, "ind not supported yet"
         assert not keepreal, "Not implemented yet"
         datadir = datadir or ""
         self.src = ImageSource.from_file(
@@ -45,7 +44,7 @@ class ImageDataset(data.Dataset):
         self.N = self.src.n
         self.D = ny + 1  # after symmetrization
         self.invert_data = invert_data
-        self.window = window_mask(ny, window_r, 0.99) if window else None
+        self.window = window_mask(ny, window_r, 0.99).to(device) if window else None
         self.max_threads = min(max_threads, mp.cpu_count())
         norm = norm or self.estimate_normalization()
         self.norm = [float(x) for x in norm]
@@ -88,7 +87,7 @@ class ImageDataset(data.Dataset):
         if isinstance(index, list):
             index = torch.Tensor(index).to(torch.long)
 
-        particles = self._process(self.src.images(index))
+        particles = self._process(self.src.images(index).to(self.device))
         if self.tilt_src is None:
             # If no tilt data is present because a tilt_mrcfile was not specified,
             # we simply return a reference to the particle data to avoid consuming
@@ -97,7 +96,7 @@ class ImageDataset(data.Dataset):
             # TODO: Find a more robust way to do this.
             tilt = particles
         else:
-            tilt = self._process(self.tilt_src.images(index))
+            tilt = self._process(self.tilt_src.images(index).to(self.device))
 
         if isinstance(index, int):
             logger.debug(f"ImageDataset returning images at index ({index})")
@@ -106,4 +105,4 @@ class ImageDataset(data.Dataset):
                 f"ImageDataset returning images for {len(index)} indices ({index[0]}..{index[-1]})"
             )
 
-        return particles.to(self.device), tilt.to(self.device), index
+        return particles, tilt.to, index

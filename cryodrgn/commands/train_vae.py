@@ -621,6 +621,7 @@ def main(args):
         datadir=args.datadir,
         window_r=args.window_r,
         max_threads=args.max_threads,
+        device=device,
     )
 
     if args.tilt is None:
@@ -785,6 +786,7 @@ def main(args):
             RandomSampler(data), batch_size=args.batch_size, drop_last=False
         ),
         batch_size=None,
+        multiprocessing_context="spawn",
     )
 
     num_epochs = args.num_epochs

@@ -39,7 +39,7 @@ dev = [
     "pyright==1.1.300",
     "pytest>=6",
     "sphinx",
-    "sphinx-book-theme",
+    "sphinx-rtd-theme",
     "twine"
 ]
 

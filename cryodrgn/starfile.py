@@ -149,7 +149,7 @@ class Starfile:
         header = mrc.parse_header(mrcs[0])
         D = header.D  # image size along one dimension in pixels
         dtype = header.dtype
-        stride = dtype().itemsize * D * D
+        stride = dtype.itemsize * D * D
         dataset = [
             LazyImage(f, (D, D), dtype, 1024 + ii * stride) for ii, f in zip(ind, mrcs)
         ]

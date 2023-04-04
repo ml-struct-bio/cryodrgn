@@ -62,7 +62,7 @@ def add_args(parser):
         help="Logging interval in N_IMGS (default: %(default)s)",
     )
     parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Increaes verbosity"
+        "-v", "--verbose", action="store_true", help="Increase verbosity"
     )
     parser.add_argument(
         "--seed", type=int, default=np.random.randint(0, 100000), help="Random seed"
@@ -148,7 +148,9 @@ def add_args(parser):
     )
 
     group = parser.add_argument_group("Pose SGD")
-    group.add_argument("--do-pose-sgd", action="store_true", help="Refine poses")
+    group.add_argument(
+        "--do-pose-sgd", action="store_true", help="Refine poses with gradient descent"
+    )
     group.add_argument(
         "--pretrain",
         type=int,
@@ -165,7 +167,7 @@ def add_args(parser):
         "--pose-lr",
         type=float,
         default=1e-4,
-        help="Learning rate in Adam optimizer (default: %(default)s)",
+        help="Learning rate for pose optimizer (default: %(default)s)",
     )
 
     group = parser.add_argument_group("Network Architecture")
@@ -222,7 +224,7 @@ def add_args(parser):
         "--feat-sigma",
         type=float,
         default=0.5,
-        help="Scale for random Gaussian features",
+        help="Scale for random Gaussian features (default: %(default)s)",
     )
 
     return parser

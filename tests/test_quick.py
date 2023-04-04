@@ -102,7 +102,7 @@ def test_run(mrcs_file, poses_file):
             "1",
         ]
     )
-    shutil.rmtree("output/landscape.3", ignore_errors=True)
+    shutil.rmtree("output/landscape.2", ignore_errors=True)
     analyze_landscape.main(args)
 
     args = graph_traversal.add_args(argparse.ArgumentParser()).parse_args(

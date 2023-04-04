@@ -28,6 +28,7 @@ def test_abinit_het_and_backproject():
         "8",
         "--pe-dim",
         "8",
+        "--no-window",
     ]
 
     args = abinit_het.add_args(argparse.ArgumentParser()).parse_args(

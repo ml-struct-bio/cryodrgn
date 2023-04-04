@@ -27,7 +27,9 @@ logger = logging.getLogger(__name__)
 
 def add_args(parser):
     parser.add_argument(
-        "particles", type=os.path.abspath, help="Input particles (.mrcs, .txt or .star)"
+        "particles",
+        type=os.path.abspath,
+        help="Input particles (.mrcs, .star, .cs, or .txt)",
     )
     parser.add_argument(
         "-o",
@@ -101,7 +103,7 @@ def add_args(parser):
     group.add_argument(
         "--lazy",
         action="store_true",
-        help="Memory efficient training by loading data in chunks",
+        help="Lazy loading if full dataset is too large to fit in memory",
     )
     group.add_argument(
         "--preprocessed",
@@ -164,12 +166,12 @@ def add_args(parser):
     group.add_argument(
         "--beta-control",
         type=float,
-        help="KL-Controlled VAE gamma. Beta is KL target. (default: %(default)s)",
+        help="KL-Controlled VAE gamma. Beta is KL target",
     )
     group.add_argument(
         "--equivariance",
         type=float,
-        help="Strength of equivariance loss (default: %(default)s)",
+        help="Strength of equivariance loss",
     )
     group.add_argument(
         "--eq-start-it",
@@ -191,13 +193,16 @@ def add_args(parser):
         help="Data normalization as shift, 1/scale (default: mean, std of dataset)",
     )
     group.add_argument(
-        "--l-ramp-epochs", type=int, default=0, help="default: %(default)s"
+        "--l-ramp-epochs",
+        type=int,
+        default=0,
+        help="Number of epochs to ramp up to --l-end (default: %(default)s)",
     )
     group.add_argument(
         "--l-ramp-model",
         type=int,
         default=0,
-        help="If 1, then during ramp only train the model up to l-max",
+        help="If 1, then during ramp only train the model up to l-max (default: %(default)s)",
     )
     group.add_argument(
         "--reset-model-every", type=int, help="If set, reset the model every N epochs"
@@ -229,7 +234,10 @@ def add_args(parser):
         "--l-end", type=int, default=32, help="End L radius (default: %(default)s)"
     )
     group.add_argument(
-        "--niter", type=int, default=4, help="Number of iterations of grid subdivision"
+        "--niter",
+        type=int,
+        default=4,
+        help="Number of iterations of grid subdivision (default: %(default)s)",
     )
     group.add_argument(
         "--t-extent",
@@ -238,10 +246,23 @@ def add_args(parser):
         help="+/- pixels to search over translations (default: %(default)s)",
     )
     group.add_argument(
-        "--t-ngrid", type=float, default=7, help="Initial grid size for translations"
+        "--t-ngrid",
+        type=float,
+        default=7,
+        help="Initial grid size for translations (default: %(default)s)",
     )
-    group.add_argument("--t-xshift", type=float, default=0)
-    group.add_argument("--t-yshift", type=float, default=0)
+    group.add_argument(
+        "--t-xshift",
+        type=float,
+        default=0,
+        help="X-axis translation shift (default: %(default)s)",
+    )
+    group.add_argument(
+        "--t-yshift",
+        type=float,
+        default=0,
+        help="Y-axis translation shift (default: %(default)s)",
+    )
     group.add_argument(
         "--pretrain",
         type=int,
@@ -258,18 +279,18 @@ def add_args(parser):
         "--nkeptposes",
         type=int,
         default=8,
-        help="Number of poses to keep at each refinement interation during branch and bound",
+        help="Number of poses to keep at each refinement interation during branch and bound (default: %(default)s)",
     )
     group.add_argument(
         "--base-healpy",
         type=int,
         default=2,
-        help="Base healpy grid for pose search. Higher means exponentially higher resolution.",
+        help="Base healpy grid for pose search. Higher means exponentially higher resolution (default: %(default)s)",
     )
     group.add_argument(
         "--pose-model-update-freq",
         type=int,
-        help="If set, only update the model used for pose search every N examples.",
+        help="If set, only update the model used for pose search every N examples",
     )
 
     group = parser.add_argument_group("Encoder Network")
@@ -348,7 +369,7 @@ def add_args(parser):
         "--domain",
         choices=("hartley", "fourier"),
         default="hartley",
-        help="Decoder representation domain (default: %(default)s)",
+        help="Volume decoder representation (default: %(default)s)",
     )
     group.add_argument(
         "--activation",

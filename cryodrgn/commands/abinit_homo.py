@@ -23,7 +23,9 @@ logger = logging.getLogger(__name__)
 
 def add_args(parser):
     parser.add_argument(
-        "particles", type=os.path.abspath, help="Particle stack file (.mrcs)"
+        "particles",
+        type=os.path.abspath,
+        help="Input particles (.mrcs, .star, .cs, or .txt)",
     )
     parser.add_argument(
         "-o",
@@ -61,7 +63,7 @@ def add_args(parser):
         help="Logging interval in N_IMGS (default: %(default)s)",
     )
     parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Increaes verbosity"
+        "-v", "--verbose", action="store_true", help="Increase verbosity"
     )
     parser.add_argument(
         "--seed", type=int, default=np.random.randint(0, 100000), help="Random seed"
@@ -73,7 +75,10 @@ def add_args(parser):
         help="Do not invert data sign",
     )
     parser.add_argument(
-        "--window", action="store_true", help="Real space windowing of dataset"
+        "--no-window",
+        dest="window",
+        action="store_false",
+        help="Turn off real space windowing of dataset",
     )
     parser.add_argument(
         "--window-r",
@@ -81,7 +86,9 @@ def add_args(parser):
         default=0.85,
         help="Windowing radius (default: %(default)s)",
     )
-    parser.add_argument("--ind", type=os.path.abspath, help="Filter indices")
+    parser.add_argument(
+        "--ind", type=os.path.abspath, help="Filter particle stack by these indices"
+    )
 
     group = parser.add_argument_group("Tilt series")
     group.add_argument("--tilt", help="Particle stack file (.mrcs)")
@@ -97,13 +104,26 @@ def add_args(parser):
         "--t-extent",
         type=float,
         default=10,
-        help="+/- pixels to search over translations",
+        help="+/- pixels to search over translations (default: %(default)s)",
     )
     group.add_argument(
-        "--t-ngrid", type=float, default=7, help="Initial grid size for translations"
+        "--t-ngrid",
+        type=float,
+        default=7,
+        help="Initial grid size for translations (default: %(default)s)",
     )
-    group.add_argument("--t-xshift", type=float, default=0)
-    group.add_argument("--t-yshift", type=float, default=0)
+    group.add_argument(
+        "--t-xshift",
+        type=float,
+        default=0,
+        help="X-axis translation shift (default: %(default)s)",
+    )
+    group.add_argument(
+        "--t-yshift",
+        type=float,
+        default=0,
+        help="Y-axis translation shift (default: %(default)s)",
+    )
     group.add_argument(
         "--no-trans", action="store_true", help="Don't search over translations"
     )
@@ -170,7 +190,10 @@ def add_args(parser):
         "--l-end", type=int, default=32, help="End L radius (default: %(default)s)"
     )
     group.add_argument(
-        "--niter", type=int, default=4, help="Number of iterations of grid subdivision"
+        "--niter",
+        type=int,
+        default=4,
+        help="Number of iterations of grid subdivision (default: %(default)s)",
     )
     group.add_argument(
         "--l-ramp-epochs",
@@ -185,18 +208,18 @@ def add_args(parser):
         "--nkeptposes",
         type=int,
         default=8,
-        help="Number of poses to keep at each refinement interation during branch and bound",
+        help="Number of poses to keep at each refinement interation during branch and bound (default: %(default)s)",
     )
     group.add_argument(
         "--base-healpy",
         type=int,
         default=2,
-        help="Base healpy grid for pose search. Higher means exponentially higher resolution.",
+        help="Base healpy grid for pose search. Higher means exponentially higher resolution (default: %(default)s)",
     )
     group.add_argument(
         "--pose-model-update-freq",
         type=int,
-        help="If set, only update the model used for pose search every N examples.",
+        help="If set, only update the model used for pose search every N examples",
     )
 
     group = parser.add_argument_group("Network Architecture")
@@ -253,7 +276,7 @@ def add_args(parser):
         "--feat-sigma",
         type=float,
         default=0.5,
-        help="Scale for random Gaussian features",
+        help="Scale for random Gaussian features (default: %(default)s)",
     )
 
     return parser

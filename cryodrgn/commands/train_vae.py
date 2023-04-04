@@ -67,7 +67,7 @@ def add_args(parser):
         help="Logging interval in N_IMGS (default: %(default)s)",
     )
     parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Increaes verbosity"
+        "-v", "--verbose", action="store_true", help="Increase verbosity"
     )
     parser.add_argument(
         "--seed", type=int, default=np.random.randint(0, 100000), help="Random seed"
@@ -106,7 +106,7 @@ def add_args(parser):
     group.add_argument(
         "--lazy",
         action="store_true",
-        help="Lazy loading if full dataset is too large to fit in memory (Should copy dataset to SSD)",
+        help="Lazy loading if full dataset is too large to fit in memory",
     )
     group.add_argument(
         "--preprocessed",
@@ -127,7 +127,7 @@ def add_args(parser):
     )
 
     group = parser.add_argument_group("Tilt series")
-    group.add_argument("--tilt", help="Particles (.mrcs)")
+    group.add_argument("--tilt", help="Particle stack file (.mrcs)")
     group.add_argument(
         "--tilt-deg",
         type=float,
@@ -170,14 +170,14 @@ def add_args(parser):
     group.add_argument(
         "--beta-control",
         type=float,
-        help="KL-Controlled VAE gamma. Beta is KL target. (default: %(default)s)",
+        help="KL-Controlled VAE gamma. Beta is KL target",
     )
     group.add_argument(
         "--norm",
         type=float,
         nargs=2,
         default=None,
-        help="Data normalization as shift, 1/scale (default: 0, std of dataset)",
+        help="Data normalization as shift, 1/scale (default: mean, std of dataset)",
     )
     group.add_argument(
         "--no-amp",
@@ -279,7 +279,7 @@ def add_args(parser):
         "--feat-sigma",
         type=float,
         default=0.5,
-        help="Scale for random Gaussian features",
+        help="Scale for random Gaussian features (default: %(default)s)",
     )
     group.add_argument(
         "--pe-dim",
@@ -290,7 +290,7 @@ def add_args(parser):
         "--domain",
         choices=("hartley", "fourier"),
         default="fourier",
-        help="Decoder representation domain (default: %(default)s)",
+        help="Volume decoder representation (default: %(default)s)",
     )
     group.add_argument(
         "--activation",

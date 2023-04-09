@@ -7,6 +7,7 @@ try:
 except ImportError:
     cp = None
 
+from collections import Counter, OrderedDict
 import multiprocessing as mp
 import os
 import multiprocessing
@@ -71,13 +72,11 @@ class TiltSeriesData(data.Dataset):
         datadir=None,
         max_threads=16,
         window_r=0.85,
-        flog=None,
         preprocessed=None,
     ):
-        log = flog if flog is not None else utils.log
         # First parse particle stack
         if preprocessed:
-            tilts = PreprocessedMRCData(tiltstar, norm=norm, ind=ind, flog=flog)
+            tilts = PreprocessedMRCData(tiltstar, norm=norm, ind=ind)
         else:
             tilts = MRCData(
                 tiltstar,
@@ -89,7 +88,6 @@ class TiltSeriesData(data.Dataset):
                 datadir=datadir,
                 max_threads=max_threads,
                 window_r=window_r,
-                flog=flog,
             )
         self.tilts = tilts
 
@@ -110,10 +108,10 @@ class TiltSeriesData(data.Dataset):
         self.D = self.tilts.D
         self.norm = self.tilts.norm
         self.ctfscalefactor = np.asarray(s.df["_rlnCtfScalefactor"], dtype=np.float32)
-        log(f"Loaded {self.tilts.N} tilts for {self.N} particles")
+        logger.info(f"Loaded {self.tilts.N} tilts for {self.N} particles")
         counts = Counter(group_name)
         unique_counts = set(counts.values())
-        log(f"{unique_counts} tilts per particle")
+        logger.info(f"{unique_counts} tilts per particle")
         self.counts = counts
         assert ntilts <= min(unique_counts)
         self.ntilts = ntilts

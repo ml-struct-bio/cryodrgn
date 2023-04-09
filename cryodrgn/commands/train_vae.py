@@ -342,20 +342,21 @@ def train_batch(
 ):
     optim.zero_grad()
     model.train()
+    print(f"y {y.shape} trans {trans.shape}")
     if trans is not None:
         y = preprocess_input(y, lattice, trans)
     # Cast operations to mixed precision if using torch.cuda.amp.GradScaler()
     if scaler is not None:
         with torch.cuda.amp.autocast_mode.autocast():
             z_mu, z_logvar, z, y_recon, mask = run_batch(
-                model, lattice, y, ntilts, rot, tilt, ctf_params, yr
+                model, lattice, y, rot, ntilts, ctf_params, yr
             )
             loss, gen_loss, kld = loss_function(
                 z_mu, z_logvar, y, ntilts, y_recon, mask, beta, beta_control
             )
     else:
         z_mu, z_logvar, z, y_recon, mask = run_batch(
-            model, lattice, y, ntilts, rot, tilt, ctf_params, yr
+            model, lattice, y, rot, tilt, ctf_params, yr
         )
         loss, gen_loss, kld = loss_function(
             z_mu, z_logvar, y, ntilts, y_recon, mask, beta, beta_control
@@ -380,11 +381,10 @@ def preprocess_input(y, lattice, trans):
     B = y.size(0)
     D = lattice.D
     y = lattice.translate_ht(y.view(B, -1), trans.unsqueeze(1)).view(B, D, D)
-    return y, yt
+    return y
 
 
 def run_batch(model, lattice, y, rot, ntilts: Optional[int], ctf_params=None, yr=None):
-    use_tilt = ntilts is not None
     use_ctf = ctf_params is not None
     B = y.size(0)
     D = lattice.D
@@ -419,7 +419,7 @@ def run_batch(model, lattice, y, rot, ntilts: Optional[int], ctf_params=None, yr
 
 
 def loss_function(
-    z_mu, z_logvar, y, ntilts: Optional[int], y_recon, mask, beta, beta_control=None
+    z_mu, z_logvar, y, ntilts: Optional[int], y_recon, mask, beta: float, beta_control=None
 ):
     # reconstruction error
     B = y.size(0)
@@ -457,7 +457,7 @@ def eval_z(
         ind = minibatch[-1]
         y = minibatch[0].to(device)
         D = lattice.D
-        if use_tilt:
+        if ntilts is not None:
             y = y.view(-1, D, D)
             ind = minibatch[1].to(device).view(-1)
         B = len(ind)
@@ -672,10 +672,9 @@ def main(args):
             datadir=args.datadir,
             max_threads=args.max_threads,
             window_r=args.window_r,
-            flog=flog,
             preprocessed=args.preprocessed,
         )
-    Nimg = data.N if args.encode_mode != "tilt" else data.tilts.N
+    Nimg = data.N if args.encode_mode != "tilt" else data.tilts.N  # type: ignore
     D = data.D
 
     if args.encode_mode == "conv":
@@ -710,7 +709,7 @@ def main(args):
         assert ctf_params.shape == (Nimg, 8)
         if args.encode_mode == "tilt":  # TODO: Parse this in cryodrgn parse_ctf_star
             ctf_params = np.concatenate(
-                (ctf_params, data.ctfscalefactor.reshape(-1, 1)), axis=1
+                (ctf_params, data.ctfscalefactor.reshape(-1, 1)), axis=1  # type: ignore
             )
         ctf_params = torch.tensor(ctf_params, device=device)  # Nx8
     else:
@@ -848,7 +847,6 @@ def main(args):
         for minibatch in data_generator:  # minibatch: [y, ind]
             ind = minibatch[-1].to(device)
             y = minibatch[0].to(device)
-            yt = minibatch[1].to(device) if tilt is not None else None
             B = len(ind)
             batch_it += B
             global_it = Nimg * epoch + batch_it
@@ -881,24 +879,6 @@ def main(args):
                 optim,
                 beta,
                 args.beta_control,
-                ctf_params=ctf_param,
-                yr=yr,
-                use_amp=args.amp,
-                scaler=scaler,
-            )
-            rot, tran = posetracker.get_pose(ind)
-            ctf_param = ctf_params[ind] if ctf_params is not None else None
-            loss, gen_loss, kld = train_batch(
-                model,
-                lattice,
-                y,
-                yt,
-                rot,
-                tran,
-                optim,
-                beta,
-                args.beta_control,
-                tilt,
                 ctf_params=ctf_param,
                 yr=yr,
                 use_amp=args.amp,

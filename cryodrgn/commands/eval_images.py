@@ -177,15 +177,15 @@ def add_args(parser):
 
 
 def eval_batch(
-    model, lattice, y, yt, rot, trans, beta, tilt=None, ctf_params=None, yr=None
+    model, lattice, y, yt, rot, trans, beta, ntilts=None, ctf_params=None, yr=None
 ):
     if trans is not None:
-        y, yt = preprocess_input(y, yt, lattice, trans)
-    z_mu, z_logvar, z, y_recon, y_recon_tilt, mask = run_batch(
-        model, lattice, y, yt, rot, tilt, ctf_params, yr
+        y = preprocess_input(y, lattice, trans)
+    z_mu, z_logvar, z, y_recon, mask = run_batch(
+        model, lattice, y, rot, ntilts, ctf_params, yr
     )
     loss, gen_loss, kld = loss_function(
-        z_mu, z_logvar, y, yt, y_recon, mask, beta, y_recon_tilt, beta_control=None
+        z_mu, z_logvar, ntilts, y, y_recon, mask, beta, beta_control=None
     )
     return (
         z_mu.detach().cpu().numpy(),

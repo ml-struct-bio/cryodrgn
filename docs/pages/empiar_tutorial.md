@@ -88,7 +88,7 @@ This walkthrough of cryoDRGN analysis of the **assembling ribosome dataset (EMPI
 
 In this step, we will first extract poses ([Step 3.1](step3-1)), then extract CTF parameters ([Step 3.2](step3-2)), then downsample our images ([Step 3.3](step3-3)).
 
-Pose and CTF parameters ****are stored in various formats depending on the upstream processing software. CryoDRGN contains scripts to convert this information to a `.pkl` file format.
+Pose and CTF parameters are stored in various formats depending on the upstream processing software. CryoDRGN contains scripts to convert this information to a `.pkl` file format.
 
 - What are `.pkl` files?
 
@@ -471,7 +471,6 @@ Additional parameters which are typically set include:
 - `-n`, Number of epochs to train
 - `--uninvert-data`, A flag to invert the image sign if particles are dark on light (i.e. negative stain format)
 - Neural network architecture settings with `--enc-layers`, `--enc-dim`, `--dec-layers`, `--dec-dim`
-- `--amp` to enable mixed precision training (fast!)
 - `--multigpu` to enable parallelized training across multiple GPUs (fast!)
 
 ### General recommended workflow**
@@ -619,6 +618,8 @@ $ cryodrgn train_vae data/128/particles.128.mrcs \
     -o tutorial/00_vae128 >> tutorial.00.log
 ```
 
+You can also use `--load latest`, and cryodrgn will try to detect the latest set of model weights in the specified workdir.
+
 ## 5) cryoDRGN analysis
 
 Once the model has finished training, use the `cryodrgn analyze` command to visualize the latent space, generate density maps, and generate template Jupyter notebooks for further interactive filtering, visualization, and analysis.
@@ -668,6 +669,7 @@ This script runs a series of standard analyses that will be further described be
 - Generation of trajectories along the first and second principal components of the latent embeddings
 - Generation of a template jupyter notebook that may be used for further interactive analyses, visualization, and volume generation
 - (New in v0.3.2) Generation of a template jupyter notebook that may be used for particle filtering
+- (New in v2.2.0) Generation of a template jupyter notebook for adjusting any of the output figures
 
 Example command to run cryodrgn analyze on the directory `tutorial/00_vae128` and the trained weights from epoch 49 (0-based indexing) (1 GPU; ~5 min)
 
@@ -1011,7 +1013,7 @@ $ ssh -N -f -L localhost:8888:localhost:8888 remote_username@remote_host_name # 
 # then navigate to a browser and type in localhost:8888 in the address bar
 ```
 
-The port number can be set to an arbitrary number between 1024 through 49151 (as long as the port is unused). Sometimes, if the port is already in use, jupyter will automatically use the next (N+1) port number.
+The port number can be set to an arbitrary number between 1024 through 49151 (as long as the port is unused). Jupyter should detect if a port is already in use and will automatically use the next (N+1) port number.
 
 Here is a screenshot of the page that will show up in your browser. It should list all the files in that directory:
 

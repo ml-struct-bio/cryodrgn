@@ -1013,7 +1013,7 @@ $ ssh -N -f -L localhost:8888:localhost:8888 remote_username@remote_host_name # 
 # then navigate to a browser and type in localhost:8888 in the address bar
 ```
 
-The port number can be set to an arbitrary number between 1024 through 49151 (as long as the port is unused). Sometimes, if the port is already in use, jupyter will automatically use the next (N+1) port number.
+The port number can be set to an arbitrary number between 1024 through 49151 (as long as the port is unused). Jupyter should detect if a port is already in use and will automatically use the next (N+1) port number.
 
 Here is a screenshot of the page that will show up in your browser. It should list all the files in that directory:
 

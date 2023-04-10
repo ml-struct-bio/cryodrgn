@@ -1,73 +1,45 @@
-# cryoDRGN2 quickstart
+# CryoDRGN2 quickstart
 
-## Installation
-
-CryoDRGN2 commands are now natively available in the top-of-tree on github, and will be available in the next official cryoDRGN version 2.0 release.
-
-- Older installation instructions
-
-    The cryodrgn2 codebase is an extension to the publicly available cryodrgn version, so you can install the software in the same conda environment and still have all the cryodrgn1 functionality.
-
-    ```bash
-    # activate existing cryodrgn conda environment, or create a new one following the installation instruction on the github
-    conda activate cryodrgn
-
-    # install an additional requirement
-    conda install healpy -c conda-forge
-
-    # install the library
-    pip install .
-    ```
-
-    Note: After installing, now when you run cryodrgn1, i.e. `cryodrgn train_vae`, there is one updated default parameter from the publicly available v0.3.4 (`—-pe-type gaussian` instead of `--pe-type geom_lowf`). This uses an updated architecture that will be the new default in cryoDRGN v1.0 (faster training, higher resolution). I’m mentioning it here in case you want to stick with the previous default.
-
-
-## Running cryoDRGN2
-
-There are two commands for ab initio reconstruction:  `cryodrgn abinit_homo` (homogeneous ab initio reconstruction) and `cryodrgn abinit_het` (heterogeneous ab initio reconstruction):
+There are two commands for ab initio reconstruction, `cryodrgn abinit_homo` and `cryodrgn abinit_het` for homogeneous and heterogeneous ab initio reconstruction, respectively:
 
 ```bash
-# homogeneous ab initio
-cryodrgn abinit_homo -h
+# homogeneous ab initio reconstruction
+(cryodrgn) $ cryodrgn abinit_homo -h
 
-# heterogeneous ab initio
-cryodrgn abinit_het -h
+# heterogeneous ab initio reconstruction
+(cryodrgn) $ cryodrgn abinit_het -h
 ```
 
 ### Setup
 
 - Downsample your particles to a box size of 128 either with `cryodrgn downsample` or with other tools.
-- If you have a very large dataset (>500k images), I would recommend training on a subset of particles for initial testing. Use `cryodrgn_utils select_random` to select a random subset of particles.
+- If you have a large dataset (>500k images), we recommend training on a subset of particles for initial testing. Use `cryodrgn_utils select_random` to select a random subset of particles.
 
     ```bash
     # get a random selection of 200k particles from a dataset of 1,423,124 particles
-    cryodrgn_utils select_random 1423124 -n 200000 -o ind200k.pkl
+    (cryodrgn) $ cryodrgn_utils select_random 1423124 -n 200000 -o ind200k.pkl
     ```
 
     - You can then train on only the random subset with the argument `--ind ind200k.pkl`
-- For reference, ab initio heterogeneous reconstruction of a recent dataset of ~218k 128x128 particles took 20 hours to train (1 V100 GPU).
+- For reference, ab initio heterogeneous reconstruction on a dataset containing 218k 128x128 particles took 20 hours to train on a single V100 GPU.
 
 ### Example usage
 
 ```bash
 # homogeneous reconstruction
-cryodrgn abinit_homo [particles] --ctf [ctf.pkl] -o [output_directory]  >> output.log
+(cryodrgn) $ cryodrgn abinit_homo [particles] --ctf [ctf.pkl] -o [output_directory]  >> output.log
 
 # heterogeneous reconstruction
-cryodrgn abinit_het [particles] --ctf [ctf.pkl] --zdim 8 -o [output_directory]  >> output.log
+(cryodrgn) $ cryodrgn abinit_het [particles] --ctf [ctf.pkl] --zdim 8 -o [output_directory]  >> output.log
 ```
-
-### Note on homogeneous reconstruction
-
-We have found that cryoDRGN2’s homogeneous reconstruction can work better than traditional ab initio approaches for challenging *heterogeneous* datasets, e.g. the RAG1-RAG2 complex (EMPIAR-10049) and the pre-catalytic spliceosome (EMPIAR-10076), potentially due regularization properties of the neural model. It may be interesting to try `cryodrgn abinit_homo`  for generating a consensus reconstruction or initial model. Please let us know if you find something interesting!
 
 ### Note on training settings
 
-- The default translational search extent is +/- 10 pixels. If your particles are not well-centered, you can use a wider search extent, e.g. +/- 40 pixels ( `--t-extent 40`).
-- Poses are updated every 5 epochs (change this setting with `--ps-freq`)
-- The default pose search settings are not tuned to produce super high-resolution volumes (a tradeoff of accuracy vs. compute speed).
-- The default training time is 30 epochs. A typical use case is to run for 30 epochs, check the results (`cryodrgn analyze`), then extend training to 60 epochs. You can extend by rerunning with `-n 60 --load latest`. If your dataset is very large, you may want to reduce `--ps-freq` and `-n`.
-- During training, pose search epochs will get successively slower. This is because the default parameter `--l-ramp-epochs 25` increases the max resolution from a Fourier radius of 12 pix to 32 pix over the first 25 epochs of training.
+- The default translational search extent is +/- 10 pixels (`--t-extent 10`). If your particles are not well-centered, you can use a wider search extent, e.g. +/- 40 pixels ( `--t-extent 40`).
+- Poses are updated every 5 epochs (`--ps-freq 5`) to alternate between pose search (slow) and standard cryodrgn1 training (fast) using the last iteration's poses.
+- The default pose search settings are not tuned for high accuracy alignments (a tradeoff of accuracy vs. compute speed). You can increase the resolution of the pose search with `
+- The default training time is 30 epochs. A typical use case is to run for 30 epochs, check the results (`cryodrgn analyze`), then extend training to 60 epochs. You can extend by rerunning with `-n 60 --load latest`. If your dataset is very large, you may want to reduce the pose search freqency `--ps-freq` and the number of epochs `-n`.
+- During training, pose search epochs will get successively slower. This is because the parameter `--l-ramp-epochs 25` increases the max resolution from a Fourier radius of 12 pixels (`--l-start`) to 32 pix (`--l-end`) over the first 25 epochs of training.
     - Example training time course (1 V100 GPU)
 
         ```bash
@@ -129,17 +101,17 @@ We have found that cryoDRGN2’s homogeneous reconstruction can work better than
 
 ### Questions and contact
 
-If you have any questions about the method, feel free to contact either Ellen (zhonge@princeton.edu) or Adam (alerer@fb.com).
-
-For questions on how to use this software, please file a GitHub issue:
+If you have any questions about the method or software, please file a GitHub issue:
 
 [https://github.com/zhonge/cryodrgn/issues](https://github.com/zhonge/cryodrgn/issues)
 
-Or post in the new cryoDRGN Google Group: [https://groups.google.com/g/cryodrgn](https://groups.google.com/g/cryodrgn).
+Or post in the cryoDRGN Google Group: [https://groups.google.com/g/cryodrgn](https://groups.google.com/g/cryodrgn).
 
-CryoDRGN2 software was developed by Ellen Zhong & Adam Lerer with software support from Vineet Bansal.
 
 ### Reference
+
+CryoDRGN2 software was developed by Ellen Zhong & Adam Lerer with software support from Vineet Bansal.
+If you find the ab initio tools in cryoDRGN useful, please cite:
 
 Zhong, Lerer, Davis, Berger. ICCV 2021.
 

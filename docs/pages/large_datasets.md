@@ -1,10 +1,10 @@
-# Dealing with large datasets
+# cryoDRGN preprocess for large datasets
 
-Large datasets that do not fit into memory can be trained with the `--lazy` flag, which loads images on-the-fly instead of all at once at the beginning of training. This can, however, be very slow due to the filesystem access pattern for on-the-fly image loading, especially if the data is not located on a SSD drive.
+CryoDRGN by default loads the entire dataset into memory for fast data access during training. However, large cryo-EM datasets can easily exceed the amount of memory available on standard workstations. For these datasets that do not fit into memory, `cryodrgn train_vae` can be run with the additional `--lazy` flag, which loads images on-the-fly instead of all at once at the beginning of training. This can, however, be very slow due to the filesystem access pattern for on-the-fly image loading, especially if the data is not located on a SSD drive.
 
-To reduce the memory requirement of loading the whole dataset, cryoDRGN contains a new tool `cryodrgn preprocess` that performs some of the image preprocessing done at the beginning of training. Separating out image preprocessing significantly reduces the memory requirement of `cryodrgn train_vae`, potentially leading to major training speedups ⚡ ⚡ ⚡ .
+To reduce the memory requirement of loading the whole dataset, as of version 0.3.3, cryoDRGN contains a tool `cryodrgn preprocess` that performs some of the image preprocessing done at the beginning of training. Separating out image preprocessing significantly reduces the memory requirement of `cryodrgn train_vae`, potentially leading to major training speedups ⚡ ⚡ ⚡ .
 
-The new workflow replaces `cryodrgn downsample` with `cryodrgn preprocess`:
+The new workflow replaces `cryodrgn downsample` with `cryodrgn preprocess` in the standard cryoDRGN workflow. Note that a new preprocessed particle stack will be created:
 
 ```bash
 # Replace `cryodrgn downsample` with `cryodrgn preprocess`
@@ -45,7 +45,7 @@ With new `--preprocessed`:
 - 200 GB maximum memory requirement
 - 3.2 min to load the dataset in `cryodrgn train_vae`
 
-On a single V100 GPU, this dataset trained in approximately 2h,3min per epoch (large 1024x3 model) when fully loaded into memory. Training with on-the-fly data loading (`--lazy`) was 4x slower, though this can vary widely depending on your filesystem/network.
+On a single Nvidia V100 GPU, this dataset trained in approximately 2h,3min per epoch (large 1024x3 model) when fully loaded into memory. Training with on-the-fly data loading (`--lazy`) was 4x slower, though this can vary widely depending on your filesystem/network. Recent tests on cached filesystems do not have a large penalty for `--lazy` image loading.
 
 ## Technicalities
 
@@ -62,11 +62,12 @@ On a single V100 GPU, this dataset trained in approximately 2h,3min per epoch (l
 
 ## Still too large
 
-If your dataset is still too large to load into memory, we recommend training on a subset of the images such that the dataset can fit into memory (e.g. split your dataset into two halves and run independent training jobs on each half). A random selection of half of your dataset can be generated with the utility `cryodrgn_utils select_random`:
+If your dataset is still too large to load into memory, we recommend training on a subset of the images such that the dataset can fit into memory (e.g. split your dataset into two halves and run independent training jobs on each half). A random selection of a subset of your dataset can be generated with the utility `cryodrgn_utils select_random`:
 
 ```
 # select 200k random particles out of a dataset containing 1,375,854 particles
 (cryodrgn) $ cryodrgn_utils select_random 1375854 -n 200000 -o ind200k.pkl
 ```
 
-Additional updates and information on chunked data loading are tracked here [https://github.com/zhonge/cryodrgn/issues/17](https://github.com/zhonge/cryodrgn/issues/17).
+We are currently implementing a large refactor of lazy data loading. Additional updates and information on chunked data loading are tracked here [https://github.com/zhonge/cryodrgn/issues/17](https://github.com/zhonge/cryodrgn/issues/17). Beta code is available in the `vb/imagesource` pull request [https://github.com/zhonge/cryodrgn/pull/221](https://github.com/zhonge/cryodrgn/pull/221).
+

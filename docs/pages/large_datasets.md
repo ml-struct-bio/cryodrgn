@@ -70,4 +70,3 @@ If your dataset is still too large to load into memory, we recommend training on
 ```
 
 We are currently implementing a large refactor of lazy data loading. Additional updates and information on chunked data loading are tracked here [https://github.com/zhonge/cryodrgn/issues/17](https://github.com/zhonge/cryodrgn/issues/17). Beta code is available in the `vb/imagesource` pull request [https://github.com/zhonge/cryodrgn/pull/221](https://github.com/zhonge/cryodrgn/pull/221).
-

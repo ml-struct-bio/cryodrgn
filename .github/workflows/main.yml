@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ master, develop, vb/pyright ]
+    branches: [ master, develop ]
   pull_request:
-    branches: [ master, develop, vb/pyright ]
+    branches: [ master, develop ]
 
 jobs:
   run_tests:
@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python: [3.7, 3.8, 3.9]
+        python: ['3.7', '3.8', '3.9', '3.10']
       fail-fast: false
 
     steps:

@@ -63,7 +63,8 @@ class MRCHeader:
         "amean",  # float
         "ispg",
         "next",
-        "creatid",  # int, int, short, [pad 30]
+        "creatid",  # int, int, short, [pad 10]
+        "nversion",  # int, [pad 20]
         "nint",
         "nreal",  # short, [pad 20]
         "imodStamp",
@@ -89,7 +90,7 @@ class MRCHeader:
         "nlabl",
         "labels",
     ]  # int, char[10][80]
-    FSTR = "3ii3i3i3f3f3i3f2ih30x2h20x2i6h6f3f4s4sfi800s"
+    FSTR = "3ii3i3i3f3f3i3f2ih10xi16x2h20x2i6h6f3f4s4sfi800s"
 
     def __init__(self, header_values, extended_header=b"", endianness="="):
         self.fields = OrderedDict(zip(self.FIELDS, header_values))
@@ -168,6 +169,7 @@ class MRCHeader:
             ispg,
             0,  # exthd_size
             0,  # creatid
+            20140,  # nversion
             0,
             0,  # nint, nreal
             0,

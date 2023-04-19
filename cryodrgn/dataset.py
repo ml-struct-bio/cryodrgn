@@ -9,7 +9,7 @@ except ImportError:
 
 import multiprocessing as mp
 import os
-from multiprocessing import Pool
+import multiprocessing
 import logging
 from torch.utils import data
 
@@ -186,7 +186,8 @@ class MRCData(data.Dataset):
         max_threads = min(max_threads, mp.cpu_count())
         if max_threads > 1:
             logger.info(f"Spawning {max_threads} processes")
-            with Pool(max_threads) as p:
+            context = multiprocessing.get_context("spawn")
+            with context.Pool(max_threads) as p:
                 particles = pp.asarray(
                     p.map(fft.ht2_center, particles), dtype=pp.float32
                 )

@@ -1,5 +1,4 @@
 """Pytorch models"""
-
 from typing import Optional, Tuple, Type, Sequence, Any
 import numpy as np
 import torch
@@ -9,6 +8,7 @@ import torch.nn.functional as F
 from torch.nn.parameter import Parameter
 from torch.nn.parallel import DataParallel
 from cryodrgn import fft, lie_tools, utils
+import cryodrgn.config
 from cryodrgn.lattice import Lattice
 
 Norm = Sequence[Any]  # mean, std
@@ -79,17 +79,18 @@ class HetOnlyVAE(nn.Module):
 
     @classmethod
     def load(cls, config, weights=None, device=None):
-        """Instantiate a model from a config.pkl
+        """Instantiate a model from a config.yaml
 
         Inputs:
-            config (str, dict): Path to config.pkl or loaded config.pkl
+            config (str, dict): Path to config.yaml or loaded config.yaml
             weights (str): Path to weights.pkl
             device: torch.device object
 
         Returns:
             HetOnlyVAE instance, Lattice instance
         """
-        cfg = utils.load_pkl(config) if type(config) is str else config
+        cfg = cryodrgn.config.load(config)
+
         c = cfg["lattice_args"]
         lat = Lattice(c["D"], extent=c["extent"], device=device)
         c = cfg["model_args"]
@@ -165,16 +166,16 @@ class HetOnlyVAE(nn.Module):
 
 def load_decoder(config, weights=None, device=None):
     """
-    Instantiate a decoder model from a config.pkl
+    Instantiate a decoder model from a config.yaml
 
     Inputs:
-        config (str, dict): Path to config.pkl or loaded config.pkl
+        config (str, dict): Path to config.yaml or loaded config.yaml
         weights (str): Path to weights.pkl
         device: torch.device object
 
     Returns a decoder model
     """
-    cfg = utils.load_pkl(config) if type(config) is str else config
+    cfg = cryodrgn.config.load(config)
     c = cfg["model_args"]
     D = cfg["lattice_args"]["D"]
     activation = {"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[c["activation"]]

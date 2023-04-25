@@ -135,7 +135,7 @@ def test_run(mrcs_file, poses_file):
         [
             "output/weights.3.pkl",
             "--config",
-            "output/config.pkl",
+            "output/config.yaml",
             "--zfile",
             "output/graph_traversal_zpath.txt",
             "-o",

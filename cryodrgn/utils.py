@@ -2,6 +2,7 @@ from collections.abc import Hashable
 import functools
 import os
 import pickle
+import yaml
 import logging
 from typing import Tuple
 import numpy as np
@@ -51,6 +52,18 @@ def save_pkl(data, out_pkl: str, mode: str = "wb") -> None:
         logger.warning(f"Warning: {out_pkl} already exists. Overwriting.")
     with open(out_pkl, mode) as f:
         pickle.dump(data, f)  # type: ignore
+
+
+def load_yaml(yamlfile: str):
+    with open(yamlfile, "r") as f:
+        return yaml.safe_load(f)
+
+
+def save_yaml(data, out_yamlfile: str, mode: str = "w"):
+    if mode == "w" and os.path.exists(out_yamlfile):
+        logger.warning(f"Warning: {out_yamlfile} already exists. Overwriting.")
+    with open(out_yamlfile, mode) as f:
+        yaml.dump(data, f)
 
 
 def R_from_eman(a: np.ndarray, b: np.ndarray, y: np.ndarray) -> np.ndarray:

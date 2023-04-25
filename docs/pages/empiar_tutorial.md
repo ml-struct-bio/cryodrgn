@@ -595,7 +595,7 @@ In this tutorial we will walk through the commands and analysis for Step 1 and S
 
     The training will take ~7.5 min/epoch on a V100 GPU, requiring ~7 hours total. The output directory will contain the following files:
 
-    - `config.pkl` a configuration file containing all inputs and settings for the job
+    - `config.yaml` a configuration file containing all inputs and settings for the job
     - `weights.pkl` the final neural network weights (and intermediate checkpoints `weights.n.pkl`)
     - `z.pkl` the final per-particle latent embeddings (and embeddings from intermediate epochs `z.n.pkl`)
 
@@ -689,9 +689,9 @@ $ cryodrgn analyze tutorial/00_vae128 49 --flip --Apix 3.275
      0.06840914 0.05249962]
     2021-02-04 02:57:18     Generating volumes...
     2021-02-04 02:57:18     Running command:
-    cryodrgn eval_vol /nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/weights.49.pkl --config /nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/config.pkl --zfile /nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/analyze.49/pc1/z_values.txt -o /nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/analyze.49/pc1 --Apix 1
+    cryodrgn eval_vol /nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/weights.49.pkl --config /nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/config.yaml --zfile /nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/analyze.49/pc1/z_values.txt -o /nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/analyze.49/pc1 --Apix 1
     2021-02-04 02:57:20     Use cuda True
-    2021-02-04 02:57:20     Namespace(Apix=1.0, D=None, activation='relu', config='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/config.pkl', domain=None, downsample=None, enc_mask=None, encode_mode=None, flip=False, func=<function main at 0x7ffed8e3fe18>, l_extent=None, n=10, norm=None, o='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/analyze.49/pc1', pdim=None, pe_dim=None, pe_type=None, players=None, prefix='vol_', qdim=None, qlayers=None, verbose=False, weights='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/weights.49.pkl', z=None, z_end=None, z_start=None, zdim=None, zfile='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/analyze.49/pc1/z_values.txt')
+    2021-02-04 02:57:20     Namespace(Apix=1.0, D=None, activation='relu', config='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/config.yaml', domain=None, downsample=None, enc_mask=None, encode_mode=None, flip=False, func=<function main at 0x7ffed8e3fe18>, l_extent=None, n=10, norm=None, o='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/analyze.49/pc1', pdim=None, pe_dim=None, pe_type=None, players=None, prefix='vol_', qdim=None, qlayers=None, verbose=False, weights='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/weights.49.pkl', z=None, z_end=None, z_start=None, zdim=None, zfile='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/analyze.49/pc1/z_values.txt')
     2021-02-04 02:57:20     Loaded configuration:
     {'dataset_args': {'ctf': '/nobackup/users/zhonge/cryodrgn/11_l17_ribo/data/ctf.new.pkl',
                       'datadir': None,
@@ -740,9 +740,9 @@ $ cryodrgn analyze tutorial/00_vae128 49 --flip --Apix 3.275
      -0.25299058 -1.62566469]
     2021-02-04 02:57:40     Finsihed in 0:00:19.785367
     2021-02-04 02:57:40     Running command:
-    cryodrgn eval_vol /nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/weights.49.pkl --config /nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/config.pkl --zfile /nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/analyze.49/pc2/z_values.txt -o /nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/analyze.49/pc2 --Apix 1
+    cryodrgn eval_vol /nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/weights.49.pkl --config /nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/config.yaml --zfile /nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/analyze.49/pc2/z_values.txt -o /nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/analyze.49/pc2 --Apix 1
     2021-02-04 02:57:42     Use cuda True
-    2021-02-04 02:57:42     Namespace(Apix=1.0, D=None, activation='relu', config='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/config.pkl', domain=None, downsample=None, enc_mask=None, encode_mode=None, flip=False, func=<function main at 0x7ffea04efe18>, l_extent=None, n=10, norm=None, o='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/analyze.49/pc2', pdim=None, pe_dim=None, pe_type=None, players=None, prefix='vol_', qdim=None, qlayers=None, verbose=False, weights='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/weights.49.pkl', z=None, z_end=None, z_start=None, zdim=None, zfile='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/analyze.49/pc2/z_values.txt')
+    2021-02-04 02:57:42     Namespace(Apix=1.0, D=None, activation='relu', config='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/config.yaml', domain=None, downsample=None, enc_mask=None, encode_mode=None, flip=False, func=<function main at 0x7ffea04efe18>, l_extent=None, n=10, norm=None, o='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/analyze.49/pc2', pdim=None, pe_dim=None, pe_type=None, players=None, prefix='vol_', qdim=None, qlayers=None, verbose=False, weights='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/weights.49.pkl', z=None, z_end=None, z_start=None, zdim=None, zfile='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/analyze.49/pc2/z_values.txt')
     2021-02-04 02:57:42     Loaded configuration:
     {'dataset_args': {'ctf': '/nobackup/users/zhonge/cryodrgn/11_l17_ribo/data/ctf.new.pkl',
                       'datadir': None,
@@ -793,9 +793,9 @@ $ cryodrgn analyze tutorial/00_vae128 49 --flip --Apix 3.275
     2021-02-04 02:57:53     K-means clustering...
     2021-02-04 02:58:00     Generating volumes...
     2021-02-04 02:58:00     Running command:
-    cryodrgn eval_vol /nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/weights.49.pkl --config /nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/config.pkl --zfile /nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/analyze.49/kmeans20/z_values.txt -o /nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/analyze.49/kmeans20 --Apix 1
+    cryodrgn eval_vol /nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/weights.49.pkl --config /nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/config.yaml --zfile /nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/analyze.49/kmeans20/z_values.txt -o /nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/analyze.49/kmeans20 --Apix 1
     2021-02-04 02:58:02     Use cuda True
-    2021-02-04 02:58:02     Namespace(Apix=1.0, D=None, activation='relu', config='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/config.pkl', domain=None, downsample=None, enc_mask=None, encode_mode=None, flip=False, func=<function main at 0x7ffeb2fded90>, l_extent=None, n=10, norm=None, o='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/analyze.49/kmeans20', pdim=None, pe_dim=None, pe_type=None, players=None, prefix='vol_', qdim=None, qlayers=None, verbose=False, weights='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/weights.49.pkl', z=None, z_end=None, z_start=None, zdim=None, zfile='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/analyze.49/kmeans20/z_values.txt')
+    2021-02-04 02:58:02     Namespace(Apix=1.0, D=None, activation='relu', config='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/config.yaml', domain=None, downsample=None, enc_mask=None, encode_mode=None, flip=False, func=<function main at 0x7ffeb2fded90>, l_extent=None, n=10, norm=None, o='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/analyze.49/kmeans20', pdim=None, pe_dim=None, pe_type=None, players=None, prefix='vol_', qdim=None, qlayers=None, verbose=False, weights='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/weights.49.pkl', z=None, z_end=None, z_start=None, zdim=None, zfile='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/tutorial/00/analyze.49/kmeans20/z_values.txt')
     2021-02-04 02:58:02     Loaded configuration:
     {'dataset_args': {'ctf': '/nobackup/users/zhonge/cryodrgn/11_l17_ribo/data/ctf.new.pkl',
                       'datadir': None,
@@ -1335,9 +1335,9 @@ We flip the handedness of the output volumes with the flag `--flip` and set the 
      0.09139399 0.08733987]
     2021-02-28 14:24:49     Generating volumes...
     2021-02-28 14:24:49     Running command:
-    cryodrgn eval_vol /nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/weights.49.pkl --config /nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/config.pkl --zfile /nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/analyze.49/pc1/z_values.txt -o /nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/analyze.49/pc1 --Apix 1
+    cryodrgn eval_vol /nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/weights.49.pkl --config /nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/config.yaml --zfile /nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/analyze.49/pc1/z_values.txt -o /nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/analyze.49/pc1 --Apix 1
     2021-02-28 14:24:50     Use cuda True
-    2021-02-28 14:24:50     Namespace(Apix=1.0, D=None, activation='relu', config='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/config.pkl', domain=None, downsample=None, enc_mask=None, encode_mode=None, flip=False, func=<function main at 0x2000ac580e18>, l_extent=None, n=10, norm=None, o='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/analyze.49/pc1', pdim=None, pe_dim=None, pe_type=None, players=None, prefix='vol_', qdim=None, qlayers=None, verbose=False, weights='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/weights.49.pkl', z=None, z_end=None, z_start=None, zdim=None, zfile='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/analyze.49/pc1/z_values.txt')
+    2021-02-28 14:24:50     Namespace(Apix=1.0, D=None, activation='relu', config='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/config.yaml', domain=None, downsample=None, enc_mask=None, encode_mode=None, flip=False, func=<function main at 0x2000ac580e18>, l_extent=None, n=10, norm=None, o='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/analyze.49/pc1', pdim=None, pe_dim=None, pe_type=None, players=None, prefix='vol_', qdim=None, qlayers=None, verbose=False, weights='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/weights.49.pkl', z=None, z_end=None, z_start=None, zdim=None, zfile='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/analyze.49/pc1/z_values.txt')
     2021-02-28 14:24:50     Loaded configuration:
     {'dataset_args': {'ctf': '/nobackup/users/zhonge/cryodrgn/11_l17_ribo/data/ctf.new.pkl',
                       'datadir': None,
@@ -1386,9 +1386,9 @@ We flip the handedness of the output volumes with the flag `--flip` and set the 
       1.13353181  2.00136567]
     2021-02-28 14:26:24     Finsihed in 0:01:33.787293
     2021-02-28 14:26:25     Running command:
-    cryodrgn eval_vol /nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/weights.49.pkl --config /nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/config.pkl --zfile /nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/analyze.49/pc2/z_values.txt -o /nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/analyze.49/pc2 --Apix 1
+    cryodrgn eval_vol /nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/weights.49.pkl --config /nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/config.yaml --zfile /nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/analyze.49/pc2/z_values.txt -o /nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/analyze.49/pc2 --Apix 1
     2021-02-28 14:26:27     Use cuda True
-    2021-02-28 14:26:27     Namespace(Apix=1.0, D=None, activation='relu', config='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/config.pkl', domain=None, downsample=None, enc_mask=None, encode_mode=None, flip=False, func=<function main at 0x2000ac580e18>, l_extent=None, n=10, norm=None, o='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/analyze.49/pc2', pdim=None, pe_dim=None, pe_type=None, players=None, prefix='vol_', qdim=None, qlayers=None, verbose=False, weights='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/weights.49.pkl', z=None, z_end=None, z_start=None, zdim=None, zfile='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/analyze.49/pc2/z_values.txt')
+    2021-02-28 14:26:27     Namespace(Apix=1.0, D=None, activation='relu', config='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/config.yaml', domain=None, downsample=None, enc_mask=None, encode_mode=None, flip=False, func=<function main at 0x2000ac580e18>, l_extent=None, n=10, norm=None, o='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/analyze.49/pc2', pdim=None, pe_dim=None, pe_type=None, players=None, prefix='vol_', qdim=None, qlayers=None, verbose=False, weights='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/weights.49.pkl', z=None, z_end=None, z_start=None, zdim=None, zfile='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/analyze.49/pc2/z_values.txt')
     2021-02-28 14:26:27     Loaded configuration:
     {'dataset_args': {'ctf': '/nobackup/users/zhonge/cryodrgn/11_l17_ribo/data/ctf.new.pkl',
                       'datadir': None,
@@ -1439,9 +1439,9 @@ We flip the handedness of the output volumes with the flag `--flip` and set the 
     2021-02-28 14:27:56     K-means clustering...
     2021-02-28 14:28:01     Generating volumes...
     2021-02-28 14:28:01     Running command:
-    cryodrgn eval_vol /nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/weights.49.pkl --config /nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/config.pkl --zfile /nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/analyze.49/kmeans20/z_values.txt -o /nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/analyze.49/kmeans20 --Apix 1
+    cryodrgn eval_vol /nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/weights.49.pkl --config /nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/config.yaml --zfile /nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/analyze.49/kmeans20/z_values.txt -o /nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/analyze.49/kmeans20 --Apix 1
     2021-02-28 14:28:03     Use cuda True
-    2021-02-28 14:28:03     Namespace(Apix=1.0, D=None, activation='relu', config='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/config.pkl', domain=None, downsample=None, enc_mask=None, encode_mode=None, flip=False, func=<function main at 0x2000ac580e18>, l_extent=None, n=10, norm=None, o='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/analyze.49/kmeans20', pdim=None, pe_dim=None, pe_type=None, players=None, prefix='vol_', qdim=None, qlayers=None, verbose=False, weights='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/weights.49.pkl', z=None, z_end=None, z_start=None, zdim=None, zfile='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/analyze.49/kmeans20/z_values.txt')
+    2021-02-28 14:28:03     Namespace(Apix=1.0, D=None, activation='relu', config='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/config.yaml', domain=None, downsample=None, enc_mask=None, encode_mode=None, flip=False, func=<function main at 0x2000ac580e18>, l_extent=None, n=10, norm=None, o='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/analyze.49/kmeans20', pdim=None, pe_dim=None, pe_type=None, players=None, prefix='vol_', qdim=None, qlayers=None, verbose=False, weights='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/weights.49.pkl', z=None, z_end=None, z_start=None, zdim=None, zfile='/nobackup/users/zhonge/cryodrgn/11_l17_ribo/04_vae256_gpu/3_gpu1_b8/analyze.49/kmeans20/z_values.txt')
     2021-02-28 14:28:03     Loaded configuration:
     {'dataset_args': {'ctf': '/nobackup/users/zhonge/cryodrgn/11_l17_ribo/data/ctf.new.pkl',
                       'datadir': None,
@@ -1867,7 +1867,7 @@ Note that you could specify arbitrary data points as the anchor points, e.g. you
 
 ```
 $ cd graph_traversal
-$ cryodrgn eval_vol ../../weights.49.pkl -c ../../config.pkl --zfile z.path.txt -o .
+$ cryodrgn eval_vol ../../weights.49.pkl -c ../../config.yaml --zfile z.path.txt -o .
 ```
 
 #### Generating assembly trajectories
@@ -1892,7 +1892,7 @@ This will produce a `path.txt` file and a `z.path.txt` file showing the indices 
 
 ```bash
 $ cd assembly_path_A
-$ cryodrgn eval_vol ../../weights.49.pkl -c ../../config.pkl --zfile z.path.txt -o .
+$ cryodrgn eval_vol ../../weights.49.pkl -c ../../config.yaml --zfile z.path.txt -o .
 ```
 
 <iframe src="https://widgets.figshare.com/articles/21170974/embed?show_title=1" width="568" height="351" allowfullscreen frameborder="0"></iframe>

@@ -88,7 +88,7 @@ class LazyMRCData(data.Dataset):
         self.use_cupy = use_cupy  # estimate_normalization may need access to self.use_cupy, so save it first
         if norm is None:
             norm = self.estimate_normalization()
-        self.norm = norm
+        self.norm = [float(x) for x in norm]
         self.window = window_mask(ny, window_r, 0.99) if window else None
 
     def estimate_normalization(self, n=1000):
@@ -214,7 +214,7 @@ class MRCData(data.Dataset):
         self.particles = particles
         self.N = N
         self.D = particles.shape[1]  # ny + 1 after symmetrizing HT
-        self.norm = norm
+        self.norm = [float(x) for x in norm]
         self.keepreal = keepreal
         self.use_cupy = use_cupy
         if keepreal:
@@ -262,7 +262,7 @@ class PreprocessedMRCData(data.Dataset):
             self.particles = (self.particles - norm[0]) / norm[1]
 
         logger.info("Normalized HT by {} +/- {}".format(*norm))
-        self.norm = norm
+        self.norm = [float(x) for x in norm]
 
     def calc_statistic(self):
         pp = cp if (self.use_cupy and cp is not None) else np
@@ -378,7 +378,7 @@ class TiltMRCData(data.Dataset):
 
         self.particles = particles
         self.particles_tilt = particles_tilt
-        self.norm = norm
+        self.norm = [float(x) for x in norm]
         self.N = N
         self.D = particles.shape[1]
         self.keepreal = keepreal

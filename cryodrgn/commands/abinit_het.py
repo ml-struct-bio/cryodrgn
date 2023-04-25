@@ -14,9 +14,9 @@ import torch.nn.functional as F
 from torch.nn.parallel import DataParallel
 from torch.utils.data import DataLoader
 from typing import Union
-import cryodrgn
 from cryodrgn import ctf, dataset, lie_tools, utils
 from cryodrgn.beta_schedule import LinearSchedule, get_beta_schedule
+import cryodrgn.config
 from cryodrgn.lattice import Lattice
 from cryodrgn.losses import EquivarianceLoss
 from cryodrgn.models import HetOnlyVAE, unparallelize
@@ -670,11 +670,8 @@ def save_config(args, dataset, lattice, model, out_config):
     config = dict(
         dataset_args=dataset_args, lattice_args=lattice_args, model_args=model_args
     )
-    config["seed"] = args.seed
-    with open(out_config, "wb") as f:
-        pickle.dump(config, f)
-        meta = dict(time=dt.now(), cmd=sys.argv, version=cryodrgn.__version__)
-        pickle.dump(meta, f)
+
+    cryodrgn.config.save(config, out_config)
 
 
 def sort_poses(poses):
@@ -911,7 +908,7 @@ def main(args):
         pose_model = model
 
     # save configuration
-    out_config = "{}/config.pkl".format(args.outdir)
+    out_config = "{}/config.yaml".format(args.outdir)
     save_config(args, data, lattice, model, out_config)
 
     ps = PoseSearch(

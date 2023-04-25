@@ -23,6 +23,7 @@ from cryodrgn import ctf, dataset, models, mrc
 from cryodrgn.lattice import Lattice
 from cryodrgn.pose import PoseTracker
 from cryodrgn.models import DataParallelDecoder, Decoder
+import cryodrgn.config
 
 logger = logging.getLogger(__name__)
 
@@ -328,10 +329,7 @@ def save_config(args, dataset, lattice, model, out_config):
         dataset_args=dataset_args, lattice_args=lattice_args, model_args=model_args
     )
     config["seed"] = args.seed
-    with open(out_config, "wb") as f:
-        pickle.dump(config, f)
-        meta = dict(time=dt.now(), cmd=sys.argv, version=cryodrgn.__version__)
-        pickle.dump(meta, f)
+    cryodrgn.config.save(config, out_config)
 
 
 def get_latest(args):
@@ -469,7 +467,7 @@ def main(args):
     Apix = ctf_params[0, 0] if ctf_params is not None else 1
 
     # save configuration
-    out_config = f"{args.outdir}/config.pkl"
+    out_config = f"{args.outdir}/config.yaml"
     save_config(args, data, lattice, model, out_config)
 
     # Mixed precision training with AMP

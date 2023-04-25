@@ -577,7 +577,7 @@ def gen_volumes(
     """Call cryodrgn eval_vol to generate volumes at specified z values
     Input:
         weights (str): Path to model weights .pkl
-        config (str): Path to config.pkl
+        config (str): Path to config.yaml
         zfile (str): Path to .txt file of z values
         outdir (str): Path to output directory for volumes,
         device (int or None): Specify cuda device

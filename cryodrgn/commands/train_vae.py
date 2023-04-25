@@ -25,6 +25,7 @@ from cryodrgn.beta_schedule import get_beta_schedule
 from cryodrgn.lattice import Lattice
 from cryodrgn.models import HetOnlyVAE, unparallelize
 from cryodrgn.pose import PoseTracker
+import cryodrgn.config
 
 logger = logging.getLogger(__name__)
 
@@ -532,10 +533,7 @@ def save_config(args, dataset, lattice, model, out_config):
         dataset_args=dataset_args, lattice_args=lattice_args, model_args=model_args
     )
     config["seed"] = args.seed
-    with open(out_config, "wb") as f:
-        pickle.dump(config, f)
-        meta = dict(time=dt.now(), cmd=sys.argv, version=cryodrgn.__version__)
-        pickle.dump(meta, f)
+    cryodrgn.config.save(config, out_config)
 
 
 def get_latest(args):
@@ -741,7 +739,7 @@ def main(args):
     )
 
     # save configuration
-    out_config = "{}/config.pkl".format(args.outdir)
+    out_config = "{}/config.yaml".format(args.outdir)
     save_config(args, data, lattice, model, out_config)
 
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)

@@ -1,9 +1,11 @@
+import sys
 import os
 import struct
 from collections import OrderedDict
 from typing import Any, Optional, Tuple
 import numpy as np
 import cryodrgn.types as types
+from cryodrgn import __version__
 
 # See ref:
 # MRC2014: Extensions to the MRC format header for electron cryo-microscopy and tomography
@@ -22,9 +24,19 @@ DTYPE_FOR_MODE = {
 }  # RBG values
 MODE_FOR_DTYPE = {vv: kk for kk, vv in DTYPE_FOR_MODE.items()}
 
+MACHST_OFFSET = 212
+MACHST_FOR_ENDIANNESS = {"<": b"\x44\x44\x00\x00", ">": b"\x11\x11\x00\x00"}
+ENDIANNESS_FOR_MACHST = {v: k for k, v in MACHST_FOR_ENDIANNESS.items()}
+
 
 class MRCHeader:
     """MRC header class"""
+
+    # Class attribute denoting endianness (machst field in MRC file format spec)
+    #   '<' = little-endian; '>' = big-endian; '=' = machine-native
+    # Note that instances of this class may override it on '.parse()' classmethod invocation,
+    # depending on what they actually find in the MRC file header at MACHST_OFFSET.
+    endianness = "="
 
     FIELDS = [
         "nx",
@@ -51,7 +63,8 @@ class MRCHeader:
         "amean",  # float
         "ispg",
         "next",
-        "creatid",  # int, int, short, [pad 30]
+        "creatid",  # int, int, short, [pad 10]
+        "nversion",  # int, [pad 20]
         "nint",
         "nreal",  # short, [pad 20]
         "imodStamp",
@@ -77,14 +90,17 @@ class MRCHeader:
         "nlabl",
         "labels",
     ]  # int, char[10][80]
-    FSTR = "3ii3i3i3f3f3i3f2ih30x2h20x2i6h6f3f4s4sfi800s"
-    STRUCT = struct.Struct(FSTR)
+    FSTR = "3ii3i3i3f3f3i3f2ih10xi16x2h20x2i6h6f3f4s4sfi800s"
 
-    def __init__(self, header_values, extended_header=b""):
+    def __init__(self, header_values, extended_header=b"", endianness="="):
         self.fields = OrderedDict(zip(self.FIELDS, header_values))
         self.extended_header = extended_header
         self.D = self.fields["nx"]
-        self.dtype = DTYPE_FOR_MODE[self.fields["mode"]]
+        assert endianness in ("=", "<", ">")
+        self.endianness = endianness
+        self.dtype = np.dtype(DTYPE_FOR_MODE[self.fields["mode"]]).newbyteorder(
+            endianness
+        )
 
     def __str__(self):
         return f"Header: {self.fields}\nExtended header: {self.extended_header}"
@@ -92,7 +108,26 @@ class MRCHeader:
     @classmethod
     def parse(cls, fname):
         with open(fname, "rb") as f:
-            header = cls(cls.STRUCT.unpack(f.read(1024)))
+            f.seek(MACHST_OFFSET)
+            # Look for valid machst field; assume '=' if invalid
+            machst = f.read(4)
+            endianness = ENDIANNESS_FOR_MACHST.get(machst, "=")
+
+            f.seek(0)
+            STRUCT = struct.Struct(
+                endianness + cls.FSTR
+            )  # prepend endianness specifier to python struct specification
+            header = cls(STRUCT.unpack(f.read(1024)), endianness=endianness)
+
+            # Older versions of MRCHeader in cryoDRGN had incorrect cmap and stamp fields.
+            # Fix these before proceeding.
+            header.fields["cmap"] = b"MAP "
+            if header.endianness == "=":
+                endianness = {"little": "<", "big": ">"}[sys.byteorder]
+            else:
+                endianness = header.endianness
+            header.fields["stamp"] = MACHST_FOR_ENDIANNESS[endianness]
+
             extbytes = header.fields["next"]
             extended_header = f.read(extbytes)
             header.extended_header = extended_header
@@ -134,6 +169,7 @@ class MRCHeader:
             ispg,
             0,  # exthd_size
             0,  # creatid
+            20140,  # nversion
             0,
             0,  # nint, nreal
             0,
@@ -153,16 +189,18 @@ class MRCHeader:
             xorg,
             yorg,
             zorg,
-            b"MAP " if is_vol else b"\x00" * 4,
-            b"\x00" * 4,  # cmap, stamp
+            b"MAP ",
+            MACHST_FOR_ENDIANNESS["<" if sys.byteorder == "little" else ">"],
             rms,  # rms
-            0,  # nlabl
-            b"\x00" * 800,  # labels
+            1,  # nlabl
+            ("cryoDRGN " + __version__[:80]).ljust(80, " ").encode("ascii")
+            + b"\x00" * 720,  # Use one 80-char label, leave remaining 9 blank
         ]
         return cls(vals)
 
     def write(self, fh):
-        buf = self.STRUCT.pack(*list(self.fields.values()))
+        STRUCT = struct.Struct(self.endianness + self.FSTR)
+        buf = STRUCT.pack(*list(self.fields.values()))
         fh.write(buf)
         fh.write(self.extended_header)
 
@@ -245,7 +283,7 @@ def parse_mrc(fname: str, lazy: bool = False) -> Tuple[types.ImageArray, MRCHead
 
     # or list of LazyImages
     else:
-        stride = dtype().itemsize * ny * nx
+        stride = dtype.itemsize * ny * nx
         array = [
             LazyImage(fname, (ny, nx), dtype, start + i * stride) for i in range(nz)
         ]
@@ -269,7 +307,9 @@ def write(
                 True if len(set(array.shape)) == 1 else False
             )  # Guess whether data is vol or image stack
         header = MRCHeader.make_default_header(array, is_vol, Apix, xorg, yorg, zorg)
+
     # write the header
     f = open(fname, "wb")
     header.write(f)
-    f.write(array.tobytes())
+
+    f.write(array.astype(header.dtype).tobytes())

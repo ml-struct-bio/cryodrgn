@@ -363,7 +363,7 @@ def add_args(parser):
     group.add_argument(
         "--pe-dim",
         type=int,
-        help="Num features in positional encoding (default: image D)",
+        help="Num frequencies in positional encoding (default: image D/2)",
     )
     group.add_argument(
         "--domain",

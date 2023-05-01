@@ -207,7 +207,7 @@ def add_args(parser):
     group.add_argument(
         "--pe-dim",
         type=int,
-        help="Num sinusoid features in positional encoding (default: D/2)",
+        help="Num frequencies in positional encoding (default: D/2)",
     )
     group.add_argument(
         "--domain",

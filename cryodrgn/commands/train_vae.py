@@ -419,6 +419,11 @@ def loss_function(
     kld = torch.mean(
         -0.5 * torch.sum(1 + z_logvar - z_mu.pow(2) - z_logvar.exp(), dim=1), dim=0
     )
+    if torch.isnan(kld):
+        logger.info(z_mu[0])
+        logger.info(z_logvar[0])
+        raise RuntimeError("KLD is nan")
+
     # total loss
     if beta_control is None:
         loss = gen_loss + beta * kld / mask.sum().float()

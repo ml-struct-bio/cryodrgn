@@ -4,7 +4,6 @@ Filter a .star file
 
 import argparse
 import os
-import warnings
 import logging
 from cryodrgn import starfile
 from cryodrgn import utils

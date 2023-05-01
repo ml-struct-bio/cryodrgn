@@ -19,36 +19,42 @@ ICLR 2020, Spotlight presentation, https://arxiv.org/abs/1909.05215
 
 The latest documentation for cryoDRGN is available [here](https://zhonge.github.io/cryodrgn/). This includes an overview and walkthrough of cryoDRGN installation, training and analysis.
 
-A more in-depth manuscript version of the tutorial is available [here](https://www.biorxiv.org/content/10.1101/2022.08.09.503342v1).
-
-Old Documentation pages are available at [notion.so](https://www.notion.so/cryoDRGN-tutorial-b932c021cb2c415282f182048bac16ff).
-
 A quick start is provided below.
 
-Post any questions as an Github issue or to our google group: https://groups.google.com/g/cryodrgn.
+For any feedback, questions, or bugs, please file a Github issue or email the [list serv](https://groups.google.com/g/cryodrgn).
 
-## New in Version 2.2
+## New in Version 2.x
 
-The official cryoDRGN2 release. This version includes new tools for ab initio reconstruction and significant codebase improvements.
+The official cryoDRGN2 release. Version 2.x includes new tools for ab initio reconstruction and significant codebase improvements.
 
-* New tools for ab initio homogeneous and heterogeneous reconstruction:
+### Version 2.3
+
+* Better documentation of help flags in ab initio reconstruction tools (https://github.com/zhonge/cryodrgn/issues/258)
+* Configuration files switch from config.pkl to human-readable config.yaml files (https://github.com/zhonge/cryodrgn/issues/235)
+* Fix machine stamp in saved .mrc files better compatibility with downstream tools (https://github.com/zhonge/cryodrgn/pull/260)
+* [FIX] Windowing of images in `cryodrgn abinit_homo` turned on by default (consistent with other reconstruction tools) (https://github.com/zhonge/cryodrgn/issues/258)
+* [FIX] Memory usage when using `--preprocessed` and `--ind` (https://github.com/zhonge/cryodrgn/pull/272)
+
+### Version 2.2
+
+* [NEW] Tools for ab initio homogeneous and heterogeneous reconstruction:
 
 ```
 (cryodrgn) $ cryodrgn abinit_homo -h
 (cryodrgn) $ cryodrgn abinit_het -h
 ```
 
-* New utility script for writing cryoSPARC `.cs`/`.csg` files [to faciliate reimporting data into cryoSPARC](https://github.com/zhonge/cryodrgn/issues/150#issuecomment-1465094751):
+* [NEW] Utils function for writing cryoSPARC `.cs`/`.csg` files [to reimport data into cryoSPARC](https://github.com/zhonge/cryodrgn/issues/150#issuecomment-1465094751):
 
 ```
 (cryodrgn) $ cryodrgn_utils write_cs
 ```
 
-* [Improved plotting](https://github.com/zhonge/cryodrgn/issues/219) in cryodrgn analyze
+* [Improved plotting](https://github.com/zhonge/cryodrgn/issues/219) in `cryodrgn analyze`
 
 * Many codebase improvements with open-source software development practices (e.g. continuous integration tests, black, flake8, pyright, logging, and PyPi packaging).
 
-* Note: we are working on a major refactor of data loading for handling large datasets for the next minor version (v2.3). This will entail an API change for the mrc.py library module
+* Note: we are working on a major refactor of data loading for handling large datasets for the next minor version (v2.4). This will entail an API change for the mrc.py library module
 
 
 ### Previous versions

@@ -160,8 +160,8 @@ def add_args(parser):
     )
     group.add_argument(
         "--beta",
-        default=1.0,
-        help="Choice of beta schedule or a constant for KLD weight (default: %(default)s)",
+        default=None,
+        help="Choice of beta schedule or a constant for KLD weight (default: 1/zdim)",
     )
     group.add_argument(
         "--beta-control",
@@ -523,16 +523,19 @@ def train(
     else:
         gen_loss = F.mse_loss(gen_slice(rot), y)
 
-    kld = -0.5 * torch.mean(1 + z_logvar - z_mu.pow(2) - z_logvar.exp())
+    # latent loss
+    kld = torch.mean(
+        -0.5 * torch.sum(1 + z_logvar - z_mu.pow(2) - z_logvar.exp(), dim=1), dim=0
+    )
     if torch.isnan(kld):
         logger.info(z_mu[0])
         logger.info(z_logvar[0])
         raise RuntimeError("KLD is nan")
 
     if beta_control is None:
-        loss = gen_loss + beta * kld / mask.sum()
+        loss = gen_loss + beta * kld / mask.sum().float()
     else:
-        loss = gen_loss + beta_control * (beta - kld) ** 2 / mask.sum()
+        loss = gen_loss + beta_control * (beta - kld) ** 2 / mask.sum().float()
 
     if loss is not None and eq_loss is not None:
         loss += lamb * eq_loss
@@ -728,6 +731,8 @@ def main(args):
         logger.warning("WARNING: No GPUs detected")
 
     # set beta schedule
+    if args.beta is None:
+        args.beta = 1.0 / args.zdim
     try:
         args.beta = float(args.beta)
     except ValueError:

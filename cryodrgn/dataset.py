@@ -243,10 +243,10 @@ class PreprocessedMRCData(data.Dataset):
         self.use_cupy = use_cupy
         if ind is not None:
             # First lazy load to avoid loading the whole dataset
-            particles = load_particles(mrcfile, True, datadir=datadir)
+            particles = load_particles(mrcfile, True)
             if not lazy:
                 # Then, load the desired particles specified by ind
-                particles = pp.array([particles[i].get() for i in ind])
+                particles = np.array([particles[i].get() for i in ind])
             else:
                 particles = particles[ind]
         else:

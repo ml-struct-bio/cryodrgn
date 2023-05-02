@@ -29,11 +29,11 @@ The official cryoDRGN2 release. Version 2.x includes new tools for ab initio rec
 
 ### Version 2.3
 
+* Model configuration files are now saved as human-readable config.yaml files (https://github.com/zhonge/cryodrgn/issues/235)
+* Fix machine stamp in output .mrc files for better compatibility with downstream tools (https://github.com/zhonge/cryodrgn/pull/260)
 * Better documentation of help flags in ab initio reconstruction tools (https://github.com/zhonge/cryodrgn/issues/258)
-* Configuration files switch from config.pkl to human-readable config.yaml files (https://github.com/zhonge/cryodrgn/issues/235)
-* Fix machine stamp in saved .mrc files better compatibility with downstream tools (https://github.com/zhonge/cryodrgn/pull/260)
-* [FIX] Windowing of images in `cryodrgn abinit_homo` turned on by default (consistent with other reconstruction tools) (https://github.com/zhonge/cryodrgn/issues/258)
-* [FIX] Memory usage when using `--preprocessed` and `--ind` (https://github.com/zhonge/cryodrgn/pull/272)
+* [FIX] By default, window images in `cryodrgn abinit_homo` (now consistent with other reconstruction tools) (https://github.com/zhonge/cryodrgn/issues/258)
+* [FIX] Reduce memory usage when using `--preprocessed` and `--ind` (https://github.com/zhonge/cryodrgn/pull/272)
 
 ### Version 2.2
 

@@ -1,5 +1,6 @@
 import argparse
 import os
+import os.path
 import pprint
 import shutil
 from datetime import datetime as dt
@@ -161,7 +162,7 @@ class MyDataset(Dataset):
 
 
 def generate_and_map_volumes(
-    zfile, cfg_pkl, weights, mask_mrc, pca_obj_pkl, landscape_dir, outdir, args
+    zfile, cfg, weights, mask_mrc, pca_obj_pkl, landscape_dir, outdir, args
 ):
     # Sample z
     logger.info(f"Sampling {args.N} particles from {zfile}")
@@ -177,7 +178,7 @@ def generate_and_map_volumes(
     # if torch.cuda.is_available():
     #     torch.set_default_tensor_type(torch.cuda.FloatTensor)  # type: ignore
 
-    cfg = config.update_config_v1(cfg_pkl)
+    cfg = config.update_config_v1(cfg)
     logger.info("Loaded configuration:")
     pprint.pprint(cfg)
 
@@ -294,7 +295,11 @@ def main(args):
     workdir = args.workdir
     zfile = f"{workdir}/z.{E}.pkl"
     weights = f"{workdir}/weights.{E}.pkl"
-    cfg_pkl = f"{workdir}/config.pkl"
+    cfg = (
+        f"{workdir}/config.yaml"
+        if os.path.exists(f"{workdir}/config.yaml")
+        else f"{workdir}/config.pkl"
+    )
     landscape_dir = (
         f"{workdir}/landscape.{E}" if args.landscape_dir is None else args.landscape_dir
     )
@@ -326,7 +331,7 @@ def main(args):
         z = utils.load_pkl(z_sampled_pkl)
     else:
         z, embeddings = generate_and_map_volumes(
-            zfile, cfg_pkl, weights, mask_mrc, pca_obj_pkl, landscape_dir, outdir, args
+            zfile, cfg, weights, mask_mrc, pca_obj_pkl, landscape_dir, outdir, args
         )
         utils.save_pkl(embeddings, embeddings_pkl)
 

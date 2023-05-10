@@ -19,24 +19,58 @@ ICLR 2020, Spotlight presentation, https://arxiv.org/abs/1909.05215
 
 The latest documentation for cryoDRGN is available [here](https://zhonge.github.io/cryodrgn/). This includes an overview and walkthrough of cryoDRGN installation, training and analysis.
 
-A more in-depth manuscript version of the tutorial is available [here](https://www.biorxiv.org/content/10.1101/2022.08.09.503342v1).
-
-Old Documentation pages are available at [notion.so](https://www.notion.so/cryoDRGN-tutorial-b932c021cb2c415282f182048bac16ff).
-
 A quick start is provided below.
 
-Post any questions as an Github issue or to our google group: https://groups.google.com/g/cryodrgn.
+For any feedback, questions, or bugs, please file a Github issue or email the [list serv](https://groups.google.com/g/cryodrgn).
 
-## New in Version 1.x
+## New in Version 2.x
 
-### Version 1.1
+The official cryoDRGN2 release. Version 2.x includes new tools for ab initio reconstruction and significant codebase improvements.
+
+### Version 2.3
+
+* Model configuration files are now saved as human-readable config.yaml files (https://github.com/zhonge/cryodrgn/issues/235)
+* Fix machine stamp in output .mrc files for better compatibility with downstream tools (https://github.com/zhonge/cryodrgn/pull/260)
+* Better documentation of help flags in ab initio reconstruction tools (https://github.com/zhonge/cryodrgn/issues/258)
+* [FIX] By default, window images in `cryodrgn abinit_homo` (now consistent with other reconstruction tools) (https://github.com/zhonge/cryodrgn/issues/258)
+* [FIX] Reduce memory usage when using `--preprocessed` and `--ind` (https://github.com/zhonge/cryodrgn/pull/272)
+
+### Version 2.2
+
+* [NEW] Tools for ab initio homogeneous and heterogeneous reconstruction:
+
+```
+(cryodrgn) $ cryodrgn abinit_homo -h
+(cryodrgn) $ cryodrgn abinit_het -h
+```
+
+* [NEW] Utils function for writing cryoSPARC `.cs`/`.csg` files [to reimport data into cryoSPARC](https://github.com/zhonge/cryodrgn/issues/150#issuecomment-1465094751):
+
+```
+(cryodrgn) $ cryodrgn_utils write_cs
+```
+
+* [Improved plotting](https://github.com/zhonge/cryodrgn/issues/219) in `cryodrgn analyze`
+
+* Many codebase improvements with open-source software development practices (e.g. continuous integration tests, black, flake8, pyright, logging, and PyPi packaging).
+
+* Note: we are working on a major refactor of data loading for handling large datasets for the next minor version (v2.4). This will entail an API change for the mrc.py library module
+
+
+### Previous versions
+
+
+<details><summary>Version 1.1.x</summary>
 
 Updated default parameters for `cryodrgn train_vae` with modified positional encoding, larger model architecture, and accelerated mixed-precision training turned on by default:
 * Mixed precision training is now turned on by default (Use `--no-amp` to revert to single precision training)
 * Encoder/decoder architecture is now 1024x3 by default (Use `--enc-dim 256` and `--dec-dim 256` to revert)
 * Gaussian Fourier featurization for faster training and higher resolution density maps (Use `--pe-type geom_lowf` to revert)
 
-### Version 1.0
+</details>
+
+
+<details><summary>Version 1.0.x</summary>
 
 The official version 1.0 release. This version introduces several new tools for analysis of the reconstructed ensembles, and adds functionality for calling utility scripts with `cryodrgn_utils <command>`.
 
@@ -46,7 +80,7 @@ The official version 1.0 release. This version introduces several new tools for 
 * NEW: `cryodrgn_utils write_star` for converting cryoDRGN particle selections to `.star` files
 * Add pytorch native mixed precision training and fix support for pytorch 1.9+
 
-### Previous versions
+</details>
 
 <details><summary>Version 0.3.4</summary>
 
@@ -414,7 +448,7 @@ Image poses may be *locally* refined using the `--do-pose-sgd` flag. Please cons
 
 ## 6. Analysis of results
 
-Once the model has finished training, the output directory will contain a configuration file `config.pkl`, neural network weights `weights.pkl`, image poses (if performing pose sgd) `pose.pkl`, and the latent embeddings for each image `z.pkl`. The latent embeddings are provided in the same order as the input particles. To analyze these results, use the `cryodrgn analyze` command to visualize the latent space and generate structures. `cryodrgn analyze` will also provide a template jupyter notebook for further interactive visualization and analysis.
+Once the model has finished training, the output directory will contain a configuration file `config.yaml`, neural network weights `weights.pkl`, image poses (if performing pose sgd) `pose.pkl`, and the latent embeddings for each image `z.pkl`. The latent embeddings are provided in the same order as the input particles. To analyze these results, use the `cryodrgn analyze` command to visualize the latent space and generate structures. `cryodrgn analyze` will also provide a template jupyter notebook for further interactive visualization and analysis.
 
 NEW in version 1.0: There are two additional tools `cryodrgn analyze_landscape` and `cryodrgn analyze_landscape_full` for more comprehensive and auomated analyses of cryodrgn results.
 
@@ -497,12 +531,11 @@ Additional structures may be generated using `cryodrgn eval_vol`:
 	  weights               Model weights
 
 	optional arguments:
-	  -h, --help            show this help message and exit
-	  -c PKL, --config PKL  CryoDRGN config.pkl file
-	  -o O                  Output .mrc or directory
-	  --prefix PREFIX       Prefix when writing out multiple .mrc files (default:
-	                        vol_)
-	  -v, --verbose         Increaes verbosity
+	  -h, --help             show this help message and exit
+	  -c YAML, --config YAML CryoDRGN config.yaml file
+	  -o O                   Output .mrc or directory
+	  --prefix PREFIX        Prefix when writing out multiple .mrc files (default: vol_)
+	  -v, --verbose          Increase verbosity
 
 	Specify z values:
 	  -z [Z [Z ...]]        Specify one z-value
@@ -519,7 +552,7 @@ Additional structures may be generated using `cryodrgn eval_vol`:
 	  -d DOWNSAMPLE, --downsample DOWNSAMPLE
 	                        Downsample volumes to this box size (pixels)
 
-	Overwrite architecture hyperparameters in config.pkl:
+	Overwrite architecture hyperparameters in config.yaml:
 	  --norm NORM NORM
 	  -D D                  Box size
 	  --enc-layers QLAYERS  Number of hidden layers
@@ -543,19 +576,19 @@ Additional structures may be generated using `cryodrgn eval_vol`:
 
 To generate a volume at a single value of the latent variable:
 
-    $ cryodrgn eval_vol [YOUR_WORKDIR]/weights.pkl --config [YOUR_WORKDIR]/config.pkl -z ZVALUE -o reconstruct.mrc
+    $ cryodrgn eval_vol [YOUR_WORKDIR]/weights.pkl --config [YOUR_WORKDIR]/config.yaml -z ZVALUE -o reconstruct.mrc
 
 The number of inputs for `-z` must match the dimension of your latent variable.
 
 Or to generate a trajectory of structures from a defined start and ending point, use the `--z-start` and `--z-end` arugments:
 
-    $ cryodrgn eval_vol [YOUR_WORKDIR]/weights.pkl --config [YOUR_WORKDIR]/config.pkl --z-start -3 --z-end 3 -n 20 -o [WORKDIR]/trajectory
+    $ cryodrgn eval_vol [YOUR_WORKDIR]/weights.pkl --config [YOUR_WORKDIR]/config.yaml --z-start -3 --z-end 3 -n 20 -o [WORKDIR]/trajectory
 
 This example generates 20 structures at evenly spaced values between z=[-3,3], assuming a 1-dimensional latent variable model.
 
 Finally, a series of structures can be generated using values of z given in a file specified by the arugment `--zfile`:
 
-    $ cryodrgn eval_vol [WORKDIR]/weights.pkl --config [WORKDIR]/config.pkl --zfile zvalues.txt -o [WORKDIR]/trajectory
+    $ cryodrgn eval_vol [WORKDIR]/weights.pkl --config [WORKDIR]/config.yaml --zfile zvalues.txt -o [WORKDIR]/trajectory
 
 The input to `--zfile` is expected to be an array of dimension (N_volumes x zdim), loaded with np.loadtxt.
 

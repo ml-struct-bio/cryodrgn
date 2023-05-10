@@ -4,9 +4,9 @@ Filter a .star file
 
 import argparse
 import os
-import warnings
 import logging
-from cryodrgn.commands_utils import write_star
+from cryodrgn import starfile
+from cryodrgn import utils
 
 logger = logging.getLogger(__name__)
 
@@ -19,20 +19,11 @@ def add_args(parser):
 
 
 def main(args):
-    warning_msg = "cryodrgn_utils filter_star is deprecated. Please use cryodrgn_utils write_star instead."
-    warnings.warn(warning_msg, DeprecationWarning)
-    logger.warning(f"WARNING: {warning_msg}")
-
-    args = write_star.add_args(argparse.ArgumentParser()).parse_args(
-        [
-            args.input,
-            "-o",
-            args.o,
-            "--ind",
-            args.ind,
-        ]
-    )
-    write_star.main(args)
+    s = starfile.Starfile.load(args.input)
+    ind = utils.load_pkl(args.ind)
+    df = s.df.loc[ind]
+    s = starfile.Starfile(headers=None, df=df)
+    s.write(args.o)
 
 
 if __name__ == "__main__":

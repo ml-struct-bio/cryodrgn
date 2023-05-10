@@ -4,6 +4,7 @@ Pipeline to analyze cryoDRGN volume distribution
 
 import argparse
 import os
+import os.path
 from collections import Counter
 from datetime import datetime as dt
 import logging
@@ -19,6 +20,7 @@ from sklearn.decomposition import PCA
 from cryodrgn import analysis, utils
 from cryodrgn.mrc import MRCFile
 from cryodrgn.source import ImageSource
+import cryodrgn.config
 
 logger = logging.getLogger(__name__)
 
@@ -465,7 +467,11 @@ def main(args):
     workdir = args.workdir
     zfile = f"{workdir}/z.{E}.pkl"
     weights = f"{workdir}/weights.{E}.pkl"
-    config = f"{workdir}/config.pkl"
+    config = (
+        f"{workdir}/config.yaml"
+        if os.path.exists(f"{workdir}/config.yaml")
+        else f"{workdir}/config.pkl"
+    )
     outdir = f"{workdir}/landscape.{E}"
 
     if args.outdir:
@@ -520,7 +526,7 @@ def main(args):
 
     logger.info("Analyzing volumes...")
     # get particle indices if the dataset was originally filtered
-    c = utils.load_pkl(config)
+    c = cryodrgn.config.load(config)
     particle_ind = (
         utils.load_pkl(c["dataset_args"]["ind"])
         if c["dataset_args"]["ind"] is not None

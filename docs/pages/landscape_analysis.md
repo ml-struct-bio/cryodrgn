@@ -4,11 +4,11 @@ CryoDRGN is a machine learning system for heterogenous cryo-EM reconstruction. I
 
 Landscape analysis is implemented in the executables, `cryodrgn analyze_landscape` and `cryodrgn analyze_landscape_full`  available in version 1.0+ of the cryoDRGN [software](https://github.com/zhonge/cryodrgn). The analysis pipeline is fully automated, though there are many command line arguments that can be experimented with, and we provide a jupyter notebook for interactive visualization.
 
-A description of the method is found in [Chapter 6 of Ellen Zhong’s thesis](https://people.csail.mit.edu/zhonge/zhong-phd-csb-2022.pdf).
+A description of the method is found in [Chapter 6 of Ellen Zhong’s thesis](https://www.cs.princeton.edu/~zhonge/papers/zhong-phd-csb-2022.pdf).
 
-![Overview of the cryodrgn landscape_analysis pipeline.](assets/landscape_analysis_overview.png)
+![Overview of the cryodrgn landscape analysis pipeline.](assets/landscape_analysis_overview.png)
 
-*Overview of the cryodrgn landscape_analysis pipeline. We show the general schematic (top) and its application to a dataset of the ClpXP protease from [Fei et al 2020](https://elifesciences.org/articles/61496) (bottom).*
+*Overview of the `cryodrgn analyze_landscape` pipeline. We show the general schematic (top) and its application to a dataset of the ClpXP protease from [Fei et al. 2020](https://elifesciences.org/articles/61496) (bottom).*
 
 ## 1. Quickstart
 

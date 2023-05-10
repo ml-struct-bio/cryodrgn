@@ -18,7 +18,11 @@ logger = logging.getLogger(__name__)
 def add_args(parser):
     parser.add_argument("weights", help="Model weights")
     parser.add_argument(
-        "-c", "--config", metavar="PKL", required=True, help="CryoDRGN config.pkl file"
+        "-c",
+        "--config",
+        metavar="YAML",
+        required=True,
+        help="CryoDRGN config.yaml file",
     )
     parser.add_argument(
         "-o", type=os.path.abspath, required=True, help="Output .mrc or directory"
@@ -73,7 +77,7 @@ def add_args(parser):
     )
 
     group = parser.add_argument_group(
-        "Overwrite architecture hyperparameters in config.pkl"
+        "Overwrite architecture hyperparameters in config.yaml"
     )
     group.add_argument("--norm", nargs=2, type=float)
     group.add_argument("-D", type=int, help="Box size")

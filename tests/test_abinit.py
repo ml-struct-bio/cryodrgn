@@ -36,6 +36,7 @@ def test_abinit_het_and_backproject():
         "8",
         "--num-epochs",
         "1",
+        "--no-window",
     ]
 
     args = abinit_het.add_args(argparse.ArgumentParser()).parse_args(

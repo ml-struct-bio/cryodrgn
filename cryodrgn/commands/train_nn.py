@@ -25,6 +25,7 @@ from cryodrgn.mrc import MRCFile
 from cryodrgn.lattice import Lattice
 from cryodrgn.pose import PoseTracker
 from cryodrgn.models import DataParallelDecoder, Decoder
+import cryodrgn.config
 
 logger = logging.getLogger(__name__)
 
@@ -150,7 +151,9 @@ def add_args(parser):
     )
 
     group = parser.add_argument_group("Pose SGD")
-    group.add_argument("--do-pose-sgd", action="store_true", help="Refine poses")
+    group.add_argument(
+        "--do-pose-sgd", action="store_true", help="Refine poses with gradient descent"
+    )
     group.add_argument(
         "--pretrain",
         type=int,
@@ -167,7 +170,7 @@ def add_args(parser):
         "--pose-lr",
         type=float,
         default=1e-4,
-        help="Learning rate in Adam optimizer (default: %(default)s)",
+        help="Learning rate for pose optimizer (default: %(default)s)",
     )
 
     group = parser.add_argument_group("Network Architecture")
@@ -206,7 +209,7 @@ def add_args(parser):
     group.add_argument(
         "--pe-dim",
         type=int,
-        help="Num sinusoid features in positional encoding (default: D/2)",
+        help="Num frequencies in positional encoding (default: D/2)",
     )
     group.add_argument(
         "--domain",
@@ -224,7 +227,7 @@ def add_args(parser):
         "--feat-sigma",
         type=float,
         default=0.5,
-        help="Scale for random Gaussian features",
+        help="Scale for random Gaussian features (default: %(default)s)",
     )
 
     return parser
@@ -328,10 +331,7 @@ def save_config(args, dataset, lattice, model, out_config):
         dataset_args=dataset_args, lattice_args=lattice_args, model_args=model_args
     )
     config["seed"] = args.seed
-    with open(out_config, "wb") as f:
-        pickle.dump(config, f)
-        meta = dict(time=dt.now(), cmd=sys.argv, version=cryodrgn.__version__)
-        pickle.dump(meta, f)
+    cryodrgn.config.save(config, out_config)
 
 
 def get_latest(args):
@@ -461,7 +461,7 @@ def main(args):
     Apix = ctf_params[0, 0] if ctf_params is not None else 1
 
     # save configuration
-    out_config = f"{args.outdir}/config.pkl"
+    out_config = f"{args.outdir}/config.yaml"
     save_config(args, data, lattice, model, out_config)
 
     # Mixed precision training with AMP

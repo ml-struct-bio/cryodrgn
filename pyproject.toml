@@ -18,9 +18,10 @@ classifiers = [
 ]
 dependencies = [
     "torch>=1.0.0",
-    "pandas",
+    "pandas<2",
     "numpy",
     "matplotlib",
+    "pyyaml",
     "scipy>=1.3.1",
     "scikit-learn",
     "seaborn<0.12",
@@ -36,10 +37,10 @@ dev = [
     "build",
     "myst-parser",
     "pre-commit",
-    "pyright",
+    "pyright==1.1.300",
     "pytest>=6",
     "sphinx",
-    "sphinx-book-theme",
+    "sphinx-rtd-theme",
     "twine"
 ]
 

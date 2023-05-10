@@ -7,7 +7,6 @@ from typing import Optional, Union
 import numpy as np
 import torch
 from cryodrgn.source import ImageSource
-from cryodrgn import __version__
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +27,7 @@ DTYPE_FOR_MODE = {
 }  # RBG values
 MODE_FOR_DTYPE = {vv: kk for kk, vv in DTYPE_FOR_MODE.items()}
 
-MACHST_OFFSET = 212
+MACHST_OFFSET = 213
 MACHST_FOR_ENDIANNESS = {"<": b"\x44\x44\x00\x00", ">": b"\x11\x11\x00\x00"}
 ENDIANNESS_FOR_MACHST = {v: k for k, v in MACHST_FOR_ENDIANNESS.items()}
 
@@ -36,12 +35,7 @@ ENDIANNESS_FOR_MACHST = {v: k for k, v in MACHST_FOR_ENDIANNESS.items()}
 class MRCHeader:
     """MRC header class"""
 
-    # Class attribute denoting endianness (machst field in MRC file format spec)
-    #   '<' = little-endian; '>' = big-endian; '=' = machine-native
-    # Note that instances of this class may override it on '.parse()' classmethod invocation,
-    # depending on what they actually find in the MRC file header at MACHST_OFFSET.
-    endianness = "="
-
+    ENDIANNESS = "="
     FIELDS = [
         "nx",
         "ny",
@@ -96,15 +90,11 @@ class MRCHeader:
     ]  # int, char[10][80]
     FSTR = "3ii3i3i3f3f3i3f2ih10xi16x2h20x2i6h6f3f4s4sfi800s"
 
-    def __init__(self, header_values, extended_header=b"", endianness="="):
+    def __init__(self, header_values, extended_header=b""):
         self.fields = OrderedDict(zip(self.FIELDS, header_values))
         self.extended_header = extended_header
         self.D = self.fields["nx"]
-        assert endianness in ("=", "<", ">")
-        self.endianness = endianness
-        self.dtype = np.dtype(DTYPE_FOR_MODE[self.fields["mode"]]).newbyteorder(
-            endianness
-        )
+        self.dtype = DTYPE_FOR_MODE[self.fields["mode"]]
 
     def __str__(self):
         return f"Header: {self.fields}\nExtended header: {self.extended_header}"
@@ -112,25 +102,15 @@ class MRCHeader:
     @classmethod
     def parse(cls, fname):
         with open(fname, "rb") as f:
+
             f.seek(MACHST_OFFSET)
-            # Look for valid machst field; assume '=' if invalid
-            machst = f.read(4)
-            endianness = ENDIANNESS_FOR_MACHST.get(machst, "=")
+            cls.ENDIANNESS = ENDIANNESS_FOR_MACHST.get(f.read(2), "=")
 
             f.seek(0)
             STRUCT = struct.Struct(
-                endianness + cls.FSTR
+                cls.ENDIANNESS + cls.FSTR
             )  # prepend endianness specifier to python struct specification
-            header = cls(STRUCT.unpack(f.read(1024)), endianness=endianness)
-
-            # Older versions of MRCHeader in cryoDRGN had incorrect cmap and stamp fields.
-            # Fix these before proceeding.
-            header.fields["cmap"] = b"MAP "
-            if header.endianness == "=":
-                endianness = {"little": "<", "big": ">"}[sys.byteorder]
-            else:
-                endianness = header.endianness
-            header.fields["stamp"] = MACHST_FOR_ENDIANNESS[endianness]
+            header = cls(STRUCT.unpack(f.read(1024)))
 
             extbytes = header.fields["next"]
             extended_header = f.read(extbytes)
@@ -213,14 +193,13 @@ class MRCHeader:
             b"MAP ",
             MACHST_FOR_ENDIANNESS["<" if sys.byteorder == "little" else ">"],
             rms,  # rms
-            1,  # nlabl
-            ("cryoDRGN " + __version__[:80]).ljust(80, " ").encode("ascii")
-            + b"\x00" * 720,  # Use one 80-char label, leave remaining 9 blank
+            0,  # nlabl
+            b"\x00" * 800,  # labels
         ]
         return cls(vals)
 
     def write(self, fh):
-        STRUCT = struct.Struct(self.endianness + self.FSTR)
+        STRUCT = struct.Struct(self.FSTR)
         buf = STRUCT.pack(*list(self.fields.values()))
         fh.write(buf)
         fh.write(self.extended_header)
@@ -256,24 +235,36 @@ class MRCFile:
         transform_fn=None,
         chunksize: int = 1000,
     ):
-        if is_vol is None:
-            is_vol = (
-                len(set(array.shape)) == 1
-            )  # Guess whether data is vol or image stack
-        header = header or MRCHeader.make_default_header(
-            nz=None,
-            ny=None,
-            nx=None,
-            data=array,
-            is_vol=is_vol,
-            Apix=Apix,
-            xorg=xorg,
-            yorg=yorg,
-            zorg=zorg,
-        )
+        if header is None:
+            if is_vol is None:
+                is_vol = (
+                    len(set(array.shape)) == 1
+                )  # Guess whether data is vol or image stack
+            header = MRCHeader.make_default_header(
+                nz=None,
+                ny=None,
+                nx=None,
+                data=array,
+                is_vol=is_vol,
+                Apix=Apix,
+                xorg=xorg,
+                yorg=yorg,
+                zorg=zorg,
+            )
+        else:
+            # Older versions of MRCHeader had incorrect cmap and stamp fields.
+            # Fix these before writing to disk.
+            header.fields["cmap"] = b"MAP "
+            if header.ENDIANNESS == "=":
+                endianness = {"little": "<", "big": ">"}.get(sys.byteorder)
+            else:
+                endianness = header.ENDIANNESS
+            header.fields["stamp"] = MACHST_FOR_ENDIANNESS[endianness]
 
         if transform_fn is None:
             transform_fn = lambda chunk, indices: chunk  # noqa: E731
+
+        new_dtype = np.dtype(header.dtype).newbyteorder(header.ENDIANNESS)
 
         os.makedirs(os.path.dirname(filename), exist_ok=True)
         with open(filename, "wb") as f:
@@ -283,13 +274,13 @@ class MRCFile:
                     logger.debug(f"Processing chunk {i}")
                     chunk = transform_fn(chunk, indices)
                     if isinstance(chunk, torch.Tensor):
-                        chunk = np.array(chunk.cpu()).astype(np.float32)
+                        chunk = np.array(chunk.cpu()).astype(new_dtype)
                     f.write(chunk.tobytes())
             else:
                 indices = np.arange(array.shape[0])
                 array = transform_fn(array, indices)
                 if isinstance(array, torch.Tensor):
-                    array = np.array(array.cpu()).astype(np.float32)
+                    array = np.array(array.cpu()).astype(new_dtype)
 
                 assert isinstance(array, np.ndarray)
                 f.write(array.tobytes())

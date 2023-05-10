@@ -105,4 +105,4 @@ class ImageDataset(data.Dataset):
                 f"ImageDataset returning images for {len(index)} indices ({index[0]}..{index[-1]})"
             )
 
-        return particles, tilt.to, index
+        return particles, tilt, index

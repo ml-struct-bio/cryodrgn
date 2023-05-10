@@ -3,6 +3,7 @@ import multiprocessing as mp
 import logging
 import torch
 from torch.utils import data
+from typing import Union
 from cryodrgn import fft
 from cryodrgn.source import ImageSource
 from cryodrgn.utils import window_mask
@@ -24,7 +25,7 @@ class ImageDataset(data.Dataset):
         datadir=None,
         window_r=0.85,
         max_threads=16,
-        device: str = "cpu",
+        device: Union[str, torch.device] = "cpu",
     ):
         assert not keepreal, "Not implemented yet"
         datadir = datadir or ""

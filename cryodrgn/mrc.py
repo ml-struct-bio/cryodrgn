@@ -256,7 +256,7 @@ class MRCFile:
             # Fix these before writing to disk.
             header.fields["cmap"] = b"MAP "
             if header.ENDIANNESS == "=":
-                endianness = {"little": "<", "big": ">"}.get(sys.byteorder)
+                endianness = {"little": "<", "big": ">"}[sys.byteorder]
             else:
                 endianness = header.ENDIANNESS
             header.fields["stamp"] = MACHST_FOR_ENDIANNESS[endianness]
@@ -264,7 +264,7 @@ class MRCFile:
         if transform_fn is None:
             transform_fn = lambda chunk, indices: chunk  # noqa: E731
 
-        new_dtype = np.dtype(header.dtype).newbyteorder(header.ENDIANNESS)
+        new_dtype = np.dtype(header.dtype).newbyteorder(header.ENDIANNESS)  # type: ignore
 
         os.makedirs(os.path.dirname(filename), exist_ok=True)
         with open(filename, "wb") as f:

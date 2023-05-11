@@ -89,7 +89,6 @@ def add_args(parser):
 
 
 def main(args):
-
     if os.path.exists(args.o):
         logger.warning(f"Warning: {args.o} already exists. Overwriting.")
     os.makedirs(os.path.dirname(args.o), exist_ok=True)

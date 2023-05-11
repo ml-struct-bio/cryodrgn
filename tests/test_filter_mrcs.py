@@ -17,7 +17,6 @@ def mrcs_data():
 
 
 def test_filter_mrcs(mrcs_data):
-
     os.makedirs("output", exist_ok=True)
 
     # Generate 15 random indices into the input mrcs

@@ -102,7 +102,6 @@ class MRCHeader:
     @classmethod
     def parse(cls, fname):
         with open(fname, "rb") as f:
-
             f.seek(MACHST_OFFSET)
             cls.ENDIANNESS = ENDIANNESS_FOR_MACHST.get(f.read(2), "=")
 

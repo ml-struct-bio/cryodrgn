@@ -241,7 +241,6 @@ class MRCFileSource(ImageSource):
         data: Optional[np.ndarray] = None,
         tgt_indices: Optional[np.ndarray] = None,
     ) -> np.ndarray:
-
         with open(self.mrcfile_path) as f:
             if data is None:
                 data = np.zeros((len(indices), self.D, self.D), dtype=self.dtype)
@@ -259,7 +258,7 @@ class MRCFileSource(ImageSource):
 
             assert isinstance(tgt_indices, np.ndarray)
 
-            for (index, tgt_index) in zip(indices, tgt_indices):
+            for index, tgt_index in zip(indices, tgt_indices):
                 f.seek(self.start)
                 offset = index * self.stride
                 # 'offset' in the call below is w.r.t the current position of f
@@ -279,7 +278,6 @@ class TxtFileSource(ImageSource):
         indices: Optional[np.ndarray] = None,
         n_workers: int = 1,
     ):
-
         _paths = []
         filepath_dir = os.path.dirname(filepath)
         for line in open(filepath).readlines():

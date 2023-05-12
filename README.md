@@ -274,7 +274,7 @@ When the input images (.mrcs), poses (.pkl), and CTF parameters (.pkl) have been
 	                          [--log-interval LOG_INTERVAL] [-v] [--seed SEED]
 	                          [--ind PKL] [--uninvert-data] [--no-window]
 	                          [--window-r WINDOW_R] [--datadir DATADIR] [--lazy]
-	                          [--preprocessed] [--max-threads MAX_THREADS]
+	                          [--max-threads MAX_THREADS]
 	                          [--tilt TILT] [--tilt-deg TILT_DEG] [-n NUM_EPOCHS]
 	                          [-b BATCH_SIZE] [--wd WD] [--lr LR] [--beta BETA]
 	                          [--beta-control BETA_CONTROL] [--norm NORM NORM]
@@ -320,8 +320,6 @@ When the input images (.mrcs), poses (.pkl), and CTF parameters (.pkl) have been
 	                        paths from a .star or .cs file
 	  --lazy                Lazy loading if full dataset is too large to fit in
 	                        memory (Should copy dataset to SSD)
-	  --preprocessed        Skip preprocessing steps if input data is from
-	                        cryodrgn preprocess_mrcs
 	  --max-threads MAX_THREADS
 	                        Maximum number of CPU cores for FFT parallelization
 	                        (default: 16)
@@ -620,7 +618,7 @@ usage: cryodrgn abinit_het [-h] -o OUTDIR --zdim ZDIM [--ctf pkl]
                            [--log-interval LOG_INTERVAL] [-v] [--seed SEED]
                            [--ind PKL] [--uninvert-data] [--no-window]
                            [--window-r WINDOW_R] [--datadir DATADIR]
-                           [--lazy-single] [--lazy] [--preprocessed]
+                           [--lazy-single] [--lazy]
                            [--max-threads MAX_THREADS] [--tilt TILT]
                            [--tilt-deg TILT_DEG] [--enc-only] [-n NUM_EPOCHS]
                            [-b BATCH_SIZE] [--wd WD] [--lr LR] [--beta BETA]
@@ -680,8 +678,6 @@ Dataset loading:
   --lazy-single         Lazy loading if full dataset is too large to fit in
                         memory
   --lazy                Memory efficient training by loading data in chunks
-  --preprocessed        Skip preprocessing steps if input data is from
-                        cryodrgn preprocess_mrcs
   --max-threads MAX_THREADS
                         Maximum number of CPU cores for FFT parallelization
                         (default: 16)

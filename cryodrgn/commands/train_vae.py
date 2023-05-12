@@ -111,11 +111,6 @@ def add_args(parser):
         help="Lazy loading if full dataset is too large to fit in memory",
     )
     group.add_argument(
-        "--preprocessed",
-        action="store_true",
-        help="Skip preprocessing steps if input data is from cryodrgn preprocess_mrcs",
-    )
-    group.add_argument(
         "--num-workers-per-gpu",
         type=int,
         default=4,

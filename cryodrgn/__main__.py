@@ -27,14 +27,11 @@ def main():
     import cryodrgn.commands.parse_pose_csparc
     import cryodrgn.commands.parse_pose_star
     import cryodrgn.commands.pc_traversal
-    import cryodrgn.commands.preprocess
     import cryodrgn.commands.train_nn
     import cryodrgn.commands.train_vae
     import cryodrgn.commands.view_config
 
     modules = [
-        cryodrgn.commands.downsample,
-        cryodrgn.commands.preprocess,
         cryodrgn.commands.downsample,
         cryodrgn.commands.parse_pose_csparc,
         cryodrgn.commands.parse_pose_star,

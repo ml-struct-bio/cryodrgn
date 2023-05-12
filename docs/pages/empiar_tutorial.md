@@ -371,7 +371,7 @@ When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl
     (cryodrgn) $ cryodrgn train_vae -h
     usage: cryodrgn train_vae [-h] -o OUTDIR --zdim ZDIM --poses POSES [--ctf pkl] [--load WEIGHTS.PKL] [--checkpoint CHECKPOINT]
                               [--log-interval LOG_INTERVAL] [-v] [--seed SEED] [--ind PKL] [--uninvert-data] [--no-window] [--window-r WINDOW_R]
-                              [--datadir DATADIR] [--lazy] [--preprocessed] [--max-threads MAX_THREADS] [--tilt TILT] [--tilt-deg TILT_DEG] [-n NUM_EPOCHS]
+                              [--datadir DATADIR] [--lazy] [--max-threads MAX_THREADS] [--tilt TILT] [--tilt-deg TILT_DEG] [-n NUM_EPOCHS]
                               [-b BATCH_SIZE] [--wd WD] [--lr LR] [--beta BETA] [--beta-control BETA_CONTROL] [--norm NORM NORM] [--amp] [--multigpu]
                               [--do-pose-sgd] [--pretrain PRETRAIN] [--emb-type {s2s2,quat}] [--pose-lr POSE_LR] [--enc-layers QLAYERS] [--enc-dim QDIM]
                               [--encode-mode {conv,resid,mlp,tilt}] [--enc-mask ENC_MASK] [--use-real] [--dec-layers PLAYERS] [--dec-dim PDIM]
@@ -406,7 +406,6 @@ When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl
       --window-r WINDOW_R   Windowing radius (default: 0.85)
       --datadir DATADIR     Path prefix to particle stack if loading relative paths from a .star or .cs file
       --lazy                Lazy loading if full dataset is too large to fit in memory (Should copy dataset to SSD)
-      --preprocessed        Skip preprocessing steps if input data is from cryodrgn preprocess_mrcs
       --max-threads MAX_THREADS
                             Maximum number of CPU cores for FFT parallelization (default: 16)
 

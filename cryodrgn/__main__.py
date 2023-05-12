@@ -35,7 +35,6 @@ def main():
     modules = [
         cryodrgn.commands.downsample,
         cryodrgn.commands.preprocess,
-        cryodrgn.commands.downsample,
         cryodrgn.commands.parse_pose_csparc,
         cryodrgn.commands.parse_pose_star,
         cryodrgn.commands.parse_ctf_csparc,

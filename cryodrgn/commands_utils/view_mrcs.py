@@ -4,7 +4,7 @@ import argparse
 import os
 import logging
 import matplotlib.pyplot as plt
-from cryodrgn import analysis, dataset, mrc, utils
+from cryodrgn import analysis, dataset, utils
 
 logger = logging.getLogger(__name__)
 

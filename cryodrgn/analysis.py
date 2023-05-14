@@ -551,14 +551,23 @@ def ipy_plot_interactive(df, opacity=0.3):
     return widget, f, t
 
 
-def plot_projections(imgs, labels=None):
-    fig, axes = plt.subplots(nrows=3, ncols=3, figsize=(10, 10))
+def plot_projections(imgs, labels=None, max_imgs=25):
+    if len(imgs) > max_imgs:
+        imgs = imgs[:max_imgs]
+    N = len(imgs)
+    nrows = int(np.floor(N**0.5))
+    ncols = int(np.ceil(N**0.5))
+    fig, axes = plt.subplots(
+        nrows=nrows, ncols=ncols, figsize=(1.5 * ncols, 1.5 * nrows)
+    )
     axes = axes.ravel()
-    for i in range(min(len(imgs), 9)):
+    for i in range(N):
         axes[i].imshow(imgs[i], cmap="Greys_r")
-        axes[i].axis("off")
         if labels is not None:
             axes[i].set_title(labels[i])
+    for i in range(nrows * ncols):
+        axes[i].axis("off")
+    plt.tight_layout()
     return fig, axes
 
 

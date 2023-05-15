@@ -128,7 +128,7 @@ def main(args):
 
     if lazy:
         assert isinstance(images, List)
-        original_D = images[0].get().shape[0]
+        original_D = images[0].get().shape[0]  # type: ignore
     else:
         assert isinstance(images, np.ndarray)
         original_D = images.shape[-1]

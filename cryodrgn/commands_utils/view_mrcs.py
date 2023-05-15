@@ -36,8 +36,8 @@ def main(args):
         ind = utils.load_pkl(args.ind).astype(int)
         stack = [stack[i] for i in ind]
 
-    logger.info("{} {}x{} images".format(len(stack), *stack[0].get().shape))
-    stack = [stack[x].get() for x in range(25)]
+    logger.info("{} {}x{} images".format(len(stack), *stack[0].get().shape))  # type: ignore
+    stack = [stack[x].get() for x in range(25)]  # type: ignore
     if args.invert:
         stack = [-1 * x for x in stack]
     analysis.plot_projections(stack)

@@ -19,7 +19,7 @@ def main(args):
     x = dataset.load_particles(args.input, lazy=True)
     logger.info(f"Loaded {len(x)} particles")
     ind = utils.load_pkl(args.ind)
-    x = np.array([x[i].get() for i in ind])
+    x = np.array([x[i].get() for i in ind])  # type: ignore
     logger.info(f"New dimensions: {x.shape}")
     mrc.write(args.o, x)
 

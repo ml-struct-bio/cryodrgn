@@ -65,7 +65,7 @@ def symmetrize_ht(ht):
     n = ht.shape[0]
 
     D = ht.shape[-1]
-    sym_ht = torch.empty((n, D + 1, D + 1), dtype=ht.dtype)
+    sym_ht = torch.empty((n, D + 1, D + 1), dtype=ht.dtype, device=ht.device)
     sym_ht[:, 0:-1, 0:-1] = ht
 
     assert D % 2 == 0

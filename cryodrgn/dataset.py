@@ -325,11 +325,19 @@ class PreprocessedMRCData(data.Dataset):
 
     def __init__(self, mrcfile, norm=None, ind=None, lazy=False, use_cupy=False):
         self.use_cupy = use_cupy
-        particles = load_particles(mrcfile, lazy=lazy)
-        self.lazy = lazy
+        pp = cp if (self.use_cupy and cp is not None) else np
+        
         if ind is not None:
-            particles = particles[ind]
-
+            # First lazy load to avoid loading the whole dataset
+            particles = load_particles(mrcfile, True)
+            if not lazy:
+                # Then, load the desired particles specified by ind
+                particles = pp.array([particles[i].get() for i in ind])
+            else:
+                particles = particles[ind]
+        else:
+            particles = load_particles(mrcfile, lazy=lazy)
+        self.lazy = lazy
         self.particles = particles
         self.N = len(particles)
         if self.lazy:

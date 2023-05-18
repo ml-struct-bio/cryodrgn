@@ -658,8 +658,6 @@ def main(args):
         assert args.encode_mode == "tilt"
         if args.lazy:
             raise NotImplementedError
-        if args.preprocessed:
-            raise NotImplementedError
         data = dataset.TiltSeriesData(
             args.particles,
             args.ntilts,

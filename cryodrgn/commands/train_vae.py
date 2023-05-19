@@ -111,12 +111,18 @@ def add_args(parser):
         help="Lazy loading if full dataset is too large to fit in memory",
     )
     group.add_argument(
+        '--shuffler-size',
+        type=int,
+        default=0,
+        help="If non-zero, will use a data shuffler for faster lazy data loading."
+    )
+    group.add_argument(
         "--preprocessed",
         action="store_true",
         help="Skip preprocessing steps if input data is from cryodrgn preprocess_mrcs",
     )
     group.add_argument(
-        "--num-workers-per-gpu",
+        "--num-workers",
         type=int,
         default=4,
         help="Number of num_workers of Dataloader (default: %(default)s)",
@@ -456,6 +462,8 @@ def eval_z(
         batch_size=None,
     )
 
+
+
     for i, minibatch in enumerate(data_generator):
         ind = minibatch[-1]
         y = minibatch[0].to(device)
@@ -767,13 +775,10 @@ def main(args):
         start_epoch = 0
 
     # parallelize
-    num_workers_per_gpu = args.num_workers_per_gpu
+    num_workers = args.num_workers
     if args.multigpu and torch.cuda.device_count() > 1:
         logger.info(f"Using {torch.cuda.device_count()} GPUs!")
         args.batch_size *= torch.cuda.device_count()
-        cpu_count = os.cpu_count() or 1
-        if num_workers_per_gpu * torch.cuda.device_count() > cpu_count:
-            num_workers_per_gpu = max(1, cpu_count // torch.cuda.device_count())
         logger.info(f"Increasing batch size to {args.batch_size}")
         model = DataParallel(model)
     elif args.multigpu:
@@ -781,16 +786,28 @@ def main(args):
             f"WARNING: --multigpu selected, but {torch.cuda.device_count()} GPUs detected"
         )
 
+    cpu_count = os.cpu_count() or 1
+    if num_workers > cpu_count:
+        logger.warning(f"Reducing workers to {cpu_count} cpus")
+        num_workers = cpu_count
+
     # training loop
-    data_generator = DataLoader(
-        data,
-        num_workers=num_workers_per_gpu,
-        sampler=BatchSampler(
-            RandomSampler(data), batch_size=args.batch_size, drop_last=False
-        ),
-        batch_size=None,
-        multiprocessing_context="spawn",
-    )
+    if args.shuffler_size > 0:
+        assert args.lazy, "Only enable a data shuffler for lazy loading"
+        data_generator = dataset.DataShuffler(
+            data,
+            batch_size=args.batch_size,
+            buffer_size=args.shuffler_size)
+    else:
+        data_generator = DataLoader(
+            data,
+            num_workers=num_workers,
+            sampler=BatchSampler(
+                RandomSampler(data), batch_size=args.batch_size, drop_last=False
+            ),
+            batch_size=None,
+            multiprocessing_context="spawn" if num_workers > 0 else None,
+        )
 
     num_epochs = args.num_epochs
     epoch = None

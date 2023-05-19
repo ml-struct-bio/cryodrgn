@@ -162,7 +162,14 @@ class ImageSource:
                 indices = np.array(self.indices[indices])
             images = self._images(indices)
 
-        return torch.tensor(images.astype(self.dtype))
+        return torch.from_numpy(images.astype(self.dtype))
+
+    def get_slice(self, start: int, stop: int) -> np.ndarray:
+        """Return the slice of the dataset from start to stop.
+        
+        Returns: A tensor of size [stop - start, D, D]
+        """
+        raise NotImplementedError("Subclasses must implement this")
 
     def _images(self, indices: np.ndarray) -> np.ndarray:
         """Subclasses must specify how to actually get the images at specific indices.
@@ -234,6 +241,17 @@ class MRCFileSource(ImageSource):
             lazy=lazy,
             indices=indices,
         )
+
+    def get_slice(self, start: int, stop: int) -> np.ndarray:
+        with open(self.mrcfile_path) as f:
+            f.seek(self.start)
+            offset = start * self.stride
+            n = stop - start
+            # 'offset' in the call below is w.r.t the current position of f
+            ret = np.fromfile(
+                f, dtype=self.dtype, count=self.size * n, offset=offset
+            ).reshape(n, self.ny, self.nx)
+            return ret
 
     def _images(
         self,
@@ -312,7 +330,19 @@ class TxtFileSource(ImageSource):
             D=self.ny, n=self.nz, n_workers=n_workers, lazy=lazy, indices=indices
         )
 
-    def _images(self, indices: np.ndarray):
+    def get_slice(self, start: int, stop: int) -> np.ndarray:
+        ret = []
+        for source, (s_start, s_stop) in zip(self.sources, self.source_intervals):
+            int_start = max(s_start, start) - s_start
+            int_stop = min(s_stop, stop) - s_start
+            if int_start < int_stop: # we've got stuff in this interval
+                tmp = source.get_slice(int_start, int_stop)
+                ret.append(tmp)
+        ret = np.concatenate(ret, axis=0) if len(ret) > 1 else ret[0]
+        assert len(ret) == stop - start, (len(ret), start, stop)
+        return ret
+
+    def _images(self, indices: np.ndarray) -> np.ndarray:
         def load_single_mrcs(
             data: np.ndarray,
             src: MRCFileSource,
@@ -322,7 +352,7 @@ class TxtFileSource(ImageSource):
             src._images(indices=src_indices, data=data, tgt_indices=tgt_indices)
 
         data = np.zeros((len(indices), self.D, self.D), dtype=self.dtype)
-
+            
         with futures.ThreadPoolExecutor(self.n_workers) as executor:
             to_do = []
             for source_i, (source_start_index, source_end_index) in enumerate(
@@ -406,6 +436,28 @@ class _MRCDataFrameSource(ImageSource):
 
         return data
 
+    def get_slice(self, start: int, stop: int) -> np.ndarray:
+        # FIXME: I'm not sure if this is going to be too slow due to the panda ops and
+        # constructing MRCFileSource's every time.
+        # I've only profiled the TxtFileSource dataset.
+        batch_df = self.df.iloc[start:stop].reset_index(drop=True)
+        groups = batch_df.groupby("__mrc_filepath")
+        if len(groups) > 2:
+            raise ValueError("You're doing something dumb... either your particle list is not contiguous or you've split it into too small files.")
+        ret = []
+        for filepath, group in groups:
+            n = len(group)
+            src = MRCFileSource(str(filepath))
+            idx = group["__mrc_index"].to_numpy()
+            start = idx[0]
+            if not all(idx == np.arange(start, start + n)):
+                raise ValueError("Can't efficiently load a slice of a non-contiguous particle list")
+            ret.append(src.get_slice(start, start + n))
+        ret = np.concatenate(ret, axis=0) if len(ret) > 1 else ret[0]
+        assert len(ret) == stop - start, (len(ret), start, stop)
+        return ret
+        
+        
 
 class StarfileSource(_MRCDataFrameSource):
     def __init__(

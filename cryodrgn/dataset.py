@@ -30,7 +30,7 @@ class ImageDataset(data.Dataset):
         assert not keepreal, "Not implemented yet"
         datadir = datadir or ""
         self.src = ImageSource.from_file(
-            mrcfile, lazy=lazy, datadir=datadir, indices=ind, n_workers=max_threads
+            mrcfile, lazy=lazy, datadir=datadir, indices=ind, n_workers=1
         )
         if tilt_mrcfile is None:
             self.tilt_src = None

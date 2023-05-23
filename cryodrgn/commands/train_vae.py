@@ -815,8 +815,8 @@ def main(args):
         kld_accum = 0
         batch_it = 0
         for i, minibatch in enumerate(
-            data_generator
-        ):  # minibatch: [y, ind]  # type: ignore
+            data_generator  # type: ignore
+        ):  # minibatch: [y, ind]
             ind = minibatch[-1].to(device)
             y = minibatch[0].to(device)
             yt = minibatch[1].to(device) if tilt is not None else None

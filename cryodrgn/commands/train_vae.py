@@ -111,10 +111,10 @@ def add_args(parser):
         help="Lazy loading if full dataset is too large to fit in memory",
     )
     group.add_argument(
-        '--shuffler-size',
+        "--shuffler-size",
         type=int,
         default=0,
-        help="If non-zero, will use a data shuffler for faster lazy data loading."
+        help="If non-zero, will use a data shuffler for faster lazy data loading.",
     )
     group.add_argument(
         "--preprocessed",
@@ -462,8 +462,6 @@ def eval_z(
         batch_size=None,
     )
 
-
-
     for i, minibatch in enumerate(data_generator):
         ind = minibatch[-1]
         y = minibatch[0].to(device)
@@ -795,9 +793,8 @@ def main(args):
     if args.shuffler_size > 0:
         assert args.lazy, "Only enable a data shuffler for lazy loading"
         data_generator = dataset.DataShuffler(
-            data,
-            batch_size=args.batch_size,
-            buffer_size=args.shuffler_size)
+            data, batch_size=args.batch_size, buffer_size=args.shuffler_size
+        )
     else:
         data_generator = DataLoader(
             data,
@@ -817,7 +814,9 @@ def main(args):
         loss_accum = 0
         kld_accum = 0
         batch_it = 0
-        for i, minibatch in enumerate(data_generator):  # minibatch: [y, ind]
+        for i, minibatch in enumerate(
+            data_generator
+        ):  # minibatch: [y, ind]  # type: ignore
             ind = minibatch[-1].to(device)
             y = minibatch[0].to(device)
             yt = minibatch[1].to(device) if tilt is not None else None

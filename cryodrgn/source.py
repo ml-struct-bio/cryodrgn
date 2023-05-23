@@ -166,7 +166,7 @@ class ImageSource:
 
     def get_slice(self, start: int, stop: int) -> np.ndarray:
         """Return the slice of the dataset from start to stop.
-        
+
         Returns: A tensor of size [stop - start, D, D]
         """
         raise NotImplementedError("Subclasses must implement this")
@@ -335,7 +335,7 @@ class TxtFileSource(ImageSource):
         for source, (s_start, s_stop) in zip(self.sources, self.source_intervals):
             int_start = max(s_start, start) - s_start
             int_stop = min(s_stop, stop) - s_start
-            if int_start < int_stop: # we've got stuff in this interval
+            if int_start < int_stop:  # we've got stuff in this interval
                 tmp = source.get_slice(int_start, int_stop)
                 ret.append(tmp)
         ret = np.concatenate(ret, axis=0) if len(ret) > 1 else ret[0]
@@ -352,7 +352,7 @@ class TxtFileSource(ImageSource):
             src._images(indices=src_indices, data=data, tgt_indices=tgt_indices)
 
         data = np.zeros((len(indices), self.D, self.D), dtype=self.dtype)
-            
+
         with futures.ThreadPoolExecutor(self.n_workers) as executor:
             to_do = []
             for source_i, (source_start_index, source_end_index) in enumerate(
@@ -443,7 +443,9 @@ class _MRCDataFrameSource(ImageSource):
         batch_df = self.df.iloc[start:stop].reset_index(drop=True)
         groups = batch_df.groupby("__mrc_filepath")
         if len(groups) > 2:
-            raise ValueError("You're doing something dumb... either your particle list is not contiguous or you've split it into too small files.")
+            raise ValueError(
+                "You're doing something dumb... either your particle list is not contiguous or you've split it into too small files."
+            )
         ret = []
         for filepath, group in groups:
             n = len(group)
@@ -451,13 +453,14 @@ class _MRCDataFrameSource(ImageSource):
             idx = group["__mrc_index"].to_numpy()
             start = idx[0]
             if not all(idx == np.arange(start, start + n)):
-                raise ValueError("Can't efficiently load a slice of a non-contiguous particle list")
+                raise ValueError(
+                    "Can't efficiently load a slice of a non-contiguous particle list"
+                )
             ret.append(src.get_slice(start, start + n))
         ret = np.concatenate(ret, axis=0) if len(ret) > 1 else ret[0]
         assert len(ret) == stop - start, (len(ret), start, stop)
         return ret
-        
-        
+
 
 class StarfileSource(_MRCDataFrameSource):
     def __init__(

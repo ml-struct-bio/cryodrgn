@@ -5,7 +5,7 @@ import torch
 from torch.utils import data
 from typing import Tuple, Union
 from cryodrgn import fft
-from cryodrgn.source import ImageSource, MRCFileSource, TxtFileSource
+from cryodrgn.source import ImageSource
 from cryodrgn.utils import window_mask
 
 logger = logging.getLogger(__name__)
@@ -114,25 +114,33 @@ class ImageDataset(data.Dataset):
         return self.src.get_slice(start, stop)
 
 
-
 class DataShuffler:
-    def __init__(self, dataset: ImageDataset, batch_size, buffer_size, dtype=np.float32):
+    def __init__(
+        self, dataset: ImageDataset, batch_size, buffer_size, dtype=np.float32
+    ):
         if not all(dataset.src.indices == np.arange(len(dataset))):
             raise NotImplementedError(
                 "Sorry dude, --ind is not supported for the data shuffler. "
                 "The purpose of the shuffler is to load chunks contiguously during lazy loading on huge datasets, which doesn't work with --ind. "
                 "If you really need this, maybe you should probably use `--ind` during preprocessing (e.g. cryodrgn downsample)."
-                )
+            )
         self.dataset = dataset
         self.batch_size = batch_size
         self.buffer_size = buffer_size
         self.dtype = dtype
-        assert self.buffer_size % self.batch_size == 0, (self.buffer_size, self.batch_size) # FIXME
+        assert self.buffer_size % self.batch_size == 0, (
+            self.buffer_size,
+            self.batch_size,
+        )  # FIXME
         self.batch_capacity = self.buffer_size // self.batch_size
-        assert self.buffer_size <= len(self.dataset), (self.buffer_size, len(self.dataset))
+        assert self.buffer_size <= len(self.dataset), (
+            self.buffer_size,
+            len(self.dataset),
+        )
 
     def __iter__(self):
         return _DataShufflerIterator(self)
+
 
 class _DataShufflerIterator:
     def __init__(self, shuffler: DataShuffler):
@@ -142,9 +150,13 @@ class _DataShufflerIterator:
         self.batch_capacity = shuffler.batch_capacity
         self.dtype = shuffler.dtype
 
-        self.buffer = np.empty((self.buffer_size, self.dataset.D - 1, self.dataset.D - 1), dtype=self.dtype)
+        self.buffer = np.empty(
+            (self.buffer_size, self.dataset.D - 1, self.dataset.D - 1), dtype=self.dtype
+        )
         self.index_buffer = np.full((self.buffer_size,), -1, dtype=np.int64)
-        self.num_batches = len(self.dataset) // self.batch_size # FIXME off-by-one? Nah, lets leave the last batch behind
+        self.num_batches = (
+            len(self.dataset) // self.batch_size
+        )  # FIXME off-by-one? Nah, lets leave the last batch behind
         self.chunk_order = torch.randperm(self.num_batches)
         self.count = 0
         self.flush_remaining = -1  # at the end of the epoch, got to flush the buffer
@@ -152,29 +164,39 @@ class _DataShufflerIterator:
         logger.info("Pre-filling data shuffler buffer...")
         for i in range(self.batch_capacity):
             chunk, chunk_indices = self._get_next_chunk()
-            self.buffer[i * self.batch_size: (i + 1) * self.batch_size] = chunk
-            self.index_buffer[i * self.batch_size: (i + 1) * self.batch_size] = chunk_indices
-        logger.info(f"Filled buffer with {self.buffer_size} images ({self.batch_capacity} contiguous chunks).")
+            self.buffer[i * self.batch_size : (i + 1) * self.batch_size] = chunk
+            self.index_buffer[
+                i * self.batch_size : (i + 1) * self.batch_size
+            ] = chunk_indices
+        logger.info(
+            f"Filled buffer with {self.buffer_size} images ({self.batch_capacity} contiguous chunks)."
+        )
 
     def _get_next_chunk(self) -> Tuple[np.ndarray, np.ndarray]:
         chunk_idx = int(self.chunk_order[self.count])
         self.count += 1
-        particles = self.dataset.get_slice(chunk_idx * self.batch_size, (chunk_idx + 1) * self.batch_size)
-        particle_indices = np.arange(chunk_idx * self.batch_size, (chunk_idx + 1) * self.batch_size)
+        particles = self.dataset.get_slice(
+            chunk_idx * self.batch_size, (chunk_idx + 1) * self.batch_size
+        )
+        particle_indices = np.arange(
+            chunk_idx * self.batch_size, (chunk_idx + 1) * self.batch_size
+        )
         return particles, particle_indices
 
     def __next__(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Returns a batch of images, and the indices of those images in the dataset.
-        
+
         The buffer starts filled with `batch_capacity` random contiguous chunks.
         Each time a batch is requested, `batch_size` random images are selected from the buffer,
         and refilled with the next random contiguous chunk from disk.
-        
+
         Once all the chunks have been fetched from disk, the buffer is randomly permuted and then
         flushed sequentially.
         """
         if self.count == self.num_batches and self.flush_remaining == -1:
-            logger.info("Finished fetching chunks. Flushing buffer for remaining batches...")
+            logger.info(
+                "Finished fetching chunks. Flushing buffer for remaining batches..."
+            )
             # since we're going to flush the buffer sequentially, we need to shuffle it first
             perm = np.random.permutation(self.buffer_size)
             self.buffer = self.buffer[perm]
@@ -186,18 +208,24 @@ class _DataShufflerIterator:
             assert self.flush_remaining % self.batch_size == 0
             if self.flush_remaining == 0:
                 raise StopIteration()
-            particles = self.buffer[self.flush_remaining - self.batch_size: self.flush_remaining]
-            particle_indices = self.index_buffer[self.flush_remaining - self.batch_size: self.flush_remaining]
+            particles = self.buffer[
+                self.flush_remaining - self.batch_size : self.flush_remaining
+            ]
+            particle_indices = self.index_buffer[
+                self.flush_remaining - self.batch_size : self.flush_remaining
+            ]
             self.flush_remaining -= self.batch_size
         else:
-            indices = np.random.choice(self.buffer_size, size=self.batch_size, replace=False)
+            indices = np.random.choice(
+                self.buffer_size, size=self.batch_size, replace=False
+            )
             particles = self.buffer[indices]
             particle_indices = self.index_buffer[indices]
             chunk, chunk_indices = self._get_next_chunk()
             self.buffer[indices] = chunk
             self.index_buffer[indices] = chunk_indices
-        
+
         particles = torch.from_numpy(particles)
         particle_indices = torch.from_numpy(particle_indices)
-        particles =  self.dataset._process(particles.to(self.dataset.device))
+        particles = self.dataset._process(particles.to(self.dataset.device))
         return particles, particles, particle_indices

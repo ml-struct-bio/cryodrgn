@@ -99,6 +99,12 @@ def add_args(parser):
         help="Lazy loading if full dataset is too large to fit in memory",
     )
     group.add_argument(
+        "--shuffler-size",
+        type=int,
+        default=0,
+        help="If non-zero, will use a data shuffler for faster lazy data loading.",
+    )
+    group.add_argument(
         "--datadir",
         type=os.path.abspath,
         help="Path prefix to particle stack if loading relative paths from a .star or .cs file",
@@ -493,13 +499,12 @@ def main(args):
         )
 
     # train
-    data_generator = DataLoader(
+    data_generator = dataset.make_dataloader(
         data,
-        sampler=BatchSampler(
-            RandomSampler(data), batch_size=args.batch_size, drop_last=False
-        ),
-        batch_size=None,
+        batch_size=args.batch_size,
+        shuffler_size=args.shuffler_size
     )
+
 
     epoch = None
     for epoch in range(start_epoch, args.num_epochs):

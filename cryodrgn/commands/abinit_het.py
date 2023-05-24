@@ -102,6 +102,12 @@ def add_args(parser):
         help="Lazy loading if full dataset is too large to fit in memory",
     )
     group.add_argument(
+        "--shuffler-size",
+        type=int,
+        default=0,
+        help="If non-zero, will use a data shuffler for faster lazy data loading.",
+    )
+    group.add_argument(
         "--max-threads",
         type=int,
         default=16,
@@ -558,13 +564,7 @@ def eval_z(
     assert not model.training
     z_mu_all = []
     z_logvar_all = []
-    data_generator = DataLoader(
-        data,
-        sampler=BatchSampler(
-            RandomSampler(data), batch_size=batch_size, drop_last=False
-        ),
-        batch_size=None,
-    )
+    data_generator = dataset.make_dataloader(data, batch_size=args.batch_size)
 
     for minibatch in data_generator:
         ind = minibatch[-1]
@@ -886,12 +886,10 @@ def main(args):
         device=device,
     )
 
-    data_iterator = DataLoader(
+    data_iterator = dataset.make_dataloader(
         data,
-        sampler=BatchSampler(
-            RandomSampler(data), batch_size=args.batch_size, drop_last=False
-        ),
-        batch_size=None,
+        batch_size=args.batch_size,
+        shuffler_size=args.shuffler_size
     )
 
     # pretrain decoder with random poses

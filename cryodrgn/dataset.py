@@ -3,10 +3,13 @@ import multiprocessing as mp
 import logging
 import torch
 from torch.utils import data
-from typing import Tuple, Union
+from typing import Iterator, Tuple, Union
 from cryodrgn import fft
 from cryodrgn.source import ImageSource
 from cryodrgn.utils import window_mask
+
+from torch.utils.data import DataLoader
+from torch.utils.data.sampler import BatchSampler, RandomSampler
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +54,7 @@ class ImageDataset(data.Dataset):
         norm = norm or self.estimate_normalization()
         self.norm = [float(x) for x in norm]
         self.device = device
+        self.lazy = lazy
 
     def estimate_normalization(self, n=1000):
         n = min(n, self.N) if n is not None else self.N
@@ -183,6 +187,9 @@ class _DataShufflerIterator:
         )
         return particles, particle_indices
 
+    def __iter__(self):
+        return self
+
     def __next__(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Returns a batch of images, and the indices of those images in the dataset.
 
@@ -229,3 +236,21 @@ class _DataShufflerIterator:
         particle_indices = torch.from_numpy(particle_indices)
         particles = self.dataset._process(particles.to(self.dataset.device))
         return particles, particles, particle_indices
+
+
+def make_dataloader(data: ImageDataset, *, batch_size: int, num_workers: int = 1, shuffler_size: int = 0):
+    if shuffler_size > 0:
+        assert data.lazy, "Only enable a data shuffler for lazy loading"
+        return DataShuffler(
+            data, batch_size=batch_size, buffer_size=shuffler_size
+        )
+    else:
+        return DataLoader(
+            data,
+            num_workers=num_workers,
+            sampler=BatchSampler(
+                RandomSampler(data), batch_size=batch_size, drop_last=False
+            ),
+            batch_size=None,
+            multiprocessing_context="spawn" if num_workers > 0 else None,
+        )

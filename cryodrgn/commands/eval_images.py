@@ -284,13 +284,7 @@ def main(args):
     kld_accum = 0
     loss_accum = 0
     batch_it = 0
-    data_generator = DataLoader(
-        data,
-        sampler=BatchSampler(
-            SequentialSampler(data), batch_size=args.batch_size, drop_last=False
-        ),
-        batch_size=None,
-    )
+    data_generator = dataset.make_dataloader(data, batch_size=args.batch_size)
 
     for minibatch in data_generator:
         ind = minibatch[-1].to(device)

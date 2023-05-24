@@ -12,8 +12,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
-from torch.utils.data.sampler import BatchSampler, RandomSampler
 from cryodrgn import ctf, dataset, lie_tools, models, utils
 from cryodrgn.mrc import MRCFile
 from cryodrgn.lattice import Lattice
@@ -89,6 +87,17 @@ def add_args(parser):
     )
     parser.add_argument(
         "--ind", type=os.path.abspath, help="Filter particle stack by these indices"
+    )
+    parser.add_argument(
+        "--lazy",
+        action="store_true",
+        help="Lazy loading if full dataset is too large to fit in memory",
+    )
+    parser.add_argument(
+        "--shuffler-size",
+        type=int,
+        default=0,
+        help="If non-zero, will use a data shuffler for faster lazy data loading.",
     )
 
     group = parser.add_argument_group("Tilt series")
@@ -498,6 +507,7 @@ def main(args):
 
     data = dataset.ImageDataset(
         mrcfile=args.particles,
+        lazy=args.lazy,
         tilt_mrcfile=args.tilt,
         norm=args.norm,
         invert_data=args.invert_data,
@@ -579,12 +589,10 @@ def main(args):
     else:
         start_epoch = 0
 
-    data_iterator = DataLoader(
+    data_iterator = dataset.make_dataloader(
         data,
-        sampler=BatchSampler(
-            RandomSampler(data), batch_size=args.batch_size, drop_last=False
-        ),
-        batch_size=None,
+        batch_size=args.batch_size,
+        shuffler_size=args.shuffler_size
     )
 
     # pretrain decoder with random poses

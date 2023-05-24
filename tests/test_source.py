@@ -18,24 +18,23 @@ def test_loading_mrcs(mrcs_data):
     src = ImageSource.from_file(
         f"{DATA_FOLDER}/toy_projections.mrcs"
     )  # 100 30x30 images
-    # Indexing inside the 'images' attributes causes the hitherto lazy data to turn into a Tensor
-    assert torch.allclose(src[:], mrcs_data)
-    # We can, of course, do selective indexing to avoid realizing ALL the underlying data to memory
-    assert torch.allclose(src[10:15], mrcs_data[10:15])
+    assert torch.allclose(src.images(), mrcs_data)
+    # We can, of course, do selective retrieval of images to avoid realizing ALL the underlying data to memory
+    assert torch.allclose(src.images(slice(10, 15)), mrcs_data[10:15])
 
 
 def test_loading_starfile(mrcs_data):
     src = ImageSource.from_file(
         f"{DATA_FOLDER}/toy_projections_13.star", datadir=DATA_FOLDER
     )
-    arr = src[7:12]
+    arr = src.images(slice(7, 12))
     assert arr.shape == (5, 30, 30)
 
 
 def test_loading_txtfile(mrcs_data):
     src = ImageSource.from_file(f"{DATA_FOLDER}/toy_projections_2.txt")
     # Each line of the txt file points to an .mrcs file with 1000 particles. Try to get a slice across the two.
-    arr = src[990:1005]
+    arr = src.images(slice(990, 1005))
     assert arr.shape == (15, 30, 30)
     assert torch.allclose(arr[:10], mrcs_data[-10:])
     assert torch.allclose(arr[10:], mrcs_data[:5])
@@ -43,11 +42,11 @@ def test_loading_txtfile(mrcs_data):
 
 def test_loading_csfile(mrcs_data):
     src = ImageSource.from_file(f"{DATA_FOLDER}/empiar_10076_7.cs")
-    arr = src[:]
+    arr = src.images()
     assert arr.shape == (7, 320, 320)
     starfile_data = ImageSource.from_file(
         f"{DATA_FOLDER}/empiar_10076_7.star", datadir=DATA_FOLDER, lazy=False
-    )[:]
+    ).images()
 
     assert torch.allclose(arr, starfile_data)
 

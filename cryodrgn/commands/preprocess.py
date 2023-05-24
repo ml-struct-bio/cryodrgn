@@ -142,7 +142,7 @@ def main(args):
     chunk_names = [os.path.basename(x) for x in out_mrcs]
     for i in range(nchunks):
         logger.info(f"Processing chunk {i+1} of {nchunks}")
-        chunk = images[i * args.chunk : (i + 1) * args.chunk]
+        chunk = images.images(slice(i * args.chunk, (i + 1) * args.chunk))
         header = MRCHeader.make_default_header(
             nz=len(chunk), ny=D + 1, nx=D + 1, data=None, is_vol=False
         )

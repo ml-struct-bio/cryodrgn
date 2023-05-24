@@ -110,7 +110,7 @@ def main(args):
         # convert poses
         if poses is not None:
             eulers = utils.R_to_relion_scipy(poses[0])
-            D = particles[0].shape[-1]
+            D = particles.images(0).shape[-1]
             trans = poses[1] * D  # convert from fraction to pixels
 
         # Create a new dataframe with required star file headers

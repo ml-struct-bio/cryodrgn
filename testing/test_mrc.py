@@ -4,7 +4,7 @@ from cryodrgn.source import ImageSource
 data = ImageSource.from_file("data/toy_projections.mrcs", lazy=True)
 data2 = ImageSource.from_file("data/toy_projections.mrcs", lazy=False).images()
 data2 = np.array(data2)
-data1 = np.array(data[:])
+data1 = np.array(data.images())
 assert (data1 == data2).all()
 print("ok")
 

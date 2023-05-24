@@ -151,29 +151,33 @@ class ImageSource:
         return indices
 
     def images(
-        self, indices: Optional[Union[np.ndarray, int, slice, Iterable]] = None
+        self,
+        indices: Optional[Union[np.ndarray, int, slice, Iterable]] = None,
+        require_adjacent: bool = False,
     ) -> torch.Tensor:
         indices = self._convert_to_ndarray(indices)
-        if self.data:
+        if self.data:  # cached data
             images = self.data._images(indices)
         else:
             # Convert incoming caller indices to indices that this ImageSource will use
             if self.indices is not None:
                 indices = np.array(self.indices[indices])
-            images = self._images(indices)
+            images = self._images(indices, require_adjacent=require_adjacent)
 
         return torch.from_numpy(images.astype(self.dtype))
 
-    def get_slice(self, start: int, stop: int) -> np.ndarray:
-        """Return the slice of the dataset from start to stop.
-
-        Returns: A tensor of size [stop - start, D, D]
+    def _images(
+        self, indices: np.ndarray, require_adjacent: bool = False
+    ) -> np.ndarray:
         """
-        raise NotImplementedError("Subclasses must implement this")
-
-    def _images(self, indices: np.ndarray) -> np.ndarray:
-        """Subclasses must specify how to actually get the images at specific indices.
-        They may employ performance tricks (chunked loading from files) to do so.
+        Return images at specified indices.
+        Args:
+            indices: An ndarray of indices
+            require_adjacent: Boolean on whether the method should throw an error if image retrieval
+            will entail non-contiguous disk access. Callers can employ this if they insist on efficient
+            loading and choose to throw an error instead of falling back on inefficient slower loading.
+        Returns:
+            Images at specified indices.
         """
         raise NotImplementedError("Subclasses must implement this")
 
@@ -206,7 +210,7 @@ class ArraySource(ImageSource):
 
         super().__init__(D=ny, n=nz)
 
-    def _images(self, indices: np.ndarray):
+    def _images(self, indices: np.ndarray, require_adjacent: bool = False):
         return self.array[indices, ...]
 
 
@@ -242,22 +246,12 @@ class MRCFileSource(ImageSource):
             indices=indices,
         )
 
-    def get_slice(self, start: int, stop: int) -> np.ndarray:
-        with open(self.mrcfile_path) as f:
-            f.seek(self.start)
-            offset = start * self.stride
-            n = stop - start
-            # 'offset' in the call below is w.r.t the current position of f
-            ret = np.fromfile(
-                f, dtype=self.dtype, count=self.size * n, offset=offset
-            ).reshape(n, self.ny, self.nx)
-            return ret
-
     def _images(
         self,
         indices: np.ndarray,
         data: Optional[np.ndarray] = None,
         tgt_indices: Optional[np.ndarray] = None,
+        require_adjacent: bool = False,
     ) -> np.ndarray:
         with open(self.mrcfile_path) as f:
             if data is None:
@@ -276,14 +270,28 @@ class MRCFileSource(ImageSource):
 
             assert isinstance(tgt_indices, np.ndarray)
 
-            for index, tgt_index in zip(indices, tgt_indices):
+            is_adjacent = np.all(indices == indices[0] + np.arange(len(indices)))
+            if require_adjacent:
+                assert is_adjacent, "MRC indices are not adjacent."
+
+            if is_adjacent:
                 f.seek(self.start)
-                offset = index * self.stride
+                offset = indices[0] * self.stride
                 # 'offset' in the call below is w.r.t the current position of f
                 _data = np.fromfile(
-                    f, dtype=self.dtype, count=self.size, offset=offset
-                ).reshape(self.ny, self.nx)
-                data[tgt_index, ...] = _data
+                    f, dtype=self.dtype, count=self.size * len(indices), offset=offset
+                ).reshape(-1, self.ny, self.nx)
+                data[tgt_indices, ...] = _data
+
+            else:
+                for index, tgt_index in zip(indices, tgt_indices):
+                    f.seek(self.start)
+                    offset = index * self.stride
+                    # 'offset' in the call below is w.r.t the current position of f
+                    _data = np.fromfile(
+                        f, dtype=self.dtype, count=self.size, offset=offset
+                    ).reshape(self.ny, self.nx)
+                    data[tgt_index, ...] = _data
 
             return data
 
@@ -330,26 +338,22 @@ class TxtFileSource(ImageSource):
             D=self.ny, n=self.nz, n_workers=n_workers, lazy=lazy, indices=indices
         )
 
-    def get_slice(self, start: int, stop: int) -> np.ndarray:
-        ret = []
-        for source, (s_start, s_stop) in zip(self.sources, self.source_intervals):
-            int_start = max(s_start, start) - s_start
-            int_stop = min(s_stop, stop) - s_start
-            if int_start < int_stop:  # we've got stuff in this interval
-                tmp = source.get_slice(int_start, int_stop)
-                ret.append(tmp)
-        ret = np.concatenate(ret, axis=0) if len(ret) > 1 else ret[0]
-        assert len(ret) == stop - start, (len(ret), start, stop)
-        return ret
-
-    def _images(self, indices: np.ndarray) -> np.ndarray:
+    def _images(
+        self, indices: np.ndarray, require_adjacent: bool = False
+    ) -> np.ndarray:
         def load_single_mrcs(
             data: np.ndarray,
             src: MRCFileSource,
             src_indices: np.ndarray,
             tgt_indices: np.ndarray,
+            require_adjacent: bool = False,
         ):
-            src._images(indices=src_indices, data=data, tgt_indices=tgt_indices)
+            src._images(
+                indices=src_indices,
+                data=data,
+                tgt_indices=tgt_indices,
+                require_adjacent=require_adjacent,
+            )
 
         data = np.zeros((len(indices), self.D, self.D), dtype=self.dtype)
 
@@ -371,6 +375,7 @@ class TxtFileSource(ImageSource):
                         src=self.sources[source_i],
                         src_indices=src_indices,
                         tgt_indices=tgt_indices,
+                        require_adjacent=require_adjacent,
                     )
                     to_do.append(future)
 
@@ -410,11 +415,13 @@ class _MRCDataFrameSource(ImageSource):
             indices=indices,
         )
 
-    def _images(self, indices: np.ndarray):
+    def _images(self, indices: np.ndarray, require_adjacent: bool = False):
         def load_single_mrcs(filepath, df):
             src = MRCFileSource(filepath)
             # df.index indicates the positions where the data needs to be inserted -> return for use by caller
-            return df.index, src._images(df["__mrc_index"])
+            return df.index, src._images(
+                df["__mrc_index"], require_adjacent=require_adjacent
+            )
 
         data = np.zeros((len(indices), self.D, self.D), dtype=self.dtype)
 
@@ -435,31 +442,6 @@ class _MRCDataFrameSource(ImageSource):
                     data[d] = _data[idx, :, :] if _data.ndim == 3 else _data
 
         return data
-
-    def get_slice(self, start: int, stop: int) -> np.ndarray:
-        # FIXME: I'm not sure if this is going to be too slow due to the panda ops and
-        # constructing MRCFileSource's every time.
-        # I've only profiled the TxtFileSource dataset.
-        batch_df = self.df.iloc[start:stop].reset_index(drop=True)
-        groups = batch_df.groupby("__mrc_filepath")
-        if len(groups) > 2:
-            raise ValueError(
-                "You're doing something dumb... either your particle list is not contiguous or you've split it into too small files."
-            )
-        ret = []
-        for filepath, group in groups:
-            n = len(group)
-            src = MRCFileSource(str(filepath))
-            idx = group["__mrc_index"].to_numpy()
-            start = idx[0]
-            if not all(idx == np.arange(start, start + n)):
-                raise ValueError(
-                    "Can't efficiently load a slice of a non-contiguous particle list"
-                )
-            ret.append(src.get_slice(start, start + n))
-        ret = np.concatenate(ret, axis=0) if len(ret) > 1 else ret[0]
-        assert len(ret) == stop - start, (len(ret), start, stop)
-        return ret
 
 
 class StarfileSource(_MRCDataFrameSource):

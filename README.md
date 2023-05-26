@@ -158,7 +158,7 @@ The official version 1.0 release. This version introduces several new tools for 
     # Create and activate conda environment
     conda create --name cryodrgn python=3.9
     conda activate cryodrgn
-    
+
     # install cryodrgn
     pip install cryodrgn
 

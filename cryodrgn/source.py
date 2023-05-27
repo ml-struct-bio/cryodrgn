@@ -296,97 +296,6 @@ class MRCFileSource(ImageSource):
             return data
 
 
-class TxtFileSource(ImageSource):
-    def __init__(
-        self,
-        filepath: str,
-        lazy: bool = True,
-        indices: Optional[np.ndarray] = None,
-        n_workers: int = 1,
-    ):
-        _paths = []
-        filepath_dir = os.path.dirname(filepath)
-        for line in open(filepath).readlines():
-            path = line.strip()
-            if not os.path.isabs(path):
-                _paths.append(os.path.join(filepath_dir, path))
-            else:
-                _paths.append(path)
-
-        self.sources = [MRCFileSource(path, lazy=True) for path in _paths]
-
-        # We'll only look at the header from the first .mrcs file, and assume that all headers are compatible
-        header = self.sources[0].header
-        self.ny, self.nx = (
-            header.fields["ny"],
-            header.fields["nx"],
-        )
-        assert self.ny == self.nx, "Only square images supported"
-
-        # Calculate the total length of this source by consulting the individual constituent sources
-        _source_lengths = np.array([s.n for s in self.sources])
-        self.nz = sum(_source_lengths)
-
-        # Maintain a list of (<start>, <end>) tuples indicating the positions of each source
-        _s_i = np.add.accumulate(_source_lengths)
-        self.source_intervals = [(0, _s_i[0])] + [
-            (_s_i[i], _s_i[i + 1]) for i in range(0, len(_s_i) - 1)
-        ]
-        n_workers = min(n_workers, len(self.source_intervals))
-
-        super().__init__(
-            D=self.ny, n=self.nz, n_workers=n_workers, lazy=lazy, indices=indices
-        )
-
-    def _images(
-        self, indices: np.ndarray, require_adjacent: bool = False
-    ) -> np.ndarray:
-        def load_single_mrcs(
-            data: np.ndarray,
-            src: MRCFileSource,
-            src_indices: np.ndarray,
-            tgt_indices: np.ndarray,
-            require_adjacent: bool = False,
-        ):
-            src._images(
-                indices=src_indices,
-                data=data,
-                tgt_indices=tgt_indices,
-                require_adjacent=require_adjacent,
-            )
-
-        data = np.zeros((len(indices), self.D, self.D), dtype=self.dtype)
-
-        with futures.ThreadPoolExecutor(self.n_workers) as executor:
-            to_do = []
-            for source_i, (source_start_index, source_end_index) in enumerate(
-                self.source_intervals
-            ):
-                tgt_indices = np.nonzero(
-                    (source_start_index <= indices) & (indices < source_end_index)
-                )[0]
-                src_indices = indices[tgt_indices] - source_start_index
-                src_images = src_indices.size
-
-                if src_images > 0:
-                    future = executor.submit(
-                        load_single_mrcs,
-                        data=data,
-                        src=self.sources[source_i],
-                        src_indices=src_indices,
-                        tgt_indices=tgt_indices,
-                        require_adjacent=require_adjacent,
-                    )
-                    to_do.append(future)
-
-            for future in futures.as_completed(to_do):
-                exc = future.exception()
-                if exc is not None:
-                    raise exc
-
-        return data
-
-
 class _MRCDataFrameSource(ImageSource):
     def __init__(
         self,
@@ -499,6 +408,36 @@ class CsSource(_MRCDataFrameSource):
         else:
             datadir = os.path.dirname(filepath)
 
+        super().__init__(
+            df=df, datadir=datadir, lazy=lazy, indices=indices, n_workers=n_workers
+        )
+
+
+class TxtFileSource(_MRCDataFrameSource):
+    def __init__(
+        self,
+        filepath: str,
+        lazy: bool = True,
+        indices: Optional[np.ndarray] = None,
+        n_workers: int = 1,
+    ):
+        _paths = []
+        filepath_dir = os.path.dirname(filepath)
+        for line in open(filepath).readlines():
+            path = line.strip()
+            if not os.path.isabs(path):
+                _paths.append(os.path.join(filepath_dir, path))
+            else:
+                _paths.append(path)
+
+        _sources = [MRCFileSource(path, lazy=True).n for path in _paths]
+        _source_lengths = np.array([s.n for s in _sources])
+        mrc_filename, mrc_index = [], []
+        for path, length in zip(_paths, _source_lengths):
+            mrc_filename.extend([path] * length)
+            mrc_index.append(np.arange(length))
+        mrc_index = np.concatenate(indices)
+        df = pd.DataFrame(data={"__mrc_filename": mrc_filename, "__mrc_index": mrc_index})
         super().__init__(
             df=df, datadir=datadir, lazy=lazy, indices=indices, n_workers=n_workers
         )

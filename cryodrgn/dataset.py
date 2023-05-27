@@ -113,9 +113,9 @@ class ImageDataset(data.Dataset):
 
         return particles, tilt, index
 
-    def get_slice(self, start: int, stop: int) -> np.ndarray:
+    def get_slice(self, start: int, stop: int) -> torch.Tensor:
         assert self.tilt_src is None
-        return self.src.get_slice(start, stop)
+        return self.src.images(slice(start, stop), require_adjacent=True).numpy()
 
 
 class DataShuffler:
@@ -176,7 +176,7 @@ class _DataShufflerIterator:
             f"Filled buffer with {self.buffer_size} images ({self.batch_capacity} contiguous chunks)."
         )
 
-    def _get_next_chunk(self) -> Tuple[np.ndarray, np.ndarray]:
+    def _get_next_chunk(self) -> Tuple[torch.Tensor, np.ndarray]:
         chunk_idx = int(self.chunk_order[self.count])
         self.count += 1
         particles = self.dataset.get_slice(

@@ -66,7 +66,7 @@ class ImageSource:
             return MRCFileSource(filepath, lazy=lazy, indices=indices)
         elif ext == "txt":
             return TxtFileSource(
-                filepath, lazy=lazy, indices=indices, n_workers=n_workers
+                filepath, lazy=lazy, datadir=datadir, indices=indices, n_workers=n_workers
             )
         elif ext == "cs":
             return CsSource(filepath, lazy=lazy, indices=indices, n_workers=n_workers)
@@ -153,7 +153,7 @@ class ImageSource:
     def images(
         self,
         indices: Optional[Union[np.ndarray, int, slice, Iterable]] = None,
-        require_adjacent: bool = False,
+        require_contiguous: bool = False,
     ) -> torch.Tensor:
         indices = self._convert_to_ndarray(indices)
         if self.data:  # cached data
@@ -162,18 +162,18 @@ class ImageSource:
             # Convert incoming caller indices to indices that this ImageSource will use
             if self.indices is not None:
                 indices = np.array(self.indices[indices])
-            images = self._images(indices, require_adjacent=require_adjacent)
+            images = self._images(indices, require_contiguous=require_contiguous)
 
         return torch.from_numpy(images.astype(self.dtype))
 
     def _images(
-        self, indices: np.ndarray, require_adjacent: bool = False
+        self, indices: np.ndarray, require_contiguous: bool = False
     ) -> np.ndarray:
         """
         Return images at specified indices.
         Args:
             indices: An ndarray of indices
-            require_adjacent: Boolean on whether the method should throw an error if image retrieval
+            require_contiguous: Boolean on whether the method should throw an error if image retrieval
             will entail non-contiguous disk access. Callers can employ this if they insist on efficient
             loading and choose to throw an error instead of falling back on inefficient slower loading.
         Returns:
@@ -210,7 +210,7 @@ class ArraySource(ImageSource):
 
         super().__init__(D=ny, n=nz)
 
-    def _images(self, indices: np.ndarray, require_adjacent: bool = False):
+    def _images(self, indices: np.ndarray, require_contiguous: bool = False):
         return self.array[indices, ...]
 
 
@@ -251,7 +251,7 @@ class MRCFileSource(ImageSource):
         indices: np.ndarray,
         data: Optional[np.ndarray] = None,
         tgt_indices: Optional[np.ndarray] = None,
-        require_adjacent: bool = False,
+        require_contiguous: bool = False,
     ) -> np.ndarray:
         with open(self.mrcfile_path) as f:
             if data is None:
@@ -270,11 +270,11 @@ class MRCFileSource(ImageSource):
 
             assert isinstance(tgt_indices, np.ndarray)
 
-            is_adjacent = np.all(indices == indices[0] + np.arange(len(indices)))
-            if require_adjacent:
-                assert is_adjacent, "MRC indices are not adjacent."
+            is_contiguous = np.all(indices == indices[0] + np.arange(len(indices)))
+            if require_contiguous:
+                assert is_contiguous, "MRC indices are not adjacent."
 
-            if is_adjacent:
+            if is_contiguous:
                 f.seek(self.start)
                 offset = indices[0] * self.stride
                 # 'offset' in the call below is w.r.t the current position of f
@@ -324,12 +324,12 @@ class _MRCDataFrameSource(ImageSource):
             indices=indices,
         )
 
-    def _images(self, indices: np.ndarray, require_adjacent: bool = False):
+    def _images(self, indices: np.ndarray, require_contiguous: bool = False):
         def load_single_mrcs(filepath, df):
             src = MRCFileSource(filepath)
             # df.index indicates the positions where the data needs to be inserted -> return for use by caller
             return df.index, src._images(
-                df["__mrc_index"], require_adjacent=require_adjacent
+                df["__mrc_index"], require_contiguous=require_contiguous
             )
 
         data = np.zeros((len(indices), self.D, self.D), dtype=self.dtype)
@@ -417,6 +417,7 @@ class TxtFileSource(_MRCDataFrameSource):
     def __init__(
         self,
         filepath: str,
+        datadir: str,
         lazy: bool = True,
         indices: Optional[np.ndarray] = None,
         n_workers: int = 1,

@@ -127,9 +127,9 @@ def main(args):
         df = starfile.df.loc[particle_ind]
     else:
         particle_ind += 1  # CHANGE TO 1-BASED INDEXING
-        image_names = [img.fname for img in particles]
+        image_names = [img.fname for img in particles]  # type: ignore
         if args.full_path:
-            image_names = [os.path.abspath(img.fname) for img in particles]
+            image_names = [os.path.abspath(img.fname) for img in particles]  # type: ignore
         names = [f"{i}@{name}" for i, name in zip(particle_ind, image_names)]
 
         if ctf is not None:
@@ -138,7 +138,7 @@ def main(args):
         # convert poses
         if poses is not None:
             eulers = utils.R_to_relion_scipy(poses[0])
-            D = particles[0].get().shape[0]
+            D = particles[0].get().shape[0]  # type: ignore
             trans = poses[1] * D  # convert from fraction to pixels
 
         # Create a new dataframe with required star file headers

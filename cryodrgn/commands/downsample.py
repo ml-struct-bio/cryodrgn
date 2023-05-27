@@ -88,7 +88,7 @@ def main(args):
         old = [old[i] for i in ind] if lazy else old[ind]
 
     if lazy:
-        oldD = old[0].get().shape[0]
+        oldD = old[0].get().shape[0]  # type: ignore
     else:
         assert isinstance(old, np.ndarray)
         oldD = old.shape[-1]

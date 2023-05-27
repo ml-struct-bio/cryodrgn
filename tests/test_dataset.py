@@ -2,7 +2,7 @@ import os.path
 import numpy as np
 from torch.utils.data.sampler import BatchSampler, RandomSampler
 from torch.utils.data import DataLoader
-from cryodrgn.dataset import ImageDataset
+from cryodrgn.dataset import DataShuffler, ImageDataset
 
 DATA_FOLDER = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
 
@@ -73,3 +73,38 @@ def test_loading_fast():
             assert minibatch[0].shape == (2, 65, 65)
             assert minibatch[1].shape == (2, 65, 65)
             assert minibatch[2].shape == (2,)
+
+
+def test_data_shuffler():
+    dataset = ImageDataset(mrcfile=f"{DATA_FOLDER}/hand.mrcs")
+    # We could use the following, but this will result in 7 independent calls to
+    # the underlying ImageDataset's __getitem__ - not efficient
+    data_loader = DataShuffler(dataset, batch_size=5, buffer_size=20)
+
+    epoch1_indices, epoch2_indices = [], []
+    for i, minibatch in enumerate(data_loader):
+        assert len(minibatch) == 3  # minibatch is a list of (particles, tilt, indices)
+
+        # We have 100 particles. For all but the last iteration *
+        # for all but the last iteration (100//7 = 14), we'll have 7 images each
+        assert minibatch[0].shape == (5, 65, 65)
+        assert minibatch[1].shape == (5, 65, 65)
+        assert minibatch[2].shape == (5,)
+
+        epoch1_indices.append(minibatch[2])
+    
+    for i, minibatch in enumerate(data_loader):
+        epoch2_indices.append(minibatch[2])
+    
+    epoch1_indices = np.concatenate(epoch1_indices)
+    epoch2_indices = np.concatenate(epoch2_indices)
+
+
+    N = len(epoch1_indices)
+    # epochs should have all the indices exactly once
+    assert sorted(epoch1_indices) == list(range(N)), epoch1_indices
+    assert sorted(epoch2_indices) == list(range(N)), epoch2_indices
+
+    # epochs should be shuffled differently
+    assert any(epoch1_indices != epoch2_indices), epoch1_indices  # Should be reshuffled
+

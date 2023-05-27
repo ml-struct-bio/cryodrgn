@@ -111,7 +111,7 @@ def add_args(parser):
         "--max-threads",
         type=int,
         default=16,
-        help="Maximum number of CPU cores for FFT parallelization (default: %(default)s)",
+        help="Maximum number of CPU cores for data loading (default: %(default)s)",
     )
 
     group = parser.add_argument_group("Tilt series")

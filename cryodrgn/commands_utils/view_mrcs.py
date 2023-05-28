@@ -1,10 +1,11 @@
-"""View the first 9 images in a particle stack"""
+"""View images in a particle stack"""
 
 import argparse
+import os
 import logging
 import matplotlib.pyplot as plt
 import os.path
-from cryodrgn import analysis, utils
+from cryodrgn import analysis, dataset, utils
 from cryodrgn.source import ImageSource
 
 logger = logging.getLogger(__name__)

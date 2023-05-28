@@ -151,32 +151,18 @@ The official version 1.0 release. This version introduces several new tools for 
 
 </details>
 
-## Installation/dependencies:
+## Installation:
 
-To install cryoDRGN, git clone the source code and install the following dependencies with anaconda:
+`cryodrgn` may be installed via `pip`, and we recommend installing `cryodrgn` in a clean conda environment.
 
-    # Create conda environment
-    conda create --name cryodrgn1 python=3.9
-    conda activate cryodrgn1
+    # Create and activate conda environment
+    conda create --name cryodrgn python=3.9
+    conda activate cryodrgn
 
-    # Install dependencies
-    conda install pytorch -c pytorch
-    conda install pandas
+    # install cryodrgn
+    pip install cryodrgn
 
-    # Install dependencies for latent space visualization
-    conda install seaborn scikit-learn
-    conda install umap-learn jupyterlab ipywidgets cufflinks-py "nodejs>=15.12.0" -c conda-forge
-    jupyter labextension install @jupyter-widgets/jupyterlab-manager --no-build
-    jupyter labextension install jupyterlab-plotly --no-build
-    jupyter labextension install plotlywidget --no-build
-    jupyter lab build
-
-    # Clone source code and install
-    git clone https://github.com/zhonge/cryodrgn.git
-    cd cryodrgn
-    pip install .
-
-A detailed installation and testing guide is provided here: https://www.notion.so/cryoDRGN-installation-with-anaconda-4cff0367d9b241bb8d902efe339d01e6
+More installation instructions and a testing guide is available in the [docs](https://zhonge.github.io/cryodrgn/).
 
 ## Quickstart: heterogeneous reconstruction with consensus poses
 

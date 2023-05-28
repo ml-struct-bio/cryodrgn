@@ -9,8 +9,6 @@ from datetime import datetime as dt
 import logging
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
-from torch.utils.data.sampler import BatchSampler, SequentialSampler
 from cryodrgn import config, ctf, dataset, utils
 from cryodrgn.commands.train_vae import loss_function, preprocess_input, run_batch
 from cryodrgn.models import HetOnlyVAE

@@ -99,7 +99,6 @@ def test_data_shuffler():
     epoch1_indices = np.concatenate(epoch1_indices)
     epoch2_indices = np.concatenate(epoch2_indices)
 
-
     N = len(epoch1_indices)
     # epochs should have all the indices exactly once
     assert sorted(epoch1_indices) == list(range(N)), epoch1_indices

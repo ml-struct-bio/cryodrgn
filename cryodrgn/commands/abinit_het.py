@@ -12,8 +12,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.parallel import DataParallel
-from torch.utils.data import DataLoader
-from torch.utils.data.sampler import BatchSampler, RandomSampler
 from typing import Union
 from cryodrgn import ctf, dataset, lie_tools, utils
 from cryodrgn.beta_schedule import LinearSchedule, get_beta_schedule
@@ -887,9 +885,7 @@ def main(args):
     )
 
     data_iterator = dataset.make_dataloader(
-        data,
-        batch_size=args.batch_size,
-        shuffler_size=args.shuffler_size
+        data, batch_size=args.batch_size, shuffler_size=args.shuffler_size
     )
 
     # pretrain decoder with random poses

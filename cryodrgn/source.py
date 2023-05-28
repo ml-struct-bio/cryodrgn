@@ -66,7 +66,11 @@ class ImageSource:
             return MRCFileSource(filepath, lazy=lazy, indices=indices)
         elif ext == "txt":
             return TxtFileSource(
-                filepath, lazy=lazy, datadir=datadir, indices=indices, n_workers=n_workers
+                filepath,
+                lazy=lazy,
+                datadir=datadir,
+                indices=indices,
+                n_workers=n_workers,
             )
         elif ext == "cs":
             return CsSource(filepath, lazy=lazy, indices=indices, n_workers=n_workers)
@@ -438,7 +442,9 @@ class TxtFileSource(_MRCDataFrameSource):
             mrc_filename.extend([path] * length)
             mrc_index.append(np.arange(length))
         mrc_index = np.concatenate(indices)
-        df = pd.DataFrame(data={"__mrc_filename": mrc_filename, "__mrc_index": mrc_index})
+        df = pd.DataFrame(
+            data={"__mrc_filename": mrc_filename, "__mrc_index": mrc_index}
+        )
         super().__init__(
             df=df, datadir=datadir, lazy=lazy, indices=indices, n_workers=n_workers
         )

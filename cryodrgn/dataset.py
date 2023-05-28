@@ -3,7 +3,7 @@ import multiprocessing as mp
 import logging
 import torch
 from torch.utils import data
-from typing import Iterator, Tuple, Union
+from typing import Tuple, Union
 from cryodrgn import fft
 from cryodrgn.source import ImageSource
 from cryodrgn.utils import window_mask
@@ -115,7 +115,7 @@ class ImageDataset(data.Dataset):
 
     def get_slice(self, start: int, stop: int) -> torch.Tensor:
         assert self.tilt_src is None
-        return self.src.images(slice(start, stop), require_adjacent=True).numpy()
+        return self.src.images(slice(start, stop), require_contiguous=True).numpy()
 
 
 class DataShuffler:
@@ -238,12 +238,12 @@ class _DataShufflerIterator:
         return particles, particles, particle_indices
 
 
-def make_dataloader(data: ImageDataset, *, batch_size: int, num_workers: int = 1, shuffler_size: int = 0):
+def make_dataloader(
+    data: ImageDataset, *, batch_size: int, num_workers: int = 1, shuffler_size: int = 0
+):
     if shuffler_size > 0:
         assert data.lazy, "Only enable a data shuffler for lazy loading"
-        return DataShuffler(
-            data, batch_size=batch_size, buffer_size=shuffler_size
-        )
+        return DataShuffler(data, batch_size=batch_size, buffer_size=shuffler_size)
     else:
         return DataLoader(
             data,

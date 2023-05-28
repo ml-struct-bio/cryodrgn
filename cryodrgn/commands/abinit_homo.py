@@ -590,9 +590,7 @@ def main(args):
         start_epoch = 0
 
     data_iterator = dataset.make_dataloader(
-        data,
-        batch_size=args.batch_size,
-        shuffler_size=args.shuffler_size
+        data, batch_size=args.batch_size, shuffler_size=args.shuffler_size
     )
 
     # pretrain decoder with random poses

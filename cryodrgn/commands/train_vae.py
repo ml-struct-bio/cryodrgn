@@ -785,9 +785,8 @@ def main(args):
         data,
         batch_size=args.batch_size,
         num_workers=num_workers,
-        shuffler_size=args.shuffler_size
+        shuffler_size=args.shuffler_size,
     )
-
 
     num_epochs = args.num_epochs
     epoch = None

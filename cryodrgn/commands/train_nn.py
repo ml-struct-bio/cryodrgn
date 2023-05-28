@@ -10,9 +10,7 @@ import logging
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.utils.data.sampler import BatchSampler, RandomSampler
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
 
 try:
     import apex.amp as amp  # type: ignore
@@ -500,11 +498,8 @@ def main(args):
 
     # train
     data_generator = dataset.make_dataloader(
-        data,
-        batch_size=args.batch_size,
-        shuffler_size=args.shuffler_size
+        data, batch_size=args.batch_size, shuffler_size=args.shuffler_size
     )
-
 
     epoch = None
     for epoch in range(start_epoch, args.num_epochs):

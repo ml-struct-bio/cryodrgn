@@ -435,13 +435,12 @@ class TxtFileSource(_MRCDataFrameSource):
             else:
                 _paths.append(path)
 
-        _sources = [MRCFileSource(path, lazy=True).n for path in _paths]
-        _source_lengths = np.array([s.n for s in _sources])
+        _source_lengths = [MRCFileSource(path, lazy=True).n for path in _paths]
         mrc_filename, mrc_index = [], []
         for path, length in zip(_paths, _source_lengths):
             mrc_filename.extend([path] * length)
             mrc_index.append(np.arange(length))
-        mrc_index = np.concatenate(indices)
+        mrc_index = np.concatenate(mrc_index)
         df = pd.DataFrame(
             data={"__mrc_filename": mrc_filename, "__mrc_index": mrc_index}
         )

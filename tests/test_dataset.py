@@ -82,6 +82,7 @@ def test_data_shuffler():
     data_loader = DataShuffler(dataset, batch_size=5, buffer_size=20)
 
     epoch1_indices, epoch2_indices = [], []
+
     for i, minibatch in enumerate(data_loader):
         assert len(minibatch) == 3  # minibatch is a list of (particles, tilt, indices)
 
@@ -92,10 +93,10 @@ def test_data_shuffler():
         assert minibatch[2].shape == (5,)
 
         epoch1_indices.append(minibatch[2])
-    
+
     for i, minibatch in enumerate(data_loader):
         epoch2_indices.append(minibatch[2])
-    
+
     epoch1_indices = np.concatenate(epoch1_indices)
     epoch2_indices = np.concatenate(epoch2_indices)
 
@@ -106,4 +107,3 @@ def test_data_shuffler():
 
     # epochs should be shuffled differently
     assert any(epoch1_indices != epoch2_indices), epoch1_indices  # Should be reshuffled
-

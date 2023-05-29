@@ -37,6 +37,8 @@ def test_abinit_het_and_backproject():
         "--num-epochs",
         "1",
         "--no-window",
+        "--pretrain",
+        "1000",
     ]
 
     args = abinit_het.add_args(argparse.ArgumentParser()).parse_args(
@@ -100,6 +102,8 @@ def test_abinit_homo_and_backproject():
         "8",
         "--num-epochs",
         "1",
+        "--pretrain",
+        "1000",
     ]
 
     args = abinit_homo.add_args(argparse.ArgumentParser()).parse_args(

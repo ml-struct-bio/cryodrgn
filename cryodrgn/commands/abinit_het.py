@@ -562,7 +562,7 @@ def eval_z(
     assert not model.training
     z_mu_all = []
     z_logvar_all = []
-    data_generator = dataset.make_dataloader(data, batch_size=args.batch_size)
+    data_generator = dataset.make_dataloader(data, batch_size=batch_size)
 
     for minibatch in data_generator:
         ind = minibatch[-1]

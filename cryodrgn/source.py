@@ -88,7 +88,6 @@ class ImageSource:
         indices: Optional[np.ndarray] = None,
     ):
         self.n = n
-
         if indices is None:
             self.indices = np.arange(self.n)
         else:
@@ -107,7 +106,7 @@ class ImageSource:
         elif isinstance(filenames, str):
             filenames = [filenames] * self.n
         else:
-            assert len(filenames) == self.n
+            assert len(filenames) == self.n, f"{len(filenames)} != {self.n}"
             filenames = list(filenames)
         self.filenames = np.array(filenames)
 
@@ -275,7 +274,7 @@ class MRCFileSource(ImageSource):
             assert isinstance(tgt_indices, np.ndarray)
             is_contiguous = np.all(indices == indices[0] + np.arange(len(indices)))
             if require_contiguous:
-                assert is_contiguous, "MRC indices are not adjacent."
+                assert is_contiguous, "MRC indices are not contiguous."
 
             if is_contiguous:
                 f.seek(self.start)
@@ -318,10 +317,13 @@ class _MRCDataFrameSource(ImageSource):
 
         # Peek into the first mrc file to get image size
         D = MRCFileSource(self.df["__mrc_filepath"][0]).D
+        self._sources = {
+            filepath: MRCFileSource(filepath)
+            for filepath in self.df["__mrc_filepath"].unique()
+        }
         super().__init__(
             D=D,
             n=len(self.df),
-            filenames=df["__mrc_filename"],
             n_workers=n_workers,
             lazy=lazy,
             indices=indices,
@@ -329,7 +331,8 @@ class _MRCDataFrameSource(ImageSource):
 
     def _images(self, indices: np.ndarray, require_contiguous: bool = False):
         def load_single_mrcs(filepath, df):
-            src = MRCFileSource(filepath)
+            src = self._sources[filepath]
+
             # df.index indicates the positions where the data needs to be inserted -> return for use by caller
             return df.index, src._images(
                 df["__mrc_index"].to_numpy(), require_contiguous=require_contiguous
@@ -341,7 +344,6 @@ class _MRCDataFrameSource(ImageSource):
         batch_df = self.df.iloc[indices].reset_index(drop=True)
         groups = batch_df.groupby("__mrc_filepath")
         n_workers = min(self.n_workers, len(groups))
-
         with futures.ThreadPoolExecutor(n_workers) as executor:
             to_do = []
             for filepath, _df in groups:
@@ -352,7 +354,6 @@ class _MRCDataFrameSource(ImageSource):
                 data_indices, _data = future.result()
                 for idx, d in enumerate(data_indices):
                     data[d] = _data[idx, :, :] if _data.ndim == 3 else _data
-
         return data
 
 
@@ -369,7 +370,7 @@ class StarfileSource(_MRCDataFrameSource):
 
         df = Starfile.load(filepath).df
         df[["__mrc_index", "__mrc_filename"]] = df["_rlnImageName"].str.split(
-            "@", 1, expand=True
+            "@", n=1, expand=True
         )
         df["__mrc_index"] = pd.to_numeric(df["__mrc_index"]) - 1
 

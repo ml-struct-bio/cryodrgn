@@ -555,14 +555,16 @@ def eval_z(
     data,
     batch_size,
     device,
-    trans=None,
     use_tilt=False,
     ctf_params=None,
+    shuffler_size=0,
 ):
     assert not model.training
     z_mu_all = []
     z_logvar_all = []
-    data_generator = dataset.make_dataloader(data, batch_size=batch_size)
+    data_generator = dataset.make_dataloader(
+        data, batch_size=batch_size, shuffler_size=shuffler_size
+    )
 
     for minibatch in data_generator:
         ind = minibatch[-1]
@@ -1046,6 +1048,7 @@ def main(args):
                     device,
                     use_tilt=tilt is not None,
                     ctf_params=ctf_params,
+                    shuffler_size=args.shuffler_size,
                 )
                 save_checkpoint(
                     model,

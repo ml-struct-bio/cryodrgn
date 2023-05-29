@@ -122,8 +122,8 @@ def add_args(parser):
     group.add_argument(
         "--num-workers",
         type=int,
-        default=1,
-        help="Number of num_workers of Dataloader (default: %(default)s)",
+        default=0,
+        help="Number of subprocesses to use as DataLoader workers. If 0, then use the main process for data loading. (default: %(default)s)",
     )
     group.add_argument(
         "--max-threads",
@@ -447,12 +447,15 @@ def eval_z(
     use_tilt=False,
     ctf_params=None,
     use_real=False,
+    shuffler_size=0,
 ):
     logger.info("Evaluating z")
     assert not model.training
     z_mu_all = []
     z_logvar_all = []
-    data_generator = dataset.make_dataloader(data, batch_size=batch_size)
+    data_generator = dataset.make_dataloader(
+        data, batch_size=batch_size, shuffler_size=shuffler_size
+    )
     for i, minibatch in enumerate(data_generator):
         ind = minibatch[-1]
         y = minibatch[0].to(device)
@@ -873,10 +876,11 @@ def main(args):
                     data,
                     args.batch_size,
                     device,
-                    posetracker.trans,
-                    tilt is not None,
-                    ctf_params,
-                    args.use_real,
+                    trans=posetracker.trans,
+                    use_tilt=tilt is not None,
+                    ctf_params=ctf_params,
+                    use_real=args.use_real,
+                    shuffler_size=args.shuffler_size,
                 )
                 save_checkpoint(model, optim, epoch, z_mu, z_logvar, out_weights, out_z)
             if args.do_pose_sgd and epoch >= args.pretrain:

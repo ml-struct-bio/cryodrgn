@@ -239,7 +239,7 @@ class _DataShufflerIterator:
 
 
 def make_dataloader(
-    data: ImageDataset, *, batch_size: int, num_workers: int = 1, shuffler_size: int = 0
+    data: ImageDataset, *, batch_size: int, num_workers: int = 0, shuffler_size: int = 0
 ):
     if shuffler_size > 0:
         assert data.lazy, "Only enable a data shuffler for lazy loading"

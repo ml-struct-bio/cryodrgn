@@ -273,7 +273,6 @@ class MRCFileSource(ImageSource):
                     tgt_indices = np.arange(len(indices))
 
             assert isinstance(tgt_indices, np.ndarray)
-
             is_contiguous = np.all(indices == indices[0] + np.arange(len(indices)))
             if require_contiguous:
                 assert is_contiguous, "MRC indices are not adjacent."
@@ -333,7 +332,7 @@ class _MRCDataFrameSource(ImageSource):
             src = MRCFileSource(filepath)
             # df.index indicates the positions where the data needs to be inserted -> return for use by caller
             return df.index, src._images(
-                df["__mrc_index"], require_contiguous=require_contiguous
+                df["__mrc_index"].to_numpy(), require_contiguous=require_contiguous
             )
 
         data = np.zeros((len(indices), self.D, self.D), dtype=self.dtype)

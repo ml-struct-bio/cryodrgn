@@ -160,7 +160,7 @@ class ImageSource:
     ) -> torch.Tensor:
         indices = self._convert_to_ndarray(indices)
         if self.data:  # cached data
-            images = self.data._images(indices)
+            images = self.data._images(indices, require_contiguous=require_contiguous)
         else:
             # Convert incoming caller indices to indices that this ImageSource will use
             if self.indices is not None:
@@ -214,6 +214,11 @@ class ArraySource(ImageSource):
         super().__init__(D=ny, n=nz)
 
     def _images(self, indices: np.ndarray, require_contiguous: bool = False):
+        """
+        Return ndarray data at specified indices.
+        Note that this implementation chooses to ignore `require_contiguous`
+        since fancy indexing on a realized ndarray is "fast enough" for all practical purposes.
+        """
         return self.array[indices, ...]
 
 

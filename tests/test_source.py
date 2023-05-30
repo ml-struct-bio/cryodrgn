@@ -80,7 +80,7 @@ def test_prespecified_indices(mrcs_data):
     assert torch.allclose(mrcs_data[np.array([5, 304]), :, :], data)
 
 
-def test_tprespecified_indices_eager(mrcs_data):
+def test_prespecified_indices_eager(mrcs_data):
     # An ImageSource can have pre-specified indices, which will be the only ones used when reading underlying data.
     src = ImageSource.from_file(
         f"{DATA_FOLDER}/toy_projections.mrcs",
@@ -111,6 +111,43 @@ def test_txt_prespecified_indices(mrcs_data):
     assert torch.allclose(
         mrcs_data[np.array([531, 363, 875, 35, 631, 693]), :, :], data
     )
+
+
+def test_txt_prespecified_indices_contiguous(mrcs_data):
+    # Each line of the txt file points to an .mrcs file with 1000 particles.
+    # Specify indices that span these files.
+    src = ImageSource.from_file(
+        f"{DATA_FOLDER}/toy_projections_2.txt",
+        indices=np.array([35, 1034, 1032, 1033, 42, 36]),
+    )
+    assert src.shape == (6, 30, 30)  # Not (100, 30, 30)
+
+    # Note that we end up accessing contiguous memory locations
+    # since the indexing below ends up being interpreted as
+    # [1032, 1033, 1034, 35, 36]
+    # and the 2 .mrcs files (indices <1000 and indices >=1000) are identical
+    data = src.images(np.array([2, 3, 1, 0, 5]), require_contiguous=True)
+
+    assert torch.allclose(mrcs_data[np.array([32, 33, 34, 35, 36]), :, :], data)
+
+
+def test_txt_prespecified_indices_contiguous_eager(mrcs_data):
+    # Each line of the txt file points to an .mrcs file with 1000 particles.
+    # Specify indices that span these files.
+    src = ImageSource.from_file(
+        f"{DATA_FOLDER}/toy_projections_2.txt",
+        indices=np.array([35, 1034, 1032, 1033, 42, 36]),
+        lazy=False,
+    )
+    assert src.shape == (6, 30, 30)  # Not (100, 30, 30)
+
+    # Note that we end up accessing contiguous memory locations
+    # since the indexing below ends up being interpreted as
+    # [1032, 1033, 1034, 35, 36]
+    # and the 2 .mrcs files (indices <1000 and indices >=1000) are identical
+    data = src.images(np.array([2, 3, 1, 0, 5]), require_contiguous=True)
+
+    assert torch.allclose(mrcs_data[np.array([32, 33, 34, 35, 36]), :, :], data)
 
 
 def test_txt_prespecified_indices_eager(mrcs_data):

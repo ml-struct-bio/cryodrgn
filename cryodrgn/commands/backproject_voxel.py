@@ -229,7 +229,7 @@ def main(args):
             freqs = lattice.freqs2d / ctf_params[ii, 0] # How to get the spatial frequency per image coordinate?
             cumulative_dose = data.tilt_number[ii] * data.dose_per_tilt
             ff *= np.exp(-cumulative_dose/data.critical_exposure(freqs))
-            ff *= math.cos(data.tilt_angles[ii])
+            ff *= math.cos(data.tilt_angles[ii] * math.pi/180)
 
         ff_coord = lattice.coords[mask] @ r
         add_slice(V, counts, ff_coord, ff, D)

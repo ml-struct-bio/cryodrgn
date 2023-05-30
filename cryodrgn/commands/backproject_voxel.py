@@ -5,6 +5,7 @@ Backproject cryo-EM images
 import argparse
 import os
 import time
+import math
 import numpy as np
 import torch
 import logging
@@ -67,6 +68,37 @@ def add_args(parser):
         default=45,
         help="Right-handed x-axis tilt offset in degrees (default: %(default)s)",
     )
+    group.add_argument(
+        "--do-tilt-series", 
+        dest="do_tilt_series", 
+        action="store_true", 
+        help="Store data as tilt series"
+    )
+    group.add_argument(
+        "--ntilts",
+        type=int,
+        default=10,
+        help="Number of tilts to encode (default: %(default)s)",
+    )
+    group.add_argument(
+        "--voltage", 
+        type=int,
+        default=300,
+        help="Microscope voltage (default: %(default)s)"
+    )
+    group.add_argument(
+        "--dose_per_tilt", 
+        type=float,
+        default=2.93,
+        help="Expected dose per tilt (electrons/A^2 per tilt) (default: %(default)s)"
+    )
+    group.add_argument(
+        "--angle_per_tilt", 
+        type=float,
+        default=3,
+        help="Tilt angle increment per tilt in degrees (default: %(default)s)"
+    )
+
     return parser
 
 
@@ -117,18 +149,32 @@ def main(args):
     else:  # tilt series
         tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32), device=device)
 
-    data = dataset.ImageDataset(
-        mrcfile=args.particles,
-        norm=(0, 1),
-        invert_data=args.invert_data,
-        datadir=args.datadir,
-        ind=args.ind,
-        lazy=args.lazy,
-    )
+    if args.do_tilt_series:
+        data = dataset.TiltSeriesData(
+            args.particles, 
+            args.ntilts,
+            norm=(0, 1),
+            invert_data=args.invert_data, 
+            datadir=args.datadir,
+            ind=args.ind,
+            lazy=args.lazy,
+            voltage=args.voltage,
+            dose_per_tilt=args.dose_per_tilt,
+            angle_per_tilt=args.angle_per_tilt
+        )
+    else:
+        data = dataset.ImageDataset(
+            mrcfile=args.particles,
+            norm=(0, 1),
+            invert_data=args.invert_data,
+            datadir=args.datadir,
+            ind=args.ind,
+            lazy=args.lazy,
+        )
 
     D = data.D
     Nimg = data.N
-
+    
     lattice = Lattice(D, extent=D // 2, device=device)
 
     posetracker = PoseTracker.load(args.poses, Nimg, D, None, args.ind, device=device)
@@ -136,9 +182,13 @@ def main(args):
     if args.ctf is not None:
         logger.info("Loading ctf params from {}".format(args.ctf))
         ctf_params = ctf.load_ctf_for_training(D - 1, args.ctf)
-        ctf_params = torch.tensor(ctf_params, device=device)
         if args.ind is not None:
             ctf_params = ctf_params[args.ind]
+        if args.encode_mode == "tilt":  # TODO: Parse this in cryodrgn parse_ctf_star
+            ctf_params = np.concatenate(
+                (ctf_params, data.ctfscalefactor.reshape(-1, 1)), axis=1  # type: ignore
+            )
+        ctf_params = torch.tensor(ctf_params, device=device)
     else:
         ctf_params = None
     Apix = float(ctf_params[0, 0]) if ctf_params is not None else 1.0
@@ -158,8 +208,9 @@ def main(args):
         if ii % 100 == 0:
             logger.info("image {}".format(ii))
         r, t = posetracker.get_pose(ii)
-        ff = data[ii]
+        ff = data.get_tilt(index) if args.do_tilt_series else data[ii]
         assert isinstance(ff, tuple)
+
         if tilt is not None:
             assert isinstance(ff, tuple)
             ff_tilt = ff[1]
@@ -174,6 +225,12 @@ def main(args):
             ff *= c.sign()
         if t is not None:
             ff = lattice.translate_ht(ff.view(1, -1), t.view(1, 1, 2), mask).view(-1)
+        if args.do_tilt_series:
+            freqs = lattice.freqs2d / ctf_params[ii, 0] # How to get the spatial frequency per image coordinate?
+            cumulative_dose = data.tilt_number[ii] * data.dose_per_tilt
+            ff *= np.exp(-cumulative_dose/data.critical_exposure(freqs))
+            ff *= math.cos(data.tilt_angles[ii])
+
         ff_coord = lattice.coords[mask] @ r
         add_slice(V, counts, ff_coord, ff, D)
 

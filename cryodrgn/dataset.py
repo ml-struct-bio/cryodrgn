@@ -121,7 +121,11 @@ class TiltSeriesData(ImageDataset):
         ntilts,
         random_tilts=False,
         ind=None,
-        **kwargs,
+        voltage=None,
+        expected_res=None,
+        dose_per_tilt=None,
+        angle_per_tilt=None,
+        **kwargs
     ):
         # Note: ind is the indices of the *tilts*, not the particles
         super().__init__(tiltstar, ind=ind, **kwargs)
@@ -141,6 +145,12 @@ class TiltSeriesData(ImageDataset):
         )
         self.Np = len(particles)
         self.ctfscalefactor = np.asarray(s.df["_rlnCtfScalefactor"], dtype=np.float32)
+        self.tilt_numbers = np.zeros(self.tilts.N)
+        for ind in particles:
+            sort_idxs = self.ctfscalefactor[ind].argsort()
+            ranks = np.empty_like(sort_idxs)
+            ranks[sort_idxs[::-1]] = np.arange(len(ind))
+            self.tilt_numbers[ind] = ranks
         logger.info(f"Loaded {self.N} tilts for {self.Np} particles")
         counts = Counter(group_name)
         unique_counts = set(counts.values())
@@ -149,6 +159,13 @@ class TiltSeriesData(ImageDataset):
         assert ntilts <= min(unique_counts)
         self.ntilts = ntilts
         self.random_tilts = random_tilts
+        
+        self.voltage = voltage
+        self.dose_per_tilt = dose_per_tilt
+        
+        # Assumes dose-symmetric tilt scheme 
+        # As implemented in Hagen, Wan, Briggs J. Struct. Biol. 2017
+        self.tilt_angles = angle_per_tilt * np.ceil(self.tilt_numbers/2)
 
     def __len__(self):
         return self.Np
@@ -170,6 +187,9 @@ class TiltSeriesData(ImageDataset):
         tilt_indices = np.concatenate(tilt_indices)
         images = self._process(self.src.images(tilt_indices).to(self.device))
         return images, tilt_indices, index
+
+    def get_tilt(self, index):
+        return super().__getitem__(index)
 
     def get_slice(self, start: int, stop: int) -> Tuple[np.ndarray, np.ndarray]:
         # we have to fetch all the tilts to stay contiguous, and then subset
@@ -194,6 +214,23 @@ class TiltSeriesData(ImageDataset):
         selected_tilt_indices = cat_tilt_indices[tilt_masks]
 
         return selected_images.numpy(), selected_tilt_indices
+
+    def critical_exposure(self, freq):
+        assert self.voltage is not None, \
+            "Critical exposure calculation requires voltage"
+
+        assert self.voltage == 300 or self.voltage == 200, \
+            "Critical exposure calculation requires 200kV or 300kV imaging"
+
+        # From Grant and Grigorieff, 2015
+        scale_factor = 1
+        if self.voltage == 200:
+            scale_factor = 0.75
+        return scale_factor * 0.245 * (freq**(-1.655)) + 2.81
+
+    def optimal_exposure(self):
+        return 2.51284 * self.critical_exposure()
+
 
 
 class DataShuffler:

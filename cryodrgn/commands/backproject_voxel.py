@@ -226,10 +226,13 @@ def main(args):
         if t is not None:
             ff = lattice.translate_ht(ff.view(1, -1), t.view(1, 1, 2), mask).view(-1)
         if args.do_tilt_series:
-            freqs = lattice.freqs2d / ctf_params[ii, 0] # How to get the spatial frequency per image coordinate?
+            freqs = lattice.freqs2d / ctf_params[ii, 0]
+            x = freqs[..., 0]
+            y = freqs[..., 1]
+            s2 = x**2 + y**2
             cumulative_dose = data.tilt_number[ii] * data.dose_per_tilt
-            ff *= np.exp(-cumulative_dose/data.critical_exposure(freqs))
-            ff *= math.cos(data.tilt_angles[ii] * math.pi/180)
+            ff *= np.exp(-cumulative_dose/data.critical_exposure(np.sqrt(s2)))
+            ff *= math.cos(data.tilt_angles[ii] * np.pi/180)
 
         ff_coord = lattice.coords[mask] @ r
         add_slice(V, counts, ff_coord, ff, D)

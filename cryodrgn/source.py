@@ -51,7 +51,7 @@ class ImageSource:
         lazy: bool = True,
         indices: Optional[np.ndarray] = None,
         datadir: str = "",
-        n_workers: int = 1,
+        max_threads: int = 1,
     ):
         ext = os.path.splitext(filepath)[-1][1:]
         if ext == "star":
@@ -60,7 +60,7 @@ class ImageSource:
                 lazy=lazy,
                 datadir=datadir,
                 indices=indices,
-                n_workers=n_workers,
+                max_threads=max_threads,
             )
         elif ext in ("mrc", "mrcs"):
             return MRCFileSource(filepath, lazy=lazy, indices=indices)
@@ -70,10 +70,12 @@ class ImageSource:
                 lazy=lazy,
                 datadir=datadir,
                 indices=indices,
-                n_workers=n_workers,
+                max_threads=max_threads,
             )
         elif ext == "cs":
-            return CsSource(filepath, lazy=lazy, indices=indices, n_workers=n_workers)
+            return CsSource(
+                filepath, lazy=lazy, indices=indices, max_threads=max_threads
+            )
         else:
             raise RuntimeError(f"Unrecognized file extension {ext}")
 
@@ -82,7 +84,7 @@ class ImageSource:
         D: int,
         n: int,
         filenames: Union[List[str], str, None] = None,
-        n_workers: int = 1,
+        max_threads: int = 1,
         dtype: str = "float32",
         lazy: bool = True,
         indices: Optional[np.ndarray] = None,
@@ -111,7 +113,7 @@ class ImageSource:
         self.filenames = np.array(filenames)
 
         self.lazy = lazy
-        self.n_workers = n_workers
+        self.max_threads = max_threads
         self.dtype = dtype
 
         self.data = None
@@ -248,7 +250,7 @@ class MRCFileSource(ImageSource):
             D=self.ny,
             n=self.nz,
             filenames=filepath,
-            n_workers=1,
+            max_threads=1,
             dtype=self.dtype,
             lazy=lazy,
             indices=indices,
@@ -310,7 +312,7 @@ class _MRCDataFrameSource(ImageSource):
         datadir: str = "",
         lazy: bool = True,
         indices: Optional[np.ndarray] = None,
-        n_workers: int = 1,
+        max_threads: int = 1,
     ):
         assert "__mrc_index" in df.columns
         assert "__mrc_filename" in df.columns
@@ -329,7 +331,7 @@ class _MRCDataFrameSource(ImageSource):
         super().__init__(
             D=D,
             n=len(self.df),
-            n_workers=n_workers,
+            max_threads=max_threads,
             lazy=lazy,
             indices=indices,
         )
@@ -348,8 +350,8 @@ class _MRCDataFrameSource(ImageSource):
         # Create a DataFrame corresponding to the indices we're interested in
         batch_df = self.df.iloc[indices].reset_index(drop=True)
         groups = batch_df.groupby("__mrc_filepath")
-        n_workers = min(self.n_workers, len(groups))
-        with futures.ThreadPoolExecutor(n_workers) as executor:
+        max_threads = min(self.max_threads, len(groups))
+        with futures.ThreadPoolExecutor(max_threads) as executor:
             to_do = []
             for filepath, _df in groups:
                 future = executor.submit(load_single_mrcs, filepath, _df)
@@ -369,7 +371,7 @@ class StarfileSource(_MRCDataFrameSource):
         datadir: str = "",
         lazy: bool = True,
         indices: Optional[np.ndarray] = None,
-        n_workers: int = 1,
+        max_threads: int = 1,
     ):
         from cryodrgn.starfile import Starfile
 
@@ -386,7 +388,7 @@ class StarfileSource(_MRCDataFrameSource):
             datadir = os.path.dirname(filepath)
 
         super().__init__(
-            df=df, datadir=datadir, lazy=lazy, indices=indices, n_workers=n_workers
+            df=df, datadir=datadir, lazy=lazy, indices=indices, max_threads=max_threads
         )
 
 
@@ -397,7 +399,7 @@ class CsSource(_MRCDataFrameSource):
         datadir: str = "",
         lazy: bool = True,
         indices: Optional[np.ndarray] = None,
-        n_workers: int = 1,
+        max_threads: int = 1,
     ):
         metadata = np.load(filepath)
         blob_indices = metadata["blob/idx"]
@@ -418,7 +420,7 @@ class CsSource(_MRCDataFrameSource):
             datadir = os.path.dirname(filepath)
 
         super().__init__(
-            df=df, datadir=datadir, lazy=lazy, indices=indices, n_workers=n_workers
+            df=df, datadir=datadir, lazy=lazy, indices=indices, max_threads=max_threads
         )
 
 
@@ -429,7 +431,7 @@ class TxtFileSource(_MRCDataFrameSource):
         datadir: str,
         lazy: bool = True,
         indices: Optional[np.ndarray] = None,
-        n_workers: int = 1,
+        max_threads: int = 1,
     ):
         _paths = []
         filepath_dir = os.path.dirname(filepath)
@@ -450,5 +452,5 @@ class TxtFileSource(_MRCDataFrameSource):
             data={"__mrc_filename": mrc_filename, "__mrc_index": mrc_index}
         )
         super().__init__(
-            df=df, datadir=datadir, lazy=lazy, indices=indices, n_workers=n_workers
+            df=df, datadir=datadir, lazy=lazy, indices=indices, max_threads=max_threads
         )

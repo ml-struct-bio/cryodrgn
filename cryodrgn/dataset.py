@@ -1,5 +1,4 @@
 import numpy as np
-import multiprocessing as mp
 import logging
 import torch
 from torch.utils import data
@@ -34,7 +33,11 @@ class ImageDataset(data.Dataset):
         datadir = datadir or ""
         self.ind = ind
         self.src = ImageSource.from_file(
-            mrcfile, lazy=lazy, datadir=datadir, indices=ind, n_workers=1
+            mrcfile,
+            lazy=lazy,
+            datadir=datadir,
+            indices=ind,
+            max_threads=max_threads,
         )
         if tilt_mrcfile is None:
             self.tilt_src = None
@@ -50,7 +53,6 @@ class ImageDataset(data.Dataset):
         self.D = ny + 1  # after symmetrization
         self.invert_data = invert_data
         self.window = window_mask(ny, window_r, 0.99).to(device) if window else None
-        self.max_threads = min(max_threads, mp.cpu_count())
         norm = norm or self.estimate_normalization()
         self.norm = [float(x) for x in norm]
         self.device = device

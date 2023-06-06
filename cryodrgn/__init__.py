@@ -12,7 +12,6 @@ except ModuleNotFoundError:
 
 _ROOT = os.path.abspath(os.path.dirname(__file__))
 
-
 logging.config.dictConfig(
     {
         "version": 1,

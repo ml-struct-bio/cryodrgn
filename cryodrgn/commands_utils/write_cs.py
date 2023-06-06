@@ -6,7 +6,8 @@ import argparse
 import os
 import numpy as np
 import logging
-from cryodrgn import dataset, utils
+from cryodrgn import utils
+from cryodrgn.source import ImageSource
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +38,8 @@ def main(args):
     assert input_ext in (".mrcs", ".txt", ".cs"), "Input file must be .mrcs/.txt/.cs"
 
     # Either accept an input cs file, or an input .mrcs/.txt with optional ctf/pose pkl file(s)
+    particles = ImageSource.from_file(args.particles, lazy=True, datadir=args.datadir)
     if input_ext == ".cs":
-        particles = np.load(args.particles)
         assert (
             args.poses is None
         ), "--poses cannot be specified when input is a cs file (poses are obtained from cs file)"
@@ -46,9 +47,6 @@ def main(args):
             args.ctf is None
         ), "--ctf cannot be specified when input is a cs file (ctf information are obtained from cs file)"
     else:
-        particles = dataset.load_particles(
-            args.particles, lazy=True, datadir=args.datadir
-        )
         if args.ctf:
             ctf = utils.load_pkl(args.ctf)
             assert ctf.shape[1] == 9, "Incorrect CTF pkl format"
@@ -62,10 +60,11 @@ def main(args):
             ), f"{len(particles)} != {len(poses)}, Number of particles != number of poses"
     logger.info(f"{len(particles)} particles in {args.particles}")
 
+    ind = None
     if args.ind:
         ind = utils.load_pkl(args.ind)
         logger.info(f"Filtering to {len(ind)} particles")
-        particles = np.array(particles)[ind]
+    particles = np.array(particles.images(ind))
 
     if input_ext == ".cs":
         pass  # Nothing to be done - we've already sub-setted the .cs data

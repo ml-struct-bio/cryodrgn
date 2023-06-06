@@ -11,12 +11,15 @@ import logging
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
 import seaborn as sns
 from matplotlib.colors import ListedColormap
 from scipy.ndimage.morphology import binary_dilation
 from sklearn.cluster import AgglomerativeClustering
 from sklearn.decomposition import PCA
-from cryodrgn import analysis, mrc, utils
+from cryodrgn import analysis, utils
+from cryodrgn.mrc import MRCFile
+from cryodrgn.source import ImageSource
 import cryodrgn.config
 
 logger = logging.getLogger(__name__)
@@ -161,39 +164,41 @@ def make_mask(outdir, K, dilate, thresh, in_mrc=None, Apix=1, vol_start_index=0)
         if thresh is None:
             thresh = []
             for i in range(K):
-                vol = mrc.parse_mrc(
+                vol = ImageSource.from_file(
                     f"{outdir}/kmeans{K}/vol_{vol_start_index+i:03d}.mrc"
-                )[0]
-                assert isinstance(vol, np.ndarray)
+                ).images()
+                assert isinstance(vol, torch.Tensor)
                 thresh.append(np.percentile(vol, 99.99) / 2)
             thresh = np.mean(thresh)
         logger.info(f"Threshold: {thresh}")
         logger.info(f"Dilating mask by: {dilate}")
 
         def binary_mask(vol):
-            x = (vol >= thresh).astype(bool)
+            x = (vol >= thresh).to(torch.bool)
             x = binary_dilation(x, iterations=dilate)
             return x
 
         # combine all masks by taking their union
-        vol = mrc.parse_mrc(f"{outdir}/kmeans{K}/vol_{vol_start_index:03d}.mrc")[0]
+        vol = ImageSource.from_file(
+            f"{outdir}/kmeans{K}/vol_{vol_start_index:03d}.mrc"
+        ).images()
         mask = ~binary_mask(vol)
         for i in range(1, K):
-            vol = mrc.parse_mrc(f"{outdir}/kmeans{K}/vol_{vol_start_index+i:03d}.mrc")[
-                0
-            ]
+            vol = ImageSource.from_file(
+                f"{outdir}/kmeans{K}/vol_{vol_start_index+i:03d}.mrc"
+            ).images()
             mask *= ~binary_mask(vol)
         mask = ~mask
     else:
         # Load provided mrc and convert to a boolean mask
-        mask, _ = mrc.parse_mrc(in_mrc)
+        mask = np.array(ImageSource.from_file(in_mrc).images())
         assert isinstance(mask, np.ndarray)
         mask = mask.astype(bool)
 
     # save mask
     out_mrc = f"{outdir}/mask.mrc"
     logger.info(f"Saving {out_mrc}")
-    mrc.write(out_mrc, mask.astype(np.float32), Apix=Apix)
+    MRCFile.write(out_mrc, mask.astype(np.float32), Apix=Apix)
 
     # view slices
     out_png = f"{outdir}/mask_slices.png"
@@ -239,30 +244,36 @@ def analyze_volumes(
 
     # load mean volume, compute it if it does not exist
     if not os.path.exists(f"{outdir}/kmeans{K}/vol_mean.mrc"):
-        volm = np.array(
+        volm = torch.stack(
             [
-                mrc.parse_mrc(f"{outdir}/kmeans{K}/vol_{vol_start_index+i:03d}.mrc")[0]
+                ImageSource.from_file(
+                    f"{outdir}/kmeans{K}/vol_{vol_start_index+i:03d}.mrc"
+                ).images()
                 for i in range(K)
             ]
-        ).mean(axis=0)
-        mrc.write(f"{outdir}/kmeans{K}/vol_mean.mrc", volm, Apix=Apix)
+        ).mean(dim=0)
+        MRCFile.write(
+            f"{outdir}/kmeans{K}/vol_mean.mrc",
+            np.array(volm).astype(np.float32),
+            Apix=Apix,
+        )
     else:
-        volm = mrc.parse_mrc(f"{outdir}/kmeans{K}/vol_mean.mrc")[0]
+        volm = ImageSource.from_file(f"{outdir}/kmeans{K}/vol_mean.mrc").images()
 
-    assert isinstance(volm, np.ndarray)
+    assert isinstance(volm, torch.Tensor)
 
     # load mask
-    mask = mrc.parse_mrc(f"{outdir}/mask.mrc")[0]
-    assert isinstance(mask, np.ndarray)
-    mask = mask.astype(bool)
+    mask = ImageSource.from_file(f"{outdir}/mask.mrc").images()
+    assert isinstance(mask, torch.Tensor)
+    mask = mask.to(torch.bool)
     logger.info(f"{mask.sum()} voxels in mask")
 
     # load volumes
-    vols = np.array(
+    vols = torch.stack(
         [
-            mrc.parse_mrc(f"{outdir}/kmeans{K}/vol_{vol_start_index+i:03d}.mrc")[0][
-                mask
-            ]
+            ImageSource.from_file(
+                f"{outdir}/kmeans{K}/vol_{vol_start_index+i:03d}.mrc"
+            ).images()[mask]
             for i in range(K)
         ]
     )
@@ -296,9 +307,11 @@ def analyze_volumes(
         for j, val in enumerate(
             np.linspace(min_, max_, 10, endpoint=True), start=vol_start_index
         ):
-            v = volm.copy()
-            v[mask] += pca.components_[i] * val
-            mrc.write(f"{subdir}/{j}.mrc", v, Apix=Apix)
+            v = volm.clone()
+            v[mask] += torch.Tensor(pca.components_[i]) * val
+            MRCFile.write(
+                f"{subdir}/{j}.mrc", np.array(v).astype(np.float32), Apix=Apix
+            )
 
     # which plots to show???
     def plot(i, j):
@@ -328,9 +341,11 @@ def analyze_volumes(
         logger.info(f"State {i}: {len(vol_i)} volumes")
         if vol_ind is not None:
             vol_i = np.arange(K)[vol_ind][vol_i]
-        vol_i_all = np.array(
+        vol_i_all = torch.stack(
             [
-                mrc.parse_mrc(f"{outdir}/kmeans{K}/vol_{vol_start_index+i:03d}.mrc")[0]
+                ImageSource.from_file(
+                    f"{outdir}/kmeans{K}/vol_{vol_start_index+i:03d}.mrc"
+                ).images()
                 for i in vol_i
             ]
         )
@@ -339,10 +354,10 @@ def analyze_volumes(
         vol_i_std = (
             np.average((vol_i_all - vol_i_mean) ** 2, axis=0, weights=nparticles) ** 0.5
         )
-        mrc.write(
+        MRCFile.write(
             f"{subdir}/state_{i}_mean.mrc", vol_i_mean.astype(np.float32), Apix=Apix
         )
-        mrc.write(
+        MRCFile.write(
             f"{subdir}/state_{i}_std.mrc", vol_i_std.astype(np.float32), Apix=Apix
         )
         if not os.path.exists(f"{subdir}/state_{i}"):

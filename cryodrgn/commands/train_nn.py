@@ -11,7 +11,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
 
 try:
     import apex.amp as amp  # type: ignore
@@ -19,7 +18,8 @@ except ImportError:
     pass
 
 import cryodrgn
-from cryodrgn import ctf, dataset, models, mrc
+from cryodrgn import ctf, dataset, models
+from cryodrgn.mrc import MRCFile
 from cryodrgn.lattice import Lattice
 from cryodrgn.pose import PoseTracker
 from cryodrgn.models import DataParallelDecoder, Decoder
@@ -95,6 +95,12 @@ def add_args(parser):
         "--lazy",
         action="store_true",
         help="Lazy loading if full dataset is too large to fit in memory",
+    )
+    group.add_argument(
+        "--shuffler-size",
+        type=int,
+        default=0,
+        help="If non-zero, will use a data shuffler for faster lazy data loading.",
     )
     group.add_argument(
         "--datadir",
@@ -236,7 +242,7 @@ def save_checkpoint(
 ):
     model.eval()
     vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, norm)
-    mrc.write(out_mrc, vol.astype(np.float32), Apix=Apix)
+    MRCFile.write(out_mrc, np.array(vol).astype(np.float32), Apix=Apix)
     torch.save(
         {
             "norm": norm,
@@ -379,26 +385,18 @@ def main(args):
         ind = pickle.load(open(args.ind, "rb"))
     else:
         ind = None
-    if args.lazy:
-        data = dataset.LazyMRCData(
-            args.particles,
-            norm=args.norm,
-            invert_data=args.invert_data,
-            ind=ind,
-            window=args.window,
-            datadir=args.datadir,
-            window_r=args.window_r,
-        )
-    else:
-        data = dataset.MRCData(
-            args.particles,
-            norm=args.norm,
-            invert_data=args.invert_data,
-            ind=ind,
-            window=args.window,
-            datadir=args.datadir,
-            window_r=args.window_r,
-        )
+
+    data = dataset.ImageDataset(
+        args.particles,
+        lazy=args.lazy,
+        norm=args.norm,
+        invert_data=args.invert_data,
+        ind=ind,
+        window=args.window,
+        datadir=args.datadir,
+        window_r=args.window_r,
+    )
+
     D = data.D
     Nimg = data.N
 
@@ -499,13 +497,16 @@ def main(args):
         )
 
     # train
-    data_generator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
+    data_generator = dataset.make_dataloader(
+        data, batch_size=args.batch_size, shuffler_size=args.shuffler_size
+    )
+
     epoch = None
     for epoch in range(start_epoch, args.num_epochs):
         t2 = dt.now()
         loss_accum = 0
         batch_it = 0
-        for batch, ind in data_generator:
+        for batch, _, ind in data_generator:
             batch_it += len(ind)
             ind = ind.to(device)
             if pose_optimizer is not None:

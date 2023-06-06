@@ -21,7 +21,10 @@ from scipy import ndimage, stats
 from scipy.ndimage import gaussian_filter, maximum_filter
 from scipy.ndimage import binary_dilation, distance_transform_edt
 from scipy.spatial import distance_matrix
-from cryodrgn import analysis, fft, mrc, utils
+
+from cryodrgn import analysis, fft, utils
+from cryodrgn.source import ImageSource
+from cryodrgn.mrc import MRCFile
 import cryodrgn.config
 
 try:
@@ -785,7 +788,7 @@ def mask_volume(volpath, outpath, Apix, thresh=None, dilate=3, dist=10):
     Outputs
        volume.masked.mrc written to outdir
     """
-    vol = mrc.parse_mrc(volpath)[0]
+    vol = np.array(ImageSource.from_file(volpath).images())
     assert isinstance(vol, np.ndarray)
     thresh = np.percentile(vol, 99.99) / 2 if thresh is None else thresh
     x = (vol >= thresh).astype(bool)
@@ -799,9 +802,9 @@ def mask_volume(volpath, outpath, Apix, thresh=None, dilate=3, dist=10):
     assert np.all(z <= 1)
 
     # used to write out mask separately from masked volume, now apply and save the masked vol to minimize future I/O
-    # mrc.write(outpath, z.astype(np.float32))
+    # MRCFile.write(outpath, z.astype(np.float32))
     vol *= z
-    mrc.write(outpath, vol.astype(np.float32), Apix=Apix)
+    MRCFile.write(outpath, vol.astype(np.float32), Apix=Apix)
 
 
 def mask_volumes(
@@ -866,7 +869,7 @@ def calculate_CCs(outdir, epochs, labels, chimerax_colors):
         Helper function to calculate the zero-mean correlation coefficient as defined in eq 2 in
         https://journals.iucr.org/d/issues/2018/09/00/kw5139/index.html
         vol1 and vol2 should be maps of the same box size, structured as numpy arrays with ndim=3, i.e. by loading with
-        cryodrgn.mrc.parse_mrc
+        cryodrgn.source.ImageSource
         """
         zmean1 = vol1 - np.mean(vol1)
         zmean2 = vol2 - np.mean(vol2)
@@ -881,12 +884,12 @@ def calculate_CCs(outdir, epochs, labels, chimerax_colors):
 
     for i in range(len(epochs) - 1):
         for cluster in np.arange(len(labels)):
-            vol1, _ = mrc.parse_mrc(
+            vol1 = ImageSource.from_file(
                 f"{outdir}/vols.{epochs[i]}/vol_{cluster:03d}.masked.mrc"
-            )
-            vol2, _ = mrc.parse_mrc(
+            ).images()
+            vol2 = ImageSource.from_file(
                 f"{outdir}/vols.{epochs[i+1]}/vol_{cluster:03d}.masked.mrc"
-            )
+            ).images()
 
             cc_masked[cluster, i] = calc_cc(vol1, vol2)
 
@@ -933,13 +936,11 @@ def calculate_FSCs(outdir, epochs, labels, img_size, chimerax_colors):
         """
         Helper function to calculate the FSC between two (assumed masked) volumes
         vol1 and vol2 should be maps of the same box size, structured as numpy arrays with ndim=3, i.e. by loading with
-        cryodrgn.mrc.parse_mrc
+        cryodrgn.source.ImageSource
         """
         # load masked volumes in fourier space
-        vol1, _ = mrc.parse_mrc(vol1_path)
-        vol2, _ = mrc.parse_mrc(vol2_path)
-        assert isinstance(vol1, np.ndarray)
-        assert isinstance(vol2, np.ndarray)
+        vol1 = ImageSource.from_file(vol1_path).images()
+        vol2 = ImageSource.from_file(vol2_path).images()
 
         vol1_ft = fft.fftn_center(vol1)
         vol2_ft = fft.fftn_center(vol2)

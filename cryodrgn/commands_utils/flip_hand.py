@@ -3,7 +3,8 @@
 import argparse
 import logging
 import numpy as np
-from cryodrgn import mrc
+from cryodrgn.mrc import MRCFile
+from cryodrgn.source import ImageSource
 
 logger = logging.getLogger(__name__)
 
@@ -17,10 +18,15 @@ def add_args(parser):
 def main(args):
     assert args.input.endswith(".mrc"), "Input volume must be .mrc file"
     assert args.o.endswith(".mrc"), "Output volume must be .mrc file"
-    x, h = mrc.parse_mrc(args.input)
-    assert isinstance(x, np.ndarray)
-    x = x[::-1]
-    mrc.write(args.o, x, header=h)
+
+    src = ImageSource.from_file(args.input)
+    # Note: Proper flipping (compatible with legacy implementation) only happens when chunksize is equal to src.n
+    MRCFile.write(
+        args.o,
+        src,
+        transform_fn=lambda data, indices: np.array(data.cpu())[::-1],
+        chunksize=src.n,
+    )
     logger.info(f"Wrote {args.o}")
 
 

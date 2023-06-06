@@ -9,12 +9,14 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.data.dataloader import default_collate
 import torch.optim as optim
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset, DataLoader
 import cryodrgn
-from cryodrgn import config, mrc, utils
+from cryodrgn import config, utils
 from cryodrgn.models import HetOnlyVAE, ResidLinearMLP
+from cryodrgn.source import ImageSource
 
 logger = logging.getLogger(__name__)
 
@@ -173,18 +175,18 @@ def generate_and_map_volumes(
     logger.info(f"Saved {outdir}/z.sampled.pkl")
 
     # Set the device
-    assert torch.cuda.is_available(), "No GPUs detected"
-    torch.set_default_tensor_type(torch.cuda.FloatTensor)  # type: ignore
+    # if torch.cuda.is_available():
+    #     torch.set_default_tensor_type(torch.cuda.FloatTensor)  # type: ignore
 
     cfg = config.update_config_v1(cfg)
     logger.info("Loaded configuration:")
     pprint.pprint(cfg)
 
     D = cfg["lattice_args"]["D"]  # image size + 1
-    norm = cfg["dataset_args"]["norm"]
+    norm = [float(x) for x in cfg["dataset_args"]["norm"]]
 
     # Load landscape analysis inputs
-    mask, _ = mrc.parse_mrc(mask_mrc)
+    mask = np.array(ImageSource.from_file(mask_mrc).images().cpu())
     assert isinstance(mask, np.ndarray)
     mask = mask.astype(bool)
     if args.downsample:
@@ -225,7 +227,7 @@ def generate_and_map_volumes(
             )
         if args.flip:
             vol = vol[::-1]
-        embeddings.append(pca.transform(vol[mask].reshape(1, -1)))
+        embeddings.append(pca.transform(vol.cpu()[mask].reshape(1, -1)))
 
     embeddings = np.array(embeddings).reshape(len(z), -1).astype(np.float32)
 
@@ -242,7 +244,11 @@ def train_model(x, y, outdir, zfile, args):
     train_kwargs = {"batch_size": args.batch_size}
     test_kwargs = {"batch_size": args.test_batch_size}
     if use_cuda:
-        cuda_kwargs = {"num_workers": 1, "pin_memory": True, "shuffle": True}
+        cuda_kwargs = {
+            "num_workers": 0,
+            "shuffle": True,
+            "collate_fn": lambda x: tuple(x_.to(device) for x_ in default_collate(x)),
+        }
         train_kwargs.update(cuda_kwargs)
         test_kwargs.update(cuda_kwargs)
 

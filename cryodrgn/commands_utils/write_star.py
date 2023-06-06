@@ -7,7 +7,8 @@ import os
 import numpy as np
 import pandas as pd
 import logging
-from cryodrgn import dataset, mrc, utils
+from cryodrgn import utils
+from cryodrgn.source import ImageSource, StarfileSource
 from cryodrgn.starfile import Starfile
 
 logger = logging.getLogger(__name__)
@@ -51,19 +52,6 @@ def add_args(parser):
     return parser
 
 
-def parse_chunk_size(txtfile):
-    lines = open(txtfile, "r").readlines()
-
-    def abspath(f):
-        if os.path.isabs(f):
-            return f
-        base = os.path.dirname(os.path.abspath(txtfile))
-        return os.path.join(base, f)
-
-    lines = [abspath(x).strip() for x in lines]
-    return [mrc.parse_header(f).fields["nz"] for f in lines]
-
-
 def main(args):
     assert args.o.endswith(".star"), "Output file must be .star file"
     input_ext = os.path.splitext(args.particles)[-1]
@@ -74,7 +62,7 @@ def main(args):
     ), "Input file must be .mrcs/.txt/.star"
 
     # Either accept an input star file, or an input .mrcs/.txt with optional ctf/pose pkl file(s)
-    starfile = ctf = poses = eulers = trans = None
+    ctf = poses = eulers = trans = None
     if input_ext == ".star":
         assert (
             args.poses is None
@@ -83,54 +71,38 @@ def main(args):
             args.ctf is None
         ), "--ctf cannot be specified when input is a starfile (ctf information are obtained from starfile)"
 
-        starfile = Starfile.load(args.particles)
-        particles = starfile.get_particles(
-            datadir=os.path.dirname(args.particles), lazy=True
-        )
+    particles = ImageSource.from_file(args.particles, lazy=True)
 
-    else:
-        particles = dataset.load_particles(args.particles, lazy=True)
-        if args.ctf:
-            ctf = utils.load_pkl(args.ctf)
-            assert ctf.shape[1] == 9, "Incorrect CTF pkl format"
-            assert len(particles) == len(
-                ctf
-            ), f"{len(particles)} != {len(ctf)}, Number of particles != number of CTF paraameters"
-        if args.poses:
-            poses = utils.load_pkl(args.poses)
-            assert len(particles) == len(
-                poses[0]
-            ), f"{len(particles)} != {len(poses)}, Number of particles != number of poses"
+    if args.ctf:
+        ctf = utils.load_pkl(args.ctf)
+        assert ctf.shape[1] == 9, "Incorrect CTF pkl format"
+        assert len(particles) == len(
+            ctf
+        ), f"{len(particles)} != {len(ctf)}, Number of particles != number of CTF parameters"
+    if args.poses:
+        poses = utils.load_pkl(args.poses)
+        assert len(particles) == len(
+            poses[0]
+        ), f"{len(particles)} != {len(poses)}, Number of particles != number of poses"
     logger.info(f"{len(particles)} particles in {args.particles}")
 
-    if input_ext == ".star":
-        particle_ind = np.arange(len(particles))
-    # Get index for particles in each .mrcs file
-    elif input_ext == ".txt":
-        N_per_chunk = parse_chunk_size(args.particles)
-        particle_ind = np.concatenate([np.arange(nn) for nn in N_per_chunk])
-        assert len(particle_ind) == len(particles)
-    else:  # single .mrcs file
-        particle_ind = np.arange(len(particles))
-
+    ind = np.arange(particles.n)
     if args.ind:
         ind = utils.load_pkl(args.ind)
         logger.info(f"Filtering to {len(ind)} particles")
-        particles = [particles[ii] for ii in ind]
         if ctf is not None:
             ctf = ctf[ind]
         if poses is not None:
             poses = (poses[0][ind], poses[1][ind])
-        particle_ind = particle_ind[ind]
 
-    if starfile is not None:
-        df = starfile.df.loc[particle_ind]
+    if input_ext == ".star":
+        assert isinstance(particles, StarfileSource)
+        df = particles.df.loc[ind]
     else:
-        particle_ind += 1  # CHANGE TO 1-BASED INDEXING
-        image_names = [img.fname for img in particles]  # type: ignore
+        image_names = particles.filenames[ind]
         if args.full_path:
-            image_names = [os.path.abspath(img.fname) for img in particles]  # type: ignore
-        names = [f"{i}@{name}" for i, name in zip(particle_ind, image_names)]
+            image_names = [os.path.abspath(image_name) for image_name in image_names]
+        names = [f"{i+1}@{name}" for i, name in zip(ind, image_names)]
 
         if ctf is not None:
             ctf = ctf[:, 2:]
@@ -138,7 +110,7 @@ def main(args):
         # convert poses
         if poses is not None:
             eulers = utils.R_to_relion_scipy(poses[0])
-            D = particles[0].get().shape[0]  # type: ignore
+            D = particles[0].shape[-1]
             trans = poses[1] * D  # convert from fraction to pixels
 
         # Create a new dataframe with required star file headers

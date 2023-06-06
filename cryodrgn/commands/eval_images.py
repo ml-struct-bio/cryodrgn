@@ -9,7 +9,6 @@ from datetime import datetime as dt
 import logging
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
 from cryodrgn import config, ctf, dataset, utils
 from cryodrgn.commands.train_vae import loss_function, preprocess_input, run_batch
 from cryodrgn.models import HetOnlyVAE
@@ -234,45 +233,23 @@ def main(args):
     if args.tilt is None:
         if args.encode_mode == "conv":
             args.use_real = True
-        if args.lazy:
-            data = dataset.LazyMRCData(
-                args.particles,
-                norm=args.norm,
-                invert_data=args.invert_data,
-                ind=ind,
-                keepreal=args.use_real,
-                window=args.window,
-                datadir=args.datadir,
-                window_r=args.window_r,
-            )
-        else:
-            data = dataset.MRCData(
-                args.particles,
-                norm=args.norm,
-                invert_data=args.invert_data,
-                ind=ind,
-                keepreal=args.use_real,
-                window=args.window,
-                datadir=args.datadir,
-                window_r=args.window_r,
-            )
         tilt = None
     else:
         assert args.encode_mode == "tilt"
-        if args.lazy:
-            raise NotImplementedError
-        data = dataset.TiltMRCData(
-            args.particles,
-            args.tilt,
-            norm=args.norm,
-            invert_data=args.invert_data,
-            ind=ind,
-            window=args.window,
-            keepreal=args.use_real,
-            datadir=args.datadir,
-            window_r=args.window_r,
-        )
         tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32))
+
+    data = dataset.ImageDataset(
+        mrcfile=args.particles,
+        tilt_mrcfile=args.tilt,
+        norm=args.norm,
+        invert_data=args.invert_data,
+        ind=ind,
+        window=args.window,
+        keepreal=args.use_real,
+        datadir=args.datadir,
+        window_r=args.window_r,
+    )
+
     Nimg = data.N
     D = data.D
 
@@ -305,7 +282,8 @@ def main(args):
     kld_accum = 0
     loss_accum = 0
     batch_it = 0
-    data_generator = DataLoader(data, batch_size=args.batch_size, shuffle=False)
+    data_generator = dataset.make_dataloader(data, batch_size=args.batch_size)
+
     for minibatch in data_generator:
         ind = minibatch[-1].to(device)
         y = minibatch[0].to(device)

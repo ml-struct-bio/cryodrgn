@@ -4,7 +4,9 @@ import argparse
 import os
 import logging
 import matplotlib.pyplot as plt
-from cryodrgn import analysis, dataset, utils
+import os.path
+from cryodrgn import analysis, utils
+from cryodrgn.source import ImageSource
 
 logger = logging.getLogger(__name__)
 
@@ -29,15 +31,14 @@ def add_args(parser):
 
 
 def main(args):
-    stack = dataset.load_particles(args.mrcs, lazy=True, datadir=args.datadir)
-
+    ind = None
     if args.ind is not None:
         logger.info(f"Filtering image dataset with {args.ind}")
         ind = utils.load_pkl(args.ind).astype(int)
-        stack = [stack[i] for i in ind]
 
-    logger.info("{} {}x{} images".format(len(stack), *stack[0].get().shape))  # type: ignore
-    stack = [stack[x].get() for x in range(25)]  # type: ignore
+    src = ImageSource.from_file(args.mrcs, datadir=args.datadir, indices=ind)
+    logger.info("{n} {L}x{L} images".format(n=len(src), L=src.images(0).shape[-1]))
+    stack = [src.images(x).squeeze(dim=0) for x in range(25)]
     if args.invert:
         stack = [-1 * x for x in stack]
     analysis.plot_projections(stack)

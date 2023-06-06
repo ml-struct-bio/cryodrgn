@@ -4,12 +4,12 @@ Downsample an image stack or volume by clipping fourier frequencies
 
 import argparse
 import math
-import multiprocessing as mp
 import os
-from multiprocessing import Pool
 import logging
 import numpy as np
-from cryodrgn import dataset, fft, mrc, utils
+from cryodrgn import fft, utils
+from cryodrgn.mrc import MRCHeader, MRCFile
+from cryodrgn.source import ImageSource
 
 logger = logging.getLogger(__name__)
 
@@ -79,19 +79,16 @@ def main(args):
     ), "Must specify output in .mrc(s) file format"
 
     lazy = not args.is_vol
-    old = dataset.load_particles(args.mrcs, lazy=lazy, datadir=args.datadir)
 
+    ind = None
     if args.ind is not None:
         assert not args.is_vol
         logger.info(f"Filtering image dataset with {args.ind}")
         ind = utils.load_pkl(args.ind).astype(int)
-        old = [old[i] for i in ind] if lazy else old[ind]
 
-    if lazy:
-        oldD = old[0].get().shape[0]  # type: ignore
-    else:
-        assert isinstance(old, np.ndarray)
-        oldD = old.shape[-1]
+    old = ImageSource.from_file(args.mrcs, lazy=lazy, indices=ind, datadir=args.datadir)
+
+    oldD = old.D
     assert (
         args.D <= oldD
     ), f"New box size {args.D} cannot be larger than the original box size {oldD}"
@@ -101,77 +98,68 @@ def main(args):
     start = int(oldD / 2 - D / 2)
     stop = int(oldD / 2 + D / 2)
 
-    def _combine_imgs(imgs):
-        ret = []
-        for img in imgs:
-            img.shape = (1, *img.shape)  # (D,D) -> (1,D,D)
-        cur = imgs[0]
-        for img in imgs[1:]:
-            if img.fname == cur.fname and img.offset == cur.offset + 4 * np.product(
-                cur.shape
-            ):
-                cur.shape = (cur.shape[0] + 1, *cur.shape[1:])
-            else:
-                ret.append(cur)
-                cur = img
-        ret.append(cur)
-        return ret
-
-    def downsample_images(imgs):
-        if lazy:
-            imgs = _combine_imgs(imgs)
-            imgs = np.concatenate([i.get() for i in imgs])
-        with Pool(min(args.max_threads, mp.cpu_count())) as p:
-            oldft = np.asarray(p.map(fft.ht2_center, imgs))
-            newft = oldft[:, start:stop, start:stop]
-            new = np.asarray(p.map(fft.iht2_center, newft))
-        return new
-
-    def downsample_in_batches(old, b):
-        new = np.empty((len(old), D, D), dtype=np.float32)
-        for ii in range(math.ceil(len(old) / b)):
-            logger.info(f"Processing batch {ii}")
-            new[ii * b : (ii + 1) * b, :, :] = downsample_images(
-                old[ii * b : (ii + 1) * b]
-            )
-        return new
-
     # Downsample volume
     if args.is_vol:
         oldft = fft.htn_center(old)
         logger.info(oldft.shape)
         newft = oldft[start:stop, start:stop, start:stop]
         logger.info(newft.shape)
-        new = fft.ihtn_center(newft).astype(np.float32)
+        new = np.array(fft.ihtn_center(newft)).astype(np.float32)
         logger.info(f"Saving {args.o}")
-        mrc.write(args.o, new, is_vol=True)
+        MRCFile.write(args.o, array=new, is_vol=True)
 
     # Downsample images
-    elif args.chunk is None:
-        new = downsample_in_batches(old, args.b)
-        logger.info(new.shape)
-        logger.info("Saving {}".format(args.o))
-        mrc.write(args.o, new.astype(np.float32), is_vol=False)
-
-    # Downsample images, saving chunks of N images
     else:
-        nchunks = math.ceil(len(old) / args.chunk)
-        out_mrcs = [
-            ".{}".format(i).join(os.path.splitext(args.o)) for i in range(nchunks)
-        ]
-        chunk_names = [os.path.basename(x) for x in out_mrcs]
-        for i in range(nchunks):
-            logger.info("Processing chunk {}".format(i))
-            chunk = old[i * args.chunk : (i + 1) * args.chunk]
-            new = downsample_in_batches(chunk, args.b)
-            logger.info(new.shape)
-            logger.info(f"Saving {out_mrcs[i]}")
-            mrc.write(out_mrcs[i], new, is_vol=False)
-        # Write a text file with all chunks
-        out_txt = "{}.txt".format(os.path.splitext(args.o)[0])
-        logger.info(f"Saving {out_txt}")
-        with open(out_txt, "w") as f:
-            f.write("\n".join(chunk_names))
+
+        def transform_fn(chunk, indices):
+            oldft = fft.ht2_center(chunk)
+            newft = oldft[:, start:stop, start:stop]
+            new = fft.iht2_center(newft)
+            return new
+
+        if args.chunk is None:
+            logger.info("Saving {}".format(args.o))
+            header = MRCHeader.make_default_header(
+                nz=old.n, ny=D, nx=D, data=None, is_vol=args.is_vol
+            )
+            MRCFile.write(
+                filename=args.o,
+                array=old,
+                header=header,
+                is_vol=args.is_vol,
+                transform_fn=transform_fn,
+                chunksize=args.b,
+            )
+
+        else:
+            # Downsample images, saving chunks of N images
+            nchunks = math.ceil(len(old) / args.chunk)
+            out_mrcs = [
+                ".{}".format(i).join(os.path.splitext(args.o)) for i in range(nchunks)
+            ]
+            chunk_names = [os.path.basename(x) for x in out_mrcs]
+            for i in range(nchunks):
+                logger.info("Processing chunk {}".format(i))
+                chunk = old[i * args.chunk : (i + 1) * args.chunk]
+
+                header = MRCHeader.make_default_header(
+                    nz=len(chunk), ny=D, nx=D, data=None, is_vol=args.is_vol
+                )
+                logger.info(f"Saving {out_mrcs[i]}")
+                MRCFile.write(
+                    filename=out_mrcs[i],
+                    array=chunk,
+                    header=header,
+                    is_vol=args.is_vol,
+                    transform_fn=transform_fn,
+                    chunksize=args.b,
+                )
+
+            # Write a text file with all chunks
+            out_txt = "{}.txt".format(os.path.splitext(args.o)[0])
+            logger.info(f"Saving {out_txt}")
+            with open(out_txt, "w") as f:
+                f.write("\n".join(chunk_names))
 
 
 if __name__ == "__main__":

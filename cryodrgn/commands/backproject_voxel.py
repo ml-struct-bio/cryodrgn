@@ -184,7 +184,7 @@ def main(args):
         ctf_params = ctf.load_ctf_for_training(D - 1, args.ctf)
         if args.ind is not None:
             ctf_params = ctf_params[args.ind]
-        if args.encode_mode == "tilt":  # TODO: Parse this in cryodrgn parse_ctf_star
+        if args.do_tilt_series:
             ctf_params = np.concatenate(
                 (ctf_params, data.ctfscalefactor.reshape(-1, 1)), axis=1  # type: ignore
             )
@@ -230,9 +230,10 @@ def main(args):
             x = freqs[..., 0]
             y = freqs[..., 1]
             s2 = x**2 + y**2
-            cumulative_dose = data.tilt_number[ii] * data.dose_per_tilt
-            ff *= np.exp(-cumulative_dose/data.critical_exposure(np.sqrt(s2)))
-            ff *= math.cos(data.tilt_angles[ii] * np.pi/180)
+            cumulative_dose = data.tilt_numbers[ii] * data.dose_per_tilt
+            exp_correction = torch.exp(-cumulative_dose/data.critical_exposure(torch.sqrt(s2)))
+            ff = torch.mul(ff, torch.from_numpy(exp_correction).to(device))
+            ff = torch.mul(ff, math.cos(data.tilt_angles[ii] * np.pi/180))
 
         ff_coord = lattice.coords[mask] @ r
         add_slice(V, counts, ff_coord, ff, D)

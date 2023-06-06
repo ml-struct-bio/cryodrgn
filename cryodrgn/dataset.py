@@ -146,7 +146,7 @@ class TiltSeriesData(ImageDataset):
         self.Np = len(particles)
         self.ctfscalefactor = np.asarray(s.df["_rlnCtfScalefactor"], dtype=np.float32)
         self.tilt_numbers = np.zeros(self.tilts.N)
-        for ind in particles:
+        for ind in self.particles:
             sort_idxs = self.ctfscalefactor[ind].argsort()
             ranks = np.empty_like(sort_idxs)
             ranks[sort_idxs[::-1]] = np.arange(len(ind))
@@ -226,7 +226,9 @@ class TiltSeriesData(ImageDataset):
         scale_factor = 1
         if self.voltage == 200:
             scale_factor = 0.75
-        return scale_factor * 0.245 * (freq**(-1.655)) + 2.81
+        critical_exp = torch.pow(freq, -1.665)
+        critical_exp = torch.mul(critical_exp, scale_factor * 0.245)
+        return torch.add(critical_exp, 2.81)
 
     def optimal_exposure(self):
         return 2.51284 * self.critical_exposure()

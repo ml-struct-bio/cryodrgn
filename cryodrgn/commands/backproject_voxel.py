@@ -232,7 +232,7 @@ def main(args):
             s2 = x**2 + y**2
             cumulative_dose = data.tilt_numbers[ii] * data.dose_per_tilt
             exp_correction = torch.exp(-cumulative_dose/data.critical_exposure(torch.sqrt(s2)))
-            ff = torch.mul(ff, torch.from_numpy(exp_correction).to(device))
+            ff = torch.mul(ff, exp_correction[mask].to(device))
             ff = torch.mul(ff, math.cos(data.tilt_angles[ii] * np.pi/180))
 
         ff_coord = lattice.coords[mask] @ r

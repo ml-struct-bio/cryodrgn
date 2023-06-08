@@ -340,7 +340,6 @@ def train_batch(
     optim,
     beta,
     beta_control=None,
-    tilt=None,
     ctf_params=None,
     yr=None,
     use_amp: bool = False,
@@ -360,8 +359,9 @@ def train_batch(
                 z_mu, z_logvar, y, ntilts, y_recon, mask, beta, beta_control
             )
     else:
+        # print('AAA', y.shape, rot.shape)
         z_mu, z_logvar, z, y_recon, mask = run_batch(
-            model, lattice, y, rot, tilt, ctf_params, yr
+            model, lattice, y, rot, ntilts, ctf_params, yr
         )
         loss, gen_loss, kld = loss_function(
             z_mu, z_logvar, y, ntilts, y_recon, mask, beta, beta_control
@@ -668,7 +668,7 @@ def main(args):
             window_r=args.window_r,
             device=device,
         )
-    Nimg = data.N if args.encode_mode != "tilt" else data.tilts.N  # type: ignore
+    Nimg = data.N
     D = data.D
 
     if args.encode_mode == "conv":
@@ -778,7 +778,9 @@ def main(args):
         assert (
             args.batch_size % 8 == 0
         ), "Batch size must be divisible by 8 for AMP training"
-        assert (D - 1) % 8 == 0, "Image size must be divisible by 8 for AMP training"
+        assert (
+            D - 1
+        ) % 8 == 0, f"Image size must be divisible by 8 for AMP training: {D}"
         assert (
             args.pdim % 8 == 0
         ), "Decoder hidden layer dimension must be divisible by 8 for AMP training"
@@ -861,6 +863,7 @@ def main(args):
                 pose_optimizer.zero_grad()
             if args.encode_mode == "tilt":
                 tilt_ind = minibatch[1].to(device)
+                assert all(tilt_ind >= 0), tilt_ind
                 rot, tran = posetracker.get_pose(tilt_ind.view(-1))
                 ctf_param = (
                     ctf_params[tilt_ind.view(-1)] if ctf_params is not None else None

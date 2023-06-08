@@ -114,7 +114,6 @@ def main(args):
 
     data = dataset.ImageDataset(
         mrcfile=args.particles,
-        tilt_mrcfile=args.tilt,
         norm=(0, 1),
         invert_data=args.invert_data,
         datadir=args.datadir,
@@ -160,8 +159,7 @@ def main(args):
             ff_tilt = ff[1]
         else:
             ff_tilt = None
-
-        ff = torch.tensor(ff[0], device=device)
+        ff = ff[0].to(device)
         ff = ff.view(-1)[mask]
         c = None
         if ctf_params is not None:
@@ -175,7 +173,7 @@ def main(args):
 
         # tilt series
         if ff_tilt is not None:
-            ff_tilt = torch.tensor(ff_tilt, device=device)
+            ff_tilt.to(device)
             ff_tilt = ff_tilt.view(-1)[mask]
             if c is not None:
                 ff_tilt *= c.sign()

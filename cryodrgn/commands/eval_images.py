@@ -184,7 +184,7 @@ def eval_batch(
         model, lattice, y, rot, ntilts, ctf_params, yr
     )
     loss, gen_loss, kld = loss_function(
-        z_mu, z_logvar, ntilts, y, y_recon, mask, beta, beta_control=None
+        z_mu, z_logvar, y, ntilts, y_recon, mask, beta, beta_control=None
     )
     return (
         z_mu.detach().cpu().numpy(),
@@ -240,7 +240,6 @@ def main(args):
 
     data = dataset.ImageDataset(
         mrcfile=args.particles,
-        tilt_mrcfile=args.tilt,
         norm=args.norm,
         invert_data=args.invert_data,
         ind=ind,

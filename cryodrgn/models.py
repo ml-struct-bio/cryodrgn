@@ -128,7 +128,7 @@ class HetOnlyVAE(nn.Module):
             domain=c["domain"],
             activation=activation,
             feat_sigma=c["feat_sigma"],
-            tilt_params=c["tilt_params"],
+            tilt_params=c.get("tilt_params", {}),
         )
         if weights is not None:
             ckpt = torch.load(weights, map_location=device)
@@ -156,7 +156,7 @@ class HetOnlyVAE(nn.Module):
         coords: Bx...x3
         z: Bxzdim
         """
-        assert coords.size(0) == z.size(0)
+        assert coords.size(0) == z.size(0), (coords.shape, z.shape)
         z = z.view(z.size(0), *([1] * (coords.ndimension() - 2)), self.zdim)
         z = torch.cat((coords, z.expand(*coords.shape[:-1], self.zdim)), dim=-1)
         return z

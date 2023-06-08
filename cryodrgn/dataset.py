@@ -4,7 +4,7 @@ from collections import Counter, OrderedDict
 import logging
 import torch
 from torch.utils import data
-from typing import Tuple, Union
+from typing import Optional, Tuple, Union
 from cryodrgn import fft, starfile
 from cryodrgn.source import ImageSource
 from cryodrgn.utils import window_mask
@@ -99,10 +99,15 @@ class ImageDataset(data.Dataset):
                 f"ImageDataset returning images for {len(index)} indices ({index[0]}..{index[-1]})"
             )
 
-        return particles, particles, index
+        return particles, None, index
 
-    def get_slice(self, start: int, stop: int) -> torch.Tensor:
-        return self.src.images(slice(start, stop), require_contiguous=True).numpy()
+    def get_slice(
+        self, start: int, stop: int
+    ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+        return (
+            self.src.images(slice(start, stop), require_contiguous=True).numpy(),
+            None,
+        )
 
 
 class TiltSeriesData(ImageDataset):
@@ -118,7 +123,8 @@ class TiltSeriesData(ImageDataset):
         ind=None,
         **kwargs,
     ):
-        super().__init__(self, tiltstar, ind=ind, **kwargs)
+        # Note: ind is the indices of the *tilts*, not the particles
+        super().__init__(tiltstar, ind=ind, **kwargs)
 
         # Parse unique particles from _rlnGroupName
         s = starfile.Starfile.load(tiltstar)
@@ -148,6 +154,8 @@ class TiltSeriesData(ImageDataset):
         return self.Np
 
     def __getitem__(self, index):
+        if isinstance(index, list):
+            index = torch.Tensor(index).to(torch.long)
         tilt_indices = []
         for ii in index:
             if self.random_tilts:
@@ -159,38 +167,40 @@ class TiltSeriesData(ImageDataset):
                 i = (len(self.particles[ii]) - self.ntilts) // 2
                 tilt_index = self.particles[ii][i : i + self.ntilts]
             tilt_indices.append(tilt_index)
-        tilt_indices = torch.cat(tilt_indices)
+        tilt_indices = np.concatenate(tilt_indices)
         images = self._process(self.src.images(tilt_indices).to(self.device))
-        return images, images, index
+        return images, tilt_indices, index
 
-    def get_slice(self, start: int, stop: int) -> torch.Tensor:
+    def get_slice(self, start: int, stop: int) -> Tuple[np.ndarray, np.ndarray]:
         # we have to fetch all the tilts to stay contiguous, and then subset
-        tilt_indices = list(self.particles[index] for index in range(start, stop))
-
-        images = self.src.images(torch.cat(tilt_indices), require_contiguous=True)
+        tilt_indices = [self.particles[index] for index in range(start, stop)]
+        cat_tilt_indices = np.concatenate(tilt_indices)
+        images = self.src.images(cat_tilt_indices, require_contiguous=True)
 
         tilt_masks = []
-        for tilt_idx, tilt_mask in zip(tilt_indices, tilt_masks):
+        for tilt_idx in tilt_indices:
+            tilt_mask = np.zeros(len(tilt_idx), dtype=np.bool)
             if self.random_tilts:
-                tilt_index = torch.from_numpy(
-                    np.random.choice(len(tilt_idx), self.ntilts, replace=False)
+                tilt_mask_idx = np.random.choice(
+                    len(tilt_idx), self.ntilts, replace=False
                 )
+                tilt_mask[tilt_mask_idx] = True
             else:
                 i = (len(tilt_idx) - self.ntilts) // 2
-                tilt_index = self.particles[tilt_idx][i : i + self.ntilts]
-
-            tilt_mask = torch.zeros(len(tilt_idx), dtype=torch.bool)
-            tilt_mask[tilt_index] = True
-        tilt_masks = torch.cat(tilt_masks)
+                tilt_mask[i : i + self.ntilts] = True
+            tilt_masks.append(tilt_mask)
+        tilt_masks = np.concatenate(tilt_masks)
         selected_images = images[tilt_masks]
-        return selected_images
+        selected_tilt_indices = cat_tilt_indices[tilt_masks]
+
+        return selected_images.numpy(), selected_tilt_indices
 
 
 class DataShuffler:
     def __init__(
-        self, dataset: ImageDataset, batch_size, buffer_size, ntilts=1, dtype=np.float32
+        self, dataset: ImageDataset, batch_size, buffer_size, dtype=np.float32
     ):
-        if not all(dataset.src.indices == np.arange(len(dataset))):
+        if not all(dataset.src.indices == np.arange(dataset.N)):
             raise NotImplementedError(
                 "Sorry dude, --ind is not supported for the data shuffler. "
                 "The purpose of the shuffler is to load chunks contiguously during lazy loading on huge datasets, which doesn't work with --ind. "
@@ -209,7 +219,7 @@ class DataShuffler:
             self.buffer_size,
             len(self.dataset),
         )
-        self.ntilts = ntilts
+        self.ntilts = getattr(dataset, "ntilts", 1)  # FIXME
 
     def __iter__(self):
         return _DataShufflerIterator(self)
@@ -229,6 +239,9 @@ class _DataShufflerIterator:
             dtype=self.dtype,
         )
         self.index_buffer = np.full((self.buffer_size,), -1, dtype=np.int64)
+        self.tilt_index_buffer = np.full(
+            (self.buffer_size, self.ntilts), -1, dtype=np.int64
+        )
         self.num_batches = (
             len(self.dataset) // self.batch_size
         )  # FIXME off-by-one? Nah, lets leave the last batch behind
@@ -238,25 +251,36 @@ class _DataShufflerIterator:
         # pre-fill
         logger.info("Pre-filling data shuffler buffer...")
         for i in range(self.batch_capacity):
-            chunk, chunk_indices = self._get_next_chunk()
+            chunk, maybe_tilt_indices, chunk_indices = self._get_next_chunk()
             self.buffer[i * self.batch_size : (i + 1) * self.batch_size] = chunk
             self.index_buffer[
                 i * self.batch_size : (i + 1) * self.batch_size
             ] = chunk_indices
+            if maybe_tilt_indices is not None:
+                self.tilt_index_buffer[
+                    i * self.batch_size : (i + 1) * self.batch_size
+                ] = maybe_tilt_indices
         logger.info(
             f"Filled buffer with {self.buffer_size} images ({self.batch_capacity} contiguous chunks)."
         )
 
-    def _get_next_chunk(self) -> Tuple[torch.Tensor, np.ndarray]:
+    def _get_next_chunk(self) -> Tuple[np.ndarray, Optional[np.ndarray], np.ndarray]:
         chunk_idx = int(self.chunk_order[self.count])
         self.count += 1
-        particles = self.dataset.get_slice(
+        particles, maybe_tilt_indices = self.dataset.get_slice(
             chunk_idx * self.batch_size, (chunk_idx + 1) * self.batch_size
         )
         particle_indices = np.arange(
             chunk_idx * self.batch_size, (chunk_idx + 1) * self.batch_size
         )
-        return particles, particle_indices
+        particles = particles.reshape(
+            self.batch_size, self.ntilts, *particles.shape[1:]
+        )
+        if maybe_tilt_indices is not None:
+            maybe_tilt_indices = maybe_tilt_indices.reshape(
+                self.batch_size, self.ntilts
+            )
+        return particles, maybe_tilt_indices, particle_indices
 
     def __iter__(self):
         return self
@@ -292,6 +316,9 @@ class _DataShufflerIterator:
             particle_indices = self.index_buffer[
                 self.flush_remaining - self.batch_size : self.flush_remaining
             ]
+            tilt_indices = self.tilt_index_buffer[
+                self.flush_remaining - self.batch_size : self.flush_remaining
+            ]
             self.flush_remaining -= self.batch_size
         else:
             indices = np.random.choice(
@@ -299,20 +326,25 @@ class _DataShufflerIterator:
             )
             particles = self.buffer[indices]
             particle_indices = self.index_buffer[indices]
-            chunk, chunk_indices = self._get_next_chunk()
+            tilt_indices = self.tilt_index_buffer[indices]
+
+            chunk, maybe_tilt_indices, chunk_indices = self._get_next_chunk()
             self.buffer[indices] = chunk
             self.index_buffer[indices] = chunk_indices
+            if maybe_tilt_indices is not None:
+                self.tilt_index_buffer[indices] = maybe_tilt_indices
 
         particles = torch.from_numpy(particles)
         particle_indices = torch.from_numpy(particle_indices)
+        tilt_indices = torch.from_numpy(tilt_indices)
 
         # merge the batch and tilt dimension
-        particle_indices = particle_indices.view(
-            -1, particle_indices.shape[-2], particle_indices.shape[-1]
-        )
+        particles = particles.view(-1, *particles.shape[2:])
+        tilt_indices = tilt_indices.view(-1, *tilt_indices.shape[2:])
 
         particles = self.dataset._process(particles.to(self.dataset.device))
-        return particles, particles, particle_indices
+        # print('ZZZ', particles.shape, tilt_indices.shape, particle_indices.shape)
+        return particles, tilt_indices, particle_indices
 
 
 def make_dataloader(

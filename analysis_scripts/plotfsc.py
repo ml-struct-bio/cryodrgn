@@ -31,7 +31,7 @@ def main(args):
         print(w)
         print(x[:, 0][w])
         print(1 / x[:, 0][w])
-    plt.legend(loc="best")
+    plt.legend(loc="best", prop={'size': 6})
     plt.ylim((0, 1))
     plt.ylabel("FSC")
     plt.xlabel("frequency")

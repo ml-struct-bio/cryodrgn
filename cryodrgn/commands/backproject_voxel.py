@@ -35,6 +35,23 @@ def add_args(parser):
     parser.add_argument(
         "-o", type=os.path.abspath, required=True, help="Output .mrc file"
     )
+    parser.add_argument(
+        "--ctf-alg", type=str, choices=("flip", "mul"), default="flip"
+    )
+    parser.add_argument(
+        "--reg-weight",
+        type=float,
+        default=0,
+        help="Add this value times the mean weight to the weight map to regularize the volume, reducing noise."
+        "Alternatively, you can set --output-sumcount, and then use `cryodrgn_utils regularize_backproject` on the"
+        ".sums and .counts files to try different regularization constants post hoc.",
+    )
+    parser.add_argument(
+        "--output-sumcount",
+        action="store_true",
+        help="Output voxel sums and counts so that different regularization weights can be applied post hoc, with "
+        "`cryodrgn_utils regularize_backproject`."
+    )
 
     group = parser.add_argument_group("Dataset loading options")
     group.add_argument(
@@ -102,7 +119,7 @@ def add_args(parser):
     return parser
 
 
-def add_slice(V, counts, ff_coord, ff, D):
+def add_slice(V, counts, ff_coord, ff, D, ctf_mul):
     d2 = int(D / 2)
     ff_coord = ff_coord.transpose(0, 1)
     xf, yf, zf = ff_coord.floor().long()
@@ -112,8 +129,8 @@ def add_slice(V, counts, ff_coord, ff, D):
         dist = torch.stack([xi, yi, zi]).float() - ff_coord
         w = 1 - dist.pow(2).sum(0).pow(0.5)
         w[w < 0] = 0
-        V[(zi + d2, yi + d2, xi + d2)] += w * ff
-        counts[(zi + d2, yi + d2, xi + d2)] += w
+        V[(zi + d2, yi + d2, xi + d2)] += w * ff * ctf_mul
+        counts[(zi + d2, yi + d2, xi + d2)] += w * ctf_mul**2
 
     add_for_corner(xf, yf, zf)
     add_for_corner(xc, yf, zf)
@@ -219,10 +236,13 @@ def main(args):
         ff = ff[0].to(device)
         ff = ff.view(-1)[mask]
         c = None
+        ctf_mul = 1
         if ctf_params is not None:
             freqs = lattice.freqs2d / ctf_params[ii, 0]
             c = ctf.compute_ctf(freqs, *ctf_params[ii, 1:]).view(-1)[mask]
-            ff *= c.sign()
+            if args.ctf_alg == "flip": 
+                ff *= c.sign()
+            else: ctf_mul = c
         if t is not None:
             ff = lattice.translate_ht(ff.view(1, -1), t.view(1, 1, 2), mask).view(-1)
         if args.do_tilt_series:
@@ -231,25 +251,25 @@ def main(args):
             y = freqs[..., 1]
             s2 = x**2 + y**2
             cumulative_dose = data.tilt_numbers[ii] * data.dose_per_tilt
-            exp_correction = torch.exp(-cumulative_dose/data.critical_exposure(torch.sqrt(s2)))
+            exp_correction = torch.exp(-0.5 * cumulative_dose/data.critical_exposure(torch.sqrt(s2)))
             ff = torch.mul(ff, exp_correction[mask].to(device))
             ff = torch.mul(ff, math.cos(data.tilt_angles[ii] * np.pi/180))
 
         ff_coord = lattice.coords[mask] @ r
-        add_slice(V, counts, ff_coord, ff, D)
+        add_slice(V, counts, ff_coord, ff, D, ctf_mul)
 
         # tilt series
         if ff_tilt is not None:
             ff_tilt.to(device)
             ff_tilt = ff_tilt.view(-1)[mask]
-            if c is not None:
+            if c is not None and args.ctf_alg == "flip":
                 ff_tilt *= c.sign()
             if t is not None:
                 ff_tilt = lattice.translate_ht(
                     ff_tilt.view(1, -1), t.view(1, 1, 2), mask
                 ).view(-1)
             ff_coord = lattice.coords[mask] @ tilt @ r
-            add_slice(V, counts, ff_coord, ff_tilt, D)
+            add_slice(V, counts, ff_coord, ff_tilt, D, ctf_mul)
 
     td = time.time() - t1
     logger.info(
@@ -258,7 +278,14 @@ def main(args):
         )
     )
     counts[counts == 0] = 1
-    V /= counts
+
+    if args.output_sumcount:
+        mrc.write(args.o + ".sums", V.cpu().numpy(), Apix=Apix)
+        mrc.write(args.o + ".counts", counts.cpu().numpy(), Apix=Apix)
+
+    regularized_counts = counts + args.reg_weight * counts.mean()
+    regularized_counts *= counts.mean() / regularized_counts.mean()
+    V /= regularized_counts    
     V = fft.ihtn_center(V[0:-1, 0:-1, 0:-1].cpu())
     MRCFile.write(args.o, np.array(V).astype("float32"), Apix=Apix)
 

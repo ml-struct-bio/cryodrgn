@@ -165,7 +165,9 @@ class TiltSeriesData(ImageDataset):
         
         # Assumes dose-symmetric tilt scheme 
         # As implemented in Hagen, Wan, Briggs J. Struct. Biol. 2017
-        self.tilt_angles = angle_per_tilt * np.ceil(self.tilt_numbers/2)
+        self.tilt_angles = None
+        if angle_per_tilt is not None:
+            self.tilt_angles = angle_per_tilt * np.ceil(self.tilt_numbers/2)
 
     def __len__(self):
         return self.Np

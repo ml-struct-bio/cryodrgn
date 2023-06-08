@@ -47,6 +47,11 @@ def add_args(parser):
         type=os.path.abspath,
         help="Path prefix to particle stack if loading relative paths from a .star or .cs file",
     )
+    group.add_argument(
+        "--lazy",
+        action="store_true",
+        help="Lazy loading if full dataset is too large to fit in memory",
+    )
     group.add_argument("--ind", help="Indices to iterate over (pkl)")
     group.add_argument(
         "--first",
@@ -118,6 +123,7 @@ def main(args):
         invert_data=args.invert_data,
         datadir=args.datadir,
         ind=args.ind,
+        lazy=args.lazy,
     )
 
     D = data.D

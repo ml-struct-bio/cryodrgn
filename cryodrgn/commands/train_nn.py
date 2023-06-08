@@ -11,7 +11,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
 
 try:
     import apex.amp as amp  # type: ignore
@@ -19,10 +18,12 @@ except ImportError:
     pass
 
 import cryodrgn
-from cryodrgn import ctf, dataset, models, mrc
+from cryodrgn import ctf, dataset, models
+from cryodrgn.mrc import MRCFile
 from cryodrgn.lattice import Lattice
 from cryodrgn.pose import PoseTracker
 from cryodrgn.models import DataParallelDecoder, Decoder
+import cryodrgn.config
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +63,7 @@ def add_args(parser):
         help="Logging interval in N_IMGS (default: %(default)s)",
     )
     parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Increaes verbosity"
+        "-v", "--verbose", action="store_true", help="Increase verbosity"
     )
     parser.add_argument(
         "--seed", type=int, default=np.random.randint(0, 100000), help="Random seed"
@@ -94,6 +95,12 @@ def add_args(parser):
         "--lazy",
         action="store_true",
         help="Lazy loading if full dataset is too large to fit in memory",
+    )
+    group.add_argument(
+        "--shuffler-size",
+        type=int,
+        default=0,
+        help="If non-zero, will use a data shuffler for faster lazy data loading.",
     )
     group.add_argument(
         "--datadir",
@@ -148,7 +155,9 @@ def add_args(parser):
     )
 
     group = parser.add_argument_group("Pose SGD")
-    group.add_argument("--do-pose-sgd", action="store_true", help="Refine poses")
+    group.add_argument(
+        "--do-pose-sgd", action="store_true", help="Refine poses with gradient descent"
+    )
     group.add_argument(
         "--pretrain",
         type=int,
@@ -165,7 +174,7 @@ def add_args(parser):
         "--pose-lr",
         type=float,
         default=1e-4,
-        help="Learning rate in Adam optimizer (default: %(default)s)",
+        help="Learning rate for pose optimizer (default: %(default)s)",
     )
 
     group = parser.add_argument_group("Network Architecture")
@@ -204,7 +213,7 @@ def add_args(parser):
     group.add_argument(
         "--pe-dim",
         type=int,
-        help="Num sinusoid features in positional encoding (default: D/2)",
+        help="Num frequencies in positional encoding (default: D/2)",
     )
     group.add_argument(
         "--domain",
@@ -222,7 +231,7 @@ def add_args(parser):
         "--feat-sigma",
         type=float,
         default=0.5,
-        help="Scale for random Gaussian features",
+        help="Scale for random Gaussian features (default: %(default)s)",
     )
 
     return parser
@@ -233,7 +242,7 @@ def save_checkpoint(
 ):
     model.eval()
     vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, norm)
-    mrc.write(out_mrc, vol.astype(np.float32), Apix=Apix)
+    MRCFile.write(out_mrc, np.array(vol).astype(np.float32), Apix=Apix)
     torch.save(
         {
             "norm": norm,
@@ -326,10 +335,7 @@ def save_config(args, dataset, lattice, model, out_config):
         dataset_args=dataset_args, lattice_args=lattice_args, model_args=model_args
     )
     config["seed"] = args.seed
-    with open(out_config, "wb") as f:
-        pickle.dump(config, f)
-        meta = dict(time=dt.now(), cmd=sys.argv, version=cryodrgn.__version__)
-        pickle.dump(meta, f)
+    cryodrgn.config.save(config, out_config)
 
 
 def get_latest(args):
@@ -379,26 +385,18 @@ def main(args):
         ind = pickle.load(open(args.ind, "rb"))
     else:
         ind = None
-    if args.lazy:
-        data = dataset.LazyMRCData(
-            args.particles,
-            norm=args.norm,
-            invert_data=args.invert_data,
-            ind=ind,
-            window=args.window,
-            datadir=args.datadir,
-            window_r=args.window_r,
-        )
-    else:
-        data = dataset.MRCData(
-            args.particles,
-            norm=args.norm,
-            invert_data=args.invert_data,
-            ind=ind,
-            window=args.window,
-            datadir=args.datadir,
-            window_r=args.window_r,
-        )
+
+    data = dataset.ImageDataset(
+        args.particles,
+        lazy=args.lazy,
+        norm=args.norm,
+        invert_data=args.invert_data,
+        ind=ind,
+        window=args.window,
+        datadir=args.datadir,
+        window_r=args.window_r,
+    )
+
     D = data.D
     Nimg = data.N
 
@@ -467,7 +465,7 @@ def main(args):
     Apix = ctf_params[0, 0] if ctf_params is not None else 1
 
     # save configuration
-    out_config = f"{args.outdir}/config.pkl"
+    out_config = f"{args.outdir}/config.yaml"
     save_config(args, data, lattice, model, out_config)
 
     # Mixed precision training with AMP
@@ -499,13 +497,16 @@ def main(args):
         )
 
     # train
-    data_generator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
+    data_generator = dataset.make_dataloader(
+        data, batch_size=args.batch_size, shuffler_size=args.shuffler_size
+    )
+
     epoch = None
     for epoch in range(start_epoch, args.num_epochs):
         t2 = dt.now()
         loss_accum = 0
         batch_it = 0
-        for batch, ind in data_generator:
+        for batch, _, ind in data_generator:
             batch_it += len(ind)
             ind = ind.to(device)
             if pose_optimizer is not None:

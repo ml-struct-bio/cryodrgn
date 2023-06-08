@@ -1,60 +1,111 @@
-# type: ignore
-
 import numpy as np
-
-try:
-    import cupy as cp
-except ImportError:
-    cp = None
-
 from collections import Counter, OrderedDict
-import multiprocessing as mp
-import os
-import multiprocessing
+
 import logging
+import torch
 from torch.utils import data
+from typing import Tuple, Union
+from cryodrgn import fft, starfile
+from cryodrgn.source import ImageSource
+from cryodrgn.utils import window_mask
 
-from cryodrgn import fft, mrc, starfile
-
+from torch.utils.data import DataLoader
+from torch.utils.data.sampler import BatchSampler, RandomSampler
 
 logger = logging.getLogger(__name__)
 
 
-def load_particles(mrcs_txt_star, lazy=False, datadir=None):
-    """
-    Load particle stack from either a .mrcs file, a .star file, a .txt file containing paths to .mrcs files, or a
-    cryosparc particles.cs file.
+class ImageDataset(data.Dataset):
+    def __init__(
+        self,
+        mrcfile,
+        lazy=True,
+        norm=None,
+        keepreal=False,
+        invert_data=False,
+        ind=None,
+        window=True,
+        datadir=None,
+        window_r=0.85,
+        max_threads=16,
+        device: Union[str, torch.device] = "cpu",
+    ):
+        assert not keepreal, "Not implemented yet"
+        datadir = datadir or ""
+        self.ind = ind
+        self.src = ImageSource.from_file(
+            mrcfile,
+            lazy=lazy,
+            datadir=datadir,
+            indices=ind,
+            max_threads=max_threads,
+        )
 
-    lazy (bool): Return numpy array if True, or return list of LazyImages
-    datadir (str or None): Base directory overwrite for .star or .cs file parsing
-    """
-    if mrcs_txt_star.endswith(".txt"):
-        particles = mrc.parse_mrc_list(mrcs_txt_star, lazy=lazy)
-    elif mrcs_txt_star.endswith(".star"):
-        # not exactly sure what the default behavior should be for the data paths if parsing a starfile
-        try:
-            particles = starfile.Starfile.load(mrcs_txt_star).get_particles(
-                datadir=datadir, lazy=lazy
+        ny = self.src.D
+        assert ny % 2 == 0, "Image size must be even."
+
+        self.N = self.src.n
+        self.D = ny + 1  # after symmetrization
+        self.invert_data = invert_data
+        self.window = window_mask(ny, window_r, 0.99).to(device) if window else None
+        norm = norm or self.estimate_normalization()
+        self.norm = [float(x) for x in norm]
+        self.device = device
+        self.lazy = lazy
+
+    def estimate_normalization(self, n=1000):
+        n = min(n, self.N) if n is not None else self.N
+        indices = range(0, self.N, self.N // n)  # FIXME: what if the data is not IID??
+        imgs = self.src.images(indices)
+
+        particleslist = []
+        for img in imgs:
+            particleslist.append(fft.ht2_center(img))
+        imgs = torch.stack(particleslist)
+
+        if self.invert_data:
+            imgs *= -1
+
+        imgs = fft.symmetrize_ht(imgs)
+        norm = (0, torch.std(imgs))
+        logger.info("Normalizing HT by {} +/- {}".format(*norm))
+        return norm
+
+    def _process(self, data):
+        if data.ndim == 2:
+            data = data[np.newaxis, ...]
+        if self.window is not None:
+            data *= self.window
+        data = fft.ht2_center(data)
+        if self.invert_data:
+            data *= -1
+        data = fft.symmetrize_ht(data)
+        data = (data - self.norm[0]) / self.norm[1]
+        return data
+
+    def __len__(self):
+        return self.N
+
+    def __getitem__(self, index):
+        if isinstance(index, list):
+            index = torch.Tensor(index).to(torch.long)
+
+        particles = self._process(self.src.images(index).to(self.device))
+
+        if isinstance(index, int):
+            logger.debug(f"ImageDataset returning images at index ({index})")
+        else:
+            logger.debug(
+                f"ImageDataset returning images for {len(index)} indices ({index[0]}..{index[-1]})"
             )
-        except Exception as e:
-            if datadir is None:
-                datadir = os.path.dirname(
-                    mrcs_txt_star
-                )  # assume .mrcs files are in the same director as the starfile
-                particles = starfile.Starfile.load(mrcs_txt_star).get_particles(
-                    datadir=datadir, lazy=lazy
-                )
-            else:
-                raise RuntimeError(e)
-    elif mrcs_txt_star.endswith(".cs"):
-        particles = starfile.csparc_get_particles(mrcs_txt_star, datadir, lazy)
-    else:
-        particles, _ = mrc.parse_mrc(mrcs_txt_star, lazy=lazy)
 
-    return particles
+        return particles, particles, index
+
+    def get_slice(self, start: int, stop: int) -> torch.Tensor:
+        return self.src.images(slice(start, stop), require_contiguous=True).numpy()
 
 
-class TiltSeriesData(data.Dataset):
+class TiltSeriesData(ImageDataset):
     """
     Class representing tilt series
     """
@@ -64,32 +115,10 @@ class TiltSeriesData(data.Dataset):
         tiltstar,
         ntilts,
         random_tilts=False,
-        norm=None,
-        keepreal=False,
-        invert_data=False,
         ind=None,
-        window=True,
-        datadir=None,
-        max_threads=16,
-        window_r=0.85,
-        preprocessed=None,
+        **kwargs,
     ):
-        # First parse particle stack
-        if preprocessed:
-            tilts = PreprocessedMRCData(tiltstar, norm=norm, ind=ind)
-        else:
-            tilts = MRCData(
-                tiltstar,
-                norm=norm,
-                keepreal=keepreal,
-                invert_data=invert_data,
-                ind=ind,
-                window=window,
-                datadir=datadir,
-                max_threads=max_threads,
-                window_r=window_r,
-            )
-        self.tilts = tilts
+        super().__init__(self, tiltstar, ind=ind, **kwargs)
 
         # Parse unique particles from _rlnGroupName
         s = starfile.Starfile.load(tiltstar)
@@ -104,11 +133,9 @@ class TiltSeriesData(data.Dataset):
         self.particles = np.array(
             [np.asarray(pp, dtype=int) for pp in particles.values()]
         )
-        self.N = len(particles)
-        self.D = self.tilts.D
-        self.norm = self.tilts.norm
+        self.Np = len(particles)
         self.ctfscalefactor = np.asarray(s.df["_rlnCtfScalefactor"], dtype=np.float32)
-        logger.info(f"Loaded {self.tilts.N} tilts for {self.N} particles")
+        logger.info(f"Loaded {self.N} tilts for {self.Np} particles")
         counts = Counter(group_name)
         unique_counts = set(counts.values())
         logger.info(f"{unique_counts} tilts per particle")
@@ -118,375 +145,189 @@ class TiltSeriesData(data.Dataset):
         self.random_tilts = random_tilts
 
     def __len__(self):
-        return self.N
+        return self.Np
 
     def __getitem__(self, index):
-        # TODO: Figure out a better place to select the subset of tilts
-        # and optionally remove randomness
-        # Esp. when we want to evaluate the whole tilt stack
-        if self.random_tilts:
-            tilt_index = np.random.choice(
-                self.particles[index], self.ntilts, replace=False
-            )
-        else:
-            i = (len(self.particles[index]) - self.ntilts) // 2
-            tilt_index = self.particles[index][i : i + self.ntilts]
-        return self.tilts.get(tilt_index), tilt_index, index
-
-    def get(self, index):
-        return self.tilts.get(self.particles[index])
-
-
-class LazyMRCData(data.Dataset):
-    """
-    Class representing an .mrcs stack file -- images loaded on the fly
-    """
-
-    def __init__(
-        self,
-        mrcfile,
-        norm=None,
-        keepreal=False,
-        invert_data=False,
-        ind=None,
-        window=True,
-        datadir=None,
-        window_r=0.85,
-        use_cupy=False,
-    ):
-        assert not keepreal, "Not implemented error"
-        particles = load_particles(mrcfile, True, datadir=datadir)
-        if ind is not None:
-            particles = [particles[x] for x in ind]
-        N = len(particles)
-        ny, nx = particles[0].get().shape
-        assert ny == nx, "Images must be square"
-        assert (
-            ny % 2 == 0
-        ), "Image size must be even. Is this a preprocessed dataset? Use the --preprocessed flag if so."
-        logger.info("Loaded {} {}x{} images".format(N, ny, nx))
-        self.particles = particles
-        self.N = N
-        self.D = ny + 1  # after symmetrizing HT
-        self.invert_data = invert_data
-        self.use_cupy = use_cupy  # estimate_normalization may need access to self.use_cupy, so save it first
-        if norm is None:
-            norm = self.estimate_normalization()
-        self.norm = norm
-        self.window = window_mask(ny, window_r, 0.99) if window else None
-
-    def estimate_normalization(self, n=1000):
-        pp = cp if (self.use_cupy and cp is not None) else np
-
-        n = min(n, self.N)
-        imgs = pp.asarray(
-            [
-                fft.ht2_center(self.particles[i].get())
-                for i in range(0, self.N, self.N // n)
-            ]
-        )
-        if self.invert_data:
-            imgs *= -1
-        imgs = fft.symmetrize_ht(imgs)
-        norm = [pp.mean(imgs), pp.std(imgs)]
-        norm[0] = 0
-        logger.info("Normalizing HT by {} +/- {}".format(*norm))
-        return norm
-
-    def get(self, i):
-        pp = cp if (self.use_cupy and cp is not None) else np
-
-        img = self.particles[i].get()
-        if self.window is not None:
-            img *= self.window
-        img = fft.ht2_center(img).astype(pp.float32)
-        if self.invert_data:
-            img *= -1
-        img = fft.symmetrize_ht(img)
-        img = (img - self.norm[0]) / self.norm[1]
-        return img
-
-    def __len__(self):
-        return self.N
-
-    def __getitem__(self, index):
-        return self.get(index), index
-
-
-def window_mask(D, in_rad, out_rad, use_cupy=False):
-    pp = cp if (use_cupy and cp is not None) else np
-
-    assert D % 2 == 0
-    x0, x1 = pp.meshgrid(
-        pp.linspace(-1, 1, D, endpoint=False, dtype=pp.float32),
-        pp.linspace(-1, 1, D, endpoint=False, dtype=pp.float32),
-    )
-    r = (x0**2 + x1**2) ** 0.5
-    mask = pp.minimum(1.0, pp.maximum(0.0, 1 - (r - in_rad) / (out_rad - in_rad)))
-    return mask
-
-
-class MRCData(data.Dataset):
-    """
-    Class representing an .mrcs stack file
-    """
-
-    def __init__(
-        self,
-        mrcfile,
-        norm=None,
-        keepreal=False,
-        invert_data=False,
-        ind=None,
-        window=True,
-        datadir=None,
-        max_threads=16,
-        window_r=0.85,
-        use_cupy=False,
-    ):
-        pp = cp if (use_cupy and cp is not None) else np
-
-        if keepreal:
-            raise NotImplementedError
-        if ind is not None:
-            particles = load_particles(mrcfile, True, datadir=datadir)
-            particles = pp.array([particles[i].get() for i in ind])
-        else:
-            particles = load_particles(mrcfile, False, datadir=datadir)
-        N, ny, nx = particles.shape
-        assert ny == nx, "Images must be square"
-        assert (
-            ny % 2 == 0
-        ), "Image size must be even. Is this a preprocessed dataset? Use the --preprocessed flag if so."
-        logger.info("Loaded {} {}x{} images".format(N, ny, nx))
-
-        # Real space window
-        if window:
-            logger.info(f"Windowing images with radius {window_r}")
-            particles *= window_mask(ny, window_r, 0.99)
-
-        # compute HT
-        logger.info("Computing FFT")
-        max_threads = min(max_threads, mp.cpu_count())
-        if max_threads > 1:
-            logger.info(f"Spawning {max_threads} processes")
-            context = multiprocessing.get_context("spawn")
-            with context.Pool(max_threads) as p:
-                particles = pp.asarray(
-                    p.map(fft.ht2_center, particles), dtype=pp.float32
+        tilt_indices = []
+        for ii in index:
+            if self.random_tilts:
+                tilt_index = np.random.choice(
+                    self.particles[ii], self.ntilts, replace=False
                 )
-        else:
-            particles = pp.asarray(
-                [fft.ht2_center(img) for img in particles], dtype=pp.float32
-            )
-            logger.info("Converted to FFT")
-
-        if invert_data:
-            particles *= -1
-
-        # symmetrize HT
-        logger.info("Symmetrizing image data")
-        particles = fft.symmetrize_ht(particles)
-
-        # normalize
-        if norm is None:
-            norm = [pp.mean(particles), pp.std(particles)]
-            norm[0] = 0
-        particles = (particles - norm[0]) / norm[1]
-        logger.info("Normalized HT by {} +/- {}".format(*norm))
-
-        self.particles = particles
-        self.N = N
-        self.D = particles.shape[1]  # ny + 1 after symmetrizing HT
-        self.norm = norm
-        self.keepreal = keepreal
-        self.use_cupy = use_cupy
-        if keepreal:
-            self.particles_real = particles_real  # noqa: F821
-            logger.info(
-                "Normalized real space images by {}".format(
-                    particles_real.std()  # noqa: F821
-                )
-            )
-            self.particles_real /= particles_real.std()  # noqa: F821
-
-    def __len__(self):
-        return self.N
-
-    def __getitem__(self, index):
-        return self.particles[index], index
-
-    def get(self, index):
-        return self.particles[index]
-
-
-class PreprocessedMRCData(data.Dataset):
-    """ """
-
-    def __init__(self, mrcfile, norm=None, ind=None, lazy=False, use_cupy=False):
-        self.use_cupy = use_cupy
-        pp = cp if (self.use_cupy and cp is not None) else np
-        
-        if ind is not None:
-            # First lazy load to avoid loading the whole dataset
-            particles = load_particles(mrcfile, True)
-            if not lazy:
-                # Then, load the desired particles specified by ind
-                particles = pp.array([particles[i].get() for i in ind])
             else:
-                particles = particles[ind]
-        else:
-            particles = load_particles(mrcfile, lazy=lazy)
-        self.lazy = lazy
-        self.particles = particles
-        self.N = len(particles)
-        if self.lazy:
-            self.D = particles[0].get().shape[0]  # ny + 1 after symmetrizing HT
-        else:
-            self.D = particles.shape[1]  # ny + 1 after symmetrizing HT
+                # take the middle ntilts
+                i = (len(self.particles[ii]) - self.ntilts) // 2
+                tilt_index = self.particles[ii][i : i + self.ntilts]
+            tilt_indices.append(tilt_index)
+        tilt_indices = torch.cat(tilt_indices)
+        images = self._process(self.src.images(tilt_indices).to(self.device))
+        return images, images, index
 
-        logger.info(f"Loaded {len(particles)} {self.D}x{self.D} images")
-        if norm is None:
-            norm = list(self.calc_statistic())
-            norm[0] = 0
+    def get_slice(self, start: int, stop: int) -> torch.Tensor:
+        # we have to fetch all the tilts to stay contiguous, and then subset
+        tilt_indices = list(self.particles[index] for index in range(start, stop))
 
-        if not lazy:
-            self.particles = (self.particles - norm[0]) / norm[1]
+        images = self.src.images(torch.cat(tilt_indices), require_contiguous=True)
 
-        logger.info("Normalized HT by {} +/- {}".format(*norm))
-        self.norm = norm
-
-    def calc_statistic(self):
-        pp = cp if (self.use_cupy and cp is not None) else np
-
-        if self.lazy:
-            max_size = min(10000, self.N)
-            sample_index = pp.sort(
-                pp.random.choice(
-                    pp.arange(self.N), max(int(0.1 * self.N), max_size), replace=False
+        tilt_masks = []
+        for tilt_idx, tilt_mask in zip(tilt_indices, tilt_masks):
+            if self.random_tilts:
+                tilt_index = torch.from_numpy(
+                    np.random.choice(len(tilt_idx), self.ntilts, replace=False)
                 )
-            )
-            print("--lazy mode, sample 10% of samples to calculate standard error...")
-            data = []
-            for d in sample_index:
-                data.append(self.particles[d].get())
-            data = pp.stack(data, 0)
-            mean, std = pp.mean(data), pp.std(data)
-        else:
-            mean, std = pp.mean(self.particles), pp.std(self.particles)
-        # print(f"std={std}, mean={mean}")
-        return mean, std
+            else:
+                i = (len(tilt_idx) - self.ntilts) // 2
+                tilt_index = self.particles[tilt_idx][i : i + self.ntilts]
 
-    def __len__(self):
-        return self.N
-
-    def __getitem__(self, index):
-        if self.lazy:
-            return (self.particles[index].get() - self.norm[0]) / self.norm[1], index
-        else:
-            return self.particles[index], index
-
-    def get(self, index):
-        if self.lazy:
-            return (self.particles[index].get() - self.norm[0]) / self.norm[1]
-        else:
-            return self.particles[index]
+            tilt_mask = torch.zeros(len(tilt_idx), dtype=torch.bool)
+            tilt_mask[tilt_index] = True
+        tilt_masks = torch.cat(tilt_masks)
+        selected_images = images[tilt_masks]
+        return selected_images
 
 
-class TiltMRCData(data.Dataset):
-    """
-    Class representing an .mrcs tilt series pair
-    """
-
+class DataShuffler:
     def __init__(
-        self,
-        mrcfile,
-        mrcfile_tilt,
-        norm=None,
-        keepreal=False,
-        invert_data=False,
-        ind=None,
-        window=True,
-        datadir=None,
-        window_r=0.85,
-        use_cupy=False,
+        self, dataset: ImageDataset, batch_size, buffer_size, ntilts=1, dtype=np.float32
     ):
-        pp = cp if (use_cupy and cp is not None) else np
-
-        if ind is not None:
-            particles_real = load_particles(mrcfile, True, datadir)
-            particles_tilt_real = load_particles(mrcfile_tilt, True, datadir)
-            particles_real = pp.array(
-                [particles_real[i].get() for i in ind], dtype=pp.float32
+        if not all(dataset.src.indices == np.arange(len(dataset))):
+            raise NotImplementedError(
+                "Sorry dude, --ind is not supported for the data shuffler. "
+                "The purpose of the shuffler is to load chunks contiguously during lazy loading on huge datasets, which doesn't work with --ind. "
+                "If you really need this, maybe you should probably use `--ind` during preprocessing (e.g. cryodrgn downsample)."
             )
-            particles_tilt_real = pp.array(
-                [particles_tilt_real[i].get() for i in ind], dtype=pp.float32
-            )
-        else:
-            particles_real = load_particles(mrcfile, False, datadir)
-            particles_tilt_real = load_particles(mrcfile_tilt, False, datadir)
-
-        N, ny, nx = particles_real.shape
-        assert ny == nx, "Images must be square"
-        assert (
-            ny % 2 == 0
-        ), "Image size must be even. Is this a preprocessed dataset? Use the --preprocessed flag if so."
-        logger.info("Loaded {} {}x{} images".format(N, ny, nx))
-        assert particles_tilt_real.shape == (
-            N,
-            ny,
-            nx,
-        ), "Tilt series pair must have same dimensions as untilted particles"
-        logger.info("Loaded {} {}x{} tilt pair images".format(N, ny, nx))
-
-        # Real space window
-        if window:
-            m = window_mask(ny, window_r, 0.99)
-            particles_real *= m
-            particles_tilt_real *= m
-
-        # compute HT
-        particles = pp.asarray([fft.ht2_center(img) for img in particles_real]).astype(
-            pp.float32
+        self.dataset = dataset
+        self.batch_size = batch_size
+        self.buffer_size = buffer_size
+        self.dtype = dtype
+        assert self.buffer_size % self.batch_size == 0, (
+            self.buffer_size,
+            self.batch_size,
+        )  # FIXME
+        self.batch_capacity = self.buffer_size // self.batch_size
+        assert self.buffer_size <= len(self.dataset), (
+            self.buffer_size,
+            len(self.dataset),
         )
-        particles_tilt = pp.asarray(
-            [fft.ht2_center(img) for img in particles_tilt_real]
-        ).astype(pp.float32)
-        if invert_data:
-            particles *= -1
-            particles_tilt *= -1
+        self.ntilts = ntilts
 
-        # symmetrize HT
-        particles = fft.symmetrize_ht(particles)
-        particles_tilt = fft.symmetrize_ht(particles_tilt)
-
-        # normalize
-        if norm is None:
-            norm = [pp.mean(particles), pp.std(particles)]
-            norm[0] = 0
-        particles = (particles - norm[0]) / norm[1]
-        particles_tilt = (particles_tilt - norm[0]) / norm[1]
-        logger.info("Normalized HT by {} +/- {}".format(*norm))
-
-        self.particles = particles
-        self.particles_tilt = particles_tilt
-        self.norm = norm
-        self.N = N
-        self.D = particles.shape[1]
-        self.keepreal = keepreal
-        self.use_cupy = use_cupy
-        if keepreal:
-            self.particles_real = particles_real
-            self.particles_tilt_real = particles_tilt_real
-
-    def __len__(self):
-        return self.N
-
-    def __getitem__(self, index):
-        return self.particles[index], self.particles_tilt[index], index
-
-    def get(self, index):
-        return self.particles[index], self.particles_tilt[index]
+    def __iter__(self):
+        return _DataShufflerIterator(self)
 
 
-# TODO: LazyTilt
+class _DataShufflerIterator:
+    def __init__(self, shuffler: DataShuffler):
+        self.dataset = shuffler.dataset
+        self.buffer_size = shuffler.buffer_size
+        self.batch_size = shuffler.batch_size
+        self.batch_capacity = shuffler.batch_capacity
+        self.dtype = shuffler.dtype
+        self.ntilts = shuffler.ntilts
+
+        self.buffer = np.empty(
+            (self.buffer_size, self.ntilts, self.dataset.D - 1, self.dataset.D - 1),
+            dtype=self.dtype,
+        )
+        self.index_buffer = np.full((self.buffer_size,), -1, dtype=np.int64)
+        self.num_batches = (
+            len(self.dataset) // self.batch_size
+        )  # FIXME off-by-one? Nah, lets leave the last batch behind
+        self.chunk_order = torch.randperm(self.num_batches)
+        self.count = 0
+        self.flush_remaining = -1  # at the end of the epoch, got to flush the buffer
+        # pre-fill
+        logger.info("Pre-filling data shuffler buffer...")
+        for i in range(self.batch_capacity):
+            chunk, chunk_indices = self._get_next_chunk()
+            self.buffer[i * self.batch_size : (i + 1) * self.batch_size] = chunk
+            self.index_buffer[
+                i * self.batch_size : (i + 1) * self.batch_size
+            ] = chunk_indices
+        logger.info(
+            f"Filled buffer with {self.buffer_size} images ({self.batch_capacity} contiguous chunks)."
+        )
+
+    def _get_next_chunk(self) -> Tuple[torch.Tensor, np.ndarray]:
+        chunk_idx = int(self.chunk_order[self.count])
+        self.count += 1
+        particles = self.dataset.get_slice(
+            chunk_idx * self.batch_size, (chunk_idx + 1) * self.batch_size
+        )
+        particle_indices = np.arange(
+            chunk_idx * self.batch_size, (chunk_idx + 1) * self.batch_size
+        )
+        return particles, particle_indices
+
+    def __iter__(self):
+        return self
+
+    def __next__(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Returns a batch of images, and the indices of those images in the dataset.
+
+        The buffer starts filled with `batch_capacity` random contiguous chunks.
+        Each time a batch is requested, `batch_size` random images are selected from the buffer,
+        and refilled with the next random contiguous chunk from disk.
+
+        Once all the chunks have been fetched from disk, the buffer is randomly permuted and then
+        flushed sequentially.
+        """
+        if self.count == self.num_batches and self.flush_remaining == -1:
+            logger.info(
+                "Finished fetching chunks. Flushing buffer for remaining batches..."
+            )
+            # since we're going to flush the buffer sequentially, we need to shuffle it first
+            perm = np.random.permutation(self.buffer_size)
+            self.buffer = self.buffer[perm]
+            self.index_buffer = self.index_buffer[perm]
+            self.flush_remaining = self.buffer_size
+
+        if self.flush_remaining != -1:
+            # we're in flush mode, just return chunks out of the buffer
+            assert self.flush_remaining % self.batch_size == 0
+            if self.flush_remaining == 0:
+                raise StopIteration()
+            particles = self.buffer[
+                self.flush_remaining - self.batch_size : self.flush_remaining
+            ]
+            particle_indices = self.index_buffer[
+                self.flush_remaining - self.batch_size : self.flush_remaining
+            ]
+            self.flush_remaining -= self.batch_size
+        else:
+            indices = np.random.choice(
+                self.buffer_size, size=self.batch_size, replace=False
+            )
+            particles = self.buffer[indices]
+            particle_indices = self.index_buffer[indices]
+            chunk, chunk_indices = self._get_next_chunk()
+            self.buffer[indices] = chunk
+            self.index_buffer[indices] = chunk_indices
+
+        particles = torch.from_numpy(particles)
+        particle_indices = torch.from_numpy(particle_indices)
+
+        # merge the batch and tilt dimension
+        particle_indices = particle_indices.view(
+            -1, particle_indices.shape[-2], particle_indices.shape[-1]
+        )
+
+        particles = self.dataset._process(particles.to(self.dataset.device))
+        return particles, particles, particle_indices
+
+
+def make_dataloader(
+    data: ImageDataset, *, batch_size: int, num_workers: int = 0, shuffler_size: int = 0
+):
+    if shuffler_size > 0:
+        assert data.lazy, "Only enable a data shuffler for lazy loading"
+        return DataShuffler(data, batch_size=batch_size, buffer_size=shuffler_size)
+    else:
+        return DataLoader(
+            data,
+            num_workers=num_workers,
+            sampler=BatchSampler(
+                RandomSampler(data), batch_size=batch_size, drop_last=False
+            ),
+            batch_size=None,
+            multiprocessing_context="spawn" if num_workers > 0 else None,
+        )

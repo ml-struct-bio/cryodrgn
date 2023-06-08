@@ -4,7 +4,8 @@ import argparse
 import logging
 import matplotlib.pyplot as plt
 import numpy as np
-from cryodrgn import fft, mrc
+from cryodrgn import fft
+from cryodrgn.source import ImageSource
 
 logger = logging.getLogger(__name__)
 
@@ -21,14 +22,14 @@ def parse_args():
 
 
 def main(args):
-    vol1, _ = mrc.parse_mrc(args.vol1)
-    vol2, _ = mrc.parse_mrc(args.vol2)
+    vol1 = ImageSource.from_file(args.vol1)
+    vol2 = ImageSource.from_file(args.vol2)
 
     assert isinstance(vol1, np.ndarray)
     assert isinstance(vol2, np.ndarray)
 
     if args.mask:
-        mask = mrc.parse_mrc(args.mask)[0]
+        mask = ImageSource.from_file(args.mask)
         assert isinstance(mask, np.ndarray)
         vol1 *= mask
         vol2 *= mask

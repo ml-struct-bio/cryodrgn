@@ -1,5 +1,6 @@
 import argparse
 import os
+import os.path
 import pprint
 import shutil
 from datetime import datetime as dt
@@ -8,12 +9,14 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.data.dataloader import default_collate
 import torch.optim as optim
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset, DataLoader
 import cryodrgn
-from cryodrgn import config, mrc, utils
+from cryodrgn import config, utils
 from cryodrgn.models import HetOnlyVAE, ResidLinearMLP
+from cryodrgn.source import ImageSource
 
 logger = logging.getLogger(__name__)
 
@@ -159,7 +162,7 @@ class MyDataset(Dataset):
 
 
 def generate_and_map_volumes(
-    zfile, cfg_pkl, weights, mask_mrc, pca_obj_pkl, landscape_dir, outdir, args
+    zfile, cfg, weights, mask_mrc, pca_obj_pkl, landscape_dir, outdir, args
 ):
     # Sample z
     logger.info(f"Sampling {args.N} particles from {zfile}")
@@ -172,18 +175,18 @@ def generate_and_map_volumes(
     logger.info(f"Saved {outdir}/z.sampled.pkl")
 
     # Set the device
-    assert torch.cuda.is_available(), "No GPUs detected"
-    torch.set_default_tensor_type(torch.cuda.FloatTensor)  # type: ignore
+    # if torch.cuda.is_available():
+    #     torch.set_default_tensor_type(torch.cuda.FloatTensor)  # type: ignore
 
-    cfg = config.update_config_v1(cfg_pkl)
+    cfg = config.update_config_v1(cfg)
     logger.info("Loaded configuration:")
     pprint.pprint(cfg)
 
     D = cfg["lattice_args"]["D"]  # image size + 1
-    norm = cfg["dataset_args"]["norm"]
+    norm = [float(x) for x in cfg["dataset_args"]["norm"]]
 
     # Load landscape analysis inputs
-    mask, _ = mrc.parse_mrc(mask_mrc)
+    mask = np.array(ImageSource.from_file(mask_mrc).images().cpu())
     assert isinstance(mask, np.ndarray)
     mask = mask.astype(bool)
     if args.downsample:
@@ -224,7 +227,7 @@ def generate_and_map_volumes(
             )
         if args.flip:
             vol = vol[::-1]
-        embeddings.append(pca.transform(vol[mask].reshape(1, -1)))
+        embeddings.append(pca.transform(vol.cpu()[mask].reshape(1, -1)))
 
     embeddings = np.array(embeddings).reshape(len(z), -1).astype(np.float32)
 
@@ -241,7 +244,11 @@ def train_model(x, y, outdir, zfile, args):
     train_kwargs = {"batch_size": args.batch_size}
     test_kwargs = {"batch_size": args.test_batch_size}
     if use_cuda:
-        cuda_kwargs = {"num_workers": 1, "pin_memory": True, "shuffle": True}
+        cuda_kwargs = {
+            "num_workers": 0,
+            "shuffle": True,
+            "collate_fn": lambda x: tuple(x_.to(device) for x_ in default_collate(x)),
+        }
         train_kwargs.update(cuda_kwargs)
         test_kwargs.update(cuda_kwargs)
 
@@ -288,7 +295,11 @@ def main(args):
     workdir = args.workdir
     zfile = f"{workdir}/z.{E}.pkl"
     weights = f"{workdir}/weights.{E}.pkl"
-    cfg_pkl = f"{workdir}/config.pkl"
+    cfg = (
+        f"{workdir}/config.yaml"
+        if os.path.exists(f"{workdir}/config.yaml")
+        else f"{workdir}/config.pkl"
+    )
     landscape_dir = (
         f"{workdir}/landscape.{E}" if args.landscape_dir is None else args.landscape_dir
     )
@@ -320,7 +331,7 @@ def main(args):
         z = utils.load_pkl(z_sampled_pkl)
     else:
         z, embeddings = generate_and_map_volumes(
-            zfile, cfg_pkl, weights, mask_mrc, pca_obj_pkl, landscape_dir, outdir, args
+            zfile, cfg, weights, mask_mrc, pca_obj_pkl, landscape_dir, outdir, args
         )
         utils.save_pkl(embeddings, embeddings_pkl)
 

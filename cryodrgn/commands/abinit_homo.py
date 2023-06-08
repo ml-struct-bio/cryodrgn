@@ -12,9 +12,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
-
-from cryodrgn import ctf, dataset, lie_tools, models, mrc, utils
+from cryodrgn import ctf, dataset, lie_tools, models, utils
+from cryodrgn.mrc import MRCFile
 from cryodrgn.lattice import Lattice
 from cryodrgn.pose_search import PoseSearch
 
@@ -23,7 +22,9 @@ logger = logging.getLogger(__name__)
 
 def add_args(parser):
     parser.add_argument(
-        "particles", type=os.path.abspath, help="Particle stack file (.mrcs)"
+        "particles",
+        type=os.path.abspath,
+        help="Input particles (.mrcs, .star, .cs, or .txt)",
     )
     parser.add_argument(
         "-o",
@@ -61,7 +62,7 @@ def add_args(parser):
         help="Logging interval in N_IMGS (default: %(default)s)",
     )
     parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Increaes verbosity"
+        "-v", "--verbose", action="store_true", help="Increase verbosity"
     )
     parser.add_argument(
         "--seed", type=int, default=np.random.randint(0, 100000), help="Random seed"
@@ -73,7 +74,10 @@ def add_args(parser):
         help="Do not invert data sign",
     )
     parser.add_argument(
-        "--window", action="store_true", help="Real space windowing of dataset"
+        "--no-window",
+        dest="window",
+        action="store_false",
+        help="Turn off real space windowing of dataset",
     )
     parser.add_argument(
         "--window-r",
@@ -81,7 +85,20 @@ def add_args(parser):
         default=0.85,
         help="Windowing radius (default: %(default)s)",
     )
-    parser.add_argument("--ind", type=os.path.abspath, help="Filter indices")
+    parser.add_argument(
+        "--ind", type=os.path.abspath, help="Filter particle stack by these indices"
+    )
+    parser.add_argument(
+        "--lazy",
+        action="store_true",
+        help="Lazy loading if full dataset is too large to fit in memory",
+    )
+    parser.add_argument(
+        "--shuffler-size",
+        type=int,
+        default=0,
+        help="If non-zero, will use a data shuffler for faster lazy data loading.",
+    )
 
     group = parser.add_argument_group("Tilt series")
     group.add_argument("--tilt", help="Particle stack file (.mrcs)")
@@ -97,13 +114,26 @@ def add_args(parser):
         "--t-extent",
         type=float,
         default=10,
-        help="+/- pixels to search over translations",
+        help="+/- pixels to search over translations (default: %(default)s)",
     )
     group.add_argument(
-        "--t-ngrid", type=float, default=7, help="Initial grid size for translations"
+        "--t-ngrid",
+        type=float,
+        default=7,
+        help="Initial grid size for translations (default: %(default)s)",
     )
-    group.add_argument("--t-xshift", type=float, default=0)
-    group.add_argument("--t-yshift", type=float, default=0)
+    group.add_argument(
+        "--t-xshift",
+        type=float,
+        default=0,
+        help="X-axis translation shift (default: %(default)s)",
+    )
+    group.add_argument(
+        "--t-yshift",
+        type=float,
+        default=0,
+        help="Y-axis translation shift (default: %(default)s)",
+    )
     group.add_argument(
         "--no-trans", action="store_true", help="Don't search over translations"
     )
@@ -170,7 +200,10 @@ def add_args(parser):
         "--l-end", type=int, default=32, help="End L radius (default: %(default)s)"
     )
     group.add_argument(
-        "--niter", type=int, default=4, help="Number of iterations of grid subdivision"
+        "--niter",
+        type=int,
+        default=4,
+        help="Number of iterations of grid subdivision (default: %(default)s)",
     )
     group.add_argument(
         "--l-ramp-epochs",
@@ -185,18 +218,18 @@ def add_args(parser):
         "--nkeptposes",
         type=int,
         default=8,
-        help="Number of poses to keep at each refinement interation during branch and bound",
+        help="Number of poses to keep at each refinement interation during branch and bound (default: %(default)s)",
     )
     group.add_argument(
         "--base-healpy",
         type=int,
         default=2,
-        help="Base healpy grid for pose search. Higher means exponentially higher resolution.",
+        help="Base healpy grid for pose search. Higher means exponentially higher resolution (default: %(default)s)",
     )
     group.add_argument(
         "--pose-model-update-freq",
         type=int,
-        help="If set, only update the model used for pose search every N examples.",
+        help="If set, only update the model used for pose search every N examples",
     )
 
     group = parser.add_argument_group("Network Architecture")
@@ -235,7 +268,7 @@ def add_args(parser):
     group.add_argument(
         "--pe-dim",
         type=int,
-        help="Num sinusoid features in positional encoding (default: D/2)",
+        help="Num frequencies in positional encoding (default: D/2)",
     )
     group.add_argument(
         "--domain",
@@ -253,7 +286,7 @@ def add_args(parser):
         "--feat-sigma",
         type=float,
         default=0.5,
-        help="Scale for random Gaussian features",
+        help="Scale for random Gaussian features (default: %(default)s)",
     )
 
     return parser
@@ -264,7 +297,7 @@ def save_checkpoint(
 ):
     model.eval()
     vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, norm)
-    mrc.write(out_mrc, vol.astype(np.float32))
+    MRCFile.write(out_mrc, vol)
     torch.save(
         {
             "norm": norm,
@@ -468,26 +501,21 @@ def main(args):
         logger.info("Filtering image dataset with {}".format(args.ind))
         args.ind = pickle.load(open(args.ind, "rb"))
     if args.tilt is None:
-        data = dataset.MRCData(
-            args.particles,
-            norm=args.norm,
-            invert_data=args.invert_data,
-            ind=args.ind,
-            window=args.window,
-            window_r=args.window_r,
-        )
         tilt = None
     else:
-        data = dataset.TiltMRCData(
-            args.particles,
-            args.tilt,
-            norm=args.norm,
-            invert_data=args.invert_data,
-            ind=args.ind,
-            window=args.window,
-            window_r=args.window_r,
-        )
         tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32), device=device)
+
+    data = dataset.ImageDataset(
+        mrcfile=args.particles,
+        lazy=args.lazy,
+        tilt_mrcfile=args.tilt,
+        norm=args.norm,
+        invert_data=args.invert_data,
+        ind=args.ind,
+        window=args.window,
+        window_r=args.window_r,
+    )
+
     D = data.D
     Nimg = data.N
 
@@ -548,7 +576,6 @@ def main(args):
         model.load_state_dict(checkpoint["model_state_dict"])
         optim.load_state_dict(checkpoint["optimizer_state_dict"])
         start_epoch = checkpoint["epoch"] + 1
-        assert args.num_epochs > start_epoch
         model.train()
         if args.load_poses:
             rot, trans = utils.load_pkl(args.load_poses)
@@ -562,7 +589,9 @@ def main(args):
     else:
         start_epoch = 0
 
-    data_iterator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
+    data_iterator = dataset.make_dataloader(
+        data, batch_size=args.batch_size, shuffler_size=args.shuffler_size
+    )
 
     # pretrain decoder with random poses
     global_it = 0
@@ -583,7 +612,7 @@ def main(args):
     out_mrc = "{}/pretrain.reconstruct.mrc".format(args.outdir)
     model.eval()
     vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, tuple(data.norm))
-    mrc.write(out_mrc, vol.astype(np.float32))
+    MRCFile.write(out_mrc, vol)
 
     # reset model after pretraining
     if args.reset_optim_after_pretrain:

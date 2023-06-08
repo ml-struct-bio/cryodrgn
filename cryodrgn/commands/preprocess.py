@@ -3,19 +3,13 @@ Preprocess a dataset for more streamlined cryoDRGN training
 """
 
 import argparse
-import numpy as np
-
-try:
-    import cupy as cp  # type: ignore
-except ImportError:
-    cp = np
 import math
-import multiprocessing as mp
 import os
-from multiprocessing import Pool
-from typing import List
 import logging
-from cryodrgn import dataset, fft, mrc, utils
+from cryodrgn import fft, utils
+from cryodrgn.utils import window_mask
+from cryodrgn.source import ImageSource
+from cryodrgn.mrc import MRCFile, MRCHeader
 
 logger = logging.getLogger(__name__)
 
@@ -94,46 +88,28 @@ def add_args(parser):
     return parser
 
 
-def mkbasedir(out):
-    if not os.path.exists(os.path.dirname(out)):
-        os.makedirs(os.path.dirname(out))
-
-
-def warnexists(out):
-    if os.path.exists(out):
-        logger.warning(f"Warning: {out} already exists. Overwriting.")
-
-
 def main(args):
-    if cp is None and args.use_cupy:
-        raise RuntimeError(
-            "Error: import cupy failed, please unset --use-cupy and try again"
-        )
+    if os.path.exists(args.o):
+        logger.warning(f"Warning: {args.o} already exists. Overwriting.")
+    os.makedirs(os.path.dirname(args.o), exist_ok=True)
 
-    mkbasedir(args.o)
-    warnexists(args.o)
     assert args.o.endswith(".mrcs") or args.o.endswith(
         ".txt"
-    ), "Must specify output in .mrcs file format"
+    ), "Must specify output in .mrcs/.txt file format"
 
-    # load images
     lazy = args.lazy
-    images = dataset.load_particles(args.mrcs, lazy=lazy, datadir=args.datadir)
 
-    # filter images
+    ind = None
     if args.ind is not None:
         logger.info(f"Filtering image dataset with {args.ind}")
         ind = utils.load_pkl(args.ind).astype(int)
-        images = [images[i] for i in ind] if lazy else images[ind]
 
-    if lazy:
-        assert isinstance(images, List)
-        original_D = images[0].get().shape[0]
-    else:
-        assert isinstance(images, np.ndarray)
-        original_D = images.shape[-1]
+    images = ImageSource.from_file(
+        args.mrcs, lazy=lazy, datadir=args.datadir, indices=ind
+    )
+    original_D = images.D
 
-    logger.info(f"Loading {len(images)} {original_D}x{original_D} images")
+    logger.info(f"Loading {images.n} {original_D}x{original_D} images")
     window = args.window
     invert_data = args.invert_data
     downsample = args.D and args.D < original_D
@@ -149,72 +125,16 @@ def main(args):
     else:
         D = original_D
 
-    def _combine_imgs(imgs):
-        ret = []
-        for img in imgs:
-            img.shape = (1, *img.shape)  # (D,D) -> (1,D,D)
-        cur = imgs[0]
-        for img in imgs[1:]:
-            if img.fname == cur.fname and img.offset == cur.offset + 4 * np.product(
-                cur.shape
-            ):
-                cur.shape = (cur.shape[0] + 1, *cur.shape[1:])
-            else:
-                ret.append(cur)
-                cur = img
-        ret.append(cur)
-        return ret
-
-    def preprocess_numpy(imgs):
-        if lazy:
-            imgs = _combine_imgs(imgs)
-            imgs = np.concatenate([i.get() for i in imgs])
-        with Pool(min(args.max_threads, mp.cpu_count())) as p:
-            # todo: refactor as a routine in dataset.py
-
-            # note: applying the window before downsampling is slightly
-            # different than in the original workflow
-            if window:
-                imgs *= dataset.window_mask(
-                    original_D, args.window_r, 0.99, use_cupy=False
-                )
-            ret = np.asarray(p.map(fft.ht2_center, imgs))
-            if invert_data:
-                ret *= -1
-            if downsample:
-                ret = ret[:, start:stop, start:stop]
-            ret = fft.symmetrize_ht(ret)
-        return ret
-
-    def preprocess_cupy(imgs):
-        imgs = cp.asarray(imgs)
-        if lazy:
-            imgs = _combine_imgs(imgs)
-            imgs = cp.concatenate([cp.asarray(i.get()) for i in imgs])
+    def preprocess(imgs, indices):
         if window:
-            imgs *= dataset.window_mask(original_D, args.window_r, 0.99, use_cupy=True)
+            imgs *= window_mask(original_D, args.window_r, 0.99)
 
-        ret = cp.asarray([fft.ht2_center(img) for img in imgs])
+        ret = fft.ht2_center(imgs)
         if invert_data:
             ret *= -1
         if downsample:
             ret = ret[:, start:stop, start:stop]
         ret = fft.symmetrize_ht(ret)
-        return ret
-
-    def preprocess_in_batches(imgs, b, use_cupy=False):
-        ret = np.empty((len(imgs), D + 1, D + 1), dtype=np.float32)
-        Nbatches = math.ceil(len(imgs) / b)
-        for ii in range(Nbatches):
-            logger.info(f"Processing batch of {b} images ({ii+1} of {Nbatches})")
-            if use_cupy:
-                ret[ii * b : (ii + 1) * b, :, :] = cp.asnumpy(  # type: ignore
-                    preprocess_cupy(imgs[ii * b : (ii + 1) * b])
-                )
-            else:
-                ret[ii * b : (ii + 1) * b, :, :] = preprocess_numpy(
-                    imgs[ii * b : (ii + 1) * b]
-                )
         return ret
 
     nchunks = math.ceil(len(images) / args.chunk)
@@ -223,10 +143,18 @@ def main(args):
     for i in range(nchunks):
         logger.info(f"Processing chunk {i+1} of {nchunks}")
         chunk = images[i * args.chunk : (i + 1) * args.chunk]
-        new = preprocess_in_batches(chunk, args.b, use_cupy=args.use_cupy)
-        logger.info(f"New shape: {new.shape}")
+        header = MRCHeader.make_default_header(
+            nz=len(chunk), ny=D + 1, nx=D + 1, data=None, is_vol=False
+        )
         logger.info(f"Saving {out_mrcs[i]}")
-        mrc.write(out_mrcs[i], new, is_vol=False)
+        MRCFile.write(
+            filename=out_mrcs[i],
+            array=chunk,
+            header=header,
+            is_vol=False,
+            transform_fn=preprocess,
+            chunksize=args.b,
+        )
 
     out_txt = f"{os.path.splitext(args.o)[0]}.ft.txt"
     logger.info(f"Saving summary txt file {out_txt}")

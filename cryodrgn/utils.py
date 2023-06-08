@@ -2,11 +2,57 @@ from collections.abc import Hashable
 import functools
 import os
 import pickle
+import yaml
 import logging
 from typing import Tuple
 import numpy as np
+import torch
 
 logger = logging.getLogger(__name__)
+
+
+def meshgrid_2d(lo, hi, n, endpoint=False):
+    """
+    Torch-compatible implementation of:
+    np.meshgrid(
+            np.linspace(-0.5, 0.5, D, endpoint=endpoint),
+            np.linspace(-0.5, 0.5, D, endpoint=endpoint),
+        )
+    Torch doesn't support the 'endpoint' argument (always assumed True)
+    and the behavior of torch.meshgrid is different unless the 'indexing' argument is supplied.
+    """
+    if endpoint:
+        values = torch.linspace(lo, hi, n)
+    else:
+        values = torch.linspace(lo, hi, n + 1)[:-1]
+
+    return torch.meshgrid(values, values, indexing="xy")
+
+
+def window_mask(D, in_rad: float, out_rad: float):
+    """
+    Create a square radial mask of linearly-interpolated float values
+    from 1.0 (within in_rad of center) to 0.0 (beyond out_rad of center)
+    Args:
+        D: Side length of the (square) mask
+        in_rad: inner radius (fractional float between 0 and 1) inside which all values are 1.0
+        out_rad: outer radius (fractional float between 0 and 1) beyond which all values are 0.0
+
+    Returns:
+        A 2D Tensor of shape (D, D) of mask values between 0 (inclusive) and 1 (inclusive)
+    """
+    assert D % 2 == 0
+    assert in_rad <= out_rad
+    x0, x1 = torch.meshgrid(
+        torch.linspace(-1, 1, D + 1, dtype=torch.float32)[:-1],
+        torch.linspace(-1, 1, D + 1, dtype=torch.float32)[:-1],
+    )
+    r = (x0**2 + x1**2) ** 0.5
+    mask = torch.minimum(
+        torch.tensor(1.0),
+        torch.maximum(torch.tensor(0.0), 1 - (r - in_rad) / (out_rad - in_rad)),
+    )
+    return mask
 
 
 class memoized(object):
@@ -51,6 +97,18 @@ def save_pkl(data, out_pkl: str, mode: str = "wb") -> None:
         logger.warning(f"Warning: {out_pkl} already exists. Overwriting.")
     with open(out_pkl, mode) as f:
         pickle.dump(data, f)  # type: ignore
+
+
+def load_yaml(yamlfile: str):
+    with open(yamlfile, "r") as f:
+        return yaml.safe_load(f)
+
+
+def save_yaml(data, out_yamlfile: str, mode: str = "w"):
+    if mode == "w" and os.path.exists(out_yamlfile):
+        logger.warning(f"Warning: {out_yamlfile} already exists. Overwriting.")
+    with open(out_yamlfile, mode) as f:
+        yaml.dump(data, f)
 
 
 def R_from_eman(a: np.ndarray, b: np.ndarray, y: np.ndarray) -> np.ndarray:

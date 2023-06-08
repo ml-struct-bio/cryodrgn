@@ -12,11 +12,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.parallel import DataParallel
-from torch.utils.data import DataLoader
 from typing import Union
-import cryodrgn
 from cryodrgn import ctf, dataset, lie_tools, utils
 from cryodrgn.beta_schedule import LinearSchedule, get_beta_schedule
+import cryodrgn.config
 from cryodrgn.lattice import Lattice
 from cryodrgn.losses import EquivarianceLoss
 from cryodrgn.models import HetOnlyVAE, unparallelize
@@ -27,7 +26,9 @@ logger = logging.getLogger(__name__)
 
 def add_args(parser):
     parser.add_argument(
-        "particles", type=os.path.abspath, help="Input particles (.mrcs, .txt or .star)"
+        "particles",
+        type=os.path.abspath,
+        help="Input particles (.mrcs, .star, .cs, or .txt)",
     )
     parser.add_argument(
         "-o",
@@ -94,25 +95,21 @@ def add_args(parser):
         help="Path prefix to particle stack if loading relative paths from a .star or .cs file",
     )
     group.add_argument(
-        "--lazy-single",
+        "--lazy",
         action="store_true",
         help="Lazy loading if full dataset is too large to fit in memory",
     )
     group.add_argument(
-        "--lazy",
-        action="store_true",
-        help="Memory efficient training by loading data in chunks",
-    )
-    group.add_argument(
-        "--preprocessed",
-        action="store_true",
-        help="Skip preprocessing steps if input data is from cryodrgn preprocess_mrcs",
+        "--shuffler-size",
+        type=int,
+        default=0,
+        help="If non-zero, will use a data shuffler for faster lazy data loading.",
     )
     group.add_argument(
         "--max-threads",
         type=int,
         default=16,
-        help="Maximum number of CPU cores for FFT parallelization (default: %(default)s)",
+        help="Maximum number of CPU cores for data loading (default: %(default)s)",
     )
 
     group = parser.add_argument_group("Tilt series")
@@ -158,18 +155,18 @@ def add_args(parser):
     )
     group.add_argument(
         "--beta",
-        default=1.0,
-        help="Choice of beta schedule or a constant for KLD weight (default: %(default)s)",
+        default=None,
+        help="Choice of beta schedule or a constant for KLD weight (default: 1/zdim)",
     )
     group.add_argument(
         "--beta-control",
         type=float,
-        help="KL-Controlled VAE gamma. Beta is KL target. (default: %(default)s)",
+        help="KL-Controlled VAE gamma. Beta is KL target",
     )
     group.add_argument(
         "--equivariance",
         type=float,
-        help="Strength of equivariance loss (default: %(default)s)",
+        help="Strength of equivariance loss",
     )
     group.add_argument(
         "--eq-start-it",
@@ -191,13 +188,16 @@ def add_args(parser):
         help="Data normalization as shift, 1/scale (default: mean, std of dataset)",
     )
     group.add_argument(
-        "--l-ramp-epochs", type=int, default=0, help="default: %(default)s"
+        "--l-ramp-epochs",
+        type=int,
+        default=0,
+        help="Number of epochs to ramp up to --l-end (default: %(default)s)",
     )
     group.add_argument(
         "--l-ramp-model",
         type=int,
         default=0,
-        help="If 1, then during ramp only train the model up to l-max",
+        help="If 1, then during ramp only train the model up to l-max (default: %(default)s)",
     )
     group.add_argument(
         "--reset-model-every", type=int, help="If set, reset the model every N epochs"
@@ -229,7 +229,10 @@ def add_args(parser):
         "--l-end", type=int, default=32, help="End L radius (default: %(default)s)"
     )
     group.add_argument(
-        "--niter", type=int, default=4, help="Number of iterations of grid subdivision"
+        "--niter",
+        type=int,
+        default=4,
+        help="Number of iterations of grid subdivision (default: %(default)s)",
     )
     group.add_argument(
         "--t-extent",
@@ -238,10 +241,23 @@ def add_args(parser):
         help="+/- pixels to search over translations (default: %(default)s)",
     )
     group.add_argument(
-        "--t-ngrid", type=float, default=7, help="Initial grid size for translations"
+        "--t-ngrid",
+        type=float,
+        default=7,
+        help="Initial grid size for translations (default: %(default)s)",
     )
-    group.add_argument("--t-xshift", type=float, default=0)
-    group.add_argument("--t-yshift", type=float, default=0)
+    group.add_argument(
+        "--t-xshift",
+        type=float,
+        default=0,
+        help="X-axis translation shift (default: %(default)s)",
+    )
+    group.add_argument(
+        "--t-yshift",
+        type=float,
+        default=0,
+        help="Y-axis translation shift (default: %(default)s)",
+    )
     group.add_argument(
         "--pretrain",
         type=int,
@@ -258,18 +274,18 @@ def add_args(parser):
         "--nkeptposes",
         type=int,
         default=8,
-        help="Number of poses to keep at each refinement interation during branch and bound",
+        help="Number of poses to keep at each refinement interation during branch and bound (default: %(default)s)",
     )
     group.add_argument(
         "--base-healpy",
         type=int,
         default=2,
-        help="Base healpy grid for pose search. Higher means exponentially higher resolution.",
+        help="Base healpy grid for pose search. Higher means exponentially higher resolution (default: %(default)s)",
     )
     group.add_argument(
         "--pose-model-update-freq",
         type=int,
-        help="If set, only update the model used for pose search every N examples.",
+        help="If set, only update the model used for pose search every N examples",
     )
 
     group = parser.add_argument_group("Encoder Network")
@@ -342,13 +358,13 @@ def add_args(parser):
     group.add_argument(
         "--pe-dim",
         type=int,
-        help="Num features in positional encoding (default: image D)",
+        help="Num frequencies in positional encoding (default: image D/2)",
     )
     group.add_argument(
         "--domain",
         choices=("hartley", "fourier"),
         default="hartley",
-        help="Decoder representation domain (default: %(default)s)",
+        help="Volume decoder representation (default: %(default)s)",
     )
     group.add_argument(
         "--activation",
@@ -502,16 +518,19 @@ def train(
     else:
         gen_loss = F.mse_loss(gen_slice(rot), y)
 
-    kld = -0.5 * torch.mean(1 + z_logvar - z_mu.pow(2) - z_logvar.exp())
+    # latent loss
+    kld = torch.mean(
+        -0.5 * torch.sum(1 + z_logvar - z_mu.pow(2) - z_logvar.exp(), dim=1), dim=0
+    )
     if torch.isnan(kld):
         logger.info(z_mu[0])
         logger.info(z_logvar[0])
         raise RuntimeError("KLD is nan")
 
     if beta_control is None:
-        loss = gen_loss + beta * kld / mask.sum()
+        loss = gen_loss + beta * kld / mask.sum().float()
     else:
-        loss = gen_loss + beta_control * (beta - kld) ** 2 / mask.sum()
+        loss = gen_loss + beta_control * (beta - kld) ** 2 / mask.sum().float()
 
     if loss is not None and eq_loss is not None:
         loss += lamb * eq_loss
@@ -536,14 +555,17 @@ def eval_z(
     data,
     batch_size,
     device,
-    trans=None,
     use_tilt=False,
     ctf_params=None,
+    shuffler_size=0,
 ):
     assert not model.training
     z_mu_all = []
     z_logvar_all = []
-    data_generator = DataLoader(data, batch_size=batch_size, shuffle=False)
+    data_generator = dataset.make_dataloader(
+        data, batch_size=batch_size, shuffler_size=shuffler_size
+    )
+
     for minibatch in data_generator:
         ind = minibatch[-1]
         y = minibatch[0].to(device)
@@ -649,11 +671,8 @@ def save_config(args, dataset, lattice, model, out_config):
     config = dict(
         dataset_args=dataset_args, lattice_args=lattice_args, model_args=model_args
     )
-    config["seed"] = args.seed
-    with open(out_config, "wb") as f:
-        pickle.dump(config, f)
-        meta = dict(time=dt.now(), cmd=sys.argv, version=cryodrgn.__version__)
-        pickle.dump(meta, f)
+
+    cryodrgn.config.save(config, out_config)
 
 
 def sort_poses(poses):
@@ -710,6 +729,8 @@ def main(args):
         logger.warning("WARNING: No GPUs detected")
 
     # set beta schedule
+    if args.beta is None:
+        args.beta = 1.0 / args.zdim
     try:
         args.beta = float(args.beta)
     except ValueError:
@@ -730,66 +751,22 @@ def main(args):
     if args.tilt is None:
         tilt = None
         args.use_real = args.encode_mode == "conv"
-
-        if args.lazy:
-            assert (
-                args.preprocessed
-            ), "Dataset must be preprocesed with `cryodrgn preprocess_mrcs` in order to use --lazy data loading"
-            assert (
-                not args.ind
-            ), "For --lazy data loading, dataset must be filtered by `cryodrgn preprocess_mrcs`"
-            # data = dataset.PreprocessedMRCData(args.particles, norm=args.norm)
-            raise NotImplementedError("Use --lazy-single for on-the-fly image loading")
-        elif args.lazy_single:
-            data = dataset.LazyMRCData(
-                args.particles,
-                norm=args.norm,
-                invert_data=args.invert_data,
-                ind=ind,
-                keepreal=args.use_real,
-                window=args.window,
-                datadir=args.datadir,
-                window_r=args.window_r,
-            )
-        elif args.preprocessed:
-            logger.info(
-                "Using preprocessed inputs. Ignoring any --window/--invert-data options"
-            )
-            data = dataset.PreprocessedMRCData(args.particles, norm=args.norm, ind=ind)
-        else:
-            data = dataset.MRCData(
-                args.particles,
-                norm=args.norm,
-                invert_data=args.invert_data,
-                ind=ind,
-                keepreal=args.use_real,
-                window=args.window,
-                datadir=args.datadir,
-                max_threads=args.max_threads,
-                window_r=args.window_r,
-            )
-
-    # Tilt series data -- lots of unsupported features
     else:
         assert args.encode_mode == "tilt"
-        if args.lazy_single:
-            raise NotImplementedError
-        if args.lazy:
-            raise NotImplementedError
-        if args.preprocessed:
-            raise NotImplementedError
-        data = dataset.TiltMRCData(
-            args.particles,
-            args.tilt,
-            norm=args.norm,
-            invert_data=args.invert_data,
-            ind=ind,
-            window=args.window,
-            keepreal=args.use_real,
-            datadir=args.datadir,
-            window_r=args.window_r,
-        )
         tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32), device=device)
+
+    data = dataset.ImageDataset(
+        mrcfile=args.particles,
+        tilt_mrcfile=args.tilt,
+        norm=args.norm,
+        invert_data=args.invert_data,
+        ind=ind,
+        window=args.window,
+        keepreal=args.use_real,
+        datadir=args.datadir,
+        window_r=args.window_r,
+    )
+
     Nimg = data.N
     D = data.D
 
@@ -890,7 +867,7 @@ def main(args):
         pose_model = model
 
     # save configuration
-    out_config = "{}/config.pkl".format(args.outdir)
+    out_config = "{}/config.yaml".format(args.outdir)
     save_config(args, data, lattice, model, out_config)
 
     ps = PoseSearch(
@@ -909,7 +886,9 @@ def main(args):
         device=device,
     )
 
-    data_iterator = DataLoader(data, batch_size=args.batch_size, shuffle=True)
+    data_iterator = dataset.make_dataloader(
+        data, batch_size=args.batch_size, shuffler_size=args.shuffler_size
+    )
 
     # pretrain decoder with random poses
     global_it = 0
@@ -991,10 +970,9 @@ def main(args):
                 equivariance_tuple = None
 
             # train the model
+            p = None
             if epoch % args.ps_freq != 0:
                 p = [torch.tensor(x[ind_np], device=device) for x in sorted_poses]  # type: ignore
-            else:
-                p = None
 
             cc += len(batch[0])
             if args.pose_model_update_freq and cc > args.pose_model_update_freq:
@@ -1070,6 +1048,7 @@ def main(args):
                     device,
                     use_tilt=tilt is not None,
                     ctf_params=ctf_params,
+                    shuffler_size=args.shuffler_size,
                 )
                 save_checkpoint(
                     model,

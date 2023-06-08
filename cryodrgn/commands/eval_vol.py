@@ -8,7 +8,8 @@ from datetime import datetime as dt
 import logging
 import numpy as np
 import torch
-from cryodrgn import config, mrc
+from cryodrgn import config
+from cryodrgn.mrc import MRCFile
 from cryodrgn.models import HetOnlyVAE
 
 logger = logging.getLogger(__name__)
@@ -17,7 +18,11 @@ logger = logging.getLogger(__name__)
 def add_args(parser):
     parser.add_argument("weights", help="Model weights")
     parser.add_argument(
-        "-c", "--config", metavar="PKL", required=True, help="CryoDRGN config.pkl file"
+        "-c",
+        "--config",
+        metavar="YAML",
+        required=True,
+        help="CryoDRGN config.yaml file",
     )
     parser.add_argument(
         "-o", type=os.path.abspath, required=True, help="Output .mrc or directory"
@@ -72,7 +77,7 @@ def add_args(parser):
     )
 
     group = parser.add_argument_group(
-        "Overwrite architecture hyperparameters in config.pkl"
+        "Overwrite architecture hyperparameters in config.yaml"
     )
     group.add_argument("--norm", nargs=2, type=float)
     group.add_argument("-D", type=int, help="Box size")
@@ -160,7 +165,7 @@ def main(args):
 
     D = cfg["lattice_args"]["D"]  # image size + 1
     zdim = cfg["model_args"]["zdim"]
-    norm = cfg["dataset_args"]["norm"]
+    norm = [float(x) for x in cfg["dataset_args"]["norm"]]
 
     if args.downsample:
         assert args.downsample % 2 == 0, "Boxsize must be even"
@@ -208,7 +213,9 @@ def main(args):
                 vol = vol[::-1]
             if args.invert:
                 vol *= -1
-            mrc.write(out_mrc, vol.astype(np.float32), Apix=args.Apix)
+            MRCFile.write(
+                out_mrc, np.array(vol.cpu()).astype(np.float32), Apix=args.Apix
+            )
 
     # Single z
     else:
@@ -231,7 +238,7 @@ def main(args):
             vol = vol[::-1]
         if args.invert:
             vol *= -1
-        mrc.write(args.o, vol.astype(np.float32), Apix=args.Apix)
+        MRCFile.write(args.o, np.array(vol).astype(np.float32), Apix=args.Apix)
 
     td = dt.now() - t1
     logger.info("Finished in {}".format(td))

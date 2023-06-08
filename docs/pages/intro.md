@@ -2,7 +2,7 @@
 
 This document contains a guide for installing and running **cryoDRGN** 🐉 ❄️. In particular, we follow the processing steps for **particle filtering** and **heterogeneous reconstruction** of the **assembling ribosome dataset (EMPIAR-10076)** used in [Zhong et al](https://www.nature.com/articles/s41592-020-01049-4). This is meant as a general guide — submission commands may need to be updated depending on your workstation or cluster setup.
 
-Please send any feedback, issues, or typos to Ellen Zhong (`zhonge@princeton.edu`) or file a Github [issue](https://github.com/zhonge/cryodrgn/issues).
+For any feedback, issues, or typos, please file a Github [issue](https://github.com/zhonge/cryodrgn/issues) or send an email to the cryodrgn user [google group](https://groups.google.com/g/cryodrgn).
 
 ---
 
@@ -33,7 +33,7 @@ What settings should I use for training cryoDRGN networks? Common hyperparameter
     - High quality CTF parameters
     - High quality image poses (particle alignments)
 
-## Tutorial
+## Tutorial overview
 
 See [cryoDRGN EMPIAR-10076 tutorial](empiar_tutorial.md) for a step-by-step guide for running cryoDRGN.
 
@@ -48,21 +48,13 @@ This walkthrough of cryoDRGN analysis of the **assembling ribosome dataset (EMPI
 
 For an abbreviated overview of the steps for running cryoDRGN, see the github [README](https://github.com/zhonge/cryodrgn)
 
+A protocols paper that describes the analysis of the assembling ribosome dataset is now published. See [Kinman*, Powell*, Zhong* et al.](https://www.nature.com/articles/s41596-022-00763-x)
+
 <iframe src="https://widgets.figshare.com/articles/21170908/embed?show_title=1" width="568" height="351" allowfullscreen frameborder="0"></iframe>
 
 *SI Video 3 from [Zhong et al 2021](https://www.nature.com/articles/s41592-020-01049-4)*
 
 ## References
-
-A protocols preprint that describes the analysis of the assembling ribosome dataset:
-
-****Uncovering structural ensembles from single particle cryo-EM data using cryoDRGN****
-
-Laurel Kinman, Barrett Powell, Ellen Zhong*, Bonnie Berger*, Joey Davis*
-
-[https://www.biorxiv.org/content/10.1101/2022.08.09.503342v1](https://www.biorxiv.org/content/10.1101/2022.08.09.503342v1)
-
----
 
 For a complete description of the method, see our paper here:
 

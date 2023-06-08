@@ -53,7 +53,7 @@ def main(args):
     rot = np.array([x[RKEY] for x in data])
     rot = torch.tensor(rot)
     rot = lie_tools.expmap(rot)
-    rot = rot.numpy()
+    rot = rot.cpu().numpy()
     logger.info("Transposing rotation matrix")
     rot = np.array([x.T for x in rot])
     logger.info(rot.shape)

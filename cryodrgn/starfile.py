@@ -6,9 +6,6 @@ from datetime import datetime as dt
 import numpy as np
 import pandas as pd
 from typing import Optional, List
-import cryodrgn.types as types
-from cryodrgn import mrc
-from cryodrgn.mrc import LazyImage
 
 
 class Starfile:
@@ -128,34 +125,9 @@ class Starfile:
             self._write_block(f, self.headers, self.df, block_header="data_")
 
     def get_particles(self, datadir: Optional[str] = None, lazy: bool = True):
-        """
-        Return particles of the starfile
-
-        Input:
-            datadir (str): Overwrite base directories of particle .mrcs
-                Tries both substituting the base path and prepending to the path
-            If lazy=True, returns list of LazyImage instances, else np.array
-        """
-        particles = self.df["_rlnImageName"]
-
-        # format is index@path_to_mrc
-        particles = [x.split("@") for x in particles]
-        ind = [int(x[0]) - 1 for x in particles]  # convert to 0-based indexing
-        mrcs = [x[1] for x in particles]
-        if datadir is not None:
-            mrcs = prefix_paths(mrcs, datadir)
-        for path in set(mrcs):
-            assert os.path.exists(path), f"{path} not found"
-        header = mrc.parse_header(mrcs[0])
-        D = header.D  # image size along one dimension in pixels
-        dtype = header.dtype
-        stride = dtype().itemsize * D * D
-        dataset = [
-            LazyImage(f, (D, D), dtype, 1024 + ii * stride) for ii, f in zip(ind, mrcs)
-        ]
-        if not lazy:
-            dataset = np.array([x.get() for x in dataset])
-        return dataset
+        raise NotImplementedError(
+            "get_particles is no longer supported. Use the `ImageSource` library."
+        )
 
 
 def prefix_paths(mrcs: List, datadir: str):
@@ -170,26 +142,3 @@ def prefix_paths(mrcs: List, datadir: str):
             assert os.path.exists(path), f"{path} not found"
         mrcs = mrcs2
     return mrcs
-
-
-def csparc_get_particles(
-    csfile: str, datadir: Optional[str] = None, lazy: bool = True
-) -> types.ImageArray:
-    metadata = np.load(csfile)
-    ind = metadata["blob/idx"]  # 0-based indexing
-    mrcs = metadata["blob/path"].astype(str).tolist()
-    if mrcs[0].startswith(">"):  # Remove '>' prefix from paths
-        mrcs = [x[1:] for x in mrcs]
-    if datadir is not None:
-        mrcs = prefix_paths(mrcs, datadir)
-    for path in set(mrcs):
-        assert os.path.exists(path), f"{path} not found"
-    D = metadata[0]["blob/shape"][0]
-    dtype = np.float32
-    stride = np.float32().itemsize * D * D
-    dataset = [
-        LazyImage(f, (D, D), dtype, 1024 + ii * stride) for ii, f in zip(ind, mrcs)
-    ]
-    if not lazy:
-        dataset = np.array([x.get() for x in dataset])
-    return dataset

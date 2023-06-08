@@ -1,7 +1,13 @@
 import argparse
 import os
 import os.path
-from cryodrgn.commands import abinit_het, abinit_homo, analyze, backproject_voxel
+from cryodrgn.commands import (
+    abinit_het,
+    abinit_homo,
+    analyze,
+    backproject_voxel,
+    view_config,
+)
 
 DATA_FOLDER = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
 
@@ -28,6 +34,11 @@ def test_abinit_het_and_backproject():
         "8",
         "--pe-dim",
         "8",
+        "--num-epochs",
+        "1",
+        "--no-window",
+        "--pretrain",
+        "1000",
     ]
 
     args = abinit_het.add_args(argparse.ArgumentParser()).parse_args(
@@ -44,9 +55,9 @@ def test_abinit_het_and_backproject():
             [
                 f"{DATA_FOLDER}/hand.mrcs",
                 "--load",
-                "output/abinit_het/weights.20.pkl",
+                "output/abinit_het/weights.0.pkl",
                 "--load-poses",
-                "output/abinit_het/pose.20.pkl",
+                "output/abinit_het/pose.0.pkl",
             ]
             + abinit_args
         )
@@ -55,7 +66,7 @@ def test_abinit_het_and_backproject():
     args = analyze.add_args(argparse.ArgumentParser()).parse_args(
         [
             "output/abinit_het",
-            "29",  # Epoch number to analyze - 0-indexed
+            "0",  # Epoch number to analyze - 0-indexed
         ]
     )
     analyze.main(args)
@@ -71,6 +82,13 @@ def test_abinit_het_and_backproject():
     )
     backproject_voxel.main(args)
 
+    args = view_config.add_args(argparse.ArgumentParser()).parse_args(
+        [
+            "output/abinit_het",
+        ]
+    )
+    view_config.main(args)
+
 
 def test_abinit_homo_and_backproject():
     os.makedirs("output", exist_ok=True)
@@ -82,6 +100,10 @@ def test_abinit_homo_and_backproject():
         "16",
         "--pe-dim",
         "8",
+        "--num-epochs",
+        "1",
+        "--pretrain",
+        "1000",
     ]
 
     args = abinit_homo.add_args(argparse.ArgumentParser()).parse_args(
@@ -98,9 +120,9 @@ def test_abinit_homo_and_backproject():
             [
                 f"{DATA_FOLDER}/hand.mrcs",
                 "--load",
-                "output/abinit_homo/weights.20.pkl",
+                "output/abinit_homo/weights.0.pkl",
                 "--load-poses",
-                "output/abinit_homo/pose.20.pkl",
+                "output/abinit_homo/pose.0.pkl",
             ]
             + abinit_args
         )

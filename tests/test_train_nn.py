@@ -1,7 +1,7 @@
 import os.path
 import argparse
 import pytest
-from cryodrgn.mrc import parse_mrc
+from cryodrgn.source import ImageSource
 from cryodrgn.commands import train_nn
 
 DATA_FOLDER = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
@@ -9,7 +9,7 @@ DATA_FOLDER = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
 
 @pytest.fixture
 def mrcs_data():
-    return parse_mrc(f"{DATA_FOLDER}/toy_projections.mrcs", lazy=False)[0]
+    return ImageSource.from_file(f"{DATA_FOLDER}/toy_projections.mrcs").images()
 
 
 @pytest.fixture

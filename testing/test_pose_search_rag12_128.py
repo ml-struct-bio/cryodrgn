@@ -10,8 +10,8 @@ from cryodrgn import dataset, lattice, models, pose_search, utils
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda" if use_cuda else "cpu")
 print("Use cuda {}".format(use_cuda))
-if use_cuda:
-    torch.set_default_tensor_type(torch.cuda.FloatTensor)  # type: ignore
+# if use_cuda:
+#     torch.set_default_tensor_type(torch.cuda.FloatTensor)  # type: ignore
 
 
 def load_model(path, D):
@@ -54,7 +54,7 @@ def run(args):
     GPU_BATCH = 4
 
     print(f"Loading particle images from {args.particles}")
-    data = dataset.MRCData(
+    data = dataset.ImageDataset(
         args.particles, window=False, keepreal=False, invert_data=True
     )
 
@@ -96,7 +96,8 @@ def run(args):
     def eval_pose_search(B=256, S=0, label="", **kwargs):
         tic = time.perf_counter()
         res = []
-        for chunk in torch.from_numpy(data.particles[S : S + B]).split(GPU_BATCH):
+        particles, _, _ = data[S : S + B]
+        for chunk in particles.split(GPU_BATCH):
             res.append(do_pose_search(chunk, **kwargs))
         delta = time.perf_counter() - tic
         batch_rot = pose_rot[S : S + B]

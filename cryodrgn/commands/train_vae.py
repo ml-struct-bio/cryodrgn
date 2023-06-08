@@ -13,7 +13,6 @@ import torch
 import torch.nn as nn
 from torch.nn.parallel import DataParallel
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
 
 try:
     import apex.amp as amp  # type: ignore  # PYR01
@@ -21,11 +20,12 @@ except ImportError:
     pass
 
 import cryodrgn
-from cryodrgn import ctf, dataset, utils
+from cryodrgn import __version__, ctf, dataset
 from cryodrgn.beta_schedule import get_beta_schedule
 from cryodrgn.lattice import Lattice
 from cryodrgn.models import HetOnlyVAE, unparallelize
 from cryodrgn.pose import PoseTracker
+import cryodrgn.config
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +68,7 @@ def add_args(parser: argparse.ArgumentParser):
         help="Logging interval in N_IMGS (default: %(default)s)",
     )
     parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Increaes verbosity"
+        "-v", "--verbose", action="store_true", help="Increase verbosity"
     )
     parser.add_argument(
         "--seed", type=int, default=np.random.randint(0, 100000), help="Random seed"
@@ -107,7 +107,13 @@ def add_args(parser: argparse.ArgumentParser):
     group.add_argument(
         "--lazy",
         action="store_true",
-        help="Lazy loading if full dataset is too large to fit in memory (Should copy dataset to SSD)",
+        help="Lazy loading if full dataset is too large to fit in memory",
+    )
+    group.add_argument(
+        "--shuffler-size",
+        type=int,
+        default=0,
+        help="If non-zero, will use a data shuffler for faster lazy data loading.",
     )
     group.add_argument(
         "--preprocessed",
@@ -115,16 +121,16 @@ def add_args(parser: argparse.ArgumentParser):
         help="Skip preprocessing steps if input data is from cryodrgn preprocess_mrcs",
     )
     group.add_argument(
-        "--num-workers-per-gpu",
+        "--num-workers",
         type=int,
-        default=4,
-        help="Number of num_workers of Dataloader (default: %(default)s)",
+        default=0,
+        help="Number of subprocesses to use as DataLoader workers. If 0, then use the main process for data loading. (default: %(default)s)",
     )
     group.add_argument(
         "--max-threads",
         type=int,
         default=16,
-        help="Maximum number of CPU cores for FFT parallelization (default: %(default)s)",
+        help="Maximum number of CPU cores for data loading (default: %(default)s)",
     )
 
     group = parser.add_argument_group("Tilt series paramters")
@@ -193,14 +199,14 @@ def add_args(parser: argparse.ArgumentParser):
     group.add_argument(
         "--beta-control",
         type=float,
-        help="KL-Controlled VAE gamma. Beta is KL target. (default: %(default)s)",
+        help="KL-Controlled VAE gamma. Beta is KL target",
     )
     group.add_argument(
         "--norm",
         type=float,
         nargs=2,
         default=None,
-        help="Data normalization as shift, 1/scale (default: 0, std of dataset)",
+        help="Data normalization as shift, 1/scale (default: mean, std of dataset)",
     )
     group.add_argument(
         "--no-amp",
@@ -302,18 +308,18 @@ def add_args(parser: argparse.ArgumentParser):
         "--feat-sigma",
         type=float,
         default=0.5,
-        help="Scale for random Gaussian features",
+        help="Scale for random Gaussian features (default: %(default)s)",
     )
     group.add_argument(
         "--pe-dim",
         type=int,
-        help="Num features in positional encoding (default: image D)",
+        help="Num frequencies in positional encoding (default: image D/2)",
     )
     group.add_argument(
         "--domain",
         choices=("hartley", "fourier"),
         default="fourier",
-        help="Decoder representation domain (default: %(default)s)",
+        help="Volume decoder representation (default: %(default)s)",
     )
     group.add_argument(
         "--activation",
@@ -342,7 +348,6 @@ def train_batch(
 ):
     optim.zero_grad()
     model.train()
-    print(f"y {y.shape} trans {trans.shape}")
     if trans is not None:
         y = preprocess_input(y, lattice, trans)
     # Cast operations to mixed precision if using torch.cuda.amp.GradScaler()
@@ -419,7 +424,14 @@ def run_batch(model, lattice, y, rot, ntilts: Optional[int], ctf_params=None, yr
 
 
 def loss_function(
-    z_mu, z_logvar, y, ntilts: Optional[int], y_recon, mask, beta: float, beta_control=None
+    z_mu,
+    z_logvar,
+    y,
+    ntilts: Optional[int],
+    y_recon,
+    mask,
+    beta: float,
+    beta_control=None,
 ):
     # reconstruction error
     B = y.size(0)
@@ -429,6 +441,11 @@ def loss_function(
     kld = torch.mean(
         -0.5 * torch.sum(1 + z_logvar - z_mu.pow(2) - z_logvar.exp(), dim=1), dim=0
     )
+    if torch.isnan(kld):
+        logger.info(z_mu[0])
+        logger.info(z_logvar[0])
+        raise RuntimeError("KLD is nan")
+
     # total loss
     # TODO work out if we need to divide by ntilts here
     if beta_control is None:
@@ -445,19 +462,23 @@ def eval_z(
     batch_size,
     device,
     trans=None,
-    ntilts: Optional[int] = None,
+    use_tilt: bool = False,
     ctf_params=None,
     use_real=False,
+    shuffler_size=0,
 ):
+    logger.info("Evaluating z")
     assert not model.training
     z_mu_all = []
     z_logvar_all = []
-    data_generator = DataLoader(data, batch_size=batch_size, shuffle=False)
-    for minibatch in data_generator:
+    data_generator = dataset.make_dataloader(
+        data, batch_size=batch_size, shuffler_size=shuffler_size
+    )
+    for i, minibatch in enumerate(data_generator):
         ind = minibatch[-1]
         y = minibatch[0].to(device)
         D = lattice.D
-        if ntilts is not None:
+        if use_tilt:
             y = y.view(-1, D, D)
             ind = minibatch[1].to(device).view(-1)
         B = len(ind)
@@ -551,10 +572,7 @@ def save_config(args, dataset, lattice, model, out_config):
         dataset_args=dataset_args, lattice_args=lattice_args, model_args=model_args
     )
     config["seed"] = args.seed
-    with open(out_config, "wb") as f:
-        pickle.dump(config, f)
-        meta = dict(time=dt.now(), cmd=sys.argv, version=cryodrgn.__version__)
-        pickle.dump(meta, f)
+    cryodrgn.config.save(config, out_config)
 
 
 def get_latest(args):
@@ -585,6 +603,7 @@ def main(args):
     if args.load == "latest":
         args = get_latest(args)
     logger.info(" ".join(sys.argv))
+    logger.info(f"cryoDRGN {__version__}")
     logger.info(args)
 
     # set the random seed
@@ -619,46 +638,23 @@ def main(args):
     # load dataset
     logger.info(f"Loading dataset from {args.particles}")
     if args.encode_mode != "tilt":
-        tilt = None
         args.use_real = args.encode_mode == "conv"  # Must be False
-
-        if args.lazy and not args.preprocessed:
-            data = dataset.LazyMRCData(
-                args.particles,
-                norm=args.norm,
-                invert_data=args.invert_data,
-                ind=ind,
-                keepreal=args.use_real,
-                window=args.window,
-                datadir=args.datadir,
-                window_r=args.window_r,
-            )
-        elif args.preprocessed:
-            logger.info(
-                "Using preprocessed inputs. Ignoring any --window/--invert-data options"
-            )
-            data = dataset.PreprocessedMRCData(
-                args.particles, norm=args.norm, ind=ind, lazy=args.lazy
-            )
-        else:
-            data = dataset.MRCData(
-                args.particles,
-                norm=args.norm,
-                invert_data=args.invert_data,
-                ind=ind,
-                keepreal=args.use_real,
-                window=args.window,
-                datadir=args.datadir,
-                max_threads=args.max_threads,
-                window_r=args.window_r,
-            )
-
-    # Tilt series data -- lots of unsupported features
+        data = dataset.ImageDataset(
+            mrcfile=args.particles,
+            lazy=args.lazy,
+            norm=args.norm,
+            invert_data=args.invert_data,
+            ind=ind,
+            keepreal=args.use_real,
+            window=args.window,
+            datadir=args.datadir,
+            window_r=args.window_r,
+            max_threads=args.max_threads,
+            device=device,
+        )
     else:
         assert args.encode_mode == "tilt"
-        if args.lazy:
-            raise NotImplementedError
-        data = dataset.TiltSeriesData(
+        data = dataset.TiltSeriesData(  # FIXME: maybe combine with above?
             args.particles,
             args.ntilts,
             args.random_tilts,
@@ -670,7 +666,7 @@ def main(args):
             datadir=args.datadir,
             max_threads=args.max_threads,
             window_r=args.window_r,
-            preprocessed=args.preprocessed,
+            device=device,
         )
     Nimg = data.N if args.encode_mode != "tilt" else data.tilts.N  # type: ignore
     D = data.D
@@ -703,7 +699,7 @@ def main(args):
         logger.info("Loading ctf params from {}".format(args.ctf))
         ctf_params = ctf.load_ctf_for_training(D - 1, args.ctf)
         if args.ind is not None:
-            ctf_params = ctf_params[ind]
+            ctf_params = ctf_params[ind, ...]
         assert ctf_params.shape == (Nimg, 8)
         if args.encode_mode == "tilt":  # TODO: Parse this in cryodrgn parse_ctf_star
             ctf_params = np.concatenate(
@@ -771,7 +767,7 @@ def main(args):
     )
 
     # save configuration
-    out_config = "{}/config.pkl".format(args.outdir)
+    out_config = "{}/config.yaml".format(args.outdir)
     save_config(args, data, lattice, model, out_config)
 
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
@@ -816,13 +812,10 @@ def main(args):
         start_epoch = 0
 
     # parallelize
-    num_workers_per_gpu = args.num_workers_per_gpu
+    num_workers = args.num_workers
     if args.multigpu and torch.cuda.device_count() > 1:
         logger.info(f"Using {torch.cuda.device_count()} GPUs!")
         args.batch_size *= torch.cuda.device_count()
-        cpu_count = os.cpu_count() or 1
-        if num_workers_per_gpu * torch.cuda.device_count() > cpu_count:
-            num_workers_per_gpu = max(1, cpu_count // torch.cuda.device_count())
         logger.info(f"Increasing batch size to {args.batch_size}")
         model = DataParallel(model)
     elif args.multigpu:
@@ -830,10 +823,19 @@ def main(args):
             f"WARNING: --multigpu selected, but {torch.cuda.device_count()} GPUs detected"
         )
 
+    cpu_count = os.cpu_count() or 1
+    if num_workers > cpu_count:
+        logger.warning(f"Reducing workers to {cpu_count} cpus")
+        num_workers = cpu_count
+
     # training loop
-    data_generator = DataLoader(
-        data, batch_size=args.batch_size, shuffle=True, num_workers=num_workers_per_gpu
+    data_generator = dataset.make_dataloader(
+        data,
+        batch_size=args.batch_size,
+        num_workers=num_workers,
+        shuffler_size=args.shuffler_size,
     )
+
     num_epochs = args.num_epochs
     epoch = None
     for epoch in range(start_epoch, num_epochs):
@@ -842,7 +844,7 @@ def main(args):
         loss_accum = 0
         kld_accum = 0
         batch_it = 0
-        for minibatch in data_generator:  # minibatch: [y, ind]
+        for i, minibatch in enumerate(data_generator):  # minibatch: [y, ind]
             ind = minibatch[-1].to(device)
             y = minibatch[0].to(device)
             B = len(ind)
@@ -894,7 +896,14 @@ def main(args):
                 logger.info(
                     "# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.6f}, kld={:.6f}, beta={:.6f}, "
                     "loss={:.6f}".format(
-                        epoch + 1, num_epochs, batch_it, Nimg, gen_loss, kld, beta, loss
+                        epoch + 1,
+                        num_epochs,
+                        batch_it,
+                        Nimg,
+                        gen_loss,
+                        kld,
+                        beta,
+                        loss,
                     )
                 )
         logger.info(
@@ -918,16 +927,18 @@ def main(args):
                     data,
                     args.batch_size,
                     device,
-                    posetracker.trans,
-                    args.encode_mode == "tilt",
-                    ctf_params,
-                    args.use_real,
+                    trans=posetracker.trans,
+                    use_tilt=args.encode_mode == "tilt",
+                    ctf_params=ctf_params,
+                    use_real=args.use_real,
+                    shuffler_size=args.shuffler_size,
                 )
                 save_checkpoint(model, optim, epoch, z_mu, z_logvar, out_weights, out_z)
             if args.do_pose_sgd and epoch >= args.pretrain:
                 out_pose = "{}/pose.{}.pkl".format(args.outdir, epoch)
                 posetracker.save(out_pose)
 
+    logger.info("Training complete")
     # save model weights, latent encoding, and evaluate the model on 3D lattice
     out_weights = "{}/weights.pkl".format(args.outdir)
     out_z = "{}/z.pkl".format(args.outdir)

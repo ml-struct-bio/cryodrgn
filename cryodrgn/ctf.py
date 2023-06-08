@@ -1,6 +1,5 @@
 from typing import Optional
 import numpy as np
-import seaborn as sns
 import torch
 import logging
 from cryodrgn import utils
@@ -121,6 +120,8 @@ def print_ctf_params(params: np.ndarray) -> None:
 
 
 def plot_ctf(D: int, Apix: float, ctf_params: np.ndarray) -> None:
+    import seaborn as sns
+
     assert len(ctf_params) == 7
     ctf_params_torch = torch.Tensor(ctf_params)
 

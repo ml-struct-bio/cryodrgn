@@ -145,7 +145,7 @@ class TiltSeriesData(ImageDataset):
         )
         self.Np = len(particles)
         self.ctfscalefactor = np.asarray(s.df["_rlnCtfScalefactor"], dtype=np.float32)
-        self.tilt_numbers = np.zeros(self.tilts.N)
+        self.tilt_numbers = np.zeros(self.N)
         for ind in self.particles:
             sort_idxs = self.ctfscalefactor[ind].argsort()
             ranks = np.empty_like(sort_idxs)

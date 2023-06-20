@@ -225,7 +225,7 @@ def main(args):
         if ii % 100 == 0:
             logger.info("image {}".format(ii))
         r, t = posetracker.get_pose(ii)
-        ff = data.get_tilt(index) if args.do_tilt_series else data[ii]
+        ff = data.get_tilt(ii) if args.do_tilt_series else data[ii]
         assert isinstance(ff, tuple)
 
         if tilt is not None:
@@ -280,8 +280,8 @@ def main(args):
     counts[counts == 0] = 1
 
     if args.output_sumcount:
-        mrc.write(args.o + ".sums", V.cpu().numpy(), Apix=Apix)
-        mrc.write(args.o + ".counts", counts.cpu().numpy(), Apix=Apix)
+        MRCFile.write(args.o + ".sums", V.cpu().numpy(), Apix=Apix)
+        MRCFile.write(args.o + ".counts", counts.cpu().numpy(), Apix=Apix)
 
     regularized_counts = counts + args.reg_weight * counts.mean()
     regularized_counts *= counts.mean() / regularized_counts.mean()

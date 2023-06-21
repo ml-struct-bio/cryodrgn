@@ -98,12 +98,6 @@ def add_args(parser):
         help="Number of tilts to encode (default: %(default)s)",
     )
     group.add_argument(
-        "--voltage", 
-        type=int,
-        default=300,
-        help="Microscope voltage (default: %(default)s)"
-    )
-    group.add_argument(
         "--dose_per_tilt", 
         type=float,
         default=2.93,
@@ -175,7 +169,6 @@ def main(args):
             datadir=args.datadir,
             ind=args.ind,
             lazy=args.lazy,
-            voltage=args.voltage,
             dose_per_tilt=args.dose_per_tilt,
             angle_per_tilt=args.angle_per_tilt
         )
@@ -209,6 +202,8 @@ def main(args):
     else:
         ctf_params = None
     Apix = float(ctf_params[0, 0]) if ctf_params is not None else 1.0
+    voltage = float(ctf_params[0, 4]) if ctf_params is not None else None
+    data.voltage = voltage
 
     V = torch.zeros((D, D, D), device=device)
     counts = torch.zeros((D, D, D), device=device)

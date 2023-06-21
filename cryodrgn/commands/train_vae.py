@@ -163,6 +163,18 @@ def add_args(parser: argparse.ArgumentParser):
         default=1024,
         help="Number of nodes in hidden layers (default: %(default)s)",
     )
+    group.add_argument(
+        "--dose_per_tilt", 
+        type=float,
+        default=2.93,
+        help="Expected dose per tilt (electrons/A^2 per tilt) (default: %(default)s)"
+    )
+    group.add_argument(
+        "--angle_per_tilt", 
+        type=float,
+        default=3,
+        help="Tilt angle increment per tilt in degrees (default: %(default)s)"
+    )
 
     group = parser.add_argument_group("Training parameters")
     group.add_argument(
@@ -344,6 +356,7 @@ def train_batch(
     yr=None,
     use_amp: bool = False,
     scaler=None,
+    dose_filters=None
 ):
     optim.zero_grad()
     model.train()
@@ -356,7 +369,7 @@ def train_batch(
                 model, lattice, y, rot, ntilts, ctf_params, yr
             )
             loss, gen_loss, kld = loss_function(
-                z_mu, z_logvar, y, ntilts, y_recon, mask, beta, beta_control
+                z_mu, z_logvar, y, ntilts, y_recon, mask, beta, beta_control, dose_filters
             )
     else:
         # print('AAA', y.shape, rot.shape)
@@ -364,7 +377,7 @@ def train_batch(
             model, lattice, y, rot, ntilts, ctf_params, yr
         )
         loss, gen_loss, kld = loss_function(
-            z_mu, z_logvar, y, ntilts, y_recon, mask, beta, beta_control
+            z_mu, z_logvar, y, ntilts, y_recon, mask, beta, beta_control, dose_filters
         )
     if use_amp:
         if scaler is not None:  # torch mixed precision
@@ -432,10 +445,15 @@ def loss_function(
     mask,
     beta: float,
     beta_control=None,
+    dose_filters=None
 ):
     # reconstruction error
     B = y.size(0)
-    gen_loss = F.mse_loss(y_recon, y.view(B, -1)[:, mask])
+    y = y.view(B, -1)[:, mask]
+    if dose_filters is not None:
+        y = torch.mul(y, dose_filters[:, mask])
+        y_recon = torch.mul(y_recon, dose_filters[:, mask])
+    gen_loss = F.mse_loss(y_recon, y)
 
     # latent loss
     kld = torch.mean(
@@ -705,6 +723,7 @@ def main(args):
             ctf_params = np.concatenate(
                 (ctf_params, data.ctfscalefactor.reshape(-1, 1)), axis=1  # type: ignore
             )
+            data.voltage = float(ctf_params[0, 4])
         ctf_params = torch.tensor(ctf_params, device=device)  # Nx8
     else:
         ctf_params = None
@@ -861,6 +880,8 @@ def main(args):
                 yr = torch.from_numpy(data.particles_real[ind.numpy()]).to(device)  # type: ignore  # PYR02
             if pose_optimizer is not None:
                 pose_optimizer.zero_grad()
+
+            dose_filters = None 
             if args.encode_mode == "tilt":
                 tilt_ind = minibatch[1].to(device)
                 assert all(tilt_ind >= 0), tilt_ind
@@ -869,9 +890,12 @@ def main(args):
                     ctf_params[tilt_ind.view(-1)] if ctf_params is not None else None
                 )
                 y = y.view(-1, D, D)
+                Apix = ctf_params[0, 0] if ctf_params is not None else None
+                dose_filters = data.get_dose_filters(tilt_ind, lattice, Apix)
             else:
                 rot, tran = posetracker.get_pose(ind)
                 ctf_param = ctf_params[ind] if ctf_params is not None else None
+
             loss, gen_loss, kld = train_batch(
                 model,
                 lattice,
@@ -886,6 +910,7 @@ def main(args):
                 yr=yr,
                 use_amp=args.amp,
                 scaler=scaler,
+                dose_filters=dose_filters
             )
             if pose_optimizer is not None and epoch >= args.pretrain:
                 pose_optimizer.step()

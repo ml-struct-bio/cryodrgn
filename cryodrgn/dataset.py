@@ -182,9 +182,8 @@ class TiltSeriesData(ImageDataset):
                     self.particles[ii], self.ntilts, replace=False
                 )
             else:
-                # take the middle ntilts
-                i = (len(self.particles[ii]) - self.ntilts) // 2
-                tilt_index = self.particles[ii][i : i + self.ntilts]
+                # take the first ntilts
+                tilt_index = self.particles[ii][0 : self.ntilts]
             tilt_indices.append(tilt_index)
         tilt_indices = np.concatenate(tilt_indices)
         images = self._process(self.src.images(tilt_indices).to(self.device))
@@ -232,8 +231,32 @@ class TiltSeriesData(ImageDataset):
         critical_exp = torch.mul(critical_exp, scale_factor * 0.245)
         return torch.add(critical_exp, 2.81)
 
-    def optimal_exposure(self):
-        return 2.51284 * self.critical_exposure()
+    def get_dose_filters(self, tilt_index, lattice, Apix):
+        D = lattice.D
+
+        N = len(tilt_index)
+        freqs = lattice.freqs2d / Apix # D/A
+        x = freqs[..., 0]
+        y = freqs[..., 1]
+        s2 = x**2 + y**2
+        s = torch.sqrt(s2)
+
+        cumulative_dose = data.tilt_numbers[tilt_index] * data.dose_per_tilt
+        cumulative_dose = torch.tensor(cumulative_dose).to(self.device)
+        cd_tile = torch.repeat_interleave(cumulative_dose, D * D).resize_(N, D, D)
+
+        ce = self.critical_exposure(s).to(self.device)
+        ce_tile = ce.repeat(N, 1, 1)
+
+        freq_correction = torch.exp(-0.5 * cd_tile/ce_tile)
+        angle_correction = np.cos(data.tilt_angles[tilt_index] * np.pi/180)
+        angle_correction = torch.tensor(angle_correction).to(self.device)
+        ac_tile = torch.repeat_interleave(angle_correction, D * D).resize_(N, D, D)
+
+        return torch.mul(freq_correction, ac_tile)
+
+    def optimal_exposure(self, freq):
+        return 2.51284 * self.critical_exposure(freq)
 
 
 

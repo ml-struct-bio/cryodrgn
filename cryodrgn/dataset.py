@@ -151,6 +151,7 @@ class TiltSeriesData(ImageDataset):
             ranks = np.empty_like(sort_idxs)
             ranks[sort_idxs[::-1]] = np.arange(len(ind))
             self.tilt_numbers[ind] = ranks
+        self.tilt_numbers = torch.tensor(self.tilt_numbers).to(self.device)
         logger.info(f"Loaded {self.N} tilts for {self.Np} particles")
         counts = Counter(group_name)
         unique_counts = set(counts.values())
@@ -167,7 +168,8 @@ class TiltSeriesData(ImageDataset):
         # As implemented in Hagen, Wan, Briggs J. Struct. Biol. 2017
         self.tilt_angles = None
         if angle_per_tilt is not None:
-            self.tilt_angles = angle_per_tilt * np.ceil(self.tilt_numbers/2)
+            self.tilt_angles = angle_per_tilt * torch.ceil(self.tilt_numbers/2)
+            self.tilt_angles = torch.tensor(self.tilt_angles).to(self.device)
 
     def __len__(self):
         return self.Np
@@ -241,17 +243,14 @@ class TiltSeriesData(ImageDataset):
         s2 = x**2 + y**2
         s = torch.sqrt(s2)
 
-        cumulative_dose = data.tilt_numbers[tilt_index] * data.dose_per_tilt
-        cumulative_dose = torch.tensor(cumulative_dose).to(self.device)
-        cd_tile = torch.repeat_interleave(cumulative_dose, D * D).resize_(N, D, D)
+        cumulative_dose = self.tilt_numbers[tilt_index] * self.dose_per_tilt
+        cd_tile = torch.repeat_interleave(cumulative_dose, D * D).view(N, -1)
 
         ce = self.critical_exposure(s).to(self.device)
-        ce_tile = ce.repeat(N, 1, 1)
-
+        ce_tile = ce.repeat(N, 1)
         freq_correction = torch.exp(-0.5 * cd_tile/ce_tile)
-        angle_correction = np.cos(data.tilt_angles[tilt_index] * np.pi/180)
-        angle_correction = torch.tensor(angle_correction).to(self.device)
-        ac_tile = torch.repeat_interleave(angle_correction, D * D).resize_(N, D, D)
+        angle_correction = torch.cos(self.tilt_angles[tilt_index] * np.pi/180)
+        ac_tile = torch.repeat_interleave(angle_correction, D * D).view(N, -1)
 
         return torch.mul(freq_correction, ac_tile)
 

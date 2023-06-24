@@ -164,13 +164,12 @@ def add_args(parser: argparse.ArgumentParser):
         help="Number of nodes in hidden layers (default: %(default)s)",
     )
     group.add_argument(
-        "--dose_per_tilt", 
+        "--dose-per-tilt", 
         type=float,
-        default=2.93,
         help="Expected dose per tilt (electrons/A^2 per tilt) (default: %(default)s)"
     )
     group.add_argument(
-        "--angle_per_tilt", 
+        "--angle-per-tilt", 
         type=float,
         default=3,
         help="Tilt angle increment per tilt in degrees (default: %(default)s)"
@@ -685,6 +684,8 @@ def main(args):
             max_threads=args.max_threads,
             window_r=args.window_r,
             device=device,
+            dose_per_tilt=args.dose_per_tilt,
+            angle_per_tilt=args.angle_per_tilt
         )
     Nimg = data.N
     D = data.D
@@ -891,7 +892,8 @@ def main(args):
                 )
                 y = y.view(-1, D, D)
                 Apix = ctf_params[0, 0] if ctf_params is not None else None
-                dose_filters = data.get_dose_filters(tilt_ind, lattice, Apix)
+                if args.dose_per_tilt is not None:
+                    dose_filters = data.get_dose_filters(tilt_ind, lattice, Apix) 
             else:
                 rot, tran = posetracker.get_pose(ind)
                 ctf_param = ctf_params[ind] if ctf_params is not None else None

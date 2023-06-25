@@ -17,11 +17,11 @@ ICLR 2020, Spotlight presentation, https://arxiv.org/abs/1909.05215
 
 ## Documentation:
 
-The latest documentation for cryoDRGN is available [here](https://zhonge.github.io/cryodrgn/). This includes an overview and walkthrough of cryoDRGN installation, training and analysis.
+The latest documentation for cryoDRGN is available [here](https://ez-lab.gitbook.io/cryodrgn/). This includes an overview and walkthrough of cryoDRGN installation, training and analysis.
 
 A quick start is provided below.
 
-For any feedback, questions, or bugs, please file a Github issue or email the [list serv](https://groups.google.com/g/cryodrgn).
+For any feedback, questions, or bugs, please file a Github issue, start a Github discussion, or email the [list serv](https://groups.google.com/g/cryodrgn).
 
 ## New in Version 2.x
 
@@ -156,13 +156,13 @@ The official version 1.0 release. This version introduces several new tools for 
 `cryodrgn` may be installed via `pip`, and we recommend installing `cryodrgn` in a clean conda environment.
 
     # Create and activate conda environment
-    conda create --name cryodrgn python=3.9
-    conda activate cryodrgn
+    (base) $ conda create --name cryodrgn python=3.9
+    (cryodrgn) $ conda activate cryodrgn
 
     # install cryodrgn
-    pip install cryodrgn
+    (cryodrgn) $ pip install cryodrgn
 
-More installation instructions and a testing guide is available in the [docs](https://zhonge.github.io/cryodrgn/).
+More installation instructions are found in the [documentation](https://ez-lab.gitbook.io/cryodrgn/installation).
 
 ## Quickstart: heterogeneous reconstruction with consensus poses
 

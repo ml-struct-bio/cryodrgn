@@ -636,7 +636,7 @@ def main(args):
 
     # set beta schedule
     if args.beta is None:
-        args.beta = 1.0 / args.zdim
+        args.beta = 1.0 / args.ntilts
     try:
         args.beta = float(args.beta)
     except ValueError:

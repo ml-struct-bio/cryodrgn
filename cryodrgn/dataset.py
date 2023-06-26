@@ -248,7 +248,12 @@ class TiltSeriesData(ImageDataset):
 
         ce = self.critical_exposure(s).to(self.device)
         ce_tile = ce.repeat(N, 1)
+
+        oe_tile = ce_tile * 2.51284 # Optimal exposure
+        oe_mask = (cd_tile < oe_tile).long()
+
         freq_correction = torch.exp(-0.5 * cd_tile/ce_tile)
+        freq_correction = torch.mul(freq_correction, oe_mask)
         angle_correction = torch.cos(self.tilt_angles[tilt_index] * np.pi/180)
         ac_tile = torch.repeat_interleave(angle_correction, D * D).view(N, -1)
 

@@ -140,9 +140,7 @@ class TiltSeriesData(ImageDataset):
             if gn not in particles:
                 particles[gn] = []
             particles[gn].append(ii)
-        self.particles = np.array(
-            [np.asarray(pp, dtype=int) for pp in particles.values()]
-        )
+        self.particles = [np.asarray(pp, dtype=int) for pp in particles.values()]
         self.Np = len(particles)
         self.ctfscalefactor = np.asarray(s.df["_rlnCtfScalefactor"], dtype=np.float32)
         self.tilt_numbers = np.zeros(self.N)

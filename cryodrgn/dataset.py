@@ -255,7 +255,7 @@ class TiltSeriesData(ImageDataset):
         angle_correction = torch.cos(self.tilt_angles[tilt_index] * np.pi/180)
         ac_tile = torch.repeat_interleave(angle_correction, D * D).view(N, -1)
 
-        return torch.mul(freq_correction, ac_tile)
+        return torch.mul(freq_correction, ac_tile).float()
 
     def optimal_exposure(self, freq):
         return 2.51284 * self.critical_exposure(freq)

@@ -241,14 +241,8 @@ def main(args):
         if t is not None:
             ff = lattice.translate_ht(ff.view(1, -1), t.view(1, 1, 2), mask).view(-1)
         if args.do_tilt_series:
-            freqs = lattice.freqs2d / ctf_params[ii, 0]
-            x = freqs[..., 0]
-            y = freqs[..., 1]
-            s2 = x**2 + y**2
-            cumulative_dose = data.tilt_numbers[ii] * data.dose_per_tilt
-            exp_correction = torch.exp(-0.5 * cumulative_dose/data.critical_exposure(torch.sqrt(s2)))
-            ff = torch.mul(ff, exp_correction[mask].to(device))
-            ff = torch.mul(ff, math.cos(data.tilt_angles[ii] * np.pi/180))
+            tilt_idxs = torch.tensor([ii]).to(device)
+            ctf_mul *= datadir.get_dose_filters(tilt_idxs, lattice, ctf_params[ii, 0])[0]
 
         ff_coord = lattice.coords[mask] @ r
         add_slice(V, counts, ff_coord, ff, D, ctf_mul)

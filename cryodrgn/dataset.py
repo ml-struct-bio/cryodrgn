@@ -140,9 +140,7 @@ class TiltSeriesData(ImageDataset):
             if gn not in particles:
                 particles[gn] = []
             particles[gn].append(ii)
-        self.particles = np.array(
-            [np.asarray(pp, dtype=int) for pp in particles.values()]
-        )
+        self.particles = [np.asarray(pp, dtype=int) for pp in particles.values()]
         self.Np = len(particles)
         self.ctfscalefactor = np.asarray(s.df["_rlnCtfScalefactor"], dtype=np.float32)
         self.tilt_numbers = np.zeros(self.N)
@@ -257,7 +255,7 @@ class TiltSeriesData(ImageDataset):
         angle_correction = torch.cos(self.tilt_angles[tilt_index] * np.pi/180)
         ac_tile = torch.repeat_interleave(angle_correction, D * D).view(N, -1)
 
-        return torch.mul(freq_correction, ac_tile)
+        return torch.mul(freq_correction, ac_tile).float()
 
     def optimal_exposure(self, freq):
         return 2.51284 * self.critical_exposure(freq)

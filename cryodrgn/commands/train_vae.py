@@ -450,7 +450,6 @@ def loss_function(
     B = y.size(0)
     y = y.view(B, -1)[:, mask]
     if dose_filters is not None:
-        y = torch.mul(y, dose_filters[:, mask])
         y_recon = torch.mul(y_recon, dose_filters[:, mask])
     gen_loss = F.mse_loss(y_recon, y)
 

@@ -170,7 +170,8 @@ def main(args):
             ind=args.ind,
             lazy=args.lazy,
             dose_per_tilt=args.dose_per_tilt,
-            angle_per_tilt=args.angle_per_tilt
+            angle_per_tilt=args.angle_per_tilt,
+            device=device
         )
     else:
         data = dataset.ImageDataset(
@@ -242,7 +243,8 @@ def main(args):
             ff = lattice.translate_ht(ff.view(1, -1), t.view(1, 1, 2), mask).view(-1)
         if args.do_tilt_series:
             tilt_idxs = torch.tensor([ii]).to(device)
-            ctf_mul *= datadir.get_dose_filters(tilt_idxs, lattice, ctf_params[ii, 0])[0]
+            dose_filters = data.get_dose_filters(tilt_idxs, lattice, ctf_params[ii, 0])[0]
+            ctf_mul *= dose_filters[mask]
 
         ff_coord = lattice.coords[mask] @ r
         add_slice(V, counts, ff_coord, ff, D, ctf_mul)

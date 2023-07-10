@@ -488,7 +488,7 @@ def eval_z(
     z_mu_all = []
     z_logvar_all = []
     data_generator = dataset.make_dataloader(
-        data, batch_size=batch_size, shuffler_size=shuffler_size
+        data, batch_size=batch_size, shuffler_size=shuffler_size, shuffle=False
     )
     for i, minibatch in enumerate(data_generator):
         ind = minibatch[-1]

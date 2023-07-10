@@ -10,7 +10,7 @@ from cryodrgn.source import ImageSource
 from cryodrgn.utils import window_mask
 
 from torch.utils.data import DataLoader
-from torch.utils.data.sampler import BatchSampler, RandomSampler
+from torch.utils.data.sampler import BatchSampler, RandomSampler, SequentialSampler
 
 logger = logging.getLogger(__name__)
 
@@ -414,17 +414,20 @@ class _DataShufflerIterator:
 
 
 def make_dataloader(
-    data: ImageDataset, *, batch_size: int, num_workers: int = 0, shuffler_size: int = 0
+    data: ImageDataset, *, batch_size: int, num_workers: int = 0, shuffler_size: int = 0, shuffle = True
 ):
-    if shuffler_size > 0:
+    if shuffler_size > 0 and shuffle:
         assert data.lazy, "Only enable a data shuffler for lazy loading"
         return DataShuffler(data, batch_size=batch_size, buffer_size=shuffler_size)
     else:
+        # see https://github.com/zhonge/cryodrgn/pull/221#discussion_r1120711123
+        # for discussion of why we use BatchSampler, etc.
+        sampler_cls = RandomSampler if shuffle else SequentialSampler
         return DataLoader(
             data,
             num_workers=num_workers,
             sampler=BatchSampler(
-                RandomSampler(data), batch_size=batch_size, drop_last=False
+                sampler_cls(data), batch_size=batch_size, drop_last=False
             ),
             batch_size=None,
             multiprocessing_context="spawn" if num_workers > 0 else None,

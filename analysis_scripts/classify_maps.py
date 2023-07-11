@@ -24,6 +24,7 @@ def get_quantiles(vol):
     quantiles = torch.quantile(vol_nonzero, torch.tensor([0.1, 0.9]))
     return quantiles[0], quantiles[1]
 
+
 # TODO: implement diffmap normalization method here
 # Currently just rescales values to between 10th and 90th percentiles
 def normalize_vols(vols, vol_ref, mask_cutoff=0.001):
@@ -99,7 +100,6 @@ def main(args):
         assert D == mask.D
 
         mask = mask.images()
-        mask = mask.to(torch.bool)
 
         vols1 *= mask.repeat(vols1.shape[0], 1, 1, 1)
         vols2 *= mask.repeat(vols2.shape[0], 1, 1, 1)
@@ -131,6 +131,7 @@ def main(args):
         num_classes += [sum(classes == ii)]
 
     print(num_classes)
+
 
 if __name__ == "__main__":
     main(parse_args().parse_args())

@@ -87,7 +87,6 @@ def add_args(parser):
     )
     group.add_argument(
         "--do-tilt-series", 
-        dest="do_tilt_series", 
         action="store_true", 
         help="Store data as tilt series"
     )
@@ -98,13 +97,13 @@ def add_args(parser):
         help="Number of tilts to encode (default: %(default)s)",
     )
     group.add_argument(
-        "--dose_per_tilt", 
+        "--dose-per-tilt", 
         type=float,
         default=2.93,
         help="Expected dose per tilt (electrons/A^2 per tilt) (default: %(default)s)"
     )
     group.add_argument(
-        "--angle_per_tilt", 
+        "--angle-per-tilt", 
         type=float,
         default=3,
         help="Tilt angle increment per tilt in degrees (default: %(default)s)"

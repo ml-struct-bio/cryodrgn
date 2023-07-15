@@ -74,8 +74,8 @@ def add_args(parser):
     group.add_argument(
         "--first",
         type=int,
-        default=10000,
-        help="Backproject the first N images (default: %(default)s)",
+        default=None,
+        help="Backproject the first N images (default: all images)",
     )
     group = parser.add_argument_group("Tilt series options")
     group.add_argument("--tilt", help="Tilt series .mrcs image stack")

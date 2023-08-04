@@ -3,7 +3,7 @@ import logging
 import os
 import struct
 from collections import OrderedDict
-from typing import Optional, Union
+from typing import Any, Optional, Tuple, Union
 import numpy as np
 import torch
 from cryodrgn.source import ImageSource
@@ -221,6 +221,24 @@ class MRCHeader:
 
 
 class MRCFile:
+    @staticmethod
+    def parse(fname: str) -> Tuple[Any, MRCHeader]:  # type: ignore
+        # parse the header
+        header = MRCHeader.parse(fname)
+
+        # get the number of bytes in extended header
+        extbytes = header.fields["next"]
+        start = 1024 + extbytes  # start of image data
+
+        dtype = header.dtype
+        nz, ny, nx = header.fields["nz"], header.fields["ny"], header.fields["nx"]
+
+        with open(fname, "rb") as fh:
+            fh.read(start)  # skip the header + extended header
+            array = np.fromfile(fh, dtype=dtype).reshape((nz, ny, nx))
+
+        return array, header
+
     @staticmethod
     def write(
         filename: str,

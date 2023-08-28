@@ -4,24 +4,11 @@
 
 CryoDRGN is a neural network based algorithm for heterogeneous cryo-EM reconstruction. In particular, the method models a *continuous* distribution over 3D structures by using a neural network based representation for the volume.
 
-## Manuscripts:
-
-CryoDRGN: reconstruction of heterogeneous cryo-EM structures using neural networks.
-Ellen D. Zhong, Tristan Bepler, Bonnie Berger*, Joseph H. Davis*.
-https://www.nature.com/articles/s41592-020-01049-4
-
-Reconstructing continuous distributions of 3D protein structure from cryo-EM images.
-Ellen D. Zhong, Tristan Bepler, Joseph H. Davis*, Bonnie Berger*.
-ICLR 2020, Spotlight presentation, https://arxiv.org/abs/1909.05215
-
-
 ## Documentation:
 
-The latest documentation for cryoDRGN is available [here](https://ez-lab.gitbook.io/cryodrgn/). This includes an overview and walkthrough of cryoDRGN installation, training and analysis.
+The latest documentation for cryoDRGN is available [on gitbook](https://ez-lab.gitbook.io/cryodrgn/), including an overview and walkthrough of cryoDRGN installation, training and analysis. A brief quick start is provided below.
 
-A quick start is provided below.
-
-For any feedback, questions, or bugs, please file a Github issue, start a Github discussion, or email the [list serv](https://groups.google.com/g/cryodrgn).
+For any feedback, questions, or bugs, please file a Github issue, start a Github discussion, or email the [google group](https://groups.google.com/g/cryodrgn).
 
 ## New in Version 2.x
 
@@ -170,7 +157,8 @@ More installation instructions are found in the [documentation](https://ez-lab.g
 
 First resize your particle images using the `cryodrgn downsample` command:
 
-    $ cryodrgn downsample -h
+<details><summary><code>$ cryodrgn downsample -h</code></summary>
+
     usage: cryodrgn downsample [-h] -D D -o MRCS [--is-vol] [--chunk CHUNK]
                                [--datadir DATADIR]
                                mrcs
@@ -178,20 +166,25 @@ First resize your particle images using the `cryodrgn downsample` command:
     Downsample an image stack or volume by clipping fourier frequencies
 
     positional arguments:
-      mrcs               Input particles or volume (.mrc, .mrcs, .star, or .txt)
+      mrcs               Input images or volume (.mrc, .mrcs, .star, .cs, or .txt)
 
     optional arguments:
       -h, --help         show this help message and exit
       -D D               New box size in pixels, must be even
-      -o MRCS            Output projection stack (.mrcs)
+      -o MRCS            Output image stack (.mrcs) or volume (.mrc)
       --is-vol           Flag if input .mrc is a volume
       --chunk CHUNK      Chunksize (in # of images) to split particle stack when
                          saving
       --relion31         Flag for relion3.1 star format
       --datadir DATADIR  Optionally provide path to input .mrcs if loading from a
                          .star or .cs file
+      --max-threads MAX_THREADS
+                         Maximum number of CPU cores for parallelization (default: 16)
+      --ind PKL          Filter image stack by these indices
+  
+</details>
 
-Since larger images take (much) longer to train, we recommend first downsampling images to 128x128:
+We recommend first downsampling images to 128x128 since larger images can take much longer to train:
 
     $ cryodrgn downsample [input particle stack] -D 128 -o particles.128.mrcs
 
@@ -199,7 +192,7 @@ The maximum recommended image size is D=256, so we also recommend downsampling y
 
     $ cryodrgn downsample [input particle stack] -D 256 -o particles.256.mrcs
 
-The input file format can be a single `.mrcs` file, a `.txt` file containing paths to multiple `.mrcs` files, a `.star` file, or a cryoSPARC `.cs` file. For the latter two options, if the relative paths to the `.mrcs` are broken, the argument `--datadir` can be used to supply the path to where the `.mrcs` files are located.
+The input file format can be a single `.mrcs` file, a `.txt` file containing paths to multiple `.mrcs` files, a RELION `.star` file, or a cryoSPARC `.cs` file. For the latter two options, if the relative paths to the `.mrcs` are broken, the argument `--datadir` can be used to supply the path to where the `.mrcs` files are located.
 
 If there are memory issues with downsampling large particle stacks, add the `--chunk 10000` argument to save images as separate `.mrcs` files of 10k images.
 
@@ -215,13 +208,11 @@ Example usage to parse image poses from a cryoSPARC homogeneous refinement parti
 
     $ cryodrgn parse_pose_csparc cryosparc_P27_J3_005_particles.cs -o pose.pkl -D 300
 
-The `-D` argument should be set to the box size of the original consensus reconstruction (before any downsampling).
-
-**Note:** Poses should be obtained from a C1 consensus refinement! (See https://github.com/zhonge/cryodrgn/issues/21)
+**Note:** The `-D` argument should be the box size of the consensus refinement (and not the downsampled images from step 1) so that the units for translation shifts are parsed correctly.
 
 ### 3. Parse CTF parameters from a .star/.cs file
 
-CryoDRGN expects CTF parameters in be stored a binary pickle format (`.pkl`). Use the `parse_ctf_star` or `parse_ctf_csparc` command to extract the relevant CTF parameters from a `.star` file or a `.cs` file, respectively.
+CryoDRGN expects CTF parameters to be stored in a binary pickle format (`.pkl`). Use the `parse_ctf_star` or `parse_ctf_csparc` command to extract the relevant CTF parameters from a `.star` file or a `.cs` file, respectively.
 
 Example usage for a .star file:
 
@@ -236,7 +227,7 @@ Example usage for a .cs file:
 ### 4. (Optional) Test pose/CTF parameters parsing
 
 Next, test that pose and CTF parameters were parsed correctly using the voxel-based backprojection script.
-The goal is to quickly verify that there are no major problems with the extracted values and that the output structure resembles the structure from the consensus reconstruction before beginning training.
+The goal is to quickly verify that there are no major problems with the extracted values and that the output structure resembles the structure from the consensus reconstruction before training.
 
 Example usage:
 
@@ -253,7 +244,7 @@ The output structure `backproject.128.mrc` will not match the consensus reconstr
 
 When the input images (.mrcs), poses (.pkl), and CTF parameters (.pkl) have been prepared, a cryoDRGN model can be trained with following command:
 
-    $ cryodrgn train_vae -h
+<details><summary><code>$ cryodrgn train_vae -h</code></summary>
 
 	usage: cryodrgn train_vae [-h] -o OUTDIR --zdim ZDIM --poses POSES [--ctf pkl]
 	                          [--load WEIGHTS.PKL] [--checkpoint CHECKPOINT]
@@ -364,6 +355,7 @@ When the input images (.mrcs), poses (.pkl), and CTF parameters (.pkl) have been
 	  --activation {relu,leaky_relu}
 	                        Activation (default: relu)
 
+</details>
 
 Many of the parameters of this script have sensible defaults. The required arguments are:
 
@@ -371,7 +363,7 @@ Many of the parameters of this script have sensible defaults. The required argum
 * `--poses`, image poses (`.pkl`) that correspond to the input images
 * `--ctf`, ctf parameters (`.pkl`), unless phase-flipped images are used
 * `--zdim`, the dimension of the latent variable
-* `-o`, a clean output directory for storing results
+* `-o`, a clean output directory for saving results
 
 Additional parameters which are typically set include:
 
@@ -423,24 +415,24 @@ Use cryoDRGN's `--multigpu` flag to enable parallelized training across all dete
     $ cryodrgn train_vae ... --multigpu # Run on all GPUs on the machine
     $ CUDA_VISIBLE_DEVICES=0,3 cryodrgn train_vae ... --multigpu # Run on GPU 0,3
 
-When training is parallelized across multiple GPUs, the batch size (number of images trained in each mini-batch of SGD; default `-b 8`) will be automatically scaled by the number of available GPUs to better take advantage of parallelization. Depending on your compute resources, GPU utilization may be improved with `-b 16`. However, note that GPU parallelization, while leading to a faster wall-clock time per epoch, may require increasing the total number of epochs, since the training dynamics are affected (fewer model updates per epoch with larger `-b`).
+We recommend using `--multigpu` for large images, e.g. D=256. Note that GPU computation may not be the training bottleneck for smaller images (D=128). In this case, `--multigpu` may not speed up training (while taking up additional compute resources).
 
-**Note:** We recommend using `--multigpu` for large images, e.g. D=256. GPU computation may not be the training bottleneck for smaller images (D=128). In this case, GPU parallelization may have a limited effect on the wall clock training time (while taking up additional compute resources).
+With `--multigpu`, the batch size is multiplied by the number of available GPUs to better utilize GPU resources. We note that GPU utilization may be further improved by increasing the batch size (e.g. `-b 16`), however, faster wall-clock time per epoch does not necessarily lead to faster *model training* since the training dynamics are affected (fewer model updates per epoch with larger `-b`), and using `--multigpu` may require increasing the total number of epochs.
 
-### Local pose refinement -- EXPERIMENTAL!
+### Local pose refinement -- *beta*
 
 Depending on the quality of the consensus reconstruction, image poses may contain errors.
-Image poses may be *locally* refined using the `--do-pose-sgd` flag. Please consult Ellen Zhong (zhonge@princeton.edu) for details.
+Image poses may be *locally* refined using the `--do-pose-sgd` flag, however, we recommend reaching out to the developers for recommended training settings.
 
 ## 6. Analysis of results
 
 Once the model has finished training, the output directory will contain a configuration file `config.yaml`, neural network weights `weights.pkl`, image poses (if performing pose sgd) `pose.pkl`, and the latent embeddings for each image `z.pkl`. The latent embeddings are provided in the same order as the input particles. To analyze these results, use the `cryodrgn analyze` command to visualize the latent space and generate structures. `cryodrgn analyze` will also provide a template jupyter notebook for further interactive visualization and analysis.
 
-NEW in version 1.0: There are two additional tools `cryodrgn analyze_landscape` and `cryodrgn analyze_landscape_full` for more comprehensive and auomated analyses of cryodrgn results.
 
 ### cryodrgn analyze
 
-    $ cryodrgn analyze -h
+<details><summary><code>$ cryodrgn analyze -h</code></summary>
+
 	usage: cryodrgn analyze [-h] [--device DEVICE] [-o OUTDIR] [--skip-vol]
 	                        [--skip-umap] [--Apix APIX] [--flip] [--invert]
 	                        [-d DOWNSAMPLE] [--pc PC] [--ksample KSAMPLE]
@@ -472,18 +464,19 @@ NEW in version 1.0: There are two additional tools `cryodrgn analyze_landscape` 
 	                        (default: 2)
 	  --ksample KSAMPLE     Number of kmeans samples to generate (default: 20)
 
+</details>
+
 This script runs a series of standard analyses:
 
 * PCA visualization of the latent embeddings
 * UMAP visualization of the latent embeddings
 * Generation of volumes. See note [1].
 * Generation of trajectories along the first and second principal components of the latent embeddings
-* Generation of a template jupyter notebook that may be used for further interactive analyses, visualization, and volume generation
-* Generation of a template jupyter notebook for particle filtering and selection
+* Generation of template jupyter notebooks that may be used for further interactive analyses, visualization, and volume generation
 
 Example usage to analyze results from the direction `01_cryodrgn256` containing results after 25 epochs of training:
 
-    $ cryodrgn analyze 01_cryodrgn256 24 --Apix 1.31
+    $ cryodrgn analyze 01_cryodrgn256 24 --Apix 1.31 # 24 for 0-based indexing of epoch numbers
 
 Notes:
 
@@ -493,9 +486,10 @@ Notes:
 
 ### Generating additional volumes
 
-Additional structures may be generated using `cryodrgn eval_vol`:
+A simple way of generating additional volumes is by increasing the number of k-means samples in `cryodrgn analyze` by using  the flag `--ksample 100` (for 100 structures) in `cryodrgn analyze`. For additional flexibility, use `cryodrgn eval_vol`:
 
-    $ cryodrgn eval_vol -h
+<details><summary><code>$ cryodrgn eval_vol -h</code></summary>
+
 	usage: cryodrgn eval_vol [-h] -c PKL -o O [--prefix PREFIX] [-v]
 	                         [-z [Z [Z ...]]] [--z-start [Z_START [Z_START ...]]]
 	                         [--z-end [Z_END [Z_END ...]]] [-n N] [--zfile ZFILE]
@@ -558,6 +552,8 @@ Additional structures may be generated using `cryodrgn eval_vol`:
 	  --activation {relu,leaky_relu}
 	                        Activation (default: relu)
 
+</details>
+
 **Example usage:**
 
 To generate a volume at a single value of the latent variable:
@@ -587,173 +583,51 @@ Two additional commands can be used in conjunction with `cryodrgn eval_vol` to g
 
 These scripts produce a text file of z values that can be input to `cryodrgn eval_vol` to generate a series of structures that can be visualized as a trajectory in ChimeraX (https://www.cgl.ucsf.edu/chimerax).
 
-An example usage of the graph traversal algorithm is here (https://github.com/zhonge/cryodrgn/issues/16#issuecomment-668897007).
+Documentation: https://ez-lab.gitbook.io/cryodrgn/cryodrgn-graph-traversal-for-making-long-trajectories
 
-## CryoDRGN2 -- Ab Initio Reconstruction
+### cryodrgn analyze_landscape
 
-To perform ab initio heterogeneous reconstruction, use `cryodrgn abinit_het`. The arguments are similar to `cryodrgn train_vae`, but the `--poses` argument is not required.
+NEW in version 1.0: There are two additional tools `cryodrgn analyze_landscape` and `cryodrgn analyze_landscape_full` for more comprehensive and automated analyses of cryodrgn results.
 
-For homogeneous reconstruction, run `cryodrgn abinit_homo`.
+Documentation: https://ez-lab.gitbook.io/cryodrgn/cryodrgn-conformational-landscape-analysis
 
-Documentation: https://www.notion.so/CryoDRGN2-quickstart-322823599fce4bd7a391d00bf749ab1f.
+## CryoDRGN2 for *Ab Initio* Reconstruction
 
-The defaults match the settings reported in the [CryoDRGN2 manuscript](https://openaccess.thecvf.com/content/ICCV2021/html/Zhong_CryoDRGN2_Ab_Initio_Neural_Reconstruction_of_3D_Protein_Structures_From_ICCV_2021_paper.html).
+To perform *ab initio* heterogeneous reconstruction, use `cryodrgn abinit_het`. The arguments are similar to `cryodrgn train_vae`, but the `--poses` argument is not required.
 
-```
-usage: cryodrgn abinit_het [-h] -o OUTDIR --zdim ZDIM [--ctf pkl]
-                           [--load LOAD] [--load-poses LOAD_POSES]
-                           [--checkpoint CHECKPOINT]
-                           [--log-interval LOG_INTERVAL] [-v] [--seed SEED]
-                           [--ind PKL] [--uninvert-data] [--no-window]
-                           [--window-r WINDOW_R] [--datadir DATADIR]
-                           [--lazy-single] [--lazy] [--preprocessed]
-                           [--max-threads MAX_THREADS] [--tilt TILT]
-                           [--tilt-deg TILT_DEG] [--enc-only] [-n NUM_EPOCHS]
-                           [-b BATCH_SIZE] [--wd WD] [--lr LR] [--beta BETA]
-                           [--beta-control BETA_CONTROL]
-                           [--equivariance EQUIVARIANCE]
-                           [--eq-start-it EQ_START_IT] [--eq-end-it EQ_END_IT]
-                           [--norm NORM NORM] [--l-ramp-epochs L_RAMP_EPOCHS]
-                           [--l-ramp-model L_RAMP_MODEL]
-                           [--reset-model-every RESET_MODEL_EVERY]
-                           [--reset-optim-every RESET_OPTIM_EVERY]
-                           [--reset-optim-after-pretrain RESET_OPTIM_AFTER_PRETRAIN]
-                           [--l-start L_START] [--l-end L_END] [--niter NITER]
-                           [--t-extent T_EXTENT] [--t-ngrid T_NGRID]
-                           [--t-xshift T_XSHIFT] [--t-yshift T_YSHIFT]
-                           [--pretrain PRETRAIN] [--ps-freq PS_FREQ]
-                           [--nkeptposes NKEPTPOSES]
-                           [--base-healpy BASE_HEALPY]
-                           [--pose-model-update-freq POSE_MODEL_UPDATE_FREQ]
-                           [--enc-layers QLAYERS] [--enc-dim QDIM]
-                           [--encode-mode {conv,resid,mlp,tilt}]
-                           [--enc-mask ENC_MASK] [--use-real]
-                           [--dec-layers PLAYERS] [--dec-dim PDIM]
-                           [--pe-type {geom_ft,geom_full,geom_lowf,geom_nohighf,linear_lowf,gaussian,none}]
-                           [--feat-sigma FEAT_SIGMA] [--pe-dim PE_DIM]
-                           [--domain {hartley,fourier}]
-                           [--activation {relu,leaky_relu}]
-                           particles
+For homogeneous reconstruction, use `cryodrgn abinit_homo`.
 
-Heterogeneous NN reconstruction with hierarchical pose optimization
+Documentation: https://ez-lab.gitbook.io/cryodrgn/cryodrgn2-ab-initio-reconstruction
 
-positional arguments:
-  particles             Input particles (.mrcs, .txt or .star)
+## CryoDRGN-ET for subtomogram analysis
 
-optional arguments:
-  -h, --help            show this help message and exit
-  -o OUTDIR, --outdir OUTDIR
-                        Output directory to save model
-  --zdim ZDIM           Dimension of latent variable
-  --ctf pkl             CTF parameters (.pkl)
-  --load LOAD           Initialize training from a checkpoint
-  --load-poses LOAD_POSES
-                        Initialize training from a checkpoint
-  --checkpoint CHECKPOINT
-                        Checkpointing interval in N_EPOCHS (default: 1)
-  --log-interval LOG_INTERVAL
-                        Logging interval in N_IMGS (default: 1000)
-  -v, --verbose         Increaes verbosity
-  --seed SEED           Random seed
+Coming soon in version 3.0.
 
-Dataset loading:
-  --ind PKL             Filter particle stack by these indices
-  --uninvert-data       Do not invert data sign
-  --no-window           Turn off real space windowing of dataset
-  --window-r WINDOW_R   Windowing radius (default: 0.85)
-  --datadir DATADIR     Path prefix to particle stack if loading relative
-                        paths from a .star or .cs file
-  --lazy-single         Lazy loading if full dataset is too large to fit in
-                        memory
-  --lazy                Memory efficient training by loading data in chunks
-  --preprocessed        Skip preprocessing steps if input data is from
-                        cryodrgn preprocess_mrcs
-  --max-threads MAX_THREADS
-                        Maximum number of CPU cores for FFT parallelization
-                        (default: 16)
+## References:
 
-Tilt series:
-  --tilt TILT           Particle stack file (.mrcs)
-  --tilt-deg TILT_DEG   X-axis tilt offset in degrees (default: 45)
-  --enc-only            Use the tilt pair only in VAE and not in BNB search
+For a complete description of the method, see:
 
-Training parameters:
-  -n NUM_EPOCHS, --num-epochs NUM_EPOCHS
-                        Number of training epochs (default: 30)
-  -b BATCH_SIZE, --batch-size BATCH_SIZE
-                        Minibatch size (default: 8)
-  --wd WD               Weight decay in Adam optimizer (default: 0)
-  --lr LR               Learning rate in Adam optimizer (default: 0.0001)
-  --beta BETA           Choice of beta schedule or a constant for KLD weight
-                        (default: 1.0)
-  --beta-control BETA_CONTROL
-                        KL-Controlled VAE gamma. Beta is KL target. (default:
-                        None)
-  --equivariance EQUIVARIANCE
-                        Strength of equivariance loss (default: None)
-  --eq-start-it EQ_START_IT
-                        It at which equivariance turned on (default: 100000)
-  --eq-end-it EQ_END_IT
-                        It at which equivariance max (default: 200000)
-  --norm NORM NORM      Data normalization as shift, 1/scale (default: mean,
-                        std of dataset)
-  --l-ramp-epochs L_RAMP_EPOCHS
-                        default: 0
-  --l-ramp-model L_RAMP_MODEL
-                        If 1, then during ramp only train the model up to
-                        l-max
-  --reset-model-every RESET_MODEL_EVERY
-                        If set, reset the model every N epochs
-  --reset-optim-every RESET_OPTIM_EVERY
-                        If set, reset the optimizer every N epochs
-  --reset-optim-after-pretrain RESET_OPTIM_AFTER_PRETRAIN
-                        If set, reset the optimizer every N epochs
+* CryoDRGN: reconstruction of heterogeneous cryo-EM structures using neural networks
+Ellen D. Zhong, Tristan Bepler, Bonnie Berger*, Joseph H Davis*
+Nature Methods 2021, https://doi.org/10.1038/s41592-020-01049-4 [pdf](https://ezlab.princeton.edu/assets/pdf/2021_cryodrgn_nature_methods.pdf)
 
-Pose Search parameters:
-  --l-start L_START     Starting L radius (default: 12)
-  --l-end L_END         End L radius (default: 32)
-  --niter NITER         Number of iterations of grid subdivision
-  --t-extent T_EXTENT   +/- pixels to search over translations (default: 10)
-  --t-ngrid T_NGRID     Initial grid size for translations
-  --t-xshift T_XSHIFT
-  --t-yshift T_YSHIFT
-  --pretrain PRETRAIN   Number of initial iterations with random poses
-                        (default: 10000)
-  --ps-freq PS_FREQ     Frequency of pose inference (default: every 5 epochs)
-  --nkeptposes NKEPTPOSES
-                        Number of poses to keep at each refinement interation
-                        during branch and bound
-  --base-healpy BASE_HEALPY
-                        Base healpy grid for pose search. Higher means
-                        exponentially higher resolution.
-  --pose-model-update-freq POSE_MODEL_UPDATE_FREQ
-                        If set, only update the model used for pose search
-                        every N examples.
+An earlier version of this work appeared at ICLR 2020:
 
-Encoder Network:
-  --enc-layers QLAYERS  Number of hidden layers (default: 3)
-  --enc-dim QDIM        Number of nodes in hidden layers (default: 256)
-  --encode-mode {conv,resid,mlp,tilt}
-                        Type of encoder network (default: resid)
-  --enc-mask ENC_MASK   Circular mask of image for encoder (default: D/2; -1
-                        for no mask)
-  --use-real            Use real space image for encoder (for convolutional
-                        encoder)
+* Reconstructing continuous distributions of protein structure from cryo-EM images
+Ellen D. Zhong, Tristan Bepler, Joseph H. Davis*, Bonnie Berger*
+ICLR 2020, Spotlight, https://arxiv.org/abs/1909.05215
 
-Decoder Network:
-  --dec-layers PLAYERS  Number of hidden layers (default: 3)
-  --dec-dim PDIM        Number of nodes in hidden layers (default: 256)
-  --pe-type {geom_ft,geom_full,geom_lowf,geom_nohighf,linear_lowf,gaussian,none}
-                        Type of positional encoding (default: gaussian)
-  --feat-sigma FEAT_SIGMA
-                        Scale for random Gaussian features (default: 0.5)
-  --pe-dim PE_DIM       Num features in positional encoding (default: image D)
-  --domain {hartley,fourier}
-                        Decoder representation domain (default: fourier)
-  --activation {relu,leaky_relu}
-                        Activation (default: relu)
-```
+CryoDRGN2's ab initio reconstruction algorithms were published at ICCV:
 
+* CryoDRGN2: Ab Initio Neural Reconstruction of 3D Protein Structures From Real Cryo-EM Images
+Ellen D. Zhong, Adam Lerer, Joseph H Davis, and Bonnie Berger
+International Conference on Computer Vision (ICCV) 2021, [paper](https://openaccess.thecvf.com/content/ICCV2021/papers/Zhong_CryoDRGN2_Ab_Initio_Neural_Reconstruction_of_3D_Protein_Structures_From_ICCV_2021_paper.pdf)
+
+A protocols paper that describes the analysis of the EMPIAR-10076 assembling ribosome dataset:
+
+* Uncovering structural ensembles from single particle cryo-EM data using cryoDRGN
+Laurel Kinman, Barrett Powell, Ellen D. Zhong*, Bonnie Berger*, Joseph H Davis*
+Nature Protocols 2023, https://doi.org/10.1038/s41596-022-00763-x 
 
 ## Contact
 

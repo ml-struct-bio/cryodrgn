@@ -181,7 +181,7 @@ First resize your particle images using the `cryodrgn downsample` command:
       --max-threads MAX_THREADS
                          Maximum number of CPU cores for parallelization (default: 16)
       --ind PKL          Filter image stack by these indices
-  
+
 </details>
 
 We recommend first downsampling images to 128x128 since larger images can take much longer to train:
@@ -482,7 +482,7 @@ Notes:
 
 [1] Volumes are generated after k-means clustering of the latent embeddings with k=20 by default. Note that we use k-means clustering here not to identify clusters, but to segment the latent space and generate structures from different regions of the latent space. The number of structures that are generated may be increased with the option `--ksample`.
 
-[2] The `cryodrgn analyze` command chains together a series of calls to `cryodrgn eval_vol` and other scripts that can be run separately for more flexibility. These scripts are located in the `analysis_scripts` directory within the source code. 
+[2] The `cryodrgn analyze` command chains together a series of calls to `cryodrgn eval_vol` and other scripts that can be run separately for more flexibility. These scripts are located in the `analysis_scripts` directory within the source code.
 
 ### Generating additional volumes
 
@@ -627,7 +627,7 @@ A protocols paper that describes the analysis of the EMPIAR-10076 assembling rib
 
 * Uncovering structural ensembles from single particle cryo-EM data using cryoDRGN
 Laurel Kinman, Barrett Powell, Ellen D. Zhong*, Bonnie Berger*, Joseph H Davis*
-Nature Protocols 2023, https://doi.org/10.1038/s41596-022-00763-x 
+Nature Protocols 2023, https://doi.org/10.1038/s41596-022-00763-x
 
 ## Contact
 

@@ -11,11 +11,11 @@
     <script src="../_static/js/html5shiv.min.js"></script>
   <![endif]-->
   
-        <script src="../_static/jquery.js"></script>
-        <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
-        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
-        <script src="../_static/doctools.js"></script>
-        <script src="../_static/sphinx_highlight.js"></script>
+        <script src="../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../_static/documentation_options.js?v=5929fcd5"></script>
+        <script src="../_static/doctools.js?v=888ff710"></script>
+        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
@@ -84,12 +84,12 @@
            <div itemprop="articleBody">
              
   <section id="cryodrgn-introduction">
-<h1>❄️🐉 cryoDRGN Introduction<a class="headerlink" href="#cryodrgn-introduction" title="Permalink to this heading"></a></h1>
+<h1>❄️🐉 cryoDRGN Introduction<a class="headerlink" href="#cryodrgn-introduction" title="Link to this heading"></a></h1>
 <p>This document contains a guide for installing and running <strong>cryoDRGN</strong> 🐉 ❄️. In particular, we follow the processing steps for <strong>particle filtering</strong> and <strong>heterogeneous reconstruction</strong> of the <strong>assembling ribosome dataset (EMPIAR-10076)</strong> used in <a class="reference external" href="https://www.nature.com/articles/s41592-020-01049-4">Zhong et al</a>. This is meant as a general guide — submission commands may need to be updated depending on your workstation or cluster setup.</p>
 <p>For any feedback, issues, or typos, please file a Github <a class="reference external" href="https://github.com/zhonge/cryodrgn/issues">issue</a> or send an email to the cryodrgn user <a class="reference external" href="https://groups.google.com/g/cryodrgn">google group</a>.</p>
 <hr class="docutils" />
 <section id="background">
-<h2>Background<a class="headerlink" href="#background" title="Permalink to this heading"></a></h2>
+<h2>Background<a class="headerlink" href="#background" title="Link to this heading"></a></h2>
 <p>CryoDRGN is a neural network-based method for heterogeneous reconstruction. Instead of <em>discrete</em> methods like 3D classification that produce an ensemble of K density maps, cryoDRGN performs heterogeneous reconstruction by learning a <em>continuous distribution</em> of density maps parameterized by a coordinate-based neural network.</p>
 <iframe src="https://widgets.figshare.com/articles/21170578/embed?show_title=1" width="568" height="351" allowfullscreen frameborder="0"></iframe>
 <p><em>Principal component trajectories and graph traversal trajectories of the pre-catalyic spliceosome. SI Video 4 from <a class="reference external" href="https://www.nature.com/articles/s41592-020-01049-4">Zhong et al 2021</a></em></p>
@@ -101,7 +101,7 @@
 <p>What settings should I use for training cryoDRGN networks? Common hyperparameters when training a cryoDRGN model are: <strong>1) the size of the neural network</strong>, which controls the capacity of the model, <strong>2) the input image size</strong>, which bounds the resolution information and greatly impacts the training speed and <strong>3) the latent variable dimension</strong>, which is the bottleneck layer that bounds the expressiveness of the model. The three parameters together all affect the expressiveness/complexity of the learned model. After exploring many real datasets, we provide reasonable defaults and recommended settings of these parameters for training.</p>
 </section>
 <section id="input-data-requirements">
-<h2>Input data requirements<a class="headerlink" href="#input-data-requirements" title="Permalink to this heading"></a></h2>
+<h2>Input data requirements<a class="headerlink" href="#input-data-requirements" title="Link to this heading"></a></h2>
 <ul class="simple">
 <li><p>Extracted single particle images (in .mrcs/.cs/.star format), clean from edge, ice, or hot pixel artifacts</p></li>
 <li><p>A C1 consensus reconstruction with:</p>
@@ -113,7 +113,7 @@
 </ul>
 </section>
 <section id="tutorial-overview">
-<h2>Tutorial overview<a class="headerlink" href="#tutorial-overview" title="Permalink to this heading"></a></h2>
+<h2>Tutorial overview<a class="headerlink" href="#tutorial-overview" title="Link to this heading"></a></h2>
 <p>See <a class="reference internal" href="empiar_tutorial.html"><span class="std std-doc">cryoDRGN EMPIAR-10076 tutorial</span></a> for a step-by-step guide for running cryoDRGN.</p>
 <p>This walkthrough of cryoDRGN analysis of the <strong>assembling ribosome dataset (EMPIAR-10076)</strong> covers:</p>
 <ol class="arabic simple">
@@ -130,7 +130,7 @@
 <p><em>SI Video 3 from <a class="reference external" href="https://www.nature.com/articles/s41592-020-01049-4">Zhong et al 2021</a></em></p>
 </section>
 <section id="references">
-<h2>References<a class="headerlink" href="#references" title="Permalink to this heading"></a></h2>
+<h2>References<a class="headerlink" href="#references" title="Link to this heading"></a></h2>
 <p>For a complete description of the method, see our paper here:</p>
 <p><strong>CryoDRGN: reconstruction of heterogeneous cryo-EM structures using neural networks</strong></p>
 <p>Ellen Zhong, Tristan Bepler, Bonnie Berger*, Joey Davis*</p>

@@ -11,11 +11,11 @@
     <script src="../_static/js/html5shiv.min.js"></script>
   <![endif]-->
   
-        <script src="../_static/jquery.js"></script>
-        <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
-        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
-        <script src="../_static/doctools.js"></script>
-        <script src="../_static/sphinx_highlight.js"></script>
+        <script src="../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../_static/documentation_options.js?v=5929fcd5"></script>
+        <script src="../_static/doctools.js?v=888ff710"></script>
+        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
@@ -86,7 +86,7 @@
            <div itemprop="articleBody">
              
   <section id="cryodrgn-installation">
-<h1>cryoDRGN Installation<a class="headerlink" href="#cryodrgn-installation" title="Permalink to this heading"></a></h1>
+<h1>cryoDRGN Installation<a class="headerlink" href="#cryodrgn-installation" title="Link to this heading"></a></h1>
 <p>We provide installation instructions assuming an <strong>Anaconda</strong> environment for managing dependencies. Anaconda is a
 python package/environment manager which can handle complex dependencies between Python packages through the creation
 of python environments. We recommended creating a separate environment for cryodrgn to prevent any conflicts among
@@ -118,7 +118,7 @@ dependencies with other software packages.</p>
 <p>The software has been tested on Python 3.7-3.9 and pytorch 1.0-1.7, 1.12.</p>
 <hr class="docutils" />
 <section id="install-anaconda">
-<h2>1) Install anaconda<a class="headerlink" href="#install-anaconda" title="Permalink to this heading"></a></h2>
+<h2>1) Install anaconda<a class="headerlink" href="#install-anaconda" title="Link to this heading"></a></h2>
 <ul>
 <li><p>For most platforms, the installation typically consists of a shell script
 (e.g. <a class="reference external" href="https://www.anaconda.com/products/distribution">Anaconda Installers</a>) that you execute on the command line
@@ -135,7 +135,7 @@ go.</p>
 </ul>
 </section>
 <section id="setting-up-the-cryodrgn-environment">
-<h2>2) Setting up the cryoDRGN environment<a class="headerlink" href="#setting-up-the-cryodrgn-environment" title="Permalink to this heading"></a></h2>
+<h2>2) Setting up the cryoDRGN environment<a class="headerlink" href="#setting-up-the-cryodrgn-environment" title="Link to this heading"></a></h2>
 <ul>
 <li><p>First, create a new conda environment named <code class="docutils literal notranslate"><span class="pre">cryodrgn</span></code> (or renamed as appropriate):</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="o">(</span>base<span class="o">)</span><span class="w"> </span>$<span class="w"> </span>conda<span class="w"> </span>create<span class="w"> </span>--name<span class="w"> </span>cryodrgn<span class="w"> </span><span class="nv">python</span><span class="o">=</span><span class="m">3</span>.9
@@ -199,7 +199,7 @@ pip<span class="w"> </span>install<span class="w"> </span>-v<span class="w"> </s
 </ul>
 </section>
 <section id="install-cryodrgn">
-<h2>3) Install cryoDRGN<a class="headerlink" href="#install-cryodrgn" title="Permalink to this heading"></a></h2>
+<h2>3) Install cryoDRGN<a class="headerlink" href="#install-cryodrgn" title="Link to this heading"></a></h2>
 <ul class="simple">
 <li><p>Obtain cryodrgn source code by cloning the git repository, and then doing a <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">.</span></code> in the checkout folder.
 This will also install dependencies that <code class="docutils literal notranslate"><span class="pre">cryoDRGN</span></code> depends on.</p></li>
@@ -222,7 +222,7 @@ release is <code class="docutils literal notranslate"><span class="pre">cryodrgn
 </div>
 </section>
 <section id="testing-the-installation">
-<h2>4) Testing the Installation<a class="headerlink" href="#testing-the-installation" title="Permalink to this heading"></a></h2>
+<h2>4) Testing the Installation<a class="headerlink" href="#testing-the-installation" title="Link to this heading"></a></h2>
 <p>Once installed, you should be able to call the <code class="docutils literal notranslate"><span class="pre">cryodrgn</span></code> executable and see a list of commands:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="o">(</span>cryodrgn<span class="o">)</span><span class="w"> </span>$<span class="w"> </span>cryodrgn<span class="w"> </span>-h
 </pre></div>
@@ -323,7 +323,7 @@ will be using your GPU for training.</p></li>
 </ul>
 </section>
 <section id="updating-cryodrgn">
-<h2>Updating cryoDRGN<a class="headerlink" href="#updating-cryodrgn" title="Permalink to this heading"></a></h2>
+<h2>Updating cryoDRGN<a class="headerlink" href="#updating-cryodrgn" title="Link to this heading"></a></h2>
 <p>To update to a later version, you need to obtain the updated software either with <code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">checkout</span> <span class="pre">&lt;version&gt;</span></code> or direct
 download from <a class="reference external" href="https://github.com/zhonge/cryodrgn">https://github.com/zhonge/cryodrgn</a>, then rerun <code class="docutils literal notranslate"><span class="pre">$</span> <span class="pre">pip</span> <span class="pre">install</span> <span class="pre">.</span></code>
 in your cryodrgn anaconda environment:</p>
@@ -336,7 +336,7 @@ in your cryodrgn anaconda environment:</p>
 all the dependencies.</p>
 </section>
 <section id="known-issues">
-<h2>Known Issues<a class="headerlink" href="#known-issues" title="Permalink to this heading"></a></h2>
+<h2>Known Issues<a class="headerlink" href="#known-issues" title="Link to this heading"></a></h2>
 <ol class="arabic simple">
 <li><p><a class="reference external" href="https://github.com/zhonge/cryodrgn/issues/34">Jupyter notebook widget not showing up</a></p></li>
 <li><p>In the jupyter notebook: no attribute <code class="docutils literal notranslate"><span class="pre">from_dcm</span></code> or <code class="docutils literal notranslate"><span class="pre">from_matrix</span></code>:</p>

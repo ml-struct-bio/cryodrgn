@@ -11,11 +11,11 @@
     <script src="../_static/js/html5shiv.min.js"></script>
   <![endif]-->
   
-        <script src="../_static/jquery.js"></script>
-        <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
-        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
-        <script src="../_static/doctools.js"></script>
-        <script src="../_static/sphinx_highlight.js"></script>
+        <script src="../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../_static/documentation_options.js?v=5929fcd5"></script>
+        <script src="../_static/doctools.js?v=888ff710"></script>
+        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
@@ -83,7 +83,7 @@
            <div itemprop="articleBody">
              
   <section id="cryodrgn-preprocess-for-large-datasets">
-<h1>cryoDRGN preprocess for large datasets<a class="headerlink" href="#cryodrgn-preprocess-for-large-datasets" title="Permalink to this heading"></a></h1>
+<h1>cryoDRGN preprocess for large datasets<a class="headerlink" href="#cryodrgn-preprocess-for-large-datasets" title="Link to this heading"></a></h1>
 <p>CryoDRGN by default loads the entire dataset into memory for fast data access during training. However, large cryo-EM datasets can easily exceed the amount of memory available on standard workstations. For these datasets that do not fit into memory, <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">train_vae</span></code> can be run with the additional <code class="docutils literal notranslate"><span class="pre">--lazy</span></code> flag, which loads images on-the-fly instead of all at once at the beginning of training. This can, however, be very slow due to the filesystem access pattern for on-the-fly image loading, especially if the data is not located on a SSD drive.</p>
 <p>To reduce the memory requirement of loading the whole dataset, as of version 0.3.3, cryoDRGN contains a tool <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">preprocess</span></code> that performs some of the image preprocessing done at the beginning of training. Separating out image preprocessing significantly reduces the memory requirement of <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">train_vae</span></code>, potentially leading to major training speedups ⚡ ⚡ ⚡ .</p>
 <p>The new workflow replaces <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">downsample</span></code> with <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">preprocess</span></code> in the standard cryoDRGN workflow. Note that a new preprocessed particle stack will be created:</p>
@@ -112,7 +112,7 @@ cryodrgn<span class="w"> </span>train_vae<span class="w"> </span>data/preprocess
 </pre></div>
 </div>
 <section id="numbers">
-<h2>Numbers<a class="headerlink" href="#numbers" title="Permalink to this heading"></a></h2>
+<h2>Numbers<a class="headerlink" href="#numbers" title="Link to this heading"></a></h2>
 <p>Some numbers for training on a 1,375,854, 128x128 particle dataset (86 GB)</p>
 <p>Baseline:</p>
 <ul class="simple">
@@ -127,7 +127,7 @@ cryodrgn<span class="w"> </span>train_vae<span class="w"> </span>data/preprocess
 <p>On a single Nvidia V100 GPU, this dataset trained in approximately 2h,3min per epoch (large 1024x3 model) when fully loaded into memory. Training with on-the-fly data loading (<code class="docutils literal notranslate"><span class="pre">--lazy</span></code>) was 4x slower, though this can vary widely depending on your filesystem/network. Recent tests on cached filesystems do not have a large penalty for <code class="docutils literal notranslate"><span class="pre">--lazy</span></code> image loading.</p>
 </section>
 <section id="technicalities">
-<h2>Technicalities<a class="headerlink" href="#technicalities" title="Permalink to this heading"></a></h2>
+<h2>Technicalities<a class="headerlink" href="#technicalities" title="Link to this heading"></a></h2>
 <ul>
 <li><p>Using <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">preprocess</span></code> in place of <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">downsample</span></code> means that images will be windowed (circular mask applied in real space) <em>before</em> they are downsampled. This is slightly different than in the original workflow where images are first downsampled, then the mask is applied during training. To exactly replicate the previous behavior, run <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">downsample</span></code> as usual, then run <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">preprocess</span></code> on the downsampled dataset.</p></li>
 <li><p>Viewing particle images in cryoDRGN_viz.ipynb and cryoDRGN_filtering.ipynb will now show Fourier space images. A current workaround is to overwrite the path with the original particles when loading particle images in the jupyter notebook:</p>
@@ -143,7 +143,7 @@ cryodrgn<span class="w"> </span>train_vae<span class="w"> </span>data/preprocess
 </ul>
 </section>
 <section id="still-too-large">
-<h2>Still too large<a class="headerlink" href="#still-too-large" title="Permalink to this heading"></a></h2>
+<h2>Still too large<a class="headerlink" href="#still-too-large" title="Link to this heading"></a></h2>
 <p>If your dataset is still too large to load into memory, we recommend training on a subset of the images such that the dataset can fit into memory (e.g. split your dataset into two halves and run independent training jobs on each half). A random selection of a subset of your dataset can be generated with the utility <code class="docutils literal notranslate"><span class="pre">cryodrgn_utils</span> <span class="pre">select_random</span></code>:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span># select 200k random particles out of a dataset containing 1,375,854 particles
 (cryodrgn) $ cryodrgn_utils select_random 1375854 -n 200000 -o ind200k.pkl

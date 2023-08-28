@@ -11,11 +11,11 @@
     <script src="../_static/js/html5shiv.min.js"></script>
   <![endif]-->
   
-        <script src="../_static/jquery.js"></script>
-        <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
-        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
-        <script src="../_static/doctools.js"></script>
-        <script src="../_static/sphinx_highlight.js"></script>
+        <script src="../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../_static/documentation_options.js?v=5929fcd5"></script>
+        <script src="../_static/doctools.js?v=888ff710"></script>
+        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
@@ -85,7 +85,7 @@
            <div itemprop="articleBody">
              
   <section id="cryodrgn2-quickstart">
-<h1>CryoDRGN2 quickstart<a class="headerlink" href="#cryodrgn2-quickstart" title="Permalink to this heading"></a></h1>
+<h1>CryoDRGN2 quickstart<a class="headerlink" href="#cryodrgn2-quickstart" title="Link to this heading"></a></h1>
 <p>There are two commands for ab initio reconstruction, <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">abinit_homo</span></code> and <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">abinit_het</span></code> for homogeneous and heterogeneous ab initio reconstruction, respectively:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># homogeneous ab initio reconstruction</span>
 <span class="o">(</span>cryodrgn<span class="o">)</span><span class="w"> </span>$<span class="w"> </span>cryodrgn<span class="w"> </span>abinit_homo<span class="w"> </span>-h
@@ -95,7 +95,7 @@
 </pre></div>
 </div>
 <section id="setup">
-<h2>Setup<a class="headerlink" href="#setup" title="Permalink to this heading"></a></h2>
+<h2>Setup<a class="headerlink" href="#setup" title="Link to this heading"></a></h2>
 <ul>
 <li><p>Downsample your particles to a box size of 128 either with <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">downsample</span></code> or with other tools.</p></li>
 <li><p>If you have a large dataset (&gt;500k images), we recommend training on a subset of particles for initial testing. Use <code class="docutils literal notranslate"><span class="pre">cryodrgn_utils</span> <span class="pre">select_random</span></code> to select a random subset of particles.</p>
@@ -111,7 +111,7 @@
 </ul>
 </section>
 <section id="example-usage">
-<h2>Example usage<a class="headerlink" href="#example-usage" title="Permalink to this heading"></a></h2>
+<h2>Example usage<a class="headerlink" href="#example-usage" title="Link to this heading"></a></h2>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># homogeneous reconstruction</span>
 <span class="o">(</span>cryodrgn<span class="o">)</span><span class="w"> </span>$<span class="w"> </span>cryodrgn<span class="w"> </span>abinit_homo<span class="w"> </span><span class="o">[</span>particles<span class="o">]</span><span class="w"> </span>--ctf<span class="w"> </span><span class="o">[</span>ctf.pkl<span class="o">]</span><span class="w"> </span>-o<span class="w"> </span><span class="o">[</span>output_directory<span class="o">]</span><span class="w">  </span>&gt;&gt;<span class="w"> </span>output.log
 
@@ -121,7 +121,7 @@
 </div>
 </section>
 <section id="note-on-training-settings">
-<h2>Note on training settings<a class="headerlink" href="#note-on-training-settings" title="Permalink to this heading"></a></h2>
+<h2>Note on training settings<a class="headerlink" href="#note-on-training-settings" title="Link to this heading"></a></h2>
 <ul>
 <li><p>The default translational search extent is +/- 10 pixels (<code class="docutils literal notranslate"><span class="pre">--t-extent</span> <span class="pre">10</span></code>). If your particles are not well-centered, you can use a wider search extent, e.g. +/- 40 pixels ( <code class="docutils literal notranslate"><span class="pre">--t-extent</span> <span class="pre">40</span></code>).</p></li>
 <li><p>Poses are updated every 5 epochs (<code class="docutils literal notranslate"><span class="pre">--ps-freq</span> <span class="pre">5</span></code>) to alternate between pose search (slow) and standard cryodrgn1 training (fast) using the last iteration’s poses.</p></li>
@@ -192,13 +192,13 @@
 </ul>
 </section>
 <section id="questions-and-contact">
-<h2>Questions and contact<a class="headerlink" href="#questions-and-contact" title="Permalink to this heading"></a></h2>
+<h2>Questions and contact<a class="headerlink" href="#questions-and-contact" title="Link to this heading"></a></h2>
 <p>If you have any questions about the method or software, please file a GitHub issue:</p>
 <p><a class="reference external" href="https://github.com/zhonge/cryodrgn/issues">https://github.com/zhonge/cryodrgn/issues</a></p>
 <p>Or post in the cryoDRGN Google Group: <a class="reference external" href="https://groups.google.com/g/cryodrgn">https://groups.google.com/g/cryodrgn</a>.</p>
 </section>
 <section id="reference">
-<h2>Reference<a class="headerlink" href="#reference" title="Permalink to this heading"></a></h2>
+<h2>Reference<a class="headerlink" href="#reference" title="Link to this heading"></a></h2>
 <p>CryoDRGN2 software was developed by Ellen Zhong &amp; Adam Lerer with software support from Vineet Bansal.
 If you find the ab initio tools in cryoDRGN useful, please cite:</p>
 <p>Zhong, Lerer, Davis, Berger. ICCV 2021.</p>

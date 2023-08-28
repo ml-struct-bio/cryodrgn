@@ -11,11 +11,11 @@
     <script src="../_static/js/html5shiv.min.js"></script>
   <![endif]-->
   
-        <script src="../_static/jquery.js"></script>
-        <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
-        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
-        <script src="../_static/doctools.js"></script>
-        <script src="../_static/sphinx_highlight.js"></script>
+        <script src="../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../_static/documentation_options.js?v=5929fcd5"></script>
+        <script src="../_static/doctools.js?v=888ff710"></script>
+        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
@@ -152,7 +152,7 @@
            <div itemprop="articleBody">
              
   <section id="cryodrgn-empiar-10076-tutorial">
-<h1>cryoDRGN EMPIAR-10076 tutorial<a class="headerlink" href="#cryodrgn-empiar-10076-tutorial" title="Permalink to this heading"></a></h1>
+<h1>cryoDRGN EMPIAR-10076 tutorial<a class="headerlink" href="#cryodrgn-empiar-10076-tutorial" title="Link to this heading"></a></h1>
 <p>This walkthrough of cryoDRGN analysis of the <strong>assembling ribosome dataset (EMPIAR-10076)</strong> from Figure 5 of <a class="reference external" href="https://www.nature.com/articles/s41592-020-01049-4">Zhong et al.</a> covers:</p>
 <ol class="arabic simple">
 <li><p>preprocessing of inputs,</p></li>
@@ -173,7 +173,7 @@
 </ul>
 <hr class="docutils" />
 <section id="obtain-the-dataset">
-<h2>1) Obtain the dataset<a class="headerlink" href="#obtain-the-dataset" title="Permalink to this heading"></a></h2>
+<h2>1) Obtain the dataset<a class="headerlink" href="#obtain-the-dataset" title="Link to this heading"></a></h2>
 <ul>
 <li><p>Download EMPIAR-10076 (~51GB) from <a class="reference external" href="https://www.ebi.ac.uk/pdbe/emdb/empiar/entry/10076/">https://www.ebi.ac.uk/pdbe/emdb/empiar/entry/10076/</a></p>
 <ul class="simple">
@@ -226,7 +226,7 @@
 <hr class="docutils" />
 </section>
 <section id="consensus-reconstruction-optional">
-<span id="step2"></span><h2>2) Consensus reconstruction (optional)<a class="headerlink" href="#consensus-reconstruction-optional" title="Permalink to this heading"></a></h2>
+<span id="step2"></span><h2>2) Consensus reconstruction (optional)<a class="headerlink" href="#consensus-reconstruction-optional" title="Link to this heading"></a></h2>
 <ul class="simple">
 <li><p>Perform a <strong>C1 homogeneous refinement</strong> in your favorite cryo-EM software package. We will be using the poses from this “consensus reconstruction”.</p></li>
 <li><p>To skip this step, download the poses from <a class="reference external" href="https://github.com/zhonge/cryodrgn_empiar/blob/main/empiar10076/inputs/cryosparc_P4_J33_004_particles.cs">https://github.com/zhonge/cryodrgn_empiar/blob/main/empiar10076/inputs/cryosparc_P4_J33_004_particles.cs</a></p></li>
@@ -250,7 +250,7 @@
 <em>CryoSPARC’s metadata file (a .cs file) that contains particle poses and CTF parameters can be downloaded from the web interface as the “alignments3D” output or found in the job directory in the filesystem where cryoSPARC is running.</em></p>
 </section>
 <section id="preprocess-inputs">
-<span id="step3"></span><h2>3) Preprocess inputs<a class="headerlink" href="#preprocess-inputs" title="Permalink to this heading"></a></h2>
+<span id="step3"></span><h2>3) Preprocess inputs<a class="headerlink" href="#preprocess-inputs" title="Link to this heading"></a></h2>
 <p>In this step, we will first extract poses (<a class="reference internal" href="#step3-1"><span class="std std-ref">Step 3.1</span></a>), then extract CTF parameters (<a class="reference internal" href="#step3-2"><span class="std std-ref">Step 3.2</span></a>), then downsample our images (<a class="reference internal" href="#step3-3"><span class="std std-ref">Step 3.3</span></a>).</p>
 <p>Pose and CTF parameters are stored in various formats depending on the upstream processing software. CryoDRGN contains scripts to convert this information to a <code class="docutils literal notranslate"><span class="pre">.pkl</span></code> file format.</p>
 <ul>
@@ -264,7 +264,7 @@
 </li>
 </ul>
 <section id="convert-poses-to-cryodrgn-format">
-<span id="step3-1"></span><h3>3.1) Convert poses to cryoDRGN format<a class="headerlink" href="#convert-poses-to-cryodrgn-format" title="Permalink to this heading"></a></h3>
+<span id="step3-1"></span><h3>3.1) Convert poses to cryoDRGN format<a class="headerlink" href="#convert-poses-to-cryodrgn-format" title="Link to this heading"></a></h3>
 <ul>
 <li><p>CryoDRGN has two executables for parsing pose information (i.e. particle alignments) from either a cryoSPARC <code class="docutils literal notranslate"><span class="pre">.cs</span></code> file or a RELION <code class="docutils literal notranslate"><span class="pre">.star</span></code> file.</p>
 <ul>
@@ -372,7 +372,7 @@ optional arguments:
 <hr class="docutils" />
 </section>
 <section id="convert-ctf-parameters-to-cryodrgn-format">
-<span id="step3-2"></span><h3>3.2) Convert CTF parameters to cryoDRGN format<a class="headerlink" href="#convert-ctf-parameters-to-cryodrgn-format" title="Permalink to this heading"></a></h3>
+<span id="step3-2"></span><h3>3.2) Convert CTF parameters to cryoDRGN format<a class="headerlink" href="#convert-ctf-parameters-to-cryodrgn-format" title="Link to this heading"></a></h3>
 <ul>
 <li><p>CryoDRGN has two executables for parsing CTF information from either a cryoSPARC <code class="docutils literal notranslate"><span class="pre">.cs</span></code> file or a RELION <code class="docutils literal notranslate"><span class="pre">.star</span></code> file.</p>
 <ul>
@@ -479,7 +479,7 @@ Optionally provide missing image parameters:
 <hr class="docutils" />
 </section>
 <section id="downsample-images">
-<span id="step3-3"></span><h3>3.3) Downsample images<a class="headerlink" href="#downsample-images" title="Permalink to this heading"></a></h3>
+<span id="step3-3"></span><h3>3.3) Downsample images<a class="headerlink" href="#downsample-images" title="Link to this heading"></a></h3>
 <p>CryoDRGN training time is highly dependent on the image size (See Fig. 2E in Zhong et al.). We will downsample images to an image size of <strong>D=128</strong> (where D is the image dimension in pixels, i.e. a 128x128 image) using <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">downsample</span></code>. Later on, we will train a higher resolution model using larger images (<strong>D=256</strong>).</p>
 <p>Because of the tradeoffs between training time and representation capacity of the neural networks, we recommend training on images with a maximum of D=256. In general, to optimize training time, we encourage using the smallest possible image size given the desired/expected resolution of the final density maps and their motions. Here, using an image size of (256x256) corresponds to a pixel size of 1.31*320/256 = 1.6375 A/pix and a Nyquist resolution of 3.275 A, which is still below the resolutions of the published density maps (~4-5 A).</p>
 <ul>
@@ -547,7 +547,7 @@ optional arguments:
 </section>
 <hr class="docutils" />
 <section id="cryodrgn-training">
-<h2>4) CryoDRGN training<a class="headerlink" href="#cryodrgn-training" title="Permalink to this heading"></a></h2>
+<h2>4) CryoDRGN training<a class="headerlink" href="#cryodrgn-training" title="Link to this heading"></a></h2>
 <p>When the input image stack (.mrcs), image poses (.pkl), and CTF parameters (.pkl) have been prepared, a cryoDRGN model can be trained with the following executable:</p>
 <ul>
 <li><p><code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">train_vae</span> <span class="pre">-h</span></code></p>
@@ -658,7 +658,7 @@ Decoder Network:
 <li><p><code class="docutils literal notranslate"><span class="pre">--multigpu</span></code> to enable parallelized training across multiple GPUs (fast!)</p></li>
 </ul>
 <section id="general-recommended-workflow">
-<h3>General recommended workflow**<a class="headerlink" href="#general-recommended-workflow" title="Permalink to this heading"></a></h3>
+<h3>General recommended workflow**<a class="headerlink" href="#general-recommended-workflow" title="Link to this heading"></a></h3>
 <ol class="arabic simple">
 <li><p>First, train on lower resolution images (e.g. D=128) using the default architecture (fast) as an initial pass to sanity check results and remove junk particles. <strong>(D=128, default 256x3 architecture)</strong></p></li>
 <li><p>After any particle filtering, then train a larger model with the <code class="docutils literal notranslate"><span class="pre">--enc-dim</span> <span class="pre">1024</span></code> and <code class="docutils literal notranslate"><span class="pre">--dec-dim</span> <span class="pre">1024</span></code> arguments, which in theory can learn more heterogeneity. <strong>(D=128, large 1024x3 architecture)</strong></p></li>
@@ -666,7 +666,7 @@ Decoder Network:
 </ol>
 <p>In this tutorial we will walk through the commands and analysis for Step 1 and Step 3 in the above workflow. You can run step 2 on your own to see how the results compare.</p>
 <section id="cryodrgn-initial-training">
-<h4>CryoDRGN initial training<a class="headerlink" href="#cryodrgn-initial-training" title="Permalink to this heading"></a></h4>
+<h4>CryoDRGN initial training<a class="headerlink" href="#cryodrgn-initial-training" title="Link to this heading"></a></h4>
 <ul>
 <li><p>Run <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">train_vae</span></code> on the full particle stack of D=128 particles (1 GPU; 64GB memory requirement)</p>
 <p>Example command:</p>
@@ -785,7 +785,7 @@ Decoder Network:
 </ul>
 </section>
 <section id="extending-or-restarting-from-a-checkpoint">
-<h4>Extending or restarting from a checkpoint<a class="headerlink" href="#extending-or-restarting-from-a-checkpoint" title="Permalink to this heading"></a></h4>
+<h4>Extending or restarting from a checkpoint<a class="headerlink" href="#extending-or-restarting-from-a-checkpoint" title="Link to this heading"></a></h4>
 <p>If the run was interrupted before it reached the desired number of epochs or you would like to train longer, a training job can be extended with the <code class="docutils literal notranslate"><span class="pre">--load</span></code> argument. For example, to resume training that was interrupted at epoch 24:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Use the same command with extra --load argument</span>
 $<span class="w"> </span>cryodrgn<span class="w"> </span>train_vae<span class="w"> </span>data/128/particles.128.mrcs<span class="w"> </span><span class="se">\</span>
@@ -803,7 +803,7 @@ $<span class="w"> </span>cryodrgn<span class="w"> </span>train_vae<span class="w
 </section>
 </section>
 <section id="cryodrgn-analysis">
-<h2>5) cryoDRGN analysis<a class="headerlink" href="#cryodrgn-analysis" title="Permalink to this heading"></a></h2>
+<h2>5) cryoDRGN analysis<a class="headerlink" href="#cryodrgn-analysis" title="Link to this heading"></a></h2>
 <p>Once the model has finished training, use the <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">analyze</span></code> command to visualize the latent space, generate density maps, and generate template Jupyter notebooks for further interactive filtering, visualization, and analysis.</p>
 <ul>
 <li><p><code class="docutils literal notranslate"><span class="pre">$</span> <span class="pre">cryodrgn</span> <span class="pre">analyze</span> <span class="pre">-h</span></code></p>
@@ -1053,7 +1053,7 @@ $<span class="w"> </span>cryodrgn<span class="w"> </span>analyze<span class="w">
 </li>
 </ul>
 <section id="what-s-in-the-analysis-directory">
-<h3><strong>What’s in the analysis directory?</strong><a class="headerlink" href="#what-s-in-the-analysis-directory" title="Permalink to this heading"></a></h3>
+<h3><strong>What’s in the analysis directory?</strong><a class="headerlink" href="#what-s-in-the-analysis-directory" title="Link to this heading"></a></h3>
 <p>Once <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">analyze</span></code> finishes, there will be a new directory, <code class="docutils literal notranslate"><span class="pre">analyze.49</span></code>, within the job directory:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="o">(</span>cryodrgn4<span class="o">)</span><span class="w"> </span>$<span class="w"> </span>ls<span class="w"> </span>tutorial/00_vae128/analyze.49<span class="w"> </span><span class="c1"># path to analysis directory</span>
 cryoDRGN_filtering.ipynb<span class="w">  </span>kmeans20<span class="w">  </span>pc2<span class="w">              </span>umap.pkl<span class="w">  </span>z_pca_hexbin.png
@@ -1062,7 +1062,7 @@ cryoDRGN_viz.ipynb<span class="w">        </span>pc1<span class="w">       </spa
 </div>
 </section>
 <section id="visualization-of-the-latent-space">
-<h3>Visualization of the latent space<a class="headerlink" href="#visualization-of-the-latent-space" title="Permalink to this heading"></a></h3>
+<h3>Visualization of the latent space<a class="headerlink" href="#visualization-of-the-latent-space" title="Link to this heading"></a></h3>
 <p>Because we trained a 8-dimensional latent variable model (<code class="docutils literal notranslate"><span class="pre">--zdim</span> <span class="pre">8</span></code>), each particle image is associated with an 8-D vector embedding (saved in <code class="docutils literal notranslate"><span class="pre">z.49.pkl</span></code> ). <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">analyze</span></code> runs PCA (a linear dimensionality reduction technique) and UMAP (a nonlinear dimensionality technique) to visualize these latent embeddings. These images will be found in the <code class="docutils literal notranslate"><span class="pre">analyze.49</span></code> directory:</p>
 <p>PCA</p>
 <p><img alt="z_pca.png" src="../_images/Untitled_6.png" /></p>
@@ -1077,7 +1077,7 @@ cryoDRGN_viz.ipynb<span class="w">        </span>pc1<span class="w">       </spa
 <p>We can see there are 5 major clusters in the latent space similar to Figure 5A in Zhong et al. We will show how these align with the 4 major classes of the LSU ribosome + a fifth junk class, and how to remove the fifth junk class from the particle stack.</p>
 </section>
 <section id="sampled-density-maps">
-<h3>Sampled density maps<a class="headerlink" href="#sampled-density-maps" title="Permalink to this heading"></a></h3>
+<h3>Sampled density maps<a class="headerlink" href="#sampled-density-maps" title="Link to this heading"></a></h3>
 <p>The <code class="docutils literal notranslate"><span class="pre">analyze.49</span></code> directory will also contain a subdirectory kmeans20 with representative reconstructed density maps:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># contents of the directory</span>
 <span class="o">(</span>cryodrgn<span class="o">)</span><span class="w"> </span>$<span class="w"> </span>ls<span class="w"> </span>tutorial/00_vae128/analyze.49/kmeans20/
@@ -1097,7 +1097,7 @@ umap_hex.png<span class="w">     </span>vol_002.mrc<span class="w">  </span>vol_
 <p><img alt="" src="../_images/Untitled_13.png" /></p>
 </section>
 <section id="pc-trajectories">
-<h3>PC trajectories<a class="headerlink" href="#pc-trajectories" title="Permalink to this heading"></a></h3>
+<h3>PC trajectories<a class="headerlink" href="#pc-trajectories" title="Link to this heading"></a></h3>
 <p>There are two subdirectories in the analysis directory that will contain volumes generated along the first and second principal components (PC) of the latent space. By default, the volumes are generated at equally spaced points between the first and 99th percentile of the data distribution projected onto each principal component (e.g. Fig 6c of Zhong et al).</p>
 <ul class="simple">
 <li><p>Note 1: The PC trajectories can give a sense of the variability in the structure, however, the principal components of cryoDRGN’s <em>latent space</em> are not principal components of the volumes due to the nonlinear nature of the decoder.</p></li>
@@ -1128,10 +1128,10 @@ vol_000.mrc<span class="w">  </span>vol_002.mrc<span class="w">  </span>vol_004.
 </section>
 </section>
 <section id="particle-filtering-with-the-cryodrgn-jupyter-notebook">
-<h2>6) Particle filtering with the cryoDRGN Jupyter notebook<a class="headerlink" href="#particle-filtering-with-the-cryodrgn-jupyter-notebook" title="Permalink to this heading"></a></h2>
+<h2>6) Particle filtering with the cryoDRGN Jupyter notebook<a class="headerlink" href="#particle-filtering-with-the-cryodrgn-jupyter-notebook" title="Link to this heading"></a></h2>
 <p>This section will walk through how to use the cryoDRGN Jupyter notebook, <code class="docutils literal notranslate"><span class="pre">cryoDRGN_filtering.ipynb</span></code>, to filter junk particles out of the dataset. The Jupyter notebook provides an interactive environment for running Python code blocks to analyze the cryoDRGN results.</p>
 <section id="accessing-the-jupyter-notebook">
-<h3>6.1) Accessing the jupyter notebook<a class="headerlink" href="#accessing-the-jupyter-notebook" title="Permalink to this heading"></a></h3>
+<h3>6.1) Accessing the jupyter notebook<a class="headerlink" href="#accessing-the-jupyter-notebook" title="Link to this heading"></a></h3>
 <p>Jupyter is a web application that requires a browser to use. If you have browser access on the machine where you ran the cryodrgn experiment, you can start the jupyter notebook from the command line with the command <code class="docutils literal notranslate"><span class="pre">jupyter-notebook</span></code>:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="o">(</span>cryodrgn<span class="o">)</span><span class="w"> </span>$<span class="w"> </span>jupyter-notebook
 <span class="o">[</span>I<span class="w"> </span><span class="m">14</span>:47:21.672<span class="w"> </span>NotebookApp<span class="o">]</span><span class="w"> </span>JupyterLab<span class="w"> </span>extension<span class="w"> </span>loaded<span class="w"> </span>from<span class="w"> </span>/Users/zhonge/anaconda3/envs/cryodrgn/lib/python3.7/site-packages/jupyterlab
@@ -1167,7 +1167,7 @@ $<span class="w"> </span>ssh<span class="w"> </span>-N<span class="w"> </span>-f
 <p><img alt="" src="../_images/Untitled_17.png" /></p>
 </section>
 <section id="run-the-jupyter-notebook-for-particle-filtering">
-<h3>6.2) Run the jupyter-notebook for particle filtering<a class="headerlink" href="#run-the-jupyter-notebook-for-particle-filtering" title="Permalink to this heading"></a></h3>
+<h3>6.2) Run the jupyter-notebook for particle filtering<a class="headerlink" href="#run-the-jupyter-notebook-for-particle-filtering" title="Link to this heading"></a></h3>
 <p>The jupyter notebook has template code for performing all the analysis and plotting and should require minimal intervention. For a general overview of running jupyter notebooks, see their documentation here: <a class="reference external" href="https://jupyter.readthedocs.io/en/latest/running.html">https://jupyter.readthedocs.io/en/latest/running.html</a>.</p>
 <p>The <code class="docutils literal notranslate"><span class="pre">cryoDRGN_filtering.ipynb</span></code> jupyter notebook has three methods for filtering particles:</p>
 <ol class="arabic simple">
@@ -1183,7 +1183,7 @@ $<span class="w"> </span>ssh<span class="w"> </span>-N<span class="w"> </span>-f
 <p>Set the variable EPOCH = N to the appropriate value.</p>
 <p>Then run the cells of the notebook to load the relevant results until the first “Filtering by Cluster” section.</p>
 <section id="published-filtering-results">
-<h4><strong>Published filtering results</strong><a class="headerlink" href="#published-filtering-results" title="Permalink to this heading"></a></h4>
+<h4><strong>Published filtering results</strong><a class="headerlink" href="#published-filtering-results" title="Link to this heading"></a></h4>
 <p>This section shows the tutorial results colored by the filtered particles in the original publication of the dataset (Davis et al) and in the cryoDRGN paper (Zhong et al). For prospective analysis, the “junk” is usually identified by visualizing the reconstructed volumes and/or the particles images, and especially straightforward for edge/ice artifacts. The filtering may be validated by 2D classification or other traditional tools. In this dataset, the junk particles also have a very different pose distribution (not shown, but you can view this in the interactive visualization section of the jupyter notebook).</p>
 <p>Davis et al 3D classification labels</p>
 <p>(Optional) Add these code blocks in the jupyter notebook if you wish to generate these visualizations.</p>
@@ -1228,7 +1228,7 @@ plt.ylabel<span class="o">(</span><span class="s1">&#39;UMAP2&#39;</span><span c
 </section>
 </section>
 <section id="filtering-by-gmm-cluster-label">
-<h3>6.3) <strong>Filtering by GMM cluster label</strong><a class="headerlink" href="#filtering-by-gmm-cluster-label" title="Permalink to this heading"></a></h3>
+<h3>6.3) <strong>Filtering by GMM cluster label</strong><a class="headerlink" href="#filtering-by-gmm-cluster-label" title="Link to this heading"></a></h3>
 <p>In this section, we demo the steps and outputs for filtering out the junk cluster using a Gaussian mixture model (GMM) clustering algorithm.</p>
 <p>The “Filtering by cluster” section of the Jupyter notebook has two subsections — filtering by kmeans clustering and by GMM clustering. You can try both options and play around with the cluster # and the random seed.</p>
 <p>In the GMM-clustering section, change the cluster number (G=6 here) and rerun as necessary to get the desired clustering. Because GMM is a non-deterministic algorithm, the results are sensitive to the initial random seed. You can rerun the cells to try a different random seed.</p>
@@ -1249,7 +1249,7 @@ plt.ylabel<span class="o">(</span><span class="s1">&#39;UMAP2&#39;</span><span c
 <p><img alt="assets/Untitled_29.png" src="../_images/Untitled_29.png" /></p>
 <p><img alt="assets/Untitled_30.png" src="../_images/Untitled_30.png" /></p>
 <section id="alternative-method-filtering-by-z-score">
-<h4>Alternative method: <strong>Filtering by z-score</strong><a class="headerlink" href="#alternative-method-filtering-by-z-score" title="Permalink to this heading"></a></h4>
+<h4>Alternative method: <strong>Filtering by z-score</strong><a class="headerlink" href="#alternative-method-filtering-by-z-score" title="Link to this heading"></a></h4>
 <p>In practice, we often find that junk particles are located as outliers in the distribution of latent embeddings. This section selects outlier particles by the magnitude of the embedding.</p>
 <p><img alt="In cell 59, you can change the zscore to make the cutoff more or less stringent." src="../_images/Untitled_31.png" /></p>
 <p>In cell 59, you can change the zscore to make the cutoff more or less stringent.</p>
@@ -1259,7 +1259,7 @@ plt.ylabel<span class="o">(</span><span class="s1">&#39;UMAP2&#39;</span><span c
 <p><img alt="assets/Untitled_34.png" src="../_images/Untitled_34.png" /></p>
 </section>
 <section id="alternative-method-filtering-with-an-interactive-lasso-tool">
-<h4>Alternative method: <strong>Filtering with an interactive lasso tool</strong><a class="headerlink" href="#alternative-method-filtering-with-an-interactive-lasso-tool" title="Permalink to this heading"></a></h4>
+<h4>Alternative method: <strong>Filtering with an interactive lasso tool</strong><a class="headerlink" href="#alternative-method-filtering-with-an-interactive-lasso-tool" title="Link to this heading"></a></h4>
 <p>Sometimes, the best clustering algorithm is the human eye (e.g. kmeans/GMM clustering algorithms can fail especially for small/oddly-shaped clusters). The cryoDRGN_filtering.ipynb notebook also provides an interactive widget that lets you interactively select regions of the latent space using a lasso tool.</p>
 <p>When the widget first shows up, you will need to change the x-axis and y-axis labels to plot the particles by their UMAP embeddings. You can also change the plotting colors.</p>
 <p>Note: Sometimes the tool struggles when there are &gt;500k particles. This is a known issue.</p>
@@ -1269,7 +1269,7 @@ plt.ylabel<span class="o">(</span><span class="s1">&#39;UMAP2&#39;</span><span c
 <p><img alt="assets/Untitled_37.png" src="../_images/Untitled_37.png" /></p>
 </section>
 <section id="view-the-raw-particles">
-<h4>View the raw particles<a class="headerlink" href="#view-the-raw-particles" title="Permalink to this heading"></a></h4>
+<h4>View the raw particles<a class="headerlink" href="#view-the-raw-particles" title="Link to this heading"></a></h4>
 <p>The second to last section of the jupyter notebook contains code blocks for viewing the raw particle images. This section will visualize 9 images at random from the selected particles. This is sometimes useful for verifying that the selected particles are problematic in obvious cases of junk particles.</p>
 <p><img alt="Cell 89 can be rerun to view a different selection of particles." src="../_images/Untitled_38.png" /></p>
 <p>Cell 89 can be rerun to view a different selection of particles.</p>
@@ -1279,7 +1279,7 @@ plt.ylabel<span class="o">(</span><span class="s1">&#39;UMAP2&#39;</span><span c
 <p>Location of the particles in latent space</p>
 </section>
 <section id="saving-the-selection">
-<h4>Saving the selection<a class="headerlink" href="#saving-the-selection" title="Permalink to this heading"></a></h4>
+<h4>Saving the selection<a class="headerlink" href="#saving-the-selection" title="Link to this heading"></a></h4>
 <p>The last section of the notebook has cells that will help save the selected indices to use in downstream processing.</p>
 <p><img alt="Screenshot of the section" src="../_images/Untitled_41.png" /></p>
 <p><em>Screenshot of the section</em></p>
@@ -1301,13 +1301,13 @@ plt.ylabel<span class="o">(</span><span class="s1">&#39;UMAP2&#39;</span><span c
 <p>These <code class="docutils literal notranslate"><span class="pre">.pkl</span></code> files contain a numpy array of indices into the particle stack, which can be provided to <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">train_vae</span></code> with the <code class="docutils literal notranslate"><span class="pre">--ind</span></code> flag to restrict training on the subset of the desired particle. This avoids having to extract a new particle stack.</p>
 </section>
 <section id="additional-functionality-writing-a-new-star-file">
-<h4>(Additional Functionality) Writing a new .star file<a class="headerlink" href="#additional-functionality-writing-a-new-star-file" title="Permalink to this heading"></a></h4>
+<h4>(Additional Functionality) Writing a new .star file<a class="headerlink" href="#additional-functionality-writing-a-new-star-file" title="Link to this heading"></a></h4>
 <ul class="simple">
 <li><p>The selected particles can be converted to a .star file using <code class="docutils literal notranslate"><span class="pre">cryodrgn_utils</span> <span class="pre">write_star</span></code>. See Section 8.3 for more details on this script.</p></li>
 </ul>
 </section>
 <section id="additional-functionality-extracting-a-new-particle-stack">
-<h4>(Additional Functionality) Extracting a new particle stack<a class="headerlink" href="#additional-functionality-extracting-a-new-particle-stack" title="Permalink to this heading"></a></h4>
+<h4>(Additional Functionality) Extracting a new particle stack<a class="headerlink" href="#additional-functionality-extracting-a-new-particle-stack" title="Link to this heading"></a></h4>
 <ul class="simple">
 <li><p>A new particle stack can be extracted using the script <code class="docutils literal notranslate"><span class="pre">filter_mrcs.py</span></code> found in the <code class="docutils literal notranslate"><span class="pre">utils</span></code> subdirectory of the cryodrgn repository.</p></li>
 </ul>
@@ -1315,7 +1315,7 @@ plt.ylabel<span class="o">(</span><span class="s1">&#39;UMAP2&#39;</span><span c
 </section>
 </section>
 <section id="cryodrgn-high-resolution-training">
-<h2>7) CryoDRGN high-resolution training<a class="headerlink" href="#cryodrgn-high-resolution-training" title="Permalink to this heading"></a></h2>
+<h2>7) CryoDRGN high-resolution training<a class="headerlink" href="#cryodrgn-high-resolution-training" title="Link to this heading"></a></h2>
 <p>Now that we have identified the junk particles, we will rerun <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">train_vae</span></code> on larger, higher resolution images (D=256) using a larger neural network model (1024 dim x 3 layer architecture).</p>
 <p>Example command to run on 1 GPU</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$<span class="w"> </span>cryodrgn<span class="w"> </span>train_vae<span class="w"> </span>data/256/particles.256.txt<span class="w"> </span><span class="se">\</span>
@@ -1333,7 +1333,7 @@ plt.ylabel<span class="o">(</span><span class="s1">&#39;UMAP2&#39;</span><span c
 <p>By providing the <code class="docutils literal notranslate"><span class="pre">--ind</span></code> argument, cryoDRGN will filter the list of particles, ctf parameters, and poses by the provided index array.</p>
 <p>This is the most compute-intensive step of the tutorial. The training will take ~25 min/epoch on a single V100 GPU, requiring ~21 hours total for 50 epochs.</p>
 <section id="accelerated-training-with-gpu-parallelization">
-<h3><strong>Accelerated training with GPU parallelization</strong><a class="headerlink" href="#accelerated-training-with-gpu-parallelization" title="Permalink to this heading"></a></h3>
+<h3><strong>Accelerated training with GPU parallelization</strong><a class="headerlink" href="#accelerated-training-with-gpu-parallelization" title="Link to this heading"></a></h3>
 <p>Use cryoDRGN’s <code class="docutils literal notranslate"><span class="pre">--multigpu</span></code> flag to enable parallelized training across all detected GPUs on the machine. To select specific GPUs for cryoDRGN to run on, use the environmental variable <code class="docutils literal notranslate"><span class="pre">CUDA_VISIBLE_DEVICES</span></code>, e.g.:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span>$ cryodrgn train_vae ... # Run on GPU 0
 $ cryodrgn train_vae ... --multigpu # Run on all GPUs on the machine
@@ -1343,16 +1343,16 @@ $ CUDA_VISIBLE_DEVICES=0,3 cryodrgn train_vae ... --multigpu # Run on GPU 0,3
 <p>When training is parallelized across multiple GPUs, the batch size (number of images trained in each mini-batch of SGD; default <code class="docutils literal notranslate"><span class="pre">-b</span> <span class="pre">8</span></code>) will be automatically scaled by the number of available GPUs to better take advantage of parallelization. Depending on your compute resources, GPU utilization may be improved with <code class="docutils literal notranslate"><span class="pre">-b</span> <span class="pre">16</span></code> (i.e. to achieve linear scaling of runtime with # GPUs). However, note that GPU parallelization, while leading to a faster wall-clock time per epoch, may require increasing the total number of epochs, since the training dynamics are affected (fewer model updates per epoch with larger <code class="docutils literal notranslate"><span class="pre">-b</span></code>).</p>
 </section>
 <section id="accelerated-training-with-mixed-precision-mode">
-<h3>Accelerated training with mixed-precision mode<a class="headerlink" href="#accelerated-training-with-mixed-precision-mode" title="Permalink to this heading"></a></h3>
+<h3>Accelerated training with mixed-precision mode<a class="headerlink" href="#accelerated-training-with-mixed-precision-mode" title="Link to this heading"></a></h3>
 <p>Mixed precision training is available for Nvidia GPUs with tensor core architectures and can lead to <em>order of magnitude</em> speedups in training. As of cryoDRGN version 1.1, mixed precision training is now automatically enabled (and can be turned off with the <code class="docutils literal notranslate"><span class="pre">--no-amp</span></code> flag).</p>
 <p><strong>Note:</strong> We recommend using <code class="docutils literal notranslate"><span class="pre">--multigpu</span></code> and <code class="docutils literal notranslate"><span class="pre">--amp</span></code> for larger architectures (1024x3) or larger images (D=256). For smaller models/images, GPU computation may not be the training bottleneck. In this case, GPU parallelization and mixed-precision training may have a limited effect on the wall clock training time, while taking up additional compute resources.</p>
 </section>
 </section>
 <section id="analysis">
-<h2>8) Analysis<a class="headerlink" href="#analysis" title="Permalink to this heading"></a></h2>
+<h2>8) Analysis<a class="headerlink" href="#analysis" title="Link to this heading"></a></h2>
 <p>We will first walk through the default outputs from <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">analyze</span></code> (Section 8.1), then we will use the cryoDRGN jupyter notebook to visualize and generate assembly state density maps (Section 8.2), extract the particles for newly identified state C4 (Section 8.3), and use cryoDRGN’s graph traversal algorithm to generate trajectories of a ribosome assembly pathways (Section 8.4).</p>
 <section id="cryodrgn-analyze">
-<h3>8.1) cryodrgn analyze<a class="headerlink" href="#cryodrgn-analyze" title="Permalink to this heading"></a></h3>
+<h3>8.1) cryodrgn analyze<a class="headerlink" href="#cryodrgn-analyze" title="Link to this heading"></a></h3>
 <p>Similar to Step 5 above, we first run the default analysis pipeline with <code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">analyze</span></code> :</p>
 <ul>
 <li><p><code class="docutils literal notranslate"><span class="pre">$</span> <span class="pre">cryodrgn</span> <span class="pre">analyze</span> <span class="pre">-h</span></code></p>
@@ -1602,7 +1602,7 @@ cryodrgn<span class="w"> </span>eval_vol<span class="w"> </span>/nobackup/users/
 <li><p>The argument <code class="docutils literal notranslate"><span class="pre">--vol-start-index</span></code> (default <code class="docutils literal notranslate"><span class="pre">0</span></code>) dictates the starting index of <code class="docutils literal notranslate"><span class="pre">.mrc</span></code> filenames for generated volumes (<code class="docutils literal notranslate"><span class="pre">vol_nnn.mrc</span></code>). You may want to set this to <code class="docutils literal notranslate"><span class="pre">1</span></code> if, for example you are using <code class="docutils literal notranslate"><span class="pre">ChimeraX</span></code> to visualize these maps, which by convention numbers all maps that it opens from <code class="docutils literal notranslate"><span class="pre">1</span></code>.</p></li>
 </ul>
 <section id="id1">
-<h4>Visualization of the latent space<a class="headerlink" href="#id1" title="Permalink to this heading"></a></h4>
+<h4>Visualization of the latent space<a class="headerlink" href="#id1" title="Link to this heading"></a></h4>
 <p>Because we trained an 8-dimensional latent variable model (<code class="docutils literal notranslate"><span class="pre">—-zdim</span> <span class="pre">8</span></code>),  PCA (a linear dimensionality reduction technique) and UMAP (a nonlinear dimensionality technique) are used to visualize the distribution of particle latent embeddings.</p>
 <p>PCA  scatter plot (left) and density plot (right)</p>
 <p><img alt="z_pca.png" src="../_images/Untitled_46.png" /></p>
@@ -1617,7 +1617,7 @@ cryodrgn<span class="w"> </span>eval_vol<span class="w"> </span>/nobackup/users/
 <p>The layout of the latent space reproduces the original results shown in Fig 5F of Zhong et al up to the trivial inversion of UMAP2 axis.</p>
 </section>
 <section id="default-sampled-density-maps">
-<h4>Default sampled density maps<a class="headerlink" href="#default-sampled-density-maps" title="Permalink to this heading"></a></h4>
+<h4>Default sampled density maps<a class="headerlink" href="#default-sampled-density-maps" title="Link to this heading"></a></h4>
 <p><code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">analyze</span></code> uses the k-means clustering algorithm to <em>partition</em> the latent space into regions (by default k=20 regions), and generate a density map from the center of each of these regions. The goal is to provide a tractable number of representative density maps to visually inspect.</p>
 <p>Additional usage notes:</p>
 <p>The number of partitions can be updated with the argument <code class="docutils literal notranslate"><span class="pre">--ksample</span> <span class="pre">50</span></code> to change the number of density maps to e.g. 50.</p>
@@ -1634,7 +1634,7 @@ umap_hex.png<span class="w">     </span>vol_002.mrc<span class="w">  </span>vol_
 <em>Location of the twenty volumes in the UMAP visualization</em></p>
 </section>
 <section id="id2">
-<h4>PC trajectories<a class="headerlink" href="#id2" title="Permalink to this heading"></a></h4>
+<h4>PC trajectories<a class="headerlink" href="#id2" title="Link to this heading"></a></h4>
 <p>There are two subdirectories in the analysis directory that will contain volumes generated along the first and second principal components (PC) of the latent space. By default, the volumes are generated at equally spaced points between the first and 99th percentile of the distribution projected onto each principal component (e.g. Fig 6c of Zhong et al).</p>
 <ul class="simple">
 <li><p>Note 1: The PC trajectories can give a sense of the variability in the structure, however, the principal components of cryoDRGN’s <em>latent space</em> are not principal components of the volumes due to the nonlinear nature of the decoder.</p></li>
@@ -1654,14 +1654,14 @@ vol_000.mrc<span class="w">  </span>vol_002.mrc<span class="w">  </span>vol_004.
 </pre></div>
 </div>
 <section id="pc1-volumes">
-<h5>PC1 volumes<a class="headerlink" href="#pc1-volumes" title="Permalink to this heading"></a></h5>
+<h5>PC1 volumes<a class="headerlink" href="#pc1-volumes" title="Link to this heading"></a></h5>
 <iframe src="https://widgets.figshare.com/articles/21171079/embed?show_title=1" width="568" height="351" allowfullscreen frameborder="0"></iframe>
 <p><em>PC1: vol_000.mrc to vol_009.mrc; This shows one of the assembly pathways from Davis et al where the central protuberance is built before the rest of the complex.</em></p>
 <p><img alt="UMAP embeddings colored by PC1 value (pc1/umap.png)" src="../_images/Untitled_51.png" />
 <em>UMAP embeddings colored by PC1 value (pc1/umap.png)</em></p>
 </section>
 <section id="pc2-volumes">
-<h5>PC2 volumes<a class="headerlink" href="#pc2-volumes" title="Permalink to this heading"></a></h5>
+<h5>PC2 volumes<a class="headerlink" href="#pc2-volumes" title="Link to this heading"></a></h5>
 <iframe src="https://widgets.figshare.com/articles/21171088/embed?show_title=1" width="568" height="351" allowfullscreen frameborder="0"></iframe>
 <p><em>PC2: vol_000.mrc to vol_009.mrc; This shows another assembly pathway from Davis et al where the base is built before the rest of the complex.</em></p>
 <p><img alt="UMAP embeddings colored by PC2 value (pc2/umap.png)" src="../_images/Untitled_52.png" /></p>
@@ -1671,14 +1671,14 @@ vol_000.mrc<span class="w">  </span>vol_002.mrc<span class="w">  </span>vol_004.
 </section>
 </section>
 <section id="the-cryodrgn-jupyter-notebook">
-<span id="step8-2"></span><h3>8.2) The cryoDRGN jupyter notebook<a class="headerlink" href="#the-cryodrgn-jupyter-notebook" title="Permalink to this heading"></a></h3>
+<span id="step8-2"></span><h3>8.2) The cryoDRGN jupyter notebook<a class="headerlink" href="#the-cryodrgn-jupyter-notebook" title="Link to this heading"></a></h3>
 <p>CryoDRGN provides a jupyter notebook, <code class="docutils literal notranslate"><span class="pre">cryoDRGN_viz.ipynb</span></code>, which contains more visualization tools to facilitate interactive exploration of the trained model.</p>
 <section id="starting-the-jupyter-notebook">
-<h4>Starting the jupyter notebook<a class="headerlink" href="#starting-the-jupyter-notebook" title="Permalink to this heading"></a></h4>
+<h4>Starting the jupyter notebook<a class="headerlink" href="#starting-the-jupyter-notebook" title="Link to this heading"></a></h4>
 <p>See Section 6.1.</p>
 </section>
 <section id="running-the-jupyter-notebook">
-<h4>Running the jupyter notebook<a class="headerlink" href="#running-the-jupyter-notebook" title="Permalink to this heading"></a></h4>
+<h4>Running the jupyter notebook<a class="headerlink" href="#running-the-jupyter-notebook" title="Link to this heading"></a></h4>
 <ul>
 <li><p>Make sure the epoch number specified in the third cell is set to the correct epoch that we are analyzing. Since we have trained for 50 epochs, it should be 49 here (0-based indexing).</p></li>
 <li><p>Then, you can run each cell one by one to see the outputs. Alternatively, you can run the entire notebook in one go with Cell → Run All.</p></li>
@@ -1710,7 +1710,7 @@ index: particle ordering</p>
 <p><img alt="" src="../_images/Untitled_60.png" /></p>
 </section>
 <section id="comparing-to-3d-classification-labels">
-<h4>Comparing to 3D classification labels<a class="headerlink" href="#comparing-to-3d-classification-labels" title="Permalink to this heading"></a></h4>
+<h4>Comparing to 3D classification labels<a class="headerlink" href="#comparing-to-3d-classification-labels" title="Link to this heading"></a></h4>
 <p>(Optional) Add these code blocks in the jupyter notebook after the data loading sectio to plot by 3D classification labels for major states and minor assembly states.</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Download from https://zenodo.org/record/4355284</span>
 <span class="nv">pub_labels</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>utils.load_pkl<span class="o">(</span><span class="s1">&#39;path/to/published_labels.pkl&#39;</span><span class="o">)</span>
@@ -1756,7 +1756,7 @@ analysis.plot_by_cluster<span class="o">(</span>umap<span class="o">[</span>:,0<
 <p><img alt="" src="../_images/Untitled_62.png" /></p>
 </section>
 <section id="generating-additional-volumes">
-<h4>Generating additional volumes<a class="headerlink" href="#generating-additional-volumes" title="Permalink to this heading"></a></h4>
+<h4>Generating additional volumes<a class="headerlink" href="#generating-additional-volumes" title="Link to this heading"></a></h4>
 <p>To generate the volumes associated with each of these assembly states, we can use the last section of the jupyter notebook:</p>
 <ul class="simple">
 <li><p>For the variable <code class="docutils literal notranslate"><span class="pre">vol_ind</span></code>, replace the empty list with the indices corresponding to the assembly state cluster centers:</p></li>
@@ -1770,10 +1770,10 @@ analysis.plot_by_cluster<span class="o">(</span>umap<span class="o">[</span>:,0<
 </section>
 </section>
 <section id="extracting-particles-for-traditional-refinement">
-<h3>8.3) Extracting particles for traditional refinement<a class="headerlink" href="#extracting-particles-for-traditional-refinement" title="Permalink to this heading"></a></h3>
+<h3>8.3) Extracting particles for traditional refinement<a class="headerlink" href="#extracting-particles-for-traditional-refinement" title="Link to this heading"></a></h3>
 <p>In <a class="reference external" href="https://www.nature.com/articles/s41592-020-01049-4">Zhong et al</a>, we identified a new assembly state, C4, which was validated with traditional refinement (see Figure 5F). This section shows how to use the interactive lasso tool to select particles from a region of the latent space and save the particles in .star file format.</p>
 <section id="interactive-selection">
-<h4>Interactive selection<a class="headerlink" href="#interactive-selection" title="Permalink to this heading"></a></h4>
+<h4>Interactive selection<a class="headerlink" href="#interactive-selection" title="Link to this heading"></a></h4>
 <p>Use the interactive lasso tool to select the small cluster of particles near the class C megacluster. The table below the plot will update with the indices of the selected datapoints.</p>
 <p><img alt="" src="../_images/Untitled_65.png" /></p>
 <p><img alt="" src="../_images/Untitled_66.png" /></p>
@@ -1787,7 +1787,7 @@ analysis.plot_by_cluster<span class="o">(</span>umap<span class="o">[</span>:,0<
 </section>
 </section>
 <section id="converting-to-a-star-file">
-<h3>Converting to a .star file<a class="headerlink" href="#converting-to-a-star-file" title="Permalink to this heading"></a></h3>
+<h3>Converting to a .star file<a class="headerlink" href="#converting-to-a-star-file" title="Link to this heading"></a></h3>
 <p>The <code class="docutils literal notranslate"><span class="pre">cryodrgn_utils</span> <span class="pre">write_star</span></code> tool can be used to convert the index <code class="docutils literal notranslate"><span class="pre">.pkl</span></code> of selected particles (and the input particles <code class="docutils literal notranslate"><span class="pre">.mrcs</span></code>, and optionally the ctf and/or pose <code class="docutils literal notranslate"><span class="pre">.pkl</span></code>) to <code class="docutils literal notranslate"><span class="pre">.star</span></code> file format:</p>
 <ul>
 <li><p><code class="docutils literal notranslate"><span class="pre">$</span> <span class="pre">cryodrgn_utils</span> <span class="pre">write_star</span> <span class="pre">-h</span></code></p>
@@ -1821,7 +1821,7 @@ optional<span class="w"> </span>arguments:
 </div>
 </section>
 <section id="re-extracting-particles-from-the-micrograph">
-<h3>Re-extracting particles from the micrograph<a class="headerlink" href="#re-extracting-particles-from-the-micrograph" title="Permalink to this heading"></a></h3>
+<h3>Re-extracting particles from the micrograph<a class="headerlink" href="#re-extracting-particles-from-the-micrograph" title="Link to this heading"></a></h3>
 <p>To re-extract particles from the original micrograph (e.g. at full resolution)</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$<span class="w"> </span>cryodrgn_utils<span class="w"> </span>write_star<span class="w"> </span>data/128/particles.128.mrcs<span class="w"> </span>data/ctf.pkl<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>--poses<span class="w"> </span>data/poses.pkl
@@ -1833,11 +1833,11 @@ optional<span class="w"> </span>arguments:
 <p>Note to create a filtered</p>
 </section>
 <section id="generating-trajectories">
-<h3>8.4) Generating trajectories<a class="headerlink" href="#generating-trajectories" title="Permalink to this heading"></a></h3>
+<h3>8.4) Generating trajectories<a class="headerlink" href="#generating-trajectories" title="Link to this heading"></a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">eval_vol</span></code> can be used to generate additional density maps given a list of z values. (See the <a class="reference external" href="https://github.com/zhonge/cryodrgn">Github README</a> for more complete documentation).</p>
 <p>In this section, we will use cryoDRGN’s graph traversal algorithm to find paths through latent space (<code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">graph_traversal</span></code>), and then generate volumes along this path (<code class="docutils literal notranslate"><span class="pre">cryodrgn</span> <span class="pre">eval_vol</span></code>).</p>
 <section id="cryodrgn-graph-traversal">
-<h4>cryodrgn graph_traversal<a class="headerlink" href="#cryodrgn-graph-traversal" title="Permalink to this heading"></a></h4>
+<h4>cryodrgn graph_traversal<a class="headerlink" href="#cryodrgn-graph-traversal" title="Link to this heading"></a></h4>
 <ul>
 <li><p><code class="docutils literal notranslate"><span class="pre">$</span> <span class="pre">cryodrgn</span> <span class="pre">graph_traversal</span> <span class="pre">-h</span></code></p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="o">(</span>cryodrgn<span class="o">)</span><span class="w"> </span>$<span class="w"> </span>cryodrgn<span class="w"> </span>graph_traversal<span class="w"> </span>-h
@@ -1882,7 +1882,7 @@ $ cryodrgn eval_vol ../../weights.49.pkl -c ../../config.yaml --zfile z.path.txt
 </div>
 </section>
 <section id="generating-assembly-trajectories">
-<h4>Generating assembly trajectories<a class="headerlink" href="#generating-assembly-trajectories" title="Permalink to this heading"></a></h4>
+<h4>Generating assembly trajectories<a class="headerlink" href="#generating-assembly-trajectories" title="Link to this heading"></a></h4>
 <p>In <a class="reference internal" href="#step8-2"><span class="std std-ref">section 8.2</span></a> above, we identified the representative particles corresponding to each minor assembly state:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Representative indices for minor assembly states, note these indices will vary between different runs</span>
 <span class="c1"># A, B, C1, C2, C3, D1, D2, D3, D4, E1, E2, E3, E4, E5</span>

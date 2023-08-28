@@ -482,11 +482,11 @@ Notes:
 
 [1] Volumes are generated after k-means clustering of the latent embeddings with k=20 by default. Note that we use k-means clustering here not to identify clusters, but to segment the latent space and generate structures from different regions of the latent space. The number of structures that are generated may be increased with the option `--ksample`.
 
-[2] The `cryodrgn analyze` command chains together a series of calls to `cryodrgn eval_vol` and scripts that can be run separately for more flexibility. These scripts are located in the `analysis_scripts` directory within the source code.
+[2] The `cryodrgn analyze` command chains together a series of calls to `cryodrgn eval_vol` and other scripts that can be run separately for more flexibility. These scripts are located in the `analysis_scripts` directory within the source code. 
 
 ### Generating additional volumes
 
-A simple way of generating additional volumes is by increasing the number of k-means samples in `cryodrgn analyze` by using  the flag `--ksample 100` (for 100 structures) in `cryodrgn analyze`. For additional flexibility, use `cryodrgn eval_vol`:
+A simple way of generating additional volumes is to increase the number of k-means samples in `cryodrgn analyze` by using the flag `--ksample 100` (for 100 structures). For additional flexibility, `cryodrgn eval_vol` may be called directly:
 
 <details><summary><code>$ cryodrgn eval_vol -h</code></summary>
 

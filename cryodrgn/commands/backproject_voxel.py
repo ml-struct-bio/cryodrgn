@@ -34,11 +34,11 @@ def add_args(parser):
     parser.add_argument(
         "-o", type=os.path.abspath, required=True, help="Output .mrc file"
     )
-    parser.add_argument("--ctf-alg", type=str, choices=("flip", "mul"), default="flip")
+    parser.add_argument("--ctf-alg", type=str, choices=("flip", "mul"), default="mul")
     parser.add_argument(
         "--reg-weight",
         type=float,
-        default=0,
+        default=1.0,
         help="Add this value times the mean weight to the weight map to regularize the volume, reducing noise."
         "Alternatively, you can set --output-sumcount, and then use `cryodrgn_utils regularize_backproject` on the"
         ".sums and .counts files to try different regularization constants post hoc.",

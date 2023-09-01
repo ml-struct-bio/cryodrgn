@@ -5,7 +5,6 @@ Backproject cryo-EM images
 import argparse
 import os
 import time
-import math
 import numpy as np
 import torch
 import logging
@@ -35,9 +34,7 @@ def add_args(parser):
     parser.add_argument(
         "-o", type=os.path.abspath, required=True, help="Output .mrc file"
     )
-    parser.add_argument(
-        "--ctf-alg", type=str, choices=("flip", "mul"), default="flip"
-    )
+    parser.add_argument("--ctf-alg", type=str, choices=("flip", "mul"), default="flip")
     parser.add_argument(
         "--reg-weight",
         type=float,
@@ -50,7 +47,7 @@ def add_args(parser):
         "--output-sumcount",
         action="store_true",
         help="Output voxel sums and counts so that different regularization weights can be applied post hoc, with "
-        "`cryodrgn_utils regularize_backproject`."
+        "`cryodrgn_utils regularize_backproject`.",
     )
 
     group = parser.add_argument_group("Dataset loading options")
@@ -79,9 +76,9 @@ def add_args(parser):
     )
     group = parser.add_argument_group("Tilt series options")
     group.add_argument(
-        "--do-tilt-series", 
-        action="store_true", 
-        help="Store data as tilt series"
+        "--do-tilt-series",
+        action="store_true",
+        help="Flag to treat data as a tilt series from cryo-ET",
     )
     group.add_argument(
         "--ntilts",
@@ -90,16 +87,16 @@ def add_args(parser):
         help="Number of tilts to encode (default: %(default)s)",
     )
     group.add_argument(
-        "--dose-per-tilt", 
+        "--dose-per-tilt",
         type=float,
         default=2.93,
         help="Expected dose per tilt (electrons/A^2 per tilt) (default: %(default)s)"
     )
     group.add_argument(
-        "--angle-per-tilt", 
+        "--angle-per-tilt",
         type=float,
         default=3,
-        help="Tilt angle increment per tilt in degrees (default: %(default)s)"
+        help="Tilt angle increment per tilt in degrees (default: %(default)s)",
     )
 
     return parser
@@ -150,16 +147,16 @@ def main(args):
 
     if args.do_tilt_series:
         data = dataset.TiltSeriesData(
-            args.particles, 
+            args.particles,
             args.ntilts,
             norm=(0, 1),
-            invert_data=args.invert_data, 
+            invert_data=args.invert_data,
             datadir=args.datadir,
             ind=args.ind,
             lazy=args.lazy,
             dose_per_tilt=args.dose_per_tilt,
             angle_per_tilt=args.angle_per_tilt,
-            device=device
+            device=device,
         )
     else:
         data = dataset.ImageDataset(
@@ -173,7 +170,7 @@ def main(args):
 
     D = data.D
     Nimg = data.N
-    
+
     lattice = Lattice(D, extent=D // 2, device=device)
 
     posetracker = PoseTracker.load(args.poses, Nimg, D, None, args.ind, device=device)
@@ -219,14 +216,17 @@ def main(args):
         if ctf_params is not None:
             freqs = lattice.freqs2d / ctf_params[ii, 0]
             c = ctf.compute_ctf(freqs, *ctf_params[ii, 1:]).view(-1)[mask]
-            if args.ctf_alg == "flip": 
+            if args.ctf_alg == "flip":
                 ff *= c.sign()
-            else: ctf_mul = c
+            else:
+                ctf_mul = c
         if t is not None:
             ff = lattice.translate_ht(ff.view(1, -1), t.view(1, 1, 2), mask).view(-1)
         if args.do_tilt_series:
             tilt_idxs = torch.tensor([ii]).to(device)
-            dose_filters = data.get_dose_filters(tilt_idxs, lattice, ctf_params[ii, 0])[0]
+            dose_filters = data.get_dose_filters(tilt_idxs, lattice, ctf_params[ii, 0])[
+                0
+            ]
             ctf_mul *= dose_filters[mask]
 
         ff_coord = lattice.coords[mask] @ r
@@ -246,7 +246,7 @@ def main(args):
 
     regularized_counts = counts + args.reg_weight * counts.mean()
     regularized_counts *= counts.mean() / regularized_counts.mean()
-    V /= regularized_counts    
+    V /= regularized_counts
     V = fft.ihtn_center(V[0:-1, 0:-1, 0:-1].cpu())
     MRCFile.write(args.o, np.array(V).astype("float32"), Apix=Apix)
 

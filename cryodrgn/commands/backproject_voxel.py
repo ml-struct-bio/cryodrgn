@@ -87,11 +87,13 @@ def add_args(parser):
         help="Number of tilts per particle to backproject (default: %(default)s)",
     )
     group.add_argument(
+        "-d",
         "--dose-per-tilt",
         type=float,
         help="Expected dose per tilt (electrons/A^2 per tilt) (default: %(default)s)",
     )
     group.add_argument(
+        "-a",
         "--angle-per-tilt",
         type=float,
         default=3,

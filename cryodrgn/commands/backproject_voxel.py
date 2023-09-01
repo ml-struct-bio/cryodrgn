@@ -78,13 +78,6 @@ def add_args(parser):
         help="Backproject the first N images (default: all images)",
     )
     group = parser.add_argument_group("Tilt series options")
-    group.add_argument("--tilt", help="Tilt series .mrcs image stack")
-    group.add_argument(
-        "--tilt-deg",
-        type=float,
-        default=45,
-        help="Right-handed x-axis tilt offset in degrees (default: %(default)s)",
-    )
     group.add_argument(
         "--do-tilt-series", 
         action="store_true", 
@@ -154,10 +147,6 @@ def main(args):
     # load the particles
     if args.ind is not None:
         args.ind = utils.load_pkl(args.ind).astype(int)
-    if args.tilt is None:
-        tilt = None
-    else:  # tilt series
-        tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32), device=device)
 
     if args.do_tilt_series:
         data = dataset.TiltSeriesData(
@@ -223,11 +212,6 @@ def main(args):
         ff = data.get_tilt(ii) if args.do_tilt_series else data[ii]
         assert isinstance(ff, tuple)
 
-        if tilt is not None:
-            assert isinstance(ff, tuple)
-            ff_tilt = ff[1]
-        else:
-            ff_tilt = None
         ff = ff[0].to(device)
         ff = ff.view(-1)[mask]
         c = None
@@ -247,19 +231,6 @@ def main(args):
 
         ff_coord = lattice.coords[mask] @ r
         add_slice(V, counts, ff_coord, ff, D, ctf_mul)
-
-        # tilt series
-        if ff_tilt is not None:
-            ff_tilt.to(device)
-            ff_tilt = ff_tilt.view(-1)[mask]
-            if c is not None and args.ctf_alg == "flip":
-                ff_tilt *= c.sign()
-            if t is not None:
-                ff_tilt = lattice.translate_ht(
-                    ff_tilt.view(1, -1), t.view(1, 1, 2), mask
-                ).view(-1)
-            ff_coord = lattice.coords[mask] @ tilt @ r
-            add_slice(V, counts, ff_coord, ff_tilt, D, ctf_mul)
 
     td = time.time() - t1
     logger.info(

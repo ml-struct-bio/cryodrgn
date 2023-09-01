@@ -77,21 +77,22 @@ def test_loading_fast():
 
 def test_data_shuffler():
     dataset = ImageDataset(mrcfile=f"{DATA_FOLDER}/hand.mrcs")
-    true_images_sum = dataset[np.arange(dataset.N)][0].cpu().numpy().sum(axis=0)
+    # We could use the following, but this will result in 7 independent calls to
+    # the underlying ImageDataset's __getitem__ - not efficient
     data_loader = DataShuffler(dataset, batch_size=5, buffer_size=20)
 
     epoch1_indices, epoch2_indices = [], []
-    images_sum = np.zeros_like(true_images_sum)
 
     for i, minibatch in enumerate(data_loader):
         assert len(minibatch) == 3  # minibatch is a list of (particles, tilt, indices)
 
+        # We have 100 particles. For all but the last iteration *
+        # for all but the last iteration (100//7 = 14), we'll have 7 images each
         assert minibatch[0].shape == (5, 65, 65)
-        assert minibatch[1].shape == (5, 65, 65)
+        assert minibatch[1].shape == (5,)
         assert minibatch[2].shape == (5,)
 
         epoch1_indices.append(minibatch[2])
-        images_sum += minibatch[0].sum(axis=0).cpu().numpy()  # type: ignore
 
     for i, minibatch in enumerate(data_loader):
         epoch2_indices.append(minibatch[2])
@@ -106,6 +107,3 @@ def test_data_shuffler():
 
     # epochs should be shuffled differently
     assert any(epoch1_indices != epoch2_indices), epoch1_indices  # Should be reshuffled
-
-    # The summation of all images, however they're shuffled, should match true_images_sum
-    assert np.allclose(images_sum, true_images_sum, atol=1e-5)

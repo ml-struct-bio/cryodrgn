@@ -1,6 +1,5 @@
 from typing import Optional
 import numpy as np
-import seaborn as sns
 import torch
 import logging
 from cryodrgn import utils
@@ -66,6 +65,7 @@ def compute_ctf(
     cs: torch.Tensor,
     w: torch.Tensor,
     phase_shift: Optional[torch.Tensor] = None,
+    scalefactor: Optional[torch.Tensor] = None,
     bfactor: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     """
@@ -80,6 +80,7 @@ def compute_ctf(
         cs: spherical aberration (mm)
         w: amplitude contrast ratio
         phase_shift: degrees
+        scalefactor : scale factor
         bfactor: envelope fcn B-factor (Angstrom^2)
     """
     # convert units
@@ -102,6 +103,8 @@ def compute_ctf(
         - phase_shift
     )
     ctf = torch.sqrt(1 - w**2) * torch.sin(gamma) - w * torch.cos(gamma)
+    if scalefactor is not None:
+        ctf *= scalefactor
     if bfactor is not None:
         ctf *= torch.exp(-bfactor / 4 * s2)
     return ctf
@@ -121,6 +124,8 @@ def print_ctf_params(params: np.ndarray) -> None:
 
 
 def plot_ctf(D: int, Apix: float, ctf_params: np.ndarray) -> None:
+    import seaborn as sns
+
     assert len(ctf_params) == 7
     ctf_params_torch = torch.Tensor(ctf_params)
 

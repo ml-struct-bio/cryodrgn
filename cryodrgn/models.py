@@ -40,6 +40,7 @@ class HetOnlyVAE(nn.Module):
         domain="fourier",
         activation=nn.ReLU,
         feat_sigma: Optional[float] = None,
+        tilt_params={},
     ):
         super(HetOnlyVAE, self).__init__()
         self.lattice = lattice
@@ -61,7 +62,17 @@ class HetOnlyVAE(nn.Module):
                 in_dim, qlayers, qdim, zdim * 2, activation  # hidden_dim  # out_dim
             )  # in_dim -> hidden_dim
         elif encode_mode == "tilt":
-            self.encoder = TiltEncoder(in_dim, qlayers, qdim, zdim * 2, activation)
+            self.encoder = TiltEncoder(
+                in_dim,
+                qlayers,
+                qdim,
+                tilt_params["t_emb_dim"],  # embedding dim
+                tilt_params["ntilts"],  # number of encoded tilts
+                tilt_params["tlayers"],
+                tilt_params["tdim"],
+                zdim * 2,  # outdim
+                activation,
+            )
         else:
             raise RuntimeError("Encoder mode {} not recognized".format(encode_mode))
         self.encode_mode = encode_mode
@@ -117,6 +128,7 @@ class HetOnlyVAE(nn.Module):
             domain=c["domain"],
             activation=activation,
             feat_sigma=c["feat_sigma"],
+            tilt_params=c.get("tilt_params", {}),
         )
         if weights is not None:
             ckpt = torch.load(weights, map_location=device)
@@ -144,7 +156,7 @@ class HetOnlyVAE(nn.Module):
         coords: Bx...x3
         z: Bxzdim
         """
-        assert coords.size(0) == z.size(0)
+        assert coords.size(0) == z.size(0), (coords.shape, z.shape)
         z = z.view(z.size(0), *([1] * (coords.ndimension() - 2)), self.zdim)
         z = torch.cat((coords, z.expand(*coords.shape[:-1], self.zdim)), dim=-1)
         return z
@@ -940,21 +952,29 @@ class TiltVAE(nn.Module):
 
 # fixme: this is half-deprecated (not used in TiltVAE, but still used in tilt BNB)
 class TiltEncoder(nn.Module):
-    def __init__(self, in_dim, nlayers, hidden_dim, out_dim, activation):
+    def __init__(
+        self,
+        in_dim,
+        nlayers,
+        hidden_dim,
+        out_dim,
+        ntilts,
+        nlayers2,
+        hidden_dim2,
+        out_dim2,
+        activation,
+    ):
         super(TiltEncoder, self).__init__()
-        assert nlayers > 2
-        self.encoder1 = ResidLinearMLP(
-            in_dim, nlayers - 2, hidden_dim, hidden_dim, activation
-        )
+        self.encoder1 = ResidLinearMLP(in_dim, nlayers, hidden_dim, out_dim, activation)
         self.encoder2 = ResidLinearMLP(
-            hidden_dim * 2, 2, hidden_dim, out_dim, activation
+            out_dim * ntilts, nlayers2, hidden_dim2, out_dim2, activation
         )
         self.in_dim = in_dim
+        self.in_dim2 = out_dim * ntilts
 
-    def forward(self, x, x_tilt):
-        x_enc = self.encoder1(x)
-        x_tilt_enc = self.encoder1(x_tilt)
-        z = self.encoder2(torch.cat((x_enc, x_tilt_enc), -1))
+    def forward(self, x):
+        x = self.encoder1(x)
+        z = self.encoder2(x.view(-1, self.in_dim2))
         return z
 
 

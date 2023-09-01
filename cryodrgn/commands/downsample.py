@@ -100,6 +100,7 @@ def main(args):
 
     # Downsample volume
     if args.is_vol:
+        old = old.images()
         oldft = fft.htn_center(old)
         logger.info(oldft.shape)
         newft = oldft[start:stop, start:stop, start:stop]

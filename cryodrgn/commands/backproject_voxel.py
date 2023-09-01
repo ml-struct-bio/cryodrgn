@@ -5,6 +5,7 @@ Backproject cryo-EM images
 import argparse
 import os
 import time
+import math
 import numpy as np
 import torch
 import logging
@@ -34,6 +35,23 @@ def add_args(parser):
     parser.add_argument(
         "-o", type=os.path.abspath, required=True, help="Output .mrc file"
     )
+    parser.add_argument(
+        "--ctf-alg", type=str, choices=("flip", "mul"), default="flip"
+    )
+    parser.add_argument(
+        "--reg-weight",
+        type=float,
+        default=0,
+        help="Add this value times the mean weight to the weight map to regularize the volume, reducing noise."
+        "Alternatively, you can set --output-sumcount, and then use `cryodrgn_utils regularize_backproject` on the"
+        ".sums and .counts files to try different regularization constants post hoc.",
+    )
+    parser.add_argument(
+        "--output-sumcount",
+        action="store_true",
+        help="Output voxel sums and counts so that different regularization weights can be applied post hoc, with "
+        "`cryodrgn_utils regularize_backproject`."
+    )
 
     group = parser.add_argument_group("Dataset loading options")
     group.add_argument(
@@ -47,12 +65,17 @@ def add_args(parser):
         type=os.path.abspath,
         help="Path prefix to particle stack if loading relative paths from a .star or .cs file",
     )
+    group.add_argument(
+        "--lazy",
+        action="store_true",
+        help="Lazy loading if full dataset is too large to fit in memory",
+    )
     group.add_argument("--ind", help="Indices to iterate over (pkl)")
     group.add_argument(
         "--first",
         type=int,
-        default=10000,
-        help="Backproject the first N images (default: %(default)s)",
+        default=None,
+        help="Backproject the first N images (default: all images)",
     )
     group = parser.add_argument_group("Tilt series options")
     group.add_argument("--tilt", help="Tilt series .mrcs image stack")
@@ -62,10 +85,34 @@ def add_args(parser):
         default=45,
         help="Right-handed x-axis tilt offset in degrees (default: %(default)s)",
     )
+    group.add_argument(
+        "--do-tilt-series", 
+        action="store_true", 
+        help="Store data as tilt series"
+    )
+    group.add_argument(
+        "--ntilts",
+        type=int,
+        default=10,
+        help="Number of tilts to encode (default: %(default)s)",
+    )
+    group.add_argument(
+        "--dose-per-tilt", 
+        type=float,
+        default=2.93,
+        help="Expected dose per tilt (electrons/A^2 per tilt) (default: %(default)s)"
+    )
+    group.add_argument(
+        "--angle-per-tilt", 
+        type=float,
+        default=3,
+        help="Tilt angle increment per tilt in degrees (default: %(default)s)"
+    )
+
     return parser
 
 
-def add_slice(V, counts, ff_coord, ff, D):
+def add_slice(V, counts, ff_coord, ff, D, ctf_mul):
     d2 = int(D / 2)
     ff_coord = ff_coord.transpose(0, 1)
     xf, yf, zf = ff_coord.floor().long()
@@ -75,8 +122,8 @@ def add_slice(V, counts, ff_coord, ff, D):
         dist = torch.stack([xi, yi, zi]).float() - ff_coord
         w = 1 - dist.pow(2).sum(0).pow(0.5)
         w[w < 0] = 0
-        V[(zi + d2, yi + d2, xi + d2)] += w * ff
-        counts[(zi + d2, yi + d2, xi + d2)] += w
+        V[(zi + d2, yi + d2, xi + d2)] += w * ff * ctf_mul
+        counts[(zi + d2, yi + d2, xi + d2)] += w * ctf_mul**2
 
     add_for_corner(xf, yf, zf)
     add_for_corner(xc, yf, zf)
@@ -112,18 +159,32 @@ def main(args):
     else:  # tilt series
         tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32), device=device)
 
-    data = dataset.ImageDataset(
-        mrcfile=args.particles,
-        tilt_mrcfile=args.tilt,
-        norm=(0, 1),
-        invert_data=args.invert_data,
-        datadir=args.datadir,
-        ind=args.ind,
-    )
+    if args.do_tilt_series:
+        data = dataset.TiltSeriesData(
+            args.particles, 
+            args.ntilts,
+            norm=(0, 1),
+            invert_data=args.invert_data, 
+            datadir=args.datadir,
+            ind=args.ind,
+            lazy=args.lazy,
+            dose_per_tilt=args.dose_per_tilt,
+            angle_per_tilt=args.angle_per_tilt,
+            device=device
+        )
+    else:
+        data = dataset.ImageDataset(
+            mrcfile=args.particles,
+            norm=(0, 1),
+            invert_data=args.invert_data,
+            datadir=args.datadir,
+            ind=args.ind,
+            lazy=args.lazy,
+        )
 
     D = data.D
     Nimg = data.N
-
+    
     lattice = Lattice(D, extent=D // 2, device=device)
 
     posetracker = PoseTracker.load(args.poses, Nimg, D, None, args.ind, device=device)
@@ -131,12 +192,18 @@ def main(args):
     if args.ctf is not None:
         logger.info("Loading ctf params from {}".format(args.ctf))
         ctf_params = ctf.load_ctf_for_training(D - 1, args.ctf)
-        ctf_params = torch.tensor(ctf_params, device=device)
         if args.ind is not None:
             ctf_params = ctf_params[args.ind]
+        if args.do_tilt_series:
+            ctf_params = np.concatenate(
+                (ctf_params, data.ctfscalefactor.reshape(-1, 1)), axis=1  # type: ignore
+            )
+        ctf_params = torch.tensor(ctf_params, device=device)
     else:
         ctf_params = None
     Apix = float(ctf_params[0, 0]) if ctf_params is not None else 1.0
+    voltage = float(ctf_params[0, 4]) if ctf_params is not None else None
+    data.voltage = voltage
 
     V = torch.zeros((D, D, D), device=device)
     counts = torch.zeros((D, D, D), device=device)
@@ -153,38 +220,46 @@ def main(args):
         if ii % 100 == 0:
             logger.info("image {}".format(ii))
         r, t = posetracker.get_pose(ii)
-        ff = data[ii]
+        ff = data.get_tilt(ii) if args.do_tilt_series else data[ii]
         assert isinstance(ff, tuple)
+
         if tilt is not None:
             assert isinstance(ff, tuple)
             ff_tilt = ff[1]
         else:
             ff_tilt = None
-
-        ff = torch.tensor(ff[0], device=device)
+        ff = ff[0].to(device)
         ff = ff.view(-1)[mask]
         c = None
+        ctf_mul = 1
         if ctf_params is not None:
             freqs = lattice.freqs2d / ctf_params[ii, 0]
             c = ctf.compute_ctf(freqs, *ctf_params[ii, 1:]).view(-1)[mask]
-            ff *= c.sign()
+            if args.ctf_alg == "flip": 
+                ff *= c.sign()
+            else: ctf_mul = c
         if t is not None:
             ff = lattice.translate_ht(ff.view(1, -1), t.view(1, 1, 2), mask).view(-1)
+        if args.do_tilt_series:
+            tilt_idxs = torch.tensor([ii]).to(device)
+            dose_filters = data.get_dose_filters(tilt_idxs, lattice, ctf_params[ii, 0])[0]
+            ctf_mul *= dose_filters[mask]
+
         ff_coord = lattice.coords[mask] @ r
-        add_slice(V, counts, ff_coord, ff, D)
+        add_slice(V, counts, ff_coord, ff, D, ctf_mul)
 
         # tilt series
         if ff_tilt is not None:
-            ff_tilt = torch.tensor(ff_tilt, device=device)
+            ff_tilt.to(device)
             ff_tilt = ff_tilt.view(-1)[mask]
-            if c is not None:
+            if c is not None and args.ctf_alg == "flip":
                 ff_tilt *= c.sign()
             if t is not None:
                 ff_tilt = lattice.translate_ht(
                     ff_tilt.view(1, -1), t.view(1, 1, 2), mask
                 ).view(-1)
             ff_coord = lattice.coords[mask] @ tilt @ r
-            add_slice(V, counts, ff_coord, ff_tilt, D)
+            add_slice(V, counts, ff_coord, ff_tilt, D, ctf_mul)
 
     td = time.time() - t1
     logger.info(
@@ -193,7 +268,14 @@ def main(args):
         )
     )
     counts[counts == 0] = 1
-    V /= counts
+
+    if args.output_sumcount:
+        MRCFile.write(args.o + ".sums", V.cpu().numpy(), Apix=Apix)
+        MRCFile.write(args.o + ".counts", counts.cpu().numpy(), Apix=Apix)
+
+    regularized_counts = counts + args.reg_weight * counts.mean()
+    regularized_counts *= counts.mean() / regularized_counts.mean()
+    V /= regularized_counts    
     V = fft.ihtn_center(V[0:-1, 0:-1, 0:-1].cpu())
     MRCFile.write(args.o, np.array(V).astype("float32"), Apix=Apix)
 

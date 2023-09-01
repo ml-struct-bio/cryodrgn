@@ -76,7 +76,7 @@ def add_args(parser):
     )
     group = parser.add_argument_group("Tilt series options")
     group.add_argument(
-        "--do-tilt-series",
+        "--tilt",
         action="store_true",
         help="Flag to treat data as a tilt series from cryo-ET",
     )
@@ -144,7 +144,7 @@ def main(args):
     if args.ind is not None:
         args.ind = utils.load_pkl(args.ind).astype(int)
 
-    if args.do_tilt_series:
+    if args.tilt:
         data = dataset.TiltSeriesData(
             args.particles,
             args.ntilts,
@@ -179,7 +179,7 @@ def main(args):
         ctf_params = ctf.load_ctf_for_training(D - 1, args.ctf)
         if args.ind is not None:
             ctf_params = ctf_params[args.ind]
-        if args.do_tilt_series:
+        if args.tilt:
             assert (
                 args.dose_per_tilt is not None
             ), "Argument --dose-per-tilt is required for backprojecting tilt series data"
@@ -208,7 +208,7 @@ def main(args):
         if ii % 100 == 0:
             logger.info("image {}".format(ii))
         r, t = posetracker.get_pose(ii)
-        ff = data.get_tilt(ii) if args.do_tilt_series else data[ii]
+        ff = data.get_tilt(ii) if args.tilt else data[ii]
         assert isinstance(ff, tuple)
 
         ff = ff[0].to(device)
@@ -224,7 +224,7 @@ def main(args):
                 ctf_mul = c
         if t is not None:
             ff = lattice.translate_ht(ff.view(1, -1), t.view(1, 1, 2), mask).view(-1)
-        if args.do_tilt_series:
+        if args.tilt:
             tilt_idxs = torch.tensor([ii]).to(device)
             dose_filters = data.get_dose_filters(tilt_idxs, lattice, ctf_params[ii, 0])[
                 0

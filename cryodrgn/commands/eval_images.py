@@ -9,7 +9,7 @@ from datetime import datetime as dt
 import logging
 import numpy as np
 import torch
-from cryodrgn import config, ctf, dataset, utils
+from cryodrgn import config, ctf, dataset
 from cryodrgn.commands.train_vae import loss_function, preprocess_input, run_batch
 from cryodrgn.models import HetOnlyVAE
 from cryodrgn.pose import PoseTracker
@@ -105,8 +105,6 @@ def add_args(parser):
         help="Maximum number of CPU cores for data loading (default: %(default)s)",
     )
 
-
-
     group = parser.add_argument_group("Tilt series paramters")
     group.add_argument(
         "--ntilts",
@@ -138,15 +136,15 @@ def add_args(parser):
         help="Number of nodes in hidden layers (default: %(default)s)",
     )
     group.add_argument(
-        "--dose-per-tilt", 
+        "--dose-per-tilt",
         type=float,
-        help="Expected dose per tilt (electrons/A^2 per tilt) (default: %(default)s)"
+        help="Expected dose per tilt (electrons/A^2 per tilt) (default: %(default)s)",
     )
     group.add_argument(
-        "--angle-per-tilt", 
+        "--angle-per-tilt",
         type=float,
         default=3,
-        help="Tilt angle increment per tilt in degrees (default: %(default)s)"
+        help="Tilt angle increment per tilt in degrees (default: %(default)s)",
     )
 
     group = parser.add_argument_group(
@@ -301,7 +299,7 @@ def main(args):
             window_r=args.window_r,
             device=device,
             dose_per_tilt=args.dose_per_tilt,
-            angle_per_tilt=args.angle_per_tilt
+            angle_per_tilt=args.angle_per_tilt,
         )
     Nimg = data.N
     D = data.D
@@ -335,7 +333,9 @@ def main(args):
     kld_accum = 0
     loss_accum = 0
     batch_it = 0
-    data_generator = dataset.make_dataloader(data, batch_size=args.batch_size, shuffle=False)
+    data_generator = dataset.make_dataloader(
+        data, batch_size=args.batch_size, shuffle=False
+    )
 
     for minibatch in data_generator:
         ind = minibatch[-1].to(device)
@@ -348,7 +348,8 @@ def main(args):
             assert hasattr(data, "particles_real")
             yr = torch.from_numpy(data.particles_real[ind]).to(device)  # type: ignore  # PYR02
 
-        dose_filters = None 
+        # TODO -- finish implementing
+        # dose_filters = None
         if args.encode_mode == "tilt":
             tilt_ind = minibatch[1].to(device)
             assert all(tilt_ind >= 0), tilt_ind
@@ -357,9 +358,9 @@ def main(args):
                 ctf_params[tilt_ind.view(-1)] if ctf_params is not None else None
             )
             y = y.view(-1, D, D)
-            Apix = ctf_params[0, 0] if ctf_params is not None else None
-            if args.dose_per_tilt is not None:
-                dose_filters = data.get_dose_filters(tilt_ind, lattice, Apix) 
+            # Apix = ctf_params[0, 0] if ctf_params is not None else None
+            # if args.dose_per_tilt is not None:
+            # dose_filters = data.get_dose_filters(tilt_ind, lattice, Apix)
         else:
             rot, tran = posetracker.get_pose(ind)
             ctf_param = ctf_params[ind] if ctf_params is not None else None

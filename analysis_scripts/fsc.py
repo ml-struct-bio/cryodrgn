@@ -24,7 +24,7 @@ def parse_args():
 def main(args):
     vol1 = ImageSource.from_file(args.vol1)
     vol2 = ImageSource.from_file(args.vol2)
-    
+
     vol1 = vol1.images()
     vol2 = vol2.images()
 

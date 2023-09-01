@@ -148,7 +148,7 @@ def add_args(parser: argparse.ArgumentParser):
     group.add_argument(
         "--t-emb-dim",
         type=int,
-        default=128,
+        default=64,
         help="Intermediate embedding dimension (default: %(default)s)",
     )
     group.add_argument(

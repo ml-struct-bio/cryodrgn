@@ -84,13 +84,12 @@ def add_args(parser):
         "--ntilts",
         type=int,
         default=10,
-        help="Number of tilts to encode (default: %(default)s)",
+        help="Number of tilts per particle to backproject (default: %(default)s)",
     )
     group.add_argument(
         "--dose-per-tilt",
         type=float,
-        default=2.93,
-        help="Expected dose per tilt (electrons/A^2 per tilt) (default: %(default)s)"
+        help="Expected dose per tilt (electrons/A^2 per tilt) (default: %(default)s)",
     )
     group.add_argument(
         "--angle-per-tilt",
@@ -181,6 +180,9 @@ def main(args):
         if args.ind is not None:
             ctf_params = ctf_params[args.ind]
         if args.do_tilt_series:
+            assert (
+                args.dose_per_tilt is not None
+            ), "Argument --dose-per-tilt is required for backprojecting tilt series data"
             ctf_params = np.concatenate(
                 (ctf_params, data.ctfscalefactor.reshape(-1, 1)), axis=1  # type: ignore
             )

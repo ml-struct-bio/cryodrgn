@@ -116,11 +116,6 @@ def add_args(parser: argparse.ArgumentParser):
         help="If non-zero, will use a data shuffler for faster lazy data loading.",
     )
     group.add_argument(
-        "--preprocessed",
-        action="store_true",
-        help="Skip preprocessing steps if input data is from cryodrgn preprocess_mrcs",
-    )
-    group.add_argument(
         "--num-workers",
         type=int,
         default=0,

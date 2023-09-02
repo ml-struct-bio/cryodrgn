@@ -79,7 +79,7 @@ def add_args(parser: argparse.ArgumentParser):
         "--ind",
         type=os.path.abspath,
         metavar="PKL",
-        help="Filter particle stack by these indices",
+        help="Filter particles by these indices",
     )
     group.add_argument(
         "--uninvert-data",
@@ -649,7 +649,12 @@ def main(args):
     # load index filter
     if args.ind is not None:
         logger.info("Filtering image dataset with {}".format(args.ind))
-        ind = pickle.load(open(args.ind, "rb"))
+        if args.encode_mode == 'tilt':
+            particle_ind = pickle.load(open(args.ind, "rb"))
+            pt, tp = dataset.TiltSeriesData.parse_particle_tilt(args.particles)
+            ind = dataset.TiltSeriesData.particles_to_tilts(pt, particle_ind)
+        else:
+            ind = pickle.load(open(args.ind, "rb"))
     else:
         ind = None
 

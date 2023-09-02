@@ -67,7 +67,12 @@ def add_args(parser):
         action="store_true",
         help="Lazy loading if full dataset is too large to fit in memory",
     )
-    group.add_argument("--ind", help="Indices to iterate over (pkl)")
+    group.add_argument(
+        "--ind",
+        type=os.path.abspath,
+        metavar="PKL",
+        help="Filter particles by these indices",
+    )
     group.add_argument(
         "--first",
         type=int,
@@ -144,7 +149,13 @@ def main(args):
 
     # load the particles
     if args.ind is not None:
-        args.ind = utils.load_pkl(args.ind).astype(int)
+        if args.tilt:
+            particle_ind = utils.load_pkl(args.ind).astype(int)
+            pt, tp = dataset.TiltSeriesData.parse_particle_tilt(args.particles)
+            tilt_ind = dataset.TiltSeriesData.particles_to_tilts(pt, particle_ind)
+            args.ind = tilt_ind
+        else:
+            args.ind = utils.load_pkl(args.ind).astype(int)
 
     if args.tilt:
         data = dataset.TiltSeriesData(

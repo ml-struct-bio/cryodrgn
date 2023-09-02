@@ -189,6 +189,36 @@ class TiltSeriesData(ImageDataset):
         images = self._process(self.src.images(tilt_indices).to(self.device))
         return images, tilt_indices, index
 
+    @classmethod
+    def parse_particle_tilt(cls, tiltstar):
+        # Parse unique particles from _rlnGroupName
+        s = starfile.Starfile.load(tiltstar)
+        group_name = list(s.df["_rlnGroupName"])
+        particles = OrderedDict()
+        for ii, gn in enumerate(group_name):
+            if gn not in particles:
+                particles[gn] = []
+            particles[gn].append(ii)
+        particles = np.array([np.asarray(pp, dtype=int) for pp in particles.values()])
+        particles_to_tilts = particles
+        tilts_to_particles = {}
+        for i, j in enumerate(particles):
+            for jj in j:
+                tilts_to_particles[jj] = i
+        return particles_to_tilts, tilts_to_particles
+
+    @classmethod
+    def particles_to_tilts(cls, particles_to_tilts, particles):
+        tilts = [particles_to_tilts[i] for i in particles]
+        tilts = np.concatenate(tilts)
+        return tilts
+
+    @classmethod
+    def tilts_to_particles(cls, tilts_to_particles, tilts):
+        particles = [tilts_to_particles[i] for i in tilts]
+        particles = np.array(sorted(set(particles)))
+        return particles
+
     def get_tilt(self, index):
         return super().__getitem__(index)
 

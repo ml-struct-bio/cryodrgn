@@ -161,13 +161,13 @@ def analyze_zN(z, outdir, vg, skip_umap=False, num_pcs=2, num_ksamples=20):
     plt.savefig(f"{outdir}/z_pca.png")
 
     # PCA -- Style 2 -- Scatter, with marginals
-    g = sns.jointplot(pc[:, 0], pc[:, 1], alpha=0.1, s=1, rasterized=True, height=4)
+    g = sns.jointplot(x=pc[:, 0], y=pc[:, 1], alpha=0.1, s=1, rasterized=True, height=4)
     plt_pc_labels_jointplot(g)
     plt.tight_layout()
     plt.savefig(f"{outdir}/z_pca_marginals.png")
 
     # PCA -- Style 3 -- Hexbin
-    g = sns.jointplot(pc[:, 0], pc[:, 1], height=4, kind="hex")
+    g = sns.jointplot(x=pc[:, 0], y=pc[:, 1], height=4, kind="hex")
     plt_pc_labels_jointplot(g)
     plt.tight_layout()
     plt.savefig(f"{outdir}/z_pca_hexbin.png")
@@ -182,14 +182,19 @@ def analyze_zN(z, outdir, vg, skip_umap=False, num_pcs=2, num_ksamples=20):
 
         # Style 2 -- Scatter with marginal distributions
         g = sns.jointplot(
-            umap_emb[:, 0], umap_emb[:, 1], alpha=0.1, s=1, rasterized=True, height=4
+            x=umap_emb[:, 0],
+            y=umap_emb[:, 1],
+            alpha=0.1,
+            s=1,
+            rasterized=True,
+            height=4,
         )
         plt_umap_labels_jointplot(g)
         plt.tight_layout()
         plt.savefig(f"{outdir}/umap_marginals.png")
 
         # Style 3 -- Hexbin / heatmap
-        g = sns.jointplot(umap_emb[:, 0], umap_emb[:, 1], kind="hex", height=4)
+        g = sns.jointplot(x=umap_emb[:, 0], y=umap_emb[:, 1], kind="hex", height=4)
         plt_umap_labels_jointplot(g)
         plt.tight_layout()
         plt.savefig(f"{outdir}/umap_hexbin.png")
@@ -316,7 +321,7 @@ def analyze_zN(z, outdir, vg, skip_umap=False, num_pcs=2, num_ksamples=20):
             plt_pc_labels_jointplot(g, i - 1, i)
         else:
             g = sns.jointplot(
-                pc[:, i], pc[:, i + 1], alpha=0.1, s=1, rasterized=True, height=4
+                x=pc[:, i], y=pc[:, i + 1], alpha=0.1, s=1, rasterized=True, height=4
             )
             g.ax_joint.scatter(t, np.zeros(10), c="cornflowerblue", edgecolor="white")
             plt_pc_labels_jointplot(g)

@@ -319,7 +319,7 @@ class _MRCDataFrameSource(ImageSource):
         self.df = df
 
         self.df["__mrc_filepath"] = self.df["__mrc_filename"].apply(
-            lambda filename: os.path.join(datadir, filename)
+            lambda filename: os.path.join(datadir, os.path.basename(filename))
         )
 
         # Peek into the first mrc file to get image size
@@ -381,14 +381,15 @@ class StarfileSource(_MRCDataFrameSource):
         )
         df["__mrc_index"] = pd.to_numeric(df["__mrc_index"]) - 1
 
-        if datadir:
-            if not os.path.isabs(datadir):
-                datadir = os.path.join(os.path.dirname(filepath), datadir)
-        else:
+        if not datadir:
             datadir = os.path.dirname(filepath)
 
         super().__init__(
-            df=df, datadir=datadir, lazy=lazy, indices=indices, max_threads=max_threads
+            df=df,
+            datadir=os.path.abspath(datadir),
+            lazy=lazy,
+            indices=indices,
+            max_threads=max_threads,
         )
 
 

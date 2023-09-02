@@ -325,6 +325,8 @@ class _MRCDataFrameSource(ImageSource):
             self.df["__mrc_filepath"] = self.df["__mrc_filename"].apply(
                 lambda filename: os.path.join(datadir, os.path.basename(filename))
             )
+        else:
+            self.df["__mrc_filepath"] = self.df["__mrc_filename"]
 
         # Peek into the first mrc file to get image size
         D = MRCFileSource(self.df["__mrc_filepath"][0]).D

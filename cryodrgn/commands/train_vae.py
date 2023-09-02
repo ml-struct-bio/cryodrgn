@@ -128,7 +128,7 @@ def add_args(parser: argparse.ArgumentParser):
         help="Maximum number of CPU cores for data loading (default: %(default)s)",
     )
 
-    group = parser.add_argument_group("Tilt series paramters")
+    group = parser.add_argument_group("Tilt series parameters")
     group.add_argument(
         "--ntilts",
         type=int,
@@ -159,11 +159,13 @@ def add_args(parser: argparse.ArgumentParser):
         help="Number of nodes in hidden layers (default: %(default)s)",
     )
     group.add_argument(
+        "-d",
         "--dose-per-tilt",
         type=float,
         help="Expected dose per tilt (electrons/A^2 per tilt) (default: %(default)s)",
     )
     group.add_argument(
+        "-a",
         "--angle-per-tilt",
         type=float,
         default=3,

@@ -651,7 +651,7 @@ def main(args):
     # load index filter
     if args.ind is not None:
         logger.info("Filtering image dataset with {}".format(args.ind))
-        if args.encode_mode == 'tilt':
+        if args.encode_mode == "tilt":
             particle_ind = pickle.load(open(args.ind, "rb"))
             pt, tp = dataset.TiltSeriesData.parse_particle_tilt(args.particles)
             ind = dataset.TiltSeriesData.particles_to_tilts(pt, particle_ind)
@@ -868,6 +868,7 @@ def main(args):
 
     num_epochs = args.num_epochs
     epoch = None
+    Nparticles = Nimg if args.encode_mode != "tilt" else data.Np
     for epoch in range(start_epoch, num_epochs):
         t2 = dt.now()
         gen_loss_accum = 0
@@ -879,7 +880,7 @@ def main(args):
             y = minibatch[0].to(device)
             B = len(ind)
             batch_it += B
-            global_it = Nimg * epoch + batch_it
+            global_it = Nparticles * epoch + batch_it
 
             beta = beta_schedule(global_it)
 
@@ -932,12 +933,12 @@ def main(args):
 
             if batch_it % args.log_interval == 0:
                 logger.info(
-                    "# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.6f}, kld={:.6f}, beta={:.6f}, "
+                    "# [Train Epoch: {}/{}] [{}/{} particles] gen loss={:.6f}, kld={:.6f}, beta={:.6f}, "
                     "loss={:.6f}".format(
                         epoch + 1,
                         num_epochs,
                         batch_it,
-                        Nimg,
+                        Nparticles,
                         gen_loss,
                         kld,
                         beta,
@@ -947,9 +948,9 @@ def main(args):
         logger.info(
             "# =====> Epoch: {} Average gen loss = {:.6}, KLD = {:.6f}, total loss = {:.6f}; Finished in {}".format(
                 epoch + 1,
-                gen_loss_accum / Nimg,
-                kld_accum / Nimg,
-                loss_accum / Nimg,
+                gen_loss_accum / Nparticles,
+                kld_accum / Nparticles,
+                loss_accum / Nparticles,
                 dt.now() - t2,
             )
         )

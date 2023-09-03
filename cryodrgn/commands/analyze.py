@@ -9,11 +9,17 @@ import shutil
 from datetime import datetime as dt
 import logging
 import matplotlib
+import pickle
+from collections import OrderedDict
+from cryodrgn import starfile
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
 import seaborn as sns
 import cryodrgn
 from cryodrgn import analysis, utils
+from cryodrgn.pose import PoseTracker
+from scipy.spatial.transform import Rotation as RR
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +106,7 @@ def analyze_z1(z, outdir, vg):
     vg.gen_volumes(outdir, ztraj)
 
 
-def analyze_zN(z, outdir, vg, skip_umap=False, num_pcs=2, num_ksamples=20):
+def analyze_zN(z, outdir, config, vg, skip_umap=False, num_pcs=2, num_ksamples=20):
     zdim = z.shape[1]
 
     # Principal component analysis
@@ -111,6 +117,40 @@ def analyze_zN(z, outdir, vg, skip_umap=False, num_pcs=2, num_ksamples=20):
         start, end = np.percentile(pc[:, i], (5, 95))
         z_pc = analysis.get_pc_traj(pca, z.shape[1], 10, i + 1, start, end)
         vg.gen_volumes(f"{outdir}/pc{i+1}", z_pc)
+
+    # plot z vs angles
+    config_data = pickle.load(open(config, "rb"))
+    posefile = config_data["dataset_args"]["poses"]
+    D = config_data["lattice_args"]["D"]
+    if config_data["dataset_args"].get("ntilts") is not None:
+        # FUCK! the particles and poses don't match up for tomo data!
+        print("Finding canonical images for tilt series")
+        s = starfile.Starfile.load(config_data["dataset_args"]["particles"])
+        group_name = list(s.df["_rlnGroupName"])
+        ctfscalefactor = np.asarray(s.df["_rlnCtfScalefactor"], dtype=np.float32)
+        particles = OrderedDict()
+        for ii, (gn, scale) in enumerate(zip(group_name, ctfscalefactor)):
+            if gn not in particles or scale > particles[gn][1]:
+                particles[gn] = (ii, scale)
+        indexes = torch.tensor([idx for idx, scale in particles.values()])
+    else:
+        indexes = torch.arange(z.shape[0])
+    posetracker = PoseTracker.load(posefile, len(indexes), D)
+    assert len(indexes) == len(pc)
+    rot, trans = posetracker.get_pose(indexes)
+    euler = RR.from_matrix(rot).as_euler("zyz", degrees=True)
+    for i in range(num_pcs):
+        for dim in range(3):
+            print(f"Plotting pc {i} vs pose dim {dim}")
+            # ax = axs[i, dim]
+            g = sns.jointplot(
+                kind="hex", x=euler[:, dim], y=pc[:, i], ylim=(-2, 2), gridsize=(16, 16)
+            )
+            g.set_axis_labels(f"Angle{dim}", f"PC{i}")
+            cax = g.fig.add_axes([0.90, 0.3, 0.05, 0.4])
+            plt.colorbar(cax=cax)
+            # plt.tight_layout()
+            plt.savefig(f"{outdir}/angle_pc{i}_dim{dim}.png")
 
     # kmeans clustering
     logger.info("K-means clustering...")
@@ -385,6 +425,7 @@ def main(args):
         analyze_zN(
             z,
             outdir,
+            config,
             vg,
             skip_umap=args.skip_umap,
             num_pcs=args.pc,

@@ -9,7 +9,7 @@ from datetime import datetime as dt
 import logging
 import numpy as np
 import torch
-from cryodrgn import config, ctf, dataset, utils
+from cryodrgn import config, ctf, dataset
 from cryodrgn.commands.train_vae import loss_function, preprocess_input, run_batch
 from cryodrgn.models import HetOnlyVAE
 from cryodrgn.pose import PoseTracker
@@ -98,14 +98,53 @@ def add_args(parser):
         type=os.path.abspath,
         help="Path prefix to particle stack if loading relative paths from a .star or .cs file",
     )
-
-    group = parser.add_argument_group("Tilt series")
-    group.add_argument("--tilt", help="Particles (.mrcs)")
     group.add_argument(
-        "--tilt-deg",
+        "--max-threads",
+        type=int,
+        default=16,
+        help="Maximum number of CPU cores for data loading (default: %(default)s)",
+    )
+
+    group = parser.add_argument_group("Tilt series paramters")
+    group.add_argument(
+        "--ntilts",
+        type=int,
+        default=10,
+        help="Number of tilts to encode (default: %(default)s)",
+    )
+    group.add_argument(
+        "--random-tilts",
+        action="store_true",
+        help="Randomize ordering of tilts series to encoder",
+    )
+    group.add_argument(
+        "--t-emb-dim",
+        type=int,
+        default=128,
+        help="Intermediate embedding dimension (default: %(default)s)",
+    )
+    group.add_argument(
+        "--tlayers",
+        type=int,
+        default=3,
+        help="Number of hidden layers (default: %(default)s)",
+    )
+    group.add_argument(
+        "--tdim",
+        type=int,
+        default=1024,
+        help="Number of nodes in hidden layers (default: %(default)s)",
+    )
+    group.add_argument(
+        "--dose-per-tilt",
         type=float,
-        default=45,
-        help="X-axis tilt offset in degrees (default: %(default)s)",
+        help="Expected dose per tilt (electrons/A^2 per tilt) (default: %(default)s)",
+    )
+    group.add_argument(
+        "--angle-per-tilt",
+        type=float,
+        default=3,
+        help="Tilt angle increment per tilt in degrees (default: %(default)s)",
     )
 
     group = parser.add_argument_group(
@@ -176,15 +215,15 @@ def add_args(parser):
 
 
 def eval_batch(
-    model, lattice, y, yt, rot, trans, beta, tilt=None, ctf_params=None, yr=None
+    model, lattice, y, rot, trans, beta, ntilts=None, ctf_params=None, yr=None
 ):
     if trans is not None:
-        y, yt = preprocess_input(y, yt, lattice, trans)
-    z_mu, z_logvar, z, y_recon, y_recon_tilt, mask = run_batch(
-        model, lattice, y, yt, rot, tilt, ctf_params, yr
+        y = preprocess_input(y, lattice, trans)
+    z_mu, z_logvar, z, y_recon, mask = run_batch(
+        model, lattice, y, rot, ntilts, ctf_params, yr
     )
     loss, gen_loss, kld = loss_function(
-        z_mu, z_logvar, y, yt, y_recon, mask, beta, y_recon_tilt, beta_control=None
+        z_mu, z_logvar, y, ntilts, y_recon, mask, beta, beta_control=None
     )
     return (
         z_mu.detach().cpu().numpy(),
@@ -229,27 +268,39 @@ def main(args):
     else:
         ind = None
 
-    # TODO: extract dataset arguments from cfg
-    if args.tilt is None:
-        if args.encode_mode == "conv":
-            args.use_real = True
-        tilt = None
+    if args.encode_mode != "tilt":
+        args.use_real = args.encode_mode == "conv"  # Must be False
+        data = dataset.ImageDataset(
+            mrcfile=args.particles,
+            lazy=args.lazy,
+            norm=args.norm,
+            invert_data=args.invert_data,
+            ind=ind,
+            keepreal=args.use_real,
+            window=args.window,
+            datadir=args.datadir,
+            window_r=args.window_r,
+            max_threads=args.max_threads,
+            device=device,
+        )
     else:
         assert args.encode_mode == "tilt"
-        tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32))
-
-    data = dataset.ImageDataset(
-        mrcfile=args.particles,
-        tilt_mrcfile=args.tilt,
-        norm=args.norm,
-        invert_data=args.invert_data,
-        ind=ind,
-        window=args.window,
-        keepreal=args.use_real,
-        datadir=args.datadir,
-        window_r=args.window_r,
-    )
-
+        data = dataset.TiltSeriesData(  # FIXME: maybe combine with above?
+            args.particles,
+            args.ntilts,
+            args.random_tilts,
+            norm=args.norm,
+            invert_data=args.invert_data,
+            ind=ind,
+            keepreal=args.use_real,
+            window=args.window,
+            datadir=args.datadir,
+            max_threads=args.max_threads,
+            window_r=args.window_r,
+            device=device,
+            dose_per_tilt=args.dose_per_tilt,
+            angle_per_tilt=args.angle_per_tilt,
+        )
     Nimg = data.N
     D = data.D
 
@@ -282,12 +333,13 @@ def main(args):
     kld_accum = 0
     loss_accum = 0
     batch_it = 0
-    data_generator = dataset.make_dataloader(data, batch_size=args.batch_size)
+    data_generator = dataset.make_dataloader(
+        data, batch_size=args.batch_size, shuffle=False
+    )
 
     for minibatch in data_generator:
         ind = minibatch[-1].to(device)
         y = minibatch[0].to(device)
-        yt = minibatch[1].to(device) if tilt is not None else None
         B = len(ind)
         batch_it += B
 
@@ -296,11 +348,25 @@ def main(args):
             assert hasattr(data, "particles_real")
             yr = torch.from_numpy(data.particles_real[ind]).to(device)  # type: ignore  # PYR02
 
-        rot, tran = posetracker.get_pose(ind)
-        ctf_param = ctf_params[ind] if ctf_params is not None else None
+        # TODO -- finish implementing
+        # dose_filters = None
+        if args.encode_mode == "tilt":
+            tilt_ind = minibatch[1].to(device)
+            assert all(tilt_ind >= 0), tilt_ind
+            rot, tran = posetracker.get_pose(tilt_ind.view(-1))
+            ctf_param = (
+                ctf_params[tilt_ind.view(-1)] if ctf_params is not None else None
+            )
+            y = y.view(-1, D, D)
+            # Apix = ctf_params[0, 0] if ctf_params is not None else None
+            # if args.dose_per_tilt is not None:
+            # dose_filters = data.get_dose_filters(tilt_ind, lattice, Apix)
+        else:
+            rot, tran = posetracker.get_pose(ind)
+            ctf_param = ctf_params[ind] if ctf_params is not None else None
 
         z_mu, z_logvar, loss, gen_loss, kld = eval_batch(
-            model, lattice, y, yt, rot, tran, beta, tilt, ctf_params=ctf_param, yr=yr
+            model, lattice, y, rot, tran, beta, args.ntilts, ctf_params=ctf_param, yr=yr
         )
 
         z_mu_all.append(z_mu)

@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 import cryodrgn
-from cryodrgn import analysis, utils
+from cryodrgn import analysis, utils, config
 
 logger = logging.getLogger(__name__)
 
@@ -161,13 +161,13 @@ def analyze_zN(z, outdir, vg, skip_umap=False, num_pcs=2, num_ksamples=20):
     plt.savefig(f"{outdir}/z_pca.png")
 
     # PCA -- Style 2 -- Scatter, with marginals
-    g = sns.jointplot(pc[:, 0], pc[:, 1], alpha=0.1, s=1, rasterized=True, height=4)
+    g = sns.jointplot(x=pc[:, 0], y=pc[:, 1], alpha=0.1, s=1, rasterized=True, height=4)
     plt_pc_labels_jointplot(g)
     plt.tight_layout()
     plt.savefig(f"{outdir}/z_pca_marginals.png")
 
     # PCA -- Style 3 -- Hexbin
-    g = sns.jointplot(pc[:, 0], pc[:, 1], height=4, kind="hex")
+    g = sns.jointplot(x=pc[:, 0], y=pc[:, 1], height=4, kind="hex")
     plt_pc_labels_jointplot(g)
     plt.tight_layout()
     plt.savefig(f"{outdir}/z_pca_hexbin.png")
@@ -182,14 +182,19 @@ def analyze_zN(z, outdir, vg, skip_umap=False, num_pcs=2, num_ksamples=20):
 
         # Style 2 -- Scatter with marginal distributions
         g = sns.jointplot(
-            umap_emb[:, 0], umap_emb[:, 1], alpha=0.1, s=1, rasterized=True, height=4
+            x=umap_emb[:, 0],
+            y=umap_emb[:, 1],
+            alpha=0.1,
+            s=1,
+            rasterized=True,
+            height=4,
         )
         plt_umap_labels_jointplot(g)
         plt.tight_layout()
         plt.savefig(f"{outdir}/umap_marginals.png")
 
         # Style 3 -- Hexbin / heatmap
-        g = sns.jointplot(umap_emb[:, 0], umap_emb[:, 1], kind="hex", height=4)
+        g = sns.jointplot(x=umap_emb[:, 0], y=umap_emb[:, 1], kind="hex", height=4)
         plt_umap_labels_jointplot(g)
         plt.tight_layout()
         plt.savefig(f"{outdir}/umap_hexbin.png")
@@ -316,7 +321,7 @@ def analyze_zN(z, outdir, vg, skip_umap=False, num_pcs=2, num_ksamples=20):
             plt_pc_labels_jointplot(g, i - 1, i)
         else:
             g = sns.jointplot(
-                pc[:, i], pc[:, i + 1], alpha=0.1, s=1, rasterized=True, height=4
+                x=pc[:, i], y=pc[:, i + 1], alpha=0.1, s=1, rasterized=True, height=4
             )
             g.ax_joint.scatter(t, np.zeros(10), c="cornflowerblue", edgecolor="white")
             plt_pc_labels_jointplot(g)
@@ -349,7 +354,7 @@ def main(args):
     workdir = args.workdir
     zfile = f"{workdir}/z.{E}.pkl"
     weights = f"{workdir}/weights.{E}.pkl"
-    config = (
+    cfg = (
         f"{workdir}/config.yaml"
         if os.path.exists(f"{workdir}/config.yaml")
         else f"{workdir}/config.pkl"
@@ -377,7 +382,7 @@ def main(args):
         invert=args.invert,
         vol_start_index=args.vol_start_index,
     )
-    vg = VolumeGenerator(weights, config, vol_args, skip_vol=args.skip_vol)
+    vg = VolumeGenerator(weights, cfg, vol_args, skip_vol=args.skip_vol)
 
     if zdim == 1:
         analyze_z1(z, outdir, vg)
@@ -392,24 +397,35 @@ def main(args):
         )
 
     # copy over template if file doesn't exist
-    out_ipynb = f"{outdir}/cryoDRGN_viz.ipynb"
-    if not os.path.exists(out_ipynb):
-        logger.info("Creating jupyter notebook...")
-        ipynb = f"{cryodrgn._ROOT}/templates/cryoDRGN_viz_template.ipynb"
-        shutil.copyfile(ipynb, out_ipynb)
+    cfg = config.load(cfg)
+    if cfg["model_args"]["encode_mode"] == "tilt":
+        out_ipynb = f"{outdir}/cryoDRGN_ET_viz.ipynb"
+        if not os.path.exists(out_ipynb):
+            logger.info("Creating jupyter notebook...")
+            ipynb = f"{cryodrgn._ROOT}/templates/cryoDRGN_ET_viz_template.ipynb"
+            shutil.copyfile(ipynb, out_ipynb)
+        else:
+            logger.info(f"{out_ipynb} already exists. Skipping")
+        logger.info(out_ipynb)
     else:
-        logger.info(f"{out_ipynb} already exists. Skipping")
-    logger.info(out_ipynb)
+        out_ipynb = f"{outdir}/cryoDRGN_viz.ipynb"
+        if not os.path.exists(out_ipynb):
+            logger.info("Creating jupyter notebook...")
+            ipynb = f"{cryodrgn._ROOT}/templates/cryoDRGN_viz_template.ipynb"
+            shutil.copyfile(ipynb, out_ipynb)
+        else:
+            logger.info(f"{out_ipynb} already exists. Skipping")
+        logger.info(out_ipynb)
 
-    # copy over template if file doesn't exist
-    out_ipynb = f"{outdir}/cryoDRGN_filtering.ipynb"
-    if not os.path.exists(out_ipynb):
-        logger.info("Creating jupyter notebook...")
-        ipynb = f"{cryodrgn._ROOT}/templates/cryoDRGN_filtering_template.ipynb"
-        shutil.copyfile(ipynb, out_ipynb)
-    else:
-        logger.info(f"{out_ipynb} already exists. Skipping")
-    logger.info(out_ipynb)
+        # copy over template if file doesn't exist
+        out_ipynb = f"{outdir}/cryoDRGN_filtering.ipynb"
+        if not os.path.exists(out_ipynb):
+            logger.info("Creating jupyter notebook...")
+            ipynb = f"{cryodrgn._ROOT}/templates/cryoDRGN_filtering_template.ipynb"
+            shutil.copyfile(ipynb, out_ipynb)
+        else:
+            logger.info(f"{out_ipynb} already exists. Skipping")
+        logger.info(out_ipynb)
 
     # copy over template if file doesn't exist
     out_ipynb = f"{outdir}/cryoDRGN_figures.ipynb"

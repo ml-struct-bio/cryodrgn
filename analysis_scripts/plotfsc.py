@@ -1,42 +1,72 @@
 """Plot FSC txtfile"""
 
-import argparse
-
 import matplotlib.pyplot as plt
 import numpy as np
+import argparse
+import os
+
+
+# Load data from file
+def load_data(file):
+    data = np.loadtxt(file)
+    x = data[:, 0]
+    y = data[:, 1]
+    return x, y
+
+
+# Plot data
+def plot_data(x, y, label):
+    plt.plot(x, y, label=label)
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("input", nargs="*", help="Input")
+    parser = argparse.ArgumentParser(description="Plot FSC data.")
     parser.add_argument(
-        "-t",
-        type=float,
-        default=0.143,
-        help="Cutoff for resolution estimation (default: %(default)s)",
+        "-i", "--input", nargs="+", help="input cryoDRGN fsc text files", required=True
     )
-    parser.add_argument("--labels", nargs="*", help="Labels for plotting")
-    parser.add_argument("-o")
+    parser.add_argument(
+        "-a", "--angpix", type=float, default=0, help="physical pixel size in angstrom"
+    )
+    parser.add_argument("-o", "--output", type=str, help="output file name")
     return parser
 
 
 def main(args):
-    labels = args.labels if args.labels else args.input
-    assert len(labels) == len(args.input)
-    for i, f in enumerate(args.input):
-        print(f)
-        x = np.loadtxt(f)
-        plt.plot(x[:, 0], x[:, 1], label=labels[i])
-        w = np.where(x[:, 1] < args.t)
-        print(w)
-        print(x[:, 0][w])
-        print(1 / x[:, 0][w])
-    plt.legend(loc="best")
-    plt.ylim((0, 1))
-    plt.ylabel("FSC")
-    plt.xlabel("frequency")
-    if args.o:
-        plt.savefig(args.o)
+    # Create a subplot
+    fig, ax = plt.subplots(figsize=(10, 5))
+
+    # Load and plot data from each file
+    for file in args.input:
+        x, y = load_data(file)
+        plot_data(x, y, os.path.basename(file))
+
+    ax.set_aspect(0.3)  # Set the aspect ratio on the plot specifically
+
+    if args.angpix != 0:
+        freq = np.arange(1, 6) * 0.1
+        res = ["1/{:.1f}".format(val) for val in ((1 / freq) * args.angpix)]
+        print(res)
+        res_text = res
+        plt.xticks(np.arange(1, 6) * 0.1, res_text)
+        plt.xlabel("1/resolution (1/Å)")
+        plt.ylabel("Fourier shell correlation")
+    else:
+        plt.xlabel("Spatial Frequency")
+        plt.ylabel("Fourier shell correlation")
+
+    plt.ylim(0, 1.0)
+    plt.xlim(0, 0.5)
+
+    # Create the legend on the figure, not the plot
+    plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left", prop={"size": 6})
+
+    plt.grid(True)
+
+    plt.tight_layout()
+    plt.subplots_adjust(right=0.8)
+
+    if args.output:
+        plt.savefig(args.output, dpi=300, bbox_inches="tight")
     else:
         plt.show()
 

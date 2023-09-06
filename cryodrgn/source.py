@@ -68,13 +68,16 @@ class ImageSource:
             return TxtFileSource(
                 filepath,
                 lazy=lazy,
-                datadir=datadir,
                 indices=indices,
                 max_threads=max_threads,
             )
         elif ext == "cs":
             return CsSource(
-                filepath, lazy=lazy, indices=indices, max_threads=max_threads
+                filepath,
+                lazy=lazy,
+                datadir=datadir,
+                indices=indices,
+                max_threads=max_threads,
             )
         else:
             raise RuntimeError(f"Unrecognized file extension {ext}")
@@ -318,9 +321,12 @@ class _MRCDataFrameSource(ImageSource):
         assert "__mrc_filename" in df.columns
         self.df = df
 
-        self.df["__mrc_filepath"] = self.df["__mrc_filename"].apply(
-            lambda filename: os.path.join(datadir, filename)
-        )
+        if datadir:
+            self.df["__mrc_filepath"] = self.df["__mrc_filename"].apply(
+                lambda filename: os.path.join(datadir, os.path.basename(filename))
+            )
+        else:
+            self.df["__mrc_filepath"] = self.df["__mrc_filename"]
 
         # Peek into the first mrc file to get image size
         D = MRCFileSource(self.df["__mrc_filepath"][0]).D
@@ -381,14 +387,15 @@ class StarfileSource(_MRCDataFrameSource):
         )
         df["__mrc_index"] = pd.to_numeric(df["__mrc_index"]) - 1
 
-        if datadir:
-            if not os.path.isabs(datadir):
-                datadir = os.path.join(os.path.dirname(filepath), datadir)
-        else:
+        if not datadir:
             datadir = os.path.dirname(filepath)
 
         super().__init__(
-            df=df, datadir=datadir, lazy=lazy, indices=indices, max_threads=max_threads
+            df=df,
+            datadir=os.path.abspath(datadir),
+            lazy=lazy,
+            indices=indices,
+            max_threads=max_threads,
         )
 
 
@@ -428,7 +435,6 @@ class TxtFileSource(_MRCDataFrameSource):
     def __init__(
         self,
         filepath: str,
-        datadir: str,
         lazy: bool = True,
         indices: Optional[np.ndarray] = None,
         max_threads: int = 1,
@@ -451,6 +457,4 @@ class TxtFileSource(_MRCDataFrameSource):
         df = pd.DataFrame(
             data={"__mrc_filename": mrc_filename, "__mrc_index": mrc_index}
         )
-        super().__init__(
-            df=df, datadir=datadir, lazy=lazy, indices=indices, max_threads=max_threads
-        )
+        super().__init__(df=df, lazy=lazy, indices=indices, max_threads=max_threads)

@@ -25,12 +25,17 @@ def main(args):
     vol1 = ImageSource.from_file(args.vol1)
     vol2 = ImageSource.from_file(args.vol2)
 
-    assert isinstance(vol1, np.ndarray)
-    assert isinstance(vol2, np.ndarray)
+    vol1 = vol1.images()
+    vol2 = vol2.images()
+
+    # assert isinstance(vol1, np.ndarray)
+    # assert isinstance(vol2, np.ndarray)
 
     if args.mask:
         mask = ImageSource.from_file(args.mask)
-        assert isinstance(mask, np.ndarray)
+        mask = mask.images()
+
+        # assert isinstance(mask, np.ndarray)
         vol1 *= mask
         vol2 *= mask
 

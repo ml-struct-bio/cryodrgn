@@ -757,7 +757,6 @@ def main(args):
 
     data = dataset.ImageDataset(
         mrcfile=args.particles,
-        tilt_mrcfile=args.tilt,
         norm=args.norm,
         invert_data=args.invert_data,
         ind=ind,

@@ -7,6 +7,7 @@ import pickle
 import sys
 import logging
 from datetime import datetime as dt
+from typing import Optional
 import numpy as np
 import torch
 import torch.nn as nn
@@ -19,7 +20,7 @@ except ImportError:
     pass
 
 import cryodrgn
-from cryodrgn import __version__, ctf, dataset, utils
+from cryodrgn import __version__, ctf, dataset
 from cryodrgn.beta_schedule import get_beta_schedule
 from cryodrgn.lattice import Lattice
 from cryodrgn.models import HetOnlyVAE, unparallelize
@@ -29,7 +30,7 @@ import cryodrgn.config
 logger = logging.getLogger(__name__)
 
 
-def add_args(parser):
+def add_args(parser: argparse.ArgumentParser):
     parser.add_argument(
         "particles",
         type=os.path.abspath,
@@ -78,7 +79,7 @@ def add_args(parser):
         "--ind",
         type=os.path.abspath,
         metavar="PKL",
-        help="Filter particle stack by these indices",
+        help="Filter particles by these indices",
     )
     group.add_argument(
         "--uninvert-data",
@@ -115,11 +116,6 @@ def add_args(parser):
         help="If non-zero, will use a data shuffler for faster lazy data loading.",
     )
     group.add_argument(
-        "--preprocessed",
-        action="store_true",
-        help="Skip preprocessing steps if input data is from cryodrgn preprocess_mrcs",
-    )
-    group.add_argument(
         "--num-workers",
         type=int,
         default=0,
@@ -132,13 +128,48 @@ def add_args(parser):
         help="Maximum number of CPU cores for data loading (default: %(default)s)",
     )
 
-    group = parser.add_argument_group("Tilt series")
-    group.add_argument("--tilt", help="Particle stack file (.mrcs)")
+    group = parser.add_argument_group("Tilt series parameters")
     group.add_argument(
-        "--tilt-deg",
+        "--ntilts",
+        type=int,
+        default=10,
+        help="Number of tilts to encode (default: %(default)s)",
+    )
+    group.add_argument(
+        "--random-tilts",
+        action="store_true",
+        help="Randomize ordering of tilts series to encoder",
+    )
+    group.add_argument(
+        "--t-emb-dim",
+        type=int,
+        default=64,
+        help="Intermediate embedding dimension (default: %(default)s)",
+    )
+    group.add_argument(
+        "--tlayers",
+        type=int,
+        default=3,
+        help="Number of hidden layers (default: %(default)s)",
+    )
+    group.add_argument(
+        "--tdim",
+        type=int,
+        default=1024,
+        help="Number of nodes in hidden layers (default: %(default)s)",
+    )
+    group.add_argument(
+        "-d",
+        "--dose-per-tilt",
         type=float,
-        default=45,
-        help="X-axis tilt offset in degrees (default: %(default)s)",
+        help="Expected dose per tilt (electrons/A^2 per tilt) (default: %(default)s)",
+    )
+    group.add_argument(
+        "-a",
+        "--angle-per-tilt",
+        type=float,
+        default=3,
+        help="Tilt angle increment per tilt in degrees (default: %(default)s)",
     )
 
     group = parser.add_argument_group("Training parameters")
@@ -308,40 +339,49 @@ def add_args(parser):
 
 
 def train_batch(
-    model,
-    lattice,
+    model: nn.Module,
+    lattice: Lattice,
     y,
-    yt,
+    ntilts: Optional[int],
     rot,
     trans,
     optim,
     beta,
     beta_control=None,
-    tilt=None,
     ctf_params=None,
     yr=None,
-    use_amp=False,
+    use_amp: bool = False,
     scaler=None,
+    dose_filters=None,
 ):
     optim.zero_grad()
     model.train()
     if trans is not None:
-        y, yt = preprocess_input(y, yt, lattice, trans)
+        y = preprocess_input(y, lattice, trans)
     # Cast operations to mixed precision if using torch.cuda.amp.GradScaler()
     if scaler is not None:
         with torch.cuda.amp.autocast_mode.autocast():
-            z_mu, z_logvar, z, y_recon, y_recon_tilt, mask = run_batch(
-                model, lattice, y, yt, rot, tilt, ctf_params, yr
+            z_mu, z_logvar, z, y_recon, mask = run_batch(
+                model, lattice, y, rot, ntilts, ctf_params, yr
             )
             loss, gen_loss, kld = loss_function(
-                z_mu, z_logvar, y, yt, y_recon, mask, beta, y_recon_tilt, beta_control
+                z_mu,
+                z_logvar,
+                y,
+                ntilts,
+                y_recon,
+                mask,
+                beta,
+                beta_control,
+                dose_filters,
             )
     else:
-        z_mu, z_logvar, z, y_recon, y_recon_tilt, mask = run_batch(
-            model, lattice, y, yt, rot, tilt, ctf_params, yr
+        # print('AAA', y.shape, rot.shape)
+        z_mu, z_logvar, z, y_recon, mask = run_batch(
+            model, lattice, y, rot, ntilts, ctf_params, yr
         )
         loss, gen_loss, kld = loss_function(
-            z_mu, z_logvar, y, yt, y_recon, mask, beta, y_recon_tilt, beta_control
+            z_mu, z_logvar, y, ntilts, y_recon, mask, beta, beta_control, dose_filters
         )
     if use_amp:
         if scaler is not None:  # torch mixed precision
@@ -358,18 +398,15 @@ def train_batch(
     return loss.item(), gen_loss.item(), kld.item()
 
 
-def preprocess_input(y, yt, lattice, trans):
+def preprocess_input(y, lattice, trans):
     # center the image
     B = y.size(0)
     D = lattice.D
     y = lattice.translate_ht(y.view(B, -1), trans.unsqueeze(1)).view(B, D, D)
-    if yt is not None:
-        yt = lattice.translate_ht(yt.view(B, -1), trans.unsqueeze(1)).view(B, D, D)
-    return y, yt
+    return y
 
 
-def run_batch(model, lattice, y, yt, rot, tilt=None, ctf_params=None, yr=None):
-    use_tilt = yt is not None
+def run_batch(model, lattice, y, rot, ntilts: Optional[int], ctf_params=None, yr=None):
     use_ctf = ctf_params is not None
     B = y.size(0)
     D = lattice.D
@@ -384,13 +421,15 @@ def run_batch(model, lattice, y, yt, rot, tilt=None, ctf_params=None, yr=None):
     if yr is not None:
         input_ = (yr,)
     else:
-        input_ = (y, yt) if yt is not None else (y,)
+        input_ = (y,)
         if c is not None:
             input_ = (x * c.sign() for x in input_)  # phase flip by the ctf
     _model = unparallelize(model)
     assert isinstance(_model, HetOnlyVAE)
     z_mu, z_logvar = _model.encode(*input_)
     z = _model.reparameterize(z_mu, z_logvar)
+    if ntilts is not None:
+        z = torch.repeat_interleave(z, ntilts, dim=0)
 
     # decode
     mask = lattice.get_circular_mask(D // 2)  # restrict to circular mask
@@ -398,28 +437,27 @@ def run_batch(model, lattice, y, yt, rot, tilt=None, ctf_params=None, yr=None):
     if c is not None:
         y_recon *= c.view(B, -1)[:, mask]
 
-    # decode the tilt series
-    if use_tilt:
-        y_recon_tilt = model(lattice.coords[mask] / lattice.extent / 2 @ tilt @ rot, z)
-        if c is not None:
-            y_recon_tilt *= c.view(B, -1)[:, mask]
-    else:
-        y_recon_tilt = None
-    return z_mu, z_logvar, z, y_recon, y_recon_tilt, mask
+    return z_mu, z_logvar, z, y_recon, mask
 
 
 def loss_function(
-    z_mu, z_logvar, y, yt, y_recon, mask, beta, y_recon_tilt=None, beta_control=None
+    z_mu,
+    z_logvar,
+    y,
+    ntilts: Optional[int],
+    y_recon,
+    mask,
+    beta: float,
+    beta_control=None,
+    dose_filters=None,
 ):
     # reconstruction error
-    use_tilt = yt is not None
     B = y.size(0)
-    gen_loss = F.mse_loss(y_recon, y.view(B, -1)[:, mask])
-    if use_tilt:
-        assert y_recon_tilt is not None
-        gen_loss = 0.5 * gen_loss + 0.5 * F.mse_loss(
-            y_recon_tilt, yt.view(B, -1)[:, mask]
-        )
+    y = y.view(B, -1)[:, mask]
+    if dose_filters is not None:
+        y_recon = torch.mul(y_recon, dose_filters[:, mask])
+    gen_loss = F.mse_loss(y_recon, y)
+
     # latent loss
     kld = torch.mean(
         -0.5 * torch.sum(1 + z_logvar - z_mu.pow(2) - z_logvar.exp(), dim=1), dim=0
@@ -444,7 +482,7 @@ def eval_z(
     batch_size,
     device,
     trans=None,
-    use_tilt=False,
+    use_tilt: bool = False,
     ctf_params=None,
     use_real=False,
     shuffler_size=0,
@@ -459,9 +497,12 @@ def eval_z(
     for i, minibatch in enumerate(data_generator):
         ind = minibatch[-1]
         y = minibatch[0].to(device)
-        yt = minibatch[1].to(device) if use_tilt else None
-        B = len(ind)
         D = lattice.D
+        if use_tilt:
+            y = y.view(-1, D, D)
+            ind = minibatch[1].to(device).view(-1)
+        B = len(ind)
+
         c = None
         if ctf_params is not None:
             freqs = lattice.freqs2d.unsqueeze(0).expand(
@@ -474,14 +515,11 @@ def eval_z(
             y = lattice.translate_ht(y.view(B, -1), trans[ind].unsqueeze(1)).view(
                 B, D, D
             )
-            if yt is not None:
-                yt = lattice.translate_ht(yt.view(B, -1), trans[ind].unsqueeze(1)).view(
-                    B, D, D
-                )
+
         if use_real:
             input_ = (torch.from_numpy(data.particles_real[ind]).to(device),)
         else:
-            input_ = (y, yt) if yt is not None else (y,)
+            input_ = (y,)
         if c is not None:
             assert not use_real, "Not implemented"
             input_ = (x * c.sign() for x in input_)  # phase flip by the ctf
@@ -526,8 +564,9 @@ def save_config(args, dataset, lattice, model, out_config):
         poses=args.poses,
         do_pose_sgd=args.do_pose_sgd,
     )
-    if args.tilt is not None:
-        dataset_args["particles_tilt"] = args.tilt
+    if args.encode_mode == "tilt":
+        dataset_args["ntilts"] = args.ntilts
+
     lattice_args = dict(D=lattice.D, extent=lattice.extent, ignore_DC=lattice.ignore_DC)
     model_args = dict(
         qlayers=args.qlayers,
@@ -542,6 +581,12 @@ def save_config(args, dataset, lattice, model, out_config):
         pe_dim=args.pe_dim,
         domain=args.domain,
         activation=args.activation,
+        tilt_params=dict(
+            tdim=args.tdim,
+            tlayers=args.tlayers,
+            t_emb_dim=args.t_emb_dim,
+            ntilts=args.ntilts,
+        ),
     )
     config = dict(
         dataset_args=dataset_args, lattice_args=lattice_args, model_args=model_args
@@ -594,7 +639,7 @@ def main(args):
 
     # set beta schedule
     if args.beta is None:
-        args.beta = 1.0 / args.zdim
+        args.beta = 1.0 / args.ntilts
     try:
         args.beta = float(args.beta)
     except ValueError:
@@ -606,34 +651,50 @@ def main(args):
     # load index filter
     if args.ind is not None:
         logger.info("Filtering image dataset with {}".format(args.ind))
-        ind = pickle.load(open(args.ind, "rb"))
+        if args.encode_mode == "tilt":
+            particle_ind = pickle.load(open(args.ind, "rb"))
+            pt, tp = dataset.TiltSeriesData.parse_particle_tilt(args.particles)
+            ind = dataset.TiltSeriesData.particles_to_tilts(pt, particle_ind)
+        else:
+            ind = pickle.load(open(args.ind, "rb"))
     else:
         ind = None
 
     # load dataset
     logger.info(f"Loading dataset from {args.particles}")
-    data = dataset.ImageDataset(
-        mrcfile=args.particles,
-        tilt_mrcfile=args.tilt,
-        lazy=args.lazy,
-        norm=args.norm,
-        invert_data=args.invert_data,
-        ind=ind,
-        keepreal=args.use_real,
-        window=args.window,
-        datadir=args.datadir,
-        window_r=args.window_r,
-        max_threads=args.max_threads,
-        device=device,
-    )
-
-    if args.tilt is None:
-        tilt = None
+    if args.encode_mode != "tilt":
         args.use_real = args.encode_mode == "conv"  # Must be False
+        data = dataset.ImageDataset(
+            mrcfile=args.particles,
+            lazy=args.lazy,
+            norm=args.norm,
+            invert_data=args.invert_data,
+            ind=ind,
+            keepreal=args.use_real,
+            window=args.window,
+            datadir=args.datadir,
+            window_r=args.window_r,
+            max_threads=args.max_threads,
+            device=device,
+        )
     else:
         assert args.encode_mode == "tilt"
-        tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32), device=device)
-
+        data = dataset.TiltSeriesData(  # FIXME: maybe combine with above?
+            args.particles,
+            args.ntilts,
+            args.random_tilts,
+            norm=args.norm,
+            invert_data=args.invert_data,
+            ind=ind,
+            keepreal=args.use_real,
+            window=args.window,
+            datadir=args.datadir,
+            max_threads=args.max_threads,
+            window_r=args.window_r,
+            device=device,
+            dose_per_tilt=args.dose_per_tilt,
+            angle_per_tilt=args.angle_per_tilt,
+        )
     Nimg = data.N
     D = data.D
 
@@ -667,6 +728,11 @@ def main(args):
         if args.ind is not None:
             ctf_params = ctf_params[ind, ...]
         assert ctf_params.shape == (Nimg, 8)
+        if args.encode_mode == "tilt":  # TODO: Parse this in cryodrgn parse_ctf_star
+            ctf_params = np.concatenate(
+                (ctf_params, data.ctfscalefactor.reshape(-1, 1)), axis=1  # type: ignore
+            )
+            data.voltage = float(ctf_params[0, 4])
         ctf_params = torch.tensor(ctf_params, device=device)  # Nx8
     else:
         ctf_params = None
@@ -687,6 +753,12 @@ def main(args):
             "Invalid argument for encoder mask radius {}".format(args.enc_mask)
         )
     activation = {"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[args.activation]
+    tilt_params = {}
+    if args.encode_mode == "tilt":
+        tilt_params["t_emb_dim"] = args.t_emb_dim
+        tilt_params["ntilts"] = args.ntilts
+        tilt_params["tlayers"] = args.tlayers
+        tilt_params["tdim"] = args.tdim
     model = HetOnlyVAE(
         lattice,
         args.qlayers,
@@ -702,6 +774,7 @@ def main(args):
         domain=args.domain,
         activation=activation,
         feat_sigma=args.feat_sigma,
+        tilt_params=tilt_params,
     )
     model.to(device)
     logger.info(model)
@@ -733,7 +806,9 @@ def main(args):
         assert (
             args.batch_size % 8 == 0
         ), "Batch size must be divisible by 8 for AMP training"
-        assert (D - 1) % 8 == 0, "Image size must be divisible by 8 for AMP training"
+        assert (
+            D - 1
+        ) % 8 == 0, f"Image size must be divisible by 8 for AMP training: {D}"
         assert (
             args.pdim % 8 == 0
         ), "Decoder hidden layer dimension must be divisible by 8 for AMP training"
@@ -793,6 +868,7 @@ def main(args):
 
     num_epochs = args.num_epochs
     epoch = None
+    Nparticles = Nimg if args.encode_mode != "tilt" else data.Np
     for epoch in range(start_epoch, num_epochs):
         t2 = dt.now()
         gen_loss_accum = 0
@@ -802,10 +878,9 @@ def main(args):
         for i, minibatch in enumerate(data_generator):  # minibatch: [y, ind]
             ind = minibatch[-1].to(device)
             y = minibatch[0].to(device)
-            yt = minibatch[1].to(device) if tilt is not None else None
             B = len(ind)
             batch_it += B
-            global_it = Nimg * epoch + batch_it
+            global_it = Nparticles * epoch + batch_it
 
             beta = beta_schedule(global_it)
 
@@ -815,23 +890,38 @@ def main(args):
                 yr = torch.from_numpy(data.particles_real[ind.numpy()]).to(device)  # type: ignore  # PYR02
             if pose_optimizer is not None:
                 pose_optimizer.zero_grad()
-            rot, tran = posetracker.get_pose(ind)
-            ctf_param = ctf_params[ind] if ctf_params is not None else None
+
+            dose_filters = None
+            if args.encode_mode == "tilt":
+                tilt_ind = minibatch[1].to(device)
+                assert all(tilt_ind >= 0), tilt_ind
+                rot, tran = posetracker.get_pose(tilt_ind.view(-1))
+                ctf_param = (
+                    ctf_params[tilt_ind.view(-1)] if ctf_params is not None else None
+                )
+                y = y.view(-1, D, D)
+                Apix = ctf_params[0, 0] if ctf_params is not None else None
+                if args.dose_per_tilt is not None:
+                    dose_filters = data.get_dose_filters(tilt_ind, lattice, Apix)
+            else:
+                rot, tran = posetracker.get_pose(ind)
+                ctf_param = ctf_params[ind] if ctf_params is not None else None
+
             loss, gen_loss, kld = train_batch(
                 model,
                 lattice,
                 y,
-                yt,
+                args.ntilts if args.encode_mode == "tilt" else None,
                 rot,
                 tran,
                 optim,
                 beta,
                 args.beta_control,
-                tilt,
                 ctf_params=ctf_param,
                 yr=yr,
                 use_amp=args.amp,
                 scaler=scaler,
+                dose_filters=dose_filters,
             )
             if pose_optimizer is not None and epoch >= args.pretrain:
                 pose_optimizer.step()
@@ -843,12 +933,12 @@ def main(args):
 
             if batch_it % args.log_interval == 0:
                 logger.info(
-                    "# [Train Epoch: {}/{}] [{}/{} images] gen loss={:.6f}, kld={:.6f}, beta={:.6f}, "
+                    "# [Train Epoch: {}/{}] [{}/{} particles] gen loss={:.6f}, kld={:.6f}, beta={:.6f}, "
                     "loss={:.6f}".format(
                         epoch + 1,
                         num_epochs,
                         batch_it,
-                        Nimg,
+                        Nparticles,
                         gen_loss,
                         kld,
                         beta,
@@ -858,9 +948,9 @@ def main(args):
         logger.info(
             "# =====> Epoch: {} Average gen loss = {:.6}, KLD = {:.6f}, total loss = {:.6f}; Finished in {}".format(
                 epoch + 1,
-                gen_loss_accum / Nimg,
-                kld_accum / Nimg,
-                loss_accum / Nimg,
+                gen_loss_accum / Nparticles,
+                kld_accum / Nparticles,
+                loss_accum / Nparticles,
                 dt.now() - t2,
             )
         )
@@ -877,7 +967,7 @@ def main(args):
                     args.batch_size,
                     device,
                     trans=posetracker.trans,
-                    use_tilt=tilt is not None,
+                    use_tilt=args.encode_mode == "tilt",
                     ctf_params=ctf_params,
                     use_real=args.use_real,
                     shuffler_size=args.shuffler_size,
@@ -900,7 +990,7 @@ def main(args):
             args.batch_size,
             device,
             posetracker.trans,
-            tilt is not None,
+            args.encode_mode == "tilt",
             ctf_params,
             args.use_real,
         )

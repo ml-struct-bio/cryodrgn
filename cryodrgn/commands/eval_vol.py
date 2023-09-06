@@ -210,7 +210,7 @@ def main(args):
                 )
             out_mrc = "{}/{}{:03d}.mrc".format(args.o, args.prefix, i)
             if args.flip:
-                vol = vol[::-1]
+                vol = vol.flip([0])
             if args.invert:
                 vol *= -1
             MRCFile.write(
@@ -235,7 +235,7 @@ def main(args):
                 lattice.coords, lattice.D, lattice.extent, norm, z
             )
         if args.flip:
-            vol = vol[::-1]
+            vol = vol.flip([0])
         if args.invert:
             vol *= -1
         MRCFile.write(args.o, np.array(vol).astype(np.float32), Apix=args.Apix)

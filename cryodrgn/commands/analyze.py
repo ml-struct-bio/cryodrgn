@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 import cryodrgn
-from cryodrgn import analysis, utils
+from cryodrgn import analysis, utils, config
 
 logger = logging.getLogger(__name__)
 
@@ -354,7 +354,7 @@ def main(args):
     workdir = args.workdir
     zfile = f"{workdir}/z.{E}.pkl"
     weights = f"{workdir}/weights.{E}.pkl"
-    config = (
+    cfg = (
         f"{workdir}/config.yaml"
         if os.path.exists(f"{workdir}/config.yaml")
         else f"{workdir}/config.pkl"
@@ -382,7 +382,7 @@ def main(args):
         invert=args.invert,
         vol_start_index=args.vol_start_index,
     )
-    vg = VolumeGenerator(weights, config, vol_args, skip_vol=args.skip_vol)
+    vg = VolumeGenerator(weights, cfg, vol_args, skip_vol=args.skip_vol)
 
     if zdim == 1:
         analyze_z1(z, outdir, vg)
@@ -397,7 +397,8 @@ def main(args):
         )
 
     # copy over template if file doesn't exist
-    if config["model_args"]["encode_mode"] == "tilt":
+    cfg = config.load(cfg)
+    if cfg["model_args"]["encode_mode"] == "tilt":
         out_ipynb = f"{outdir}/cryoDRGN_ET_viz.ipynb"
         if not os.path.exists(out_ipynb):
             logger.info("Creating jupyter notebook...")

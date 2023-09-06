@@ -1,6 +1,6 @@
 [![CI](https://github.com/zhonge/cryodrgn/actions/workflows/main.yml/badge.svg)](https://github.com/zhonge/cryodrgn/actions/workflows/main.yml)
 
-# :snowflake::dragon: cryoDRGN: Deep Reconstructing Generative Networks for cryo-EM heterogeneous reconstruction
+# :snowflake::dragon: cryoDRGN: Deep Reconstructing Generative Networks for cryo-EM and cryo-ET heterogeneous reconstruction
 
 CryoDRGN is a neural network based algorithm for heterogeneous cryo-EM reconstruction. In particular, the method models a *continuous* distribution over 3D structures by using a neural network based representation for the volume.
 
@@ -10,19 +10,27 @@ The latest documentation for cryoDRGN is available [on gitbook](https://ez-lab.g
 
 For any feedback, questions, or bugs, please file a Github issue, start a Github discussion, or email the [google group](https://groups.google.com/g/cryodrgn).
 
-## New in Version 2.x
+## New in Version 3.x
 
-The official cryoDRGN2 release. Version 2.x includes new tools for ab initio reconstruction and significant codebase improvements.
+The official [cryoDRGN-ET](https://www.biorxiv.org/content/10.1101/2023.08.18.553799v1) release for heterogeneous subtomogram analysis. 
 
-### Version 2.3
+* [NEW] Heterogeneous reconstruction of subtomograms. See documentation [on gitbook](https://ez-lab.gitbook.io/cryodrgn/)
+* [NEW] `cryodrgn direct_traversal` for making movies
+* Major refactor of dataset loading for handling large datasets
 
+### Previous versions
+
+<details><summary>Version 2.3</summary>
+	
 * Model configuration files are now saved as human-readable config.yaml files (https://github.com/zhonge/cryodrgn/issues/235)
 * Fix machine stamp in output .mrc files for better compatibility with downstream tools (https://github.com/zhonge/cryodrgn/pull/260)
 * Better documentation of help flags in ab initio reconstruction tools (https://github.com/zhonge/cryodrgn/issues/258)
 * [FIX] By default, window images in `cryodrgn abinit_homo` (now consistent with other reconstruction tools) (https://github.com/zhonge/cryodrgn/issues/258)
 * [FIX] Reduce memory usage when using `--preprocessed` and `--ind` (https://github.com/zhonge/cryodrgn/pull/272)
 
-### Version 2.2
+</details>
+
+<details><summary>Version 2.2</summary>
 
 * [NEW] Tools for ab initio homogeneous and heterogeneous reconstruction:
 
@@ -43,9 +51,7 @@ The official cryoDRGN2 release. Version 2.x includes new tools for ab initio rec
 
 * Note: we are working on a major refactor of data loading for handling large datasets for the next minor version (v2.4). This will entail an API change for the mrc.py library module
 
-
-### Previous versions
-
+</details>
 
 <details><summary>Version 1.1.x</summary>
 

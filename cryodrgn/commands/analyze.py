@@ -397,24 +397,34 @@ def main(args):
         )
 
     # copy over template if file doesn't exist
-    out_ipynb = f"{outdir}/cryoDRGN_viz.ipynb"
-    if not os.path.exists(out_ipynb):
-        logger.info("Creating jupyter notebook...")
-        ipynb = f"{cryodrgn._ROOT}/templates/cryoDRGN_viz_template.ipynb"
-        shutil.copyfile(ipynb, out_ipynb)
+    if config["model_args"]["encode_mode"] == "tilt":
+        out_ipynb = f"{outdir}/cryoDRGN_ET_viz.ipynb"
+        if not os.path.exists(out_ipynb):
+            logger.info("Creating jupyter notebook...")
+            ipynb = f"{cryodrgn._ROOT}/templates/cryoDRGN_ET_viz_template.ipynb"
+            shutil.copyfile(ipynb, out_ipynb)
+        else:
+            logger.info(f"{out_ipynb} already exists. Skipping")
+        logger.info(out_ipynb)
     else:
-        logger.info(f"{out_ipynb} already exists. Skipping")
-    logger.info(out_ipynb)
+        out_ipynb = f"{outdir}/cryoDRGN_viz.ipynb"
+        if not os.path.exists(out_ipynb):
+            logger.info("Creating jupyter notebook...")
+            ipynb = f"{cryodrgn._ROOT}/templates/cryoDRGN_viz_template.ipynb"
+            shutil.copyfile(ipynb, out_ipynb)
+        else:
+            logger.info(f"{out_ipynb} already exists. Skipping")
+        logger.info(out_ipynb)
 
-    # copy over template if file doesn't exist
-    out_ipynb = f"{outdir}/cryoDRGN_filtering.ipynb"
-    if not os.path.exists(out_ipynb):
-        logger.info("Creating jupyter notebook...")
-        ipynb = f"{cryodrgn._ROOT}/templates/cryoDRGN_filtering_template.ipynb"
-        shutil.copyfile(ipynb, out_ipynb)
-    else:
-        logger.info(f"{out_ipynb} already exists. Skipping")
-    logger.info(out_ipynb)
+        # copy over template if file doesn't exist
+        out_ipynb = f"{outdir}/cryoDRGN_filtering.ipynb"
+        if not os.path.exists(out_ipynb):
+            logger.info("Creating jupyter notebook...")
+            ipynb = f"{cryodrgn._ROOT}/templates/cryoDRGN_filtering_template.ipynb"
+            shutil.copyfile(ipynb, out_ipynb)
+        else:
+            logger.info(f"{out_ipynb} already exists. Skipping")
+        logger.info(out_ipynb)
 
     # copy over template if file doesn't exist
     out_ipynb = f"{outdir}/cryoDRGN_figures.ipynb"

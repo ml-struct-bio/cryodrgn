@@ -16,6 +16,7 @@ The official [cryoDRGN-ET](https://www.biorxiv.org/content/10.1101/2023.08.18.55
 
 * [NEW] Heterogeneous reconstruction of subtomograms. See documentation [on gitbook](https://ez-lab.gitbook.io/cryodrgn/)
 * [NEW] `cryodrgn direct_traversal` for making movies
+* Updated `cryodrgn backproject_voxel` for voxel-based homogeneous reconstruction
 * Major refactor of dataset loading for handling large datasets
 
 ### Previous versions

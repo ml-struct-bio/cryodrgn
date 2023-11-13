@@ -100,7 +100,7 @@ def analyze_z1(z, outdir, vg):
     vg.gen_volumes(outdir, ztraj)
 
 
-def analyze_zN(z, outdir, vg, skip_umap=False, num_pcs=2, num_ksamples=20):
+def analyze_zN(z, outdir, vg, workdir, epoch, skip_umap=False, num_pcs=2, num_ksamples=20):
     zdim = z.shape[1]
 
     # Principal component analysis
@@ -134,6 +134,17 @@ def analyze_zN(z, outdir, vg, skip_umap=False, num_pcs=2, num_ksamples=20):
 
     # Make some plots
     logger.info("Generating plots...")
+
+    # Plot learning curve
+    loss = analysis.parse_loss(f"{workdir}/run.log")
+    plt.figure(figsize=(4, 4))
+    plt.plot(loss)
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.axvline(x=epoch, linestyle="--", color="black", label=f"Epoch {epoch}")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(f"{outdir}/learning_curve_epoch{epoch}.png")
 
     def plt_pc_labels(x=0, y=1):
         plt.xlabel(f"PC{x+1} ({pca.explained_variance_ratio_[x]:.2f})")
@@ -352,6 +363,7 @@ def main(args):
     t1 = dt.now()
     E = args.epoch
     workdir = args.workdir
+    epoch = args.epoch
     zfile = f"{workdir}/z.{E}.pkl"
     weights = f"{workdir}/weights.{E}.pkl"
     cfg = (
@@ -391,6 +403,8 @@ def main(args):
             z,
             outdir,
             vg,
+            workdir,
+            epoch,
             skip_umap=args.skip_umap,
             num_pcs=args.pc,
             num_ksamples=args.ksample,

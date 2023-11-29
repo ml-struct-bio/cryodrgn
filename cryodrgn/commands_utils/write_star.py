@@ -56,19 +56,12 @@ def add_args(parser):
         help="Write the full path to particles (default: relative paths)",
     )
     parser.add_argument(
+        "--datadir",
+        required=True,
+        help="provide absolute path to input .mrcs",
+    )
+    parser.add_argument(
         "-o", type=os.path.abspath, required=True, help="Output .star file"
-    )
-    parser.add_argument(
-        "--img_dim",
-        type=int,
-        default=2,
-        help="_rlnImageDimensionality (default: %(default)s)",
-    )
-    parser.add_argument(
-        "--optics_group",
-        type=int,
-        default=1,
-        help="_rlnOpticsGroup (default: %(default)s)",
     )
     
     return parser
@@ -82,17 +75,21 @@ def natural_sort_key(s):
     
     return parts
 
-# def print_ctf_params(params: np.ndarray) -> None:
-#     assert len(params) == 9
-#     logger.info("Image size (pix)  : {}".format(int(params[0])))
-#     logger.info("A/pix             : {}".format(params[1]))
-#     logger.info("DefocusU (A)      : {}".format(params[2]))
-#     logger.info("DefocusV (A)      : {}".format(params[3]))
-#     logger.info("Dfang (deg)       : {}".format(params[4]))
-#     logger.info("voltage (kV)      : {}".format(params[5]))
-#     logger.info("cs (mm)           : {}".format(params[6]))
-#     logger.info("w                 : {}".format(params[7]))
-#     logger.info("Phase shift (deg) : {}".format(params[8]))
+def print_ctf_params(params: np.ndarray) -> None:
+    assert len(params) == 9
+    logger.info("Image size (pix)  : {}".format(int(params[0])))
+    logger.info("A/pix             : {}".format(params[1]))
+    logger.info("DefocusU (A)      : {}".format(params[2]))
+    logger.info("DefocusV (A)      : {}".format(params[3]))
+    logger.info("Dfang (deg)       : {}".format(params[4]))
+    logger.info("voltage (kV)      : {}".format(params[5]))
+    logger.info("cs (mm)           : {}".format(params[6]))
+    logger.info("w                 : {}".format(params[7]))
+    logger.info("Phase shift (deg) : {}".format(params[8]))
+
+def files_in_directory(directory, extension):
+    files = [file for file in os.listdir(directory) if file.endswith(f'.{extension}')]
+    return files
 
 def main(args):
     assert args.o.endswith(".star"), "Output file must be .star file"
@@ -127,7 +124,6 @@ def main(args):
             poses[0]
         ), f"{len(particles)} != {len(poses)}, Number of particles != number of poses"
     logger.info(f"{len(particles)} particles in {args.particles}")
-
     ind = np.arange(particles.n)
     if args.ind:
         ind = utils.load_pkl(args.ind)
@@ -142,21 +138,17 @@ def main(args):
         df = particles.df.loc[ind]
     else:
         image_names = particles.filenames[ind]
-        particle_path, _ = os.path.split(args.particles)
-        file_names_lst = os.listdir(particle_path)
+        file_names_lst = files_in_directory(args.datadir, extension='mrcs')
+        num_data_per_particle = particles.n//len(file_names_lst)
         file_names_lst = sorted(file_names_lst, key=natural_sort_key)
         if args.full_path:
             image_names = [os.path.abspath(image_name) for image_name in image_names]
         names = []
         j=1
         for i, name in zip(ind, image_names):
-            if j % 1000 ==1:
+            if j % num_data_per_particle ==1:
                 j=1
-            print(f"{j}@{name}"+particle_path+'/'+file_names_lst[i//1000])
-            if file_names_lst[i//1000].split('.')[-1] == 'txt':
-                continue
-            else:
-                names.append(f"{j}@{name}"+particle_path+'/'+file_names_lst[i//1000])
+            names.append(f"{j}@{name}"+args.datadir+'/'+file_names_lst[i//num_data_per_particle])
             j = j+1
 
         # convert poses
@@ -176,21 +168,21 @@ def main(args):
                 data[POSE_HDRS[i]] = eulers[:, i]  # type: ignore
             for i in range(2):
                 data[POSE_HDRS[3 + i]] = trans[:, i]
-        
-        #### CryoSPARC ####
-        column_values = [ctf[0][1], ctf[0][0], args.img_dim, args.optics_group, 1]
-        for i in range(len(CRYOSPARC_HEADERS)):
-            data[CRYOSPARC_HEADERS[i]] = column_values[i]
         df = pd.DataFrame(data=data)
-        # Half Set
-        lst = list(range(len(df)))
-        list_sampled = random.sample(lst, k=len(lst)//2)
-        df[CRYOSPARC_HEADERS[-1]].loc[list_sampled] = 2
+
     s = Starfile(headers=None, df=df)
 
+    #### CryoSPARC ####
+    column_values = [ctf[0][1], ctf[0][0], 2, 1, 1]
+    s.df[CRYOSPARC_HEADERS] = column_values
+    # Half set
+    lst = list(range(len(s.df)))
+    list_sampled = random.sample(lst, k=len(lst)//2)
+    s.df[CRYOSPARC_HEADERS[-1]].loc[list_sampled] = 2
+
     #### Relion ####
-    relion_values = ["opticsGroup1", args.optics_group, ctf[0][1], ctf[0][5], ctf[0][6],
-                    ctf[0][7], ctf[0][1], ctf[0][0], args.img_dim, 0]
+    relion_values = ["opticsGroup1", 1, ctf[0][1], ctf[0][5], ctf[0][6],
+                    ctf[0][7], ctf[0][1], ctf[0][0], 2, 0]
     s.write(args.o, RELION_HEADERS, relion_values)
 
 

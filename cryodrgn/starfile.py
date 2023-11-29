@@ -96,17 +96,22 @@ class Starfile:
         df = pd.DataFrame(data=data)
         return cls(headers, df)
 
-    def _write_block(self, f, headers, df, block_header="data_"):
+    def _write_block(self, f, headers, df=None, block_header="data_", relion_values=None, is_relion=False):
         f.write(f"{block_header}\n\n")
         f.write("loop_\n")
         f.write("\n".join(headers))
         f.write("\n")
-        for i in df.index:
-            # TODO: Assumes header and df ordering is consistent
-            f.write(" ".join([str(v) for v in df.loc[i]]))
+        if is_relion:
+            f.write(" ".join([str(v) for v in relion_values]))
             f.write("\n")
+            f.write("\n")
+        else:
+            for i in df.index:
+                # TODO: Assumes header and df ordering is consistent
+                f.write(" ".join([str(v) for v in df.loc[i]]))
+                f.write("\n")
 
-    def write(self, outstar: str):
+    def write(self, outstar: str, relion_headers=None, relion_values=None):
         f = open(outstar, "w")
         f.write("# Created {}\n".format(dt.now()))
         f.write("\n")
@@ -122,7 +127,8 @@ class Starfile:
             f.write("\n\n")
             self._write_block(f, self.headers, self.df, block_header="data_particles")
         else:
-            self._write_block(f, self.headers, self.df, block_header="data_")
+            self._write_block(f, relion_headers, block_header="data_optics", relion_values=relion_values, is_relion=True)
+            self._write_block(f, self.headers, self.df, block_header="data_particles")
 
     def get_particles(self, datadir: Optional[str] = None, lazy: bool = True):
         raise NotImplementedError(

@@ -14,7 +14,7 @@ from cryodrgn.starfile import Starfile
 import pickle
 import re
 # file="/scratch/gpfs/ZHONGE/mj7341/research/00_moml/antibody/dataset/conformational"
-# python /scratch/gpfs/ZHONGE/mj7341/MoML/cryosim/cryodrgn/cryodrgn/commands_utils/write_star.py $file/add_noise/128_chimera_resample/snr01/mrcs/sorted_particles.128.txt --ctf $file/integrated_ctf.pkl --poses $file/integrated_poses_chimera.pkl -o $file/add_noise/128_chimera_resample/snr01/snr01_star.star 
+# python cryodrgn/commands_utils/write_star.py $file/add_noise/128_chimera_resample/snr01/mrcs/sorted_particles.128.txt --ctf $file/integrated_ctf.pkl --poses $file/integrated_poses_chimera.pkl -o $file/add_noise/128_chimera_resample/snr01/snr01_star_newver3.star --datadir $file/add_noise/128_chimera_resample/snr01/mrcs 
 log = print
 logger = logging.getLogger(__name__)
 
@@ -145,10 +145,10 @@ def main(args):
             image_names = [os.path.abspath(image_name) for image_name in image_names]
         names = []
         j=1
-        for i, name in zip(ind, image_names):
+        for i in range(particles.n):
             if j % num_data_per_particle ==1:
                 j=1
-            names.append(f"{j}@{name}"+args.datadir+'/'+file_names_lst[i//num_data_per_particle])
+            names.append(f"{j}@"+args.datadir+'/'+file_names_lst[i//num_data_per_particle])
             j = j+1
 
         # convert poses
@@ -176,9 +176,7 @@ def main(args):
     column_values = [ctf[0][1], ctf[0][0], 2, 1, 1]
     s.df[CRYOSPARC_HEADERS] = column_values
     # Half set
-    lst = list(range(len(s.df)))
-    list_sampled = random.sample(lst, k=len(lst)//2)
-    s.df[CRYOSPARC_HEADERS[-1]].loc[list_sampled] = 2
+    s.df[CRYOSPARC_HEADERS[-1]] = s.df.index%2+1
 
     #### Relion ####
     relion_values = ["opticsGroup1", 1, ctf[0][1], ctf[0][5], ctf[0][6],

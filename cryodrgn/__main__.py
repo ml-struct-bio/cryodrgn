@@ -21,6 +21,7 @@ def main():
     import cryodrgn.commands.downsample
     import cryodrgn.commands.eval_images
     import cryodrgn.commands.eval_vol
+    import cryodrgn.commands.filter
     import cryodrgn.commands.graph_traversal
     import cryodrgn.commands.parse_ctf_csparc
     import cryodrgn.commands.parse_ctf_star
@@ -44,6 +45,7 @@ def main():
         cryodrgn.commands.backproject_voxel,
         cryodrgn.commands.train_vae,
         cryodrgn.commands.eval_vol,
+        cryodrgn.commands.filter,
         cryodrgn.commands.eval_images,
         cryodrgn.commands.analyze,
         cryodrgn.commands.analyze_landscape,

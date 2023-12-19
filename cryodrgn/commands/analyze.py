@@ -42,7 +42,7 @@ def add_args(parser):
     group.add_argument(
         "--Apix",
         type=float,
-        help="Pixel size to add to .mrc header (default is to use A/px found in ctf)",
+        help="Pixel size to add to .mrc header (default is to infer from ctf.pkl file else 1)",
     )
     group.add_argument(
         "--flip", action="store_true", help="Flip handedness of output volumes"

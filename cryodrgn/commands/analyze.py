@@ -327,7 +327,7 @@ def analyze_zN(
 
         if i > 0 and i == num_pcs - 1:
             g = sns.jointplot(
-                pc[:, i - 1], pc[:, i], alpha=0.1, s=1, rasterized=True, height=4
+                x=pc[:, i - 1], y=pc[:, i], alpha=0.1, s=1, rasterized=True, height=4
             )
             g.ax_joint.scatter(np.zeros(10), t, c="cornflowerblue", edgecolor="white")
             plt_pc_labels_jointplot(g, i - 1, i)

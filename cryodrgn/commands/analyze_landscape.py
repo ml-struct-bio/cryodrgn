@@ -380,9 +380,9 @@ def analyze_volumes(
     def hack_barplot(counts_):
         if M <= 20:  # HACK TO GET COLORS
             with sns.color_palette(cmap):
-                g = sns.barplot(np.arange(M), counts_)
+                g = sns.barplot(x=np.arange(M), y=counts_)
         else:  # default is husl
-            g = sns.barplot(np.arange(M), counts_)
+            g = sns.barplot(x=np.arange(M), y=counts_)
         return g
 
     plt.figure()

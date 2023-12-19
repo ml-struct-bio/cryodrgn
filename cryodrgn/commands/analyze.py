@@ -42,8 +42,7 @@ def add_args(parser):
     group.add_argument(
         "--Apix",
         type=float,
-        default=1,
-        help="Pixel size to add to .mrc header (default: %(default)s A/pix)",
+        help="Pixel size to add to .mrc header (default is to use A/px found in ctf)",
     )
     group.add_argument(
         "--flip", action="store_true", help="Flip handedness of output volumes"
@@ -100,7 +99,9 @@ def analyze_z1(z, outdir, vg):
     vg.gen_volumes(outdir, ztraj)
 
 
-def analyze_zN(z, outdir, vg, workdir, epoch, skip_umap=False, num_pcs=2, num_ksamples=20):
+def analyze_zN(
+    z, outdir, vg, workdir, epoch, skip_umap=False, num_pcs=2, num_ksamples=20
+):
     zdim = z.shape[1]
 
     # Principal component analysis
@@ -364,6 +365,7 @@ def main(args):
     E = args.epoch
     workdir = args.workdir
     epoch = args.epoch
+
     zfile = f"{workdir}/z.{E}.pkl"
     weights = f"{workdir}/weights.{E}.pkl"
     cfg = (
@@ -371,7 +373,45 @@ def main(args):
         if os.path.exists(f"{workdir}/config.yaml")
         else f"{workdir}/config.pkl"
     )
+
+    configs = config.load(cfg)
     outdir = f"{workdir}/analyze.{E}"
+
+    if args.Apix:
+        use_apix = args.Apix
+
+    # find A/px from CTF if not given
+    else:
+        if configs["dataset_args"]["ctf"]:
+            ctf_params = utils.load_pkl(configs["dataset_args"]["ctf"])
+            orig_apixs = set(ctf_params[:, 1])
+
+            if len(orig_apixs) > 1:
+                use_apix = 1.0
+                logger.info(
+                    "cannot find unique A/px in CTF parameters, "
+                    "defaulting to A/px=1.0"
+                )
+
+            else:
+                orig_apix = tuple(orig_apixs)[0]
+                orig_sizes = set(ctf_params[:, 0])
+                orig_size = tuple(orig_sizes)[0]
+
+                if len(orig_sizes) > 1:
+                    logger.info(
+                        "cannot find unique original box size in CTF "
+                        f"parameters, defaulting to first found: {orig_size}"
+                    )
+
+                cur_size = configs["lattice_args"]["D"] - 1
+                use_apix = round(orig_apix * orig_size / cur_size, 6)
+                logger.info(f"using A/px={use_apix} as per CTF parameters")
+
+        else:
+            use_apix = 1.0
+            logger.info("cannot find A/px in CTF parameters, " "defaulting to A/px=1.0")
+
     if E == -1:
         zfile = f"{workdir}/z.pkl"
         weights = f"{workdir}/weights.pkl"
@@ -387,7 +427,7 @@ def main(args):
     zdim = z.shape[1]
 
     vol_args = dict(
-        Apix=args.Apix,
+        Apix=use_apix,
         downsample=args.downsample,
         flip=args.flip,
         device=args.device,
@@ -451,7 +491,7 @@ def main(args):
         logger.info(f"{out_ipynb} already exists. Skipping")
     logger.info(out_ipynb)
 
-    logger.info(f"Finished in {dt.now()-t1}")
+    logger.info(f"Finished in {dt.now() - t1}")
 
 
 if __name__ == "__main__":

@@ -92,7 +92,7 @@ class ImageDataset(data.Dataset):
 
         particles = self._process(self.src.images(index).to(self.device))
 
-        if isinstance(index, int):
+        if isinstance(index, (int, np.integer)):
             logger.debug(f"ImageDataset returning images at index ({index})")
         else:
             logger.debug(

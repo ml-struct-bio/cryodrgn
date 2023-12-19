@@ -50,69 +50,59 @@ def add_args(parser):
         "`cryodrgn_utils regularize_backproject`.",
     )
 
-    dataset_group = parser.add_argument_group("Dataset loading options")
-    dataset_group.add_argument(
+    group = parser.add_argument_group("Dataset loading options")
+    group.add_argument(
         "--uninvert-data",
         dest="invert_data",
         action="store_false",
         help="Do not invert data sign",
     )
-    dataset_group.add_argument(
+    group.add_argument(
         "--datadir",
         type=os.path.abspath,
         help="Path prefix to particle stack if loading relative paths from a .star or .cs file",
     )
-    dataset_group.add_argument(
+    group.add_argument(
         "--lazy",
         action="store_true",
         help="Lazy loading if full dataset is too large to fit in memory",
     )
-    dataset_group.add_argument(
+    group.add_argument(
         "--ind",
         type=os.path.abspath,
         metavar="PKL",
         help="Filter particles by these indices",
     )
-    dataset_group = parser.add_argument_group("Tilt series options")
-    dataset_group.add_argument(
-        "--tilt",
-        action="store_true",
-        help="Flag to treat data as a tilt series from cryo-ET",
-    )
-    dataset_group.add_argument(
-        "--ntilts",
-        type=int,
-        default=10,
-        help="Number of tilts per particle to backproject (default: %(default)s)",
-    )
-    dataset_group.add_argument(
-        "-d",
-        "--dose-per-tilt",
-        type=float,
-        help="Expected dose per tilt (electrons/A^2 per tilt) (default: %(default)s)",
-    )
-    dataset_group.add_argument(
-        "-a",
-        "--angle-per-tilt",
-        type=float,
-        default=3,
-        help="Tilt angle increment per tilt in degrees (default: %(default)s)",
-    )
-
-    imgs_group = parser.add_mutually_exclusive_group()
-    imgs_group.add_argument(
+    group.add_argument(
         "--first",
         type=int,
         default=None,
         help="Backproject the first N images (default: all images)",
     )
-
-    imgs_group.add_argument(
-        "--half-map",
+    group = parser.add_argument_group("Tilt series options")
+    group.add_argument(
+        "--tilt",
+        action="store_true",
+        help="Flag to treat data as a tilt series from cryo-ET",
+    )
+    group.add_argument(
+        "--ntilts",
         type=int,
-        nargs="?",
-        const=np.random.randint(10000),
-        help="Generate a half map using the given random seed; chooses a random seed for you if none given.",
+        default=10,
+        help="Number of tilts per particle to backproject (default: %(default)s)",
+    )
+    group.add_argument(
+        "-d",
+        "--dose-per-tilt",
+        type=float,
+        help="Expected dose per tilt (electrons/A^2 per tilt) (default: %(default)s)",
+    )
+    group.add_argument(
+        "-a",
+        "--angle-per-tilt",
+        type=float,
+        default=3,
+        help="Tilt angle increment per tilt in degrees (default: %(default)s)",
     )
 
     return parser
@@ -222,41 +212,34 @@ def main(args):
     mask = lattice.get_circular_mask(D // 2)
 
     if args.first:
-        iterator = range(min(args.first, Nimg))
-
-    elif args.half_map:
-        np.random.seed(args.half_map)
-        iterator = np.random.choice(range(Nimg), Nimg // 2, replace=False)
-
+        args.first = min(args.first, Nimg)
+        iterator = range(args.first)
     else:
         iterator = range(Nimg)
 
-    for i, j in enumerate(iterator):
-        if i % 100 == 0:
-            logger.info("image {}".format(i))
-
-        r, t = posetracker.get_pose(j)
-        ff = data.get_tilt(j) if args.tilt else data[j]
+    for ii in iterator:
+        if ii % 100 == 0:
+            logger.info("image {}".format(ii))
+        r, t = posetracker.get_pose(ii)
+        ff = data.get_tilt(ii) if args.tilt else data[ii]
         assert isinstance(ff, tuple)
 
         ff = ff[0].to(device)
         ff = ff.view(-1)[mask]
+        c = None
         ctf_mul = 1
-
         if ctf_params is not None:
-            freqs = lattice.freqs2d / ctf_params[j, 0]
-            c = ctf.compute_ctf(freqs, *ctf_params[j, 1:]).view(-1)[mask]
+            freqs = lattice.freqs2d / ctf_params[ii, 0]
+            c = ctf.compute_ctf(freqs, *ctf_params[ii, 1:]).view(-1)[mask]
             if args.ctf_alg == "flip":
                 ff *= c.sign()
             else:
                 ctf_mul = c
-
         if t is not None:
             ff = lattice.translate_ht(ff.view(1, -1), t.view(1, 1, 2), mask).view(-1)
-
         if args.tilt:
-            tilt_idxs = torch.tensor([j]).to(device)
-            dose_filters = data.get_dose_filters(tilt_idxs, lattice, ctf_params[j, 0])[
+            tilt_idxs = torch.tensor([ii]).to(device)
+            dose_filters = data.get_dose_filters(tilt_idxs, lattice, ctf_params[ii, 0])[
                 0
             ]
             ctf_mul *= dose_filters[mask]

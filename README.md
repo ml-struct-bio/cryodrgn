@@ -19,6 +19,10 @@ The official [cryoDRGN-ET](https://www.biorxiv.org/content/10.1101/2023.08.18.55
 * Updated `cryodrgn backproject_voxel` for voxel-based homogeneous reconstruction
 * Major refactor of dataset loading for handling large datasets
 
+### New in Version 3.1.x ###
+
+* [NEW] `drgnai filter` interface for interactive filtering of particles as an alternative to the cryoDRGN_filter Jupyter notebook
+
 ### Previous versions
 
 <details><summary>Version 2.3</summary>

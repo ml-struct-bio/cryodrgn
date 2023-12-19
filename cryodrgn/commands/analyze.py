@@ -386,6 +386,7 @@ def main(args):
             ctf_params = utils.load_pkl(configs["dataset_args"]["ctf"])
             orig_apixs = set(ctf_params[:, 1])
 
+	    # TODO: add support for multiple optics groups
             if len(orig_apixs) > 1:
                 use_apix = 1.0
                 logger.info(

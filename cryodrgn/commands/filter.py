@@ -41,13 +41,15 @@ def add_args(parser):
         "-k",
         type=int,
         default=-1,
-        help="which set of k-means clusters " "to use for filtering",
+        help="which set of k-means clusters to use for filtering",
     )
 
     parser.add_argument(
-        "--inds",
+        "--plot-inds",
         type=str,
-        help="Path to a file containing previously " "selected indices.",
+        help="path to a file containing previously selected indices "
+             "that will be plotted at the beginning",
+        dest='plot_inds'
     )
 
 
@@ -55,7 +57,7 @@ def main(args) -> None:
     workdir = args.outdir
     epoch = args.epoch
     kmeans = args.kmeans
-    pre_inds = args.inds
+    plot_inds = args.plot_inds
 
     train_configs_file = os.path.join(workdir, "config.yaml")
     if not os.path.exists(train_configs_file):
@@ -91,15 +93,25 @@ def main(args) -> None:
         rot, trans = utils.load_pkl(pose_pkl)
 
     ctf_params = utils.load_pkl(train_configs["dataset_args"]["ctf"])
+    all_indices = np.array(range(ctf_params.shape[0]))
+
     if isinstance(train_configs["dataset_args"]["ind"], int):
-        ctf_params = ctf_params[: train_configs["dataset_args"]["ind"]]
+        ctf_params = ctf_params[:train_configs["dataset_args"]["ind"], :]
+        all_indices = all_indices[:train_configs["dataset_args"]["ind"]]
+
+    elif isinstance(train_configs["dataset_args"]["ind"], str):
+        inds = utils.load_pkl(train_configs["dataset_args"]["ind"])
+        ctf_params = ctf_params[inds, :]
+        rot = rot[inds, :, :]
+        trans = trans[inds, :]
+        all_indices = all_indices[inds]
 
     pc, pca = analysis.run_pca(z)
     umap = utils.load_pkl(os.path.join(anlzdir, "umap.pkl"))
 
     # load preselected indices if they have been specified
-    if pre_inds:
-        with open(pre_inds, "rb") as file:
+    if plot_inds:
+        with open(plot_inds, "rb") as file:
             pre_indices = pickle.load(file)
     else:
         pre_indices = None
@@ -153,17 +165,24 @@ def main(args) -> None:
 
     selector = SelectFromScatter(plot_df, pre_indices)
     input("Press Enter after making your selection...")
-    selected_indices = selector.indices if pre_indices is None else pre_indices
+    selected_indices = [all_indices[i] for i in selector.indices]
     plt.close()  # Close the figure to avoid interference with other plots
 
-    print(f"Selected particles: {selected_indices}")
+    select_str = " ... ".join(
+        [','.join([str(i) for i in selected_indices[:6]]),
+         ','.join([str(i) for i in selected_indices[-6:]])]
+        )
+
+    print(f"Selected {len(selected_indices)} particles from original list of "
+          f"{len(all_indices)} "
+          f"particles numbered [{min(all_indices)}, ... , {max(all_indices)}]:\n{select_str}")
+
     save_option = (
-        input("Do you want to save the " "selection? (yes/no): ").strip().lower()
-    )
+        input("Do you want to save the selection? (yes/no): ").strip().lower())
 
     if save_option == "yes":
         filename = input(
-            "Enter filename to save selection (absolute, " "without extension): "
+            "Enter filename to save selection (absolute, without extension): "
         ).strip()
 
         # saving the selected indices
@@ -176,12 +195,15 @@ def main(args) -> None:
 
             # Saving the inverse selection
             inverse_filename = filename + "_inverse.pkl"
-            inverse_indices = np.setdiff1d(np.arange(umap.shape[0]), selected_indices)
+            inverse_indices = np.setdiff1d(all_indices, selected_indices)
 
             with open(inverse_filename, "wb") as file:
                 pickle.dump(inverse_indices, file)
 
             print(f"Inverse selection saved to {inverse_filename}")
+
+    else:
+        print("Exiting without saving selection.")
 
 
 class SelectFromScatter:

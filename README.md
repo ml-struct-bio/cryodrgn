@@ -12,17 +12,21 @@ For any feedback, questions, or bugs, please file a Github issue, start a Github
 
 ## New in Version 3.x
 
-The official [cryoDRGN-ET](https://www.biorxiv.org/content/10.1101/2023.08.18.553799v1) release for heterogeneous subtomogram analysis. 
+The official [cryoDRGN-ET](https://www.biorxiv.org/content/10.1101/2023.08.18.553799v1) release for heterogeneous subtomogram analysis.
 
 * [NEW] Heterogeneous reconstruction of subtomograms. See documentation [on gitbook](https://ez-lab.gitbook.io/cryodrgn/)
 * [NEW] `cryodrgn direct_traversal` for making movies
 * Updated `cryodrgn backproject_voxel` for voxel-based homogeneous reconstruction
 * Major refactor of dataset loading for handling large datasets
 
+### New in Version 3.1.x ###
+
+* [NEW] `drgnai filter` interface for interactive filtering of particles as an alternative to the cryoDRGN_filter Jupyter notebook
+
 ### Previous versions
 
 <details><summary>Version 2.3</summary>
-	
+
 * Model configuration files are now saved as human-readable config.yaml files (https://github.com/zhonge/cryodrgn/issues/235)
 * Fix machine stamp in output .mrc files for better compatibility with downstream tools (https://github.com/zhonge/cryodrgn/pull/260)
 * Better documentation of help flags in ab initio reconstruction tools (https://github.com/zhonge/cryodrgn/issues/258)
@@ -490,6 +494,9 @@ Notes:
 [1] Volumes are generated after k-means clustering of the latent embeddings with k=20 by default. Note that we use k-means clustering here not to identify clusters, but to segment the latent space and generate structures from different regions of the latent space. The number of structures that are generated may be increased with the option `--ksample`.
 
 [2] The `cryodrgn analyze` command chains together a series of calls to `cryodrgn eval_vol` and other scripts that can be run separately for more flexibility. These scripts are located in the `analysis_scripts` directory within the source code.
+
+[3] In particular, you may find it useful to perform filtering of particles separately from other analyses. This can
+done using our interactive interface available from the command line: `cryodrgn filter 01_cryodrgn256`.
 
 ### Generating additional volumes
 

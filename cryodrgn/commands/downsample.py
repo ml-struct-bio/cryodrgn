@@ -98,6 +98,9 @@ def main(args):
     start = int(oldD / 2 - D / 2)
     stop = int(oldD / 2 + D / 2)
 
+    old_apix = old.header.get_apix() if hasattr(old, "header") else 1.0
+    new_apix = round(old_apix * oldD / args.D, 6)
+
     # Downsample volume
     if args.is_vol:
         old = old.images()
@@ -109,7 +112,7 @@ def main(args):
         logger.info(f"Saving {args.o}")
         MRCFile.write(args.o, array=new, is_vol=True)
 
-    # Downsample images
+    # downsample images
     else:
 
         def transform_fn(chunk, indices):
@@ -120,9 +123,11 @@ def main(args):
 
         if args.chunk is None:
             logger.info("Saving {}".format(args.o))
+
             header = MRCHeader.make_default_header(
-                nz=old.n, ny=D, nx=D, data=None, is_vol=args.is_vol
+                nz=old.n, ny=D, nx=D, Apix=new_apix, data=None, is_vol=args.is_vol
             )
+
             MRCFile.write(
                 filename=args.o,
                 array=old,
@@ -132,20 +137,27 @@ def main(args):
                 chunksize=args.b,
             )
 
+        # downsample images, saving one chunk of N images at a time
         else:
-            # Downsample images, saving chunks of N images
             nchunks = math.ceil(len(old) / args.chunk)
             out_mrcs = [
                 ".{}".format(i).join(os.path.splitext(args.o)) for i in range(nchunks)
             ]
             chunk_names = [os.path.basename(x) for x in out_mrcs]
+
             for i in range(nchunks):
                 logger.info("Processing chunk {}".format(i))
                 chunk = old[i * args.chunk : (i + 1) * args.chunk]
 
                 header = MRCHeader.make_default_header(
-                    nz=len(chunk), ny=D, nx=D, data=None, is_vol=args.is_vol
+                    nz=len(chunk),
+                    ny=D,
+                    nx=D,
+                    Apix=new_apix,
+                    data=None,
+                    is_vol=args.is_vol,
                 )
+
                 logger.info(f"Saving {out_mrcs[i]}")
                 MRCFile.write(
                     filename=out_mrcs[i],

@@ -1,179 +1,19 @@
-"""Pytorch models"""
-from typing import Optional, Tuple, Type, Sequence, Any
+"""Pytorch models implenting neural networks."""
+
 import numpy as np
 import torch
 from torch import Tensor
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.parameter import Parameter
-from torch.nn.parallel import DataParallel
-from cryodrgn import fft, lie_tools, utils
+from typing import Optional, Tuple, Type, Sequence, Any
+
+from cryodrgn import fft
+from cryodrgn import lie_tools
+from cryodrgn import utils
 import cryodrgn.config
-from cryodrgn.lattice import Lattice
 
 Norm = Sequence[Any]  # mean, std
-
-
-def unparallelize(model: nn.Module) -> nn.Module:
-    if isinstance(model, DataParallelDecoder):
-        return model.dp.module
-    if isinstance(model, DataParallel):
-        return model.module
-    return model
-
-
-class HetOnlyVAE(nn.Module):
-    # No pose inference
-    def __init__(
-        self,
-        lattice: Lattice,
-        qlayers: int,
-        qdim: int,
-        players: int,
-        pdim: int,
-        in_dim: int,
-        zdim: int = 1,
-        encode_mode: str = "resid",
-        enc_mask=None,
-        enc_type="linear_lowf",
-        enc_dim=None,
-        domain="fourier",
-        activation=nn.ReLU,
-        feat_sigma: Optional[float] = None,
-        tilt_params={},
-    ):
-        super(HetOnlyVAE, self).__init__()
-        self.lattice = lattice
-        self.zdim = zdim
-        self.in_dim = in_dim
-        self.enc_mask = enc_mask
-        if encode_mode == "conv":
-            self.encoder = ConvEncoder(qdim, zdim * 2)
-        elif encode_mode == "resid":
-            self.encoder = ResidLinearMLP(
-                in_dim,
-                qlayers,
-                qdim,
-                zdim * 2,
-                activation,  # nlayers  # hidden_dim  # out_dim
-            )
-        elif encode_mode == "mlp":
-            self.encoder = MLP(
-                in_dim, qlayers, qdim, zdim * 2, activation  # hidden_dim  # out_dim
-            )  # in_dim -> hidden_dim
-        elif encode_mode == "tilt":
-            self.encoder = TiltEncoder(
-                in_dim,
-                qlayers,
-                qdim,
-                tilt_params["t_emb_dim"],  # embedding dim
-                tilt_params["ntilts"],  # number of encoded tilts
-                tilt_params["tlayers"],
-                tilt_params["tdim"],
-                zdim * 2,  # outdim
-                activation,
-            )
-        else:
-            raise RuntimeError("Encoder mode {} not recognized".format(encode_mode))
-        self.encode_mode = encode_mode
-        self.decoder = get_decoder(
-            3 + zdim,
-            lattice.D,
-            players,
-            pdim,
-            domain,
-            enc_type,
-            enc_dim,
-            activation,
-            feat_sigma,
-        )
-
-    @classmethod
-    def load(cls, config, weights=None, device=None):
-        """Instantiate a model from a config.yaml
-
-        Inputs:
-            config (str, dict): Path to config.yaml or loaded config.yaml
-            weights (str): Path to weights.pkl
-            device: torch.device object
-
-        Returns:
-            HetOnlyVAE instance, Lattice instance
-        """
-        cfg = cryodrgn.config.load(config)
-
-        c = cfg["lattice_args"]
-        lat = Lattice(c["D"], extent=c["extent"], device=device)
-        c = cfg["model_args"]
-        if c["enc_mask"] > 0:
-            enc_mask = lat.get_circular_mask(c["enc_mask"])
-            in_dim = int(enc_mask.sum())
-        else:
-            assert c["enc_mask"] == -1
-            enc_mask = None
-            in_dim = lat.D**2
-        activation = {"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[c["activation"]]
-        model = HetOnlyVAE(
-            lat,
-            c["qlayers"],
-            c["qdim"],
-            c["players"],
-            c["pdim"],
-            in_dim,
-            c["zdim"],
-            encode_mode=c["encode_mode"],
-            enc_mask=enc_mask,
-            enc_type=c["pe_type"],
-            enc_dim=c["pe_dim"],
-            domain=c["domain"],
-            activation=activation,
-            feat_sigma=c["feat_sigma"],
-            tilt_params=c.get("tilt_params", {}),
-        )
-        if weights is not None:
-            ckpt = torch.load(weights, map_location=device)
-            model.load_state_dict(ckpt["model_state_dict"])
-        if device is not None:
-            model.to(device)
-        return model, lat
-
-    def reparameterize(self, mu, logvar):
-        if not self.training:
-            return mu
-        std = torch.exp(0.5 * logvar)
-        eps = torch.randn_like(std)
-        return eps * std + mu
-
-    def encode(self, *img) -> Tuple[Tensor, Tensor]:
-        img = (x.view(x.shape[0], -1) for x in img)
-        if self.enc_mask is not None:
-            img = (x[:, self.enc_mask] for x in img)
-        z = self.encoder(*img)
-        return z[:, : self.zdim], z[:, self.zdim :]
-
-    def cat_z(self, coords, z) -> Tensor:
-        """
-        coords: Bx...x3
-        z: Bxzdim
-        """
-        assert coords.size(0) == z.size(0), (coords.shape, z.shape)
-        z = z.view(z.size(0), *([1] * (coords.ndimension() - 2)), self.zdim)
-        z = torch.cat((coords, z.expand(*coords.shape[:-1], self.zdim)), dim=-1)
-        return z
-
-    def decode(self, coords, z=None) -> torch.Tensor:
-        """
-        coords: BxNx3 image coordinates
-        z: Bxzdim latent coordinate
-        """
-        decoder = self.decoder
-        assert isinstance(decoder, nn.Module)
-        retval = decoder(self.cat_z(coords, z) if z is not None else coords)
-        return retval
-
-    # Need forward func for DataParallel -- TODO: refactor
-    def forward(self, *args, **kwargs):
-        return self.decode(*args, **kwargs)
 
 
 def load_decoder(config, weights=None, device=None):
@@ -777,179 +617,6 @@ def get_decoder(
     return model
 
 
-class VAE(nn.Module):
-    def __init__(
-        self,
-        lattice,
-        qlayers: int,
-        qdim: int,
-        players: int,
-        pdim: int,
-        encode_mode: str = "mlp",
-        no_trans: bool = False,
-        enc_mask: Optional[Tensor] = None,
-    ):
-        super(VAE, self).__init__()
-        self.lattice = lattice
-        self.D = lattice.D
-        if enc_mask is not None:
-            self.in_dim = (
-                lattice.D * lattice.D if enc_mask is None else int(enc_mask.sum())
-            )
-        self.enc_mask = enc_mask
-        assert qlayers > 2
-        if encode_mode == "conv":
-            self.encoder = ConvEncoder(qdim, qdim)
-        elif encode_mode == "resid":
-            self.encoder = ResidLinearMLP(
-                self.in_dim,
-                qlayers - 2,  # -2 bc we add 2 more layers in the homeomorphic encoer
-                qdim,  # hidden_dim
-                qdim,  # out_dim
-                nn.ReLU,
-            )  # in_dim -> hidden_dim
-        elif encode_mode == "mlp":
-            self.encoder = MLP(
-                self.in_dim, qlayers - 2, qdim, qdim, nn.ReLU  # hidden_dim  # out_dim
-            )  # in_dim -> hidden_dim
-        else:
-            raise RuntimeError("Encoder mode {} not recognized".format(encode_mode))
-        # predict rotation and translation in two completely separate NNs
-        # self.so3_encoder = SO3reparameterize(qdim) # hidden_dim -> SO(3) latent variable
-        # self.trans_encoder = ResidLinearMLP(nx*ny, 5, qdim, 4, nn.ReLU)
-
-        # or predict rotation/translations from intermediate encoding
-        self.so3_encoder = SO3reparameterize(
-            qdim, 1, qdim
-        )  # hidden_dim -> SO(3) latent variable
-        self.trans_encoder = ResidLinearMLP(qdim, 1, qdim, 4, nn.ReLU)
-
-        self.decoder = FTSliceDecoder(3, self.D, players, pdim, nn.ReLU)
-        self.no_trans = no_trans
-
-    def reparameterize(self, mu: Tensor, logvar: Tensor) -> Tensor:
-        if not self.training:
-            return mu
-        std = torch.exp(0.5 * logvar)
-        eps = torch.randn_like(std)
-        return eps * std + mu
-
-    def encode(self, img) -> Tuple[Tensor, Tensor, Optional[Tensor], Optional[Tensor]]:
-        """img: BxDxD"""
-        img = img.view(img.size(0), -1)
-        if self.enc_mask is not None:
-            img = img[:, self.enc_mask]
-        enc = nn.ReLU()(self.encoder(img))
-        z_mu, z_std = self.so3_encoder(enc)
-        if self.no_trans:
-            tmu, tlogvar = (None, None)
-        else:
-            z = self.trans_encoder(enc)
-            tmu, tlogvar = z[:, :2], z[:, 2:]
-        return z_mu, z_std, tmu, tlogvar
-
-    def eval_volume(self, norm) -> Tensor:
-        return self.decoder.eval_volume(
-            self.lattice.coords, self.D, self.lattice.extent, norm
-        )
-
-    def decode(self, rot):
-        # transform lattice by rot.T
-        x = self.lattice.coords @ rot  # R.T*x
-        y_hat = self.decoder(x)
-        y_hat = y_hat.view(-1, self.D, self.D)
-        return y_hat
-
-    def forward(self, img: Tensor):
-        z_mu, z_std, tmu, tlogvar = self.encode(img)
-        rot, w_eps = self.so3_encoder.sampleSO3(z_mu, z_std)
-        # transform lattice by rot and predict image
-        y_hat = self.decode(rot)
-        if not self.no_trans:
-            # translate image by t
-            assert tmu is not None and tlogvar is not None
-            B = img.size(0)
-            t = self.reparameterize(tmu, tlogvar)
-            t = t.unsqueeze(1)  # B x 1 x 2
-            img = self.lattice.translate_ht(img.view(B, -1), t)
-            img = img.view(B, self.D, self.D)
-        return y_hat, img, z_mu, z_std, w_eps, tmu, tlogvar
-
-
-class TiltVAE(nn.Module):
-    def __init__(
-        self, lattice, tilt, qlayers, qdim, players, pdim, no_trans=False, enc_mask=None
-    ):
-        super(TiltVAE, self).__init__()
-        self.lattice = lattice
-        self.D = lattice.D
-        self.in_dim = lattice.D * lattice.D if enc_mask is None else enc_mask.sum()
-        self.enc_mask = enc_mask
-        assert qlayers > 3
-        self.encoder = ResidLinearMLP(self.in_dim, qlayers - 3, qdim, qdim, nn.ReLU)
-        self.so3_encoder = SO3reparameterize(
-            2 * qdim, 3, qdim
-        )  # hidden_dim -> SO(3) latent variable
-        self.trans_encoder = ResidLinearMLP(2 * qdim, 2, qdim, 4, nn.ReLU)
-        self.decoder = FTSliceDecoder(3, self.D, players, pdim, nn.ReLU)
-        assert tilt.shape == (3, 3), "Rotation matrix input required"
-        self.tilt = torch.tensor(tilt)
-        self.no_trans = no_trans
-
-    def reparameterize(self, mu, logvar):
-        if not self.training:
-            return mu
-        std = torch.exp(0.5 * logvar)
-        eps = torch.randn_like(std)
-        return eps * std + mu
-
-    def eval_volume(self, norm) -> Tensor:
-        return self.decoder.eval_volume(
-            self.lattice.coords, self.D, self.lattice.extent, norm
-        )
-
-    def encode(self, img, img_tilt):
-        img = img.view(img.size(0), -1)
-        img_tilt = img_tilt.view(img_tilt.size(0), -1)
-        if self.enc_mask is not None:
-            img = img[:, self.enc_mask]
-            img_tilt = img_tilt[:, self.enc_mask]
-        enc1 = self.encoder(img)
-        enc2 = self.encoder(img_tilt)
-        enc = torch.cat((enc1, enc2), -1)  # then nn.ReLU?
-        z_mu, z_std = self.so3_encoder(enc)
-        rot, w_eps = self.so3_encoder.sampleSO3(z_mu, z_std)
-        if self.no_trans:
-            tmu, tlogvar, t = (None, None, None)
-        else:
-            z = self.trans_encoder(enc)
-            tmu, tlogvar = z[:, :2], z[:, 2:]
-            t = self.reparameterize(tmu, tlogvar)
-        return z_mu, z_std, w_eps, rot, tmu, tlogvar, t
-
-    def forward(self, img, img_tilt):
-        B = img.size(0)
-        z_mu, z_std, w_eps, rot, tmu, tlogvar, t = self.encode(img, img_tilt)
-        if not self.no_trans:
-            assert t is not None
-            t = t.unsqueeze(1)  # B x 1 x 2
-            img = self.lattice.translate_ht(img.view(B, -1), -t)
-            img_tilt = self.lattice.translate_ht(img_tilt.view(B, -1), -t)
-            img = img.view(B, self.D, self.D)
-            img_tilt = img_tilt.view(B, self.D, self.D)
-
-        # rotate lattice by rot.T
-        x = self.lattice.coords @ rot  # R.T*x
-        y_hat = self.decoder(x)
-        y_hat = y_hat.view(-1, self.D, self.D)
-
-        # tilt series pair
-        x = self.lattice.coords @ self.tilt @ rot
-        y_hat2 = self.decoder(x)
-        y_hat2 = y_hat2.view(-1, self.D, self.D)
-        return y_hat, y_hat2, img, img_tilt, z_mu, z_std, w_eps, tmu, tlogvar
-
-
 # fixme: this is half-deprecated (not used in TiltVAE, but still used in tilt BNB)
 class TiltEncoder(nn.Module):
     def __init__(
@@ -989,16 +656,16 @@ class ResidLinearMLP(Decoder):
     ):
         super(ResidLinearMLP, self).__init__()
         layers = [
-            ResidLinear(in_dim, hidden_dim)
+            ResidualLinear(in_dim, hidden_dim)
             if in_dim == hidden_dim
             else MyLinear(in_dim, hidden_dim),
             activation(),
         ]
         for n in range(nlayers):
-            layers.append(ResidLinear(hidden_dim, hidden_dim))
+            layers.append(ResidualLinear(hidden_dim, hidden_dim))
             layers.append(activation())
         layers.append(
-            ResidLinear(hidden_dim, out_dim)
+            ResidualLinear(hidden_dim, out_dim)
             if out_dim == hidden_dim
             else MyLinear(hidden_dim, out_dim)
         )
@@ -1074,9 +741,9 @@ class MyLinear(nn.Linear):
             )  # F.linear(input, self.weight, self.bias)
 
 
-class ResidLinear(nn.Module):
+class ResidualLinear(nn.Module):
     def __init__(self, nin, nout):
-        super(ResidLinear, self).__init__()
+        super(ResidualLinear, self).__init__()
         self.linear = MyLinear(nin, nout)
         # self.linear = nn.utils.weight_norm(MyLinear(nin, nout))
 
@@ -1178,3 +845,11 @@ class SO3reparameterize(nn.Module):
         logvar = z[:, 6:]
         z_std = torch.exp(0.5 * logvar)  # or could do softplus
         return z_mu, z_std
+
+
+class MyDataParallel(nn.DataParallel):
+    def __getattr__(self, name):
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            return getattr(self.module, name)

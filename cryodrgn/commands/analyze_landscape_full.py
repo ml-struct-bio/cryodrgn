@@ -15,7 +15,7 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset, DataLoader
 import cryodrgn
 from cryodrgn import config, utils
-from cryodrgn.models import HetOnlyVAE, ResidLinearMLP
+from cryodrgn.models import ResidLinearMLP, load_model
 from cryodrgn.source import ImageSource
 
 logger = logging.getLogger(__name__)
@@ -199,7 +199,7 @@ def generate_and_map_volumes(
 
     # Load model weights
     logger.info("Loading weights from {}".format(weights))
-    model, lattice = HetOnlyVAE.load(cfg, weights)
+    model, lattice = load_model(cfg, weights)
     model.eval()
 
     # Set z

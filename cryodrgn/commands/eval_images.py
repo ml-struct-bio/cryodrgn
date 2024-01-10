@@ -19,7 +19,7 @@ import numpy as np
 import torch
 from cryodrgn import config, ctf, dataset
 from cryodrgn.commands.train_vae import loss_function, preprocess_input, run_batch
-from cryodrgn.models import HetOnlyVAE
+from cryodrgn.models import load_model
 from cryodrgn.pose import PoseTracker
 
 logger = logging.getLogger(__name__)
@@ -332,7 +332,7 @@ def main(args):
         ctf_params = None
 
     # instantiate model
-    model, lattice = HetOnlyVAE.load(cfg, args.weights, device=device)
+    model, lattice = load_model(cfg, args.weights, device=device)
     model.eval()
     z_mu_all = []
     z_logvar_all = []

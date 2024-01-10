@@ -27,7 +27,7 @@ from torch.utils.data import Dataset, DataLoader
 
 import cryodrgn
 from cryodrgn import config, utils
-from cryodrgn.models import HetOnlyVAE, ResidLinearMLP
+from cryodrgn.models import ResidLinearMLP, load_model
 from cryodrgn.source import ImageSource
 
 logger = logging.getLogger(__name__)
@@ -217,7 +217,7 @@ def generate_and_map_volumes(
     # Load model weights
     logger.info("Loading weights from {}".format(weights))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model, lattice = HetOnlyVAE.load(cfg, weights, device)
+    model, lattice = load_model(cfg, weights, device)
     model.eval()
 
     # Set z
@@ -228,7 +228,7 @@ def generate_and_map_volumes(
     t1 = dt.now()
     embeddings = []
     for i, zz in enumerate(z):
-        if i % 1 == 0:
+        if i % 100 == 0:
             logger.info(i)
 
         if args.downsample:

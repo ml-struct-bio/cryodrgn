@@ -20,7 +20,7 @@ import logging
 import numpy as np
 import torch
 from cryodrgn import config
-from cryodrgn.models import HetOnlyVAE
+from cryodrgn.models import load_model
 from cryodrgn.source import write_mrc
 
 logger = logging.getLogger(__name__)
@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("weights", help="Model weights")
+
     parser.add_argument(
         "-c",
         "--config",
@@ -186,7 +187,7 @@ def main(args: argparse.Namespace) -> None:
                 f"smaller than original box size {D=}!"
             )
 
-    model, lattice = HetOnlyVAE.load(cfg, args.weights, device=device)
+    model, lattice = load_model(cfg, args.weights, device=device)
     model.eval()
 
     # Multiple z

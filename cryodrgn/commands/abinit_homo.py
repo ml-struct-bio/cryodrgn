@@ -465,7 +465,7 @@ def get_latest(args):
 
 def make_model(args, D: int):
     activation = {"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[args.activation]
-    return models.get_decoder(
+    return get_decoder(
         3,
         D,
         args.layers,

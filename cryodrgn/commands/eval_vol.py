@@ -7,9 +7,9 @@ from datetime import datetime as dt
 import logging
 import numpy as np
 import torch
-from cryodrgn import config
+import cryodrgn.config
 from cryodrgn.mrc import MRCFile
-from cryodrgn.models import load_model
+from cryodrgn.models.utils import load_model
 
 logger = logging.getLogger(__name__)
 
@@ -159,7 +159,7 @@ def main(args):
             logger.warning("WARNING: No GPUs detected")
 
     logger.info(args)
-    cfg = config.overwrite_config(args.config, args)
+    cfg = cryodrgn.config.overwrite_config(args.config, args)
     logger.info("Loaded configuration:")
     pprint.pprint(cfg)
 
@@ -174,71 +174,58 @@ def main(args):
     model, lattice = load_model(cfg, args.weights, device=device)
     model.eval()
 
-    # Multiple z
-    if args.z_start or args.zfile:
-        # Get z values
-        if args.z_start:
-            args.z_start = np.array(args.z_start)
-            args.z_end = np.array(args.z_end)
-            z = np.repeat(np.arange(args.n, dtype=np.float32), zdim).reshape(
-                (args.n, zdim)
-            )
-            z *= (args.z_end - args.z_start) / (args.n - 1)  # type: ignore
-            z += args.z_start
-        else:
-            z = np.loadtxt(args.zfile).reshape(-1, zdim)
+    # parse user inputs for location(s) in the latent space
+    if args.zfile:
+        z = np.loadtxt(args.zfile).reshape(-1, zdim)
 
+    elif args.z_start:
+        z_start = np.array(args.z_start)
+        z_end = np.array(args.z_end)
+        z = np.repeat(np.arange(args.n, dtype=np.float32), zdim).reshape((args.n, zdim))
+        z *= (z_end - z_start) / (args.n - 1)  # type: ignore
+        z += z_start
+
+    else:
+        z = np.array(args.z)
+
+    if args.downsample:
+        coords = lattice.get_downsample_coords(args.downsample + 1)
+        D = args.downsample + 1
+        extent = lattice.extent * (args.downsample / (D - 1))
+    else:
+        coords = lattice.coords
+        D = lattice.D
+        extent = lattice.extent
+
+    def transform_volume(vol):
+        if args.flip:
+            vol = vol.flip([0])
+        if args.invert:
+            vol *= -1
+
+        return vol
+
+    # multiple latent space co-ordinates
+    if len(z.shape) > 1:
         if not os.path.exists(args.o):
             os.makedirs(args.o)
 
         logger.info(f"Generating {len(z)} volumes")
         for i, zz in enumerate(z, start=args.vol_start_index):
             logger.info(zz)
-            if args.downsample:
-                extent = lattice.extent * (args.downsample / (D - 1))
-                decoder = model.decoder
-                vol = decoder.eval_volume(
-                    lattice.get_downsample_coords(args.downsample + 1),
-                    args.downsample + 1,
-                    extent,
-                    norm,
-                    zz,
-                )
-            else:
-                vol = model.decoder.eval_volume(
-                    lattice.coords, lattice.D, lattice.extent, norm, zz
-                )
-            out_mrc = "{}/{}{:03d}.mrc".format(args.o, args.prefix, i)
-            if args.flip:
-                vol = vol.flip([0])
-            if args.invert:
-                vol *= -1
+            volume = transform_volume(model.eval_volume(coords, D, extent, norm, zz))
+
+            out_mrc = os.path.join(args.o, "{}{:03d}.mrc".format(args.prefix, i))
             MRCFile.write(
-                out_mrc, np.array(vol.cpu()).astype(np.float32), Apix=args.Apix
+                out_mrc, np.array(volume.cpu()).astype(np.float32), Apix=args.Apix
             )
 
-    # Single z
+    # single location in latent space
     else:
         z = np.array(args.z)
         logger.info(z)
-        if args.downsample:
-            extent = lattice.extent * (args.downsample / (D - 1))
-            vol = model.decoder.eval_volume(
-                lattice.get_downsample_coords(args.downsample + 1),
-                args.downsample + 1,
-                extent,
-                norm,
-                z,
-            )
-        else:
-            vol = model.decoder.eval_volume(
-                lattice.coords, lattice.D, lattice.extent, norm, z
-            )
-        if args.flip:
-            vol = vol.flip([0])
-        if args.invert:
-            vol *= -1
-        MRCFile.write(args.o, np.array(vol).astype(np.float32), Apix=args.Apix)
+        volume = transform_volume(model.eval_volume(coords, D, extent, norm, z))
+        MRCFile.write(args.o, np.array(volume).astype(np.float32), Apix=args.Apix)
 
     td = dt.now() - t1
     logger.info("Finished in {}".format(td))

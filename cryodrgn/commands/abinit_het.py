@@ -18,7 +18,7 @@ from cryodrgn.beta_schedule import LinearSchedule, get_beta_schedule
 import cryodrgn.config
 from cryodrgn.lattice import Lattice
 from cryodrgn.losses import EquivarianceLoss
-from cryodrgn.models import HetOnlyVAE, unparallelize
+from cryodrgn.models.variational_autoencoder import unparallelize, HetOnlyVAE
 from cryodrgn.pose_search import PoseSearch
 
 logger = logging.getLogger(__name__)

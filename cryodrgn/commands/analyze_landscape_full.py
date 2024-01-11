@@ -15,7 +15,8 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset, DataLoader
 import cryodrgn
 from cryodrgn import config, utils
-from cryodrgn.models import ResidLinearMLP, load_model
+from cryodrgn.models.neural_nets import ResidLinearMLP
+from cryodrgn.models.utils import load_model
 from cryodrgn.source import ImageSource
 
 logger = logging.getLogger(__name__)
@@ -214,7 +215,7 @@ def generate_and_map_volumes(
             logger.info(i)
         if args.downsample:
             extent = lattice.extent * (args.downsample / (D - 1))
-            vol = model.decoder.eval_volume(
+            vol = model.eval_volume(
                 lattice.get_downsample_coords(args.downsample + 1),
                 args.downsample + 1,
                 extent,
@@ -222,9 +223,7 @@ def generate_and_map_volumes(
                 zz,
             )
         else:
-            vol = model.decoder.eval_volume(
-                lattice.coords, lattice.D, lattice.extent, norm, zz
-            )
+            vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, norm, zz)
         if args.flip:
             vol = vol[::-1]
         embeddings.append(pca.transform(vol.cpu()[mask].reshape(1, -1)))

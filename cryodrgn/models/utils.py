@@ -1,8 +1,9 @@
 """Utilities shared across all types of models."""
 
 import logging
-import torch
 from typing import Union, Optional
+import torch
+from torch import nn
 import cryodrgn.config
 from cryodrgn.lattice import Lattice
 from cryodrgn.models.variational_autoencoder import HetOnlyVAE
@@ -41,9 +42,7 @@ def load_model(
             enc_mask = None
             in_dim = lat.D**2
 
-        activation = {"relu": torch.nn.ReLU, "leaky_relu": torch.nn.LeakyReLU}[
-            c["activation"]
-        ]
+        activation = {"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[c["activation"]]
         model = HetOnlyVAE(
             lat,
             c["qlayers"],

@@ -1,6 +1,4 @@
-"""
-Visualize latent space and generate volumes
-"""
+"""Visualize latent space and generate volumes."""
 
 import argparse
 import os
@@ -8,30 +6,39 @@ import os.path
 import shutil
 from datetime import datetime as dt
 import logging
+import nbformat
+
+import numpy as np
+import torch
+from cryodrgn import _ROOT, analysis, utils
+import cryodrgn.config
+from cryodrgn.config import TrainingConfigurations, AnalysisConfigurations
+
 import matplotlib
 import matplotlib.pyplot as plt
-import numpy as np
 import seaborn as sns
-import cryodrgn
-from cryodrgn import analysis, utils, config
 
 logger = logging.getLogger(__name__)
+TEMPLATE_DIR = os.path.join(_ROOT, "templates")
 
 
 def add_args(parser):
     parser.add_argument(
-        "workdir", type=os.path.abspath, help="Directory with cryoDRGN results"
+        "outdir", type=os.path.abspath, help="Directory with cryoDRGN results"
     )
     parser.add_argument(
         "epoch",
         type=int,
-        help="Epoch number N to analyze (0-based indexing, corresponding to z.N.pkl, weights.N.pkl)",
+        help="Epoch number N to analyze (0-based indexing, "
+        "corresponding to z.N.pkl, weights.N.pkl)",
     )
+
     parser.add_argument("--device", type=int, help="Optionally specify CUDA device")
     parser.add_argument(
         "-o",
         "--outdir",
-        help="Output directory for analysis results (default: [workdir]/analyze.[epoch])",
+        help="Output directory for analysis results "
+        "(default: [workdir]/analyze.[epoch])",
     )
     parser.add_argument(
         "--skip-vol", action="store_true", help="Skip generation of volumes"
@@ -42,7 +49,8 @@ def add_args(parser):
     group.add_argument(
         "--Apix",
         type=float,
-        help="Pixel size to add to .mrc header (default is to infer from ctf.pkl file else 1)",
+        help="Pixel size to add to .mrc header "
+        "(default is to infer from ctf.pkl file else 1)",
     )
     group.add_argument(
         "--flip", action="store_true", help="Flip handedness of output volumes"
@@ -60,7 +68,8 @@ def add_args(parser):
         "--pc",
         type=int,
         default=2,
-        help="Number of principal component traversals to generate (default: %(default)s)",
+        help="Number of principal component traversals "
+        "to generate (default: %(default)s)",
     )
     group.add_argument(
         "--ksample",
@@ -72,273 +81,548 @@ def add_args(parser):
         "--vol-start-index",
         type=int,
         default=0,
-        help="Default value of start index for volume generation (default: %(default)s)",
+        help="Default value of start index for volume "
+        "generation (default: %(default)s)",
     )
 
-    return parser
 
+class ModelAnalyzer:
+    """An engine for analyzing the output of a reconstruction model.
 
-def analyze_z1(z, outdir, vg):
-    """Plotting and volume generation for 1D z"""
-    assert z.shape[1] == 1
-    z = z.reshape(-1)
-    N = len(z)
+    Attributes
+    ----------
+    configs (AnalysisConfigurations):   Values of all parameters that can be
+                                        set by the user (see command-line args above).
+    train_configs (TrainingConfigurations): Parameters that were used when
+                                            the model was trained.
+    """
 
-    plt.figure(1)
-    plt.scatter(np.arange(N), z, alpha=0.1, s=2)
-    plt.xlabel("particle")
-    plt.ylabel("z")
-    plt.savefig(f"{outdir}/z.png")
+    def __init__(
+        self, configs: AnalysisConfigurations, train_configs: TrainingConfigurations
+    ) -> None:
+        self.configs = configs
+        self.train_configs = train_configs
+        self.traindir = self.train_configs.outdir
+        self.z_dim = self.train_configs.z_dim
 
-    plt.figure(2)
-    sns.distplot(z)
-    plt.xlabel("z")
-    plt.savefig(f"{outdir}/z_hist.png")
+        if "run.log" in os.listdir(self.traindir):
+            self.log = os.path.join(self.traindir, "run.log")
+        elif "training.log" in os.listdir(self.traindir):
+            self.log = os.path.join(self.traindir, "training.log")
 
-    ztraj = np.percentile(z, np.linspace(5, 95, 10))
-    vg.gen_volumes(outdir, ztraj)
+        else:
+            raise ValueError(f"No training log file found in `{self.traindir}`!")
 
+        self.use_cuda = torch.cuda.is_available()
+        self.device = torch.device("cuda:0" if self.use_cuda else "cpu")
+        logger.info(f"Use cuda {self.use_cuda}")
 
-def analyze_zN(
-    z, outdir, vg, workdir, epoch, skip_umap=False, num_pcs=2, num_ksamples=20
-):
-    zdim = z.shape[1]
+        if configs.Apix:
+            self.apix = configs.Apix
 
-    # Principal component analysis
-    logger.info("Performing principal component analysis...")
-    pc, pca = analysis.run_pca(z)
-    logger.info("Generating volumes...")
-    for i in range(num_pcs):
-        start, end = np.percentile(pc[:, i], (5, 95))
-        z_pc = analysis.get_pc_traj(pca, z.shape[1], 10, i + 1, start, end)
-        vg.gen_volumes(f"{outdir}/pc{i+1}", z_pc)
+        # find A/px from CTF if not given
+        else:
+            if self.configs["dataset_args"]["ctf"]:
+                ctf_params = utils.load_pkl(configs["dataset_args"]["ctf"])
+                orig_apixs = set(ctf_params[:, 1])
 
-    # kmeans clustering
-    logger.info("K-means clustering...")
-    K = num_ksamples
-    kmeans_labels, centers = analysis.cluster_kmeans(z, K)
-    centers, centers_ind = analysis.get_nearest_point(z, centers)
-    if not os.path.exists(f"{outdir}/kmeans{K}"):
-        os.mkdir(f"{outdir}/kmeans{K}")
-    utils.save_pkl(kmeans_labels, f"{outdir}/kmeans{K}/labels.pkl")
-    np.savetxt(f"{outdir}/kmeans{K}/centers.txt", centers)
-    np.savetxt(f"{outdir}/kmeans{K}/centers_ind.txt", centers_ind, fmt="%d")
-    logger.info("Generating volumes...")
-    vg.gen_volumes(f"{outdir}/kmeans{K}", centers)
+                # TODO: add support for multiple optics groups
+                if len(orig_apixs) > 1:
+                    self.apix = 1.0
+                    logger.info(
+                        "cannot find unique A/px in CTF parameters, "
+                        "defaulting to A/px=1.0"
+                    )
 
-    # UMAP -- slow step
-    umap_emb = None
-    if zdim > 2 and not skip_umap:
-        logger.info("Running UMAP...")
-        umap_emb = analysis.run_umap(z)
-        utils.save_pkl(umap_emb, f"{outdir}/umap.pkl")
+                else:
+                    orig_apix = tuple(orig_apixs)[0]
+                    orig_sizes = set(ctf_params[:, 0])
+                    orig_size = tuple(orig_sizes)[0]
 
-    # Make some plots
-    logger.info("Generating plots...")
+                    if len(orig_sizes) > 1:
+                        logger.info(
+                            "cannot find unique original box size in CTF "
+                            f"parameters, defaulting to first found: {orig_size}"
+                        )
 
-    # Plot learning curve
-    loss = analysis.parse_loss(f"{workdir}/run.log")
-    plt.figure(figsize=(4, 4))
-    plt.plot(loss)
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.axvline(x=epoch, linestyle="--", color="black", label=f"Epoch {epoch}")
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(f"{outdir}/learning_curve_epoch{epoch}.png")
+                    cur_size = configs["lattice_args"]["D"] - 1
+                    self.apix = round(orig_apix * orig_size / cur_size, 6)
+                    logger.info(f"using A/px={self.apix} as per CTF parameters")
 
-    def plt_pc_labels(x=0, y=1):
-        plt.xlabel(f"PC{x+1} ({pca.explained_variance_ratio_[x]:.2f})")
-        plt.ylabel(f"PC{y+1} ({pca.explained_variance_ratio_[y]:.2f})")
+            else:
+                self.apix = 1.0
+                logger.info(
+                    "cannot find A/px in CTF parameters, " "defaulting to A/px=1.0"
+                )
 
-    def plt_pc_labels_jointplot(g, x=0, y=1):
-        g.ax_joint.set_xlabel(f"PC{x+1} ({pca.explained_variance_ratio_[x]:.2f})")
-        g.ax_joint.set_ylabel(f"PC{y+1} ({pca.explained_variance_ratio_[y]:.2f})")
+        # use last completed epoch if no epoch given
+        if self.configs.epoch == -1:
+            self.epoch = max(
+                int(fl.split(".")[1])
+                for fl in os.listdir(self.traindir)
+                if fl[:8] == "weights."
+            )
 
-    def plt_umap_labels():
-        plt.xticks([])
-        plt.yticks([])
-        plt.xlabel("UMAP1")
-        plt.ylabel("UMAP2")
+        else:
+            self.epoch = self.configs.epoch
 
-    def plt_umap_labels_jointplot(g):
-        g.ax_joint.set_xlabel("UMAP1")
-        g.ax_joint.set_ylabel("UMAP2")
+        # load model data
+        self.weights_file = os.path.join(self.traindir, f"weights.{self.epoch}.pkl")
+        if self.train_configs.z_dim > 0:
+            self.z = utils.load_pkl(
+                os.path.join(self.traindir, f"conf.{self.epoch}.pkl")
+            )
+        else:
+            self.z = None
 
-    # PCA -- Style 1 -- Scatter
-    plt.figure(figsize=(4, 4))
-    plt.scatter(pc[:, 0], pc[:, 1], alpha=0.1, s=1, rasterized=True)
-    plt_pc_labels()
-    plt.tight_layout()
-    plt.savefig(f"{outdir}/z_pca.png")
+        # create an output directory for these analyses
+        self.outdir = os.path.join(self.traindir, f"analyze.{self.epoch}")
+        os.makedirs(self.outdir, exist_ok=True)
+        logger.info(f"Saving results to {self.outdir}")
 
-    # PCA -- Style 2 -- Scatter, with marginals
-    g = sns.jointplot(x=pc[:, 0], y=pc[:, 1], alpha=0.1, s=1, rasterized=True, height=4)
-    plt_pc_labels_jointplot(g)
-    plt.tight_layout()
-    plt.savefig(f"{outdir}/z_pca_marginals.png")
+    def analyze(self):
+        if self.z_dim == 0:
+            logger.warning("No analyses available for homogeneous reconstruction!")
 
-    # PCA -- Style 3 -- Hexbin
-    g = sns.jointplot(x=pc[:, 0], y=pc[:, 1], height=4, kind="hex")
-    plt_pc_labels_jointplot(g)
-    plt.tight_layout()
-    plt.savefig(f"{outdir}/z_pca_hexbin.png")
+        if self.z_dim == 1:
+            self.analyze_z1()
+        else:
+            self.analyze_zN()
 
-    if umap_emb is not None:
-        # Style 1 -- Scatter
-        plt.figure(figsize=(4, 4))
-        plt.scatter(umap_emb[:, 0], umap_emb[:, 1], alpha=0.1, s=1, rasterized=True)
-        plt_umap_labels()
-        plt.tight_layout()
-        plt.savefig(f"{outdir}/umap.png")
+        # create Jupyter notebooks for data analysis and visualization by
+        # copying them over from the template directory
+        if self.train_configs.quick_config["capture_setup"] == "spa":
+            out_ipynb = os.path.join(self.outdir, "cryoDRGN-analysis.ipynb")
 
-        # Style 2 -- Scatter with marginal distributions
-        g = sns.jointplot(
-            x=umap_emb[:, 0],
-            y=umap_emb[:, 1],
-            alpha=0.1,
-            s=1,
-            rasterized=True,
-            height=4,
+            if not os.path.exists(out_ipynb):
+                logger.info("Creating analysis+visualization notebook...")
+                ipynb = os.path.join(TEMPLATE_DIR, "analysis-template.ipynb")
+                shutil.copyfile(ipynb, out_ipynb)
+
+            else:
+                logger.info(f"{out_ipynb} already exists. Skipping")
+
+            # edit the notebook with the epoch to analyze
+            with open(out_ipynb, "r") as f:
+                viz_ntbook = nbformat.read(f, as_version=nbformat.NO_CONVERT)
+
+            viz_ntbook["cells"][3]["source"] = viz_ntbook["cells"][3]["source"].replace(
+                "EPOCH = None", "EPOCH = {self.epoch}"
+            )
+
+            with open(out_ipynb, "w") as f:
+                nbformat.write(viz_ntbook, f)
+
+        if self.configs.sample_z_idx is not None:
+            sampledir = os.path.join(self.outdir, "samples")
+            os.makedirs(sampledir, exist_ok=True)
+
+            for z_idx in self.sample_z_idx:
+                logger.info(f"Sampling index {z_idx}")
+                self.vg.gen_volumes(sampledir, self.z[z_idx][None], suffix=z_idx)
+
+        if self.configs.trajectory_1d is not None:
+            logger.info(
+                "Generating 1d linear trajectory from "
+                f"{self.trajectory_1d[0]} to {self.trajectory_1d[1]} "
+                f"({self.trajectory_1d[2]} samples)"
+            )
+
+            z_0 = self.z[self.trajectory_1d[0]]
+            z_1 = self.z[self.trajectory_1d[1]]
+            n_zs = self.trajectory_1d[2]
+            z_list = self.linear_interpolation(z_0, z_1, n_zs)
+
+            trajdir = os.path.join(
+                self.outdir,
+                "trajectories",
+                f"1d_{self.trajectory_1d[0]}"
+                f"_{self.trajectory_1d[self.trajectory_1d[2]]}",
+            )
+
+            os.makedirs(trajdir, exist_ok=True)
+            self.vg.gen_volumes(trajdir, z_list)
+
+        if self.configs.direct_traversal_txt is not None:
+            dir_traversal_vertices_ind = np.loadtxt(self.configs.direct_traversal_txt)
+            travdir = os.path.join(self.outdir, "direct_traversal")
+            z_values = np.zeros((0, self.z_dim))
+
+            for i, ind in enumerate(dir_traversal_vertices_ind[:-1]):
+                z_0 = self.z[int(int)]
+                z_1 = self.z[int(dir_traversal_vertices_ind[i + 1])]
+                z_values = np.concatenate(
+                    [
+                        z_values,
+                        self.linear_interpolation(z_0, z_1, 10, exclude_last=True),
+                    ],
+                    0,
+                )
+
+            self.vg.gen_volumes(travdir, z_values)
+
+        if self.configs.z_values_txt is not None:
+            z_values = np.loadtxt(self.configs.z_values_txt)
+            zvaldir = os.path.join(self.outdir, "trajectory")
+            self.vg.gen_volumes(zvaldir, z_values)
+
+        logger.info("Done")
+
+    def analyze_z1(self) -> None:
+        """Plotting and volume generation for 1D z"""
+        assert self.z.shape[1] == 1
+        z = self.z.reshape(-1)
+        n = len(z)
+
+        plt.figure(1)
+        plt.scatter(np.arange(n), z, alpha=0.1, s=2)
+        plt.xlabel("particle")
+        plt.ylabel("z")
+        plt.savefig(os.path.join(self.outdir, "z.png"))
+        plt.close()
+
+        plt.figure(2)
+        sns.distplot(z)
+        plt.xlabel("z")
+        plt.savefig(os.path.join(self.outdir, "z_hist.png"))
+        plt.close()
+
+        ztraj = np.percentile(z, np.linspace(5, 95, 10))
+        self.vg.gen_volumes(self.outdir, ztraj)
+
+        kmeans_labels, centers = analysis.cluster_kmeans(
+            z[..., None], self.ksample, reorder=False
         )
-        plt_umap_labels_jointplot(g)
+        centers, centers_ind = analysis.get_nearest_point(z[:, None], centers)
+
+        volpath = os.path.join(self.outdir, f"kmeans{self.configs.ksample}")
+        self.vg.gen_volumes(volpath, centers)
+
+    def analyze_zN(self) -> None:
+        zdim = self.z.shape[1]
+
+        # Principal component analysis
+        logger.info("Performing principal component analysis...")
+        pc, pca = analysis.run_pca(self.z)
+        logger.info("Generating volumes...")
+
+        for i in range(self.configs.pc):
+            start, end = np.percentile(pc[:, i], (5, 95))
+            z_pc = analysis.get_pc_traj(
+                pca, self.z.shape[1], self.configs.n_per_pc, i + 1, start, end
+            )
+
+            volpath = os.path.join(self.outdir, f"pc{i + 1}_{self.configs.n_per_pc}")
+            self.vg.gen_volumes(volpath, z_pc)
+
+        # kmeans clustering
+        logger.info("K-means clustering...")
+        k = self.configs.ksample
+        kmeans_labels, centers = analysis.cluster_kmeans(self.z, k)
+        centers, centers_ind = analysis.get_nearest_point(self.z, centers)
+        kmean_path = os.path.join(self.outdir, f"kmeans{k}")
+        os.makedirs(kmean_path, exist_ok=True)
+
+        utils.save_pkl(kmeans_labels, os.path.join(kmean_path, "labels.pkl"))
+        np.savetxt(os.path.join(kmean_path, "centers.txt"), centers)
+        np.savetxt(os.path.join(kmean_path, "centers_ind.txt"), centers_ind, fmt="%d")
+
+        logger.info("Generating volumes...")
+        self.vg.gen_volumes(kmean_path, centers)
+
+        # UMAP -- slow step
+        umap_emb = None
+        if zdim > 2 and not self.configs.skip_umap:
+            logger.info("Running UMAP...")
+            umap_emb = analysis.run_umap(self.z)
+            utils.save_pkl(umap_emb, os.path.join(self.outdir, "umap.pkl"))
+
+        # Make some plots
+        logger.info("Generating plots...")
+
+        # Plot learning curve
+        loss = analysis.parse_loss(self.log)
+        plt.figure(figsize=(4, 4))
+        plt.plot(loss)
+        plt.xlabel("Epoch")
+        plt.ylabel("Loss")
+        plt.axvline(
+            x=self.epoch, linestyle="--", color="black", label=f"Epoch {self.epoch}"
+        )
+        plt.legend()
         plt.tight_layout()
-        plt.savefig(f"{outdir}/umap_marginals.png")
+        plt.savefig(os.path.join(self.outdir, f"learning_curve_epoch{self.epoch}.png"))
 
-        # Style 3 -- Hexbin / heatmap
-        g = sns.jointplot(x=umap_emb[:, 0], y=umap_emb[:, 1], kind="hex", height=4)
-        plt_umap_labels_jointplot(g)
+        def plt_pc_labels(pc1=0, pc2=1):
+            plt.xlabel(f"PC{pc1 + 1} " f"({pca.explained_variance_ratio_[pc1]:.2f})")
+            plt.ylabel(f"PC{pc2 + 1} " f"({pca.explained_variance_ratio_[pc2]:.2f})")
+
+        def plt_pc_labels_jointplot(g, pc1=0, pc2=1):
+            g.ax_joint.set_xlabel(
+                f"PC{pc1 + 1} ({pca.explained_variance_ratio_[pc1]:.2f})"
+            )
+            g.ax_joint.set_ylabel(
+                f"PC{pc2 + 1} ({pca.explained_variance_ratio_[pc2]:.2f})"
+            )
+
+        def plt_umap_labels():
+            plt.xticks([])
+            plt.yticks([])
+            plt.xlabel("UMAP1")
+            plt.ylabel("UMAP2")
+
+        def plt_umap_labels_jointplot(g):
+            g.ax_joint.set_xlabel("UMAP1")
+            g.ax_joint.set_ylabel("UMAP2")
+
+        # PCA -- Style 1 -- Scatter
+        plt.figure(figsize=(4, 4))
+        plt.scatter(pc[:, 0], pc[:, 1], alpha=0.1, s=1, rasterized=True)
+        plt_pc_labels()
         plt.tight_layout()
-        plt.savefig(f"{outdir}/umap_hexbin.png")
+        plt.savefig(os.path.join(self.outdir, "z_pca.png"))
+        plt.close()
 
-    # Plot kmeans sample points
-    colors = analysis._get_chimerax_colors(K)
-    analysis.scatter_annotate(
-        pc[:, 0],
-        pc[:, 1],
-        centers_ind=centers_ind,
-        annotate=True,
-        colors=colors,
-    )
-    plt_pc_labels()
-    plt.tight_layout()
-    plt.savefig(f"{outdir}/kmeans{K}/z_pca.png")
+        # PCA -- Style 2 -- Scatter, with marginals
+        g = sns.jointplot(
+            x=pc[:, 0], y=pc[:, 1], alpha=0.1, s=1, rasterized=True, height=4
+        )
+        plt_pc_labels_jointplot(g)
+        plt.tight_layout()
+        plt.savefig(os.path.join(self.outdir, "z_pca_marginals.png"))
+        plt.close()
 
-    g = analysis.scatter_annotate_hex(
-        pc[:, 0],
-        pc[:, 1],
-        centers_ind=centers_ind,
-        annotate=True,
-        colors=colors,
-    )
-    plt_pc_labels_jointplot(g)
-    plt.tight_layout()
-    plt.savefig(f"{outdir}/kmeans{K}/z_pca_hex.png")
+        # PCA -- Style 3 -- Hexbin
+        g = sns.jointplot(x=pc[:, 0], y=pc[:, 1], height=4, kind="hex")
+        plt_pc_labels_jointplot(g)
+        plt.tight_layout()
+        plt.savefig(os.path.join(self.outdir, "z_pca_hexbin.png"))
+        plt.close()
 
-    if umap_emb is not None:
+        if umap_emb is not None:
+            # Style 1 -- Scatter
+            plt.figure(figsize=(4, 4))
+            plt.scatter(umap_emb[:, 0], umap_emb[:, 1], alpha=0.1, s=1, rasterized=True)
+            plt_umap_labels()
+            plt.tight_layout()
+            plt.savefig(os.path.join(self.outdir, "umap.png"))
+            plt.close()
+
+            # Style 2 -- Scatter with marginal distributions
+            g = sns.jointplot(
+                x=umap_emb[:, 0],
+                y=umap_emb[:, 1],
+                alpha=0.1,
+                s=1,
+                rasterized=True,
+                height=4,
+            )
+
+            plt_umap_labels_jointplot(g)
+            plt.tight_layout()
+            plt.savefig(os.path.join(self.outdir, "umap_marginals.png"))
+            plt.close()
+
+            # Style 3 -- Hexbin / heatmap
+            g = sns.jointplot(x=umap_emb[:, 0], y=umap_emb[:, 1], kind="hex", height=4)
+            plt_umap_labels_jointplot(g)
+            plt.tight_layout()
+            plt.savefig(os.path.join(self.outdir, "umap_hexbin.png"))
+            plt.close()
+
+        # Plot kmeans sample points
+        colors = analysis._get_chimerax_colors(k)
         analysis.scatter_annotate(
-            umap_emb[:, 0],
-            umap_emb[:, 1],
+            pc[:, 0],
+            pc[:, 1],
             centers_ind=centers_ind,
             annotate=True,
             colors=colors,
         )
-        plt_umap_labels()
+        plt_pc_labels()
         plt.tight_layout()
-        plt.savefig(f"{outdir}/kmeans{K}/umap.png")
+        plt.savefig(os.path.join(kmean_path, "z_pca.png"))
+        plt.close()
 
         g = analysis.scatter_annotate_hex(
-            umap_emb[:, 0],
-            umap_emb[:, 1],
+            pc[:, 0],
+            pc[:, 1],
             centers_ind=centers_ind,
             annotate=True,
             colors=colors,
         )
-        plt_umap_labels_jointplot(g)
+        plt_pc_labels_jointplot(g)
         plt.tight_layout()
-        plt.savefig(f"{outdir}/kmeans{K}/umap_hex.png")
+        plt.savefig(os.path.join(kmean_path, "z_pca_hex.png"))
+        plt.close()
 
-    # Plot PC trajectories
-    for i in range(num_pcs):
-        start, end = np.percentile(pc[:, i], (5, 95))
-        z_pc = analysis.get_pc_traj(pca, z.shape[1], 10, i + 1, start, end)
         if umap_emb is not None:
-            # UMAP, colored by PCX
-            analysis.scatter_color(
+            analysis.scatter_annotate(
                 umap_emb[:, 0],
                 umap_emb[:, 1],
-                pc[:, i],
-                label=f"PC{i+1}",
+                centers_ind=centers_ind,
+                annotate=True,
+                colors=colors,
             )
             plt_umap_labels()
             plt.tight_layout()
-            plt.savefig(f"{outdir}/pc{i+1}/umap.png")
+            plt.savefig(os.path.join(kmean_path, "umap.png"))
+            plt.close()
 
-            # UMAP, with PC traversal
-            z_pc_on_data, pc_ind = analysis.get_nearest_point(z, z_pc)
-            dists = ((z_pc_on_data - z_pc) ** 2).sum(axis=1) ** 0.5
-            if np.any(dists > 2):
-                logger.warn(
-                    f"Warning: PC{i+1} point locations in UMAP plot may be inaccurate"
+            g = analysis.scatter_annotate_hex(
+                umap_emb[:, 0],
+                umap_emb[:, 1],
+                centers_ind=centers_ind,
+                annotate=True,
+                colors=colors,
+            )
+            plt_umap_labels_jointplot(g)
+            plt.tight_layout()
+            plt.savefig(os.path.join(kmean_path, "umap_hex.png"))
+            plt.close()
+
+        # Plot PC trajectories
+        for i in range(self.configs.pc):
+            start, end = np.percentile(pc[:, i], (5, 95))
+            pc_path = os.path.join(self.outdir, f"pc{i + 1}_{self.configs.n_per_pc}")
+            z_pc = analysis.get_pc_traj(
+                pca, self.z.shape[1], self.configs.n_per_pc, i + 1, start, end
+            )
+
+            if umap_emb is not None:
+                # UMAP, colored by PCX
+                analysis.scatter_color(
+                    umap_emb[:, 0],
+                    umap_emb[:, 1],
+                    pc[:, i],
+                    label=f"PC{i + 1}",
                 )
+                plt_umap_labels()
+                plt.tight_layout()
+                plt.savefig(os.path.join(pc_path, "umap.png"))
+                plt.close()
+
+                # UMAP, with PC traversal
+                z_pc_on_data, pc_ind = analysis.get_nearest_point(self.z, z_pc)
+                dists = ((z_pc_on_data - z_pc) ** 2).sum(axis=1) ** 0.5
+
+                if np.any(dists > 2):
+                    logger.warning(
+                        f"Warning: PC{i + 1} point locations "
+                        "in UMAP plot may be inaccurate"
+                    )
+
+                plt.figure(figsize=(4, 4))
+                plt.scatter(
+                    umap_emb[:, 0], umap_emb[:, 1], alpha=0.05, s=1, rasterized=True
+                )
+                plt.scatter(
+                    umap_emb[pc_ind, 0],
+                    umap_emb[pc_ind, 1],
+                    c="cornflowerblue",
+                    edgecolor="black",
+                )
+                plt_umap_labels()
+                plt.tight_layout()
+                plt.savefig(os.path.join(pc_path, "umap_traversal.png"))
+                plt.close()
+
+                # UMAP, with PC traversal, connected
+                plt.figure(figsize=(4, 4))
+                plt.scatter(
+                    umap_emb[:, 0], umap_emb[:, 1], alpha=0.05, s=1, rasterized=True
+                )
+
+                plt.plot(umap_emb[pc_ind, 0], umap_emb[pc_ind, 1], "--", c="k")
+                plt.scatter(
+                    umap_emb[pc_ind, 0],
+                    umap_emb[pc_ind, 1],
+                    c="cornflowerblue",
+                    edgecolor="black",
+                )
+
+                plt_umap_labels()
+                plt.tight_layout()
+                plt.savefig(os.path.join(pc_path, "umap_traversal_connected.png"))
+                plt.close()
+
+            # 10 points, from 5th to 95th percentile of PC1 values
+            t = np.linspace(start, end, self.configs.n_per_pc, endpoint=True)
             plt.figure(figsize=(4, 4))
-            plt.scatter(
-                umap_emb[:, 0], umap_emb[:, 1], alpha=0.05, s=1, rasterized=True
-            )
-            plt.scatter(
-                umap_emb[pc_ind, 0],
-                umap_emb[pc_ind, 1],
-                c="cornflowerblue",
-                edgecolor="black",
-            )
-            plt_umap_labels()
+
+            if i > 0 and i == self.configs.pc - 1:
+                plt.scatter(pc[:, i - 1], pc[:, i], alpha=0.1, s=1, rasterized=True)
+                plt.scatter(
+                    np.zeros(self.configs.n_per_pc),
+                    t,
+                    c="cornflowerblue",
+                    edgecolor="white",
+                )
+                plt_pc_labels(i - 1, i)
+
+            else:
+                plt.scatter(pc[:, i], pc[:, i + 1], alpha=0.1, s=1, rasterized=True)
+                plt.scatter(
+                    t,
+                    np.zeros(self.configs.n_per_pc),
+                    c="cornflowerblue",
+                    edgecolor="white",
+                )
+                plt_pc_labels(i, i + 1)
+
             plt.tight_layout()
-            plt.savefig(f"{outdir}/pc{i+1}/umap_traversal.png")
+            plt.savefig(os.path.join(pc_path, "pca_traversal.png"))
+            plt.close()
 
-            # UMAP, with PC traversal, connected
-            plt.figure(figsize=(4, 4))
-            plt.scatter(
-                umap_emb[:, 0], umap_emb[:, 1], alpha=0.05, s=1, rasterized=True
-            )
-            plt.plot(umap_emb[pc_ind, 0], umap_emb[pc_ind, 1], "--", c="k")
-            plt.scatter(
-                umap_emb[pc_ind, 0],
-                umap_emb[pc_ind, 1],
-                c="cornflowerblue",
-                edgecolor="black",
-            )
-            plt_umap_labels()
+            if i > 0 and i == self.configs.pc - 1:
+                g = sns.jointplot(
+                    x=pc[:, i - 1],
+                    y=pc[:, i],
+                    alpha=0.1,
+                    s=1,
+                    rasterized=True,
+                    height=4,
+                )
+                g.ax_joint.scatter(
+                    np.zeros(self.configs.n_per_pc),
+                    t,
+                    c="cornflowerblue",
+                    edgecolor="white",
+                )
+                plt_pc_labels_jointplot(g, i - 1, i)
+
+            else:
+                g = sns.jointplot(
+                    x=pc[:, i],
+                    y=pc[:, i + 1],
+                    alpha=0.1,
+                    s=1,
+                    rasterized=True,
+                    height=4,
+                )
+                g.ax_joint.scatter(
+                    t,
+                    np.zeros(self.configs.n_per_pc),
+                    c="cornflowerblue",
+                    edgecolor="white",
+                )
+                plt_pc_labels_jointplot(g)
+
             plt.tight_layout()
-            plt.savefig(f"{outdir}/pc{i+1}/umap_traversal_connected.png")
+            plt.savefig(os.path.join(pc_path, "pca_traversal_hex.png"))
+            plt.close()
 
-        # 10 points, from 5th to 95th percentile of PC1 values
-        t = np.linspace(start, end, 10, endpoint=True)
-        plt.figure(figsize=(4, 4))
-        if i > 0 and i == num_pcs - 1:
-            plt.scatter(pc[:, i - 1], pc[:, i], alpha=0.1, s=1, rasterized=True)
-            plt.scatter(np.zeros(10), t, c="cornflowerblue", edgecolor="white")
-            plt_pc_labels(i - 1, i)
-        else:
-            plt.scatter(pc[:, i], pc[:, i + 1], alpha=0.1, s=1, rasterized=True)
-            plt.scatter(t, np.zeros(10), c="cornflowerblue", edgecolor="white")
-            plt_pc_labels(i, i + 1)
-        plt.tight_layout()
-        plt.savefig(f"{outdir}/pc{i+1}/pca_traversal.png")
+    def generate_volumes(self, voldir: str, z_values) -> None:
+        if self.configs.skip_vol:
+            return None
 
-        if i > 0 and i == num_pcs - 1:
-            g = sns.jointplot(
-                x=pc[:, i - 1], y=pc[:, i], alpha=0.1, s=1, rasterized=True, height=4
-            )
-            g.ax_joint.scatter(np.zeros(10), t, c="cornflowerblue", edgecolor="white")
-            plt_pc_labels_jointplot(g, i - 1, i)
-        else:
-            g = sns.jointplot(
-                x=pc[:, i], y=pc[:, i + 1], alpha=0.1, s=1, rasterized=True, height=4
-            )
-            g.ax_joint.scatter(t, np.zeros(10), c="cornflowerblue", edgecolor="white")
-            plt_pc_labels_jointplot(g)
-        plt.tight_layout()
-        plt.savefig(f"{outdir}/pc{i+1}/pca_traversal_hex.png")
+        os.makedirs(voldir, exist_ok=True)
+        zfile = os.path.join(voldir, "z_values.txt")
+        np.savetxt(zfile, z_values)
+
+        analysis.gen_volumes(
+            self.weights_file, self.configs, zfile, self.outdir, **self.vol_args
+        )
 
 
 class VolumeGenerator:
@@ -355,148 +639,28 @@ class VolumeGenerator:
             return
         if not os.path.exists(outdir):
             os.makedirs(outdir)
+
         zfile = f"{outdir}/z_values.txt"
         np.savetxt(zfile, z_values)
+
         analysis.gen_volumes(self.weights, self.config, zfile, outdir, **self.vol_args)
 
 
 def main(args):
-    t1 = dt.now()
-    E = args.epoch
-    workdir = args.workdir
-    epoch = args.epoch
+    matplotlib.use("Agg")  # non-interactive backend
+    t0 = dt.now()
 
-    zfile = f"{workdir}/z.{E}.pkl"
-    weights = f"{workdir}/weights.{E}.pkl"
-    cfg = (
-        f"{workdir}/config.yaml"
-        if os.path.exists(f"{workdir}/config.yaml")
-        else f"{workdir}/config.pkl"
-    )
+    train_configs = cryodrgn.config.find_train_configs(args.outdir)
+    anlz_configs = AnalysisConfigurations.parse_args(args)
 
-    configs = config.load(cfg)
-    outdir = f"{workdir}/analyze.{E}"
+    utils._verbose = False
+    analyzer = ModelAnalyzer(anlz_configs, train_configs)
+    analyzer.analyze()
 
-    if args.Apix:
-        use_apix = args.Apix
-
-    # find A/px from CTF if not given
-    else:
-        if configs["dataset_args"]["ctf"]:
-            ctf_params = utils.load_pkl(configs["dataset_args"]["ctf"])
-            orig_apixs = set(ctf_params[:, 1])
-
-	    # TODO: add support for multiple optics groups
-            if len(orig_apixs) > 1:
-                use_apix = 1.0
-                logger.info(
-                    "cannot find unique A/px in CTF parameters, "
-                    "defaulting to A/px=1.0"
-                )
-
-            else:
-                orig_apix = tuple(orig_apixs)[0]
-                orig_sizes = set(ctf_params[:, 0])
-                orig_size = tuple(orig_sizes)[0]
-
-                if len(orig_sizes) > 1:
-                    logger.info(
-                        "cannot find unique original box size in CTF "
-                        f"parameters, defaulting to first found: {orig_size}"
-                    )
-
-                cur_size = configs["lattice_args"]["D"] - 1
-                use_apix = round(orig_apix * orig_size / cur_size, 6)
-                logger.info(f"using A/px={use_apix} as per CTF parameters")
-
-        else:
-            use_apix = 1.0
-            logger.info("cannot find A/px in CTF parameters, " "defaulting to A/px=1.0")
-
-    if E == -1:
-        zfile = f"{workdir}/z.pkl"
-        weights = f"{workdir}/weights.pkl"
-        outdir = f"{workdir}/analyze"
-
-    if args.outdir:
-        outdir = args.outdir
-    logger.info(f"Saving results to {outdir}")
-    if not os.path.exists(outdir):
-        os.mkdir(outdir)
-
-    z = utils.load_pkl(zfile)
-    zdim = z.shape[1]
-
-    vol_args = dict(
-        Apix=use_apix,
-        downsample=args.downsample,
-        flip=args.flip,
-        device=args.device,
-        invert=args.invert,
-        vol_start_index=args.vol_start_index,
-    )
-    vg = VolumeGenerator(weights, cfg, vol_args, skip_vol=args.skip_vol)
-
-    if zdim == 1:
-        analyze_z1(z, outdir, vg)
-    else:
-        analyze_zN(
-            z,
-            outdir,
-            vg,
-            workdir,
-            epoch,
-            skip_umap=args.skip_umap,
-            num_pcs=args.pc,
-            num_ksamples=args.ksample,
-        )
-
-    # copy over template if file doesn't exist
-    cfg = config.load(cfg)
-    if cfg["model_args"]["encode_mode"] == "tilt":
-        out_ipynb = f"{outdir}/cryoDRGN_ET_viz.ipynb"
-        if not os.path.exists(out_ipynb):
-            logger.info("Creating jupyter notebook...")
-            ipynb = f"{cryodrgn._ROOT}/templates/cryoDRGN_ET_viz_template.ipynb"
-            shutil.copyfile(ipynb, out_ipynb)
-        else:
-            logger.info(f"{out_ipynb} already exists. Skipping")
-        logger.info(out_ipynb)
-    else:
-        out_ipynb = f"{outdir}/cryoDRGN_viz.ipynb"
-        if not os.path.exists(out_ipynb):
-            logger.info("Creating jupyter notebook...")
-            ipynb = f"{cryodrgn._ROOT}/templates/cryoDRGN_viz_template.ipynb"
-            shutil.copyfile(ipynb, out_ipynb)
-        else:
-            logger.info(f"{out_ipynb} already exists. Skipping")
-        logger.info(out_ipynb)
-
-        # copy over template if file doesn't exist
-        out_ipynb = f"{outdir}/cryoDRGN_filtering.ipynb"
-        if not os.path.exists(out_ipynb):
-            logger.info("Creating jupyter notebook...")
-            ipynb = f"{cryodrgn._ROOT}/templates/cryoDRGN_filtering_template.ipynb"
-            shutil.copyfile(ipynb, out_ipynb)
-        else:
-            logger.info(f"{out_ipynb} already exists. Skipping")
-        logger.info(out_ipynb)
-
-    # copy over template if file doesn't exist
-    out_ipynb = f"{outdir}/cryoDRGN_figures.ipynb"
-    if not os.path.exists(out_ipynb):
-        logger.info("Creating jupyter notebook...")
-        ipynb = f"{cryodrgn._ROOT}/templates/cryoDRGN_figures_template.ipynb"
-        shutil.copyfile(ipynb, out_ipynb)
-    else:
-        logger.info(f"{out_ipynb} already exists. Skipping")
-    logger.info(out_ipynb)
-
-    logger.info(f"Finished in {dt.now() - t1}")
+    logger.info(f"Finished in {dt.now() - t0}")
 
 
 if __name__ == "__main__":
-    matplotlib.use("Agg")  # non-interactive backend
     parser = argparse.ArgumentParser(description=__doc__)
     add_args(parser)
     main(parser.parse_args())

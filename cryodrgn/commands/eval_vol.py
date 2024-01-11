@@ -130,7 +130,6 @@ def add_args(parser):
         default="relu",
         help="Activation (default: %(default)s)",
     )
-    return parser
 
 
 def check_inputs(args):
@@ -233,5 +232,5 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    args = add_args(parser).parse_args()
-    main(args)
+    add_args(parser)
+    main(parser.parse_args())

@@ -1,20 +1,21 @@
 """Pytorch models implementing variational autoencoders."""
 
 import torch
-from torch import Tensor
 import torch.nn as nn
 from torch.nn.parallel import DataParallel
 from typing import Optional, Tuple, Type
 from cryodrgn.models.neural_nets import (
     DataParallelDecoder,
-    half_linear,
-    single_linear,
+    MyLinear,
     ResidLinearMLP,
     TiltEncoder,
     get_decoder,
 )
-from cryodrgn import lie_tools
 from cryodrgn.lattice import Lattice
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def unparallelize(model: nn.Module) -> nn.Module:
@@ -98,14 +99,14 @@ class HetOnlyVAE(nn.Module):
         eps = torch.randn_like(std)
         return eps * std + mu
 
-    def encode(self, *img) -> Tuple[Tensor, Tensor]:
+    def encode(self, *img) -> Tuple[torch.Tensor, torch.Tensor]:
         img = (x.view(x.shape[0], -1) for x in img)
         if self.enc_mask is not None:
             img = (x[:, self.enc_mask] for x in img)
         z = self.encoder(*img)
         return z[:, : self.zdim], z[:, self.zdim :]
 
-    def cat_z(self, coords, z) -> Tensor:
+    def cat_z(self, coords, z) -> torch.Tensor:
         """
         coords: Bx...x3
         z: Bxzdim
@@ -129,28 +130,41 @@ class HetOnlyVAE(nn.Module):
     def forward(self, *args, **kwargs):
         return self.decode(*args, **kwargs)
 
+    def eval_volume(
+        self,
+        coords=None,
+        resolution=None,
+        extent=None,
+        norm=(0.0, 1.0),
+        zval=None,
+        **vol_args,
+    ) -> torch.Tensor:
+        """
+        Evaluate the model on a DxDxD volume
 
-class MyLinear(nn.Linear):
-    def forward(self, input):
-        if input.dtype == torch.half:
-            return half_linear(
-                input, self.weight, self.bias
-            )  # F.linear(input, self.weight.half(), self.bias.half())
-        else:
-            return single_linear(
-                input, self.weight, self.bias
-            )  # F.linear(input, self.weight, self.bias)
+        Inputs:
+            coords: lattice coords on the x-y plane (D^2 x 3)
+            D: size of lattice
+            extent: extent of lattice [-extent, extent]
+            norm: data normalization
+            zval: value of latent (zdim x 1)
+        """
 
+        if not hasattr(self.decoder, "eval_volume"):
+            raise NotImplementedError
 
-class ResidualLinear(nn.Module):
-    def __init__(self, nin, nout):
-        super(ResidualLinear, self).__init__()
-        self.linear = MyLinear(nin, nout)
-        # self.linear = nn.utils.weight_norm(MyLinear(nin, nout))
+        if coords is None:
+            coords = self.lattice.coords
+        if resolution is None:
+            resolution = self.lattice.D
+        if extent is None:
+            extent = self.lattice.extent
 
-    def forward(self, x):
-        z = self.linear(x) + x
-        return z
+        # TODO: kludge because VAE and drgnai models have different loading APIs
+        for k, v in vol_args.items():
+            logger.info(f"ignoring argument {k}={v} in VAE volume generation")
+
+        return self.decoder.eval_volume(coords, resolution, extent, norm, zval)
 
 
 class MLP(nn.Module):
@@ -204,45 +218,3 @@ class ConvEncoder(nn.Module):
         x = x.view(-1, 1, 64, 64)
         x = self.main(x)
         return x.view(x.size(0), -1)  # flatten
-
-
-class SO3reparameterize(nn.Module):
-    """Reparameterize R^N encoder output to SO(3) latent variable"""
-
-    def __init__(self, input_dims, nlayers: int, hidden_dim: int):
-        super().__init__()
-        if nlayers is not None:
-            self.main = ResidLinearMLP(input_dims, nlayers, hidden_dim, 9, nn.ReLU)
-        else:
-            self.main = MyLinear(input_dims, 9)
-
-        # start with big outputs
-        # self.s2s2map.weight.data.uniform_(-5,5)
-        # self.s2s2map.bias.data.uniform_(-5,5)
-
-    def sampleSO3(
-        self, z_mu: torch.Tensor, z_std: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Reparameterize SO(3) latent variable
-        # z represents mean on S2xS2 and variance on so3, which enocdes a Gaussian distribution on SO3
-        # See section 2.5 of http://ethaneade.com/lie.pdf
-        """
-        # resampling trick
-        if not self.training:
-            return z_mu, z_std
-        eps = torch.randn_like(z_std)
-        w_eps = eps * z_std
-        rot_eps = lie_tools.expmap(w_eps)
-        # z_mu = lie_tools.quaternions_to_SO3(z_mu)
-        rot_sampled = z_mu @ rot_eps
-        return rot_sampled, w_eps
-
-    def forward(self, x) -> Tuple[torch.Tensor, torch.Tensor]:
-        z = self.main(x)
-        z1 = z[:, :3].double()
-        z2 = z[:, 3:6].double()
-        z_mu = lie_tools.s2s2_to_SO3(z1, z2).float()
-        logvar = z[:, 6:]
-        z_std = torch.exp(0.5 * logvar)  # or could do softplus
-        return z_mu, z_std

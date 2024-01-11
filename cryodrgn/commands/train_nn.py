@@ -35,8 +35,8 @@ import cryodrgn
 from cryodrgn import ctf, dataset, models
 from cryodrgn.lattice import Lattice
 from cryodrgn.pose import PoseTracker
-from cryodrgn.models import DataParallelDecoder, Decoder
 from cryodrgn.source import write_mrc
+from cryodrgn.models.neural_nets import DataParallelDecoder, Decoder
 import cryodrgn.config
 
 logger = logging.getLogger(__name__)

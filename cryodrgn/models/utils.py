@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 def load_model(
     config: Union[str, dict], weights=Union[str, None], device=Optional[str]
-) -> tuple[torch.nn.Module, Lattice]:
+) -> tuple[torch.nn.Module, Lattice, int]:
     """Instantiate a volume model from a config.yaml
 
     Inputs:
@@ -67,6 +67,8 @@ def load_model(
         if device is not None:
             model.to(device)
 
+        radius_mask = None
+
     else:
         logger.info("loading a DRGNai model...")
 
@@ -81,4 +83,10 @@ def load_model(
             checkpoint["hypervolume_params"]["resolution"], extent=0.5, device=device
         )
 
-    return model, lat
+        radius_mask = (
+            checkpoint["output_mask_radius"]
+            if "output_mask_radius" in checkpoint
+            else None
+        )
+
+    return model, lat, radius_mask

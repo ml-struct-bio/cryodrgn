@@ -15,7 +15,7 @@ ht = cryodrgn.fft.symmetrize_ht(ht)
 D += 1
 
 lattice = Lattice(D)
-model = cryodrgn.models.FTSliceDecoder(D**2, D, 10, 10, nn.ReLU)
+model = cryodrgn.models.neural_nets.FTSliceDecoder(D**2, D, 10, 10, nn.ReLU)
 
 coords = lattice.coords[..., 0:2] / 2
 ht = torch.tensor(ht).view(1, -1)

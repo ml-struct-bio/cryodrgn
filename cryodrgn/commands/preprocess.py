@@ -85,7 +85,6 @@ def add_args(parser):
     group.add_argument(
         "--use-cupy", action="store_true", help="Use cupy to replace numpy"
     )
-    return parser
 
 
 def main(args):
@@ -164,4 +163,5 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    main(add_args(parser).parse_args())
+    add_args(parser)
+    main(parser.parse_args())

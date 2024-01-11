@@ -3,7 +3,7 @@
 import numpy as np
 import torch
 from torch import Tensor
-import torch.nn as nn
+from torch import nn
 import torch.nn.functional as F
 from torch.nn.parameter import Parameter
 from typing import Optional, Tuple, Type, Sequence, Any
@@ -16,7 +16,31 @@ import cryodrgn.config
 Norm = Sequence[Any]  # mean, std
 
 
-def load_decoder(config, weights=None, device=None):
+class Decoder(nn.Module):
+    def eval_volume(
+        self,
+        coords: Tensor,
+        D: int,
+        extent: float,
+        norm: Norm,
+        zval: Optional[np.ndarray] = None,
+    ) -> Tensor:
+        """
+        Evaluate the model on a DxDxD volume
+        Inputs:
+            coords: lattice coords on the x-y plane (D^2 x 3)
+            D: size of lattice
+            extent: extent of lattice [-extent, extent]
+            norm: data normalization
+            zval: value of latent (zdim x 1)
+        """
+        raise NotImplementedError
+
+    def get_voxel_decoder(self) -> Optional["Decoder"]:
+        return None
+
+
+def load_decoder(config, weights=None, device=None) -> Decoder:
     """
     Instantiate a decoder model from a config.yaml
 
@@ -48,30 +72,6 @@ def load_decoder(config, weights=None, device=None):
     if device is not None:
         model.to(device)
     return model
-
-
-class Decoder(nn.Module):
-    def eval_volume(
-        self,
-        coords: Tensor,
-        D: int,
-        extent: float,
-        norm: Norm,
-        zval: Optional[np.ndarray] = None,
-    ) -> Tensor:
-        """
-        Evaluate the model on a DxDxD volume
-        Inputs:
-            coords: lattice coords on the x-y plane (D^2 x 3)
-            D: size of lattice
-            extent: extent of lattice [-extent, extent]
-            norm: data normalization
-            zval: value of latent (zdim x 1)
-        """
-        raise NotImplementedError
-
-    def get_voxel_decoder(self) -> Optional["Decoder"]:
-        return None
 
 
 class DataParallelDecoder(Decoder):
@@ -645,6 +645,18 @@ class TiltEncoder(nn.Module):
         return z
 
 
+class MyLinear(nn.Linear):
+    def forward(self, input):
+        if input.dtype == torch.half:
+            return half_linear(
+                input, self.weight, self.bias
+            )  # F.linear(input, self.weight.half(), self.bias.half())
+        else:
+            return single_linear(
+                input, self.weight, self.bias
+            )  # F.linear(input, self.weight, self.bias)
+
+
 class ResidLinearMLP(Decoder):
     def __init__(
         self,
@@ -729,18 +741,6 @@ def single_linear(input, weight, bias):
     return F.linear(input, weight, bias)
 
 
-class MyLinear(nn.Linear):
-    def forward(self, input):
-        if input.dtype == torch.half:
-            return half_linear(
-                input, self.weight, self.bias
-            )  # F.linear(input, self.weight.half(), self.bias.half())
-        else:
-            return single_linear(
-                input, self.weight, self.bias
-            )  # F.linear(input, self.weight, self.bias)
-
-
 class ResidualLinear(nn.Module):
     def __init__(self, nin, nout):
         super(ResidualLinear, self).__init__()
@@ -750,59 +750,6 @@ class ResidualLinear(nn.Module):
     def forward(self, x):
         z = self.linear(x) + x
         return z
-
-
-class MLP(nn.Module):
-    def __init__(
-        self,
-        in_dim: int,
-        nlayers: int,
-        hidden_dim: int,
-        out_dim: int,
-        activation: Type,
-    ):
-        super(MLP, self).__init__()
-        layers = [MyLinear(in_dim, hidden_dim), activation()]
-        for n in range(nlayers):
-            layers.append(MyLinear(hidden_dim, hidden_dim))
-            layers.append(activation())
-        layers.append(MyLinear(hidden_dim, out_dim))
-        self.main = nn.Sequential(*layers)
-
-    def forward(self, x):
-        return self.main(x)
-
-
-# Adapted from soumith DCGAN
-class ConvEncoder(nn.Module):
-    def __init__(self, hidden_dim, out_dim):
-        super(ConvEncoder, self).__init__()
-        ndf = hidden_dim
-        self.main = nn.Sequential(
-            # input is 1 x 64 x 64
-            nn.Conv2d(1, ndf, 4, 2, 1, bias=False),
-            nn.LeakyReLU(0.2, inplace=True),
-            # state size. (ndf) x 32 x 32
-            nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=False),
-            # nn.BatchNorm2d(ndf * 2),
-            nn.LeakyReLU(0.2, inplace=True),
-            # state size. (ndf*2) x 16 x 16
-            nn.Conv2d(ndf * 2, ndf * 4, 4, 2, 1, bias=False),
-            # nn.BatchNorm2d(ndf * 4),
-            nn.LeakyReLU(0.2, inplace=True),
-            # state size. (ndf*4) x 8 x 8
-            nn.Conv2d(ndf * 4, ndf * 8, 4, 2, 1, bias=False),
-            # nn.BatchNorm2d(ndf * 8),
-            nn.LeakyReLU(0.2, inplace=True),
-            # state size. (ndf*8) x 4 x 4
-            nn.Conv2d(ndf * 8, out_dim, 4, 1, 0, bias=False),
-            # state size. out_dims x 1 x 1
-        )
-
-    def forward(self, x):
-        x = x.view(-1, 1, 64, 64)
-        x = self.main(x)
-        return x.view(x.size(0), -1)  # flatten
 
 
 class SO3reparameterize(nn.Module):

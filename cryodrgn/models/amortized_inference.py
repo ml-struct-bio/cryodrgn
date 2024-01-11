@@ -6,7 +6,6 @@ import torch.nn as nn
 import time
 from cryodrgn.models.neural_nets import half_linear, single_linear
 from cryodrgn import fft, lie_tools, mask, pose_search
-from cryodrgn.lattice import Lattice
 
 
 class DRGNai(nn.Module):
@@ -431,51 +430,6 @@ class DRGNai(nn.Module):
         y_pred = ctf_local * y_pred
         return y_pred
 
-    def eval_volume(self, norm, zval=None):
-        """
-        norm: (mean, std)
-        zval: [z_dim]
-        """
-        return eval_volume_method(
-            self.hypervolume,
-            self.lattice,
-            self.z_dim,
-            norm,
-            zval=zval,
-            radius=self.output_mask.current_radius,
-        )
-
-    @classmethod
-    def load(cls, weights, device=None):
-        """
-        Instantiate a model from a config.pkl
-
-        Inputs:
-            weights (str): Path to weights.pkl
-            device: torch.device object
-
-        Returns:
-            DRGNai instance, Lattice instance
-        """
-        checkpoint = torch.load(weights)
-        hypervolume = HyperVolume(checkpoint["hypervolume_params"])
-        hypervolume.load_state_dict(checkpoint["hypervolume_state_dict"])
-        hypervolume.eval()
-
-        if device is not None:
-            hypervolume.to(device)
-
-        lattice = Lattice(
-            checkpoint["hypervolume_params"]["resolution"], extent=0.5, device=device
-        )
-        radius_mask = (
-            checkpoint["output_mask_radius"]
-            if "output_mask_radius" in checkpoint
-            else None
-        )
-
-        return hypervolume, lattice, radius_mask
-
 
 def sample_conf(z_mu, z_logvar):
     """
@@ -489,49 +443,8 @@ def sample_conf(z_mu, z_logvar):
     std = torch.exp(0.5 * z_logvar)
     eps = torch.randn_like(std)
     z = eps * std + z_mu
+
     return z
-
-
-def eval_volume_method(hypervolume, lattice, z_dim, norm, zval=None, radius=None):
-    """
-    hypervolume: HyperVolume
-    lattice: Lattice
-    z_dim: int
-    norm: (mean, std)
-    zval: [z_dim]
-    radius: int
-    """
-    coords = lattice.coords
-    extent = lattice.extent
-    resolution = lattice.D
-    radius_normalized = extent * 2 * radius / resolution
-    z = None
-    if zval is not None:
-        z = torch.tensor(zval, dtype=torch.float32, device=coords.device).reshape(
-            1, z_dim
-        )
-
-    volume = np.zeros((resolution, resolution, resolution), dtype=np.float32)
-    assert not hypervolume.training
-    with torch.no_grad():
-        for i, dz in enumerate(
-            np.linspace(-extent, extent, resolution, endpoint=True, dtype=np.float32)
-        ):
-            x = coords + torch.tensor([0, 0, dz], device=coords.device)
-            x = x.reshape(1, -1, 3)
-            y = hypervolume(x, z)
-            slice_radius = int(
-                np.sqrt(max(radius_normalized**2 - dz**2, 0.0)) * resolution
-            )
-            slice_mask = mask.CircularMask(lattice, slice_radius).binary_mask
-            y[0, ~slice_mask] = 0.0
-            y = y.view(resolution, resolution).detach().cpu().numpy()
-            volume[i] = y
-        volume = volume * norm[1] + norm[0]
-        volume_real = fft.ihtn_center(
-            volume[0:-1, 0:-1, 0:-1]
-        )  # remove last +k freq for inverse FFT
-    return volume_real
 
 
 class SharedCNN(nn.Module):
@@ -1010,6 +923,48 @@ class HyperVolume(nn.Module):
             "pe_type_conf": self.pe_type_conf,
         }
         return building_params
+
+    def eval_volume(
+        self, coords, resolution, extent, norm=(0.0, 1.0), zval=None, radius=None
+    ):
+
+        if radius is None:
+            raise ValueError(
+                "Must provide a radius for volume generation with HyperVolume!"
+            )
+        radius_normalized = extent * 2 * radius / resolution
+
+        z = None
+        if zval is not None:
+            z = torch.tensor(zval, dtype=torch.float32, device=coords.device).reshape(
+                1, self.z_dim
+            )
+
+        volume = np.zeros((resolution, resolution, resolution), dtype=np.float32)
+        assert not self.hypervolume.training
+        dzs = np.linspace(-extent, extent, resolution, endpoint=True, dtype=np.float32)
+
+        with torch.no_grad():
+            for i, dz in enumerate(dzs):
+                x = coords + torch.tensor([0, 0, dz], device=coords.device)
+                x = x.reshape(1, -1, 3)
+                y = self.hypervolume(x, z)
+
+                slice_radius = int(
+                    np.sqrt(max(radius_normalized**2 - dz**2, 0.0)) * resolution
+                )
+                slice_mask = mask.CircularMask(self.lattice, slice_radius).binary_mask
+
+                y[0, ~slice_mask] = 0.0
+                y = y.view(resolution, resolution).detach().cpu().numpy()
+                volume[i] = y
+
+            volume = volume * norm[1] + norm[0]
+            volume_real = fft.ihtn_center(
+                volume[0:-1, 0:-1, 0:-1]
+            )  # remove last +k freq for inverse FFT
+
+        return volume_real
 
 
 class VolumeExplicit(nn.Module):

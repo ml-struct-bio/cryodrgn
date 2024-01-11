@@ -23,7 +23,7 @@ import cryodrgn
 from cryodrgn import __version__, ctf, dataset
 from cryodrgn.beta_schedule import get_beta_schedule
 from cryodrgn.lattice import Lattice
-from cryodrgn.models import HetOnlyVAE, unparallelize
+from cryodrgn.models.variational_autoencoder import HetOnlyVAE, unparallelize
 from cryodrgn.pose import PoseTracker
 import cryodrgn.config
 

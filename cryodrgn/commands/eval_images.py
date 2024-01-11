@@ -19,7 +19,7 @@ import numpy as np
 import torch
 from cryodrgn import config, ctf, dataset
 from cryodrgn.commands.train_vae import loss_function, preprocess_input, run_batch
-from cryodrgn.models import load_model
+from cryodrgn.models.utils import load_model
 from cryodrgn.pose import PoseTracker
 
 logger = logging.getLogger(__name__)

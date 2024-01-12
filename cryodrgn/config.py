@@ -2,6 +2,7 @@
 
 from datetime import datetime
 import argparse
+from pathlib import Path
 from typing import Optional, Union
 import warnings
 import cryodrgn
@@ -414,8 +415,8 @@ def find_train_configs(outdir: str) -> TrainingConfigurations:
     return TrainingConfigurations(train_configs)
 
 
-def load(config: Union[str, dict]) -> dict:
-    if isinstance(config, str):
+def load(config: Union[str, Path, dict]) -> dict:
+    if isinstance(config, (str, Path)):
         ext = os.path.splitext(config)[-1]
         if ext == ".pkl":
             warnings.warn(

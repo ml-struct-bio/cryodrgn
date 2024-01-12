@@ -466,14 +466,15 @@ def update_config_v1(config):
 
 def overwrite_config(config: Union[str, dict], args: argparse.Namespace) -> dict:
     config = load(config)
+    args_dict = vars(args)
 
-    if args.norm is not None:
+    if hasattr(args, "norm") and args.norm is not None:
         config["dataset_args"]["norm"] = args.norm
-    v = vars(args)
-    if "D" in v and args.D is not None:
+    if hasattr(args, "D") and args.D is not None:
         config["lattice_args"]["D"] = args.D + 1
-    if "l_extent" in v and args.l_extent is not None:
+    if hasattr(args, "l_extent") and args.l_extent is not None:
         config["lattice_args"]["extent"] = args.l_extent
+
     # Overwrite any arguments that are not None
     for arg in (
         "qlayers",
@@ -491,15 +492,21 @@ def overwrite_config(config: Union[str, dict], args: argparse.Namespace) -> dict
     ):
         # Set default to None to maintain backwards compatibility
         if arg in ("pe_dim", "feat_sigma") and arg not in config["model_args"]:
-            assert v[arg] is None, f"Should not reach here. Something is wrong: {arg}"
+            assert (
+                args_dict[arg] is None
+            ), f"Should not reach here. Something is wrong: {arg}"
             config["model_args"][arg] = None
             continue
+
         # Set default activation to ReLU to maintain backwards compatibility with v0.3.1 and earlier
         if arg == "activation" and arg not in config["model_args"]:
-            assert v[arg] == "relu"
+            assert (
+                args_dict[arg] == "relu"
+            ), f"Should not reach here. Something is wrong: {arg}"
             config["model_args"]["activation"] = "relu"
             continue
-        if v[arg] is not None:
-            config["model_args"][arg] = v[arg]
+
+        if arg in args_dict and args_dict[arg] is not None:
+            config["model_args"][arg] = args_dict[arg]
 
     return config

@@ -76,7 +76,6 @@ def load_model(
         hypervolume_params = checkpoint["hypervolume_params"]
         model = HyperVolume(**hypervolume_params)
         model.load_state_dict(checkpoint["hypervolume_state_dict"])
-        model.eval()
         model.to(device)
 
         lat = Lattice(

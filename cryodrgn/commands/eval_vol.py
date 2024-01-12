@@ -5,6 +5,7 @@ import os
 import pprint
 from datetime import datetime as dt
 import logging
+from typing import Optional
 import numpy as np
 import torch
 import cryodrgn.config
@@ -161,12 +162,14 @@ class VolumeEvaluator:
     ):
 
         # set the device
-        if device is not None:
+        if isinstance(device, torch.device):
+            self.device = device
+        elif device is not None:
             self.device = torch.device(f"cuda:{device}")
+
         else:
             use_cuda = torch.cuda.is_available()
             self.device = torch.device("cuda" if use_cuda else "cpu")
-
             logger.info(f"Use cuda {use_cuda}")
             if not use_cuda:
                 logger.warning("WARNING: No GPUs detected")
@@ -189,7 +192,9 @@ class VolumeEvaluator:
                     "Downsampling size must be smaller than original box size"
                 )
 
-        self.model, self.lattice = load_model(cfg_data, weights, device=self.device)
+        self.model, self.lattice, self.radius_mask = load_model(
+            cfg_data, weights, device=self.device
+        )
         self.model.eval()
 
         if downsample:
@@ -216,7 +221,9 @@ class VolumeEvaluator:
 
     def evaluate_volume(self, z):
         return self.transform_volume(
-            self.model.eval_volume(self.coords, self.D, self.extent, self.norm, z)
+            self.model.eval_volume(
+                self.coords, self.D, self.extent, self.norm, z, radius=self.radius_mask
+            )
         )
 
     def produce_volumes(
@@ -224,6 +231,7 @@ class VolumeEvaluator:
         z_values: np.array,
         outpath: str,
         prefix: str = "vol_",
+        suffix: Optional[str] = None,
         vol_start_index: int = 0,
     ) -> None:
 
@@ -238,12 +246,13 @@ class VolumeEvaluator:
             os.makedirs(outpath, exist_ok=True)
 
             logger.info(f"Generating {len(z_values)} volumes")
-            for i, zz in enumerate(z_values, start=vol_start_index):
-                logger.info(zz)
-                volume = self.evaluate_volume(zz)
+            for i, z_val in enumerate(z_values, start=vol_start_index):
+                logger.info(z_val)
+                volume = self.evaluate_volume(z_val)
+                lbl = i if suffix is None else suffix
 
                 MRCFile.write(
-                    os.path.join(outpath, "{}{:03d}.mrc".format(prefix, i)),
+                    os.path.join(outpath, "{}{:03d}.mrc".format(prefix, lbl)),
                     np.array(volume.cpu()).astype(np.float32),
                     Apix=self.apix,
                 )
@@ -263,22 +272,20 @@ def main(args):
     t0 = dt.now()
 
     cfg = cryodrgn.config.load(args.config)
-    arch_args = {a.dest: getattr(args, a.dest, None) for a in args if a in cfg}
-
     evaluator = VolumeEvaluator(
         args.weights,
         cfg,
         args.device,
         args.verbose,
-        args.apix,
+        args.Apix,
         args.flip,
         args.invert,
         args.downsample,
-        **arch_args,
+        **{k: v for k, v in vars(args).items() if k in cfg},
     )
 
     z_bounds = (args.z_start, args.z_end) if args.z_start is not None else None
-    if (args.z_val is None) + (z_bounds is None) + (args.z_file is None) != 2:
+    if (args.z_val is None) + (z_bounds is None) + (args.zfile is None) != 2:
         raise ValueError(
             "Must specify either a single z value (-z) "
             "OR z bounds (--z-start AND --z-end) OR z file (--zfile)"

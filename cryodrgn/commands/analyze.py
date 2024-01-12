@@ -24,6 +24,7 @@ import torch
 from cryodrgn import _ROOT, analysis, utils
 import cryodrgn.config
 from cryodrgn.config import TrainingConfigurations, AnalysisConfigurations
+from cryodrgn.commands.eval_vol import VolumeEvaluator
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -191,6 +192,28 @@ class ModelAnalyzer:
         os.makedirs(self.outdir, exist_ok=True)
         logger.info(f"Saving results to {self.outdir}")
 
+        if configs.skip_vol:
+            self.volume_generator = None
+        else:
+            self.volume_generator = VolumeEvaluator(
+                self.weights_file,
+                self.train_configs,
+                self.device,
+                verbose=False,
+                apix=self.apix,
+            )
+
+    def generate_volumes(
+        self, z_values, voldir, prefix="vol_", suffix=None, start_index=0
+    ):
+        if not self.configs.skip_vol:
+            os.makedirs(voldir, exist_ok=True)
+            np.savetxt(os.path.join(voldir, "z_values.txt"), z_values)
+
+            self.volume_generator.produce_volumes(
+                z_values, voldir, prefix, suffix, start_index
+            )
+
     def analyze(self):
         if self.z_dim == 0:
             logger.warning("No analyses available for homogeneous reconstruction!")
@@ -230,7 +253,7 @@ class ModelAnalyzer:
 
             for z_idx in self.sample_z_idx:
                 logger.info(f"Sampling index {z_idx}")
-                self.vg.gen_volumes(sampledir, self.z[z_idx][None], suffix=z_idx)
+                self.generate_volumes(self.z[z_idx][None], sampledir, suffix=z_idx)
 
         if self.configs.trajectory_1d is not None:
             logger.info(
@@ -252,7 +275,7 @@ class ModelAnalyzer:
             )
 
             os.makedirs(trajdir, exist_ok=True)
-            self.vg.gen_volumes(trajdir, z_list)
+            self.generate_volumes(z_list, trajdir)
 
         if self.configs.direct_traversal_txt is not None:
             dir_traversal_vertices_ind = np.loadtxt(self.configs.direct_traversal_txt)
@@ -270,12 +293,12 @@ class ModelAnalyzer:
                     0,
                 )
 
-            self.vg.gen_volumes(travdir, z_values)
+            self.generate_volumes(z_values, travdir)
 
         if self.configs.z_values_txt is not None:
             z_values = np.loadtxt(self.configs.z_values_txt)
             zvaldir = os.path.join(self.outdir, "trajectory")
-            self.vg.gen_volumes(zvaldir, z_values)
+            self.generate_volumes(z_values, zvaldir)
 
         logger.info("Done")
 
@@ -299,7 +322,7 @@ class ModelAnalyzer:
         plt.close()
 
         ztraj = np.percentile(z, np.linspace(5, 95, 10))
-        self.vg.gen_volumes(self.outdir, ztraj)
+        self.generate_volumes(ztraj, self.outdir)
 
         kmeans_labels, centers = analysis.cluster_kmeans(
             z[..., None], self.ksample, reorder=False
@@ -307,7 +330,7 @@ class ModelAnalyzer:
         centers, centers_ind = analysis.get_nearest_point(z[:, None], centers)
 
         volpath = os.path.join(self.outdir, f"kmeans{self.configs.ksample}")
-        self.vg.gen_volumes(volpath, centers)
+        self.generate_volumes(centers, volpath)
 
     def analyze_zN(self) -> None:
         zdim = self.z.shape[1]
@@ -324,7 +347,7 @@ class ModelAnalyzer:
             )
 
             volpath = os.path.join(self.outdir, f"pc{i + 1}_{self.configs.n_per_pc}")
-            self.vg.gen_volumes(volpath, z_pc)
+            self.generate_volumes(z_pc, volpath)
 
         # kmeans clustering
         logger.info("K-means clustering...")
@@ -339,7 +362,7 @@ class ModelAnalyzer:
         np.savetxt(os.path.join(kmean_path, "centers_ind.txt"), centers_ind, fmt="%d")
 
         logger.info("Generating volumes...")
-        self.vg.gen_volumes(kmean_path, centers)
+        self.generate_volumes(centers, kmean_path)
 
         # UMAP -- slow step
         umap_emb = None
@@ -660,40 +683,6 @@ class ModelAnalyzer:
                         plt.close()
 
 
-def generate_volumes(self, voldir: str, z_values) -> None:
-    if self.configs.skip_vol:
-        return None
-
-    os.makedirs(voldir, exist_ok=True)
-    zfile = os.path.join(voldir, "z_values.txt")
-    np.savetxt(zfile, z_values)
-
-    analysis.gen_volumes(
-        self.weights_file, self.configs, zfile, self.outdir, **self.vol_args
-    )
-
-
-class VolumeGenerator:
-    """Helper class to call analysis.gen_volumes"""
-
-    def __init__(self, weights, config, vol_args={}, skip_vol=False):
-        self.weights = weights
-        self.config = config
-        self.vol_args = vol_args
-        self.skip_vol = skip_vol
-
-    def gen_volumes(self, outdir, z_values):
-        if self.skip_vol:
-            return
-        if not os.path.exists(outdir):
-            os.makedirs(outdir)
-
-        zfile = f"{outdir}/z_values.txt"
-        np.savetxt(zfile, z_values)
-
-        analysis.gen_volumes(self.weights, self.config, zfile, outdir, **self.vol_args)
-
-
 def main(args):
     matplotlib.use("Agg")  # non-interactive backend
     t0 = dt.now()
@@ -701,10 +690,8 @@ def main(args):
     train_configs = cryodrgn.config.find_train_configs(args.outdir)
     anlz_configs = AnalysisConfigurations.parse_args(args)
 
-    utils._verbose = False
     analyzer = ModelAnalyzer(anlz_configs, train_configs)
     analyzer.analyze()
-
     logger.info(f"Finished in {dt.now() - t0}")
 
 

@@ -2,6 +2,8 @@
 Visualize convergence and training dynamics
 
 (BETA -- contributed by Barrett Powell bmp@mit.edu)
+
+Compatible with v3.0.0 and up.
 """
 
 import argparse

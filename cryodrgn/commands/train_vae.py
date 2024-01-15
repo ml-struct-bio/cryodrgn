@@ -42,7 +42,7 @@ from cryodrgn.beta_schedule import get_beta_schedule
 from cryodrgn.lattice import Lattice
 from cryodrgn.models.variational_autoencoder import HetOnlyVAE, unparallelize
 from cryodrgn.pose import PoseTracker
-import cryodrgn.config
+import cryodrgn.models.config
 
 logger = logging.getLogger(__name__)
 
@@ -609,7 +609,7 @@ def save_config(args, dataset, lattice, model, out_config):
         dataset_args=dataset_args, lattice_args=lattice_args, model_args=model_args
     )
     config["seed"] = args.seed
-    cryodrgn.config.save(config, out_config)
+    cryodrgn.models.config.save(config, out_config)
 
 
 def get_latest(args):

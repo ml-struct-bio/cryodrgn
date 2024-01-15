@@ -1,23 +1,15 @@
-"""Storing and retrieving parameter settings set by the user."""
+"""Storing and retrieving model parameter settings set by the user and from defaults."""
 
 from datetime import datetime
 import argparse
-from pathlib import Path
-from typing import Optional, Union
-import warnings
+from typing import Optional
 import cryodrgn
-from cryodrgn import utils
-
 import os
 import sys
 import yaml
 import numpy as np
 from collections import OrderedDict
 from abc import ABC
-
-CONFIG_DIR = os.path.join(
-    os.path.abspath(os.path.dirname(os.path.dirname(__file__))), "configs"
-)
 
 
 class _BaseConfigurations(ABC):
@@ -68,7 +60,7 @@ class _BaseConfigurations(ABC):
             yaml.dump(dict(self), f, default_flow_style=False, sort_keys=False)
 
 
-class TrainingConfigurations(_BaseConfigurations):
+class AmortizedInferenceConfigurations(_BaseConfigurations):
 
     defaults = OrderedDict(
         {
@@ -373,67 +365,6 @@ class TrainingConfigurations(_BaseConfigurations):
                 self.dose_per_tilt = paths[self.dataset]["dose_per_tilt"]
 
 
-class AnalysisConfigurations(_BaseConfigurations):
-
-    defaults = {
-        "epoch": -1,
-        "skip_umap": False,
-        "pc": 2,
-        "n_per_pc": 10,
-        "ksample": 20,
-        "seed": -1,
-        "invert": True,
-        "sample_z_idx": None,
-        "trajectory_1d": None,
-        "direct_traversal_txt": None,
-        "z_values_txt": None,
-    }
-
-
-def find_train_configs(outdir: str) -> TrainingConfigurations:
-    train_configs = dict()
-
-    if not os.path.exists(outdir):
-        raise ValueError(f"Given cryoDRGN output directory `{outdir}` does not exist!")
-
-    if not os.path.exists(os.path.join(outdir, "out")):
-        if os.path.exists(os.path.join(outdir, "config.yaml")):
-            train_configs = utils.load_yaml(os.path.join(outdir, "config.yaml"))
-            train_configs["outdir"] = outdir
-
-    elif os.path.exists(os.path.join(outdir, "out", "train-configs.yaml")):
-        train_configs = utils.load_yaml(
-            os.path.join(outdir, "out", "train-configs.yaml")
-        )
-        train_configs["outdir"] = os.path.join(outdir, "out")
-
-    if not train_configs:
-        raise ValueError(
-            f"Unable to find cryoDRGN training configurations in output folder `{outdir}`!"
-        )
-
-    return TrainingConfigurations(train_configs)
-
-
-def load(config: Union[str, Path, dict]) -> dict:
-    if isinstance(config, (str, Path)):
-        ext = os.path.splitext(config)[-1]
-        if ext == ".pkl":
-            warnings.warn(
-                "Loading configuration from a .pkl file is deprecated. Please save/load configuration"
-                "as a .yaml file instead."
-            )
-            return utils.load_pkl(config)
-        elif ext in (".yml", ".yaml"):
-            return utils.load_yaml(config)
-        else:
-            raise RuntimeError(f"Unrecognized config extension {ext}")
-
-    # if given the configuration values themselves just return them
-    else:
-        return config
-
-
 def save(config: dict, filename: Optional[str] = None, folder: Optional[str] = None):
     filename = filename or "config.yaml"
     if folder is not None:
@@ -447,12 +378,11 @@ def save(config: dict, filename: Optional[str] = None, folder: Optional[str] = N
     if "cmd" not in config:
         config["cmd"] = sys.argv
 
-    utils.save_yaml(config, filename)
+    cryodrgn.utils.save_yaml(config, filename)
     return filename
 
 
-def update_config_v1(config):
-    config = load(config)
+def update_config_v1(config: dict) -> dict:
     arg = "feat_sigma"
     if arg not in config["model_args"]:
         assert config["model_args"]["pe_type"] != "gaussian"
@@ -465,8 +395,7 @@ def update_config_v1(config):
     return config
 
 
-def overwrite_config(config: Union[str, dict], args: argparse.Namespace) -> dict:
-    config = load(config)
+def overwrite_config(config: dict, args: argparse.Namespace) -> dict:
     args_dict = vars(args)
 
     if hasattr(args, "norm") and args.norm is not None:

@@ -23,6 +23,7 @@ substring "mike" anywhere under folders containing the substring "paper".
 $ cryodrgn undeprecate "**/*paper*/**/*mike*"
 
 """
+import os
 import argparse
 from pathlib import Path
 import pickle
@@ -63,25 +64,54 @@ def add_args(parser):
     )
 
 
-def update_dir(d: Path, version: str) -> None:
+def update_dir(d: Path, version: str, cfg: dict) -> None:
     if version == "3":
-        pass
+        new_cfg = {
+            **cfg["dataset_args"],
+            **cfg["model_args"],
+            **cfg["lattice_args"],
+            "model": "cryoDRGN_v3",
+        }
+
+        new_cfg["pose"] = new_cfg["poses"]
+        del new_cfg["poses"]
+
+        origwd = os.getcwd()
+        os.chdir(d)
+
+        for f in Path(".").iterdir():
+            if f.name == "run.log":
+                f.rename("training.log")
+
+            elif f.name[:2] == "z." and f.name[-4:] == ".pkl":
+                f.rename(f"conf.{f.name[2:]}")
+
+        os.makedirs("out", exist_ok=True)
+        for f in Path(".").iterdir():
+            if not f.is_dir() or f.name != "out":
+                f.rename("out" / f)
+
+        with open(Path("out", "train-configs.yaml"), "w") as f:
+            yaml.dump(new_cfg, f)
+
+        os.chdir(origwd)
+
     elif version == "2":
         pass
     else:
         raise ValueError(f"Unrecognized version {version}")
 
 
-def safe_open_config(d: Path, config: str, version: str, verbosity: int) -> dict:
+def _safe_open_config(d: Path, config: str, version: str) -> tuple[dict, str]:
+    version_code = str(version)
+
     if version == "2":
         try:
             with open(Path(d, config), "rb") as f:
                 cfg = pickle.load(f)
         except NORMAL_EXCEPTIONS:
             cfg = dict()
-
-            if verbosity > 1:
-                prompt_dir(d, "2C")
+            version_code = "2C"
 
     else:
         try:
@@ -90,20 +120,40 @@ def safe_open_config(d: Path, config: str, version: str, verbosity: int) -> dict
 
         except NORMAL_EXCEPTIONS:
             cfg = dict()
+            version_code = f"{version}C"
 
-            if verbosity > 1:
-                prompt_dir(d, f"{version}C")
+    if version_code[-1] != "C":
+        if version == "4":
+            if "particles" not in cfg and "dataset" not in cfg:
+                version_code = "N"
 
-    return cfg
+        else:
+            if (
+                "cmd" not in cfg
+                or "cryodrgn" not in cfg["cmd"][0]
+                or cfg["cmd"][1] not in {"train_nn", "train_vae"}
+                or "dataset_args" not in cfg
+            ):
+                version_code = "N"
+
+    return cfg, version_code
 
 
-def prompt_dir(d: Path, version_code: str, dry_run: bool, maxlen: int = 10) -> None:
+def _prompt_dir(
+    d: Path,
+    cfg: dict,
+    version_code: str,
+    dry_run: bool,
+    maxlen: int = 10,
+    verbosity: int = 0,
+) -> None:
     msg = "".join(f"is a cryoDRGNv{version_code} directory")
 
     if version_code == "4":
         msg = msg.replace("is a", "is already a")
     elif version_code == "N":
         msg = msg.replace("is a", "is not a")
+        msg = msg.replace("cryoDRGNvN", "cryoDRGN")
 
     elif version_code == "2C":
         msg = msg.replace("is a", "might be a")
@@ -112,37 +162,28 @@ def prompt_dir(d: Path, version_code: str, dry_run: bool, maxlen: int = 10) -> N
         msg = msg.replace("is a", "might be a")
         msg = "".join([msg, ", but configs.yaml is corrupted"])
 
-    if dry_run:
+    if (
+        dry_run
+        or "C" in version_code
+        or (verbosity > 0 and version_code == "4")
+        or (verbosity > 1 and version_code == "N")
+    ):
         print("\t".join(["".join(["`", str(d), "`"]).ljust(maxlen, "."), msg]))
 
-    else:
-        if version_code == "4":
-            print(" ".join(["".join(["`", str(d), "`"]), msg]))
+    elif version_code in {"2", "3"}:
+        prompt_msg = ', enter 1) "(s)kip" or 2) any other key to update:\n'
+        prompt = input("".join(["`", str(d), " ", msg, prompt_msg]))
 
-        else:
-            prompt = input(
-                "".join(
-                    [
-                        "`",
-                        str(d),
-                        " ",
-                        msg,
-                        ', enter 1) "(s)kip" or 2) any other key to update:\n',
-                    ]
-                )
-            )
-
-            if prompt not in {"s", "skip"}:
-                update_dir(d, version_code)
+        if prompt not in {"s", "skip"}:
+            update_dir(d, version_code, cfg)
 
 
 def main(args):
-    scan_dirs = {p for p in Path().glob(args.outglob) if p.is_dir()}
+    scan_dirs = sorted(p for p in Path().glob(args.outglob) if p.is_dir())
     maxlen = len(str(max(scan_dirs, key=lambda d: len(str(d)))))
 
     while scan_dirs:
-        cur_dir = scan_dirs.pop()
-        is_cryodrgn = True
+        cur_dir = scan_dirs.pop(0)
         dir_ls = set(Path.iterdir(cur_dir))
 
         if (
@@ -150,40 +191,25 @@ def main(args):
             and Path(cur_dir, "out") in dir_ls
             and Path(cur_dir, "out").is_dir()
         ):
-            cfg = safe_open_config(cur_dir, "configs.yaml", "4", args.verbose)
-
-            if "particles" in cfg or "dataset" in cfg:
-                if args.verbose > 0:
-                    prompt_dir(cur_dir, "4", args.dry_run, maxlen)
-            else:
-                is_cryodrgn = False
-                if args.verbose > 1:
-                    prompt_dir(cur_dir, "N", args.dry_run, maxlen)
+            cfg, version_code = _safe_open_config(cur_dir, "configs.yaml", "4")
 
         elif Path(cur_dir, "config.yaml") in dir_ls:
-            cfg = safe_open_config(cur_dir, "config.yaml", "3", args.verbose)
-
-            if "particles" in cfg or "dataset" in cfg:
-                if args.verbose > 0:
-                    prompt_dir(cur_dir, "3", args.dry_run, maxlen)
-            else:
-                is_cryodrgn = False
-                if args.verbose > 1:
-                    prompt_dir(cur_dir, "N", args.dry_run, maxlen)
+            cfg, version_code = _safe_open_config(cur_dir, "config.yaml", "3")
+        elif Path(cur_dir, "config.yml") in dir_ls:
+            cfg, version_code = _safe_open_config(cur_dir, "config.yml", "3")
 
         elif Path(cur_dir, "config.pkl") in dir_ls:
-            cfg = safe_open_config(cur_dir, "config.pkl", "2", args.verbose)
-            if "particles" in cfg or "dataset" in cfg:
-                prompt_dir(cur_dir, "2", args.dry_run, maxlen)
+            cfg, version_code = _safe_open_config(cur_dir, "config.pkl", "2")
 
         else:
-            is_cryodrgn = False
-            if args.verbose > 1:
-                prompt_dir(cur_dir, "N", args.dry_run, maxlen)
+            cfg = None
+            version_code = "N"
+
+        _prompt_dir(cur_dir, cfg, version_code, args.dry_run, maxlen, args.verbose)
 
         # don't scan subdirectories of already identified cryoDRGN folders
-        if is_cryodrgn:
-            scan_dirs -= {p for p in scan_dirs if cur_dir in p.parents}
+        if "N" not in version_code and "C" not in version_code:
+            scan_dirs = [p for p in scan_dirs if cur_dir not in p.parents]
 
 
 if __name__ == "__main__":

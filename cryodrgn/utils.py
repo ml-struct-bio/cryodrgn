@@ -100,7 +100,7 @@ def save_pkl(data, out_pkl: str, mode: str = "wb") -> None:
         pickle.dump(data, f)  # type: ignore
 
 
-def load_yaml(yamlfile: str):
+def load_yaml(yamlfile: str) -> dict:
     with open(yamlfile, "r") as f:
         return yaml.safe_load(f)
 

@@ -30,6 +30,8 @@ dependencies = [
     "notebook<7",
     "umap-learn",
     "ipywidgets<8",
+    'pillow<10',
+    'tensorboard',
     "healpy"
 ]
 

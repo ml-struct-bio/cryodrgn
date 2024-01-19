@@ -18,6 +18,7 @@ def main():
     import cryodrgn.commands.analyze_landscape
     import cryodrgn.commands.analyze_landscape_full
     import cryodrgn.commands.backproject_voxel
+    import cryodrgn.commands.clean
     import cryodrgn.commands.downsample
     import cryodrgn.commands.eval_images
     import cryodrgn.commands.eval_vol
@@ -29,8 +30,11 @@ def main():
     import cryodrgn.commands.parse_pose_star
     import cryodrgn.commands.pc_traversal
     import cryodrgn.commands.preprocess
+    import cryodrgn.commands.setup
     import cryodrgn.commands.train_nn
     import cryodrgn.commands.train_vae
+    import cryodrgn.commands.train
+    import cryodrgn.commands.train_ai
     import cryodrgn.commands.undeprecate
     import cryodrgn.commands.view_config
 
@@ -44,6 +48,7 @@ def main():
         cryodrgn.commands.parse_ctf_csparc,
         cryodrgn.commands.parse_ctf_star,
         cryodrgn.commands.train_nn,
+        cryodrgn.commands.clean,
         cryodrgn.commands.backproject_voxel,
         cryodrgn.commands.train_vae,
         cryodrgn.commands.eval_vol,
@@ -57,6 +62,9 @@ def main():
         cryodrgn.commands.view_config,
         cryodrgn.commands.abinit_homo,
         cryodrgn.commands.abinit_het,
+        cryodrgn.commands.train_ai,
+        cryodrgn.commands.train,
+        cryodrgn.commands.setup,
     ]
 
     subparsers = parser.add_subparsers(title="Choose a command")

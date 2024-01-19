@@ -4,7 +4,7 @@ import logging
 from typing import Union, Optional
 import torch
 from torch import nn
-import cryodrgn.config
+import cryodrgn.models.config
 from cryodrgn.lattice import Lattice
 from cryodrgn.models.variational_autoencoder import HetOnlyVAE
 from cryodrgn.models.amortized_inference import HyperVolume
@@ -25,7 +25,7 @@ def load_model(
     Returns:
         nn.Module instance, Lattice instance
     """
-    cfg = cryodrgn.config.load(config)
+    cfg = cryodrgn.models.config.load(config)
 
     if "cmd" in cfg:
         logger.info("loading a cryoDRGN2 model...")

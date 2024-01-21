@@ -15,7 +15,7 @@ from torch.nn.parallel import DataParallel
 from typing import Union
 from cryodrgn import ctf, dataset, lie_tools, utils
 from cryodrgn.beta_schedule import LinearSchedule, get_beta_schedule
-import cryodrgn.config
+import cryodrgn.models.config
 from cryodrgn.lattice import Lattice
 from cryodrgn.losses import EquivarianceLoss
 from cryodrgn.models.variational_autoencoder import unparallelize, HetOnlyVAE
@@ -672,7 +672,7 @@ def save_config(args, dataset, lattice, model, out_config):
         dataset_args=dataset_args, lattice_args=lattice_args, model_args=model_args
     )
 
-    cryodrgn.config.save(config, out_config)
+    cryodrgn.models.config.save(config, out_config)
 
 
 def sort_poses(poses):

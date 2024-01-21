@@ -26,7 +26,7 @@ $ cryodrgn clean "**/*paper*/**/*mike*"
 import os
 import argparse
 from pathlib import Path
-from cryodrgn.commands.utils.configs import check_open_config
+from cryodrgn.commands_utils.configs import check_open_config
 
 
 def add_args(parser):

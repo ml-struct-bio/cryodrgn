@@ -2,7 +2,7 @@
 
 from datetime import datetime
 import argparse
-from typing import Optional
+from typing import Optional, Any
 import cryodrgn
 import os
 import sys
@@ -10,18 +10,23 @@ import yaml
 import numpy as np
 from collections import OrderedDict
 from abc import ABC
+from cryodrgn.utils import load_yaml
 
 
 class _BaseConfigurations(ABC):
     """Base class for sets of model configuration parameters."""
 
-    # a parameter belongs to this set if and only if it has a default value
+    # the base parameters for all sets: whether we are testing the installation,
+    # where the output is located and which configuration shortcuts were used
+    __slots__: tuple[str] = ("outdir", "quick_config")
+
+    # any other parameters belong to this set if and only if they have a default value
     # defined in this dictionary, ordering makes e.g. printing easier for user
-    defaults = OrderedDict()
+    defaults: OrderedDict[str, Any] = OrderedDict()
 
     @classmethod
     @property
-    def parameters(cls) -> list:
+    def parameters(cls) -> list[str]:
         return list(cls.defaults.keys())
 
     @classmethod
@@ -29,14 +34,26 @@ class _BaseConfigurations(ABC):
         return cls(
             {
                 par: (getattr(args, par) if hasattr(args, par) else cls.defaults[par])
-                for par in cls.defaults
+                for par in tuple(cls.defaults) + cls.__slots__
             }
         )
 
-    def __init__(self, config_vals: dict) -> None:
-        for key in config_vals:
+    def __init__(self, config_vals: dict[str, Any]) -> None:
+        if "test_installation" in config_vals and config_vals["test_installation"]:
+            print("Installation was successful!")
+            sys.exit()
+
+        if "outdir" not in config_vals:
+            raise ValueError("`config_vals` must have a `outdir` entry!")
+        if "quick_config" not in config_vals:
+            raise ValueError("`config_vals` must have a `quick_config` entry!")
+
+        for key in set(config_vals) - {"outdir", "quick_config"}:
             if key not in self.defaults:
                 raise ValueError("Unrecognized configuration " f"parameter `{key}`!")
+
+        self.outdir = config_vals["outdir"]
+        self.quick_config = config_vals["quick_config"]
 
         # an attribute is created for every entry in the defaults dictionary
         for key, value in self.defaults.items():
@@ -60,12 +77,124 @@ class _BaseConfigurations(ABC):
             yaml.dump(dict(self), f, default_flow_style=False, sort_keys=False)
 
 
+class AbInitioConfigurations(_BaseConfigurations):
+
+    __slots__ = ("particles", "ctf", "pose", "dataset", "log_interval")
+    defaults = OrderedDict(
+        {
+            "particles": None,
+            "ctf": None,
+            "pose": None,
+            "dataset": None,
+            "log_interval": 1000,
+        }
+    )
+
+    def __init__(self, config_vals: dict[str, Any]) -> None:
+        super().__init__(config_vals)
+
+        if self.dataset is None:
+            if self.particles is None:
+                raise ValueError(
+                    "As dataset was not specified, please " "specify particles!"
+                )
+
+            if self.ctf is None:
+                raise ValueError("As dataset was not specified, please " "specify ctf!")
+
+
 class AmortizedInferenceConfigurations(_BaseConfigurations):
+
+    __slots__ = (
+        "particles",
+        "ctf",
+        "pose",
+        "dataset",
+        "server",
+        "datadir",
+        "ind",
+        "labels",
+        "relion31",
+        "no_trans",
+        "use_gt_poses",
+        "refine_gt_poses",
+        "use_gt_trans",
+        "load",
+        "initial_conf",
+        "log_interval",
+        "log_heavy_interval",
+        "verbose_time",
+        "shuffle",
+        "lazy",
+        "num_workers",
+        "max_threads",
+        "fast_dataloading",
+        "shuffler_size",
+        "batch_size_known_poses",
+        "batch_size_hps",
+        "batch_size_sgd",
+        "hypervolume_optimizer_type",
+        "pose_table_optimizer_type",
+        "conf_table_optimizer_type",
+        "conf_encoder_optimizer_type",
+        "lr",
+        "lr_pose_table",
+        "lr_conf_table",
+        "lr_conf_encoder",
+        "wd",
+        "n_imgs_pose_search",
+        "epochs_sgd",
+        "pose_only_phase",
+        "output_mask",
+        "add_one_frequency_every",
+        "n_frequencies_per_epoch",
+        "max_freq",
+        "window_radius_gt_real",
+        "l_start_fm",
+        "beta_conf",
+        "trans_l1_regularizer",
+        "l2_smoothness_regularizer",
+        "variational_het",
+        "z_dim",
+        "std_z_init",
+        "use_conf_encoder",
+        "depth_cnn",
+        "channels_cnn",
+        "kernel_size_cnn",
+        "resolution_encoder",
+        "explicit_volume",
+        "hypervolume_layers",
+        "hypervolume_dim",
+        "pe_type",
+        "pe_dim",
+        "feat_sigma",
+        "hypervolume_domain",
+        "pe_type_conf",
+        "n_imgs_pretrain",
+        "pretrain_with_gt_poses",
+        "l_start",
+        "l_end",
+        "n_iter",
+        "t_extent",
+        "t_n_grid",
+        "t_x_shift",
+        "t_y_shift",
+        "no_trans_search_at_pose_search",
+        "n_kept_poses",
+        "base_healpy",
+        "subtomogram_averaging",
+        "n_tilts",
+        "dose_per_tilt",
+        "angle_per_tilt",
+        "n_tilts_pose_search",
+        "average_over_tilts",
+        "tilt_axis_angle",
+        "dose_exposure_correction",
+        "seed",
+    )
 
     defaults = OrderedDict(
         {
-            "outdir": None,
-            "quick_config": None,
             # dataset
             "particles": None,
             "ctf": None,
@@ -166,7 +295,6 @@ class AmortizedInferenceConfigurations(_BaseConfigurations):
             # others
             "seed": -1,
             "palette_type": None,
-            "test_installation": False,
         }
     )
 
@@ -202,10 +330,6 @@ class AmortizedInferenceConfigurations(_BaseConfigurations):
 
     def __init__(self, config_vals: dict):
         super().__init__(config_vals)
-
-        if self.test_installation:
-            print("Installation was successful!")
-            sys.exit()
 
         if self.seed < 0:
             self.seed = np.random.randint(0, 10000)
@@ -363,6 +487,17 @@ class AmortizedInferenceConfigurations(_BaseConfigurations):
                 self.ind = paths[self.dataset]["ind"]
             if "dose_per_tilt" in paths[self.dataset]:
                 self.dose_per_tilt = paths[self.dataset]["dose_per_tilt"]
+
+
+def load_configs(outdir: str) -> dict:
+    cfg_fl = os.path.join(outdir, "configs.yaml")
+
+    if not os.path.isfile(cfg_fl):
+        raise ValueError(
+            f"Folder `{outdir}` does not contain a cryoDRGN configuration file!"
+        )
+
+    return load_yaml(cfg_fl)
 
 
 def save(config: dict, filename: Optional[str] = None, folder: Optional[str] = None):

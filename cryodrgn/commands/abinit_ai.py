@@ -15,12 +15,12 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
+import cryodrgn
 from cryodrgn import mrc
 from cryodrgn import utils
 from cryodrgn import dataset_fast
 from cryodrgn import dataset
 from cryodrgn import ctf
-from cryodrgn import summary
 
 from cryodrgn.models.config import AmortizedInferenceConfigurations
 from cryodrgn.lattice import Lattice
@@ -1068,7 +1068,7 @@ class ModelTrainer:
         return total_loss, all_losses
 
     def make_heavy_summary(self):
-        summary.make_img_summary(
+        cryodrgn.summary.make_img_summary(
             self.writer,
             self.in_dict_last,
             self.y_pred_last,
@@ -1100,7 +1100,7 @@ class ModelTrainer:
                 else None
             )
 
-            pca = summary.make_conf_summary(
+            pca = cryodrgn.summary.make_conf_summary(
                 self.writer,
                 predicted_conf,
                 self.epoch,
@@ -1150,7 +1150,7 @@ class ModelTrainer:
             else None
         )
 
-        summary.make_pose_summary(
+        cryodrgn.summary.make_pose_summary(
             self.writer,
             predicted_rots,
             predicted_trans,
@@ -1175,7 +1175,9 @@ class ModelTrainer:
         if self.model.trans_search_factor is not None:
             all_losses["Trans. Search Factor"] = self.model.trans_search_factor
 
-        summary.make_scalar_summary(self.writer, all_losses, self.total_particles_count)
+        cryodrgn.summary.make_scalar_summary(
+            self.writer, all_losses, self.total_particles_count
+        )
 
         if self.configs.verbose_time:
             for key in self.run_times.keys():
@@ -1255,10 +1257,8 @@ class ModelTrainer:
 
 def main(args, configs=None):
     if configs is None:
-        setup_helper = SetupHelper(args)
-        configs = setup_helper.get_configs()
+        configs = SetupHelper(args.outdir, update_existing=False).create_configs()
 
-    configs["outdir"] = os.path.join(args.outdir, "out")
     utils._verbose = False
     trainer = ModelTrainer(configs)
     trainer.train()
@@ -1269,5 +1269,5 @@ def main(args, configs=None):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    args = add_args(parser).parse_args()
-    main(args)
+    add_args(parser)
+    main(parser.parse_args())

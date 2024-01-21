@@ -298,8 +298,6 @@ def add_args(parser):
         help="Scale for random Gaussian features (default: %(default)s)",
     )
 
-    return parser
-
 
 def save_checkpoint(
     model, lattice, pose, optim, epoch, norm, out_mrc, out_weights, out_poses
@@ -362,13 +360,6 @@ def sort_poses(pose):
         trans = trans[np.argsort(ind)]
         return (rot, trans)
     return (rot,)
-
-
-def sort_base_poses(pose):
-    ind, data = zip(*pose)
-    ind = np.concatenate(ind)
-    data = np.concatenate(data)
-    return data[np.argsort(ind)]
 
 
 def train(

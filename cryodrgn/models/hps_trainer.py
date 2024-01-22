@@ -1,16 +1,16 @@
-"""Neural net reconstruction with hierarchical pose optimization."""
-import argparse
 import os
 import pickle
 import logging
 from datetime import datetime as dt
-from typing import Optional, Any
+from collections import OrderedDict
+from typing import Any
 
 import numpy as np
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
+from torch import nn
 from torch.nn.parallel import DataParallel
+import torch.nn.functional as F
+
 from cryodrgn import ctf, dataset, lie_tools, utils
 from cryodrgn.beta_schedule import LinearSchedule, get_beta_schedule
 import cryodrgn.models.config
@@ -18,23 +18,8 @@ from cryodrgn.lattice import Lattice
 from cryodrgn.losses import EquivarianceLoss
 from cryodrgn.models.variational_autoencoder import unparallelize, HetOnlyVAE
 from cryodrgn.models.neural_nets import get_decoder
+from cryodrgn.models.config import ModelConfigurations
 from cryodrgn.pose_search import PoseSearch
-from cryodrgn.models.config import AbInitioConfigurations
-from cryodrgn.commands.analyze import ModelAnalyzer
-from cryodrgn.commands.setup import SetupHelper
-
-logger = logging.getLogger(__name__)
-
-
-def add_args(parser):
-    parser.add_argument("outdir", help="experiment output location")
-
-    parser.add_argument(
-        "--no-analysis",
-        action="store_true",
-        help="just do the training stage",
-        dest="no_anlz",
-    )
 
 
 def save_config(args, dataset, lattice, model, out_config):
@@ -73,26 +58,7 @@ def save_config(args, dataset, lattice, model, out_config):
     cryodrgn.models.config.save(config, out_config)
 
 
-def get_latest(configs: dict[str, Any]) -> dict[str, Any]:
-    logger.info("Detecting latest checkpoint...")
-
-    weights = [
-        os.path.join(configs["outdir"], f"weights.{epoch}.pkl")
-        for epoch in range(configs["num_epochs"])
-    ]
-    weights = [f for f in weights if os.path.exists(f)]
-
-    configs["load"] = weights[-1]
-    logger.info(f"Loading {configs['load']}")
-    epoch = configs["load"].split(".")[-2]
-    configs["load_poses"] = os.path.join(configs["outdir"], f"pose.{epoch}.pkl")
-    assert os.path.exists(configs["load_poses"])
-    logger.info(f"Loading {configs['load_poses']}")
-
-    return configs
-
-
-class ModelTrainer:
+class HierarchicalSearchTrainer:
     def make_model(self) -> HetOnlyVAE:
         if self.zdim == 0:
             model = get_decoder(
@@ -127,21 +93,22 @@ class ModelTrainer:
         return model
 
     def __init__(self, configs: dict) -> None:
+        self.logger = logging.getLogger(__name__)
         if configs["verbose"]:
-            logger.setLevel(logging.DEBUG)
+            self.logger.setLevel(logging.DEBUG)
 
         self.configs = AbInitioConfigurations(configs)
         self.outdir = self.configs.outdir
         os.makedirs(self.outdir, exist_ok=True)
-        logger.addHandler(
+        self.logger.addHandler(
             logging.FileHandler(os.path.join(self.outdir, "training.log"))
         )
 
         if self.configs.load == "latest":
-            configs = get_latest(configs)
+            configs = self.get_latest()
             self.configs = AbInitioConfigurations(configs)
 
-        logger.info(str(self.configs))
+        self.logger.info(str(self.configs))
 
         # set the random seed
         np.random.seed(self.configs.seed)
@@ -150,9 +117,9 @@ class ModelTrainer:
         # set the device
         use_cuda = torch.cuda.is_available()
         self.device = torch.device("cuda" if use_cuda else "cpu")
-        logger.info("Use cuda {}".format(use_cuda))
+        self.logger.info("Use cuda {}".format(use_cuda))
         if not use_cuda:
-            logger.warning("WARNING: No GPUs detected")
+            self.logger.warning("WARNING: No GPUs detected")
 
         # set beta schedule
         self.zdim = self.configs.z_dim
@@ -164,13 +131,13 @@ class ModelTrainer:
 
         # load index filter
         if self.configs.ind is not None:
-            logger.info(f"Filtering image dataset with {self.configs.ind}")
+            self.logger.info(f"Filtering image dataset with {self.configs.ind}")
             self.ind = pickle.load(open(self.configs.ind, "rb"))
         else:
             self.ind = None
 
         # load dataset
-        logger.info(f"Loading dataset from {self.configs.particles}")
+        self.logger.info(f"Loading dataset from {self.configs.particles}")
         if self.configs.tilt is None:
             self.tilt = None
         else:
@@ -198,7 +165,7 @@ class ModelTrainer:
 
         # load ctf
         if self.configs.ctf is not None:
-            logger.info(f"Loading ctf params from {self.configs.ctf}")
+            self.logger.info(f"Loading ctf params from {self.configs.ctf}")
             ctf_params = ctf.load_ctf_for_training(self.D - 1, self.configs.ctf)
             if self.ind is not None:
                 ctf_params = ctf_params[self.ind]
@@ -235,8 +202,8 @@ class ModelTrainer:
         self.model = self.make_model()
         self.model.to(self.device)
 
-        logger.info(self.model)
-        logger.info(
+        self.logger.info(self.model)
+        self.logger.info(
             "{} parameters in model".format(
                 sum(p.numel() for p in self.model.parameters() if p.requires_grad)
             )
@@ -262,7 +229,7 @@ class ModelTrainer:
         self.sorted_poses = list()
         if self.configs.load:
             self.configs.pretrain = 0
-            logger.info("Loading checkpoint from {}".format(self.configs.load))
+            self.logger.info("Loading checkpoint from {}".format(self.configs.load))
             checkpoint = torch.load(self.configs.load)
             self.model.load_state_dict(checkpoint["model_state_dict"])
             self.optim.load_state_dict(checkpoint["optimizer_state_dict"])
@@ -290,12 +257,12 @@ class ModelTrainer:
         # parallelize
         if self.zdim > 0:
             if self.configs.multigpu and torch.cuda.device_count() > 1:
-                logger.info(f"Using {torch.cuda.device_count()} GPUs!")
+                self.logger.info(f"Using {torch.cuda.device_count()} GPUs!")
                 self.configs.batch_size *= torch.cuda.device_count()
-                logger.info(f"Increasing batch size to {self.configs.batch_size}")
+                self.logger.info(f"Increasing batch size to {self.configs.batch_size}")
                 self.model = DataParallel(self.model)
             elif self.configs.multigpu:
-                logger.warning(
+                self.logger.warning(
                     f"WARNING: --multigpu selected, but {torch.cuda.device_count()} GPUs detected"
                 )
         else:
@@ -341,7 +308,7 @@ class ModelTrainer:
 
         # pretrain decoder with random poses
         global_it = 0
-        logger.info(f"Using random poses for {self.configs.pretrain} iterations")
+        self.logger.info(f"Using random poses for {self.configs.pretrain} iterations")
         while global_it < self.configs.pretrain:
             for batch in self.data_iterator:
                 global_it += len(batch[0])
@@ -353,13 +320,13 @@ class ModelTrainer:
 
                 loss = self.pretrain(batch)
                 if global_it % self.configs.log_interval == 0:
-                    logger.info(f"[Pretrain Iteration {global_it}] loss={loss:4f}")
+                    self.logger.info(f"[Pretrain Iteration {global_it}] loss={loss:4f}")
                 if global_it > self.configs.pretrain:
                     break
 
         # reset model after pretraining
         if self.configs.reset_optim_after_pretrain:
-            logger.info(">> Resetting optim after pretrain")
+            self.logger.info(">> Resetting optim after pretrain")
             self.optim = torch.optim.Adam(
                 self.model.parameters(),
                 lr=self.configs.learning_rate,
@@ -399,14 +366,14 @@ class ModelTrainer:
                 self.configs.reset_model_every
                 and (epoch - 1) % self.configs.reset_model_every == 0
             ):
-                logger.info(">> Resetting model")
+                self.logger.info(">> Resetting model")
                 self.model = self.make_model()
 
             if (
                 self.configs.reset_optim_every
                 and (epoch - 1) % self.configs.reset_optim_every == 0
             ):
-                logger.info(">> Resetting optim")
+                self.logger.info(">> Resetting optim")
                 self.optim = torch.optim.Adam(
                     self.model.parameters(),
                     lr=self.configs.learning_rate,
@@ -414,7 +381,7 @@ class ModelTrainer:
                 )
 
             if epoch % self.configs.ps_freq != 0:
-                logger.info("Using previous iteration poses")
+                self.logger.info("Using previous iteration poses")
             for batch in self.data_iterator:
                 ind = batch[-1]
                 ind_np = ind.cpu().numpy()
@@ -475,7 +442,7 @@ class ModelTrainer:
                         if eq_loss is not None and lamb is not None
                         else ""
                     )
-                    logger.info(
+                    self.logger.info(
                         f"# [Train Epoch: {epoch + 1}/{num_epochs}] "
                         f"[{batch_it}/{self.Nimg} images] gen loss={gen_loss:.4f}, "
                         f"kld={kld:.4f}, beta={beta:.4f}, {eq_log}loss={loss:.4f}"
@@ -486,7 +453,7 @@ class ModelTrainer:
                 if self.configs.equivariance
                 else ""
             )
-            logger.info(
+            self.logger.info(
                 "# =====> Epoch: {} Average gen loss = {:.4}, KLD = {:.4f}, {}total loss = {:.4f}; Finished in {}".format(
                     epoch + 1,
                     gen_loss_accum / self.Nimg,
@@ -539,7 +506,7 @@ class ModelTrainer:
                     )
 
             td = dt.now() - t0
-            logger.info(
+            self.logger.info(
                 f"Finished in {td} ({td / (num_epochs - self.start_epoch)} per epoch)"
             )
 
@@ -634,8 +601,8 @@ class ModelTrainer:
             -0.5 * torch.sum(1 + z_logvar - z_mu.pow(2) - z_logvar.exp(), dim=1), dim=0
         )
         if torch.isnan(kld):
-            logger.info(z_mu[0])
-            logger.info(z_logvar[0])
+            self.logger.info(z_mu[0])
+            self.logger.info(z_logvar[0])
             raise RuntimeError("KLD is nan")
 
         if self.configs.beta_control is None:
@@ -797,20 +764,192 @@ class ModelTrainer:
                 D = self.model.lattice.D
             pickle.dump((rot, trans / D), f)
 
+    def get_latest(self) -> None:
+        self.logger.info("Detecting latest checkpoint...")
 
-def main(args: argparse.Namespace, configs: Optional[dict[str, Any]] = None):
-    if configs is None:
-        configs = SetupHelper(args.outdir, update_existing=False).create_configs()
+        weights = [
+            os.path.join(self.configs.outdir, f"weights.{epoch}.pkl")
+            for epoch in range(self.configs.num_epochs)
+        ]
+        weights = [f for f in weights if os.path.exists(f)]
 
-    utils._verbose = False
-    trainer = ModelTrainer(configs)
-    trainer.train()
+        self.configs.load = weights[-1]
+        self.logger.info(f"Loading {self.configs.load}")
+        epoch = self.configs.load.split(".")[-2]
+        self.configs.load_poses = os.path.join(self.configs.outdir, f"pose.{epoch}.pkl")
+        assert os.path.exists(self.configs.load_poses)
+        self.logger.info(f"Loading {self.configs.load_poses}")
 
-    if not args.no_anlz:
-        ModelAnalyzer(configs).analyze()
 
+class AbInitioConfigurations(ModelConfigurations):
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    add_args(parser)
-    main(parser.parse_args())
+    __slots__ = (
+        "particles",
+        "ctf",
+        "dataset",
+        "datadir",
+        "ind",
+        "log_interval",
+        "verbose",
+        "load",
+        "load_poses",
+        "checkpoint",
+        "z_dim",
+        "invert_data",
+        "window",
+        "window_r",
+        "lazy",
+        "shuffler_size",
+        "max_threads",
+        "tilt",
+        "tilt_deg",
+        "enc_only",
+        "num_epochs",
+        "batch_size",
+        "weight_decay",
+        "learning_rate",
+        "beta",
+        "beta_control",
+        "equivariance",
+        "equivariance_start",
+        "equivariance_stop",
+        "data_norm",
+        "l_ramp_epochs",
+        "l_ramp_model",
+        "reset_model_every",
+        "reset_optim_every",
+        "reset_optim_after_pretrain",
+        "multigpu",
+        "l_start",
+        "l_end",
+        "grid_niter",
+        "t_extent",
+        "t_ngrid",
+        "t_xshift",
+        "t_yshift",
+        "pretrain",
+        "ps_freq",
+        "n_kept_poses",
+        "base_healpy",
+        "pose_model_update_freq",
+        "enc_layers",
+        "enc_dim",
+        "encode_mode",
+        "enc_mask",
+        "use_real",
+        "dec_layers",
+        "dec_dim",
+        "pe_type",
+        "feat_sigma",
+        "pe_dim",
+        "domain",
+        "activation",
+        "seed",
+    )
+    defaults = OrderedDict(
+        {
+            "particles": None,
+            "ctf": None,
+            "dataset": None,
+            "datadir": None,
+            "ind": None,
+            "log_interval": 1000,
+            "verbose": False,
+            "load": None,
+            "load_poses": None,
+            "checkpoint": 1,
+            "z_dim": None,
+            "invert_data": True,
+            "window": True,
+            "window_r": 0.85,
+            "lazy": False,
+            "shuffler_size": 0,
+            "max_threads": 16,
+            "tilt": None,
+            "tilt_deg": 45,
+            "enc_only": False,
+            "num_epochs": 30,
+            "batch_size": 8,
+            "weight_decay": 0,
+            "learning_rate": 1e-4,
+            "beta": None,
+            "beta_control": None,
+            "equivariance": None,
+            "equivariance_start": 100000,
+            "equivariance_stop": 200000,
+            "data_norm": None,
+            "l_ramp_epochs": 0,
+            "l_ramp_model": 0,
+            "reset_model_every": None,
+            "reset_optim_every": None,
+            "reset_optim_after_pretrain": None,
+            "multigpu": False,
+            "l_start": 12,
+            "l_end": 32,
+            "grid_niter": 4,
+            "t_extent": 10,
+            "t_ngrid": 7,
+            "t_xshift": 0,
+            "t_yshift": 0,
+            "pretrain": 10000,
+            "ps_freq": 5,
+            "n_kept_poses": 8,
+            "base_healpy": 2,
+            "pose_model_update_freq": None,
+            "enc_layers": 3,
+            "enc_dim": 256,
+            "encode_mode": "resid",
+            "enc_mask": None,
+            "use_real": False,
+            "dec_layers": 3,
+            "dec_dim": 256,
+            "pe_type": "gaussian",
+            "feat_sigma": 0.5,
+            "pe_dim": None,
+            "domain": "hartley",
+            "activation": "relu",
+            "seed": None,
+        }
+    )
+
+    def __init__(self, config_vals: dict[str, Any]) -> None:
+        super().__init__(config_vals)
+
+        if self.dataset is None:
+            if self.particles is None:
+                raise ValueError(
+                    "As dataset was not specified, please " "specify particles!"
+                )
+            if self.ctf is None:
+                raise ValueError("As dataset was not specified, please " "specify ctf!")
+
+        if self.beta is not None:
+            if self.z_dim == 0:
+                raise ValueError("Cannot use beta with homogeneous reconstruction!.")
+
+            if not isinstance(self.beta, (int, float)) and not self.beta_control:
+                raise ValueError(
+                    f"Need to set beta control weight for schedule {self.beta}"
+                )
+
+        if self.tilt is None:
+            if self.z_dim > 0:
+                if self.use_real != (self.encode_mode == "conv"):
+                    raise ValueError(
+                        "Using real space image is only available "
+                        "for convolutional encoder in SPA heterogeneous reconstruction!"
+                    )
+        else:
+            if self.z_dim > 0:
+                if self.encode_mode != "tilt":
+                    raise ValueError(
+                        "Must use tilt for heterogeneous reconstruction on ET capture!"
+                    )
+
+        if self.equivariance is not None:
+            if self.z_dim == 0:
+                raise ValueError(
+                    "Cannot use equivariance with homogeneous reconstruction!."
+                )
+            if self.equivariance <= 0:
+                raise ValueError("Regularization weight must be positive")

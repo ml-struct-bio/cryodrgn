@@ -34,8 +34,6 @@ def main():
     import cryodrgn.commands.train_nn
     import cryodrgn.commands.train_vae
     import cryodrgn.commands.train
-    import cryodrgn.commands.abinit_ai
-    import cryodrgn.commands.abinit
     import cryodrgn.commands.undeprecate
     import cryodrgn.commands.view_config
 
@@ -63,8 +61,6 @@ def main():
         cryodrgn.commands.view_config,
         cryodrgn.commands.abinit_homo,
         cryodrgn.commands.abinit_het,
-        cryodrgn.commands.abinit_ai,
-        cryodrgn.commands.abinit,
         cryodrgn.commands.train,
         cryodrgn.commands.setup,
     ]

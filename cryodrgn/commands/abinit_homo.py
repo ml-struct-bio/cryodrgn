@@ -1,7 +1,7 @@
 """Homogeneous neural net ab initio reconstruction with hierarchical pose optimization.
 
-Example usage
--------------
+Example usages
+--------------
 $ cryodrgn abinit_homo particles.256.txt --ctf ctf.pkl --ind chosen-particles.pkl \
                                          -o cryodrn-out/256_abinit-homo
 
@@ -10,7 +10,6 @@ import argparse
 import os
 import pickle
 import sys
-import contextlib
 from datetime import datetime as dt
 import logging
 import numpy as np
@@ -19,94 +18,19 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from cryodrgn import ctf, dataset, lie_tools, models, utils
+from cryodrgn.mrc import MRCFile
 from cryodrgn.lattice import Lattice
 from cryodrgn.pose_search import PoseSearch
-from cryodrgn.source import write_mrc
 import cryodrgn.config
-
-try:
-    import apex.amp as amp  # type: ignore  # PYR01
-except ImportError:
-    pass
 
 logger = logging.getLogger(__name__)
 
 
 def add_args(parser):
+    parser.add_argument("outdir", help="experiment output location")
+
     parser.add_argument(
-        "particles",
-        type=os.path.abspath,
-        help="Input particles (.mrcs, .star, .cs, or .txt)",
-    )
-    parser.add_argument(
-        "-o",
-        "--outdir",
-        type=os.path.abspath,
-        required=True,
-        help="Output directory to save model",
-    )
-    parser.add_argument(
-        "--ctf", metavar="pkl", type=os.path.abspath, help="CTF parameters (.pkl)"
-    )
-    parser.add_argument(
-        "--norm",
-        type=float,
-        nargs=2,
-        default=None,
-        help="Data normalization as shift, 1/scale (default: mean, std of dataset)",
-    )
-    parser.add_argument("--load", help="Initialize training from a checkpoint")
-    parser.add_argument(
-        "--load-poses",
-        type=os.path.abspath,
-        help="Initialize training from a checkpoint",
-    )
-    parser.add_argument(
-        "--checkpoint",
-        type=int,
-        default=1,
-        help="Checkpointing interval in N_EPOCHS (default: %(default)s)",
-    )
-    parser.add_argument(
-        "--log-interval",
-        type=int,
-        default=1000,
-        help="Logging interval in N_IMGS (default: %(default)s)",
-    )
-    parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Increase verbosity"
-    )
-    parser.add_argument(
-        "--seed", type=int, default=np.random.randint(0, 100000), help="Random seed"
-    )
-    parser.add_argument(
-        "--uninvert-data",
-        dest="invert_data",
-        action="store_false",
-        help="Do not invert data sign",
-    )
-    parser.add_argument(
-        "--no-window",
-        dest="window",
-        action="store_false",
-        help="Turn off real space windowing of dataset",
-    )
-    parser.add_argument(
-        "--window-r",
-        type=float,
-        default=0.85,
-        help="Windowing radius (default: %(default)s)",
-    )
-    parser.add_argument(
-        "--ind", type=os.path.abspath, help="Filter particle stack by these indices"
-    )
-    parser.add_argument(
-        "--datadir",
-        type=os.path.abspath,
-        help="Path prefix to particle stack if loading relative paths from a .star or .cs file",
-    )
-    parser.add_argument(
-        "--lazy",
+        "--no-analysis",
         action="store_true",
         help="Lazy loading if full dataset is too large to fit in memory",
     )
@@ -204,12 +128,6 @@ def add_args(parser):
         "--reset-optim-after-pretrain",
         type=int,
         help="If set, reset the optimizer every N epochs",
-    )
-    group.add_argument(
-        "--no-amp",
-        action="store_false",
-        dest="amp",
-        help="Do not use mixed-precision training for accelerating training",
     )
 
     group = parser.add_argument_group("Pose search parameters")
@@ -316,166 +234,68 @@ def add_args(parser):
     )
 
 
-def save_checkpoint(
-    model, lattice, pose, optim, epoch, norm, out_mrc, out_weights, out_poses
-):
-    model.eval()
-    vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, norm)
-    write_mrc(out_mrc, vol)
-    torch.save(
-        {
-            "norm": norm,
-            "epoch": epoch,
-            "model_state_dict": model.state_dict(),
-            "optimizer_state_dict": optim.state_dict(),
-        },
-        out_weights,
-    )
-    with open(out_poses, "wb") as f:
-        rot, trans = pose
-        # When saving translations, save in box units (fractional)
-        pickle.dump((rot, trans / model.D), f)
+def main(args: argparse.Namespace, configs: Optional[dict[str, Any]] = None) -> None:
+    if configs is None:
+        configs = SetupHelper(args.outdir, update_existing=False).create_configs()
 
+    if "z_dim" in configs and configs["z_dim"] > 0:
+        configs["z_dim"] = 0
 
-def pretrain(model, lattice, optim, batch, tilt=None):
-    y, yt = batch
-    B = y.size(0)
+        print(
+            "WARNING: given configurations specify heterogeneous reconstruction, "
+            "updating them to specify homogeneous reconstruction!"
+        )
+
+    # pose inference
+    if poses is not None:
+        rot = poses[0]
+        if not no_trans:
+            trans = poses[1]
+    else:  # BNB
+        model.eval()
+        with torch.no_grad():
+            rot, trans, base_pose = ps.opt_theta_trans(
+                y, images_tilt=yt, init_poses=base_pose, ctf_i=ctf_i
+            )
+            base_pose = base_pose.detach().cpu().numpy()
+
+    # reconstruct circle of pixels instead of whole image
+    mask = lattice.get_circular_mask(lattice.D // 2)
+    # mask = lattice.get_circular_mask(ps.Lmax)
+
+    def gen_slice(R):
+        slice_ = model(lattice.coords[mask] @ R).view(B, -1)
+        if ctf_i is not None:
+            slice_ *= ctf_i.view(B, -1)[:, mask]
+        return slice_
+
+    def translate(img):
+        img = lattice.translate_ht(img, trans.unsqueeze(1), mask)
+        return img.view(B, -1)
+
+    # Train model
     model.train()
     optim.zero_grad()
 
-    mask = lattice.get_circular_mask(lattice.D // 2)
-
-    def gen_slice(R):
-        slice_ = model(lattice.coords[mask] @ R)
-        return slice_.view(B, -1)
-
-    rot = lie_tools.random_SO3(B, device=y.device)
-
     y = y.view(B, -1)[:, mask]
-    if tilt is not None:
+    if tilt_rot is not None:
         yt = yt.view(B, -1)[:, mask]
+    if not no_trans:
+        y = translate(y)
+        if tilt_rot is not None:
+            yt = translate(yt)
+
+    if tilt_rot is not None:
         loss = 0.5 * F.mse_loss(gen_slice(rot), y) + 0.5 * F.mse_loss(
-            gen_slice(tilt @ rot), yt
+            gen_slice(tilt_rot @ rot), yt
         )
     else:
         loss = F.mse_loss(gen_slice(rot), y)
     loss.backward()
     optim.step()
-    return loss.item()
-
-
-def sort_poses(pose):
-    ind = [x[0] for x in pose]
-    ind = np.concatenate(ind)
-    rot = [x[1][0] for x in pose]
-    rot = np.concatenate(rot)
-
-    rot = rot[np.argsort(ind)]
-    if len(pose[0][1]) == 2:
-        trans = [x[1][1] for x in pose]
-        trans = np.concatenate(trans)
-        trans = trans[np.argsort(ind)]
-        return (rot, trans)
-    return (rot,)
-
-
-def train(
-    model,
-    lattice,
-    ps,
-    optim,
-    batch,
-    tilt_rot=None,
-    no_trans=False,
-    poses=None,
-    base_pose=None,
-    ctf_params=None,
-    use_amp=False,
-    scaler=None,
-):
-    y, yt = batch
-    B = y.size(0)
-    D = lattice.D
-
-    ctf_i = None
-    if ctf_params is not None:
-        freqs = lattice.freqs2d.unsqueeze(0).expand(
-            B, *lattice.freqs2d.shape
-        ) / ctf_params[:, 0].view(B, 1, 1)
-        ctf_i = ctf.compute_ctf(freqs, *torch.split(ctf_params[:, 1:], 1, 1)).view(
-            B, D, D
-        )
-
-    if scaler is not None:
-        amp_mode = torch.cuda.amp.autocast_mode.autocast()
-    else:
-        amp_mode = contextlib.nullcontext()
-
-    with amp_mode:
-        # pose inference
-        if poses is not None:
-            rot = poses[0]
-            if not no_trans:
-                trans = poses[1]
-        else:  # BNB
-            model.eval()
-            with torch.no_grad():
-                rot, trans, base_pose = ps.opt_theta_trans(
-                    y, images_tilt=yt, init_poses=base_pose, ctf_i=ctf_i
-                )
-                base_pose = base_pose.detach().cpu().numpy()
-
-        # reconstruct circle of pixels instead of whole image
-        mask = lattice.get_circular_mask(lattice.D // 2)
-
-        # mask = lattice.get_circular_mask(ps.Lmax)
-
-        def gen_slice(R):
-            slice_ = model(lattice.coords[mask] @ R).view(B, -1)
-            if ctf_i is not None:
-                slice_ *= ctf_i.view(B, -1)[:, mask]
-            return slice_
-
-        def translate(img):
-            img = lattice.translate_ht(img, trans.unsqueeze(1), mask)
-            return img.view(B, -1)
-
-        # Train model
-        model.train()
-        optim.zero_grad()
-
-        y = y.view(B, -1)[:, mask]
-        if tilt_rot is not None:
-            yt = yt.view(B, -1)[:, mask]
-        if not no_trans:
-            y = translate(y)
-            if tilt_rot is not None:
-                yt = translate(yt)
-
-        if tilt_rot is not None:
-            loss = 0.5 * F.mse_loss(gen_slice(rot), y) + 0.5 * F.mse_loss(
-                gen_slice(tilt_rot @ rot), yt
-            )
-        else:
-            loss = F.mse_loss(gen_slice(rot), y)
-
-    if use_amp:
-        if scaler is not None:
-            scaler.scale(loss).backward()
-            scaler.step(optim)
-            scaler.update()
-        else:  # apex.amp mixed precision
-            with amp.scale_loss(loss, optim) as scaled_loss:
-                scaled_loss.backward()
-            optim.step()
-    else:
-        loss.backward()
-        optim.step()
-
     save_pose = [rot.detach().cpu().numpy()]
     if not no_trans:
         save_pose.append(trans.detach().cpu().numpy())
-
     return loss.item(), save_pose, base_pose
 
 
@@ -643,32 +463,6 @@ def main(args):
     )
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
-    # Mixed precision training
-    scaler = None
-    if args.amp:
-        if args.batch_size % 8 != 0:
-            logger.warning(
-                f"Batch size {args.batch_size} not divisible by 8 "
-                f"and thus not optimal for AMP training!"
-            )
-        if (D - 1) % 8 != 0:
-            logger.warning(
-                f"Image size {D - 1} not divisible by 8 "
-                f"and thus not optimal for AMP training!"
-            )
-        if args.dim % 8 != 0:
-            logger.warning(
-                f"Hidden layer dimension {args.dim} not divisible by 8 "
-                f"and thus not optimal for AMP training!"
-            )
-
-        # mixed precision with apex.amp
-        try:
-            model, optim = amp.initialize(model, optim, opt_level="O1")
-        # mixed precision with pytorch (v1.6+)
-        except:  # noqa: E722
-            scaler = torch.cuda.amp.grad_scaler.GradScaler()
-
     sorted_poses = []
     if args.load:
         args.pretrain = 0
@@ -713,7 +507,7 @@ def main(args):
     out_mrc = "{}/pretrain.reconstruct.mrc".format(args.outdir)
     model.eval()
     vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, tuple(data.norm))
-    write_mrc(out_mrc, vol)
+    MRCFile.write(out_mrc, vol)
 
     # reset model after pretraining
     if args.reset_optim_after_pretrain:
@@ -786,8 +580,6 @@ def main(args):
                 poses=p,
                 base_pose=bp,
                 ctf_params=c,
-                use_amp=args.amp,
-                scaler=scaler,
             )
             poses.append((ind.cpu().numpy(), pose))
             base_poses.append((ind_np, base_pose))
@@ -853,5 +645,5 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    args = add_args(parser).parse_args()
-    main(args)
+    add_args(parser)
+    main(parser.parse_args())

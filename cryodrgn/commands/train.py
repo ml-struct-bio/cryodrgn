@@ -1,14 +1,10 @@
-"""Train a cryoDRGN model to perform reconstruction on a particle stack.
-
-Example usages
---------------
-
-"""
 import argparse
-from cryodrgn.models.config import load_configs
-from cryodrgn.commands.train_ai import main as run_train_ai
-from cryodrgn.commands.train_vae import main as run_train_vae
-from cryodrgn.commands.train_nn import main as run_train_nn
+from typing import Optional, Any
+import cryodrgn.utils
+from cryodrgn.models.amortinf_trainer import AmortizedInferenceTrainer
+from cryodrgn.models.hps_trainer import HierarchicalSearchTrainer
+from cryodrgn.commands.analyze import ModelAnalyzer
+from cryodrgn.commands.setup import SetupHelper
 
 
 def add_args(parser):
@@ -18,26 +14,26 @@ def add_args(parser):
         "--no-analysis",
         action="store_true",
         help="just do the training stage",
-        dest="no_anlz",
     )
 
 
-def main(args):
-    cfg = load_configs(args.outdir)
+def main(args: argparse.Namespace, configs: Optional[dict[str, Any]] = None):
+    if configs is None:
+        configs = SetupHelper(args.outdir, update_existing=False).create_configs()
 
-    if "model" in cfg:
-        if cfg["model"] == "AI":
-            run_train_ai(args, cfg)
-        elif cfg["model"] == "VAE":
-            run_train_vae(args, cfg)
-        elif cfg["model"] == "NN":
-            run_train_nn(args, cfg)
+    cryodrgn.utils._verbose = False
 
-        else:
-            raise ValueError(f'Unrecognized model `{cfg["model"]}`!')
+    if configs["model"] == "ai":
+        trainer = AmortizedInferenceTrainer(configs)
+    elif configs["model"] == "hps":
+        trainer = HierarchicalSearchTrainer(configs)
 
     else:
-        run_train_ai(args, cfg)
+        raise ValueError(f"Unrecognized model: {configs['model']}")
+
+    trainer.train()
+    if not args.no_analysis:
+        ModelAnalyzer(configs).analyze()
 
 
 if __name__ == "__main__":

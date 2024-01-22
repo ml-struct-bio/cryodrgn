@@ -27,75 +27,10 @@ logger = logging.getLogger(__name__)
 
 
 def add_args(parser):
+    parser.add_argument("outdir", help="experiment output location")
+
     parser.add_argument(
-        "particles",
-        type=os.path.abspath,
-        help="Input particles (.mrcs, .star, .cs, or .txt)",
-    )
-    parser.add_argument(
-        "-o",
-        "--outdir",
-        type=os.path.abspath,
-        required=True,
-        help="Output directory to save model",
-    )
-    parser.add_argument(
-        "--ctf", metavar="pkl", type=os.path.abspath, help="CTF parameters (.pkl)"
-    )
-    parser.add_argument(
-        "--norm",
-        type=float,
-        nargs=2,
-        default=None,
-        help="Data normalization as shift, 1/scale (default: mean, std of dataset)",
-    )
-    parser.add_argument("--load", help="Initialize training from a checkpoint")
-    parser.add_argument(
-        "--load-poses",
-        type=os.path.abspath,
-        help="Initialize training from a checkpoint",
-    )
-    parser.add_argument(
-        "--checkpoint",
-        type=int,
-        default=1,
-        help="Checkpointing interval in N_EPOCHS (default: %(default)s)",
-    )
-    parser.add_argument(
-        "--log-interval",
-        type=int,
-        default=1000,
-        help="Logging interval in N_IMGS (default: %(default)s)",
-    )
-    parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Increase verbosity"
-    )
-    parser.add_argument(
-        "--seed", type=int, default=np.random.randint(0, 100000), help="Random seed"
-    )
-    parser.add_argument(
-        "--uninvert-data",
-        dest="invert_data",
-        action="store_false",
-        help="Do not invert data sign",
-    )
-    parser.add_argument(
-        "--no-window",
-        dest="window",
-        action="store_false",
-        help="Turn off real space windowing of dataset",
-    )
-    parser.add_argument(
-        "--window-r",
-        type=float,
-        default=0.85,
-        help="Windowing radius (default: %(default)s)",
-    )
-    parser.add_argument(
-        "--ind", type=os.path.abspath, help="Filter particle stack by these indices"
-    )
-    parser.add_argument(
-        "--lazy",
+        "--no-analysis",
         action="store_true",
         help="Lazy loading if full dataset is too large to fit in memory",
     )
@@ -299,92 +234,16 @@ def add_args(parser):
     )
 
 
-def save_checkpoint(
-    model, lattice, pose, optim, epoch, norm, out_mrc, out_weights, out_poses
-):
-    model.eval()
-    vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, norm)
-    MRCFile.write(out_mrc, vol)
-    torch.save(
-        {
-            "norm": norm,
-            "epoch": epoch,
-            "model_state_dict": model.state_dict(),
-            "optimizer_state_dict": optim.state_dict(),
-        },
-        out_weights,
-    )
-    with open(out_poses, "wb") as f:
-        rot, trans = pose
-        # When saving translations, save in box units (fractional)
-        pickle.dump((rot, trans / model.D), f)
+def main(args: argparse.Namespace, configs: Optional[dict[str, Any]] = None) -> None:
+    if configs is None:
+        configs = SetupHelper(args.outdir, update_existing=False).create_configs()
 
+    if "z_dim" in configs and configs["z_dim"] > 0:
+        configs["z_dim"] = 0
 
-def pretrain(model, lattice, optim, batch, tilt=None):
-    y, yt = batch
-    B = y.size(0)
-    model.train()
-    optim.zero_grad()
-
-    mask = lattice.get_circular_mask(lattice.D // 2)
-
-    def gen_slice(R):
-        slice_ = model(lattice.coords[mask] @ R)
-        return slice_.view(B, -1)
-
-    rot = lie_tools.random_SO3(B, device=y.device)
-
-    y = y.view(B, -1)[:, mask]
-    if tilt is not None:
-        yt = yt.view(B, -1)[:, mask]
-        loss = 0.5 * F.mse_loss(gen_slice(rot), y) + 0.5 * F.mse_loss(
-            gen_slice(tilt @ rot), yt
-        )
-    else:
-        loss = F.mse_loss(gen_slice(rot), y)
-    loss.backward()
-    optim.step()
-    return loss.item()
-
-
-def sort_poses(pose):
-    ind = [x[0] for x in pose]
-    ind = np.concatenate(ind)
-    rot = [x[1][0] for x in pose]
-    rot = np.concatenate(rot)
-
-    rot = rot[np.argsort(ind)]
-    if len(pose[0][1]) == 2:
-        trans = [x[1][1] for x in pose]
-        trans = np.concatenate(trans)
-        trans = trans[np.argsort(ind)]
-        return (rot, trans)
-    return (rot,)
-
-
-def train(
-    model,
-    lattice,
-    ps,
-    optim,
-    batch,
-    tilt_rot=None,
-    no_trans=False,
-    poses=None,
-    base_pose=None,
-    ctf_params=None,
-):
-    y, yt = batch
-    B = y.size(0)
-    D = lattice.D
-
-    ctf_i = None
-    if ctf_params is not None:
-        freqs = lattice.freqs2d.unsqueeze(0).expand(
-            B, *lattice.freqs2d.shape
-        ) / ctf_params[:, 0].view(B, 1, 1)
-        ctf_i = ctf.compute_ctf(freqs, *torch.split(ctf_params[:, 1:], 1, 1)).view(
-            B, D, D
+        print(
+            "WARNING: given configurations specify heterogeneous reconstruction, "
+            "updating them to specify homogeneous reconstruction!"
         )
 
     # pose inference
@@ -784,5 +643,5 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    args = add_args(parser).parse_args()
-    main(args)
+    add_args(parser)
+    main(parser.parse_args())

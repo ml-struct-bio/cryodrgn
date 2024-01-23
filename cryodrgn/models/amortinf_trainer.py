@@ -10,15 +10,13 @@ import time
 
 import torch
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-import cryodrgn
 from cryodrgn import mrc
 from cryodrgn import utils
-from cryodrgn import dataset_fast
 from cryodrgn import dataset
 from cryodrgn import ctf
+from cryodrgn import summary
 from cryodrgn.lattice import Lattice
 from cryodrgn.losses import kl_divergence_conf, l1_regularizer, l2_frequency_bias
 from cryodrgn.models.amortized_inference import DRGNai, MyDataParallel
@@ -124,53 +122,34 @@ class AmortizedInferenceTrainer:
 
         # load the particles
         self.logger.info("Creating dataset")
-        if self.configs.fast_dataloading:
-            if not self.configs.subtomogram_averaging:
-                self.data = dataset_fast.ImageDataset(
-                    self.configs.particles,
-                    max_threads=self.configs.max_threads,
-                    lazy=True,
-                    poses_gt_pkl=self.configs.pose,
-                    resolution_input=self.configs.resolution_encoder,
-                    window_r=self.configs.window_radius_gt_real,
-                    datadir=self.configs.datadir,
-                    no_trans=self.configs.no_trans,
-                )
-
-            else:
-                self.data = dataset_fast.TiltSeriesData(
-                    self.configs.particles,
-                    self.configs.n_tilts,
-                    self.configs.angle_per_tilt,
-                    window_r=self.configs.window_radius_gt_real,
-                    datadir=self.configs.datadir,
-                    max_threads=self.configs.max_threads,
-                    dose_per_tilt=self.configs.dose_per_tilt,
-                    device=self.device,
-                    poses_gt_pkl=self.configs.pose,
-                    tilt_axis_angle=self.configs.tilt_axis_angle,
-                    ind=self.index,
-                    no_trans=self.configs.no_trans,
-                )
-
-        else:
-            self.data = dataset.MRCData(
-                self.configs.particles,
-                max_threads=self.configs.max_threads,
-                ind=self.index,
+        if not self.configs.subtomogram_averaging:
+            self.data = dataset.ImageDataset(
+                mrcfile=self.configs.particles,
                 lazy=self.configs.lazy,
-                relion31=self.configs.relion31,
-                poses_gt_pkl=self.configs.pose,
-                resolution_input=self.configs.resolution_encoder,
+                max_threads=self.configs.max_threads,
                 window_r=self.configs.window_radius_gt_real,
                 datadir=self.configs.datadir,
+            )
+            self.n_particles_dataset = self.data.N
+
+        else:
+            self.data = dataset.TiltSeriesData(
+                tiltstar=self.configs.particles,
+                ntilts=self.configs.n_tilts,
+                angle_per_tilt=self.configs.angle_per_tilt,
+                window_r=self.configs.window_radius_gt_real,
+                datadir=self.configs.datadir,
+                max_threads=self.configs.max_threads,
+                dose_per_tilt=self.configs.dose_per_tilt,
+                device=self.device,
+                poses_gt_pkl=self.configs.pose,
+                tilt_axis_angle=self.configs.tilt_axis_angle,
+                ind=self.index,
                 no_trans=self.configs.no_trans,
             )
+            self.n_particles_dataset = self.data.Np
 
-        self.n_particles_dataset = self.data.N
-        self.n_tilts_dataset = (
-            self.data.Nt if self.configs.subtomogram_averaging else self.data.N
-        )
+        self.n_tilts_dataset = self.data.N
         self.resolution = self.data.D
 
         # load ctf
@@ -249,7 +228,7 @@ class AmortizedInferenceTrainer:
                 "no_trans_search_at_pose_search": self.configs.no_trans_search_at_pose_search,
                 "n_tilts_pose_search": self.configs.n_tilts_pose_search,
                 "tilting_func": (
-                    self.configs.data.get_tilting_func()
+                    self.data.get_tilting_func()
                     if self.configs.subtomogram_averaging
                     else None
                 ),
@@ -420,48 +399,24 @@ class AmortizedInferenceTrainer:
                 )
 
         # dataloaders
-        if self.configs.fast_dataloading:
-            self.data_generator_pose_search = dataset_fast.make_dataloader(
-                self.data,
-                batch_size=self.batch_size_hps,
-                num_workers=self.configs.num_workers,
-                shuffler_size=self.configs.shuffler_size,
-            )
-            self.data_generator = dataset_fast.make_dataloader(
-                self.data,
-                batch_size=self.batch_size_known_poses,
-                num_workers=self.configs.num_workers,
-                shuffler_size=self.configs.shuffler_size,
-            )
-            self.data_generator_latent_optimization = dataset_fast.make_dataloader(
-                self.data,
-                batch_size=self.batch_size_sgd,
-                num_workers=self.configs.num_workers,
-                shuffler_size=self.configs.shuffler_size,
-            )
-
-        else:
-            self.data_generator_pose_search = DataLoader(
-                self.data,
-                batch_size=self.batch_size_hps,
-                shuffle=self.configs.shuffle,
-                num_workers=self.configs.num_workers,
-                drop_last=False,
-            )
-            self.data_generator = DataLoader(
-                self.data,
-                batch_size=self.batch_size_known_poses,
-                shuffle=self.configs.shuffle,
-                num_workers=self.configs.num_workers,
-                drop_last=False,
-            )
-            self.data_generator_latent_optimization = DataLoader(
-                self.data,
-                batch_size=self.batch_size_sgd,
-                shuffle=self.configs.shuffle,
-                num_workers=self.configs.num_workers,
-                drop_last=False,
-            )
+        self.data_generator_pose_search = dataset.make_dataloader(
+            self.data,
+            batch_size=self.batch_size_hps,
+            num_workers=self.configs.num_workers,
+            shuffler_size=self.configs.shuffler_size,
+        )
+        self.data_generator = dataset.make_dataloader(
+            self.data,
+            batch_size=self.batch_size_known_poses,
+            num_workers=self.configs.num_workers,
+            shuffler_size=self.configs.shuffler_size,
+        )
+        self.data_generator_latent_optimization = dataset.make_dataloader(
+            self.data,
+            batch_size=self.batch_size_sgd,
+            num_workers=self.configs.num_workers,
+            shuffler_size=self.configs.shuffler_size,
+        )
 
         # save configurations
         self.configs.write(os.path.join(self.configs.outdir, "train-configs.yaml"))
@@ -1052,7 +1007,7 @@ class AmortizedInferenceTrainer:
         return total_loss, all_losses
 
     def make_heavy_summary(self):
-        cryodrgn.summary.make_img_summary(
+        summary.make_img_summary(
             self.writer,
             self.in_dict_last,
             self.y_pred_last,
@@ -1084,7 +1039,7 @@ class AmortizedInferenceTrainer:
                 else None
             )
 
-            pca = cryodrgn.summary.make_conf_summary(
+            pca = summary.make_conf_summary(
                 self.writer,
                 predicted_conf,
                 self.epoch,
@@ -1134,7 +1089,7 @@ class AmortizedInferenceTrainer:
             else None
         )
 
-        cryodrgn.summary.make_pose_summary(
+        summary.make_pose_summary(
             self.writer,
             predicted_rots,
             predicted_trans,
@@ -1159,10 +1114,7 @@ class AmortizedInferenceTrainer:
         if self.model.trans_search_factor is not None:
             all_losses["Trans. Search Factor"] = self.model.trans_search_factor
 
-        cryodrgn.summary.make_scalar_summary(
-            self.writer, all_losses, self.total_particles_count
-        )
-
+        summary.make_scalar_summary(self.writer, all_losses, self.total_particles_count)
         if self.configs.verbose_time:
             for key in self.run_times.keys():
                 self.logger.info(
@@ -1264,7 +1216,6 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
         "lazy",
         "num_workers",
         "max_threads",
-        "fast_dataloading",
         "shuffler_size",
         "batch_size_known_poses",
         "batch_size_hps",
@@ -1356,7 +1307,6 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
             "lazy": False,
             "num_workers": 2,
             "max_threads": 16,
-            "fast_dataloading": False,
             "shuffler_size": 32768,
             "batch_size_known_poses": 32,
             "batch_size_hps": 8,
@@ -1438,7 +1388,6 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
             "spa": dict(),
             "et": {
                 "subtomogram_averaging": True,
-                "fast_dataloading": True,
                 "shuffler_size": 0,
                 "num_workers": 0,
                 "t_extent": 0.0,
@@ -1570,7 +1519,6 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
                 raise ValueError("Initial poses must be specified " "to be refined!")
 
         if self.subtomogram_averaging:
-            self.fast_dataloading = True
 
             # TODO: Implement conformation encoder for subtomogram averaging.
             if self.use_conf_encoder:

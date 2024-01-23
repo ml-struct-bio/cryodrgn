@@ -27,7 +27,7 @@ import os
 import argparse
 from pathlib import Path
 import yaml
-from cryodrgn.commands.utils.configs import check_open_config
+from cryodrgn.commands_utils.configs import check_open_config
 from cryodrgn.commands.clean import clean_dir
 
 

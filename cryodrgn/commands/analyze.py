@@ -21,14 +21,13 @@ import nbformat
 
 import numpy as np
 import torch
-from cryodrgn import _ROOT, analysis, utils
-import cryodrgn.config
-from cryodrgn.config import TrainingConfigurations, AnalysisConfigurations
-from cryodrgn.commands.eval_vol import VolumeEvaluator
-
 import matplotlib
 import matplotlib.pyplot as plt
 import seaborn as sns
+
+from cryodrgn import _ROOT, analysis, utils
+from cryodrgn.models.config import load_configs
+from cryodrgn.commands.eval_vol import VolumeEvaluator
 
 logger = logging.getLogger(__name__)
 TEMPLATE_DIR = os.path.join(_ROOT, "templates")
@@ -103,16 +102,21 @@ class ModelAnalyzer:
 
     Attributes
     ----------
-    configs (AnalysisConfigurations):   Values of all parameters that can be
-                                        set by the user (see command-line args above).
     train_configs (TrainingConfigurations): Parameters that were used when
                                             the model was trained.
     """
 
     def __init__(
-        self, configs: AnalysisConfigurations, train_configs: TrainingConfigurations
+        self,
+        train_configs: dict,
+        epoch: int = -1,
+        skip_vol: bool = False,
+        apix: float = None,
+        downsample: int = None,
+        n_per_pc: int = 10,
+        ksample: int = 20,
+        vol_start_index: int = 0,
     ) -> None:
-        self.configs = configs
         self.train_configs = train_configs
         self.traindir = self.train_configs.outdir
         self.z_dim = self.train_configs.z_dim
@@ -129,13 +133,13 @@ class ModelAnalyzer:
         self.device = torch.device("cuda:0" if self.use_cuda else "cpu")
         logger.info(f"Use cuda {self.use_cuda}")
 
-        if configs.Apix:
-            self.apix = configs.Apix
+        if apix:
+            self.apix = apix
 
         # find A/px from CTF if not given
         else:
             if self.configs["dataset_args"]["ctf"]:
-                ctf_params = utils.load_pkl(configs["dataset_args"]["ctf"])
+                ctf_params = utils.load_pkl(self.configs["dataset_args"]["ctf"])
                 orig_apixs = set(ctf_params[:, 1])
 
                 # TODO: add support for multiple optics groups
@@ -157,7 +161,7 @@ class ModelAnalyzer:
                             f"parameters, defaulting to first found: {orig_size}"
                         )
 
-                    cur_size = configs["lattice_args"]["D"] - 1
+                    cur_size = self.configs["lattice_args"]["D"] - 1
                     self.apix = round(orig_apix * orig_size / cur_size, 6)
                     logger.info(f"using A/px={self.apix} as per CTF parameters")
 
@@ -168,7 +172,7 @@ class ModelAnalyzer:
                 )
 
         # use last completed epoch if no epoch given
-        if self.configs.epoch == -1:
+        if epoch == -1:
             self.epoch = max(
                 int(fl.split(".")[1])
                 for fl in os.listdir(self.traindir)
@@ -176,11 +180,11 @@ class ModelAnalyzer:
             )
 
         else:
-            self.epoch = self.configs.epoch
+            self.epoch = epoch
 
         # load model data
         self.weights_file = os.path.join(self.traindir, f"weights.{self.epoch}.pkl")
-        if self.train_configs.z_dim > 0:
+        if self.z_dim > 0:
             self.z = utils.load_pkl(
                 os.path.join(self.traindir, f"conf.{self.epoch}.pkl")
             )
@@ -192,7 +196,7 @@ class ModelAnalyzer:
         os.makedirs(self.outdir, exist_ok=True)
         logger.info(f"Saving results to {self.outdir}")
 
-        if configs.skip_vol:
+        if skip_vol:
             self.volume_generator = None
         else:
             self.volume_generator = VolumeEvaluator(
@@ -687,11 +691,10 @@ def main(args):
     matplotlib.use("Agg")  # non-interactive backend
     t0 = dt.now()
 
-    train_configs = cryodrgn.config.find_train_configs(args.outdir)
-    anlz_configs = AnalysisConfigurations.parse_args(args)
-
-    analyzer = ModelAnalyzer(anlz_configs, train_configs)
+    train_configs = load_configs(args.outdir)
+    analyzer = ModelAnalyzer(train_configs, args.epoch, args.downsample)
     analyzer.analyze()
+
     logger.info(f"Finished in {dt.now() - t0}")
 
 

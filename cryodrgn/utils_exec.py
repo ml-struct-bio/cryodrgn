@@ -13,6 +13,7 @@ def main():
     )
 
     import cryodrgn.commands_utils.add_psize
+    import cryodrgn.commands_utils.clean
     import cryodrgn.commands_utils.concat_pkls
     import cryodrgn.commands_utils.filter_mrcs
     import cryodrgn.commands_utils.filter_pkl
@@ -31,6 +32,7 @@ def main():
 
     modules = [
         cryodrgn.commands_utils.add_psize,
+        cryodrgn.commands_utils.clean,
         cryodrgn.commands_utils.concat_pkls,
         cryodrgn.commands_utils.filter_mrcs,
         cryodrgn.commands_utils.filter_pkl,

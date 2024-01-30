@@ -1,5 +1,10 @@
 """Remove extraneous files from experiment output directories
 
+This utility interactively removes output files from cryoDRGN output directories
+except for those belonging to every `n` epoch, and those whose epochs have analysis
+folders associated with them. This includes files containing weights, poses,
+reconstructions, and latent variables.
+
 Example usages
 --------------
 
@@ -40,7 +45,10 @@ NORMAL_EXCEPTIONS = (
 
 def add_args(parser):
     parser.add_argument(
-        "outglobs", nargs="*", help="Path patterns to scan for experiment outputs."
+        "outglobs",
+        nargs="*",
+        help="Path patterns to scan for experiment outputs."
+        "Must be relative to current directory.",
     )
 
     parser.add_argument(

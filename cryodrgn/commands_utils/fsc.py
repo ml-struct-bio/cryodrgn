@@ -10,6 +10,9 @@ import argparse
 import logging
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+import torch
+from typing import Optional
 from cryodrgn import fft
 from cryodrgn.source import ImageSource
 
@@ -27,9 +30,9 @@ def add_args(parser):
     parser.add_argument("-o", help="Output")
 
 
-def calculate_fsc(vol1, vol2, mask_file=None):
-    vol1 = vol1.images()
-    vol2 = vol2.images()
+def calculate_fsc(
+    vol1: torch.Tensor, vol2: torch.Tensor, mask_file: Optional[str] = None
+) -> pd.Series:
 
     if mask_file:
         mask = ImageSource.from_file(mask_file)
@@ -59,32 +62,28 @@ def calculate_fsc(vol1, vol2, mask_file=None):
         fsc.append(float(p.real))
         prev_mask = mask
 
-    return np.asarray(fsc)
+    return pd.Series(fsc, index=np.arange(D // 2) / D)
 
 
 def main(args):
     vol1 = ImageSource.from_file(args.volumes[0])
     vol2 = ImageSource.from_file(args.volumes[1])
-    fsc = calculate_fsc(vol1, vol2, args.mask)
+    fsc_vals = calculate_fsc(vol1.images(), vol2.images(), args.mask)
 
-    D = vol1.shape[0]
-    x = np.arange(D // 2) / D
-    res = np.stack((x, fsc), 1)
     if args.o:
-        np.savetxt(args.o, res)
+        np.savetxt(args.o, fsc_vals.values)
     else:
-        logger.info(res)
+        logger.info(fsc_vals)
 
-    w = np.where(fsc < 0.5)
-    if w:
-        logger.info("0.5: {}".format(1 / x[w[0]] * args.Apix))
-
-    w = np.where(fsc < 0.143)
-    if w:
-        logger.info("0.143: {}".format(1 / x[w[0]] * args.Apix))
+    if (fsc_vals >= 0.5).any():
+        res = fsc_vals[fsc_vals >= 0.5].index.max()
+        logger.info("0.5: {}".format(1 / res * args.Apix))
+    if (fsc_vals >= 0.143).any():
+        res = fsc_vals[fsc_vals >= 0.143].index.max()
+        logger.info("0.143: {}".format(1 / res * args.Apix))
 
     if args.plot:
-        plt.plot(x, fsc)
+        plt.plot(fsc_vals.index, fsc_vals.values)
         plt.ylim((0, 1))
         plt.show()
 

@@ -1,5 +1,11 @@
-"""Compute FSC between two volumes"""
+"""Compute Fourier shell correlation between two volumes.
 
+Example usages
+--------------
+$ cryodrgn_utils fsc volume1.mrc volume2.mrc -o fsc.txt -p
+$ cryodrgn_utils fsc volume1.mrc volume2.mrc --ind 5k-ind.pkl -o fsc.txt
+
+"""
 import argparse
 import logging
 import matplotlib.pyplot as plt
@@ -10,32 +16,24 @@ from cryodrgn.source import ImageSource
 logger = logging.getLogger(__name__)
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("vol1", help="Input")
-    parser.add_argument("vol2", help="Input")
+def add_args(parser):
+    parser.add_argument("volumes", nargs=2, help="volumes to compare")
+
     parser.add_argument("--mask")
-    parser.add_argument("--plot", action="store_true")
+    parser.add_argument(
+        "--plot", "-p", action="store_true", help="create plot of FSC curve?"
+    )
     parser.add_argument("--Apix", type=float, default=1)
     parser.add_argument("-o", help="Output")
-    return parser
 
 
-def main(args):
-    vol1 = ImageSource.from_file(args.vol1)
-    vol2 = ImageSource.from_file(args.vol2)
-
+def calculate_fsc(vol1, vol2, mask_file=None):
     vol1 = vol1.images()
     vol2 = vol2.images()
 
-    # assert isinstance(vol1, np.ndarray)
-    # assert isinstance(vol2, np.ndarray)
-
-    if args.mask:
-        mask = ImageSource.from_file(args.mask)
+    if mask_file:
+        mask = ImageSource.from_file(mask_file)
         mask = mask.images()
-
-        # assert isinstance(mask, np.ndarray)
         vol1 *= mask
         vol2 *= mask
 
@@ -46,7 +44,6 @@ def main(args):
     r = (coords**2).sum(-1) ** 0.5
 
     assert r[D // 2, D // 2, D // 2] == 0.0
-
     vol1 = fft.fftn_center(vol1)
     vol2 = fft.fftn_center(vol2)
 
@@ -61,9 +58,17 @@ def main(args):
         p = np.vdot(v1, v2) / (np.vdot(v1, v1) * np.vdot(v2, v2)) ** 0.5
         fsc.append(float(p.real))
         prev_mask = mask
-    fsc = np.asarray(fsc)
-    x = np.arange(D // 2) / D
 
+    return np.asarray(fsc)
+
+
+def main(args):
+    vol1 = ImageSource.from_file(args.volumes[0])
+    vol2 = ImageSource.from_file(args.volumes[1])
+    fsc = calculate_fsc(vol1, vol2, args.mask)
+
+    D = vol1.shape[0]
+    x = np.arange(D // 2) / D
     res = np.stack((x, fsc), 1)
     if args.o:
         np.savetxt(args.o, res)
@@ -85,4 +90,6 @@ def main(args):
 
 
 if __name__ == "__main__":
-    main(parse_args().parse_args())
+    parser = argparse.ArgumentParser(description=__doc__)
+    add_args(parser)
+    main(parser.parse_args())

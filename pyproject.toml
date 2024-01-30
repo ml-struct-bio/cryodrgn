@@ -46,8 +46,8 @@ dev = [
 ]
 
 [project.scripts]
-cryodrgn = "cryodrgn.__main__:main"
-cryodrgn_utils = "cryodrgn.utils_exec:main"
+cryodrgn = "cryodrgn.command_line:main_commands"
+cryodrgn_utils = "cryodrgn.command_line:util_commands"
 
 [project.urls]
 "Homepage" = "https://github.com/zhonge/cryodrgn"

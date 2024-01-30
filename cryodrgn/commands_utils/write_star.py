@@ -35,25 +35,34 @@ POSE_HDRS = [
 
 def add_args(parser):
     parser.add_argument("particles", help="Input particles (.mrcs, .txt, .star)")
+
+    parser.add_argument(
+        "-o", type=os.path.abspath, required=True, help="Output .star file"
+    )
+
     parser.add_argument("--ctf", help="Input ctf.pkl")
     parser.add_argument("--poses", help="Optionally include pose.pkl")
     parser.add_argument(
         "--ind", help="Optionally filter by array of selected indices (.pkl)"
     )
+
+    # TODO: is this needed any more?
     parser.add_argument(
         "--full-path",
         action="store_true",
         help="Write the full path to particles (default: relative paths)",
     )
-    parser.add_argument(
-        "-o", type=os.path.abspath, required=True, help="Output .star file"
-    )
 
-    return parser
+    parser.add_argument(
+        "--relion30",
+        action="store_true",
+        help="Write output in RELION 3.0 format instead of the default 3.1 format.",
+    )
 
 
 def main(args):
     assert args.o.endswith(".star"), "Output file must be .star file"
+
     input_ext = os.path.splitext(args.particles)[-1]
     assert input_ext in (
         ".mrcs",
@@ -126,11 +135,11 @@ def main(args):
                 data[POSE_HDRS[3 + i]] = trans[:, i]
         df = pd.DataFrame(data=data)
 
-    s = Starfile(headers=None, df=df)
+    s = Starfile(headers=None, df=df, relion31=not args.relion30)
     s.write(args.o)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    args = add_args(parser).parse_args()
-    main(args)
+    add_args(parser)
+    main(parser.parse_args())

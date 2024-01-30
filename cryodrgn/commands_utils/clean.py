@@ -16,17 +16,9 @@ Scan every directory found in the current folder.
 Note use of double-quotes to prevent bash from evaluating the glob expression itself.
 $ cryodrgn_utils clean "*"
 
-Scan every directory recursively found in the current folder
-AND all of its children subdirectories.
-$ cryodrgn_utils clean "**"
-
 Recursively scan current folder and its children for cryoDRGN outputs
-containing the substring "mike".
-$ cryodrgn_utils clean "**/*mike*"
-
-Recursively scan current folder and its children for cryoDRGN outputs containing the
-substring "mike" anywhere under folders containing the substring "paper".
-$ cryodrgn_utils clean "**/*paper*/**/*mike*"
+containing the substring "old".
+$ cryodrgn_utils clean "**/*old*"
 
 """
 import os
@@ -79,7 +71,7 @@ def add_args(parser):
     )
 
 
-def clean_dir(d: Path, every_n_epochs: int = 5) -> None:
+def clean_dir(d: Path, args: argparse.Namespace) -> None:
     analysis_epochs = {
         int(out_dir.name.split(".")[1])
         for out_dir in d.iterdir()
@@ -90,16 +82,24 @@ def clean_dir(d: Path, every_n_epochs: int = 5) -> None:
         )
     }
 
+    rmv_count = 0
     for out_lbl in ["weights", "z", "pose", "reconstruct"]:
         for out_fl in d.glob(f"{out_lbl}.*"):
             epoch = out_fl.name.split(".")[1]
 
             if out_fl.is_file() and (
                 epoch.isnumeric()
-                and (int(epoch) % every_n_epochs) != 0
+                and (int(epoch) % args.every_n_epochs) != 0
                 and int(epoch) not in analysis_epochs
             ):
-                os.remove(out_fl)
+                rmv_count += 1
+                if not args.dry_run:
+                    os.remove(out_fl)
+
+    if args.dry_run:
+        print(f"\tWould remove {rmv_count} files!")
+    else:
+        print(f"\tRemoved {rmv_count} files!")
 
 
 def _prompt_dir(
@@ -113,28 +113,29 @@ def _prompt_dir(
     if not cfg:
         msg = msg.replace("is a", "is not a")
 
-    if args.dry_run or (args.verbose > 1 and not cfg):
-        print("\t".join(["".join(["`", str(d), "`"]).ljust(maxlen, "."), msg]))
+    if (cfg and args.dry_run) or (not cfg and args.verbose > 0):
+        print("".join(["".join(["`", str(d), "`"]).ljust(maxlen + 2, " "), msg]))
 
-    elif not args.force:
-        prompt_msg = ', enter 1) "(s)kip" or 2) any other key to clean:\n'
-        prompt = input("".join(["`", str(d), " ", msg, prompt_msg]))
+    if cfg:
+        if args.force or args.dry_run:
+            clean_dir(d, args)
 
-        if prompt not in {"s", "skip"}:
-            clean_dir(d, args.every_n_epochs)
+        else:
+            prompt_msg = ', enter 1) "(s)kip" or 2) any other key to clean:'
+            prompt = input("".join(["`", str(d), " ", msg, prompt_msg]))
 
-    else:
-        clean_dir(d, args.every_n_epochs)
+            if prompt not in {"s", "skip"}:
+                clean_dir(d, args)
 
 
 def check_open_config(d: Path) -> dict:
     """Safely gets configs from a potential cryoDRGN directory."""
-    dir_ls = set(Path.iterdir(d))
+    dir_files = {p.name for p in d.iterdir() if p.is_file()}
     config = None
     cfg = None
 
     for cfg_lbl, cfg_ext in product(["config", "configs"], [".yaml", ".yml"]):
-        if "".join([cfg_lbl, cfg_ext]) in dir_ls:
+        if "".join([cfg_lbl, cfg_ext]) in dir_files:
             config = "".join([cfg_lbl, cfg_ext])
             break
 
@@ -150,10 +151,11 @@ def check_open_config(d: Path) -> dict:
             corrupted = True
 
         if not corrupted:
+            cryodrgn_cmds = {"abinit_homo", "abinit_het", "train_nn", "train_vae"}
             if (
                 "cmd" not in cfg
                 or "cryodrgn" not in cfg["cmd"][0]
-                or cfg["cmd"][1] not in {"train_nn", "train_vae"}
+                or cfg["cmd"][1] not in cryodrgn_cmds
                 or "dataset_args" not in cfg
             ):
                 cfg = dict()

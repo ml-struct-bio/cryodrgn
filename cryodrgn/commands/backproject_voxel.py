@@ -105,8 +105,6 @@ def add_args(parser):
         help="Tilt angle increment per tilt in degrees (default: %(default)s)",
     )
 
-    return parser
-
 
 def add_slice(V, counts, ff_coord, ff, D, ctf_mul):
     d2 = int(D / 2)
@@ -158,6 +156,9 @@ def main(args):
             args.ind = utils.load_pkl(args.ind).astype(int)
 
     if args.tilt:
+        assert (
+            args.dose_per_tilt is not None
+        ), "Argument --dose-per-tilt is required for backprojecting tilt series data"
         data = dataset.TiltSeriesData(
             args.particles,
             args.ntilts,
@@ -182,26 +183,23 @@ def main(args):
 
     D = data.D
     Nimg = data.N
-
     lattice = Lattice(D, extent=D // 2, device=device)
-
     posetracker = PoseTracker.load(args.poses, Nimg, D, None, args.ind, device=device)
 
     if args.ctf is not None:
-        logger.info("Loading ctf params from {}".format(args.ctf))
+        logger.info(f"Loading ctf params from {args.ctf}")
         ctf_params = ctf.load_ctf_for_training(D - 1, args.ctf)
+
         if args.ind is not None:
             ctf_params = ctf_params[args.ind]
-        if args.tilt:
-            assert (
-                args.dose_per_tilt is not None
-            ), "Argument --dose-per-tilt is required for backprojecting tilt series data"
             ctf_params = np.concatenate(
                 (ctf_params, data.ctfscalefactor.reshape(-1, 1)), axis=1  # type: ignore
             )
         ctf_params = torch.tensor(ctf_params, device=device)
+
     else:
         ctf_params = None
+
     Apix = float(ctf_params[0, 0]) if ctf_params is not None else 1.0
     voltage = float(ctf_params[0, 4]) if ctf_params is not None else None
     data.voltage = voltage
@@ -219,24 +217,28 @@ def main(args):
 
     for ii in iterator:
         if ii % 100 == 0:
-            logger.info("image {}".format(ii))
+            logger.info("fimage {ii}")
+
         r, t = posetracker.get_pose(ii)
         ff = data.get_tilt(ii) if args.tilt else data[ii]
         assert isinstance(ff, tuple)
 
         ff = ff[0].to(device)
         ff = ff.view(-1)[mask]
-        c = None
         ctf_mul = 1
+
         if ctf_params is not None:
             freqs = lattice.freqs2d / ctf_params[ii, 0]
             c = ctf.compute_ctf(freqs, *ctf_params[ii, 1:]).view(-1)[mask]
+
             if args.ctf_alg == "flip":
                 ff *= c.sign()
             else:
                 ctf_mul = c
+
         if t is not None:
             ff = lattice.translate_ht(ff.view(1, -1), t.view(1, 1, 2), mask).view(-1)
+
         if args.tilt:
             tilt_idxs = torch.tensor([ii]).to(device)
             dose_filters = data.get_dose_filters(tilt_idxs, lattice, ctf_params[ii, 0])[
@@ -249,12 +251,10 @@ def main(args):
 
     td = time.time() - t1
     logger.info(
-        "Backprojected {} images in {}s ({}s per image)".format(
-            len(iterator), td, td / Nimg
-        )
+        f"Backprojected {len(iterator)} images in {td}s ({td / Nimg}s per image)"
     )
-    counts[counts == 0] = 1
 
+    counts[counts == 0] = 1
     if args.output_sumcount:
         MRCFile.write(args.o + ".sums", V.cpu().numpy(), Apix=Apix)
         MRCFile.write(args.o + ".counts", counts.cpu().numpy(), Apix=Apix)
@@ -263,9 +263,11 @@ def main(args):
     regularized_counts *= counts.mean() / regularized_counts.mean()
     V /= regularized_counts
     V = fft.ihtn_center(V[0:-1, 0:-1, 0:-1].cpu())
+
     MRCFile.write(args.o, np.array(V).astype("float32"), Apix=Apix)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    main(add_args(parser).parse_args())
+    add_args(parser)
+    main(parser.parse_args())

@@ -1,7 +1,17 @@
-"""
-Backproject cryo-EM images
-"""
+"""Backproject cryo-EM images to reconstruct a volume as well as half-maps.
 
+This script creates a reconstructed volume using the images in the given stack as well
+as the given poses. Unless instructed otherwise, it will also produce volumes using
+the images in each half of the dataset, as well as calculating an FSC curve between
+these two half-map reconstructions.
+
+Example usages
+----------
+$ cryodrgn backproject_voxel particles.128.mrcs --poses pose.pkl -o backproj.128.mrc
+$ cryodrgn backproject_voxel particles.256.mrcs --poses pose.pkl
+                             --ind good-particles.pkl -o backproj.256.mrc --lazy
+
+"""
 import argparse
 import os
 import time
@@ -36,6 +46,12 @@ def add_args(parser):
     )
     parser.add_argument(
         "-o", type=os.path.abspath, required=True, help="Output .mrc file"
+    )
+    parser.add_argument(
+        "--no-half-maps",
+        action="store_false",
+        help="Don't produce half-maps and FSCs.",
+        dest="half_maps",
     )
     parser.add_argument("--ctf-alg", type=str, choices=("flip", "mul"), default="mul")
     parser.add_argument(
@@ -256,10 +272,11 @@ def main(args):
         ff_coord = lattice.coords[mask] @ r
         add_slice(volume_full, counts_full, ff_coord, ff, D, ctf_mul)
 
-        if ii % 2 == 0:
-            add_slice(volume_half1, counts_half1, ff_coord, ff, D, ctf_mul)
-        else:
-            add_slice(volume_half2, counts_half2, ff_coord, ff, D, ctf_mul)
+        if args.half_maps:
+            if ii % 2 == 0:
+                add_slice(volume_half1, counts_half1, ff_coord, ff, D, ctf_mul)
+            else:
+                add_slice(volume_half2, counts_half2, ff_coord, ff, D, ctf_mul)
 
     td = time.time() - t1
     logger.info(
@@ -276,29 +293,31 @@ def main(args):
         MRCFile.write(args.o + ".counts", counts_full.cpu().numpy(), Apix=Apix)
 
     volume_full = regularize_volume(volume_full, counts_full, args.reg_weight)
-    volume_half1 = regularize_volume(volume_half1, counts_half1, args.reg_weight)
-    volume_half2 = regularize_volume(volume_half2, counts_half2, args.reg_weight)
-    fsc_vals = calculate_fsc(volume_half1, volume_half2)
-
     out_path = os.path.splitext(args.o)[0]
-    fsc_vals.to_csv("_".join([out_path, "fsc-vals.txt"]), sep=" ", header=False)
-    plt.plot(fsc_vals.index, fsc_vals.values)
-    plt.ylim((0, 1))
-    plt.savefig("_".join([out_path, "fsc-plot.png"]), bbox_inches="tight")
-
-    if (fsc_vals >= 0.5).any():
-        fsc_res = fsc_vals[fsc_vals >= 0.5].index.max() ** -1 * Apix
-        logger.info(f"res @ FSC=0.5: {fsc_res:.4f}")
-    if (fsc_vals >= 0.143).any():
-        fsc_res = fsc_vals[fsc_vals >= 0.143].index.max() ** -1 * Apix
-        logger.info(f"res @ FSC=0.143: {fsc_res:.4f}")
-
-    # save the full reconstruction and the half-map reconstructions to file
-    half_fl1 = "_".join([out_path, "half-map1.mrc"])
-    half_fl2 = "_".join([out_path, "half-map2.mrc"])
     MRCFile.write(args.o, np.array(volume_full).astype("float32"), Apix=Apix)
-    MRCFile.write(half_fl1, np.array(volume_half1).astype("float32"), Apix=Apix)
-    MRCFile.write(half_fl2, np.array(volume_half2).astype("float32"), Apix=Apix)
+
+    if args.half_maps:
+        volume_half1 = regularize_volume(volume_half1, counts_half1, args.reg_weight)
+        volume_half2 = regularize_volume(volume_half2, counts_half2, args.reg_weight)
+        fsc_vals = calculate_fsc(volume_half1, volume_half2)
+
+        fsc_vals.to_csv("_".join([out_path, "fsc-vals.txt"]), sep=" ", header=False)
+        plt.plot(fsc_vals.index, fsc_vals.values)
+        plt.ylim((0, 1))
+        plt.savefig("_".join([out_path, "fsc-plot.png"]), bbox_inches="tight")
+
+        if (fsc_vals >= 0.5).any():
+            fsc_res = fsc_vals[fsc_vals >= 0.5].index.max() ** -1 * Apix
+            logger.info(f"res @ FSC=0.5: {fsc_res:.4f}")
+        if (fsc_vals >= 0.143).any():
+            fsc_res = fsc_vals[fsc_vals >= 0.143].index.max() ** -1 * Apix
+            logger.info(f"res @ FSC=0.143: {fsc_res:.4f}")
+
+        # save the half-map reconstructions to file
+        half_fl1 = "_".join([out_path, "half-map1.mrc"])
+        half_fl2 = "_".join([out_path, "half-map2.mrc"])
+        MRCFile.write(half_fl1, np.array(volume_half1).astype("float32"), Apix=Apix)
+        MRCFile.write(half_fl2, np.array(volume_half2).astype("float32"), Apix=Apix)
 
 
 if __name__ == "__main__":

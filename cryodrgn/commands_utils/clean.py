@@ -1,15 +1,25 @@
 """Remove extraneous files from experiment output directories
 
-This utility interactively removes output files from cryoDRGN output directories
+This utility removes output files from cryoDRGN output directories
 except for those belonging to every `n` epoch, and those whose epochs have analysis
 folders associated with them. This includes files containing weights, poses,
 reconstructions, and latent variables.
+
+Running this script without any positional arguments will just clean the current
+directory. You can also provide any number of directories instead, in which case the
+script will interactively scan each of them. Finally, any directory can also be given
+as a glob wildcard expression, and the script will scan any directory matching it. In
+this case the script will also force the user to confirm cleaning of any directory
+that looks like cryoDRGN output unless additional arguments are provided (see below).
 
 Example usages
 --------------
 
 Scan current directory:
 $ cryodrgn_utils clean
+
+See how many files would be removed with every 3 epochs but don't remove them:
+$ cryodrgn_utils clean -n 3 -d
 
 Scan a single directory:
 $ cryodrgn_utils clean outdir
@@ -32,6 +42,7 @@ from pathlib import Path
 import yaml
 import pickle
 from itertools import product
+from math import log10
 
 NORMAL_EXCEPTIONS = (
     EOFError,
@@ -61,7 +72,8 @@ def add_args(parser):
     parser.add_argument(
         "--force",
         "-f",
-        action="store_true",
+        action="count",
+        default=0,
         help="Clean automatically without prompting the user.",
     )
     parser.add_argument(
@@ -121,8 +133,8 @@ def _prompt_dir(
     if not cfg:
         msg = msg.replace("is a", "is not a")
 
-    if (cfg and args.dry_run) or (not cfg and args.verbose > 0):
-        print("".join(["".join(["`", str(d), "`"]).ljust(maxlen + 2, " "), msg]))
+    if (cfg and (args.dry_run or args.force)) or (not cfg and args.verbose > 0):
+        print("".join(["".join(["`", str(d), "`"]).ljust(maxlen + 7, "."), msg]))
 
     if cfg:
         if args.force or args.dry_run:
@@ -173,27 +185,36 @@ def check_open_config(d: Path) -> dict:
 
 def main(args):
     if not args.outglobs:
-        clean_dir(Path(os.getcwd()), args.every_n_epochs)
+        clean_dir(Path(os.getcwd()), args)
 
     else:
-        scan_dirs = sorted(
-            set(
-                p
-                for outglob in args.outglobs
-                for p in Path().glob(outglob)
-                if p.is_dir()
-            )
-        )
-        maxlen = len(str(max(scan_dirs, key=lambda d: len(str(d)))))
+        for outglob in args.outglobs:
+            scan_dirs = sorted(set(p for p in Path().glob(outglob) if p.is_dir()))
 
-        while scan_dirs:
-            cur_dir = scan_dirs.pop(0)
-            cfg = check_open_config(cur_dir)
-            _prompt_dir(cur_dir, cfg, maxlen, args)
+            if len(scan_dirs) == 1:
+                clean_dir(Path(os.getcwd()), args)
 
-            # don't scan subdirectories of already identified cryoDRGN folders
-            if cfg:
-                scan_dirs = [p for p in scan_dirs if cur_dir not in p.parents]
+            else:
+                maxlen = len(str(max(scan_dirs, key=lambda d: len(str(d)))))
+                print(f"Found {len(scan_dirs)} directories matching {outglob}")
+
+                if len(scan_dirs) > 10**args.force:
+                    if args.force:
+                        force_str = "f" * (int(log10(len(scan_dirs))) + 1)
+                        print(
+                            f"Reverting to interactivity — use -{force_str} to "
+                            f"disable interactivity in this case!"
+                        )
+                        args.force = False
+
+                while scan_dirs:
+                    cur_dir = scan_dirs.pop(0)
+                    cfg = check_open_config(cur_dir)
+                    _prompt_dir(cur_dir, cfg, maxlen, args)
+
+                    # don't scan subdirectories of already identified cryoDRGN folders
+                    if cfg:
+                        scan_dirs = [p for p in scan_dirs if cur_dir not in p.parents]
 
 
 if __name__ == "__main__":

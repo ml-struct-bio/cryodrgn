@@ -1,7 +1,12 @@
-"""
-Create a Relion 3.0 star file from a particle stack and ctf parameters
-"""
+"""Create a Relion .star file from a given particle stack and CTF parameters.
 
+Example usages
+--------------
+$ cryodrgn_utils write_star particles.128.mrcs -o particles.128.star --ctf ctf.pkl
+$ cryodrgn_utils write_star particles.128.mrcs -o particles.128.star --ctf ctf.pkl \
+                                               --ind good-ind.pkl
+
+"""
 import argparse
 import os
 import numpy as np
@@ -88,6 +93,7 @@ def main(args):
         assert len(particles) == len(
             ctf
         ), f"{len(particles)} != {len(ctf)}, Number of particles != number of CTF parameters"
+
     if args.poses:
         poses = utils.load_pkl(args.poses)
         assert len(particles) == len(
@@ -107,6 +113,8 @@ def main(args):
     if input_ext == ".star":
         assert isinstance(particles, StarfileSource)
         df = particles.df.loc[ind]
+        optics = None
+
     else:
         image_names = particles.filenames[ind]
         if args.full_path:
@@ -124,18 +132,35 @@ def main(args):
 
         # Create a new dataframe with required star file headers
         data = {"_rlnImageName": names}
+        ctf_cols = {0, 1, 2, 6}
         if ctf is not None:
-            for i in range(7):
-                data[CTF_HEADERS[i]] = ctf[:, i]
+            for ctf_col in ctf_cols:
+                data[CTF_HEADERS[ctf_col]] = ctf[:, ctf_col]
+
+        # figure out what the optics groups are using voltage, spherical aberration,
+        # and amplitude contrast to assign a unique group to each particle
+        optics_cols = list(set(range(7)) - ctf_cols)
+        optics_headers = [CTF_HEADERS[optics_col] for optics_col in optics_cols]
+        optics_groups, optics_indx = np.unique(
+            ctf[:, optics_cols], return_inverse=True, axis=0
+        )
+
+        data["_rlnOpticsGroup"] = optics_indx + 1
+        optics_groups = pd.DataFrame(optics_groups, columns=optics_headers)
+        optics_groups["_rlnOpticsGroup"] = np.array(
+            [str(i + 1) for i in range(optics_groups.shape[0])],
+        )
+        optics = Starfile(df=optics_groups, relion31=False, headers=None)
 
         if eulers is not None and trans is not None:
             for i in range(3):
                 data[POSE_HDRS[i]] = eulers[:, i]  # type: ignore
             for i in range(2):
                 data[POSE_HDRS[3 + i]] = trans[:, i]
+
         df = pd.DataFrame(data=data)
 
-    s = Starfile(headers=None, df=df, relion31=not args.relion30)
+    s = Starfile(headers=None, df=df, relion31=not args.relion30, data_optics=optics)
     s.write(args.o)
 
 

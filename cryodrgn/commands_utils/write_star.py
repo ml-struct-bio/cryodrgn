@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 
 
 CTF_HEADERS = [
+    "_rlnImageSize",
+    "_rlnImagePixelSize",
     "_rlnDefocusU",
     "_rlnDefocusV",
     "_rlnDefocusAngle",
@@ -121,9 +123,6 @@ def main(args):
             image_names = [os.path.abspath(image_name) for image_name in image_names]
         names = [f"{i+1}@{name}" for i, name in zip(ind, image_names)]
 
-        if ctf is not None:
-            ctf = ctf[:, 2:]
-
         # convert poses
         if poses is not None:
             eulers = utils.R_to_relion_scipy(poses[0])
@@ -132,14 +131,14 @@ def main(args):
 
         # Create a new dataframe with required star file headers
         data = {"_rlnImageName": names}
-        ctf_cols = {0, 1, 2, 6}
+        ctf_cols = {2, 3, 4, 8}
         if ctf is not None:
             for ctf_col in ctf_cols:
                 data[CTF_HEADERS[ctf_col]] = ctf[:, ctf_col]
 
         # figure out what the optics groups are using voltage, spherical aberration,
         # and amplitude contrast to assign a unique group to each particle
-        optics_cols = list(set(range(7)) - ctf_cols)
+        optics_cols = list(set(range(9)) - ctf_cols)
         optics_headers = [CTF_HEADERS[optics_col] for optics_col in optics_cols]
         optics_groups, optics_indx = np.unique(
             ctf[:, optics_cols], return_inverse=True, axis=0

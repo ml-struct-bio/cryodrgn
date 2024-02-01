@@ -125,6 +125,7 @@ class AmortizedInferenceTrainer:
         if not self.configs.subtomogram_averaging:
             self.data = dataset.ImageDataset(
                 mrcfile=self.configs.particles,
+                ind=self.index,
                 lazy=self.configs.lazy,
                 max_threads=self.configs.max_threads,
                 window_r=self.configs.window_radius_gt_real,
@@ -135,6 +136,7 @@ class AmortizedInferenceTrainer:
         else:
             self.data = dataset.TiltSeriesData(
                 tiltstar=self.configs.particles,
+                ind=self.index,
                 ntilts=self.configs.n_tilts,
                 angle_per_tilt=self.configs.angle_per_tilt,
                 window_r=self.configs.window_radius_gt_real,
@@ -144,7 +146,6 @@ class AmortizedInferenceTrainer:
                 device=self.device,
                 poses_gt_pkl=self.configs.pose,
                 tilt_axis_angle=self.configs.tilt_axis_angle,
-                ind=self.index,
                 no_trans=self.configs.no_trans,
             )
             self.n_particles_dataset = self.data.Np
@@ -1278,6 +1279,7 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
         "tilt_axis_angle",
         "dose_exposure_correction",
         "seed",
+        "palette_type",
     )
     defaults = OrderedDict(
         {
@@ -1413,6 +1415,7 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
     }
 
     def __init__(self, config_vals: dict):
+        assert config_vals["model"] == "amort"
         super().__init__(config_vals)
 
         if self.seed < 0:

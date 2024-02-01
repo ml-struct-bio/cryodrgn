@@ -28,7 +28,7 @@ from cryodrgn import analysis, utils
 from cryodrgn.commands.analyze import VolumeGenerator
 from cryodrgn.mrcfile import parse_mrc, write_mrc
 from cryodrgn.masking import cosine_dilation_mask
-import cryodrgn.config
+import cryodrgn.models.config
 
 logger = logging.getLogger(__name__)
 
@@ -537,7 +537,7 @@ def main(args: argparse.Namespace) -> None:
 
     logger.info("Analyzing volumes...")
     # get particle indices if the dataset was originally filtered
-    cfgs = cryodrgn.config.load(cfg_file)
+    cfgs = cryodrgn.models.config.load(cfg_file)
     particle_ind = (
         utils.load_pkl(cfgs["dataset_args"]["ind"])
         if cfgs["dataset_args"]["ind"] is not None

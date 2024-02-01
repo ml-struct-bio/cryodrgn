@@ -15,9 +15,9 @@ from cryodrgn.utils import load_yaml
 class ModelConfigurations(ABC):
     """Base class for sets of model configuration parameters."""
 
-    # the base parameters for all sets: whether we are testing the installation,
-    # where the output is located and which configuration shortcuts were used
-    __slots__: tuple[str] = ("outdir", "quick_config")
+    # the base parameters for all sets: where the training output is located, which
+    # model is used, and which configuration shortcuts are applied
+    __slots__: tuple[str] = ("outdir", "model", "quick_config")
 
     # any other parameters belong to this set if and only if they have a default value
     # defined in this dictionary, ordering makes e.g. printing easier for user
@@ -44,14 +44,17 @@ class ModelConfigurations(ABC):
 
         if "outdir" not in config_vals:
             raise ValueError("`config_vals` must have a `outdir` entry!")
+        if "model" not in config_vals:
+            raise ValueError("`config_vals` must have a `model` entry!")
         if "quick_config" not in config_vals:
             raise ValueError("`config_vals` must have a `quick_config` entry!")
 
-        for key in set(config_vals) - {"outdir", "quick_config"}:
+        for key in set(config_vals) - set(ModelConfigurations.__slots__):
             if key not in self.defaults:
                 raise ValueError("Unrecognized configuration " f"parameter `{key}`!")
 
         self.outdir = config_vals["outdir"]
+        self.model = config_vals["model"]
         self.quick_config = config_vals["quick_config"]
 
         # an attribute is created for every entry in the defaults dictionary

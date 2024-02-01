@@ -17,7 +17,8 @@ from datetime import datetime as dt
 import logging
 import numpy as np
 import torch
-from cryodrgn import config, ctf, dataset
+from cryodrgn import ctf, dataset
+from cryodrgn.models import config
 from cryodrgn.commands.train_vae import loss_function, preprocess_input, run_batch
 from cryodrgn.models.utils import load_model
 from cryodrgn.pose import PoseTracker

@@ -4,7 +4,7 @@ import os
 import shutil
 import argparse
 import yaml
-from typing import Optional
+from typing import Optional, Union
 from cryodrgn.utils import load_yaml
 
 
@@ -92,10 +92,13 @@ class SetupHelper:
         pose_estimation: Optional[str] = None,
         conf_estimation: Optional[str] = None,
     ) -> dict:
-        configs = self.old_configs.copy()
+        configs: dict[str, Union[str, dict, None]] = self.old_configs.copy()
 
         if model:
             configs["model"] = model
+        else:
+            configs["model"] = "amort"
+
         if dataset:
             configs["dataset"] = dataset
         if particles:
@@ -186,6 +189,9 @@ class SetupHelper:
         if self.update_existing:
             with open(self.configs_file, "w") as f:
                 yaml.dump(configs, f, sort_keys=False)
+
+        # parameters only the model code needs to use, not the user
+        configs["outdir"] = os.path.join(self.outdir, "out")
 
         return configs
 

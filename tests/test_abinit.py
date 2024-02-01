@@ -71,7 +71,9 @@ def test_abinit_het_and_backproject():
     )
     analyze.main(args)
 
-    args = backproject_voxel.add_args(argparse.ArgumentParser()).parse_args(
+    parser = argparse.ArgumentParser()
+    backproject_voxel.add_args(parser)
+    args = parser.parse_args(
         [
             f"{DATA_FOLDER}/hand.mrcs",
             "--poses",
@@ -128,7 +130,9 @@ def test_abinit_homo_and_backproject():
         )
     )
 
-    args = backproject_voxel.add_args(argparse.ArgumentParser()).parse_args(
+    parser = argparse.ArgumentParser()
+    backproject_voxel.add_args(parser)
+    args = parser.parse_args(
         [
             f"{DATA_FOLDER}/hand.mrcs",
             "--poses",

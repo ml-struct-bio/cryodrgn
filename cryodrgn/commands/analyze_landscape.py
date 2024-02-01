@@ -328,9 +328,8 @@ def analyze_volumes(
     subdir = f"{outdir}/clustering_L2_{linkage}_{M}"
     if not os.path.exists(subdir):
         os.makedirs(subdir)
-    cluster = AgglomerativeClustering(
-        n_clusters=M, affinity="euclidean", linkage=linkage
-    )
+
+    cluster = AgglomerativeClustering(n_clusters=M, linkage=linkage)
     labels = cluster.fit_predict(vols)
     utils.save_pkl(labels, f"{subdir}/state_labels.pkl")
 

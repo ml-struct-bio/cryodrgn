@@ -27,7 +27,9 @@ def particles_csfile():
 
 def test_parse_ctf_star(particles_starfile):
     os.makedirs("output", exist_ok=True)
-    args = parse_ctf_star.add_args(argparse.ArgumentParser()).parse_args(
+    parser = argparse.ArgumentParser()
+    parse_ctf_star.add_args(parser)
+    args = parser.parse_args(
         [
             particles_starfile,
             "-w",

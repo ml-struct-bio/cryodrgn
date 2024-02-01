@@ -11,7 +11,7 @@ from typing import Optional, Tuple, Type, Sequence, Any
 from cryodrgn import fft
 from cryodrgn import lie_tools
 from cryodrgn import utils
-import cryodrgn.config
+import cryodrgn.models.config
 
 Norm = Sequence[Any]  # mean, std
 
@@ -51,7 +51,7 @@ def load_decoder(config, weights=None, device=None) -> Decoder:
 
     Returns a decoder model
     """
-    cfg = cryodrgn.config.load(config)
+    cfg = cryodrgn.models.config.load(config)
     c = cfg["model_args"]
     D = cfg["lattice_args"]["D"]
     activation = {"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[c["activation"]]
@@ -792,11 +792,3 @@ class SO3reparameterize(nn.Module):
         logvar = z[:, 6:]
         z_std = torch.exp(0.5 * logvar)  # or could do softplus
         return z_mu, z_std
-
-
-class MyDataParallel(nn.DataParallel):
-    def __getattr__(self, name):
-        try:
-            return super().__getattr__(name)
-        except AttributeError:
-            return getattr(self.module, name)

@@ -8,7 +8,7 @@ import logging
 from typing import Optional
 import numpy as np
 import torch
-import cryodrgn.config
+import cryodrgn.models.config
 from cryodrgn.mrc import MRCFile
 from cryodrgn.models.utils import load_model
 
@@ -174,7 +174,7 @@ class VolumeEvaluator:
             if not use_cuda:
                 logger.warning("WARNING: No GPUs detected")
 
-        cfg_data = cryodrgn.config.overwrite_config(
+        cfg_data = cryodrgn.models.config.overwrite_config(
             cfg_data, argparse.Namespace(**architecture_args)
         )
         logger.info("Loaded configuration:")
@@ -271,7 +271,7 @@ def main(args):
     logger.info(args)
     t0 = dt.now()
 
-    cfg = cryodrgn.config.load(args.config)
+    cfg = cryodrgn.models.config.load(args.config)
     evaluator = VolumeEvaluator(
         args.weights,
         cfg,

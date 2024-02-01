@@ -1,3 +1,5 @@
+"""Helper functions for working with contrast transfer function parameters."""
+
 from typing import Optional
 import numpy as np
 import torch
@@ -5,55 +7,6 @@ import logging
 from cryodrgn import utils
 
 logger = logging.getLogger(__name__)
-
-
-# def compute_ctf(
-#     freqs: torch.Tensor,
-#     dfu: torch.Tensor,
-#     dfv: torch.Tensor,
-#     dfang: torch.Tensor,
-#     volt: torch.Tensor,
-#     cs: torch.Tensor,
-#     w: torch.Tensor,
-#     phase_shift: torch.Tensor = torch.Tensor([0]),
-#     bfactor: Optional[torch.Tensor] = None,
-# ) -> torch.Tensor:
-#     """
-#     Compute the 2D CTF
-#
-#     Input:
-#         freqs (np.ndarray) Nx2 or BxNx2 tensor of 2D spatial frequencies
-#         dfu (float or Bx1 tensor): DefocusU (Angstrom)
-#         dfv (float or Bx1 tensor): DefocusV (Angstrom)
-#         dfang (float or Bx1 tensor): DefocusAngle (degrees)
-#         volt (float or Bx1 tensor): accelerating voltage (kV)
-#         cs (float or Bx1 tensor): spherical aberration (mm)
-#         w (float or Bx1 tensor): amplitude contrast ratio
-#         phase_shift (float or Bx1 tensor): degrees
-#         bfactor (float or Bx1 tensor): envelope fcn B-factor (Angstrom^2)
-#     """
-#     assert freqs.shape[-1] == 2
-#     # convert units
-#     volt = volt * 1000
-#     cs = cs * 10**7
-#     dfang = dfang * np.pi / 180
-#     phase_shift = phase_shift * np.pi / 180
-#
-#     # lam = sqrt(h^2/(2*m*e*Vr)); Vr = V + (e/(2*m*c^2))*V^2
-#     lam = 12.2639 / (volt + 0.97845e-6 * volt**2) ** 0.5
-#     x = freqs[..., 0]
-#     y = freqs[..., 1]
-#     ang = torch.atan2(y, x)
-#     s2 = x**2 + y**2
-#     df = 0.5 * (dfu + dfv + (dfu - dfv) * torch.cos(2 * (ang - dfang)))
-#     gamma = (
-#         2 * np.pi * (-0.5 * df * lam * s2 + 0.25 * cs * lam**3 * s2**2)
-#         - phase_shift
-#     )
-#     ctf = (1 - w**2) ** 0.5 * torch.sin(gamma) - w * torch.cos(gamma)
-#     if bfactor is not None:
-#         ctf *= torch.exp(-bfactor / 4 * s2)
-#     return ctf
 
 
 def compute_ctf(
@@ -141,14 +94,30 @@ def plot_ctf(D: int, Apix: float, ctf_params: np.ndarray) -> None:
     sns.heatmap(c.cpu().numpy().reshape(D, D))
 
 
-def load_ctf_for_training(D: int, ctf_params_pkl: str) -> np.ndarray:
-    assert D % 2 == 0
+def load_ctf_for_training(
+    resolution: int, ctf_params_pkl: str, verbose: bool = False
+) -> np.ndarray:
+    """Load contrast transfer function parameter data from file."""
+    if resolution % 2 != 0:
+        raise ValueError(
+            f"Cannot load ctf `{ctf_params_pkl}` "
+            f"with odd given resolution `{resolution}`!"
+        )
+
     ctf_params = utils.load_pkl(ctf_params_pkl)
-    assert ctf_params.shape[1] == 9
-    # Replace original image size with current dimensions
-    Apix = ctf_params[0, 0] * ctf_params[0, 1] / D
-    ctf_params[:, 0] = D
-    ctf_params[:, 1] = Apix
-    print_ctf_params(ctf_params[0])
-    # Slice out the first column (D)
+    if ctf_params.shape[1] != 9:
+        raise ValueError(
+            f"Given ctf file `{ctf_params_pkl}` "
+            f"has {ctf_params.shape[1]} columns, expected 9 columns!"
+        )
+
+    # replace original image size with current dimensions
+    apix = ctf_params[0, 0] * ctf_params[0, 1] / resolution
+    ctf_params[:, 0] = resolution
+    ctf_params[:, 1] = apix
+
+    if verbose:
+        print_ctf_params(ctf_params[0])
+
+    # remove the first column which is just the resolution (D)
     return ctf_params[:, 1:]

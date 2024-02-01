@@ -1064,3 +1064,11 @@ class ResidualLinearMLP(nn.Module):
         ret_flat = self.main(flat)
         ret = ret_flat.view(*x.shape[:-1], ret_flat.shape[-1])
         return ret
+
+
+class MyDataParallel(nn.DataParallel):
+    def __getattr__(self, name):
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            return getattr(self.module, name)

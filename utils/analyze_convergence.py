@@ -27,7 +27,7 @@ from scipy.spatial import distance_matrix
 from cryodrgn import analysis, fft, utils
 from cryodrgn.source import ImageSource
 from cryodrgn.mrc import MRCFile
-import cryodrgn.config
+import cryodrgn.models.config
 
 try:
     from cuml.manifold.umap import UMAP as cuUMAP  # type: ignore
@@ -1101,7 +1101,7 @@ def main(args):
 
     # Get total number of particles, latent space dimensionality, input image size
     n_particles_total, n_dim = utils.load_pkl(f"{workdir}/z.{E}.pkl").shape
-    cfg = cryodrgn.config.load(config)
+    cfg = cryodrgn.models.config.load(config)
     img_size = cfg["lattice_args"]["D"] - 1
 
     # Commonly used variables

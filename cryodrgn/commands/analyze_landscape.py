@@ -21,7 +21,7 @@ from sklearn.decomposition import PCA
 from cryodrgn import analysis, utils
 from cryodrgn.mrc import MRCFile
 from cryodrgn.source import ImageSource
-import cryodrgn.config
+import cryodrgn.models.config
 
 logger = logging.getLogger(__name__)
 
@@ -530,7 +530,7 @@ def main(args):
 
     logger.info("Analyzing volumes...")
     # get particle indices if the dataset was originally filtered
-    c = cryodrgn.config.load(config)
+    c = cryodrgn.models.config.load(config)
     particle_ind = (
         utils.load_pkl(c["dataset_args"]["ind"])
         if c["dataset_args"]["ind"] is not None

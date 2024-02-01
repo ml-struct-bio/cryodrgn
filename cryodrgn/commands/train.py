@@ -23,7 +23,7 @@ def main(args: argparse.Namespace, configs: Optional[dict[str, Any]] = None):
 
     cryodrgn.utils._verbose = False
 
-    if configs["model"] == "ai":
+    if configs["model"] == "amort":
         trainer = AmortizedInferenceTrainer(configs)
     elif configs["model"] == "hps":
         trainer = HierarchicalSearchTrainer(configs)

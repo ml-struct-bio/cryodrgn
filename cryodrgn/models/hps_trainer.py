@@ -913,6 +913,7 @@ class AbInitioConfigurations(ModelConfigurations):
     )
 
     def __init__(self, config_vals: dict[str, Any]) -> None:
+        assert config_vals["model"] == "hps"
         super().__init__(config_vals)
 
         if self.dataset is None:

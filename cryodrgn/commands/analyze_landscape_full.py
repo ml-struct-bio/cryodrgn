@@ -14,7 +14,8 @@ import torch.optim as optim
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset, DataLoader
 import cryodrgn
-from cryodrgn import config, utils
+from cryodrgn import utils
+from cryodrgn.models import config
 from cryodrgn.models.neural_nets import ResidLinearMLP
 from cryodrgn.models.utils import load_model
 from cryodrgn.source import ImageSource

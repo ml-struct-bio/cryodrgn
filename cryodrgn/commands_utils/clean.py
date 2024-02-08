@@ -7,7 +7,7 @@ reconstructions, and latent variables.
 
 Running this script without any positional arguments will just clean the current
 directory. You can also provide any number of directories instead, in which case the
-script will interactively scan each of them. Finally, any directory can also be given
+script will scan each of them. Finally, any directory can also be given
 as a glob wildcard expression, and the script will scan any directory matching it. In
 this case the script will also force the user to confirm cleaning of any directory
 that looks like cryoDRGN output unless additional arguments are provided (see below).
@@ -192,7 +192,7 @@ def main(args):
             scan_dirs = sorted(set(p for p in Path().glob(outglob) if p.is_dir()))
 
             if len(scan_dirs) == 1:
-                clean_dir(Path(os.getcwd()), args)
+                clean_dir(Path(tuple(scan_dirs)[0]), args)
 
             else:
                 maxlen = len(str(max(scan_dirs, key=lambda d: len(str(d)))))

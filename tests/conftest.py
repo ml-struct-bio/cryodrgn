@@ -3,7 +3,7 @@
 import os
 import shutil
 import pytest
-from typing import Optional, Union
+from typing import Optional, Union, Any
 from cryodrgn.utils import run_command
 
 
@@ -19,7 +19,7 @@ class TrainDir:
         train_cmd: str,
         epochs: int = 10,
         seed: Optional[int] = None,
-        out_lbl: Optional[str] = None
+        out_lbl: Optional[str] = None,
     ) -> None:
         self.dataset = dataset
         self.train_cmd = train_cmd
@@ -61,6 +61,34 @@ class TrainDir:
                 os.path.join(self.outdir, orig_file),
                 os.path.join(self.orig_cache, orig_file),
             )
+
+    @classmethod
+    def parse_request(cls, req: dict[str, Any]) -> dict[str, Any]:
+        train_args = dict()
+
+        if "dataset" in req:
+            train_args["dataset"] = req["dataset"]
+        else:
+            train_args["dataset"] = "hand"
+
+        if "train_cmd" in req:
+            train_args["train_cmd"] = req["train_cmd"]
+        else:
+            train_args["train_cmd"] = "train_nn"
+
+        if "epochs" in req:
+            train_args["epochs"] = req["epochs"]
+        else:
+            train_args["epochs"] = 10
+
+        if "seed" in req:
+            train_args["seed"] = req["seed"]
+        else:
+            train_args["seed"] = None
+
+        train_args["out_lbl"] = "_".join([str(x) for x in train_args.values()])
+
+        return train_args
 
     @property
     def out_files(self) -> list[str]:
@@ -108,31 +136,33 @@ class TrainDir:
             )
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def train_dir(request) -> TrainDir:
-    """Set up and tear down an experiment output directory."""
-    dataset = request.param["dataset"] if "dataset" in request.param else "hand"
-    cmd = request.param["train_cmd"] if "train_cmd" in request.param else "train_nn"
-    epochs = request.param["epochs"] if "epochs" in request.param else 10
-    seed = request.param["seed"] if "seed" in request.param else None
-
-    out_lbl = f"{request.module.__name__}__{dataset}_{cmd}"
-    yield TrainDir(dataset, cmd, epochs, seed, out_lbl)
-    shutil.rmtree(out_lbl)
+    """Run an experiment to generate output; remove this output when finished."""
+    train_args = TrainDir.parse_request(request.param)
+    yield TrainDir(**train_args)
+    shutil.rmtree(train_args["out_lbl"])
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
+def trained_dir(train_dir) -> TrainDir:
+    """Get an experiment that has been run; restore its output when done."""
+    yield train_dir
+    train_dir.replace_files()
+
+
+@pytest.fixture(scope="session")
 def train_dirs(request) -> list[TrainDir]:
-    """Set up and tear down a series of experiment output directories."""
-    out_lbls = {
-        (dataset, train_cmd): f"{request.module.__name__}-dirs__{dataset}_{train_cmd}"
-        for dataset, train_cmd in request.param
-    }
+    """Run experiments to generate outputs; remove these outputs when finished."""
+    train_args_list = [TrainDir.parse_request(req) for req in request.param]
+    yield [TrainDir(**train_args) for train_args in train_args_list]
+    for train_args in train_args_list:
+        shutil.rmtree(train_args["out_lbl"])
 
-    yield [
-        TrainDir(dataset, train_cmd, out_lbl=out_lbl)
-        for (dataset, train_cmd), out_lbl in out_lbls.items()
-    ]
 
-    for out_lbl in out_lbls.values():
-        shutil.rmtree(out_lbl)
+@pytest.fixture(scope="function")
+def trained_dirs(train_dirs) -> list[TrainDir]:
+    """Get experiments that have been run; restore their output when done."""
+    yield train_dirs
+    for train_dir in train_dirs:
+        train_dir.replace_files()

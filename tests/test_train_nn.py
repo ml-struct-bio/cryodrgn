@@ -1,52 +1,19 @@
-import os.path
-import argparse
+"""Integration tests of neural network reconstruction with known poses.
+
+The training done here has unrealistically low parameter values to allow the tests to
+run in any environment in a reasonable amount of time with or without GPUs.
+
+"""
+import os
 import pytest
-from cryodrgn.source import ImageSource
-from cryodrgn.commands import train_nn
 
-DATA_FOLDER = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
+DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
 
 
-@pytest.fixture
-def mrcs_data():
-    return ImageSource.from_file(f"{DATA_FOLDER}/toy_projections.mrcs").images()
-
-
-@pytest.fixture
-def poses_file():
-    return f"{DATA_FOLDER}/toy_angles.pkl"
-
-
-def test_train_nn(mrcs_data, poses_file):
-    args = train_nn.add_args(argparse.ArgumentParser()).parse_args(
-        [
-            f"{DATA_FOLDER}/toy_projections.mrcs",
-            "--outdir",
-            "output/train_nn",
-            "--poses",
-            poses_file,
-            "--num-epochs",
-            "3",
-            "--no-amp",
-            "--multigpu",
-        ]
-    )
-    train_nn.main(args)
-
-    # Load a check-pointed model, this time with no --multigpu
-    train_nn.main(
-        train_nn.add_args(argparse.ArgumentParser()).parse_args(
-            [
-                f"{DATA_FOLDER}/toy_projections.mrcs",
-                "--outdir",
-                "output/train_nn",
-                "--poses",
-                poses_file,
-                "--num-epochs",
-                "5",
-                "--no-amp",
-                "--load",
-                "output/train_nn/weights.2.pkl",
-            ]
-        )
-    )
+@pytest.mark.parametrize(
+    "train_dir", [{"train_cmd": "train_nn", "epochs": 5}], indirect=True
+)
+@pytest.mark.parametrize("load_epoch", [0, 2])
+@pytest.mark.parametrize("train_epochs", [4, 5, 6])
+def test_reconstruct_and_from_checkpoint(trained_dir, load_epoch, train_epochs):
+    trained_dir.train_load_epoch(load_epoch, train_epochs)

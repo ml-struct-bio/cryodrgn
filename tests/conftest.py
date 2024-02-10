@@ -6,10 +6,7 @@ import pytest
 from typing import Optional, Union, Any
 from cryodrgn.utils import run_command
 
-
-DATA_DIR = os.path.join(
-    os.path.abspath(os.path.dirname(__file__)), "..", "testing", "data"
-)
+DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
 
 
 class TrainDir:
@@ -29,29 +26,29 @@ class TrainDir:
         self.orig_cache = os.path.join(self.outdir, "orig_cache")
 
         if self.dataset == "toy":
-            particles = os.path.join(DATA_DIR, "toy_projections.mrcs")
-            poses = os.path.join(DATA_DIR, "toy_angles.pkl")
+            self.particles = os.path.join(DATA_DIR, "toy_projections.mrcs")
+            self.poses = os.path.join(DATA_DIR, "toy_angles.pkl")
         elif self.dataset == "hand":
-            particles = os.path.join(DATA_DIR, "hand.mrcs")
-            poses = os.path.join(DATA_DIR, "hand_rot.pkl")
+            self.particles = os.path.join(DATA_DIR, "hand.mrcs")
+            self.poses = os.path.join(DATA_DIR, "hand_rot.pkl")
         else:
             raise ValueError(f"Unrecognized dataset label `{self.dataset}`!")
 
         cmd = (
-            f"cryodrgn {self.train_cmd} {particles} -o {self.outdir} "
-            f"--poses {poses} --no-amp -n={self.epochs} "
+            f"cryodrgn {self.train_cmd} {self.particles} -o {self.outdir} "
+            f"--poses {self.poses} --no-amp -n={self.epochs} "
         )
 
-        if train_cmd == "train_vae":
+        if self.train_cmd == "train_vae":
             cmd += "--zdim=8 --tdim=16 --tlayers=1 "
-        elif train_cmd == "train_nn":
+        elif self.train_cmd == "train_nn":
             cmd += "--dim=16 --layers=2 "
 
         if seed:
             cmd += f" --seed={seed}"
 
         out, err = run_command(cmd)
-        assert ") Finished in " in out
+        assert ") Finished in " in out, err
         assert self.all_files_present
 
         orig_files = self.out_files
@@ -135,13 +132,35 @@ class TrainDir:
                 os.path.join(self.outdir, orig_file),
             )
 
+    def train_load_epoch(self, load_epoch: int, train_epochs: int) -> None:
+        if not 0 <= load_epoch < self.epochs:
+            raise ValueError(
+                f"Given epoch to load {load_epoch} is not valid for experiment "
+                f"with {self.epochs} epochs!"
+            )
+
+        cmd = (
+            f"cryodrgn {self.train_cmd} {self.particles} -o {self.outdir} "
+            f"--poses {self.poses} --no-amp -n={train_epochs} "
+            f"--load {os.path.join(self.outdir, f'weights.{load_epoch}.pkl')} "
+        )
+        if self.train_cmd == "train_vae":
+            cmd += "--zdim=8 --tdim=16 --tlayers=1 "
+        elif self.train_cmd == "train_nn":
+            cmd += "--dim=16 --layers=2 "
+
+        out, err = run_command(cmd)
+        assert ") Finished in " in out, err
+        self.epochs = train_epochs
+        assert self.all_files_present
+
 
 @pytest.fixture(scope="session")
 def train_dir(request) -> TrainDir:
     """Run an experiment to generate output; remove this output when finished."""
-    train_args = TrainDir.parse_request(request.param)
-    yield TrainDir(**train_args)
-    shutil.rmtree(train_args["out_lbl"])
+    tdir = TrainDir(**TrainDir.parse_request(request.param))
+    yield tdir
+    shutil.rmtree(tdir.outdir)
 
 
 @pytest.fixture(scope="function")
@@ -154,10 +173,10 @@ def trained_dir(train_dir) -> TrainDir:
 @pytest.fixture(scope="session")
 def train_dirs(request) -> list[TrainDir]:
     """Run experiments to generate outputs; remove these outputs when finished."""
-    train_args_list = [TrainDir.parse_request(req) for req in request.param]
-    yield [TrainDir(**train_args) for train_args in train_args_list]
-    for train_args in train_args_list:
-        shutil.rmtree(train_args["out_lbl"])
+    tdirs = [TrainDir(**TrainDir.parse_request(req)) for req in request.param]
+    yield tdirs
+    for tdir in tdirs:
+        shutil.rmtree(tdir.outdir)
 
 
 @pytest.fixture(scope="function")

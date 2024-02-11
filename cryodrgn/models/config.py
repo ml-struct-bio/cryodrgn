@@ -2,81 +2,11 @@
 
 from datetime import datetime
 import argparse
-from typing import Optional, Any
+from typing import Optional
 import cryodrgn
 import os
 import sys
-import yaml
-from collections import OrderedDict
-from abc import ABC
 from cryodrgn.utils import load_yaml
-
-
-class ModelConfigurations(ABC):
-    """Base class for sets of model configuration parameters."""
-
-    # the base parameters for all sets: where the training output is located, which
-    # model is used, and which configuration shortcuts are applied
-    __slots__: tuple[str] = ("outdir", "model", "quick_config")
-
-    # any other parameters belong to this set if and only if they have a default value
-    # defined in this dictionary, ordering makes e.g. printing easier for user
-    defaults: OrderedDict[str, Any] = OrderedDict()
-
-    @classmethod
-    @property
-    def parameters(cls) -> list[str]:
-        return list(cls.defaults.keys())
-
-    @classmethod
-    def parse_args(cls, args):
-        return cls(
-            {
-                par: (getattr(args, par) if hasattr(args, par) else cls.defaults[par])
-                for par in tuple(cls.defaults) + cls.__slots__
-            }
-        )
-
-    def __init__(self, config_vals: dict[str, Any]) -> None:
-        if "test_installation" in config_vals and config_vals["test_installation"]:
-            print("Installation was successful!")
-            sys.exit()
-
-        if "outdir" not in config_vals:
-            raise ValueError("`config_vals` must have a `outdir` entry!")
-        if "model" not in config_vals:
-            raise ValueError("`config_vals` must have a `model` entry!")
-        if "quick_config" not in config_vals:
-            raise ValueError("`config_vals` must have a `quick_config` entry!")
-
-        for key in set(config_vals) - set(ModelConfigurations.__slots__):
-            if key not in self.defaults:
-                raise ValueError("Unrecognized configuration " f"parameter `{key}`!")
-
-        self.outdir = config_vals["outdir"]
-        self.model = config_vals["model"]
-        self.quick_config = config_vals["quick_config"]
-
-        # an attribute is created for every entry in the defaults dictionary
-        for key, value in self.defaults.items():
-            if key in config_vals:
-                setattr(self, key, config_vals[key])
-
-            # if not in given parameters, use defaults
-            else:
-                setattr(self, key, value)
-
-    def __iter__(self):
-        return iter((par, getattr(self, par)) for par in self.parameters)
-
-    def __str__(self):
-        return "\n".join([f"{par}{str(val):>20}" for par, val in self])
-
-    def write(self, fl: str) -> None:
-        """Saving configurations to file using the original order."""
-
-        with open(fl, "w") as f:
-            yaml.dump(dict(self), f, default_flow_style=False, sort_keys=False)
 
 
 def load_configs(outdir: str) -> dict:

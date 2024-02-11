@@ -55,7 +55,7 @@ cryodrgn_utils = "cryodrgn.command_line:util_commands"
 "Homepage" = "https://github.com/zhonge/cryodrgn"
 
 [tool.setuptools_scm]
-write_to = "cryodrgn/_version.py"
+version_file = "cryodrgn/_version.py"
 
 [tool.setuptools]
 include-package-data = true

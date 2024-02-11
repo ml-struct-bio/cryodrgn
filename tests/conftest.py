@@ -9,7 +9,36 @@ from cryodrgn.utils import run_command
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
 
 
+@pytest.fixture(scope="session", autouse=True)
+def output_dir() -> None:
+    """Helper fixture to remove output folder upon completion of all tests."""
+    yield None
+    shutil.rmtree("output")
+
+
+def get_testing_datasets(dataset_lbl: str) -> tuple[str, str]:
+    """Retrieve the input files corresponding to a given dataset label."""
+
+    if dataset_lbl == "toy":
+        particles = os.path.join(DATA_DIR, "toy_projections.mrcs")
+        poses = os.path.join(DATA_DIR, "toy_angles.pkl")
+    elif dataset_lbl == "hand":
+        particles = os.path.join(DATA_DIR, "hand.mrcs")
+        poses = os.path.join(DATA_DIR, "hand_rot.pkl")
+    else:
+        raise ValueError(f"Unrecognized dataset label `{dataset_lbl}`!")
+
+    return particles, poses
+
+
 class TrainDir:
+    """A folder containing trained cryoDRGN reconstruction output for use in tests.
+
+    Note that the reconstruction model training is done during initialization of an
+    instance of this class, and that the `replace_files` method can be used to clean
+    up after individual tests via the `orig_cache` subfolder.
+    """
+
     def __init__(
         self,
         dataset: str,
@@ -19,20 +48,13 @@ class TrainDir:
         out_lbl: Optional[str] = None,
     ) -> None:
         self.dataset = dataset
+        self.particles, self.poses = get_testing_datasets(dataset)
+
         self.train_cmd = train_cmd
         self.epochs = epochs
         self.out_lbl = out_lbl or "_".join([dataset, train_cmd])
         self.outdir = os.path.abspath(self.out_lbl)
         self.orig_cache = os.path.join(self.outdir, "orig_cache")
-
-        if self.dataset == "toy":
-            self.particles = os.path.join(DATA_DIR, "toy_projections.mrcs")
-            self.poses = os.path.join(DATA_DIR, "toy_angles.pkl")
-        elif self.dataset == "hand":
-            self.particles = os.path.join(DATA_DIR, "hand.mrcs")
-            self.poses = os.path.join(DATA_DIR, "hand_rot.pkl")
-        else:
-            raise ValueError(f"Unrecognized dataset label `{self.dataset}`!")
 
         cmd = (
             f"cryodrgn {self.train_cmd} {self.particles} -o {self.outdir} "
@@ -155,6 +177,14 @@ class TrainDir:
         assert self.all_files_present
 
 
+# Note the use of nested fixtures here with a function->session scope hierarchy that
+# allows for separate setup/teardown routines to be defined for the same `train_dir`
+# fixture across these scopes. Thus each time we need a directory with trained
+# experiment results we get one and replace any moved/deleted output files afterwards,
+# but the experiment is only run as often as necessary for each session, with the output
+# folder being cleaned up each time.
+
+
 @pytest.fixture(scope="session")
 def train_dir(request) -> TrainDir:
     """Run an experiment to generate output; remove this output when finished."""
@@ -188,6 +218,8 @@ def trained_dirs(train_dirs) -> list[TrainDir]:
 
 
 class AbInitioDir:
+    """A folder for running cryoDRGN ab initio experiment tests."""
+
     def __init__(
         self,
         zdim: int,
@@ -197,18 +229,11 @@ class AbInitioDir:
     ) -> None:
         self.zdim = zdim
         self.dataset = dataset
-        self.epochs = epochs
-        self.seed = seed
-
+        self.particles, _ = get_testing_datasets(dataset)
         self.outdir = os.path.abspath(f"test-output_{dataset}")
         os.makedirs(self.outdir)
-
-        if self.dataset == "toy":
-            self.particles = os.path.join(DATA_DIR, "toy_projections.mrcs")
-        elif self.dataset == "hand":
-            self.particles = os.path.join(DATA_DIR, "hand.mrcs")
-        else:
-            raise ValueError(f"Unrecognized dataset label `{self.dataset}`!")
+        self.epochs = epochs
+        self.seed = seed
 
     @classmethod
     def parse_request(cls, req: dict[str, Any]) -> dict[str, Any]:

@@ -1,14 +1,13 @@
 import os
-import shutil
 import pickle
-import yaml
-import logging
 from datetime import datetime as dt
 from collections import OrderedDict
 import numpy as np
+from typing import Any
 import time
 
 import torch
+from torch import nn
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 
@@ -17,14 +16,13 @@ from cryodrgn import utils
 from cryodrgn import dataset
 from cryodrgn import ctf
 from cryodrgn import summary
-from cryodrgn.lattice import Lattice
 from cryodrgn.losses import kl_divergence_conf, l1_regularizer, l2_frequency_bias
 from cryodrgn.models.amortized_inference import DRGNai, MyDataParallel
 from cryodrgn.mask import CircularMask, FrequencyMarchingMask
-from cryodrgn.models.config import ModelConfigurations
+from cryodrgn.models.trainers import ModelTrainer
 
 
-class AmortizedInferenceTrainer:
+class AmortizedInferenceTrainer(ModelTrainer):
     """An engine for training the reconstruction model on particle data.
 
     Attributes
@@ -40,9 +38,6 @@ class AmortizedInferenceTrainer:
                                 about the model as it is running.
     """
 
-    # options for optimizers to use
-    optim_types = {"adam": torch.optim.Adam, "lbfgs": torch.optim.LBFGS}
-
     # placeholders for runtimes
     run_phases = [
         "dataloading",
@@ -57,150 +52,248 @@ class AmortizedInferenceTrainer:
         "to_cpu",
     ]
 
-    def __init__(self, config_vals: dict) -> None:
-        self.logger = logging.getLogger(__name__)
-        self.configs = AmortizedInferenceConfigurations(config_vals)
+    config_defaults = OrderedDict(
+        {
+            # dataset
+            "particles": None,
+            "ctf": None,
+            "pose": None,
+            "dataset": None,
+            "server": None,
+            "datadir": None,
+            "ind": None,
+            "labels": None,
+            "relion31": False,
+            "no_trans": False,
+            # initialization
+            "use_gt_poses": False,
+            "refine_gt_poses": False,
+            "use_gt_trans": False,
+            "load": None,
+            "initial_conf": None,
+            # logging
+            "log_interval": 10000,
+            "log_heavy_interval": 5,
+            "verbose_time": False,
+            # data loading
+            "shuffle": True,
+            "lazy": False,
+            "num_workers": 2,
+            "max_threads": 16,
+            "shuffler_size": 32768,
+            "batch_size_known_poses": 32,
+            "batch_size_hps": 8,
+            "batch_size_sgd": 256,
+            # optimizers
+            "hypervolume_optimizer_type": "adam",
+            "pose_table_optimizer_type": "adam",
+            "conf_table_optimizer_type": "adam",
+            "conf_encoder_optimizer_type": "adam",
+            "lr": 1.0e-4,
+            "lr_pose_table": 1.0e-3,
+            "lr_conf_table": 1.0e-2,
+            "lr_conf_encoder": 1.0e-4,
+            "wd": 0.0,
+            # scheduling
+            "n_imgs_pose_search": 500000,
+            "epochs_sgd": 100,
+            "pose_only_phase": 0,
+            # masking
+            "output_mask": "circ",
+            "add_one_frequency_every": 100000,
+            "n_frequencies_per_epoch": 10,
+            "max_freq": None,
+            "window_radius_gt_real": 0.85,
+            "l_start_fm": 12,
+            # loss
+            "beta_conf": 0.0,
+            "trans_l1_regularizer": 0.0,
+            "l2_smoothness_regularizer": 0.0,
+            # conformations
+            "variational_het": False,
+            "z_dim": 4,
+            "std_z_init": 0.1,
+            "use_conf_encoder": False,
+            "depth_cnn": 5,
+            "channels_cnn": 32,
+            "kernel_size_cnn": 3,
+            "resolution_encoder": None,
+            # hypervolume
+            "explicit_volume": False,
+            "hypervolume_layers": 3,
+            "hypervolume_dim": 256,
+            "pe_type": "gaussian",
+            "pe_dim": 64,
+            "feat_sigma": 0.5,
+            "hypervolume_domain": "hartley",
+            "pe_type_conf": None,
+            # pre-training
+            "n_imgs_pretrain": 10000,
+            "pretrain_with_gt_poses": False,
+            # pose search
+            "l_start": 12,
+            "l_end": 32,
+            "n_iter": 4,
+            "t_extent": 20.0,
+            "t_n_grid": 7,
+            "t_x_shift": 0.0,
+            "t_y_shift": 0.0,
+            "no_trans_search_at_pose_search": False,
+            "n_kept_poses": 8,
+            "base_healpy": 2,
+            # subtomogram averaging
+            "subtomogram_averaging": False,
+            "n_tilts": 11,
+            "dose_per_tilt": 2.93,
+            "angle_per_tilt": 3.0,
+            "n_tilts_pose_search": 11,
+            "average_over_tilts": False,
+            "tilt_axis_angle": 0.0,
+            "dose_exposure_correction": True,
+            # others
+            "palette_type": None,
+        }
+    )
 
-        # output directory
-        if os.path.exists(self.configs.outdir):
-            self.logger.warning(
-                "Output directory already exists." "Renaming the old one."
-            )
-
-            newdir = self.configs.outdir + "_old"
-            if os.path.exists(newdir):
-                self.logger.warning("Must delete the previously " "saved old output.")
-                shutil.rmtree(newdir)
-
-            os.rename(self.configs.outdir, newdir)
-
-        os.makedirs(self.configs.outdir)
-        self.logger.addHandler(
-            logging.FileHandler(os.path.join(self.configs.outdir, "training.log"))
+    def parse_configs(cls, configs: dict[str, Any]) -> dict[str, Any]:
+        assert configs["model"] == "amort", (
+            f"Mismatched model {configs['model']} for AmortizedInferenceTrainer!"
         )
 
-        n_gpus = torch.cuda.device_count()
-        self.logger.info(f"Number of available gpus: {n_gpus}")
-        self.n_prcs = max(n_gpus, 1)
-
-        self.batch_size_known_poses = self.configs.batch_size_known_poses * self.n_prcs
-        self.batch_size_hps = self.configs.batch_size_hps * self.n_prcs
-        self.batch_size_sgd = self.configs.batch_size_sgd * self.n_prcs
-
-        np.random.seed(self.configs.seed)
-        torch.manual_seed(self.configs.seed)
-
-        # set the device
-        self.use_cuda = torch.cuda.is_available()
-        self.device = torch.device("cuda:0" if self.use_cuda else "cpu")
-        self.logger.info(f"Use cuda {self.use_cuda}")
-
-        # tensorboard writer
-        self.summaries_dir = os.path.join(self.configs.outdir, "summaries")
-        os.makedirs(self.summaries_dir, exist_ok=True)
-        self.writer = SummaryWriter(self.summaries_dir)
-        self.logger.info("Will write tensorboard summaries " f"in {self.summaries_dir}")
-
-        # load the optional index used to filter particles
-        if self.configs.ind is not None:
-            if isinstance(self.configs.ind, int):
-                self.logger.info(f"Keeping {self.configs.ind} particles")
-                self.index = np.arange(self.configs.ind)
-
-            elif isinstance(self.configs.ind, str):
-                if not os.path.exists(self.configs.ind):
-                    raise ValueError(
-                        "Given subset index file "
-                        f"`{self.configs.ind}` does not exist!"
-                    )
-
-                self.logger.info(f"Filtering dataset with {self.configs.ind}")
-                self.index = pickle.load(open(self.configs.ind, "rb"))
-
-        else:
-            self.index = None
-
-        # load the particles
-        self.logger.info("Creating dataset")
-        if not self.configs.subtomogram_averaging:
-            self.data = dataset.ImageDataset(
-                mrcfile=self.configs.particles,
-                ind=self.index,
-                lazy=self.configs.lazy,
-                max_threads=self.configs.max_threads,
-                window_r=self.configs.window_radius_gt_real,
-                datadir=self.configs.datadir,
-            )
-            self.n_particles_dataset = self.data.N
-
-        else:
-            self.data = dataset.TiltSeriesData(
-                tiltstar=self.configs.particles,
-                ind=self.index,
-                ntilts=self.configs.n_tilts,
-                angle_per_tilt=self.configs.angle_per_tilt,
-                window_r=self.configs.window_radius_gt_real,
-                datadir=self.configs.datadir,
-                max_threads=self.configs.max_threads,
-                dose_per_tilt=self.configs.dose_per_tilt,
-                device=self.device,
-                poses_gt_pkl=self.configs.pose,
-                tilt_axis_angle=self.configs.tilt_axis_angle,
-                no_trans=self.configs.no_trans,
-            )
-            self.n_particles_dataset = self.data.Np
-
-        self.n_tilts_dataset = self.data.N
-        self.resolution = self.data.D
-
-        # load ctf
-        if self.configs.ctf is not None:
-            self.logger.info(f"Loading ctf params from {self.configs.ctf}")
-
-            ctf_params = ctf.load_ctf_for_training(
-                self.resolution - 1, self.configs.ctf
+        if configs["explicit_volume"] and configs["z_dim"] >= 1:
+            raise ValueError(
+                "Explicit volumes do not support " "heterogeneous reconstruction."
             )
 
-            if self.index is not None:
-                self.logger.info("Filtering dataset")
-                ctf_params = ctf_params[self.index]
-
-            assert ctf_params.shape == (self.n_tilts_dataset, 8)
-            if self.configs.subtomogram_averaging:
-                ctf_params = np.concatenate(
-                    (ctf_params, self.data.ctfscalefactor.reshape(-1, 1)),
-                    axis=1,  # type: ignore
+        if configs["dataset"] is None:
+            if configs["particles"] is None:
+                raise ValueError(
+                    "As dataset was not specified, please " "specify particles!"
                 )
-                self.data.voltage = float(ctf_params[0, 4])
 
-            self.ctf_params = torch.tensor(ctf_params)
-            self.ctf_params = self.ctf_params.to(self.device)
+            if configs["ctf"] is None:
+                raise ValueError("As dataset was not specified, please " "specify ctf!")
 
-            if self.configs.subtomogram_averaging:
-                self.data.voltage = float(self.ctf_params[0, 4])
+        if configs["hypervolume_optimizer_type"] not in {"adam"}:
+            raise ValueError(
+                "Invalid value "
+                f"`{configs['hypervolume_optimizer_type']}` "
+                "for hypervolume_optimizer_type!"
+            )
 
-        else:
-            self.ctf_params = None
+        if configs["pose_table_optimizer_type"] not in {"adam", "lbfgs"}:
+            raise ValueError(
+                "Invalid value "
+                f"`{configs['pose_table_optimizer_type']}` "
+                "for pose_table_optimizer_type!"
+            )
 
-        # lattice
-        self.logger.info("Building lattice")
-        self.lattice = Lattice(self.resolution, extent=0.5, device=self.device)
+        if configs["conf_table_optimizer_type"] not in {"adam", "lbfgs"}:
+            raise ValueError(
+                "Invalid value "
+                f"`{configs['conf_table_optimizer_type']}` "
+                "for conf_table_optimizer_type!"
+            )
 
+        if configs["conf_encoder_optimizer_type"] not in {"adam"}:
+            raise ValueError(
+                "Invalid value "
+                f"`{configs['conf_encoder_optimizer_type']}` "
+                "for conf_encoder_optimizer_type!"
+            )
+
+        if configs["output_mask"] not in {"circ", "frequency_marching"}:
+            raise ValueError(f"Invalid value {configs['output_mask']} for output_mask!")
+
+        if configs["pe_type"] not in {"gaussian"}:
+            raise ValueError(f"Invalid value {configs['pe_type']} for pe_type!")
+
+        if configs["pe_type_conf"] not in {None, "geom"}:
+            raise ValueError(
+                f"Invalid value {configs['pe_type_conf']} for pe_type_conf!"
+            )
+
+        if configs["hypervolume_domain"] not in {"hartley"}:
+            raise ValueError(
+                f"Invalid value {configs['hypervolume_domain']} for hypervolume_domain."
+            )
+
+        if configs["n_imgs_pose_search"] < 0:
+            raise ValueError("n_imgs_pose_search must be greater than 0!")
+
+        if configs["use_conf_encoder"] and configs["initial_conf"]:
+            raise ValueError(
+                "Conformations cannot be initialized when also using an encoder!"
+            )
+
+        if configs["use_gt_trans"] and configs["pose"] is None:
+            raise ValueError(
+                "Poses must be specified to use ground-truth translations!"
+            )
+
+        if configs["refine_gt_poses"]:
+            configs["n_imgs_pose_search"] = 0
+
+            if configs["pose"] is None:
+                raise ValueError("Initial poses must be specified to be refined!")
+
+        if configs["subtomogram_averaging"]:
+
+            # TODO: Implement conformation encoder for subtomogram averaging.
+            if configs["use_conf_encoder"]:
+                raise ValueError(
+                    "Conformation encoder is not implemented "
+                    "for subtomogram averaging!"
+                )
+
+            # TODO: Implement translation search for subtomogram averaging.
+            if not (configs["use_gt_poses"]
+                    or configs["use_gt_trans"]
+                    or configs["t_extent"] == 0.0):
+                raise ValueError(
+                    "Translation search is not implemented "
+                    "for subtomogram averaging!"
+                )
+
+            if (configs["average_over_tilts"]
+                    and configs["n_tilts_pose_search"] % 2 == 0):
+                raise ValueError(
+                    "`n_tilts_pose_search` must be odd to use `average_over_tilts`!"
+                )
+
+            if configs["n_tilts_pose_search"] > configs["n_tilts"]:
+                raise ValueError("`n_tilts_pose_search` must be smaller than `n_tilts`!")
+
+        if configs["use_gt_poses"]:
+            # "poses" include translations
+            configs["use_gt_trans"] = True
+
+            if configs["pose"] is None:
+                raise ValueError("Ground truth poses must be specified!")
+
+        if configs["no_trans"]:
+            configs["t_extent"] = 0.0
+        if configs["t_extent"] == 0.0:
+            configs["t_n_grid"] = 1
+
+        return super().parse_configs(configs)
+
+    def make_model(self, configs: dict[str, Any]) -> nn.Module:
         # output mask
-        if self.configs.output_mask == "circ":
+        if configs["output_mask"] == "circ":
             radius = (
                 self.lattice.D // 2
-                if self.configs.max_freq is None
-                else self.configs.max_freq
+                if configs["max_freq"] is None
+                else configs["max_freq"]
             )
-            self.output_mask = CircularMask(self.lattice, radius)
+            output_mask = CircularMask(self.lattice, radius)
 
-        elif self.configs.output_mask == "frequency_marching":
-            self.output_mask = FrequencyMarchingMask(
+        elif configs["output_mask"] == "frequency_marching":
+            output_mask = FrequencyMarchingMask(
                 self.lattice,
                 self.lattice.D // 2,
-                radius=self.configs.l_start_fm,
-                add_one_every=self.configs.add_one_frequency_every,
+                radius=configs["l_start_fm"],
+                add_one_every=configs["add_one_frequency_every"],
             )
 
         else:
@@ -208,12 +301,72 @@ class AmortizedInferenceTrainer:
 
         # pose search
         ps_params = None
-        self.epochs_pose_search = 0
 
-        if self.configs.n_imgs_pose_search > 0:
-            self.epochs_pose_search = max(
-                2, self.configs.n_imgs_pose_search // self.n_particles_dataset + 1
+        # cnn
+        cnn_params = {
+            "conf": self.configs.use_conf_encoder,
+            "depth_cnn": self.configs.depth_cnn,
+            "channels_cnn": self.configs.channels_cnn,
+            "kernel_size_cnn": self.configs.kernel_size_cnn,
+            }
+
+        # conformational encoder
+        if self.configs.z_dim > 0:
+            self.logger.info(
+                "Heterogeneous reconstruction with " f"z_dim = {self.configs.z_dim}"
+                )
+        else:
+            self.logger.info("Homogeneous reconstruction")
+
+        conf_regressor_params = {
+            "z_dim": self.configs.z_dim,
+            "std_z_init": self.configs.std_z_init,
+            "variational": self.configs.variational_het,
+            }
+
+        # hypervolume
+        hyper_volume_params = {
+            "explicit_volume": self.configs.explicit_volume,
+            "n_layers": self.configs.hypervolume_layers,
+            "hidden_dim": self.configs.hypervolume_dim,
+            "pe_type": self.configs.pe_type,
+            "pe_dim": self.configs.pe_dim,
+            "feat_sigma": self.configs.feat_sigma,
+            "domain": self.configs.hypervolume_domain,
+            "extent": self.lattice.extent,
+            "pe_type_conf": self.configs.pe_type_conf,
+            }
+
+        will_use_point_estimates = configs["epochs_sgd"] >= 1
+
+        return DRGNai(
+            self.lattice,
+            output_mask,
+            self.n_particles_dataset,
+            self.n_tilts_dataset,
+            cnn_params,
+            conf_regressor_params,
+            hyper_volume_params,
+            resolution_encoder=self.configs.resolution_encoder,
+            no_trans=self.configs.no_trans,
+            use_gt_poses=self.configs.use_gt_poses,
+            use_gt_trans=self.configs.use_gt_trans,
+            will_use_point_estimates=will_use_point_estimates,
+            ps_params=ps_params,
+            verbose_time=self.configs.verbose_time,
+            pretrain_with_gt_poses=self.configs.pretrain_with_gt_poses,
+            n_tilts_pose_search=self.configs.n_tilts_pose_search,
             )
+
+    def __init__(self, configs: dict[str, Any]) -> None:
+        super().__init__(configs)
+
+        if configs["n_imgs_pose_search"] > 0:
+            self.epochs_pose_search = max(
+                2, configs["n_imgs_pose_search"] // self.n_particles_dataset + 1
+                )
+        else:
+            self.epochs_pose_search = 0
 
         if self.epochs_pose_search > 0:
             ps_params = {
@@ -234,99 +387,23 @@ class AmortizedInferenceTrainer:
                     else None
                 ),
                 "average_over_tilts": self.configs.average_over_tilts,
-            }
+                }
 
-        # cnn
-        cnn_params = {
-            "conf": self.configs.use_conf_encoder,
-            "depth_cnn": self.configs.depth_cnn,
-            "channels_cnn": self.configs.channels_cnn,
-            "kernel_size_cnn": self.configs.kernel_size_cnn,
-        }
+        self.batch_size_known_poses = self.configs.batch_size_known_poses * self.n_prcs
+        self.batch_size_hps = self.configs.batch_size_hps * self.n_prcs
+        self.batch_size_sgd = self.configs.batch_size_sgd * self.n_prcs
 
-        # conformational encoder
-        if self.configs.z_dim > 0:
-            self.logger.info(
-                "Heterogeneous reconstruction with " f"z_dim = {self.configs.z_dim}"
-            )
-        else:
-            self.logger.info("Homogeneous reconstruction")
-
-        conf_regressor_params = {
-            "z_dim": self.configs.z_dim,
-            "std_z_init": self.configs.std_z_init,
-            "variational": self.configs.variational_het,
-        }
-
-        # hypervolume
-        hyper_volume_params = {
-            "explicit_volume": self.configs.explicit_volume,
-            "n_layers": self.configs.hypervolume_layers,
-            "hidden_dim": self.configs.hypervolume_dim,
-            "pe_type": self.configs.pe_type,
-            "pe_dim": self.configs.pe_dim,
-            "feat_sigma": self.configs.feat_sigma,
-            "domain": self.configs.hypervolume_domain,
-            "extent": self.lattice.extent,
-            "pe_type_conf": self.configs.pe_type_conf,
-        }
-
-        will_use_point_estimates = self.configs.epochs_sgd >= 1
-        self.logger.info("Initializing model...")
-
-        self.model = DRGNai(
-            self.lattice,
-            self.output_mask,
-            self.n_particles_dataset,
-            self.n_tilts_dataset,
-            cnn_params,
-            conf_regressor_params,
-            hyper_volume_params,
-            resolution_encoder=self.configs.resolution_encoder,
-            no_trans=self.configs.no_trans,
-            use_gt_poses=self.configs.use_gt_poses,
-            use_gt_trans=self.configs.use_gt_trans,
-            will_use_point_estimates=will_use_point_estimates,
-            ps_params=ps_params,
-            verbose_time=self.configs.verbose_time,
-            pretrain_with_gt_poses=self.configs.pretrain_with_gt_poses,
-            n_tilts_pose_search=self.configs.n_tilts_pose_search,
-        )
-
-        # TODO: auto-loading from last weights file if load=True?
-        # initialization from a previous checkpoint
-        if self.configs.load:
-            self.logger.info(f"Loading checkpoint from {self.configs.load}")
-            checkpoint = torch.load(self.configs.load)
-            state_dict = checkpoint["model_state_dict"]
-
-            if "base_shifts" in state_dict:
-                state_dict.pop("base_shifts")
-
-            self.logger.info(self.model.load_state_dict(state_dict, strict=False))
-            self.start_epoch = checkpoint["epoch"] + 1
-
-            if "output_mask_radius" in checkpoint:
-                self.output_mask.update_radius(checkpoint["output_mask_radius"])
-
-        else:
-            self.start_epoch = -1
-
-        # move to gpu and parallelize
-        self.logger.info(self.model)
-        parameter_count = sum(
-            p.numel() for p in self.model.parameters() if p.requires_grad
-        )
-        self.logger.info(f"{parameter_count} parameters in model")
+        # tensorboard writer
+        self.summaries_dir = os.path.join(self.configs.outdir, "summaries")
+        os.makedirs(self.summaries_dir, exist_ok=True)
+        self.writer = SummaryWriter(self.summaries_dir)
+        self.logger.info("Will write tensorboard summaries " f"in {self.summaries_dir}")
 
         # TODO: Replace with DistributedDataParallel
         if self.n_prcs > 1:
             self.model = MyDataParallel(self.model)
 
-        self.logger.info("Model initialized. Moving to GPU...")
-        self.model.to(self.device)
         self.model.output_mask.binary_mask = self.model.output_mask.binary_mask.cpu()
-
         self.optimizers = dict()
         self.optimizer_types = dict()
 
@@ -390,14 +467,6 @@ class AmortizedInferenceTrainer:
 
         self.optimized_modules = []
 
-        # initialization from a previous checkpoint
-        if self.configs.load:
-            checkpoint = torch.load(self.configs.load)
-
-            for key in self.optimizers:
-                self.optimizers[key].load_state_dict(
-                    checkpoint["optimizers_state_dict"][key]
-                )
 
         # dataloaders
         self.data_generator_pose_search = dataset.make_dataloader(
@@ -1190,386 +1259,3 @@ class AmortizedInferenceTrainer:
             saved_objects["output_mask_radius"] = self.output_mask.current_radius
 
         torch.save(saved_objects, out_weights)
-
-
-class AmortizedInferenceConfigurations(ModelConfigurations):
-
-    __slots__ = (
-        "particles",
-        "ctf",
-        "pose",
-        "dataset",
-        "server",
-        "datadir",
-        "ind",
-        "labels",
-        "relion31",
-        "no_trans",
-        "use_gt_poses",
-        "refine_gt_poses",
-        "use_gt_trans",
-        "load",
-        "initial_conf",
-        "log_interval",
-        "log_heavy_interval",
-        "verbose_time",
-        "shuffle",
-        "lazy",
-        "num_workers",
-        "max_threads",
-        "shuffler_size",
-        "batch_size_known_poses",
-        "batch_size_hps",
-        "batch_size_sgd",
-        "hypervolume_optimizer_type",
-        "pose_table_optimizer_type",
-        "conf_table_optimizer_type",
-        "conf_encoder_optimizer_type",
-        "lr",
-        "lr_pose_table",
-        "lr_conf_table",
-        "lr_conf_encoder",
-        "wd",
-        "n_imgs_pose_search",
-        "epochs_sgd",
-        "pose_only_phase",
-        "output_mask",
-        "add_one_frequency_every",
-        "n_frequencies_per_epoch",
-        "max_freq",
-        "window_radius_gt_real",
-        "l_start_fm",
-        "beta_conf",
-        "trans_l1_regularizer",
-        "l2_smoothness_regularizer",
-        "variational_het",
-        "z_dim",
-        "std_z_init",
-        "use_conf_encoder",
-        "depth_cnn",
-        "channels_cnn",
-        "kernel_size_cnn",
-        "resolution_encoder",
-        "explicit_volume",
-        "hypervolume_layers",
-        "hypervolume_dim",
-        "pe_type",
-        "pe_dim",
-        "feat_sigma",
-        "hypervolume_domain",
-        "pe_type_conf",
-        "n_imgs_pretrain",
-        "pretrain_with_gt_poses",
-        "l_start",
-        "l_end",
-        "n_iter",
-        "t_extent",
-        "t_n_grid",
-        "t_x_shift",
-        "t_y_shift",
-        "no_trans_search_at_pose_search",
-        "n_kept_poses",
-        "base_healpy",
-        "subtomogram_averaging",
-        "n_tilts",
-        "dose_per_tilt",
-        "angle_per_tilt",
-        "n_tilts_pose_search",
-        "average_over_tilts",
-        "tilt_axis_angle",
-        "dose_exposure_correction",
-        "seed",
-        "palette_type",
-    )
-    defaults = OrderedDict(
-        {
-            # dataset
-            "particles": None,
-            "ctf": None,
-            "pose": None,
-            "dataset": None,
-            "server": None,
-            "datadir": None,
-            "ind": None,
-            "labels": None,
-            "relion31": False,
-            "no_trans": False,
-            # initialization
-            "use_gt_poses": False,
-            "refine_gt_poses": False,
-            "use_gt_trans": False,
-            "load": None,
-            "initial_conf": None,
-            # logging
-            "log_interval": 10000,
-            "log_heavy_interval": 5,
-            "verbose_time": False,
-            # data loading
-            "shuffle": True,
-            "lazy": False,
-            "num_workers": 2,
-            "max_threads": 16,
-            "shuffler_size": 32768,
-            "batch_size_known_poses": 32,
-            "batch_size_hps": 8,
-            "batch_size_sgd": 256,
-            # optimizers
-            "hypervolume_optimizer_type": "adam",
-            "pose_table_optimizer_type": "adam",
-            "conf_table_optimizer_type": "adam",
-            "conf_encoder_optimizer_type": "adam",
-            "lr": 1.0e-4,
-            "lr_pose_table": 1.0e-3,
-            "lr_conf_table": 1.0e-2,
-            "lr_conf_encoder": 1.0e-4,
-            "wd": 0.0,
-            # scheduling
-            "n_imgs_pose_search": 500000,
-            "epochs_sgd": 100,
-            "pose_only_phase": 0,
-            # masking
-            "output_mask": "circ",
-            "add_one_frequency_every": 100000,
-            "n_frequencies_per_epoch": 10,
-            "max_freq": None,
-            "window_radius_gt_real": 0.85,
-            "l_start_fm": 12,
-            # loss
-            "beta_conf": 0.0,
-            "trans_l1_regularizer": 0.0,
-            "l2_smoothness_regularizer": 0.0,
-            # conformations
-            "variational_het": False,
-            "z_dim": 4,
-            "std_z_init": 0.1,
-            "use_conf_encoder": False,
-            "depth_cnn": 5,
-            "channels_cnn": 32,
-            "kernel_size_cnn": 3,
-            "resolution_encoder": None,
-            # hypervolume
-            "explicit_volume": False,
-            "hypervolume_layers": 3,
-            "hypervolume_dim": 256,
-            "pe_type": "gaussian",
-            "pe_dim": 64,
-            "feat_sigma": 0.5,
-            "hypervolume_domain": "hartley",
-            "pe_type_conf": None,
-            # pre-training
-            "n_imgs_pretrain": 10000,
-            "pretrain_with_gt_poses": False,
-            # pose search
-            "l_start": 12,
-            "l_end": 32,
-            "n_iter": 4,
-            "t_extent": 20.0,
-            "t_n_grid": 7,
-            "t_x_shift": 0.0,
-            "t_y_shift": 0.0,
-            "no_trans_search_at_pose_search": False,
-            "n_kept_poses": 8,
-            "base_healpy": 2,
-            # subtomogram averaging
-            "subtomogram_averaging": False,
-            "n_tilts": 11,
-            "dose_per_tilt": 2.93,
-            "angle_per_tilt": 3.0,
-            "n_tilts_pose_search": 11,
-            "average_over_tilts": False,
-            "tilt_axis_angle": 0.0,
-            "dose_exposure_correction": True,
-            # others
-            "seed": -1,
-            "palette_type": None,
-        }
-    )
-
-    quick_defaults = {
-        "capture_setup": {
-            "spa": dict(),
-            "et": {
-                "subtomogram_averaging": True,
-                "shuffler_size": 0,
-                "num_workers": 0,
-                "t_extent": 0.0,
-                "batch_size_known_poses": 8,
-                "batch_size_sgd": 32,
-                "n_imgs_pose_search": 150000,
-                "pose_only_phase": 50000,
-                "lr_pose_table": 1.0e-5,
-            },
-        },
-        "reconstruction_type": {"homo": {"z_dim": 0}, "het": dict()},
-        "pose_estimation": {
-            "abinit": dict(),
-            "refine": {"refine_gt_poses": True, "lr_pose_table": 1.0e-4},
-            "fixed": {"use_gt_poses": True},
-        },
-        "conf_estimation": {
-            None: dict(),
-            "autodecoder": dict(),
-            "refine": dict(),
-            "encoder": {"use_conf_encoder": True},
-        },
-    }
-
-    def __init__(self, config_vals: dict):
-        assert config_vals["model"] == "amort"
-        super().__init__(config_vals)
-
-        if self.seed < 0:
-            self.seed = np.random.randint(0, 10000)
-
-        # process the quick_config parameter
-        if self.quick_config is not None:
-            for key, value in self.quick_config.items():
-                if key not in self.quick_defaults:
-                    raise ValueError(
-                        "Unrecognized parameter " f"shortcut field `{key}`!"
-                    )
-
-                if value not in self.quick_defaults[key]:
-                    raise ValueError(
-                        "Unrecognized parameter shortcut label "
-                        f"`{value}` for field `{key}`!"
-                    )
-
-                for _key, _value in self.quick_defaults[key][value].items():
-                    if _key not in self.defaults:
-                        raise ValueError(
-                            "Unrecognized configuration " f"parameter `{key}`!"
-                        )
-
-                    # given parameters have priority
-                    if _key not in config_vals:
-                        setattr(self, _key, _value)
-
-        if not self.outdir:
-            raise ValueError("Must specify an outdir!")
-
-        if self.explicit_volume and self.z_dim >= 1:
-            raise ValueError(
-                "Explicit volumes do not support " "heterogeneous reconstruction."
-            )
-
-        if self.dataset is None:
-            if self.particles is None:
-                raise ValueError(
-                    "As dataset was not specified, please " "specify particles!"
-                )
-
-            if self.ctf is None:
-                raise ValueError("As dataset was not specified, please " "specify ctf!")
-
-        if self.hypervolume_optimizer_type not in {"adam"}:
-            raise ValueError(
-                "Invalid value "
-                f"`{self.hypervolume_optimizer_type}` "
-                "for hypervolume_optimizer_type!"
-            )
-
-        if self.pose_table_optimizer_type not in {"adam", "lbfgs"}:
-            raise ValueError(
-                "Invalid value "
-                f"`{self.pose_table_optimizer_type}` "
-                "for pose_table_optimizer_type!"
-            )
-
-        if self.conf_table_optimizer_type not in {"adam", "lbfgs"}:
-            raise ValueError(
-                "Invalid value "
-                f"`{self.conf_table_optimizer_type}` "
-                "for conf_table_optimizer_type!"
-            )
-
-        if self.conf_encoder_optimizer_type not in {"adam"}:
-            raise ValueError(
-                "Invalid value "
-                f"`{self.conf_encoder_optimizer_type}` "
-                "for conf_encoder_optimizer_type!"
-            )
-
-        if self.output_mask not in {"circ", "frequency_marching"}:
-            raise ValueError("Invalid value " f"{self.output_mask} for output_mask!")
-
-        if self.pe_type not in {"gaussian"}:
-            raise ValueError(f"Invalid value {self.pe_type} for pe_type!")
-
-        if self.pe_type_conf not in {None, "geom"}:
-            raise ValueError(f"Invalid value {self.pe_type_conf} " "for pe_type_conf!")
-
-        if self.hypervolume_domain not in {"hartley"}:
-            raise ValueError(
-                f"Invalid value {self.hypervolume_domain} " "for hypervolume_domain."
-            )
-
-        if self.n_imgs_pose_search < 0:
-            raise ValueError("n_imgs_pose_search must be greater than 0!")
-
-        if self.use_conf_encoder and self.initial_conf:
-            raise ValueError(
-                "Conformations cannot be initialized " "when using an encoder!"
-            )
-
-        if self.use_gt_trans and self.pose is None:
-            raise ValueError("Poses must be specified to use GT translations!")
-
-        if self.refine_gt_poses:
-            self.n_imgs_pose_search = 0
-
-            if self.pose is None:
-                raise ValueError("Initial poses must be specified " "to be refined!")
-
-        if self.subtomogram_averaging:
-
-            # TODO: Implement conformation encoder for subtomogram averaging.
-            if self.use_conf_encoder:
-                raise ValueError(
-                    "Conformation encoder is not implemented "
-                    "for subtomogram averaging!"
-                )
-
-            # TODO: Implement translation search for subtomogram averaging.
-            if not (self.use_gt_poses or self.use_gt_trans or self.t_extent == 0.0):
-                raise ValueError(
-                    "Translation search is not implemented "
-                    "for subtomogram averaging!"
-                )
-
-            if self.average_over_tilts and self.n_tilts_pose_search % 2 == 0:
-                raise ValueError(
-                    "n_tilts_pose_search must be odd " "to use average_over_tilts!"
-                )
-
-            if self.n_tilts_pose_search > self.n_tilts:
-                raise ValueError("n_tilts_pose_search must be " "smaller than n_tilts!")
-        if self.use_gt_poses:
-            # "poses" include translations
-            self.use_gt_trans = True
-
-            if self.pose is None:
-                raise ValueError("Ground truth poses must be specified!")
-
-        if self.no_trans:
-            self.t_extent = 0.0
-        if self.t_extent == 0.0:
-            self.t_n_grid = 1
-
-        if self.dataset:
-            with open(os.environ.get("DRGNAI_DATASETS"), "r") as f:
-                paths = yaml.safe_load(f)
-
-            self.particles = paths[self.dataset]["particles"]
-            self.ctf = paths[self.dataset]["ctf"]
-
-            if self.pose is None and "pose" in paths[self.dataset]:
-                self.pose = paths[self.dataset]["pose"]
-            if "datadir" in paths[self.dataset]:
-                self.datadir = paths[self.dataset]["datadir"]
-            if "labels" in paths[self.dataset]:
-                self.labels = paths[self.dataset]["labels"]
-            if self.ind is None and "ind" in paths[self.dataset]:
-                self.ind = paths[self.dataset]["ind"]
-            if "dose_per_tilt" in paths[self.dataset]:
-                self.dose_per_tilt = paths[self.dataset]["dose_per_tilt"]

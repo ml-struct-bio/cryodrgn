@@ -1,6 +1,5 @@
 import os
 import pickle
-import logging
 from datetime import datetime as dt
 from collections import OrderedDict
 from typing import Any
@@ -14,12 +13,11 @@ import torch.nn.functional as F
 from cryodrgn import ctf, dataset, lie_tools, utils
 from cryodrgn.beta_schedule import LinearSchedule, get_beta_schedule
 import cryodrgn.models.config
-from cryodrgn.lattice import Lattice
 from cryodrgn.losses import EquivarianceLoss
 from cryodrgn.models.variational_autoencoder import unparallelize, HetOnlyVAE
 from cryodrgn.models.neural_nets import get_decoder
-from cryodrgn.models.config import ModelConfigurations
 from cryodrgn.pose_search import PoseSearch
+from cryodrgn.models.trainers import ModelTrainer
 
 
 def save_config(args, dataset, lattice, model, out_config):
@@ -58,68 +56,50 @@ def save_config(args, dataset, lattice, model, out_config):
     cryodrgn.models.config.save(config, out_config)
 
 
-class HierarchicalSearchTrainer:
-    def make_model(self) -> HetOnlyVAE:
-        if self.zdim == 0:
+class HierarchicalSearchTrainer(ModelTrainer):
+
+    def parse_configs(cls, configs: dict[str, Any]) -> dict[str, Any]:
+        assert configs["model"] == "hps", (
+            f"Mismatched model {configs['model']} for HierarchicalSearchTrainer!"
+        )
+
+        return super().parse_configs(configs)
+
+    def make_model(self, configs) -> HetOnlyVAE:
+        if configs["zdim"] == 0:
             model = get_decoder(
                 3,
-                self.D,
-                self.configs.dec_layers,
-                self.configs.dec_dim,
-                self.configs.domain,
-                self.configs.pe_type,
-                enc_dim=self.configs.pe_dim,
-                activation=self.activation,
-                feat_sigma=self.configs.feat_sigma,
+                configs["D"],
+                configs["dec_layers"],
+                configs["dec_dim"],
+                configs["domain"],
+                configs["pe_type"],
+                configs["pe_dim"],
+                activation=configs["activation"],
+                feat_sigma=configs["feat_sigma"],
             )
         else:
             model = HetOnlyVAE(
                 self.lattice,
-                self.configs.enc_layers,
-                self.configs.enc_dim,
-                self.configs.dec_layers,
-                self.configs.dec_dim,
-                self.in_dim,
-                self.zdim,
-                encode_mode=self.configs.encode_mode,
-                enc_mask=self.enc_mask,
-                enc_type=self.configs.pe_type,
-                enc_dim=self.configs.pe_dim,
-                domain=self.configs.domain,
-                activation=self.activation,
-                feat_sigma=self.configs.feat_sigma,
+                configs["enc_layers"],
+                configs["enc_dim"],
+                configs["dec_layers"],
+                configs["dec_dim"],
+                configs["in_dim"],
+                configs["zdim"],
+                encode_mode=configs["encode_mode"],
+                enc_mask=configs["enc_mask"],
+                enc_type=configs["pe_type"],
+                enc_dim=configs["pe_dim"],
+                domain=configs["domain"],
+                activation=configs["activation"],
+                feat_sigma=configs["feat_sigma"],
             )
 
         return model
 
-    def __init__(self, configs: dict) -> None:
-        self.logger = logging.getLogger(__name__)
-        if configs["verbose"]:
-            self.logger.setLevel(logging.DEBUG)
-
-        self.configs = AbInitioConfigurations(configs)
-        self.outdir = self.configs.outdir
-        os.makedirs(self.outdir, exist_ok=True)
-        self.logger.addHandler(
-            logging.FileHandler(os.path.join(self.outdir, "training.log"))
-        )
-
-        if self.configs.load == "latest":
-            configs = self.get_latest()
-            self.configs = AbInitioConfigurations(configs)
-
-        self.logger.info(str(self.configs))
-
-        # set the random seed
-        np.random.seed(self.configs.seed)
-        torch.manual_seed(self.configs.seed)
-
-        # set the device
-        use_cuda = torch.cuda.is_available()
-        self.device = torch.device("cuda" if use_cuda else "cpu")
-        self.logger.info("Use cuda {}".format(use_cuda))
-        if not use_cuda:
-            self.logger.warning("WARNING: No GPUs detected")
+    def __init__(self, configs: dict[str, Any]) -> None:
+        super().__init__(configs)
 
         # set beta schedule
         self.zdim = self.configs.z_dim
@@ -129,52 +109,9 @@ class HierarchicalSearchTrainer:
 
             self.beta_schedule = get_beta_schedule(self.configs.beta)
 
-        # load index filter
-        if self.configs.ind is not None:
-            self.logger.info(f"Filtering image dataset with {self.configs.ind}")
-            self.ind = pickle.load(open(self.configs.ind, "rb"))
-        else:
-            self.ind = None
-
-        # load dataset
-        self.logger.info(f"Loading dataset from {self.configs.particles}")
-        if self.configs.tilt is None:
-            self.tilt = None
-        else:
-            self.tilt = torch.tensor(
-                utils.xrot(self.configs.tilt_deg).astype(np.float32), device=self.device
-            )
-
-        self.data = dataset.ImageDataset(
-            mrcfile=self.configs.particles,
-            norm=self.configs.data_norm,
-            invert_data=self.configs.invert_data,
-            ind=self.ind,
-            window=self.configs.window,
-            keepreal=self.configs.use_real,
-            datadir=self.configs.datadir,
-            window_r=self.configs.window_r,
-        )
-
-        self.Nimg = self.data.N
-        self.D = self.data.D
-
         if self.configs.encode_mode == "conv":
             if self.D - 1 != 64:
                 raise ValueError("Image size must be 64x64 for convolutional encoder!")
-
-        # load ctf
-        if self.configs.ctf is not None:
-            self.logger.info(f"Loading ctf params from {self.configs.ctf}")
-            ctf_params = ctf.load_ctf_for_training(self.D - 1, self.configs.ctf)
-            if self.ind is not None:
-                ctf_params = ctf_params[self.ind]
-            assert ctf_params.shape == (self.Nimg, 8), ctf_params.shape
-            self.ctf_params = torch.tensor(ctf_params, device=self.device)
-        else:
-            self.ctf_params = None
-
-        self.lattice = Lattice(self.D, extent=0.5, device=self.device)
 
         if self.zdim > 0:
             if self.configs.enc_mask is None:
@@ -199,15 +136,6 @@ class HierarchicalSearchTrainer:
         self.activation = {"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[
             self.configs.activation
         ]
-        self.model = self.make_model()
-        self.model.to(self.device)
-
-        self.logger.info(self.model)
-        self.logger.info(
-            "{} parameters in model".format(
-                sum(p.numel() for p in self.model.parameters() if p.requires_grad)
-            )
-        )
 
         self.equivariance_lambda = self.equivariance_loss = None
         if self.zdim > 0:
@@ -222,37 +150,27 @@ class HierarchicalSearchTrainer:
 
         self.optim = torch.optim.Adam(
             self.model.parameters(),
-            lr=self.configs.learning_rate,
-            weight_decay=self.configs.weight_decay,
+            lr=configs["learning_rate"],
+            weight_decay=configs["weight_decay"],
         )
 
         self.sorted_poses = list()
-        if self.configs.load:
-            self.configs.pretrain = 0
-            self.logger.info("Loading checkpoint from {}".format(self.configs.load))
-            checkpoint = torch.load(self.configs.load)
-            self.model.load_state_dict(checkpoint["model_state_dict"])
-            self.optim.load_state_dict(checkpoint["optimizer_state_dict"])
-            self.start_epoch = checkpoint["epoch"] + 1
-            self.model.train()
+        if self.configs.load_poses:
+            rot, trans = utils.load_pkl(self.configs.load_poses)
 
-            if self.configs.load_poses:
-                rot, trans = utils.load_pkl(self.configs.load_poses)
-                assert np.all(
-                    trans <= 1
-                ), "ERROR: Old pose format detected. Translations must be in units of fraction of box."
+            assert np.all(
+                trans <= 1
+            ), "ERROR: Old pose format detected. Translations must be in units of fraction of box."
 
-                # Convert translations to pixel units to feed back to the model
-                if isinstance(self.model, DataParallel):
-                    _model = self.model.module
-                    assert isinstance(_model, HetOnlyVAE)
-                    D = _model.lattice.D
-                else:
-                    D = self.model.lattice.D
+            # Convert translations to pixel units to feed back to the model
+            if isinstance(self.model, DataParallel):
+                _model = self.model.module
+                assert isinstance(_model, HetOnlyVAE)
+                D = _model.lattice.D
+            else:
+                D = self.model.lattice.D
 
-                self.sorted_poses = (rot, trans * D)
-        else:
-            self.start_epoch = 0
+            self.sorted_poses = (rot, trans * D)
 
         # parallelize
         if self.zdim > 0:
@@ -781,7 +699,7 @@ class HierarchicalSearchTrainer:
         self.logger.info(f"Loading {self.configs.load_poses}")
 
 
-class AbInitioConfigurations(ModelConfigurations):
+class AbInitioConfigurations:
 
     __slots__ = (
         "particles",
@@ -913,8 +831,8 @@ class AbInitioConfigurations(ModelConfigurations):
     )
 
     def __init__(self, config_vals: dict[str, Any]) -> None:
-        assert config_vals["model"] == "hps"
         super().__init__(config_vals)
+        assert self.model == "hps"
 
         if self.dataset is None:
             if self.particles is None:

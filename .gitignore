@@ -76,7 +76,7 @@ target/
 
 # pyenv
 .python-version
-cryodrgn/_version.py
+_version.py
 
 # celery beat schedule file
 celerybeat-schedule

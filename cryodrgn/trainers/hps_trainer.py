@@ -12,12 +12,12 @@ import torch.nn.functional as F
 
 from cryodrgn import ctf, dataset, lie_tools, utils
 from cryodrgn.beta_schedule import LinearSchedule, get_beta_schedule
-import cryodrgn.models.config
+import cryodrgn.trainers.config
 from cryodrgn.losses import EquivarianceLoss
 from cryodrgn.models.variational_autoencoder import unparallelize, HetOnlyVAE
 from cryodrgn.models.neural_nets import get_decoder
 from cryodrgn.pose_search import PoseSearch
-from cryodrgn.models.trainers import ModelTrainer
+from cryodrgn.trainers._base import ModelTrainer
 
 
 def save_config(args, dataset, lattice, model, out_config):
@@ -53,15 +53,14 @@ def save_config(args, dataset, lattice, model, out_config):
         dataset_args=dataset_args, lattice_args=lattice_args, model_args=model_args
     )
 
-    cryodrgn.models.config.save(config, out_config)
+    cryodrgn.trainers.config.save(config, out_config)
 
 
 class HierarchicalSearchTrainer(ModelTrainer):
-
     def parse_configs(cls, configs: dict[str, Any]) -> dict[str, Any]:
-        assert configs["model"] == "hps", (
-            f"Mismatched model {configs['model']} for HierarchicalSearchTrainer!"
-        )
+        assert (
+            configs["model"] == "hps"
+        ), f"Mismatched model {configs['model']} for HierarchicalSearchTrainer!"
 
         return super().parse_configs(configs)
 
@@ -195,9 +194,6 @@ class HierarchicalSearchTrainer(ModelTrainer):
         else:
             self.pose_model = self.model
 
-        # save configuration
-        self.configs.write(os.path.join(self.outdir, "train-configs.yaml"))
-
         self.pose_search = PoseSearch(
             self.pose_model,
             self.lattice,
@@ -220,213 +216,153 @@ class HierarchicalSearchTrainer(ModelTrainer):
             shuffler_size=self.configs.shuffler_size,
         )
 
-    def train(self):
+    def train_epoch(self):
+        te = dt.now()
 
-        t0 = dt.now()
+        kld_accum = 0
+        gen_loss_accum = 0
+        loss_accum = 0
+        eq_loss_accum = 0
+        batch_it = 0
+        poses = []
 
-        # pretrain decoder with random poses
-        global_it = 0
-        self.logger.info(f"Using random poses for {self.configs.pretrain} iterations")
-        while global_it < self.configs.pretrain:
-            for batch in self.data_iterator:
-                global_it += len(batch[0])
-                batch = (
-                    (batch[0].to(self.device), None)
-                    if self.configs.tilt is None
-                    else (batch[0].to(self.device), batch[1].to(self.device))
-                )
+        L_model = self.lattice.D // 2
+        if self.configs.l_ramp_epochs > 0:
+            Lramp = self.configs.l_start + int(
+                self.current_epoch
+                / self.configs.l_ramp_epochs
+                * (self.configs.l_end - self.configs.l_start)
+            )
 
-                loss = self.pretrain(batch)
-                if global_it % self.configs.log_interval == 0:
-                    self.logger.info(f"[Pretrain Iteration {global_it}] loss={loss:4f}")
-                if global_it > self.configs.pretrain:
-                    break
+            self.pose_search.Lmin = min(Lramp, self.configs.l_start)
+            self.pose_search.Lmax = min(Lramp, self.configs.l_end)
+            if (
+                self.current_epoch < self.configs.l_ramp_epochs
+                and self.configs.l_ramp_model
+            ):
+                L_model = self.pose_search.Lmax
 
-        # reset model after pretraining
-        if self.configs.reset_optim_after_pretrain:
-            self.logger.info(">> Resetting optim after pretrain")
+        if (
+            self.configs.reset_model_every
+            and (self.current_epoch - 1) % self.configs.reset_model_every == 0
+        ):
+            self.logger.info(">> Resetting model")
+            self.model = self.make_model()
+
+        if (
+            self.configs.reset_optim_every
+            and (self.current_epoch - 1) % self.configs.reset_optim_every == 0
+        ):
+            self.logger.info(">> Resetting optim")
             self.optim = torch.optim.Adam(
                 self.model.parameters(),
                 lr=self.configs.learning_rate,
                 weight_decay=self.configs.weight_decay,
             )
 
-        # training loop
-        num_epochs = self.configs.num_epochs
-        cc = 0
-        if self.configs.pose_model_update_freq:
-            self.pose_model.load_state_dict(self.model.state_dict())
+        if self.current_epoch % self.configs.ps_freq != 0:
+            self.logger.info("Using previous iteration poses")
 
-        epoch = None
-        for epoch in range(self.start_epoch, num_epochs):
-            t2 = dt.now()
-            kld_accum = 0
-            gen_loss_accum = 0
-            loss_accum = 0
-            eq_loss_accum = 0
-            batch_it = 0
-            poses = []
+        for batch in self.data_iterator:
+            ind = batch[-1]
+            ind_np = ind.cpu().numpy()
+            batch = (
+                (batch[0].to(self.device), None)
+                if self.tilt is None
+                else (batch[0].to(self.device), batch[1].to(self.device))
+            )
+            batch_it += len(batch[0])
+            global_it = self.Nimg * self.current_epoch + batch_it
 
-            L_model = self.lattice.D // 2
-            if self.configs.l_ramp_epochs > 0:
-                Lramp = self.configs.l_start + int(
-                    epoch
-                    / self.configs.l_ramp_epochs
-                    * (self.configs.l_end - self.configs.l_start)
-                )
-
-                self.pose_search.Lmin = min(Lramp, self.configs.l_start)
-                self.pose_search.Lmax = min(Lramp, self.configs.l_end)
-                if epoch < self.configs.l_ramp_epochs and self.configs.l_ramp_model:
-                    L_model = self.pose_search.Lmax
-
+            lamb = None
+            beta = self.beta_schedule(global_it)
             if (
-                self.configs.reset_model_every
-                and (epoch - 1) % self.configs.reset_model_every == 0
+                self.equivariance_lambda is not None
+                and self.equivariance_loss is not None
             ):
-                self.logger.info(">> Resetting model")
-                self.model = self.make_model()
+                lamb = self.equivariance_lambda(global_it)
+                equivariance_tuple = (lamb, self.equivariance_loss)
+            else:
+                equivariance_tuple = None
 
-            if (
-                self.configs.reset_optim_every
-                and (epoch - 1) % self.configs.reset_optim_every == 0
-            ):
-                self.logger.info(">> Resetting optim")
-                self.optim = torch.optim.Adam(
-                    self.model.parameters(),
-                    lr=self.configs.learning_rate,
-                    weight_decay=self.configs.weight_decay,
-                )
+            # train the model
+            p = None
+            if self.current_epoch % self.configs.ps_freq != 0:
+                p = [torch.tensor(x[ind_np], device=self.device) for x in self.sorted_poses]  # type: ignore
 
-            if epoch % self.configs.ps_freq != 0:
-                self.logger.info("Using previous iteration poses")
-            for batch in self.data_iterator:
-                ind = batch[-1]
-                ind_np = ind.cpu().numpy()
-                batch = (
-                    (batch[0].to(self.device), None)
-                    if self.tilt is None
-                    else (batch[0].to(self.device), batch[1].to(self.device))
-                )
-                batch_it += len(batch[0])
-                global_it = self.Nimg * epoch + batch_it
-
-                lamb = None
-                beta = self.beta_schedule(global_it)
+            self.conf_search_particles += len(batch[0])
+            if self.configs.pose_model_update_freq:
                 if (
-                    self.equivariance_lambda is not None
-                    and self.equivariance_loss is not None
-                ):
-                    lamb = self.equivariance_lambda(global_it)
-                    equivariance_tuple = (lamb, self.equivariance_loss)
-                else:
-                    equivariance_tuple = None
-
-                # train the model
-                p = None
-                if epoch % self.configs.ps_freq != 0:
-                    p = [torch.tensor(x[ind_np], device=self.device) for x in self.sorted_poses]  # type: ignore
-
-                cc += len(batch[0])
-                if (
-                    self.configs.pose_model_update_freq
-                    and cc > self.configs.pose_model_update_freq
+                    self.current_epoch == 0
+                    or self.conf_search_particles > self.configs.pose_model_update_freq
                 ):
                     self.pose_model.load_state_dict(self.model.state_dict())
-                    cc = 0
+                    self.conf_search_particles = 0
 
-                ctf_i = self.ctf_params[ind] if self.ctf_params is not None else None
-                gen_loss, kld, loss, eq_loss, pose = self.train_step(
-                    batch,
-                    L_model,
-                    beta,
-                    equivariance_tuple,
-                    poses=p,
-                    ctf_params=ctf_i,
-                )
-
-                # logging
-                poses.append((ind.cpu().numpy(), pose))
-                kld_accum += kld * len(ind)
-                gen_loss_accum += gen_loss * len(ind)
-                if self.configs.equivariance:
-                    assert eq_loss is not None
-                    eq_loss_accum += eq_loss * len(ind)
-
-                loss_accum += loss * len(ind)
-                if batch_it % self.configs.log_interval == 0:
-                    eq_log = (
-                        f"equivariance={eq_loss:.4f}, lambda={lamb:.4f}, "
-                        if eq_loss is not None and lamb is not None
-                        else ""
-                    )
-                    self.logger.info(
-                        f"# [Train Epoch: {epoch + 1}/{num_epochs}] "
-                        f"[{batch_it}/{self.Nimg} images] gen loss={gen_loss:.4f}, "
-                        f"kld={kld:.4f}, beta={beta:.4f}, {eq_log}loss={loss:.4f}"
-                    )
-
-            eq_log = (
-                "equivariance = {:.4f}, ".format(eq_loss_accum / self.Nimg)
-                if self.configs.equivariance
-                else ""
-            )
-            self.logger.info(
-                "# =====> Epoch: {} Average gen loss = {:.4}, KLD = {:.4f}, {}total loss = {:.4f}; Finished in {}".format(
-                    epoch + 1,
-                    gen_loss_accum / self.Nimg,
-                    kld_accum / self.Nimg,
-                    eq_log,
-                    loss_accum / self.Nimg,
-                    dt.now() - t2,
-                )
+            ctf_i = self.ctf_params[ind] if self.ctf_params is not None else None
+            gen_loss, kld, loss, eq_loss, pose = self.train_step(
+                batch,
+                L_model,
+                beta,
+                equivariance_tuple,
+                poses=p,
+                ctf_params=ctf_i,
             )
 
-            if poses:
-                ind = [x[0] for x in poses]
-                ind = np.concatenate(ind)
-                rot = [x[1][0] for x in poses]
-                rot = np.concatenate(rot)
-                rot = rot[np.argsort(ind)]
+            # logging
+            poses.append((ind.cpu().numpy(), pose))
+            kld_accum += kld * len(ind)
+            gen_loss_accum += gen_loss * len(ind)
+            if self.configs.equivariance:
+                assert eq_loss is not None
+                eq_loss_accum += eq_loss * len(ind)
 
-                if len(poses[0][1]) == 2:
-                    trans = [x[1][1] for x in poses]
-                    trans = np.concatenate(trans)
-                    trans = trans[np.argsort(ind)]
-                    self.sorted_poses = (rot, trans)
-                else:
-                    self.sorted_poses = (rot,)
+            loss_accum += loss * len(ind)
+            if batch_it % self.configs.log_interval == 0:
+                eq_log = (
+                    f"equivariance={eq_loss:.4f}, lambda={lamb:.4f}, "
+                    if eq_loss is not None and lamb is not None
+                    else ""
+                )
+                self.logger.info(
+                    f"# [Train Epoch: {self.current_epoch + 1}/{self.num_epochs}] "
+                    f"[{batch_it}/{self.Nimg} images] gen loss={gen_loss:.4f}, "
+                    f"kld={kld:.4f}, beta={beta:.4f}, {eq_log}loss={loss:.4f}"
+                )
 
+        eq_log = (
+            "equivariance = {:.4f}, ".format(eq_loss_accum / self.Nimg)
+            if self.configs.equivariance
+            else ""
+        )
+        self.logger.info(
+            "# =====> Epoch: {} Average gen loss = {:.4}, KLD = {:.4f}, {}total loss = {:.4f}; Finished in {}".format(
+                self.current_epoch + 1,
+                gen_loss_accum / self.Nimg,
+                kld_accum / self.Nimg,
+                eq_log,
+                loss_accum / self.Nimg,
+                dt.now() - te,
+            )
+        )
+
+        if poses:
+            ind = [x[0] for x in poses]
+            ind = np.concatenate(ind)
+            rot = [x[1][0] for x in poses]
+            rot = np.concatenate(rot)
+            rot = rot[np.argsort(ind)]
+
+            if len(poses[0][1]) == 2:
+                trans = [x[1][1] for x in poses]
+                trans = np.concatenate(trans)
+                trans = trans[np.argsort(ind)]
+                self.sorted_poses = (rot, trans)
             else:
-                self.sorted_poses = tuple()
+                self.sorted_poses = (rot,)
 
-            # save checkpoint
-            save_epoch = (
-                epoch == self.configs.num_epochs - 1
-                or self.configs.checkpoint
-                and epoch % self.configs.checkpoint == 0
-            )
-
-            if save_epoch:
-                out_mrc = os.path.join(self.outdir, f"reconstruct.{epoch}.mrc")
-                out_weights = os.path.join(self.outdir, f"weights.{epoch}.pkl")
-                out_poses = os.path.join(self.outdir, f"pose.{epoch}.pkl")
-                out_z = os.path.join(self.outdir, f"z.{epoch}.pkl")
-
-                self.model.eval()
-                with torch.no_grad():
-                    self.save_checkpoint(
-                        epoch,
-                        out_mrc,
-                        out_weights,
-                        out_z,
-                        out_poses,
-                    )
-
-            td = dt.now() - t0
-            self.logger.info(
-                f"Finished in {td} ({td / (num_epochs - self.start_epoch)} per epoch)"
-            )
+        else:
+            self.sorted_poses = tuple()
 
     def train_step(
         self,
@@ -545,7 +481,7 @@ class HierarchicalSearchTrainer(ModelTrainer):
             save_pose,
         )
 
-    def pretrain(self, batch):
+    def pretrain_step(self, batch):
         if self.zdim > 0:
             y, yt = batch
             use_tilt = yt is not None

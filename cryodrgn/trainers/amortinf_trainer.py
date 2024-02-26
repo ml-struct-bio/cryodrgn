@@ -1,6 +1,5 @@
 import os
 import pickle
-from datetime import datetime as dt
 from collections import OrderedDict
 import numpy as np
 from typing import Any
@@ -15,11 +14,11 @@ from cryodrgn import mrc
 from cryodrgn import utils
 from cryodrgn import dataset
 from cryodrgn import ctf
-from cryodrgn import summary
+from cryodrgn.trainers import summary
 from cryodrgn.losses import kl_divergence_conf, l1_regularizer, l2_frequency_bias
 from cryodrgn.models.amortized_inference import DRGNai, MyDataParallel
 from cryodrgn.mask import CircularMask, FrequencyMarchingMask
-from cryodrgn.models.trainers import ModelTrainer
+from cryodrgn.trainers._base import ModelTrainer
 
 
 class AmortizedInferenceTrainer(ModelTrainer):
@@ -156,9 +155,9 @@ class AmortizedInferenceTrainer(ModelTrainer):
     )
 
     def parse_configs(cls, configs: dict[str, Any]) -> dict[str, Any]:
-        assert configs["model"] == "amort", (
-            f"Mismatched model {configs['model']} for AmortizedInferenceTrainer!"
-        )
+        assert (
+            configs["model"] == "amort"
+        ), f"Mismatched model {configs['model']} for AmortizedInferenceTrainer!"
 
         if configs["explicit_volume"] and configs["z_dim"] >= 1:
             raise ValueError(
@@ -247,22 +246,28 @@ class AmortizedInferenceTrainer(ModelTrainer):
                 )
 
             # TODO: Implement translation search for subtomogram averaging.
-            if not (configs["use_gt_poses"]
-                    or configs["use_gt_trans"]
-                    or configs["t_extent"] == 0.0):
+            if not (
+                configs["use_gt_poses"]
+                or configs["use_gt_trans"]
+                or configs["t_extent"] == 0.0
+            ):
                 raise ValueError(
                     "Translation search is not implemented "
                     "for subtomogram averaging!"
                 )
 
-            if (configs["average_over_tilts"]
-                    and configs["n_tilts_pose_search"] % 2 == 0):
+            if (
+                configs["average_over_tilts"]
+                and configs["n_tilts_pose_search"] % 2 == 0
+            ):
                 raise ValueError(
                     "`n_tilts_pose_search` must be odd to use `average_over_tilts`!"
                 )
 
             if configs["n_tilts_pose_search"] > configs["n_tilts"]:
-                raise ValueError("`n_tilts_pose_search` must be smaller than `n_tilts`!")
+                raise ValueError(
+                    "`n_tilts_pose_search` must be smaller than `n_tilts`!"
+                )
 
         if configs["use_gt_poses"]:
             # "poses" include translations
@@ -308,13 +313,13 @@ class AmortizedInferenceTrainer(ModelTrainer):
             "depth_cnn": self.configs.depth_cnn,
             "channels_cnn": self.configs.channels_cnn,
             "kernel_size_cnn": self.configs.kernel_size_cnn,
-            }
+        }
 
         # conformational encoder
         if self.configs.z_dim > 0:
             self.logger.info(
                 "Heterogeneous reconstruction with " f"z_dim = {self.configs.z_dim}"
-                )
+            )
         else:
             self.logger.info("Homogeneous reconstruction")
 
@@ -322,7 +327,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
             "z_dim": self.configs.z_dim,
             "std_z_init": self.configs.std_z_init,
             "variational": self.configs.variational_het,
-            }
+        }
 
         # hypervolume
         hyper_volume_params = {
@@ -335,7 +340,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
             "domain": self.configs.hypervolume_domain,
             "extent": self.lattice.extent,
             "pe_type_conf": self.configs.pe_type_conf,
-            }
+        }
 
         will_use_point_estimates = configs["epochs_sgd"] >= 1
 
@@ -356,7 +361,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
             verbose_time=self.configs.verbose_time,
             pretrain_with_gt_poses=self.configs.pretrain_with_gt_poses,
             n_tilts_pose_search=self.configs.n_tilts_pose_search,
-            )
+        )
 
     def __init__(self, configs: dict[str, Any]) -> None:
         super().__init__(configs)
@@ -364,12 +369,12 @@ class AmortizedInferenceTrainer(ModelTrainer):
         if configs["n_imgs_pose_search"] > 0:
             self.epochs_pose_search = max(
                 2, configs["n_imgs_pose_search"] // self.n_particles_dataset + 1
-                )
+            )
         else:
             self.epochs_pose_search = 0
 
         if self.epochs_pose_search > 0:
-            ps_params = {
+            self.ps_params = {
                 "l_min": self.configs.l_start,
                 "l_max": self.configs.l_end,
                 "t_extent": self.configs.t_extent,
@@ -387,7 +392,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
                     else None
                 ),
                 "average_over_tilts": self.configs.average_over_tilts,
-                }
+            }
 
         self.batch_size_known_poses = self.configs.batch_size_known_poses * self.n_prcs
         self.batch_size_hps = self.configs.batch_size_hps * self.n_prcs
@@ -467,7 +472,6 @@ class AmortizedInferenceTrainer(ModelTrainer):
 
         self.optimized_modules = []
 
-
         # dataloaders
         self.data_generator_pose_search = dataset.make_dataloader(
             self.data,
@@ -487,9 +491,6 @@ class AmortizedInferenceTrainer(ModelTrainer):
             num_workers=self.configs.num_workers,
             shuffler_size=self.configs.shuffler_size,
         )
-
-        # save configurations
-        self.configs.write(os.path.join(self.configs.outdir, "train-configs.yaml"))
 
         epsilon = 1e-8
         # booleans
@@ -563,188 +564,153 @@ class AmortizedInferenceTrainer(ModelTrainer):
         self.batch_idx = 0
         self.cur_loss = None
 
-    def train(self):
-        self.logger.info("--- Training Starts Now ---")
-        t_0 = dt.now()
+    def train_epoch(self):
+        self.mask_particles_seen_at_last_epoch = np.zeros(self.n_particles_dataset)
+        self.mask_tilts_seen_at_last_epoch = np.zeros(self.n_tilts_dataset)
 
-        self.predicted_rots = (
-            np.eye(3).reshape(1, 3, 3).repeat(self.n_tilts_dataset, axis=0)
+        self.epoch += 1
+        self.current_epoch_particles_count = 0
+        self.optimized_modules = ["hypervolume"]
+
+        self.pose_only = (
+            self.total_particles_count < self.configs.pose_only_phase
+            or self.configs.z_dim == 0
+            or self.current_epoch < 0
         )
-        self.predicted_trans = (
-            np.zeros((self.n_tilts_dataset, 2)) if not self.configs.no_trans else None
-        )
-        self.predicted_conf = (
-            np.zeros((self.n_particles_dataset, self.configs.z_dim))
-            if self.configs.z_dim > 0
-            else None
-        )
+        self.pretraining = self.epoch < 0
 
-        self.total_batch_count = 0
-        self.total_particles_count = 0
-
-        self.epoch = self.start_epoch - 1
-        for epoch in range(self.start_epoch, self.num_epochs):
-            te = dt.now()
-
-            self.mask_particles_seen_at_last_epoch = np.zeros(self.n_particles_dataset)
-            self.mask_tilts_seen_at_last_epoch = np.zeros(self.n_tilts_dataset)
-
-            self.epoch += 1
-            self.current_epoch_particles_count = 0
-            self.optimized_modules = ["hypervolume"]
-
-            self.pose_only = (
-                self.total_particles_count < self.configs.pose_only_phase
-                or self.configs.z_dim == 0
-                or epoch < 0
+        if not self.configs.use_gt_poses:
+            self.is_in_pose_search_step = (
+                0 <= self.current_epoch < self.epochs_pose_search
             )
-            self.pretraining = self.epoch < 0
+            self.use_point_estimates = self.current_epoch >= max(
+                0, self.epochs_pose_search
+            )
 
-            if not self.configs.use_gt_poses:
-                self.is_in_pose_search_step = 0 <= epoch < self.epochs_pose_search
-                self.use_point_estimates = epoch >= max(0, self.epochs_pose_search)
+        n_max_particles = self.n_particles_dataset
+        data_generator = self.data_generator
 
+        # pre-training
+        if self.pretraining:
+            n_max_particles = self.n_particles_pretrain
+            self.logger.info(f"Will pretrain on {n_max_particles} particles")
+
+        # HPS
+        elif self.is_in_pose_search_step:
             n_max_particles = self.n_particles_dataset
-            data_generator = self.data_generator
+            self.logger.info(f"Will use pose search on {n_max_particles} particles")
+            data_generator = self.data_generator_pose_search
 
-            # pre-training
-            if self.pretraining:
-                n_max_particles = self.n_particles_pretrain
-                self.logger.info(f"Will pretrain on {n_max_particles} particles")
+        # SGD
+        elif self.use_point_estimates:
+            if self.first_switch_to_point_estimates:
+                self.first_switch_to_point_estimates = False
+                self.logger.info("Switched to autodecoding poses")
 
-            # HPS
-            elif self.is_in_pose_search_step:
-                n_max_particles = self.n_particles_dataset
-                self.logger.info(f"Will use pose search on {n_max_particles} particles")
-                data_generator = self.data_generator_pose_search
+                if self.configs.refine_gt_poses:
+                    self.logger.info("Initializing pose table from ground truth")
 
-            # SGD
-            elif self.use_point_estimates:
-                if self.first_switch_to_point_estimates:
-                    self.first_switch_to_point_estimates = False
-                    self.logger.info("Switched to autodecoding poses")
+                    poses_gt = utils.load_pkl(self.configs.pose)
+                    if poses_gt[0].ndim == 3:
+                        # contains translations
+                        rotmat_gt = torch.tensor(poses_gt[0]).float()
+                        trans_gt = torch.tensor(poses_gt[1]).float()
+                        trans_gt *= self.resolution
 
-                    if self.configs.refine_gt_poses:
-                        self.logger.info("Initializing pose table from ground truth")
-
-                        poses_gt = utils.load_pkl(self.configs.pose)
-                        if poses_gt[0].ndim == 3:
-                            # contains translations
-                            rotmat_gt = torch.tensor(poses_gt[0]).float()
-                            trans_gt = torch.tensor(poses_gt[1]).float()
-                            trans_gt *= self.resolution
-
-                            if self.index is not None:
-                                rotmat_gt = rotmat_gt[self.index]
-                                trans_gt = trans_gt[self.index]
-
-                        else:
-                            rotmat_gt = torch.tensor(poses_gt).float()
-                            trans_gt = None
-
-                            if self.index is not None:
-                                rotmat_gt = rotmat_gt[self.index]
-
-                        self.model.pose_table.initialize(rotmat_gt, trans_gt)
+                        if self.index is not None:
+                            rotmat_gt = rotmat_gt[self.index]
+                            trans_gt = trans_gt[self.index]
 
                     else:
+                        rotmat_gt = torch.tensor(poses_gt).float()
+                        trans_gt = None
+
+                        if self.index is not None:
+                            rotmat_gt = rotmat_gt[self.index]
+
+                    self.model.pose_table.initialize(rotmat_gt, trans_gt)
+
+                else:
+                    self.logger.info(
+                        "Initializing pose table from " "hierarchical pose search"
+                    )
+                    self.model.pose_table.initialize(
+                        self.predicted_rots, self.predicted_trans
+                    )
+
+                self.model.to(self.device)
+
+            self.logger.info(
+                "Will use latent optimization on "
+                f"{self.n_particles_dataset} particles"
+            )
+
+            data_generator = self.data_generator_latent_optimization
+            self.optimized_modules.append("pose_table")
+
+        # GT poses
+        else:
+            assert self.configs.use_gt_poses
+
+        # conformations
+        if not self.pose_only:
+            if self.configs.use_conf_encoder:
+                self.optimized_modules.append("conf_encoder")
+
+            else:
+                if self.first_switch_to_point_estimates_conf:
+                    self.first_switch_to_point_estimates_conf = False
+
+                    if self.configs.initial_conf is not None:
                         self.logger.info(
-                            "Initializing pose table from " "hierarchical pose search"
+                            "Initializing conformation table " "from given z's"
                         )
-                        self.model.pose_table.initialize(
-                            self.predicted_rots, self.predicted_trans
+                        self.model.conf_table.initialize(
+                            utils.load_pkl(self.configs.initial_conf)
                         )
 
                     self.model.to(self.device)
 
-                self.logger.info(
-                    "Will use latent optimization on "
-                    f"{self.n_particles_dataset} particles"
-                )
+                self.optimized_modules.append("conf_table")
 
-                data_generator = self.data_generator_latent_optimization
-                self.optimized_modules.append("pose_table")
+        for key in self.run_times.keys():
+            self.run_times[key] = []
 
-            # GT poses
-            else:
-                assert self.configs.use_gt_poses
+        end_time = time.time()
 
-            # conformations
-            if not self.pose_only:
-                if self.configs.use_conf_encoder:
-                    self.optimized_modules.append("conf_encoder")
+        # inner loop
+        for batch_idx, in_dict in enumerate(data_generator):
+            self.batch_idx = batch_idx
 
-                else:
-                    if self.first_switch_to_point_estimates_conf:
-                        self.first_switch_to_point_estimates_conf = False
-
-                        if self.configs.initial_conf is not None:
-                            self.logger.info(
-                                "Initializing conformation table " "from given z's"
-                            )
-                            self.model.conf_table.initialize(
-                                utils.load_pkl(self.configs.initial_conf)
-                            )
-
-                        self.model.to(self.device)
-
-                    self.optimized_modules.append("conf_table")
-
-            will_make_summary = (
-                (
-                    self.configs.log_heavy_interval
-                    and epoch % self.configs.log_heavy_interval == 0
-                )
-                or self.is_in_pose_search_step
-                or self.pretraining
-            )
-            self.log_latents = will_make_summary
-
-            if will_make_summary:
-                self.logger.info("Will make a full summary at the end of this epoch")
-
-            for key in self.run_times.keys():
-                self.run_times[key] = []
+            # with torch.autograd.detect_anomaly():
+            self.train_step(in_dict, end_time=end_time)
+            if self.configs.verbose_time:
+                torch.cuda.synchronize()
 
             end_time = time.time()
-            self.cur_loss = 0
 
-            # inner loop
-            for batch_idx, in_dict in enumerate(data_generator):
-                self.batch_idx = batch_idx
+            if self.current_epoch_particles_count > n_max_particles:
+                break
 
-                # with torch.autograd.detect_anomaly():
-                self.train_step(in_dict, end_time=end_time)
-                if self.configs.verbose_time:
-                    torch.cuda.synchronize()
+        # update output mask -- epoch-based scaling
+        if hasattr(self.output_mask, "update_epoch") and self.use_point_estimates:
+            self.output_mask.update_epoch(self.configs.n_frequencies_per_epoch)
 
-                end_time = time.time()
+    def pretrain(self):
+        end_time = time.time()
 
-                if self.current_epoch_particles_count > n_max_particles:
-                    break
+        for batch_idx, in_dict in enumerate(self.data_generator):
+            self.batch_idx = batch_idx
 
-            total_loss = self.cur_loss / n_max_particles
-            self.logger.info(
-                f"# =====> SGD Epoch: {self.epoch} "
-                f"finished in {dt.now() - te}; "
-                f"total loss = {format(total_loss, '.6f')}"
-            )
+            # with torch.autograd.detect_anomaly():
+            self.train_step(in_dict, end_time=end_time)
+            if self.configs.verbose_time:
+                torch.cuda.synchronize()
 
-            # image and pose summary
-            if will_make_summary:
-                self.make_heavy_summary()
-                self.save_latents()
-                self.save_volume()
-                self.save_model()
+            end_time = time.time()
 
-            # update output mask -- epoch-based scaling
-            if hasattr(self.output_mask, "update_epoch") and self.use_point_estimates:
-                self.output_mask.update_epoch(self.configs.n_frequencies_per_epoch)
-
-        t_total = dt.now() - t_0
-        self.logger.info(
-            f"Finished in {t_total} ({t_total / self.num_epochs} per epoch)"
-        )
+            if self.current_epoch_particles_count > self.n_particles_pretrain:
+                break
 
     def get_ctfs_at(self, index):
         batch_size = len(index)

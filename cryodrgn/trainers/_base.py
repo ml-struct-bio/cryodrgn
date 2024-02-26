@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 from typing_extensions import Self
 import yaml
+from datetime import datetime as dt
 import logging
 from cryodrgn import ctf
 from cryodrgn import dataset
@@ -116,7 +117,7 @@ class BaseTrainer(ABC):
             yaml.dump(dict(self), f, default_flow_style=False, sort_keys=False)
 
 
-class ModelTrainer(BaseTrainer):
+class ModelTrainer(BaseTrainer, ABC):
 
     config_defaults = OrderedDict({"model": "amort", "verbose": 0, "seed": -1})
 
@@ -337,6 +338,7 @@ class ModelTrainer(BaseTrainer):
         self.logger.info(self.model)
         param_count = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
         self.logger.info(f"{param_count} parameters in model")
+        self.current_epoch = None
 
         # TODO: auto-loading from last weights file if load=True?
         # initialization from a previous checkpoint
@@ -349,7 +351,6 @@ class ModelTrainer(BaseTrainer):
                 state_dict.pop("base_shifts")
 
             self.logger.info(self.model.load_state_dict(state_dict, strict=False))
-            self.start_epoch = checkpoint["epoch"] + 1
 
             if "output_mask_radius" in checkpoint:
                 self.output_mask.update_radius(checkpoint["output_mask_radius"])
@@ -360,6 +361,116 @@ class ModelTrainer(BaseTrainer):
                 )
 
             self.start_epoch = checkpoint["epoch"] + 1
-            self.pretrain = 0
+            self.pretrain_iter = 0
         else:
-            self.start_epoch = -1
+            self.start_epoch = 1
+
+        # save configuration
+        configs.write(os.path.join(self.outdir, "train-configs.yaml"))
+
+        self.predicted_rots = (
+            np.eye(3).reshape(1, 3, 3).repeat(self.n_tilts_dataset, axis=0)
+        )
+        self.predicted_trans = (
+            np.zeros((self.n_tilts_dataset, 2)) if not self.configs.no_trans else None
+        )
+        self.predicted_conf = (
+            np.zeros((self.n_particles_dataset, self.configs.z_dim))
+            if self.configs.z_dim > 0
+            else None
+        )
+
+    def train(self) -> None:
+        t0 = dt.now()
+
+        self.pretrain()
+        self.current_epoch = self.start_epoch
+        self.logger.info("--- Training Starts Now ---")
+
+        self.total_batch_count = 0
+        self.total_particles_count = 0
+        self.conf_search_particles = 0
+
+        while self.current_epoch <= self.final_epoch:
+            will_make_summary = (
+                (
+                    self.current_epoch == self.final_epoch
+                    or self.configs.log_heavy_interval
+                    and self.current_epoch % self.configs.log_heavy_interval == 0
+                )
+                or self.is_in_pose_search_step
+                or self.pretraining
+            )
+            self.log_latents = will_make_summary
+
+            if will_make_summary:
+                self.logger.info("Will make a full summary at the end of this epoch")
+
+            te = dt.now()
+            self.cur_loss = 0
+            self.train_epoch()
+
+            total_loss = self.cur_loss / self.train_particles
+            self.logger.info(
+                f"# =====> SGD Epoch: {self.epoch} "
+                f"finished in {dt.now() - te}; "
+                f"total loss = {format(total_loss, '.6f')}"
+            )
+
+            # image and pose summary
+            if will_make_summary:
+                self.make_summary()
+
+            self.current_epoch += 1
+
+        t_total = dt.now() - t0
+        self.logger.info(
+            f"Finished in {t_total} ({t_total / self.num_epochs} per epoch)"
+        )
+
+    def pretrain(self):
+        """Pretrain the decoder using random initial poses."""
+        particles_seen = 0
+        loss = None
+        self.logger.info(f"Using random poses for {self.configs.pretrain} iterations")
+
+        for batch in self.data_iterator:
+            particles_seen += len(batch[0])
+
+            batch = (
+                (batch[0].to(self.device), None)
+                if self.configs.tilt is None
+                else (batch[0].to(self.device), batch[1].to(self.device))
+            )
+            loss = self.pretrain_step(batch)
+
+            if particles_seen % self.configs.log_interval == 0:
+                self.logger.info(
+                    f"[Pretrain Iteration {particles_seen}] loss={loss:4f}"
+                )
+
+            if particles_seen > self.configs.pretrain_iter:
+                break
+
+        # reset model after pretraining
+        if self.configs.reset_optim_after_pretrain:
+            self.logger.info(">> Resetting optim after pretrain")
+            self.optim = torch.optim.Adam(
+                self.model.parameters(),
+                lr=self.configs.learning_rate,
+                weight_decay=self.configs.weight_decay,
+            )
+
+        return loss
+
+    @abstractmethod
+    def train_epoch(self):
+        pass
+
+    @abstractmethod
+    def pretrain_step(self):
+        pass
+
+    @abstractmethod
+    def make_summary(self):
+        pass

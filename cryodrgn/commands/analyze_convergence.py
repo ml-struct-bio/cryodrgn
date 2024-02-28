@@ -24,6 +24,9 @@ from scipy.ndimage import gaussian_filter, maximum_filter
 from scipy.ndimage import binary_dilation, distance_transform_edt
 from scipy.spatial import distance_matrix
 
+from cryodrgn import analysis, fft, toolx
+from cryodrgn.source import ImageSource
+import cryodrgn.trainers.config
 from cryodrgn import analysis, fft, utils
 import cryodrgn.models.config
 from cryodrgn.source import ImageSource, write_mrc
@@ -1100,7 +1103,7 @@ def main(args):
 
     # Get total number of particles, latent space dimensionality, input image size
     n_particles_total, n_dim = utils.load_pkl(f"{workdir}/z.{E}.pkl").shape
-    cfg = cryodrgn.models.config.load(config)
+    cfg = cryodrgn.trainers.config.load(config)
     img_size = cfg["lattice_args"]["D"] - 1
 
     # Commonly used variables

@@ -426,6 +426,12 @@ class ModelTrainer(BaseTrainer, ABC):
         self.logger.info(f"{param_count} parameters in model")
         self.current_epoch = None
 
+        self.data_iterator = make_dataloader(
+            self.data,
+            batch_size=self.configs.batch_size,
+            shuffler_size=self.configs.shuffler_size,
+        )
+
         # TODO: auto-loading from last weights file if load=True?
         # initialization from a previous checkpoint
         if self.configs.load:
@@ -453,24 +459,6 @@ class ModelTrainer(BaseTrainer, ABC):
 
         # save configuration
         self.configs.write(os.path.join(self.outdir, "train-configs.yaml"))
-
-        self.predicted_rots = (
-            np.eye(3).reshape(1, 3, 3).repeat(self.image_count, axis=0)
-        )
-        self.predicted_trans = (
-            np.zeros((self.image_count, 2)) if not self.configs.no_trans else None
-        )
-        self.predicted_conf = (
-            np.zeros((self.particle_count, self.configs.z_dim))
-            if self.configs.z_dim > 0
-            else None
-        )
-
-        self.data_iterator = make_dataloader(
-            self.data,
-            batch_size=self.configs.batch_size,
-            shuffler_size=self.configs.shuffler_size,
-        )
 
     def train(self) -> None:
         t0 = dt.now()

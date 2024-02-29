@@ -2,7 +2,7 @@ import os
 import pickle
 from collections import OrderedDict
 import numpy as np
-from typing import Any
+from typing import Any, Optional
 import time
 
 import torch
@@ -10,15 +10,331 @@ from torch import nn
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 
+import cryodrgn.utils
 from cryodrgn import mrc
-from cryodrgn import utils
-from cryodrgn import dataset
 from cryodrgn import ctf
+from cryodrgn.dataset import make_dataloader
 from cryodrgn.trainers import summary
 from cryodrgn.losses import kl_divergence_conf, l1_regularizer, l2_frequency_bias
 from cryodrgn.models.amortized_inference import DRGNai, MyDataParallel
 from cryodrgn.mask import CircularMask, FrequencyMarchingMask
-from cryodrgn.trainers._base import ModelTrainer
+from cryodrgn.trainers._base import ModelTrainer, ModelConfigurations
+
+
+class AmortizedInferenceConfigurations(ModelConfigurations):
+
+    __slots__ = (
+        "use_gt_poses",
+        "refine_gt_poses",
+        "use_gt_trans",
+        "log_heavy_interval",
+        "verbose_time",
+        "batch_size_known_poses",
+        "batch_size_hps",
+        "batch_size_sgd",
+        "hypervolume_optimizer_type",
+        "pose_table_optimizer_type",
+        "conf_table_optimizer_type",
+        "conf_encoder_optimizer_type",
+        "lr_pose_table",
+        "lr_conf_table",
+        "lr_conf_encoder",
+        "n_imgs_pose_search",
+        "epochs_sgd",
+        "pose_only_phase",
+        "output_mask",
+        "add_one_frequency_every",
+        "n_frequencies_per_epoch",
+        "max_freq",
+        "window_radius_gt_real",
+        "l_start_fm",
+        "beta_conf",
+        "trans_l1_regularizer",
+        "l2_smoothness_regularizer",
+        "shuffle",
+        "num_workers",
+        # conformations
+        "variational_het",
+        "std_z_init",
+        "use_conf_encoder",
+        "depth_cnn",
+        "channels_cnn",
+        "kernel_size_cnn",
+        "resolution_encoder",
+        # hypervolume
+        "explicit_volume",
+        "hypervolume_layers",
+        "hypervolume_dim",
+        "pe_type_conf",
+        # pre-training
+        "pretrain_with_gt_poses",
+        # pose search
+        "l_start",
+        "l_end",
+        "n_iter",
+        "t_extent",
+        "t_n_grid",
+        "t_x_shift",
+        "t_y_shift",
+        "n_tilts_pose_search",
+        "average_over_tilts",
+        "no_trans_search_at_pose_search",
+        "n_kept_poses",
+        "base_healpy",
+        # subtomogram averaging
+        "palette_type",
+    )
+    default_values = OrderedDict(
+        {
+            # initialization
+            "use_gt_poses": False,
+            "refine_gt_poses": False,
+            "use_gt_trans": False,
+            "log_heavy_interval": 5,
+            "verbose_time": False,
+            # data loading
+            "shuffle": True,
+            "num_workers": 2,
+            "shuffler_size": 32768,
+            "batch_size_known_poses": 32,
+            "batch_size_hps": 8,
+            "batch_size_sgd": 256,
+            # optimizers
+            "hypervolume_optimizer_type": "adam",
+            "pose_table_optimizer_type": "adam",
+            "conf_table_optimizer_type": "adam",
+            "conf_encoder_optimizer_type": "adam",
+            "lr_pose_table": 1.0e-3,
+            "lr_conf_table": 1.0e-2,
+            "lr_conf_encoder": 1.0e-4,
+            # scheduling
+            "n_imgs_pose_search": 500000,
+            "epochs_sgd": 100,
+            "pose_only_phase": 0,
+            # masking
+            "output_mask": "circ",
+            "add_one_frequency_every": 100000,
+            "n_frequencies_per_epoch": 10,
+            "max_freq": None,
+            "window_radius_gt_real": 0.85,
+            "l_start_fm": 12,
+            # loss
+            "beta_conf": 0.0,
+            "trans_l1_regularizer": 0.0,
+            "l2_smoothness_regularizer": 0.0,
+            # conformations
+            "variational_het": False,
+            "std_z_init": 0.1,
+            "use_conf_encoder": False,
+            "depth_cnn": 5,
+            "channels_cnn": 32,
+            "kernel_size_cnn": 3,
+            "resolution_encoder": None,
+            # hypervolume
+            "explicit_volume": False,
+            "hypervolume_layers": 3,
+            "hypervolume_dim": 256,
+            "pe_type_conf": None,
+            # pre-training
+            "pretrain_with_gt_poses": False,
+            # pose search
+            "l_start": 12,
+            "l_end": 32,
+            "n_iter": 4,
+            "t_extent": 20.0,
+            "t_n_grid": 7,
+            "t_x_shift": 0.0,
+            "t_y_shift": 0.0,
+            "n_tilts_pose_search": 11,
+            "average_over_tilts": False,
+            "no_trans_search_at_pose_search": False,
+            "n_kept_poses": 8,
+            "base_healpy": 2,
+            # others
+            "palette_type": None,
+        }
+    )
+
+    quick_config = OrderedDict(
+        {
+            "capture_setup": {
+                "spa": dict(),
+                "et": {
+                    "subtomogram_averaging": True,
+                    "shuffler_size": 0,
+                    "num_workers": 0,
+                    "t_extent": 0.0,
+                    "batch_size_known_poses": 8,
+                    "batch_size_sgd": 32,
+                    "n_imgs_pose_search": 150000,
+                    "pose_only_phase": 50000,
+                    "lr_pose_table": 1.0e-5,
+                },
+            },
+            "reconstruction_type": {"homo": {"z_dim": 0}, "het": dict()},
+            "pose_estimation": {
+                "abinit": dict(),
+                "refine": {"refine_gt_poses": True, "lr_pose_table": 1.0e-4},
+                "fixed": {"use_gt_poses": True},
+            },
+            "conf_estimation": {
+                None: dict(),
+                "autodecoder": dict(),
+                "refine": dict(),
+                "encoder": {"use_conf_encoder": True},
+            },
+        }
+    )
+
+    def __init__(self, config_vals: dict[str, Any]) -> None:
+        if "model" in config_vals and config_vals["model"] != "amort":
+            raise ValueError(
+                f"Mismatched model {config_vals['model']} "
+                "for AmortizedInferenceTrainer!"
+            )
+
+        if "explicit_volume" in config_vals:
+            if config_vals["explicit_volume"] and config_vals["z_dim"] >= 1:
+                raise ValueError(
+                    "Explicit volumes do not support heterogeneous reconstruction."
+                )
+
+        if "dataset" in config_vals:
+            if config_vals["dataset"] is None:
+                if config_vals["particles"] is None:
+                    raise ValueError(
+                        "As dataset was not specified, please " "specify particles!"
+                    )
+                if config_vals["ctf"] is None:
+                    raise ValueError("As dataset wasn't specified, please specify ctf!")
+
+        if "hypervolume_optimizer_type" in config_vals:
+            if config_vals["hypervolume_optimizer_type"] not in {"adam"}:
+                raise ValueError(
+                    "Invalid value "
+                    f"`{config_vals['hypervolume_optimizer_type']}` "
+                    "for hypervolume_optimizer_type!"
+                )
+
+        if "pose_table_optimizer_type" in config_vals:
+            if config_vals["pose_table_optimizer_type"] not in {"adam", "lbfgs"}:
+                raise ValueError(
+                    "Invalid value "
+                    f"`{config_vals['pose_table_optimizer_type']}` "
+                    "for pose_table_optimizer_type!"
+                )
+
+        if "conf_table_optimizer_type" in config_vals:
+            if config_vals["conf_table_optimizer_type"] not in {"adam", "lbfgs"}:
+                raise ValueError(
+                    "Invalid value "
+                    f"`{config_vals['conf_table_optimizer_type']}` "
+                    "for conf_table_optimizer_type!"
+                )
+
+        if "conf_encoder_optimizer_type" in config_vals:
+            if config_vals["conf_encoder_optimizer_type"] not in {"adam"}:
+                raise ValueError(
+                    "Invalid value "
+                    f"`{config_vals['conf_encoder_optimizer_type']}` "
+                    "for conf_encoder_optimizer_type!"
+                )
+
+        if "output_mask" in config_vals:
+            if config_vals["output_mask"] not in {"circ", "frequency_marching"}:
+                raise ValueError(
+                    f"Invalid value {config_vals['output_mask']} for output_mask!"
+                )
+
+        if "pe_type" in config_vals and config_vals["pe_type"] not in {"gaussian"}:
+            raise ValueError(f"Invalid value {config_vals['pe_type']} for pe_type!")
+
+        if "pe_type_conf" in config_vals:
+            if config_vals["pe_type_conf"] not in {None, "geom"}:
+                raise ValueError(
+                    f"Invalid value {config_vals['pe_type_conf']} for pe_type_conf!"
+                )
+
+        if "hypervolume_domain" in config_vals:
+            if config_vals["hypervolume_domain"] not in {"hartley"}:
+                raise ValueError(
+                    f"Invalid value {config_vals['hypervolume_domain']} "
+                    "for hypervolume_domain."
+                )
+
+        if "n_imgs_pose_search" in config_vals:
+            if config_vals["n_imgs_pose_search"] < 0:
+                raise ValueError("n_imgs_pose_search must be greater than 0!")
+
+        if "use_conf_encoder" in config_vals and "initial_conf" in config_vals:
+            if config_vals["use_conf_encoder"] and config_vals["initial_conf"]:
+                raise ValueError(
+                    "Conformations cannot be initialized when also using an encoder!"
+                )
+
+        if "use_gt_trans" in config_vals and "pose" in config_vals:
+            if config_vals["use_gt_trans"] and config_vals["pose"] is None:
+                raise ValueError(
+                    "Poses must be specified to use ground-truth translations!"
+                )
+
+        if "refine_gt_poses" in config_vals and config_vals["refine_gt_poses"]:
+            config_vals["n_imgs_pose_search"] = 0
+            if "pose" not in config_vals or config_vals["pose"] is None:
+                raise ValueError("Initial poses must be specified to be refined!")
+
+        if "subtomogram_averaging" in config_vals:
+            if config_vals["subtomogram_averaging"]:
+                # TODO: Implement conformation encoder for subtomogram averaging.
+                if "use_conf_encoder" in config_vals:
+                    if config_vals["use_conf_encoder"]:
+                        raise ValueError(
+                            "Conformation encoder is not implemented "
+                            "for subtomogram averaging!"
+                        )
+
+                # TODO: Implement translation search for subtomogram averaging.
+                if not (
+                    "use_gt_poses" in config_vals
+                    and config_vals["use_gt_poses"]
+                    or "use_gt_trans" in config_vals
+                    and config_vals["use_gt_trans"]
+                    or "t_extent" in config_vals
+                    and config_vals["t_extent"] == 0.0
+                ):
+                    raise ValueError(
+                        "Translation search is not implemented "
+                        "for subtomogram averaging!"
+                    )
+
+                if (
+                    "average_over_tilts" in config_vals
+                    and config_vals["average_over_tilts"]
+                    and "n_tilts_pose_search" in config_vals
+                    and config_vals["n_tilts_pose_search"] % 2 == 0
+                ):
+                    raise ValueError(
+                        "`n_tilts_pose_search` must be odd to use `average_over_tilts`!"
+                    )
+
+                if "n_tilts_pose_search" in config_vals and "n_tilts" in config_vals:
+                    if config_vals["n_tilts_pose_search"] > config_vals["n_tilts"]:
+                        raise ValueError(
+                            "`n_tilts_pose_search` must be smaller than `n_tilts`!"
+                        )
+
+        if "use_gt_poses" in config_vals and config_vals["use_gt_poses"]:
+            # "poses" include translations
+            config_vals["use_gt_trans"] = True
+            if "pose" in config_vals and config_vals["pose"] is None:
+                raise ValueError("Ground truth poses must be specified!")
+
+        if "no_trans" in config_vals and config_vals["no_trans"]:
+            config_vals["t_extent"] = 0.0
+        if "t_extent" in config_vals and config_vals["t_extent"] == 0.0:
+            config_vals["t_n_grid"] = 1
+
+        super().__init__(config_vals)
 
 
 class AmortizedInferenceTrainer(ModelTrainer):
@@ -29,7 +345,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
     configs (TrainingConfigurations):   Values of all parameters that can be
                                         set by the user.
 
-    n_particles_dataset (int):  The number of picked particles in the data.
+    particle_count (int):  The number of picked particles in the data.
     pretraining (bool):     Whether we are in the pretraining stage.
     epoch (int):    Which training epoch the model is in.
 
@@ -51,254 +367,24 @@ class AmortizedInferenceTrainer(ModelTrainer):
         "to_cpu",
     ]
 
-    config_defaults = OrderedDict(
-        {
-            # dataset
-            "particles": None,
-            "ctf": None,
-            "pose": None,
-            "dataset": None,
-            "server": None,
-            "datadir": None,
-            "ind": None,
-            "labels": None,
-            "relion31": False,
-            "no_trans": False,
-            # initialization
-            "use_gt_poses": False,
-            "refine_gt_poses": False,
-            "use_gt_trans": False,
-            "load": None,
-            "initial_conf": None,
-            # logging
-            "log_interval": 10000,
-            "log_heavy_interval": 5,
-            "verbose_time": False,
-            # data loading
-            "shuffle": True,
-            "lazy": False,
-            "num_workers": 2,
-            "max_threads": 16,
-            "shuffler_size": 32768,
-            "batch_size_known_poses": 32,
-            "batch_size_hps": 8,
-            "batch_size_sgd": 256,
-            # optimizers
-            "hypervolume_optimizer_type": "adam",
-            "pose_table_optimizer_type": "adam",
-            "conf_table_optimizer_type": "adam",
-            "conf_encoder_optimizer_type": "adam",
-            "lr": 1.0e-4,
-            "lr_pose_table": 1.0e-3,
-            "lr_conf_table": 1.0e-2,
-            "lr_conf_encoder": 1.0e-4,
-            "wd": 0.0,
-            # scheduling
-            "n_imgs_pose_search": 500000,
-            "epochs_sgd": 100,
-            "pose_only_phase": 0,
-            # masking
-            "output_mask": "circ",
-            "add_one_frequency_every": 100000,
-            "n_frequencies_per_epoch": 10,
-            "max_freq": None,
-            "window_radius_gt_real": 0.85,
-            "l_start_fm": 12,
-            # loss
-            "beta_conf": 0.0,
-            "trans_l1_regularizer": 0.0,
-            "l2_smoothness_regularizer": 0.0,
-            # conformations
-            "variational_het": False,
-            "z_dim": 4,
-            "std_z_init": 0.1,
-            "use_conf_encoder": False,
-            "depth_cnn": 5,
-            "channels_cnn": 32,
-            "kernel_size_cnn": 3,
-            "resolution_encoder": None,
-            # hypervolume
-            "explicit_volume": False,
-            "hypervolume_layers": 3,
-            "hypervolume_dim": 256,
-            "pe_type": "gaussian",
-            "pe_dim": 64,
-            "feat_sigma": 0.5,
-            "hypervolume_domain": "hartley",
-            "pe_type_conf": None,
-            # pre-training
-            "n_imgs_pretrain": 10000,
-            "pretrain_with_gt_poses": False,
-            # pose search
-            "l_start": 12,
-            "l_end": 32,
-            "n_iter": 4,
-            "t_extent": 20.0,
-            "t_n_grid": 7,
-            "t_x_shift": 0.0,
-            "t_y_shift": 0.0,
-            "no_trans_search_at_pose_search": False,
-            "n_kept_poses": 8,
-            "base_healpy": 2,
-            # subtomogram averaging
-            "subtomogram_averaging": False,
-            "n_tilts": 11,
-            "dose_per_tilt": 2.93,
-            "angle_per_tilt": 3.0,
-            "n_tilts_pose_search": 11,
-            "average_over_tilts": False,
-            "tilt_axis_angle": 0.0,
-            "dose_exposure_correction": True,
-            # others
-            "palette_type": None,
-        }
-    )
+    config_cls = AmortizedInferenceConfigurations
 
-    def parse_configs(cls, configs: dict[str, Any]) -> dict[str, Any]:
-        assert (
-            configs["model"] == "amort"
-        ), f"Mismatched model {configs['model']} for AmortizedInferenceTrainer!"
+    def make_model(
+        self, configs: Optional[AmortizedInferenceConfigurations] = None
+    ) -> nn.Module:
+        model_configs = configs or self.configs
 
-        if configs["explicit_volume"] and configs["z_dim"] >= 1:
-            raise ValueError(
-                "Explicit volumes do not support " "heterogeneous reconstruction."
-            )
-
-        if configs["dataset"] is None:
-            if configs["particles"] is None:
-                raise ValueError(
-                    "As dataset was not specified, please " "specify particles!"
-                )
-
-            if configs["ctf"] is None:
-                raise ValueError("As dataset was not specified, please " "specify ctf!")
-
-        if configs["hypervolume_optimizer_type"] not in {"adam"}:
-            raise ValueError(
-                "Invalid value "
-                f"`{configs['hypervolume_optimizer_type']}` "
-                "for hypervolume_optimizer_type!"
-            )
-
-        if configs["pose_table_optimizer_type"] not in {"adam", "lbfgs"}:
-            raise ValueError(
-                "Invalid value "
-                f"`{configs['pose_table_optimizer_type']}` "
-                "for pose_table_optimizer_type!"
-            )
-
-        if configs["conf_table_optimizer_type"] not in {"adam", "lbfgs"}:
-            raise ValueError(
-                "Invalid value "
-                f"`{configs['conf_table_optimizer_type']}` "
-                "for conf_table_optimizer_type!"
-            )
-
-        if configs["conf_encoder_optimizer_type"] not in {"adam"}:
-            raise ValueError(
-                "Invalid value "
-                f"`{configs['conf_encoder_optimizer_type']}` "
-                "for conf_encoder_optimizer_type!"
-            )
-
-        if configs["output_mask"] not in {"circ", "frequency_marching"}:
-            raise ValueError(f"Invalid value {configs['output_mask']} for output_mask!")
-
-        if configs["pe_type"] not in {"gaussian"}:
-            raise ValueError(f"Invalid value {configs['pe_type']} for pe_type!")
-
-        if configs["pe_type_conf"] not in {None, "geom"}:
-            raise ValueError(
-                f"Invalid value {configs['pe_type_conf']} for pe_type_conf!"
-            )
-
-        if configs["hypervolume_domain"] not in {"hartley"}:
-            raise ValueError(
-                f"Invalid value {configs['hypervolume_domain']} for hypervolume_domain."
-            )
-
-        if configs["n_imgs_pose_search"] < 0:
-            raise ValueError("n_imgs_pose_search must be greater than 0!")
-
-        if configs["use_conf_encoder"] and configs["initial_conf"]:
-            raise ValueError(
-                "Conformations cannot be initialized when also using an encoder!"
-            )
-
-        if configs["use_gt_trans"] and configs["pose"] is None:
-            raise ValueError(
-                "Poses must be specified to use ground-truth translations!"
-            )
-
-        if configs["refine_gt_poses"]:
-            configs["n_imgs_pose_search"] = 0
-
-            if configs["pose"] is None:
-                raise ValueError("Initial poses must be specified to be refined!")
-
-        if configs["subtomogram_averaging"]:
-
-            # TODO: Implement conformation encoder for subtomogram averaging.
-            if configs["use_conf_encoder"]:
-                raise ValueError(
-                    "Conformation encoder is not implemented "
-                    "for subtomogram averaging!"
-                )
-
-            # TODO: Implement translation search for subtomogram averaging.
-            if not (
-                configs["use_gt_poses"]
-                or configs["use_gt_trans"]
-                or configs["t_extent"] == 0.0
-            ):
-                raise ValueError(
-                    "Translation search is not implemented "
-                    "for subtomogram averaging!"
-                )
-
-            if (
-                configs["average_over_tilts"]
-                and configs["n_tilts_pose_search"] % 2 == 0
-            ):
-                raise ValueError(
-                    "`n_tilts_pose_search` must be odd to use `average_over_tilts`!"
-                )
-
-            if configs["n_tilts_pose_search"] > configs["n_tilts"]:
-                raise ValueError(
-                    "`n_tilts_pose_search` must be smaller than `n_tilts`!"
-                )
-
-        if configs["use_gt_poses"]:
-            # "poses" include translations
-            configs["use_gt_trans"] = True
-
-            if configs["pose"] is None:
-                raise ValueError("Ground truth poses must be specified!")
-
-        if configs["no_trans"]:
-            configs["t_extent"] = 0.0
-        if configs["t_extent"] == 0.0:
-            configs["t_n_grid"] = 1
-
-        return super().parse_configs(configs)
-
-    def make_model(self, configs: dict[str, Any]) -> nn.Module:
         # output mask
-        if configs["output_mask"] == "circ":
-            radius = (
-                self.lattice.D // 2
-                if configs["max_freq"] is None
-                else configs["max_freq"]
-            )
+        if model_configs.output_mask == "circ":
+            radius = model_configs.max_freq or self.lattice.D // 2
             output_mask = CircularMask(self.lattice, radius)
 
-        elif configs["output_mask"] == "frequency_marching":
+        elif model_configs.output_mask == "frequency_marching":
             output_mask = FrequencyMarchingMask(
                 self.lattice,
                 self.lattice.D // 2,
-                radius=configs["l_start_fm"],
-                add_one_every=configs["add_one_frequency_every"],
+                radius=model_configs.l_start_fm,
+                add_one_every=model_configs.add_one_frequency_every,
             )
 
         else:
@@ -309,46 +395,44 @@ class AmortizedInferenceTrainer(ModelTrainer):
 
         # cnn
         cnn_params = {
-            "conf": self.configs.use_conf_encoder,
-            "depth_cnn": self.configs.depth_cnn,
-            "channels_cnn": self.configs.channels_cnn,
-            "kernel_size_cnn": self.configs.kernel_size_cnn,
+            "conf": model_configs.use_conf_encoder,
+            "depth_cnn": model_configs.depth_cnn,
+            "channels_cnn": model_configs.channels_cnn,
+            "kernel_size_cnn": model_configs.kernel_size_cnn,
         }
 
         # conformational encoder
-        if self.configs.z_dim > 0:
+        if model_configs.z_dim > 0:
             self.logger.info(
-                "Heterogeneous reconstruction with " f"z_dim = {self.configs.z_dim}"
+                "Heterogeneous reconstruction with " f"z_dim = {model_configs.z_dim}"
             )
         else:
             self.logger.info("Homogeneous reconstruction")
 
         conf_regressor_params = {
-            "z_dim": self.configs.z_dim,
-            "std_z_init": self.configs.std_z_init,
-            "variational": self.configs.variational_het,
+            "z_dim": model_configs.z_dim,
+            "std_z_init": model_configs.std_z_init,
+            "variational": model_configs.variational_het,
         }
 
         # hypervolume
         hyper_volume_params = {
-            "explicit_volume": self.configs.explicit_volume,
-            "n_layers": self.configs.hypervolume_layers,
-            "hidden_dim": self.configs.hypervolume_dim,
-            "pe_type": self.configs.pe_type,
-            "pe_dim": self.configs.pe_dim,
-            "feat_sigma": self.configs.feat_sigma,
-            "domain": self.configs.hypervolume_domain,
+            "explicit_volume": model_configs.explicit_volume,
+            "n_layers": model_configs.hypervolume_layers,
+            "hidden_dim": model_configs.hypervolume_dim,
+            "pe_type": model_configs.pe_type,
+            "pe_dim": model_configs.pe_dim,
+            "feat_sigma": model_configs.feat_sigma,
+            "domain": model_configs.hypervolume_domain,
             "extent": self.lattice.extent,
-            "pe_type_conf": self.configs.pe_type_conf,
+            "pe_type_conf": model_configs.pe_type_conf,
         }
-
-        will_use_point_estimates = configs["epochs_sgd"] >= 1
 
         return DRGNai(
             self.lattice,
             output_mask,
-            self.n_particles_dataset,
-            self.n_tilts_dataset,
+            self.particle_count,
+            self.image_count,
             cnn_params,
             conf_regressor_params,
             hyper_volume_params,
@@ -356,7 +440,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
             no_trans=self.configs.no_trans,
             use_gt_poses=self.configs.use_gt_poses,
             use_gt_trans=self.configs.use_gt_trans,
-            will_use_point_estimates=will_use_point_estimates,
+            will_use_point_estimates=model_configs.epochs_sgd >= 1,
             ps_params=ps_params,
             verbose_time=self.configs.verbose_time,
             pretrain_with_gt_poses=self.configs.pretrain_with_gt_poses,
@@ -365,10 +449,11 @@ class AmortizedInferenceTrainer(ModelTrainer):
 
     def __init__(self, configs: dict[str, Any]) -> None:
         super().__init__(configs)
+        self.configs: AmortizedInferenceConfigurations
 
-        if configs["n_imgs_pose_search"] > 0:
+        if self.configs.n_imgs_pose_search > 0:
             self.epochs_pose_search = max(
-                2, configs["n_imgs_pose_search"] // self.n_particles_dataset + 1
+                2, self.configs.n_imgs_pose_search // self.particle_count + 1
             )
         else:
             self.epochs_pose_search = 0
@@ -388,7 +473,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
                 "n_tilts_pose_search": self.configs.n_tilts_pose_search,
                 "tilting_func": (
                     self.data.get_tilting_func()
-                    if self.configs.subtomogram_averaging
+                    if self.configs.subtomo_averaging
                     else None
                 ),
                 "average_over_tilts": self.configs.average_over_tilts,
@@ -417,7 +502,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
 
         self.optimizers["hypervolume"] = self.optim_types[
             self.configs.hypervolume_optimizer_type
-        ](hyper_volume_params, lr=self.configs.lr)
+        ](hyper_volume_params, lr=self.configs.learning_rate)
         self.optimizer_types["hypervolume"] = self.configs.hypervolume_optimizer_type
 
         # pose table
@@ -471,26 +556,31 @@ class AmortizedInferenceTrainer(ModelTrainer):
                 ] = self.configs.conf_table_optimizer_type
 
         self.optimized_modules = []
+        self.data_generators = {"hps": None, "known": None, "sgd": None}
 
         # dataloaders
-        self.data_generator_pose_search = dataset.make_dataloader(
-            self.data,
-            batch_size=self.batch_size_hps,
-            num_workers=self.configs.num_workers,
-            shuffler_size=self.configs.shuffler_size,
-        )
-        self.data_generator = dataset.make_dataloader(
-            self.data,
-            batch_size=self.batch_size_known_poses,
-            num_workers=self.configs.num_workers,
-            shuffler_size=self.configs.shuffler_size,
-        )
-        self.data_generator_latent_optimization = dataset.make_dataloader(
-            self.data,
-            batch_size=self.batch_size_sgd,
-            num_workers=self.configs.num_workers,
-            shuffler_size=self.configs.shuffler_size,
-        )
+        if self.batch_size_hps != self.configs.batch_size:
+            self.data_generators["hps"] = make_dataloader(
+                self.data,
+                batch_size=self.batch_size_hps,
+                num_workers=self.configs.num_workers,
+                shuffler_size=self.configs.shuffler_size,
+            )
+
+        if self.batch_size_known_poses != self.configs.batch_size:
+            self.data_generators["known"] = make_dataloader(
+                self.data,
+                batch_size=self.batch_size_known_poses,
+                num_workers=self.configs.num_workers,
+                shuffler_size=self.configs.shuffler_size,
+            )
+        if self.batch_size_sgd != self.configs.batch_size:
+            self.data_generators["sgd"] = make_dataloader(
+                self.data,
+                batch_size=self.batch_size_sgd,
+                num_workers=self.configs.num_workers,
+                shuffler_size=self.configs.shuffler_size,
+            )
 
         epsilon = 1e-8
         # booleans
@@ -526,34 +616,13 @@ class AmortizedInferenceTrainer(ModelTrainer):
             self.num_epochs += self.start_epoch
 
         self.n_particles_pretrain = (
-            self.configs.n_imgs_pretrain
-            if self.configs.n_imgs_pretrain >= 0
-            else self.n_particles_dataset
+            self.configs.pretrain if self.configs.pretrain >= 0 else self.particle_count
         )
 
-        # placeholders for predicted latent variables,
-        # last input/output batch, losses
         self.in_dict_last = None
         self.y_pred_last = None
-
-        self.predicted_rots = np.empty((self.n_tilts_dataset, 3, 3))
-        self.predicted_trans = (
-            np.empty((self.n_tilts_dataset, 2)) if not self.configs.no_trans else None
-        )
-        self.predicted_conf = (
-            np.empty((self.n_particles_dataset, self.configs.z_dim))
-            if self.configs.z_dim > 0
-            else None
-        )
-
-        self.predicted_logvar = (
-            np.empty((self.n_particles_dataset, self.configs.z_dim))
-            if self.configs.z_dim > 0 and self.configs.variational_het
-            else None
-        )
-
-        self.mask_particles_seen_at_last_epoch = np.zeros(self.n_particles_dataset)
-        self.mask_tilts_seen_at_last_epoch = np.zeros(self.n_tilts_dataset)
+        self.mask_particles_seen_at_last_epoch = np.zeros(self.particle_count)
+        self.mask_tilts_seen_at_last_epoch = np.zeros(self.image_count)
 
         # counters
         self.epoch = 0
@@ -565,8 +634,8 @@ class AmortizedInferenceTrainer(ModelTrainer):
         self.cur_loss = None
 
     def train_epoch(self):
-        self.mask_particles_seen_at_last_epoch = np.zeros(self.n_particles_dataset)
-        self.mask_tilts_seen_at_last_epoch = np.zeros(self.n_tilts_dataset)
+        self.mask_particles_seen_at_last_epoch = np.zeros(self.particle_count)
+        self.mask_tilts_seen_at_last_epoch = np.zeros(self.image_count)
 
         self.epoch += 1
         self.current_epoch_particles_count = 0
@@ -587,8 +656,8 @@ class AmortizedInferenceTrainer(ModelTrainer):
                 0, self.epochs_pose_search
             )
 
-        n_max_particles = self.n_particles_dataset
-        data_generator = self.data_generator
+        n_max_particles = self.particle_count
+        data_generator = self.data_iterator
 
         # pre-training
         if self.pretraining:
@@ -597,9 +666,9 @@ class AmortizedInferenceTrainer(ModelTrainer):
 
         # HPS
         elif self.is_in_pose_search_step:
-            n_max_particles = self.n_particles_dataset
+            n_max_particles = self.particle_count
             self.logger.info(f"Will use pose search on {n_max_particles} particles")
-            data_generator = self.data_generator_pose_search
+            data_generator = self.data_generators["hps"] or self.data_iterator
 
         # SGD
         elif self.use_point_estimates:
@@ -610,7 +679,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
                 if self.configs.refine_gt_poses:
                     self.logger.info("Initializing pose table from ground truth")
 
-                    poses_gt = utils.load_pkl(self.configs.pose)
+                    poses_gt = cryodrgn.utils.load_pkl(self.configs.pose)
                     if poses_gt[0].ndim == 3:
                         # contains translations
                         rotmat_gt = torch.tensor(poses_gt[0]).float()
@@ -641,16 +710,16 @@ class AmortizedInferenceTrainer(ModelTrainer):
                 self.model.to(self.device)
 
             self.logger.info(
-                "Will use latent optimization on "
-                f"{self.n_particles_dataset} particles"
+                "Will use latent optimization on " f"{self.particle_count} particles"
             )
 
-            data_generator = self.data_generator_latent_optimization
+            data_generator = self.data_generators["sgd"] or self.data_iterator
             self.optimized_modules.append("pose_table")
 
         # GT poses
         else:
             assert self.configs.use_gt_poses
+            data_generator = self.data_generators["known"] or self.data_iterator
 
         # conformations
         if not self.pose_only:
@@ -666,7 +735,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
                             "Initializing conformation table " "from given z's"
                         )
                         self.model.conf_table.initialize(
-                            utils.load_pkl(self.configs.initial_conf)
+                            cryodrgn.utils.load_pkl(self.configs.initial_conf)
                         )
 
                     self.model.to(self.device)
@@ -679,11 +748,9 @@ class AmortizedInferenceTrainer(ModelTrainer):
         end_time = time.time()
 
         # inner loop
-        for batch_idx, in_dict in enumerate(data_generator):
-            self.batch_idx = batch_idx
-
-            # with torch.autograd.detect_anomaly():
+        for self.batch_idx, in_dict in enumerate(data_generator):
             self.train_step(in_dict, end_time=end_time)
+
             if self.configs.verbose_time:
                 torch.cuda.synchronize()
 
@@ -702,7 +769,6 @@ class AmortizedInferenceTrainer(ModelTrainer):
         for batch_idx, in_dict in enumerate(self.data_generator):
             self.batch_idx = batch_idx
 
-            # with torch.autograd.detect_anomaly():
             self.train_step(in_dict, end_time=end_time)
             if self.configs.verbose_time:
                 torch.cuda.synchronize()
@@ -711,6 +777,9 @@ class AmortizedInferenceTrainer(ModelTrainer):
 
             if self.current_epoch_particles_count > self.n_particles_pretrain:
                 break
+
+    def pretrain_step(self, batch, **pretrain_kwargs):
+        self.train_step(batch, **pretrain_kwargs)
 
     def get_ctfs_at(self, index):
         batch_size = len(index)
@@ -909,7 +978,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
         ctf_local = self.get_ctfs_at(in_dict["tilt_index"])
 
         if self.configs.subtomogram_averaging:
-            ctf_local = ctf_local.reshape(-1, self.n_tilts, *ctf_local.shape[1:])
+            ctf_local = ctf_local.reshape(-1, self.image_count, *ctf_local.shape[1:])
 
         if self.configs.verbose_time:
             torch.cuda.synchronize()
@@ -1042,7 +1111,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
 
         return total_loss, all_losses
 
-    def make_heavy_summary(self):
+    def make_summary(self):
         summary.make_img_summary(
             self.writer,
             self.in_dict_last,
@@ -1057,7 +1126,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
             labels = None
 
             if self.configs.labels is not None:
-                labels = utils.load_pkl(self.configs.labels)
+                labels = cryodrgn.utils.load_pkl(self.configs.labels)
 
                 if self.index is not None:
                     labels = labels[self.index]
@@ -1065,7 +1134,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
             if self.mask_particles_seen_at_last_epoch is not None:
                 mask_idx = self.mask_particles_seen_at_last_epoch > 0.5
             else:
-                mask_idx = np.ones((self.n_particles_dataset,), dtype=bool)
+                mask_idx = np.ones((self.particle_count,), dtype=bool)
 
             predicted_conf = self.predicted_conf[mask_idx]
             labels = labels[mask_idx] if labels is not None else None
@@ -1093,10 +1162,10 @@ class AmortizedInferenceTrainer(ModelTrainer):
         if self.mask_particles_seen_at_last_epoch is not None:
             mask_tilt_idx = self.mask_tilts_seen_at_last_epoch > 0.5
         else:
-            mask_tilt_idx = np.ones((self.n_tilts_dataset,), dtype=bool)
+            mask_tilt_idx = np.ones((self.image_count,), dtype=bool)
 
         if self.configs.pose is not None:
-            poses_gt = utils.load_pkl(self.configs.pose)
+            poses_gt = cryodrgn.utils.load_pkl(self.configs.pose)
 
             if poses_gt[0].ndim == 3:
                 # contains translations
@@ -1141,7 +1210,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
         self.logger.info(
             f"# [Train Epoch: {self.epoch}/{self.num_epochs - 1}] "
             f"[{self.current_epoch_particles_count}"
-            f"/{self.n_particles_dataset} particles]"
+            f"/{self.particle_count} particles]"
         )
 
         if hasattr(self.output_mask, "current_radius"):

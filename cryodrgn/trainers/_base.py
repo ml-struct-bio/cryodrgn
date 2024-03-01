@@ -3,6 +3,7 @@ import argparse
 import os
 import shutil
 import sys
+import pickle
 from collections import OrderedDict
 from abc import ABC, abstractmethod
 from typing import Any
@@ -15,7 +16,7 @@ import numpy as np
 import torch
 from torch import nn
 import cryodrgn.utils
-from cryodrgn import ctf
+from cryodrgn import __version__, ctf
 from cryodrgn.dataset import ImageDataset, TiltSeriesData, make_dataloader
 from cryodrgn.lattice import Lattice
 
@@ -174,6 +175,8 @@ class BaseTrainer(ABC):
         self.logger.addHandler(
             logging.FileHandler(os.path.join(self.outdir, "training.log"))
         )
+
+        self.logger.info(f"cryoDRGN {__version__}")
         self.logger.info(str(configs))
 
 
@@ -345,6 +348,12 @@ class ModelTrainer(BaseTrainer, ABC):
             else:
                 self.logger.info(f"Filtering image dataset with {configs['ind']}")
                 self.ind = cryodrgn.utils.load_yaml(self.configs.ind)
+
+                if self.configs.encode_mode == "tilt":
+                    particle_ind = pickle.load(open(self.configs.ind, "rb"))
+                    pt, tp = TiltSeriesData.parse_particle_tilt(self.configs.particles)
+                    self.ind = TiltSeriesData.particles_to_tilts(pt, particle_ind)
+
         else:
             self.ind = None
 

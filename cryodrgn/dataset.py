@@ -1,21 +1,21 @@
-import numpy as np
+
 from collections import Counter, OrderedDict
-
 import logging
-import torch
-from torch.utils import data
 from typing import Optional, Tuple, Union
-from cryodrgn import fft, starfile
-from cryodrgn.source import ImageSource
-from cryodrgn.utils import window_mask
 
+import numpy as np
+import torch
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import BatchSampler, RandomSampler, SequentialSampler
+import cryodrgn.utils
+from cryodrgn import fft, starfile
+from cryodrgn.source import ImageSource
+
 
 logger = logging.getLogger(__name__)
 
 
-class ImageDataset(data.Dataset):
+class ImageDataset(torch.utils.data.Dataset):
     def __init__(
         self,
         mrcfile,
@@ -43,11 +43,15 @@ class ImageDataset(data.Dataset):
 
         ny = self.src.D
         assert ny % 2 == 0, "Image size must be even."
-
         self.N = self.src.n
         self.D = ny + 1  # after symmetrization
         self.invert_data = invert_data
-        self.window = window_mask(ny, window_r, 0.99).to(device) if window else None
+
+        if window:
+            self.window = cryodrgn.utils.window_mask(ny, window_r, 0.99).to(device)
+        else:
+            self.window = None
+
         norm = norm or self.estimate_normalization()
         self.norm = [float(x) for x in norm]
         self.device = device

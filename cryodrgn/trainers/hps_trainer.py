@@ -2,7 +2,7 @@ import os
 import pickle
 from datetime import datetime as dt
 from collections import OrderedDict
-from typing import Any
+from typing import Any, Optional, Callable
 
 import numpy as np
 import torch
@@ -10,109 +10,265 @@ from torch import nn
 from torch.nn.parallel import DataParallel
 import torch.nn.functional as F
 
-from cryodrgn import ctf, dataset, lie_tools, utils
-from cryodrgn.beta_schedule import LinearSchedule, get_beta_schedule
 import cryodrgn.trainers.config
+from cryodrgn import ctf, dataset, lie_tools, utils
 from cryodrgn.losses import EquivarianceLoss
 from cryodrgn.models.variational_autoencoder import unparallelize, HetOnlyVAE
 from cryodrgn.models.neural_nets import get_decoder
 from cryodrgn.pose_search import PoseSearch
-from cryodrgn.trainers._base import ModelTrainer
+from cryodrgn.trainers._base import ModelTrainer, ModelConfigurations
 
 
-def save_config(args, dataset, lattice, model, out_config):
-    dataset_args = dict(
-        particles=args.particles,
-        norm=dataset.norm,
-        invert_data=args.invert_data,
-        ind=args.ind,
-        keepreal=args.use_real,
-        window=args.window,
-        window_r=args.window_r,
-        datadir=args.datadir,
-        ctf=args.ctf,
+class HierarchicalPoseSearchConfigurations(ModelConfigurations):
+
+    __slots__ = (
+        "particles",
+        "ctf",
+        "dataset",
+        "datadir",
+        "ind",
+        "log_interval",
+        "verbose",
+        "load",
+        "load_poses",
+        "checkpoint",
+        "z_dim",
+        "invert_data",
+        "lazy",
+        "shuffler_size",
+        "max_threads",
+        "tilt",
+        "tilt_deg",
+        "enc_only",
+        "num_epochs",
+        "batch_size",
+        "weight_decay",
+        "learning_rate",
+        "beta",
+        "beta_control",
+        "equivariance",
+        "equivariance_start",
+        "equivariance_stop",
+        "data_norm",
+        "l_ramp_epochs",
+        "l_ramp_model",
+        "reset_model_every",
+        "reset_optim_every",
+        "reset_optim_after_pretrain",
+        "multigpu",
+        "l_start",
+        "l_end",
+        "grid_niter",
+        "t_extent",
+        "t_ngrid",
+        "t_xshift",
+        "t_yshift",
+        "pretrain",
+        "ps_freq",
+        "n_kept_poses",
+        "base_healpy",
+        "pose_model_update_freq",
+        "enc_layers",
+        "enc_dim",
+        "encode_mode",
+        "enc_mask",
+        "use_real",
+        "dec_layers",
+        "dec_dim",
+        "pe_type",
+        "feat_sigma",
+        "pe_dim",
+        "domain",
+        "activation",
+        "seed",
     )
-    if args.tilt is not None:
-        dataset_args["particles_tilt"] = args.tilt
-    lattice_args = dict(D=lattice.D, extent=lattice.extent, ignore_DC=lattice.ignore_DC)
-    model_args = dict(
-        qlayers=args.qlayers,
-        qdim=args.qdim,
-        players=args.players,
-        pdim=args.pdim,
-        zdim=args.zdim,
-        encode_mode=args.encode_mode,
-        enc_mask=args.enc_mask,
-        pe_type=args.pe_type,
-        feat_sigma=args.feat_sigma,
-        pe_dim=args.pe_dim,
-        domain=args.domain,
-        activation=args.activation,
+    default_values = OrderedDict(
+        {
+            "particles": None,
+            "ctf": None,
+            "dataset": None,
+            "datadir": None,
+            "ind": None,
+            "log_interval": 1000,
+            "verbose": False,
+            "load": None,
+            "load_poses": None,
+            "checkpoint": 1,
+            "z_dim": None,
+            "invert_data": True,
+            "lazy": False,
+            "shuffler_size": 0,
+            "max_threads": 16,
+            "tilt": None,
+            "tilt_deg": 45,
+            "enc_only": False,
+            "num_epochs": 30,
+            "batch_size": 8,
+            "weight_decay": 0,
+            "learning_rate": 1e-4,
+            "beta": None,
+            "beta_control": None,
+            "equivariance": None,
+            "equivariance_start": 100000,
+            "equivariance_stop": 200000,
+            "data_norm": None,
+            "l_ramp_epochs": 0,
+            "l_ramp_model": 0,
+            "reset_model_every": None,
+            "reset_optim_every": None,
+            "reset_optim_after_pretrain": None,
+            "multigpu": False,
+            "l_start": 12,
+            "l_end": 32,
+            "grid_niter": 4,
+            "t_extent": 10,
+            "t_ngrid": 7,
+            "t_xshift": 0,
+            "t_yshift": 0,
+            "pretrain": 10000,
+            "ps_freq": 5,
+            "n_kept_poses": 8,
+            "base_healpy": 2,
+            "pose_model_update_freq": None,
+            "enc_layers": 3,
+            "enc_dim": 256,
+            "encode_mode": "resid",
+            "enc_mask": None,
+            "use_real": False,
+            "dec_layers": 3,
+            "dec_dim": 256,
+            "pe_type": "gaussian",
+            "feat_sigma": 0.5,
+            "pe_dim": None,
+            "domain": "hartley",
+            "activation": "relu",
+            "seed": None,
+        }
     )
-    config = dict(
-        dataset_args=dataset_args, lattice_args=lattice_args, model_args=model_args
-    )
 
-    cryodrgn.trainers.config.save(config, out_config)
-
-
-class HierarchicalSearchTrainer(ModelTrainer):
-    def parse_configs(cls, configs: dict[str, Any]) -> dict[str, Any]:
+    def __init__(self, config_vals: dict[str, Any]) -> None:
         assert (
-            configs["model"] == "hps"
-        ), f"Mismatched model {configs['model']} for HierarchicalSearchTrainer!"
+                config_vals["model"] == "hps"
+        ), f"Mismatched model {config_vals['model']} for HierarchicalSearchTrainer!"
 
-        return super().parse_configs(configs)
+        if self.dataset is None:
+            if self.particles is None:
+                raise ValueError(
+                    "As dataset was not specified, please " "specify particles!"
+                )
+            if self.ctf is None:
+                raise ValueError("As dataset was not specified, please " "specify ctf!")
 
-    def make_model(self, configs) -> HetOnlyVAE:
-        if configs["zdim"] == 0:
+        if self.beta is not None:
+            if self.z_dim == 0:
+                raise ValueError("Cannot use beta with homogeneous reconstruction!.")
+
+            if not isinstance(self.beta, (int, float)) and not self.beta_control:
+                raise ValueError(
+                    f"Need to set beta control weight for schedule {self.beta}"
+                )
+
+        if self.tilt is None:
+            if self.z_dim > 0:
+                if self.use_real != (self.encode_mode == "conv"):
+                    raise ValueError(
+                        "Using real space image is only available "
+                        "for convolutional encoder in SPA heterogeneous reconstruction!"
+                    )
+        else:
+            if self.z_dim > 0:
+                if self.encode_mode != "tilt":
+                    raise ValueError(
+                        "Must use tilt for heterogeneous reconstruction on ET capture!"
+                    )
+
+        if self.equivariance is not None:
+            if self.z_dim == 0:
+                raise ValueError(
+                    "Cannot use equivariance with homogeneous reconstruction!."
+                )
+            if self.equivariance <= 0:
+                raise ValueError("Regularization weight must be positive")
+
+        super().__init__(config_vals)
+
+
+class HierarchicalPoseSearchTrainer(ModelTrainer):
+
+    def make_model(
+            self, configs: Optional[HierarchicalPoseSearchConfigurations]
+    ) -> nn.Module:
+        model_configs: HierarchicalPoseSearchConfigurations = configs or self.configs
+
+        if self.configs.z_dim == 0:
             model = get_decoder(
                 3,
-                configs["D"],
-                configs["dec_layers"],
-                configs["dec_dim"],
-                configs["domain"],
-                configs["pe_type"],
-                configs["pe_dim"],
-                activation=configs["activation"],
-                feat_sigma=configs["feat_sigma"],
+                self.D,
+                model_configs.dec_layers,
+                model_configs.dec_dim,
+                model_configs.domain,
+                model_configs.pe_type,
+                model_configs.pe_dim,
+                activation=model_configs.activation,
+                feat_sigma=model_configs.feat_sigma,
             )
         else:
             model = HetOnlyVAE(
                 self.lattice,
-                configs["enc_layers"],
-                configs["enc_dim"],
-                configs["dec_layers"],
-                configs["dec_dim"],
-                configs["in_dim"],
-                configs["zdim"],
-                encode_mode=configs["encode_mode"],
-                enc_mask=configs["enc_mask"],
-                enc_type=configs["pe_type"],
-                enc_dim=configs["pe_dim"],
-                domain=configs["domain"],
-                activation=configs["activation"],
-                feat_sigma=configs["feat_sigma"],
+                model_configs.enc_layers,
+                model_configs.enc_dim,
+                model_configs.dec_layers,
+                model_configs.dec_dim,
+                model_configs.in_dim,
+                model_configs.z_dim,
+                encode_mode=model_configs.encode_mode,
+                enc_mask=model_configs.enc_mask,
+                enc_type=model_configs.pe_type,
+                enc_dim=model_configs.pe_dim,
+                domain=model_configs.domain,
+                activation=model_configs.activation,
+                feat_sigma=model_configs.feat_sigma,
             )
 
         return model
 
+    @classmethod
+    def create_beta_schedule(
+            cls, start_x: float, end_x: float, start_y: float, end_y: float
+    ) -> Callable[[float], float]:
+        min_y = min(start_y, end_y)
+        max_y = max(start_y, end_y)
+        coef = (end_y - start_y) / (end_x - start_x)
+
+        return lambda x: np.clip((x - start_x) * coef + start_y, min_y, max_y).item(0)
+
     def __init__(self, configs: dict[str, Any]) -> None:
         super().__init__(configs)
+        self.configs: HierarchicalPoseSearchConfigurations
 
         # set beta schedule
-        self.zdim = self.configs.z_dim
-        if self.zdim > 0:
-            if self.configs.beta is None:
-                self.configs.beta = 1.0 / self.zdim
+        if self.model.zdim > 0:
+            beta = self.configs.beta or self.model.zdim**-1
 
-            self.beta_schedule = get_beta_schedule(self.configs.beta)
+            if isinstance(beta, float):
+                self.beta_schedule = lambda x: self.configs.beta
+
+            elif beta == "a":
+                self.beta_schedule = self.create_beta_schedule(0, 1000000, 0.001, 15)
+            elif beta == "b":
+                self.beta_schedule = self.create_beta_schedule(200000, 800000, 5, 15)
+            elif beta == "c":
+                self.beta_schedule = self.create_beta_schedule(200000, 800000, 5, 18)
+            elif beta == "d":
+                self.beta_schedule = self.create_beta_schedule(1000000, 5000000, 5, 18)
+            else:
+                raise RuntimeError(f"Unrecognized beta schedule {beta=}!")
 
         if self.configs.encode_mode == "conv":
             if self.D - 1 != 64:
                 raise ValueError("Image size must be 64x64 for convolutional encoder!")
 
-        if self.zdim > 0:
+        if self.model.zdim > 0:
             if self.configs.enc_mask is None:
                 self.configs.enc_mask = self.D // 2
 
@@ -137,13 +293,13 @@ class HierarchicalSearchTrainer(ModelTrainer):
         ]
 
         self.equivariance_lambda = self.equivariance_loss = None
-        if self.zdim > 0:
+        if self.model.zdim > 0:
             if self.configs.equivariance:
-                self.equivariance_lambda = LinearSchedule(
-                    0,
-                    self.configs.equivariance,
+                self.equivariance_lambda = self.create_beta_schedule(
                     self.configs.equivariance_start,
                     self.configs.equivariance_stop,
+                    0,
+                    self.configs.equivariance,
                 )
                 self.equivariance_loss = EquivarianceLoss(self.model, self.D)
 
@@ -172,7 +328,7 @@ class HierarchicalSearchTrainer(ModelTrainer):
             self.sorted_poses = (rot, trans * D)
 
         # parallelize
-        if self.zdim > 0:
+        if self.model.zdim > 0:
             if self.configs.multigpu and torch.cuda.device_count() > 1:
                 self.logger.info(f"Using {torch.cuda.device_count()} GPUs!")
                 self.configs.batch_size *= torch.cuda.device_count()
@@ -208,12 +364,6 @@ class HierarchicalSearchTrainer(ModelTrainer):
             t_xshift=self.configs.t_xshift,
             t_yshift=self.configs.t_yshift,
             device=self.device,
-        )
-
-        self.data_iterator = dataset.make_dataloader(
-            self.data,
-            batch_size=self.configs.batch_size,
-            shuffler_size=self.configs.shuffler_size,
         )
 
     def train_epoch(self):
@@ -326,22 +476,22 @@ class HierarchicalSearchTrainer(ModelTrainer):
                 )
                 self.logger.info(
                     f"# [Train Epoch: {self.current_epoch + 1}/{self.num_epochs}] "
-                    f"[{batch_it}/{self.Nimg} images] gen loss={gen_loss:.4f}, "
+                    f"[{batch_it}/{self.image_count} images] gen loss={gen_loss:.4f}, "
                     f"kld={kld:.4f}, beta={beta:.4f}, {eq_log}loss={loss:.4f}"
                 )
 
         eq_log = (
-            "equivariance = {:.4f}, ".format(eq_loss_accum / self.Nimg)
+            "equivariance = {:.4f}, ".format(eq_loss_accum / self.image_count)
             if self.configs.equivariance
             else ""
         )
         self.logger.info(
             "# =====> Epoch: {} Average gen loss = {:.4}, KLD = {:.4f}, {}total loss = {:.4f}; Finished in {}".format(
                 self.current_epoch + 1,
-                gen_loss_accum / self.Nimg,
-                kld_accum / self.Nimg,
+                gen_loss_accum / self.image_count,
+                kld_accum / self.image_count,
                 eq_log,
-                loss_accum / self.Nimg,
+                loss_accum / self.image_count,
                 dt.now() - te,
             )
         )
@@ -635,176 +785,37 @@ class HierarchicalSearchTrainer(ModelTrainer):
         self.logger.info(f"Loading {self.configs.load_poses}")
 
 
-class AbInitioConfigurations:
-
-    __slots__ = (
-        "particles",
-        "ctf",
-        "dataset",
-        "datadir",
-        "ind",
-        "log_interval",
-        "verbose",
-        "load",
-        "load_poses",
-        "checkpoint",
-        "z_dim",
-        "invert_data",
-        "window",
-        "window_r",
-        "lazy",
-        "shuffler_size",
-        "max_threads",
-        "tilt",
-        "tilt_deg",
-        "enc_only",
-        "num_epochs",
-        "batch_size",
-        "weight_decay",
-        "learning_rate",
-        "beta",
-        "beta_control",
-        "equivariance",
-        "equivariance_start",
-        "equivariance_stop",
-        "data_norm",
-        "l_ramp_epochs",
-        "l_ramp_model",
-        "reset_model_every",
-        "reset_optim_every",
-        "reset_optim_after_pretrain",
-        "multigpu",
-        "l_start",
-        "l_end",
-        "grid_niter",
-        "t_extent",
-        "t_ngrid",
-        "t_xshift",
-        "t_yshift",
-        "pretrain",
-        "ps_freq",
-        "n_kept_poses",
-        "base_healpy",
-        "pose_model_update_freq",
-        "enc_layers",
-        "enc_dim",
-        "encode_mode",
-        "enc_mask",
-        "use_real",
-        "dec_layers",
-        "dec_dim",
-        "pe_type",
-        "feat_sigma",
-        "pe_dim",
-        "domain",
-        "activation",
-        "seed",
+def save_config(args, dataset, lattice, model, out_config):
+    dataset_args = dict(
+        particles=args.particles,
+        norm=dataset.norm,
+        invert_data=args.invert_data,
+        ind=args.ind,
+        keepreal=args.use_real,
+        window=args.window,
+        window_r=args.window_r,
+        datadir=args.datadir,
+        ctf=args.ctf,
     )
-    defaults = OrderedDict(
-        {
-            "particles": None,
-            "ctf": None,
-            "dataset": None,
-            "datadir": None,
-            "ind": None,
-            "log_interval": 1000,
-            "verbose": False,
-            "load": None,
-            "load_poses": None,
-            "checkpoint": 1,
-            "z_dim": None,
-            "invert_data": True,
-            "window": True,
-            "window_r": 0.85,
-            "lazy": False,
-            "shuffler_size": 0,
-            "max_threads": 16,
-            "tilt": None,
-            "tilt_deg": 45,
-            "enc_only": False,
-            "num_epochs": 30,
-            "batch_size": 8,
-            "weight_decay": 0,
-            "learning_rate": 1e-4,
-            "beta": None,
-            "beta_control": None,
-            "equivariance": None,
-            "equivariance_start": 100000,
-            "equivariance_stop": 200000,
-            "data_norm": None,
-            "l_ramp_epochs": 0,
-            "l_ramp_model": 0,
-            "reset_model_every": None,
-            "reset_optim_every": None,
-            "reset_optim_after_pretrain": None,
-            "multigpu": False,
-            "l_start": 12,
-            "l_end": 32,
-            "grid_niter": 4,
-            "t_extent": 10,
-            "t_ngrid": 7,
-            "t_xshift": 0,
-            "t_yshift": 0,
-            "pretrain": 10000,
-            "ps_freq": 5,
-            "n_kept_poses": 8,
-            "base_healpy": 2,
-            "pose_model_update_freq": None,
-            "enc_layers": 3,
-            "enc_dim": 256,
-            "encode_mode": "resid",
-            "enc_mask": None,
-            "use_real": False,
-            "dec_layers": 3,
-            "dec_dim": 256,
-            "pe_type": "gaussian",
-            "feat_sigma": 0.5,
-            "pe_dim": None,
-            "domain": "hartley",
-            "activation": "relu",
-            "seed": None,
-        }
+    if args.tilt is not None:
+        dataset_args["particles_tilt"] = args.tilt
+    lattice_args = dict(D=lattice.D, extent=lattice.extent, ignore_DC=lattice.ignore_DC)
+    model_args = dict(
+        qlayers=args.qlayers,
+        qdim=args.qdim,
+        players=args.players,
+        pdim=args.pdim,
+        zdim=args.zdim,
+        encode_mode=args.encode_mode,
+        enc_mask=args.enc_mask,
+        pe_type=args.pe_type,
+        feat_sigma=args.feat_sigma,
+        pe_dim=args.pe_dim,
+        domain=args.domain,
+        activation=args.activation,
+    )
+    config = dict(
+        dataset_args=dataset_args, lattice_args=lattice_args, model_args=model_args
     )
 
-    def __init__(self, config_vals: dict[str, Any]) -> None:
-        super().__init__(config_vals)
-        assert self.model == "hps"
-
-        if self.dataset is None:
-            if self.particles is None:
-                raise ValueError(
-                    "As dataset was not specified, please " "specify particles!"
-                )
-            if self.ctf is None:
-                raise ValueError("As dataset was not specified, please " "specify ctf!")
-
-        if self.beta is not None:
-            if self.z_dim == 0:
-                raise ValueError("Cannot use beta with homogeneous reconstruction!.")
-
-            if not isinstance(self.beta, (int, float)) and not self.beta_control:
-                raise ValueError(
-                    f"Need to set beta control weight for schedule {self.beta}"
-                )
-
-        if self.tilt is None:
-            if self.z_dim > 0:
-                if self.use_real != (self.encode_mode == "conv"):
-                    raise ValueError(
-                        "Using real space image is only available "
-                        "for convolutional encoder in SPA heterogeneous reconstruction!"
-                    )
-        else:
-            if self.z_dim > 0:
-                if self.encode_mode != "tilt":
-                    raise ValueError(
-                        "Must use tilt for heterogeneous reconstruction on ET capture!"
-                    )
-
-        if self.equivariance is not None:
-            if self.z_dim == 0:
-                raise ValueError(
-                    "Cannot use equivariance with homogeneous reconstruction!."
-                )
-            if self.equivariance <= 0:
-                raise ValueError("Regularization weight must be positive")
+    cryodrgn.trainers.config.save(config, out_config)

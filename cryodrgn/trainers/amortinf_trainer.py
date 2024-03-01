@@ -372,7 +372,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
     def make_model(
         self, configs: Optional[AmortizedInferenceConfigurations] = None
     ) -> nn.Module:
-        model_configs = configs or self.configs
+        model_configs: AmortizedInferenceConfigurations = configs or self.configs
 
         # output mask
         if model_configs.output_mask == "circ":

@@ -1,4 +1,7 @@
-"""Train a VAE for heterogeneous reconstruction with known poses.
+"""Train a variational auto-encoder for heterogeneous reconstruction with known poses.
+
+This is a wrapper for the special case of `commands.train` when using hierarchical pose
+search reconstruction with heterogeneous latent conformations (z_dim > 0).
 
 Example usage
 -------------
@@ -28,7 +31,6 @@ from typing import Optional
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.nn.parallel import DataParallel
 import torch.nn.functional as F
 
 try:
@@ -37,12 +39,11 @@ except ImportError:
     pass
 
 import cryodrgn
-from cryodrgn import __version__, ctf, dataset
-from cryodrgn.beta_schedule import get_beta_schedule
+from cryodrgn import ctf, dataset
 from cryodrgn.lattice import Lattice
 from cryodrgn.models.variational_autoencoder import HetOnlyVAE, unparallelize
 from cryodrgn.pose import PoseTracker
-import cryodrgn.models.config
+import cryodrgn.trainers.config
 
 logger = logging.getLogger(__name__)
 
@@ -352,7 +353,6 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         default="relu",
         help="Activation (default: %(default)s)",
     )
-    return parser
 
 
 def train_batch(
@@ -609,7 +609,7 @@ def save_config(args, dataset, lattice, model, out_config):
         dataset_args=dataset_args, lattice_args=lattice_args, model_args=model_args
     )
     config["seed"] = args.seed
-    cryodrgn.models.config.save(config, out_config)
+    cryodrgn.trainers.config.save(config, out_config)
 
 
 def get_latest(args):

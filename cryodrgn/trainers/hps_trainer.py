@@ -195,15 +195,32 @@ class HierarchicalPoseSearchConfigurations(ModelConfigurations):
 
 class HierarchicalPoseSearchTrainer(ModelTrainer):
 
-    def make_model(
+    def make_volume_model(
             self, configs: Optional[HierarchicalPoseSearchConfigurations]
     ) -> nn.Module:
         model_configs: HierarchicalPoseSearchConfigurations = configs or self.configs
 
+        if model_configs.enc_mask is None:
+            model_configs.enc_mask = self.resolution // 2
+        if model_configs.enc_mask > 0:
+            assert model_configs.enc_mask <= self.resolution // 2
+            enc_mask = self.lattice.get_circular_mask(model_configs.enc_mask)
+            in_dim = int(enc_mask.sum())
+        elif model_configs.enc_mask == -1:
+            enc_mask = None
+            in_dim = self.lattice.D ** 2 if not self.configs.use_real else (self.lattice.D - 1) ** 2
+        else:
+            raise RuntimeError(
+                f"Invalid argument for encoder mask radius {model_configs['enc_mask']=}"
+            )
+
+        activation = {"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[
+            self.configs.activation]
+
         if self.configs.z_dim == 0:
             model = get_decoder(
                 3,
-                self.D,
+                self.resolution,
                 model_configs.dec_layers,
                 model_configs.dec_dim,
                 model_configs.domain,
@@ -230,6 +247,18 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                 feat_sigma=model_configs.feat_sigma,
             )
 
+            enc_params = sum(
+                p.numel() for p in model.encoder.parameters() if p.requires_grad
+            )
+            self.logger.info(f"{enc_params} parameters in encoder")
+            dec_params = sum(
+                p.numel() for p in model.decoder.parameters() if p.requires_grad
+            )
+            self.logger.info(f"{dec_params} parameters in decoder")
+
+        all_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        self.logger.info(f"{all_params} parameters in model")
+
         return model
 
     @classmethod
@@ -249,6 +278,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
         # set beta schedule
         if self.model.zdim > 0:
             beta = self.configs.beta or self.model.zdim**-1
+            # beta = 1.0 / args.ntilts
 
             if isinstance(beta, float):
                 self.beta_schedule = lambda x: self.configs.beta
@@ -265,7 +295,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                 raise RuntimeError(f"Unrecognized beta schedule {beta=}!")
 
         if self.configs.encode_mode == "conv":
-            if self.D - 1 != 64:
+            if self.resolution - 1 != 64:
                 raise ValueError("Image size must be 64x64 for convolutional encoder!")
 
         if self.model.zdim > 0:
@@ -349,6 +379,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
             self.pose_model.eval()
         else:
             self.pose_model = self.model
+
 
         self.pose_search = PoseSearch(
             self.pose_model,

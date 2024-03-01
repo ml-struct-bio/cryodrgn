@@ -15,10 +15,16 @@ import logging
 import numpy as np
 import torch
 from torch import nn
+from torch.nn.parallel import DataParallel
 import cryodrgn.utils
 from cryodrgn import __version__, ctf
 from cryodrgn.dataset import ImageDataset, TiltSeriesData, make_dataloader
 from cryodrgn.lattice import Lattice
+
+try:
+    import apex.amp as amp  # type: ignore  # PYR01
+except ImportError:
+    pass
 
 
 class BaseConfigurations(ABC):
@@ -224,7 +230,9 @@ class ModelConfigurations(BaseConfigurations):
         "hypervolume_domain",
         "activation",
         "subtomo_averaging",
+        "volume_optim_type",
         "no_trans",
+        "amp",
     )
     default_values = OrderedDict(
         {
@@ -268,7 +276,9 @@ class ModelConfigurations(BaseConfigurations):
             "hypervolume_domain": "hartley",
             "activation": "relu",
             "subtomo_averaging": False,
+            "volume_optim_type": "Adam",
             "no_trans": False,
+            "amp": False,
         }
     )
 
@@ -320,7 +330,7 @@ class ModelTrainer(BaseTrainer, ABC):
     optim_types = {"adam": torch.optim.Adam, "lbfgs": torch.optim.LBFGS}
 
     @abstractmethod
-    def make_model(self, configs: dict[str, Any]) -> nn.Module:
+    def make_volume_model(self, configs: dict[str, Any]) -> nn.Module:
         pass
 
     def __init__(self, configs: dict[str, Any]) -> None:
@@ -357,9 +367,6 @@ class ModelTrainer(BaseTrainer, ABC):
         else:
             self.ind = None
 
-        # load dataset
-        self.logger.info(f"Loading dataset from {self.configs.particles}")
-
         if self.configs.tilt is not None:
             self.tilt = torch.tensor(
                 cryodrgn.utils.xrot(configs["tilt_deg"]).astype(np.float32),
@@ -368,21 +375,27 @@ class ModelTrainer(BaseTrainer, ABC):
         else:
             self.tilt = None
 
+        # load dataset
+        self.logger.info(f"Loading dataset from {self.configs.particles}")
+
         if not self.configs.subtomo_averaging:
             self.data = ImageDataset(
                 mrcfile=self.configs.particles,
+                lazy=self.configs.lazy,
                 norm=self.configs.data_norm,
                 invert_data=self.configs.invert_data,
-                ind=self.configs.ind,
-                window=self.configs.window,
                 keepreal=self.configs.use_real,
+                ind=self.ind,
+                window=self.configs.window,
                 datadir=self.configs.datadir,
                 window_r=self.configs.window_r,
+                max_threads=self.configs.max_threads,
+                device=self.device,
             )
         else:
             self.data = TiltSeriesData(
                 tiltstar=self.configs.particles,
-                ind=self.configs.ind,
+                ind=self.ind,
                 ntilts=self.configs.n_tilts,
                 angle_per_tilt=self.configs.angle_per_tilt,
                 window_r=self.configs.window_radius_gt_real,
@@ -400,13 +413,19 @@ class ModelTrainer(BaseTrainer, ABC):
         self.resolution = self.data.D
 
         if self.configs.ctf:
+            if self.configs.use_real:
+                raise NotImplementedError(
+                    "Not implemented with real-space encoder."
+                    "Use phase-flipped images instead"
+                )
+
             self.logger.info(f"Loading ctf params from {self.configs.ctf}")
             ctf_params = ctf.load_ctf_for_training(
                 self.resolution - 1, self.configs.ctf
             )
 
             if self.ind is not None:
-                ctf_params = ctf_params[self.ind]
+                ctf_params = ctf_params[self.ind, ...]
             assert ctf_params.shape == (self.image_count, 8), ctf_params.shape
 
             if self.configs.subtomo_averaging:
@@ -417,9 +436,6 @@ class ModelTrainer(BaseTrainer, ABC):
                 self.data.voltage = float(ctf_params[0, 4])
 
             self.ctf_params = torch.tensor(ctf_params, device=self.device)
-            if self.configs.subtomo_averaging:
-                self.data.voltage = float(self.ctf_params[0, 4])
-
         else:
             self.ctf_params = None
 
@@ -428,10 +444,11 @@ class ModelTrainer(BaseTrainer, ABC):
         self.lattice = Lattice(self.resolution, extent=0.5, device=self.device)
 
         self.logger.info("Initializing model...")
-        self.model = self.make_model()
-        self.model.to(self.device)
-        self.logger.info(self.model)
-        param_count = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+        self.volume_model = self.make_volume_model()
+        self.volume_model.to(self.device)
+        self.logger.info(self.volume_model)
+
+        param_count = sum(p.numel() for p in self.volume_model.parameters() if p.requires_grad)
         self.logger.info(f"{param_count} parameters in model")
         self.current_epoch = None
 
@@ -439,7 +456,58 @@ class ModelTrainer(BaseTrainer, ABC):
             self.data,
             batch_size=self.configs.batch_size,
             shuffler_size=self.configs.shuffler_size,
+            num_workers=self.configs.num_workers,
         )
+
+        self.volume_optim_class = self.optim_types[self.configs.volume_optim_type]
+        self.volume_optimizer = self.volume_optim_class(
+            self.volume_model.parameters(),
+            lr=self.configs.learning_rate,
+            weight_decay=configs["weight_decay"]
+        )
+
+        # Mixed precision training
+        self.scaler = None
+        if self.configs.amp:
+            if self.configs.batch_size % 8 != 0:
+                raise ValueError(
+                    f"{self.configs.batch_size=} must be divisible by 8 "
+                    "for AMP training!"
+                )
+            if (self.resolution - 1) % 8 != 0:
+                raise ValueError(
+                    f"{self.resolution=} must be divisible by 8 for AMP training!"
+                )
+            if self.configs.pe_dim % 8 != 0:
+                raise ValueError(
+                    f"Decoder hidden layer dimension {self.configs.pe_dim=} must be "
+                    "divisible by 8 for AMP training!"
+                )
+            if self.configs.qdim % 8 != 0:
+                raise ValueError(
+                    f"Encoder hidden layer dimension {self.configs.qdim=} must be "
+                    "divisible by 8 for AMP training!"
+                )
+
+            # Also check zdim, enc_mask dim? Add them as warnings for now.
+            if self.configs.z_dim % 8 != 0:
+                self.logger.warning(
+                    f"Warning: {self.configs.z_dim=} is not a multiple of 8 "
+                    "-- AMP training speedup is not optimized"
+                )
+            if self.configs.in_dim % 8 != 0:
+                self.logger.warning(
+                    f"Warning: Masked input image dimension {self.configs.in_dim=} "
+                    "is not a mutiple of 8 -- AMP training speedup is not optimized!"
+                )
+
+            try:  # Mixed precision with apex.amp
+                self.volume_model, self.volume_optimizer = amp.initialize(
+                    self.volume_model, self.volume_optimizer, opt_level="O1"
+                )
+            except:  # noqa: E722
+                # Mixed precision with pytorch (v1.6+)
+                self.scaler = torch.cuda.amp.grad_scaler.GradScaler()
 
         # TODO: auto-loading from last weights file if load=True?
         # initialization from a previous checkpoint
@@ -451,7 +519,7 @@ class ModelTrainer(BaseTrainer, ABC):
             if "base_shifts" in state_dict:
                 state_dict.pop("base_shifts")
 
-            self.logger.info(self.model.load_state_dict(state_dict, strict=False))
+            self.logger.info(self.load_state_dict(state_dict, strict=False))
 
             if "output_mask_radius" in checkpoint:
                 self.output_mask.update_radius(checkpoint["output_mask_radius"])
@@ -465,6 +533,25 @@ class ModelTrainer(BaseTrainer, ABC):
             self.pretrain_iter = 0
         else:
             self.start_epoch = 1
+
+        # parallelize
+        if self.configs.multigpu and torch.cuda.device_count() > 1:
+            self.logger.info(f"Using {torch.cuda.device_count()} GPUs!")
+            self.configs.batch_size *= torch.cuda.device_count()
+            self.logger.info(f"Increasing batch size to {self.configs.batch_size}")
+            self.volume_model = DataParallel(self.volume_model)
+
+        elif self.configs.multigpu:
+            self.logger.warning(
+                f"--multigpu selected, but {torch.cuda.device_count()} GPUs detected"
+            )
+
+        cpu_count = os.cpu_count() or 1
+        if self.configs.num_workers > cpu_count:
+            self.logger.warning(f"Reducing workers to {cpu_count} cpus")
+            self.num_workers = cpu_count
+        else:
+            self.num_workers = self.configs.num_workers
 
         # save configuration
         self.configs.write(os.path.join(self.outdir, "train-configs.yaml"))

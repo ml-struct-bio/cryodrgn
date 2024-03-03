@@ -24,7 +24,7 @@ from scipy.ndimage import gaussian_filter, maximum_filter
 from scipy.ndimage import binary_dilation, distance_transform_edt
 from scipy.spatial import distance_matrix
 
-from cryodrgn import analysis, fft, toolx
+from cryodrgn import analysis, fft, utils
 from cryodrgn.source import ImageSource
 from cryodrgn.mrc import MRCFile
 import cryodrgn.trainers.config

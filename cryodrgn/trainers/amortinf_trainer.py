@@ -11,8 +11,7 @@ import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 
 import cryodrgn.utils
-from cryodrgn import mrc
-from cryodrgn import ctf
+from cryodrgn import ctf, mrc
 from cryodrgn.dataset import make_dataloader
 from cryodrgn.trainers import summary
 from cryodrgn.losses import kl_divergence_conf, l1_regularizer, l2_frequency_bias
@@ -24,7 +23,6 @@ from cryodrgn.trainers._base import ModelTrainer, ModelConfigurations
 class AmortizedInferenceConfigurations(ModelConfigurations):
 
     __slots__ = (
-        "log_heavy_interval",
         "verbose_time",
         "batch_size_known_poses",
         "batch_size_hps",
@@ -43,13 +41,10 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
         "add_one_frequency_every",
         "n_frequencies_per_epoch",
         "max_freq",
-        "window_radius_gt_real",
         "l_start_fm",
         "beta_conf",
         "trans_l1_regularizer",
         "l2_smoothness_regularizer",
-        "shuffle",
-        "num_workers",
         # conformations
         "variational_het",
         "std_z_init",
@@ -60,35 +55,22 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
         "resolution_encoder",
         # hypervolume
         "explicit_volume",
-        "hypervolume_layers",
-        "hypervolume_dim",
         "pe_type_conf",
         # pre-training
         "pretrain_with_gt_poses",
         # pose search
-        "l_start",
-        "l_end",
         "n_iter",
-        "t_extent",
-        "t_n_grid",
-        "t_x_shift",
-        "t_y_shift",
         "n_tilts_pose_search",
         "average_over_tilts",
         "no_trans_search_at_pose_search",
         "n_kept_poses",
-        "base_healpy",
         # subtomogram averaging
         "palette_type",
     )
     default_values = OrderedDict(
         {
-            "log_heavy_interval": 5,
             "verbose_time": False,
             # data loading
-            "shuffle": True,
-            "num_workers": 2,
-            "shuffler_size": 32768,
             "batch_size_known_poses": 32,
             "batch_size_hps": 8,
             "batch_size_sgd": 256,
@@ -109,7 +91,6 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
             "add_one_frequency_every": 100000,
             "n_frequencies_per_epoch": 10,
             "max_freq": None,
-            "window_radius_gt_real": 0.85,
             "l_start_fm": 12,
             # loss
             "beta_conf": 0.0,
@@ -125,24 +106,15 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
             "resolution_encoder": None,
             # hypervolume
             "explicit_volume": False,
-            "hypervolume_layers": 3,
-            "hypervolume_dim": 256,
             "pe_type_conf": None,
             # pre-training
             "pretrain_with_gt_poses": False,
             # pose search
-            "l_start": 12,
-            "l_end": 32,
             "n_iter": 4,
-            "t_extent": 20.0,
-            "t_n_grid": 7,
-            "t_x_shift": 0.0,
-            "t_y_shift": 0.0,
             "n_tilts_pose_search": 11,
             "average_over_tilts": False,
             "no_trans_search_at_pose_search": False,
             "n_kept_poses": 8,
-            "base_healpy": 2,
             # others
             "palette_type": None,
         }
@@ -411,8 +383,8 @@ class AmortizedInferenceTrainer(ModelTrainer):
         # hypervolume
         hyper_volume_params = {
             "explicit_volume": model_configs.explicit_volume,
-            "n_layers": model_configs.hypervolume_layers,
-            "hidden_dim": model_configs.hypervolume_dim,
+            "n_layers": model_configs.vol_layers,
+            "hidden_dim": model_configs.vol_dim,
             "pe_type": model_configs.pe_type,
             "pe_dim": model_configs.pe_dim,
             "feat_sigma": model_configs.feat_sigma,
@@ -456,12 +428,12 @@ class AmortizedInferenceTrainer(ModelTrainer):
                 "l_min": self.configs.l_start,
                 "l_max": self.configs.l_end,
                 "t_extent": self.configs.t_extent,
-                "t_n_grid": self.configs.t_n_grid,
+                "t_n_grid": self.configs.t_ngrid,
                 "niter": self.configs.n_iter,
                 "nkeptposes": self.configs.n_kept_poses,
                 "base_healpy": self.configs.base_healpy,
-                "t_xshift": self.configs.t_x_shift,
-                "t_yshift": self.configs.t_y_shift,
+                "t_xshift": self.configs.t_xshift,
+                "t_yshift": self.configs.t_yshift,
                 "no_trans_search_at_pose_search": self.configs.no_trans_search_at_pose_search,
                 "n_tilts_pose_search": self.configs.n_tilts_pose_search,
                 "tilting_func": (

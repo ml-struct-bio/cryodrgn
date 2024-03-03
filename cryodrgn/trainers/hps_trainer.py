@@ -22,28 +22,7 @@ from cryodrgn.trainers._base import ModelTrainer, ModelConfigurations
 class HierarchicalPoseSearchConfigurations(ModelConfigurations):
 
     __slots__ = (
-        "particles",
-        "ctf",
-        "dataset",
-        "datadir",
-        "ind",
-        "log_interval",
-        "verbose",
-        "load",
-        "load_poses",
-        "checkpoint",
-        "z_dim",
-        "invert_data",
-        "lazy",
-        "shuffler_size",
-        "max_threads",
-        "tilt",
-        "tilt_deg",
         "enc_only",
-        "num_epochs",
-        "batch_size",
-        "weight_decay",
-        "learning_rate",
         "beta",
         "beta_control",
         "equivariance",
@@ -55,18 +34,9 @@ class HierarchicalPoseSearchConfigurations(ModelConfigurations):
         "reset_model_every",
         "reset_optim_every",
         "reset_optim_after_pretrain",
-        "multigpu",
-        "l_start",
-        "l_end",
         "grid_niter",
-        "t_extent",
-        "t_ngrid",
-        "t_xshift",
-        "t_yshift",
-        "pretrain",
         "ps_freq",
         "n_kept_poses",
-        "base_healpy",
         "pose_model_update_freq",
         "enc_layers",
         "enc_dim",
@@ -75,37 +45,10 @@ class HierarchicalPoseSearchConfigurations(ModelConfigurations):
         "use_real",
         "dec_layers",
         "dec_dim",
-        "pe_type",
-        "feat_sigma",
-        "pe_dim",
-        "domain",
-        "activation",
-        "seed",
     )
     default_values = OrderedDict(
         {
-            "particles": None,
-            "ctf": None,
-            "dataset": None,
-            "datadir": None,
-            "ind": None,
-            "log_interval": 1000,
-            "verbose": False,
-            "load": None,
-            "load_poses": None,
-            "checkpoint": 1,
-            "z_dim": None,
-            "invert_data": True,
-            "lazy": False,
-            "shuffler_size": 0,
-            "max_threads": 16,
-            "tilt": None,
-            "tilt_deg": 45,
             "enc_only": False,
-            "num_epochs": 30,
-            "batch_size": 8,
-            "weight_decay": 0,
-            "learning_rate": 1e-4,
             "beta": None,
             "beta_control": None,
             "equivariance": None,
@@ -117,18 +60,9 @@ class HierarchicalPoseSearchConfigurations(ModelConfigurations):
             "reset_model_every": None,
             "reset_optim_every": None,
             "reset_optim_after_pretrain": None,
-            "multigpu": False,
-            "l_start": 12,
-            "l_end": 32,
             "grid_niter": 4,
-            "t_extent": 10,
-            "t_ngrid": 7,
-            "t_xshift": 0,
-            "t_yshift": 0,
-            "pretrain": 10000,
             "ps_freq": 5,
             "n_kept_poses": 8,
-            "base_healpy": 2,
             "pose_model_update_freq": None,
             "enc_layers": 3,
             "enc_dim": 256,
@@ -137,12 +71,6 @@ class HierarchicalPoseSearchConfigurations(ModelConfigurations):
             "use_real": False,
             "dec_layers": 3,
             "dec_dim": 256,
-            "pe_type": "gaussian",
-            "feat_sigma": 0.5,
-            "pe_dim": None,
-            "domain": "hartley",
-            "activation": "relu",
-            "seed": None,
         }
     )
 
@@ -445,16 +373,14 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
         if self.current_epoch % self.configs.ps_freq != 0:
             self.logger.info("Using previous iteration poses")
 
-        for batch in self.data_iterator:
-            ind = batch[-1]
+        for batch, tilt_ind, ind in self.data_iterator:
             ind_np = ind.cpu().numpy()
-            batch = (
-                (batch[0].to(self.device), None)
-                if self.tilt is None
-                else (batch[0].to(self.device), batch[1].to(self.device))
-            )
+            y = batch.to(self.device)
+            if tilt_ind is not None:
+                tilt_ind = tilt_ind.to(self.device)
+
             batch_it += len(batch[0])
-            global_it = self.Nimg * self.current_epoch + batch_it
+            global_it = self.particle_count * self.current_epoch + batch_it
 
             lamb = None
             beta = self.beta_schedule(global_it)
@@ -466,6 +392,17 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                 equivariance_tuple = (lamb, self.equivariance_loss)
             else:
                 equivariance_tuple = None
+
+            if self.configs.use_real:
+                assert hasattr(self.data, "particles_real")
+                yr = torch.from_numpy(
+                    self.data.particles_real[ind.numpy()]
+                ).to(device)  # type: ignore  # PYR02
+            else:
+                yr = None
+
+            if self.pose_optimizer is not None:
+                self.pose_optimizer.zero_grad()
 
             # train the model
             p = None
@@ -481,6 +418,22 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                     self.pose_model.load_state_dict(self.model.state_dict())
                     self.conf_search_particles = 0
 
+            dose_filters = None
+            if self.configs.encode_mode == "tilt":
+                tilt_ind = minibatch[1].to(device)
+                assert all(tilt_ind >= 0), tilt_ind
+                rot, tran = posetracker.get_pose(tilt_ind.view(-1))
+                ctf_param = (
+                    ctf_params[tilt_ind.view(-1)] if ctf_params is not None else None
+                )
+                y = y.view(-1, D, D)
+                Apix = ctf_params[0, 0] if ctf_params is not None else None
+                if args.dose_per_tilt is not None:
+                    dose_filters = data.get_dose_filters(tilt_ind, lattice, Apix)
+            else:
+                rot, tran = posetracker.get_pose(ind)
+                ctf_param = ctf_params[ind] if ctf_params is not None else None
+
             ctf_i = self.ctf_params[ind] if self.ctf_params is not None else None
             gen_loss, kld, loss, eq_loss, pose = self.train_step(
                 batch,
@@ -491,15 +444,20 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                 ctf_params=ctf_i,
             )
 
+            if self.pose_optimizer is not None:
+                if self.current_epoch >= self.configs.pretrain:
+                    self.pose_optimizer.step()
+
             # logging
             poses.append((ind.cpu().numpy(), pose))
             kld_accum += kld * len(ind)
+            loss_accum += loss * len(ind)
             gen_loss_accum += gen_loss * len(ind)
+
             if self.configs.equivariance:
                 assert eq_loss is not None
                 eq_loss_accum += eq_loss * len(ind)
 
-            loss_accum += loss * len(ind)
             if batch_it % self.configs.log_interval == 0:
                 eq_log = (
                     f"equivariance={eq_loss:.4f}, lambda={lamb:.4f}, "

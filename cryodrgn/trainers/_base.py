@@ -6,7 +6,7 @@ import sys
 import pickle
 from collections import OrderedDict
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Optional
 from typing_extensions import Self
 import yaml
 from datetime import datetime as dt
@@ -213,6 +213,7 @@ class ModelConfigurations(BaseConfigurations):
         "window_r",
         "shuffler_size",
         "max_threads",
+        "num_workers",
         "tilt",
         "tilt_deg",
         "num_epochs",
@@ -220,21 +221,27 @@ class ModelConfigurations(BaseConfigurations):
         "weight_decay",
         "learning_rate",
         "pose_learning_rate",
+        "lattice_extent",
+        "l_start",
+        "l_end",
         "data_norm",
         "multigpu",
         "pretrain",
-        "enc_layers",
-        "enc_dim",
+        "t_extent",
+        "t_ngrid",
+        "t_xshift",
+        "t_yshift",
+        "vol_layers",
+        "vol_dim",
         "encode_mode",
         "enc_mask",
         "use_real",
-        "dec_layers",
-        "dec_dim",
         "pe_type",
         "feat_sigma",
         "pe_dim",
         "hypervolume_domain",
         "activation",
+        "base_healpy",
         "subtomo_averaging",
         "volume_optim_type",
         "no_trans",
@@ -264,6 +271,7 @@ class ModelConfigurations(BaseConfigurations):
             "window_r": 0.85,
             "shuffler_size": 0,
             "max_threads": 16,
+            "num_workers": 2,
             "tilt": None,
             "tilt_deg": 45,
             "num_epochs": 30,
@@ -271,21 +279,27 @@ class ModelConfigurations(BaseConfigurations):
             "weight_decay": 0,
             "learning_rate": 1e-4,
             "pose_learning_rate": None,
+            "lattice_extent": 0.5,
+            "l_start": 12,
+            "l_end": 32,
             "data_norm": None,
             "multigpu": False,
             "pretrain": 10000,
-            "enc_layers": 3,
-            "enc_dim": 256,
+            "t_extent": 10,
+            "t_ngrid": 7,
+            "t_xshift": 0,
+            "t_yshift": 0,
+            "vol_layers": 3,
+            "vol_dim": 256,
             "encode_mode": "resid",
             "enc_mask": None,
             "use_real": False,
-            "dec_layers": 3,
-            "dec_dim": 256,
             "pe_type": "gaussian",
             "feat_sigma": 0.5,
             "pe_dim": 64,
             "hypervolume_domain": "hartley",
             "activation": "relu",
+            "base_healpy": 2,
             "subtomo_averaging": False,
             "volume_optim_type": "Adam",
             "no_trans": False,
@@ -341,7 +355,7 @@ class ModelTrainer(BaseTrainer, ABC):
     optim_types = {"adam": torch.optim.Adam, "lbfgs": torch.optim.LBFGS}
 
     @abstractmethod
-    def make_volume_model(self, configs: dict[str, Any]) -> nn.Module:
+    def make_volume_model(self) -> nn.Module:
         pass
 
     def __init__(self, configs: dict[str, Any]) -> None:
@@ -403,6 +417,8 @@ class ModelTrainer(BaseTrainer, ABC):
                 max_threads=self.configs.max_threads,
                 device=self.device,
             )
+            self.particle_count = self.data.N
+
         else:
             self.data = TiltSeriesData(
                 tiltstar=self.configs.particles,
@@ -418,9 +434,9 @@ class ModelTrainer(BaseTrainer, ABC):
                 tilt_axis_angle=self.configs.tilt_axis_angle,
                 no_trans=self.configs.no_trans,
             )
+            self.particle_count = self.data.Np
 
         self.image_count = self.data.N
-        self.particle_count = self.data.N
         self.resolution = self.data.D
 
         if self.configs.ctf:
@@ -452,7 +468,11 @@ class ModelTrainer(BaseTrainer, ABC):
 
         # lattice
         self.logger.info("Building lattice...")
-        self.lattice = Lattice(self.resolution, extent=0.5, device=self.device)
+        self.lattice = Lattice(
+            self.resolution,
+            extent=self.configs.lattice_extent,
+            device=self.device
+        )
 
         self.logger.info("Initializing volume model...")
         self.volume_model = self.make_volume_model()
@@ -607,16 +627,7 @@ class ModelTrainer(BaseTrainer, ABC):
             if will_make_summary:
                 self.logger.info("Will make a full summary at the end of this epoch")
 
-            te = dt.now()
-            self.cur_loss = 0
             self.train_epoch()
-
-            total_loss = self.cur_loss / self.train_particles
-            self.logger.info(
-                f"# =====> SGD Epoch: {self.epoch} "
-                f"finished in {dt.now() - te}; "
-                f"total loss = {format(total_loss, '.6f')}"
-            )
 
             # image and pose summary
             if will_make_summary:

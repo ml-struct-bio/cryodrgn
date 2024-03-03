@@ -26,7 +26,6 @@ import pickle
 import sys
 import contextlib
 import logging
-from datetime import datetime as dt
 from typing import Optional
 import numpy as np
 import torch
@@ -42,7 +41,6 @@ import cryodrgn
 from cryodrgn import ctf, dataset
 from cryodrgn.lattice import Lattice
 from cryodrgn.models.variational_autoencoder import HetOnlyVAE, unparallelize
-from cryodrgn.pose import PoseTracker
 import cryodrgn.trainers.config
 
 logger = logging.getLogger(__name__)
@@ -625,145 +623,3 @@ def get_latest(args):
         assert os.path.exists(args.poses)
         logger.info(f"Loading {args.poses}")
     return args
-
-
-def main(args):
-
-    num_epochs = args.num_epochs
-    epoch = None
-    Nparticles = Nimg if args.encode_mode != "tilt" else data.Np
-    for epoch in range(start_epoch, num_epochs):
-        t2 = dt.now()
-        gen_loss_accum = 0
-        loss_accum = 0
-        kld_accum = 0
-        batch_it = 0
-        for i, minibatch in enumerate(data_generator):  # minibatch: [y, ind]
-            ind = minibatch[-1].to(device)
-            y = minibatch[0].to(device)
-            B = len(ind)
-            batch_it += B
-            global_it = Nparticles * epoch + batch_it
-
-            beta = beta_schedule(global_it)
-
-            yr = None
-            if args.use_real:
-                assert hasattr(data, "particles_real")
-                yr = torch.from_numpy(data.particles_real[ind.numpy()]).to(device)  # type: ignore  # PYR02
-            if pose_optimizer is not None:
-                pose_optimizer.zero_grad()
-
-            dose_filters = None
-            if args.encode_mode == "tilt":
-                tilt_ind = minibatch[1].to(device)
-                assert all(tilt_ind >= 0), tilt_ind
-                rot, tran = posetracker.get_pose(tilt_ind.view(-1))
-                ctf_param = (
-                    ctf_params[tilt_ind.view(-1)] if ctf_params is not None else None
-                )
-                y = y.view(-1, D, D)
-                Apix = ctf_params[0, 0] if ctf_params is not None else None
-                if args.dose_per_tilt is not None:
-                    dose_filters = data.get_dose_filters(tilt_ind, lattice, Apix)
-            else:
-                rot, tran = posetracker.get_pose(ind)
-                ctf_param = ctf_params[ind] if ctf_params is not None else None
-
-            loss, gen_loss, kld = train_batch(
-                model,
-                lattice,
-                y,
-                args.ntilts if args.encode_mode == "tilt" else None,
-                rot,
-                tran,
-                optim,
-                beta,
-                args.beta_control,
-                ctf_params=ctf_param,
-                yr=yr,
-                use_amp=args.amp,
-                scaler=scaler,
-                dose_filters=dose_filters,
-            )
-            if pose_optimizer is not None and epoch >= args.pretrain:
-                pose_optimizer.step()
-
-            # logging
-            gen_loss_accum += gen_loss * B
-            kld_accum += kld * B
-            loss_accum += loss * B
-
-            if batch_it % args.log_interval == 0:
-                logger.info(
-                    "# [Train Epoch: {}/{}] [{}/{} particles] gen loss={:.6f}, kld={:.6f}, beta={:.6f}, "
-                    "loss={:.6f}".format(
-                        epoch + 1,
-                        num_epochs,
-                        batch_it,
-                        Nparticles,
-                        gen_loss,
-                        kld,
-                        beta,
-                        loss,
-                    )
-                )
-        logger.info(
-            "# =====> Epoch: {} Average gen loss = {:.6}, KLD = {:.6f}, total loss = {:.6f}; Finished in {}".format(
-                epoch + 1,
-                gen_loss_accum / Nparticles,
-                kld_accum / Nparticles,
-                loss_accum / Nparticles,
-                dt.now() - t2,
-            )
-        )
-
-        if args.checkpoint and epoch % args.checkpoint == 0:
-            out_weights = "{}/weights.{}.pkl".format(args.outdir, epoch)
-            out_z = "{}/z.{}.pkl".format(args.outdir, epoch)
-            model.eval()
-            with torch.no_grad():
-                z_mu, z_logvar = eval_z(
-                    model,
-                    lattice,
-                    data,
-                    args.batch_size,
-                    device,
-                    trans=posetracker.trans,
-                    use_tilt=args.encode_mode == "tilt",
-                    ctf_params=ctf_params,
-                    use_real=args.use_real,
-                    shuffler_size=args.shuffler_size,
-                )
-                save_checkpoint(model, optim, epoch, z_mu, z_logvar, out_weights, out_z)
-            if args.do_pose_sgd and epoch >= args.pretrain:
-                out_pose = "{}/pose.{}.pkl".format(args.outdir, epoch)
-                posetracker.save(out_pose)
-
-    logger.info("Training complete")
-    # save model weights, latent encoding, and evaluate the model on 3D lattice
-    out_weights = "{}/weights.pkl".format(args.outdir)
-    out_z = "{}/z.pkl".format(args.outdir)
-    model.eval()
-    with torch.no_grad():
-        z_mu, z_logvar = eval_z(
-            model,
-            lattice,
-            data,
-            args.batch_size,
-            device,
-            posetracker.trans,
-            args.encode_mode == "tilt",
-            ctf_params,
-            args.use_real,
-        )
-        save_checkpoint(model, optim, epoch, z_mu, z_logvar, out_weights, out_z)
-
-    if args.do_pose_sgd and epoch >= args.pretrain:
-        out_pose = "{}/pose.pkl".format(args.outdir)
-        posetracker.save(out_pose)
-
-    td = dt.now() - t1
-    logger.info(
-        "Finished in {} ({} per epoch)".format(td, td / (num_epochs - start_epoch))
-    )

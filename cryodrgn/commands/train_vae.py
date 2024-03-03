@@ -611,24 +611,6 @@ def get_latest(args):
 
 def main(args):
 
-    # load poses
-    pose_optimizer = None
-    if args.do_pose_sgd:
-        assert (
-            args.domain == "hartley"
-        ), "Need to use --domain hartley if doing pose SGD"
-
-    do_pose_sgd = args.do_pose_sgd
-
-    posetracker = PoseTracker.load(
-        args.poses, Nimg, D, "s2s2" if do_pose_sgd else None, ind, device=device
-    )
-    pose_optimizer = (
-        torch.optim.SparseAdam(list(posetracker.parameters()), lr=args.pose_lr)
-        if do_pose_sgd
-        else None
-    )
-
     num_epochs = args.num_epochs
     epoch = None
     Nparticles = Nimg if args.encode_mode != "tilt" else data.Np

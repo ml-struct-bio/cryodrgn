@@ -24,9 +24,6 @@ from cryodrgn.trainers._base import ModelTrainer, ModelConfigurations
 class AmortizedInferenceConfigurations(ModelConfigurations):
 
     __slots__ = (
-        "use_gt_poses",
-        "refine_gt_poses",
-        "use_gt_trans",
         "log_heavy_interval",
         "verbose_time",
         "batch_size_known_poses",
@@ -86,10 +83,6 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
     )
     default_values = OrderedDict(
         {
-            # initialization
-            "use_gt_poses": False,
-            "refine_gt_poses": False,
-            "use_gt_trans": False,
             "log_heavy_interval": 5,
             "verbose_time": False,
             # data loading
@@ -187,6 +180,8 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
     )
 
     def __init__(self, config_vals: dict[str, Any]) -> None:
+        super().__init__(config_vals)
+
         if "model" in config_vals and config_vals["model"] != "amort":
             raise ValueError(
                 f"Mismatched model {config_vals['model']} "
@@ -334,8 +329,6 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
         if "t_extent" in config_vals and config_vals["t_extent"] == 0.0:
             config_vals["t_n_grid"] = 1
 
-        super().__init__(config_vals)
-
 
 class AmortizedInferenceTrainer(ModelTrainer):
     """An engine for training the reconstruction model on particle data.
@@ -369,7 +362,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
 
     config_cls = AmortizedInferenceConfigurations
 
-    def make_model(
+    def make_volume_model(
         self, configs: Optional[AmortizedInferenceConfigurations] = None
     ) -> nn.Module:
         model_configs: AmortizedInferenceConfigurations = configs or self.configs
@@ -494,8 +487,6 @@ class AmortizedInferenceTrainer(ModelTrainer):
             self.model = MyDataParallel(self.model)
 
         self.model.output_mask.binary_mask = self.model.output_mask.binary_mask.cpu()
-        self.optimizers = dict()
-        self.optimizer_types = dict()
 
         # hypervolume
         hyper_volume_params = [{"params": list(self.model.hypervolume.parameters())}]
@@ -536,7 +527,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
                 ](
                     conf_encoder_params,
                     lr=self.configs.lr_conf_encoder,
-                    weight_decay=self.configs.wd,
+                    weight_decay=self.configs.weight_decay,
                 )
                 self.optimizer_types[
                     "conf_encoder"

@@ -147,6 +147,8 @@ class HierarchicalPoseSearchConfigurations(ModelConfigurations):
     )
 
     def __init__(self, config_vals: dict[str, Any]) -> None:
+        super().__init__(config_vals)
+
         assert (
                 config_vals["model"] == "hps"
         ), f"Mismatched model {config_vals['model']} for HierarchicalSearchTrainer!"
@@ -189,8 +191,6 @@ class HierarchicalPoseSearchConfigurations(ModelConfigurations):
                 )
             if self.equivariance <= 0:
                 raise ValueError("Regularization weight must be positive")
-
-        super().__init__(config_vals)
 
 
 class HierarchicalPoseSearchTrainer(ModelTrainer):
@@ -333,11 +333,13 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                 )
                 self.equivariance_loss = EquivarianceLoss(self.model, self.D)
 
-        self.optim = torch.optim.Adam(
-            self.model.parameters(),
-            lr=configs["learning_rate"],
-            weight_decay=configs["weight_decay"],
-        )
+        if self.configs.refine_gt_poses:
+            self.pose_optimizer = torch.optim.SparseAdam(
+                list(self.pose_tracker.parameters()),
+                lr=self.configs.pose_learning_rate
+            )
+        else:
+            self.pose_optimizer = None
 
         self.sorted_poses = list()
         if self.configs.load_poses:
@@ -379,7 +381,6 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
             self.pose_model.eval()
         else:
             self.pose_model = self.model
-
 
         self.pose_search = PoseSearch(
             self.pose_model,

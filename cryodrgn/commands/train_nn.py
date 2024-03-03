@@ -17,8 +17,6 @@ $ cryodrgn train_nn projections.star --poses angles.pkl --ctf.pkl \
 """
 import argparse
 import os
-import pickle
-import sys
 from datetime import datetime as dt
 import logging
 import numpy as np
@@ -37,7 +35,7 @@ from cryodrgn.lattice import Lattice
 from cryodrgn.pose import PoseTracker
 from cryodrgn.source import write_mrc
 from cryodrgn.models.neural_nets import DataParallelDecoder, Decoder
-import cryodrgn.models.config
+import cryodrgn.trainers.config
 
 logger = logging.getLogger(__name__)
 
@@ -349,7 +347,7 @@ def save_config(args, dataset, lattice, model, out_config):
         dataset_args=dataset_args, lattice_args=lattice_args, model_args=model_args
     )
     config["seed"] = args.seed
-    cryodrgn.models.config.save(config, out_config)
+    cryodrgn.trainers.config.save(config, out_config)
 
 
 def get_latest(args):
@@ -367,54 +365,7 @@ def get_latest(args):
     return args
 
 
-def main(args: argparse.Namespace) -> None:
-    if args.verbose:
-        logger.setLevel(logging.DEBUG)
-
-    t1 = dt.now()
-    if args.outdir is not None and not os.path.exists(args.outdir):
-        os.makedirs(args.outdir)
-
-    logger.addHandler(logging.FileHandler(f"{args.outdir}/run.log"))
-
-    if args.load == "latest":
-        args = get_latest(args)
-    logger.info(" ".join(sys.argv))
-    logger.info(args)
-
-    # set the random seed
-    np.random.seed(args.seed)
-    torch.manual_seed(args.seed)
-
-    # set the device
-    use_cuda = torch.cuda.is_available()
-    device_str = "cuda" if use_cuda else "cpu"
-    device = torch.device(device_str)
-    logger.info("Use cuda {}".format(use_cuda))
-    if not use_cuda:
-        logger.warning("WARNING: No GPUs detected")
-
-    # load the particles
-    if args.ind is not None:
-        logger.info("Filtering image dataset with {}".format(args.ind))
-        ind = pickle.load(open(args.ind, "rb"))
-    else:
-        ind = None
-
-    data = dataset.ImageDataset(
-        args.particles,
-        lazy=args.lazy,
-        norm=args.norm,
-        invert_data=args.invert_data,
-        ind=ind,
-        window=args.window,
-        datadir=args.datadir,
-        window_r=args.window_r,
-    )
-
-    D = data.D
-    Nimg = data.N
-
+def main(args):
     # instantiate model
     # if args.pe_type != 'none': assert args.l_extent == 0.5
     lattice = Lattice(D, extent=args.l_extent, device=device)

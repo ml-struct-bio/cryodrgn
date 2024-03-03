@@ -20,6 +20,7 @@ import cryodrgn.utils
 from cryodrgn import __version__, ctf
 from cryodrgn.dataset import ImageDataset, TiltSeriesData, make_dataloader
 from cryodrgn.lattice import Lattice
+from cryodrgn.pose import PoseTracker
 
 try:
     import apex.amp as amp  # type: ignore  # PYR01
@@ -192,6 +193,7 @@ class ModelConfigurations(BaseConfigurations):
         "model",
         "particles",
         "ctf",
+        "pose",
         "dataset",
         "datadir",
         "ind",
@@ -202,6 +204,9 @@ class ModelConfigurations(BaseConfigurations):
         "initial_conf",
         "checkpoint",
         "z_dim",
+        "use_gt_poses",
+        "refine_gt_poses",
+        "use_gt_trans",
         "invert_data",
         "lazy",
         "window",
@@ -214,6 +219,7 @@ class ModelConfigurations(BaseConfigurations):
         "batch_size",
         "weight_decay",
         "learning_rate",
+        "pose_learning_rate",
         "data_norm",
         "multigpu",
         "pretrain",
@@ -239,6 +245,7 @@ class ModelConfigurations(BaseConfigurations):
             "model": "amort",
             "particles": None,
             "ctf": None,
+            "pose": None,
             "dataset": None,
             "datadir": None,
             "ind": None,
@@ -248,6 +255,9 @@ class ModelConfigurations(BaseConfigurations):
             "load_poses": None,
             "checkpoint": 1,
             "z_dim": None,
+            "use_gt_poses": False,
+            "refine_gt_poses": False,
+            "use_gt_trans": False,
             "invert_data": True,
             "lazy": False,
             "window": True,
@@ -260,6 +270,7 @@ class ModelConfigurations(BaseConfigurations):
             "batch_size": 8,
             "weight_decay": 0,
             "learning_rate": 1e-4,
+            "pose_learning_rate": None,
             "data_norm": None,
             "multigpu": False,
             "pretrain": 10000,
@@ -283,43 +294,43 @@ class ModelConfigurations(BaseConfigurations):
     )
 
     def __init__(self, config_vals: dict[str, Any]) -> None:
-        if "model" in config_vals:
-            if config_vals["model"] not in {"hps", "amort"}:
-                raise ValueError(
-                    f"Given model `{config_vals['model']}` not in currently supported "
-                    f"model types:\n"
-                    f"`amort` (cryoDRGN v4 amortized inference pose estimation)\n"
-                    f"`hps` (cryoDRGN v3 hierarchical pose estimation)\n"
-                )
+        super().__init__(config_vals)
 
-        if "ind" in config_vals:
-            if isinstance(config_vals["ind"], str):
-                if not os.path.exists(config_vals["ind"]):
-                    raise ValueError(
-                        f"Subset indices file {config_vals['ind']} does not exist!"
-                    )
+        if self.model not in {"hps", "amort"}:
+            raise ValueError(
+                f"Given model `{self.model}` not in currently supported model types:\n"
+                f"`amort` (cryoDRGN v4 amortized inference pose estimation)\n"
+                f"`hps` (cryoDRGN v3 hierarchical pose estimation)\n"
+            )
 
-        if "dataset" in config_vals and config_vals["dataset"]:
+        if isinstance(self.ind, str) and not os.path.exists(self.ind):
+            raise ValueError(
+                f"Subset indices file {config_vals['ind']} does not exist!"
+            )
+
+        if self.dataset:
             paths_file = os.environ.get("DRGNAI_DATASETS")
             paths = cryodrgn.utils.load_yaml(paths_file)
 
-            if config_vals["dataset"] not in paths:
+            if self.dataset not in paths:
                 raise ValueError(
-                    f"Given dataset label `{config_vals['dataset']}` not in list of "
+                    f"Given dataset label `{self.dataset}` not in list of "
                     f"datasets specified at `{paths_file}`!"
                 )
-            use_paths = paths[config_vals["dataset"]]
 
-            config_vals["particles"] = use_paths["particles"]
+            use_paths = paths[self.dataset]
+            self.particles = use_paths["particles"]
+
             for k in ["ctf", "pose", "datadir", "labels", "ind", "dose_per_tilt"]:
                 if k not in config_vals and k in use_paths:
                     if not os.path.exists(use_paths[k]):
                         raise ValueError(
                             f"Given {k} file `{use_paths[k]}` does not exist!"
                         )
-                    config_vals[k] = use_paths[k]
+                    setattr(self, k, use_paths[k])
 
-        super().__init__(config_vals)
+        if self.refine_gt_poses and self.hypervolume_domain != "hartley":
+            raise ValueError("Need to use --domain hartley if doing pose SGD")
 
 
 class ModelTrainer(BaseTrainer, ABC):
@@ -443,13 +454,15 @@ class ModelTrainer(BaseTrainer, ABC):
         self.logger.info("Building lattice...")
         self.lattice = Lattice(self.resolution, extent=0.5, device=self.device)
 
-        self.logger.info("Initializing model...")
+        self.logger.info("Initializing volume model...")
         self.volume_model = self.make_volume_model()
         self.volume_model.to(self.device)
         self.logger.info(self.volume_model)
 
-        param_count = sum(p.numel() for p in self.volume_model.parameters() if p.requires_grad)
-        self.logger.info(f"{param_count} parameters in model")
+        param_count = sum(
+            p.numel() for p in self.volume_model.parameters() if p.requires_grad
+        )
+        self.logger.info(f"{param_count} parameters in volume model")
         self.current_epoch = None
 
         self.data_iterator = make_dataloader(
@@ -463,7 +476,7 @@ class ModelTrainer(BaseTrainer, ABC):
         self.volume_optimizer = self.volume_optim_class(
             self.volume_model.parameters(),
             lr=self.configs.learning_rate,
-            weight_decay=configs["weight_decay"]
+            weight_decay=self.configs.weight_decay,
         )
 
         # Mixed precision training
@@ -533,6 +546,18 @@ class ModelTrainer(BaseTrainer, ABC):
             self.pretrain_iter = 0
         else:
             self.start_epoch = 1
+
+        if self.configs.pose:
+            self.pose_tracker = PoseTracker.load(
+                infile=self.configs.pose,
+                Nimg=self.image_count,
+                D=self.resolution,
+                emb_type="s2s2" if self.configs.refine_gt_poses else None,
+                ind=self.ind,
+                device=self.device
+            )
+        else:
+            self.pose_tracker = None
 
         # parallelize
         if self.configs.multigpu and torch.cuda.device_count() > 1:

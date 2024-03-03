@@ -8,8 +8,6 @@ $ cryodrgn abinit_homo particles.256.txt --ctf ctf.pkl --ind chosen-particles.pk
 """
 import argparse
 import os
-import pickle
-import sys
 from datetime import datetime as dt
 import logging
 import numpy as np
@@ -19,8 +17,6 @@ import torch.nn.functional as F
 
 from cryodrgn import ctf, dataset, lie_tools, models, utils
 from cryodrgn.mrc import MRCFile
-from cryodrgn.lattice import Lattice
-from cryodrgn.pose_search import PoseSearch
 import cryodrgn.config
 
 logger = logging.getLogger(__name__)
@@ -359,73 +355,6 @@ def save_config(args, dataset, lattice, out_config):
 
 
 def main(args):
-    if args.verbose:
-        logger.setLevel(logging.DEBUG)
-
-    t1 = dt.now()
-    if not os.path.exists(args.outdir):
-        os.makedirs(args.outdir)
-
-    logger.addHandler(logging.FileHandler(f"{args.outdir}/run.log"))
-
-    if args.load == "latest":
-        args = get_latest(args)
-
-    logger.info(" ".join(sys.argv))
-    logger.info(args)
-
-    # set the random seed
-    np.random.seed(args.seed)
-    torch.manual_seed(args.seed)
-
-    # set the device
-    use_cuda = torch.cuda.is_available()
-    device = torch.device("cuda" if use_cuda else "cpu")
-    logger.info("Use cuda {}".format(use_cuda))
-    if not use_cuda:
-        logger.warning("WARNING: No GPUs detected")
-
-    # load the particles
-    if args.ind is not None:
-        logger.info("Filtering image dataset with {}".format(args.ind))
-        ind = pickle.load(open(args.ind, "rb"))
-    else:
-        ind = None
-
-    if args.tilt is None:
-        tilt = None
-    else:
-        tilt = torch.tensor(utils.xrot(args.tilt_deg).astype(np.float32), device=device)
-
-    data = dataset.ImageDataset(
-        mrcfile=args.particles,
-        lazy=args.lazy,
-        norm=args.norm,
-        invert_data=args.invert_data,
-        ind=ind,
-        window=args.window,
-        datadir=args.datadir,
-        window_r=args.window_r,
-    )
-
-    D = data.D
-    Nimg = data.N
-
-    # load ctf
-    if args.ctf is not None:
-        logger.info("Loading ctf params from {}".format(args.ctf))
-        ctf_params = ctf.load_ctf_for_training(D - 1, args.ctf)
-        if ind is not None:
-            ctf_params = ctf_params[ind]
-        assert ctf_params.shape == (Nimg, 8)
-        ctf_params = torch.tensor(ctf_params, device=device)
-    else:
-        ctf_params = None
-
-    # instantiate model
-    lattice = Lattice(D, extent=0.5, device=device)
-    model = make_model(args, D)
-    model.to(device)
 
     if args.pose_model_update_freq:
         pose_model = make_model(args, D)
@@ -433,35 +362,6 @@ def main(args):
         pose_model.eval()
     else:
         pose_model = model
-
-    # save configuration
-    save_config(args, data, lattice, os.path.join(args.outdir, "config.yaml"))
-
-    if args.no_trans:
-        raise NotImplementedError()
-    else:
-        ps = PoseSearch(
-            pose_model,
-            lattice,
-            args.l_start,
-            args.l_end,
-            tilt,
-            t_extent=args.t_extent,
-            t_ngrid=args.t_ngrid,
-            niter=args.niter,
-            nkeptposes=args.nkeptposes,
-            base_healpy=args.base_healpy,
-            t_xshift=args.t_xshift,
-            t_yshift=args.t_yshift,
-            device=device,
-        )
-    logger.info(model)
-    logger.info(
-        "{} parameters in model".format(
-            sum(p.numel() for p in model.parameters() if p.requires_grad)
-        )
-    )
-    optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
     sorted_poses = []
     if args.load:

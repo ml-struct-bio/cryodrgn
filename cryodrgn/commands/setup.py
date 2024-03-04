@@ -78,7 +78,10 @@ class SetupHelper:
         if os.path.exists(self.configs_file):
             self.old_configs = load_yaml(self.configs_file)
         else:
-            self.old_configs = {"quick_config": None}
+            self.old_configs = dict()
+
+        if "quick_config" not in self.old_configs:
+            self.old_configs["quick_config"] = dict()
 
     def create_configs(
         self,
@@ -125,8 +128,9 @@ class SetupHelper:
                 if os.path.exists(new_path):
                     configs[k] = new_path
 
-        if configs["quick_config"]["reconstruction_type"] == "homo":
-            configs["quick_config"]["conf_estimation"] = None
+        if "reconstruction_type" in configs:
+            if configs["quick_config"]["reconstruction_type"] == "homo":
+                configs["quick_config"]["conf_estimation"] = None
 
         paths_file = os.environ.get("DRGNAI_DATASETS")
         if paths_file:

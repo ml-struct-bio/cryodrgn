@@ -2,7 +2,7 @@ import os
 import pickle
 from datetime import datetime as dt
 from collections import OrderedDict
-from typing import Any, Optional, Callable
+from typing import Any, Callable
 
 import numpy as np
 import torch
@@ -10,8 +10,8 @@ from torch import nn
 from torch.nn.parallel import DataParallel
 import torch.nn.functional as F
 
-import cryodrgn.trainers.config
-from cryodrgn import ctf, dataset, lie_tools, utils
+import cryodrgn.config
+from cryodrgn import ctf, dataset, lie_tools
 from cryodrgn.losses import EquivarianceLoss
 from cryodrgn.models.variational_autoencoder import unparallelize, HetOnlyVAE
 from cryodrgn.models.neural_nets import get_decoder
@@ -90,7 +90,7 @@ class HierarchicalPoseSearchConfigurations(ModelConfigurations):
                 raise ValueError("As dataset was not specified, please " "specify ctf!")
 
         if self.beta is not None:
-            if self.z_dim == 0:
+            if not self.z_dim:
                 raise ValueError("Cannot use beta with homogeneous reconstruction!.")
 
             if not isinstance(self.beta, (int, float)) and not self.beta_control:
@@ -99,21 +99,19 @@ class HierarchicalPoseSearchConfigurations(ModelConfigurations):
                 )
 
         if self.tilt is None:
-            if self.z_dim > 0:
-                if self.use_real != (self.encode_mode == "conv"):
-                    raise ValueError(
-                        "Using real space image is only available "
-                        "for convolutional encoder in SPA heterogeneous reconstruction!"
-                    )
+            if self.z_dim and self.use_real != (self.encode_mode == "conv"):
+                raise ValueError(
+                    "Using real space image is only available "
+                    "for convolutional encoder in SPA heterogeneous reconstruction!"
+                )
         else:
-            if self.z_dim > 0:
-                if self.encode_mode != "tilt":
+            if self.z_dim and self.encode_mode:
                     raise ValueError(
                         "Must use tilt for heterogeneous reconstruction on ET capture!"
                     )
 
         if self.equivariance is not None:
-            if self.z_dim == 0:
+            if not self.z_dim:
                 raise ValueError(
                     "Cannot use equivariance with homogeneous reconstruction!."
                 )
@@ -123,56 +121,39 @@ class HierarchicalPoseSearchConfigurations(ModelConfigurations):
 
 class HierarchicalPoseSearchTrainer(ModelTrainer):
 
-    def make_volume_model(
-            self, configs: Optional[HierarchicalPoseSearchConfigurations]
-    ) -> nn.Module:
-        model_configs: HierarchicalPoseSearchConfigurations = configs or self.configs
+    config_cls = HierarchicalPoseSearchConfigurations
 
-        if model_configs.enc_mask is None:
-            model_configs.enc_mask = self.resolution // 2
-        if model_configs.enc_mask > 0:
-            assert model_configs.enc_mask <= self.resolution // 2
-            enc_mask = self.lattice.get_circular_mask(model_configs.enc_mask)
-            in_dim = int(enc_mask.sum())
-        elif model_configs.enc_mask == -1:
-            enc_mask = None
-            in_dim = self.lattice.D ** 2 if not self.configs.use_real else (self.lattice.D - 1) ** 2
-        else:
-            raise RuntimeError(
-                f"Invalid argument for encoder mask radius {model_configs['enc_mask']=}"
-            )
+    def make_volume_model(self) -> nn.Module:
+        self.configs: HierarchicalPoseSearchConfigurations
 
-        activation = {"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[
-            self.configs.activation]
-
-        if self.configs.z_dim == 0:
+        if not self.configs.z_dim:
             model = get_decoder(
                 3,
                 self.resolution,
-                model_configs.dec_layers,
-                model_configs.dec_dim,
-                model_configs.domain,
-                model_configs.pe_type,
-                model_configs.pe_dim,
-                activation=model_configs.activation,
-                feat_sigma=model_configs.feat_sigma,
+                self.configs.dec_layers,
+                self.configs.dec_dim,
+                self.configs.volume_domain,
+                self.configs.pe_type,
+                self.configs.pe_dim,
+                activation=self.activation,
+                feat_sigma=self.configs.feat_sigma,
             )
         else:
             model = HetOnlyVAE(
                 self.lattice,
-                model_configs.enc_layers,
-                model_configs.enc_dim,
-                model_configs.dec_layers,
-                model_configs.dec_dim,
-                model_configs.in_dim,
-                model_configs.z_dim,
-                encode_mode=model_configs.encode_mode,
-                enc_mask=model_configs.enc_mask,
-                enc_type=model_configs.pe_type,
-                enc_dim=model_configs.pe_dim,
-                domain=model_configs.domain,
-                activation=model_configs.activation,
-                feat_sigma=model_configs.feat_sigma,
+                self.configs.enc_layers,
+                self.configs.enc_dim,
+                self.configs.dec_layers,
+                self.configs.dec_dim,
+                self.in_dim,
+                self.configs.z_dim,
+                encode_mode=self.configs.encode_mode,
+                enc_mask=self.enc_mask,
+                enc_type=self.configs.pe_type,
+                enc_dim=self.configs.pe_dim,
+                domain=self.configs.volume_domain,
+                activation=self.activation,
+                feat_sigma=self.configs.feat_sigma,
             )
 
             enc_params = sum(
@@ -204,8 +185,8 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
         self.configs: HierarchicalPoseSearchConfigurations
 
         # set beta schedule
-        if self.model.zdim > 0:
-            beta = self.configs.beta or self.model.zdim**-1
+        if self.configs.z_dim:
+            beta = self.configs.beta or self.configs.z_dim**-1
             # beta = 1.0 / args.ntilts
 
             if isinstance(beta, float):
@@ -226,17 +207,16 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
             if self.resolution - 1 != 64:
                 raise ValueError("Image size must be 64x64 for convolutional encoder!")
 
-        if self.model.zdim > 0:
-            if self.configs.enc_mask is None:
-                self.configs.enc_mask = self.D // 2
+        if self.configs.z_dim:
+            use_mask = self.configs.enc_mask or self.resolution // 2
 
-            if self.configs.enc_mask > 0:
-                assert self.configs.enc_mask <= self.D // 2
-                self.enc_mask = self.lattice.get_circular_mask(self.configs.enc_mask)
+            if use_mask > 0:
+                assert use_mask <= self.resolution // 2
+                self.enc_mask = self.lattice.get_circular_mask(use_mask)
                 self.in_dim = self.enc_mask.sum()
-            elif self.configs.enc_mask == -1:
+            elif use_mask == -1:
                 self.enc_mask = None
-                self.in_dim = self.D**2
+                self.in_dim = self.resolution**2
             else:
                 raise RuntimeError(
                     f"Invalid argument for encoder mask radius {self.configs.enc_mask}"
@@ -246,12 +226,8 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
             self.enc_mask = None
             self.in_dim = None
 
-        self.activation = {"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[
-            self.configs.activation
-        ]
-
         self.equivariance_lambda = self.equivariance_loss = None
-        if self.model.zdim > 0:
+        if self.configs.z_dim:
             if self.configs.equivariance:
                 self.equivariance_lambda = self.create_beta_schedule(
                     self.configs.equivariance_start,
@@ -269,46 +245,13 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
         else:
             self.pose_optimizer = None
 
-        self.sorted_poses = list()
-        if self.configs.load_poses:
-            rot, trans = utils.load_pkl(self.configs.load_poses)
-
-            assert np.all(
-                trans <= 1
-            ), "ERROR: Old pose format detected. Translations must be in units of fraction of box."
-
-            # Convert translations to pixel units to feed back to the model
-            if isinstance(self.model, DataParallel):
-                _model = self.model.module
-                assert isinstance(_model, HetOnlyVAE)
-                D = _model.lattice.D
-            else:
-                D = self.model.lattice.D
-
-            self.sorted_poses = (rot, trans * D)
-
-        # parallelize
-        if self.model.zdim > 0:
-            if self.configs.multigpu and torch.cuda.device_count() > 1:
-                self.logger.info(f"Using {torch.cuda.device_count()} GPUs!")
-                self.configs.batch_size *= torch.cuda.device_count()
-                self.logger.info(f"Increasing batch size to {self.configs.batch_size}")
-                self.model = DataParallel(self.model)
-            elif self.configs.multigpu:
-                self.logger.warning(
-                    f"WARNING: --multigpu selected, but {torch.cuda.device_count()} GPUs detected"
-                )
-        else:
-            if self.configs.multigpu:
-                raise NotImplementedError("--multigpu")
-
         if self.configs.pose_model_update_freq:
             assert not self.configs.multigpu, "TODO"
-            self.pose_model = self.make_model()
+            self.pose_model = self.make_volume_model()
             self.pose_model.to(self.device)
             self.pose_model.eval()
         else:
-            self.pose_model = self.model
+            self.pose_model = self.volume_model
 
         self.pose_search = PoseSearch(
             self.pose_model,
@@ -357,7 +300,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
             and (self.current_epoch - 1) % self.configs.reset_model_every == 0
         ):
             self.logger.info(">> Resetting model")
-            self.model = self.make_model()
+            self.model = self.make_volume_model()
 
         if (
             self.configs.reset_optim_every
@@ -419,29 +362,38 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                     self.conf_search_particles = 0
 
             dose_filters = None
-            if self.configs.encode_mode == "tilt":
-                tilt_ind = minibatch[1].to(device)
+            if self.configs.tilt:
+                tilt_ind = tilt_ind.to(self.device)
                 assert all(tilt_ind >= 0), tilt_ind
-                rot, tran = posetracker.get_pose(tilt_ind.view(-1))
-                ctf_param = (
-                    ctf_params[tilt_ind.view(-1)] if ctf_params is not None else None
-                )
-                y = y.view(-1, D, D)
-                Apix = ctf_params[0, 0] if ctf_params is not None else None
-                if args.dose_per_tilt is not None:
-                    dose_filters = data.get_dose_filters(tilt_ind, lattice, Apix)
-            else:
-                rot, tran = posetracker.get_pose(ind)
-                ctf_param = ctf_params[ind] if ctf_params is not None else None
+                batch_poses = self.pose_tracker.get_pose(tilt_ind.view(-1))
 
-            ctf_i = self.ctf_params[ind] if self.ctf_params is not None else None
+                ctf_param = (
+                    self.ctf_params[tilt_ind.view(-1)]
+                    if self.ctf_params is not None else None
+                )
+                y = y.view(-1, self.resolution, self.resolution, self.resolution)
+                Apix = self.ctf_params[0, 0] if self.ctf_params is not None else None
+
+                if self.configs.dose_per_tilt is not None:
+                    dose_filters = self.data.get_dose_filters(
+                        tilt_ind, self.lattice, Apix
+                    )
+
+            else:
+                batch_poses = self.pose_tracker.get_pose(ind)
+                ctf_param = (
+                    self.ctf_params[ind] if self.ctf_params is not None else None
+                )
+
+            import pdb; pdb.set_trace()
+
             gen_loss, kld, loss, eq_loss, pose = self.train_step(
                 batch,
                 L_model,
                 beta,
                 equivariance_tuple,
-                poses=p,
-                ctf_params=ctf_i,
+                poses=batch_poses,
+                ctf_params=ctf_param,
             )
 
             if self.pose_optimizer is not None:
@@ -465,7 +417,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                     else ""
                 )
                 self.logger.info(
-                    f"# [Train Epoch: {self.current_epoch + 1}/{self.num_epochs}] "
+                    f"# [Train Epoch: {self.current_epoch + 1}/{self.configs.num_epochs}] "
                     f"[{batch_it}/{self.image_count} images] gen loss={gen_loss:.4f}, "
                     f"kld={kld:.4f}, beta={beta:.4f}, {eq_log}loss={loss:.4f}"
                 )
@@ -682,7 +634,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
 
             return loss.item()
 
-    def save_checkpoint(
+    def make_summary(
         self,
         epoch,
         search_pose,
@@ -808,4 +760,4 @@ def save_config(args, dataset, lattice, model, out_config):
         dataset_args=dataset_args, lattice_args=lattice_args, model_args=model_args
     )
 
-    cryodrgn.trainers.config.save(config, out_config)
+    cryodrgn.config.save(config, out_config)

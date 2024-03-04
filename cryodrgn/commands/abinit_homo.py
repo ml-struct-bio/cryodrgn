@@ -15,7 +15,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from cryodrgn import ctf, dataset, lie_tools, models, utils
+from cryodrgn import dataset, utils
 from cryodrgn.mrc import MRCFile
 import cryodrgn.config
 
@@ -230,7 +230,7 @@ def add_args(parser):
     )
 
 
-def main(args: argparse.Namespace, configs: Optional[dict[str, Any]] = None) -> None:
+def main(args: argparse.Namespace, configs) -> None:
     if configs is None:
         configs = SetupHelper(args.outdir, update_existing=False).create_configs()
 

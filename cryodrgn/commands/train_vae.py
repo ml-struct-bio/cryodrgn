@@ -23,7 +23,7 @@ import cryodrgn
 from cryodrgn import ctf, dataset
 from cryodrgn.lattice import Lattice
 from cryodrgn.models.variational_autoencoder import HetOnlyVAE, unparallelize
-import cryodrgn.trainers.config
+import cryodrgn.config
 
 logger = logging.getLogger(__name__)
 
@@ -589,7 +589,7 @@ def save_config(args, dataset, lattice, model, out_config):
         dataset_args=dataset_args, lattice_args=lattice_args, model_args=model_args
     )
     config["seed"] = args.seed
-    cryodrgn.trainers.config.save(config, out_config)
+    cryodrgn.config.save(config, out_config)
 
 
 def get_latest(args):
@@ -605,3 +605,6 @@ def get_latest(args):
         assert os.path.exists(args.poses)
         logger.info(f"Loading {args.poses}")
     return args
+
+def main():
+    pass

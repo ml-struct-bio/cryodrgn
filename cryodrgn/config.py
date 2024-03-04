@@ -3,10 +3,9 @@
 from datetime import datetime
 import argparse
 from typing import Optional
-import cryodrgn
+import cryodrgn.utils
 import os
 import sys
-from cryodrgn.utils import load_yaml
 
 
 def load_configs(outdir: str) -> dict:
@@ -17,7 +16,7 @@ def load_configs(outdir: str) -> dict:
             f"Folder `{outdir}` does not contain a cryoDRGN configuration file!"
         )
 
-    return load_yaml(cfg_fl)
+    return cryodrgn.utils.load_yaml(cfg_fl)
 
 
 def save(config: dict, filename: Optional[str] = None, folder: Optional[str] = None):

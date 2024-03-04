@@ -87,7 +87,7 @@ class BaseConfigurations(ABC):
                     if _key not in config_vals:
                         config_vals[_key] = _value
 
-        for key in config_vals:
+        for key in set(config_vals) - {"quick_config"}:
             if key not in self.defaults:
                 raise ValueError(f"Unrecognized configuration parameter `{key}`!")
 
@@ -231,16 +231,16 @@ class ModelConfigurations(BaseConfigurations):
         "t_ngrid",
         "t_xshift",
         "t_yshift",
-        "vol_layers",
-        "vol_dim",
+        "hidden_layers",
+        "hidden_dim",
         "encode_mode",
         "enc_mask",
         "use_real",
         "pe_type",
-        "feat_sigma",
         "pe_dim",
-        "hypervolume_domain",
+        "volume_domain",
         "activation",
+        "feat_sigma",
         "base_healpy",
         "subtomo_averaging",
         "volume_optim_type",
@@ -272,7 +272,7 @@ class ModelConfigurations(BaseConfigurations):
             "shuffler_size": 0,
             "max_threads": 16,
             "num_workers": 2,
-            "tilt": None,
+            "tilt": False,
             "tilt_deg": 45,
             "num_epochs": 30,
             "batch_size": 8,
@@ -289,19 +289,19 @@ class ModelConfigurations(BaseConfigurations):
             "t_ngrid": 7,
             "t_xshift": 0,
             "t_yshift": 0,
-            "vol_layers": 3,
-            "vol_dim": 256,
+            "hidden_layers": 3,
+            "hidden_dim": 256,
             "encode_mode": "resid",
             "enc_mask": None,
             "use_real": False,
             "pe_type": "gaussian",
-            "feat_sigma": 0.5,
             "pe_dim": 64,
-            "hypervolume_domain": "hartley",
+            "volume_domain": "hartley",
             "activation": "relu",
+            "feat_sigma": 0.5,
             "base_healpy": 2,
             "subtomo_averaging": False,
-            "volume_optim_type": "Adam",
+            "volume_optim_type": "adam",
             "no_trans": False,
             "amp": False,
         }
@@ -343,7 +343,7 @@ class ModelConfigurations(BaseConfigurations):
                         )
                     setattr(self, k, use_paths[k])
 
-        if self.refine_gt_poses and self.hypervolume_domain != "hartley":
+        if self.refine_gt_poses and self.volume_domain != "hartley":
             raise ValueError("Need to use --domain hartley if doing pose SGD")
 
 
@@ -375,6 +375,10 @@ class ModelTrainer(BaseTrainer, ABC):
             self.logger.warning(f"No GPUs detected, using {self.device} instead!")
             self.n_prcs = 1
 
+        self.activation = {"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[
+            self.configs.activation
+        ]
+
         # load index filter
         if self.configs.ind is not None:
             if isinstance(self.configs.ind, int):
@@ -392,13 +396,13 @@ class ModelTrainer(BaseTrainer, ABC):
         else:
             self.ind = None
 
-        if self.configs.tilt is not None:
-            self.tilt = torch.tensor(
-                cryodrgn.utils.xrot(configs["tilt_deg"]).astype(np.float32),
+        if self.configs.tilt:
+            self.tilts = torch.tensor(
+                cryodrgn.utils.xrot(self.configs.tilt_deg).astype(np.float32),
                 device=self.device,
             )
         else:
-            self.tilt = None
+            self.tilts = None
 
         # load dataset
         self.logger.info(f"Loading dataset from {self.configs.particles}")
@@ -483,13 +487,35 @@ class ModelTrainer(BaseTrainer, ABC):
             p.numel() for p in self.volume_model.parameters() if p.requires_grad
         )
         self.logger.info(f"{param_count} parameters in volume model")
-        self.current_epoch = None
+
+        # parallelize
+        if self.volume_model.zdim > 0:
+            if self.configs.multigpu and torch.cuda.device_count() > 1:
+                self.logger.info(f"Using {torch.cuda.device_count()} GPUs!")
+                self.configs.batch_size *= torch.cuda.device_count()
+                self.logger.info(f"Increasing batch size to {self.configs.batch_size}")
+                self.model = DataParallel(self.volume_model)
+            elif self.configs.multigpu:
+                self.logger.warning(
+                    f"WARNING: --multigpu selected, but {torch.cuda.device_count()} "
+                    "GPUs detected"
+                )
+        else:
+            if self.configs.multigpu:
+                raise NotImplementedError("--multigpu")
+
+        cpu_count = os.cpu_count() or 1
+        if self.configs.num_workers > cpu_count:
+            self.logger.warning(f"Reducing workers to {cpu_count} cpus")
+            self.num_workers = cpu_count
+        else:
+            self.num_workers = self.configs.num_workers
 
         self.data_iterator = make_dataloader(
             self.data,
             batch_size=self.configs.batch_size,
             shuffler_size=self.configs.shuffler_size,
-            num_workers=self.configs.num_workers,
+            num_workers=self.num_workers,
         )
 
         self.volume_optim_class = self.optim_types[self.configs.volume_optim_type]
@@ -579,24 +605,25 @@ class ModelTrainer(BaseTrainer, ABC):
         else:
             self.pose_tracker = None
 
-        # parallelize
-        if self.configs.multigpu and torch.cuda.device_count() > 1:
-            self.logger.info(f"Using {torch.cuda.device_count()} GPUs!")
-            self.configs.batch_size *= torch.cuda.device_count()
-            self.logger.info(f"Increasing batch size to {self.configs.batch_size}")
-            self.volume_model = DataParallel(self.volume_model)
+        self.sorted_poses = list()
+        if self.configs.load_poses:
+            rot, trans = cryodrgn.utils.load_pkl(self.configs.load_poses)
 
-        elif self.configs.multigpu:
-            self.logger.warning(
-                f"--multigpu selected, but {torch.cuda.device_count()} GPUs detected"
-            )
+            assert np.all(
+                trans <= 1
+            ), "ERROR: Old pose format detected. Translations must be in units of fraction of box."
 
-        cpu_count = os.cpu_count() or 1
-        if self.configs.num_workers > cpu_count:
-            self.logger.warning(f"Reducing workers to {cpu_count} cpus")
-            self.num_workers = cpu_count
-        else:
-            self.num_workers = self.configs.num_workers
+            # Convert translations to pixel units to feed back to the model
+            if isinstance(self.model, DataParallel):
+                _model = self.model.module
+                assert isinstance(_model, HetOnlyVAE)
+                D = _model.lattice.D
+            else:
+                D = self.model.lattice.D
+
+            self.sorted_poses = (rot, trans * D)
+
+        self.current_epoch = None
 
         # save configuration
         self.configs.write(os.path.join(self.outdir, "train-configs.yaml"))
@@ -612,12 +639,12 @@ class ModelTrainer(BaseTrainer, ABC):
         self.total_particles_count = 0
         self.conf_search_particles = 0
 
-        while self.current_epoch <= self.final_epoch:
+        while self.current_epoch <= self.configs.num_epochs:
             will_make_summary = (
                 (
-                    self.current_epoch == self.final_epoch
-                    or self.configs.log_heavy_interval
-                    and self.current_epoch % self.configs.log_heavy_interval == 0
+                    self.current_epoch == self.configs.num_epochs
+                    or self.configs.log_interval
+                    and self.current_epoch % self.configs.log_interval == 0
                 )
                 or self.is_in_pose_search_step
                 or self.pretraining

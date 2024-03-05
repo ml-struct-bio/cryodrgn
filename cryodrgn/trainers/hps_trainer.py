@@ -2,7 +2,7 @@ import os
 import pickle
 from datetime import datetime as dt
 from collections import OrderedDict
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 import numpy as np
 import torch
@@ -65,12 +65,12 @@ class HierarchicalPoseSearchConfigurations(ModelConfigurations):
             "n_kept_poses": 8,
             "pose_model_update_freq": None,
             "enc_layers": 3,
-            "enc_dim": 256,
+            "enc_dim": 1024,
             "encode_mode": "resid",
             "enc_mask": None,
             "use_real": False,
             "dec_layers": 3,
-            "dec_dim": 256,
+            "dec_dim": 1024,
         }
     )
 
@@ -78,7 +78,7 @@ class HierarchicalPoseSearchConfigurations(ModelConfigurations):
         super().__init__(config_vals)
 
         assert (
-                config_vals["model"] == "hps"
+            config_vals["model"] == "hps"
         ), f"Mismatched model {config_vals['model']} for HierarchicalSearchTrainer!"
 
         if self.dataset is None:
@@ -106,9 +106,9 @@ class HierarchicalPoseSearchConfigurations(ModelConfigurations):
                 )
         else:
             if self.z_dim and self.encode_mode:
-                    raise ValueError(
-                        "Must use tilt for heterogeneous reconstruction on ET capture!"
-                    )
+                raise ValueError(
+                    "Must use tilt for heterogeneous reconstruction on ET capture!"
+                )
 
         if self.equivariance is not None:
             if not self.z_dim:
@@ -122,6 +122,29 @@ class HierarchicalPoseSearchConfigurations(ModelConfigurations):
 class HierarchicalPoseSearchTrainer(ModelTrainer):
 
     config_cls = HierarchicalPoseSearchConfigurations
+
+    @property
+    def mask_dimensions(self):
+        if self.configs.z_dim:
+            use_mask = self.configs.enc_mask or self.resolution // 2
+
+            if use_mask > 0:
+                assert use_mask <= self.resolution // 2
+                enc_mask = self.lattice.get_circular_mask(use_mask)
+                in_dim = enc_mask.sum()
+            elif use_mask == -1:
+                enc_mask = None
+                in_dim = self.resolution**2
+            else:
+                raise RuntimeError(
+                    f"Invalid argument for encoder mask radius {self.configs.enc_mask}"
+                )
+
+        else:
+            enc_mask = None
+            in_dim = None
+
+        return enc_mask, in_dim
 
     def make_volume_model(self) -> nn.Module:
         self.configs: HierarchicalPoseSearchConfigurations
@@ -139,16 +162,17 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                 feat_sigma=self.configs.feat_sigma,
             )
         else:
+            enc_mask, in_dim = self.mask_dimensions
             model = HetOnlyVAE(
                 self.lattice,
                 self.configs.enc_layers,
                 self.configs.enc_dim,
                 self.configs.dec_layers,
                 self.configs.dec_dim,
-                self.in_dim,
+                in_dim,
                 self.configs.z_dim,
                 encode_mode=self.configs.encode_mode,
-                enc_mask=self.enc_mask,
+                enc_mask=enc_mask,
                 enc_type=self.configs.pe_type,
                 enc_dim=self.configs.pe_dim,
                 domain=self.configs.volume_domain,
@@ -172,7 +196,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
 
     @classmethod
     def create_beta_schedule(
-            cls, start_x: float, end_x: float, start_y: float, end_y: float
+        cls, start_x: float, end_x: float, start_y: float, end_y: float
     ) -> Callable[[float], float]:
         min_y = min(start_y, end_y)
         max_y = max(start_y, end_y)
@@ -190,7 +214,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
             # beta = 1.0 / args.ntilts
 
             if isinstance(beta, float):
-                self.beta_schedule = lambda x: self.configs.beta
+                self.beta_schedule = lambda x: beta
 
             elif beta == "a":
                 self.beta_schedule = self.create_beta_schedule(0, 1000000, 0.001, 15)
@@ -202,29 +226,19 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                 self.beta_schedule = self.create_beta_schedule(1000000, 5000000, 5, 18)
             else:
                 raise RuntimeError(f"Unrecognized beta schedule {beta=}!")
+        else:
+            self.beta_schedule = None
 
         if self.configs.encode_mode == "conv":
             if self.resolution - 1 != 64:
                 raise ValueError("Image size must be 64x64 for convolutional encoder!")
 
-        if self.configs.z_dim:
-            use_mask = self.configs.enc_mask or self.resolution // 2
-
-            if use_mask > 0:
-                assert use_mask <= self.resolution // 2
-                self.enc_mask = self.lattice.get_circular_mask(use_mask)
-                self.in_dim = self.enc_mask.sum()
-            elif use_mask == -1:
-                self.enc_mask = None
-                self.in_dim = self.resolution**2
-            else:
-                raise RuntimeError(
-                    f"Invalid argument for encoder mask radius {self.configs.enc_mask}"
-                )
-
-        else:
-            self.enc_mask = None
-            self.in_dim = None
+        in_dim = self.mask_dimensions[1]
+        if in_dim % 8 != 0:
+            self.logger.warning(
+                f"Warning: Masked input image dimension {in_dim=} "
+                "is not a mutiple of 8 -- AMP training speedup is not optimized!"
+            )
 
         self.equivariance_lambda = self.equivariance_loss = None
         if self.configs.z_dim:
@@ -235,12 +249,13 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                     0,
                     self.configs.equivariance,
                 )
-                self.equivariance_loss = EquivarianceLoss(self.model, self.D)
+                self.equivariance_loss = EquivarianceLoss(
+                    self.volume_model, self.resolution
+                )
 
         if self.configs.refine_gt_poses:
             self.pose_optimizer = torch.optim.SparseAdam(
-                list(self.pose_tracker.parameters()),
-                lr=self.configs.pose_learning_rate
+                list(self.pose_tracker.parameters()), lr=self.configs.pose_learning_rate
             )
         else:
             self.pose_optimizer = None
@@ -253,104 +268,96 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
         else:
             self.pose_model = self.volume_model
 
-        self.pose_search = PoseSearch(
-            self.pose_model,
-            self.lattice,
-            self.configs.l_start,
-            self.configs.l_end,
-            self.configs.tilt,
-            t_extent=self.configs.t_extent,
-            t_ngrid=self.configs.t_ngrid,
-            niter=self.configs.grid_niter,
-            nkeptposes=self.configs.n_kept_poses,
-            base_healpy=self.configs.base_healpy,
-            t_xshift=self.configs.t_xshift,
-            t_yshift=self.configs.t_yshift,
-            device=self.device,
-        )
-
-    def train_epoch(self):
-        te = dt.now()
-
-        kld_accum = 0
-        gen_loss_accum = 0
-        loss_accum = 0
-        eq_loss_accum = 0
-        batch_it = 0
-        poses = []
-
-        L_model = self.lattice.D // 2
-        if self.configs.l_ramp_epochs > 0:
-            Lramp = self.configs.l_start + int(
-                self.current_epoch
-                / self.configs.l_ramp_epochs
-                * (self.configs.l_end - self.configs.l_start)
+        if self.configs.pose:
+            self.pose_search = None
+        else:
+            self.pose_search = PoseSearch(
+                self.pose_model,
+                self.lattice,
+                self.configs.l_start,
+                self.configs.l_end,
+                self.configs.tilt,
+                t_extent=self.configs.t_extent,
+                t_ngrid=self.configs.t_ngrid,
+                niter=self.configs.grid_niter,
+                nkeptposes=self.configs.n_kept_poses,
+                base_healpy=self.configs.base_healpy,
+                t_xshift=self.configs.t_xshift,
+                t_yshift=self.configs.t_yshift,
+                device=self.device,
             )
 
-            self.pose_search.Lmin = min(Lramp, self.configs.l_start)
-            self.pose_search.Lmax = min(Lramp, self.configs.l_end)
-            if (
-                self.current_epoch < self.configs.l_ramp_epochs
-                and self.configs.l_ramp_model
-            ):
-                L_model = self.pose_search.Lmax
+    @property
+    def global_it(self) -> int:
+        return self.particle_count * self.current_epoch + self.batch_it
 
+    def train_epoch(self):
+        self.configs: HierarchicalPoseSearchConfigurations
+        te = dt.now()
+
+        accum_losses = {"total": 0, "gen": 0, "kld": 0, "eq": 0}
+        all_poses = list()
+        base_poses = list()
+        self.batch_it = 0
+
+        # reset the model if asked for
         if (
             self.configs.reset_model_every
             and (self.current_epoch - 1) % self.configs.reset_model_every == 0
         ):
             self.logger.info(">> Resetting model")
-            self.model = self.make_volume_model()
+            self.volume_model = self.make_volume_model()
 
+        # reset the optimizer if asked for
         if (
             self.configs.reset_optim_every
             and (self.current_epoch - 1) % self.configs.reset_optim_every == 0
         ):
             self.logger.info(">> Resetting optim")
-            self.optim = torch.optim.Adam(
-                self.model.parameters(),
+            self.volume_optimizer = self.volume_optim_class(
+                self.volume_model.parameters(),
                 lr=self.configs.learning_rate,
                 weight_decay=self.configs.weight_decay,
             )
 
-        if self.current_epoch % self.configs.ps_freq != 0:
-            self.logger.info("Using previous iteration poses")
-
         for batch, tilt_ind, ind in self.data_iterator:
             ind_np = ind.cpu().numpy()
             y = batch.to(self.device)
+            self.batch_it += len(batch[0])
+
             if tilt_ind is not None:
                 tilt_ind = tilt_ind.to(self.device)
-
-            batch_it += len(batch[0])
-            global_it = self.particle_count * self.current_epoch + batch_it
+                assert all(tilt_ind >= 0), tilt_ind
 
             lamb = None
-            beta = self.beta_schedule(global_it)
             if (
                 self.equivariance_lambda is not None
                 and self.equivariance_loss is not None
             ):
-                lamb = self.equivariance_lambda(global_it)
+                lamb = self.equivariance_lambda(self.global_it)
                 equivariance_tuple = (lamb, self.equivariance_loss)
             else:
                 equivariance_tuple = None
 
             if self.configs.use_real:
                 assert hasattr(self.data, "particles_real")
-                yr = torch.from_numpy(
-                    self.data.particles_real[ind.numpy()]
-                ).to(device)  # type: ignore  # PYR02
+                yr = torch.from_numpy(self.data.particles_real[ind.numpy()]).to(
+                    device
+                )  # type: ignore  # PYR02
             else:
                 yr = None
 
             if self.pose_optimizer is not None:
                 self.pose_optimizer.zero_grad()
 
-            # train the model
-            p = None
-            if self.current_epoch % self.configs.ps_freq != 0:
-                p = [torch.tensor(x[ind_np], device=self.device) for x in self.sorted_poses]  # type: ignore
+            # getting the poses
+            batch_poses = None
+            if self.pose_search and self.current_epoch % self.configs.ps_freq != 0:
+                self.logger.info("Using previous iteration poses")
+                batch_poses = [
+                    torch.tensor(x[ind_np], device=self.device)
+                    for x in self.sorted_poses
+                ]  # type: ignore
 
             self.conf_search_particles += len(batch[0])
             if self.configs.pose_model_update_freq:
@@ -358,18 +365,18 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                     self.current_epoch == 0
                     or self.conf_search_particles > self.configs.pose_model_update_freq
                 ):
-                    self.pose_model.load_state_dict(self.model.state_dict())
+                    self.pose_model.load_state_dict(self.volume_model.state_dict())
                     self.conf_search_particles = 0
 
             dose_filters = None
             if self.configs.tilt:
-                tilt_ind = tilt_ind.to(self.device)
-                assert all(tilt_ind >= 0), tilt_ind
-                batch_poses = self.pose_tracker.get_pose(tilt_ind.view(-1))
+                if self.pose_tracker and not self.pose_search:
+                    batch_poses = self.pose_tracker.get_pose(tilt_ind.view(-1))
 
                 ctf_param = (
                     self.ctf_params[tilt_ind.view(-1)]
-                    if self.ctf_params is not None else None
+                    if self.ctf_params is not None
+                    else None
                 )
                 y = y.view(-1, self.resolution, self.resolution, self.resolution)
                 Apix = self.ctf_params[0, 0] if self.ctf_params is not None else None
@@ -380,19 +387,19 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                     )
 
             else:
-                batch_poses = self.pose_tracker.get_pose(ind)
+                if self.pose_tracker and not self.pose_search:
+                    batch_poses = self.pose_tracker.get_pose(ind)
                 ctf_param = (
                     self.ctf_params[ind] if self.ctf_params is not None else None
                 )
 
-            import pdb; pdb.set_trace()
-
-            gen_loss, kld, loss, eq_loss, pose = self.train_step(
+            # train the model
+            losses, new_poses, new_base_poses = self.train_step(
                 batch,
-                L_model,
-                beta,
+                tilt_ind,
                 equivariance_tuple,
-                poses=batch_poses,
+                rot=batch_poses[0],
+                trans=batch_poses[1],
                 ctf_params=ctf_param,
             )
 
@@ -400,76 +407,66 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                 if self.current_epoch >= self.configs.pretrain:
                     self.pose_optimizer.step()
 
+            all_poses.append((ind.cpu().numpy(), new_poses))
+            if new_base_poses:
+                base_poses.append((ind_np, new_base_poses))
+
             # logging
-            poses.append((ind.cpu().numpy(), pose))
-            kld_accum += kld * len(ind)
-            loss_accum += loss * len(ind)
-            gen_loss_accum += gen_loss * len(ind)
-
-            if self.configs.equivariance:
-                assert eq_loss is not None
-                eq_loss_accum += eq_loss * len(ind)
-
-            if batch_it % self.configs.log_interval == 0:
-                eq_log = (
-                    f"equivariance={eq_loss:.4f}, lambda={lamb:.4f}, "
-                    if eq_loss is not None and lamb is not None
-                    else ""
-                )
-                self.logger.info(
-                    f"# [Train Epoch: {self.current_epoch + 1}/{self.configs.num_epochs}] "
-                    f"[{batch_it}/{self.image_count} images] gen loss={gen_loss:.4f}, "
-                    f"kld={kld:.4f}, beta={beta:.4f}, {eq_log}loss={loss:.4f}"
-                )
+            for k in losses:
+                accum_losses[k] += losses[k] * len(ind)
 
         eq_log = (
-            "equivariance = {:.4f}, ".format(eq_loss_accum / self.image_count)
+            "equivariance = {:.4f}, ".format(accum_losses["eq"] / self.image_count)
             if self.configs.equivariance
             else ""
         )
         self.logger.info(
             "# =====> Epoch: {} Average gen loss = {:.4}, KLD = {:.4f}, {}total loss = {:.4f}; Finished in {}".format(
                 self.current_epoch + 1,
-                gen_loss_accum / self.image_count,
-                kld_accum / self.image_count,
+                accum_losses["gen"] / self.image_count,
+                accum_losses["kld"] / self.image_count,
                 eq_log,
-                loss_accum / self.image_count,
+                accum_losses["total"] / self.image_count,
                 dt.now() - te,
             )
         )
 
-        if poses:
-            ind = [x[0] for x in poses]
-            ind = np.concatenate(ind)
-            rot = [x[1][0] for x in poses]
-            rot = np.concatenate(rot)
-            rot = rot[np.argsort(ind)]
+        # sort poses if necessary
+        if self.pose_search:
+            if all_poses:
+                ind = [x[0] for x in all_poses]
+                ind = np.concatenate(ind)
+                rot = [x[1][0] for x in all_poses]
+                rot = np.concatenate(rot)
+                rot = rot[np.argsort(ind)]
 
-            if len(poses[0][1]) == 2:
-                trans = [x[1][1] for x in poses]
-                trans = np.concatenate(trans)
-                trans = trans[np.argsort(ind)]
-                self.sorted_poses = (rot, trans)
+                if len(all_poses[0][1]) == 2:
+                    trans = [x[1][1] for x in all_poses]
+                    trans = np.concatenate(trans)
+                    trans = trans[np.argsort(ind)]
+                    self.sorted_poses = (rot, trans)
+                else:
+                    self.sorted_poses = (rot,)
             else:
-                self.sorted_poses = (rot,)
-
-        else:
-            self.sorted_poses = tuple()
+                self.sorted_poses = tuple()
 
     def train_step(
         self,
-        minibatch,
-        L,
-        beta,
+        y,
+        tilt_ind,
         equivariance=None,
-        poses=None,
+        rot=None,
+        trans=None,
         ctf_params=None,
-    ):
-        y, yt = minibatch
-        use_tilt = yt is not None
+    ) -> tuple[dict[str, float], tuple[torch.Tensor, torch.Tensor], tuple]:
+        use_tilt = tilt_ind is not None
         use_ctf = ctf_params is not None
         B = y.size(0)
-        D = self.lattice.D
+
+        if self.beta_schedule is not None:
+            beta = self.beta_schedule(self.global_it)
+        else:
+            beta = None
 
         ctf_i = None
         if use_ctf:
@@ -477,49 +474,67 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                 B, *self.lattice.freqs2d.shape
             ) / ctf_params[:, 0].view(B, 1, 1)
             ctf_i = ctf.compute_ctf(freqs, *torch.split(ctf_params[:, 1:], 1, 1)).view(
-                B, D, D
+                B, self.resolution, self.resolution
             )
 
-        # TODO: Center image?
-        # We do this in pose-supervised train_vae
+        if trans is not None:
+            y = self.preprocess_input(y, trans)
 
         # VAE inference of z
-        self.model.train()
-        self.optim.zero_grad()
-        input_ = (y, yt) if use_tilt else (y,)
+        self.volume_model.train()
+        self.volume_optimizer.zero_grad()
+        input_ = (y, tilt_ind) if use_tilt else (y,)
         if ctf_i is not None:
             input_ = (x * ctf_i.sign() for x in input_)  # phase flip by the ctf
 
-        _model = unparallelize(self.model)
+        _model = unparallelize(self.volume_model)
         assert isinstance(_model, HetOnlyVAE)
         z_mu, z_logvar = _model.encode(*input_)
         z = _model.reparameterize(z_mu, z_logvar)
 
-        lamb = eq_loss = None
+        lamb = None
+        losses = dict()
         if equivariance is not None:
             lamb, equivariance_loss = equivariance
-            eq_loss = equivariance_loss(y, z_mu)
+            losses["eq_loss"] = equivariance_loss(y, z_mu)
 
-        # pose inference
-        if poses is not None:  # use provided poses
-            rot = poses[0]
-            trans = poses[1]
-        else:  # pose search
-            self.model.eval()
+        # execute a pose search if poses not given
+        if rot is None:
+            self.volume_model.eval()
             with torch.no_grad():
-                rot, trans, _base_pose = self.pose_search.opt_theta_trans(
+                rot, trans, base_pose = self.pose_search.opt_theta_trans(
                     y,
                     z=z,
-                    images_tilt=None if self.configs.enc_only else yt,
+                    images_tilt=None if self.configs.enc_only else tilt_ind,
                     ctf_i=ctf_i,
                 )
-            self.model.train()
+            if self.configs.z_dim:
+                self.volume_model.train()
+            else:
+                base_pose = base_pose.detach().cpu().numpy()
+        else:
+            base_pose = None
 
         # reconstruct circle of pixels instead of whole image
-        mask = self.lattice.get_circular_mask(L)
+        L_model = self.lattice.D // 2
+        if self.configs.l_ramp_epochs > 0:
+            Lramp = self.configs.l_start + int(
+                self.current_epoch
+                / self.configs.l_ramp_epochs
+                * (self.configs.l_end - self.configs.l_start)
+            )
+            self.pose_search.Lmin = min(Lramp, self.configs.l_start)
+            self.pose_search.Lmax = min(Lramp, self.configs.l_end)
+
+            if (
+                self.current_epoch < self.configs.l_ramp_epochs
+                and self.configs.l_ramp_model
+            ):
+                L_model = self.pose_search.Lmax
+        mask = self.lattice.get_circular_mask(L_model)
 
         def gen_slice(R):
-            slice_ = self.model(self.lattice.coords[mask] @ R, z).view(B, -1)
+            slice_ = self.volume_model(self.lattice.coords[mask] @ R, z).view(B, -1)
             if ctf_i is not None:
                 slice_ *= ctf_i.view(B, -1)[:, mask]
             return slice_
@@ -530,48 +545,70 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
 
         y = y.view(B, -1)[:, mask]
         if use_tilt:
-            yt = yt.view(B, -1)[:, mask]
-        y = translate(y)
+            tilt_ind = tilt_ind.view(B, -1)[:, mask]
+        if trans is not None:
+            y = translate(y)
         if use_tilt:
-            yt = translate(yt)
+            tilt_ind = translate(tilt_ind)
 
         if use_tilt:
-            gen_loss = 0.5 * F.mse_loss(gen_slice(rot), y) + 0.5 * F.mse_loss(
-                gen_slice(bnb.tilt @ rot), yt  # type: ignore  # noqa: F821
+            rot_loss = F.mse_loss(gen_slice(rot), y)
+            tilt_loss = F.mse_loss(
+                gen_slice(bnb.tilt @ rot), tilt_ind  # type: ignore  # noqa: F821
             )
+            losses = {"gen": (rot_loss + tilt_loss) / 2}
         else:
-            gen_loss = F.mse_loss(gen_slice(rot), y)
+            losses = {"gen": F.mse_loss(gen_slice(rot), y)}
 
         # latent loss
-        kld = torch.mean(
-            -0.5 * torch.sum(1 + z_logvar - z_mu.pow(2) - z_logvar.exp(), dim=1), dim=0
-        )
-        if torch.isnan(kld):
-            self.logger.info(z_mu[0])
-            self.logger.info(z_logvar[0])
-            raise RuntimeError("KLD is nan")
+        if self.configs.z_dim:
+            losses["kld"] = torch.mean(
+                -0.5 * torch.sum(1 + z_logvar - z_mu.pow(2) - z_logvar.exp(), dim=1),
+                dim=0,
+            )
 
-        if self.configs.beta_control is None:
-            loss = gen_loss + beta * kld / mask.sum().float()
-        else:
-            loss = self.configs.beta_control * (beta - kld) ** 2 / mask.sum().float()
-            loss += gen_loss
+            if torch.isnan(losses["kld"]):
+                self.logger.info(z_mu[0])
+                self.logger.info(z_logvar[0])
+                raise RuntimeError("KLD is nan")
 
-        if loss is not None and eq_loss is not None:
-            loss += lamb * eq_loss
+            if self.configs.beta_control is None:
+                losses["total"] = beta * losses["kld"] / mask.sum().float()
+            else:
+                losses["total"] = (beta - losses["kld"]) ** 2 / mask.sum().float()
+                losses["total"] *= self.configs.beta_control
 
-        loss.backward()
+            losses["total"] += losses["gen"]
+            if lamb is not None and "eq_loss" in losses:
+                losses["total"] += lamb * losses["eq_loss"]
 
-        self.optim.step()
-        save_pose = [rot.detach().cpu().numpy()]
-        save_pose.append(trans.detach().cpu().numpy())
-        return (
-            gen_loss.item(),
-            kld.item(),
-            loss.item(),
-            eq_loss.item() if eq_loss else None,
-            save_pose,
-        )
+        losses["total"].backward()
+        self.volume_optimizer.step()
+        rot = rot.detach().cpu().numpy()
+        if trans is not None:
+            trans = trans.detach().cpu().numpy()
+
+        if self.batch_it % self.configs.log_interval == 0:
+            eq_log = (
+                f"equivariance={losses['eq_loss']:.4f}, lambda={lamb:.4f}, "
+                if "eq_loss" in losses and lamb is not None
+                else ""
+            )
+            self.logger.info(
+                f"# [Train Epoch: {self.current_epoch + 1}/{self.configs.num_epochs}] "
+                f"[{self.batch_it}/{self.image_count} images] "
+                f"gen loss={losses['gen']:.4f}, "
+                f"kld={losses['kld']:.4f}, beta={beta:.4f}, "
+                f"{eq_log}loss={losses['total']:.4f}"
+            )
+
+        return {k: loss.item() for k, loss in losses.items()}, (rot, trans), base_pose
+
+    def preprocess_input(self, y, trans):
+        """Center the image."""
+        return self.lattice.translate_ht(
+            y.view(y.size(0), -1), trans.unsqueeze(1)
+        ).view(y.size(0), self.resolution, self.resolution)
 
     def pretrain_step(self, batch):
         if self.zdim > 0:

@@ -272,7 +272,7 @@ class ModelConfigurations(BaseConfigurations):
             "shuffler_size": 0,
             "max_threads": 16,
             "num_workers": 2,
-            "tilt": False,
+            "tilt": None,
             "tilt_deg": 45,
             "num_epochs": 30,
             "batch_size": 8,
@@ -296,14 +296,14 @@ class ModelConfigurations(BaseConfigurations):
             "use_real": False,
             "pe_type": "gaussian",
             "pe_dim": 64,
-            "volume_domain": "hartley",
+            "volume_domain": "fourier",
             "activation": "relu",
             "feat_sigma": 0.5,
             "base_healpy": 2,
             "subtomo_averaging": False,
             "volume_optim_type": "adam",
             "no_trans": False,
-            "amp": False,
+            "amp": True,
         }
     )
 
@@ -342,6 +342,9 @@ class ModelConfigurations(BaseConfigurations):
                             f"Given {k} file `{use_paths[k]}` does not exist!"
                         )
                     setattr(self, k, use_paths[k])
+
+        if self.z_dim is None:
+            raise ValueError("Must specify `z_dim`!")
 
         if self.refine_gt_poses and self.volume_domain != "hartley":
             raise ValueError("Need to use --domain hartley if doing pose SGD")
@@ -483,18 +486,13 @@ class ModelTrainer(BaseTrainer, ABC):
         self.volume_model.to(self.device)
         self.logger.info(self.volume_model)
 
-        param_count = sum(
-            p.numel() for p in self.volume_model.parameters() if p.requires_grad
-        )
-        self.logger.info(f"{param_count} parameters in volume model")
-
         # parallelize
-        if self.volume_model.zdim > 0:
+        if self.volume_model.zdim > 0 and self.configs.multigpu and self.n_prcs > 1:
             if self.configs.multigpu and torch.cuda.device_count() > 1:
                 self.logger.info(f"Using {torch.cuda.device_count()} GPUs!")
                 self.configs.batch_size *= torch.cuda.device_count()
                 self.logger.info(f"Increasing batch size to {self.configs.batch_size}")
-                self.model = DataParallel(self.volume_model)
+                self.volume_model = DataParallel(self.volume_model)
             elif self.configs.multigpu:
                 self.logger.warning(
                     f"WARNING: --multigpu selected, but {torch.cuda.device_count()} "
@@ -528,24 +526,16 @@ class ModelTrainer(BaseTrainer, ABC):
         # Mixed precision training
         self.scaler = None
         if self.configs.amp:
-            if self.configs.batch_size % 8 != 0:
-                raise ValueError(
-                    f"{self.configs.batch_size=} must be divisible by 8 "
-                    "for AMP training!"
-                )
+            for parameter in ["batch_size", "pe_dim", "qdim"]:
+                pval = getattr(self.configs, parameter, 0)
+                if pval % 8 != 0:
+                    raise ValueError(
+                        f"{parameter}={pval} must be divisible by 8 for AMP training!"
+                    )
+
             if (self.resolution - 1) % 8 != 0:
                 raise ValueError(
                     f"{self.resolution=} must be divisible by 8 for AMP training!"
-                )
-            if self.configs.pe_dim % 8 != 0:
-                raise ValueError(
-                    f"Decoder hidden layer dimension {self.configs.pe_dim=} must be "
-                    "divisible by 8 for AMP training!"
-                )
-            if self.configs.qdim % 8 != 0:
-                raise ValueError(
-                    f"Encoder hidden layer dimension {self.configs.qdim=} must be "
-                    "divisible by 8 for AMP training!"
                 )
 
             # Also check zdim, enc_mask dim? Add them as warnings for now.
@@ -553,11 +543,6 @@ class ModelTrainer(BaseTrainer, ABC):
                 self.logger.warning(
                     f"Warning: {self.configs.z_dim=} is not a multiple of 8 "
                     "-- AMP training speedup is not optimized"
-                )
-            if self.configs.in_dim % 8 != 0:
-                self.logger.warning(
-                    f"Warning: Masked input image dimension {self.configs.in_dim=} "
-                    "is not a mutiple of 8 -- AMP training speedup is not optimized!"
                 )
 
             try:  # Mixed precision with apex.amp
@@ -614,12 +599,12 @@ class ModelTrainer(BaseTrainer, ABC):
             ), "ERROR: Old pose format detected. Translations must be in units of fraction of box."
 
             # Convert translations to pixel units to feed back to the model
-            if isinstance(self.model, DataParallel):
-                _model = self.model.module
+            if isinstance(self.volume_model, DataParallel):
+                _model = self.volume_model.module
                 assert isinstance(_model, HetOnlyVAE)
                 D = _model.lattice.D
             else:
-                D = self.model.lattice.D
+                D = self.volume_model.lattice.D
 
             self.sorted_poses = (rot, trans * D)
 
@@ -631,7 +616,7 @@ class ModelTrainer(BaseTrainer, ABC):
     def train(self) -> None:
         t0 = dt.now()
 
-        self.pretrain()
+        #self.pretrain()
         self.current_epoch = self.start_epoch
         self.logger.info("--- Training Starts Now ---")
 
@@ -646,8 +631,8 @@ class ModelTrainer(BaseTrainer, ABC):
                     or self.configs.log_interval
                     and self.current_epoch % self.configs.log_interval == 0
                 )
-                or self.is_in_pose_search_step
-                or self.pretraining
+                #or self.is_in_pose_search_step
+                #or self.pretraining
             )
             self.log_latents = will_make_summary
 
@@ -658,7 +643,8 @@ class ModelTrainer(BaseTrainer, ABC):
 
             # image and pose summary
             if will_make_summary:
-                self.make_summary()
+                pass
+                #self.make_summary()
 
             self.current_epoch += 1
 

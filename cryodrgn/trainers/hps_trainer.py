@@ -2,7 +2,7 @@ import os
 import pickle
 from datetime import datetime as dt
 from collections import OrderedDict
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 import numpy as np
 import torch
@@ -124,14 +124,14 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
     config_cls = HierarchicalPoseSearchConfigurations
 
     @property
-    def mask_dimensions(self):
+    def mask_dimensions(self) -> tuple[torch.Tensor, int]:
         if self.configs.z_dim:
             use_mask = self.configs.enc_mask or self.resolution // 2
 
             if use_mask > 0:
                 assert use_mask <= self.resolution // 2
                 enc_mask = self.lattice.get_circular_mask(use_mask)
-                in_dim = enc_mask.sum()
+                in_dim = enc_mask.sum().item()
             elif use_mask == -1:
                 enc_mask = None
                 in_dim = self.resolution**2
@@ -163,6 +163,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
             )
         else:
             enc_mask, in_dim = self.mask_dimensions
+
             model = HetOnlyVAE(
                 self.lattice,
                 self.configs.enc_layers,
@@ -234,7 +235,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                 raise ValueError("Image size must be 64x64 for convolutional encoder!")
 
         in_dim = self.mask_dimensions[1]
-        if in_dim % 8 != 0:
+        if in_dim is not None and in_dim % 8 != 0:
             self.logger.warning(
                 f"Warning: Masked input image dimension {in_dim=} "
                 "is not a mutiple of 8 -- AMP training speedup is not optimized!"
@@ -260,17 +261,19 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
         else:
             self.pose_optimizer = None
 
-        if self.configs.pose_model_update_freq:
-            assert not self.configs.multigpu, "TODO"
-            self.pose_model = self.make_volume_model()
-            self.pose_model.to(self.device)
-            self.pose_model.eval()
-        else:
-            self.pose_model = self.volume_model
-
         if self.configs.pose:
             self.pose_search = None
+            self.pose_model = None
+
         else:
+            if self.configs.pose_model_update_freq:
+                assert not self.configs.multigpu, "TODO"
+                self.pose_model = self.make_volume_model()
+                self.pose_model.to(self.device)
+                self.pose_model.eval()
+            else:
+                self.pose_model = self.volume_model
+
             self.pose_search = PoseSearch(
                 self.pose_model,
                 self.lattice,
@@ -301,24 +304,20 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
         self.batch_it = 0
 
         # reset the model if asked for
-        if (
-            self.configs.reset_model_every
-            and (self.current_epoch - 1) % self.configs.reset_model_every == 0
-        ):
-            self.logger.info(">> Resetting model")
-            self.volume_model = self.make_volume_model()
+        if self.configs.reset_model_every:
+            if self.current_epoch % self.configs.reset_model_every == 0:
+                self.logger.info(">> Resetting model")
+                self.volume_model = self.make_volume_model()
 
         # reset the optimizer if asked for
-        if (
-            self.configs.reset_optim_every
-            and (self.current_epoch - 1) % self.configs.reset_optim_every == 0
-        ):
-            self.logger.info(">> Resetting optim")
-            self.volume_optimizer = self.volume_optim_class(
-                self.volume_model.parameters(),
-                lr=self.configs.learning_rate,
-                weight_decay=self.configs.weight_decay,
-            )
+        if self.configs.reset_optim_every:
+            if self.current_epoch % self.configs.reset_optim_every == 0:
+                self.logger.info(">> Resetting optim")
+                self.volume_optimizer = self.volume_optim_class(
+                    self.volume_model.parameters(),
+                    lr=self.configs.learning_rate,
+                    weight_decay=self.configs.weight_decay,
+                )
 
         for batch, tilt_ind, ind in self.data_iterator:
             ind_np = ind.cpu().numpy()
@@ -342,7 +341,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
             if self.configs.use_real:
                 assert hasattr(self.data, "particles_real")
                 yr = torch.from_numpy(self.data.particles_real[ind.numpy()]).to(
-                    device
+                    self.device
                 )  # type: ignore  # PYR02
             else:
                 yr = None
@@ -420,15 +419,14 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
             if self.configs.equivariance
             else ""
         )
+        avg_gen_loss = accum_losses["gen"] / self.image_count
+        kld_loss = accum_losses["kld"] / self.image_count
+        total_loss = accum_losses["total"] / self.image_count
         self.logger.info(
-            "# =====> Epoch: {} Average gen loss = {:.4}, KLD = {:.4f}, {}total loss = {:.4f}; Finished in {}".format(
-                self.current_epoch + 1,
-                accum_losses["gen"] / self.image_count,
-                accum_losses["kld"] / self.image_count,
-                eq_log,
-                accum_losses["total"] / self.image_count,
-                dt.now() - te,
-            )
+            f"# =====> Epoch: {self.current_epoch} "
+            f"Average gen loss = {avg_gen_loss:.4}, KLD = {kld_loss:.4f},"
+            f" {eq_log}total loss = {total_loss:.4f}; "
+            f"Finished in {dt.now() - te,}"
         )
 
         # sort poses if necessary
@@ -481,8 +479,8 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
             y = self.preprocess_input(y, trans)
 
         # VAE inference of z
-        self.volume_model.train()
         self.volume_optimizer.zero_grad()
+        self.volume_model.train()
         input_ = (y, tilt_ind) if use_tilt else (y,)
         if ctf_i is not None:
             input_ = (x * ctf_i.sign() for x in input_)  # phase flip by the ctf
@@ -595,7 +593,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                 else ""
             )
             self.logger.info(
-                f"# [Train Epoch: {self.current_epoch + 1}/{self.configs.num_epochs}] "
+                f"# [Train Epoch: {self.current_epoch}/{self.configs.num_epochs}] "
                 f"[{self.batch_it}/{self.image_count} images] "
                 f"gen loss={losses['gen']:.4f}, "
                 f"kld={losses['kld']:.4f}, beta={beta:.4f}, "

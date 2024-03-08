@@ -395,48 +395,6 @@ def train_batch(
     return loss.item(), gen_loss.item(), kld.item()
 
 
-def preprocess_input(y, lattice, trans):
-    # center the image
-    B = y.size(0)
-    D = lattice.D
-    y = lattice.translate_ht(y.view(B, -1), trans.unsqueeze(1)).view(B, D, D)
-    return y
-
-
-def run_batch(model, lattice, y, rot, ntilts: Optional[int], ctf_params=None, yr=None):
-    use_ctf = ctf_params is not None
-    B = y.size(0)
-    D = lattice.D
-    c = None
-    if use_ctf:
-        freqs = lattice.freqs2d.unsqueeze(0).expand(
-            B, *lattice.freqs2d.shape
-        ) / ctf_params[:, 0].view(B, 1, 1)
-        c = ctf.compute_ctf(freqs, *torch.split(ctf_params[:, 1:], 1, 1)).view(B, D, D)
-
-    # encode
-    if yr is not None:
-        input_ = (yr,)
-    else:
-        input_ = (y,)
-        if c is not None:
-            input_ = (x * c.sign() for x in input_)  # phase flip by the ctf
-    _model = unparallelize(model)
-    assert isinstance(_model, HetOnlyVAE)
-    z_mu, z_logvar = _model.encode(*input_)
-    z = _model.reparameterize(z_mu, z_logvar)
-    if ntilts is not None:
-        z = torch.repeat_interleave(z, ntilts, dim=0)
-
-    # decode
-    mask = lattice.get_circular_mask(D // 2)  # restrict to circular mask
-    y_recon = model(lattice.coords[mask] / lattice.extent / 2 @ rot, z).view(B, -1)
-    if c is not None:
-        y_recon *= c.view(B, -1)[:, mask]
-
-    return z_mu, z_logvar, z, y_recon, mask
-
-
 def loss_function(
     z_mu,
     z_logvar,

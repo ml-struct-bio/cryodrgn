@@ -16,7 +16,7 @@ from cryodrgn.dataset import make_dataloader
 from cryodrgn.trainers import summary
 from cryodrgn.losses import kl_divergence_conf, l1_regularizer, l2_frequency_bias
 from cryodrgn.models.amortized_inference import DRGNai, MyDataParallel
-from cryodrgn.mask import CircularMask, FrequencyMarchingMask
+from cryodrgn.masking import CircularMask, FrequencyMarchingMask
 from cryodrgn.trainers._base import ModelTrainer, ModelConfigurations
 
 
@@ -27,7 +27,6 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
         "batch_size_known_poses",
         "batch_size_hps",
         "batch_size_sgd",
-        "hypervolume_optimizer_type",
         "pose_table_optimizer_type",
         "conf_table_optimizer_type",
         "conf_encoder_optimizer_type",
@@ -53,6 +52,7 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
         "channels_cnn",
         "kernel_size_cnn",
         "resolution_encoder",
+        "initial_conf",
         # hypervolume
         "explicit_volume",
         "pe_type_conf",
@@ -75,7 +75,6 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
             "batch_size_hps": 8,
             "batch_size_sgd": 256,
             # optimizers
-            "hypervolume_optimizer_type": "adam",
             "pose_table_optimizer_type": "adam",
             "conf_table_optimizer_type": "adam",
             "conf_encoder_optimizer_type": "adam",
@@ -104,6 +103,7 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
             "channels_cnn": 32,
             "kernel_size_cnn": 3,
             "resolution_encoder": None,
+            "initial_conf": None,
             # hypervolume
             "explicit_volume": False,
             "pe_type_conf": None,
@@ -125,7 +125,7 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
             "capture_setup": {
                 "spa": dict(),
                 "et": {
-                    "subtomogram_averaging": True,
+                    "subtomo_averaging": True,
                     "shuffler_size": 0,
                     "num_workers": 0,
                     "t_extent": 0.0,
@@ -229,6 +229,9 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
                     "for hypervolume_domain."
                 )
 
+        if self.volume_domain is None:
+            self.volume_domain = "hartley"
+
         if "n_imgs_pose_search" in config_vals:
             if config_vals["n_imgs_pose_search"] < 0:
                 raise ValueError("n_imgs_pose_search must be greater than 0!")
@@ -250,8 +253,8 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
             if "pose" not in config_vals or config_vals["pose"] is None:
                 raise ValueError("Initial poses must be specified to be refined!")
 
-        if "subtomogram_averaging" in config_vals:
-            if config_vals["subtomogram_averaging"]:
+        if "subtomo_averaging" in config_vals:
+            if config_vals["subtomo_averaging"]:
                 # TODO: Implement conformation encoder for subtomogram averaging.
                 if "use_conf_encoder" in config_vals:
                     if config_vals["use_conf_encoder"]:
@@ -334,86 +337,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
 
     config_cls = AmortizedInferenceConfigurations
 
-    def make_volume_model(
-        self, configs: Optional[AmortizedInferenceConfigurations] = None
-    ) -> nn.Module:
-        model_configs: AmortizedInferenceConfigurations = configs or self.configs
-
-        # output mask
-        if model_configs.output_mask == "circ":
-            radius = model_configs.max_freq or self.lattice.D // 2
-            output_mask = CircularMask(self.lattice, radius)
-
-        elif model_configs.output_mask == "frequency_marching":
-            output_mask = FrequencyMarchingMask(
-                self.lattice,
-                self.lattice.D // 2,
-                radius=model_configs.l_start_fm,
-                add_one_every=model_configs.add_one_frequency_every,
-            )
-
-        else:
-            raise NotImplementedError
-
-        # pose search
-        ps_params = None
-
-        # cnn
-        cnn_params = {
-            "conf": model_configs.use_conf_encoder,
-            "depth_cnn": model_configs.depth_cnn,
-            "channels_cnn": model_configs.channels_cnn,
-            "kernel_size_cnn": model_configs.kernel_size_cnn,
-        }
-
-        # conformational encoder
-        if model_configs.z_dim > 0:
-            self.logger.info(
-                "Heterogeneous reconstruction with " f"z_dim = {model_configs.z_dim}"
-            )
-        else:
-            self.logger.info("Homogeneous reconstruction")
-
-        conf_regressor_params = {
-            "z_dim": model_configs.z_dim,
-            "std_z_init": model_configs.std_z_init,
-            "variational": model_configs.variational_het,
-        }
-
-        # hypervolume
-        hyper_volume_params = {
-            "explicit_volume": model_configs.explicit_volume,
-            "n_layers": model_configs.vol_layers,
-            "hidden_dim": model_configs.vol_dim,
-            "pe_type": model_configs.pe_type,
-            "pe_dim": model_configs.pe_dim,
-            "feat_sigma": model_configs.feat_sigma,
-            "domain": model_configs.hypervolume_domain,
-            "extent": self.lattice.extent,
-            "pe_type_conf": model_configs.pe_type_conf,
-        }
-
-        return DRGNai(
-            self.lattice,
-            output_mask,
-            self.particle_count,
-            self.image_count,
-            cnn_params,
-            conf_regressor_params,
-            hyper_volume_params,
-            resolution_encoder=self.configs.resolution_encoder,
-            no_trans=self.configs.no_trans,
-            use_gt_poses=self.configs.use_gt_poses,
-            use_gt_trans=self.configs.use_gt_trans,
-            will_use_point_estimates=model_configs.epochs_sgd >= 1,
-            ps_params=ps_params,
-            verbose_time=self.configs.verbose_time,
-            pretrain_with_gt_poses=self.configs.pretrain_with_gt_poses,
-            n_tilts_pose_search=self.configs.n_tilts_pose_search,
-        )
-
-    def __init__(self, configs: dict[str, Any]) -> None:
-        super().__init__(configs)
+    def make_volume_model(self) -> nn.Module:
         self.configs: AmortizedInferenceConfigurations
 
         if self.configs.n_imgs_pose_search > 0:
@@ -423,8 +347,60 @@ class AmortizedInferenceTrainer(ModelTrainer):
         else:
             self.epochs_pose_search = 0
 
+        # output mask
+        if self.configs.output_mask == "circ":
+            radius = self.configs.max_freq or self.lattice.D // 2
+            output_mask = CircularMask(self.lattice, radius)
+
+        elif self.configs.output_mask == "frequency_marching":
+            output_mask = FrequencyMarchingMask(
+                self.lattice,
+                self.lattice.D // 2,
+                radius=self.configs.l_start_fm,
+                add_one_every=self.configs.add_one_frequency_every,
+            )
+
+        else:
+            raise NotImplementedError
+
+        # cnn
+        cnn_params = {
+            "conf": self.configs.use_conf_encoder,
+            "depth_cnn": self.configs.depth_cnn,
+            "channels_cnn": self.configs.channels_cnn,
+            "kernel_size_cnn": self.configs.kernel_size_cnn,
+        }
+
+        # conformational encoder
+        if self.configs.z_dim > 0:
+            self.logger.info(
+                "Heterogeneous reconstruction with " f"z_dim = {self.configs.z_dim}"
+            )
+        else:
+            self.logger.info("Homogeneous reconstruction")
+
+        conf_regressor_params = {
+            "z_dim": self.configs.z_dim,
+            "std_z_init": self.configs.std_z_init,
+            "variational": self.configs.variational_het,
+        }
+
+        # hypervolume
+        hyper_volume_params = {
+            "explicit_volume": self.configs.explicit_volume,
+            "n_layers": self.configs.hidden_layers,
+            "hidden_dim": self.configs.hidden_dim,
+            "pe_type": self.configs.pe_type,
+            "pe_dim": self.configs.pe_dim,
+            "feat_sigma": self.configs.feat_sigma,
+            "domain": self.configs.volume_domain,
+            "extent": self.lattice.extent,
+            "pe_type_conf": self.configs.pe_type_conf,
+        }
+
+        # pose search
         if self.epochs_pose_search > 0:
-            self.ps_params = {
+            ps_params = {
                 "l_min": self.configs.l_start,
                 "l_max": self.configs.l_end,
                 "t_extent": self.configs.t_extent,
@@ -443,6 +419,32 @@ class AmortizedInferenceTrainer(ModelTrainer):
                 ),
                 "average_over_tilts": self.configs.average_over_tilts,
             }
+        else:
+            ps_params = None
+
+        return DRGNai(
+            self.lattice,
+            output_mask,
+            self.particle_count,
+            self.image_count,
+            cnn_params,
+            conf_regressor_params,
+            hyper_volume_params,
+            resolution_encoder=self.configs.resolution_encoder,
+            no_trans=self.configs.no_trans,
+            use_gt_poses=self.configs.use_gt_poses,
+            use_gt_trans=self.configs.use_gt_trans,
+            will_use_point_estimates=self.configs.epochs_sgd >= 1,
+            ps_params=ps_params,
+            verbose_time=self.configs.verbose_time,
+            pretrain_with_gt_poses=self.configs.pretrain_with_gt_poses,
+            n_tilts_pose_search=self.configs.n_tilts_pose_search,
+        )
+
+    def __init__(self, configs: dict[str, Any]) -> None:
+        super().__init__(configs)
+        self.configs: AmortizedInferenceConfigurations
+        self.model = self.volume_model
 
         self.batch_size_known_poses = self.configs.batch_size_known_poses * self.n_prcs
         self.batch_size_hps = self.configs.batch_size_hps * self.n_prcs
@@ -456,17 +458,11 @@ class AmortizedInferenceTrainer(ModelTrainer):
 
         # TODO: Replace with DistributedDataParallel
         if self.n_prcs > 1:
-            self.model = MyDataParallel(self.model)
+            self.model = MyDataParallel(self.volume_model)
 
         self.model.output_mask.binary_mask = self.model.output_mask.binary_mask.cpu()
-
-        # hypervolume
-        hyper_volume_params = [{"params": list(self.model.hypervolume.parameters())}]
-
-        self.optimizers["hypervolume"] = self.optim_types[
-            self.configs.hypervolume_optimizer_type
-        ](hyper_volume_params, lr=self.configs.learning_rate)
-        self.optimizer_types["hypervolume"] = self.configs.hypervolume_optimizer_type
+        self.optimizers = {"hypervolume": self.volume_optimizer}
+        self.optimizer_types = {"hypervolume": self.configs.volume_optim_type}
 
         # pose table
         if not self.configs.use_gt_poses:
@@ -588,7 +584,6 @@ class AmortizedInferenceTrainer(ModelTrainer):
         self.mask_tilts_seen_at_last_epoch = np.zeros(self.image_count)
 
         # counters
-        self.epoch = 0
         self.run_times = {phase: [] for phase in self.run_phases}
         self.current_epoch_particles_count = 0
         self.total_batch_count = 0
@@ -596,11 +591,27 @@ class AmortizedInferenceTrainer(ModelTrainer):
         self.batch_idx = 0
         self.cur_loss = None
 
+        self.predicted_rots = np.empty((self.image_count, 3, 3))
+        self.predicted_trans = (
+            np.empty((self.image_count, 2)) if not self.configs.no_trans else None
+        )
+        self.predicted_conf = (
+            np.empty((self.particle_count, self.configs.z_dim))
+            if self.configs.z_dim > 0
+            else None
+        )
+
+        self.predicted_logvar = (
+            np.empty((self.particle_count, self.configs.z_dim))
+            if self.configs.z_dim > 0 and self.configs.variational_het
+            else None
+        )
+
     def train_epoch(self):
+        self.configs: AmortizedInferenceConfigurations
         self.mask_particles_seen_at_last_epoch = np.zeros(self.particle_count)
         self.mask_tilts_seen_at_last_epoch = np.zeros(self.image_count)
 
-        self.epoch += 1
         self.current_epoch_particles_count = 0
         self.optimized_modules = ["hypervolume"]
 
@@ -609,7 +620,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
             or self.configs.z_dim == 0
             or self.current_epoch < 0
         )
-        self.pretraining = self.epoch < 0
+        self.pretraining = self.current_epoch < 0
 
         if not self.configs.use_gt_poses:
             self.is_in_pose_search_step = (
@@ -649,22 +660,22 @@ class AmortizedInferenceTrainer(ModelTrainer):
                         trans_gt = torch.tensor(poses_gt[1]).float()
                         trans_gt *= self.resolution
 
-                        if self.index is not None:
-                            rotmat_gt = rotmat_gt[self.index]
-                            trans_gt = trans_gt[self.index]
+                        if self.ind is not None:
+                            rotmat_gt = rotmat_gt[self.ind]
+                            trans_gt = trans_gt[self.ind]
 
                     else:
                         rotmat_gt = torch.tensor(poses_gt).float()
                         trans_gt = None
 
-                        if self.index is not None:
-                            rotmat_gt = rotmat_gt[self.index]
+                        if self.ind is not None:
+                            rotmat_gt = rotmat_gt[self.ind]
 
                     self.model.pose_table.initialize(rotmat_gt, trans_gt)
 
                 else:
                     self.logger.info(
-                        "Initializing pose table from " "hierarchical pose search"
+                        "Initializing pose table from hierarchical pose search"
                     )
                     self.model.pose_table.initialize(
                         self.predicted_rots, self.predicted_trans
@@ -711,8 +722,8 @@ class AmortizedInferenceTrainer(ModelTrainer):
         end_time = time.time()
 
         # inner loop
-        for self.batch_idx, in_dict in enumerate(data_generator):
-            self.train_step(in_dict, end_time=end_time)
+        for self.batch_idx, (batch, tilt_ind, ind) in enumerate(data_generator):
+            self.train_step(batch, tilt_ind, ind, end_time=end_time)
 
             if self.configs.verbose_time:
                 torch.cuda.synchronize()
@@ -723,16 +734,16 @@ class AmortizedInferenceTrainer(ModelTrainer):
                 break
 
         # update output mask -- epoch-based scaling
-        if hasattr(self.output_mask, "update_epoch") and self.use_point_estimates:
-            self.output_mask.update_epoch(self.configs.n_frequencies_per_epoch)
+        if hasattr(self.model.output_mask, "update_epoch") and self.use_point_estimates:
+            self.model.output_mask.update_epoch(self.configs.n_frequencies_per_epoch)
 
     def pretrain(self):
         end_time = time.time()
 
-        for batch_idx, in_dict in enumerate(self.data_generator):
+        for batch_idx, (batch, tilt_ind, ind) in enumerate(self.data_iterator):
             self.batch_idx = batch_idx
 
-            self.train_step(in_dict, end_time=end_time)
+            self.train_step(batch, tilt_ind, ind, end_time=end_time)
             if self.configs.verbose_time:
                 torch.cuda.synchronize()
 
@@ -764,14 +775,14 @@ class AmortizedInferenceTrainer(ModelTrainer):
 
         return ctf_local
 
-    def train_step(self, in_dict, end_time):
+    def train_step(self, y_gt, tilt_ind, ind, end_time):
         if self.configs.verbose_time:
             torch.cuda.synchronize()
             self.run_times["dataloading"].append(time.time() - end_time)
 
         # update output mask -- image-based scaling
-        if hasattr(self.output_mask, "update") and self.is_in_pose_search_step:
-            self.output_mask.update(self.total_particles_count)
+        if hasattr(self.model.output_mask, "update") and self.is_in_pose_search_step:
+            self.model.output_mask.update(self.total_particles_count)
 
         if self.is_in_pose_search_step:
             self.model.ps_params["l_min"] = self.configs.l_start
@@ -780,18 +791,15 @@ class AmortizedInferenceTrainer(ModelTrainer):
                 self.model.ps_params["l_max"] = self.configs.l_end
             else:
                 self.model.ps_params["l_max"] = min(
-                    self.output_mask.current_radius, self.configs.l_end
+                    self.model.output_mask.current_radius, self.configs.l_end
                 )
 
-        y_gt = in_dict["y"]
-        ind = in_dict["index"]
-
-        if "tilt_index" not in in_dict:
-            in_dict["tilt_index"] = in_dict["index"]
+        if tilt_ind is not None:
+            ind_tilt = tilt_ind.reshape(-1)
+            ind_tilt = ind_tilt.to(self.device)
         else:
-            in_dict["tilt_index"] = in_dict["tilt_index"].reshape(-1)
+            ind_tilt = None
 
-        ind_tilt = in_dict["tilt_index"]
         self.total_batch_count += 1
         batch_size = len(y_gt)
         self.total_particles_count += batch_size
@@ -802,8 +810,8 @@ class AmortizedInferenceTrainer(ModelTrainer):
             torch.cuda.synchronize()
         start_time_gpu = time.time()
 
-        for key in in_dict.keys():
-            in_dict[key] = in_dict[key].to(self.device)
+        y_gt = y_gt.to(self.device)
+        ind = ind.to(self.device)
         if self.configs.verbose_time:
             torch.cuda.synchronize()
             self.run_times["to_gpu"].append(time.time() - start_time_gpu)
@@ -812,8 +820,16 @@ class AmortizedInferenceTrainer(ModelTrainer):
         for key in self.optimized_modules:
             self.optimizers[key].zero_grad()
 
+        in_dict = {
+            "y": y_gt,
+            "index": ind,
+            "tilt_index": tilt_ind,
+        }
+
         # forward pass
-        latent_variables_dict, y_pred, y_gt_processed = self.forward_pass(in_dict)
+        latent_variables_dict, y_pred, y_gt_processed = self.forward_pass(
+            y_gt, tilt_ind, ind
+        )
 
         if self.n_prcs > 1:
             self.model.module.is_in_pose_search_step = False
@@ -838,7 +854,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
             torch.cuda.synchronize()
         start_time_backward = time.time()
         total_loss.backward()
-        self.cur_loss += total_loss.item() * len(ind)
+        # self.cur_loss += total_loss.item() * len(ind)
 
         for key in self.optimized_modules:
             if self.optimizer_types[key] == "adam":
@@ -889,7 +905,8 @@ class AmortizedInferenceTrainer(ModelTrainer):
             # log
             if self.use_cuda:
                 ind = ind.cpu()
-                ind_tilt = ind_tilt.cpu()
+                if ind_tilt is not None:
+                    ind_tilt = ind_tilt.cpu()
 
             self.mask_particles_seen_at_last_epoch[ind] = 1
             self.mask_tilts_seen_at_last_epoch[ind_tilt] = 1
@@ -933,14 +950,17 @@ class AmortizedInferenceTrainer(ModelTrainer):
 
         return rot_pred, trans_pred, conf_pred, logvar_pred
 
-    def forward_pass(self, in_dict):
+    def forward_pass(self, y_gt, tilt_ind, ind):
         if self.configs.verbose_time:
             torch.cuda.synchronize()
 
         start_time_ctf = time.time()
-        ctf_local = self.get_ctfs_at(in_dict["tilt_index"])
+        if tilt_ind is not None:
+            ctf_local = self.get_ctfs_at(tilt_ind)
+        else:
+            ctf_local = self.get_ctfs_at(ind)
 
-        if self.configs.subtomogram_averaging:
+        if self.configs.subtomo_averaging:
             ctf_local = ctf_local.reshape(-1, self.image_count, *ctf_local.shape[1:])
 
         if self.configs.verbose_time:
@@ -974,7 +994,6 @@ class AmortizedInferenceTrainer(ModelTrainer):
             else:
                 self.model.conf_table.eval()
 
-        in_dict["ctf"] = ctf_local
         if self.n_prcs > 1:
             self.model.module.pose_only = self.pose_only
             self.model.module.use_point_estimates = self.use_point_estimates
@@ -991,10 +1010,20 @@ class AmortizedInferenceTrainer(ModelTrainer):
             self.model.is_in_pose_search_step = self.is_in_pose_search_step
             self.model.use_point_estimates_conf = not self.configs.use_conf_encoder
 
-        if self.configs.subtomogram_averaging:
-            in_dict["tilt_index"] = in_dict["tilt_index"].reshape(
-                *in_dict["y"].shape[0:2]
-            )
+        if self.configs.subtomo_averaging:
+            tilt_ind = tilt_ind.reshape(y_gt.shape[0:2])
+
+        in_dict = {
+            "y": y_gt,
+            "index": ind,
+            "tilt_index": tilt_ind,
+            "ctf": ctf_local,
+        }
+
+        if in_dict["tilt_index"] is None:
+            in_dict["tilt_index"] = in_dict["index"]
+        else:
+            in_dict["tilt_index"] = in_dict["tilt_index"].reshape(-1)
 
         out_dict = self.model(in_dict)
         self.run_times["encoder"].append(
@@ -1025,8 +1054,8 @@ class AmortizedInferenceTrainer(ModelTrainer):
         y_pred = out_dict["y_pred"]
         y_gt_processed = out_dict["y_gt_processed"]
 
-        if self.configs.subtomogram_averaging and self.configs.dose_exposure_correction:
-            mask = self.output_mask.binary_mask
+        if self.configs.subtomo_averaging and self.configs.dose_exposure_correction:
+            mask = self.model.output_mask.binary_mask
             a_pix = self.ctf_params[0, 0]
 
             dose_filters = self.data.get_dose_filters(
@@ -1066,7 +1095,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
             smoothness_loss = l2_frequency_bias(
                 y_pred,
                 self.lattice.freqs2d,
-                self.output_mask.binary_mask,
+                self.model.output_mask.binary_mask,
                 self.resolution,
             )
             total_loss += self.configs.l2_smoothness_regularizer * smoothness_loss
@@ -1079,8 +1108,8 @@ class AmortizedInferenceTrainer(ModelTrainer):
             self.writer,
             self.in_dict_last,
             self.y_pred_last,
-            self.output_mask,
-            self.epoch,
+            self.model.output_mask,
+            self.current_epoch,
         )
 
         # conformation
@@ -1091,8 +1120,8 @@ class AmortizedInferenceTrainer(ModelTrainer):
             if self.configs.labels is not None:
                 labels = cryodrgn.utils.load_pkl(self.configs.labels)
 
-                if self.index is not None:
-                    labels = labels[self.index]
+                if self.ind is not None:
+                    labels = labels[self.ind]
 
             if self.mask_particles_seen_at_last_epoch is not None:
                 mask_idx = self.mask_particles_seen_at_last_epoch > 0.5
@@ -1110,7 +1139,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
             pca = summary.make_conf_summary(
                 self.writer,
                 predicted_conf,
-                self.epoch,
+                self.current_epoch,
                 labels,
                 pca=None,
                 logvar=logvar,
@@ -1135,17 +1164,17 @@ class AmortizedInferenceTrainer(ModelTrainer):
                 rotmat_gt = torch.tensor(poses_gt[0]).float()
                 trans_gt = torch.tensor(poses_gt[1]).float() * self.resolution
 
-                if self.index is not None:
-                    rotmat_gt = rotmat_gt[self.index]
-                    trans_gt = trans_gt[self.index]
+                if self.ind is not None:
+                    rotmat_gt = rotmat_gt[self.ind]
+                    trans_gt = trans_gt[self.ind]
 
             else:
                 rotmat_gt = torch.tensor(poses_gt).float()
                 trans_gt = None
                 assert not shift, "Shift activated but trans not given in gt"
 
-                if self.index is not None:
-                    rotmat_gt = rotmat_gt[self.index]
+                if self.ind is not None:
+                    rotmat_gt = rotmat_gt[self.ind]
 
             rotmat_gt = rotmat_gt[mask_tilt_idx]
             trans_gt = trans_gt[mask_tilt_idx] if trans_gt is not None else None
@@ -1163,7 +1192,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
             predicted_trans,
             rotmat_gt,
             trans_gt,
-            self.epoch,
+            self.current_epoch,
             shift=shift,
         )
 
@@ -1171,13 +1200,13 @@ class AmortizedInferenceTrainer(ModelTrainer):
 
     def make_light_summary(self, all_losses):
         self.logger.info(
-            f"# [Train Epoch: {self.epoch}/{self.num_epochs - 1}] "
+            f"# [Train Epoch: {self.current_epoch}/{self.num_epochs - 1}] "
             f"[{self.current_epoch_particles_count}"
             f"/{self.particle_count} particles]"
         )
 
-        if hasattr(self.output_mask, "current_radius"):
-            all_losses["Mask Radius"] = self.output_mask.current_radius
+        if hasattr(self.model.output_mask, "current_radius"):
+            all_losses["Mask Radius"] = self.model.output_mask.current_radius
 
         if self.model.trans_search_factor is not None:
             all_losses["Trans. Search Factor"] = self.model.trans_search_factor
@@ -1191,7 +1220,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
 
     def save_latents(self):
         """Write model's latent variables to file."""
-        out_pose = os.path.join(self.configs.outdir, f"pose.{self.epoch}.pkl")
+        out_pose = os.path.join(self.configs.outdir, f"pose.{self.current_epoch}.pkl")
 
         if self.configs.no_trans:
             with open(out_pose, "wb") as f:
@@ -1201,13 +1230,17 @@ class AmortizedInferenceTrainer(ModelTrainer):
                 pickle.dump((self.predicted_rots, self.predicted_trans), f)
 
         if self.configs.z_dim > 0:
-            out_conf = os.path.join(self.configs.outdir, f"conf.{self.epoch}.pkl")
+            out_conf = os.path.join(
+                self.configs.outdir, f"conf.{self.current_epoch}.pkl"
+            )
             with open(out_conf, "wb") as f:
                 pickle.dump(self.predicted_conf, f)
 
     def save_volume(self):
         """Write reconstructed volume to file."""
-        out_mrc = os.path.join(self.configs.outdir, f"reconstruct.{self.epoch}.mrc")
+        out_mrc = os.path.join(
+            self.configs.outdir, f"reconstruct.{self.current_epoch}.mrc"
+        )
 
         self.model.hypervolume.eval()
         if hasattr(self.model, "conf_cnn"):
@@ -1231,14 +1264,16 @@ class AmortizedInferenceTrainer(ModelTrainer):
     # TODO: weights -> model and reconstruct -> volume for output labels?
     def save_model(self):
         """Write model state to file."""
-        out_weights = os.path.join(self.configs.outdir, f"weights.{self.epoch}.pkl")
+        out_weights = os.path.join(
+            self.configs.outdir, f"weights.{self.current_epoch}.pkl"
+        )
 
         optimizers_state_dict = {}
         for key in self.optimizers.keys():
             optimizers_state_dict[key] = self.optimizers[key].state_dict()
 
         saved_objects = {
-            "epoch": self.epoch,
+            "epoch": self.current_epoch,
             "model_state_dict": (
                 self.model.module.state_dict()
                 if self.n_prcs > 1
@@ -1253,7 +1288,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
             "optimizers_state_dict": optimizers_state_dict,
         }
 
-        if hasattr(self.output_mask, "current_radius"):
-            saved_objects["output_mask_radius"] = self.output_mask.current_radius
+        if hasattr(self.model.output_mask, "current_radius"):
+            saved_objects["output_mask_radius"] = self.model.output_mask.current_radius
 
         torch.save(saved_objects, out_weights)

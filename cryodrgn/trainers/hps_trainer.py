@@ -118,6 +118,9 @@ class HierarchicalPoseSearchConfigurations(ModelConfigurations):
             if self.equivariance <= 0:
                 raise ValueError("Regularization weight must be positive")
 
+        if self.volume_domain is None:
+            self.volume_domain = "fourier"
+
 
 class HierarchicalPoseSearchTrainer(ModelTrainer):
 
@@ -609,7 +612,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
         ).view(y.size(0), self.resolution, self.resolution)
 
     def pretrain_step(self, batch):
-        if self.zdim > 0:
+        if self.z_dim > 0:
             y, yt = batch
             use_tilt = yt is not None
             B = y.size(0)
@@ -618,7 +621,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
             self.optim.zero_grad()
 
             rot = lie_tools.random_SO3(B, device=y.device)
-            z = torch.randn((B, self.zdim), device=y.device)
+            z = torch.randn((B, self.z_dim), device=y.device)
 
             # reconstruct circle of pixels instead of whole image
             mask = self.lattice.get_circular_mask(self.lattice.D // 2)
@@ -689,7 +692,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
             out_weights,
         )
 
-        if self.zdim > 0:
+        if self.z_dim > 0:
             assert not self.model.training
             z_mu_all = []
             z_logvar_all = []

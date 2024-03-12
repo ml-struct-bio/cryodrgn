@@ -11,11 +11,12 @@ from torch.nn.parallel import DataParallel
 import torch.nn.functional as F
 
 import cryodrgn.config
-from cryodrgn import ctf, dataset, lie_tools
-from cryodrgn.losses import EquivarianceLoss
+from cryodrgn import ctf, dataset
+from cryodrgn.models import lie_tools
+from cryodrgn.models.losses import EquivarianceLoss
 from cryodrgn.models.variational_autoencoder import unparallelize, HetOnlyVAE
 from cryodrgn.models.neural_nets import get_decoder
-from cryodrgn.pose_search import PoseSearch
+from cryodrgn.models.pose_search import PoseSearch
 from cryodrgn.trainers._base import ModelTrainer, ModelConfigurations
 
 
@@ -28,7 +29,6 @@ class HierarchicalPoseSearchConfigurations(ModelConfigurations):
         "equivariance",
         "equivariance_start",
         "equivariance_stop",
-        "data_norm",
         "l_ramp_epochs",
         "l_ramp_model",
         "reset_model_every",
@@ -42,7 +42,6 @@ class HierarchicalPoseSearchConfigurations(ModelConfigurations):
         "enc_dim",
         "encode_mode",
         "enc_mask",
-        "use_real",
         "dec_layers",
         "dec_dim",
     )
@@ -54,12 +53,10 @@ class HierarchicalPoseSearchConfigurations(ModelConfigurations):
             "equivariance": None,
             "equivariance_start": 100000,
             "equivariance_stop": 200000,
-            "data_norm": None,
             "l_ramp_epochs": 0,
             "l_ramp_model": 0,
             "reset_model_every": None,
             "reset_optim_every": None,
-            "reset_optim_after_pretrain": None,
             "grid_niter": 4,
             "ps_freq": 5,
             "n_kept_poses": 8,
@@ -68,7 +65,6 @@ class HierarchicalPoseSearchConfigurations(ModelConfigurations):
             "enc_dim": 1024,
             "encode_mode": "resid",
             "enc_mask": None,
-            "use_real": False,
             "dec_layers": 3,
             "dec_dim": 1024,
         }
@@ -395,13 +391,18 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                     self.ctf_params[ind] if self.ctf_params is not None else None
                 )
 
+            if batch_poses:
+                rot, trans = batch_poses
+            else:
+                rot, trans = None, None
+
             # train the model
             losses, new_poses, new_base_poses = self.train_step(
                 batch,
                 tilt_ind,
                 equivariance_tuple,
-                rot=batch_poses[0],
-                trans=batch_poses[1],
+                rot=rot,
+                trans=trans,
                 ctf_params=ctf_param,
             )
 
@@ -410,7 +411,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                     self.pose_optimizer.step()
 
             all_poses.append((ind.cpu().numpy(), new_poses))
-            if new_base_poses:
+            if new_base_poses is not None:
                 base_poses.append((ind_np, new_base_poses))
 
             # logging
@@ -612,22 +613,22 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
         ).view(y.size(0), self.resolution, self.resolution)
 
     def pretrain_step(self, batch):
-        if self.z_dim > 0:
+        if self.configs.z_dim > 0:
             y, yt = batch
             use_tilt = yt is not None
             B = y.size(0)
 
-            self.model.train()
-            self.optim.zero_grad()
+            self.volume_model.train()
+            self.volume_optimizer.zero_grad()
 
             rot = lie_tools.random_SO3(B, device=y.device)
-            z = torch.randn((B, self.z_dim), device=y.device)
+            z = torch.randn((B, self.configs.z_dim), device=y.device)
 
             # reconstruct circle of pixels instead of whole image
             mask = self.lattice.get_circular_mask(self.lattice.D // 2)
 
             def gen_slice(R):
-                _model = unparallelize(self.model)
+                _model = unparallelize(self.volume_model)
                 assert isinstance(_model, HetOnlyVAE)
                 return _model.decode(self.lattice.coords[mask] @ R, z).view(B, -1)
 
@@ -641,34 +642,34 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                 gen_loss = F.mse_loss(gen_slice(rot), y)
 
             gen_loss.backward()
-            self.optim.step()
+            self.volume_optimizer.step()
 
             return gen_loss.item()
 
         else:
             y, yt = batch
             B = y.size(0)
-            self.model.train()
-            self.optim.zero_grad()
+            self.volume_model.train()
+            self.volume_optimizer.zero_grad()
 
             mask = self.lattice.get_circular_mask(self.lattice.D // 2)
 
             def gen_slice(R):
-                slice_ = self.model(self.lattice.coords[mask] @ R)
+                slice_ = self.volume_model(self.lattice.coords[mask] @ R)
                 return slice_.view(B, -1)
 
             rot = lie_tools.random_SO3(B, device=y.device)
 
             y = y.view(B, -1)[:, mask]
-            if self.tilt is not None:
+            if self.configs.tilt is not None:
                 yt = yt.view(B, -1)[:, mask]
                 loss = 0.5 * F.mse_loss(gen_slice(rot), y) + 0.5 * F.mse_loss(
-                    gen_slice(self.tilt @ rot), yt
+                    gen_slice(self.configs.tilt @ rot), yt
                 )
             else:
                 loss = F.mse_loss(gen_slice(rot), y)
             loss.backward()
-            self.optim.step()
+            self.volume_optimizer.step()
 
             return loss.item()
 

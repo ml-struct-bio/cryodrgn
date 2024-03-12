@@ -4,9 +4,10 @@ import os
 import shutil
 import sys
 import pickle
+import time
 from collections import OrderedDict
 from abc import ABC, abstractmethod
-from typing import Any, Optional
+from typing import Any
 from typing_extensions import Self
 import yaml
 from datetime import datetime as dt
@@ -198,7 +199,6 @@ class ModelConfigurations(BaseConfigurations):
         "datadir",
         "ind",
         "log_interval",
-        "verbose",
         "load",
         "load_poses",
         "initial_conf",
@@ -233,9 +233,6 @@ class ModelConfigurations(BaseConfigurations):
         "t_yshift",
         "hidden_layers",
         "hidden_dim",
-        "encode_mode",
-        "enc_mask",
-        "use_real",
         "pe_type",
         "pe_dim",
         "volume_domain",
@@ -244,8 +241,10 @@ class ModelConfigurations(BaseConfigurations):
         "base_healpy",
         "subtomo_averaging",
         "volume_optim_type",
+        "use_real",
         "no_trans",
         "amp",
+        "reset_optim_after_pretrain",
     )
     default_values = OrderedDict(
         {
@@ -257,7 +256,6 @@ class ModelConfigurations(BaseConfigurations):
             "datadir": None,
             "ind": None,
             "log_interval": 1000,
-            "verbose": False,
             "load": None,
             "load_poses": None,
             "checkpoint": 1,
@@ -291,9 +289,6 @@ class ModelConfigurations(BaseConfigurations):
             "t_yshift": 0,
             "hidden_layers": 3,
             "hidden_dim": 256,
-            "encode_mode": "resid",
-            "enc_mask": None,
-            "use_real": False,
             "pe_type": "gaussian",
             "pe_dim": 64,
             "volume_domain": None,
@@ -302,8 +297,10 @@ class ModelConfigurations(BaseConfigurations):
             "base_healpy": 2,
             "subtomo_averaging": False,
             "volume_optim_type": "adam",
+            "use_real": False,
             "no_trans": False,
             "amp": True,
+            "reset_optim_after_pretrain": False,
         }
     )
 
@@ -484,7 +481,7 @@ class ModelTrainer(BaseTrainer, ABC):
         self.logger.info(self.volume_model)
 
         # parallelize
-        if self.volume_model.zdim > 0 and self.configs.multigpu and self.n_prcs > 1:
+        if self.volume_model.z_dim > 0 and self.configs.multigpu and self.n_prcs > 1:
             if self.configs.multigpu and torch.cuda.device_count() > 1:
                 self.logger.info(f"Using {torch.cuda.device_count()} GPUs!")
                 self.configs.batch_size *= torch.cuda.device_count()
@@ -611,9 +608,10 @@ class ModelTrainer(BaseTrainer, ABC):
         self.configs.write(os.path.join(self.outdir, "train-configs.yaml"))
 
     def train(self) -> None:
+        self.configs: ModelConfigurations
         t0 = dt.now()
 
-        # self.pretrain()
+        self.pretrain()
         self.current_epoch = self.start_epoch
         self.logger.info("--- Training Starts Now ---")
 
@@ -645,43 +643,46 @@ class ModelTrainer(BaseTrainer, ABC):
 
         t_total = dt.now() - t0
         self.logger.info(
-            f"Finished in {t_total} ({t_total / self.num_epochs} per epoch)"
+            f"Finished in {t_total} ({t_total / self.configs.num_epochs} per epoch)"
         )
 
-    def pretrain(self):
+    def pretrain(self) -> None:
         """Pretrain the decoder using random initial poses."""
-        particles_seen = 0
-        loss = None
+        self.configs: ModelConfigurations
+        end_time = time.time()
         self.logger.info(f"Using random poses for {self.configs.pretrain} iterations")
 
-        for batch in self.data_iterator:
-            particles_seen += len(batch[0])
+        particles_seen = 0
+        while particles_seen < self.configs.pretrain:
+            for batch in self.data_iterator:
+                particles_seen += len(batch[0])
 
-            batch = (
-                (batch[0].to(self.device), None)
-                if self.configs.tilt is None
-                else (batch[0].to(self.device), batch[1].to(self.device))
-            )
-            loss = self.pretrain_step(batch)
-
-            if particles_seen % self.configs.log_interval == 0:
-                self.logger.info(
-                    f"[Pretrain Iteration {particles_seen}] loss={loss:4f}"
+                batch = (
+                    (batch[0].to(self.device), None)
+                    if batch[1] is None
+                    else (batch[0].to(self.device), batch[1].to(self.device))
                 )
+                loss = self.pretrain_step(batch, end_time=end_time)
 
-            if particles_seen > self.configs.pretrain_iter:
-                break
+                if self.configs.verbose_time:
+                    torch.cuda.synchronize()
+
+                if particles_seen % self.configs.log_interval == 0:
+                    self.logger.info(
+                        f"[Pretrain Iteration {particles_seen}] loss={loss:4f}"
+                    )
+
+                if particles_seen > self.configs.pretrain:
+                    break
 
         # reset model after pretraining
         if self.configs.reset_optim_after_pretrain:
             self.logger.info(">> Resetting optim after pretrain")
             self.optim = torch.optim.Adam(
-                self.model.parameters(),
+                self.volume_model.parameters(),
                 lr=self.configs.learning_rate,
                 weight_decay=self.configs.weight_decay,
             )
-
-        return loss
 
     @abstractmethod
     def train_epoch(self):

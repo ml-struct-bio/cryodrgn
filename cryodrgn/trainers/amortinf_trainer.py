@@ -2,7 +2,7 @@ import os
 import pickle
 from collections import OrderedDict
 import numpy as np
-from typing import Any, Optional
+from typing import Any
 import time
 
 import torch
@@ -14,7 +14,7 @@ import cryodrgn.utils
 from cryodrgn import ctf, mrc
 from cryodrgn.dataset import make_dataloader
 from cryodrgn.trainers import summary
-from cryodrgn.losses import kl_divergence_conf, l1_regularizer, l2_frequency_bias
+from cryodrgn.models.losses import kl_divergence_conf, l1_regularizer, l2_frequency_bias
 from cryodrgn.models.amortized_inference import DRGNai, MyDataParallel
 from cryodrgn.masking import CircularMask, FrequencyMarchingMask
 from cryodrgn.trainers._base import ModelTrainer, ModelConfigurations
@@ -736,21 +736,6 @@ class AmortizedInferenceTrainer(ModelTrainer):
         # update output mask -- epoch-based scaling
         if hasattr(self.model.output_mask, "update_epoch") and self.use_point_estimates:
             self.model.output_mask.update_epoch(self.configs.n_frequencies_per_epoch)
-
-    def pretrain(self):
-        end_time = time.time()
-
-        for batch_idx, (batch, tilt_ind, ind) in enumerate(self.data_iterator):
-            self.batch_idx = batch_idx
-
-            self.train_step(batch, tilt_ind, ind, end_time=end_time)
-            if self.configs.verbose_time:
-                torch.cuda.synchronize()
-
-            end_time = time.time()
-
-            if self.current_epoch_particles_count > self.n_particles_pretrain:
-                break
 
     def pretrain_step(self, batch, **pretrain_kwargs):
         self.train_step(batch, **pretrain_kwargs)

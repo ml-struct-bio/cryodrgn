@@ -3,7 +3,8 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from typing import Optional, Union, Tuple
-from cryodrgn import lie_tools, shift_grid, so3_grid
+from cryodrgn import shift_grid, so3_grid
+from cryodrgn.models import lie_tools
 from cryodrgn.models.variational_autoencoder import unparallelize, HetOnlyVAE
 from cryodrgn.lattice import Lattice
 import torch.nn as nn

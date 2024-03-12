@@ -42,6 +42,74 @@ def map_to_lie_vector(X):
     return torch.stack((-X[..., 1, 2], X[..., 0, 2], -X[..., 0, 1]), -1)
 
 
+def quat_to_rotmat(q):
+    """
+    Normalizes q and maps to group matrix.
+    q: [..., 4]
+
+    output: [..., 3, 3]
+    """
+    q = q / q.norm(p=2, dim=-1, keepdim=True)
+    r, i, j, k = q[..., 0], q[..., 1], q[..., 2], q[..., 3]
+
+    return torch.stack(
+        [
+            r * r - i * i - j * j + k * k,
+            2 * (r * i + j * k),
+            2 * (r * j - i * k),
+            2 * (r * i - j * k),
+            -r * r + i * i - j * j + k * k,
+            2 * (i * j + r * k),
+            2 * (r * j + i * k),
+            2 * (i * j - r * k),
+            -r * r - i * i + j * j + k * k,
+        ],
+        -1,
+    ).view(*q.shape[:-1], 3, 3)
+
+
+def random_quat(n, dtype=torch.float32, device=None):
+    u1, u2, u3 = torch.rand(3, n, dtype=dtype, device=device)
+    return torch.stack((
+        torch.sqrt(1-u1) * torch.sin(2 * np.pi * u2),
+        torch.sqrt(1-u1) * torch.cos(2 * np.pi * u2),
+        torch.sqrt(u1) * torch.sin(2 * np.pi * u3),
+        torch.sqrt(u1) * torch.cos(2 * np.pi * u3),
+    ), 1)
+
+
+def random_rotmat(n, dtype=torch.float32, device=None):
+    return quat_to_rotmat(random_quat(n, dtype, device))
+
+
+def s2s2_to_rotmat(s2s2):
+    """
+    Normalize 2 3-vectors. Project second to orthogonal component.
+    Take cross product for third. Stack to form SO matrix.
+
+    s2s2: [..., 6]
+
+    output: [..., 3, 3]
+    """
+    v2 = s2s2[..., 3:]
+    v1 = s2s2[..., 0:3]
+    u1 = v1
+    e1 = u1 / u1.norm(p=2, dim=-1, keepdim=True).clamp(min=1E-5)
+    u2 = v2 - (e1 * v2).sum(-1, keepdim=True) * e1
+    e2 = u2 / u2.norm(p=2, dim=-1, keepdim=True).clamp(min=1E-5)
+    e3 = torch.linalg.cross(e1, e2)
+    return torch.cat([e1[..., None, :], e2[..., None, :], e3[..., None, :]], -2)
+
+
+def rotmat_to_s2s2(rotmat):
+    """
+    rotmat: [..., 3, 3]
+
+    output: [..., 6]
+    """
+    return torch.cat([rotmat[..., 0, :], rotmat[..., 1, :]], -1)
+
+
 def expmap(v):
     theta = v.norm(p=2, dim=-1, keepdim=True)
     # normalize K

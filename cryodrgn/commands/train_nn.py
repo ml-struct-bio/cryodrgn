@@ -1,4 +1,8 @@
-"""Train a neural net to model a 3D density map given 2D images with pose assignments.
+"""Train a NN to model a 3D density map given 2D images with pose assignments.
+
+This command is an interface for the zdim=0 case of the 3D reconstruction method
+introduced in cryoDRGN v1. It creates an output directory and config file in the
+style of cryoDRGN v4 while using a now-deprecated set of command-line arguments.
 
 Example usage
 -------------
@@ -17,7 +21,6 @@ $ cryodrgn train_nn projections.star --poses angles.pkl --ctf.pkl \
 """
 import argparse
 import os
-from datetime import datetime as dt
 import logging
 import numpy as np
 import torch
@@ -38,6 +41,7 @@ from cryodrgn.models.neural_nets import DataParallelDecoder, Decoder
 import cryodrgn.trainers.config
 
 logger = logging.getLogger(__name__)
+from cryodrgn.trainers.hps_trainer import HierarchicalPoseSearchTrainer
 
 
 def add_args(parser: argparse.ArgumentParser) -> None:
@@ -249,292 +253,63 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     return parser
 
 
-def save_checkpoint(
-    model: Decoder, lattice, optim, epoch, norm, Apix, out_mrc, out_weights
-):
-    model.eval()
-    vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, norm)
-    write_mrc(out_mrc, np.array(vol.cpu()).astype(np.float32), Apix=Apix)
-    torch.save(
-        {
-            "norm": norm,
-            "epoch": epoch,
-            "model_state_dict": model.state_dict(),
-            "optimizer_state_dict": optim.state_dict(),
-        },
-        out_weights,
-    )
+def main(args: argparse.Namespace):
+    configs = {
+        "model": "hps",
+        "outdir": args.outdir,
+        "particles": args.particles,
+        "ctf": args.ctf,
+        "pose": args.poses,
+        "dataset": None,
+        "datadir": args.datadir,
+        "ind": args.ind,
+        "log_interval": args.log_interval,
+        "verbose": args.verbose,
+        "load": args.load,
+        "checkpoint": args.checkpoint,
+        "z_dim": 0,
+        "use_gt_poses": True,
+        "refine_gt_poses": args.do_pose_sgd,
+        "use_gt_trans": False,
+        "invert_data": args.invert_data,
+        "lazy": args.lazy,
+        "window": args.window,
+        "window_r": args.window_r,
+        "shuffler_size": args.shuffler_size,
+        "max_threads": None,
+        "num_workers": 0,
+        "num_epochs": args.num_epochs,
+        "batch_size": args.batch_size,
+        "weight_decay": args.wd,
+        "learning_rate": args.lr,
+        "pose_learning_rate": args.pose_lr,
+        "lattice_extent": args.l_extent,
+        "data_norm": args.norm,
+        "multigpu": args.multigpu,
+        "pretrain": args.pretrain,
+        "hidden_layers": args.layers,
+        "hidden_dim": args.dim,
+        "encode_mode": None,
+        "enc_mask": None,
+        "use_real": False,
+        "pe_type": args.pe_type,
+        "pe_dim": args.pe_dim,
+        "volume_domain": args.domain,
+        "activation": args.activation,
+        "feat_sigma": args.feat_sigma,
+        "subtomo_averaging": False,
+        "volume_optim_type": "adam",
+        "no_trans": False,
+        "amp": args.amp,
+        "enc_only": False,
+        "reset_optim_after_pretrain": False,
+        "pose_sgd_emb_type": args.emb_type,
+    }
+
+    trainer = HierarchicalPoseSearchTrainer(configs)
+    trainer.train()
 
 
-def train(
-    model,
-    lattice,
-    optim,
-    y,
-    rot,
-    trans=None,
-    ctf_params=None,
-    use_amp=False,
-    scaler=None,
-):
-    model.train()
-    optim.zero_grad()
-    B = y.size(0)
-    D = lattice.D
-
-    def run_model(y):
-        """Helper function"""
-        # reconstruct circle of pixels instead of whole image
-        mask = lattice.get_circular_mask(D // 2)
-        yhat = model(lattice.coords[mask] @ rot).view(B, -1)
-        if ctf_params is not None:
-            freqs = lattice.freqs2d[mask]
-            freqs = freqs.unsqueeze(0).expand(B, *freqs.shape) / ctf_params[:, 0].view(
-                B, 1, 1
-            )
-            yhat *= ctf.compute_ctf(freqs, *torch.split(ctf_params[:, 1:], 1, 1))
-        y = y.view(B, -1)[:, mask]
-        if trans is not None:
-            y = lattice.translate_ht(y, trans.unsqueeze(1), mask).view(B, -1)
-        return F.mse_loss(yhat, y)
-
-    # Cast operations to mixed precision if using torch.cuda.amp.GradScaler()
-    if scaler is not None:
-        with torch.cuda.amp.autocast_mode.autocast():
-            loss = run_model(y)
-    else:
-        loss = run_model(y)
-
-    if use_amp:
-        if scaler is not None:  # torch mixed precision
-            scaler.scale(loss).backward()
-            scaler.step(optim)
-            scaler.update()
-        else:  # apex.amp mixed precision
-            with amp.scale_loss(loss, optim) as scaled_loss:
-                scaled_loss.backward()
-            optim.step()
-    else:
-        loss.backward()
-        optim.step()
-    return loss.item()
-
-
-def save_config(args, dataset, lattice, model, out_config):
-    dataset_args = dict(
-        particles=args.particles,
-        norm=dataset.norm,
-        invert_data=args.invert_data,
-        ind=args.ind,
-        window=args.window,
-        window_r=args.window_r,
-        datadir=args.datadir,
-        ctf=args.ctf,
-        poses=args.poses,
-        do_pose_sgd=args.do_pose_sgd,
-    )
-    lattice_args = dict(D=lattice.D, extent=lattice.extent, ignore_DC=lattice.ignore_DC)
-    model_args = dict(
-        layers=args.layers,
-        dim=args.dim,
-        pe_type=args.pe_type,
-        feat_sigma=args.feat_sigma,
-        pe_dim=args.pe_dim,
-        domain=args.domain,
-        activation=args.activation,
-    )
-    config = dict(
-        dataset_args=dataset_args, lattice_args=lattice_args, model_args=model_args
-    )
-    config["seed"] = args.seed
-    cryodrgn.trainers.config.save(config, out_config)
-
-
-def get_latest(args):
-    # assumes args.num_epochs > latest checkpoint
-    logger.info("Detecting latest checkpoint...")
-    weights = [f"{args.outdir}/weights.{i}.pkl" for i in range(args.num_epochs)]
-    weights = [f for f in weights if os.path.exists(f)]
-    args.load = weights[-1]
-    logger.info(f"Loading {args.load}")
-    if args.do_pose_sgd:
-        i = args.load.split(".")[-2]
-        args.poses = f"{args.outdir}/pose.{i}.pkl"
-        assert os.path.exists(args.poses)
-        logger.info(f"Loading {args.poses}")
-    return args
-
-
-def main(args):
-    # instantiate model
-    # if args.pe_type != 'none': assert args.l_extent == 0.5
-    lattice = Lattice(D, extent=args.l_extent, device=device)
-
-    activation = {"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[args.activation]
-    model = models.get_decoder(
-        3,
-        D,
-        args.layers,
-        args.dim,
-        args.domain,
-        args.pe_type,
-        enc_dim=args.pe_dim,
-        activation=activation,
-        feat_sigma=args.feat_sigma,
-    )
-    model.to(device)
-    logger.info(model)
-    logger.info(
-        "{} parameters in model".format(
-            sum(p.numel() for p in model.parameters() if p.requires_grad)
-        )
-    )
-
-    # optimizer
-    optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
-
-    # load weights
-    if args.load:
-        logger.info("Loading model weights from {}".format(args.load))
-        checkpoint = torch.load(args.load)
-        model.load_state_dict(checkpoint["model_state_dict"])
-        optim.load_state_dict(checkpoint["optimizer_state_dict"])
-        start_epoch = checkpoint["epoch"] + 1
-        assert start_epoch < args.num_epochs
-    else:
-        start_epoch = 0
-
-    # load poses
-    pose_optimizer = None
-    if args.do_pose_sgd:
-        assert (
-            args.domain == "hartley"
-        ), "Need to use --domain hartley if doing pose SGD"
-        posetracker = PoseTracker.load(
-            args.poses, Nimg, D, args.emb_type, ind, device=device
-        )
-        pose_optimizer = torch.optim.SparseAdam(
-            list(posetracker.parameters()), lr=args.pose_lr
-        )
-    else:
-        posetracker = PoseTracker.load(args.poses, Nimg, D, None, ind, device=device)
-
-    # load CTF
-    if args.ctf is not None:
-        logger.info("Loading ctf params from {}".format(args.ctf))
-        ctf_params = ctf.load_ctf_for_training(D - 1, args.ctf)
-        if args.ind is not None:
-            ctf_params = ctf_params[ind]
-        ctf_params = torch.tensor(ctf_params, device=device)
-    else:
-        ctf_params = None
-    Apix = ctf_params[0, 0] if ctf_params is not None else 1
-
-    # save configuration
-    out_config = f"{args.outdir}/config.yaml"
-    save_config(args, data, lattice, model, out_config)
-
-    # Mixed precision training with AMP
-    scaler = None
-    if args.amp:
-        if args.batch_size % 8 != 0:
-            logger.warning(
-                f"Batch size {args.batch_size} not divisible by 8 "
-                f"and thus not optimal for AMP training!"
-            )
-        if (D - 1) % 8 != 0:
-            logger.warning(
-                f"Image size {D - 1} not divisible by 8 "
-                f"and thus not optimal for AMP training!"
-            )
-
-        # also check e.g. enc_mask dim?
-        if args.dim % 8 != 0:
-            logger.warning(
-                f"Decoder hidden layer dimension {args.dim} not divisible by 8 "
-                f"and thus not optimal for AMP training!"
-            )
-
-        # mixed precision with apex.amp
-        try:
-            model, optim = amp.initialize(model, optim, opt_level="O1")
-        # Mixed precision with pytorch (v1.6+)
-        except:  # noqa: E722
-            scaler = torch.cuda.amp.grad_scaler.GradScaler()
-
-    # parallelize
-    if args.multigpu and torch.cuda.device_count() > 1:
-        logger.info(f"Using {torch.cuda.device_count()} GPUs!")
-        args.batch_size *= torch.cuda.device_count()
-        logger.info(f"Increasing batch size to {args.batch_size}")
-        model = DataParallelDecoder(model)
-    elif args.multigpu:
-        logger.info(
-            f"WARNING: --multigpu selected, "
-            f"but {torch.cuda.device_count()} GPUs detected"
-        )
-
-    # train
-    data_generator = dataset.make_dataloader(
-        data, batch_size=args.batch_size, shuffler_size=args.shuffler_size
-    )
-
-    epoch = None
-    for epoch in range(start_epoch, args.num_epochs):
-        t2 = dt.now()
-        loss_accum = 0
-        batch_it = 0
-        for batch, _, ind in data_generator:
-            batch_it += len(ind)
-            ind = ind.to(device)
-            if pose_optimizer is not None:
-                pose_optimizer.zero_grad()
-            r, t = posetracker.get_pose(ind)
-            c = ctf_params[ind] if ctf_params is not None else None
-            loss_item = train(
-                model,
-                lattice,
-                optim,
-                batch.to(device),
-                r,
-                t,
-                c,
-                use_amp=args.amp,
-                scaler=scaler,
-            )
-            if pose_optimizer is not None and epoch >= args.pretrain:
-                pose_optimizer.step()
-            loss_accum += loss_item * len(ind)
-            if batch_it % args.log_interval == 0:
-                logger.info(
-                    "# [Train Epoch: {}/{}] [{}/{} images] loss={:.6f}".format(
-                        epoch + 1, args.num_epochs, batch_it, Nimg, loss_item
-                    )
-                )
-        logger.info(
-            "# =====> Epoch: {} Average loss = {:.6}; Finished in {}".format(
-                epoch + 1, loss_accum / Nimg, dt.now() - t2
-            )
-        )
-        if args.checkpoint and epoch % args.checkpoint == 0:
-            out_mrc = "{}/reconstruct.{}.mrc".format(args.outdir, epoch)
-            out_weights = "{}/weights.{}.pkl".format(args.outdir, epoch)
-            save_checkpoint(
-                model, lattice, optim, epoch, data.norm, Apix, out_mrc, out_weights
-            )
-            if args.do_pose_sgd and epoch >= args.pretrain:
-                out_pose = "{}/pose.{}.pkl".format(args.outdir, epoch)
-                posetracker.save(out_pose)
-
-    # save model weights and evaluate the model on 3D lattice
-    out_mrc = "{}/reconstruct.mrc".format(args.outdir)
-    out_weights = "{}/weights.pkl".format(args.outdir)
-    save_checkpoint(model, lattice, optim, epoch, data.norm, Apix, out_mrc, out_weights)
-    if args.do_pose_sgd and epoch >= args.pretrain:
-        out_pose = "{}/pose.pkl".format(args.outdir)
-        posetracker.save(out_pose)
-
-    td = dt.now() - t1
-    logger.info(
-        "Finished in {} ({} per epoch)".format(td, td / (args.num_epochs - start_epoch))
-    )
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    main(add_args(parser).parse_args())

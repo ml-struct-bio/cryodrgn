@@ -1,9 +1,14 @@
-"""
-Heterogeneous NN reconstruction with hierarchical pose optimization
+"""Heterogeneous NN reconstruction with cryoDRGN v2 hierarchical pose optimization
+
+This command is an interface for the zdim>0 case of the ab initio pose reconstruction
+method introduced in cryoDRGN v2. It creates an output directory and config file in the
+style of cryoDRGN v4 while using a now-deprecated set of command-line arguments.
+
 """
 import os
 import argparse
 import numpy as np
+import warnings
 import cryodrgn.utils
 from cryodrgn.trainers.hps_trainer import HierarchicalPoseSearchTrainer
 
@@ -444,5 +449,9 @@ def main(args: argparse.Namespace):
 
 
 if __name__ == "__main__":
+    warnings.warn(
+        "This command is being replaced by `cryodrgn train`!", DeprecationWarning
+    )
+
     parser = argparse.ArgumentParser(description=__doc__)
     main(add_args(parser).parse_args())

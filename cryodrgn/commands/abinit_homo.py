@@ -1,5 +1,9 @@
 """Homogeneous neural net ab initio reconstruction with hierarchical pose optimization.
 
+This command is an interface for the zdim=0 case of the ab initio pose reconstruction
+method introduced in cryoDRGN v2. It creates an output directory and config file in the
+style of cryoDRGN v4 while using a now-deprecated set of command-line arguments.
+
 Example usages
 --------------
 $ cryodrgn abinit_homo particles.256.txt --ctf ctf.pkl --ind chosen-particles.pkl \
@@ -8,25 +12,81 @@ $ cryodrgn abinit_homo particles.256.txt --ctf ctf.pkl --ind chosen-particles.pk
 """
 import argparse
 import os
-from datetime import datetime as dt
-import logging
 import numpy as np
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-
-from cryodrgn import dataset, utils
-from cryodrgn.mrc import MRCFile
-import cryodrgn.config
-
-logger = logging.getLogger(__name__)
+import cryodrgn.utils
+from cryodrgn.trainers.hps_trainer import HierarchicalPoseSearchTrainer
 
 
-def add_args(parser):
-    parser.add_argument("outdir", help="experiment output location")
-
+def add_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser.add_argument(
-        "--no-analysis",
+        "particles",
+        type=os.path.abspath,
+        help="Input particles (.mrcs, .star, .cs, or .txt)",
+    )
+    parser.add_argument(
+        "-o",
+        "--outdir",
+        type=os.path.abspath,
+        required=True,
+        help="Output directory to save model",
+    )
+    parser.add_argument(
+        "--ctf", metavar="pkl", type=os.path.abspath, help="CTF parameters (.pkl)"
+    )
+    parser.add_argument(
+        "--norm",
+        type=float,
+        nargs=2,
+        default=None,
+        help="Data normalization as shift, 1/scale (default: mean, std of dataset)",
+    )
+    parser.add_argument("--load", help="Initialize training from a checkpoint")
+    parser.add_argument(
+        "--load-poses",
+        type=os.path.abspath,
+        help="Initialize training from a checkpoint",
+    )
+    parser.add_argument(
+        "--checkpoint",
+        type=int,
+        default=1,
+        help="Checkpointing interval in N_EPOCHS (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--log-interval",
+        type=int,
+        default=1000,
+        help="Logging interval in N_IMGS (default: %(default)s)",
+    )
+    parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Increase verbosity"
+    )
+    parser.add_argument(
+        "--seed", type=int, default=np.random.randint(0, 100000), help="Random seed"
+    )
+    parser.add_argument(
+        "--uninvert-data",
+        dest="invert_data",
+        action="store_false",
+        help="Do not invert data sign",
+    )
+    parser.add_argument(
+        "--no-window",
+        dest="window",
+        action="store_false",
+        help="Turn off real space windowing of dataset",
+    )
+    parser.add_argument(
+        "--window-r",
+        type=float,
+        default=0.85,
+        help="Windowing radius (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--ind", type=os.path.abspath, help="Filter particle stack by these indices"
+    )
+    parser.add_argument(
+        "--lazy",
         action="store_true",
         help="Lazy loading if full dataset is too large to fit in memory",
     )
@@ -155,15 +215,13 @@ def add_args(parser):
         "--nkeptposes",
         type=int,
         default=8,
-        help="Number of poses to keep at each refinement interation "
-        "during branch and bound (default: %(default)s)",
+        help="Number of poses to keep at each refinement interation during branch and bound (default: %(default)s)",
     )
     group.add_argument(
         "--base-healpy",
         type=int,
         default=2,
-        help="Base healpy grid for pose search. Higher means exponentially higher "
-        "resolution (default: %(default)s)",
+        help="Base healpy grid for pose search. Higher means exponentially higher resolution (default: %(default)s)",
     )
     group.add_argument(
         "--pose-model-update-freq",
@@ -188,8 +246,7 @@ def add_args(parser):
         "--l-extent",
         type=float,
         default=0.5,
-        help="Coordinate lattice size (if not using positional encoding) "
-        "(default: %(default)s)",
+        help="Coordinate lattice size (if not using positional encoding) (default: %(default)s)",
     )
     group.add_argument(
         "--pe-type",
@@ -229,321 +286,89 @@ def add_args(parser):
         help="Scale for random Gaussian features (default: %(default)s)",
     )
 
-
-def main(args: argparse.Namespace, configs) -> None:
-    if configs is None:
-        configs = SetupHelper(args.outdir, update_existing=False).create_configs()
-
-    if "z_dim" in configs and configs["z_dim"] > 0:
-        configs["z_dim"] = 0
-
-        print(
-            "WARNING: given configurations specify heterogeneous reconstruction, "
-            "updating them to specify homogeneous reconstruction!"
-        )
-
-    # pose inference
-    if poses is not None:
-        rot = poses[0]
-        if not no_trans:
-            trans = poses[1]
-    else:  # BNB
-        model.eval()
-        with torch.no_grad():
-            rot, trans, base_pose = ps.opt_theta_trans(
-                y, images_tilt=yt, init_poses=base_pose, ctf_i=ctf_i
-            )
-            base_pose = base_pose.detach().cpu().numpy()
-
-    # reconstruct circle of pixels instead of whole image
-    mask = lattice.get_circular_mask(lattice.D // 2)
-    # mask = lattice.get_circular_mask(ps.Lmax)
-
-    def gen_slice(R):
-        slice_ = model(lattice.coords[mask] @ R).view(B, -1)
-        if ctf_i is not None:
-            slice_ *= ctf_i.view(B, -1)[:, mask]
-        return slice_
-
-    def translate(img):
-        img = lattice.translate_ht(img, trans.unsqueeze(1), mask)
-        return img.view(B, -1)
-
-    # Train model
-    model.train()
-    optim.zero_grad()
-
-    y = y.view(B, -1)[:, mask]
-    if tilt_rot is not None:
-        yt = yt.view(B, -1)[:, mask]
-    if not no_trans:
-        y = translate(y)
-        if tilt_rot is not None:
-            yt = translate(yt)
-
-    if tilt_rot is not None:
-        loss = 0.5 * F.mse_loss(gen_slice(rot), y) + 0.5 * F.mse_loss(
-            gen_slice(tilt_rot @ rot), yt
-        )
-    else:
-        loss = F.mse_loss(gen_slice(rot), y)
-    loss.backward()
-    optim.step()
-    save_pose = [rot.detach().cpu().numpy()]
-    if not no_trans:
-        save_pose.append(trans.detach().cpu().numpy())
-    return loss.item(), save_pose, base_pose
+    return parser
 
 
-def get_latest(args):
-    # assumes args.num_epochs > latest checkpoint
-    logger.info("Detecting latest checkpoint...")
-    weights = [f"{args.outdir}/weights.{i}.pkl" for i in range(args.num_epochs)]
-    weights = [f for f in weights if os.path.exists(f)]
-    args.load = weights[-1]
-    logger.info(f"Loading {args.load}")
-    i = args.load.split(".")[-2]
-    args.load_poses = f"{args.outdir}/pose.{i}.pkl"
-    assert os.path.exists(args.load_poses)  # Might need to relax this assert
-    logger.info(f"Loading {args.load_poses}")
-    return args
+def main(args: argparse.Namespace):
+    configs = {
+        "model": "hps",
+        "outdir": args.outdir,
+        "particles": args.particles,
+        "ctf": args.ctf,
+        "pose": None,
+        "dataset": None,
+        "datadir": None,
+        "ind": args.ind,
+        "log_interval": args.log_interval,
+        "verbose": args.verbose,
+        "load": args.load,
+        "load_poses": args.load_poses,
+        "checkpoint": args.checkpoint,
+        "z_dim": 0,
+        "use_gt_poses": False,
+        "refine_gt_poses": False,
+        "use_gt_trans": False,
+        "invert_data": args.invert_data,
+        "lazy": args.lazy,
+        "window": args.window,
+        "window_r": args.window_r,
+        "shuffler_size": args.shuffler_size,
+        "max_threads": None,
+        "num_workers": 0,
+        "tilt": args.tilt,
+        "tilt_deg": args.tilt_deg,
+        "num_epochs": args.num_epochs,
+        "batch_size": args.batch_size,
+        "weight_decay": args.wd,
+        "learning_rate": args.lr,
+        "pose_learning_rate": args.lr,
+        "lattice_extent": 0.5,
+        "l_start": args.l_start,
+        "l_end": args.l_end,
+        "data_norm": args.norm,
+        "multigpu": False,
+        "pretrain": args.pretrain,
+        "t_extent": args.t_extent,
+        "t_ngrid": args.t_ngrid,
+        "t_xshift": args.t_xshift,
+        "t_yshift": args.t_yshift,
+        "hidden_layers": args.layers,
+        "hidden_dim": args.dim,
+        "encode_mode": None,
+        "enc_mask": None,
+        "use_real": False,
+        "pe_type": args.pe_type,
+        "pe_dim": args.pe_dim,
+        "volume_domain": args.domain,
+        "activation": args.activation,
+        "feat_sigma": args.feat_sigma,
+        "base_healpy": args.base_healpy,
+        "subtomo_averaging": False,
+        "volume_optim_type": "adam",
+        "no_trans": False,
+        "amp": False,
+        "enc_only": False,
+        "beta": None,
+        "beta_control": None,
+        "equivariance": None,
+        "equivariance_start": None,
+        "equivariance_stop": None,
+        "l_ramp_epochs": args.l_ramp_epochs,
+        "l_ramp_model": None,
+        "reset_model_every": args.reset_model_every,
+        "reset_optim_every": args.reset_optim_every,
+        "reset_optim_after_pretrain": args.reset_optim_after_pretrain,
+        "grid_niter": args.niter,
+        "ps_freq": args.ps_freq,
+        "n_kept_poses": args.nkeptposes,
+        "pose_model_update_freq": args.pose_model_update_freq,
+    }
 
-
-def make_model(args, D: int):
-    activation = {"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[args.activation]
-    return get_decoder(
-        3,
-        D,
-        args.layers,
-        args.dim,
-        args.domain,
-        args.pe_type,
-        enc_dim=args.pe_dim,
-        activation=activation,
-        feat_sigma=args.feat_sigma,
-    )
-
-
-def save_config(args, dataset, lattice, out_config):
-    dataset_args = dict(
-        particles=args.particles,
-        norm=dataset.norm,
-        invert_data=args.invert_data,
-        ind=args.ind,
-        window=args.window,
-        window_r=args.window_r,
-        datadir=args.datadir,
-        ctf=args.ctf,
-    )
-    if args.tilt is not None:
-        dataset_args["particles_tilt"] = args.tilt
-    lattice_args = dict(D=lattice.D, extent=lattice.extent, ignore_DC=lattice.ignore_DC)
-    model_args = dict(
-        qlayers=args.layers,
-        qdim=args.dim,
-        pe_type=args.pe_type,
-        feat_sigma=args.feat_sigma,
-        pe_dim=args.pe_dim,
-        domain=args.domain,
-        activation=args.activation,
-    )
-    config = dict(
-        dataset_args=dataset_args, lattice_args=lattice_args, model_args=model_args
-    )
-
-    cryodrgn.config.save(config, out_config)
-
-
-def main(args):
-
-    if args.pose_model_update_freq:
-        pose_model = make_model(args, D)
-        pose_model.to(device)
-        pose_model.eval()
-    else:
-        pose_model = model
-
-    sorted_poses = []
-    if args.load:
-        args.pretrain = 0
-        logger.info("Loading checkpoint from {}".format(args.load))
-        checkpoint = torch.load(args.load)
-        model.load_state_dict(checkpoint["model_state_dict"])
-        optim.load_state_dict(checkpoint["optimizer_state_dict"])
-        start_epoch = checkpoint["epoch"] + 1
-        model.train()
-        if args.load_poses:
-            rot, trans = utils.load_pkl(args.load_poses)
-            assert np.all(
-                trans <= 1
-            ), "ERROR: Old pose format detected. Translations must be in units of fraction of box."
-            # Convert translations to pixel units to feed back to the model
-            sorted_poses = (rot, trans * model.D)
-
-            # sorted_base_poses = None   # TODO: need to save base_poses if we are going to use it
-    else:
-        start_epoch = 0
-
-    data_iterator = dataset.make_dataloader(
-        data, batch_size=args.batch_size, shuffler_size=args.shuffler_size
-    )
-
-    # pretrain decoder with random poses
-    global_it = 0
-    logger.info("Using random poses for {} iterations".format(args.pretrain))
-    while global_it < args.pretrain:
-        for batch in data_iterator:
-            global_it += len(batch[0])
-            batch = (
-                (batch[0].to(device), None)
-                if tilt is None
-                else (batch[0].to(device), batch[1].to(device))
-            )
-            loss = pretrain(model, lattice, optim, batch, tilt=ps.tilt)
-            if global_it % args.log_interval == 0:
-                logger.info(f"[Pretrain Iteration {global_it}] loss={loss:4f}")
-            if global_it > args.pretrain:
-                break
-    out_mrc = "{}/pretrain.reconstruct.mrc".format(args.outdir)
-    model.eval()
-    vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, tuple(data.norm))
-    MRCFile.write(out_mrc, vol)
-
-    # reset model after pretraining
-    if args.reset_optim_after_pretrain:
-        logger.info(">> Resetting optim after pretrain")
-        optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
-
-    # training loop
-    cc = 0
-    if args.pose_model_update_freq:
-        pose_model.load_state_dict(model.state_dict())
-
-    epoch = None
-    for epoch in range(start_epoch, args.num_epochs):
-        t2 = dt.now()
-        batch_it = 0
-        loss_accum = 0
-        poses, base_poses = [], []
-
-        if args.l_ramp_epochs > 0:
-            Lramp = args.l_start + int(
-                epoch / args.l_ramp_epochs * (args.l_end - args.l_start)
-            )
-            ps.Lmin = min(Lramp, args.l_start)
-            ps.Lmax = min(Lramp, args.l_end)
-
-        if args.reset_model_every and (epoch - 1) % args.reset_model_every == 0:
-            logger.info(">> Resetting model")
-            model = make_model(args, D)
-
-        if args.reset_optim_every and (epoch - 1) % args.reset_optim_every == 0:
-            logger.info(">> Resetting optim")
-            optim = torch.optim.Adam(
-                model.parameters(), lr=args.lr, weight_decay=args.wd
-            )
-
-        if epoch % args.ps_freq != 0:
-            logger.info("Using previous iteration poses")
-        for batch in data_iterator:
-            ind = batch[-1]
-            ind_np = ind.cpu().numpy()
-            batch = (
-                (batch[0].to(device), None)
-                if tilt is None
-                else (batch[0].to(device), batch[1].to(device))
-            )
-            batch_it += len(batch[0])
-
-            # train the model
-            if epoch % args.ps_freq != 0:
-                p = [torch.tensor(x[ind_np], device=device) for x in sorted_poses]  # type: ignore
-                # bp = sorted_base_poses[ind_np]
-                bp = None
-            else:
-                p, bp = None, None
-
-            cc += len(batch[0])
-            if args.pose_model_update_freq and cc > args.pose_model_update_freq:
-                pose_model.load_state_dict(model.state_dict())
-                cc = 0
-
-            c = ctf_params[ind] if ctf_params is not None else None
-            loss_item, pose, base_pose = train(
-                model,
-                lattice,
-                ps,
-                optim,
-                batch,
-                tilt,
-                args.no_trans,
-                poses=p,
-                base_pose=bp,
-                ctf_params=c,
-            )
-            poses.append((ind.cpu().numpy(), pose))
-            base_poses.append((ind_np, base_pose))
-            # logging
-            loss_accum += loss_item * len(batch[0])
-            if batch_it % args.log_interval == 0:
-                logger.info(
-                    "# [Train Epoch: {}/{}] [{}/{} images] loss={:.4f}".format(
-                        epoch + 1, args.num_epochs, batch_it, Nimg, loss_item
-                    )
-                )
-
-        logger.info(
-            "# =====> Epoch: {} Average loss = {:.4}; Finished in {}".format(
-                epoch + 1, loss_accum / Nimg, dt.now() - t2
-            )
-        )
-
-        # sort pose
-        sorted_poses = sort_poses(poses) if poses else None
-        # sorted_base_poses = sort_base_poses(base_poses)
-
-        if args.checkpoint and epoch % args.checkpoint == 0:
-            out_mrc = "{}/reconstruct.{}.mrc".format(args.outdir, epoch)
-            out_weights = "{}/weights.{}.pkl".format(args.outdir, epoch)
-            out_poses = "{}/pose.{}.pkl".format(args.outdir, epoch)
-            save_checkpoint(
-                model,
-                lattice,
-                sorted_poses,
-                optim,
-                epoch,
-                data.norm,
-                out_mrc,
-                out_weights,
-                out_poses,
-            )
-
-    if epoch is not None:
-        # save model weights and evaluate the model on 3D lattice
-        out_mrc = "{}/reconstruct.mrc".format(args.outdir)
-        out_weights = "{}/weights.pkl".format(args.outdir)
-        out_poses = "{}/pose.pkl".format(args.outdir)
-        save_checkpoint(
-            model,
-            lattice,
-            sorted_poses,
-            optim,
-            epoch,
-            data.norm,
-            out_mrc,
-            out_weights,
-            out_poses,
-        )
-
-        td = dt.now() - t1
-        logger.info(
-            "Finished in {} ({} per epoch)".format(
-                td, td / (args.num_epochs - start_epoch)
-            )
-        )
+    cryodrgn.utils._verbose = False
+    trainer = HierarchicalPoseSearchTrainer(configs)
+    trainer.train()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    add_args(parser)
-    main(parser.parse_args())
+    main(add_args(parser).parse_args())

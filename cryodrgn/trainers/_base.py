@@ -296,7 +296,7 @@ class ModelConfigurations(BaseConfigurations):
             "use_real": False,
             "pe_type": "gaussian",
             "pe_dim": 64,
-            "volume_domain": "fourier",
+            "volume_domain": None,
             "activation": "relu",
             "feat_sigma": 0.5,
             "base_healpy": 2,
@@ -422,7 +422,6 @@ class ModelTrainer(BaseTrainer, ABC):
                 datadir=self.configs.datadir,
                 window_r=self.configs.window_r,
                 max_threads=self.configs.max_threads,
-                device=self.device,
             )
             self.particle_count = self.data.N
 
@@ -476,9 +475,7 @@ class ModelTrainer(BaseTrainer, ABC):
         # lattice
         self.logger.info("Building lattice...")
         self.lattice = Lattice(
-            self.resolution,
-            extent=self.configs.lattice_extent,
-            device=self.device
+            self.resolution, extent=self.configs.lattice_extent, device=self.device
         )
 
         self.logger.info("Initializing volume model...")
@@ -538,7 +535,7 @@ class ModelTrainer(BaseTrainer, ABC):
                     f"{self.resolution=} must be divisible by 8 for AMP training!"
                 )
 
-            # Also check zdim, enc_mask dim? Add them as warnings for now.
+            # Also check z_dim, enc_mask dim? Add them as warnings for now.
             if self.configs.z_dim % 8 != 0:
                 self.logger.warning(
                     f"Warning: {self.configs.z_dim=} is not a multiple of 8 "
@@ -585,7 +582,7 @@ class ModelTrainer(BaseTrainer, ABC):
                 D=self.resolution,
                 emb_type="s2s2" if self.configs.refine_gt_poses else None,
                 ind=self.ind,
-                device=self.device
+                device=self.device,
             )
         else:
             self.pose_tracker = None
@@ -616,7 +613,7 @@ class ModelTrainer(BaseTrainer, ABC):
     def train(self) -> None:
         t0 = dt.now()
 
-        #self.pretrain()
+        # self.pretrain()
         self.current_epoch = self.start_epoch
         self.logger.info("--- Training Starts Now ---")
 
@@ -626,13 +623,11 @@ class ModelTrainer(BaseTrainer, ABC):
 
         while self.current_epoch <= self.configs.num_epochs:
             will_make_summary = (
-                (
-                    self.current_epoch == self.configs.num_epochs
-                    or self.configs.log_interval
-                    and self.current_epoch % self.configs.log_interval == 0
-                )
-                #or self.is_in_pose_search_step
-                #or self.pretraining
+                self.current_epoch == self.configs.num_epochs
+                or self.configs.log_interval
+                and self.current_epoch % self.configs.log_interval == 0
+                # or self.is_in_pose_search_step
+                # or self.pretraining
             )
             self.log_latents = will_make_summary
 
@@ -644,7 +639,7 @@ class ModelTrainer(BaseTrainer, ABC):
             # image and pose summary
             if will_make_summary:
                 pass
-                #self.make_summary()
+                # self.make_summary()
 
             self.current_epoch += 1
 

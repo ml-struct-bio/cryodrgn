@@ -1,3 +1,18 @@
+"""Create, train, and analyze a reconstruction experiment.
+
+This command can be used to train any model included in cryoDRGN, including:
+    - homogeneous and heterogeneous reconstruction with given poses (cryoDRGN v1)
+    - homo and het reconstruction with ab initio poses (cryoDRGN v2)
+    - reconstruction using tilt series particle stacks (cryoDRGN v3)
+    - pose estimation using amortized inference (drgnai; cryoDRGN v4)
+
+Example usages
+--------------
+
+$ cryodrgn train new-test --model=hps
+$ sbatch -t 3:00:00 --wrap='cryodrgn train new-test' --mem=16G -o new-test.out
+
+"""
 import argparse
 from typing import Optional, Any
 import cryodrgn.utils
@@ -15,12 +30,14 @@ def add_args(parser):
         choices={"hps", "amort"},
         help="which model to use for reconstruction"
         )
-
     parser.add_argument(
         "--no-analysis",
-        action="store_true",
+        action="store_false",
+        dest="do_analysis",
         help="just do the training stage",
     )
+
+    return parser
 
 
 def main(args: argparse.Namespace, configs: Optional[dict[str, Any]] = None):
@@ -40,11 +57,10 @@ def main(args: argparse.Namespace, configs: Optional[dict[str, Any]] = None):
         raise ValueError(f"Unrecognized model: {configs['model']}")
 
     trainer.train()
-    if not args.no_analysis:
+    if args.do_analysis:
         ModelAnalyzer(configs).analyze()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    add_args(parser)
-    main(parser.parse_args())
+    main(add_args(parser).parse_args())

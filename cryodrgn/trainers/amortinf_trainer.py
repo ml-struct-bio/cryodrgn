@@ -23,7 +23,6 @@ from cryodrgn.trainers._base import ModelTrainer, ModelConfigurations
 class AmortizedInferenceConfigurations(ModelConfigurations):
 
     __slots__ = (
-        "verbose_time",
         "batch_size_known_poses",
         "batch_size_hps",
         "batch_size_sgd",
@@ -69,7 +68,6 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
     )
     default_values = OrderedDict(
         {
-            "verbose_time": False,
             # data loading
             "batch_size_known_poses": 32,
             "batch_size_hps": 8,
@@ -340,13 +338,6 @@ class AmortizedInferenceTrainer(ModelTrainer):
     def make_volume_model(self) -> nn.Module:
         self.configs: AmortizedInferenceConfigurations
 
-        if self.configs.n_imgs_pose_search > 0:
-            self.epochs_pose_search = max(
-                2, self.configs.n_imgs_pose_search // self.particle_count + 1
-            )
-        else:
-            self.epochs_pose_search = 0
-
         # output mask
         if self.configs.output_mask == "circ":
             radius = self.configs.max_freq or self.lattice.D // 2
@@ -440,6 +431,17 @@ class AmortizedInferenceTrainer(ModelTrainer):
             pretrain_with_gt_poses=self.configs.pretrain_with_gt_poses,
             n_tilts_pose_search=self.configs.n_tilts_pose_search,
         )
+
+    @property
+    def epochs_pose_search(self) -> int:
+        if self.configs.n_imgs_pose_search > 0:
+            epochs_pose_search = max(
+                2, self.configs.n_imgs_pose_search // self.particle_count + 1
+            )
+        else:
+            epochs_pose_search = 0
+
+        return epochs_pose_search
 
     def __init__(self, configs: dict[str, Any]) -> None:
         super().__init__(configs)
@@ -545,8 +547,6 @@ class AmortizedInferenceTrainer(ModelTrainer):
         # booleans
         self.log_latents = False
         self.pose_only = True
-        self.pretraining = False
-        self.is_in_pose_search_step = False
         self.use_point_estimates = False
         self.first_switch_to_point_estimates = True
         self.first_switch_to_point_estimates_conf = True
@@ -574,10 +574,6 @@ class AmortizedInferenceTrainer(ModelTrainer):
         if self.configs.load:
             self.num_epochs += self.start_epoch
 
-        self.n_particles_pretrain = (
-            self.configs.pretrain if self.configs.pretrain >= 0 else self.particle_count
-        )
-
         self.in_dict_last = None
         self.y_pred_last = None
         self.mask_particles_seen_at_last_epoch = np.zeros(self.particle_count)
@@ -585,21 +581,9 @@ class AmortizedInferenceTrainer(ModelTrainer):
 
         # counters
         self.run_times = {phase: [] for phase in self.run_phases}
-        self.current_epoch_particles_count = 0
-        self.total_batch_count = 0
-        self.total_particles_count = 0
-        self.batch_idx = 0
+        self.batch_idx = None
         self.cur_loss = None
-
-        self.predicted_rots = np.empty((self.image_count, 3, 3))
-        self.predicted_trans = (
-            np.empty((self.image_count, 2)) if not self.configs.no_trans else None
-        )
-        self.predicted_conf = (
-            np.empty((self.particle_count, self.configs.z_dim))
-            if self.configs.z_dim > 0
-            else None
-        )
+        self.end_time = None
 
         self.predicted_logvar = (
             np.empty((self.particle_count, self.configs.z_dim))
@@ -607,42 +591,27 @@ class AmortizedInferenceTrainer(ModelTrainer):
             else None
         )
 
-    def train_epoch(self):
+    def begin_epoch(self):
         self.configs: AmortizedInferenceConfigurations
         self.mask_particles_seen_at_last_epoch = np.zeros(self.particle_count)
         self.mask_tilts_seen_at_last_epoch = np.zeros(self.image_count)
-
-        self.current_epoch_particles_count = 0
         self.optimized_modules = ["hypervolume"]
 
         self.pose_only = (
-            self.total_particles_count < self.configs.pose_only_phase
-            or self.configs.z_dim == 0
-            or self.current_epoch < 0
+                self.total_images_seen < self.configs.pose_only_phase
+                or self.configs.z_dim == 0
         )
-        self.pretraining = self.current_epoch < 0
 
         if not self.configs.use_gt_poses:
-            self.is_in_pose_search_step = (
-                0 <= self.current_epoch < self.epochs_pose_search
-            )
             self.use_point_estimates = self.current_epoch >= max(
                 0, self.epochs_pose_search
             )
 
-        n_max_particles = self.particle_count
-        data_generator = self.data_iterator
-
-        # pre-training
-        if self.pretraining:
-            n_max_particles = self.n_particles_pretrain
-            self.logger.info(f"Will pretrain on {n_max_particles} particles")
-
         # HPS
-        elif self.is_in_pose_search_step:
+        if self.is_in_pose_search_step:
             n_max_particles = self.particle_count
             self.logger.info(f"Will use pose search on {n_max_particles} particles")
-            data_generator = self.data_generators["hps"] or self.data_iterator
+            self.data_iterator = self.data_generators["hps"] or self.data_iterator
 
         # SGD
         elif self.use_point_estimates:
@@ -687,13 +656,13 @@ class AmortizedInferenceTrainer(ModelTrainer):
                 "Will use latent optimization on " f"{self.particle_count} particles"
             )
 
-            data_generator = self.data_generators["sgd"] or self.data_iterator
+            self.data_iterator = self.data_generators["sgd"] or self.data_iterator
             self.optimized_modules.append("pose_table")
 
         # GT poses
         else:
             assert self.configs.use_gt_poses
-            data_generator = self.data_generators["known"] or self.data_iterator
+            self.data_iterator = self.data_generators["known"] or self.data_iterator
 
         # conformations
         if not self.pose_only:
@@ -719,26 +688,12 @@ class AmortizedInferenceTrainer(ModelTrainer):
         for key in self.run_times.keys():
             self.run_times[key] = []
 
-        end_time = time.time()
+        self.end_time = time.time()
 
-        # inner loop
-        for self.batch_idx, (batch, tilt_ind, ind) in enumerate(data_generator):
-            self.train_step(batch, tilt_ind, ind, end_time=end_time)
-
-            if self.configs.verbose_time:
-                torch.cuda.synchronize()
-
-            end_time = time.time()
-
-            if self.current_epoch_particles_count > n_max_particles:
-                break
-
+    def end_epoch(self) -> None:
         # update output mask -- epoch-based scaling
         if hasattr(self.model.output_mask, "update_epoch") and self.use_point_estimates:
             self.model.output_mask.update_epoch(self.configs.n_frequencies_per_epoch)
-
-    def pretrain_step(self, batch, **pretrain_kwargs):
-        self.train_step(batch, **pretrain_kwargs)
 
     def get_ctfs_at(self, index):
         batch_size = len(index)
@@ -760,14 +715,16 @@ class AmortizedInferenceTrainer(ModelTrainer):
 
         return ctf_local
 
-    def train_step(self, y_gt, tilt_ind, ind, end_time):
+    def train_batch(self, batch: tuple) -> None:
+        y_gt, tilt_ind, ind = batch
+
         if self.configs.verbose_time:
             torch.cuda.synchronize()
-            self.run_times["dataloading"].append(time.time() - end_time)
+            self.run_times["dataloading"].append(time.time() - self.end_time)
 
         # update output mask -- image-based scaling
         if hasattr(self.model.output_mask, "update") and self.is_in_pose_search_step:
-            self.model.output_mask.update(self.total_particles_count)
+            self.model.output_mask.update(self.total_images_seen)
 
         if self.is_in_pose_search_step:
             self.model.ps_params["l_min"] = self.configs.l_start
@@ -784,11 +741,6 @@ class AmortizedInferenceTrainer(ModelTrainer):
             ind_tilt = ind_tilt.to(self.device)
         else:
             ind_tilt = None
-
-        self.total_batch_count += 1
-        batch_size = len(y_gt)
-        self.total_particles_count += batch_size
-        self.current_epoch_particles_count += batch_size
 
         # move to gpu
         if self.configs.verbose_time:
@@ -867,11 +819,10 @@ class AmortizedInferenceTrainer(ModelTrainer):
 
         if self.configs.verbose_time:
             torch.cuda.synchronize()
-
             self.run_times["backward"].append(time.time() - start_time_backward)
 
         # detach
-        if self.log_latents:
+        if self.will_make_checkpoint:
             self.in_dict_last = in_dict
             self.y_pred_last = y_pred
 
@@ -909,9 +860,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
         else:
             self.run_times["to_cpu"].append(0.0)
 
-        # scalar summary
-        if self.total_particles_count % self.configs.log_interval < batch_size:
-            self.make_light_summary(all_losses)
+        self.end_time = time.time()
 
     def detach_latent_variables(self, latent_variables_dict):
         rot_pred = latent_variables_dict["R"].detach().cpu().numpy()
@@ -1088,7 +1037,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
 
         return total_loss, all_losses
 
-    def make_summary(self):
+    def make_epoch_summary(self):
         summary.make_img_summary(
             self.writer,
             self.in_dict_last,
@@ -1183,7 +1132,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
 
         return pca
 
-    def make_light_summary(self, all_losses):
+    def make_batch_summary(self) -> None:
         self.logger.info(
             f"# [Train Epoch: {self.current_epoch}/{self.num_epochs - 1}] "
             f"[{self.current_epoch_particles_count}"
@@ -1191,12 +1140,16 @@ class AmortizedInferenceTrainer(ModelTrainer):
         )
 
         if hasattr(self.model.output_mask, "current_radius"):
-            all_losses["Mask Radius"] = self.model.output_mask.current_radius
-
+            self.current_losses["Mask Radius"] = self.model.output_mask.current_radius
         if self.model.trans_search_factor is not None:
-            all_losses["Trans. Search Factor"] = self.model.trans_search_factor
+            self.current_losses["Trans. Search Factor"] = self.model.trans_search_factor
 
-        summary.make_scalar_summary(self.writer, all_losses, self.total_particles_count)
+        summary.make_scalar_summary(
+            self.writer,
+            self.current_losses,
+            self.total_images_seen
+        )
+
         if self.configs.verbose_time:
             for key in self.run_times.keys():
                 self.logger.info(
@@ -1277,3 +1230,12 @@ class AmortizedInferenceTrainer(ModelTrainer):
             saved_objects["output_mask_radius"] = self.model.output_mask.current_radius
 
         torch.save(saved_objects, out_weights)
+
+    @property
+    def is_in_pose_search_step(self) -> bool:
+        in_pose_search = False
+
+        if not self.configs.use_gt_poses:
+            in_pose_search = 0 <= self.current_epoch < self.epochs_pose_search
+
+        return in_pose_search

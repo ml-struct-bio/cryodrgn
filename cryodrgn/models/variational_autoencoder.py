@@ -36,7 +36,7 @@ class HetOnlyVAE(nn.Module):
         players: int,
         pdim: int,
         in_dim: int,
-        zdim: int = 1,
+        z_dim: int = 1,
         encode_mode: str = "resid",
         enc_mask=None,
         enc_type="linear_lowf",
@@ -44,26 +44,26 @@ class HetOnlyVAE(nn.Module):
         domain="fourier",
         activation=nn.ReLU,
         feat_sigma: Optional[float] = None,
-        tilt_params={},
+        tilt_params=None,
     ):
         super(HetOnlyVAE, self).__init__()
         self.lattice = lattice
-        self.zdim = zdim
+        self.z_dim = z_dim
         self.in_dim = in_dim
         self.enc_mask = enc_mask
         if encode_mode == "conv":
-            self.encoder = ConvEncoder(qdim, zdim * 2)
+            self.encoder = ConvEncoder(qdim, z_dim * 2)
         elif encode_mode == "resid":
             self.encoder = ResidLinearMLP(
                 in_dim,
                 qlayers,
                 qdim,
-                zdim * 2,
+                z_dim * 2,
                 activation,  # nlayers  # hidden_dim  # out_dim
             )
         elif encode_mode == "mlp":
             self.encoder = MLP(
-                in_dim, qlayers, qdim, zdim * 2, activation  # hidden_dim  # out_dim
+                in_dim, qlayers, qdim, z_dim * 2, activation  # hidden_dim  # out_dim
             )  # in_dim -> hidden_dim
         elif encode_mode == "tilt":
             self.encoder = TiltEncoder(
@@ -74,14 +74,14 @@ class HetOnlyVAE(nn.Module):
                 tilt_params["ntilts"],  # number of encoded tilts
                 tilt_params["tlayers"],
                 tilt_params["tdim"],
-                zdim * 2,  # outdim
+                z_dim * 2,  # outdim
                 activation,
             )
         else:
             raise RuntimeError("Encoder mode {} not recognized".format(encode_mode))
         self.encode_mode = encode_mode
         self.decoder = get_decoder(
-            3 + zdim,
+            3 + z_dim,
             lattice.D,
             players,
             pdim,
@@ -104,22 +104,22 @@ class HetOnlyVAE(nn.Module):
         if self.enc_mask is not None:
             img = (x[:, self.enc_mask] for x in img)
         z = self.encoder(*img)
-        return z[:, : self.zdim], z[:, self.zdim :]
+        return z[:, : self.z_dim], z[:, self.z_dim :]
 
     def cat_z(self, coords, z) -> torch.Tensor:
         """
-        coords: Bx...x3
-        z: Bxzdim
+        coords: B x ... x 3
+        z: B x z_dim
         """
         assert coords.size(0) == z.size(0), (coords.shape, z.shape)
-        z = z.view(z.size(0), *([1] * (coords.ndimension() - 2)), self.zdim)
-        z = torch.cat((coords, z.expand(*coords.shape[:-1], self.zdim)), dim=-1)
+        z = z.view(z.size(0), *([1] * (coords.ndimension() - 2)), self.z_dim)
+        z = torch.cat((coords, z.expand(*coords.shape[:-1], self.z_dim)), dim=-1)
         return z
 
     def decode(self, coords, z=None) -> torch.Tensor:
         """
         coords: BxNx3 image coordinates
-        z: Bxzdim latent coordinate
+        z: Bxz_dim latent coordinate
         """
         decoder = self.decoder
         assert isinstance(decoder, nn.Module)
@@ -147,7 +147,7 @@ class HetOnlyVAE(nn.Module):
             D: size of lattice
             extent: extent of lattice [-extent, extent]
             norm: data normalization
-            zval: value of latent (zdim x 1)
+            zval: value of latent (z_dim x 1)
         """
 
         if not hasattr(self.decoder, "eval_volume"):

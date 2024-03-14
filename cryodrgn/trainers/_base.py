@@ -4,7 +4,6 @@ import os
 import argparse
 import shutil
 import sys
-import time
 import pickle
 from collections import OrderedDict
 from abc import ABC, abstractmethod
@@ -274,7 +273,7 @@ class ModelConfigurations(BaseConfigurations):
             "window_r": 0.85,
             "shuffler_size": 0,
             "max_threads": 16,
-            "num_workers": 2,
+            "num_workers": 1,
             "tilt": None,
             "tilt_deg": 45,
             "num_epochs": 30,
@@ -612,8 +611,7 @@ class ModelTrainer(BaseTrainer, ABC):
 
         # counters used across training iterations
         self.current_epoch = None
-        self.accum_losses = dict()
-        self.current_losses = dict()
+        self.accum_losses = None
         self.total_batch_count = None
         self.total_images_seen = None
         self.epoch_images_seen = None
@@ -651,6 +649,7 @@ class ModelTrainer(BaseTrainer, ABC):
     def train(self) -> None:
         self.configs: ModelConfigurations
         train_start_time = dt.now()
+        self.accum_losses = dict()
 
         if self.do_pretrain:
             self.current_epoch = 0
@@ -663,8 +662,10 @@ class ModelTrainer(BaseTrainer, ABC):
         self.conf_search_particles = 0
 
         while self.current_epoch <= self.configs.num_epochs:
-            self.epoch_start_time = time.time()
+            self.epoch_start_time = dt.now()
             self.epoch_images_seen = 0
+            for k in self.accum_losses:
+                self.accum_losses[k] = 0
 
             will_make_checkpoint = self.will_make_checkpoint
             if will_make_checkpoint:

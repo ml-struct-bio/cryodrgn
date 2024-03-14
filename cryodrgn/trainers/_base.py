@@ -1,10 +1,11 @@
 """Base classes for model training engines."""
-import argparse
+
 import os
+import argparse
 import shutil
 import sys
-import pickle
 import time
+import pickle
 from collections import OrderedDict
 from abc import ABC, abstractmethod
 from typing import Any
@@ -104,8 +105,10 @@ class BaseConfigurations(ABC):
     @classmethod
     @property
     def defaults(cls) -> dict[str, Any]:
+        """The default values used for these configuration parameters."""
         def_values = cls.default_values
 
+        # inherit defaults from parent configuration classes if they are present
         for c in cls.__bases__:
             if hasattr(c, "defaults"):
                 def_values.update(c.defaults)
@@ -245,6 +248,8 @@ class ModelConfigurations(BaseConfigurations):
         "no_trans",
         "amp",
         "reset_optim_after_pretrain",
+        "pose_sgd_emb_type",
+        "verbose_time"
     )
     default_values = OrderedDict(
         {
@@ -301,6 +306,8 @@ class ModelConfigurations(BaseConfigurations):
             "no_trans": False,
             "amp": True,
             "reset_optim_after_pretrain": False,
+            "pose_sgd_emb_type": "quat",
+            "verbose_time": False,
         }
     )
 
@@ -311,7 +318,7 @@ class ModelConfigurations(BaseConfigurations):
             raise ValueError(
                 f"Given model `{self.model}` not in currently supported model types:\n"
                 f"`amort` (cryoDRGN v4 amortized inference pose estimation)\n"
-                f"`hps` (cryoDRGN v3 hierarchical pose estimation)\n"
+                f"`hps` (cryoDRGN v3,v2,v1 hierarchical pose estimation)\n"
             )
 
         if isinstance(self.ind, str) and not os.path.exists(self.ind):
@@ -342,6 +349,19 @@ class ModelConfigurations(BaseConfigurations):
 
         if self.z_dim is None:
             raise ValueError("Must specify `z_dim`!")
+        else:
+            if not isinstance(self.z_dim, int) or self.z_dim < 0:
+                raise ValueError(
+                    f"Given latent space dimension {self.z_dim=} "
+                    f"is not zero (homogeneous reconstruction) "
+                    f"or a positive integer (heterogeneous reconstruction)!"
+                )
+
+        if (self.use_gt_poses or self.refine_gt_poses) and not self.pose:
+            raise ValueError(
+                "Must specify a poses file using pose= if using "
+                "or refining ground truth poses!"
+            )
 
         if self.refine_gt_poses and self.volume_domain != "hartley":
             raise ValueError("Need to use --domain hartley if doing pose SGD")
@@ -572,6 +592,10 @@ class ModelTrainer(BaseTrainer, ABC):
         else:
             self.start_epoch = 1
 
+        self.n_particles_pretrain = (
+            self.configs.pretrain if self.configs.pretrain >= 0 else self.particle_count
+        )
+
         if self.configs.pose:
             self.pose_tracker = PoseTracker.load(
                 infile=self.configs.pose,
@@ -584,7 +608,16 @@ class ModelTrainer(BaseTrainer, ABC):
         else:
             self.pose_tracker = None
 
-        self.sorted_poses = list()
+        # counters used across training iterations
+        self.current_epoch = None
+        self.accum_losses = dict()
+        self.current_losses = dict()
+        self.total_batch_count = None
+        self.total_particles_seen = None
+        self.epoch_particles_seen = None
+        self.conf_search_particles = None
+        self.beta = None
+
         if self.configs.load_poses:
             rot, trans = cryodrgn.utils.load_pkl(self.configs.load_poses)
 
@@ -593,67 +626,105 @@ class ModelTrainer(BaseTrainer, ABC):
             ), "ERROR: Old pose format detected. Translations must be in units of fraction of box."
 
             # Convert translations to pixel units to feed back to the model
-            if isinstance(self.volume_model, DataParallel):
-                _model = self.volume_model.module
-                assert isinstance(_model, HetOnlyVAE)
-                D = _model.lattice.D
-            else:
-                D = self.volume_model.lattice.D
+            self.sorted_poses = (rot, trans * self.model_resolution)
 
-            self.sorted_poses = (rot, trans * D)
+        self.base_poses = list()
+        if not self.configs.use_gt_poses:
+            self.predicted_rots = np.empty((self.image_count, 3, 3))
+            self.predicted_trans = (
+                np.empty((self.image_count, 2)) if not self.configs.no_trans else None
+            )
+        else:
+            self.predicted_rots = self.predicted_trans = None
 
-        self.current_epoch = None
+        self.predicted_conf = (
+            np.empty((self.particle_count, self.configs.z_dim))
+            if self.configs.z_dim > 0
+            else None
+        )
 
         # save configuration
         self.configs.write(os.path.join(self.outdir, "train-configs.yaml"))
 
     def train(self) -> None:
         self.configs: ModelConfigurations
-        t0 = dt.now()
+        train_start_time = dt.now()
 
         self.pretrain()
-        self.current_epoch = self.start_epoch
-        self.logger.info("--- Training Starts Now ---")
 
+        self.logger.info("--- Training Starts Now ---")
+        self.current_epoch = self.start_epoch
         self.total_batch_count = 0
-        self.total_particles_count = 0
+        self.total_particles_seen = 0
         self.conf_search_particles = 0
 
         while self.current_epoch <= self.configs.num_epochs:
-            will_make_summary = (
-                self.current_epoch == self.configs.num_epochs
-                or self.configs.log_interval
-                and self.current_epoch % self.configs.log_interval == 0
-                # or self.is_in_pose_search_step
-                # or self.pretraining
-            )
-            self.log_latents = will_make_summary
+            self.epoch_start_time = time.time()
+            self.epoch_particles_seen = 0
 
-            if will_make_summary:
+            will_make_checkpoint = self.will_make_checkpoint
+            if will_make_checkpoint:
                 self.logger.info("Will make a full summary at the end of this epoch")
 
-            self.train_epoch()
+            self.begin_epoch()
+
+            for self.batch_idx, batch in enumerate(self.data_iterator):
+                self.total_batch_count += 1
+                len_y = len(batch[0])
+                self.total_particles_seen += len_y
+                self.epoch_particles_seen += len_y
+
+                self.train_batch(batch)
+
+                # scalar summary
+                if self.total_particles_seen % self.configs.log_interval < len_y:
+                    self.make_batch_summary()
+
+            self.end_epoch()
+
+            if self.configs.verbose_time:
+                torch.cuda.synchronize()
 
             # image and pose summary
-            if will_make_summary:
-                pass
-                # self.make_summary()
+            if will_make_checkpoint:
+                self.make_epoch_summary()
 
             self.current_epoch += 1
 
-        t_total = dt.now() - t0
+        t_total = dt.now() - train_start_time
         self.logger.info(
             f"Finished in {t_total} ({t_total / self.configs.num_epochs} per epoch)"
         )
 
+    @property
+    def will_make_checkpoint(self) -> bool:
+        self.configs: ModelConfigurations
+        make_chk = self.current_epoch == self.configs.num_epochs
+        make_chk |= (
+                self.configs.checkpoint
+                and self.current_epoch % self.configs.checkpoint == 0
+        )
+        make_chk |= self.is_in_pose_search_step
+
+        return make_chk
+
+    @property
+    def model_resolution(self) -> int:
+        if isinstance(self.volume_model, DataParallel):
+            model_resolution = self.volume_model.module.lattice.D
+        else:
+            model_resolution = self.volume_model.lattice.D
+
+        return model_resolution
+
     def pretrain(self) -> None:
         """Pretrain the decoder using random initial poses."""
         self.configs: ModelConfigurations
-        end_time = time.time()
-        self.logger.info(f"Using random poses for {self.configs.pretrain} iterations")
+        self.logger.info("Will make a full summary at the end of this epoch")
+        self.logger.info(f"Will pretrain on {self.configs.pretrain} particles")
 
         particles_seen = 0
-        while particles_seen < self.configs.pretrain:
+        while particles_seen < self.n_particles_pretrain:
             for batch in self.data_iterator:
                 particles_seen += len(batch[0])
 
@@ -662,36 +733,56 @@ class ModelTrainer(BaseTrainer, ABC):
                     if batch[1] is None
                     else (batch[0].to(self.device), batch[1].to(self.device))
                 )
-                loss = self.pretrain_step(batch, end_time=end_time)
+                self.pretrain_batch(batch)
 
                 if self.configs.verbose_time:
                     torch.cuda.synchronize()
 
-                if particles_seen % self.configs.log_interval == 0:
+                if particles_seen % self.configs.log_interval < len(batch[0]):
                     self.logger.info(
-                        f"[Pretrain Iteration {particles_seen}] loss={loss:4f}"
+                        f"[Pretrain Iteration {particles_seen}] "
+                        f"loss={self.current_losses['total']:4f}"
                     )
 
-                if particles_seen > self.configs.pretrain:
+                if particles_seen > self.n_particles_pretrain:
                     break
 
         # reset model after pretraining
         if self.configs.reset_optim_after_pretrain:
             self.logger.info(">> Resetting optim after pretrain")
-            self.optim = torch.optim.Adam(
+            self.volume_optimizer = torch.optim.Adam(
                 self.volume_model.parameters(),
                 lr=self.configs.learning_rate,
                 weight_decay=self.configs.weight_decay,
             )
 
-    @abstractmethod
-    def train_epoch(self):
+        self.make_epoch_summary()
+
+    def begin_epoch(self) -> None:
+        pass
+
+    def end_epoch(self) -> None:
         pass
 
     @abstractmethod
-    def pretrain_step(self, batch, **pretrain_kwargs):
+    def train_batch(self, batch) -> None:
         pass
 
     @abstractmethod
-    def make_summary(self):
+    def pretrain_batch(self, batch):
+        self.train_batch(batch)
+
+    @abstractmethod
+    def make_epoch_summary(self):
         pass
+
+    def make_batch_summary(self):
+        raise NotImplementedError
+
+    @property
+    def is_in_pose_search_step(self) -> bool:
+        return False
+
+    @property
+    def epoch_lbl(self) -> str:
+        return str(self.current_epoch)

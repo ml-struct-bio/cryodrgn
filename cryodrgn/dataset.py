@@ -493,6 +493,7 @@ def make_dataloader(
     num_workers: int = 0,
     shuffler_size: int = 0,
     shuffle=True,
+    seed=np.random.randint(0, 100000),
 ):
     if shuffler_size > 0 and shuffle:
         assert data.lazy, "Only enable a data shuffler for lazy loading"
@@ -500,13 +501,17 @@ def make_dataloader(
     else:
         # see https://github.com/zhonge/cryodrgn/pull/221#discussion_r1120711123
         # for discussion of why we use BatchSampler, etc.
-        sampler_cls = RandomSampler if shuffle else SequentialSampler
+        if shuffle:
+            generator = torch.Generator()
+            generator.manual_seed(seed)
+            sampler = RandomSampler(data, generator=generator)
+        else:
+            sampler = SequentialSampler(data)
+
         return DataLoader(
             data,
             num_workers=num_workers,
-            sampler=BatchSampler(
-                sampler_cls(data), batch_size=batch_size, drop_last=False
-            ),
+            sampler=BatchSampler(sampler, batch_size=batch_size, drop_last=False),
             batch_size=None,
             multiprocessing_context="spawn" if num_workers > 0 else None,
         )

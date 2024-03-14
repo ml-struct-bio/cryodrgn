@@ -528,6 +528,7 @@ class ModelTrainer(BaseTrainer, ABC):
             batch_size=self.configs.batch_size,
             shuffler_size=self.configs.shuffler_size,
             num_workers=self.num_workers,
+            seed=self.configs.seed,
         )
 
         self.volume_optim_class = self.optim_types[self.configs.volume_optim_type]

@@ -588,9 +588,10 @@ class ModelTrainer(BaseTrainer, ABC):
                 )
 
             self.start_epoch = checkpoint["epoch"] + 1
-            self.pretrain_iter = 0
+            self.do_pretrain = False
         else:
             self.start_epoch = 1
+            self.do_pretrain = True
 
         self.n_particles_pretrain = (
             self.configs.pretrain if self.configs.pretrain >= 0 else self.particle_count
@@ -613,8 +614,8 @@ class ModelTrainer(BaseTrainer, ABC):
         self.accum_losses = dict()
         self.current_losses = dict()
         self.total_batch_count = None
-        self.total_particles_seen = None
-        self.epoch_particles_seen = None
+        self.total_images_seen = None
+        self.epoch_images_seen = None
         self.conf_search_particles = None
         self.beta = None
 
@@ -650,17 +651,19 @@ class ModelTrainer(BaseTrainer, ABC):
         self.configs: ModelConfigurations
         train_start_time = dt.now()
 
-        self.pretrain()
+        if self.do_pretrain:
+            self.current_epoch = 0
+            self.pretrain()
 
         self.logger.info("--- Training Starts Now ---")
         self.current_epoch = self.start_epoch
         self.total_batch_count = 0
-        self.total_particles_seen = 0
+        self.total_images_seen = 0
         self.conf_search_particles = 0
 
         while self.current_epoch <= self.configs.num_epochs:
             self.epoch_start_time = time.time()
-            self.epoch_particles_seen = 0
+            self.epoch_images_seen = 0
 
             will_make_checkpoint = self.will_make_checkpoint
             if will_make_checkpoint:
@@ -671,13 +674,13 @@ class ModelTrainer(BaseTrainer, ABC):
             for self.batch_idx, batch in enumerate(self.data_iterator):
                 self.total_batch_count += 1
                 len_y = len(batch[0])
-                self.total_particles_seen += len_y
-                self.epoch_particles_seen += len_y
+                self.total_images_seen += len_y
+                self.epoch_images_seen += len_y
 
                 self.train_batch(batch)
 
                 # scalar summary
-                if self.total_particles_seen % self.configs.log_interval < len_y:
+                if self.total_images_seen % self.configs.log_interval < len_y:
                     self.make_batch_summary()
 
             self.end_epoch()
@@ -706,6 +709,7 @@ class ModelTrainer(BaseTrainer, ABC):
         )
         make_chk |= self.is_in_pose_search_step
 
+
         return make_chk
 
     @property
@@ -727,12 +731,6 @@ class ModelTrainer(BaseTrainer, ABC):
         while particles_seen < self.n_particles_pretrain:
             for batch in self.data_iterator:
                 particles_seen += len(batch[0])
-
-                batch = (
-                    (batch[0].to(self.device), None)
-                    if batch[1] is None
-                    else (batch[0].to(self.device), batch[1].to(self.device))
-                )
                 self.pretrain_batch(batch)
 
                 if self.configs.verbose_time:
@@ -765,10 +763,9 @@ class ModelTrainer(BaseTrainer, ABC):
         pass
 
     @abstractmethod
-    def train_batch(self, batch) -> None:
+    def train_batch(self, batch: tuple) -> None:
         pass
 
-    @abstractmethod
     def pretrain_batch(self, batch):
         self.train_batch(batch)
 

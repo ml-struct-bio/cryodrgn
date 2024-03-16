@@ -74,6 +74,9 @@ class ImageDataset(torch.utils.data.Dataset):
 
         norm = norm or self.estimate_normalization()
         self.norm = [float(x) for x in norm]
+        norm_real = self.estimate_normalization_real()
+        self.norm_real = [float(x) for x in norm_real]
+
         self.device = device
         self.lazy = lazy
 
@@ -94,18 +97,28 @@ class ImageDataset(torch.utils.data.Dataset):
 
         return norm
 
+    def estimate_normalization_real(self, n=1000):
+        n = min(n, self.N) if n is not None else self.N
+        indices = range(0, self.N, self.N // n)  # FIXME: what if the data is not IID??
+        imgs = self.src.images(indices)
+        norm = (torch.mean(imgs), torch.std(imgs))
+        logger.info('Normalized real space images by {} +/- {}'.format(*norm))
+
+        return norm
+
     def _process(self, data):
         if data.ndim == 2:
             data = data[np.newaxis, ...]
         if self.window is not None:
             data *= self.window
-
-        data = fft.ht2_center(data)
         if self.invert_data:
             data *= -1
-        data = fft.symmetrize_ht(data)
-        data = (data - self.norm[0]) / self.norm[1]
-        return data
+        fier_data = fft.ht2_center(data)
+        fier_data = fft.symmetrize_ht(fier_data)
+        fier_data = (fier_data - self.norm[0]) / self.norm[1]
+        real_data = (data - self.norm_real[0]) / self.norm_real[1]
+
+        return real_data, fier_data
 
     def __len__(self):
         return self.N
@@ -156,7 +169,7 @@ class TiltSeriesData(ImageDataset):
         angle_per_tilt=None,
         **kwargs,
     ):
-        # Note: ind is the indices of the *tilts*, not the particles
+        # Note: indices is the indices of the *tilts*, not the particles
         super().__init__(tiltstar, ind=ind, **kwargs)
 
         # Parse unique particles from _rlnGroupName
@@ -341,9 +354,11 @@ class DataShuffler:
     ):
         if not all(dataset.src.indices == np.arange(dataset.N)):
             raise NotImplementedError(
-                "Sorry dude, --ind is not supported for the data shuffler. "
-                "The purpose of the shuffler is to load chunks contiguously during lazy loading on huge datasets, which doesn't work with --ind. "
-                "If you really need this, maybe you should probably use `--ind` during preprocessing (e.g. cryodrgn downsample)."
+                "--indices is not supported for the data shuffler!\n"
+                "The purpose of the shuffler is to load chunks contiguously during "
+                "lazy loading on huge datasets, which doesn't work with --indices. "
+                "If you really need this, maybe you should probably use `--indices` "
+                "during preprocessing (e.g. cryodrgn downsample)."
             )
         self.dataset = dataset
         self.batch_size = batch_size
@@ -424,7 +439,7 @@ class _DataShufflerIterator:
     def __iter__(self):
         return self
 
-    def __next__(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def __next__(self) -> dict[str, torch.Tensor]:
         """Returns a batch of images, and the indices of those images in the dataset.
 
         The buffer starts filled with `batch_capacity` random contiguous chunks.
@@ -481,9 +496,29 @@ class _DataShufflerIterator:
         particles = particles.view(-1, *particles.shape[2:])
         tilt_indices = tilt_indices.view(-1, *tilt_indices.shape[2:])
 
-        particles = self.dataset._process(particles.to(self.dataset.device))
+        r_particles, particles = self.dataset._process(particles)
         # print('ZZZ', particles.shape, tilt_indices.shape, particle_indices.shape)
-        return particles, tilt_indices, particle_indices
+
+        if self.dataset.subtomogram_averaging:
+            particles = particles.reshape(-1, self.ntilts, *particles.shape[-2:])
+            tilt_indices = tilt_indices.reshape(-1, self.ntilts)
+            r_particles = r_particles.reshape(-1, self.ntilts, *r_particles.shape[-2:])
+            rots = rots.reshape(-1, self.ntilts, 3, 3)
+        else:
+            particles = particles.reshape(-1, *particles.shape[-2:])
+            tilt_indices = tilt_indices.reshape(-1)
+            r_particles = r_particles.reshape(-1, *r_particles.shape[-2:])
+            #rots = rots.reshape(-1, 3, 3)
+
+        in_dict = {
+            'y': particles,  # batch_size(, n_tilts), D, D
+            'y_real': r_particles,  # batch_size(, n_tilts), D - 1, D - 1
+            'indices': particle_indices,  # batch_size
+            'tilt_indices': tilt_indices.reshape(-1),  # batch_size * n_tilts
+            #'R': rots  # batch_size(, n_tilts), 3, 3
+        }
+
+        return in_dict
 
 
 def make_dataloader(

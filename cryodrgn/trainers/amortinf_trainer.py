@@ -826,28 +826,19 @@ class AmortizedInferenceTrainer(ModelTrainer):
                 torch.cuda.synchronize()
                 self.run_times["to_cpu"].append(time.time() - start_time_cpu)
 
-            # log
             if self.use_cuda:
                 batch["indices"] = batch["indices"].cpu()
                 if batch["tilt_indices"] is not None:
-                    ind_tilt = batch["tilt_indices"].cpu()
+                    batch["tilt_indices"] = batch["tilt_indices"].cpu()
 
+            # keep track of predicted variables
             self.mask_particles_seen_at_last_epoch[batch["indices"]] = 1
             self.mask_tilts_seen_at_last_epoch[batch["tilt_indices"]] = 1
-
-            print(rot_pred.shape)
-            print(rot_pred.reshape(-1, 3, 3).shape)
-            if batch["tilt_indices"] is not None:
-                print(batch["tilt_indices"].shape)
-
             self.predicted_rots[batch["tilt_indices"]] = rot_pred.reshape(-1, 3, 3)
-
             if not self.configs.no_trans:
                 self.predicted_trans[batch["tilt_indices"]] = trans_pred.reshape(-1, 2)
-
             if self.configs.z_dim > 0:
                 self.predicted_conf[batch["indices"]] = conf_pred
-
                 if self.configs.variational_het:
                     self.predicted_logvar[batch["indices"]] = logvar_pred
 
@@ -1130,17 +1121,17 @@ class AmortizedInferenceTrainer(ModelTrainer):
     def make_batch_summary(self) -> None:
         self.logger.info(
             f"# [Train Epoch: {self.current_epoch}/{self.num_epochs - 1}] "
-            f"[{self.current_epoch_particles_count}"
+            f"[{self.epoch_images_seen}"
             f"/{self.particle_count} particles]"
         )
 
         if hasattr(self.model.output_mask, "current_radius"):
-            self.current_losses["Mask Radius"] = self.model.output_mask.current_radius
+            self.accum_losses["Mask Radius"] = self.model.output_mask.current_radius
         if self.model.trans_search_factor is not None:
-            self.current_losses["Trans. Search Factor"] = self.model.trans_search_factor
+            self.accum_losses["Trans. Search Factor"] = self.model.trans_search_factor
 
         summary.make_scalar_summary(
-            self.writer, self.current_losses, self.total_images_seen
+            self.writer, self.accum_losses, self.total_images_seen
         )
 
         if self.configs.verbose_time:

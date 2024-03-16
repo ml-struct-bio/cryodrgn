@@ -1,9 +1,9 @@
 """The training engine for cryoDRGN reconstruction models up to and including v3."""
 
 import os
-import time
 import pickle
 from collections import OrderedDict
+from datetime import datetime as dt
 from typing import Any, Callable
 
 import numpy as np
@@ -62,12 +62,12 @@ class HierarchicalPoseSearchConfigurations(ModelConfigurations):
             "ps_freq": 5,
             "n_kept_poses": 8,
             "pose_model_update_freq": None,
-            "enc_layers": 3,
-            "enc_dim": 1024,
+            "enc_layers": None,
+            "enc_dim": None,
             "encode_mode": "resid",
             "enc_mask": None,
-            "dec_layers": 3,
-            "dec_dim": 1024,
+            "dec_layers": None,
+            "dec_dim": None,
         }
     )
 
@@ -107,6 +107,15 @@ class HierarchicalPoseSearchConfigurations(ModelConfigurations):
                     "Must use tilt for heterogeneous reconstruction on ET capture!"
                 )
 
+        if self.enc_layers is None:
+            self.enc_layers = self.hidden_layers
+        if self.enc_dim is None:
+            self.enc_dim = self.hidden_dim
+        if self.dec_layers is None:
+            self.dec_layers = self.hidden_layers
+        if self.dec_dim is None:
+            self.dec_dim = self.hidden_dim
+
         if self.equivariance is not None:
             if not self.z_dim:
                 raise ValueError(
@@ -116,7 +125,7 @@ class HierarchicalPoseSearchConfigurations(ModelConfigurations):
                 raise ValueError("Regularization weight must be positive")
 
         if self.volume_domain is None:
-            self.volume_domain = "fourier"
+            self.volume_domain = "fourier" if self.use_gt_poses else "hartley"
 
 
 class HierarchicalPoseSearchTrainer(ModelTrainer):
@@ -151,13 +160,13 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
 
         if not self.configs.z_dim:
             model = get_decoder(
-                3,
-                self.resolution,
-                self.configs.dec_layers,
-                self.configs.dec_dim,
-                self.configs.volume_domain,
-                self.configs.pe_type,
-                self.configs.pe_dim,
+                in_dim=3,
+                D=self.resolution,
+                layers=self.configs.dec_layers,
+                dim=self.configs.dec_dim,
+                domain=self.configs.volume_domain,
+                enc_type=self.configs.pe_type,
+                enc_dim=self.configs.pe_dim,
                 activation=self.activation,
                 feat_sigma=self.configs.feat_sigma,
             )
@@ -165,13 +174,13 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
             enc_mask, in_dim = self.mask_dimensions
 
             model = HetOnlyVAE(
-                self.lattice,
-                self.configs.enc_layers,
-                self.configs.enc_dim,
-                self.configs.dec_layers,
-                self.configs.dec_dim,
-                in_dim,
-                self.configs.z_dim,
+                lattice=self.lattice,
+                qlayers=self.configs.enc_layers,
+                qdim=self.configs.enc_dim,
+                players=self.configs.dec_layers,
+                pdim=self.configs.dec_dim,
+                in_dim=in_dim,
+                z_dim=self.configs.z_dim,
                 encode_mode=self.configs.encode_mode,
                 enc_mask=enc_mask,
                 enc_type=self.configs.pe_type,
@@ -296,30 +305,27 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
             if self.configs.equivariance
             else ""
         )
-        avg_gen_loss = self.accum_losses["gen"] / self.total_images_seen
-        kld_loss = self.accum_losses["kld"] / self.total_images_seen
-        total_loss = self.accum_losses["total"] / self.total_images_seen
+        avg_gen_loss = self.accum_losses["gen"] / self.image_count
+        kld_loss = self.accum_losses["kld"] / self.image_count
+        total_loss = self.accum_losses["total"] / self.image_count
         self.logger.info(
             f"# =====> Epoch: {self.current_epoch} "
             f"Average gen loss = {avg_gen_loss:.4}, KLD = {kld_loss:.4f},"
             f" {eq_log}total loss = {total_loss:.4f}; "
-            f"Finished in {time.time() - self.epoch_start_time,}"
+            f"Finished in {dt.now() - self.epoch_start_time}"
         )
 
     def train_batch(self, batch: tuple) -> None:
         y_gt, tilt_ind, ind = batch
         ind_np = ind.cpu().numpy()
         y = y_gt.to(self.device)
+        B = y.size(0)
 
         if tilt_ind is not None:
             tilt_ind = tilt_ind.to(self.device)
             assert all(tilt_ind >= 0), tilt_ind
 
-        lamb = None
-        if (
-                self.equivariance_lambda is not None
-                and self.equivariance_loss is not None
-        ):
+        if self.equivariance_lambda is not None and self.equivariance_loss is not None:
             lamb = self.equivariance_lambda(self.total_images_seen)
             equivariance_tuple = (lamb, self.equivariance_loss)
         else:
@@ -337,19 +343,23 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
             self.pose_optimizer.zero_grad()
 
         # getting the poses
-        if self.pose_search and self.current_epoch % self.configs.ps_freq != 0:
+        rot = trans = None
+        if self.pose_search and (self.current_epoch - 1) % self.configs.ps_freq != 0:
             self.logger.info("Using previous iteration poses")
-            rot = torch.tensor(self.predicted_rots[ind_np], device=self.device)
+            rot = torch.tensor(
+                self.predicted_rots[ind_np].astype(np.float32), device=self.device
+            )
+
             if not self.configs.no_trans:
-                trans = torch.tensor(self.predicted_trans[ind_np], device=self.device)
-            else:
-                trans = None
+                trans = torch.tensor(
+                    self.predicted_trans[ind_np].astype(np.float32), device=self.device
+                )
 
         self.conf_search_particles += len(batch[0])
         if self.configs.pose_model_update_freq:
             if (
-                    self.current_epoch == 0
-                    or self.conf_search_particles > self.configs.pose_model_update_freq
+                self.current_epoch == 1
+                or self.conf_search_particles > self.configs.pose_model_update_freq
             ):
                 self.pose_model.load_state_dict(self.volume_model.state_dict())
                 self.conf_search_particles = 0
@@ -368,20 +378,15 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
             Apix = self.ctf_params[0, 0] if self.ctf_params is not None else None
 
             if self.configs.dose_per_tilt is not None:
-                dose_filters = self.data.get_dose_filters(
-                    tilt_ind, self.lattice, Apix
-                )
+                dose_filters = self.data.get_dose_filters(tilt_ind, self.lattice, Apix)
 
         else:
             if self.pose_tracker and not self.pose_search:
                 rot, trans = self.pose_tracker.get_pose(ind)
-            ctf_param = (
-                self.ctf_params[ind] if self.ctf_params is not None else None
-            )
+            ctf_param = self.ctf_params[ind] if self.ctf_params is not None else None
 
         use_tilt = tilt_ind is not None
         use_ctf = ctf_param is not None
-        B = y.size(0)
 
         if self.beta_schedule is not None:
             self.beta = self.beta_schedule(self.total_images_seen)
@@ -394,9 +399,6 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
             ctf_i = ctf.compute_ctf(freqs, *torch.split(ctf_param[:, 1:], 1, 1)).view(
                 B, self.resolution, self.resolution
             )
-
-        if trans is not None:
-            y = self.preprocess_input(y, trans)
 
         # VAE inference of z
         self.volume_optimizer.zero_grad()
@@ -528,27 +530,25 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
 
         # logging
         for loss_k, loss_val in losses.items():
-            self.current_losses[loss_k] = loss_val.item()
-
             if loss_k in self.accum_losses:
-                self.accum_losses[loss_k] += self.current_losses[loss_k] * len(ind)
+                self.accum_losses[loss_k] += loss_val.item() * len(ind)
             else:
-                self.accum_losses[loss_k] = self.current_losses[loss_k] * len(ind)
+                self.accum_losses[loss_k] = loss_val.item() * len(ind)
 
     def make_batch_summary(self):
         eq_log = ""
         if self.equivariance_lambda is not None:
             eq_log = (
-                f"equivariance={self.current_losses['eq_loss']:.4f}, "
+                f"equivariance={self.accum_losses['eq_loss']:.4f}, "
                 f"lambda={self.equivariance_lambda:.4f}, "
             )
 
         self.logger.info(
             f"# [Train Epoch: {self.current_epoch}/{self.configs.num_epochs}] "
-            f"[{self.total_images_seen}/{self.image_count} images] "
-            f"gen loss={self.current_losses['gen']:.4f}, "
-            f"kld={self.current_losses['kld']:.4f}, beta={self.beta:.4f}, "
-            f"{eq_log}loss={self.current_losses['total']:.4f}"
+            f"[{self.epoch_images_seen}/{self.image_count} images] "
+            f"gen loss={self.accum_losses['gen']:.4f}, "
+            f"kld={self.accum_losses['kld']:.4f}, beta={self.beta:.4f}, "
+            f"{eq_log}loss={self.accum_losses['total']:.4f}"
         )
 
     def preprocess_input(self, y, trans):
@@ -560,6 +560,9 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
     def pretrain_batch(self, batch: tuple) -> None:
         y, yt, _ = batch
         use_tilt = yt is not None
+        if use_tilt:
+            yt.to(self.device)
+        y = y.to(self.device)
         B = y.size(0)
 
         self.volume_model.train()
@@ -567,10 +570,10 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
 
         # reconstruct circle of pixels instead of whole image
         mask = self.lattice.get_circular_mask(self.lattice.D // 2)
-        rot = lie_tools.random_SO3(B, device=y.device)
+        rot = lie_tools.random_SO3(B, device=self.device)
 
         if self.configs.z_dim > 0:
-            z = torch.randn((B, self.configs.z_dim), device=y.device)
+            z = torch.randn((B, self.configs.z_dim), device=self.device)
 
             def gen_slice(R):
                 _model = unparallelize(self.volume_model)
@@ -578,6 +581,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                 return _model.decode(self.lattice.coords[mask] @ R, z).view(B, -1)
 
         else:
+
             def gen_slice(R):
                 slice_ = self.volume_model(self.lattice.coords[mask] @ R)
                 return slice_.view(B, -1)
@@ -593,7 +597,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
 
         loss.backward()
         self.volume_optimizer.step()
-        self.current_losses['total'] = loss.item()
+        self.accum_losses["total"] = loss.item()
 
     def make_epoch_summary(self):
         """Save model weights, latent encoding z, and decoder volumes"""
@@ -663,8 +667,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
 
         with open(out_poses, "wb") as f:
             pickle.dump(
-                (self.predicted_rots, self.predicted_trans / self.model_resolution),
-                f
+                (self.predicted_rots, self.predicted_trans / self.model_resolution), f
             )
 
     def get_latest(self) -> None:
@@ -684,10 +687,10 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
         self.logger.info(f"Loading {self.configs.load_poses}")
 
     @property
-    def is_in_pose_search_step(self) -> bool:
+    def in_pose_search_step(self) -> bool:
         is_in_pose_search = False
         if self.pose_search:
-            if self.current_epoch % self.configs.ps_freq == 0:
+            if (self.current_epoch - 1) % self.configs.ps_freq == 0:
                 is_in_pose_search = True
 
         return is_in_pose_search

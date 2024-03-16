@@ -150,6 +150,9 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
     )
 
     def __init__(self, config_vals: dict[str, Any]) -> None:
+        if "batch_size" in config_vals and "batch_size_sgd" not in config_vals:
+            config_vals["batch_size_sgd"] = config_vals["batch_size"]
+
         super().__init__(config_vals)
 
         if "model" in config_vals and config_vals["model"] != "amort":
@@ -598,8 +601,8 @@ class AmortizedInferenceTrainer(ModelTrainer):
         self.optimized_modules = ["hypervolume"]
 
         self.pose_only = (
-                self.total_images_seen < self.configs.pose_only_phase
-                or self.configs.z_dim == 0
+            self.total_images_seen < self.configs.pose_only_phase
+            or self.configs.z_dim == 0
         )
 
         if not self.configs.use_gt_poses:
@@ -608,7 +611,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
             )
 
         # HPS
-        if self.is_in_pose_search_step:
+        if self.in_pose_search_step:
             n_max_particles = self.particle_count
             self.logger.info(f"Will use pose search on {n_max_particles} particles")
             self.data_iterator = self.data_generators["hps"] or self.data_iterator
@@ -715,18 +718,16 @@ class AmortizedInferenceTrainer(ModelTrainer):
 
         return ctf_local
 
-    def train_batch(self, batch: tuple) -> None:
-        y_gt, tilt_ind, ind = batch
-
+    def train_batch(self, batch: dict[str, torch.Tensor]) -> None:
         if self.configs.verbose_time:
             torch.cuda.synchronize()
             self.run_times["dataloading"].append(time.time() - self.end_time)
 
         # update output mask -- image-based scaling
-        if hasattr(self.model.output_mask, "update") and self.is_in_pose_search_step:
+        if hasattr(self.model.output_mask, "update") and self.in_pose_search_step:
             self.model.output_mask.update(self.total_images_seen)
 
-        if self.is_in_pose_search_step:
+        if self.in_pose_search_step:
             self.model.ps_params["l_min"] = self.configs.l_start
 
             if self.configs.output_mask == "circ":
@@ -736,19 +737,14 @@ class AmortizedInferenceTrainer(ModelTrainer):
                     self.model.output_mask.current_radius, self.configs.l_end
                 )
 
-        if tilt_ind is not None:
-            ind_tilt = tilt_ind.reshape(-1)
-            ind_tilt = ind_tilt.to(self.device)
+        if not "tilt_indices" in batch:
+            batch["tilt_indices"] = batch["indices"]
         else:
-            ind_tilt = None
+            batch["tilt_indices"] = batch["tilt_indices"].reshape(-1)
 
-        # move to gpu
         if self.configs.verbose_time:
             torch.cuda.synchronize()
         start_time_gpu = time.time()
-
-        y_gt = y_gt.to(self.device)
-        ind = ind.to(self.device)
         if self.configs.verbose_time:
             torch.cuda.synchronize()
             self.run_times["to_gpu"].append(time.time() - start_time_gpu)
@@ -757,16 +753,8 @@ class AmortizedInferenceTrainer(ModelTrainer):
         for key in self.optimized_modules:
             self.optimizers[key].zero_grad()
 
-        in_dict = {
-            "y": y_gt,
-            "index": ind,
-            "tilt_index": tilt_ind,
-        }
-
         # forward pass
-        latent_variables_dict, y_pred, y_gt_processed = self.forward_pass(
-            y_gt, tilt_ind, ind
-        )
+        latent_variables_dict, y_pred, y_gt_processed = self.forward_pass(**batch)
 
         if self.n_prcs > 1:
             self.model.module.is_in_pose_search_step = False
@@ -791,7 +779,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
             torch.cuda.synchronize()
         start_time_backward = time.time()
         total_loss.backward()
-        # self.cur_loss += total_loss.item() * len(ind)
+        # self.cur_loss += total_loss.item() * len(indices)
 
         for key in self.optimized_modules:
             if self.optimizer_types[key] == "adam":
@@ -805,7 +793,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
                         _latent_variables_dict,
                         _y_pred,
                         _y_gt_processed,
-                    ) = self.forward_pass(in_dict)
+                    ) = self.forward_pass(**batch)
                     _loss, _ = self.loss(
                         _y_pred, _y_gt_processed, _latent_variables_dict
                     )
@@ -823,7 +811,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
 
         # detach
         if self.will_make_checkpoint:
-            self.in_dict_last = in_dict
+            self.in_dict_last = batch
             self.y_pred_last = y_pred
 
             if self.configs.verbose_time:
@@ -840,22 +828,28 @@ class AmortizedInferenceTrainer(ModelTrainer):
 
             # log
             if self.use_cuda:
-                ind = ind.cpu()
-                if ind_tilt is not None:
-                    ind_tilt = ind_tilt.cpu()
+                batch["indices"] = batch["indices"].cpu()
+                if batch["tilt_indices"] is not None:
+                    ind_tilt = batch["tilt_indices"].cpu()
 
-            self.mask_particles_seen_at_last_epoch[ind] = 1
-            self.mask_tilts_seen_at_last_epoch[ind_tilt] = 1
-            self.predicted_rots[ind_tilt] = rot_pred.reshape(-1, 3, 3)
+            self.mask_particles_seen_at_last_epoch[batch["indices"]] = 1
+            self.mask_tilts_seen_at_last_epoch[batch["tilt_indices"]] = 1
+
+            print(rot_pred.shape)
+            print(rot_pred.reshape(-1, 3, 3).shape)
+            if batch["tilt_indices"] is not None:
+                print(batch["tilt_indices"].shape)
+
+            self.predicted_rots[batch["tilt_indices"]] = rot_pred.reshape(-1, 3, 3)
 
             if not self.configs.no_trans:
-                self.predicted_trans[ind_tilt] = trans_pred.reshape(-1, 2)
+                self.predicted_trans[batch["tilt_indices"]] = trans_pred.reshape(-1, 2)
 
             if self.configs.z_dim > 0:
-                self.predicted_conf[ind] = conf_pred
+                self.predicted_conf[batch["indices"]] = conf_pred
 
                 if self.configs.variational_het:
-                    self.predicted_logvar[ind] = logvar_pred
+                    self.predicted_logvar[batch["indices"]] = logvar_pred
 
         else:
             self.run_times["to_cpu"].append(0.0)
@@ -884,15 +878,15 @@ class AmortizedInferenceTrainer(ModelTrainer):
 
         return rot_pred, trans_pred, conf_pred, logvar_pred
 
-    def forward_pass(self, y_gt, tilt_ind, ind):
+    def forward_pass(self, y, y_real, tilt_indices, indices):
         if self.configs.verbose_time:
             torch.cuda.synchronize()
 
         start_time_ctf = time.time()
-        if tilt_ind is not None:
-            ctf_local = self.get_ctfs_at(tilt_ind)
+        if tilt_indices is not None:
+            ctf_local = self.get_ctfs_at(tilt_indices)
         else:
-            ctf_local = self.get_ctfs_at(ind)
+            ctf_local = self.get_ctfs_at(indices)
 
         if self.configs.subtomo_averaging:
             ctf_local = ctf_local.reshape(-1, self.image_count, *ctf_local.shape[1:])
@@ -931,8 +925,8 @@ class AmortizedInferenceTrainer(ModelTrainer):
         if self.n_prcs > 1:
             self.model.module.pose_only = self.pose_only
             self.model.module.use_point_estimates = self.use_point_estimates
-            self.model.module.pretrain = self.pretraining
-            self.model.module.is_in_pose_search_step = self.is_in_pose_search_step
+            self.model.module.pretrain = self.in_pretraining
+            self.model.module.is_in_pose_search_step = self.in_pose_search_step
             self.model.module.use_point_estimates_conf = (
                 not self.configs.use_conf_encoder
             )
@@ -940,24 +934,25 @@ class AmortizedInferenceTrainer(ModelTrainer):
         else:
             self.model.pose_only = self.pose_only
             self.model.use_point_estimates = self.use_point_estimates
-            self.model.pretrain = self.pretraining
-            self.model.is_in_pose_search_step = self.is_in_pose_search_step
+            self.model.pretrain = self.in_pretraining
+            self.model.is_in_pose_search_step = self.in_pose_search_step
             self.model.use_point_estimates_conf = not self.configs.use_conf_encoder
 
         if self.configs.subtomo_averaging:
-            tilt_ind = tilt_ind.reshape(y_gt.shape[0:2])
+            tilt_indices = tilt_indices.reshape(y.shape[0:2])
 
         in_dict = {
-            "y": y_gt,
-            "index": ind,
-            "tilt_index": tilt_ind,
+            "y": y,
+            "y_real": y_real,
+            "indices": indices,
+            "tilt_indices": tilt_indices,
             "ctf": ctf_local,
         }
 
-        if in_dict["tilt_index"] is None:
-            in_dict["tilt_index"] = in_dict["index"]
+        if in_dict["tilt_indices"] is None:
+            in_dict["tilt_indices"] = in_dict["indices"]
         else:
-            in_dict["tilt_index"] = in_dict["tilt_index"].reshape(-1)
+            in_dict["tilt_indices"] = in_dict["tilt_indices"].reshape(-1)
 
         out_dict = self.model(in_dict)
         self.run_times["encoder"].append(
@@ -993,7 +988,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
             a_pix = self.ctf_params[0, 0]
 
             dose_filters = self.data.get_dose_filters(
-                in_dict["tilt_index"].reshape(-1), self.lattice, a_pix
+                in_dict["tilt_indices"].reshape(-1), self.lattice, a_pix
             ).reshape(*y_pred.shape[:2], -1)
 
             y_pred *= dose_filters[..., mask]
@@ -1003,7 +998,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
     def loss(self, y_pred, y_gt, latent_variables_dict):
         """
         y_pred: [batch_size(, n_tilts), n_pts]
-        y_gt: [batch_size(, n_tilts), n_pts]
+        y: [batch_size(, n_tilts), n_pts]
         """
         all_losses = {}
 
@@ -1145,9 +1140,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
             self.current_losses["Trans. Search Factor"] = self.model.trans_search_factor
 
         summary.make_scalar_summary(
-            self.writer,
-            self.current_losses,
-            self.total_images_seen
+            self.writer, self.current_losses, self.total_images_seen
         )
 
         if self.configs.verbose_time:
@@ -1232,7 +1225,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
         torch.save(saved_objects, out_weights)
 
     @property
-    def is_in_pose_search_step(self) -> bool:
+    def in_pose_search_step(self) -> bool:
         in_pose_search = False
 
         if not self.configs.use_gt_poses:

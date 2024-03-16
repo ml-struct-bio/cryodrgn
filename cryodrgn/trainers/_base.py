@@ -248,7 +248,7 @@ class ModelConfigurations(BaseConfigurations):
         "amp",
         "reset_optim_after_pretrain",
         "pose_sgd_emb_type",
-        "verbose_time"
+        "verbose_time",
     )
     default_values = OrderedDict(
         {
@@ -321,9 +321,7 @@ class ModelConfigurations(BaseConfigurations):
             )
 
         if isinstance(self.ind, str) and not os.path.exists(self.ind):
-            raise ValueError(
-                f"Subset indices file {config_vals['ind']} does not exist!"
-            )
+            raise ValueError(f"Subset indices file {self.ind} does not exist!")
 
         if self.dataset:
             paths_file = os.environ.get("DRGNAI_DATASETS")
@@ -675,7 +673,7 @@ class ModelTrainer(BaseTrainer, ABC):
 
             for self.batch_idx, batch in enumerate(self.data_iterator):
                 self.total_batch_count += 1
-                len_y = len(batch[0])
+                len_y = len(batch["indices"])
                 self.total_images_seen += len_y
                 self.epoch_images_seen += len_y
 
@@ -706,11 +704,10 @@ class ModelTrainer(BaseTrainer, ABC):
         self.configs: ModelConfigurations
         make_chk = self.current_epoch == self.configs.num_epochs
         make_chk |= (
-                self.configs.checkpoint
-                and self.current_epoch % self.configs.checkpoint == 0
+            self.configs.checkpoint
+            and self.current_epoch % self.configs.checkpoint == 0
         )
-        make_chk |= self.is_in_pose_search_step
-
+        make_chk |= self.in_pose_search_step
 
         return make_chk
 
@@ -724,7 +721,7 @@ class ModelTrainer(BaseTrainer, ABC):
         return model_resolution
 
     def pretrain(self) -> None:
-        """Pretrain the decoder using random initial poses."""
+        """Iterate the model before main learning epochs for better initializations."""
         self.configs: ModelConfigurations
         self.logger.info("Will make a full summary at the end of this epoch")
         self.logger.info(f"Will pretrain on {self.configs.pretrain} particles")
@@ -732,16 +729,18 @@ class ModelTrainer(BaseTrainer, ABC):
         particles_seen = 0
         while particles_seen < self.n_particles_pretrain:
             for batch in self.data_iterator:
-                particles_seen += len(batch[0])
+                len_y = len(batch["indices"])
+                particles_seen += len_y
+
                 self.pretrain_batch(batch)
 
                 if self.configs.verbose_time:
                     torch.cuda.synchronize()
 
-                if particles_seen % self.configs.log_interval < len(batch[0]):
+                if particles_seen % self.configs.log_interval < len_y:
                     self.logger.info(
                         f"[Pretrain Iteration {particles_seen}] "
-                        f"loss={self.current_losses['total']:4f}"
+                        f"loss={self.accum_losses['total']:4f}"
                     )
 
                 if particles_seen > self.n_particles_pretrain:
@@ -765,7 +764,7 @@ class ModelTrainer(BaseTrainer, ABC):
         pass
 
     @abstractmethod
-    def train_batch(self, batch: tuple) -> None:
+    def train_batch(self, batch: dict[str, torch.Tensor]) -> None:
         pass
 
     def pretrain_batch(self, batch):
@@ -779,8 +778,13 @@ class ModelTrainer(BaseTrainer, ABC):
         raise NotImplementedError
 
     @property
-    def is_in_pose_search_step(self) -> bool:
+    def in_pose_search_step(self) -> bool:
+        """Whether we are in a pose search epoch of the training stage."""
         return False
+
+    def in_pretraining(self) -> bool:
+        """Whether we are in a pretraining epoch of the training stage."""
+        return self.current_epoch is not None and self.current_epoch == 0
 
     @property
     def epoch_lbl(self) -> str:

@@ -8,7 +8,7 @@ from matplotlib import colors
 import seaborn as sns
 
 from cryodrgn import analysis
-from cryodrgn import lie_tools
+from cryodrgn.models import lie_tools
 from cryodrgn import utils
 from cryodrgn import fft
 
@@ -120,7 +120,9 @@ def make_conf_summary(
     return pca
 
 
-def make_img_summary(writer, in_dict, recon_y, output_mask, steps, prefix=""):
+def make_img_summary(
+    writer, in_dict: dict[str, torch.Tensor], recon_y, output_mask, steps, prefix=""
+):
     """
     writer: Writer
     in_dict: dict
@@ -144,7 +146,7 @@ def make_img_summary(writer, in_dict, recon_y, output_mask, steps, prefix=""):
     fig = plt.figure(dpi=96, figsize=(10, 4))
     # GT
     plt.subplot(121)
-    y_np = utils.to_numpy(y)
+    y_np = y.detach().numpy()
     plt.imshow(y_np, cmap="plasma")
     plt.colorbar()
     plt.axis("off")
@@ -154,10 +156,10 @@ def make_img_summary(writer, in_dict, recon_y, output_mask, steps, prefix=""):
     plt.subplot(122)
     y_pred = torch.zeros_like(y).reshape(-1)
     y_pred[output_mask.binary_mask] = recon_y.to(dtype=y_pred.dtype)
-    y_pred = utils.to_numpy(y_pred)
+    y_pred = y_pred.detach()
     resolution = int(np.sqrt(y_pred.shape[0]))
     y_pred = y_pred.reshape(resolution, resolution)
-    plt.imshow(y_pred, cmap="plasma")
+    plt.imshow(y_pred.numpy(), cmap="plasma")
     plt.colorbar()
     plt.axis("off")
     plt.title(f"Prediction ({resolution}x{resolution})")
@@ -184,14 +186,14 @@ def make_img_summary(writer, in_dict, recon_y, output_mask, steps, prefix=""):
     fig = plt.figure(dpi=96, figsize=(13, 4))
     # GT
     plt.subplot(131)
-    y_real_np = utils.to_numpy(y_real)
+    y_real_np = y_real.detach().numpy()
     plt.imshow(y_real_np)
     plt.colorbar()
     plt.axis("off")
     plt.title(f"Input Encoder ({y_real_np.shape[-2]}x{y_real_np.shape[-1]})")
 
     plt.subplot(132)
-    y_real_np = fft.ihtn_center(y_np)
+    y_real_np = fft.ihtn_center(y.detach())
     plt.imshow(y_real_np)
     plt.colorbar()
     plt.axis("off")

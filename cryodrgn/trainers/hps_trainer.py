@@ -315,15 +315,19 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
             f"Finished in {dt.now() - self.epoch_start_time}"
         )
 
-    def train_batch(self, batch: tuple) -> None:
-        y_gt, tilt_ind, ind = batch
-        ind_np = ind.cpu().numpy()
-        y = y_gt.to(self.device)
-        B = y.size(0)
+    def train_batch(self, batch: dict[str, torch.Tensor]) -> None:
+        y = batch["y"]
+        ind = batch["indices"]
 
-        if tilt_ind is not None:
-            tilt_ind = tilt_ind.to(self.device)
+        y = y.to(self.device)
+        ind_np = ind.cpu().numpy()
+        B = y.size(0)
+        if "tilt_indices" in batch:
+            tilt_ind = batch["tilt_indices"]
             assert all(tilt_ind >= 0), tilt_ind
+            tilt_ind.to(self.device)
+        else:
+            tilt_ind = None
 
         if self.equivariance_lambda is not None and self.equivariance_loss is not None:
             lamb = self.equivariance_lambda(self.total_images_seen)
@@ -355,7 +359,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                     self.predicted_trans[ind_np].astype(np.float32), device=self.device
                 )
 
-        self.conf_search_particles += len(batch[0])
+        self.conf_search_particles += B
         if self.configs.pose_model_update_freq:
             if (
                 self.current_epoch == 1
@@ -557,11 +561,12 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
             y.view(y.size(0), -1), trans.unsqueeze(1)
         ).view(y.size(0), self.resolution, self.resolution)
 
-    def pretrain_batch(self, batch: tuple) -> None:
-        y, yt, _ = batch
-        use_tilt = yt is not None
+    def pretrain_batch(self, batch: dict[str, torch.Tensor]) -> None:
+        """Pretrain the decoder using random initial poses."""
+        y = batch["y"]
+        use_tilt = "tilt_indices" in batch
         if use_tilt:
-            yt.to(self.device)
+            batch["tilt_indices"].to(self.device)
         y = y.to(self.device)
         B = y.size(0)
 
@@ -588,7 +593,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
 
         y = y.view(B, -1)[:, mask]
         if use_tilt:
-            yt = yt.view(B, -1)[:, mask]
+            yt = batch["tilt_indices"].view(B, -1)[:, mask]
             loss = 0.5 * F.mse_loss(gen_slice(rot), y) + 0.5 * F.mse_loss(
                 gen_slice(self.configs.tilt @ rot), yt
             )
@@ -632,11 +637,11 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                 )
 
                 for minibatch in data_generator:
-                    ind = minibatch[-1]
-                    y = minibatch[0].to(self.device)
+                    ind = minibatch["indices"]
+                    y = minibatch["y"].to(self.device)
                     yt = None
                     if self.configs.tilt:
-                        yt = minibatch[1].to(self.device)
+                        yt = minibatch["tilt_indices"].to(self.device)
                     B = len(ind)
                     D = self.lattice.D
                     c = None

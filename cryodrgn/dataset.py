@@ -24,14 +24,11 @@ from cryodrgn.masking import spherical_window_mask
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.sampler import BatchSampler, RandomSampler, SequentialSampler
 import cryodrgn.utils
 from cryodrgn import fft, starfile
 from cryodrgn.source import ImageSource
-
-
-logger = logging.getLogger(__name__)
 
 
 class ImageDataset(torch.utils.data.Dataset):
@@ -49,6 +46,7 @@ class ImageDataset(torch.utils.data.Dataset):
         max_threads=16,
         device: Union[str, torch.device] = "cpu",
     ):
+        self.logger = logging.getLogger(__name__)
         assert not keepreal, "Not implemented yet"
         datadir = datadir or ""
         self.ind = ind
@@ -93,7 +91,7 @@ class ImageDataset(torch.utils.data.Dataset):
 
         imgs = fft.symmetrize_ht(imgs)
         norm = (0, torch.std(imgs))
-        logger.info("Normalizing HT by {} +/- {}".format(*norm))
+        self.logger.info("Normalizing HT by {} +/- {}".format(*norm))
 
         return norm
 
@@ -102,11 +100,11 @@ class ImageDataset(torch.utils.data.Dataset):
         indices = range(0, self.N, self.N // n)  # FIXME: what if the data is not IID??
         imgs = self.src.images(indices)
         norm = (torch.mean(imgs), torch.std(imgs))
-        logger.info('Normalized real space images by {} +/- {}'.format(*norm))
+        self.logger.info('Normalized real space images by {} +/- {}'.format(*norm))
 
         return norm
 
-    def _process(self, data):
+    def _process(self, data) -> tuple[torch.Tensor, torch.Tensor]:
         if data.ndim == 2:
             data = data[np.newaxis, ...]
         if self.window is not None:
@@ -123,25 +121,30 @@ class ImageDataset(torch.utils.data.Dataset):
     def __len__(self):
         return self.N
 
-    def __getitem__(self, index):
+    def __getitem__(
+            self, index: Union[int, list[int]]) -> dict[str, torch.Tensor]:
         if isinstance(index, list):
             index = torch.Tensor(index).to(torch.long)
 
-        particles = self._process(self.src.images(index).to(self.device))
+        r_particles, f_particles = self._process(self.src.images(index).to(self.device))
 
         # this is why it is tricky for index to be allowed to be a list!
         if len(particles.shape) == 2:
             particles = particles[np.newaxis, ...]
 
         if isinstance(index, (int, np.integer)):
-            logger.debug(f"ImageDataset returning images at index ({index})")
+            self.logger.debug(f"ImageDataset returning images at index ({index})")
         else:
-            logger.debug(
-                f"ImageDataset returning images for {len(index)} indices:"
-                f" ({index[0]}..{index[-1]})"
-            )
+            self.logger.debug(
+                f"ImageDataset returning images for {len(index)} "
+                f"indices ({index[0]}..{index[-1]})"
 
-        return particles, None, index
+        return {
+            'y': f_particles,  # batch_size(, n_tilts), D, D
+            'y_real': r_particles,  # batch_size(, n_tilts), D - 1, D - 1
+            'indices': index,  # batch_size
+            #'R': rots  # batch_size(, n_tilts), 3, 3
+        }
 
     def get_slice(
         self, start: int, stop: int
@@ -196,10 +199,10 @@ class TiltSeriesData(ImageDataset):
             ranks[sort_idxs[::-1]] = np.arange(len(ind))
             self.tilt_numbers[ind] = ranks
         self.tilt_numbers = torch.tensor(self.tilt_numbers).to(self.device)
-        logger.info(f"Loaded {self.N} tilts for {self.Np} particles")
+        self.logger.info(f"Loaded {self.N} tilts for {self.Np} particles")
         counts = Counter(group_name)
         unique_counts = set(counts.values())
-        logger.info(f"{unique_counts} tilts per particle")
+        self.logger.info(f"{unique_counts} tilts per particle")
         self.counts = counts
         assert ntilts <= min(unique_counts)
         self.ntilts = ntilts
@@ -381,6 +384,7 @@ class DataShuffler:
 
 class _DataShufflerIterator:
     def __init__(self, shuffler: DataShuffler):
+        self.logger = logging.getLogger(__name__)
         self.dataset = shuffler.dataset
         self.buffer_size = shuffler.buffer_size
         self.batch_size = shuffler.batch_size
@@ -403,7 +407,7 @@ class _DataShufflerIterator:
         self.count = 0
         self.flush_remaining = -1  # at the end of the epoch, got to flush the buffer
         # pre-fill
-        logger.info("Pre-filling data shuffler buffer...")
+        self.logger.info("Pre-filling data shuffler buffer...")
         for i in range(self.batch_capacity):
             chunk, maybe_tilt_indices, chunk_indices = self._get_next_chunk()
             self.buffer[i * self.batch_size : (i + 1) * self.batch_size] = chunk
@@ -414,7 +418,7 @@ class _DataShufflerIterator:
                 self.tilt_index_buffer[
                     i * self.batch_size : (i + 1) * self.batch_size
                 ] = maybe_tilt_indices
-        logger.info(
+        self.logger.info(
             f"Filled buffer with {self.buffer_size} images ({self.batch_capacity} contiguous chunks)."
         )
 
@@ -450,7 +454,7 @@ class _DataShufflerIterator:
         flushed sequentially.
         """
         if self.count == self.num_batches and self.flush_remaining == -1:
-            logger.info(
+            self.logger.info(
                 "Finished fetching chunks. Flushing buffer for remaining batches..."
             )
             # since we're going to flush the buffer sequentially, we need to shuffle it first
@@ -496,22 +500,22 @@ class _DataShufflerIterator:
         particles = particles.view(-1, *particles.shape[2:])
         tilt_indices = tilt_indices.view(-1, *tilt_indices.shape[2:])
 
-        r_particles, particles = self.dataset._process(particles)
+        r_particles, f_particles = self.dataset._process(particles)
         # print('ZZZ', particles.shape, tilt_indices.shape, particle_indices.shape)
 
-        if self.dataset.subtomogram_averaging:
+        if False and self.dataset.subtomogram_averaging:
             particles = particles.reshape(-1, self.ntilts, *particles.shape[-2:])
             tilt_indices = tilt_indices.reshape(-1, self.ntilts)
             r_particles = r_particles.reshape(-1, self.ntilts, *r_particles.shape[-2:])
             rots = rots.reshape(-1, self.ntilts, 3, 3)
         else:
-            particles = particles.reshape(-1, *particles.shape[-2:])
+            f_particles = f_particles.reshape(-1, *f_particles.shape[-2:])
             tilt_indices = tilt_indices.reshape(-1)
             r_particles = r_particles.reshape(-1, *r_particles.shape[-2:])
             #rots = rots.reshape(-1, 3, 3)
 
         in_dict = {
-            'y': particles,  # batch_size(, n_tilts), D, D
+            'y': f_particles,  # batch_size(, n_tilts), D, D
             'y_real': r_particles,  # batch_size(, n_tilts), D - 1, D - 1
             'indices': particle_indices,  # batch_size
             'tilt_indices': tilt_indices.reshape(-1),  # batch_size * n_tilts

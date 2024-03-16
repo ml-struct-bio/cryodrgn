@@ -128,14 +128,13 @@ class BaseConfigurations(ABC):
 
 
 class BaseTrainer(ABC):
-    """Abstract base class for reconstruction model training engines.
+    """Abstract base class for training engines used by cryoDRGN.
 
     Attributes
     ----------
-    outdir(str):    Path to where experiment output is stored.
-    quick_config(dict):    Configuration shortcuts.
-    """
+    outdir (str):    Path to where experiment output is stored.
 
+    """
     config_cls = BaseConfigurations
 
     @classmethod
@@ -200,6 +199,7 @@ class ModelConfigurations(BaseConfigurations):
         "dataset",
         "datadir",
         "ind",
+        "labels",
         "log_interval",
         "load",
         "load_poses",
@@ -259,6 +259,7 @@ class ModelConfigurations(BaseConfigurations):
             "dataset": None,
             "datadir": None,
             "ind": None,
+            "labels": None,
             "log_interval": 1000,
             "load": None,
             "load_poses": None,
@@ -365,7 +366,13 @@ class ModelConfigurations(BaseConfigurations):
 
 
 class ModelTrainer(BaseTrainer, ABC):
+    """Abstract base class for reconstruction model training engines.
 
+    Attributes
+    ----------
+    use_cuda (bool): Whether we are using CUDA GPUs (or otherwise CPUs).
+
+    """
     config_cls = ModelConfigurations
 
     # options for optimizers to use
@@ -729,7 +736,7 @@ class ModelTrainer(BaseTrainer, ABC):
         particles_seen = 0
         while particles_seen < self.n_particles_pretrain:
             for batch in self.data_iterator:
-                len_y = len(batch["indices"])
+                len_y = len(batch['indices'])
                 particles_seen += len_y
 
                 self.pretrain_batch(batch)
@@ -767,7 +774,7 @@ class ModelTrainer(BaseTrainer, ABC):
     def train_batch(self, batch: dict[str, torch.Tensor]) -> None:
         pass
 
-    def pretrain_batch(self, batch):
+    def pretrain_batch(self, batch: dict[str, torch.Tensor]) -> None:
         self.train_batch(batch)
 
     @abstractmethod

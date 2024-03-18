@@ -199,7 +199,7 @@ class TiltSeriesData(ImageDataset):
             if gn not in particles:
                 particles[gn] = []
             particles[gn].append(ii)
-        particles = np.array([np.asarray(pp, dtype=int) for pp in particles.values()])
+        particles = np.array([np.asarray(pp, dtype=int) for pp in particles.values()], dtype=object)
         particles_to_tilts = particles
         tilts_to_particles = {}
         for i, j in enumerate(particles):

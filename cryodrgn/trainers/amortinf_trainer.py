@@ -1,9 +1,17 @@
+"""Training engine for the amortized inference reconstruction drgnai/v4 model.
+
+This module contains the model training engine and the corresponding configuration
+definitions for the amortized inference approach to particle reconstruction originally
+introduced by Alex Levy in the drgnai package.
+
+"""
 import os
 import pickle
 from collections import OrderedDict
 import numpy as np
 from typing import Any
 import time
+from datetime import datetime as dt
 
 import torch
 from torch import nn
@@ -845,7 +853,14 @@ class AmortizedInferenceTrainer(ModelTrainer):
         else:
             self.run_times["to_cpu"].append(0.0)
 
+        # logging
         self.end_time = time.time()
+        all_losses["total"] = total_loss
+        for loss_k, loss_val in all_losses.items():
+            if loss_k in self.accum_losses:
+                self.accum_losses[loss_k] += loss_val * len(batch["indices"])
+            else:
+                self.accum_losses[loss_k] = loss_val * len(batch["indices"])
 
     def detach_latent_variables(self, latent_variables_dict):
         rot_pred = latent_variables_dict["R"].detach().cpu().numpy()
@@ -1023,7 +1038,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
 
         return total_loss, all_losses
 
-    def make_epoch_summary(self):
+    def save_epoch_data(self):
         summary.make_img_summary(
             self.writer,
             self.in_dict_last,
@@ -1118,7 +1133,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
 
         return pca
 
-    def make_batch_summary(self) -> None:
+    def print_batch_summary(self) -> None:
         self.logger.info(
             f"# [Train Epoch: {self.current_epoch}/{self.num_epochs - 1}] "
             f"[{self.epoch_images_seen}"

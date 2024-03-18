@@ -371,6 +371,7 @@ class DataShuffler:
             self.buffer_size,
             self.batch_size,
         )  # FIXME
+
         self.batch_capacity = self.buffer_size // self.batch_size
         assert self.buffer_size <= len(self.dataset), (
             self.buffer_size,

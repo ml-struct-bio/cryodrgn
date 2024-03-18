@@ -299,22 +299,6 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                 device=self.device,
             )
 
-    def end_epoch(self) -> None:
-        eq_log = (
-            "equivariance = {:.4f}, ".format(self.accum_losses["eq"] / self.image_count)
-            if self.configs.equivariance
-            else ""
-        )
-        avg_gen_loss = self.accum_losses["gen"] / self.image_count
-        kld_loss = self.accum_losses["kld"] / self.image_count
-        total_loss = self.accum_losses["total"] / self.image_count
-        self.logger.info(
-            f"# =====> Epoch: {self.current_epoch} "
-            f"Average gen loss = {avg_gen_loss:.4}, KLD = {kld_loss:.4f},"
-            f" {eq_log}total loss = {total_loss:.4f}; "
-            f"Finished in {dt.now() - self.epoch_start_time}"
-        )
-
     def train_batch(self, batch: dict[str, torch.Tensor]) -> None:
         y = batch["y"]
         ind = batch["indices"]
@@ -421,7 +405,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
 
             if equivariance_tuple is not None:
                 lamb, equivariance_loss = equivariance_tuple
-                losses["eq_loss"] = equivariance_loss(y, z_mu)
+                losses["eq"] = equivariance_loss(y, z_mu)
         else:
             z_mu = z_logvar = z = None
 
@@ -510,8 +494,8 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                 losses["total"] *= self.configs.beta_control
 
             losses["total"] += losses["gen"]
-            if lamb is not None and "eq_loss" in losses:
-                losses["total"] += lamb * losses["eq_loss"]
+            if lamb is not None and "eq" in losses:
+                losses["total"] += lamb * losses["eq"]
         else:
             losses["total"] = losses["gen"]
 
@@ -539,18 +523,18 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
             else:
                 self.accum_losses[loss_k] = loss_val.item() * len(ind)
 
-    def make_batch_summary(self):
+    def print_batch_summary(self):
         eq_log = ""
         if self.equivariance_lambda is not None:
             eq_log = (
-                f"equivariance={self.accum_losses['eq_loss']:.4f}, "
+                f"equivariance={self.accum_losses['eq']:.4f}, "
                 f"lambda={self.equivariance_lambda:.4f}, "
             )
 
         self.logger.info(
             f"# [Train Epoch: {self.current_epoch}/{self.configs.num_epochs}] "
             f"[{self.epoch_images_seen}/{self.image_count} images] "
-            f"gen loss={self.accum_losses['gen']:.4f}, "
+            f"gen loss={self.accum_losses['gen']:.6f}, "
             f"kld={self.accum_losses['kld']:.4f}, beta={self.beta:.4f}, "
             f"{eq_log}loss={self.accum_losses['total']:.4f}"
         )
@@ -604,7 +588,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
         self.volume_optimizer.step()
         self.accum_losses["total"] = loss.item()
 
-    def make_epoch_summary(self):
+    def save_epoch_data(self):
         """Save model weights, latent encoding z, and decoder volumes"""
         out_mrc = os.path.join(self.outdir, f"reconstruct.{self.epoch_lbl}.mrc")
         out_weights = os.path.join(self.outdir, f"weights.{self.epoch_lbl}.pkl")

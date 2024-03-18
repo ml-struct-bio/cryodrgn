@@ -135,6 +135,7 @@ class BaseTrainer(ABC):
     outdir (str):    Path to where experiment output is stored.
 
     """
+
     config_cls = BaseConfigurations
 
     @classmethod
@@ -373,6 +374,7 @@ class ModelTrainer(BaseTrainer, ABC):
     use_cuda (bool): Whether we are using CUDA GPUs (or otherwise CPUs).
 
     """
+
     config_cls = ModelConfigurations
 
     # options for optimizers to use
@@ -622,6 +624,7 @@ class ModelTrainer(BaseTrainer, ABC):
         self.epoch_images_seen = None
         self.conf_search_particles = None
         self.beta = None
+        self.epoch_start_time = None
 
         if self.configs.load_poses:
             rot, trans = cryodrgn.utils.load_pkl(self.configs.load_poses)
@@ -688,16 +691,17 @@ class ModelTrainer(BaseTrainer, ABC):
 
                 # scalar summary
                 if self.total_images_seen % self.configs.log_interval < len_y:
-                    self.make_batch_summary()
+                    self.print_batch_summary()
 
             self.end_epoch()
+            self.print_epoch_summary()
 
             if self.configs.verbose_time:
                 torch.cuda.synchronize()
 
             # image and pose summary
             if will_make_checkpoint:
-                self.make_epoch_summary()
+                self.save_epoch_data()
 
             self.current_epoch += 1
 
@@ -732,11 +736,12 @@ class ModelTrainer(BaseTrainer, ABC):
         self.configs: ModelConfigurations
         self.logger.info("Will make a full summary at the end of this epoch")
         self.logger.info(f"Will pretrain on {self.configs.pretrain} particles")
+        self.epoch_start_time = dt.now()
 
         particles_seen = 0
         while particles_seen < self.n_particles_pretrain:
             for batch in self.data_iterator:
-                len_y = len(batch['indices'])
+                len_y = len(batch["indices"])
                 particles_seen += len_y
 
                 self.pretrain_batch(batch)
@@ -762,7 +767,8 @@ class ModelTrainer(BaseTrainer, ABC):
                 weight_decay=self.configs.weight_decay,
             )
 
-        self.make_epoch_summary()
+        self.print_epoch_summary()
+        self.save_epoch_data()
 
     def begin_epoch(self) -> None:
         pass
@@ -778,11 +784,45 @@ class ModelTrainer(BaseTrainer, ABC):
         self.train_batch(batch)
 
     @abstractmethod
-    def make_epoch_summary(self):
+    def save_epoch_data(self) -> None:
         pass
 
-    def make_batch_summary(self):
+    def print_batch_summary(self) -> None:
+        """Create a summary at the end of a training batch and print it to the log."""
         raise NotImplementedError
+
+    def print_epoch_summary(self) -> None:
+        """Create a summary at the end of a training epoch and print it to the log."""
+        epoch_lbl = f"[{self.current_epoch}/{self.configs.num_epochs}]"
+
+        if self.in_pose_search_step:
+            epoch_lbl += " <pretraining>"
+        elif self.in_pose_search_step:
+            epoch_lbl += " <pose search>"
+        else:
+            epoch_lbl += " <volume inference>"
+
+        avg_losses = {
+            loss_k: (
+                loss_val / self.image_count
+                if loss_k in {"total", "gen", "kld"}
+                else loss_val
+            )
+            for loss_k, loss_val in self.accum_losses.items()
+        }
+        loss_str = ", ".join(
+            [
+                f"{loss_k} loss = {loss_val:.4g}"
+                for loss_k, loss_val in avg_losses.items()
+                if loss_k != "total"
+            ]
+        )
+        self.logger.info(
+            f"===> Train Epoch: {epoch_lbl}\n"
+            f"\t\t\t\t\tfinished in {dt.now() - self.epoch_start_time};\n"
+            f"\t\t\t\t\ttotal loss = {avg_losses['total']:.6g}\n"
+            f"\t\t\t\t\t{loss_str}"
+        )
 
     @property
     def in_pose_search_step(self) -> bool:

@@ -7,6 +7,7 @@ import sys
 import pickle
 from collections import OrderedDict
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field, fields, MISSING, asdict
 from typing import Any
 from typing_extensions import Self
 import yaml
@@ -29,93 +30,69 @@ except ImportError:
     pass
 
 
+@dataclass
 class BaseConfigurations(ABC):
     """Base class for sets of model configuration parameters."""
 
     # a parameter belongs to this set if and only if it has a default value
     # defined in these variables, ordering makes e.g. printing easier for user
-    __slots__ = ("outdir", "verbose", "seed")
-    default_values = OrderedDict(
-        {"outdir": os.getcwd(), "verbose": 0, "seed": np.random.randint(0, 10000)}
-    )
-    quick_config = OrderedDict()
+    trainer_cls: str = "BaseTrainer"
+    outdir: str = os.getcwd()
+    verbose: int = 0
+    seed: int = np.random.randint(0, 10000)
+    quick_config: OrderedDict = field(default_factory=OrderedDict)
+    test_installation: bool = False
 
-    def __init__(self, config_vals: dict[str, Any]) -> None:
-        if "test_installation" in config_vals and config_vals["test_installation"]:
+    def __post_init__(self) -> None:
+        for this_field in fields(self):
+            assert (
+                this_field.name == "quick_config" or this_field.default is not MISSING
+            ), (
+                f"`{self.__class__.__name__}` class has no default value defined "
+                f"for parameter `{this_field.name}`"
+            )
+
+        if self.test_installation:
             print("Installation was successful!")
             sys.exit()
 
-        if "verbose" in config_vals:
-            if not isinstance(config_vals["verbose"], int):
-                raise ValueError(
-                    f"Given verbosity `{config_vals['verbose']}` is not an integer!"
-                )
-            if config_vals["verbose"] < 0:
-                raise ValueError(
-                    f"Given verbosity `{config_vals['verbose']}` is not positive!"
-                )
-
-        if "seed" in config_vals and not isinstance(config_vals["seed"], int):
+        if not isinstance(self.verbose, int) or self.verbose < 0:
             raise ValueError(
-                "Configuration `seed` must be given as an integer, "
-                f"given `{config_vals['seed']}` instead!"
+                f"Given verbosity `{self.verbose}` is not a positive integer!"
             )
 
-        if "outdir" in config_vals and config_vals["outdir"] is not None:
-            config_vals["outdir"] = os.path.abspath(config_vals["outdir"])
+        if not isinstance(self.seed, int):
+            raise ValueError(
+                "Configuration `seed` must be given as an integer, "
+                f"given `{self.seed}` instead!"
+            )
+
+        if self.outdir:
+            self.outdir = os.path.abspath(self.outdir)
 
         # process the quick_config parameter
-        if "quick_config" in config_vals and config_vals["quick_config"] is not None:
-            for key, value in config_vals["quick_config"].items():
-                if key not in self.quick_config:
+        for key, value in self.quick_config.items():
+            if key not in self.quick_config:
+                raise ValueError("Unrecognized parameter " f"shortcut field `{key}`!")
+
+            if value not in self.quick_config[key]:
+                raise ValueError(
+                    "Unrecognized parameter shortcut label "
+                    f"`{value}` for field `{key}`!"
+                )
+
+            for _key, _value in self.quick_config[key][value].items():
+                if _key not in self.defaults:
                     raise ValueError(
-                        "Unrecognized parameter " f"shortcut field `{key}`!"
+                        "Unrecognized configuration " f"parameter `{key}`!"
                     )
 
-                if value not in self.quick_config[key]:
-                    raise ValueError(
-                        "Unrecognized parameter shortcut label "
-                        f"`{value}` for field `{key}`!"
-                    )
-
-                for _key, _value in self.quick_config[key][value].items():
-                    if _key not in self.defaults:
-                        raise ValueError(
-                            "Unrecognized configuration " f"parameter `{key}`!"
-                        )
-
-                    # given parameters have priority
-                    if _key not in config_vals:
-                        config_vals[_key] = _value
-
-        for key in set(config_vals) - {"quick_config"}:
-            if key not in self.defaults:
-                raise ValueError(f"Unrecognized configuration parameter `{key}`!")
-
-        # an attribute is created for every entry in the defaults dictionary
-        for key, value in self.defaults.items():
-            if key in config_vals:
-                setattr(self, key, config_vals[key])
-
-            # if not in given parameters, use defaults
-            else:
-                setattr(self, key, value)
-
-    @classmethod
-    @property
-    def defaults(cls) -> dict[str, Any]:
-        """The default values used for these configuration parameters."""
-        def_values = cls.default_values
-
-        # inherit defaults from parent configuration classes if they are present
-        for c in cls.__bases__:
-            if hasattr(c, "defaults"):
-                def_values.update(c.defaults)
-
-        return def_values
+                # given parameters have priority
+                if _key not in config_vals:
+                    config_vals[_key] = _value
 
     def __iter__(self):
-        return iter((par, getattr(self, par)) for par in self.defaults)
+        return iter(asdict(self).items())
 
     def __str__(self):
         return "\n".join([f"{par}{str(val):>20}" for par, val in self])
@@ -124,7 +101,7 @@ class BaseConfigurations(ABC):
         """Saving configurations to file using the original order."""
 
         with open(fl, "w") as f:
-            yaml.dump(dict(self), f, default_flow_style=False, sort_keys=False)
+            yaml.dump(asdict(self), f, default_flow_style=False, sort_keys=False)
 
 
 class BaseTrainer(ABC):
@@ -138,11 +115,10 @@ class BaseTrainer(ABC):
 
     config_cls = BaseConfigurations
 
-    @classmethod
     @property
-    def parameters(cls) -> list:
+    def parameters(self) -> list:
         """The user-set parameters governing the behaviour of this model."""
-        return list(cls.config_cls.defaults.keys())
+        return list(asdict(self.config_cls()).keys())
 
     @classmethod
     def parse_args(cls, args: argparse.Namespace) -> Self:
@@ -162,7 +138,7 @@ class BaseTrainer(ABC):
         if "load" in configs and configs["load"] == "latest":
             configs = self.get_latest_configs()
 
-        self.configs = self.config_cls(configs)
+        self.configs = self.config_cls(**configs)
         self.outdir = self.configs.outdir
         self.verbose = self.configs.verbose
         np.random.seed(self.configs.seed)
@@ -190,130 +166,69 @@ class BaseTrainer(ABC):
         self.logger.info(str(configs))
 
 
+@dataclass
 class ModelConfigurations(BaseConfigurations):
 
-    __slots__ = (
-        "model",
-        "particles",
-        "ctf",
-        "pose",
-        "dataset",
-        "datadir",
-        "ind",
-        "labels",
-        "log_interval",
-        "load",
-        "load_poses",
-        "initial_conf",
-        "checkpoint",
-        "z_dim",
-        "use_gt_poses",
-        "refine_gt_poses",
-        "use_gt_trans",
-        "invert_data",
-        "lazy",
-        "window",
-        "window_r",
-        "shuffler_size",
-        "max_threads",
-        "num_workers",
-        "tilt",
-        "tilt_deg",
-        "num_epochs",
-        "batch_size",
-        "weight_decay",
-        "learning_rate",
-        "pose_learning_rate",
-        "lattice_extent",
-        "l_start",
-        "l_end",
-        "data_norm",
-        "multigpu",
-        "pretrain",
-        "t_extent",
-        "t_ngrid",
-        "t_xshift",
-        "t_yshift",
-        "hidden_layers",
-        "hidden_dim",
-        "pe_type",
-        "pe_dim",
-        "volume_domain",
-        "activation",
-        "feat_sigma",
-        "base_healpy",
-        "subtomo_averaging",
-        "volume_optim_type",
-        "use_real",
-        "no_trans",
-        "amp",
-        "reset_optim_after_pretrain",
-        "pose_sgd_emb_type",
-        "verbose_time",
-    )
-    default_values = OrderedDict(
-        {
-            "model": "amort",
-            "particles": None,
-            "ctf": None,
-            "pose": None,
-            "dataset": None,
-            "datadir": None,
-            "ind": None,
-            "labels": None,
-            "log_interval": 1000,
-            "load": None,
-            "load_poses": None,
-            "checkpoint": 1,
-            "z_dim": None,
-            "use_gt_poses": False,
-            "refine_gt_poses": False,
-            "use_gt_trans": False,
-            "invert_data": True,
-            "lazy": False,
-            "window": True,
-            "window_r": 0.85,
-            "shuffler_size": 0,
-            "max_threads": 16,
-            "num_workers": 1,
-            "tilt": None,
-            "tilt_deg": 45,
-            "num_epochs": 30,
-            "batch_size": 8,
-            "weight_decay": 0,
-            "learning_rate": 1e-4,
-            "pose_learning_rate": None,
-            "lattice_extent": 0.5,
-            "l_start": 12,
-            "l_end": 32,
-            "data_norm": None,
-            "multigpu": False,
-            "pretrain": 10000,
-            "t_extent": 10,
-            "t_ngrid": 7,
-            "t_xshift": 0,
-            "t_yshift": 0,
-            "hidden_layers": 3,
-            "hidden_dim": 256,
-            "pe_type": "gaussian",
-            "pe_dim": 64,
-            "volume_domain": None,
-            "activation": "relu",
-            "feat_sigma": 0.5,
-            "base_healpy": 2,
-            "subtomo_averaging": False,
-            "volume_optim_type": "adam",
-            "use_real": False,
-            "no_trans": False,
-            "amp": True,
-            "reset_optim_after_pretrain": False,
-            "pose_sgd_emb_type": "quat",
-            "verbose_time": False,
-        }
-    )
+    trainer_cls: str = "ModelTrainer"
+    model: str = "amort"
+    particles: str = None
+    ctf: str = (None,)
+    pose: str = None
+    dataset: str = None
+    datadir: str = None
+    ind: str = None
+    labels: str = None
+    log_interval: int = 1000
+    checkpoint: int = 5
+    load: str = None
+    load_poses: str = None
+    z_dim: int = None
+    use_gt_poses: bool = False
+    refine_gt_poses: bool = False
+    use_gt_trans: bool = False
+    invert_data: bool = True
+    lazy: bool = False
+    window: bool = True
+    window_r: float = 0.85
+    shuffler_size: int = 0
+    max_threads: int = 16
+    num_workers: int = 1
+    tilt: bool = None
+    tilt_deg: int = 45
+    num_epochs: int = 30
+    batch_size: int = 8
+    weight_decay: int = 0
+    learning_rate: float = 1e-4
+    pose_learning_rate: bool = None
+    lattice_extent: float = 0.5
+    l_start: int = 12
+    l_end: int = 32
+    data_norm: float = None
+    multigpu: bool = False
+    pretrain: int = 10000
+    t_extent: int = 10
+    t_ngrid: int = 7
+    t_xshift: int = 0
+    t_yshift: int = 0
+    hidden_layers: int = 3
+    hidden_dim: int = 256
+    pe_type: str = "gaussian"
+    pe_dim: int = 64
+    volume_domain: str = None
+    activation: str = "relu"
+    feat_sigma: float = 0.5
+    base_healpy: int = 2
+    subtomo_averaging: bool = False
+    volume_optim_type: str = "adam"
+    use_real: bool = False
+    no_trans: bool = False
+    amp: bool = True
+    reset_optim_after_pretrain: bool = False
+    pose_sgd_emb_type: str = "quat"
+    verbose_time: bool = False
 
-    def __init__(self, config_vals: dict[str, Any]) -> None:
-        super().__init__(config_vals)
+    def __post_init__(self) -> None:
+        super().__post_init__()
 
         if self.model not in {"hps", "amort"}:
             raise ValueError(
@@ -375,6 +290,7 @@ class ModelTrainer(BaseTrainer, ABC):
 
     """
 
+    configs: ModelConfigurations
     config_cls = ModelConfigurations
 
     # options for optimizers to use
@@ -386,7 +302,6 @@ class ModelTrainer(BaseTrainer, ABC):
 
     def __init__(self, configs: dict[str, Any]) -> None:
         super().__init__(configs)
-        self.configs: ModelConfigurations
 
         # set the device
         torch.manual_seed(self.configs.seed)
@@ -620,6 +535,7 @@ class ModelTrainer(BaseTrainer, ABC):
         self.current_epoch = None
         self.accum_losses = None
         self.total_batch_count = None
+        self.epoch_losses = None
         self.total_images_seen = None
         self.epoch_images_seen = None
         self.conf_search_particles = None
@@ -651,14 +567,11 @@ class ModelTrainer(BaseTrainer, ABC):
             else None
         )
 
-        # save configuration
-        self.configs.write(os.path.join(self.outdir, "train-configs.yaml"))
-
     def train(self) -> None:
-        self.configs: ModelConfigurations
+        self.save_configs()
         train_start_time = dt.now()
-        self.accum_losses = dict()
 
+        self.accum_losses = dict()
         if self.do_pretrain:
             self.current_epoch = 0
             self.pretrain()
@@ -666,6 +579,7 @@ class ModelTrainer(BaseTrainer, ABC):
         self.logger.info("--- Training Starts Now ---")
         self.current_epoch = self.start_epoch
         self.total_batch_count = 0
+        self.epoch_batch_count = 0
         self.total_images_seen = 0
         self.conf_search_particles = 0
 
@@ -681,7 +595,7 @@ class ModelTrainer(BaseTrainer, ABC):
 
             self.begin_epoch()
 
-            for self.batch_idx, batch in enumerate(self.data_iterator):
+            for batch in self.data_iterator:
                 self.total_batch_count += 1
                 len_y = len(batch["indices"])
                 self.total_images_seen += len_y
@@ -733,7 +647,6 @@ class ModelTrainer(BaseTrainer, ABC):
 
     def pretrain(self) -> None:
         """Iterate the model before main learning epochs for better initializations."""
-        self.configs: ModelConfigurations
         self.logger.info("Will make a full summary at the end of this epoch")
         self.logger.info(f"Will pretrain on {self.configs.pretrain} particles")
         self.epoch_start_time = dt.now()
@@ -770,6 +683,79 @@ class ModelTrainer(BaseTrainer, ABC):
         self.print_epoch_summary()
         self.save_epoch_data()
 
+    def get_configs(self) -> dict[str, Any]:
+        """Retrieves all given and inferred configurations for downstream use."""
+
+        dataset_args = dict(
+            particles=self.configs.particles,
+            norm=self.configs.data_norm,
+            invert_data=self.configs.invert_data,
+            ind=self.configs.ind,
+            keepreal=self.configs.use_real,
+            window=self.configs.window,
+            window_r=self.configs.window_r,
+            datadir=self.configs.datadir,
+            ctf=self.configs.ctf,
+        )
+        if self.configs.tilt is not None:
+            dataset_args["particles_tilt"] = self.configs.tilt
+
+        lattice_args = dict(
+            D=self.lattice.D,
+            extent=self.lattice.extent,
+            ignore_DC=self.lattice.ignore_DC,
+        )
+
+        model_args = dict(
+            z_dim=self.configs.z_dim,
+            pe_type=self.configs.pe_type,
+            feat_sigma=self.configs.feat_sigma,
+            pe_dim=self.configs.pe_dim,
+            domain=self.configs.volume_domain,
+            activation=self.configs.activation,
+        )
+
+        return dict(
+            outdir=self.outdir,
+            dataset_args=dataset_args,
+            lattice_args=lattice_args,
+            model_args=model_args,
+        )
+
+    def save_configs(self) -> None:
+        """Saves all given and inferred configurations to file."""
+        configs = self.get_configs()
+
+        if "version" not in configs:
+            configs["version"] = cryodrgn.__version__
+        if "time" not in configs:
+            configs["time"] = dt.now()
+
+        with open(os.path.join(self.outdir, "train-configs.yaml"), "w") as f:
+            yaml.dump(configs, f, default_flow_style=False, sort_keys=False)
+
+    @classmethod
+    def load_from_config(cls, config_file: str) -> Self:
+        """Retrieves all configurations that have been saved to file."""
+        if os.path.exists(config_file):
+            with open(config_file, "r") as f:
+                configs = yaml.safe_load(f)
+        else:
+            raise FileNotFoundError(
+                f"Cannot find training configurations file `{config_file}` "
+                f"— has this model been trained yet?"
+            )
+
+        cfg_dict = {
+            sub_k: sub_v
+            for k, v in configs.items()
+            for sub_k, sub_v in v.items()
+            if isinstance(v, dict)
+        }
+        cfg_dict.update({k: v for k, v in configs.items() if not isinstance(v, dict)})
+
+        return ModelTrainer(cfg_dict)
+
     def begin_epoch(self) -> None:
         pass
 
@@ -793,6 +779,7 @@ class ModelTrainer(BaseTrainer, ABC):
 
     def print_epoch_summary(self) -> None:
         """Create a summary at the end of a training epoch and print it to the log."""
+        self.configs: ModelConfigurations
         epoch_lbl = f"[{self.current_epoch}/{self.configs.num_epochs}]"
 
         if self.in_pose_search_step:
@@ -818,7 +805,7 @@ class ModelTrainer(BaseTrainer, ABC):
             ]
         )
         self.logger.info(
-            f"===> Train Epoch: {epoch_lbl}\n"
+            f"===> Training Epoch {epoch_lbl}\n"
             f"\t\t\t\t\tfinished in {dt.now() - self.epoch_start_time};\n"
             f"\t\t\t\t\ttotal loss = {avg_losses['total']:.6g}\n"
             f"\t\t\t\t\t{loss_str}"
@@ -829,10 +816,12 @@ class ModelTrainer(BaseTrainer, ABC):
         """Whether we are in a pose search epoch of the training stage."""
         return False
 
+    @property
     def in_pretraining(self) -> bool:
         """Whether we are in a pretraining epoch of the training stage."""
         return self.current_epoch is not None and self.current_epoch == 0
 
     @property
     def epoch_lbl(self) -> str:
+        """A human-readable label for the current training epoch."""
         return str(self.current_epoch)

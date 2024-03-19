@@ -9,9 +9,9 @@ import os
 import pickle
 from collections import OrderedDict
 import numpy as np
+from dataclasses import dataclass
 from typing import Any
 import time
-from datetime import datetime as dt
 
 import torch
 from torch import nn
@@ -28,103 +28,57 @@ from cryodrgn.masking import CircularMask, FrequencyMarchingMask
 from cryodrgn.trainers._base import ModelTrainer, ModelConfigurations
 
 
+@dataclass
 class AmortizedInferenceConfigurations(ModelConfigurations):
 
-    __slots__ = (
-        "batch_size_known_poses",
-        "batch_size_hps",
-        "batch_size_sgd",
-        "pose_table_optimizer_type",
-        "conf_table_optimizer_type",
-        "conf_encoder_optimizer_type",
-        "lr_pose_table",
-        "lr_conf_table",
-        "lr_conf_encoder",
-        "n_imgs_pose_search",
-        "epochs_sgd",
-        "pose_only_phase",
-        "output_mask",
-        "add_one_frequency_every",
-        "n_frequencies_per_epoch",
-        "max_freq",
-        "l_start_fm",
-        "beta_conf",
-        "trans_l1_regularizer",
-        "l2_smoothness_regularizer",
-        # conformations
-        "variational_het",
-        "std_z_init",
-        "use_conf_encoder",
-        "depth_cnn",
-        "channels_cnn",
-        "kernel_size_cnn",
-        "resolution_encoder",
-        "initial_conf",
-        # hypervolume
-        "explicit_volume",
-        "pe_type_conf",
-        # pre-training
-        "pretrain_with_gt_poses",
-        # pose search
-        "n_iter",
-        "n_tilts_pose_search",
-        "average_over_tilts",
-        "no_trans_search_at_pose_search",
-        "n_kept_poses",
-        # subtomogram averaging
-        "palette_type",
-    )
-    default_values = OrderedDict(
-        {
-            # data loading
-            "batch_size_known_poses": 32,
-            "batch_size_hps": 8,
-            "batch_size_sgd": 256,
-            # optimizers
-            "pose_table_optimizer_type": "adam",
-            "conf_table_optimizer_type": "adam",
-            "conf_encoder_optimizer_type": "adam",
-            "lr_pose_table": 1.0e-3,
-            "lr_conf_table": 1.0e-2,
-            "lr_conf_encoder": 1.0e-4,
-            # scheduling
-            "n_imgs_pose_search": 500000,
-            "epochs_sgd": 100,
-            "pose_only_phase": 0,
-            # masking
-            "output_mask": "circ",
-            "add_one_frequency_every": 100000,
-            "n_frequencies_per_epoch": 10,
-            "max_freq": None,
-            "l_start_fm": 12,
-            # loss
-            "beta_conf": 0.0,
-            "trans_l1_regularizer": 0.0,
-            "l2_smoothness_regularizer": 0.0,
-            # conformations
-            "variational_het": False,
-            "std_z_init": 0.1,
-            "use_conf_encoder": False,
-            "depth_cnn": 5,
-            "channels_cnn": 32,
-            "kernel_size_cnn": 3,
-            "resolution_encoder": None,
-            "initial_conf": None,
-            # hypervolume
-            "explicit_volume": False,
-            "pe_type_conf": None,
-            # pre-training
-            "pretrain_with_gt_poses": False,
-            # pose search
-            "n_iter": 4,
-            "n_tilts_pose_search": 11,
-            "average_over_tilts": False,
-            "no_trans_search_at_pose_search": False,
-            "n_kept_poses": 8,
-            # others
-            "palette_type": None,
-        }
-    )
+    # data loading
+    batch_size_known_poses: int = 32
+    batch_size_hps: int = 8
+    batch_size_sgd: int = 256
+    # optimizers
+    pose_table_optim_type: str = "adam"
+    conf_table_optim_type: str = "adam"
+    conf_encoder_optim_type: str = "adam"
+    lr_pose_table: float = 1.0e-3
+    lr_conf_table: float = 1.0e-2
+    lr_conf_encoder: float = 1.0e-4
+    # scheduling
+    n_imgs_pose_search: int = 500000
+    epochs_sgd: int = 100
+    pose_only_phase: int = 0
+    # masking
+    output_mask: str = "circ"
+    add_one_frequency_every: int = 100000
+    n_frequencies_per_epoch: int = 10
+    max_freq: int = None
+    l_start_fm: int = 1
+    # loss
+    beta_conf: float = 0.0
+    trans_l1_regularizer: float = 0.0
+    l2_smoothness_regularizer: float = 0.0
+    # conformations
+    variational_het: bool = False
+    std_z_init: float = 0.1
+    use_conf_encoder: bool = False
+    depth_cnn: int = 5
+    channels_cnn: int = 32
+    kernel_size_cnn: int = 3
+    resolution_encoder: str = None
+    initial_conf: str = None
+    # hypervolume
+    volume_domain: str = "hartley"
+    explicit_volume: bool = False
+    pe_type_conf: str = None
+    # pre-training
+    pretrain_with_gt_poses: bool = False
+    # pose search
+    n_iter: int = 4
+    n_tilts_pose_search: int = 11
+    average_over_tilts: bool = False
+    no_trans_search_at_pose_search: bool = False
+    n_kept_poses: int = 8
+    # others
+    palette_type: str = None
 
     quick_config = OrderedDict(
         {
@@ -157,161 +111,122 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
         }
     )
 
-    def __init__(self, config_vals: dict[str, Any]) -> None:
-        if "batch_size" in config_vals and "batch_size_sgd" not in config_vals:
-            config_vals["batch_size_sgd"] = config_vals["batch_size"]
+    def __post_init__(self) -> None:
+        super().__post_init__()
 
-        super().__init__(config_vals)
-
-        if "model" in config_vals and config_vals["model"] != "amort":
+        if self.model != "amort":
             raise ValueError(
-                f"Mismatched model {config_vals['model']} "
-                "for AmortizedInferenceTrainer!"
+                f"Mismatched model {self.model} for AmortizedInferenceTrainer!"
             )
 
-        if "explicit_volume" in config_vals:
-            if config_vals["explicit_volume"] and config_vals["z_dim"] >= 1:
-                raise ValueError(
-                    "Explicit volumes do not support heterogeneous reconstruction."
-                )
+        if self.batch_size_sgd is None:
+            self.batch_size_sgd = self.batch_size
+        if self.batch_size_known_poses is None:
+            self.batch_size_known_poses = self.batch_size
+        if self.batch_size_sgd is None:
+            self.batch_size_sgd = self.batch_size
 
-        if "dataset" in config_vals:
-            if config_vals["dataset"] is None:
-                if config_vals["particles"] is None:
-                    raise ValueError(
-                        "As dataset was not specified, please " "specify particles!"
-                    )
-                if config_vals["ctf"] is None:
-                    raise ValueError("As dataset wasn't specified, please specify ctf!")
+        if self.explicit_volume and self.z_dim >= 1:
+            raise ValueError(
+                "Explicit volumes do not support heterogeneous reconstruction."
+            )
 
-        if "hypervolume_optimizer_type" in config_vals:
-            if config_vals["hypervolume_optimizer_type"] not in {"adam"}:
-                raise ValueError(
-                    "Invalid value "
-                    f"`{config_vals['hypervolume_optimizer_type']}` "
-                    "for hypervolume_optimizer_type!"
-                )
+        if self.dataset is None:
+            if self.particles is None:
+                raise ValueError("Dataset wasn't specified: please specify particles!")
+            if self.ctf is None:
+                raise ValueError("Dataset wasn't specified: please specify ctf!")
 
-        if "pose_table_optimizer_type" in config_vals:
-            if config_vals["pose_table_optimizer_type"] not in {"adam", "lbfgs"}:
-                raise ValueError(
-                    "Invalid value "
-                    f"`{config_vals['pose_table_optimizer_type']}` "
-                    "for pose_table_optimizer_type!"
-                )
+        if self.volume_optim_type not in {"adam"}:
+            raise ValueError(
+                f"Invalid value `{self.volume_optim_type=}` "
+                f"for hypervolume optimizer type!"
+            )
 
-        if "conf_table_optimizer_type" in config_vals:
-            if config_vals["conf_table_optimizer_type"] not in {"adam", "lbfgs"}:
-                raise ValueError(
-                    "Invalid value "
-                    f"`{config_vals['conf_table_optimizer_type']}` "
-                    "for conf_table_optimizer_type!"
-                )
+        if self.pose_table_optim_type not in {"adam", "lbfgs"}:
+            raise ValueError(
+                f"Invalid value `{self.pose_table_optim_type=}` "
+                f"for pose table optimizer type!"
+            )
 
-        if "conf_encoder_optimizer_type" in config_vals:
-            if config_vals["conf_encoder_optimizer_type"] not in {"adam"}:
-                raise ValueError(
-                    "Invalid value "
-                    f"`{config_vals['conf_encoder_optimizer_type']}` "
-                    "for conf_encoder_optimizer_type!"
-                )
+        if self.conf_table_optim_type not in {"adam", "lbfgs"}:
+            raise ValueError(
+                f"Invalid value `{self.conf_table_optim_type=}` "
+                f"for conformation table optimizer type!"
+            )
 
-        if "output_mask" in config_vals:
-            if config_vals["output_mask"] not in {"circ", "frequency_marching"}:
-                raise ValueError(
-                    f"Invalid value {config_vals['output_mask']} for output_mask!"
-                )
+        if self.conf_encoder_optim_type not in {"adam"}:
+            raise ValueError(
+                f"Invalid value `{self.conf_encoder_optim_type}` "
+                "for conformation encoder optimizer type!"
+            )
 
-        if "pe_type" in config_vals and config_vals["pe_type"] not in {"gaussian"}:
-            raise ValueError(f"Invalid value {config_vals['pe_type']} for pe_type!")
+        if self.output_mask not in {"circ", "frequency_marching"}:
+            raise ValueError(f"Invalid value {self.output_mask} for output_mask!")
 
-        if "pe_type_conf" in config_vals:
-            if config_vals["pe_type_conf"] not in {None, "geom"}:
-                raise ValueError(
-                    f"Invalid value {config_vals['pe_type_conf']} for pe_type_conf!"
-                )
+        if self.pe_type not in {"gaussian"}:
+            raise ValueError(f"Invalid value {self.pe_type} for pe_type!")
 
-        if "hypervolume_domain" in config_vals:
-            if config_vals["hypervolume_domain"] not in {"hartley"}:
-                raise ValueError(
-                    f"Invalid value {config_vals['hypervolume_domain']} "
-                    "for hypervolume_domain."
-                )
+        if self.pe_type_conf not in {None, "geom"}:
+            raise ValueError(f"Invalid value {self.pe_type_conf} for pe_type_conf!")
 
-        if self.volume_domain is None:
-            self.volume_domain = "hartley"
+        if self.volume_domain not in {"hartley"}:
+            raise ValueError(
+                f"Invalid value {self.volume_domain} "
+                "for hypervolume_domain."
+            )
 
-        if "n_imgs_pose_search" in config_vals:
-            if config_vals["n_imgs_pose_search"] < 0:
-                raise ValueError("n_imgs_pose_search must be greater than 0!")
+        if self.n_imgs_pose_search < 0:
+            raise ValueError("n_imgs_pose_search must be greater than 0!")
 
-        if "use_conf_encoder" in config_vals and "initial_conf" in config_vals:
-            if config_vals["use_conf_encoder"] and config_vals["initial_conf"]:
-                raise ValueError(
-                    "Conformations cannot be initialized when also using an encoder!"
-                )
+        if self.use_conf_encoder and self.initial_conf:
+            raise ValueError(
+                "Conformations cannot be initialized when also using an encoder!"
+            )
 
-        if "use_gt_trans" in config_vals and "pose" in config_vals:
-            if config_vals["use_gt_trans"] and config_vals["pose"] is None:
-                raise ValueError(
-                    "Poses must be specified to use ground-truth translations!"
-                )
-
-        if "refine_gt_poses" in config_vals and config_vals["refine_gt_poses"]:
-            config_vals["n_imgs_pose_search"] = 0
-            if "pose" not in config_vals or config_vals["pose"] is None:
+        if self.use_gt_trans and self.pose is None:
+            raise ValueError(
+                "Poses must be specified to use ground-truth translations!"
+            )
+        if self.refine_gt_poses:
+            self.n_imgs_pose_search = 0
+            if self.pose is None:
                 raise ValueError("Initial poses must be specified to be refined!")
 
-        if "subtomo_averaging" in config_vals:
-            if config_vals["subtomo_averaging"]:
-                # TODO: Implement conformation encoder for subtomogram averaging.
-                if "use_conf_encoder" in config_vals:
-                    if config_vals["use_conf_encoder"]:
-                        raise ValueError(
-                            "Conformation encoder is not implemented "
-                            "for subtomogram averaging!"
-                        )
+        if self.subtomo_averaging:
+            # TODO: Implement conformation encoder for subtomogram averaging.
+            if self.use_conf_encoder:
+                raise ValueError(
+                    "Conformation encoder is not implemented "
+                    "for subtomogram averaging!"
+                )
 
-                # TODO: Implement translation search for subtomogram averaging.
-                if not (
-                    "use_gt_poses" in config_vals
-                    and config_vals["use_gt_poses"]
-                    or "use_gt_trans" in config_vals
-                    and config_vals["use_gt_trans"]
-                    or "t_extent" in config_vals
-                    and config_vals["t_extent"] == 0.0
-                ):
-                    raise ValueError(
-                        "Translation search is not implemented "
-                        "for subtomogram averaging!"
-                    )
+            # TODO: Implement translation search for subtomogram averaging.
+            if not (
+                    self.use_gt_poses and (self.use_gt_trans or self.t_extent == 0.0)
+            ):
+                raise ValueError(
+                    "Translation search is not implemented for subtomogram averaging!"
+                )
 
-                if (
-                    "average_over_tilts" in config_vals
-                    and config_vals["average_over_tilts"]
-                    and "n_tilts_pose_search" in config_vals
-                    and config_vals["n_tilts_pose_search"] % 2 == 0
-                ):
-                    raise ValueError(
-                        "`n_tilts_pose_search` must be odd to use `average_over_tilts`!"
-                    )
+        if self.average_over_tilts and self.n_tilts_pose_search % 2 == 0:
+            raise ValueError(
+                "`n_tilts_pose_search` must be odd to use `average_over_tilts`!"
+            )
 
-                if "n_tilts_pose_search" in config_vals and "n_tilts" in config_vals:
-                    if config_vals["n_tilts_pose_search"] > config_vals["n_tilts"]:
-                        raise ValueError(
-                            "`n_tilts_pose_search` must be smaller than `n_tilts`!"
-                        )
+        if self.n_tilts_pose_search > self.n_tilts:
+            raise ValueError("`n_tilts_pose_search` must be smaller than `n_tilts`!")
 
-        if "use_gt_poses" in config_vals and config_vals["use_gt_poses"]:
+        if self.use_gt_poses:
             # "poses" include translations
-            config_vals["use_gt_trans"] = True
-            if "pose" in config_vals and config_vals["pose"] is None:
+            self.use_gt_trans = True
+            if self.pose is None:
                 raise ValueError("Ground truth poses must be specified!")
 
-        if "no_trans" in config_vals and config_vals["no_trans"]:
-            config_vals["t_extent"] = 0.0
-        if "t_extent" in config_vals and config_vals["t_extent"] == 0.0:
-            config_vals["t_n_grid"] = 1
+        if self.no_trans:
+            self.t_extent = 0.0
+        if self.t_extent == 0.0:
+            self.t_n_grid = 1
 
 
 class AmortizedInferenceTrainer(ModelTrainer):
@@ -344,7 +259,9 @@ class AmortizedInferenceTrainer(ModelTrainer):
         "to_cpu",
     ]
 
+    configs: AmortizedInferenceConfigurations
     config_cls = AmortizedInferenceConfigurations
+    model_lbl = "amort"
 
     def make_volume_model(self) -> nn.Module:
         self.configs: AmortizedInferenceConfigurations
@@ -483,13 +400,10 @@ class AmortizedInferenceTrainer(ModelTrainer):
                 pose_table_params = [
                     {"params": list(self.model.pose_table.parameters())}
                 ]
-
                 self.optimizers["pose_table"] = self.optim_types[
-                    self.configs.pose_table_optimizer_type
+                    self.configs.pose_table_optim_type
                 ](pose_table_params, lr=self.configs.lr_pose_table)
-                self.optimizer_types[
-                    "pose_table"
-                ] = self.configs.pose_table_optimizer_type
+                self.optimizer_types["pose_table"] = self.configs.pose_table_optim_type
 
         # conformations
         if self.configs.z_dim > 0:
@@ -504,7 +418,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
                 ]
 
                 self.optimizers["conf_encoder"] = self.optim_types[
-                    self.configs.conf_encoder_optimizer_type
+                    self.configs.conf_encoder_optim_type
                 ](
                     conf_encoder_params,
                     lr=self.configs.lr_conf_encoder,
@@ -512,7 +426,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
                 )
                 self.optimizer_types[
                     "conf_encoder"
-                ] = self.configs.conf_encoder_optimizer_type
+                ] = self.configs.conf_encoder_optim_type
 
             else:
                 conf_table_params = [
@@ -520,12 +434,9 @@ class AmortizedInferenceTrainer(ModelTrainer):
                 ]
 
                 self.optimizers["conf_table"] = self.optim_types[
-                    self.configs.conf_table_optimizer_type
+                    self.configs.conf_table_optim_type
                 ](conf_table_params, lr=self.configs.lr_conf_table)
-
-                self.optimizer_types[
-                    "conf_table"
-                ] = self.configs.conf_table_optimizer_type
+                self.optimizer_types["conf_table"] = self.configs.conf_table_optim_type
 
         self.optimized_modules = []
         self.data_generators = {"hps": None, "known": None, "sgd": None}

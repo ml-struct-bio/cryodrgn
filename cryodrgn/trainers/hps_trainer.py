@@ -2,16 +2,13 @@
 
 import os
 import pickle
-from collections import OrderedDict
-from datetime import datetime as dt
+from dataclasses import dataclass
 from typing import Any, Callable
-
 import numpy as np
 import torch
 from torch import nn
 import torch.nn.functional as F
 
-import cryodrgn.config
 from cryodrgn import ctf, dataset
 from cryodrgn.models import lie_tools
 from cryodrgn.models.losses import EquivarianceLoss
@@ -21,70 +18,42 @@ from cryodrgn.models.pose_search import PoseSearch
 from cryodrgn.trainers._base import ModelTrainer, ModelConfigurations
 
 
+@dataclass
 class HierarchicalPoseSearchConfigurations(ModelConfigurations):
 
-    __slots__ = (
-        "enc_only",
-        "beta",
-        "beta_control",
-        "equivariance",
-        "equivariance_start",
-        "equivariance_stop",
-        "l_ramp_epochs",
-        "l_ramp_model",
-        "reset_model_every",
-        "reset_optim_every",
-        "reset_optim_after_pretrain",
-        "grid_niter",
-        "ps_freq",
-        "n_kept_poses",
-        "pose_model_update_freq",
-        "enc_layers",
-        "enc_dim",
-        "encode_mode",
-        "enc_mask",
-        "dec_layers",
-        "dec_dim",
-    )
-    default_values = OrderedDict(
-        {
-            "enc_only": False,
-            "beta": None,
-            "beta_control": None,
-            "equivariance": None,
-            "equivariance_start": 100000,
-            "equivariance_stop": 200000,
-            "l_ramp_epochs": 0,
-            "l_ramp_model": 0,
-            "reset_model_every": None,
-            "reset_optim_every": None,
-            "grid_niter": 4,
-            "ps_freq": 5,
-            "n_kept_poses": 8,
-            "pose_model_update_freq": None,
-            "enc_layers": None,
-            "enc_dim": None,
-            "encode_mode": "resid",
-            "enc_mask": None,
-            "dec_layers": None,
-            "dec_dim": None,
-        }
-    )
+    trainer_cls: str = "HierarchicalPoseSearchTrainer"
+    enc_only: bool = False
+    beta: float = None
+    beta_control: float = None
+    equivariance: bool = None
+    equivariance_start: int = 100000
+    equivariance_stop: int = 200000
+    l_ramp_epochs: int = 0
+    l_ramp_model: int = 0
+    reset_model_every: int = None
+    reset_optim_every: int = None
+    grid_niter: int = 4
+    ps_freq: int = 5
+    n_kept_poses: int = 8
+    pose_model_update_freq: int = None
+    enc_layers: int = None
+    enc_dim: int = None
+    encode_mode: str = "resid"
+    enc_mask: bool = None
+    dec_layers: int = None
+    dec_dim: int = None
 
-    def __init__(self, config_vals: dict[str, Any]) -> None:
-        super().__init__(config_vals)
-
-        assert (
-            config_vals["model"] == "hps"
-        ), f"Mismatched model {config_vals['model']} for HierarchicalSearchTrainer!"
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.model = "hps"
 
         if self.dataset is None:
             if self.particles is None:
                 raise ValueError(
-                    "As dataset was not specified, please " "specify particles!"
+                    "As dataset was not specified, please specify particles!"
                 )
             if self.ctf is None:
-                raise ValueError("As dataset was not specified, please " "specify ctf!")
+                raise ValueError("As dataset was not specified, please specify ctf!")
 
         if self.beta is not None:
             if not self.z_dim:
@@ -130,6 +99,7 @@ class HierarchicalPoseSearchConfigurations(ModelConfigurations):
 
 class HierarchicalPoseSearchTrainer(ModelTrainer):
 
+    configs: HierarchicalPoseSearchConfigurations
     config_cls = HierarchicalPoseSearchConfigurations
 
     @property
@@ -156,8 +126,6 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
         return enc_mask, in_dim
 
     def make_volume_model(self) -> nn.Module:
-        self.configs: HierarchicalPoseSearchConfigurations
-
         if not self.configs.z_dim:
             model = get_decoder(
                 in_dim=3,
@@ -216,7 +184,6 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
 
     def __init__(self, configs: dict[str, Any]) -> None:
         super().__init__(configs)
-        self.configs: HierarchicalPoseSearchConfigurations
 
         # set beta schedule
         if self.configs.z_dim:
@@ -333,7 +300,8 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
         # getting the poses
         rot = trans = None
         if self.pose_search and (self.current_epoch - 1) % self.configs.ps_freq != 0:
-            self.logger.info("Using previous iteration poses")
+            if self.epoch_batch_count == 0:
+                self.logger.info("Using previous iteration's learned poses...")
             rot = torch.tensor(
                 self.predicted_rots[ind_np].astype(np.float32), device=self.device
             )
@@ -523,7 +491,25 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
             else:
                 self.accum_losses[loss_k] = loss_val.item() * len(ind)
 
-    def print_batch_summary(self):
+    def get_configs(self) -> dict[str, Any]:
+        """Retrieves all given and inferred configurations for downstream use."""
+        configs = super().get_configs()
+        enc_mask = self.configs.enc_mask or self.resolution // 2
+
+        configs["model_args"].update(
+            dict(
+                qlayers=self.configs.enc_layers,
+                qdim=self.configs.enc_dim,
+                players=self.configs.dec_layers,
+                pdim=self.configs.dec_dim,
+                encode_mode=self.configs.encode_mode,
+                enc_mask=enc_mask,
+            )
+        )
+
+        return configs
+
+    def print_batch_summary(self) -> None:
         eq_log = ""
         if self.equivariance_lambda is not None:
             eq_log = (
@@ -532,8 +518,9 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
             )
 
         self.logger.info(
-            f"# [Train Epoch: {self.current_epoch}/{self.configs.num_epochs}] "
-            f"[{self.epoch_images_seen}/{self.image_count} images] "
+            f"### Epoch [{self.current_epoch}/{self.configs.num_epochs}], "
+            f"Batch [{self.epoch_batch_count}] "
+            f"({self.epoch_images_seen}/{self.image_count} images)\n"
             f"gen loss={self.accum_losses['gen']:.6f}, "
             f"kld={self.accum_losses['kld']:.4f}, beta={self.beta:.4f}, "
             f"{eq_log}loss={self.accum_losses['total']:.4f}"
@@ -593,7 +580,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
         out_mrc = os.path.join(self.outdir, f"reconstruct.{self.epoch_lbl}.mrc")
         out_weights = os.path.join(self.outdir, f"weights.{self.epoch_lbl}.pkl")
         out_poses = os.path.join(self.outdir, f"pose.{self.epoch_lbl}.pkl")
-        out_conf = os.path.join(self.outdir, f"z.{self.epoch_lbl}.pkl")
+        out_conf = os.path.join(self.outdir, f"conf.{self.epoch_lbl}.pkl")
 
         # save model weights
         torch.save(
@@ -683,39 +670,3 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                 is_in_pose_search = True
 
         return is_in_pose_search
-
-
-def save_config(args, dataset, lattice, model, out_config):
-    dataset_args = dict(
-        particles=args.particles,
-        norm=dataset.norm,
-        invert_data=args.invert_data,
-        ind=args.ind,
-        keepreal=args.use_real,
-        window=args.window,
-        window_r=args.window_r,
-        datadir=args.datadir,
-        ctf=args.ctf,
-    )
-    if args.tilt is not None:
-        dataset_args["particles_tilt"] = args.tilt
-    lattice_args = dict(D=lattice.D, extent=lattice.extent, ignore_DC=lattice.ignore_DC)
-    model_args = dict(
-        qlayers=args.qlayers,
-        qdim=args.qdim,
-        players=args.players,
-        pdim=args.pdim,
-        zdim=args.zdim,
-        encode_mode=args.encode_mode,
-        enc_mask=args.enc_mask,
-        pe_type=args.pe_type,
-        feat_sigma=args.feat_sigma,
-        pe_dim=args.pe_dim,
-        domain=args.domain,
-        activation=args.activation,
-    )
-    config = dict(
-        dataset_args=dataset_args, lattice_args=lattice_args, model_args=model_args
-    )
-
-    cryodrgn.config.save(config, out_config)

@@ -1,19 +1,55 @@
 """Utilities shared across all types of models."""
 
+import os
 import logging
+import yaml
 from typing import Union, Optional
 import torch
 from torch import nn
-import cryodrgn.models.config
 from cryodrgn.lattice import Lattice
 from cryodrgn.models.variational_autoencoder import HetOnlyVAE
 from cryodrgn.models.amortized_inference import HyperVolume
+from cryodrgn.trainers.hps_trainer import HierarchicalPoseSearchTrainer
+from cryodrgn.trainers.amortinf_trainer import AmortizedInferenceTrainer
 
 logger = logging.getLogger(__name__)
+trainer_classes = {
+    "hps": HierarchicalPoseSearchTrainer,
+    "amort": AmortizedInferenceTrainer,
+}
+
+
+def load_from_config(
+    config_file: str,
+) -> Union[HierarchicalPoseSearchTrainer, AmortizedInferenceTrainer]:
+    """Retrieves all configurations that have been saved to file."""
+    if os.path.exists(config_file):
+        with open(config_file, "r") as f:
+            configs = yaml.safe_load(f)
+    else:
+        raise FileNotFoundError(
+            f"Cannot find training configurations file `{config_file}` "
+            f"— has this model been trained yet?"
+        )
+
+    cfg_dict = {
+        sub_k: sub_v
+        for k, v in configs.items()
+        if isinstance(v, dict)
+        for sub_k, sub_v in v.items()
+    }
+    cfg_dict.update({k: v for k, v in configs.items() if not isinstance(v, dict)})
+
+    trainer_class = trainer_classes[cfg_dict["model"]]
+    cfg_dict = {
+        k: v for k, v in cfg_dict.items() if k in set(trainer_class.parameters())
+    }
+
+    return trainer_class(cfg_dict)
 
 
 def load_model(
-    config: Union[str, dict], weights=Union[str, None], device=Optional[str]
+    cfg: dict[str, dict], weights=Union[str, None], device=Optional[str]
 ) -> tuple[torch.nn.Module, Lattice, int]:
     """Instantiate a volume model from a config.yaml
 
@@ -25,10 +61,10 @@ def load_model(
     Returns:
         nn.Module instance, Lattice instance
     """
-    cfg = cryodrgn.models.config.load(config)
 
-    if "cmd" in cfg:
-        logger.info("loading a cryoDRGN2 model...")
+    # cryodrgn v3 and v4
+    if "dataset_args" in cfg:
+        logger.info("loading a cryoDRGN v<=3 model...")
 
         c = cfg["lattice_args"]
         lat = Lattice(c["D"], extent=c["extent"], device=device)
@@ -50,7 +86,7 @@ def load_model(
             c["players"],
             c["pdim"],
             in_dim,
-            c["zdim"],
+            c["z_dim"],
             encode_mode=c["encode_mode"],
             enc_mask=enc_mask,
             enc_type=c["pe_type"],

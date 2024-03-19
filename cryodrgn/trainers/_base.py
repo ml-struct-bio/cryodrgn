@@ -115,11 +115,6 @@ class BaseTrainer(ABC):
 
     config_cls = BaseConfigurations
 
-    @property
-    def parameters(self) -> list:
-        """The user-set parameters governing the behaviour of this model."""
-        return list(asdict(self.config_cls()).keys())
-
     @classmethod
     def parse_args(cls, args: argparse.Namespace) -> Self:
         """Utility for initializing using a namespace as opposed to a dictionary."""
@@ -144,7 +139,8 @@ class BaseTrainer(ABC):
         np.random.seed(self.configs.seed)
         self.logger = logging.getLogger(__name__)
 
-        # TODO: more sophisticated management of existing output folders
+    # TODO: more sophisticated management of existing output folders
+    def create_outdir(self) -> None:
         if os.path.exists(self.outdir):
             self.logger.warning("Output folder already exists, renaming the old one.")
             newdir = self.outdir + "_old"
@@ -163,7 +159,17 @@ class BaseTrainer(ABC):
         )
 
         self.logger.info(f"cryoDRGN {__version__}")
-        self.logger.info(str(configs))
+        self.logger.info(str(self.configs))
+
+    @classmethod
+    def defaults(cls) -> dict[str, Any]:
+        """The user-set parameters governing the behaviour of this model."""
+        return {fld.name: fld.default for fld in fields(cls.config_cls)}
+
+    @classmethod
+    def parameters(cls) -> list[str]:
+        """The user-set parameters governing the behaviour of this model."""
+        return [fld.name for fld in fields(cls.config_cls)]
 
 
 @dataclass
@@ -172,7 +178,7 @@ class ModelConfigurations(BaseConfigurations):
     trainer_cls: str = "ModelTrainer"
     model: str = "amort"
     particles: str = None
-    ctf: str = (None,)
+    ctf: str = None
     pose: str = None
     dataset: str = None
     datadir: str = None
@@ -182,7 +188,7 @@ class ModelConfigurations(BaseConfigurations):
     checkpoint: int = 5
     load: str = None
     load_poses: str = None
-    z_dim: int = None
+    z_dim: int = 0
     use_gt_poses: bool = False
     refine_gt_poses: bool = False
     use_gt_trans: bool = False
@@ -206,7 +212,7 @@ class ModelConfigurations(BaseConfigurations):
     data_norm: float = None
     multigpu: bool = False
     pretrain: int = 10000
-    t_extent: int = 10
+    t_extent: float = 10.0
     t_ngrid: int = 7
     t_xshift: int = 0
     t_yshift: int = 0
@@ -226,6 +232,7 @@ class ModelConfigurations(BaseConfigurations):
     reset_optim_after_pretrain: bool = False
     pose_sgd_emb_type: str = "quat"
     verbose_time: bool = False
+    n_tilts: int = 11
 
     def __post_init__(self) -> None:
         super().__post_init__()
@@ -261,8 +268,6 @@ class ModelConfigurations(BaseConfigurations):
                         )
                     setattr(self, k, use_paths[k])
 
-        if self.z_dim is None:
-            raise ValueError("Must specify `z_dim`!")
         else:
             if not isinstance(self.z_dim, int) or self.z_dim < 0:
                 raise ValueError(
@@ -292,6 +297,7 @@ class ModelTrainer(BaseTrainer, ABC):
 
     configs: ModelConfigurations
     config_cls = ModelConfigurations
+    model_lbl = None
 
     # options for optimizers to use
     optim_types = {"adam": torch.optim.Adam, "lbfgs": torch.optim.LBFGS}
@@ -568,6 +574,7 @@ class ModelTrainer(BaseTrainer, ABC):
         )
 
     def train(self) -> None:
+        self.create_outdir()
         self.save_configs()
         train_start_time = dt.now()
 
@@ -688,7 +695,7 @@ class ModelTrainer(BaseTrainer, ABC):
 
         dataset_args = dict(
             particles=self.configs.particles,
-            norm=self.configs.data_norm,
+            data_norm=self.data.norm,
             invert_data=self.configs.invert_data,
             ind=self.configs.ind,
             keepreal=self.configs.use_real,
@@ -707,6 +714,7 @@ class ModelTrainer(BaseTrainer, ABC):
         )
 
         model_args = dict(
+            model=self.configs.model,
             z_dim=self.configs.z_dim,
             pe_type=self.configs.pe_type,
             feat_sigma=self.configs.feat_sigma,
@@ -733,28 +741,6 @@ class ModelTrainer(BaseTrainer, ABC):
 
         with open(os.path.join(self.outdir, "train-configs.yaml"), "w") as f:
             yaml.dump(configs, f, default_flow_style=False, sort_keys=False)
-
-    @classmethod
-    def load_from_config(cls, config_file: str) -> Self:
-        """Retrieves all configurations that have been saved to file."""
-        if os.path.exists(config_file):
-            with open(config_file, "r") as f:
-                configs = yaml.safe_load(f)
-        else:
-            raise FileNotFoundError(
-                f"Cannot find training configurations file `{config_file}` "
-                f"— has this model been trained yet?"
-            )
-
-        cfg_dict = {
-            sub_k: sub_v
-            for k, v in configs.items()
-            for sub_k, sub_v in v.items()
-            if isinstance(v, dict)
-        }
-        cfg_dict.update({k: v for k, v in configs.items() if not isinstance(v, dict)})
-
-        return ModelTrainer(cfg_dict)
 
     def begin_epoch(self) -> None:
         pass

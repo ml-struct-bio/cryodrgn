@@ -4,10 +4,11 @@ Pipeline to analyze cryoDRGN volume distribution
 
 import argparse
 import os
-import os.path
 from collections import Counter
 from datetime import datetime as dt
 import logging
+from typing import Optional
+
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
@@ -195,18 +196,22 @@ def make_mask(outdir, K, dilate, thresh, in_mrc=None, Apix=1, vol_start_index=0)
         assert isinstance(mask, np.ndarray)
         mask = mask.astype(bool)
 
-    # save mask
+    # save mask, view its slices as saved plots
     out_mrc = f"{outdir}/mask.mrc"
     logger.info(f"Saving {out_mrc}")
     MRCFile.write(out_mrc, mask.astype(np.float32), Apix=Apix)
+    view_slices(mask, out_png=f"{outdir}/mask_slices.png")
 
-    # view slices
-    out_png = f"{outdir}/mask_slices.png"
-    D = mask.shape[0]
+
+def view_slices(y: np.array, out_png: str, D: Optional[int] = None) -> None:
+    if D is None:
+        D = y.shape[0]
+
     fig, ax = plt.subplots(1, 3, figsize=(10, 8))
-    ax[0].imshow(mask[D // 2, :, :])
-    ax[1].imshow(mask[:, D // 2, :])
-    ax[2].imshow(mask[:, :, D // 2])
+    ax[0].imshow(y[D // 2, :, :])
+    ax[1].imshow(y[:, D // 2, :])
+    ax[2].imshow(y[:, :, D // 2])
+
     plt.savefig(out_png)
 
 

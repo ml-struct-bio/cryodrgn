@@ -1,16 +1,17 @@
-"""Automated generation of masking filters for reconstructed volumes.
+"""Automated generation of masking filters for 3D volumes.
 
 Example usages
 --------------
-
+$ cryodrgn_utils gen_mask volume16.mrc mask16.mrc
+$ cryodrgn_utils gen_mask volume16.mrc mask16.mrc -p slices.png
+$ cryodrgn_utils gen_mask volume16.mrc mask16.mrc --dist 15
 
 """
 import os
 import argparse
 import logging
 import numpy as np
-from scipy.ndimage.morphology import distance_transform_edt
-from scipy.ndimage.morphology import binary_dilation
+from scipy.ndimage import distance_transform_edt, binary_dilation
 from cryodrgn.mrc import MRCFile
 from cryodrgn.commands.analyze_landscape import view_slices
 
@@ -33,14 +34,19 @@ def add_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser.add_argument(
         "--dilate",
         type=int,
-        default=3,
-        help="Dilate initial mask by this amount (default: %(default)s pixels)",
+        default=25,
+        help="Dilate initial mask by this amount (default: %(default)s angstroms)",
     )
     parser.add_argument(
         "--dist",
         type=int,
-        default=10,
-        help="Width of cosine edge (default: %(default)s pix)",
+        default=15,
+        help="Width of cosine edge (default: %(default)s angstroms)",
+    )
+    parser.add_argument(
+        "--apix",
+        type=float,
+        help="use this A/px value instead of inferring from the input header",
     )
     parser.add_argument(
         "--png-output",
@@ -54,19 +60,25 @@ def add_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
 
 def main(args: argparse.Namespace) -> None:
     vol, header = MRCFile.parse(args.input)
+    apix = args.apix or header.get_apix()
     thresh = np.percentile(vol, 99.99) / 2 if args.thresh is None else args.thresh
-    logger.info(f"Threshold: {thresh}")
+    logger.info(f"A/px={apix:.5g}; Threshold={thresh:.5g}")
+
     x = (vol >= thresh).astype(bool)
 
     if args.dilate:
-        logger.info(f"Dilate initial mask by: {args.dilate}")
-        x = binary_dilation(x, iterations=args.dilate)
+        dilate_val = int(args.dilate // apix)
+        logger.info(f"Dilate initial mask by: {dilate_val} px")
+        x = binary_dilation(x, iterations=dilate_val)
+    else:
+        logger.info("no mask dilation applied")
 
-    logger.info(f"Width of cosine edge: {args.dist}")
-    if args.dist:
+    dist_val = args.dist / apix
+    logger.info(f"Width of cosine edge: {dist_val} px")
+    if dist_val:
         y = distance_transform_edt(~x.astype(bool))
-        y[y > args.dist] = args.dist
-        z = np.cos(np.pi * y / args.dist / 2)
+        y[y > dist_val] = dist_val
+        z = np.cos(np.pi * y / dist_val / 2)
     else:
         z = x
 

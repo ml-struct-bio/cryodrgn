@@ -33,13 +33,13 @@ def test_fidelity(trained_dir, vol_idx) -> None:
 
     thresh_vals = {1: 0.3228, 2: 0.3134}
     assert (
-        round(float(out0.split("\n")[0].split("Threshold: ")[1]), 4)
+        round(float(out0.split("\n")[0].split("Threshold=")[1]), 4)
         == thresh_vals[vol_idx]
     )
 
     mask_hashes = {
-        1: "df67e4492a152fda1410eb52dfd3b967",
-        2: "31a7cb816e694b9d8b307d8bbcfbe199",
+        1: "8c489a79e9bf4adddc9b8f47508f10e7",
+        2: "310ed7776301d3785aea1fe88bd7daa0",
     }
     assert hash_file(mask_file) == mask_hashes[vol_idx]
 
@@ -49,16 +49,27 @@ def test_fidelity(trained_dir, vol_idx) -> None:
     [{"train_cmd": "train_nn", "epochs": 3, "seed": 5555}],
     indirect=True,
 )
-def test_png_output_file(trained_dir) -> None:
+@pytest.mark.parametrize("dist_val", [10, 20])
+def test_png_output_file(trained_dir, dist_val) -> None:
     vol_file = os.path.join(trained_dir.outdir, "reconstruct.2.mrc")
     mask_file = os.path.join(trained_dir.outdir, "mask.mrc")
     plot_file = os.path.join(trained_dir.outdir, "slices.png")
 
     out0, err = run_command(
-        f"cryodrgn_utils gen_mask {vol_file} {mask_file} -p {plot_file}"
+        f"cryodrgn_utils gen_mask {vol_file} {mask_file} "
+        f"-p {plot_file} --dist {dist_val}"
     )
     assert err == ""
+    assert round(float(out0.split("\n")[0].split("Threshold=")[1]), 4) == 0.477
 
-    assert round(float(out0.split("\n")[0].split("Threshold: ")[1]), 4) == 0.477
-    assert hash_file(mask_file) == "06b68d753304c5ae245db037e3c3e681"
-    assert hash_file(plot_file) == "9e56fe7f013fa57619257a4c0b13f757"
+    mask_hashes = {
+        10: "1d970ec46645a4b9953d4f1bc0c2dfe9",
+        20: "d880019cae20e440b257d77aa331aaa1",
+    }
+    assert hash_file(mask_file) == mask_hashes[dist_val]
+
+    plot_hashes = {
+        10: "71e898a77ce2913cc4d755e00c8bfd68",
+        20: "6f6a6ce284134fa43478a220d271f5f2",
+    }
+    assert hash_file(plot_file) == plot_hashes[dist_val]

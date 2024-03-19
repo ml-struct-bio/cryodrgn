@@ -13,7 +13,10 @@ DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
 def output_dir() -> None:
     """Helper fixture to remove output folder upon completion of all tests."""
     yield None
-    shutil.rmtree("output")
+
+    # we don't always create this folder, e.g. if we are only doing some of the tests
+    if os.path.exists("output"):
+        shutil.rmtree("output")
 
 
 def get_testing_datasets(dataset_lbl: str) -> tuple[str, str]:

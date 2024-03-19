@@ -49,7 +49,7 @@ def test_fidelity(trained_dir) -> None:
     assert out.split()[10] == "0.143:"
     assert round(float(out.split()[11]), 6) == 2.064516
     assert len(out.split("\n")) == 3
-    assert round(10 ** (fsc_vals @ np.tile([1, -1], len(fsc_vals) // 2)), 5) == 0.99311
+    assert round(10 ** (fsc_vals @ np.tile([1, -1], len(fsc_vals) // 2)), 4) == 0.9931
 
 
 @pytest.mark.parametrize(

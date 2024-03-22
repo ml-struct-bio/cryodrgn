@@ -1,17 +1,30 @@
-"""
-Backproject cryo-EM images
-"""
+"""Backproject cryo-EM images to reconstruct a volume as well as half-maps.
 
+This script creates a reconstructed volume using the images in the given stack as well
+as the given poses. Unless instructed otherwise, it will also produce volumes using
+the images in each half of the dataset, as well as calculating an FSC curve between
+these two half-map reconstructions.
+
+Example usages
+----------
+$ cryodrgn backproject_voxel particles.128.mrcs --poses pose.pkl -o backproj.128.mrc
+$ cryodrgn backproject_voxel particles.256.mrcs --poses pose.pkl
+                             --ind good-particles.pkl -o backproj.256.mrc --lazy
+
+"""
 import argparse
 import os
 import time
 import numpy as np
 import torch
+import matplotlib.pyplot as plt
 import logging
+
 from cryodrgn import ctf, dataset, fft, utils
 from cryodrgn.mrc import MRCFile
 from cryodrgn.lattice import Lattice
 from cryodrgn.pose import PoseTracker
+from cryodrgn.commands_utils.fsc import calculate_fsc
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +46,12 @@ def add_args(parser):
     )
     parser.add_argument(
         "-o", type=os.path.abspath, required=True, help="Output .mrc file"
+    )
+    parser.add_argument(
+        "--no-half-maps",
+        action="store_false",
+        help="Don't produce half-maps and FSCs.",
+        dest="half_maps",
     )
     parser.add_argument("--ctf-alg", type=str, choices=("flip", "mul"), default="mul")
     parser.add_argument(
@@ -76,7 +95,6 @@ def add_args(parser):
     group.add_argument(
         "--first",
         type=int,
-        default=None,
         help="Backproject the first N images (default: all images)",
     )
     group = parser.add_argument_group("Tilt series options")
@@ -105,10 +123,8 @@ def add_args(parser):
         help="Tilt angle increment per tilt in degrees (default: %(default)s)",
     )
 
-    return parser
 
-
-def add_slice(V, counts, ff_coord, ff, D, ctf_mul):
+def add_slice(volume, counts, ff_coord, ff, D, ctf_mul):
     d2 = int(D / 2)
     ff_coord = ff_coord.transpose(0, 1)
     xf, yf, zf = ff_coord.floor().long()
@@ -118,7 +134,7 @@ def add_slice(V, counts, ff_coord, ff, D, ctf_mul):
         dist = torch.stack([xi, yi, zi]).float() - ff_coord
         w = 1 - dist.pow(2).sum(0).pow(0.5)
         w[w < 0] = 0
-        V[(zi + d2, yi + d2, xi + d2)] += w * ff * ctf_mul
+        volume[(zi + d2, yi + d2, xi + d2)] += w * ff * ctf_mul
         counts[(zi + d2, yi + d2, xi + d2)] += w * ctf_mul**2
 
     add_for_corner(xf, yf, zf)
@@ -129,7 +145,14 @@ def add_slice(V, counts, ff_coord, ff, D, ctf_mul):
     add_for_corner(xf, yc, zc)
     add_for_corner(xc, yf, zc)
     add_for_corner(xc, yc, zc)
-    return V, counts
+
+
+def regularize_volume(volume, counts, reg_weight):
+    regularized_counts = counts + reg_weight * counts.mean()
+    regularized_counts *= counts.mean() / regularized_counts.mean()
+    reg_volume = volume / regularized_counts
+
+    return fft.ihtn_center(reg_volume[0:-1, 0:-1, 0:-1].cpu())
 
 
 def main(args):
@@ -137,8 +160,7 @@ def main(args):
 
     t1 = time.time()
     logger.info(args)
-    if not os.path.exists(os.path.dirname(args.o)):
-        os.makedirs(os.path.dirname(args.o))
+    os.makedirs(os.path.dirname(args.o), exist_ok=True)
 
     # set the device
     use_cuda = torch.cuda.is_available()
@@ -158,6 +180,9 @@ def main(args):
             args.ind = utils.load_pkl(args.ind).astype(int)
 
     if args.tilt:
+        assert (
+            args.dose_per_tilt is not None
+        ), "Argument --dose-per-tilt is required for backprojecting tilt series data"
         data = dataset.TiltSeriesData(
             args.particles,
             args.ntilts,
@@ -182,61 +207,61 @@ def main(args):
 
     D = data.D
     Nimg = data.N
-
     lattice = Lattice(D, extent=D // 2, device=device)
-
     posetracker = PoseTracker.load(args.poses, Nimg, D, None, args.ind, device=device)
 
     if args.ctf is not None:
-        logger.info("Loading ctf params from {}".format(args.ctf))
+        logger.info(f"Loading ctf params from {args.ctf}")
         ctf_params = ctf.load_ctf_for_training(D - 1, args.ctf)
+
         if args.ind is not None:
             ctf_params = ctf_params[args.ind]
         if args.tilt:
-            assert (
-                args.dose_per_tilt is not None
-            ), "Argument --dose-per-tilt is required for backprojecting tilt series data"
             ctf_params = np.concatenate(
                 (ctf_params, data.ctfscalefactor.reshape(-1, 1)), axis=1  # type: ignore
             )
         ctf_params = torch.tensor(ctf_params, device=device)
+
     else:
         ctf_params = None
+
     Apix = float(ctf_params[0, 0]) if ctf_params is not None else 1.0
     voltage = float(ctf_params[0, 4]) if ctf_params is not None else None
     data.voltage = voltage
-
-    V = torch.zeros((D, D, D), device=device)
-    counts = torch.zeros((D, D, D), device=device)
-
     mask = lattice.get_circular_mask(D // 2)
+    iterator = range(min(args.first, Nimg)) if args.first else range(Nimg)
 
-    if args.first:
-        args.first = min(args.first, Nimg)
-        iterator = range(args.first)
-    else:
-        iterator = range(Nimg)
+    volume_full = torch.zeros((D, D, D), device=device)
+    counts_full = torch.zeros((D, D, D), device=device)
+    volume_half1 = torch.zeros((D, D, D), device=device)
+    counts_half1 = torch.zeros((D, D, D), device=device)
+    volume_half2 = torch.zeros((D, D, D), device=device)
+    counts_half2 = torch.zeros((D, D, D), device=device)
 
     for ii in iterator:
         if ii % 100 == 0:
-            logger.info("image {}".format(ii))
+            logger.info(f"fimage {ii}")
+
         r, t = posetracker.get_pose(ii)
         ff = data.get_tilt(ii) if args.tilt else data[ii]
         assert isinstance(ff, tuple)
 
         ff = ff[0].to(device)
         ff = ff.view(-1)[mask]
-        c = None
         ctf_mul = 1
+
         if ctf_params is not None:
             freqs = lattice.freqs2d / ctf_params[ii, 0]
             c = ctf.compute_ctf(freqs, *ctf_params[ii, 1:]).view(-1)[mask]
+
             if args.ctf_alg == "flip":
                 ff *= c.sign()
             else:
                 ctf_mul = c
+
         if t is not None:
             ff = lattice.translate_ht(ff.view(1, -1), t.view(1, 1, 2), mask).view(-1)
+
         if args.tilt:
             tilt_idxs = torch.tensor([ii]).to(device)
             dose_filters = data.get_dose_filters(tilt_idxs, lattice, ctf_params[ii, 0])[
@@ -245,27 +270,57 @@ def main(args):
             ctf_mul *= dose_filters[mask]
 
         ff_coord = lattice.coords[mask] @ r
-        add_slice(V, counts, ff_coord, ff, D, ctf_mul)
+        add_slice(volume_full, counts_full, ff_coord, ff, D, ctf_mul)
+
+        if args.half_maps:
+            if ii % 2 == 0:
+                add_slice(volume_half1, counts_half1, ff_coord, ff, D, ctf_mul)
+            else:
+                add_slice(volume_half2, counts_half2, ff_coord, ff, D, ctf_mul)
 
     td = time.time() - t1
     logger.info(
-        "Backprojected {} images in {}s ({}s per image)".format(
-            len(iterator), td, td / Nimg
-        )
+        f"Backprojected {len(iterator)} images "
+        f"in {td:.2f}s ({(td / Nimg):4f}s per image)"
     )
-    counts[counts == 0] = 1
+
+    counts_full[counts_full == 0] = 1
+    counts_half1[counts_half1 == 0] = 1
+    counts_half2[counts_half2 == 0] = 1
 
     if args.output_sumcount:
-        MRCFile.write(args.o + ".sums", V.cpu().numpy(), Apix=Apix)
-        MRCFile.write(args.o + ".counts", counts.cpu().numpy(), Apix=Apix)
+        MRCFile.write(args.o + ".sums", volume_full.cpu().numpy(), Apix=Apix)
+        MRCFile.write(args.o + ".counts", counts_full.cpu().numpy(), Apix=Apix)
 
-    regularized_counts = counts + args.reg_weight * counts.mean()
-    regularized_counts *= counts.mean() / regularized_counts.mean()
-    V /= regularized_counts
-    V = fft.ihtn_center(V[0:-1, 0:-1, 0:-1].cpu())
-    MRCFile.write(args.o, np.array(V).astype("float32"), Apix=Apix)
+    volume_full = regularize_volume(volume_full, counts_full, args.reg_weight)
+    out_path = os.path.splitext(args.o)[0]
+    MRCFile.write(args.o, np.array(volume_full).astype("float32"), Apix=Apix)
+
+    if args.half_maps:
+        volume_half1 = regularize_volume(volume_half1, counts_half1, args.reg_weight)
+        volume_half2 = regularize_volume(volume_half2, counts_half2, args.reg_weight)
+        fsc_vals = calculate_fsc(volume_half1, volume_half2)
+
+        fsc_vals.to_csv("_".join([out_path, "fsc-vals.txt"]), sep=" ", header=False)
+        plt.plot(fsc_vals.index, fsc_vals.values)
+        plt.ylim((0, 1))
+        plt.savefig("_".join([out_path, "fsc-plot.png"]), bbox_inches="tight")
+
+        if (fsc_vals >= 0.5).any():
+            fsc_res = fsc_vals[fsc_vals >= 0.5].index.max() ** -1 * Apix
+            logger.info(f"res @ FSC=0.5: {fsc_res:.4f}")
+        if (fsc_vals >= 0.143).any():
+            fsc_res = fsc_vals[fsc_vals >= 0.143].index.max() ** -1 * Apix
+            logger.info(f"res @ FSC=0.143: {fsc_res:.4f}")
+
+        # save the half-map reconstructions to file
+        half_fl1 = "_".join([out_path, "half-map1.mrc"])
+        half_fl2 = "_".join([out_path, "half-map2.mrc"])
+        MRCFile.write(half_fl1, np.array(volume_half1).astype("float32"), Apix=Apix)
+        MRCFile.write(half_fl2, np.array(volume_half2).astype("float32"), Apix=Apix)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    main(add_args(parser).parse_args())
+    add_args(parser)
+    main(parser.parse_args())

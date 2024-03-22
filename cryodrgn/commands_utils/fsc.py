@@ -3,7 +3,7 @@
 Example usages
 --------------
 $ cryodrgn_utils fsc volume1.mrc volume2.mrc -o fsc.txt -p
-$ cryodrgn_utils fsc volume1.mrc volume2.mrc --ind 5k-ind.pkl -o fsc.txt
+$ cryodrgn_utils fsc volume1.mrc volume2.mrc --mask test-mask.mrc -o fsc.txt
 
 """
 import argparse

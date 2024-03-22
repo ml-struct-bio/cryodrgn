@@ -84,7 +84,7 @@ def main(args: argparse.Namespace) -> None:
 
     MRCFile.write(args.output, z.astype(np.float32), header=header)
     if args.png_output:
-        view_slices(z, out_png=args.png_output, D=vol.shape[0])
+        view_slices(z, out_png=args.png_output)
 
 
 if __name__ == "__main__":

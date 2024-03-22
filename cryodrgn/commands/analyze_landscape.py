@@ -15,7 +15,7 @@ import numpy as np
 import torch
 import seaborn as sns
 from matplotlib.colors import ListedColormap
-from scipy.ndimage.morphology import binary_dilation
+from scipy.ndimage import binary_dilation
 from sklearn.cluster import AgglomerativeClustering
 from sklearn.decomposition import PCA
 from cryodrgn import analysis, utils

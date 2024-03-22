@@ -34,7 +34,9 @@ def _get_commands(cmd_dir: str) -> None:
 
             if hasattr(module, "add_args"):
                 this_parser = subparsers.add_parser(
-                    module_file[:-3], description=module.__doc__
+                    module_file[:-3],
+                    description=module.__doc__,
+                    formatter_class=argparse.RawDescriptionHelpFormatter,
                 )
                 module.add_args(this_parser)
                 this_parser.set_defaults(func=module.main)

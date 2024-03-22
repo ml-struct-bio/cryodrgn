@@ -6,6 +6,7 @@ $ cryodrgn_utils fsc volume1.mrc volume2.mrc -o fsc.txt -p
 $ cryodrgn_utils fsc volume1.mrc volume2.mrc --mask test-mask.mrc -o fsc.txt
 
 """
+import os
 import argparse
 import logging
 import matplotlib.pyplot as plt
@@ -19,15 +20,32 @@ from cryodrgn.source import ImageSource
 logger = logging.getLogger(__name__)
 
 
-def add_args(parser):
+def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("volumes", nargs=2, help="volumes to compare")
 
-    parser.add_argument("--mask")
+    parser.add_argument(
+        "--mask",
+        type=os.path.abspath,
+        help="if given, apply the mask in this file before calculating FSCs",
+    )
     parser.add_argument(
         "--plot", "-p", action="store_true", help="create plot of FSC curve?"
     )
-    parser.add_argument("--Apix", type=float, default=1)
-    parser.add_argument("-o", help="Output")
+    parser.add_argument(
+        "--Apix",
+        type=float,
+        default=1,
+        help="Ang/pixels to use when printing the resolutions at thresholds",
+    )
+    parser.add_argument(
+        "-o",
+        "--outtxt",
+        help=(
+            "if given, a file to save the FSC values, "
+            "with each space-delimited row as <resolution> <fsc_val>; "
+            "otherwise print these to screen"
+        ),
+    )
 
 
 def calculate_fsc(
@@ -70,8 +88,8 @@ def main(args):
     vol2 = ImageSource.from_file(args.volumes[1])
     fsc_vals = calculate_fsc(vol1.images(), vol2.images(), args.mask)
 
-    if args.o:
-        np.savetxt(args.o, fsc_vals.values)
+    if args.outtxt:
+        np.savetxt(args.outtxt, fsc_vals.values)
     else:
         logger.info(fsc_vals)
 
@@ -86,9 +104,3 @@ def main(args):
         plt.plot(fsc_vals.index, fsc_vals.values)
         plt.ylim((0, 1))
         plt.show()
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    add_args(parser)
-    main(parser.parse_args())

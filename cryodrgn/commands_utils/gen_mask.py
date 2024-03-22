@@ -18,7 +18,7 @@ from cryodrgn.commands.analyze_landscape import view_slices
 logger = logging.getLogger(__name__)
 
 
-def add_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "input", type=os.path.abspath, help="Input .mrc file for volume to be masked"
     )
@@ -44,7 +44,7 @@ def add_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         help="Width of cosine edge (default: %(default)s angstroms)",
     )
     parser.add_argument(
-        "--apix",
+        "--Apix",
         type=float,
         help="use this A/px value instead of inferring from the input header",
     )
@@ -55,12 +55,10 @@ def add_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         help="Output .png file for slice plots",
     )
 
-    return parser
-
 
 def main(args: argparse.Namespace) -> None:
     vol, header = MRCFile.parse(args.input)
-    apix = args.apix or header.get_apix()
+    apix = args.Apix or header.get_apix()
     thresh = np.percentile(vol, 99.99) / 2 if args.thresh is None else args.thresh
     logger.info(f"A/px={apix:.5g}; Threshold={thresh:.5g}")
 
@@ -85,8 +83,3 @@ def main(args: argparse.Namespace) -> None:
     MRCFile.write(args.output, z.astype(np.float32), header=header)
     if args.png_output:
         view_slices(z, out_png=args.png_output)
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    main(add_args(parser).parse_args())

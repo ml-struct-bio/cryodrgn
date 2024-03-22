@@ -43,7 +43,7 @@ def test_fidelity(trained_dir) -> None:
     out, err = run_command(f"cryodrgn_utils fsc {vol_file1} {vol_file2} -o {fsc_file}")
     fsc_vals = np.fromfile(fsc_file, dtype=float, sep=" ")
 
-    assert err == "", err
+    assert err == ""
     assert out.split()[4] == "0.5:"
     assert round(float(out.split()[5]), 6) == 2.064516
     assert out.split()[10] == "0.143:"
@@ -72,7 +72,34 @@ def test_output_file(trained_dir, epochs: tuple[int, int]) -> None:
     assert out0.split()[-2] == "0.143:"
 
     out, err = run_command(f"cryodrgn_utils fsc {vol_file1} {vol_file2} -o {fsc_file}")
-    assert err == "", err
+    assert err == ""
     fsc_vals = np.fromfile(fsc_file, dtype=float, sep=" ")
     for i, fsc_val in enumerate(fsc_vals):
         assert round(fsc_val, 6) == round(float(out0.split()[4 + 2 * i + 1]), 6)
+
+
+@pytest.mark.parametrize(
+    "train_dir",
+    [
+        {"dataset": "toy", "train_cmd": "train_nn", "epochs": 5, "seed": 2456},
+    ],
+    indirect=True,
+)
+@pytest.mark.parametrize("epochs", [(1, 2), (3, 4)])
+def test_apply_mask(trained_dir, epochs: tuple[int, int]) -> None:
+    vol_file1 = os.path.join(trained_dir.outdir, f"reconstruct.{epochs[0]}.mrc")
+    vol_file2 = os.path.join(trained_dir.outdir, f"reconstruct.{epochs[1]}.mrc")
+    mask_file = os.path.join(trained_dir.outdir, "mask.mrc")
+
+    out0, err = run_command(f"cryodrgn_utils gen_mask {vol_file1} {mask_file} --dist 3")
+    assert err == ""
+    assert 0.13 < float(out0.split("\n")[0].split("Threshold=")[1]) < 0.16
+
+    out0, err = run_command(
+        f"cryodrgn_utils fsc {vol_file1} {vol_file2} --mask {mask_file}"
+    )
+    assert err == ""
+    assert out0.split()[-8] == "0.5:"
+    assert out0.split()[-2] == "0.143:"
+    assert round(float(out0.split("\n")[5].split()[0]), 3) == 0.167
+    assert 0.97 < float(out0.split("\n")[5].split()[1]) < 0.99

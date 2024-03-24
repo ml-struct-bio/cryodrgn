@@ -19,7 +19,8 @@ import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 
 import cryodrgn.utils
-from cryodrgn import ctf, mrc
+from cryodrgn import ctf
+from cryodrgn.mrc import MRCFile
 from cryodrgn.dataset import make_dataloader
 from cryodrgn.trainers import summary
 from cryodrgn.models.losses import kl_divergence_conf, l1_regularizer, l2_frequency_bias
@@ -31,6 +32,7 @@ from cryodrgn.trainers._base import ModelTrainer, ModelConfigurations
 @dataclass
 class AmortizedInferenceConfigurations(ModelConfigurations):
 
+    model: str = "amort"
     # data loading
     batch_size_known_poses: int = 32
     batch_size_hps: int = 8
@@ -172,8 +174,7 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
 
         if self.volume_domain not in {"hartley"}:
             raise ValueError(
-                f"Invalid value {self.volume_domain} "
-                "for hypervolume_domain."
+                f"Invalid value {self.volume_domain} for hypervolume_domain."
             )
 
         if self.n_imgs_pose_search < 0:
@@ -202,9 +203,7 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
                 )
 
             # TODO: Implement translation search for subtomogram averaging.
-            if not (
-                    self.use_gt_poses and (self.use_gt_trans or self.t_extent == 0.0)
-            ):
+            if not (self.use_gt_poses and (self.use_gt_trans or self.t_extent == 0.0)):
                 raise ValueError(
                     "Translation search is not implemented for subtomogram averaging!"
                 )
@@ -263,13 +262,16 @@ class AmortizedInferenceTrainer(ModelTrainer):
     config_cls = AmortizedInferenceConfigurations
     model_lbl = "amort"
 
-    def make_volume_model(self) -> nn.Module:
-        self.configs: AmortizedInferenceConfigurations
-
-        # output mask
+    def make_output_mask(self) -> CircularMask:
         if self.configs.output_mask == "circ":
             radius = self.configs.max_freq or self.lattice.D // 2
-            output_mask = CircularMask(self.lattice, radius)
+            output_mask = CircularMask(
+                radius,
+                self.lattice.coords,
+                self.lattice.D,
+                self.lattice.extent,
+                self.lattice.ignore_DC,
+            )
 
         elif self.configs.output_mask == "frequency_marching":
             output_mask = FrequencyMarchingMask(
@@ -281,6 +283,11 @@ class AmortizedInferenceTrainer(ModelTrainer):
 
         else:
             raise NotImplementedError
+
+        return output_mask
+
+    def make_volume_model(self) -> nn.Module:
+        output_mask = self.make_output_mask()
 
         # cnn
         cnn_params = {
@@ -382,9 +389,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
 
         # tensorboard writer
         self.summaries_dir = os.path.join(self.configs.outdir, "summaries")
-        os.makedirs(self.summaries_dir, exist_ok=True)
-        self.writer = SummaryWriter(self.summaries_dir)
-        self.logger.info("Will write tensorboard summaries " f"in {self.summaries_dir}")
+        self.writer = None
 
         # TODO: Replace with DistributedDataParallel
         if self.n_prcs > 1:
@@ -512,6 +517,12 @@ class AmortizedInferenceTrainer(ModelTrainer):
             if self.configs.z_dim > 0 and self.configs.variational_het
             else None
         )
+
+    def create_outdir(self) -> None:
+        super().create_outdir()
+        os.makedirs(self.summaries_dir, exist_ok=True)
+        self.writer = SummaryWriter(self.summaries_dir)
+        self.logger.info("Will write tensorboard summaries " f"in {self.summaries_dir}")
 
     def begin_epoch(self):
         self.configs: AmortizedInferenceConfigurations
@@ -656,7 +667,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
                     self.model.output_mask.current_radius, self.configs.l_end
                 )
 
-        if not "tilt_indices" in batch:
+        if "tilt_indices" not in batch:
             batch["tilt_indices"] = batch["indices"]
         else:
             batch["tilt_indices"] = batch["tilt_indices"].reshape(-1)
@@ -959,7 +970,6 @@ class AmortizedInferenceTrainer(ModelTrainer):
         )
 
         # conformation
-        pca = None
         if self.configs.z_dim > 0:
             labels = None
 
@@ -981,8 +991,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
                 if self.predicted_logvar is not None
                 else None
             )
-
-            pca = summary.make_conf_summary(
+            summary.make_conf_summary(
                 self.writer,
                 predicted_conf,
                 self.current_epoch,
@@ -1042,7 +1051,9 @@ class AmortizedInferenceTrainer(ModelTrainer):
             shift=shift,
         )
 
-        return pca
+        self.save_latents()
+        self.save_volume()
+        self.save_model()
 
     def print_batch_summary(self) -> None:
         self.logger.info(
@@ -1106,8 +1117,8 @@ class AmortizedInferenceTrainer(ModelTrainer):
         else:
             zval = None
 
-        vol = -1.0 * self.model.eval_volume(self.data.norm, zval=zval)
-        mrc.write(out_mrc, vol.astype(np.float32))
+        vol = -1.0 * self.model.eval_volume(norm=self.data.norm, zval=zval)
+        MRCFile.write(out_mrc, np.array(vol, dtype=np.float32))
 
     # TODO: weights -> model and reconstruct -> volume for output labels?
     def save_model(self):
@@ -1146,6 +1157,6 @@ class AmortizedInferenceTrainer(ModelTrainer):
         in_pose_search = False
 
         if not self.configs.use_gt_poses:
-            in_pose_search = 0 <= self.current_epoch < self.epochs_pose_search
+            in_pose_search = 1 <= self.current_epoch <= self.epochs_pose_search
 
         return in_pose_search

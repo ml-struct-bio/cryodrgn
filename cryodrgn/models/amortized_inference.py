@@ -5,7 +5,8 @@ import torch
 import torch.nn as nn
 import time
 from cryodrgn.models.neural_nets import half_linear, single_linear
-from cryodrgn import fft, lie_tools, mask, pose_search
+from cryodrgn import fft, masking
+from cryodrgn.models import lie_tools, pose_search_amortized
 
 
 class DRGNai(nn.Module):
@@ -84,16 +85,16 @@ class DRGNai(nn.Module):
         self.freqs2d = nn.Parameter(self.lattice.freqs2d, requires_grad=False)
         if ps_params is not None:
             self.base_shifts = nn.Parameter(
-                pose_search.get_base_shifts(ps_params), requires_grad=False
+                pose_search_amortized.get_base_shifts(ps_params), requires_grad=False
             )
             self.base_rot = nn.Parameter(
-                pose_search.get_base_rot(ps_params), requires_grad=False
+                pose_search_amortized.get_base_rot(ps_params), requires_grad=False
             )
             self.so3_base_quat = nn.Parameter(
-                pose_search.get_so3_base_quat(ps_params), requires_grad=False
+                pose_search_amortized.get_so3_base_quat(ps_params), requires_grad=False
             )
             self.base_inplane = nn.Parameter(
-                pose_search.get_base_inplane(ps_params), requires_grad=False
+                pose_search_amortized.get_base_inplane(ps_params), requires_grad=False
             )
 
         self.no_trans = no_trans
@@ -191,7 +192,7 @@ class DRGNai(nn.Module):
             ctf: [batch_size(, n_tilts), D, D]
         or (in pose supervision step)
             y_real: [batch_size, D - 1, D - 1]
-            ind: [batch_size]
+            indices: [batch_size]
             R: [batch_size, 3, 3]
             t: [batch_size, 2]
 
@@ -210,7 +211,10 @@ class DRGNai(nn.Module):
             torch.cuda.synchronize(device)
         start_time_encoder = time.time()
         latent_variables_dict = self.encode(in_dict, ctf=in_dict["ctf"])
-        in_dict["tilt_index"] = in_dict["tilt_index"].reshape(-1)
+
+        if in_dict["tilt_indices"] is not None:
+            in_dict["tilt_indices"] = in_dict["tilt_indices"].reshape(-1)
+
         if self.verbose_time:
             torch.cuda.synchronize(device)
         start_time_decoder = time.time()
@@ -302,9 +306,10 @@ class DRGNai(nn.Module):
                 pose_dict["t"] = trans
 
         # random poses
+        # TODO: refactor to make pretraining a method of the trainer like for HPS?
         elif self.pretrain:
             in_dim = in_dict["y"].shape[:-2]
-            device = in_dict["y_real"].device
+            device = in_dict["y"].device
             pose_dict = {"R": lie_tools.random_rotmat(np.prod(in_dim), device=device)}
             pose_dict["R"] = pose_dict["R"].reshape(*in_dim, 3, 3)
             if not self.no_trans:
@@ -313,7 +318,7 @@ class DRGNai(nn.Module):
         # use pose search
         elif self.is_in_pose_search_step:
             self.hypervolume.eval()
-            rot, trans, _ = pose_search.opt_theta_trans(
+            rot, trans, _ = pose_search_amortized.opt_theta_trans(
                 self,
                 in_dict["y"],
                 self.lattice,
@@ -325,7 +330,7 @@ class DRGNai(nn.Module):
                 else None,
                 trans_search_factor=self.trans_search_factor,
             )
-            pose_dict = {"R": rot, "index": in_dict["index"]}
+            pose_dict = {"R": rot, "indices": in_dict["indices"]}
             if not self.no_trans:
                 pose_dict["t"] = trans
             self.hypervolume.train()
@@ -348,11 +353,11 @@ class DRGNai(nn.Module):
             z: [batch_size, z_dim]
             z_logvar: [batch_size, z_dim]
         ctf_local: [batch_size(, n_tilts), D, D]
-        y_gt: [batch_size(, n_tilts), D, D]
+        y: [batch_size(, n_tilts), D, D]
 
         output: [batch_size(, n_tilts), n_pts], [batch_size, n_pts], dict ('coords': float, 'query': float)
         """
-        rots = latent_variables_dict["R"]
+        rots = latent_variables_dict["R"].to(self.coords.device)
         in_shape = latent_variables_dict["R"].shape[:-2]
         z = None
 
@@ -370,8 +375,8 @@ class DRGNai(nn.Module):
         if self.verbose_time:
             torch.cuda.synchronize(device)
         start_time_coords = time.time()
-        x = (
-            self.coords[self.output_mask.binary_mask] @ rots
+        x = self.coords[self.output_mask.binary_mask] @ rots.to(
+            self.coords.device
         )  # batch_size(, n_tilts), n_pts, 3
         if self.verbose_time:
             torch.cuda.synchronize(device)
@@ -415,7 +420,31 @@ class DRGNai(nn.Module):
             y_pred = y_pred.reshape(batch_size, nq, n_pts)
         else:
             y_pred = self.hypervolume(x, z)
+
         return y_pred
+
+    def eval_volume(
+        self,
+        coords=None,
+        resolution=None,
+        extent=None,
+        norm=None,
+        zval=None,
+        radius=None,
+    ):
+        use_coords = coords or self.lattice.coords
+        use_resolution = resolution or self.lattice.D
+        use_extent = extent or self.lattice.extent
+
+        return self.hypervolume.eval_volume(
+            coords=use_coords,
+            resolution=use_resolution,
+            extent=use_extent,
+            norm=norm,
+            zval=zval,
+            radius=radius or self.output_mask.current_radius,
+            z_dim=self.z_dim,
+        )
 
     def apply_ctf(self, y_pred, ctf_local):
         """
@@ -675,10 +704,10 @@ class ConfTable(nn.Module):
             z: [batch_size, z_dim]
             z_logvar: [batch_size, z_dim] if variational and not pose_only
         """
-        conf = self.table_conf[in_dict["index"]]
+        conf = self.table_conf[in_dict["indices"]]
         conf_dict = {"z": conf}
         if self.variational:
-            logvar = self.table_logvar[in_dict["index"]]
+            logvar = self.table_logvar[in_dict["indices"]]
             conf_dict["z_logvar"] = logvar
         return conf_dict
 
@@ -737,12 +766,12 @@ class PoseTable(nn.Module):
             R: [batch_size(, n_tilts), 3, 3]
             t: [batch_size(, n_tilts), 2]
         """
-        rots_s2s2 = self.table_s2s2[in_dict["tilt_index"]]
+        rots_s2s2 = self.table_s2s2[in_dict["tilt_indices"]]
         rots_matrix = lie_tools.s2s2_to_rotmat(rots_s2s2)
         pose_dict = {"R": rots_matrix}
         if not self.no_trans:
             if not self.use_gt_trans:
-                pose_dict["t"] = self.table_trans[in_dict["tilt_index"]]
+                pose_dict["t"] = self.table_trans[in_dict["tilt_indices"]]
             else:
                 pose_dict["t"] = in_dict["t"]
         if in_dict["y"].ndim == 4:
@@ -925,44 +954,55 @@ class HyperVolume(nn.Module):
         return building_params
 
     def eval_volume(
-        self, coords, resolution, extent, norm=(0.0, 1.0), zval=None, radius=None
+        self,
+        coords,
+        resolution,
+        extent,
+        norm,
+        zval=None,
+        radius=None,
+        z_dim=None,
     ):
-
-        if radius is None:
-            raise ValueError(
-                "Must provide a radius for volume generation with HyperVolume!"
-            )
+        """
+        lattice: Lattice
+        z_dim: int
+        norm: (mean, std)
+        zval: [z_dim]
+        radius: int
+        """
+        z_dim = z_dim or self.z_dim
         radius_normalized = extent * 2 * radius / resolution
 
         z = None
         if zval is not None:
             z = torch.tensor(zval, dtype=torch.float32, device=coords.device).reshape(
-                1, self.z_dim
+                1, z_dim
             )
 
         volume = np.zeros((resolution, resolution, resolution), dtype=np.float32)
-        assert not self.hypervolume.training
+        assert not self.training
         dzs = np.linspace(-extent, extent, resolution, endpoint=True, dtype=np.float32)
 
         with torch.no_grad():
             for i, dz in enumerate(dzs):
                 x = coords + torch.tensor([0, 0, dz], device=coords.device)
                 x = x.reshape(1, -1, 3)
-                y = self.hypervolume(x, z)
+                y = self(x, z)
 
                 slice_radius = int(
                     np.sqrt(max(radius_normalized**2 - dz**2, 0.0)) * resolution
                 )
-                slice_mask = mask.CircularMask(self.lattice, slice_radius).binary_mask
+                slice_mask = masking.CircularMask(
+                    slice_radius, coords, resolution, extent
+                ).binary_mask
 
                 y[0, ~slice_mask] = 0.0
                 y = y.view(resolution, resolution).detach().cpu().numpy()
                 volume[i] = y
 
+            # remove last +k freq for inverse FFT
             volume = volume * norm[1] + norm[0]
-            volume_real = fft.ihtn_center(
-                volume[0:-1, 0:-1, 0:-1]
-            )  # remove last +k freq for inverse FFT
+            volume_real = fft.ihtn_center(torch.Tensor(volume[0:-1, 0:-1, 0:-1]))
 
         return volume_real
 

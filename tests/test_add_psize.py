@@ -21,6 +21,7 @@ def test_add_psize(mrcs_data):
             "output/toy_projections_added_psize.mrc",
         ]
     )
+    os.makedirs("output", exist_ok=True)
     add_psize.main(args)
 
     # Data is unchanged

@@ -15,8 +15,8 @@ from importlib import import_module
 import cryodrgn
 
 
-def _get_commands(cmd_dir: str) -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
+def _get_commands(cmd_dir: str, doc_str: str = "") -> None:
+    parser = argparse.ArgumentParser(description=doc_str)
 
     parser.add_argument(
         "--version", action="version", version="cryoDRGN " + cryodrgn.__version__
@@ -47,9 +47,15 @@ def _get_commands(cmd_dir: str) -> None:
 
 def main_commands():
     """Commands installed with cryoDRGN."""
-    _get_commands(os.path.join(os.path.dirname(__file__), "commands"))
+    _get_commands(
+        cmd_dir=os.path.join(os.path.dirname(__file__), "commands"),
+        doc_str="Commands installed with cryoDRGN",
+    )
 
 
 def util_commands():
     """Utility commands installed with cryoDRGN."""
-    _get_commands(os.path.join(os.path.dirname(__file__), "commands_utils"))
+    _get_commands(
+        cmd_dir=os.path.join(os.path.dirname(__file__), "commands_utils"),
+        doc_str="Utility commands installed with cryoDRGN",
+    )

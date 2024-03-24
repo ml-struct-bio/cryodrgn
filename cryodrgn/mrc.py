@@ -1,6 +1,5 @@
 import sys
 import logging
-import os
 import struct
 from collections import OrderedDict
 from typing import Any, Optional, Tuple, Union
@@ -282,10 +281,9 @@ class MRCFile:
             transform_fn = lambda chunk, indices: chunk  # noqa: E731
 
         new_dtype = np.dtype(header.dtype).newbyteorder(header.ENDIANNESS)  # type: ignore
-
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
         with open(filename, "wb") as f:
             header.write(f)
+
             if isinstance(array, ImageSource):
                 for i, (indices, chunk) in enumerate(array.chunks(chunksize=chunksize)):
                     logger.debug(f"Processing chunk {i}")

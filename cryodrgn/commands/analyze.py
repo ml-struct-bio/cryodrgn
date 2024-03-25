@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 TEMPLATE_DIR = os.path.join(_ROOT, "templates")
 
 
-def add_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "traindir", type=os.path.abspath, help="Directory with cryoDRGN results"
     )
@@ -86,8 +86,6 @@ def add_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         help="Default value of start index for volume "
         "generation (default: %(default)s)",
     )
-
-    return parser
 
 
 class ModelAnalyzer:
@@ -249,20 +247,21 @@ class ModelAnalyzer:
                 z_values, voldir, prefix, suffix, start_index
             )
         else:
-            logger.info(f"Skipping volume generation...")
+            logger.info("Skipping volume generation...")
 
     def analyze(self):
         if self.trainer.configs.z_dim == 0:
             logger.warning("No analyses available for homogeneous reconstruction!")
+            return
 
-        if self.trainer.configs.z_dim == 1:
+        elif self.trainer.configs.z_dim == 1:
             self.analyze_z1()
         else:
             self.analyze_zN()
 
         # create Jupyter notebooks for data analysis and visualization by
         # copying them over from the template directory
-        if self.trainer.configs.quick_config["capture_setup"] == "spa":
+        if self.trainer.configs.tilt:
             out_ipynb = os.path.join(self.outdir, "cryoDRGN-analysis.ipynb")
 
             if not os.path.exists(out_ipynb):
@@ -733,8 +732,3 @@ def main(args):
     analyzer.analyze()
 
     logger.info(f"Finished in {dt.now() - t0}")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    main(add_args(parser).parse_args())

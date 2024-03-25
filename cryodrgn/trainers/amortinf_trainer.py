@@ -82,7 +82,7 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
     # others
     palette_type: str = None
 
-    quick_config = OrderedDict(
+    quick_configs = OrderedDict(
         {
             "capture_setup": {
                 "spa": dict(),

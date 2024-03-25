@@ -8,7 +8,7 @@ import pickle
 from collections import OrderedDict
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, fields, MISSING, asdict
-from typing import Any
+from typing import Any, ClassVar
 from typing_extensions import Self
 import yaml
 from datetime import datetime as dt
@@ -43,6 +43,8 @@ class BaseConfigurations(ABC):
     quick_config: OrderedDict = field(default_factory=OrderedDict)
     test_installation: bool = False
 
+    quick_configs: ClassVar[dict[str, dict[str, Any]]] = OrderedDict()
+
     def __post_init__(self) -> None:
         for this_field in fields(self):
             assert (
@@ -71,31 +73,38 @@ class BaseConfigurations(ABC):
             self.outdir = os.path.abspath(self.outdir)
 
         # process the quick_config parameter
-        for key, value in self.quick_config.items():
-            if key not in self.quick_config:
-                raise ValueError("Unrecognized parameter " f"shortcut field `{key}`!")
-
-            if value not in self.quick_config[key]:
+        for cfg_k, cfg_val in self.quick_config.items():
+            if cfg_k not in self.quick_configs:
                 raise ValueError(
-                    "Unrecognized parameter shortcut label "
-                    f"`{value}` for field `{key}`!"
+                    f"Unrecognized parameter quick_config shortcut field `{cfg_k}`!"
                 )
 
-            for _key, _value in self.quick_config[key][value].items():
-                if _key not in self.defaults:
+            if cfg_val not in self.quick_configs[cfg_k]:
+                raise ValueError(
+                    f"Unrecognized parameter quick_config shortcut label `{cfg_val}` "
+                    f"for field `{cfg_k}`, "
+                    f"choose from: {','.join(list(self.quick_configs[cfg_k]))}"
+                )
+
+            for par_k, par_value in self.quick_configs[cfg_k][cfg_val].items():
+                if par_k not in self:
                     raise ValueError(
-                        "Unrecognized configuration " f"parameter `{key}`!"
+                        f"Unrecognized configuration parameter `{par_k}` found "
+                        f"in this classes quick_config entry `{cfg_k}:{cfg_val}`!"
                     )
 
-                # given parameters have priority
-                if _key not in config_vals:
-                    config_vals[_key] = _value
+                # parameters given elsewhere in configs have priority
+                if getattr(self, par_k) == getattr(type(self), par_k):
+                    setattr(self, par_k, par_value)
 
     def __iter__(self):
         return iter(asdict(self).items())
 
     def __str__(self):
         return "\n".join([f"{par}{str(val):>20}" for par, val in self])
+
+    def __contains__(self, val) -> bool:
+        return val in {k for k, _ in self}
 
     def write(self, fl: str) -> None:
         """Saving configurations to file using the original order."""
@@ -151,15 +160,6 @@ class BaseTrainer(ABC):
 
             os.rename(self.outdir, newdir)
         os.makedirs(self.outdir)
-
-        if self.configs.verbose:
-            self.logger.setLevel(logging.DEBUG)
-        self.logger.addHandler(
-            logging.FileHandler(os.path.join(self.outdir, "training.log"))
-        )
-
-        self.logger.info(f"cryoDRGN {__version__}")
-        self.logger.info(str(self.configs))
 
     @classmethod
     def defaults(cls) -> dict[str, Any]:
@@ -248,7 +248,7 @@ class ModelConfigurations(BaseConfigurations):
             raise ValueError(f"Subset indices file {self.ind} does not exist!")
 
         if self.dataset:
-            paths_file = os.environ.get("DRGNAI_DATASETS")
+            paths_file = os.environ.get("CRYODRGN_DATASETS")
             paths = cryodrgn.utils.load_yaml(paths_file)
 
             if self.dataset not in paths:
@@ -261,7 +261,7 @@ class ModelConfigurations(BaseConfigurations):
             self.particles = use_paths["particles"]
 
             for k in ["ctf", "pose", "datadir", "labels", "ind", "dose_per_tilt"]:
-                if k not in config_vals and k in use_paths:
+                if getattr(self, k) is None and k in use_paths:
                     if not os.path.exists(use_paths[k]):
                         raise ValueError(
                             f"Given {k} file `{use_paths[k]}` does not exist!"
@@ -541,6 +541,7 @@ class ModelTrainer(BaseTrainer, ABC):
         self.current_epoch = None
         self.accum_losses = None
         self.total_batch_count = None
+        self.epoch_batch_count = None
         self.epoch_losses = None
         self.total_images_seen = None
         self.epoch_images_seen = None
@@ -576,8 +577,16 @@ class ModelTrainer(BaseTrainer, ABC):
     def train(self) -> None:
         self.create_outdir()
         self.save_configs()
-        train_start_time = dt.now()
+        if self.configs.verbose:
+            self.logger.setLevel(logging.DEBUG)
 
+        self.logger.addHandler(
+            logging.FileHandler(os.path.join(self.outdir, "training.log"))
+        )
+        self.logger.info(f"cryoDRGN {__version__}")
+        self.logger.info(str(self.configs))
+
+        train_start_time = dt.now()
         self.accum_losses = dict()
         if self.do_pretrain:
             self.current_epoch = 0
@@ -768,7 +777,7 @@ class ModelTrainer(BaseTrainer, ABC):
         self.configs: ModelConfigurations
         epoch_lbl = f"[{self.current_epoch}/{self.configs.num_epochs}]"
 
-        if self.in_pose_search_step:
+        if self.in_pretraining:
             epoch_lbl += " <pretraining>"
         elif self.in_pose_search_step:
             epoch_lbl += " <pose search>"

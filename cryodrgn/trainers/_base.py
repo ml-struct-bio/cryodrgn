@@ -34,10 +34,10 @@ except ImportError:
 class BaseConfigurations(ABC):
     """Base class for sets of model configuration parameters."""
 
-    # a parameter belongs to this set if and only if it has a default value
-    # defined in these variables, ordering makes e.g. printing easier for user
     trainer_cls: str = "BaseTrainer"
-    outdir: str = os.getcwd()
+
+    # a parameter belongs to this configuration set if and only if it has a default
+    # value defined here, note that children classes inherit these from parents
     verbose: int = 0
     seed: int = np.random.randint(0, 10000)
     quick_config: OrderedDict = field(default_factory=OrderedDict)
@@ -69,19 +69,14 @@ class BaseConfigurations(ABC):
                 f"given `{self.seed}` instead!"
             )
 
-        if self.outdir:
-            self.outdir = os.path.abspath(self.outdir)
-
         # process the quick_config parameter
         for cfg_k, cfg_val in self.quick_config.items():
             if cfg_k not in self.quick_configs:
-                raise ValueError(
-                    f"Unrecognized parameter quick_config shortcut field `{cfg_k}`!"
-                )
+                raise ValueError(f"Unrecognized quick_config shortcut field `{cfg_k}`!")
 
             if cfg_val not in self.quick_configs[cfg_k]:
                 raise ValueError(
-                    f"Unrecognized parameter quick_config shortcut label `{cfg_val}` "
+                    f"Unrecognized quick_config shortcut value `{cfg_val}` "
                     f"for field `{cfg_k}`, "
                     f"choose from: {','.join(list(self.quick_configs[cfg_k]))}"
                 )
@@ -118,7 +113,7 @@ class BaseTrainer(ABC):
 
     Attributes
     ----------
-    outdir (str):    Path to where experiment output is stored.
+    configs (BaseConfigurations):    The parameter configuration for this engine.
 
     """
 
@@ -143,23 +138,9 @@ class BaseTrainer(ABC):
             configs = self.get_latest_configs()
 
         self.configs = self.config_cls(**configs)
-        self.outdir = self.configs.outdir
         self.verbose = self.configs.verbose
         np.random.seed(self.configs.seed)
         self.logger = logging.getLogger(__name__)
-
-    # TODO: more sophisticated management of existing output folders
-    def create_outdir(self) -> None:
-        if os.path.exists(self.outdir):
-            self.logger.warning("Output folder already exists, renaming the old one.")
-            newdir = self.outdir + "_old"
-
-            if os.path.exists(newdir):
-                self.logger.warning("Must delete the previously saved old output.")
-                shutil.rmtree(newdir)
-
-            os.rename(self.outdir, newdir)
-        os.makedirs(self.outdir)
 
     @classmethod
     def defaults(cls) -> dict[str, Any]:
@@ -176,42 +157,66 @@ class BaseTrainer(ABC):
 class ModelConfigurations(BaseConfigurations):
 
     trainer_cls: str = "ModelTrainer"
-    model: str = "amort"
+
+    # a parameter belongs to this configuration set if and only if it has a default
+    # value defined here, note that children classes inherit these from parents
+    model: str = None
+
+    # whether we are doing homogeneous (z_dim=0) or heterogeneous (z_dim>0)
+    # reconstruction, and how long to train for
+    z_dim: int = 0
+    num_epochs: int = 30
+    # paths to where output will be stored and where input datasets are located
+    outdir: str = os.getcwd()
     particles: str = None
     ctf: str = None
-    pose: str = None
+    poses: str = None
     dataset: str = None
     datadir: str = None
     ind: str = None
     labels: str = None
-    log_interval: int = 1000
-    checkpoint: int = 5
-    load: str = None
-    load_poses: str = None
-    z_dim: int = 0
+    # whether to start with given poses to some degree, or do ab initio pose search
     use_gt_poses: bool = False
     refine_gt_poses: bool = False
     use_gt_trans: bool = False
-    invert_data: bool = True
+    no_trans: bool = False
+    # loading checkpoints from previous experiment runs
+    load: str = None
+    load_poses: str = None
+    # using a lazy data loader to minimize memory usage, shuffling training minibatches
+    # and controlling their size, applying parallel computation and data processing
+    batch_size: int = 8
     lazy: bool = False
-    window: bool = True
-    window_r: float = 0.85
     shuffler_size: int = 0
+    amp: bool = True
+    multigpu: bool = False
     max_threads: int = 16
     num_workers: int = 1
+    # how often to print log messages and save trained model data
+    log_interval: int = 1000
+    checkpoint: int = 5
+    # if using a cryo-ET dataset, description of dataset tilting parameters
     tilt: bool = None
+    n_tilts: int = 11
     tilt_deg: int = 45
-    num_epochs: int = 30
-    batch_size: int = 8
+    subtomo_averaging: bool = False
+    # masking
+    window: bool = True
+    window_r: float = 0.85
+    # data normalization
+    invert_data: bool = True
+    data_norm: float = None
+    use_real: bool = False
+    # how long to do pretraining for, and what type
+    pretrain: int = 10000
+    reset_optim_after_pretrain: bool = False
+    # other learning parameters
     weight_decay: int = 0
     learning_rate: float = 1e-4
     pose_learning_rate: bool = None
-    lattice_extent: float = 0.5
+    l_extent: float = 0.5
     l_start: int = 12
     l_end: int = 32
-    data_norm: float = None
-    multigpu: bool = False
-    pretrain: int = 10000
     t_extent: float = 10.0
     t_ngrid: int = 7
     t_xshift: int = 0
@@ -224,15 +229,9 @@ class ModelConfigurations(BaseConfigurations):
     activation: str = "relu"
     feat_sigma: float = 0.5
     base_healpy: int = 2
-    subtomo_averaging: bool = False
     volume_optim_type: str = "adam"
-    use_real: bool = False
-    no_trans: bool = False
-    amp: bool = True
-    reset_optim_after_pretrain: bool = False
     pose_sgd_emb_type: str = "quat"
     verbose_time: bool = False
-    n_tilts: int = 11
 
     def __post_init__(self) -> None:
         super().__post_init__()
@@ -244,6 +243,7 @@ class ModelConfigurations(BaseConfigurations):
                 f"`hps` (cryoDRGN v3,v2,v1 hierarchical pose estimation)\n"
             )
 
+        self.outdir = os.path.abspath(self.outdir)
         if isinstance(self.ind, str) and not os.path.exists(self.ind):
             raise ValueError(f"Subset indices file {self.ind} does not exist!")
 
@@ -260,7 +260,7 @@ class ModelConfigurations(BaseConfigurations):
             use_paths = paths[self.dataset]
             self.particles = use_paths["particles"]
 
-            for k in ["ctf", "pose", "datadir", "labels", "ind", "dose_per_tilt"]:
+            for k in ["ctf", "poses", "datadir", "labels", "ind", "dose_per_tilt"]:
                 if getattr(self, k) is None and k in use_paths:
                     if not os.path.exists(use_paths[k]):
                         raise ValueError(
@@ -276,7 +276,7 @@ class ModelConfigurations(BaseConfigurations):
                     f"or a positive integer (heterogeneous reconstruction)!"
                 )
 
-        if (self.use_gt_poses or self.refine_gt_poses) and not self.pose:
+        if (self.use_gt_poses or self.refine_gt_poses) and not self.poses:
             raise ValueError(
                 "Must specify a poses file using pose= if using "
                 "or refining ground truth poses!"
@@ -306,8 +306,22 @@ class ModelTrainer(BaseTrainer, ABC):
     def make_volume_model(self) -> nn.Module:
         pass
 
+    # TODO: more sophisticated management of existing output folders
+    def create_outdir(self) -> None:
+        if os.path.exists(self.outdir):
+            self.logger.warning("Output folder already exists, renaming the old one.")
+            newdir = self.outdir + "_old"
+
+            if os.path.exists(newdir):
+                self.logger.warning("Must delete the previously saved old output.")
+                shutil.rmtree(newdir)
+
+            os.rename(self.outdir, newdir)
+        os.makedirs(self.outdir)
+
     def __init__(self, configs: dict[str, Any]) -> None:
         super().__init__(configs)
+        self.outdir = self.configs.outdir
 
         # set the device
         torch.manual_seed(self.configs.seed)
@@ -380,7 +394,7 @@ class ModelTrainer(BaseTrainer, ABC):
                 max_threads=self.configs.max_threads,
                 dose_per_tilt=self.configs.dose_per_tilt,
                 device=self.device,
-                poses_gt_pkl=self.configs.pose,
+                poses_gt_pkl=self.configs.poses,
                 tilt_axis_angle=self.configs.tilt_axis_angle,
                 no_trans=self.configs.no_trans,
             )
@@ -419,7 +433,7 @@ class ModelTrainer(BaseTrainer, ABC):
         # lattice
         self.logger.info("Building lattice...")
         self.lattice = Lattice(
-            self.resolution, extent=self.configs.lattice_extent, device=self.device
+            self.resolution, extent=self.configs.l_extent, device=self.device
         )
 
         self.logger.info("Initializing volume model...")
@@ -525,9 +539,9 @@ class ModelTrainer(BaseTrainer, ABC):
             self.configs.pretrain if self.configs.pretrain >= 0 else self.particle_count
         )
 
-        if self.configs.pose:
+        if self.configs.poses:
             self.pose_tracker = PoseTracker.load(
-                infile=self.configs.pose,
+                infile=self.configs.poses,
                 Nimg=self.image_count,
                 D=self.resolution,
                 emb_type="s2s2" if self.configs.refine_gt_poses else None,

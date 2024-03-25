@@ -3,6 +3,7 @@
 import os
 import pickle
 from dataclasses import dataclass
+from collections import OrderedDict
 from typing import Any, Callable
 import numpy as np
 import torch
@@ -16,13 +17,32 @@ from cryodrgn.models.variational_autoencoder import unparallelize, HetOnlyVAE
 from cryodrgn.models.neural_nets import get_decoder
 from cryodrgn.models.pose_search import PoseSearch
 from cryodrgn.trainers._base import ModelTrainer, ModelConfigurations
+from cryodrgn.mrc import MRCFile
 
 
 @dataclass
 class HierarchicalPoseSearchConfigurations(ModelConfigurations):
 
     trainer_cls: str = "HierarchicalPoseSearchTrainer"
-    enc_only: bool = False
+
+    # a parameter belongs to this configuration set if and only if it has a default
+    # value defined here, note that children classes inherit these from parents
+    model = "hps"
+
+    # specifying size and type of model encoder and decoder
+    enc_layers: int = None
+    enc_dim: int = None
+    encode_mode: str = "resid"
+    enc_mask: bool = None
+    tilt_enc_only: bool = False
+    dec_layers: int = None
+    dec_dim: int = None
+    # how often pose search is done and other pose search parameters
+    ps_freq: int = 5
+    n_kept_poses: int = 8
+    pose_model_update_freq: int = None
+    grid_niter: int = 4
+    # other learning model parameters
     beta: float = None
     beta_control: float = None
     equivariance: bool = None
@@ -30,18 +50,35 @@ class HierarchicalPoseSearchConfigurations(ModelConfigurations):
     equivariance_stop: int = 200000
     l_ramp_epochs: int = 0
     l_ramp_model: int = 0
+    # resetting every certain number of epochs
     reset_model_every: int = None
     reset_optim_every: int = None
-    grid_niter: int = 4
-    ps_freq: int = 5
-    n_kept_poses: int = 8
-    pose_model_update_freq: int = None
-    enc_layers: int = None
-    enc_dim: int = None
-    encode_mode: str = "resid"
-    enc_mask: bool = None
-    dec_layers: int = None
-    dec_dim: int = None
+
+    quick_configs = OrderedDict(
+        {
+            "capture_setup": {
+                "spa": dict(),
+                "et": {
+                    "subtomo_averaging": True,
+                    "shuffler_size": 0,
+                    "num_workers": 0,
+                    "t_extent": 0.0,
+                },
+            },
+            "reconstruction_type": {"homo": {"z_dim": 0}, "het": dict()},
+            "pose_estimation": {
+                "abinit": dict(),
+                "refine": {"refine_gt_poses": True, "pose_learning_rate": 1.0e-4},
+                "fixed": {"use_gt_poses": True},
+            },
+            "model_size": {
+                "small": {"enc_layers": 128, "dec_layers": 128},
+                "medium": {"enc_layers": 256, "dec_layers": 256},
+                "large": {"enc_layers": 512, "dec_layers": 512},
+                "very-large": {"enc_layers": 1024, "dec_layers": 1024},
+            },
+        }
+    )
 
     def __post_init__(self) -> None:
         super().__post_init__()
@@ -188,7 +225,6 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
         # set beta schedule
         if self.configs.z_dim:
             beta = self.configs.beta or self.configs.z_dim**-1
-            # beta = 1.0 / args.ntilts
 
             if isinstance(beta, float):
                 self.beta_schedule = lambda x: beta
@@ -237,7 +273,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
         else:
             self.pose_optimizer = None
 
-        if self.configs.pose:
+        if self.configs.poses:
             self.pose_search = None
             self.pose_model = None
 
@@ -359,7 +395,11 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
         # VAE inference of z
         self.volume_optimizer.zero_grad()
         self.volume_model.train()
-        input_ = (y, tilt_ind) if use_tilt else (y,)
+
+        if yr is not None:
+            input_ = (yr, tilt_ind) if use_tilt else (yr,)
+        else:
+            input_ = (y, tilt_ind) if use_tilt else (y,)
         if ctf_i is not None:
             input_ = (x * ctf_i.sign() for x in input_)  # phase flip by the ctf
 
@@ -384,7 +424,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                 rot, trans, base_pose = self.pose_search.opt_theta_trans(
                     y,
                     z=z,
-                    images_tilt=None if self.configs.enc_only else tilt_ind,
+                    images_tilt=None if self.configs.tilt_enc_only else tilt_ind,
                     ctf_i=ctf_i,
                 )
             if self.configs.z_dim:
@@ -435,11 +475,17 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
             tilt_ind = translate(tilt_ind)
 
         if use_tilt:
-            rot_loss = F.mse_loss(gen_slice(rot), y)
+            if dose_filters:
+                rot_loss = F.mse_loss(gen_slice(rot), y)
+            else:
+                y_recon = torch.mul(gen_slice(rot), dose_filters[:, mask])
+                rot_loss = F.mse_loss(y_recon, y)
+
             tilt_loss = F.mse_loss(
                 gen_slice(bnb.tilt @ rot), tilt_ind  # type: ignore  # noqa: F821
             )
             losses["gen"] = (rot_loss + tilt_loss) / 2
+
         else:
             losses["gen"] = F.mse_loss(gen_slice(rot), y)
 
@@ -577,10 +623,21 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
 
     def save_epoch_data(self):
         """Save model weights, latent encoding z, and decoder volumes"""
-        out_mrc = os.path.join(self.outdir, f"reconstruct.{self.epoch_lbl}.mrc")
         out_weights = os.path.join(self.outdir, f"weights.{self.epoch_lbl}.pkl")
         out_poses = os.path.join(self.outdir, f"pose.{self.epoch_lbl}.pkl")
         out_conf = os.path.join(self.outdir, f"conf.{self.epoch_lbl}.pkl")
+
+        # save a reconstructed volume by evaluating model on a 3d lattice
+        if self.configs.z_dim == 0:
+            out_mrc = os.path.join(self.outdir, f"reconstruct.{self.epoch_lbl}.mrc")
+            self.volume_model.eval()
+            vol = self.volume_model.eval_volume(
+                coords=self.lattice.coords,
+                D=self.lattice.D,
+                extent=self.lattice.extent,
+                norm=self.data.norm,
+            )
+            MRCFile.write(out_mrc, vol)
 
         # save model weights
         torch.save(

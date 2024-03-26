@@ -1,5 +1,5 @@
 """Unit tests of the cryodrgn fsc command."""
-
+import pandas as pd
 import pytest
 import os
 import numpy as np
@@ -16,18 +16,16 @@ def test_fidelity(trained_dir) -> None:
 
     vol_file1 = os.path.join(trained_dir.outdir, "reconstruct.0.mrc")
     vol_file2 = os.path.join(trained_dir.outdir, "reconstruct.4.mrc")
-    fsc_file = os.path.join(trained_dir.outdir, "fsc.txt")
-
     out, err = run_command(f"cryodrgn_utils fsc {vol_file1} {vol_file2}")
     assert err == ""
 
     assert np.array_equal(
-        np.array(out.split("\n")[1].split(), dtype="float"),
+        np.array(out.split("\n")[2].split(), dtype="float"),
         np.array([0.0, 1.0]),
     )
     assert np.array_equal(
-        np.array(out.split("\n")[3].split(), dtype="float"),
-        np.array([0.031250, 0.893017]),
+        np.array(out.split("\n")[4].split(), dtype="float"),
+        np.array([0.0312, 0.8930]),
     )
 
     assert out.split("\n")[-3].split()[4] == "0.5:"
@@ -42,22 +40,7 @@ def test_fidelity(trained_dir) -> None:
         )
         == 34.584
     )
-    assert len(out.split("\n")) == 37
-
-    out, err = run_command(f"cryodrgn_utils fsc {vol_file1} {vol_file2} -o {fsc_file}")
-    assert err == ""
-    fsc_vals = np.fromfile(fsc_file, dtype=float, sep=" ")
-
-    assert out.split("\n")[-3].split()[4] == "0.5:"
-    assert round(float(out.split("\n")[-3].split()[5]), 6) == 2.064516
-    assert out.split("\n")[-2].split()[4] == "0.143:"
-    assert round(float(out.split("\n")[-3].split()[5]), 6) == 2.064516
-    assert len(out.split("\n")) == 4
-    assert round(10 ** (fsc_vals @ np.tile([1, -1], len(fsc_vals) // 2)), 4) == 0.9931
-
-    import shutil
-
-    shutil.copy(fsc_file, f"fsc-vals_{np.random.choice(list(range(1000)))}.txt")
+    assert len(out.split("\n")) == 38
 
 
 @pytest.mark.parametrize(
@@ -82,10 +65,11 @@ def test_output_file(trained_dir, epochs: tuple[int, int]) -> None:
     out, err = run_command(f"cryodrgn_utils fsc {vol_file1} {vol_file2} -o {fsc_file}")
     assert err == ""
 
-    fsc_vals = np.fromfile(fsc_file, dtype=float, sep=" ")
-    assert len(fsc_vals) * 2 + 21 == len(out0.split())
-    for i, fsc_val in enumerate(fsc_vals):
-        assert round(fsc_val, 6) == round(float(out0.split()[8 + 2 * i]), 6)
+    fsc_vals = pd.read_csv(fsc_file, dtype=float, sep=" ")
+    assert fsc_vals.shape[0] * 2 + 20 == len(out0.split())
+    for i, (_, (res_val, fsc_val)) in enumerate(fsc_vals.iterrows()):
+        assert round(res_val, 4) == round(float(out0.split()[6 + 2 * i]), 6)
+        assert round(fsc_val, 4) == round(float(out0.split()[7 + 2 * i]), 6)
 
 
 @pytest.mark.parametrize(
@@ -112,8 +96,8 @@ def test_apply_mask(trained_dir, epochs: tuple[int, int]) -> None:
 
     assert out.split("\n")[-3].split()[4] == "0.5:"
     assert out.split("\n")[-2].split()[4] == "0.143:"
-    assert round(float(out.split("\n")[6].split()[0]), 3) == 0.167
-    assert 0.97 < float(out.split("\n")[6].split()[1]) < 0.99
+    assert round(float(out.split("\n")[7].split()[0]), 3) == 0.167
+    assert 0.97 < float(out.split("\n")[7].split()[1]) < 0.99
 
 
 @pytest.mark.parametrize(
@@ -147,3 +131,11 @@ def test_plotting(trained_dir, epochs: tuple[int, int]) -> None:
     out, err = run_command(f"cryodrgn_utils fsc {vol_file1} {vol_file2} -p {plot_file}")
     assert err == ""
     assert os.path.exists(plot_file)
+    os.unlink(plot_file)
+
+    fsc_file = os.path.join(trained_dir.outdir, "fsc.txt")
+    out, err = run_command(
+        f"cryodrgn_utils fsc {vol_file1} {vol_file2} -o {fsc_file} -p"
+    )
+    assert err == ""
+    assert os.path.exists(fsc_file.replace(".txt", ".png"))

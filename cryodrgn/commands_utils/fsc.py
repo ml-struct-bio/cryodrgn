@@ -2,8 +2,9 @@
 
 Example usages
 --------------
-$ cryodrgn_utils fsc volume1.mrc volume2.mrc -o fsc.txt -p
-$ cryodrgn_utils fsc volume1.mrc volume2.mrc --mask test-mask.mrc -o fsc.txt
+$ cryodrgn_utils fsc volume1.mrc volume2.mrc
+$ cryodrgn_utils fsc vol1.mrc vol2.mrc -o fsc.txt -p
+$ cryodrgn_utils fsc vol1.mrc vol2.mrc --mask test-mask.mrc -o fsc.txt -p fsc-plot.png
 
 """
 import os
@@ -41,12 +42,13 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--Apix",
         type=float,
-        default=1,
+        default=1.0,
         help="Ang/pixels to use when printing the resolutions at thresholds",
     )
     parser.add_argument(
-        "-o",
         "--outtxt",
+        "-o",
+        type=os.path.abspath,
         help=(
             "if given, a file to save the FSC values, "
             "with each space-delimited row as <resolution> <fsc_val>; "
@@ -57,7 +59,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
 
 def calculate_fsc(
     vol1: torch.Tensor, vol2: torch.Tensor, mask_file: Optional[str] = None
-) -> pd.Series:
+) -> pd.DataFrame:
 
     if mask_file:
         mask = ImageSource.from_file(mask_file)
@@ -87,7 +89,7 @@ def calculate_fsc(
         fsc.append(float(p.real))
         prev_mask = mask
 
-    return pd.Series(fsc, index=np.arange(D // 2) / D)
+    return pd.DataFrame(dict(pixres=np.arange(D // 2) / D, fsc=fsc))
 
 
 def main(args):
@@ -97,24 +99,26 @@ def main(args):
 
     if args.outtxt:
         logger.info(f"Saving FSC values to {args.outtxt}")
-        np.savetxt(args.outtxt, fsc_vals.values)
+        fsc_vals.to_csv(args.outtxt, sep=" ", index=False)
     else:
-        logger.info("\n".join(["Calculated FSC values:", str(fsc_vals)]))
+        fsc_str = fsc_vals.round(4).to_csv(sep="\t", index=False)
+        logger.info(f"\n{fsc_str}")
 
-    if (fsc_vals >= 0.5).any():
-        res = fsc_vals[fsc_vals >= 0.5].index.max()
-        logger.info("0.5: {}".format(1 / res * args.Apix))
-    if (fsc_vals >= 0.143).any():
-        res = fsc_vals[fsc_vals >= 0.143].index.max()
-        logger.info("0.143: {}".format(1 / res * args.Apix))
+    if (fsc_vals.fsc >= 0.5).any():
+        res = fsc_vals.pixres[fsc_vals.fsc >= 0.5].max()
+        logger.info("0.5: {:.7g} ang".format((1 / res) * args.Apix))
+    if (fsc_vals.fsc >= 0.143).any():
+        res = fsc_vals.pixres[fsc_vals.fsc >= 0.143].max()
+        logger.info("0.143: {:.7g} ang".format((1 / res) * args.Apix))
 
     if args.plot:
         if isinstance(args.plot, bool):
             if args.outtxt:
-                plot_file = os.path.basename(args.outtxt) + ".png"
+                plot_file = "".join([os.path.splitext(args.outtxt)[0], ".png"])
             else:
                 plot_file = "fsc-plot.png"
         else:
             plot_file = str(args.plot)
 
+        logger.info(f"Saving plot to {plot_file}")
         create_fsc_plot(fsc_vals=fsc_vals, outfile=plot_file, Apix=args.Apix)

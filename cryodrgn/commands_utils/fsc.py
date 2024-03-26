@@ -9,13 +9,13 @@ $ cryodrgn_utils fsc volume1.mrc volume2.mrc --mask test-mask.mrc -o fsc.txt
 import os
 import argparse
 import logging
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
 from typing import Optional
 from cryodrgn import fft
 from cryodrgn.source import ImageSource
+from cryodrgn.commands_utils.plot_fsc import create_fsc_plot
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,14 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         help="if given, apply the mask in this file before calculating FSCs",
     )
     parser.add_argument(
-        "--plot", "-p", action="store_true", help="create plot of FSC curve?"
+        "--plot",
+        "-p",
+        type=os.path.abspath,
+        nargs="?",
+        const=True,
+        default=None,
+        help="also plot the FSC curve: optionally supply a .png file name instead of "
+        "generating one automatically",
     )
     parser.add_argument(
         "--Apix",
@@ -89,9 +96,10 @@ def main(args):
     fsc_vals = calculate_fsc(vol1.images(), vol2.images(), args.mask)
 
     if args.outtxt:
+        logger.info(f"Saving FSC values to {args.outtxt}")
         np.savetxt(args.outtxt, fsc_vals.values)
     else:
-        logger.info(fsc_vals)
+        logger.info("\n".join(["Calculated FSC values:", str(fsc_vals)]))
 
     if (fsc_vals >= 0.5).any():
         res = fsc_vals[fsc_vals >= 0.5].index.max()
@@ -101,6 +109,12 @@ def main(args):
         logger.info("0.143: {}".format(1 / res * args.Apix))
 
     if args.plot:
-        plt.plot(fsc_vals.index, fsc_vals.values)
-        plt.ylim((0, 1))
-        plt.show()
+        if isinstance(args.plot, bool):
+            if args.outtxt:
+                plot_file = os.path.basename(args.outtxt) + ".png"
+            else:
+                plot_file = "fsc-plot.png"
+        else:
+            plot_file = str(args.plot)
+
+        create_fsc_plot(fsc_vals=fsc_vals, outfile=plot_file, Apix=args.Apix)

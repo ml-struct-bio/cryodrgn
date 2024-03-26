@@ -22,6 +22,7 @@ HEADERS = [
 
 def add_args(parser):
     parser.add_argument("star", help="Input")
+
     parser.add_argument(
         "-o", type=os.path.abspath, required=True, help="Output pkl of CTF parameters"
     )
@@ -36,7 +37,6 @@ def add_args(parser):
     group.add_argument("--cs", type=float, help="Spherical abberation (mm)")
     group.add_argument("-w", type=float, help="Amplitude contrast ratio")
     group.add_argument("--ps", type=float, help="Phase shift (deg)")
-    return parser
 
 
 def main(args):
@@ -107,4 +107,5 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    main(add_args(parser).parse_args())
+    add_args(parser)
+    main(parser.parse_args())

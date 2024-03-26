@@ -1,6 +1,7 @@
 from collections.abc import Hashable
 import functools
 import os
+import subprocess
 import pickle
 import yaml
 import logging
@@ -109,6 +110,12 @@ def save_yaml(data, out_yamlfile: str, mode: str = "w"):
         logger.warning(f"Warning: {out_yamlfile} already exists. Overwriting.")
     with open(out_yamlfile, mode) as f:
         yaml.dump(data, f)
+
+
+def run_command(cmd: str) -> tuple[str, str]:
+    cmd_out = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+
+    return cmd_out.stdout, cmd_out.stderr
 
 
 def R_from_eman(a: np.ndarray, b: np.ndarray, y: np.ndarray) -> np.ndarray:

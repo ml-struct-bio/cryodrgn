@@ -37,9 +37,9 @@ def main(args):
             len(s.data_optics.df) == 1
         ), "Datasets with only one optics group are supported."
         args.Apix = float(s.data_optics.df["_rlnImagePixelSize"][0])
-        args.D = int(s.data_optics.df["_rlnImageSize"][0])
+        args.D = int(float(s.data_optics.df["_rlnImageSize"][0]))
     if args.D is None and "_rlnImageSize" in s.headers:
-        args.D = int(s.df["_rlnImageSize"][0])
+        args.D = int(float(s.df["_rlnImageSize"][0]))
     assert args.D is not None, "Must provide image size with -D"
 
     N = len(s.df)

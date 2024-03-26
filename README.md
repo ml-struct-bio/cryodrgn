@@ -4,6 +4,9 @@
 
 CryoDRGN is a neural network based algorithm for heterogeneous cryo-EM reconstruction. In particular, the method models a *continuous* distribution over 3D structures by using a neural network based representation for the volume.
 
+**Note:** This is a private fork of the public [cryodrgn repo](https://github.com/ml-struct-bio/cryodrgn) meant for novel research work done by the DRGN lab at Princeton.
+The main branch of this repo will be periodically merged with the main branch of its public counterpart.
+
 ## Documentation:
 
 The latest documentation for cryoDRGN is available [on gitbook](https://ez-lab.gitbook.io/cryodrgn/), including an overview and walkthrough of cryoDRGN installation, training and analysis. A brief quick start is provided below.

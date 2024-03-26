@@ -44,7 +44,9 @@ def test_pipeline(
     os.makedirs("output", exist_ok=True)
 
     # Downsample all particles from an .mrcs file to a pkl file
-    args = parse_ctf_star.add_args(argparse.ArgumentParser()).parse_args(
+    parser = argparse.ArgumentParser()
+    parse_ctf_star.add_args(parser)
+    args = parser.parse_args(
         [
             toy_projections_star,
             "-D",
@@ -58,7 +60,9 @@ def test_pipeline(
     parse_ctf_star.main(args)
 
     # Write starfile from an input .mrcs, with ALL particles selected
-    args = write_star.add_args(argparse.ArgumentParser()).parse_args(
+    parser = argparse.ArgumentParser()
+    write_star.add_args(parser)
+    args = parser.parse_args(
         [
             toy_particles_mrcs,
             "--ctf",
@@ -70,7 +74,9 @@ def test_pipeline(
     write_star.main(args)
 
     # Write starfile from an input .mrcs, with 100 particles selected
-    args = write_star.add_args(argparse.ArgumentParser()).parse_args(
+    parser = argparse.ArgumentParser()
+    write_star.add_args(parser)
+    args = parser.parse_args(
         [
             toy_particles_mrcs,
             "--ctf",
@@ -84,7 +90,9 @@ def test_pipeline(
     write_star.main(args)
 
     # Write starfile from an input .mrcs, with poses, with ALL particles selected
-    args = write_star.add_args(argparse.ArgumentParser()).parse_args(
+    parser = argparse.ArgumentParser()
+    write_star.add_args(parser)
+    args = parser.parse_args(
         [
             toy_particles_mrcs,
             "--ctf",
@@ -119,7 +127,9 @@ def test_pipeline(
     downsample.main(args)
 
     # Write starfile from an input .txt file with 100 particles selected
-    args = write_star.add_args(argparse.ArgumentParser()).parse_args(
+    parser = argparse.ArgumentParser()
+    write_star.add_args(parser)
+    args = parser.parse_args(
         [
             toy_projections_txt,
             "--ctf",
@@ -133,7 +143,9 @@ def test_pipeline(
     write_star.main(args)
 
     # Test copying micrograph coordinates
-    args = write_star.add_args(argparse.ArgumentParser()).parse_args(
+    parser = argparse.ArgumentParser()
+    write_star.add_args(parser)
+    args = parser.parse_args(
         [
             relion_mrcs,
             "--ctf",
@@ -145,7 +157,9 @@ def test_pipeline(
     write_star.main(args)
 
     # Test copying micrograph coordinates, with filtering
-    args = write_star.add_args(argparse.ArgumentParser()).parse_args(
+    parser = argparse.ArgumentParser()
+    write_star.add_args(parser)
+    args = parser.parse_args(
         [
             relion_mrcs,
             "--ctf",

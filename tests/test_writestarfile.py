@@ -14,7 +14,10 @@ def particles_starfile():
 
 def test_writestarfile1():
     os.makedirs("output", exist_ok=True)
-    args = write_star.add_args(argparse.ArgumentParser()).parse_args(
+    parser = argparse.ArgumentParser()
+    write_star.add_args(parser)
+
+    args = parser.parse_args(
         [
             f"{DATA_FOLDER}/hand.5.mrcs",
             "--ctf",
@@ -28,7 +31,10 @@ def test_writestarfile1():
 
 def test_writestarfile2(particles_starfile):
     os.makedirs("output", exist_ok=True)
-    args = write_star.add_args(argparse.ArgumentParser()).parse_args(
+    parser = argparse.ArgumentParser()
+    write_star.add_args(parser)
+
+    args = parser.parse_args(
         [
             f"{DATA_FOLDER}/hand.5.mrcs",
             "--ctf",

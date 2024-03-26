@@ -1,7 +1,11 @@
-"""
-Homogeneous NN reconstruction with hierarchical pose optimization
-"""
+"""Homogeneous neural net ab initio reconstruction with hierarchical pose optimization.
 
+Example usages
+--------------
+$ cryodrgn abinit_homo particles.256.txt --ctf ctf.pkl --ind chosen-particles.pkl \
+                                         -o cryodrn-out/256_abinit-homo
+
+"""
 import argparse
 import os
 import pickle
@@ -12,10 +16,12 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 from cryodrgn import ctf, dataset, lie_tools, models, utils
 from cryodrgn.mrc import MRCFile
 from cryodrgn.lattice import Lattice
 from cryodrgn.pose_search import PoseSearch
+import cryodrgn.config
 
 logger = logging.getLogger(__name__)
 
@@ -218,13 +224,15 @@ def add_args(parser):
         "--nkeptposes",
         type=int,
         default=8,
-        help="Number of poses to keep at each refinement interation during branch and bound (default: %(default)s)",
+        help="Number of poses to keep at each refinement interation "
+        "during branch and bound (default: %(default)s)",
     )
     group.add_argument(
         "--base-healpy",
         type=int,
         default=2,
-        help="Base healpy grid for pose search. Higher means exponentially higher resolution (default: %(default)s)",
+        help="Base healpy grid for pose search. Higher means exponentially higher "
+        "resolution (default: %(default)s)",
     )
     group.add_argument(
         "--pose-model-update-freq",
@@ -249,7 +257,8 @@ def add_args(parser):
         "--l-extent",
         type=float,
         default=0.5,
-        help="Coordinate lattice size (if not using positional encoding) (default: %(default)s)",
+        help="Coordinate lattice size (if not using positional encoding) "
+        "(default: %(default)s)",
     )
     group.add_argument(
         "--pe-type",
@@ -469,6 +478,35 @@ def make_model(args, D: int):
     )
 
 
+def save_config(args, dataset, lattice, out_config):
+    dataset_args = dict(
+        particles=args.particles,
+        norm=dataset.norm,
+        invert_data=args.invert_data,
+        ind=args.ind,
+        window=args.window,
+        window_r=args.window_r,
+        ctf=args.ctf,
+    )
+    if args.tilt is not None:
+        dataset_args["particles_tilt"] = args.tilt
+    lattice_args = dict(D=lattice.D, extent=lattice.extent, ignore_DC=lattice.ignore_DC)
+    model_args = dict(
+        qlayers=args.layers,
+        qdim=args.dim,
+        pe_type=args.pe_type,
+        feat_sigma=args.feat_sigma,
+        pe_dim=args.pe_dim,
+        domain=args.domain,
+        activation=args.activation,
+    )
+    config = dict(
+        dataset_args=dataset_args, lattice_args=lattice_args, model_args=model_args
+    )
+
+    cryodrgn.config.save(config, out_config)
+
+
 def main(args):
     if args.verbose:
         logger.setLevel(logging.DEBUG)
@@ -499,7 +537,10 @@ def main(args):
     # load the particles
     if args.ind is not None:
         logger.info("Filtering image dataset with {}".format(args.ind))
-        args.ind = pickle.load(open(args.ind, "rb"))
+        ind = pickle.load(open(args.ind, "rb"))
+    else:
+        ind = None
+
     if args.tilt is None:
         tilt = None
     else:
@@ -510,7 +551,7 @@ def main(args):
         lazy=args.lazy,
         norm=args.norm,
         invert_data=args.invert_data,
-        ind=args.ind,
+        ind=ind,
         window=args.window,
         window_r=args.window_r,
     )
@@ -522,8 +563,8 @@ def main(args):
     if args.ctf is not None:
         logger.info("Loading ctf params from {}".format(args.ctf))
         ctf_params = ctf.load_ctf_for_training(D - 1, args.ctf)
-        if args.ind is not None:
-            ctf_params = ctf_params[args.ind]
+        if ind is not None:
+            ctf_params = ctf_params[ind]
         assert ctf_params.shape == (Nimg, 8)
         ctf_params = torch.tensor(ctf_params, device=device)
     else:
@@ -540,6 +581,9 @@ def main(args):
         pose_model.eval()
     else:
         pose_model = model
+
+    # save configuration
+    save_config(args, data, lattice, os.path.join(args.outdir, "config.yaml"))
 
     if args.no_trans:
         raise NotImplementedError()
@@ -695,6 +739,7 @@ def main(args):
                         epoch + 1, args.num_epochs, batch_it, Nimg, loss_item
                     )
                 )
+
         logger.info(
             "# =====> Epoch: {} Average loss = {:.4}; Finished in {}".format(
                 epoch + 1, loss_accum / Nimg, dt.now() - t2

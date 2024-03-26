@@ -68,7 +68,10 @@ def test_filter(input_star):
         #   the index of the individual particle in the MRCS file (e.g. 00042@mymrcs.mrcs)
         pickle.dump([11, 3, 2, 4], f)
 
-    args = filter_star.add_args(argparse.ArgumentParser()).parse_args(
+    parser = argparse.ArgumentParser()
+    filter_star.add_args(parser)
+
+    args = parser.parse_args(
         [
             input_star,
             "--ind",
@@ -89,7 +92,9 @@ def test_filter(input_star):
 def test_parse_ctf_star(input_star):
     os.makedirs("output", exist_ok=True)
 
-    args = parse_ctf_star.add_args(argparse.ArgumentParser()).parse_args(
+    parser = argparse.ArgumentParser()
+    parse_ctf_star.add_args(parser)
+    args = parser.parse_args(
         [
             input_star,  # 13 particles
             "-o",
@@ -116,7 +121,9 @@ def test_write_star(input_mrcs, input_star_all):
     os.makedirs("output", exist_ok=True)
 
     # The CTF pkl file is required for write_star, for ALL particles in the .mrcs we provide it, so we create it here
-    args = parse_ctf_star.add_args(argparse.ArgumentParser()).parse_args(
+    parser = argparse.ArgumentParser()
+    parse_ctf_star.add_args(parser)
+    args = parser.parse_args(
         [
             input_star_all,  # 1000 particles
             "-o",
@@ -137,7 +144,9 @@ def test_write_star(input_mrcs, input_star_all):
     with open(indices_pkl, "wb") as f:
         pickle.dump([11, 3, 2, 4], f)
 
-    args = write_star.add_args(argparse.ArgumentParser()).parse_args(
+    parser = argparse.ArgumentParser()
+    write_star.add_args(parser)
+    args = parser.parse_args(
         [
             input_mrcs,  # 1000 particles
             "--ctf",
@@ -160,7 +169,9 @@ def test_write_star2(input_mrcs, input_star_all):
     with open(indices_pkl, "wb") as f:
         pickle.dump([11, 3, 2, 4], f)
 
-    args = write_star.add_args(argparse.ArgumentParser()).parse_args(
+    parser = argparse.ArgumentParser()
+    write_star.add_args(parser)
+    args = parser.parse_args(
         [
             input_star_all,  # 1000 particles
             "-o",
@@ -168,6 +179,7 @@ def test_write_star2(input_mrcs, input_star_all):
             "--ind",
             "output/indices.pkl",
             "--full-path",
+            "--relion30",
         ]
     )
     write_star.main(args)
@@ -183,7 +195,9 @@ def test_write_cs(input_cs_all, input_cs_proj_dir):
     with open(indices_pkl, "wb") as f:
         pickle.dump([11, 3, 2, 4], f)
 
-    args = write_cs.add_args(argparse.ArgumentParser()).parse_args(
+    parser = argparse.ArgumentParser()
+    write_cs.add_args(parser)
+    args = parser.parse_args(
         [
             input_cs_all,  # 1000 particles
             "--datadir",

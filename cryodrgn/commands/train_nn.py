@@ -19,28 +19,11 @@ $ cryodrgn train_nn projections.star --poses angles.pkl --ctf.pkl \
                                      --load latest
 
 """
-import argparse
 import os
-import logging
+import argparse
 import numpy as np
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-
-try:
-    import apex.amp as amp  # type: ignore
-except ImportError:
-    pass
-
-import cryodrgn
-from cryodrgn import ctf, dataset, models
-from cryodrgn.lattice import Lattice
-from cryodrgn.pose import PoseTracker
-from cryodrgn.source import write_mrc
-from cryodrgn.models.neural_nets import DataParallelDecoder, Decoder
-import cryodrgn.trainers.config
-
-logger = logging.getLogger(__name__)
+import cryodrgn.utils
+from cryodrgn.commands.setup import SetupHelper
 from cryodrgn.trainers.hps_trainer import HierarchicalPoseSearchTrainer
 
 
@@ -250,16 +233,18 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         help="Scale for random Gaussian features (default: %(default)s)",
     )
 
-    return parser
 
-
-def main(args: argparse.Namespace):
+def main(args: argparse.Namespace) -> None:
+    print(
+        "WARNING: "
+        "This command is deprecated; use `cryodrgn train` as of cryoDRGN v4.0.0."
+    )
     configs = {
         "model": "hps",
         "outdir": args.outdir,
         "particles": args.particles,
         "ctf": args.ctf,
-        "pose": args.poses,
+        "poses": args.poses,
         "dataset": None,
         "datadir": args.datadir,
         "ind": args.ind,
@@ -283,7 +268,7 @@ def main(args: argparse.Namespace):
         "weight_decay": args.wd,
         "learning_rate": args.lr,
         "pose_learning_rate": args.pose_lr,
-        "lattice_extent": args.l_extent,
+        "l_extent": args.l_extent,
         "data_norm": args.norm,
         "multigpu": args.multigpu,
         "pretrain": args.pretrain,
@@ -301,15 +286,12 @@ def main(args: argparse.Namespace):
         "volume_optim_type": "adam",
         "no_trans": False,
         "amp": args.amp,
-        "enc_only": False,
+        "tilt_enc_only": False,
         "reset_optim_after_pretrain": False,
         "pose_sgd_emb_type": args.emb_type,
     }
 
+    cryodrgn.utils._verbose = False
+    _ = SetupHelper.create_using_configs(configs)
     trainer = HierarchicalPoseSearchTrainer(configs)
     trainer.train()
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    main(add_args(parser).parse_args())

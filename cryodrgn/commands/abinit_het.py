@@ -4,16 +4,21 @@ This command is an interface for the zdim>0 case of the ab initio pose reconstru
 method introduced in cryoDRGN v2. It creates an output directory and config file in the
 style of cryoDRGN v4 while using a now-deprecated set of command-line arguments.
 
+Example usages
+--------------
+$ cryodrgn abinit_het particles.256.txt --ctf ctf.pkl --ind chosen-particles.pkl \
+                                         -o cryodrn-out/256_abinit-homo --zdim=4
+
 """
 import os
 import argparse
 import numpy as np
-import warnings
 import cryodrgn.utils
+from cryodrgn.commands.setup import SetupHelper
 from cryodrgn.trainers.hps_trainer import HierarchicalPoseSearchTrainer
 
 
-def add_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "particles",
         type=os.path.abspath,
@@ -361,16 +366,19 @@ def add_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         default="relu",
         help="Activation (default: %(default)s)",
     )
-    return parser
 
 
-def main(args: argparse.Namespace):
+def main(args: argparse.Namespace) -> None:
+    print(
+        "WARNING: "
+        "This command is deprecated; use `cryodrgn train` as of cryoDRGN v4.0.0."
+    )
     configs = {
         "model": "hps",
         "outdir": args.outdir,
         "particles": args.particles,
         "ctf": args.ctf,
-        "pose": None,
+        "poses": None,
         "dataset": None,
         "datadir": args.datadir,
         "ind": args.ind,
@@ -397,7 +405,7 @@ def main(args: argparse.Namespace):
         "weight_decay": args.wd,
         "learning_rate": args.lr,
         "pose_learning_rate": args.lr,
-        "lattice_extent": 0.5,
+        "l_extent": 0.5,
         "l_start": args.l_start,
         "l_end": args.l_end,
         "data_norm": args.norm,
@@ -422,7 +430,7 @@ def main(args: argparse.Namespace):
         "volume_optim_type": "adam",
         "no_trans": False,
         "amp": False,
-        "enc_only": args.enc_only,
+        "tilt_enc_only": args.enc_only,
         "beta": args.beta,
         "beta_control": args.beta_control,
         "equivariance": args.equivariance,
@@ -444,14 +452,6 @@ def main(args: argparse.Namespace):
     }
 
     cryodrgn.utils._verbose = False
+    _ = SetupHelper.create_using_configs(configs)
     trainer = HierarchicalPoseSearchTrainer(configs)
     trainer.train()
-
-
-if __name__ == "__main__":
-    warnings.warn(
-        "This command is being replaced by `cryodrgn train`!", DeprecationWarning
-    )
-
-    parser = argparse.ArgumentParser(description=__doc__)
-    main(add_args(parser).parse_args())

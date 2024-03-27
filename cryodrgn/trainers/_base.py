@@ -609,12 +609,12 @@ class ModelTrainer(BaseTrainer, ABC):
         self.logger.info("--- Training Starts Now ---")
         self.current_epoch = self.start_epoch
         self.total_batch_count = 0
-        self.epoch_batch_count = 0
         self.total_images_seen = 0
         self.conf_search_particles = 0
 
         while self.current_epoch <= self.configs.num_epochs:
             self.epoch_start_time = dt.now()
+            self.epoch_batch_count = 0
             self.epoch_images_seen = 0
             for k in self.accum_losses:
                 self.accum_losses[k] = 0
@@ -627,6 +627,7 @@ class ModelTrainer(BaseTrainer, ABC):
 
             for batch in self.data_iterator:
                 self.total_batch_count += 1
+                self.epoch_batch_count += 1
                 len_y = len(batch["indices"])
                 self.total_images_seen += len_y
                 self.epoch_images_seen += len_y
@@ -680,25 +681,31 @@ class ModelTrainer(BaseTrainer, ABC):
         self.logger.info("Will make a full summary at the end of this epoch")
         self.logger.info(f"Will pretrain on {self.configs.pretrain} particles")
         self.epoch_start_time = dt.now()
+        self.epoch_images_seen = 0
 
-        particles_seen = 0
-        while particles_seen < self.n_particles_pretrain:
+        while self.epoch_images_seen < self.n_particles_pretrain:
             for batch in self.data_iterator:
                 len_y = len(batch["indices"])
-                particles_seen += len_y
+                self.epoch_images_seen += len_y
+
+                print(
+                    f"XXX {self.epoch_images_seen}:\t{','.join([str(x) for x in batch['indices']])}"
+                )
 
                 self.pretrain_batch(batch)
 
                 if self.configs.verbose_time:
                     torch.cuda.synchronize()
 
-                if particles_seen % self.configs.log_interval < len_y:
+                if self.epoch_images_seen % self.configs.log_interval < len_y:
                     self.logger.info(
-                        f"[Pretrain Iteration {particles_seen}] "
+                        f"Pretrain Epoch "
+                        f"[{self.current_epoch}/{self.configs.num_epochs}]; "
+                        f"{self.epoch_images_seen} images seen] "
                         f"loss={self.accum_losses['total']:4f}"
                     )
 
-                if particles_seen > self.n_particles_pretrain:
+                if self.epoch_images_seen > self.n_particles_pretrain:
                     break
 
         # reset model after pretraining
@@ -765,6 +772,29 @@ class ModelTrainer(BaseTrainer, ABC):
         with open(os.path.join(self.outdir, "train-configs.yaml"), "w") as f:
             yaml.dump(configs, f, default_flow_style=False, sort_keys=False)
 
+    @classmethod
+    def load_from_config(cls, config_file: str) -> Self:
+        """Retrieves all configurations that have been saved to file."""
+        if os.path.exists(config_file):
+            with open(config_file, "r") as f:
+                configs = yaml.safe_load(f)
+        else:
+            raise FileNotFoundError(
+                f"Cannot find training configurations file `{config_file}` "
+                f"— has this model been trained yet?"
+            )
+
+        cfg_dict = {
+            sub_k: sub_v
+            for k, v in configs.items()
+            if isinstance(v, dict)
+            for sub_k, sub_v in v.items()
+        }
+        cfg_dict.update({k: v for k, v in configs.items() if not isinstance(v, dict)})
+        cfg_dict = {k: v for k, v in cfg_dict.items() if k in set(cls.parameters())}
+
+        return cls(cfg_dict)
+
     def begin_epoch(self) -> None:
         pass
 
@@ -798,26 +828,21 @@ class ModelTrainer(BaseTrainer, ABC):
         else:
             epoch_lbl += " <volume inference>"
 
-        avg_losses = {
-            loss_k: (
-                loss_val / self.image_count
-                if loss_k in {"total", "gen", "kld"}
-                else loss_val
-            )
-            for loss_k, loss_val in self.accum_losses.items()
-        }
+        avg_losses = self.average_losses
         loss_str = ", ".join(
             [
-                f"{loss_k} loss = {loss_val:.4g}"
+                f"{loss_k} = {loss_val:.4g}"
                 for loss_k, loss_val in avg_losses.items()
                 if loss_k != "total"
             ]
         )
+        time_str, mcrscd_str = str(dt.now() - self.epoch_start_time).split(".")
+        time_str = ".".join([time_str, mcrscd_str[:3]])
+
         self.logger.info(
-            f"===> Training Epoch {epoch_lbl}\n"
-            f"\t\t\t\t\tfinished in {dt.now() - self.epoch_start_time};\n"
-            f"\t\t\t\t\ttotal loss = {avg_losses['total']:.6g}\n"
-            f"\t\t\t\t\t{loss_str}"
+            f"===> Training Epoch {epoch_lbl} === Finished in {time_str}\n"
+            f"\t\t\t\t\t\tAvg. Losses: Total = {avg_losses['total']:.4g}\n"
+            f"\t\t\t\t\t\t             {loss_str}"
         )
 
     @property
@@ -834,3 +859,14 @@ class ModelTrainer(BaseTrainer, ABC):
     def epoch_lbl(self) -> str:
         """A human-readable label for the current training epoch."""
         return str(self.current_epoch)
+
+    @property
+    def average_losses(self) -> dict[str, float]:
+        return {
+            loss_k: (
+                loss_val / self.epoch_images_seen
+                if loss_k in {"total", "gen", "kld"}
+                else loss_val
+            )
+            for loss_k, loss_val in self.accum_losses.items()
+        }

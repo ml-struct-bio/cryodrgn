@@ -1,42 +1,65 @@
-"""
-Find shortest path along nearest neighbor graph
+"""Construct the shortest path along a nearest neighbor graph in the latent z-space.
+
+Example usages
+--------------
+# find the graph path between the first two points in the file, print to screen
+$ cryodrgn graph_traversal zvals.pkl --anchors 0 1
+
+# find the graph path connecting the first three points in order, save to file
+$ cryodrgn graph_traversal zvals.pkl --anchors 0 1 2 -o
+
+# connect the points whose indices are listed in a file; save only path indices
+$ cryodrgn graph_traversal zvals.pkl --anchors path-anchors.txt --outind path-ind.txt
+
 """
 import argparse
 import os
 import pickle
-from heapq import heappop, heappush
-
+import logging
 import numpy as np
+import pandas as pd
+from heapq import heappop, heappush
 import torch
 
+logger = logging.getLogger(__name__)
 
-def add_args(parser):
-    parser.add_argument("data", help="Input z.pkl embeddings")
+
+def add_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("zfile", help="Input .pkl file containing z-embeddings")
     parser.add_argument(
-        "--anchors", type=int, nargs="+", required=True, help="Index of anchor points"
+        "--anchors",
+        required=True,
+        nargs="+",
+        help="List of anchor point indices in the given file, either given "
+        "directly as integers, or in a .txt file(s).",
     )
+
     parser.add_argument("--max-neighbors", type=int, default=10)
     parser.add_argument("--avg-neighbors", type=float, default=5)
     parser.add_argument("--batch-size", type=int, default=1000)
     parser.add_argument("--max-images", type=int, default=None)
+
     parser.add_argument(
+        "--outtxt",
         "-o",
-        metavar="PATH.TXT",
         type=os.path.abspath,
-        required=True,
+        nargs="?",
+        const="z-path.txt",
+        metavar="Z-PATH.TXT",
+        help="output .txt file for path z-values, "
+        "choose name automatically if flag given with no name",
+    )
+    parser.add_argument(
+        "--outind",
+        type=os.path.abspath,
+        nargs="?",
+        const="z-path-indices.txt",
+        metavar="IND-PATH.TXT",
         help="Output .txt file for path indices",
     )
-    parser.add_argument(
-        "--out-z",
-        metavar="Z.PATH.TXT",
-        type=os.path.abspath,
-        required=True,
-        help="Output .txt file for path z-values",
-    )
-    return parser
 
 
-class Graph(object):
+class GraphLatentTraversor(object):
     def __init__(self, edges):  # edges is a list of tuples (src, dest, distance)
         # everything after here is derived from (weights, actions, probs)
         # for computational efficiency
@@ -89,7 +112,7 @@ class Graph(object):
 
 
 def main(args):
-    data_np = pickle.load(open(args.data, "rb"))
+    data_np = pickle.load(open(args.zfile, "rb"))
     data = torch.from_numpy(data_np)
 
     if args.max_images is not None:
@@ -101,9 +124,34 @@ def main(args):
     data = data.to(device)
 
     N, D = data.shape
-    for i in args.anchors:
-        assert i < N
-    assert len(args.anchors) >= 2
+    anchors = list()
+    for anchor_txt in args.anchors:
+        if os.path.exists(anchor_txt):
+            new_anchors = np.loadtxt(anchor_txt).astype(int).tolist()
+        elif anchor_txt.isnumeric():
+            new_anchors = [int(anchor_txt)]
+        else:
+            raise ValueError(
+                f"Unrecognized anchor value `{anchor_txt}` which is neither an integer "
+                f"nor a .txt file containing a list of integers!"
+            )
+
+        for new_anchor in new_anchors:
+            if new_anchor < 0:
+                raise ValueError(
+                    f"Invalid anchor index {new_anchor} is not a positive integer!"
+                )
+            if new_anchor >= N:
+                raise ValueError(
+                    f"Invalid anchor index {new_anchor} too big for "
+                    f"`{args.zfile}` containing {N} points!"
+                )
+        anchors += new_anchors
+
+    if len(anchors) < 2:
+        raise ValueError(
+            f"Need at least two anchors for graph traversal; given {len(anchors)}!"
+        )
 
     n2 = (data * data).sum(-1, keepdim=True)
     B = args.batch_size
@@ -113,7 +161,7 @@ def main(args):
     )
     for i in range(0, data.shape[0], B):
         # (a-b)^2 = a^2 + b^2 - 2ab
-        print(f"Working on images {i}-{i+B}")
+        print(f"Working on images {i}-{min(data.shape[0], i+B)}")
         batch_dist = n2[i : i + B] + n2.t() - 2 * torch.mm(data[i : i + B], data.t())
         ndist[i : i + B], neighbors[i : i + B] = batch_dist.topk(
             args.max_neighbors, dim=-1, largest=False
@@ -142,10 +190,10 @@ def main(args):
             if max_dist is None or ndist[i, j] < max_dist:
                 edges.append((int(i), int(neighbors[i, j]), float(ndist[i, j])))
 
-    graph = Graph(edges)
+    graph = GraphLatentTraversor(edges)
     full_path = []
-    for i in range(len(args.anchors) - 1):
-        src, dest = args.anchors[i], args.anchors[i + 1]
+    for i in range(len(anchors) - 1):
+        src, dest = anchors[i], anchors[i + 1]
         path, total_distance = graph.find_path(src, dest)
         dd = data[path].cpu().numpy()
         dists = ((dd[1:, :] - dd[0:-1, :]) ** 2).sum(axis=1) ** 0.5
@@ -172,15 +220,22 @@ def main(args):
         else:
             print("Could not find path!")
 
-    if not os.path.exists(os.path.dirname(args.o)):
-        os.makedirs(os.path.dirname(args.o))
-    print(args.o)
-    np.savetxt(args.o, full_path, fmt="%d")
-    print(args.out_z)
-    np.savetxt(args.out_z, data_np[full_path])
+    if args.outind:
+        if not os.path.exists(os.path.dirname(args.outind)):
+            os.makedirs(os.path.dirname(args.outind))
+        logger.info(f"Saving path indices relative to {args.zfile} to {args.outind}!")
+        np.savetxt(args.outind, full_path, fmt="%d")
+    elif args.outtxt:
+        logger.info(f"Found shortest nearest-neighbor path with indices:\n{full_path}")
 
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    add_args(parser)
-    main(parser.parse_args())
+    if args.outtxt:
+        if not os.path.exists(os.path.dirname(args.outtxt)):
+            os.makedirs(os.path.dirname(args.outtxt))
+        logger.info(f"Saving path z-values to {args.outtxt}!")
+        np.savetxt(args.outtxt, data_np[full_path])
+    else:
+        if args.outind:
+            logger.info(f"Found shortest nearest-neighbor path:\n{data_np[full_path]}")
+        else:
+            path_df = pd.DataFrame(data_np[full_path], index=full_path)
+            logger.info(f"Found shortest nearest-neighbor path:\n{path_df}")

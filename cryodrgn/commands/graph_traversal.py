@@ -47,7 +47,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         nargs="?",
         const="z-path.txt",
         metavar="Z-PATH.TXT",
-        help="output .txt file for path z-values, "
+        help="output .txt file for path z-values; "
         "choose name automatically if flag given with no name",
     )
     parser.add_argument(

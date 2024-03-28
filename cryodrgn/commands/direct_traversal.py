@@ -2,9 +2,9 @@
 
 Example usages
 --------------
-$ cryodrgn direct_traversal zvals.pkl --ind anchors.txt
-$ cryodrgn direct_traversal zvals.pkl --ind anchors.txt -n 20 -o z-path-new.txt
-$ cryodrgn direct_traversal zvals.pkl --ind anchors.txt -n 3 --loop
+$ cryodrgn direct_traversal zvals.pkl --anchors anchors.txt
+$ cryodrgn direct_traversal zvals.pkl --anchors anchors.txt -n 20 -o z-path-new.txt
+$ cryodrgn direct_traversal zvals.pkl --anchors anchors.txt -n 3 --loop -o
 
 """
 import os
@@ -36,7 +36,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         nargs="?",
         const="z-path.txt",
         metavar="Z-PATH.TXT",
-        help="output .txt file for path z-values, "
+        help="output .txt file for path z-values; "
         "choose name automatically if flag given with no name",
     )
 

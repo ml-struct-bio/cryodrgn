@@ -1,28 +1,37 @@
-import os.path
-import argparse
+import os
 import numpy as np
-import pytest
 from cryodrgn.source import ImageSource
-from cryodrgn.commands_utils import flip_hand
+from cryodrgn.mrc import MRCFile
+from cryodrgn.utils import run_command
 
 DATA_FOLDER = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
 
 
-@pytest.fixture
-def mrcs_data():
-    return ImageSource.from_file(f"{DATA_FOLDER}/toy_projections.mrc").images()
-
-
-def test_flip_hand(mrcs_data):
-    args = flip_hand.add_args(argparse.ArgumentParser()).parse_args(
-        [
-            f"{DATA_FOLDER}/toy_projections.mrc",
-            "-o",
-            "output/toy_projections_flipped.mrc",
-        ]
+def test_mrc_file():
+    vol_file = os.path.join(DATA_FOLDER, "hand-vol.mrc")
+    flipped_file = os.path.join(
+        "output", os.path.basename(vol_file).replace(".mrc", "_flipped.mrc")
     )
-    flip_hand.main(args)
 
-    flipped_data = ImageSource.from_file("output/toy_projections_flipped.mrc").images()
+    out, err = run_command(f"cryodrgn_utils flip_hand {vol_file} -o {flipped_file}")
+    assert err == ""
+
+    mrcs_data, _ = MRCFile.parse(vol_file)
+    flipped_data, _ = MRCFile.parse(flipped_file)
+    # torch doesn't let us use a -ve stride, hence the conversion below
+    assert np.allclose(flipped_data, mrcs_data[::-1])
+
+
+def test_image_source():
+    vol_file = os.path.join(DATA_FOLDER, "toy_projections.mrc")
+    flipped_file = os.path.join(
+        "output", os.path.basename(vol_file).replace(".mrc", "_flipped.mrc")
+    )
+
+    out, err = run_command(f"cryodrgn_utils flip_hand {vol_file} -o {flipped_file}")
+    assert err == ""
+
+    mrcs_data = ImageSource.from_file(vol_file).images()
+    flipped_data = ImageSource.from_file(flipped_file).images()
     # torch doesn't let us use a -ve stride, hence the conversion below
     assert np.allclose(np.array(flipped_data.cpu()), np.array(mrcs_data.cpu())[::-1])

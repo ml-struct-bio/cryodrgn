@@ -1,5 +1,6 @@
 """Flip handedness of an .mrc file"""
 
+import os
 import argparse
 import logging
 import numpy as np
@@ -18,6 +19,8 @@ def add_args(parser):
 def main(args):
     assert args.input.endswith(".mrc"), "Input volume must be .mrc file"
     assert args.o.endswith(".mrc"), "Output volume must be .mrc file"
+    if os.path.dirname(args.o):
+        os.makedirs(os.path.dirname(args.o), exist_ok=True)
 
     src = ImageSource.from_file(args.input)
     # Note: Proper flipping (compatible with legacy implementation) only happens when chunksize is equal to src.n

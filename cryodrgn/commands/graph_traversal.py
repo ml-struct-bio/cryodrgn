@@ -20,6 +20,7 @@ import numpy as np
 import pandas as pd
 from heapq import heappop, heappush
 import torch
+from cryodrgn.commands.direct_traversal import parse_anchors
 
 logger = logging.getLogger(__name__)
 
@@ -122,37 +123,9 @@ def main(args):
     print(f"Use cuda {use_cuda}")
     device = torch.device("cuda" if use_cuda else "cpu")
     data = data.to(device)
-
     N, D = data.shape
-    anchors = list()
-    for anchor_txt in args.anchors:
-        if os.path.exists(anchor_txt):
-            new_anchors = np.loadtxt(anchor_txt).astype(int).tolist()
-        elif anchor_txt.isnumeric():
-            new_anchors = [int(anchor_txt)]
-        else:
-            raise ValueError(
-                f"Unrecognized anchor value `{anchor_txt}` which is neither an integer "
-                f"nor a .txt file containing a list of integers!"
-            )
 
-        for new_anchor in new_anchors:
-            if new_anchor < 0:
-                raise ValueError(
-                    f"Invalid anchor index {new_anchor} is not a positive integer!"
-                )
-            if new_anchor >= N:
-                raise ValueError(
-                    f"Invalid anchor index {new_anchor} too big for "
-                    f"`{args.zfile}` containing {N} points!"
-                )
-        anchors += new_anchors
-
-    if len(anchors) < 2:
-        raise ValueError(
-            f"Need at least two anchors for graph traversal; given {len(anchors)}!"
-        )
-
+    anchors = parse_anchors(args.anchors, data, args.zfile)
     n2 = (data * data).sum(-1, keepdim=True)
     B = args.batch_size
     ndist = torch.empty(data.shape[0], args.max_neighbors, device=device)
@@ -205,6 +178,8 @@ def main(args):
         if path is not None:
             if full_path and full_path[-1] == path[0]:
                 path = path[1:]
+            else:
+                dists = [0] + dists.tolist()
 
             new_df = pd.DataFrame(
                 data_np[path],
@@ -212,15 +187,18 @@ def main(args):
                 columns=[f"z{i + 1}" for i in range(D)],
             )
 
-            new_df["dist"] = [0] + dists.tolist()
-            new_df.index.name = "ind"
+            new_df["dist"] = dists
             data_df = pd.concat([data_df, new_df])
+            full_path += path
 
             euc_dist = ((dd[0] - dd[-1]) ** 2).sum() ** 0.5
             print(f"Total path distance {anchor_str}: {total_distance:.4g}")
             print(f" Euclidean distance {anchor_str}: {euc_dist:.4g}")
         else:
             print(f"Could not find a {anchor_str} path!")
+
+    data_df.index = [f"{i}(a)" if i in anchors else str(i) for i in data_df.index]
+    data_df.index.name = "ind"
 
     if args.outind:
         if not os.path.exists(os.path.dirname(args.outind)):

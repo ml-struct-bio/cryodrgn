@@ -177,7 +177,8 @@ def main(args):
     else:
         max_dist = None
     print(
-        f"Max dist between neighbors: {max_dist}  (to enforce average of {args.avg_neighbors} neighbors)"
+        f"Max dist between neighbors: {max_dist:.4g}  "
+        f"(to enforce average of {args.avg_neighbors} neighbors)"
     )
 
     if max_dist is not None:
@@ -192,7 +193,10 @@ def main(args):
 
     graph = GraphLatentTraversor(edges)
     full_path = []
+    data_df = pd.DataFrame()
+
     for i in range(len(anchors) - 1):
+        anchor_str = f"{anchors[i]}->{anchors[i + 1]}"
         src, dest = anchors[i], anchors[i + 1]
         path, total_distance = graph.find_path(src, dest)
         dd = data[path].cpu().numpy()
@@ -200,25 +204,23 @@ def main(args):
 
         if path is not None:
             if full_path and full_path[-1] == path[0]:
-                full_path.extend(path[1:])
-            else:
-                full_path.extend(path)
+                path = path[1:]
 
-        print()
-        if path is not None:
-            print("Path:")
-            for id in path:
-                print(id)
-            print()
-            print(f"Total distance: {total_distance}")
-            print()
-            print("Neighbor distance:")
-            for d in dists:
-                print(d)
-            print()
-            print("Euclidean distance: {}".format(((dd[0] - dd[-1]) ** 2).sum() ** 0.5))
+            new_df = pd.DataFrame(
+                data_np[path],
+                index=path,
+                columns=[f"z{i + 1}" for i in range(D)],
+            )
+
+            new_df["dist"] = [0] + dists.tolist()
+            new_df.index.name = "ind"
+            data_df = pd.concat([data_df, new_df])
+
+            euc_dist = ((dd[0] - dd[-1]) ** 2).sum() ** 0.5
+            print(f"Total path distance {anchor_str}: {total_distance:.4g}")
+            print(f" Euclidean distance {anchor_str}: {euc_dist:.4g}")
         else:
-            print("Could not find path!")
+            print(f"Could not find a {anchor_str} path!")
 
     if args.outind:
         if not os.path.exists(os.path.dirname(args.outind)):
@@ -237,5 +239,5 @@ def main(args):
         if args.outind:
             logger.info(f"Found shortest nearest-neighbor path:\n{data_np[full_path]}")
         else:
-            path_df = pd.DataFrame(data_np[full_path], index=full_path)
-            logger.info(f"Found shortest nearest-neighbor path:\n{path_df}")
+            print_data = data_df.round(3).to_csv(sep="\t")
+            logger.info(f"Found shortest nearest-neighbor path:\n{print_data}")

@@ -119,7 +119,9 @@ def test_run(mrcs_file, poses_file):
     shutil.rmtree("output/landscape.2/landscape_full", ignore_errors=True)
     analyze_landscape_full.main(args)
 
-    args = graph_traversal.add_args(argparse.ArgumentParser()).parse_args(
+    parser = argparse.ArgumentParser()
+    graph_traversal.add_args(parser)
+    args = parser.parse_args(
         [
             "output/z.3.pkl",
             "--anchors",
@@ -137,9 +139,9 @@ def test_run(mrcs_file, poses_file):
             "67",
             "9",
             "89",
-            "-o",
+            "--outind",
             "output/graph_traversal_path.txt",
-            "--out-z",
+            "--outtxt",
             "output/graph_traversal_zpath.txt",
         ]
     )

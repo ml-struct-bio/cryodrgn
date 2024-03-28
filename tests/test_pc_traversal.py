@@ -1,4 +1,4 @@
-import os.path
+import os
 from cryodrgn.utils import run_command
 
 DATA_FOLDER = os.path.join(os.path.dirname(__file__), "..", "testing", "data")

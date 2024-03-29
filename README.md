@@ -6,13 +6,13 @@ CryoDRGN is a neural network based algorithm for heterogeneous cryo-EM reconstru
 
 ## Documentation:
 
-The latest documentation for cryoDRGN is available [on gitbook](https://ez-lab.gitbook.io/cryodrgn/), including an overview and walkthrough of cryoDRGN installation, training and analysis. A brief quick start is provided below.
+The latest documentation for cryoDRGN is available in our [user guide](https://ez-lab.gitbook.io/cryodrgn/), including an overview and walkthrough of cryoDRGN installation, training and analysis. A brief quick start is provided below.
 
-For any feedback, questions, or bugs, please file a Github issue, start a Github discussion, or email the [google group](https://groups.google.com/g/cryodrgn).
+For any feedback, questions, or bugs, please file a Github issue or start a Github discussion.
 
 ## New in Version 3.x
 
-The official [cryoDRGN-ET](https://www.biorxiv.org/content/10.1101/2023.08.18.553799v1) release for heterogeneous subtomogram analysis.
+The official release of [cryoDRGN-ET](https://www.biorxiv.org/content/10.1101/2023.08.18.553799v1) for heterogeneous subtomogram analysis.
 
 * [NEW] Heterogeneous reconstruction of subtomograms. See documentation [on gitbook](https://ez-lab.gitbook.io/cryodrgn/)
 * [NEW] `cryodrgn direct_traversal` for making movies
@@ -21,7 +21,7 @@ The official [cryoDRGN-ET](https://www.biorxiv.org/content/10.1101/2023.08.18.55
 
 ### New in Version 3.1.x ###
 
-* [NEW] `drgnai filter` interface for interactive filtering of particles as an alternative to the cryoDRGN_filter Jupyter notebook
+* [NEW] `cryodrgn filter` interface for interactive filtering of particles as an alternative to the cryoDRGN_filter Jupyter notebook
 
 ### Previous versions
 
@@ -615,7 +615,7 @@ Documentation: https://ez-lab.gitbook.io/cryodrgn/cryodrgn2-ab-initio-reconstruc
 
 ## CryoDRGN-ET for subtomogram analysis
 
-Coming soon in version 3.0.
+Available in beta release starting in version 3.x. Documentation for getting started can be found in the [user guide](https://ez-lab.gitbook.io/cryodrgn/cryodrgn-et-subtomogram-analysis). Please reach out if you have any questions!
 
 ## References:
 
@@ -643,6 +643,12 @@ A protocols paper that describes the analysis of the EMPIAR-10076 assembling rib
 Laurel Kinman, Barrett Powell, Ellen D. Zhong*, Bonnie Berger*, Joseph H Davis*
 Nature Protocols 2023, https://doi.org/10.1038/s41596-022-00763-x
 
+Heterogeneous subtomogram averaging:
+
+* Deep reconstructing generative networks for visualizing dynamic biomolecules inside cells
+Rangan et al.
+bioRxiv 2023, https://www.biorxiv.org/content/10.1101/2023.08.18.553799v1
+
 ## Contact
 
-Please submit any bug reports, feature requests, or general usage feedback as a github issue, or post in the Google Group: https://groups.google.com/g/cryodrgn.
+Please submit any bug reports, feature requests, or general usage feedback as a github issue or discussion. 

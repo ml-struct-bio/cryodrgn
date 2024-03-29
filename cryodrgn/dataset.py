@@ -100,7 +100,7 @@ class ImageDataset(torch.utils.data.Dataset):
         indices = range(0, self.N, self.N // n)  # FIXME: what if the data is not IID??
         imgs = self.src.images(indices)
         norm = (torch.mean(imgs), torch.std(imgs))
-        self.logger.info('Normalized real space images by {} +/- {}'.format(*norm))
+        self.logger.info("Normalized real space images by {} +/- {}".format(*norm))
 
         return norm
 
@@ -121,8 +121,7 @@ class ImageDataset(torch.utils.data.Dataset):
     def __len__(self):
         return self.N
 
-    def __getitem__(
-            self, index: Union[int, list[int]]) -> dict[str, torch.Tensor]:
+    def __getitem__(self, index: Union[int, list[int]]) -> dict[str, torch.Tensor]:
         if isinstance(index, list):
             index = torch.Tensor(index).to(torch.long)
 
@@ -140,9 +139,9 @@ class ImageDataset(torch.utils.data.Dataset):
                 f"indices ({index[0]}..{index[-1]})"
 
         return {
-            'y': f_particles,  # batch_size(, n_tilts), D, D
-            'y_real': r_particles,  # batch_size(, n_tilts), D - 1, D - 1
-            'indices': index,  # batch_size
+            "y": f_particles,  # batch_size(, n_tilts), D, D
+            "y_real": r_particles,  # batch_size(, n_tilts), D - 1, D - 1
+            "indices": index,  # batch_size
             #'R': rots  # batch_size(, n_tilts), 3, 3
         }
 
@@ -513,13 +512,13 @@ class _DataShufflerIterator:
             f_particles = f_particles.reshape(-1, *f_particles.shape[-2:])
             tilt_indices = tilt_indices.reshape(-1)
             r_particles = r_particles.reshape(-1, *r_particles.shape[-2:])
-            #rots = rots.reshape(-1, 3, 3)
+            # rots = rots.reshape(-1, 3, 3)
 
         in_dict = {
-            'y': f_particles,  # batch_size(, n_tilts), D, D
-            'y_real': r_particles,  # batch_size(, n_tilts), D - 1, D - 1
-            'indices': particle_indices,  # batch_size
-            'tilt_indices': tilt_indices.reshape(-1),  # batch_size * n_tilts
+            "y": f_particles,  # batch_size(, n_tilts), D, D
+            "y_real": r_particles,  # batch_size(, n_tilts), D - 1, D - 1
+            "indices": particle_indices,  # batch_size
+            "tilt_indices": tilt_indices.reshape(-1),  # batch_size * n_tilts
             #'R': rots  # batch_size(, n_tilts), 3, 3
         }
 
@@ -532,7 +531,7 @@ def make_dataloader(
     batch_size: int,
     num_workers: int = 0,
     shuffler_size: int = 0,
-    shuffle=True,
+    shuffle=False,
     seed=np.random.randint(0, 100000),
 ):
     if shuffler_size > 0 and shuffle:
@@ -543,7 +542,7 @@ def make_dataloader(
         # for discussion of why we use BatchSampler, etc.
         if shuffle:
             generator = torch.Generator()
-            generator.manual_seed(seed)
+            generator = generator.manual_seed(seed)
             sampler = RandomSampler(data, generator=generator)
         else:
             sampler = SequentialSampler(data)

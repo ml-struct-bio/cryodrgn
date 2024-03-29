@@ -32,7 +32,16 @@ from cryodrgn.trainers._base import ModelTrainer, ModelConfigurations
 @dataclass
 class AmortizedInferenceConfigurations(ModelConfigurations):
 
+    trainer_cls = "AmortizedInferenceTrainer"
+
+    # a parameter belongs to this configuration set if and only if it has a default
+    # value defined here, note that children classes inherit these from parents
     model: str = "amort"
+
+    # scheduling
+    n_imgs_pose_search: int = 500000
+    epochs_sgd: int = 100
+    pose_only_phase: int = 0
     # data loading
     batch_size_known_poses: int = 32
     batch_size_hps: int = 8
@@ -44,10 +53,6 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
     lr_pose_table: float = 1.0e-3
     lr_conf_table: float = 1.0e-2
     lr_conf_encoder: float = 1.0e-4
-    # scheduling
-    n_imgs_pose_search: int = 500000
-    epochs_sgd: int = 100
-    pose_only_phase: int = 0
     # masking
     output_mask: str = "circ"
     add_one_frequency_every: int = 100000
@@ -67,10 +72,10 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
     kernel_size_cnn: int = 3
     resolution_encoder: str = None
     initial_conf: str = None
+    pe_type_conf: str = None
     # hypervolume
     volume_domain: str = "hartley"
     explicit_volume: bool = False
-    pe_type_conf: str = None
     # pre-training
     pretrain_with_gt_poses: bool = False
     # pose search
@@ -101,7 +106,7 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
             "reconstruction_type": {"homo": {"z_dim": 0}, "het": dict()},
             "pose_estimation": {
                 "abinit": dict(),
-                "refine": {"refine_gt_poses": True, "lr_pose_table": 1.0e-4},
+                "refine": {"refine_gt_poses": True, "pose_learning_rate": 1.0e-4},
                 "fixed": {"use_gt_poses": True},
             },
             "conf_estimation": {
@@ -555,7 +560,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
                 if self.configs.refine_gt_poses:
                     self.logger.info("Initializing pose table from ground truth")
 
-                    poses_gt = cryodrgn.utils.load_pkl(self.configs.pose)
+                    poses_gt = cryodrgn.utils.load_pkl(self.configs.poses)
                     if poses_gt[0].ndim == 3:
                         # contains translations
                         rotmat_gt = torch.tensor(poses_gt[0]).float()
@@ -1011,8 +1016,8 @@ class AmortizedInferenceTrainer(ModelTrainer):
         else:
             mask_tilt_idx = np.ones((self.image_count,), dtype=bool)
 
-        if self.configs.pose is not None:
-            poses_gt = cryodrgn.utils.load_pkl(self.configs.pose)
+        if self.configs.poses is not None:
+            poses_gt = cryodrgn.utils.load_pkl(self.configs.poses)
 
             if poses_gt[0].ndim == 3:
                 # contains translations

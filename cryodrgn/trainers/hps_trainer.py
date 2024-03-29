@@ -336,7 +336,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
         # getting the poses
         rot = trans = None
         if self.pose_search and (self.current_epoch - 1) % self.configs.ps_freq != 0:
-            if self.epoch_batch_count == 0:
+            if self.epoch_batch_count == 1:
                 self.logger.info("Using previous iteration's learned poses...")
             rot = torch.tensor(
                 self.predicted_rots[ind_np].astype(np.float32), device=self.device
@@ -563,13 +563,14 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                 f"lambda={self.equivariance_lambda:.4f}, "
             )
 
+        avg_losses = self.average_losses
         self.logger.info(
             f"### Epoch [{self.current_epoch}/{self.configs.num_epochs}], "
             f"Batch [{self.epoch_batch_count}] "
-            f"({self.epoch_images_seen}/{self.image_count} images)\n"
-            f"gen loss={self.accum_losses['gen']:.6f}, "
-            f"kld={self.accum_losses['kld']:.4f}, beta={self.beta:.4f}, "
-            f"{eq_log}loss={self.accum_losses['total']:.4f}"
+            f"({self.epoch_images_seen}/{self.image_count} images); "
+            f"gen loss={avg_losses['gen']:.4g}, "
+            f"kld={avg_losses['kld']:.4f}, beta={self.beta:.4f}, "
+            f"{eq_log}loss={avg_losses['total']:.4f}"
         )
 
     def preprocess_input(self, y, trans):

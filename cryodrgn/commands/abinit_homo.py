@@ -304,6 +304,7 @@ def main(args: argparse.Namespace) -> None:
         "dataset": None,
         "datadir": None,
         "ind": args.ind,
+        "seed": args.seed,
         "log_interval": args.log_interval,
         "verbose": args.verbose,
         "load": args.load,

@@ -39,7 +39,7 @@ class BaseConfigurations(ABC):
     # a parameter belongs to this configuration set if and only if it has a default
     # value defined here, note that children classes inherit these from parents
     verbose: int = 0
-    seed: int = np.random.randint(0, 10000)
+    seed: int = None
     quick_config: OrderedDict = field(default_factory=OrderedDict)
     test_installation: bool = False
 
@@ -62,6 +62,9 @@ class BaseConfigurations(ABC):
             raise ValueError(
                 f"Given verbosity `{self.verbose}` is not a positive integer!"
             )
+
+        if self.seed is None:
+            self.seed = np.random.randint(0, 10000)
 
         if not isinstance(self.seed, int):
             raise ValueError(
@@ -635,7 +638,7 @@ class ModelTrainer(BaseTrainer, ABC):
                 self.train_batch(batch)
 
                 # scalar summary
-                if self.total_images_seen % self.configs.log_interval < len_y:
+                if self.epoch_images_seen % self.configs.log_interval < len_y:
                     self.print_batch_summary()
 
             self.end_epoch()
@@ -681,16 +684,14 @@ class ModelTrainer(BaseTrainer, ABC):
         self.logger.info("Will make a full summary at the end of this epoch")
         self.logger.info(f"Will pretrain on {self.configs.pretrain} particles")
         self.epoch_start_time = dt.now()
-        self.epoch_images_seen = 0
+        self.total_images_seen = 0
 
-        while self.epoch_images_seen < self.n_particles_pretrain:
+        while self.total_images_seen < self.n_particles_pretrain:
+            self.epoch_images_seen = 0
             for batch in self.data_iterator:
                 len_y = len(batch["indices"])
                 self.epoch_images_seen += len_y
-
-                print(
-                    f"XXX {self.epoch_images_seen}:\t{','.join([str(x) for x in batch['indices']])}"
-                )
+                self.total_images_seen += len_y
 
                 self.pretrain_batch(batch)
 
@@ -705,7 +706,7 @@ class ModelTrainer(BaseTrainer, ABC):
                         f"loss={self.accum_losses['total']:4f}"
                     )
 
-                if self.epoch_images_seen > self.n_particles_pretrain:
+                if self.total_images_seen >= self.n_particles_pretrain:
                     break
 
         # reset model after pretraining

@@ -1,10 +1,40 @@
 import os
+import shutil
 import numpy as np
 from cryodrgn.source import ImageSource
 from cryodrgn.mrc import MRCFile
 from cryodrgn.utils import run_command
 
 DATA_FOLDER = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
+
+
+def test_output():
+    """Try different ways of specifying the output file."""
+    os.makedirs("output", exist_ok=True)
+
+    vol_file = os.path.join("output", "hand-vol.mrc")
+    shutil.copyfile(os.path.join(DATA_FOLDER, "hand-vol.mrc"), vol_file)
+    flipped_file = os.path.join(
+        "output", os.path.basename(vol_file).replace(".mrc", "_flipped.mrc")
+    )
+
+    out, err = run_command(f"cryodrgn_utils flip_hand {vol_file}")
+    assert err == ""
+
+    mrcs_data, _ = MRCFile.parse(vol_file)
+    flipped_data, _ = MRCFile.parse(flipped_file)
+    assert np.allclose(flipped_data, mrcs_data[::-1])
+
+    flipped_file = os.path.join(
+        "output", "vols", os.path.basename(vol_file).replace(".mrc", "_flipped.mrc")
+    )
+
+    out, err = run_command(f"cryodrgn_utils flip_hand {vol_file} -o {flipped_file}")
+    assert err == ""
+
+    mrcs_data, _ = MRCFile.parse(vol_file)
+    flipped_data, _ = MRCFile.parse(flipped_file)
+    assert np.allclose(flipped_data, mrcs_data[::-1])
 
 
 def test_mrc_file():
@@ -18,7 +48,6 @@ def test_mrc_file():
 
     mrcs_data, _ = MRCFile.parse(vol_file)
     flipped_data, _ = MRCFile.parse(flipped_file)
-    # torch doesn't let us use a -ve stride, hence the conversion below
     assert np.allclose(flipped_data, mrcs_data[::-1])
 
 

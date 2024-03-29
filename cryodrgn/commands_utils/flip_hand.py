@@ -1,5 +1,13 @@
-"""Flip handedness of an .mrc file"""
+"""Flip handedness of an .mrc file
 
+Example usages
+--------------
+# writes to vol_000_flipped.mrc
+$ cryodrgn_utils flip_hand vol_000.mrc
+
+$ cryodrgn_utils flip_hand vol_000.mrc -o vol-flipped.mrc
+
+"""
 import os
 import argparse
 import logging
@@ -12,25 +20,30 @@ logger = logging.getLogger(__name__)
 
 def add_args(parser):
     parser.add_argument("input", help="Input volume (.mrc)")
-    parser.add_argument("-o", help="Output volume (.mrc)")
+    parser.add_argument(
+        "--outmrc", "-o", type=os.path.abspath, help="Output volume (.mrc)"
+    )
     return parser
 
 
 def main(args):
-    assert args.input.endswith(".mrc"), "Input volume must be .mrc file"
-    assert args.o.endswith(".mrc"), "Output volume must be .mrc file"
-    if os.path.dirname(args.o):
-        os.makedirs(os.path.dirname(args.o), exist_ok=True)
+    if not args.input.endswith(".mrc"):
+        raise ValueError(f"Input volume {args.input} is not a .mrc file!")
+    outmrc = args.outmrc or args.input.replace(".mrc", "_flipped.mrc")
+    if os.path.dirname(outmrc):
+        os.makedirs(os.path.dirname(outmrc), exist_ok=True)
+    if not outmrc.endswith(".mrc"):
+        raise ValueError(f"Output volume {outmrc} is not a .mrc file!")
 
     src = ImageSource.from_file(args.input)
     # Note: Proper flipping (compatible with legacy implementation) only happens when chunksize is equal to src.n
     MRCFile.write(
-        args.o,
+        outmrc,
         src,
         transform_fn=lambda data, indices: np.array(data.cpu())[::-1],
         chunksize=src.n,
     )
-    logger.info(f"Wrote {args.o}")
+    logger.info(f"Wrote {outmrc}")
 
 
 if __name__ == "__main__":

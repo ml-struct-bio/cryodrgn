@@ -29,7 +29,7 @@ from pathlib import Path
 from cryodrgn.commands_utils.configs import check_open_config
 
 
-def add_args(parser):
+def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("outglob", help="Path pattern to scan for experiment outputs.")
 
     parser.add_argument(
@@ -142,9 +142,3 @@ def main(args):
         # don't scan subdirectories of already identified cryoDRGN folders
         if "N" not in version_code and "C" not in version_code:
             scan_dirs = [p for p in scan_dirs if cur_dir not in p.parents]
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    add_args(parser)
-    main(parser.parse_args())

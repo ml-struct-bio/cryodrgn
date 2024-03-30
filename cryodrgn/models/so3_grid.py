@@ -3,10 +3,10 @@ Implementation of Yershova et al. "Generating uniform incremental
 grids on SO(3) using the Hopf fribration"
 """
 
-import json
 import os
-
+import json
 import numpy as np
+import torch
 
 
 def grid_s1(resol):
@@ -95,7 +95,7 @@ def get_base_ind(ind, base):
     """
     Np = 6 * 2**base
     psii = ind % Np
-    thetai = ind // Np
+    thetai = torch.div(ind, Np, rounding_mode="trunc")
     return np.stack((thetai, psii), axis=1)
 
 

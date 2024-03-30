@@ -31,7 +31,7 @@ from cryodrgn.commands_utils.configs import check_open_config
 from cryodrgn.commands.clean import clean_dir
 
 
-def add_args(parser):
+def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("outglob", help="Path pattern to scan for experiment outputs.")
 
     parser.add_argument(
@@ -141,7 +141,7 @@ def _prompt_dir(
                 clean_dir(d, args.clean)
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
     scan_dirs = sorted(p for p in Path().glob(args.outglob) if p.is_dir())
     maxlen = len(str(max(scan_dirs, key=lambda d: len(str(d)))))
 
@@ -173,9 +173,3 @@ def main(args):
         # don't scan subdirectories of already identified cryoDRGN folders
         if "N" not in version_code and "C" not in version_code:
             scan_dirs = [p for p in scan_dirs if cur_dir not in p.parents]
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    add_args(parser)
-    main(parser.parse_args())

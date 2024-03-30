@@ -143,7 +143,7 @@ class BaseTrainer(ABC):
         self.configs = self.config_cls(**configs)
         self.verbose = self.configs.verbose
         np.random.seed(self.configs.seed)
-        self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger(type(self).__name__)
 
     @classmethod
     def defaults(cls) -> dict[str, Any]:
@@ -702,8 +702,8 @@ class ModelTrainer(BaseTrainer, ABC):
                     self.logger.info(
                         f"Pretrain Epoch "
                         f"[{self.current_epoch}/{self.configs.num_epochs}]; "
-                        f"{self.epoch_images_seen} images seen] "
-                        f"loss={self.accum_losses['total']:4f}"
+                        f"{self.total_images_seen} images seen; "
+                        f"avg. loss={self.accum_losses['total']:.4f}"
                     )
 
                 if self.total_images_seen >= self.n_particles_pretrain:

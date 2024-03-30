@@ -3,8 +3,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from typing import Optional, Union, Tuple
-from cryodrgn import shift_grid, so3_grid
-from cryodrgn.models import lie_tools
+from cryodrgn.models import lie_tools, so3_grid, shift_grid
 from cryodrgn.models.variational_autoencoder import unparallelize, HetOnlyVAE
 from cryodrgn.lattice import Lattice
 import torch.nn as nn
@@ -319,7 +318,7 @@ class PoseSearch:
         keep_idx = torch.empty(
             len(shape), B * max_poses, dtype=torch.long, device=loss.device
         )
-        keep_idx[0] = flat_idx // shape[2]
+        keep_idx[0] = torch.div(flat_idx, shape[2], rounding_mode="trunc")
         keep_idx[2] = flat_idx % shape[2]
         keep_idx[1] = best_trans_idx[keep_idx[0], keep_idx[2]]
         return keep_idx
@@ -426,10 +425,11 @@ class PoseSearch:
             keepBN, keepT, keepQ = self.keep_matrix(
                 loss, B, nkeptposes
             ).cpu()  # B x (self.Nkeptposes*32)
-            keepB = keepBN * B // loss.shape[0]  # FIXME: expain
+            keepB = torch.div(keepBN * B, loss.shape[0], rounding_mode="trunc")
             assert (
                 len(keepB) == B * nkeptposes
             ), f"{len(keepB)} != {B} x {nkeptposes} at iter {iter_}"
+
             quat = quat[keepBN, keepQ]
             q_ind = q_ind[keepBN, keepQ]
             trans = trans[keepBN, keepT]

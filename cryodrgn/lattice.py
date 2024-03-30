@@ -186,10 +186,11 @@ class Lattice:
         coords = freqs if mask is None else freqs[mask]
         img = img.unsqueeze(1)  # Bx1xN
         t = t.unsqueeze(-1)  # BxTx2x1 to be able to do bmm
-        tfilt = coords @ t * 2 * np.pi  # BxTxNx1
+        tfilt = coords @ t.to(coords.device) * 2 * np.pi  # BxTxNx1
         tfilt = tfilt.squeeze(-1)  # BxTxN
         c = torch.cos(tfilt)  # BxTxN
         s = torch.sin(tfilt)  # BxTxN
+        img = img.to(coords.device)
         return c * img + s * img[:, :, torch.arange(len(coords) - 1, -1, -1)]
 
 

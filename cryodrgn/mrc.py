@@ -1,9 +1,9 @@
 import sys
 import logging
-import os
 import struct
 from collections import OrderedDict
 from typing import Any, Optional, Tuple, Union
+from typing_extensions import Self
 import numpy as np
 import torch
 from cryodrgn.source import ImageSource
@@ -129,17 +129,29 @@ class MRCHeader:
         xorg=0.0,
         yorg=0.0,
         zorg=0.0,
-    ):
+    ) -> Self:
         if data is not None:
             nz, ny, nx = data.shape
         assert nz is not None
         assert ny is not None
         assert nx is not None
-
         ispg = 1 if is_vol else 0
+
         if is_vol:
-            assert data is not None, "If is_vol=True, data array must be specified"
-            dmin, dmax, dmean, rms = data.min(), data.max(), data.mean(), data.std()
+            if data is None:
+                raise ValueError("If is_vol=True, data array must be specified")
+
+            if isinstance(data, (np.ndarray, torch.Tensor)):
+                dmin, dmax, dmean, rms = data.min(), data.max(), data.mean(), data.std()
+            elif isinstance(data, ImageSource):
+                imgdata = data.images()
+                dmin = imgdata.min().item()
+                dmax = imgdata.max().item()
+                dmean = imgdata.mean().item()
+                rms = imgdata.std().item()
+            else:
+                raise TypeError(f"Unrecognized type of data: `{type(data).__name__}`!")
+
         else:  # use undefined values for image stacks
             dmin, dmax, dmean, rms = -1, -2, -3, -1
 
@@ -195,6 +207,7 @@ class MRCHeader:
             0,  # nlabl
             b"\x00" * 800,  # labels
         ]
+
         return cls(vals)
 
     def write(self, fh):
@@ -282,10 +295,9 @@ class MRCFile:
             transform_fn = lambda chunk, indices: chunk  # noqa: E731
 
         new_dtype = np.dtype(header.dtype).newbyteorder(header.ENDIANNESS)  # type: ignore
-
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
         with open(filename, "wb") as f:
             header.write(f)
+
             if isinstance(array, ImageSource):
                 for i, (indices, chunk) in enumerate(array.chunks(chunksize=chunksize)):
                     logger.debug(f"Processing chunk {i}")

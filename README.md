@@ -4,14 +4,22 @@
 
 CryoDRGN is a neural network based algorithm for heterogeneous cryo-EM reconstruction. In particular, the method models a *continuous* distribution over 3D structures by using a neural network based representation for the volume.
 
-**Note:** This is a private fork of the public [cryodrgn repo](https://github.com/ml-struct-bio/cryodrgn) meant for novel research work done by the DRGN lab at Princeton.
-The main branch of this repo will be periodically merged with the main branch of its public counterpart.
 
 ## Documentation:
 
 The latest documentation for cryoDRGN is available [on gitbook](https://ez-lab.gitbook.io/cryodrgn/), including an overview and walkthrough of cryoDRGN installation, training and analysis. A brief quick start is provided below.
 
 For any feedback, questions, or bugs, please file a Github issue, start a Github discussion, or email the [google group](https://groups.google.com/g/cryodrgn).
+
+
+### New in Version 3.2.x
+* [NEW] `cryodrgn_utils clean` for removing extraneous output files from completed experiments
+* [NEW] `cryodrgn_utils fsc`, `cryodrgn_utils fsc_plot`, `cryodrgn_utils gen_mask` adapted from existing scripts;
+  for calculating FSCs, plotting them, and generating masks for volumes respectively
+* `cryodrgn backproject_voxel` now produces half-maps and a half-map FSC
+* fixing `filter_star` to accept tilt series as well
+* fixing assorted bugs in e.g. `write_star`, `invert_constrast`, and `train_vae` (see release notes)
+
 
 ## New in Version 3.x
 
@@ -22,11 +30,15 @@ The official [cryoDRGN-ET](https://www.biorxiv.org/content/10.1101/2023.08.18.55
 * Updated `cryodrgn backproject_voxel` for voxel-based homogeneous reconstruction
 * Major refactor of dataset loading for handling large datasets
 
-### New in Version 3.1.x ###
+
+### Previous versions
+
+<details><summary>Version 3.1</summary>
 
 * [NEW] `drgnai filter` interface for interactive filtering of particles as an alternative to the cryoDRGN_filter Jupyter notebook
 
-### Previous versions
+</details>
+
 
 <details><summary>Version 2.3</summary>
 
@@ -37,6 +49,7 @@ The official [cryoDRGN-ET](https://www.biorxiv.org/content/10.1101/2023.08.18.55
 * [FIX] Reduce memory usage when using `--preprocessed` and `--ind` (https://github.com/zhonge/cryodrgn/pull/272)
 
 </details>
+
 
 <details><summary>Version 2.2</summary>
 
@@ -61,6 +74,7 @@ The official [cryoDRGN-ET](https://www.biorxiv.org/content/10.1101/2023.08.18.55
 
 </details>
 
+
 <details><summary>Version 1.1.x</summary>
 
 Updated default parameters for `cryodrgn train_vae` with modified positional encoding, larger model architecture, and accelerated mixed-precision training turned on by default:
@@ -83,6 +97,7 @@ The official version 1.0 release. This version introduces several new tools for 
 
 </details>
 
+
 <details><summary>Version 0.3.4</summary>
 
 * FIX: Bug in `write_starfile.py` when provided particle stack is chunked (.txt file)
@@ -90,6 +105,7 @@ The official version 1.0 release. This version introduces several new tools for 
 * New helper scripts: `analyze_convergence.py` (_in beta testing_) contributed by <a href="bmp@mit.edu">Barrett Powell</a> (thanks!) and `make_random_selection.py` for splitting up particle stacks for training
 
 </details>
+
 
 <details><summary>Version 0.3.3</summary>
 
@@ -99,6 +115,7 @@ The official version 1.0 release. This version introduces several new tools for 
 
 </details>
 
+
 <details><summary>Version 0.3.2</summary>
 
 * New: cryoDRGN_filtering.ipynb for interactive filtering/selection of images from the dataset
@@ -107,12 +124,14 @@ The official version 1.0 release. This version introduces several new tools for 
 
 </details>
 
+
 <details><summary>Version 0.3.1</summary>
 
 * New: Script `write_starfile.py` to convert (filtered) particle selection to a .star file
 * More visualizations in `cryodrgn analyze`
 
 </details>
+
 
 <details><summary>Version 0.3.0</summary>
 

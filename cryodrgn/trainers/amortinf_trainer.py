@@ -46,6 +46,7 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
     batch_size_known_poses: int = 32
     batch_size_hps: int = 8
     batch_size_sgd: int = 256
+    invert_data: bool = False
     # optimizers
     pose_table_optim_type: str = "adam"
     conf_table_optim_type: str = "adam"
@@ -130,8 +131,8 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
             self.batch_size_sgd = self.batch_size
         if self.batch_size_known_poses is None:
             self.batch_size_known_poses = self.batch_size
-        if self.batch_size_sgd is None:
-            self.batch_size_sgd = self.batch_size
+        if self.batch_size_hps is None:
+            self.batch_size_hps = self.batch_size
 
         if self.explicit_volume and self.z_dim >= 1:
             raise ValueError(
@@ -190,13 +191,13 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
                 "Conformations cannot be initialized when also using an encoder!"
             )
 
-        if self.use_gt_trans and self.pose is None:
+        if self.use_gt_trans and self.poses is None:
             raise ValueError(
                 "Poses must be specified to use ground-truth translations!"
             )
         if self.refine_gt_poses:
             self.n_imgs_pose_search = 0
-            if self.pose is None:
+            if self.poses is None:
                 raise ValueError("Initial poses must be specified to be refined!")
 
         if self.subtomo_averaging:
@@ -224,7 +225,7 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
         if self.use_gt_poses:
             # "poses" include translations
             self.use_gt_trans = True
-            if self.pose is None:
+            if self.poses is None:
                 raise ValueError("Ground truth poses must be specified!")
 
         if self.no_trans:
@@ -353,7 +354,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
         else:
             ps_params = None
 
-        return DRGNai(
+        model = DRGNai(
             self.lattice,
             output_mask,
             self.particle_count,
@@ -371,6 +372,11 @@ class AmortizedInferenceTrainer(ModelTrainer):
             pretrain_with_gt_poses=self.configs.pretrain_with_gt_poses,
             n_tilts_pose_search=self.configs.n_tilts_pose_search,
         )
+
+        all_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        self.logger.info(f"{all_params} parameters in model")
+
+        return model
 
     @property
     def epochs_pose_search(self) -> int:
@@ -452,28 +458,25 @@ class AmortizedInferenceTrainer(ModelTrainer):
         self.data_generators = {"hps": None, "known": None, "sgd": None}
 
         # dataloaders
-        if self.batch_size_hps != self.configs.batch_size:
-            self.data_generators["hps"] = make_dataloader(
-                self.data,
-                batch_size=self.batch_size_hps,
-                num_workers=self.configs.num_workers,
-                shuffler_size=self.configs.shuffler_size,
-            )
+        self.data_generators["hps"] = make_dataloader(
+            self.data,
+            batch_size=self.batch_size_hps,
+            num_workers=self.configs.num_workers,
+            shuffler_size=self.configs.shuffler_size,
+        )
 
-        if self.batch_size_known_poses != self.configs.batch_size:
-            self.data_generators["known"] = make_dataloader(
-                self.data,
-                batch_size=self.batch_size_known_poses,
-                num_workers=self.configs.num_workers,
-                shuffler_size=self.configs.shuffler_size,
-            )
-        if self.batch_size_sgd != self.configs.batch_size:
-            self.data_generators["sgd"] = make_dataloader(
-                self.data,
-                batch_size=self.batch_size_sgd,
-                num_workers=self.configs.num_workers,
-                shuffler_size=self.configs.shuffler_size,
-            )
+        self.data_generators["known"] = make_dataloader(
+            self.data,
+            batch_size=self.batch_size_known_poses,
+            num_workers=self.configs.num_workers,
+            shuffler_size=self.configs.shuffler_size,
+        )
+        self.data_generators["sgd"] = make_dataloader(
+            self.data,
+            batch_size=self.batch_size_sgd,
+            num_workers=self.configs.num_workers,
+            shuffler_size=self.configs.shuffler_size,
+        )
 
         epsilon = 1e-8
         # booleans
@@ -502,9 +505,13 @@ class AmortizedInferenceTrainer(ModelTrainer):
             self.configs.l2_smoothness_regularizer >= epsilon
         )
 
-        self.num_epochs = self.epochs_pose_search + self.configs.epochs_sgd
+        # TODO: more sophisticated treatment of epoch configs
+        if self.configs.epochs_sgd:
+            self.configs.num_epochs = self.epochs_pose_search + self.configs.epochs_sgd
+        elif self.configs.num_epochs:
+            self.configs.epochs_sgd = self.configs.num_epochs - self.epochs_pose_search
         if self.configs.load:
-            self.num_epochs += self.start_epoch
+            self.configs.num_epochs += self.start_epoch
 
         self.in_dict_last = None
         self.y_pred_last = None
@@ -535,18 +542,21 @@ class AmortizedInferenceTrainer(ModelTrainer):
         self.mask_tilts_seen_at_last_epoch = np.zeros(self.image_count)
         self.optimized_modules = ["hypervolume"]
 
-        self.pose_only = (
-            self.total_images_seen < self.configs.pose_only_phase
-            or self.configs.z_dim == 0
-        )
+        self.pose_only = self.configs.z_dim == 0
+        self.pose_only |= self.current_epoch == 0
+        self.pose_only |= self.epoch_images_seen < self.configs.pose_only_phase
 
         if not self.configs.use_gt_poses:
             self.use_point_estimates = self.current_epoch >= max(
                 0, self.epochs_pose_search
             )
 
+        if self.current_epoch == 0:
+            self.logger.info("Pretraining")
+            self.data_iterator = self.data_generators["known"] or self.data_iterator
+
         # HPS
-        if self.in_pose_search_step:
+        elif self.in_pose_search_step:
             n_max_particles = self.particle_count
             self.logger.info(f"Will use pose search on {n_max_particles} particles")
             self.data_iterator = self.data_generators["hps"] or self.data_iterator
@@ -598,8 +608,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
             self.optimized_modules.append("pose_table")
 
         # GT poses
-        else:
-            assert self.configs.use_gt_poses
+        elif self.configs.use_gt_poses:
             self.data_iterator = self.data_generators["known"] or self.data_iterator
 
         # conformations
@@ -680,6 +689,10 @@ class AmortizedInferenceTrainer(ModelTrainer):
         if self.configs.verbose_time:
             torch.cuda.synchronize()
         start_time_gpu = time.time()
+
+        for key in batch.keys():
+            batch[key] = batch[key].to(self.device)
+
         if self.configs.verbose_time:
             torch.cuda.synchronize()
             self.run_times["to_gpu"].append(time.time() - start_time_gpu)
@@ -937,20 +950,20 @@ class AmortizedInferenceTrainer(ModelTrainer):
 
         # data loss
         data_loss = F.mse_loss(y_pred, y_gt)
-        all_losses["Data Loss"] = data_loss.item()
+        all_losses["gen"] = data_loss.item()
         total_loss = data_loss
 
         # KL divergence
         if self.use_kl_divergence:
             kld_conf = kl_divergence_conf(latent_variables_dict)
             total_loss += self.configs.beta_conf * kld_conf / self.resolution**2
-            all_losses["KL Div. Conf."] = kld_conf.item()
+            all_losses["kld"] = kld_conf.item()
 
         # L1 regularization for translations
         if self.use_trans_l1_regularizer and self.use_point_estimates:
             trans_l1_loss = l1_regularizer(latent_variables_dict["t"])
             total_loss += self.configs.trans_l1_regularizer * trans_l1_loss
-            all_losses["L1 Reg. Trans."] = trans_l1_loss.item()
+            all_losses["L1-Reg"] = trans_l1_loss.item()
 
         # L2 smoothness prior
         if self.use_l2_smoothness_regularizer:
@@ -961,7 +974,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
                 self.resolution,
             )
             total_loss += self.configs.l2_smoothness_regularizer * smoothness_loss
-            all_losses["L2 Smoothness Loss"] = smoothness_loss.item()
+            all_losses["L2-Smooth"] = smoothness_loss.item()
 
         return total_loss, all_losses
 
@@ -1061,10 +1074,15 @@ class AmortizedInferenceTrainer(ModelTrainer):
         self.save_model()
 
     def print_batch_summary(self) -> None:
+        avg_losses = self.average_losses
+
+        kld_str = f"kld={avg_losses['kld']:.4f}, " if "kld" in avg_losses else ""
         self.logger.info(
-            f"# [Train Epoch: {self.current_epoch}/{self.num_epochs - 1}] "
-            f"[{self.epoch_images_seen}"
-            f"/{self.particle_count} particles]"
+            f"### Epoch [{self.current_epoch}/{self.configs.num_epochs}], "
+            f"Batch [{self.epoch_batch_count}] "
+            f"({self.epoch_images_seen}/{self.image_count} images); "
+            f"gen loss={avg_losses['gen']:.4g}, {kld_str}"
+            f"loss={avg_losses['total']:.4f}"
         )
 
         if hasattr(self.model.output_mask, "current_radius"):

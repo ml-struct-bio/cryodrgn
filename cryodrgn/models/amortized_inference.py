@@ -240,8 +240,10 @@ class DRGNai(nn.Module):
             out_dict["time_decoder_query"] = (
                 torch.tensor([times["query"]]).float().to(device)
             )
+
         for key in latent_variables_dict.keys():
             out_dict[key] = latent_variables_dict[key]
+
         return out_dict
 
     @staticmethod
@@ -309,7 +311,7 @@ class DRGNai(nn.Module):
         # TODO: refactor to make pretraining a method of the trainer like for HPS?
         elif self.pretrain:
             in_dim = in_dict["y"].shape[:-2]
-            device = in_dict["y"].device
+            device = in_dict["y_real"].device
             pose_dict = {"R": lie_tools.random_rotmat(np.prod(in_dim), device=device)}
             pose_dict["R"] = pose_dict["R"].reshape(*in_dim, 3, 3)
             if not self.no_trans:
@@ -426,19 +428,19 @@ class DRGNai(nn.Module):
     def eval_volume(
         self,
         coords=None,
-        resolution=None,
+        D=None,
         extent=None,
         norm=None,
         zval=None,
         radius=None,
     ):
         use_coords = coords or self.lattice.coords
-        use_resolution = resolution or self.lattice.D
+        use_D = D or self.lattice.D
         use_extent = extent or self.lattice.extent
 
         return self.hypervolume.eval_volume(
             coords=use_coords,
-            resolution=use_resolution,
+            resolution=use_D,
             extent=use_extent,
             norm=norm,
             zval=zval,
@@ -911,7 +913,9 @@ class HyperVolume(nn.Module):
             out_shape = (batch_size_in, n_tilts, n_pts)
         else:
             out_shape = (batch_size_in, n_pts)
-        return self.mlp(x).reshape(*out_shape)
+
+        y_pred = self.mlp(x)
+        return y_pred.reshape(*out_shape)
 
     def random_fourier_encoding(self, x):
         """
@@ -1094,7 +1098,7 @@ class ResidualLinearMLP(nn.Module):
         )
         self.main = nn.Sequential(*layers)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         x: [..., in_dim]
 
@@ -1103,6 +1107,7 @@ class ResidualLinearMLP(nn.Module):
         flat = x.view(-1, x.shape[-1])
         ret_flat = self.main(flat)
         ret = ret_flat.view(*x.shape[:-1], ret_flat.shape[-1])
+
         return ret
 
 

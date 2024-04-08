@@ -8,6 +8,7 @@ import torch.nn.functional as F
 import numpy as np
 from cryodrgn import masking
 from cryodrgn.models import lie_tools, so3_grid, shift_grid
+from cryodrgn.models.pose_search import PoseSearch
 
 
 def get_base_shifts(ps_params):
@@ -279,32 +280,6 @@ def eval_grid(
         apply_tilting_scheme=apply_tilting_scheme,
     )
     return err
-
-
-def keep_matrix(loss, batch_size, max_poses):
-    """
-    loss: [batch_size, t, q]: tensor of losses for each translation and rotation.
-
-    output: 3 * [batch_size, max_poses]: bool tensor of rotations to keep, along with the best translation for each.
-    """
-    shape = loss.shape
-    assert len(shape) == 3
-    best_loss, best_trans_idx = loss.min(1)
-    flat_loss = best_loss.reshape(batch_size, -1)
-    flat_idx = flat_loss.topk(max_poses, dim=-1, largest=False, sorted=True)[1]
-    # add the batch index in, to make it completely flat
-    flat_idx += (
-        torch.arange(batch_size, device=loss.device).unsqueeze(1) * flat_loss.shape[1]
-    )
-    flat_idx = flat_idx.reshape(-1)
-
-    keep_idx = torch.empty(
-        len(shape), batch_size * max_poses, dtype=torch.long, device=loss.device
-    )
-    keep_idx[0] = flat_idx // shape[2]
-    keep_idx[2] = flat_idx % shape[2]
-    keep_idx[1] = best_trans_idx[keep_idx[0], keep_idx[2]]
-    return keep_idx
 
 
 def get_s1_neighbor_tensor(mini, curr_res):
@@ -632,7 +607,8 @@ def opt_theta_trans(
         tilting_func=ps_params["tilting_func"],
         apply_tilting_scheme=apply_tilting_scheme,
     )
-    keep_b, keep_t, keep_q = keep_matrix(
+
+    keep_b, keep_t, keep_q = PoseSearch.keep_matrix(
         loss, batch_size, ps_params["nkeptposes"]
     ).cpu()
 
@@ -702,20 +678,22 @@ def opt_theta_trans(
         )
         nkeptposes = ps_params["nkeptposes"] if iter_ < ps_params["niter"] else 1
 
-        keep_bn, keep_t, keep_q = keep_matrix(
+        keep_bn, keep_t, keep_q = PoseSearch.keep_matrix(
             loss, batch_size, nkeptposes
         ).cpu()  # B x (self.Nkeptposes*32)
-        keep_b = keep_bn * batch_size // loss.shape[0]
+        keep_b = torch.div(keep_bn * batch_size, loss.shape[0], rounding_mode="trunc")
+
         assert (
             len(keep_b) == batch_size * nkeptposes
         ), f"{len(keep_b)} != {batch_size} x {nkeptposes} at iter {iter_}"
         quat = quat[keep_bn, keep_q]
         q_ind = q_ind[keep_bn, keep_q]
+
         if gt_trans_selected is None and ps_params["t_extent"] > 1e-6:
             trans = trans[keep_bn, keep_t]
 
     assert loss is not None
-    best_bn, best_t, best_q = keep_matrix(loss, batch_size, 1).cpu()
+    best_bn, best_t, best_q = PoseSearch.keep_matrix(loss, batch_size, 1).cpu()
     assert len(best_bn) == batch_size
     assert rot is not None
     best_rot = rot.reshape(-1, 8, 3, 3)[best_bn, best_q]

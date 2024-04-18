@@ -25,6 +25,7 @@ def add_args(parser):
     parser.add_argument(
         "--et", action="store_true", help="Set if .star file includes tilts"
     )
+    parser.add_argument("--tomo", action="store_true", help="Split output by micrograph name into separate .star files")
     parser.add_argument("-o", type=os.path.abspath, help="Output .star file")
 
 
@@ -41,6 +42,16 @@ def main(args):
         tilt_indices = TiltSeriesData.particles_to_tilts(particles_to_tilts, ind)
         df = s.df.loc[tilt_indices]
 
+    if args.tomo:
+        df = s.df.loc[ind]
+        os.makedirs(args.o, exist_ok=True)  # Ensure the output directory exists
+        for micrograph_name, group_df in df.groupby('_rlnMicrographName'):
+            filename_without_extension = os.path.splitext(micrograph_name)[0]  # Remove extension
+            output_path = os.path.join(args.o, f"{filename_without_extension}.star")
+            new_star = starfile.Starfile(headers=None, df=group_df)
+            new_star.write(output_path)
+            logger.info(f"Written .star file for {filename_without_extension} to {output_path}")
+        exit()
     else:
         df = s.df.loc[ind]
 
@@ -52,3 +63,4 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     add_args(parser)
     main(parser.parse_args())
+

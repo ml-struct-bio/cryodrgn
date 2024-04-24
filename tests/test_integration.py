@@ -4,6 +4,9 @@ import pytest
 import argparse
 import os.path
 import shutil
+import nbformat
+from nbconvert.preprocessors import ExecutePreprocessor
+
 from cryodrgn.commands import (
     analyze,
     analyze_landscape,
@@ -20,10 +23,10 @@ from cryodrgn.commands import (
 DATA_FOLDER = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
 
 
-class TestTrainVAE:
+class TestFixedHetero:
 
     mrcs_file = f"{DATA_FOLDER}/hand.mrcs"
-    poses_file = f"{DATA_FOLDER}/hand_rot.pkl"
+    poses_file = f"{DATA_FOLDER}/hand_rot_trans.pkl"
 
     def test_train_model(self):
         """Train the initial heterogeneous model."""
@@ -78,6 +81,7 @@ class TestTrainVAE:
         )
 
     def test_analyze(self):
+        """Produce standard analyses for a particular epoch."""
         args = analyze.add_args(argparse.ArgumentParser()).parse_args(
             [
                 "output",
@@ -85,12 +89,28 @@ class TestTrainVAE:
                 "--pc",
                 "3",  # Number of principal component traversals to generate
                 "--ksample",
-                "14",  # Number of kmeans samples to generate
+                "20",  # Number of kmeans samples to generate
                 "--vol-start-index",
                 "1",
             ]
         )
         analyze.main(args)
+        assert os.path.exists(os.path.join("output", "analyze.2"))
+
+    def test_notebooks(self):
+        """Execute the demonstration Jupyter notebooks produced by analysis."""
+        os.chdir(os.path.join("output", "analyze.2"))
+
+        # TODO: other notebooks don't work if --ctf not specified
+        for ipynb in ["cryoDRGN_figures"]:
+            assert os.path.exists(f"{ipynb}.ipynb")
+            with open(f"{ipynb}.ipynb") as ff:
+                nb_in = nbformat.read(ff, nbformat.NO_CONVERT)
+
+            ep = ExecutePreprocessor(timeout=600, kernel_name="python3")
+            ep.preprocess(nb_in)
+
+        os.chdir(os.path.join("..", ".."))
 
     def test_landscape(self):
         shutil.rmtree("output/landscape.3", ignore_errors=True)
@@ -189,12 +209,89 @@ class TestTrainVAE:
         eval_images.main(args)
 
 
+class TestAbinitHetero:
+
+    mrcs_file = f"{DATA_FOLDER}/toy_projections.mrcs"
+    ctf_file = f"{DATA_FOLDER}/test_ctf.pkl"
+
+    def test_train_model(self):
+        """Train the initial heterogeneous model."""
+
+        args = abinit_het.add_args(argparse.ArgumentParser()).parse_args(
+            [
+                self.mrcs_file,
+                "--ctf",
+                self.ctf_file,
+                "-o",
+                "output",
+                "--zdim",
+                "4",
+                "--lr",
+                ".0001",
+                "--enc-dim",
+                "8",
+                "--enc-layers",
+                "2",
+                "--dec-dim",
+                "8",
+                "--dec-layers",
+                "2",
+                "--pe-dim",
+                "8",
+                "--enc-only",
+                "--t-extent",
+                "4.0",
+                "--t-ngrid",
+                "2",
+                "--pretrain",
+                "1",
+                "--num-epochs",
+                "3",
+                "--ps-freq",
+                "2",
+            ]
+        )
+        abinit_het.main(args)
+
+    def test_analyze(self):
+        """Produce standard analyses for a particular epoch."""
+        args = analyze.add_args(argparse.ArgumentParser()).parse_args(
+            [
+                "output",
+                "1",  # Epoch number to analyze - 0-indexed
+                "--pc",
+                "3",  # Number of principal component traversals to generate
+                "--ksample",
+                "20",  # Number of kmeans samples to generate
+                "--vol-start-index",
+                "1",
+            ]
+        )
+        analyze.main(args)
+        assert os.path.exists(os.path.join("output", "analyze.1"))
+
+    def test_notebooks(self):
+        """Execute the demonstration Jupyter notebooks produced by analysis."""
+        os.chdir(os.path.join("output", "analyze.1"))
+
+        for ipynb in ["cryoDRGN_figures"]:
+            assert os.path.exists(f"{ipynb}.ipynb")
+            with open(f"{ipynb}.ipynb") as ff:
+                nb_in = nbformat.read(ff, nbformat.NO_CONVERT)
+
+            ep = ExecutePreprocessor(timeout=600, kernel_name="python3")
+            ep.preprocess(nb_in)
+
+        os.chdir(os.path.join("..", ".."))
+
+
 @pytest.mark.parametrize(
     "star_particles",
     [os.path.join(DATA_FOLDER, "sta_testing_bin8.star")],
     ids=("sta-bin8",),
 )
 class TestSta:
+    """Run reconstructions using particles from a .star file as input."""
 
     poses_file = os.path.join(DATA_FOLDER, "sta_pose.pkl")
     ctf_file = os.path.join(DATA_FOLDER, "sta_ctf.pkl")

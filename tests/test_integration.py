@@ -11,7 +11,10 @@ from cryodrgn.commands import (
     eval_images,
     eval_vol,
     graph_traversal,
+    train_nn,
     train_vae,
+    abinit_homo,
+    abinit_het,
 )
 
 DATA_FOLDER = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
@@ -187,13 +190,33 @@ class TestTrainVAE:
 
 
 @pytest.mark.parametrize(
-    "star_particles", [os.path.join(DATA_FOLDER, "sta_testing_bin8.star")]
+    "star_particles",
+    [os.path.join(DATA_FOLDER, "sta_testing_bin8.star")],
+    ids=("sta-bin8",),
 )
 class TestSta:
 
     poses_file = os.path.join(DATA_FOLDER, "sta_pose.pkl")
     ctf_file = os.path.join(DATA_FOLDER, "sta_ctf.pkl")
     outdir = os.path.join(DATA_FOLDER, "output", "sta")
+
+    def test_train_nn(self, star_particles):
+        args = train_nn.add_args(argparse.ArgumentParser()).parse_args(
+            [
+                star_particles,
+                "--datadir",
+                DATA_FOLDER,
+                "--poses",
+                self.poses_file,
+                "--ctf",
+                self.ctf_file,
+                "-o",
+                self.outdir,
+                "--dim",
+                "256",
+            ]
+        )
+        train_nn.main(args)
 
     def test_train_vae(self, star_particles):
         args = train_vae.add_args(argparse.ArgumentParser()).parse_args(
@@ -220,3 +243,66 @@ class TestSta:
             ]
         )
         train_vae.main(args)
+
+    def test_abinit_homo(self, star_particles):
+        args = abinit_homo.add_args(argparse.ArgumentParser()).parse_args(
+            [
+                star_particles,
+                "--datadir",
+                DATA_FOLDER,
+                "--ctf",
+                self.ctf_file,
+                "-o",
+                self.outdir,
+                "--dim",
+                "4",
+                "--layers",
+                "2",
+                "--t-extent",
+                "4.0",
+                "--t-ngrid",
+                "2",
+                "--pretrain=1",
+                "--num-epochs",
+                "3",
+                "--ps-freq",
+                "2",
+            ]
+        )
+        abinit_homo.main(args)
+
+    def test_abinit_het(self, star_particles):
+        args = abinit_het.add_args(argparse.ArgumentParser()).parse_args(
+            [
+                star_particles,
+                "--datadir",
+                DATA_FOLDER,
+                "--ctf",
+                self.ctf_file,
+                "--zdim",
+                "8",
+                "-o",
+                self.outdir,
+                "--enc-dim",
+                "4",
+                "--enc-layers",
+                "2",
+                "--dec-dim",
+                "4",
+                "--dec-layers",
+                "2",
+                "--pe-dim",
+                "4",
+                "--enc-only",
+                "--t-extent",
+                "4.0",
+                "--t-ngrid",
+                "2",
+                "--pretrain=1",
+                "--num-epochs",
+                "3",
+                "--ps-freq",
+                "2",
+            ]
+        )
+        abinit_het.main(args)

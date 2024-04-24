@@ -1,13 +1,14 @@
+"""Running an experiment of training followed by downstream analyses."""
+
+import pytest
 import argparse
 import os.path
 import shutil
-
-import pytest
-
 from cryodrgn.commands import (
     analyze,
     analyze_landscape,
     analyze_landscape_full,
+    eval_images,
     eval_vol,
     graph_traversal,
     train_vae,
@@ -159,3 +160,22 @@ def test_run(mrcs_file, poses_file):
         ]
     )
     eval_vol.main(args)
+
+    args = eval_images.add_args(argparse.ArgumentParser()).parse_args(
+        [
+            mrcs_file,
+            "output/weights.3.pkl",
+            "--config",
+            "output/config.yaml",
+            "-o",
+            "output/out_eval_images_losses.pkl",
+            "--out-z",
+            "output/out_eval_images_z.pkl",
+            "--poses",
+            poses_file,
+            "--log-interval",
+            "1",
+            "--verbose",
+        ]
+    )
+    eval_images.main(args)

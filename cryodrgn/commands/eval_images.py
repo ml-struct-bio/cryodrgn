@@ -3,10 +3,10 @@
 Example usages
 --------------
 
-$ cryodrgn eval_images hand.mrcs het_weights.pkl \
-                       --config config.pkl -o output/out_eval_images_losses.pkl \
+$ cryodrgn eval_images hand.mrcs het_weights.pkl --config config.pkl \
+                        -o output/out_eval_images_losses.pkl \
                        --out-z output/out_eval_images_z.pkl \
-                       --poses testing/data/hand_rot.pkl --log-interval 1 --verbose
+                       --poses hand_rot.pkl --log-interval 1 --verbose
 
 """
 import argparse
@@ -117,7 +117,6 @@ def add_args(parser):
     group.add_argument(
         "--ntilts",
         type=int,
-        default=10,
         help="Number of tilts to encode (default: %(default)s)",
     )
     group.add_argument(

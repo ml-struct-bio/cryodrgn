@@ -8,6 +8,7 @@ import os.path
 import shutil
 from datetime import datetime as dt
 import logging
+import nbformat
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
@@ -386,7 +387,7 @@ def main(args):
             ctf_params = utils.load_pkl(configs["dataset_args"]["ctf"])
             orig_apixs = set(ctf_params[:, 1])
 
-	    # TODO: add support for multiple optics groups
+            # TODO: add support for multiple optics groups
             if len(orig_apixs) > 1:
                 use_apix = 1.0
                 logger.info(
@@ -451,46 +452,35 @@ def main(args):
             num_ksamples=args.ksample,
         )
 
-    # copy over template if file doesn't exist
+    # create demonstration Jupyter notebooks from templates if they don't already exist
     cfg = config.load(cfg)
+    ipynbs = ["cryoDRGN_figures"]
     if cfg["model_args"]["encode_mode"] == "tilt":
-        out_ipynb = f"{outdir}/cryoDRGN_ET_viz.ipynb"
-        if not os.path.exists(out_ipynb):
-            logger.info("Creating jupyter notebook...")
-            ipynb = f"{cryodrgn._ROOT}/templates/cryoDRGN_ET_viz_template.ipynb"
-            shutil.copyfile(ipynb, out_ipynb)
-        else:
-            logger.info(f"{out_ipynb} already exists. Skipping")
-        logger.info(out_ipynb)
+        ipynbs += ["cryoDRGN_ET_viz"]
     else:
-        out_ipynb = f"{outdir}/cryoDRGN_viz.ipynb"
-        if not os.path.exists(out_ipynb):
-            logger.info("Creating jupyter notebook...")
-            ipynb = f"{cryodrgn._ROOT}/templates/cryoDRGN_viz_template.ipynb"
-            shutil.copyfile(ipynb, out_ipynb)
-        else:
-            logger.info(f"{out_ipynb} already exists. Skipping")
-        logger.info(out_ipynb)
+        ipynbs += ["cryoDRGN_viz", "cryoDRGN_filtering"]
 
-        # copy over template if file doesn't exist
-        out_ipynb = f"{outdir}/cryoDRGN_filtering.ipynb"
-        if not os.path.exists(out_ipynb):
-            logger.info("Creating jupyter notebook...")
-            ipynb = f"{cryodrgn._ROOT}/templates/cryoDRGN_filtering_template.ipynb"
-            shutil.copyfile(ipynb, out_ipynb)
-        else:
-            logger.info(f"{out_ipynb} already exists. Skipping")
-        logger.info(out_ipynb)
+    for ipynb in ipynbs:
+        nb_outfile = os.path.join(outdir, f"{ipynb}.ipynb")
 
-    # copy over template if file doesn't exist
-    out_ipynb = f"{outdir}/cryoDRGN_figures.ipynb"
-    if not os.path.exists(out_ipynb):
-        logger.info("Creating jupyter notebook...")
-        ipynb = f"{cryodrgn._ROOT}/templates/cryoDRGN_figures_template.ipynb"
-        shutil.copyfile(ipynb, out_ipynb)
-    else:
-        logger.info(f"{out_ipynb} already exists. Skipping")
-    logger.info(out_ipynb)
+        if not os.path.exists(nb_outfile):
+            logger.info(f"Creating demo Jupyter notebook {nb_outfile}...")
+            nb_infile = os.path.join(
+                cryodrgn._ROOT, "templates", f"{ipynb}_template.ipynb"
+            )
+            shutil.copyfile(nb_infile, nb_outfile)
+        else:
+            logger.info(f"{nb_outfile} already exists. Skipping")
+
+        # lazily look at the beginning of the notebook for the epoch number to update
+        with open(nb_outfile, "r") as f:
+            filter_ntbook = nbformat.read(f, as_version=nbformat.NO_CONVERT)
+        for i in range(5):
+            filter_ntbook["cells"][i]["source"] = filter_ntbook["cells"][i][
+                "source"
+            ].replace("EPOCH = None", f"EPOCH = {epoch}")
+        with open(nb_outfile, "w") as f:
+            nbformat.write(filter_ntbook, f)
 
     logger.info(f"Finished in {dt.now() - t1}")
 

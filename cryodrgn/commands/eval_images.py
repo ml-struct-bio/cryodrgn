@@ -1,5 +1,13 @@
-"""
-Evaluate cryoDRGN z and loss for a stack of images
+"""Evaluate cryoDRGN model latent variables and loss for a stack of images.
+
+Example usages
+--------------
+
+$ cryodrgn eval_images hand.mrcs het_weights.pkl \
+                       --config config.pkl -o output/out_eval_images_losses.pkl \
+                       --out-z output/out_eval_images_z.pkl \
+                       --poses testing/data/hand_rot.pkl --log-interval 1 --verbose
+
 """
 import argparse
 import os

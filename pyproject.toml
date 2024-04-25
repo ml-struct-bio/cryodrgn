@@ -54,6 +54,7 @@ cryodrgn_utils = "cryodrgn.command_line:util_commands"
 
 [tool.setuptools_scm]
 write_to = "cryodrgn/_version.py"
+local_scheme = "no-local-version"
 
 [tool.setuptools]
 include-package-data = true

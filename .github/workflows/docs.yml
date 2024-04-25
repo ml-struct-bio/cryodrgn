@@ -2,7 +2,7 @@ name: Docs
 
 on:
   push:
-    branches: [ master, develop, docs ]
+    branches: [ master, develop, docs, v3.3.1 ]
     tags:
       - '*'
 
@@ -10,21 +10,20 @@ jobs:
 
   build_docs:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python: [3.9]
 
     steps:
       - name: Setup Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python }}
+          python-version: 3.9
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Install Python dependencies
         run: |
-          pip install sphinx myst-parser sphinx-rtd-theme
-
-      - uses: actions/checkout@v2
+          python -m pip install --upgrade pip
+          pip install sphinx myst-parser sphinx-rtd-theme /home/runner/work/cryodrgn/cryodrgn/
 
       - name: Setup Envvars
         run: |

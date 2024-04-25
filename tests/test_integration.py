@@ -25,8 +25,8 @@ DATA_FOLDER = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
 
 class TestFixedHetero:
 
-    mrcs_file = f"{DATA_FOLDER}/hand.mrcs"
-    poses_file = f"{DATA_FOLDER}/hand_rot_trans.pkl"
+    mrcs_file = os.path.join(DATA_FOLDER, "hand.mrcs")
+    poses_file = os.path.join(DATA_FOLDER, "hand_rot_trans.pkl")
 
     def test_train_model(self):
         """Train the initial heterogeneous model."""
@@ -208,11 +208,13 @@ class TestFixedHetero:
         )
         eval_images.main(args)
 
+        shutil.rmtree("output")
+
 
 class TestAbinitHetero:
 
-    mrcs_file = f"{DATA_FOLDER}/toy_projections.mrcs"
-    ctf_file = f"{DATA_FOLDER}/test_ctf.pkl"
+    mrcs_file = os.path.join(DATA_FOLDER, "toy_projections.mrcs")
+    ctf_file = os.path.join(DATA_FOLDER, "test_ctf.pkl")
 
     def test_train_model(self):
         """Train the initial heterogeneous model."""
@@ -283,6 +285,7 @@ class TestAbinitHetero:
             ep.preprocess(nb_in)
 
         os.chdir(os.path.join("..", ".."))
+        shutil.rmtree("output")
 
 
 @pytest.mark.parametrize(
@@ -403,3 +406,88 @@ class TestSta:
             ]
         )
         abinit_het.main(args)
+
+
+@pytest.mark.parametrize(
+    "indices_file",
+    [
+        os.path.join(DATA_FOLDER, "ind100.pkl"),
+        os.path.join(DATA_FOLDER, "ind100-rand.pkl"),
+    ],
+    ids=("first-100", "random-100"),
+)
+class TestIterativeFiltering:
+
+    mrcs_file = os.path.join(DATA_FOLDER, "toy_projections.mrcs")
+    poses_file = os.path.join(DATA_FOLDER, "toy_rot_trans.pkl")
+    ctf_file = os.path.join(DATA_FOLDER, "test_ctf.pkl")
+
+    def test_train_model(self, indices_file):
+        """Train the initial heterogeneous model."""
+        outdir = "output_rand" if "rand" in indices_file else "output_first"
+        shutil.rmtree(outdir, ignore_errors=True)
+
+        args = train_vae.add_args(argparse.ArgumentParser()).parse_args(
+            [
+                self.mrcs_file,
+                "-o",
+                outdir,
+                "--ctf",
+                self.ctf_file,
+                "--ind",
+                indices_file,
+                "--num-epochs",
+                "3",
+                "--poses",
+                self.poses_file,
+                "--zdim",
+                "4",
+                "--pe-type",
+                "gaussian",
+                "--no-amp",
+            ]
+        )
+        train_vae.main(args)
+
+    def test_analyze(self, indices_file):
+        """Produce standard analyses for a particular epoch."""
+        outdir = "output_rand" if "rand" in indices_file else "output_first"
+
+        assert os.path.exists(
+            os.path.join(outdir, "weights.2.pkl")
+        ), "Upstream tests have failed!"
+
+        args = analyze.add_args(argparse.ArgumentParser()).parse_args(
+            [
+                outdir,
+                "2",  # Epoch number to analyze - 0-indexed
+                "--pc",
+                "3",  # Number of principal component traversals to generate
+                "--ksample",
+                "20",  # Number of kmeans samples to generate
+                "--vol-start-index",
+                "1",
+            ]
+        )
+        analyze.main(args)
+        assert os.path.exists(os.path.join(outdir, "analyze.2"))
+
+    def test_notebooks(self, indices_file):
+        """Execute the demonstration Jupyter notebooks produced by analysis."""
+        outdir = "output_rand" if "rand" in indices_file else "output_first"
+
+        assert os.path.exists(
+            os.path.join(outdir, "analyze.2")
+        ), "Upstream tests have failed!"
+        os.chdir(os.path.join(outdir, "analyze.2"))
+
+        for ipynb in ["cryoDRGN_figures", "cryoDRGN_filtering", "cryoDRGN_viz"]:
+            assert os.path.exists(f"{ipynb}.ipynb")
+            with open(f"{ipynb}.ipynb") as ff:
+                nb_in = nbformat.read(ff, nbformat.NO_CONVERT)
+
+            ep = ExecutePreprocessor(timeout=600, kernel_name="python3")
+            ep.preprocess(nb_in)
+
+        os.chdir(os.path.join("..", ".."))
+        shutil.rmtree(outdir)

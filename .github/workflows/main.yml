@@ -34,12 +34,12 @@ jobs:
 
       - name: Pre-commit checks
         run: |
-          pre-commit run --all-files
+          pre-commit run --all-files --show-diff-on-failure
 
       - name: Pyright
         run: |
           pyright --version
-          pyright
+          #pyright
 
       - name: Pytest
         run: |

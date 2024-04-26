@@ -48,8 +48,8 @@ def add_args(parser):
         "--plot-inds",
         type=str,
         help="path to a file containing previously selected indices "
-             "that will be plotted at the beginning",
-        dest='plot_inds'
+        "that will be plotted at the beginning",
+        dest="plot_inds",
     )
 
 
@@ -96,8 +96,8 @@ def main(args) -> None:
     all_indices = np.array(range(ctf_params.shape[0]))
 
     if isinstance(train_configs["dataset_args"]["ind"], int):
-        ctf_params = ctf_params[:train_configs["dataset_args"]["ind"], :]
-        all_indices = all_indices[:train_configs["dataset_args"]["ind"]]
+        ctf_params = ctf_params[: train_configs["dataset_args"]["ind"], :]
+        all_indices = all_indices[: train_configs["dataset_args"]["ind"]]
 
     elif isinstance(train_configs["dataset_args"]["ind"], str):
         inds = utils.load_pkl(train_configs["dataset_args"]["ind"])
@@ -169,16 +169,19 @@ def main(args) -> None:
     plt.close()  # Close the figure to avoid interference with other plots
 
     select_str = " ... ".join(
-        [','.join([str(i) for i in selected_indices[:6]]),
-         ','.join([str(i) for i in selected_indices[-6:]])]
-        )
+        [
+            ",".join([str(i) for i in selected_indices[:6]]),
+            ",".join([str(i) for i in selected_indices[-6:]]),
+        ]
+    )
 
-    print(f"Selected {len(selected_indices)} particles from original list of "
-          f"{len(all_indices)} "
-          f"particles numbered [{min(all_indices)}, ... , {max(all_indices)}]:\n{select_str}")
+    print(
+        f"Selected {len(selected_indices)} particles from original list of "
+        f"{len(all_indices)} "
+        f"particles numbered [{min(all_indices)}, ... , {max(all_indices)}]:\n{select_str}"
+    )
 
-    save_option = (
-        input("Do you want to save the selection? (yes/no): ").strip().lower())
+    save_option = input("Do you want to save the selection? (yes/no): ").strip().lower()
 
     if save_option == "yes":
         filename = input(

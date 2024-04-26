@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
       - name: Upgrade setuptools/build
         run: |
@@ -19,7 +19,7 @@ jobs:
           pip3 install setuptools --upgrade
 
       - name: Setup Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v5
         with:
           python-version: 3.9
 
@@ -30,7 +30,6 @@ jobs:
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
 
         run: |
-          git checkout ${{ github.ref_name }}
           python -m pip install --upgrade build
           python -m build .
           python -m pip install --upgrade twine

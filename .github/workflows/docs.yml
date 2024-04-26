@@ -2,9 +2,7 @@ name: Docs
 
 on:
   push:
-    branches: [ master, develop, docs, v3.3.1 ]
-    tags:
-      - '*'
+    branches: [ main ]
 
 jobs:
 

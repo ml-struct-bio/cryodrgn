@@ -19,11 +19,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Upgrade setuptools
-        run: |
-          pip3 install wheel --upgrade
-          pip3 install setuptools --upgrade
-
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -31,7 +26,7 @@ jobs:
 
       - name: Install cryoDRGN with dev dependencies
         run: |
-          python -m pip install .[dev]
+          python3 -m pip install .[dev]
 
       - name: Pre-commit checks
         run: |

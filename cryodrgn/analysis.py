@@ -562,15 +562,17 @@ def plot_projections(imgs, labels=None, max_imgs=25):
     fig, axes = plt.subplots(
         nrows=nrows, ncols=ncols, figsize=(1.5 * ncols, 1.5 * nrows)
     )
-    axes = axes.ravel()
 
-    for i in range(nrows * ncols):
-        axes[i].imshow(imgs[i], cmap="Greys_r")
-        if labels is not None:
-            axes[i].set_title(labels[i])
+    if not isinstance(axes, np.ndarray):
+        axes = np.array([[axes]])
+    if labels is None:
+        labels = [None for _ in axes.ravel()]
 
-    for i in range(nrows * ncols):
-        axes[i].axis("off")
+    for img, ax, lbl in zip(imgs, axes.ravel(), labels):
+        ax.imshow(img, cmap="Greys_r")
+        if lbl is not None:
+            ax.set_title(lbl)
+        ax.axis("off")
 
     plt.tight_layout()
     return fig, axes

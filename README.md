@@ -1,7 +1,8 @@
-[![CI](https://github.com/ml-struct-bio/cryodrgn/actions/workflows/main.yml/badge.svg)](https://github.
-com/ml-struct-bio/cryodrgn/actions/workflows/main.yml)
-[![beta-release](https://github.com/ml-struct-bio/cryodrgn/actions/workflows/beta-release.yml/badge.svg)]
-(https://github.com/ml-struct-bio/cryodrgn/actions/workflows/beta-release.yml)
+![pypi-downloads](https://img.shields.io/pypi/dm/cryodrgn?label=PyPI%20Downloads)
+![stable-release](https://img.shields.io/pypi/v/cryodrgn?label=stable%20release)
+![beta-release](https://img.shields.io/pypi/v/cryodrgn?pypiBaseUrl=https%3A%2F%2Ftest.pypi.org&label=beta%20release)
+![ci-test](https://github.com/ml-struct-bio/cryodrgn/actions/workflows/main.yml/badge.svg)
+
 
 
 # :snowflake::dragon: cryoDRGN: Deep Reconstructing Generative Networks for cryo-EM and cryo-ET heterogeneous reconstruction

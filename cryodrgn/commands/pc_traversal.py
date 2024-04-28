@@ -1,21 +1,24 @@
-"""
-Generate trajectory along PCs
-"""
+"""Construct a path of embeddings in latent space along principal components.
 
-import argparse
+Example usages
+--------------
+$ cryodrgn pc_traversal zvals.pkl
+$ cryodrgn pc_traversal zvals.pkl --pc 3
+$ cryodrgn pc_traversal zvals.pkl --pc 4 -n 12 ---lim 0.10 0.90 -o z-path-new.txt
+
+"""
 import os
+import argparse
 import pickle
-
 import numpy as np
 from scipy.spatial.distance import cdist
-
 from cryodrgn import analysis
 
 
-def add_args(parser):
-    parser.add_argument("z", help="Input z.pkl")
+def add_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("zfile", help="Input .pkl file containing z-embeddings")
     parser.add_argument(
-        "--dim", type=int, help="Choose PC (1-based indexing) (default: all)"
+        "--pc", type=int, nargs="+", help="Choose PCs (1-based indexing) (default: all)"
     )
     parser.add_argument(
         "-n",
@@ -35,12 +38,15 @@ def add_args(parser):
         help="Use equally spaced percentiles of the distribution instead of equally spaced points along the PC",
     )
     parser.add_argument(
+        "--outdir",
         "-o",
         type=os.path.abspath,
-        required=True,
-        help="Output directory for pc.X.txt files",
+        nargs="?",
+        const="zpaths",
+        metavar="Z-DIR",
+        help="output folder for pc<i>.txt files path z-values; "
+        "choose name automatically if flag given with no name",
     )
-    return parser
 
 
 def analyze_data_support(z, traj, cutoff=3):
@@ -50,15 +56,13 @@ def analyze_data_support(z, traj, cutoff=3):
 
 
 def main(args):
-    if not os.path.exists(args.o):
-        os.makedirs(args.o)
+    if args.outdir:
+        os.makedirs(args.outdir)
 
-    z = pickle.load(open(args.z, "rb"))
+    z = pickle.load(open(args.zfile, "rb"))
     zdim = z.shape[1]
     pc, pca = analysis.run_pca(z)
-
-    # Use 1-based indexing
-    dims = [args.dim] if args.dim else list(range(1, zdim + 1))
+    dims = args.pc if args.pc is not None else list(range(1, zdim + 1))
     lim = args.lim if args.lim else (5, 95)
 
     for dim in dims:
@@ -80,12 +84,7 @@ def main(args):
         print("Neighbor count along trajectory:")
         print(analyze_data_support(z, traj))
 
-        out = f"{args.o}/pc{dim}.txt"
-        print(out)
-        np.savetxt(out, traj)
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    add_args(parser)
-    main(parser.parse_args())
+        if args.outdir:
+            np.savetxt(os.path.join(args.outdir, f"pc{dim}.txt"), traj)
+        else:
+            print(traj)

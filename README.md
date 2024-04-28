@@ -5,11 +5,20 @@
 CryoDRGN is a neural network based algorithm for heterogeneous cryo-EM reconstruction. In particular, the method models a *continuous* distribution over 3D structures by using a neural network based representation for the volume.
 
 
-## Documentation:
+## Documentation
 
 The latest documentation for cryoDRGN is available in our [user guide](https://ez-lab.gitbook.io/cryodrgn/), including an overview and walkthrough of cryoDRGN installation, training and analysis. A brief quick start is provided below.
 
 For any feedback, questions, or bugs, please file a Github issue or start a Github discussion.
+
+
+### New in Version 3.3.x
+
+* [NEW] `cryodrgn direct_traversal` to generate interpolations in the conformation latnet space between two points
+* improved interface for `graph` and `pc` traversal methods
+* adding `--datadir` to `cryodrgn abinit_homo` for use with .star files
+* fixing various bugs in Jupyter demonstration notebooks
+* support for TestPyPI beta releases via `pip`
 
 
 ### New in Version 3.2.x
@@ -181,6 +190,9 @@ The official version 1.0 release. This version introduces several new tools for 
 
     # install cryodrgn
     (cryodrgn) $ pip install cryodrgn
+
+You can alternatively install a newer, less stable, development version of `cryodrgn` using our beta release channel:
+    `(cryodrgn) $ pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ 'cryodrgn==3.3.0a1.dev4'
 
 More installation instructions are found in the [documentation](https://ez-lab.gitbook.io/cryodrgn/installation).
 
@@ -673,4 +685,4 @@ bioRxiv 2023, https://www.biorxiv.org/content/10.1101/2023.08.18.553799v1
 
 ## Contact
 
-Please submit any bug reports, feature requests, or general usage feedback as a github issue or discussion. 
+Please submit any bug reports, feature requests, or general usage feedback as a github issue or discussion.

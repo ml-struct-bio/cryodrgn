@@ -1,13 +1,12 @@
-name: Release
+name: Beta Release
 
 on:
   push:
-    branches: [ main ]
     tags:
-        - '[0-9]+.[0-9]+.[0-9]+*'
+      - '[0-9]+.[0-9]+.[0-9]+*'
 
 jobs:
-  release:
+  beta-release:
 
     runs-on: ubuntu-latest
 
@@ -24,7 +23,7 @@ jobs:
         with:
           python-version: 3.9
 
-      - name: Release to pypi
+      - name: Release to TestPyPI
         if: github.event_name == 'push' && startsWith(github.event.ref, 'refs/tags')
         env:
           TWINE_USERNAME: __token__
@@ -34,4 +33,4 @@ jobs:
           python -m pip install --upgrade build
           python -m build .
           python -m pip install --upgrade twine
-          twine upload dist/*
+          twine upload --repository testpypi dist/*

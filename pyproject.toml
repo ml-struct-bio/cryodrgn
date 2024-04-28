@@ -10,7 +10,7 @@ authors = [
 ]
 description = "cryoDRGN heterogeneous reconstruction"
 readme = "README.md"
-requires-python = ">=3.7,<3.11"
+requires-python = ">=3.9,<3.11"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
@@ -54,6 +54,7 @@ cryodrgn_utils = "cryodrgn.command_line:util_commands"
 
 [tool.setuptools_scm]
 write_to = "cryodrgn/_version.py"
+local_scheme = "no-local-version"
 
 [tool.setuptools]
 include-package-data = true

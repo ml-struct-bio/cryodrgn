@@ -95,6 +95,11 @@ def add_args(parser):
         "--ind", type=os.path.abspath, help="Filter particle stack by these indices"
     )
     parser.add_argument(
+        "--datadir",
+        type=os.path.abspath,
+        help="Path prefix to particle stack if loading relative paths from a .star or .cs file",
+    )
+    parser.add_argument(
         "--lazy",
         action="store_true",
         help="Lazy loading if full dataset is too large to fit in memory",
@@ -486,6 +491,7 @@ def save_config(args, dataset, lattice, out_config):
         ind=args.ind,
         window=args.window,
         window_r=args.window_r,
+        datadir=args.datadir,
         ctf=args.ctf,
     )
     if args.tilt is not None:
@@ -553,6 +559,7 @@ def main(args):
         invert_data=args.invert_data,
         ind=ind,
         window=args.window,
+        datadir=args.datadir,
         window_r=args.window_r,
     )
 

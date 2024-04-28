@@ -35,6 +35,7 @@ Use the ``-h`` flag for help, e.g. to display all available subcommands or ``cry
    pages/large_datasets
    pages/cryodrgn2
    pages/faq
+   api
 
 
 Indices and tables

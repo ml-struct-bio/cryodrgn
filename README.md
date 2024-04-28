@@ -1,5 +1,8 @@
-[![CI](https://github.com/zhonge/cryodrgn/actions/workflows/main.yml/badge.svg)](https://github.com/zhonge/cryodrgn/actions/workflows/main.yml)
-[![beta-release](https://github.com/zhonge/cryodrgn/actions/workflows/beta-release.yml/badge.svg)](https://github.com/zhonge/cryodrgn/actions/workflows/beta-release.yml)
+[![CI](https://github.com/ml-struct-bio/cryodrgn/actions/workflows/main.yml/badge.svg)](https://github.
+com/ml-struct-bio/cryodrgn/actions/workflows/main.yml)
+[![beta-release](https://github.com/ml-struct-bio/cryodrgn/actions/workflows/beta-release.yml/badge.svg)]
+(https://github.com/ml-struct-bio/cryodrgn/actions/workflows/beta-release.yml)
+
 
 # :snowflake::dragon: cryoDRGN: Deep Reconstructing Generative Networks for cryo-EM and cryo-ET heterogeneous reconstruction
 

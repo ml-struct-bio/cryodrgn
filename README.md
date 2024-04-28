@@ -1,6 +1,6 @@
-![pypi-downloads](https://img.shields.io/pypi/dm/cryodrgn?label=PyPI%20Downloads)
-![stable-release](https://img.shields.io/pypi/v/cryodrgn?label=stable%20release)
-![beta-release](https://img.shields.io/pypi/v/cryodrgn?pypiBaseUrl=https%3A%2F%2Ftest.pypi.org&label=beta%20release)
+![pypi-downloads](https://img.shields.io/pypi/dm/cryodrgn?style=flat&label=PyPI%20Downloads&logo=pypi&labelColor=%23FFF8EC)
+![stable-release](https://img.shields.io/pypi/v/cryodrgn?style=flat&logo=pypi&logoColor=%233775A9&logoSize=auto&label=stable%20release&labelColor=%23FFF8EC)
+![beta-release](https://img.shields.io/pypi/v/cryodrgn?pypiBaseUrl=https%3A%2F%2Ftest.pypi.org&style=flat&logo=pypi&logoColor=%233775A9&logoSize=auto&label=beta%20release&labelColor=%23FFF8EC)
 ![ci-test](https://github.com/ml-struct-bio/cryodrgn/actions/workflows/main.yml/badge.svg)
 
 

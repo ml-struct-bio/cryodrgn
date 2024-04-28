@@ -1,4 +1,7 @@
-[![CI](https://github.com/zhonge/cryodrgn/actions/workflows/main.yml/badge.svg)](https://github.com/zhonge/cryodrgn/actions/workflows/main.yml)
+[![CI](https://github.com/ml-struct-bio/cryodrgn/actions/workflows/main.yml/badge.svg)](https://github.
+com/ml-struct-bio/cryodrgn/actions/workflows/main.yml)
+[![beta-release](https://github.com/ml-struct-bio/cryodrgn/actions/workflows/beta-release.yml/badge.svg)]
+(https://github.com/ml-struct-bio/cryodrgn/actions/workflows/beta-release.yml)
 
 # :snowflake::dragon: cryoDRGN: Deep Reconstructing Generative Networks for cryo-EM and cryo-ET heterogeneous reconstruction
 
@@ -18,7 +21,7 @@ For any feedback, questions, or bugs, please file a Github issue or start a Gith
 * improved interface for `graph` and `pc` traversal methods
 * adding `--datadir` to `cryodrgn abinit_homo` for use with .star files
 * fixing various bugs in Jupyter demonstration notebooks
-* support for TestPyPI beta releases via `pip`
+* support for TestPyPI beta release deployments via `pip`
 
 
 ### New in Version 3.2.x
@@ -192,7 +195,7 @@ The official version 1.0 release. This version introduces several new tools for 
     (cryodrgn) $ pip install cryodrgn
 
 You can alternatively install a newer, less stable, development version of `cryodrgn` using our beta release channel:
-    `(cryodrgn) $ pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ 'cryodrgn==3.3.0a1.dev4'
+    `(cryodrgn) $ pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ "cryodrgn<=3.3.0" --pre
 
 More installation instructions are found in the [documentation](https://ez-lab.gitbook.io/cryodrgn/installation).
 

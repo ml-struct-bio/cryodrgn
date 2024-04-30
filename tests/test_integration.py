@@ -298,8 +298,9 @@ class TestAbinitHetero:
     [
         None,
         os.path.join(DATA_FOLDER, "ind3.pkl"),
+        os.path.join(DATA_FOLDER, "ind3-numpy.pkl"),
     ],
-    ids=("no-ind", "ind3"),
+    ids=("no-ind", "ind3", "ind3-numpy"),
 )
 class TestSta:
     """Run reconstructions using particles from a .star file as input."""

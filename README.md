@@ -184,7 +184,7 @@ The official version 1.0 release. This version introduces several new tools for 
 
 </details>
 
-## Installation:
+## Installation
 
 `cryodrgn` may be installed via `pip`, and we recommend installing `cryodrgn` in a clean conda environment.
 
@@ -196,7 +196,8 @@ The official version 1.0 release. This version introduces several new tools for 
     (cryodrgn) $ pip install cryodrgn
 
 You can alternatively install a newer, less stable, development version of `cryodrgn` using our beta release channel:
-    `(cryodrgn) $ pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ "cryodrgn<=3.3.0" --pre
+
+    (cryodrgn) $ pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ "cryodrgn<=3.3.0" --pre
 
 More installation instructions are found in the [documentation](https://ez-lab.gitbook.io/cryodrgn/installation).
 

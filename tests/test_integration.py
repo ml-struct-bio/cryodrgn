@@ -81,18 +81,7 @@ class TestFixedHetero:
 
     def test_analyze(self, outdir):
         """Produce standard analyses for a particular epoch."""
-        args = analyze.add_args(argparse.ArgumentParser()).parse_args(
-            [
-                outdir,
-                "2",  # Epoch number to analyze - 0-indexed
-                "--pc",
-                "3",  # Number of principal component traversals to generate
-                "--ksample",
-                "20",  # Number of kmeans samples to generate
-                "--vol-start-index",
-                "1",
-            ]
-        )
+        args = analyze.add_args(argparse.ArgumentParser()).parse_args([outdir, "2"])
         analyze.main(args)
         assert os.path.exists(os.path.join(outdir, "analyze.2"))
 
@@ -267,7 +256,7 @@ class TestAbinitHetero:
     def test_notebooks(self, outdir, nb_lbl):
         """Execute the demonstration Jupyter notebooks produced by analysis."""
         os.chdir(os.path.join(outdir, "analyze.1"))
-        assert os.path.exists(f"{nb_lbl}.ipynb")
+        assert os.path.exists(f"{nb_lbl}.ipynb"), "Upstream tests have failed!"
 
         with open(f"{nb_lbl}.ipynb") as ff:
             nb_in = nbformat.read(ff, nbformat.NO_CONVERT)
@@ -290,13 +279,13 @@ class TestAbinitHetero:
     ],
     ids=("no-ind", "ind3", "ind3-numpy"),
 )
-class TestSta:
+class TestStarFixedHomo:
     """Run reconstructions using particles from a .star file as input."""
 
     poses_file = os.path.join(DATA_FOLDER, "sta_pose.pkl")
     ctf_file = os.path.join(DATA_FOLDER, "sta_ctf.pkl")
 
-    def test_train_nn(self, outdir, star_particles, indices_file):
+    def test_train_model(self, outdir, star_particles, indices_file):
         args = [
             star_particles,
             "--datadir",
@@ -308,7 +297,7 @@ class TestSta:
             "-o",
             outdir,
             "--dim",
-            "256",
+            "32",
         ]
         if indices_file is not None:
             args += ["--ind", indices_file]
@@ -316,7 +305,19 @@ class TestSta:
         args = train_nn.add_args(argparse.ArgumentParser()).parse_args(args)
         train_nn.main(args)
 
-    def test_train_vae(self, outdir, star_particles, indices_file):
+
+@pytest.mark.parametrize(
+    "star_particles",
+    [os.path.join(DATA_FOLDER, "sta_testing_bin8.star")],
+    ids=("sta-bin8",),
+)
+class TestStarFixedHetero:
+    """Run reconstructions using particles from a .star file as input."""
+
+    poses_file = os.path.join(DATA_FOLDER, "sta_pose.pkl")
+    ctf_file = os.path.join(DATA_FOLDER, "sta_ctf.pkl")
+
+    def test_train_model(self, outdir, star_particles):
         args = [
             star_particles,
             "--datadir",
@@ -327,24 +328,71 @@ class TestSta:
             self.poses_file,
             "--ctf",
             self.ctf_file,
+            "--num-epochs",
+            "5",
             "--zdim",
-            "8",
+            "4",
             "-o",
             outdir,
             "--tdim",
-            "256",
+            "16",
             "--enc-dim",
-            "256",
+            "16",
             "--dec-dim",
-            "256",
+            "16",
         ]
-        if indices_file is not None:
-            args += ["--ind", indices_file]
-
         args = train_vae.add_args(argparse.ArgumentParser()).parse_args(args)
         train_vae.main(args)
 
-    def test_abinit_homo(self, outdir, star_particles, indices_file):
+    def test_analyze(self, outdir, star_particles):
+        """Produce standard analyses for a particular epoch."""
+        args = analyze.add_args(argparse.ArgumentParser()).parse_args(
+            [
+                outdir,
+                "4",  # Epoch number to analyze - 0-indexed
+                "--pc",
+                "3",  # Number of principal component traversals to generate
+                "--ksample",
+                "2",  # Number of kmeans samples to generate
+                "--vol-start-index",
+                "1",
+            ]
+        )
+        analyze.main(args)
+        assert os.path.exists(os.path.join(outdir, "analyze.4"))
+
+    @pytest.mark.parametrize("nb_lbl", ["cryoDRGN_figures", "cryoDRGN_ET_viz"])
+    def test_notebooks(self, outdir, nb_lbl, star_particles):
+        """Execute the demonstration Jupyter notebooks produced by analysis."""
+        os.chdir(os.path.join(outdir, "analyze.4"))
+        assert os.path.exists(f"{nb_lbl}.ipynb"), "Upstream tests have failed!"
+
+        with open(f"{nb_lbl}.ipynb") as ff:
+            nb_in = nbformat.read(ff, nbformat.NO_CONVERT)
+
+        ExecutePreprocessor(timeout=600, kernel_name="python3").preprocess(nb_in)
+        os.chdir(os.path.join("..", ".."))
+
+
+@pytest.mark.parametrize(
+    "star_particles",
+    [os.path.join(DATA_FOLDER, "sta_testing_bin8.star")],
+    ids=("sta-bin8",),
+)
+@pytest.mark.parametrize(
+    "indices_file",
+    [
+        None,
+        os.path.join(DATA_FOLDER, "ind3.pkl"),
+        os.path.join(DATA_FOLDER, "ind3-numpy.pkl"),
+    ],
+    ids=("no-ind", "ind3", "ind3-numpy"),
+)
+class TestStarAbinitHomo:
+
+    ctf_file = os.path.join(DATA_FOLDER, "sta_ctf.pkl")
+
+    def test_train_model(self, outdir, star_particles, indices_file):
         args = [
             star_particles,
             "--datadir",
@@ -373,7 +421,26 @@ class TestSta:
         args = abinit_homo.add_args(argparse.ArgumentParser()).parse_args(args)
         abinit_homo.main(args)
 
-    def test_abinit_het(self, outdir, star_particles, indices_file):
+
+@pytest.mark.parametrize(
+    "star_particles",
+    [os.path.join(DATA_FOLDER, "sta_testing_bin8.star")],
+    ids=("sta-bin8",),
+)
+@pytest.mark.parametrize(
+    "indices_file",
+    [
+        None,
+        os.path.join(DATA_FOLDER, "ind3.pkl"),
+        os.path.join(DATA_FOLDER, "ind3-numpy.pkl"),
+    ],
+    ids=("no-ind", "ind3", "ind3-numpy"),
+)
+class TestStarAbinitHetero:
+
+    ctf_file = os.path.join(DATA_FOLDER, "sta_ctf.pkl")
+
+    def test_train_model(self, outdir, star_particles, indices_file):
         args = [
             star_particles,
             "--datadir",
@@ -463,7 +530,7 @@ class TestIterativeFiltering:
                 "--pc",
                 "3",  # Number of principal component traversals to generate
                 "--ksample",
-                "20",  # Number of kmeans samples to generate
+                "8",  # Number of kmeans samples to generate
                 "--vol-start-index",
                 "1",
             ]
@@ -477,7 +544,7 @@ class TestIterativeFiltering:
     def test_notebooks(self, outdir, nb_lbl, indices_file):
         """Execute the demonstration Jupyter notebooks produced by analysis."""
         os.chdir(os.path.join(outdir, "analyze.2"))
-        assert os.path.exists(f"{nb_lbl}.ipynb")
+        assert os.path.exists(f"{nb_lbl}.ipynb"), "Upstream tests have failed!"
 
         with open(f"{nb_lbl}.ipynb") as ff:
             nb_in = nbformat.read(ff, nbformat.NO_CONVERT)

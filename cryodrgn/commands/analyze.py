@@ -475,10 +475,13 @@ def main(args):
         # lazily look at the beginning of the notebook for the epoch number to update
         with open(nb_outfile, "r") as f:
             filter_ntbook = nbformat.read(f, as_version=nbformat.NO_CONVERT)
-        for i in range(5):
-            filter_ntbook["cells"][i]["source"] = filter_ntbook["cells"][i][
-                "source"
-            ].replace("EPOCH = None", f"EPOCH = {epoch}")
+
+        for cell in filter_ntbook["cells"]:
+            cell["source"] = cell["source"].replace("EPOCH = None", f"EPOCH = {epoch}")
+            cell["source"] = cell["source"].replace(
+                "KMEANS = None", f"KMEANS = {args.ksample}"
+            )
+
         with open(nb_outfile, "w") as f:
             nbformat.write(filter_ntbook, f)
 

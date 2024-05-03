@@ -3,7 +3,7 @@ name: Beta Release
 on:
   push:
     tags:
-      - '[0-9]+.[0-9]+.[0-9]+*'
+      - '[0-9]+\.[0-9]+\.[0-9]+-*'
 
 jobs:
   beta-release:
@@ -24,7 +24,6 @@ jobs:
           python-version: 3.9
 
       - name: Release to TestPyPI
-        if: github.event_name == 'push' && startsWith(github.event.ref, 'refs/tags')
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}

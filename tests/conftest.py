@@ -1,22 +1,19 @@
 """Fixtures used across many unit test modules."""
 
+import pytest
 import os
 import shutil
-import pytest
 from typing import Optional, Union, Any
 from cryodrgn.utils import run_command
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
 
 
-@pytest.fixture(scope="session", autouse=True)
-def output_dir() -> None:
-    """Helper fixture to remove output folder upon completion of all tests."""
-    yield None
-
-    # we don't always create this folder, e.g. if we are only doing some of the tests
-    if os.path.exists("output"):
-        shutil.rmtree("output")
+@pytest.fixture(scope="class")
+def outdir(tmpdir_factory) -> str:
+    odir = tmpdir_factory.mktemp("output")
+    yield str(odir)
+    shutil.rmtree(odir)
 
 
 def get_testing_datasets(dataset_lbl: str) -> tuple[str, str]:

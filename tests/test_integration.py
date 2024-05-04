@@ -195,6 +195,7 @@ class TestAbinitHetero:
 
     mrcs_file = os.path.join(DATA_FOLDER, "toy_projections.mrcs")
     ctf_file = os.path.join(DATA_FOLDER, "test_ctf.pkl")
+    indices_file = os.path.join(DATA_FOLDER, "ind100-rand.pkl")
 
     def test_train_model(self, outdir):
         """Train the initial heterogeneous model."""
@@ -204,6 +205,8 @@ class TestAbinitHetero:
                 self.mrcs_file,
                 "--ctf",
                 self.ctf_file,
+                "--ind",
+                self.indices_file,
                 "-o",
                 outdir,
                 "--zdim",
@@ -272,12 +275,8 @@ class TestAbinitHetero:
 )
 @pytest.mark.parametrize(
     "indices_file",
-    [
-        None,
-        os.path.join(DATA_FOLDER, "ind3.pkl"),
-        os.path.join(DATA_FOLDER, "ind3-numpy.pkl"),
-    ],
-    ids=("no-ind", "ind3", "ind3-numpy"),
+    [None, os.path.join(DATA_FOLDER, "ind4.pkl")],
+    ids=("no-ind", "ind4"),
 )
 class TestStarFixedHomo:
     """Run reconstructions using particles from a .star file as input."""
@@ -311,13 +310,18 @@ class TestStarFixedHomo:
     [os.path.join(DATA_FOLDER, "sta_testing_bin8.star")],
     ids=("sta-bin8",),
 )
+@pytest.mark.parametrize(
+    "indices_file",
+    [None, os.path.join(DATA_FOLDER, "ind4.pkl")],
+    ids=("no-ind", "ind4"),
+)
 class TestStarFixedHetero:
     """Run reconstructions using particles from a .star file as input."""
 
     poses_file = os.path.join(DATA_FOLDER, "sta_pose.pkl")
     ctf_file = os.path.join(DATA_FOLDER, "sta_ctf.pkl")
 
-    def test_train_model(self, outdir, star_particles):
+    def test_train_model(self, outdir, star_particles, indices_file):
         args = [
             star_particles,
             "--datadir",
@@ -341,10 +345,13 @@ class TestStarFixedHetero:
             "--dec-dim",
             "16",
         ]
+        if indices_file is not None:
+            args += ["--ind", indices_file]
+
         args = train_vae.add_args(argparse.ArgumentParser()).parse_args(args)
         train_vae.main(args)
 
-    def test_analyze(self, outdir, star_particles):
+    def test_analyze(self, outdir, star_particles, indices_file):
         """Produce standard analyses for a particular epoch."""
         args = analyze.add_args(argparse.ArgumentParser()).parse_args(
             [
@@ -362,7 +369,7 @@ class TestStarFixedHetero:
         assert os.path.exists(os.path.join(outdir, "analyze.4"))
 
     @pytest.mark.parametrize("nb_lbl", ["cryoDRGN_figures", "cryoDRGN_ET_viz"])
-    def test_notebooks(self, outdir, nb_lbl, star_particles):
+    def test_notebooks(self, outdir, nb_lbl, star_particles, indices_file):
         """Execute the demonstration Jupyter notebooks produced by analysis."""
         os.chdir(os.path.join(outdir, "analyze.4"))
         assert os.path.exists(f"{nb_lbl}.ipynb"), "Upstream tests have failed!"
@@ -381,12 +388,8 @@ class TestStarFixedHetero:
 )
 @pytest.mark.parametrize(
     "indices_file",
-    [
-        None,
-        os.path.join(DATA_FOLDER, "ind3.pkl"),
-        os.path.join(DATA_FOLDER, "ind3-numpy.pkl"),
-    ],
-    ids=("no-ind", "ind3", "ind3-numpy"),
+    [None, os.path.join(DATA_FOLDER, "ind4.pkl")],
+    ids=("no-ind", "ind4"),
 )
 class TestStarAbinitHomo:
 
@@ -429,12 +432,8 @@ class TestStarAbinitHomo:
 )
 @pytest.mark.parametrize(
     "indices_file",
-    [
-        None,
-        os.path.join(DATA_FOLDER, "ind3.pkl"),
-        os.path.join(DATA_FOLDER, "ind3-numpy.pkl"),
-    ],
-    ids=("no-ind", "ind3", "ind3-numpy"),
+    [None, os.path.join(DATA_FOLDER, "ind4.pkl")],
+    ids=("no-ind", "ind4"),
 )
 class TestStarAbinitHetero:
 

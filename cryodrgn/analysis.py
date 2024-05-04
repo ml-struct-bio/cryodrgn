@@ -496,19 +496,18 @@ def ipy_plot_interactive(df, opacity=0.3):
         text = [f"index {i}" for i in df.index]  # hovertext
 
     xaxis, yaxis = df.columns[0], df.columns[1]
+    plt_size = max(1.7, 53 / df.shape[0] ** 0.31)
+    plt_mrk = dict(
+        size=plt_size, opacity=opacity, color=np.arange(len(df)), colorscale="hsv"
+    )
     f = go.FigureWidget(
         [
             go.Scattergl(
-                x=df[xaxis],
-                y=df[yaxis],
-                mode="markers",
-                text=text,
-                marker=dict(
-                    size=2, opacity=opacity, color=np.arange(len(df)), colorscale="hsv"
-                ),
+                x=df[xaxis], y=df[yaxis], mode="markers", text=text, marker=plt_mrk
             )
         ]
     )
+
     scatter = f.data[0]
     f.update_layout(xaxis_title=xaxis, yaxis_title=yaxis)
     f.layout.dragmode = "lasso"

@@ -147,6 +147,7 @@ def analyze_zN(
     plt.legend()
     plt.tight_layout()
     plt.savefig(f"{outdir}/learning_curve_epoch{epoch}.png")
+    plt.close()
 
     def plt_pc_labels(x=0, y=1):
         plt.xlabel(f"PC{x+1} ({pca.explained_variance_ratio_[x]:.2f})")
@@ -172,18 +173,24 @@ def analyze_zN(
     plt_pc_labels()
     plt.tight_layout()
     plt.savefig(f"{outdir}/z_pca.png")
+    plt.close()
 
     # PCA -- Style 2 -- Scatter, with marginals
     g = sns.jointplot(x=pc[:, 0], y=pc[:, 1], alpha=0.1, s=1, rasterized=True, height=4)
     plt_pc_labels_jointplot(g)
     plt.tight_layout()
     plt.savefig(f"{outdir}/z_pca_marginals.png")
+    plt.close()
 
     # PCA -- Style 3 -- Hexbin
-    g = sns.jointplot(x=pc[:, 0], y=pc[:, 1], height=4, kind="hex")
-    plt_pc_labels_jointplot(g)
-    plt.tight_layout()
-    plt.savefig(f"{outdir}/z_pca_hexbin.png")
+    try:
+        g = sns.jointplot(x=pc[:, 0], y=pc[:, 1], height=4, kind="hex")
+        plt_pc_labels_jointplot(g)
+        plt.tight_layout()
+        plt.savefig(f"{outdir}/z_pca_hexbin.png")
+        plt.close()
+    except ZeroDivisionError:
+        print("Data too small to produce hexbins!")
 
     if umap_emb is not None:
         # Style 1 -- Scatter
@@ -192,25 +199,34 @@ def analyze_zN(
         plt_umap_labels()
         plt.tight_layout()
         plt.savefig(f"{outdir}/umap.png")
+        plt.close()
 
         # Style 2 -- Scatter with marginal distributions
-        g = sns.jointplot(
-            x=umap_emb[:, 0],
-            y=umap_emb[:, 1],
-            alpha=0.1,
-            s=1,
-            rasterized=True,
-            height=4,
-        )
-        plt_umap_labels_jointplot(g)
-        plt.tight_layout()
-        plt.savefig(f"{outdir}/umap_marginals.png")
+        try:
+            g = sns.jointplot(
+                x=umap_emb[:, 0],
+                y=umap_emb[:, 1],
+                alpha=0.1,
+                s=1,
+                rasterized=True,
+                height=4,
+            )
+            plt_umap_labels_jointplot(g)
+            plt.tight_layout()
+            plt.savefig(f"{outdir}/umap_marginals.png")
+            plt.close()
+        except ZeroDivisionError:
+            logger.warning("Data too for marginal distribution scatterplots!")
 
         # Style 3 -- Hexbin / heatmap
-        g = sns.jointplot(x=umap_emb[:, 0], y=umap_emb[:, 1], kind="hex", height=4)
-        plt_umap_labels_jointplot(g)
-        plt.tight_layout()
-        plt.savefig(f"{outdir}/umap_hexbin.png")
+        try:
+            g = sns.jointplot(x=umap_emb[:, 0], y=umap_emb[:, 1], kind="hex", height=4)
+            plt_umap_labels_jointplot(g)
+            plt.tight_layout()
+            plt.savefig(f"{outdir}/umap_hexbin.png")
+            plt.close()
+        except ZeroDivisionError:
+            logger.warning("Data too small to generate UMAP hexbins!")
 
     # Plot kmeans sample points
     colors = analysis._get_chimerax_colors(K)
@@ -224,6 +240,7 @@ def analyze_zN(
     plt_pc_labels()
     plt.tight_layout()
     plt.savefig(f"{outdir}/kmeans{K}/z_pca.png")
+    plt.close()
 
     g = analysis.scatter_annotate_hex(
         pc[:, 0],
@@ -235,6 +252,7 @@ def analyze_zN(
     plt_pc_labels_jointplot(g)
     plt.tight_layout()
     plt.savefig(f"{outdir}/kmeans{K}/z_pca_hex.png")
+    plt.close()
 
     if umap_emb is not None:
         analysis.scatter_annotate(
@@ -247,17 +265,22 @@ def analyze_zN(
         plt_umap_labels()
         plt.tight_layout()
         plt.savefig(f"{outdir}/kmeans{K}/umap.png")
+        plt.close()
 
-        g = analysis.scatter_annotate_hex(
-            umap_emb[:, 0],
-            umap_emb[:, 1],
-            centers_ind=centers_ind,
-            annotate=True,
-            colors=colors,
-        )
-        plt_umap_labels_jointplot(g)
-        plt.tight_layout()
-        plt.savefig(f"{outdir}/kmeans{K}/umap_hex.png")
+        try:
+            g = analysis.scatter_annotate_hex(
+                umap_emb[:, 0],
+                umap_emb[:, 1],
+                centers_ind=centers_ind,
+                annotate=True,
+                colors=colors,
+            )
+            plt_umap_labels_jointplot(g)
+            plt.tight_layout()
+            plt.savefig(f"{outdir}/kmeans{K}/umap_hex.png")
+            plt.close()
+        except ZeroDivisionError:
+            logger.warning("Data too small to generate UMAP annotated hexes!")
 
     # Plot PC trajectories
     for i in range(num_pcs):
@@ -274,12 +297,13 @@ def analyze_zN(
             plt_umap_labels()
             plt.tight_layout()
             plt.savefig(f"{outdir}/pc{i+1}/umap.png")
+            plt.close()
 
             # UMAP, with PC traversal
             z_pc_on_data, pc_ind = analysis.get_nearest_point(z, z_pc)
             dists = ((z_pc_on_data - z_pc) ** 2).sum(axis=1) ** 0.5
             if np.any(dists > 2):
-                logger.warn(
+                logger.warning(
                     f"Warning: PC{i+1} point locations in UMAP plot may be inaccurate"
                 )
             plt.figure(figsize=(4, 4))
@@ -295,6 +319,7 @@ def analyze_zN(
             plt_umap_labels()
             plt.tight_layout()
             plt.savefig(f"{outdir}/pc{i+1}/umap_traversal.png")
+            plt.close()
 
             # UMAP, with PC traversal, connected
             plt.figure(figsize=(4, 4))
@@ -311,6 +336,7 @@ def analyze_zN(
             plt_umap_labels()
             plt.tight_layout()
             plt.savefig(f"{outdir}/pc{i+1}/umap_traversal_connected.png")
+            plt.close()
 
         # 10 points, from 5th to 95th percentile of PC1 values
         t = np.linspace(start, end, 10, endpoint=True)
@@ -325,6 +351,7 @@ def analyze_zN(
             plt_pc_labels(i, i + 1)
         plt.tight_layout()
         plt.savefig(f"{outdir}/pc{i+1}/pca_traversal.png")
+        plt.close()
 
         if i > 0 and i == num_pcs - 1:
             g = sns.jointplot(
@@ -340,6 +367,7 @@ def analyze_zN(
             plt_pc_labels_jointplot(g)
         plt.tight_layout()
         plt.savefig(f"{outdir}/pc{i+1}/pca_traversal_hex.png")
+        plt.close()
 
 
 class VolumeGenerator:

@@ -1,5 +1,10 @@
-"""
-Train a VAE for heterogeneous reconstruction with known pose
+"""Train a VAE for heterogeneous reconstruction with known poses.
+
+Example usages
+--------------
+$ cryodrgn train_vae projections.mrcs -o outs/002_trainvae --lr=0.0001 --zdim 10 \
+                                      --poses angles.pkl --ctf test_ctf.pkl
+
 """
 import argparse
 import os
@@ -803,31 +808,46 @@ def main(args):
     # Mixed precision training
     scaler = None
     if args.amp:
-        assert (
-            args.batch_size % 8 == 0
-        ), "Batch size must be divisible by 8 for AMP training"
-        assert (
-            D - 1
-        ) % 8 == 0, f"Image size must be divisible by 8 for AMP training: {D}"
-        assert (
-            args.pdim % 8 == 0
-        ), "Decoder hidden layer dimension must be divisible by 8 for AMP training"
-        assert (
-            args.qdim % 8 == 0
-        ), "Encoder hidden layer dimension must be divisible by 8 for AMP training"
-        # Also check zdim, enc_mask dim? Add them as warnings for now.
+        if args.batch_size % 8 != 0:
+            logger.warning(
+                f"Batch size {args.batch_size} not divisible by 8 "
+                f"and thus not optimal for AMP training!"
+            )
+        if (D - 1) % 8 != 0:
+            logger.warning(
+                f"Image size {D - 1} not divisible by 8 "
+                f"and thus not optimal for AMP training!"
+            )
+
+        if args.pdim % 8 != 0:
+            logger.warning(
+                f"Decoder hidden layer dimension {args.pdim} not divisible by 8 "
+                f"and thus not optimal for AMP training!"
+            )
+
+        # also check e.g. enc_mask dim?
+        if args.qdim % 8 != 0:
+            logger.warning(
+                f"Decoder hidden layer dimension {args.qdim} not divisible by 8 "
+                f"and thus not optimal for AMP training!"
+            )
+
         if args.zdim % 8 != 0:
             logger.warning(
-                "Warning: z dimension is not a multiple of 8 -- AMP training speedup is not optimized"
+                f"Z dimension {args.zdim} is not a multiple of 8 "
+                "-- AMP training speedup is not optimized!"
             )
         if in_dim % 8 != 0:
             logger.warning(
-                "Warning: Masked input image dimension is not a mutiple of 8 -- AMP training speedup is not optimized"
+                f"Masked input image dimension {in_dim} is not a mutiple of 8 "
+                "-- AMP training speedup is not optimized!"
             )
-        try:  # Mixed precision with apex.amp
+
+        # mixed precision with apex.amp
+        try:
             model, optim = amp.initialize(model, optim, opt_level="O1")
+        # mixed precision with pytorch (v1.6+)
         except:  # noqa: E722
-            # Mixed precision with pytorch (v1.6+)
             scaler = torch.cuda.amp.grad_scaler.GradScaler()
 
     # restart from checkpoint

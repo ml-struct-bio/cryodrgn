@@ -1,5 +1,11 @@
-"""
-Train a NN to model a 3D density map given 2D images with pose assignments
+"""Train a neural net to model a 3D density map given 2D images with pose assignments.
+
+Example usages
+--------------
+$ cryodrgn train_nn projections.mrcs --poses angles.pkl -o output/train_nn -n 10
+$ cryodrgn train_nn projections.star --poses angles.pkl -o outs/003_train-nn \
+                                     --num-epochs=30 --lr=0.01
+
 """
 import argparse
 import os
@@ -471,18 +477,29 @@ def main(args):
     # Mixed precision training with AMP
     scaler = None
     if args.amp:
-        assert (
-            args.batch_size % 8 == 0
-        ), "Batch size must be divisible by 8 for AMP training"
-        assert (D - 1) % 8 == 0, "Image size must be divisible by 8 for AMP training"
-        assert (
-            args.dim % 8 == 0
-        ), "Decoder hidden layer dimension must be divisible by 8 for AMP training"
-        # Also check zdim, enc_mask dim?
-        try:  # Mixed precision with apex.amp
+        if args.batch_size % 8 != 0:
+            logger.warning(
+                f"Batch size {args.batch_size} not divisible by 8 "
+                f"and thus not optimal for AMP training!"
+            )
+        if (D - 1) % 8 != 0:
+            logger.warning(
+                f"Image size {D - 1} not divisible by 8 "
+                f"and thus not optimal for AMP training!"
+            )
+
+        # also check e.g. enc_mask dim?
+        if args.dim % 8 != 0:
+            logger.warning(
+                f"Decoder hidden layer dimension {args.dim} not divisible by 8 "
+                f"and thus not optimal for AMP training!"
+            )
+
+        # mixed precision with apex.amp
+        try:
             model, optim = amp.initialize(model, optim, opt_level="O1")
+        # Mixed precision with pytorch (v1.6+)
         except:  # noqa: E722
-            # Mixed precision with pytorch (v1.6+)
             scaler = torch.cuda.amp.grad_scaler.GradScaler()
 
     # parallelize
@@ -493,7 +510,8 @@ def main(args):
         model = DataParallelDecoder(model)
     elif args.multigpu:
         logger.info(
-            f"WARNING: --multigpu selected, but {torch.cuda.device_count()} GPUs detected"
+            f"WARNING: --multigpu selected, "
+            f"but {torch.cuda.device_count()} GPUs detected"
         )
 
     # train

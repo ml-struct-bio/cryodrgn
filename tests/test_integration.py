@@ -11,6 +11,7 @@ from cryodrgn.commands import (
     analyze,
     analyze_landscape,
     analyze_landscape_full,
+    backproject_voxel,
     eval_images,
     eval_vol,
     graph_traversal,
@@ -430,6 +431,37 @@ class TestStarFixedHetero:
         )
         analyze.main(args)
         assert os.path.exists(os.path.join(outdir, "analyze.4"))
+
+    @pytest.mark.parametrize(
+        "new_indices_file",
+        [None, "filtered_ind.pkl"],
+        ids=("no-new-ind", "new-ind"),
+    )
+    def test_backproject(self, outdir, star_particles, indices_file, new_indices_file):
+        """Run backprojection using the given particles."""
+        args = [
+            os.path.join(outdir, "filtered_sta_testing_bin8.star"),
+            "--datadir",
+            DATA_FOLDER,
+            "--tilt",
+            "--poses",
+            os.path.join(outdir, "filtered_sta_pose.pkl"),
+            "--ctf",
+            os.path.join(outdir, "filtered_sta_ctf.pkl"),
+            "-o",
+            os.path.join(outdir, "filtered.mrc"),
+            "-d",
+            "2.93",
+        ]
+
+        if new_indices_file is not None:
+            args += ["--ind", os.path.join(outdir, new_indices_file)]
+        parser = argparse.ArgumentParser()
+        backproject_voxel.add_args(parser)
+
+        backproject_voxel.main(parser.parse_args(args))
+        assert os.path.exists(os.path.join(outdir, "filtered.mrc"))
+        os.remove(os.path.join(outdir, "filtered.mrc"))
 
     @pytest.mark.parametrize("nb_lbl", ["cryoDRGN_figures", "cryoDRGN_ET_viz"])
     def test_notebooks(self, outdir, nb_lbl, star_particles, indices_file):

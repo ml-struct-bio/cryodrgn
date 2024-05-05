@@ -4,6 +4,7 @@
 ![grading](https://img.shields.io/codefactor/grade/github/ml-struct-bio/cryodrgn/main?style=flat&logo=codefactor&logoColor=%23F44A6A&logoSize=auto&label=CodeFactor%20Grade&labelColor=%23FFF8EC)
 ![ci-test](https://github.com/ml-struct-bio/cryodrgn/actions/workflows/tests.yml/badge.svg)
 
+
 # :snowflake::dragon: cryoDRGN: Deep Reconstructing Generative Networks for cryo-EM and cryo-ET heterogeneous reconstruction
 
 CryoDRGN is a neural network based algorithm for heterogeneous cryo-EM reconstruction. In particular, the method models a *continuous* distribution over 3D structures by using a neural network based representation for the volume.
@@ -196,17 +197,8 @@ The official version 1.0 release. This version introduces several new tools for 
     (cryodrgn) $ pip install cryodrgn
 
 You can alternatively install a newer, less stable, development version of `cryodrgn` using our beta release channel:
-<<<<<<< HEAD
-
-    (cryodrgn) $ pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ "cryodrgn<=3.3.0" --pre
-=======
-<<<<<<< HEAD
-    `(cryodrgn) $ pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ 'cryodrgn==3.3.0a1.dev4'
-=======
 
     `(cryodrgn) $ pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ cryodrgn --pre
->>>>>>> 39f87b8 (auto update of kmeans variable in analysis notebooks; fixing README and beta release)
->>>>>>> 3a99596 (auto update of kmeans variable in analysis notebooks; fixing README and beta release)
 
 More installation instructions are found in the [documentation](https://ez-lab.gitbook.io/cryodrgn/installation).
 

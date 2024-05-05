@@ -1,7 +1,13 @@
-"""
-Filter a .star file
-"""
+"""Filter a .star file using a saved set of particle indices.
 
+Example usages
+--------------
+$ cryodrgn_utils filter_star particles.star --ind good-particles.pkl \
+                             -o filtered-particles.star
+$ cryodrgn_utils filter_star tilts.star --et --ind good-particles.pkl \
+                             -o filtered-tilts.star
+
+"""
 import argparse
 import os
 import logging

@@ -7,6 +7,17 @@ from typing import Optional, Union, Any
 from cryodrgn.utils import run_command
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def default_outdir() -> None:
+    """Helper fixture to remove default  output folder upon completion of all tests."""
+    yield None
+
+    # we don't always create this folder, e.g. if we are only doing some of the tests
+    if os.path.exists("output"):
+        shutil.rmtree("output")
 
 
 @pytest.fixture(scope="class")

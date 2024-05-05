@@ -382,8 +382,8 @@ class VolumeGenerator:
     def gen_volumes(self, outdir, z_values):
         if self.skip_vol:
             return
-        if not os.path.exists(outdir):
-            os.makedirs(outdir)
+
+        os.makedirs(outdir, exist_ok=True)
         zfile = f"{outdir}/z_values.txt"
         np.savetxt(zfile, z_values)
         analysis.gen_volumes(self.weights, self.config, zfile, outdir, **self.vol_args)

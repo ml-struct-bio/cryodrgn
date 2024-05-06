@@ -25,8 +25,8 @@ def default_outdir() -> None:
 
 
 @pytest.fixture(scope="class")
-def outdir(tmpdir_factory) -> str:
-    odir = tmpdir_factory.mktemp("output")
+def outdir(tmpdir_factory, request) -> str:
+    odir = tmpdir_factory.mktemp(f"output_{request.node.__class__.__name__}")
     yield str(odir)
     shutil.rmtree(odir)
 
@@ -50,9 +50,12 @@ PARTICLES_FILES = {
     "hand": "hand.mrcs",
     "hand-tilt": "hand_tilt.mrcs",
     "toy.mrcs": "toy_projections.mrcs",
+    "toy.mrcs-999": "toy_projections_0-999.mrcs",
     "toy.star": "toy_projections.star",
+    "toy.star-13": "toy_projections_13.star",
     "toy.txt": "toy_projections.txt",
     "tilts.star": "sta_testing_bin8.star",
+    "cryosparc-all": "cryosparc_P12_J24_001_particles.cs",
 }
 POSES_FILES = {
     "hand-rot": "hand_rot.pkl",
@@ -195,7 +198,8 @@ class TrainDir:
         else:
             train_args["seed"] = None
 
-        train_args["out_lbl"] = "_".join([str(x) for x in train_args.values()])
+        if "out_lbl" not in train_args:
+            train_args["out_lbl"] = "_".join([str(x) for x in train_args.values()])
 
         return train_args
 
@@ -276,9 +280,14 @@ class TrainDir:
 
 
 @pytest.fixture(scope="session")
-def train_dir(request) -> TrainDir:
+def train_dir(request, tmpdir_factory) -> TrainDir:
     """Run an experiment to generate output; remove this output when finished."""
-    tdir = TrainDir(**TrainDir.parse_request(request.param))
+    args = TrainDir.parse_request(request.param)
+    args.update(
+        dict(out_lbl=tmpdir_factory.mktemp(f"output_{request.node.__class__.__name__}"))
+    )
+
+    tdir = TrainDir(**args)
     yield tdir
     shutil.rmtree(tdir.outdir)
 

@@ -1,10 +1,10 @@
+import pytest
 import argparse
 import os
-import os.path
+import shutil
 import pickle
 import numpy as np
 import torch
-import pytest
 from cryodrgn.source import ImageSource
 from cryodrgn.commands import parse_ctf_star
 from cryodrgn.commands_utils import filter_star, write_cs, write_star
@@ -56,6 +56,86 @@ def test_filter(outdir, particles, datadir):
     data = ImageSource.from_file(out_fl, lazy=False, datadir=datadir).images()
     assert isinstance(data, torch.Tensor)
     assert data.shape == (4, 30, 30)
+    os.remove(out_fl)
+
+
+@pytest.mark.parametrize("datadir", ["default-datadir"], indirect=True)
+@pytest.mark.parametrize("particles", ["tilts.star"], indirect=True)
+class TestFilterStar:
+    def test_filter_with_indices(self, outdir, particles, datadir):
+        indices_pkl = os.path.join(outdir, "indices.pkl")
+        with open(indices_pkl, "wb") as f:
+            pickle.dump([1, 3, 4], f)
+
+        out_fl = os.path.join(outdir, "tilts_filtered.star")
+        parser = argparse.ArgumentParser()
+        filter_star.add_args(parser)
+        filter_star.main(
+            parser.parse_args([particles, "--ind", indices_pkl, "-o", out_fl])
+        )
+
+        data = ImageSource.from_file(out_fl, lazy=False, datadir=datadir).images()
+        assert isinstance(data, torch.Tensor)
+        assert data.shape == (3, 64, 64)
+        os.remove(out_fl)
+
+        filter_star.main(
+            parser.parse_args([particles, "--ind", indices_pkl, "-o", out_fl, "--et"])
+        )
+
+        data = ImageSource.from_file(out_fl, lazy=False, datadir=datadir).images()
+        assert isinstance(data, torch.Tensor)
+        assert data.shape == (39 * 3, 64, 64)
+        os.remove(out_fl)
+
+        with open(indices_pkl, "wb") as f:
+            pickle.dump([1, 3, 5], f)
+        filter_star.main(
+            parser.parse_args([particles, "--ind", indices_pkl, "-o", out_fl, "--et"])
+        )
+
+        data = ImageSource.from_file(out_fl, lazy=False, datadir=datadir).images()
+        assert isinstance(data, torch.Tensor)
+        assert data.shape == (39 + 39 + 24, 64, 64)
+        os.remove(out_fl)
+
+    @pytest.mark.parametrize("indices", ["just-4", "just-5"], indirect=True)
+    def test_filter_with_separate_files(self, outdir, particles, indices, datadir):
+        out_dir = os.path.join(outdir, "tilts_filt-names")
+        parser = argparse.ArgumentParser()
+        filter_star.add_args(parser)
+
+        out_fl = os.path.join(outdir, "tilts_filtered.star")
+        args = [particles, "--ind", indices, "-o", out_fl, "--et"]
+        filter_star.main(parser.parse_args(args))
+
+        data = ImageSource.from_file(out_fl, lazy=False, datadir=datadir).images()
+        assert isinstance(data, torch.Tensor)
+
+        all_n = data.shape[0]
+        os.remove(out_fl)
+
+        args = [
+            particles,
+            "--ind",
+            indices,
+            "-o",
+            out_dir,
+            "--micrograph-files",
+            "--et",
+        ]
+        filter_star.main(parser.parse_args(args))
+
+        split_n = 0
+        for out_fl in os.listdir(out_dir):
+            data = ImageSource.from_file(
+                os.path.join(out_dir, out_fl), lazy=False, datadir=datadir
+            ).images()
+            assert isinstance(data, torch.Tensor)
+            split_n += data.shape[0]
+
+        assert split_n == all_n
+        shutil.rmtree(out_dir)
 
 
 @pytest.mark.parametrize("datadir", ["default-datadir"], indirect=True)
@@ -73,19 +153,18 @@ class TestParseCTFWriteStar:
         )
         parse_ctf_star.main(args)
 
+        # The ctf pkl file has N rows and 9 columns
+        #   D, Apix, _rlnDefocusU, _rlnDefocusV, _rlnDefocusAngle, _rlnVoltage,
+        #   _rlnSphericalAberration, _rlnAmplitudeContrast, _rlnPhaseShift
         with open(out_fl, "rb") as f:
             out_ctf = pickle.load(f)
-            # The ctf pkl file has N rows and 9 columns
-            #   D, Apix, _rlnDefocusU, _rlnDefocusV, _rlnDefocusAngle, _rlnVoltage,
-            #   _rlnSphericalAberration, _rlnAmplitudeContrast, _rlnPhaseShift
-            assert (
-                out_ctf.shape
-                == {False: (1000, 9), True: (13, 9)}[
-                    "13" in os.path.basename(particles)
-                ]
-            )
-            assert np.allclose(out_ctf[:, 0], 300)  # D
-            assert np.allclose(out_ctf[:, 1], 1.035)  # Apix
+
+        assert (
+            out_ctf.shape
+            == {False: (1000, 9), True: (13, 9)}["13" in os.path.basename(particles)]
+        )
+        assert np.allclose(out_ctf[:, 0], 300)  # D
+        assert np.allclose(out_ctf[:, 1], 1.035)  # Apix
 
     @pytest.mark.parametrize("particles", ["toy.mrcs-999"], indirect=True)
     def test_write_star_from_mrcs(self, outdir, particles, datadir):

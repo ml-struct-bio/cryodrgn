@@ -34,4 +34,4 @@ jobs:
 
       - name: Pytest
         run: |
-          pytest -v -n0 --dist=loadscope --durations=0
+          pytest -v -n0 --dist=loadscope

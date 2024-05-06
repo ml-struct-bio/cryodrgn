@@ -86,6 +86,9 @@ def main(args):
         assert (
             args.ctf is None
         ), "--ctf cannot be specified when input is a starfile (ctf information are obtained from starfile)"
+    else:
+        if not args.ctf:
+            raise ValueError("--ctf must be specified when input is not a starfile!")
 
     particles = ImageSource.from_file(args.particles, lazy=True)
 

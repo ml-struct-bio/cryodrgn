@@ -50,8 +50,13 @@ def main(args):
         df = s.df.loc[ind]
 
     if args.micrograph_files:
-        os.makedirs(args.o, exist_ok=True)
+        if "_rlnMicrographName" not in df.columns:
+            raise ValueError(
+                "Cannot write micrograph files for a .star file "
+                "without a `_rlnMicrographName` field!"
+            )
 
+        os.makedirs(args.o, exist_ok=True)
         for micrograph_name, group_df in df.groupby("_rlnMicrographName"):
             filename_without_extension = os.path.splitext(micrograph_name)[0]
             output_path = os.path.join(args.o, f"{filename_without_extension}.star")

@@ -302,7 +302,11 @@ class TestStarFixedHomo:
 @pytest.mark.parametrize("ctf", ["CTF-Tilt"], indirect=True)
 @pytest.mark.parametrize("datadir", ["default-datadir"], indirect=True)
 class TestStarFixedHetero:
-    """Run reconstructions using particles from a .star file as input."""
+    """Run heterogeneous reconstruction using tilt series from a .star file and poses.
+
+    We use two sets of indices, one that produces a tilt series with all particles
+    having the same number of tilts and another that produces a ragged tilt-series.
+    """
 
     def test_train_model(self, outdir, particles, indices, poses, ctf, datadir):
         args = [

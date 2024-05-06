@@ -283,9 +283,8 @@ class TrainDir:
 def train_dir(request, tmpdir_factory) -> TrainDir:
     """Run an experiment to generate output; remove this output when finished."""
     args = TrainDir.parse_request(request.param)
-    args.update(
-        dict(out_lbl=tmpdir_factory.mktemp(f"output_{request.node.__class__.__name__}"))
-    )
+    out_lbl = f"train-outs_{request.node.__class__.__name__}"
+    args.update(dict(out_lbl=tmpdir_factory.mktemp(out_lbl)))
 
     tdir = TrainDir(**args)
     yield tdir
@@ -324,12 +323,19 @@ class AbInitioDir:
         zdim: int,
         dataset: str = "hand",
         epochs: int = 2,
+        out_lbl: Optional[str] = None,
         seed: Optional[int] = None,
     ) -> None:
         self.zdim = zdim
         self.dataset = dataset
         self.particles, _ = get_testing_datasets(dataset)
-        self.outdir = os.path.abspath(f"test-output_{dataset}")
+
+        if out_lbl is None:
+            self.outdir = os.path.abspath(f"test-output_{dataset}")
+        else:
+            self.outdir = os.path.abspath(out_lbl)
+
+        shutil.rmtree(self.outdir, ignore_errors=True)
         os.makedirs(self.outdir)
         self.epochs = epochs
         self.seed = seed
@@ -411,8 +417,12 @@ class AbInitioDir:
         assert err == "", err
 
 
-@pytest.fixture(scope="session")
-def abinit_dir(request) -> AbInitioDir:
-    adir = AbInitioDir(**AbInitioDir.parse_request(request.param))
+@pytest.fixture
+def abinit_dir(request, tmpdir_factory) -> AbInitioDir:
+    args = AbInitioDir.parse_request(request.param)
+    out_lbl = f"abinit-outs_{request.function.__name__}"
+    args.update(dict(out_lbl=tmpdir_factory.mktemp(out_lbl)))
+
+    adir = AbInitioDir(**args)
     yield adir
     shutil.rmtree(adir.outdir)

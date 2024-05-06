@@ -5,6 +5,7 @@ import shutil
 import pickle
 import numpy as np
 import torch
+from itertools import product
 from cryodrgn.source import ImageSource
 from cryodrgn.commands import parse_ctf_star
 from cryodrgn.commands_utils import filter_star, write_cs, write_star
@@ -39,24 +40,46 @@ def test_read_starfile(particles, datadir):
 
 @pytest.mark.parametrize("particles", ["toy.star", "toy.star-13"], indirect=True)
 @pytest.mark.parametrize("datadir", ["default-datadir"], indirect=True)
-def test_filter(outdir, particles, datadir):
-    indices_pkl = os.path.join(outdir, "indices.pkl")
-    with open(indices_pkl, "wb") as f:
-        # 0-based indices into the input star file
-        # Note that these indices are simply the 0-indexed row numbers in the starfile,
-        # and have nothing to do with the index of the individual particle in the MRCS
-        # file (e.g. 00042@mymrcs.mrcs)
-        pickle.dump([11, 3, 2, 4], f)
+@pytest.mark.parametrize(
+    "index_pair",
+    [([11, 3, 2, 4], [1, 2, 3]), ([5, 8, 11], [0, 7, 10])],
+    ids=("inds1", "inds2"),
+)
+def test_filter(outdir, particles, datadir, index_pair):
+    indices_pkl1 = os.path.join(outdir, "indices1.pkl")
+    indices_pkl2 = os.path.join(outdir, "indices2.pkl")
+
+    with open(indices_pkl1, "wb") as f:
+        pickle.dump(index_pair[0], f)
+    with open(indices_pkl2, "wb") as f:
+        pickle.dump(index_pair[1], f)
 
     out_fl = os.path.join(outdir, "issue150_filtered.star")
     parser = argparse.ArgumentParser()
     filter_star.add_args(parser)
-    filter_star.main(parser.parse_args([particles, "--ind", indices_pkl, "-o", out_fl]))
+    filter_star.main(
+        parser.parse_args([particles, "--ind", indices_pkl1, "-o", out_fl])
+    )
 
-    data = ImageSource.from_file(out_fl, lazy=False, datadir=datadir).images()
-    assert isinstance(data, torch.Tensor)
-    assert data.shape == (4, 30, 30)
+    data1 = ImageSource.from_file(out_fl, lazy=False, datadir=datadir).images()
+    assert isinstance(data1, torch.Tensor)
+    assert data1.shape == (len(index_pair[0]), 30, 30)
     os.remove(out_fl)
+
+    filter_star.main(
+        parser.parse_args([particles, "--ind", indices_pkl2, "-o", out_fl])
+    )
+
+    data2 = ImageSource.from_file(out_fl, lazy=False, datadir=datadir).images()
+    assert isinstance(data2, torch.Tensor)
+    assert data2.shape == (len(index_pair[1]), 30, 30)
+    os.remove(out_fl)
+
+    for (i, ind1), (j, ind2) in product(
+        enumerate(index_pair[0]), enumerate(index_pair[1])
+    ):
+        if ind1 == ind2:
+            assert np.allclose(data1[i, ...], data2[j, ...])
 
 
 @pytest.mark.parametrize("datadir", ["default-datadir"], indirect=True)
@@ -64,6 +87,10 @@ def test_filter(outdir, particles, datadir):
 class TestFilterStar:
     def test_filter_with_indices(self, outdir, particles, datadir):
         indices_pkl = os.path.join(outdir, "indices.pkl")
+        # 0-based indices into the input star file
+        # Note that these indices are simply the 0-indexed row numbers in the starfile,
+        # and have nothing to do with the index of the individual particle in the MRCS
+        # file (e.g. 00042@mymrcs.mrcs)
         with open(indices_pkl, "wb") as f:
             pickle.dump([1, 3, 4], f)
 

@@ -89,6 +89,7 @@ class TestFixedHetero:
     @pytest.mark.parametrize("nb_lbl", ["cryoDRGN_figures"])
     def test_notebooks(self, outdir, particles, poses, nb_lbl):
         """Execute the demonstration Jupyter notebooks produced by analysis."""
+        orig_cwd = os.path.abspath(os.getcwd())
         os.chdir(os.path.join(outdir, "analyze.2"))
         assert os.path.exists(f"{nb_lbl}.ipynb")
 
@@ -96,7 +97,7 @@ class TestFixedHetero:
             nb_in = nbformat.read(ff, nbformat.NO_CONVERT)
 
         ExecutePreprocessor(timeout=600, kernel_name="python3").preprocess(nb_in)
-        os.chdir(os.path.join("..", ".."))
+        os.chdir(orig_cwd)
 
     def test_landscape(self, outdir, particles, poses):
         args = analyze_landscape.add_args(argparse.ArgumentParser()).parse_args(
@@ -257,6 +258,7 @@ class TestAbinitHetero:
     @pytest.mark.parametrize("nb_lbl", ["cryoDRGN_figures"])
     def test_notebooks(self, outdir, particles, ctf, indices, nb_lbl):
         """Execute the demonstration Jupyter notebooks produced by analysis."""
+        orig_cwd = os.path.abspath(os.getcwd())
         os.chdir(os.path.join(outdir, "analyze.1"))
         assert os.path.exists(f"{nb_lbl}.ipynb"), "Upstream tests have failed!"
 
@@ -264,7 +266,7 @@ class TestAbinitHetero:
             nb_in = nbformat.read(ff, nbformat.NO_CONVERT)
 
         ExecutePreprocessor(timeout=600, kernel_name="python3").preprocess(nb_in)
-        os.chdir(os.path.join("..", ".."))
+        os.chdir(orig_cwd)
 
 
 @pytest.mark.parametrize("particles", ["tilts.star"], indirect=True)
@@ -450,6 +452,7 @@ class TestStarFixedHetero:
     @pytest.mark.parametrize("nb_lbl", ["cryoDRGN_figures", "cryoDRGN_ET_viz"])
     def test_notebooks(self, outdir, particles, indices, poses, ctf, datadir, nb_lbl):
         """Execute the demonstration Jupyter notebooks produced by analysis."""
+        orig_cwd = os.path.abspath(os.getcwd())
         os.chdir(os.path.join(outdir, "analyze.4"))
         assert os.path.exists(f"{nb_lbl}.ipynb"), "Upstream tests have failed!"
 
@@ -457,10 +460,11 @@ class TestStarFixedHetero:
             nb_in = nbformat.read(ff, nbformat.NO_CONVERT)
 
         ExecutePreprocessor(timeout=600, kernel_name="python3").preprocess(nb_in)
-        os.chdir(os.path.join("..", ".."))
+        os.chdir(orig_cwd)
 
     def test_refiltering(self, outdir, particles, indices, poses, ctf, datadir):
         """Use particle index creating during analysis."""
+        orig_cwd = os.path.abspath(os.getcwd())
         os.chdir(os.path.join(outdir, "analyze.4"))
         assert os.path.exists("tmp_ind_selected.pkl"), "Upstream tests have failed!"
 
@@ -499,6 +503,7 @@ class TestStarFixedHetero:
 
         args = train_vae.add_args(argparse.ArgumentParser()).parse_args(args)
         train_vae.main(args)
+        os.chdir(orig_cwd)
 
 
 @pytest.mark.parametrize("particles", ["tilts.star"], indirect=True)
@@ -635,6 +640,7 @@ class TestIterativeFiltering:
     )
     def test_notebooks(self, outdir, particles, indices, poses, ctf, nb_lbl):
         """Execute the demonstration Jupyter notebooks produced by analysis."""
+        orig_cwd = os.path.abspath(os.getcwd())
         os.chdir(os.path.join(outdir, "analyze.2"))
         assert os.path.exists(f"{nb_lbl}.ipynb"), "Upstream tests have failed!"
 
@@ -642,4 +648,4 @@ class TestIterativeFiltering:
             nb_in = nbformat.read(ff, nbformat.NO_CONVERT)
 
         ExecutePreprocessor(timeout=600, kernel_name="python3").preprocess(nb_in)
-        os.chdir(os.path.join("..", ".."))
+        os.chdir(orig_cwd)

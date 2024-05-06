@@ -6,8 +6,12 @@ import shutil
 from typing import Optional, Union, Any
 from cryodrgn.utils import run_command
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
+DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
+
+
+def pytest_configure():
+    pytest.data_dir = DATA_DIR
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -40,6 +44,81 @@ def get_testing_datasets(dataset_lbl: str) -> tuple[str, str]:
         raise ValueError(f"Unrecognized dataset label `{dataset_lbl}`!")
 
     return particles, poses
+
+
+PARTICLES_FILES = {
+    "hand": "hand.mrcs",
+    "hand-tilt": "hand_tilt.mrcs",
+    "toy.mrcs": "toy_projections.mrcs",
+    "toy.star": "toy_projections.star",
+    "toy.txt": "toy_projections.txt",
+    "tilts.star": "sta_testing_bin8.star",
+}
+POSES_FILES = {
+    "hand-rot": "hand_rot.pkl",
+    "hand-poses": "hand_rot_trans.pkl",
+    "toy-poses": "toy_rot_trans.pkl",
+    "toy-angles": "toy_angles.pkl",
+    "tilt-poses": "sta_pose.pkl",
+}
+CTF_FILES = {
+    "CTF-Test": "test_ctf.pkl",
+    "CTF-Tilt": "sta_ctf.pkl",
+}
+IND_FILES = {
+    "first-100": "ind100.pkl",
+    "random-100": "ind100-rand.pkl",
+    "just-4": "ind4.pkl",
+    "just-5": "ind5.pkl",
+}
+DATA_FOLDERS = {
+    "default-datadir": DATA_DIR,
+}
+
+
+@pytest.fixture(scope="function")
+def particles(request) -> Union[None, str]:
+    if request.param:
+        assert (
+            request.param in PARTICLES_FILES
+        ), f"Unknown testing particles label `{request.param}` !"
+        return os.path.join(DATA_DIR, PARTICLES_FILES[request.param])
+
+
+@pytest.fixture(scope="function")
+def poses(request) -> Union[None, str]:
+    if request.param:
+        assert (
+            request.param in POSES_FILES
+        ), f"Unknown testing poses label `{request.param}` !"
+        return os.path.join(DATA_DIR, POSES_FILES[request.param])
+
+
+@pytest.fixture(scope="function")
+def ctf(request) -> Union[None, str]:
+    if request.param:
+        assert (
+            request.param in CTF_FILES
+        ), f"Unknown testing CTF file label `{request.param}` !"
+        return os.path.join(DATA_DIR, CTF_FILES[request.param])
+
+
+@pytest.fixture(scope="function")
+def indices(request) -> Union[None, str]:
+    if request.param:
+        assert (
+            request.param in IND_FILES
+        ), f"Unknown testing indices label `{request.param}` !"
+        return os.path.join(DATA_DIR, IND_FILES[request.param])
+
+
+@pytest.fixture(scope="function")
+def datadir(request) -> Union[None, str]:
+    if request.param:
+        assert (
+            request.param in DATA_FOLDERS
+        ), f"Unknown --datadir path `{request.param}` !"
+        return DATA_FOLDERS[request.param]
 
 
 class TrainDir:
@@ -295,19 +374,32 @@ class AbInitioDir:
 
         out, err = run_command(cmd)
         assert ") Finished in " in out, err
+        assert os.path.exists(
+            os.path.join(self.outdir, f"weights.{self.epochs - 1}.pkl")
+        ), err
 
     def analyze(self, analysis_epoch: int) -> None:
-        run_command(f"cryodrgn analyze {self.outdir} {analysis_epoch}")
+        out, err = run_command(f"cryodrgn analyze {self.outdir} {analysis_epoch}")
+        assert ") Finished in " in out, err
+        assert os.path.isdir(
+            os.path.join(self.outdir, f"analysis.{analysis_epoch}")
+        ), err
 
     def backproject(self) -> None:
-        run_command(
+        out_path = os.path.join(self.outdir, "backproject")
+        out_fl = os.path.join(out_path, "vol.mrc")
+        in_poses = os.path.join(self.outdir, "pose.pkl")
+
+        out, err = run_command(
             f"cryodrgn backproject_voxel {self.particles} "
-            f"-o {os.path.join(self.outdir, 'backproject', 'vol.mrc')} "
-            f"--poses {os.path.join(self.outdir, 'pose.pkl')} "
+            f"-o {out_fl} --poses {in_poses} "
         )
+        assert "Backprojected 100 images in" in out, err
 
     def view_config(self) -> None:
-        run_command(f"cryodrgn view_config {self.outdir}")
+        out, err = run_command(f"cryodrgn view_config {self.outdir}")
+        assert "'cmd'" in out and "'dataset_args'" in out and "'model_args'" in out, out
+        assert err == "", err
 
 
 @pytest.fixture(scope="session")

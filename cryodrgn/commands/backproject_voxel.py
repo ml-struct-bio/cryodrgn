@@ -156,7 +156,8 @@ def regularize_volume(volume, counts, reg_weight):
 
 
 def main(args):
-    assert args.o.endswith(".mrc")
+    if not args.o.endswith(".mrc"):
+        raise ValueError(f"Output file {args.o} does not end with .mrc!")
 
     t1 = time.time()
     logger.info(args)

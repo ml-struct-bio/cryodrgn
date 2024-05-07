@@ -299,7 +299,7 @@ def main(args):
     if args.half_maps:
         volume_half1 = regularize_volume(volume_half1, counts_half1, args.reg_weight)
         volume_half2 = regularize_volume(volume_half2, counts_half2, args.reg_weight)
-        fsc_vals = calculate_fsc(volume_half1, volume_half2)
+        fsc_vals = calculate_fsc(volume_half1, volume_half2)['fsc'].squeeze()
 
         fsc_vals.to_csv("_".join([out_path, "fsc-vals.txt"]), sep=" ", header=False)
         plt.plot(fsc_vals.index, fsc_vals.values)

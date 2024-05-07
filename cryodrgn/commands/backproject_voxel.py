@@ -307,10 +307,10 @@ def main(args):
         plt.savefig("_".join([out_path, "fsc-plot.png"]), bbox_inches="tight")
 
         if (fsc_vals >= 0.5).any():
-            fsc_res = fsc_vals[fsc_vals >= 0.5].index.max() ** -1 * Apix
+            fsc_res = fsc_vals[fsc_vals >= 0.5].index.max() ** -1.0 * Apix
             logger.info(f"res @ FSC=0.5: {fsc_res:.4f}")
         if (fsc_vals >= 0.143).any():
-            fsc_res = fsc_vals[fsc_vals >= 0.143].index.max() ** -1 * Apix
+            fsc_res = fsc_vals[fsc_vals >= 0.143].index.max() ** -1.0 * Apix
             logger.info(f"res @ FSC=0.143: {fsc_res:.4f}")
 
         # save the half-map reconstructions to file

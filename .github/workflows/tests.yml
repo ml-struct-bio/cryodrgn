@@ -29,9 +29,14 @@ jobs:
 
       - name: Install cryoDRGN with pytest dependencies
         run: |
+          python3 -m pip install --upgrade pip
           python3 -m pip install pytest-xdist
           python3 -m pip install .
 
       - name: Pytest
         run: |
-          pytest -v -n auto --dist=loadscope
+	  pytest -v -n0 -k $testStr1 --dist loadscope
+	  pytest -v -n2 -k $testStr2 --dist loadscope
+        env:
+	  testStr1: 'not test_integration and not test_pipeline and not test_reconstruct'
+	  testStr2: 'test_integration or test_pipeline or test_reconstruct'

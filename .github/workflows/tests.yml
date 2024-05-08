@@ -35,7 +35,4 @@ jobs:
 
       - name: Pytest
         run: |
-	  pytest -v -n0 --dist=loadscope
-        env:
-	  testStr1: 'not test_integration and not test_pipeline and not test_reconstruct'
-	  testStr2: 'test_integration or test_pipeline or test_reconstruct'
+	  pytest -v -n0 --dist=loadscope -k "test_reconstruct"

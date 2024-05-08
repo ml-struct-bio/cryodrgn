@@ -59,23 +59,44 @@ def test_frompose_train_and_from_checkpoint(trained_dir, load_epoch, train_epoch
 
 
 @pytest.mark.parametrize(
-    "particles, poses, ctf",
+    "particles, poses, ctf, datadir",
     [
-        ("toy.mrcs", "toy-poses", None),
-        ("hand", "hand-rot", None),
-        ("hand", "hand-poses", None),
-        ("tilts.star", "tilt-poses", "CTF-Tilt"),
+        ("toy.mrcs", "toy-poses", None, None),
+        ("toy.mrcs", "toy-poses", "CTF-Test", None),
+        ("hand", "hand-rot", None, None),
+        ("hand", "hand-poses", None, None),
+        ("tilts.star", "tilt-poses", "CTF-Tilt", None),
+        ("tilts.star", "tilt-poses", "CTF-Tilt", "default-datadir"),
     ],
     indirect=True,
 )
-def test_backprojection(outdir, particles, poses, ctf):
+@pytest.mark.parametrize("indices", [None, "just-5"], indirect=True)
+def test_backprojection(outdir, particles, poses, ctf, indices, datadir):
     args = [particles, "--poses", poses, "-o", os.path.join(outdir, "vol.mrc")]
 
     if ctf is not None:
         args += ["--ctf", ctf]
+    if indices is not None:
+        args += ["--ind", indices]
+    if datadir is not None:
+        args += ["--datadir", datadir]
     if "tilt" in particles:
         args += ["--tilt", "-d", "2.93"]
 
     parser = argparse.ArgumentParser()
     backproject_voxel.add_args(parser)
     backproject_voxel.main(parser.parse_args(args))
+
+    assert os.path.exists(os.path.join(outdir, "vol.mrc"))
+    assert os.path.exists(os.path.join(outdir, "vol_fsc-plot.png"))
+    assert os.path.exists(os.path.join(outdir, "vol_fsc-vals.txt"))
+    assert os.path.exists(os.path.join(outdir, "vol_half-map1.mrc"))
+    assert os.path.exists(os.path.join(outdir, "vol_half-map2.mrc"))
+
+    # test if FSC at lowest resolution is still good for easy hand cases
+    if "hand" in particles and indices is None:
+        with open(os.path.join(outdir, "vol_fsc-vals.txt"), "r") as f:
+            pixres, fsc_val = f.readlines()[-1].strip().split()[1:]
+
+        assert round(float(pixres), 3) == 0.484
+        assert float(fsc_val) > 0.2

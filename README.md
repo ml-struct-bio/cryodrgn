@@ -198,7 +198,7 @@ The official version 1.0 release. This version introduces several new tools for 
 
 You can alternatively install a newer, less stable, development version of `cryodrgn` using our beta release channel:
 
-    `(cryodrgn) $ pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ cryodrgn --pre
+    (cryodrgn) $ pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ cryodrgn --pre
 
 More installation instructions are found in the [documentation](https://ez-lab.gitbook.io/cryodrgn/installation).
 

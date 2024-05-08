@@ -307,13 +307,13 @@ def main(args):
         plt.ylim((0, 1))
         plt.savefig("_".join([out_path, "fsc-plot.png"]), bbox_inches="tight")
 
-        if fsc_vals.shape[0] > 1 and (fsc_vals.fsc >= 0.5).any():
-            fsc_res = fsc_vals.pixres[fsc_vals.fsc >= 0.5].max() ** -1 * Apix
+        if ((fsc_vals.fsc >= 0.5) & (fsc_vals.pixres > 0)).any():
+            fsc_res = fsc_vals.pixres[fsc_vals.fsc >= 0.5].max() ** -1.0 * Apix
             logger.info(f"res @ FSC=0.5: {fsc_res:.4f}")
         else:
             logger.warning("res @ FSC=0.5: N/A")
-        if fsc_vals.shape[0] > 1 and (fsc_vals.fsc >= 0.143).any():
-            fsc_res = fsc_vals.pixres[fsc_vals.fsc >= 0.143].max() ** -1 * Apix
+        if ((fsc_vals.fsc >= 0.143) & (fsc_vals.pixres > 0)).any():
+            fsc_res = fsc_vals.pixres[fsc_vals.fsc >= 0.143].max() ** -1.0 * Apix
             logger.info(f"res @ FSC=0.143: {fsc_res:.4f}")
         else:
             logger.warning("res @ FSC=0.143: N/A")

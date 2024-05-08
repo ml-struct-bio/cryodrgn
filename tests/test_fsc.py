@@ -107,12 +107,7 @@ def test_apply_mask(trained_dir, epochs: tuple[int, int]) -> None:
     ],
     indirect=True,
 )
-@pytest.mark.parametrize(
-    "epochs",
-    [
-        (3, 4),
-    ],
-)
+@pytest.mark.parametrize("epochs", [(3, 4)])
 def test_plotting(trained_dir, epochs: tuple[int, int]) -> None:
     vol_file1 = os.path.join(trained_dir.outdir, f"reconstruct.{epochs[0]}.mrc")
     vol_file2 = os.path.join(trained_dir.outdir, f"reconstruct.{epochs[1]}.mrc")

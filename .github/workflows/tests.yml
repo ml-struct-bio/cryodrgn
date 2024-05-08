@@ -35,4 +35,5 @@ jobs:
 
       - name: Pytest
         run: |
-	  pytest -v -n0 --dist=loadscope
+           pytest -v -n0 --dist=loadscope -k "not test_reconstruct and not test_pipeline and not test_integration"
+           pytest -v -n2 --dist=loadscope -k "test_reconstruct and test_pipeline and test_integration"

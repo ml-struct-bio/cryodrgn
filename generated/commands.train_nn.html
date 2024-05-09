@@ -54,7 +54,10 @@
 <li class="toctree-l1"><a class="reference internal" href="../pages/cryodrgn2.html">CryoDRGN2 quickstart</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../pages/faq.html">FAQ / Troubleshooting</a></li>
 <li class="toctree-l1 current"><a class="reference internal" href="../api.html">API</a><ul class="current">
-<li class="toctree-l2 current"><a class="current reference internal" href="#">commands.train_nn</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">commands.train_nn</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#example-usages">Example usages</a></li>
+</ul>
+</li>
 <li class="toctree-l2"><a class="reference internal" href="commands.train_vae.html">commands.train_vae</a></li>
 <li class="toctree-l2"><a class="reference internal" href="commands.abinit_homo.html">commands.abinit_homo</a></li>
 <li class="toctree-l2"><a class="reference internal" href="commands.abinit_het.html">commands.abinit_het</a></li>
@@ -89,7 +92,12 @@
              
   <section id="module-commands.train_nn">
 <span id="commands-train-nn"></span><h1>commands.train_nn<a class="headerlink" href="#module-commands.train_nn" title="Link to this heading"></a></h1>
-<p>Train a NN to model a 3D density map given 2D images with pose assignments</p>
+<p>Train a neural net to model a 3D density map given 2D images with pose assignments.</p>
+<section id="example-usages">
+<h2>Example usages<a class="headerlink" href="#example-usages" title="Link to this heading"></a></h2>
+<p>$ cryodrgn train_nn projections.mrcs –poses angles.pkl -o output/train_nn -n 10
+$ cryodrgn train_nn projections.star –poses angles.pkl -o outs/003_train-nn                                      –num-epochs=30 –lr=0.01</p>
+</section>
 <p class="rubric">Functions</p>
 <table class="autosummary longtable docutils align-default">
 <tbody>

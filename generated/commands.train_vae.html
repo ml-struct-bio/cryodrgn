@@ -55,7 +55,10 @@
 <li class="toctree-l1"><a class="reference internal" href="../pages/faq.html">FAQ / Troubleshooting</a></li>
 <li class="toctree-l1 current"><a class="reference internal" href="../api.html">API</a><ul class="current">
 <li class="toctree-l2"><a class="reference internal" href="commands.train_nn.html">commands.train_nn</a></li>
-<li class="toctree-l2 current"><a class="current reference internal" href="#">commands.train_vae</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">commands.train_vae</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#example-usages">Example usages</a></li>
+</ul>
+</li>
 <li class="toctree-l2"><a class="reference internal" href="commands.abinit_homo.html">commands.abinit_homo</a></li>
 <li class="toctree-l2"><a class="reference internal" href="commands.abinit_het.html">commands.abinit_het</a></li>
 </ul>
@@ -89,7 +92,11 @@
              
   <section id="module-commands.train_vae">
 <span id="commands-train-vae"></span><h1>commands.train_vae<a class="headerlink" href="#module-commands.train_vae" title="Link to this heading"></a></h1>
-<p>Train a VAE for heterogeneous reconstruction with known pose</p>
+<p>Train a VAE for heterogeneous reconstruction with known poses.</p>
+<section id="example-usages">
+<h2>Example usages<a class="headerlink" href="#example-usages" title="Link to this heading"></a></h2>
+<p>$ cryodrgn train_vae projections.mrcs -o outs/002_trainvae –lr=0.0001 –zdim 10                                       –poses angles.pkl –ctf test_ctf.pkl</p>
+</section>
 <p class="rubric">Functions</p>
 <table class="autosummary longtable docutils align-default">
 <tbody>

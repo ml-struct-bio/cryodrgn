@@ -1,22 +1,34 @@
 """Fixtures used across many unit test modules."""
 
+import pytest
 import os
 import shutil
-import pytest
 from typing import Optional, Union, Any
 from cryodrgn.utils import run_command
 
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
 
 
+def pytest_configure():
+    pytest.data_dir = DATA_DIR
+
+
 @pytest.fixture(scope="session", autouse=True)
-def output_dir() -> None:
-    """Helper fixture to remove output folder upon completion of all tests."""
+def default_outdir() -> None:
+    """Helper fixture to remove default  output folder upon completion of all tests."""
     yield None
 
     # we don't always create this folder, e.g. if we are only doing some of the tests
     if os.path.exists("output"):
         shutil.rmtree("output")
+
+
+@pytest.fixture(scope="class")
+def outdir(tmpdir_factory, request) -> str:
+    odir = tmpdir_factory.mktemp(f"output_{request.node.__class__.__name__}")
+    yield str(odir)
+    shutil.rmtree(odir)
 
 
 def get_testing_datasets(dataset_lbl: str) -> tuple[str, str]:
@@ -32,6 +44,84 @@ def get_testing_datasets(dataset_lbl: str) -> tuple[str, str]:
         raise ValueError(f"Unrecognized dataset label `{dataset_lbl}`!")
 
     return particles, poses
+
+
+PARTICLES_FILES = {
+    "hand": "hand.mrcs",
+    "hand-tilt": "hand_tilt.mrcs",
+    "toy.mrcs": "toy_projections.mrcs",
+    "toy.mrcs-999": "toy_projections_0-999.mrcs",
+    "toy.star": "toy_projections.star",
+    "toy.star-13": "toy_projections_13.star",
+    "toy.txt": "toy_projections.txt",
+    "tilts.star": "sta_testing_bin8.star",
+    "cryosparc-all": "cryosparc_P12_J24_001_particles.cs",
+}
+POSES_FILES = {
+    "hand-rot": "hand_rot.pkl",
+    "hand-poses": "hand_rot_trans.pkl",
+    "toy-poses": "toy_rot_trans.pkl",
+    "toy-angles": "toy_angles.pkl",
+    "tilt-poses": "sta_pose.pkl",
+}
+CTF_FILES = {
+    "CTF-Test": "test_ctf.pkl",
+    "CTF-Tilt": "sta_ctf.pkl",
+}
+IND_FILES = {
+    "first-100": "ind100.pkl",
+    "random-100": "ind100-rand.pkl",
+    "just-4": "ind4.pkl",
+    "just-5": "ind5.pkl",
+}
+DATA_FOLDERS = {
+    "default-datadir": DATA_DIR,
+}
+
+
+@pytest.fixture(scope="function")
+def particles(request) -> Union[None, str]:
+    if request.param:
+        assert (
+            request.param in PARTICLES_FILES
+        ), f"Unknown testing particles label `{request.param}` !"
+        return os.path.join(DATA_DIR, PARTICLES_FILES[request.param])
+
+
+@pytest.fixture(scope="function")
+def poses(request) -> Union[None, str]:
+    if request.param:
+        assert (
+            request.param in POSES_FILES
+        ), f"Unknown testing poses label `{request.param}` !"
+        return os.path.join(DATA_DIR, POSES_FILES[request.param])
+
+
+@pytest.fixture(scope="function")
+def ctf(request) -> Union[None, str]:
+    if request.param:
+        assert (
+            request.param in CTF_FILES
+        ), f"Unknown testing CTF file label `{request.param}` !"
+        return os.path.join(DATA_DIR, CTF_FILES[request.param])
+
+
+@pytest.fixture(scope="function")
+def indices(request) -> Union[None, str]:
+    if request.param:
+        assert (
+            request.param in IND_FILES
+        ), f"Unknown testing indices label `{request.param}` !"
+        return os.path.join(DATA_DIR, IND_FILES[request.param])
+
+
+@pytest.fixture(scope="function")
+def datadir(request) -> Union[None, str]:
+    if request.param:
+        assert (
+            request.param in DATA_FOLDERS
+        ), f"Unknown --datadir path `{request.param}` !"
+        return DATA_FOLDERS[request.param]
 
 
 class TrainDir:
@@ -108,7 +198,8 @@ class TrainDir:
         else:
             train_args["seed"] = None
 
-        train_args["out_lbl"] = "_".join([str(x) for x in train_args.values()])
+        if "out_lbl" not in train_args:
+            train_args["out_lbl"] = "_".join([str(x) for x in train_args.values()])
 
         return train_args
 
@@ -189,9 +280,13 @@ class TrainDir:
 
 
 @pytest.fixture(scope="session")
-def train_dir(request) -> TrainDir:
+def train_dir(request, tmpdir_factory) -> TrainDir:
     """Run an experiment to generate output; remove this output when finished."""
-    tdir = TrainDir(**TrainDir.parse_request(request.param))
+    args = TrainDir.parse_request(request.param)
+    out_lbl = f"train-outs_{request.node.__class__.__name__}"
+    args.update(dict(out_lbl=tmpdir_factory.mktemp(out_lbl)))
+
+    tdir = TrainDir(**args)
     yield tdir
     shutil.rmtree(tdir.outdir)
 
@@ -228,12 +323,19 @@ class AbInitioDir:
         zdim: int,
         dataset: str = "hand",
         epochs: int = 2,
+        out_lbl: Optional[str] = None,
         seed: Optional[int] = None,
     ) -> None:
         self.zdim = zdim
         self.dataset = dataset
         self.particles, _ = get_testing_datasets(dataset)
-        self.outdir = os.path.abspath(f"test-output_{dataset}")
+
+        if out_lbl is None:
+            self.outdir = os.path.abspath(f"test-output_{dataset}")
+        else:
+            self.outdir = os.path.abspath(out_lbl)
+
+        shutil.rmtree(self.outdir, ignore_errors=True)
         os.makedirs(self.outdir)
         self.epochs = epochs
         self.seed = seed
@@ -287,23 +389,40 @@ class AbInitioDir:
 
         out, err = run_command(cmd)
         assert ") Finished in " in out, err
+        assert os.path.exists(
+            os.path.join(self.outdir, f"weights.{self.epochs - 1}.pkl")
+        ), err
 
     def analyze(self, analysis_epoch: int) -> None:
-        run_command(f"cryodrgn analyze {self.outdir} {analysis_epoch}")
+        out, err = run_command(f"cryodrgn analyze {self.outdir} {analysis_epoch}")
+        assert ") Finished in " in out, err
+        assert os.path.isdir(
+            os.path.join(self.outdir, f"analysis.{analysis_epoch}")
+        ), err
 
     def backproject(self) -> None:
-        run_command(
+        out_path = os.path.join(self.outdir, "backproject")
+        out_fl = os.path.join(out_path, "vol.mrc")
+        in_poses = os.path.join(self.outdir, "pose.pkl")
+
+        out, err = run_command(
             f"cryodrgn backproject_voxel {self.particles} "
-            f"-o {os.path.join(self.outdir, 'backproject', 'vol.mrc')} "
-            f"--poses {os.path.join(self.outdir, 'pose.pkl')} "
+            f"-o {out_fl} --poses {in_poses} "
         )
+        assert "Backprojected 100 images in" in out, err
 
     def view_config(self) -> None:
-        run_command(f"cryodrgn view_config {self.outdir}")
+        out, err = run_command(f"cryodrgn view_config {self.outdir}")
+        assert "'cmd'" in out and "'dataset_args'" in out and "'model_args'" in out, out
+        assert err == "", err
 
 
-@pytest.fixture(scope="session")
-def abinit_dir(request) -> AbInitioDir:
-    adir = AbInitioDir(**AbInitioDir.parse_request(request.param))
+@pytest.fixture
+def abinit_dir(request, tmpdir_factory) -> AbInitioDir:
+    args = AbInitioDir.parse_request(request.param)
+    out_lbl = f"abinit-outs_{request.function.__name__}"
+    args.update(dict(out_lbl=tmpdir_factory.mktemp(out_lbl)))
+
+    adir = AbInitioDir(**args)
     yield adir
     shutil.rmtree(adir.outdir)

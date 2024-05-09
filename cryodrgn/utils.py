@@ -113,7 +113,12 @@ def save_yaml(data, out_yamlfile: str, mode: str = "w"):
 
 
 def run_command(cmd: str) -> tuple[str, str]:
-    cmd_out = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    try:
+        cmd_out = subprocess.run(
+            cmd, shell=True, capture_output=True, text=True, check=True
+        )
+    except subprocess.CalledProcessError as e:
+        raise ValueError(f"Command {cmd} failed:\n{e.stderr}")
 
     return cmd_out.stdout, cmd_out.stderr
 

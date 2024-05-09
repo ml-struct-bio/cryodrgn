@@ -156,7 +156,8 @@ def regularize_volume(volume, counts, reg_weight):
 
 
 def main(args):
-    assert args.o.endswith(".mrc")
+    if not args.o.endswith(".mrc"):
+        raise ValueError(f"Output file {args.o} does not end with .mrc!")
 
     t1 = time.time()
     logger.info(args)
@@ -302,16 +303,20 @@ def main(args):
         fsc_vals = calculate_fsc(volume_half1, volume_half2)
 
         fsc_vals.to_csv("_".join([out_path, "fsc-vals.txt"]), sep=" ", header=False)
-        plt.plot(fsc_vals.index, fsc_vals.values)
+        plt.plot(fsc_vals.pixres, fsc_vals.fsc)
         plt.ylim((0, 1))
         plt.savefig("_".join([out_path, "fsc-plot.png"]), bbox_inches="tight")
 
-        if (fsc_vals >= 0.5).any():
-            fsc_res = fsc_vals[fsc_vals >= 0.5].index.max() ** -1 * Apix
+        if ((fsc_vals.fsc >= 0.5) & (fsc_vals.pixres > 0)).any():
+            fsc_res = fsc_vals.pixres[fsc_vals.fsc >= 0.5].max() ** -1.0 * Apix
             logger.info(f"res @ FSC=0.5: {fsc_res:.4f}")
-        if (fsc_vals >= 0.143).any():
-            fsc_res = fsc_vals[fsc_vals >= 0.143].index.max() ** -1 * Apix
+        else:
+            logger.warning("res @ FSC=0.5: N/A")
+        if ((fsc_vals.fsc >= 0.143) & (fsc_vals.pixres > 0)).any():
+            fsc_res = fsc_vals.pixres[fsc_vals.fsc >= 0.143].max() ** -1.0 * Apix
             logger.info(f"res @ FSC=0.143: {fsc_res:.4f}")
+        else:
+            logger.warning("res @ FSC=0.143: N/A")
 
         # save the half-map reconstructions to file
         half_fl1 = "_".join([out_path, "half-map1.mrc"])

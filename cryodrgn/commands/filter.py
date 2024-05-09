@@ -1,5 +1,13 @@
-"""Interactive filtering of mapped particles."""
+"""Interactive filtering of particles plotted using various model variables.
 
+Note that this tool can only be used for outputs of SPA — *not* tilt series!
+
+Example usages
+--------------
+$ cryodrgn filter 00_trainvae
+$ cryodrgn filter outdir --epoch 20
+
+"""
 import os
 import pickle
 import argparse

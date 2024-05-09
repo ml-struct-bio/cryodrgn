@@ -165,7 +165,7 @@ def test_pipeline(
             "--ctf",
             f"{DATA_FOLDER}/ctf1.pkl",
             "--ind",
-            f"{DATA_FOLDER}/ind3.pkl",
+            f"{DATA_FOLDER}/ind4.pkl",
             "-o",
             "output/pipeline_test3_filtered.star",
         ]

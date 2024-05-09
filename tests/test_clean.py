@@ -37,7 +37,7 @@ def test_clean_one(trained_dir, every_n: int) -> None:
     """Test that we can clean the output of one directory."""
 
     out, err = run_command(
-        f"cryodrgn_utils clean {trained_dir.out_lbl} -n {every_n} -d"
+        f"cryodrgn_utils clean {os.path.relpath(trained_dir.out_lbl)} -n {every_n} -d"
     )
 
     rmv_count = 2 * (trained_dir.epochs - 1 - ((trained_dir.epochs - 1) // every_n))
@@ -45,7 +45,9 @@ def test_clean_one(trained_dir, every_n: int) -> None:
     assert err == ""
     assert trained_dir.all_files_present
 
-    out, err = run_command(f"cryodrgn_utils clean {trained_dir.out_lbl} -n {every_n}")
+    out, err = run_command(
+        f"cryodrgn_utils clean {os.path.relpath(trained_dir.out_lbl)} -n {every_n}"
+    )
     assert out == f"\tRemoved {rmv_count} files!\n"
     assert err == ""
 
@@ -68,7 +70,9 @@ def test_clean_one(trained_dir, every_n: int) -> None:
 def test_clean_two(trained_dirs, every_n: int) -> None:
     """Test that we can clean the output of two directories."""
 
-    dir_str = " ".join([trained_dir.out_lbl for trained_dir in trained_dirs])
+    dir_str = " ".join(
+        [os.path.relpath(trained_dir.out_lbl) for trained_dir in trained_dirs]
+    )
     out, err = run_command(f"cryodrgn_utils clean {dir_str} -n {every_n} -d")
 
     rmv_counts = [

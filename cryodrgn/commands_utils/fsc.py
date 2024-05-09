@@ -89,7 +89,7 @@ def calculate_fsc(
         fsc.append(float(p.real))
         prev_mask = mask
 
-    return pd.DataFrame(dict(pixres=np.arange(D // 2) / D, fsc=fsc))
+    return pd.DataFrame(dict(pixres=np.arange(D // 2) / D, fsc=fsc), dtype=float)
 
 
 def main(args):
@@ -104,12 +104,17 @@ def main(args):
         fsc_str = fsc_vals.round(4).to_csv(sep="\t", index=False)
         logger.info(f"\n{fsc_str}")
 
-    if (fsc_vals.fsc >= 0.5).any():
+    if fsc_vals.shape[0] > 1 and (fsc_vals.fsc >= 0.5).any():
         res = fsc_vals.pixres[fsc_vals.fsc >= 0.5].max()
         logger.info("0.5: {:.7g} ang".format((1 / res) * args.Apix))
-    if (fsc_vals.fsc >= 0.143).any():
+    else:
+        logger.warning("0.5: N/A")
+
+    if fsc_vals.shape[0] > 1 and (fsc_vals.fsc >= 0.143).any():
         res = fsc_vals.pixres[fsc_vals.fsc >= 0.143].max()
         logger.info("0.143: {:.7g} ang".format((1 / res) * args.Apix))
+    else:
+        logger.warning("0.143: N/A")
 
     if args.plot:
         if isinstance(args.plot, bool):

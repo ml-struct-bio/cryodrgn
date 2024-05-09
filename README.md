@@ -1,7 +1,8 @@
-![pypi-downloads](https://img.shields.io/pypi/dm/cryodrgn?style=flat&label=PyPI%20Downloads&logo=pypi&labelColor=%23FFF8EC)
+![pypi-downloads](https://img.shields.io/pypi/dm/cryodrgn?style=flat&label=PyPI%20Downloads&logo=pypi&logoColor=%233775A9&labelColor=%23FFF8EC)
 ![stable-release](https://img.shields.io/pypi/v/cryodrgn?style=flat&logo=pypi&logoColor=%233775A9&logoSize=auto&label=stable%20release&labelColor=%23FFF8EC)
 ![beta-release](https://img.shields.io/pypi/v/cryodrgn?pypiBaseUrl=https%3A%2F%2Ftest.pypi.org&style=flat&logo=pypi&logoColor=%233775A9&logoSize=auto&label=beta%20release&labelColor=%23FFF8EC)
-![ci-test](https://github.com/ml-struct-bio/cryodrgn/actions/workflows/main.yml/badge.svg)
+![grading](https://img.shields.io/codefactor/grade/github/ml-struct-bio/cryodrgn/main?style=flat&logo=codefactor&logoColor=%23F44A6A&logoSize=auto&label=CodeFactor%20Grade&labelColor=%23FFF8EC)
+![ci-test](https://github.com/ml-struct-bio/cryodrgn/actions/workflows/tests.yml/badge.svg)
 
 
 # :snowflake::dragon: cryoDRGN: Deep Reconstructing Generative Networks for cryo-EM and cryo-ET heterogeneous reconstruction
@@ -197,7 +198,7 @@ The official version 1.0 release. This version introduces several new tools for 
 
 You can alternatively install a newer, less stable, development version of `cryodrgn` using our beta release channel:
 
-    (cryodrgn) $ pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ "cryodrgn<=3.3.0" --pre
+    (cryodrgn) $ pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ cryodrgn --pre
 
 More installation instructions are found in the [documentation](https://ez-lab.gitbook.io/cryodrgn/installation).
 

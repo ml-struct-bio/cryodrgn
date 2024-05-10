@@ -15,6 +15,7 @@ import logging
 from cryodrgn import utils
 from cryodrgn.source import ImageSource, StarfileSource
 from cryodrgn.starfile import Starfile
+from cryodrgn.mrc import MRCHeader
 
 logger = logging.getLogger(__name__)
 
@@ -119,9 +120,15 @@ def main(args):
         assert isinstance(particles, StarfileSource)
         df = particles.df.loc[ind]
         optics = None
-
     else:
-        image_names = particles.filenames[ind]
+        if input_ext == ".txt":
+            mrcs_files = open(args.particles,'r').read().splitlines()
+            base = os.path.dirname(os.path.abspath(args.particles))
+            counts = [MRCHeader.parse(os.path.join(base, f)).fields['nz'] for f in mrcs_files]
+            image_names = np.repeat(mrcs_files, counts)
+            ind = np.concatenate([np.arange(count) for count in counts])
+        else:
+            image_names = particles.filenames[ind]
         if args.full_path:
             image_names = [os.path.abspath(image_name) for image_name in image_names]
         names = [f"{i+1}@{name}" for i, name in zip(ind, image_names)]

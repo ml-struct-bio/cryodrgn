@@ -69,7 +69,7 @@ def main(args):
         print("PC{}".format(dim))
         if args.use_percentile_spacing:
             pc_values = np.percentile(
-                pc[:, dim - 1], np.linspace(lim[0], lim[1], args.n)
+                pc[:, dim - 1], np.linspace(lim[0], lim[1], args.n, endpoint=True)
             )
             print("Limits: {}, {}".format(pc_values[0], pc_values[-1]))
             traj = analysis.get_pc_traj(pca, zdim, args.n, dim, None, None, pc_values)

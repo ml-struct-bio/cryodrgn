@@ -15,8 +15,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
-        python: ['3.9', '3.10']
+        os: [ ubuntu-latest, macos-latest ]
+        python: [ '3.9', '3.10' ]
       fail-fast: false
 
     steps:
@@ -29,9 +29,10 @@ jobs:
 
       - name: Install cryoDRGN with pytest dependencies
         run: |
+          python3 -m pip install --upgrade pip
           python3 -m pip install pytest-xdist
           python3 -m pip install .
 
       - name: Pytest
         run: |
-          pytest -v -n auto --dist=loadscope
+          pytest -v -n0

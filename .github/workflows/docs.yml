@@ -25,7 +25,11 @@ jobs:
 
       - name: Setup Envvars
         run: |
-            if [[ $GITHUB_REF = "refs/tags/"* ]] ; then echo "CRYODRGN_VERSION=${GITHUB_REF/refs\/tags\//}" ; else echo "CRYODRGN_VERSION=" ; fi >> $GITHUB_ENV
+            if [[ $GITHUB_REF = "refs/tags/"* ]];
+                then echo "CRYODRGN_VERSION=${GITHUB_REF/refs\/tags\//}";
+            else
+                echo "CRYODRGN_VERSION=";
+            fi >> $GITHUB_ENV
 
       - name: Build docs
         run: |

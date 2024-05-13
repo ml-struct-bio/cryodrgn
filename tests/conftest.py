@@ -67,6 +67,7 @@ POSES_FILES = {
 }
 CTF_FILES = {
     "CTF-Test": "test_ctf.pkl",
+    "CTF-Test.100": "test_ctf.100.pkl",
     "CTF-Tilt": "sta_ctf.pkl",
     "CTF1": "ctf1.pkl",
 }
@@ -82,21 +83,39 @@ DATA_FOLDERS = {
 
 
 @pytest.fixture(scope="function")
-def particles(request) -> Union[None, str]:
+def particles(request) -> Union[None, str, dict[Any, str]]:
     if request.param:
-        assert (
-            request.param in PARTICLES_FILES
-        ), f"Unknown testing particles label `{request.param}` !"
-        return os.path.join(DATA_DIR, PARTICLES_FILES[request.param])
+        lbls = (
+            request.param if isinstance(request.param, dict) else {None: request.param}
+        )
+        files = dict()
+
+        for k, lbl in lbls.items():
+            assert lbl in PARTICLES_FILES, f"Unknown testing particles label `{lbl}` !"
+            files[k] = os.path.join(DATA_DIR, PARTICLES_FILES[lbl])
+
+        if not isinstance(request.param, dict):
+            files = files[None]
+
+        return files
 
 
 @pytest.fixture(scope="function")
-def poses(request) -> Union[None, str]:
+def poses(request) -> Union[None, str, dict[Any, str]]:
     if request.param:
-        assert (
-            request.param in POSES_FILES
-        ), f"Unknown testing poses label `{request.param}` !"
-        return os.path.join(DATA_DIR, POSES_FILES[request.param])
+        lbls = (
+            request.param if isinstance(request.param, dict) else {None: request.param}
+        )
+        files = dict()
+
+        for k, lbl in lbls.items():
+            assert lbl in POSES_FILES, f"Unknown testing poses label `{lbl}` !"
+            files[k] = os.path.join(DATA_DIR, POSES_FILES[lbl])
+
+        if not isinstance(request.param, dict):
+            files = files[None]
+
+        return files
 
 
 @pytest.fixture(scope="function")

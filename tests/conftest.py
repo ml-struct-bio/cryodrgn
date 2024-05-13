@@ -48,6 +48,7 @@ def get_testing_datasets(dataset_lbl: str) -> tuple[str, str]:
 
 PARTICLES_FILES = {
     "hand": "hand.mrcs",
+    "hand-5": "hand.5.mrcs",
     "hand-tilt": "hand_tilt.mrcs",
     "toy.mrcs": "toy_projections.mrcs",
     "toy.mrcs-999": "toy_projections_0-999.mrcs",
@@ -67,6 +68,7 @@ POSES_FILES = {
 CTF_FILES = {
     "CTF-Test": "test_ctf.pkl",
     "CTF-Tilt": "sta_ctf.pkl",
+    "CTF1": "ctf1.pkl",
 }
 IND_FILES = {
     "first-100": "ind100.pkl",

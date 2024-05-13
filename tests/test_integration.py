@@ -6,12 +6,11 @@ tests to run in any environment in a reasonable amount of time with or without G
 """
 import pytest
 import os
-import logging
-import time
 import argparse
 import nbformat
 from nbconvert.preprocessors import ExecutePreprocessor
 from cryodrgn.commands import analyze, train_vae
+import logging
 
 
 @pytest.fixture(autouse=True)
@@ -84,11 +83,7 @@ class TestNotebookFiltering:
         with open(f"{nb_lbl}.ipynb") as ff:
             nb_in = nbformat.read(ff, nbformat.NO_CONVERT)
 
-        t0 = time.time()
         ExecutePreprocessor(timeout=3, kernel_name="python3").preprocess(nb_in)
-
-        print(f"Execution time: {time.time() - t0} seconds")
-
         os.chdir(orig_cwd)
 
     def test_refiltering(self, outdir, particles, poses, ctf):

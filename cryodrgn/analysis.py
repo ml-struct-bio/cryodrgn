@@ -33,7 +33,8 @@ def parse_loss(f: str) -> np.ndarray:
     return np.asarray(loss).astype(np.float32)
 
 
-### Dimensionality reduction
+# Dimensionality reduction
+
 
 def run_pca(z: np.ndarray) -> Tuple[np.ndarray, PCA]:
     pca = PCA(z.shape[1])

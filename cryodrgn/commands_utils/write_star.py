@@ -122,16 +122,23 @@ def main(args):
         optics = None
     else:
         if input_ext == ".txt":
-            mrcs_files = open(args.particles,'r').read().splitlines()
+            with open(args.particles, "r") as f:
+                mrcs_files = f.read().splitlines()
+
             base = os.path.dirname(os.path.abspath(args.particles))
-            counts = [MRCHeader.parse(os.path.join(base, f)).fields['nz'] for f in mrcs_files]
-            image_names = np.repeat(mrcs_files, counts)
-            ind = np.concatenate([np.arange(count) for count in counts])
+            counts = [
+                MRCHeader.parse(os.path.join(base, f)).fields["nz"] for f in mrcs_files
+            ]
+            ind_lbls = np.concatenate([np.arange(count) for count in counts])[ind] + 1
+            image_names = np.repeat(mrcs_files, counts)[ind]
+
         else:
+            ind_lbls = [str(i + 1) for i in ind]
             image_names = particles.filenames[ind]
+
         if args.full_path:
             image_names = [os.path.abspath(image_name) for image_name in image_names]
-        names = [f"{i+1}@{name}" for i, name in zip(ind, image_names)]
+        names = [f"{lbl}@{name}" for lbl, name in zip(ind_lbls, image_names)]
 
         # convert poses
         if poses is not None:

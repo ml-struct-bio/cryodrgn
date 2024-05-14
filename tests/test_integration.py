@@ -4,8 +4,6 @@ Note that the training done here has unrealistically low parameter values to all
 tests to run in any environment in a reasonable amount of time with or without GPUs.
 
 """
-import shutil
-
 import pytest
 import os
 import argparse
@@ -93,8 +91,6 @@ class TestNotebookFiltering:
         assert len(ind_keep_fl) == 1
         assert int(ind_keep_fl[0].split(".")[1].split("_particles")[0]) >= 10
         ind_keep_fl = os.path.join(outdir, ind_keep_fl[0])
-
-        shutil.copy(ind_keep_fl, "/Users/mg2332/Documents/")
 
         args = train_vae.add_args(argparse.ArgumentParser()).parse_args(
             [

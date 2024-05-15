@@ -4,7 +4,8 @@ import numpy as np
 from typing import Sequence
 from torch.utils.data.sampler import BatchSampler, RandomSampler
 from torch.utils.data import DataLoader
-from cryodrgn.dataset import DataShuffler, ImageDataset, make_dataloader
+from cryodrgn.dataset import DataShuffler, ImageDataset, TiltSeriesData, make_dataloader
+from cryodrgn.utils import load_pkl
 
 
 @pytest.mark.parametrize("particles", ["hand"], indirect=True)
@@ -25,17 +26,29 @@ def test_particles(particles):
 
 
 @pytest.mark.parametrize(
-    "particles",
-    ["hand", "hand-tilt", "toy.mrcs", "toy.txt", "toy.star", "tilts.star"],
+    "particles, indices",
+    [
+        ("hand", None),
+        ("hand-tilt", None),
+        ("toy.mrcs", None),
+        ("toy.mrcs", "first-100"),
+        ("toy.mrcs", "random-100"),
+        ("toy.txt", None),
+        ("toy.txt", "random-100"),
+        ("toy.star", None),
+        ("toy.star", "random-100"),
+        ("tilts.star", None),
+    ],
     indirect=True,
 )
-class TestLoading:
+class TestImageDatasetLoading:
 
     # 11 is a useful number to test as it is 1 mod 100 and 1 mod 1000
     # lots of edge cases with numpy and torch arrays when a dimension is of length one!
     @pytest.mark.parametrize("batch_size", [7, 11, 20, 43])
-    def test_loading_slow(self, particles, batch_size):
-        dataset = ImageDataset(mrcfile=particles)
+    def test_loading_slow(self, particles, indices, batch_size):
+        ind = indices if indices is None else load_pkl(indices)
+        dataset = ImageDataset(mrcfile=particles, ind=ind)
         data_loader = make_dataloader(dataset, batch_size=batch_size, shuffle=True)
 
         # minibatch is a list of (particles, tilt, indices)
@@ -61,8 +74,9 @@ class TestLoading:
                 assert minibatch[2].shape == (dataset.N % batch_size,)
 
     @pytest.mark.parametrize("batch_size", [11, 25, 61])
-    def test_loading_fast(self, particles, batch_size):
-        dataset = ImageDataset(mrcfile=particles)
+    def test_loading_fast(self, particles, indices, batch_size):
+        ind = indices if indices is None else load_pkl(indices)
+        dataset = ImageDataset(mrcfile=particles, ind=ind)
 
         # A faster way to load is to use BatchSampler with RandomSampler
         # see https://stackoverflow.com/questions/61458305
@@ -95,47 +109,111 @@ class TestLoading:
                     dataset.D,
                     dataset.D,
                 )
+
                 assert minibatch[1] is None
                 assert minibatch[2].shape == (dataset.N % batch_size,)
 
-    @pytest.mark.parametrize(
-        "batch_size, buffer_size",
-        [
-            (5, 20),
-            (10, 40),
-            (27, 81),
-            pytest.param(
-                40, 10, marks=pytest.mark.xfail(reason="buffer must be 0 mod batch")
-            ),
-        ],
-    )
-    def test_data_shuffler(self, particles, batch_size, buffer_size):
-        dataset = ImageDataset(mrcfile=particles)
-        data_loader = DataShuffler(
-            dataset, batch_size=batch_size, buffer_size=buffer_size
-        )
-        epoch1_indices, epoch2_indices = [], []
+
+@pytest.mark.parametrize(
+    "particles, indices",
+    [
+        ("tilts.star", None),
+        ("tilts.star", "just-5"),
+    ],
+    indirect=True,
+)
+@pytest.mark.parametrize("ntilts", [2, 5, 10])
+class TestTiltSeriesLoading:
+    @pytest.mark.parametrize("batch_size", [3, 5, 8])
+    def test_loading_slow(self, particles, indices, ntilts, batch_size):
+        pt_ind = indices if indices is None else load_pkl(indices)
+
+        if pt_ind is None:
+            ind = None
+        else:
+            pt, tp = TiltSeriesData.parse_particle_tilt(particles)
+            ind = TiltSeriesData.particles_to_tilts(pt, pt_ind)
+
+        dataset = TiltSeriesData(tiltstar=particles, ntilts=ntilts, ind=ind)
+        data_loader = make_dataloader(dataset, batch_size=batch_size, shuffle=True)
 
         # minibatch is a list of (particles, tilt, indices)
         for i, minibatch in enumerate(data_loader):
             assert isinstance(minibatch, Sequence)
             assert len(minibatch) == 3
 
-            assert minibatch[0].shape == (batch_size, dataset.D, dataset.D)
-            assert minibatch[1].shape == (batch_size,)
-            assert minibatch[2].shape == (batch_size,)
-            epoch1_indices.append(minibatch[2])
+            # We have 100 particles. For all but the last iteration *
+            # for all but the last iteration (100//7 = 14), we'll have 7 images each
+            if i < (dataset.Np // batch_size):
+                assert minibatch[0].shape == (batch_size * ntilts, dataset.D, dataset.D)
+                assert minibatch[1].shape == (batch_size * ntilts,)
+                assert minibatch[2].shape == (batch_size,)
 
-        for i, minibatch in enumerate(data_loader):
-            epoch2_indices.append(minibatch[2])
+            # and 100 % 7 = 2 for the very last one
+            else:
+                assert minibatch[0].shape == (
+                    (dataset.Np % batch_size) * ntilts,
+                    dataset.D,
+                    dataset.D,
+                )
+                assert minibatch[1].shape == ((dataset.Np % batch_size) * ntilts,)
+                assert minibatch[2].shape == (dataset.Np % batch_size,)
 
-        epoch1_indices = np.concatenate(epoch1_indices)
-        epoch2_indices = np.concatenate(epoch2_indices)
 
-        N = len(epoch1_indices)
-        # epochs should have all the indices exactly once
-        assert sorted(epoch1_indices) == list(range(N)), epoch1_indices
-        assert sorted(epoch2_indices) == list(range(N)), epoch2_indices
+@pytest.mark.parametrize(
+    "particles, indices",
+    [
+        ("hand", None),
+        ("hand-tilt", None),
+        ("toy.mrcs", None),
+        pytest.param(
+            "toy.mrcs",
+            "random-100",
+            marks=pytest.mark.xfail(raises=NotImplementedError),
+        ),
+        ("toy.txt", None),
+        ("toy.star", None),
+        ("tilts.star", None),
+    ],
+    indirect=True,
+)
+@pytest.mark.parametrize(
+    "batch_size, buffer_size",
+    [
+        (5, 20),
+        (10, 40),
+        (27, 81),
+        pytest.param(
+            40, 10, marks=pytest.mark.xfail(reason="buffer must be 0 mod batch")
+        ),
+    ],
+)
+def test_data_shuffler(particles, indices, batch_size, buffer_size):
+    ind = indices if indices is None else load_pkl(indices)
+    dataset = ImageDataset(mrcfile=particles, ind=ind)
+    data_loader = DataShuffler(dataset, batch_size=batch_size, buffer_size=buffer_size)
 
-        # epochs should be shuffled differently
-        assert any(epoch1_indices != epoch2_indices), epoch1_indices
+    # minibatch is a list of (particles, tilt, indices)
+    epoch1_indices, epoch2_indices = list(), list()
+    for i, minibatch in enumerate(data_loader):
+        assert isinstance(minibatch, Sequence)
+        assert len(minibatch) == 3
+
+        assert minibatch[0].shape == (batch_size, dataset.D, dataset.D)
+        assert minibatch[1].shape == (batch_size,)
+        assert minibatch[2].shape == (batch_size,)
+        epoch1_indices.append(minibatch[2])
+
+    for i, minibatch in enumerate(data_loader):
+        epoch2_indices.append(minibatch[2])
+
+    epoch1_indices = np.concatenate(epoch1_indices)
+    epoch2_indices = np.concatenate(epoch2_indices)
+
+    N = len(epoch1_indices)
+    # epochs should have all the indices exactly once
+    assert sorted(epoch1_indices) == list(range(N)), epoch1_indices
+    assert sorted(epoch2_indices) == list(range(N)), epoch2_indices
+
+    # epochs should be shuffled differently
+    assert any(epoch1_indices != epoch2_indices), epoch1_indices

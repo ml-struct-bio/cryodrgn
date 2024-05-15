@@ -30,7 +30,10 @@ def test_particles(particles):
     indirect=True,
 )
 class TestLoading:
-    @pytest.mark.parametrize("batch_size", [7, 20, 43])
+
+    # 11 is a useful number to test as it is 1 mod 100 and 1 mod 1000
+    # lots of edge cases with numpy and torch arrays when a dimension is of length one!
+    @pytest.mark.parametrize("batch_size", [7, 11, 20, 43])
     def test_loading_slow(self, particles, batch_size):
         dataset = ImageDataset(mrcfile=particles)
         data_loader = make_dataloader(dataset, batch_size=batch_size, shuffle=True)
@@ -57,7 +60,7 @@ class TestLoading:
                 assert minibatch[1] is None
                 assert minibatch[2].shape == (dataset.N % batch_size,)
 
-    @pytest.mark.parametrize("batch_size", [25, 61])
+    @pytest.mark.parametrize("batch_size", [11, 25, 61])
     def test_loading_fast(self, particles, batch_size):
         dataset = ImageDataset(mrcfile=particles)
 
@@ -95,9 +98,22 @@ class TestLoading:
                 assert minibatch[1] is None
                 assert minibatch[2].shape == (dataset.N % batch_size,)
 
-    def test_data_shuffler(self, particles):
+    @pytest.mark.parametrize(
+        "batch_size, buffer_size",
+        [
+            (5, 20),
+            (10, 40),
+            (27, 81),
+            pytest.param(
+                40, 10, marks=pytest.mark.xfail(reason="buffer must be 0 mod batch")
+            ),
+        ],
+    )
+    def test_data_shuffler(self, particles, batch_size, buffer_size):
         dataset = ImageDataset(mrcfile=particles)
-        data_loader = DataShuffler(dataset, batch_size=5, buffer_size=20)
+        data_loader = DataShuffler(
+            dataset, batch_size=batch_size, buffer_size=buffer_size
+        )
         epoch1_indices, epoch2_indices = [], []
 
         # minibatch is a list of (particles, tilt, indices)
@@ -105,9 +121,9 @@ class TestLoading:
             assert isinstance(minibatch, Sequence)
             assert len(minibatch) == 3
 
-            assert minibatch[0].shape == (5, dataset.D, dataset.D)
-            assert minibatch[1].shape == (5,)
-            assert minibatch[2].shape == (5,)
+            assert minibatch[0].shape == (batch_size, dataset.D, dataset.D)
+            assert minibatch[1].shape == (batch_size,)
+            assert minibatch[2].shape == (batch_size,)
             epoch1_indices.append(minibatch[2])
 
         for i, minibatch in enumerate(data_loader):

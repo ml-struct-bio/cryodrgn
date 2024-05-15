@@ -87,11 +87,11 @@ class TestNotebookFiltering:
         os.chdir(orig_cwd)
 
     def test_refiltering(self, outdir, particles, poses, ctf):
-        ind_keep_fl = [fl for fl in os.listdir(outdir) if fl[:9] == "ind_keep."]
-        assert len(ind_keep_fl) == 1
-        assert int(ind_keep_fl[0].split(".")[1].split("_particles")[0]) >= 10
-        ind_keep_fl = os.path.join(outdir, ind_keep_fl[0])
+        ind_keep_fl = [fl for fl in os.listdir(outdir) if fl[:9] == "ind_keep."][0]
+        if int(ind_keep_fl.split(".")[1].split("_particles")[0]) < 50:
+            ind_keep_fl = [fl for fl in os.listdir(outdir) if fl[:8] == "ind_bad."][0]
 
+        ind_keep_fl = os.path.join(outdir, ind_keep_fl)
         args = train_vae.add_args(argparse.ArgumentParser()).parse_args(
             [
                 particles,

@@ -306,7 +306,9 @@ def main(args):
         print_fsc(fsc_vals, Apix)
 
         # save the FSC values and half-map reconstructions to file
-        fsc_vals.to_csv("_".join([out_path, "fsc-vals.txt"]), sep=" ", header=False)
+        fsc_vals.to_csv(
+            "_".join([out_path, "fsc-vals.txt"]), sep=" ", header=True, index=False
+        )
         half_fl1 = "_".join([out_path, "half-map1.mrc"])
         half_fl2 = "_".join([out_path, "half-map2.mrc"])
         MRCFile.write(half_fl1, np.array(volume_half1).astype("float32"), Apix=Apix)

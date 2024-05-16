@@ -93,13 +93,13 @@ def calculate_fsc(
 
 
 def print_fsc(fsc_vals: pd.DataFrame, apix: float) -> None:
-    if fsc_vals.shape[0] > 1 and (fsc_vals.fsc >= 0.5).any():
+    if ((fsc_vals.pixres > 0) & (fsc_vals.fsc >= 0.5)).any():
         res = fsc_vals.pixres[fsc_vals.fsc >= 0.5].max()
         logger.info("res @ FSC=0.5: {:.4g} ang".format((1 / res) * apix))
     else:
         logger.warning("res @ FSC=0.5: N/A")
 
-    if fsc_vals.shape[0] > 1 and (fsc_vals.fsc >= 0.143).any():
+    if ((fsc_vals.pixres > 0) & (fsc_vals.fsc >= 0.143)).any():
         res = fsc_vals.pixres[fsc_vals.fsc >= 0.143].max()
         logger.info("res @ FSC=0.143: {:.4g} ang".format((1 / res) * apix))
     else:

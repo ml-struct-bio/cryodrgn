@@ -20,7 +20,7 @@ from cryodrgn.commands import (
     abinit_homo,
     abinit_het,
 )
-from cryodrgn.commands_utils import filter_star
+from cryodrgn.commands_utils import filter_star, plot_fsc
 from cryodrgn.dataset import TiltSeriesData
 import cryodrgn.utils
 
@@ -342,35 +342,50 @@ def test_frompose_train_and_from_checkpoint(trained_dir, load_epoch, train_epoch
     indirect=True,
 )
 @pytest.mark.parametrize("indices", [None, "just-5"], indirect=True)
-def test_backprojection(outdir, particles, poses, ctf, indices, datadir):
-    args = [particles, "--poses", poses, "-o", os.path.join(outdir, "vol.mrc")]
+class TestBackprojection:
+    def test_train(self, outdir, particles, poses, ctf, indices, datadir):
+        args = [particles, "--poses", poses, "-o", os.path.join(outdir, "vol.mrc")]
 
-    if ctf is not None:
-        args += ["--ctf", ctf]
-    if indices is not None:
-        args += ["--ind", indices]
-    if datadir is not None:
-        args += ["--datadir", datadir]
-    if "tilt" in particles:
-        args += ["--tilt", "-d", "2.93"]
+        if ctf is not None:
+            args += ["--ctf", ctf]
+        if indices is not None:
+            args += ["--ind", indices]
+        if datadir is not None:
+            args += ["--datadir", datadir]
+        if "tilt" in particles:
+            args += ["--tilt", "-d", "2.93"]
 
-    parser = argparse.ArgumentParser()
-    backproject_voxel.add_args(parser)
-    backproject_voxel.main(parser.parse_args(args))
+        parser = argparse.ArgumentParser()
+        backproject_voxel.add_args(parser)
+        backproject_voxel.main(parser.parse_args(args))
 
-    assert os.path.exists(os.path.join(outdir, "vol.mrc"))
-    assert os.path.exists(os.path.join(outdir, "vol_fsc-plot.png"))
-    assert os.path.exists(os.path.join(outdir, "vol_fsc-vals.txt"))
-    assert os.path.exists(os.path.join(outdir, "vol_half-map1.mrc"))
-    assert os.path.exists(os.path.join(outdir, "vol_half-map2.mrc"))
+        assert os.path.exists(os.path.join(outdir, "vol.mrc"))
+        assert os.path.exists(os.path.join(outdir, "vol_fsc-plot.png"))
+        assert os.path.exists(os.path.join(outdir, "vol_fsc-vals.txt"))
+        assert os.path.exists(os.path.join(outdir, "vol_half-map1.mrc"))
+        assert os.path.exists(os.path.join(outdir, "vol_half-map2.mrc"))
 
-    # test if FSC at lowest resolution is still good for easy hand cases
-    if "hand" in particles and indices is None:
-        with open(os.path.join(outdir, "vol_fsc-vals.txt"), "r") as f:
-            pixres, fsc_val = f.readlines()[-1].strip().split()[1:]
+        # test if FSC at lowest resolution is still good for easy hand cases
+        if "hand" in particles and indices is None:
+            with open(os.path.join(outdir, "vol_fsc-vals.txt"), "r") as f:
+                pixres, fsc_val = f.readlines()[-1].strip().split()
 
-        assert round(float(pixres), 3) == 0.484
-        assert float(fsc_val) > 0.2
+            assert round(float(pixres), 3) == 0.484
+            assert float(fsc_val) > 0.2
+
+    def test_to_fsc(self, outdir, particles, poses, ctf, indices, datadir):
+        """Export calculated FSC scores to plotting function."""
+
+        args = [
+            os.path.join(outdir, "vol_fsc-vals.txt"),
+            "-o",
+            os.path.join(outdir, "vol_fsc-plot2.png"),
+        ]
+
+        parser = argparse.ArgumentParser()
+        plot_fsc.add_args(parser)
+        plot_fsc.main(parser.parse_args(args))
+        assert os.path.exists(os.path.join(outdir, "vol_fsc-plot2.png"))
 
 
 @pytest.mark.parametrize("particles", ["tilts.star"], indirect=True)

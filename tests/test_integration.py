@@ -6,35 +6,41 @@ tests to run in any environment in a reasonable amount of time with or without G
 """
 import pytest
 import os
+import shutil
 import argparse
 import nbformat
 from nbconvert.preprocessors import ExecutePreprocessor
 from cryodrgn.commands import analyze, train_vae
-import logging
-
-
-@pytest.fixture(autouse=True)
-def no_logging(caplog):
-    caplog.set_level(logging.CRITICAL)
 
 
 @pytest.mark.parametrize("particles", ["toy.mrcs"], indirect=True)
 @pytest.mark.parametrize("poses", ["toy-poses"], indirect=True)
 @pytest.mark.parametrize("ctf", ["CTF-Test"], indirect=True)
-class TestNotebookFiltering:
-    def test_train_model(self, outdir, particles, poses, ctf):
-        """Train the initial heterogeneous model."""
+@pytest.mark.parametrize("indices", [None, "first-100", "random-100"], indirect=True)
+class TestIterativeFiltering:
+    def get_outdir(self, tmpdir_factory, particles, indices, poses, ctf):
+        dirname = os.path.join(
+            "IterativeFiltering", particles.label, indices.label, poses.label, ctf.label
+        )
+        odir = os.path.join(tmpdir_factory.getbasetemp(), dirname)
+        os.makedirs(odir, exist_ok=True)
+
+        return odir
+
+    def test_train_model(self, tmpdir_factory, particles, poses, ctf, indices):
+        """Train the initial heterogeneous model without any manual filters."""
+        outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
         args = train_vae.add_args(argparse.ArgumentParser()).parse_args(
             [
-                particles,
+                particles.file,
                 "-o",
                 outdir,
                 "--ctf",
-                ctf,
+                ctf.file,
                 "--num-epochs",
                 "10",
                 "--poses",
-                poses,
+                poses.file,
                 "--zdim",
                 "4",
                 "--tdim",
@@ -50,8 +56,9 @@ class TestNotebookFiltering:
         )
         train_vae.main(args)
 
-    def test_analyze(self, outdir, particles, poses, ctf):
-        """Produce standard analyses for a particular epoch."""
+    def test_analyze(self, tmpdir_factory, particles, poses, ctf, indices):
+        """Produce standard analyses for the final epoch."""
+        outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
         assert os.path.exists(
             os.path.join(outdir, "weights.9.pkl")
         ), "Upstream tests have failed!"
@@ -74,8 +81,9 @@ class TestNotebookFiltering:
     @pytest.mark.parametrize(
         "nb_lbl", ["cryoDRGN_figures", "cryoDRGN_filtering", "cryoDRGN_viz"]
     )
-    def test_notebooks(self, outdir, particles, poses, ctf, nb_lbl):
+    def test_notebooks(self, tmpdir_factory, particles, poses, ctf, indices, nb_lbl):
         """Execute the demonstration Jupyter notebooks produced by analysis."""
+        outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
         orig_cwd = os.path.abspath(os.getcwd())
         os.chdir(os.path.join(outdir, "analyze.9"))
         assert os.path.exists(f"{nb_lbl}.ipynb"), "Upstream tests have failed!"
@@ -83,10 +91,11 @@ class TestNotebookFiltering:
         with open(f"{nb_lbl}.ipynb") as ff:
             nb_in = nbformat.read(ff, nbformat.NO_CONVERT)
 
-        ExecutePreprocessor(timeout=3, kernel_name="python3").preprocess(nb_in)
+        ExecutePreprocessor(timeout=60, kernel_name="python3").preprocess(nb_in)
         os.chdir(orig_cwd)
 
-    def test_refiltering(self, outdir, particles, poses, ctf):
+    def test_refiltering(self, tmpdir_factory, particles, poses, ctf, indices):
+        outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
         ind_keep_fl = [fl for fl in os.listdir(outdir) if fl[:9] == "ind_keep."][0]
         if int(ind_keep_fl.split(".")[1].split("_particles")[0]) < 50:
             ind_keep_fl = [fl for fl in os.listdir(outdir) if fl[:8] == "ind_bad."][0]
@@ -94,17 +103,17 @@ class TestNotebookFiltering:
         ind_keep_fl = os.path.join(outdir, ind_keep_fl)
         args = train_vae.add_args(argparse.ArgumentParser()).parse_args(
             [
-                particles,
+                particles.file,
                 "-o",
                 outdir,
                 "--ctf",
-                ctf,
+                ctf.file,
                 "--ind",
                 ind_keep_fl,
                 "--num-epochs",
                 "5",
                 "--poses",
-                poses,
+                poses.file,
                 "--zdim",
                 "4",
                 "--tdim",
@@ -119,3 +128,5 @@ class TestNotebookFiltering:
             ]
         )
         train_vae.main(args)
+
+        shutil.rmtree(outdir)

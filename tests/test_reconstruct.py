@@ -3,6 +3,7 @@
 import pytest
 import argparse
 import os.path
+import shutil
 import pickle
 import nbformat
 from nbconvert.preprocessors import ExecutePreprocessor
@@ -20,87 +21,109 @@ from cryodrgn.commands import (
     abinit_homo,
     abinit_het,
 )
-from cryodrgn.commands_utils import filter_star, plot_fsc
+from cryodrgn.commands_utils import filter_star
 from cryodrgn.dataset import TiltSeriesData
 import cryodrgn.utils
 
 
-@pytest.mark.parametrize("particles", ["hand"], indirect=True)
-@pytest.mark.parametrize("poses", ["hand-poses"], indirect=True)
+@pytest.mark.parametrize(
+    "particles", ["toy.mrcs", "toy.txt", "toy.star"], indirect=True
+)
+@pytest.mark.parametrize("poses", ["toy-poses"], indirect=True)
+@pytest.mark.parametrize("ctf", [None, "CTF-Test"], indirect=True)
+@pytest.mark.parametrize("indices", [None, "random-100"], indirect=True)
 class TestFixedHetero:
-    def test_train_model(self, outdir, particles, poses):
+    def get_outdir(self, tmpdir_factory, particles, poses, ctf, indices):
+        dirname = os.path.join(
+            "IterativeFiltering", particles.label, poses.label, ctf.label, indices.label
+        )
+        odir = os.path.join(tmpdir_factory.getbasetemp(), dirname)
+        os.makedirs(odir, exist_ok=True)
+
+        return odir
+
+    def test_train_model(self, tmpdir_factory, particles, poses, ctf, indices):
         """Train the initial heterogeneous model."""
+        outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
+        args = [
+            particles.file,
+            "-o",
+            outdir,
+            "--lr",
+            ".0001",
+            "--num-epochs",
+            "3",
+            "--seed",
+            "0",
+            "--poses",
+            poses.file,
+            "--zdim",
+            "10",
+            "--tdim",
+            "8",
+            "--enc-dim",
+            "8",
+            "--dec-dim",
+            "8",
+            "--pe-type",
+            "gaussian",
+            "--multigpu",
+        ]
+        if ctf.file is not None:
+            args += ["--ctf", ctf.file]
+        if indices.file is not None:
+            args += ["--ind", indices.file]
 
-        args = train_vae.add_args(argparse.ArgumentParser()).parse_args(
-            [
-                particles,
-                "-o",
-                outdir,
-                "--lr",
-                ".0001",
-                "--num-epochs",
-                "3",
-                "--seed",
-                "0",
-                "--poses",
-                poses,
-                "--zdim",
-                "10",
-                "--tdim",
-                "8",
-                "--enc-dim",
-                "8",
-                "--dec-dim",
-                "8",
-                "--pe-type",
-                "gaussian",
-                "--multigpu",
-            ]
-        )
-        train_vae.main(args)
+        train_vae.main(train_vae.add_args(argparse.ArgumentParser()).parse_args(args))
 
-    def test_train_from_checkpoint(self, outdir, particles, poses):
+    def test_train_from_checkpoint(
+        self, tmpdir_factory, particles, poses, ctf, indices
+    ):
         """Load a cached model and run for another epoch, now without --multigpu."""
+        outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
+        args = [
+            particles.file,
+            "-o",
+            outdir,
+            "--lr",
+            ".0001",
+            "--num-epochs",
+            "4",
+            "--seed",
+            "0",
+            "--poses",
+            poses.file,
+            "--zdim",
+            "10",
+            "--tdim",
+            "8",
+            "--enc-dim",
+            "8",
+            "--dec-dim",
+            "8",
+            "--pe-type",
+            "gaussian",
+            "--load",
+            os.path.join(outdir, "weights.2.pkl"),
+        ]
+        if ctf.file is not None:
+            args += ["--ctf", ctf.file]
+        if indices.file is not None:
+            args += ["--ind", indices.file]
 
-        train_vae.main(
-            train_vae.add_args(argparse.ArgumentParser()).parse_args(
-                [
-                    particles,
-                    "-o",
-                    outdir,
-                    "--lr",
-                    ".0001",
-                    "--num-epochs",
-                    "4",
-                    "--seed",
-                    "0",
-                    "--poses",
-                    poses,
-                    "--zdim",
-                    "10",
-                    "--tdim",
-                    "8",
-                    "--enc-dim",
-                    "8",
-                    "--dec-dim",
-                    "8",
-                    "--pe-type",
-                    "gaussian",
-                    "--load",
-                    os.path.join(outdir, "weights.2.pkl"),
-                ]
-            )
-        )
+        train_vae.main(train_vae.add_args(argparse.ArgumentParser()).parse_args(args))
 
-    def test_analyze(self, outdir, particles, poses):
+    def test_analyze(self, tmpdir_factory, particles, poses, ctf, indices):
         """Produce standard analyses for a particular epoch."""
+        outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
         args = analyze.add_args(argparse.ArgumentParser()).parse_args([outdir, "2"])
         analyze.main(args)
         assert os.path.exists(os.path.join(outdir, "analyze.2"))
 
     @pytest.mark.parametrize("nb_lbl", ["cryoDRGN_figures"])
-    def test_notebooks(self, outdir, particles, poses, nb_lbl):
+    def test_notebooks(self, tmpdir_factory, particles, poses, ctf, indices, nb_lbl):
         """Execute the demonstration Jupyter notebooks produced by analysis."""
+        outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
         orig_cwd = os.path.abspath(os.getcwd())
         os.chdir(os.path.join(outdir, "analyze.2"))
         assert os.path.exists(f"{nb_lbl}.ipynb")
@@ -111,7 +134,22 @@ class TestFixedHetero:
         ExecutePreprocessor(timeout=600, kernel_name="python3").preprocess(nb_in)
         os.chdir(orig_cwd)
 
-    def test_landscape(self, outdir, particles, poses):
+    @pytest.mark.parametrize(
+        "downsample_dim",
+        [
+            "16",
+            pytest.param(
+                "64",
+                marks=pytest.mark.xfail(
+                    raises=AssertionError, reason="box size > resolution"
+                ),
+            ),
+        ],
+    )
+    def test_landscape(
+        self, tmpdir_factory, particles, poses, ctf, indices, downsample_dim
+    ):
+        outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
         args = analyze_landscape.add_args(argparse.ArgumentParser()).parse_args(
             [
                 outdir,
@@ -119,7 +157,7 @@ class TestFixedHetero:
                 "--sketch-size",
                 "10",  # Number of volumes to generate for analysis
                 "--downsample",
-                "64",
+                downsample_dim,
                 "--pc-dim",
                 "5",
                 "--vol-start-index",
@@ -128,7 +166,22 @@ class TestFixedHetero:
         )
         analyze_landscape.main(args)
 
-    def test_landscape_full(self, outdir, particles, poses):
+    @pytest.mark.parametrize(
+        "downsample_dim",
+        [
+            "16",
+            pytest.param(
+                "64",
+                marks=pytest.mark.xfail(
+                    raises=AssertionError, reason="box size > resolution"
+                ),
+            ),
+        ],
+    )
+    def test_landscape_full(
+        self, tmpdir_factory, particles, poses, ctf, indices, downsample_dim
+    ):
+        outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
         args = analyze_landscape_full.add_args(argparse.ArgumentParser()).parse_args(
             [
                 outdir,
@@ -136,12 +189,13 @@ class TestFixedHetero:
                 "-N",
                 "10",  # Number of training volumes to generate
                 "--downsample",
-                "64",
+                downsample_dim,
             ]
         )
         analyze_landscape_full.main(args)
 
-    def test_graph_traversal(self, outdir, particles, poses):
+    def test_graph_traversal(self, tmpdir_factory, particles, poses, ctf, indices):
+        outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
         parser = argparse.ArgumentParser()
         graph_traversal.add_args(parser)
         args = parser.parse_args(
@@ -170,7 +224,8 @@ class TestFixedHetero:
         )
         graph_traversal.main(args)
 
-    def test_eval_volume(self, outdir, particles, poses):
+    def test_eval_volume(self, tmpdir_factory, particles, poses, ctf, indices):
+        outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
         args = eval_vol.add_args(argparse.ArgumentParser()).parse_args(
             [
                 os.path.join(outdir, "weights.3.pkl"),
@@ -184,10 +239,11 @@ class TestFixedHetero:
         )
         eval_vol.main(args)
 
-    def test_eval_images(self, outdir, particles, poses):
+    def test_eval_images(self, tmpdir_factory, particles, poses, ctf, indices):
+        outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
         args = eval_images.add_args(argparse.ArgumentParser()).parse_args(
             [
-                particles,
+                particles.file,
                 os.path.join(outdir, "weights.3.pkl"),
                 "--config",
                 os.path.join(outdir, "config.yaml"),
@@ -196,7 +252,7 @@ class TestFixedHetero:
                 "--out-z",
                 os.path.join(outdir, "out_eval_images_z.pkl"),
                 "--poses",
-                poses,
+                poses.file,
                 "--log-interval",
                 "1",
                 "--verbose",
@@ -204,54 +260,65 @@ class TestFixedHetero:
         )
         eval_images.main(args)
 
+        shutil.rmtree(outdir)
 
-@pytest.mark.parametrize("particles", ["toy.mrcs"], indirect=True)
-@pytest.mark.parametrize("ctf", ["CTF-Test"], indirect=True)
-@pytest.mark.parametrize("indices", ["random-100"], indirect=True)
+
+@pytest.mark.parametrize(
+    "particles", ["toy.mrcs", "toy.txt", "toy.star"], indirect=True
+)
+@pytest.mark.parametrize("ctf", [None, "CTF-Test"], indirect=True)
+@pytest.mark.parametrize("indices", [None, "random-100"], indirect=True)
 class TestAbinitHetero:
-    def test_train_model(self, outdir, particles, ctf, indices):
+    def get_outdir(self, tmpdir_factory, particles, ctf, indices):
+        dirname = os.path.join("AbinitHet", particles.label, ctf.label, indices.label)
+        odir = os.path.join(tmpdir_factory.getbasetemp(), dirname)
+        os.makedirs(odir, exist_ok=True)
+
+        return odir
+
+    def test_train_model(self, tmpdir_factory, particles, ctf, indices):
         """Train the initial heterogeneous model."""
+        outdir = self.get_outdir(tmpdir_factory, particles, indices, ctf)
+        args = [
+            particles.file,
+            "-o",
+            outdir,
+            "--zdim",
+            "4",
+            "--lr",
+            ".0001",
+            "--enc-dim",
+            "8",
+            "--enc-layers",
+            "2",
+            "--dec-dim",
+            "8",
+            "--dec-layers",
+            "2",
+            "--pe-dim",
+            "8",
+            "--enc-only",
+            "--t-extent",
+            "4.0",
+            "--t-ngrid",
+            "2",
+            "--pretrain",
+            "1",
+            "--num-epochs",
+            "3",
+            "--ps-freq",
+            "2",
+        ]
+        if ctf.file is not None:
+            args += ["--ctf", ctf.file]
+        if indices.file is not None:
+            args += ["--ind", indices.file]
 
-        args = abinit_het.add_args(argparse.ArgumentParser()).parse_args(
-            [
-                particles,
-                "--ctf",
-                ctf,
-                "--ind",
-                indices,
-                "-o",
-                outdir,
-                "--zdim",
-                "4",
-                "--lr",
-                ".0001",
-                "--enc-dim",
-                "8",
-                "--enc-layers",
-                "2",
-                "--dec-dim",
-                "8",
-                "--dec-layers",
-                "2",
-                "--pe-dim",
-                "8",
-                "--enc-only",
-                "--t-extent",
-                "4.0",
-                "--t-ngrid",
-                "2",
-                "--pretrain",
-                "1",
-                "--num-epochs",
-                "3",
-                "--ps-freq",
-                "2",
-            ]
-        )
-        abinit_het.main(args)
+        abinit_het.main(abinit_het.add_args(argparse.ArgumentParser()).parse_args(args))
 
-    def test_analyze(self, outdir, particles, ctf, indices):
+    def test_analyze(self, tmpdir_factory, particles, ctf, indices):
         """Produce standard analyses for a particular epoch."""
+        outdir = self.get_outdir(tmpdir_factory, particles, indices, ctf)
         args = analyze.add_args(argparse.ArgumentParser()).parse_args(
             [
                 outdir,
@@ -268,8 +335,9 @@ class TestAbinitHetero:
         assert os.path.exists(os.path.join(outdir, "analyze.1"))
 
     @pytest.mark.parametrize("nb_lbl", ["cryoDRGN_figures"])
-    def test_notebooks(self, outdir, particles, ctf, indices, nb_lbl):
+    def test_notebooks(self, tmpdir_factory, particles, ctf, indices, nb_lbl):
         """Execute the demonstration Jupyter notebooks produced by analysis."""
+        outdir = self.get_outdir(tmpdir_factory, particles, indices, ctf)
         orig_cwd = os.path.abspath(os.getcwd())
         os.chdir(os.path.join(outdir, "analyze.1"))
         assert os.path.exists(f"{nb_lbl}.ipynb"), "Upstream tests have failed!"
@@ -280,6 +348,8 @@ class TestAbinitHetero:
         ExecutePreprocessor(timeout=600, kernel_name="python3").preprocess(nb_in)
         os.chdir(orig_cwd)
 
+        shutil.rmtree(outdir)
+
 
 @pytest.mark.parametrize(
     "particles", ["toy.mrcs", "toy.star", "toy.txt"], indirect=True
@@ -287,15 +357,15 @@ class TestAbinitHetero:
 @pytest.mark.parametrize("poses", ["toy-poses", "toy-angles"], indirect=True)
 @pytest.mark.parametrize("batch_size", ["24", "36"], ids=("batch24", "batch36"))
 @pytest.mark.parametrize("use_amp", [False, True], ids=("no-amp", "use-amp"))
-def test_homogeneous_with_poses(outdir, particles, poses, batch_size, use_amp):
+def test_homogeneous_with_poses(tmpdir, particles, poses, batch_size, use_amp):
     args = [
-        particles,
+        particles.file,
         "-o",
-        outdir,
+        tmpdir,
         "-n",
         "10",
         "--poses",
-        poses,
+        poses.file,
         "--dim",
         "12",
         "-b",
@@ -305,7 +375,7 @@ def test_homogeneous_with_poses(outdir, particles, poses, batch_size, use_amp):
         args += ["--no-amp"]
 
     train_nn.main(train_nn.add_args(argparse.ArgumentParser()).parse_args(args))
-    assert "weights.9.pkl" in os.listdir(outdir)
+    assert "weights.9.pkl" in os.listdir(tmpdir)
 
 
 @pytest.mark.parametrize(
@@ -329,65 +399,6 @@ def test_frompose_train_and_from_checkpoint(trained_dir, load_epoch, train_epoch
     trained_dir.train_load_epoch(load_epoch, train_epochs)
 
 
-@pytest.mark.parametrize(
-    "particles, poses, ctf, datadir",
-    [
-        ("toy.mrcs", "toy-poses", None, None),
-        ("toy.mrcs", "toy-poses", "CTF-Test", None),
-        ("hand", "hand-rot", None, None),
-        ("hand", "hand-poses", None, None),
-        ("tilts.star", "tilt-poses", "CTF-Tilt", None),
-        ("tilts.star", "tilt-poses", "CTF-Tilt", "default-datadir"),
-    ],
-    indirect=True,
-)
-@pytest.mark.parametrize("indices", [None, "just-5"], indirect=True)
-class TestBackprojection:
-    def test_train(self, outdir, particles, poses, ctf, indices, datadir):
-        args = [particles, "--poses", poses, "-o", os.path.join(outdir, "vol.mrc")]
-
-        if ctf is not None:
-            args += ["--ctf", ctf]
-        if indices is not None:
-            args += ["--ind", indices]
-        if datadir is not None:
-            args += ["--datadir", datadir]
-        if "tilt" in particles:
-            args += ["--tilt", "-d", "2.93"]
-
-        parser = argparse.ArgumentParser()
-        backproject_voxel.add_args(parser)
-        backproject_voxel.main(parser.parse_args(args))
-
-        assert os.path.exists(os.path.join(outdir, "vol.mrc"))
-        assert os.path.exists(os.path.join(outdir, "vol_fsc-plot.png"))
-        assert os.path.exists(os.path.join(outdir, "vol_fsc-vals.txt"))
-        assert os.path.exists(os.path.join(outdir, "vol_half-map1.mrc"))
-        assert os.path.exists(os.path.join(outdir, "vol_half-map2.mrc"))
-
-        # test if FSC at lowest resolution is still good for easy hand cases
-        if "hand" in particles and indices is None:
-            with open(os.path.join(outdir, "vol_fsc-vals.txt"), "r") as f:
-                pixres, fsc_val = f.readlines()[-1].strip().split()
-
-            assert round(float(pixres), 3) == 0.484
-            assert float(fsc_val) > 0.2
-
-    def test_to_fsc(self, outdir, particles, poses, ctf, indices, datadir):
-        """Export calculated FSC scores to plotting function."""
-
-        args = [
-            os.path.join(outdir, "vol_fsc-vals.txt"),
-            "-o",
-            os.path.join(outdir, "vol_fsc-plot2.png"),
-        ]
-
-        parser = argparse.ArgumentParser()
-        plot_fsc.add_args(parser)
-        plot_fsc.main(parser.parse_args(args))
-        assert os.path.exists(os.path.join(outdir, "vol_fsc-plot2.png"))
-
-
 @pytest.mark.parametrize("particles", ["tilts.star"], indirect=True)
 @pytest.mark.parametrize("indices", [None, "just-4"], indirect=True)
 @pytest.mark.parametrize("poses", ["tilt-poses"], indirect=True)
@@ -396,17 +407,17 @@ class TestBackprojection:
 class TestStarFixedHomo:
     """Run reconstructions using particles from a .star file as input."""
 
-    def test_train_model(self, outdir, particles, indices, poses, ctf, datadir):
+    def test_train_model(self, tmpdir, particles, indices, poses, ctf, datadir):
         args = [
-            particles,
+            particles.file,
             "--datadir",
-            datadir,
+            datadir.file,
             "--poses",
-            poses,
+            poses.file,
             "--ctf",
-            ctf,
+            ctf.file,
             "-o",
-            outdir,
+            tmpdir,
             "--dim",
             "32",
         ]
@@ -418,28 +429,44 @@ class TestStarFixedHomo:
 
 
 @pytest.mark.parametrize("particles", ["tilts.star"], indirect=True)
-@pytest.mark.parametrize("indices", ["just-4", "just-5"], indirect=True)
+@pytest.mark.parametrize("indices", [None, "just-4", "just-5"], indirect=True)
 @pytest.mark.parametrize("poses", ["tilt-poses"], indirect=True)
 @pytest.mark.parametrize("ctf", ["CTF-Tilt"], indirect=True)
 @pytest.mark.parametrize("datadir", ["default-datadir"], indirect=True)
-class TestStarFixedHetero:
+class TestTiltFixedHetero:
     """Run heterogeneous reconstruction using tilt series from a .star file and poses.
 
     We use two sets of indices, one that produces a tilt series with all particles
     having the same number of tilts and another that produces a ragged tilt-series.
     """
 
-    def test_train_model(self, outdir, particles, indices, poses, ctf, datadir):
+    def get_outdir(self, tmpdir_factory, particles, poses, ctf, indices, datadir):
+        dirname = os.path.join(
+            "IterativeFiltering",
+            particles.label,
+            poses.label,
+            ctf.label,
+            indices.label.datadir.label,
+        )
+        odir = os.path.join(tmpdir_factory.getbasetemp(), dirname)
+        os.makedirs(odir, exist_ok=True)
+
+        return odir
+
+    def test_train_model(self, tmpdir_factory, particles, indices, poses, ctf, datadir):
+        outdir = self.get_outdir(
+            tmpdir_factory, particles, poses, ctf, indices, datadir
+        )
         args = [
-            particles,
+            particles.file,
             "--datadir",
-            datadir,
+            datadir.file,
             "--encode-mode",
             "tilt",
             "--poses",
-            poses,
+            poses.file,
             "--ctf",
-            ctf,
+            ctf.file,
             "--num-epochs",
             "5",
             "--zdim",
@@ -459,12 +486,18 @@ class TestStarFixedHetero:
         args = train_vae.add_args(argparse.ArgumentParser()).parse_args(args)
         train_vae.main(args)
 
-    def test_filter_command(self, outdir, particles, indices, poses, ctf, datadir):
+    def test_filter_command(
+        self, tmpdir_factory, particles, indices, poses, ctf, datadir
+    ):
+        outdir = self.get_outdir(
+            tmpdir_factory, particles, poses, ctf, indices, datadir
+        )
+
         # filter the tilt-series particles
         args = [
-            particles,
+            particles.file,
             "--ind",
-            indices,
+            indices.file,
             "--et",
             "-o",
             os.path.join(outdir, "filtered_sta_testing_bin8.star"),
@@ -474,25 +507,25 @@ class TestStarFixedHetero:
         filter_star.main(parser.parse_args(args))
 
         # need to filter poses and CTFs manually due to tilt indices
-        pt, tp = TiltSeriesData.parse_particle_tilt(particles)
-        ind = cryodrgn.utils.load_pkl(indices)
+        pt, tp = TiltSeriesData.parse_particle_tilt(particles.file)
+        ind = cryodrgn.utils.load_pkl(indices.file)
         new_ind = ind[:3]
         tilt_ind = TiltSeriesData.particles_to_tilts(pt, ind)
 
-        rot, trans = cryodrgn.utils.load_pkl(poses)
+        rot, trans = cryodrgn.utils.load_pkl(poses.file)
         rot, trans = rot[tilt_ind], trans[tilt_ind]
         cryodrgn.utils.save_pkl(
             (rot, trans), os.path.join(outdir, "filtered_sta_pose.pkl")
         )
 
-        ctf_mat = cryodrgn.utils.load_pkl(ctf)[tilt_ind]
+        ctf_mat = cryodrgn.utils.load_pkl(ctf.file)[tilt_ind]
         cryodrgn.utils.save_pkl(ctf_mat, os.path.join(outdir, "filtered_sta_ctf.pkl"))
         cryodrgn.utils.save_pkl(new_ind, os.path.join(outdir, "filtered_ind.pkl"))
 
         args = [
             os.path.join(outdir, "filtered_sta_testing_bin8.star"),
             "--datadir",
-            datadir,
+            datadir.file,
             "--encode-mode",
             "tilt",
             "--ntilts",
@@ -518,8 +551,11 @@ class TestStarFixedHetero:
         ]
         train_vae.main(train_vae.add_args(argparse.ArgumentParser()).parse_args(args))
 
-    def test_analyze(self, outdir, particles, indices, poses, ctf, datadir):
+    def test_analyze(self, tmpdir_factory, particles, indices, poses, ctf, datadir):
         """Produce standard analyses for a particular epoch."""
+        outdir = self.get_outdir(
+            tmpdir_factory, particles, poses, ctf, indices, datadir
+        )
         args = analyze.add_args(argparse.ArgumentParser()).parse_args(
             [
                 outdir,
@@ -541,13 +577,16 @@ class TestStarFixedHetero:
         ids=("no-new-ind", "new-ind"),
     )
     def test_backproject(
-        self, outdir, particles, indices, poses, ctf, datadir, new_indices_file
+        self, tmpdir_factory, particles, indices, poses, ctf, datadir, new_indices_file
     ):
         """Run backprojection using the given particles."""
+        outdir = self.get_outdir(
+            tmpdir_factory, particles, poses, ctf, indices, datadir
+        )
         args = [
             os.path.join(outdir, "filtered_sta_testing_bin8.star"),
             "--datadir",
-            datadir,
+            datadir.file,
             "--tilt",
             "--poses",
             os.path.join(outdir, "filtered_sta_pose.pkl"),
@@ -569,8 +608,13 @@ class TestStarFixedHetero:
         os.remove(os.path.join(outdir, "filtered.mrc"))
 
     @pytest.mark.parametrize("nb_lbl", ["cryoDRGN_figures", "cryoDRGN_ET_viz"])
-    def test_notebooks(self, outdir, particles, indices, poses, ctf, datadir, nb_lbl):
+    def test_notebooks(
+        self, tmpdir_factory, particles, indices, poses, ctf, datadir, nb_lbl
+    ):
         """Execute the demonstration Jupyter notebooks produced by analysis."""
+        outdir = self.get_outdir(
+            tmpdir_factory, particles, poses, ctf, indices, datadir
+        )
         orig_cwd = os.path.abspath(os.getcwd())
         os.chdir(os.path.join(outdir, "analyze.4"))
         assert os.path.exists(f"{nb_lbl}.ipynb"), "Upstream tests have failed!"
@@ -581,8 +625,11 @@ class TestStarFixedHetero:
         ExecutePreprocessor(timeout=600, kernel_name="python3").preprocess(nb_in)
         os.chdir(orig_cwd)
 
-    def test_refiltering(self, outdir, particles, indices, poses, ctf, datadir):
+    def test_refiltering(self, tmpdir_factory, particles, indices, poses, ctf, datadir):
         """Use particle index creating during analysis."""
+        outdir = self.get_outdir(
+            tmpdir_factory, particles, poses, ctf, indices, datadir
+        )
         orig_cwd = os.path.abspath(os.getcwd())
         os.chdir(os.path.join(outdir, "analyze.4"))
         assert os.path.exists("tmp_ind_selected.pkl"), "Upstream tests have failed!"
@@ -595,15 +642,15 @@ class TestStarFixedHetero:
             pickle.dump(new_indices, f)
 
         args = [
-            particles,
+            particles.file,
             "--datadir",
-            datadir,
+            datadir.file,
             "--encode-mode",
             "tilt",
             "--poses",
-            poses,
+            poses.file,
             "--ctf",
-            ctf,
+            ctf.file,
             "--ind",
             "tmp_ind_selected.pkl",
             "--num-epochs",
@@ -624,21 +671,23 @@ class TestStarFixedHetero:
         train_vae.main(args)
         os.chdir(orig_cwd)
 
+        shutil.rmtree(outdir)
+
 
 @pytest.mark.parametrize("particles", ["tilts.star"], indirect=True)
 @pytest.mark.parametrize("indices", [None, "just-4"], indirect=True)
 @pytest.mark.parametrize("ctf", ["CTF-Tilt"], indirect=True)
 @pytest.mark.parametrize("datadir", ["default-datadir"], indirect=True)
-class TestStarAbinitHomo:
-    def test_train_model(self, outdir, particles, indices, ctf, datadir):
+class TestTiltAbinitHomo:
+    def test_train_model(self, tmpdir, particles, indices, ctf, datadir):
         args = [
-            particles,
+            particles.file,
             "--datadir",
-            datadir,
+            datadir.file,
             "--ctf",
-            ctf,
+            ctf.file,
             "-o",
-            outdir,
+            tmpdir,
             "--dim",
             "4",
             "--layers",
@@ -664,18 +713,18 @@ class TestStarAbinitHomo:
 @pytest.mark.parametrize("indices", [None, "just-4"], indirect=True)
 @pytest.mark.parametrize("ctf", ["CTF-Tilt"], indirect=True)
 @pytest.mark.parametrize("datadir", ["default-datadir"], indirect=True)
-class TestStarAbinitHetero:
-    def test_train_model(self, outdir, particles, indices, ctf, datadir):
+class TestTiltAbinitHetero:
+    def test_train_model(self, tmpdir, particles, indices, ctf, datadir):
         args = [
-            particles,
+            particles.file,
             "--datadir",
-            datadir,
+            datadir.file,
             "--ctf",
-            ctf,
+            ctf.file,
             "--zdim",
             "8",
             "-o",
-            outdir,
+            tmpdir,
             "--enc-dim",
             "4",
             "--enc-layers",
@@ -702,75 +751,3 @@ class TestStarAbinitHetero:
 
         args = abinit_het.add_args(argparse.ArgumentParser()).parse_args(args)
         abinit_het.main(args)
-
-
-@pytest.mark.parametrize("particles", ["toy.mrcs"], indirect=True)
-@pytest.mark.parametrize("indices", ["first-100", "random-100"], indirect=True)
-@pytest.mark.parametrize("poses", ["toy-poses"], indirect=True)
-@pytest.mark.parametrize("ctf", ["CTF-Test"], indirect=True)
-class TestIterativeFiltering:
-    def test_train_model(self, outdir, particles, indices, poses, ctf):
-        """Train the initial heterogeneous model."""
-        args = train_vae.add_args(argparse.ArgumentParser()).parse_args(
-            [
-                particles,
-                "-o",
-                outdir,
-                "--ctf",
-                ctf,
-                "--ind",
-                indices,
-                "--num-epochs",
-                "3",
-                "--poses",
-                poses,
-                "--zdim",
-                "4",
-                "--tdim",
-                "32",
-                "--enc-dim",
-                "32",
-                "--dec-dim",
-                "32",
-                "--pe-type",
-                "gaussian",
-                "--no-amp",
-            ]
-        )
-        train_vae.main(args)
-
-    def test_analyze(self, outdir, particles, indices, poses, ctf):
-        """Produce standard analyses for a particular epoch."""
-        assert os.path.exists(
-            os.path.join(outdir, "weights.2.pkl")
-        ), "Upstream tests have failed!"
-
-        args = analyze.add_args(argparse.ArgumentParser()).parse_args(
-            [
-                outdir,
-                "2",  # Epoch number to analyze - 0-indexed
-                "--pc",
-                "3",  # Number of principal component traversals to generate
-                "--ksample",
-                "8",  # Number of kmeans samples to generate
-                "--vol-start-index",
-                "1",
-            ]
-        )
-        analyze.main(args)
-        assert os.path.exists(os.path.join(outdir, "analyze.2"))
-
-    @pytest.mark.parametrize(
-        "nb_lbl", ["cryoDRGN_figures", "cryoDRGN_filtering", "cryoDRGN_viz"]
-    )
-    def test_notebooks(self, outdir, particles, indices, poses, ctf, nb_lbl):
-        """Execute the demonstration Jupyter notebooks produced by analysis."""
-        orig_cwd = os.path.abspath(os.getcwd())
-        os.chdir(os.path.join(outdir, "analyze.2"))
-        assert os.path.exists(f"{nb_lbl}.ipynb"), "Upstream tests have failed!"
-
-        with open(f"{nb_lbl}.ipynb") as ff:
-            nb_in = nbformat.read(ff, nbformat.NO_CONVERT)
-
-        ExecutePreprocessor(timeout=5, kernel_name="python3").preprocess(nb_in)
-        os.chdir(orig_cwd)

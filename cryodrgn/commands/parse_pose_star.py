@@ -1,5 +1,13 @@
-"""Parse image poses from RELION .star file"""
+"""Parse image poses from RELION .star file into a separate file for use in cryoDRGN.
 
+This command is often used as a part of preparing inputs for training commands such as
+`train_vae` and `abinit_homo` when particles are coming from a .star file.
+
+Example usages
+--------------
+$ cryodrgn parse_pose_star particles_from_M.star -o pose.pkl -D 294 --Apix 1.7
+
+"""
 import argparse
 import os
 import pickle
@@ -13,7 +21,18 @@ logger = logging.getLogger(__name__)
 def add_args(parser):
     parser.add_argument("input", help="RELION .star file")
     parser.add_argument(
-        "-o", metavar="PKL", type=os.path.abspath, required=True, help="Output pose.pkl"
+        "--outpkl",
+        "-o",
+        metavar="PKL",
+        type=os.path.abspath,
+        required=True,
+        help="Output pose.pkl",
+    )
+
+    parser.add_argument(
+        "--ignore-optics",
+        action="store_true",
+        help="ignore presence of optics tables from RELION 3.1 format",
     )
 
     group = parser.add_argument_group("Optionally provide missing image parameters")
@@ -27,17 +46,25 @@ def add_args(parser):
 
 
 def main(args):
-    assert args.input.endswith(".star"), "Input file must be .star file"
-    assert args.o.endswith(".pkl"), "Output format must be .pkl"
+    if not args.input.endswith(".star"):
+        raise ValueError("Input file must be a .star file!")
+    if not args.outpkl.endswith(".pkl"):
+        raise ValueError("Output file must be a .pkl file (pickled Python format)!")
 
     s = starfile.Starfile.load(args.input)
     if s.relion31:  # Get image stats from data_optics table
         assert s.data_optics is not None
-        assert (
-            len(s.data_optics.df) == 1
-        ), "Datasets with only one optics group are supported."
+
+        if len(s.data_optics.df) > 1:
+            if not args.ignore_optics:
+                raise ValueError(
+                    "Datasets with only one optics group are supported "
+                    "— use --ignore-optics flag if necessary!"
+                )
+
         args.Apix = float(s.data_optics.df["_rlnImagePixelSize"][0])
         args.D = int(float(s.data_optics.df["_rlnImageSize"][0]))
+
     if args.D is None and "_rlnImageSize" in s.headers:
         args.D = int(float(s.df["_rlnImageSize"][0]))
     assert args.D is not None, "Must provide image size with -D"
@@ -63,6 +90,7 @@ def main(args):
         # translations in pixels
         trans[:, 0] = s.df["_rlnOriginX"]
         trans[:, 1] = s.df["_rlnOriginY"]
+
     elif "_rlnOriginXAngst" in s.headers and "_rlnOriginYAngst" in s.headers:
         # translation in Angstroms (Relion 3.1)
         assert (
@@ -71,6 +99,7 @@ def main(args):
         trans[:, 0] = s.df["_rlnOriginXAngst"]
         trans[:, 1] = s.df["_rlnOriginYAngst"]
         trans /= args.Apix
+
     else:
         logger.warning(
             "Warning: Neither _rlnOriginX/Y nor _rlnOriginX/YAngst found. Defaulting to 0s."
@@ -83,8 +112,8 @@ def main(args):
     trans /= args.D
 
     # write output
-    logger.info(f"Writing {args.o}")
-    with open(args.o, "wb") as f:
+    logger.info(f"Writing {args.outpkl}")
+    with open(args.outpkl, "wb") as f:
         pickle.dump((rot, trans), f)
 
 

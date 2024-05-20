@@ -12,6 +12,11 @@ def particles_starfile():
     return os.path.join(pytest.data_dir, "FinalRefinement-OriginalParticles-PfCRT.star")
 
 
+@pytest.fixture
+def relion31_mrcs():
+    return os.path.join(pytest.data_dir, "relion31.mrcs")
+
+
 @pytest.mark.parametrize(
     "use_ctf",
     [
@@ -191,3 +196,21 @@ def test_from_txt_with_two_files(
         )
 
     os.chdir(orig_dir)
+
+
+@pytest.mark.parametrize("ctf", ["CTF1"], indirect=True)
+@pytest.mark.parametrize("indices", [None, "just-4"], indirect=True)
+def test_relion31(tmpdir, relion31_mrcs, ctf, indices):
+    # Test copying micrograph coordinates
+    parser = argparse.ArgumentParser()
+    write_star.add_args(parser)
+    out_fl = os.path.join(tmpdir, "pipeline.star")
+    args = [relion31_mrcs, "--ctf", ctf.path, "-o", out_fl]
+    if indices.path is not None:
+        args += ["--ind", indices.path]
+
+    write_star.main(parser.parse_args(args))
+    star_data = Starfile.load(out_fl)
+    indices = None if indices.path is None else cryodrgn.utils.load_pkl(indices.path)
+    assert star_data.df.shape == (5 if indices is None else indices.shape[0], 6)
+    assert star_data.data_optics.df.shape == (1, 6)

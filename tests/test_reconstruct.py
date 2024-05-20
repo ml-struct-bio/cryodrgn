@@ -15,6 +15,7 @@ from cryodrgn.commands import (
     analyze_landscape,
     analyze_landscape_full,
     backproject_voxel,
+    direct_traversal,
     eval_images,
     eval_vol,
     graph_traversal,
@@ -157,76 +158,125 @@ class TestFixedHetero:
 
         try:
             ExecutePreprocessor(timeout=600, kernel_name="python3").preprocess(nb_in)
-        except CellExecutionError:
+        except CellExecutionError as e:
             os.chdir(orig_cwd)
+            raise e
 
         os.chdir(orig_cwd)
 
-    @pytest.mark.parametrize("ctf", [None, "CTF-Test"], indirect=True)
     @pytest.mark.parametrize(
-        "downsample_dim",
+        "ctf, downsample_dim",
         [
-            "16",
+            (None, "16"),
+            ("CTF-Test", "16"),
             pytest.param(
+                "CTF-Test",
                 "64",
                 marks=pytest.mark.xfail(
                     raises=AssertionError, reason="box size > resolution"
                 ),
             ),
+            pytest.param(
+                "CTF-Test",
+                None,
+                marks=pytest.mark.xfail(
+                    raises=AssertionError, reason="box size > resolution"
+                ),
+            ),
         ],
+        indirect=["ctf"],
     )
     def test_landscape(
         self, tmpdir_factory, particles, poses, ctf, indices, downsample_dim
     ):
         outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
-        args = analyze_landscape.add_args(argparse.ArgumentParser()).parse_args(
-            [
-                outdir,
-                "3",  # Epoch number to analyze - 0-indexed
-                "--sketch-size",
-                "10",  # Number of volumes to generate for analysis
-                "--downsample",
-                downsample_dim,
-                "--pc-dim",
-                "5",
-                "--vol-start-index",
-                "1",
-            ]
-        )
-        analyze_landscape.main(args)
+        args = [
+            outdir,
+            "3",  # Epoch number to analyze - 0-indexed
+            "--sketch-size",
+            "10",  # Number of volumes to generate for analysis
+            "--pc-dim",
+            "5",
+            "--vol-start-index",
+            "1",
+        ]
+        if downsample_dim:
+            args += ["--downsample", downsample_dim]
 
-    @pytest.mark.parametrize("ctf", [None, "CTF-Test"], indirect=True)
+        analyze_landscape.main(
+            analyze_landscape.add_args(argparse.ArgumentParser()).parse_args(args)
+        )
+
     @pytest.mark.parametrize(
-        "downsample_dim",
+        "ctf, downsample_dim",
         [
-            "16",
+            (None, "16"),
+            ("CTF-Test", "16"),
             pytest.param(
+                "CTF-Test",
                 "64",
                 marks=pytest.mark.xfail(
                     raises=AssertionError, reason="box size > resolution"
                 ),
             ),
+            pytest.param(
+                "CTF-Test",
+                None,
+                marks=pytest.mark.xfail(
+                    raises=AssertionError, reason="box size > resolution"
+                ),
+            ),
         ],
+        indirect=["ctf"],
     )
     def test_landscape_full(
         self, tmpdir_factory, particles, poses, ctf, indices, downsample_dim
     ):
         outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
-        args = analyze_landscape_full.add_args(argparse.ArgumentParser()).parse_args(
-            [
-                outdir,
-                "3",  # Epoch number to analyze - 0-indexed
-                "-N",
-                "10",  # Number of training volumes to generate
-                "--downsample",
-                downsample_dim,
-            ]
-        )
-        analyze_landscape_full.main(args)
+        parser = argparse.ArgumentParser()
+        args = [outdir, "3", "-N", "10"]
+        if downsample_dim is not None:
+            args += ["--downsample", downsample_dim]
 
-    @pytest.mark.parametrize("ctf", ["CTF-Test"], indirect=True)
+        analyze_landscape_full.main(
+            analyze_landscape_full.add_args(parser).parse_args(args)
+        )
+
     @pytest.mark.parametrize(
-        "epoch, seed, steps", [(2, 321, 2), (3, 701, 5), (3, 102, 10)]
+        "ctf, seed, steps, points",
+        [
+            (None, 915, 5, None),
+            ("CTF-Test", 321, 2, None),
+            ("CTF-Test", 701, 3, 1),
+            ("CTF-Test", 701, 3, 2),
+            ("CTF-Test", 55, 3, None),
+        ],
+        indirect=["ctf"],
+    )
+    def test_direct_traversal(
+        self, tmpdir_factory, particles, poses, ctf, indices, seed, steps, points
+    ):
+        outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
+        random.seed(seed)
+        anchors = [str(anchor) for anchor in random.sample(range(100), steps)]
+
+        parser = argparse.ArgumentParser()
+        direct_traversal.add_args(parser)
+        args = [os.path.join(outdir, "z.3.pkl"), "--anchors"] + anchors
+        if points is not None:
+            args += ["-n", str(points)]
+
+        direct_traversal.main(parser.parse_args(args))
+
+    @pytest.mark.parametrize(
+        "ctf, epoch, seed, steps",
+        [
+            (None, 3, 915, 5),
+            ("CTF-Test", 2, 321, 2),
+            ("CTF-Test", 3, 701, 5),
+            ("CTF-Test", 3, 102, 10),
+        ],
+        indirect=["ctf"],
     )
     def test_graph_traversal(
         self, tmpdir_factory, particles, poses, ctf, indices, epoch, seed, steps

@@ -1,79 +1,88 @@
-import argparse
-import os
-import os.path
-import torch
 import pytest
+import os
+import argparse
+import torch
 from cryodrgn.source import ImageSource
 from cryodrgn.commands import downsample
 
-DATA_FOLDER = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
 
-
-@pytest.fixture
-def input_star():
-    # starfile refers to 13 random shuffled indices into mrcs between 0-1000
-    return f"{DATA_FOLDER}/toy_projections_13.star"
-
-
-def test_downsample(input_star):
-    os.makedirs("output/downsampled", exist_ok=True)
-
-    # Note - no filtering is possible in downsample currently
+@pytest.mark.parametrize("particles", ["toy.star-13"], indirect=True)
+@pytest.mark.parametrize("datadir", ["default-datadir"], indirect=True)
+@pytest.mark.parametrize(
+    "downsample_dim",
+    [
+        28,
+        pytest.param(
+            15,
+            marks=pytest.mark.xfail(
+                raises=AssertionError, reason="odd downsampled box size"
+            ),
+        ),
+        10,
+    ],
+)
+def test_downsample(tmpdir, particles, datadir, downsample_dim):
+    out_mrcs = os.path.join(tmpdir, "downsampled.mrcs")
     args = downsample.add_args(argparse.ArgumentParser()).parse_args(
         [
-            input_star,  # 13 particles
+            particles.path,  # 13 particles
             "-D",
-            "28",  # downsampled from 30x30
+            str(downsample_dim),  # downsampled from 30x30
             "--datadir",
-            DATA_FOLDER,  # If specified, prefixed to each _rlnImageName in starfile
+            datadir.path,  # If specified, prefixed to each _rlnImageName in starfile
             "-o",
-            "output/downsampled/downsampled.mrcs",
+            out_mrcs,
         ]
     )
+    # Note - no filtering is possible in downsample currently
     downsample.main(args)
 
-    output_data = ImageSource.from_file(
-        "output/downsampled/downsampled.mrcs", lazy=False
-    ).images()
+    output_data = ImageSource.from_file(out_mrcs, lazy=False).images()
     assert isinstance(output_data, torch.Tensor)
-    assert output_data.shape == (13, 28, 28)
+    assert output_data.shape == (13, downsample_dim, downsample_dim)
 
 
-def test_downsample_in_chunks(input_star):
-    os.makedirs("output", exist_ok=True)
-
-    # TODO - no filtering is possible in downsample currently
+@pytest.mark.parametrize("particles", ["toy.star-13"], indirect=True)
+@pytest.mark.parametrize("datadir", ["default-datadir"], indirect=True)
+@pytest.mark.parametrize("downsample_dim", [18, 10])
+@pytest.mark.parametrize("chunk_size", [5, 6, 8])
+def test_downsample_with_chunks(tmpdir, particles, datadir, downsample_dim, chunk_size):
+    out_mrcs = os.path.join(tmpdir, "downsampled.mrcs")
     args = downsample.add_args(argparse.ArgumentParser()).parse_args(
         [
-            input_star,  # 13 particles
+            particles.path,  # 13 particles
             "-D",
-            "28",
+            str(downsample_dim),
             "--datadir",
-            DATA_FOLDER,  # If specified, prefixed to each _rlnImageName in starfile
+            datadir.path,  # If specified, prefixed to each _rlnImageName in starfile
             "--chunk",
-            "5",
+            str(chunk_size),
             "-o",
-            "output/downsampled/downsampled.mrcs",
+            out_mrcs,
         ]
     )
     downsample.main(args)
 
     assert ImageSource.from_file(
-        "output/downsampled/downsampled.txt", lazy=False
-    ).shape == (13, 28, 28)
+        out_mrcs.replace(".mrcs", ".txt"), lazy=False
+    ).shape == (13, downsample_dim, downsample_dim)
 
-    assert ImageSource.from_file("output/downsampled/downsampled.0.mrcs").shape == (
-        5,
-        28,
-        28,
-    )
-    assert ImageSource.from_file("output/downsampled/downsampled.1.mrcs").shape == (
-        5,
-        28,
-        28,
-    )
-    assert ImageSource.from_file("output/downsampled/downsampled.2.mrcs").shape == (
-        3,
-        28,
-        28,
-    )
+    for i in range((13 // chunk_size) + 4):
+        if i < (13 // chunk_size):
+            assert ImageSource.from_file(
+                out_mrcs.replace(".mrcs", f".{i}.mrcs")
+            ).shape == (
+                chunk_size,
+                downsample_dim,
+                downsample_dim,
+            )
+        elif i == (13 // chunk_size):
+            assert ImageSource.from_file(
+                out_mrcs.replace(".mrcs", f".{i}.mrcs")
+            ).shape == (
+                13 % chunk_size,
+                downsample_dim,
+                downsample_dim,
+            )
+        else:
+            assert not os.path.exists(out_mrcs.replace(".mrcs", f".{i}.mrcs"))

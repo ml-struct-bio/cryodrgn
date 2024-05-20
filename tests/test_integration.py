@@ -30,31 +30,32 @@ class TestIterativeFiltering:
     def test_train_model(self, tmpdir_factory, particles, poses, ctf, indices):
         """Train the initial heterogeneous model without any manual filters."""
         outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
-        args = train_vae.add_args(argparse.ArgumentParser()).parse_args(
-            [
-                particles.file,
-                "-o",
-                outdir,
-                "--ctf",
-                ctf.file,
-                "--num-epochs",
-                "10",
-                "--poses",
-                poses.file,
-                "--zdim",
-                "4",
-                "--tdim",
-                "64",
-                "--enc-dim",
-                "64",
-                "--dec-dim",
-                "64",
-                "--pe-type",
-                "gaussian",
-                "--no-amp",
-            ]
-        )
-        train_vae.main(args)
+        args = [
+            particles.path,
+            "-o",
+            outdir,
+            "--ctf",
+            ctf.path,
+            "--num-epochs",
+            "10",
+            "--poses",
+            poses.path,
+            "--zdim",
+            "4",
+            "--tdim",
+            "64",
+            "--enc-dim",
+            "64",
+            "--dec-dim",
+            "64",
+            "--pe-type",
+            "gaussian",
+            "--no-amp",
+        ]
+        if indices.path is not None:
+            args += ["--ind", indices.path]
+
+        train_vae.main(train_vae.add_args(argparse.ArgumentParser()).parse_args(args))
 
     def test_analyze(self, tmpdir_factory, particles, poses, ctf, indices):
         """Produce standard analyses for the final epoch."""
@@ -97,23 +98,23 @@ class TestIterativeFiltering:
     def test_refiltering(self, tmpdir_factory, particles, poses, ctf, indices):
         outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
         ind_keep_fl = [fl for fl in os.listdir(outdir) if fl[:9] == "ind_keep."][0]
-        if int(ind_keep_fl.split(".")[1].split("_particles")[0]) < 50:
+        if int(ind_keep_fl.split(".")[1].split("_particles")[0]) < 20:
             ind_keep_fl = [fl for fl in os.listdir(outdir) if fl[:8] == "ind_bad."][0]
 
         ind_keep_fl = os.path.join(outdir, ind_keep_fl)
         args = train_vae.add_args(argparse.ArgumentParser()).parse_args(
             [
-                particles.file,
+                particles.path,
                 "-o",
                 outdir,
                 "--ctf",
-                ctf.file,
+                ctf.path,
                 "--ind",
                 ind_keep_fl,
                 "--num-epochs",
                 "5",
                 "--poses",
-                poses.file,
+                poses.path,
                 "--zdim",
                 "4",
                 "--tdim",

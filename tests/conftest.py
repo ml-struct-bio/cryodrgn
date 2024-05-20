@@ -40,6 +40,7 @@ def get_testing_datasets(dataset_lbl: str) -> tuple[str, str]:
     return particles, poses
 
 
+# Data fixtures for cryoDRGN inputs
 PARTICLES_FILES = {
     "hand": "hand.mrcs",
     "hand-5": "hand.5.mrcs",
@@ -76,18 +77,27 @@ DATA_FOLDERS = {
 }
 
 
+# Data fixtures for cryoDRGN outputs (and sometimes inputs)
+VOLUME_FILES = {
+    "toy": "toy_projections.mrc",
+    "hand": "hand-vol.mrc",
+    "spike": "spike-vol.mrc",
+    "empiar": "empiar_10076_7.mrc",
+}
+
+
 @dataclass
 class DataFixture:
     label: str
-    file: str
+    path: Union[None, str]
 
 
 def produce_data_fixture(
     data_dict: dict[str, str], labels: str
-) -> Union[None, DataFixture, dict[str, DataFixture]]:
+) -> Union[DataFixture, dict[str, DataFixture]]:
     """Retrieves and parses a request for a fixture defined in a data dictionary."""
     if labels is None:
-        files = DataFixture(label="None", file=None)
+        files = DataFixture(label="None", path=None)
 
     else:
         lbls = labels if isinstance(labels, dict) else {None: labels}
@@ -98,7 +108,7 @@ def produce_data_fixture(
                 lbl in data_dict
             ), f"Unknown testing label `{lbl}` for data dictionary `{data_dict}`!"
             files[k] = DataFixture(
-                label=lbl, file=os.path.join(DATA_DIR, data_dict[lbl])
+                label=lbl, path=os.path.join(DATA_DIR, data_dict[lbl])
             )
 
         if not isinstance(labels, dict):
@@ -108,28 +118,33 @@ def produce_data_fixture(
 
 
 @pytest.fixture(scope="function")
-def particles(request) -> Union[None, DataFixture, dict[str, DataFixture]]:
+def particles(request) -> Union[DataFixture, dict[str, DataFixture]]:
     return produce_data_fixture(PARTICLES_FILES, request.param)
 
 
 @pytest.fixture(scope="function")
-def poses(request) -> Union[None, DataFixture, dict[str, DataFixture]]:
+def poses(request) -> Union[DataFixture, dict[str, DataFixture]]:
     return produce_data_fixture(POSES_FILES, request.param)
 
 
 @pytest.fixture(scope="function")
-def ctf(request) -> Union[None, DataFixture, dict[str, DataFixture]]:
+def ctf(request) -> Union[DataFixture, dict[str, DataFixture]]:
     return produce_data_fixture(CTF_FILES, request.param)
 
 
 @pytest.fixture(scope="function")
-def indices(request) -> Union[None, DataFixture, dict[str, DataFixture]]:
+def indices(request) -> Union[DataFixture, dict[str, DataFixture]]:
     return produce_data_fixture(IND_FILES, request.param)
 
 
 @pytest.fixture(scope="function")
-def datadir(request) -> Union[None, DataFixture, dict[str, DataFixture]]:
+def datadir(request) -> Union[DataFixture, dict[str, DataFixture]]:
     return produce_data_fixture(DATA_FOLDERS, request.param)
+
+
+@pytest.fixture(scope="function")
+def volume(request) -> Union[DataFixture, dict[str, DataFixture]]:
+    return produce_data_fixture(VOLUME_FILES, request.param)
 
 
 class TrainDir:

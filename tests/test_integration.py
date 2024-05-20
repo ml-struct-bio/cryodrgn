@@ -8,9 +8,22 @@ import pytest
 import os
 import shutil
 import argparse
+import pickle
 import nbformat
 from nbconvert.preprocessors import ExecutePreprocessor
-from cryodrgn.commands import analyze, train_vae
+import numpy as np
+import torch
+
+from cryodrgn.commands import (
+    analyze,
+    downsample,
+    parse_ctf_star,
+    parse_pose_star,
+    train_vae,
+)
+from cryodrgn.commands_utils import write_star
+from cryodrgn.source import ImageSource
+import cryodrgn.utils
 
 
 @pytest.mark.parametrize("particles", ["toy.mrcs"], indirect=True)
@@ -131,3 +144,154 @@ class TestIterativeFiltering:
         train_vae.main(args)
 
         shutil.rmtree(outdir)
+
+
+@pytest.mark.parametrize("particles", ["toy.star"], indirect=True)
+@pytest.mark.parametrize("datadir", ["default-datadir"], indirect=True)
+class TestParseWriteStar:
+    def get_outdir(self, tmpdir_factory, particles, datadir):
+        dirname = os.path.join("ParseWriteStar", particles.label, datadir.label)
+        odir = os.path.join(tmpdir_factory.getbasetemp(), dirname)
+        os.makedirs(odir, exist_ok=True)
+
+        return odir
+
+    def test_parse_ctf_star(self, tmpdir_factory, particles, datadir):
+        outdir = self.get_outdir(tmpdir_factory, particles, datadir)
+        out_fl = os.path.join(
+            outdir, f"ctf_{os.path.splitext(os.path.basename(particles.path))[0]}.pkl"
+        )
+
+        parser = argparse.ArgumentParser()
+        parse_ctf_star.add_args(parser)
+        args = parser.parse_args(
+            [particles.path, "-o", out_fl, "-D", "30", "--Apix", "1"]
+        )
+        parse_ctf_star.main(args)
+
+        with open(out_fl, "rb") as f:
+            out_ctf = pickle.load(f)
+
+        assert out_ctf.shape == (1000, 9)
+        assert np.allclose(out_ctf[:, 0], 30)  # D
+        assert np.allclose(out_ctf[:, 1], 1.0)  # Apix
+
+    @pytest.mark.parametrize(
+        "indices", [None, "first-100", "random-100"], indirect=True
+    )
+    @pytest.mark.parametrize("poses", [None, "toy-poses"], indirect=True)
+    def test_write_star_from_mrcs(
+        self, tmpdir_factory, particles, datadir, indices, poses
+    ):
+        outdir = self.get_outdir(tmpdir_factory, particles, datadir)
+        out_fl = os.path.join(outdir, f"written_{indices.label}_{poses.label}.star")
+        parsed_ctf = os.path.join(
+            outdir, f"ctf_{os.path.splitext(os.path.basename(particles.path))[0]}.pkl"
+        )
+        assert os.path.exists(parsed_ctf), "Upstream tests have failed!"
+
+        parser = argparse.ArgumentParser()
+        write_star.add_args(parser)
+        args = [
+            os.path.join(pytest.data_dir, "toy_projections.mrcs"),
+            "--ctf",
+            parsed_ctf,
+            "-o",
+            out_fl,
+        ]
+        if indices.path is not None:
+            args += ["--ind", indices.path]
+        if poses.path is not None:
+            args += ["--poses", poses.path]
+
+        write_star.main(parser.parse_args(args))
+        data = ImageSource.from_file(out_fl, lazy=False, datadir=datadir.path).images()
+        assert isinstance(data, torch.Tensor)
+        assert data.shape == (1000 if indices.path is None else 100, 30, 30)
+
+    @pytest.mark.parametrize("indices", [None], indirect=True)
+    @pytest.mark.parametrize("poses", ["toy-poses"], indirect=True)
+    def test_parse_pose(self, tmpdir_factory, particles, datadir, indices, poses):
+        outdir = self.get_outdir(tmpdir_factory, particles, datadir)
+        star_in = os.path.join(outdir, f"written_{indices.label}_{poses.label}.star")
+        out_fl = os.path.join(outdir, "test_pose.pkl")
+        assert os.path.exists(star_in), "Upstream tests have failed!"
+
+        parser = argparse.ArgumentParser()
+        parse_pose_star.add_args(parser)
+        parse_pose_star.main(parser.parse_args([star_in, "-D", "30", "-o", out_fl]))
+
+        out_poses = cryodrgn.utils.load_pkl(out_fl)
+        assert isinstance(out_poses, tuple)
+        assert len(out_poses) == 2
+        assert isinstance(out_poses[0], np.ndarray)
+        assert isinstance(out_poses[1], np.ndarray)
+        assert out_poses[0].shape == (1000, 3, 3)
+        assert out_poses[1].shape == (1000, 2)
+
+        old_poses = cryodrgn.utils.load_pkl(poses.path)
+        assert np.allclose(old_poses[0], out_poses[0], atol=1e-5)
+        assert np.allclose(old_poses[1], out_poses[1], atol=1e-5)
+
+    @pytest.mark.parametrize(
+        "indices", [None, "first-100", "random-100"], indirect=True
+    )
+    @pytest.mark.parametrize("downsample_dim, chunk_size", [(28, 80), (14, 100)])
+    def test_downsample_and_from_txt(
+        self,
+        tmpdir_factory,
+        particles,
+        datadir,
+        downsample_dim,
+        chunk_size,
+        indices,
+    ):
+        outdir = self.get_outdir(tmpdir_factory, particles, datadir)
+        out_mrcs = os.path.join(
+            outdir, f"downsampled_{downsample_dim}.{chunk_size}.mrcs"
+        )
+
+        args = downsample.add_args(argparse.ArgumentParser()).parse_args(
+            [
+                particles.path,
+                "-D",
+                str(downsample_dim),
+                "--chunk",
+                str(chunk_size),
+                "--datadir",
+                datadir.path,
+                "-o",
+                out_mrcs,
+            ]
+        )
+        downsample.main(args)
+
+        parsed_ctf = os.path.join(
+            outdir, f"ctf_{os.path.splitext(os.path.basename(particles.path))[0]}.pkl"
+        )
+        parser = argparse.ArgumentParser()
+        write_star.add_args(parser)
+        args = [
+            os.path.join(
+                outdir,
+                "".join([os.path.splitext(os.path.basename(out_mrcs))[0], ".txt"]),
+            ),
+            "--ctf",
+            parsed_ctf,
+            "-o",
+            os.path.join(outdir, "downsampled.star"),
+        ]
+        if indices.path is not None:
+            args += ["--ind", indices.path]
+
+        write_star.main(parser.parse_args(args))
+        data = ImageSource.from_file(
+            os.path.join(outdir, "downsampled.star"), lazy=False, datadir=outdir
+        ).images()
+
+        assert isinstance(data, torch.Tensor)
+        assert data.shape == (
+            1000 if indices.path is None else 100,
+            downsample_dim,
+            downsample_dim,
+        )

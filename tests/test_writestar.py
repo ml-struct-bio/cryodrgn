@@ -50,22 +50,22 @@ class TestBasic:
     ):
         parser = argparse.ArgumentParser()
         write_star.add_args(parser)
-        args = [particles, "-o", os.path.join(tmpdir, "out.star")]
+        args = [particles.path, "-o", os.path.join(tmpdir, "out.star")]
 
         if use_ctf:
-            args += ["--ctf", ctf]
+            args += ["--ctf", ctf.path]
         if use_poses:
-            args += ["--poses", poses[use_poses]]
-        if indices:
-            args += ["--ind", indices]
+            args += ["--poses", poses[use_poses].path]
+        if indices.path:
+            args += ["--ind", indices.path]
         if use_relion30:
             args += ["--relion30"]
 
         write_star.main(parser.parse_args(args))
         assert os.path.exists(os.path.join(tmpdir, "out.star"))
 
-        ind = cryodrgn.utils.load_pkl(indices) if indices else None
-        particle_data = ImageSource.from_file(particles, indices=ind)
+        ind = cryodrgn.utils.load_pkl(indices.path) if indices.path else None
+        particle_data = ImageSource.from_file(particles.path, indices=ind)
         ind = list(range(particle_data.n)) if ind is None else ind
         star_data = Starfile.load(os.path.join(tmpdir, "out.star"))
         assert star_data.df.shape[0] == particle_data.n
@@ -79,7 +79,7 @@ class TestBasic:
         for i, star_name in enumerate(star_data.df["_rlnImageName"].tolist()):
             file_idx, file_name = star_name.split("@")
             assert int(file_idx) == ind[i] + 1
-            assert os.path.basename(file_name) == os.path.basename(particles)
+            assert os.path.basename(file_name) == os.path.basename(particles.path)
 
     @pytest.mark.parametrize(
         "particles, ctf, poses",
@@ -94,22 +94,22 @@ class TestBasic:
     ):
         parser = argparse.ArgumentParser()
         write_star.add_args(parser)
-        args = [particles, "-o", os.path.join(tmpdir, "out.star")]
+        args = [particles.path, "-o", os.path.join(tmpdir, "out.star")]
 
         if use_ctf:
-            args += ["--ctf", ctf]
+            args += ["--ctf", ctf.path]
         if use_poses:
-            args += ["--poses", poses[use_poses]]
-        if indices:
-            args += ["--ind", indices]
+            args += ["--poses", poses[use_poses].path]
+        if indices.path:
+            args += ["--ind", indices.path]
         if use_relion30:
             args += ["--relion30"]
 
         write_star.main(parser.parse_args(args))
         assert os.path.exists(os.path.join(tmpdir, "out.star"))
 
-        ind = cryodrgn.utils.load_pkl(indices) if indices else None
-        particle_data = ImageSource.from_file(particles, indices=ind)
+        ind = cryodrgn.utils.load_pkl(indices.path) if indices.path else None
+        particle_data = ImageSource.from_file(particles.path, indices=ind)
         ind = list(range((particle_data.n))) if ind is None else ind
         star_data = Starfile.load(os.path.join(tmpdir, "out.star"))
         assert star_data.df.shape[0] == particle_data.n
@@ -145,7 +145,7 @@ def test_from_txt_with_two_files(
 
     for mrcs_file in mrcs_files:
         args = filter_mrcs.add_args(argparse.ArgumentParser()).parse_args(
-            [particles, "--ind", indices, "-o", mrcs_file]
+            [particles.path, "--ind", indices.path, "-o", mrcs_file]
         )
         filter_mrcs.main(args)
 
@@ -160,18 +160,18 @@ def test_from_txt_with_two_files(
         "-o",
         os.path.join(tmpdir, "out.star"),
         "--ctf",
-        ctf,
+        ctf.path,
         "--poses",
-        poses,
+        poses.path,
     ]
     if use_relion30:
         args += ["--relion30"]
     if use_indices:
-        args += ["--ind", indices]
+        args += ["--ind", indices.path]
     write_star.main(parser.parse_args(args))
     assert os.path.exists(os.path.join(tmpdir, "out.star"))
 
-    ind = cryodrgn.utils.load_pkl(indices) if use_indices else None
+    ind = cryodrgn.utils.load_pkl(indices.path) if use_indices else None
     particle_data = ImageSource.from_file(txt_file, indices=ind)
     ind = list(range(particle_data.n)) if ind is None else ind
     star_data = Starfile.load(os.path.join(tmpdir, "out.star"))

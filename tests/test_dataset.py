@@ -12,7 +12,7 @@ from cryodrgn.utils import load_pkl
 def test_particles(particles):
     # compare data for some random indices against data generated from known
     # correct values after normalization/fft/symmetrization etc.
-    dataset = ImageDataset(mrcfile=particles, invert_data=True)
+    dataset = ImageDataset(mrcfile=particles.path, invert_data=True)
     indices = np.array([43, 12, 53, 64, 31, 56, 75, 63, 27, 62, 96])
     particles_arr, _, _ = dataset[indices]
 
@@ -47,8 +47,8 @@ class TestImageDatasetLoading:
     # lots of edge cases with numpy and torch arrays when a dimension is of length one!
     @pytest.mark.parametrize("batch_size", [7, 11, 20, 43])
     def test_loading_slow(self, particles, indices, batch_size):
-        ind = indices if indices is None else load_pkl(indices)
-        dataset = ImageDataset(mrcfile=particles, ind=ind)
+        ind = None if indices.path is None else load_pkl(indices.path)
+        dataset = ImageDataset(mrcfile=particles.path, ind=ind)
         data_loader = make_dataloader(dataset, batch_size=batch_size, shuffle=True)
 
         # minibatch is a list of (particles, tilt, indices)
@@ -75,8 +75,8 @@ class TestImageDatasetLoading:
 
     @pytest.mark.parametrize("batch_size", [11, 25, 61])
     def test_loading_fast(self, particles, indices, batch_size):
-        ind = indices if indices is None else load_pkl(indices)
-        dataset = ImageDataset(mrcfile=particles, ind=ind)
+        ind = None if indices.path is None else load_pkl(indices.path)
+        dataset = ImageDataset(mrcfile=particles.path, ind=ind)
 
         # A faster way to load is to use BatchSampler with RandomSampler
         # see https://stackoverflow.com/questions/61458305
@@ -126,15 +126,15 @@ class TestImageDatasetLoading:
 class TestTiltSeriesLoading:
     @pytest.mark.parametrize("batch_size", [3, 5, 8])
     def test_loading_slow(self, particles, indices, ntilts, batch_size):
-        pt_ind = indices if indices is None else load_pkl(indices)
+        pt_ind = None if indices.path is None else load_pkl(indices.path)
 
         if pt_ind is None:
             ind = None
         else:
-            pt, tp = TiltSeriesData.parse_particle_tilt(particles)
+            pt, tp = TiltSeriesData.parse_particle_tilt(particles.path)
             ind = TiltSeriesData.particles_to_tilts(pt, pt_ind)
 
-        dataset = TiltSeriesData(tiltstar=particles, ntilts=ntilts, ind=ind)
+        dataset = TiltSeriesData(tiltstar=particles.path, ntilts=ntilts, ind=ind)
         data_loader = make_dataloader(dataset, batch_size=batch_size, shuffle=True)
 
         # minibatch is a list of (particles, tilt, indices)
@@ -189,8 +189,8 @@ class TestTiltSeriesLoading:
     ],
 )
 def test_data_shuffler(particles, indices, batch_size, buffer_size):
-    ind = indices if indices is None else load_pkl(indices)
-    dataset = ImageDataset(mrcfile=particles, ind=ind)
+    ind = None if indices.path is None else load_pkl(indices.path)
+    dataset = ImageDataset(mrcfile=particles.path, ind=ind)
     data_loader = DataShuffler(dataset, batch_size=batch_size, buffer_size=buffer_size)
 
     # minibatch is a list of (particles, tilt, indices)

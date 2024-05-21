@@ -216,7 +216,7 @@ def analyze_zN(
             plt.savefig(f"{outdir}/umap_marginals.png")
             plt.close()
         except ZeroDivisionError:
-            logger.warning("Data too for marginal distribution scatterplots!")
+            logger.warning("Data too small for marginal distribution scatterplots!")
 
         # Style 3 -- Hexbin / heatmap
         try:
@@ -242,13 +242,17 @@ def analyze_zN(
     plt.savefig(f"{outdir}/kmeans{K}/z_pca.png")
     plt.close()
 
-    g = analysis.scatter_annotate_hex(
-        pc[:, 0],
-        pc[:, 1],
-        centers_ind=centers_ind,
-        annotate=True,
-        colors=colors,
-    )
+    try:
+        g = analysis.scatter_annotate_hex(
+            pc[:, 0],
+            pc[:, 1],
+            centers_ind=centers_ind,
+            annotate=True,
+            colors=colors,
+        )
+    except ZeroDivisionError:
+        logger.warning("Data too small to generate PCA annotated hexes!")
+
     plt_pc_labels_jointplot(g)
     plt.tight_layout()
     plt.savefig(f"{outdir}/kmeans{K}/z_pca_hex.png")

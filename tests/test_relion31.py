@@ -4,8 +4,6 @@ import os.path
 import pytest
 from cryodrgn.commands import downsample, parse_ctf_star, parse_pose_star
 
-DATA_FOLDER = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
-
 
 @pytest.fixture
 def relion_starfile(request):
@@ -20,7 +18,6 @@ def test_downsample(tmpdir, relion_starfile):
     args = downsample.add_args(argparse.ArgumentParser()).parse_args(
         [
             f"{relion_starfile}",
-            "--relion31",
             "-D",
             "32",
             "-o",
@@ -30,42 +27,26 @@ def test_downsample(tmpdir, relion_starfile):
     downsample.main(args)
 
 
-@pytest.mark.xfail(reason="coming soon")
 @pytest.mark.parametrize(
-    "relion_starfile", ["relion31.star", "relion31.v2.star"], indirect=True
+    "relion_starfile, resolution, apix",
+    [
+        ("relion31.star", None, None),
+        ("relion31.6opticsgroups.star", None, None),
+        ("relion31.6opticsgroups.star", "256", "1.0"),
+        ("relion31.star", "256", "1.0"),
+        ("relion31.v2.star", "256", "1.0"),
+    ],
+    indirect=["relion_starfile"],
 )
-def test_parse_pose_star(tmpdir, relion_starfile):
-    args = parse_pose_star.add_args(argparse.ArgumentParser()).parse_args(
-        [
-            f"{relion_starfile}",
-            "--relion31",
-            "-D",
-            "256",
-            "--Apix",
-            "1",
-            "-o",
-            os.path.join(tmpdir, "pose1.pkl"),
-        ]
-    )
-    parse_pose_star.main(args)
-
-
-@pytest.mark.parametrize(
-    "relion_starfile", ["relion31.star", "relion31.v2.star"], indirect=True
-)
-def test_parse_pose_star_ignore_optics(tmpdir, relion_starfile):
-    args = [
-        f"{relion_starfile}",
-        "-D",
-        "256",
-        "--Apix",
-        "1",
-        "-o",
-        os.path.join(tmpdir, "pose.pkl"),
-        "--ignore-optics",
-    ]
+def test_parse_pose_star(tmpdir, relion_starfile, resolution, apix):
     parser = argparse.ArgumentParser()
     parse_pose_star.add_args(parser)
+    args = [f"{relion_starfile}", "-o", os.path.join(tmpdir, "pose.pkl")]
+    if resolution is not None:
+        args += ["-D", resolution]
+    if apix is not None:
+        args += ["--Apix", apix]
+
     parse_pose_star.main(parser.parse_args(args))
 
 
@@ -74,10 +55,11 @@ def test_parse_pose_star_ignore_optics(tmpdir, relion_starfile):
     "relion_starfile", ["relion31.star", "relion31.v2.star"], indirect=True
 )
 def test_parse_ctf_star(tmpdir, relion_starfile):
-    args = parse_ctf_star.add_args(argparse.ArgumentParser()).parse_args(
+    parser = argparse.ArgumentParser()
+    parse_ctf_star.add_args(parser)
+    args = parser.parse_args(
         [
             f"{relion_starfile}",
-            "--relion31",
             "-D",
             "256",
             "--Apix",

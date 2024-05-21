@@ -110,8 +110,12 @@ class TestIterativeFiltering:
 
     def test_refiltering(self, tmpdir_factory, particles, poses, ctf, indices):
         outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
-        ind_keep_fl = [fl for fl in os.listdir(outdir) if fl[:9] == "ind_keep."][0]
-        if int(ind_keep_fl.split(".")[1].split("_particles")[0]) < 20:
+        ind_keep_fl = [fl for fl in os.listdir(outdir) if fl[:9] == "ind_keep."]
+
+        if (
+            not ind_keep_fl
+            or int(ind_keep_fl[0].split(".")[1].split("_particles")[0]) < 20
+        ):
             ind_keep_fl = [fl for fl in os.listdir(outdir) if fl[:8] == "ind_bad."][0]
 
         ind_keep_fl = os.path.join(outdir, ind_keep_fl)

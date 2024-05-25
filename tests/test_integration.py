@@ -117,6 +117,8 @@ class TestIterativeFiltering:
             or int(ind_keep_fl[0].split(".")[1].split("_particles")[0]) < 20
         ):
             ind_keep_fl = [fl for fl in os.listdir(outdir) if fl[:8] == "ind_bad."][0]
+        else:
+            ind_keep_fl = ind_keep_fl[0]
 
         ind_keep_fl = os.path.join(outdir, ind_keep_fl)
         args = train_vae.add_args(argparse.ArgumentParser()).parse_args(

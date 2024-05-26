@@ -15,8 +15,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
-        python: ['3.9', '3.10']
+        os: [ ubuntu-latest, macos-latest ]
+        python: [ '3.9', '3.10' ]
+        torch: [ '1.12', '2.1', '2.3' ]
       fail-fast: false
 
     steps:
@@ -29,9 +30,13 @@ jobs:
 
       - name: Install cryoDRGN with pytest dependencies
         run: |
+          python3 -m pip install --upgrade pip
           python3 -m pip install pytest-xdist
           python3 -m pip install .
+          python3 -m pip uninstall -y torch
+          python3 -m pip install torch==${{ matrix.torch }}
 
       - name: Pytest
         run: |
-          pytest -v -n auto --dist=loadscope
+          pytest -v -n2 --dist=loadscope -k 'test_reconstruct'
+          pytest -v -n0 --dist=loadscope -k 'not test_reconstruct'

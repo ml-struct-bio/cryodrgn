@@ -37,7 +37,7 @@ def plot_fsc_vals(fsc_arr: pd.DataFrame, label):
     elif fsc_arr.shape[1] == 1:
         plt.plot(fsc_arr.iloc[:, 0], label=label, **plot_args)
     else:
-        raise ValueError(f"Unrecognized format for\n{fsc_arr=}!")
+        raise ValueError(f"Unrecognized format for fsc_arr:\n{fsc_arr}!")
 
 
 def create_fsc_plot(

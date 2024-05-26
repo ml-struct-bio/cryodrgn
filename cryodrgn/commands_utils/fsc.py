@@ -92,6 +92,20 @@ def calculate_fsc(
     return pd.DataFrame(dict(pixres=np.arange(D // 2) / D, fsc=fsc), dtype=float)
 
 
+def print_fsc(fsc_vals: pd.DataFrame, apix: float) -> None:
+    if ((fsc_vals.pixres > 0) & (fsc_vals.fsc >= 0.5)).any():
+        res = fsc_vals.pixres[fsc_vals.fsc >= 0.5].max()
+        logger.info("res @ FSC=0.5: {:.4g} ang".format((1 / res) * apix))
+    else:
+        logger.warning("res @ FSC=0.5: N/A")
+
+    if ((fsc_vals.pixres > 0) & (fsc_vals.fsc >= 0.143)).any():
+        res = fsc_vals.pixres[fsc_vals.fsc >= 0.143].max()
+        logger.info("res @ FSC=0.143: {:.4g} ang".format((1 / res) * apix))
+    else:
+        logger.warning("res @ FSC=0.143: N/A")
+
+
 def main(args):
     vol1 = ImageSource.from_file(args.volumes[0])
     vol2 = ImageSource.from_file(args.volumes[1])
@@ -104,17 +118,7 @@ def main(args):
         fsc_str = fsc_vals.round(4).to_csv(sep="\t", index=False)
         logger.info(f"\n{fsc_str}")
 
-    if fsc_vals.shape[0] > 1 and (fsc_vals.fsc >= 0.5).any():
-        res = fsc_vals.pixres[fsc_vals.fsc >= 0.5].max()
-        logger.info("0.5: {:.7g} ang".format((1 / res) * args.Apix))
-    else:
-        logger.warning("0.5: N/A")
-
-    if fsc_vals.shape[0] > 1 and (fsc_vals.fsc >= 0.143).any():
-        res = fsc_vals.pixres[fsc_vals.fsc >= 0.143].max()
-        logger.info("0.143: {:.7g} ang".format((1 / res) * args.Apix))
-    else:
-        logger.warning("0.143: N/A")
+    print_fsc(fsc_vals, args.Apix)
 
     if args.plot:
         if isinstance(args.plot, bool):

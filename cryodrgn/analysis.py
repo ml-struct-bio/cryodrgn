@@ -26,11 +26,11 @@ def parse_loss(f: str) -> np.ndarray:
     matches = [re.search(regex, x) for x in lines]
     loss = []
     for m in matches:
-        assert m is not None
-        loss.append(m.group(1))
-    loss = np.asarray(loss).astype(np.float32)
+        # assert m is not None
+        if m:
+            loss.append(m.group(1))
 
-    return loss
+    return np.asarray(loss).astype(np.float32)
 
 
 # Dimensionality reduction

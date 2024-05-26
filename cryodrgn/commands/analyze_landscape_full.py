@@ -212,6 +212,7 @@ def generate_and_map_volumes(
     for i, zz in enumerate(z):
         if i % 100 == 0:
             logger.info(i)
+
         if args.downsample:
             extent = lattice.extent * (args.downsample / (D - 1))
             vol = model.decoder.eval_volume(
@@ -225,9 +226,13 @@ def generate_and_map_volumes(
             vol = model.decoder.eval_volume(
                 lattice.coords, lattice.D, lattice.extent, norm, zz
             )
+
         if args.flip:
             vol = vol[::-1]
-        embeddings.append(pca.transform(vol.cpu()[mask].reshape(1, -1)))
+
+        embeddings.append(
+            pca.transform(vol.cpu()[torch.tensor(mask).bool()].reshape(1, -1))
+        )
 
     embeddings = np.array(embeddings).reshape(len(z), -1).astype(np.float32)
 
@@ -283,6 +288,7 @@ def train_model(x, y, outdir, zfile, args):
             x = torch.tensor(x, device=device)
             yhat = model(x)
             yhat_all.append(yhat.detach().cpu().numpy())
+
     yhat_all = np.concatenate(yhat_all)
     torch.save(model.state_dict(), f"{outdir}/model.pt")
     return yhat_all

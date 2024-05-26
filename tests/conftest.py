@@ -4,6 +4,7 @@ import pytest
 import os
 import shutil
 from typing import Optional, Union, Any
+from dataclasses import dataclass
 from cryodrgn.utils import run_command
 
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
@@ -24,13 +25,6 @@ def default_outdir() -> None:
         shutil.rmtree("output")
 
 
-@pytest.fixture(scope="class")
-def outdir(tmpdir_factory, request) -> str:
-    odir = tmpdir_factory.mktemp(f"output_{request.node.__class__.__name__}")
-    yield str(odir)
-    shutil.rmtree(odir)
-
-
 def get_testing_datasets(dataset_lbl: str) -> tuple[str, str]:
     """Retrieve the input files corresponding to a given dataset label."""
 
@@ -46,8 +40,10 @@ def get_testing_datasets(dataset_lbl: str) -> tuple[str, str]:
     return particles, poses
 
 
+# Data fixtures for cryoDRGN inputs
 PARTICLES_FILES = {
     "hand": "hand.mrcs",
+    "hand-5": "hand.5.mrcs",
     "hand-tilt": "hand_tilt.mrcs",
     "toy.mrcs": "toy_projections.mrcs",
     "toy.mrcs-999": "toy_projections_0-999.mrcs",
@@ -66,7 +62,9 @@ POSES_FILES = {
 }
 CTF_FILES = {
     "CTF-Test": "test_ctf.pkl",
+    "CTF-Test.100": "test_ctf.100.pkl",
     "CTF-Tilt": "sta_ctf.pkl",
+    "CTF1": "ctf1.pkl",
 }
 IND_FILES = {
     "first-100": "ind100.pkl",
@@ -75,53 +73,78 @@ IND_FILES = {
     "just-5": "ind5.pkl",
 }
 DATA_FOLDERS = {
-    "default-datadir": DATA_DIR,
+    "default-datadir": ".",
 }
 
 
-@pytest.fixture(scope="function")
-def particles(request) -> Union[None, str]:
-    if request.param:
-        assert (
-            request.param in PARTICLES_FILES
-        ), f"Unknown testing particles label `{request.param}` !"
-        return os.path.join(DATA_DIR, PARTICLES_FILES[request.param])
+# Data fixtures for cryoDRGN outputs (and sometimes inputs)
+VOLUME_FILES = {
+    "toy": "toy_projections.mrc",
+    "hand": "hand-vol.mrc",
+    "spike": "spike-vol.mrc",
+    "empiar": "empiar_10076_7.mrc",
+}
+
+
+@dataclass
+class DataFixture:
+    label: str
+    path: Union[None, str]
+
+
+def produce_data_fixture(
+    data_dict: dict[str, str], labels: str
+) -> Union[DataFixture, dict[str, DataFixture]]:
+    """Retrieves and parses a request for a fixture defined in a data dictionary."""
+    if labels is None:
+        files = DataFixture(label="None", path=None)
+
+    else:
+        lbls = labels if isinstance(labels, dict) else {None: labels}
+        files = dict()
+
+        for k, lbl in lbls.items():
+            assert (
+                lbl in data_dict
+            ), f"Unknown testing label `{lbl}` for data dictionary `{data_dict}`!"
+            files[k] = DataFixture(
+                label=lbl, path=os.path.join(DATA_DIR, data_dict[lbl])
+            )
+
+        if not isinstance(labels, dict):
+            files = files[None]
+
+    return files
 
 
 @pytest.fixture(scope="function")
-def poses(request) -> Union[None, str]:
-    if request.param:
-        assert (
-            request.param in POSES_FILES
-        ), f"Unknown testing poses label `{request.param}` !"
-        return os.path.join(DATA_DIR, POSES_FILES[request.param])
+def particles(request) -> Union[DataFixture, dict[str, DataFixture]]:
+    return produce_data_fixture(PARTICLES_FILES, request.param)
 
 
 @pytest.fixture(scope="function")
-def ctf(request) -> Union[None, str]:
-    if request.param:
-        assert (
-            request.param in CTF_FILES
-        ), f"Unknown testing CTF file label `{request.param}` !"
-        return os.path.join(DATA_DIR, CTF_FILES[request.param])
+def poses(request) -> Union[DataFixture, dict[str, DataFixture]]:
+    return produce_data_fixture(POSES_FILES, request.param)
 
 
 @pytest.fixture(scope="function")
-def indices(request) -> Union[None, str]:
-    if request.param:
-        assert (
-            request.param in IND_FILES
-        ), f"Unknown testing indices label `{request.param}` !"
-        return os.path.join(DATA_DIR, IND_FILES[request.param])
+def ctf(request) -> Union[DataFixture, dict[str, DataFixture]]:
+    return produce_data_fixture(CTF_FILES, request.param)
 
 
 @pytest.fixture(scope="function")
-def datadir(request) -> Union[None, str]:
-    if request.param:
-        assert (
-            request.param in DATA_FOLDERS
-        ), f"Unknown --datadir path `{request.param}` !"
-        return DATA_FOLDERS[request.param]
+def indices(request) -> Union[DataFixture, dict[str, DataFixture]]:
+    return produce_data_fixture(IND_FILES, request.param)
+
+
+@pytest.fixture(scope="function")
+def datadir(request) -> Union[DataFixture, dict[str, DataFixture]]:
+    return produce_data_fixture(DATA_FOLDERS, request.param)
+
+
+@pytest.fixture(scope="function")
+def volume(request) -> Union[DataFixture, dict[str, DataFixture]]:
+    return produce_data_fixture(VOLUME_FILES, request.param)
 
 
 class TrainDir:

@@ -92,6 +92,10 @@ class ImageDataset(data.Dataset):
 
         particles = self._process(self.src.images(index).to(self.device))
 
+        # this is why it is tricky for index to be allowed to be a list!
+        if len(particles.shape) == 2:
+            particles = particles[np.newaxis, ...]
+
         if isinstance(index, (int, np.integer)):
             logger.debug(f"ImageDataset returning images at index ({index})")
         else:

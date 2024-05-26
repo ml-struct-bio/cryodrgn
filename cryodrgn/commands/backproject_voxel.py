@@ -17,14 +17,14 @@ import os
 import time
 import numpy as np
 import torch
-import matplotlib.pyplot as plt
 import logging
 
 from cryodrgn import ctf, dataset, fft, utils
 from cryodrgn.mrc import MRCFile
 from cryodrgn.lattice import Lattice
 from cryodrgn.pose import PoseTracker
-from cryodrgn.commands_utils.fsc import calculate_fsc
+from cryodrgn.commands_utils.fsc import calculate_fsc, print_fsc
+from cryodrgn.commands_utils.plot_fsc import create_fsc_plot
 
 logger = logging.getLogger(__name__)
 
@@ -297,28 +297,18 @@ def main(args):
     out_path = os.path.splitext(args.o)[0]
     MRCFile.write(args.o, np.array(volume_full).astype("float32"), Apix=Apix)
 
+    # create the half-maps, calculate the FSC curve between them, and save both to file
     if args.half_maps:
         volume_half1 = regularize_volume(volume_half1, counts_half1, args.reg_weight)
         volume_half2 = regularize_volume(volume_half2, counts_half2, args.reg_weight)
         fsc_vals = calculate_fsc(volume_half1, volume_half2)
+        create_fsc_plot(fsc_vals=fsc_vals, outfile="_".join([out_path, "fsc-plot.png"]))
+        print_fsc(fsc_vals, Apix)
 
-        fsc_vals.to_csv("_".join([out_path, "fsc-vals.txt"]), sep=" ", header=False)
-        plt.plot(fsc_vals.pixres, fsc_vals.fsc)
-        plt.ylim((0, 1))
-        plt.savefig("_".join([out_path, "fsc-plot.png"]), bbox_inches="tight")
-
-        if ((fsc_vals.fsc >= 0.5) & (fsc_vals.pixres > 0)).any():
-            fsc_res = fsc_vals.pixres[fsc_vals.fsc >= 0.5].max() ** -1.0 * Apix
-            logger.info(f"res @ FSC=0.5: {fsc_res:.4f}")
-        else:
-            logger.warning("res @ FSC=0.5: N/A")
-        if ((fsc_vals.fsc >= 0.143) & (fsc_vals.pixres > 0)).any():
-            fsc_res = fsc_vals.pixres[fsc_vals.fsc >= 0.143].max() ** -1.0 * Apix
-            logger.info(f"res @ FSC=0.143: {fsc_res:.4f}")
-        else:
-            logger.warning("res @ FSC=0.143: N/A")
-
-        # save the half-map reconstructions to file
+        # save the FSC values and half-map reconstructions to file
+        fsc_vals.to_csv(
+            "_".join([out_path, "fsc-vals.txt"]), sep=" ", header=True, index=False
+        )
         half_fl1 = "_".join([out_path, "half-map1.mrc"])
         half_fl2 = "_".join([out_path, "half-map2.mrc"])
         MRCFile.write(half_fl1, np.array(volume_half1).astype("float32"), Apix=Apix)

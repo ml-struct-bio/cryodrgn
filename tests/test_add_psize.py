@@ -1,29 +1,32 @@
-import os.path
+import pytest
+import os
 import argparse
 import torch
-import pytest
 from cryodrgn.source import ImageSource
 from cryodrgn.commands_utils import add_psize
 
-DATA_FOLDER = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
 
-
-@pytest.fixture
-def mrcs_data():
-    return ImageSource.from_file(f"{DATA_FOLDER}/toy_projections.mrcs").images()
-
-
-def test_add_psize(mrcs_data):
+@pytest.mark.parametrize("volume", ["toy", "hand", "spike", "empiar"], indirect=True)
+@pytest.mark.parametrize("Apix", ["1", "1.7"])
+def test_add_psize(tmpdir, volume, Apix):
+    out_vol = os.path.join(tmpdir, "toy_projections_added_psize.mrc")
     args = add_psize.add_args(argparse.ArgumentParser()).parse_args(
-        [
-            f"{DATA_FOLDER}/toy_projections.mrc",
-            "-o",
-            "output/toy_projections_added_psize.mrc",
-        ]
+        [volume.path, "-o", out_vol]
     )
-    os.makedirs("output", exist_ok=True)
     add_psize.main(args)
 
-    # Data is unchanged
-    new_data = ImageSource.from_file("output/toy_projections_added_psize.mrc").images()
-    assert torch.allclose(new_data, mrcs_data)
+    # data should be unchanged
+    old_data = ImageSource.from_file(volume.path).images()
+    new_data = ImageSource.from_file(out_vol).images()
+    assert torch.allclose(new_data, old_data)
+
+    new_vol = str(out_vol).replace(".mrc", "_new.mrc")
+    args = add_psize.add_args(argparse.ArgumentParser()).parse_args(
+        [out_vol, "-o", new_vol, "--Apix", Apix]
+    )
+    add_psize.main(args)
+
+    # data should be unchanged
+    old_data = ImageSource.from_file(out_vol).images()
+    new_data = ImageSource.from_file(new_vol).images()
+    assert torch.allclose(new_data, old_data)

@@ -1,38 +1,31 @@
+import pytest
 import os
-import os.path
 import argparse
 import numpy as np
 import torch
-import pytest
 from cryodrgn.source import ImageSource
 from cryodrgn.commands_utils import filter_mrcs
 from cryodrgn.utils import save_pkl
 
-DATA_FOLDER = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
 
+@pytest.mark.parametrize("particles", ["toy.mrcs", "hand"], indirect=True)
+@pytest.mark.parametrize("ind_size", [0.02, 0.05, 0.25])
+@pytest.mark.parametrize("random_seed", [88, 99])
+def test_filter_mrcs(tmpdir, particles, ind_size, random_seed):
+    mrcs_data = ImageSource.from_file(particles.path).images()
 
-@pytest.fixture
-def mrcs_data():
-    return ImageSource.from_file(f"{DATA_FOLDER}/toy_projections.mrc").images()
+    ind_n = int(mrcs_data.shape[0] * ind_size) + 1
+    np.random.seed(random_seed)
+    indices = np.random.randint(0, mrcs_data.shape[0], size=ind_n)
+    test_lbl = "-".join([particles.label, str(ind_n), str(ind_size)[2:]])
+    ind_fl = os.path.join(tmpdir, f"random-indices_{test_lbl}.pkl")
+    save_pkl(indices, ind_fl)
 
-
-def test_filter_mrcs(mrcs_data):
-    os.makedirs("output", exist_ok=True)
-
-    # Generate 15 random indices into the input mrcs
-    indices = np.random.randint(0, mrcs_data.shape[0], size=15)
-    save_pkl(indices, "output/random_indices.pkl")
-
+    out_fl = os.path.join(tmpdir, f"projections-filtered_{test_lbl}.mrc")
     args = filter_mrcs.add_args(argparse.ArgumentParser()).parse_args(
-        [
-            f"{DATA_FOLDER}/toy_projections.mrc",
-            "--ind",
-            "output/random_indices.pkl",
-            "-o",
-            "output/toy_projections_filtered.mrc",
-        ]
+        [particles.path, "--ind", ind_fl, "-o", out_fl]
     )
     filter_mrcs.main(args)
 
-    new_data = ImageSource.from_file("output/toy_projections_filtered.mrc").images()
+    new_data = ImageSource.from_file(out_fl).images()
     assert torch.allclose(new_data[:], mrcs_data[indices])

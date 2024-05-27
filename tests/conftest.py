@@ -25,6 +25,11 @@ def default_outdir() -> None:
         shutil.rmtree("output")
 
 
+@pytest.fixture
+def testing_dataset(request) -> str:
+    return os.path.join(DATA_DIR, request.param)
+
+
 def get_testing_datasets(dataset_lbl: str) -> tuple[str, str]:
     """Retrieve the input files corresponding to a given dataset label."""
 
@@ -71,6 +76,12 @@ IND_FILES = {
     "random-100": "ind100-rand.pkl",
     "just-4": "ind4.pkl",
     "just-5": "ind5.pkl",
+}
+WEIGHTS_FILES = {
+    "het": "het_weights.pkl",
+}
+CONFIG_FILES = {
+    "het": "het_config.pkl",
 }
 DATA_FOLDERS = {
     "default-datadir": ".",
@@ -145,6 +156,16 @@ def datadir(request) -> Union[DataFixture, dict[str, DataFixture]]:
 @pytest.fixture(scope="function")
 def volume(request) -> Union[DataFixture, dict[str, DataFixture]]:
     return produce_data_fixture(VOLUME_FILES, request.param)
+
+
+@pytest.fixture(scope="function")
+def weights(request) -> Union[DataFixture, dict[str, DataFixture]]:
+    return produce_data_fixture(WEIGHTS_FILES, request.param)
+
+
+@pytest.fixture(scope="function")
+def configs(request) -> Union[DataFixture, dict[str, DataFixture]]:
+    return produce_data_fixture(CONFIG_FILES, request.param)
 
 
 class TrainDir:

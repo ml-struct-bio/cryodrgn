@@ -20,53 +20,46 @@ For any feedback, questions, or bugs, please file a Github issue or start a Gith
 ### New in Version 3.3.x
 
 * [NEW] `cryodrgn direct_traversal` to generate interpolations in the conformation latnet space between two points
-* improved interface for `graph` and `pc` traversal methods
+* support for .txt files in `write_star`
+* support for RELION 3.1 input files with multiple optics groups in `parse_pose_star`
 * adding `--datadir` to `cryodrgn abinit_homo` for use with .star files
 * fixing various bugs in Jupyter demonstration notebooks
 * support for TestPyPI beta release deployments via `pip`
 
 
-### New in Version 3.2.x
+### New in Version 3.x
+
+The official release of [cryoDRGN-ET](https://www.biorxiv.org/content/10.1101/2023.08.18.553799v1) for heterogeneous subtomogram analysis.
+
+* [NEW] Heterogeneous reconstruction of subtomograms. See documentation [on gitbook](https://ez-lab.gitbook.io/cryodrgn/)
+* Updated `cryodrgn backproject_voxel` for voxel-based homogeneous reconstruction
+* Major refactor of dataset loading for handling large datasets
+
+
+## Previous versions
+
+<details><summary>Version 3.2</summary>
 * [NEW] `cryodrgn_utils clean` for removing extraneous output files from completed experiments
 * [NEW] `cryodrgn_utils fsc`, `cryodrgn_utils fsc_plot`, `cryodrgn_utils gen_mask` adapted from existing scripts;
   for calculating FSCs, plotting them, and generating masks for volumes respectively
 * `cryodrgn backproject_voxel` now produces half-maps and a half-map FSC
 * fixing `filter_star` to accept tilt series as well
 * fixing assorted bugs in e.g. `write_star`, `invert_constrast`, and `train_vae` (see release notes)
-
-
-## New in Version 3.x
-
-The official release of [cryoDRGN-ET](https://www.biorxiv.org/content/10.1101/2023.08.18.553799v1) for heterogeneous subtomogram analysis.
-
-* [NEW] Heterogeneous reconstruction of subtomograms. See documentation [on gitbook](https://ez-lab.gitbook.io/cryodrgn/)
-* [NEW] `cryodrgn direct_traversal` for making movies
-* Updated `cryodrgn backproject_voxel` for voxel-based homogeneous reconstruction
-* Major refactor of dataset loading for handling large datasets
-
-
-### Previous versions
-
-<details><summary>Version 3.1</summary>
-
-* [NEW] `cryodrgn filter` interface for interactive filtering of particles as an alternative to the cryoDRGN_filter Jupyter notebook
-
 </details>
 
+<details><summary>Version 3.1</summary>
+* [NEW] `cryodrgn filter` interface for interactive filtering of particles as an alternative to the cryoDRGN_filter Jupyter notebook
+</details>
 
 <details><summary>Version 2.3</summary>
-
 * Model configuration files are now saved as human-readable config.yaml files (https://github.com/zhonge/cryodrgn/issues/235)
 * Fix machine stamp in output .mrc files for better compatibility with downstream tools (https://github.com/zhonge/cryodrgn/pull/260)
 * Better documentation of help flags in ab initio reconstruction tools (https://github.com/zhonge/cryodrgn/issues/258)
 * [FIX] By default, window images in `cryodrgn abinit_homo` (now consistent with other reconstruction tools) (https://github.com/zhonge/cryodrgn/issues/258)
 * [FIX] Reduce memory usage when using `--preprocessed` and `--ind` (https://github.com/zhonge/cryodrgn/pull/272)
-
 </details>
 
-
 <details><summary>Version 2.2</summary>
-
 * [NEW] Tools for ab initio homogeneous and heterogeneous reconstruction:
 
 ```
@@ -90,17 +83,13 @@ The official release of [cryoDRGN-ET](https://www.biorxiv.org/content/10.1101/20
 
 
 <details><summary>Version 1.1.x</summary>
-
 Updated default parameters for `cryodrgn train_vae` with modified positional encoding, larger model architecture, and accelerated mixed-precision training turned on by default:
 * Mixed precision training is now turned on by default (Use `--no-amp` to revert to single precision training)
 * Encoder/decoder architecture is now 1024x3 by default (Use `--enc-dim 256` and `--dec-dim 256` to revert)
 * Gaussian Fourier featurization for faster training and higher resolution density maps (Use `--pe-type geom_lowf` to revert)
-
 </details>
 
-
 <details><summary>Version 1.0.x</summary>
-
 The official version 1.0 release. This version introduces several new tools for analysis of the reconstructed ensembles, and adds functionality for calling utility scripts with `cryodrgn_utils <command>`.
 
 * NEW: `cryodrgn analyze_landscape` and `cryodrgn analyze_landscape_full` for automatic assignment of classes and conformational landscape visualization. Documentation for this new feature is here: https://www.notion.so/cryodrgn-conformational-landscape-analysis-a5af129288d54d1aa95388bdac48235a.

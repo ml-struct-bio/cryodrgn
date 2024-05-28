@@ -17,7 +17,9 @@ def test_filter_mrcs(tmpdir, particles, ind_size, random_seed):
     ind_n = int(mrcs_data.shape[0] * ind_size) + 1
     np.random.seed(random_seed)
     indices = np.random.randint(0, mrcs_data.shape[0], size=ind_n)
-    test_lbl = "-".join([particles.label, str(ind_n), str(ind_size)[2:]])
+    test_lbl = "-".join(
+        [particles.label, str(ind_n), str(ind_size)[2:], str(random_seed)]
+    )
     ind_fl = os.path.join(tmpdir, f"random-indices_{test_lbl}.pkl")
     save_pkl(indices, ind_fl)
 

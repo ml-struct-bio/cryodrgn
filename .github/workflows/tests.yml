@@ -2,12 +2,12 @@ name: CI Testing
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ develop ]
     tags:
       - '[0-9]+\.[0-9]+\.[0-9]+'
       - '[0-9]+\.[0-9]+\.[0-9]+-*'
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main ]
 
 jobs:
   run_tests:

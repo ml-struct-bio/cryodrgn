@@ -9,12 +9,12 @@ import cryodrgn.utils
 
 @pytest.fixture
 def particles_starfile():
-    return os.path.join(pytest.data_dir, "FinalRefinement-OriginalParticles-PfCRT.star")
+    return os.path.join(pytest.DATADIR, "FinalRefinement-OriginalParticles-PfCRT.star")
 
 
 @pytest.fixture
 def relion31_mrcs():
-    return os.path.join(pytest.data_dir, "relion31.mrcs")
+    return os.path.join(pytest.DATADIR, "relion31.mrcs")
 
 
 @pytest.mark.parametrize(

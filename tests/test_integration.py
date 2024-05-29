@@ -199,7 +199,7 @@ class TestParseWriteStar:
         parser = argparse.ArgumentParser()
         write_star.add_args(parser)
         args = [
-            os.path.join(pytest.data_dir, "toy_projections.mrcs"),
+            os.path.join(pytest.DATADIR, "toy_projections.mrcs"),
             "--ctf",
             parsed_ctf,
             "-o",

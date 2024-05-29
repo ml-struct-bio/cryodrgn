@@ -37,11 +37,10 @@ def volume(request) -> tuple[str, str]:
 @pytest.mark.parametrize("dist", [2, 5])
 @pytest.mark.parametrize("dilate", [3, 7])
 @pytest.mark.parametrize("apix", [1, 2.79])
-def test_mask_fidelity(volume, dist, dilate, apix) -> None:
+def test_mask_fidelity(tmpdir, volume, dist, dilate, apix) -> None:
     """Test that we can compare two volumes produced during reconstruction training."""
-    os.makedirs("output", exist_ok=True)
     vol_file, vol_lbl = volume
-    mask_file = os.path.join("output", f"{vol_lbl}_mask.mrc")
+    mask_file = os.path.join(tmpdir, f"{vol_lbl}_mask.mrc")
     out0, err = run_command(
         f"cryodrgn_utils gen_mask {vol_file} {mask_file} "
         f"--dist {dist} --dilate {dilate} --Apix {apix}"
@@ -105,11 +104,10 @@ def test_mask_fidelity(volume, dist, dilate, apix) -> None:
 
 @pytest.mark.parametrize("volume", ["toymodel_small_nocenter"], indirect=True)
 @pytest.mark.parametrize("dist_val", [3, 5])
-def test_png_output_file(volume, dist_val) -> None:
-    os.makedirs("output", exist_ok=True)
+def test_png_output_file(tmpdir, volume, dist_val) -> None:
     vol_file, vol_lbl = volume
-    mask_file = os.path.join("output", f"{vol_lbl}_{dist_val}_mask.mrc")
-    plot_file = os.path.join("output", f"{vol_lbl}_{dist_val}slices.png")
+    mask_file = os.path.join(tmpdir, f"{vol_lbl}_{dist_val}_mask.mrc")
+    plot_file = os.path.join(tmpdir, f"{vol_lbl}_{dist_val}_slices.png")
 
     out0, err = run_command(
         f"cryodrgn_utils gen_mask {vol_file} {mask_file} "

@@ -9,7 +9,7 @@ from cryodrgn.lattice import Lattice
 
 def test_shifted_image():
     torch.manual_seed(15321)
-    imgs = ImageSource.from_file(os.path.join(pytest.data_dir, "hand.mrcs")).images()
+    imgs = ImageSource.from_file(os.path.join(pytest.DATADIR, "hand.mrcs")).images()
     img = imgs[0]
     D = img.shape[0]
     ht = fft.ht2_center(img)
@@ -23,5 +23,5 @@ def test_shifted_image():
     ht_np = ht_shifted.view(D, D)[0:-1, 0:-1]
 
     img_shifted = fft.ihtn_center(ht_np)
-    new_arr = torch.Tensor(np.load(os.path.join(pytest.data_dir, "im_shifted.npy")))
+    new_arr = torch.Tensor(np.load(os.path.join(pytest.DATADIR, "im_shifted.npy")))
     assert torch.allclose(new_arr, img_shifted, atol=1e-4)

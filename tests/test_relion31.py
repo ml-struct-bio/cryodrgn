@@ -7,7 +7,7 @@ from cryodrgn.commands import downsample, parse_ctf_star, parse_pose_star
 
 @pytest.fixture
 def relion_starfile(request):
-    return os.path.join(pytest.data_dir, request.param)
+    return os.path.join(pytest.DATADIR, request.param)
 
 
 @pytest.mark.xfail(reason="coming soon")

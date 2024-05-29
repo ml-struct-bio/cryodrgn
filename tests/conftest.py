@@ -8,11 +8,11 @@ from dataclasses import dataclass
 from cryodrgn.utils import run_command
 
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
-DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
+DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "tests", "data")
 
 
 def pytest_configure():
-    pytest.data_dir = DATA_DIR
+    pytest.DATADIR = DATA_DIR
 
 
 @pytest.fixture(scope="session", autouse=True)

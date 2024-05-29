@@ -5,6 +5,7 @@ Example usages
 $ cryodrgn train_vae projections.mrcs -o outs/002_trainvae --lr=0.0001 --zdim 10 \
                                       --poses angles.pkl --ctf test_ctf.pkl
 
+# cryoDRGN-ET tilt series reconstruction
 $ cryodrgn train_vae particles_from_M.star --datadir particleseries -o your-outdir \
                                            --ctf ctf.pkl --poses pose.pkl \
                                            --encode-mode tilt --dose-per-tilt 2.93 \

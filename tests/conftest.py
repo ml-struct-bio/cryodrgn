@@ -91,6 +91,7 @@ DATA_FOLDERS = {
 # Data fixtures for cryoDRGN outputs (and sometimes inputs)
 VOLUME_FILES = {
     "toy": "toy_projections.mrc",
+    "toy-small": "toymodel_small_nocenter.mrc",
     "hand": "hand-vol.mrc",
     "spike": "spike-vol.mrc",
     "empiar": "empiar_10076_7.mrc",

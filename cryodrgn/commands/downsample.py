@@ -1,7 +1,10 @@
-"""
-Downsample an image stack or volume by clipping fourier frequencies
-"""
+"""Downsample an image stack or volume by clipping fourier frequencies.
 
+Example usages
+--------------
+$ cryodrgn downsample my_particle_stack.mrcs -D 128 -o particles.128.mrcs
+
+"""
 import argparse
 import math
 import os

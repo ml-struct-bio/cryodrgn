@@ -1,13 +1,12 @@
-import os
+import pytest
+import os.path
 from cryodrgn.utils import run_command
-
-DATA_FOLDER = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
 
 
 def test_fidelity_small():
     out, err = run_command(
-        f"cryodrgn pc_traversal "
-        f"{os.path.join(DATA_FOLDER, 'zvals_het-2_1k.pkl')} --pc 0 --lim 0.10 0.85 -n 5"
+        f"cryodrgn pc_traversal {os.path.join(pytest.DATADIR, 'zvals_het-2_1k.pkl')} "
+        "--pc 0 --lim 0.10 0.85 -n 5"
     )
     assert err == ""
 
@@ -21,7 +20,7 @@ def test_fidelity_small():
 def test_fidelity_big():
     out, err = run_command(
         f"cryodrgn pc_traversal "
-        f"{os.path.join(DATA_FOLDER, 'zvals_het-8_4k.pkl')} --pc 3"
+        f"{os.path.join(pytest.DATADIR, 'zvals_het-8_4k.pkl')} --pc 3"
     )
     assert err == ""
 

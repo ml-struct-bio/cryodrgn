@@ -1,11 +1,10 @@
+import pytest
 import os.path
 from cryodrgn.utils import run_command
 
-DATA_FOLDER = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
-
 
 def test_fidelity_small():
-    zvals_fl = os.path.join(DATA_FOLDER, "zvals_het-2_1k.pkl")
+    zvals_fl = os.path.join(pytest.DATADIR, "zvals_het-2_1k.pkl")
     out, err = run_command(
         f"cryodrgn graph_traversal {zvals_fl} --anchors 50 100 "
         f"--max-neighbors=30 --avg-neighbors=10"
@@ -35,7 +34,7 @@ def test_fidelity_small():
 
 
 def test_fidelity_medium():
-    zvals_fl = os.path.join(DATA_FOLDER, "zvals_het-2_1k.pkl")
+    zvals_fl = os.path.join(pytest.DATADIR, "zvals_het-2_1k.pkl")
     out, err = run_command(
         f"cryodrgn graph_traversal {zvals_fl} --anchors 50 100 "
         f"--max-neighbors=50 --avg-neighbors=20"
@@ -61,7 +60,7 @@ def test_fidelity_medium():
 
 
 def test_fidelity_large():
-    zvals_fl = os.path.join(DATA_FOLDER, "zvals_het-8_4k.pkl")
+    zvals_fl = os.path.join(pytest.DATADIR, "zvals_het-8_4k.pkl")
     out, err = run_command(
         f"cryodrgn graph_traversal {zvals_fl} --anchors 2020 3030 4040 "
         f"--max-neighbors=10 --avg-neighbors=5"

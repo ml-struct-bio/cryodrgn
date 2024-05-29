@@ -7,8 +7,9 @@ these two half-map reconstructions.
 
 Example usages
 ----------
-$ cryodrgn backproject_voxel particles.128.mrcs --poses pose.pkl -o backproj.128.mrc
-$ cryodrgn backproject_voxel particles.256.mrcs --poses pose.pkl
+$ cryodrgn backproject_voxel particles.128.mrcs \
+                             --ctf ctf.pkl --poses pose.pkl -o backproj.128.mrc
+$ cryodrgn backproject_voxel particles.256.mrcs --ctf ctf.pkl --poses pose.pkl \
                              --ind good-particles.pkl -o backproj.256.mrc --lazy
 
 """

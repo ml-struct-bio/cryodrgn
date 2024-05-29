@@ -1,15 +1,14 @@
+import pytest
 import os
 import numpy as np
 from cryodrgn.utils import run_command
 
-DATA_FOLDER = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
 
-
-def test_fidelity_small():
-    out_file = os.path.join("output", "path.txt")
+def test_fidelity_small(tmpdir):
+    in_file = os.path.join(pytest.DATADIR, "zvals_het-2_1k.pkl")
+    out_file = os.path.join(tmpdir, "path.txt")
     out, err = run_command(
-        f"cryodrgn direct_traversal {os.path.join(DATA_FOLDER, 'zvals_het-2_1k.pkl')} "
-        f"--anchors 77 333 -o {out_file}"
+        f"cryodrgn direct_traversal {in_file} --anchors 77 333 -o {out_file}"
     )
     assert err == ""
 
@@ -29,11 +28,11 @@ def test_fidelity_small():
     )
 
 
-def test_fidelity_big():
-    out_file = os.path.join("output", "path.txt")
+def test_fidelity_big(tmpdir):
+    in_file = os.path.join(pytest.DATADIR, "zvals_het-8_4k.pkl")
+    out_file = os.path.join(tmpdir, "path2.txt")
     out, err = run_command(
-        f"cryodrgn direct_traversal {os.path.join(DATA_FOLDER, 'zvals_het-8_4k.pkl')} "
-        f"--anchors 1099 4001 -o {out_file}"
+        f"cryodrgn direct_traversal {in_file} --anchors 1099 4001 -o {out_file}"
     )
     assert err == ""
 

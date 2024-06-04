@@ -1,7 +1,16 @@
-"""
-Visualize latent space and generate volumes
-"""
+"""Visualize latent space and generate volumes using a trained cryoDRGN model.
 
+Example usages
+--------------
+$ cryodrgn analyze 003_abinit-het/ 49
+
+# it is necessary to invert handedness for some datasets
+$ cryodrgn analyze 003_abinit-het/ 99 --invert
+
+# don't run more computationally expensive analyses
+$ cryodrgn analyze 003_abinit-het/ 99 --skip-umap --skip-vol
+
+"""
 import argparse
 import os
 import os.path

@@ -7,9 +7,9 @@ these two half-map reconstructions.
 
 Example usages
 ----------
-$ cryodrgn backproject_voxel particles.128.mrcs \
+$ cryodrgn backproject_voxel particles.128.mrcs
                              --ctf ctf.pkl --poses pose.pkl -o backproj.128.mrc
-$ cryodrgn backproject_voxel particles.256.mrcs --ctf ctf.pkl --poses pose.pkl \
+$ cryodrgn backproject_voxel particles.256.mrcs --ctf ctf.pkl --poses pose.pkl
                              --ind good-particles.pkl -o backproj.256.mrc --lazy
 
 """
@@ -59,15 +59,17 @@ def add_args(parser):
         "--reg-weight",
         type=float,
         default=1.0,
-        help="Add this value times the mean weight to the weight map to regularize the volume, reducing noise."
-        "Alternatively, you can set --output-sumcount, and then use `cryodrgn_utils regularize_backproject` on the"
-        ".sums and .counts files to try different regularization constants post hoc.",
+        help="Add this value times the mean weight to the weight map to regularize the"
+        "volume, reducing noise.\nAlternatively, you can set --output-sumcount, and "
+        "then use `cryodrgn_utils regularize_backproject` on the"
+        ".sums and .counts files to try different regularization constants post hoc.\n"
+        "(default: %(default)s)",
     )
     parser.add_argument(
         "--output-sumcount",
         action="store_true",
-        help="Output voxel sums and counts so that different regularization weights can be applied post hoc, with "
-        "`cryodrgn_utils regularize_backproject`.",
+        help="Output voxel sums and counts so that different regularization weights "
+        "can be applied post hoc, with `cryodrgn_utils regularize_backproject`.",
     )
 
     group = parser.add_argument_group("Dataset loading options")

@@ -12,6 +12,7 @@ is used to create the commands during installation.
 import argparse
 import os
 from importlib import import_module
+import re
 import cryodrgn
 
 
@@ -45,6 +46,8 @@ def _get_commands(cmd_dir: str, doc_str: str = "") -> None:
                 parsed_doc = module.__doc__.split("\n") if module.__doc__ else list()
                 descr_txt = parsed_doc[0] if parsed_doc else ""
                 epilog_txt = "" if len(parsed_doc) <= 1 else "\n".join(parsed_doc[1:])
+                epilog_txt = re.sub(" +", " ", epilog_txt)
+                epilog_txt = re.sub("\n ", "\n\t ", epilog_txt)
 
                 # we add documentation text parsed from the module's docstring
                 this_parser = subparsers.add_parser(

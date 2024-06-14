@@ -21,11 +21,13 @@ class TestBackprojection:
 
         return odir
 
+    # NOTE: these have to be the same as in `test_to_fsc()` below for proper cleanup!
     @pytest.mark.parametrize(
         "particles, poses, ctf, datadir",
         [
             ("toy.mrcs", "toy-poses", None, None),
             ("toy.mrcs", "toy-poses", "CTF-Test", None),
+            ("toy.txt", "toy-poses", "CTF-Test", None),
             ("hand", "hand-rot", None, None),
             ("hand", "hand-poses", None, None),
             ("tilts.star", "tilt-poses", "CTF-Tilt", None),
@@ -96,11 +98,13 @@ class TestBackprojection:
         assert round(float(pixres), 3) == 0.484
         assert float(fsc_val) > 0.2
 
+    # NOTE: these have to be the same as in `test_train()` above for proper cleanup!
     @pytest.mark.parametrize(
         "particles, poses, ctf, datadir",
         [
             ("toy.mrcs", "toy-poses", None, None),
             ("toy.mrcs", "toy-poses", "CTF-Test", None),
+            ("toy.txt", "toy-poses", "CTF-Test", None),
             ("hand", "hand-rot", None, None),
             ("hand", "hand-poses", None, None),
             ("tilts.star", "tilt-poses", "CTF-Tilt", None),

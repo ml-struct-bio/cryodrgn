@@ -3,12 +3,12 @@
 Example usages
 --------------
 # this model used the default of zdim=8
-$ cryodrgn eval_vol 004_vae128/weights.pkl -c 004_vae128/config.yaml \
+$ cryodrgn eval_vol 004_vae128/weights.pkl -c 004_vae128/config.yaml
                                            -o zero-vol.mrc -z 0 0 0 0 0 0 0 0
 
 # we can instead specify a z-latent-space path instead of a single location
 # here the model was trained using zdim=4
-$ cryodrgn eval_vol 004_vae128/weights.pkl -c 004_vae128/config.yaml -o zero-vol.mrc \
+$ cryodrgn eval_vol 004_vae128/weights.pkl -c 004_vae128/config.yaml -o zero-vol.mrc
                                            --z-start 0 -1 0 0 --z-end 1 1 1 1
 
 """

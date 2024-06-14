@@ -3,9 +3,9 @@
 Example usages
 --------------
 
-$ cryodrgn eval_images hand.mrcs het_weights.pkl --config config.pkl \
-                        -o output/out_eval_images_losses.pkl \
-                       --out-z output/out_eval_images_z.pkl \
+$ cryodrgn eval_images hand.mrcs het_weights.pkl --config config.pkl
+                        -o output/out_eval_images_losses.pkl
+                       --out-z output/out_eval_images_z.pkl
                        --poses hand_rot.pkl --log-interval 1 --verbose
 
 """

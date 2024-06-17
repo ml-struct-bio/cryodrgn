@@ -235,6 +235,12 @@ def main(args):
     mask = lattice.get_circular_mask(D // 2)
     iterator = range(min(args.first, Nimg)) if args.first else range(Nimg)
 
+    if args.tilt:
+        use_tilts = set(range(args.ntilts))
+        iterator = [
+            ii for ii in iterator if int(data.tilt_numbers[ii].item()) in use_tilts
+        ]
+
     volume_full = torch.zeros((D, D, D), device=device)
     counts_full = torch.zeros((D, D, D), device=device)
     volume_half1 = torch.zeros((D, D, D), device=device)
@@ -242,8 +248,8 @@ def main(args):
     volume_half2 = torch.zeros((D, D, D), device=device)
     counts_half2 = torch.zeros((D, D, D), device=device)
 
-    for ii in iterator:
-        if ii % 100 == 0:
+    for i, ii in enumerate(iterator):
+        if i % 100 == 0:
             logger.info(f"fimage {ii}")
 
         r, t = posetracker.get_pose(ii)

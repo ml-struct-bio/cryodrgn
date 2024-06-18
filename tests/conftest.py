@@ -15,16 +15,6 @@ def pytest_configure():
     pytest.DATADIR = DATA_DIR
 
 
-@pytest.fixture(scope="session", autouse=True)
-def default_outdir() -> None:
-    """Helper fixture to remove default  output folder upon completion of all tests."""
-    yield None
-
-    # we don't always create this folder, e.g. if we are only doing some of the tests
-    if os.path.exists("output"):
-        shutil.rmtree("output")
-
-
 @pytest.fixture
 def testing_dataset(request) -> str:
     return os.path.join(DATA_DIR, request.param)

@@ -379,3 +379,84 @@ class TestParseWriteStar:
         backproject_voxel.main(parser.parse_args(args))
 
         assert os.path.exists(out_vol)
+
+
+@pytest.mark.parametrize(
+    "particles, poses, ctf", [("toy.mrcs", "toy-poses", "CTF-Test")], indirect=True
+)
+@pytest.mark.parametrize("dsample_dim", [8, 10])
+@pytest.mark.parametrize("chunksize", [4, 7])
+class TestBackprojectFromChunkedDownsampled:
+    def get_outpaths(
+        self, tmpdir_factory, particles, poses, ctf, dsample_dim, chunksize
+    ):
+        dirname = os.path.join(
+            "BackprojectChunked",
+            particles.label,
+            poses.label,
+            ctf.label,
+            "_".join([str(dsample_dim), str(chunksize)]),
+        )
+        odir = os.path.join(tmpdir_factory.getbasetemp(), dirname)
+        os.makedirs(odir, exist_ok=True)
+        out_mrcs = os.path.join(odir, "downsampled.mrcs")
+        out_txt = os.path.join(odir, "downsampled.txt")
+
+        return odir, out_mrcs, out_txt
+
+    def test_downsample_with_chunks(
+        self, tmpdir_factory, particles, poses, ctf, dsample_dim, chunksize
+    ):
+        outdir, out_mrcs, out_txt = self.get_outpaths(
+            tmpdir_factory, particles, poses, ctf, dsample_dim, chunksize
+        )
+
+        args = downsample.add_args(argparse.ArgumentParser()).parse_args(
+            [
+                particles.path,
+                "-D",
+                str(dsample_dim),
+                "--chunk",
+                str(chunksize),
+                "-o",
+                out_mrcs,
+            ]
+        )
+        downsample.main(args)
+
+        orig_imgs = ImageSource.from_file(particles.path, lazy=False)
+        assert ImageSource.from_file(out_txt, lazy=False).shape == (
+            orig_imgs.shape[0],
+            dsample_dim,
+            dsample_dim,
+        )
+
+    @pytest.mark.parametrize("indices", [None, "random-100"], indirect=True)
+    def test_backprojection_from_chunks(
+        self, tmpdir_factory, particles, poses, ctf, indices, dsample_dim, chunksize
+    ):
+        outdir, out_mrcs, out_txt = self.get_outpaths(
+            tmpdir_factory, particles, poses, ctf, dsample_dim, chunksize
+        )
+
+        args = [out_txt, "--poses", poses.path]
+        out_vol = os.path.join(outdir, "vol.mrc")
+        if ctf.path is not None:
+            args += ["--ctf", ctf.path]
+        if indices.path is not None:
+            args += ["--ind", indices.path]
+            out_vol = out_vol[:-4] + f"_{indices.label}.mrc"
+        args += ["-o", out_vol]
+
+        parser = argparse.ArgumentParser()
+        backproject_voxel.add_args(parser)
+        backproject_voxel.main(parser.parse_args(args))
+        assert os.path.exists(out_vol)
+
+        vol_fls = [
+            fl
+            for fl in os.listdir(outdir)
+            if fl[-4:] == ".mrc" and os.path.basename(fl)[:3] == "vol"
+        ]
+        if len(vol_fls) == 2:
+            shutil.rmtree(outdir)

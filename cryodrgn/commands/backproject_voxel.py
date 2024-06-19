@@ -129,7 +129,7 @@ def add_args(parser):
 
 def add_slice(volume, counts, ff_coord, ff, D, ctf_mul):
     d2 = int(D / 2)
-    ff_coord = ff_coord.transpose(0, 1)
+    ff_coord = ff_coord.transpose(0, 1).clip(-d2, d2)
     xf, yf, zf = ff_coord.floor().long()
     xc, yc, zc = ff_coord.ceil().long()
 

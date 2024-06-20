@@ -11,6 +11,9 @@ $ cryodrgn backproject_voxel particles.128.mrcs
                              --ctf ctf.pkl --poses pose.pkl -o backproj.128.mrc
 $ cryodrgn backproject_voxel particles.256.mrcs --ctf ctf.pkl --poses pose.pkl
                              --ind good-particles.pkl -o backproj.256.mrc --lazy
+$ cryodrgn backproject_voxel particles_from_M.star --datadir subtilts/128/
+                             --ctf ctf.pkl --poses pose.pkl
+                             -o bproj_tilt.mrc --lazy --tilt --ntilts=5
 
 """
 import argparse

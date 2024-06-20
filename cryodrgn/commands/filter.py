@@ -26,8 +26,7 @@ from matplotlib.widgets import LassoSelector, RadioButtons
 from matplotlib.path import Path as PlotPath
 from scipy.spatial.transform import Rotation as RR
 
-from cryodrgn import analysis
-from cryodrgn import utils
+from cryodrgn import analysis, utils
 
 logger = logging.getLogger(__name__)
 

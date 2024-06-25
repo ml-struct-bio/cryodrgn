@@ -108,57 +108,57 @@ so/cryodrgn-conformational-landscape-analysis-a5af129288d54d1aa95388bdac48235a.<
 </ul></details>
 
 <details><summary>Version 0.3.4</summary><ul>
-* FIX: Bug in `write_starfile.py` when provided particle stack is chunked (.txt file)
-* Support micrograph coordinates and additional column headers to `write_starfile.py`
-* New helper scripts: `analyze_convergence.py` (_in beta testing_) contributed by <a href="bmp@mit.edu">Barrett Powell</a> (thanks!) and `make_random_selection.py` for splitting up particle stacks for training
+    <li>FIX: Bug in `write_starfile.py` when provided particle stack is chunked (.txt file)</li>
+    <li>Support micrograph coordinates and additional column headers to `write_starfile.py`</li>
+    <li>New helper scripts: `analyze_convergence.py` (_in beta testing_) contributed by <a href="bmp@mit.edu">Barrett
+Powell</a> (thanks!) and `make_random_selection.py` for splitting up particle stacks for training</li>
 </ul></details>
 
-<details><summary>Version 0.3.3</summary>
-* Faster image preprocessing and smaller memory footprint
-* New: `cryodrgn preprocess` for large datasets (_in beta testing_ - see <a href="https://www.notion.so/cryodrgn-preprocess-d84a9d9df8634a6a8bfd32d6b5e737ef">this Notion doc</a> for details)
-* Known <a href="https://github.com/zhonge/cryodrgn/issues/66">issue</a> with PyTorch version 1.9+
-</details>
+<details><summary>Version 0.3.3</summary><ul>
+    <li>Faster image preprocessing and smaller memory footprint</li>
+    <li>New: `cryodrgn preprocess` for large datasets (_in beta testing_ - see <a href="https://www.notion.
+so/cryodrgn-preprocess-d84a9d9df8634a6a8bfd32d6b5e737ef">this Notion doc</a> for details)</li>
+    <li>* Known <a href="https://github.com/zhonge/cryodrgn/issues/66">issue</a> with PyTorch version 1.9+</li>
+</ul></details>
 
-<details><summary>Version 0.3.2</summary>
-* New: cryoDRGN_filtering.ipynb for interactive filtering/selection of images from the dataset
-* New: `cryodrgn view_config`
-* Minor performance improvements and compatibility fixes
-</details>
+<details><summary>Version 0.3.2</summary><ul>
+    <li>New: cryoDRGN_filtering.ipynb for interactive filtering/selection of images from the dataset</li>
+    <li>New: `cryodrgn view_config`</li>
+    <li>Minor performance improvements and compatibility fixes</li>
+</ul></details>
 
-<details><summary>Version 0.3.1</summary>
-* New: Script `write_starfile.py` to convert (filtered) particle selection to a .star file
-* More visualizations in `cryodrgn analyze`
-</details>
+<details><summary>Version 0.3.1</summary><ul>
+    <li>New: Script `write_starfile.py` to convert (filtered) particle selection to a .star file</li>
+    <li>More visualizations in `cryodrgn analyze`</li>
+</ul></details>
 
-<details><summary>Version 0.3.0</summary>
-* New: GPU parallelization with flag `--multigpu`
-* New: Mode for accelerated mixed precision training with flag `--amp`, available for NVIDIA tensor core GPUs
-* Interface update:
-    * Renamed encoder arguments `--qdim` and `--qlayers` to `--enc-dim` and `--enc-layers`
-    * Renamed decoder arguments `--pdim` and `--players` to `--dec-dim` and `--dec-layers`
-* Argument default changes:
-    * Flipped the default for `--invert-data` to True by default
-    * Flipped the default for `--window` to True by default
-* Updated training recommendations in below quick start guide
-* Updates to cryodrgn analyze
-    * More visualizations
-    * Order kmeans volumes according to distances in latent space (previously random)
-    * More features for particle selection and filtering in the Jupiter notebook
-</details>
+<details><summary>Version 0.3.0</summary><ul>
+    <li>New: GPU parallelization with flag `--multigpu`</li>
+    <li>New: Mode for accelerated mixed precision training with flag `--amp`, available for NVIDIA tensor core GPUs</li>
+    <li>Interface update: renamed encoder arguments `--qdim` and `--qlayers` to `--enc-dim` and `--enc-layers`;
+renamed decoder arguments `--pdim` and `--players` to `--dec-dim` and `--dec-layers`</li>
+    <li>Argument default changes: flipped the default for `--invert-data` to True by default, and flipped the default
+for `--window` to True by default</li>
+    <li>Updated training recommendations in below quick start guide</li>
+    <li>Updates to cryodrgn analyze: more visualizations, ordering kmeans volumes according to distances in latent
+space (previously random), and more features for particle selection and filtering in the Jupiter notebook</li>
+</ul></details>
 
-<details><summary>Version 0.2.1</summary>
-* New: Parsing of RELION 3.1 files
-* Fix: Compatibility with pytorch 1.5
-</details>
+<details><summary>Version 0.2.1</summary><ul>
+    <li>New: Parsing of RELION 3.1 files</li>
+    <li>Fix: Compatibility with pytorch 1.5</li>
+</ul></details>
 
-<details><summary>Version 0.2.0</summary>
-* New interface and proper python packaging with `setup.py`. This version has identical functionality and argument usage as previous versions, however tools are now available from a common entry point. See:
+<details><summary>Version 0.2.0</summary><ul>
+    <li>New interface and proper python packaging with `setup.py`. This version has identical functionality and
+argument usage as previous versions, however tools are now available from a common entry point. See:
 
-    `$ cryodrgn <command> -h`
+```$ cryodrgn -h```
 
-* New analysis pipeline `cryodrgn analyze`
-* New latent space traversal scripts with `cryodrgn graph_traversal` and `cryodrgn pc_traversal`.
-</details>
+</li>
+<li>New analysis pipeline `cryodrgn analyze`</li>
+<li>New latent space traversal scripts with `cryodrgn graph_traversal` and `cryodrgn pc_traversal`.</li>
+</ul></details>
 
 
 ## Installation

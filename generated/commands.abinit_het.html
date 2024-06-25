@@ -56,7 +56,10 @@
 <li class="toctree-l2"><a class="reference internal" href="commands.train_nn.html">commands.train_nn</a></li>
 <li class="toctree-l2"><a class="reference internal" href="commands.train_vae.html">commands.train_vae</a></li>
 <li class="toctree-l2"><a class="reference internal" href="commands.abinit_homo.html">commands.abinit_homo</a></li>
-<li class="toctree-l2 current"><a class="current reference internal" href="#">commands.abinit_het</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">commands.abinit_het</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#example-usages">Example usages</a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>
@@ -88,7 +91,21 @@
              
   <section id="module-commands.abinit_het">
 <span id="commands-abinit-het"></span><h1>commands.abinit_het<a class="headerlink" href="#module-commands.abinit_het" title="Link to this heading"></a></h1>
-<p>Heterogeneous NN reconstruction with hierarchical pose optimization</p>
+<p>Train a heterogeneous NN reconstruction model with hierarchical pose optimization.</p>
+<section id="example-usages">
+<h2>Example usages<a class="headerlink" href="#example-usages" title="Link to this heading"></a></h2>
+<p># the default is to train for thirty epochs; here we train for fifty instead
+$ cryodrgn abinit_het particles.mrcs -o cryodrgn-outs/003_abinit_het –zdim 4</p>
+<blockquote>
+<div><p>–ctf ctf.pkl -n 50</p>
+</div></blockquote>
+<p># using .star particle input requires datadir argument pointing to image stacks
+$ cryodrgn abinit_het particles.star –datadir path_to_images/</p>
+<blockquote>
+<div><p>-o cryodrgn-outs/004_abinit_het.10 –zdim 10
+–ctf ctf.pkl -n 50</p>
+</div></blockquote>
+</section>
 <p class="rubric">Functions</p>
 <table class="autosummary longtable docutils align-default">
 <tbody>

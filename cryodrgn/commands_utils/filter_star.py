@@ -50,7 +50,7 @@ def main(args):
         df = s.df.loc[ind]
 
     # filter data optics table by what optics groups are left in the particle table
-    if s.data_optics:
+    if s.data_optics and "_rlnOpticsGroup" in df.columns:
         new_grps = set(df["_rlnOpticsGroup"])
         new_optics_df = s.data_optics.df.copy()
         new_optics_df = new_optics_df.loc[new_optics_df._rlnOpticsGroup.isin(new_grps)]
@@ -72,12 +72,15 @@ def main(args):
 
             # filter data optics table by what optics groups are left
             # in this micrograph's particle table
-            micro_grps = set(group_df["_rlnOpticsGroup"])
-            micro_optics_df = new_optics.df.copy()
-            micro_optics_df = micro_optics_df.loc[
-                micro_optics_df._rlnOpticsGroup.isin(micro_grps)
-            ]
-            micro_optics = starfile.Starfile(headers=None, df=micro_optics_df)
+            if s.data_optics and "_rlnOpticsGroup" in df.columns:
+                micro_grps = set(group_df["_rlnOpticsGroup"])
+                micro_optics_df = new_optics.df.copy()
+                micro_optics_df = micro_optics_df.loc[
+                    micro_optics_df._rlnOpticsGroup.isin(micro_grps)
+                ]
+                micro_optics = starfile.Starfile(headers=None, df=micro_optics_df)
+            else:
+                micro_optics = None
 
             micro_star = starfile.Starfile(
                 headers=None,

@@ -21,9 +21,9 @@ For any feedback, questions, or bugs, please file a Github issue or start a Gith
 
 * [NEW] `cryodrgn direct_traversal` to generate interpolations in the conformation latnet space between two points
 * support for .txt files in `write_star`
-* support for RELION 3.1 input files with multiple optics groups in `parse_pose_star`
+* support for RELION 3.1 input files in `parse_pose_star`, `filter_star`
 * adding `--datadir` to `cryodrgn abinit_homo` for use with .star files
-* fixing various bugs in Jupyter demonstration notebooks
+* fixing various bugs in `backproject_voxel`, Jupyter demonstration notebooks
 * support for TestPyPI beta release deployments via `pip`
 
 
@@ -38,106 +38,99 @@ The official release of [cryoDRGN-ET](https://www.biorxiv.org/content/10.1101/20
 
 ## Previous versions
 
-<details><summary>Version 3.2</summary>
-* [NEW] `cryodrgn_utils clean` for removing extraneous output files from completed experiments
-* [NEW] `cryodrgn_utils fsc`, `cryodrgn_utils fsc_plot`, `cryodrgn_utils gen_mask` adapted from existing scripts;
-  for calculating FSCs, plotting them, and generating masks for volumes respectively
-* `cryodrgn backproject_voxel` now produces half-maps and a half-map FSC
-* fixing `filter_star` to accept tilt series as well
-* fixing assorted bugs in e.g. `write_star`, `invert_constrast`, and `train_vae` (see release notes)
-</details>
+<details><summary>Version 3.2</summary><ul>
+  <li>[NEW] `cryodrgn_utils clean` for removing extraneous output files from completed experiments</li>
+  <li>[NEW] `cryodrgn_utils fsc`, `cryodrgn_utils fsc_plot`, `cryodrgn_utils gen_mask` adapted from existing scripts;
+  for calculating FSCs, plotting them, and generating masks for volumes respectively</li>
+  <li>`cryodrgn backproject_voxel` now produces half-maps and a half-map FSC</li>
+  <li>fixing `filter_star` to accept tilt series as well</li>
+  <li>fixing assorted bugs in e.g. `write_star`, `invert_constrast`, and `train_vae` (see release notes)
+</ul></details>
 
-<details><summary>Version 3.1</summary>
-* [NEW] `cryodrgn filter` interface for interactive filtering of particles as an alternative to the cryoDRGN_filter Jupyter notebook
-</details>
+<details><summary>Version 3.1</summary><ul>
+  <li>`cryodrgn filter` interface for interactive filtering of particles as an alternative to the cryoDRGN_filter
+Jupyter notebook</li>
+</ul></details>
 
-<details><summary>Version 2.3</summary>
-* Model configuration files are now saved as human-readable config.yaml files (https://github.com/zhonge/cryodrgn/issues/235)
-* Fix machine stamp in output .mrc files for better compatibility with downstream tools (https://github.com/zhonge/cryodrgn/pull/260)
-* Better documentation of help flags in ab initio reconstruction tools (https://github.com/zhonge/cryodrgn/issues/258)
-* [FIX] By default, window images in `cryodrgn abinit_homo` (now consistent with other reconstruction tools) (https://github.com/zhonge/cryodrgn/issues/258)
-* [FIX] Reduce memory usage when using `--preprocessed` and `--ind` (https://github.com/zhonge/cryodrgn/pull/272)
-</details>
+<details><summary>Version 2.3</summary><ul>
+  <li>Model configuration files are now saved as human-readable config.yaml files (https://github.
+com/zhonge/cryodrgn/issues/235)</li>
+  <li>Fix machine stamp in output .mrc files for better compatibility with downstream tools (https://github.
+com/zhonge/cryodrgn/pull/260)</li>
+  <li>Better documentation of help flags in ab initio reconstruction tools (https://github.
+com/zhonge/cryodrgn/issues/258)</li>
+  <li>[FIX] By default, window images in `cryodrgn abinit_homo` (now consistent with other reconstruction tools)
+(https://github.com/zhonge/cryodrgn/issues/258)</li>
+  <li>[FIX] Reduce memory usage when using `--preprocessed` and `--ind` (https://github.com/zhonge/cryodrgn/pull/272)</li>
+</ul></details>
 
-<details><summary>Version 2.2</summary>
-* [NEW] Tools for ab initio homogeneous and heterogeneous reconstruction:
+<details><summary>Version 2.2</summary><ul>
+  <li>[NEW] Tools for ab initio homogeneous and heterogeneous reconstruction:
 
-```
-(cryodrgn) $ cryodrgn abinit_homo -h
-(cryodrgn) $ cryodrgn abinit_het -h
-```
+    ```
+    (cryodrgn) $ cryodrgn abinit_homo -h
+    (cryodrgn) $ cryodrgn abinit_het -h
+    ```
+  </li>
 
-* [NEW] Utils function for writing cryoSPARC `.cs`/`.csg` files [to reimport data into cryoSPARC](https://github.com/zhonge/cryodrgn/issues/150#issuecomment-1465094751):
+  <li>[NEW] Utils function for writing cryoSPARC `.cs`/`.csg` files [to reimport data into cryoSPARC](https://github.
+  com/zhonge/cryodrgn/issues/150#issuecomment-1465094751):
 
-```
-(cryodrgn) $ cryodrgn_utils write_cs
-```
-
-* [Improved plotting](https://github.com/zhonge/cryodrgn/issues/219) in `cryodrgn analyze`
-
-* Many codebase improvements with open-source software development practices (e.g. continuous integration tests, black, flake8, pyright, logging, and PyPi packaging).
-
-* Note: we are working on a major refactor of data loading for handling large datasets for the next minor version (v2.4). This will entail an API change for the mrc.py library module
-
-</details>
-
+  ```
+  (cryodrgn) $ cryodrgn_utils write_cs
+  ```
+  </li>
+  <li>[Improved plotting](https://github.com/zhonge/cryodrgn/issues/219) in `cryodrgn analyze`</li>
+  <li>Many codebase improvements with open-source software development practices (e.g. continuous integration tests,
+black, flake8, pyright, logging, and PyPi packaging).</li>
+</ul></details>
 
 <details><summary>Version 1.1.x</summary>
-Updated default parameters for `cryodrgn train_vae` with modified positional encoding, larger model architecture, and accelerated mixed-precision training turned on by default:
-* Mixed precision training is now turned on by default (Use `--no-amp` to revert to single precision training)
-* Encoder/decoder architecture is now 1024x3 by default (Use `--enc-dim 256` and `--dec-dim 256` to revert)
-* Gaussian Fourier featurization for faster training and higher resolution density maps (Use `--pe-type geom_lowf` to revert)
-</details>
+Updated default parameters for `cryodrgn train_vae` with modified positional encoding, larger model architecture,
+and accelerated mixed-precision training turned on by default:
+<ul>
+  <li>Mixed precision training is now turned on by default (Use `--no-amp` to revert to single precision training)</li>
+  <li>Encoder/decoder architecture is now 1024x3 by default (Use `--enc-dim 256` and `--dec-dim 256` to revert)</li>
+  <li>Gaussian Fourier featurization for faster training and higher resolution density maps (Use `--pe-type geom_lowf`
+to revert)</li>
+</ul></details>
 
 <details><summary>Version 1.0.x</summary>
 The official version 1.0 release. This version introduces several new tools for analysis of the reconstructed ensembles, and adds functionality for calling utility scripts with `cryodrgn_utils <command>`.
+<ul>
+  <li>NEW: `cryodrgn analyze_landscape` and `cryodrgn analyze_landscape_full` for automatic assignment of classes and
+conformational landscape visualization. Documentation for this new feature is here: https://www.notion.
+so/cryodrgn-conformational-landscape-analysis-a5af129288d54d1aa95388bdac48235a.</li>
+  <li>NEW: Faster training and higher resolution model with Gaussian Fourier featurization (Use `--pe-type gaussian`)</li>
+  <li>NEW: `cryodrgn_utils <command> -h` for standalone utility scripts</li>
+  <li>NEW: `cryodrgn_utils write_star` for converting cryoDRGN particle selections to `.star` files</li>
+  <li>Add pytorch native mixed precision training and fix support for pytorch 1.9+</li>
+</ul></details>
 
-* NEW: `cryodrgn analyze_landscape` and `cryodrgn analyze_landscape_full` for automatic assignment of classes and conformational landscape visualization. Documentation for this new feature is here: https://www.notion.so/cryodrgn-conformational-landscape-analysis-a5af129288d54d1aa95388bdac48235a.
-* NEW: Faster training and higher resolution model with Gaussian Fourier featurization (Use `--pe-type gaussian`)
-* NEW: `cryodrgn_utils <command> -h` for standalone utility scripts
-* NEW: `cryodrgn_utils write_star` for converting cryoDRGN particle selections to `.star` files
-* Add pytorch native mixed precision training and fix support for pytorch 1.9+
-
-</details>
-
-
-<details><summary>Version 0.3.4</summary>
-
+<details><summary>Version 0.3.4</summary><ul>
 * FIX: Bug in `write_starfile.py` when provided particle stack is chunked (.txt file)
 * Support micrograph coordinates and additional column headers to `write_starfile.py`
 * New helper scripts: `analyze_convergence.py` (_in beta testing_) contributed by <a href="bmp@mit.edu">Barrett Powell</a> (thanks!) and `make_random_selection.py` for splitting up particle stacks for training
-
-</details>
-
+</ul></details>
 
 <details><summary>Version 0.3.3</summary>
-
 * Faster image preprocessing and smaller memory footprint
 * New: `cryodrgn preprocess` for large datasets (_in beta testing_ - see <a href="https://www.notion.so/cryodrgn-preprocess-d84a9d9df8634a6a8bfd32d6b5e737ef">this Notion doc</a> for details)
 * Known <a href="https://github.com/zhonge/cryodrgn/issues/66">issue</a> with PyTorch version 1.9+
-
 </details>
 
-
 <details><summary>Version 0.3.2</summary>
-
 * New: cryoDRGN_filtering.ipynb for interactive filtering/selection of images from the dataset
 * New: `cryodrgn view_config`
 * Minor performance improvements and compatibility fixes
-
 </details>
-
 
 <details><summary>Version 0.3.1</summary>
-
 * New: Script `write_starfile.py` to convert (filtered) particle selection to a .star file
 * More visualizations in `cryodrgn analyze`
-
 </details>
 
-
 <details><summary>Version 0.3.0</summary>
-
 * New: GPU parallelization with flag `--multigpu`
 * New: Mode for accelerated mixed precision training with flag `--amp`, available for NVIDIA tensor core GPUs
 * Interface update:
@@ -151,28 +144,22 @@ The official version 1.0 release. This version introduces several new tools for 
     * More visualizations
     * Order kmeans volumes according to distances in latent space (previously random)
     * More features for particle selection and filtering in the Jupiter notebook
-
 </details>
-
 
 <details><summary>Version 0.2.1</summary>
-
 * New: Parsing of RELION 3.1 files
 * Fix: Compatibility with pytorch 1.5
-
 </details>
 
-
 <details><summary>Version 0.2.0</summary>
-
 * New interface and proper python packaging with `setup.py`. This version has identical functionality and argument usage as previous versions, however tools are now available from a common entry point. See:
 
     `$ cryodrgn <command> -h`
 
 * New analysis pipeline `cryodrgn analyze`
 * New latent space traversal scripts with `cryodrgn graph_traversal` and `cryodrgn pc_traversal`.
-
 </details>
+
 
 ## Installation
 

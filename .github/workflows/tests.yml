@@ -34,7 +34,8 @@ jobs:
           python3 -m pip install pytest-xdist
           python3 -m pip install .
           python3 -m pip uninstall -y torch
-          python3 -m pip install --no-cache-dir torch==${{ matrix.torch }}
+	  python3 -m pip cache purge
+          python3 -m pip install torch==${{ matrix.torch }}
 
       - name: Pytest
         run: |

@@ -1,14 +1,9 @@
-import os.path
+import pytest
 import argparse
 from cryodrgn.commands_utils import view_header
 
-DATA_FOLDER = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
 
-
-def test_view_header():
-    args = view_header.add_args(argparse.ArgumentParser()).parse_args(
-        [
-            f"{DATA_FOLDER}/hand.mrcs",
-        ]
-    )
+@pytest.mark.parametrize("particles", ["hand", "toy.mrcs"], indirect=True)
+def test_view_header(particles):
+    args = view_header.add_args(argparse.ArgumentParser()).parse_args([particles.path])
     view_header.main(args)

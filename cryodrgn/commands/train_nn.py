@@ -3,7 +3,7 @@
 Example usages
 --------------
 $ cryodrgn train_nn projections.mrcs --poses angles.pkl -o output/train_nn -n 10
-$ cryodrgn train_nn projections.star --poses angles.pkl -o outs/003_train-nn \
+$ cryodrgn train_nn projections.star --poses angles.pkl -o outs/003_train-nn
                                      --num-epochs=30 --lr=0.01
 
 """

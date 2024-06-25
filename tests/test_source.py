@@ -4,20 +4,17 @@ import torch
 import pytest
 from cryodrgn.source import ImageSource
 
-DATA_FOLDER = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
-
 
 @pytest.fixture
 def mrcs_data():
     return ImageSource.from_file(
-        f"{DATA_FOLDER}/toy_projections.mrcs", lazy=False
+        os.path.join(pytest.DATADIR, "toy_projections.mrcs"), lazy=False
     ).images()
 
 
 def test_loading_mrcs(mrcs_data):
-    src = ImageSource.from_file(
-        f"{DATA_FOLDER}/toy_projections.mrcs"
-    )  # 100 30x30 images
+    # 100 30x30 images
+    src = ImageSource.from_file(os.path.join(pytest.DATADIR, "toy_projections.mrcs"))
     # Indexing inside the 'images' attributes causes the hitherto lazy data to turn into a Tensor
     assert torch.allclose(src[:], mrcs_data)
     # We can, of course, do selective indexing to avoid realizing ALL the underlying data to memory
@@ -26,14 +23,15 @@ def test_loading_mrcs(mrcs_data):
 
 def test_loading_starfile(mrcs_data):
     src = ImageSource.from_file(
-        f"{DATA_FOLDER}/toy_projections_13.star", datadir=DATA_FOLDER
+        os.path.join(pytest.DATADIR, "toy_projections_13.star"),
+        datadir=pytest.DATADIR,
     )
     arr = src[7:12]
     assert arr.shape == (5, 30, 30)
 
 
 def test_loading_txtfile(mrcs_data):
-    src = ImageSource.from_file(f"{DATA_FOLDER}/toy_projections_2.txt")
+    src = ImageSource.from_file(os.path.join(pytest.DATADIR, "toy_projections_2.txt"))
     # Each line of the txt file points to an .mrcs file with 1000 particles. Try to get a slice across the two.
     arr = src[990:1005]
     assert arr.shape == (15, 30, 30)
@@ -42,11 +40,13 @@ def test_loading_txtfile(mrcs_data):
 
 
 def test_loading_csfile(mrcs_data):
-    src = ImageSource.from_file(f"{DATA_FOLDER}/empiar_10076_7.cs")
+    src = ImageSource.from_file(os.path.join(pytest.DATADIR, "empiar_10076_7.cs"))
     arr = src[:]
     assert arr.shape == (7, 320, 320)
     starfile_data = ImageSource.from_file(
-        f"{DATA_FOLDER}/empiar_10076_7.star", datadir=DATA_FOLDER, lazy=False
+        os.path.join(pytest.DATADIR, "empiar_10076_7.star"),
+        datadir=pytest.DATADIR,
+        lazy=False,
     )[:]
 
     assert torch.allclose(arr, starfile_data)
@@ -54,7 +54,7 @@ def test_loading_csfile(mrcs_data):
 
 def test_source_iteration():
     # An ImageSource can be iterated over, with an optional chunksize (default 1000)
-    src = ImageSource.from_file(f"{DATA_FOLDER}/toy_projections.mrcs")
+    src = ImageSource.from_file(os.path.join(pytest.DATADIR, "toy_projections.mrcs"))
     chunk_sizes = []
     for i, (indices, chunk) in enumerate(src.chunks(chunksize=300)):
         assert isinstance(chunk, torch.Tensor)
@@ -69,7 +69,8 @@ def test_source_iteration():
 def test_prespecified_indices(mrcs_data):
     # An ImageSource can have pre-specified indices, which will be the only ones used when reading underlying data.
     src = ImageSource.from_file(
-        f"{DATA_FOLDER}/toy_projections.mrcs", indices=np.array([0, 1, 5, 304])
+        os.path.join(pytest.DATADIR, "toy_projections.mrcs"),
+        indices=np.array([0, 1, 5, 304]),
     )
     assert src.shape == (4, 30, 30)  # Not (100, 30, 30)
 
@@ -83,7 +84,7 @@ def test_prespecified_indices(mrcs_data):
 def test_prespecified_indices_eager(mrcs_data):
     # An ImageSource can have pre-specified indices, which will be the only ones used when reading underlying data.
     src = ImageSource.from_file(
-        f"{DATA_FOLDER}/toy_projections.mrcs",
+        os.path.join(pytest.DATADIR, "toy_projections.mrcs"),
         indices=np.array([0, 1, 5, 304]),
         lazy=False,
     )
@@ -99,7 +100,7 @@ def test_txt_prespecified_indices(mrcs_data):
     # Each line of the txt file points to an .mrcs file with 1000 particles.
     # Specify indices that span these files.
     src = ImageSource.from_file(
-        f"{DATA_FOLDER}/toy_projections_2.txt",
+        os.path.join(pytest.DATADIR, "toy_projections_2.txt"),
         indices=np.array([35, 631, 1531, 363, 1693, 1875]),
     )
     assert src.shape == (6, 30, 30)  # Not (100, 30, 30)
@@ -117,7 +118,7 @@ def test_txt_prespecified_indices_contiguous(mrcs_data):
     # Each line of the txt file points to an .mrcs file with 1000 particles.
     # Specify indices that span these files.
     src = ImageSource.from_file(
-        f"{DATA_FOLDER}/toy_projections_2.txt",
+        os.path.join(pytest.DATADIR, "toy_projections_2.txt"),
         indices=np.array([35, 1034, 1032, 1033, 42, 36]),
     )
     assert src.shape == (6, 30, 30)  # Not (100, 30, 30)
@@ -135,7 +136,7 @@ def test_txt_prespecified_indices_contiguous_eager(mrcs_data):
     # Each line of the txt file points to an .mrcs file with 1000 particles.
     # Specify indices that span these files.
     src = ImageSource.from_file(
-        f"{DATA_FOLDER}/toy_projections_2.txt",
+        os.path.join(pytest.DATADIR, "toy_projections_2.txt"),
         indices=np.array([35, 1034, 1032, 1033, 42, 36]),
         lazy=False,
     )
@@ -154,7 +155,7 @@ def test_txt_prespecified_indices_eager(mrcs_data):
     # Each line of the txt file points to an .mrcs file with 1000 particles.
     # Specify indices that span these files.
     src = ImageSource.from_file(
-        f"{DATA_FOLDER}/toy_projections_2.txt",
+        os.path.join(pytest.DATADIR, "toy_projections_2.txt"),
         indices=np.array([35, 631, 1531, 363, 1693, 1875]),
         lazy=False,
     )
@@ -171,7 +172,8 @@ def test_txt_prespecified_indices_eager(mrcs_data):
 
 def test_prespecified_indices_chunked(mrcs_data):
     src = ImageSource.from_file(
-        f"{DATA_FOLDER}/toy_projections.mrcs", indices=np.array([0, 1, 5, 304])
+        os.path.join(pytest.DATADIR, "toy_projections.mrcs"),
+        indices=np.array([0, 1, 5, 304]),
     )
     assert src.shape == (4, 30, 30)  # Not (100, 30, 30)
 
@@ -185,7 +187,7 @@ def test_prespecified_indices_chunked(mrcs_data):
 
 def test_prespecified_indices_eager_chunked(mrcs_data):
     src = ImageSource.from_file(
-        f"{DATA_FOLDER}/toy_projections.mrcs",
+        os.path.join(pytest.DATADIR, "toy_projections.mrcs"),
         indices=np.array([0, 1, 5, 304]),
         lazy=False,
     )

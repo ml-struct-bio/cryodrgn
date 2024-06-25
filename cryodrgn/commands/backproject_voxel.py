@@ -7,9 +7,13 @@ these two half-map reconstructions.
 
 Example usages
 ----------
-$ cryodrgn backproject_voxel particles.128.mrcs --poses pose.pkl -o backproj.128.mrc
-$ cryodrgn backproject_voxel particles.256.mrcs --poses pose.pkl
+$ cryodrgn backproject_voxel particles.128.mrcs
+                             --ctf ctf.pkl --poses pose.pkl -o backproj.128.mrc
+$ cryodrgn backproject_voxel particles.256.mrcs --ctf ctf.pkl --poses pose.pkl
                              --ind good-particles.pkl -o backproj.256.mrc --lazy
+$ cryodrgn backproject_voxel particles_from_M.star --datadir subtilts/128/
+                             --ctf ctf.pkl --poses pose.pkl
+                             -o bproj_tilt.mrc --lazy --tilt --ntilts=5
 
 """
 import argparse
@@ -58,15 +62,17 @@ def add_args(parser):
         "--reg-weight",
         type=float,
         default=1.0,
-        help="Add this value times the mean weight to the weight map to regularize the volume, reducing noise."
-        "Alternatively, you can set --output-sumcount, and then use `cryodrgn_utils regularize_backproject` on the"
-        ".sums and .counts files to try different regularization constants post hoc.",
+        help="Add this value times the mean weight to the weight map to regularize the"
+        "volume, reducing noise.\nAlternatively, you can set --output-sumcount, and "
+        "then use `cryodrgn_utils regularize_backproject` on the"
+        ".sums and .counts files to try different regularization constants post hoc.\n"
+        "(default: %(default)s)",
     )
     parser.add_argument(
         "--output-sumcount",
         action="store_true",
-        help="Output voxel sums and counts so that different regularization weights can be applied post hoc, with "
-        "`cryodrgn_utils regularize_backproject`.",
+        help="Output voxel sums and counts so that different regularization weights "
+        "can be applied post hoc, with `cryodrgn_utils regularize_backproject`.",
     )
 
     group = parser.add_argument_group("Dataset loading options")
@@ -126,7 +132,7 @@ def add_args(parser):
 
 def add_slice(volume, counts, ff_coord, ff, D, ctf_mul):
     d2 = int(D / 2)
-    ff_coord = ff_coord.transpose(0, 1)
+    ff_coord = ff_coord.transpose(0, 1).clip(-d2, d2)
     xf, yf, zf = ff_coord.floor().long()
     xc, yc, zc = ff_coord.ceil().long()
 
@@ -232,6 +238,12 @@ def main(args):
     mask = lattice.get_circular_mask(D // 2)
     iterator = range(min(args.first, Nimg)) if args.first else range(Nimg)
 
+    if args.tilt:
+        use_tilts = set(range(args.ntilts))
+        iterator = [
+            ii for ii in iterator if int(data.tilt_numbers[ii].item()) in use_tilts
+        ]
+
     volume_full = torch.zeros((D, D, D), device=device)
     counts_full = torch.zeros((D, D, D), device=device)
     volume_half1 = torch.zeros((D, D, D), device=device)
@@ -239,8 +251,8 @@ def main(args):
     volume_half2 = torch.zeros((D, D, D), device=device)
     counts_half2 = torch.zeros((D, D, D), device=device)
 
-    for ii in iterator:
-        if ii % 100 == 0:
+    for i, ii in enumerate(iterator):
+        if i % 100 == 0:
             logger.info(f"fimage {ii}")
 
         r, t = posetracker.get_pose(ii)

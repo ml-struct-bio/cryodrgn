@@ -19,7 +19,7 @@ def test_particles(particles):
     # the tolerance (atol) of 1e-5 accounts for minor fft differences between
     # numpy fft (legacy) and torch fft
     assert np.allclose(
-        np.load(os.path.join(pytest.data_dir, "hand_11_particles.npy")),
+        np.load(os.path.join(pytest.DATADIR, "hand_11_particles.npy")),
         particles_arr.cpu().numpy(),
         atol=1e-5,
     )

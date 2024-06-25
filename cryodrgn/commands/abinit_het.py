@@ -1,5 +1,16 @@
-"""
-Heterogeneous NN reconstruction with hierarchical pose optimization
+"""Train a heterogeneous NN reconstruction model with hierarchical pose optimization.
+
+Example usages
+--------------
+# the default is to train for thirty epochs; here we train for fifty instead
+$ cryodrgn abinit_het particles.mrcs -o cryodrgn-outs/003_abinit_het --zdim 4
+                                     --ctf ctf.pkl -n 50
+
+# using .star particle input requires datadir argument pointing to image stacks
+$ cryodrgn abinit_het particles.star --datadir path_to_images/
+                                     -o cryodrgn-outs/004_abinit_het.10 --zdim 10
+                                     --ctf ctf.pkl -n 50
+
 """
 import argparse
 import os

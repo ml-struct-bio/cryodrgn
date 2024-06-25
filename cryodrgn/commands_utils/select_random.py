@@ -1,8 +1,13 @@
-"""Select a random subset of particles"""
+"""Create an index corresponding to the selection of a random subset of particles.
 
+Example usages
+--------------
+$ cryodrgn_utils select_random 189043 -o my-indices.pkl -n 100000
+$ cryodrgn_utils select_random 189043 -o my-indices.pkl --frac 0.5
+
+"""
 import argparse
 import pickle
-
 import numpy as np
 
 

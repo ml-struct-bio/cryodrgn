@@ -1,18 +1,12 @@
 import pytest
 import os
 import argparse
-from cryodrgn.source import ImageSource
 from cryodrgn.commands import eval_images
-
-
-@pytest.fixture
-def mrcs_data():
-    return ImageSource.from_file(f"{pytest.data_dir}/hand.mrcs").images()
 
 
 @pytest.mark.parametrize(
     "particles, poses, weights, configs",
-    [("hand", "hand-rot", "het", "het")],
+    [("hand", "hand-rot", "het", "het"), ("hand", "hand-poses", "het", "het")],
     indirect=True,
 )
 def test_invert_contrast(tmpdir, particles, poses, weights, configs):

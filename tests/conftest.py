@@ -8,21 +8,11 @@ from dataclasses import dataclass
 from cryodrgn.utils import run_command
 
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
-DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "testing", "data")
+DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "tests", "data")
 
 
 def pytest_configure():
-    pytest.data_dir = DATA_DIR
-
-
-@pytest.fixture(scope="session", autouse=True)
-def default_outdir() -> None:
-    """Helper fixture to remove default  output folder upon completion of all tests."""
-    yield None
-
-    # we don't always create this folder, e.g. if we are only doing some of the tests
-    if os.path.exists("output"):
-        shutil.rmtree("output")
+    pytest.DATADIR = DATA_DIR
 
 
 @pytest.fixture
@@ -91,6 +81,7 @@ DATA_FOLDERS = {
 # Data fixtures for cryoDRGN outputs (and sometimes inputs)
 VOLUME_FILES = {
     "toy": "toy_projections.mrc",
+    "toy-small": "toymodel_small_nocenter.mrc",
     "hand": "hand-vol.mrc",
     "spike": "spike-vol.mrc",
     "empiar": "empiar_10076_7.mrc",

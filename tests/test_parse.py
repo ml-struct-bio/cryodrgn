@@ -16,12 +16,12 @@ from cryodrgn.utils import assert_pkl_close
 
 @pytest.fixture
 def particles_starfile():
-    return os.path.join(pytest.data_dir, "FinalRefinement-OriginalParticles-PfCRT.star")
+    return os.path.join(pytest.DATADIR, "FinalRefinement-OriginalParticles-PfCRT.star")
 
 
 @pytest.fixture
 def particles_csfile():
-    return os.path.join(pytest.data_dir, "cryosparc_P12_J24_001_particles.cs")
+    return os.path.join(pytest.DATADIR, "cryosparc_P12_J24_001_particles.cs")
 
 
 class TestCtfStar:
@@ -60,12 +60,12 @@ class TestCtfStar:
     def test_fidelity(self, tmpdir_factory, particles_starfile, resolution):
         outdir = self.get_outdir(tmpdir_factory, resolution)
         pkl_out = os.path.join(outdir, "ctf.pkl")
-        assert_pkl_close(pkl_out, os.path.join(pytest.data_dir, "ctf1.pkl"))
+        assert_pkl_close(pkl_out, os.path.join(pytest.DATADIR, "ctf1.pkl"))
 
     @pytest.mark.parametrize("resolution", ["128", "300"])
     def test_write_star_from_mrcs(self, tmpdir_factory, particles_starfile, resolution):
         outdir = self.get_outdir(tmpdir_factory, resolution)
-        mrcs_fl = os.path.join(pytest.data_dir, "hand.5.mrcs")
+        mrcs_fl = os.path.join(pytest.DATADIR, "hand.5.mrcs")
         ctf_out = os.path.join(outdir, "ctf.pkl")
 
         parser = argparse.ArgumentParser()
@@ -90,7 +90,7 @@ def test_parse_ctf_cs(tmpdir, particles_csfile):
     )
     parse_ctf_csparc.main(args)
 
-    assert_pkl_close(pkl_out, os.path.join(pytest.data_dir, "ctf2.pkl"))
+    assert_pkl_close(pkl_out, os.path.join(pytest.DATADIR, "ctf2.pkl"))
 
 
 def test_parse_pose_star(tmpdir, particles_starfile):
@@ -100,7 +100,7 @@ def test_parse_pose_star(tmpdir, particles_starfile):
     )
     parse_pose_star.main(args)
 
-    assert_pkl_close(pkl_out, os.path.join(pytest.data_dir, "pose.star.pkl"))
+    assert_pkl_close(pkl_out, os.path.join(pytest.DATADIR, "pose.star.pkl"))
 
 
 def test_parse_pose_cs(tmpdir, particles_csfile):
@@ -110,4 +110,4 @@ def test_parse_pose_cs(tmpdir, particles_csfile):
     )
     parse_pose_csparc.main(args)
 
-    assert_pkl_close(pkl_out, os.path.join(pytest.data_dir, "pose.cs.pkl"))
+    assert_pkl_close(pkl_out, os.path.join(pytest.DATADIR, "pose.cs.pkl"))

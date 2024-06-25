@@ -1,23 +1,23 @@
 """Interactive filtering of particles plotted using various model variables.
 
-Note that this tool can only be used for outputs of SPA — *not* tilt series!
+Note that `cryodrgn analyze` must be run first using the epoch to filter on!
 
 Example usages
 --------------
 $ cryodrgn filter 00_trainvae
-$ cryodrgn filter outdir --epoch 20
+$ cryodrgn filter my_outdir --epoch 30
+$ cryodrgn filter my_outdir/ -k 25
+$ cryodrgn filter my_outdir/01_trainvae --plot-inds candidate-particles.pkl
 
 """
 import os
 import pickle
-import argparse
-
-import pandas as pd
 import yaml
 import re
-import numpy as np
 import logging
 
+import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from matplotlib import colors
@@ -26,8 +26,7 @@ from matplotlib.widgets import LassoSelector, RadioButtons
 from matplotlib.path import Path as PlotPath
 from scipy.spatial.transform import Rotation as RR
 
-from cryodrgn import analysis
-from cryodrgn import utils
+from cryodrgn import analysis, utils
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +86,11 @@ def main(args) -> None:
         logger.info(f"Using epoch {epoch} for filtering...")
 
     anlzdir = os.path.join(workdir, f"analyze.{epoch}")
+    if not os.path.isdir(anlzdir):
+        raise ValueError(
+            f"No analysis available for epoch {epoch} "
+            f"— first run `cryodrgn analyze {workdir} {epoch}`"
+        )
     z = utils.load_pkl(os.path.join(workdir, f"z.{epoch}.pkl"))
 
     # load poses
@@ -156,20 +160,28 @@ def main(args) -> None:
             )
 
     kmeans_lbls = utils.load_pkl(os.path.join(kmeans_dir, "labels.pkl"))
+    znorm = np.sum(z**2, axis=1) ** 0.5
 
-    plot_df = analysis.load_dataframe(
-        z=z,
-        pc=pc,
-        euler=RR.from_matrix(rot).as_euler("zyz", degrees=True),
-        trans=trans,
-        labels=kmeans_lbls,
-        umap=umap,
-        df1=ctf_params[:, 2],
-        df2=ctf_params[:, 3],
-        dfang=ctf_params[:, 4],
-        phase=ctf_params[:, 8],
-        znorm=np.sum(z**2, axis=1) ** 0.5,
-    )
+    if rot.shape[0] == z.shape[0]:
+        plot_df = analysis.load_dataframe(
+            z=z,
+            pc=pc,
+            euler=RR.from_matrix(rot).as_euler("zyz", degrees=True),
+            trans=trans,
+            labels=kmeans_lbls,
+            umap=umap,
+            df1=ctf_params[:, 2],
+            df2=ctf_params[:, 3],
+            dfang=ctf_params[:, 4],
+            phase=ctf_params[:, 8],
+            znorm=znorm,
+        )
+    # tilt-series outputs have tilt-level CTFs and poses but particle-level model
+    # results, thus we ignore the former in this case for now
+    else:
+        plot_df = analysis.load_dataframe(
+            z=z, pc=pc, labels=kmeans_lbls, umap=umap, znorm=znorm
+        )
 
     selector = SelectFromScatter(plot_df, pre_indices)
     input("Press Enter after making your selection...")
@@ -399,9 +411,3 @@ class SelectFromScatter:
             self.handl_id = self.fig.canvas.mpl_connect(
                 "motion_notify_event", self.hover_points
             )
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    args = add_args(parser).parse_args()
-    main(args)

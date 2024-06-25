@@ -2,12 +2,12 @@ name: CI Testing
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ develop ]
     tags:
       - '[0-9]+\.[0-9]+\.[0-9]+'
       - '[0-9]+\.[0-9]+\.[0-9]+-*'
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main ]
 
 jobs:
   run_tests:
@@ -34,9 +34,9 @@ jobs:
           python3 -m pip install pytest-xdist
           python3 -m pip install .
           python3 -m pip uninstall -y torch
-          python3 -m pip install --no-cache-dir torch==${{ matrix.torch }}
+          python3 -m pip cache purge
+          python3 -m pip install torch==${{ matrix.torch }}
 
       - name: Pytest
         run: |
-          pytest -v -n2 --dist=loadscope -k 'test_reconstruct'
-          pytest -v -n0 --dist=loadscope -k 'not test_reconstruct'
+          pytest -v -n2 --dist=loadscope

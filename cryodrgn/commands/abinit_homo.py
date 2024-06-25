@@ -2,7 +2,7 @@
 
 Example usages
 --------------
-$ cryodrgn abinit_homo particles.256.txt --ctf ctf.pkl --ind chosen-particles.pkl \
+$ cryodrgn abinit_homo particles.256.txt --ctf ctf.pkl --ind chosen-particles.pkl
                                          -o cryodrn-out/256_abinit-homo
 
 """

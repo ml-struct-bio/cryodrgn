@@ -1,8 +1,12 @@
+"""Tests of compatibility with the RELION 3.1 format for .star files (optics groups)."""
+
+import pytest
 import argparse
 import os
-import os.path
-import pytest
+import pickle
+from cryodrgn.starfile import Starfile
 from cryodrgn.commands import downsample, parse_ctf_star, parse_pose_star
+from cryodrgn.commands_utils import filter_star
 
 
 @pytest.fixture
@@ -25,6 +29,36 @@ def test_downsample(tmpdir, relion_starfile):
         ]
     )
     downsample.main(args)
+
+
+@pytest.mark.parametrize(
+    "relion_starfile, indices",
+    [
+        ("relion31.6opticsgroups.star", "just-4"),
+        ("relion31.6opticsgroups.star", "just-5"),
+    ],
+    indirect=True,
+)
+def test_filter_star(tmpdir, relion_starfile, indices):
+    parser = argparse.ArgumentParser()
+    filter_star.add_args(parser)
+    starfile = os.path.join(tmpdir, f"filtered_{indices.label}.star")
+    args = [
+        f"{relion_starfile}",
+        "-o",
+        starfile,
+        "--ind",
+        indices.path,
+    ]
+
+    filter_star.main(parser.parse_args(args))
+    stardata = Starfile.load(starfile)
+    with open(indices.path, "rb") as f:
+        ind = pickle.load(f)
+
+    assert stardata.relion31
+    assert stardata.df.shape[0] == len(ind)
+    assert stardata.data_optics.df.shape[0] == 1
 
 
 @pytest.mark.parametrize(

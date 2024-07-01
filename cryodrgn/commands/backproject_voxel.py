@@ -5,18 +5,22 @@ as the given poses. Unless instructed otherwise, it will also produce volumes us
 the images in each half of the dataset, as well as calculating an FSC curve between
 these two half-map reconstructions.
 
-Example usages
-----------
-$ cryodrgn backproject_voxel particles.128.mrcs
-                             --ctf ctf.pkl --poses pose.pkl -o backproj.128.mrc
-$ cryodrgn backproject_voxel particles.256.mrcs --ctf ctf.pkl --poses pose.pkl
-                             --ind good-particles.pkl -o backproj.256.mrc --lazy
-$ cryodrgn backproject_voxel particles_from_M.star --datadir subtilts/128/
-                             --ctf ctf.pkl --poses pose.pkl
-                             -o bproj_tilt.mrc --lazy --tilt --ntilts=5
+Example usage
+-------------
+$ cryodrgn backproject_voxel particles.128.mrcs \
+                             --ctf ctf.pkl --poses pose.pkl -o backproject.128.mrc
+
+# Use --lazy for large datasets to reduce memory usage and avoid OOM errors
+$ cryodrgn backproject_voxel particles.256.mrcs --ctf ctf.pkl --poses pose.pkl \
+                             --ind good_particles.pkl -o backproject.256.mrc --lazy
+
+# --tilt is required for subtomogram datasets
+# --datadir is generally required when using .star or .cs particle inputs
+$ cryodrgn backproject_voxel particles_from_M.star --datadir subtilts/128/ \
+                             --ctf ctf.pkl --poses pose.pkl \
+                             -o backproject_tilt.mrc --lazy --tilt --ntilts 5
 
 """
-import argparse
 import os
 import time
 import numpy as np
@@ -314,7 +318,9 @@ def main(args):
         volume_half1 = regularize_volume(volume_half1, counts_half1, args.reg_weight)
         volume_half2 = regularize_volume(volume_half2, counts_half2, args.reg_weight)
         fsc_vals = calculate_fsc(volume_half1, volume_half2)
-        create_fsc_plot(fsc_vals=fsc_vals, outfile="_".join([out_path, "fsc-plot.png"]))
+        create_fsc_plot(
+            fsc_vals=fsc_vals, outfile="_".join([out_path, "fsc-plot.png"]), Apix=Apix
+        )
         print_fsc(fsc_vals, Apix)
 
         # save the FSC values and half-map reconstructions to file
@@ -325,9 +331,3 @@ def main(args):
         half_fl2 = "_".join([out_path, "half-map2.mrc"])
         MRCFile.write(half_fl1, np.array(volume_half1).astype("float32"), Apix=Apix)
         MRCFile.write(half_fl2, np.array(volume_half2).astype("float32"), Apix=Apix)
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    add_args(parser)
-    main(parser.parse_args())

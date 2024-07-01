@@ -1,22 +1,21 @@
 """Downsample an image stack or volume by clipping fourier frequencies.
 
-Example usages
---------------
+Example usage
+-------------
 $ cryodrgn downsample my_particle_stack.mrcs -D 128 -o particles.128.mrcs
-$ cryodrgn downsample my_particle_stack.mrcs -D 164 -o particles.164.mrcs
+$ cryodrgn downsample my_particle_stack.mrcs -D 164 -o particles.164.mrcs \
                                                     --ind chosen_particles.pkl
-$ cryodrgn downsample my_particle_stack.star -D 128 -o particles.128.mrcs
+$ cryodrgn downsample my_particle_stack.star -D 128 -o particles.128.mrcs \
                                              --datadir folder_with_subtilts/
 
-# try a smaller processing batch size if you are running into memory issues, or a
+# Try a smaller processing batch size if you are running into memory issues, or a
 # larger size for faster processing
 $ cryodrgn downsample my_particle_stack.txt -D 256 -o particles.256.mrcs -b 2000
 $ cryodrgn downsample my_particle_stack.txt -D 256 -o particles.256.mrcs -b 20000
 
-# will create files
-#       particles.256.0.mrcs, particles.256.1.mrcs, ..., particles.256.i.mrcs
-# where i is equal to particle count // 10000
-# in addition to output file particles.256.txt that indexes all of them
+# This will create files particles.256.0.mrcs, particles.256.1.mrcs, ...,
+# particles.256.i.mrcs, where i is equal to particle count // 10000, in addition to
+# output file particles.256.txt that indexes all of them
 $ cryodrgn downsample my_particle_stack.mrcs -D 256 -o particles.256.mrcs --chunk 10000
 
 """

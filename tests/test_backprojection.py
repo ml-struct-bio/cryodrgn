@@ -6,6 +6,7 @@ from cryodrgn.commands import backproject_voxel
 from cryodrgn.commands_utils import plot_fsc
 
 
+# TODO: test different Apix values, both given and found in the CTF file
 class TestBackprojection:
     def get_outdir(self, tmpdir_factory, particles, poses, ctf, indices, datadir):
         dirname = os.path.join(

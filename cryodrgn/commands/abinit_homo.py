@@ -1,8 +1,8 @@
 """Homogeneous neural net ab initio reconstruction with hierarchical pose optimization.
 
-Example usages
---------------
-$ cryodrgn abinit_homo particles.256.txt --ctf ctf.pkl --ind chosen-particles.pkl
+Example usage
+-------------
+$ cryodrgn abinit_homo particles.256.txt --ctf ctf.pkl --ind chosen-particles.pkl \
                                          -o cryodrn-out/256_abinit-homo
 
 """

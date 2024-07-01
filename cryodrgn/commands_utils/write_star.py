@@ -1,7 +1,7 @@
 """Create a Relion .star file from a given particle stack and CTF parameters.
 
-Example usages
---------------
+Example usage
+-------------
 $ cryodrgn_utils write_star particles.128.mrcs -o particles.128.star --ctf ctf.pkl
 $ cryodrgn_utils write_star particles.128.mrcs -o particles.128.star --ctf ctf.pkl \
                                                --ind good-ind.pkl

@@ -1,7 +1,7 @@
 """Create a plot of one or more sets of computed Fourier shell correlations.
 
-Example usages
---------------
+Example usage
+-------------
 $ cryodrgn_utils plot_fsc vol1-fsc.txt vol2-fsc.txt
 $ cryodrgn_utils plot_fsc vol1-fsc.txt -o vol1-fsc.png
 $ cryodrgn_utils plot_fsc fsc-a.txt fsc-b.txt fsc-c.txt -o fsc.png --Apix 2.75
@@ -62,15 +62,15 @@ def create_fsc_plot(
     res_given |= isinstance(fsc_vals, dict) and all(
         fsc_arr.shape[1] == 2 for fsc_arr in fsc_vals.values()
     )
+
     if res_given:
         use_xticks = np.arange(0.1, 0.6, 0.1)
         xtick_lbls = [f"1/{val:.1f}Å" for val in ((1 / use_xticks) * Apix)]
         plt.xticks(use_xticks, xtick_lbls)
-        plt.xlabel("1/resolution", size=14)
-        plt.ylabel("Fourier shell correlation", size=14)
-    else:
-        plt.xlabel("Spatial Frequency", size=14)
-        plt.ylabel("Fourier shell correlation", size=14)
+
+    # titles for axes
+    plt.xlabel("Spatial frequency", size=14)
+    plt.ylabel("Fourier shell correlation", size=14)
 
     plt.grid(True)
     plt.xticks(size=10)

@@ -1,7 +1,7 @@
 """Construct a path in z-latent-space interpolating directly between anchor points.
 
-Example usages
---------------
+Example usage
+-------------
 $ cryodrgn direct_traversal zvals.pkl --anchors anchors.txt
 $ cryodrgn direct_traversal zvals.pkl --anchors anchors.txt -n 20 -o z-path-new.txt
 $ cryodrgn direct_traversal zvals.pkl --anchors anchors.txt -n 3 --loop -o

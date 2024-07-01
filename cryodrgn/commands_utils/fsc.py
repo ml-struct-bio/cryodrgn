@@ -1,7 +1,7 @@
 """Compute Fourier shell correlation between two volumes.
 
-Example usages
---------------
+Example usage
+-------------
 $ cryodrgn_utils fsc volume1.mrc volume2.mrc
 $ cryodrgn_utils fsc vol1.mrc vol2.mrc -o fsc.txt -p
 $ cryodrgn_utils fsc vol1.mrc vol2.mrc --mask test-mask.mrc -o fsc.txt -p fsc-plot.png

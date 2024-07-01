@@ -1,10 +1,11 @@
 """Flip handedness of an .mrc file
 
-Example usages
---------------
-# writes to vol_000_flipped.mrc
+Example usage
+-------------
+# Writes to vol_000_flipped.mrc
 $ cryodrgn_utils flip_hand vol_000.mrc
 
+# You can also specify an output file manually
 $ cryodrgn_utils flip_hand vol_000.mrc -o vol-flipped.mrc
 
 """

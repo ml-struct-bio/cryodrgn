@@ -1,7 +1,7 @@
 """Filter a .star file using a saved set of particle indices.
 
-Example usages
---------------
+Example usage
+-------------
 $ cryodrgn_utils filter_star particles.star --ind good-particles.pkl \
                              -o filtered-particles.star
 $ cryodrgn_utils filter_star tilts.star --et --ind good-particles.pkl \

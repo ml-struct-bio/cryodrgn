@@ -1,7 +1,7 @@
 """Automated generation of masking filters for 3D volumes.
 
-Example usages
---------------
+Example usage
+-------------
 $ cryodrgn_utils gen_mask volume16.mrc mask16.mrc
 $ cryodrgn_utils gen_mask volume16.mrc mask16.mrc -p slices.png
 $ cryodrgn_utils gen_mask volume16.mrc mask16.mrc --dist 15

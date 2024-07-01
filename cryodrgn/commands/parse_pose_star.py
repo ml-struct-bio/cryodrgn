@@ -3,8 +3,8 @@
 This command is often used as a part of preparing inputs for training commands such as
 `train_vae` and `abinit_homo` when particles are coming from a .star file.
 
-Example usages
---------------
+Example usage
+-------------
 $ cryodrgn parse_pose_star particles_from_M.star -o pose.pkl
 
 # override image parameters even if given in file

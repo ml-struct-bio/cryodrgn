@@ -1,19 +1,19 @@
 """Train a VAE for heterogeneous reconstruction with known poses.
 
-Example usages
---------------
-$ cryodrgn train_vae projections.mrcs -o outs/002_trainvae --lr=0.0001 --zdim 10
+Example usage
+-------------
+$ cryodrgn train_vae projections.mrcs -o outs/002_trainvae --lr=0.0001 --zdim 10 \
                                       --poses angles.pkl --ctf test_ctf.pkl -n 50
 
-# restart after already running the same command with some epochs completed
-$ cryodrgn train_vae projections.mrcs -o outs/002_trainvae --lr=0.0001 --zdim 10
-                                      --poses angles.pkl --ctf test_ctf.pkl
+# Restart after already running the same command with some epochs completed
+$ cryodrgn train_vae projections.mrcs -o outs/002_trainvae --lr=0.0001 --zdim 10 \
+                                      --poses angles.pkl --ctf test_ctf.pkl \
                                       --load latest -n 100
 
 # cryoDRGN-ET tilt series reconstruction
-$ cryodrgn train_vae particles_from_M.star --datadir particleseries -o your-outdir
-                                           --ctf ctf.pkl --poses pose.pkl
-                                           --encode-mode tilt --dose-per-tilt 2.93
+$ cryodrgn train_vae particles_from_M.star --datadir particleseries -o your-outdir \
+                                           --ctf ctf.pkl --poses pose.pkl \
+                                           --encode-mode tilt --dose-per-tilt 2.93 \
                                            --zdim 8 --num-epochs 50 --beta .025
 
 """

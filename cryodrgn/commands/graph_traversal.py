@@ -1,7 +1,7 @@
 """Construct the shortest path along a nearest neighbor graph in the latent z-space.
 
-Example usages
---------------
+Example usage
+-------------
 # find the graph path between the first two points in the file, print to screen
 $ cryodrgn graph_traversal zvals.pkl --anchors 0 1
 

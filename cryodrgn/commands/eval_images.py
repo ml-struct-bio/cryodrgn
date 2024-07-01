@@ -1,7 +1,7 @@
 """Evaluate cryoDRGN model latent variables and loss for a stack of images.
 
-Example usages
---------------
+Example usage
+-------------
 
 $ cryodrgn eval_images hand.mrcs het_weights.pkl --config config.pkl
                         -o output/out_eval_images_losses.pkl

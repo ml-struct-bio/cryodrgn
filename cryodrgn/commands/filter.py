@@ -2,8 +2,8 @@
 
 Note that `cryodrgn analyze` must be run first using the epoch to filter on!
 
-Example usages
---------------
+Example usage
+-------------
 $ cryodrgn filter 00_trainvae
 $ cryodrgn filter my_outdir --epoch 30
 $ cryodrgn filter my_outdir/ -k 25

@@ -1,7 +1,7 @@
 """Create an index corresponding to the selection of a random subset of particles.
 
-Example usages
---------------
+Example usage
+-------------
 $ cryodrgn_utils select_random 189043 -o my-indices.pkl -n 100000
 $ cryodrgn_utils select_random 189043 -o my-indices.pkl --frac 0.5
 

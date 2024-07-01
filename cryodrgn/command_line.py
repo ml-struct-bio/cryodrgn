@@ -53,6 +53,8 @@ def _get_commands(cmd_dir: str, doc_str: str = "") -> None:
 
                 # we have to manually re-add the backslashes used to break up lines
                 # for multi-line examples as these get parsed into spaces by .__doc__
+                # NOTE: this means command docstrings shouldn't otherwise have
+                # consecutive spaces!
                 epilog_txt = re.sub(" ([ ]+)", " \\\n\\1", epilog_txt)
 
                 # the docstring header becomes the help message "description", while

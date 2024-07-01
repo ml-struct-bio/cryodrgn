@@ -1,7 +1,7 @@
 """Invert the contrast of an .mrc file
 
-Example usages
---------------
+Example usage
+-------------
 # writes to vol_000_inverted.mrc
 $ cryodrgn_utils invert_contrast vol_000.mrc
 

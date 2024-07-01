@@ -1,7 +1,7 @@
 """Train a neural net to model a 3D density map given 2D images with pose assignments.
 
-Example usages
---------------
+Example usage
+-------------
 $ cryodrgn train_nn projections.mrcs --poses angles.pkl -o output/train_nn -n 10
 $ cryodrgn train_nn projections.star --poses angles.pkl -o outs/003_train-nn
                                      --num-epochs=30 --lr=0.01

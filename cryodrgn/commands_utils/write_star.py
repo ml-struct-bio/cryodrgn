@@ -63,7 +63,7 @@ def add_args(parser):
 
     parser.add_argument(
         "--datadir",
-        type=os.path.abspath,
+        type=str,
         # TODO Check if .cs files work with this (or remove .cs here!)
         help="Path prefix to particle stack if loading relative paths from a .star or .cs file",
         default="",

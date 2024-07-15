@@ -802,7 +802,7 @@ def parse_star(starfile: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
     return blocks["data_"], blocks["data_optics"] if "data_optics" in blocks else None
 
 
-class Starfile:
+class Stardata:
     """A lightweight class for simple .star file operations."""
 
     def __init__(
@@ -821,6 +821,10 @@ class Starfile:
                 )
 
             self.data_optics = self.data_optics.set_index("_rlnOpticsGroup", drop=False)
+
+    @staticmethod
+    def from_file(filename):
+        return Stardata(*parse_star(filename))
 
     def __len__(self) -> int:
         return len(self.df)
@@ -852,11 +856,51 @@ class Starfile:
             else:
                 self._write_block(f, self.df, block_header="data_")
 
+    @property
+    def apix(self) -> Union[float, pd.Series]:
+        if self.data_optics is not None and "_rlnImagePixelSize" in self.data_optics:
+            if "_rlnOpticsGroup" in self.df.columns:
+                apix = pd.Series(
+                    [
+                        float(self.data_optics.loc[str(g), "_rlnImagePixelSize"])
+                        for g in self.df["_rlnOpticsGroup"].values
+                    ]
+                )
+            else:
+                apix = float(self.data_optics["_rlnImagePixelSize"][0])
+
+        elif "_rlnImagePixelSize" in self.df:
+            apix = self.df["_rlnImagePixelSize"]
+        else:
+            apix = 1.0
+
+        return apix
+
+    @property
+    def resolution(self) -> Union[int, pd.Series]:
+        if self.data_optics is not None and "_rlnImageSize" in self.data_optics:
+            if "_rlnOpticsGroup" in self.df.columns:
+                res = pd.Series(
+                    [
+                        int(self.data_optics.loc[str(g), "_rlnImageSize"])
+                        for g in self.df["_rlnOpticsGroup"].values
+                    ]
+                )
+            else:
+                res = float(self.data_optics["_rlnImageSize"][0])
+
+        elif "_rlnImageSize" in self.df:
+            res = self.df["_rlnImageSize"]
+        else:
+            res = None
+
+        return res
+
 
 class _StarfileSourceBase(_MRCDataFrameSource):
     def __init__(
         self,
-        starfile: Starfile,
+        starfile: Stardata,
         datadir: str = "",
         lazy: bool = True,
         indices: Optional[np.ndarray] = None,
@@ -880,20 +924,11 @@ class _StarfileSourceBase(_MRCDataFrameSource):
 
     @property
     def apix(self) -> Union[float, pd.Series]:
-        if self.data_optics is not None and "_rlnImagePixelSize" in self.data_optics:
-            if "_rlnOpticsGroup" in self.df.columns:
-                apix = pd.Series(
-                    [
-                        float(self.data_optics.loc[str(g), "_rlnImagePixelSize"])
-                        for g in self.df["_rlnOpticsGroup"]
-                    ]
-                )
-            else:
-                apix = float(self.data_optics["_rlnImagePixelSize"][0])
-        else:
-            apix = 1.0
+        return Stardata(self.data_optics, self.data_optics).apix
 
-        return apix
+    @property
+    def resolution(self) -> Union[int, pd.Series]:
+        return Stardata(self.data_optics, self.data_optics).resolution
 
 
 class StarfileSource(_StarfileSourceBase):
@@ -905,7 +940,7 @@ class StarfileSource(_StarfileSourceBase):
         indices: Optional[np.ndarray] = None,
         max_threads: int = 1,
     ):
-        starfile = Starfile(*parse_star(filename))
+        starfile = Stardata(*parse_star(filename))
         if not datadir:
             datadir = os.path.dirname(filename)
 

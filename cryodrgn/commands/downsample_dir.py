@@ -11,7 +11,7 @@ import argparse
 import os
 import logging
 from cryodrgn import utils
-from cryodrgn.source import ImageSource, StarfileSource, Starfile
+from cryodrgn.source import ImageSource, StarfileSource, Stardata
 from cryodrgn.commands.downsample import mkbasedir, warnexists, downsample_mrc_images
 
 logger = logging.getLogger(__name__)
@@ -99,4 +99,4 @@ def main(args):
         else:
             new_optics = None
 
-        Starfile(sdata=old_src.df, data_optics=new_optics).write(args.outfile)
+        Stardata(sdata=old_src.df, data_optics=new_optics).write(args.outfile)

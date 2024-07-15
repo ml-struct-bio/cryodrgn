@@ -14,7 +14,7 @@ import pickle
 import logging
 import numpy as np
 from cryodrgn import ctf
-from cryodrgn.source import parse_star
+from cryodrgn.source import Stardata
 
 logger = logging.getLogger(__name__)
 
@@ -48,20 +48,19 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     group.add_argument("--ps", type=float, help="Phase shift (deg)")
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
     assert args.star.endswith(".star"), "Input file must be .star file"
     assert args.o.endswith(".pkl"), "Output CTF parameters must be .pkl file"
-    stardf, data_optics = parse_star(args.star)
-    N = len(stardf)
+    stardata = Stardata.from_file(args.star)
+    N = len(stardata)
     logger.info(f"{N} particles")
 
     overrides = {}
-    if data_optics is not None:
-        args.D = int(data_optics["_rlnImageSize"][0])
-        args.Apix = float(data_optics["_rlnImagePixelSize"][0])
-        overrides[HEADERS[3]] = float(data_optics[HEADERS[3]][0])
-        overrides[HEADERS[4]] = float(data_optics[HEADERS[4]][0])
-        overrides[HEADERS[5]] = float(data_optics[HEADERS[5]][0])
+    if stardata.data_optics is not None:
+        args.Apix, args.D = stardata.apix, stardata.resolution
+        overrides[HEADERS[3]] = float(stardata.data_optics[HEADERS[3]][0])
+        overrides[HEADERS[4]] = float(stardata.data_optics[HEADERS[4]][0])
+        overrides[HEADERS[5]] = float(stardata.data_optics[HEADERS[5]][0])
     else:
         assert args.D is not None, "Must provide image size with -D"
         assert args.Apix is not None, "Must provide pixel size with --Apix"
@@ -95,7 +94,7 @@ def main(args):
         ]
     ):
         ctf_params[:, i + 2] = (
-            stardf[header] if header not in overrides else overrides[header]
+            stardata.df[header] if header not in overrides else overrides[header]
         )
 
     logger.info("CTF parameters for first particle:")

@@ -13,7 +13,7 @@ import os
 import logging
 from cryodrgn import utils
 from cryodrgn.dataset import TiltSeriesData
-from cryodrgn.source import parse_star, Starfile
+from cryodrgn.source import parse_star, Stardata
 
 logger = logging.getLogger(__name__)
 
@@ -78,11 +78,11 @@ def main(args: argparse.Namespace):
             else:
                 micro_optics = None
 
-            micro_star = Starfile(sdata=group_df, data_optics=micro_optics)
+            micro_star = Stardata(sdata=group_df, data_optics=micro_optics)
             micro_star.write(output_path)
             logger.info(
                 f"Wrote .star file for {filename_without_extension} to {output_path}"
             )
     else:
-        s = Starfile(sdata=df, data_optics=new_optics)
+        s = Stardata(sdata=df, data_optics=new_optics)
         s.write(args.o)

@@ -43,6 +43,7 @@ PARTICLES_FILES = {
     "toy.mrcs": "toy_projections.mrcs",
     "toy.mrcs-999": "toy_projections_0-999.mrcs",
     "toy.star": "toy_projections.star",
+    "toydatadir.star": "toy_projections_dir.star",
     "toy.star-13": "toy_projections_13.star",
     "toy.txt": "toy_projections.txt",
     "tilts.star": "sta_testing_bin8.star",
@@ -75,6 +76,7 @@ CONFIG_FILES = {
 }
 DATA_FOLDERS = {
     "default-datadir": ".",
+    "toy": "toy_datadir",
 }
 
 

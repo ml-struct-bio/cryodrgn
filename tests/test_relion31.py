@@ -4,9 +4,10 @@ import pytest
 import argparse
 import os
 import pickle
-from cryodrgn.starfile import Starfile
+import numpy as np
 from cryodrgn.commands import downsample, parse_ctf_star, parse_pose_star
 from cryodrgn.commands_utils import filter_star
+from cryodrgn.source import ImageSource, parse_star
 
 
 # TODO -- convert these starfiles to 3.0 and compare outputs across these tests
@@ -15,35 +16,33 @@ def relion_starfile(request):
     return os.path.join(pytest.DATADIR, request.param)
 
 
-@pytest.mark.xfail(reason="coming soon")
 @pytest.mark.parametrize(
     "relion_starfile", ["relion31.star", "relion31.v2.star"], indirect=True
 )
-def test_downsample(tmpdir, relion_starfile):
-    args = downsample.add_args(argparse.ArgumentParser()).parse_args(
-        [
-            f"{relion_starfile}",
-            "-D",
-            "32",
-            "-o",
-            os.path.join(tmpdir, "temp.mrcs"),
-        ]
+@pytest.mark.parametrize("resolution", [32, 64])
+def test_downsample(tmpdir, relion_starfile, resolution):
+    input_data = ImageSource.from_file(relion_starfile, lazy=False)
+    out_mrcs = os.path.join(tmpdir, "temp.mrcs")
+
+    parser = argparse.ArgumentParser()
+    downsample.add_args(parser)
+    args = parser.parse_args(
+        [f"{relion_starfile}", "-D", str(resolution), "-o", out_mrcs]
     )
     downsample.main(args)
+
+    output_data = ImageSource.from_file(out_mrcs, lazy=False)
+    in_imgs = input_data.images()
+    out_imgs = output_data.images()
+    assert out_imgs.shape == (in_imgs.shape[0], resolution, resolution)
+    assert np.isclose(in_imgs.sum(), out_imgs.sum())
 
 
 @pytest.mark.parametrize(
     "relion_starfile, indices",
     [
         ("relion31.star", "just-4"),
-        pytest.param(
-            "relion31.v2.star",
-            "just-4",
-            marks=pytest.mark.xfail(
-                raises=AssertionError,
-                reason="don't yet support relion31 files with optics table last!",
-            ),
-        ),
+        ("relion31.v2.star", "just-4"),
         ("relion31.6opticsgroups.star", "just-4"),
         ("relion31.6opticsgroups.star", "just-5"),
     ],
@@ -64,13 +63,13 @@ def test_filter_star(tmpdir, relion_starfile, indices):
     ]
 
     filter_star.main(parser.parse_args(args))
-    stardata = Starfile.load(starfile)
+    stardata, data_optics = parse_star(starfile)
     with open(indices.path, "rb") as f:
         ind = pickle.load(f)
 
-    assert stardata.relion31
-    assert stardata.df.shape[0] == len(ind)
-    assert stardata.data_optics.df.shape[0] == 1
+    assert data_optics is not None
+    assert stardata.shape[0] == len(ind)
+    assert data_optics.shape[0] == 1
 
 
 @pytest.mark.parametrize(
@@ -97,16 +96,15 @@ def test_parse_pose_star(tmpdir, relion_starfile, resolution, apix):
         args += ["--Apix", apix]
 
     parse_pose_star.main(parser.parse_args(args))
-    stardata = Starfile.load(relion_starfile)
+    stardata, data_optics = parse_star(relion_starfile)
     with open(pose_file, "rb") as f:
         poses = pickle.load(f)
 
     assert len(poses) == 2
-    assert poses[0].shape[0] == stardata.df.shape[0]
-    assert poses[1].shape[0] == stardata.df.shape[0]
+    assert poses[0].shape[0] == stardata.shape[0]
+    assert poses[1].shape[0] == stardata.shape[0]
 
 
-@pytest.mark.xfail(reason="coming soon")
 @pytest.mark.parametrize(
     "relion_starfile", ["relion31.star", "relion31.v2.star"], indirect=True
 )

@@ -28,11 +28,11 @@ import torch
 import logging
 
 from cryodrgn import ctf, dataset, fft, utils
-from cryodrgn.mrc import MRCFile
 from cryodrgn.lattice import Lattice
 from cryodrgn.pose import PoseTracker
 from cryodrgn.commands_utils.fsc import calculate_fsc, print_fsc
 from cryodrgn.commands_utils.plot_fsc import create_fsc_plot
+from cryodrgn.source import write_mrc
 
 logger = logging.getLogger(__name__)
 
@@ -306,12 +306,12 @@ def main(args):
     counts_half2[counts_half2 == 0] = 1
 
     if args.output_sumcount:
-        MRCFile.write(args.o + ".sums", volume_full.cpu().numpy(), Apix=Apix)
-        MRCFile.write(args.o + ".counts", counts_full.cpu().numpy(), Apix=Apix)
+        write_mrc(args.o + ".sums", volume_full.cpu().numpy(), Apix=Apix)
+        write_mrc(args.o + ".counts", counts_full.cpu().numpy(), Apix=Apix)
 
     volume_full = regularize_volume(volume_full, counts_full, args.reg_weight)
     out_path = os.path.splitext(args.o)[0]
-    MRCFile.write(args.o, np.array(volume_full).astype("float32"), Apix=Apix)
+    write_mrc(args.o, np.array(volume_full).astype("float32"), Apix=Apix)
 
     # create the half-maps, calculate the FSC curve between them, and save both to file
     if args.half_maps:
@@ -329,5 +329,5 @@ def main(args):
         )
         half_fl1 = "_".join([out_path, "half-map1.mrc"])
         half_fl2 = "_".join([out_path, "half-map2.mrc"])
-        MRCFile.write(half_fl1, np.array(volume_half1).astype("float32"), Apix=Apix)
-        MRCFile.write(half_fl2, np.array(volume_half2).astype("float32"), Apix=Apix)
+        write_mrc(half_fl1, np.array(volume_half1).astype("float32"), Apix=Apix)
+        write_mrc(half_fl2, np.array(volume_half2).astype("float32"), Apix=Apix)

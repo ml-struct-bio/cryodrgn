@@ -2,13 +2,13 @@
 
 Example usage
 -------------
-# this model used the default of zdim=8
-$ cryodrgn eval_vol 004_vae128/weights.pkl -c 004_vae128/config.yaml
+# This model used the default of zdim=8
+$ cryodrgn eval_vol 004_vae128/weights.pkl -c 004_vae128/config.yaml \
                                            -o zero-vol.mrc -z 0 0 0 0 0 0 0 0
 
-# we can instead specify a z-latent-space path instead of a single location
-# here the model was trained using zdim=4
-$ cryodrgn eval_vol 004_vae128/weights.pkl -c 004_vae128/config.yaml -o zero-vol.mrc
+# We can instead specify a z-latent-space path instead of a single location
+# Here the model was trained using zdim=4
+$ cryodrgn eval_vol 004_vae128/weights.pkl -c 004_vae128/config.yaml -o zero-vol.mrc \
                                            --z-start 0 -1 0 0 --z-end 1 1 1 1
 
 """
@@ -20,8 +20,8 @@ import logging
 import numpy as np
 import torch
 from cryodrgn import config
-from cryodrgn.mrc import MRCFile
 from cryodrgn.models import HetOnlyVAE
+from cryodrgn.source import write_mrc
 
 logger = logging.getLogger(__name__)
 
@@ -224,9 +224,8 @@ def main(args):
                 vol = vol.flip([0])
             if args.invert:
                 vol *= -1
-            MRCFile.write(
-                out_mrc, np.array(vol.cpu()).astype(np.float32), Apix=args.Apix
-            )
+
+            write_mrc(out_mrc, np.array(vol.cpu()).astype(np.float32), Apix=args.Apix)
 
     # Single z
     else:
@@ -249,7 +248,8 @@ def main(args):
             vol = vol.flip([0])
         if args.invert:
             vol *= -1
-        MRCFile.write(args.o, np.array(vol).astype(np.float32), Apix=args.Apix)
+
+        write_mrc(args.o, np.array(vol).astype(np.float32), Apix=args.Apix)
 
     td = dt.now() - t1
     logger.info("Finished in {}".format(td))

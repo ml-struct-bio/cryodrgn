@@ -12,7 +12,7 @@ import argparse
 import logging
 import numpy as np
 from scipy.ndimage import distance_transform_edt, binary_dilation
-from cryodrgn.mrc import MRCFile
+from cryodrgn.source import write_mrc, parse_mrc
 from cryodrgn.commands.analyze_landscape import view_slices
 
 logger = logging.getLogger(__name__)
@@ -57,7 +57,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
 
 
 def main(args: argparse.Namespace) -> None:
-    vol, header = MRCFile.parse(args.input)
+    vol, header = parse_mrc(args.input)
     apix = args.Apix or header.get_apix()
     thresh = np.percentile(vol, 99.99) / 2 if args.thresh is None else args.thresh
     logger.info(f"A/px={apix:.5g}; Threshold={thresh:.5g}")
@@ -80,6 +80,6 @@ def main(args: argparse.Namespace) -> None:
     else:
         z = x
 
-    MRCFile.write(args.output, z.astype(np.float32), header=header)
+    write_mrc(args.output, z.astype(np.float32), header=header)
     if args.png_output:
         view_slices(z, out_png=args.png_output)

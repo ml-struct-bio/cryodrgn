@@ -2,11 +2,11 @@
 
 Example usage
 -------------
-$ cryodrgn train_vae projections.mrcs -o outs/002_trainvae --lr=0.0001 --zdim 10 \
+$ cryodrgn train_vae projections.mrcs -o outs/002_trainvae --lr 0.0001 --zdim 10 \
                                       --poses angles.pkl --ctf test_ctf.pkl -n 50
 
 # Restart after already running the same command with some epochs completed
-$ cryodrgn train_vae projections.mrcs -o outs/002_trainvae --lr=0.0001 --zdim 10 \
+$ cryodrgn train_vae projections.mrcs -o outs/002_trainvae --lr 0.0001 --zdim 10 \
                                       --poses angles.pkl --ctf test_ctf.pkl \
                                       --load latest -n 100
 

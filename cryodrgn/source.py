@@ -22,7 +22,7 @@ from collections.abc import Iterable
 from concurrent import futures
 import numpy as np
 import pandas as pd
-from typing import List, Tuple, Optional, Union, Any
+from typing import List, Tuple, Iterator, Optional, Union, Any
 from typing_extensions import Self
 import logging
 import torch
@@ -196,7 +196,7 @@ class ImageSource:
         """
         raise NotImplementedError("Subclasses must implement this")
 
-    def chunks(self, chunksize: int = 1000):
+    def chunks(self, chunksize: int = 1000) -> tuple[np.ndarray, torch.Tensor]:
         """A generator that returns images in chunks of size `chunksize`.
 
         Returns:
@@ -206,6 +206,11 @@ class ImageSource:
         for i in range(0, self.n, chunksize):
             indices = np.arange(i, min(self.n, i + chunksize))
             yield indices, self.images(indices)
+
+    @property
+    def apix(self):
+        """The angstroms per pixels for the images in this source."""
+        return None
 
 
 class MRCHeader:
@@ -509,6 +514,10 @@ class MRCFileSource(ImageSource):
 
             return data
 
+    @property
+    def apix(self) -> float:
+        return self.header.get_apix()
+
 
 def parse_mrc(fname: str) -> Tuple[Any, MRCHeader]:  # type: ignore
     # parse the header
@@ -625,7 +634,7 @@ class _MRCDataFrameSource(ImageSource):
         lazy: bool = True,
         indices: Optional[np.ndarray] = None,
         max_threads: int = 1,
-    ):
+    ) -> None:
         assert "__mrc_index" in df.columns
         assert "__mrc_filename" in df.columns
         self.df = df
@@ -651,7 +660,9 @@ class _MRCDataFrameSource(ImageSource):
             indices=indices,
         )
 
-    def _images(self, indices: np.ndarray, require_contiguous: bool = False):
+    def _images(
+        self, indices: np.ndarray, require_contiguous: bool = False
+    ) -> np.ndarray:
         def load_single_mrcs(filepath, df):
             src = self._sources[filepath]
 
@@ -676,7 +687,12 @@ class _MRCDataFrameSource(ImageSource):
                 data_indices, _data = future.result()
                 for idx, d in enumerate(data_indices):
                     data[d] = _data[idx, :, :] if _data.ndim == 3 else _data
+
         return data
+
+    @property
+    def sources(self) -> Iterator[tuple[str, MRCFileSource]]:
+        return iter(self._sources.items())
 
 
 class CsSource(_MRCDataFrameSource):
@@ -786,33 +802,27 @@ def parse_star(starfile: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
     return blocks["data_"], blocks["data_optics"] if "data_optics" in blocks else None
 
 
-class StarfileSource(_MRCDataFrameSource):
+class Starfile:
+    """A lightweight class for simple .star file operations."""
+
     def __init__(
         self,
-        filepath: str,
-        datadir: str = "",
-        lazy: bool = True,
-        indices: Optional[np.ndarray] = None,
-        max_threads: int = 1,
-    ):
-        sdata, self.data_optics = parse_star(filepath)
-        sdata[["__mrc_index", "__mrc_filename"]] = sdata["_rlnImageName"].str.split(
-            "@", n=1, expand=True
-        )
-        sdata["__mrc_index"] = pd.to_numeric(sdata["__mrc_index"]) - 1
+        sdata: pd.DataFrame,
+        data_optics: Optional[pd.DataFrame] = None,
+    ) -> None:
+        self.df = sdata
+        self.data_optics = data_optics
 
-        if not datadir:
-            datadir = os.path.dirname(filepath)
+        if self.data_optics is not None:
+            if "_rlnOpticsGroup" not in self.data_optics.columns:
+                raise ValueError(
+                    "Given data optics table does not "
+                    "contain a `_rlnOpticsGroup` column!"
+                )
 
-        super().__init__(
-            df=sdata,
-            datadir=os.path.abspath(datadir),
-            lazy=lazy,
-            indices=indices,
-            max_threads=max_threads,
-        )
+            self.data_optics = self.data_optics.set_index("_rlnOpticsGroup", drop=False)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.df)
 
     @staticmethod
@@ -823,7 +833,7 @@ class StarfileSource(_MRCDataFrameSource):
         f.write("\n")
 
         # TODO: Assumes header and df ordering is consistent
-        for i, vals in data.iterrows():
+        for _, vals in data.iterrows():
             f.write(" ".join([str(val) for val in vals]))
             f.write("\n")
 
@@ -833,7 +843,7 @@ class StarfileSource(_MRCDataFrameSource):
             f.write("\n")
 
             # RELION 3.1
-            if self.data_optics:
+            if self.data_optics is not None:
                 self._write_block(f, self.data_optics, block_header="data_optics")
                 f.write("\n\n")
                 self._write_block(f, self.df, block_header="data_particles")
@@ -842,8 +852,64 @@ class StarfileSource(_MRCDataFrameSource):
             else:
                 self._write_block(f, self.df, block_header="data_")
 
-    def get_apix(self):
-        pass
+
+class _StarfileSourceBase(_MRCDataFrameSource):
+    def __init__(
+        self,
+        starfile: Starfile,
+        datadir: str = "",
+        lazy: bool = True,
+        indices: Optional[np.ndarray] = None,
+        max_threads: int = 1,
+    ) -> None:
+        self.data_optics = starfile.data_optics
+        sdata = starfile.df
+
+        sdata[["__mrc_index", "__mrc_filename"]] = sdata["_rlnImageName"].str.split(
+            "@", n=1, expand=True
+        )
+        sdata["__mrc_index"] = pd.to_numeric(sdata["__mrc_index"]) - 1
+
+        super().__init__(
+            df=sdata,
+            datadir=os.path.abspath(datadir),
+            lazy=lazy,
+            indices=indices,
+            max_threads=max_threads,
+        )
+
+    @property
+    def apix(self) -> Union[float, pd.Series]:
+        if self.data_optics is not None and "_rlnImagePixelSize" in self.data_optics:
+            if "_rlnOpticsGroup" in self.df.columns:
+                apix = pd.Series(
+                    [
+                        float(self.data_optics.loc[str(g), "_rlnImagePixelSize"])
+                        for g in self.df["_rlnOpticsGroup"]
+                    ]
+                )
+            else:
+                apix = float(self.data_optics["_rlnImagePixelSize"][0])
+        else:
+            apix = 1.0
+
+        return apix
+
+
+class StarfileSource(_StarfileSourceBase):
+    def __init__(
+        self,
+        filename: str,
+        datadir: str = "",
+        lazy: bool = True,
+        indices: Optional[np.ndarray] = None,
+        max_threads: int = 1,
+    ):
+        starfile = Starfile(*parse_star(filename))
+        if not datadir:
+            datadir = os.path.dirname(filename)
+
+        super().__init__(starfile, datadir, lazy, indices, max_threads)
 
 
 def prefix_paths(mrcs: List, datadir: str):

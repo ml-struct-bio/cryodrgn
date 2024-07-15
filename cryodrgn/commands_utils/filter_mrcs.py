@@ -3,27 +3,20 @@
 import argparse
 import logging
 from cryodrgn import utils
-from cryodrgn.mrc import MRCFile
-from cryodrgn.source import ImageSource
+from cryodrgn.source import ImageSource, write_mrc
 
 logger = logging.getLogger(__name__)
 
 
-def add_args(parser):
+def add_args(parser: argparse.ArgumentParser):
     parser.add_argument("input", help="Input particles (.mrcs, .txt, .star, .cs)")
     parser.add_argument("--ind", required=True, help="Selected indices array (.pkl)")
     parser.add_argument("-o", help="Output .mrcs file")
     return parser
 
 
-def main(args):
+def main(args: argparse.Namespace):
     ind = utils.load_pkl(args.ind)
     src = ImageSource.from_file(args.input, lazy=True, indices=ind)
     logger.info(f"Loaded {len(src)} particles")
-    MRCFile.write(args.o, src)
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    args = add_args(parser).parse_args()
-    main(args)
+    write_mrc(args.o, src)

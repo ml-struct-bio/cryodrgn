@@ -14,13 +14,19 @@ Typical usage:
     ...
 """
 import os.path
+import sys
+from datetime import datetime as dt
+import struct
+from collections import OrderedDict
 from collections.abc import Iterable
 from concurrent import futures
 import numpy as np
 import pandas as pd
-from typing import List, Optional, Union
+from typing import List, Tuple, Optional, Union, Any
+from typing_extensions import Self
 import logging
 import torch
+
 
 logger = logging.getLogger(__name__)
 
@@ -186,6 +192,7 @@ class ImageSource:
             loading and choose to throw an error instead of falling back on inefficient slower loading.
         Returns:
             Images at specified indices.
+
         """
         raise NotImplementedError("Subclasses must implement this")
 
@@ -194,37 +201,234 @@ class ImageSource:
 
         Returns:
             A 2-tuple of (<indices>, <torch.Tensor>).
+
         """
         for i in range(0, self.n, chunksize):
             indices = np.arange(i, min(self.n, i + chunksize))
             yield indices, self.images(indices)
 
 
-class ArraySource(ImageSource):
-    """A source that is consults an in-memory Numpy array for data.
+class MRCHeader:
+    """MRC header class
+    # See ref:
+    # MRC2014: Extensions to the MRC format header for electron cryo-microscopy and tomography
+    # And:
+    # https://www.ccpem.ac.uk/mrc_format/mrc2014.php
 
-    An ArraySource is initialized with an ndarray, and indexes into it to return images at specified indices.
-    Note that the `indices` argument to `images()` is still a Numpy array, which means that fancy indexing is
-    used to get a fresh copy of the requested data. Callers should be mindful of memory usage by passing in a
-    reasonable number of indices, or use `chunks()` to iterate through the source.
     """
 
-    def __init__(self, array: np.ndarray):
-        if array.ndim == 2:
-            array = array[np.newaxis, ...]
-        nz, ny, nx = array.shape
-        assert ny == nx, "Only square arrays supported"
-        self.array = array
+    ENDIANNESS = "="
+    FIELDS = [
+        "nx",
+        "ny",
+        "nz",  # int
+        "mode",  # int
+        "nxstart",
+        "nystart",
+        "nzstart",  # int
+        "mx",
+        "my",
+        "mz",  # int
+        "xlen",
+        "ylen",
+        "zlen",  # float
+        "alpha",
+        "beta",
+        "gamma",  # float
+        "mapc",
+        "mapr",
+        "maps",  # int
+        "amin",
+        "amax",
+        "amean",  # float
+        "ispg",
+        "next",
+        "creatid",  # int, int, short, [pad 10]
+        "nversion",  # int, [pad 20]
+        "nint",
+        "nreal",  # short, [pad 20]
+        "imodStamp",
+        "imodFlags",  # int
+        "idtype",
+        "lens",
+        "nd1",
+        "nd2",
+        "vd1",
+        "vd2",  # short
+        "tilt_ox",
+        "tilt_oy",
+        "tilt_oz",  # float
+        "tilt_cx",
+        "tilt_cy",
+        "tilt_cz",  # float
+        "xorg",
+        "yorg",
+        "zorg",  # float
+        "cmap",
+        "stamp",
+        "rms",  # char[4], float
+        "nlabl",
+        "labels",
+    ]  # int, char[10][80]
+    FSTR = "3ii3i3i3f3f3i3f2ih10xi16x2h20x2i6h6f3f4s4sfi800s"
 
-        super().__init__(D=ny, n=nz)
+    DTYPE_FOR_MODE = {
+        0: np.int8,
+        1: np.int16,
+        2: np.float32,
+        3: "2h",  # complex number from 2 shorts
+        4: np.complex64,
+        6: np.uint16,
+        12: np.float16,
+        16: "3B",
+    }  # RBG values
+    MODE_FOR_DTYPE = {vv: kk for kk, vv in DTYPE_FOR_MODE.items()}
 
-    def _images(self, indices: np.ndarray, require_contiguous: bool = False):
-        """
-        Return ndarray data at specified indices.
-        Note that this implementation chooses to ignore `require_contiguous`
-        since fancy indexing on a realized ndarray is "fast enough" for all practical purposes.
-        """
-        return self.array[indices, ...]
+    MACHST_OFFSET = 213
+    MACHST_FOR_ENDIANNESS = {"<": b"\x44\x44\x00\x00", ">": b"\x11\x11\x00\x00"}
+    ENDIANNESS_FOR_MACHST = {v: k for k, v in MACHST_FOR_ENDIANNESS.items()}
+
+    def __init__(self, header_values, extended_header=b""):
+        self.fields = OrderedDict(zip(self.FIELDS, header_values))
+        self.extended_header = extended_header
+        self.D = self.fields["nx"]
+        self.dtype = self.DTYPE_FOR_MODE[self.fields["mode"]]
+
+    def __str__(self):
+        return f"Header: {self.fields}\nExtended header: {self.extended_header}"
+
+    @classmethod
+    def parse(cls, fname):
+        with open(fname, "rb") as f:
+            f.seek(cls.MACHST_OFFSET)
+            cls.ENDIANNESS = cls.ENDIANNESS_FOR_MACHST.get(f.read(2), "=")
+
+            f.seek(0)
+            # prepend endianness specifier to python struct specification
+            STRUCT = struct.Struct(cls.ENDIANNESS + cls.FSTR)
+            header = cls(STRUCT.unpack(f.read(1024)))
+
+            extbytes = header.fields["next"]
+            extended_header = f.read(extbytes)
+            header.extended_header = extended_header
+
+        return header
+
+    @classmethod
+    def make_default_header(
+        cls,
+        *,
+        nz=None,
+        ny=None,
+        nx=None,
+        data=None,
+        is_vol=True,
+        Apix=1.0,
+        xorg=0.0,
+        yorg=0.0,
+        zorg=0.0,
+    ) -> Self:
+        if data is not None:
+            nz, ny, nx = data.shape
+        assert nz is not None
+        assert ny is not None
+        assert nx is not None
+        ispg = 1 if is_vol else 0
+
+        if is_vol:
+            if data is None:
+                raise ValueError("If is_vol=True, data array must be specified")
+
+            if isinstance(data, (np.ndarray, torch.Tensor)):
+                dmin, dmax, dmean, rms = data.min(), data.max(), data.mean(), data.std()
+            elif isinstance(data, ImageSource):
+                imgdata = data.images()
+                dmin = imgdata.min().item()
+                dmax = imgdata.max().item()
+                dmean = imgdata.mean().item()
+                rms = imgdata.std().item()
+            else:
+                raise TypeError(f"Unrecognized type of data: `{type(data).__name__}`!")
+
+        else:  # use undefined values for image stacks
+            dmin, dmax, dmean, rms = -1, -2, -3, -1
+
+        vals = [
+            nx,
+            ny,
+            nz,
+            2,  # mode = 2 for 32-bit float
+            0,
+            0,
+            0,  # nxstart, nystart, nzstart
+            nx,
+            ny,
+            nz,  # mx, my, mz
+            Apix * nx,
+            Apix * ny,
+            Apix * nz,  # cella
+            90.0,
+            90.0,
+            90.0,  # cellb
+            1,
+            2,
+            3,  # mapc, mapr, maps
+            dmin,
+            dmax,
+            dmean,
+            ispg,
+            0,  # exthd_size
+            0,  # creatid
+            20140,  # nversion
+            0,
+            0,  # nint, nreal
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            xorg,
+            yorg,
+            zorg,
+            b"MAP ",
+            cls.MACHST_FOR_ENDIANNESS["<" if sys.byteorder == "little" else ">"],
+            rms,  # rms
+            0,  # nlabl
+            b"\x00" * 800,  # labels
+        ]
+
+        return cls(vals)
+
+    def write(self, fh):
+        STRUCT = struct.Struct(self.FSTR)
+        buf = STRUCT.pack(*list(self.fields.values()))
+        fh.write(buf)
+        fh.write(self.extended_header)
+
+    def get_apix(self):
+        return self.fields["xlen"] / self.fields["nx"]
+
+    def update_apix(self, Apix):
+        self.fields["xlen"] = self.fields["nx"] * Apix
+        self.fields["ylen"] = self.fields["ny"] * Apix
+        self.fields["zlen"] = self.fields["nz"] * Apix
+
+    def get_origin(self):
+        return self.fields["xorg"], self.fields["yorg"], self.fields["zorg"]
+
+    def update_origin(self, xorg, yorg, zorg):
+        self.fields["xorg"] = xorg
+        self.fields["yorg"] = yorg
+        self.fields["zorg"] = zorg
 
 
 class MRCFileSource(ImageSource):
@@ -233,8 +437,6 @@ class MRCFileSource(ImageSource):
     def __init__(
         self, filepath: str, lazy: bool = True, indices: Optional[np.ndarray] = None
     ):
-        from cryodrgn.mrc import MRCHeader
-
         header = MRCHeader.parse(filepath)
         self.header = header
         self.mrcfile_path = filepath
@@ -308,6 +510,113 @@ class MRCFileSource(ImageSource):
             return data
 
 
+def parse_mrc(fname: str) -> Tuple[Any, MRCHeader]:  # type: ignore
+    # parse the header
+    header = MRCHeader.parse(fname)
+
+    # get the number of bytes in extended header
+    extbytes = header.fields["next"]
+    start = 1024 + extbytes  # start of image data
+
+    dtype = header.dtype
+    nz, ny, nx = header.fields["nz"], header.fields["ny"], header.fields["nx"]
+
+    with open(fname, "rb") as fh:
+        fh.read(start)  # skip the header + extended header
+        array = np.fromfile(fh, dtype=dtype).reshape((nz, ny, nx))
+
+    return array, header
+
+
+def write_mrc(
+    filename: str,
+    array: Union[np.ndarray, torch.Tensor, ImageSource],
+    header: Optional[MRCHeader] = None,
+    Apix: float = 1.0,
+    xorg: float = 0.0,
+    yorg: float = 0.0,
+    zorg: float = 0.0,
+    is_vol: Optional[bool] = None,
+    transform_fn=None,
+    chunksize: int = 1000,
+):
+    if header is None:
+        if is_vol is None:
+            is_vol = (
+                len(set(array.shape)) == 1
+            )  # Guess whether data is vol or image stack
+        header = MRCHeader.make_default_header(
+            nz=None,
+            ny=None,
+            nx=None,
+            data=array,
+            is_vol=is_vol,
+            Apix=Apix,
+            xorg=xorg,
+            yorg=yorg,
+            zorg=zorg,
+        )
+    else:
+        # Older versions of MRCHeader had incorrect cmap and stamp fields.
+        # Fix these before writing to disk.
+        header.fields["cmap"] = b"MAP "
+        if header.ENDIANNESS == "=":
+            endianness = {"little": "<", "big": ">"}[sys.byteorder]
+        else:
+            endianness = header.ENDIANNESS
+        header.fields["stamp"] = header.MACHST_FOR_ENDIANNESS[endianness]
+
+    if transform_fn is None:
+        transform_fn = lambda chunk, indices: chunk  # noqa: E731
+
+    new_dtype = np.dtype(header.dtype).newbyteorder(header.ENDIANNESS)  # type: ignore
+    with open(filename, "wb") as f:
+        header.write(f)
+
+        if isinstance(array, ImageSource):
+            for i, (indices, chunk) in enumerate(array.chunks(chunksize=chunksize)):
+                logger.debug(f"Processing chunk {i}")
+                chunk = transform_fn(chunk, indices)
+                if isinstance(chunk, torch.Tensor):
+                    chunk = np.array(chunk.cpu()).astype(new_dtype)
+                f.write(chunk.tobytes())
+        else:
+            indices = np.arange(array.shape[0])
+            array = transform_fn(array, indices)
+            if isinstance(array, torch.Tensor):
+                array = np.array(array.cpu()).astype(new_dtype)
+
+            assert isinstance(array, np.ndarray)
+            f.write(array.tobytes())
+
+
+class ArraySource(ImageSource):
+    """A source that is consults an in-memory Numpy array for data.
+
+    An ArraySource is initialized with an ndarray, and indexes into it to return images at specified indices.
+    Note that the `indices` argument to `images()` is still a Numpy array, which means that fancy indexing is
+    used to get a fresh copy of the requested data. Callers should be mindful of memory usage by passing in a
+    reasonable number of indices, or use `chunks()` to iterate through the source.
+    """
+
+    def __init__(self, array: np.ndarray):
+        if array.ndim == 2:
+            array = array[np.newaxis, ...]
+        nz, ny, nx = array.shape
+        assert ny == nx, "Only square arrays supported"
+        self.array = array
+
+        super().__init__(D=ny, n=nz)
+
+    def _images(self, indices: np.ndarray, require_contiguous: bool = False):
+        """
+        Return ndarray data at specified indices.
+        Note that this implementation chooses to ignore `require_contiguous`
+        since fancy indexing on a realized ndarray is "fast enough" for all practical purposes.
+        """
+        return self.array[indices, ...]
+
+
 class _MRCDataFrameSource(ImageSource):
     def __init__(
         self,
@@ -370,35 +679,6 @@ class _MRCDataFrameSource(ImageSource):
         return data
 
 
-class StarfileSource(_MRCDataFrameSource):
-    def __init__(
-        self,
-        filepath: str,
-        datadir: str = "",
-        lazy: bool = True,
-        indices: Optional[np.ndarray] = None,
-        max_threads: int = 1,
-    ):
-        from cryodrgn.starfile import Starfile
-
-        df = Starfile.load(filepath).df
-        df[["__mrc_index", "__mrc_filename"]] = df["_rlnImageName"].str.split(
-            "@", n=1, expand=True
-        )
-        df["__mrc_index"] = pd.to_numeric(df["__mrc_index"]) - 1
-
-        if not datadir:
-            datadir = os.path.dirname(filepath)
-
-        super().__init__(
-            df=df,
-            datadir=os.path.abspath(datadir),
-            lazy=lazy,
-            indices=indices,
-            max_threads=max_threads,
-        )
-
-
 class CsSource(_MRCDataFrameSource):
     def __init__(
         self,
@@ -458,3 +738,124 @@ class TxtFileSource(_MRCDataFrameSource):
             data={"__mrc_filename": mrc_filename, "__mrc_index": mrc_index}
         )
         super().__init__(df=df, lazy=lazy, indices=indices, max_threads=max_threads)
+
+
+def parse_star(starfile: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    blocks = dict()
+    cur_block = None
+
+    with open(starfile, "r") as f:
+        while line := f.readline():
+            if line.startswith("data_"):
+                if not line.startswith("data_optics"):
+                    if "data_" in blocks:
+                        raise ValueError("Multiple data blocks detected!")
+                    cur_block = "data_"
+                else:
+                    cur_block = "data_optics"
+
+                blocks[cur_block] = {"headers": list(), "body": list()}
+
+            elif line.startswith("_"):
+                blocks[cur_block]["headers"].append(line.split()[0])
+
+            elif not line.startswith("#") and not line.startswith("loop_"):
+                vals = line.strip().split()
+                if len(vals):
+                    blocks[cur_block]["body"].append(vals)
+
+    for block in blocks:
+        blocks[block]["body"] = np.array(blocks[block]["body"])
+        assert blocks[block]["body"].ndim == 2, (
+            f"Error in parsing. Uneven # columns detected in parsing"
+            f" {set([len(x) for x in blocks[block]['body']])}."
+        )
+
+        assert blocks[block]["body"].shape[1] == len(blocks[block]["headers"]), (
+            f"Error in parsing. Number of columns {blocks[block]['body'].shape[1]} "
+            f"!= number of headers {blocks[block]['headers']}"
+        )
+
+        blocks[block] = pd.DataFrame(
+            data=blocks[block]["body"], columns=blocks[block]["headers"]
+        )
+
+    if "data_" not in blocks:
+        raise ValueError(f"Starfile `{starfile}` does not contain a data block!")
+
+    return blocks["data_"], blocks["data_optics"] if "data_optics" in blocks else None
+
+
+class StarfileSource(_MRCDataFrameSource):
+    def __init__(
+        self,
+        filepath: str,
+        datadir: str = "",
+        lazy: bool = True,
+        indices: Optional[np.ndarray] = None,
+        max_threads: int = 1,
+    ):
+        sdata, self.data_optics = parse_star(filepath)
+        sdata[["__mrc_index", "__mrc_filename"]] = sdata["_rlnImageName"].str.split(
+            "@", n=1, expand=True
+        )
+        sdata["__mrc_index"] = pd.to_numeric(sdata["__mrc_index"]) - 1
+
+        if not datadir:
+            datadir = os.path.dirname(filepath)
+
+        super().__init__(
+            df=sdata,
+            datadir=os.path.abspath(datadir),
+            lazy=lazy,
+            indices=indices,
+            max_threads=max_threads,
+        )
+
+    def __len__(self):
+        return len(self.df)
+
+    @staticmethod
+    def _write_block(f, data: pd.DataFrame, block_header: str = "data_"):
+        f.write(f"{block_header}\n\n")
+        f.write("loop_\n")
+        f.write("\n".join(data.columns))
+        f.write("\n")
+
+        # TODO: Assumes header and df ordering is consistent
+        for i, vals in data.iterrows():
+            f.write(" ".join([str(val) for val in vals]))
+            f.write("\n")
+
+    def write(self, outstar: str):
+        with open(outstar, "w") as f:
+            f.write("# Created {}\n".format(dt.now()))
+            f.write("\n")
+
+            # RELION 3.1
+            if self.data_optics:
+                self._write_block(f, self.data_optics, block_header="data_optics")
+                f.write("\n\n")
+                self._write_block(f, self.df, block_header="data_particles")
+
+            # RELION 3.0
+            else:
+                self._write_block(f, self.df, block_header="data_")
+
+    def get_apix(self):
+        pass
+
+
+def prefix_paths(mrcs: List, datadir: str):
+    mrcs1 = ["{}/{}".format(datadir, os.path.basename(x)) for x in mrcs]
+    mrcs2 = ["{}/{}".format(datadir, x) for x in mrcs]
+    try:
+        for path in set(mrcs1):
+            assert os.path.exists(path)
+        mrcs = mrcs1
+    except AssertionError:
+        for path in set(mrcs2):
+            assert os.path.exists(path), f"{path} not found"
+        mrcs = mrcs2
+
+    return mrcs

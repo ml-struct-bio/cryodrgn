@@ -2,12 +2,16 @@ import pytest
 import os
 import argparse
 import torch
+import numpy as np
 from cryodrgn.source import ImageSource
-from cryodrgn.commands import downsample
+from cryodrgn.commands import downsample, downsample_dir
 
 
-@pytest.mark.parametrize("particles", ["toy.star-13"], indirect=True)
-@pytest.mark.parametrize("datadir", ["default-datadir"], indirect=True)
+@pytest.mark.parametrize(
+    "particles, datadir",
+    [("toy.star-13", "default-datadir"), ("toydatadir.star", "toy")],
+    indirect=True,
+)
 @pytest.mark.parametrize(
     "downsample_dim",
     [
@@ -22,8 +26,14 @@ from cryodrgn.commands import downsample
     ],
 )
 def test_downsample(tmpdir, particles, datadir, downsample_dim):
+    in_imgs = ImageSource.from_file(
+        particles.path, datadir=datadir.path, lazy=False
+    ).images()
     out_mrcs = os.path.join(tmpdir, "downsampled.mrcs")
-    args = downsample.add_args(argparse.ArgumentParser()).parse_args(
+
+    parser = argparse.ArgumentParser()
+    downsample.add_args(parser)
+    args = parser.parse_args(
         [
             particles.path,  # 13 particles
             "-D",
@@ -37,9 +47,10 @@ def test_downsample(tmpdir, particles, datadir, downsample_dim):
     # Note - no filtering is possible in downsample currently
     downsample.main(args)
 
-    output_data = ImageSource.from_file(out_mrcs, lazy=False).images()
-    assert isinstance(output_data, torch.Tensor)
-    assert output_data.shape == (13, downsample_dim, downsample_dim)
+    out_imgs = ImageSource.from_file(out_mrcs, lazy=False).images()
+    assert isinstance(out_imgs, torch.Tensor)
+    assert out_imgs.shape == (in_imgs.shape[0], downsample_dim, downsample_dim)
+    assert np.isclose(in_imgs.sum(), out_imgs.sum())
 
 
 @pytest.mark.parametrize("particles", ["toy.star-13"], indirect=True)
@@ -48,7 +59,10 @@ def test_downsample(tmpdir, particles, datadir, downsample_dim):
 @pytest.mark.parametrize("chunk_size", [5, 6, 8])
 def test_downsample_with_chunks(tmpdir, particles, datadir, downsample_dim, chunk_size):
     out_mrcs = os.path.join(tmpdir, "downsampled.mrcs")
-    args = downsample.add_args(argparse.ArgumentParser()).parse_args(
+
+    parser = argparse.ArgumentParser()
+    downsample.add_args(parser)
+    args = parser.parse_args(
         [
             particles.path,  # 13 particles
             "-D",
@@ -86,3 +100,36 @@ def test_downsample_with_chunks(tmpdir, particles, datadir, downsample_dim, chun
             )
         else:
             assert not os.path.exists(out_mrcs.replace(".mrcs", f".{i}.mrcs"))
+
+
+@pytest.mark.parametrize(
+    "particles, datadir", [("toydatadir.star", "toy")], indirect=True
+)
+@pytest.mark.parametrize("downsample_dim", [16, 8])
+def test_downsample_dir(tmpdir, particles, datadir, downsample_dim):
+    in_imgs = ImageSource.from_file(
+        particles.path, datadir=datadir.path, lazy=False
+    ).images()
+    out_star = os.path.join(tmpdir, "downsampled.star")
+    outdir = os.path.join(tmpdir, f"downsampled-toy.{downsample_dim}")
+
+    parser = argparse.ArgumentParser()
+    downsample_dir.add_args(parser)
+    args = parser.parse_args(
+        [
+            particles.path,  # 13 particles
+            "-D",
+            str(downsample_dim),
+            "--datadir",
+            datadir.path,  # If specified, prefixed to each _rlnImageName in starfile
+            "-o",
+            out_star,
+            "--outdir",
+            outdir,
+        ]
+    )
+    downsample_dir.main(args)
+
+    out_imgs = ImageSource.from_file(out_star, datadir=outdir, lazy=False).images()
+    assert out_imgs.shape == (1000, downsample_dim, downsample_dim)
+    assert np.isclose(in_imgs.sum(), out_imgs.sum())

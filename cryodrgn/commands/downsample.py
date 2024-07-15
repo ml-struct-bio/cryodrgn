@@ -24,16 +24,17 @@ import math
 import os
 import logging
 import numpy as np
+import pandas as pd
+from typing import Optional
 from cryodrgn import fft, utils
-from cryodrgn.mrc import MRCHeader, MRCFile
-from cryodrgn.source import ImageSource
+from cryodrgn.source import ImageSource, MRCHeader, write_mrc
 
 logger = logging.getLogger(__name__)
 
 
-def add_args(parser):
+def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
-        "mrcs", help="Input particles or volume (.mrc, .mrcs, .star, .cs, or .txt)"
+        "input", help="Input particles or volume (.mrc, .mrcs, .star, .cs, or .txt)"
     )
     parser.add_argument(
         "-D", type=int, required=True, help="New box size in pixels, must be even"
@@ -77,7 +78,6 @@ def add_args(parser):
         metavar="PKL",
         help="Filter particle stack by these indices",
     )
-    return parser
 
 
 def mkbasedir(out):
@@ -90,6 +90,97 @@ def warnexists(out):
         logger.warning("Warning: {} already exists. Overwriting.".format(out))
 
 
+def downsample_mrc_images(
+    src: ImageSource,
+    new_D: int,
+    out_fl: str,
+    batch_size: int,
+    chunk_size: Optional[int] = None,
+):
+    if new_D > src.D:
+        raise ValueError(
+            f"New box size {new_D} cannot be larger than the original box size {src.D}!"
+        )
+
+    old_apix = src.apix
+    if old_apix is None:
+        old_apix = 1.0
+
+    new_apix = round(old_apix * src.D / new_D, 6)
+    start = int(src.D / 2 - new_D / 2)
+    stop = int(src.D / 2 + new_D / 2)
+
+    if isinstance(new_apix, pd.Series):
+        new_apix = new_apix.unique()
+
+        if len(new_apix) > 1:
+            logger.warning(
+                f"Found multiple A/px values in {src.filenames}, using the first one "
+                f"found {new_apix[0]} for the output .mrcs!"
+            )
+
+        new_apix = new_apix[0]
+
+    def transform_fn(chunk, indices):
+        oldft = fft.ht2_center(chunk)
+        newft = oldft[:, start:stop, start:stop]
+        new = fft.iht2_center(newft)
+        return new
+
+    if chunk_size is None:
+        logger.info(f"Saving {out_fl}")
+
+        header = MRCHeader.make_default_header(
+            nz=src.n, ny=new_D, nx=new_D, Apix=new_apix, data=None, is_vol=False
+        )
+
+        write_mrc(
+            filename=out_fl,
+            array=src,
+            header=header,
+            is_vol=False,
+            transform_fn=transform_fn,
+            chunksize=batch_size,
+        )
+
+    # downsample images, saving one chunk of N images at a time
+    else:
+        nchunks = math.ceil(len(src) / chunk_size)
+        out_mrcs = [
+            ".{}".format(i).join(os.path.splitext(out_fl)) for i in range(nchunks)
+        ]
+        chunk_names = [os.path.basename(x) for x in out_mrcs]
+
+        for i in range(nchunks):
+            logger.info("Processing chunk {}".format(i))
+            chunk = src[i * chunk_size : (i + 1) * chunk_size]
+
+            header = MRCHeader.make_default_header(
+                nz=len(chunk),
+                ny=new_D,
+                nx=new_D,
+                Apix=new_apix,
+                data=None,
+                is_vol=False,
+            )
+
+            logger.info(f"Saving {out_mrcs[i]}")
+            write_mrc(
+                filename=out_mrcs[i],
+                array=chunk,
+                header=header,
+                is_vol=False,
+                transform_fn=transform_fn,
+                chunksize=batch_size,
+            )
+
+        # Write a text file with all chunks
+        out_txt = "{}.txt".format(os.path.splitext(out_fl)[0])
+        logger.info(f"Saving {out_txt}")
+        with open(out_txt, "w") as f:
+            f.write("\n".join(chunk_names))
+
+
 def main(args):
     mkbasedir(args.o)
     warnexists(args.o)
@@ -97,103 +188,35 @@ def main(args):
         "mrc"
     ), "Must specify output in .mrc(s) file format"
 
-    lazy = not args.is_vol
-
     ind = None
     if args.ind is not None:
         assert not args.is_vol
         logger.info(f"Filtering image dataset with {args.ind}")
         ind = utils.load_pkl(args.ind).astype(int)
 
-    old = ImageSource.from_file(args.mrcs, lazy=lazy, indices=ind, datadir=args.datadir)
-
-    oldD = old.D
+    old_src = ImageSource.from_file(
+        args.input, lazy=not args.is_vol, indices=ind, datadir=args.datadir
+    )
     assert (
-        args.D <= oldD
-    ), f"New box size {args.D} cannot be larger than the original box size {oldD}"
+        args.D <= old_src.D
+    ), f"New box size {args.D} cannot be larger than the original box size {old_src.D}"
     assert args.D % 2 == 0, "New box size must be even"
 
-    D = args.D
-    start = int(oldD / 2 - D / 2)
-    stop = int(oldD / 2 + D / 2)
-
-    old_apix = old.header.get_apix() if hasattr(old, "header") else 1.0
-    new_apix = round(old_apix * oldD / args.D, 6)
-
-    # Downsample volume
+    # downsample volume
     if args.is_vol:
-        old = old.images()
+        start = int(old_src.D / 2 - args.D / 2)
+        stop = int(old_src.D / 2 + args.D / 2)
+
+        old = old_src.images()
         oldft = fft.htn_center(old)
         logger.info(oldft.shape)
         newft = oldft[start:stop, start:stop, start:stop]
         logger.info(newft.shape)
+
         new = np.array(fft.ihtn_center(newft)).astype(np.float32)
         logger.info(f"Saving {args.o}")
-        MRCFile.write(args.o, array=new, is_vol=True)
+        write_mrc(args.o, array=new, is_vol=True)
 
     # downsample images
     else:
-
-        def transform_fn(chunk, indices):
-            oldft = fft.ht2_center(chunk)
-            newft = oldft[:, start:stop, start:stop]
-            new = fft.iht2_center(newft)
-            return new
-
-        if args.chunk is None:
-            logger.info("Saving {}".format(args.o))
-
-            header = MRCHeader.make_default_header(
-                nz=old.n, ny=D, nx=D, Apix=new_apix, data=None, is_vol=args.is_vol
-            )
-
-            MRCFile.write(
-                filename=args.o,
-                array=old,
-                header=header,
-                is_vol=args.is_vol,
-                transform_fn=transform_fn,
-                chunksize=args.b,
-            )
-
-        # downsample images, saving one chunk of N images at a time
-        else:
-            nchunks = math.ceil(len(old) / args.chunk)
-            out_mrcs = [
-                ".{}".format(i).join(os.path.splitext(args.o)) for i in range(nchunks)
-            ]
-            chunk_names = [os.path.basename(x) for x in out_mrcs]
-
-            for i in range(nchunks):
-                logger.info("Processing chunk {}".format(i))
-                chunk = old[i * args.chunk : (i + 1) * args.chunk]
-
-                header = MRCHeader.make_default_header(
-                    nz=len(chunk),
-                    ny=D,
-                    nx=D,
-                    Apix=new_apix,
-                    data=None,
-                    is_vol=args.is_vol,
-                )
-
-                logger.info(f"Saving {out_mrcs[i]}")
-                MRCFile.write(
-                    filename=out_mrcs[i],
-                    array=chunk,
-                    header=header,
-                    is_vol=args.is_vol,
-                    transform_fn=transform_fn,
-                    chunksize=args.b,
-                )
-
-            # Write a text file with all chunks
-            out_txt = "{}.txt".format(os.path.splitext(args.o)[0])
-            logger.info(f"Saving {out_txt}")
-            with open(out_txt, "w") as f:
-                f.write("\n".join(chunk_names))
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    main(add_args(parser).parse_args())
+        downsample_mrc_images(old_src, args.D, args.o, args.b, args.chunk)

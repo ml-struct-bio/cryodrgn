@@ -2,8 +2,7 @@
 
 import argparse
 import logging
-from cryodrgn.mrc import MRCFile, MRCHeader
-from cryodrgn.source import ImageSource
+from cryodrgn.source import ImageSource, MRCHeader, write_mrc
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +23,7 @@ def main(args):
     header.update_apix(args.Apix)
 
     src = ImageSource.from_file(args.input)
-    MRCFile.write(args.o, src, header=header)
+    write_mrc(args.o, src, header=header)
 
     logger.info(f"Wrote {args.o}")
 

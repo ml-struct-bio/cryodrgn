@@ -16,7 +16,8 @@ import os
 import pickle
 import logging
 import numpy as np
-from cryodrgn import starfile, utils
+from cryodrgn import utils
+from cryodrgn.source import parse_star
 
 logger = logging.getLogger(__name__)
 
@@ -52,29 +53,28 @@ def main(args):
 
     resolution = None
     apix = None
-    stardata = starfile.Starfile.load(args.input)
-    N = len(stardata.df)
+    stardf, data_optics = parse_star(args.input)
+    N = len(stardf)
     logger.info(f"{N} particles")
 
-    if stardata.relion31:  # Get image stats from data_optics table
-        assert stardata.data_optics is not None
-        optics_df = stardata.data_optics.df.set_index("_rlnOpticsGroup")
+    if data_optics is not None:
+        optics_df = data_optics.set_index("_rlnOpticsGroup")
         apix = np.array(
             [
                 float(optics_df.loc[g, "_rlnImagePixelSize"])
-                for g in stardata.df["_rlnOpticsGroup"].values
+                for g in stardf["_rlnOpticsGroup"].values
             ]
         )
         resolution = np.array(
             [
                 int(float(optics_df.loc[g, "_rlnImageSize"]))
-                for g in stardata.df["_rlnOpticsGroup"].values
+                for g in stardf["_rlnOpticsGroup"].values
             ]
         )
 
-    if resolution is None and "_rlnImageSize" in stardata.headers:
+    if resolution is None and "_rlnImageSize" in stardf.columns:
         resolution = np.array(
-            [int(float(stardata.df["_rlnImageSize"][0])) for _ in range(N)]
+            [int(float(stardf["_rlnImageSize"][0])) for _ in range(N)]
         )
 
     if args.D is not None:
@@ -86,9 +86,9 @@ def main(args):
 
     # parse rotations
     euler = np.zeros((N, 3))
-    euler[:, 0] = stardata.df["_rlnAngleRot"]
-    euler[:, 1] = stardata.df["_rlnAngleTilt"]
-    euler[:, 2] = stardata.df["_rlnAnglePsi"]
+    euler[:, 0] = stardf["_rlnAngleRot"]
+    euler[:, 1] = stardf["_rlnAngleTilt"]
+    euler[:, 2] = stardf["_rlnAnglePsi"]
     logger.info("Euler angles (Rot, Tilt, Psi):")
     logger.info(euler[0])
     logger.info("Converting to rotation matrix:")
@@ -98,22 +98,19 @@ def main(args):
 
     # parse translations
     trans = np.zeros((N, 2))
-    if "_rlnOriginX" in stardata.headers and "_rlnOriginY" in stardata.headers:
+    if "_rlnOriginX" in stardf.columns and "_rlnOriginY" in stardf.columns:
         # translations in pixels
-        trans[:, 0] = stardata.df["_rlnOriginX"]
-        trans[:, 1] = stardata.df["_rlnOriginY"]
+        trans[:, 0] = stardf["_rlnOriginX"]
+        trans[:, 1] = stardf["_rlnOriginY"]
 
-    elif (
-        "_rlnOriginXAngst" in stardata.headers
-        and "_rlnOriginYAngst" in stardata.headers
-    ):
+    elif "_rlnOriginXAngst" in stardf.columns and "_rlnOriginYAngst" in stardf.columns:
         # translation in Angstroms (Relion 3.1)
         assert apix is not None, (
             "Must provide --Apix argument to convert _rlnOriginXAngst "
             "and _rlnOriginYAngst translation units"
         )
-        trans[:, 0] = stardata.df["_rlnOriginXAngst"]
-        trans[:, 1] = stardata.df["_rlnOriginYAngst"]
+        trans[:, 0] = stardf["_rlnOriginXAngst"]
+        trans[:, 1] = stardf["_rlnOriginYAngst"]
         trans /= apix.reshape(-1, 1)
     else:
         logger.warning(

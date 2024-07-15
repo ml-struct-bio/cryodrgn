@@ -13,7 +13,8 @@ import os
 import pickle
 import logging
 import numpy as np
-from cryodrgn import ctf, starfile
+from cryodrgn import ctf
+from cryodrgn.source import parse_star
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,7 @@ HEADERS = [
 ]
 
 
-def add_args(parser):
+def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("star", help="Input")
 
     parser.add_argument(
@@ -50,20 +51,17 @@ def add_args(parser):
 def main(args):
     assert args.star.endswith(".star"), "Input file must be .star file"
     assert args.o.endswith(".pkl"), "Output CTF parameters must be .pkl file"
-    s = starfile.Starfile.load(args.star)
-    N = len(s.df)
+    stardf, data_optics = parse_star(args.star)
+    N = len(stardf)
     logger.info(f"{N} particles")
 
     overrides = {}
-    if s.relion31:
-        assert s.data_optics is not None
-        df = s.data_optics.df
-        assert len(df) == 1, "Only one optics group supported"
-        args.D = int(df["_rlnImageSize"][0])
-        args.Apix = float(df["_rlnImagePixelSize"][0])
-        overrides[HEADERS[3]] = float(df[HEADERS[3]][0])
-        overrides[HEADERS[4]] = float(df[HEADERS[4]][0])
-        overrides[HEADERS[5]] = float(df[HEADERS[5]][0])
+    if data_optics is not None:
+        args.D = int(data_optics["_rlnImageSize"][0])
+        args.Apix = float(data_optics["_rlnImagePixelSize"][0])
+        overrides[HEADERS[3]] = float(data_optics[HEADERS[3]][0])
+        overrides[HEADERS[4]] = float(data_optics[HEADERS[4]][0])
+        overrides[HEADERS[5]] = float(data_optics[HEADERS[5]][0])
     else:
         assert args.D is not None, "Must provide image size with -D"
         assert args.Apix is not None, "Must provide pixel size with --Apix"
@@ -97,13 +95,16 @@ def main(args):
         ]
     ):
         ctf_params[:, i + 2] = (
-            s.df[header] if header not in overrides else overrides[header]
+            stardf[header] if header not in overrides else overrides[header]
         )
+
     logger.info("CTF parameters for first particle:")
     ctf.print_ctf_params(ctf_params[0])
     logger.info("Saving {}".format(args.o))
+
     with open(args.o, "wb") as f:
         pickle.dump(ctf_params.astype(np.float32), f)
+
     if args.png:
         import matplotlib.pyplot as plt
 
@@ -111,9 +112,3 @@ def main(args):
         ctf.plot_ctf(args.D, args.Apix, ctf_params[0, 2:])
         plt.savefig(args.png)
         logger.info(args.png)
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    add_args(parser)
-    main(parser.parse_args())

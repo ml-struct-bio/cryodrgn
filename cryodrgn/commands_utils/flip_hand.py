@@ -13,21 +13,19 @@ import os
 import argparse
 import logging
 import numpy as np
-from cryodrgn.mrc import MRCFile
-from cryodrgn.source import ImageSource
+from cryodrgn.source import parse_mrc, write_mrc
 
 logger = logging.getLogger(__name__)
 
 
-def add_args(parser):
+def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("input", help="Input volume (.mrc)")
     parser.add_argument(
         "--outmrc", "-o", type=os.path.abspath, help="Output volume (.mrc)"
     )
-    return parser
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
     if not args.input.endswith(".mrc"):
         raise ValueError(f"Input volume {args.input} is not a .mrc file!")
     outmrc = args.outmrc or args.input.replace(".mrc", "_flipped.mrc")
@@ -36,18 +34,7 @@ def main(args):
     if not outmrc.endswith(".mrc"):
         raise ValueError(f"Output volume {outmrc} is not a .mrc file!")
 
-    src = ImageSource.from_file(args.input)
-    # Note: Proper flipping (compatible with legacy implementation) only happens when chunksize is equal to src.n
-    MRCFile.write(
-        outmrc,
-        src,
-        transform_fn=lambda data, indices: np.array(data.cpu())[::-1],
-        chunksize=src.n,
-    )
+    vol, header = parse_mrc(args.input)
+    vol = np.array(vol.cpu())[::-1]
+    write_mrc(outmrc, vol, header=header)
     logger.info(f"Wrote {outmrc}")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    args = add_args(parser).parse_args()
-    main(args)

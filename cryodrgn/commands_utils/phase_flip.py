@@ -6,14 +6,13 @@ import logging
 import numpy as np
 import torch
 from cryodrgn import ctf, fft
-from cryodrgn.mrc import MRCFile
-from cryodrgn.source import ImageSource
+from cryodrgn.source import ImageSource, write_mrc
 from cryodrgn.utils import meshgrid_2d
 
 logger = logging.getLogger(__name__)
 
 
-def add_args(parser):
+def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("mrcs", help="Input particles (.mrcs, .txt, .star, or .cs)")
     parser.add_argument("ctf_params", help="Input CTF parameters (.pkl)")
     parser.add_argument(
@@ -24,7 +23,7 @@ def add_args(parser):
     return parser
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
     imgs = ImageSource.from_file(args.mrcs, lazy=True, datadir=args.datadir)
     D = imgs.D
     ctf_params = ctf.load_ctf_for_training(D, args.ctf_params)
@@ -63,10 +62,4 @@ def main(args):
         return img2.cpu().numpy().astype(np.float32)
 
     logger.info(f"Writing {args.o}")
-    MRCFile.write(args.o, imgs, transform_fn=transform_fn)
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    args = add_args(parser).parse_args()
-    main(args)
+    write_mrc(args.o, imgs, transform_fn=transform_fn)

@@ -95,9 +95,9 @@ def test_parse_ctf_cs(tmpdir, particles_csfile):
 
 def test_parse_pose_star(tmpdir, particles_starfile):
     pkl_out = os.path.join(tmpdir, "pose.pkl")
-    args = parse_pose_star.add_args(argparse.ArgumentParser()).parse_args(
-        [particles_starfile, "-D", "300", "-o", pkl_out]
-    )
+    parser = argparse.ArgumentParser()
+    parse_pose_star.add_args(parser)
+    args = parser.parse_args([particles_starfile, "-D", "300", "-o", pkl_out])
     parse_pose_star.main(args)
 
     assert_pkl_close(pkl_out, os.path.join(pytest.DATADIR, "pose.star.pkl"))
@@ -105,9 +105,9 @@ def test_parse_pose_star(tmpdir, particles_starfile):
 
 def test_parse_pose_cs(tmpdir, particles_csfile):
     pkl_out = os.path.join(tmpdir, "pose.pkl")
-    args = parse_pose_csparc.add_args(argparse.ArgumentParser()).parse_args(
-        [particles_csfile, "-D", "180", "-o", pkl_out]
-    )
+    parser = argparse.ArgumentParser()
+    parse_pose_csparc.add_args(parser)
+    args = parser.parse_args([particles_csfile, "-D", "180", "-o", pkl_out])
     parse_pose_csparc.main(args)
 
     assert_pkl_close(pkl_out, os.path.join(pytest.DATADIR, "pose.cs.pkl"))

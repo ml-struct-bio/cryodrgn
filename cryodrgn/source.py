@@ -882,7 +882,7 @@ class Stardata:
             if "_rlnOpticsGroup" in self.df.columns:
                 res = pd.Series(
                     [
-                        int(self.data_optics.loc[str(g), "_rlnImageSize"])
+                        int(float(self.data_optics.loc[str(g), "_rlnImageSize"]))
                         for g in self.df["_rlnOpticsGroup"].values
                     ]
                 )
@@ -924,11 +924,11 @@ class _StarfileSourceBase(_MRCDataFrameSource):
 
     @property
     def apix(self) -> Union[float, pd.Series]:
-        return Stardata(self.data_optics, self.data_optics).apix
+        return Stardata(self.df, self.data_optics).apix
 
     @property
     def resolution(self) -> Union[int, pd.Series]:
-        return Stardata(self.data_optics, self.data_optics).resolution
+        return Stardata(self.df, self.data_optics).resolution
 
 
 class StarfileSource(_StarfileSourceBase):

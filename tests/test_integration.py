@@ -259,7 +259,9 @@ class TestParseWriteStar:
         )
         out_txt = os.path.join(outdir, f"downsampled_{downsample_dim}.{chunk_size}.txt")
 
-        args = downsample.add_args(argparse.ArgumentParser()).parse_args(
+        parser = argparse.ArgumentParser()
+        downsample.add_args(parser)
+        args = parser.parse_args(
             [
                 particles.path,
                 "-D",
@@ -411,7 +413,9 @@ class TestBackprojectFromChunkedDownsampled:
             tmpdir_factory, particles, poses, ctf, dsample_dim, chunksize
         )
 
-        args = downsample.add_args(argparse.ArgumentParser()).parse_args(
+        parser = argparse.ArgumentParser()
+        downsample.add_args(parser)
+        args = parser.parse_args(
             [
                 particles.path,
                 "-D",

@@ -5,8 +5,8 @@ import logging
 import torch
 from torch.utils import data
 from typing import Optional, Tuple, Union
-from cryodrgn import fft, starfile
-from cryodrgn.source import ImageSource
+from cryodrgn import fft
+from cryodrgn.source import ImageSource, parse_star
 from cryodrgn.utils import window_mask
 
 from torch.utils.data import DataLoader
@@ -135,10 +135,10 @@ class TiltSeriesData(ImageDataset):
         super().__init__(tiltstar, ind=ind, **kwargs)
 
         # Parse unique particles from _rlnGroupName
-        s = starfile.Starfile.load(tiltstar)
+        star_df, _ = parse_star(tiltstar)
         if ind is not None:
-            s.df = s.df.loc[ind]
-        group_name = list(s.df["_rlnGroupName"])
+            star_df = star_df.loc[ind]
+        group_name = list(star_df["_rlnGroupName"])
         particles = OrderedDict()
         for ii, gn in enumerate(group_name):
             if gn not in particles:
@@ -146,7 +146,9 @@ class TiltSeriesData(ImageDataset):
             particles[gn].append(ii)
         self.particles = [np.asarray(pp, dtype=int) for pp in particles.values()]
         self.Np = len(particles)
-        self.ctfscalefactor = np.asarray(s.df["_rlnCtfScalefactor"], dtype=np.float32)
+        self.ctfscalefactor = np.asarray(
+            star_df["_rlnCtfScalefactor"], dtype=np.float32
+        )
         self.tilt_numbers = np.zeros(self.N)
         for ind in self.particles:
             sort_idxs = self.ctfscalefactor[ind].argsort()
@@ -198,8 +200,8 @@ class TiltSeriesData(ImageDataset):
         cls, tiltstar: str
     ) -> tuple[list[np.ndarray], dict[np.int64, int]]:
         # Parse unique particles from _rlnGroupName
-        s = starfile.Starfile.load(tiltstar)
-        group_name = list(s.df["_rlnGroupName"])
+        star_df, _ = parse_star(tiltstar)
+        group_name = list(star_df["_rlnGroupName"])
         particles = OrderedDict()
 
         for ii, gn in enumerate(group_name):

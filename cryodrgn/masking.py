@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 class CircularMask:
-    """A circular lattice coordinate filter."""
+    """A circular lattice coordinate filter that is not updated over training."""
 
     def __init__(self, lattice: Lattice, radius: int) -> None:
         self.lattice = lattice
@@ -19,6 +19,12 @@ class CircularMask:
     def update_radius(self, radius: int) -> None:
         self.binary_mask = self.lattice.get_circular_mask(radius)
         self.current_radius = radius
+
+    def update_batch(self, total_images_count: int) -> None:
+        pass
+
+    def update_epoch(self, n_frequencies: int) -> None:
+        pass
 
     def get_lf_submask(self) -> torch.Tensor:
         return self.lattice.get_circular_mask(self.current_radius // 2)[
@@ -44,7 +50,7 @@ class FrequencyMarchingMask(CircularMask):
         self.radius_init = radius
         self.add_one_every = add_one_every
 
-    def update(self, total_images_count) -> None:
+    def update_batch(self, total_images_count) -> None:
         new_radius = int(self.radius_init + total_images_count / self.add_one_every)
 
         if self.current_radius < new_radius <= self.radius_max:
@@ -53,8 +59,8 @@ class FrequencyMarchingMask(CircularMask):
                 f"Frequency marching mask updated, new radius = {self.current_radius}"
             )
 
-    def update_epoch(self, n_freqs: int) -> None:
-        self.update_radius(min(self.current_radius + n_freqs, self.radius_max))
+    def update_epoch(self, n_frequencies: int) -> None:
+        self.update_radius(min(self.current_radius + n_frequencies, self.radius_max))
 
     def reset(self) -> None:
         self.update_radius(self.radius_init)
@@ -72,7 +78,7 @@ class FrequencyMarchingExpMask(FrequencyMarchingMask):
         super().__init__(lattice, radius, radius_max, add_one_every)
         self.exp_factor = exp_factor
 
-    def update(self, total_images_count: int) -> None:
+    def update_batch(self, total_images_count: int) -> None:
         new_radius = int(
             self.radius_init
             + np.exp((total_images_count / self.add_one_every) * self.exp_factor)

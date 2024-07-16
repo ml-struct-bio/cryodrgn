@@ -2,7 +2,10 @@
 
 Example usage
 -------------
+# Sample a thousand indices from [0 ... 189042]
 $ cryodrgn_utils select_random 189043 -o my-indices.pkl -n 100000
+
+# Sample half of the indices from [0 ... 189042]
 $ cryodrgn_utils select_random 189043 -o my-indices.pkl --frac 0.5
 
 """
@@ -11,7 +14,7 @@ import pickle
 import numpy as np
 
 
-def add_args(parser):
+def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("N", type=int, help="Total number of particles")
     parser.add_argument("-o", required=True, help="Output selection (.pkl)")
     parser.add_argument("-n", type=int, help="Number of particles to select")
@@ -22,10 +25,9 @@ def add_args(parser):
     parser.add_argument(
         "--seed", type=int, default=0, help="Random seed (default: %(default)s)"
     )
-    return parser
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
     print(f"{args.N} total particles")
     np.random.seed(args.seed)
     ind = np.arange(args.N)
@@ -44,9 +46,3 @@ def main(args):
         print(f"{len(test)} particles in inverted selection: {test}")
         print(f"Saving {args.s}")
         pickle.dump(test, open(args.s, "wb"))
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    args = add_args(parser).parse_args()
-    main(args)

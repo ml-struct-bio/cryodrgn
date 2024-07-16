@@ -52,7 +52,7 @@ def main(args: argparse.Namespace) -> None:
 
     resolution = None
     apix = None
-    stardata = Stardata.from_file(args.star)
+    stardata = Stardata.from_file(args.input)
     N = len(stardata.df)
     logger.info(f"{N} particles")
 

@@ -185,6 +185,7 @@ class TestParseCTFWriteStar:
     @pytest.mark.parametrize("particles", ["toy.star", "toy.star-13"], indirect=True)
     def test_parse_ctf_star(self, tmpdir_factory, particles, datadir):
         outdir = self.get_outdir(tmpdir_factory, particles, datadir)
+        in_src = ImageSource.from_file(particles.path, lazy=False, datadir=datadir.path)
         out_fl = os.path.join(
             outdir, f"ctf_{os.path.splitext(os.path.basename(particles.path))[0]}.pkl"
         )
@@ -202,10 +203,7 @@ class TestParseCTFWriteStar:
         with open(out_fl, "rb") as f:
             out_ctf = pickle.load(f)
 
-        assert (
-            out_ctf.shape
-            == {False: (1000, 9), True: (13, 9)}[particles.label == "toy.star-13"]
-        )
+        assert out_ctf.shape == (in_src.n, 9)
         assert np.allclose(out_ctf[:, 0], 300)  # D
         assert np.allclose(out_ctf[:, 1], 1.035)  # Apix
 
@@ -216,23 +214,28 @@ class TestParseCTFWriteStar:
         parsed_ctf = os.path.join(outdir, "ctf_toy_projections.pkl")
         assert os.path.exists(parsed_ctf), "Upstream tests have failed!"
 
+        in_imgs = ImageSource.from_file(
+            particles.path, lazy=False, datadir=datadir.path
+        ).images()
+
+        args = [
+            os.path.join(pytest.DATADIR, "toy_projections_0-999.mrcs"),
+            "--ctf",
+            parsed_ctf,
+            "-o",
+            out_fl,
+            "--full-path",
+        ]
+
         parser = argparse.ArgumentParser()
         write_star.add_args(parser)
-        args = parser.parse_args(
-            [
-                os.path.join(pytest.DATADIR, "toy_projections_0-999.mrcs"),
-                "--ctf",
-                parsed_ctf,
-                "-o",
-                out_fl,
-                "--full-path",
-            ]
-        )
-        write_star.main(args)
+        write_star.main(parser.parse_args(args))
+        out_imgs = ImageSource.from_file(
+            out_fl, lazy=False, datadir=datadir.path
+        ).images()
 
-        data = ImageSource.from_file(out_fl, lazy=False, datadir=datadir.path).images()
-        assert isinstance(data, torch.Tensor)
-        assert data.shape == (1000, 30, 30)
+        assert isinstance(out_imgs, torch.Tensor)
+        assert out_imgs.shape == in_imgs.shape
         os.remove(out_fl)
 
     # TODO: create relion3.1 tests
@@ -241,6 +244,8 @@ class TestParseCTFWriteStar:
         outdir = self.get_outdir(tmpdir_factory, particles, datadir)
         indices_pkl = os.path.join(outdir, "indices.pkl")
         out_fl = os.path.join(outdir, "issue150_written_rel30.star")
+
+        in_src = ImageSource.from_file(particles.path, lazy=False, datadir=datadir.path)
         with open(indices_pkl, "wb") as f:
             pickle.dump([11, 3, 2, 4], f)
 
@@ -261,7 +266,7 @@ class TestParseCTFWriteStar:
 
         data = ImageSource.from_file(out_fl, lazy=False, datadir=datadir.path).images()
         assert isinstance(data, torch.Tensor)
-        assert data.shape == (4, 30, 30)
+        assert data.shape == (4, in_src.D, in_src.D)
         os.remove(out_fl)
 
 

@@ -1,9 +1,9 @@
+import pandas as pd
 import pytest
 import os
 import argparse
 from cryodrgn.commands_utils import write_star, filter_mrcs
-from cryodrgn.starfile import Starfile
-from cryodrgn.source import ImageSource
+from cryodrgn.source import ImageSource, Stardata
 import cryodrgn.utils
 
 
@@ -72,16 +72,16 @@ class TestBasic:
         ind = cryodrgn.utils.load_pkl(indices.path) if indices.path else None
         particle_data = ImageSource.from_file(particles.path, indices=ind)
         ind = list(range(particle_data.n)) if ind is None else ind
-        star_data = Starfile.load(os.path.join(tmpdir, "out.star"))
-        assert star_data.df.shape[0] == particle_data.n
+        stardata = Stardata.from_file(os.path.join(tmpdir, "out.star"))
+        assert stardata.df.shape[0] == particle_data.n
 
         if use_relion30:
-            assert star_data.data_optics is None
+            assert stardata.data_optics is None
         else:
-            assert isinstance(star_data.data_optics, Starfile)
-            assert star_data.data_optics.df.shape == (1, 6)
+            assert isinstance(stardata.data_optics, pd.DataFrame)
+            assert stardata.data_optics.df.shape == (1, 6)
 
-        for i, star_name in enumerate(star_data.df["_rlnImageName"].tolist()):
+        for i, star_name in enumerate(stardata.df["_rlnImageName"].tolist()):
             file_idx, file_name = star_name.split("@")
             assert int(file_idx) == ind[i] + 1
             assert os.path.basename(file_name) == os.path.basename(particles.path)
@@ -116,16 +116,16 @@ class TestBasic:
         ind = cryodrgn.utils.load_pkl(indices.path) if indices.path else None
         particle_data = ImageSource.from_file(particles.path, indices=ind)
         ind = list(range((particle_data.n))) if ind is None else ind
-        star_data = Starfile.load(os.path.join(tmpdir, "out.star"))
-        assert star_data.df.shape[0] == particle_data.n
+        stardata = Stardata.from_file(os.path.join(tmpdir, "out.star"))
+        assert stardata.df.shape[0] == particle_data.n
 
         if use_relion30:
-            assert star_data.data_optics is None
+            assert stardata.data_optics is None
         else:
-            assert isinstance(star_data.data_optics, Starfile)
-            assert star_data.data_optics.df.shape == (1, 6)
+            assert isinstance(stardata.data_optics, pd.DataFrame)
+            assert stardata.data_optics.df.shape == (1, 6)
 
-        for i, star_name in enumerate(star_data.df["_rlnImageName"].tolist()):
+        for i, star_name in enumerate(stardata.df["_rlnImageName"].tolist()):
             file_idx, file_name = star_name.split("@")
             assert int(file_idx) == ind[i] + 1
             assert file_name == os.path.basename(
@@ -179,16 +179,16 @@ def test_from_txt_with_two_files(
     ind = cryodrgn.utils.load_pkl(indices.path) if use_indices else None
     particle_data = ImageSource.from_file(txt_file, indices=ind)
     ind = list(range(particle_data.n)) if ind is None else ind
-    star_data = Starfile.load(os.path.join(tmpdir, "out.star"))
-    assert star_data.df.shape[0] == particle_data.n
+    stardata = Stardata.from_file(os.path.join(tmpdir, "out.star"))
+    assert stardata.df.shape[0] == particle_data.n
 
     if use_relion30:
-        assert star_data.data_optics is None
+        assert stardata.data_optics is None
     else:
-        assert isinstance(star_data.data_optics, Starfile)
-        assert star_data.data_optics.df.shape == (1, 6)
+        assert isinstance(stardata.data_optics, pd.DataFrame)
+        assert stardata.data_optics.df.shape == (1, 6)
 
-    for i, star_name in enumerate(star_data.df["_rlnImageName"].tolist()):
+    for i, star_name in enumerate(stardata.df["_rlnImageName"].tolist()):
         file_idx, file_name = star_name.split("@")
         assert int(file_idx) == (ind[i] % 100) + 1
         assert file_name == os.path.basename(
@@ -210,7 +210,7 @@ def test_relion31(tmpdir, relion31_mrcs, ctf, indices):
         args += ["--ind", indices.path]
 
     write_star.main(parser.parse_args(args))
-    star_data = Starfile.load(out_fl)
+    stardata = Stardata.from_file(out_fl)
     indices = None if indices.path is None else cryodrgn.utils.load_pkl(indices.path)
-    assert star_data.df.shape == (5 if indices is None else indices.shape[0], 6)
-    assert star_data.data_optics.df.shape == (1, 6)
+    assert stardata.df.shape == (5 if indices is None else indices.shape[0], 6)
+    assert stardata.data_optics.df.shape == (1, 6)

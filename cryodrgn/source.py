@@ -1,17 +1,25 @@
-"""This module provides an `ImageSource` class that makes it easy to work with Image data.
+"""Classes for reading and using particle image data from various file formats.
 
-An `ImageSource` can be instantiated with a path to a .star/.mrcs/.txt/.cs file, in either lazy or eager mode.
-An `images` method is used at runtime to retrieve 3D Tensors for image data at specified indices.
-Chunked access is possible using the `chunks()` method.
+This module contains the class hierarchy used by cryoDRGN for loading image stacks.
+These stacks can be saved to file in a variety of formats such as
+.mrcs, .star, and .txt, each of which is handled by its own class.
 
-Typical usage:
-  src = source.ImageSource("hand.mrcs", lazy=True)
-  im = src.images(np.arange(1000, 2000))
-  assert im.shape == (1000, 64, 64)
-  ...
-  for chunk in src.chunks(chunksize=20):
-    assert chunk.shape == (20, 64, 64)
-    ...
+The base class of the hierarchy, `ImageSource`, contains the `.from_file()` method,
+which accepts a path to a .star/.mrcs/.txt/.cs file, detects the file format, and
+instantiates the appropriate child class.
+An `images` method is used at runtime to retrieve 3D Tensors for image data
+at specified indices. Chunked access is possible using the `chunks()` method.
+
+Example usage
+-------------
+> src = source.ImageSource("hand.mrcs", lazy=True)
+> im = src.images(np.arange(1000, 2000))
+> assert im.shape == (1000, 64, 64)
+> ...
+> for chunk in src.chunks(chunksize=20):
+>    assert chunk.shape == (20, 64, 64)
+>    ...
+
 """
 import os.path
 import sys
@@ -208,7 +216,7 @@ class ImageSource:
             yield indices, self.images(indices)
 
     @property
-    def apix(self):
+    def apix(self) -> Union[None, float, np.ndarray]:
         """The angstroms per pixels for the images in this source."""
         return None
 
@@ -419,10 +427,10 @@ class MRCHeader:
         fh.write(buf)
         fh.write(self.extended_header)
 
-    def get_apix(self):
+    def get_apix(self) -> float:
         return self.fields["xlen"] / self.fields["nx"]
 
-    def update_apix(self, Apix):
+    def update_apix(self, Apix: float) -> float:
         self.fields["xlen"] = self.fields["nx"] * Apix
         self.fields["ylen"] = self.fields["ny"] * Apix
         self.fields["zlen"] = self.fields["nz"] * Apix
@@ -857,10 +865,10 @@ class Stardata:
                 self._write_block(f, self.df, block_header="data_")
 
     @property
-    def apix(self) -> Union[float, pd.Series]:
+    def apix(self) -> Union[None, float, np.ndarray]:
         if self.data_optics is not None and "_rlnImagePixelSize" in self.data_optics:
             if "_rlnOpticsGroup" in self.df.columns:
-                apix = pd.Series(
+                apix = np.array(
                     [
                         float(self.data_optics.loc[str(g), "_rlnImagePixelSize"])
                         for g in self.df["_rlnOpticsGroup"].values
@@ -870,17 +878,17 @@ class Stardata:
                 apix = float(self.data_optics["_rlnImagePixelSize"][0])
 
         elif "_rlnImagePixelSize" in self.df:
-            apix = self.df["_rlnImagePixelSize"]
+            apix = self.df["_rlnImagePixelSize"].values.reshape(-1)
         else:
-            apix = 1.0
+            apix = None
 
         return apix
 
     @property
-    def resolution(self) -> Union[int, pd.Series]:
+    def resolution(self) -> Union[None, int, np.ndarray]:
         if self.data_optics is not None and "_rlnImageSize" in self.data_optics:
             if "_rlnOpticsGroup" in self.df.columns:
-                res = pd.Series(
+                res = np.array(
                     [
                         int(float(self.data_optics.loc[str(g), "_rlnImageSize"]))
                         for g in self.df["_rlnOpticsGroup"].values
@@ -890,7 +898,7 @@ class Stardata:
                 res = float(self.data_optics["_rlnImageSize"][0])
 
         elif "_rlnImageSize" in self.df:
-            res = self.df["_rlnImageSize"]
+            res = self.df["_rlnImageSize"].values.reshape(-1)
         else:
             res = None
 

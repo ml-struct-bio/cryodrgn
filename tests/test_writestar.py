@@ -79,7 +79,7 @@ class TestBasic:
             assert stardata.data_optics is None
         else:
             assert isinstance(stardata.data_optics, pd.DataFrame)
-            assert stardata.data_optics.df.shape == (1, 6)
+            assert stardata.data_optics.shape == (1, 6)
 
         for i, star_name in enumerate(stardata.df["_rlnImageName"].tolist()):
             file_idx, file_name = star_name.split("@")
@@ -123,7 +123,7 @@ class TestBasic:
             assert stardata.data_optics is None
         else:
             assert isinstance(stardata.data_optics, pd.DataFrame)
-            assert stardata.data_optics.df.shape == (1, 6)
+            assert stardata.data_optics.shape == (1, 6)
 
         for i, star_name in enumerate(stardata.df["_rlnImageName"].tolist()):
             file_idx, file_name = star_name.split("@")
@@ -186,7 +186,7 @@ def test_from_txt_with_two_files(
         assert stardata.data_optics is None
     else:
         assert isinstance(stardata.data_optics, pd.DataFrame)
-        assert stardata.data_optics.df.shape == (1, 6)
+        assert stardata.data_optics.shape == (1, 6)
 
     for i, star_name in enumerate(stardata.df["_rlnImageName"].tolist()):
         file_idx, file_name = star_name.split("@")
@@ -213,4 +213,4 @@ def test_relion31(tmpdir, relion31_mrcs, ctf, indices):
     stardata = Stardata.from_file(out_fl)
     indices = None if indices.path is None else cryodrgn.utils.load_pkl(indices.path)
     assert stardata.df.shape == (5 if indices is None else indices.shape[0], 6)
-    assert stardata.data_optics.df.shape == (1, 6)
+    assert stardata.data_optics.shape == (1, 6)

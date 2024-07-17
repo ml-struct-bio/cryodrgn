@@ -2,8 +2,10 @@
 
 Example usage
 -------------
-$ cryodrgn_utils write_star particles.128.mrcs -o particles.128.star --ctf ctf.pkl
-$ cryodrgn_utils write_star particles.128.mrcs -o particles.128.star --ctf ctf.pkl \
+$ cryodrgn_utils write_star particles.128.mrcs -o particles.128.mrcs --ctf ctf.pkl
+
+# Can be used to filter a particle stack that is already a .star file
+$ cryodrgn_utils write_star particles.128.star -o particles.128.star --ctf ctf.pkl \
                                                --ind good-ind.pkl
 
 """
@@ -13,9 +15,7 @@ import numpy as np
 import pandas as pd
 import logging
 from cryodrgn import utils
-from cryodrgn.source import ImageSource, StarfileSource
-from cryodrgn.starfile import Starfile
-from cryodrgn.mrc import MRCHeader
+from cryodrgn.source import ImageSource, StarfileSource, Stardata, MRCHeader
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ POSE_HDRS = [
 ]
 
 
-def add_args(parser):
+def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("particles", help="Input particles (.mrcs, .txt, .star)")
 
     parser.add_argument(
@@ -68,7 +68,7 @@ def add_args(parser):
     )
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
     assert args.o.endswith(".star"), "Output file must be .star file"
 
     input_ext = os.path.splitext(args.particles)[-1]
@@ -119,7 +119,7 @@ def main(args):
     if input_ext == ".star":
         assert isinstance(particles, StarfileSource)
         df = particles.df.loc[ind]
-        optics = None
+        optics = None if args.relion30 else particles.data_optics
     else:
         if input_ext == ".txt":
             with open(args.particles, "r") as f:
@@ -155,18 +155,20 @@ def main(args):
 
         # figure out what the optics groups are using voltage, spherical aberration,
         # and amplitude contrast to assign a unique group to each particle
-        optics_cols = list(set(range(9)) - ctf_cols)
-        optics_headers = [CTF_HEADERS[optics_col] for optics_col in optics_cols]
-        optics_groups, optics_indx = np.unique(
-            ctf[:, optics_cols], return_inverse=True, axis=0
-        )
+        if not args.relion30:
+            optics_cols = list(set(range(9)) - ctf_cols)
+            optics_headers = [CTF_HEADERS[optics_col] for optics_col in optics_cols]
+            optics_groups, optics_indx = np.unique(
+                ctf[:, optics_cols], return_inverse=True, axis=0
+            )
 
-        data["_rlnOpticsGroup"] = optics_indx + 1
-        optics_groups = pd.DataFrame(optics_groups, columns=optics_headers)
-        optics_groups["_rlnOpticsGroup"] = np.array(
-            [str(i + 1) for i in range(optics_groups.shape[0])],
-        )
-        optics = Starfile(df=optics_groups, relion31=False, headers=None)
+            data["_rlnOpticsGroup"] = optics_indx + 1
+            optics = pd.DataFrame(optics_groups, columns=optics_headers)
+            optics["_rlnOpticsGroup"] = np.array(
+                [str(i + 1) for i in range(optics.shape[0])],
+            )
+        else:
+            optics = None
 
         if eulers is not None and trans is not None:
             for i in range(3):
@@ -176,11 +178,4 @@ def main(args):
 
         df = pd.DataFrame(data=data)
 
-    s = Starfile(headers=None, df=df, relion31=not args.relion30, data_optics=optics)
-    s.write(args.o)
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    add_args(parser)
-    main(parser.parse_args())
+    Stardata(sdata=df, data_optics=optics).write(args.o)

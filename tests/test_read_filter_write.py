@@ -1,3 +1,4 @@
+import pandas as pd
 import pytest
 import argparse
 import os
@@ -238,9 +239,11 @@ class TestParseCTFWriteStar:
         assert out_imgs.shape == in_imgs.shape
         os.remove(out_fl)
 
-    # TODO: create relion3.1 tests
     @pytest.mark.parametrize("particles", ["toy.star", "toy.star-13"], indirect=True)
-    def test_write_star_relion30(self, tmpdir_factory, particles, datadir):
+    @pytest.mark.parametrize(
+        "use_relion30", [False, True], ids=("relion3.1", "relion3.0")
+    )
+    def test_write_filter_star(self, tmpdir_factory, particles, datadir, use_relion30):
         outdir = self.get_outdir(tmpdir_factory, particles, datadir)
         indices_pkl = os.path.join(outdir, "indices.pkl")
         out_fl = os.path.join(outdir, "issue150_written_rel30.star")
@@ -251,22 +254,23 @@ class TestParseCTFWriteStar:
 
         parser = argparse.ArgumentParser()
         write_star.add_args(parser)
-        args = parser.parse_args(
-            [
-                particles.path,
-                "-o",
-                out_fl,
-                "--ind",
-                indices_pkl,
-                "--full-path",
-                "--relion30",
-            ]
-        )
-        write_star.main(args)
+        args = [particles.path, "-o", out_fl, "--ind", indices_pkl, "--full-path"]
+        if use_relion30:
+            args += ["--relion30"]
 
-        data = ImageSource.from_file(out_fl, lazy=False, datadir=datadir.path).images()
-        assert isinstance(data, torch.Tensor)
-        assert data.shape == (4, in_src.D, in_src.D)
+        write_star.main(parser.parse_args(args))
+        out_src = ImageSource.from_file(out_fl, lazy=False, datadir=datadir.path)
+        assert isinstance(out_src.df, pd.DataFrame)
+        assert out_src.df.shape == (4, 12)
+        out_imgs = out_src.images()
+        assert isinstance(out_imgs, torch.Tensor)
+        assert out_imgs.shape == (4, in_src.D, in_src.D)
+
+        if use_relion30 or in_src.data_optics is None:
+            assert out_src.data_optics is None
+        else:
+            assert out_src.data_optics.shape == in_src.data_optics.shape
+
         os.remove(out_fl)
 
 

@@ -4,11 +4,16 @@ Example usages
 --------------
 $ cryodrgn_utils plot_classes my_work_dir/003_train-vae 49 --labels new_classes.pkl
 
+# Use your own color palette saved to a file
+$ cryodrgn_utils plot_classes my_work_dir/003_train-vae 49 --labels new_classes.pkl \
+                              --palette my_colours.pkl
+
 """
 import os
 import argparse
 import pandas as pd
 from itertools import combinations as combns
+import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import logging
@@ -31,7 +36,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "--labels",
         required=True,
         type=os.path.abspath,
-        help="Class labels for use in plotting",
+        help="Class labels for use in plotting (.pkl); a pickled numpy array ",
     )
     parser.add_argument(
         "--palette",
@@ -57,45 +62,93 @@ def main(args: argparse.Namespace) -> None:
     assert not cfgs
 
     if args.epoch == "-1":
-        zfile = os.path.join(args.traindir, "z.pkl")
+        z_file = os.path.join(args.traindir, "z.pkl")
         outdir = os.path.join(args.traindir, "analyze")
     else:
-        zfile = os.path.join(args.traindir, f"z.{args.epoch}.pkl")
+        z_file = os.path.join(args.traindir, f"z.{args.epoch}.pkl")
         outdir = os.path.join(args.traindir, f"analyze.{args.epoch}")
 
     logger.info(f"Saving results to {outdir}")
     if not os.path.exists(outdir):
         os.mkdir(outdir)
 
-    z = utils.load_pkl(zfile)
-    zdim = z.shape[1]
-    classes = utils.load_pkl(args.labels)[: z.shape[0]]
+    z_mat = utils.load_pkl(z_file)
+    classes = utils.load_pkl(args.labels)
+    if classes.ndim != 1:
+        raise ValueError("Class labels must be a 1D array!")
 
-    if zdim > 1:
-        logger.info("Plotting z-latent-space panels...")
+    n_imgs = z_mat.shape[0]
+    if n_imgs < classes.shape[0]:
+        raise ValueError(
+            f"Given class labels have more entries ({classes.shape[0]}) than there "
+            f"were images in the reconstruction experiment ({n_imgs})!"
+        )
+    elif n_imgs > classes.shape[0]:
+        if not all(
+            isinstance(i, (int, np.integer)) and 0 <= i < n_imgs for i in classes
+        ):
+            raise ValueError(
+                f"Given class labels have fewer entries ({classes.shape[0]}) than "
+                f"there were images in the reconstruction experiment "
+                f"({n_imgs}), so they are being interpreted as indices "
+                f"defining a subet of the images, but not all of its entries are "
+                f"in the range [0, ..., {n_imgs - 1}]!"
+            )
+        inds = set(classes)
+        classes = np.array([int(i) in inds for i in range(n_imgs)])
+        nclasses = 2
+    else:
+        nclasses = len(set(classes))
 
-    if zdim > 2:
+    if args.palette:
+        if os.path.exists(args.palette):
+            palette = utils.load_pkl(args.palette)
+        else:
+            try:
+                palette = sns.color_palette(args.palette, nclasses)
+            except ValueError as e:
+                raise ValueError(
+                    f"Palette {args.palette} is not available in seaborn\n\t({e})!"
+                )
+    else:
+        palette = sns.color_palette("Set1", nclasses)
+
+    z_dim = z_mat.shape[1]
+    if z_dim > 2:
         logger.info("Performing principal component analysis...")
-        pc, pca = analysis.run_pca(z)
+        pc, pca = analysis.run_pca(z_mat)
 
         if not args.skip_umap:
             logger.info("Running UMAP...")
-            umap_emb = pd.DataFrame(analysis.run_umap(z), columns=["UMAP1", "UMAP2"])
+            umap_emb = pd.DataFrame(
+                analysis.run_umap(z_mat), columns=["UMAP1", "UMAP2"]
+            )
             umap_emb["Class"] = classes
 
             g = sns.jointplot(
-                data=umap_emb, x="UMAP1", y="UMAP2", kind="kde", hue="Class", height=10
+                data=umap_emb,
+                x="UMAP1",
+                y="UMAP2",
+                kind="kde",
+                hue="Class",
+                palette=palette,
+                height=10,
             )
 
             g.ax_joint.set_xlabel("UMAP1")
             g.ax_joint.set_ylabel("UMAP2")
             plt.tight_layout()
-            plt.savefig(os.path.join(outdir, "umap_hexbin_classes.png"))
+            plt.savefig(os.path.join(outdir, "umap_kde_classes.png"))
             plt.close()
 
         for pc1, pc2 in combns(range(3), 2):
             g = sns.jointplot(
-                x=pc[:, pc1], y=pc[:, pc2], height=4, kind="kde", hue=classes
+                x=pc[:, pc1],
+                y=pc[:, pc2],
+                kind="kde",
+                hue=classes,
+                palette=palette,
+                height=10,
             )
 
             g.ax_joint.set_xlabel(
@@ -106,5 +159,5 @@ def main(args: argparse.Namespace) -> None:
             )
 
             plt.tight_layout()
-            plt.savefig(os.path.join(outdir, f"z_pca_hexbin_{pc1}x{pc2}.png"))
+            plt.savefig(os.path.join(outdir, f"z_pca_kde_classes_{pc1}x{pc2}.png"))
             plt.close()

@@ -1,17 +1,33 @@
 """Interactive filtering of particles plotted using various model variables.
 
-Note that `cryodrgn analyze` must be run first using the epoch to filter on!
+This command opens an interactive interface in which the particles (or tilts) used in
+the given reconstruction experiment are plotted as a 2-d scatter plot with trained
+model variables as the axes values. This interface allows for lasso-type selection
+of particles within this space which can then be saved upon closing the window;
+you can also colour the points by a third model variable, or select another pair of
+model variables to use as axes.
+
+Note that `cryodrgn analyze` must be run first in the given workdir using the
+epoch to filter on!
 
 Example usage
 -------------
+# If no epoch is given, the default is to find the last available epoch in the workdir
 $ cryodrgn filter 00_trainvae
+
+# Choose an epoch yourself
 $ cryodrgn filter my_outdir --epoch 30
+
+# If you have done multiple k-means clusterings, you can pick which one to use
 $ cryodrgn filter my_outdir/ -k 25
+
+# If you already have indices you can start by plotting them
 $ cryodrgn filter my_outdir/01_trainvae --plot-inds candidate-particles.pkl
 
 """
 import os
 import pickle
+import argparse
 import yaml
 import re
 import logging
@@ -31,7 +47,7 @@ from cryodrgn import analysis, utils
 logger = logging.getLogger(__name__)
 
 
-def add_args(parser):
+def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "outdir", type=os.path.abspath, help="experiment output directory"
     )
@@ -60,7 +76,7 @@ def add_args(parser):
     )
 
 
-def main(args) -> None:
+def main(args: argparse.Namespace) -> None:
     workdir = args.outdir
     epoch = args.epoch
     kmeans = args.kmeans
@@ -188,45 +204,49 @@ def main(args) -> None:
     selected_indices = [all_indices[i] for i in selector.indices]
     plt.close()  # Close the figure to avoid interference with other plots
 
-    select_str = " ... ".join(
-        [
-            ",".join([str(i) for i in selected_indices[:6]]),
-            ",".join([str(i) for i in selected_indices[-6:]]),
-        ]
-    )
+    if selected_indices:
+        select_str = " ... ".join(
+            [
+                ",".join([str(i) for i in selected_indices[:6]]),
+                ",".join([str(i) for i in selected_indices[-6:]]),
+            ]
+        )
 
-    print(
-        f"Selected {len(selected_indices)} particles from original list of "
-        f"{len(all_indices)} "
-        f"particles numbered [{min(all_indices)}, ... , {max(all_indices)}]:\n{select_str}"
-    )
+        print(
+            f"Selected {len(selected_indices)} particles from original list of "
+            f"{len(all_indices)} "
+            f"particles numbered [{min(all_indices)}, ... , {max(all_indices)}]:\n{select_str}"
+        )
 
-    save_option = input("Do you want to save the selection? (yes/no): ").strip().lower()
+        save_option = (
+            input("Do you want to save the selection? (yes/no): ").strip().lower()
+        )
 
-    if save_option == "yes":
-        filename = input(
-            "Enter filename to save selection (absolute, without extension): "
-        ).strip()
+        if save_option == "yes":
+            filename = input(
+                "Enter filename to save selection (absolute, without extension): "
+            ).strip()
 
-        # saving the selected indices
-        if filename:
-            selected_full_path = filename + ".pkl"
+            # saving the selected indices
+            if filename:
+                selected_full_path = filename + ".pkl"
 
-            with open(selected_full_path, "wb") as file:
-                pickle.dump(selected_indices, file)
-            print(f"Selection saved to {selected_full_path}")
+                with open(selected_full_path, "wb") as file:
+                    pickle.dump(selected_indices, file)
+                print(f"Selection saved to {selected_full_path}")
 
-            # Saving the inverse selection
-            inverse_filename = filename + "_inverse.pkl"
-            inverse_indices = np.setdiff1d(all_indices, selected_indices)
+                # Saving the inverse selection
+                inverse_filename = filename + "_inverse.pkl"
+                inverse_indices = np.setdiff1d(all_indices, selected_indices)
 
-            with open(inverse_filename, "wb") as file:
-                pickle.dump(inverse_indices, file)
+                with open(inverse_filename, "wb") as file:
+                    pickle.dump(inverse_indices, file)
 
-            print(f"Inverse selection saved to {inverse_filename}")
-
+                print(f"Inverse selection saved to {inverse_filename}")
+        else:
+            print("Exiting without saving selection.")
     else:
-        print("Exiting without saving selection.")
+        print("Exiting without having made a selection.")
 
 
 class SelectFromScatter:
@@ -266,8 +286,8 @@ class SelectFromScatter:
 
         self.lasso = LassoSelector(self.main_ax, onselect=self.choose_points)
         self.indices = pre_indices if pre_indices else list()
-        self.annot = None
         self.pik_txt = None
+        self.hover_txt = None
 
         self.handl_id = self.fig.canvas.mpl_connect(
             "motion_notify_event", self.hover_points
@@ -320,17 +340,6 @@ class SelectFromScatter:
         self.main_ax.set_ylabel(self.ycol, size=17, weight="semibold")
         self.main_ax.set_title("Select Points Manually", size=23, weight="semibold")
 
-        self.annot = self.main_ax.annotate(
-            "",
-            xy=(0, 0),
-            xytext=(20, 20),
-            textcoords="offset points",
-            bbox=dict(boxstyle="round", fc="w"),
-            arrowprops=dict(arrowstyle="->"),
-            annotation_clip=False,
-        )
-        self.annot.set_visible(False)
-
         self.pik_txt = self.main_ax.text(
             0.99,
             0.01,
@@ -341,7 +350,6 @@ class SelectFromScatter:
             va="bottom",
             transform=self.main_ax.transAxes,
         )
-
         plt.show(block=False)
         plt.draw()
 
@@ -370,37 +378,39 @@ class SelectFromScatter:
         self.menu_col.set_active(0)
         self.plot()
 
-    def hover_points(self, event: Event):
-        vis = self.annot.get_visible()
+    def hover_points(self, event: Event) -> None:
 
+        # erase any existing annotation for points hovered over
+        if self.hover_txt is not None and self.hover_txt.get_text():
+            self.hover_txt.set_text("")
+            self.fig.canvas.draw_idle()
+
+        # if hovering over the plotting region, find if we are hovering over any points
         if event.inaxes == self.main_ax:
             cont, ix = self.scatter.contains(event)
 
             if cont:
-                pos = self.scatter.get_offsets()[ix["ind"][0]]
-
-                self.annot.xy = pos
                 ant_lbls = [
                     str(int(self.data_table.iloc[x]["index"])) for x in ix["ind"]
                 ]
 
-                if len(ant_lbls) > 5:
-                    ant_lbls = ant_lbls[:5]
+                if len(ant_lbls) > 4:
+                    ant_lbls = ant_lbls[:4]
                     ant_txt = ",".join(ant_lbls) + ",..."
                 else:
                     ant_txt = ",".join(ant_lbls)
 
-                self.annot.set_text(ant_txt)
-                self.annot.get_bbox_patch().set_facecolor("0.5")
-                self.annot.get_bbox_patch().set_alpha(0.4)
-
-                self.annot.set_visible(True)
+                self.hover_txt = self.main_ax.text(
+                    0.01,
+                    0.01,
+                    f"hovering over particles:\n{ant_txt}",
+                    size=11,
+                    fontstyle="italic",
+                    ha="left",
+                    va="bottom",
+                    transform=self.main_ax.transAxes,
+                )
                 self.fig.canvas.draw_idle()
-
-            else:
-                if vis:
-                    self.annot.set_visible(False)
-                    self.fig.canvas.draw_idle()
 
     def on_click(self, event: Event) -> None:
         if hasattr(event, "button") and event.button is MouseButton.LEFT:

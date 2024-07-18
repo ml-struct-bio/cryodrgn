@@ -24,7 +24,6 @@ import math
 import os
 import logging
 import numpy as np
-import pandas as pd
 from typing import Optional
 from cryodrgn import fft, utils
 from cryodrgn.source import ImageSource, MRCHeader, write_mrc
@@ -106,12 +105,12 @@ def downsample_mrc_images(
     if old_apix is None:
         old_apix = 1.0
 
-    new_apix = round(old_apix * src.D / new_D, 6)
+    new_apix = np.round(old_apix * src.D / new_D, 6)
     start = int(src.D / 2 - new_D / 2)
     stop = int(src.D / 2 + new_D / 2)
 
-    if isinstance(new_apix, pd.Series):
-        new_apix = new_apix.unique()
+    if not isinstance(new_apix, float):
+        new_apix = tuple(set(new_apix))
 
         if len(new_apix) > 1:
             logger.warning(

@@ -30,7 +30,7 @@ from collections.abc import Iterable
 from concurrent import futures
 import numpy as np
 import pandas as pd
-from typing import List, Tuple, Iterator, Optional, Union, Any
+from typing import List, Tuple, Iterator, Optional, Union
 from typing_extensions import Self
 import logging
 import torch
@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 
 class ImageSource:
-    """An ImageSource is a class that returns a copy of the underlying 3D image data, from a .mrcs/.txt/.star file.
+    """A class that returns the 3D image data in a .mrcs/.txt/.star file stack.
 
     The images(<indices>) method is used to read images at specified indices as torch Tensors.
     <indices> can be a scalar, a slice, a numpy array, or an iterable of indices where we want to query the data.
@@ -117,25 +117,23 @@ class ImageSource:
         self.D = D
         self.shape = self.n, self.D, self.D
 
-        # Some client calls need to access the original filename(s) associated with a source
-        # These are traditionally available as the 'fname' attribute of the LazyImage class, hence only used by
-        # calling code when lazy=True
+        # Some client calls need to access the original filename(s) associated with a
+        # source; these are traditionally available as the 'fname' attribute of the
+        # LazyImage class, hence only used by calling code when lazy=True
         if filenames is None:
             filenames = [""] * self.n
         elif isinstance(filenames, str):
             filenames = [filenames] * self.n
         else:
-            assert len(filenames) == self.n, f"{len(filenames)} != {self.n}"
+            if len(filenames) != self.n:
+                raise ValueError(f"`{len(filenames)=}` != `{n=}`")
             filenames = list(filenames)
-        self.filenames = np.array(filenames)
 
+        self.filenames = np.array(filenames)
         self.lazy = lazy
         self.max_threads = max_threads
         self.dtype = dtype
-
-        self.data = None
-        if not self.lazy:
-            self.data = ArraySource(self._images(self.indices))
+        self.data = None if self.lazy else ArraySource(self._images(self.indices))
 
     def __len__(self) -> int:
         return self.n
@@ -204,7 +202,9 @@ class ImageSource:
         """
         raise NotImplementedError("Subclasses must implement this")
 
-    def chunks(self, chunksize: int = 1000) -> tuple[np.ndarray, torch.Tensor]:
+    def chunks(
+        self, chunksize: int = 1000
+    ) -> Iterable[tuple[np.ndarray, torch.Tensor]]:
         """A generator that returns images in chunks of size `chunksize`.
 
         Returns:
@@ -222,11 +222,13 @@ class ImageSource:
 
 
 class MRCHeader:
-    """MRC header class
-    # See ref:
-    # MRC2014: Extensions to the MRC format header for electron cryo-microscopy and tomography
-    # And:
-    # https://www.ccpem.ac.uk/mrc_format/mrc2014.php
+    """A class for representing the headers of .mrc files which store metadata.
+
+    See ref:
+        MRC2014: Extensions to the MRC format header for electron cryo-microscopy and
+                 tomography
+    and:
+        https://www.ccpem.ac.uk/mrc_format/mrc2014.php
 
     """
 
@@ -450,15 +452,14 @@ class MRCFileSource(ImageSource):
     def __init__(
         self, filepath: str, lazy: bool = True, indices: Optional[np.ndarray] = None
     ):
-        header = MRCHeader.parse(filepath)
-        self.header = header
+        self.header = MRCHeader.parse(filepath)
         self.mrcfile_path = filepath
-        self.dtype = header.dtype
-        self.start = 1024 + header.fields["next"]  # start of image data
+        self.dtype = self.header.dtype
+        self.start = 1024 + self.header.fields["next"]  # start of image data
         self.nz, self.ny, self.nx = (
-            header.fields["nz"],
-            header.fields["ny"],
-            header.fields["nx"],
+            self.header.fields["nz"],
+            self.header.fields["ny"],
+            self.header.fields["nx"],
         )
         assert self.ny == self.nx, "Only square images supported"
         self.size = self.ny * self.nx
@@ -520,14 +521,14 @@ class MRCFileSource(ImageSource):
                     ).reshape(self.ny, self.nx)
                     data[tgt_index, ...] = _data
 
-            return data
+        return data
 
     @property
     def apix(self) -> float:
         return self.header.get_apix()
 
 
-def parse_mrc(fname: str) -> Tuple[Any, MRCHeader]:  # type: ignore
+def parse_mrc(fname: str) -> Tuple[np.ndarray, MRCHeader]:  # type: ignore
     # parse the header
     header = MRCHeader.parse(fname)
 

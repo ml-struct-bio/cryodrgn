@@ -62,6 +62,14 @@ def add_args(parser):
     )
 
     parser.add_argument(
+        "--datadir",
+        type=str,
+        # TODO Check if .cs files work with this (or remove .cs here!)
+        help="Path prefix to particle stack if loading relative paths from a .star or .cs file",
+        default="",
+    )
+
+    parser.add_argument(
         "--relion30",
         action="store_true",
         help="Write output in RELION 3.0 format instead of the default 3.1 format.",
@@ -91,8 +99,10 @@ def main(args):
         if not args.ctf:
             raise ValueError("--ctf must be specified when input is not a starfile!")
 
-    particles = ImageSource.from_file(args.particles, lazy=True)
-
+    # TODO REMOVE:ImageSource->StarFileSource->_MRCDataFrameSource
+    # TODO REMOVE:datadir is passed through and used to set __mrc_filename values with realtive directories
+    # TODO REMOVE:indices is used via super. If lazy=True, not utilised at all. If lazy=False, it is used to create an subselected stack of mrcs (in np fom)
+    particles = ImageSource.from_file(args.particles, datadir=args.datadir, lazy=True) # indices=args.ind)
     if args.ctf:
         ctf = utils.load_pkl(args.ctf)
         assert ctf.shape[1] == 9, "Incorrect CTF pkl format"
@@ -119,7 +129,10 @@ def main(args):
     if input_ext == ".star":
         assert isinstance(particles, StarfileSource)
         df = particles.df.loc[ind]
-        optics = None
+        if ~args.relion30:
+            optics = Starfile.load(args.particles).data_optics
+        else:
+            optics = None
     else:
         if input_ext == ".txt":
             with open(args.particles, "r") as f:
@@ -160,7 +173,6 @@ def main(args):
         optics_groups, optics_indx = np.unique(
             ctf[:, optics_cols], return_inverse=True, axis=0
         )
-
         data["_rlnOpticsGroup"] = optics_indx + 1
         optics_groups = pd.DataFrame(optics_groups, columns=optics_headers)
         optics_groups["_rlnOpticsGroup"] = np.array(
@@ -175,7 +187,10 @@ def main(args):
                 data[POSE_HDRS[3 + i]] = trans[:, i]
 
         df = pd.DataFrame(data=data)
-
+    
+    # TODO check if setting __mrc_index __mrc_filename or 
+    # __mrc_filepath for starfile input to starfile output
+    # is relion compatible
     s = Starfile(headers=None, df=df, relion31=not args.relion30, data_optics=optics)
     s.write(args.o)
 

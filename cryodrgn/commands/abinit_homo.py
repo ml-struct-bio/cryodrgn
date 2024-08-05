@@ -18,9 +18,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from cryodrgn import ctf, dataset, lie_tools, models, utils
-from cryodrgn.mrc import MRCFile
 from cryodrgn.lattice import Lattice
 from cryodrgn.pose_search import PoseSearch
+from cryodrgn.source import write_mrc
 import cryodrgn.config
 
 logger = logging.getLogger(__name__)
@@ -311,7 +311,7 @@ def save_checkpoint(
 ):
     model.eval()
     vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, norm)
-    MRCFile.write(out_mrc, vol)
+    write_mrc(out_mrc, vol)
     torch.save(
         {
             "norm": norm,
@@ -662,7 +662,7 @@ def main(args):
     out_mrc = "{}/pretrain.reconstruct.mrc".format(args.outdir)
     model.eval()
     vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, tuple(data.norm))
-    MRCFile.write(out_mrc, vol)
+    write_mrc(out_mrc, vol)
 
     # reset model after pretraining
     if args.reset_optim_after_pretrain:

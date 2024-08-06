@@ -6,8 +6,7 @@ import logging
 import matplotlib.pyplot as plt
 import numpy as np
 from cryodrgn import fft, utils
-from cryodrgn.mrc import MRCFile
-from cryodrgn.source import ImageSource
+from cryodrgn.source import ImageSource, write_mrc
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +69,7 @@ def main(args):
         imgs[ii] = fft.ifftn_center(ff).astype(np.float32)
 
     logger.info(f"Writing {args.o}")
-    MRCFile.write(args.o, imgs)
+    write_mrc(args.o, imgs)
 
     if args.out_png:
         plot_projections(args.out_png, imgs[:9])

@@ -30,7 +30,7 @@ from collections.abc import Iterable
 from concurrent import futures
 import numpy as np
 import pandas as pd
-from typing import List, Tuple, Iterator, Optional, Union
+from typing import List, Tuple, Iterator, Optional, Union, Callable
 from typing_extensions import Self
 import logging
 import torch
@@ -107,6 +107,7 @@ class ImageSource:
         indices: Optional[np.ndarray] = None,
     ):
         self.n = n
+        self.N = n
         if indices is None:
             self.indices = np.arange(self.n)
         else:
@@ -523,6 +524,36 @@ class MRCFileSource(ImageSource):
 
         return data
 
+    def write(
+        self,
+        output_file: str,
+        transform_fn: Optional[Callable] = None,
+        chunksize: Optional[int] = None,
+    ) -> None:
+        """Save this source's data to a .mrc file, using chunking if necessary."""
+
+        if chunksize is None:
+            write_mrc(
+                output_file,
+                self.images(),
+                header=None,
+                Apix=self.apix,
+                transform_fn=transform_fn,
+            )
+        else:
+            new_dtype = np.dtype(self.header.dtype).newbyteorder(self.header.ENDIANNESS)  # type: ignore
+
+            with open(output_file, "wb") as f:
+                for i, (indices, chunk) in enumerate(self.chunks(chunksize=chunksize)):
+                    logger.debug(f"Processing chunk {i}")
+
+                    if transform_fn is not None:
+                        chunk = transform_fn(chunk, indices)
+                    if isinstance(chunk, torch.Tensor):
+                        chunk = np.array(chunk.cpu()).astype(new_dtype)
+
+                    f.write(chunk.tobytes())
+
     @property
     def apix(self) -> float:
         return self.header.get_apix()
@@ -548,21 +579,20 @@ def parse_mrc(fname: str) -> Tuple[np.ndarray, MRCHeader]:  # type: ignore
 
 def write_mrc(
     filename: str,
-    array: Union[np.ndarray, torch.Tensor, ImageSource],
+    array: Union[np.ndarray, torch.Tensor],
     header: Optional[MRCHeader] = None,
     Apix: float = 1.0,
     xorg: float = 0.0,
     yorg: float = 0.0,
     zorg: float = 0.0,
     is_vol: Optional[bool] = None,
-    transform_fn=None,
-    chunksize: int = 1000,
+    transform_fn: Optional[Callable] = None,
 ):
     if header is None:
         if is_vol is None:
-            is_vol = (
-                len(set(array.shape)) == 1
-            )  # Guess whether data is vol or image stack
+            # If necessary, guess whether data is vol or image stack
+            is_vol = len(set(array.shape)) == 1
+
         header = MRCHeader.make_default_header(
             nz=None,
             ny=None,
@@ -590,22 +620,14 @@ def write_mrc(
     new_dtype = np.dtype(header.dtype).newbyteorder(header.ENDIANNESS)  # type: ignore
     with open(filename, "wb") as f:
         header.write(f)
+        indices = np.arange(array.shape[0])
+        array = transform_fn(array, indices)
 
-        if isinstance(array, ImageSource):
-            for i, (indices, chunk) in enumerate(array.chunks(chunksize=chunksize)):
-                logger.debug(f"Processing chunk {i}")
-                chunk = transform_fn(chunk, indices)
-                if isinstance(chunk, torch.Tensor):
-                    chunk = np.array(chunk.cpu()).astype(new_dtype)
-                f.write(chunk.tobytes())
-        else:
-            indices = np.arange(array.shape[0])
-            array = transform_fn(array, indices)
-            if isinstance(array, torch.Tensor):
-                array = np.array(array.cpu()).astype(new_dtype)
+        if isinstance(array, torch.Tensor):
+            array = np.array(array.cpu()).astype(new_dtype)
 
-            assert isinstance(array, np.ndarray)
-            f.write(array.tobytes())
+        assert isinstance(array, np.ndarray)
+        f.write(array.tobytes())
 
 
 class ArraySource(ImageSource):

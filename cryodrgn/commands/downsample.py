@@ -132,12 +132,9 @@ def downsample_mrc_images(
         header = MRCHeader.make_default_header(
             nz=src.n, ny=new_D, nx=new_D, Apix=new_apix, data=None, is_vol=False
         )
-
-        write_mrc(
-            filename=out_fl,
-            array=src,
+        src.write_mrc(
+            output_file=out_fl,
             header=header,
-            is_vol=False,
             transform_fn=transform_fn,
             chunksize=batch_size,
         )

@@ -3,7 +3,7 @@ import os
 import shutil
 import numpy as np
 from cryodrgn.source import ImageSource
-from cryodrgn.mrc import MRCFile
+from cryodrgn.mrcfile import parse_mrc
 from cryodrgn.utils import run_command
 
 
@@ -20,8 +20,8 @@ def test_output(tmpdir, volume):
     out, err = run_command(f"cryodrgn_utils flip_hand {vol_file}")
     assert err == ""
 
-    mrcs_data, _ = MRCFile.parse(vol_file)
-    flipped_data, _ = MRCFile.parse(flipped_file)
+    mrcs_data, _ = parse_mrc(vol_file)
+    flipped_data, _ = parse_mrc(flipped_file)
     assert np.allclose(flipped_data, mrcs_data[::-1])
 
     flipped_file = os.path.join(
@@ -31,8 +31,8 @@ def test_output(tmpdir, volume):
     out, err = run_command(f"cryodrgn_utils flip_hand {vol_file} -o {flipped_file}")
     assert err == ""
 
-    mrcs_data, _ = MRCFile.parse(vol_file)
-    flipped_data, _ = MRCFile.parse(flipped_file)
+    mrcs_data, _ = parse_mrc(vol_file)
+    flipped_data, _ = parse_mrc(flipped_file)
     assert np.allclose(flipped_data, mrcs_data[::-1])
 
 
@@ -45,8 +45,8 @@ def test_mrc_file(tmpdir, volume):
     out, err = run_command(f"cryodrgn_utils flip_hand {volume.path} -o {flipped_file}")
     assert err == ""
 
-    mrcs_data, _ = MRCFile.parse(volume.path)
-    flipped_data, _ = MRCFile.parse(flipped_file)
+    mrcs_data, _ = parse_mrc(volume.path)
+    flipped_data, _ = parse_mrc(flipped_file)
     assert np.allclose(flipped_data, mrcs_data[::-1])
 
 

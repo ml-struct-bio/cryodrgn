@@ -12,7 +12,7 @@ $ cryodrgn_utils invert_contrast vol_000.mrc -o outputs/vol-inv.mrc
 import os
 import argparse
 import logging
-from cryodrgn.source import parse_mrc, write_mrc
+from cryodrgn.mrcfile import parse_mrc, write_mrc
 
 logger = logging.getLogger(__name__)
 

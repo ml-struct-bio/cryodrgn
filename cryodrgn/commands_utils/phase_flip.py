@@ -24,11 +24,16 @@ def add_args(parser: argparse.ArgumentParser) -> None:
 
 
 def main(args: argparse.Namespace) -> None:
-    imgs = ImageSource.from_file(args.mrcs, lazy=True, datadir=args.datadir)
-    D = imgs.D
+    src = ImageSource.from_file(args.mrcs, lazy=True, datadir=args.datadir)
+    D = src.D
     ctf_params = ctf.load_ctf_for_training(D, args.ctf_params)
     ctf_params = torch.Tensor(ctf_params)
-    assert len(imgs) == len(ctf_params), f"{len(imgs)} != {len(ctf_params)}"
+
+    if len(src) != len(ctf_params):
+        raise ValueError(
+            f"Found {len(src)} images in {args.mrcs} but "
+            f"{args.ctf_params} contains {len(ctf_params)} CTF parameter entries!"
+        )
 
     fx2, fy2 = meshgrid_2d(-0.5, 0.5, D, endpoint=False)
     freqs = torch.stack((fx2.ravel(), fy2.ravel()), dim=1)
@@ -62,4 +67,4 @@ def main(args: argparse.Namespace) -> None:
         return img2.cpu().numpy().astype(np.float32)
 
     logger.info(f"Writing {args.o}")
-    write_mrc(args.o, imgs, transform_fn=transform_fn)
+    write_mrc(args.o, src.images(), transform_fn=transform_fn)

@@ -12,8 +12,7 @@ $ cryodrgn_utils flip_hand vol_000.mrc -o vol-flipped.mrc
 import os
 import argparse
 import logging
-import numpy as np
-from cryodrgn.source import parse_mrc, write_mrc
+from cryodrgn.mrcfile import parse_mrc, write_mrc
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +34,6 @@ def main(args: argparse.Namespace) -> None:
         raise ValueError(f"Output volume {outmrc} is not a .mrc file!")
 
     vol, header = parse_mrc(args.input)
-    vol = np.array(vol.cpu())[::-1]
+    vol = vol[::-1]
     write_mrc(outmrc, vol, header=header)
     logger.info(f"Wrote {outmrc}")

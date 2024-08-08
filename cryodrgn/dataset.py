@@ -56,19 +56,15 @@ class ImageDataset(data.Dataset):
     def estimate_normalization(self, n=1000):
         n = min(n, self.N) if n is not None else self.N
         indices = range(0, self.N, self.N // n)  # FIXME: what if the data is not IID??
-        imgs = self.src.images(indices)
 
-        particleslist = []
-        for img in imgs:
-            particleslist.append(fft.ht2_center(img))
-        imgs = torch.stack(particleslist)
-
+        imgs = torch.stack([fft.ht2_center(img) for img in self.src.images(indices)])
         if self.invert_data:
             imgs *= -1
 
         imgs = fft.symmetrize_ht(imgs)
         norm = (0, torch.std(imgs))
         logger.info("Normalizing HT by {} +/- {}".format(*norm))
+
         return norm
 
     def _process(self, data):

@@ -49,7 +49,16 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "--outdir",
         help="Output directory for output plots (default: [traindir]/analyze.[epoch])",
     )
-    parser.add_argument("--skip-umap", action="store_true", help="Skip running UMAP")
+    parser.add_argument(
+        "--skip-umap",
+        action="store_true",
+        help="Skip running computationally-intensive UMAP step",
+    )
+    parser.add_argument(
+        "--svg",
+        action="store_true",
+        help="Save figures as rasterized .svg image files as opposed to .png",
+    )
 
 
 def main(args: argparse.Namespace) -> None:
@@ -113,6 +122,12 @@ def main(args: argparse.Namespace) -> None:
     else:
         palette = sns.color_palette("Set1", nclasses)
 
+    def save_figure(plt, out_lbl):
+        if args.svg:
+            plt.savefig(os.path.join(outdir, f"{out_lbl}.svg"), format="svg")
+        else:
+            plt.savefig(os.path.join(outdir, f"{out_lbl}.png"), format="png")
+
     z_dim = z_mat.shape[1]
     if z_dim > 2:
         logger.info("Performing principal component analysis...")
@@ -138,7 +153,7 @@ def main(args: argparse.Namespace) -> None:
             g.ax_joint.set_xlabel("UMAP1")
             g.ax_joint.set_ylabel("UMAP2")
             plt.tight_layout()
-            plt.savefig(os.path.join(outdir, "umap_kde_classes.png"))
+            save_figure(plt, "umap_kde_classes")
             plt.close()
 
         for pc1, pc2 in combns(range(3), 2):
@@ -159,5 +174,5 @@ def main(args: argparse.Namespace) -> None:
             )
 
             plt.tight_layout()
-            plt.savefig(os.path.join(outdir, f"z_pca_kde_classes_{pc1}x{pc2}.png"))
+            save_figure(plt, f"z_pca_kde_classes_{pc1}x{pc2}")
             plt.close()

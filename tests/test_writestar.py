@@ -149,10 +149,11 @@ def test_from_txt_with_two_files(
     mrcs_files = [f"particles{i}.mrcs" for i in range(10)]
 
     for mrcs_file in mrcs_files:
-        args = filter_mrcs.add_args(argparse.ArgumentParser()).parse_args(
-            [particles.path, "--ind", indices.path, "-o", mrcs_file]
+        parser = argparse.ArgumentParser()
+        filter_mrcs.add_args(parser)
+        filter_mrcs.main(
+            parser.parse_args([particles.path, "--ind", indices.path, "-o", mrcs_file])
         )
-        filter_mrcs.main(args)
 
     txt_file = os.path.join(tmpdir, "particles.txt")
     with open(txt_file, "w") as f:

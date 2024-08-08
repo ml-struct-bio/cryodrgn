@@ -4,7 +4,7 @@ import shutil
 import numpy as np
 import torch
 from cryodrgn.source import ImageSource
-from cryodrgn.mrc import MRCFile
+from cryodrgn.mrcfile import parse_mrc
 from cryodrgn.utils import run_command
 
 
@@ -20,8 +20,8 @@ def test_output(tmpdir, volume):
     out, err = run_command(f"cryodrgn_utils invert_contrast {vol_file}")
     assert err == ""
 
-    mrcs_data, _ = MRCFile.parse(vol_file)
-    flipped_data, _ = MRCFile.parse(inv_file)
+    mrcs_data, _ = parse_mrc(vol_file)
+    flipped_data, _ = parse_mrc(inv_file)
     # torch doesn't let us use a -ve stride, hence the conv
     assert np.allclose(flipped_data, -mrcs_data)
 
@@ -32,8 +32,8 @@ def test_output(tmpdir, volume):
     out, err = run_command(f"cryodrgn_utils invert_contrast {vol_file} -o {inv_file}")
     assert err == ""
 
-    mrcs_data, _ = MRCFile.parse(volume.path)
-    flipped_data, _ = MRCFile.parse(inv_file)
+    mrcs_data, _ = parse_mrc(volume.path)
+    flipped_data, _ = parse_mrc(inv_file)
     assert np.allclose(flipped_data, -mrcs_data)
 
 
@@ -48,8 +48,8 @@ def test_mrc_file(tmpdir, volume):
     )
     assert err == ""
 
-    mrcs_data, _ = MRCFile.parse(volume.path)
-    flipped_data, _ = MRCFile.parse(inv_file)
+    mrcs_data, _ = parse_mrc(volume.path)
+    flipped_data, _ = parse_mrc(inv_file)
     assert np.allclose(flipped_data, -mrcs_data)
 
 

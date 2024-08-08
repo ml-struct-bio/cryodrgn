@@ -8,7 +8,7 @@ $ cryodrgn_utils add_psize my_volume.mrc --Apix 1.73 -o my_volume.mrc
 """
 import argparse
 import logging
-from cryodrgn.source import parse_mrc, write_mrc
+from cryodrgn.mrcfile import parse_mrc, write_mrc
 
 logger = logging.getLogger(__name__)
 

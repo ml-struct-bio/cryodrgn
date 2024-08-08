@@ -12,7 +12,7 @@ import argparse
 import logging
 import numpy as np
 from scipy.ndimage import distance_transform_edt, binary_dilation
-from cryodrgn.source import write_mrc, parse_mrc
+from cryodrgn.mrcfile import write_mrc, parse_mrc
 from cryodrgn.commands.analyze_landscape import view_slices
 
 logger = logging.getLogger(__name__)

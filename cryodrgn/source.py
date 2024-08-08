@@ -10,10 +10,14 @@ instantiates the appropriate child class.
 An `images` method is used at runtime to retrieve 3D Tensors for image data
 at specified indices. Chunked access is possible using the `chunks()` method.
 
+See also
+--------
+cryodrgn.dataset.ImageDataset
+
 Example usage
 -------------
 > from cryodrgn.source import ImageSource
-> # load testing image dataset found in this repository
+> # load testing image dataset found in this repository; .mrcs is detected automatically
 > src = ImageSource.from_file("tests/data/hand.mrcs", lazy=True)
 > # get a 10x64x64 torch Tensor with the images at indices 10...19
 > im = src.images(range(10, 20))
@@ -39,21 +43,27 @@ logger = logging.getLogger(__name__)
 class ImageSource:
     """A class that returns the 3D image data in a .mrcs/.txt/.star file stack.
 
-    The images(<indices>) method is used to read images at specified indices as torch Tensors.
-    <indices> can be a scalar, a slice, a numpy array, or an iterable of indices where we want to query the data.
+    `images(<indices>)` method is used to read in images as torch Tensors.
+    <indices> can be omitted to get all images at once;
+    it can also be a scalar, a slice, a numpy array, or an iterable of indices
+    where we want to query the data.
     Only square images are supported, of side length D pixels.
     The dimensions of the returned Tensor is (<n_images>, D, D).
 
-    The underlying file can be loaded in lazy (default) mode, which is quick, but defers the actual reading of file(s)
-    till images(<indices>) is called. In non-lazy mode, the file(s) are read immediately.
+    The underlying file can be loaded using the `from_file` method in lazy (default)
+    mode, which is quick, but defers the actual reading of file(s) until
+    images(<indices>) is called.
+    In non-lazy mode, the file(s) are read immediately.
 
-    The `images()` call always returns a copy of the data, whether the `ImageSource` is lazy or not.
+    The `images()` call always returns a copy of the data,
+    whether the `ImageSource` is lazy or not.
 
-    Attributes:
-        D: An integer indicating the side length (pixels) of the square images in this `ImageSource`.
-        n: An integer indicting the total number of images in this `ImageSource`.
-        shape: The shape of the underlying data - (n, D, D).
-
+    Attributes
+    ----------
+        D (int): Side length (pixels) of the square images in this `ImageSource`.
+        n (int): Total number of images (after initial filtering) in this `ImageSource`.
+        orig_n (int): Total number of images in the file(s) images are loaded from.
+        shape (tuple): The shape of the underlying data - `(n, D, D)`.
     """
 
     @staticmethod
@@ -103,16 +113,12 @@ class ImageSource:
         lazy: bool = True,
         indices: Optional[np.ndarray] = None,
     ):
-        self.n = n
-        self.N = n
-        if indices is None:
-            self.indices = np.arange(self.n)
-        else:
-            self.indices = indices
-            # If indices is provided, it overrides self.n
-            self.n = len(indices)
-
+        self.orig_n = n
         self.D = D
+
+        # If indices is provided, it overrides self.n (but not self.orig_n)
+        self.indices = np.arange(n) if indices is None else indices
+        self.n = len(self.indices)
         self.shape = self.n, self.D, self.D
 
         # Some client calls need to access the original filename(s) associated with a
@@ -182,6 +188,10 @@ class ImageSource:
                 indices = np.array(self.indices[indices])
             images = self._images(indices, require_contiguous=require_contiguous)
 
+        assert images.dtype == self.dtype, (
+            f"Class `{self.__class__.__name__}` has implemented an `_images` method "
+            f"that does not return arrays of numpy dtype `{self.dtype}` !"
+        )
         return torch.from_numpy(images.astype(self.dtype))
 
     def _images(
@@ -198,7 +208,7 @@ class ImageSource:
             Images at specified indices.
 
         """
-        raise NotImplementedError("Subclasses must implement this")
+        raise NotImplementedError("Subclasses of `ImageSource` must implement this!")
 
     def chunks(
         self, chunksize: int = 1000

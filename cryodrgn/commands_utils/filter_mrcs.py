@@ -27,7 +27,7 @@ def main(args: argparse.Namespace) -> None:
     ind = utils.load_pkl(args.ind)
     src = ImageSource.from_file(args.input, lazy=True, indices=ind)
     logger.info(
-        f"Loaded {src.N} particles which were "
+        f"Loaded {src.orig_n} particles which were "
         f"filtered down to {len(src)} particles."
     )
 

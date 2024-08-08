@@ -1,9 +1,22 @@
+"""Classes for using particle image datasets in PyTorch learning methods.
+
+This module contains classes that implement various preprocessing and data access
+methods acting on the image data stored in a cryodrgn.source.ImageSource class.
+These methods are used by learning methods such as those used in volume reconstruction
+algorithms; the classes are thus implemented as children of torch.utils.data.Dataset
+to allow them to inherit behaviour such as batch training.
+
+For example, during initialization, ImageDataset initializes an ImageSource class and
+then also estimates normalization parameters, a non-trivial computational step. When
+image data is retrieved during model training using __getitem__, the data is whitened
+using these parameters.
+
+"""
 import numpy as np
 from collections import Counter, OrderedDict
 
 import logging
 import torch
-from torch.utils import data
 from typing import Optional, Tuple, Union
 from cryodrgn import fft
 from cryodrgn.source import ImageSource, parse_star
@@ -15,7 +28,7 @@ from torch.utils.data.sampler import BatchSampler, RandomSampler, SequentialSamp
 logger = logging.getLogger(__name__)
 
 
-class ImageDataset(data.Dataset):
+class ImageDataset(torch.utils.data.Dataset):
     def __init__(
         self,
         mrcfile,

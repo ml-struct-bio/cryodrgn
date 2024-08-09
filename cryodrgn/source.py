@@ -12,16 +12,20 @@ at specified indices. Chunked access is possible using the `chunks()` method.
 
 See also
 --------
-cryodrgn.dataset.ImageDataset
+`cryodrgn.dataset.ImageDataset` — Using `ImageSource` data in torch.data workflows
+`cryodrgn.mrcfile`, `cryodrgn.starfile` — Utilities for specific file formats
 
 Example usage
 -------------
 > from cryodrgn.source import ImageSource
 > # load testing image dataset found in this repository; .mrcs is detected automatically
 > src = ImageSource.from_file("tests/data/hand.mrcs", lazy=True)
+
 > # get a 10x64x64 torch Tensor with the images at indices 10...19
 > im = src.images(range(10, 20))
+
 > # iterate through all images in the dataset, twenty images at a time
+> # this is useful for avoiding memory issues when loading large datasets
 > for indices, chunk in src.chunks(chunksize=20):
 >    assert chunk.shape == (20, 64, 64)
 
@@ -60,10 +64,14 @@ class ImageSource:
 
     Attributes
     ----------
-        D (int): Side length (pixels) of the square images in this `ImageSource`.
-        n (int): Total number of images (after initial filtering) in this `ImageSource`.
-        orig_n (int): Total number of images in the file(s) images are loaded from.
-        shape (tuple): The shape of the underlying data - `(n, D, D)`.
+    D (int): Side length (pixels) of the square images in this `ImageSource`.
+    n (int): Total number of images (after initial filtering) in this `ImageSource`.
+    orig_n (int): Total number of images in the file(s) images are loaded from.
+    shape (tuple): The shape of the underlying image data tensor - `(n, D, D)`.
+
+    lazy (bool): Whether the images were loaded directly or will be loaded on demand.
+    data (torch.Tensor): A tensor containing the images data.
+                         Will be `None` if using lazy loading mode.
     """
 
     @staticmethod
@@ -145,6 +153,9 @@ class ImageSource:
     def __getitem__(self, item) -> torch.Tensor:
         return self.images(item)
 
+    def __eq__(self, other):
+        return np.allclose(self.images(), other.images())
+
     def _convert_to_ndarray(
         self, indices: Optional[Union[np.ndarray, int, slice, Iterable]] = None
     ) -> np.ndarray:
@@ -192,14 +203,15 @@ class ImageSource:
             f"Class `{self.__class__.__name__}` has implemented an `_images` method "
             f"that does not return arrays of numpy dtype `{self.dtype}` !"
         )
-        return torch.from_numpy(images.astype(self.dtype))
+        return torch.from_numpy(images)
 
     def _images(
         self, indices: np.ndarray, require_contiguous: bool = False
     ) -> np.ndarray:
-        """
-        Return images at specified indices.
-        Args:
+        """Base method for returning images at specified indices.
+
+        Arguments
+        ---------
             indices: An ndarray of indices
             require_contiguous: Boolean on whether the method should throw an error if image retrieval
             will entail non-contiguous disk access. Callers can employ this if they insist on efficient
@@ -236,12 +248,15 @@ class ImageSource:
         chunksize: Optional[int] = None,
     ) -> None:
         """Save this source's data to a .mrc file, using chunking if necessary."""
+        if header is None and hasattr(self, "header"):
+            header = self.header
+
         if chunksize is None:
             write_mrc(
                 output_file,
                 self.images(),
                 header=header,
-                Apix=self.apix,
+                Apix=self.apix or 1.0,
                 transform_fn=transform_fn,
             )
         else:
@@ -278,7 +293,7 @@ class MRCFileSource(ImageSource):
         self.mrcfile_path = filepath
         self.dtype = self.header.dtype
         self.start = 1024 + self.header.fields["next"]  # start of image data
-        self.nz, self.ny, self.nx = (
+        orig_n, self.ny, self.nx = (
             self.header.fields["nz"],
             self.header.fields["ny"],
             self.header.fields["nx"],
@@ -287,9 +302,14 @@ class MRCFileSource(ImageSource):
         self.size = self.ny * self.nx
         self.stride = self.dtype().itemsize * self.size
 
+        # Adjust the header for the index filter we are applying
+        if indices is not None:
+            self.header.fields["nz"] = len(indices)
+        self.nz = self.header.fields["nz"]
+
         super().__init__(
             D=self.ny,
-            n=self.nz,
+            n=orig_n,
             filenames=filepath,
             max_threads=1,
             dtype=self.dtype,

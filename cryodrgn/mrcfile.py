@@ -224,7 +224,7 @@ class MRCHeader:
         self.fields["zorg"] = zorg
 
 
-def parse_mrc(fname: str) -> Tuple[np.ndarray, MRCHeader]:  # type: ignore
+def parse_mrc(fname: str) -> Tuple[np.ndarray, MRCHeader]:
     # parse the header
     header = MRCHeader.parse(fname)
 

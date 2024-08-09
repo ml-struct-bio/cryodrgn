@@ -68,10 +68,8 @@ class ImageSource:
     n (int): Total number of images (after initial filtering) in this `ImageSource`.
     orig_n (int): Total number of images in the file(s) images are loaded from.
     shape (tuple): The shape of the underlying image data tensor - `(n, D, D)`.
-
-    lazy (bool): Whether the images were loaded directly or will be loaded on demand.
-    data (torch.Tensor): A tensor containing the images data.
-                         Will be `None` if using lazy loading mode.
+    data (np.array): The image stack data loaded as a matrix.
+                     Will be `None` if using lazy loading mode.
     """
 
     @staticmethod
@@ -133,22 +131,36 @@ class ImageSource:
         # source; these are traditionally available as the 'fname' attribute of the
         # LazyImage class, hence only used by calling code when lazy=True
         if filenames is None:
-            filenames = [""] * self.n
+            filenames = ["" for _ in range(self.n)]
         elif isinstance(filenames, str):
-            filenames = [filenames] * self.n
+            filenames = [filenames for _ in range(self.n)]
         else:
             if len(filenames) != self.n:
                 raise ValueError(f"`{len(filenames)=}` != `{n=}`")
             filenames = list(filenames)
 
         self.filenames = np.array(filenames)
-        self.lazy = lazy
         self.max_threads = max_threads
         self.dtype = dtype
-        self.data = None if self.lazy else ArraySource(self._images(self.indices))
+
+        if lazy:
+            self.data = None
+        else:
+            array = self._images(self.indices)
+            if array.ndim == 2:
+                array = array[np.newaxis, ...]
+
+            nz, ny, nx = array.shape
+            assert ny == nx, "Only square arrays supported"
+            self.data = array
 
     def __len__(self) -> int:
         return self.n
+
+    @property
+    def lazy(self) -> bool:
+        """Whether the images were loaded lazily or directly as a numpy array."""
+        return self.data is None
 
     def __getitem__(self, item) -> torch.Tensor:
         return self.images(item)
@@ -177,7 +189,7 @@ class ImageSource:
             ), "Only positive start/stop/step supported"
             indices = np.arange(start, stop, step)
         else:
-            raise TypeError("Unsupported Type for indices")
+            raise TypeError(f"Unsupported type `{type(indices)}` for indices")
 
         assert isinstance(indices, np.ndarray)
         if np.any(indices >= self.n):
@@ -191,13 +203,14 @@ class ImageSource:
         require_contiguous: bool = False,
     ) -> torch.Tensor:
         indices = self._convert_to_ndarray(indices)
-        if self.data:  # cached data
-            images = self.data._images(indices, require_contiguous=require_contiguous)
-        else:
+
+        if self.lazy:
             # Convert incoming caller indices to indices that this ImageSource will use
             if self.indices is not None:
                 indices = np.array(self.indices[indices])
             images = self._images(indices, require_contiguous=require_contiguous)
+        else:
+            images = self.data[indices, ...]  # cached data when not using lazy mode
 
         assert images.dtype == self.dtype, (
             f"Class `{self.__class__.__name__}` has implemented an `_images` method "
@@ -212,12 +225,15 @@ class ImageSource:
 
         Arguments
         ---------
-            indices: An ndarray of indices
-            require_contiguous: Boolean on whether the method should throw an error if image retrieval
-            will entail non-contiguous disk access. Callers can employ this if they insist on efficient
-            loading and choose to throw an error instead of falling back on inefficient slower loading.
-        Returns:
-            Images at specified indices.
+            indices (np.array): The subset of images we want to return.
+            require_contiguous (bool)
+                Whether the method should throw an error if image retrieval will entail
+                non-contiguous disk access. Callers can employ this if they insist on
+                efficient loading and choose to throw an error instead of falling back
+                on inefficient slower loading.
+        Returns
+        -------
+            Images (np.array) at specified indices.
 
         """
         raise NotImplementedError("Subclasses of `ImageSource` must implement this!")
@@ -377,33 +393,6 @@ class MRCFileSource(ImageSource):
     @property
     def apix(self) -> float:
         return self.header.get_apix()
-
-
-class ArraySource(ImageSource):
-    """A source that is consults an in-memory Numpy array for data.
-
-    An ArraySource is initialized with an ndarray, and indexes into it to return images at specified indices.
-    Note that the `indices` argument to `images()` is still a Numpy array, which means that fancy indexing is
-    used to get a fresh copy of the requested data. Callers should be mindful of memory usage by passing in a
-    reasonable number of indices, or use `chunks()` to iterate through the source.
-    """
-
-    def __init__(self, array: np.ndarray):
-        if array.ndim == 2:
-            array = array[np.newaxis, ...]
-        nz, ny, nx = array.shape
-        assert ny == nx, "Only square arrays supported"
-        self.array = array
-
-        super().__init__(D=ny, n=nz)
-
-    def _images(self, indices: np.ndarray, require_contiguous: bool = False):
-        """
-        Return ndarray data at specified indices.
-        Note that this implementation chooses to ignore `require_contiguous`
-        since fancy indexing on a realized ndarray is "fast enough" for all practical purposes.
-        """
-        return self.array[indices, ...]
 
 
 class _MRCDataFrameSource(ImageSource):

@@ -15,8 +15,8 @@ Example usage
 # If no epoch is given, the default is to find the last available epoch in the workdir
 $ cryodrgn filter 00_trainvae
 
-# Choose an epoch yourself
-$ cryodrgn filter my_outdir --epoch 30
+# Choose an epoch yourself; save final selection to `indices.pkl` without prompting
+$ cryodrgn filter my_outdir --epoch 30 -f
 
 # If you have done multiple k-means clusterings, you can pick which one to use
 $ cryodrgn filter my_outdir/ -k 25
@@ -66,7 +66,12 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         default=-1,
         help="which set of k-means clusters to use for filtering",
     )
-
+    parser.add_argument(
+        "--force",
+        "-f",
+        action="store_true",
+        help="save selection to `indices.pkl` without prompting",
+    )
     parser.add_argument(
         "--plot-inds",
         type=str,
@@ -211,21 +216,28 @@ def main(args: argparse.Namespace) -> None:
                 ",".join([str(i) for i in selected_indices[-6:]]),
             ]
         )
-
         print(
             f"Selected {len(selected_indices)} particles from original list of "
             f"{len(all_indices)} "
             f"particles numbered [{min(all_indices)}, ... , {max(all_indices)}]:\n{select_str}"
         )
 
-        save_option = (
-            input("Do you want to save the selection? (yes/no): ").strip().lower()
-        )
+        if args.force:
+            save_option = "yes"
+        else:
+            save_option = (
+                input("Do you want to save the selection to file? (yes/no): ")
+                .strip()
+                .lower()
+            )
 
         if save_option == "yes":
-            filename = input(
-                "Enter filename to save selection (absolute, without extension): "
-            ).strip()
+            if args.force:
+                filename = "indices"
+            else:
+                filename = input(
+                    "Enter filename to save selection (absolute, without extension): "
+                ).strip()
 
             # saving the selected indices
             if filename:

@@ -14,7 +14,7 @@ import pickle
 import logging
 import numpy as np
 from cryodrgn import ctf
-from cryodrgn.source import Stardata
+from cryodrgn.starfile import Starfile
 
 logger = logging.getLogger(__name__)
 
@@ -49,23 +49,30 @@ def add_args(parser: argparse.ArgumentParser) -> None:
 
 
 def main(args: argparse.Namespace) -> None:
-    assert args.star.endswith(".star"), "Input file must be .star file"
     assert args.o.endswith(".pkl"), "Output CTF parameters must be .pkl file"
-    stardata = Stardata.from_file(args.star)
-    N = len(stardata)
-    logger.info(f"{N} particles")
+    stardata = Starfile(args.star)
+    logger.info(f"{len(stardata)} particles")
 
-    overrides = {}
-    if stardata.data_optics is not None:
-        args.Apix, args.D = stardata.apix, stardata.resolution
-        overrides[HEADERS[3]] = float(stardata.data_optics[HEADERS[3]][0])
-        overrides[HEADERS[4]] = float(stardata.data_optics[HEADERS[4]][0])
-        overrides[HEADERS[5]] = float(stardata.data_optics[HEADERS[5]][0])
-    else:
-        assert args.D is not None, "Must provide image size with -D"
-        assert args.Apix is not None, "Must provide pixel size with --Apix"
+    apix = stardata.apix
+    if apix is None:
+        if args.Apix is None:
+            raise ValueError(
+                f"Cannot find A/px values in {args.star} "
+                f"— must be given manually with --Apix <val> !"
+            )
+        apix = args.Apix
+
+    resolution = stardata.resolution
+    if resolution is None:
+        if args.D is None:
+            raise ValueError(
+                f"Cannot find image size values in {args.star} "
+                f"— must be given manually with -D <val> !"
+            )
+        resolution = args.D
 
     # Sometimes CTF parameters are missing from the star file
+    overrides = dict()
     if args.kv is not None:
         logger.info(f"Overriding accerlating voltage with {args.kv} kV")
         overrides[HEADERS[3]] = args.kv
@@ -79,9 +86,9 @@ def main(args: argparse.Namespace) -> None:
         logger.info(f"Overriding phase shift with {args.ps}")
         overrides[HEADERS[6]] = args.ps
 
-    ctf_params = np.zeros((N, 9))
-    ctf_params[:, 0] = args.D
-    ctf_params[:, 1] = args.Apix
+    ctf_params = np.zeros((len(stardata), 9))
+    ctf_params[:, 0] = resolution
+    ctf_params[:, 1] = apix
     for i, header in enumerate(
         [
             "_rlnDefocusU",
@@ -94,7 +101,9 @@ def main(args: argparse.Namespace) -> None:
         ]
     ):
         ctf_params[:, i + 2] = (
-            stardata.df[header] if header not in overrides else overrides[header]
+            stardata.optics_values(header)
+            if header not in overrides
+            else overrides[header]
         )
 
     logger.info("CTF parameters for first particle:")

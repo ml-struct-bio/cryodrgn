@@ -11,7 +11,7 @@ import argparse
 import os
 import logging
 from cryodrgn import utils
-from cryodrgn.source import ImageSource, StarfileSource, Stardata
+from cryodrgn.source import ImageSource, MRCDataFrameSource, StarfileSource
 from cryodrgn.commands.downsample import mkbasedir, warnexists, downsample_mrc_images
 
 logger = logging.getLogger(__name__)
@@ -73,9 +73,15 @@ def main(args):
         logger.info(f"Filtering image dataset with {args.ind}")
         ind = utils.load_pkl(args.ind).astype(int)
 
-    old_src = ImageSource.from_file(
-        args.input, lazy=True, indices=ind, datadir=args.datadir
+    src = ImageSource.from_file(
+        filepath=args.input, lazy=True, indices=ind, datadir=args.datadir
     )
+    if not isinstance(src, MRCDataFrameSource):
+        raise TypeError(
+            f"Input file {args.input} is not an index of a collection of .mrc/.mrcs "
+            f"files such as .star, .cs, or .txt, "
+            f"see `cryodrgn downsample for other input formats!"
+        )
 
     outdir = args.outdir or f"downsampled.{args.D}"
     outdir = os.path.abspath(outdir)
@@ -83,20 +89,17 @@ def main(args):
     logger.info(f"Storing downsampled stacks in new --datadir `{outdir}`...")
 
     new_fls = dict()
-    for fl, fl_src in old_src.sources:
+    for fl, fl_src in src.sources:
         new_fls[fl] = os.path.join(outdir, os.path.basename(fl))
         downsample_mrc_images(fl_src, args.D, new_fls[fl], args.b, chunk_size=None)
 
-    if isinstance(old_src, StarfileSource):
-        old_src.df["__mrc_filepath"] = old_src.df["__mrc_filepath"].map(new_fls)
+    src.df["__mrc_filepath"] = src.df["__mrc_filepath"].map(new_fls)
 
-        if old_src.data_optics is not None:
-            new_optics = old_src.data_optics.copy()
-            if "_rlnImagePixelSize" in old_src.data_optics:
-                new_optics["_rlnImagePixelSize"] = round(
-                    new_optics["_rlnImagePixelSize"] * old_src.D / args.D, 6
+    if isinstance(src, StarfileSource):
+        if src.relion31:
+            if "_rlnImagePixelSize" in src.data_optics:
+                src.data_optics["_rlnImagePixelSize"] = round(
+                    src.data_optics["_rlnImagePixelSize"] * src.resolution / args.D, 6
                 )
-        else:
-            new_optics = None
 
-        Stardata(sdata=old_src.df, data_optics=new_optics).write(args.outfile)
+    src.write(args.outfile)

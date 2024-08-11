@@ -17,7 +17,7 @@ import pickle
 import logging
 import numpy as np
 from cryodrgn import utils
-from cryodrgn.source import Stardata
+from cryodrgn.starfile import Starfile
 
 logger = logging.getLogger(__name__)
 
@@ -50,27 +50,24 @@ def main(args: argparse.Namespace) -> None:
     if not args.outpkl.endswith(".pkl"):
         raise ValueError("Output file must be a .pkl file (pickled Python format)!")
 
-    resolution = None
-    apix = None
-    stardata = Stardata.from_file(args.input)
-    N = len(stardata.df)
-    logger.info(f"{N} particles")
-
-    if stardata.data_optics is not None:
-        apix, resolution = stardata.apix, stardata.resolution
+    starfile = Starfile(args.input)
+    logger.info(f"{len(starfile)} particles")
+    apix, resolution = starfile.apix, starfile.resolution
 
     if args.D is not None:
-        resolution = np.array([args.D for _ in range(N)])
+        resolution = np.array([args.D for _ in range(len(starfile))])
     if args.Apix is not None:
-        apix = np.array([args.Apix for _ in range(N)])
-
-    assert resolution is not None, "Must provide image size with -D"
+        apix = np.array([args.Apix for _ in range(len(starfile))])
+    if resolution is None:
+        raise ValueError(
+            f"Must provide image size with -D as none found in `{args.input}`!"
+        )
 
     # parse rotations
-    euler = np.zeros((N, 3))
-    euler[:, 0] = stardata.df["_rlnAngleRot"]
-    euler[:, 1] = stardata.df["_rlnAngleTilt"]
-    euler[:, 2] = stardata.df["_rlnAnglePsi"]
+    euler = np.zeros((len(starfile), 3))
+    euler[:, 0] = starfile.df["_rlnAngleRot"]
+    euler[:, 1] = starfile.df["_rlnAngleTilt"]
+    euler[:, 2] = starfile.df["_rlnAnglePsi"]
     logger.info("Euler angles (Rot, Tilt, Psi):")
     logger.info(euler[0])
     logger.info("Converting to rotation matrix:")
@@ -79,23 +76,24 @@ def main(args: argparse.Namespace) -> None:
     logger.info(rot[0])
 
     # parse translations
-    trans = np.zeros((N, 2))
-    if "_rlnOriginX" in stardata.df.columns and "_rlnOriginY" in stardata.df.columns:
+    trans = np.zeros((len(starfile), 2))
+    if "_rlnOriginX" in starfile.df.columns and "_rlnOriginY" in starfile.df.columns:
         # translations in pixels
-        trans[:, 0] = stardata.df["_rlnOriginX"]
-        trans[:, 1] = stardata.df["_rlnOriginY"]
-
+        trans[:, 0] = starfile.df["_rlnOriginX"]
+        trans[:, 1] = starfile.df["_rlnOriginY"]
     elif (
-        "_rlnOriginXAngst" in stardata.df.columns
-        and "_rlnOriginYAngst" in stardata.df.columns
+        "_rlnOriginXAngst" in starfile.df.columns
+        and "_rlnOriginYAngst" in starfile.df.columns
     ):
         # translation in Angstroms (Relion 3.1)
-        assert apix is not None, (
-            "Must provide --Apix argument to convert _rlnOriginXAngst "
-            "and _rlnOriginYAngst translation units"
-        )
-        trans[:, 0] = stardata.df["_rlnOriginXAngst"]
-        trans[:, 1] = stardata.df["_rlnOriginYAngst"]
+        if apix is None:
+            raise ValueError(
+                f"Must provide --Apix argument to convert _rlnOriginXAngst and "
+                f"_rlnOriginYAngst translation units as A/px not "
+                f"found in `{args.input}`!"
+            )
+        trans[:, 0] = starfile.df["_rlnOriginXAngst"]
+        trans[:, 1] = starfile.df["_rlnOriginYAngst"]
         trans /= apix.reshape(-1, 1)
     else:
         logger.warning(

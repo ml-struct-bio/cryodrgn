@@ -3,7 +3,7 @@ import pytest
 import os
 import argparse
 from cryodrgn.commands_utils import write_star, filter_mrcs
-from cryodrgn.source import ImageSource, Stardata
+from cryodrgn.source import ImageSource, StarfileSource
 import cryodrgn.utils
 
 
@@ -72,7 +72,7 @@ class TestBasic:
         ind = cryodrgn.utils.load_pkl(indices.path) if indices.path else None
         particle_data = ImageSource.from_file(particles.path, indices=ind)
         ind = list(range(particle_data.n)) if ind is None else ind
-        stardata = Stardata.from_file(os.path.join(tmpdir, "out.star"))
+        stardata = StarfileSource(os.path.join(tmpdir, "out.star"))
         assert stardata.df.shape[0] == particle_data.n
 
         if use_relion30:
@@ -116,7 +116,7 @@ class TestBasic:
         ind = cryodrgn.utils.load_pkl(indices.path) if indices.path else None
         particle_data = ImageSource.from_file(particles.path, indices=ind)
         ind = list(range((particle_data.n))) if ind is None else ind
-        stardata = Stardata.from_file(os.path.join(tmpdir, "out.star"))
+        stardata = StarfileSource(os.path.join(tmpdir, "out.star"))
         assert stardata.df.shape[0] == particle_data.n
 
         if use_relion30:
@@ -180,7 +180,7 @@ def test_from_txt_with_two_files(
     ind = cryodrgn.utils.load_pkl(indices.path) if use_indices else None
     particle_data = ImageSource.from_file(txt_file, indices=ind)
     ind = list(range(particle_data.n)) if ind is None else ind
-    stardata = Stardata.from_file(os.path.join(tmpdir, "out.star"))
+    stardata = StarfileSource.from_file(os.path.join(tmpdir, "out.star"))
     assert stardata.df.shape[0] == particle_data.n
 
     if use_relion30:
@@ -211,7 +211,8 @@ def test_relion31(tmpdir, relion31_mrcs, ctf, indices):
         args += ["--ind", indices.path]
 
     write_star.main(parser.parse_args(args))
-    stardata = Stardata.from_file(out_fl)
+    stardata = StarfileSource.from_file(out_fl)
     indices = None if indices.path is None else cryodrgn.utils.load_pkl(indices.path)
-    assert stardata.df.shape == (5 if indices is None else indices.shape[0], 6)
+    assert stardata.relion31
+    assert stardata.df.shape == (5 if indices is None else indices.shape[0], 9)
     assert stardata.data_optics.shape == (1, 6)

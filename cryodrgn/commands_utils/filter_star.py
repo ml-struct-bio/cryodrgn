@@ -13,7 +13,7 @@ import os
 import logging
 from cryodrgn import utils
 from cryodrgn.dataset import TiltSeriesData
-from cryodrgn.source import parse_star, Stardata
+from cryodrgn.starfile import parse_star, write_star
 
 logger = logging.getLogger(__name__)
 
@@ -45,32 +45,32 @@ def main(args: argparse.Namespace):
     if args.et:
         particles_to_tilts, _ = TiltSeriesData.parse_particle_tilt(args.input)
         tilt_indices = TiltSeriesData.particles_to_tilts(particles_to_tilts, ind)
-        df = stardf.loc[tilt_indices]
+        filtered_df = stardf.loc[tilt_indices]
     else:
-        df = stardf.loc[ind]
+        filtered_df = stardf.loc[ind]
 
     # filter data optics table by what optics groups are left in the particle table
-    if data_optics is not None and "_rlnOpticsGroup" in df.columns:
-        new_grps = set(df["_rlnOpticsGroup"])
+    if data_optics is not None and "_rlnOpticsGroup" in filtered_df.columns:
+        new_grps = set(filtered_df["_rlnOpticsGroup"])
         new_optics = data_optics.loc[data_optics._rlnOpticsGroup.isin(new_grps)]
     else:
         new_optics = None
 
     if args.micrograph_files:
-        if "_rlnMicrographName" not in df.columns:
+        if "_rlnMicrographName" not in filtered_df.columns:
             raise ValueError(
                 "Cannot write micrograph files for a .star file "
                 "without a `_rlnMicrographName` field!"
             )
 
         os.makedirs(args.o, exist_ok=True)
-        for micrograph_name, group_df in df.groupby("_rlnMicrographName"):
+        for micrograph_name, group_df in filtered_df.groupby("_rlnMicrographName"):
             filename_without_extension = os.path.splitext(micrograph_name)[0]
             output_path = os.path.join(args.o, f"{filename_without_extension}.star")
 
             # filter data optics table by what optics groups are left
             # in this micrograph's particle table
-            if data_optics is not None and "_rlnOpticsGroup" in df.columns:
+            if data_optics is not None and "_rlnOpticsGroup" in filtered_df.columns:
                 micro_grps = set(group_df["_rlnOpticsGroup"])
                 micro_optics = new_optics.loc[
                     new_optics._rlnOpticsGroup.isin(micro_grps)
@@ -78,11 +78,9 @@ def main(args: argparse.Namespace):
             else:
                 micro_optics = None
 
-            micro_star = Stardata(sdata=group_df, data_optics=micro_optics)
-            micro_star.write(output_path)
+            write_star(output_path, data=group_df, data_optics=micro_optics)
             logger.info(
                 f"Wrote .star file for {filename_without_extension} to {output_path}"
             )
     else:
-        s = Stardata(sdata=df, data_optics=new_optics)
-        s.write(args.o)
+        write_star(args.o, data=filtered_df, data_optics=new_optics)

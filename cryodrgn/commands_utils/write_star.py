@@ -15,7 +15,8 @@ import numpy as np
 import pandas as pd
 import logging
 from cryodrgn import utils
-from cryodrgn.source import ImageSource, StarfileSource, Stardata, MRCHeader
+from cryodrgn.source import ImageSource, StarfileSource, MRCHeader
+from cryodrgn.starfile import write_star
 
 logger = logging.getLogger(__name__)
 
@@ -178,4 +179,4 @@ def main(args: argparse.Namespace) -> None:
 
         df = pd.DataFrame(data=data)
 
-    Stardata(sdata=df, data_optics=optics).write(args.o)
+    write_star(args.o, data=df, data_optics=optics)

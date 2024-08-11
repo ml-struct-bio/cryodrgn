@@ -15,11 +15,6 @@ def pytest_configure():
     pytest.DATADIR = DATA_DIR
 
 
-@pytest.fixture
-def testing_dataset(request) -> str:
-    return os.path.join(DATA_DIR, request.param)
-
-
 def get_testing_datasets(dataset_lbl: str) -> tuple[str, str]:
     """Retrieve the input files corresponding to a given dataset label."""
 

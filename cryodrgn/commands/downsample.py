@@ -177,12 +177,13 @@ def downsample_mrc_images(
             f.write("\n".join(chunk_names))
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
     mkbasedir(args.o)
     warnexists(args.o)
-    assert args.o.endswith(".mrcs") or args.o.endswith(
-        "mrc"
-    ), "Must specify output in .mrc(s) file format"
+    assert args.o.endswith(".mrcs") or args.o.endswith("mrc"), (
+        "Must specify output in .mrc(s) file format! "
+        "— use `cryodrgn downsample_dir` for other output formats such as .star"
+    )
 
     ind = None
     if args.ind is not None:

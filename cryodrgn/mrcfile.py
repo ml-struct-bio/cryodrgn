@@ -95,6 +95,7 @@ class MRCHeader:
         self.fields = OrderedDict(zip(self.FIELDS, header_values))
         self.extended_header = extended_header
         self.D = self.fields["nx"]
+        self.N = self.fields["nz"]
         self.dtype = self.DTYPE_FOR_MODE[self.fields["mode"]]
 
     def __str__(self):

@@ -7,6 +7,7 @@ from typing import Tuple, Union, Optional, TextIO
 
 
 def parse_star(starfile: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Read the data table in a .star file, and the data optics table if present."""
     if not starfile.endswith(".star"):
         raise ValueError(f"{starfile} is not a .star file!")
 
@@ -76,12 +77,15 @@ def write_star(
 def _write_star_block(
     f: TextIO, data: pd.DataFrame, block_header: str = "data_"
 ) -> None:
+    """Append a DataFrame to a file using the .star data block format."""
     f.write(f"{block_header}\n\n")
     f.write("loop_\n")
+
+    # write the header
     f.write("\n".join(data.columns))
     f.write("\n")
 
-    # TODO: Assumes header and df ordering is consistent
+    # write the values in the same order as the DataFrame columns used in the header
     for _, vals in data.iterrows():
         f.write(" ".join([str(val) for val in vals]))
         f.write("\n")
@@ -94,6 +98,17 @@ class Starfile:
     ----------
     df (pd.DataFrame):  The primary data table of the .star file.
     data_optics (pd.DataFrame):  If RELION3.1, the optics data table in the .star file.
+
+    Example usage
+    -------------
+    # If using a file, it can be passed as the lone argument
+    > starfile = Starfile("mydata_folder/.particles.star")
+
+    # If using data tables, must use keywords
+    > starfile = Starfile(data=stardf, data_optics=optics_df)
+
+    # Can also override data optics table found in file (but not `data` as well!)
+    > starfile = Starfile("mydata_folder/.particles.star", data_optics=optics_df)
 
     """
 
@@ -123,13 +138,16 @@ class Starfile:
             self.data_optics = self.data_optics.set_index("_rlnOpticsGroup", drop=False)
 
     def write(self, outstar: str) -> None:
+        """Save these data tables to file using the .star format."""
         write_star(outstar, data=self.df, data_optics=self.data_optics)
 
     @property
     def relion31(self) -> bool:
+        """Whether this file is RELION3.1 format, with a data optics table present."""
         return self.data_optics is not None
 
     def __len__(self) -> int:
+        """The number of particle images described by this file."""
         return self.df.shape[0]
 
     def optics_values(
@@ -149,6 +167,7 @@ class Starfile:
                     [self.data_optics[fieldname][0] for _ in range(self.df.shape[0])]
                 )
 
+        # If can't find this field in the optics table, look in the primary data table
         elif fieldname in self.df:
             vals = self.df[fieldname].values.reshape(-1)
         else:
@@ -161,10 +180,12 @@ class Starfile:
 
     @property
     def apix(self) -> Union[None, np.ndarray]:
+        """The A/px of each image in this file."""
         return self.optics_values(fieldname="_rlnImagePixelSize", dtype=np.float32)
 
     @property
     def resolution(self) -> Union[None, np.ndarray]:
+        """The resolution of each image in this file."""
         vals = self.optics_values(fieldname="_rlnImageSize", dtype=np.float32)
         if vals is not None:
             vals = vals.astype(np.int64)

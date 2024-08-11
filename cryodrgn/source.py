@@ -63,56 +63,24 @@ class ImageSource:
     The `images()` call always returns a copy of the data,
     whether the `ImageSource` is lazy or not.
 
+    Arguments
+    ---------
+    D (int): Side length (pixels) of the square images in this stack.
+    n (int): Total number of images in this stack.
+    filenames (str of list of str, optional)
+        The file(s) containing the images in this stack.
+    lazy (bool): Whether to load the images in this stack immediately or on demand.
+    indices (np.array, optional): Filter the images using these indices.
+
     Attributes
     ----------
-    D (int): Side length (pixels) of the square images in this `ImageSource`.
-    n (int): Total number of images (after initial filtering) in this `ImageSource`.
-    orig_n (int): Total number of images in the file(s) images are loaded from.
+    orig_n (int): Total number of images originally in this stack.
+    n (int): The number of images in this stack after `indices` was applied.
     shape (tuple): The shape of the underlying image data tensor - `(n, D, D)`.
     data (np.array): The image stack data loaded as a matrix.
                      Will be `None` if using lazy loading mode.
 
     """
-
-    @staticmethod
-    def from_file(
-        filepath: str,
-        lazy: bool = True,
-        indices: Optional[np.ndarray] = None,
-        datadir: Optional[str] = None,
-        max_threads: int = 1,
-    ):
-        ext = os.path.splitext(filepath)[-1][1:]
-        if ext == "star":
-            return StarfileSource(
-                filepath,
-                lazy=lazy,
-                datadir=os.path.dirname(filepath) if not datadir else datadir,
-                indices=indices,
-                max_threads=max_threads,
-            )
-        elif ext in ("mrc", "mrcs"):
-            return MRCFileSource(filepath, lazy=lazy, indices=indices)
-        elif ext == "txt":
-            return TxtFileSource(
-                filepath,
-                lazy=lazy,
-                indices=indices,
-                max_threads=max_threads,
-            )
-        elif ext == "cs":
-            return CsSource(
-                filepath,
-                lazy=lazy,
-                datadir=datadir,
-                indices=indices,
-                max_threads=max_threads,
-            )
-        else:
-            raise ValueError(
-                f"Unrecognized ImageSource file extension `{ext}` not in .star, "
-                ".mrc/.mrcs, .txt, or .cs!"
-            )
 
     def __init__(
         self,
@@ -158,6 +126,46 @@ class ImageSource:
             nz, ny, nx = array.shape
             assert ny == nx, "Only square arrays supported"
             self.data = array
+
+    @staticmethod
+    def from_file(
+        filepath: str,
+        lazy: bool = True,
+        indices: Optional[np.ndarray] = None,
+        datadir: Optional[str] = None,
+        max_threads: int = 1,
+    ):
+        ext = os.path.splitext(filepath)[-1][1:]
+        if ext == "star":
+            return StarfileSource(
+                filepath,
+                lazy=lazy,
+                datadir=os.path.dirname(filepath) if not datadir else datadir,
+                indices=indices,
+                max_threads=max_threads,
+            )
+        elif ext in ("mrc", "mrcs"):
+            return MRCFileSource(filepath, lazy=lazy, indices=indices)
+        elif ext == "txt":
+            return TxtFileSource(
+                filepath,
+                lazy=lazy,
+                indices=indices,
+                max_threads=max_threads,
+            )
+        elif ext == "cs":
+            return CsSource(
+                filepath,
+                lazy=lazy,
+                datadir=datadir,
+                indices=indices,
+                max_threads=max_threads,
+            )
+        else:
+            raise ValueError(
+                f"Unrecognized ImageSource file extension `{ext}` not in .star, "
+                ".mrc/.mrcs, .txt, or .cs!"
+            )
 
     def __len__(self) -> int:
         return self.n
@@ -230,15 +238,15 @@ class ImageSource:
 
         Arguments
         ---------
-            indices (np.array): The subset of images we want to return.
-            require_contiguous (bool)
-                Whether the method should throw an error if image retrieval will entail
-                non-contiguous disk access. Callers can employ this if they insist on
-                efficient loading and choose to throw an error instead of falling back
-                on inefficient slower loading.
+        indices (np.array): The subset of images we want to return.
+        require_contiguous (bool)
+            Whether the method should throw an error if image retrieval will entail
+            non-contiguous disk access. Callers can employ this if they insist on
+            efficient loading and choose to throw an error instead of falling back
+            on inefficient slower loading.
         Returns
         -------
-            Images (np.array) at specified indices.
+        Images (np.array) at specified indices.
 
         """
         raise NotImplementedError("Subclasses of `ImageSource` must implement this!")
@@ -326,7 +334,6 @@ class MRCFileSource(ImageSource):
         # Adjust the header for the index filter we are applying
         if indices is not None:
             self.header.fields["nz"] = len(indices)
-        self.nz = self.header.fields["nz"]
 
         super().__init__(
             D=self.ny,
@@ -408,24 +415,13 @@ class MRCDataFrameSource(ImageSource):
 
     Attributes
     ----------
+    df (pd.DataFrame):  The table listing the constituent parts of this stack.
+    datadir (str):  Optional path used by .cs and .star files to prepend to file names.
     _sources (dict[str, MRCFileSource])
         Index of the .mrc/.mrcs files in this collection; keys are the file paths
         and values are the data in each loaded lazily.
 
     """
-
-    def parse_filename(self, filename: str) -> str:
-        newname = (
-            os.path.abspath(filename) if os.path.isabs(filename) else str(filename)
-        )
-        if self.datadir is not None:
-            if os.path.isabs(newname):
-                if os.path.commonprefix([newname, self.datadir]) != self.datadir:
-                    newname = os.path.join(self.datadir, os.path.basename(newname))
-            else:
-                newname = os.path.join(self.datadir, newname)
-
-        return newname
 
     def __init__(
         self,
@@ -496,6 +492,19 @@ class MRCDataFrameSource(ImageSource):
     def sources(self) -> Iterator[tuple[str, MRCFileSource]]:
         return iter(self._sources.items())
 
+    def parse_filename(self, filename: str) -> str:
+        newname = (
+            os.path.abspath(filename) if os.path.isabs(filename) else str(filename)
+        )
+        if self.datadir is not None:
+            if os.path.isabs(newname):
+                if os.path.commonprefix([newname, self.datadir]) != self.datadir:
+                    newname = os.path.join(self.datadir, os.path.basename(newname))
+            else:
+                newname = os.path.join(self.datadir, newname)
+
+        return newname
+
 
 class CsSource(MRCDataFrameSource):
     def __init__(
@@ -530,6 +539,8 @@ class CsSource(MRCDataFrameSource):
 
 
 class TxtFileSource(MRCDataFrameSource):
+    """Image stacks indexed using a .txt file listing a .mrcs stack on each line."""
+
     def __init__(
         self,
         filepath: str,
@@ -546,7 +557,7 @@ class TxtFileSource(MRCDataFrameSource):
             else:
                 _paths.append(path)
 
-        _source_lengths = [MRCFileSource(path, lazy=True).n for path in _paths]
+        _source_lengths = [MRCHeader.parse(path).N for path in _paths]
         mrc_filename, mrc_index = [], []
         for path, length in zip(_paths, _source_lengths):
             mrc_filename.extend([path] * length)
@@ -561,8 +572,14 @@ class TxtFileSource(MRCDataFrameSource):
 class StarfileSource(MRCDataFrameSource, Starfile):
     """Image stacks indexed using a .star file in RELION3.0 or RELION3.1 format.
 
+    In RELION3.1 format, these files will have an optics table that lists parameters
+    for images grouped by optics parameters.
+    See `Starfile.optics_values()` for how these optics values, such as A/px and
+    resolution, are retrieved on an image-wise basis.
+
     Attributes
     ----------
+    df (pd.DataFrame):  The primary data table in the .star file.
     data_optics (pd.Dataframe): `None` if RELION3.1
 
     """

@@ -38,8 +38,9 @@ import pandas as pd
 from typing import List, Iterator, Optional, Union, Callable
 import logging
 import torch
+
 from cryodrgn.mrcfile import MRCHeader, write_mrc, get_mrc_header, fix_mrc_header
-from cryodrgn.starfile import Stardata, parse_star
+from cryodrgn.starfile import parse_star, Starfile
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +71,7 @@ class ImageSource:
     shape (tuple): The shape of the underlying image data tensor - `(n, D, D)`.
     data (np.array): The image stack data loaded as a matrix.
                      Will be `None` if using lazy loading mode.
+
     """
 
     @staticmethod
@@ -77,7 +79,7 @@ class ImageSource:
         filepath: str,
         lazy: bool = True,
         indices: Optional[np.ndarray] = None,
-        datadir: str = "",
+        datadir: Optional[str] = None,
         max_threads: int = 1,
     ):
         ext = os.path.splitext(filepath)[-1][1:]
@@ -85,7 +87,7 @@ class ImageSource:
             return StarfileSource(
                 filepath,
                 lazy=lazy,
-                datadir=datadir,
+                datadir=os.path.dirname(filepath) if not datadir else datadir,
                 indices=indices,
                 max_threads=max_threads,
             )
@@ -107,7 +109,10 @@ class ImageSource:
                 max_threads=max_threads,
             )
         else:
-            raise RuntimeError(f"Unrecognized file extension {ext}")
+            raise ValueError(
+                f"Unrecognized ImageSource file extension `{ext}` not in .star, "
+                ".mrc/.mrcs, .txt, or .cs!"
+            )
 
     def __init__(
         self,
@@ -300,7 +305,7 @@ class ImageSource:
 
 
 class MRCFileSource(ImageSource):
-    """An ImageSource that reads an .mrc/.mrcs particle stack."""
+    """An image stack saved as a single .mrc/.mrcs file."""
 
     def __init__(
         self, filepath: str, lazy: bool = True, indices: Optional[np.ndarray] = None
@@ -395,11 +400,37 @@ class MRCFileSource(ImageSource):
         return self.header.get_apix()
 
 
-class _MRCDataFrameSource(ImageSource):
+class MRCDataFrameSource(ImageSource):
+    """Base class for image stacks saved across a collection of .mrc/.mrcs files.
+
+    These stacks use a single file as a reference to a collection of .mrc/.mrcs files
+    storing the actual data, such as .star, .cs, and .txt files.
+
+    Attributes
+    ----------
+    _sources (dict[str, MRCFileSource])
+        Index of the .mrc/.mrcs files in this collection; keys are the file paths
+        and values are the data in each loaded lazily.
+
+    """
+
+    def parse_filename(self, filename: str) -> str:
+        newname = (
+            os.path.abspath(filename) if os.path.isabs(filename) else str(filename)
+        )
+        if self.datadir is not None:
+            if os.path.isabs(newname):
+                if os.path.commonprefix([newname, self.datadir]) != self.datadir:
+                    newname = os.path.join(self.datadir, os.path.basename(newname))
+            else:
+                newname = os.path.join(self.datadir, newname)
+
+        return newname
+
     def __init__(
         self,
         df: pd.DataFrame,
-        datadir: str = "",
+        datadir: Optional[str] = None,
         lazy: bool = True,
         indices: Optional[np.ndarray] = None,
         max_threads: int = 1,
@@ -407,20 +438,21 @@ class _MRCDataFrameSource(ImageSource):
         assert "__mrc_index" in df.columns
         assert "__mrc_filename" in df.columns
         self.df = df
+        self.datadir = datadir
+        self.df["__mrc_filepath"] = self.df["__mrc_filename"].apply(self.parse_filename)
 
-        if datadir:
-            self.df["__mrc_filepath"] = self.df["__mrc_filename"].apply(
-                lambda filename: os.path.join(datadir, os.path.basename(filename))
-            )
-        else:
-            self.df["__mrc_filepath"] = self.df["__mrc_filename"]
-
-        # Peek into the first mrc file to get image size
-        D = MRCFileSource(self.df["__mrc_filepath"][0]).D
         self._sources = {
-            filepath: MRCFileSource(filepath)
+            filepath: MRCFileSource(filepath) if os.path.exists(filepath) else None
             for filepath in self.df["__mrc_filepath"].unique()
         }
+
+        # Peek into the first mrc file to get image size
+        D = None
+        for filepath, src in self._sources.items():
+            if isinstance(src, MRCFileSource):
+                D = src.D
+                break
+
         super().__init__(
             D=D,
             n=len(self.df),
@@ -435,7 +467,8 @@ class _MRCDataFrameSource(ImageSource):
         def load_single_mrcs(filepath, df):
             src = self._sources[filepath]
 
-            # df.index indicates the positions where the data needs to be inserted -> return for use by caller
+            # `df.index` indicates the positions where the data needs to be inserted
+            # and returned for use by caller
             return df.index, src._images(
                 df["__mrc_index"].to_numpy(), require_contiguous=require_contiguous
             )
@@ -464,7 +497,7 @@ class _MRCDataFrameSource(ImageSource):
         return iter(self._sources.items())
 
 
-class CsSource(_MRCDataFrameSource):
+class CsSource(MRCDataFrameSource):
     def __init__(
         self,
         filepath: str,
@@ -496,7 +529,7 @@ class CsSource(_MRCDataFrameSource):
         )
 
 
-class TxtFileSource(_MRCDataFrameSource):
+class TxtFileSource(MRCDataFrameSource):
     def __init__(
         self,
         filepath: str,
@@ -525,37 +558,37 @@ class TxtFileSource(_MRCDataFrameSource):
         super().__init__(df=df, lazy=lazy, indices=indices, max_threads=max_threads)
 
 
-class StarfileSource(_MRCDataFrameSource):
+class StarfileSource(MRCDataFrameSource, Starfile):
+    """Image stacks indexed using a .star file in RELION3.0 or RELION3.1 format.
+
+    Attributes
+    ----------
+    data_optics (pd.Dataframe): `None` if RELION3.1
+
+    """
+
     def __init__(
         self,
         filename: str,
-        datadir: str = "",
+        datadir: Optional[str] = None,
         lazy: bool = True,
         indices: Optional[np.ndarray] = None,
         max_threads: int = 1,
     ) -> None:
-        sdata, self.data_optics = parse_star(filename)
+        sdata, data_optics = parse_star(filename)
+        Starfile.__init__(self, data=sdata, data_optics=data_optics)
+        self.df = None
 
         sdata[["__mrc_index", "__mrc_filename"]] = sdata["_rlnImageName"].str.split(
             "@", n=1, expand=True
         )
         sdata["__mrc_index"] = pd.to_numeric(sdata["__mrc_index"]) - 1
 
-        if not datadir:
-            datadir = os.path.dirname(filename)
-
-        super().__init__(
+        MRCDataFrameSource.__init__(
+            self,
             df=sdata,
-            datadir=os.path.abspath(datadir),
+            datadir=os.path.abspath(datadir) if datadir else None,
             lazy=lazy,
             indices=indices,
             max_threads=max_threads,
         )
-
-    @property
-    def apix(self) -> Union[float, pd.Series]:
-        return Stardata(self.df, self.data_optics).apix
-
-    @property
-    def resolution(self) -> Union[int, pd.Series]:
-        return Stardata(self.df, self.data_optics).resolution

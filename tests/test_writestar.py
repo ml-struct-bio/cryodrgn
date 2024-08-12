@@ -20,7 +20,10 @@ def relion31_mrcs():
 @pytest.mark.parametrize(
     "use_ctf",
     [
-        pytest.param(False, marks=pytest.mark.xfail(reason="ctf is required input")),
+        pytest.param(
+            False,
+            marks=pytest.mark.xfail(reason="ctf is required input", raises=ValueError),
+        ),
         True,
     ],
     ids=("no-ctf", "with-ctf"),

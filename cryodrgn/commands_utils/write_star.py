@@ -2,11 +2,15 @@
 
 Example usage
 -------------
-$ cryodrgn_utils write_star particles.128.mrcs -o particles.128.mrcs --ctf ctf.pkl
+$ cryodrgn_utils write_star particles.128.mrcs -o particles.128.star --ctf ctf.pkl
 
-# Can be used to filter a particle stack that is already a .star file
-$ cryodrgn_utils write_star particles.128.star -o particles.128.star --ctf ctf.pkl \
-                                               --ind good-ind.pkl
+# Also add particle pose data, and filter final output by given particle index
+$ cryodrgn_utils write_star particles.128.mrcs -o particles.128.star \
+                            --ctf ctf.pkl --poses pose.pkl --ind good-ind.pkl
+
+# Can be used to filter a particle stack that is already a .star file, no CTF needed
+$ cryodrgn_utils write_star particles.128.star \
+                            -o particles.128_good.star --ind good-ind.pkl
 
 """
 import argparse
@@ -44,7 +48,6 @@ POSE_HDRS = [
 
 def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("particles", help="Input particles (.mrcs, .txt, .star)")
-
     parser.add_argument(
         "-o", type=os.path.abspath, required=True, help="Output .star file"
     )
@@ -54,14 +57,17 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--ind", help="Optionally filter by array of selected indices (.pkl)"
     )
-
-    # TODO: is this needed any more?
+    parser.add_argument(
+        "--datadir",
+        type=str,
+        help="Path prefix to particle stack if input contains relative paths "
+        "or absolute paths that will be replaced",
+    )
     parser.add_argument(
         "--full-path",
         action="store_true",
-        help="Write the full path to particles (default: relative paths)",
+        help="Update relative particle paths to absolute paths (default: leave as is)",
     )
-
     parser.add_argument(
         "--relion30",
         action="store_true",
@@ -79,35 +85,47 @@ def main(args: argparse.Namespace) -> None:
         ".star",
     ), "Input file must be .mrcs/.txt/.star"
 
-    # Either accept an input star file, or an input .mrcs/.txt with optional ctf/pose pkl file(s)
+    # Either accept an input star file,
+    # or an input .mrcs/.txt with optional ctf/pose pkl file(s)
     ctf = poses = eulers = trans = None
     if input_ext == ".star":
-        assert (
-            args.poses is None
-        ), "--poses cannot be specified when input is a starfile (poses are obtained from starfile)"
-        assert (
-            args.ctf is None
-        ), "--ctf cannot be specified when input is a starfile (ctf information are obtained from starfile)"
+        if args.poses is not None:
+            raise ValueError(
+                "--poses cannot be specified when input is a starfile "
+                "(poses are obtained from starfile)"
+            )
+        if args.ctf is not None:
+            raise ValueError(
+                "--ctf cannot be specified when input is a starfile "
+                "(ctf information are obtained from starfile)"
+            )
     else:
         if not args.ctf:
             raise ValueError("--ctf must be specified when input is not a starfile!")
 
-    particles = ImageSource.from_file(args.particles, lazy=True)
+    particles = ImageSource.from_file(args.particles, lazy=True, datadir=args.datadir)
 
     if args.ctf:
         ctf = utils.load_pkl(args.ctf)
-        assert ctf.shape[1] == 9, "Incorrect CTF pkl format"
-        assert len(particles) == len(
-            ctf
-        ), f"{len(particles)} != {len(ctf)}, Number of particles != number of CTF parameters"
-
+        if ctf.shape[1] != 9:
+            raise ValueError(
+                f"Incorrect CTF .pkl format "
+                f"— expected 9 columns but found {ctf.shape[1]}!"
+            )
+        if len(particles) != len(ctf):
+            raise ValueError(
+                f"{len(particles)} != {len(ctf)}, "
+                f"Number of particles != number of CTF parameters"
+            )
     if args.poses:
         poses = utils.load_pkl(args.poses)
-        assert len(particles) == len(
-            poses[0]
-        ), f"{len(particles)} != {len(poses)}, Number of particles != number of poses"
-    logger.info(f"{len(particles)} particles in {args.particles}")
+        if len(particles) != len(poses[0]):
+            raise ValueError(
+                f"{len(particles)} != {len(poses)}, "
+                f"Number of particles != number of poses"
+            )
 
+    logger.info(f"{len(particles)} particles in {args.particles}")
     ind = np.arange(particles.n)
     if args.ind:
         ind = utils.load_pkl(args.ind)
@@ -117,10 +135,13 @@ def main(args: argparse.Namespace) -> None:
         if poses is not None:
             poses = (poses[0][ind], poses[1][ind])
 
+    # When the input is already a .star file, we just filter the data table directly
     if input_ext == ".star":
         assert isinstance(particles, StarfileSource)
         df = particles.df.loc[ind]
         optics = None if args.relion30 else particles.data_optics
+
+    # When the input is not a .star file, we have to create the data table fields
     else:
         if input_ext == ".txt":
             with open(args.particles, "r") as f:
@@ -154,7 +175,7 @@ def main(args: argparse.Namespace) -> None:
             for ctf_col in ctf_cols:
                 data[CTF_HEADERS[ctf_col]] = ctf[:, ctf_col]
 
-        # figure out what the optics groups are using voltage, spherical aberration,
+        # Figure out what the optics groups are using voltage, spherical aberration,
         # and amplitude contrast to assign a unique group to each particle
         if not args.relion30:
             optics_cols = list(set(range(9)) - ctf_cols)

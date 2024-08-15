@@ -119,6 +119,7 @@ class ImageSource:
         if lazy:
             self.data = None
         else:
+            assert D is not None
             array = self._images(self.indices)
             if array.ndim == 2:
                 array = array[np.newaxis, ...]
@@ -140,7 +141,7 @@ class ImageSource:
             return StarfileSource(
                 filepath,
                 lazy=lazy,
-                datadir=os.path.dirname(filepath) if not datadir else datadir,
+                datadir=datadir,
                 indices=indices,
                 max_threads=max_threads,
             )
@@ -595,6 +596,11 @@ class StarfileSource(MRCDataFrameSource, Starfile):
         sdata, data_optics = parse_star(filename)
         Starfile.__init__(self, data=sdata, data_optics=data_optics)
         self.df = None
+
+        # If --datadir is not given, we assume that image stacks are in the
+        # same location as this .star file
+        if not datadir:
+            datadir = os.path.dirname(filename)
 
         sdata[["__mrc_index", "__mrc_filename"]] = sdata["_rlnImageName"].str.split(
             "@", n=1, expand=True

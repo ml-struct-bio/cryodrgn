@@ -1,3 +1,7 @@
+# Script for running tests of cryoDRGN training and analysis methods outside of pytest
+# NOTE: must be run within the folder containing this script:
+#   $ cd cryodrgn/tests; sh unittest.sh
+
 set -e
 set -x
 
@@ -7,12 +11,14 @@ cryodrgn train_nn data/toy_projections.star --poses data/toy_angles.pkl -o outpu
 cryodrgn train_nn data/toy_projections.txt --poses data/toy_angles.pkl -o output/toy_recon -n 10 --no-amp
 
 # Test translations
-python ../utils/translate_stack.py data/toy_projections.mrcs data/toy_trans.pkl -o output/toy_projections.trans.mrcs --tscale -1
+cryodrgn_utils translate_mrcs data/toy_projections.mrcs data/toy_trans.pkl \
+                              -o output/toy_projections.trans.mrcs --tscale -1
 cryodrgn train_nn output/toy_projections.trans.mrcs --poses data/toy_rot_trans.pkl -o output/toy_recon -n 10 --no-amp
 cryodrgn train_nn data/toy_projections.mrcs --poses data/toy_rot_zerotrans.pkl -o output/toy_recon -n 10 --no-amp
 
 # Do pose SGD
-cryodrgn train_nn data/toy_projections.mrcs --poses data/toy_rot_zerotrans.pkl -o output/toy_recon --do-pose-sgd --domain hartley
+cryodrgn train_nn data/toy_projections.mrcs --poses data/toy_rot_zerotrans.pkl \
+                  -o output/toy_recon --do-pose-sgd --domain hartley
 
 # Other decoder architectures
 cryodrgn train_nn data/toy_projections.mrcs --poses data/toy_angles.pkl -o output/toy_recon --domain hartley -n 2 --no-amp

@@ -73,6 +73,10 @@ DATA_FOLDERS = {
     "default-datadir": ".",
     "toy": "toy_datadir",
 }
+TRANS_FILES = {
+    "toy": "toy_trans.pkl",
+    "toy-zero": "toy_zero.pkl",
+}
 
 
 # Data fixtures for cryoDRGN outputs (and sometimes inputs)
@@ -139,6 +143,11 @@ def indices(request) -> Union[DataFixture, dict[str, DataFixture]]:
 @pytest.fixture(scope="function")
 def datadir(request) -> Union[DataFixture, dict[str, DataFixture]]:
     return produce_data_fixture(DATA_FOLDERS, request.param)
+
+
+@pytest.fixture(scope="function")
+def trans(request) -> Union[DataFixture, dict[str, DataFixture]]:
+    return produce_data_fixture(TRANS_FILES, request.param)
 
 
 @pytest.fixture(scope="function")

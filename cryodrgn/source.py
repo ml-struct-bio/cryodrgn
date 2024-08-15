@@ -215,7 +215,8 @@ class ImageSource:
         self,
         indices: Optional[Union[np.ndarray, int, slice, Iterable]] = None,
         require_contiguous: bool = False,
-    ) -> torch.Tensor:
+        as_numpy: bool = False,
+    ) -> Union[np.ndarray, torch.Tensor]:
         indices = self._convert_to_ndarray(indices)
 
         if self.lazy:
@@ -230,7 +231,11 @@ class ImageSource:
             f"Class `{self.__class__.__name__}` has implemented an `_images` method "
             f"that does not return arrays of numpy dtype `{self.dtype}` !"
         )
-        return torch.from_numpy(images)
+
+        if not as_numpy:
+            return torch.from_numpy(images)
+        else:
+            return images
 
     def _images(
         self, indices: np.ndarray, require_contiguous: bool = False

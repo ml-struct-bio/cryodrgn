@@ -19,7 +19,7 @@ import logging
 import torch
 from typing import Optional, Tuple, Union
 from cryodrgn import fft
-from cryodrgn.source import ImageSource, parse_star
+from cryodrgn.source import ImageSource, StarfileSource, parse_star
 from cryodrgn.utils import window_mask
 
 from torch.utils.data import DataLoader
@@ -145,6 +145,8 @@ class TiltSeriesData(ImageDataset):
 
         # Parse unique particles from _rlnGroupName
         star_df, _ = parse_star(tiltstar)
+        assert isinstance(self.src, StarfileSource)
+        # star_df = self.src.df
         if ind is not None:
             star_df = star_df.loc[ind]
         group_name = list(star_df["_rlnGroupName"])

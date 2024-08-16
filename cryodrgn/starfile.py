@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 from datetime import datetime as dt
 from typing import Tuple, Union, Optional, TextIO
+from typing_extensions import Self
 
 
 def parse_star(starfile: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
@@ -136,6 +137,11 @@ class Starfile:
                     "contain a `_rlnOpticsGroup` column!"
                 )
             self.data_optics = self.data_optics.set_index("_rlnOpticsGroup", drop=False)
+
+    @classmethod
+    def load(cls, starfile: str) -> Self:
+        """Convenience instantiation method for backwards compatibility."""
+        return cls(starfile=starfile)
 
     def write(self, outstar: str) -> None:
         """Save these data tables to file using the .star format."""

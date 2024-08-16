@@ -499,6 +499,16 @@ class MRCDataFrameSource(ImageSource):
         return iter(self._sources.items())
 
     def parse_filename(self, filename: str) -> str:
+        """Get the complete path to an image stack using `self.datadir` if necessary.
+
+        This function is used for operations such as getting the `__mrc_filepath` field
+        from `__mrc_filename`. We prepend `self.datadir` to the given file name if this
+        object has one defined, otherwise we just use the filename itself. We replace
+        the directory path of the given file only if `self.datadir` is defined and
+        doesn't match the directory path of the file, and we only prepend if the file
+        is given as a relative path!
+
+        """
         newname = (
             os.path.abspath(filename) if os.path.isabs(filename) else str(filename)
         )

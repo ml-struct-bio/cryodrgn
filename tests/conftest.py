@@ -107,12 +107,12 @@ def produce_data_fixture(
         files = dict()
 
         for k, lbl in lbls.items():
-            assert (
-                lbl in data_dict
-            ), f"Unknown testing label `{lbl}` for data dictionary `{data_dict}`!"
-            files[k] = DataFixture(
-                label=lbl, path=os.path.join(DATA_DIR, data_dict[lbl])
-            )
+            if lbl in data_dict:
+                files[k] = DataFixture(
+                    label=lbl, path=os.path.join(DATA_DIR, data_dict[lbl])
+                )
+            else:
+                files[k] = DataFixture(label=lbl, path=os.path.join(DATA_DIR, lbl))
 
         if not isinstance(labels, dict):
             files = files[None]

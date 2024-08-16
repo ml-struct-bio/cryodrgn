@@ -9,7 +9,11 @@ from cryodrgn.commands import downsample, downsample_dir
 
 @pytest.mark.parametrize(
     "particles, datadir",
-    [("toy.star-13", "default-datadir"), ("toydatadir.star", "toy")],
+    [
+        ("toy.star-13", "default-datadir"),
+        ("toydatadir.star", "toy"),
+        ("relion31.v2.star", None),
+    ],
     indirect=True,
 )
 @pytest.mark.parametrize(
@@ -53,12 +57,15 @@ def test_downsample(tmpdir, particles, datadir, downsample_dim):
     assert np.isclose(in_imgs.sum(), out_imgs.sum())
 
 
-@pytest.mark.parametrize("particles", ["toy.star-13"], indirect=True)
+@pytest.mark.parametrize("particles", ["toy.star-13", "relion31.star"], indirect=True)
 @pytest.mark.parametrize("datadir", ["default-datadir"], indirect=True)
 @pytest.mark.parametrize("downsample_dim", [18, 10])
 @pytest.mark.parametrize("chunk_size", [5, 6, 8])
 def test_downsample_with_chunks(tmpdir, particles, datadir, downsample_dim, chunk_size):
     out_mrcs = os.path.join(tmpdir, "downsampled.mrcs")
+    in_imgs = ImageSource.from_file(
+        particles.path, datadir=datadir.path, lazy=False
+    ).images()
 
     parser = argparse.ArgumentParser()
     downsample.add_args(parser)
@@ -79,10 +86,10 @@ def test_downsample_with_chunks(tmpdir, particles, datadir, downsample_dim, chun
 
     assert ImageSource.from_file(
         out_mrcs.replace(".mrcs", ".txt"), lazy=False
-    ).shape == (13, downsample_dim, downsample_dim)
+    ).shape == (in_imgs.shape[0], downsample_dim, downsample_dim)
 
-    for i in range((13 // chunk_size) + 4):
-        if i < (13 // chunk_size):
+    for i in range((in_imgs.shape[0] // chunk_size) + 4):
+        if i < (in_imgs.shape[0] // chunk_size):
             assert ImageSource.from_file(
                 out_mrcs.replace(".mrcs", f".{i}.mrcs")
             ).shape == (
@@ -90,11 +97,11 @@ def test_downsample_with_chunks(tmpdir, particles, datadir, downsample_dim, chun
                 downsample_dim,
                 downsample_dim,
             )
-        elif i == (13 // chunk_size):
+        elif i == (in_imgs.shape[0] // chunk_size) and in_imgs.shape[0] % chunk_size:
             assert ImageSource.from_file(
                 out_mrcs.replace(".mrcs", f".{i}.mrcs")
             ).shape == (
-                13 % chunk_size,
+                in_imgs.shape[0] % chunk_size,
                 downsample_dim,
                 downsample_dim,
             )

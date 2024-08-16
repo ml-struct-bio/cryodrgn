@@ -4,10 +4,9 @@ import pytest
 import argparse
 import os
 import pickle
-import numpy as np
-from cryodrgn.commands import downsample, parse_ctf_star, parse_pose_star
+from cryodrgn.commands import parse_ctf_star, parse_pose_star
 from cryodrgn.commands_utils import filter_star
-from cryodrgn.source import ImageSource, parse_star
+from cryodrgn.source import parse_star
 
 
 # TODO -- convert these starfiles to 3.0 and compare outputs across these tests
@@ -16,38 +15,14 @@ def relion_starfile(request):
     return os.path.join(pytest.DATADIR, request.param)
 
 
-@pytest.mark.parametrize(
-    "relion_starfile", ["relion31.star", "relion31.v2.star"], indirect=True
-)
-@pytest.mark.parametrize("resolution", [32, 64])
-def test_downsample(tmpdir, relion_starfile, resolution):
-    input_data = ImageSource.from_file(relion_starfile, lazy=False)
-    out_mrcs = os.path.join(tmpdir, "temp.mrcs")
-
-    parser = argparse.ArgumentParser()
-    downsample.add_args(parser)
-    args = parser.parse_args(
-        [f"{relion_starfile}", "-D", str(resolution), "-o", out_mrcs]
-    )
-    downsample.main(args)
-
-    output_data = ImageSource.from_file(out_mrcs, lazy=False)
-    in_imgs = input_data.images()
-    out_imgs = output_data.images()
-    assert out_imgs.shape == (in_imgs.shape[0], resolution, resolution)
-    assert np.isclose(in_imgs.sum(), out_imgs.sum())
-
-
-@pytest.mark.parametrize(
-    "relion_starfile, indices",
-    [
-        ("relion31.star", "just-4"),
-        ("relion31.v2.star", "just-4"),
-        ("relion31.6opticsgroups.star", "just-4"),
-        ("relion31.6opticsgroups.star", "just-5"),
-    ],
+pytestmark = pytest.mark.parametrize(
+    "relion_starfile",
+    ["relion31.star", "relion31.v2.star", "relion31.6opticsgroups.star"],
     indirect=True,
 )
+
+
+@pytest.mark.parametrize("indices", ["just-4"], indirect=True)
 def test_filter_star(tmpdir, relion_starfile, indices):
     parser = argparse.ArgumentParser()
     filter_star.add_args(parser)
@@ -72,17 +47,7 @@ def test_filter_star(tmpdir, relion_starfile, indices):
     assert data_optics.shape[0] == 1
 
 
-@pytest.mark.parametrize(
-    "relion_starfile, resolution, apix",
-    [
-        ("relion31.star", None, None),
-        ("relion31.6opticsgroups.star", None, None),
-        ("relion31.6opticsgroups.star", "256", "1.0"),
-        ("relion31.star", "256", "1.0"),
-        ("relion31.v2.star", "256", "1.0"),
-    ],
-    indirect=["relion_starfile"],
-)
+@pytest.mark.parametrize("resolution, apix", [(None, None), ("256", "1.0")])
 def test_parse_pose_star(tmpdir, relion_starfile, resolution, apix):
     parser = argparse.ArgumentParser()
     parse_pose_star.add_args(parser)
@@ -105,9 +70,6 @@ def test_parse_pose_star(tmpdir, relion_starfile, resolution, apix):
     assert poses[1].shape[0] == stardata.shape[0]
 
 
-@pytest.mark.parametrize(
-    "relion_starfile", ["relion31.star", "relion31.v2.star"], indirect=True
-)
 def test_parse_ctf_star(tmpdir, relion_starfile):
     parser = argparse.ArgumentParser()
     parse_ctf_star.add_args(parser)
@@ -131,3 +93,8 @@ def test_parse_ctf_star(tmpdir, relion_starfile):
         ]
     )
     parse_ctf_star.main(args)
+
+    with open(os.path.join(tmpdir, "ctf.pkl"), "rb") as f:
+        ctf_params = pickle.load(f)
+
+    print(ctf_params.shape)

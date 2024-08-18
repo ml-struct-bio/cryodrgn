@@ -6,7 +6,7 @@ import os
 import pickle
 from cryodrgn.commands import parse_ctf_star, parse_pose_star
 from cryodrgn.commands_utils import filter_star
-from cryodrgn.source import parse_star
+from cryodrgn.starfile import parse_star, write_star, Starfile
 
 
 # TODO -- convert these starfiles to 3.0 and compare outputs across these tests
@@ -92,9 +92,18 @@ def test_parse_ctf_star(tmpdir, relion_starfile):
             os.path.join(tmpdir, "ctf.pkl"),
         ]
     )
-    parse_ctf_star.main(args)
 
+    parse_ctf_star.main(args)
+    stardata, data_optics = parse_star(relion_starfile)
     with open(os.path.join(tmpdir, "ctf.pkl"), "rb") as f:
         ctf_params = pickle.load(f)
 
-    print(ctf_params.shape)
+    assert ctf_params.shape == (stardata.shape[0], 9)
+
+
+def test_to_relion30(tmpdir, relion_starfile):
+    starfile = Starfile(relion_starfile)
+    write_star(os.path.join(tmpdir, "r30.star"), data=starfile.to_relion30())
+    r30_starfile = Starfile.load(os.path.join(tmpdir, "r30.star"))
+    assert r30_starfile.df.shape[0] == starfile.df.shape[0]
+    assert not r30_starfile.relion31

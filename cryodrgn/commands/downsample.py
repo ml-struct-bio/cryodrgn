@@ -26,7 +26,8 @@ import logging
 import numpy as np
 from typing import Optional
 from cryodrgn import fft, utils
-from cryodrgn.source import ImageSource, MRCHeader, write_mrc
+from cryodrgn.source import ImageSource, StarfileSource, TxtFileSource
+from cryodrgn.mrcfile import write_mrc, MRCHeader
 
 logger = logging.getLogger(__name__)
 
@@ -40,10 +41,15 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "-o",
-        metavar="MRCS",
+        "--outfile",
         type=os.path.abspath,
         required=True,
         help="Output projection stack (.mrcs)",
+    )
+    parser.add_argument(
+        "--outdir",
+        type=os.path.abspath,
+        help="Output image stack directory, (default: `downsampled.<-D>/`)",
     )
     parser.add_argument(
         "-b",
@@ -178,12 +184,9 @@ def downsample_mrc_images(
 
 
 def main(args: argparse.Namespace) -> None:
-    mkbasedir(args.o)
-    warnexists(args.o)
-    assert args.o.endswith(".mrcs") or args.o.endswith("mrc"), (
-        "Must specify output in .mrc(s) file format! "
-        "— use `cryodrgn downsample_dir` for other output formats such as .star"
-    )
+    mkbasedir(args.outfile)
+    warnexists(args.outfile)
+    out_ext = os.path.splitext(args.outfile)[1]
 
     ind = None
     if args.ind is not None:
@@ -191,29 +194,80 @@ def main(args: argparse.Namespace) -> None:
         logger.info(f"Filtering image dataset with {args.ind}")
         ind = utils.load_pkl(args.ind).astype(int)
 
-    old_src = ImageSource.from_file(
+    src = ImageSource.from_file(
         args.input, lazy=not args.is_vol, indices=ind, datadir=args.datadir
     )
-    assert (
-        args.D <= old_src.D
-    ), f"New box size {args.D} cannot be larger than the original box size {old_src.D}"
-    assert args.D % 2 == 0, "New box size must be even"
+    if args.D > src.D:
+        raise ValueError(
+            f"New box size {args.D=} can't be larger "
+            f"than the original box size {src.D}!"
+        )
+    if args.D % 2 != 0:
+        raise ValueError(f"New box size {args.D=} is not even!")
 
-    # downsample volume
-    if args.is_vol:
-        start = int(old_src.D / 2 - args.D / 2)
-        stop = int(old_src.D / 2 + args.D / 2)
+    import pdb
 
-        old = old_src.images()
-        oldft = fft.htn_center(old)
+    pdb.set_trace()
+
+    # Downsample a single file containing a volume into another volume
+    if args.is_vol or out_ext == ".mrc":
+        start = int(src.D / 2 - args.D / 2)
+        stop = int(src.D / 2 + args.D / 2)
+
+        old_imgs = src.images()
+        oldft = fft.htn_center(old_imgs)
         logger.info(oldft.shape)
         newft = oldft[start:stop, start:stop, start:stop]
         logger.info(newft.shape)
 
         new = np.array(fft.ihtn_center(newft)).astype(np.float32)
-        logger.info(f"Saving {args.o}")
-        write_mrc(args.o, array=new, is_vol=True)
+        logger.info(f"Saving {args.outfile}")
+        write_mrc(args.outfile, array=new, is_vol=True)
 
-    # downsample images
+    # Downsample images into a .mrcs image stack file, no matter the input format was
+    elif out_ext == ".mrcs":
+        downsample_mrc_images(src, args.D, args.outfile, args.b, args.chunk)
+
+    # Downsample images referenced in a .star file, using the original image stack file
+    # structure where possible
+    elif out_ext == ".star":
+        if not isinstance(src, StarfileSource):
+            raise ValueError(
+                f"To write output to a .star file you must use a .star file as input, "
+                f"instead was given {args.input=} !"
+            )
+
+        outdir = args.outdir or f"downsampled.{args.D}"
+        outdir = os.path.abspath(outdir)
+        os.makedirs(outdir, exist_ok=True)
+        logger.info(f"Storing downsampled stacks in new --datadir `{outdir}`...")
+
+        new_fls = dict()
+        for fl, fl_src in src.sources:
+            new_fls[fl] = os.path.join(outdir, os.path.basename(fl))
+            downsample_mrc_images(fl_src, args.D, new_fls[fl], args.b, chunk_size=None)
+
+        src.df["__mrc_filepath"] = src.df["__mrc_filepath"].map(new_fls)
+
+        if isinstance(src, StarfileSource):
+            if src.relion31:
+                if "_rlnImagePixelSize" in src.data_optics:
+                    src.data_optics["_rlnImagePixelSize"] = round(
+                        src.data_optics["_rlnImagePixelSize"] * src.resolution / args.D,
+                        6,
+                    )
+
+        src.write(args.outfile)
+
+    elif out_ext == ".txt":
+        if not isinstance(src, TxtFileSource):
+            raise ValueError(
+                f"To specify a .txt file as output you must use a .txt file as input, "
+                f"instead was given {args.input=} !"
+            )
+
     else:
-        downsample_mrc_images(old_src, args.D, args.o, args.b, args.chunk)
+        raise ValueError(
+            f"Unrecognized output extension `{out_ext}` "
+            f"not in {{.mrc,.mrcs,.star,.txt}}!"
+        )

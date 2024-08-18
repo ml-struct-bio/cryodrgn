@@ -57,10 +57,12 @@ cryodrgn graph_traversal output/toy_recon_vae/z.pkl --anchors 0 10 100 \
 
 # Test apex.amp
 cryodrgn train_nn data/hand.mrcs --poses data/hand_rot.pkl -o output/hand_recon -b 8 --no-amp
-cryodrgn train_nn data/hand.mrcs --poses data/hand_rot.pkl -o output/hand_recon --amp -b 8 --no-amp
+cryodrgn train_nn data/hand.mrcs --poses data/hand_rot.pkl -o output/hand_recon -b 16
 
 # CTF testing
 cryodrgn parse_ctf_csparc data/cryosparc_P12_J24_001_particles.cs -o test_ctf.pkl
 cryodrgn parse_ctf_star data/toy_projections.star -D 30 --Apix 1 -o test_ctf.pkl
 cryodrgn train_vae data/toy_projections.mrcs -o output/toy_recon_vae \
                    --lr .0001 --seed 0 --poses data/toy_angles.pkl --ctf test_ctf.pkl --zdim 10
+
+echo ">>>>>   All unittest.sh tests passed!   <<<<<"

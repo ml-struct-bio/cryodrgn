@@ -197,3 +197,12 @@ class Starfile:
             vals = vals.astype(np.int64)
 
         return vals
+
+    def to_relion30(self) -> pd.DataFrame:
+        """Converts this data into a single data table for use with RELION3.0."""
+        r30_df = self.df.copy()
+        for field in set(self.data_optics.columns) - set(self.df.columns):
+            if "OpticsGroup" not in field:
+                r30_df[field] = self.optics_values(fieldname=field)
+
+        return r30_df

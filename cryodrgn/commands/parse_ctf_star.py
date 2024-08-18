@@ -101,7 +101,7 @@ def main(args: argparse.Namespace) -> None:
         ]
     ):
         ctf_params[:, i + 2] = (
-            stardata.optics_values(header)
+            stardata.get_optics_values(header)
             if header not in overrides
             else overrides[header]
         )

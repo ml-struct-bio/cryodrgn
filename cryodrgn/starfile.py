@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 from datetime import datetime as dt
-from typing import Tuple, Union, Optional, TextIO
+from typing import Tuple, Union, Optional, TextIO, Iterable
 from typing_extensions import Self
 
 
@@ -156,7 +156,7 @@ class Starfile:
         """The number of particle images described by this file."""
         return self.df.shape[0]
 
-    def optics_values(
+    def get_optics_values(
         self, fieldname: str, dtype: Optional[np.dtype] = None
     ) -> Union[None, np.ndarray]:
         """Get sample optics values for a given field using optics table if present."""
@@ -184,15 +184,60 @@ class Starfile:
 
         return vals
 
+    def set_optics_values(self, fieldname: str, vals: Union[float, Iterable]) -> None:
+        """Set optics values for a given field, updating optics table if present."""
+        if not isinstance(vals, Iterable):
+            vals = [vals]
+        else:
+            vals = list(vals)
+
+        possible_sizes = {1, len(self)}
+        if self.relion31:
+            possible_sizes |= {self.data_optics.shape[0]}
+        if len(vals) not in possible_sizes:
+            raise ValueError(
+                f"Given optics values have length `{len(vals)}` "
+                f"not in {possible_sizes}!"
+            )
+
+        if self.relion31 and fieldname in self.data_optics:
+            if "_rlnOpticsGroup" in self.df.columns:
+                if len(vals) in {1, self.data_optics.shape[0]}:
+                    self.data_optics.loc[:, fieldname] = vals
+                else:
+                    self.df.loc = vals
+                    self.data_optics.drop(fieldname, axis=1, inplace=True)
+            else:
+                if len(vals) != 1:
+                    raise ValueError(
+                        f"No optics mapping for this .star file, and thus new optics "
+                        f"values have to be of length one, given {len(vals)=}!"
+                    )
+                self.data_optics.loc[:, fieldname] = vals
+
+        # If can't find this field in the optics table, look in the primary data table
+        elif fieldname in self.df:
+            if len(vals) == self.data_optics.shape[0]:
+                self.df.loc[:, fieldname] = np.array(
+                    [
+                        vals[self.data_optics["_rlnOpticsGroup"].index(g)]
+                        for g in self.df["_rlnOpticsGroup"].values
+                    ]
+                )
+            else:
+                self.df.loc[:, fieldname] = vals
+        else:
+            raise ValueError(f"Cannot find {fieldname=} in this .star file!")
+
     @property
     def apix(self) -> Union[None, np.ndarray]:
         """The A/px of each image in this file."""
-        return self.optics_values(fieldname="_rlnImagePixelSize", dtype=np.float32)
+        return self.get_optics_values(fieldname="_rlnImagePixelSize", dtype=np.float32)
 
     @property
     def resolution(self) -> Union[None, np.ndarray]:
         """The resolution of each image in this file."""
-        vals = self.optics_values(fieldname="_rlnImageSize", dtype=np.float32)
+        vals = self.get_optics_values(fieldname="_rlnImageSize", dtype=np.float32)
         if vals is not None:
             vals = vals.astype(np.int64)
 
@@ -203,6 +248,6 @@ class Starfile:
         r30_df = self.df.copy()
         for field in set(self.data_optics.columns) - set(self.df.columns):
             if "OpticsGroup" not in field:
-                r30_df[field] = self.optics_values(fieldname=field)
+                r30_df[field] = self.get_optics_values(fieldname=field)
 
         return r30_df

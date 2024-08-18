@@ -49,7 +49,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--outdir",
         type=os.path.abspath,
-        help="Output image stack directory, (default: `downsampled.<-D>/`)",
+        help="Output image stack directory, (default: placed alongside --outfile)",
     )
     parser.add_argument(
         "-b",
@@ -205,12 +205,8 @@ def main(args: argparse.Namespace) -> None:
     if args.D % 2 != 0:
         raise ValueError(f"New box size {args.D=} is not even!")
 
-    import pdb
-
-    pdb.set_trace()
-
     # Downsample a single file containing a volume into another volume
-    if args.is_vol or out_ext == ".mrc":
+    if args.is_vol:
         start = int(src.D / 2 - args.D / 2)
         stop = int(src.D / 2 + args.D / 2)
 
@@ -225,46 +221,48 @@ def main(args: argparse.Namespace) -> None:
         write_mrc(args.outfile, array=new, is_vol=True)
 
     # Downsample images into a .mrcs image stack file, no matter the input format was
-    elif out_ext == ".mrcs":
+    elif out_ext in {".mrcs", ".mrc"}:
         downsample_mrc_images(src, args.D, args.outfile, args.b, args.chunk)
 
     # Downsample images referenced in a .star file, using the original image stack file
     # structure where possible
-    elif out_ext == ".star":
-        if not isinstance(src, StarfileSource):
+    elif out_ext in {".star", ".txt"}:
+        if args.chunk is not None:
+            raise ValueError("Chunked output only available for .mrcs output!")
+
+        if out_ext == ".star" and not isinstance(src, StarfileSource):
             raise ValueError(
                 f"To write output to a .star file you must use a .star file as input, "
                 f"instead was given {args.input=} !"
             )
-
-        outdir = args.outdir or f"downsampled.{args.D}"
-        outdir = os.path.abspath(outdir)
-        os.makedirs(outdir, exist_ok=True)
-        logger.info(f"Storing downsampled stacks in new --datadir `{outdir}`...")
-
-        new_fls = dict()
-        for fl, fl_src in src.sources:
-            new_fls[fl] = os.path.join(outdir, os.path.basename(fl))
-            downsample_mrc_images(fl_src, args.D, new_fls[fl], args.b, chunk_size=None)
-
-        src.df["__mrc_filepath"] = src.df["__mrc_filepath"].map(new_fls)
-
-        if isinstance(src, StarfileSource):
-            if src.relion31:
-                if "_rlnImagePixelSize" in src.data_optics:
-                    src.data_optics["_rlnImagePixelSize"] = round(
-                        src.data_optics["_rlnImagePixelSize"] * src.resolution / args.D,
-                        6,
-                    )
-
-        src.write(args.outfile)
-
-    elif out_ext == ".txt":
-        if not isinstance(src, TxtFileSource):
+        if out_ext == ".txt" and not isinstance(src, TxtFileSource):
             raise ValueError(
                 f"To specify a .txt file as output you must use a .txt file as input, "
                 f"instead was given {args.input=} !"
             )
+
+        outdir = args.outdir or os.path.dirname(args.outfile)
+        outdir = os.path.abspath(outdir)
+        os.makedirs(outdir, exist_ok=True)
+        logger.info(f"Storing downsampled stacks in new --datadir `{outdir}`...")
+
+        basepath = os.path.dirname(os.path.commonprefix([p for p, _ in src.sources]))
+        newpaths = {
+            oldpath: os.path.join(outdir, os.path.relpath(oldpath, basepath))
+            for oldpath, _ in src.sources
+        }
+        for fl, fl_src in src.sources:
+            downsample_mrc_images(fl_src, args.D, newpaths[fl], args.b, chunk_size=None)
+
+        src.df["__mrc_filepath"] = src.df["__mrc_filepath"].map(newpaths)
+
+        if isinstance(src, StarfileSource) and src.resolution is not None:
+            apix = src.apix or 1.0
+            src.set_optics_values(
+                "_rlnImagePixelSize", round(apix * src.resolution / args.D, 6)
+            )
+
+        src.write(args.outfile)
 
     else:
         raise ValueError(

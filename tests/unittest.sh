@@ -65,4 +65,5 @@ cryodrgn parse_ctf_star data/toy_projections.star -D 30 --Apix 1 -o test_ctf.pkl
 cryodrgn train_vae data/toy_projections.mrcs -o output/toy_recon_vae \
                    --lr .0001 --seed 0 --poses data/toy_angles.pkl --ctf test_ctf.pkl --zdim 10
 
+set +x
 echo ">>>>>   All unittest.sh tests passed!   <<<<<"

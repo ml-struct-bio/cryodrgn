@@ -2,12 +2,31 @@
 
 Example usage
 -------------
+# Downsample an image stack file to a new stack file
 $ cryodrgn downsample my_particle_stack.mrcs -D 128 -o particles.128.mrcs
+
+# Downsample an image stack and also apply a filtering index
 $ cryodrgn downsample my_particle_stack.mrcs -D 164 -o particles.164.mrcs \
                                                     --ind chosen_particles.pkl
+
+# Downsample an image stack saved across many files referenced by a .star file to a
+# single new image stack file
 $ cryodrgn downsample my_particle_stack.star -D 128 -o particles.128.mrcs \
                                              --datadir folder_with_subtilts/
 
+# Downsample a .star image stack, preserving the original image stack file structure
+# and creating a new .star file with image stack saved alongside it (i.e. no
+# --datadir necessary for future use)
+$ cryodrgn downsample my_particle_stack.star -D 128 -o particles.128.star \
+                                             --datadir folder_with_subtilts/
+
+# Same case as above except specifying a new --datadir using --outdir:
+$ cryodrgn downsample my_particle_stack.star -D 128 -o particles.128.star \
+                                             --datadir folder_with_subtilts/ \
+                                             --outdir my_new_datadir/
+
+# Downsample an image stack saved across many files referenced by a .txt file to a
+# single new image stack file
 # Try a smaller processing batch size if you are running into memory issues, or a
 # larger size for faster processing
 $ cryodrgn downsample my_particle_stack.txt -D 256 -o particles.256.mrcs -b 2000
@@ -42,13 +61,13 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "-o",
         "--outfile",
-        type=os.path.abspath,
+        type=str,
         required=True,
-        help="Output projection stack (.mrcs)",
+        help="Output projection stack (.mrc, .mrcs, .star, or .txt)",
     )
     parser.add_argument(
         "--outdir",
-        type=os.path.abspath,
+        type=str,
         help="Output image stack directory, (default: placed alongside --outfile)",
     )
     parser.add_argument(
@@ -242,6 +261,11 @@ def main(args: argparse.Namespace) -> None:
             )
 
         outdir = args.outdir or os.path.dirname(args.outfile)
+        if out_ext == ".txt" and not os.path.isabs(outdir):
+            outdir = os.path.join(
+                os.path.dirname(os.path.abspath(args.outfile)),
+                outdir,
+            )
         outdir = os.path.abspath(outdir)
         os.makedirs(outdir, exist_ok=True)
         logger.info(f"Storing downsampled stacks in new --datadir `{outdir}`...")
@@ -252,10 +276,27 @@ def main(args: argparse.Namespace) -> None:
             for oldpath, _ in src.sources
         }
         for fl, fl_src in src.sources:
+            os.makedirs(os.path.dirname(newpaths[fl]), exist_ok=True)
             downsample_mrc_images(fl_src, args.D, newpaths[fl], args.b, chunk_size=None)
 
         src.df["__mrc_filepath"] = src.df["__mrc_filepath"].map(newpaths)
+        if out_ext == ".star":
+            src.df["__mrc_filename"] = [
+                os.path.relpath(newpath, outdir) for newpath in src.df["__mrc_filepath"]
+            ]
+        else:
+            src.df["__mrc_filename"] = [
+                os.path.relpath(newpath, os.path.dirname(args.outfile))
+                for newpath in src.df["__mrc_filepath"]
+            ]
 
+        if "_rlnImageName" in src.df.columns:
+            src.df["_rlnImageName"] = [
+                "@".join([old_name.split("@")[0], os.path.relpath(newpath, outdir)])
+                for old_name, newpath in zip(
+                    src.df["_rlnImageName"].values, src.df["__mrc_filepath"].values
+                )
+            ]
         if isinstance(src, StarfileSource) and src.resolution is not None:
             apix = src.apix or 1.0
             src.set_optics_values(

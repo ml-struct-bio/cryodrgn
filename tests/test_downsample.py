@@ -1,11 +1,14 @@
 import pytest
 import os
+import shutil
 import argparse
 import torch
 import numpy as np
 from cryodrgn.source import ImageSource
 from cryodrgn.commands import downsample
 from cryodrgn.utils import load_pkl
+from cryodrgn.mrcfile import parse_mrc, write_mrc
+from cryodrgn.starfile import parse_star, write_star
 
 
 @pytest.mark.parametrize(
@@ -175,4 +178,64 @@ def test_downsample_txtout(tmpdir, particles, outdir, downsample_dim):
     downsample.main(parser.parse_args(args))
     out_imgs = ImageSource.from_file(out_txt, lazy=False).images()
     assert out_imgs.shape == (in_imgs.shape[0], downsample_dim, downsample_dim)
+    assert np.isclose(in_imgs.sum(), out_imgs.sum())
+
+
+@pytest.mark.parametrize(
+    "particles, datadir", [("toydatadir.star", "toy")], indirect=True
+)
+@pytest.mark.parametrize(
+    "newdatadir", [False, True], ids=["without-newdir", "with-newdir"]
+)
+def test_difficult_directory(tmpdir, particles, datadir, newdatadir):
+    """Create a hard .star file setup with colliding file names between subfolders."""
+
+    newdir = os.path.join(tmpdir, "toy-new") if newdatadir else tmpdir
+    newdatadir_path = newdir if newdatadir else None
+    xdir = os.path.join(newdir, "particles_x")
+    ydir = os.path.join(newdir, "particles_y")
+    os.makedirs(xdir, exist_ok=True)
+    os.makedirs(ydir, exist_ok=True)
+
+    shutil.copy(os.path.join(datadir.path, "toy_images_a.mrcs"), xdir)
+    shutil.copy(os.path.join(datadir.path, "toy_images_b.mrcs"), xdir)
+    shutil.copy(os.path.join(datadir.path, "toy_images_a.mrcs"), ydir)
+
+    ymrcs, yheader = parse_mrc(os.path.join(ydir, "toy_images_a.mrcs"))
+    write_mrc(os.path.join(ydir, "toy_images_a.mrcs"), ymrcs * -1, yheader)
+
+    newstar, newoptics = parse_star(particles.path)
+    new_imgnames = list()
+    for i, imgname in enumerate(newstar["_rlnImageName"]):
+        idx, filename = imgname.split("@")
+        if filename == "toy_images_a.mrcs":
+            if np.random.random() < 0.3:
+                newfile = os.path.join("particles_y", "toy_images_a.mrcs")
+            else:
+                newfile = os.path.join("particles_x", "toy_images_a.mrcs")
+        elif filename == "toy_images_b.mrcs":
+            newfile = os.path.join("particles_x", "toy_images_b.mrcs")
+        else:
+            raise ValueError(filename)
+
+        new_imgnames.append("@".join([idx, newfile]))
+
+    newstar["_rlnImageName"] = new_imgnames
+    newstarfile = os.path.join(tmpdir, "new-stack.star")
+    write_star(newstarfile, newstar, newoptics)
+    src = ImageSource.from_file(newstarfile, datadir=newdatadir_path, lazy=False)
+    assert src.shape == (1000, 30, 30)
+
+    out_star = os.path.join(tmpdir, "downsampled.star")
+    parser = argparse.ArgumentParser()
+    downsample.add_args(parser)
+    newoutdir = os.path.join(tmpdir, "downsampled")
+    args = [newstarfile, "-D", "12", "-o", out_star, "--outdir", newoutdir]
+    if newdatadir:
+        args += ["--datadir", newdir]
+    downsample.main(parser.parse_args(args))
+
+    in_imgs = src.images()
+    out_imgs = ImageSource.from_file(out_star, datadir=newoutdir, lazy=False).images()
+    assert out_imgs.shape == (src.n, 12, 12)
     assert np.isclose(in_imgs.sum(), out_imgs.sum())

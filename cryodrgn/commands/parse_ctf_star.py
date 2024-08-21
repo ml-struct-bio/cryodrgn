@@ -60,6 +60,7 @@ def main(args: argparse.Namespace) -> None:
                 f"Cannot find A/px values in {args.star} "
                 f"— must be given manually with --Apix <val> !"
             )
+    if args.Apix is not None:
         apix = args.Apix
 
     resolution = stardata.resolution
@@ -69,6 +70,7 @@ def main(args: argparse.Namespace) -> None:
                 f"Cannot find image size values in {args.star} "
                 f"— must be given manually with -D <val> !"
             )
+    if args.D is not None:
         resolution = args.D
 
     # Sometimes CTF parameters are missing from the star file

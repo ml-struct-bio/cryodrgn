@@ -252,7 +252,7 @@ def main(args: argparse.Namespace) -> None:
                 inverse_indices = np.setdiff1d(all_indices, selected_indices)
 
                 with open(inverse_filename, "wb") as file:
-                    pickle.dump(inverse_indices, file)
+                    pickle.dump(np.array(inverse_indices, dtype=int), file)
 
                 print(f"Inverse selection saved to {inverse_filename}")
         else:

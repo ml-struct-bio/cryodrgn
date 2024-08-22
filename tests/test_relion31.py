@@ -190,40 +190,53 @@ class TestParsePoseStar:
 @pytest.mark.parametrize(
     "apix, resolution", [(None, None), (1.5, None), (3.0, 256), (None, 128), (2.0, 128)]
 )
+@pytest.mark.parametrize("kv", [None, 300])
+@pytest.mark.parametrize("cs", [None, 2.7])
+@pytest.mark.parametrize("w", [None, 0.15])
+@pytest.mark.parametrize("ps", [None, 1.0])
 class TestParseCTFStar:
-    def get_outdir(self, tmpdir_factory, relion_starfile, apix, resolution):
+    def get_outdir(
+        self, tmpdir_factory, relion_starfile, apix, resolution, kv, cs, w, ps
+    ):
         dirname = os.path.join(
-            "r31_ParseCTFStar", relion_starfile, str(apix), str(resolution)
+            "r31_ParseCTFStar",
+            relion_starfile,
+            str(apix),
+            str(resolution),
+            str(kv),
+            str(cs),
+            str(w),
+            str(ps),
         )
         odir = os.path.join(tmpdir_factory.getbasetemp(), dirname)
         os.makedirs(odir, exist_ok=True)
 
         return odir
 
-    def test_parse_ctf_star(self, tmpdir_factory, relion_starfile, apix, resolution):
+    def test_command(
+        self, tmpdir_factory, relion_starfile, apix, resolution, kv, cs, w, ps
+    ):
         outlbl = os.path.basename(relion_starfile)
-        outdir = self.get_outdir(tmpdir_factory, outlbl, apix, resolution)
+        outdir = self.get_outdir(
+            tmpdir_factory, outlbl, apix, resolution, kv, cs, w, ps
+        )
 
         parser = argparse.ArgumentParser()
         parse_ctf_star.add_args(parser)
         out_fl = os.path.join(outdir, "parsed-ctf.pkl")
-        args = [
-            relion_starfile,
-            "--kv",
-            "300",
-            "-w",
-            ".1",
-            "--ps",
-            "0",
-            "--cs",
-            "2.7",
-            "-o",
-            out_fl,
-        ]
+        args = [relion_starfile, "-o", out_fl]
         if apix is not None:
             args += ["--Apix", str(apix)]
         if resolution is not None:
             args += ["-D", str(resolution)]
+        if kv is not None:
+            args += ["--kv", str(kv)]
+        if cs is not None:
+            args += ["--cs", str(cs)]
+        if w is not None:
+            args += ["-w", str(w)]
+        if ps is not None:
+            args += ["--ps", str(ps)]
 
         parse_ctf_star.main(parser.parse_args(args))
         starfile = Starfile(relion_starfile)
@@ -233,38 +246,54 @@ class TestParseCTFStar:
 
         new_apix = apix or orig_apix
         new_D = resolution or orig_D
+        new_kv = kv or starfile.get_optics_values("_rlnVoltage", dtype=float)
+        new_cs = cs or starfile.get_optics_values(
+            "_rlnSphericalAberration", dtype=float
+        )
+        new_w = w or starfile.get_optics_values("_rlnAmplitudeContrast", dtype=float)
+        new_ps = ps or starfile.get_optics_values("_rlnPhaseShift", dtype=float)
+
         assert ctf_params.shape == (starfile.df.shape[0], 9)
         assert (ctf_params[:, 1] == new_apix).all()
         assert (ctf_params[:, 0] == new_D).all()
 
+        assert np.allclose(
+            starfile.get_optics_values("_rlnDefocusU", dtype=float), ctf_params[:, 2]
+        )
+        assert np.allclose(
+            starfile.get_optics_values("_rlnDefocusV", dtype=float), ctf_params[:, 3]
+        )
+        assert np.allclose(new_kv, ctf_params[:, 5])
+        assert np.allclose(new_cs, ctf_params[:, 6])
+        assert np.allclose(new_w, ctf_params[:, 7])
+        assert np.allclose(new_ps, ctf_params[:, 8])
+
     def test_relion30_consistency(
-        self, tmpdir_factory, relion_starfile, apix, resolution
+        self, tmpdir_factory, relion_starfile, apix, resolution, kv, cs, w, ps
     ):
         outlbl = os.path.basename(relion_starfile)
-        outdir = self.get_outdir(tmpdir_factory, outlbl, apix, resolution)
+        outdir = self.get_outdir(
+            tmpdir_factory, outlbl, apix, resolution, kv, cs, w, ps
+        )
 
         starfile = Starfile(relion_starfile)
         write_star(os.path.join(outdir, "r30.star"), data=starfile.to_relion30())
         out_fl = os.path.join(outdir, "parsed-ctf_r30.pkl")
         parser = argparse.ArgumentParser()
         parse_ctf_star.add_args(parser)
-        args = [
-            os.path.join(outdir, "r30.star"),
-            "--kv",
-            "300",
-            "-w",
-            ".1",
-            "--ps",
-            "0",
-            "--cs",
-            "2.7",
-            "-o",
-            out_fl,
-        ]
+        args = [relion_starfile, "-o", out_fl]
         if apix is not None:
             args += ["--Apix", str(apix)]
         if resolution is not None:
             args += ["-D", str(resolution)]
+        if kv is not None:
+            args += ["--kv", str(kv)]
+        if cs is not None:
+            args += ["--cs", str(cs)]
+        if w is not None:
+            args += ["-w", str(w)]
+        if ps is not None:
+            args += ["--ps", str(ps)]
 
         parse_ctf_star.main(parser.parse_args(args))
         with open(os.path.join(out_fl), "rb") as f:

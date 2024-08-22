@@ -1,5 +1,8 @@
 """Create plots of cryoDRGN model results arranged by given particle class labels.
 
+This command will create a new directory in the given training directory for the
+epoch being analyzed, similarly to `cryodrgn analyze`, and place plots within it.
+
 Example usages
 --------------
 $ cryodrgn_utils plot_classes my_work_dir/003_train-vae 49 --labels new_classes.pkl
@@ -7,6 +10,9 @@ $ cryodrgn_utils plot_classes my_work_dir/003_train-vae 49 --labels new_classes.
 # Use your own color palette saved to a file
 $ cryodrgn_utils plot_classes my_work_dir/003_train-vae 49 --labels new_classes.pkl \
                               --palette my_colours.pkl
+
+# Save plots to .svg files instead of .pngs, which will preserve resolution with scaling
+$ cryodrgn_utils plot_classes 005_train-vae 39 --labels new_classes.pkl --svg
 
 """
 import os
@@ -68,7 +74,7 @@ def main(args: argparse.Namespace) -> None:
         else os.path.exists(os.path.join(args.traindir, "config.pkl"))
     )
     cfgs = config.load(cfg)
-    assert not cfgs
+    print(cfgs)
 
     if args.epoch == "-1":
         z_file = os.path.join(args.traindir, "z.pkl")
@@ -140,6 +146,7 @@ def main(args: argparse.Namespace) -> None:
             )
             umap_emb["Class"] = classes
 
+            logger.info("Plotting UMAP clustering densities...")
             g = sns.jointplot(
                 data=umap_emb,
                 x="UMAP1",
@@ -156,6 +163,7 @@ def main(args: argparse.Namespace) -> None:
             save_figure(plt, "umap_kde_classes")
             plt.close()
 
+        logger.info("Plotting PCA clustering densities...")
         for pc1, pc2 in combns(range(3), 2):
             g = sns.jointplot(
                 x=pc[:, pc1],

@@ -12,25 +12,29 @@ def parse_star(starfile: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
     if not starfile.endswith(".star"):
         raise ValueError(f"{starfile} is not a .star file!")
 
+    comments = list()
     blocks = dict()
     cur_block = None
     with open(starfile, "r") as f:
         while line := f.readline():
-            if line.startswith("data_"):
-                if not line.startswith("data_optics"):
-                    if "data_" in blocks:
-                        raise ValueError("Multiple data blocks detected!")
-                    cur_block = "data_"
-                else:
-                    cur_block = "data_optics"
+            line = line.strip()
 
+            if line.startswith("data_"):
+                if line in blocks:
+                    raise ValueError(f"Multiple `{line}` blocks detected!")
+
+                cur_block = str(line)
                 blocks[cur_block] = {"headers": list(), "body": list()}
+
+            # File level comments come before the first `data_` field
+            elif cur_block is None:
+                comments.append(line)
 
             elif line.startswith("_"):
                 blocks[cur_block]["headers"].append(line.split()[0])
 
             elif not line.startswith("#") and not line.startswith("loop_"):
-                vals = line.strip().split()
+                vals = line.split()
                 if len(vals):
                     blocks[cur_block]["body"].append(vals)
 
@@ -40,20 +44,24 @@ def parse_star(starfile: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
             f"Error in parsing. Uneven # columns detected in parsing"
             f" {set([len(x) for x in blocks[block]['body']])}."
         )
-
         assert blocks[block]["body"].shape[1] == len(blocks[block]["headers"]), (
             f"Error in parsing. Number of columns {blocks[block]['body'].shape[1]} "
             f"!= number of headers {blocks[block]['headers']}"
         )
-
         blocks[block] = pd.DataFrame(
             data=blocks[block]["body"], columns=blocks[block]["headers"]
         )
 
-    if "data_" not in blocks:
+    data_block = None
+    for block_lbl, block_vals in blocks.items():
+        if block_lbl.startswith("data_") and block_lbl != "data_optics":
+            if data_block is None or block_vals.shape[0] > data_block.shape[0]:
+                data_block = block_vals.copy()
+
+    if data_block is None:
         raise ValueError(f"Starfile `{starfile}` does not contain a data block!")
 
-    return blocks["data_"], blocks["data_optics"] if "data_optics" in blocks else None
+    return data_block, blocks["data_optics"] if "data_optics" in blocks else None
 
 
 def write_star(

@@ -555,7 +555,13 @@ class CsSource(MRCDataFrameSource):
 
 
 class TxtFileSource(MRCDataFrameSource):
-    """Image stacks indexed using a .txt file listing a .mrcs stack on each line."""
+    """Image stacks indexed using a .txt file listing a .mrcs stack on each line.
+
+    Note that .txt files differ from .cs and .star files in that the filenames contained
+    therein are always assumed to be stated relative to the directory
+    the .txt file is in; thus we don't need a --datadir.
+
+    """
 
     def __init__(
         self,
@@ -583,6 +589,11 @@ class TxtFileSource(MRCDataFrameSource):
             data={"__mrc_filename": mrc_filename, "__mrc_index": mrc_index}
         )
         super().__init__(df=df, lazy=lazy, indices=indices, max_threads=max_threads)
+
+    def write(self, output_file: str):
+        """Save the list of stacks referenced in this source as its .txt version."""
+        with open(output_file, "w") as f:
+            f.write("\n".join(self.df["__mrc_filename"].unique()))
 
 
 class StarfileSource(MRCDataFrameSource, Starfile):

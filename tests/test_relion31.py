@@ -273,3 +273,23 @@ class TestParseCTFStar:
             orig_params = pickle.load(f)
 
         assert np.allclose(ctf_params, orig_params)
+
+
+def test_relion50(tmpdir, relion_starfile):
+    with open(relion_starfile, "r") as f:
+        starlines = f.readlines()
+
+    starlines += [
+        "\n",
+        "# version 50001\n",
+        "\n",
+        "data_general\n",
+        "\n",
+        "_rlnTomoSubTomosAre2DStacks 1\n",
+    ]
+    with open(os.path.join(tmpdir, "new.star"), "w") as f:
+        f.writelines(starlines)
+
+    newfile = Starfile(os.path.join(tmpdir, "new.star"))
+    starfile = Starfile(relion_starfile)
+    assert newfile == starfile

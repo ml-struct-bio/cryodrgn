@@ -1,5 +1,25 @@
-"""Utilities for reading/loading data from .star files."""
+"""Utilities for reading/loading data from .star files.
 
+Example usage
+-------------
+# Read in the tables of a .star file and look at the first row of each
+> from cryodrgn.starfile import parse_star, write_star
+> stardata, optics_data = parse_star("output_directory/particles.star")
+> print(stardata.df.iloc[0])
+> if optics_data is not None:
+>     print(optics_data.df.iloc[0])
+
+# The `Starfile` class is useful for easier access to optics values
+> from cryodrgn.starfile import Starfile
+> starfile = Starfile("output_directory/particles.star")
+
+# These will always be 1D arrays of length same as number of main data table entries
+> starfile.apix, starfile.resolution
+# Can also access any data fields present in either table
+> D = starfile.get_optics_values("_rlnImageSize")
+> aberr = starfile.get_optics_values("_rlnSphericalAberration")
+
+"""
 import numpy as np
 import pandas as pd
 from datetime import datetime as dt
@@ -19,6 +39,8 @@ def parse_star(starfile: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
         while line := f.readline():
             line = line.strip()
 
+            # Here we read in every data table found in the file, and figure out which
+            # table is the main one later on (optics table is always `data_optics`)
             if line.startswith("data_"):
                 if line in blocks:
                     raise ValueError(f"Multiple `{line}` blocks detected!")
@@ -30,14 +52,18 @@ def parse_star(starfile: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
             elif cur_block is None:
                 comments.append(line)
 
+            # Underscores indicate field names for the subsequent data table values
             elif line.startswith("_"):
                 blocks[cur_block]["headers"].append(line.split()[0])
 
-            elif not line.startswith("#") and not line.startswith("loop_"):
-                vals = line.split()
-                if len(vals):
-                    blocks[cur_block]["body"].append(vals)
+            # Read in data table; ignore everything else
+            elif len(line):
+                if not line.startswith("#") and not line.startswith("loop_"):
+                    vals = line.split()
+                    if len(vals):
+                        blocks[cur_block]["body"].append(vals)
 
+    blocks = {lbl: block for lbl, block in blocks.items() if block["body"]}
     for block in blocks:
         blocks[block]["body"] = np.array(blocks[block]["body"])
         assert blocks[block]["body"].ndim == 2, (
@@ -101,7 +127,7 @@ def _write_star_block(
 
 
 class Starfile:
-    """A class representing data stored in .star files.
+    """A class representing data stored in a .star file.
 
     Attributes
     ----------
@@ -163,6 +189,14 @@ class Starfile:
     def __len__(self) -> int:
         """The number of particle images described by this file."""
         return self.df.shape[0]
+
+    def __eq__(self, other: Self) -> bool:
+        """Two .star files are equal if and only if they contain the same data."""
+        eq_stat = self.df.equals(other.df) and (self.relion31 == other.relion31)
+        if eq_stat and self.relion31:
+            eq_stat &= self.data_optics.equals(other.data_optics)
+
+        return eq_stat
 
     def get_optics_values(
         self, fieldname: str, dtype: Optional[np.dtype] = None

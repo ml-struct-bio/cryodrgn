@@ -40,7 +40,8 @@ from matplotlib import colors
 from matplotlib.backend_bases import Event, MouseButton
 from matplotlib.widgets import LassoSelector, RadioButtons
 from matplotlib.path import Path as PlotPath
-from scipy.spatial.transform import Rotation as RR
+from scipy.spatial import transform
+from typing import Optional, Sequence
 
 from cryodrgn import analysis, utils
 
@@ -48,6 +49,7 @@ logger = logging.getLogger(__name__)
 
 
 def add_args(parser: argparse.ArgumentParser) -> None:
+    """Specifies the command-line interface used by `cryodrgn filter`."""
     parser.add_argument(
         "outdir", type=os.path.abspath, help="experiment output directory"
     )
@@ -77,7 +79,6 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         type=str,
         help="path to a file containing previously selected indices "
         "that will be plotted at the beginning",
-        dest="plot_inds",
     )
 
 
@@ -187,7 +188,7 @@ def main(args: argparse.Namespace) -> None:
         plot_df = analysis.load_dataframe(
             z=z,
             pc=pc,
-            euler=RR.from_matrix(rot).as_euler("zyz", degrees=True),
+            euler=transform.Rotation.from_matrix(rot).as_euler("zyz", degrees=True),
             trans=trans,
             labels=kmeans_lbls,
             umap=umap,
@@ -197,7 +198,7 @@ def main(args: argparse.Namespace) -> None:
             phase=ctf_params[:, 8],
             znorm=znorm,
         )
-    # tilt-series outputs have tilt-level CTFs and poses but particle-level model
+    # Tilt-series outputs have tilt-level CTFs and poses but particle-level model
     # results, thus we ignore the former in this case for now
     else:
         plot_df = analysis.load_dataframe(
@@ -239,7 +240,7 @@ def main(args: argparse.Namespace) -> None:
                     "Enter filename to save selection (absolute, without extension): "
                 ).strip()
 
-            # saving the selected indices
+            # Saving the selected indices
             if filename:
                 selected_full_path = filename + ".pkl"
 
@@ -262,7 +263,11 @@ def main(args: argparse.Namespace) -> None:
 
 
 class SelectFromScatter:
-    def __init__(self, data_table: pd.DataFrame, pre_indices: list[int]) -> None:
+    """An interactive scatterplot for choosing particles using a lasso tool."""
+
+    def __init__(
+        self, data_table: pd.DataFrame, pre_indices: Optional[Sequence[int]] = None
+    ) -> None:
         self.data_table = data_table
         self.scatter = None
 
@@ -282,13 +287,13 @@ class SelectFromScatter:
         lax.axis("off")
         lax.set_title("choose\nx-axis", size=13)
         self.menu_x = RadioButtons(lax, labels=self.select_cols, active=0)
-        self.menu_x.on_clicked(self.choose_xaxis)
+        self.menu_x.on_clicked(self.update_xaxis)
 
         rax = self.fig.add_subplot(gs[1, 0])
         rax.axis("off")
         rax.set_title("choose\ny-axis", size=13)
         self.menu_y = RadioButtons(rax, labels=self.select_cols, active=1)
-        self.menu_y.on_clicked(self.choose_yaxis)
+        self.menu_y.on_clicked(self.update_yaxis)
 
         cax = self.fig.add_subplot(gs[:, 2])
         cax.axis("off")
@@ -297,7 +302,7 @@ class SelectFromScatter:
         self.menu_col.on_clicked(self.choose_colors)
 
         self.lasso = LassoSelector(self.main_ax, onselect=self.choose_points)
-        self.indices = pre_indices if pre_indices else list()
+        self.indices = pre_indices if pre_indices is not None else list()
         self.pik_txt = None
         self.hover_txt = None
 
@@ -365,15 +370,18 @@ class SelectFromScatter:
         plt.show(block=False)
         plt.draw()
 
-    def choose_xaxis(self, xlbl: str) -> None:
+    def update_xaxis(self, xlbl: str) -> None:
+        """When we choose a new x-axis label, we remake the plot with the new axes."""
         self.xcol = xlbl
         self.plot()
 
-    def choose_yaxis(self, ylbl: str) -> None:
+    def update_yaxis(self, ylbl: str) -> None:
+        """When we choose a new y-axis label, we remake the plot with the new axes."""
         self.ycol = ylbl
         self.plot()
 
     def choose_colors(self, colors: str) -> None:
+        """New colors necessitate clearing current selection and remaking the plot."""
         self.color_col = colors
 
         if self.color_col != "None":
@@ -391,13 +399,14 @@ class SelectFromScatter:
         self.plot()
 
     def hover_points(self, event: Event) -> None:
+        """Update the plot label listing points the mouse is currently hovering over."""
 
-        # erase any existing annotation for points hovered over
+        # Erase any existing annotation for points hovered over
         if self.hover_txt is not None and self.hover_txt.get_text():
             self.hover_txt.set_text("")
             self.fig.canvas.draw_idle()
 
-        # if hovering over the plotting region, find if we are hovering over any points
+        # If hovering over the plotting region, find if we are hovering over any points
         if event.inaxes == self.main_ax:
             cont, ix = self.scatter.contains(event)
 
@@ -406,12 +415,14 @@ class SelectFromScatter:
                     str(int(self.data_table.iloc[x]["index"])) for x in ix["ind"]
                 ]
 
+                # If there are a lot of points we are hovering over, shorten the label
                 if len(ant_lbls) > 4:
                     ant_lbls = ant_lbls[:4]
                     ant_txt = ",".join(ant_lbls) + ",..."
                 else:
                     ant_txt = ",".join(ant_lbls)
 
+                # Add the new label to the bottom-left corner and redraw the plot
                 self.hover_txt = self.main_ax.text(
                     0.01,
                     0.01,
@@ -425,10 +436,12 @@ class SelectFromScatter:
                 self.fig.canvas.draw_idle()
 
     def on_click(self, event: Event) -> None:
+        """When we click the mouse button to make a selection, we disable hover-text."""
         if hasattr(event, "button") and event.button is MouseButton.LEFT:
             self.fig.canvas.mpl_disconnect(self.handl_id)
 
     def on_release(self, event: Event) -> None:
+        """When the mouse is released after making a selection, re-enable hover-text."""
         if hasattr(event, "button") and event.button is MouseButton.LEFT:
             self.handl_id = self.fig.canvas.mpl_connect(
                 "motion_notify_event", self.hover_points

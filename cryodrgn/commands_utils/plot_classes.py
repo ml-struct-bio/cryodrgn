@@ -11,6 +11,10 @@ $ cryodrgn_utils plot_classes my_work_dir/003_train-vae 49 --labels new_classes.
 $ cryodrgn_utils plot_classes my_work_dir/003_train-vae 49 --labels new_classes.pkl \
                               --palette my_colours.pkl
 
+# Use a colour palette from the seaborn plotting package
+$ cryodrgn_utils plot_classes my_work_dir/003_train-vae 49 --labels new_classes.pkl \
+                              --palette rocket
+
 # Save plots to .svg files instead of .pngs, which will preserve resolution with scaling
 $ cryodrgn_utils plot_classes 005_train-vae 39 --labels new_classes.pkl --svg
 
@@ -46,7 +50,6 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--palette",
-        type=os.path.abspath,
         help="Path to class colours for use in plotting, "
         "or the name of a seaborn color palette",
     )
@@ -68,20 +71,39 @@ def add_args(parser: argparse.ArgumentParser) -> None:
 
 
 def main(args: argparse.Namespace) -> None:
-    cfg = (
-        os.path.join(args.traindir, "config.yaml")
-        if os.path.exists(os.path.join(args.traindir, "config.yaml"))
-        else os.path.exists(os.path.join(args.traindir, "config.pkl"))
-    )
-    cfgs = config.load(cfg)
-    print(cfgs)
-
-    if args.epoch == "-1":
+    if args.epoch == -1:
         z_file = os.path.join(args.traindir, "z.pkl")
-        outdir = os.path.join(args.traindir, "analyze")
     else:
         z_file = os.path.join(args.traindir, f"z.{args.epoch}.pkl")
+
+    if args.outdir is not None:
+        outdir = str(args.outdir)
+    elif args.epoch == -1:
+        outdir = os.path.join(args.traindir, "analyze")
+    else:
         outdir = os.path.join(args.traindir, f"analyze.{args.epoch}")
+
+    if os.path.exists(os.path.join(args.traindir, "config.yaml")):
+        cfg_file = os.path.join(args.traindir, "config.yaml")
+    elif os.path.exists(os.path.join(args.traindir, "config.pkl")):
+        cfg_file = os.path.join(args.traindir, "config.pkl")
+    else:
+        raise ValueError(
+            f"Given directory `{args.traindir}` does not appear to be a cryoDRGN "
+            "output folder as it does not contain a `config.yaml` or `config.pkl` file!"
+        )
+    cfgs = config.load(cfg_file)
+
+    if not os.path.exists(z_file):
+        if cfgs["cmd"][1] not in {"train_vae", "abinit_het"}:
+            logger.warning(
+                f"Given cryoDRGN output folder `{args.traindir}` is associated with a "
+                f"homogeneous reconstruction experiment (`cryodrgn {cfgs['cmd'][1]}`), "
+                "for which no class-based plots are currently available!"
+            )
+            exit(0)
+        else:
+            raise ValueError(f"Cannot find saved latent space embeddings `{z_file}`!")
 
     logger.info(f"Saving results to {outdir}")
     if not os.path.exists(outdir):
@@ -128,11 +150,16 @@ def main(args: argparse.Namespace) -> None:
     else:
         palette = sns.color_palette("Set1", nclasses)
 
-    def save_figure(plt, out_lbl):
+    def save_figure(out_lbl: str) -> None:
+        """Utility for saving the current figure according to the given format."""
+        plt.tight_layout()
+
         if args.svg:
             plt.savefig(os.path.join(outdir, f"{out_lbl}.svg"), format="svg")
         else:
             plt.savefig(os.path.join(outdir, f"{out_lbl}.png"), format="png")
+
+        plt.close()
 
     z_dim = z_mat.shape[1]
     if z_dim > 2:
@@ -156,12 +183,9 @@ def main(args: argparse.Namespace) -> None:
                 palette=palette,
                 height=10,
             )
-
-            g.ax_joint.set_xlabel("UMAP1")
-            g.ax_joint.set_ylabel("UMAP2")
-            plt.tight_layout()
-            save_figure(plt, "umap_kde_classes")
-            plt.close()
+            g.ax_joint.set_xlabel("UMAP1", size=23, weight="semibold")
+            g.ax_joint.set_ylabel("UMAP2", size=23, weight="semibold")
+            save_figure("umap_kde_classes")
 
         logger.info("Plotting PCA clustering densities...")
         for pc1, pc2 in combns(range(3), 2):
@@ -173,14 +197,14 @@ def main(args: argparse.Namespace) -> None:
                 palette=palette,
                 height=10,
             )
-
             g.ax_joint.set_xlabel(
-                f"PC{pc1 + 1} ({pca.explained_variance_ratio_[pc1]:.2f})"
+                f"PC{pc1 + 1} ({pca.explained_variance_ratio_[pc1]:.2f})",
+                size=23,
+                weight="semibold",
             )
             g.ax_joint.set_ylabel(
-                f"PC{pc2 + 1} ({pca.explained_variance_ratio_[pc2]:.2f})"
+                f"PC{pc2 + 1} ({pca.explained_variance_ratio_[pc2]:.2f})",
+                size=23,
+                weight="semibold",
             )
-
-            plt.tight_layout()
-            save_figure(plt, f"z_pca_kde_classes_{pc1}x{pc2}")
-            plt.close()
+            save_figure(f"z_pca_kde_classes_pc.{pc1 + 1}xpc.{pc2 + 1}")

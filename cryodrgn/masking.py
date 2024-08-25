@@ -2,10 +2,102 @@
 
 import numpy as np
 import torch
+from scipy.ndimage import distance_transform_edt, binary_dilation
 import logging
+from typing import Optional, Union
 from cryodrgn.lattice import Lattice
 
 logger = logging.getLogger(__name__)
+
+
+def spherical_window_mask(
+    vol: Optional[Union[np.ndarray, torch.Tensor]] = None,
+    *,
+    D: Optional[int] = None,
+    in_rad: float = 1.0,
+    out_rad: float = 1.0,
+) -> torch.Tensor:
+    """Create a radial mask centered within a square image with a soft or hard edge.
+
+    Given a volume or a volume's dimension, this function creates a masking array with
+    values of 1.0 for points within `in_rad` of the image's center, values of 0.0 for
+    points beyond `out_rad` of the center, and linearly-interpolated values between 0.0
+    and 1.0 for points located between the two given radii.
+
+    The default radii values create a mask circumscribed against the borders of the
+    image with a hard edge.
+
+    Arguments
+    ---------
+    vol:        A volume array to create a mask for.
+    D:          Side length of the (square) image the mask is for.
+    in_rad      Inner radius (fractional float between 0 and 1)
+                inside which all values are 1.0
+    out_rad     Outer radius (fractional float between 0 and 1)
+                beyond which all values are 0.0
+
+    Returns
+    -------
+    mask    A 2D torch.Tensor of shape (D,D) with mask values between
+            0 (masked) and 1 (unmasked) inclusive.
+
+    """
+    if (vol is None) == (D is None):
+        raise ValueError("Either `vol` or `D` must be specified!")
+    if vol is not None:
+        D = vol.shape[0]
+
+    assert D % 2 == 0
+    assert in_rad <= out_rad
+    x0, x1 = torch.meshgrid(
+        torch.linspace(-1, 1, D + 1, dtype=torch.float32)[:-1],
+        torch.linspace(-1, 1, D + 1, dtype=torch.float32)[:-1],
+    )
+    dists = (x0**2 + x1**2) ** 0.5
+
+    # Create a mask with a hard edge which goes directly from 1.0 to 0.0
+    if in_rad == out_rad:
+        mask = (dists <= out_rad).float()
+
+    # Create a mask with a soft edge between `in_rad` and `out_rad`
+    else:
+        mask = torch.minimum(
+            torch.tensor(1.0),
+            torch.maximum(torch.tensor(0.0), 1 - (dists - in_rad) / (out_rad - in_rad)),
+        )
+
+    return mask
+
+
+def cosine_dilation_mask(
+    vol: Union[np.ndarray, torch.Tensor],
+    threshold: Optional[float] = None,
+    dilation: int = 25,
+    edge_dist: int = 15,
+    apix: float = 1.0,
+) -> np.ndarray:
+    threshold = threshold or np.percentile(vol, 99.99) / 2
+    logger.info(f"A/px={apix:.5g}; Threshold={threshold:.5g}")
+
+    x = np.array(vol >= threshold).astype(bool)
+
+    if dilation:
+        dilate_val = int(dilation // apix)
+        logger.info(f"Dilate initial mask by: {dilate_val} px")
+        x = binary_dilation(x, iterations=dilate_val)
+    else:
+        logger.info("no mask dilation applied")
+
+    dist_val = edge_dist / apix
+    logger.info(f"Width of cosine edge: {dist_val} px")
+    if dist_val:
+        y = distance_transform_edt(~x.astype(bool))
+        y[y > dist_val] = dist_val
+        z = np.cos(np.pi * y / dist_val / 2)
+    else:
+        z = x
+
+    return z
 
 
 class CircularMask:

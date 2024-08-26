@@ -107,6 +107,25 @@ def test_apply_mask(trained_dir, epochs: tuple[int, int]) -> None:
     ],
     indirect=True,
 )
+def test_apply_phase_randomization(trained_dir) -> None:
+    vol_file1 = os.path.join(trained_dir.outdir, "reconstruct.1.mrc")
+    vol_file2 = os.path.join(trained_dir.outdir, "reconstruct.2.mrc")
+
+    out, err = run_command(f"cryodrgn_utils fsc {vol_file1} {vol_file2} --corrected 16")
+    assert err == ""
+    assert out.split("\n")[-3].split()[-3] == "FSC=0.5:"
+    assert out.split("\n")[-2].split()[-3] == "FSC=0.143:"
+    assert round(float(out.split("\n")[7].split()[0]), 3) == 0.167
+    assert 0.97 < float(out.split("\n")[7].split()[1]) < 0.99
+
+
+@pytest.mark.parametrize(
+    "train_dir",
+    [
+        {"dataset": "toy", "train_cmd": "train_nn", "epochs": 5, "seed": 2456},
+    ],
+    indirect=True,
+)
 @pytest.mark.parametrize("epochs", [(3, 4)])
 def test_plotting(trained_dir, epochs: tuple[int, int]) -> None:
     vol_file1 = os.path.join(trained_dir.outdir, f"reconstruct.{epochs[0]}.mrc")

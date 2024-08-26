@@ -20,7 +20,7 @@ import torch
 from typing import Optional, Tuple, Union
 from cryodrgn import fft
 from cryodrgn.source import ImageSource, StarfileSource, parse_star
-from cryodrgn.utils import window_mask
+from cryodrgn.masking import spherical_window_mask
 
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import BatchSampler, RandomSampler, SequentialSampler
@@ -53,14 +53,19 @@ class ImageDataset(torch.utils.data.Dataset):
             indices=ind,
             max_threads=max_threads,
         )
-
         ny = self.src.D
         assert ny % 2 == 0, "Image size must be even."
-
         self.N = self.src.n
         self.D = ny + 1  # after symmetrization
         self.invert_data = invert_data
-        self.window = window_mask(ny, window_r, 0.99).to(device) if window else None
+
+        if window:
+            self.window = spherical_window_mask(D=ny, in_rad=window_r, out_rad=0.99).to(
+                device
+            )
+        else:
+            self.window = None
+
         norm = norm or self.estimate_normalization()
         self.norm = [float(x) for x in norm]
         self.device = device
@@ -109,7 +114,8 @@ class ImageDataset(torch.utils.data.Dataset):
             logger.debug(f"ImageDataset returning images at index ({index})")
         else:
             logger.debug(
-                f"ImageDataset returning images for {len(index)} indices ({index[0]}..{index[-1]})"
+                f"ImageDataset returning images for {len(index)} indices:"
+                f" ({index[0]}..{index[-1]})"
             )
 
         return particles, None, index

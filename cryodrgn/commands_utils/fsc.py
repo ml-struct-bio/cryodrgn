@@ -1,10 +1,18 @@
-"""Compute Fourier shell correlation between two volumes.
+"""Compute Fourier shell correlation between two volumes, applying an optional mask.
 
 Example usage
 -------------
 $ cryodrgn_utils fsc volume1.mrc volume2.mrc
+
+# Save FSC values to file and produce an FSC plot
 $ cryodrgn_utils fsc vol1.mrc vol2.mrc -o fsc.txt -p
+
+# Also apply a mask before computing FSCs
 $ cryodrgn_utils fsc vol1.mrc vol2.mrc --mask test-mask.mrc -o fsc.txt -p fsc-plot.png
+
+# Also apply phase randomization at Fourier shells for resolutions < 10 angstroms
+$ cryodrgn_utils fsc vol1.mrc vol2.mrc --mask test-mask.mrc -o fsc.txt -p fsc-plot.png
+                                       --corrected 10
 
 """
 import os
@@ -28,6 +36,12 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "--mask",
         type=os.path.abspath,
         help="if given, apply the mask in this file before calculating FSCs",
+    )
+    parser.add_argument(
+        "--corrected",
+        type=float,
+        help="use cryoSPARC-style high resolution phase randomization beyond this "
+        "resolution to correct for possible effects of tight masking",
     )
     parser.add_argument(
         "--plot",
@@ -144,7 +158,12 @@ def main(args: argparse.Namespace) -> None:
     vol1 = ImageSource.from_file(args.volumes[0])
     vol2 = ImageSource.from_file(args.volumes[1])
     mask = ImageSource.from_file(args.mask).images() if args.mask is not None else None
-    fsc_vals = calculate_fsc(vol1.images(), vol2.images(), mask)
+
+    if args.corrected is not None:
+        if args.corrected >= 1:
+            args.corrected = (args.corrected / args.Apix) ** -1
+
+    fsc_vals = calculate_fsc(vol1.images(), vol2.images(), mask, args.corrected)
 
     if args.outtxt:
         logger.info(f"Saving FSC values to {args.outtxt}")

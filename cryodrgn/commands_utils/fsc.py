@@ -12,7 +12,7 @@ import argparse
 import logging
 import numpy as np
 import pandas as pd
-import torch
+import random
 from typing import Optional
 from cryodrgn import fft
 from cryodrgn.source import ImageSource
@@ -58,12 +58,12 @@ def add_args(parser: argparse.ArgumentParser) -> None:
 
 
 def calculate_fsc(
-    vol1: torch.Tensor, vol2: torch.Tensor, mask_file: Optional[str] = None
+    vol1: np.ndarray,
+    vol2: np.ndarray,
+    mask: Optional[np.ndarray] = None,
+    phase_randomization: Optional[float] = None,
 ) -> pd.DataFrame:
-
-    if mask_file:
-        mask = ImageSource.from_file(mask_file)
-        mask = mask.images()
+    if mask is not None:
         vol1 *= mask
         vol2 *= mask
 
@@ -71,9 +71,9 @@ def calculate_fsc(
     x = np.arange(-D // 2, D // 2)
     x2, x1, x0 = np.meshgrid(x, x, x, indexing="ij")
     coords = np.stack((x0, x1, x2), -1)
-    r = (coords**2).sum(-1) ** 0.5
+    dists = (coords**2).sum(-1) ** 0.5
+    assert dists[D // 2, D // 2, D // 2] == 0.0
 
-    assert r[D // 2, D // 2, D // 2] == 0.0
     vol1 = fft.fftn_center(vol1)
     vol2 = fft.fftn_center(vol2)
 
@@ -81,7 +81,7 @@ def calculate_fsc(
     prev_mask = np.zeros((D, D, D), dtype=bool)
     fsc = [1.0]
     for i in range(1, D // 2):
-        mask = r < i
+        mask = dists < i
         shell = np.where(mask & np.logical_not(prev_mask))
         v1 = vol1[shell]
         v2 = vol2[shell]
@@ -89,28 +89,64 @@ def calculate_fsc(
         fsc.append(float(p.real))
         prev_mask = mask
 
+    if phase_randomization is not None:
+        phase_D = int(phase_randomization * D)
+        phase_mask = dists > phase_D
+        phase_inds = list(range(phase_mask.sum()))
+        random.shuffle(phase_inds)
+        vol1[phase_mask] = vol1[phase_mask][phase_inds]
+        random.shuffle(phase_inds)
+        vol2[phase_mask] = vol2[phase_mask][phase_inds]
+
+        for i in range(1, D // 2):
+            mask = dists < i
+            shell = np.where(mask & np.logical_not(prev_mask))
+
+            if i > phase_D:
+                v1 = vol1[shell]
+                v2 = vol2[shell]
+                p = float(
+                    (np.vdot(v1, v2) / (np.vdot(v1, v1) * np.vdot(v2, v2)) ** 0.5).real
+                )
+                if not np.isnan(p) and p < 1.0:
+                    fsc[i - 1] = (fsc[i - 1] - p) / (1 - p)
+
+            prev_mask = mask
+
     return pd.DataFrame(dict(pixres=np.arange(D // 2) / D, fsc=fsc), dtype=float)
 
 
-def print_fsc(fsc_vals: pd.DataFrame, apix: float) -> None:
+def get_fsc_thresholds(
+    fsc_vals: pd.DataFrame, apix: float, verbose: bool = True
+) -> tuple[float, float]:
     if ((fsc_vals.pixres > 0) & (fsc_vals.fsc >= 0.5)).any():
-        res = fsc_vals.pixres[fsc_vals.fsc >= 0.5].max()
-        logger.info("res @ FSC=0.5: {:.4g} ang".format((1 / res) * apix))
+        res_05 = fsc_vals.pixres[fsc_vals.fsc >= 0.5].max()
+        if verbose:
+            logger.info("res @ FSC=0.5: {:.4g} ang".format((1 / res_05) * apix))
     else:
-        logger.warning("res @ FSC=0.5: N/A")
+        res_05 = None
+        if verbose:
+            logger.warning("res @ FSC=0.5: N/A")
 
     if ((fsc_vals.pixres > 0) & (fsc_vals.fsc >= 0.143)).any():
-        res = fsc_vals.pixres[fsc_vals.fsc >= 0.143].max()
-        logger.info("res @ FSC=0.143: {:.4g} ang".format((1 / res) * apix))
+        res_143 = fsc_vals.pixres[fsc_vals.fsc >= 0.143].max()
+        if verbose:
+            logger.info("res @ FSC=0.143: {:.4g} ang".format((1 / res_143) * apix))
     else:
-        logger.warning("res @ FSC=0.143: N/A")
+        res_143 = None
+        if verbose:
+            logger.warning("res @ FSC=0.143: N/A")
+
+    return res_05, res_143
 
 
 def main(args):
     vol1 = ImageSource.from_file(args.volumes[0])
     vol2 = ImageSource.from_file(args.volumes[1])
-    fsc_vals = calculate_fsc(vol1.images(), vol2.images(), args.mask)
+    if args.mask is not None:
+        mask = ImageSource.from_file(args.mask).images()
 
+    fsc_vals = calculate_fsc(vol1.images(), vol2.images(), mask)
     if args.outtxt:
         logger.info(f"Saving FSC values to {args.outtxt}")
         fsc_vals.to_csv(args.outtxt, sep=" ", index=False)
@@ -118,7 +154,7 @@ def main(args):
         fsc_str = fsc_vals.round(4).to_csv(sep="\t", index=False)
         logger.info(f"\n{fsc_str}")
 
-    print_fsc(fsc_vals, args.Apix)
+    _ = get_fsc_thresholds(fsc_vals, args.Apix)
 
     if args.plot:
         if isinstance(args.plot, bool):

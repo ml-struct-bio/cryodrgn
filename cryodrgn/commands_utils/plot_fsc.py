@@ -29,13 +29,14 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def plot_fsc_vals(fsc_arr: pd.DataFrame, label):
-    plot_args = dict(linewidth=3.1, alpha=0.81)
+def plot_fsc_vals(fsc_arr: pd.DataFrame, label, **plot_args):
+    plotting_args = dict(linewidth=3.1, alpha=0.81)
+    plotting_args.update(**plot_args)
 
     if "pixres" in fsc_arr.columns:
-        plt.plot(fsc_arr.pixres, fsc_arr.fsc, label=label, **plot_args)
+        plt.plot(fsc_arr.pixres, fsc_arr.fsc, label=label, **plotting_args)
     elif fsc_arr.shape[1] == 1:
-        plt.plot(fsc_arr.iloc[:, 0], label=label, **plot_args)
+        plt.plot(fsc_arr.iloc[:, 0], label=label, **plotting_args)
     else:
         raise ValueError(f"Unrecognized format for fsc_arr:\n{fsc_arr}!")
 
@@ -50,7 +51,7 @@ def create_fsc_plot(
 
     if isinstance(fsc_vals, dict):
         for plt_lbl, fsc_array in fsc_vals.items():
-            plot_fsc_vals(fsc_array, plt_lbl)
+            plot_fsc_vals(fsc_array, plt_lbl, linewidth=0.8 + 2.3 / len(dict))
 
     elif isinstance(fsc_vals, (np.ndarray, pd.DataFrame)):
         plot_fsc_vals(fsc_vals, "")

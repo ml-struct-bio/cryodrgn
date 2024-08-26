@@ -8,7 +8,6 @@ import numpy as np
 import torch
 from itertools import product
 from cryodrgn.source import ImageSource
-from cryodrgn.starfile import Starfile
 from cryodrgn.commands import parse_ctf_star
 from cryodrgn.commands_utils import filter_star, write_cs, write_star
 
@@ -184,20 +183,47 @@ class TestParseCTFWriteStar:
 
         return odir
 
-    @pytest.mark.parametrize("particles", ["toy.star", "toy.star-13"], indirect=True)
-    def test_parse_ctf_star(self, tmpdir_factory, particles, datadir):
+    @pytest.mark.parametrize(
+        "particles, resolution, apix",
+        [
+            ("toy.star", 300, 1.035),
+            ("toy.star-13", 160, 2.86),
+            pytest.param(
+                "toy-star",
+                200,
+                None,
+                marks=pytest.mark.xfail(raises=ValueError, reason="no A/px available!"),
+            ),
+            pytest.param(
+                "toy-star-13",
+                None,
+                2.86,
+                marks=pytest.mark.xfail(
+                    raises=ValueError, reason="no resolution available!"
+                ),
+            ),
+        ],
+        indirect=["particles"],
+    )
+    def test_parse_ctf_star(self, tmpdir_factory, particles, datadir, resolution, apix):
         outdir = self.get_outdir(tmpdir_factory, particles, datadir)
-        in_src = ImageSource.from_file(particles.path, lazy=False, datadir=datadir.path)
-        out_fl = os.path.join(
-            outdir, f"ctf_{os.path.splitext(os.path.basename(particles.path))[0]}.pkl"
-        )
+        out_lbl = os.path.splitext(os.path.basename(particles.path))[0]
+        if resolution is not None:
+            out_lbl += "_{}".format(resolution)
+        if apix is not None:
+            out_lbl += "_{}".format(apix)
 
+        out_fl = os.path.join(outdir, f"ctf_{out_lbl}.pkl")
+        in_src = ImageSource.from_file(particles.path, lazy=False, datadir=datadir.path)
         parser = argparse.ArgumentParser()
         parse_ctf_star.add_args(parser)
-        args = parser.parse_args(
-            [particles.path, "-o", out_fl, "-D", "300", "--Apix", "1.035"]
-        )
-        parse_ctf_star.main(args)
+        args = [particles.path, "-o", out_fl]
+        if resolution is not None:
+            args += ["-D", str(resolution)]
+        if apix is not None:
+            args += ["--Apix", str(apix)]
+
+        parse_ctf_star.main(parser.parse_args(args))
 
         # The ctf pkl file has N rows and 9 columns
         #   D, Apix, _rlnDefocusU, _rlnDefocusV, _rlnDefocusAngle, _rlnVoltage,
@@ -206,14 +232,14 @@ class TestParseCTFWriteStar:
             out_ctf = pickle.load(f)
 
         assert out_ctf.shape == (in_src.n, 9)
-        assert np.allclose(out_ctf[:, 0], 300)  # D
-        assert np.allclose(out_ctf[:, 1], 1.035)  # Apix
+        assert np.allclose(out_ctf[:, 0], resolution)  # D
+        assert np.allclose(out_ctf[:, 1], apix)  # Apix
 
     @pytest.mark.parametrize("particles", ["toy.star"], indirect=True)
     def test_write_star_from_mrcs(self, tmpdir_factory, particles, datadir):
         outdir = self.get_outdir(tmpdir_factory, particles, datadir)
         out_fl = os.path.join(outdir, "written.star")
-        parsed_ctf = os.path.join(outdir, "ctf_toy_projections.pkl")
+        parsed_ctf = os.path.join(outdir, "ctf_toy_projections_300_1.035.pkl")
         assert os.path.exists(parsed_ctf), "Upstream tests have failed!"
 
         in_imgs = ImageSource.from_file(
@@ -271,66 +297,6 @@ class TestParseCTFWriteStar:
             assert out_src.data_optics is None
         else:
             assert out_src.data_optics.shape == in_src.data_optics.shape
-
-        os.remove(out_fl)
-
-    @pytest.mark.parametrize("particles", ["toy.star"], indirect=True)
-    @pytest.mark.parametrize(
-        "use_relion30", [False, True], ids=("relion3.1", "relion3.0")
-    )
-    def test_write_new_datadir(self, tmpdir_factory, particles, datadir, use_relion30):
-        outdir = self.get_outdir(tmpdir_factory, particles, datadir)
-        out_fl = os.path.join(outdir, "new-datadir.star")
-        in_sfile = Starfile(particles.path)
-
-        parser = argparse.ArgumentParser()
-        write_star.add_args(parser)
-        args = [particles.path, "-o", out_fl, "--datadir", "toy"]
-        if use_relion30:
-            args += ["--relion30"]
-
-        write_star.main(parser.parse_args(args))
-        out_sfile = Starfile(out_fl)
-        assert in_sfile.df.shape[0] == out_sfile.df.shape[0]
-
-        if use_relion30 or in_sfile.data_optics is None:
-            assert not out_sfile.relion31
-        else:
-            assert out_sfile.data_optics.shape == in_sfile.data_optics.shape
-
-        for i in range(out_sfile.df.shape[0]):
-            filename = out_sfile.df["__mrc_filepath"][i]
-            assert (
-                os.path.basename(filename)
-                == in_sfile.df["_rlnImageName"][i].split("@")[1]
-            )
-            assert os.path.dirname(filename) == os.path.abspath("toy")
-
-        parser2 = argparse.ArgumentParser()
-        write_star.add_args(parser2)
-        out_fl2 = os.path.join(outdir, "new-datadir2.star")
-        args2 = [out_fl, "-o", out_fl2, "--datadir", os.path.join("another", "toy")]
-        if use_relion30:
-            args2 += ["--relion30"]
-
-        write_star.main(parser.parse_args(args2))
-        out_sfile2 = Starfile(out_fl2)
-        assert in_sfile.df.shape[0] == out_sfile2.df.shape[0]
-
-        if use_relion30 or in_sfile.data_optics is None:
-            assert not out_sfile2.relion31
-        else:
-            assert out_sfile2.data_optics.shape == in_sfile.data_optics.shape
-
-        for i in range(out_sfile2.df.shape[0]):
-            filename = out_sfile2.df["__mrc_filepath"][i]
-            assert (
-                os.path.basename(filename)
-                == in_sfile.df["_rlnImageName"][i].split("@")[1]
-            )
-            assert os.path.dirname(filename) == os.path.abspath(
-                os.path.join("another", "toy")
-            )
 
         os.remove(out_fl)
 

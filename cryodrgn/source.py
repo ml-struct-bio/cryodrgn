@@ -358,26 +358,30 @@ class MRCFileSource(ImageSource):
         tgt_indices: Optional[np.ndarray] = None,
         require_contiguous: bool = False,
     ) -> np.ndarray:
-        with open(self.mrcfile_path) as f:
-            if data is None:
-                data = np.zeros((len(indices), self.D, self.D), dtype=self.dtype)
-                assert (
-                    tgt_indices is None
-                ), "Target indices can only be specified when passing in a pre-allocated array"
-                tgt_indices = np.arange(len(indices))
+        if data is None:
+            data = np.zeros((len(indices), self.D, self.D), dtype=self.dtype)
+            if tgt_indices is not None:
+                raise ValueError(
+                    "Target indices can only be specified when passing "
+                    "in a pre-allocated array using `data`!"
+                )
+            tgt_indices = np.arange(len(indices))
+        else:
+            if tgt_indices is not None:
+                if len(tgt_indices) != len(indices):
+                    raise ValueError(
+                        f"`indices` ({len(indices)}) and `tgt_indices` "
+                        f"({len(tgt_indices)}) length mismatch!"
+                    )
             else:
-                if tgt_indices is not None:
-                    assert len(tgt_indices) == len(
-                        indices
-                    ), "indices/tgt_indices length mismatch"
-                else:
-                    tgt_indices = np.arange(len(indices))
+                tgt_indices = np.arange(len(indices))
 
-            assert isinstance(tgt_indices, np.ndarray)
-            is_contiguous = np.all(indices == indices[0] + np.arange(len(indices)))
-            if require_contiguous:
-                assert is_contiguous, "MRC indices are not contiguous."
+        assert isinstance(tgt_indices, np.ndarray)
+        is_contiguous = np.all(indices == indices[0] + np.arange(len(indices)))
+        if require_contiguous and not is_contiguous:
+            raise ValueError("MRC indices are not contiguous!")
 
+        with open(self.mrcfile_path) as f:
             if is_contiguous:
                 f.seek(self.start)
                 offset = indices[0] * self.stride
@@ -410,14 +414,14 @@ class MRCFileSource(ImageSource):
 
     @property
     def apix(self) -> float:
-        return self.header.get_apix()
+        return self.header.apix
 
 
 class MRCDataFrameSource(ImageSource):
     """Base class for image stacks saved across a collection of .mrc/.mrcs files.
 
     These stacks use a single file as a reference to a collection of .mrc/.mrcs files
-    storing the actual data, such as .star, .cs, and .txt files.
+    storing the actual data. Examples include .star, .cs, and .txt files.
 
     Attributes
     ----------
@@ -502,22 +506,27 @@ class MRCDataFrameSource(ImageSource):
         """Get the complete path to an image stack using `self.datadir` if necessary.
 
         This function is used for operations such as getting the `__mrc_filepath` field
-        from `__mrc_filename`. We prepend `self.datadir` to the given file name if this
-        object has one defined, otherwise we just use the filename itself. We replace
-        the directory path of the given file only if `self.datadir` is defined and
-        doesn't match the directory path of the file, and we only prepend if the file
-        is given as a relative path!
+        from `__mrc_filename`. We first try appending the stack's full file path to the
+        datadir; if that path does not yield an extant file we try again by appending
+        just the stack's file name to the datadir before throwing an error. This second
+        approach is for cases where the image stack path contains a directory structure
+        leftover from processing.
 
         """
         newname = (
             os.path.abspath(filename) if os.path.isabs(filename) else str(filename)
         )
         if self.datadir is not None:
-            if os.path.isabs(newname):
-                if os.path.commonprefix([newname, self.datadir]) != self.datadir:
-                    newname = os.path.join(self.datadir, os.path.basename(newname))
-            else:
+            if os.path.exists(newname):
+                pass
+            elif os.path.exists(os.path.join(self.datadir, newname)):
                 newname = os.path.join(self.datadir, newname)
+            elif os.path.exists(os.path.join(self.datadir, os.path.basename(newname))):
+                newname = os.path.join(self.datadir, os.path.basename(newname))
+            else:
+                raise ValueError(
+                    f"Cannot find file `{newname}` under `{self.datadir=}`!"
+                )
 
         return newname
 

@@ -140,13 +140,12 @@ def get_fsc_thresholds(
     return res_05, res_143
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
     vol1 = ImageSource.from_file(args.volumes[0])
     vol2 = ImageSource.from_file(args.volumes[1])
-    if args.mask is not None:
-        mask = ImageSource.from_file(args.mask).images()
-
+    mask = ImageSource.from_file(args.mask).images() if args.mask is not None else None
     fsc_vals = calculate_fsc(vol1.images(), vol2.images(), mask)
+
     if args.outtxt:
         logger.info(f"Saving FSC values to {args.outtxt}")
         fsc_vals.to_csv(args.outtxt, sep=" ", index=False)

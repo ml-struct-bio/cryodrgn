@@ -1,5 +1,13 @@
-"""Lattice object"""
+"""Lattices used to represent spatial co-ordinates in reconstruction methods.
 
+Example usage
+-------------
+> from cryodrgn.lattice import Lattice
+> lattice = Lattice(D, extent=D // 2, device=device)
+# get a circular mask circumscribed within this co-ordinate box
+> mask = lattice.get_circular_mask(D // 2)
+
+"""
 import numpy as np
 import torch
 import torch.nn.functional as F

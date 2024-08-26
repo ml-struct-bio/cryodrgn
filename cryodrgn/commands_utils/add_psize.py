@@ -26,6 +26,6 @@ def main(args: argparse.Namespace) -> None:
     assert args.o.endswith(".mrc"), "Output volume must be .mrc file"
 
     vol, header = parse_mrc(args.input)
-    header.update_apix(args.Apix)
+    header.apix = args.Apix
     write_mrc(args.o, vol, header=header)
     logger.info(f"Wrote {args.o}")

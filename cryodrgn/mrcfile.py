@@ -208,21 +208,25 @@ class MRCHeader:
         fh.write(buf)
         fh.write(self.extended_header)
 
-    def get_apix(self) -> float:
+    @property
+    def apix(self) -> float:
         return self.fields["xlen"] / self.fields["nx"]
 
-    def update_apix(self, Apix: float) -> float:
-        self.fields["xlen"] = self.fields["nx"] * Apix
-        self.fields["ylen"] = self.fields["ny"] * Apix
-        self.fields["zlen"] = self.fields["nz"] * Apix
+    @apix.setter
+    def apix(self, value: float) -> None:
+        self.fields["xlen"] = self.fields["nx"] * value
+        self.fields["ylen"] = self.fields["ny"] * value
+        self.fields["zlen"] = self.fields["nz"] * value
 
-    def get_origin(self):
+    @property
+    def origin(self) -> tuple[float, float, float]:
         return self.fields["xorg"], self.fields["yorg"], self.fields["zorg"]
 
-    def update_origin(self, xorg, yorg, zorg):
-        self.fields["xorg"] = xorg
-        self.fields["yorg"] = yorg
-        self.fields["zorg"] = zorg
+    @origin.setter
+    def origin(self, value: tuple[float, float, float]) -> None:
+        self.fields["xorg"] = value[0]
+        self.fields["yorg"] = value[1]
+        self.fields["zorg"] = value[2]
 
 
 def parse_mrc(fname: str) -> Tuple[np.ndarray, MRCHeader]:

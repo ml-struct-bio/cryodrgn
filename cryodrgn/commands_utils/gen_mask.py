@@ -1,4 +1,4 @@
-"""Automated generation of masking filters for 3D volumes.
+"""Creating masking filters for 3D volumes using threshold dilation with a cosine edge.
 
 Example usage
 -------------
@@ -59,15 +59,16 @@ def add_args(parser: argparse.ArgumentParser) -> None:
 
 def main(args: argparse.Namespace) -> None:
     vol, header = parse_mrc(args.input)
-    apix = args.Apix or header.get_apix()
+    apix = args.Apix or header.apix
 
     mask = cosine_dilation_mask(
         vol,
-        threshold=args.treshold,
+        threshold=args.threshold,
         dilation=args.dilate,
         edge_dist=args.dist,
         apix=apix,
     )
+    header.apix = apix
     write_mrc(args.output, mask.astype(np.float32), header=header)
 
     if args.png_output:

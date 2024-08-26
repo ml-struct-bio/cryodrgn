@@ -42,6 +42,9 @@ def relion31_mrcs():
 @pytest.mark.parametrize(
     "indices", [None, "just-5"], indirect=True, ids=("no-ind", "with-ind")
 )
+@pytest.mark.parametrize(
+    "full_path", [False, True], ids=("no-full-paths", "full-paths")
+)
 @pytest.mark.parametrize("use_relion30", [False, True], ids=("relion3.1", "relion3.0"))
 class TestBasic:
     @pytest.mark.parametrize(
@@ -54,7 +57,16 @@ class TestBasic:
         ids=("hand", "toy"),
     )
     def test_from_mrcs(
-        self, tmpdir, particles, ctf, poses, use_ctf, use_poses, indices, use_relion30
+        self,
+        tmpdir,
+        particles,
+        ctf,
+        poses,
+        use_ctf,
+        use_poses,
+        indices,
+        use_relion30,
+        full_path,
     ):
         parser = argparse.ArgumentParser()
         write_star.add_args(parser)
@@ -68,6 +80,8 @@ class TestBasic:
             args += ["--ind", indices.path]
         if use_relion30:
             args += ["--relion30"]
+        if full_path:
+            args += ["--full-path"]
 
         write_star.main(parser.parse_args(args))
         assert os.path.exists(os.path.join(tmpdir, "out.star"))
@@ -87,7 +101,11 @@ class TestBasic:
         for i, star_name in enumerate(stardata.df["_rlnImageName"].tolist()):
             file_idx, file_name = star_name.split("@")
             assert int(file_idx) == ind[i] + 1
-            assert os.path.basename(file_name) == os.path.basename(particles.path)
+
+            if full_path:
+                assert file_name == os.path.abspath(particles.path)
+            else:
+                assert os.path.abspath(file_name) == os.path.abspath(particles.path)
 
     @pytest.mark.parametrize(
         "particles, ctf, poses",
@@ -98,7 +116,16 @@ class TestBasic:
         ids=("hand",),
     )
     def test_from_txt(
-        self, tmpdir, particles, ctf, poses, use_ctf, use_poses, indices, use_relion30
+        self,
+        tmpdir,
+        particles,
+        ctf,
+        poses,
+        use_ctf,
+        use_poses,
+        indices,
+        use_relion30,
+        full_path,
     ):
         parser = argparse.ArgumentParser()
         write_star.add_args(parser)
@@ -112,6 +139,8 @@ class TestBasic:
             args += ["--ind", indices.path]
         if use_relion30:
             args += ["--relion30"]
+        if full_path:
+            args += ["--full-path"]
 
         write_star.main(parser.parse_args(args))
         assert os.path.exists(os.path.join(tmpdir, "out.star"))
@@ -119,9 +148,16 @@ class TestBasic:
         ind = cryodrgn.utils.load_pkl(indices.path) if indices.path else None
         particle_data = ImageSource.from_file(particles.path, indices=ind)
         ind = list(range((particle_data.n))) if ind is None else ind
-        stardata = StarfileSource(os.path.join(tmpdir, "out.star"))
-        assert stardata.df.shape[0] == particle_data.n
 
+        if full_path:
+            stardata = StarfileSource(os.path.join(tmpdir, "out.star"))
+        else:
+            stardata = StarfileSource(
+                os.path.join(tmpdir, "out.star"),
+                datadir=os.path.dirname(particles.path),
+            )
+
+        assert stardata.df.shape[0] == particle_data.n
         if use_relion30:
             assert stardata.data_optics is None
         else:
@@ -131,9 +167,20 @@ class TestBasic:
         for i, star_name in enumerate(stardata.df["_rlnImageName"].tolist()):
             file_idx, file_name = star_name.split("@")
             assert int(file_idx) == ind[i] + 1
-            assert file_name == os.path.basename(
-                particle_data.df.loc[ind[i], "__mrc_filename"]
-            )
+
+            if full_path:
+                assert file_name == os.path.abspath(
+                    os.path.join(
+                        os.path.dirname(particles.path),
+                        os.path.basename(
+                            particle_data.df.loc[ind[i], "__mrc_filename"]
+                        ),
+                    )
+                )
+            else:
+                assert file_name == os.path.basename(
+                    particle_data.df.loc[ind[i], "__mrc_filename"]
+                )
 
 
 @pytest.mark.parametrize(

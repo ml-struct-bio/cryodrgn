@@ -2,15 +2,21 @@
 
 Example usage
 -------------
+# If using a .mrcs or .txt stack, you must provide an additional CTF file
 $ cryodrgn_utils write_star particles.128.mrcs -o particles.128.star --ctf ctf.pkl
 
-# Also add particle pose data, and filter final output by given particle index
-$ cryodrgn_utils write_star particles.128.mrcs -o particles.128.star \
-                            --ctf ctf.pkl --poses pose.pkl --ind good-ind.pkl
+# You can also add particle pose data, and filter final output by given particle index
+$ cryodrgn_utils write_star particles.128.mrcs -o particles.128.star --ctf ctf.pkl \
+                            --poses pose.pkl --ind good-ind.pkl
 
 # Can be used to filter a particle stack that is already a .star file, no CTF needed
-$ cryodrgn_utils write_star particles.128.star \
-                            -o particles.128_good.star --ind good-ind.pkl
+$ cryodrgn_utils write_star particles.128.star -o particles.128_good.star \
+                            --ind good-ind.pkl
+
+# If using a .txt stack, you can use `--full-path` to avoid needing to specify
+# any `--datadir` when using the new .star stack
+$ cryodrgn_utils write_star particles.256.txt -o particles.256.star --ctf ctf.pkl \
+                            --full-path
 
 """
 import argparse
@@ -36,7 +42,6 @@ CTF_HEADERS = [
     "_rlnAmplitudeContrast",
     "_rlnPhaseShift",
 ]
-
 POSE_HDRS = [
     "_rlnAngleRot",
     "_rlnAngleTilt",
@@ -85,8 +90,8 @@ def main(args: argparse.Namespace) -> None:
         ".star",
     ), "Input file must be .mrcs/.txt/.star"
 
-    # Either accept an input star file,
-    # or an input .mrcs/.txt with optional ctf/pose pkl file(s)
+    # Either accept an input star file, or an input .mrcs/.txt with CTF .pkl
+    # and an optional pose .pkl file(s)
     ctf = poses = eulers = trans = None
     if input_ext == ".star":
         if args.poses is not None:
@@ -104,6 +109,7 @@ def main(args: argparse.Namespace) -> None:
             raise ValueError("--ctf must be specified when input is not a starfile!")
 
     particles = ImageSource.from_file(args.particles, lazy=True, datadir=args.datadir)
+    logger.info(f"{len(particles)} particles in {args.particles}")
 
     if args.ctf:
         ctf = utils.load_pkl(args.ctf)
@@ -125,7 +131,7 @@ def main(args: argparse.Namespace) -> None:
                 f"Number of particles != number of poses"
             )
 
-    logger.info(f"{len(particles)} particles in {args.particles}")
+    # load the particle filter if given and apply it to the CTF and poses data
     ind = np.arange(particles.n)
     if args.ind:
         ind = utils.load_pkl(args.ind)
@@ -143,23 +149,30 @@ def main(args: argparse.Namespace) -> None:
 
     # When the input is not a .star file, we have to create the data table fields
     else:
+        base_dir = os.path.dirname(os.path.abspath(args.particles))
+
         if input_ext == ".txt":
             with open(args.particles, "r") as f:
                 mrcs_files = f.read().splitlines()
 
-            base = os.path.dirname(os.path.abspath(args.particles))
             counts = [
-                MRCHeader.parse(os.path.join(base, f)).fields["nz"] for f in mrcs_files
+                MRCHeader.parse(os.path.join(base_dir, f)).fields["nz"]
+                for f in mrcs_files
             ]
             ind_lbls = np.concatenate([np.arange(count) for count in counts])[ind] + 1
             image_names = np.repeat(mrcs_files, counts)[ind]
-
         else:
             ind_lbls = [str(i + 1) for i in ind]
             image_names = particles.filenames[ind]
 
         if args.full_path:
-            image_names = [os.path.abspath(image_name) for image_name in image_names]
+            image_names = [
+                os.path.abspath(
+                    os.path.join(os.path.dirname(args.particles), image_name)
+                )
+                for image_name in image_names
+            ]
+
         names = [f"{lbl}@{name}" for lbl, name in zip(ind_lbls, image_names)]
 
         # convert poses

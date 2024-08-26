@@ -45,13 +45,14 @@ def create_fsc_plot(
     fsc_vals: Union[pd.DataFrame, dict[str, pd.DataFrame]],
     outfile: Optional[str] = None,
     Apix: float = 1.0,
+    title: Optional[str] = None,
 ) -> None:
     # Create a subplot
     fig, ax = plt.subplots(figsize=(10, 5))
 
     if isinstance(fsc_vals, dict):
         for plt_lbl, fsc_array in fsc_vals.items():
-            plot_fsc_vals(fsc_array, plt_lbl, linewidth=0.8 + 2.3 / len(dict))
+            plot_fsc_vals(fsc_array, plt_lbl, linewidth=0.9 + 3.5 / len(fsc_vals))
 
     elif isinstance(fsc_vals, (np.ndarray, pd.DataFrame)):
         plot_fsc_vals(fsc_vals, "")
@@ -73,7 +74,8 @@ def create_fsc_plot(
     plt.xlabel("Spatial frequency", size=14)
     plt.ylabel("Fourier shell correlation", size=14)
 
-    plt.grid(True)
+    plt.axhline(y=0.143, color="b", linewidth=1.4)
+    plt.grid(True, linewidth=0.7, color="0.5", alpha=0.33)
     plt.xticks(size=10)
     plt.yticks(size=10)
     plt.ylim(0, 1.0)
@@ -81,6 +83,9 @@ def create_fsc_plot(
     ax.set_aspect(0.3)  # Set the aspect ratio on the plot specifically
     plt.tight_layout()
     plt.subplots_adjust(right=0.8)
+
+    if title:
+        plt.title(title)
 
     # Create the legend on the figure, not the plot
     if isinstance(fsc_vals, dict):

@@ -29,8 +29,9 @@ import logging
 
 from cryodrgn import ctf, dataset, fft, utils
 from cryodrgn.lattice import Lattice
+from cryodrgn.masking import spherical_window_mask, cosine_dilation_mask
 from cryodrgn.pose import PoseTracker
-from cryodrgn.commands_utils.fsc import calculate_fsc, print_fsc
+from cryodrgn.commands_utils.fsc import calculate_fsc, get_fsc_thresholds
 from cryodrgn.commands_utils.plot_fsc import create_fsc_plot
 from cryodrgn.source import write_mrc
 
@@ -53,7 +54,7 @@ def add_args(parser):
         help="CTF parameters (.pkl) for phase flipping images",
     )
     parser.add_argument(
-        "-o", type=os.path.abspath, required=True, help="Output .mrc file"
+        "--outfile", "-o", type=os.path.abspath, required=True, help="Output .mrc file"
     )
     parser.add_argument(
         "--no-half-maps",
@@ -157,7 +158,9 @@ def add_slice(volume, counts, ff_coord, ff, D, ctf_mul):
     add_for_corner(xc, yc, zc)
 
 
-def regularize_volume(volume, counts, reg_weight):
+def regularize_volume(
+    volume: torch.Tensor, counts: torch.Tensor, reg_weight: float
+) -> torch.Tensor:
     regularized_counts = counts + reg_weight * counts.mean()
     regularized_counts *= counts.mean() / regularized_counts.mean()
     reg_volume = volume / regularized_counts
@@ -166,12 +169,12 @@ def regularize_volume(volume, counts, reg_weight):
 
 
 def main(args):
-    if not args.o.endswith(".mrc"):
-        raise ValueError(f"Output file {args.o} does not end with .mrc!")
+    if not args.outfile.endswith(".mrc"):
+        raise ValueError(f"Output file {args.outfile} does not end with .mrc!")
 
     t1 = time.time()
     logger.info(args)
-    os.makedirs(os.path.dirname(args.o), exist_ok=True)
+    os.makedirs(os.path.dirname(args.outfile), exist_ok=True)
 
     # set the device
     use_cuda = torch.cuda.is_available()
@@ -239,7 +242,7 @@ def main(args):
     Apix = float(ctf_params[0, 0]) if ctf_params is not None else 1.0
     voltage = float(ctf_params[0, 4]) if ctf_params is not None else None
     data.voltage = voltage
-    mask = lattice.get_circular_mask(D // 2)
+    lattice_mask = lattice.get_circular_mask(D // 2)
     iterator = range(min(args.first, Nimg)) if args.first else range(Nimg)
 
     if args.tilt:
@@ -264,12 +267,12 @@ def main(args):
         assert isinstance(ff, tuple)
 
         ff = ff[0].to(device)
-        ff = ff.view(-1)[mask]
+        ff = ff.view(-1)[lattice_mask]
         ctf_mul = 1
 
         if ctf_params is not None:
             freqs = lattice.freqs2d / ctf_params[ii, 0]
-            c = ctf.compute_ctf(freqs, *ctf_params[ii, 1:]).view(-1)[mask]
+            c = ctf.compute_ctf(freqs, *ctf_params[ii, 1:]).view(-1)[lattice_mask]
 
             if args.ctf_alg == "flip":
                 ff *= c.sign()
@@ -277,16 +280,18 @@ def main(args):
                 ctf_mul = c
 
         if t is not None:
-            ff = lattice.translate_ht(ff.view(1, -1), t.view(1, 1, 2), mask).view(-1)
+            ff = lattice.translate_ht(
+                ff.view(1, -1), t.view(1, 1, 2), lattice_mask
+            ).view(-1)
 
         if args.tilt:
             tilt_idxs = torch.tensor([ii]).to(device)
             dose_filters = data.get_dose_filters(tilt_idxs, lattice, ctf_params[ii, 0])[
                 0
             ]
-            ctf_mul *= dose_filters[mask]
+            ctf_mul *= dose_filters[lattice_mask]
 
-        ff_coord = lattice.coords[mask] @ r
+        ff_coord = lattice.coords[lattice_mask] @ r
         add_slice(volume_full, counts_full, ff_coord, ff, D, ctf_mul)
 
         if args.half_maps:
@@ -306,25 +311,70 @@ def main(args):
     counts_half2[counts_half2 == 0] = 1
 
     if args.output_sumcount:
-        write_mrc(args.o + ".sums", volume_full.cpu().numpy(), Apix=Apix)
-        write_mrc(args.o + ".counts", counts_full.cpu().numpy(), Apix=Apix)
+        write_mrc(args.outfile + ".sums", volume_full.cpu().numpy(), Apix=Apix)
+        write_mrc(args.outfile + ".counts", counts_full.cpu().numpy(), Apix=Apix)
 
     volume_full = regularize_volume(volume_full, counts_full, args.reg_weight)
-    out_path = os.path.splitext(args.o)[0]
-    write_mrc(args.o, np.array(volume_full).astype("float32"), Apix=Apix)
+    out_path = os.path.splitext(args.outfile)[0]
+    write_mrc(args.outfile, np.array(volume_full).astype("float32"), Apix=Apix)
 
     # create the half-maps, calculate the FSC curve between them, and save both to file
     if args.half_maps:
         volume_half1 = regularize_volume(volume_half1, counts_half1, args.reg_weight)
         volume_half2 = regularize_volume(volume_half2, counts_half2, args.reg_weight)
-        fsc_vals = calculate_fsc(volume_half1, volume_half2)
+
+        # cryoSPARC defaults for masks used in gold-standard FSC
+        masks = {
+            "No Mask": None,
+            "Spherical": spherical_window_mask(D=D - 1),
+            "Loose": cosine_dilation_mask(
+                volume_full, dilation=25, edge_dist=15, apix=Apix
+            ),
+            "Tight": cosine_dilation_mask(
+                volume_full, dilation=6, edge_dist=6, apix=Apix
+            ),
+        }
+        fsc_vals = {
+            mask_lbl: calculate_fsc(volume_half1, volume_half2, mask=mask)
+            for mask_lbl, mask in masks.items()
+        }
+        fsc_thresh = {
+            mask_lbl: get_fsc_thresholds(fsc_df, Apix, verbose=False)[1]
+            for mask_lbl, fsc_df in fsc_vals.items()
+        }
+
+        if fsc_thresh["Tight"] is not None:
+            fsc_vals["Corrected"] = calculate_fsc(
+                volume_half1,
+                volume_half2,
+                mask=masks["Tight"],
+                phase_randomization=0.75 * fsc_thresh["Tight"],
+            )
+            fsc_thresh["Corrected"] = get_fsc_thresholds(
+                fsc_vals["Corrected"], Apix, verbose=False
+            )[1]
+        else:
+            fsc_vals["Corrected"] = fsc_vals["Tight"]
+            fsc_thresh["Corrected"] = fsc_thresh["Tight"]
+
+        fsc_angs = {
+            mask_lbl: ((1 / fsc_val) * Apix) for mask_lbl, fsc_val in fsc_thresh.items()
+        }
+        fsc_plot_vals = {
+            f"{mask_lbl}  ({fsc_angs[mask_lbl]:.1f}Å)": fsc_df
+            for mask_lbl, fsc_df in fsc_vals.items()
+        }
+        pltfile = "_".join([out_path, "fsc-plot.png"])
         create_fsc_plot(
-            fsc_vals=fsc_vals, outfile="_".join([out_path, "fsc-plot.png"]), Apix=Apix
+            fsc_vals=fsc_plot_vals,
+            outfile=pltfile,
+            Apix=Apix,
+            title=f"GSFSC Resolution: {fsc_angs['Corrected']:.2f}Å",
         )
-        print_fsc(fsc_vals, Apix)
+        get_fsc_thresholds(fsc_vals["Corrected"], Apix)
 
         # save the FSC values and half-map reconstructions to file
-        fsc_vals.to_csv(
+        fsc_vals["Corrected"].to_csv(
             "_".join([out_path, "fsc-vals.txt"]), sep=" ", header=True, index=False
         )
         half_fl1 = "_".join([out_path, "half-map1.mrc"])

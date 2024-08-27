@@ -25,12 +25,13 @@ from typing import Optional
 from cryodrgn import fft
 from cryodrgn.source import ImageSource
 from cryodrgn.commands_utils.plot_fsc import create_fsc_plot
+from cryodrgn.masking import spherical_window_mask, cosine_dilation_mask
 
 logger = logging.getLogger(__name__)
 
 
 def add_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("volumes", nargs=2, help="volumes to compare")
+    parser.add_argument("volumes", nargs="+", help="volumes to compare")
 
     parser.add_argument(
         "--mask",
@@ -76,6 +77,8 @@ def calculate_fsc(
     vol2: np.ndarray,
     mask: Optional[np.ndarray] = None,
     phase_randomization: Optional[float] = None,
+    out_file: Optional[str] = None,
+    plot_file: Optional[str] = None,
 ) -> pd.DataFrame:
     if mask is not None:
         vol1 *= mask
@@ -127,7 +130,12 @@ def calculate_fsc(
 
             prev_mask = mask
 
-    return pd.DataFrame(dict(pixres=np.arange(D // 2) / D, fsc=fsc), dtype=float)
+    fsc_vals = pd.DataFrame(dict(pixres=np.arange(D // 2) / D, fsc=fsc), dtype=float)
+    if out_file is not None:
+        logger.info(f"Saving FSC values to {out_file}")
+        fsc_vals.to_csv(out_file, sep=" ", header=True, index=False)
+
+    return fsc_vals
 
 
 def get_fsc_thresholds(
@@ -154,25 +162,83 @@ def get_fsc_thresholds(
     return res_05, res_143
 
 
-def main(args: argparse.Namespace) -> None:
-    vol1 = ImageSource.from_file(args.volumes[0])
-    vol2 = ImageSource.from_file(args.volumes[1])
-    mask = ImageSource.from_file(args.mask).images() if args.mask is not None else None
+def calculate_cryosparc_fscs(
+    full_vol: np.ndarray,
+    half_vol1: np.ndarray,
+    half_vol2: np.ndarray,
+    sphere_mask: Optional[np.ndarray] = None,
+    loose_mask: tuple[int, int] = (25, 15),
+    tight_mask: tuple[int, int] = (6, 6),
+    Apix: float = 1.0,
+    out_file: Optional[str] = None,
+    plot_file: Optional[str] = None,
+) -> pd.DataFrame:
+    """Calculating cryoSPARC-style FSC curves with phase randomization correction."""
+    if sphere_mask is None:
+        sphere_mask = spherical_window_mask(D=full_vol.shape[0])
 
-    if args.corrected is not None:
-        if args.corrected >= 1:
-            args.corrected = (args.corrected / args.Apix) ** -1
+    masks = {
+        "No Mask": None,
+        "Spherical": sphere_mask,
+        "Loose": cosine_dilation_mask(
+            full_vol, dilation=loose_mask[0], edge_dist=loose_mask[1], apix=Apix
+        ),
+        "Tight": cosine_dilation_mask(
+            full_vol, dilation=tight_mask[0], edge_dist=tight_mask[1], apix=Apix
+        ),
+    }
+    fsc_vals = {
+        mask_lbl: calculate_fsc(half_vol1, half_vol2, mask=mask)
+        for mask_lbl, mask in masks.items()
+    }
+    fsc_thresh = {
+        mask_lbl: get_fsc_thresholds(fsc_df, Apix, verbose=False)[1]
+        for mask_lbl, fsc_df in fsc_vals.items()
+    }
 
-    fsc_vals = calculate_fsc(vol1.images(), vol2.images(), mask, args.corrected)
-
-    if args.outtxt:
-        logger.info(f"Saving FSC values to {args.outtxt}")
-        fsc_vals.to_csv(args.outtxt, sep=" ", index=False)
+    if fsc_thresh["Tight"] is not None:
+        fsc_vals["Corrected"] = calculate_fsc(
+            half_vol1,
+            half_vol2,
+            mask=masks["Tight"],
+            phase_randomization=0.75 * fsc_thresh["Tight"],
+        )
+        fsc_thresh["Corrected"] = get_fsc_thresholds(
+            fsc_vals["Corrected"], Apix, verbose=False
+        )[1]
     else:
-        fsc_str = fsc_vals.round(4).to_csv(sep="\t", index=False)
-        logger.info(f"\n{fsc_str}")
+        fsc_vals["Corrected"] = fsc_vals["Tight"]
+        fsc_thresh["Corrected"] = fsc_thresh["Tight"]
 
-    _ = get_fsc_thresholds(fsc_vals, args.Apix)
+    # Report corrected FSCs by printing FSC=0.5 and FSC=0.143 threshold values to screen
+    get_fsc_thresholds(fsc_vals["Corrected"], Apix)
+
+    if plot_file is not None:
+        fsc_angs = {
+            mask_lbl: ((1 / fsc_val) * Apix) for mask_lbl, fsc_val in fsc_thresh.items()
+        }
+        fsc_plot_vals = {
+            f"{mask_lbl}  ({fsc_angs[mask_lbl]:.1f}Å)": fsc_df
+            for mask_lbl, fsc_df in fsc_vals.items()
+        }
+        create_fsc_plot(
+            fsc_vals=fsc_plot_vals,
+            outfile=plot_file,
+            Apix=Apix,
+            title=f"GSFSC Resolution: {fsc_angs['Corrected']:.2f}Å",
+        )
+
+    pixres_index = {tuple(vals.pixres.values) for vals in fsc_vals.values()}
+    assert len(pixres_index) == 1
+    pixres_index = tuple(pixres_index)[0]
+
+    return pd.DataFrame(
+        {k: vals.fsc.values for k, vals in fsc_vals.items()}, index=list(pixres_index)
+    )
+
+
+def main(args: argparse.Namespace) -> None:
+    mask = ImageSource.from_file(args.mask).images() if args.mask is not None else None
 
     if args.plot:
         if isinstance(args.plot, bool):
@@ -182,6 +248,61 @@ def main(args: argparse.Namespace) -> None:
                 plot_file = "fsc-plot.png"
         else:
             plot_file = str(args.plot)
+    else:
+        plot_file = None
 
-        logger.info(f"Saving plot to {plot_file}")
-        create_fsc_plot(fsc_vals=fsc_vals, outfile=plot_file, Apix=args.Apix)
+    if len(args.volumes) == 2:
+        logger.info(
+            f"Calculating FSC curve between `{args.volumes[0]}` "
+            f"and `{args.volumes[1]}`..."
+        )
+        vol1 = ImageSource.from_file(args.volumes[0]).images()
+        vol2 = ImageSource.from_file(args.volumes[1]).images()
+
+        if args.corrected is not None:
+            if args.corrected >= 1:
+                args.corrected = (args.corrected / args.Apix) ** -1
+
+        fsc_vals = calculate_fsc(vol1, vol2, mask, args.corrected, out_file=args.outtxt)
+        _ = get_fsc_thresholds(fsc_vals, args.Apix)
+
+        if not args.outtxt:
+            fsc_str = fsc_vals.round(4).to_csv(sep="\t", index=False)
+            logger.info(f"\n{fsc_str}")
+        if args.plot:
+            create_fsc_plot(fsc_vals=fsc_vals, outfile=plot_file, Apix=args.Apix)
+
+    elif len(args.volumes) == 3:
+        logger.info(
+            f"Calculating FSC curve between `{args.volumes[1]}` and `{args.volumes[2]}`"
+            f" using `{args.volumes[0]}` as the reference full volume..."
+        )
+        fullvol = ImageSource.from_file(args.volumes[0]).images()
+        vol1 = ImageSource.from_file(args.volumes[1]).images()
+        vol2 = ImageSource.from_file(args.volumes[2]).images()
+
+        if args.corrected is not None:
+            raise ValueError(
+                "Cannot provide your own phase randomization threshold as this will "
+                "be computed for you when providing three volumes "
+                "{{fullvol, halfvol1, halfvol2}}!"
+            )
+
+        fsc_vals = calculate_cryosparc_fscs(
+            fullvol,
+            vol1,
+            vol2,
+            sphere_mask=mask,
+            Apix=args.Apix,
+            out_file=args.outtxt,
+            plot_file=plot_file,
+        )
+        if not args.outtxt:
+            fsc_str = fsc_vals.round(4).to_csv(sep="\t", index=False)
+            logger.info(f"\n{fsc_str}")
+
+    else:
+        raise ValueError(
+            f"Must provide two or three volume files, "
+            f"given {len(args.volumes)} instead!"
+        )

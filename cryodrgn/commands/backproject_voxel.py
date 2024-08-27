@@ -26,13 +26,10 @@ import time
 import numpy as np
 import torch
 import logging
-
 from cryodrgn import ctf, dataset, fft, utils
 from cryodrgn.lattice import Lattice
-from cryodrgn.masking import spherical_window_mask, cosine_dilation_mask
 from cryodrgn.pose import PoseTracker
-from cryodrgn.commands_utils.fsc import calculate_fsc, get_fsc_thresholds
-from cryodrgn.commands_utils.plot_fsc import create_fsc_plot
+from cryodrgn.commands_utils.fsc import calculate_cryosparc_fscs
 from cryodrgn.source import write_mrc
 
 logger = logging.getLogger(__name__)
@@ -101,7 +98,7 @@ def add_args(parser):
         "--ind",
         type=os.path.abspath,
         metavar="PKL",
-        help="Filter particles by these indices",
+        help="Filter particles by these indices before starting backprojection",
     )
     group.add_argument(
         "--first",
@@ -322,62 +319,18 @@ def main(args):
     if args.half_maps:
         volume_half1 = regularize_volume(volume_half1, counts_half1, args.reg_weight)
         volume_half2 = regularize_volume(volume_half2, counts_half2, args.reg_weight)
-
-        # cryoSPARC defaults for masks used in gold-standard FSC
-        masks = {
-            "No Mask": None,
-            "Spherical": spherical_window_mask(D=D - 1),
-            "Loose": cosine_dilation_mask(
-                volume_full, dilation=25, edge_dist=15, apix=Apix
-            ),
-            "Tight": cosine_dilation_mask(
-                volume_full, dilation=6, edge_dist=6, apix=Apix
-            ),
-        }
-        fsc_vals = {
-            mask_lbl: calculate_fsc(volume_half1, volume_half2, mask=mask)
-            for mask_lbl, mask in masks.items()
-        }
-        fsc_thresh = {
-            mask_lbl: get_fsc_thresholds(fsc_df, Apix, verbose=False)[1]
-            for mask_lbl, fsc_df in fsc_vals.items()
-        }
-
-        if fsc_thresh["Tight"] is not None:
-            fsc_vals["Corrected"] = calculate_fsc(
-                volume_half1,
-                volume_half2,
-                mask=masks["Tight"],
-                phase_randomization=0.75 * fsc_thresh["Tight"],
-            )
-            fsc_thresh["Corrected"] = get_fsc_thresholds(
-                fsc_vals["Corrected"], Apix, verbose=False
-            )[1]
-        else:
-            fsc_vals["Corrected"] = fsc_vals["Tight"]
-            fsc_thresh["Corrected"] = fsc_thresh["Tight"]
-
-        fsc_angs = {
-            mask_lbl: ((1 / fsc_val) * Apix) for mask_lbl, fsc_val in fsc_thresh.items()
-        }
-        fsc_plot_vals = {
-            f"{mask_lbl}  ({fsc_angs[mask_lbl]:.1f}Å)": fsc_df
-            for mask_lbl, fsc_df in fsc_vals.items()
-        }
-        pltfile = "_".join([out_path, "fsc-plot.png"])
-        create_fsc_plot(
-            fsc_vals=fsc_plot_vals,
-            outfile=pltfile,
-            Apix=Apix,
-            title=f"GSFSC Resolution: {fsc_angs['Corrected']:.2f}Å",
-        )
-        get_fsc_thresholds(fsc_vals["Corrected"], Apix)
-
-        # save the FSC values and half-map reconstructions to file
-        fsc_vals["Corrected"].to_csv(
-            "_".join([out_path, "fsc-vals.txt"]), sep=" ", header=True, index=False
-        )
         half_fl1 = "_".join([out_path, "half-map1.mrc"])
         half_fl2 = "_".join([out_path, "half-map2.mrc"])
         write_mrc(half_fl1, np.array(volume_half1).astype("float32"), Apix=Apix)
         write_mrc(half_fl2, np.array(volume_half2).astype("float32"), Apix=Apix)
+
+        out_file = "_".join([out_path, "fsc-vals.txt"])
+        plot_file = "_".join([out_path, "fsc-plot.png"])
+        _ = calculate_cryosparc_fscs(
+            volume_full,
+            volume_half1,
+            volume_half2,
+            Apix=Apix,
+            out_file=out_file,
+            plot_file=plot_file,
+        )

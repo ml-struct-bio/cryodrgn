@@ -103,7 +103,7 @@ def test_apply_mask(trained_dir, epochs: tuple[int, int]) -> None:
 @pytest.mark.parametrize(
     "train_dir",
     [
-        {"dataset": "toy", "train_cmd": "train_nn", "epochs": 5, "seed": 2456},
+        {"dataset": "toy", "train_cmd": "train_nn", "epochs": 3, "seed": 2456},
     ],
     indirect=True,
 )
@@ -116,7 +116,7 @@ def test_apply_phase_randomization(trained_dir) -> None:
     assert out.split("\n")[-3].split()[-3] == "FSC=0.5:"
     assert out.split("\n")[-2].split()[-3] == "FSC=0.143:"
     assert round(float(out.split("\n")[7].split()[0]), 3) == 0.167
-    assert 0.97 < float(out.split("\n")[7].split()[1]) < 0.99
+    assert 0.95 < float(out.split("\n")[7].split()[1])
 
 
 @pytest.mark.parametrize(

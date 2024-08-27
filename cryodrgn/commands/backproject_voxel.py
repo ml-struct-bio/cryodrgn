@@ -3,22 +3,26 @@
 This script creates a reconstructed volume using the images in the given stack as well
 as the given poses. Unless instructed otherwise, it will also produce volumes using
 the images in each half of the dataset, as well as calculating an FSC curve between
-these two half-map reconstructions.
+these two half-map reconstructions. All outputs will be placed in the folder given.
 
 Example usage
 -------------
 $ cryodrgn backproject_voxel particles.128.mrcs \
-                             --ctf ctf.pkl --poses pose.pkl -o backproject.128.mrc
+                             --ctf ctf.pkl --poses pose.pkl -o backproject-results/
 
-# Use --lazy for large datasets to reduce memory usage and avoid OOM errors
+# Use `--lazy` for large datasets to reduce memory usage and avoid OOM errors
 $ cryodrgn backproject_voxel particles.256.mrcs --ctf ctf.pkl --poses pose.pkl \
-                             --ind good_particles.pkl -o backproject.256.mrc --lazy
+                             --ind good_particles.pkl -o backproject-256/ --lazy
 
-# --tilt is required for subtomogram datasets
-# --datadir is generally required when using .star or .cs particle inputs
+# `--first` is also a good tool for doing a quick initial reconstruction
+$ cryodrgn backproject_voxel particles.196.mrcs --ctf ctf.pkl --poses pose.pkl \
+                             -o backproject-196/ --lazy --first=10000
+
+# `--tilt` is required for subtomogram datasets
+# `--datadir` is generally required when using .star or .cs particle inputs
 $ cryodrgn backproject_voxel particles_from_M.star --datadir subtilts/128/ \
                              --ctf ctf.pkl --poses pose.pkl \
-                             -o backproject_tilt.mrc --lazy --tilt --ntilts 5
+                             -o backproject-tilt/ --lazy --tilt --ntilts 5
 
 """
 import os
@@ -51,13 +55,23 @@ def add_args(parser):
         help="CTF parameters (.pkl) for phase flipping images",
     )
     parser.add_argument(
-        "--outfile", "-o", type=os.path.abspath, required=True, help="Output .mrc file"
+        "--outdir",
+        "-o",
+        type=os.path.abspath,
+        required=True,
+        help="New or existing folder in which outputs will be " "placed",
     )
     parser.add_argument(
         "--no-half-maps",
         action="store_false",
         help="Don't produce half-maps and FSCs.",
         dest="half_maps",
+    )
+    parser.add_argument(
+        "--no-fsc-vals",
+        action="store_false",
+        help="Don't calculate FSCs, but still produce half-maps.",
+        dest="fsc_vals",
     )
     parser.add_argument("--ctf-alg", type=str, choices=("flip", "mul"), default="mul")
     parser.add_argument(
@@ -166,12 +180,9 @@ def regularize_volume(
 
 
 def main(args):
-    if not args.outfile.endswith(".mrc"):
-        raise ValueError(f"Output file {args.outfile} does not end with .mrc!")
-
     t1 = time.time()
     logger.info(args)
-    os.makedirs(os.path.dirname(args.outfile), exist_ok=True)
+    os.makedirs(args.outdir, exist_ok=True)
 
     # set the device
     use_cuda = torch.cuda.is_available()
@@ -306,31 +317,33 @@ def main(args):
     counts_full[counts_full == 0] = 1
     counts_half1[counts_half1 == 0] = 1
     counts_half2[counts_half2 == 0] = 1
-
     if args.output_sumcount:
-        write_mrc(args.outfile + ".sums", volume_full.cpu().numpy(), Apix=Apix)
-        write_mrc(args.outfile + ".counts", counts_full.cpu().numpy(), Apix=Apix)
+        sums_fl = os.path.join(args.outdir, "backproject.sums")
+        counts_fl = os.path.join(args.outdir, "backproject.counts")
+        write_mrc(sums_fl, volume_full.cpu().numpy(), Apix=Apix)
+        write_mrc(counts_fl, counts_full.cpu().numpy(), Apix=Apix)
 
     volume_full = regularize_volume(volume_full, counts_full, args.reg_weight)
-    out_path = os.path.splitext(args.outfile)[0]
-    write_mrc(args.outfile, np.array(volume_full).astype("float32"), Apix=Apix)
+    vol_fl = os.path.join(args.outdir, "backproject.mrc")
+    write_mrc(vol_fl, np.array(volume_full).astype("float32"), Apix=Apix)
 
     # create the half-maps, calculate the FSC curve between them, and save both to file
     if args.half_maps:
         volume_half1 = regularize_volume(volume_half1, counts_half1, args.reg_weight)
         volume_half2 = regularize_volume(volume_half2, counts_half2, args.reg_weight)
-        half_fl1 = "_".join([out_path, "half-map1.mrc"])
-        half_fl2 = "_".join([out_path, "half-map2.mrc"])
+        half_fl1 = os.path.join(args.outdir, "half_map_a.mrc")
+        half_fl2 = os.path.join(args.outdir, "half_map_b.mrc")
         write_mrc(half_fl1, np.array(volume_half1).astype("float32"), Apix=Apix)
         write_mrc(half_fl2, np.array(volume_half2).astype("float32"), Apix=Apix)
 
-        out_file = "_".join([out_path, "fsc-vals.txt"])
-        plot_file = "_".join([out_path, "fsc-plot.png"])
-        _ = calculate_cryosparc_fscs(
-            volume_full,
-            volume_half1,
-            volume_half2,
-            Apix=Apix,
-            out_file=out_file,
-            plot_file=plot_file,
-        )
+        if args.fsc_vals:
+            out_file = os.path.join(args.outdir, "fsc-vals.txt")
+            plot_file = os.path.join(args.outdir, "fsc-plot.png")
+            _ = calculate_cryosparc_fscs(
+                volume_full,
+                volume_half1,
+                volume_half2,
+                Apix=Apix,
+                out_file=out_file,
+                plot_file=plot_file,
+            )

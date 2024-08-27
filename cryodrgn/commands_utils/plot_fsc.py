@@ -89,7 +89,7 @@ def create_fsc_plot(
 
     # Create the legend on the figure, not the plot
     if isinstance(fsc_vals, dict):
-        plt.legend(loc="best", bbox_to_anchor=(0.5, 0.5, 0.5, 0.5), prop={"size": 12})
+        plt.legend(loc="best", prop={"size": 12})
 
     if outfile:
         if os.path.dirname(outfile):

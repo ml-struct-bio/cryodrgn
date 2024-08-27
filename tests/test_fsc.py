@@ -20,18 +20,18 @@ def test_fidelity(trained_dir) -> None:
     assert err == ""
 
     assert np.array_equal(
-        np.array(out.split("\n")[2].split(), dtype="float"),
+        np.array(out.split("\n")[5].split(), dtype="float"),
         np.array([0.0, 1.0]),
     )
     assert np.array_equal(
-        np.array(out.split("\n")[4].split(), dtype="float"),
+        np.array(out.split("\n")[7].split(), dtype="float"),
         np.array([0.0312, 0.8930]),
     )
 
-    assert out.split("\n")[-3].split()[-3] == "FSC=0.5:"
-    assert round(float(out.split("\n")[-3].split()[-2]), 3) == 2.065
-    assert out.split("\n")[-2].split()[-3] == "FSC=0.143:"
-    assert round(float(out.split("\n")[-3].split()[-2]), 3) == 2.065
+    assert out.split("\n")[1].split()[-3] == "FSC=0.5:"
+    assert round(float(out.split("\n")[1].split()[-2]), 3) == 2.065
+    assert out.split("\n")[2].split()[-3] == "FSC=0.143:"
+    assert round(float(out.split("\n")[1].split()[-2]), 3) == 2.065
 
     assert (
         round(
@@ -40,7 +40,7 @@ def test_fidelity(trained_dir) -> None:
         )
         == 34.584
     )
-    assert len(out.split("\n")) == 38
+    assert len(out.split("\n")) == 39
 
 
 @pytest.mark.parametrize(
@@ -59,17 +59,17 @@ def test_output_file(trained_dir, epochs: tuple[int, int]) -> None:
 
     out0, err = run_command(f"cryodrgn_utils fsc {vol_file1} {vol_file2}")
     assert err == ""
-    assert out0.split("\n")[-3].split()[-3] == "FSC=0.5:"
-    assert out0.split("\n")[-2].split()[-3] == "FSC=0.143:"
+    assert out0.split("\n")[1].split()[-3] == "FSC=0.5:"
+    assert out0.split("\n")[2].split()[-3] == "FSC=0.143:"
 
     out, err = run_command(f"cryodrgn_utils fsc {vol_file1} {vol_file2} -o {fsc_file}")
     assert err == ""
 
     fsc_vals = pd.read_csv(fsc_file, dtype=float, sep=" ")
-    assert fsc_vals.shape[0] * 2 + 24 == len(out0.split())
+    assert fsc_vals.shape[0] * 2 + 35 == len(out0.split())
     for i, (_, (res_val, fsc_val)) in enumerate(fsc_vals.iterrows()):
-        assert round(res_val, 4) == round(float(out0.split()[6 + 2 * i]), 6)
-        assert round(fsc_val, 4) == round(float(out0.split()[7 + 2 * i]), 6)
+        assert round(res_val, 4) == round(float(out0.split()[35 + 2 * i]), 6)
+        assert round(fsc_val, 4) == round(float(out0.split()[36 + 2 * i]), 6)
 
 
 @pytest.mark.parametrize(
@@ -94,16 +94,16 @@ def test_apply_mask(trained_dir, epochs: tuple[int, int]) -> None:
     )
     assert err == ""
 
-    assert out.split("\n")[-3].split()[-3] == "FSC=0.5:"
-    assert out.split("\n")[-2].split()[-3] == "FSC=0.143:"
-    assert round(float(out.split("\n")[7].split()[0]), 3) == 0.167
-    assert 0.97 < float(out.split("\n")[7].split()[1]) < 0.99
+    assert out.split("\n")[1].split()[-3] == "FSC=0.5:"
+    assert out.split("\n")[2].split()[-3] == "FSC=0.143:"
+    assert round(float(out.split("\n")[10].split()[0]), 3) == 0.167
+    assert 0.97 < float(out.split("\n")[10].split()[1]) < 0.99
 
 
 @pytest.mark.parametrize(
     "train_dir",
     [
-        {"dataset": "toy", "train_cmd": "train_nn", "epochs": 3, "seed": 2456},
+        {"dataset": "toy", "train_cmd": "train_nn", "epochs": 4, "seed": 2456},
     ],
     indirect=True,
 )
@@ -113,20 +113,20 @@ def test_apply_phase_randomization(trained_dir) -> None:
 
     out, err = run_command(f"cryodrgn_utils fsc {vol_file1} {vol_file2} --corrected 16")
     assert err == ""
-    assert out.split("\n")[-3].split()[-3] == "FSC=0.5:"
-    assert out.split("\n")[-2].split()[-3] == "FSC=0.143:"
-    assert round(float(out.split("\n")[7].split()[0]), 3) == 0.167
-    assert 0.95 < float(out.split("\n")[7].split()[1])
+    assert out.split("\n")[1].split()[-3] == "FSC=0.5:"
+    assert out.split("\n")[2].split()[-3] == "FSC=0.143:"
+    assert round(float(out.split("\n")[10].split()[0]), 3) == 0.167
+    assert 0.95 < float(out.split("\n")[10].split()[1])
 
 
 @pytest.mark.parametrize(
     "train_dir",
     [
-        {"dataset": "toy", "train_cmd": "train_nn", "epochs": 5, "seed": 2456},
+        {"dataset": "toy", "train_cmd": "train_nn", "epochs": 4, "seed": 2456},
     ],
     indirect=True,
 )
-@pytest.mark.parametrize("epochs", [(3, 4)])
+@pytest.mark.parametrize("epochs", [(2, 3)])
 def test_plotting(trained_dir, epochs: tuple[int, int]) -> None:
     vol_file1 = os.path.join(trained_dir.outdir, f"reconstruct.{epochs[0]}.mrc")
     vol_file2 = os.path.join(trained_dir.outdir, f"reconstruct.{epochs[1]}.mrc")

@@ -1,5 +1,11 @@
 """Compute Fourier shell correlation between two volumes, applying an optional mask.
 
+Instead of giving two volumes, you can give three, in which case the first volume is
+assumed to be the full volume whereas the other two are corresponding half-maps
+The Full volume will be used to create a loose and a tight mask using dilation and
+cosine edges; the latter mask will be corrected using phase randomization as implemented
+in cryoSPARC.
+
 Example usage
 -------------
 $ cryodrgn_utils fsc volume1.mrc volume2.mrc
@@ -13,6 +19,10 @@ $ cryodrgn_utils fsc vol1.mrc vol2.mrc --mask test-mask.mrc -o fsc.txt -p fsc-pl
 # Also apply phase randomization at Fourier shells for resolutions < 10 angstroms
 $ cryodrgn_utils fsc vol1.mrc vol2.mrc --mask test-mask.mrc -o fsc.txt -p fsc-plot.png
                                        --corrected 10
+
+# Do cryoSPARC-style phase randomization with a tight mask; create an FSC plot with
+# curves for no mask, spherical mask, loose mask, tight mask, and corrected tight mask
+$ cryodrgn_utils fsc fullvol.mrc vol1.mrc vol2.mrc -p fsc-plot.png
 
 """
 import os
@@ -57,8 +67,8 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--Apix",
         type=float,
-        default=1.0,
-        help="Ang/pixels to use when printing the resolutions at thresholds",
+        help="Ang/pixels to use when printing the resolutions at thresholds to "
+        "override those found in the volumes, or replace them if missing in volumes",
     )
     parser.add_argument(
         "--outtxt",
@@ -78,7 +88,6 @@ def calculate_fsc(
     mask: Optional[np.ndarray] = None,
     phase_randomization: Optional[float] = None,
     out_file: Optional[str] = None,
-    plot_file: Optional[str] = None,
 ) -> pd.DataFrame:
     if mask is not None:
         vol1 *= mask
@@ -218,27 +227,45 @@ def calculate_cryosparc_fscs(
             mask_lbl: ((1 / fsc_val) * Apix) for mask_lbl, fsc_val in fsc_thresh.items()
         }
         fsc_plot_vals = {
-            f"{mask_lbl}  ({fsc_angs[mask_lbl]:.1f}Å)": fsc_df
+            f"{mask_lbl}  ({fsc_angs[mask_lbl]:.2f}Å)": fsc_df
             for mask_lbl, fsc_df in fsc_vals.items()
         }
-        create_fsc_plot(
-            fsc_vals=fsc_plot_vals,
-            outfile=plot_file,
-            Apix=Apix,
-            title=f"GSFSC Resolution: {fsc_angs['Corrected']:.2f}Å",
-        )
+        create_fsc_plot(fsc_vals=fsc_plot_vals, outfile=plot_file, Apix=Apix)
 
     pixres_index = {tuple(vals.pixres.values) for vals in fsc_vals.values()}
     assert len(pixres_index) == 1
     pixres_index = tuple(pixres_index)[0]
 
-    return pd.DataFrame(
+    fsc_vals = pd.DataFrame(
         {k: vals.fsc.values for k, vals in fsc_vals.items()}, index=list(pixres_index)
     )
+    if out_file is not None:
+        logger.info(f"Saving FSC values to {out_file}")
+        fsc_vals.to_csv(out_file, sep=" ", header=True, index=False)
+
+    return fsc_vals
 
 
 def main(args: argparse.Namespace) -> None:
+    if len(args.volumes) not in {2, 3}:
+        raise ValueError(
+            f"Must provide two or three volume files, "
+            f"given {len(args.volumes)} instead!"
+        )
+    volumes = [ImageSource.from_file(vol_file) for vol_file in args.volumes]
     mask = ImageSource.from_file(args.mask).images() if args.mask is not None else None
+
+    if args.Apix:
+        apix = args.Apix
+    else:
+        vol_apixs = {vol.apix for vol in volumes if vol.apix is not None}
+
+        if len(vol_apixs) == 0:
+            apix = 1.0
+        elif len(vol_apixs) == 1:
+            apix = tuple(vol_apixs)[0]
+        else:
+            raise ValueError(f"These volumes have different A/px values: {vol_apixs}")
 
     if args.plot:
         if isinstance(args.plot, bool):
@@ -256,31 +283,30 @@ def main(args: argparse.Namespace) -> None:
             f"Calculating FSC curve between `{args.volumes[0]}` "
             f"and `{args.volumes[1]}`..."
         )
-        vol1 = ImageSource.from_file(args.volumes[0]).images()
-        vol2 = ImageSource.from_file(args.volumes[1]).images()
-
         if args.corrected is not None:
             if args.corrected >= 1:
-                args.corrected = (args.corrected / args.Apix) ** -1
+                args.corrected = (args.corrected / apix) ** -1
 
-        fsc_vals = calculate_fsc(vol1, vol2, mask, args.corrected, out_file=args.outtxt)
-        _ = get_fsc_thresholds(fsc_vals, args.Apix)
+        fsc_vals = calculate_fsc(
+            volumes[0].images(),
+            volumes[1].images(),
+            mask,
+            args.corrected,
+            out_file=args.outtxt,
+        )
+        _ = get_fsc_thresholds(fsc_vals, apix)
 
         if not args.outtxt:
             fsc_str = fsc_vals.round(4).to_csv(sep="\t", index=False)
             logger.info(f"\n{fsc_str}")
         if args.plot:
-            create_fsc_plot(fsc_vals=fsc_vals, outfile=plot_file, Apix=args.Apix)
+            create_fsc_plot(fsc_vals=fsc_vals, outfile=plot_file, Apix=apix)
 
     elif len(args.volumes) == 3:
         logger.info(
             f"Calculating FSC curve between `{args.volumes[1]}` and `{args.volumes[2]}`"
             f" using `{args.volumes[0]}` as the reference full volume..."
         )
-        fullvol = ImageSource.from_file(args.volumes[0]).images()
-        vol1 = ImageSource.from_file(args.volumes[1]).images()
-        vol2 = ImageSource.from_file(args.volumes[2]).images()
-
         if args.corrected is not None:
             raise ValueError(
                 "Cannot provide your own phase randomization threshold as this will "
@@ -289,20 +315,14 @@ def main(args: argparse.Namespace) -> None:
             )
 
         fsc_vals = calculate_cryosparc_fscs(
-            fullvol,
-            vol1,
-            vol2,
+            volumes[0].images(),
+            volumes[1].images(),
+            volumes[2].images(),
             sphere_mask=mask,
-            Apix=args.Apix,
+            Apix=apix,
             out_file=args.outtxt,
             plot_file=plot_file,
         )
         if not args.outtxt:
             fsc_str = fsc_vals.round(4).to_csv(sep="\t", index=False)
             logger.info(f"\n{fsc_str}")
-
-    else:
-        raise ValueError(
-            f"Must provide two or three volume files, "
-            f"given {len(args.volumes)} instead!"
-        )

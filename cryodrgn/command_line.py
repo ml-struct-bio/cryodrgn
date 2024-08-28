@@ -1,14 +1,14 @@
-"""Creating commands installed with cryoDRGN for use from command line using modules.
+"""Creating the commands installed with cryoDRGN using the package's modules.
 
-This module searches through the `commands` and `commands_utils`
-folders for anything that matches the format of a cryoDRGN command module, and creates
-a `cryodrgn <x>` command line interface for each such found in the former
-and a `cryodrgn_utils <x>` for each found in the latter. This format is kept simple:
-anything that is a .py file and has an `add_args` method defined is considered
-a command module!
+Here we add modules under the `cryodrgn.commands` and `cryodrgn.commands_utils` folders
+to the namespace of commands that are installed as part of the cryoDRGN package.
+Each module in the former folder thus corresponds to a `cryodrgn <module_name>` command,
+while those in the latter folder correspond to a `cryodgn_utils <module_name>` command.
 
 See the `[project.scripts]` entry in the `pyproject.toml` file for how this module
-is used to create the commands during installation.
+is used to create the commands during installation. We list the modules to use
+explicitly for each folder in case the namespace is inadvertantly polluted, and also
+since automated scanning for command modules is computationally non-trivial.
 
 """
 import argparse
@@ -19,7 +19,7 @@ import cryodrgn
 
 
 def _get_commands(cmd_dir: str, cmds: list[str], doc_str: str = "") -> None:
-    """Start up a command line interface using the modules in a directory as subparsers.
+    """Start up a command line interface using given modules as subcommands.
 
     Arguments
     ---------
@@ -50,13 +50,14 @@ def _get_commands(cmd_dir: str, cmds: list[str], doc_str: str = "") -> None:
                 f"same directory for examples!"
             )
 
+        # Parse the module-level documentation appearing at the top of the file
         parsed_doc = module.__doc__.split("\n") if module.__doc__ else list()
         descr_txt = parsed_doc[0] if parsed_doc else ""
         epilog_txt = "" if len(parsed_doc) <= 1 else "\n".join(parsed_doc[1:])
 
-        # we have to manually re-add the backslashes used to break up lines
+        # We have to manually re-add the backslashes used to break up lines
         # for multi-line examples as these get parsed into spaces by .__doc__
-        # NOTE: this means command docstrings shouldn't otherwise have
+        # NOTE: This means command docstrings shouldn't otherwise have
         # consecutive spaces!
         epilog_txt = re.sub(" ([ ]+)", " \\\n\\1", epilog_txt)
 
@@ -75,7 +76,7 @@ def _get_commands(cmd_dir: str, cmds: list[str], doc_str: str = "") -> None:
     args.func(args)
 
 
-def main_commands():
+def main_commands() -> None:
     """Primary commands installed with cryoDRGN as `cryodrgn <cmd_module_name>."""
     _get_commands(
         cmd_dir=os.path.join(os.path.dirname(__file__), "commands"),
@@ -105,7 +106,7 @@ def main_commands():
     )
 
 
-def util_commands():
+def util_commands() -> None:
     """Utility commands installed with cryoDRGN as `cryodrgn_utils <cmd_module_name>."""
     _get_commands(
         cmd_dir=os.path.join(os.path.dirname(__file__), "commands_utils"),

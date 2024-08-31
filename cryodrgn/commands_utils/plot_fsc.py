@@ -14,6 +14,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("input", nargs="+", help="input cryoDRGN fsc text files")
@@ -29,16 +33,20 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def plot_fsc_vals(fsc_arr: pd.DataFrame, label, **plot_args):
+def plot_fsc_vals(fsc_arr: pd.DataFrame, label: str, **plot_args) -> None:
+    """Add this set of FSC curves to the current plot using the given aesthetics."""
     plotting_args = dict(linewidth=3.1, alpha=0.81)
     plotting_args.update(**plot_args)
 
+    # if one of the columns is the pixel resolution, use that as the x-axis...
     if "pixres" in fsc_arr.columns:
-        plt.plot(fsc_arr.pixres, fsc_arr.fsc, label=label, **plotting_args)
-    elif fsc_arr.shape[1] == 1:
-        plt.plot(fsc_arr.iloc[:, 0], label=label, **plotting_args)
+        for col in set(fsc_arr.columns) - {"pixres"}:
+            plt.plot(fsc_arr.pixres, fsc_arr[col], label=label, **plotting_args)
+
+    # ...otherwise just plot the values sequentially
     else:
-        raise ValueError(f"Unrecognized format for fsc_arr:\n{fsc_arr}!")
+        for col in set(fsc_arr.columns):
+            plt.plot(fsc_arr[col], label=label, **plotting_args)
 
 
 def create_fsc_plot(
@@ -100,23 +108,24 @@ def create_fsc_plot(
 
 
 def main(args):
-    # Load and plot data from each file
+    # Load and plot FSC curves from each user-given file (see `add_args()` above)."""
     fsc_arrays = dict()
+
     for file in args.input:
-        fsc_arr = pd.read_csv(file, sep=" ", header=None)
-
+        fsc_arr = pd.read_csv(file, sep=" ")
         if fsc_arr.shape[1] > 2:
-            raise ValueError(
-                "FSC text files must either have two columns labelled `pixres` "
-                "and `fsc` or one unlabelled column containing FSCs; "
-                "see cryodrgn_utils fsc for the former"
-            )
-        elif fsc_arr.shape[1] == 2:
-            fsc_arr = pd.read_csv(file, sep=" ")
+            fsc_arrays = fsc_arr
 
-        fsc_arrays[os.path.splitext(file)[0]] = fsc_arr
+            if len(args.input) > 1:
+                logger.info(
+                    f"Only using the first FSC file `{file}` which "
+                    f"already contains multiple FSC curves!"
+                )
+                break
+        else:
+            fsc_arrays[os.path.splitext(file)[0]] = fsc_arr
 
-    if len(fsc_arrays) == 1:
+    if isinstance(fsc_arrays, dict) and len(fsc_arrays) == 1:
         fsc_arrays = tuple(fsc_arrays.values())[0]
 
     create_fsc_plot(fsc_arrays, args.outfile, args.Apix)

@@ -1,56 +1,65 @@
+"""Utility functions used in Fast Fourier Transform calculations on image tensors."""
+
 import logging
 import numpy as np
 import torch
 from torch.fft import fftshift, ifftshift, fft2, fftn, ifftn
-
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 
-def normalize(img, mean=0, std=None, std_n=None):
+def normalize(
+    img: torch.Tensor,
+    mean: float = 0,
+    std: Optional[float] = None,
+    std_n: Optional[int] = None,
+) -> torch.Tensor:
+    """Normalize an image tensors to z-scores using the first `std_n` samples.
+
+    Note that since taking the standard deviation is a memory-consuming process,
+    we here use the first `std_n` samples for its calculation.
+
+    """
     if std is None:
-        # Since std is a memory consuming process, use the first std_n samples for std determination
         std = torch.std(img[:std_n, ...])
 
     logger.info(f"Normalized by {mean} +/- {std}")
     return (img - mean) / std
 
 
-def fft2_center(img):
+def fft2_center(img: torch.Tensor) -> torch.Tensor:
     return fftshift(fft2(fftshift(img, dim=(-1, -2))), dim=(-1, -2))
 
 
-def fftn_center(img):
+def fftn_center(img: torch.Tensor) -> torch.Tensor:
     return fftshift(fftn(fftshift(img)))
 
 
-def ifftn_center(img):
-    if isinstance(img, np.ndarray):
-        # Note: We can't just typecast a complex ndarray using torch.Tensor(array) !
-        img = torch.complex(torch.Tensor(img.real), torch.Tensor(img.imag))
+def ifftn_center(img: torch.Tensor) -> torch.Tensor:
     x = ifftshift(img)
     y = ifftn(x)
     z = ifftshift(y)
     return z
 
 
-def ht2_center(img):
+def ht2_center(img: torch.Tensor) -> torch.Tensor:
     _img = fft2_center(img)
     return _img.real - _img.imag
 
 
-def htn_center(img):
+def htn_center(img: torch.Tensor) -> torch.Tensor:
     _img = fftshift(fftn(fftshift(img)))
     return _img.real - _img.imag
 
 
-def iht2_center(img):
+def iht2_center(img: torch.Tensor) -> torch.Tensor:
     img = fft2_center(img)
     img /= img.shape[-1] * img.shape[-2]
     return img.real - img.imag
 
 
-def ihtn_center(img):
+def ihtn_center(img: torch.Tensor) -> torch.Tensor:
     img = fftshift(img)
     img = fftn(img)
     img = fftshift(img)
@@ -58,7 +67,7 @@ def ihtn_center(img):
     return img.real - img.imag
 
 
-def symmetrize_ht(ht):
+def symmetrize_ht(ht: torch.Tensor) -> torch.Tensor:
     if ht.ndim == 2:
         ht = ht[np.newaxis, ...]
     assert ht.ndim == 3

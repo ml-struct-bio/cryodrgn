@@ -78,26 +78,25 @@ def cosine_dilation_mask(
 ) -> np.ndarray:
     threshold = threshold or np.percentile(vol, 99.99) / 2
     logger.info(f"A/px={apix:.5g}; Threshold={threshold:.5g}")
-
     x = np.array(vol >= threshold).astype(bool)
 
-    if dilation:
-        dilate_val = int(dilation // apix)
-        logger.info(f"Dilate initial mask by: {dilate_val} px")
-        x = binary_dilation(x, iterations=dilate_val)
+    dilate_val = int(dilation // apix)
+    if dilate_val:
+        logger.info(f"Dilating initial vol>={threshold:3g} mask by {dilate_val} px")
+        x = binary_dilation(x, iterations=dilate_val).astype(float)
     else:
         logger.info("no mask dilation applied")
 
     dist_val = edge_dist / apix
-    logger.info(f"Width of cosine edge: {dist_val} px")
+    logger.info(f"Width of cosine edge: {dist_val:.2f} px")
     if dist_val:
         y = distance_transform_edt(~x.astype(bool))
         y[y > dist_val] = dist_val
         z = np.cos(np.pi * y / dist_val / 2)
     else:
-        z = x
+        z = x.astype(float)
 
-    return z
+    return z.round(6)
 
 
 class CircularMask:

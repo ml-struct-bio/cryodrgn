@@ -11,6 +11,7 @@ import os
 import argparse
 import logging
 import numpy as np
+import torch
 from cryodrgn.masking import cosine_dilation_mask
 from cryodrgn.mrcfile import write_mrc, parse_mrc
 from cryodrgn.commands.analyze_landscape import view_slices
@@ -59,6 +60,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
 
 def main(args: argparse.Namespace) -> None:
     vol, header = parse_mrc(args.input)
+    vol = torch.Tensor(vol)
     apix = args.Apix or header.apix
 
     mask = cosine_dilation_mask(

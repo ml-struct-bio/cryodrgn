@@ -30,10 +30,12 @@ import argparse
 import logging
 import numpy as np
 import pandas as pd
+import torch
 import random
-from typing import Optional
+from typing import Optional, Union
 from cryodrgn import fft
 from cryodrgn.source import ImageSource
+from cryodrgn.mrcfile import parse_mrc
 from cryodrgn.commands_utils.plot_fsc import create_fsc_plot
 from cryodrgn.masking import spherical_window_mask, cosine_dilation_mask
 
@@ -46,7 +48,8 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--mask",
         type=os.path.abspath,
-        help="if given, apply the mask in this file before calculating FSCs",
+        help="if given, apply the mask in this file before calculating half-map FSCs, "
+        "or use it for the correction step if calculating phase-randomized FSCs",
     )
     parser.add_argument(
         "--corrected",
@@ -83,15 +86,14 @@ def add_args(parser: argparse.ArgumentParser) -> None:
 
 
 def calculate_fsc(
-    vol1: np.ndarray,
-    vol2: np.ndarray,
-    mask: Optional[np.ndarray] = None,
-    phase_randomization: Optional[float] = None,
+    vol1: torch.Tensor,
+    vol2: torch.Tensor,
+    initial_mask: Optional[torch.Tensor] = None,
     out_file: Optional[str] = None,
 ) -> pd.DataFrame:
-    if mask is not None:
-        vol1 *= mask
-        vol2 *= mask
+    if initial_mask is not None:
+        vol1 *= initial_mask
+        vol2 *= initial_mask
 
     D = vol1.shape[0]
     x = np.arange(-D // 2, D // 2)
@@ -114,30 +116,6 @@ def calculate_fsc(
         p = np.vdot(v1, v2) / (np.vdot(v1, v1) * np.vdot(v2, v2)) ** 0.5
         fsc.append(float(p.real))
         prev_mask = mask
-
-    if phase_randomization is not None:
-        phase_D = int(phase_randomization * D)
-        phase_mask = dists > phase_D
-        phase_inds = list(range(phase_mask.sum()))
-        random.shuffle(phase_inds)
-        vol1[phase_mask] = vol1[phase_mask][phase_inds]
-        random.shuffle(phase_inds)
-        vol2[phase_mask] = vol2[phase_mask][phase_inds]
-
-        for i in range(1, D // 2):
-            mask = dists < i
-            shell = np.where(mask & np.logical_not(prev_mask))
-
-            if i > phase_D:
-                v1 = vol1[shell]
-                v2 = vol2[shell]
-                p = float(
-                    (np.vdot(v1, v2) / (np.vdot(v1, v1) * np.vdot(v2, v2)) ** 0.5).real
-                )
-                if not np.isnan(p) and p < 1.0:
-                    fsc[i - 1] = (fsc[i - 1] - p) / (1 - p)
-
-            prev_mask = mask
 
     fsc_vals = pd.DataFrame(dict(pixres=np.arange(D // 2) / D, fsc=fsc), dtype=float)
     if out_file is not None:
@@ -171,13 +149,62 @@ def get_fsc_thresholds(
     return res_05, res_143
 
 
+def correct_fsc(
+    vol1: torch.Tensor,
+    vol2: torch.Tensor,
+    randomization_threshold: float,
+    fsc_vals: pd.DataFrame,
+    initial_mask: Optional[torch.Tensor] = None,
+) -> pd.DataFrame:
+    if initial_mask is not None:
+        vol1 *= initial_mask
+        vol2 *= initial_mask
+
+    D = vol1.shape[0]
+    x = np.arange(-D // 2, D // 2)
+    x2, x1, x0 = np.meshgrid(x, x, x, indexing="ij")
+    coords = np.stack((x0, x1, x2), -1)
+    dists = (coords**2).sum(-1) ** 0.5
+    assert dists[D // 2, D // 2, D // 2] == 0.0
+
+    vol1 = fft.fftn_center(vol1)
+    vol2 = fft.fftn_center(vol2)
+
+    phase_D = int(randomization_threshold * vol1.shape[0])
+    phase_mask = dists > phase_D
+    phase_inds = list(range(phase_mask.sum()))
+    random.shuffle(phase_inds)
+    vol1[phase_mask] = vol1[phase_mask][phase_inds]
+    random.shuffle(phase_inds)
+    vol2[phase_mask] = vol2[phase_mask][phase_inds]
+
+    prev_mask = np.zeros((D, D, D), dtype=bool)
+    fsc = fsc_vals.fsc.tolist()
+    for i in range(1, D // 2):
+        mask = dists < i
+        shell = np.where(mask & np.logical_not(prev_mask))
+
+        if i > phase_D:
+            v1 = vol1[shell]
+            v2 = vol2[shell]
+            p = float(
+                (np.vdot(v1, v2) / (np.vdot(v1, v1) * np.vdot(v2, v2)) ** 0.5).real
+            )
+            if not np.isnan(p) and p < 1.0:
+                fsc[i - 1] = (fsc[i - 1] - p) / (1 - p)
+
+        prev_mask = mask
+
+    return pd.DataFrame(dict(pixres=np.arange(D // 2) / D, fsc=fsc), dtype=float)
+
+
 def calculate_cryosparc_fscs(
     full_vol: np.ndarray,
     half_vol1: np.ndarray,
     half_vol2: np.ndarray,
     sphere_mask: Optional[np.ndarray] = None,
     loose_mask: tuple[int, int] = (25, 15),
-    tight_mask: tuple[int, int] = (6, 6),
+    tight_mask: Union[tuple[int, int], np.ndarray] = (6, 6),
     Apix: float = 1.0,
     out_file: Optional[str] = None,
     plot_file: Optional[str] = None,
@@ -192,12 +219,21 @@ def calculate_cryosparc_fscs(
         "Loose": cosine_dilation_mask(
             full_vol, dilation=loose_mask[0], edge_dist=loose_mask[1], apix=Apix
         ),
-        "Tight": cosine_dilation_mask(
-            full_vol, dilation=tight_mask[0], edge_dist=tight_mask[1], apix=Apix
-        ),
     }
+    if isinstance(tight_mask, tuple):
+        masks["Tight"] = cosine_dilation_mask(
+            full_vol, dilation=tight_mask[0], edge_dist=tight_mask[1], apix=Apix
+        )
+    elif isinstance(tight_mask, (np.ndarray, torch.Tensor)):
+        masks["Tight"] = tight_mask
+    else:
+        raise TypeError(
+            f"`tight_mask` must be an array or a tuple giving dilation and cosine edge "
+            f"size in pixels, instead given {type(tight_mask).__name__}!"
+        )
+
     fsc_vals = {
-        mask_lbl: calculate_fsc(half_vol1, half_vol2, mask=mask)
+        mask_lbl: calculate_fsc(half_vol1, half_vol2, initial_mask=mask)
         for mask_lbl, mask in masks.items()
     }
     fsc_thresh = {
@@ -206,11 +242,12 @@ def calculate_cryosparc_fscs(
     }
 
     if fsc_thresh["Tight"] is not None:
-        fsc_vals["Corrected"] = calculate_fsc(
+        fsc_vals["Corrected"] = correct_fsc(
             half_vol1,
             half_vol2,
-            mask=masks["Tight"],
-            phase_randomization=0.75 * fsc_thresh["Tight"],
+            randomization_threshold=0.75 * fsc_thresh["Tight"],
+            fsc_vals=fsc_vals["Tight"],
+            initial_mask=masks["Tight"],
         )
         fsc_thresh["Corrected"] = get_fsc_thresholds(
             fsc_vals["Corrected"], Apix, verbose=False
@@ -241,19 +278,21 @@ def calculate_cryosparc_fscs(
     )
     if out_file is not None:
         logger.info(f"Saving FSC values to {out_file}")
-        fsc_vals.to_csv(out_file, sep=" ", header=True, index=False)
+        fsc_vals.to_csv(out_file, sep=" ", header=True)
 
     return fsc_vals
 
 
 def main(args: argparse.Namespace) -> None:
+    """Calculate FSC curves based on command-line arguments (see `add_args()` above)."""
+
     if len(args.volumes) not in {2, 3}:
         raise ValueError(
             f"Must provide two or three volume files, "
             f"given {len(args.volumes)} instead!"
         )
     volumes = [ImageSource.from_file(vol_file) for vol_file in args.volumes]
-    mask = ImageSource.from_file(args.mask).images() if args.mask is not None else None
+    mask = parse_mrc(args.mask)[0] if args.mask is not None else None
 
     if args.Apix:
         apix = args.Apix
@@ -314,11 +353,13 @@ def main(args: argparse.Namespace) -> None:
                 "{{fullvol, halfvol1, halfvol2}}!"
             )
 
+        if mask is None:
+            mask = (6, 6)
         fsc_vals = calculate_cryosparc_fscs(
             volumes[0].images(),
             volumes[1].images(),
             volumes[2].images(),
-            sphere_mask=mask,
+            tight_mask=mask,
             Apix=apix,
             out_file=args.outtxt,
             plot_file=plot_file,

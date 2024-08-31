@@ -52,6 +52,7 @@ def spherical_window_mask(
     x0, x1 = torch.meshgrid(
         torch.linspace(-1, 1, D + 1, dtype=torch.float32)[:-1],
         torch.linspace(-1, 1, D + 1, dtype=torch.float32)[:-1],
+        indexing="ij",
     )
     dists = (x0**2 + x1**2) ** 0.5
 

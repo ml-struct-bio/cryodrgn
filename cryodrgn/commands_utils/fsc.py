@@ -2,9 +2,14 @@
 
 Instead of giving two volumes, you can give three, in which case the first volume is
 assumed to be the full volume whereas the other two are corresponding half-maps
-The Full volume will be used to create a loose and a tight mask using dilation and
+The full volume will be used to create a loose and a tight mask using dilation and
 cosine edges; the latter mask will be corrected using phase randomization as implemented
 in cryoSPARC.
+
+See also
+--------
+`cryodrgn.commands_utils.plot_fsc` — for just plotting already-calculated FSCs
+`cryodrgn.commands_utils.gen_mask` — for generating custom dilation + cosine edge masks
 
 Example usage
 -------------
@@ -13,16 +18,22 @@ $ cryodrgn_utils fsc volume1.mrc volume2.mrc
 # Save FSC values to file and produce an FSC plot
 $ cryodrgn_utils fsc vol1.mrc vol2.mrc -o fsc.txt -p
 
-# Also apply a mask before computing FSCs
-$ cryodrgn_utils fsc vol1.mrc vol2.mrc --mask test-mask.mrc -o fsc.txt -p fsc-plot.png
+# Also apply a mask before computing FSCs, and also produce a plot of FSC curves.
+$ cryodrgn_utils fsc vol1.mrc vol2.mrc --mask test-mask.mrc -o fsc.txt -p
 
 # Also apply phase randomization at Fourier shells for resolutions < 10 angstroms
 $ cryodrgn_utils fsc vol1.mrc vol2.mrc --mask test-mask.mrc -o fsc.txt -p fsc-plot.png
                                        --corrected 10
 
 # Do cryoSPARC-style phase randomization with a tight mask; create an FSC plot with
-# curves for no mask, spherical mask, loose mask, tight mask, and corrected tight mask
+# curves for no mask, spherical mask, loose mask, tight mask, and corrected tight mask,
+# with loose and tight masks generated using the (first-given) full volume.
 $ cryodrgn_utils fsc fullvol.mrc vol1.mrc vol2.mrc -p fsc-plot.png
+
+# Do phase randomization as above using the given mask instead of the default tight
+# mask, which will also be used to calculate corrected FSCs.
+$ cryodrgn_utils fsc backproject.mrc half_vol_a.mrc half_vol_b.mrc \
+                     -p tighter-mask.png mask=tighter-mask.mrc
 
 """
 import os
@@ -85,6 +96,16 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def get_fftn_dists(resolution: int) -> np.array:
+    x = np.arange(-resolution // 2, resolution // 2)
+    x2, x1, x0 = np.meshgrid(x, x, x, indexing="ij")
+    coords = np.stack((x0, x1, x2), -1)
+    dists = (coords**2).sum(-1) ** 0.5
+    assert dists[resolution // 2, resolution // 2, resolution // 2] == 0.0
+
+    return dists
+
+
 def calculate_fsc(
     vol1: torch.Tensor,
     vol2: torch.Tensor,
@@ -96,12 +117,7 @@ def calculate_fsc(
         vol2 *= initial_mask
 
     D = vol1.shape[0]
-    x = np.arange(-D // 2, D // 2)
-    x2, x1, x0 = np.meshgrid(x, x, x, indexing="ij")
-    coords = np.stack((x0, x1, x2), -1)
-    dists = (coords**2).sum(-1) ** 0.5
-    assert dists[D // 2, D // 2, D // 2] == 0.0
-
+    dists = get_fftn_dists(D)
     vol1 = fft.fftn_center(vol1)
     vol2 = fft.fftn_center(vol2)
 
@@ -150,26 +166,34 @@ def get_fsc_thresholds(
 
 
 def correct_fsc(
+    fsc_vals: pd.DataFrame,
     vol1: torch.Tensor,
     vol2: torch.Tensor,
     randomization_threshold: float,
-    fsc_vals: pd.DataFrame,
     initial_mask: Optional[torch.Tensor] = None,
 ) -> pd.DataFrame:
+    """Apply phase-randomization null correction to given FSC volumes past a resolution.
+
+    This function implements cryoSPARC-style correction to an FSC curve to account for
+    the boost in FSCs that can be attributed to a mask that too tightly fits the
+    volumes and thus introduces an artificial source of correlation.
+
+    """
     if initial_mask is not None:
         vol1 *= initial_mask
         vol2 *= initial_mask
 
     D = vol1.shape[0]
-    x = np.arange(-D // 2, D // 2)
-    x2, x1, x0 = np.meshgrid(x, x, x, indexing="ij")
-    coords = np.stack((x0, x1, x2), -1)
-    dists = (coords**2).sum(-1) ** 0.5
-    assert dists[D // 2, D // 2, D // 2] == 0.0
-
+    if fsc_vals.shape[0] != (D // 2):
+        raise ValueError(
+            f"Given FSC values must have (D // 2) + 1 = {(D // 2) + 1} entries, "
+            f"instead have {fsc_vals.shape[0]}!"
+        )
+    dists = get_fftn_dists(D)
     vol1 = fft.fftn_center(vol1)
     vol2 = fft.fftn_center(vol2)
 
+    # apply phase-randomization past the given resolution by shuffling the phases
     phase_D = int(randomization_threshold * vol1.shape[0])
     phase_mask = dists > phase_D
     phase_inds = list(range(phase_mask.sum()))
@@ -178,6 +202,7 @@ def correct_fsc(
     random.shuffle(phase_inds)
     vol2[phase_mask] = vol2[phase_mask][phase_inds]
 
+    # re-calculate the FSCs past the resolution using the phase-randomized volumes
     prev_mask = np.zeros((D, D, D), dtype=bool)
     fsc = fsc_vals.fsc.tolist()
     for i in range(1, D // 2):
@@ -187,11 +212,14 @@ def correct_fsc(
         if i > phase_D:
             v1 = vol1[shell]
             v2 = vol2[shell]
-            p = float(
-                (np.vdot(v1, v2) / (np.vdot(v1, v1) * np.vdot(v2, v2)) ** 0.5).real
-            )
-            if not np.isnan(p) and p < 1.0:
-                fsc[i - 1] = (fsc[i - 1] - p) / (1 - p)
+            p_raw = np.vdot(v1, v2) / (np.vdot(v1, v1) * np.vdot(v2, v2)) ** 0.5
+            p = float(p_raw.real)
+
+            # normalize the original FSC value using the phase-randomized value
+            if p == 1.0:
+                fsc[i] = 0.0
+            elif not np.isnan(p):
+                fsc[i] = np.clip((fsc[i] - p) / (1 - p), 0, 1.0)
 
         prev_mask = mask
 
@@ -243,10 +271,10 @@ def calculate_cryosparc_fscs(
 
     if fsc_thresh["Tight"] is not None:
         fsc_vals["Corrected"] = correct_fsc(
+            fsc_vals["Tight"],
             half_vol1,
             half_vol2,
             randomization_threshold=0.75 * fsc_thresh["Tight"],
-            fsc_vals=fsc_vals["Tight"],
             initial_mask=masks["Tight"],
         )
         fsc_thresh["Corrected"] = get_fsc_thresholds(

@@ -42,7 +42,6 @@ import logging
 import numpy as np
 import pandas as pd
 import torch
-import random
 from typing import Optional, Union
 from cryodrgn import fft
 from cryodrgn.source import ImageSource
@@ -54,8 +53,14 @@ logger = logging.getLogger(__name__)
 
 
 def add_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("volumes", nargs="+", help="volumes to compare")
+    """The command-line arguments available for use with `cryodrgn_utils fsc`."""
 
+    parser.add_argument(
+        "volumes",
+        nargs="+",
+        help="volumes to compare; two volumes or three to use the first "
+        "to create masks for comparing the other two",
+    )
     parser.add_argument(
         "--mask",
         type=os.path.abspath,
@@ -106,20 +111,31 @@ def get_fftn_dists(resolution: int) -> np.array:
     return dists
 
 
+def calc_fsc(
+    v1: Union[np.ndarray, torch.Tensor], v2: Union[np.ndarray, torch.Tensor]
+) -> float:
+    var = (np.vdot(v1, v1) * np.vdot(v2, v2)) ** 0.5
+
+    if var:
+        fsc = float((np.vdot(v1, v2) / var).real)
+    else:
+        fsc = 1.0
+
+    return fsc
+
+
 def calculate_fsc(
     vol1: torch.Tensor,
     vol2: torch.Tensor,
     initial_mask: Optional[torch.Tensor] = None,
     out_file: Optional[str] = None,
 ) -> pd.DataFrame:
-    if initial_mask is not None:
-        vol1 *= initial_mask
-        vol2 *= initial_mask
-
+    maskvol1 = vol1 * initial_mask if initial_mask is not None else vol1.clone()
+    maskvol2 = vol2 * initial_mask if initial_mask is not None else vol2.clone()
     D = vol1.shape[0]
     dists = get_fftn_dists(D)
-    vol1 = fft.fftn_center(vol1)
-    vol2 = fft.fftn_center(vol2)
+    maskvol1 = fft.fftn_center(maskvol1)
+    maskvol2 = fft.fftn_center(maskvol2)
 
     # logger.info(r[D//2, D//2, D//2:])
     prev_mask = np.zeros((D, D, D), dtype=bool)
@@ -127,10 +143,7 @@ def calculate_fsc(
     for i in range(1, D // 2):
         mask = dists < i
         shell = np.where(mask & np.logical_not(prev_mask))
-        v1 = vol1[shell]
-        v2 = vol2[shell]
-        p = np.vdot(v1, v2) / (np.vdot(v1, v1) * np.vdot(v2, v2)) ** 0.5
-        fsc.append(float(p.real))
+        fsc.append(calc_fsc(maskvol1[shell], maskvol2[shell]))
         prev_mask = mask
 
     fsc_vals = pd.DataFrame(dict(pixres=np.arange(D // 2) / D, fsc=fsc), dtype=float)
@@ -165,6 +178,14 @@ def get_fsc_thresholds(
     return res_05, res_143
 
 
+def randomize_phase(cval: complex) -> complex:
+    """Create a new complex value with the same amplitude but scrambled phase."""
+    amp = (cval.real**2.0 + cval.imag**2.0) ** 0.5
+    angrand = np.random.random() * 2 * np.pi
+
+    return complex(amp * np.cos(angrand), amp * np.sin(angrand))
+
+
 def correct_fsc(
     fsc_vals: pd.DataFrame,
     vol1: torch.Tensor,
@@ -175,32 +196,23 @@ def correct_fsc(
     """Apply phase-randomization null correction to given FSC volumes past a resolution.
 
     This function implements cryoSPARC-style correction to an FSC curve to account for
-    the boost in FSCs that can be attributed to a mask that too tightly fits the
-    volumes and thus introduces an artificial source of correlation.
+    the boost in FSCs that can be attributed to a mask that is too sharp or too tightly
+    fits the volumes and thus introduces an artificial source of correlation.
 
     """
-    if initial_mask is not None:
-        vol1 *= initial_mask
-        vol2 *= initial_mask
-
     D = vol1.shape[0]
     if fsc_vals.shape[0] != (D // 2):
         raise ValueError(
             f"Given FSC values must have (D // 2) + 1 = {(D // 2) + 1} entries, "
             f"instead have {fsc_vals.shape[0]}!"
         )
-    dists = get_fftn_dists(D)
-    vol1 = fft.fftn_center(vol1)
-    vol2 = fft.fftn_center(vol2)
 
-    # apply phase-randomization past the given resolution by shuffling the phases
-    phase_D = int(randomization_threshold * vol1.shape[0])
-    phase_mask = dists > phase_D
-    phase_inds = list(range(phase_mask.sum()))
-    random.shuffle(phase_inds)
-    vol1[phase_mask] = vol1[phase_mask][phase_inds]
-    random.shuffle(phase_inds)
-    vol2[phase_mask] = vol2[phase_mask][phase_inds]
+    maskvol1 = vol1 * initial_mask if initial_mask is not None else vol1.clone()
+    maskvol2 = vol2 * initial_mask if initial_mask is not None else vol2.clone()
+    dists = get_fftn_dists(D)
+    maskvol1 = fft.fftn_center(maskvol1)
+    maskvol2 = fft.fftn_center(maskvol2)
+    phase_D = int(randomization_threshold * D)
 
     # re-calculate the FSCs past the resolution using the phase-randomized volumes
     prev_mask = np.zeros((D, D, D), dtype=bool)
@@ -210,10 +222,10 @@ def correct_fsc(
         shell = np.where(mask & np.logical_not(prev_mask))
 
         if i > phase_D:
-            v1 = vol1[shell]
-            v2 = vol2[shell]
-            p_raw = np.vdot(v1, v2) / (np.vdot(v1, v1) * np.vdot(v2, v2)) ** 0.5
-            p = float(p_raw.real)
+            p = calc_fsc(
+                maskvol1[shell].apply_(randomize_phase),
+                maskvol2[shell].apply_(randomize_phase),
+            )
 
             # normalize the original FSC value using the phase-randomized value
             if p == 1.0:
@@ -350,18 +362,21 @@ def main(args: argparse.Namespace) -> None:
             f"Calculating FSC curve between `{args.volumes[0]}` "
             f"and `{args.volumes[1]}`..."
         )
-        if args.corrected is not None:
-            if args.corrected >= 1:
-                args.corrected = (args.corrected / apix) ** -1
-
         fsc_vals = calculate_fsc(
             volumes[0].images(),
             volumes[1].images(),
             mask,
-            args.corrected,
             out_file=args.outtxt,
         )
         _ = get_fsc_thresholds(fsc_vals, apix)
+
+        if args.corrected is not None:
+            if args.corrected >= 1:
+                args.corrected = (args.corrected / apix) ** -1
+
+            fsc_vals = correct_fsc(
+                fsc_vals, volumes[0].images(), volumes[1].images(), args.corrected, mask
+            )
 
         if not args.outtxt:
             fsc_str = fsc_vals.round(4).to_csv(sep="\t", index=False)
@@ -372,13 +387,14 @@ def main(args: argparse.Namespace) -> None:
     elif len(args.volumes) == 3:
         logger.info(
             f"Calculating FSC curve between `{args.volumes[1]}` and `{args.volumes[2]}`"
-            f" using `{args.volumes[0]}` as the reference full volume..."
+            f" using `{args.volumes[0]}` as the reference full volume "
+            f"for generating masks..."
         )
         if args.corrected is not None:
             raise ValueError(
                 "Cannot provide your own phase randomization threshold as this will "
-                "be computed for you when providing three volumes "
-                "{{fullvol, halfvol1, halfvol2}}!"
+                "be computed for you when providing three volumes with "
+                "cryodrgn_utils fsc fullvol.mrc vol1.mrc vol2.mrc ... !"
             )
 
         if mask is None:

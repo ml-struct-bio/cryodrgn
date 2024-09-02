@@ -2,25 +2,36 @@
 
 Example usage
 -------------
+# Plot two curves on the same plot and save it to `fsc-plot.png`
 $ cryodrgn_utils plot_fsc vol1-fsc.txt vol2-fsc.txt
+
+# Plot one curve and save it to `vol1-fsc.png`
 $ cryodrgn_utils plot_fsc vol1-fsc.txt -o vol1-fsc.png
+
+# Plot three curves at `fsc.png` and use an A/px value other than 1.0
 $ cryodrgn_utils plot_fsc fsc-a.txt fsc-b.txt fsc-c.txt -o fsc.png --Apix 2.75
 
 """
 import os
 import argparse
+import logging
 from typing import Union, Optional
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-import logging
-
 logger = logging.getLogger(__name__)
 
 
 def add_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("input", nargs="+", help="input cryoDRGN fsc text files")
+    """The command-line arguments available for use with `cryodrgn_utils plot_fsc`."""
+
+    parser.add_argument(
+        "input",
+        nargs="+",
+        help="input cryoDRGN FSC text files, with either one column containing FSCs or "
+        "two space-delimited columns containing pixres and FSCs",
+    )
     parser.add_argument(
         "-a", "--Apix", type=float, default=1.0, help="physical pixel size in angstrom"
     )
@@ -50,12 +61,23 @@ def plot_fsc_vals(fsc_arr: pd.DataFrame, label: str, **plot_args) -> None:
 
 
 def create_fsc_plot(
-    fsc_vals: Union[pd.DataFrame, dict[str, pd.DataFrame]],
+    fsc_vals: Union[np.ndarray, pd.DataFrame, dict[str, pd.DataFrame]],
     outfile: Optional[str] = None,
-    Apix: float = 1.0,
+    apix: Optional[float] = None,
     title: Optional[str] = None,
 ) -> None:
-    # Create a subplot
+    """Plot a given set of Fourier shell correlation values on a single canvas.
+
+    Arguments
+    ---------
+    fsc_vals:   An array or DataFrame of FSC values, in which case each column will be
+                treated as an FSC curve, or a dictionary of FSC curves expressed as
+                DataFrames with an optional `pixres` columns.
+    outfile:    Where to save the plot. If not given, plot will be displayed on screen.
+    apix:       Supply an A/px value for creating proper x-axis frequency labels.
+    title:      Optionally add this title to the plot.
+
+    """
     fig, ax = plt.subplots(figsize=(10, 5))
 
     if isinstance(fsc_vals, dict):
@@ -69,14 +91,18 @@ def create_fsc_plot(
         raise TypeError(f"Unrecognized type for `fsc_vals`: {type(fsc_vals).__name__}!")
 
     res_given = isinstance(fsc_vals, pd.DataFrame) and fsc_vals.shape[1] == 2
-    res_given |= isinstance(fsc_vals, dict) and all(
-        fsc_arr.shape[1] == 2 for fsc_arr in fsc_vals.values()
-    )
+    if isinstance(fsc_vals, dict):
+        res_given |= all(fsc_arr.shape[1] == 2 for fsc_arr in fsc_vals.values())
 
     if res_given:
         use_xticks = np.arange(0.1, 0.6, 0.1)
-        xtick_lbls = [f"1/{val:.1f}Å" for val in ((1 / use_xticks) * Apix)]
+        xtick_lbls = [f"1/{val:.1f}Å" for val in ((1 / use_xticks) * apix)]
         plt.xticks(use_xticks, xtick_lbls)
+    elif apix is not None:
+        logger.warning(
+            f"Supplied A/px={apix} but can't produce frequency x-axis labels if "
+            f"input arrays don't have `pixres` columns!"
+        )
 
     # titles for axes
     plt.xlabel("Spatial frequency", size=14)
@@ -108,7 +134,7 @@ def create_fsc_plot(
 
 
 def main(args):
-    # Load and plot FSC curves from each user-given file (see `add_args()` above)."""
+    """Load and plot FSC curves from each user-given file (see `add_args()` above)."""
     fsc_arrays = dict()
 
     for file in args.input:

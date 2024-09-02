@@ -132,21 +132,23 @@ def calculate_fsc(
 ) -> pd.DataFrame:
     maskvol1 = vol1 * initial_mask if initial_mask is not None else vol1.clone()
     maskvol2 = vol2 * initial_mask if initial_mask is not None else vol2.clone()
-    D = vol1.shape[0]
-    dists = get_fftn_dists(D)
+    res = vol1.shape[0]
+    dists = get_fftn_dists(res)
     maskvol1 = fft.fftn_center(maskvol1)
     maskvol2 = fft.fftn_center(maskvol2)
 
     # logger.info(r[D//2, D//2, D//2:])
-    prev_mask = np.zeros((D, D, D), dtype=bool)
+    prev_mask = np.zeros((res, res, res), dtype=bool)
     fsc = [1.0]
-    for i in range(1, D // 2):
+    for i in range(1, res // 2):
         mask = dists < i
         shell = np.where(mask & np.logical_not(prev_mask))
         fsc.append(calc_fsc(maskvol1[shell], maskvol2[shell]))
         prev_mask = mask
 
-    fsc_vals = pd.DataFrame(dict(pixres=np.arange(D // 2) / D, fsc=fsc), dtype=float)
+    fsc_vals = pd.DataFrame(
+        dict(pixres=np.arange(res // 2) / res, fsc=fsc), dtype=float
+    )
     if out_file is not None:
         logger.info(f"Saving FSC values to {out_file}")
         fsc_vals.to_csv(out_file, sep=" ", header=True, index=False)
@@ -200,28 +202,28 @@ def correct_fsc(
     fits the volumes and thus introduces an artificial source of correlation.
 
     """
-    D = vol1.shape[0]
-    if fsc_vals.shape[0] != (D // 2):
+    res = vol1.shape[0]
+    if fsc_vals.shape[0] != (res // 2):
         raise ValueError(
-            f"Given FSC values must have (D // 2) + 1 = {(D // 2) + 1} entries, "
+            f"Given FSC values must have (D // 2) + 1 = {(res // 2) + 1} entries, "
             f"instead have {fsc_vals.shape[0]}!"
         )
 
     maskvol1 = vol1 * initial_mask if initial_mask is not None else vol1.clone()
     maskvol2 = vol2 * initial_mask if initial_mask is not None else vol2.clone()
-    dists = get_fftn_dists(D)
+    dists = get_fftn_dists(res)
     maskvol1 = fft.fftn_center(maskvol1)
     maskvol2 = fft.fftn_center(maskvol2)
-    phase_D = int(randomization_threshold * D)
+    phase_res = int(randomization_threshold * res)
 
     # re-calculate the FSCs past the resolution using the phase-randomized volumes
-    prev_mask = np.zeros((D, D, D), dtype=bool)
+    prev_mask = np.zeros((res, res, res), dtype=bool)
     fsc = fsc_vals.fsc.tolist()
-    for i in range(1, D // 2):
+    for i in range(1, res // 2):
         mask = dists < i
         shell = np.where(mask & np.logical_not(prev_mask))
 
-        if i > phase_D:
+        if i > phase_res:
             p = calc_fsc(
                 maskvol1[shell].apply_(randomize_phase),
                 maskvol2[shell].apply_(randomize_phase),
@@ -235,17 +237,17 @@ def correct_fsc(
 
         prev_mask = mask
 
-    return pd.DataFrame(dict(pixres=np.arange(D // 2) / D, fsc=fsc), dtype=float)
+    return pd.DataFrame(dict(pixres=np.arange(res // 2) / res, fsc=fsc), dtype=float)
 
 
 def calculate_cryosparc_fscs(
-    full_vol: np.ndarray,
-    half_vol1: np.ndarray,
-    half_vol2: np.ndarray,
-    sphere_mask: Optional[np.ndarray] = None,
+    full_vol: torch.Tensor,
+    half_vol1: torch.Tensor,
+    half_vol2: torch.Tensor,
+    sphere_mask: Optional[Union[np.ndarray, torch.Tensor]] = None,
     loose_mask: tuple[int, int] = (25, 15),
     tight_mask: Union[tuple[int, int], np.ndarray] = (6, 6),
-    Apix: float = 1.0,
+    apix: float = 1.0,
     out_file: Optional[str] = None,
     plot_file: Optional[str] = None,
 ) -> pd.DataFrame:
@@ -257,12 +259,12 @@ def calculate_cryosparc_fscs(
         "No Mask": None,
         "Spherical": sphere_mask,
         "Loose": cosine_dilation_mask(
-            full_vol, dilation=loose_mask[0], edge_dist=loose_mask[1], apix=Apix
+            full_vol, dilation=loose_mask[0], edge_dist=loose_mask[1], apix=apix
         ),
     }
     if isinstance(tight_mask, tuple):
         masks["Tight"] = cosine_dilation_mask(
-            full_vol, dilation=tight_mask[0], edge_dist=tight_mask[1], apix=Apix
+            full_vol, dilation=tight_mask[0], edge_dist=tight_mask[1], apix=apix
         )
     elif isinstance(tight_mask, (np.ndarray, torch.Tensor)):
         masks["Tight"] = tight_mask
@@ -277,7 +279,7 @@ def calculate_cryosparc_fscs(
         for mask_lbl, mask in masks.items()
     }
     fsc_thresh = {
-        mask_lbl: get_fsc_thresholds(fsc_df, Apix, verbose=False)[1]
+        mask_lbl: get_fsc_thresholds(fsc_df, apix, verbose=False)[1]
         for mask_lbl, fsc_df in fsc_vals.items()
     }
 
@@ -290,24 +292,24 @@ def calculate_cryosparc_fscs(
             initial_mask=masks["Tight"],
         )
         fsc_thresh["Corrected"] = get_fsc_thresholds(
-            fsc_vals["Corrected"], Apix, verbose=False
+            fsc_vals["Corrected"], apix, verbose=False
         )[1]
     else:
         fsc_vals["Corrected"] = fsc_vals["Tight"]
         fsc_thresh["Corrected"] = fsc_thresh["Tight"]
 
     # Report corrected FSCs by printing FSC=0.5 and FSC=0.143 threshold values to screen
-    get_fsc_thresholds(fsc_vals["Corrected"], Apix)
+    get_fsc_thresholds(fsc_vals["Corrected"], apix)
 
     if plot_file is not None:
         fsc_angs = {
-            mask_lbl: ((1 / fsc_val) * Apix) for mask_lbl, fsc_val in fsc_thresh.items()
+            mask_lbl: ((1 / fsc_val) * apix) for mask_lbl, fsc_val in fsc_thresh.items()
         }
         fsc_plot_vals = {
             f"{mask_lbl}  ({fsc_angs[mask_lbl]:.2f}Å)": fsc_df
             for mask_lbl, fsc_df in fsc_vals.items()
         }
-        create_fsc_plot(fsc_vals=fsc_plot_vals, outfile=plot_file, Apix=Apix)
+        create_fsc_plot(fsc_vals=fsc_plot_vals, outfile=plot_file, apix=apix)
 
     pixres_index = {tuple(vals.pixres.values) for vals in fsc_vals.values()}
     assert len(pixres_index) == 1
@@ -382,7 +384,7 @@ def main(args: argparse.Namespace) -> None:
             fsc_str = fsc_vals.round(4).to_csv(sep="\t", index=False)
             logger.info(f"\n{fsc_str}")
         if args.plot:
-            create_fsc_plot(fsc_vals=fsc_vals, outfile=plot_file, Apix=apix)
+            create_fsc_plot(fsc_vals=fsc_vals, outfile=plot_file, apix=apix)
 
     elif len(args.volumes) == 3:
         logger.info(
@@ -404,7 +406,7 @@ def main(args: argparse.Namespace) -> None:
             volumes[1].images(),
             volumes[2].images(),
             tight_mask=mask,
-            Apix=apix,
+            apix=apix,
             out_file=args.outtxt,
             plot_file=plot_file,
         )

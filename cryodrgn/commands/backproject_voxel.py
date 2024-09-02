@@ -40,6 +40,8 @@ logger = logging.getLogger(__name__)
 
 
 def add_args(parser):
+    """The command-line arguments for use with `cryodrgn_utils backproject_voxel`."""
+
     parser.add_argument(
         "particles",
         type=os.path.abspath,
@@ -343,7 +345,7 @@ def main(args):
                 volume_full,
                 volume_half1,
                 volume_half2,
-                Apix=Apix,
+                apix=Apix,
                 out_file=out_file,
                 plot_file=plot_file,
             )

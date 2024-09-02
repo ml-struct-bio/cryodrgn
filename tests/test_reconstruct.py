@@ -777,19 +777,19 @@ class TestTiltFixedHetero:
             "--ctf",
             os.path.join(outdir, "filtered_sta_ctf.pkl"),
             "-o",
-            os.path.join(outdir, "filtered.mrc"),
+            os.path.join(outdir, "filtered"),
             "-d",
             "2.93",
+            "--no-half-maps",
         ]
-
         if new_indices_file is not None:
             args += ["--ind", os.path.join(outdir, new_indices_file)]
+
         parser = argparse.ArgumentParser()
         backproject_voxel.add_args(parser)
-
         backproject_voxel.main(parser.parse_args(args))
-        assert os.path.exists(os.path.join(outdir, "filtered.mrc"))
-        os.remove(os.path.join(outdir, "filtered.mrc"))
+        assert os.path.exists(os.path.join(outdir, "filtered", "backproject.mrc"))
+        shutil.rmtree(os.path.join(outdir, "filtered"))
 
     @pytest.mark.parametrize("nb_lbl", ["cryoDRGN_figures", "cryoDRGN_ET_viz"])
     def test_notebooks(

@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 
 def add_args(parser: argparse.ArgumentParser) -> None:
+    """The command-line arguments added for use with `cryodrgn_utils plot_classes`."""
     parser.add_argument(
         "traindir", type=os.path.abspath, help="Directory with cryoDRGN results"
     )

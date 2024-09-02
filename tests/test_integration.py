@@ -323,13 +323,13 @@ class TestParseWriteStar:
         outdir = self.get_outdir(tmpdir_factory, particles, datadir)
         out_txt = os.path.join(outdir, f"downsampled_{downsample_dim}.{chunk_size}.txt")
 
-        out_vol = os.path.join(outdir, f"vol_{downsample_dim}.{chunk_size}.mrc")
+        outpath = os.path.join(outdir, f"backproj_{downsample_dim}.{chunk_size}")
         args = [out_txt, "--poses", poses.path]
         if indices.path is not None:
-            out_vol = out_vol.replace(".mrc", f"_{indices.label}.mrc")
+            outpath += f"_{indices.label}"
             args += ["--ind", indices.path]
 
-        args += ["-o", out_vol]
+        args += ["-o", outpath]
         if ctf.path is not None:
             args += ["--ctf", ctf.path]
         if datadir.path is not None:
@@ -339,8 +339,13 @@ class TestParseWriteStar:
         backproject_voxel.add_args(parser)
         backproject_voxel.main(parser.parse_args(args))
 
-        assert os.path.exists(out_vol)
-        os.remove(out_vol)
+        assert os.path.exists(os.path.join(outpath, "backproject.mrc"))
+        assert os.path.exists(os.path.join(outpath, "half_map_a.mrc"))
+        assert os.path.exists(os.path.join(outpath, "half_map_b.mrc"))
+        assert os.path.exists(os.path.join(outpath, "fsc-plot.png"))
+        assert os.path.exists(os.path.join(outpath, "fsc-vals.txt"))
+
+        shutil.rmtree(outpath)
 
     # NOTE: these must be a subset of the parameters
     #       used in `test_downsample_and_from_txt()` above to get input .txt particles!
@@ -365,12 +370,12 @@ class TestParseWriteStar:
         out_star = os.path.join(
             outdir, f"downsampled_{downsample_dim}.{chunk_size}.star"
         )
-        out_vol = os.path.join(outdir, f"vol_{downsample_dim}.{chunk_size}.mrc")
 
+        outpath = os.path.join(outdir, f"backproj_{downsample_dim}.{chunk_size}")
         if indices.path is not None:
-            out_vol = out_vol.replace(".mrc", f"_{indices.label}.mrc")
+            outpath += f"_{indices.label}"
 
-        args = [out_star, "--poses", poses.path, "-o", out_vol, "--datadir", outdir]
+        args = [out_star, "--poses", poses.path, "-o", outpath, "--datadir", outdir]
         if indices.path is not None:
             args += ["--ind", indices.path]
         if ctf.path is not None:
@@ -380,7 +385,13 @@ class TestParseWriteStar:
         backproject_voxel.add_args(parser)
         backproject_voxel.main(parser.parse_args(args))
 
-        assert os.path.exists(out_vol)
+        assert os.path.exists(os.path.join(outpath, "backproject.mrc"))
+        assert os.path.exists(os.path.join(outpath, "half_map_a.mrc"))
+        assert os.path.exists(os.path.join(outpath, "half_map_b.mrc"))
+        assert os.path.exists(os.path.join(outpath, "fsc-plot.png"))
+        assert os.path.exists(os.path.join(outpath, "fsc-vals.txt"))
+
+        shutil.rmtree(outpath)
 
 
 @pytest.mark.parametrize(
@@ -444,23 +455,23 @@ class TestBackprojectFromChunkedDownsampled:
         )
 
         args = [out_txt, "--poses", poses.path]
-        out_vol = os.path.join(outdir, "vol.mrc")
+        outpath = os.path.join(outdir, "bproj")
         if ctf.path is not None:
             args += ["--ctf", ctf.path]
         if indices.path is not None:
             args += ["--ind", indices.path]
-            out_vol = out_vol[:-4] + f"_{indices.label}.mrc"
-        args += ["-o", out_vol]
+            outpath += f"_{indices.label}"
+        args += ["-o", outpath]
 
         parser = argparse.ArgumentParser()
         backproject_voxel.add_args(parser)
         backproject_voxel.main(parser.parse_args(args))
-        assert os.path.exists(out_vol)
 
-        vol_fls = [
-            fl
-            for fl in os.listdir(outdir)
-            if fl[-4:] == ".mrc" and os.path.basename(fl)[:3] == "vol"
-        ]
-        if len(vol_fls) == 2:
+        assert os.path.exists(os.path.join(outpath, "backproject.mrc"))
+        assert os.path.exists(os.path.join(outpath, "half_map_a.mrc"))
+        assert os.path.exists(os.path.join(outpath, "half_map_b.mrc"))
+        assert os.path.exists(os.path.join(outpath, "fsc-plot.png"))
+        assert os.path.exists(os.path.join(outpath, "fsc-vals.txt"))
+
+        if indices.path is not None:
             shutil.rmtree(outdir)

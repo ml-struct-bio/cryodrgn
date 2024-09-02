@@ -4,6 +4,7 @@ import pytest
 import os
 from hashlib import md5
 from cryodrgn.utils import run_command
+from cryodrgn.mrcfile import parse_mrc
 
 
 def hash_file(filename: str) -> str:
@@ -37,61 +38,44 @@ def test_mask_fidelity(tmpdir, volume, dist, dilate, apix) -> None:
         round(float(out0.split("\n")[0].split("Threshold=")[1]), 4)
         == thresh_vals[volume.label]
     )
-    mask_hashes = {
+
+    assert os.path.exists(mask_file)
+    vol_arr, vol_header = parse_mrc(volume.path)
+    mask_arr, mask_header = parse_mrc(mask_file)
+
+    assert mask_arr.shape == vol_arr.shape
+    if apix is None:
+        assert mask_header.apix == vol_header.apix
+    else:
+        assert mask_header.apix == apix
+
+    mask_sums = {
         "toy-small": {
             2: {
-                3: {
-                    None: "85f8073b2a933f7d3fb0f890d8630af8",
-                    1: "85f8073b2a933f7d3fb0f890d8630af8",
-                    2.79: "bb4207c6d0610923c368d193fffa961b",
-                },
-                7: {
-                    None: "b073bfd7a9ae12a6dbf61fc822845524",
-                    1: "b073bfd7a9ae12a6dbf61fc822845524",
-                    2.79: "e57542e0f6ec7a9df2152df99fdeeef3",
-                },
+                3: {None: 1760.1, 1: 1760.1, 2.79: 242.0},
+                7: {None: 5571.7, 1: 5571.7, 2.79: 592.0},
             },
             5: {
-                3: {
-                    None: "71b5eb59642a8ffd012d47d805c3de5c",
-                    1: "71b5eb59642a8ffd012d47d805c3de5c",
-                    2.79: "b5823d127f0c7171f550f8f6b65ffc55",
-                },
-                7: {
-                    None: "1037b5733e3c499d932592ac8574496d",
-                    1: "1037b5733e3c499d932592ac8574496d",
-                    2.79: "fd48d91f9de4ea2d4f3e4ad00bbc3f3a",
-                },
+                3: {None: 4256.2, 1: 4256.2, 2.79: 543.9},
+                7: {None: 9545.2, 1: 9545.2, 2.79: 1021.3},
             },
         },
         "spike": {
             2: {
-                3: {
-                    None: "e0dc53ecc7566085daee70402672426f",
-                    1: "1a4e2f540a3878e1a1711a5ace8e7f32",
-                    2.79: "3a09e498807a44316a87609a1dd06b2e",
-                },
-                7: {
-                    None: "e0dc53ecc7566085daee70402672426f",
-                    1: "e907111fa79e20aa2eeef7ca41a57d1b",
-                    2.79: "72d1c7606076633a4eb3fd27391d21a4",
-                },
+                3: {None: 0.0, 1: 3042.6, 2.79: 450.0},
+                7: {None: 0.0, 1: 8542.9, 2.79: 1069.0},
             },
             5: {
-                3: {
-                    None: "e0dc53ecc7566085daee70402672426f",
-                    1: "acf89e2e2d1583ac037bab0f50ce772c",
-                    2.79: "fcc9b4fc697a7584c9fa6ff2b952439d",
-                },
-                7: {
-                    None: "e0dc53ecc7566085daee70402672426f",
-                    1: "7fa0570251fefeb807c56223af2ab58c",
-                    2.79: "a659ea05459ed429ce8c7fbd7274cf2a",
-                },
+                3: {None: 0.0, 1: 6853.3, 2.79: 1011.0},
+                7: {None: 0.0, 1: 11745.8, 2.79: 1821.7},
             },
         },
     }
-    assert hash_file(mask_file) == mask_hashes[volume.label][dist][dilate][apix]
+
+    # the mask is always at max value for the volume itself
+    assert not ((mask_arr != 1) & (vol_arr > thresh_vals[volume.label])).any()
+    out_sum = mask_arr[vol_arr <= thresh_vals[volume.label]].sum()
+    assert round(float(out_sum), 1) == mask_sums[volume.label][dist][dilate][apix]
 
 
 @pytest.mark.parametrize("volume", ["toy-small"], indirect=True)
@@ -114,10 +98,10 @@ def test_png_output_file(tmpdir, volume, dist_val) -> None:
 
     mask_hashes = {
         3: {
-            "toy-small": "eafaaafd35bdbbdc880802367f892921",
+            "toy-small": "84b23b71ef048218874f9b468cee6abf",
         },
         5: {
-            "toy-small": "3ddb1ca57d656d9b8bbc2cf2b045c3b8",
+            "toy-small": "84b9810568cc8c2d00b320d2dc24564e",
         },
     }
     assert hash_file(mask_file) == mask_hashes[dist_val][volume.label]

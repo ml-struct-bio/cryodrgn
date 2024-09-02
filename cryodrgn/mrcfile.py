@@ -210,7 +210,7 @@ class MRCHeader:
 
     @property
     def apix(self) -> float:
-        return self.fields["xlen"] / self.fields["nx"]
+        return round(self.fields["xlen"] / self.fields["nx"], 6)
 
     @apix.setter
     def apix(self, value: float) -> None:

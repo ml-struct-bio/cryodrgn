@@ -22,13 +22,10 @@ class TestBackprojection:
 
         return odir
 
-    # NOTE: these have to be the same as in `test_to_fsc()` below for proper cleanup!
     @pytest.mark.parametrize(
         "particles, poses, ctf, datadir",
         [
             ("toy.mrcs", "toy-poses", None, None),
-            ("toy.mrcs", "toy-poses", "CTF-Test", None),
-            ("toy.txt", "toy-poses", "CTF-Test", None),
             ("toy.star", "toy-poses", "CTF-Test", None),
             ("hand", "hand-rot", None, None),
             ("hand", "hand-poses", None, None),
@@ -42,14 +39,9 @@ class TestBackprojection:
         outdir = self.get_outdir(
             tmpdir_factory, particles, poses, ctf, indices, datadir
         )
-        args = [
-            particles.path,
-            "--poses",
-            poses.path,
-            "-o",
-            os.path.join(outdir, "vol.mrc"),
-        ]
+        outpath = os.path.join(outdir, "backprojection-test")
 
+        args = [particles.path, "--poses", poses.path, "-o", outpath]
         if ctf.path is not None:
             args += ["--ctf", ctf.path]
         if indices.path is not None:
@@ -61,11 +53,79 @@ class TestBackprojection:
         backproject_voxel.add_args(parser)
         backproject_voxel.main(parser.parse_args(args))
 
-        assert os.path.exists(os.path.join(outdir, "vol.mrc"))
-        assert os.path.exists(os.path.join(outdir, "vol_fsc-plot.png"))
-        assert os.path.exists(os.path.join(outdir, "vol_fsc-vals.txt"))
-        assert os.path.exists(os.path.join(outdir, "vol_half-map1.mrc"))
-        assert os.path.exists(os.path.join(outdir, "vol_half-map2.mrc"))
+        assert os.path.exists(os.path.join(outpath, "backproject.mrc"))
+        assert os.path.exists(os.path.join(outpath, "half_map_a.mrc"))
+        assert os.path.exists(os.path.join(outpath, "half_map_b.mrc"))
+        assert os.path.exists(os.path.join(outpath, "fsc-plot.png"))
+        assert os.path.exists(os.path.join(outpath, "fsc-vals.txt"))
+
+    @pytest.mark.parametrize(
+        "particles, poses, ctf, datadir",
+        [("toy.mrcs", "toy-poses", "CTF-Test", None)],
+        indirect=True,
+    )
+    @pytest.mark.parametrize("indices", [None, "just-5"], indirect=True)
+    def test_train_no_halfmaps(
+        self, tmpdir_factory, particles, poses, ctf, indices, datadir
+    ):
+        outdir = self.get_outdir(
+            tmpdir_factory, particles, poses, ctf, indices, datadir
+        )
+        outpath = os.path.join(outdir, "backprojection-test")
+
+        args = [particles.path, "--poses", poses.path, "-o", outpath, "--no-half-maps"]
+        if ctf.path is not None:
+            args += ["--ctf", ctf.path]
+        if indices.path is not None:
+            args += ["--ind", indices.path]
+        if datadir.path is not None:
+            args += ["--datadir", datadir.path]
+
+        parser = argparse.ArgumentParser()
+        backproject_voxel.add_args(parser)
+        backproject_voxel.main(parser.parse_args(args))
+
+        assert os.path.exists(os.path.join(outpath, "backproject.mrc"))
+        assert not os.path.exists(os.path.join(outpath, "half_map_a.mrc"))
+        assert not os.path.exists(os.path.join(outpath, "half_map_b.mrc"))
+        assert not os.path.exists(os.path.join(outpath, "fsc-plot.png"))
+        assert not os.path.exists(os.path.join(outpath, "fsc-vals.txt"))
+
+        shutil.rmtree(outdir)
+
+    @pytest.mark.parametrize(
+        "particles, poses, ctf, datadir",
+        [("toy.txt", "toy-poses", "CTF-Test", None)],
+        indirect=True,
+    )
+    @pytest.mark.parametrize("indices", [None, "just-5"], indirect=True)
+    def test_train_no_fscs(
+        self, tmpdir_factory, particles, poses, ctf, indices, datadir
+    ):
+        outdir = self.get_outdir(
+            tmpdir_factory, particles, poses, ctf, indices, datadir
+        )
+        outpath = os.path.join(outdir, "backprojection-test")
+
+        args = [particles.path, "--poses", poses.path, "-o", outpath, "--no-fsc"]
+        if ctf.path is not None:
+            args += ["--ctf", ctf.path]
+        if indices.path is not None:
+            args += ["--ind", indices.path]
+        if datadir.path is not None:
+            args += ["--datadir", datadir.path]
+
+        parser = argparse.ArgumentParser()
+        backproject_voxel.add_args(parser)
+        backproject_voxel.main(parser.parse_args(args))
+
+        assert os.path.exists(os.path.join(outpath, "backproject.mrc"))
+        assert os.path.exists(os.path.join(outpath, "half_map_a.mrc"))
+        assert os.path.exists(os.path.join(outpath, "half_map_b.mrc"))
+        assert not os.path.exists(os.path.join(outpath, "fsc-plot.png"))
+        assert not os.path.exists(os.path.join(outpath, "fsc-vals.txt"))
+
+        shutil.rmtree(outdir)
 
     @pytest.mark.parametrize(
         "particles, poses, ctf, datadir",
@@ -75,36 +135,22 @@ class TestBackprojection:
         ],
         indirect=True,
     )
-    @pytest.mark.parametrize(
-        "indices",
-        [
-            None,
-            pytest.param(
-                "just-5",
-                marks=pytest.mark.xfail(
-                    raises=AssertionError, reason="not enough particles!"
-                ),
-            ),
-        ],
-        indirect=True,
-    )
+    @pytest.mark.parametrize("indices", [None], indirect=True)
     def test_fidelity(self, tmpdir_factory, particles, poses, ctf, indices, datadir):
         outdir = self.get_outdir(
             tmpdir_factory, particles, poses, ctf, indices, datadir
         )
-        with open(os.path.join(outdir, "vol_fsc-vals.txt"), "r") as f:
-            pixres, fsc_val = f.readlines()[-1].strip().split()
+        outpath = os.path.join(outdir, "backprojection-test")
+        with open(os.path.join(outpath, "fsc-vals.txt"), "r") as f:
+            pixres, *fsc_vals = f.readlines()[-1].strip().split()
 
         assert round(float(pixres), 3) == 0.484
-        assert float(fsc_val) > 0.2
+        assert float(fsc_vals[0]) > 0.2
 
-    # NOTE: these have to be the same as in `test_train()` above for proper cleanup!
     @pytest.mark.parametrize(
         "particles, poses, ctf, datadir",
         [
             ("toy.mrcs", "toy-poses", None, None),
-            ("toy.mrcs", "toy-poses", "CTF-Test", None),
-            ("toy.txt", "toy-poses", "CTF-Test", None),
             ("toy.star", "toy-poses", "CTF-Test", None),
             ("hand", "hand-rot", None, None),
             ("hand", "hand-poses", None, None),
@@ -119,16 +165,17 @@ class TestBackprojection:
         outdir = self.get_outdir(
             tmpdir_factory, particles, poses, ctf, indices, datadir
         )
+        outpath = os.path.join(outdir, "backprojection-test")
         args = [
-            os.path.join(outdir, "vol_fsc-vals.txt"),
+            os.path.join(outpath, "fsc-vals.txt"),
             "-o",
-            os.path.join(outdir, "vol_fsc-plot2.png"),
+            os.path.join(outpath, "fsc-plot2.png"),
         ]
 
         parser = argparse.ArgumentParser()
         plot_fsc.add_args(parser)
         plot_fsc.main(parser.parse_args(args))
-        assert os.path.exists(os.path.join(outdir, "vol_fsc-plot2.png"))
+        assert os.path.exists(os.path.join(outpath, "fsc-plot2.png"))
 
         shutil.rmtree(outdir)
 
@@ -168,17 +215,17 @@ class TestTiltBackprojection:
         outdir = self.get_outdir(
             tmpdir_factory, particles, poses, ctf, indices, datadir, ntilts
         )
+        outpath = os.path.join(outdir, "backprojection-test")
         args = [
             particles.path,
             "--poses",
             poses.path,
             "-o",
-            os.path.join(outdir, "vol.mrc"),
+            outpath,
             "--tilt",
             "--dose-per-tilt",
             "2.93",
         ]
-
         if ctf.path is not None:
             args += ["--ctf", ctf.path]
         if indices.path is not None:
@@ -192,11 +239,11 @@ class TestTiltBackprojection:
         backproject_voxel.add_args(parser)
         backproject_voxel.main(parser.parse_args(args))
 
-        assert os.path.exists(os.path.join(outdir, "vol.mrc"))
-        assert os.path.exists(os.path.join(outdir, "vol_fsc-plot.png"))
-        assert os.path.exists(os.path.join(outdir, "vol_fsc-vals.txt"))
-        assert os.path.exists(os.path.join(outdir, "vol_half-map1.mrc"))
-        assert os.path.exists(os.path.join(outdir, "vol_half-map2.mrc"))
+        assert os.path.exists(os.path.join(outpath, "backproject.mrc"))
+        assert os.path.exists(os.path.join(outpath, "half_map_a.mrc"))
+        assert os.path.exists(os.path.join(outpath, "half_map_b.mrc"))
+        assert os.path.exists(os.path.join(outpath, "fsc-plot.png"))
+        assert os.path.exists(os.path.join(outpath, "fsc-vals.txt"))
 
     # NOTE: these have to be the same as in `test_train()` above for proper cleanup!
     @pytest.mark.parametrize(
@@ -216,15 +263,16 @@ class TestTiltBackprojection:
         outdir = self.get_outdir(
             tmpdir_factory, particles, poses, ctf, indices, datadir, ntilts
         )
+        outpath = os.path.join(outdir, "backprojection-test")
         args = [
-            os.path.join(outdir, "vol_fsc-vals.txt"),
+            os.path.join(outpath, "fsc-vals.txt"),
             "-o",
-            os.path.join(outdir, "vol_fsc-plot2.png"),
+            os.path.join(outpath, "fsc-plot2.png"),
         ]
 
         parser = argparse.ArgumentParser()
         plot_fsc.add_args(parser)
         plot_fsc.main(parser.parse_args(args))
-        assert os.path.exists(os.path.join(outdir, "vol_fsc-plot2.png"))
+        assert os.path.exists(os.path.join(outpath, "fsc-plot2.png"))
 
         shutil.rmtree(outdir)

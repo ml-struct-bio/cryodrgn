@@ -142,13 +142,25 @@ def plot_ctf(D: int, Apix: float, ctf_params: np.ndarray) -> None:
 
 
 def load_ctf_for_training(D: int, ctf_params_pkl: str) -> np.ndarray:
-    assert D % 2 == 0
+    if D % 2 != 0:
+        raise ValueError(f"{D=} must be even!")
+
     ctf_params = utils.load_pkl(ctf_params_pkl)
-    assert ctf_params.shape[1] == 9
+    if not isinstance(ctf_params, (np.ndarray, torch.Tensor)):
+        raise TypeError(
+            f"{ctf_params_pkl=} contains a <{type(ctf_params).__name__}> object, "
+            f"expected an <np.array> or <torch.Tensor> instead!"
+        )
+    if ctf_params.shape[1] != 9:
+        raise ValueError(
+            f"These CTF parameters have {ctf_params.shape[1]} columns, expected 9!"
+        )
+
     # Replace original image size with current dimensions
     Apix = ctf_params[0, 0] * ctf_params[0, 1] / D
     ctf_params[:, 0] = D
     ctf_params[:, 1] = Apix
     print_ctf_params(ctf_params[0])
+
     # Slice out the first column (D)
     return ctf_params[:, 1:]

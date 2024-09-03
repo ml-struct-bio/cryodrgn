@@ -245,7 +245,7 @@ def main(args: argparse.Namespace) -> None:
                 selected_full_path = filename + ".pkl"
 
                 with open(selected_full_path, "wb") as file:
-                    pickle.dump(selected_indices, file)
+                    pickle.dump(np.array(selected_indices, dtype=int), file)
                 print(f"Selection saved to {selected_full_path}")
 
                 # Saving the inverse selection

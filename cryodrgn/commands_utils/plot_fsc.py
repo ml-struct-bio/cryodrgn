@@ -33,7 +33,10 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "two space-delimited columns containing pixres and FSCs",
     )
     parser.add_argument(
-        "-a", "--Apix", type=float, default=1.0, help="physical pixel size in angstrom"
+        "-a",
+        "--Apix",
+        type=float,
+        help="physical pixel size in angstroms for proper frequency x-axis labels",
     )
     parser.add_argument(
         "-o",

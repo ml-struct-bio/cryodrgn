@@ -202,24 +202,24 @@ def correct_fsc(
     fits the volumes and thus introduces an artificial source of correlation.
 
     """
-    res = vol1.shape[0]
-    if fsc_vals.shape[0] != (res // 2):
+    box_size = vol1.shape[0]
+    if fsc_vals.shape[0] != (box_size // 2):
         raise ValueError(
-            f"Given FSC values must have (D // 2) + 1 = {(res // 2) + 1} entries, "
+            f"Given FSC values must have (D // 2) + 1 = {(box_size // 2) + 1} entries, "
             f"instead have {fsc_vals.shape[0]}!"
         )
 
     maskvol1 = vol1 * initial_mask if initial_mask is not None else vol1.clone()
     maskvol2 = vol2 * initial_mask if initial_mask is not None else vol2.clone()
-    dists = get_fftn_dists(res)
+    dists = get_fftn_dists(box_size)
     maskvol1 = fft.fftn_center(maskvol1)
     maskvol2 = fft.fftn_center(maskvol2)
-    phase_res = int(randomization_threshold * res)
+    phase_res = int(randomization_threshold * box_size)
 
     # re-calculate the FSCs past the resolution using the phase-randomized volumes
-    prev_mask = np.zeros((res, res, res), dtype=bool)
+    prev_mask = np.zeros((box_size, box_size, box_size), dtype=bool)
     fsc = fsc_vals.fsc.tolist()
-    for i in range(1, res // 2):
+    for i in range(1, box_size // 2):
         mask = dists < i
         shell = np.where(mask & np.logical_not(prev_mask))
 
@@ -237,7 +237,9 @@ def correct_fsc(
 
         prev_mask = mask
 
-    return pd.DataFrame(dict(pixres=np.arange(res // 2) / res, fsc=fsc), dtype=float)
+    return pd.DataFrame(
+        dict(pixres=np.arange(box_size // 2) / box_size, fsc=fsc), dtype=float
+    )
 
 
 def calculate_cryosparc_fscs(
@@ -318,9 +320,12 @@ def calculate_cryosparc_fscs(
     fsc_vals = pd.DataFrame(
         {k: vals.fsc.values for k, vals in fsc_vals.items()}, index=list(pixres_index)
     )
+    fsc_vals.index.name = "pixres"
+
     if out_file is not None:
+        fsc_vals.reset_index(inplace=True, drop=False)
         logger.info(f"Saving FSC values to {out_file}")
-        fsc_vals.to_csv(out_file, sep=" ", header=True)
+        fsc_vals.round(6).to_csv(out_file, sep=" ", header=True, index=False)
 
     return fsc_vals
 

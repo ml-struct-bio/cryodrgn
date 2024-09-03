@@ -417,7 +417,7 @@ class MRCFileSource(ImageSource):
         return self.header.apix
 
 
-class MRCDataFrameSource(ImageSource):
+class _MRCDataFrameSource(ImageSource):
     """Base class for image stacks saved across a collection of .mrc/.mrcs files.
 
     These stacks use a single file as a reference to a collection of .mrc/.mrcs files
@@ -531,7 +531,7 @@ class MRCDataFrameSource(ImageSource):
         return newname
 
 
-class CsSource(MRCDataFrameSource):
+class CsSource(_MRCDataFrameSource):
     def __init__(
         self,
         filepath: str,
@@ -563,7 +563,7 @@ class CsSource(MRCDataFrameSource):
         )
 
 
-class TxtFileSource(MRCDataFrameSource):
+class TxtFileSource(_MRCDataFrameSource):
     """Image stacks indexed using a .txt file listing a .mrcs stack on each line.
 
     Note that .txt files differ from .cs and .star files in that the filenames contained
@@ -605,7 +605,7 @@ class TxtFileSource(MRCDataFrameSource):
             f.write("\n".join(self.df["__mrc_filename"].unique()))
 
 
-class StarfileSource(MRCDataFrameSource, Starfile):
+class StarfileSource(_MRCDataFrameSource, Starfile):
     """Image stacks indexed using a .star file in RELION3.0 or RELION3.1 format.
 
     In RELION3.1 format, these files will have an optics table that lists parameters
@@ -642,7 +642,7 @@ class StarfileSource(MRCDataFrameSource, Starfile):
         )
         sdata["__mrc_index"] = pd.to_numeric(sdata["__mrc_index"]) - 1
 
-        MRCDataFrameSource.__init__(
+        _MRCDataFrameSource.__init__(
             self,
             df=sdata,
             datadir=os.path.abspath(datadir) if datadir else None,

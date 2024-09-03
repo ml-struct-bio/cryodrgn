@@ -1,5 +1,13 @@
-"""Utilities for reading and writing .mrc/.mrcs files."""
+"""Utilities for reading and writing .mrc/.mrcs files.
 
+Example usage
+-------------
+> from cryodrgn.mrcfile import parse_mrc, write_mrc
+> img_array, header = parse_mrc("particles.mrcs")
+> img_array = img_array[::5, :, :]  # take every fifth image
+> write_mrc("new-particles.mrcs", img_array, header)
+
+"""
 import sys
 import struct
 from collections import OrderedDict

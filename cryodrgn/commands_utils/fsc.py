@@ -1,10 +1,8 @@
-"""Compute Fourier shell correlation between two volumes, applying an optional mask.
+"""Compute Fourier shell correlations between two volumes, applying an optional mask.
 
-Instead of giving two volumes, you can give three, in which case the first volume is
-assumed to be the full volume whereas the other two are corresponding half-maps
-The full volume will be used to create a loose and a tight mask using dilation and
-cosine edges; the latter mask will be corrected using phase randomization as implemented
-in cryoSPARC.
+When using `--ref-volume`, this reference volume will be used to create a loose and a
+tight mask using dilation and cosine edges; the latter mask will be corrected using
+phase randomization as implemented in cryoSPARC.
 
 See also
 --------
@@ -44,8 +42,7 @@ import pandas as pd
 import torch
 from typing import Optional, Union
 from cryodrgn import fft
-from cryodrgn.source import ImageSource
-from cryodrgn.mrcfile import parse_mrc
+from cryodrgn.source import MRCFileSource
 from cryodrgn.commands_utils.plot_fsc import create_fsc_plot
 from cryodrgn.masking import spherical_window_mask, cosine_dilation_mask
 
@@ -55,12 +52,14 @@ logger = logging.getLogger(__name__)
 def add_args(parser: argparse.ArgumentParser) -> None:
     """The command-line arguments available for use with `cryodrgn_utils fsc`."""
 
+    parser.add_argument("volumes", nargs=2, help="the two .mrc volume files to compare")
     parser.add_argument(
-        "volumes",
-        nargs="+",
-        help="volumes to compare; two volumes or three to use the first "
-        "to create masks for comparing the other two",
+        "--ref-volume",
+        type=os.path.abspath,
+        help="if given, create a cryoSPARC-style FSC plot instead using this .mrc "
+        "volume as the reference to produce masks",
     )
+
     parser.add_argument(
         "--mask",
         type=os.path.abspath,
@@ -333,13 +332,8 @@ def calculate_cryosparc_fscs(
 def main(args: argparse.Namespace) -> None:
     """Calculate FSC curves based on command-line arguments (see `add_args()` above)."""
 
-    if len(args.volumes) not in {2, 3}:
-        raise ValueError(
-            f"Must provide two or three volume files, "
-            f"given {len(args.volumes)} instead!"
-        )
-    volumes = [ImageSource.from_file(vol_file) for vol_file in args.volumes]
-    mask = parse_mrc(args.mask)[0] if args.mask is not None else None
+    volumes = [MRCFileSource(vol_file) for vol_file in args.volumes]
+    mask = MRCFileSource(args.mask).images() if args.mask is not None else None
 
     if args.Apix:
         apix = args.Apix
@@ -364,11 +358,10 @@ def main(args: argparse.Namespace) -> None:
     else:
         plot_file = None
 
-    if len(args.volumes) == 2:
-        logger.info(
-            f"Calculating FSC curve between `{args.volumes[0]}` "
-            f"and `{args.volumes[1]}`..."
-        )
+    logger.info(
+        f"Calculating FSCs between `{args.volumes[0]}` and `{args.volumes[1]}`..."
+    )
+    if args.ref_volume is None:
         fsc_vals = calculate_fsc(
             volumes[0].images(),
             volumes[1].images(),
@@ -384,37 +377,38 @@ def main(args: argparse.Namespace) -> None:
             fsc_vals = correct_fsc(
                 fsc_vals, volumes[0].images(), volumes[1].images(), args.corrected, mask
             )
-
-        if not args.outtxt:
-            fsc_str = fsc_vals.round(4).to_csv(sep="\t", index=False)
-            logger.info(f"\n{fsc_str}")
         if args.plot:
             create_fsc_plot(fsc_vals=fsc_vals, outfile=plot_file, apix=apix)
 
-    elif len(args.volumes) == 3:
+    else:
         logger.info(
-            f"Calculating FSC curve between `{args.volumes[1]}` and `{args.volumes[2]}`"
-            f" using `{args.volumes[0]}` as the reference full volume "
-            f"for generating masks..."
+            f"Using `{args.ref_volume}` as the reference volume for creating masks..."
         )
         if args.corrected is not None:
             raise ValueError(
                 "Cannot provide your own phase randomization threshold as this will "
-                "be computed for you when providing three volumes with "
-                "cryodrgn_utils fsc fullvol.mrc vol1.mrc vol2.mrc ... !"
+                "be computed for you when using a `--ref-volume`!"
             )
 
+        ref_volume = MRCFileSource(args.ref_volume)
         if mask is None:
             mask = (6, 6)
+
         fsc_vals = calculate_cryosparc_fscs(
             volumes[0].images(),
             volumes[1].images(),
-            volumes[2].images(),
+            ref_volume.images(),
             tight_mask=mask,
             apix=apix,
             out_file=args.outtxt,
             plot_file=plot_file,
         )
-        if not args.outtxt:
-            fsc_str = fsc_vals.round(4).to_csv(sep="\t", index=False)
-            logger.info(f"\n{fsc_str}")
+
+    # If we didn't save the FSC values to file, print them to screen instead
+    if not args.outtxt:
+        show_indx = "pixres" not in fsc_vals.columns
+        if show_indx:
+            fsc_vals.index = np.round(fsc_vals.index, 3)
+
+        fsc_str = fsc_vals.round(4).to_csv(sep="\t", index=show_indx, header=True)
+        logger.info(f"\n{fsc_str}")

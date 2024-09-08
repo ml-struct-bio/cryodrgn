@@ -83,8 +83,10 @@ class MRCHeader:
     ]  # int, char[10][80]
     FSTR = "3ii3i3i3f3f3i3f2ih10xi16x2h20x2i6h6f3f4s4sfi800s"
 
+    # Mappings for number formats used by .mrc files to number formats used by numpy
+    # Note that (u)int32 is treated equivalent to float32 here
     DTYPE_FOR_MODE = {
-        0: np.int8,
+        0: np.uint8,
         1: np.int16,
         2: np.float32,
         3: "2h",  # complex number from 2 shorts
@@ -92,6 +94,7 @@ class MRCHeader:
         6: np.uint16,
         12: np.float16,
         16: "3B",
+        17: np.int8,
     }  # RBG values
     MODE_FOR_DTYPE = {vv: kk for kk, vv in DTYPE_FOR_MODE.items()}
 
@@ -104,6 +107,13 @@ class MRCHeader:
         self.extended_header = extended_header
         self.D = self.fields["nx"]
         self.N = self.fields["nz"]
+
+        if self.fields["mode"] not in self.DTYPE_FOR_MODE:
+            raise ValueError(
+                f"This file contains a Data Type mode label `{self.fields['mode']}` "
+                f"not found in the dictionary of recognized mode to dtype mappings:\n"
+                f"{self.DTYPE_FOR_MODE}"
+            )
         self.dtype = self.DTYPE_FOR_MODE[self.fields["mode"]]
 
     def __str__(self):
@@ -129,18 +139,34 @@ class MRCHeader:
     @classmethod
     def make_default_header(
         cls,
-        nz=None,
-        ny=None,
-        nx=None,
-        data=None,
-        is_vol=True,
-        Apix=1.0,
-        xorg=0.0,
-        yorg=0.0,
-        zorg=0.0,
+        nz: Optional[int] = None,
+        ny: Optional[int] = None,
+        nx: Optional[int] = None,
+        data: Optional[Union[np.ndarray, torch.Tensor]] = None,
+        is_vol: bool = True,
+        Apix: float = 1.0,
+        xorg: float = 0.0,
+        yorg: float = 0.0,
+        zorg: float = 0.0,
     ) -> Self:
         if data is not None:
             nz, ny, nx = data.shape
+            if isinstance(data, torch.Tensor):
+                try:
+                    data_dtype = np.dtype(str(data.dtype).split(".")[1])
+                except TypeError:
+                    data_dtype = np.dtype("float32")
+            else:
+                data_dtype = data.dtype
+
+            if data_dtype in cls.MODE_FOR_DTYPE:
+                use_mode = cls.MODE_FOR_DTYPE[data_dtype]
+            elif data_dtype.type in cls.MODE_FOR_DTYPE:
+                use_mode = cls.MODE_FOR_DTYPE[data_dtype.type]
+            else:
+                use_mode = 2
+        else:
+            use_mode = 2  # default to np.float 32 mode as above
 
         assert nz is not None
         assert ny is not None
@@ -159,7 +185,7 @@ class MRCHeader:
             nx,
             ny,
             nz,
-            2,  # mode = 2 for 32-bit float
+            use_mode,  # mode = 2 for 32-bit float
             0,
             0,
             0,  # nxstart, nystart, nzstart
@@ -258,6 +284,8 @@ def parse_mrc(fname: str) -> Tuple[np.ndarray, MRCHeader]:
 def get_mrc_header(
     array: Union[np.ndarray, torch.Tensor], is_vol: Optional[bool] = None, **header_args
 ) -> MRCHeader:
+    """Create the default header corresponding to this image data array."""
+
     if is_vol is None:
         # If necessary, guess whether data is vol or image stack
         is_vol = len(set(array.shape)) == 1

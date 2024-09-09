@@ -155,7 +155,7 @@ def downsample_mrc_images(
         logger.info(f"Saving {out_fl}")
 
         header = MRCHeader.make_default_header(
-            nz=src.n, ny=new_D, nx=new_D, Apix=new_apix, data=None, is_vol=False
+            nz=src.n, ny=new_D, nx=new_D, Apix=new_apix, dtype=src.dtype, is_vol=False
         )
         src.write_mrc(
             output_file=out_fl,
@@ -181,7 +181,7 @@ def downsample_mrc_images(
                 ny=new_D,
                 nx=new_D,
                 Apix=new_apix,
-                data=None,
+                dtype=src.dtype,
                 is_vol=False,
             )
 

@@ -1,7 +1,25 @@
 """Create plots of cryoDRGN model results arranged by given particle class labels.
 
-This command will create a new directory in the given training directory for the
-epoch being analyzed, similarly to `cryodrgn analyze`, and place plots within it.
+Class labels are expected to be saved as a pickled .pkl file containing a single
+one-dimensional `np.array` object containing categorical data (e.g. string labels
+or integers) with length equal to the number of particles in the input dataset.
+You can also use a 1D array of indices in {0 ... nparticles - 1) in which case two
+classes will be plotted defined by particle membership in this subset index.
+
+For example, to create labels representing three classes chosen at random for
+a dataset of 10k particles:
+> cryodrgn.utils.save_pkl(np.random.choice(3, 10000), "random_labels.pkl")
+
+Colour palettes can be specified using known seaborn palette names:
+seaborn.pydata.org/tutorial/color_palettes.html
+Or alternatively a .pkl file storing a palette dictionary:
+> cryodrgn.utils.save_pkl(
+>     {"Class_A": "blue", "Class_B": "red", "Class_C": "#000FFF"},
+>     "my_palette.pkl"
+> )
+
+This command will create a new folder [traindir]/analyze.[epoch] in the given training
+directory for saving output plots, unless `cryodrgn analyze` has done so already.
 
 Example usages
 --------------
@@ -21,9 +39,9 @@ $ cryodrgn_utils plot_classes 005_train-vae 39 --labels new_classes.pkl --svg
 """
 import os
 import argparse
-import pandas as pd
 from itertools import combinations as combns
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import logging
@@ -49,6 +67,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         type=os.path.abspath,
         help="Class labels for use in plotting (.pkl); a pickled numpy array ",
     )
+
     parser.add_argument(
         "--palette",
         help="Path to class colours for use in plotting, "
@@ -72,6 +91,8 @@ def add_args(parser: argparse.ArgumentParser) -> None:
 
 
 def main(args: argparse.Namespace) -> None:
+    """Plot reconstruction outputs by given class labels (see `add_args()` above)."""
+
     if args.epoch == -1:
         z_file = os.path.join(args.traindir, "z.pkl")
     else:

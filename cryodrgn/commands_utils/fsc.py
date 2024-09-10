@@ -26,11 +26,11 @@ $ cryodrgn_utils fsc vol1.mrc vol2.mrc --mask test-mask.mrc -o fsc.txt -p fsc-pl
 # Do cryoSPARC-style phase randomization with a tight mask; create an FSC plot with
 # curves for no mask, spherical mask, loose mask, tight mask, and corrected tight mask,
 # with loose and tight masks generated using the (first-given) full volume.
-$ cryodrgn_utils fsc fullvol.mrc vol1.mrc vol2.mrc -p fsc-plot.png
+$ cryodrgn_utils fsc vol1.mrc vol2.mrc --ref-volume=full.mrc -p fsc-plot.png
 
 # Do phase randomization as above using the given mask instead of the default tight
 # mask, which will also be used to calculate corrected FSCs.
-$ cryodrgn_utils fsc backproject.mrc half_vol_a.mrc half_vol_b.mrc \
+$ cryodrgn_utils fsc half_vol_a.mrc half_vol_b.mrc --ref-volume=backproject.mrc \
                      -p tighter-mask.png mask=tighter-mask.mrc
 
 """
@@ -51,15 +51,14 @@ logger = logging.getLogger(__name__)
 
 def add_args(parser: argparse.ArgumentParser) -> None:
     """The command-line arguments available for use with `cryodrgn_utils fsc`."""
-
     parser.add_argument("volumes", nargs=2, help="the two .mrc volume files to compare")
+
     parser.add_argument(
         "--ref-volume",
         type=os.path.abspath,
         help="if given, create a cryoSPARC-style FSC plot instead using this .mrc "
         "volume as the reference to produce masks",
     )
-
     parser.add_argument(
         "--mask",
         type=os.path.abspath,
@@ -70,7 +69,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "--corrected",
         type=float,
         help="use cryoSPARC-style high resolution phase randomization beyond this "
-        "resolution to correct for possible effects of tight masking",
+        "resolution (in angstroms) to correct for possible effects of tight masking",
     )
     parser.add_argument(
         "--plot",
@@ -79,7 +78,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         nargs="?",
         const=True,
         default=None,
-        help="also plot the FSC curve: optionally supply a .png file name instead of "
+        help="also plot the FSC curve; optionally supply a .png file name instead of "
         "generating one automatically",
     )
     parser.add_argument(
@@ -345,7 +344,10 @@ def main(args: argparse.Namespace) -> None:
         elif len(vol_apixs) == 1:
             apix = tuple(vol_apixs)[0]
         else:
-            raise ValueError(f"These volumes have different A/px values: {vol_apixs}")
+            raise ValueError(
+                f"These volumes have different A/px values: {vol_apixs}"
+                f"\nUse `--Apix` to supply your own A/px value to override this!"
+            )
 
     if args.plot:
         if isinstance(args.plot, bool):
@@ -395,9 +397,9 @@ def main(args: argparse.Namespace) -> None:
             mask = (6, 6)
 
         fsc_vals = calculate_cryosparc_fscs(
+            ref_volume.images(),
             volumes[0].images(),
             volumes[1].images(),
-            ref_volume.images(),
             tight_mask=mask,
             apix=apix,
             out_file=args.outtxt,

@@ -30,32 +30,6 @@ def meshgrid_2d(lo, hi, n, endpoint=False):
     return torch.meshgrid(values, values, indexing="xy")
 
 
-def window_mask(D, in_rad: float, out_rad: float):
-    """
-    Create a square radial mask of linearly-interpolated float values
-    from 1.0 (within in_rad of center) to 0.0 (beyond out_rad of center)
-    Args:
-        D: Side length of the (square) mask
-        in_rad: inner radius (fractional float between 0 and 1) inside which all values are 1.0
-        out_rad: outer radius (fractional float between 0 and 1) beyond which all values are 0.0
-
-    Returns:
-        A 2D Tensor of shape (D, D) of mask values between 0 (inclusive) and 1 (inclusive)
-    """
-    assert D % 2 == 0
-    assert in_rad <= out_rad
-    x0, x1 = torch.meshgrid(
-        torch.linspace(-1, 1, D + 1, dtype=torch.float32)[:-1],
-        torch.linspace(-1, 1, D + 1, dtype=torch.float32)[:-1],
-    )
-    r = (x0**2 + x1**2) ** 0.5
-    mask = torch.minimum(
-        torch.tensor(1.0),
-        torch.maximum(torch.tensor(0.0), 1 - (r - in_rad) / (out_rad - in_rad)),
-    )
-    return mask
-
-
 class memoized(object):
     """Decorator. Caches a function's return value each time it is called.
     If called later with the same arguments, the cached value is returned

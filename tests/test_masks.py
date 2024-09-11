@@ -4,6 +4,7 @@ import pytest
 import os
 from hashlib import md5
 from cryodrgn.utils import run_command
+from cryodrgn.mrcfile import parse_mrc
 
 
 def hash_file(filename: str) -> str:
@@ -20,14 +21,16 @@ def hash_file(filename: str) -> str:
 @pytest.mark.parametrize("volume", ["toy-small", "spike"], indirect=True)
 @pytest.mark.parametrize("dist", [2, 5])
 @pytest.mark.parametrize("dilate", [3, 7])
-@pytest.mark.parametrize("apix", [1, 2.79])
+@pytest.mark.parametrize("apix", [None, 1, 2.79])
 def test_mask_fidelity(tmpdir, volume, dist, dilate, apix) -> None:
     """Test that we can compare two volumes produced during reconstruction training."""
     mask_file = os.path.join(tmpdir, f"{volume.label}_mask.mrc")
-    out0, err = run_command(
-        f"cryodrgn_utils gen_mask {volume.path} {mask_file} "
-        f"--dist {dist} --dilate {dilate} --Apix {apix}"
-    )
+    cmd_str = f"cryodrgn_utils gen_mask {volume.path} {mask_file} "
+    cmd_str += f"--dist {dist} --dilate {dilate} "
+    if apix is not None:
+        cmd_str += f"--Apix {apix}"
+
+    out0, err = run_command(cmd_str)
     assert err == ""
 
     thresh_vals = {"toy-small": 0.5, "spike": 12.472}
@@ -36,53 +39,43 @@ def test_mask_fidelity(tmpdir, volume, dist, dilate, apix) -> None:
         == thresh_vals[volume.label]
     )
 
-    mask_hashes = {
+    assert os.path.exists(mask_file)
+    vol_arr, vol_header = parse_mrc(volume.path)
+    mask_arr, mask_header = parse_mrc(mask_file)
+
+    assert mask_arr.shape == vol_arr.shape
+    if apix is None:
+        assert mask_header.apix == vol_header.apix
+    else:
+        assert mask_header.apix == apix
+
+    mask_sums = {
         "toy-small": {
             2: {
-                3: {
-                    1: "85f8073b2a933f7d3fb0f890d8630af8",
-                    2.79: "26699762b135761eb5b3c8dfcc7ee690",
-                },
-                7: {
-                    1: "b073bfd7a9ae12a6dbf61fc822845524",
-                    2.79: "1f92cc29abbe7708286ac1ac91da477a",
-                },
+                3: {None: 1760.1, 1: 1760.1, 2.79: 242.0},
+                7: {None: 5571.7, 1: 5571.7, 2.79: 592.0},
             },
             5: {
-                3: {
-                    1: "71b5eb59642a8ffd012d47d805c3de5c",
-                    2.79: "a3abeb31ee91561f2a4483704dd3f95c",
-                },
-                7: {
-                    1: "1037b5733e3c499d932592ac8574496d",
-                    2.79: "219cf27948e9f6fd3a720ec6049797dd",
-                },
+                3: {None: 4256.2, 1: 4256.2, 2.79: 543.9},
+                7: {None: 9545.2, 1: 9545.2, 2.79: 1021.3},
             },
         },
         "spike": {
             2: {
-                3: {
-                    1: "669db4697acc9d3888cc49852c66c1bd",
-                    2.79: "ab1bfedefb583f43e54bd12eda5e5e42",
-                },
-                7: {
-                    1: "683e870c6c91e9316b35cc62decc82e1",
-                    2.79: "eb65cbb230e8c5e7187a38e0f3d5aafe",
-                },
+                3: {None: 0.0, 1: 3042.6, 2.79: 450.0},
+                7: {None: 0.0, 1: 8542.9, 2.79: 1069.0},
             },
             5: {
-                3: {
-                    1: "6607d96c02c35815b3fd01d04201ed50",
-                    2.79: "cb8e7b3fb0e142c4f03cb3437649831c",
-                },
-                7: {
-                    1: "b298278a4d9d61adc5ca9543b4a6a218",
-                    2.79: "994db98752ebfa1940c373b26c7196b2",
-                },
+                3: {None: 0.0, 1: 6853.3, 2.79: 1011.0},
+                7: {None: 0.0, 1: 11745.8, 2.79: 1821.7},
             },
         },
     }
-    assert hash_file(mask_file) == mask_hashes[volume.label][dist][dilate][apix]
+
+    # the mask is always at max value for the volume itself
+    assert not ((mask_arr != 1) & (vol_arr > thresh_vals[volume.label])).any()
+    out_sum = mask_arr[vol_arr <= thresh_vals[volume.label]].sum()
+    assert round(float(out_sum), 1) == mask_sums[volume.label][dist][dilate][apix]
 
 
 @pytest.mark.parametrize("volume", ["toy-small"], indirect=True)
@@ -105,10 +98,10 @@ def test_png_output_file(tmpdir, volume, dist_val) -> None:
 
     mask_hashes = {
         3: {
-            "toy-small": "eafaaafd35bdbbdc880802367f892921",
+            "toy-small": "84b23b71ef048218874f9b468cee6abf",
         },
         5: {
-            "toy-small": "3ddb1ca57d656d9b8bbc2cf2b045c3b8",
+            "toy-small": "84b9810568cc8c2d00b320d2dc24564e",
         },
     }
     assert hash_file(mask_file) == mask_hashes[dist_val][volume.label]

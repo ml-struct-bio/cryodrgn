@@ -23,8 +23,7 @@ from scipy.ndimage import binary_dilation, distance_transform_edt
 from scipy.spatial import distance_matrix
 
 from cryodrgn import analysis, fft, utils
-from cryodrgn.source import ImageSource
-from cryodrgn.mrc import MRCFile
+from cryodrgn.source import ImageSource, write_mrc
 import cryodrgn.config
 
 try:
@@ -804,7 +803,7 @@ def mask_volume(volpath, outpath, Apix, thresh=None, dilate=3, dist=10):
     # used to write out mask separately from masked volume, now apply and save the masked vol to minimize future I/O
     # MRCFile.write(outpath, z.astype(np.float32))
     vol *= z
-    MRCFile.write(outpath, vol.astype(np.float32), Apix=Apix)
+    write_mrc(outpath, vol.astype(np.float32), Apix=Apix)
 
 
 def mask_volumes(

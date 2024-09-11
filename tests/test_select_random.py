@@ -11,10 +11,14 @@ from cryodrgn.utils import load_pkl
 def test_select_random_n(tmpdir, total_count, chosen_count):
     sel_file = os.path.join(tmpdir, "sel_random.pkl")
     rej_file = os.path.join(tmpdir, "sel_random_inverted.pkl")
-    args = select_random.add_args(argparse.ArgumentParser()).parse_args(
-        [str(total_count), "-o", sel_file, "-n", str(chosen_count), "-s", rej_file]
+
+    parser = argparse.ArgumentParser()
+    select_random.add_args(parser)
+    select_random.main(
+        parser.parse_args(
+            [str(total_count), "-o", sel_file, "-n", str(chosen_count), "-s", rej_file]
+        )
     )
-    select_random.main(args)
 
     selected = load_pkl(sel_file)
     rejected = load_pkl(rej_file)
@@ -27,10 +31,22 @@ def test_select_random_n(tmpdir, total_count, chosen_count):
 def test_select_random_frac(tmpdir, total_count, chosen_frac):
     sel_file = os.path.join(tmpdir, "sel_random.pkl")
     rej_file = os.path.join(tmpdir, "sel_random_inverted.pkl")
-    args = select_random.add_args(argparse.ArgumentParser()).parse_args(
-        [str(total_count), "-o", sel_file, "--frac", str(chosen_frac), "-s", rej_file]
+
+    parser = argparse.ArgumentParser()
+    select_random.add_args(parser)
+    select_random.main(
+        parser.parse_args(
+            [
+                str(total_count),
+                "-o",
+                sel_file,
+                "--frac",
+                str(chosen_frac),
+                "-s",
+                rej_file,
+            ]
+        )
     )
-    select_random.main(args)
 
     selected = load_pkl(sel_file)
     rejected = load_pkl(rej_file)

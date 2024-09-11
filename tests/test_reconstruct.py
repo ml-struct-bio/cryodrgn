@@ -9,6 +9,7 @@ import random
 import nbformat
 from nbclient.exceptions import CellExecutionError
 from nbconvert.preprocessors import ExecutePreprocessor
+import numpy as np
 
 from cryodrgn.commands import (
     analyze,
@@ -24,9 +25,10 @@ from cryodrgn.commands import (
     abinit_homo,
     abinit_het,
 )
-from cryodrgn.commands_utils import clean, filter_star
+from cryodrgn.commands_utils import clean, filter_star, plot_classes
+from cryodrgn.source import ImageSource
 from cryodrgn.dataset import TiltSeriesData
-import cryodrgn.utils
+from cryodrgn import utils
 
 
 @pytest.mark.parametrize(
@@ -342,6 +344,60 @@ class TestFixedHetero:
         )
         eval_images.main(args)
 
+    @pytest.mark.parametrize("ctf", ["CTF-Test"], indirect=True)
+    @pytest.mark.parametrize(
+        "epoch, palette, plot_outdir",
+        [
+            (-1, "rocket", None),
+            pytest.param(
+                3,
+                "Rocket",
+                None,
+                marks=pytest.mark.xfail(
+                    raises=ValueError, reason="palette not available in seaborn!"
+                ),
+            ),
+            (2, None, None),
+            (2, None, "plots"),
+        ],
+    )
+    def test_plot_classes(
+        self,
+        tmpdir_factory,
+        particles,
+        poses,
+        ctf,
+        indices,
+        epoch,
+        palette,
+        plot_outdir,
+    ):
+        outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
+        ind = utils.load_pkl(indices.path) if indices.path is not None else None
+        particles_n = ImageSource.from_file(particles.path, indices=ind, lazy=True).n
+        lbl_file = os.path.join(outdir, "plot-classes.pkl")
+        if not os.path.exists(lbl_file):
+            labels = np.array([0 if i % 3 == 0 else 1 for i in range(particles_n)])
+            utils.save_pkl(labels, lbl_file)
+
+        parser = argparse.ArgumentParser()
+        plot_classes.add_args(parser)
+        args = [outdir, str(epoch), "--labels", lbl_file]
+        if palette is not None:
+            args += ["--palette", palette]
+        if plot_outdir is not None:
+            args += ["--outdir", os.path.join(outdir, plot_outdir)]
+
+        plot_classes.main(parser.parse_args(args))
+        if plot_outdir is not None:
+            use_outdir = os.path.join(outdir, plot_outdir)
+        elif epoch == -1:
+            use_outdir = os.path.join(outdir, "analyze")
+        else:
+            use_outdir = os.path.join(outdir, f"analyze.{epoch}")
+
+        assert os.path.exists(os.path.join(use_outdir, "umap_kde_classes.png"))
+
     @pytest.mark.parametrize("ctf", [None, "CTF-Test"], indirect=True)
     def test_clean_all(self, tmpdir_factory, particles, poses, ctf, indices):
         outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
@@ -640,20 +696,16 @@ class TestTiltFixedHetero:
 
         # need to filter poses and CTFs manually due to tilt indices
         pt, tp = TiltSeriesData.parse_particle_tilt(particles.path)
-        ind = cryodrgn.utils.load_pkl(indices.path)
+        ind = utils.load_pkl(indices.path)
         new_ind = ind[:3]
         tilt_ind = TiltSeriesData.particles_to_tilts(pt, ind)
 
-        rot, trans = cryodrgn.utils.load_pkl(poses.path)
+        rot, trans = utils.load_pkl(poses.path)
         rot, trans = rot[tilt_ind], trans[tilt_ind]
-        cryodrgn.utils.save_pkl(
-            (rot, trans), os.path.join(outdir, "filtered_sta_pose.pkl")
-        )
-
-        ctf_mat = cryodrgn.utils.load_pkl(ctf.path)[tilt_ind]
-        cryodrgn.utils.save_pkl(ctf_mat, os.path.join(outdir, "filtered_sta_ctf.pkl"))
-        cryodrgn.utils.save_pkl(new_ind, os.path.join(outdir, "filtered_ind.pkl"))
-
+        utils.save_pkl((rot, trans), os.path.join(outdir, "filtered_sta_pose.pkl"))
+        ctf_mat = utils.load_pkl(ctf.path)[tilt_ind]
+        utils.save_pkl(ctf_mat, os.path.join(outdir, "filtered_sta_ctf.pkl"))
+        utils.save_pkl(new_ind, os.path.join(outdir, "filtered_ind.pkl"))
         args = [
             os.path.join(outdir, "filtered_sta_testing_bin8.star"),
             "--datadir",
@@ -725,19 +777,19 @@ class TestTiltFixedHetero:
             "--ctf",
             os.path.join(outdir, "filtered_sta_ctf.pkl"),
             "-o",
-            os.path.join(outdir, "filtered.mrc"),
+            os.path.join(outdir, "filtered"),
             "-d",
             "2.93",
+            "--no-half-maps",
         ]
-
         if new_indices_file is not None:
             args += ["--ind", os.path.join(outdir, new_indices_file)]
+
         parser = argparse.ArgumentParser()
         backproject_voxel.add_args(parser)
-
         backproject_voxel.main(parser.parse_args(args))
-        assert os.path.exists(os.path.join(outdir, "filtered.mrc"))
-        os.remove(os.path.join(outdir, "filtered.mrc"))
+        assert os.path.exists(os.path.join(outdir, "filtered", "backproject.mrc"))
+        shutil.rmtree(os.path.join(outdir, "filtered"))
 
     @pytest.mark.parametrize("nb_lbl", ["cryoDRGN_figures", "cryoDRGN_ET_viz"])
     def test_notebooks(

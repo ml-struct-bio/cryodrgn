@@ -1,13 +1,26 @@
+"""Classes for using particle image datasets in PyTorch learning methods.
+
+This module contains classes that implement various preprocessing and data access
+methods acting on the image data stored in a cryodrgn.source.ImageSource class.
+These methods are used by learning methods such as those used in volume reconstruction
+algorithms; the classes are thus implemented as children of torch.utils.data.Dataset
+to allow them to inherit behaviour such as batch training.
+
+For example, during initialization, ImageDataset initializes an ImageSource class and
+then also estimates normalization parameters, a non-trivial computational step. When
+image data is retrieved during model training using __getitem__, the data is whitened
+using these parameters.
+
+"""
 import numpy as np
 from collections import Counter, OrderedDict
 
 import logging
 import torch
-from torch.utils import data
 from typing import Optional, Tuple, Union
-from cryodrgn import fft, starfile
-from cryodrgn.source import ImageSource
-from cryodrgn.utils import window_mask
+from cryodrgn import fft
+from cryodrgn.source import ImageSource, StarfileSource, parse_star
+from cryodrgn.masking import spherical_window_mask
 
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import BatchSampler, RandomSampler, SequentialSampler
@@ -15,7 +28,7 @@ from torch.utils.data.sampler import BatchSampler, RandomSampler, SequentialSamp
 logger = logging.getLogger(__name__)
 
 
-class ImageDataset(data.Dataset):
+class ImageDataset(torch.utils.data.Dataset):
     def __init__(
         self,
         mrcfile,
@@ -40,14 +53,19 @@ class ImageDataset(data.Dataset):
             indices=ind,
             max_threads=max_threads,
         )
-
         ny = self.src.D
         assert ny % 2 == 0, "Image size must be even."
-
         self.N = self.src.n
         self.D = ny + 1  # after symmetrization
         self.invert_data = invert_data
-        self.window = window_mask(ny, window_r, 0.99).to(device) if window else None
+
+        if window:
+            self.window = spherical_window_mask(D=ny, in_rad=window_r, out_rad=0.99).to(
+                device
+            )
+        else:
+            self.window = None
+
         norm = norm or self.estimate_normalization()
         self.norm = [float(x) for x in norm]
         self.device = device
@@ -56,19 +74,15 @@ class ImageDataset(data.Dataset):
     def estimate_normalization(self, n=1000):
         n = min(n, self.N) if n is not None else self.N
         indices = range(0, self.N, self.N // n)  # FIXME: what if the data is not IID??
-        imgs = self.src.images(indices)
 
-        particleslist = []
-        for img in imgs:
-            particleslist.append(fft.ht2_center(img))
-        imgs = torch.stack(particleslist)
-
+        imgs = torch.stack([fft.ht2_center(img) for img in self.src.images(indices)])
         if self.invert_data:
             imgs *= -1
 
         imgs = fft.symmetrize_ht(imgs)
         norm = (0, torch.std(imgs))
         logger.info("Normalizing HT by {} +/- {}".format(*norm))
+
         return norm
 
     def _process(self, data):
@@ -100,7 +114,8 @@ class ImageDataset(data.Dataset):
             logger.debug(f"ImageDataset returning images at index ({index})")
         else:
             logger.debug(
-                f"ImageDataset returning images for {len(index)} indices ({index[0]}..{index[-1]})"
+                f"ImageDataset returning images for {len(index)} indices:"
+                f" ({index[0]}..{index[-1]})"
             )
 
         return particles, None, index
@@ -135,10 +150,12 @@ class TiltSeriesData(ImageDataset):
         super().__init__(tiltstar, ind=ind, **kwargs)
 
         # Parse unique particles from _rlnGroupName
-        s = starfile.Starfile.load(tiltstar)
+        star_df, _ = parse_star(tiltstar)
+        assert isinstance(self.src, StarfileSource)
+        # star_df = self.src.df
         if ind is not None:
-            s.df = s.df.loc[ind]
-        group_name = list(s.df["_rlnGroupName"])
+            star_df = star_df.loc[ind]
+        group_name = list(star_df["_rlnGroupName"])
         particles = OrderedDict()
         for ii, gn in enumerate(group_name):
             if gn not in particles:
@@ -146,7 +163,9 @@ class TiltSeriesData(ImageDataset):
             particles[gn].append(ii)
         self.particles = [np.asarray(pp, dtype=int) for pp in particles.values()]
         self.Np = len(particles)
-        self.ctfscalefactor = np.asarray(s.df["_rlnCtfScalefactor"], dtype=np.float32)
+        self.ctfscalefactor = np.asarray(
+            star_df["_rlnCtfScalefactor"], dtype=np.float32
+        )
         self.tilt_numbers = np.zeros(self.N)
         for ind in self.particles:
             sort_idxs = self.ctfscalefactor[ind].argsort()
@@ -198,8 +217,8 @@ class TiltSeriesData(ImageDataset):
         cls, tiltstar: str
     ) -> tuple[list[np.ndarray], dict[np.int64, int]]:
         # Parse unique particles from _rlnGroupName
-        s = starfile.Starfile.load(tiltstar)
-        group_name = list(s.df["_rlnGroupName"])
+        star_df, _ = parse_star(tiltstar)
+        group_name = list(star_df["_rlnGroupName"])
         particles = OrderedDict()
 
         for ii, gn in enumerate(group_name):

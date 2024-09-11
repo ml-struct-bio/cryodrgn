@@ -3,37 +3,45 @@
 This script creates a reconstructed volume using the images in the given stack as well
 as the given poses. Unless instructed otherwise, it will also produce volumes using
 the images in each half of the dataset, as well as calculating an FSC curve between
-these two half-map reconstructions.
+these two half-map reconstructions. All outputs will be placed in the folder given.
 
-Example usages
-----------
-$ cryodrgn backproject_voxel particles.128.mrcs
-                             --ctf ctf.pkl --poses pose.pkl -o backproj.128.mrc
-$ cryodrgn backproject_voxel particles.256.mrcs --ctf ctf.pkl --poses pose.pkl
-                             --ind good-particles.pkl -o backproj.256.mrc --lazy
-$ cryodrgn backproject_voxel particles_from_M.star --datadir subtilts/128/
-                             --ctf ctf.pkl --poses pose.pkl
-                             -o bproj_tilt.mrc --lazy --tilt --ntilts=5
+Example usage
+-------------
+$ cryodrgn backproject_voxel particles.128.mrcs \
+                             --ctf ctf.pkl --poses pose.pkl -o backproject-results/
+
+# Use `--lazy` for large datasets to reduce memory usage and avoid OOM errors
+$ cryodrgn backproject_voxel particles.256.mrcs --ctf ctf.pkl --poses pose.pkl \
+                             --ind good_particles.pkl -o backproject-256/ --lazy
+
+# `--first` is also a good tool for doing a quick initial reconstruction
+$ cryodrgn backproject_voxel particles.196.mrcs --ctf ctf.pkl --poses pose.pkl \
+                             -o backproject-196/ --lazy --first=10000
+
+# `--tilt` is required for subtomogram datasets
+# `--datadir` is generally required when using .star or .cs particle inputs
+$ cryodrgn backproject_voxel particles_from_M.star --datadir subtilts/128/ \
+                             --ctf ctf.pkl --poses pose.pkl \
+                             -o backproject-tilt/ --lazy --tilt --ntilts 5
 
 """
-import argparse
 import os
 import time
 import numpy as np
 import torch
 import logging
-
 from cryodrgn import ctf, dataset, fft, utils
-from cryodrgn.mrc import MRCFile
 from cryodrgn.lattice import Lattice
 from cryodrgn.pose import PoseTracker
-from cryodrgn.commands_utils.fsc import calculate_fsc, print_fsc
-from cryodrgn.commands_utils.plot_fsc import create_fsc_plot
+from cryodrgn.commands_utils.fsc import calculate_cryosparc_fscs
+from cryodrgn.source import write_mrc
 
 logger = logging.getLogger(__name__)
 
 
 def add_args(parser):
+    """The command-line arguments for use with `cryodrgn_utils backproject_voxel`."""
+
     parser.add_argument(
         "particles",
         type=os.path.abspath,
@@ -49,13 +57,23 @@ def add_args(parser):
         help="CTF parameters (.pkl) for phase flipping images",
     )
     parser.add_argument(
-        "-o", type=os.path.abspath, required=True, help="Output .mrc file"
+        "--outdir",
+        "-o",
+        type=os.path.abspath,
+        required=True,
+        help="New or existing folder in which outputs will be " "placed",
     )
     parser.add_argument(
         "--no-half-maps",
         action="store_false",
         help="Don't produce half-maps and FSCs.",
         dest="half_maps",
+    )
+    parser.add_argument(
+        "--no-fsc-vals",
+        action="store_false",
+        help="Don't calculate FSCs, but still produce half-maps.",
+        dest="fsc_vals",
     )
     parser.add_argument("--ctf-alg", type=str, choices=("flip", "mul"), default="mul")
     parser.add_argument(
@@ -96,7 +114,7 @@ def add_args(parser):
         "--ind",
         type=os.path.abspath,
         metavar="PKL",
-        help="Filter particles by these indices",
+        help="Filter particles by these indices before starting backprojection",
     )
     group.add_argument(
         "--first",
@@ -153,7 +171,9 @@ def add_slice(volume, counts, ff_coord, ff, D, ctf_mul):
     add_for_corner(xc, yc, zc)
 
 
-def regularize_volume(volume, counts, reg_weight):
+def regularize_volume(
+    volume: torch.Tensor, counts: torch.Tensor, reg_weight: float
+) -> torch.Tensor:
     regularized_counts = counts + reg_weight * counts.mean()
     regularized_counts *= counts.mean() / regularized_counts.mean()
     reg_volume = volume / regularized_counts
@@ -162,12 +182,9 @@ def regularize_volume(volume, counts, reg_weight):
 
 
 def main(args):
-    if not args.o.endswith(".mrc"):
-        raise ValueError(f"Output file {args.o} does not end with .mrc!")
-
     t1 = time.time()
     logger.info(args)
-    os.makedirs(os.path.dirname(args.o), exist_ok=True)
+    os.makedirs(args.outdir, exist_ok=True)
 
     # set the device
     use_cuda = torch.cuda.is_available()
@@ -235,7 +252,7 @@ def main(args):
     Apix = float(ctf_params[0, 0]) if ctf_params is not None else 1.0
     voltage = float(ctf_params[0, 4]) if ctf_params is not None else None
     data.voltage = voltage
-    mask = lattice.get_circular_mask(D // 2)
+    lattice_mask = lattice.get_circular_mask(D // 2)
     iterator = range(min(args.first, Nimg)) if args.first else range(Nimg)
 
     if args.tilt:
@@ -260,12 +277,12 @@ def main(args):
         assert isinstance(ff, tuple)
 
         ff = ff[0].to(device)
-        ff = ff.view(-1)[mask]
+        ff = ff.view(-1)[lattice_mask]
         ctf_mul = 1
 
         if ctf_params is not None:
             freqs = lattice.freqs2d / ctf_params[ii, 0]
-            c = ctf.compute_ctf(freqs, *ctf_params[ii, 1:]).view(-1)[mask]
+            c = ctf.compute_ctf(freqs, *ctf_params[ii, 1:]).view(-1)[lattice_mask]
 
             if args.ctf_alg == "flip":
                 ff *= c.sign()
@@ -273,16 +290,18 @@ def main(args):
                 ctf_mul = c
 
         if t is not None:
-            ff = lattice.translate_ht(ff.view(1, -1), t.view(1, 1, 2), mask).view(-1)
+            ff = lattice.translate_ht(
+                ff.view(1, -1), t.view(1, 1, 2), lattice_mask
+            ).view(-1)
 
         if args.tilt:
             tilt_idxs = torch.tensor([ii]).to(device)
             dose_filters = data.get_dose_filters(tilt_idxs, lattice, ctf_params[ii, 0])[
                 0
             ]
-            ctf_mul *= dose_filters[mask]
+            ctf_mul *= dose_filters[lattice_mask]
 
-        ff_coord = lattice.coords[mask] @ r
+        ff_coord = lattice.coords[lattice_mask] @ r
         add_slice(volume_full, counts_full, ff_coord, ff, D, ctf_mul)
 
         if args.half_maps:
@@ -300,34 +319,33 @@ def main(args):
     counts_full[counts_full == 0] = 1
     counts_half1[counts_half1 == 0] = 1
     counts_half2[counts_half2 == 0] = 1
-
     if args.output_sumcount:
-        MRCFile.write(args.o + ".sums", volume_full.cpu().numpy(), Apix=Apix)
-        MRCFile.write(args.o + ".counts", counts_full.cpu().numpy(), Apix=Apix)
+        sums_fl = os.path.join(args.outdir, "backproject.sums")
+        counts_fl = os.path.join(args.outdir, "backproject.counts")
+        write_mrc(sums_fl, volume_full.cpu().numpy(), Apix=Apix)
+        write_mrc(counts_fl, counts_full.cpu().numpy(), Apix=Apix)
 
     volume_full = regularize_volume(volume_full, counts_full, args.reg_weight)
-    out_path = os.path.splitext(args.o)[0]
-    MRCFile.write(args.o, np.array(volume_full).astype("float32"), Apix=Apix)
+    vol_fl = os.path.join(args.outdir, "backproject.mrc")
+    write_mrc(vol_fl, np.array(volume_full).astype("float32"), Apix=Apix)
 
     # create the half-maps, calculate the FSC curve between them, and save both to file
     if args.half_maps:
         volume_half1 = regularize_volume(volume_half1, counts_half1, args.reg_weight)
         volume_half2 = regularize_volume(volume_half2, counts_half2, args.reg_weight)
-        fsc_vals = calculate_fsc(volume_half1, volume_half2)
-        create_fsc_plot(fsc_vals=fsc_vals, outfile="_".join([out_path, "fsc-plot.png"]))
-        print_fsc(fsc_vals, Apix)
+        half_fl1 = os.path.join(args.outdir, "half_map_a.mrc")
+        half_fl2 = os.path.join(args.outdir, "half_map_b.mrc")
+        write_mrc(half_fl1, np.array(volume_half1).astype("float32"), Apix=Apix)
+        write_mrc(half_fl2, np.array(volume_half2).astype("float32"), Apix=Apix)
 
-        # save the FSC values and half-map reconstructions to file
-        fsc_vals.to_csv(
-            "_".join([out_path, "fsc-vals.txt"]), sep=" ", header=True, index=False
-        )
-        half_fl1 = "_".join([out_path, "half-map1.mrc"])
-        half_fl2 = "_".join([out_path, "half-map2.mrc"])
-        MRCFile.write(half_fl1, np.array(volume_half1).astype("float32"), Apix=Apix)
-        MRCFile.write(half_fl2, np.array(volume_half2).astype("float32"), Apix=Apix)
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    add_args(parser)
-    main(parser.parse_args())
+        if args.fsc_vals:
+            out_file = os.path.join(args.outdir, "fsc-vals.txt")
+            plot_file = os.path.join(args.outdir, "fsc-plot.png")
+            _ = calculate_cryosparc_fscs(
+                volume_full,
+                volume_half1,
+                volume_half2,
+                apix=Apix,
+                out_file=out_file,
+                plot_file=plot_file,
+            )

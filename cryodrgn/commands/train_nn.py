@@ -1,10 +1,18 @@
 """Train a neural net to model a 3D density map given 2D images with pose assignments.
 
-Example usages
---------------
-$ cryodrgn train_nn projections.mrcs --poses angles.pkl -o output/train_nn -n 10
-$ cryodrgn train_nn projections.star --poses angles.pkl -o outs/003_train-nn
-                                     --num-epochs=30 --lr=0.01
+Example usage
+-------------
+$ cryodrgn train_nn projections.mrcs --poses angles.pkl --ctf ctf.pkl \
+                                     -o output/train_nn -n 10
+
+# Run with more epochs
+$ cryodrgn train_nn projections.star --poses angles.pkl --ctf.pkl \
+                                     -o outs/003_train-nn --num-epochs 30 --lr 0.01
+
+# Restart after already running the same command with some epochs completed
+$ cryodrgn train_nn projections.star --poses angles.pkl --ctf.pkl \
+                                     -o outs/003_train-nn --num-epochs 75 --lr 0.01 \
+                                     --load latest
 
 """
 import argparse
@@ -25,10 +33,10 @@ except ImportError:
 
 import cryodrgn
 from cryodrgn import ctf, dataset, models
-from cryodrgn.mrc import MRCFile
 from cryodrgn.lattice import Lattice
 from cryodrgn.pose import PoseTracker
 from cryodrgn.models import DataParallelDecoder, Decoder
+from cryodrgn.source import write_mrc
 import cryodrgn.config
 
 logger = logging.getLogger(__name__)
@@ -248,7 +256,7 @@ def save_checkpoint(
 ):
     model.eval()
     vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, norm)
-    MRCFile.write(out_mrc, np.array(vol).astype(np.float32), Apix=Apix)
+    write_mrc(out_mrc, np.array(vol).astype(np.float32), Apix=Apix)
     torch.save(
         {
             "norm": norm,

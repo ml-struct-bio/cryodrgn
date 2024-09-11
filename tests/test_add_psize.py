@@ -10,9 +10,9 @@ from cryodrgn.commands_utils import add_psize
 @pytest.mark.parametrize("Apix", ["1", "1.7"])
 def test_add_psize(tmpdir, volume, Apix):
     out_vol = os.path.join(tmpdir, "toy_projections_added_psize.mrc")
-    args = add_psize.add_args(argparse.ArgumentParser()).parse_args(
-        [volume.path, "-o", out_vol]
-    )
+    parser = argparse.ArgumentParser()
+    add_psize.add_args(parser)
+    args = parser.parse_args([volume.path, "-o", out_vol])
     add_psize.main(args)
 
     # data should be unchanged
@@ -21,9 +21,7 @@ def test_add_psize(tmpdir, volume, Apix):
     assert torch.allclose(new_data, old_data)
 
     new_vol = str(out_vol).replace(".mrc", "_new.mrc")
-    args = add_psize.add_args(argparse.ArgumentParser()).parse_args(
-        [out_vol, "-o", new_vol, "--Apix", Apix]
-    )
+    args = parser.parse_args([out_vol, "-o", new_vol, "--Apix", Apix])
     add_psize.main(args)
 
     # data should be unchanged

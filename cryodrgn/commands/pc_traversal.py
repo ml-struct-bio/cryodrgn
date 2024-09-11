@@ -1,7 +1,7 @@
 """Construct a path of embeddings in latent space along principal components.
 
-Example usages
---------------
+Example usage
+-------------
 $ cryodrgn pc_traversal zvals.pkl
 $ cryodrgn pc_traversal zvals.pkl --pc 3
 $ cryodrgn pc_traversal zvals.pkl --pc 4 -n 12 ---lim 0.10 0.90 -o z-path-new.txt

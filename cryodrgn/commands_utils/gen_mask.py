@@ -1,7 +1,7 @@
-"""Automated generation of masking filters for 3D volumes.
+"""Creating masking filters for 3D volumes using threshold dilation with a cosine edge.
 
-Example usages
---------------
+Example usage
+-------------
 $ cryodrgn_utils gen_mask volume16.mrc mask16.mrc
 $ cryodrgn_utils gen_mask volume16.mrc mask16.mrc -p slices.png
 $ cryodrgn_utils gen_mask volume16.mrc mask16.mrc --dist 15
@@ -11,8 +11,9 @@ import os
 import argparse
 import logging
 import numpy as np
-from scipy.ndimage import distance_transform_edt, binary_dilation
-from cryodrgn.mrc import MRCFile
+import torch
+from cryodrgn.masking import cosine_dilation_mask
+from cryodrgn.mrcfile import write_mrc, parse_mrc
 from cryodrgn.commands.analyze_landscape import view_slices
 
 logger = logging.getLogger(__name__)
@@ -27,9 +28,10 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     )
 
     parser.add_argument(
-        "--thresh",
+        "--threshold",
         type=float,
-        help="Density value to threshold for masking (default: half of max density value)",
+        help="Density value to use as the initial threshold for masking "
+        "(default: half of max density value)",
     )
     parser.add_argument(
         "--dilate",
@@ -46,7 +48,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--Apix",
         type=float,
-        help="use this A/px value instead of inferring from the input header",
+        help="Use this A/px value instead of inferring from the input header",
     )
     parser.add_argument(
         "--png-output",
@@ -57,29 +59,19 @@ def add_args(parser: argparse.ArgumentParser) -> None:
 
 
 def main(args: argparse.Namespace) -> None:
-    vol, header = MRCFile.parse(args.input)
-    apix = args.Apix or header.get_apix()
-    thresh = np.percentile(vol, 99.99) / 2 if args.thresh is None else args.thresh
-    logger.info(f"A/px={apix:.5g}; Threshold={thresh:.5g}")
+    vol, header = parse_mrc(args.input)
+    vol = torch.Tensor(vol)
+    apix = args.Apix or header.apix
 
-    x = (vol >= thresh).astype(bool)
+    mask = cosine_dilation_mask(
+        vol,
+        threshold=args.threshold,
+        dilation=args.dilate,
+        edge_dist=args.dist,
+        apix=apix,
+    )
+    header.apix = apix
+    write_mrc(args.output, mask.astype(np.float32), header=header)
 
-    if args.dilate:
-        dilate_val = int(args.dilate // apix)
-        logger.info(f"Dilate initial mask by: {dilate_val} px")
-        x = binary_dilation(x, iterations=dilate_val)
-    else:
-        logger.info("no mask dilation applied")
-
-    dist_val = args.dist / apix
-    logger.info(f"Width of cosine edge: {dist_val} px")
-    if dist_val:
-        y = distance_transform_edt(~x.astype(bool))
-        y[y > dist_val] = dist_val
-        z = np.cos(np.pi * y / dist_val / 2)
-    else:
-        z = x
-
-    MRCFile.write(args.output, z.astype(np.float32), header=header)
     if args.png_output:
-        view_slices(z, out_png=args.png_output)
+        view_slices(mask, out_png=args.png_output)

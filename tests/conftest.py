@@ -15,11 +15,6 @@ def pytest_configure():
     pytest.DATADIR = DATA_DIR
 
 
-@pytest.fixture
-def testing_dataset(request) -> str:
-    return os.path.join(DATA_DIR, request.param)
-
-
 def get_testing_datasets(dataset_lbl: str) -> tuple[str, str]:
     """Retrieve the input files corresponding to a given dataset label."""
 
@@ -43,6 +38,7 @@ PARTICLES_FILES = {
     "toy.mrcs": "toy_projections.mrcs",
     "toy.mrcs-999": "toy_projections_0-999.mrcs",
     "toy.star": "toy_projections.star",
+    "toydatadir.star": "toy_projections_dir.star",
     "toy.star-13": "toy_projections_13.star",
     "toy.txt": "toy_projections.txt",
     "tilts.star": "sta_testing_bin8.star",
@@ -75,6 +71,11 @@ CONFIG_FILES = {
 }
 DATA_FOLDERS = {
     "default-datadir": ".",
+    "toy": "toy_datadir",
+}
+TRANS_FILES = {
+    "toy": "toy_trans.pkl",
+    "toy-zero": "toy_zero.pkl",
 }
 
 
@@ -106,12 +107,12 @@ def produce_data_fixture(
         files = dict()
 
         for k, lbl in lbls.items():
-            assert (
-                lbl in data_dict
-            ), f"Unknown testing label `{lbl}` for data dictionary `{data_dict}`!"
-            files[k] = DataFixture(
-                label=lbl, path=os.path.join(DATA_DIR, data_dict[lbl])
-            )
+            if lbl in data_dict:
+                files[k] = DataFixture(
+                    label=lbl, path=os.path.join(DATA_DIR, data_dict[lbl])
+                )
+            else:
+                files[k] = DataFixture(label=lbl, path=os.path.join(DATA_DIR, lbl))
 
         if not isinstance(labels, dict):
             files = files[None]
@@ -142,6 +143,11 @@ def indices(request) -> Union[DataFixture, dict[str, DataFixture]]:
 @pytest.fixture(scope="function")
 def datadir(request) -> Union[DataFixture, dict[str, DataFixture]]:
     return produce_data_fixture(DATA_FOLDERS, request.param)
+
+
+@pytest.fixture(scope="function")
+def trans(request) -> Union[DataFixture, dict[str, DataFixture]]:
+    return produce_data_fixture(TRANS_FILES, request.param)
 
 
 @pytest.fixture(scope="function")

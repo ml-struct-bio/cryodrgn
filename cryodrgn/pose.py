@@ -1,3 +1,5 @@
+"""Keeping track of poses used under different embeddings in reconstruction models."""
+
 import pickle
 from typing import Optional, Tuple, Union, List
 import logging
@@ -19,7 +21,8 @@ class PoseTracker(nn.Module):
         emb_type: Optional[str] = None,
         device: Optional[torch.device] = None,
     ):
-        super(PoseTracker, self).__init__()
+        super().__init__()
+
         rots = torch.tensor(rots_np.astype(np.float32), device=device)
         trans = (
             torch.tensor(trans_np.astype(np.float32), device=device)
@@ -31,6 +34,7 @@ class PoseTracker(nn.Module):
         self.use_trans = trans_np is not None
         self.D = D
         self.emb_type = emb_type
+
         if emb_type is None:
             pass
         else:
@@ -89,11 +93,17 @@ class PoseTracker(nn.Module):
         if ind is not None:
             if len(rots) > Nimg:  # HACK
                 rots = rots[ind]
-        assert rots.shape == (
-            Nimg,
-            3,
-            3,
-        ), f"Input rotations have shape {rots.shape} but expected ({Nimg},3,3)"
+        if rots.shape[0] != Nimg:
+            raise ValueError(
+                f"Input # of pose rotations {rots.shape[0]} "
+                f"does not match number of given particle images {Nimg} "
+                f"— double-check input files!"
+            )
+        if rots.shape[1:] != (3, 3):
+            raise ValueError(
+                f"Wrong format for input rotations; "
+                f"expected an array of dimensions `{Nimg=}`x3x3 but found {rots.shape}!"
+            )
 
         # translations if they exist
         if len(poses) == 2:
@@ -101,13 +111,23 @@ class PoseTracker(nn.Module):
             if ind is not None:
                 if len(trans) > Nimg:  # HACK
                     trans = trans[ind]
-            assert trans.shape == (
-                Nimg,
-                2,
-            ), f"Input translations have shape {trans.shape} but expected ({Nimg},2)"
-            assert np.all(
-                trans <= 1
-            ), "ERROR: Old pose format detected. Translations must be in units of fraction of box."
+            if trans.shape[0] != Nimg:
+                raise ValueError(
+                    f"Input # of pose translations {trans.shape[0]} "
+                    f"does not match number of given particle images {Nimg} "
+                    f"— double-check input files!"
+                )
+            if trans.shape[1] != 2:
+                raise ValueError(
+                    f"Wrong format for input translations; "
+                    f"expected an array of dimensions `{Nimg=}`x2 "
+                    f"but found {trans.shape}!"
+                )
+            if not np.all(trans <= 1):
+                raise ValueError(
+                    "Old pose format detected; "
+                    "translations must be in units of fraction of box!"
+                )
             trans *= D  # convert from fraction to pixels
         else:
             logger.warning("WARNING: No translations provided")
@@ -149,4 +169,5 @@ class PoseTracker(nn.Module):
             else:
                 raise RuntimeError  # should not reach here
             tran = self.trans_emb(ind) if self.trans_emb is not None else None
+
         return rot, tran

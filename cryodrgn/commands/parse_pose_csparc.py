@@ -11,7 +11,7 @@ from cryodrgn import lie_tools
 logger = logging.getLogger(__name__)
 
 
-def add_args(parser):
+def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("input", help="Cryosparc .cs file")
     parser.add_argument(
         "--abinit",
@@ -32,7 +32,7 @@ def add_args(parser):
     return parser
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
     assert args.input.endswith(".cs"), "Input format must be .cs file"
     assert args.o.endswith(".pkl"), "Output format must be .pkl"
 
@@ -73,8 +73,3 @@ def main(args):
     logger.info(f"Writing {args.o}")
     with open(args.o, "wb") as f:
         pickle.dump((rot, trans), f)
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    main(add_args(parser).parse_args())

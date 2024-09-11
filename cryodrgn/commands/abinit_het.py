@@ -1,14 +1,14 @@
 """Train a heterogeneous NN reconstruction model with hierarchical pose optimization.
 
-Example usages
---------------
+Example usage
+-------------
 # the default is to train for thirty epochs; here we train for fifty instead
-$ cryodrgn abinit_het particles.mrcs -o cryodrgn-outs/003_abinit_het --zdim 4
+$ cryodrgn abinit_het particles.mrcs -o cryodrgn-outs/003_abinit_het --zdim 4 \
                                      --ctf ctf.pkl -n 50
 
 # using .star particle input requires datadir argument pointing to image stacks
-$ cryodrgn abinit_het particles.star --datadir path_to_images/
-                                     -o cryodrgn-outs/004_abinit_het.10 --zdim 10
+$ cryodrgn abinit_het particles.star --datadir path_to_images/ \
+                                     -o cryodrgn-outs/004_abinit_het.10 --zdim 10 \
                                      --ctf ctf.pkl -n 50
 
 """
@@ -622,6 +622,7 @@ def save_checkpoint(
     out_weights,
     out_z,
     out_poses,
+    configs,
 ):
     """Save model weights, latent encoding z, and decoder volumes"""
     # save model weights
@@ -631,6 +632,7 @@ def save_checkpoint(
             "model_state_dict": unparallelize(model).state_dict(),
             "optimizer_state_dict": optim.state_dict(),
             "search_pose": search_pose,
+            "configs": configs,
         },
         out_weights,
     )
@@ -684,6 +686,8 @@ def save_config(args, dataset, lattice, model, out_config):
     )
 
     cryodrgn.config.save(config, out_config)
+
+    return config
 
 
 def sort_poses(poses):
@@ -878,7 +882,7 @@ def main(args):
 
     # save configuration
     out_config = "{}/config.yaml".format(args.outdir)
-    save_config(args, data, lattice, model, out_config)
+    configs = save_config(args, data, lattice, model, out_config)
 
     ps = PoseSearch(
         pose_model,
@@ -1073,6 +1077,7 @@ def main(args):
                     out_weights,
                     out_z,
                     out_poses,
+                    configs,
                 )
 
     if epoch is not None:
@@ -1106,6 +1111,7 @@ def main(args):
                 out_weights,
                 out_z,
                 out_poses,
+                configs,
             )
 
         td = dt.now() - t1

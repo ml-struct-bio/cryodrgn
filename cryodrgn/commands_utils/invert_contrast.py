@@ -1,31 +1,30 @@
 """Invert the contrast of an .mrc file
 
-Example usages
---------------
-# writes to vol_000_inverted.mrc
+Example usage
+-------------
+# Writes to vol_000_inverted.mrc
 $ cryodrgn_utils invert_contrast vol_000.mrc
 
+# Manually specify an output file
 $ cryodrgn_utils invert_contrast vol_000.mrc -o outputs/vol-inv.mrc
 
 """
 import os
 import argparse
 import logging
-from cryodrgn.mrc import MRCFile
-from cryodrgn.source import ImageSource
+from cryodrgn.mrcfile import parse_mrc, write_mrc
 
 logger = logging.getLogger(__name__)
 
 
-def add_args(parser):
+def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("input", help="Input volume (.mrc)")
     parser.add_argument(
         "--outmrc", "-o", type=os.path.abspath, help="Output volume (.mrc)"
     )
-    return parser
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
     if not args.input.endswith(".mrc"):
         raise ValueError(f"Input volume {args.input} is not a .mrc file!")
     outmrc = args.outmrc or args.input.replace(".mrc", "_inverted.mrc")
@@ -34,12 +33,6 @@ def main(args):
     if not outmrc.endswith(".mrc"):
         raise ValueError(f"Output volume {outmrc} is not a .mrc file!")
 
-    src = ImageSource.from_file(args.input)
-    MRCFile.write(outmrc, src, transform_fn=lambda data, indices: -data)
+    vol, header = parse_mrc(args.input)
+    write_mrc(outmrc, -vol, header=header)
     logger.info(f"Wrote {outmrc}")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    args = add_args(parser).parse_args()
-    main(args)

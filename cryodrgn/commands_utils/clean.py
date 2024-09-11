@@ -12,27 +12,27 @@ as a glob wildcard expression, and the script will scan any directory matching i
 this case the script will also force the user to confirm cleaning of any directory
 that looks like cryoDRGN output unless additional arguments are provided (see below).
 
-Example usages
---------------
+Example usage
+-------------
 
-Scan current directory:
+@ Scan current directory
 $ cryodrgn_utils clean
 
-See how many files would be removed with every 3 epochs but don't remove them:
+# See how many files would be removed with every 3 epochs but don't remove them
 $ cryodrgn_utils clean -n 3 -d
 
-Scan a single directory:
+# Scan a single directory
 $ cryodrgn_utils clean outdir
 
-Scan multiple directories:
+# Scan multiple directories
 $ cryodrgn_utils clean outdir outdir2
 
-Scan every directory found in the current folder.
-Note use of double-quotes to prevent bash from evaluating the glob expression itself.
+# Scan every directory found in the current folder
+# Note use of double-quotes to prevent bash from evaluating the glob expression itself
 $ cryodrgn_utils clean "*"
 
-Recursively scan current folder and its children for cryoDRGN outputs
-containing the substring "old".
+# Recursively scan current folder and its children for cryoDRGN outputs
+# containing the substring "old"
 $ cryodrgn_utils clean "**/*old*"
 
 """

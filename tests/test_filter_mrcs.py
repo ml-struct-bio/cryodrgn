@@ -24,10 +24,9 @@ def test_filter_mrcs(tmpdir, particles, ind_size, random_seed):
     save_pkl(indices, ind_fl)
 
     out_fl = os.path.join(tmpdir, f"projections-filtered_{test_lbl}.mrc")
-    args = filter_mrcs.add_args(argparse.ArgumentParser()).parse_args(
-        [particles.path, "--ind", ind_fl, "-o", out_fl]
-    )
-    filter_mrcs.main(args)
+    args = argparse.ArgumentParser()
+    filter_mrcs.add_args(args)
+    filter_mrcs.main(args.parse_args([particles.path, "--ind", ind_fl, "-o", out_fl]))
 
     new_data = ImageSource.from_file(out_fl).images()
     assert torch.allclose(new_data[:], mrcs_data[indices])

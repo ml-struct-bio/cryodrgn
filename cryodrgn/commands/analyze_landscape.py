@@ -19,8 +19,7 @@ from scipy.ndimage import binary_dilation
 from sklearn.cluster import AgglomerativeClustering
 from sklearn.decomposition import PCA
 from cryodrgn import analysis, utils
-from cryodrgn.mrc import MRCFile
-from cryodrgn.source import ImageSource
+from cryodrgn.source import ImageSource, write_mrc
 import cryodrgn.config
 
 logger = logging.getLogger(__name__)
@@ -199,7 +198,7 @@ def make_mask(outdir, K, dilate, thresh, in_mrc=None, Apix=1, vol_start_index=0)
     # save mask, view its slices as saved plots
     out_mrc = f"{outdir}/mask.mrc"
     logger.info(f"Saving {out_mrc}")
-    MRCFile.write(out_mrc, mask.astype(np.float32), Apix=Apix)
+    write_mrc(out_mrc, mask.astype(np.float32), Apix=Apix)
     view_slices(mask, out_png=f"{outdir}/mask_slices.png")
 
 
@@ -257,7 +256,7 @@ def analyze_volumes(
                 for i in range(K)
             ]
         ).mean(dim=0)
-        MRCFile.write(
+        write_mrc(
             f"{outdir}/kmeans{K}/vol_mean.mrc",
             np.array(volm).astype(np.float32),
             Apix=Apix,
@@ -314,9 +313,7 @@ def analyze_volumes(
         ):
             v = volm.clone()
             v[mask] += torch.Tensor(pca.components_[i]) * val
-            MRCFile.write(
-                f"{subdir}/{j}.mrc", np.array(v).astype(np.float32), Apix=Apix
-            )
+            write_mrc(f"{subdir}/{j}.mrc", np.array(v).astype(np.float32), Apix=Apix)
 
     # which plots to show???
     def plot(i, j):
@@ -358,10 +355,10 @@ def analyze_volumes(
         vol_i_std = (
             np.average((vol_i_all - vol_i_mean) ** 2, axis=0, weights=nparticles) ** 0.5
         )
-        MRCFile.write(
+        write_mrc(
             f"{subdir}/state_{i}_mean.mrc", vol_i_mean.astype(np.float32), Apix=Apix
         )
-        MRCFile.write(
+        write_mrc(
             f"{subdir}/state_{i}_std.mrc", vol_i_std.astype(np.float32), Apix=Apix
         )
         if not os.path.exists(f"{subdir}/state_{i}"):

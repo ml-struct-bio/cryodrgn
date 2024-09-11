@@ -11,7 +11,7 @@ from cryodrgn.source import ImageSource
 logger = logging.getLogger(__name__)
 
 
-def add_args(parser):
+def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "mrcs", help="Input particles or volume (.mrc, .mrcs, .star, .cs, or .txt)"
     )
@@ -27,10 +27,9 @@ def add_args(parser):
         help="Filter particle stack by these indices",
     )
     parser.add_argument("-o", help="Optionally, specify image to save")
-    return parser
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
     ind = None
     if args.ind is not None:
         logger.info(f"Filtering image dataset with {args.ind}")
@@ -41,15 +40,10 @@ def main(args):
     stack = [src.images(x).squeeze(dim=0) for x in range(25)]
     if args.invert:
         stack = [-1 * x for x in stack]
+
     analysis.plot_projections(stack)
     if args.o:
         plt.savefig(args.o)
         logger.info(f"Wrote {args.o}")
     else:
         plt.show()
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    args = add_args(parser).parse_args()
-    main(args)

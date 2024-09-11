@@ -4,11 +4,6 @@
 .. automodule:: commands.train_vae
 
    
-   
-   
-
-   
-   
    .. rubric:: Functions
 
    .. autosummary::
@@ -24,15 +19,3 @@
       save_config
       train_batch
    
-   
-
-   
-   
-   
-
-   
-   
-   
-
-
-

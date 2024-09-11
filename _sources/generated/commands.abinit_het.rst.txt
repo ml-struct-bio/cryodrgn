@@ -4,11 +4,6 @@
 .. automodule:: commands.abinit_het
 
    
-   
-   
-
-   
-   
    .. rubric:: Functions
 
    .. autosummary::
@@ -24,15 +19,3 @@
       sort_poses
       train
    
-   
-
-   
-   
-   
-
-   
-   
-   
-
-
-

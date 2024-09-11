@@ -55,7 +55,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../pages/faq.html">FAQ / Troubleshooting</a></li>
 <li class="toctree-l1 current"><a class="reference internal" href="../api.html">API</a><ul class="current">
 <li class="toctree-l2 current"><a class="current reference internal" href="#">commands.train_nn</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="#example-usages">Example usages</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#example-usage">Example usage</a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="commands.train_vae.html">commands.train_vae</a></li>
@@ -93,13 +93,13 @@
   <section id="module-commands.train_nn">
 <span id="commands-train-nn"></span><h1>commands.train_nn<a class="headerlink" href="#module-commands.train_nn" title="Link to this heading"></a></h1>
 <p>Train a neural net to model a 3D density map given 2D images with pose assignments.</p>
-<section id="example-usages">
-<h2>Example usages<a class="headerlink" href="#example-usages" title="Link to this heading"></a></h2>
-<p>$ cryodrgn train_nn projections.mrcs –poses angles.pkl -o output/train_nn -n 10
-$ cryodrgn train_nn projections.star –poses angles.pkl -o outs/003_train-nn</p>
-<blockquote>
-<div><p>–num-epochs=30 –lr=0.01</p>
-</div></blockquote>
+<section id="example-usage">
+<h2>Example usage<a class="headerlink" href="#example-usage" title="Link to this heading"></a></h2>
+<p>$ cryodrgn train_nn projections.mrcs –poses angles.pkl –ctf ctf.pkl                                      -o output/train_nn -n 10</p>
+<p># Run with more epochs
+$ cryodrgn train_nn projections.star –poses angles.pkl –ctf.pkl                                      -o outs/003_train-nn –num-epochs 30 –lr 0.01</p>
+<p># Restart after already running the same command with some epochs completed
+$ cryodrgn train_nn projections.star –poses angles.pkl –ctf.pkl                                      -o outs/003_train-nn –num-epochs 75 –lr 0.01                                      –load latest</p>
 </section>
 <p class="rubric">Functions</p>
 <table class="autosummary longtable docutils align-default">

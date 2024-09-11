@@ -4,11 +4,6 @@
 .. automodule:: commands.train_nn
 
    
-   
-   
-
-   
-   
    .. rubric:: Functions
 
    .. autosummary::
@@ -20,15 +15,3 @@
       save_config
       train
    
-   
-
-   
-   
-   
-
-   
-   
-   
-
-
-

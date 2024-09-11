@@ -337,6 +337,7 @@ def calculate_cryosparc_fscs(
     if out_file is not None:
         fsc_vals.reset_index(inplace=True, drop=False)
         logger.info(f"Saving FSC values to {out_file}")
+        fsc_vals.columns = fsc_vals.columns.str.replace(" ", "")
         fsc_vals.round(6).to_csv(out_file, sep=" ", header=True, index=False)
 
     return fsc_vals

@@ -299,12 +299,14 @@ Example usage:
     $ cryodrgn backproject_voxel projections.128.mrcs \
             --poses pose.pkl \
             --ctf ctf.pkl \
-            -o backproject.128.mrc
+            -o backproject.128 \
+            --first 10000
 
-The output structure `backproject.128.mrc` will not match the consensus reconstruction exactly
-as the `backproject_voxel` command backprojects phase-flipped particles onto the voxel grid,
-and by default only uses the first 10k images.
-If the structure is too noisy, you can increase the number of images that are used with the `--first` argument.
+The output structure `backproject.128/backproject.mrc` will not match the consensus reconstruction exactly
+as the `backproject_voxel` command backprojects phase-flipped particles onto the voxel grid, and because here we
+performed backprojection using only the first 10k images in the stack for quicker results.
+If the structure is too noisy, we can try using more images with `--first` or the
+entire stack instead (without `--first`).
 
 **Note:** If the volume does not resemble your structure, you may need to use the flag `--uninvert-data`.
 This flips the data sign (e.g. light-on-dark or dark-on-light), which may be needed depending on the
@@ -580,6 +582,9 @@ These scripts are located in the `analysis_scripts` directory within the source 
 
 [3] In particular, you may find it useful to perform filtering of particles separately from other analyses. This can
 done using our interactive interface available from the command line: `cryodrgn filter 01_cryodrgn256`.
+
+[4] `--Apix` only needs to be given if it is not present (or not accurate) in the CTF file that was used in training.
+
 
 ### Generating additional volumes
 

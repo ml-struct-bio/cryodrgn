@@ -585,7 +585,7 @@ class FTPositionalDecoder(Decoder):
             zdim = len(zval)
             z = torch.tensor(zval, dtype=torch.float32, device=coords.device)
 
-        vol_f = torch.zeros((D, D, D), dtype=torch.float32)
+        vol_f = torch.zeros((D, D, D), dtype=torch.float32, device=coords.device)
         assert not self.training
         # evaluate the volume by zslice to avoid memory overflows
         for i, dz in enumerate(
@@ -602,8 +602,8 @@ class FTPositionalDecoder(Decoder):
                 else:
                     y = self.decode(x)
                     y = y[..., 0] - y[..., 1]
-                slice_ = torch.zeros(D**2, device="cpu")
-                slice_[keep] = y.cpu()
+                slice_ = torch.zeros(D**2, device=coords.device)
+                slice_[keep] = y
                 slice_ = slice_.view(D, D)
             vol_f[i] = slice_
         vol_f = vol_f * norm[1] + norm[0]

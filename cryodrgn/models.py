@@ -1,4 +1,5 @@
 """Pytorch models"""
+
 from typing import Optional, Tuple, Type, Sequence, Any
 import numpy as np
 import torch
@@ -131,7 +132,7 @@ class HetOnlyVAE(nn.Module):
             tilt_params=c.get("tilt_params", {}),
         )
         if weights is not None:
-            ckpt = torch.load(weights, map_location=device)
+            ckpt = torch.load(weights, map_location=device, weights_only=True)
             model.load_state_dict(ckpt["model_state_dict"])
         if device is not None:
             model.to(device)
@@ -989,9 +990,11 @@ class ResidLinearMLP(Decoder):
     ):
         super(ResidLinearMLP, self).__init__()
         layers = [
-            ResidLinear(in_dim, hidden_dim)
-            if in_dim == hidden_dim
-            else MyLinear(in_dim, hidden_dim),
+            (
+                ResidLinear(in_dim, hidden_dim)
+                if in_dim == hidden_dim
+                else MyLinear(in_dim, hidden_dim)
+            ),
             activation(),
         ]
         for n in range(nlayers):

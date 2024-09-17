@@ -38,8 +38,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from matplotlib import colors
 from matplotlib.backend_bases import Event, MouseButton
-from matplotlib.widgets import LassoSelector, RadioButtons
+from matplotlib.widgets import LassoSelector, RadioButtons, Button
 from matplotlib.path import Path as PlotPath
+from matplotlib.gridspec import GridSpec
 from scipy.spatial import transform
 from typing import Optional, Sequence
 
@@ -206,7 +207,7 @@ def main(args: argparse.Namespace) -> None:
         )
 
     selector = SelectFromScatter(plot_df, pre_indices)
-    input("Press Enter after making your selection...")
+    # input("Press Enter after making your selection...")
     selected_indices = [all_indices[i] for i in selector.indices]
     plt.close()  # Close the figure to avoid interference with other plots
 
@@ -272,7 +273,7 @@ class SelectFromScatter:
         self.scatter = None
 
         self.fig = plt.figure(constrained_layout=True)
-        gs = self.fig.add_gridspec(2, 3, width_ratios=[1, 7, 1])
+        gs = self.gridspec()
         self.main_ax = self.fig.add_subplot(gs[:, 1])
 
         self.select_cols = [
@@ -295,6 +296,11 @@ class SelectFromScatter:
         self.menu_y = RadioButtons(rax, labels=self.select_cols, active=1)
         self.menu_y.on_clicked(self.update_yaxis)
 
+        # add save button only when selection is made
+        self.btn_loc = self.fig.add_subplot(gs[2, 0])
+        self.sv_btn = Button(self.btn_loc, "Save Selection!", color="darkgreen")
+        self.btn_loc.set_visible(False)
+
         cax = self.fig.add_subplot(gs[:, 2])
         cax.axis("off")
         cax.set_title("choose\ncolors", size=13)
@@ -314,6 +320,9 @@ class SelectFromScatter:
 
         self.plot()
 
+    def gridspec(self) -> GridSpec:
+        return self.fig.add_gridspec(3, 3, width_ratios=[1, 7, 1], height_ratios=[5, 5, 1])
+
     def plot(self) -> None:
         self.main_ax.clear()
         pnt_colors = ["gray" for _ in range(self.data_table.shape[0])]
@@ -321,6 +330,14 @@ class SelectFromScatter:
         if len(self.indices):
             for idx in self.indices:
                 pnt_colors[idx] = "goldenrod"
+
+            # with selection, set save button visible
+            self.btn_loc.set_visible(True)
+            self.sv_btn.on_clicked(self.save_click)
+        
+        elif ~len(self.indices):
+            # remove save button if no selection is made
+            self.btn_loc.set_visible(False)
 
         elif self.color_col != "None":
             clr_vals = self.data_table[self.color_col]
@@ -367,7 +384,7 @@ class SelectFromScatter:
             va="bottom",
             transform=self.main_ax.transAxes,
         )
-        plt.show(block=False)
+        plt.show()
         plt.draw()
 
     def update_xaxis(self, xlbl: str) -> None:
@@ -446,3 +463,9 @@ class SelectFromScatter:
             self.handl_id = self.fig.canvas.mpl_connect(
                 "motion_notify_event", self.hover_points
             )
+
+    def save_click(self, event: Event) -> None:
+        """When the save button is clicked, we close display."""
+        if hasattr(event, "button") and event.button is MouseButton.LEFT:
+            # close the plt so we can move onto saving it
+            plt.close("all")

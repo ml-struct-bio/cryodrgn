@@ -2,12 +2,14 @@
 
 When using `--ref-volume`, this reference volume will be used to create a loose and a
 tight mask using dilation and cosine edges; the latter mask will be corrected using
-phase randomization as implemented in cryoSPARC.
+phase randomization as implemented in cryoSPARC. Also using `--mask` will override the
+tight mask used in this situation.
 
 See also
 --------
 `cryodrgn.commands_utils.plot_fsc` — for just plotting already-calculated FSCs
 `cryodrgn.commands_utils.gen_mask` — for generating custom dilation + cosine edge masks
+`cryodrgn.commands.backproject_voxel` — calculates FSCs between reconstructed half-maps
 
 Example usage
 -------------
@@ -31,7 +33,7 @@ $ cryodrgn_utils fsc vol1.mrc vol2.mrc --ref-volume=full.mrc -p fsc-plot.png
 # Do phase randomization as above using the given mask instead of the default tight
 # mask, which will also be used to calculate corrected FSCs.
 $ cryodrgn_utils fsc half_vol_a.mrc half_vol_b.mrc --ref-volume=backproject.mrc \
-                     -p tighter-mask.png mask=tighter-mask.mrc
+                     -p tighter-mask.png --mask=tighter-mask.mrc
 
 """
 import os
@@ -298,11 +300,16 @@ def calculate_cryosparc_fscs(
     }
 
     if fsc_thresh["Tight"] is not None:
+        if fsc_thresh["Tight"] == fsc_vals["Tight"].pixres.values[-1]:
+            rand_thresh = 0.5 * fsc_thresh["No Mask"]
+        else:
+            rand_thresh = 0.75 * fsc_thresh["Tight"]
+
         fsc_vals["Corrected"] = correct_fsc(
             fsc_vals["Tight"],
             half_vol1,
             half_vol2,
-            randomization_threshold=0.75 * fsc_thresh["Tight"],
+            randomization_threshold=rand_thresh,
             initial_mask=masks["Tight"],
         )
         fsc_thresh["Corrected"] = get_fsc_thresholds(

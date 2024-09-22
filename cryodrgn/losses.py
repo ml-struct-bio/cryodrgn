@@ -31,4 +31,5 @@ class EquivarianceLoss(nn.Module):
         rotT = torch.stack([cos, sin, -sin, cos], 1).view(-1, 2, 2)
         grid = self.model.lattice.coords[:, 0:2] @ rotT
         grid = grid.view(-1, self.D, self.D, 2)
-        return F.grid_sample(img, grid)
+
+        return F.grid_sample(img, grid, align_corners=False)

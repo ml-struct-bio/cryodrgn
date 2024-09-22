@@ -117,7 +117,8 @@ class Lattice:
         grid = grid.view(len(rot), self.D, self.D, 2)  # QxYxXx2
         offset = self.center - grid[:, self.D2, self.D2]  # Qx2
         grid += offset[:, None, None, :]
-        rotated = F.grid_sample(images, grid)  # QxBxYxX
+        rotated = F.grid_sample(images, grid, align_corners=False)  # QxBxYxX
+
         return rotated.transpose(0, 1)  # BxQxYxX
 
     def translate_ft(self, img, t, mask=None):

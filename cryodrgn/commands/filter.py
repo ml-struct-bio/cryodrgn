@@ -37,7 +37,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from matplotlib import colors
-from matplotlib.backend_bases import Event, MouseButton
+from matplotlib.backend_bases import MouseButton, MouseEvent
 from matplotlib.widgets import LassoSelector, RadioButtons
 from matplotlib.path import Path as PlotPath
 from scipy.spatial import transform
@@ -115,20 +115,17 @@ def main(args: argparse.Namespace) -> None:
         )
     z = utils.load_pkl(os.path.join(workdir, f"z.{epoch}.pkl"))
 
-    # load poses
-    if train_configs["dataset_args"]["do_pose_sgd"]:
+    # Load poses either from input file or from reconstruction results if ab-initio
+    if "poses" in train_configs["dataset_args"]:
+        pose_pkl = train_configs["dataset_args"]["poses"]
+    else:
         pose_pkl = os.path.join(workdir, f"pose.{epoch}.pkl")
 
-        with open(pose_pkl, "rb") as f:
-            rot, trans = pickle.load(f)
-
-    else:
-        pose_pkl = train_configs["dataset_args"]["poses"]
-        rot, trans = utils.load_pkl(pose_pkl)
-
+    rot, trans = utils.load_pkl(pose_pkl)
     ctf_params = utils.load_pkl(train_configs["dataset_args"]["ctf"])
     all_indices = np.array(range(ctf_params.shape[0]))
 
+    # Load the set of indices used to filter original dataset and apply it to inputs
     if isinstance(train_configs["dataset_args"]["ind"], int):
         ctf_params = ctf_params[: train_configs["dataset_args"]["ind"], :]
         all_indices = all_indices[: train_configs["dataset_args"]["ind"]]
@@ -143,7 +140,7 @@ def main(args: argparse.Namespace) -> None:
     pc, pca = analysis.run_pca(z)
     umap = utils.load_pkl(os.path.join(anlzdir, "umap.pkl"))
 
-    # load preselected indices if they have been specified
+    # Load preselected indices for initial plotting if they have been specified
     if plot_inds:
         with open(plot_inds, "rb") as file:
             pre_indices = pickle.load(file)
@@ -205,10 +202,12 @@ def main(args: argparse.Namespace) -> None:
             z=z, pc=pc, labels=kmeans_lbls, umap=umap, znorm=znorm
         )
 
+    # Launch the plot and the interactive command-line prompt; once points are selected,
+    # close the figure to avoid interference with other plots
     selector = SelectFromScatter(plot_df, pre_indices)
     input("Press Enter after making your selection...")
     selected_indices = [all_indices[i] for i in selector.indices]
-    plt.close()  # Close the figure to avoid interference with other plots
+    plt.close()
 
     if selected_indices:
         select_str = " ... ".join(
@@ -219,8 +218,8 @@ def main(args: argparse.Namespace) -> None:
         )
         print(
             f"Selected {len(selected_indices)} particles from original list of "
-            f"{len(all_indices)} "
-            f"particles numbered [{min(all_indices)}, ... , {max(all_indices)}]:\n{select_str}"
+            f"{len(all_indices)} particles numbered "
+            f"[{min(all_indices)}, ... , {max(all_indices)}]:\n{select_str}"
         )
 
         if args.force:
@@ -271,10 +270,14 @@ class SelectFromScatter:
         self.data_table = data_table
         self.scatter = None
 
+        # Create a plotting region subdivided into three parts verically, the middle
+        # big part being used for the scatterplot and the thin sides used for legends
         self.fig = plt.figure(constrained_layout=True)
         gs = self.fig.add_gridspec(2, 3, width_ratios=[1, 7, 1])
         self.main_ax = self.fig.add_subplot(gs[:, 1])
 
+        # Find the columns in the given data frame that can be used as plotting
+        # covariates based on being a numeric non-index column
         self.select_cols = [
             col for col in data_table.select_dtypes("number").columns if col != "index"
         ]
@@ -283,6 +286,7 @@ class SelectFromScatter:
         self.color_col = "None"
         self.pnt_colors = None
 
+        # Create user interfaces for selecting the covariates to plot using the legends
         lax = self.fig.add_subplot(gs[0, 0])
         lax.axis("off")
         lax.set_title("choose\nx-axis", size=13)
@@ -301,6 +305,7 @@ class SelectFromScatter:
         self.menu_col = RadioButtons(cax, labels=["None"] + self.select_cols, active=0)
         self.menu_col.on_clicked(self.choose_colors)
 
+        # Create and initialize user interface for selecting points in the scatterplot
         self.lasso = LassoSelector(self.main_ax, onselect=self.choose_points)
         self.indices = pre_indices if pre_indices is not None else list()
         self.pik_txt = None
@@ -315,6 +320,7 @@ class SelectFromScatter:
         self.plot()
 
     def plot(self) -> None:
+        """Redraw the plot using the current plot info upon e.g. input from user."""
         self.main_ax.clear()
         pnt_colors = ["gray" for _ in range(self.data_table.shape[0])]
 
@@ -331,7 +337,7 @@ class SelectFromScatter:
                 def use_norm(x):
                     return x
 
-            elif clr_vals.min() < 0 and clr_vals.max() > 0:
+            elif clr_vals.min() < 0 < clr_vals.max():
                 use_max = max(abs(clr_vals))
                 use_norm = colors.Normalize(vmin=-use_max, vmax=use_max)
                 use_cmap = sns.color_palette("Spectral", as_cmap=True)
@@ -380,9 +386,9 @@ class SelectFromScatter:
         self.ycol = ylbl
         self.plot()
 
-    def choose_colors(self, colors: str) -> None:
-        """New colors necessitate clearing current selection and remaking the plot."""
-        self.color_col = colors
+    def choose_colors(self, chosen_colors: str) -> None:
+        """User selecting new colors from menu necessitate updating the plot."""
+        self.color_col = chosen_colors
 
         if self.color_col != "None":
             self.indices = list()
@@ -390,6 +396,7 @@ class SelectFromScatter:
         self.plot()
 
     def choose_points(self, verts: np.array) -> None:
+        """Update the chosen points and the plot when points are circled by the user."""
         self.indices = np.where(
             PlotPath(verts).contains_points(self.scatter.get_offsets())
         )[0]
@@ -398,7 +405,7 @@ class SelectFromScatter:
         self.menu_col.set_active(0)
         self.plot()
 
-    def hover_points(self, event: Event) -> None:
+    def hover_points(self, event: MouseEvent) -> None:
         """Update the plot label listing points the mouse is currently hovering over."""
 
         # Erase any existing annotation for points hovered over
@@ -435,12 +442,12 @@ class SelectFromScatter:
                 )
                 self.fig.canvas.draw_idle()
 
-    def on_click(self, event: Event) -> None:
+    def on_click(self, event: MouseEvent) -> None:
         """When we click the mouse button to make a selection, we disable hover-text."""
         if hasattr(event, "button") and event.button is MouseButton.LEFT:
             self.fig.canvas.mpl_disconnect(self.handl_id)
 
-    def on_release(self, event: Event) -> None:
+    def on_release(self, event: MouseEvent) -> None:
         """When the mouse is released after making a selection, re-enable hover-text."""
         if hasattr(event, "button") and event.button is MouseButton.LEFT:
             self.handl_id = self.fig.canvas.mpl_connect(

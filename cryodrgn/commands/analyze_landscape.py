@@ -1,15 +1,18 @@
-"""
-Pipeline to analyze cryoDRGN volume distribution
-"""
+"""Describe the latent space produced by a cryoDRGN model by directly comparing volumes.
 
+Example usage
+-------------
+$ cryodrgn analyze_landscape 003_abinit-het/ 49
+
+"""
 import argparse
 import os
+import shutil
 from collections import Counter
 from datetime import datetime as dt
 import logging
 from typing import Optional
 
-import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -25,21 +28,23 @@ import cryodrgn.config
 logger = logging.getLogger(__name__)
 
 
-def add_args(parser):
+def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "workdir", type=os.path.abspath, help="Directory with cryoDRGN results"
     )
     parser.add_argument(
         "epoch",
         type=str,
-        help="Epoch number N to analyze (0-based indexing, corresponding to z.N.pkl, weights.N.pkl)",
+        help="Epoch number N to analyze "
+        "(0-based indexing, corresponding to z.N.pkl, weights.N.pkl)",
     )
     parser.add_argument("--device", type=int, help="Optionally specify CUDA device")
     parser.add_argument(
         "-o",
         "--outdir",
         type=os.path.abspath,
-        help="Output directory for landscape analysis results (default: [workdir]/landscape.[epoch])",
+        help="Output directory for landscape analysis results (default: "
+        "[workdir]/landscape.[epoch])",
     )
     parser.add_argument("--skip-umap", action="store_true", help="Skip running UMAP")
     parser.add_argument(
@@ -77,14 +82,16 @@ def add_args(parser):
         "--vol-start-index",
         type=int,
         default=0,
-        help="Default value of start index for volume generation (default: %(default)s)",
+        help="Default value of start index for volume generation "
+        "(default: %(default)s)",
     )
 
     group = parser.add_argument_group("Extra arguments for mask generation")
     group.add_argument(
         "--thresh",
         type=float,
-        help="Density value to threshold for masking (default: half of max density value)",
+        help="Density value to threshold for masking (default: "
+        "half of max density value)",
     )
     group.add_argument(
         "--dilate",
@@ -103,7 +110,8 @@ def add_args(parser):
     group.add_argument(
         "--linkage",
         default="average",
-        help="Linkage for agglomerative clustering (e.g. average, ward) (default: %(default)s)",
+        help="Linkage for agglomerative clustering (e.g. average, "
+        "ward) (default: %(default)s)",
     )
     group.add_argument(
         "-M", type=int, default=10, help="Number of clusters (default: %(default)s)"
@@ -342,14 +350,9 @@ def analyze_volumes(
         logger.info(f"State {i}: {len(vol_i)} volumes")
         if vol_ind is not None:
             vol_i = np.arange(K)[vol_ind][vol_i]
-        vol_i_all = torch.stack(
-            [
-                ImageSource.from_file(
-                    f"{outdir}/kmeans{K}/vol_{vol_start_index+i:03d}.mrc"
-                ).images()
-                for i in vol_i
-            ]
-        )
+
+        vol_fl = os.path.join(outdir, f"kmeans{K}", f"vol_{vol_start_index+i:03d}.mrc")
+        vol_i_all = torch.stack([ImageSource.from_file(vol_fl).images() for i in vol_i])
         nparticles = np.array([kmeans_counts[i] for i in vol_i])
         vol_i_mean = np.average(vol_i_all, axis=0, weights=nparticles)
         vol_i_std = (
@@ -361,21 +364,25 @@ def analyze_volumes(
         write_mrc(
             f"{subdir}/state_{i}_std.mrc", vol_i_std.astype(np.float32), Apix=Apix
         )
-        if not os.path.exists(f"{subdir}/state_{i}"):
-            os.makedirs(f"{subdir}/state_{i}")
+
+        os.makedirs(f"{subdir}/state_{i}", exist_ok=True)
         for v in vol_i:
             os.symlink(
-                f"{outdir}/kmeans{K}/vol_{vol_start_index+v:03d}.mrc",
-                f"{subdir}/state_{i}/vol_{vol_start_index+v:03d}.mrc",
+                os.path.join(outdir, f"kmeans{K}", f"vol_{vol_start_index+v:03d}.mrc"),
+                os.path.join(subdir, f"state_{i}", f"vol_{vol_start_index+v:03d}.mrc"),
             )
+
         particle_ind = analysis.get_ind_for_cluster(kmeans_labels, vol_i)
         logger.info(f"State {i}: {len(particle_ind)} particles")
         if particle_ind_orig is not None:
             utils.save_pkl(
-                particle_ind_orig[particle_ind], f"{subdir}/state_{i}_particle_ind.pkl"
+                particle_ind_orig[particle_ind],
+                os.path.join(subdir, f"state_{i}_particle_ind.pkl"),
             )
         else:
-            utils.save_pkl(particle_ind, f"{subdir}/state_{i}_particle_ind.pkl")
+            utils.save_pkl(
+                particle_ind, os.path.join(subdir, f"state_{i}_particle_ind.pkl")
+            )
 
     # plot clustering results
     def hack_barplot(counts_):
@@ -411,7 +418,7 @@ def analyze_volumes(
         plt.scatter(pc[:, i], pc[:, j], c=labels, cmap=cmap)
         plt.xlabel(f"Volume PC{i+1} (EV: {pca.explained_variance_ratio_[i]:03f})")
         plt.ylabel(f"Volume PC{j+1} (EV: {pca.explained_variance_ratio_[j]:03f})")
-        plt.savefig(f"{subdir}/vol_pca_{K}_{i+1}_{j+1}.png")
+        plt.savefig(os.path.join(subdir, f"vol_pca_{K}_{i+1}_{j+1}.png"))
 
     for i in range(plot_dim - 1):
         plot_w_labels(i, i + 1)
@@ -426,7 +433,7 @@ def analyze_volumes(
             ax.annotate(str(k), pc[ii, [i, j]] + np.array([0.1, 0.1]))
         plt.xlabel(f"Volume PC{i+1} (EV: {pca.explained_variance_ratio_[i]:03f})")
         plt.ylabel(f"Volume PC{j+1} (EV: {pca.explained_variance_ratio_[j]:03f})")
-        plt.savefig(f"{subdir}/vol_pca_{K}_annotated_{i+1}_{j+1}.png")
+        plt.savefig(os.path.join(subdir, f"vol_pca_{K}_annotated_{i+1}_{j+1}.png"))
 
     for i in range(plot_dim - 1):
         plot_w_labels_annotated(i, i + 1)
@@ -456,31 +463,27 @@ def analyze_volumes(
         annots = annots[vol_ind]
     for i, k in enumerate(annots):
         ax.annotate(str(k), umap_i[i] + np.array([0.1, 0.1]))
+
     plt.xlabel("UMAP1")
     plt.ylabel("UMAP2")
-    plt.savefig(f"{subdir}/umap_annotated.png")
+    plt.savefig(os.path.join(subdir, "umap_annotated.png"))
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
     t1 = dt.now()
     logger.info(args)
+
     E = args.epoch
     workdir = args.workdir
-    zfile = f"{workdir}/z.{E}.pkl"
-    weights = f"{workdir}/weights.{E}.pkl"
-    config = (
-        f"{workdir}/config.yaml"
-        if os.path.exists(f"{workdir}/config.yaml")
-        else f"{workdir}/config.pkl"
+    zfile = os.path.join(workdir, f"z.{E}.pkl")
+    weights = os.path.join(workdir, f"weights.{E}.pkl")
+    cfg_file = os.path.join(workdir, "config.yaml")
+    cfg_file = (
+        cfg_file if os.path.exists(cfg_file) else os.path.join(workdir, "config.pkl")
     )
-    outdir = f"{workdir}/landscape.{E}"
-
-    if args.outdir:
-        outdir = args.outdir
+    outdir = args.outdir or os.path.join(workdir, f"landscape.{E}")
     logger.info(f"Saving results to {outdir}")
-    if not os.path.exists(outdir):
-        os.mkdir(outdir)
-
+    os.makedirs(outdir, exist_ok=True)
     z = utils.load_pkl(zfile)
     K = args.sketch_size
 
@@ -491,7 +494,7 @@ def main(args):
         device=args.device,
         vol_start_index=args.vol_start_index,
     )
-    vg = VolumeGenerator(weights, config, vol_args, skip_vol=args.skip_vol)
+    vg = VolumeGenerator(weights, cfg_file, vol_args, skip_vol=args.skip_vol)
 
     if args.vol_ind is not None:
         args.vol_ind = utils.load_pkl(args.vol_ind)
@@ -502,14 +505,13 @@ def main(args):
         logger.info("Skipping volume generation")
 
     if args.skip_umap:
-        assert os.path.exists(f"{outdir}/umap.pkl")
+        assert os.path.exists(os.path.join(outdir, "umap.pkl"))
         logger.info("Skipping UMAP")
     else:
-        logger.info(f"Copying UMAP from {workdir}/analyze.{E}/umap.pkl")
-        if os.path.exists(f"{workdir}/analyze.{E}/umap.pkl"):
-            from shutil import copyfile
-
-            copyfile(f"{workdir}/analyze.{E}/umap.pkl", f"{outdir}/umap.pkl")
+        umap_fl = os.path.join(workdir, f"analyze.{E}", "umap.pkl")
+        logger.info(f"Copying UMAP from {umap_fl}")
+        if os.path.exists(umap_fl):
+            shutil.copyfile(umap_fl, os.path.join(outdir, "umap.pkl"))
         else:
             raise NotImplementedError
 
@@ -527,10 +529,10 @@ def main(args):
 
     logger.info("Analyzing volumes...")
     # get particle indices if the dataset was originally filtered
-    c = cryodrgn.config.load(config)
+    cfgs = cryodrgn.config.load(cfg_file)
     particle_ind = (
-        utils.load_pkl(c["dataset_args"]["ind"])
-        if c["dataset_args"]["ind"] is not None
+        utils.load_pkl(cfgs["dataset_args"]["ind"])
+        if cfgs["dataset_args"]["ind"] is not None
         else None
     )
     analyze_volumes(
@@ -545,12 +547,6 @@ def main(args):
         Apix=args.Apix,
         vol_start_index=args.vol_start_index,
     )
+
     td = dt.now() - t1
     logger.info(f"Finished in {td}")
-
-
-if __name__ == "__main__":
-    matplotlib.use("Agg")
-    parser = argparse.ArgumentParser(description=__doc__)
-    add_args(parser)
-    main(parser.parse_args())

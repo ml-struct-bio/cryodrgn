@@ -35,6 +35,8 @@ def add_args(parser: argparse.ArgumentParser) -> None:
 
 
 def main(args: argparse.Namespace) -> None:
+    """Running the command `cryodrgn_utils filter_pkl` (see `add_args` above)."""
+
     if not (args.ind is None) ^ (args.first is None):
         raise ValueError(
             "Must provide exactly one of `--ind` (for filtering using a set of indices)"

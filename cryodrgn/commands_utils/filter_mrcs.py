@@ -18,12 +18,16 @@ logger = logging.getLogger(__name__)
 
 
 def add_args(parser: argparse.ArgumentParser) -> None:
+    """Specifies the command-line interface used by `cryodrgn_utils filter_mrcs`."""
+
     parser.add_argument("input", help="Input particles (.mrcs, .txt, .star, .cs)")
     parser.add_argument("--ind", required=True, help="Selected indices array (.pkl)")
     parser.add_argument("--outfile", "-o", help="Output .mrcs file")
 
 
 def main(args: argparse.Namespace) -> None:
+    """Running the command `cryodrgn_utils filter_mrcs` (see `add_args` above)."""
+
     ind = utils.load_pkl(args.ind)
     src = ImageSource.from_file(args.input, lazy=True, indices=ind)
     logger.info(

@@ -287,13 +287,15 @@ class ImageSource:
             header = self.header
 
         if chunksize is None:
+            header_args = {"Apix": self.apix or 1.0} if header is None else dict()
             write_mrc(
                 output_file,
                 self.images(),
                 header=header,
-                Apix=self.apix or 1.0,
                 transform_fn=transform_fn,
+                **header_args,
             )
+
         else:
             if header is None:
                 header = get_mrc_header(self.images())

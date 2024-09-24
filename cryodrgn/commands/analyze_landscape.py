@@ -18,11 +18,12 @@ import numpy as np
 import torch
 import seaborn as sns
 from matplotlib.colors import ListedColormap
-from scipy.ndimage import binary_dilation
 from sklearn.cluster import AgglomerativeClustering
 from sklearn.decomposition import PCA
 from cryodrgn import analysis, utils
-from cryodrgn.source import ImageSource, write_mrc
+from cryodrgn.commands.analyze import VolumeGenerator
+from cryodrgn.mrcfile import parse_mrc, write_mrc
+from cryodrgn.masking import cosine_dilation_mask
 import cryodrgn.config
 
 logger = logging.getLogger(__name__)
@@ -96,8 +97,14 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     group.add_argument(
         "--dilate",
         type=int,
-        default=5,
+        default=6,
         help="Dilate initial mask by this amount (default: %(default)s pixels)",
+    )
+    group.add_argument(
+        "--cosine-edge",
+        type=int,
+        default=6,
+        help="Apply a cosine edge to the mask (default: %(default)s pixels)",
     )
     group.add_argument(
         "--mask",
@@ -148,66 +155,56 @@ def generate_volumes(z, outdir, vg, K):
     vg.gen_volumes(f"{outdir}/kmeans{K}", centers)
 
 
-class VolumeGenerator:
-    """Helper class to call analysis.gen_volumes"""
+def make_mask(
+    outdir: str,
+    K: int,
+    dilate: int,
+    cosine_edge: int,
+    thresh: float,
+    in_mrc: Optional[str] = None,
+    Apix: float = 1.0,
+    vol_start_index: int = 0,
+) -> None:
+    """Create a masking filter for use across all volumes produced by k-means."""
+    kmean_dir = os.path.join(outdir, f"kmeans{K}")
 
-    def __init__(self, weights, config, vol_args={}, skip_vol=False):
-        self.weights = weights
-        self.config = config
-        self.vol_args = vol_args
-        self.skip_vol = skip_vol
-
-    def gen_volumes(self, outdir, z_values):
-        if self.skip_vol:
-            return
-        if not os.path.exists(outdir):
-            os.makedirs(outdir)
-        zfile = f"{outdir}/z_values.txt"
-        np.savetxt(zfile, z_values)
-        analysis.gen_volumes(self.weights, self.config, zfile, outdir, **self.vol_args)
-
-
-def make_mask(outdir, K, dilate, thresh, in_mrc=None, Apix=1, vol_start_index=0):
     if in_mrc is None:
         if thresh is None:
-            thresh = []
-            for i in range(K):
-                vol = ImageSource.from_file(
-                    f"{outdir}/kmeans{K}/vol_{vol_start_index+i:03d}.mrc"
-                ).images()
-                assert isinstance(vol, torch.Tensor)
-                thresh.append(np.percentile(vol, 99.99) / 2)
-            thresh = np.mean(thresh)
-        logger.info(f"Threshold: {thresh}")
-        logger.info(f"Dilating mask by: {dilate}")
+            thresh = np.mean(
+                [
+                    np.percentile(
+                        parse_mrc(
+                            os.path.join(kmean_dir, f"vol_{vol_start_index+i:03d}.mrc")
+                        )[0],
+                        99.99,
+                    )
+                    / 2.0
+                    for i in range(K)
+                ]
+            )
 
-        def binary_mask(vol):
-            x = (vol >= thresh).to(torch.bool)
-            x = binary_dilation(x, iterations=dilate)
-            return x
+        def mask_fx(vol):
+            return cosine_dilation_mask(
+                vol, thresh, dilate, edge_dist=cosine_edge, apix=Apix, verbose=False
+            )
 
-        # combine all masks by taking their union
-        vol = ImageSource.from_file(
-            f"{outdir}/kmeans{K}/vol_{vol_start_index:03d}.mrc"
-        ).images()
-        mask = ~binary_mask(vol)
+        # Combine all masks by taking their union (without loading all into memory)
+        vol, _ = parse_mrc(os.path.join(kmean_dir, f"vol_{vol_start_index:03d}.mrc"))
+        mask = 1.0 - mask_fx(vol)
         for i in range(1, K):
-            vol = ImageSource.from_file(
-                f"{outdir}/kmeans{K}/vol_{vol_start_index+i:03d}.mrc"
-            ).images()
-            mask *= ~binary_mask(vol)
-        mask = ~mask
+            vol, _ = parse_mrc(
+                os.path.join(kmean_dir, f"vol_{vol_start_index+i:03d}.mrc")
+            )
+            mask *= 1.0 - mask_fx(vol)
+        mask = 1.0 - mask
     else:
-        # Load provided mrc and convert to a boolean mask
-        mask = np.array(ImageSource.from_file(in_mrc).images())
-        assert isinstance(mask, np.ndarray)
-        mask = mask.astype(bool)
+        mask = np.array(parse_mrc(in_mrc)[0])
 
-    # save mask, view its slices as saved plots
-    out_mrc = f"{outdir}/mask.mrc"
+    # Save mask, and then view its slices from three acxes as saved plots
+    out_mrc = os.path.join(outdir, "mask.mrc")
     logger.info(f"Saving {out_mrc}")
     write_mrc(out_mrc, mask.astype(np.float32), Apix=Apix)
-    view_slices(mask, out_png=f"{outdir}/mask_slices.png")
+    view_slices(mask, out_png=os.path.join(outdir, "mask_slices.png"))
 
 
 def view_slices(y: np.array, out_png: str, D: Optional[int] = None) -> None:
@@ -252,40 +249,44 @@ def analyze_volumes(
     Apix=1,
     vol_start_index=0,
 ):
+    kmean_dir = os.path.join(outdir, f"kmeans{K}")
     cmap = choose_cmap(M)
 
-    # load mean volume, compute it if it does not exist
-    if not os.path.exists(f"{outdir}/kmeans{K}/vol_mean.mrc"):
+    # Load mean volume; compute it instead if it does not exist
+    vol_mean_fl = os.path.join(kmean_dir, "vol_mean.mrc")
+    if not os.path.exists(vol_mean_fl):
         volm = torch.stack(
             [
-                ImageSource.from_file(
-                    f"{outdir}/kmeans{K}/vol_{vol_start_index+i:03d}.mrc"
-                ).images()
+                torch.Tensor(
+                    parse_mrc(
+                        os.path.join(kmean_dir, f"vol_{vol_start_index+i:03d}.mrc")
+                    )[0]
+                )
                 for i in range(K)
             ]
         ).mean(dim=0)
-        write_mrc(
-            f"{outdir}/kmeans{K}/vol_mean.mrc",
-            np.array(volm).astype(np.float32),
-            Apix=Apix,
-        )
+        write_mrc(vol_mean_fl, np.array(volm).astype(np.float32), Apix=Apix)
     else:
-        volm = ImageSource.from_file(f"{outdir}/kmeans{K}/vol_mean.mrc").images()
+        volm = torch.Tensor(parse_mrc(vol_mean_fl)[0])
 
     assert isinstance(volm, torch.Tensor)
 
-    # load mask
-    mask = ImageSource.from_file(f"{outdir}/mask.mrc").images()
-    assert isinstance(mask, torch.Tensor)
-    mask = mask.to(torch.bool)
-    logger.info(f"{mask.sum()} voxels in mask")
+    # Load the mask; we will only use the non-zero co-ordinates for analyses
+    mask = torch.Tensor(parse_mrc(os.path.join(outdir, "mask.mrc"))[0])
+    mask_inds = mask > 0.0
+    logger.info(f"{mask_inds.sum()} voxels in mask")
 
     # load volumes
     vols = torch.stack(
         [
-            ImageSource.from_file(
-                f"{outdir}/kmeans{K}/vol_{vol_start_index+i:03d}.mrc"
-            ).images()[mask]
+            (
+                mask[mask_inds]
+                * torch.Tensor(
+                    parse_mrc(
+                        os.path.join(kmean_dir, f"vol_{vol_start_index+i:03d}.mrc")
+                    )[0]
+                )[mask_inds]
+            ).flatten()
             for i in range(K)
         ]
     )
@@ -304,8 +305,8 @@ def analyze_volumes(
     pca = PCA(dim)
     pca.fit(vols)
     pc = pca.transform(vols)
-    utils.save_pkl(pc, f"{outdir}/vol_pca_{K}.pkl")
-    utils.save_pkl(pca, f"{outdir}/vol_pca_obj.pkl")
+    utils.save_pkl(pc, os.path.join(outdir, f"vol_pca_{K}.pkl"))
+    utils.save_pkl(pca, os.path.join(outdir, "vol_pca_obj.pkl"))
     logger.info("Explained variance ratio:")
     logger.info(pca.explained_variance_ratio_)
 
@@ -320,7 +321,7 @@ def analyze_volumes(
             np.linspace(min_, max_, 10, endpoint=True), start=vol_start_index
         ):
             v = volm.clone()
-            v[mask] += torch.Tensor(pca.components_[i]) * val
+            v[mask_inds] += torch.Tensor(pca.components_[i]) * val
             write_mrc(f"{subdir}/{j}.mrc", np.array(v).astype(np.float32), Apix=Apix)
 
     # which plots to show???
@@ -329,21 +330,19 @@ def analyze_volumes(
         plt.scatter(pc[:, i], pc[:, j])
         plt.xlabel(f"Volume PC{i+1} (EV: {pca.explained_variance_ratio_[i]:03f})")
         plt.ylabel(f"Volume PC{j+1} (EV: {pca.explained_variance_ratio_[j]:03f})")
-        plt.savefig(f"{outdir}/vol_pca_{K}_{i+1}_{j+1}.png")
+        plt.savefig(os.path.join(outdir, f"vol_pca_{K}_{i+1}_{j+1}.png"))
 
     for i in range(plot_dim - 1):
         plot(i, i + 1)
 
     # clustering
-    subdir = f"{outdir}/clustering_L2_{linkage}_{M}"
-    if not os.path.exists(subdir):
-        os.makedirs(subdir)
-
+    subdir = os.path.join(outdir, f"clustering_L2_{linkage}_{M}")
+    os.makedirs(subdir, exist_ok=True)
     cluster = AgglomerativeClustering(n_clusters=M, linkage=linkage)
     labels = cluster.fit_predict(vols)
-    utils.save_pkl(labels, f"{subdir}/state_labels.pkl")
+    utils.save_pkl(labels, os.path.join(subdir, "state_labels.pkl"))
 
-    kmeans_labels = utils.load_pkl(f"{outdir}/kmeans{K}/labels.pkl")
+    kmeans_labels = utils.load_pkl(os.path.join(outdir, f"kmeans{K}", "labels.pkl"))
     kmeans_counts = Counter(kmeans_labels)
     for i in range(M):
         vol_i = np.where(labels == i)[0]
@@ -351,24 +350,28 @@ def analyze_volumes(
         if vol_ind is not None:
             vol_i = np.arange(K)[vol_ind][vol_i]
 
-        vol_fl = os.path.join(outdir, f"kmeans{K}", f"vol_{vol_start_index+i:03d}.mrc")
-        vol_i_all = torch.stack([ImageSource.from_file(vol_fl).images() for i in vol_i])
+        vol_fl = os.path.join(kmean_dir, f"vol_{vol_start_index+i:03d}.mrc")
+        vol_i_all = torch.stack([torch.Tensor(parse_mrc(vol_fl)[0]) for i in vol_i])
         nparticles = np.array([kmeans_counts[i] for i in vol_i])
         vol_i_mean = np.average(vol_i_all, axis=0, weights=nparticles)
         vol_i_std = (
             np.average((vol_i_all - vol_i_mean) ** 2, axis=0, weights=nparticles) ** 0.5
         )
         write_mrc(
-            f"{subdir}/state_{i}_mean.mrc", vol_i_mean.astype(np.float32), Apix=Apix
+            os.path.join(subdir, f"state_{i}_mean.mrc"),
+            vol_i_mean.astype(np.float32),
+            Apix=Apix,
         )
         write_mrc(
-            f"{subdir}/state_{i}_std.mrc", vol_i_std.astype(np.float32), Apix=Apix
+            os.path.join(subdir, f"state_{i}_std.mrc"),
+            vol_i_std.astype(np.float32),
+            Apix=Apix,
         )
 
-        os.makedirs(f"{subdir}/state_{i}", exist_ok=True)
+        os.makedirs(os.path.join(subdir, f"state_{i}"), exist_ok=True)
         for v in vol_i:
             os.symlink(
-                os.path.join(outdir, f"kmeans{K}", f"vol_{vol_start_index+v:03d}.mrc"),
+                os.path.join(kmean_dir, f"vol_{vol_start_index+v:03d}.mrc"),
                 os.path.join(subdir, f"state_{i}", f"vol_{vol_start_index+v:03d}.mrc"),
             )
 
@@ -400,7 +403,7 @@ def analyze_volumes(
         g.text(i - 0.1, counts[i] + 2, counts[i])  # type: ignore  (bug in Counter type-checking?)
     plt.xlabel("State")
     plt.ylabel("Count")
-    plt.savefig(f"{subdir}/state_volume_counts.png")
+    plt.savefig(os.path.join(subdir, "state_volume_counts.png"))
 
     plt.figure()
     particle_counts = [
@@ -411,7 +414,7 @@ def analyze_volumes(
         g.text(i - 0.1, particle_counts[i] + 2, particle_counts[i])
     plt.xlabel("State")
     plt.ylabel("Count")
-    plt.savefig(f"{subdir}/state_particle_counts.png")
+    plt.savefig(os.path.join(subdir, "state_particle_counts.png"))
 
     def plot_w_labels(i, j):
         plt.figure()
@@ -521,6 +524,7 @@ def main(args: argparse.Namespace) -> None:
         outdir,
         K,
         args.dilate,
+        args.cosine_edge,
         args.thresh,
         args.mask,
         Apix=args.Apix,

@@ -534,6 +534,8 @@ class _MRCDataFrameSource(ImageSource):
 
 
 class CsSource(_MRCDataFrameSource):
+    """Image stacks created using the cryoSPARC format, saved to a .cs file."""
+
     def __init__(
         self,
         filepath: str,
@@ -542,23 +544,15 @@ class CsSource(_MRCDataFrameSource):
         indices: Optional[np.ndarray] = None,
         max_threads: int = 1,
     ):
-        metadata = np.load(filepath)
-        blob_indices = metadata["blob/idx"]
-        blob_paths = metadata["blob/path"].astype(str).tolist()
+        csdata = np.load(filepath)
+        blob_indices = csdata["blob/idx"]
+        blob_paths = csdata["blob/path"].astype(str).tolist()
         n = len(blob_indices)
         assert len(blob_paths) == n
 
         # Remove leading ">" from paths, if present
-        if blob_paths[0].startswith(">"):
-            blob_paths = [p[1:] for p in blob_paths]
-
+        blob_paths = [p[1:] if p.startswith(">") else p for p in blob_paths]
         df = pd.DataFrame({"__mrc_index": blob_indices, "__mrc_filename": blob_paths})
-
-        if datadir:
-            if not os.path.isabs(datadir):
-                datadir = os.path.join(os.path.dirname(filepath), datadir)
-        else:
-            datadir = os.path.dirname(filepath)
 
         super().__init__(
             df=df, datadir=datadir, lazy=lazy, indices=indices, max_threads=max_threads
@@ -595,10 +589,10 @@ class TxtFileSource(_MRCDataFrameSource):
         for path, length in zip(_paths, _source_lengths):
             mrc_filename.extend([path] * length)
             mrc_index.append(np.arange(length))
+
         mrc_index = np.concatenate(mrc_index)
-        df = pd.DataFrame(
-            data={"__mrc_filename": mrc_filename, "__mrc_index": mrc_index}
-        )
+        df = pd.DataFrame({"__mrc_filename": mrc_filename, "__mrc_index": mrc_index})
+
         super().__init__(df=df, lazy=lazy, indices=indices, max_threads=max_threads)
 
     def write(self, output_file: str):

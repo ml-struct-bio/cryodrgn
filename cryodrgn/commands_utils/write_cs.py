@@ -1,7 +1,12 @@
-"""
-Create a CryoSparc .cs file from a particle stack and ctf parameters, or an input .cs file
-"""
+"""Create a CryoSparc .cs file from a particle stack, using poses and CTF if necessary.
 
+Example usage
+-------------
+$ cryodrgn_utils write_cs particles.mrcs --poses pose.pkl --ctf ctf.pkl -o particles.cs
+$ cryodrgn_utils write_cs particles.star --datadir=/scratch/empiar_10345/Micrographs \
+                          -o particles.cs
+
+"""
 import argparse
 import os
 import numpy as np
@@ -12,7 +17,7 @@ from cryodrgn.source import ImageSource
 logger = logging.getLogger(__name__)
 
 
-def add_args(parser):
+def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("particles", help="Input particles (.cs)")
     parser.add_argument("--datadir", help="Data/Project directory for cryoSPARC")
     parser.add_argument("--ctf", help="Input ctf.pkl")
@@ -26,27 +31,48 @@ def add_args(parser):
         help="Write the full path to particles (default: relative paths)",
     )
     parser.add_argument(
-        "-o", type=os.path.abspath, required=True, help="Output .star file"
+        "-o", "--output", type=os.path.abspath, required=True, help="Output .star file"
     )
 
-    return parser
 
-
-def main(args):
-    assert args.o.endswith(".cs"), "Output file must be .cs file"
+def main(args: argparse.Namespace) -> None:
     input_ext = os.path.splitext(args.particles)[-1]
-    assert input_ext in (".mrcs", ".txt", ".cs"), "Input file must be .mrcs/.txt/.cs"
+    if input_ext not in (".mrcs", ".txt", ".cs", ".star"):
+        raise ValueError(
+            f"Input must be .mrcs/.txt/.star/.cs, given {input_ext} file instead!"
+        )
+    if not args.output.endswith(".cs"):
+        raise ValueError(f"Output file {args.output} is not a .cs file!")
 
-    # Either accept an input cs file, or an input .mrcs/.txt with optional ctf/pose pkl file(s)
-    particles = ImageSource.from_file(args.particles, lazy=True, datadir=args.datadir)
+    # We will filter particles using the set of indices if they are given
+    ind = utils.load_pkl(args.ind) if args.ind is not None else None
+
+    # Either accept an input cs file...
     if input_ext == ".cs":
-        assert (
-            args.poses is None
-        ), "--poses cannot be specified when input is a cs file (poses are obtained from cs file)"
-        assert (
-            args.ctf is None
-        ), "--ctf cannot be specified when input is a cs file (ctf information are obtained from cs file)"
+        if args.poses is not None:
+            raise ValueError(
+                "--poses cannot be specified when input is a cs file (poses are "
+                "obtained from cs file)!"
+            )
+        if args.ctf is not None:
+            raise ValueError(
+                "--ctf cannot be specified when input is a cs file (ctf "
+                "information is obtained from cs file)!"
+            )
+
+        particles = np.load(args.particles)
+        logger.info(f"{len(particles)} particles in {args.particles}")
+        if args.ind:
+            logger.info(f"Filtering to {len(ind)} particles")
+            particles = particles[ind]
+
+    # ...or an input .mrcs/.txt/.star with optional ctf/pose pkl file(s)
     else:
+        particles = ImageSource.from_file(
+            args.particles, lazy=True, datadir=args.datadir
+        )
+        logger.info(f"{particles.orig_n} particles in {args.particles}")
+
         if args.ctf:
             ctf = utils.load_pkl(args.ctf)
             assert ctf.shape[1] == 9, "Incorrect CTF pkl format"
@@ -58,13 +84,12 @@ def main(args):
             assert len(particles) == len(
                 poses[0]
             ), f"{len(particles)} != {len(poses)}, Number of particles != number of poses"
-    logger.info(f"{len(particles)} particles in {args.particles}")
 
-    ind = None
-    if args.ind:
-        ind = utils.load_pkl(args.ind)
-        logger.info(f"Filtering to {len(ind)} particles")
-    particles = np.array(particles.images(ind))
+        if args.ind:
+            logger.info(f"Filtering to {len(ind)} particles")
+            particles = np.array(particles.images(ind))
+        else:
+            particles = np.array(particles.images())
 
     if input_ext == ".cs":
         pass  # Nothing to be done - we've already sub-setted the .cs data
@@ -75,11 +100,5 @@ def main(args):
         )
 
     assert isinstance(particles, np.ndarray)
-    with open(args.o, "wb") as f:
+    with open(args.output, "wb") as f:
         np.save(f, particles)
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    args = add_args(parser).parse_args()
-    main(args)

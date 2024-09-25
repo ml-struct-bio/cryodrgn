@@ -547,8 +547,12 @@ class CsSource(_MRCDataFrameSource):
         csdata = np.load(filepath)
         blob_indices = csdata["blob/idx"]
         blob_paths = csdata["blob/path"].astype(str).tolist()
-        n = len(blob_indices)
-        assert len(blob_paths) == n
+        assert len(blob_paths) == len(blob_indices)
+
+        # If --datadir is not given, we assume that image stacks are in the
+        # same location as this .cs file
+        if not datadir:
+            datadir = os.path.dirname(filepath)
 
         # Remove leading ">" from paths, if present
         blob_paths = [p[1:] if p.startswith(">") else p for p in blob_paths]

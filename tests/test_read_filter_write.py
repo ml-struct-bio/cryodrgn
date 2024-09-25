@@ -301,9 +301,8 @@ class TestParseCTFWriteStar:
         os.remove(out_fl)
 
 
-@pytest.mark.parametrize("particles", ["cryosparc-all"], indirect=True)
-@pytest.mark.xfail(reason="The source .mrcs file for the .cs file are not available")
-def test_write_cs(tmpdir, particles, input_cs_proj_dir):
+@pytest.mark.parametrize("particles", ["csparc_small", "csparc_big"], indirect=True)
+def test_filter_cs(tmpdir, particles):
     # Test writing out a .cs file from an input .cs file, with filtering
     # write_cs can optionally filter the output based on provided indices,
     # so we'll use that here
@@ -312,18 +311,12 @@ def test_write_cs(tmpdir, particles, input_cs_proj_dir):
     with open(indices_pkl, "wb") as f:
         pickle.dump([11, 3, 2, 4], f)
 
+    old_particles = np.load(particles.path)
     parser = argparse.ArgumentParser()
     write_cs.add_args(parser)
-    args = parser.parse_args(
-        [
-            particles.path,
-            "--datadir",
-            input_cs_proj_dir,
-            "-o",
-            out_fl,
-            "--ind",
-            indices_pkl,
-            "--full-path",
-        ]
-    )
+    args = parser.parse_args([particles.path, "-o", out_fl, "--ind", indices_pkl])
     write_cs.main(args)
+
+    particles = np.load(out_fl)
+    assert particles.shape == (4,)
+    assert (particles == old_particles[[11, 3, 2, 4]]).all()

@@ -42,7 +42,8 @@ PARTICLES_FILES = {
     "toy.star-13": "toy_projections_13.star",
     "toy.txt": "toy_projections.txt",
     "tilts.star": "sta_testing_bin8.star",
-    "cryosparc-all": "cryosparc_P12_J24_001_particles.cs",
+    "csparc_small": "cryosparc_J2_particles_exported.cs",
+    "csparc_big": "cryosparc_P12_J24_001_particles.cs",
 }
 POSES_FILES = {
     "hand-rot": "hand_rot.pkl",

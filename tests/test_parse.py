@@ -19,11 +19,6 @@ def particles_starfile():
     return os.path.join(pytest.DATADIR, "FinalRefinement-OriginalParticles-PfCRT.star")
 
 
-@pytest.fixture
-def particles_csfile():
-    return os.path.join(pytest.DATADIR, "cryosparc_P12_J24_001_particles.cs")
-
-
 class TestCtfStar:
     def get_outdir(self, tmpdir_factory, resolution):
         dirname = os.path.join("CTFStar", f"res.{resolution}")
@@ -82,11 +77,12 @@ class TestCtfStar:
         shutil.rmtree(outdir)
 
 
-def test_parse_ctf_cs(tmpdir, particles_csfile):
+@pytest.mark.parametrize("particles", ["csparc_big"], indirect=True)
+def test_parse_ctf_cs(tmpdir, particles):
     pkl_out = os.path.join(tmpdir, "ctf.pkl")
     png_out = os.path.join(tmpdir, "ctf.png")
     args = parse_ctf_csparc.add_args(argparse.ArgumentParser()).parse_args(
-        [particles_csfile, "-o", pkl_out, "--png", png_out]
+        [particles.path, "-o", pkl_out, "--png", png_out]
     )
     parse_ctf_csparc.main(args)
 
@@ -103,11 +99,12 @@ def test_parse_pose_star(tmpdir, particles_starfile):
     assert_pkl_close(pkl_out, os.path.join(pytest.DATADIR, "pose.star.pkl"))
 
 
-def test_parse_pose_cs(tmpdir, particles_csfile):
+@pytest.mark.parametrize("particles", ["csparc_big"], indirect=True)
+def test_parse_pose_cs(tmpdir, particles):
     pkl_out = os.path.join(tmpdir, "pose.pkl")
     parser = argparse.ArgumentParser()
     parse_pose_csparc.add_args(parser)
-    args = parser.parse_args([particles_csfile, "-D", "180", "-o", pkl_out])
+    args = parser.parse_args([particles.path, "-D", "180", "-o", pkl_out])
     parse_pose_csparc.main(args)
 
     assert_pkl_close(pkl_out, os.path.join(pytest.DATADIR, "pose.cs.pkl"))

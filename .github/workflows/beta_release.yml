@@ -15,8 +15,9 @@ jobs:
 
       - name: Upgrade setuptools/build
         run: |
-          pip3 install wheel --upgrade
-          pip3 install setuptools --upgrade
+          python3 -m venv myenv/
+          myenv/bin/pip install wheel --upgrade
+          myenv/bin/pip install setuptools --upgrade
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -29,7 +30,7 @@ jobs:
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
 
         run: |
-          python -m pip install --upgrade build
-          python -m build .
-          python -m pip install --upgrade twine
+          myenv/bin/python -m myenv/bin/pip install --upgrade build
+          myenv/bin/python -m build .
+          myenv/bin/python -m myenv/bin/pip install --upgrade twine
           twine upload --repository testpypi dist/*

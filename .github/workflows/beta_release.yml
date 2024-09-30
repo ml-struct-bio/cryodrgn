@@ -33,4 +33,4 @@ jobs:
           myenv/bin/python -m pip install --upgrade build
           myenv/bin/python -m build .
           myenv/bin/python -m pip install --upgrade twine
-          twine upload --repository testpypi dist/*
+          myenv/bin/twine upload --repository testpypi dist/*

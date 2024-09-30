@@ -39,8 +39,8 @@ class Lattice:
         # self.center = torch.tensor([c,c]) # pixel coordinate for img[D/2,D/2]
         self.center = torch.tensor([0.0, 0.0], device=device)
 
-        self.square_mask = {}
-        self.circle_mask = {}
+        self.square_masks = {}
+        self.circle_masks = {}
 
         self.freqs2d = self.coords[:, 0:2] / extent / 2
 
@@ -66,42 +66,59 @@ class Lattice:
         )
         return center_lattice
 
-    def get_square_mask(self, L: int) -> Tensor:
-        """Return a binary mask for self.coords which restricts coordinates to a centered square lattice"""
-        if L in self.square_mask:
-            return self.square_mask[L]
-        assert (
-            2 * L + 1 <= self.D
-        ), "Mask with size {} too large for lattice with size {}".format(L, self.D)
-        logger.info("Using square lattice of size {}x{}".format(2 * L + 1, 2 * L + 1))
-        b, e = self.D2 - L, self.D2 + L
-        c1 = self.coords.view(self.D, self.D, 3)[b, b]
-        c2 = self.coords.view(self.D, self.D, 3)[e, e]
-        m1 = self.coords[:, 0] >= c1[0]
-        m2 = self.coords[:, 0] <= c2[0]
-        m3 = self.coords[:, 1] >= c1[1]
-        m4 = self.coords[:, 1] <= c2[1]
-        mask = m1 * m2 * m3 * m4
-        self.square_mask[L] = mask
-        if self.ignore_DC:
-            raise NotImplementedError
+    def get_square_mask(self, side_length: int) -> Tensor:
+        """Return a binary mask for these coords corresponding to a centered square."""
+        if side_length in self.square_masks:
+            mask = self.square_masks[side_length]
+
+        else:
+            if 2 * side_length + 1 > self.D:
+                raise ValueError(
+                    f"Mask with {side_length=} too large for lattice with size {self.D}"
+                )
+            logger.info(
+                f"Using square lattice of size "
+                f"{2 * side_length + 1}x{2 * side_length + 1}"
+            )
+
+            b, e = self.D2 - side_length, self.D2 + side_length
+            c1 = self.coords.view(self.D, self.D, 3)[b, b]
+            c2 = self.coords.view(self.D, self.D, 3)[e, e]
+            m1 = self.coords[:, 0] >= c1[0]
+            m2 = self.coords[:, 0] <= c2[0]
+            m3 = self.coords[:, 1] >= c1[1]
+            m4 = self.coords[:, 1] <= c2[1]
+            mask = m1 * m2 * m3 * m4
+
+            if self.ignore_DC:
+                raise NotImplementedError
+
+            self.square_masks[side_length] = mask
+
         return mask
 
-    def get_circular_mask(self, R: float) -> Tensor:
-        """Return a binary mask for self.coords which restricts coordinates to a centered circular lattice"""
-        if R in self.circle_mask:
-            return self.circle_mask[R]
-        assert (
-            2 * R + 1 <= self.D
-        ), "Mask with radius {} too large for lattice with size {}".format(R, self.D)
-        logger.debug("Using circular lattice with radius {}".format(R))
+    def get_circular_mask(self, radius: float) -> Tensor:
+        """Return a binary mask for these coords corresponding to a centered circle."""
+        if radius in self.circle_masks:
+            mask = self.circle_masks[radius]
 
-        r = R / (self.D // 2) * self.extent
-        mask = self.coords.pow(2).sum(-1) <= r**2
-        if self.ignore_DC:
-            assert self.coords[self.D**2 // 2].sum() == 0.0
-            mask[self.D**2 // 2] = 0
-        self.circle_mask[R] = mask
+        else:
+            if 2 * radius + 1 > self.D:
+                raise ValueError(
+                    f"Mask with {radius=} too large for lattice with size {self.D}"
+                )
+            logger.info(f"Using circular lattice with {radius=}")
+
+            normed_radius = radius / (self.D // 2) * self.extent
+            distances = self.coords.pow(2).sum(-1)
+            mask = distances <= normed_radius**2
+
+            if self.ignore_DC:
+                assert self.coords[self.D**2 // 2].sum() == 0.0
+                mask[self.D**2 // 2] = 0
+
+            self.circle_masks[radius] = mask
+
         return mask
 
     def rotate(self, images: Tensor, theta: Tensor) -> Tensor:
@@ -203,8 +220,8 @@ class EvenLattice(Lattice):
             [c, c], device=device
         )  # pixel coordinate for img[D/2,D/2]
 
-        self.square_mask = {}
-        self.circle_mask = {}
+        self.square_masks = {}
+        self.circle_masks = {}
 
         self.ignore_DC = ignore_DC
         self.device = device

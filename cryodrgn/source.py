@@ -65,12 +65,11 @@ class ImageSource:
 
     Arguments
     ---------
-    D (int): Side length (pixels) of the square images in this stack.
-    n (int): Total number of images in this stack.
-    filenames (str of list of str, optional)
-        The file(s) containing the images in this stack.
-    lazy (bool): Whether to load the images in this stack immediately or on demand.
-    indices (np.array, optional): Filter the images using these indices.
+    D           Side length (pixels) of the square images in this stack.
+    n           Total number of images in this stack.
+    filenames   The file(s) containing the images in this stack.
+    lazy        Whether to load the images in this stack immediately or on demand.
+    indices     Filter the images using these indices.
 
     Attributes
     ----------
@@ -79,7 +78,6 @@ class ImageSource:
     shape (tuple): The shape of the underlying image data tensor - `(n, D, D)`.
     data (np.array): The image stack data loaded as a matrix.
                      Will be `None` if using lazy loading mode.
-
     """
 
     def __init__(
@@ -136,6 +134,22 @@ class ImageSource:
         datadir: Optional[str] = None,
         max_threads: int = 1,
     ):
+        """Utility for creating an `ImageSource` object from any given file type.
+
+        This method instantiates the appropriate child class of the `ImageSource` class
+        according to the extension of the given file pointing to a stack of particle
+        images.
+
+        Arguments
+        ---------
+        filepath:   A path to a stack of particle images.
+        lazy:       Whether to load the images in this stack immediately or on demand.
+        indices:    Filter the images using these indices.
+        datadir:    Path prefix to particle stack files if loading relative stack
+                    paths from a .star or .cs file.
+        max_threads:    Maximum number of CPU cores to use for data loading.
+
+        """
         ext = os.path.splitext(filepath)[-1][1:]
         if ext == "star":
             return StarfileSource(
@@ -231,11 +245,10 @@ class ImageSource:
             f"Class `{self.__class__.__name__}` has implemented an `_images` method "
             f"that does not return arrays of numpy dtype `{self.dtype}` !"
         )
-
         if not as_numpy:
-            return torch.from_numpy(images)
-        else:
-            return images
+            images = torch.from_numpy(images)
+
+        return images
 
     def _images(
         self, indices: np.ndarray, require_contiguous: bool = False
@@ -432,7 +445,6 @@ class _MRCDataFrameSource(ImageSource):
     _sources (dict[str, MRCFileSource])
         Index of the .mrc/.mrcs files in this collection; keys are the file paths
         and values are the data in each loaded lazily.
-
     """
 
     def __init__(
@@ -569,7 +581,6 @@ class TxtFileSource(_MRCDataFrameSource):
     Note that .txt files differ from .cs and .star files in that the filenames contained
     therein are always assumed to be stated relative to the directory
     the .txt file is in; thus we don't need a --datadir.
-
     """
 
     def __init__(
@@ -617,7 +628,6 @@ class StarfileSource(_MRCDataFrameSource, Starfile):
     ----------
     df (pd.DataFrame):  The primary data table in the .star file.
     data_optics (pd.Dataframe): `None` if RELION3.1
-
     """
 
     def __init__(

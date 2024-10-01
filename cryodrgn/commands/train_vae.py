@@ -367,6 +367,7 @@ def train_batch(
     ctf_params=None,
     yr=None,
     use_amp: bool = False,
+    device: str = "cuda",
     scaler=None,
     dose_filters=None,
 ):
@@ -376,7 +377,7 @@ def train_batch(
         y = preprocess_input(y, lattice, trans)
     # Cast operations to mixed precision if using torch.cuda.amp.GradScaler()
     if scaler is not None:
-        with torch.cuda.amp.autocast_mode.autocast():
+        with torch.amp.autocast_mode.autocast(device_type=device):
             z_mu, z_logvar, z, y_recon, mask = run_batch(
                 model, lattice, y, rot, ntilts, ctf_params, yr
             )
@@ -648,7 +649,8 @@ def main(args):
 
     # set the device
     use_cuda = torch.cuda.is_available()
-    device = torch.device("cuda" if use_cuda else "cpu")
+    device_str = "cuda" if use_cuda else "cpu"
+    device = torch.device(device_str)
     logger.info("Use cuda {}".format(use_cuda))
     if not use_cuda:
         logger.warning("WARNING: No GPUs detected")
@@ -859,7 +861,7 @@ def main(args):
             model, optim = amp.initialize(model, optim, opt_level="O1")
         # mixed precision with pytorch (v1.6+)
         except:  # noqa: E722
-            scaler = torch.cuda.amp.grad_scaler.GradScaler()
+            scaler = torch.GradScaler(device=device)
 
     # restart from checkpoint
     if args.load:
@@ -951,6 +953,7 @@ def main(args):
                 ctf_params=ctf_param,
                 yr=yr,
                 use_amp=args.amp,
+                device=device_str,
                 scaler=scaler,
                 dose_filters=dose_filters,
             )

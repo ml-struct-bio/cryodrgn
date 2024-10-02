@@ -861,7 +861,10 @@ def main(args):
             model, optim = amp.initialize(model, optim, opt_level="O1")
         # mixed precision with pytorch (v1.6+)
         except:  # noqa: E722
-            scaler = torch.GradScaler(device=device)
+            try:
+                scaler = torch.GradScaler(device=device_str)
+            except:  # noqa: E722
+                scaler = torch.cuda.amp.GradScaler()
 
     # restart from checkpoint
     if args.load:

@@ -2,7 +2,7 @@
 
 Example usage
 -------------
-$ cryodrgn_utils write_cs particles.mrcs --poses pose.pkl --ctf ctf.pkl -o particles.cs
+$ cryodrgn_utils filter_cs particles.mrcs --poses pose.pkl --ctf ctf.pkl -o particles.cs
 $ cryodrgn_utils write_cs particles.star --datadir=/scratch/empiar_10345/Micrographs \
                           -o particles.cs
 

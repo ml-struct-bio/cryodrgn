@@ -46,7 +46,7 @@ import cryodrgn.config
 logger = logging.getLogger(__name__)
 
 
-def add_args(parser: argparse.ArgumentParser):
+def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "particles",
         type=os.path.abspath,
@@ -367,7 +367,6 @@ def train_batch(
     ctf_params=None,
     yr=None,
     use_amp: bool = False,
-    device: str = "cuda",
     scaler=None,
     dose_filters=None,
 ):
@@ -377,7 +376,7 @@ def train_batch(
         y = preprocess_input(y, lattice, trans)
     # Cast operations to mixed precision if using torch.cuda.amp.GradScaler()
     if scaler is not None:
-        with torch.amp.autocast_mode.autocast(device_type=device):
+        with torch.cuda.amp.autocast_mode.autocast():
             z_mu, z_logvar, z, y_recon, mask = run_batch(
                 model, lattice, y, rot, ntilts, ctf_params, yr
             )
@@ -488,7 +487,8 @@ def loss_function(
     if beta_control is None:
         loss = gen_loss + beta * kld / mask.sum().float()
     else:
-        loss = gen_loss + args.beta_control * (beta - kld) ** 2 / mask.sum().float()
+        loss = gen_loss + beta_control * (beta - kld) ** 2 / mask.sum().float()
+
     return loss, gen_loss, kld
 
 
@@ -627,7 +627,7 @@ def get_latest(args):
     return args
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
     if args.verbose:
         logger.setLevel(logging.DEBUG)
 
@@ -861,10 +861,7 @@ def main(args):
             model, optim = amp.initialize(model, optim, opt_level="O1")
         # mixed precision with pytorch (v1.6+)
         except:  # noqa: E722
-            try:
-                scaler = torch.GradScaler(device=device_str)
-            except:  # noqa: E722
-                scaler = torch.cuda.amp.GradScaler()
+            scaler = torch.cuda.amp.grad_scaler.GradScaler()
 
     # restart from checkpoint
     if args.load:
@@ -956,7 +953,6 @@ def main(args):
                 ctf_params=ctf_param,
                 yr=yr,
                 use_amp=args.amp,
-                device=device_str,
                 scaler=scaler,
                 dose_filters=dose_filters,
             )
@@ -1036,13 +1032,8 @@ def main(args):
     if args.do_pose_sgd and epoch >= args.pretrain:
         out_pose = "{}/pose.pkl".format(args.outdir)
         posetracker.save(out_pose)
+
     td = dt.now() - t1
     logger.info(
         "Finished in {} ({} per epoch)".format(td, td / (num_epochs - start_epoch))
     )
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    args = add_args(parser).parse_args()
-    main(args)

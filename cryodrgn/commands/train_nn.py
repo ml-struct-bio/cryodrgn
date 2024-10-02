@@ -42,7 +42,7 @@ import cryodrgn.config
 logger = logging.getLogger(__name__)
 
 
-def add_args(parser):
+def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "particles",
         type=os.path.abspath,
@@ -277,7 +277,6 @@ def train(
     trans=None,
     ctf_params=None,
     use_amp=False,
-    device="cuda",
     scaler=None,
 ):
     model.train()
@@ -303,7 +302,7 @@ def train(
 
     # Cast operations to mixed precision if using torch.cuda.amp.GradScaler()
     if scaler is not None:
-        with torch.amp.autocast_mode.autocast(device_type=device):
+        with torch.cuda.amp.autocast_mode.autocast():
             loss = run_model(y)
     else:
         loss = run_model(y)
@@ -368,7 +367,7 @@ def get_latest(args):
     return args
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
     if args.verbose:
         logger.setLevel(logging.DEBUG)
 
@@ -510,10 +509,7 @@ def main(args):
             model, optim = amp.initialize(model, optim, opt_level="O1")
         # Mixed precision with pytorch (v1.6+)
         except:  # noqa: E722
-            try:
-                scaler = torch.GradScaler(device=device_str)
-            except:  # noqa: E722
-                scaler = torch.cuda.amp.GradScaler()
+            scaler = torch.cuda.amp.grad_scaler.GradScaler()
 
     # parallelize
     if args.multigpu and torch.cuda.device_count() > 1:
@@ -553,7 +549,6 @@ def main(args):
                 t,
                 c,
                 use_amp=args.amp,
-                device=device_str,
                 scaler=scaler,
             )
             if pose_optimizer is not None and epoch >= args.pretrain:
@@ -592,9 +587,3 @@ def main(args):
     logger.info(
         "Finished in {} ({} per epoch)".format(td, td / (args.num_epochs - start_epoch))
     )
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    args = add_args(parser).parse_args()
-    main(args)

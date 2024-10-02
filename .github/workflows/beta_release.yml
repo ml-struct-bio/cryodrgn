@@ -16,7 +16,6 @@ jobs:
       - name: Upgrade setuptools/build
         run: |
           python3 -m venv myenv/
-          myenv/bin/pip install wheel --upgrade
           myenv/bin/pip install setuptools --upgrade
 
       - name: Setup Python

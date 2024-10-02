@@ -446,7 +446,7 @@ def main(args):
     # load weights
     if args.load:
         logger.info("Loading model weights from {}".format(args.load))
-        checkpoint = torch.load(args.load, weights_only=False)
+        checkpoint = torch.load(args.load)
         model.load_state_dict(checkpoint["model_state_dict"])
         optim.load_state_dict(checkpoint["optimizer_state_dict"])
         start_epoch = checkpoint["epoch"] + 1

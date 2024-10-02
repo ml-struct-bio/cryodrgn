@@ -33,4 +33,5 @@ jobs:
           myenv/bin/python -m pip install --upgrade build
           myenv/bin/python -m build .
           myenv/bin/python -m pip install --upgrade twine
+          myenv/bin/python -m pip install importlib_metadata==7.2.1
           myenv/bin/twine upload --repository testpypi dist/*

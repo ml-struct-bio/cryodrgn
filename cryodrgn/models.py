@@ -407,10 +407,9 @@ class PositionalDecoder(Decoder):
                 y = self.forward(x)
                 y = y.view(D, D)
             vol_f[i] = y
+
         vol_f = vol_f * norm[1] + norm[0]
-        vol = fft.ihtn_center(
-            vol_f[0:-1, 0:-1, 0:-1]
-        )  # remove last +k freq for inverse FFT
+        vol = fft.ihtn_center(vol_f[0:-1, 0:-1, 0:-1])
         return vol
 
 

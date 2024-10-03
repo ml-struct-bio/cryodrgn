@@ -270,7 +270,7 @@ class SelectFromScatter:
         self.data_table = data_table
         self.scatter = None
 
-        # Create a plotting region subdivided into three parts verically, the middle
+        # Create a plotting region subdivided into three parts vertically, the middle
         # big part being used for the scatterplot and the thin sides used for legends
         self.fig = plt.figure(constrained_layout=True)
         gs = self.fig.add_gridspec(2, 3, width_ratios=[1, 7, 1])

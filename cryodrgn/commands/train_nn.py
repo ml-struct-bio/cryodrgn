@@ -256,7 +256,7 @@ def save_checkpoint(
 ):
     model.eval()
     vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, norm)
-    write_mrc(out_mrc, np.array(vol).astype(np.float32), Apix=Apix)
+    write_mrc(out_mrc, np.array(vol.cpu()).astype(np.float32), Apix=Apix)
     torch.save(
         {
             "norm": norm,

@@ -9,7 +9,7 @@ import torch
 from itertools import product
 from cryodrgn.source import ImageSource
 from cryodrgn.commands import parse_ctf_star
-from cryodrgn.commands_utils import filter_star, write_cs, write_star
+from cryodrgn.commands_utils import filter_star, filter_cs, write_cs, write_star
 
 
 @pytest.fixture
@@ -317,6 +317,16 @@ def test_filter_cs(tmpdir, particles):
     args = parser.parse_args([particles.path, "-o", out_fl, "--ind", indices_pkl])
     write_cs.main(args)
 
-    particles = np.load(out_fl)
-    assert particles.shape == (4,)
-    assert (particles == old_particles[[11, 3, 2, 4]]).all()
+    new_particles = np.load(out_fl)
+    assert new_particles.shape == (4,)
+    assert (new_particles == old_particles[[11, 3, 2, 4]]).all()
+
+    out_fl2 = os.path.join(tmpdir, "cs_filtered2.cs")
+    parser = argparse.ArgumentParser()
+    filter_cs.add_args(parser)
+    args = parser.parse_args([particles.path, "-o", out_fl2, "--ind", indices_pkl])
+    filter_cs.main(args)
+
+    new_particles = np.load(out_fl2)
+    assert new_particles.shape == (4,)
+    assert (new_particles == old_particles[[11, 3, 2, 4]]).all()

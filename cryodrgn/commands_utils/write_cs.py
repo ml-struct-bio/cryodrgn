@@ -9,8 +9,10 @@ $ cryodrgn_utils write_cs particles.star --datadir=/scratch/empiar_10345/Microgr
 """
 import argparse
 import os
-from warnings import warn
+import logging
 from cryodrgn.commands_utils.filter_cs import main as filter_cs_main
+
+logger = logging.getLogger(__name__)
 
 
 def add_args(parser: argparse.ArgumentParser) -> None:
@@ -32,10 +34,8 @@ def add_args(parser: argparse.ArgumentParser) -> None:
 
 
 def main(args: argparse.Namespace) -> None:
-    warn(
+    logger.warning(
         "`cryodrgn write_cs` is deprecated as of cryoDRGN v3.4.1 and will be removed "
         "in a future version; use `filter_cs` instead to filter .cs files!",
-        DeprecationWarning,
-        stacklevel=2,
     )
     filter_cs_main(args)

@@ -76,20 +76,26 @@ def cosine_dilation_mask(
     dilation: int = 25,
     edge_dist: int = 15,
     apix: float = 1.0,
+    verbose: bool = True,
 ) -> np.ndarray:
     threshold = threshold or np.percentile(vol, 99.99) / 2
-    logger.info(f"A/px={apix:.5g}; Threshold={threshold:.5g}")
-    x = np.array(vol >= threshold).astype(bool)
+    if verbose:
+        logger.info(f"Mask A/px={apix:.5g}; Threshold={threshold:.5g}")
 
+    x = np.array(vol >= threshold).astype(bool)
     dilate_val = int(dilation // apix)
     if dilate_val:
-        logger.info(f"Dilating initial vol>={threshold:3g} mask by {dilate_val} px")
+        if verbose:
+            logger.info(f"Dilating initial vol>={threshold:3g} mask by {dilate_val} px")
         x = binary_dilation(x, iterations=dilate_val).astype(float)
     else:
-        logger.info("no mask dilation applied")
+        if verbose:
+            logger.info("no mask dilation applied")
 
     dist_val = edge_dist / apix
-    logger.info(f"Width of cosine edge: {dist_val:.2f} px")
+    if verbose:
+        logger.info(f"Width of cosine edge: {dist_val:.2f} px")
+
     if dist_val:
         y = distance_transform_edt(~x.astype(bool))
         y[y > dist_val] = dist_val

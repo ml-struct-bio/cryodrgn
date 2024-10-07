@@ -1,4 +1,4 @@
-"""Utility functions used in Fast Fourier Transform calculations on image tensors."""
+"""Utility functions used in Fast Fourier transform calculations on image tensors."""
 
 import logging
 import numpy as np
@@ -29,40 +29,45 @@ def normalize(
 
 
 def fft2_center(img: torch.Tensor) -> torch.Tensor:
+    """2-dimensional discrete Fourier transform reordered with origin at center."""
+    if img.dtype == torch.float16:
+        img = img.type(torch.float32)
+
     return fftshift(fft2(fftshift(img, dim=(-1, -2))), dim=(-1, -2))
 
 
 def fftn_center(img: torch.Tensor) -> torch.Tensor:
+    """N-dimensional discrete Fourier transform reordered with origin at center."""
     return fftshift(fftn(fftshift(img)))
 
 
 def ifftn_center(img: torch.Tensor) -> torch.Tensor:
-    x = ifftshift(img)
-    y = ifftn(x)
-    z = ifftshift(y)
-    return z
+    """N-dimensional inverse discrete Fourier transform with origin at center."""
+    return ifftshift(ifftn(ifftshift(img)))
 
 
 def ht2_center(img: torch.Tensor) -> torch.Tensor:
-    _img = fft2_center(img)
-    return _img.real - _img.imag
+    """2-dimensional discrete Hartley transform reordered with origin at center."""
+    img = fft2_center(img)
+    return img.real - img.imag
 
 
 def htn_center(img: torch.Tensor) -> torch.Tensor:
-    _img = fftshift(fftn(fftshift(img)))
-    return _img.real - _img.imag
+    """N-dimensional discrete Hartley transform reordered with origin at center."""
+    img = fftn_center(img)
+    return img.real - img.imag
 
 
 def iht2_center(img: torch.Tensor) -> torch.Tensor:
+    """2-dimensional inverse discrete Hartley transform with origin at center."""
     img = fft2_center(img)
     img /= img.shape[-1] * img.shape[-2]
     return img.real - img.imag
 
 
 def ihtn_center(img: torch.Tensor) -> torch.Tensor:
-    img = fftshift(img)
-    img = fftn(img)
-    img = fftshift(img)
+    """N-dimensional inverse discrete Hartley transform with origin at center."""
+    img = fftn_center(img)
     img /= torch.prod(torch.tensor(img.shape, device=img.device))
     return img.real - img.imag
 

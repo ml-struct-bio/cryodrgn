@@ -125,9 +125,9 @@ class TestFixedHetero:
     def test_analyze(self, tmpdir_factory, particles, poses, ctf, indices, epoch):
         """Produce standard analyses for a particular epoch."""
         outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
-        args = analyze.add_args(argparse.ArgumentParser()).parse_args(
-            [outdir, str(epoch)]
-        )
+        parser = argparse.ArgumentParser()
+        analyze.add_args(parser)
+        args = parser.parse_args([outdir, str(epoch)])
         analyze.main(args)
         assert os.path.exists(os.path.join(outdir, f"analyze.{epoch}"))
 
@@ -175,14 +175,14 @@ class TestFixedHetero:
                 "CTF-Test",
                 "64",
                 marks=pytest.mark.xfail(
-                    raises=AssertionError, reason="box size > resolution"
+                    raises=ValueError, reason="box size > resolution"
                 ),
             ),
             pytest.param(
                 "CTF-Test",
                 None,
                 marks=pytest.mark.xfail(
-                    raises=AssertionError, reason="box size > resolution"
+                    raises=ValueError, reason="box size > resolution"
                 ),
             ),
         ],
@@ -205,9 +205,9 @@ class TestFixedHetero:
         if downsample_dim:
             args += ["--downsample", downsample_dim]
 
-        analyze_landscape.main(
-            analyze_landscape.add_args(argparse.ArgumentParser()).parse_args(args)
-        )
+        parser = argparse.ArgumentParser()
+        analyze_landscape.add_args(parser)
+        analyze_landscape.main(parser.parse_args(args))
 
     @pytest.mark.parametrize(
         "ctf, downsample_dim",
@@ -240,9 +240,9 @@ class TestFixedHetero:
         if downsample_dim is not None:
             args += ["--downsample", downsample_dim]
 
-        analyze_landscape_full.main(
-            analyze_landscape_full.add_args(parser).parse_args(args)
-        )
+        parser = argparse.ArgumentParser()
+        analyze_landscape_full.add_args(parser)
+        analyze_landscape_full.main(parser.parse_args(args))
 
     @pytest.mark.parametrize(
         "ctf, seed, steps, points",
@@ -308,7 +308,9 @@ class TestFixedHetero:
     @pytest.mark.parametrize("epoch", [2, 3])
     def test_eval_volume(self, tmpdir_factory, particles, poses, ctf, indices, epoch):
         outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
-        args = eval_vol.add_args(argparse.ArgumentParser()).parse_args(
+        parser = argparse.ArgumentParser()
+        eval_vol.add_args(parser)
+        args = parser.parse_args(
             [
                 os.path.join(outdir, f"weights.{epoch}.pkl"),
                 "--config",
@@ -522,7 +524,9 @@ class TestAbinitHetero:
 
     def test_eval_volume(self, tmpdir_factory, particles, ctf, indices):
         outdir = self.get_outdir(tmpdir_factory, particles, indices, ctf)
-        args = eval_vol.add_args(argparse.ArgumentParser()).parse_args(
+        parser = argparse.ArgumentParser()
+        eval_vol.add_args(parser)
+        args = parser.parse_args(
             [
                 os.path.join(outdir, "weights.2.pkl"),
                 "--config",

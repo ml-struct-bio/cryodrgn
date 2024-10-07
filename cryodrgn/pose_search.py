@@ -37,6 +37,7 @@ def interpolate(img: torch.Tensor, coords: torch.Tensor) -> torch.Tensor:
         F.grid_sample(
             img.unsqueeze(1),
             grid,
+            align_corners=False,
         )
         .squeeze(2)
         .squeeze(1)

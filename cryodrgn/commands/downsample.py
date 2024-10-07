@@ -52,6 +52,8 @@ logger = logging.getLogger(__name__)
 
 
 def add_args(parser: argparse.ArgumentParser) -> None:
+    """The command-line arguments for use with `cryodrgn downsample`."""
+
     parser.add_argument(
         "input", help="Input particles or volume (.mrc, .mrcs, .star, .cs, or .txt)"
     )
@@ -61,13 +63,13 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "-o",
         "--outfile",
-        type=str,
+        type=os.path.abspath,
         required=True,
         help="Output projection stack (.mrc, .mrcs, .star, or .txt)",
     )
     parser.add_argument(
         "--outdir",
-        type=str,
+        type=os.path.abspath,
         help="Output image stack directory, (default: placed alongside --outfile)",
     )
     parser.add_argument(
@@ -116,23 +118,39 @@ def warnexists(out):
 
 def downsample_mrc_images(
     src: ImageSource,
-    new_D: int,
+    new_box_size: int,
     out_fl: str,
     batch_size: int,
     chunk_size: Optional[int] = None,
 ):
-    if new_D > src.D:
+    """Downsample the images in a single particle stack into a new .mrcs file.
+
+    This utlility function also simplifies handling each of the individual .mrcs files
+    listed in a .txt or .star file into a new collection of downsampled .mrcs files.
+
+    Arguments
+    ---------
+    src         A loaded particle image stack.
+    new_box_size       The new downsampled box size in pixels.
+    out_fl      The output .mrcs file name.
+    batch_size  The batch size for processing images;
+                useful for avoiding out-of-memory issues.
+    chunk_size  If given, divide output into files each containing this many images.
+
+    """
+    if new_box_size > src.D:
         raise ValueError(
-            f"New box size {new_D} cannot be larger than the original box size {src.D}!"
+            f"New box size {new_box_size} cannot be larger "
+            f"than the original box size {src.D}!"
         )
 
     old_apix = src.apix
     if old_apix is None:
         old_apix = 1.0
 
-    new_apix = np.round(old_apix * src.D / new_D, 6)
-    start = int(src.D / 2 - new_D / 2)
-    stop = int(src.D / 2 + new_D / 2)
+    new_apix = np.round(old_apix * src.D / new_box_size, 6)
+    start = int(src.D / 2 - new_box_size / 2)
+    stop = int(src.D / 2 + new_box_size / 2)
 
     if not isinstance(new_apix, float):
         new_apix = tuple(set(new_apix))
@@ -155,7 +173,12 @@ def downsample_mrc_images(
         logger.info(f"Saving {out_fl}")
 
         header = MRCHeader.make_default_header(
-            nz=src.n, ny=new_D, nx=new_D, Apix=new_apix, dtype=src.dtype, is_vol=False
+            nz=src.n,
+            ny=new_box_size,
+            nx=new_box_size,
+            Apix=new_apix,
+            dtype=src.dtype,
+            is_vol=False,
         )
         src.write_mrc(
             output_file=out_fl,
@@ -174,12 +197,12 @@ def downsample_mrc_images(
 
         for i in range(nchunks):
             logger.info("Processing chunk {}".format(i))
-            chunk = src[i * chunk_size : (i + 1) * chunk_size]
+            chunk = src[(i * chunk_size) : ((i + 1) * chunk_size)]
 
             header = MRCHeader.make_default_header(
                 nz=len(chunk),
-                ny=new_D,
-                nx=new_D,
+                ny=new_box_size,
+                nx=new_box_size,
                 Apix=new_apix,
                 dtype=src.dtype,
                 is_vol=False,
@@ -203,6 +226,7 @@ def downsample_mrc_images(
 
 
 def main(args: argparse.Namespace) -> None:
+    """Downsampling the given particle stack into a new stack (see `add_args` above)."""
     mkbasedir(args.outfile)
     warnexists(args.outfile)
     out_ext = os.path.splitext(args.outfile)[1]
@@ -213,6 +237,7 @@ def main(args: argparse.Namespace) -> None:
         logger.info(f"Filtering image dataset with {args.ind}")
         ind = utils.load_pkl(args.ind).astype(int)
 
+    # Load image data (in lazy mode unless we are loading a volume)
     src = ImageSource.from_file(
         args.input, lazy=not args.is_vol, indices=ind, datadir=args.datadir
     )

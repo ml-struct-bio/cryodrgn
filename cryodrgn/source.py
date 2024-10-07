@@ -65,12 +65,11 @@ class ImageSource:
 
     Arguments
     ---------
-    D (int): Side length (pixels) of the square images in this stack.
-    n (int): Total number of images in this stack.
-    filenames (str of list of str, optional)
-        The file(s) containing the images in this stack.
-    lazy (bool): Whether to load the images in this stack immediately or on demand.
-    indices (np.array, optional): Filter the images using these indices.
+    D           Side length (pixels) of the square images in this stack.
+    n           Total number of images in this stack.
+    filenames   The file(s) containing the images in this stack.
+    lazy        Whether to load the images in this stack immediately or on demand.
+    indices     Filter the images using these indices.
 
     Attributes
     ----------
@@ -79,7 +78,6 @@ class ImageSource:
     shape (tuple): The shape of the underlying image data tensor - `(n, D, D)`.
     data (np.array): The image stack data loaded as a matrix.
                      Will be `None` if using lazy loading mode.
-
     """
 
     def __init__(
@@ -136,6 +134,22 @@ class ImageSource:
         datadir: Optional[str] = None,
         max_threads: int = 1,
     ):
+        """Utility for creating an `ImageSource` object from any given file type.
+
+        This method instantiates the appropriate child class of the `ImageSource` class
+        according to the extension of the given file pointing to a stack of particle
+        images.
+
+        Arguments
+        ---------
+        filepath:   A path to a stack of particle images.
+        lazy:       Whether to load the images in this stack immediately or on demand.
+        indices:    Filter the images using these indices.
+        datadir:    Path prefix to particle stack files if loading relative stack
+                    paths from a .star or .cs file.
+        max_threads:    Maximum number of CPU cores to use for data loading.
+
+        """
         ext = os.path.splitext(filepath)[-1][1:]
         if ext == "star":
             return StarfileSource(
@@ -231,11 +245,10 @@ class ImageSource:
             f"Class `{self.__class__.__name__}` has implemented an `_images` method "
             f"that does not return arrays of numpy dtype `{self.dtype}` !"
         )
-
         if not as_numpy:
-            return torch.from_numpy(images)
-        else:
-            return images
+            images = torch.from_numpy(images)
+
+        return images
 
     def _images(
         self, indices: np.ndarray, require_contiguous: bool = False
@@ -287,13 +300,15 @@ class ImageSource:
             header = self.header
 
         if chunksize is None:
+            header_args = {"Apix": self.apix or 1.0} if header is None else dict()
             write_mrc(
                 output_file,
                 self.images(),
                 header=header,
-                Apix=self.apix or 1.0,
                 transform_fn=transform_fn,
+                **header_args,
             )
+
         else:
             if header is None:
                 header = get_mrc_header(self.images())
@@ -430,7 +445,6 @@ class _MRCDataFrameSource(ImageSource):
     _sources (dict[str, MRCFileSource])
         Index of the .mrc/.mrcs files in this collection; keys are the file paths
         and values are the data in each loaded lazily.
-
     """
 
     def __init__(
@@ -532,6 +546,8 @@ class _MRCDataFrameSource(ImageSource):
 
 
 class CsSource(_MRCDataFrameSource):
+    """Image stacks created using the cryoSPARC format, saved to a .cs file."""
+
     def __init__(
         self,
         filepath: str,
@@ -540,23 +556,19 @@ class CsSource(_MRCDataFrameSource):
         indices: Optional[np.ndarray] = None,
         max_threads: int = 1,
     ):
-        metadata = np.load(filepath)
-        blob_indices = metadata["blob/idx"]
-        blob_paths = metadata["blob/path"].astype(str).tolist()
-        n = len(blob_indices)
-        assert len(blob_paths) == n
+        csdata = np.load(filepath)
+        blob_indices = csdata["blob/idx"]
+        blob_paths = csdata["blob/path"].astype(str).tolist()
+        assert len(blob_paths) == len(blob_indices)
+
+        # If --datadir is not given, we assume that image stacks are in the
+        # same location as this .cs file
+        if not datadir:
+            datadir = os.path.dirname(filepath)
 
         # Remove leading ">" from paths, if present
-        if blob_paths[0].startswith(">"):
-            blob_paths = [p[1:] for p in blob_paths]
-
+        blob_paths = [p[1:] if p.startswith(">") else p for p in blob_paths]
         df = pd.DataFrame({"__mrc_index": blob_indices, "__mrc_filename": blob_paths})
-
-        if datadir:
-            if not os.path.isabs(datadir):
-                datadir = os.path.join(os.path.dirname(filepath), datadir)
-        else:
-            datadir = os.path.dirname(filepath)
 
         super().__init__(
             df=df, datadir=datadir, lazy=lazy, indices=indices, max_threads=max_threads
@@ -569,7 +581,6 @@ class TxtFileSource(_MRCDataFrameSource):
     Note that .txt files differ from .cs and .star files in that the filenames contained
     therein are always assumed to be stated relative to the directory
     the .txt file is in; thus we don't need a --datadir.
-
     """
 
     def __init__(
@@ -593,10 +604,10 @@ class TxtFileSource(_MRCDataFrameSource):
         for path, length in zip(_paths, _source_lengths):
             mrc_filename.extend([path] * length)
             mrc_index.append(np.arange(length))
+
         mrc_index = np.concatenate(mrc_index)
-        df = pd.DataFrame(
-            data={"__mrc_filename": mrc_filename, "__mrc_index": mrc_index}
-        )
+        df = pd.DataFrame({"__mrc_filename": mrc_filename, "__mrc_index": mrc_index})
+
         super().__init__(df=df, lazy=lazy, indices=indices, max_threads=max_threads)
 
     def write(self, output_file: str):
@@ -617,7 +628,6 @@ class StarfileSource(_MRCDataFrameSource, Starfile):
     ----------
     df (pd.DataFrame):  The primary data table in the .star file.
     data_optics (pd.Dataframe): `None` if RELION3.1
-
     """
 
     def __init__(

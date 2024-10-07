@@ -46,7 +46,7 @@ import cryodrgn.config
 logger = logging.getLogger(__name__)
 
 
-def add_args(parser: argparse.ArgumentParser):
+def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "particles",
         type=os.path.abspath,
@@ -487,7 +487,8 @@ def loss_function(
     if beta_control is None:
         loss = gen_loss + beta * kld / mask.sum().float()
     else:
-        loss = gen_loss + args.beta_control * (beta - kld) ** 2 / mask.sum().float()
+        loss = gen_loss + beta_control * (beta - kld) ** 2 / mask.sum().float()
+
     return loss, gen_loss, kld
 
 
@@ -626,7 +627,7 @@ def get_latest(args):
     return args
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
     if args.verbose:
         logger.setLevel(logging.DEBUG)
 
@@ -648,7 +649,8 @@ def main(args):
 
     # set the device
     use_cuda = torch.cuda.is_available()
-    device = torch.device("cuda" if use_cuda else "cpu")
+    device_str = "cuda" if use_cuda else "cpu"
+    device = torch.device(device_str)
     logger.info("Use cuda {}".format(use_cuda))
     if not use_cuda:
         logger.warning("WARNING: No GPUs detected")
@@ -1030,13 +1032,8 @@ def main(args):
     if args.do_pose_sgd and epoch >= args.pretrain:
         out_pose = "{}/pose.pkl".format(args.outdir)
         posetracker.save(out_pose)
+
     td = dt.now() - t1
     logger.info(
         "Finished in {} ({} per epoch)".format(td, td / (num_epochs - start_epoch))
     )
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    args = add_args(parser).parse_args()
-    main(args)

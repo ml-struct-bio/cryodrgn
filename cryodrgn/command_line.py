@@ -114,6 +114,7 @@ def util_commands() -> None:
             "add_psize",
             "clean",
             "concat_pkls",
+            "filter_cs",
             "filter_mrcs",
             "filter_pkl",
             "filter_star",

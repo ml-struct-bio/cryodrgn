@@ -19,15 +19,16 @@ cryoDRGN installation, training and analysis. A brief quick start is provided be
 For any feedback, questions, or bugs, please file a Github issue or start a Github discussion.
 
 
-### New in Version 3.4.0
+### New in Version 3.4.x
 * [NEW] `cryodrgn plot_classes` for analysis visualizations colored by a given set of class labels
-* full support for RELION 3.1 .star files with separate optics tables
+* support for RELION 3.1 .star files with separate optics tables
+* support for np.float16 number formats used in RELION .mrcs outputs
 * `cryodrgn backproject_voxel` produces cryoSPARC-style FSC curve plots with phase-randomization correction of
   automatically generated tight masks
 * `cryodrgn downsample` can create a new .star or .txt image stack from the corresponding stack format instead of
   always writing to an .mrcs stack; now also always puts output files into a folder
 * fixing issues with `cryodrgn filter` such as less intrusive annotation text and `np.array` instead of `list` output
-  format
+  format and `do_pose_sgd` errors
 * official support for Python 3.11
 
 

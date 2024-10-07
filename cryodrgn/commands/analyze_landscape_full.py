@@ -1,3 +1,14 @@
+"""Transform a cryoDRGN latent space to better capture differences between volumes.
+
+Example usage
+-------------
+$ cryodrgn analyze_landscape_full 003_abinit-het/ 49
+
+# Sample fewer volumes from this dataset's particles according to their position in the
+# latent space; use a larger box size for these volumes instead of downsampling to 128
+$ cryodrgn analyze_landscape_full 005_train-vae/ 39 -N 4000 -d 256
+
+"""
 import argparse
 import os
 import os.path
@@ -21,14 +32,17 @@ from cryodrgn.source import ImageSource
 logger = logging.getLogger(__name__)
 
 
-def add_args(parser):
+def add_args(parser: argparse.ArgumentParser) -> None:
+    """The command-line arguments for use with `cryodrgn analyze_landscape_full`."""
+
     parser.add_argument(
         "workdir", type=os.path.abspath, help="Directory with cryoDRGN results"
     )
     parser.add_argument(
         "epoch",
         type=int,
-        help="Epoch number N to analyze (0-based indexing, corresponding to z.N.pkl, weights.N.pkl)",
+        help="Epoch number N to analyze (0-based indexing, "
+        "corresponding to z.N.pkl and weights.N.pkl)",
     )
     parser.add_argument("--device", type=int, help="Optionally specify CUDA device")
     parser.add_argument(
@@ -108,7 +122,6 @@ def add_args(parser):
         metavar="N",
         help="MLP number of hidden layers (default: 3)",
     )
-    return parser
 
 
 def train(args, model, device, train_loader, optimizer, epoch):
@@ -238,6 +251,7 @@ def generate_and_map_volumes(
 
     td = dt.now() - t1
     logger.info(f"Finished generating {args.N} volumes in {td}")
+
     return z, embeddings
 
 
@@ -291,10 +305,11 @@ def train_model(x, y, outdir, zfile, args):
 
     yhat_all = np.concatenate(yhat_all)
     torch.save(model.state_dict(), f"{outdir}/model.pt")
+
     return yhat_all
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
     t1 = dt.now()
     logger.info(args)
     E = args.epoch
@@ -353,12 +368,6 @@ def main(args):
         shutil.copyfile(ipynb, out_ipynb)
     else:
         logger.info(f"{out_ipynb} already exists. Skipping")
+
     logger.info(out_ipynb)
-
     logger.info(f"Finished in {dt.now()-t1}")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    args = add_args(parser).parse_args()
-    main(args)

@@ -4,6 +4,10 @@ Example usage
 -------------
 $ cryodrgn analyze_landscape 003_abinit-het/ 49
 
+# Sample more volumes from k-means centroids generated from the latent space; use a
+# larger box size for the sampled volumes instead of downsampling to 128x128
+$ cryodrgn analyze_landscape 005_train-vae/ 39 -N 5000 -d 256
+
 """
 import argparse
 import os
@@ -30,6 +34,8 @@ logger = logging.getLogger(__name__)
 
 
 def add_args(parser: argparse.ArgumentParser) -> None:
+    """The command-line arguments for use with `cryodrgn analyze_landscape`."""
+
     parser.add_argument(
         "workdir", type=os.path.abspath, help="Directory with cryoDRGN results"
     )
@@ -97,13 +103,13 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     group.add_argument(
         "--dilate",
         type=int,
-        default=6,
+        default=5,
         help="Dilate initial mask by this amount (default: %(default)s pixels)",
     )
     group.add_argument(
         "--cosine-edge",
         type=int,
-        default=6,
+        default=0,
         help="Apply a cosine edge to the mask (default: %(default)s pixels)",
     )
     group.add_argument(
@@ -137,8 +143,6 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         default=5,
         help="Number of dimensions to plot (default: %(default)s)",
     )
-
-    return parser
 
 
 def generate_volumes(z, outdir, vg, K):

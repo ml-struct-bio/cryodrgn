@@ -205,9 +205,9 @@ class TestFixedHetero:
         if downsample_dim:
             args += ["--downsample", downsample_dim]
 
-        analyze_landscape.main(
-            analyze_landscape.add_args(argparse.ArgumentParser()).parse_args(args)
-        )
+        parser = argparse.ArgumentParser()
+        analyze_landscape.add_args(parser)
+        analyze_landscape.main(parser.parse_args(args))
 
     @pytest.mark.parametrize(
         "ctf, downsample_dim",
@@ -240,9 +240,9 @@ class TestFixedHetero:
         if downsample_dim is not None:
             args += ["--downsample", downsample_dim]
 
-        analyze_landscape_full.main(
-            analyze_landscape_full.add_args(parser).parse_args(args)
-        )
+        parser = argparse.ArgumentParser()
+        analyze_landscape_full.add_args(parser)
+        analyze_landscape_full.main(parser.parse_args(args))
 
     @pytest.mark.parametrize(
         "ctf, seed, steps, points",

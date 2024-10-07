@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 
 
 def add_args(parser):
-    """The command-line arguments for use with `cryodrgn_utils backproject_voxel`."""
+    """The command-line arguments for use with `cryodrgn backproject_voxel`."""
 
     parser.add_argument(
         "particles",

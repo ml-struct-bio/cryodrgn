@@ -116,22 +116,46 @@ def R_from_eman(a: np.ndarray, b: np.ndarray, y: np.ndarray) -> np.ndarray:
     return R
 
 
-def R_from_relion(a: np.ndarray, b: np.ndarray, y: np.ndarray) -> np.ndarray:
-    a *= np.pi / 180.0
-    b *= np.pi / 180.0
-    y *= np.pi / 180.0
+def R_from_relion(euler: np.ndarray) -> np.ndarray:
+    """Produce a rotation matrix from Euler angles returned by RELION."""
+
+    a = euler[:, 0] * np.pi / 180.0
+    b = euler[:, 1] * np.pi / 180.0
+    y = euler[:, 2] * np.pi / 180.0
+    nsamp = euler.shape[0]
     ca, sa = np.cos(a), np.sin(a)
     cb, sb = np.cos(b), np.sin(b)
     cy, sy = np.cos(y), np.sin(y)
-    Ra = np.array([[ca, -sa, 0], [sa, ca, 0], [0, 0, 1]])
-    Rb = np.array([[cb, 0, -sb], [0, 1, 0], [sb, 0, cb]])
-    Ry = np.array(([cy, -sy, 0], [sy, cy, 0], [0, 0, 1]))
-    R = np.dot(np.dot(Ry, Rb), Ra)
-    R[0, 1] *= -1
-    R[1, 0] *= -1
-    R[1, 2] *= -1
-    R[2, 1] *= -1
-    return R
+
+    r_amat = np.array(
+        [
+            [ca, -sa, np.repeat(0, nsamp)],
+            [sa, ca, np.repeat(0, nsamp)],
+            [np.repeat(0, nsamp), np.repeat(0, nsamp), np.repeat(1, nsamp)],
+        ],
+    )
+    r_bmat = np.array(
+        [
+            [cb, np.repeat(0, nsamp), -sb],
+            [np.repeat(0, nsamp), np.repeat(1, nsamp), np.repeat(0, nsamp)],
+            [sb, np.repeat(0, nsamp), cb],
+        ]
+    )
+    r_ymat = np.array(
+        [
+            [cy, -sy, np.repeat(0, nsamp)],
+            [sy, cy, np.repeat(0, nsamp)],
+            [np.repeat(0, nsamp), np.repeat(0, nsamp), np.repeat(1, nsamp)],
+        ]
+    )
+
+    rmat = np.matmul(np.matmul(r_ymat.T, r_bmat.T), r_amat.T)
+    rmat[:, 0, 2] *= -1
+    rmat[:, 2, 0] *= -1
+    rmat[:, 1, 2] *= -1
+    rmat[:, 2, 1] *= -1
+
+    return rmat
 
 
 def R_from_relion_scipy(euler_: np.ndarray, degrees: bool = True) -> np.ndarray:

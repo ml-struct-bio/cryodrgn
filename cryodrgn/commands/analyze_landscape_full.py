@@ -241,7 +241,7 @@ def generate_and_map_volumes(
             )
 
         if args.flip:
-            vol = vol[::-1]
+            vol = vol.flip([0])
 
         embeddings.append(
             pca.transform(vol.cpu()[torch.tensor(mask).bool()].reshape(1, -1))

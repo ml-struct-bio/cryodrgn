@@ -167,13 +167,14 @@ class TestFixedHetero:
         os.chdir(orig_cwd)
 
     @pytest.mark.parametrize(
-        "ctf, downsample_dim",
+        "ctf, downsample_dim, flip_vol",
         [
-            (None, "16"),
-            ("CTF-Test", "16"),
+            (None, "16", False),
+            ("CTF-Test", "16", True),
             pytest.param(
                 "CTF-Test",
                 "64",
+                False,
                 marks=pytest.mark.xfail(
                     raises=ValueError, reason="box size > resolution"
                 ),
@@ -181,6 +182,7 @@ class TestFixedHetero:
             pytest.param(
                 "CTF-Test",
                 None,
+                False,
                 marks=pytest.mark.xfail(
                     raises=ValueError, reason="box size > resolution"
                 ),
@@ -189,7 +191,7 @@ class TestFixedHetero:
         indirect=["ctf"],
     )
     def test_landscape(
-        self, tmpdir_factory, particles, poses, ctf, indices, downsample_dim
+        self, tmpdir_factory, particles, poses, ctf, indices, downsample_dim, flip_vol
     ):
         outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
         args = [
@@ -204,19 +206,22 @@ class TestFixedHetero:
         ]
         if downsample_dim:
             args += ["--downsample", downsample_dim]
+        if flip_vol:
+            args += ["--flip"]
 
         parser = argparse.ArgumentParser()
         analyze_landscape.add_args(parser)
         analyze_landscape.main(parser.parse_args(args))
 
     @pytest.mark.parametrize(
-        "ctf, downsample_dim",
+        "ctf, downsample_dim, flip_vol",
         [
-            (None, "16"),
-            ("CTF-Test", "16"),
+            (None, "16", False),
+            ("CTF-Test", "16", True),
             pytest.param(
                 "CTF-Test",
                 "64",
+                False,
                 marks=pytest.mark.xfail(
                     raises=AssertionError, reason="box size > resolution"
                 ),
@@ -224,6 +229,7 @@ class TestFixedHetero:
             pytest.param(
                 "CTF-Test",
                 None,
+                False,
                 marks=pytest.mark.xfail(
                     raises=AssertionError, reason="box size > resolution"
                 ),
@@ -232,13 +238,14 @@ class TestFixedHetero:
         indirect=["ctf"],
     )
     def test_landscape_full(
-        self, tmpdir_factory, particles, poses, ctf, indices, downsample_dim
+        self, tmpdir_factory, particles, poses, ctf, indices, downsample_dim, flip_vol
     ):
         outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
-        parser = argparse.ArgumentParser()
         args = [outdir, "3", "-N", "10"]
         if downsample_dim is not None:
             args += ["--downsample", downsample_dim]
+        if flip_vol:
+            args += ["--flip"]
 
         parser = argparse.ArgumentParser()
         analyze_landscape_full.add_args(parser)

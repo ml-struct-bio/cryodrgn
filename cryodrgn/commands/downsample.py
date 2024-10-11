@@ -190,17 +190,15 @@ def downsample_mrc_images(
     # downsample images, saving one chunk of N images at a time
     else:
         nchunks = math.ceil(len(src) / chunk_size)
-        out_mrcs = [
-            ".{}".format(i).join(os.path.splitext(out_fl)) for i in range(nchunks)
-        ]
+        out_mrcs = [f".{i}".join(os.path.splitext(out_fl)) for i in range(nchunks)]
         chunk_names = [os.path.basename(x) for x in out_mrcs]
 
-        for i in range(nchunks):
-            logger.info("Processing chunk {}".format(i))
-            chunk = src[(i * chunk_size) : ((i + 1) * chunk_size)]
+        for i, out_mrc in enumerate(out_mrcs):
+            logger.info(f"Processing chunk {i}")
+            chunk_indices = np.arange(i * chunk_size, min((i + 1) * chunk_size, src.n))
 
             header = MRCHeader.make_default_header(
-                nz=len(chunk),
+                nz=len(chunk_indices),
                 ny=new_box_size,
                 nx=new_box_size,
                 Apix=new_apix,
@@ -209,17 +207,16 @@ def downsample_mrc_images(
             )
 
             logger.info(f"Saving {out_mrcs[i]}")
-            write_mrc(
-                filename=out_mrcs[i],
-                array=chunk,
+            src.write_mrc(
+                output_file=out_mrc,
                 header=header,
-                is_vol=False,
+                indices=chunk_indices,
                 transform_fn=transform_fn,
                 chunksize=batch_size,
             )
 
         # Write a text file with all chunks
-        out_txt = "{}.txt".format(os.path.splitext(out_fl)[0])
+        out_txt = f"{os.path.splitext(out_fl)[0]}.txt"
         logger.info(f"Saving {out_txt}")
         with open(out_txt, "w") as f:
             f.write("\n".join(chunk_names))

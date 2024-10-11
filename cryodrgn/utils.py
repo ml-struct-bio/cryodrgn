@@ -1,3 +1,5 @@
+"""Utility functions shared between various cryoDRGN operations and commands."""
+
 from collections.abc import Hashable
 import functools
 import os
@@ -84,6 +86,17 @@ def save_yaml(data, out_yamlfile: str, mode: str = "w"):
         logger.warning(f"Warning: {out_yamlfile} already exists. Overwriting.")
     with open(out_yamlfile, mode) as f:
         yaml.dump(data, f)
+
+
+def create_basedir(out: str) -> None:
+    """Create the parent directory of a path if necessary."""
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+
+
+def warn_file_exists(out: str) -> None:
+    """Notify user if an output file or directory already exists."""
+    if os.path.exists(out):
+        logger.warning(f"Warning: {out} already exists. Overwriting.")
 
 
 def run_command(cmd: str) -> tuple[str, str]:

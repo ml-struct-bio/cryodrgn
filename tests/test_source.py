@@ -199,10 +199,10 @@ def test_prespecified_indices_chunked(mrcs_data):
         os.path.join(pytest.DATADIR, "toy_projections.mrcs"),
         indices=np.array([0, 1, 5, 304]),
     )
-    assert src.shape == (4, 30, 30)  # Not (100, 30, 30)
+    assert src.shape == (4, 30, 30)  # Not (1000, 30, 30)
 
-    for i, (indices, chunk) in enumerate(src.chunks(chunksize=2)):
-        assert len(indices) == chunk.shape[0]
+    for i, (indx, chunk) in enumerate(src.chunks(chunksize=2)):
+        assert len(indx) == chunk.shape[0]
         if i == 0:
             assert torch.allclose(mrcs_data[np.array([0, 1]), :, :], chunk)
         elif i == 1:

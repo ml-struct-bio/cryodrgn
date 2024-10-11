@@ -33,7 +33,6 @@ Example usage
 import os.path
 from collections.abc import Iterable
 from concurrent import futures
-from copy import copy
 import numpy as np
 import pandas as pd
 from typing import List, Iterator, Optional, Union, Callable
@@ -283,7 +282,7 @@ class ImageSource:
             A 2-tuple of (<indices>, <torch.Tensor>).
 
         """
-        use_indices = copy(self.indices) if indices is None else np.array(indices)
+        use_indices = np.arange(self.n) if indices is None else np.array(indices)
         for i in range(0, len(use_indices), chunksize):
             indx = use_indices[np.arange(i, min(len(use_indices), i + chunksize))]
 
@@ -325,6 +324,8 @@ class ImageSource:
                     ny=self.D,
                     nx=self.D,
                     dtype=self.dtype,
+                    is_vol=False,
+                    Apix=self.apix if self.apix is not None else 1.0,
                 )
             else:
                 header = fix_mrc_header(header=header)

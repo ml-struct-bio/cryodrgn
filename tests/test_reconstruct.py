@@ -127,8 +127,8 @@ class TestFixedHetero:
         outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
         parser = argparse.ArgumentParser()
         analyze.add_args(parser)
-        args = parser.parse_args([outdir, str(epoch)])
-        analyze.main(args)
+        analyze.main(parser.parse_args([outdir, str(epoch)]))
+
         assert os.path.exists(os.path.join(outdir, f"analyze.{epoch}"))
 
     @pytest.mark.parametrize(
@@ -250,6 +250,26 @@ class TestFixedHetero:
         parser = argparse.ArgumentParser()
         analyze_landscape_full.add_args(parser)
         analyze_landscape_full.main(parser.parse_args(args))
+
+    @pytest.mark.parametrize("ctf", ["CTF-Test"], indirect=True)
+    def test_landscape_notebook(self, tmpdir_factory, particles, poses, ctf, indices):
+        """Execute the demo Jupyter notebooks produced by landscape analysis."""
+        outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
+        orig_cwd = os.path.abspath(os.getcwd())
+        os.chdir(os.path.join(outdir, "landscape.3"))
+        notebook_fl = "cryoDRGN_analyze_landscape.ipynb"
+        assert os.path.exists(notebook_fl)
+
+        with open(notebook_fl) as ff:
+            nb_in = nbformat.read(ff, nbformat.NO_CONVERT)
+
+        try:
+            ExecutePreprocessor(timeout=600, kernel_name="python3").preprocess(nb_in)
+        except CellExecutionError as e:
+            os.chdir(orig_cwd)
+            raise e
+
+        os.chdir(orig_cwd)
 
     @pytest.mark.parametrize(
         "ctf, seed, steps, points",
@@ -479,19 +499,24 @@ class TestAbinitHetero:
     def test_analyze(self, tmpdir_factory, particles, ctf, indices):
         """Produce standard analyses for a particular epoch."""
         outdir = self.get_outdir(tmpdir_factory, particles, indices, ctf)
-        args = analyze.add_args(argparse.ArgumentParser()).parse_args(
-            [
-                outdir,
-                "1",  # Epoch number to analyze - 0-indexed
-                "--pc",
-                "3",  # Number of principal component traversals to generate
-                "--ksample",
-                "10",  # Number of kmeans samples to generate
-                "--vol-start-index",
-                "1",
-            ]
+
+        parser = argparse.ArgumentParser()
+        analyze.add_args(parser)
+        analyze.main(
+            parser.parse_args(
+                [
+                    outdir,
+                    "1",  # Epoch number to analyze - 0-indexed
+                    "--pc",
+                    "3",  # Number of principal component traversals to generate
+                    "--ksample",
+                    "10",  # Number of kmeans samples to generate
+                    "--vol-start-index",
+                    "1",
+                ]
+            )
         )
-        analyze.main(args)
+
         assert os.path.exists(os.path.join(outdir, "analyze.1"))
 
     @pytest.mark.parametrize("nb_lbl", ["cryoDRGN_figures"])
@@ -751,19 +776,23 @@ class TestTiltFixedHetero:
         outdir = self.get_outdir(
             tmpdir_factory, particles, poses, ctf, indices, datadir
         )
-        args = analyze.add_args(argparse.ArgumentParser()).parse_args(
-            [
-                outdir,
-                "4",  # Epoch number to analyze - 0-indexed
-                "--pc",
-                "3",  # Number of principal component traversals to generate
-                "--ksample",
-                "2",  # Number of kmeans samples to generate
-                "--vol-start-index",
-                "1",
-            ]
+
+        parser = argparse.ArgumentParser()
+        analyze.add_args(parser)
+        analyze.main(
+            parser.parse_args(
+                [
+                    outdir,
+                    "4",  # Epoch number to analyze - 0-indexed
+                    "--pc",
+                    "3",  # Number of principal component traversals to generate
+                    "--ksample",
+                    "2",  # Number of kmeans samples to generate
+                    "--vol-start-index",
+                    "1",
+                ]
+            )
         )
-        analyze.main(args)
         assert os.path.exists(os.path.join(outdir, "analyze.4"))
 
     @pytest.mark.parametrize(

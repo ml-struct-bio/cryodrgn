@@ -9,6 +9,7 @@ $ cryodrgn analyze_landscape_full 003_abinit-het/ 49
 $ cryodrgn analyze_landscape_full 005_train-vae/ 39 -N 4000 -d 256
 
 """
+
 import argparse
 import os
 import os.path
@@ -210,9 +211,11 @@ def generate_and_map_volumes(
 
     pca = utils.load_pkl(pca_obj_pkl)
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     # Load model weights
     logger.info("Loading weights from {}".format(weights))
-    model, lattice = HetOnlyVAE.load(cfg, weights)
+    model, lattice = HetOnlyVAE.load(cfg, weights, device)
     model.eval()
 
     # Set z

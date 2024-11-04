@@ -21,8 +21,9 @@ For any feedback, questions, or bugs, please file a Github issue or start a Gith
 
 ### New in Version 3.4.x
 * [NEW] `cryodrgn plot_classes` for analysis visualizations colored by a given set of class labels
-* support for RELION 3.1 .star files with separate optics tables
-* support for np.float16 number formats used in RELION .mrcs outputs
+* implementing [automatic mixed-precision training](https://pytorch.org/docs/stable/amp.html)
+  for ab-initio reconstruction for 2-4x speedup
+* support for RELION 3.1 .star files with separate optics tables, np.float16 number formats used in RELION .mrcs outputs
 * `cryodrgn backproject_voxel` produces cryoSPARC-style FSC curve plots with phase-randomization correction of
   automatically generated tight masks
 * `cryodrgn downsample` can create a new .star or .txt image stack from the corresponding stack format instead of

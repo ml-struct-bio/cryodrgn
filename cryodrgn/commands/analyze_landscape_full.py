@@ -216,7 +216,8 @@ def generate_and_map_volumes(
 
     # Load model weights
     logger.info("Loading weights from {}".format(weights))
-    model, lattice = HetOnlyVAE.load(cfg, weights)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model, lattice = HetOnlyVAE.load(cfg, weights, device)
     model.eval()
 
     # Set z
@@ -252,7 +253,6 @@ def generate_and_map_volumes(
         )
 
     embeddings = np.array(embeddings).reshape(len(z), -1).astype(np.float32)
-
     td = dt.now() - t1
     logger.info(f"Finished generating {args.training_volumes} volumes in {td}")
 

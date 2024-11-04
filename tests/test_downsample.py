@@ -26,6 +26,8 @@ from cryodrgn.starfile import parse_star, write_star
     indirect=True,
 )
 class TestDownsampleToMRCS:
+    """Downsampling various image stack formats to .mrcs-formatted stacks."""
+
     @pytest.mark.parametrize(
         "downsample_dim",
         [
@@ -126,11 +128,12 @@ class TestDownsampleToMRCS:
 )
 @pytest.mark.parametrize("downsample_dim", [16, 8])
 def test_downsample_starout(tmpdir, particles, datadir, outdir, downsample_dim):
+    """Downsampling a .star image stack to another .star image stack."""
+
     in_imgs = ImageSource.from_file(
         particles.path, datadir=datadir.path, lazy=False
     ).images()
     out_star = os.path.join(tmpdir, "downsampled.star")
-    outdir = os.path.join(tmpdir, f"downsampled-toy.{downsample_dim}")
 
     parser = argparse.ArgumentParser()
     downsample.add_args(parser)
@@ -144,8 +147,12 @@ def test_downsample_starout(tmpdir, particles, datadir, outdir, downsample_dim):
         out_star,
     ]
     if outdir is not None:
-        outpath = f"{outdir}-{datadir.label}.{downsample_dim}"
+        outpath = os.path.join(
+            tmpdir, f"{particles.label}_{datadir.label}.{downsample_dim}"
+        )
         args += ["--outdir", outpath]
+    else:
+        outpath = None
 
     downsample.main(parser.parse_args(args))
     out_imgs = ImageSource.from_file(out_star, datadir=outpath, lazy=False).images()
@@ -159,6 +166,8 @@ def test_downsample_starout(tmpdir, particles, datadir, outdir, downsample_dim):
 )
 @pytest.mark.parametrize("downsample_dim", [16, 8])
 def test_downsample_txtout(tmpdir, particles, outdir, downsample_dim):
+    """Downsampling a .txt image stack to another .txt image stack."""
+
     in_imgs = ImageSource.from_file(particles.path, lazy=False).images()
     out_txt = os.path.join(tmpdir, "downsampled.txt")
 
@@ -172,11 +181,14 @@ def test_downsample_txtout(tmpdir, particles, outdir, downsample_dim):
         out_txt,
     ]
     if outdir is not None:
-        outpath = f"{outdir}-{particles.label}.{downsample_dim}"
+        outpath = os.path.join(tmpdir, f"{particles.label}.{downsample_dim}")
         args += ["--outdir", outpath]
 
     downsample.main(parser.parse_args(args))
     out_imgs = ImageSource.from_file(out_txt, lazy=False).images()
+    if outdir is not None:
+        assert os.path.isdir(outpath)
+
     assert out_imgs.shape == (in_imgs.shape[0], downsample_dim, downsample_dim)
     assert np.isclose(in_imgs.sum(), out_imgs.sum())
 

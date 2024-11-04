@@ -21,6 +21,7 @@ import argparse
 import os
 import pickle
 import sys
+import contextlib
 import logging
 from datetime import datetime as dt
 from typing import Optional
@@ -236,7 +237,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "--no-amp",
         action="store_false",
         dest="amp",
-        help="Do not use mixed-precision training",
+        help="Do not use mixed-precision training for accelerating training",
     )
     group.add_argument(
         "--multigpu",
@@ -374,31 +375,29 @@ def train_batch(
     model.train()
     if trans is not None:
         y = preprocess_input(y, lattice, trans)
+
     # Cast operations to mixed precision if using torch.cuda.amp.GradScaler()
     if scaler is not None:
-        with torch.cuda.amp.autocast_mode.autocast():
-            z_mu, z_logvar, z, y_recon, mask = run_batch(
-                model, lattice, y, rot, ntilts, ctf_params, yr
-            )
-            loss, gen_loss, kld = loss_function(
-                z_mu,
-                z_logvar,
-                y,
-                ntilts,
-                y_recon,
-                mask,
-                beta,
-                beta_control,
-                dose_filters,
-            )
+        amp_mode = torch.cuda.amp.autocast_mode.autocast()
     else:
-        # print('AAA', y.shape, rot.shape)
+        amp_mode = contextlib.nullcontext()
+
+    with amp_mode:
         z_mu, z_logvar, z, y_recon, mask = run_batch(
             model, lattice, y, rot, ntilts, ctf_params, yr
         )
         loss, gen_loss, kld = loss_function(
-            z_mu, z_logvar, y, ntilts, y_recon, mask, beta, beta_control, dose_filters
+            z_mu,
+            z_logvar,
+            y,
+            ntilts,
+            y_recon,
+            mask,
+            beta,
+            beta_control,
+            dose_filters,
         )
+
     if use_amp:
         if scaler is not None:  # torch mixed precision
             scaler.scale(loss).backward()
@@ -411,6 +410,7 @@ def train_batch(
     else:
         loss.backward()
         optim.step()
+
     return loss.item(), gen_loss.item(), kld.item()
 
 

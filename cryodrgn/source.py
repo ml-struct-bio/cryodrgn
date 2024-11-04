@@ -38,8 +38,7 @@ import pandas as pd
 from typing import List, Iterator, Optional, Union, Callable
 import logging
 import torch
-
-from cryodrgn.mrcfile import MRCHeader, write_mrc, get_mrc_header, fix_mrc_header
+from cryodrgn.mrcfile import MRCHeader, write_mrc, fix_mrc_header
 from cryodrgn.starfile import parse_star, Starfile
 
 logger = logging.getLogger(__name__)
@@ -231,12 +230,28 @@ class ImageSource:
         require_contiguous: bool = False,
         as_numpy: bool = False,
     ) -> Union[np.ndarray, torch.Tensor]:
+        """Retrieve the image data contained in this stack, or a subset thereof.
+
+        Arguments
+        ---------
+        indices:     The subset of images we want to return.
+        require_contiguous:
+            Whether the method should throw an error if image retrieval will entail
+            non-contiguous disk access. Callers can employ this if they insist on
+            efficient loading and choose to throw an error instead of falling back
+            on inefficient slower loading.
+        as_numpy:    Cast image data to a numpy array (instead of PyTorch tensor).
+
+        Returns
+        -------
+        images: Image data at specified indices.
+
+        """
         indices = self._convert_to_ndarray(indices)
 
         if self.lazy:
             # Convert incoming caller indices to indices that this ImageSource will use
-            if self.indices is not None:
-                indices = np.array(self.indices[indices])
+            indices = np.array(self.indices[indices])
             images = self._images(indices, require_contiguous=require_contiguous)
         else:
             images = self.data[indices, ...]  # cached data when not using lazy mode
@@ -253,25 +268,13 @@ class ImageSource:
     def _images(
         self, indices: np.ndarray, require_contiguous: bool = False
     ) -> np.ndarray:
-        """Base method for returning images at specified indices.
-
-        Arguments
-        ---------
-        indices (np.array): The subset of images we want to return.
-        require_contiguous (bool)
-            Whether the method should throw an error if image retrieval will entail
-            non-contiguous disk access. Callers can employ this if they insist on
-            efficient loading and choose to throw an error instead of falling back
-            on inefficient slower loading.
-        Returns
-        -------
-        Images (np.array) at specified indices.
-
-        """
+        """Retrieve images at specified indices from this stack's files."""
         raise NotImplementedError("Subclasses of `ImageSource` must implement this!")
 
     def chunks(
-        self, chunksize: int = 1000
+        self,
+        chunksize: int = 1000,
+        indices: Optional[np.ndarray] = None,
     ) -> Iterable[tuple[np.ndarray, torch.Tensor]]:
         """A generator that returns images in chunks of size `chunksize`.
 
@@ -279,9 +282,11 @@ class ImageSource:
             A 2-tuple of (<indices>, <torch.Tensor>).
 
         """
-        for i in range(0, self.n, chunksize):
-            indices = np.arange(i, min(self.n, i + chunksize))
-            yield indices, self.images(indices)
+        use_indices = np.arange(self.n) if indices is None else np.array(indices)
+        for i in range(0, len(use_indices), chunksize):
+            indx = use_indices[np.arange(i, min(len(use_indices), i + chunksize))]
+
+            yield indx, self.images(indx)
 
     @property
     def apix(self) -> Union[None, float, np.ndarray]:
@@ -292,18 +297,21 @@ class ImageSource:
         self,
         output_file: str,
         header: Optional[MRCHeader] = None,
+        indices: Optional[np.ndarray] = None,
         transform_fn: Optional[Callable] = None,
         chunksize: Optional[int] = None,
     ) -> None:
         """Save this source's data to a .mrc file, using chunking if necessary."""
         if header is None and hasattr(self, "header"):
             header = self.header
+        if indices is None:
+            indices = np.arange(self.n)
 
         if chunksize is None:
             header_args = {"Apix": self.apix or 1.0} if header is None else dict()
             write_mrc(
                 output_file,
-                self.images(),
+                self.images(indices),
                 header=header,
                 transform_fn=transform_fn,
                 **header_args,
@@ -311,7 +319,14 @@ class ImageSource:
 
         else:
             if header is None:
-                header = get_mrc_header(self.images())
+                header = MRCHeader.make_default_header(
+                    nz=len(indices),
+                    ny=self.D,
+                    nx=self.D,
+                    dtype=self.dtype,
+                    is_vol=False,
+                    Apix=self.apix if self.apix is not None else 1.0,
+                )
             else:
                 header = fix_mrc_header(header=header)
 
@@ -319,11 +334,11 @@ class ImageSource:
             with open(output_file, "wb") as f:
                 header.write(f)
 
-                for i, (indices, chunk) in enumerate(self.chunks(chunksize=chunksize)):
+                for i, (indx, chunk) in enumerate(self.chunks(chunksize, indices)):
                     logger.debug(f"Processing chunk {i}")
 
                     if transform_fn is not None:
-                        chunk = transform_fn(chunk, indices)
+                        chunk = transform_fn(chunk, indx)
                     if isinstance(chunk, torch.Tensor):
                         chunk = np.array(chunk.cpu()).astype(new_dtype)
 

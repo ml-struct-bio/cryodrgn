@@ -1,4 +1,4 @@
-"""Downsample an image stack or volume by clipping fourier frequencies.
+"""Downsample an image stack or volume by clipping Fourier frequencies.
 
 Example usage
 -------------
@@ -43,6 +43,8 @@ import math
 import os
 import logging
 import numpy as np
+import torch
+from collections.abc import Iterable
 from typing import Optional
 from cryodrgn import fft, utils
 from cryodrgn.source import ImageSource, StarfileSource, TxtFileSource
@@ -106,16 +108,6 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def mkbasedir(out):
-    if not os.path.exists(os.path.dirname(out)):
-        os.makedirs(os.path.dirname(out))
-
-
-def warnexists(out):
-    if os.path.exists(out):
-        logger.warning("Warning: {} already exists. Overwriting.".format(out))
-
-
 def downsample_mrc_images(
     src: ImageSource,
     new_box_size: int,
@@ -149,10 +141,7 @@ def downsample_mrc_images(
         old_apix = 1.0
 
     new_apix = np.round(old_apix * src.D / new_box_size, 6)
-    start = int(src.D / 2 - new_box_size / 2)
-    stop = int(src.D / 2 + new_box_size / 2)
-
-    if not isinstance(new_apix, float):
+    if isinstance(new_apix, Iterable):
         new_apix = tuple(set(new_apix))
 
         if len(new_apix) > 1:
@@ -160,14 +149,18 @@ def downsample_mrc_images(
                 f"Found multiple A/px values in {src.filenames}, using the first one "
                 f"found {new_apix[0]} for the output .mrcs!"
             )
-
         new_apix = new_apix[0]
 
-    def transform_fn(chunk, indices):
+    def downsample_transform(chunk: torch.Tensor, indices: np.ndarray) -> torch.Tensor:
+        """Downsample an image array by clipping Fourier frequencies."""
+
+        start = int(src.D / 2 - new_box_size / 2)
+        stop = int(src.D / 2 + new_box_size / 2)
         oldft = fft.ht2_center(chunk)
         newft = oldft[:, start:stop, start:stop]
-        new = fft.iht2_center(newft)
-        return new
+        new_chunk = fft.iht2_center(newft)
+
+        return new_chunk
 
     if chunk_size is None:
         logger.info(f"Saving {out_fl}")
@@ -183,24 +176,22 @@ def downsample_mrc_images(
         src.write_mrc(
             output_file=out_fl,
             header=header,
-            transform_fn=transform_fn,
+            transform_fn=downsample_transform,
             chunksize=batch_size,
         )
 
     # downsample images, saving one chunk of N images at a time
     else:
         nchunks = math.ceil(len(src) / chunk_size)
-        out_mrcs = [
-            ".{}".format(i).join(os.path.splitext(out_fl)) for i in range(nchunks)
-        ]
+        out_mrcs = [f".{i}".join(os.path.splitext(out_fl)) for i in range(nchunks)]
         chunk_names = [os.path.basename(x) for x in out_mrcs]
 
-        for i in range(nchunks):
-            logger.info("Processing chunk {}".format(i))
-            chunk = src[(i * chunk_size) : ((i + 1) * chunk_size)]
+        for i, out_mrc in enumerate(out_mrcs):
+            logger.info(f"Processing chunk {i}")
+            chunk_indices = np.arange(i * chunk_size, min((i + 1) * chunk_size, src.n))
 
             header = MRCHeader.make_default_header(
-                nz=len(chunk),
+                nz=len(chunk_indices),
                 ny=new_box_size,
                 nx=new_box_size,
                 Apix=new_apix,
@@ -209,17 +200,16 @@ def downsample_mrc_images(
             )
 
             logger.info(f"Saving {out_mrcs[i]}")
-            write_mrc(
-                filename=out_mrcs[i],
-                array=chunk,
+            src.write_mrc(
+                output_file=out_mrc,
                 header=header,
-                is_vol=False,
-                transform_fn=transform_fn,
+                indices=chunk_indices,
+                transform_fn=downsample_transform,
                 chunksize=batch_size,
             )
 
         # Write a text file with all chunks
-        out_txt = "{}.txt".format(os.path.splitext(out_fl)[0])
+        out_txt = f"{os.path.splitext(out_fl)[0]}.txt"
         logger.info(f"Saving {out_txt}")
         with open(out_txt, "w") as f:
             f.write("\n".join(chunk_names))
@@ -227,8 +217,8 @@ def downsample_mrc_images(
 
 def main(args: argparse.Namespace) -> None:
     """Downsampling the given particle stack into a new stack (see `add_args` above)."""
-    mkbasedir(args.outfile)
-    warnexists(args.outfile)
+    utils.create_basedir(args.outfile)
+    utils.warn_file_exists(args.outfile)
     out_ext = os.path.splitext(args.outfile)[1]
 
     ind = None

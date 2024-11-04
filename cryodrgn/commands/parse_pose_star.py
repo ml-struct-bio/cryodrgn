@@ -71,7 +71,7 @@ def main(args: argparse.Namespace) -> None:
     logger.info("Euler angles (Rot, Tilt, Psi):")
     logger.info(euler[0])
     logger.info("Converting to rotation matrix:")
-    rot = np.asarray([utils.R_from_relion(*x) for x in euler])
+    rot = utils.R_from_relion(euler)
 
     logger.info(rot[0])
 

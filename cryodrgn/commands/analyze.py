@@ -28,7 +28,7 @@ from cryodrgn import analysis, utils, config
 logger = logging.getLogger(__name__)
 
 
-def add_args(parser):
+def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "workdir", type=os.path.abspath, help="Directory with cryoDRGN results"
     )
@@ -402,7 +402,8 @@ class VolumeGenerator:
         analysis.gen_volumes(self.weights, self.config, zfile, outdir, **self.vol_args)
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
+    matplotlib.use("Agg")  # non-interactive backend
     t1 = dt.now()
     E = args.epoch
     workdir = args.workdir
@@ -527,10 +528,3 @@ def main(args):
             nbformat.write(filter_ntbook, f)
 
     logger.info(f"Finished in {dt.now() - t1}")
-
-
-if __name__ == "__main__":
-    matplotlib.use("Agg")  # non-interactive backend
-    parser = argparse.ArgumentParser(description=__doc__)
-    add_args(parser)
-    main(parser.parse_args())

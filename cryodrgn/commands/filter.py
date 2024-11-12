@@ -123,7 +123,7 @@ def main(args: argparse.Namespace) -> None:
 
     rot, trans = utils.load_pkl(pose_pkl)
     ctf_params = utils.load_pkl(train_configs["dataset_args"]["ctf"])
-    all_indices = np.array(range(ctf_params.shape[0]))
+    all_indices = np.array(range(z.shape[0]))
 
     # Load the set of indices used to filter original dataset and apply it to inputs
     if isinstance(train_configs["dataset_args"]["ind"], int):

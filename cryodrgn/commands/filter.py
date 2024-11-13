@@ -43,7 +43,7 @@ from matplotlib.path import Path as PlotPath
 from scipy.spatial import transform
 from typing import Optional, Sequence
 
-from cryodrgn import analysis, utils
+from cryodrgn import analysis, utils, starfile
 
 logger = logging.getLogger(__name__)
 
@@ -115,27 +115,37 @@ def main(args: argparse.Namespace) -> None:
         )
     z = utils.load_pkl(os.path.join(workdir, f"z.{epoch}.pkl"))
 
-    # Load poses either from input file or from reconstruction results if ab-initio
-    if "poses" in train_configs["dataset_args"]:
-        pose_pkl = train_configs["dataset_args"]["poses"]
+    if train_configs["model_args"]["encode_mode"] != 'tilt':
+        # Load poses either from input file or from reconstruction results if ab-initio
+        if "poses" in train_configs["dataset_args"]:
+            pose_pkl = train_configs["dataset_args"]["poses"]
+        else:
+            pose_pkl = os.path.join(workdir, f"pose.{epoch}.pkl")
+
+        rot, trans = utils.load_pkl(pose_pkl)
+        ctf_params = utils.load_pkl(train_configs["dataset_args"]["ctf"])
+        all_indices = np.array(range(ctf_params.shape[0]))
+
+        # Load the set of indices used to filter original dataset and apply it to inputs
+        if isinstance(train_configs["dataset_args"]["ind"], int):
+            ctf_params = ctf_params[: train_configs["dataset_args"]["ind"], :]
+            all_indices = all_indices[: train_configs["dataset_args"]["ind"]]
+
+        elif isinstance(train_configs["dataset_args"]["ind"], str):
+            inds = utils.load_pkl(train_configs["dataset_args"]["ind"])
+            ctf_params = ctf_params[inds, :]
+            rot = rot[inds, :, :]
+            trans = trans[inds, :]
+            all_indices = all_indices[inds]
     else:
-        pose_pkl = os.path.join(workdir, f"pose.{epoch}.pkl")
-
-    rot, trans = utils.load_pkl(pose_pkl)
-    ctf_params = utils.load_pkl(train_configs["dataset_args"]["ctf"])
-    all_indices = np.array(range(z.shape[0]))
-
-    # Load the set of indices used to filter original dataset and apply it to inputs
-    if isinstance(train_configs["dataset_args"]["ind"], int):
-        ctf_params = ctf_params[: train_configs["dataset_args"]["ind"], :]
-        all_indices = all_indices[: train_configs["dataset_args"]["ind"]]
-
-    elif isinstance(train_configs["dataset_args"]["ind"], str):
-        inds = utils.load_pkl(train_configs["dataset_args"]["ind"])
-        ctf_params = ctf_params[inds, :]
-        rot = rot[inds, :, :]
-        trans = trans[inds, :]
-        all_indices = all_indices[inds]
+        particles, _ = starfile.parse_star(train_configs["dataset_args"]["particles"])
+        particles = list(particles["_rlnGroupName"].unique())
+        all_indices = np.array(range(len(particles)))
+        if isinstance(train_configs["dataset_args"]["ind"], int):
+            all_indices = all_indices[: train_configs["dataset_args"]["ind"]]
+        elif isinstance(train_configs["dataset_args"]["ind"], str):
+            inds = utils.load_pkl(train_configs["dataset_args"]["ind"])
+            all_indices = all_indices[inds]
 
     pc, pca = analysis.run_pca(z)
     umap = utils.load_pkl(os.path.join(anlzdir, "umap.pkl"))
@@ -181,7 +191,7 @@ def main(args: argparse.Namespace) -> None:
     kmeans_lbls = utils.load_pkl(os.path.join(kmeans_dir, "labels.pkl"))
     znorm = np.sum(z**2, axis=1) ** 0.5
 
-    if rot.shape[0] == z.shape[0]:
+    if train_configs["model_args"]["encode_mode"] != 'tilt':
         plot_df = analysis.load_dataframe(
             z=z,
             pc=pc,

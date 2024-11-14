@@ -17,6 +17,7 @@ $ cryodrgn train_vae particles_from_M.star --datadir particleseries -o your-outd
                                            --zdim 8 --num-epochs 50 --beta .025
 
 """
+
 import argparse
 import os
 import pickle
@@ -376,7 +377,7 @@ def train_batch(
         y = preprocess_input(y, lattice, trans)
     # Cast operations to mixed precision if using torch.cuda.amp.GradScaler()
     if scaler is not None:
-        with torch.cuda.amp.autocast_mode.autocast():
+        with torch.amp.autocast("cuda"):
             z_mu, z_logvar, z, y_recon, mask = run_batch(
                 model, lattice, y, rot, ntilts, ctf_params, yr
             )

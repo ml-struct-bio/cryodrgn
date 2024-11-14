@@ -6,7 +6,7 @@ Example usage
 $ cryodrgn_utils make_movies spr_runs/07/out 19 latent --iso=31 --camera="-0.03377,-0.97371,0.22528,545.75,0.89245,-0.13085,-0.43175,87.21,0.44988,0.18647,0.87341,1039"
 
 # Volume PCA movies
-$ cryodrgn_utils make_movies spr_runs/07/out 19 volume --iso=210 --camera="0.12868,-0.9576,0.25778,95.4,-0.85972,-0.23728,-0.45231,15.356,0.4943,-0.16341,-0.8538,-33.755"
+$ cryodrgn_utils make_movies spr_runs/07/out 19 volume --name=front --iso=210 --camera="0.12868,-0.9576,0.25778,95.4,-0.85972,-0.23728,-0.45231,15.356,0.4943,-0.16341,-0.8538,-33.755"
 
 """
 
@@ -26,7 +26,9 @@ generate_movie_prologue = lambda w, h: [
 ]
 
 
-def generate_movie_epilogue(cam_matrix, iso_threshold, num_vols, directory, all_cornfl):
+def generate_movie_epilogue(
+    cam_matrix, iso_threshold, num_vols, directory, name, all_cornfl
+):
 
     l = [
         f"view matrix camera {cam_matrix}",
@@ -36,7 +38,7 @@ def generate_movie_epilogue(cam_matrix, iso_threshold, num_vols, directory, all_
         "mov record",
         "mseries all pause 1 step 1",
         f"wait {num_vols}",
-        f"mov encode {directory}/movie.mp4 framerate 3",
+        f"mov encode {directory}/{name}.mp4 framerate 3",
         "exit",
     ]
 
@@ -77,6 +79,11 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         help="Camera matrix string for the movies",
     )
 
+    parser.add_argument(
+        "--name",
+        type=str,
+        help="Video name (default: 'movie')",
+    )
     parser.add_argument(
         "--width",
         type=int,
@@ -144,6 +151,7 @@ def record_movie(
     dir_list: list[Path],
     iso: str,
     cam_matrix: str,
+    name: str,
     prologue: list[str],
     all_cornfl: bool,
 ):
@@ -154,7 +162,7 @@ def record_movie(
         vols = get_vols(directory)
 
         epilogue = generate_movie_epilogue(
-            cam_matrix, iso, len(vols), directory, all_cornfl
+            cam_matrix, iso, len(vols), directory, name, all_cornfl
         )
 
         movie_commands = prologue + vols + epilogue
@@ -172,12 +180,12 @@ def record_movie(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        logger.info(f"Movie saved in {directory}/movie.mp4")
+        logger.info(f"Movie saved in {directory}/{name}.mp4")
         os.remove(script_path)
 
 
 def latent_movies(
-    analysis_dir: str, iso: str, cam_matrix: str, width: int, height: int
+    analysis_dir: str, iso: str, cam_matrix: str, name: str, width: int, height: int
 ):
     """Record the movies for latent space analysis"""
 
@@ -185,24 +193,24 @@ def latent_movies(
 
     # 1) kmeans movies
     kmeans_dirs = find_subdirs(analysis_dir, "kmeans")
-    record_movie(kmeans_dirs, iso, cam_matrix, prologue, False)
+    record_movie(kmeans_dirs, iso, cam_matrix, name, prologue, False)
 
     # 2) pc movies
     pc_dirs = find_subdirs(analysis_dir, "pc")
-    record_movie(pc_dirs, iso, cam_matrix, prologue, True)
+    record_movie(pc_dirs, iso, cam_matrix, name, prologue, True)
 
     return
 
 
 def landscape_movies(
-    landscape_dir: str, iso: str, cam_matrix: str, width: int, height: int
+    landscape_dir: str, iso: str, cam_matrix: str, name: str, width: int, height: int
 ):
     """Record the movies for volume space landscape analysis"""
 
     prologue = generate_movie_prologue(width, height)
 
     vol_pc_dirs = find_subdirs(f"{landscape_dir}/vol_pcs", "pc")
-    record_movie(vol_pc_dirs, iso, cam_matrix, prologue, True)
+    record_movie(vol_pc_dirs, iso, cam_matrix, name, prologue, True)
 
     return
 
@@ -218,6 +226,7 @@ def main(args: argparse.Namespace) -> None:
     cam_matrix = args.camera
     iso = args.iso
     width = 600 if args.width is None else args.width
+    name = "movie" if args.name is None else args.name
     height = 800 if args.height is None else args.height
 
     # checking chimerax
@@ -237,10 +246,10 @@ def main(args: argparse.Namespace) -> None:
 
     if analysis_type == "latent":
         logger.info(f"Working in {analysis_dir}")
-        latent_movies(analysis_dir, iso, cam_matrix, width, height)
+        latent_movies(analysis_dir, iso, cam_matrix, name, width, height)
     else:
         logger.info(f"Working in {landscape_dir}")
-        landscape_movies(landscape_dir, iso, cam_matrix, width, height)
+        landscape_movies(landscape_dir, iso, cam_matrix, name, width, height)
 
     td = dt.now() - t1
     logger.info(f"Finished in {td}")

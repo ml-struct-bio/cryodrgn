@@ -9,6 +9,7 @@ $ cryodrgn analyze_landscape 003_abinit-het/ 49
 $ cryodrgn analyze_landscape 005_train-vae/ 39 -N 5000 -d 256
 
 """
+
 import argparse
 import os
 import shutil
@@ -354,8 +355,8 @@ def analyze_volumes(
         if vol_ind is not None:
             vol_i = np.arange(K)[vol_ind][vol_i]
 
-        vol_fl = os.path.join(kmean_dir, f"vol_{vol_start_index+i:03d}.mrc")
-        vol_i_all = torch.stack([torch.Tensor(parse_mrc(vol_fl)[0]) for i in vol_i])
+        vol_fl = lambda j: os.path.join(kmean_dir, f"vol_{vol_start_index+j:03d}.mrc")
+        vol_i_all = torch.stack([torch.Tensor(parse_mrc(vol_fl(j))[0]) for j in vol_i])
         nparticles = np.array([kmeans_counts[i] for i in vol_i])
         vol_i_mean = np.average(vol_i_all, axis=0, weights=nparticles)
         vol_i_std = (

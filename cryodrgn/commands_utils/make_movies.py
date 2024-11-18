@@ -30,9 +30,16 @@ def generate_movie_epilogue(
     cam_matrix, iso_threshold, num_vols, directory, name, all_cornfl
 ):
 
-    l = [
-        f"view matrix camera {cam_matrix}",
-        f"vol all level {iso_threshold}",
+    l = []
+    if all_cornfl:
+        l = ["vol all color cornfl"]
+
+    l = l + [f"view matrix camera {cam_matrix}"]
+
+    if iso_threshold:
+        l = l + [f"vol all level {iso_threshold}"]
+
+    l = l + [
         "surface dust all size 10",
         "lighting soft",
         "mov record",
@@ -41,9 +48,6 @@ def generate_movie_epilogue(
         f"mov encode {directory}/{name}.mp4 framerate 3",
         "exit",
     ]
-
-    if all_cornfl:
-        l = ["vol all color cornfl"] + l
 
     return l
 
@@ -67,18 +71,16 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     )
 
     parser.add_argument(
-        "--iso",
-        required=True,
-        type=str,
-        help="Isosurface threshold for the movies",
-    )
-    parser.add_argument(
         "--camera",
         required=True,
         type=str,
         help="Camera matrix string for the movies",
     )
-
+    parser.add_argument(
+        "--iso",
+        type=str,
+        help="Isosurface threshold for the movies (default: ChimeraX default level)",
+    )
     parser.add_argument(
         "--name",
         type=str,

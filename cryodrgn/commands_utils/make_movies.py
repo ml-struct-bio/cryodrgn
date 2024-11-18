@@ -143,9 +143,10 @@ def find_subdirs(directory: str, keyword: str) -> list[Path]:
     return subdirs
 
 
-def get_vols(directory: Path) -> list[str]:
-    vol_files = sorted(directory.glob("*.mrc"))
-    logger.info(f"{len(vol_files)} volumes were found in {directory}")
+def get_vols(directory: Path, postfix_regex: str = "") -> list[str]:
+    """Postfix regex string enables us to find the state_m_mean.mrc volumes"""
+    vol_files = sorted(directory.glob(f"*{postfix_regex}.mrc"))
+    logger.info(f"{len(vol_files)} {postfix_regex} volumes were found in {directory}")
     return [f"open {vol_file}" for vol_file in vol_files]
 
 
@@ -155,13 +156,14 @@ def record_movie(
     cam_matrix: str,
     name: str,
     prologue: list[str],
-    all_cornfl: bool,
+    all_cornfl: bool = False,
+    vol_postfix_regex: str = "",
 ):
     """Movie recording subroutine"""
 
     for directory in dir_list:
 
-        vols = get_vols(directory)
+        vols = get_vols(directory, vol_postfix_regex)
 
         epilogue = generate_movie_epilogue(
             cam_matrix, iso, len(vols), directory, name, all_cornfl
@@ -211,6 +213,19 @@ def landscape_movies(
 
     prologue = generate_movie_prologue(width, height)
 
+    # 1) clustering movies
+    clustering_dirs = find_subdirs(f"{landscape_dir}", "clustering")
+    record_movie(
+        clustering_dirs,
+        iso,
+        cam_matrix,
+        name,
+        prologue,
+        False,
+        vol_postfix_regex="mean",
+    )
+
+    # 2) pc movies
     vol_pc_dirs = find_subdirs(f"{landscape_dir}/vol_pcs", "pc")
     record_movie(vol_pc_dirs, iso, cam_matrix, name, prologue, True)
 

@@ -135,9 +135,11 @@ def check_chimerax_installation() -> bool:
 
 def find_subdirs(directory: str, keyword: str) -> list[Path]:
     directory_path = Path(directory)
-    subdirs = [p for p in directory_path.rglob(f"{keyword}*") if p.is_dir()]
+    subdirs = [
+        p for p in directory_path.iterdir() if p.is_dir() and p.name.startswith(keyword)
+    ]
 
-    values = [p.name.split(keyword)[-1] for p in subdirs if p.name.startswith(keyword)]
+    values = [p.name.split(keyword)[-1] for p in subdirs]
     logger.info(f"{len(subdirs)} {keyword} directories were found: {', '.join(values)}")
 
     return subdirs

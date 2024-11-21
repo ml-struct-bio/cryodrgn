@@ -81,6 +81,11 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         help="path to a file containing previously selected indices "
         "that will be plotted at the beginning",
     )
+    parser.add_argument(
+        "--sel-dir",
+        type=str,
+        help="directory to save the particle selection into",
+    )
 
 
 def main(args: argparse.Namespace) -> None:
@@ -88,6 +93,7 @@ def main(args: argparse.Namespace) -> None:
     epoch = args.epoch
     kmeans = args.kmeans
     plot_inds = args.plot_inds
+    sel_dir = args.sel_dir
 
     train_configs_file = os.path.join(workdir, "config.yaml")
     if not os.path.exists(train_configs_file):
@@ -236,6 +242,8 @@ def main(args: argparse.Namespace) -> None:
         if save_option == "yes":
             if args.force:
                 filename = "indices"
+                if args.sel_dir:
+                    filename = os.path.join(args.sel_dir, filename)
             else:
                 filename = input(
                     "Enter filename to save selection (absolute, without extension): "

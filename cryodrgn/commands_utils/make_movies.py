@@ -27,7 +27,7 @@ generate_movie_prologue = lambda w, h: [
 
 
 def generate_movie_epilogue(
-    cam_matrix, iso_threshold, num_vols, directory, name, all_cornfl
+    cam_matrix, iso_threshold, num_vols, directory, name, all_cornfl, framerate
 ):
 
     l = []
@@ -45,7 +45,7 @@ def generate_movie_epilogue(
         "mov record",
         "mseries all pause 1 step 1",
         f"wait {num_vols}",
-        f"mov encode {directory}/{name}.mp4 framerate 3",
+        f"mov encode {directory}/{name}.mp4 framerate {framerate}",
         "exit",
     ]
 
@@ -80,6 +80,11 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "--iso",
         type=str,
         help="Isosurface threshold for the movies (default: ChimeraX default level)",
+    )
+    parser.add_argument(
+        "--frame",
+        type=int,
+        help="Frame rate (fps) for the movies (default: 3)",
     )
     parser.add_argument(
         "--name",
@@ -158,6 +163,7 @@ def record_movie(
     cam_matrix: str,
     name: str,
     prologue: list[str],
+    frame_rate: int,
     all_cornfl: bool = False,
     vol_postfix_regex: str = "",
 ):
@@ -168,7 +174,7 @@ def record_movie(
         vols = get_vols(directory, vol_postfix_regex)
 
         epilogue = generate_movie_epilogue(
-            cam_matrix, iso, len(vols), directory, name, all_cornfl
+            cam_matrix, iso, len(vols), directory, name, all_cornfl, frame_rate
         )
 
         movie_commands = prologue + vols + epilogue
@@ -191,7 +197,13 @@ def record_movie(
 
 
 def latent_movies(
-    analysis_dir: str, iso: str, cam_matrix: str, name: str, width: int, height: int
+    analysis_dir: str,
+    iso: str,
+    cam_matrix: str,
+    name: str,
+    width: int,
+    height: int,
+    frame_rate: int,
 ):
     """Record the movies for latent space analysis"""
 
@@ -199,17 +211,23 @@ def latent_movies(
 
     # 1) kmeans movies
     kmeans_dirs = find_subdirs(analysis_dir, "kmeans")
-    record_movie(kmeans_dirs, iso, cam_matrix, name, prologue, False)
+    record_movie(kmeans_dirs, iso, cam_matrix, name, prologue, frame_rate, False)
 
     # 2) pc movies
     pc_dirs = find_subdirs(analysis_dir, "pc")
-    record_movie(pc_dirs, iso, cam_matrix, name, prologue, True)
+    record_movie(pc_dirs, iso, cam_matrix, name, prologue, frame_rate, True)
 
     return
 
 
 def landscape_movies(
-    landscape_dir: str, iso: str, cam_matrix: str, name: str, width: int, height: int
+    landscape_dir: str,
+    iso: str,
+    cam_matrix: str,
+    name: str,
+    width: int,
+    height: int,
+    frame_rate: int,
 ):
     """Record the movies for volume space landscape analysis"""
 
@@ -223,13 +241,14 @@ def landscape_movies(
         cam_matrix,
         name,
         prologue,
+        frame_rate,
         False,
         vol_postfix_regex="mean",
     )
 
     # 2) pc movies
     vol_pc_dirs = find_subdirs(f"{landscape_dir}/vol_pcs", "pc")
-    record_movie(vol_pc_dirs, iso, cam_matrix, name, prologue, True)
+    record_movie(vol_pc_dirs, iso, cam_matrix, name, prologue, frame_rate, True)
 
     return
 
@@ -247,6 +266,7 @@ def main(args: argparse.Namespace) -> None:
     width = 600 if args.width is None else args.width
     name = "movie" if args.name is None else args.name
     height = 800 if args.height is None else args.height
+    frame_rate = 3 if args.frame is None else args.frame
 
     # checking chimerax
     if not check_chimerax_installation():
@@ -265,10 +285,12 @@ def main(args: argparse.Namespace) -> None:
 
     if analysis_type == "latent":
         logger.info(f"Working in {analysis_dir}")
-        latent_movies(analysis_dir, iso, cam_matrix, name, width, height)
+        latent_movies(analysis_dir, iso, cam_matrix, name, width, height, frame_rate)
     else:
         logger.info(f"Working in {landscape_dir}")
-        landscape_movies(landscape_dir, iso, cam_matrix, name, width, height)
+        landscape_movies(
+            landscape_dir, iso, cam_matrix, name, width, height, frame_rate
+        )
 
     td = dt.now() - t1
     logger.info(f"Finished in {td}")

@@ -42,7 +42,7 @@ import cryodrgn.config
 logger = logging.getLogger(__name__)
 
 
-def add_args(parser):
+def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "particles",
         type=os.path.abspath,
@@ -256,7 +256,7 @@ def save_checkpoint(
 ):
     model.eval()
     vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, norm)
-    write_mrc(out_mrc, np.array(vol).astype(np.float32), Apix=Apix)
+    write_mrc(out_mrc, np.array(vol.cpu()).astype(np.float32), Apix=Apix)
     torch.save(
         {
             "norm": norm,
@@ -367,7 +367,7 @@ def get_latest(args):
     return args
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
     if args.verbose:
         logger.setLevel(logging.DEBUG)
 
@@ -388,7 +388,8 @@ def main(args):
 
     # set the device
     use_cuda = torch.cuda.is_available()
-    device = torch.device("cuda" if use_cuda else "cpu")
+    device_str = "cuda" if use_cuda else "cpu"
+    device = torch.device(device_str)
     logger.info("Use cuda {}".format(use_cuda))
     if not use_cuda:
         logger.warning("WARNING: No GPUs detected")
@@ -586,9 +587,3 @@ def main(args):
     logger.info(
         "Finished in {} ({} per epoch)".format(td, td / (args.num_epochs - start_epoch))
     )
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    args = add_args(parser).parse_args()
-    main(args)

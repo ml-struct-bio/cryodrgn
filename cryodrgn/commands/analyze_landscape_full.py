@@ -1,18 +1,30 @@
+"""Transform a cryoDRGN latent space to better capture differences between volumes.
+
+Example usage
+-------------
+$ cryodrgn analyze_landscape_full 003_abinit-het/ 49
+
+# Sample fewer volumes from this dataset's particles according to their position in the
+# latent space; use a larger box size for these volumes instead of downsampling to 128
+$ cryodrgn analyze_landscape_full 005_train-vae/ 39 -N 4000 -d 256
+
+"""
 import argparse
 import os
-import os.path
 import pprint
 import shutil
 from datetime import datetime as dt
 import logging
+import nbformat
+
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data.dataloader import default_collate
-import torch.optim as optim
 from sklearn.model_selection import train_test_split
+from torch.utils.data.dataloader import default_collate
 from torch.utils.data import Dataset, DataLoader
+
 import cryodrgn
 from cryodrgn import config, utils
 from cryodrgn.models import HetOnlyVAE, ResidLinearMLP
@@ -21,14 +33,17 @@ from cryodrgn.source import ImageSource
 logger = logging.getLogger(__name__)
 
 
-def add_args(parser):
+def add_args(parser: argparse.ArgumentParser) -> None:
+    """The command-line arguments for use with `cryodrgn analyze_landscape_full`."""
+
     parser.add_argument(
         "workdir", type=os.path.abspath, help="Directory with cryoDRGN results"
     )
     parser.add_argument(
         "epoch",
         type=int,
-        help="Epoch number N to analyze (0-based indexing, corresponding to z.N.pkl, weights.N.pkl)",
+        help="Epoch number N to analyze (0-based indexing, "
+        "corresponding to z.N.pkl and weights.N.pkl)",
     )
     parser.add_argument("--device", type=int, help="Optionally specify CUDA device")
     parser.add_argument(
@@ -49,6 +64,7 @@ def add_args(parser):
     group = parser.add_argument_group("Volume generation arguments")
     group.add_argument(
         "-N",
+        "--training-volumes",
         type=int,
         default=10000,
         help="Number of training volumes to generate (default: %(default)s)",
@@ -108,7 +124,6 @@ def add_args(parser):
         metavar="N",
         help="MLP number of hidden layers (default: 3)",
     )
-    return parser
 
 
 def train(args, model, device, train_loader, optimizer, epoch):
@@ -165,10 +180,12 @@ def generate_and_map_volumes(
     zfile, cfg, weights, mask_mrc, pca_obj_pkl, landscape_dir, outdir, args
 ):
     # Sample z
-    logger.info(f"Sampling {args.N} particles from {zfile}")
+    logger.info(f"Sampling {args.training_volumes} particles from {zfile}")
     np.random.seed(args.seed)
     z_all = utils.load_pkl(zfile)
-    ind = np.array(sorted(np.random.choice(len(z_all), args.N, replace=False)))  # type: ignore
+    ind = np.array(
+        sorted(np.random.choice(len(z_all), args.training_volumes, replace=False))
+    )  # type: ignore
     z_sample = z_all[ind]
     utils.save_pkl(z_sample, f"{outdir}/z.sampled.pkl")
     utils.save_pkl(ind, f"{outdir}/ind.sampled.pkl")
@@ -199,7 +216,8 @@ def generate_and_map_volumes(
 
     # Load model weights
     logger.info("Loading weights from {}".format(weights))
-    model, lattice = HetOnlyVAE.load(cfg, weights)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model, lattice = HetOnlyVAE.load(cfg, weights, device)
     model.eval()
 
     # Set z
@@ -210,7 +228,7 @@ def generate_and_map_volumes(
     t1 = dt.now()
     embeddings = []
     for i, zz in enumerate(z):
-        if i % 100 == 0:
+        if i % 1 == 0:
             logger.info(i)
 
         if args.downsample:
@@ -228,16 +246,16 @@ def generate_and_map_volumes(
             )
 
         if args.flip:
-            vol = vol[::-1]
+            vol = vol.flip([0])
 
         embeddings.append(
             pca.transform(vol.cpu()[torch.tensor(mask).bool()].reshape(1, -1))
         )
 
     embeddings = np.array(embeddings).reshape(len(z), -1).astype(np.float32)
-
     td = dt.now() - t1
-    logger.info(f"Finished generating {args.N} volumes in {td}")
+    logger.info(f"Finished generating {args.training_volumes} volumes in {td}")
+
     return z, embeddings
 
 
@@ -272,7 +290,7 @@ def train_model(x, y, outdir, zfile, args):
         device
     )
     logger.info(model)
-    optimizer = optim.Adam(model.parameters(), lr=args.lr)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     # Train
     for epoch in range(1, args.epochs + 1):
@@ -291,12 +309,14 @@ def train_model(x, y, outdir, zfile, args):
 
     yhat_all = np.concatenate(yhat_all)
     torch.save(model.state_dict(), f"{outdir}/model.pt")
+
     return yhat_all
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
     t1 = dt.now()
     logger.info(args)
+
     E = args.epoch
     workdir = args.workdir
     zfile = f"{workdir}/z.{E}.pkl"
@@ -319,6 +339,17 @@ def main(args):
     assert os.path.exists(
         pca_obj_pkl
     ), f"{pca_obj_pkl} missing. Did you run cryodrgn analyze_landscape?"
+
+    kmeans_folder = [
+        p for p in os.listdir(landscape_dir) if p.startswith("clustering_L2_")
+    ]
+    if len(kmeans_folder) == 0:
+        raise RuntimeError(
+            "No clustering folders `clustering_L2_` found. "
+            "Did you run cryodrgn analyze_landscape?"
+        )
+    kmeans_folder = kmeans_folder[0]
+    link_method, kmeans_K = kmeans_folder.split("_")[-2:]
 
     logger.info(f"Saving results to {outdir}")
     if not os.path.exists(outdir):
@@ -346,19 +377,35 @@ def main(args):
     utils.save_pkl(embeddings_all, f"{outdir}/vol_pca_all.pkl")
 
     # Copy viz notebook
-    out_ipynb = f"{landscape_dir}/cryoDRGN_analyze_landscape.ipynb"
+    out_ipynb = os.path.join(landscape_dir, "cryoDRGN_analyze_landscape.ipynb")
     if not os.path.exists(out_ipynb):
         logger.info("Creating jupyter notebook...")
-        ipynb = f"{cryodrgn._ROOT}/templates/cryoDRGN_analyze_landscape_template.ipynb"
+        ipynb = os.path.join(
+            cryodrgn._ROOT, "templates", "cryoDRGN_analyze_landscape_template.ipynb"
+        )
         shutil.copyfile(ipynb, out_ipynb)
     else:
         logger.info(f"{out_ipynb} already exists. Skipping")
+
+    # Lazily look at the beginning of the notebook for the epoch number to update
+    with open(out_ipynb, "r") as f:
+        filter_ntbook = nbformat.read(f, as_version=nbformat.NO_CONVERT)
+
+    for cell in filter_ntbook["cells"]:
+        cell["source"] = cell["source"].replace("EPOCH = None", f"EPOCH = {args.epoch}")
+        cell["source"] = cell["source"].replace(
+            "WORKDIR = None", f'WORKDIR = "{args.workdir}"'
+        )
+        cell["source"] = cell["source"].replace(
+            "K = None", f"K = {args.training_volumes}"
+        )
+        cell["source"] = cell["source"].replace("M = None", f"M = {kmeans_K}")
+        cell["source"] = cell["source"].replace(
+            "linkage = None", f'linkage = "{link_method}"'
+        )
+
+    with open(out_ipynb, "w") as f:
+        nbformat.write(filter_ntbook, f)
+
     logger.info(out_ipynb)
-
     logger.info(f"Finished in {dt.now()-t1}")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    args = add_args(parser).parse_args()
-    main(args)

@@ -616,8 +616,9 @@ def gen_volumes(
     if vol_start_index is not None:
         args += ["--vol-start-index", f"{vol_start_index}"]
 
-    args = eval_vol.add_args(argparse.ArgumentParser()).parse_args(args)
-    return eval_vol.main(args)
+    parser = argparse.ArgumentParser()
+    eval_vol.add_args(parser)
+    return eval_vol.main(parser.parse_args(args))
 
 
 def load_dataframe(

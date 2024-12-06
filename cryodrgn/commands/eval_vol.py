@@ -26,7 +26,7 @@ from cryodrgn.source import write_mrc
 logger = logging.getLogger(__name__)
 
 
-def add_args(parser):
+def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("weights", help="Model weights")
     parser.add_argument(
         "-c",
@@ -141,10 +141,9 @@ def add_args(parser):
         default="relu",
         help="Activation (default: %(default)s)",
     )
-    return parser
 
 
-def check_inputs(args):
+def check_inputs(args: argparse.Namespace) -> None:
     if args.z_start:
         assert args.z_end, "Must provide --z-end with argument --z-start"
     assert (
@@ -152,7 +151,7 @@ def check_inputs(args):
     ), "Must specify either -z OR --z-start/--z-end OR --zfile"
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
     if args.verbose:
         logger.setLevel(logging.DEBUG)
 
@@ -179,8 +178,13 @@ def main(args):
     norm = [float(x) for x in cfg["dataset_args"]["norm"]]
 
     if args.downsample:
-        assert args.downsample % 2 == 0, "Boxsize must be even"
-        assert args.downsample <= D - 1, "Must be smaller than original box size"
+        if args.downsample % 2 != 0:
+            raise ValueError(f"Boxsize {args.downsample} is not even!")
+        if args.downsample >= D:
+            raise ValueError(
+                f"New boxsize {args.downsample=} must be "
+                f"smaller than original box size {D=}!"
+            )
 
     model, lattice = HetOnlyVAE.load(cfg, args.weights, device=device)
     model.eval()
@@ -199,9 +203,7 @@ def main(args):
         else:
             z = np.loadtxt(args.zfile).reshape(-1, zdim)
 
-        if not os.path.exists(args.o):
-            os.makedirs(args.o)
-
+        os.makedirs(args.o, exist_ok=True)
         logger.info(f"Generating {len(z)} volumes")
         for i, zz in enumerate(z, start=args.vol_start_index):
             logger.info(zz)
@@ -249,13 +251,7 @@ def main(args):
         if args.invert:
             vol *= -1
 
-        write_mrc(args.o, np.array(vol).astype(np.float32), Apix=args.Apix)
+        write_mrc(args.o, np.array(vol.cpu()).astype(np.float32), Apix=args.Apix)
 
     td = dt.now() - t1
-    logger.info("Finished in {}".format(td))
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    args = add_args(parser).parse_args()
-    main(args)
+    logger.info(f"Finished in {td}")

@@ -10,6 +10,7 @@ import argparse
 import os
 import pickle
 import sys
+import contextlib
 from datetime import datetime as dt
 import logging
 import numpy as np
@@ -22,6 +23,11 @@ from cryodrgn.lattice import Lattice
 from cryodrgn.pose_search import PoseSearch
 from cryodrgn.source import write_mrc
 import cryodrgn.config
+
+try:
+    import apex.amp as amp  # type: ignore  # PYR01
+except ImportError:
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -198,6 +204,12 @@ def add_args(parser):
         "--reset-optim-after-pretrain",
         type=int,
         help="If set, reset the optimizer every N epochs",
+    )
+    group.add_argument(
+        "--no-amp",
+        action="store_false",
+        dest="amp",
+        help="Do not use mixed-precision training for accelerating training",
     )
 
     group = parser.add_argument_group("Pose search parameters")
@@ -387,6 +399,8 @@ def train(
     poses=None,
     base_pose=None,
     ctf_params=None,
+    use_amp=False,
+    scaler=None,
 ):
     y, yt = batch
     B = y.size(0)
@@ -401,56 +415,76 @@ def train(
             B, D, D
         )
 
-    # pose inference
-    if poses is not None:
-        rot = poses[0]
-        if not no_trans:
-            trans = poses[1]
-    else:  # BNB
-        model.eval()
-        with torch.no_grad():
-            rot, trans, base_pose = ps.opt_theta_trans(
-                y, images_tilt=yt, init_poses=base_pose, ctf_i=ctf_i
-            )
-            base_pose = base_pose.detach().cpu().numpy()
-
-    # reconstruct circle of pixels instead of whole image
-    mask = lattice.get_circular_mask(lattice.D // 2)
-    # mask = lattice.get_circular_mask(ps.Lmax)
-
-    def gen_slice(R):
-        slice_ = model(lattice.coords[mask] @ R).view(B, -1)
-        if ctf_i is not None:
-            slice_ *= ctf_i.view(B, -1)[:, mask]
-        return slice_
-
-    def translate(img):
-        img = lattice.translate_ht(img, trans.unsqueeze(1), mask)
-        return img.view(B, -1)
-
-    # Train model
-    model.train()
-    optim.zero_grad()
-
-    y = y.view(B, -1)[:, mask]
-    if tilt_rot is not None:
-        yt = yt.view(B, -1)[:, mask]
-    if not no_trans:
-        y = translate(y)
-        if tilt_rot is not None:
-            yt = translate(yt)
-
-    if tilt_rot is not None:
-        loss = 0.5 * F.mse_loss(gen_slice(rot), y) + 0.5 * F.mse_loss(
-            gen_slice(tilt_rot @ rot), yt
-        )
+    if scaler is not None:
+        amp_mode = torch.cuda.amp.autocast_mode.autocast()
     else:
-        loss = F.mse_loss(gen_slice(rot), y)
-    loss.backward()
-    optim.step()
+        amp_mode = contextlib.nullcontext()
+
+    with amp_mode:
+        # pose inference
+        if poses is not None:
+            rot = poses[0]
+            if not no_trans:
+                trans = poses[1]
+        else:  # BNB
+            model.eval()
+            with torch.no_grad():
+                rot, trans, base_pose = ps.opt_theta_trans(
+                    y, images_tilt=yt, init_poses=base_pose, ctf_i=ctf_i
+                )
+                base_pose = base_pose.detach().cpu().numpy()
+
+        # reconstruct circle of pixels instead of whole image
+        mask = lattice.get_circular_mask(lattice.D // 2)
+
+        # mask = lattice.get_circular_mask(ps.Lmax)
+
+        def gen_slice(R):
+            slice_ = model(lattice.coords[mask] @ R).view(B, -1)
+            if ctf_i is not None:
+                slice_ *= ctf_i.view(B, -1)[:, mask]
+            return slice_
+
+        def translate(img):
+            img = lattice.translate_ht(img, trans.unsqueeze(1), mask)
+            return img.view(B, -1)
+
+        # Train model
+        model.train()
+        optim.zero_grad()
+
+        y = y.view(B, -1)[:, mask]
+        if tilt_rot is not None:
+            yt = yt.view(B, -1)[:, mask]
+        if not no_trans:
+            y = translate(y)
+            if tilt_rot is not None:
+                yt = translate(yt)
+
+        if tilt_rot is not None:
+            loss = 0.5 * F.mse_loss(gen_slice(rot), y) + 0.5 * F.mse_loss(
+                gen_slice(tilt_rot @ rot), yt
+            )
+        else:
+            loss = F.mse_loss(gen_slice(rot), y)
+
+    if use_amp:
+        if scaler is not None:
+            scaler.scale(loss).backward()
+            scaler.step(optim)
+            scaler.update()
+        else:  # apex.amp mixed precision
+            with amp.scale_loss(loss, optim) as scaled_loss:
+                scaled_loss.backward()
+            optim.step()
+    else:
+        loss.backward()
+        optim.step()
+
     save_pose = [rot.detach().cpu().numpy()]
     if not no_trans:
         save_pose.append(trans.detach().cpu().numpy())
+
     return loss.item(), save_pose, base_pose
 
 
@@ -618,6 +652,32 @@ def main(args):
     )
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
+    # Mixed precision training
+    scaler = None
+    if args.amp:
+        if args.batch_size % 8 != 0:
+            logger.warning(
+                f"Batch size {args.batch_size} not divisible by 8 "
+                f"and thus not optimal for AMP training!"
+            )
+        if (D - 1) % 8 != 0:
+            logger.warning(
+                f"Image size {D - 1} not divisible by 8 "
+                f"and thus not optimal for AMP training!"
+            )
+        if args.dim % 8 != 0:
+            logger.warning(
+                f"Hidden layer dimension {args.dim} not divisible by 8 "
+                f"and thus not optimal for AMP training!"
+            )
+
+        # mixed precision with apex.amp
+        try:
+            model, optim = amp.initialize(model, optim, opt_level="O1")
+        # mixed precision with pytorch (v1.6+)
+        except:  # noqa: E722
+            scaler = torch.cuda.amp.grad_scaler.GradScaler()
+
     sorted_poses = []
     if args.load:
         args.pretrain = 0
@@ -735,6 +795,8 @@ def main(args):
                 poses=p,
                 base_pose=bp,
                 ctf_params=c,
+                use_amp=args.amp,
+                scaler=scaler,
             )
             poses.append((ind.cpu().numpy(), pose))
             base_poses.append((ind_np, base_pose))

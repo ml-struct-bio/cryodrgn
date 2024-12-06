@@ -71,6 +71,9 @@ class ImageDataset(torch.utils.data.Dataset):
         self.device = device
         self.lazy = lazy
 
+        if np.issubdtype(self.src.dtype, np.integer):
+            self.window = self.window.int()
+
     def estimate_normalization(self, n=1000):
         n = min(n, self.N) if n is not None else self.N
         indices = range(0, self.N, self.N // n)  # FIXME: what if the data is not IID??
@@ -90,6 +93,7 @@ class ImageDataset(torch.utils.data.Dataset):
             data = data[np.newaxis, ...]
         if self.window is not None:
             data *= self.window
+
         data = fft.ht2_center(data)
         if self.invert_data:
             data *= -1

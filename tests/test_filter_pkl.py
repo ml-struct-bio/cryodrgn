@@ -27,9 +27,9 @@ def test_select_clusters(tmpdir, total_size, ind_size, selected_size, random_see
     save_pkl(selected_positions, sel_fl)
 
     out_fl = os.path.join(tmpdir, f"filtered-indices_{test_lbl}.pkl")
-    args = filter_pkl.add_args(argparse.ArgumentParser()).parse_args(
-        [ind_fl, "--ind", sel_fl, "-o", out_fl]
-    )
+    parser = argparse.ArgumentParser()
+    filter_pkl.add_args(parser)
+    args = parser.parse_args([ind_fl, "--ind", sel_fl, "-o", out_fl])
     filter_pkl.main(args)
 
     # Indices values corresponding to the selected positions

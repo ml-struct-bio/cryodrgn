@@ -21,6 +21,7 @@ import argparse
 import os
 import pickle
 import sys
+import contextlib
 import logging
 from datetime import datetime as dt
 from typing import Optional
@@ -46,7 +47,7 @@ import cryodrgn.config
 logger = logging.getLogger(__name__)
 
 
-def add_args(parser: argparse.ArgumentParser):
+def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "particles",
         type=os.path.abspath,
@@ -236,7 +237,7 @@ def add_args(parser: argparse.ArgumentParser):
         "--no-amp",
         action="store_false",
         dest="amp",
-        help="Do not use mixed-precision training",
+        help="Do not use mixed-precision training for accelerating training",
     )
     group.add_argument(
         "--multigpu",
@@ -374,31 +375,29 @@ def train_batch(
     model.train()
     if trans is not None:
         y = preprocess_input(y, lattice, trans)
+
     # Cast operations to mixed precision if using torch.cuda.amp.GradScaler()
     if scaler is not None:
-        with torch.cuda.amp.autocast_mode.autocast():
-            z_mu, z_logvar, z, y_recon, mask = run_batch(
-                model, lattice, y, rot, ntilts, ctf_params, yr
-            )
-            loss, gen_loss, kld = loss_function(
-                z_mu,
-                z_logvar,
-                y,
-                ntilts,
-                y_recon,
-                mask,
-                beta,
-                beta_control,
-                dose_filters,
-            )
+        amp_mode = torch.cuda.amp.autocast_mode.autocast()
     else:
-        # print('AAA', y.shape, rot.shape)
+        amp_mode = contextlib.nullcontext()
+
+    with amp_mode:
         z_mu, z_logvar, z, y_recon, mask = run_batch(
             model, lattice, y, rot, ntilts, ctf_params, yr
         )
         loss, gen_loss, kld = loss_function(
-            z_mu, z_logvar, y, ntilts, y_recon, mask, beta, beta_control, dose_filters
+            z_mu,
+            z_logvar,
+            y,
+            ntilts,
+            y_recon,
+            mask,
+            beta,
+            beta_control,
+            dose_filters,
         )
+
     if use_amp:
         if scaler is not None:  # torch mixed precision
             scaler.scale(loss).backward()
@@ -411,6 +410,7 @@ def train_batch(
     else:
         loss.backward()
         optim.step()
+
     return loss.item(), gen_loss.item(), kld.item()
 
 
@@ -487,7 +487,8 @@ def loss_function(
     if beta_control is None:
         loss = gen_loss + beta * kld / mask.sum().float()
     else:
-        loss = gen_loss + args.beta_control * (beta - kld) ** 2 / mask.sum().float()
+        loss = gen_loss + beta_control * (beta - kld) ** 2 / mask.sum().float()
+
     return loss, gen_loss, kld
 
 
@@ -626,7 +627,7 @@ def get_latest(args):
     return args
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
     if args.verbose:
         logger.setLevel(logging.DEBUG)
 
@@ -648,7 +649,8 @@ def main(args):
 
     # set the device
     use_cuda = torch.cuda.is_available()
-    device = torch.device("cuda" if use_cuda else "cpu")
+    device_str = "cuda" if use_cuda else "cpu"
+    device = torch.device(device_str)
     logger.info("Use cuda {}".format(use_cuda))
     if not use_cuda:
         logger.warning("WARNING: No GPUs detected")
@@ -1030,13 +1032,8 @@ def main(args):
     if args.do_pose_sgd and epoch >= args.pretrain:
         out_pose = "{}/pose.pkl".format(args.outdir)
         posetracker.save(out_pose)
+
     td = dt.now() - t1
     logger.info(
         "Finished in {} ({} per epoch)".format(td, td / (num_epochs - start_epoch))
     )
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    args = add_args(parser).parse_args()
-    main(args)

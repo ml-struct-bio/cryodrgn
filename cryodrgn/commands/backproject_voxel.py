@@ -1,9 +1,10 @@
 """Backproject cryo-EM images to reconstruct a volume as well as half-maps.
 
-This script creates a reconstructed volume using the images in the given stack as well
-as the given poses. Unless instructed otherwise, it will also produce volumes using
-the images in each half of the dataset, as well as calculating an FSC curve between
-these two half-map reconstructions. All outputs will be placed in the folder given.
+This command performs volume reconstruction using voxel-based backprojection applied to
+the images in the given stack as well as the given poses. Unless instructed otherwise,
+it will also produce volumes using the images in each half of the dataset, along with
+calculating an FSC curve between these two half-map reconstructions.
+All outputs will be placed in the folder specified.
 
 Example usage
 -------------
@@ -14,11 +15,14 @@ $ cryodrgn backproject_voxel particles.128.mrcs \
 $ cryodrgn backproject_voxel particles.256.mrcs --ctf ctf.pkl --poses pose.pkl \
                              --ind good_particles.pkl -o backproject-256/ --lazy
 
-# `--first` is also a good tool for doing a quick initial reconstruction
+# `--first` is also a good tool for doing a quick initial reconstruction with only the
+# first <x> images in the given stack
+# Here we also avoid calculating FSCs between the half-maps at the end
 $ cryodrgn backproject_voxel particles.196.mrcs --ctf ctf.pkl --poses pose.pkl \
                              -o backproject-196/ --lazy --first=10000
 
-# `--tilt` is required for subtomogram datasets
+# `--tilt` is required for subtomogram datasets; you can further control how many tilts
+# are used per particle using `--ntilts`
 # `--datadir` is generally required when using .star or .cs particle inputs
 $ cryodrgn backproject_voxel particles_from_M.star --datadir subtilts/128/ \
                              --ctf ctf.pkl --poses pose.pkl \
@@ -40,7 +44,7 @@ logger = logging.getLogger(__name__)
 
 
 def add_args(parser):
-    """The command-line arguments for use with `cryodrgn_utils backproject_voxel`."""
+    """The command-line arguments for use with `cryodrgn backproject_voxel`."""
 
     parser.add_argument(
         "particles",
@@ -103,7 +107,8 @@ def add_args(parser):
     group.add_argument(
         "--datadir",
         type=os.path.abspath,
-        help="Path prefix to particle stack if loading relative paths from a .star or .cs file",
+        help="Path prefix to particle stack files if loading "
+        "relative stack paths from a .star or .cs file",
     )
     group.add_argument(
         "--lazy",
@@ -121,6 +126,13 @@ def add_args(parser):
         type=int,
         help="Backproject the first N images (default: all images)",
     )
+    parser.add_argument(
+        "--log-interval",
+        type=str,
+        default="100",
+        help="Logging interval in N_IMGS (default: %(default)s)",
+    )
+
     group = parser.add_argument_group("Tilt series options")
     group.add_argument(
         "--tilt",
@@ -199,9 +211,11 @@ def main(args):
             particle_ind = utils.load_pkl(args.ind).astype(int)
             pt, tp = dataset.TiltSeriesData.parse_particle_tilt(args.particles)
             tilt_ind = dataset.TiltSeriesData.particles_to_tilts(pt, particle_ind)
-            args.ind = tilt_ind
+            indices = tilt_ind
         else:
-            args.ind = utils.load_pkl(args.ind).astype(int)
+            indices = utils.load_pkl(args.ind).astype(int)
+    else:
+        indices = None
 
     if args.tilt:
         assert (
@@ -213,7 +227,7 @@ def main(args):
             norm=(0, 1),
             invert_data=args.invert_data,
             datadir=args.datadir,
-            ind=args.ind,
+            ind=indices,
             lazy=args.lazy,
             dose_per_tilt=args.dose_per_tilt,
             angle_per_tilt=args.angle_per_tilt,
@@ -225,21 +239,21 @@ def main(args):
             norm=(0, 1),
             invert_data=args.invert_data,
             datadir=args.datadir,
-            ind=args.ind,
+            ind=indices,
             lazy=args.lazy,
         )
 
     D = data.D
     Nimg = data.N
     lattice = Lattice(D, extent=D // 2, device=device)
-    posetracker = PoseTracker.load(args.poses, Nimg, D, None, args.ind, device=device)
+    posetracker = PoseTracker.load(args.poses, Nimg, D, None, indices, device=device)
 
     if args.ctf is not None:
         logger.info(f"Loading ctf params from {args.ctf}")
         ctf_params = ctf.load_ctf_for_training(D - 1, args.ctf)
 
-        if args.ind is not None:
-            ctf_params = ctf_params[args.ind]
+        if indices is not None:
+            ctf_params = ctf_params[indices]
         if args.tilt:
             ctf_params = np.concatenate(
                 (ctf_params, data.ctfscalefactor.reshape(-1, 1)), axis=1  # type: ignore
@@ -253,14 +267,16 @@ def main(args):
     voltage = float(ctf_params[0, 4]) if ctf_params is not None else None
     data.voltage = voltage
     lattice_mask = lattice.get_circular_mask(D // 2)
-    iterator = range(min(args.first, Nimg)) if args.first else range(Nimg)
+    img_iterator = range(min(args.first, Nimg)) if args.first else range(Nimg)
 
     if args.tilt:
         use_tilts = set(range(args.ntilts))
-        iterator = [
-            ii for ii in iterator if int(data.tilt_numbers[ii].item()) in use_tilts
+        img_iterator = [
+            ii for ii in img_iterator if int(data.tilt_numbers[ii].item()) in use_tilts
         ]
 
+    # Initialize tensors that will store backprojection results
+    img_count = len(img_iterator)
     volume_full = torch.zeros((D, D, D), device=device)
     counts_full = torch.zeros((D, D, D), device=device)
     volume_half1 = torch.zeros((D, D, D), device=device)
@@ -268,14 +284,24 @@ def main(args):
     volume_half2 = torch.zeros((D, D, D), device=device)
     counts_half2 = torch.zeros((D, D, D), device=device)
 
-    for i, ii in enumerate(iterator):
-        if i % 100 == 0:
-            logger.info(f"fimage {ii}")
+    # Figure out how often we are going to report progress w.r.t. images processed
+    if args.log_interval == "auto":
+        log_interval = max(round((img_count // 1000), -2), 100)
+    elif args.log_interval.isnumeric():
+        log_interval = int(args.log_interval)
+    else:
+        raise ValueError(
+            f"Unrecognized argument for --log-interval: `{args.log_interval}`\n"
+            f"Given value must be an integer or the label 'auto'!"
+        )
+
+    for i, ii in enumerate(img_iterator):
+        if i % log_interval == 0:
+            logger.info(f"fimage {ii} — {(i / img_count * 100):.1f}% done")
 
         r, t = posetracker.get_pose(ii)
         ff = data.get_tilt(ii) if args.tilt else data[ii]
         assert isinstance(ff, tuple)
-
         ff = ff[0].to(device)
         ff = ff.view(-1)[lattice_mask]
         ctf_mul = 1
@@ -312,8 +338,8 @@ def main(args):
 
     td = time.time() - t1
     logger.info(
-        f"Backprojected {len(iterator)} images "
-        f"in {td:.2f}s ({(td / Nimg):4f}s per image)"
+        f"Backprojected {img_count} images "
+        f"in {td:.2f}s ({(td / img_count):4f}s per image)"
     )
 
     counts_full[counts_full == 0] = 1
@@ -329,7 +355,7 @@ def main(args):
     vol_fl = os.path.join(args.outdir, "backproject.mrc")
     write_mrc(vol_fl, np.array(volume_full).astype("float32"), Apix=Apix)
 
-    # create the half-maps, calculate the FSC curve between them, and save both to file
+    # Create the half-maps, calculate the FSC curve between them, and save both to file
     if args.half_maps:
         volume_half1 = regularize_volume(volume_half1, counts_half1, args.reg_weight)
         volume_half2 = regularize_volume(volume_half2, counts_half2, args.reg_weight)

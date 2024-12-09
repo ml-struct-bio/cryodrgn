@@ -85,6 +85,7 @@ def main_commands() -> None:
             "abinit_het",
             "abinit_homo",
             "analyze",
+            "plot_volumes",
             "analyze_landscape",
             "analyze_landscape_full",
             "backproject_voxel",

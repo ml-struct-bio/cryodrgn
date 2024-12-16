@@ -302,7 +302,11 @@ def train(
 
     # Cast operations to mixed precision if using torch.cuda.amp.GradScaler()
     if scaler is not None:
-        with torch.cuda.amp.autocast_mode.autocast():
+        try:
+            amp_mode = torch.amp.autocast("cuda")
+        except AttributeError:
+            amp_mode = torch.cuda.amp.autocast_mode.autocast()
+        with amp_mode:
             loss = run_model(y)
     else:
         loss = run_model(y)

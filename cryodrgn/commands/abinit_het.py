@@ -485,7 +485,10 @@ def train(
     # We do this in pose-supervised train_vae
 
     if scaler is not None:
-        amp_mode = torch.cuda.amp.autocast_mode.autocast()
+        try:
+            amp_mode = torch.amp.autocast("cuda")
+        except AttributeError:
+            amp_mode = torch.cuda.amp.autocast_mode.autocast()
     else:
         amp_mode = contextlib.nullcontext()
 

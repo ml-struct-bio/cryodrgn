@@ -37,9 +37,10 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from matplotlib import colors
-from matplotlib.backend_bases import MouseButton, MouseEvent
-from matplotlib.widgets import LassoSelector, RadioButtons
+from matplotlib.backend_bases import Event, MouseButton, MouseEvent
+from matplotlib.widgets import LassoSelector, RadioButtons, Button
 from matplotlib.path import Path as PlotPath
+from matplotlib.gridspec import GridSpec
 from scipy.spatial import transform
 from typing import Optional, Sequence
 
@@ -80,6 +81,11 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         help="path to a file containing previously selected indices "
         "that will be plotted at the beginning",
     )
+    parser.add_argument(
+        "--sel-dir",
+        type=str,
+        help="directory to save the particle selection into",
+    )
 
 
 def main(args: argparse.Namespace) -> None:
@@ -87,6 +93,7 @@ def main(args: argparse.Namespace) -> None:
     epoch = args.epoch
     kmeans = args.kmeans
     plot_inds = args.plot_inds
+    sel_dir = args.sel_dir
 
     train_configs_file = os.path.join(workdir, "config.yaml")
     if not os.path.exists(train_configs_file):
@@ -202,7 +209,7 @@ def main(args: argparse.Namespace) -> None:
     # Launch the plot and the interactive command-line prompt; once points are selected,
     # close the figure to avoid interference with other plots
     selector = SelectFromScatter(plot_df, pre_indices)
-    input("Press Enter after making your selection...")
+    # input("Press Enter after making your selection...")
     selected_indices = [all_indices[i] for i in selector.indices]
     plt.close()
 
@@ -231,6 +238,8 @@ def main(args: argparse.Namespace) -> None:
         if save_option == "yes":
             if args.force:
                 filename = "indices"
+                if args.sel_dir:
+                    filename = os.path.join(args.sel_dir, filename)
             else:
                 filename = input(
                     "Enter filename to save selection (absolute, without extension): "
@@ -270,7 +279,7 @@ class SelectFromScatter:
         # Create a plotting region subdivided into three parts vertically, the middle
         # big part being used for the scatterplot and the thin sides used for legends
         self.fig = plt.figure(constrained_layout=True)
-        gs = self.fig.add_gridspec(2, 3, width_ratios=[1, 7, 1])
+        gs = self.gridspec()
         self.main_ax = self.fig.add_subplot(gs[:, 1])
 
         # Find the columns in the given data frame that can be used as plotting
@@ -296,6 +305,11 @@ class SelectFromScatter:
         self.menu_y = RadioButtons(rax, labels=self.select_cols, active=1)
         self.menu_y.on_clicked(self.update_yaxis)
 
+        # add save button only when selection is made
+        self.btn_loc = self.fig.add_subplot(gs[2, 0])
+        self.sv_btn = Button(self.btn_loc, "Save Selection!", color="darkgreen")
+        self.btn_loc.set_visible(False)
+
         cax = self.fig.add_subplot(gs[:, 2])
         cax.axis("off")
         cax.set_title("choose\ncolors", size=13)
@@ -316,6 +330,9 @@ class SelectFromScatter:
 
         self.plot()
 
+    def gridspec(self) -> GridSpec:
+        return self.fig.add_gridspec(3, 3, width_ratios=[1, 7, 1], height_ratios=[5, 5, 1])
+
     def plot(self) -> None:
         """Redraw the plot using the current plot info upon e.g. input from user."""
         self.main_ax.clear()
@@ -324,6 +341,14 @@ class SelectFromScatter:
         if len(self.indices):
             for idx in self.indices:
                 pnt_colors[idx] = "goldenrod"
+
+            # with selection, set save button visible
+            self.btn_loc.set_visible(True)
+            self.sv_btn.on_clicked(self.save_click)
+        
+        elif ~len(self.indices):
+            # remove save button if no selection is made
+            self.btn_loc.set_visible(False)
 
         elif self.color_col != "None":
             clr_vals = self.data_table[self.color_col]
@@ -370,7 +395,7 @@ class SelectFromScatter:
             va="bottom",
             transform=self.main_ax.transAxes,
         )
-        plt.show(block=False)
+        plt.show()
         plt.draw()
 
     def update_xaxis(self, xlbl: str) -> None:
@@ -450,3 +475,9 @@ class SelectFromScatter:
             self.handl_id = self.fig.canvas.mpl_connect(
                 "motion_notify_event", self.hover_points
             )
+
+    def save_click(self, event: Event) -> None:
+        """When the save button is clicked, we close display."""
+        if hasattr(event, "button") and event.button is MouseButton.LEFT:
+            # close the plt so we can move onto saving it
+            plt.close("all")

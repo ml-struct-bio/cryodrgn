@@ -864,7 +864,10 @@ def main(args: argparse.Namespace) -> None:
             model, optim = amp.initialize(model, optim, opt_level="O1")
         # mixed precision with pytorch (v1.6+)
         except:  # noqa: E722
-            scaler = torch.cuda.amp.grad_scaler.GradScaler()
+            try:
+                scaler = torch.amp.GradScaler("cuda")
+            except AttributeError:
+                scaler = torch.cuda.amp.grad_scaler.GradScaler()
 
     # restart from checkpoint
     if args.load:

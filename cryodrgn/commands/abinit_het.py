@@ -910,7 +910,10 @@ def main(args):
             model, optim = amp.initialize(model, optim, opt_level="O1")
         # mixed precision with pytorch (v1.6+)
         except:  # noqa: E722
-            scaler = torch.cuda.amp.grad_scaler.GradScaler()
+            try:
+                scaler = torch.amp.GradScaler("cuda")
+            except AttributeError:
+                scaler = torch.cuda.amp.grad_scaler.GradScaler()
 
     if args.load == "latest":
         args = get_latest(args)

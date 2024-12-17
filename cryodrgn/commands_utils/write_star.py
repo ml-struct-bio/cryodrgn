@@ -54,7 +54,7 @@ POSE_HDRS = [
 def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("particles", help="Input particles (.mrcs, .txt, .star)")
     parser.add_argument(
-        "-o", type=os.path.abspath, required=True, help="Output .star file"
+        "-o", "--outfile", type=os.path.abspath, required=True, help="Output .star file"
     )
 
     parser.add_argument("--ctf", help="Input ctf.pkl")
@@ -81,14 +81,11 @@ def add_args(parser: argparse.ArgumentParser) -> None:
 
 
 def main(args: argparse.Namespace) -> None:
-    assert args.o.endswith(".star"), "Output file must be .star file"
-
     input_ext = os.path.splitext(args.particles)[-1]
-    assert input_ext in (
-        ".mrcs",
-        ".txt",
-        ".star",
-    ), "Input file must be .mrcs/.txt/.star"
+    if input_ext not in {".mrcs", ".txt", ".star"}:
+        raise ValueError(f"Input `{args.particles}` not a .mrcs/.txt/.star file!")
+    if not args.outfile.endswith(".star"):
+        raise ValueError(f"Output `{args.outfile}` not .star file!")
 
     # Either accept an input star file, or an input .mrcs/.txt with CTF .pkl
     # and an optional pose .pkl file(s)
@@ -101,8 +98,8 @@ def main(args: argparse.Namespace) -> None:
             )
         if args.ctf is not None:
             raise ValueError(
-                "--ctf cannot be specified when input is a starfile "
-                "(ctf information are obtained from starfile)"
+                "--ctf cannot be specified when input is a .star file "
+                "(CTF information is obtained from .star file)"
             )
     else:
         if not args.ctf:
@@ -123,8 +120,13 @@ def main(args: argparse.Namespace) -> None:
                 f"{len(particles)} != {len(ctf)}, "
                 f"Number of particles != number of CTF parameters"
             )
+
     if args.poses:
         poses = utils.load_pkl(args.poses)
+        if not isinstance(poses, tuple) or len(poses) != 2:
+            raise ValueError(
+                f"Unrecognized pose format found in given file `{args.poses}`!"
+            )
         if len(particles) != len(poses[0]):
             raise ValueError(
                 f"{len(particles)} != {len(poses)}, "
@@ -132,14 +134,21 @@ def main(args: argparse.Namespace) -> None:
             )
 
     # load the particle filter if given and apply it to the CTF and poses data
-    ind = np.arange(particles.n)
     if args.ind:
         ind = utils.load_pkl(args.ind)
+        if np.array(ind).ndim != 1:
+            raise ValueError(
+                f"Unrecognized indices format found in given file `{args.ind}`!"
+            )
+
         logger.info(f"Filtering to {len(ind)} particles")
         if ctf is not None:
             ctf = ctf[ind]
         if poses is not None:
             poses = (poses[0][ind], poses[1][ind])
+
+    else:
+        ind = np.arange(particles.n)
 
     # When the input is already a .star file, we just filter the data table directly
     if input_ext == ".star":
@@ -213,4 +222,4 @@ def main(args: argparse.Namespace) -> None:
 
         df = pd.DataFrame(data=data)
 
-    write_star(args.o, data=df, data_optics=optics)
+    write_star(args.outfile, data=df, data_optics=optics)

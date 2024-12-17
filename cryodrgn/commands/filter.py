@@ -37,7 +37,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from matplotlib import colors
-from matplotlib.backend_bases import Event, MouseButton, MouseEvent
+from matplotlib.backend_bases import MouseEvent, MouseButton
 from matplotlib.widgets import LassoSelector, RadioButtons, Button
 from matplotlib.path import Path as PlotPath
 from matplotlib.gridspec import GridSpec
@@ -93,7 +93,6 @@ def main(args: argparse.Namespace) -> None:
     epoch = args.epoch
     kmeans = args.kmeans
     plot_inds = args.plot_inds
-    sel_dir = args.sel_dir
 
     train_configs_file = os.path.join(workdir, "config.yaml")
     if not os.path.exists(train_configs_file):
@@ -209,7 +208,6 @@ def main(args: argparse.Namespace) -> None:
     # Launch the plot and the interactive command-line prompt; once points are selected,
     # close the figure to avoid interference with other plots
     selector = SelectFromScatter(plot_df, pre_indices)
-    # input("Press Enter after making your selection...")
     selected_indices = [all_indices[i] for i in selector.indices]
     plt.close()
 
@@ -227,42 +225,33 @@ def main(args: argparse.Namespace) -> None:
         )
 
         if args.force:
-            save_option = "yes"
+            filename = "indices"
         else:
-            save_option = (
-                input("Do you want to save the selection to file? (yes/no): ")
-                .strip()
-                .lower()
-            )
-
-        if save_option == "yes":
-            if args.force:
-                filename = "indices"
-                if args.sel_dir:
-                    filename = os.path.join(args.sel_dir, filename)
+            if args.sel_dir:
+                sel_msg = f"Enter filename to save selection under {args.sel_dir} "
             else:
-                filename = input(
-                    "Enter filename to save selection (absolute, without extension): "
-                ).strip()
+                sel_msg = "Enter filename to save selection "
+            filename = input(sel_msg + "(absolute, without extension):").strip()
+        if args.sel_dir:
+            filename = os.path.join(args.sel_dir, filename)
 
-            # Saving the selected indices
-            if filename:
-                selected_full_path = filename + ".pkl"
+        # Saving the selected indices
+        if filename:
+            selected_full_path = filename + ".pkl"
 
-                with open(selected_full_path, "wb") as file:
-                    pickle.dump(np.array(selected_indices, dtype=int), file)
-                print(f"Selection saved to {selected_full_path}")
+            with open(selected_full_path, "wb") as file:
+                pickle.dump(np.array(selected_indices, dtype=int), file)
+            print(f"Selection saved to `{selected_full_path}`")
 
-                # Saving the inverse selection
-                inverse_filename = filename + "_inverse.pkl"
-                inverse_indices = np.setdiff1d(all_indices, selected_indices)
+            # Saving the inverse selection
+            inverse_filename = filename + "_inverse.pkl"
+            inverse_indices = np.setdiff1d(all_indices, selected_indices)
 
-                with open(inverse_filename, "wb") as file:
-                    pickle.dump(np.array(inverse_indices, dtype=int), file)
+            with open(inverse_filename, "wb") as file:
+                pickle.dump(np.array(inverse_indices, dtype=int), file)
 
-                print(f"Inverse selection saved to {inverse_filename}")
-        else:
-            print("Exiting without saving selection.")
+            print(f"Inverse selection saved to `{inverse_filename}`")
+
     else:
         print("Exiting without having made a selection.")
 
@@ -306,9 +295,26 @@ class SelectFromScatter:
         self.menu_y.on_clicked(self.update_yaxis)
 
         # add save button only when selection is made
-        self.btn_loc = self.fig.add_subplot(gs[2, 0])
-        self.sv_btn = Button(self.btn_loc, "Save Selection!", color="darkgreen")
-        self.btn_loc.set_visible(False)
+        self.save_ax = self.fig.add_subplot(gs[2, 0])
+        self.exit_ax = self.fig.add_subplot(gs[3, 0])
+        self.save_btn = Button(
+            self.save_ax,
+            "Save Selection",
+            color="#164316",
+            hovercolor="#01BC01",
+        )
+        self.exit_btn = Button(
+            self.exit_ax,
+            "Exit Without Saving",
+            color="#601515",
+            hovercolor="#BA0B0B",
+        )
+        self.save_btn.label.set_color("white")
+        self.exit_btn.label.set_color("white")
+        self.save_btn.on_clicked(self.save_click)
+        self.exit_btn.on_clicked(self.exit_click)
+        self.save_ax.set_visible(False)
+        self.exit_ax.set_visible(True)
 
         cax = self.fig.add_subplot(gs[:, 2])
         cax.axis("off")
@@ -331,7 +337,10 @@ class SelectFromScatter:
         self.plot()
 
     def gridspec(self) -> GridSpec:
-        return self.fig.add_gridspec(3, 3, width_ratios=[1, 7, 1], height_ratios=[5, 5, 1])
+        """Defines the layout of the plots and menus in the interactive interface."""
+        return self.fig.add_gridspec(
+            4, 3, width_ratios=[1, 7, 1], height_ratios=[7, 7, 1, 1]
+        )
 
     def plot(self) -> None:
         """Redraw the plot using the current plot info upon e.g. input from user."""
@@ -343,12 +352,11 @@ class SelectFromScatter:
                 pnt_colors[idx] = "goldenrod"
 
             # with selection, set save button visible
-            self.btn_loc.set_visible(True)
-            self.sv_btn.on_clicked(self.save_click)
-        
+            self.save_ax.set_visible(True)
+
         elif ~len(self.indices):
             # remove save button if no selection is made
-            self.btn_loc.set_visible(False)
+            self.save_ax.set_visible(False)
 
         elif self.color_col != "None":
             clr_vals = self.data_table[self.color_col]
@@ -476,8 +484,15 @@ class SelectFromScatter:
                 "motion_notify_event", self.hover_points
             )
 
-    def save_click(self, event: Event) -> None:
+    def save_click(self, event: MouseEvent) -> None:
         """When the save button is clicked, we close display."""
         if hasattr(event, "button") and event.button is MouseButton.LEFT:
             # close the plt so we can move onto saving it
+            plt.close("all")
+
+    def exit_click(self, event: MouseEvent) -> None:
+        """When the exit button is clicked, we clear the selection and close display."""
+        if hasattr(event, "button") and event.button is MouseButton.LEFT:
+            # close the plt so we can move onto saving it
+            self.indices = list()
             plt.close("all")

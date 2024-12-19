@@ -129,29 +129,6 @@ class TestFixedHetero:
         assert os.path.exists(os.path.join(outdir, f"analyze.{epoch}"))
 
     @pytest.mark.parametrize(
-        "ctf, epoch",
-        [
-            ("CTF-Test", 3),
-            ("CTF-Test", None),
-            pytest.param(
-                None,
-                None,
-                marks=pytest.mark.xfail(raises=NotImplementedError),
-            ),
-        ],
-        indirect=["ctf"],
-    )
-    def test_interactive_filtering(
-        self, tmpdir_factory, particles, poses, ctf, indices, epoch
-    ):
-        """Launch interface for filtering particles using model covariates."""
-        outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
-        parser = argparse.ArgumentParser()
-        filter.add_args(parser)
-        epoch_args = ["--epoch", str(epoch)] if epoch is not None else list()
-        filter.main(parser.parse_args([outdir] + epoch_args))
-
-    @pytest.mark.parametrize(
         "nb_lbl, ctf",
         [
             ("cryoDRGN_filtering", "CTF-Test"),
@@ -185,6 +162,29 @@ class TestFixedHetero:
             raise e
 
         os.chdir(orig_cwd)
+
+    @pytest.mark.parametrize(
+        "ctf, epoch",
+        [
+            ("CTF-Test", 3),
+            ("CTF-Test", None),
+            pytest.param(
+                None,
+                None,
+                marks=pytest.mark.xfail(raises=NotImplementedError),
+            ),
+        ],
+        indirect=["ctf"],
+    )
+    def test_interactive_filtering(
+        self, tmpdir_factory, particles, poses, ctf, indices, epoch
+    ):
+        """Launch interface for filtering particles using model covariates."""
+        outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
+        parser = argparse.ArgumentParser()
+        filter.add_args(parser)
+        epoch_args = ["--epoch", str(epoch)] if epoch is not None else list()
+        filter.main(parser.parse_args([outdir] + epoch_args))
 
     @pytest.mark.parametrize(
         "ctf, downsample_dim, flip_vol",
@@ -553,7 +553,18 @@ class TestAbinitHetero:
         ExecutePreprocessor(timeout=600, kernel_name="python3").preprocess(nb_in)
         os.chdir(orig_cwd)
 
-    @pytest.mark.parametrize("epoch", [1, None])
+    @pytest.mark.parametrize(
+        "epoch",
+        [
+            1,
+            pytest.param(
+                None,
+                marks=pytest.mark.xfail(
+                    raises=ValueError, reason="missing analysis epoch"
+                ),
+            ),
+        ],
+    )
     def test_interactive_filtering(
         self, tmpdir_factory, particles, ctf, indices, epoch
     ):

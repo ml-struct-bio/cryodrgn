@@ -855,7 +855,7 @@ def main(args: argparse.Namespace) -> None:
             )
         if in_dim % 8 != 0:
             logger.warning(
-                f"Masked input image dimension {in_dim} is not a mutiple of 8 "
+                f"Masked input image dimension {in_dim} is not a multiple of 8 "
                 "-- AMP training speedup is not optimized!"
             )
 

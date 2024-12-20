@@ -1,4 +1,7 @@
-"""Make mp4 movies of .mrc's produced by analyze* commands
+"""Make MP4 movies of .mrc volumes produced by cryodrgn analyze* commands.
+
+You must install ChimeraX under the alias `chimerax` before running this command, see:
+https://www.cgl.ucsf.edu/chimerax/download.html
 
 Example usage
 -------------
@@ -9,7 +12,6 @@ $ cryodrgn_utils make_movies spr_runs/07/out 19 latent --iso=31 --camera="-0.033
 $ cryodrgn_utils make_movies spr_runs/07/out 19 volume --name=front --iso=210 --camera="0.12868,-0.9576,0.25778,95.4,-0.85972,-0.23728,-0.45231,15.356,0.4943,-0.16341,-0.8538,-33.755"
 
 """
-
 import argparse
 import os
 from datetime import datetime as dt

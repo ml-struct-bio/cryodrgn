@@ -19,8 +19,9 @@ cryoDRGN installation, training and analysis. A brief quick start is provided be
 For any feedback, questions, or bugs, please file a Github issue or start a Github discussion.
 
 
-### New in Version 3.4.x
-* [NEW] `cryodrgn plot_classes` for analysis visualizations colored by a given set of class labels
+### Updates in Version 3.4.x
+* [NEW] `cryodrgn_utils plot_classes` for analysis visualizations colored by a given set of class labels
+* [NEW] `cryodrgn_utils make_movies` for animations of `analyze*` output volumes
 * implementing [automatic mixed-precision training](https://pytorch.org/docs/stable/amp.html)
   for ab-initio reconstruction for 2-4x speedup
 * support for RELION 3.1 .star files with separate optics tables, np.float16 number formats used in RELION .mrcs outputs
@@ -33,7 +34,7 @@ For any feedback, questions, or bugs, please file a Github issue or start a Gith
 * official support for Python 3.11
 
 
-### New in Version 3.x
+### Updates in Version 3.x
 
 The official release of [cryoDRGN-ET](https://www.biorxiv.org/content/10.1101/2023.08.18.553799v1) for heterogeneous subtomogram analysis.
 

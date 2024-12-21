@@ -485,7 +485,10 @@ def train(
     # We do this in pose-supervised train_vae
 
     if scaler is not None:
-        amp_mode = torch.cuda.amp.autocast_mode.autocast()
+        try:
+            amp_mode = torch.amp.autocast("cuda")
+        except AttributeError:
+            amp_mode = torch.cuda.amp.autocast_mode.autocast()
     else:
         amp_mode = contextlib.nullcontext()
 
@@ -898,7 +901,7 @@ def main(args):
             )
         if in_dim % 8 != 0:
             logger.warning(
-                f"Masked input image dimension {in_dim} is not a mutiple of 8 "
+                f"Masked input image dimension {in_dim} is not a multiple of 8 "
                 "-- AMP training speedup is not optimized!"
             )
 
@@ -907,7 +910,10 @@ def main(args):
             model, optim = amp.initialize(model, optim, opt_level="O1")
         # mixed precision with pytorch (v1.6+)
         except:  # noqa: E722
-            scaler = torch.cuda.amp.grad_scaler.GradScaler()
+            try:
+                scaler = torch.amp.GradScaler("cuda")
+            except AttributeError:
+                scaler = torch.cuda.amp.grad_scaler.GradScaler()
 
     if args.load == "latest":
         args = get_latest(args)

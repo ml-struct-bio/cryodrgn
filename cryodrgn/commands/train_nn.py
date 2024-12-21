@@ -302,7 +302,11 @@ def train(
 
     # Cast operations to mixed precision if using torch.cuda.amp.GradScaler()
     if scaler is not None:
-        with torch.cuda.amp.autocast_mode.autocast():
+        try:
+            amp_mode = torch.amp.autocast("cuda")
+        except AttributeError:
+            amp_mode = torch.cuda.amp.autocast_mode.autocast()
+        with amp_mode:
             loss = run_model(y)
     else:
         loss = run_model(y)
@@ -509,7 +513,10 @@ def main(args: argparse.Namespace) -> None:
             model, optim = amp.initialize(model, optim, opt_level="O1")
         # Mixed precision with pytorch (v1.6+)
         except:  # noqa: E722
-            scaler = torch.cuda.amp.grad_scaler.GradScaler()
+            try:
+                scaler = torch.amp.GradScaler("cuda")
+            except AttributeError:
+                scaler = torch.cuda.amp.grad_scaler.GradScaler()
 
     # parallelize
     if args.multigpu and torch.cuda.device_count() > 1:

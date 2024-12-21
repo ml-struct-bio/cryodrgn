@@ -348,47 +348,55 @@ def analyze_volumes(
 
     kmeans_labels = utils.load_pkl(os.path.join(outdir, f"kmeans{K}", "labels.pkl"))
     kmeans_counts = Counter(kmeans_labels)
-    for i in range(M):
-        vol_i = np.where(labels == i)[0]
-        logger.info(f"State {i}: {len(vol_i)} volumes")
+    for cluster_i in range(M):
+        vol_indices = np.where(labels == cluster_i)[0]
+        logger.info(f"State {cluster_i}: {len(vol_indices)} volumes")
         if vol_ind is not None:
-            vol_i = np.arange(K)[vol_ind][vol_i]
+            vol_indices = np.arange(K)[vol_ind][vol_indices]
 
-        vol_fl = os.path.join(kmean_dir, f"vol_{vol_start_index+i:03d}.mrc")
-        vol_i_all = torch.stack([torch.Tensor(parse_mrc(vol_fl)[0]) for i in vol_i])
-        nparticles = np.array([kmeans_counts[i] for i in vol_i])
+        vol_fls = [
+            os.path.join(kmean_dir, f"vol_{vol_start_index + vol_i:03d}.mrc")
+            for vol_i in vol_indices
+        ]
+        vol_i_all = torch.stack(
+            [torch.Tensor(parse_mrc(vol_fl)[0]) for vol_fl in vol_fls]
+        )
+
+        nparticles = np.array([kmeans_counts[vol_i] for vol_i in vol_indices])
         vol_i_mean = np.average(vol_i_all, axis=0, weights=nparticles)
         vol_i_std = (
             np.average((vol_i_all - vol_i_mean) ** 2, axis=0, weights=nparticles) ** 0.5
         )
+
         write_mrc(
-            os.path.join(subdir, f"state_{i}_mean.mrc"),
+            os.path.join(subdir, f"state_{cluster_i}_mean.mrc"),
             vol_i_mean.astype(np.float32),
             Apix=Apix,
         )
         write_mrc(
-            os.path.join(subdir, f"state_{i}_std.mrc"),
+            os.path.join(subdir, f"state_{cluster_i}_std.mrc"),
             vol_i_std.astype(np.float32),
             Apix=Apix,
         )
 
-        os.makedirs(os.path.join(subdir, f"state_{i}"), exist_ok=True)
-        for v in vol_i:
-            os.symlink(
-                os.path.join(kmean_dir, f"vol_{vol_start_index+v:03d}.mrc"),
-                os.path.join(subdir, f"state_{i}", f"vol_{vol_start_index+v:03d}.mrc"),
-            )
+        statedir = os.path.join(subdir, f"state_{cluster_i}")
+        os.makedirs(statedir, exist_ok=True)
+        for vol_i in vol_indices:
+            kmean_fl = os.path.join(kmean_dir, f"vol_{vol_start_index+vol_i:03d}.mrc")
+            sub_fl = os.path.join(statedir, f"vol_{vol_start_index+vol_i:03d}.mrc")
+            os.symlink(kmean_fl, sub_fl)
 
-        particle_ind = analysis.get_ind_for_cluster(kmeans_labels, vol_i)
-        logger.info(f"State {i}: {len(particle_ind)} particles")
+        particle_ind = analysis.get_ind_for_cluster(kmeans_labels, vol_indices)
+        logger.info(f"State {cluster_i}: {len(particle_ind)} particles")
         if particle_ind_orig is not None:
             utils.save_pkl(
                 particle_ind_orig[particle_ind],
-                os.path.join(subdir, f"state_{i}_particle_ind.pkl"),
+                os.path.join(subdir, f"state_{cluster_i}_particle_ind.pkl"),
             )
         else:
             utils.save_pkl(
-                particle_ind, os.path.join(subdir, f"state_{i}_particle_ind.pkl")
+                particle_ind,
+                os.path.join(subdir, f"state_{cluster_i}_particle_ind.pkl"),
             )
 
     # plot clustering results

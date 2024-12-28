@@ -112,6 +112,7 @@ def util_commands() -> None:
     _get_commands(
         cmd_dir=os.path.join(os.path.dirname(__file__), "commands_utils"),
         cmds=[
+            "analyze_convergence",
             "add_psize",
             "clean",
             "concat_pkls",

@@ -1,9 +1,12 @@
 """
 Visualize convergence and training dynamics
-
 (BETA -- contributed by Barrett Powell bmp@mit.edu)
-"""
 
+Example usage
+-------------
+$ cryodrgn_utils analyze_convergence 003_train-vae_out/ 25
+
+"""
 import argparse
 import itertools
 import multiprocessing
@@ -34,7 +37,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-def add_args(parser):
+def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "workdir", type=os.path.abspath, help="Directory with cryoDRGN results"
     )
@@ -183,8 +186,6 @@ def add_args(parser):
         default=10,
         help="Number of voxels over which to apply a soft cosine falling edge from dilated mask boundary",
     )
-
-    return parser
 
 
 def plot_loss(logfile, outdir, E):
@@ -1039,7 +1040,7 @@ def calculate_FSCs(outdir, epochs, labels, img_size, chimerax_colors):
     )
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
     t1 = dt.now()
 
     # Configure paths
@@ -1238,13 +1239,3 @@ def main(args):
     calculate_FSCs(outdir, epochs, labels, img_size, chimerax_colors)
 
     logger.info(f"Finished in {dt.now() - t1}")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description=__doc__,
-        epilog="Example usage: $ python analyze_convergence.py [workdir] [epoch]",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    add_args(parser)
-    main(parser.parse_args())

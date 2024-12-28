@@ -7,23 +7,20 @@ Example usage
 $ cryodrgn_utils analyze_convergence 003_train-vae_out/ 25
 
 """
-import argparse
-import itertools
-import multiprocessing
 import os
-import os.path
-import random
 import sys
+import argparse
+import multiprocessing
+import random
+import itertools
 from datetime import datetime as dt
 from string import ascii_uppercase
 import logging
-import numpy as np
-import umap
 from matplotlib import pyplot as plt
-from scipy import ndimage, stats
-from scipy.ndimage import gaussian_filter, maximum_filter
-from scipy.ndimage import binary_dilation, distance_transform_edt
-from scipy.spatial import distance_matrix
+import numpy as np
+import torch
+from scipy import stats, ndimage, spatial
+import umap
 
 from cryodrgn import analysis, fft, utils
 from cryodrgn.source import ImageSource, write_mrc
@@ -188,6 +185,17 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def find_configs(workdir: str) -> str:
+    base_fl = os.path.join(workdir, "config")
+
+    if os.path.exists(base_fl + ".yaml"):
+        configs = base_fl + ".yaml"
+    else:
+        configs = base_fl + ".pkl"
+
+    return configs
+
+
 def plot_loss(logfile, outdir, E):
     """
     Plots the total loss (reconstruction + regularization) per epoch
@@ -266,21 +274,25 @@ def encoder_latent_umaps(
     ind_subset = sorted(
         random.sample(range(0, n_particles_total), k=n_particles_subset)
     )
-    utils.save_pkl(ind_subset, outdir + "/ind_subset.pkl")
+    utils.save_pkl(ind_subset, os.path.join(outdir, "ind_subset.pkl"))
 
     epoch = None
     for epoch in epochs:
         logger.info(
             f"Now calculating UMAP for epoch {epoch} with random_state {random_state}"
         )
-        z = utils.load_pkl(workdir + f"/z.{epoch}.pkl")[ind_subset, :]
+        z = utils.load_pkl(os.path.join(workdir, f"z.{epoch}.pkl"))[ind_subset, :]
+
         if use_umap_gpu:  # using cuML library GPU-accelerated UMAP
             reducer = cuUMAP(random_state=random_state, n_epochs=n_epochs_umap)
             umap_embedding = reducer.fit_transform(z)
         else:  # using umap-learn library CPU-bound UMAP
             reducer = umap.UMAP(random_state=random_state)
             umap_embedding = reducer.fit_transform(z)
-        utils.save_pkl(umap_embedding, f"{outdir}/umaps/umap.{epoch}.pkl")
+
+        utils.save_pkl(
+            umap_embedding, os.path.join(outdir, "umaps", f"umap.{epoch}.pkl")
+        )
 
     n_cols = int(np.ceil(len(epochs) ** 0.5))
     n_rows = int(np.ceil(len(epochs) / n_cols))
@@ -292,8 +304,9 @@ def encoder_latent_umaps(
 
     toplot = None
     for i, ax in enumerate(axes.flat):
+        umap_fl = os.path.join(outdir, "umaps", f"umap.{epochs[i]}.pkl")
         try:
-            umap_embedding = utils.load_pkl(f"{outdir}/umaps/umap.{epochs[i]}.pkl")
+            umap_embedding = utils.load_pkl(umap_fl)
             toplot = ax.hexbin(
                 umap_embedding[:, 0], umap_embedding[:, 1], bins="log", mincnt=1
             )
@@ -301,7 +314,7 @@ def encoder_latent_umaps(
         except IndexError:
             pass
         except FileNotFoundError:
-            logger.info(f"Could not find file {outdir}/umaps/umap.{epoch}.pkl")
+            logger.info(f"Could not find file `{umap_fl}`!")
 
     if len(axes.shape) == 1:
         axes[0].set_ylabel("UMAP2")
@@ -320,14 +333,10 @@ def encoder_latent_umaps(
 
     plt.subplots_adjust(wspace=0.1)
     plt.subplots_adjust(hspace=0.3)
-    plt.savefig(
-        f"{outdir}/plots/01_encoder_umaps.png",
-        dpi=300,
-        format="png",
-        transparent=True,
-        bbox_inches="tight",
-    )
-    logger.info(f"Saved UMAP distribution plot to {outdir}/plots/01_encoder_umaps.png")
+    plot_fl = os.path.join(outdir, "plots", "01_encoder_umaps.png")
+    plt.savefig(plot_fl, dpi=300, format="png", transparent=True, bbox_inches="tight")
+
+    logger.info(f"Saved UMAP distribution plot to {plot_fl}")
 
 
 def encoder_latent_shifts(workdir: str, outdir: str, E: int):
@@ -348,15 +357,15 @@ def encoder_latent_shifts(workdir: str, outdir: str, E: int):
     metrics = ["dot product", "magnitude", "cosine distance"]
 
     vector_metrics = np.zeros((E - 1, len(metrics)))
-    z1 = utils.load_pkl(f"{workdir}/z.0.pkl")
-    z2 = utils.load_pkl(f"{workdir}/z.1.pkl")
-    z3 = utils.load_pkl(f"{workdir}/z.2.pkl")
+    z1 = utils.load_pkl(os.path.join(workdir, "z.0.pkl"))
+    z2 = utils.load_pkl(os.path.join(workdir, "z.1.pkl"))
+    z3 = utils.load_pkl(os.path.join(workdir, "z.2.pkl"))
     for i in np.arange(E - 1):
         logger.info(f"Calculating vector metrics for epochs {i}-{i+1} and {i+1}-{i+2}")
         if i > 0:
             z1 = z2.copy()
             z2 = z3.copy()
-            z3 = utils.load_pkl(workdir + f"/z.{i+2}.pkl")
+            z3 = utils.load_pkl(os.path.join(workdir, f"z.{i+2}.pkl"))
 
         diff21 = z2 - z1
         diff32 = z3 - z2
@@ -374,25 +383,18 @@ def encoder_latent_shifts(workdir: str, outdir: str, E: int):
             1 - uv / (np.sqrt(uu) * np.sqrt(vv))
         )  # median vector cosine distance
 
-    utils.save_pkl(vector_metrics, f"{outdir}/vector_metrics.pkl")
-
+    utils.save_pkl(vector_metrics, os.path.join(outdir, "vector_metrics.pkl"))
     fig, axes = plt.subplots(1, len(metrics), figsize=(10, 3))
     fig.tight_layout()
     for i, ax in enumerate(axes.flat):
         ax.plot(np.arange(2, E + 1), vector_metrics[:, i])
         ax.set_xlabel("epoch")
         ax.set_ylabel(metrics[i])
-    plt.savefig(
-        f"{outdir}/plots/02_encoder_latent_vector_shifts.png",
-        dpi=300,
-        format="png",
-        transparent=True,
-        bbox_inches="tight",
-    )
 
-    logger.info(
-        f"Saved latent vector shifts plots to {outdir}/plots/02_encoder_latent_vector_shifts.png"
-    )
+    plot_fl = os.path.join(outdir, "plots", "02_encoder_latent_vector_shifts.png")
+    plt.savefig(plot_fl, dpi=300, format="png", transparent=True, bbox_inches="tight")
+
+    logger.info(f"Saved latent vector shifts plots to {plot_fl}")
 
 
 def sketch_via_umap_local_maxima(
@@ -442,7 +444,7 @@ def sketch_via_umap_local_maxima(
         footprint = np.ones((size, size))
         footprint[1, 1] = 0
 
-        filtered = maximum_filter(data, footprint=footprint, mode="mirror")
+        filtered = ndimage.maximum_filter(data, footprint=footprint, mode="mirror")
         mask_local_maxima = data > filtered
         coords = np.asarray(np.where(mask_local_maxima)).T
         values = data[mask_local_maxima]
@@ -472,7 +474,7 @@ def sketch_via_umap_local_maxima(
         * coords
         * values
         """
-        dist_matrix = distance_matrix(coords, coords)
+        dist_matrix = spatial.distance_matrix(coords, coords)
         dist_matrix[
             dist_matrix > radius
         ] = 0  # ignore points separated by > @radius in bin-space
@@ -512,7 +514,7 @@ def sketch_via_umap_local_maxima(
         return umap_median_peaks
 
     logger.info("Using UMAP local maxima sketching")
-    umap = utils.load_pkl(outdir + f"/umaps/umap.{E}.pkl")
+    umap = utils.load_pkl(os.path.join(outdir, "umaps", f"umap.{E}.pkl"))
     n_particles_sketch = umap.shape[0]
 
     # create 2d histogram of umap distribution
@@ -525,7 +527,7 @@ def sketch_via_umap_local_maxima(
     # optionally smooth the histogram to reduce the number of peaks with sigma=width of two bins
     hist_smooth = None
     if smooth:
-        hist_smooth = gaussian_filter(
+        hist_smooth = ndimage.gaussian_filter(
             hist, smooth_width * np.abs(xedges[1] - xedges[0])
         )
         coords, values = local_maxima_2D(hist_smooth)
@@ -612,16 +614,9 @@ def sketch_via_umap_local_maxima(
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
 
-    plt.savefig(
-        f"{outdir}/plots/03_decoder_UMAP-sketching.png",
-        dpi=300,
-        format="png",
-        transparent=True,
-        bbox_inches="tight",
-    )
-    logger.info(
-        f"Saved latent sketching plot to {outdir}/plots/03_decoder_UMAP-sketching.png"
-    )
+    plot_fl = os.path.join(outdir, "plots", "03_decoder_UMAP-sketching.png")
+    plt.savefig(plot_fl, dpi=300, format="png", transparent=True, bbox_inches="tight")
+    logger.info(f"Saved latent sketching plot to {plot_fl}")
 
     return binned_ptcls_mask, labels
 
@@ -655,13 +650,17 @@ def follow_candidate_particles(
     fig.tight_layout()
 
     toplot = None
-    ind_subset = utils.load_pkl(f"{outdir}/ind_subset.pkl")
+    ind_subset = utils.load_pkl(os.path.join(outdir, "ind_subset.pkl"))
     for i, ax in enumerate(axes.flat):
         try:
-            umap = utils.load_pkl(f"{outdir}/umaps/umap.{epochs[i]}.pkl")
-            z = utils.load_pkl(f"{workdir}/z.{epochs[i]}.pkl")[ind_subset, :]
-            z_maxima_median = np.zeros((len(labels), n_dim))
+            umap = utils.load_pkl(
+                os.path.join(outdir, "umaps", f"umap.{epochs[i]}.pkl")
+            )
+            z = utils.load_pkl(os.path.join(workdir, f"z.{epochs[i]}.pkl"))[
+                ind_subset, :
+            ]
 
+            z_maxima_median = np.zeros((len(labels), n_dim))
             for k in range(len(labels)):
                 z_maxima_median[k, :] = np.median(
                     z[binned_ptcls_mask[:, k]], axis=0
@@ -678,9 +677,10 @@ def follow_candidate_particles(
             ]  # find on-data UMAP embedding of each median latent encoding
 
             # Write out the on-data median latent values of each labeled set of particles for each epoch in epochs
-            with open(
-                f"{outdir}/repr_particles/latent_representative.{epochs[i]}.txt", "w"
-            ) as f:
+            repr_fl = os.path.join(
+                outdir, "repr_particles", f"latent_representative.{epochs[i]}.txt"
+            )
+            with open(repr_fl, "w") as f:
                 np.savetxt(
                     f,
                     z_maxima_median_ondata,
@@ -691,8 +691,8 @@ def follow_candidate_particles(
                     comments="# ",
                 )
             logger.info(
-                f"Saved representative latent encodings for epoch {epochs[i]} to "
-                f"{outdir}/repr_particles/latent_representative.{epochs[i]}.txt"
+                f"Saved representative latent encodings for epoch {epochs[i]} "
+                f"to {repr_fl}"
             )
 
             for k in range(len(labels)):
@@ -712,6 +712,7 @@ def follow_candidate_particles(
                 alpha=1,
             )
             ax.set_title(f"epoch {epochs[i]}")
+
         except IndexError:
             pass
 
@@ -732,17 +733,12 @@ def follow_candidate_particles(
 
     plt.subplots_adjust(wspace=0.1)
     plt.subplots_adjust(hspace=0.25)
+    plt_fl = os.path.join(outdir, "plots", "04_decoder_maxima-sketch-consistency.png")
+    plt.savefig(plt_fl, dpi=300, format="png", transparent=True, bbox_inches="tight")
 
-    plt.savefig(
-        f"{outdir}/plots/04_decoder_maxima-sketch-consistency.png",
-        dpi=300,
-        format="png",
-        transparent=True,
-        bbox_inches="tight",
-    )
     logger.info(
-        f"Saved plot tracking representative latent encodings through epochs {epochs} to "
-        f"{outdir}/plots/04_decoder_maxima-sketch-consistency.png"
+        f"Saved plot tracking representative latent encodings through "
+        f"epochs {epochs} to {plt_fl}"
     )
 
 
@@ -751,20 +747,17 @@ def generate_volumes(workdir, outdir, epochs, Apix, flip, invert, downsample, de
     Helper function to call cryodrgn.analysis.gen_volumes on all representative latent values in selected epochs
     """
     for epoch in epochs:
-        weights = f"{workdir}/weights.{epoch}.pkl"
-        config = (
-            f"{workdir}/config.yaml"
-            if os.path.exists(f"{workdir}/config.yaml")
-            else f"{workdir}/config.pkl"
+        weights = os.path.join(workdir, f"weights.{epoch}.pkl")
+        config = find_configs(workdir)
+        zfile = os.path.join(
+            outdir, "repr_particles", f"latent_representative.{epoch}.txt"
         )
-        zfile = f"{outdir}/repr_particles/latent_representative.{epoch}.txt"
-        volsdir = f"{outdir}/vols.{epoch}"
 
         analysis.gen_volumes(
             weights,
             config,
             zfile,
-            volsdir,
+            os.path.join(outdir, f"vols.{epoch}"),
             Apix=Apix,
             flip=flip,
             invert=invert,
@@ -787,13 +780,15 @@ def mask_volume(volpath, outpath, Apix, thresh=None, dilate=3, dist=10):
 
     Outputs
        volume.masked.mrc written to outdir
+
     """
     vol = np.array(ImageSource.from_file(volpath).images())
     assert isinstance(vol, np.ndarray)
+
     thresh = np.percentile(vol, 99.99) / 2 if thresh is None else thresh
     x = (vol >= thresh).astype(bool)
-    x = binary_dilation(x, iterations=dilate)
-    y = distance_transform_edt(~x.astype(bool))
+    x = ndimage.binary_dilation(x, iterations=dilate)
+    y = ndimage.distance_transform_edt(~x.astype(bool))
     y[y > dist] = dist
     z = np.cos(np.pi * y / dist / 2)
 
@@ -801,8 +796,8 @@ def mask_volume(volpath, outpath, Apix, thresh=None, dilate=3, dist=10):
     assert np.all(z >= 0)
     assert np.all(z <= 1)
 
-    # used to write out mask separately from masked volume, now apply and save the masked vol to minimize future I/O
-    # MRCFile.write(outpath, z.astype(np.float32))
+    # used to write out mask separately from masked volume, now apply and save the
+    # masked vol to minimize future I/O; MRCFile.write(outpath, z.astype(np.float32))
     vol *= z
     write_mrc(outpath, vol.astype(np.float32), Apix=Apix)
 
@@ -823,17 +818,18 @@ def mask_volumes(
 
     Outputs:
         volume.masked.mrc for each volume
-    """
 
-    volpaths = []
-    outpaths = []
+    """
+    volpaths = list()
+    outpaths = list()
+
     for epoch in epochs:
         logger.info(f"Generating and applying masks for epoch {epoch}")
-        volsdir = outdir + f"/vols.{epoch}"
-        for cluster in range(len(labels)):
-            volpath = f"{volsdir}/vol_{cluster:03d}.mrc"
-            outpath = f"{volsdir}/vol_{cluster:03d}.masked.mrc"
+        volsdir = os.path.join(outdir, f"vols.{epoch}")
 
+        for cluster in range(len(labels)):
+            volpath = os.path.join(volsdir, f"vol_{cluster:03d}.mrc")
+            outpath = os.path.join(volsdir, f"vol_{cluster:03d}.masked.mrc")
             volpaths.append(volpath)
             outpaths.append(outpath)
 
@@ -845,6 +841,7 @@ def mask_volumes(
         itertools.repeat(dilate),
         itertools.repeat(dist),
     )
+
     with multiprocessing.Pool(max_threads) as p:
         p.starmap(mask_volume, args, 4)
 
@@ -864,53 +861,48 @@ def calculate_CCs(outdir, epochs, labels, chimerax_colors):
         plot.png of sequential volume pairs map-map CC for each class in labels across training epochs
     """
 
-    def calc_cc(vol1, vol2):
+    def calc_cc(volume1: torch.Tensor, volume2: torch.Tensor) -> float:
         """
         Helper function to calculate the zero-mean correlation coefficient as defined in eq 2 in
         https://journals.iucr.org/d/issues/2018/09/00/kw5139/index.html
         vol1 and vol2 should be maps of the same box size, structured as numpy arrays with ndim=3, i.e. by loading with
         cryodrgn.source.ImageSource
+
         """
-        zmean1 = vol1 - np.mean(vol1)
-        zmean2 = vol2 - np.mean(vol2)
-        cc = (
-            (np.sum(zmean1**2) ** -0.5)
-            * (np.sum(zmean2**2) ** -0.5)
-            * np.sum(zmean1 * zmean2)
-        )
-        return cc
+        zmean1, zmean2 = volume1 - volume1.mean(), volume2 - volume2.mean()
+        cc = (zmean1.pow(2).sum() ** -0.5) * (zmean2.pow(2).sum() ** -0.5)
+        cc *= (zmean1 * zmean2).sum()
+
+        return cc.item()
 
     cc_masked = np.zeros((len(labels), len(epochs) - 1))
-
     for i in range(len(epochs) - 1):
         for cluster in np.arange(len(labels)):
             vol1 = ImageSource.from_file(
-                f"{outdir}/vols.{epochs[i]}/vol_{cluster:03d}.masked.mrc"
+                os.path.join(
+                    outdir, f"vols.{epochs[i]}", f"vol_{cluster:03d}.masked.mrc"
+                )
             ).images()
             vol2 = ImageSource.from_file(
-                f"{outdir}/vols.{epochs[i+1]}/vol_{cluster:03d}.masked.mrc"
+                os.path.join(
+                    outdir, f"vols.{epochs[i+1]}", f"vol_{cluster:03d}.masked.mrc"
+                )
             ).images()
 
             cc_masked[cluster, i] = calc_cc(vol1, vol2)
 
-    utils.save_pkl(cc_masked, f"{outdir}/cc_masked.pkl")
-
+    utils.save_pkl(cc_masked, os.path.join(outdir, "cc_masked.pkl"))
     fig, ax = plt.subplots(1, 1)
-
     ax.set_xlabel("epoch")
     ax.set_ylabel("masked CC")
     for i in range(len(labels)):
         ax.plot(epochs[1:], cc_masked[i, :], c=chimerax_colors[i] * 0.75, linewidth=2.5)
     ax.legend(labels, ncol=3, fontsize="x-small")
 
-    plt.savefig(
-        f"{outdir}/plots/05_decoder_CC.png",
-        dpi=300,
-        format="png",
-        transparent=True,
-        bbox_inches="tight",
-    )
-    logger.info(f"Saved map-map correlation plot to {outdir}/plots/05_decoder_CC.png")
+    plt_fl = os.path.join(outdir, "plots", "05_decoder_CC.png")
+    plt.savefig(plt_fl, dpi=300, format="png", transparent=True, bbox_inches="tight")
+
+    logger.info(f"Saved map-map correlation plot to {plt_fl}")
 
 
 def calculate_FSCs(outdir, epochs, labels, img_size, chimerax_colors):
@@ -974,13 +966,16 @@ def calculate_FSCs(outdir, epochs, labels, img_size, chimerax_colors):
         logger.info(f"Calculating all FSCs for cluster {cluster}")
 
         for i in range(len(epochs) - 1):
-            vol1_path = f"{outdir}/vols.{epochs[i]}/vol_{cluster:03d}.masked.mrc"
-            vol2_path = f"{outdir}/vols.{epochs[i+1]}/vol_{cluster:03d}.masked.mrc"
-
+            vol1_path = os.path.join(
+                outdir, f"vols.{epochs[i]}", f"vol_{cluster:03d}.masked.mrc"
+            )
+            vol2_path = os.path.join(
+                outdir, f"vols.{epochs[i+1]}", f"vol_{cluster:03d}.masked.mrc"
+            )
             x, fsc_masked[cluster, i, :] = calc_fsc(vol1_path, vol2_path)
 
-    utils.save_pkl(fsc_masked, f"{outdir}/fsc_masked.pkl")
-    utils.save_pkl(x, f"{outdir}/fsc_xaxis.pkl")
+    utils.save_pkl(fsc_masked, os.path.join(outdir, "fsc_masked.pkl"))
+    utils.save_pkl(x, os.path.join(outdir, "fsc_xaxis.pkl"))
 
     # plot all fscs
     n_cols = int(np.ceil(len(labels) ** 0.5))
@@ -1008,18 +1003,13 @@ def calculate_FSCs(outdir, epochs, labels, img_size, chimerax_colors):
     axes[-1, 0].legend(legend, loc="lower left", ncol=2, fontsize=6.5)
     plt.subplots_adjust(hspace=0.3)
     plt.subplots_adjust(wspace=0.1)
-    plt.savefig(
-        f"{outdir}/plots/06_decoder_FSC.png",
-        dpi=300,
-        format="png",
-        transparent=True,
-        bbox_inches="tight",
-    )
-    logger.info(f"Saved map-map FSC plot to {outdir}/plots/06_decoder_FSC.png")
+
+    plt_fl = os.path.join(outdir, "plots", "06_decoder_FSC.png")
+    plt.savefig(plt_fl, dpi=300, format="png", transparent=True, bbox_inches="tight")
+    logger.info(f"Saved map-map FSC plot to {plt_fl}")
 
     # plot all FSCs at Nyquist only
     fig, ax = plt.subplots(1, 1)
-
     ax.set_xlabel("epoch")
     ax.set_ylabel("masked FSC at nyquist")
     for i in range(len(labels)):
@@ -1028,16 +1018,15 @@ def calculate_FSCs(outdir, epochs, labels, img_size, chimerax_colors):
         )
     ax.legend(labels, ncol=3, fontsize="x-small")
 
+    plt_fl = os.path.join(outdir, "plots", "07_decoder_FSC-nyquist.png")
     plt.savefig(
-        f"{outdir}/plots/07_decoder_FSC-nyquist.png",
+        plt_fl,
         dpi=300,
         format="png",
         transparent=True,
         bbox_inches="tight",
     )
-    logger.info(
-        f"Saved map-map FSC (Nyquist) plot to {outdir}/plots/07_decoder_FSC-nyquist.png"
-    )
+    logger.info(f"Saved map-map FSC (Nyquist) plot to {plt_fl}")
 
 
 def main(args: argparse.Namespace) -> None:
@@ -1049,40 +1038,39 @@ def main(args: argparse.Namespace) -> None:
     epochs = np.arange(4, E + 1, sampling)
     if epochs[-1] != E:
         epochs = np.append(epochs, E)
+
     workdir = args.workdir
-    config = (
-        f"{workdir}/config.yaml"
-        if os.path.exists(f"{workdir}/config.yaml")
-        else f"{workdir}/config.pkl"
-    )
-    logfile = f"{workdir}/run.log"
+    config = find_configs(workdir)
+    logfile = os.path.join(workdir, "run.log")
 
     # assert all required files are locatable
-    for i in range(E):
-        assert os.path.exists(
-            f"{workdir}/z.{i}.pkl"
-        ), f"Could not find training file {workdir}/z.{i}.pkl"
-    for epoch in epochs:
-        assert os.path.exists(
-            f"{workdir}/weights.{epoch}.pkl"
-        ), f"Could not find training file {workdir}/weights.{epoch}.pkl"
     assert os.path.exists(config), f"Could not find training file {config}"
     assert os.path.exists(logfile), f"Could not find training file {logfile}"
+    for i in range(E):
+        z_fl = os.path.join(workdir, f"z.{i}.pkl")
+        assert os.path.exists(
+            z_fl
+        ), f"Could not find training latent embeddings file {z_fl}!"
+    for epoch in epochs:
+        weights_fl = os.path.join(workdir, f"weights.{epoch}.pkl")
+        assert os.path.exists(
+            weights_fl
+        ), f"Could not find training weights file {weights_fl}!"
 
     # Configure output paths
-    if E == -1:
-        outdir = f"{workdir}/convergence"
     if args.outdir:
         outdir = args.outdir
+    elif E == -1:
+        outdir = os.path.join(workdir, "convergence")
     else:
-        outdir = f"{workdir}/convergence.{E}"
+        outdir = os.path.join(workdir, f"convergence.{E}")
+
     os.makedirs(outdir, exist_ok=True)
-    os.makedirs(f"{outdir}/plots", exist_ok=True)
-    os.makedirs(f"{outdir}/umaps", exist_ok=True)
-    os.makedirs(f"{outdir}/repr_particles", exist_ok=True)
+    os.makedirs(os.path.join(outdir, "plots"), exist_ok=True)
+    os.makedirs(os.path.join(outdir, "umaps"), exist_ok=True)
+    os.makedirs(os.path.join(outdir, "repr_particles"), exist_ok=True)
 
-    logger.addHandler(logging.FileHandler(f"{outdir}/convergence.log"))
-
+    logger.addHandler(logging.FileHandler(os.path.join(outdir, "convergence.log")))
     logger.info(args)
     if len(epochs) < 3:
         logger.info(
@@ -1098,7 +1086,7 @@ def main(args: argparse.Namespace) -> None:
     logger.info(f"Saving all results to {outdir}")
 
     # Get total number of particles, latent space dimensionality, input image size
-    n_particles_total, n_dim = utils.load_pkl(f"{workdir}/z.{E}.pkl").shape
+    n_particles_total, n_dim = utils.load_pkl(os.path.join(workdir, f"z.{E}.pkl")).shape
     cfg = cryodrgn.config.load(config)
     img_size = cfg["lattice_args"]["D"] - 1
 

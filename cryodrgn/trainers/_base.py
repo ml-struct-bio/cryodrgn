@@ -5,9 +5,11 @@ import argparse
 import shutil
 import sys
 import pickle
+import difflib
+import inspect
 from collections import OrderedDict
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field, fields, MISSING, asdict
+from dataclasses import dataclass, field, fields, Field, MISSING, asdict
 from typing import Any, ClassVar
 from typing_extensions import Self
 import yaml
@@ -110,6 +112,67 @@ class BaseConfigurations(ABC):
         with open(fl, "w") as f:
             yaml.dump(asdict(self), f, default_flow_style=False, sort_keys=False)
 
+    @classmethod
+    def fields(cls) -> list[Field]:
+        """Returning all fields defined for this class without needing an instance.
+
+        The default Python dataclass `fields` method does not have a counterpart for
+        classes, which we need in cases like `parse_cfg_keys()` which we want to call
+        without using an instance of the data class!
+
+        """
+        members = inspect.getmembers(cls)
+        return list(list(filter(
+            lambda x: x[0] == '__dataclass_fields__', members))[0][1].values())
+
+    @classmethod
+    def parse_cfg_keys(cls, cfg_keys: list[str]) -> dict[str, Any]:
+        """Retrieve the parameter values given in a list of --cfgs command line entries.
+
+        This method parses the parameters given by a user via a `--cfgs` flag defined
+        for commands such as `drgnai setup` to provide an arbitrary set of
+        configuration parameters through the command line interface.
+
+        """
+        cfgs = dict()
+
+        for cfg_str in cfg_keys:
+            if cfg_str.count("=") != 1:
+                raise ValueError("--cfgs entries must have exactly one equals sign "
+                                 "and be in the form 'CFG_KEY=CFG_VAL'!")
+            cfg_key, cfg_val = cfg_str.split('=')
+
+            if cfg_val is None or cfg_val == 'None':
+                cfgs[cfg_key] = None
+
+            else:
+                for fld in cls.fields():
+                    if cfg_key == fld.name:
+                        if fld.type is str:
+                            cfgs[cfg_key] = str(cfg_val)
+                        else:
+                            cfgs[cfg_key] = fld.type(eval(cfg_val))
+
+                        # accounting for parameters like `ind` which can be paths
+                        # to files as well as integers
+                        if isinstance(cfgs[cfg_key], str) and cfgs[cfg_key].isnumeric():
+                            cfgs[cfg_key] = int(cfgs[cfg_key])
+
+                        break
+
+                else:
+                    close_keys = difflib.get_close_matches(
+                        cfg_key, [fld.name for fld in cls.fields()])
+
+                    if close_keys:
+                        close_str = f"\nDid you mean one of:\n{', '.join(close_keys)}"
+                    else:
+                        close_str = ""
+
+                    raise ValueError(f"--cfgs parameter `{cfg_key}` is not a "
+                                     f"valid configuration parameter!{close_str}")
+
+        return cfgs
 
 class BaseTrainer(ABC):
     """Abstract base class for training engines used by cryoDRGN.
@@ -308,19 +371,6 @@ class ModelTrainer(BaseTrainer, ABC):
     @abstractmethod
     def make_volume_model(self) -> nn.Module:
         pass
-
-    # TODO: more sophisticated management of existing output folders
-    def create_outdir(self) -> None:
-        if os.path.exists(self.outdir):
-            self.logger.warning("Output folder already exists, renaming the old one.")
-            newdir = self.outdir + "_old"
-
-            if os.path.exists(newdir):
-                self.logger.warning("Must delete the previously saved old output.")
-                shutil.rmtree(newdir)
-
-            os.rename(self.outdir, newdir)
-        os.makedirs(self.outdir)
 
     def __init__(self, configs: dict[str, Any]) -> None:
         super().__init__(configs)
@@ -539,7 +589,9 @@ class ModelTrainer(BaseTrainer, ABC):
             self.do_pretrain = True
 
         self.n_particles_pretrain = (
-            self.configs.pretrain if self.configs.pretrain >= 0 else self.particle_count
+            self.configs.pretrain * self.particle_count
+            if self.configs.pretrain >= 0
+            else self.particle_count
         )
 
         if self.configs.poses:
@@ -592,7 +644,7 @@ class ModelTrainer(BaseTrainer, ABC):
         )
 
     def train(self) -> None:
-        self.create_outdir()
+        os.makedirs(self.outdir, exist_ok=True)
         self.save_configs()
         if self.configs.verbose:
             self.logger.setLevel(logging.DEBUG)
@@ -641,6 +693,9 @@ class ModelTrainer(BaseTrainer, ABC):
                 if self.epoch_images_seen % self.configs.log_interval < len_y:
                     self.print_batch_summary()
 
+                if self.epoch_images_seen > self.data.N:
+                    break
+
             self.end_epoch()
             self.print_epoch_summary()
 
@@ -649,7 +704,8 @@ class ModelTrainer(BaseTrainer, ABC):
 
             # image and pose summary
             if will_make_checkpoint:
-                self.save_epoch_data()
+                pass
+                #self.save_epoch_data()
 
             self.current_epoch += 1
 
@@ -686,28 +742,26 @@ class ModelTrainer(BaseTrainer, ABC):
         self.epoch_start_time = dt.now()
         self.total_images_seen = 0
 
-        while self.total_images_seen < self.n_particles_pretrain:
-            self.epoch_images_seen = 0
-            for batch in self.data_iterator:
-                len_y = len(batch["indices"])
-                self.epoch_images_seen += len_y
-                self.total_images_seen += len_y
+        self.epoch_images_seen = 0
+        for batch in self.data_iterator:
+            len_y = len(batch["indices"])
+            self.epoch_images_seen += len_y
+            self.total_images_seen += len_y
 
-                self.pretrain_batch(batch)
+            self.pretrain_batch(batch)
 
-                if self.configs.verbose_time:
-                    torch.cuda.synchronize()
+            if self.configs.verbose_time:
+                torch.cuda.synchronize()
 
-                if self.epoch_images_seen % self.configs.log_interval < len_y:
-                    self.logger.info(
-                        f"Pretrain Epoch "
-                        f"[{self.current_epoch}/{self.configs.num_epochs}]; "
-                        f"{self.total_images_seen} images seen; "
-                        f"avg. loss={self.accum_losses['total']:.4f}"
-                    )
-
-                if self.total_images_seen >= self.n_particles_pretrain:
-                    break
+            if self.epoch_images_seen % self.configs.log_interval < len_y:
+                self.logger.info(
+                    f"Pretrain Epoch "
+                    f"[{self.current_epoch}/{self.configs.num_epochs}]; "
+                    f"{self.total_images_seen} images seen; "
+                    # f"avg. loss={self.accum_losses['total']:.4f}"
+                )
+            if self.epoch_images_seen >= self.configs.pretrain:
+                break
 
         # reset model after pretraining
         if self.configs.reset_optim_after_pretrain:
@@ -719,7 +773,7 @@ class ModelTrainer(BaseTrainer, ABC):
             )
 
         self.print_epoch_summary()
-        self.save_epoch_data()
+        #self.save_epoch_data()
 
     def get_configs(self) -> dict[str, Any]:
         """Retrieves all given and inferred configurations for downstream use."""
@@ -774,17 +828,8 @@ class ModelTrainer(BaseTrainer, ABC):
             yaml.dump(configs, f, default_flow_style=False, sort_keys=False)
 
     @classmethod
-    def load_from_config(cls, config_file: str) -> Self:
+    def load_from_config(cls, configs: dict[str, Any]) -> Self:
         """Retrieves all configurations that have been saved to file."""
-        if os.path.exists(config_file):
-            with open(config_file, "r") as f:
-                configs = yaml.safe_load(f)
-        else:
-            raise FileNotFoundError(
-                f"Cannot find training configurations file `{config_file}` "
-                f"— has this model been trained yet?"
-            )
-
         cfg_dict = {
             sub_k: sub_v
             for k, v in configs.items()

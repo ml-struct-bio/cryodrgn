@@ -17,7 +17,7 @@ from cryodrgn.models.variational_autoencoder import unparallelize, HetOnlyVAE
 from cryodrgn.models.neural_nets import get_decoder
 from cryodrgn.models.pose_search import PoseSearch
 from cryodrgn.trainers._base import ModelTrainer, ModelConfigurations
-from cryodrgn.mrc import MRCFile
+from cryodrgn.mrcfile import write_mrc
 
 
 @dataclass
@@ -638,7 +638,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                 extent=self.lattice.extent,
                 norm=self.data.norm,
             )
-            MRCFile.write(out_mrc, vol)
+            write_mrc(out_mrc, vol)
 
         # save model weights
         torch.save(

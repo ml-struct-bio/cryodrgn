@@ -9,7 +9,6 @@ import seaborn as sns
 
 from cryodrgn import analysis
 from cryodrgn.models import lie_tools
-from cryodrgn import utils
 from cryodrgn import fft
 
 logger = logging.getLogger(__name__)
@@ -146,7 +145,7 @@ def make_img_summary(
     fig = plt.figure(dpi=96, figsize=(10, 4))
     # GT
     plt.subplot(121)
-    y_np = y.detach().numpy()
+    y_np = y.detach().cpu().numpy()
     plt.imshow(y_np, cmap="plasma")
     plt.colorbar()
     plt.axis("off")
@@ -156,7 +155,7 @@ def make_img_summary(
     plt.subplot(122)
     y_pred = torch.zeros_like(y).reshape(-1)
     y_pred[output_mask.binary_mask] = recon_y.to(dtype=y_pred.dtype)
-    y_pred = y_pred.detach()
+    y_pred = y_pred.detach().cpu()
     resolution = int(np.sqrt(y_pred.shape[0]))
     y_pred = y_pred.reshape(resolution, resolution)
     plt.imshow(y_pred.numpy(), cmap="plasma")
@@ -186,14 +185,14 @@ def make_img_summary(
     fig = plt.figure(dpi=96, figsize=(13, 4))
     # GT
     plt.subplot(131)
-    y_real_np = y_real.detach().numpy()
+    y_real_np = y_real.detach().cpu().numpy()
     plt.imshow(y_real_np)
     plt.colorbar()
     plt.axis("off")
     plt.title(f"Input Encoder ({y_real_np.shape[-2]}x{y_real_np.shape[-1]})")
 
     plt.subplot(132)
-    y_real_np = fft.ihtn_center(y.detach())
+    y_real_np = fft.ihtn_center(y.detach().cpu())
     plt.imshow(y_real_np)
     plt.colorbar()
     plt.axis("off")

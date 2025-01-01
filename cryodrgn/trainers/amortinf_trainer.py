@@ -20,7 +20,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 import cryodrgn.utils
 from cryodrgn import ctf
-from cryodrgn.mrc import MRCFile
+from cryodrgn.mrcfile import write_mrc
 from cryodrgn.dataset import make_dataloader
 from cryodrgn.trainers import summary
 from cryodrgn.models.losses import kl_divergence_conf, l1_regularizer, l2_frequency_bias
@@ -271,19 +271,13 @@ class AmortizedInferenceTrainer(ModelTrainer):
     def make_output_mask(self) -> CircularMask:
         if self.configs.output_mask == "circ":
             radius = self.configs.max_freq or self.lattice.D // 2
-            output_mask = CircularMask(
-                radius,
-                self.lattice.coords,
-                self.lattice.D,
-                self.lattice.extent,
-                self.lattice.ignore_DC,
-            )
+            output_mask = CircularMask(self.lattice, radius)
 
         elif self.configs.output_mask == "frequency_marching":
             output_mask = FrequencyMarchingMask(
                 self.lattice,
-                self.lattice.D // 2,
                 radius=self.configs.l_start_fm,
+                radius_max=self.lattice.D // 2,
                 add_one_every=self.configs.add_one_frequency_every,
             )
 
@@ -400,7 +394,9 @@ class AmortizedInferenceTrainer(ModelTrainer):
 
         # tensorboard writer
         self.summaries_dir = os.path.join(self.configs.outdir, "summaries")
-        self.writer = None
+        os.makedirs(self.summaries_dir, exist_ok=True)
+        self.writer = SummaryWriter(self.summaries_dir)
+        self.logger.info("Will write tensorboard summaries " f"in {self.summaries_dir}")
 
         # TODO: Replace with DistributedDataParallel
         if self.n_prcs > 1:
@@ -529,12 +525,6 @@ class AmortizedInferenceTrainer(ModelTrainer):
             if self.configs.z_dim > 0 and self.configs.variational_het
             else None
         )
-
-    def create_outdir(self) -> None:
-        super().create_outdir()
-        os.makedirs(self.summaries_dir, exist_ok=True)
-        self.writer = SummaryWriter(self.summaries_dir)
-        self.logger.info("Will write tensorboard summaries " f"in {self.summaries_dir}")
 
     def begin_epoch(self):
         self.configs: AmortizedInferenceConfigurations
@@ -1141,7 +1131,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
             zval = None
 
         vol = -1.0 * self.model.eval_volume(norm=self.data.norm, zval=zval)
-        MRCFile.write(out_mrc, np.array(vol, dtype=np.float32))
+        write_mrc(out_mrc, np.array(vol, dtype=np.float32))
 
     # TODO: weights -> model and reconstruct -> volume for output labels?
     def save_model(self):

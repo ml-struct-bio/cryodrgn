@@ -1,25 +1,21 @@
 """Utilities for creating experiment output folders and configuration files."""
 
 import os
-import shutil
 import argparse
 import yaml
 from typing import Optional, Union
+from cryodrgn.trainers._base import ModelConfigurations
 from cryodrgn.utils import load_yaml
 
 
 def add_args(parser):
-    parser.add_argument("outdir", help="experiment output location")
-
-    parser.add_argument(
-        "--remove-existing", action="store_true", help="remove existing output folder"
-    )
+    parser.add_argument("config_file", help="experiment config file (.yaml)")
 
     parser.add_argument(
         "--model",
         "-m",
-        default="v4",
-        choices=["v2", "v3", "v4"],
+        default="amort",
+        choices=["amort", "hps"],
         help="which generation of cryoDRGN learning models to apply",
     )
 
@@ -28,7 +24,7 @@ def add_args(parser):
         "--particles", help="path to the picked particles (.mrcs/.star /.txt)"
     )
     parser.add_argument("--ctf", help="path to the CTF parameters (.pkl)")
-    parser.add_argument("--pose", help="path to the poses (.pkl)")
+    parser.add_argument("--poses", help="path to the poses (.pkl)")
 
     parser.add_argument(
         "--capture-setup",
@@ -51,37 +47,27 @@ def add_args(parser):
         "ground truth poses by gradient descent or `fixed` to use ground "
         "truth poses",
     )
+
     parser.add_argument(
-        "--conf-estimation",
-        default="autodecoder",
-        choices=["encoder", "autodecoder", "refine"],
-        help="conformation estimation mode for heterogenous reconstruction: "
-        "`autodecoder` (default), "
-        "`encoder` or `refine` to refine conformations by gradient "
-        "descent (you must then define initial_conf)",
+        '--cfgs', '-c', nargs='+',
+        help="additional configuration parameters to pass to the model "
+             "in the form of 'CFG_KEY1=CFG_VAL1' 'CFG_KEY2=CFG_VAL2' ... "
     )
 
 
 class SetupHelper:
-    def __init__(
-        self, outdir: str, remove_existing: bool = False, update_existing: bool = True
-    ) -> None:
+    def __init__(self, config_file: str, update_existing: bool = True) -> None:
 
-        self.outdir = outdir
-        self.configs_file = os.path.join(outdir, "configs.yaml")
+        self.configs_file = config_file
         self.update_existing = update_existing
+        config_dir = os.path.dirname(self.configs_file)
+        if config_dir:
+            os.makedirs(config_dir, exist_ok=True)
 
-        if remove_existing:
-            shutil.rmtree(self.outdir)
-
-        os.makedirs(self.outdir, exist_ok=True)
         if os.path.exists(self.configs_file):
             self.old_configs = load_yaml(self.configs_file)
         else:
             self.old_configs = dict()
-
-        if "quick_config" not in self.old_configs:
-            self.old_configs["quick_config"] = dict()
 
     def create_configs(
         self,
@@ -89,17 +75,15 @@ class SetupHelper:
         dataset: Optional[str] = None,
         particles: Optional[str] = None,
         ctf: Optional[str] = None,
-        pose: Optional[str] = None,
-        capture_setup: Optional[str] = None,
-        reconstruction_type: Optional[str] = None,
-        pose_estimation: Optional[str] = None,
-        conf_estimation: Optional[str] = None,
+        poses: Optional[str] = None,
+        additional_cfgs: Optional[list[str]] = None,
+        **cfg_args,
     ) -> dict:
         configs: dict[str, Union[str, dict, None]] = self.old_configs.copy()
 
         if model:
             configs["model"] = model
-        else:
+        elif "model" not in configs:
             configs["model"] = "amort"
 
         if dataset:
@@ -108,29 +92,19 @@ class SetupHelper:
             configs["particles"] = particles
         if ctf:
             configs["ctf"] = ctf
-        if pose:
-            configs["pose"] = pose
+        if poses:
+            configs["poses"] = poses
+        if additional_cfgs:
+            configs = {**configs, **ModelConfigurations.parse_cfg_keys(additional_cfgs)}
 
-        if capture_setup:
-            configs["quick_config"]["capture_setup"] = capture_setup
-        if reconstruction_type:
-            configs["quick_config"]["reconstruction_type"] = reconstruction_type
-        if pose_estimation:
-            configs["quick_config"]["pose_estimation"] = pose_estimation
-        if conf_estimation:
-            configs["quick_config"]["conf_estimation"] = conf_estimation
+        configs = {**configs, **cfg_args}
 
         # turn anything that looks like a relative path into an absolute path
         for k in list(configs):
             if isinstance(configs[k], str) and not os.path.isabs(configs[k]):
-                new_path = os.path.abspath(os.path.join(self.outdir, configs[k]))
-
+                new_path = os.path.abspath(configs[k])
                 if os.path.exists(new_path):
                     configs[k] = new_path
-
-        if "reconstruction_type" in configs:
-            if configs["quick_config"]["reconstruction_type"] == "homo":
-                configs["quick_config"]["conf_estimation"] = None
 
         paths_file = os.environ.get("DRGNAI_DATASETS")
         if paths_file:
@@ -194,29 +168,14 @@ class SetupHelper:
             with open(self.configs_file, "w") as f:
                 yaml.dump(configs, f, sort_keys=False)
 
-        # parameters only the model code needs to use, not the user
-        configs["outdir"] = os.path.join(self.outdir, "out")
-
         return configs
 
 
 def main(args):
-    setup_helper = SetupHelper(args.outdir, args.remove_existing)
-
+    setup_helper = SetupHelper(args.config_file)
     setup_helper.create_configs(
-        args.model,
-        args.dataset,
-        args.particles,
-        args.ctf,
-        args.pose,
-        args.capture_setup,
-        args.reconstruction_type,
-        args.pose_estimation,
-        args.conf_estimation,
+        args.model, args.dataset, args.particles, args.ctf, args.poses, args.cfgs,
+        capture_setup=args.capture_setup,
+        reconstruction_type=args.reconstruction_type,
+        pose_estimation=args.pose_estimation,
     )
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    add_args(parser)
-    main(parser.parse_args())

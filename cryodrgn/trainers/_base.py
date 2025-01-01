@@ -42,10 +42,7 @@ class BaseConfigurations(ABC):
     # value defined here, note that children classes inherit these from parents
     verbose: int = 0
     seed: int = None
-    quick_config: OrderedDict = field(default_factory=OrderedDict)
     test_installation: bool = False
-
-    quick_configs: ClassVar[dict[str, dict[str, Any]]] = OrderedDict()
 
     def __post_init__(self) -> None:
         for this_field in fields(self):
@@ -73,29 +70,6 @@ class BaseConfigurations(ABC):
                 "Configuration `seed` must be given as an integer, "
                 f"given `{self.seed}` instead!"
             )
-
-        # process the quick_config parameter
-        for cfg_k, cfg_val in self.quick_config.items():
-            if cfg_k not in self.quick_configs:
-                raise ValueError(f"Unrecognized quick_config shortcut field `{cfg_k}`!")
-
-            if cfg_val not in self.quick_configs[cfg_k]:
-                raise ValueError(
-                    f"Unrecognized quick_config shortcut value `{cfg_val}` "
-                    f"for field `{cfg_k}`, "
-                    f"choose from: {','.join(list(self.quick_configs[cfg_k]))}"
-                )
-
-            for par_k, par_value in self.quick_configs[cfg_k][cfg_val].items():
-                if par_k not in self:
-                    raise ValueError(
-                        f"Unrecognized configuration parameter `{par_k}` found "
-                        f"in this classes quick_config entry `{cfg_k}:{cfg_val}`!"
-                    )
-
-                # parameters given elsewhere in configs have priority
-                if getattr(self, par_k) == getattr(type(self), par_k):
-                    setattr(self, par_k, par_value)
 
     def __iter__(self):
         return iter(asdict(self).items())
@@ -279,7 +253,7 @@ class ModelConfigurations(BaseConfigurations):
     # other learning parameters
     weight_decay: int = 0
     learning_rate: float = 1e-4
-    pose_learning_rate: bool = None
+    pose_learning_rate: float = 1e-4
     l_extent: float = 0.5
     l_start: int = 12
     l_end: int = 32
@@ -299,8 +273,23 @@ class ModelConfigurations(BaseConfigurations):
     pose_sgd_emb_type: str = "quat"
     verbose_time: bool = False
 
+    # quick configs
+    capture_setup: str = None
+    reconstruction_type: str = None
+    pose_estimation: str = None
+
     def __post_init__(self) -> None:
         super().__post_init__()
+
+        if self.reconstruction_type is not None:
+            if self.reconstruction_type == "homo":
+                self.z_dim = 0
+            elif self.reconstruction_type == "het":
+                self.z_dim = 8
+            else:
+                raise ValueError(
+                    f"Unreocgnized reconstruction type `{self.reconstruction_type}`!"
+                )
 
         if self.model not in {"hps", "amort"}:
             raise ValueError(
@@ -704,8 +693,7 @@ class ModelTrainer(BaseTrainer, ABC):
 
             # image and pose summary
             if will_make_checkpoint:
-                pass
-                #self.save_epoch_data()
+                self.save_epoch_data()
 
             self.current_epoch += 1
 

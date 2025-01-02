@@ -296,7 +296,8 @@ class PoseSearch:
 
         return quat, q_ind, rot
 
-    def keep_matrix(self, loss: torch.Tensor, B: int, max_poses: int) -> torch.Tensor:
+    @staticmethod
+    def keep_matrix(loss: torch.Tensor, B: int, max_poses: int) -> torch.Tensor:
         """
         Inputs:
             loss (B, T, Q): tensor of losses for each translation and rotation.
@@ -321,6 +322,7 @@ class PoseSearch:
         keep_idx[0] = torch.div(flat_idx, shape[2], rounding_mode="trunc")
         keep_idx[2] = flat_idx % shape[2]
         keep_idx[1] = best_trans_idx[keep_idx[0], keep_idx[2]]
+
         return keep_idx
 
     def getL(self, iter_: int) -> int:

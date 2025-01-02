@@ -1,4 +1,4 @@
-"""Keeping track of poses used under different embeddings in reconstruction models."""
+"""Keeping track of particle alignments used in reconstruction models."""
 
 import pickle
 from typing import Optional, Tuple, Union, List
@@ -6,8 +6,8 @@ import logging
 import numpy as np
 import torch
 import torch.nn as nn
-from torch import Tensor
-from cryodrgn import lie_tools, utils
+from cryodrgn.utils import load_pkl
+from cryodrgn.models import lie_tools
 
 logger = logging.getLogger(__name__)
 
@@ -76,16 +76,19 @@ class PoseTracker(nn.Module):
             D:                  Box size (pixels)
             emb_type:           SO(3) embedding type if refining poses
             ind:                Index array if poses are being filtered
+
         """
         # load pickle
-        if type(infile) is str:
+        if isinstance(infile, str):
             infile = [infile]
+
         assert len(infile) in (1, 2)
         if len(infile) == 2:  # rotation pickle, translation pickle
-            poses = (utils.load_pkl(infile[0]), utils.load_pkl(infile[1]))
+            poses = load_pkl(infile[0]), load_pkl(infile[1])
+
         else:  # rotation pickle or poses pickle
-            poses = utils.load_pkl(infile[0])
-            if type(poses) != tuple:
+            poses = load_pkl(infile[0])
+            if not isinstance(poses, tuple):
                 poses = (poses,)
 
         # rotations
@@ -129,6 +132,7 @@ class PoseTracker(nn.Module):
                     "translations must be in units of fraction of box!"
                 )
             trans *= D  # convert from fraction to pixels
+
         else:
             logger.warning("WARNING: No translations provided")
             trans = None
@@ -157,7 +161,9 @@ class PoseTracker(nn.Module):
 
         pickle.dump(poses, open(out_pkl, "wb"))
 
-    def get_pose(self, ind: Union[int, Tensor]) -> Tuple[Tensor, Optional[Tensor]]:
+    def get_pose(
+        self, ind: Union[int, torch.Tensor]
+    ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         if self.emb_type is None:
             rot = self.rots[ind]
             tran = self.trans[ind] if self.trans is not None else None

@@ -6,7 +6,6 @@ import json
 import torch
 import torch.nn.functional as F
 import numpy as np
-from cryodrgn import masking
 from cryodrgn.models import lie_tools, so3_grid, shift_grid
 from cryodrgn.models.pose_search import PoseSearch
 
@@ -62,11 +61,10 @@ def translate_images(images, shifts, l_current, lattice, freqs2d):
     shifts: [batch_size, T, 2] or [..., T, 2]
 
     output: [batch_size, T, n_pts] at resolution l_current
+
     """
     batch_size = images.shape[0]
-    mask = masking.get_circular_mask(radius=l_current, lattice=lattice).to(
-        images.device
-    )
+    mask = lattice.get_circular_mask(radius=l_current).to(images.device)
 
     return lattice.translate_ht(
         images.reshape(batch_size, -1)[:, mask], shifts, mask=mask, freqs2d=freqs2d
@@ -113,12 +111,11 @@ def rotate_images(images, angles, l_current, masked_coords, lattice):
     squeezed_images = images.reshape(bnq, yx)
     res = lattice.D
     output = torch.zeros((bnq, len(angles), yx), device=device)
-    mask = masking.get_circular_mask(radius=l_current, lattice=lattice).to(device)
+    mask = lattice.get_circular_mask(radius=l_current).to(device)
 
     rot_matrices = torch.stack([rot_2d(a, 2, images.device) for a in angles], dim=0)
     lattice_coords = masked_coords[:, :2]
     rot_coords = lattice_coords @ rot_matrices
-
     full_images = torch.zeros((bnq, res, res), device=device)
     full_images.reshape(bnq, res * res)[:, mask] = squeezed_images
 
@@ -254,9 +251,7 @@ def eval_grid(
     apply_tilting_scheme=False,
 ):
     batch_size = images.shape[0]
-    device = images.device
-
-    mask = masking.get_circular_mask(radius=l_current, lattice=lattice).to(device)
+    mask = lattice.get_circular_mask(radius=l_current).to(images.device)
     masked_coords = coords[mask]
     yx = masked_coords.size(-2)
 
@@ -465,7 +460,7 @@ def opt_trans(model, y_gt, y_pred, lattice, ps_params, current_radius):
     freqs2d = model.freqs2d
     base_shifts = model.base_shifts  # [T, 2]
     best_trans = torch.zeros(1).float().to(base_shifts.device)
-    mask_cpu = masking.get_circular_mask(radius=current_radius, lattice=lattice).cpu()
+    mask_cpu = lattice.get_circular_mask(radius=current_radius).cpu()
 
     best_trans_idx = None
     translated_images = None
@@ -474,7 +469,7 @@ def opt_trans(model, y_gt, y_pred, lattice, ps_params, current_radius):
             l_current = min(get_l(iter_, lattice.D, ps_params), current_radius)
         else:
             l_current = current_radius
-        mask = masking.get_circular_mask(radius=l_current, lattice=lattice).cpu()
+        mask = lattice.get_circular_mask(radius=l_current).cpu()
         trans = best_trans[:, None] + base_shifts / (2.0**iter_)  # [batch_size, T, 2]
         translated_images = translate_images(
             y_gt, trans, l_current, lattice, freqs2d

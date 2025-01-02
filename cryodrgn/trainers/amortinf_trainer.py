@@ -692,6 +692,9 @@ class AmortizedInferenceTrainer(ModelTrainer):
             self.optimizers[key].zero_grad()
 
         # forward pass
+        if self.pose_tracker is not None:
+            batch["rots"], batch["trans"] = self.pose_tracker.get_pose(batch["indices"])
+
         latent_variables_dict, y_pred, y_gt_processed = self.forward_pass(**batch)
 
         if self.n_prcs > 1:
@@ -772,9 +775,11 @@ class AmortizedInferenceTrainer(ModelTrainer):
             # keep track of predicted variables
             self.mask_particles_seen_at_last_epoch[batch["indices"]] = 1
             self.mask_tilts_seen_at_last_epoch[batch["tilt_indices"]] = 1
-            self.predicted_rots[batch["tilt_indices"]] = rot_pred.reshape(-1, 3, 3)
-            if not self.configs.no_trans:
+            if not self.configs.use_gt_poses:
+                self.predicted_rots[batch["tilt_indices"]] = rot_pred.reshape(-1, 3, 3)
+            if not self.configs.no_trans and not self.configs.use_gt_poses:
                 self.predicted_trans[batch["tilt_indices"]] = trans_pred.reshape(-1, 2)
+
             if self.configs.z_dim > 0:
                 self.predicted_conf[batch["indices"]] = conf_pred
                 if self.configs.variational_het:
@@ -814,7 +819,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
 
         return rot_pred, trans_pred, conf_pred, logvar_pred
 
-    def forward_pass(self, y, y_real, tilt_indices, indices):
+    def forward_pass(self, y, y_real, tilt_indices, indices, rots=None, trans=None):
         if self.configs.verbose_time:
             torch.cuda.synchronize()
 
@@ -884,6 +889,10 @@ class AmortizedInferenceTrainer(ModelTrainer):
             "tilt_indices": tilt_indices,
             "ctf": ctf_local,
         }
+        if rots is not None:
+            in_dict["R"] = rots
+        if trans is not None:
+            in_dict["t"] = trans
 
         if in_dict["tilt_indices"] is None:
             in_dict["tilt_indices"] = in_dict["indices"]
@@ -1042,23 +1051,30 @@ class AmortizedInferenceTrainer(ModelTrainer):
             rotmat_gt = rotmat_gt[mask_tilt_idx]
             trans_gt = trans_gt[mask_tilt_idx] if trans_gt is not None else None
 
-        predicted_rots = self.predicted_rots[mask_tilt_idx]
-        predicted_trans = (
-            self.predicted_trans[mask_tilt_idx]
-            if self.predicted_trans is not None
-            else None
-        )
+        if not self.configs.use_gt_poses:
+            predicted_rots = self.predicted_rots[mask_tilt_idx]
+        else:
+            predicted_rots = None
 
-        summary.make_pose_summary(
-            self.writer,
-            predicted_rots,
-            predicted_trans,
-            rotmat_gt,
-            trans_gt,
-            self.current_epoch,
-            shift=shift,
-        )
+        if not self.configs.use_gt_poses and not self.configs.no_trans:
+            predicted_trans = (
+                self.predicted_trans[mask_tilt_idx]
+                if self.predicted_trans is not None
+                else None
+            )
+        else:
+            predicted_trans = None
 
+        if self.predicted_rots is not None:
+            summary.make_pose_summary(
+                self.writer,
+                predicted_rots,
+                predicted_trans,
+                rotmat_gt,
+                trans_gt,
+                self.current_epoch,
+                shift=shift,
+            )
         self.save_latents()
         self.save_volume()
         self.save_model()

@@ -138,7 +138,6 @@ class ImageDataset(torch.utils.data.Dataset):
             "y": f_particles,  # batch_size(, n_tilts), D, D
             "y_real": r_particles,  # batch_size(, n_tilts), D - 1, D - 1
             "indices": index,  # batch_size
-            # 'R': rots  # batch_size(, n_tilts), 3, 3
         }
 
     def get_slice(
@@ -500,22 +499,19 @@ class _DataShufflerIterator:
         # print('ZZZ', particles.shape, tilt_indices.shape, particle_indices.shape)
 
         if False and self.dataset.subtomogram_averaging:
-            particles = particles.reshape(-1, self.ntilts, *particles.shape[-2:])
+            f_particles = particles.reshape(-1, self.ntilts, *particles.shape[-2:])
             tilt_indices = tilt_indices.reshape(-1, self.ntilts)
             r_particles = r_particles.reshape(-1, self.ntilts, *r_particles.shape[-2:])
-            # rots = rots.reshape(-1, self.ntilts, 3, 3)
         else:
             f_particles = f_particles.reshape(-1, *f_particles.shape[-2:])
             tilt_indices = tilt_indices.reshape(-1)
             r_particles = r_particles.reshape(-1, *r_particles.shape[-2:])
-            # rots = rots.reshape(-1, 3, 3)
 
         in_dict = {
             "y": f_particles,  # batch_size(, n_tilts), D, D
             "y_real": r_particles,  # batch_size(, n_tilts), D - 1, D - 1
             "indices": particle_indices,  # batch_size
             "tilt_indices": tilt_indices.reshape(-1),  # batch_size * n_tilts
-            # 'R': rots  # batch_size(, n_tilts), 3, 3
         }
 
         return in_dict

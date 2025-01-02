@@ -434,11 +434,13 @@ class DRGNai(nn.Module):
         zval=None,
         radius=None,
     ):
+        use_lattice = self.lattice if coords is None else None
         use_coords = coords or self.lattice.coords
         use_D = D or self.lattice.D
         use_extent = extent or self.lattice.extent
 
         return self.hypervolume.eval_volume(
+            lattice=use_lattice,
             coords=use_coords,
             resolution=use_D,
             extent=use_extent,
@@ -959,10 +961,11 @@ class HyperVolume(nn.Module):
 
     def eval_volume(
         self,
-        coords,
-        resolution,
-        extent,
-        norm,
+        lattice=None,
+        coords=None,
+        resolution=None,
+        extent=None,
+        norm=None,
         zval=None,
         radius=None,
         z_dim=None,
@@ -976,6 +979,8 @@ class HyperVolume(nn.Module):
         """
         z_dim = z_dim or self.z_dim
         radius_normalized = extent * 2 * radius / resolution
+        if coords is None:
+            coords = lattice.coords
 
         z = None
         if zval is not None:
@@ -996,10 +1001,7 @@ class HyperVolume(nn.Module):
                 slice_radius = int(
                     np.sqrt(max(radius_normalized**2 - dz**2, 0.0)) * resolution
                 )
-                slice_mask = masking.CircularMask(
-                    slice_radius, coords, resolution, extent
-                ).binary_mask
-
+                slice_mask = masking.CircularMask(lattice, slice_radius).binary_mask
                 y[0, ~slice_mask] = 0.0
                 y = y.view(resolution, resolution).detach().cpu().numpy()
                 volume[i] = y

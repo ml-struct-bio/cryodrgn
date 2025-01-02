@@ -19,7 +19,12 @@ logger = logging.getLogger(__name__)
 
 class Lattice:
     def __init__(
-        self, D: int, extent: float = 0.5, ignore_DC: bool = True, device=None
+        self,
+        D: int,
+        extent: float = 0.5,
+        ignore_DC: bool = True,
+        device=None,
+        verbose=0,
     ):
         if D % 2 != 1:
             raise ValueError(f"Lattice size {D=} is not odd!")
@@ -49,6 +54,7 @@ class Lattice:
 
         self.ignore_DC = ignore_DC
         self.device = device
+        self.verbose = verbose
 
     def get_downsample_coords(self, d: int) -> Tensor:
         assert d % 2 == 1
@@ -79,10 +85,11 @@ class Lattice:
                 raise ValueError(
                     f"Mask with {side_length=} too large for lattice with size {self.D}"
                 )
-            logger.info(
-                f"Using square lattice of size "
-                f"{2 * side_length + 1}x{2 * side_length + 1}"
-            )
+            if self.verbose:
+                logger.info(
+                    f"Using square lattice of size "
+                    f"{2 * side_length + 1}x{2 * side_length + 1}"
+                )
 
             b, e = self.D2 - side_length, self.D2 + side_length
             c1 = self.coords.view(self.D, self.D, 3)[b, b]
@@ -110,7 +117,8 @@ class Lattice:
                 raise ValueError(
                     f"Mask with {radius=} too large for lattice with size {self.D}"
                 )
-            logger.info(f"Using circular lattice with {radius=}")
+            if self.verbose:
+                logger.info(f"Using circular lattice with {radius=}")
 
             normed_radius = radius / (self.D // 2) * self.extent
             distances = self.coords.pow(2).sum(-1)

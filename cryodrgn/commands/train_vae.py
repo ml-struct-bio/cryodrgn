@@ -25,7 +25,6 @@ import os
 import argparse
 import numpy as np
 import cryodrgn.utils
-from cryodrgn.commands.setup import SetupHelper
 from cryodrgn.trainers.hps_trainer import HierarchicalPoseSearchTrainer
 
 
@@ -367,7 +366,7 @@ def main(args: argparse.Namespace) -> None:
         "window": args.window,
         "window_r": args.window_r,
         "shuffler_size": args.shuffler_size,
-        "max_threads": None,
+        "max_threads": 1,
         "num_workers": 0,
         "num_epochs": args.num_epochs,
         "batch_size": args.batch_size,
@@ -398,6 +397,5 @@ def main(args: argparse.Namespace) -> None:
     }
 
     cryodrgn.utils._verbose = False
-    _ = SetupHelper.create_using_configs(configs)
     trainer = HierarchicalPoseSearchTrainer(configs)
     trainer.train()

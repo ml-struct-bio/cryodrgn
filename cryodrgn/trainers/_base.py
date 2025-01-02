@@ -2,15 +2,13 @@
 
 import os
 import argparse
-import shutil
 import sys
 import pickle
 import difflib
 import inspect
-from collections import OrderedDict
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field, fields, Field, MISSING, asdict
-from typing import Any, ClassVar
+from dataclasses import dataclass, fields, Field, MISSING, asdict
+from typing import Any
 from typing_extensions import Self
 import yaml
 from datetime import datetime as dt
@@ -20,6 +18,7 @@ import numpy as np
 import torch
 from torch import nn
 from torch.nn.parallel import DataParallel
+
 import cryodrgn.utils
 from cryodrgn import __version__, ctf
 from cryodrgn.dataset import ImageDataset, TiltSeriesData, make_dataloader
@@ -96,8 +95,11 @@ class BaseConfigurations(ABC):
 
         """
         members = inspect.getmembers(cls)
-        return list(list(filter(
-            lambda x: x[0] == '__dataclass_fields__', members))[0][1].values())
+        return list(
+            list(filter(lambda x: x[0] == "__dataclass_fields__", members))[0][
+                1
+            ].values()
+        )
 
     @classmethod
     def parse_cfg_keys(cls, cfg_keys: list[str]) -> dict[str, Any]:
@@ -112,11 +114,13 @@ class BaseConfigurations(ABC):
 
         for cfg_str in cfg_keys:
             if cfg_str.count("=") != 1:
-                raise ValueError("--cfgs entries must have exactly one equals sign "
-                                 "and be in the form 'CFG_KEY=CFG_VAL'!")
-            cfg_key, cfg_val = cfg_str.split('=')
+                raise ValueError(
+                    "--cfgs entries must have exactly one equals sign "
+                    "and be in the form 'CFG_KEY=CFG_VAL'!"
+                )
+            cfg_key, cfg_val = cfg_str.split("=")
 
-            if cfg_val is None or cfg_val == 'None':
+            if cfg_val is None or cfg_val == "None":
                 cfgs[cfg_key] = None
 
             else:
@@ -136,17 +140,21 @@ class BaseConfigurations(ABC):
 
                 else:
                     close_keys = difflib.get_close_matches(
-                        cfg_key, [fld.name for fld in cls.fields()])
+                        cfg_key, [fld.name for fld in cls.fields()]
+                    )
 
                     if close_keys:
                         close_str = f"\nDid you mean one of:\n{', '.join(close_keys)}"
                     else:
                         close_str = ""
 
-                    raise ValueError(f"--cfgs parameter `{cfg_key}` is not a "
-                                     f"valid configuration parameter!{close_str}")
+                    raise ValueError(
+                        f"--cfgs parameter `{cfg_key}` is not a "
+                        f"valid configuration parameter!{close_str}"
+                    )
 
         return cfgs
+
 
 class BaseTrainer(ABC):
     """Abstract base class for training engines used by cryoDRGN.
@@ -761,14 +769,14 @@ class ModelTrainer(BaseTrainer, ABC):
             )
 
         self.print_epoch_summary()
-        #self.save_epoch_data()
+        # self.save_epoch_data()
 
     def get_configs(self) -> dict[str, Any]:
         """Retrieves all given and inferred configurations for downstream use."""
 
         dataset_args = dict(
             particles=self.configs.particles,
-            data_norm=self.data.norm,
+            norm=self.data.norm,
             invert_data=self.configs.invert_data,
             ind=self.configs.ind,
             keepreal=self.configs.use_real,

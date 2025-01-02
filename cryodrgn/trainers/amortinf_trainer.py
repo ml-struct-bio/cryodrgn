@@ -7,7 +7,6 @@ introduced by Alex Levy in the drgnai package.
 """
 import os
 import pickle
-from collections import OrderedDict
 import numpy as np
 from dataclasses import dataclass
 from typing import Any
@@ -40,7 +39,7 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
 
     # scheduling
     n_imgs_pose_search: int = 500000
-    epochs_sgd: int = 100
+    epochs_sgd: int = None
     pose_only_phase: int = 0
     # data loading
     batch_size_known_poses: int = 32
@@ -88,36 +87,8 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
     # others
     palette_type: str = None
 
-    quick_configs = OrderedDict(
-        {
-            "capture_setup": {
-                "spa": dict(),
-                "et": {
-                    "subtomo_averaging": True,
-                    "shuffler_size": 0,
-                    "num_workers": 0,
-                    "t_extent": 0.0,
-                    "batch_size_known_poses": 8,
-                    "batch_size_sgd": 32,
-                    "n_imgs_pose_search": 150000,
-                    "pose_only_phase": 50000,
-                    "lr_pose_table": 1.0e-5,
-                },
-            },
-            "reconstruction_type": {"homo": {"z_dim": 0}, "het": dict()},
-            "pose_estimation": {
-                "abinit": dict(),
-                "refine": {"refine_gt_poses": True, "pose_learning_rate": 1.0e-4},
-                "fixed": {"use_gt_poses": True},
-            },
-            "conf_estimation": {
-                None: dict(),
-                "autodecoder": dict(),
-                "refine": dict(),
-                "encoder": {"use_conf_encoder": True},
-            },
-        }
-    )
+    # quick configs
+    conf_estimation: str = None
 
     def __post_init__(self) -> None:
         super().__post_init__()
@@ -126,6 +97,29 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
             raise ValueError(
                 f"Mismatched model {self.model} for AmortizedInferenceTrainer!"
             )
+
+        if self.capture_setup is not None:
+            if self.capture_setup == "et":
+                self.subtomo_averaging = True
+                self.shuffler_size = 0
+                self.num_workers = 0
+                self.t_extent = 0.0
+                self.batch_size_known_poses = 8
+                self.batch_size_sgd = 32
+                self.n_imgs_pose_search = 150000
+                self.pose_only_phase = 50000
+                self.lr_pose_table = 1.0e-5
+
+        if self.pose_estimation is not None:
+            if self.pose_estimation == "refine":
+                self.refine_gt_poses = True
+                self.pose_learning_rate = 1.0e-4
+            elif self.pose_estimation == "fixed":
+                self.use_gt_poses = True
+
+        if self.conf_estimation is not None:
+            if self.conf_estimation == "encoder":
+                self.use_conf_encoder = True
 
         if self.batch_size_sgd is None:
             self.batch_size_sgd = self.batch_size
@@ -360,7 +354,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
             no_trans=self.configs.no_trans,
             use_gt_poses=self.configs.use_gt_poses,
             use_gt_trans=self.configs.use_gt_trans,
-            will_use_point_estimates=self.configs.epochs_sgd >= 1,
+            will_use_point_estimates=self.epochs_sgd >= 1,
             ps_params=ps_params,
             verbose_time=self.configs.verbose_time,
             pretrain_with_gt_poses=self.configs.pretrain_with_gt_poses,
@@ -383,10 +377,24 @@ class AmortizedInferenceTrainer(ModelTrainer):
 
         return epochs_pose_search
 
+    @property
+    def epochs_sgd(self) -> int:
+        if self.configs.epochs_sgd is None:
+            epochs_sgd = self.configs.num_epochs - self.epochs_pose_search
+        else:
+            epochs_sgd = self.configs.epochs_sgd
+
+        return epochs_sgd
+
     def __init__(self, configs: dict[str, Any]) -> None:
         super().__init__(configs)
         self.configs: AmortizedInferenceConfigurations
         self.model = self.volume_model
+
+        if self.configs.num_epochs is None:
+            self.configs.num_epochs = self.epochs_sgd + self.epochs_pose_search
+        if self.configs.load:
+            self.configs.num_epochs += self.start_epoch
 
         self.batch_size_known_poses = self.configs.batch_size_known_poses * self.n_prcs
         self.batch_size_hps = self.configs.batch_size_hps * self.n_prcs
@@ -408,7 +416,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
 
         # pose table
         if not self.configs.use_gt_poses:
-            if self.configs.epochs_sgd > 0:
+            if self.epochs_sgd > 0:
                 pose_table_params = [
                     {"params": list(self.model.pose_table.parameters())}
                 ]
@@ -500,14 +508,6 @@ class AmortizedInferenceTrainer(ModelTrainer):
         self.use_l2_smoothness_regularizer = (
             self.configs.l2_smoothness_regularizer >= epsilon
         )
-
-        # TODO: more sophisticated treatment of epoch configs
-        if self.configs.epochs_sgd:
-            self.configs.num_epochs = self.epochs_pose_search + self.configs.epochs_sgd
-        elif self.configs.num_epochs:
-            self.configs.epochs_sgd = self.configs.num_epochs - self.epochs_pose_search
-        if self.configs.load:
-            self.configs.num_epochs += self.start_epoch
 
         self.in_dict_last = None
         self.y_pred_last = None

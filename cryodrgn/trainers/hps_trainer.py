@@ -3,7 +3,6 @@
 import os
 import pickle
 from dataclasses import dataclass
-from collections import OrderedDict
 from typing import Any, Callable
 import numpy as np
 import torch
@@ -54,35 +53,16 @@ class HierarchicalPoseSearchConfigurations(ModelConfigurations):
     reset_model_every: int = None
     reset_optim_every: int = None
 
-    quick_configs = OrderedDict(
-        {
-            "capture_setup": {
-                "spa": dict(),
-                "et": {
-                    "subtomo_averaging": True,
-                    "shuffler_size": 0,
-                    "num_workers": 0,
-                    "t_extent": 0.0,
-                },
-            },
-            "reconstruction_type": {"homo": {"z_dim": 0}, "het": dict()},
-            "pose_estimation": {
-                "abinit": dict(),
-                "refine": {"refine_gt_poses": True, "pose_learning_rate": 1.0e-4},
-                "fixed": {"use_gt_poses": True},
-            },
-            "model_size": {
-                "small": {"enc_layers": 128, "dec_layers": 128},
-                "medium": {"enc_layers": 256, "dec_layers": 256},
-                "large": {"enc_layers": 512, "dec_layers": 512},
-                "very-large": {"enc_layers": 1024, "dec_layers": 1024},
-            },
-        }
-    )
-
     def __post_init__(self) -> None:
         super().__post_init__()
-        self.model = "hps"
+        assert self.model == "hps"
+
+        if self.capture_setup is not None:
+            if self.capture_setup == "et":
+                self.subtomo_averaging = True
+                self.shuffler_size = 0
+                self.num_workers = 0
+                self.t_extent = 0.0
 
         if self.dataset is None:
             if self.particles is None:
@@ -564,14 +544,18 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
             )
 
         avg_losses = self.average_losses
-        self.logger.info(
+        batch_str = (
             f"### Epoch [{self.current_epoch}/{self.configs.num_epochs}], "
             f"Batch [{self.epoch_batch_count}] "
             f"({self.epoch_images_seen}/{self.image_count} images); "
             f"gen loss={avg_losses['gen']:.4g}, "
-            f"kld={avg_losses['kld']:.4f}, beta={self.beta:.4f}, "
-            f"{eq_log}loss={avg_losses['total']:.4f}"
         )
+        if "kld" in avg_losses:
+            batch_str += f"kld={avg_losses['kld']:.4f}, "
+        if self.beta is not None:
+            batch_str += f"beta={self.beta:.4f}, "
+
+        self.logger.info(batch_str + f"{eq_log}loss={avg_losses['total']:.4f}")
 
     def preprocess_input(self, y, trans):
         """Center the image."""
@@ -699,10 +683,14 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                 pickle.dump(z_mu_all, f)
                 pickle.dump(z_logvar_all, f)
 
-        with open(out_poses, "wb") as f:
-            pickle.dump(
-                (self.predicted_rots, self.predicted_trans / self.model_resolution), f
-            )
+        if self.pose_tracker is not None:
+            self.pose_tracker.save(out_poses)
+        else:
+            with open(out_poses, "wb") as f:
+                pickle.dump(
+                    (self.predicted_rots, self.predicted_trans / self.model_resolution),
+                    f,
+                )
 
     def get_latest(self) -> None:
         self.logger.info("Detecting latest checkpoint...")
@@ -722,6 +710,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
 
     @property
     def in_pose_search_step(self) -> bool:
+        """Whether the current epoch of training will include searching over poses."""
         is_in_pose_search = False
         if self.pose_search:
             if (self.current_epoch - 1) % self.configs.ps_freq == 0:

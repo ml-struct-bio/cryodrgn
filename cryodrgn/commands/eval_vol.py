@@ -2,12 +2,12 @@
 
 Example usage
 -------------
-# This model used the default of zdim=8
+# This model used the default of z_dim=8
 $ cryodrgn eval_vol 004_vae128/weights.pkl -c 004_vae128/config.yaml \
                                            -o zero-vol.mrc -z 0 0 0 0 0 0 0 0
 
 # We can instead specify a z-latent-space path instead of a single location
-# Here the model was trained using zdim=4
+# Here the model was trained using z_dim=4
 $ cryodrgn eval_vol 004_vae128/weights.pkl -c 004_vae128/config.yaml -o zero-vol.mrc \
                                            --z-start 0 -1 0 0 --z-end 1 1 1 1
 
@@ -20,7 +20,7 @@ import logging
 from typing import Optional
 import numpy as np
 import torch
-import cryodrgn.models.config
+import cryodrgn.config
 from cryodrgn.models.utils import load_model
 from cryodrgn.source import write_mrc
 
@@ -112,7 +112,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     group.add_argument(
         "--enc-dim", dest="qdim", type=int, help="Number of nodes in hidden layers"
     )
-    group.add_argument("--zdim", type=int, help="Dimension of latent variable")
+    group.add_argument("--z_dim", type=int, help="Dimension of latent variable")
     group.add_argument(
         "--encode-mode",
         choices=("conv", "resid", "mlp", "tilt"),
@@ -186,14 +186,14 @@ class VolumeEvaluator:
             if not use_cuda:
                 logger.warning("WARNING: No GPUs detected")
 
-        cfg_data = cryodrgn.models.config.overwrite_config(
+        cfg_data = cryodrgn.config.overwrite_config(
             cfg_data, argparse.Namespace(**architecture_args)
         )
         logger.info("Loaded configuration:")
         pprint.pprint(cfg_data)
 
         orig_d = cfg_data["lattice_args"]["D"]  # image size + 1
-        self.zdim = cfg_data["model_args"]["zdim"]
+        self.z_dim = cfg_data["model_args"]["z_dim"]
         self.norm = [float(x) for x in cfg_data["dataset_args"]["norm"]]
 
         if downsample:
@@ -261,7 +261,7 @@ class VolumeEvaluator:
             for i, z_val in enumerate(z_values, start=vol_start_index):
                 logger.info(z_val)
                 volume = self.evaluate_volume(z_val)
-                lbl = i if suffix is None else suffix
+                # lbl = i if suffix is None else suffix
 
                 write_mrc(
                     os.path.join(outpath, "{}{:03d}.mrc".format(prefix, i)),
@@ -283,7 +283,7 @@ def main(args):
     logger.info(args)
     t0 = dt.now()
 
-    cfg = cryodrgn.models.config.load(args.config)
+    cfg = cryodrgn.config.load_configs(args.config)
     evaluator = VolumeEvaluator(
         args.weights,
         cfg,
@@ -318,15 +318,15 @@ def main(args):
 
     # parse user inputs for location(s) in the latent space
     if args.zfile:
-        z_vals = np.loadtxt(args.zfile).reshape(-1, evaluator.zdim)
+        z_vals = np.loadtxt(args.zfile).reshape(-1, evaluator.z_dim)
 
     elif args.z_start:
         z_start = np.array(args.z_start)
         z_end = np.array(args.z_end)
 
         z_vals = np.repeat(
-            np.arange(args.volume_count, dtype=np.float32), evaluator.zdim
-        ).reshape((args.volume_count, evaluator.zdim))
+            np.arange(args.volume_count, dtype=np.float32), evaluator.z_dim
+        ).reshape((args.volume_count, evaluator.z_dim))
         z_vals *= (z_end - z_start) / (args.volume_count - 1)  # type: ignore
         z_vals += z_start
 

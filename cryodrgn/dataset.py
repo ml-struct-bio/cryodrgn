@@ -12,23 +12,16 @@ image data is retrieved during model training using __getitem__, the data is whi
 using these parameters.
 
 """
-import numpy as np
 from collections import Counter, OrderedDict
-
-import logging
-import torch
 from typing import Optional, Tuple, Union
-from cryodrgn import fft
-from cryodrgn.source import ImageSource, StarfileSource, parse_star
-from cryodrgn.masking import spherical_window_mask
-
+import logging
 import numpy as np
 import torch
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.sampler import BatchSampler, RandomSampler, SequentialSampler
-import cryodrgn.utils
-from cryodrgn import fft, starfile
-from cryodrgn.source import ImageSource
+from cryodrgn import fft
+from cryodrgn.source import ImageSource, StarfileSource, parse_star
+from cryodrgn.masking import spherical_window_mask
 
 
 class ImageDataset(torch.utils.data.Dataset):
@@ -128,8 +121,10 @@ class ImageDataset(torch.utils.data.Dataset):
         r_particles, f_particles = self._process(self.src.images(index).to(self.device))
 
         # this is why it is tricky for index to be allowed to be a list!
-        if len(particles.shape) == 2:
-            particles = particles[np.newaxis, ...]
+        if len(r_particles.shape) == 2:
+            r_particles = r_particles[np.newaxis, ...]
+        if len(f_particles.shape) == 2:
+            f_particles = f_particles[np.newaxis, ...]
 
         if isinstance(index, (int, np.integer)):
             self.logger.debug(f"ImageDataset returning images at index ({index})")
@@ -137,12 +132,13 @@ class ImageDataset(torch.utils.data.Dataset):
             self.logger.debug(
                 f"ImageDataset returning images for {len(index)} "
                 f"indices ({index[0]}..{index[-1]})"
+            )
 
         return {
             "y": f_particles,  # batch_size(, n_tilts), D, D
             "y_real": r_particles,  # batch_size(, n_tilts), D - 1, D - 1
             "indices": index,  # batch_size
-            #'R': rots  # batch_size(, n_tilts), 3, 3
+            # 'R': rots  # batch_size(, n_tilts), 3, 3
         }
 
     def get_slice(
@@ -507,7 +503,7 @@ class _DataShufflerIterator:
             particles = particles.reshape(-1, self.ntilts, *particles.shape[-2:])
             tilt_indices = tilt_indices.reshape(-1, self.ntilts)
             r_particles = r_particles.reshape(-1, self.ntilts, *r_particles.shape[-2:])
-            rots = rots.reshape(-1, self.ntilts, 3, 3)
+            # rots = rots.reshape(-1, self.ntilts, 3, 3)
         else:
             f_particles = f_particles.reshape(-1, *f_particles.shape[-2:])
             tilt_indices = tilt_indices.reshape(-1)
@@ -519,7 +515,7 @@ class _DataShufflerIterator:
             "y_real": r_particles,  # batch_size(, n_tilts), D - 1, D - 1
             "indices": particle_indices,  # batch_size
             "tilt_indices": tilt_indices.reshape(-1),  # batch_size * n_tilts
-            #'R': rots  # batch_size(, n_tilts), 3, 3
+            # 'R': rots  # batch_size(, n_tilts), 3, 3
         }
 
         return in_dict

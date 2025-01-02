@@ -2,8 +2,8 @@
 
 import argparse
 import os
-import os.path
 import shutil
+import yaml
 from datetime import datetime as dt
 import logging
 import nbformat
@@ -17,7 +17,11 @@ import seaborn as sns
 from cryodrgn import _ROOT
 import cryodrgn.analysis
 import cryodrgn.utils
-from cryodrgn.trainers.utils import load_from_config
+from cryodrgn.trainers import (
+    ModelTrainer,
+    AmortizedInferenceTrainer,
+    HierarchicalPoseSearchTrainer,
+)
 from cryodrgn.commands.eval_vol import VolumeEvaluator
 
 logger = logging.getLogger(__name__)
@@ -97,11 +101,34 @@ class ModelAnalyzer:
                                             the model was trained.
     """
 
+    def get_trainer(self) -> ModelTrainer:
+        """Load a training engine like the one that was used to train this model."""
+        if os.path.exists(self.cfg_file):
+            with open(self.cfg_file, "r") as f:
+                cfg_dict: dict[str, dict[str, str]] = yaml.safe_load(f)
+        else:
+            raise FileNotFoundError(
+                f"Cannot find training configurations file `{self.cfg_file}` "
+                f"— has this model been trained yet?"
+            )
+
+        if cfg_dict["model_args"]["model"] == "amort":
+            trainer = AmortizedInferenceTrainer.load_from_config(cfg_dict)
+        elif cfg_dict["model_args"]["model"] == "hps":
+            trainer = HierarchicalPoseSearchTrainer.load_from_config(cfg_dict)
+        else:
+            raise ValueError(
+                f"Unrecognized cryoDRGN model `{cfg_dict['model_args']['model']}` "
+                f"in `{self.cfg_file}`!"
+            )
+
+        return trainer
+
     def __init__(
         self,
         traindir: str,
         epoch: int = -1,
-        device: str = "cpu",
+        device: str = None,
         outdir: str = None,
         skip_vol: bool = False,
         apix: float = None,
@@ -129,7 +156,7 @@ class ModelAnalyzer:
                 f"Given training output directory does not have a trained model "
                 f"under {self.traindir}!"
             )
-        self.trainer = load_from_config(self.cfg_file)
+        self.trainer = self.get_trainer()
 
         log_fl = os.path.join(self.traindir, "training.log")
         if os.path.exists(log_fl):
@@ -214,7 +241,7 @@ class ModelAnalyzer:
         os.makedirs(self.outdir, exist_ok=True)
         logger.info(f"Saving results to {self.outdir}")
 
-        if skip_vol:
+        if skip_vol or self.trainer.configs.z_dim == 0:
             self.volume_generator = None
         else:
             cfgs = cryodrgn.utils.load_yaml(self.cfg_file)
@@ -469,6 +496,36 @@ class ModelAnalyzer:
         plt.savefig(os.path.join(self.outdir, "z_pca_hexbin.png"))
         plt.close()
 
+        # Plot kmeans sample points
+        colors = cryodrgn.analysis._get_chimerax_colors(self.ksample)
+        cryodrgn.analysis.scatter_annotate(
+            pc[:, 0],
+            pc[:, 1],
+            centers_ind=centers_ind,
+            annotate=True,
+            colors=colors,
+        )
+        plt_pc_labels()
+        plt.tight_layout()
+        plt.savefig(f"{self.outdir}/kmeans{self.ksample}/z_pca.png")
+        plt.close()
+
+        try:
+            g = cryodrgn.analysis.scatter_annotate_hex(
+                pc[:, 0],
+                pc[:, 1],
+                centers_ind=centers_ind,
+                annotate=True,
+                colors=colors,
+            )
+        except ZeroDivisionError:
+            logger.warning("Data too small to generate PCA annotated hexes!")
+
+        plt_pc_labels_jointplot(g)
+        plt.tight_layout()
+        plt.savefig(f"{self.outdir}/kmeans{self.ksample}/z_pca_hex.png")
+        plt.close()
+
         if umap_emb is not None:
             # Style 1 -- Scatter
             plt.figure(figsize=(4, 4))
@@ -494,96 +551,16 @@ class ModelAnalyzer:
             plt.close()
 
             # Style 3 -- Hexbin / heatmap
-	    try:
-            	g = sns.jointplot(x=umap_emb[:, 0], y=umap_emb[:, 1], kind="hex", height=4)
-            	plt_umap_labels_jointplot(g)
-            	plt.tight_layout()
-            	plt.savefig(os.path.join(self.outdir, "umap_hexbin.png"))
-            	plt.close()
+            try:
+                g = sns.jointplot(
+                    x=umap_emb[:, 0], y=umap_emb[:, 1], kind="hex", height=4
+                )
+                plt_umap_labels_jointplot(g)
+                plt.tight_layout()
+                plt.savefig(os.path.join(self.outdir, "umap_hexbin.png"))
+                plt.close()
             except ZeroDivisionError:
-            	logger.warning("Data too small for marginal distribution scatterplots!")
-
-    # Plot kmeans sample points
-    colors = analysis._get_chimerax_colors(K)
-    analysis.scatter_annotate(
-        pc[:, 0],
-        pc[:, 1],
-        centers_ind=centers_ind,
-        annotate=True,
-        colors=colors,
-    )
-    plt_pc_labels()
-    plt.tight_layout()
-    plt.savefig(f"{outdir}/kmeans{K}/z_pca.png")
-    plt.close()
-
-    try:
-        g = analysis.scatter_annotate_hex(
-            pc[:, 0],
-            pc[:, 1],
-            centers_ind=centers_ind,
-            annotate=True,
-            colors=colors,
-        )
-    except ZeroDivisionError:
-        logger.warning("Data too small to generate PCA annotated hexes!")
-
-    plt_pc_labels_jointplot(g)
-    plt.tight_layout()
-    plt.savefig(f"{outdir}/kmeans{K}/z_pca_hex.png")
-    plt.close()
-
-    if umap_emb is not None:
-        # Plot kmeans sample points
-        colors = cryodrgn.analysis._get_chimerax_colors(k)
-        cryodrgn.analysis.scatter_annotate(
-            pc[:, 0],
-            pc[:, 1],
-            centers_ind=centers_ind,
-            annotate=True,
-            colors=colors,
-        )
-        plt_pc_labels()
-        plt.tight_layout()
-        plt.savefig(os.path.join(kmean_path, "z_pca.png"))
-        plt.close()
-
-        g = cryodrgn.analysis.scatter_annotate_hex(
-            pc[:, 0],
-            pc[:, 1],
-            centers_ind=centers_ind,
-            annotate=True,
-            colors=colors,
-        )
-        plt_pc_labels_jointplot(g)
-        plt.tight_layout()
-        plt.savefig(os.path.join(kmean_path, "z_pca_hex.png"))
-        plt.close()
-
-        if umap_emb is not None:
-            cryodrgn.analysis.scatter_annotate(
-                umap_emb[:, 0],
-                umap_emb[:, 1],
-                centers_ind=centers_ind,
-                annotate=True,
-                colors=colors,
-            )
-            plt_umap_labels()
-            plt.tight_layout()
-            plt.savefig(os.path.join(kmean_path, "umap.png"))
-            plt.close()
-
-            g = cryodrgn.analysis.scatter_annotate_hex(
-                umap_emb[:, 0],
-                umap_emb[:, 1],
-                centers_ind=centers_ind,
-                annotate=True,
-                colors=colors,
-            )
-            plt_umap_labels_jointplot(g)
-            plt.tight_layout()
-            plt.savefig(os.path.join(kmean_path, "umap_hex.png"))
-            plt.close()
+                logger.warning("Data too small for marginal distribution scatterplots!")
 
         # Plot PC trajectories
         for i in range(self.pc):
@@ -618,7 +595,11 @@ class ModelAnalyzer:
 
                 plt.figure(figsize=(4, 4))
                 plt.scatter(
-                    umap_emb[:, 0], umap_emb[:, 1], alpha=0.05, s=1, rasterized=True
+                    umap_emb[:, 0],
+                    umap_emb[:, 1],
+                    alpha=0.05,
+                    s=1,
+                    rasterized=True,
                 )
                 plt.scatter(
                     umap_emb[pc_ind, 0],
@@ -634,7 +615,11 @@ class ModelAnalyzer:
                 # UMAP, with PC traversal, connected
                 plt.figure(figsize=(4, 4))
                 plt.scatter(
-                    umap_emb[:, 0], umap_emb[:, 1], alpha=0.05, s=1, rasterized=True
+                    umap_emb[:, 0],
+                    umap_emb[:, 1],
+                    alpha=0.05,
+                    s=1,
+                    rasterized=True,
                 )
 
                 plt.plot(umap_emb[pc_ind, 0], umap_emb[pc_ind, 1], "--", c="k")

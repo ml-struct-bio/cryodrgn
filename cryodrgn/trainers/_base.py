@@ -430,6 +430,7 @@ class ModelTrainer(BaseTrainer, ABC):
                 datadir=self.configs.datadir,
                 window_r=self.configs.window_r,
                 max_threads=self.configs.max_threads,
+                device=self.device,
             )
             self.particle_count = self.data.N
 

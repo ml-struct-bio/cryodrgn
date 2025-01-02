@@ -5,6 +5,7 @@ All functions are pytorch-ified
 """
 
 import numpy as np
+from scipy.spatial.transform import Rotation
 import torch
 from torch.distributions import Normal
 
@@ -70,12 +71,15 @@ def quat_to_rotmat(q):
 
 def random_quat(n, dtype=torch.float32, device=None):
     u1, u2, u3 = torch.rand(3, n, dtype=dtype, device=device)
-    return torch.stack((
-        torch.sqrt(1-u1) * torch.sin(2 * np.pi * u2),
-        torch.sqrt(1-u1) * torch.cos(2 * np.pi * u2),
-        torch.sqrt(u1) * torch.sin(2 * np.pi * u3),
-        torch.sqrt(u1) * torch.cos(2 * np.pi * u3),
-    ), 1)
+    return torch.stack(
+        (
+            torch.sqrt(1 - u1) * torch.sin(2 * np.pi * u2),
+            torch.sqrt(1 - u1) * torch.cos(2 * np.pi * u2),
+            torch.sqrt(u1) * torch.sin(2 * np.pi * u3),
+            torch.sqrt(u1) * torch.cos(2 * np.pi * u3),
+        ),
+        1,
+    )
 
 
 def random_rotmat(n, dtype=torch.float32, device=None):
@@ -94,9 +98,9 @@ def s2s2_to_rotmat(s2s2):
     v2 = s2s2[..., 3:]
     v1 = s2s2[..., 0:3]
     u1 = v1
-    e1 = u1 / u1.norm(p=2, dim=-1, keepdim=True).clamp(min=1E-5)
+    e1 = u1 / u1.norm(p=2, dim=-1, keepdim=True).clamp(min=1e-5)
     u2 = v2 - (e1 * v2).sum(-1, keepdim=True) * e1
-    e2 = u2 / u2.norm(p=2, dim=-1, keepdim=True).clamp(min=1E-5)
+    e2 = u2 / u2.norm(p=2, dim=-1, keepdim=True).clamp(min=1e-5)
     e3 = torch.linalg.cross(e1, e2)
     return torch.cat([e1[..., None, :], e2[..., None, :], e3[..., None, :]], -2)
 
@@ -108,6 +112,15 @@ def rotmat_to_s2s2(rotmat):
     output: [..., 6]
     """
     return torch.cat([rotmat[..., 0, :], rotmat[..., 1, :]], -1)
+
+
+def rotmat_to_euler(rotmat):
+    """
+    rotmat: [..., 3, 3] (numpy)
+
+    output: [..., 3]
+    """
+    return Rotation.from_matrix(rotmat.swapaxes(-2, -1)).as_euler("zxz")
 
 
 def expmap(v):
@@ -343,3 +356,18 @@ def so3_entropy(w_eps, std, k=10):
     log_p = log_p.sum(-1) + log_vol.sum(-1)  # [B, 2k+1]
     entropy = -logsumexp(log_p, -1)
     return entropy
+
+
+def direction_to_azimuth_elevation(out_of_planes):
+    """
+    out_of_planes: [..., 3]
+
+    up: Y
+    plane: (Z, X)
+
+    output: ([...], [...]) (azimuth, elevation)
+    """
+    elevation = np.arcsin(out_of_planes[..., 1])
+    azimuth = np.arctan2(out_of_planes[..., 0], out_of_planes[..., 2])
+
+    return azimuth, elevation

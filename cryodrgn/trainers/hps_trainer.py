@@ -47,7 +47,7 @@ class HierarchicalPoseSearchConfigurations(ModelConfigurations):
     equivariance: bool = None
     equivariance_start: int = 100000
     equivariance_stop: int = 200000
-    l_ramp_epochs: int = 0
+    l_ramp_epochs: int = 25
     l_ramp_model: int = 0
     # resetting every certain number of epochs
     reset_model_every: int = None
@@ -253,7 +253,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
         else:
             self.pose_optimizer = None
 
-        if self.configs.poses:
+        if self.configs.pose_estimation == "fixed":
             self.pose_search = None
             self.pose_model = None
 
@@ -282,14 +282,25 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                 device=self.device,
             )
 
-    def train_batch(self, batch: dict[str, torch.Tensor]) -> None:
+    def begin_epoch(self) -> None:
+        if self.configs.l_ramp_epochs > 0:
+            Lramp = self.configs.l_start + int(
+                self.current_epoch
+                / self.configs.l_ramp_epochs
+                * (self.configs.l_end - self.configs.l_start)
+            )
+            self.pose_search.Lmin = min(Lramp, self.configs.l_start)
+            self.pose_search.Lmax = min(Lramp, self.configs.l_end)
+
+    def train_batch(self, batch: dict[str, torch.Tensor]) -> tuple:
         y = batch["y"]
         ind = batch["indices"]
 
         y = y.to(self.device)
         ind_np = ind.cpu().numpy()
         B = y.size(0)
-        if "tilt_indices" in batch:
+
+        if self.configs.tilt:
             tilt_ind = batch["tilt_indices"]
             assert all(tilt_ind >= 0), tilt_ind
             tilt_ind.to(self.device)
@@ -315,7 +326,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
 
         # getting the poses
         rot = trans = None
-        if self.pose_search and (self.current_epoch - 1) % self.configs.ps_freq != 0:
+        if self.pose_search and not self.in_pose_search_step:
             if self.epoch_batch_count == 1:
                 self.logger.info("Using previous iteration's learned poses...")
             rot = torch.tensor(
@@ -353,13 +364,11 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                 dose_filters = self.data.get_dose_filters(tilt_ind, self.lattice, Apix)
 
         else:
-            if self.pose_tracker and not self.pose_search:
+            if not self.pose_search:
                 rot, trans = self.pose_tracker.get_pose(ind)
             ctf_param = self.ctf_params[ind] if self.ctf_params is not None else None
 
-        use_tilt = tilt_ind is not None
         use_ctf = ctf_param is not None
-
         if self.beta_schedule is not None:
             self.beta = self.beta_schedule(self.total_images_seen)
 
@@ -372,14 +381,10 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                 B, self.resolution, self.resolution
             )
 
-        # VAE inference of z
-        self.volume_optimizer.zero_grad()
-        self.volume_model.train()
-
         if yr is not None:
-            input_ = (yr, tilt_ind) if use_tilt else (yr,)
+            input_ = (yr, tilt_ind) if self.configs.tilt else (yr,)
         else:
-            input_ = (y, tilt_ind) if use_tilt else (y,)
+            input_ = (y, tilt_ind) if self.configs.tilt else (y,)
         if ctf_i is not None:
             input_ = (x * ctf_i.sign() for x in input_)  # phase flip by the ctf
 
@@ -401,7 +406,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
         if rot is None:
             self.volume_model.eval()
             with torch.no_grad():
-                rot, trans, base_pose = self.pose_search.opt_theta_trans(
+                rot, trans, self.base_pose = self.pose_search.opt_theta_trans(
                     y,
                     z=z,
                     images_tilt=None if self.configs.tilt_enc_only else tilt_ind,
@@ -410,26 +415,18 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
             if self.configs.z_dim:
                 self.volume_model.train()
             else:
-                base_pose = base_pose.detach().cpu().numpy()
+                self.base_pose = self.base_pose.detach().cpu().numpy()
         else:
-            base_pose = None
+            self.base_pose = None
 
         # reconstruct circle of pixels instead of whole image
         L_model = self.lattice.D // 2
-        if self.configs.l_ramp_epochs > 0:
-            Lramp = self.configs.l_start + int(
-                self.current_epoch
-                / self.configs.l_ramp_epochs
-                * (self.configs.l_end - self.configs.l_start)
-            )
-            self.pose_search.Lmin = min(Lramp, self.configs.l_start)
-            self.pose_search.Lmax = min(Lramp, self.configs.l_end)
+        if (
+            self.current_epoch < self.configs.l_ramp_epochs
+            and self.configs.l_ramp_model
+        ):
+            L_model = self.pose_search.Lmax
 
-            if (
-                self.current_epoch < self.configs.l_ramp_epochs
-                and self.configs.l_ramp_model
-            ):
-                L_model = self.pose_search.Lmax
         mask = self.lattice.get_circular_mask(L_model)
 
         def gen_slice(R):
@@ -446,15 +443,19 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
             img = self.lattice.translate_ht(img, trans.unsqueeze(1), mask)
             return img.view(B, -1)
 
+        # VAE inference of z
+        self.volume_model.train()
+        self.volume_optimizer.zero_grad()
+
         y = y.view(B, -1)[:, mask]
-        if use_tilt:
+        if self.configs.tilt:
             tilt_ind = tilt_ind.view(B, -1)[:, mask]
         if trans is not None:
             y = translate(y)
-        if use_tilt:
+        if self.configs.tilt:
             tilt_ind = translate(tilt_ind)
 
-        if use_tilt:
+        if self.configs.tilt:
             if dose_filters:
                 rot_loss = F.mse_loss(gen_slice(rot), y)
             else:
@@ -493,29 +494,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
         else:
             losses["total"] = losses["gen"]
 
-        losses["total"].backward()
-        self.volume_optimizer.step()
-        rot = rot.detach().cpu().numpy()
-        if trans is not None:
-            trans = trans.detach().cpu().numpy()
-
-        if self.pose_optimizer is not None:
-            if self.current_epoch >= self.configs.pretrain:
-                self.pose_optimizer.step()
-
-        ind_tilt = tilt_ind or ind
-        self.predicted_rots[ind_tilt] = rot.reshape(-1, 3, 3)
-        if trans is not None:
-            self.predicted_trans[ind_tilt] = trans.reshape(-1, 2)
-        if base_pose is not None:
-            self.base_poses.append((ind_np, base_pose))
-
-        # logging
-        for loss_k, loss_val in losses.items():
-            if loss_k in self.accum_losses:
-                self.accum_losses[loss_k] += loss_val.item() * len(ind)
-            else:
-                self.accum_losses[loss_k] = loss_val.item() * len(ind)
+        return losses, tilt_ind, ind, rot, trans
 
     def get_configs(self) -> dict[str, Any]:
         """Retrieves all given and inferred configurations for downstream use."""
@@ -566,8 +545,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
     def pretrain_batch(self, batch: dict[str, torch.Tensor]) -> None:
         """Pretrain the decoder using random initial poses."""
         y = batch["y"]
-        use_tilt = "tilt_indices" in batch
-        if use_tilt:
+        if self.configs.tilt:
             batch["tilt_indices"].to(self.device)
         y = y.to(self.device)
         B = y.size(0)
@@ -594,7 +572,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                 return slice_.view(B, -1)
 
         y = y.view(B, -1)[:, mask]
-        if use_tilt:
+        if self.configs.tilt:
             yt = batch["tilt_indices"].view(B, -1)[:, mask]
             loss = 0.5 * F.mse_loss(gen_slice(rot), y) + 0.5 * F.mse_loss(
                 gen_slice(self.configs.tilt @ rot), yt
@@ -635,6 +613,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
             out_weights,
         )
 
+        # If we are doing heterogeneous reconstruction, also save latent conformations
         if self.configs.z_dim > 0:
             self.volume_model.eval()
 

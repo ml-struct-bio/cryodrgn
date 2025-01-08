@@ -118,7 +118,7 @@ class ImageDataset(torch.utils.data.Dataset):
         if isinstance(index, list):
             index = torch.Tensor(index).to(torch.long)
 
-        r_particles, f_particles = self._process(self.src.images(index).to(self.device))
+        r_particles, f_particles = self._process(self.src.images(index))
 
         # this is why it is tricky for index to be allowed to be a list!
         if len(r_particles.shape) == 2:

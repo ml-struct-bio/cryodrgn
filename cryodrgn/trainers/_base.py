@@ -5,6 +5,7 @@ import argparse
 import sys
 import pickle
 import difflib
+import contextlib
 import inspect
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, fields, Field, MISSING, asdict
@@ -100,6 +101,10 @@ class BaseConfigurations(ABC):
                 1
             ].values()
         )
+
+    @property
+    def fields_dict(self) -> dict[str, Field]:
+        return {fld.name: fld for fld in fields(self)}
 
     @classmethod
     def parse_cfg_keys(cls, cfg_keys: list[str]) -> dict[str, Any]:
@@ -212,7 +217,7 @@ class ModelConfigurations(BaseConfigurations):
 
     # whether we are doing homogeneous (z_dim=0) or heterogeneous (z_dim>0)
     # reconstruction, and how long to train for
-    z_dim: int = 0
+    z_dim: int = None
     num_epochs: int = 30
     # paths to where output will be stored and where input datasets are located
     outdir: str = os.getcwd()
@@ -234,12 +239,16 @@ class ModelConfigurations(BaseConfigurations):
     # using a lazy data loader to minimize memory usage, shuffling training minibatches
     # and controlling their size, applying parallel computation and data processing
     batch_size: int = 8
+    batch_size_known_poses: int = 128
+    batch_size_sgd: int = None
+    batch_size_hps: int = None
     lazy: bool = False
+    shuffle: bool = True
     shuffler_size: int = 0
     amp: bool = True
     multigpu: bool = False
     max_threads: int = 16
-    num_workers: int = 1
+    num_workers: int = 2
     # how often to print log messages and save trained model data
     log_interval: int = 1000
     checkpoint: int = 5
@@ -430,7 +439,6 @@ class ModelTrainer(BaseTrainer, ABC):
                 datadir=self.configs.datadir,
                 window_r=self.configs.window_r,
                 max_threads=self.configs.max_threads,
-                device=self.device,
             )
             self.particle_count = self.data.N
 
@@ -519,6 +527,7 @@ class ModelTrainer(BaseTrainer, ABC):
             self.data,
             batch_size=self.configs.batch_size,
             shuffler_size=self.configs.shuffler_size,
+            shuffle=self.configs.shuffle,
             num_workers=self.num_workers,
             seed=self.configs.seed,
         )
@@ -559,6 +568,14 @@ class ModelTrainer(BaseTrainer, ABC):
             except:  # noqa: E722
                 # Mixed precision with pytorch (v1.6+)
                 self.scaler = torch.cuda.amp.grad_scaler.GradScaler()
+
+        if self.scaler is not None:
+            try:
+                self.amp_mode = torch.amp.autocast("cuda")
+            except AttributeError:
+                self.amp_mode = torch.cuda.amp.autocast_mode.autocast()
+        else:
+            self.amp_mode = contextlib.nullcontext()
 
         # TODO: auto-loading from last weights file if load=True?
         # initialization from a previous checkpoint
@@ -615,6 +632,8 @@ class ModelTrainer(BaseTrainer, ABC):
         self.conf_search_particles = None
         self.beta = None
         self.epoch_start_time = None
+        self.base_pose = None
+        self.pose_optimizer = None
 
         if self.configs.load_poses:
             rot, trans = cryodrgn.utils.load_pkl(self.configs.load_poses)
@@ -685,7 +704,45 @@ class ModelTrainer(BaseTrainer, ABC):
                 self.total_images_seen += len_y
                 self.epoch_images_seen += len_y
 
-                self.train_batch(batch)
+                with self.amp_mode:
+                    losses, tilt_ind, ind, rot, trans = self.train_batch(batch)
+
+                rot = rot.detach().cpu().numpy()
+                if trans is not None:
+                    trans = trans.detach().cpu().numpy()
+
+                if self.pose_optimizer is not None:
+                    if self.current_epoch >= self.configs.pretrain:
+                        self.pose_optimizer.step()
+
+                ind_tilt = tilt_ind or ind
+                self.predicted_rots[ind_tilt] = rot.reshape(-1, 3, 3)
+                if trans is not None:
+                    self.predicted_trans[ind_tilt] = trans.reshape(-1, 2)
+                if self.base_pose is not None:
+                    self.base_poses.append((ind.cpu().numpy(), self.base_pose))
+
+                if self.configs.amp:
+                    if self.scaler is not None:  # torch mixed precision
+                        self.scaler.scale(losses["total"]).backward()
+                        self.scaler.step(self.volume_optimizer)
+                        self.scaler.update()
+                    else:  # apex.amp mixed precision
+                        with amp.scale_loss(
+                            losses["total"], self.volume_optimizer
+                        ) as scaled_loss:
+                            scaled_loss.backward()
+                        self.volume_optimizer.step()
+                else:
+                    losses["total"].backward()
+                    self.volume_optimizer.step()
+
+                # logging
+                for loss_k, loss_val in losses.items():
+                    if loss_k in self.accum_losses:
+                        self.accum_losses[loss_k] += loss_val.item() * len(ind)
+                    else:
+                        self.accum_losses[loss_k] = loss_val.item() * len(ind)
 
                 # scalar summary
                 if self.epoch_images_seen % self.configs.log_interval < len_y:
@@ -739,8 +796,16 @@ class ModelTrainer(BaseTrainer, ABC):
         self.epoch_start_time = dt.now()
         self.total_images_seen = 0
 
+        pretrain_dataloader = make_dataloader(
+            self.data,
+            batch_size=self.configs.batch_size_known_poses,
+            num_workers=self.configs.num_workers,
+            shuffler_size=self.configs.shuffler_size,
+            shuffle=self.configs.shuffle,
+        )
+
         self.epoch_images_seen = 0
-        for batch in self.data_iterator:
+        for batch in pretrain_dataloader:
             len_y = len(batch["indices"])
             self.epoch_images_seen += len_y
             self.total_images_seen += len_y
@@ -751,11 +816,12 @@ class ModelTrainer(BaseTrainer, ABC):
                 torch.cuda.synchronize()
 
             if self.epoch_images_seen % self.configs.log_interval < len_y:
+                avg_loss = self.accum_losses["total"] / self.epoch_images_seen
                 self.logger.info(
                     f"Pretrain Epoch "
                     f"[{self.current_epoch}/{self.configs.num_epochs}]; "
                     f"{self.total_images_seen} images seen; "
-                    # f"avg. loss={self.accum_losses['total']:.4f}"
+                    f"avg. total loss={avg_loss:.4f}"
                 )
             if self.epoch_images_seen >= self.configs.pretrain:
                 break
@@ -769,8 +835,17 @@ class ModelTrainer(BaseTrainer, ABC):
                 weight_decay=self.configs.weight_decay,
             )
 
-        self.print_epoch_summary()
-        # self.save_epoch_data()
+        epoch_lbl = f"[{self.current_epoch}/{self.configs.num_epochs}]"
+        epoch_lbl += " <pretraining>"
+        time_str, mcrscd_str = str(dt.now() - self.epoch_start_time).split(".")
+        time_str = ".".join([time_str, mcrscd_str[:3]])
+
+        self.logger.info(
+            f"===> Training Epoch {epoch_lbl} === Finished in {time_str}\n"
+            f"\t\t\t\t\t\t             |> "
+            f"Avg. Losses: Total = {self.accum_losses['total']:.4g}\n"
+        )
+        self.save_epoch_data()
 
     def get_configs(self) -> dict[str, Any]:
         """Retrieves all given and inferred configurations for downstream use."""
@@ -884,8 +959,9 @@ class ModelTrainer(BaseTrainer, ABC):
 
         self.logger.info(
             f"===> Training Epoch {epoch_lbl} === Finished in {time_str}\n"
-            f"\t\t\t\t\t\tAvg. Losses: Total = {avg_losses['total']:.4g}\n"
-            f"\t\t\t\t\t\t             {loss_str}"
+            f"\t\t\t\t\t\t             |> "
+            f"Avg. Losses: Total = {avg_losses['total']:.4g}\n"
+            f"\t\t\t\t\t\t             |>              {loss_str}"
         )
 
     @property

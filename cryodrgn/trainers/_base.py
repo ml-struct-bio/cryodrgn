@@ -24,7 +24,6 @@ import cryodrgn.utils
 from cryodrgn import __version__, ctf
 from cryodrgn.dataset import ImageDataset, TiltSeriesData, make_dataloader
 from cryodrgn.lattice import Lattice
-from cryodrgn.pose import PoseTracker
 
 try:
     import apex.amp as amp  # type: ignore  # PYR01
@@ -45,6 +44,8 @@ class BaseConfigurations(ABC):
     test_installation: bool = False
 
     def __post_init__(self) -> None:
+        """Parsing given configuration parameter values and checking their validity."""
+
         for this_field in fields(self):
             assert (
                 this_field.name == "quick_config" or this_field.default is not MISSING
@@ -56,6 +57,11 @@ class BaseConfigurations(ABC):
         if self.test_installation:
             print("Installation was successful!")
             sys.exit()
+        elif self.test_installation is not False:
+            raise ValueError(
+                f"Given `test_installation` value `{self.test_installation}` "
+                f"cannot be interpreted as a boolean!"
+            )
 
         if not isinstance(self.verbose, int) or self.verbose < 0:
             raise ValueError(
@@ -531,6 +537,7 @@ class ModelTrainer(BaseTrainer, ABC):
             num_workers=self.num_workers,
             seed=self.configs.seed,
         )
+        self.apix = self.ctf_params[0, 0] if self.ctf_params is not None else None
 
         self.volume_optim_class = self.optim_types[self.configs.volume_optim_type]
         self.volume_optimizer = self.volume_optim_class(
@@ -601,25 +608,12 @@ class ModelTrainer(BaseTrainer, ABC):
             self.do_pretrain = False
         else:
             self.start_epoch = 1
-            self.do_pretrain = True
 
         self.n_particles_pretrain = (
             self.configs.pretrain * self.particle_count
             if self.configs.pretrain >= 0
             else self.particle_count
         )
-
-        if self.configs.poses:
-            self.pose_tracker = PoseTracker.load(
-                infile=self.configs.poses,
-                Nimg=self.image_count,
-                D=self.resolution,
-                emb_type="s2s2" if self.configs.refine_gt_poses else None,
-                ind=self.ind,
-                device=self.device,
-            )
-        else:
-            self.pose_tracker = None
 
         # counters used across training iterations
         self.current_epoch = None
@@ -746,7 +740,7 @@ class ModelTrainer(BaseTrainer, ABC):
 
                 # scalar summary
                 if self.epoch_images_seen % self.configs.log_interval < len_y:
-                    self.print_batch_summary()
+                    self.print_batch_summary(losses)
 
                 if self.epoch_images_seen > self.data.N:
                     break
@@ -930,7 +924,7 @@ class ModelTrainer(BaseTrainer, ABC):
     def save_epoch_data(self) -> None:
         pass
 
-    def print_batch_summary(self) -> None:
+    def print_batch_summary(self, losses: dict[str, float]) -> None:
         """Create a summary at the end of a training batch and print it to the log."""
         raise NotImplementedError
 

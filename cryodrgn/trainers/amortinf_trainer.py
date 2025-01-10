@@ -41,10 +41,6 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
     n_imgs_pose_search: int = 500000
     epochs_sgd: int = None
     pose_only_phase: int = 0
-    # data loading
-    batch_size_known_poses: int = 32
-    batch_size_hps: int = 8
-    batch_size_sgd: int = 256
     invert_data: bool = False
     # optimizers
     pose_table_optim_type: str = "adam"
@@ -390,6 +386,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
         super().__init__(configs)
         self.configs: AmortizedInferenceConfigurations
         self.model = self.volume_model
+        self.do_pretrain = True
 
         if self.configs.num_epochs is None:
             self.configs.num_epochs = self.epochs_sgd + self.epochs_pose_search
@@ -652,7 +649,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
 
         return ctf_local
 
-    def train_batch(self, batch: dict[str, torch.Tensor]) -> None:
+    def train_batch(self, batch: dict[str, torch.Tensor]) -> tuple:
         if self.configs.verbose_time:
             torch.cuda.synchronize()
             self.run_times["dataloading"].append(time.time() - self.end_time)
@@ -691,10 +688,6 @@ class AmortizedInferenceTrainer(ModelTrainer):
         for key in self.optimized_modules:
             self.optimizers[key].zero_grad()
 
-        # forward pass
-        if self.pose_tracker is not None:
-            batch["rots"], batch["trans"] = self.pose_tracker.get_pose(batch["indices"])
-
         latent_variables_dict, y_pred, y_gt_processed = self.forward_pass(**batch)
 
         if self.n_prcs > 1:
@@ -718,10 +711,8 @@ class AmortizedInferenceTrainer(ModelTrainer):
         # backward pass
         if self.configs.verbose_time:
             torch.cuda.synchronize()
-        start_time_backward = time.time()
-        total_loss.backward()
-        # self.cur_loss += total_loss.item() * len(indices)
 
+        start_time_backward = time.time()
         for key in self.optimized_modules:
             if self.optimizer_types[key] == "adam":
                 self.optimizers[key].step()
@@ -739,7 +730,8 @@ class AmortizedInferenceTrainer(ModelTrainer):
                         _y_pred, _y_gt_processed, _latent_variables_dict
                     )
                     _loss.backward()
-                    return _loss.item()
+
+                    return _loss
 
                 self.optimizers[key].step(closure)
 
@@ -751,6 +743,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
             self.run_times["backward"].append(time.time() - start_time_backward)
 
         # detach
+        rot_pred, trans_pred = None, None
         if self.will_make_checkpoint:
             self.in_dict_last = batch
             self.y_pred_last = y_pred
@@ -788,14 +781,10 @@ class AmortizedInferenceTrainer(ModelTrainer):
         else:
             self.run_times["to_cpu"].append(0.0)
 
-        # logging
-        self.end_time = time.time()
         all_losses["total"] = total_loss
-        for loss_k, loss_val in all_losses.items():
-            if loss_k in self.accum_losses:
-                self.accum_losses[loss_k] += loss_val * len(batch["indices"])
-            else:
-                self.accum_losses[loss_k] = loss_val * len(batch["indices"])
+        self.accum_losses["total"] = total_loss
+
+        return all_losses, batch["tilt_indices"], batch["indices"], rot_pred, trans_pred
 
     def detach_latent_variables(self, latent_variables_dict):
         rot_pred = latent_variables_dict["R"].detach().cpu().numpy()
@@ -1079,27 +1068,19 @@ class AmortizedInferenceTrainer(ModelTrainer):
         self.save_volume()
         self.save_model()
 
-    def print_batch_summary(self) -> None:
-        avg_losses = self.average_losses
-
-        kld_str = f"kld={avg_losses['kld']:.4f}, " if "kld" in avg_losses else ""
+    def print_batch_summary(self, losses: dict[str, float]) -> None:
+        kld_str = f"kld={losses['kld']:.4f}, " if "kld" in losses else ""
         self.logger.info(
             f"### Epoch [{self.current_epoch}/{self.configs.num_epochs}], "
             f"Batch [{self.epoch_batch_count}] "
             f"({self.epoch_images_seen}/{self.image_count} images); "
-            f"gen loss={avg_losses['gen']:.4g}, {kld_str}"
-            f"loss={avg_losses['total']:.4f}"
+            f"gen loss={losses['gen']:.4g}, {kld_str}"
+            f"loss={losses['total']:.4f}"
         )
-
-        if hasattr(self.model.output_mask, "current_radius"):
-            self.accum_losses["Mask Radius"] = self.model.output_mask.current_radius
         if self.model.trans_search_factor is not None:
-            self.accum_losses["Trans. Search Factor"] = self.model.trans_search_factor
+            losses["Trans. Search Factor"] = self.model.trans_search_factor
 
-        summary.make_scalar_summary(
-            self.writer, self.accum_losses, self.total_images_seen
-        )
-
+        summary.make_scalar_summary(self.writer, losses, self.total_images_seen)
         if self.configs.verbose_time:
             for key in self.run_times.keys():
                 self.logger.info(

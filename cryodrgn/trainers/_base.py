@@ -245,7 +245,7 @@ class ModelConfigurations(BaseConfigurations):
     # using a lazy data loader to minimize memory usage, shuffling training minibatches
     # and controlling their size, applying parallel computation and data processing
     batch_size: int = 8
-    batch_size_known_poses: int = 128
+    batch_size_known_poses: int = None
     batch_size_sgd: int = None
     batch_size_hps: int = None
     lazy: bool = False
@@ -363,6 +363,9 @@ class ModelConfigurations(BaseConfigurations):
         if self.refine_gt_poses and self.volume_domain != "hartley":
             raise ValueError("Need to use --domain hartley if doing pose SGD")
 
+        if self.batch_size_known_poses is None:
+            self.batch_size_known_poses = self.batch_size
+
 
 class ModelTrainer(BaseTrainer, ABC):
     """Abstract base class for reconstruction model training engines.
@@ -445,6 +448,7 @@ class ModelTrainer(BaseTrainer, ABC):
                 datadir=self.configs.datadir,
                 window_r=self.configs.window_r,
                 max_threads=self.configs.max_threads,
+                device=self.device,
             )
             self.particle_count = self.data.N
 
@@ -698,18 +702,21 @@ class ModelTrainer(BaseTrainer, ABC):
                 self.total_images_seen += len_y
                 self.epoch_images_seen += len_y
 
+                self.volume_model.train()
+                self.volume_optimizer.zero_grad()
                 with self.amp_mode:
                     losses, tilt_ind, ind, rot, trans = self.train_batch(batch)
 
-                rot = rot.detach().cpu().numpy()
-                if trans is not None:
+                if isinstance(rot, torch.Tensor):
+                    rot = rot.detach().cpu().numpy()
+                if isinstance(trans, torch.Tensor):
                     trans = trans.detach().cpu().numpy()
 
                 if self.pose_optimizer is not None:
                     if self.current_epoch >= self.configs.pretrain:
                         self.pose_optimizer.step()
 
-                ind_tilt = tilt_ind or ind
+                ind_tilt = tilt_ind if tilt_ind is not None else ind
                 self.predicted_rots[ind_tilt] = rot.reshape(-1, 3, 3)
                 if trans is not None:
                     self.predicted_trans[ind_tilt] = trans.reshape(-1, 2)
@@ -733,10 +740,13 @@ class ModelTrainer(BaseTrainer, ABC):
 
                 # logging
                 for loss_k, loss_val in losses.items():
+                    loss_v = (
+                        loss_val if isinstance(loss_val, float) else loss_val.item()
+                    )
                     if loss_k in self.accum_losses:
-                        self.accum_losses[loss_k] += loss_val.item() * len(ind)
+                        self.accum_losses[loss_k] += loss_v * len(ind)
                     else:
-                        self.accum_losses[loss_k] = loss_val.item() * len(ind)
+                        self.accum_losses[loss_k] = loss_v * len(ind)
 
                 # scalar summary
                 if self.epoch_images_seen % self.configs.log_interval < len_y:
@@ -777,9 +787,15 @@ class ModelTrainer(BaseTrainer, ABC):
     @property
     def model_resolution(self) -> int:
         if isinstance(self.volume_model, DataParallel):
-            model_resolution = self.volume_model.module.lattice.D
+            if self.configs.z_dim > 0:
+                model_resolution = self.volume_model.module.lattice.D
+            else:
+                model_resolution = self.volume_model.module.D
         else:
-            model_resolution = self.volume_model.lattice.D
+            if self.configs.z_dim > 0:
+                model_resolution = self.volume_model.lattice.D
+            else:
+                model_resolution = self.volume_model.D
 
         return model_resolution
 
@@ -788,7 +804,7 @@ class ModelTrainer(BaseTrainer, ABC):
         self.logger.info("Will make a full summary at the end of this epoch")
         self.logger.info(f"Will pretrain on {self.configs.pretrain} particles")
         self.epoch_start_time = dt.now()
-        self.total_images_seen = 0
+        self.epoch_images_seen = 0
 
         pretrain_dataloader = make_dataloader(
             self.data,
@@ -798,24 +814,20 @@ class ModelTrainer(BaseTrainer, ABC):
             shuffle=self.configs.shuffle,
         )
 
-        self.epoch_images_seen = 0
         for batch in pretrain_dataloader:
             len_y = len(batch["indices"])
             self.epoch_images_seen += len_y
-            self.total_images_seen += len_y
-
             self.pretrain_batch(batch)
 
             if self.configs.verbose_time:
                 torch.cuda.synchronize()
 
             if self.epoch_images_seen % self.configs.log_interval < len_y:
-                avg_loss = self.accum_losses["total"] / self.epoch_images_seen
                 self.logger.info(
                     f"Pretrain Epoch "
                     f"[{self.current_epoch}/{self.configs.num_epochs}]; "
-                    f"{self.total_images_seen} images seen; "
-                    f"avg. total loss={avg_loss:.4f}"
+                    f"{self.epoch_images_seen} images seen; "
+                    f"avg. total loss={self.accum_losses['total']:.6f}"
                 )
             if self.epoch_images_seen >= self.configs.pretrain:
                 break
@@ -914,7 +926,7 @@ class ModelTrainer(BaseTrainer, ABC):
         pass
 
     @abstractmethod
-    def train_batch(self, batch: dict[str, torch.Tensor]) -> None:
+    def train_batch(self, batch: dict[str, torch.Tensor]) -> tuple[str, torch.Tensor]:
         pass
 
     def pretrain_batch(self, batch: dict[str, torch.Tensor]) -> None:

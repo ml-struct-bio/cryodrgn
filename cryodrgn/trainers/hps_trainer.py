@@ -48,7 +48,7 @@ class HierarchicalPoseSearchConfigurations(ModelConfigurations):
     equivariance: bool = None
     equivariance_start: int = 100000
     equivariance_stop: int = 200000
-    l_ramp_epochs: int = 25
+    l_ramp_epochs: int = 0
     l_ramp_model: int = 0
     # resetting every certain number of epochs
     reset_model_every: int = None
@@ -381,7 +381,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                 rot, trans = self.pose_tracker.get_pose(ind)
             ctf_param = self.ctf_params[ind] if self.ctf_params is not None else None
 
-        if trans is not None:
+        if trans is not None and self.configs.pose_estimation == "fixed":
             y = self.preprocess_input(y, trans)
 
         use_ctf = ctf_param is not None
@@ -403,10 +403,6 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
             input_ = (y, tilt_ind) if self.configs.tilt else (y,)
         if ctf_i is not None:
             input_ = (x * ctf_i.sign() for x in input_)  # phase flip by the ctf
-
-        # VAE inference of z
-        self.volume_optimizer.zero_grad()
-        self.volume_model.train()
 
         lamb = None
         losses = dict()
@@ -482,6 +478,9 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
             losses["gen"] = (rot_loss + tilt_loss) / 2
 
         else:
+            if self.configs.pose_estimation == "abinit" and trans is not None:
+                y = translate(y)
+
             losses["gen"] = F.mse_loss(gen_slice(rot), y)
 
         # latent loss
@@ -541,12 +540,12 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
             f"### Epoch [{self.current_epoch}/{self.configs.num_epochs}], "
             f"Batch [{self.epoch_batch_count}] "
             f"({self.epoch_images_seen}/{self.image_count} images); "
-            f"loss={losses['gen']:.6g}, "
+            f"gen loss={losses['gen']:.4g}, "
         )
         if "kld" in losses:
-            batch_str += f"kld={losses['kld']:.6f}, "
+            batch_str += f"kld={losses['kld']:.4f}, "
         if self.beta is not None:
-            batch_str += f"beta={self.beta:.6f}, "
+            batch_str += f"beta={self.beta:.4f}, "
 
         self.logger.info(batch_str + f"{eq_log}")
 
@@ -630,6 +629,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
         # If we are doing heterogeneous reconstruction, also save latent conformations
         if self.configs.z_dim > 0:
             self.volume_model.eval()
+            trans = self.pose_tracker.trans
 
             with torch.no_grad():
                 assert not self.volume_model.training
@@ -640,11 +640,15 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                     batch_size=self.configs.batch_size,
                     shuffler_size=self.configs.shuffler_size,
                     shuffle=False,
+                    seed=self.configs.seed,
                 )
 
                 for minibatch in data_generator:
                     ind = minibatch["indices"]
                     y = minibatch["y"].to(self.device)
+                    if trans is not None:
+                        y = self.preprocess_input(y, trans[ind])
+
                     yt = None
                     if self.configs.tilt:
                         yt = minibatch["tilt_indices"].to(self.device)

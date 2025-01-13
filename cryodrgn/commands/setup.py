@@ -4,11 +4,11 @@ import os
 import argparse
 import yaml
 from typing import Optional, Union
-from cryodrgn.trainers._base import ModelConfigurations
+from cryodrgn.trainers import ModelConfigurations
 from cryodrgn.utils import load_yaml
 
 
-def add_args(parser):
+def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("config_file", help="experiment config file (.yaml)")
 
     parser.add_argument(
@@ -49,9 +49,11 @@ def add_args(parser):
     )
 
     parser.add_argument(
-        '--cfgs', '-c', nargs='+',
+        "--cfgs",
+        "-c",
+        nargs="+",
         help="additional configuration parameters to pass to the model "
-             "in the form of 'CFG_KEY1=CFG_VAL1' 'CFG_KEY2=CFG_VAL2' ... "
+        "in the form of 'CFG_KEY1=CFG_VAL1' 'CFG_KEY2=CFG_VAL2' ... ",
     )
 
 
@@ -171,10 +173,15 @@ class SetupHelper:
         return configs
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
     setup_helper = SetupHelper(args.config_file)
     setup_helper.create_configs(
-        args.model, args.dataset, args.particles, args.ctf, args.poses, args.cfgs,
+        args.model,
+        args.dataset,
+        args.particles,
+        args.ctf,
+        args.poses,
+        args.cfgs,
         capture_setup=args.capture_setup,
         reconstruction_type=args.reconstruction_type,
         pose_estimation=args.pose_estimation,

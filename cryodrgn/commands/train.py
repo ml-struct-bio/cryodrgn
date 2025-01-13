@@ -28,8 +28,11 @@ TRAINER_CLASSES = {
 
 
 def add_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("outdir", help="experiment output location")
+    parser.add_argument("config_file", help="experiment config file")
 
+    parser.add_argument(
+        "--outdir", "-o", required=True, help="where to store experiment output"
+    )
     parser.add_argument(
         "--model",
         choices=set(TRAINER_CLASSES),
@@ -45,10 +48,11 @@ def add_args(parser: argparse.ArgumentParser) -> None:
 
 def main(args: argparse.Namespace, configs: Optional[dict[str, Any]] = None) -> None:
     if configs is None:
-        configs = SetupHelper(args.outdir, update_existing=False).create_configs(
+        configs = SetupHelper(args.config_file, update_existing=False).create_configs(
             model=args.model
         )
 
+    configs["outdir"] = args.outdir
     cryodrgn.utils._verbose = False
     trainer = TRAINER_CLASSES[configs["model"]](configs)
     trainer.train()

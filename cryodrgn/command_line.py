@@ -98,6 +98,8 @@ def main_commands() -> None:
             "parse_pose_csparc",
             "parse_pose_star",
             "pc_traversal",
+            "setup",
+            "train",
             "train_nn",
             "train_vae",
             "view_config",

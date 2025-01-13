@@ -199,7 +199,7 @@ class BaseTrainer(ABC):
         self.configs = self.config_cls(**configs)
         self.verbose = self.configs.verbose
         np.random.seed(self.configs.seed)
-        self.logger = logging.getLogger(type(self).__name__)
+        self.logger = logging.getLogger(self.label)
 
     @classmethod
     def defaults(cls) -> dict[str, Any]:
@@ -235,8 +235,6 @@ class ModelConfigurations(BaseConfigurations):
     ind: str = None
     labels: str = None
     # whether to start with given poses to some degree, or do ab initio pose search
-    use_gt_poses: bool = False
-    refine_gt_poses: bool = False
     use_gt_trans: bool = False
     no_trans: bool = False
     # loading checkpoints from previous experiment runs
@@ -354,13 +352,13 @@ class ModelConfigurations(BaseConfigurations):
                     f"or a positive integer (heterogeneous reconstruction)!"
                 )
 
-        if (self.use_gt_poses or self.refine_gt_poses) and not self.poses:
+        if self.pose_estimation in {"fixed", "refine"} and not self.poses:
             raise ValueError(
                 "Must specify a poses file using pose= if using "
                 "or refining ground truth poses!"
             )
 
-        if self.refine_gt_poses and self.volume_domain != "hartley":
+        if self.pose_estimation == "refine" and self.volume_domain != "hartley":
             raise ValueError("Need to use --domain hartley if doing pose SGD")
 
         if self.batch_size_known_poses is None:
@@ -644,13 +642,13 @@ class ModelTrainer(BaseTrainer, ABC):
             self.sorted_poses = (rot, trans * self.model_resolution)
 
         self.base_poses = list()
-        if not self.configs.use_gt_poses:
+        if self.configs.pose_estimation == "fixed":
+            self.predicted_rots = self.predicted_trans = None
+        else:
             self.predicted_rots = np.empty((self.image_count, 3, 3))
             self.predicted_trans = (
                 np.empty((self.image_count, 2)) if not self.configs.no_trans else None
             )
-        else:
-            self.predicted_rots = self.predicted_trans = None
 
         self.predicted_conf = (
             np.empty((self.particle_count, self.configs.z_dim))
@@ -827,7 +825,7 @@ class ModelTrainer(BaseTrainer, ABC):
                     f"Pretrain Epoch "
                     f"[{self.current_epoch}/{self.configs.num_epochs}]; "
                     f"{self.epoch_images_seen} images seen; "
-                    f"avg. total loss={self.accum_losses['total']:.6f}"
+                    f"total loss={self.accum_losses['total']:.4g}"
                 )
             if self.epoch_images_seen >= self.configs.pretrain:
                 break
@@ -849,7 +847,7 @@ class ModelTrainer(BaseTrainer, ABC):
         self.logger.info(
             f"===> Training Epoch {epoch_lbl} === Finished in {time_str}\n"
             f"\t\t\t\t\t\t             |> "
-            f"Avg. Losses: Total = {self.accum_losses['total']:.4g}\n"
+            f"Total Loss = {self.accum_losses['total']:.4g}\n"
         )
         self.save_epoch_data()
 
@@ -926,7 +924,7 @@ class ModelTrainer(BaseTrainer, ABC):
         pass
 
     @abstractmethod
-    def train_batch(self, batch: dict[str, torch.Tensor]) -> tuple[str, torch.Tensor]:
+    def train_batch(self, batch: dict[str, torch.Tensor]) -> tuple:
         pass
 
     def pretrain_batch(self, batch: dict[str, torch.Tensor]) -> None:
@@ -953,22 +951,28 @@ class ModelTrainer(BaseTrainer, ABC):
             epoch_lbl += " <volume inference>"
 
         avg_losses = self.average_losses
-        loss_str = ", ".join(
-            [
-                f"{loss_k} = {loss_val:.4g}"
-                for loss_k, loss_val in avg_losses.items()
-                if loss_k != "total"
-            ]
-        )
+        if self.verbose > 2:
+            loss_str = ", ".join(
+                [
+                    f"{loss_k} = {loss_val:.4g}"
+                    for loss_k, loss_val in avg_losses.items()
+                    if loss_k != "total"
+                ]
+            )
+        else:
+            loss_str = ""
+
         time_str, mcrscd_str = str(dt.now() - self.epoch_start_time).split(".")
         time_str = ".".join([time_str, mcrscd_str[:3]])
-
-        self.logger.info(
+        log_msg = (
             f"===> Training Epoch {epoch_lbl} === Finished in {time_str}\n"
             f"\t\t\t\t\t\t             |> "
             f"Avg. Losses: Total = {avg_losses['total']:.4g}\n"
-            f"\t\t\t\t\t\t             |>              {loss_str}"
         )
+        if loss_str:
+            log_msg += f"\t\t\t\t\t\t             |>              {loss_str}"
+
+        self.logger.info(log_msg)
 
     @property
     def in_pose_search_step(self) -> bool:

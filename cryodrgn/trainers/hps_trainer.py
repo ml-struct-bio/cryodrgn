@@ -122,6 +122,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
 
     configs: HierarchicalPoseSearchConfigurations
     config_cls = HierarchicalPoseSearchConfigurations
+    label = "cDRGN v3 training"
 
     @property
     def mask_dimensions(self) -> tuple[torch.Tensor, int]:

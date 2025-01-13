@@ -25,7 +25,7 @@ from cryodrgn.trainers import summary
 from cryodrgn.models.losses import kl_divergence_conf, l1_regularizer, l2_frequency_bias
 from cryodrgn.models.amortized_inference import DRGNai, MyDataParallel
 from cryodrgn.masking import CircularMask, FrequencyMarchingMask
-from cryodrgn.trainers._base import ModelTrainer, ModelConfigurations
+from cryodrgn.trainers import ReconstructionModelTrainer, ModelConfigurations
 
 
 @dataclass
@@ -224,7 +224,7 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
             self.t_n_grid = 1
 
 
-class AmortizedInferenceTrainer(ModelTrainer):
+class AmortizedInferenceTrainer(ReconstructionModelTrainer):
     """An engine for training the reconstruction model on particle data.
 
     Attributes
@@ -257,6 +257,7 @@ class AmortizedInferenceTrainer(ModelTrainer):
     configs: AmortizedInferenceConfigurations
     config_cls = AmortizedInferenceConfigurations
     model_lbl = "amort"
+    label = "cDRGN v4 training"
 
     def make_output_mask(self) -> CircularMask:
         if self.configs.output_mask == "circ":
@@ -782,7 +783,8 @@ class AmortizedInferenceTrainer(ModelTrainer):
             self.run_times["to_cpu"].append(0.0)
 
         all_losses["total"] = total_loss
-        self.accum_losses["total"] = total_loss
+        if self.in_pretraining:
+            self.accum_losses["total"] = total_loss
 
         return all_losses, batch["tilt_indices"], batch["indices"], rot_pred, trans_pred
 
@@ -1075,7 +1077,6 @@ class AmortizedInferenceTrainer(ModelTrainer):
             f"Batch [{self.epoch_batch_count}] "
             f"({self.epoch_images_seen}/{self.image_count} images); "
             f"gen loss={losses['gen']:.4g}, {kld_str}"
-            f"loss={losses['total']:.4f}"
         )
         if self.model.trans_search_factor is not None:
             losses["Trans. Search Factor"] = self.model.trans_search_factor

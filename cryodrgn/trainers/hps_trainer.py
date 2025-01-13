@@ -1,5 +1,13 @@
-"""The training engine for cryoDRGN reconstruction models up to and including v3."""
+"""The training engine for cryoDRGN reconstruction models up to and including v3.
 
+This `HierarchicalPoseSearchTrainer` class (and its associated configuration class
+`HierarchicalPoseSearchConfigurations`) are used to replicate the behaviour of the
+cryoDRGN reconstruction algorithm as featured in commands such as `cryodrgn train_vae`,
+`cryodrgn abinit_homo`, etc. in versions of the package before v4.0.0 — that is, before
+the merge of the cryoDRGN codebase with the offshoot DRGN-AI amortized inference
+reconstruction algorithm.
+
+"""
 import os
 import pickle
 from dataclasses import dataclass
@@ -15,7 +23,7 @@ from cryodrgn.models.losses import EquivarianceLoss
 from cryodrgn.models.variational_autoencoder import unparallelize, HetOnlyVAE
 from cryodrgn.models.neural_nets import get_decoder
 from cryodrgn.models.pose_search import PoseSearch
-from cryodrgn.trainers._base import ModelTrainer, ModelConfigurations
+from cryodrgn.trainers import ReconstructionModelTrainer, ModelConfigurations
 from cryodrgn.mrcfile import write_mrc
 from cryodrgn.pose import PoseTracker
 
@@ -118,7 +126,7 @@ class HierarchicalPoseSearchConfigurations(ModelConfigurations):
                 self.volume_domain = "hartley"
 
 
-class HierarchicalPoseSearchTrainer(ModelTrainer):
+class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
 
     configs: HierarchicalPoseSearchConfigurations
     config_cls = HierarchicalPoseSearchConfigurations
@@ -232,11 +240,23 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                 raise ValueError("Image size must be 64x64 for convolutional encoder!")
 
         in_dim = self.mask_dimensions[1]
-        if in_dim is not None and in_dim % 8 != 0:
-            self.logger.warning(
-                f"Warning: Masked input image dimension {in_dim=} "
-                "is not a mutiple of 8 -- AMP training speedup is not optimized!"
-            )
+        # also check e.g. enc_mask dim?
+        if self.configs.amp:
+            if self.configs.enc_dim % 8 != 0:
+                self.logger.warning(
+                    f"Encoder hidden layer dimension {self.configs.enc_dim} not "
+                    f"divisible by 8 and thus not optimal for AMP training!"
+                )
+            if self.configs.dec_dim % 8 != 0:
+                self.logger.warning(
+                    f"Decoder hidden layer dimension {self.configs.dec_dim} not "
+                    f"divisible by 8 and thus not optimal for AMP training!"
+                )
+            if in_dim is not None and in_dim % 8 != 0:
+                self.logger.warning(
+                    f"Warning: Masked input image dimension {in_dim=} "
+                    "is not a mutiple of 8 -- AMP training speedup is not optimized!"
+                )
 
         self.equivariance_lambda = self.equivariance_loss = None
         if self.configs.z_dim:
@@ -261,7 +281,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                 infile=self.configs.poses,
                 Nimg=self.image_count,
                 D=self.resolution,
-                emb_type="s2s2" if self.configs.refine_gt_poses else None,
+                emb_type="s2s2" if self.configs.pose_estimation == "refine" else None,
                 ind=self.ind,
                 device=self.device,
             )
@@ -384,6 +404,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
 
         if trans is not None and self.configs.pose_estimation == "fixed":
             y = self.preprocess_input(y, trans)
+            trans = None
 
         use_ctf = ctf_param is not None
         if self.beta_schedule is not None:
@@ -630,7 +651,6 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
         # If we are doing heterogeneous reconstruction, also save latent conformations
         if self.configs.z_dim > 0:
             self.volume_model.eval()
-            trans = self.pose_tracker.trans
 
             with torch.no_grad():
                 assert not self.volume_model.training
@@ -647,8 +667,16 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
                 for minibatch in data_generator:
                     ind = minibatch["indices"]
                     y = minibatch["y"].to(self.device)
+
+                    if self.predicted_trans is not None:
+                        trans = torch.Tensor(self.predicted_trans[ind])
+                    elif self.pose_tracker is not None:
+                        trans = self.pose_tracker.trans
+                    else:
+                        trans = None
+
                     if trans is not None:
-                        y = self.preprocess_input(y, trans[ind])
+                        y = self.preprocess_input(y, trans)
 
                     yt = None
                     if self.configs.tilt:
@@ -685,10 +713,7 @@ class HierarchicalPoseSearchTrainer(ModelTrainer):
             self.pose_tracker.save(out_poses)
         elif self.configs.pose_estimation == "abinit":
             with open(out_poses, "wb") as f:
-                pickle.dump(
-                    (self.predicted_rots, self.predicted_trans / self.model_resolution),
-                    f,
-                )
+                pickle.dump((self.predicted_rots, trans / self.model_resolution), f)
 
     def get_latest(self) -> None:
         self.logger.info("Detecting latest checkpoint...")

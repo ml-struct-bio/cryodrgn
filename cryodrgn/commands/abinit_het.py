@@ -14,7 +14,6 @@ import os
 import argparse
 import numpy as np
 import cryodrgn.utils
-from cryodrgn.commands.setup import SetupHelper
 from cryodrgn.trainers.hps_trainer import HierarchicalPoseSearchTrainer
 
 
@@ -36,6 +35,12 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--ctf", metavar="pkl", type=os.path.abspath, help="CTF parameters (.pkl)"
+    )
+    parser.add_argument(
+        "--no-amp",
+        action="store_false",
+        dest="amp",
+        help="Do not use mixed-precision training",
     )
     parser.add_argument("--load", help="Initialize training from a checkpoint")
     parser.add_argument("--load-poses", help="Initialize training from a checkpoint")
@@ -382,6 +387,7 @@ def main(args: argparse.Namespace) -> None:
         "dataset": None,
         "datadir": args.datadir,
         "ind": args.ind,
+        "pose_estimation": "abinit",
         "seed": args.seed,
         "log_interval": args.log_interval,
         "verbose": args.verbose,
@@ -389,8 +395,6 @@ def main(args: argparse.Namespace) -> None:
         "load_poses": args.load_poses,
         "checkpoint": args.checkpoint,
         "z_dim": args.zdim,
-        "use_gt_poses": False,
-        "refine_gt_poses": False,
         "use_gt_trans": False,
         "invert_data": args.invert_data,
         "lazy": args.lazy,
@@ -430,7 +434,7 @@ def main(args: argparse.Namespace) -> None:
         "subtomo_averaging": False,
         "volume_optim_type": "adam",
         "no_trans": False,
-        "amp": False,
+        "amp": args.amp,
         "tilt_enc_only": args.enc_only,
         "beta": args.beta,
         "beta_control": args.beta_control,
@@ -453,6 +457,5 @@ def main(args: argparse.Namespace) -> None:
     }
 
     cryodrgn.utils._verbose = False
-    _ = SetupHelper.create_using_configs(configs)
     trainer = HierarchicalPoseSearchTrainer(configs)
     trainer.train()

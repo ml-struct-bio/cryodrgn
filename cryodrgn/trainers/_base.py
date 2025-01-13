@@ -215,7 +215,7 @@ class BaseTrainer(ABC):
 @dataclass
 class ModelConfigurations(BaseConfigurations):
 
-    trainer_cls: str = "ModelTrainer"
+    trainer_cls: str = "ReconstructionModelTrainer"
 
     # a parameter belongs to this configuration set if and only if it has a default
     # value defined here, note that children classes inherit these from parents
@@ -365,8 +365,8 @@ class ModelConfigurations(BaseConfigurations):
             self.batch_size_known_poses = self.batch_size
 
 
-class ModelTrainer(BaseTrainer, ABC):
-    """Abstract base class for reconstruction model training engines.
+class ReconstructionModelTrainer(BaseTrainer, ABC):
+    """Abstract base class for volume reconstruction model training engines.
 
     Attributes
     ----------
@@ -551,23 +551,20 @@ class ModelTrainer(BaseTrainer, ABC):
         # Mixed precision training
         self.scaler = None
         if self.configs.amp:
-            for parameter in ["batch_size", "pe_dim", "qdim"]:
-                pval = getattr(self.configs, parameter, 0)
-                if pval % 8 != 0:
-                    raise ValueError(
-                        f"{parameter}={pval} must be divisible by 8 for AMP training!"
-                    )
-
-            if (self.resolution - 1) % 8 != 0:
-                raise ValueError(
-                    f"{self.resolution=} must be divisible by 8 for AMP training!"
+            if self.configs.batch_size % 8 != 0:
+                self.logger.warning(
+                    f"Batch size {self.configs.batch_size} not divisible by 8 "
+                    f"and thus not optimal for AMP training!"
                 )
-
-            # Also check z_dim, enc_mask dim? Add them as warnings for now.
+            if (self.data.D - 1) % 8 != 0:
+                self.logger.warning(
+                    f"Image size {self.data.D - 1} not divisible by 8 "
+                    f"and thus not optimal for AMP training!"
+                )
             if self.configs.z_dim % 8 != 0:
                 self.logger.warning(
-                    f"Warning: {self.configs.z_dim=} is not a multiple of 8 "
-                    "-- AMP training speedup is not optimized"
+                    f"Z dimension {self.configs.z_dim} is not a multiple of 8 "
+                    "-- AMP training speedup is not optimized!"
                 )
 
             try:  # Mixed precision with apex.amp
@@ -715,7 +712,8 @@ class ModelTrainer(BaseTrainer, ABC):
                         self.pose_optimizer.step()
 
                 ind_tilt = tilt_ind if tilt_ind is not None else ind
-                self.predicted_rots[ind_tilt] = rot.reshape(-1, 3, 3)
+                if self.predicted_rots is not None:
+                    self.predicted_rots[ind_tilt] = rot.reshape(-1, 3, 3)
                 if trans is not None:
                     self.predicted_trans[ind_tilt] = trans.reshape(-1, 2)
                 if self.base_pose is not None:

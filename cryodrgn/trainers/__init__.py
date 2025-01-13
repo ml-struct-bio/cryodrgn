@@ -1,4 +1,4 @@
-from cryodrgn.trainers._base import ModelTrainer, ModelConfigurations
+from cryodrgn.trainers._base import ReconstructionModelTrainer, ModelConfigurations
 from cryodrgn.trainers.hps_trainer import (
     HierarchicalPoseSearchTrainer,
     HierarchicalPoseSearchConfigurations,
@@ -9,7 +9,7 @@ from cryodrgn.trainers.amortinf_trainer import (
 )
 
 __all__ = [
-    "ModelTrainer",
+    "ReconstructionModelTrainer",
     "ModelConfigurations",
     "HierarchicalPoseSearchTrainer",
     "HierarchicalPoseSearchConfigurations",

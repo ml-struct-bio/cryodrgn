@@ -364,6 +364,7 @@ def main(args: argparse.Namespace) -> None:
         "lazy": args.lazy,
         "window": args.window,
         "window_r": args.window_r,
+        "shuffle": args.shuffler_size is not None and args.shuffler_size > 0,
         "shuffler_size": args.shuffler_size,
         "max_threads": args.max_threads,
         "num_workers": 0,
@@ -393,6 +394,7 @@ def main(args: argparse.Namespace) -> None:
         "beta_control": None,
         "reset_optim_after_pretrain": False,
         "pose_sgd_emb_type": args.emb_type,
+        "seed": args.seed,
     }
 
     cryodrgn.utils._verbose = False

@@ -402,10 +402,6 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
                 rot, trans = self.pose_tracker.get_pose(ind)
             ctf_param = self.ctf_params[ind] if self.ctf_params is not None else None
 
-        if trans is not None and self.configs.pose_estimation == "fixed":
-            y = self.preprocess_input(y, trans)
-            trans = None
-
         use_ctf = ctf_param is not None
         if self.beta_schedule is not None:
             self.beta = self.beta_schedule(self.total_images_seen)
@@ -418,6 +414,27 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
             ctf_i = ctf.compute_ctf(freqs, *torch.split(ctf_param[:, 1:], 1, 1)).view(
                 B, self.resolution, self.resolution
             )
+
+        # reconstruct circle of pixels instead of whole image
+        L_model = self.lattice.D // 2
+        if (
+            self.current_epoch < self.configs.l_ramp_epochs
+            and self.configs.l_ramp_model
+        ):
+            L_model = self.pose_search.Lmax
+
+        mask = self.lattice.get_circular_mask(L_model)
+        if trans is not None and self.configs.pose_estimation == "fixed":
+            if self.configs.z_dim == 0:
+                y = self.lattice.translate_ht(
+                    y.view(B, -1)[:, mask], trans.unsqueeze(1), mask
+                ).view(B, -1)
+            else:
+                y = self.lattice.translate_ht(y.view(B, -1), trans.unsqueeze(1)).view(
+                    B, self.resolution, self.resolution
+                )
+
+            trans = None
 
         if yr is not None:
             input_ = (yr, tilt_ind) if self.configs.tilt else (yr,)
@@ -457,16 +474,6 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
         else:
             self.base_pose = None
 
-        # reconstruct circle of pixels instead of whole image
-        L_model = self.lattice.D // 2
-        if (
-            self.current_epoch < self.configs.l_ramp_epochs
-            and self.configs.l_ramp_model
-        ):
-            L_model = self.pose_search.Lmax
-
-        mask = self.lattice.get_circular_mask(L_model)
-
         def gen_slice(R):
             lat_coords = self.lattice.coords[mask] / self.lattice.extent / 2
 
@@ -483,7 +490,6 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
         def translate(img):
             return self.lattice.translate_ht(img, trans.unsqueeze(1), mask).view(B, -1)
 
-        y = y.view(B, -1)[:, mask]
         if self.configs.tilt:
             tilt_ind = tilt_ind.view(B, -1)[:, mask]
             tilt_ind = translate(tilt_ind)
@@ -501,7 +507,9 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
 
         else:
             if self.configs.pose_estimation == "abinit" and trans is not None:
-                y = translate(y)
+                y = translate(y.view(B, -1)[:, mask])
+            elif self.configs.pose_estimation == "fixed" and self.configs.z_dim > 0:
+                y = y.view(B, -1)[:, mask]
 
             losses["gen"] = F.mse_loss(gen_slice(rot), y)
 
@@ -562,7 +570,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
             f"### Epoch [{self.current_epoch}/{self.configs.num_epochs}], "
             f"Batch [{self.epoch_batch_count}] "
             f"({self.epoch_images_seen}/{self.image_count} images); "
-            f"gen loss={losses['gen']:.4g}, "
+            f"gen loss={losses['gen']:.6g}, "
         )
         if "kld" in losses:
             batch_str += f"kld={losses['kld']:.4f}, "
@@ -570,12 +578,6 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
             batch_str += f"beta={self.beta:.4f}, "
 
         self.logger.info(batch_str + f"{eq_log}")
-
-    def preprocess_input(self, y, trans):
-        """Center the image."""
-        return self.lattice.translate_ht(
-            y.view(y.size(0), -1), trans.unsqueeze(1)
-        ).view(y.size(0), self.lattice.D, self.lattice.D)
 
     def pretrain_batch(self, batch: dict[str, torch.Tensor]) -> None:
         """Pretrain the decoder using random initial poses."""
@@ -667,24 +669,13 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
                 for minibatch in data_generator:
                     ind = minibatch["indices"]
                     y = minibatch["y"].to(self.device)
-
-                    if self.predicted_trans is not None:
-                        trans = torch.Tensor(self.predicted_trans[ind])
-                    elif self.pose_tracker is not None:
-                        trans = self.pose_tracker.trans
-                    else:
-                        trans = None
-
-                    if trans is not None:
-                        y = self.preprocess_input(y, trans)
-
                     yt = None
                     if self.configs.tilt:
                         yt = minibatch["tilt_indices"].to(self.device)
+
                     B = len(ind)
                     D = self.lattice.D
                     c = None
-
                     if self.ctf_params is not None:
                         freqs = self.lattice.freqs2d.unsqueeze(0).expand(
                             B, *self.lattice.freqs2d.shape
@@ -713,7 +704,10 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
             self.pose_tracker.save(out_poses)
         elif self.configs.pose_estimation == "abinit":
             with open(out_poses, "wb") as f:
-                pickle.dump((self.predicted_rots, trans / self.model_resolution), f)
+                pickle.dump(
+                    (self.predicted_rots, self.predicted_trans / self.model_resolution),
+                    f,
+                )
 
     def get_latest(self) -> None:
         self.logger.info("Detecting latest checkpoint...")

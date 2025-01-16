@@ -102,10 +102,13 @@ class ImageDataset(torch.utils.data.Dataset):
             data = data[np.newaxis, ...]
         if self.window is not None:
             data *= self.window
-        if self.invert_data:
-            data *= -1
         fier_data = fft.ht2_center(data)
+
+        if self.invert_data:
+            fier_data *= -1
+
         fier_data = fft.symmetrize_ht(fier_data)
+
         fier_data = (fier_data - self.norm[0]) / self.norm[1]
         real_data = (data - self.norm_real[0]) / self.norm_real[1]
 

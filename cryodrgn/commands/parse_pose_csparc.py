@@ -6,7 +6,7 @@ import pickle
 import logging
 import numpy as np
 import torch
-from cryodrgn import lie_tools
+from cryodrgn.models import lie_tools
 
 logger = logging.getLogger(__name__)
 

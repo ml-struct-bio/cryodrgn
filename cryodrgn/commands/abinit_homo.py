@@ -322,6 +322,7 @@ def main(args: argparse.Namespace) -> None:
         "lazy": args.lazy,
         "window": args.window,
         "window_r": args.window_r,
+        "shuffle": args.shuffler_size is not None and args.shuffler_size > 0,
         "shuffler_size": args.shuffler_size,
         "max_threads": 16,
         "num_workers": 0,

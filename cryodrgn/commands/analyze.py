@@ -18,7 +18,7 @@ from cryodrgn import _ROOT
 import cryodrgn.analysis
 import cryodrgn.utils
 from cryodrgn.trainers import (
-    ModelTrainer,
+    ReconstructionModelTrainer,
     AmortizedInferenceTrainer,
     HierarchicalPoseSearchTrainer,
 )
@@ -101,7 +101,7 @@ class ModelAnalyzer:
                                             the model was trained.
     """
 
-    def get_trainer(self) -> ModelTrainer:
+    def get_trainer(self) -> ReconstructionModelTrainer:
         """Load a training engine like the one that was used to train this model."""
         if os.path.exists(self.cfg_file):
             with open(self.cfg_file, "r") as f:

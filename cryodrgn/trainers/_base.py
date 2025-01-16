@@ -949,7 +949,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
             epoch_lbl += " <volume inference>"
 
         avg_losses = self.average_losses
-        if self.verbose > 2:
+        if self.configs.z_dim > 0:
             loss_str = ", ".join(
                 [
                     f"{loss_k} = {loss_val:.4g}"

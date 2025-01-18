@@ -714,7 +714,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
                 ind_tilt = tilt_ind if tilt_ind is not None else ind
                 if self.predicted_rots is not None:
                     self.predicted_rots[ind_tilt] = rot.reshape(-1, 3, 3)
-                if trans is not None:
+                if trans is not None and self.predicted_trans is not None:
                     self.predicted_trans[ind_tilt] = trans.reshape(-1, 2)
                 if self.base_pose is not None:
                     self.base_poses.append((ind.cpu().numpy(), self.base_pose))
@@ -808,6 +808,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
             num_workers=self.configs.num_workers,
             shuffler_size=self.configs.shuffler_size,
             shuffle=self.configs.shuffle,
+            seed=self.configs.seed,
         )
 
         for batch in pretrain_dataloader:

@@ -108,11 +108,7 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
 
         if self.pose_estimation is not None:
             if self.pose_estimation == "refine":
-                self.refine_gt_poses = True
                 self.pose_learning_rate = 1.0e-4
-            elif self.pose_estimation == "fixed":
-                self.use_gt_poses = True
-
         if self.conf_estimation is not None:
             if self.conf_estimation == "encoder":
                 self.use_conf_encoder = True
@@ -181,11 +177,11 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
                 "Conformations cannot be initialized when also using an encoder!"
             )
 
-        if self.use_gt_trans and self.poses is None:
+        if self.pose_estimation == "fixed" and self.poses is None:
             raise ValueError(
                 "Poses must be specified to use ground-truth translations!"
             )
-        if self.refine_gt_poses:
+        if self.pose_estimation == "refine":
             self.n_imgs_pose_search = 0
             if self.poses is None:
                 raise ValueError("Initial poses must be specified to be refined!")
@@ -199,7 +195,10 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
                 )
 
             # TODO: Implement translation search for subtomogram averaging.
-            if not (self.use_gt_poses and (self.use_gt_trans or self.t_extent == 0.0)):
+            if not (
+                self.pose_estimation == "fixed"
+                and (self.use_gt_trans or self.t_extent == 0.0)
+            ):
                 raise ValueError(
                     "Translation search is not implemented for subtomogram averaging!"
                 )
@@ -212,7 +211,7 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
         if self.n_tilts_pose_search > self.n_tilts:
             raise ValueError("`n_tilts_pose_search` must be smaller than `n_tilts`!")
 
-        if self.use_gt_poses:
+        if self.pose_estimation == "fixed":
             # "poses" include translations
             self.use_gt_trans = True
             if self.poses is None:
@@ -349,7 +348,7 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
             hyper_volume_params,
             resolution_encoder=self.configs.resolution_encoder,
             no_trans=self.configs.no_trans,
-            use_gt_poses=self.configs.use_gt_poses,
+            use_gt_poses=self.configs.pose_estimation == "fixed",
             use_gt_trans=self.configs.use_gt_trans,
             will_use_point_estimates=self.epochs_sgd >= 1,
             ps_params=ps_params,
@@ -413,7 +412,7 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
         self.optimizer_types = {"hypervolume": self.configs.volume_optim_type}
 
         # pose table
-        if not self.configs.use_gt_poses:
+        if self.configs.pose_estimation != "fixed":
             if self.epochs_sgd > 0:
                 pose_table_params = [
                     {"params": list(self.model.pose_table.parameters())}
@@ -534,7 +533,7 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
         self.pose_only |= self.current_epoch == 0
         self.pose_only |= self.epoch_images_seen < self.configs.pose_only_phase
 
-        if not self.configs.use_gt_poses:
+        if self.configs.pose_estimation != "fixed":
             self.use_point_estimates = self.current_epoch >= max(
                 0, self.epochs_pose_search
             )
@@ -555,7 +554,7 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
                 self.first_switch_to_point_estimates = False
                 self.logger.info("Switched to autodecoding poses")
 
-                if self.configs.refine_gt_poses:
+                if self.configs.pose_estimation == "refine":
                     self.logger.info("Initializing pose table from ground truth")
 
                     poses_gt = cryodrgn.utils.load_pkl(self.configs.poses)
@@ -596,7 +595,7 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
             self.optimized_modules.append("pose_table")
 
         # GT poses
-        elif self.configs.use_gt_poses:
+        elif self.configs.pose_estimation == "fixed":
             self.data_iterator = self.data_generators["known"] or self.data_iterator
 
         # conformations
@@ -769,9 +768,9 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
             # keep track of predicted variables
             self.mask_particles_seen_at_last_epoch[batch["indices"]] = 1
             self.mask_tilts_seen_at_last_epoch[batch["tilt_indices"]] = 1
-            if not self.configs.use_gt_poses:
+            if self.configs.pose_estimation != "fixed":
                 self.predicted_rots[batch["tilt_indices"]] = rot_pred.reshape(-1, 3, 3)
-            if not self.configs.no_trans and not self.configs.use_gt_poses:
+            if not self.configs.no_trans and self.configs.pose_estimation != "fixed":
                 self.predicted_trans[batch["tilt_indices"]] = trans_pred.reshape(-1, 2)
 
             if self.configs.z_dim > 0:
@@ -1042,12 +1041,12 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
             rotmat_gt = rotmat_gt[mask_tilt_idx]
             trans_gt = trans_gt[mask_tilt_idx] if trans_gt is not None else None
 
-        if not self.configs.use_gt_poses:
+        if self.configs.pose_estimation != "fixed":
             predicted_rots = self.predicted_rots[mask_tilt_idx]
         else:
             predicted_rots = None
 
-        if not self.configs.use_gt_poses and not self.configs.no_trans:
+        if self.configs.pose_estimation != "fixed" and not self.configs.no_trans:
             predicted_trans = (
                 self.predicted_trans[mask_tilt_idx]
                 if self.predicted_trans is not None
@@ -1167,7 +1166,7 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
     def in_pose_search_step(self) -> bool:
         in_pose_search = False
 
-        if not self.configs.use_gt_poses:
+        if self.configs.pose_estimation != "fixed":
             in_pose_search = 1 <= self.current_epoch <= self.epochs_pose_search
 
         return in_pose_search

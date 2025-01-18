@@ -357,29 +357,6 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
         if self.pose_optimizer is not None:
             self.pose_optimizer.zero_grad()
 
-        # getting the poses
-        rot = trans = None
-        if self.pose_search and not self.in_pose_search_step:
-            if self.epoch_batch_count == 1:
-                self.logger.info("Using previous iteration's learned poses...")
-            rot = torch.tensor(
-                self.predicted_rots[ind_np].astype(np.float32), device=self.device
-            )
-
-            if not self.configs.no_trans:
-                trans = torch.tensor(
-                    self.predicted_trans[ind_np].astype(np.float32), device=self.device
-                )
-
-        self.conf_search_particles += B
-        if self.configs.pose_model_update_freq:
-            if (
-                self.current_epoch == 1
-                or self.conf_search_particles > self.configs.pose_model_update_freq
-            ):
-                self.pose_model.load_state_dict(self.volume_model.state_dict())
-                self.conf_search_particles = 0
-
         dose_filters = None
         if self.configs.tilt:
             if self.pose_tracker and not self.pose_search:
@@ -398,8 +375,6 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
                 )
 
         else:
-            if not self.pose_search:
-                rot, trans = self.pose_tracker.get_pose(ind)
             ctf_param = self.ctf_params[ind] if self.ctf_params is not None else None
 
         use_ctf = ctf_param is not None
@@ -415,37 +390,29 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
                 B, self.resolution, self.resolution
             )
 
-        # reconstruct circle of pixels instead of whole image
-        L_model = self.lattice.D // 2
-        if (
-            self.current_epoch < self.configs.l_ramp_epochs
-            and self.configs.l_ramp_model
-        ):
-            L_model = self.pose_search.Lmax
-
-        mask = self.lattice.get_circular_mask(L_model)
-        if trans is not None and self.configs.pose_estimation == "fixed":
-            if self.configs.z_dim == 0:
-                y = self.lattice.translate_ht(
-                    y.view(B, -1)[:, mask], trans.unsqueeze(1), mask
-                ).view(B, -1)
-            else:
-                y = self.lattice.translate_ht(y.view(B, -1), trans.unsqueeze(1)).view(
-                    B, self.resolution, self.resolution
-                )
-
-            trans = None
-
-        if yr is not None:
-            input_ = (yr, tilt_ind) if self.configs.tilt else (yr,)
+        if not self.pose_search:
+            rot, trans = self.pose_tracker.get_pose(ind)
         else:
-            input_ = (y, tilt_ind) if self.configs.tilt else (y,)
-        if ctf_i is not None:
-            input_ = (x * ctf_i.sign() for x in input_)  # phase flip by the ctf
+            rot, trans = None, None
 
         lamb = None
         losses = dict()
         if self.configs.z_dim > 0:
+            if trans is not None:
+                y_trans = self.lattice.translate_ht(
+                    y.view(B, -1), trans.unsqueeze(1)
+                ).view(B, self.resolution, self.resolution)
+            else:
+                y_trans = y.clone()
+
+            if yr is not None:
+                input_ = (yr, tilt_ind) if tilt_ind is not None else (yr,)
+            else:
+                input_ = (y_trans, tilt_ind) if tilt_ind is not None else (y_trans,)
+
+            if ctf_i is not None:
+                input_ = (x * ctf_i.sign() for x in input_)  # phase flip by the ctf
+
             _model = unparallelize(self.volume_model)
             assert isinstance(_model, HetOnlyVAE)
             z_mu, z_logvar = _model.encode(*input_)
@@ -457,22 +424,56 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
         else:
             z_mu = z_logvar = z = None
 
-        # execute a pose search if poses not given
-        if rot is None:
-            self.volume_model.eval()
-            with torch.no_grad():
-                rot, trans, self.base_pose = self.pose_search.opt_theta_trans(
-                    y,
-                    z=z,
-                    images_tilt=None if self.configs.tilt_enc_only else tilt_ind,
-                    ctf_i=ctf_i,
-                )
-            if self.configs.z_dim:
-                self.volume_model.train()
+        # getting the poses; execute a pose search if poses not given
+        if self.pose_search:
+            if self.in_pose_search_step:
+                self.base_pose = None
+                self.volume_model.eval()
+
+                with torch.no_grad():
+                    rot, trans, self.base_pose = self.pose_search.opt_theta_trans(
+                        y,
+                        z=z,
+                        images_tilt=None if self.configs.tilt_enc_only else tilt_ind,
+                        ctf_i=ctf_i,
+                    )
+                if self.configs.z_dim > 0:
+                    self.volume_model.train()
+
             else:
-                self.base_pose = self.base_pose.detach().cpu().numpy()
-        else:
-            self.base_pose = None
+                if self.epoch_batch_count == 1:
+                    self.logger.info("Using previous iteration's learned poses...")
+
+                if isinstance(self.base_pose, torch.Tensor):
+                    self.base_pose = self.base_pose.detach().cpu().numpy()
+                rot = torch.tensor(
+                    self.predicted_rots[ind_np].astype(np.float32), device=self.device
+                )
+                if not self.configs.no_trans:
+                    trans = torch.tensor(
+                        self.predicted_trans[ind_np].astype(np.float32),
+                        device=self.device,
+                    )
+                else:
+                    trans = None
+
+        self.conf_search_particles += B
+        if self.configs.pose_model_update_freq:
+            if (
+                self.current_epoch == 1
+                or self.conf_search_particles > self.configs.pose_model_update_freq
+            ):
+                self.pose_model.load_state_dict(self.volume_model.state_dict())
+                self.conf_search_particles = 0
+
+        # reconstruct circle of pixels instead of whole image
+        L_model = self.lattice.D // 2
+        if (
+            self.current_epoch < self.configs.l_ramp_epochs
+            and self.configs.l_ramp_model
+        ):
+            L_model = self.pose_search.Lmax
+        mask = self.lattice.get_circular_mask(L_model)
 
         def gen_slice(R):
             lat_coords = self.lattice.coords[mask] / self.lattice.extent / 2
@@ -488,7 +489,14 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
             return slice_
 
         def translate(img):
-            return self.lattice.translate_ht(img, trans.unsqueeze(1), mask).view(B, -1)
+            img_trans = img.view(B, -1)[:, mask]
+
+            if trans is not None:
+                img_trans = self.lattice.translate_ht(
+                    img_trans, trans.unsqueeze(1), mask
+                )
+
+            return img_trans
 
         if self.configs.tilt:
             tilt_ind = tilt_ind.view(B, -1)[:, mask]
@@ -506,12 +514,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
             losses["gen"] = (rot_loss + tilt_loss) / 2
 
         else:
-            if self.configs.pose_estimation == "abinit" and trans is not None:
-                y = translate(y.view(B, -1)[:, mask])
-            elif self.configs.pose_estimation == "fixed" and self.configs.z_dim > 0:
-                y = y.view(B, -1)[:, mask]
-
-            losses["gen"] = F.mse_loss(gen_slice(rot), y)
+            losses["gen"] = F.mse_loss(gen_slice(rot), translate(y).view(B, -1))
 
         # latent loss
         if self.configs.z_dim:

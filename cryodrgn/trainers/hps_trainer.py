@@ -622,7 +622,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
 
         loss.backward()
         self.volume_optimizer.step()
-        self.accum_losses["total"] = loss.item()
+        self.accum_losses["total"] += loss.item() * B
 
     def save_epoch_data(self):
         """Save model weights, latent encoding z, and decoder volumes"""

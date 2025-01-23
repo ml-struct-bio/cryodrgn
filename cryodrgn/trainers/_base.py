@@ -396,7 +396,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
 
         if self.use_cuda:
             self.logger.info(f"Using GPU {self.device}")
-            self.n_prcs = max(torch.cuda.device_count(), 1)
+            self.n_prcs = min(torch.cuda.device_count(), 1)
             self.logger.info(f"Number of available gpus: {self.n_prcs}")
         else:
             self.logger.warning(f"No GPUs detected, using {self.device} instead!")
@@ -801,6 +801,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
         self.logger.info(f"Will pretrain on {self.configs.pretrain} particles")
         self.epoch_start_time = dt.now()
         self.epoch_images_seen = 0
+        self.accum_losses = {"total": 0.0}
 
         pretrain_dataloader = make_dataloader(
             self.data,
@@ -810,6 +811,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
             shuffle=self.configs.shuffle,
             seed=self.configs.seed,
         )
+        epoch_label = f"Pretrain Epoch [{self.current_epoch}/{self.configs.num_epochs}]"
 
         for batch in pretrain_dataloader:
             len_y = len(batch["indices"])
@@ -821,34 +823,24 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
 
             if self.epoch_images_seen % self.configs.log_interval < len_y:
                 self.logger.info(
-                    f"Pretrain Epoch "
-                    f"[{self.current_epoch}/{self.configs.num_epochs}]; "
-                    f"{self.epoch_images_seen} images seen; "
-                    f"total loss={self.accum_losses['total']:.4g}"
+                    f"{epoch_label}; {self.epoch_images_seen} images seen; "
+                    f"avg. loss={self.average_losses['total']:.4g}"
                 )
+
             if self.epoch_images_seen >= self.configs.pretrain:
                 break
 
-        # reset model after pretraining
+        self.print_epoch_summary()
+        self.save_epoch_data()
+
+        # Reset the model after pretraining if asked for
         if self.configs.reset_optim_after_pretrain:
-            self.logger.info(">> Resetting optim after pretrain")
+            self.logger.info(">> Resetting optimizer after pretrain")
             self.volume_optimizer = torch.optim.Adam(
                 self.volume_model.parameters(),
                 lr=self.configs.learning_rate,
                 weight_decay=self.configs.weight_decay,
             )
-
-        epoch_lbl = f"[{self.current_epoch}/{self.configs.num_epochs}]"
-        epoch_lbl += " <pretraining>"
-        time_str, mcrscd_str = str(dt.now() - self.epoch_start_time).split(".")
-        time_str = ".".join([time_str, mcrscd_str[:3]])
-
-        self.logger.info(
-            f"===> Training Epoch {epoch_lbl} === Finished in {time_str}\n"
-            f"\t\t\t\t\t\t             |> "
-            f"Total Loss = {self.accum_losses['total']:.4g}\n"
-        )
-        self.save_epoch_data()
 
     def get_configs(self) -> dict[str, Any]:
         """Retrieves all given and inferred configurations for downstream use."""
@@ -949,12 +941,11 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
         else:
             epoch_lbl += " <volume inference>"
 
-        avg_losses = self.average_losses
         if self.configs.z_dim > 0:
             loss_str = ", ".join(
                 [
                     f"{loss_k} = {loss_val:.4g}"
-                    for loss_k, loss_val in avg_losses.items()
+                    for loss_k, loss_val in self.average_losses.items()
                     if loss_k != "total"
                 ]
             )
@@ -966,7 +957,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
         log_msg = (
             f"===> Training Epoch {epoch_lbl} === Finished in {time_str}\n"
             f"\t\t\t\t\t\t             |> "
-            f"Avg. Losses: Total = {avg_losses['total']:.4g}\n"
+            f"Avg. Losses: Total = {self.average_losses['total']:.4g}\n"
         )
         if loss_str:
             log_msg += f"\t\t\t\t\t\t             |>              {loss_str}"
@@ -990,6 +981,8 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
 
     @property
     def average_losses(self) -> dict[str, float]:
+        """Calculate the running mean losses for the current training epoch."""
+
         return {
             loss_k: (
                 loss_val / self.epoch_images_seen

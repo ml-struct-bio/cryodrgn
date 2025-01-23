@@ -531,7 +531,10 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
 
         self.pose_only = self.configs.z_dim == 0
         self.pose_only |= self.current_epoch == 0
-        self.pose_only |= self.epoch_images_seen < self.configs.pose_only_phase
+        self.pose_only |= (
+            self.epoch_images_seen is None
+            or self.epoch_images_seen < self.configs.pose_only_phase
+        )
 
         if self.configs.pose_estimation != "fixed":
             self.use_point_estimates = self.current_epoch >= max(
@@ -649,6 +652,10 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
 
         return ctf_local
 
+    def pretrain(self) -> None:
+        self.begin_epoch()
+        super().pretrain()
+
     def train_batch(self, batch: dict[str, torch.Tensor]) -> tuple:
         if self.configs.verbose_time:
             torch.cuda.synchronize()
@@ -713,6 +720,9 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
             torch.cuda.synchronize()
 
         start_time_backward = time.time()
+        if self.in_pretraining:
+            total_loss.backward()
+
         for key in self.optimized_modules:
             if self.optimizer_types[key] == "adam":
                 self.optimizers[key].step()
@@ -781,9 +791,11 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
         else:
             self.run_times["to_cpu"].append(0.0)
 
-        all_losses["total"] = total_loss
+        batch_size = len(batch["indices"])
         if self.in_pretraining:
-            self.accum_losses["total"] = total_loss
+            self.accum_losses["total"] += total_loss.item() * batch_size
+
+        all_losses["total"] = total_loss
 
         return all_losses, batch["tilt_indices"], batch["indices"], rot_pred, trans_pred
 

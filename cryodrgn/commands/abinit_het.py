@@ -813,6 +813,7 @@ def main(args):
         keepreal=args.use_real,
         datadir=args.datadir,
         window_r=args.window_r,
+        device=device,
     )
 
     Nimg = data.N
@@ -983,25 +984,29 @@ def main(args):
     )
 
     data_iterator = dataset.make_dataloader(
-        data, batch_size=args.batch_size, shuffler_size=args.shuffler_size
+        data,
+        batch_size=args.batch_size,
+        shuffler_size=args.shuffler_size,
+        seed=args.seed,
     )
 
     # pretrain decoder with random poses
     global_it = 0
     logger.info("Using random poses for {} iterations".format(args.pretrain))
-    while global_it < args.pretrain:
-        for batch in data_iterator:
-            global_it += len(batch[0])
-            batch = (
-                (batch[0].to(device), None)
-                if tilt is None
-                else (batch[0].to(device), batch[1].to(device))
-            )
-            loss = pretrain(model, lattice, optim, batch, tilt=ps.tilt, zdim=args.zdim)
-            if global_it % args.log_interval == 0:
-                logger.info(f"[Pretrain Iteration {global_it}] loss={loss:4f}")
-            if global_it > args.pretrain:
-                break
+    for batch in data_iterator:
+        global_it += len(batch[0])
+        batch = (
+            (batch[0].to(device), None)
+            if tilt is None
+            else (batch[0].to(device), batch[1].to(device))
+        )
+        loss = pretrain(model, lattice, optim, batch, tilt=ps.tilt, zdim=args.zdim)
+        if global_it % args.log_interval == 0:
+            logger.info(f"[Pretrain Iteration {global_it}] loss={loss:4f}")
+
+        print(f"XXX: {torch.randn((2, 2)).det().item()}")
+        if global_it >= args.pretrain:
+            break
 
     # reset model after pretraining
     if args.reset_optim_after_pretrain:

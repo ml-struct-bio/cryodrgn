@@ -506,13 +506,17 @@ def eval_z(
     ctf_params=None,
     use_real=False,
     shuffler_size=0,
+    seed=None,
 ):
     logger.info("Evaluating z")
     assert not model.training
     z_mu_all = []
     z_logvar_all = []
     data_generator = dataset.make_dataloader(
-        data, batch_size=batch_size, shuffler_size=shuffler_size, shuffle=False
+        data,
+        batch_size=batch_size,
+        shuffler_size=shuffler_size,
+        seed=seed,
     )
     for i, minibatch in enumerate(data_generator):
         ind = minibatch[-1]
@@ -903,6 +907,7 @@ def main(args: argparse.Namespace) -> None:
         batch_size=args.batch_size,
         num_workers=num_workers,
         shuffler_size=args.shuffler_size,
+        seed=args.seed,
     )
 
     num_epochs = args.num_epochs
@@ -970,7 +975,7 @@ def main(args: argparse.Namespace) -> None:
             kld_accum += kld * B
             loss_accum += loss * B
 
-            if batch_it % args.log_interval == 0:
+            if batch_it % args.log_interval < args.batch_size:
                 logger.info(
                     "# [Train Epoch: {}/{}] [{}/{} particles] gen loss={:.6f}, kld={:.6f}, beta={:.6f}, "
                     "loss={:.6f}".format(
@@ -1010,6 +1015,7 @@ def main(args: argparse.Namespace) -> None:
                     ctf_params=ctf_params,
                     use_real=args.use_real,
                     shuffler_size=args.shuffler_size,
+                    seed=args.seed,
                 )
                 save_checkpoint(model, optim, epoch, z_mu, z_logvar, out_weights, out_z)
             if args.do_pose_sgd and epoch >= args.pretrain:
@@ -1032,6 +1038,8 @@ def main(args: argparse.Namespace) -> None:
             args.encode_mode == "tilt",
             ctf_params,
             args.use_real,
+            shuffler_size=args.shuffler_size,
+            seed=args.seed,
         )
         save_checkpoint(model, optim, epoch, z_mu, z_logvar, out_weights, out_z)
 

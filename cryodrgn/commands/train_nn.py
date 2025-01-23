@@ -414,6 +414,7 @@ def main(args: argparse.Namespace) -> None:
         window=args.window,
         datadir=args.datadir,
         window_r=args.window_r,
+        device=device,
     )
 
     D = data.D
@@ -532,7 +533,10 @@ def main(args: argparse.Namespace) -> None:
 
     # train
     data_generator = dataset.make_dataloader(
-        data, batch_size=args.batch_size, shuffler_size=args.shuffler_size
+        data,
+        batch_size=args.batch_size,
+        shuffler_size=args.shuffler_size,
+        seed=args.seed,
     )
 
     epoch = None
@@ -561,7 +565,7 @@ def main(args: argparse.Namespace) -> None:
             if pose_optimizer is not None and epoch >= args.pretrain:
                 pose_optimizer.step()
             loss_accum += loss_item * len(ind)
-            if batch_it % args.log_interval == 0:
+            if batch_it % args.log_interval < args.batch_size:
                 logger.info(
                     "# [Train Epoch: {}/{}] [{}/{} images] loss={:.6f}".format(
                         epoch + 1, args.num_epochs, batch_it, Nimg, loss_item

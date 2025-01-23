@@ -598,6 +598,7 @@ def main(args):
         window=args.window,
         datadir=args.datadir,
         window_r=args.window_r,
+        device=device,
     )
 
     D = data.D
@@ -706,25 +707,28 @@ def main(args):
         start_epoch = 0
 
     data_iterator = dataset.make_dataloader(
-        data, batch_size=args.batch_size, shuffler_size=args.shuffler_size
+        data,
+        batch_size=args.batch_size,
+        shuffler_size=args.shuffler_size,
+        seed=args.seed,
     )
 
     # pretrain decoder with random poses
     global_it = 0
     logger.info("Using random poses for {} iterations".format(args.pretrain))
-    while global_it < args.pretrain:
-        for batch in data_iterator:
-            global_it += len(batch[0])
-            batch = (
-                (batch[0].to(device), None)
-                if tilt is None
-                else (batch[0].to(device), batch[1].to(device))
-            )
-            loss = pretrain(model, lattice, optim, batch, tilt=ps.tilt)
-            if global_it % args.log_interval == 0:
-                logger.info(f"[Pretrain Iteration {global_it}] loss={loss:4f}")
-            if global_it > args.pretrain:
-                break
+    for batch in data_iterator:
+        global_it += len(batch[0])
+        batch = (
+            (batch[0].to(device), None)
+            if tilt is None
+            else (batch[0].to(device), batch[1].to(device))
+        )
+        loss = pretrain(model, lattice, optim, batch, tilt=ps.tilt)
+        if global_it % args.log_interval < args.batch_size:
+            logger.info(f"[Pretrain Iteration {global_it}] loss={loss:4f}")
+        if global_it >= args.pretrain:
+            break
+
     out_mrc = "{}/pretrain.reconstruct.mrc".format(args.outdir)
     model.eval()
     vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, tuple(data.norm))
@@ -808,7 +812,7 @@ def main(args):
             base_poses.append((ind_np, base_pose))
             # logging
             loss_accum += loss_item * len(batch[0])
-            if batch_it % args.log_interval == 0:
+            if batch_it % args.log_interval < args.batch_size:
                 logger.info(
                     "# [Train Epoch: {}/{}] [{}/{} images] loss={:.4f}".format(
                         epoch + 1, args.num_epochs, batch_it, Nimg, loss_item

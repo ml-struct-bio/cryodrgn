@@ -27,6 +27,11 @@ from cryodrgn.trainers import ReconstructionModelTrainer, ModelConfigurations
 from cryodrgn.mrcfile import write_mrc
 from cryodrgn.pose import PoseTracker
 
+try:
+    import apex.amp as amp  # type: ignore  # PYR01
+except ImportError:
+    pass
+
 
 @dataclass
 class HierarchicalPoseSearchConfigurations(ModelConfigurations):
@@ -56,7 +61,7 @@ class HierarchicalPoseSearchConfigurations(ModelConfigurations):
     equivariance: bool = None
     equivariance_start: int = 100000
     equivariance_stop: int = 200000
-    l_ramp_epochs: int = 0
+    l_ramp_epochs: int = None
     l_ramp_model: int = 0
     # resetting every certain number of epochs
     reset_model_every: int = None
@@ -125,6 +130,9 @@ class HierarchicalPoseSearchConfigurations(ModelConfigurations):
             else:
                 self.volume_domain = "hartley"
 
+        if self.l_ramp_epochs is None:
+            self.l_ramp_epochs = 25 if self.z_dim == 0 else 0
+
 
 class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
 
@@ -155,7 +163,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
 
         return enc_mask, in_dim
 
-    def make_volume_model(self) -> nn.Module:
+    def make_reconstruction_model(self) -> nn.Module:
         if not self.configs.z_dim:
             model = get_decoder(
                 in_dim=3,
@@ -268,7 +276,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
                     self.configs.equivariance,
                 )
                 self.equivariance_loss = EquivarianceLoss(
-                    self.volume_model, self.resolution
+                    self.reconstruction_model, self.resolution
                 )
 
         self.pose_tracker = None
@@ -293,11 +301,11 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
         elif self.configs.pose_estimation == "abinit":
             if self.configs.pose_model_update_freq:
                 assert not self.configs.multigpu, "TODO"
-                self.pose_model = self.make_volume_model()
+                self.pose_model = self.make_reconstruction_model()
                 self.pose_model.to(self.device)
                 self.pose_model.eval()
             else:
-                self.pose_model = self.volume_model
+                self.pose_model = self.reconstruction_model
 
             self.pose_search = PoseSearch(
                 self.pose_model,
@@ -413,7 +421,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
             if ctf_i is not None:
                 input_ = (x * ctf_i.sign() for x in input_)  # phase flip by the ctf
 
-            _model = unparallelize(self.volume_model)
+            _model = unparallelize(self.reconstruction_model)
             assert isinstance(_model, HetOnlyVAE)
             z_mu, z_logvar = _model.encode(*input_)
             z = _model.reparameterize(z_mu, z_logvar)
@@ -428,17 +436,18 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
         if self.pose_search:
             if self.in_pose_search_step:
                 self.base_pose = None
-                self.volume_model.eval()
+                self.reconstruction_model.eval()
 
                 with torch.no_grad():
                     rot, trans, self.base_pose = self.pose_search.opt_theta_trans(
                         y,
                         z=z,
                         images_tilt=None if self.configs.tilt_enc_only else tilt_ind,
+                        init_poses=self.base_pose,
                         ctf_i=ctf_i,
                     )
                 if self.configs.z_dim > 0:
-                    self.volume_model.train()
+                    self.reconstruction_model.train()
 
             else:
                 if self.epoch_batch_count == 1:
@@ -463,7 +472,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
                 self.current_epoch == 1
                 or self.conf_search_particles > self.configs.pose_model_update_freq
             ):
-                self.pose_model.load_state_dict(self.volume_model.state_dict())
+                self.pose_model.load_state_dict(self.reconstruction_model.state_dict())
                 self.conf_search_particles = 0
 
         # reconstruct circle of pixels instead of whole image
@@ -479,9 +488,9 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
             lat_coords = self.lattice.coords[mask] / self.lattice.extent / 2
 
             if z is None:
-                slice_ = self.volume_model(lat_coords @ R).view(B, -1)
+                slice_ = self.reconstruction_model(lat_coords @ R).view(B, -1)
             else:
-                slice_ = self.volume_model(lat_coords @ R, z).view(B, -1)
+                slice_ = self.reconstruction_model(lat_coords @ R, z).view(B, -1)
 
             if ctf_i is not None:
                 slice_ *= ctf_i.view(B, -1)[:, mask]
@@ -540,6 +549,21 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
         else:
             losses["total"] = losses["gen"]
 
+        if self.configs.amp:
+            if self.scaler is not None:  # torch mixed precision
+                self.scaler.scale(losses["total"]).backward()
+                self.scaler.step(self.reconstruction_optimizer)
+                self.scaler.update()
+            else:  # apex.amp mixed precision
+                with amp.scale_loss(
+                    losses["total"], self.reconstruction_optimizer
+                ) as scaled_loss:
+                    scaled_loss.backward()
+                self.reconstruction_optimizer.step()
+        else:
+            losses["total"].backward()
+            self.reconstruction_optimizer.step()
+
         return losses, tilt_ind, ind, rot, trans
 
     def get_configs(self) -> dict[str, Any]:
@@ -590,8 +614,8 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
         y = y.to(self.device)
         B = y.size(0)
 
-        self.volume_model.train()
-        self.volume_optimizer.zero_grad()
+        self.reconstruction_model.train()
+        self.reconstruction_optimizer.zero_grad()
 
         # reconstruct circle of pixels instead of whole image
         mask = self.lattice.get_circular_mask(self.lattice.D // 2)
@@ -601,14 +625,14 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
             z = torch.randn((B, self.configs.z_dim), device=self.device)
 
             def gen_slice(R):
-                _model = unparallelize(self.volume_model)
+                _model = unparallelize(self.reconstruction_model)
                 assert isinstance(_model, HetOnlyVAE)
                 return _model.decode(self.lattice.coords[mask] @ R, z).view(B, -1)
 
         else:
 
             def gen_slice(R):
-                slice_ = self.volume_model(self.lattice.coords[mask] @ R)
+                slice_ = self.reconstruction_model(self.lattice.coords[mask] @ R)
                 return slice_.view(B, -1)
 
         y = y.view(B, -1)[:, mask]
@@ -621,7 +645,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
             loss = F.mse_loss(gen_slice(rot), y)
 
         loss.backward()
-        self.volume_optimizer.step()
+        self.reconstruction_optimizer.step()
         self.accum_losses["total"] += loss.item() * B
 
     def save_epoch_data(self):
@@ -633,8 +657,8 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
         # save a reconstructed volume by evaluating model on a 3d lattice
         if self.configs.z_dim == 0:
             out_mrc = os.path.join(self.outdir, f"reconstruct.{self.epoch_lbl}.mrc")
-            self.volume_model.eval()
-            vol = self.volume_model.eval_volume(
+            self.reconstruction_model.eval()
+            vol = self.reconstruction_model.eval_volume(
                 coords=self.lattice.coords,
                 D=self.lattice.D,
                 extent=self.lattice.extent,
@@ -646,8 +670,10 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
         torch.save(
             {
                 "epoch": self.current_epoch,
-                "model_state_dict": unparallelize(self.volume_model).state_dict(),
-                "optimizer_state_dict": self.volume_optimizer.state_dict(),
+                "model_state_dict": unparallelize(
+                    self.reconstruction_model
+                ).state_dict(),
+                "optimizer_state_dict": self.reconstruction_optimizer.state_dict(),
                 "search_pose": (self.predicted_rots, self.predicted_trans),
             },
             out_weights,
@@ -655,10 +681,10 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
 
         # If we are doing heterogeneous reconstruction, also save latent conformations
         if self.configs.z_dim > 0:
-            self.volume_model.eval()
+            self.reconstruction_model.eval()
 
             with torch.no_grad():
-                assert not self.volume_model.training
+                assert not self.reconstruction_model.training
                 z_mu_all = []
                 z_logvar_all = []
                 data_generator = dataset.make_dataloader(
@@ -687,11 +713,16 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
                             freqs, *torch.split(self.ctf_params[ind, 1:], 1, 1)
                         ).view(B, D, D)
 
+                    if self.pose_search is None and self.pose_tracker is not None:
+                        y = self.lattice.translate_ht(
+                            y.view(B, -1), self.pose_tracker.trans[ind].unsqueeze(1)
+                        ).view(B, D, D)
+
                     input_ = (y, yt) if yt is not None else (y,)
                     if c is not None:
                         input_ = (x * c.sign() for x in input_)  # phase flip by the ctf
 
-                    _model = unparallelize(self.volume_model)
+                    _model = unparallelize(self.reconstruction_model)
                     assert isinstance(_model, HetOnlyVAE)
                     z_mu, z_logvar = _model.encode(*input_)
                     z_mu_all.append(z_mu.detach().cpu().numpy())

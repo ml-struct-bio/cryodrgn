@@ -19,7 +19,7 @@ import numpy as np
 import torch
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.sampler import BatchSampler, RandomSampler, SequentialSampler
-from cryodrgn import fft
+from cryodrgn import fft, utils
 from cryodrgn.source import ImageSource, StarfileSource, parse_star
 from cryodrgn.masking import spherical_window_mask
 
@@ -37,6 +37,7 @@ class ImageDataset(torch.utils.data.Dataset):
         datadir=None,
         window_r=0.85,
         max_threads=16,
+        poses_gt_pkl=None,
         device: Union[str, torch.device] = "cpu",
     ):
         self.logger = logging.getLogger(__name__)
@@ -70,6 +71,16 @@ class ImageDataset(torch.utils.data.Dataset):
 
         self.device = device
         self.lazy = lazy
+
+        self.rot_gt = None
+        self.trans_gt = None
+        if poses_gt_pkl is not None:
+            poses_gt = utils.load_pkl(poses_gt_pkl)
+            if poses_gt[0].ndim == 3:
+                self.rot_gt = torch.Tensor(poses_gt[0]).float()
+                self.trans_gt = torch.Tensor(poses_gt[1] * self.D).float()
+            else:
+                self.rot_gt = torch.Tensor(poses_gt).float()
 
         if np.issubdtype(self.src.dtype, np.integer):
             self.window = self.window.int()
@@ -117,7 +128,7 @@ class ImageDataset(torch.utils.data.Dataset):
     def __len__(self):
         return self.N
 
-    def __getitem__(self, index: Union[int, list[int]]) -> dict[str, torch.Tensor]:
+    def __getitem__(self, index) -> dict[str, torch.Tensor]:
         if isinstance(index, list):
             index = torch.Tensor(index).to(torch.long)
 
@@ -129,6 +140,12 @@ class ImageDataset(torch.utils.data.Dataset):
         if len(f_particles.shape) == 2:
             f_particles = f_particles[np.newaxis, ...]
 
+        in_dict = {"y": f_particles, "y_real": r_particles, "indices": index}
+        if self.rot_gt is not None:
+            in_dict["rots"] = self.rot_gt[index].float()
+            if self.trans_gt is not None:
+                in_dict["trans"] = self.trans_gt[index].float()
+
         if isinstance(index, (int, np.integer)):
             self.logger.debug(f"ImageDataset returning images at index ({index})")
         else:
@@ -137,11 +154,7 @@ class ImageDataset(torch.utils.data.Dataset):
                 f"indices ({index[0]}..{index[-1]})"
             )
 
-        return {
-            "y": f_particles,  # batch_size(, n_tilts), D, D
-            "y_real": r_particles,  # batch_size(, n_tilts), D - 1, D - 1
-            "indices": index,  # batch_size
-        }
+        return in_dict
 
     def get_slice(
         self, start: int, stop: int
@@ -542,10 +555,12 @@ def make_dataloader(
         else:
             sampler = SequentialSampler(data)
 
-        return DataLoader(
+        data_loader = DataLoader(
             data,
             num_workers=num_workers,
             sampler=BatchSampler(sampler, batch_size=batch_size, drop_last=False),
             batch_size=None,
             multiprocessing_context="spawn" if num_workers > 0 else None,
         )
+
+        return data_loader

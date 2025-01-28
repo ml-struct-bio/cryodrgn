@@ -276,7 +276,7 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
 
         return output_mask
 
-    def make_volume_model(self) -> nn.Module:
+    def make_reconstruction_model(self) -> nn.Module:
         output_mask = self.make_output_mask()
 
         # cnn
@@ -385,7 +385,7 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
     def __init__(self, configs: dict[str, Any]) -> None:
         super().__init__(configs)
         self.configs: AmortizedInferenceConfigurations
-        self.model = self.volume_model
+        self.model = self.reconstruction_model
         self.do_pretrain = True
 
         if self.configs.num_epochs is None:
@@ -405,10 +405,10 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
 
         # TODO: Replace with DistributedDataParallel
         if self.n_prcs > 1:
-            self.model = MyDataParallel(self.volume_model)
+            self.model = MyDataParallel(self.reconstruction_model)
 
         self.model.output_mask.binary_mask = self.model.output_mask.binary_mask.cpu()
-        self.optimizers = {"hypervolume": self.volume_optimizer}
+        self.optimizers = {"hypervolume": self.reconstruction_optimizer}
         self.optimizer_types = {"hypervolume": self.configs.volume_optim_type}
 
         # pose table
@@ -720,8 +720,7 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
             torch.cuda.synchronize()
 
         start_time_backward = time.time()
-        if self.in_pretraining:
-            total_loss.backward()
+        total_loss.backward()
 
         for key in self.optimized_modules:
             if self.optimizer_types[key] == "adam":

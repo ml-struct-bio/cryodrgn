@@ -382,7 +382,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
     optim_types = {"adam": torch.optim.Adam, "lbfgs": torch.optim.LBFGS}
 
     @abstractmethod
-    def make_volume_model(self) -> nn.Module:
+    def make_reconstruction_model(self) -> nn.Module:
         pass
 
     def __init__(self, configs: dict[str, Any]) -> None:
@@ -433,6 +433,10 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
 
         # load dataset
         self.logger.info(f"Loading dataset from {self.configs.particles}")
+        if self.configs.pose_estimation in {"fixed", "refine"}:
+            use_poses = self.configs.poses
+        else:
+            use_poses = None
 
         if not self.configs.subtomo_averaging:
             self.data = ImageDataset(
@@ -446,6 +450,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
                 datadir=self.configs.datadir,
                 window_r=self.configs.window_r,
                 max_threads=self.configs.max_threads,
+                poses_gt_pkl=use_poses,
                 device=self.device,
             )
             self.particle_count = self.data.N
@@ -461,7 +466,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
                 max_threads=self.configs.max_threads,
                 dose_per_tilt=self.configs.dose_per_tilt,
                 device=self.device,
-                poses_gt_pkl=self.configs.poses,
+                poses_gt_pkl=use_poses,
                 tilt_axis_angle=self.configs.tilt_axis_angle,
                 no_trans=self.configs.no_trans,
             )
@@ -504,17 +509,21 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
         )
 
         self.logger.info("Initializing volume model...")
-        self.volume_model = self.make_volume_model()
-        self.volume_model.to(self.device)
-        self.logger.info(self.volume_model)
+        self.reconstruction_model = self.make_reconstruction_model()
+        self.reconstruction_model.to(self.device)
+        self.logger.info(self.reconstruction_model)
 
         # parallelize
-        if self.volume_model.z_dim > 0 and self.configs.multigpu and self.n_prcs > 1:
+        if (
+            self.reconstruction_model.z_dim > 0
+            and self.configs.multigpu
+            and self.n_prcs > 1
+        ):
             if self.configs.multigpu and torch.cuda.device_count() > 1:
                 self.logger.info(f"Using {torch.cuda.device_count()} GPUs!")
                 self.configs.batch_size *= torch.cuda.device_count()
                 self.logger.info(f"Increasing batch size to {self.configs.batch_size}")
-                self.volume_model = DataParallel(self.volume_model)
+                self.reconstruction_model = DataParallel(self.reconstruction_model)
             elif self.configs.multigpu:
                 self.logger.warning(
                     f"WARNING: --multigpu selected, but {torch.cuda.device_count()} "
@@ -541,9 +550,11 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
         )
         self.apix = self.ctf_params[0, 0] if self.ctf_params is not None else None
 
-        self.volume_optim_class = self.optim_types[self.configs.volume_optim_type]
-        self.volume_optimizer = self.volume_optim_class(
-            self.volume_model.parameters(),
+        self.reconstruction_optim_class = self.optim_types[
+            self.configs.volume_optim_type
+        ]
+        self.reconstruction_optimizer = self.reconstruction_optim_class(
+            self.reconstruction_model.parameters(),
             lr=self.configs.learning_rate,
             weight_decay=self.configs.weight_decay,
         )
@@ -568,8 +579,13 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
                 )
 
             try:  # Mixed precision with apex.amp
-                self.volume_model, self.volume_optimizer = amp.initialize(
-                    self.volume_model, self.volume_optimizer, opt_level="O1"
+                (
+                    self.reconstruction_model,
+                    self.reconstruction_optimizer,
+                ) = amp.initialize(
+                    self.reconstruction_model,
+                    self.reconstruction_optimizer,
+                    opt_level="O1",
                 )
             except:  # noqa: E722
                 # Mixed precision with pytorch (v1.6+)
@@ -691,14 +707,16 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
             self.begin_epoch()
 
             for batch in self.data_iterator:
+                batch["y"] = torch.Tensor(np.round(batch["y"].cpu().numpy(), 4))
+
                 self.total_batch_count += 1
                 self.epoch_batch_count += 1
                 len_y = len(batch["indices"])
                 self.total_images_seen += len_y
                 self.epoch_images_seen += len_y
 
-                self.volume_model.train()
-                self.volume_optimizer.zero_grad()
+                self.reconstruction_model.train()
+                self.reconstruction_optimizer.zero_grad()
                 with self.amp_mode:
                     losses, tilt_ind, ind, rot, trans = self.train_batch(batch)
 
@@ -718,21 +736,6 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
                     self.predicted_trans[ind_tilt] = trans.reshape(-1, 2)
                 if self.base_pose is not None:
                     self.base_poses.append((ind.cpu().numpy(), self.base_pose))
-
-                if self.configs.amp:
-                    if self.scaler is not None:  # torch mixed precision
-                        self.scaler.scale(losses["total"]).backward()
-                        self.scaler.step(self.volume_optimizer)
-                        self.scaler.update()
-                    else:  # apex.amp mixed precision
-                        with amp.scale_loss(
-                            losses["total"], self.volume_optimizer
-                        ) as scaled_loss:
-                            scaled_loss.backward()
-                        self.volume_optimizer.step()
-                else:
-                    losses["total"].backward()
-                    self.volume_optimizer.step()
 
                 # logging
                 for loss_k, loss_val in losses.items():
@@ -782,16 +785,16 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
 
     @property
     def model_resolution(self) -> int:
-        if isinstance(self.volume_model, DataParallel):
+        if isinstance(self.reconstruction_model, DataParallel):
             if self.configs.z_dim > 0:
-                model_resolution = self.volume_model.module.lattice.D
+                model_resolution = self.reconstruction_model.module.lattice.D
             else:
-                model_resolution = self.volume_model.module.D
+                model_resolution = self.reconstruction_model.module.D
         else:
             if self.configs.z_dim > 0:
-                model_resolution = self.volume_model.lattice.D
+                model_resolution = self.reconstruction_model.lattice.D
             else:
-                model_resolution = self.volume_model.D
+                model_resolution = self.reconstruction_model.D
 
         return model_resolution
 
@@ -836,8 +839,8 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
         # Reset the model after pretraining if asked for
         if self.configs.reset_optim_after_pretrain:
             self.logger.info(">> Resetting optimizer after pretrain")
-            self.volume_optimizer = torch.optim.Adam(
-                self.volume_model.parameters(),
+            self.reconstruction_optimizer = torch.optim.Adam(
+                self.reconstruction_model.parameters(),
                 lr=self.configs.learning_rate,
                 weight_decay=self.configs.weight_decay,
             )

@@ -1,5 +1,17 @@
-"""Visualize latent space and generate volumes from trained cryoDRGN model."""
+"""Visualize latent space and generate volumes from trained cryoDRGN model.
 
+Example usage
+-------------
+# Default is to analyze the last epoch for which output files have been generated
+$ cryodrgn analyze 003_abinit-het/
+
+# It is necessary to invert handedness for some datasets
+$ cryodrgn analyze 002_train-vae/ --epoch 99 --invert
+
+# Avoid running more computationally expensive analyses
+$ cryodrgn analyze frf3_results/003_abinit-zdim.4/ --epoch 49 --skip-umap --skip-vol
+
+"""
 import argparse
 import os
 import shutil
@@ -33,10 +45,11 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "traindir", type=os.path.abspath, help="Directory with cryoDRGN results"
     )
     parser.add_argument(
-        "epoch",
+        "--epoch",
         type=int,
-        help="Epoch number N to analyze (0-based indexing, "
-        "corresponding to z.N.pkl, weights.N.pkl)",
+        default=-1,
+        help="Epoch number N to analyze, corresponding to result output files z.N.pkl, "
+        "weights.N.pkl. Default is to analyze the last available epoch.",
     )
 
     parser.add_argument("--device", type=int, help="Optionally specify CUDA device")
@@ -86,7 +99,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     group.add_argument(
         "--vol-start-index",
         type=int,
-        default=0,
+        default=1,
         help="Default value of start index for volume "
         "generation (default: %(default)s)",
     )
@@ -131,6 +144,7 @@ class ModelAnalyzer:
         device: str = None,
         outdir: str = None,
         skip_vol: bool = False,
+        skip_umap: bool = False,
         apix: float = None,
         flip: bool = False,
         invert: bool = False,
@@ -138,7 +152,7 @@ class ModelAnalyzer:
         pc: int = 2,
         n_per_pc: int = 10,
         ksample: int = 20,
-        vol_start_index: int = 0,
+        vol_start_index: int = 1,
         sample_z_idx: list[int] = None,
         trajectory_1d: list[int] = None,
         z_values_txt: str = None,
@@ -146,7 +160,7 @@ class ModelAnalyzer:
     ) -> None:
         if not os.path.exists(traindir):
             raise ValueError(
-                f"Given training output directory {traindir} does not exist!"
+                f"Given training output directory `{traindir}` does not exist!"
             )
         self.traindir = traindir
         self.cfg_file = os.path.join(self.traindir, "train-configs.yaml")
@@ -188,7 +202,7 @@ class ModelAnalyzer:
                 if len(orig_apixs) > 1:
                     self.apix = 1.0
                     logger.info(
-                        "cannot find unique A/px in CTF parameters, "
+                        "Cannot find unique A/px in CTF parameters, "
                         "defaulting to A/px=1.0"
                     )
 
@@ -199,7 +213,7 @@ class ModelAnalyzer:
 
                     if len(orig_sizes) > 1:
                         logger.info(
-                            "cannot find unique original box size in CTF "
+                            f"Cannot find unique original box size in CTF "
                             f"parameters, defaulting to first found: {orig_size}"
                         )
 
@@ -210,7 +224,7 @@ class ModelAnalyzer:
             else:
                 self.apix = 1.0
                 logger.info(
-                    "cannot find A/px in CTF parameters, " "defaulting to A/px=1.0"
+                    "Cannot find A/px in CTF parameters, defaulting to A/px=1.0"
                 )
 
         # use last completed epoch if no epoch given
@@ -220,12 +234,18 @@ class ModelAnalyzer:
                 for fl in os.listdir(self.traindir)
                 if fl[:8] == "weights."
             )
-
         else:
             self.epoch = epoch
 
         # load model data
         self.weights_file = os.path.join(self.traindir, f"weights.{self.epoch}.pkl")
+        if not os.path.isfile(self.weights_file):
+            raise RuntimeError(
+                f"Unable to find saved epoch data file `{self.weights_file}`"
+                f"— has the model for `{self.traindir}` been trained "
+                f"to epoch {self.epoch} yet?"
+            )
+
         if self.trainer.configs.z_dim > 0:
             self.z = cryodrgn.utils.load_pkl(
                 os.path.join(self.traindir, f"conf.{self.epoch}.pkl")
@@ -241,6 +261,7 @@ class ModelAnalyzer:
         os.makedirs(self.outdir, exist_ok=True)
         logger.info(f"Saving results to {self.outdir}")
 
+        # We will generate volumes unless told not to or if using a homogeneous model
         if skip_vol or self.trainer.configs.z_dim == 0:
             self.volume_generator = None
         else:
@@ -251,6 +272,9 @@ class ModelAnalyzer:
                 self.device,
                 verbose=False,
                 apix=self.apix,
+                flip=flip,
+                invert=invert,
+                downsample=downsample,
             )
 
         self.pc = pc
@@ -261,11 +285,13 @@ class ModelAnalyzer:
         self.z_values_txt = z_values_txt
         self.direct_traversal_txt = direct_traversal_txt
         self.vol_start_index = vol_start_index
-        self.skip_umap = False
+        self.skip_umap = skip_umap
 
     def generate_volumes(
-        self, z_values, voldir, prefix="vol_", suffix=None, start_index=0
+        self, z_values, voldir, prefix="vol_", suffix=None, start_index=None
     ):
+        start_index = start_index or self.vol_start_index
+
         if self.volume_generator:
             os.makedirs(voldir, exist_ok=True)
             np.savetxt(os.path.join(voldir, "z_values.txt"), z_values)
@@ -276,7 +302,7 @@ class ModelAnalyzer:
         else:
             logger.info("Skipping volume generation...")
 
-    def analyze(self):
+    def analyze(self) -> None:
         if self.trainer.configs.z_dim == 0:
             logger.warning("No analyses available for homogeneous reconstruction!")
             return
@@ -288,27 +314,38 @@ class ModelAnalyzer:
 
         # create Jupyter notebooks for data analysis and visualization by
         # copying them over from the template directory
+        ipynbs = ["cryoDRGN_figures"]
         if self.trainer.configs.tilt:
-            out_ipynb = os.path.join(self.outdir, "cryoDRGN-analysis.ipynb")
+            ipynbs += ["cryoDRGN_ET_viz"]
+        else:
+            ipynbs += ["cryoDRGN_viz", "analysis"]
 
-            if not os.path.exists(out_ipynb):
-                logger.info("Creating analysis+visualization notebook...")
-                ipynb = os.path.join(TEMPLATE_DIR, "analysis-template.ipynb")
-                shutil.copyfile(ipynb, out_ipynb)
+        for ipynb in ipynbs:
+            nb_outfile = os.path.join(self.outdir, f"{ipynb}.ipynb")
 
+            if not os.path.exists(nb_outfile):
+                logger.info(f"Creating demo Jupyter notebook {nb_outfile}...")
+                nb_infile = os.path.join(
+                    cryodrgn._ROOT, "templates", f"{ipynb}_template.ipynb"
+                )
+                shutil.copyfile(nb_infile, nb_outfile)
             else:
-                logger.info(f"{out_ipynb} already exists. Skipping")
+                logger.info(f"{nb_outfile} already exists. Skipping")
 
             # edit the notebook with the epoch to analyze
-            with open(out_ipynb, "r") as f:
-                viz_ntbook = nbformat.read(f, as_version=nbformat.NO_CONVERT)
+            with open(nb_outfile, "r") as f:
+                ntbook = nbformat.read(f, as_version=nbformat.NO_CONVERT)
 
-            viz_ntbook["cells"][3]["source"] = viz_ntbook["cells"][3]["source"].replace(
-                "EPOCH = None", "EPOCH = {self.epoch}"
-            )
+            for cell in ntbook["cells"]:
+                cell["source"] = cell["source"].replace(
+                    "EPOCH = None", f"EPOCH = {self.epoch}"
+                )
+                cell["source"] = cell["source"].replace(
+                    "KMEANS = None", f"KMEANS = {self.ksample}"
+                )
 
-            with open(out_ipynb, "w") as f:
-                nbformat.write(viz_ntbook, f)
+            with open(nb_outfile, "w") as f:
+                nbformat.write(ntbook, f)
 
         if self.sample_z_idx is not None:
             sampledir = os.path.join(self.outdir, "samples")
@@ -490,41 +527,14 @@ class ModelAnalyzer:
         plt.close()
 
         # PCA -- Style 3 -- Hexbin
-        g = sns.jointplot(x=pc[:, 0], y=pc[:, 1], height=4, kind="hex")
-        plt_pc_labels_jointplot(g)
-        plt.tight_layout()
-        plt.savefig(os.path.join(self.outdir, "z_pca_hexbin.png"))
-        plt.close()
-
-        # Plot kmeans sample points
-        colors = cryodrgn.analysis._get_chimerax_colors(self.ksample)
-        cryodrgn.analysis.scatter_annotate(
-            pc[:, 0],
-            pc[:, 1],
-            centers_ind=centers_ind,
-            annotate=True,
-            colors=colors,
-        )
-        plt_pc_labels()
-        plt.tight_layout()
-        plt.savefig(f"{self.outdir}/kmeans{self.ksample}/z_pca.png")
-        plt.close()
-
         try:
-            g = cryodrgn.analysis.scatter_annotate_hex(
-                pc[:, 0],
-                pc[:, 1],
-                centers_ind=centers_ind,
-                annotate=True,
-                colors=colors,
-            )
+            g = sns.jointplot(x=pc[:, 0], y=pc[:, 1], height=4, kind="hex")
+            plt_pc_labels_jointplot(g)
+            plt.tight_layout()
+            plt.savefig(os.path.join(self.outdir, "z_pca_hexbin.png"))
+            plt.close()
         except ZeroDivisionError:
-            logger.warning("Data too small to generate PCA annotated hexes!")
-
-        plt_pc_labels_jointplot(g)
-        plt.tight_layout()
-        plt.savefig(f"{self.outdir}/kmeans{self.ksample}/z_pca_hex.png")
-        plt.close()
+            print("Data too small to produce hexbins!")
 
         if umap_emb is not None:
             # Style 1 -- Scatter
@@ -561,6 +571,66 @@ class ModelAnalyzer:
                 plt.close()
             except ZeroDivisionError:
                 logger.warning("Data too small for marginal distribution scatterplots!")
+
+        # Plot kmeans sample points
+        colors = cryodrgn.analysis._get_chimerax_colors(self.ksample)
+        cryodrgn.analysis.scatter_annotate(
+            pc[:, 0],
+            pc[:, 1],
+            centers_ind=centers_ind,
+            annotate=True,
+            colors=colors,
+        )
+        plt_pc_labels()
+        plt.tight_layout()
+        plt.savefig(f"{self.outdir}/kmeans{self.ksample}/z_pca.png")
+        plt.close()
+
+        try:
+            g = cryodrgn.analysis.scatter_annotate_hex(
+                pc[:, 0],
+                pc[:, 1],
+                centers_ind=centers_ind,
+                annotate=True,
+                colors=colors,
+            )
+        except ZeroDivisionError:
+            logger.warning("Data too small to generate PCA annotated hexes!")
+
+        plt_pc_labels_jointplot(g)
+        plt.tight_layout()
+        plt.savefig(os.path.join(self.outdir, f"kmeans{self.ksample}", "z_pca_hex.png"))
+        plt.close()
+
+        if umap_emb is not None:
+            cryodrgn.analysis.scatter_annotate(
+                umap_emb[:, 0],
+                umap_emb[:, 1],
+                centers_ind=centers_ind,
+                annotate=True,
+                colors=colors,
+            )
+            plt_umap_labels()
+            plt.tight_layout()
+            plt.savefig(os.path.join(self.outdir, f"kmeans{self.ksample}", "umap.png"))
+            plt.close()
+
+            try:
+                g = cryodrgn.analysis.scatter_annotate_hex(
+                    umap_emb[:, 0],
+                    umap_emb[:, 1],
+                    centers_ind=centers_ind,
+                    annotate=True,
+                    colors=colors,
+                )
+                plt_umap_labels_jointplot(g)
+                plt.tight_layout()
+                plt.savefig(
+                    os.path.join(self.outdir, f"kmeans{self.ksample}", "umap_hex.png")
+                )
+                plt.close()
+            except ZeroDivisionError:
+                logger.warning("Data too small to generate UMAP annotated hexes!")
 
         # Plot PC trajectories
         for i in range(self.pc):
@@ -713,7 +783,21 @@ def main(args):
     matplotlib.use("Agg")  # non-interactive backend
     t0 = dt.now()
 
-    analyzer = ModelAnalyzer(args.traindir, args.epoch, args.device, args.downsample)
+    analyzer = ModelAnalyzer(
+        traindir=args.traindir,
+        epoch=args.epoch,
+        device=args.device,
+        outdir=args.outdir,
+        skip_vol=args.skip_vol,
+        skip_umap=args.skip_umap,
+        apix=args.Apix,
+        flip=args.flip,
+        invert=args.invert,
+        downsample=args.downsample,
+        pc=args.pc,
+        ksample=args.ksample,
+        vol_start_index=args.vol_start_index,
+    )
     analyzer.analyze()
 
     logger.info(f"Finished in {dt.now() - t0}")

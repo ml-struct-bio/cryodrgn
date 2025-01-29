@@ -234,7 +234,12 @@ class VolumeEvaluator:
     def evaluate_volume(self, z):
         return self.transform_volume(
             self.model.eval_volume(
-                self.coords, self.D, self.extent, self.norm, z, radius=self.radius_mask
+                lattice=self.lattice,
+                resolution=self.D,
+                extent=self.extent,
+                norm=self.norm,
+                zval=z,
+                radius=self.radius_mask,
             )
         )
 
@@ -244,7 +249,7 @@ class VolumeEvaluator:
         outpath: str,
         prefix: str = "vol_",
         suffix: Optional[str] = None,
-        vol_start_index: int = 0,
+        vol_start_index: int = 1,
     ) -> None:
 
         if vol_start_index > (len(z_values) - 1):
@@ -261,10 +266,11 @@ class VolumeEvaluator:
             for i, z_val in enumerate(z_values, start=vol_start_index):
                 logger.info(z_val)
                 volume = self.evaluate_volume(z_val)
-                # lbl = i if suffix is None else suffix
-
+                suffix_str = "" if suffix is None else suffix
                 write_mrc(
-                    os.path.join(outpath, "{}{:03d}.mrc".format(prefix, i)),
+                    os.path.join(
+                        outpath, "{}{:03d}{}.mrc".format(prefix, i, suffix_str)
+                    ),
                     np.array(volume.cpu()).astype(np.float32),
                     Apix=self.apix,
                 )

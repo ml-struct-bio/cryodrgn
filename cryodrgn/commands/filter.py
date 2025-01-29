@@ -18,6 +18,9 @@ $ cryodrgn filter 00_trainvae
 # Choose an epoch yourself; save final selection to `indices.pkl` without prompting
 $ cryodrgn filter my_outdir --epoch 30 -f
 
+# Choose another epoch; this time choose file name but pre-select directory to save in
+$ cryodrgn filter my_outdir --epoch 30 --sel-dir /data/my_indices/
+
 # If you have done multiple k-means clusterings, you can pick which one to use
 $ cryodrgn filter my_outdir/ -k 25
 
@@ -37,13 +40,14 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from matplotlib import colors
-from matplotlib.backend_bases import MouseButton, MouseEvent
-from matplotlib.widgets import LassoSelector, RadioButtons
+from matplotlib.backend_bases import MouseEvent, MouseButton
+from matplotlib.widgets import LassoSelector, RadioButtons, Button
 from matplotlib.path import Path as PlotPath
+from matplotlib.gridspec import GridSpec
 from scipy.spatial import transform
 from typing import Optional, Sequence
 
-from cryodrgn import analysis, utils
+from cryodrgn import analysis, utils, dataset
 
 logger = logging.getLogger(__name__)
 
@@ -80,28 +84,39 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         help="path to a file containing previously selected indices "
         "that will be plotted at the beginning",
     )
+    parser.add_argument(
+        "--sel-dir",
+        type=str,
+        help="directory to save the particle selection into",
+    )
 
 
 def main(args: argparse.Namespace) -> None:
+    """Launching the interactive interface for filtering particles from command-line."""
     workdir = args.outdir
     epoch = args.epoch
     kmeans = args.kmeans
     plot_inds = args.plot_inds
 
-    train_configs_file = os.path.join(workdir, "config.yaml")
+    train_configs_file = os.path.join(workdir, "train-configs.yaml")
     if not os.path.exists(train_configs_file):
         raise ValueError("Missing config.yaml file " "in given output folder!")
-
-    conf_fls = [fl for fl in os.listdir(workdir) if re.fullmatch(r"z\.[0-9]+\.pkl", fl)]
-
-    if not conf_fls:
+    with open(train_configs_file, "r") as f:
+        train_configs = yaml.safe_load(f)
+    if train_configs["model_args"]["z_dim"] == 0:
         raise NotImplementedError(
             "Filtering is not available for the output "
             "of homogeneous reconstruction!"
         )
 
-    with open(train_configs_file, "r") as f:
-        train_configs = yaml.safe_load(f)
+    conf_fls = [
+        fl for fl in os.listdir(workdir) if re.fullmatch(r"conf\.[0-9]+\.pkl", fl)
+    ]
+    if not conf_fls:
+        raise RuntimeError(
+            f"No latent space conformation model outputs found in {workdir}, "
+            f"has training finished yet?"
+        )
 
     if epoch == -1:
         epoch = max(int(x.split(".")[1]) for x in conf_fls)
@@ -113,7 +128,7 @@ def main(args: argparse.Namespace) -> None:
             f"No analysis available for epoch {epoch} "
             f"— first run `cryodrgn analyze {workdir} {epoch}`"
         )
-    z = utils.load_pkl(os.path.join(workdir, f"z.{epoch}.pkl"))
+    conf_mat = utils.load_pkl(os.path.join(workdir, f"conf.{epoch}.pkl"))
 
     # Get poses either from input file or from reconstruction results if ab-initio
     if "poses" in train_configs["dataset_args"]:
@@ -123,25 +138,42 @@ def main(args: argparse.Namespace) -> None:
 
     # Load poses and initial indices for plotting if they have been specified
     rot, trans = utils.load_pkl(pose_pkl)
-    ctf_params = utils.load_pkl(train_configs["dataset_args"]["ctf"])
-    pre_indices = None if plot_inds is None else utils.load_pkl(plot_inds)
-    all_indices = np.array(range(ctf_params.shape[0]))
+    if train_configs["dataset_args"]["ctf"] is not None:
+        ctf_params = utils.load_pkl(train_configs["dataset_args"]["ctf"])
+    else:
+        ctf_params = None
 
     # Load the set of indices used to filter original dataset and apply it to inputs
+    pre_indices = None if plot_inds is None else utils.load_pkl(plot_inds)
+    if ctf_params is not None:
+        all_indices = np.array(range(ctf_params.shape[0]))
+    else:
+        all_indices = np.array(
+            range(
+                dataset.ImageDataset(
+                    mrcfile=train_configs["dataset_args"]["particles"], lazy=True
+                ).N
+            )
+        )
+
+    # Load the set of indices used to filter the original dataset and apply it to inputs
     if isinstance(train_configs["dataset_args"]["ind"], int):
         indices = slice(train_configs["dataset_args"]["ind"])
-    else:
+    elif train_configs["dataset_args"]["ind"] is not None:
         indices = utils.load_pkl(train_configs["dataset_args"]["ind"])
+    else:
+        indices = None
 
-    ctf_params = ctf_params[indices, :]
-    all_indices = all_indices[indices]
+    if indices is not None:
+        ctf_params = ctf_params[indices, :] if ctf_params is not None else None
+        all_indices = all_indices[indices]
 
-    # We only need to filter the poses if they weren't generated by the model
-    if "poses" in train_configs["dataset_args"]:
-        rot = rot[indices, :, :]
-        trans = trans[indices, :]
+        # We only need to filter the poses if they weren't generated by the model
+        if "poses" in train_configs["dataset_args"]:
+            rot = rot[indices, :, :]
+            trans = trans[indices, :]
 
-    pc, pca = analysis.run_pca(z)
+    pc, pca = analysis.run_pca(conf_mat)
     umap = utils.load_pkl(os.path.join(anlzdir, "umap.pkl"))
 
     if kmeans == -1:
@@ -176,33 +208,34 @@ def main(args: argparse.Namespace) -> None:
             )
 
     kmeans_lbls = utils.load_pkl(os.path.join(kmeans_dir, "labels.pkl"))
-    znorm = np.sum(z**2, axis=1) ** 0.5
+    znorm = np.sum(conf_mat**2, axis=1) ** 0.5
 
-    if rot.shape[0] == z.shape[0]:
+    if rot.shape[0] == conf_mat.shape[0]:
         plot_df = analysis.load_dataframe(
-            z=z,
+            z=conf_mat,
             pc=pc,
             euler=transform.Rotation.from_matrix(rot).as_euler("zyz", degrees=True),
             trans=trans,
             labels=kmeans_lbls,
             umap=umap,
-            df1=ctf_params[:, 2],
-            df2=ctf_params[:, 3],
-            dfang=ctf_params[:, 4],
-            phase=ctf_params[:, 8],
             znorm=znorm,
         )
+        if ctf_params is not None:
+            plot_df["df1"] = ctf_params[:, 2]
+            plot_df["df2"] = ctf_params[:, 3]
+            plot_df["dfang"] = ctf_params[:, 4]
+            plot_df["phase"] = ctf_params[:, 8]
+
     # Tilt-series outputs have tilt-level CTFs and poses but particle-level model
     # results, thus we ignore the former in this case for now
     else:
         plot_df = analysis.load_dataframe(
-            z=z, pc=pc, labels=kmeans_lbls, umap=umap, znorm=znorm
+            z=conf_mat, pc=pc, labels=kmeans_lbls, umap=umap, znorm=znorm
         )
 
     # Launch the plot and the interactive command-line prompt; once points are selected,
     # close the figure to avoid interference with other plots
     selector = SelectFromScatter(plot_df, pre_indices)
-    input("Press Enter after making your selection...")
     selected_indices = [all_indices[i] for i in selector.indices]
     plt.close()
 
@@ -220,40 +253,33 @@ def main(args: argparse.Namespace) -> None:
         )
 
         if args.force:
-            save_option = "yes"
+            filename = "indices"
         else:
-            save_option = (
-                input("Do you want to save the selection to file? (yes/no): ")
-                .strip()
-                .lower()
-            )
-
-        if save_option == "yes":
-            if args.force:
-                filename = "indices"
+            if args.sel_dir:
+                sel_msg = f"Enter filename to save selection under {args.sel_dir} "
             else:
-                filename = input(
-                    "Enter filename to save selection (absolute, without extension): "
-                ).strip()
+                sel_msg = "Enter filename to save selection "
+            filename = input(sel_msg + "(absolute, without extension):").strip()
+        if args.sel_dir:
+            filename = os.path.join(args.sel_dir, filename)
 
-            # Saving the selected indices
-            if filename:
-                selected_full_path = filename + ".pkl"
+        # Saving the selected indices
+        if filename:
+            selected_full_path = filename + ".pkl"
 
-                with open(selected_full_path, "wb") as file:
-                    pickle.dump(np.array(selected_indices, dtype=int), file)
-                print(f"Selection saved to {selected_full_path}")
+            with open(selected_full_path, "wb") as file:
+                pickle.dump(np.array(selected_indices, dtype=int), file)
+            print(f"Selection saved to `{selected_full_path}`")
 
-                # Saving the inverse selection
-                inverse_filename = filename + "_inverse.pkl"
-                inverse_indices = np.setdiff1d(all_indices, selected_indices)
+            # Saving the inverse selection
+            inverse_filename = filename + "_inverse.pkl"
+            inverse_indices = np.setdiff1d(all_indices, selected_indices)
 
-                with open(inverse_filename, "wb") as file:
-                    pickle.dump(np.array(inverse_indices, dtype=int), file)
+            with open(inverse_filename, "wb") as file:
+                pickle.dump(np.array(inverse_indices, dtype=int), file)
 
-                print(f"Inverse selection saved to {inverse_filename}")
-        else:
-            print("Exiting without saving selection.")
+            print(f"Inverse selection saved to `{inverse_filename}`")
+
     else:
         print("Exiting without having made a selection.")
 
@@ -270,7 +296,7 @@ class SelectFromScatter:
         # Create a plotting region subdivided into three parts vertically, the middle
         # big part being used for the scatterplot and the thin sides used for legends
         self.fig = plt.figure(constrained_layout=True)
-        gs = self.fig.add_gridspec(2, 3, width_ratios=[1, 7, 1])
+        gs = self.gridspec()
         self.main_ax = self.fig.add_subplot(gs[:, 1])
 
         # Find the columns in the given data frame that can be used as plotting
@@ -296,6 +322,28 @@ class SelectFromScatter:
         self.menu_y = RadioButtons(rax, labels=self.select_cols, active=1)
         self.menu_y.on_clicked(self.update_yaxis)
 
+        # add save button only when selection is made
+        self.save_ax = self.fig.add_subplot(gs[2, 0])
+        self.exit_ax = self.fig.add_subplot(gs[3, 0])
+        self.save_btn = Button(
+            self.save_ax,
+            "Save Selection",
+            color="#164316",
+            hovercolor="#01BC01",
+        )
+        self.exit_btn = Button(
+            self.exit_ax,
+            "Exit Without Saving",
+            color="#601515",
+            hovercolor="#BA0B0B",
+        )
+        self.save_btn.label.set_color("white")
+        self.exit_btn.label.set_color("white")
+        self.save_btn.on_clicked(self.save_click)
+        self.exit_btn.on_clicked(self.exit_click)
+        self.save_ax.set_visible(False)
+        self.exit_ax.set_visible(True)
+
         cax = self.fig.add_subplot(gs[:, 2])
         cax.axis("off")
         cax.set_title("choose\ncolors", size=13)
@@ -316,6 +364,12 @@ class SelectFromScatter:
 
         self.plot()
 
+    def gridspec(self) -> GridSpec:
+        """Defines the layout of the plots and menus in the interactive interface."""
+        return self.fig.add_gridspec(
+            4, 3, width_ratios=[1, 7, 1], height_ratios=[7, 7, 1, 1]
+        )
+
     def plot(self) -> None:
         """Redraw the plot using the current plot info upon e.g. input from user."""
         self.main_ax.clear()
@@ -324,6 +378,13 @@ class SelectFromScatter:
         if len(self.indices):
             for idx in self.indices:
                 pnt_colors[idx] = "goldenrod"
+
+            # with selection, set save button visible
+            self.save_ax.set_visible(True)
+
+        elif ~len(self.indices):
+            # remove save button if no selection is made
+            self.save_ax.set_visible(False)
 
         elif self.color_col != "None":
             clr_vals = self.data_table[self.color_col]
@@ -370,7 +431,7 @@ class SelectFromScatter:
             va="bottom",
             transform=self.main_ax.transAxes,
         )
-        plt.show(block=False)
+        plt.show()
         plt.draw()
 
     def update_xaxis(self, xlbl: str) -> None:
@@ -450,3 +511,16 @@ class SelectFromScatter:
             self.handl_id = self.fig.canvas.mpl_connect(
                 "motion_notify_event", self.hover_points
             )
+
+    def save_click(self, event: MouseEvent) -> None:
+        """When the save button is clicked, we close display."""
+        if hasattr(event, "button") and event.button is MouseButton.LEFT:
+            # close the plt so we can move onto saving it
+            plt.close("all")
+
+    def exit_click(self, event: MouseEvent) -> None:
+        """When the exit button is clicked, we clear the selection and close display."""
+        if hasattr(event, "button") and event.button is MouseButton.LEFT:
+            # close the plt so we can move onto saving it
+            self.indices = list()
+            plt.close("all")

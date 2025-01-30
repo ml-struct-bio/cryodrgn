@@ -4,7 +4,6 @@ import os
 import argparse
 import yaml
 from typing import Optional, Union
-from cryodrgn.trainers import ModelConfigurations
 from cryodrgn.utils import load_yaml
 
 
@@ -78,7 +77,6 @@ class SetupHelper:
         particles: Optional[str] = None,
         ctf: Optional[str] = None,
         poses: Optional[str] = None,
-        additional_cfgs: Optional[list[str]] = None,
         **cfg_args,
     ) -> dict:
         configs: dict[str, Union[str, dict, None]] = self.old_configs.copy()
@@ -96,8 +94,6 @@ class SetupHelper:
             configs["ctf"] = ctf
         if poses:
             configs["poses"] = poses
-        if additional_cfgs:
-            configs = {**configs, **ModelConfigurations.parse_cfg_keys(additional_cfgs)}
 
         configs = {**configs, **cfg_args}
 

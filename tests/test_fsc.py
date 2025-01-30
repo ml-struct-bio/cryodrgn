@@ -14,8 +14,8 @@ from cryodrgn.utils import run_command
 def test_fidelity(trained_dir) -> None:
     """Test that we can compare two volumes produced during reconstruction training."""
 
-    vol_file1 = os.path.join(trained_dir.outdir, "reconstruct.0.mrc")
-    vol_file2 = os.path.join(trained_dir.outdir, "reconstruct.4.mrc")
+    vol_file1 = os.path.join(trained_dir.outdir, "reconstruct.1.mrc")
+    vol_file2 = os.path.join(trained_dir.outdir, "reconstruct.5.mrc")
     out, err = run_command(f"cryodrgn_utils fsc {vol_file1} {vol_file2}")
     assert err == ""
 
@@ -51,7 +51,7 @@ def test_fidelity(trained_dir) -> None:
     ],
     indirect=True,
 )
-@pytest.mark.parametrize("epochs", [(0, 1), (0, 2), (1, 2)])
+@pytest.mark.parametrize("epochs", [(1, 2), (1, 3), (2, 3)])
 def test_output_file(trained_dir, epochs: tuple[int, int]) -> None:
     vol_file1 = os.path.join(trained_dir.outdir, f"reconstruct.{epochs[0]}.mrc")
     vol_file2 = os.path.join(trained_dir.outdir, f"reconstruct.{epochs[1]}.mrc")
@@ -108,8 +108,8 @@ def test_apply_mask(trained_dir, epochs: tuple[int, int]) -> None:
     indirect=True,
 )
 def test_apply_phase_randomization(trained_dir) -> None:
-    vol_file1 = os.path.join(trained_dir.outdir, "reconstruct.1.mrc")
-    vol_file2 = os.path.join(trained_dir.outdir, "reconstruct.2.mrc")
+    vol_file1 = os.path.join(trained_dir.outdir, "reconstruct.2.mrc")
+    vol_file2 = os.path.join(trained_dir.outdir, "reconstruct.3.mrc")
 
     out, err = run_command(f"cryodrgn_utils fsc {vol_file1} {vol_file2} --corrected 16")
     assert err == ""
@@ -127,9 +127,9 @@ def test_apply_phase_randomization(trained_dir) -> None:
     indirect=True,
 )
 def test_use_cryosparc_correction(trained_dir) -> None:
-    vol_file1 = os.path.join(trained_dir.outdir, "reconstruct.1.mrc")
-    vol_file2 = os.path.join(trained_dir.outdir, "reconstruct.2.mrc")
-    ref_vol = os.path.join(trained_dir.outdir, "reconstruct.3.mrc")
+    vol_file1 = os.path.join(trained_dir.outdir, "reconstruct.2.mrc")
+    vol_file2 = os.path.join(trained_dir.outdir, "reconstruct.3.mrc")
+    ref_vol = os.path.join(trained_dir.outdir, "reconstruct.4.mrc")
     mask_file = os.path.join(trained_dir.outdir, "mask.mrc")
 
     out, err = run_command(
@@ -165,7 +165,7 @@ def test_use_cryosparc_correction(trained_dir) -> None:
     ],
     indirect=True,
 )
-@pytest.mark.parametrize("epochs", [(2, 3)])
+@pytest.mark.parametrize("epochs", [(3, 4)])
 def test_plotting(trained_dir, epochs: tuple[int, int]) -> None:
     vol_file1 = os.path.join(trained_dir.outdir, f"reconstruct.{epochs[0]}.mrc")
     vol_file2 = os.path.join(trained_dir.outdir, f"reconstruct.{epochs[1]}.mrc")

@@ -1,6 +1,6 @@
 import torch
 
-from cryodrgn import lie_tools
+from cryodrgn.models import lie_tools
 
 
 def test_so3_entropy():

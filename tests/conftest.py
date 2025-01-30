@@ -249,8 +249,12 @@ class TrainDir:
     def out_files(self) -> list[str]:
         return os.listdir(self.outdir)
 
-    def epoch_cleaned(self, epoch: Union[int, None]) -> bool:
-        if epoch and not 0 <= epoch < self.epochs:
+    @property
+    def epoch_iter(self) -> range:
+        return range(1, self.epochs + 1)
+
+    def epoch_cleaned(self, epoch: int) -> bool:
+        if not 1 <= epoch <= self.epochs:
             raise ValueError(
                 f"Cannot check if given epoch {epoch} has been cleaned "
                 f"for output folder `{self.outdir}` which only contains "
@@ -260,28 +264,21 @@ class TrainDir:
         cleaned = True
         out_files = self.out_files
 
-        if epoch:
-            epoch_lbl = f".{epoch}"
-        else:
-            epoch_lbl = ""
-
-        if f"weights{epoch_lbl}.pkl" in out_files:
+        if f"weights.{epoch}.pkl" in out_files:
             cleaned = False
 
         if self.train_cmd == "train_nn":
-            if f"reconstruct{epoch_lbl}.mrc" in out_files:
+            if f"reconstruct.{epoch}.mrc" in out_files:
                 cleaned = False
         elif self.train_cmd == "train_vae":
-            if f"z{epoch_lbl}.pkl" in out_files:
+            if f"conf.{epoch}.pkl" in out_files:
                 cleaned = False
 
         return cleaned
 
     @property
     def all_files_present(self) -> bool:
-        return not any(
-            self.epoch_cleaned(epoch) for epoch in list(range(self.epochs)) + [None]
-        )
+        return not any(self.epoch_cleaned(epoch) for epoch in self.epoch_iter)
 
     def replace_files(self) -> None:
         for orig_file in os.listdir(self.orig_cache):
@@ -291,7 +288,7 @@ class TrainDir:
             )
 
     def train_load_epoch(self, load_epoch: int, train_epochs: int) -> None:
-        if not 0 <= load_epoch < self.epochs:
+        if not 1 <= load_epoch <= self.epochs:
             raise ValueError(
                 f"Given epoch to load {load_epoch} is not valid for experiment "
                 f"with {self.epochs} epochs!"

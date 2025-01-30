@@ -13,7 +13,7 @@ def test_clean_here(trained_dir, every_n: int) -> None:
     os.chdir(trained_dir.out_lbl)
     out, err = run_command(f"cryodrgn_utils clean -n {every_n} -d")
     os.chdir("..")
-    assert out == f"\tWould remove {2 * (9 - 9 // every_n)} files!\n"
+    assert out == f"\tWould remove {2 * (10 - 10 // every_n)} files!\n"
     assert err == ""
     assert trained_dir.all_files_present
 
@@ -21,11 +21,10 @@ def test_clean_here(trained_dir, every_n: int) -> None:
     out, err = run_command(f"cryodrgn_utils clean -n {every_n}")
     os.chdir("..")
 
-    assert out == f"\tRemoved {2 * (9 - 9 // every_n)} files!\n"
+    assert out == f"\tRemoved {2 * (10 - 10 // every_n)} files!\n"
     assert err == ""
 
-    assert not trained_dir.epoch_cleaned(None)
-    for epoch in range(10):
+    for epoch in range(1, 11):
         assert trained_dir.epoch_cleaned(epoch) == (epoch % every_n != 0)
 
 
@@ -40,7 +39,7 @@ def test_clean_one(trained_dir, every_n: int) -> None:
         f"cryodrgn_utils clean {os.path.relpath(trained_dir.out_lbl)} -n {every_n} -d"
     )
 
-    rmv_count = 2 * (trained_dir.epochs - 1 - ((trained_dir.epochs - 1) // every_n))
+    rmv_count = 2 * (trained_dir.epochs - (trained_dir.epochs // every_n))
     assert out == f"\tWould remove {rmv_count} files!\n"
     assert err == ""
     assert trained_dir.all_files_present
@@ -51,8 +50,7 @@ def test_clean_one(trained_dir, every_n: int) -> None:
     assert out == f"\tRemoved {rmv_count} files!\n"
     assert err == ""
 
-    assert not trained_dir.epoch_cleaned(None)
-    for epoch in range(trained_dir.epochs):
+    for epoch in trained_dir.epoch_iter:
         assert trained_dir.epoch_cleaned(epoch) == (epoch % every_n != 0)
 
 
@@ -76,7 +74,7 @@ def test_clean_two(trained_dirs, every_n: int) -> None:
     out, err = run_command(f"cryodrgn_utils clean {dir_str} -n {every_n} -d")
 
     rmv_counts = [
-        2 * (trained_dir.epochs - 1 - ((trained_dir.epochs - 1) // every_n))
+        2 * (trained_dir.epochs - (trained_dir.epochs // every_n))
         for trained_dir in trained_dirs
     ]
 
@@ -95,6 +93,5 @@ def test_clean_two(trained_dirs, every_n: int) -> None:
     assert err == ""
 
     for trained_dir in trained_dirs:
-        assert not trained_dir.epoch_cleaned(None)
-        for epoch in range(trained_dir.epochs):
+        for epoch in trained_dir.epoch_iter:
             assert trained_dir.epoch_cleaned(epoch) == (epoch % every_n != 0)

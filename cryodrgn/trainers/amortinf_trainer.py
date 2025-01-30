@@ -25,13 +25,33 @@ from cryodrgn.trainers import summary
 from cryodrgn.models.losses import kl_divergence_conf, l1_regularizer, l2_frequency_bias
 from cryodrgn.models.amortized_inference import DRGNai, MyDataParallel
 from cryodrgn.masking import CircularMask, FrequencyMarchingMask
-from cryodrgn.trainers import ReconstructionModelTrainer, ModelConfigurations
+from cryodrgn.trainers import (
+    ReconstructionModelTrainer,
+    ReconstructionModelConfigurations,
+)
 
 
 @dataclass
-class AmortizedInferenceConfigurations(ModelConfigurations):
+class AmortizedInferenceConfigurations(ReconstructionModelConfigurations):
 
-    trainer_cls = "AmortizedInferenceTrainer"
+    quick_config = {
+        "capture_setup": {
+            "spa": {"lazy": True},
+            "et": {
+                "subtomo_averaging": True,
+                "lazy": True,
+                "shuffler_size": 0,
+                "num_workers": 0,
+                "t_extent": 0.0,
+                "batch_size_known_poses": 8,
+                "batch_size_sgd": 32,
+                "n_imgs_pose_search": 150000,
+                "pose_only_phase": 50000,
+                "lr_pose_table": 1.0e-5,
+            },
+        },
+        "reconstruction_type": {"homo": {"z_dim": 0}, "het": {"z_dim": 8}},
+    }
 
     # a parameter belongs to this configuration set if and only if it has a default
     # value defined here, note that children classes inherit these from parents
@@ -85,6 +105,9 @@ class AmortizedInferenceConfigurations(ModelConfigurations):
 
     # quick configs
     conf_estimation: str = None
+
+    def __init__(self, **config_args: dict[str, Any]) -> None:
+        super().__init__(**config_args)
 
     def __post_init__(self) -> None:
         super().__post_init__()

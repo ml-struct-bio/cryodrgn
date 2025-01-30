@@ -23,7 +23,10 @@ from cryodrgn.models.losses import EquivarianceLoss
 from cryodrgn.models.variational_autoencoder import unparallelize, HetOnlyVAE
 from cryodrgn.models.neural_nets import get_decoder
 from cryodrgn.models.pose_search import PoseSearch
-from cryodrgn.trainers import ReconstructionModelTrainer, ModelConfigurations
+from cryodrgn.trainers import (
+    ReconstructionModelTrainer,
+    ReconstructionModelConfigurations,
+)
 from cryodrgn.mrcfile import write_mrc
 from cryodrgn.pose import PoseTracker
 
@@ -34,9 +37,7 @@ except ImportError:
 
 
 @dataclass
-class HierarchicalPoseSearchConfigurations(ModelConfigurations):
-
-    trainer_cls: str = "HierarchicalPoseSearchTrainer"
+class HierarchicalPoseSearchConfigurations(ReconstructionModelConfigurations):
 
     # a parameter belongs to this configuration set if and only if it has a default
     # value defined here, note that children classes inherit these from parents

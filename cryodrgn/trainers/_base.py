@@ -8,7 +8,7 @@ import difflib
 import contextlib
 import inspect
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, fields, Field, MISSING, asdict
+from dataclasses import dataclass, fields, field, Field, MISSING, asdict
 from typing import Any
 from typing_extensions import Self
 import yaml
@@ -33,18 +33,52 @@ except ImportError:
 
 @dataclass
 class BaseConfigurations(ABC):
-    """Base class for sets of model configuration parameters."""
+    """The abstract base data class for configuration parameter sets used by cryoDRGN.
 
-    trainer_cls: str = "BaseTrainer"
+    This class defines the core parameters used by all cryoDRGN configuration parameter
+    sets (data classes inherit their parents' data fields).
+
+    It also defines special behaviour for the `quick_config` parameter, which defines
+    a set of shortcuts used as values for the parameters listed as its keys. These
+    shortcuts define a list of parameter names and values that are used as the new
+    defaults when the shortcut is used, but can still be overridden by values specified
+    by the user.
+    """
 
     # a parameter belongs to this configuration set if and only if it has a default
     # value defined here, note that children classes inherit these from parents
+    quick_config: dict = field(default_factory=dict)
     verbose: int = 0
     seed: int = None
     test_installation: bool = False
 
+    def __init__(self, **config_args: dict[str, Any]) -> None:
+        self.given_configs = config_args
+        for k, v in self.given_configs.items():
+            setattr(self, k, v)
+
+        for k, v in self:
+            if k not in self.given_configs:
+                setattr(self, k, v)
+
+        self.__post_init__()
+
     def __post_init__(self) -> None:
         """Parsing given configuration parameter values and checking their validity."""
+
+        for quick_cfg_k, quick_cfg_dict in self.quick_config.items():
+            assert quick_cfg_k in self, (
+                f"Configuration class `{self.__class__.__name__}` has a `quick_config` "
+                f"entry `{quick_cfg_k}` that is not a valid configuration parameter!"
+            )
+            for quick_cfg_label, quick_label_dict in quick_cfg_dict.items():
+                for quick_cfg_param, quick_cfg_val in quick_label_dict.items():
+                    assert quick_cfg_param in self, (
+                        f"Configuration class `{self.__class__.__name__}` has a "
+                        f"`quick_config` entry `{quick_cfg_label}` under "
+                        f"`{quick_cfg_k}` with a value for `{quick_cfg_param}` which "
+                        f"is not a valid configuration parameter!"
+                    )
 
         for this_field in fields(self):
             assert (
@@ -53,6 +87,20 @@ class BaseConfigurations(ABC):
                 f"`{self.__class__.__name__}` class has no default value defined "
                 f"for parameter `{this_field.name}`"
             )
+
+            if this_field.name in self.quick_config:
+                field_val = getattr(self, this_field.name)
+                if field_val is not None:
+                    if field_val not in self.quick_config[this_field.name]:
+                        raise ValueError(
+                            f"Given value `{field_val}` is not a valid entry "
+                            f"for quick config shortcut parameter `{this_field.name}`!"
+                        )
+                    for param_k, param_val in self.quick_config[this_field.name][
+                        field_val
+                    ].items():
+                        if param_k not in self.given_configs:
+                            setattr(self, param_k, param_val)
 
         if self.test_installation:
             print("Installation was successful!")
@@ -70,7 +118,6 @@ class BaseConfigurations(ABC):
 
         if self.seed is None:
             self.seed = np.random.randint(0, 10000)
-
         if not isinstance(self.seed, int):
             raise ValueError(
                 "Configuration `seed` must be given as an integer, "
@@ -177,6 +224,7 @@ class BaseTrainer(ABC):
     """
 
     config_cls = BaseConfigurations
+    label = "cDRGN training"
 
     @classmethod
     def parse_args(cls, args: argparse.Namespace) -> Self:
@@ -213,9 +261,7 @@ class BaseTrainer(ABC):
 
 
 @dataclass
-class ModelConfigurations(BaseConfigurations):
-
-    trainer_cls: str = "ReconstructionModelTrainer"
+class ReconstructionModelConfigurations(BaseConfigurations):
 
     # a parameter belongs to this configuration set if and only if it has a default
     # value defined here, note that children classes inherit these from parents
@@ -243,9 +289,9 @@ class ModelConfigurations(BaseConfigurations):
     # using a lazy data loader to minimize memory usage, shuffling training minibatches
     # and controlling their size, applying parallel computation and data processing
     batch_size: int = 8
-    batch_size_known_poses: int = None
-    batch_size_sgd: int = None
-    batch_size_hps: int = None
+    batch_size_known_poses: int = 32
+    batch_size_sgd: int = 256
+    batch_size_hps: int = 8
     lazy: bool = False
     shuffle: bool = True
     shuffler_size: int = 0
@@ -298,6 +344,9 @@ class ModelConfigurations(BaseConfigurations):
     capture_setup: str = None
     reconstruction_type: str = None
     pose_estimation: str = None
+
+    def __init__(self, **config_args: dict[str, Any]) -> None:
+        super().__init__(**config_args)
 
     def __post_init__(self) -> None:
         super().__post_init__()
@@ -374,8 +423,8 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
 
     """
 
-    configs: ModelConfigurations
-    config_cls = ModelConfigurations
+    configs: ReconstructionModelConfigurations
+    config_cls = ReconstructionModelConfigurations
     model_lbl = None
 
     # options for optimizers to use
@@ -707,8 +756,6 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
             self.begin_epoch()
 
             for batch in self.data_iterator:
-                batch["y"] = torch.Tensor(np.round(batch["y"].cpu().numpy(), 4))
-
                 self.total_batch_count += 1
                 self.epoch_batch_count += 1
                 len_y = len(batch["indices"])
@@ -773,7 +820,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
 
     @property
     def will_make_checkpoint(self) -> bool:
-        self.configs: ModelConfigurations
+        self.configs: ReconstructionModelConfigurations
         make_chk = self.current_epoch == self.configs.num_epochs
         make_chk |= (
             self.configs.checkpoint
@@ -934,7 +981,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
 
     def print_epoch_summary(self) -> None:
         """Create a summary at the end of a training epoch and print it to the log."""
-        self.configs: ModelConfigurations
+        self.configs: ReconstructionModelConfigurations
         epoch_lbl = f"[{self.current_epoch}/{self.configs.num_epochs}]"
 
         if self.in_pretraining:

@@ -110,8 +110,8 @@ class ModelAnalyzer:
 
     Attributes
     ----------
-    train_configs (ModelConfigurations): Parameters that were used when
-                                            the model was trained.
+    train_configs (ReconstructionModelConfigurations)
+        Parameters that were used when the model was trained.
     """
 
     def get_trainer(self) -> ReconstructionModelTrainer:

@@ -88,7 +88,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     group.add_argument(
         "--vol-start-index",
         type=int,
-        default=0,
+        default=1,
         help="Default value of start index for volume generation "
         "(default: %(default)s)",
     )
@@ -174,7 +174,7 @@ def make_mask(
     thresh: float,
     in_mrc: Optional[str] = None,
     Apix: float = 1.0,
-    vol_start_index: int = 0,
+    vol_start_index: int = 1,
 ) -> None:
     """Create a masking filter for use across all volumes produced by k-means."""
     kmean_dir = os.path.join(outdir, f"kmeans{sketch_size}")
@@ -258,7 +258,7 @@ def analyze_volumes(
     plot_dim=5,
     particle_ind_orig=None,
     Apix=1,
-    vol_start_index=0,
+    vol_start_index=1,
 ):
     kmean_dir = os.path.join(outdir, f"kmeans{K}")
     cmap = choose_cmap(M)
@@ -489,16 +489,12 @@ def main(args: argparse.Namespace) -> None:
 
     conf_file = os.path.join(args.workdir, f"conf.{args.epoch}.pkl")
     weights_file = os.path.join(args.workdir, f"weights.{args.epoch}.pkl")
-    cfg_file = os.path.join(args.workdir, "train-configs.yaml")
-    if not os.path.exists(cfg_file):
-        cfg_file = os.path.join(args.workdir, "config.yaml")
-    cfgs = cryodrgn.utils.load_yaml(cfg_file)
-
+    cfgs = cryodrgn.config.load_configs(args.workdir)
     outdir = args.outdir or os.path.join(args.workdir, f"landscape.{args.epoch}")
     logger.info(f"Saving results to {outdir}")
+
     os.makedirs(outdir, exist_ok=True)
     z = utils.load_pkl(conf_file)
-
     volume_generator = VolumeEvaluator(
         weights_file,
         cfgs,
@@ -511,7 +507,6 @@ def main(args: argparse.Namespace) -> None:
 
     if args.vol_ind is not None:
         args.vol_ind = utils.load_pkl(args.vol_ind)
-
     if not args.skip_vol:
         generate_volumes(z, outdir, volume_generator, args.sketch_size)
     else:
@@ -543,7 +538,6 @@ def main(args: argparse.Namespace) -> None:
 
     logger.info("Analyzing volumes...")
     # get particle indices if the dataset was originally filtered
-    cfgs = cryodrgn.config.load_configs(cfg_file)
     particle_ind = (
         utils.load_pkl(cfgs["dataset_args"]["ind"])
         if cfgs["dataset_args"]["ind"] is not None

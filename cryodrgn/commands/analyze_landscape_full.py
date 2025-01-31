@@ -25,9 +25,8 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data.dataloader import default_collate
 from torch.utils.data import Dataset, DataLoader
 
-import cryodrgn
-from cryodrgn import utils
-from cryodrgn.models import config
+import cryodrgn.config
+from cryodrgn.utils import load_pkl, save_pkl
 from cryodrgn.models.neural_nets import ResidLinearMLP
 from cryodrgn.models.utils import load_model
 from cryodrgn.source import ImageSource
@@ -184,20 +183,20 @@ def generate_and_map_volumes(
     # Sample z
     logger.info(f"Sampling {args.training_volumes} particles from {zfile}")
     np.random.seed(args.seed)
-    z_all = utils.load_pkl(zfile)
+    z_all = load_pkl(zfile)
     ind = np.array(
         sorted(np.random.choice(len(z_all), args.training_volumes, replace=False))
     )  # type: ignore
     z_sample = z_all[ind]
-    utils.save_pkl(z_sample, f"{outdir}/z.sampled.pkl")
-    utils.save_pkl(ind, f"{outdir}/ind.sampled.pkl")
+    save_pkl(z_sample, f"{outdir}/z.sampled.pkl")
+    save_pkl(ind, f"{outdir}/ind.sampled.pkl")
     logger.info(f"Saved {outdir}/z.sampled.pkl")
 
     # Set the device
     # if torch.cuda.is_available():
     #     torch.set_default_tensor_type(torch.cuda.FloatTensor)  # type: ignore
 
-    cfg = config.update_config_v1(cfg)
+    cfg = cryodrgn.config.update_config_v1(cfg)
     logger.info("Loaded configuration:")
     pprint.pprint(cfg)
 
@@ -214,7 +213,7 @@ def generate_and_map_volumes(
         assert mask.shape == (D - 1, D - 1, D - 1)
     logger.info(f"{mask.sum()} voxels in the mask")
 
-    pca = utils.load_pkl(pca_obj_pkl)
+    pca = load_pkl(pca_obj_pkl)
 
     # Load model weights
     logger.info("Loading weights from {}".format(weights))
@@ -299,7 +298,7 @@ def train_model(x, y, outdir, zfile, args):
     # Evaluate
     model.eval()
     yhat_all = []
-    eval_dataset = utils.load_pkl(zfile).astype(np.float32)
+    eval_dataset = load_pkl(zfile).astype(np.float32)
     with torch.no_grad():
         for x in np.array_split(eval_dataset, args.test_batch_size):
             x = torch.tensor(x, device=device)
@@ -316,22 +315,24 @@ def main(args: argparse.Namespace) -> None:
     t1 = dt.now()
     logger.info(args)
 
-    E = args.epoch
-    workdir = args.workdir
-    zfile = f"{workdir}/z.{E}.pkl"
-    weights = f"{workdir}/weights.{E}.pkl"
+    zfile = f"{args.workdir}/conf.{args.epoch}.pkl"
+    weights = f"{args.workdir}/weights.{args.epoch}.pkl"
     cfg = (
-        f"{workdir}/config.yaml"
-        if os.path.exists(f"{workdir}/config.yaml")
-        else f"{workdir}/config.pkl"
+        f"{args.workdir}/train-configs.yaml"
+        if os.path.exists(f"{args.workdir}/train-configs.yaml")
+        else f"{args.workdir}/config.pkl"
     )
-    landscape_dir = (
-        f"{workdir}/landscape.{E}" if args.landscape_dir is None else args.landscape_dir
-    )
-    outdir = f"{landscape_dir}/landscape_full" if args.outdir is None else args.outdir
+    if args.landscape_dir is None:
+        landscape_dir = os.path.join(args.workdir, f"landscape.{args.epoch}")
+    else:
+        landscape_dir = args.landscape_dir
+    if args.outdir is None:
+        outdir = os.path.join(landscape_dir, "landscape_full")
+    else:
+        outdir = args.outdir
 
-    mask_mrc = f"{landscape_dir}/mask.mrc"
-    pca_obj_pkl = f"{landscape_dir}/vol_pca_obj.pkl"
+    mask_mrc = os.path.join(landscape_dir, "mask.mrc")
+    pca_obj_pkl = os.path.join(landscape_dir, "vol_pca_obj.pkl")
     assert os.path.exists(
         mask_mrc
     ), f"{mask_mrc} missing. Did you run cryodrgn analyze_landscape?"
@@ -363,17 +364,17 @@ def main(args: argparse.Namespace) -> None:
         assert os.path.exists(
             z_sampled_pkl
         ), f"{z_sampled_pkl} missing. Can't use --skip-vol"
-        embeddings = utils.load_pkl(embeddings_pkl).astype(np.float32)
-        z = utils.load_pkl(z_sampled_pkl)
+        embeddings = load_pkl(embeddings_pkl).astype(np.float32)
+        z = load_pkl(z_sampled_pkl)
     else:
         z, embeddings = generate_and_map_volumes(
             zfile, cfg, weights, mask_mrc, pca_obj_pkl, landscape_dir, outdir, args
         )
-        utils.save_pkl(embeddings, embeddings_pkl)
+        save_pkl(embeddings, embeddings_pkl)
 
     # Train model
     embeddings_all = train_model(z, embeddings, outdir, zfile, args)
-    utils.save_pkl(embeddings_all, f"{outdir}/vol_pca_all.pkl")
+    save_pkl(embeddings_all, f"{outdir}/vol_pca_all.pkl")
 
     # Copy viz notebook
     out_ipynb = os.path.join(landscape_dir, "cryoDRGN_analyze_landscape.ipynb")

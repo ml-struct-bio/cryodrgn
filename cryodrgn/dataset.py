@@ -244,9 +244,16 @@ class TiltSeriesData(ImageDataset):
                 # take the first ntilts
                 tilt_index = self.particles[ii][0 : self.ntilts]
             tilt_indices.append(tilt_index)
+
         tilt_indices = np.concatenate(tilt_indices)
-        images = self._process(self.src.images(tilt_indices).to(self.device))
-        return images, tilt_indices, index
+        r_imgs, f_imgs = self._process(self.src.images(tilt_indices).to(self.device))
+
+        return {
+            "y": f_imgs,
+            "y_real": r_imgs,
+            "tilt_indices": tilt_indices,
+            "indices": index,
+        }
 
     @classmethod
     def parse_particle_tilt(

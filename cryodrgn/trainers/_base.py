@@ -339,6 +339,8 @@ class ReconstructionModelConfigurations(BaseConfigurations):
     volume_optim_type: str = "adam"
     pose_sgd_emb_type: str = "quat"
     verbose_time: bool = False
+    angle_per_tilt: int = 3
+    dose_per_tilt: float = 2.97
 
     # quick configs
     capture_setup: str = None
@@ -510,14 +512,12 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
                 ind=self.ind,
                 ntilts=self.configs.n_tilts,
                 angle_per_tilt=self.configs.angle_per_tilt,
-                window_r=self.configs.window_radius_gt_real,
+                window_r=self.configs.window_r,
                 datadir=self.configs.datadir,
                 max_threads=self.configs.max_threads,
                 dose_per_tilt=self.configs.dose_per_tilt,
                 device=self.device,
                 poses_gt_pkl=use_poses,
-                tilt_axis_angle=self.configs.tilt_axis_angle,
-                no_trans=self.configs.no_trans,
             )
             self.particle_count = self.data.Np
 

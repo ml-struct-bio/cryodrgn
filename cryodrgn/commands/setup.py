@@ -83,9 +83,6 @@ class SetupHelper:
 
         if model:
             configs["model"] = model
-        elif "model" not in configs:
-            configs["model"] = "amort"
-
         if dataset:
             configs["dataset"] = dataset
         if particles:

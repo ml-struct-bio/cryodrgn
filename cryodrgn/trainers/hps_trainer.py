@@ -38,6 +38,13 @@ except ImportError:
 
 @dataclass
 class HierarchicalPoseSearchConfigurations(ReconstructionModelConfigurations):
+    quick_config = {
+        "capture_setup": {
+            "spa": {"lazy": True},
+            "et": {"tilt": True, "dose_per_tilt": 2.97, "angle_per_tilt": 3},
+        },
+        "reconstruction_type": {"homo": {"z_dim": 0}, "het": {"z_dim": 8}},
+    }
 
     # a parameter belongs to this configuration set if and only if it has a default
     # value defined here, note that children classes inherit these from parents
@@ -338,7 +345,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
 
         y = y.to(self.device)
         ind_np = ind.cpu().numpy()
-        B = y.size(0)
+        B = len(ind)
 
         if self.configs.tilt:
             tilt_ind = batch["tilt_indices"]

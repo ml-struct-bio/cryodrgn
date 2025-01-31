@@ -55,7 +55,9 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def main(args: argparse.Namespace, configs: Optional[dict[str, Any]] = None) -> None:
+def main(
+    args: argparse.Namespace, additional_configs: Optional[dict[str, Any]] = None
+) -> None:
     """Running the `cryodrgn train` command (see `add_args` above for arguments).
 
     An additional `configs` dictionary of configuration values can also be passed, which
@@ -63,18 +65,18 @@ def main(args: argparse.Namespace, configs: Optional[dict[str, Any]] = None) -> 
     values specified through the `--cfgs` command-line argument.
 
     """
-    if configs is None:
-        configs = dict()
+    if additional_configs is None:
+        additional_configs = dict()
 
-    file_configs = SetupHelper(args.config_file, update_existing=False).create_configs(
+    configs = SetupHelper(args.config_file, update_existing=False).create_configs(
         model=args.model,
     )
 
     trainer_cls = TRAINER_CLASSES[configs["model"]]
     if args.cfgs:
         configs = {**configs, **trainer_cls.config_cls.parse_cfg_keys(args.cfgs)}
+    configs = {**configs, **additional_configs, "outdir": args.outdir}
 
-    configs = {**file_configs, **configs, "outdir": args.outdir}
     trainer = trainer_cls(configs)
     cryodrgn.utils._verbose = False
     trainer.train()

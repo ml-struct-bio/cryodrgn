@@ -161,6 +161,9 @@ class MRCHeader:
         else:
             data_dtype = np.dtype("float32")  # default to np.float 32 mode
 
+        if Apix is None:
+            Apix = 1.0
+
         if data is not None:
             nz, ny, nx = data.shape
 

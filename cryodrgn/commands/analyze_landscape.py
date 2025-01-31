@@ -25,10 +25,10 @@ from matplotlib.colors import ListedColormap
 from sklearn.cluster import AgglomerativeClustering
 from sklearn.decomposition import PCA
 from cryodrgn import analysis, utils
-from cryodrgn.commands.analyze import VolumeGenerator
 from cryodrgn.mrcfile import parse_mrc, write_mrc
 from cryodrgn.masking import cosine_dilation_mask
-import cryodrgn.models.config
+from cryodrgn.commands.eval_vol import VolumeEvaluator
+import cryodrgn.config
 
 logger = logging.getLogger(__name__)
 
@@ -145,23 +145,30 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def generate_volumes(z, outdir, vg, K):
+def generate_volumes(
+    z: torch.Tensor, outdir: str, vg: VolumeEvaluator, sketch_size: int
+) -> None:
     # kmeans clustering
     logger.info("Sketching distribution...")
-    kmeans_labels, centers = analysis.cluster_kmeans(z, K, on_data=True, reorder=True)
+    kmeans_labels, centers = analysis.cluster_kmeans(
+        z, sketch_size, on_data=True, reorder=True
+    )
+
     centers, centers_ind = analysis.get_nearest_point(z, centers)
-    if not os.path.exists(f"{outdir}/kmeans{K}"):
-        os.mkdir(f"{outdir}/kmeans{K}")
-    utils.save_pkl(kmeans_labels, f"{outdir}/kmeans{K}/labels.pkl")
-    np.savetxt(f"{outdir}/kmeans{K}/centers.txt", centers)
-    np.savetxt(f"{outdir}/kmeans{K}/centers_ind.txt", centers_ind, fmt="%d")
+    if not os.path.exists(f"{outdir}/kmeans{sketch_size}"):
+        os.mkdir(f"{outdir}/kmeans{sketch_size}")
+
+    utils.save_pkl(kmeans_labels, f"{outdir}/kmeans{sketch_size}/labels.pkl")
+    np.savetxt(f"{outdir}/kmeans{sketch_size}/centers.txt", centers)
+    np.savetxt(f"{outdir}/kmeans{sketch_size}/centers_ind.txt", centers_ind, fmt="%d")
+
     logger.info("Generating volumes...")
-    vg.gen_volumes(f"{outdir}/kmeans{K}", centers)
+    vg.produce_volumes(centers, f"{outdir}/kmeans{sketch_size}")
 
 
 def make_mask(
     outdir: str,
-    K: int,
+    sketch_size: int,
     dilate: int,
     cosine_edge: int,
     thresh: float,
@@ -170,7 +177,7 @@ def make_mask(
     vol_start_index: int = 0,
 ) -> None:
     """Create a masking filter for use across all volumes produced by k-means."""
-    kmean_dir = os.path.join(outdir, f"kmeans{K}")
+    kmean_dir = os.path.join(outdir, f"kmeans{sketch_size}")
 
     if in_mrc is None:
         if thresh is None:
@@ -183,7 +190,7 @@ def make_mask(
                         99.99,
                     )
                     / 2.0
-                    for i in range(K)
+                    for i in range(sketch_size)
                 ]
             )
 
@@ -195,7 +202,7 @@ def make_mask(
         # Combine all masks by taking their union (without loading all into memory)
         vol, _ = parse_mrc(os.path.join(kmean_dir, f"vol_{vol_start_index:03d}.mrc"))
         mask = 1.0 - mask_fx(vol)
-        for i in range(1, K):
+        for i in range(1, sketch_size):
             vol, _ = parse_mrc(
                 os.path.join(kmean_dir, f"vol_{vol_start_index+i:03d}.mrc")
             )
@@ -480,34 +487,33 @@ def main(args: argparse.Namespace) -> None:
     t1 = dt.now()
     logger.info(args)
 
-    E = args.epoch
-    workdir = args.workdir
-    zfile = os.path.join(workdir, f"z.{E}.pkl")
-    weights = os.path.join(workdir, f"weights.{E}.pkl")
-    cfg_file = os.path.join(workdir, "config.yaml")
-    cfg_file = (
-        cfg_file if os.path.exists(cfg_file) else os.path.join(workdir, "config.pkl")
-    )
-    outdir = args.outdir or os.path.join(workdir, f"landscape.{E}")
+    conf_file = os.path.join(args.workdir, f"conf.{args.epoch}.pkl")
+    weights_file = os.path.join(args.workdir, f"weights.{args.epoch}.pkl")
+    cfg_file = os.path.join(args.workdir, "train-configs.yaml")
+    if not os.path.exists(cfg_file):
+        cfg_file = os.path.join(args.workdir, "config.yaml")
+    cfgs = cryodrgn.utils.load_yaml(cfg_file)
+
+    outdir = args.outdir or os.path.join(args.workdir, f"landscape.{args.epoch}")
     logger.info(f"Saving results to {outdir}")
     os.makedirs(outdir, exist_ok=True)
-    z = utils.load_pkl(zfile)
-    K = args.sketch_size
+    z = utils.load_pkl(conf_file)
 
-    vol_args = dict(
-        Apix=args.Apix,
-        downsample=args.downsample,
+    volume_generator = VolumeEvaluator(
+        weights_file,
+        cfgs,
+        args.device,
+        verbose=False,
+        apix=args.Apix,
         flip=args.flip,
-        device=args.device,
-        vol_start_index=args.vol_start_index,
+        downsample=args.downsample,
     )
-    vg = VolumeGenerator(weights, cfg_file, vol_args, skip_vol=args.skip_vol)
 
     if args.vol_ind is not None:
         args.vol_ind = utils.load_pkl(args.vol_ind)
 
     if not args.skip_vol:
-        generate_volumes(z, outdir, vg, K)
+        generate_volumes(z, outdir, volume_generator, args.sketch_size)
     else:
         logger.info("Skipping volume generation")
 
@@ -515,7 +521,7 @@ def main(args: argparse.Namespace) -> None:
         assert os.path.exists(os.path.join(outdir, "umap.pkl"))
         logger.info("Skipping UMAP")
     else:
-        umap_fl = os.path.join(workdir, f"analyze.{E}", "umap.pkl")
+        umap_fl = os.path.join(args.workdir, f"analyze.{args.epoch}", "umap.pkl")
         logger.info(f"Copying UMAP from {umap_fl}")
         if os.path.exists(umap_fl):
             shutil.copyfile(umap_fl, os.path.join(outdir, "umap.pkl"))
@@ -526,7 +532,7 @@ def main(args: argparse.Namespace) -> None:
         logger.info(f"Using custom mask {args.mask}")
     make_mask(
         outdir,
-        K,
+        args.sketch_size,
         args.dilate,
         args.cosine_edge,
         args.thresh,
@@ -537,7 +543,7 @@ def main(args: argparse.Namespace) -> None:
 
     logger.info("Analyzing volumes...")
     # get particle indices if the dataset was originally filtered
-    cfgs = cryodrgn.models.config.load(cfg_file)
+    cfgs = cryodrgn.config.load_configs(cfg_file)
     particle_ind = (
         utils.load_pkl(cfgs["dataset_args"]["ind"])
         if cfgs["dataset_args"]["ind"] is not None
@@ -545,7 +551,7 @@ def main(args: argparse.Namespace) -> None:
     )
     analyze_volumes(
         outdir,
-        K,
+        args.sketch_size,
         args.pc_dim,
         args.M,
         args.linkage,

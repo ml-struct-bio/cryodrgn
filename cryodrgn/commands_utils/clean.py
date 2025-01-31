@@ -103,7 +103,7 @@ def clean_dir(d: Path, args: argparse.Namespace) -> None:
     }
 
     rmv_count = 0
-    for out_lbl in ["weights", "z", "pose", "reconstruct"]:
+    for out_lbl in ["weights", "conf", "pose", "reconstruct"]:
         for out_fl in d.glob(f"{out_lbl}.*"):
             epoch = out_fl.name.split(".")[1]
 
@@ -154,7 +154,9 @@ def check_open_config(d: Path) -> dict:
     config = None
     cfg = None
 
-    for cfg_lbl, cfg_ext in product(["config", "configs"], [".yaml", ".yml"]):
+    for cfg_lbl, cfg_ext in product(
+        ["train-configs", "config", "configs"], [".yaml", ".yml"]
+    ):
         if "".join([cfg_lbl, cfg_ext]) in dir_files:
             config = "".join([cfg_lbl, cfg_ext])
             break
@@ -215,9 +217,3 @@ def main(args):
                     # don't scan subdirectories of already identified cryoDRGN folders
                     if cfg:
                         scan_dirs = [p for p in scan_dirs if cur_dir not in p.parents]
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    add_args(parser)
-    main(parser.parse_args())

@@ -194,6 +194,8 @@ def regularize_volume(
 
 
 def main(args):
+    """Running `cryodrgn backproject_voxel` (see `add_args` above for arguments)."""
+
     t1 = time.time()
     logger.info(args)
     os.makedirs(args.outdir, exist_ok=True)
@@ -243,14 +245,13 @@ def main(args):
             lazy=args.lazy,
         )
 
-    D = data.D
-    Nimg = data.N
-    lattice = Lattice(D, extent=D // 2, device=device)
-    posetracker = PoseTracker.load(args.poses, Nimg, D, None, indices, device=device)
-
+    lattice = Lattice(data.D, extent=data.D // 2, device=device)
+    posetracker = PoseTracker.load(
+        args.poses, data.N, data.D, None, indices, device=device
+    )
     if args.ctf is not None:
         logger.info(f"Loading ctf params from {args.ctf}")
-        ctf_params = ctf.load_ctf_for_training(D - 1, args.ctf)
+        ctf_params = ctf.load_ctf_for_training(data.D - 1, args.ctf)
 
         if indices is not None:
             ctf_params = ctf_params[indices]
@@ -266,8 +267,8 @@ def main(args):
     Apix = float(ctf_params[0, 0]) if ctf_params is not None else 1.0
     voltage = float(ctf_params[0, 4]) if ctf_params is not None else None
     data.voltage = voltage
-    lattice_mask = lattice.get_circular_mask(D // 2)
-    img_iterator = range(min(args.first, Nimg)) if args.first else range(Nimg)
+    lattice_mask = lattice.get_circular_mask(data.D // 2)
+    img_iterator = range(min(args.first, data.N)) if args.first else range(data.N)
 
     if args.tilt:
         use_tilts = set(range(args.ntilts))
@@ -277,12 +278,12 @@ def main(args):
 
     # Initialize tensors that will store backprojection results
     img_count = len(img_iterator)
-    volume_full = torch.zeros((D, D, D), device=device)
-    counts_full = torch.zeros((D, D, D), device=device)
-    volume_half1 = torch.zeros((D, D, D), device=device)
-    counts_half1 = torch.zeros((D, D, D), device=device)
-    volume_half2 = torch.zeros((D, D, D), device=device)
-    counts_half2 = torch.zeros((D, D, D), device=device)
+    volume_full = torch.zeros((data.D, data.D, data.D), device=device)
+    counts_full = torch.zeros((data.D, data.D, data.D), device=device)
+    volume_half1 = torch.zeros((data.D, data.D, data.D), device=device)
+    counts_half1 = torch.zeros((data.D, data.D, data.D), device=device)
+    volume_half2 = torch.zeros((data.D, data.D, data.D), device=device)
+    counts_half2 = torch.zeros((data.D, data.D, data.D), device=device)
 
     # Figure out how often we are going to report progress w.r.t. images processed
     if args.log_interval == "auto":
@@ -295,46 +296,44 @@ def main(args):
             f"Given value must be an integer or the label 'auto'!"
         )
 
-    for i, ii in enumerate(img_iterator):
-        if i % log_interval == 0:
-            logger.info(f"fimage {ii} — {(i / img_count * 100):.1f}% done")
+    for iter_i, img_i in enumerate(img_iterator):
+        if iter_i % log_interval == 0:
+            logger.info(f"fimage {img_i} — {(iter_i / img_count * 100):.1f}% done")
 
-        r, t = posetracker.get_pose(ii)
-        ff = data.get_tilt(ii) if args.tilt else data[ii]
-        assert isinstance(ff, tuple)
-        ff = ff[0].to(device)
-        ff = ff.view(-1)[lattice_mask]
+        rot, trans = posetracker.get_pose(img_i)
+        ff = data.get_tilt(img_i)["y"] if args.tilt else data[img_i]["y"]
+        ff = ff.to(device).view(-1)[lattice_mask]
+
         ctf_mul = 1
-
         if ctf_params is not None:
-            freqs = lattice.freqs2d / ctf_params[ii, 0]
-            c = ctf.compute_ctf(freqs, *ctf_params[ii, 1:]).view(-1)[lattice_mask]
+            freqs = lattice.freqs2d / ctf_params[img_i, 0]
+            c = ctf.compute_ctf(freqs, *ctf_params[img_i, 1:]).view(-1)[lattice_mask]
 
             if args.ctf_alg == "flip":
                 ff *= c.sign()
             else:
                 ctf_mul = c
 
-        if t is not None:
+        if trans is not None:
             ff = lattice.translate_ht(
-                ff.view(1, -1), t.view(1, 1, 2), lattice_mask
+                ff.view(1, -1), trans.view(1, 1, 2), lattice_mask
             ).view(-1)
 
         if args.tilt:
-            tilt_idxs = torch.tensor([ii]).to(device)
-            dose_filters = data.get_dose_filters(tilt_idxs, lattice, ctf_params[ii, 0])[
-                0
-            ]
+            tilt_idxs = torch.tensor([img_i]).to(device)
+            dose_filters = data.get_dose_filters(
+                tilt_idxs, lattice, ctf_params[img_i, 0]
+            )[0]
             ctf_mul *= dose_filters[lattice_mask]
 
-        ff_coord = lattice.coords[lattice_mask] @ r
-        add_slice(volume_full, counts_full, ff_coord, ff, D, ctf_mul)
+        ff_coord = lattice.coords[lattice_mask] @ rot
+        add_slice(volume_full, counts_full, ff_coord, ff, data.D, ctf_mul)
 
         if args.half_maps:
-            if ii % 2 == 0:
-                add_slice(volume_half1, counts_half1, ff_coord, ff, D, ctf_mul)
+            if iter_i % 2 == 0:
+                add_slice(volume_half1, counts_half1, ff_coord, ff, data.D, ctf_mul)
             else:
-                add_slice(volume_half2, counts_half2, ff_coord, ff, D, ctf_mul)
+                add_slice(volume_half2, counts_half2, ff_coord, ff, data.D, ctf_mul)
 
     td = time.time() - t1
     logger.info(

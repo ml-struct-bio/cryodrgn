@@ -818,8 +818,15 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
             self.accum_losses["total"] += total_loss.item() * batch_size
 
         all_losses["total"] = total_loss
-
-        return all_losses, batch["tilt_indices"], batch["indices"], rot_pred, trans_pred
+        return (
+            all_losses,
+            batch["tilt_indices"],
+            batch["indices"],
+            rot_pred,
+            trans_pred,
+            latent_variables_dict["z"],
+            None,
+        )
 
     def detach_latent_variables(self, latent_variables_dict):
         rot_pred = latent_variables_dict["R"].detach().cpu().numpy()

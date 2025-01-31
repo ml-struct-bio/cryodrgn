@@ -9,7 +9,7 @@ import sys
 
 
 def load_configs(outdir: str) -> dict:
-    cfg_fl = os.path.join(outdir, "configs.yaml")
+    cfg_fl = os.path.join(outdir, "train-configs.yaml")
 
     if not os.path.isfile(cfg_fl):
         raise ValueError(

@@ -84,8 +84,6 @@ class HierarchicalPoseSearchConfigurations(ReconstructionModelConfigurations):
                 raise ValueError(
                     "As dataset was not specified, please specify particles!"
                 )
-            if self.ctf is None:
-                raise ValueError("As dataset was not specified, please specify ctf!")
 
         if self.beta is not None:
             if not self.z_dim:
@@ -565,7 +563,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
             losses["total"].backward()
             self.reconstruction_optimizer.step()
 
-        return losses, tilt_ind, ind, rot, trans
+        return losses, tilt_ind, ind, rot, trans, z_mu, z_logvar
 
     def get_configs(self) -> dict[str, Any]:
         """Retrieves all given and inferred configurations for downstream use."""
@@ -715,9 +713,10 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
                         ).view(B, D, D)
 
                     if self.pose_search is None and self.pose_tracker is not None:
-                        y = self.lattice.translate_ht(
-                            y.view(B, -1), self.pose_tracker.trans[ind].unsqueeze(1)
-                        ).view(B, D, D)
+                        if self.pose_tracker.trans is not None:
+                            y = self.lattice.translate_ht(
+                                y.view(B, -1), self.pose_tracker.trans[ind].unsqueeze(1)
+                            ).view(B, D, D)
 
                     input_ = (y, yt) if yt is not None else (y,)
                     if c is not None:

@@ -343,7 +343,7 @@ def hopf_to_quat_tensor(theta, phi, psi):
 
 
 try:
-    with open(f"{os.path.dirname(os.path.dirname(__file__))}/healpy_grid.json") as hf:
+    with open(f"{os.path.dirname(__file__)}/healpy_grid.json") as hf:
         _GRIDS = {int(k): np.array(v).T for k, v in json.load(hf).items()}
 except IOError as e:
     print(

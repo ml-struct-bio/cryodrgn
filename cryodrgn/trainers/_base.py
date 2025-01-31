@@ -765,7 +765,15 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
                 self.reconstruction_model.train()
                 self.reconstruction_optimizer.zero_grad()
                 with self.amp_mode:
-                    losses, tilt_ind, ind, rot, trans = self.train_batch(batch)
+                    (
+                        losses,
+                        tilt_ind,
+                        ind,
+                        rot,
+                        trans,
+                        z_mu,
+                        z_logvar,
+                    ) = self.train_batch(batch)
 
                 if isinstance(rot, torch.Tensor):
                     rot = rot.detach().cpu().numpy()

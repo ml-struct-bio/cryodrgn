@@ -17,16 +17,14 @@ from datetime import datetime as dt
 import logging
 import numpy as np
 import torch
-from cryodrgn import ctf, dataset
-from cryodrgn.models import config
-from cryodrgn.commands.train_vae import loss_function, preprocess_input, run_batch
+from cryodrgn import config, dataset, utils
 from cryodrgn.models.utils import load_model
-from cryodrgn.pose import PoseTracker
+from cryodrgn.trainers import AmortizedInferenceTrainer, HierarchicalPoseSearchTrainer
 
 logger = logging.getLogger(__name__)
 
 
-def add_args(parser):
+def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "particles",
         type=os.path.abspath,
@@ -158,7 +156,7 @@ def add_args(parser):
     group = parser.add_argument_group(
         "Overwrite architecture hyperparameters in config.yaml"
     )
-    group.add_argument("--zdim", type=int, help="Dimension of latent variable")
+    group.add_argument("--z_dim", type=int, help="Dimension of latent variable")
     group.add_argument(
         "--norm", type=float, nargs=2, help="Data normalization as shift, 1/scale"
     )
@@ -219,30 +217,9 @@ def add_args(parser):
         default="relu",
         help="Activation (default: %(default)s)",
     )
-    return parser
 
 
-def eval_batch(
-    model, lattice, y, rot, trans, beta, ntilts=None, ctf_params=None, yr=None
-):
-    if trans is not None:
-        y = preprocess_input(y, lattice, trans)
-    z_mu, z_logvar, z, y_recon, mask = run_batch(
-        model, lattice, y, rot, ntilts, ctf_params, yr
-    )
-    loss, gen_loss, kld = loss_function(
-        z_mu, z_logvar, y, ntilts, y_recon, mask, beta, beta_control=None
-    )
-    return (
-        z_mu.detach().cpu().numpy(),
-        z_logvar.detach().cpu().numpy(),
-        loss.item(),
-        gen_loss.item(),
-        kld.item(),
-    )
-
-
-def main(args):
+def main(args: argparse.Namespace) -> None:
     if args.verbose:
         logger.setLevel(logging.DEBUG)
 
@@ -262,12 +239,13 @@ def main(args):
         logger.warning("WARNING: No GPUs detected")
 
     logger.info(args)
-    cfg = config.overwrite_config(args.config, args)
+    cfg = utils.load_yaml(args.config)
+    cfg = config.overwrite_config(cfg, args)
     logger.info("Loaded configuration:")
     pprint.pprint(cfg)
 
-    zdim = cfg["model_args"]["zdim"]
-    beta = 1.0 / zdim if args.beta is None else args.beta
+    z_dim = cfg["model_args"]["z_dim"]
+    beta = 1.0 / z_dim if args.beta is None else args.beta
 
     # load the particles
     if args.ind is not None:
@@ -309,31 +287,11 @@ def main(args):
             dose_per_tilt=args.dose_per_tilt,
             angle_per_tilt=args.angle_per_tilt,
         )
-    Nimg = data.N
-    D = data.D
-
     if args.encode_mode == "conv":
-        assert D - 1 == 64, "Image size must be 64x64 for convolutional encoder"
-
-    # load poses
-    posetracker = PoseTracker.load(args.poses, Nimg, D, None, ind, device=device)
-
-    # load ctf
-    if args.ctf is not None:
-        if args.use_real:
-            raise NotImplementedError(
-                "Not implemented with real-space encoder. Use phase-flipped images instead"
-            )
-        logger.info("Loading ctf params from {}".format(args.ctf))
-        ctf_params = ctf.load_ctf_for_training(D - 1, args.ctf)
-        if args.ind is not None:
-            ctf_params = ctf_params[ind]
-        ctf_params = torch.tensor(ctf_params, device=device)
-    else:
-        ctf_params = None
+        assert data.D - 1 == 64, "Image size must be 64x64 for convolutional encoder"
 
     # instantiate model
-    model, lattice = load_model(cfg, args.weights, device=device)
+    model, lattice, _ = load_model(cfg, args.weights, device=device)
     model.eval()
     z_mu_all = []
     z_logvar_all = []
@@ -345,78 +303,70 @@ def main(args):
         data, batch_size=args.batch_size, shuffle=False
     )
 
-    for minibatch in data_generator:
-        ind = minibatch[-1].to(device)
-        y = minibatch[0].to(device)
-        B = len(ind)
-        batch_it += B
-
-        yr = None
-        if args.use_real:
-            assert hasattr(data, "particles_real")
-            yr = torch.from_numpy(data.particles_real[ind]).to(device)  # type: ignore  # PYR02
-
-        # TODO -- finish implementing
-        # dose_filters = None
-        if args.encode_mode == "tilt":
-            tilt_ind = minibatch[1].to(device)
-            assert all(tilt_ind >= 0), tilt_ind
-            rot, tran = posetracker.get_pose(tilt_ind.view(-1))
-            ctf_param = (
-                ctf_params[tilt_ind.view(-1)] if ctf_params is not None else None
-            )
-            y = y.view(-1, D, D)
-            # Apix = ctf_params[0, 0] if ctf_params is not None else None
-            # if args.dose_per_tilt is not None:
-            # dose_filters = data.get_dose_filters(tilt_ind, lattice, Apix)
-        else:
-            rot, tran = posetracker.get_pose(ind)
-            ctf_param = ctf_params[ind] if ctf_params is not None else None
-
-        z_mu, z_logvar, loss, gen_loss, kld = eval_batch(
-            model, lattice, y, rot, tran, beta, args.ntilts, ctf_params=ctf_param, yr=yr
+    if cfg["model_args"]["model"] == "amort":
+        trainer = AmortizedInferenceTrainer.load_from_config(cfg)
+    elif cfg["model_args"]["model"] == "hps":
+        trainer = HierarchicalPoseSearchTrainer.load_from_config(cfg)
+    else:
+        raise ValueError(
+            f"Unrecognized cryoDRGN model `{cfg['model_args']['model']}` specified "
+            f"in config file `{args.cfg}`!"
         )
+    trainer.current_epoch = -1
+    trainer.use_point_estimates = True
 
+    for minibatch in data_generator:
+        batch_size = len(minibatch["indices"])
+        batch_it += batch_size
+
+        losses, tilt_ind, ind, rot, trans, z_mu, z_logvar = trainer.train_batch(
+            minibatch
+        )
+        z_mu = z_mu.detach().cpu().numpy()
+        if z_logvar is not None:
+            z_logvar = z_logvar.detach().cpu().numpy()
+
+        loss = losses["total"].item()
+        gen_loss = losses["gen"]
+        kld_loss = losses["kld"].item() if "kld" in losses else 0.0
         z_mu_all.append(z_mu)
-        z_logvar_all.append(z_logvar)
+        if z_logvar is not None:
+            z_logvar_all.append(z_logvar)
 
         # logging
-        gen_loss_accum += gen_loss * B
-        kld_accum += kld * B
-        loss_accum += loss * B
-
+        gen_loss_accum += gen_loss * batch_size
+        kld_accum += kld_loss * batch_size
+        loss_accum += loss * batch_size
         if batch_it % args.log_interval == 0:
             logger.info(
                 "# [{}/{} images] gen loss={:.4f}, kld={:.4f}, beta={:.4f}, loss={:.4f}".format(
-                    batch_it, Nimg, gen_loss, kld, beta, loss
+                    batch_it, data.N, gen_loss, kld_loss, beta, loss
                 )
             )
+
     logger.info(
         "# =====> Average gen loss = {:.6}, KLD = {:.6f}, total loss = {:.6f}".format(
-            gen_loss_accum / Nimg, kld_accum / Nimg, loss_accum / Nimg
+            gen_loss_accum / data.N, kld_accum / data.N, loss_accum / data.N
         )
     )
 
     z_mu_all = np.vstack(z_mu_all)
-    z_logvar_all = np.vstack(z_logvar_all)
+    if z_logvar_all:
+        z_logvar_all = np.vstack(z_logvar_all)
 
     with open(args.out_z, "wb") as f:
         pickle.dump(z_mu_all, f)
-        pickle.dump(z_logvar_all, f)
+        if z_logvar_all:
+            pickle.dump(z_logvar_all, f)
+
     with open(args.o, "wb") as f:
         pickle.dump(
             {
-                "loss": loss_accum / Nimg,
-                "recon": gen_loss_accum / Nimg,
-                "kld": kld_accum / Nimg,
+                "loss": loss_accum / data.N,
+                "recon": gen_loss_accum / data.N,
+                "kld": kld_accum / data.N,
             },
             f,
         )
 
     logger.info("Finished in {}".format(dt.now() - t1))
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    args = add_args(parser).parse_args()
-    main(args)

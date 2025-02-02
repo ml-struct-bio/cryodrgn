@@ -23,12 +23,12 @@ from cryodrgn.models.losses import EquivarianceLoss
 from cryodrgn.models.variational_autoencoder import unparallelize, HetOnlyVAE
 from cryodrgn.models.neural_nets import get_decoder
 from cryodrgn.models.pose_search import PoseSearch
-from cryodrgn.trainers import (
+from cryodrgn.mrcfile import write_mrc
+from cryodrgn.pose import PoseTracker
+from cryodrgn.trainers.reconstruction import (
     ReconstructionModelTrainer,
     ReconstructionModelConfigurations,
 )
-from cryodrgn.mrcfile import write_mrc
-from cryodrgn.pose import PoseTracker
 
 try:
     import apex.amp as amp  # type: ignore  # PYR01
@@ -38,6 +38,9 @@ except ImportError:
 
 @dataclass
 class HierarchicalPoseSearchConfigurations(ReconstructionModelConfigurations):
+
+    # This parameter is not a data class field and is instead used to define shortcut
+    # labels to set values for a number of other fields
     quick_config = {
         "capture_setup": {
             "spa": {"lazy": True},
@@ -46,8 +49,8 @@ class HierarchicalPoseSearchConfigurations(ReconstructionModelConfigurations):
         "reconstruction_type": {"homo": {"z_dim": 0}, "het": {"z_dim": 8}},
     }
 
-    # a parameter belongs to this configuration set if and only if it has a default
-    # value defined here, note that children classes inherit these from parents
+    # A parameter belongs to this configuration set if and only if it has a type and a
+    # default value defined here, note that children classes inherit these parameters
     model = "hps"
 
     # specifying size and type of model encoder and decoder
@@ -75,16 +78,12 @@ class HierarchicalPoseSearchConfigurations(ReconstructionModelConfigurations):
     reset_model_every: int = None
     reset_optim_every: int = None
 
+    def __init__(self, **config_args: dict[str, Any]) -> None:
+        super().__init__(**config_args)
+
     def __post_init__(self) -> None:
         super().__post_init__()
         assert self.model == "hps"
-
-        if self.capture_setup is not None:
-            if self.capture_setup == "et":
-                self.subtomo_averaging = True
-                self.shuffler_size = 0
-                self.num_workers = 0
-                self.t_extent = 0.0
 
         if self.dataset is None:
             if self.particles is None:

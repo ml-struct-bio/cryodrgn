@@ -29,11 +29,9 @@ import seaborn as sns
 from cryodrgn import _ROOT
 import cryodrgn.analysis
 import cryodrgn.utils
-from cryodrgn.trainers import (
-    ReconstructionModelTrainer,
-    AmortizedInferenceTrainer,
-    HierarchicalPoseSearchTrainer,
-)
+from cryodrgn.trainers.reconstruction import ReconstructionModelTrainer
+from cryodrgn.trainers.amortinf_trainer import AmortizedInferenceTrainer
+from cryodrgn.trainers.hps_trainer import HierarchicalPoseSearchTrainer
 from cryodrgn.commands.eval_vol import VolumeEvaluator
 
 logger = logging.getLogger(__name__)

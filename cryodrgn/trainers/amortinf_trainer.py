@@ -18,14 +18,14 @@ import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 
 import cryodrgn.utils
-from cryodrgn import ctf
+import cryodrgn.ctf
 from cryodrgn.mrcfile import write_mrc
 from cryodrgn.dataset import make_dataloader
 from cryodrgn.trainers import summary
 from cryodrgn.models.losses import kl_divergence_conf, l1_regularizer, l2_frequency_bias
 from cryodrgn.models.amortized_inference import DRGNai, MyDataParallel
 from cryodrgn.masking import CircularMask, FrequencyMarchingMask
-from cryodrgn.trainers import (
+from cryodrgn.trainers.reconstruction import (
     ReconstructionModelTrainer,
     ReconstructionModelConfigurations,
 )
@@ -34,6 +34,8 @@ from cryodrgn.trainers import (
 @dataclass
 class AmortizedInferenceConfigurations(ReconstructionModelConfigurations):
 
+    # This parameter is not a data class field and is instead used to define shortcut
+    # labels to set values for a number of other fields
     quick_config = {
         "capture_setup": {
             "spa": {"lazy": True},
@@ -53,8 +55,8 @@ class AmortizedInferenceConfigurations(ReconstructionModelConfigurations):
         "reconstruction_type": {"homo": {"z_dim": 0}, "het": {"z_dim": 8}},
     }
 
-    # a parameter belongs to this configuration set if and only if it has a default
-    # value defined here, note that children classes inherit these from parents
+    # A parameter belongs to this configuration set if and only if it has a type and a
+    # default value defined here, note that children classes inherit these parameters
     model: str = "amort"
 
     # scheduling
@@ -666,7 +668,7 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
                 batch_size, *self.lattice.freqs2d.shape
             ) / ctf_params_local[:, 0].view(batch_size, 1, 1)
 
-            ctf_local = ctf.compute_ctf(
+            ctf_local = cryodrgn.ctf.compute_ctf(
                 freqs, *torch.split(ctf_params_local[:, 1:], 1, 1)
             ).view(batch_size, self.resolution, self.resolution)
 

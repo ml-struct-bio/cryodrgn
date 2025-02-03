@@ -78,12 +78,8 @@ class ReconstructionModelConfigurations(BaseConfigurations):
     # A parameter belongs to this configuration set if and only if it has a type and a
     # default value defined here, note that children classes inherit these parameters
     model: str = None
-
-    # whether we are doing homogeneous (z_dim=0) or heterogeneous (z_dim>0)
-    # reconstruction, and how long to train for
     z_dim: int = None
     num_epochs: int = 30
-
     dataset: str = None
     particles: str = None
     ctf: str = None
@@ -153,7 +149,7 @@ class ReconstructionModelConfigurations(BaseConfigurations):
     angle_per_tilt: int = 3
     dose_per_tilt: float = 2.97
 
-    # quick configs
+    # quick configuration parameters
     capture_setup: str = None
     reconstruction_type: str = None
     pose_estimation: str = None
@@ -164,25 +160,23 @@ class ReconstructionModelConfigurations(BaseConfigurations):
     def __post_init__(self) -> None:
         super().__post_init__()
 
-        if self.reconstruction_type is not None:
-            if self.reconstruction_type == "homo":
-                self.z_dim = 0
-            elif self.reconstruction_type == "het":
-                self.z_dim = 8
-            else:
-                raise ValueError(
-                    f"Unreocgnized reconstruction type `{self.reconstruction_type}`!"
-                )
-
         if self.model not in {"hps", "amort"}:
             raise ValueError(
                 f"Given model `{self.model}` not in currently supported model types:\n"
                 f"`amort` (cryoDRGN v4 amortized inference pose estimation)\n"
                 f"`hps` (cryoDRGN v3,v2,v1 hierarchical pose estimation)\n"
             )
-
-        if isinstance(self.ind, str) and not os.path.exists(self.ind):
-            raise ValueError(f"Subset indices file {self.ind} does not exist!")
+        if not isinstance(self.z_dim, int) or self.z_dim < 0:
+            raise ValueError(
+                f"Given latent space dimension {self.z_dim=} "
+                f"is not zero (homogeneous reconstruction) "
+                f"or a positive integer (heterogeneous reconstruction)!"
+            )
+        if not isinstance(self.num_epochs, int) or self.num_epochs <= 0:
+            raise ValueError(
+                f"Given number of training epochs {self.z_dim=} "
+                f"is not a positive integer!"
+            )
 
         if self.dataset:
             paths_file = os.environ.get("CRYODRGN_DATASETS")
@@ -205,13 +199,8 @@ class ReconstructionModelConfigurations(BaseConfigurations):
                         )
                     setattr(self, k, use_paths[k])
 
-        else:
-            if not isinstance(self.z_dim, int) or self.z_dim < 0:
-                raise ValueError(
-                    f"Given latent space dimension {self.z_dim=} "
-                    f"is not zero (homogeneous reconstruction) "
-                    f"or a positive integer (heterogeneous reconstruction)!"
-                )
+        if isinstance(self.ind, str) and not os.path.exists(self.ind):
+            raise ValueError(f"Subset indices file {self.ind} does not exist!")
 
         if self.pose_estimation in {"fixed", "refine"} and not self.poses:
             raise ValueError(
@@ -229,10 +218,24 @@ class ReconstructionModelConfigurations(BaseConfigurations):
 class ReconstructionModelTrainer(BaseTrainer, ABC):
     """Abstract base class for volume reconstruction model training engines.
 
+    Arguments
+    ---------
+    configs (dict):     The raw configuration parameters for this engine.
+                        Will be parsed by the engine's configuration class.
+
     Attributes
     ----------
-    use_cuda (bool): Whether we are using CUDA GPUs (or otherwise CPUs).
+    config_cls:         The configuration class that will be used to parse parameter
+                        sets for this engine class. Children implementations of this
+                        class will thus use children of `BaseConfigurations` here.
+    label:              String used to refer to this engine for e.g. logging messages.
 
+    configs (BaseConfigurations):    The parsed parameter configs for this engine.
+    outdir  (str):      The path where output produced by the engine will be saved.
+    logger  (Logger):   Logging utility used to create info and warning messages.
+
+    use_cuda (bool): Whether we are using CUDA GPUs (or otherwise CPUs).
+    data (ImageDataset):    The processed particle stack data used as model input.
     """
 
     configs: ReconstructionModelConfigurations
@@ -460,7 +463,26 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
         # TODO: auto-loading from last weights file if load=True?
         # initialization from a previous checkpoint
         if self.configs.load:
-            self.logger.info(f"Loading checkpoint from {self.configs.load}")
+            if self.configs.load == "latest" or self.configs.load is True:
+                self.logger.info("Detecting latest checkpoint...")
+
+                weights = [
+                    os.path.join(self.outdir, f"weights.{epoch}.pkl")
+                    for epoch in range(self.configs.num_epochs)
+                ]
+                weights = [f for f in weights if os.path.exists(f)]
+                load_path = weights[-1]
+
+                if self.configs.load_poses is None or self.configs.load_poses:
+                    epoch = self.configs.load.split(".")[-2]
+                    load_poses_path = os.path.join(self.outdir, f"pose.{epoch}.pkl")
+                    assert os.path.exists(load_poses_path)
+                    self.logger.info(f"Loading {load_poses_path}")
+
+            else:
+                load_path = self.configs.load
+
+            self.logger.info(f"Loading checkpoint from {load_path}")
             checkpoint = torch.load(self.configs.load)
             state_dict = checkpoint["model_state_dict"]
 

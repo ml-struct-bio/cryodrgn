@@ -749,22 +749,6 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
                     f,
                 )
 
-    def get_latest(self) -> None:
-        self.logger.info("Detecting latest checkpoint...")
-
-        weights = [
-            os.path.join(self.configs.outdir, f"weights.{epoch}.pkl")
-            for epoch in range(self.configs.num_epochs)
-        ]
-        weights = [f for f in weights if os.path.exists(f)]
-
-        self.configs.load = weights[-1]
-        self.logger.info(f"Loading {self.configs.load}")
-        epoch = self.configs.load.split(".")[-2]
-        self.configs.load_poses = os.path.join(self.configs.outdir, f"pose.{epoch}.pkl")
-        assert os.path.exists(self.configs.load_poses)
-        self.logger.info(f"Loading {self.configs.load_poses}")
-
     @property
     def in_pose_search_step(self) -> bool:
         """Whether the current epoch of training will include searching over poses."""

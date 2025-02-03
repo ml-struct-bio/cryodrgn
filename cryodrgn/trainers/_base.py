@@ -241,7 +241,7 @@ class BaseTrainer(ABC):
     Arguments
     ---------
     configs (dict):     The raw configuration parameters for this engine.
-                        Will be parsed by the
+                        Will be parsed using the engine's configuration class
 
     Attributes
     ----------
@@ -258,24 +258,7 @@ class BaseTrainer(ABC):
     config_cls = BaseConfigurations
     label = "cDRGN training"
 
-    @classmethod
-    def parse_args(cls, args: argparse.Namespace) -> Self:
-        """Utility for initializing using a namespace as opposed to a dictionary."""
-        return cls(
-            {
-                par: (
-                    getattr(args, par)
-                    if hasattr(args, par)
-                    else cls.config_cls.defaults[par]
-                )
-                for par in tuple(cls.config_cls.defaults)
-            }
-        )
-
     def __init__(self, configs: dict[str, Any]) -> None:
-        if "load" in configs and configs["load"] == "latest":
-            configs = self.get_latest_configs()
-
         self.configs = self.config_cls(**configs)
         self.outdir = self.configs.outdir
         np.random.seed(self.configs.seed)
@@ -290,3 +273,14 @@ class BaseTrainer(ABC):
     def parameters(cls) -> list[str]:
         """The user-set parameters governing the behaviour of this model."""
         return [fld.name for fld in fields(cls.config_cls)]
+
+    @classmethod
+    def parse_args(cls, args: argparse.Namespace) -> Self:
+        """Utility for initializing using a namespace as opposed to a dictionary."""
+
+        return cls(
+            {
+                par: getattr(args, par) if hasattr(args, par) else cls.defaults()[par]
+                for par in cls.parameters()
+            }
+        )

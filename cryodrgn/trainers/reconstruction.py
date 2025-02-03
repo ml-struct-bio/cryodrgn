@@ -29,6 +29,47 @@ except ImportError:
 
 @dataclass
 class ReconstructionModelConfigurations(BaseConfigurations):
+    """The abstract base class for parameter sets used by volume learning models.
+
+    Arguments
+    ---------
+    outdir:     Path to where output produced by the engine will be saved.
+    model:      A label for the reconstruction algorithm to be used — must be either
+                `hps` for cryoDRGN v3 models or `amort` for cryoDRGN-AI models.
+    z_dim:      The dimensionality of the latent space of conformations.
+                Thus z_dim=0 for homogeneous models and z_dim>0 for hetergeneous models.
+    num_epochs: The total number of epochs to use when training the model, not including
+                pretraining epochs.
+
+    dataset:    Label for the particle dataset to be used as input for the model.
+                If used, remaining input parameters can be omitted.
+    particles:  Path to the stack of particle images to use as input for the model.
+                Must be a (.mrcs/.txt/.star/.cs file).
+    ctf:        Path to the file storing contrast transfer function parameters used to
+                process the input particle images.
+    poses:      Path to the input particle poses data (.pkl).
+    datadir:    Path prefix to particle stack if loading relative paths from
+                a .star or .cs file.
+    ind:        Path to a numpy array saved as a .pkl used to filter input particles.
+
+    load:       Load model from given weights.<epoch>.pkl output file saved from
+                previous run of the engine.
+                Can also be given as "latest", in which the latest saved epoch in the
+                given output directory will be used.
+
+    batch_size:     The number of input images to use at a time when updating
+                    the learning algorithm.
+
+    multigpu:       Whether to use all available GPUs available on this machine.
+                    The default is to use only one GPU.
+
+    Attributes
+    ----------
+    quick_config:   A dictionary with keys consisting of special `quick_config` shortcut
+                    parameters; each value is a dictionary of non-quick_config
+                    parameter keys and shortcut values that are used when the
+                    corresponding quick configuration parameter value is used.
+    """
 
     # This class variable is not a dataclass field and is instead used to define shortcut
     # labels to set values for a number of other fields
@@ -42,12 +83,11 @@ class ReconstructionModelConfigurations(BaseConfigurations):
     # reconstruction, and how long to train for
     z_dim: int = None
     num_epochs: int = 30
-    # paths to where output will be stored and where input datasets are located
-    outdir: str = os.getcwd()
+
+    dataset: str = None
     particles: str = None
     ctf: str = None
     poses: str = None
-    dataset: str = None
     datadir: str = None
     ind: str = None
     labels: str = None
@@ -141,7 +181,6 @@ class ReconstructionModelConfigurations(BaseConfigurations):
                 f"`hps` (cryoDRGN v3,v2,v1 hierarchical pose estimation)\n"
             )
 
-        self.outdir = os.path.abspath(self.outdir)
         if isinstance(self.ind, str) and not os.path.exists(self.ind):
             raise ValueError(f"Subset indices file {self.ind} does not exist!")
 
@@ -209,7 +248,6 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
 
     def __init__(self, configs: dict[str, Any]) -> None:
         super().__init__(configs)
-        self.outdir = self.configs.outdir
 
         # set the device
         torch.manual_seed(self.configs.seed)
@@ -370,14 +408,14 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
         )
         self.apix = self.ctf_params[0, 0] if self.ctf_params is not None else None
 
-        self.reconstruction_optim_class = self.optim_types[
-            self.configs.volume_optim_type
-        ]
-        self.reconstruction_optimizer = self.reconstruction_optim_class(
-            self.reconstruction_model.parameters(),
-            lr=self.configs.learning_rate,
-            weight_decay=self.configs.weight_decay,
-        )
+        self.optimizer_types = {"hypervolume": self.configs.volume_optim_type}
+        self.optimizers = {
+            "hypervolume": self.optim_types[self.optimizer_types["hypervolume"]](
+                self.reconstruction_model.parameters(),
+                lr=self.configs.learning_rate,
+                weight_decay=self.configs.weight_decay,
+            )
+        }
 
         # Mixed precision training
         self.scaler = None
@@ -401,10 +439,10 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
             try:  # Mixed precision with apex.amp
                 (
                     self.reconstruction_model,
-                    self.reconstruction_optimizer,
+                    self.optimizers["hypervolume"],
                 ) = amp.initialize(
                     self.reconstruction_model,
-                    self.reconstruction_optimizer,
+                    self.optimizers["hypervolume"],
                     opt_level="O1",
                 )
             except:  # noqa: E722
@@ -429,10 +467,14 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
             if "base_shifts" in state_dict:
                 state_dict.pop("base_shifts")
 
-            self.logger.info(self.load_state_dict(state_dict, strict=False))
+            self.logger.info(
+                self.reconstruction_model.load_state_dict(state_dict, strict=False)
+            )
 
             if "output_mask_radius" in checkpoint:
-                self.output_mask.update_radius(checkpoint["output_mask_radius"])
+                self.reconstruction_model.output_mask.update_radius(
+                    checkpoint["output_mask_radius"]
+                )
 
             for key in self.optimizers:
                 self.optimizers[key].load_state_dict(
@@ -462,7 +504,6 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
         self.beta = None
         self.epoch_start_time = None
         self.base_pose = None
-        self.pose_optimizer = None
 
         if self.configs.load_poses:
             rot, trans = cryodrgn.utils.load_pkl(self.configs.load_poses)
@@ -534,7 +575,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
                 self.epoch_images_seen += len_y
 
                 self.reconstruction_model.train()
-                self.reconstruction_optimizer.zero_grad()
+                self.optimizers["hypervolume"].zero_grad()
                 with self.amp_mode:
                     (
                         losses,
@@ -551,9 +592,9 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
                 if isinstance(trans, torch.Tensor):
                     trans = trans.detach().cpu().numpy()
 
-                if self.pose_optimizer is not None:
+                if "pose_table" in self.optimizers:
                     if self.current_epoch >= self.configs.pretrain:
-                        self.pose_optimizer.step()
+                        self.optimizers["pose_table"].step()
 
                 ind_tilt = tilt_ind if tilt_ind is not None else ind
                 if self.predicted_rots is not None:
@@ -665,7 +706,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
         # Reset the model after pretraining if asked for
         if self.configs.reset_optim_after_pretrain:
             self.logger.info(">> Resetting optimizer after pretrain")
-            self.reconstruction_optimizer = torch.optim.Adam(
+            self.optimizers["hypervolume"] = torch.optim.Adam(
                 self.reconstruction_model.parameters(),
                 lr=self.configs.learning_rate,
                 weight_decay=self.configs.weight_decay,

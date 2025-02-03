@@ -1,5 +1,6 @@
 """Base classes for model training engines and their parameter configurations."""
 
+import os
 import argparse
 import sys
 import difflib
@@ -15,7 +16,7 @@ import numpy as np
 
 @dataclass
 class BaseConfigurations(ABC):
-    """The abstract base data class for configuration parameter sets used by cryoDRGN.
+    """The abstract base data class for config parameter sets used by cryoDRGN engines.
 
     This class' variables constitute the core parameters used by all cryoDRGN
     configuration parameter sets. These configurations are used by various engines
@@ -38,6 +39,8 @@ class BaseConfigurations(ABC):
     ---------
     verbose:        An integer specifiying the verbosity level for this engine, with
                     the default value of 0 generally specifying no/minimum verbosity.
+
+    outdir:         Path to where output produced by the engine will be saved.
 
     seed:           A non-negative integer used to fix the stochasticity of the random
                     number generators used by this engine for reproducibility.
@@ -64,6 +67,7 @@ class BaseConfigurations(ABC):
     # A parameter belongs to this configuration set if and only if it has a type and a
     # default value defined here, note that children classes inherit these parameters
     verbose: int = 0
+    outdir: str = os.getcwd()
     seed: int = None
     test_installation: bool = False
 
@@ -86,6 +90,7 @@ class BaseConfigurations(ABC):
 
     def __post_init__(self) -> None:
         """Parsing given configuration parameter values and checking their validity."""
+        self.outdir = os.path.abspath(self.outdir)
 
         for quick_cfg_k, quick_cfg_dict in self.quick_config.items():
             assert quick_cfg_k in self, (
@@ -233,10 +238,21 @@ class BaseConfigurations(ABC):
 class BaseTrainer(ABC):
     """Abstract base class for training engines used by cryoDRGN.
 
+    Arguments
+    ---------
+    configs (dict):     The raw configuration parameters for this engine.
+                        Will be parsed by the
+
     Attributes
     ----------
-    configs (BaseConfigurations):    The parameter configuration for this engine.
+    config_cls:         The configuration class that will be used to parse parameter
+                        sets for this engine class. Children implementations of this
+                        class will thus use children of `BaseConfigurations` here.
+    label:              String used to refer to this engine for e.g. logging messages.
 
+    configs (BaseConfigurations):    The parsed parameter configs for this engine.
+    outdir  (str):      The path where output produced by the engine will be saved.
+    logger  (Logger):   Logging utility used to create info and warning messages.
     """
 
     config_cls = BaseConfigurations
@@ -261,7 +277,7 @@ class BaseTrainer(ABC):
             configs = self.get_latest_configs()
 
         self.configs = self.config_cls(**configs)
-        self.verbose = self.configs.verbose
+        self.outdir = self.configs.outdir
         np.random.seed(self.configs.seed)
         self.logger = logging.getLogger(self.label)
 

@@ -410,7 +410,6 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
     def __init__(self, configs: dict[str, Any]) -> None:
         super().__init__(configs)
         self.configs: AmortizedInferenceConfigurations
-        self.model = self.reconstruction_model
         self.do_pretrain = True
 
         if self.configs.num_epochs is None:
@@ -427,20 +426,19 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
         os.makedirs(self.summaries_dir, exist_ok=True)
         self.writer = SummaryWriter(self.summaries_dir)
         self.logger.info("Will write tensorboard summaries " f"in {self.summaries_dir}")
+        self.reconstruction_model.output_mask.binary_mask = (
+            self.reconstruction_model.output_mask.binary_mask.cpu()
+        )
 
         # TODO: Replace with DistributedDataParallel
         if self.n_prcs > 1:
-            self.model = MyDataParallel(self.reconstruction_model)
-
-        self.model.output_mask.binary_mask = self.model.output_mask.binary_mask.cpu()
-        self.optimizers = {"hypervolume": self.reconstruction_optimizer}
-        self.optimizer_types = {"hypervolume": self.configs.volume_optim_type}
+            self.reconstruction_model = MyDataParallel(self.reconstruction_model)
 
         # pose table
         if self.configs.pose_estimation != "fixed":
             if self.epochs_sgd > 0:
                 pose_table_params = [
-                    {"params": list(self.model.pose_table.parameters())}
+                    {"params": list(self.reconstruction_model.pose_table.parameters())}
                 ]
                 self.optimizers["pose_table"] = self.optim_types[
                     self.configs.pose_table_optim_type
@@ -453,8 +451,10 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
                 conf_encoder_params = [
                     {
                         "params": (
-                            list(self.model.conf_cnn.parameters())
-                            + list(self.model.conf_regressor.parameters())
+                            list(self.reconstruction_model.conf_cnn.parameters())
+                            + list(
+                                self.reconstruction_model.conf_regressor.parameters()
+                            )
                         )
                     }
                 ]
@@ -472,7 +472,7 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
 
             else:
                 conf_table_params = [
-                    {"params": list(self.model.conf_table.parameters())}
+                    {"params": list(self.reconstruction_model.conf_table.parameters())}
                 ]
 
                 self.optimizers["conf_table"] = self.optim_types[
@@ -603,17 +603,17 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
                         if self.ind is not None:
                             rotmat_gt = rotmat_gt[self.ind]
 
-                    self.model.pose_table.initialize(rotmat_gt, trans_gt)
+                    self.reconstruction_model.pose_table.initialize(rotmat_gt, trans_gt)
 
                 else:
                     self.logger.info(
                         "Initializing pose table from hierarchical pose search"
                     )
-                    self.model.pose_table.initialize(
+                    self.reconstruction_model.pose_table.initialize(
                         self.predicted_rots, self.predicted_trans
                     )
 
-                self.model.to(self.device)
+                self.reconstruction_model.to(self.device)
 
             self.logger.info(
                 "Will use latent optimization on " f"{self.particle_count} particles"
@@ -639,11 +639,11 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
                         self.logger.info(
                             "Initializing conformation table " "from given z's"
                         )
-                        self.model.conf_table.initialize(
+                        self.reconstruction_model.conf_table.initialize(
                             cryodrgn.utils.load_pkl(self.configs.initial_conf)
                         )
 
-                    self.model.to(self.device)
+                    self.reconstruction_model.to(self.device)
 
                 self.optimized_modules.append("conf_table")
 
@@ -654,8 +654,11 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
 
     def end_epoch(self) -> None:
         # update output mask -- epoch-based scaling
-        if hasattr(self.model.output_mask, "update_epoch") and self.use_point_estimates:
-            self.model.output_mask.update_epoch(self.configs.n_frequencies_per_epoch)
+        if hasattr(self.reconstruction_model.output_mask, "update_epoch"):
+            if self.use_point_estimates:
+                self.reconstruction_model.output_mask.update_epoch(
+                    self.configs.n_frequencies_per_epoch
+                )
 
     def get_ctfs_at(self, index):
         batch_size = len(index)
@@ -687,17 +690,19 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
             self.run_times["dataloading"].append(time.time() - self.end_time)
 
         # update output mask -- image-based scaling
-        if hasattr(self.model.output_mask, "update") and self.in_pose_search_step:
-            self.model.output_mask.update(self.total_images_seen)
+        if hasattr(self.reconstruction_model.output_mask, "update"):
+            if self.in_pose_search_step:
+                self.reconstruction_model.output_mask.update(self.total_images_seen)
 
         if self.in_pose_search_step:
-            self.model.ps_params["l_min"] = self.configs.l_start
+            self.reconstruction_model.ps_params["l_min"] = self.configs.l_start
 
             if self.configs.output_mask == "circ":
-                self.model.ps_params["l_max"] = self.configs.l_end
+                self.reconstruction_model.ps_params["l_max"] = self.configs.l_end
             else:
-                self.model.ps_params["l_max"] = min(
-                    self.model.output_mask.current_radius, self.configs.l_end
+                self.reconstruction_model.ps_params["l_max"] = min(
+                    self.reconstruction_model.output_mask.current_radius,
+                    self.configs.l_end,
                 )
 
         if "tilt_indices" not in batch:
@@ -723,9 +728,9 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
         latent_variables_dict, y_pred, y_gt_processed = self.forward_pass(**batch)
 
         if self.n_prcs > 1:
-            self.model.module.is_in_pose_search_step = False
+            self.reconstruction_model.module.is_in_pose_search_step = False
         else:
-            self.model.is_in_pose_search_step = False
+            self.reconstruction_model.is_in_pose_search_step = False
 
         # loss
         if self.configs.verbose_time:
@@ -871,46 +876,52 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
 
         # forward pass
         if "hypervolume" in self.optimized_modules:
-            self.model.hypervolume.train()
+            self.reconstruction_model.hypervolume.train()
         else:
-            self.model.hypervolume.eval()
+            self.reconstruction_model.hypervolume.eval()
 
-        if hasattr(self.model, "conf_cnn"):
-            if hasattr(self.model, "conf_regressor"):
+        if hasattr(self.reconstruction_model, "conf_cnn"):
+            if hasattr(self.reconstruction_model, "conf_regressor"):
                 if "conf_encoder" in self.optimized_modules:
-                    self.model.conf_cnn.train()
-                    self.model.conf_regressor.train()
+                    self.reconstruction_model.conf_cnn.train()
+                    self.reconstruction_model.conf_regressor.train()
                 else:
-                    self.model.conf_cnn.eval()
-                    self.model.conf_regressor.eval()
+                    self.reconstruction_model.conf_cnn.eval()
+                    self.reconstruction_model.conf_regressor.eval()
 
-        if hasattr(self.model, "pose_table"):
+        if hasattr(self.reconstruction_model, "pose_table"):
             if "pose_table" in self.optimized_modules:
-                self.model.pose_table.train()
+                self.reconstruction_model.pose_table.train()
             else:
-                self.model.pose_table.eval()
+                self.reconstruction_model.pose_table.eval()
 
-        if hasattr(self.model, "conf_table"):
+        if hasattr(self.reconstruction_model, "conf_table"):
             if "conf_table" in self.optimized_modules:
-                self.model.conf_table.train()
+                self.reconstruction_model.conf_table.train()
             else:
-                self.model.conf_table.eval()
+                self.reconstruction_model.conf_table.eval()
 
         if self.n_prcs > 1:
-            self.model.module.pose_only = self.pose_only
-            self.model.module.use_point_estimates = self.use_point_estimates
-            self.model.module.pretrain = self.in_pretraining
-            self.model.module.is_in_pose_search_step = self.in_pose_search_step
-            self.model.module.use_point_estimates_conf = (
+            self.reconstruction_model.module.pose_only = self.pose_only
+            self.reconstruction_model.module.use_point_estimates = (
+                self.use_point_estimates
+            )
+            self.reconstruction_model.module.pretrain = self.in_pretraining
+            self.reconstruction_model.module.is_in_pose_search_step = (
+                self.in_pose_search_step
+            )
+            self.reconstruction_model.module.use_point_estimates_conf = (
                 not self.configs.use_conf_encoder
             )
 
         else:
-            self.model.pose_only = self.pose_only
-            self.model.use_point_estimates = self.use_point_estimates
-            self.model.pretrain = self.in_pretraining
-            self.model.is_in_pose_search_step = self.in_pose_search_step
-            self.model.use_point_estimates_conf = not self.configs.use_conf_encoder
+            self.reconstruction_model.pose_only = self.pose_only
+            self.reconstruction_model.use_point_estimates = self.use_point_estimates
+            self.reconstruction_model.pretrain = self.in_pretraining
+            self.reconstruction_model.is_in_pose_search_step = self.in_pose_search_step
+            self.reconstruction_model.use_point_estimates_conf = (
+                not self.configs.use_conf_encoder
+            )
 
         if self.configs.subtomo_averaging:
             tilt_indices = tilt_indices.reshape(y.shape[0:2])
@@ -932,7 +943,7 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
         else:
             in_dict["tilt_indices"] = in_dict["tilt_indices"].reshape(-1)
 
-        out_dict = self.model(in_dict)
+        out_dict = self.reconstruction_model(in_dict)
         self.run_times["encoder"].append(
             torch.mean(out_dict["time_encoder"].cpu())
             if self.configs.verbose_time
@@ -962,7 +973,7 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
         y_gt_processed = out_dict["y_gt_processed"]
 
         if self.configs.subtomo_averaging and self.configs.dose_exposure_correction:
-            mask = self.model.output_mask.binary_mask
+            mask = self.reconstruction_model.output_mask.binary_mask
             a_pix = self.ctf_params[0, 0]
 
             dose_filters = self.data.get_dose_filters(
@@ -1002,7 +1013,7 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
             smoothness_loss = l2_frequency_bias(
                 y_pred,
                 self.lattice.freqs2d,
-                self.model.output_mask.binary_mask,
+                self.reconstruction_model.output_mask.binary_mask,
                 self.resolution,
             )
             total_loss += self.configs.l2_smoothness_regularizer * smoothness_loss
@@ -1015,7 +1026,7 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
             self.writer,
             self.in_dict_last,
             self.y_pred_last,
-            self.model.output_mask,
+            self.reconstruction_model.output_mask,
             self.current_epoch,
         )
 
@@ -1120,8 +1131,10 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
             f"({self.epoch_images_seen}/{self.image_count} images); "
             f"gen loss={losses['gen']:.4g}, {kld_str}"
         )
-        if self.model.trans_search_factor is not None:
-            losses["Trans. Search Factor"] = self.model.trans_search_factor
+        if self.reconstruction_model.trans_search_factor is not None:
+            losses["Trans. Search Factor"] = getattr(
+                self.reconstruction_model, "trans_search_factor"
+            )
 
         summary.make_scalar_summary(self.writer, losses, self.total_images_seen)
         if self.configs.verbose_time:
@@ -1154,23 +1167,25 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
             self.configs.outdir, f"reconstruct.{self.current_epoch}.mrc"
         )
 
-        self.model.hypervolume.eval()
-        if hasattr(self.model, "conf_cnn"):
-            if hasattr(self.model, "conf_regressor"):
-                self.model.conf_cnn.eval()
-                self.model.conf_regressor.eval()
+        self.reconstruction_model.hypervolume.eval()
+        if hasattr(self.reconstruction_model, "conf_cnn"):
+            if hasattr(self.reconstruction_model, "conf_regressor"):
+                self.reconstruction_model.conf_cnn.eval()
+                self.reconstruction_model.conf_regressor.eval()
 
-        if hasattr(self.model, "pose_table"):
-            self.model.pose_table.eval()
-        if hasattr(self.model, "conf_table"):
-            self.model.conf_table.eval()
+        if hasattr(self.reconstruction_model, "pose_table"):
+            self.reconstruction_model.pose_table.eval()
+        if hasattr(self.reconstruction_model, "conf_table"):
+            self.reconstruction_model.conf_table.eval()
 
         if self.configs.z_dim > 0:
             zval = self.predicted_conf[0].reshape(-1)
         else:
             zval = None
 
-        vol = -1.0 * self.model.eval_volume(norm=self.data.norm, zval=zval)
+        vol = -1.0 * self.reconstruction_model.eval_volume(
+            norm=self.data.norm, zval=zval
+        )
         write_mrc(out_mrc, np.array(vol, dtype=np.float32))
 
     # TODO: weights -> model and reconstruct -> volume for output labels?
@@ -1187,21 +1202,25 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
         saved_objects = {
             "epoch": self.current_epoch,
             "model_state_dict": (
-                self.model.module.state_dict()
+                self.reconstruction_model.module.state_dict()
                 if self.n_prcs > 1
-                else self.model.state_dict()
+                else self.reconstruction_model.state_dict()
             ),
             "hypervolume_state_dict": (
-                self.model.module.hypervolume.state_dict()
+                self.reconstruction_model.module.hypervolume.state_dict()
                 if self.n_prcs > 1
-                else self.model.hypervolume.state_dict()
+                else self.reconstruction_model.hypervolume.state_dict()
             ),
-            "hypervolume_params": self.model.hypervolume.get_building_params(),
+            "hypervolume_params": (
+                self.reconstruction_model.hypervolume.get_building_params()
+            ),
             "optimizers_state_dict": optimizers_state_dict,
         }
 
-        if hasattr(self.model.output_mask, "current_radius"):
-            saved_objects["output_mask_radius"] = self.model.output_mask.current_radius
+        if hasattr(self.reconstruction_model.output_mask, "current_radius"):
+            saved_objects["output_mask_radius"] = getattr(
+                self.reconstruction_model.output_mask, "current_radius"
+            )
 
         torch.save(saved_objects, out_weights)
 

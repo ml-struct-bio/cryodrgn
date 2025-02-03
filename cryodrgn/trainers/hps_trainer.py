@@ -300,7 +300,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
             )
 
         if self.configs.pose_estimation == "refine":
-            self.pose_optimizer = torch.optim.SparseAdam(
+            self.optimizers["pose_table"] = torch.optim.SparseAdam(
                 list(self.pose_tracker.parameters()), lr=self.configs.pose_learning_rate
             )
         elif self.configs.pose_estimation == "abinit":
@@ -367,8 +367,8 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
         else:
             yr = None
 
-        if self.pose_optimizer is not None:
-            self.pose_optimizer.zero_grad()
+        if self.optimizers["pose_table"] is not None:
+            self.optimizers["pose_table"].zero_grad()
 
         dose_filters = None
         if self.configs.tilt:

@@ -777,7 +777,7 @@ class ModelAnalyzer:
         return z_0[None] * (1.0 - t) + z_1[None] * t
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
     matplotlib.use("Agg")  # non-interactive backend
     t0 = dt.now()
 

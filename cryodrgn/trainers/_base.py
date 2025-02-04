@@ -25,12 +25,6 @@ class BaseConfigurations(ABC):
     of this abstract class' children configuration classes contain these parameters
     in addition to the ones they themselves define.
 
-    This class also defines special behaviour for the `quick_config` class variable,
-    which is not treated as a data field and instead defines a set of shortcuts used as
-    values for the data field parameters listed as its keys. These shortcuts each define
-    a list of fields and values that are used as the new defaults when the shortcut is
-    used, but can still be overridden by values specified by the user.
-
     Note that unlike regular data classes these config classes must define defaults for
     all their parameters to ensure that default engine behaviour is explicitly stated,
     with an AssertionError being thrown upon initialization otherwise.
@@ -51,18 +45,7 @@ class BaseConfigurations(ABC):
                         correctly and exit immediately without running anything if this
                         boolean value is set to `True`.
                         Default is not to run this test.
-
-    Attributes
-    ----------
-    quick_config:   A dictionary with keys consisting of special `quick_config` shortcut
-                    parameters; each value is a dictionary of non-quick_config
-                    parameter keys and shortcut values that are used when the
-                    corresponding quick configuration parameter value is used.
     """
-
-    # This class variable is not a dataclass field and is instead used to define shortcut
-    # labels to set values for a number of other fields
-    quick_config = dict()
 
     # A parameter belongs to this configuration set if and only if it has a type and a
     # default value defined here, note that children classes inherit these parameters
@@ -71,57 +54,15 @@ class BaseConfigurations(ABC):
     seed: int = None
     test_installation: bool = False
 
-    def __init__(self, **config_args: dict[str, Any]) -> None:
-        """Setting given config values as attributes; saving values given by user."""
-        self.given_configs = config_args
+    def __post_init__(self) -> None:
+        """Parsing given configuration parameter values and checking their validity."""
+        self.outdir = os.path.abspath(self.outdir)
 
-        # for configuration values not given by the user we use the defined defaults
         for this_field in self.fields():
             assert this_field.default is not MISSING, (
                 f"`{self.__class__.__name__}` class has no default value defined "
                 f"for parameter `{this_field.name}`!"
             )
-
-        # set values specified explicitly by the user as attributes of this class
-        for k, v in self.given_configs.items():
-            setattr(self, k, v)
-
-        self.__post_init__()
-
-    def __post_init__(self) -> None:
-        """Parsing given configuration parameter values and checking their validity."""
-        self.outdir = os.path.abspath(self.outdir)
-
-        for quick_cfg_k, quick_cfg_dict in self.quick_config.items():
-            assert quick_cfg_k in self, (
-                f"Configuration class `{self.__class__.__name__}` has a `quick_config` "
-                f"entry `{quick_cfg_k}` that is not a valid configuration parameter!"
-            )
-            for quick_cfg_label, quick_label_dict in quick_cfg_dict.items():
-                for quick_cfg_param, quick_cfg_val in quick_label_dict.items():
-                    assert quick_cfg_param in self, (
-                        f"Configuration class `{self.__class__.__name__}` has a "
-                        f"`quick_config` entry `{quick_cfg_label}` under "
-                        f"`{quick_cfg_k}` with a value for `{quick_cfg_param}` which "
-                        f"is not a valid configuration parameter!"
-                    )
-
-            if quick_cfg_k in self.given_configs:
-                quick_cfg_val = getattr(self, quick_cfg_k)
-                if quick_cfg_val is not None:
-                    if quick_cfg_val not in self.quick_config[quick_cfg_k]:
-                        raise ValueError(
-                            f"Given value `{quick_cfg_val}` is not a valid entry "
-                            f"for quick config shortcut parameter `{quick_cfg_k}`!"
-                        )
-
-                    # We only use the `quick_config` value if the parameter is not
-                    # also being set explicitly by the user
-                    for param_k, param_val in self.quick_config[quick_cfg_k][
-                        quick_cfg_val
-                    ].items():
-                        if param_k not in self.given_configs:
-                            setattr(self, param_k, param_val)
 
         if self.test_installation:
             print("Installation was successful!")

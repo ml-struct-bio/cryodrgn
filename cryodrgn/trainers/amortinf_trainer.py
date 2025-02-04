@@ -34,27 +34,6 @@ from cryodrgn.trainers.reconstruction import (
 @dataclass
 class AmortizedInferenceConfigurations(ReconstructionModelConfigurations):
 
-    # This parameter is not a data class field and is instead used to define shortcut
-    # labels to set values for a number of other fields
-    quick_config = {
-        "capture_setup": {
-            "spa": {"lazy": True},
-            "et": {
-                "subtomo_averaging": True,
-                "lazy": True,
-                "shuffler_size": 0,
-                "num_workers": 0,
-                "t_extent": 0.0,
-                "batch_size_known_poses": 8,
-                "batch_size_sgd": 32,
-                "n_imgs_pose_search": 150000,
-                "pose_only_phase": 50000,
-                "lr_pose_table": 1.0e-5,
-            },
-        },
-        "reconstruction_type": {"homo": {"z_dim": 0}, "het": {"z_dim": 8}},
-    }
-
     # A parameter belongs to this configuration set if and only if it has a type and a
     # default value defined here, note that children classes inherit these parameters
     model: str = "amort"
@@ -63,6 +42,7 @@ class AmortizedInferenceConfigurations(ReconstructionModelConfigurations):
     n_imgs_pose_search: int = 500000
     epochs_sgd: int = None
     pose_only_phase: int = 0
+    use_gt_trans: bool = False
     invert_data: bool = False
     # optimizers
     pose_table_optim_type: str = "adam"
@@ -107,9 +87,6 @@ class AmortizedInferenceConfigurations(ReconstructionModelConfigurations):
 
     # quick configs
     conf_estimation: str = None
-
-    def __init__(self, **config_args: dict[str, Any]) -> None:
-        super().__init__(**config_args)
 
     def __post_init__(self) -> None:
         super().__post_init__()
@@ -831,7 +808,7 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
             batch["indices"],
             rot_pred,
             trans_pred,
-            latent_variables_dict["z"],
+            latent_variables_dict["z"] if "z" in latent_variables_dict else None,
             None,
         )
 

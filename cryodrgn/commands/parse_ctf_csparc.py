@@ -10,7 +10,7 @@ from cryodrgn import ctf
 logger = logging.getLogger(__name__)
 
 
-def add_args(parser):
+def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("cs", help="Input cryosparc particles.cs file")
     parser.add_argument(
         "-o", type=os.path.abspath, required=True, help="Output pkl of CTF parameters"
@@ -22,10 +22,9 @@ def add_args(parser):
     group = parser.add_argument_group("Optionally provide missing image parameters")
     group.add_argument("-D", type=int, help="Image size in pixels")
     group.add_argument("--Apix", type=float, help="Angstroms per pixel")
-    return parser
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
     assert args.cs.endswith(".cs"), "Input file must be a .cs file"
     assert args.o.endswith(".pkl"), "Output CTF parameters must be .pkl file"
 
@@ -70,8 +69,3 @@ def main(args):
         ctf.plot_ctf(int(ctf_params[0, 0]), ctf_params[0, 1], ctf_params[0, 2:])
         plt.savefig(args.png)
         logger.info(args.png)
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    main(add_args(parser).parse_args())

@@ -102,7 +102,6 @@ def main_commands() -> None:
             "train",
             "train_nn",
             "train_vae",
-            "view_config",
         ],
         doc_str="Commands installed with cryoDRGN",
     )

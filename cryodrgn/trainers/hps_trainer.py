@@ -39,16 +39,6 @@ except ImportError:
 @dataclass
 class HierarchicalPoseSearchConfigurations(ReconstructionModelConfigurations):
 
-    # This parameter is not a data class field and is instead used to define shortcut
-    # labels to set values for a number of other fields
-    quick_config = {
-        "capture_setup": {
-            "spa": {"lazy": True},
-            "et": {"tilt": True, "dose_per_tilt": 2.97, "angle_per_tilt": 3},
-        },
-        "reconstruction_type": {"homo": {"z_dim": 0}, "het": {"z_dim": 8}},
-    }
-
     # A parameter belongs to this configuration set if and only if it has a type and a
     # default value defined here, note that children classes inherit these parameters
     model = "hps"
@@ -77,9 +67,6 @@ class HierarchicalPoseSearchConfigurations(ReconstructionModelConfigurations):
     # resetting every certain number of epochs
     reset_model_every: int = None
     reset_optim_every: int = None
-
-    def __init__(self, **config_args: dict[str, Any]) -> None:
-        super().__init__(**config_args)
 
     def __post_init__(self) -> None:
         super().__post_init__()

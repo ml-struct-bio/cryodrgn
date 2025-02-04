@@ -52,6 +52,12 @@ class ReconstructionModelConfigurations(BaseConfigurations):
                 a .star or .cs file.
     ind:        Path to a numpy array saved as a .pkl used to filter input particles.
 
+    pose_estimation:    Whether to perform ab-initio reconstruction ("abinit"),
+                        reconstruction using fixed poses ("fixed"), or reconstruction
+                        with SGD refinement of poses ("refine").
+                        Default is to use fixed poses if poses file is given
+                        and ab-initio otherwise.
+
     load:       Load model from given weights.<epoch>.pkl output file saved from
                 previous run of the engine.
                 Can also be given as "latest", in which the latest saved epoch in the
@@ -70,18 +76,7 @@ class ReconstructionModelConfigurations(BaseConfigurations):
     pe_dim:     Number of frequencies to use in the positional encoding (default: 64).
     volume_domain:  Representation to use in the volume
                     decoder ("hartley" or "fourier").
-
-    Attributes
-    ----------
-    quick_config:   A dictionary with keys consisting of special `quick_config` shortcut
-                    parameters; each value is a dictionary of non-quick_config
-                    parameter keys and shortcut values that are used when the
-                    corresponding quick configuration parameter value is used.
     """
-
-    # This class variable is not a dataclass field and is instead used to define shortcut
-    # labels to set values for a number of other fields
-    quick_config = dict()
 
     # A parameter belongs to this configuration set if and only if it has a type and a
     # default value defined here, note that children classes inherit these parameters
@@ -96,7 +91,7 @@ class ReconstructionModelConfigurations(BaseConfigurations):
     ind: str = None
     labels: str = None
     # whether to start with given poses to some degree, or do ab initio pose search
-    use_gt_trans: bool = False
+    pose_estimation: str = None
     no_trans: bool = False
     # loading checkpoints from previous experiment runs
     load: str = None
@@ -157,14 +152,6 @@ class ReconstructionModelConfigurations(BaseConfigurations):
     angle_per_tilt: int = 3
     dose_per_tilt: float = 2.97
 
-    # quick configuration parameters
-    capture_setup: str = None
-    reconstruction_type: str = None
-    pose_estimation: str = None
-
-    def __init__(self, **config_args: dict[str, Any]) -> None:
-        super().__init__(**config_args)
-
     def __post_init__(self) -> None:
         super().__post_init__()
 
@@ -210,14 +197,20 @@ class ReconstructionModelConfigurations(BaseConfigurations):
         if isinstance(self.ind, str) and not os.path.exists(self.ind):
             raise ValueError(f"Subset indices file {self.ind} does not exist!")
 
-        if self.pose_estimation in {"fixed", "refine"} and not self.poses:
-            raise ValueError(
-                "Must specify a poses file using pose= if using "
-                "or refining ground truth poses!"
-            )
-
-        if self.pose_estimation == "refine" and self.volume_domain != "hartley":
-            raise ValueError("Need to use --domain hartley if doing pose SGD")
+        if self.pose_estimation is None:
+            self.pose_estimation = "fixed" if self.poses else "abinit"
+        if self.pose_estimation == "refine":
+            if not self.poses:
+                raise ValueError(
+                    "Specify an input file (poses=) if refining ground truth poses!"
+                )
+            if self.volume_domain != "hartley":
+                raise ValueError("Need to use --domain hartley if doing pose SGD")
+        elif self.pose_estimation == "fixed":
+            if not self.poses:
+                raise ValueError(
+                    "Specify an input file (poses=) if using ground truth poses!"
+                )
 
         if self.batch_size_known_poses is None:
             self.batch_size_known_poses = self.batch_size

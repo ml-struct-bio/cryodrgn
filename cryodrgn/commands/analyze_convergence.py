@@ -30,7 +30,7 @@ from scipy.spatial import distance_matrix
 
 from cryodrgn import analysis, fft, utils
 from cryodrgn.source import ImageSource
-from cryodrgn.mrc import MRCFile
+from cryodrgn.mrcfile import write_mrc
 import cryodrgn.config
 
 try:
@@ -41,7 +41,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-def add_args(parser):
+def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "workdir", type=os.path.abspath, help="Directory with cryoDRGN results"
     )
@@ -190,8 +190,6 @@ def add_args(parser):
         default=10,
         help="Number of voxels over which to apply a soft cosine falling edge from dilated mask boundary",
     )
-
-    return parser
 
 
 def plot_loss(logfile, outdir, E):
@@ -810,7 +808,7 @@ def mask_volume(volpath, outpath, Apix, thresh=None, dilate=3, dist=10):
     # used to write out mask separately from masked volume, now apply and save the masked vol to minimize future I/O
     # MRCFile.write(outpath, z.astype(np.float32))
     vol *= z
-    MRCFile.write(outpath, vol.astype(np.float32), Apix=Apix)
+    write_mrc(outpath, vol.astype(np.float32), Apix=Apix)
 
 
 def mask_volumes(
@@ -1046,7 +1044,7 @@ def calculate_FSCs(outdir, epochs, labels, img_size, chimerax_colors):
     )
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
     t1 = dt.now()
 
     # Configure paths
@@ -1245,8 +1243,3 @@ def main(args):
     calculate_FSCs(outdir, epochs, labels, img_size, chimerax_colors)
 
     logger.info(f"Finished in {dt.now() - t1}")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    main(add_args(parser).parse_args())

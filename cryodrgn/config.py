@@ -1,22 +1,29 @@
 """Storing and retrieving model parameter settings set by the user and from defaults."""
 
+import os
+import sys
 from datetime import datetime
 import argparse
 from typing import Optional
+import warnings
 import cryodrgn.utils
-import os
-import sys
 
 
-def load_configs(outdir: str) -> dict:
-    cfg_fl = os.path.join(outdir, "train-configs.yaml")
-
-    if not os.path.isfile(cfg_fl):
-        raise ValueError(
-            f"Folder `{outdir}` does not contain a cryoDRGN configuration file!"
-        )
-
-    return cryodrgn.utils.load_yaml(cfg_fl)
+def load(config):
+    if isinstance(config, str):
+        ext = os.path.splitext(config)[-1]
+        if ext == ".pkl":
+            warnings.warn(
+                "Loading configuration from a .pkl file is deprecated. Please "
+                "save/load configuration as a .yaml file instead."
+            )
+            return cryodrgn.utils.load_pkl(config)
+        elif ext in (".yml", ".yaml"):
+            return cryodrgn.utils.load_yaml(config)
+        else:
+            raise RuntimeError(f"Unrecognized config extension {ext}")
+    else:
+        return config
 
 
 def save(config: dict, filename: Optional[str] = None, folder: Optional[str] = None):
@@ -50,7 +57,7 @@ def update_config_v1(config: dict) -> dict:
 
 
 def overwrite_config(config: dict, args: argparse.Namespace) -> dict:
-    args_dict = vars(args)
+    config = load(config)
 
     if hasattr(args, "norm") and args.norm is not None:
         config["dataset_args"]["norm"] = args.norm
@@ -77,20 +84,24 @@ def overwrite_config(config: dict, args: argparse.Namespace) -> dict:
         # Set default to None to maintain backwards compatibility
         if arg in ("pe_dim", "feat_sigma") and arg not in config["model_args"]:
             assert (
-                args_dict[arg] is None
+                not hasattr(args, arg) or getattr(args, arg) is None
             ), f"Should not reach here. Something is wrong: {arg}"
             config["model_args"][arg] = None
             continue
 
-        # Set default activation to ReLU to maintain backwards compatibility with v0.3.1 and earlier
+        # Set default activation to ReLU to maintain backwards compatibility
+        # with v0.3.1 and earlier
         if arg == "activation" and arg not in config["model_args"]:
             assert (
-                args_dict[arg] == "relu"
+                not hasattr(args, arg) or getattr(args, arg) == "relu"
             ), f"Should not reach here. Something is wrong: {arg}"
             config["model_args"]["activation"] = "relu"
             continue
 
-        if arg in args_dict and args_dict[arg] is not None:
-            config["model_args"][arg] = args_dict[arg]
+        if hasattr(args, arg) and getattr(args, arg) is not None:
+            config["model_args"][arg] = getattr(args, arg)
+
+    if "zdim" in config["model_args"]:
+        config["model_args"]["z_dim"] = config["model_args"]["zdim"]
 
     return config

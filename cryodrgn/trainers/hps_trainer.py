@@ -367,7 +367,10 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
         else:
             yr = None
 
-        if self.optimizers["pose_table"] is not None:
+        if (
+            "pose_table" in self.optimizers
+            and self.optimizers["pose_table"] is not None
+        ):
             self.optimizers["pose_table"].zero_grad()
 
         dose_filters = None
@@ -403,7 +406,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
                 B, self.resolution, self.resolution
             )
 
-        if not self.pose_search:
+        if not self.pose_search and self.pose_tracker is not None:
             rot, trans = self.pose_tracker.get_pose(ind)
         else:
             rot, trans = None, None
@@ -471,7 +474,6 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
                 else:
                     trans = None
 
-        self.conf_search_particles += B
         if self.configs.pose_model_update_freq:
             if (
                 self.current_epoch == 1
@@ -557,17 +559,17 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
         if self.configs.amp:
             if self.scaler is not None:  # torch mixed precision
                 self.scaler.scale(losses["total"]).backward()
-                self.scaler.step(self.reconstruction_optimizer)
+                self.scaler.step(self.optimizers["hypervolume"])
                 self.scaler.update()
             else:  # apex.amp mixed precision
                 with amp.scale_loss(
-                    losses["total"], self.reconstruction_optimizer
+                    losses["total"], self.optimizers["hypervolume"]
                 ) as scaled_loss:
                     scaled_loss.backward()
-                self.reconstruction_optimizer.step()
+                self.optimizers["hypervolume"].step()
         else:
             losses["total"].backward()
-            self.reconstruction_optimizer.step()
+            self.optimizers["hypervolume"].step()
 
         return losses, tilt_ind, ind, rot, trans, z_mu, z_logvar
 
@@ -620,7 +622,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
         B = y.size(0)
 
         self.reconstruction_model.train()
-        self.reconstruction_optimizer.zero_grad()
+        self.optimizers["hypervolume"].zero_grad()
 
         # reconstruct circle of pixels instead of whole image
         mask = self.lattice.get_circular_mask(self.lattice.D // 2)
@@ -650,7 +652,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
             loss = F.mse_loss(gen_slice(rot), y)
 
         loss.backward()
-        self.reconstruction_optimizer.step()
+        self.optimizers["hypervolume"].step()
         self.accum_losses["total"] += loss.item() * B
 
     def save_epoch_data(self):
@@ -678,7 +680,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
                 "model_state_dict": unparallelize(
                     self.reconstruction_model
                 ).state_dict(),
-                "optimizer_state_dict": self.reconstruction_optimizer.state_dict(),
+                "optimizer_state_dict": self.optimizers["hypervolume"].state_dict(),
                 "search_pose": (self.predicted_rots, self.predicted_trans),
             },
             out_weights,

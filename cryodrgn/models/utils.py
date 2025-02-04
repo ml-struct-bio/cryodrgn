@@ -26,7 +26,11 @@ def load_model(
     """
 
     # cryodrgn v3 and v4
-    if "model_args" in cfg and cfg["model_args"]["model"] == "hps":
+    if (
+        "model_args" in cfg
+        and "model" not in cfg["model_args"]
+        or cfg["model_args"]["model"] == "hps"
+    ):
         lattice_args = cfg["lattice_args"]
         model_args = cfg["model_args"]
 
@@ -53,7 +57,7 @@ def load_model(
             model_args["players"],
             model_args["pdim"],
             in_dim,
-            model_args["z_dim"],
+            model_args["z_dim"] if "z_dim" in model_args else model_args["zdim"],
             encode_mode=model_args["encode_mode"],
             enc_mask=enc_mask,
             enc_type=model_args["pe_type"],
@@ -67,7 +71,7 @@ def load_model(
         )
 
         if weights is not None:
-            ckpt = torch.load(weights, map_location=device)
+            ckpt = torch.load(weights, map_location=device, weights_only=False)
             model.load_state_dict(ckpt["model_state_dict"])
         if device is not None:
             model.to(device)
@@ -77,7 +81,7 @@ def load_model(
     else:
         logger.info("loading a DRGNai model...")
 
-        checkpoint = torch.load(weights, map_location=device)
+        checkpoint = torch.load(weights, map_location=device, weights_only=False)
         hypervolume_params = checkpoint["hypervolume_params"]
         model = HyperVolume(**hypervolume_params)
         model.load_state_dict(checkpoint["hypervolume_state_dict"])

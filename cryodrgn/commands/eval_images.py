@@ -17,7 +17,7 @@ from datetime import datetime as dt
 import logging
 import numpy as np
 import torch
-from cryodrgn import config, dataset, utils
+from cryodrgn import config, dataset
 from cryodrgn.models.utils import load_model
 from cryodrgn.trainers import AmortizedInferenceTrainer, HierarchicalPoseSearchTrainer
 
@@ -239,12 +239,15 @@ def main(args: argparse.Namespace) -> None:
         logger.warning("WARNING: No GPUs detected")
 
     logger.info(args)
-    cfg = utils.load_yaml(args.config)
-    cfg = config.overwrite_config(cfg, args)
+    cfg = config.overwrite_config(args.config, args)
     logger.info("Loaded configuration:")
     pprint.pprint(cfg)
 
-    z_dim = cfg["model_args"]["z_dim"]
+    z_dim = (
+        cfg["model_args"]["z_dim"]
+        if "z_dim" in cfg["model_args"]
+        else cfg["model_args"]["zdim"]
+    )
     beta = 1.0 / z_dim if args.beta is None else args.beta
 
     # load the particles
@@ -303,7 +306,15 @@ def main(args: argparse.Namespace) -> None:
         data, batch_size=args.batch_size, shuffle=False
     )
 
-    if cfg["model_args"]["model"] == "amort":
+    cfg["dataset_args"]["particles"] = args.particles
+    cfg["dataset_args"]["poses"] = args.poses
+    if args.ctf is not None:
+        cfg["dataset_args"]["ctf"] = args.ctf
+
+    if "model" not in cfg["model_args"]:
+        cfg["model_args"]["model"] = "hps"
+        trainer = HierarchicalPoseSearchTrainer.load_from_config(cfg)
+    elif cfg["model_args"]["model"] == "amort":
         trainer = AmortizedInferenceTrainer.load_from_config(cfg)
     elif cfg["model_args"]["model"] == "hps":
         trainer = HierarchicalPoseSearchTrainer.load_from_config(cfg)
@@ -356,7 +367,7 @@ def main(args: argparse.Namespace) -> None:
 
     with open(args.out_z, "wb") as f:
         pickle.dump(z_mu_all, f)
-        if z_logvar_all:
+        if z_logvar_all is not None:
             pickle.dump(z_logvar_all, f)
 
     with open(args.o, "wb") as f:

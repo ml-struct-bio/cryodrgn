@@ -10,7 +10,9 @@ from cryodrgn.commands import eval_images
     indirect=True,
 )
 def test_invert_contrast(tmpdir, particles, poses, weights, configs):
-    args = eval_images.add_args(argparse.ArgumentParser()).parse_args(
+    parser = argparse.ArgumentParser()
+    eval_images.add_args(parser)
+    args = parser.parse_args(
         [
             particles.path,
             weights.path,

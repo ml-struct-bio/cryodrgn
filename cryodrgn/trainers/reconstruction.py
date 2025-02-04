@@ -63,6 +63,14 @@ class ReconstructionModelConfigurations(BaseConfigurations):
     multigpu:       Whether to use all available GPUs available on this machine.
                     The default is to use only one GPU.
 
+    log_interval:   Print a log message every `N` number of training images.
+    checkpoint:     Save model results to file every `N` training epochs.
+
+    pe_type:    Label for the type of positional encoding to use.
+    pe_dim:     Number of frequencies to use in the positional encoding (default: 64).
+    volume_domain:  Representation to use in the volume
+                    decoder ("hartley" or "fourier").
+
     Attributes
     ----------
     quick_config:   A dictionary with keys consisting of special `quick_config` shortcut
@@ -595,6 +603,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
                 len_y = len(batch["indices"])
                 self.total_images_seen += len_y
                 self.epoch_images_seen += len_y
+                self.conf_search_particles += len_y
 
                 self.reconstruction_model.train()
                 self.optimizers["hypervolume"].zero_grad()

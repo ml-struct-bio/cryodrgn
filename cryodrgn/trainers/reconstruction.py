@@ -62,6 +62,8 @@ class ReconstructionModelConfigurations(BaseConfigurations):
                 previous run of the engine.
                 Can also be given as "latest", in which the latest saved epoch in the
                 given output directory will be used.
+    lazy:       Whether to use lazy loading of data into memory in smaller batches.
+                Necessary if input dataset is too large to fit into memory.
 
     batch_size:     The number of input images to use at a time when updating
                     the learning algorithm.
@@ -99,9 +101,9 @@ class ReconstructionModelConfigurations(BaseConfigurations):
     # using a lazy data loader to minimize memory usage, shuffling training minibatches
     # and controlling their size, applying parallel computation and data processing
     batch_size: int = 8
-    batch_size_known_poses: int = 32
-    batch_size_sgd: int = 256
-    batch_size_hps: int = 8
+    batch_size_known_poses: int = None
+    batch_size_sgd: int = None
+    batch_size_hps: int = None
     lazy: bool = False
     shuffle: bool = True
     shuffler_size: int = 0
@@ -214,6 +216,10 @@ class ReconstructionModelConfigurations(BaseConfigurations):
 
         if self.batch_size_known_poses is None:
             self.batch_size_known_poses = self.batch_size
+        if self.batch_size_sgd is None:
+            self.batch_size_sgd = self.batch_size
+        if self.batch_size_hps is None:
+            self.batch_size_hps = self.batch_size
 
 
 class ReconstructionModelTrainer(BaseTrainer, ABC):
@@ -277,13 +283,12 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
                 self.ind = np.arange(self.configs.ind)
             else:
                 self.logger.info(f"Filtering image dataset with {configs['ind']}")
-                self.ind = cryodrgn.utils.load_yaml(self.configs.ind)
+                self.ind = cryodrgn.utils.load_pkl(self.configs.ind)
 
                 if self.configs.encode_mode == "tilt":
                     particle_ind = pickle.load(open(self.configs.ind, "rb"))
                     pt, tp = TiltSeriesData.parse_particle_tilt(self.configs.particles)
                     self.ind = TiltSeriesData.particles_to_tilts(pt, particle_ind)
-
         else:
             self.ind = None
 
@@ -376,24 +381,16 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
         self.logger.info(self.reconstruction_model)
 
         # parallelize
-        if (
-            self.reconstruction_model.z_dim > 0
-            and self.configs.multigpu
-            and self.n_prcs > 1
-        ):
-            if self.configs.multigpu and torch.cuda.device_count() > 1:
-                self.logger.info(f"Using {torch.cuda.device_count()} GPUs!")
-                self.configs.batch_size *= torch.cuda.device_count()
-                self.logger.info(f"Increasing batch size to {self.configs.batch_size}")
-                self.reconstruction_model = DataParallel(self.reconstruction_model)
-            elif self.configs.multigpu:
-                self.logger.warning(
-                    f"WARNING: --multigpu selected, but {torch.cuda.device_count()} "
-                    "GPUs detected"
-                )
-        else:
-            if self.configs.multigpu:
-                raise NotImplementedError("--multigpu")
+        if self.configs.multigpu and torch.cuda.device_count() > 1:
+            self.logger.info(f"Using {torch.cuda.device_count()} GPUs!")
+            self.configs.batch_size *= torch.cuda.device_count()
+            self.logger.info(f"Increasing batch size to {self.configs.batch_size}")
+            self.reconstruction_model = DataParallel(self.reconstruction_model)
+        elif self.configs.multigpu:
+            self.logger.warning(
+                f"WARNING: --multigpu selected, but {torch.cuda.device_count()} "
+                "GPUs detected"
+            )
 
         cpu_count = os.cpu_count() or 1
         if self.configs.num_workers > cpu_count:

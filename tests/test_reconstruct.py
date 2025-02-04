@@ -79,7 +79,9 @@ class TestFixedHetero:
         if indices.path is not None:
             args += ["--ind", indices.path]
 
-        train_vae.main(train_vae.add_args(argparse.ArgumentParser()).parse_args(args))
+        parser = argparse.ArgumentParser()
+        train_vae.add_args(parser)
+        train_vae.main(parser.parse_args(args))
 
     @pytest.mark.parametrize("ctf", [None, "CTF-Test"], indirect=True)
     def test_train_from_checkpoint(
@@ -117,7 +119,9 @@ class TestFixedHetero:
         if indices.path is not None:
             args += ["--ind", indices.path]
 
-        train_vae.main(train_vae.add_args(argparse.ArgumentParser()).parse_args(args))
+        parser = argparse.ArgumentParser()
+        train_vae.add_args(parser)
+        train_vae.main(parser.parse_args(args))
 
     @pytest.mark.parametrize(
         "ctf, epoch", [("CTF-Test", 2), (None, 3), ("CTF-Test", 3)], indirect=["ctf"]
@@ -647,8 +651,9 @@ class TestStarFixedHomo:
         if indices.path is not None:
             args += ["--ind", indices.path]
 
-        args = train_nn.add_args(argparse.ArgumentParser()).parse_args(args)
-        train_nn.main(args)
+        parser = argparse.ArgumentParser()
+        train_nn.add_args(parser)
+        train_nn.main(parser.parse_args(args))
 
 
 @pytest.mark.parametrize("particles", ["tilts.star"], indirect=True)
@@ -707,8 +712,9 @@ class TestTiltFixedHetero:
         if indices.path is not None:
             args += ["--ind", indices.path]
 
-        args = train_vae.add_args(argparse.ArgumentParser()).parse_args(args)
-        train_vae.main(args)
+        parser = argparse.ArgumentParser()
+        train_vae.add_args(parser)
+        train_vae.main(parser.parse_args(args))
 
     def test_filter_command(
         self, tmpdir_factory, particles, indices, poses, ctf, datadir
@@ -742,6 +748,7 @@ class TestTiltFixedHetero:
         ctf_mat = utils.load_pkl(ctf.path)[tilt_ind]
         utils.save_pkl(ctf_mat, os.path.join(outdir, "filtered_sta_ctf.pkl"))
         utils.save_pkl(new_ind, os.path.join(outdir, "filtered_ind.pkl"))
+
         args = [
             os.path.join(outdir, "filtered_sta_testing_bin8.star"),
             "--datadir",
@@ -769,7 +776,9 @@ class TestTiltFixedHetero:
             "--dec-dim",
             "16",
         ]
-        train_vae.main(train_vae.add_args(argparse.ArgumentParser()).parse_args(args))
+        parser = argparse.ArgumentParser()
+        train_vae.add_args(parser)
+        train_vae.main(parser.parse_args(args))
 
     def test_analyze(self, tmpdir_factory, particles, indices, poses, ctf, datadir):
         """Produce standard analyses for a particular epoch."""
@@ -891,8 +900,9 @@ class TestTiltFixedHetero:
             "16",
         ]
 
-        args = train_vae.add_args(argparse.ArgumentParser()).parse_args(args)
-        train_vae.main(args)
+        parser = argparse.ArgumentParser()
+        train_vae.add_args(parser)
+        train_vae.main(parser.parse_args(args))
         os.chdir(orig_cwd)
 
         shutil.rmtree(outdir)
@@ -929,8 +939,9 @@ class TestTiltAbinitHomo:
         if indices.path is not None:
             args += ["--ind", indices.path]
 
-        args = abinit_homo.add_args(argparse.ArgumentParser()).parse_args(args)
-        abinit_homo.main(args)
+        parser = argparse.ArgumentParser()
+        abinit_homo.add_args(parser)
+        abinit_homo.main(parser.parse_args(args))
 
 
 @pytest.mark.parametrize("particles", ["tilts.star"], indirect=True)
@@ -973,5 +984,6 @@ class TestTiltAbinitHetero:
         if indices.path is not None:
             args += ["--ind", indices.path]
 
-        args = abinit_het.add_args(argparse.ArgumentParser()).parse_args(args)
-        abinit_het.main(args)
+        parser = argparse.ArgumentParser()
+        abinit_het.add_args(parser)
+        abinit_het.main(parser.parse_args(args))

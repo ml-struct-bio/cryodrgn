@@ -96,18 +96,6 @@ class AmortizedInferenceConfigurations(ReconstructionModelConfigurations):
                 f"Mismatched model {self.model} for AmortizedInferenceTrainer!"
             )
 
-        if self.capture_setup is not None:
-            if self.capture_setup == "et":
-                self.subtomo_averaging = True
-                self.shuffler_size = 0
-                self.num_workers = 0
-                self.t_extent = 0.0
-                self.batch_size_known_poses = 8
-                self.batch_size_sgd = 32
-                self.n_imgs_pose_search = 150000
-                self.pose_only_phase = 50000
-                self.lr_pose_table = 1.0e-5
-
         if self.pose_estimation is not None:
             if self.pose_estimation == "refine":
                 self.pose_learning_rate = 1.0e-4

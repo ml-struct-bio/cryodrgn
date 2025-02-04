@@ -359,7 +359,6 @@ def main(args: argparse.Namespace) -> None:
         "enc_dim": args.qdim,
         "dec_layers": args.players,
         "dec_dim": args.pdim,
-        "use_gt_trans": False,
         "invert_data": args.invert_data,
         "lazy": args.lazy,
         "window": args.window,

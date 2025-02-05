@@ -131,14 +131,14 @@ class TestFixedHetero:
         outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
         parser = argparse.ArgumentParser()
         analyze.add_args(parser)
-        analyze.main(parser.parse_args([outdir, str(epoch)]))
+        analyze.main(parser.parse_args([outdir, "--epoch", str(epoch)]))
 
         assert os.path.exists(os.path.join(outdir, f"analyze.{epoch}"))
 
     @pytest.mark.parametrize(
         "nb_lbl, ctf",
         [
-            ("cryoDRGN_filtering", "CTF-Test"),
+            ("analysis", "CTF-Test"),
             ("cryoDRGN_figures", "CTF-Test"),
             ("cryoDRGN_viz", "CTF-Test"),
             pytest.param(
@@ -510,6 +510,7 @@ class TestAbinitHetero:
             parser.parse_args(
                 [
                     outdir,
+                    "--epoch",
                     "1",  # Epoch number to analyze - 0-indexed
                     "--pc",
                     "3",  # Number of principal component traversals to generate
@@ -792,6 +793,7 @@ class TestTiltFixedHetero:
             parser.parse_args(
                 [
                     outdir,
+                    "--epoch",
                     "4",  # Epoch number to analyze - 0-indexed
                     "--pc",
                     "3",  # Number of principal component traversals to generate

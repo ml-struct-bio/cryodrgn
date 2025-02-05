@@ -8,13 +8,13 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 
-def add_args(parser):
+def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("input", nargs="+", help="Input .pkl files")
     parser.add_argument("-o", required=True, help="Output .pkl file")
     return parser
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
     x = [pickle.load(open(f, "rb")) for f in args.input]
     if type(x[0]) == tuple:  # pose tuples
         r = [xx[0] for xx in x]
@@ -30,9 +30,3 @@ def main(args):
         x2 = np.concatenate(x)
         logger.info(x2.shape)
     pickle.dump(x2, open(args.o, "wb"))
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    args = add_args(parser).parse_args()
-    main(args)

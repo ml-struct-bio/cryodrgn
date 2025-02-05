@@ -119,6 +119,7 @@ class BaseConfigurations(ABC):
 
     @property
     def fields_dict(self) -> dict[str, Field]:
+        """Convenience method to get all fields indexed by field label."""
         return {fld.name: fld for fld in fields(self)}
 
     @classmethod

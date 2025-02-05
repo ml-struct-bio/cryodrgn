@@ -289,7 +289,7 @@ def main(args):
     logger.info(args)
     t0 = dt.now()
 
-    cfg = cryodrgn.config.load_configs(args.config)
+    cfg = cryodrgn.config.load(args.config)
     evaluator = VolumeEvaluator(
         args.weights,
         cfg,

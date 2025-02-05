@@ -8,7 +8,7 @@ from cryodrgn import analysis, utils
 logger = logging.getLogger(__name__)
 
 
-def add_args(parser):
+def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("labels", help="Input labels.pkl")
     parser.add_argument("--sel", nargs="+", type=int, help="Ids of clusters to select")
     parser.add_argument(
@@ -25,7 +25,7 @@ def add_args(parser):
     return parser
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
     labels = utils.load_pkl(args.labels)
     logger.info(f"{len(labels)} particles")
     logger.info(f"Selecting clusters {args.sel}")
@@ -40,9 +40,3 @@ def main(args):
         logger.info(ind)
     utils.save_pkl(ind, args.o)
     logger.info(f"Saved {args.o}")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    args = add_args(parser).parse_args()
-    main(args)

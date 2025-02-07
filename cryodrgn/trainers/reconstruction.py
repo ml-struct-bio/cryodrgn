@@ -115,10 +115,11 @@ class ReconstructionModelConfigurations(BaseConfigurations):
     log_interval: int = 1000
     checkpoint: int = 5
     # if using a cryo-ET dataset, description of dataset tilting parameters
-    tilt: bool = None
+    tilt: bool = False
     n_tilts: int = 11
     tilt_deg: int = 45
-    subtomo_averaging: bool = False
+    angle_per_tilt: int = 3
+    dose_per_tilt: float = 2.97
     # masking
     window: bool = True
     window_r: float = 0.85
@@ -151,8 +152,9 @@ class ReconstructionModelConfigurations(BaseConfigurations):
     volume_optim_type: str = "adam"
     pose_sgd_emb_type: str = "quat"
     verbose_time: bool = False
-    angle_per_tilt: int = 3
-    dose_per_tilt: float = 2.97
+    tdim: int = None
+    tlayers: int = None
+    t_emb_dim: int = None
 
     def __post_init__(self) -> None:
         super().__post_init__()
@@ -175,26 +177,57 @@ class ReconstructionModelConfigurations(BaseConfigurations):
                 f"is not a positive integer!"
             )
 
-        if self.dataset:
-            paths_file = os.environ.get("CRYODRGN_DATASETS")
-            paths = cryodrgn.utils.load_yaml(paths_file)
+        # turn anything that looks like a relative path into an absolute path
+        for fld_k, fld_v in self:
+            if isinstance(fld_v, str) and not os.path.isabs(fld_v):
+                new_path = os.path.abspath(fld_v)
+                if os.path.exists(new_path):
+                    setattr(self, fld_k, new_path)
 
-            if self.dataset not in paths:
+        paths_file = os.environ.get("CRYODRGN_DATASETS")
+        if paths_file:
+            with open(paths_file, "r") as f:
+                data_paths = yaml.safe_load(f)
+        else:
+            data_paths = None
+
+        # handling different ways of specifying the input data, starting with a
+        # file containing the data files
+        if self.dataset is not None:
+            if os.path.exists(self.dataset):
+                paths = cryodrgn.utils.load_yaml(self.dataset)
+
+                # resolve paths relative to the dataset file if they look relative
+                for k in list(paths):
+                    if paths[k] and not os.path.isabs(paths[k]):
+                        paths[k] = os.path.abspath(os.path.join(self.dataset, paths[k]))
+
+            elif data_paths and self.dataset not in data_paths:
                 raise ValueError(
-                    f"Given dataset label `{self.dataset}` not in list of "
-                    f"datasets specified at `{paths_file}`!"
+                    f"Given dataset {self.dataset} is not a "
+                    "label in the list of known datasets!"
                 )
 
-            use_paths = paths[self.dataset]
-            self.particles = use_paths["particles"]
+            elif data_paths is None:
+                raise ValueError(
+                    "To specify datasets using a label, first specify"
+                    "a .yaml catalogue of datasets using the "
+                    "environment variable $DRGNAI_DATASETS!"
+                )
 
-            for k in ["ctf", "poses", "datadir", "labels", "ind", "dose_per_tilt"]:
-                if getattr(self, k) is None and k in use_paths:
-                    if not os.path.exists(use_paths[k]):
-                        raise ValueError(
-                            f"Given {k} file `{use_paths[k]}` does not exist!"
-                        )
-                    setattr(self, k, use_paths[k])
+            # you can also give the dataset as a label in the global dataset list
+            else:
+                paths = data_paths[self.dataset]
+
+            for k, v in paths.items():
+                setattr(self, k, v)
+
+        elif self.particles is None:
+            raise ValueError(
+                "Must specify either a dataset label stored in "
+                f"{paths_file} or the paths to a particles and "
+                "ctf settings file!"
+            )
 
         if isinstance(self.ind, str) and not os.path.exists(self.ind):
             raise ValueError(f"Subset indices file {self.ind} does not exist!")
@@ -285,7 +318,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
                 self.logger.info(f"Filtering image dataset with {configs['ind']}")
                 self.ind = cryodrgn.utils.load_pkl(self.configs.ind)
 
-                if self.configs.encode_mode == "tilt":
+                if self.configs.tilt:
                     particle_ind = pickle.load(open(self.configs.ind, "rb"))
                     pt, tp = TiltSeriesData.parse_particle_tilt(self.configs.particles)
                     self.ind = TiltSeriesData.particles_to_tilts(pt, particle_ind)
@@ -307,7 +340,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
         else:
             use_poses = None
 
-        if not self.configs.subtomo_averaging:
+        if not self.configs.tilt:
             self.data = ImageDataset(
                 mrcfile=self.configs.particles,
                 lazy=self.configs.lazy,
@@ -358,7 +391,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
                 ctf_params = ctf_params[self.ind, ...]
             assert ctf_params.shape == (self.image_count, 8), ctf_params.shape
 
-            if self.configs.subtomo_averaging:
+            if self.configs.tilt:
                 ctf_params = np.concatenate(
                     (ctf_params, self.data.ctfscalefactor.reshape(-1, 1)),
                     axis=1,  # type: ignore
@@ -551,6 +584,8 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
         )
 
     def train(self) -> None:
+        """Train the model to reconstruct volumes from the input particle stack."""
+
         os.makedirs(self.outdir, exist_ok=True)
         self.save_configs()
         if self.configs.verbose:
@@ -661,7 +696,8 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
 
     @property
     def will_make_checkpoint(self) -> bool:
-        self.configs: ReconstructionModelConfigurations
+        """Is this engine in a training epoch where model results will be saved?"""
+
         make_chk = self.current_epoch == self.configs.num_epochs
         make_chk |= (
             self.configs.checkpoint
@@ -688,6 +724,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
 
     def pretrain(self) -> None:
         """Iterate the model before main learning epochs for better initializations."""
+
         self.logger.info("Will make a full summary at the end of this epoch")
         self.logger.info(f"Will pretrain on {self.configs.pretrain} particles")
         self.epoch_start_time = dt.now()
@@ -738,6 +775,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
 
         dataset_args = dict(
             particles=self.configs.particles,
+            poses=self.configs.poses,
             norm=self.data.norm,
             invert_data=self.configs.invert_data,
             ind=self.configs.ind,
@@ -746,24 +784,26 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
             window_r=self.configs.window_r,
             datadir=self.configs.datadir,
             ctf=self.configs.ctf,
+            tilt=self.configs.tilt,
         )
-        if self.configs.tilt is not None:
-            dataset_args["particles_tilt"] = self.configs.tilt
-
         lattice_args = dict(
             D=self.lattice.D,
             extent=self.lattice.extent,
             ignore_DC=self.lattice.ignore_DC,
         )
-
         model_args = dict(
             model=self.configs.model,
+            pose_estimation=self.configs.pose_estimation,
             z_dim=self.configs.z_dim,
             pe_type=self.configs.pe_type,
-            feat_sigma=self.configs.feat_sigma,
             pe_dim=self.configs.pe_dim,
+            feat_sigma=self.configs.feat_sigma,
             domain=self.configs.volume_domain,
             activation=self.configs.activation,
+            tdim=self.configs.tdim,
+            tlayers=self.configs.tlayers,
+            t_emb_dim=self.configs.t_emb_dim,
+            ntilts=self.configs.n_tilts,
         )
 
         return dict(
@@ -775,8 +815,8 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
 
     def save_configs(self) -> None:
         """Saves all given and inferred configurations to file."""
-        configs = self.get_configs()
 
+        configs = self.get_configs()
         if "version" not in configs:
             configs["version"] = cryodrgn.__version__
         if "time" not in configs:
@@ -788,6 +828,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
     @classmethod
     def load_from_config(cls, configs: dict[str, Any]) -> Self:
         """Retrieves all configurations that have been saved to file."""
+
         cfg_dict = {
             sub_k: sub_v
             for k, v in configs.items()
@@ -800,9 +841,11 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
         return cls(cfg_dict)
 
     def begin_epoch(self) -> None:
+        """Actions to perform at the beginning of each training epoch."""
         pass
 
     def end_epoch(self) -> None:
+        """Actions to perform at the end of each training epoch."""
         pass
 
     @abstractmethod

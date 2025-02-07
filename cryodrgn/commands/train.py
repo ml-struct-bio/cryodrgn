@@ -16,15 +16,8 @@ $ sbatch -t 3:00:00 --wrap='cryodrgn train new-test' --mem=16G -o new-test.out
 import argparse
 from typing import Optional, Any
 import cryodrgn.utils
+from cryodrgn.commands.setup import TRAINER_CLASSES
 from cryodrgn.commands.analyze import ModelAnalyzer
-from cryodrgn.commands.setup import SetupHelper
-from cryodrgn.trainers.amortinf_trainer import AmortizedInferenceTrainer
-from cryodrgn.trainers.hps_trainer import HierarchicalPoseSearchTrainer
-
-TRAINER_CLASSES = {
-    "amort": AmortizedInferenceTrainer,
-    "hps": HierarchicalPoseSearchTrainer,
-}
 
 
 def add_args(parser: argparse.ArgumentParser) -> None:
@@ -65,19 +58,22 @@ def main(
     values specified through the `--cfgs` command-line argument.
 
     """
+    configs = cryodrgn.utils.load_yaml(args.config_file)
+
+    if args.model is not None:
+        use_model = args.model
+    elif "model" in configs:
+        use_model = configs["model"]
+    else:
+        use_model = "amort"
+
+    trainer_cls = TRAINER_CLASSES[use_model]
     if additional_configs is None:
         additional_configs = dict()
-
-    configs = SetupHelper(args.config_file, update_existing=False).create_configs(
-        model=args.model,
-    )
-
-    trainer_cls = TRAINER_CLASSES[configs["model"]]
     if args.cfgs:
         configs = {**configs, **trainer_cls.config_cls.parse_cfg_keys(args.cfgs)}
-    configs = {**configs, **additional_configs, "outdir": args.outdir}
 
-    trainer = trainer_cls(configs)
+    trainer = trainer_cls({**configs, **additional_configs, "outdir": args.outdir})
     cryodrgn.utils._verbose = False
     trainer.train()
 

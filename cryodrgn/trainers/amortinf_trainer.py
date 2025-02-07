@@ -44,6 +44,7 @@ class AmortizedInferenceConfigurations(ReconstructionModelConfigurations):
     pose_only_phase: int = 0
     use_gt_trans: bool = False
     invert_data: bool = False
+    subtomo_averaging: bool = False
     # optimizers
     pose_table_optim_type: str = "adam"
     conf_table_optim_type: str = "adam"

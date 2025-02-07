@@ -353,7 +353,6 @@ def main(args: argparse.Namespace) -> None:
         "activation": args.activation,
         "feat_sigma": args.feat_sigma,
         "base_healpy": args.base_healpy,
-        "subtomo_averaging": False,
         "volume_optim_type": "adam",
         "no_trans": False,
         "amp": args.amp,

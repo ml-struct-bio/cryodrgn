@@ -282,7 +282,6 @@ def main(args: argparse.Namespace) -> None:
         "volume_domain": args.domain,
         "activation": args.activation,
         "feat_sigma": args.feat_sigma,
-        "subtomo_averaging": False,
         "volume_optim_type": "adam",
         "no_trans": False,
         "amp": args.amp,

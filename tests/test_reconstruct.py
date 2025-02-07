@@ -601,7 +601,10 @@ def test_homogeneous_with_poses(tmpdir, particles, poses, batch_size, use_amp):
     if not use_amp:
         args += ["--no-amp"]
 
-    train_nn.main(train_nn.add_args(argparse.ArgumentParser()).parse_args(args))
+    parser = argparse.ArgumentParser()
+    train_nn.add_args(parser)
+    train_nn.main(parser.parse_args(args))
+
     assert "weights.9.pkl" in os.listdir(tmpdir)
 
 
@@ -793,7 +796,7 @@ class TestTiltFixedHetero:
                 [
                     outdir,
                     "--epoch",
-                    "4",  # Epoch number to analyze - 0-indexed
+                    "5",  # Epoch number to analyze - 0-indexed
                     "--pc",
                     "3",  # Number of principal component traversals to generate
                     "--ksample",
@@ -803,7 +806,7 @@ class TestTiltFixedHetero:
                 ]
             )
         )
-        assert os.path.exists(os.path.join(outdir, "analyze.4"))
+        assert os.path.exists(os.path.join(outdir, "analyze.5"))
 
     @pytest.mark.parametrize(
         "new_indices_file",
@@ -850,7 +853,7 @@ class TestTiltFixedHetero:
             tmpdir_factory, particles, poses, ctf, indices, datadir
         )
         orig_cwd = os.path.abspath(os.getcwd())
-        os.chdir(os.path.join(outdir, "analyze.4"))
+        os.chdir(os.path.join(outdir, "analyze.5"))
         assert os.path.exists(f"{nb_lbl}.ipynb"), "Upstream tests have failed!"
 
         with open(f"{nb_lbl}.ipynb") as ff:

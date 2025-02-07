@@ -87,16 +87,16 @@ class HierarchicalPoseSearchConfigurations(ReconstructionModelConfigurations):
                     f"Need to set beta control weight for schedule {self.beta}"
                 )
 
-        if self.tilt is None:
+        if self.tilt:
+            if self.z_dim and self.encode_mode != "tilt":
+                raise ValueError(
+                    "Must use tilt for heterogeneous reconstruction on ET capture!"
+                )
+        else:
             if self.z_dim and self.use_real != (self.encode_mode == "conv"):
                 raise ValueError(
                     "Using real space image is only available "
                     "for convolutional encoder in SPA heterogeneous reconstruction!"
-                )
-        else:
-            if self.z_dim and self.encode_mode:
-                raise ValueError(
-                    "Must use tilt for heterogeneous reconstruction on ET capture!"
                 )
 
         if self.enc_layers is None:
@@ -186,6 +186,12 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
                 domain=self.configs.volume_domain,
                 activation=self.activation,
                 feat_sigma=self.configs.feat_sigma,
+                tilt_params=dict(
+                    tdim=self.configs.tdim,
+                    tlayers=self.configs.tlayers,
+                    t_emb_dim=self.configs.t_emb_dim,
+                    ntilts=self.configs.n_tilts,
+                ),
             )
 
             enc_params = sum(
@@ -331,7 +337,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
 
         y = y.to(self.device)
         ind_np = ind.cpu().numpy()
-        B = len(ind)
+        B = y.size(0)
 
         if self.configs.tilt:
             tilt_ind = batch["tilt_indices"]
@@ -362,21 +368,15 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
 
         dose_filters = None
         if self.configs.tilt:
-            if self.pose_tracker and not self.pose_search:
-                rot, trans = self.pose_tracker.get_pose(tilt_ind.view(-1))
-
             ctf_param = (
                 self.ctf_params[tilt_ind.view(-1)]
                 if self.ctf_params is not None
                 else None
             )
-            y = y.view(-1, self.resolution, self.resolution, self.resolution)
-
             if self.configs.dose_per_tilt is not None:
                 dose_filters = self.data.get_dose_filters(
                     tilt_ind, self.lattice, self.apix
                 )
-
         else:
             ctf_param = self.ctf_params[ind] if self.ctf_params is not None else None
 
@@ -394,7 +394,10 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
             )
 
         if not self.pose_search and self.pose_tracker is not None:
-            rot, trans = self.pose_tracker.get_pose(ind)
+            if not self.configs.tilt:
+                rot, trans = self.pose_tracker.get_pose(ind)
+            else:
+                rot, trans = self.pose_tracker.get_pose(tilt_ind.view(-1))
         else:
             rot, trans = None, None
 
@@ -408,18 +411,20 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
             else:
                 y_trans = y.clone()
 
-            if yr is not None:
-                input_ = (yr, tilt_ind) if tilt_ind is not None else (yr,)
-            else:
-                input_ = (y_trans, tilt_ind) if tilt_ind is not None else (y_trans,)
-
+            input_ = (yr,) if yr is not None else (y_trans,)
             if ctf_i is not None:
                 input_ = (x * ctf_i.sign() for x in input_)  # phase flip by the ctf
+
+            if self.configs.tilt:
+                if self.configs.pose_estimation == "abinit" and self.configs.z_dim > 0:
+                    input_ += (tilt_ind,)
 
             _model = unparallelize(self.reconstruction_model)
             assert isinstance(_model, HetOnlyVAE)
             z_mu, z_logvar = _model.encode(*input_)
             z = _model.reparameterize(z_mu, z_logvar)
+            if self.configs.tilt:
+                z = torch.repeat_interleave(z, self.configs.n_tilts, dim=0)
 
             if equivariance_tuple is not None:
                 lamb, equivariance_loss = equivariance_tuple
@@ -502,20 +507,21 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
             return img_trans
 
         if self.configs.tilt:
-            tilt_ind = tilt_ind.view(B, -1)[:, mask]
-            tilt_ind = translate(tilt_ind)
+            if self.configs.pose_estimation == "abinit" and self.configs.z_dim > 0:
+                tilt_ind = tilt_ind.view(B, -1)[:, mask]
+                tilt_ind = translate(tilt_ind)
 
-            if dose_filters:
-                rot_loss = F.mse_loss(gen_slice(rot), y)
+            if dose_filters is None:
+                rot_loss = F.mse_loss(gen_slice(rot), y.view(B, -1)[:, mask])
             else:
                 y_recon = torch.mul(gen_slice(rot), dose_filters[:, mask])
-                rot_loss = F.mse_loss(y_recon, y)
+                rot_loss = F.mse_loss(y_recon, y.view(B, -1)[:, mask])
 
-            tilt_loss = F.mse_loss(
-                gen_slice(bnb.tilt @ rot), tilt_ind  # type: ignore  # noqa: F821
-            )
-            losses["gen"] = (rot_loss + tilt_loss) / 2
-
+            if self.configs.pose_estimation == "abinit" and self.configs.z_dim > 0:
+                tilt_loss = F.mse_loss(gen_slice(bnb.tilt @ rot), tilt_ind)  # type: ignore  # noqa: F821
+                losses["gen"] = (rot_loss + tilt_loss) / 2
+            else:
+                losses["gen"] = rot_loss
         else:
             losses["gen"] = F.mse_loss(gen_slice(rot), translate(y).view(B, -1))
 
@@ -690,11 +696,11 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
                 )
 
                 for minibatch in data_generator:
-                    ind = minibatch["indices"]
                     y = minibatch["y"].to(self.device)
-                    yt = None
-                    if self.configs.tilt:
-                        yt = minibatch["tilt_indices"].to(self.device)
+                    if not self.configs.tilt:
+                        ind = minibatch["indices"].to(self.device)
+                    else:
+                        ind = minibatch["tilt_indices"].to(self.device)
 
                     B = len(ind)
                     D = self.lattice.D
@@ -713,7 +719,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
                                 y.view(B, -1), self.pose_tracker.trans[ind].unsqueeze(1)
                             ).view(B, D, D)
 
-                    input_ = (y, yt) if yt is not None else (y,)
+                    input_ = (y,)
                     if c is not None:
                         input_ = (x * c.sign() for x in input_)  # phase flip by the ctf
 

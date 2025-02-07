@@ -386,7 +386,6 @@ def main(args: argparse.Namespace) -> None:
         "volume_domain": args.domain,
         "activation": args.activation,
         "feat_sigma": args.feat_sigma,
-        "subtomo_averaging": False,
         "volume_optim_type": "adam",
         "no_trans": False,
         "amp": args.amp,
@@ -396,6 +395,11 @@ def main(args: argparse.Namespace) -> None:
         "reset_optim_after_pretrain": False,
         "pose_sgd_emb_type": args.emb_type,
         "seed": args.seed,
+        "tilt": args.encode_mode == "tilt",
+        "n_tilts": args.ntilts,
+        "tdim": args.tdim,
+        "tlayers": args.tlayers,
+        "t_emb_dim": args.t_emb_dim,
     }
 
     cryodrgn.utils._verbose = False

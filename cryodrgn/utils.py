@@ -63,6 +63,22 @@ class memoized(object):
         return functools.partial(self.__call__, obj)
 
 
+def find_latest_output(outdir: str, outlbl: str = "weights") -> str:
+    """Get the output file corresponding to the latest saved training epoch."""
+
+    return os.path.join(
+        outdir,
+        sorted(
+            [
+                f
+                for f in os.listdir(outdir)
+                if os.path.isfile(os.path.join(outdir, f)) and f.startswith(outlbl)
+            ],
+            key=lambda x: int(x.split(".")[1]) if x.split(".")[1].isnumeric() else -1,
+        )[-1],
+    )
+
+
 def load_pkl(pkl: str):
     with open(pkl, "rb") as f:
         x = pickle.load(f)

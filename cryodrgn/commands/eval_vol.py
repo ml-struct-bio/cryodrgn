@@ -96,7 +96,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     group.add_argument(
         "--vol-start-index",
         type=int,
-        default=0,
+        default=1,
         help="Default value of start index "
         "for volume generation (default: %(default)s)",
     )
@@ -252,12 +252,6 @@ class VolumeEvaluator:
         vol_start_index: int = 1,
     ) -> None:
 
-        if vol_start_index > (len(z_values) - 1):
-            raise ValueError(
-                f"Cannot use vol-start-index={vol_start_index} with only "
-                f"{len(z_values)} latent space co-ordinates!"
-            )
-
         # multiple latent space co-ordinates
         if len(z_values.shape) > 1:
             os.makedirs(outpath, exist_ok=True)
@@ -339,5 +333,15 @@ def main(args):
     else:
         z_vals = np.array(args.z_val)
 
-    evaluator.produce_volumes(z_vals, args.output, args.prefix, args.vol_start_index)
+    if len(z_vals):
+        evaluator.produce_volumes(
+            z_vals, args.output, args.prefix, args.vol_start_index
+        )
+    elif args.zfile:
+        logger.warning(f"Given z-values file `{args.zfile}`is empty!")
+    elif args.z_start:
+        logger.warning("Given z-values range produces empty list of values!")
+    else:
+        logger.warning("Given z-values list is empty!")
+
     logger.info(f"Finished in {dt.now() - t0}")

@@ -59,7 +59,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "epoch",
         type=int,
         help="Epoch number N to analyze (0-based indexing, "
-        "corresponding to z.N.pkl, weights.N.pkl)",
+        "corresponding to conf.N.pkl, weights.N.pkl)",
     )
     parser.add_argument(
         "--labels",
@@ -93,19 +93,23 @@ def add_args(parser: argparse.ArgumentParser) -> None:
 def main(args: argparse.Namespace) -> None:
     """Plot reconstruction outputs by given class labels (see `add_args()` above)."""
 
+    # Use the output from last available training epoch or the given epoch
     if args.epoch == -1:
-        z_file = os.path.join(args.traindir, "z.pkl")
+        z_file = utils.find_latest_output(args.traindir, "conf")
+        epoch = int(z_file.split(".")[-2])
     else:
-        z_file = os.path.join(args.traindir, f"z.{args.epoch}.pkl")
+        epoch = args.epoch
+        z_file = os.path.join(args.traindir, f"conf.{epoch}.pkl")
 
     if args.outdir is not None:
         outdir = str(args.outdir)
-    elif args.epoch == -1:
-        outdir = os.path.join(args.traindir, "analyze")
     else:
-        outdir = os.path.join(args.traindir, f"analyze.{args.epoch}")
+        outdir = os.path.join(args.traindir, f"analyze.{epoch}")
 
-    if os.path.exists(os.path.join(args.traindir, "config.yaml")):
+    # TODO: make this the standard config loading behaviour?
+    if os.path.exists(os.path.join(args.traindir, "train-configs.yaml")):
+        cfg_file = os.path.join(args.traindir, "train-configs.yaml")
+    elif os.path.exists(os.path.join(args.traindir, "config.yaml")):
         cfg_file = os.path.join(args.traindir, "config.yaml")
     elif os.path.exists(os.path.join(args.traindir, "config.pkl")):
         cfg_file = os.path.join(args.traindir, "config.pkl")
@@ -117,7 +121,7 @@ def main(args: argparse.Namespace) -> None:
     cfgs = config.load(cfg_file)
 
     if not os.path.exists(z_file):
-        if cfgs["cmd"][1] not in {"train_vae", "abinit_het"}:
+        if "cmd" in cfgs and cfgs["cmd"][1] not in {"train_vae", "abinit_het"}:
             logger.warning(
                 f"Given cryoDRGN output folder `{args.traindir}` is associated with a "
                 f"homogeneous reconstruction experiment (`cryodrgn {cfgs['cmd'][1]}`), "

@@ -234,6 +234,8 @@ def add_args(parser: argparse.ArgumentParser) -> None:
 
 
 def main(args: argparse.Namespace) -> None:
+    """Passing command-line arguments as configurations to v3 model training engine."""
+
     print(
         "WARNING: "
         "This command is deprecated; use `cryodrgn train` as of cryoDRGN v4.0.0."
@@ -253,7 +255,6 @@ def main(args: argparse.Namespace) -> None:
         "load": args.load,
         "checkpoint": args.checkpoint,
         "z_dim": 0,
-        "use_gt_trans": False,
         "invert_data": args.invert_data,
         "lazy": args.lazy,
         "window": args.window,

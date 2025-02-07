@@ -209,12 +209,12 @@ class BaseTrainer(ABC):
     @classmethod
     def defaults(cls) -> dict[str, Any]:
         """The user-set parameters governing the behaviour of this model."""
-        return {fld.name: fld.default for fld in fields(cls.config_cls)}
+        return {fld.name: fld.default for fld in cls.config_cls.fields()}
 
     @classmethod
     def parameters(cls) -> list[str]:
         """The user-set parameters governing the behaviour of this model."""
-        return [fld.name for fld in fields(cls.config_cls)]
+        return [fld.name for fld in cls.config_cls.fields()]
 
     @classmethod
     def parse_args(cls, args: argparse.Namespace) -> Self:

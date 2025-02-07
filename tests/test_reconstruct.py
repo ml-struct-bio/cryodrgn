@@ -141,13 +141,6 @@ class TestFixedHetero:
             ("analysis", "CTF-Test"),
             ("cryoDRGN_figures", "CTF-Test"),
             ("cryoDRGN_viz", "CTF-Test"),
-            pytest.param(
-                "cryoDRGN_filtering",
-                None,
-                marks=pytest.mark.xfail(
-                    raises=CellExecutionError, reason="need CTFs for filtering ntbook"
-                ),
-            ),
             ("cryoDRGN_figures", None),
         ],
         indirect=["ctf"],
@@ -295,7 +288,7 @@ class TestFixedHetero:
 
         parser = argparse.ArgumentParser()
         direct_traversal.add_args(parser)
-        args = [os.path.join(outdir, "z.3.pkl"), "--anchors"] + anchors
+        args = [os.path.join(outdir, "conf.3.pkl"), "--anchors"] + anchors
         if points is not None:
             args += ["-n", str(points)]
 
@@ -322,7 +315,7 @@ class TestFixedHetero:
         graph_traversal.add_args(parser)
         args = parser.parse_args(
             [
-                os.path.join(outdir, f"z.{epoch}.pkl"),
+                os.path.join(outdir, f"conf.{epoch}.pkl"),
                 "--anchors",
             ]
             + anchors
@@ -345,7 +338,7 @@ class TestFixedHetero:
             [
                 os.path.join(outdir, f"weights.{epoch}.pkl"),
                 "--config",
-                os.path.join(outdir, "config.yaml"),
+                os.path.join(outdir, "train-configs.yaml"),
                 "--zfile",
                 os.path.join(outdir, f"graph_traversal_zpath.{epoch}.txt"),
                 "-o",
@@ -358,12 +351,14 @@ class TestFixedHetero:
     @pytest.mark.parametrize("epoch", [2, 3])
     def test_eval_images(self, tmpdir_factory, particles, poses, ctf, indices, epoch):
         outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
-        args = eval_images.add_args(argparse.ArgumentParser()).parse_args(
+        parser = argparse.ArgumentParser()
+        eval_images.add_args(parser)
+        args = parser.parse_args(
             [
                 particles.path,
                 os.path.join(outdir, f"weights.{epoch}.pkl"),
                 "--config",
-                os.path.join(outdir, "config.yaml"),
+                os.path.join(outdir, "train-configs.yaml"),
                 "-o",
                 os.path.join(outdir, f"out_eval_images_losses.{epoch}.pkl"),
                 "--out-z",
@@ -425,7 +420,7 @@ class TestFixedHetero:
         if plot_outdir is not None:
             use_outdir = os.path.join(outdir, plot_outdir)
         elif epoch == -1:
-            use_outdir = os.path.join(outdir, "analyze")
+            use_outdir = os.path.join(outdir, "analyze.3")
         else:
             use_outdir = os.path.join(outdir, f"analyze.{epoch}")
 
@@ -492,13 +487,17 @@ class TestAbinitHetero:
             "3",
             "--ps-freq",
             "2",
+            "--checkpoint",
+            "1",
         ]
         if ctf.path is not None:
             args += ["--ctf", ctf.path]
         if indices.path is not None:
             args += ["--ind", indices.path]
 
-        abinit_het.main(abinit_het.add_args(argparse.ArgumentParser()).parse_args(args))
+        parser = argparse.ArgumentParser()
+        abinit_het.add_args(parser)
+        abinit_het.main(parser.parse_args(args))
 
     def test_analyze(self, tmpdir_factory, particles, ctf, indices):
         """Produce standard analyses for a particular epoch."""
@@ -545,7 +544,7 @@ class TestAbinitHetero:
         graph_traversal.add_args(parser)
         args = parser.parse_args(
             [
-                os.path.join(outdir, f"z.{epoch}.pkl"),
+                os.path.join(outdir, f"conf.{epoch}.pkl"),
                 "--anchors",
                 "5",
                 "0",
@@ -567,7 +566,7 @@ class TestAbinitHetero:
             [
                 os.path.join(outdir, "weights.2.pkl"),
                 "--config",
-                os.path.join(outdir, "config.yaml"),
+                os.path.join(outdir, "train-configs.yaml"),
                 "--zfile",
                 os.path.join(outdir, "graph_traversal_zpath.2.txt"),
                 "-o",

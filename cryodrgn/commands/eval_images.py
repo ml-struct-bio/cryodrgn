@@ -17,8 +17,9 @@ from datetime import datetime as dt
 import logging
 import numpy as np
 import torch
-from cryodrgn import config, dataset
+from cryodrgn import config, ctf, dataset
 from cryodrgn.models.utils import load_model
+from cryodrgn.pose import PoseTracker
 from cryodrgn.trainers import AmortizedInferenceTrainer, HierarchicalPoseSearchTrainer
 
 logger = logging.getLogger(__name__)
@@ -306,10 +307,20 @@ def main(args: argparse.Namespace) -> None:
         data, batch_size=args.batch_size, shuffle=False
     )
 
-    cfg["dataset_args"]["particles"] = args.particles
-    cfg["dataset_args"]["poses"] = args.poses
+    # load ctf
     if args.ctf is not None:
-        cfg["dataset_args"]["ctf"] = args.ctf
+        if args.use_real:
+            raise NotImplementedError(
+                "Not implemented with real-space encoder!"
+                "Use phase-flipped images instead."
+            )
+        logger.info("Loading ctf params from {}".format(args.ctf))
+        ctf_params = ctf.load_ctf_for_training(data.D - 1, args.ctf)
+        if args.ind is not None:
+            ctf_params = ctf_params[ind]
+        ctf_params = torch.tensor(ctf_params, device=device)
+    else:
+        ctf_params = None
 
     if "model" not in cfg["model_args"]:
         cfg["model_args"]["model"] = "hps"
@@ -325,6 +336,10 @@ def main(args: argparse.Namespace) -> None:
         )
     trainer.current_epoch = -1
     trainer.use_point_estimates = True
+    trainer.ctf_params = ctf_params
+    trainer.pose_tracker = PoseTracker.load(
+        args.poses, data.N, data.D, None, ind, device=device
+    )
 
     for minibatch in data_generator:
         batch_size = len(minibatch["indices"])

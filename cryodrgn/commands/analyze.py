@@ -227,16 +227,13 @@ class ModelAnalyzer:
 
         # use last completed epoch if no epoch given
         if epoch == -1:
-            self.epoch = max(
-                int(fl.split(".")[1])
-                for fl in os.listdir(self.traindir)
-                if fl[:8] == "weights."
-            )
+            self.weights_file = cryodrgn.utils.find_latest_output(self.traindir)
+            self.epoch = int(self.weights_file.split(".")[1])
         else:
             self.epoch = epoch
+            self.weights_file = os.path.join(self.traindir, f"weights.{self.epoch}.pkl")
 
         # load model data
-        self.weights_file = os.path.join(self.traindir, f"weights.{self.epoch}.pkl")
         if not os.path.isfile(self.weights_file):
             raise RuntimeError(
                 f"Unable to find saved epoch data file `{self.weights_file}`"

@@ -18,6 +18,8 @@ from cryodrgn.trainers.hps_trainer import HierarchicalPoseSearchTrainer
 
 
 def add_args(parser: argparse.ArgumentParser) -> None:
+    """The command-line arguments for use with the command `cryodrgn abinit_het`."""
+
     parser.add_argument(
         "particles",
         type=os.path.abspath,

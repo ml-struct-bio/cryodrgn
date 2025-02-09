@@ -311,7 +311,7 @@ class ModelAnalyzer:
         # copying them over from the template directory
         ipynbs = ["cryoDRGN_figures"]
         if self.trainer.configs.tilt:
-            ipynbs += ["cryoDRGN_ET_viz"]
+            ipynbs += ["ET-viz"]
         else:
             ipynbs += ["cryoDRGN_viz", "analysis"]
 

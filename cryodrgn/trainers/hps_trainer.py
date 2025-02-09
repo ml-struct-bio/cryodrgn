@@ -666,14 +666,17 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
             )
             write_mrc(out_mrc, vol, Apix=self.apix)
 
-        # save model weights
+        # Save reconstruction model weights to file
+        model_weights = {
+            k: optimizer.state_dict() for k, optimizer in self.optimizers.items()
+        }
         torch.save(
             {
                 "epoch": self.current_epoch,
                 "model_state_dict": unparallelize(
                     self.reconstruction_model
                 ).state_dict(),
-                "optimizer_state_dict": self.optimizers["hypervolume"].state_dict(),
+                "optimizers_state_dict": model_weights,
                 "search_pose": (self.predicted_rots, self.predicted_trans),
             },
             out_weights,

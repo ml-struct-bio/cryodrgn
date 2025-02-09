@@ -844,7 +844,7 @@ class TestTiltFixedHetero:
         assert os.path.exists(os.path.join(outdir, "filtered", "backproject.mrc"))
         shutil.rmtree(os.path.join(outdir, "filtered"))
 
-    @pytest.mark.parametrize("nb_lbl", ["cryoDRGN_figures", "cryoDRGN_ET_viz"])
+    @pytest.mark.parametrize("nb_lbl", ["cryoDRGN_figures", "ET-viz"])
     def test_notebooks(
         self, tmpdir_factory, particles, indices, poses, ctf, datadir, nb_lbl
     ):
@@ -868,7 +868,7 @@ class TestTiltFixedHetero:
             tmpdir_factory, particles, poses, ctf, indices, datadir
         )
         orig_cwd = os.path.abspath(os.getcwd())
-        os.chdir(os.path.join(outdir, "analyze.4"))
+        os.chdir(os.path.join(outdir, "analyze.5"))
         assert os.path.exists("tmp_ind_selected.pkl"), "Upstream tests have failed!"
 
         with open("tmp_ind_selected.pkl", "rb") as f:

@@ -28,6 +28,8 @@ logger = logging.getLogger(__name__)
 
 
 def add_args(parser: argparse.ArgumentParser) -> None:
+    """The command-line arguments for use with the command `cryodrgn eval_vol`."""
+
     parser.add_argument("weights", help="Model weights")
 
     parser.add_argument(
@@ -234,7 +236,7 @@ class VolumeEvaluator:
     def evaluate_volume(self, z):
         return self.transform_volume(
             self.model.eval_volume(
-                lattice=self.lattice,
+                coords=self.coords,
                 resolution=self.D,
                 extent=self.extent,
                 norm=self.norm,
@@ -276,7 +278,9 @@ class VolumeEvaluator:
             write_mrc(outpath, np.array(volume).astype(np.float32), Apix=self.apix)
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
+    """Running the command `cryodrgn eval_vol` (see `add_args` above for arguments)."""
+
     if args.verbose:
         logger.setLevel(logging.DEBUG)
 

@@ -49,6 +49,19 @@ def load_model(
             enc_mask = None
             in_dim = lattice.D**2
 
+        if model_args["encode_mode"] == "tilt":
+            if "tilt_params" in model_args:
+                tilt_params = model_args["tilt_params"]
+            else:
+                tilt_params = dict(
+                    t_emb_dim=model_args["t_emb_dim"],
+                    ntilts=model_args["ntilts"],
+                    tlayers=model_args["tlayers"],
+                    tdim=model_args["tdim"],
+                )
+        else:
+            tilt_params = None
+
         # TODO: pull activation from a global dictionary?
         model = HetOnlyVAE(
             lattice,
@@ -67,7 +80,7 @@ def load_model(
                 model_args["activation"]
             ],
             feat_sigma=model_args["feat_sigma"],
-            tilt_params=model_args.get("tilt_params", {}),
+            tilt_params=tilt_params,
         )
 
         if weights is not None:

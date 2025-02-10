@@ -324,40 +324,54 @@ def main(args: argparse.Namespace) -> None:
 
     if "model" not in cfg["model_args"]:
         cfg["model_args"]["model"] = "hps"
-        trainer = HierarchicalPoseSearchTrainer.load_from_config(cfg)
+        trainer = HierarchicalPoseSearchTrainer.load_from_config(
+            cfg, load_data=False, model=model
+        )
     elif cfg["model_args"]["model"] == "amort":
-        trainer = AmortizedInferenceTrainer.load_from_config(cfg)
+        trainer = AmortizedInferenceTrainer.load_from_config(
+            cfg, load_data=False, model=model
+        )
     elif cfg["model_args"]["model"] == "hps":
-        trainer = HierarchicalPoseSearchTrainer.load_from_config(cfg)
+        trainer = HierarchicalPoseSearchTrainer.load_from_config(
+            cfg, load_data=False, model=model
+        )
     else:
         raise ValueError(
             f"Unrecognized cryoDRGN model `{cfg['model_args']['model']}` specified "
             f"in config file `{args.cfg}`!"
         )
+
     trainer.current_epoch = -1
     trainer.use_point_estimates = True
     trainer.ctf_params = ctf_params
     trainer.pose_tracker = PoseTracker.load(
         args.poses, data.N, data.D, None, ind, device=device
     )
+    if trainer.configs.pose_estimation == "abinit":
+        trainer.predicted_rots = np.array(trainer.pose_tracker.rots)
+        if trainer.pose_tracker.trans is not None:
+            trainer.predicted_trans = np.array(trainer.pose_tracker.trans)
+        else:
+            trainer.predicted_trans = None
 
     for minibatch in data_generator:
-        batch_size = len(minibatch["indices"])
+        ind = minibatch["indices"]
+        batch_size = len(ind)
         batch_it += batch_size
 
         losses, tilt_ind, ind, rot, trans, z_mu, z_logvar = trainer.train_batch(
-            minibatch
+            batch=minibatch, lattice=lattice
         )
         z_mu = z_mu.detach().cpu().numpy()
         if z_logvar is not None:
             z_logvar = z_logvar.detach().cpu().numpy()
+        z_mu_all.append(z_mu)
+        if z_logvar is not None:
+            z_logvar_all.append(z_logvar)
 
         loss = losses["total"].item()
         gen_loss = losses["gen"]
         kld_loss = losses["kld"].item() if "kld" in losses else 0.0
-        z_mu_all.append(z_mu)
-        if z_logvar is not None:
-            z_logvar_all.append(z_logvar)
 
         # logging
         gen_loss_accum += gen_loss * batch_size

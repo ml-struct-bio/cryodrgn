@@ -36,6 +36,15 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "--ctf", metavar="pkl", type=os.path.abspath, help="CTF parameters (.pkl)"
     )
     parser.add_argument(
+        "--ind", type=os.path.abspath, help="Filter particle stack by these indices"
+    )
+    parser.add_argument(
+        "--datadir",
+        type=os.path.abspath,
+        help="Path prefix to particle stack if loading relative paths from a .star or .cs file",
+    )
+
+    parser.add_argument(
         "--norm",
         type=float,
         nargs=2,
@@ -90,9 +99,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         default=0.85,
         help="Windowing radius (default: %(default)s)",
     )
-    parser.add_argument(
-        "--ind", type=os.path.abspath, help="Filter particle stack by these indices"
-    )
+
     parser.add_argument(
         "--lazy",
         action="store_true",
@@ -309,7 +316,7 @@ def main(args: argparse.Namespace) -> None:
         "ctf": args.ctf,
         "poses": None,
         "dataset": None,
-        "datadir": None,
+        "datadir": args.datadir,
         "ind": args.ind,
         "pose_estimation": "abinit",
         "seed": args.seed,

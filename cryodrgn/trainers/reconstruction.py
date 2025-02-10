@@ -624,9 +624,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
         self.logger.info(f"cryoDRGN {__version__}")
         self.logger.info(str(self.configs))
 
-        if self.configs.pose_estimation == "fixed":
-            self.predicted_rots = self.predicted_trans = None
-        else:
+        if self.configs.pose_estimation != "fixed" and not self.configs.load:
             self.predicted_rots = np.empty((self.image_count, 3, 3))
             self.predicted_trans = (
                 np.empty((self.image_count, 2)) if not self.configs.no_trans else None

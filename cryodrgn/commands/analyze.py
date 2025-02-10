@@ -228,7 +228,7 @@ class ModelAnalyzer:
         # use last completed epoch if no epoch given
         if epoch == -1:
             self.weights_file = cryodrgn.utils.find_latest_output(self.traindir)
-            self.epoch = int(self.weights_file.split(".")[1])
+            self.epoch = int(self.weights_file.split(".")[-2])
         else:
             self.epoch = epoch
             self.weights_file = os.path.join(self.traindir, f"weights.{self.epoch}.pkl")

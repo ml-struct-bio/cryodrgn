@@ -74,7 +74,7 @@ def find_latest_output(outdir: str, outlbl: str = "weights") -> str:
                 for f in os.listdir(outdir)
                 if os.path.isfile(os.path.join(outdir, f)) and f.startswith(outlbl)
             ],
-            key=lambda x: int(x.split(".")[1]) if x.split(".")[1].isnumeric() else -1,
+            key=lambda x: int(x.split(".")[-2]) if x.split(".")[-2].isnumeric() else -1,
         )[-1],
     )
 

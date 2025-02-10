@@ -218,8 +218,10 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
 
         return lambda x: np.clip((x - start_x) * coef + start_y, min_y, max_y).item(0)
 
-    def __init__(self, configs: dict[str, Any]) -> None:
-        super().__init__(configs)
+    def __init__(
+        self, configs: dict[str, Any], load_data: bool = True, model=None
+    ) -> None:
+        super().__init__(configs, load_data, model)
 
         # set beta schedule
         if self.configs.z_dim:
@@ -331,13 +333,13 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
             self.pose_search.Lmin = min(Lramp, self.configs.l_start)
             self.pose_search.Lmax = min(Lramp, self.configs.l_end)
 
-    def train_batch(self, batch: dict[str, torch.Tensor]) -> tuple:
+    def train_batch(self, batch: dict[str, torch.Tensor], lattice=None) -> tuple:
         y = batch["y"]
         ind = batch["indices"]
-
         y = y.to(self.device)
         ind_np = ind.cpu().numpy()
         B = y.size(0)
+        lattice = lattice if lattice is not None else self.lattice
 
         if self.configs.tilt:
             tilt_ind = batch["tilt_indices"]
@@ -374,9 +376,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
                 else None
             )
             if self.configs.dose_per_tilt is not None:
-                dose_filters = self.data.get_dose_filters(
-                    tilt_ind, self.lattice, self.apix
-                )
+                dose_filters = self.data.get_dose_filters(tilt_ind, lattice, self.apix)
         else:
             ctf_param = self.ctf_params[ind] if self.ctf_params is not None else None
 
@@ -386,8 +386,8 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
 
         ctf_i = None
         if use_ctf:
-            freqs = self.lattice.freqs2d.unsqueeze(0).expand(
-                B, *self.lattice.freqs2d.shape
+            freqs = lattice.freqs2d.unsqueeze(0).expand(
+                B, *lattice.freqs2d.shape
             ) / ctf_param[:, 0].view(B, 1, 1)
             ctf_i = ctf.compute_ctf(freqs, *torch.split(ctf_param[:, 1:], 1, 1)).view(
                 B, self.resolution, self.resolution
@@ -405,9 +405,9 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
         losses = dict()
         if self.configs.z_dim > 0:
             if trans is not None:
-                y_trans = self.lattice.translate_ht(
-                    y.view(B, -1), trans.unsqueeze(1)
-                ).view(B, self.resolution, self.resolution)
+                y_trans = lattice.translate_ht(y.view(B, -1), trans.unsqueeze(1)).view(
+                    B, self.resolution, self.resolution
+                )
             else:
                 y_trans = y.clone()
 
@@ -458,7 +458,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
                 rot = torch.tensor(
                     self.predicted_rots[ind_np].astype(np.float32), device=self.device
                 )
-                if not self.configs.no_trans:
+                if self.predicted_trans is not None and not self.configs.no_trans:
                     trans = torch.tensor(
                         self.predicted_trans[ind_np].astype(np.float32),
                         device=self.device,
@@ -475,16 +475,16 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
                 self.conf_search_particles = 0
 
         # reconstruct circle of pixels instead of whole image
-        L_model = self.lattice.D // 2
+        L_model = lattice.D // 2
         if (
             self.current_epoch < self.configs.l_ramp_epochs
             and self.configs.l_ramp_model
         ):
             L_model = self.pose_search.Lmax
-        mask = self.lattice.get_circular_mask(L_model)
+        mask = lattice.get_circular_mask(L_model)
 
         def gen_slice(R):
-            lat_coords = self.lattice.coords[mask] / self.lattice.extent / 2
+            lat_coords = lattice.coords[mask] / lattice.extent / 2
 
             if z is None:
                 slice_ = self.reconstruction_model(lat_coords @ R).view(B, -1)
@@ -500,9 +500,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
             img_trans = img.view(B, -1)[:, mask]
 
             if trans is not None:
-                img_trans = self.lattice.translate_ht(
-                    img_trans, trans.unsqueeze(1), mask
-                )
+                img_trans = lattice.translate_ht(img_trans, trans.unsqueeze(1), mask)
 
             return img_trans
 

@@ -69,38 +69,29 @@ class TestIterativeFiltering:
         if indices.path is not None:
             args += ["--ind", indices.path]
 
-        train_vae.main(train_vae.add_args(argparse.ArgumentParser()).parse_args(args))
+        parser = argparse.ArgumentParser()
+        train_vae.add_args(parser)
+        train_vae.main(parser.parse_args(args))
 
     def test_analyze(self, tmpdir_factory, particles, poses, ctf, indices):
         """Produce standard analyses for the final epoch."""
         outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
         assert os.path.exists(
-            os.path.join(outdir, "weights.9.pkl")
+            os.path.join(outdir, "weights.10.pkl")
         ), "Upstream tests have failed!"
 
-        args = analyze.add_args(argparse.ArgumentParser()).parse_args(
-            [
-                outdir,
-                "9",  # Epoch number to analyze - 0-indexed
-                "--pc",
-                "2",  # Number of principal component traversals to generate
-                "--ksample",
-                "10",  # Number of kmeans samples to generate
-                "--vol-start-index",
-                "1",
-            ]
-        )
-        analyze.main(args)
-        assert os.path.exists(os.path.join(outdir, "analyze.9"))
+        parser = argparse.ArgumentParser()
+        analyze.add_args(parser)
+        analyze.main(parser.parse_args([outdir, "--pc", "2", "--ksample", "10"]))
 
-    @pytest.mark.parametrize(
-        "nb_lbl", ["cryoDRGN_figures", "cryoDRGN_filtering", "cryoDRGN_viz"]
-    )
+        assert os.path.exists(os.path.join(outdir, "analyze.10"))
+
+    @pytest.mark.parametrize("nb_lbl", ["cryoDRGN_figures", "analysis", "cryoDRGN_viz"])
     def test_notebooks(self, tmpdir_factory, particles, poses, ctf, indices, nb_lbl):
         """Execute the demonstration Jupyter notebooks produced by analysis."""
         outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
         orig_cwd = os.path.abspath(os.getcwd())
-        os.chdir(os.path.join(outdir, "analyze.9"))
+        os.chdir(os.path.join(outdir, "analyze.10"))
         assert os.path.exists(f"{nb_lbl}.ipynb"), "Upstream tests have failed!"
 
         with open(f"{nb_lbl}.ipynb") as ff:
@@ -122,33 +113,36 @@ class TestIterativeFiltering:
             ind_keep_fl = ind_keep_fl[0]
 
         ind_keep_fl = os.path.join(outdir, ind_keep_fl)
-        args = train_vae.add_args(argparse.ArgumentParser()).parse_args(
-            [
-                particles.path,
-                "-o",
-                outdir,
-                "--ctf",
-                ctf.path,
-                "--ind",
-                ind_keep_fl,
-                "--num-epochs",
-                "5",
-                "--poses",
-                poses.path,
-                "--zdim",
-                "4",
-                "--tdim",
-                "64",
-                "--enc-dim",
-                "64",
-                "--dec-dim",
-                "64",
-                "--pe-type",
-                "gaussian",
-                "--no-amp",
-            ]
+        parser = argparse.ArgumentParser()
+        train_vae.add_args(parser)
+        train_vae.main(
+            parser.parse_args(
+                [
+                    particles.path,
+                    "-o",
+                    outdir,
+                    "--ctf",
+                    ctf.path,
+                    "--ind",
+                    ind_keep_fl,
+                    "--num-epochs",
+                    "5",
+                    "--poses",
+                    poses.path,
+                    "--zdim",
+                    "4",
+                    "--tdim",
+                    "64",
+                    "--enc-dim",
+                    "64",
+                    "--dec-dim",
+                    "64",
+                    "--pe-type",
+                    "gaussian",
+                    "--no-amp",
+                ]
+            )
         )
-        train_vae.main(args)
 
         shutil.rmtree(outdir)
 

@@ -81,10 +81,11 @@ class TestCtfStar:
 def test_parse_ctf_cs(tmpdir, particles):
     pkl_out = os.path.join(tmpdir, "ctf.pkl")
     png_out = os.path.join(tmpdir, "ctf.png")
-    args = parse_ctf_csparc.add_args(argparse.ArgumentParser()).parse_args(
-        [particles.path, "-o", pkl_out, "--png", png_out]
+    parser = argparse.ArgumentParser()
+    parse_ctf_csparc.add_args(parser)
+    parse_ctf_csparc.main(
+        parser.parse_args([particles.path, "-o", pkl_out, "--png", png_out])
     )
-    parse_ctf_csparc.main(args)
 
     assert_pkl_close(pkl_out, os.path.join(pytest.DATADIR, "ctf2.pkl"))
 

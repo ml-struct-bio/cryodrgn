@@ -1,7 +1,6 @@
 import pytest
 import os
 import numpy as np
-from typing import Sequence
 from torch.utils.data.sampler import BatchSampler, RandomSampler
 from torch.utils.data import DataLoader
 from cryodrgn.dataset import DataShuffler, ImageDataset, TiltSeriesData, make_dataloader
@@ -153,41 +152,41 @@ class TestTiltSeriesLoading:
         dataset = TiltSeriesData(tiltstar=particles.path, ntilts=ntilts, ind=ind)
         data_loader = make_dataloader(dataset, batch_size=batch_size, shuffle=True)
 
-        # minibatch is a list of (particles, tilt, indices)
         for i, minibatch in enumerate(data_loader):
-            assert isinstance(minibatch, Sequence)
-            assert len(minibatch) == 3
+            assert isinstance(minibatch, dict)
+            assert len(minibatch) == 4
+            assert sorted(minibatch.keys()) == [
+                "indices",
+                "tilt_indices",
+                "y",
+                "y_real",
+            ]
 
             # We have 100 particles. For all but the last iteration *
             # for all but the last iteration (100//7 = 14), we'll have 7 images each
+            D = dataset.D
             if i < (dataset.Np // batch_size):
-                assert minibatch[0][0].shape == (
-                    batch_size * ntilts,
-                    dataset.D - 1,
-                    dataset.D - 1,
-                )
-                assert minibatch[0][1].shape == (
-                    batch_size * ntilts,
-                    dataset.D,
-                    dataset.D,
-                )
-                assert minibatch[1].shape == (batch_size * ntilts,)
-                assert minibatch[2].shape == (batch_size,)
+                assert minibatch["y"].shape == (batch_size * ntilts, D, D)
+                assert minibatch["y_real"].shape == (batch_size * ntilts, D - 1, D - 1)
+                assert minibatch["indices"].shape == (batch_size,)
+                assert minibatch["tilt_indices"].shape == (batch_size * ntilts,)
 
             # and 100 % 7 = 2 for the very last one
             else:
-                assert minibatch[0][0].shape == (
+                assert minibatch["y"].shape == (
                     (dataset.Np % batch_size) * ntilts,
-                    dataset.D - 1,
-                    dataset.D - 1,
+                    D,
+                    D,
                 )
-                assert minibatch[0][1].shape == (
+                assert minibatch["y_real"].shape == (
                     (dataset.Np % batch_size) * ntilts,
-                    dataset.D,
-                    dataset.D,
+                    D - 1,
+                    D - 1,
                 )
-                assert minibatch[1].shape == ((dataset.Np % batch_size) * ntilts,)
-                assert minibatch[2].shape == (dataset.Np % batch_size,)
+                assert minibatch["indices"].shape == (dataset.Np % batch_size,)
+                assert minibatch["tilt_indices"].shape == (
+                    (dataset.Np % batch_size) * ntilts,
+                )
 
 
 @pytest.mark.parametrize(

@@ -44,7 +44,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "epoch",
         type=int,
         help="Epoch number N to analyze (0-based indexing, "
-        "corresponding to z.N.pkl and weights.N.pkl)",
+        "corresponding to conf.N.pkl and weights.N.pkl)",
     )
     parser.add_argument("--device", type=int, help="Optionally specify CUDA device")
     parser.add_argument(
@@ -181,12 +181,13 @@ def generate_and_map_volumes(
     zfile, cfg, weights, mask_mrc, pca_obj_pkl, landscape_dir, outdir, args
 ):
     # Sample z
-    logger.info(f"Sampling {args.training_volumes} particles from {zfile}")
     np.random.seed(args.seed)
     z_all = load_pkl(zfile)
-    ind = np.array(
-        sorted(np.random.choice(len(z_all), args.training_volumes, replace=False))
-    )  # type: ignore
+    nimgs = len(z_all)
+
+    training_volumes = min(args.training_volumes, nimgs)
+    logger.info(f"Sampling {training_volumes} particles from {zfile}")
+    ind = np.array(sorted(np.random.choice(nimgs, training_volumes, replace=False)))  # type: ignore
     z_sample = z_all[ind]
     save_pkl(z_sample, f"{outdir}/z.sampled.pkl")
     save_pkl(ind, f"{outdir}/ind.sampled.pkl")
@@ -218,7 +219,7 @@ def generate_and_map_volumes(
     # Load model weights
     logger.info("Loading weights from {}".format(weights))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model, lattice = load_model(cfg, weights, device)
+    model, lattice, radius_mask = load_model(cfg, weights, device)
     model.eval()
 
     # Set z
@@ -252,7 +253,7 @@ def generate_and_map_volumes(
 
     embeddings = np.array(embeddings).reshape(len(z), -1).astype(np.float32)
     td = dt.now() - t1
-    logger.info(f"Finished generating {args.training_volumes} volumes in {td}")
+    logger.info(f"Finished generating {training_volumes} volumes in {td}")
 
     return z, embeddings
 
@@ -312,16 +313,24 @@ def train_model(x, y, outdir, zfile, args):
 
 
 def main(args: argparse.Namespace) -> None:
+    """Running full landscape analysis command — see `add_args` above for arguments."""
+
     t1 = dt.now()
     logger.info(args)
+    zfile = os.path.join(args.workdir, f"conf.{args.epoch}.pkl")
+    weights = os.path.join(args.workdir, f"weights.{args.epoch}.pkl")
 
-    zfile = f"{args.workdir}/conf.{args.epoch}.pkl"
-    weights = f"{args.workdir}/weights.{args.epoch}.pkl"
     cfg = (
-        f"{args.workdir}/train-configs.yaml"
-        if os.path.exists(f"{args.workdir}/train-configs.yaml")
-        else f"{args.workdir}/config.pkl"
+        os.path.join(args.workdir, "train-configs.yaml")
+        if os.path.exists(os.path.join(args.workdir, "train-configs.yaml"))
+        else os.path.join(args.workdir, "config.yaml")
+        if os.path.exists(os.path.join(args.workdir, "configs.yaml"))
+        else os.path.join(args.workdir, "config.yml")
+        if os.path.exists(os.path.join(args.workdir, "configs.yml"))
+        else os.path.join(args.workdir, "config.pkl")
     )
+    configs = cryodrgn.config.load(cfg)
+
     if args.landscape_dir is None:
         landscape_dir = os.path.join(args.workdir, f"landscape.{args.epoch}")
     else:
@@ -368,20 +377,21 @@ def main(args: argparse.Namespace) -> None:
         z = load_pkl(z_sampled_pkl)
     else:
         z, embeddings = generate_and_map_volumes(
-            zfile, cfg, weights, mask_mrc, pca_obj_pkl, landscape_dir, outdir, args
+            zfile, configs, weights, mask_mrc, pca_obj_pkl, landscape_dir, outdir, args
         )
         save_pkl(embeddings, embeddings_pkl)
 
     # Train model
+    training_volumes = min(args.training_volumes, len(z))
     embeddings_all = train_model(z, embeddings, outdir, zfile, args)
     save_pkl(embeddings_all, f"{outdir}/vol_pca_all.pkl")
 
     # Copy viz notebook
-    out_ipynb = os.path.join(landscape_dir, "cryoDRGN_analyze_landscape.ipynb")
+    out_ipynb = os.path.join(landscape_dir, "analyze-landscape.ipynb")
     if not os.path.exists(out_ipynb):
         logger.info("Creating jupyter notebook...")
         ipynb = os.path.join(
-            cryodrgn._ROOT, "templates", "cryoDRGN_analyze_landscape_template.ipynb"
+            cryodrgn._ROOT, "templates", "analyze-landscape_template.ipynb"
         )
         shutil.copyfile(ipynb, out_ipynb)
     else:
@@ -396,9 +406,7 @@ def main(args: argparse.Namespace) -> None:
         cell["source"] = cell["source"].replace(
             "WORKDIR = None", f'WORKDIR = "{args.workdir}"'
         )
-        cell["source"] = cell["source"].replace(
-            "K = None", f"K = {args.training_volumes}"
-        )
+        cell["source"] = cell["source"].replace("K = None", f"K = {training_volumes}")
         cell["source"] = cell["source"].replace("M = None", f"M = {kmeans_K}")
         cell["source"] = cell["source"].replace(
             "linkage = None", f'linkage = "{link_method}"'

@@ -521,7 +521,10 @@ def main(args: argparse.Namespace) -> None:
         if os.path.exists(umap_fl):
             shutil.copyfile(umap_fl, os.path.join(outdir, "umap.pkl"))
         else:
-            raise NotImplementedError
+            raise RuntimeError(
+                f"Cannot find UMAP file — has `cryodrgn analyze {args.workdir} "
+                f"--epoch {args.epoch}` been run yet?"
+            )
 
     if args.mask:
         logger.info(f"Using custom mask {args.mask}")

@@ -33,26 +33,38 @@ class ReconstructionModelConfigurations(BaseConfigurations):
 
     Arguments
     ---------
-    outdir:     Path to where output produced by the engine will be saved.
-    model:      A label for the reconstruction algorithm to be used — must be either
+    inherited from BaseConfigurations:
+        verbose     An integer specifiying the verbosity level for this engine, with
+                    the default value of 0 generally specifying no/minimum verbosity.
+        outdir      Path to where output produced by the engine will be saved.
+        seed        A non-negative integer used to fix the stochasticity of the random
+                    number generators used by this engine for reproducibility.
+                    The default is to not fix stochasticity and thus use a different
+                    random seed upon each run of the engine.
+        test_installation   Only perform a smoke test that this module has been
+                            installed correctly and exit immediately without running
+                            anything if this boolean value is set to `True`.
+                            Default is not to run this test.
+
+    model       A label for the reconstruction algorithm to be used — must be either
                 `hps` for cryoDRGN v3 models or `amort` for cryoDRGN-AI models.
-    z_dim:      The dimensionality of the latent space of conformations.
+    z_dim       The dimensionality of the latent space of conformations.
                 Thus z_dim=0 for homogeneous models and z_dim>0 for hetergeneous models.
-    num_epochs: The total number of epochs to use when training the model, not including
+    num_epochs  The total number of epochs to use when training the model, not including
                 pretraining epochs.
 
-    dataset:    Label for the particle dataset to be used as input for the model.
+    dataset     Label for the particle dataset to be used as input for the model.
                 If used, remaining input parameters can be omitted.
-    particles:  Path to the stack of particle images to use as input for the model.
+    particles   Path to the stack of particle images to use as input for the model.
                 Must be a (.mrcs/.txt/.star/.cs file).
-    ctf:        Path to the file storing contrast transfer function parameters used to
+    ctf         Path to the file storing contrast transfer function parameters used to
                 process the input particle images.
-    poses:      Path to the input particle poses data (.pkl).
-    datadir:    Path prefix to particle stack if loading relative paths from
+    poses       Path to the input particle poses data (.pkl).
+    datadir     Path prefix to particle stack if loading relative paths from
                 a .star or .cs file.
-    ind:        Path to a numpy array saved as a .pkl used to filter input particles.
+    ind         Path to a numpy array saved as a .pkl used to filter input particles.
 
-    pose_estimation:    Whether to perform ab-initio reconstruction ("abinit"),
+    pose_estimation     Whether to perform ab-initio reconstruction ("abinit"),
                         reconstruction using fixed poses ("fixed"), or reconstruction
                         with SGD refinement of poses ("refine").
                         Default is to use fixed poses if poses file is given
@@ -62,21 +74,21 @@ class ReconstructionModelConfigurations(BaseConfigurations):
                 previous run of the engine.
                 Can also be given as "latest", in which the latest saved epoch in the
                 given output directory will be used.
-    lazy:       Whether to use lazy loading of data into memory in smaller batches.
+    lazy        Whether to use lazy loading of data into memory in smaller batches.
                 Necessary if input dataset is too large to fit into memory.
 
-    batch_size:     The number of input images to use at a time when updating
+    batch_size      The number of input images to use at a time when updating
                     the learning algorithm.
 
-    multigpu:       Whether to use all available GPUs available on this machine.
+    multigpu        Whether to use all available GPUs available on this machine.
                     The default is to use only one GPU.
 
-    log_interval:   Print a log message every `N` number of training images.
-    checkpoint:     Save model results to file every `N` training epochs.
+    log_interval    Print a log message every `N` number of training images.
+    checkpoint      Save model results to file every `N` training epochs.
 
-    pe_type:    Label for the type of positional encoding to use.
-    pe_dim:     Number of frequencies to use in the positional encoding (default: 64).
-    volume_domain:  Representation to use in the volume
+    pe_type     Label for the type of positional encoding to use.
+    pe_dim      Number of frequencies to use in the positional encoding (default: 64).
+    volume_domain   Representation to use in the volume
                     decoder ("hartley" or "fourier").
     """
 
@@ -157,6 +169,7 @@ class ReconstructionModelConfigurations(BaseConfigurations):
     t_emb_dim: int = None
 
     def __post_init__(self) -> None:
+        """Parsing given configuration parameter values and checking their validity."""
         super().__post_init__()
 
         if self.model not in {"hps", "amort"}:
@@ -260,22 +273,22 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
 
     Arguments
     ---------
-    configs (dict):     The raw configuration parameters for this engine.
+    configs (dict)      The raw configuration parameters for this engine.
                         Will be parsed by the engine's configuration class.
 
     Attributes
     ----------
-    config_cls:         The configuration class that will be used to parse parameter
-                        sets for this engine class. Children implementations of this
-                        class will thus use children of `BaseConfigurations` here.
-    label:              String used to refer to this engine for e.g. logging messages.
+    label               String used to refer to this engine for e.g. logging messages.
+    configs (ReconstructionModelConfigurations)
+                        The parsed parameter configs for this engine.
 
-    configs (BaseConfigurations):    The parsed parameter configs for this engine.
-    outdir  (str):      The path where output produced by the engine will be saved.
-    logger  (Logger):   Logging utility used to create info and warning messages.
+    outdir (str)        The path where output produced by the engine will be saved.
+    logger (Logger)     Logging utility used to create info and warning messages.
+    use_cuda (bool)     Whether we are using CUDA GPUs (or otherwise CPUs).
+    data (ImageDataset)     The processed particle stack data used as model input.
 
-    use_cuda (bool): Whether we are using CUDA GPUs (or otherwise CPUs).
-    data (ImageDataset):    The processed particle stack data used as model input.
+    reconstruction_model (nn.Module)    The PyTorch learning algorithm used to
+                                        reconstruct volumes from the input image stack.
     """
 
     configs: ReconstructionModelConfigurations
@@ -491,7 +504,34 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
         else:
             self.amp_mode = contextlib.nullcontext()
 
-        # TODO: auto-loading from last weights file if load=True?
+        # counters used across training iterations
+        self.current_epoch = None
+        self.accum_losses = None
+        self.total_batch_count = None
+        self.epoch_batch_count = None
+        self.epoch_losses = None
+        self.total_images_seen = None
+        self.epoch_images_seen = None
+        self.conf_search_particles = None
+        self.beta = None
+        self.epoch_start_time = None
+        self.base_pose = None
+        self.base_poses = list()
+
+        if self.configs.pose_estimation == "fixed":
+            self.predicted_rots = self.predicted_trans = None
+        else:
+            self.predicted_rots = np.empty((self.image_count, 3, 3))
+            self.predicted_trans = (
+                np.empty((self.image_count, 2)) if not self.configs.no_trans else None
+            )
+
+        self.predicted_conf = (
+            np.empty((self.particle_count, self.configs.z_dim))
+            if self.configs.z_dim > 0
+            else None
+        )
+
         # initialization from a previous checkpoint
         if self.configs.load:
             if self.configs.load == "latest" or self.configs.load is True:
@@ -503,19 +543,32 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
                 ]
                 weights = [f for f in weights if os.path.exists(f)]
                 load_path = weights[-1]
-
-                if self.configs.load_poses is None or self.configs.load_poses:
-                    epoch = self.configs.load.split(".")[-2]
-                    load_poses_path = os.path.join(self.outdir, f"pose.{epoch}.pkl")
-                    assert os.path.exists(load_poses_path)
-                    self.logger.info(f"Loading {load_poses_path}")
-
             else:
                 load_path = self.configs.load
 
             self.logger.info(f"Loading checkpoint from {load_path}")
-            checkpoint = torch.load(self.configs.load)
+            checkpoint = torch.load(load_path, weights_only=False)
             state_dict = checkpoint["model_state_dict"]
+
+            if self.configs.pose_estimation == "abinit":
+                if self.configs.load_poses is None or self.configs.load_poses is True:
+                    epoch = self.configs.load.split(".")[-2]
+                    load_poses_path = os.path.join(self.outdir, f"pose.{epoch}.pkl")
+                else:
+                    load_poses_path = self.configs.load_poses
+
+                assert os.path.exists(load_poses_path)
+                self.logger.info(f"Loading poses from {load_poses_path}...")
+                rot, trans = cryodrgn.utils.load_pkl(load_poses_path)
+                if np.any(trans > 1):
+                    raise RuntimeError(
+                        "Old pose format detected."
+                        "Translations must be in units of fraction of box."
+                    )
+
+                # Convert translations to pixel units to feed back to the model
+                self.predicted_rots = rot
+                self.predicted_trans = trans * self.model_resolution
 
             if "base_shifts" in state_dict:
                 state_dict.pop("base_shifts")
@@ -543,44 +596,6 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
             self.configs.pretrain * self.particle_count
             if self.configs.pretrain >= 0
             else self.particle_count
-        )
-
-        # counters used across training iterations
-        self.current_epoch = None
-        self.accum_losses = None
-        self.total_batch_count = None
-        self.epoch_batch_count = None
-        self.epoch_losses = None
-        self.total_images_seen = None
-        self.epoch_images_seen = None
-        self.conf_search_particles = None
-        self.beta = None
-        self.epoch_start_time = None
-        self.base_pose = None
-
-        if self.configs.load_poses:
-            rot, trans = cryodrgn.utils.load_pkl(self.configs.load_poses)
-
-            assert np.all(
-                trans <= 1
-            ), "ERROR: Old pose format detected. Translations must be in units of fraction of box."
-
-            # Convert translations to pixel units to feed back to the model
-            self.sorted_poses = (rot, trans * self.model_resolution)
-
-        self.base_poses = list()
-        if self.configs.pose_estimation == "fixed":
-            self.predicted_rots = self.predicted_trans = None
-        else:
-            self.predicted_rots = np.empty((self.image_count, 3, 3))
-            self.predicted_trans = (
-                np.empty((self.image_count, 2)) if not self.configs.no_trans else None
-            )
-
-        self.predicted_conf = (
-            np.empty((self.particle_count, self.configs.z_dim))
-            if self.configs.z_dim > 0
-            else None
         )
 
     def train(self) -> None:

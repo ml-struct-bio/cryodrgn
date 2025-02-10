@@ -182,19 +182,19 @@ class BaseTrainer(ABC):
 
     Arguments
     ---------
-    configs (dict):     The raw configuration parameters for this engine.
+    configs (dict)      The raw configuration parameters for this engine.
                         Will be parsed using the engine's configuration class
 
     Attributes
     ----------
-    config_cls:         The configuration class that will be used to parse parameter
+    config_cls          The configuration class that will be used to parse parameter
                         sets for this engine class. Children implementations of this
                         class will thus use children of `BaseConfigurations` here.
     label:              String used to refer to this engine for e.g. logging messages.
 
-    configs (BaseConfigurations):    The parsed parameter configs for this engine.
-    outdir  (str):      The path where output produced by the engine will be saved.
-    logger  (Logger):   Logging utility used to create info and warning messages.
+    configs (BaseConfigurations)    The parsed parameter configs for this engine.
+    outdir (str)        The path where output produced by the engine will be saved.
+    logger (Logger)     Logging utility used to create info and warning messages.
     """
 
     config_cls = BaseConfigurations

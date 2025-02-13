@@ -47,7 +47,7 @@ class HierarchicalPoseSearchConfigurations(ReconstructionModelConfigurations):
     enc_layers: int = None
     enc_dim: int = None
     encode_mode: str = "resid"
-    enc_mask: bool = None
+    enc_mask: int = None
     tilt_enc_only: bool = False
     dec_layers: int = None
     dec_dim: int = None
@@ -142,20 +142,17 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
                 enc_mask = self.lattice.get_circular_mask(use_mask)
                 in_dim = enc_mask.sum().item()
             elif use_mask == -1:
-                enc_mask = None
-                in_dim = self.resolution**2
+                enc_mask, in_dim = None, self.resolution**2
             else:
                 raise RuntimeError(
                     f"Invalid argument for encoder mask radius {self.configs.enc_mask}"
                 )
-
         else:
-            enc_mask = None
-            in_dim = None
+            enc_mask, in_dim = None, None
 
         return enc_mask, in_dim
 
-    def make_reconstruction_model(self) -> nn.Module:
+    def make_reconstruction_model(self, weights=None) -> nn.Module:
         if not self.configs.z_dim:
             model = get_decoder(
                 in_dim=3,
@@ -218,10 +215,8 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
 
         return lambda x: np.clip((x - start_x) * coef + start_y, min_y, max_y).item(0)
 
-    def __init__(
-        self, configs: dict[str, Any], load_data: bool = True, model=None
-    ) -> None:
-        super().__init__(configs, load_data, model)
+    def __init__(self, configs: dict[str, Any]) -> None:
+        super().__init__(configs)
 
         # set beta schedule
         if self.configs.z_dim:
@@ -567,16 +562,15 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
     def get_configs(self) -> dict[str, Any]:
         """Retrieves all given and inferred configurations for downstream use."""
         configs = super().get_configs()
-        enc_mask = self.configs.enc_mask or self.resolution // 2
 
         configs["model_args"].update(
             dict(
-                qlayers=self.configs.enc_layers,
-                qdim=self.configs.enc_dim,
-                players=self.configs.dec_layers,
-                pdim=self.configs.dec_dim,
+                enc_layers=self.configs.enc_layers,
+                enc_dim=self.configs.enc_dim,
+                dec_layers=self.configs.dec_layers,
+                dec_dim=self.configs.dec_dim,
                 encode_mode=self.configs.encode_mode,
-                enc_mask=enc_mask,
+                enc_mask=self.configs.enc_mask,
             )
         )
 

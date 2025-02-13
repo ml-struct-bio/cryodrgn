@@ -29,9 +29,7 @@ import seaborn as sns
 from cryodrgn import _ROOT
 import cryodrgn.analysis
 import cryodrgn.utils
-from cryodrgn.trainers.reconstruction import ReconstructionModelTrainer
-from cryodrgn.trainers.amortinf_trainer import AmortizedInferenceTrainer
-from cryodrgn.trainers.hps_trainer import HierarchicalPoseSearchTrainer
+from cryodrgn.models.utils import get_model_trainer
 from cryodrgn.commands.eval_vol import VolumeEvaluator
 
 logger = logging.getLogger(__name__)
@@ -112,29 +110,6 @@ class ModelAnalyzer:
         Parameters that were used when the model was trained.
     """
 
-    def get_trainer(self) -> ReconstructionModelTrainer:
-        """Load a training engine like the one that was used to train this model."""
-        if os.path.exists(self.cfg_file):
-            with open(self.cfg_file, "r") as f:
-                cfg_dict: dict[str, dict[str, str]] = yaml.safe_load(f)
-        else:
-            raise FileNotFoundError(
-                f"Cannot find training configurations file `{self.cfg_file}` "
-                f"— has this model been trained yet?"
-            )
-
-        if cfg_dict["model_args"]["model"] == "amort":
-            trainer = AmortizedInferenceTrainer.load_from_config(cfg_dict)
-        elif cfg_dict["model_args"]["model"] == "hps":
-            trainer = HierarchicalPoseSearchTrainer.load_from_config(cfg_dict)
-        else:
-            raise ValueError(
-                f"Unrecognized cryoDRGN model `{cfg_dict['model_args']['model']}` "
-                f"in `{self.cfg_file}`!"
-            )
-
-        return trainer
-
     def __init__(
         self,
         traindir: str,
@@ -161,14 +136,17 @@ class ModelAnalyzer:
                 f"Given training output directory `{traindir}` does not exist!"
             )
         self.traindir = traindir
-        self.cfg_file = os.path.join(self.traindir, "train-configs.yaml")
 
-        if not os.path.exists(self.cfg_file):
-            raise ValueError(
-                f"Given training output directory does not have a trained model "
-                f"under {self.traindir}!"
+        self.cfg_file = os.path.join(self.traindir, "train-configs.yaml")
+        if os.path.exists(self.cfg_file):
+            with open(self.cfg_file, "r") as f:
+                cfg_dict: dict[str, dict[str, str]] = yaml.safe_load(f)
+        else:
+            raise FileNotFoundError(
+                f"Cannot find training configurations file `{self.cfg_file}` "
+                f"— has this model been trained yet?"
             )
-        self.trainer = self.get_trainer()
+        self.trainer = get_model_trainer(cfg_dict)
 
         log_fl = os.path.join(self.traindir, "training.log")
         if os.path.exists(log_fl):

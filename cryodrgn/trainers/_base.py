@@ -4,7 +4,7 @@ import os
 import argparse
 import sys
 import difflib
-import inspect
+import pandas as pd
 from abc import ABC
 from dataclasses import dataclass, fields, Field, MISSING, asdict
 from typing import Any
@@ -58,7 +58,7 @@ class BaseConfigurations(ABC):
         """Parsing given configuration parameter values and checking their validity."""
         self.outdir = os.path.abspath(self.outdir)
 
-        for this_field in self.fields():
+        for this_field in fields(self):
             assert this_field.default is not MISSING, (
                 f"`{self.__class__.__name__}` class has no default value defined "
                 f"for parameter `{this_field.name}`!"
@@ -102,25 +102,24 @@ class BaseConfigurations(ABC):
             yaml.dump(asdict(self), f, default_flow_style=False, sort_keys=False)
 
     @classmethod
-    def fields(cls) -> list[Field]:
-        """Returning all fields defined for this class without needing an instance.
-
-        The default Python dataclass `fields` method does not have a counterpart for
-        classes, which we need in cases like `parse_cfg_keys()` which we want to call
-        without using an instance of the data class!
-
-        """
-        members = inspect.getmembers(cls)
-        return list(
-            list(filter(lambda x: x[0] == "__dataclass_fields__", members))[0][
-                1
-            ].values()
-        )
-
-    @property
-    def fields_dict(self) -> dict[str, Field]:
+    def fields_dict(cls) -> dict[str, Field]:
         """Convenience method to get all fields indexed by field label."""
-        return {fld.name: fld for fld in fields(self)}
+        return {fld.name: fld for fld in fields(cls)}
+
+    @classmethod
+    def parse_config(cls, configs: dict[str, Any]) -> dict[str, Any]:
+        """Retrieves all configurations that have been saved to file."""
+        cfg = {
+            k.split("___")[-1]: v[0]
+            for k, v in pd.json_normalize(configs, sep="___").items()
+        }
+        cfg = {k: v for k, v in cfg.items() if k in cls.fields_dict()}
+        cfg = {
+            k: cls.fields_dict()[k].type(v) if v is not None else None
+            for k, v in cfg.items()
+        }
+
+        return cfg
 
     @classmethod
     def parse_cfg_keys(cls, cfg_keys: list[str]) -> dict[str, Any]:
@@ -215,6 +214,12 @@ class BaseTrainer(ABC):
     def parameters(cls) -> list[str]:
         """The user-set parameters governing the behaviour of this model."""
         return [fld.name for fld in cls.config_cls.fields()]
+
+    @classmethod
+    def load_from_config(cls, configs: dict[str, Any]) -> Self:
+        """Retrieves all configurations that have been saved to file."""
+
+        return cls(cls.config_cls.parse_config(configs))
 
     @classmethod
     def parse_args(cls, args: argparse.Namespace) -> Self:

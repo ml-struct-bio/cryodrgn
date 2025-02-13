@@ -6,7 +6,6 @@ import contextlib
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
-from typing_extensions import Self
 import yaml
 from datetime import datetime as dt
 import logging
@@ -299,12 +298,10 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
     optim_types = {"adam": torch.optim.Adam, "lbfgs": torch.optim.LBFGS}
 
     @abstractmethod
-    def make_reconstruction_model(self) -> nn.Module:
+    def make_reconstruction_model(self, weights=None) -> nn.Module:
         pass
 
-    def __init__(
-        self, configs: dict[str, Any], load_data: bool = True, model=None
-    ) -> None:
+    def __init__(self, configs: dict[str, Any]) -> None:
         super().__init__(configs)
 
         # set the device
@@ -355,48 +352,42 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
         else:
             use_poses = None
 
-        if load_data:
-            if not self.configs.tilt:
-                self.data = ImageDataset(
-                    mrcfile=self.configs.particles,
-                    lazy=self.configs.lazy,
-                    norm=self.configs.data_norm,
-                    invert_data=self.configs.invert_data,
-                    keepreal=self.configs.use_real,
-                    ind=self.ind,
-                    window=self.configs.window,
-                    datadir=self.configs.datadir,
-                    window_r=self.configs.window_r,
-                    max_threads=self.configs.max_threads,
-                    poses_gt_pkl=use_poses,
-                    device=self.device,
-                )
-                self.particle_count = self.data.N
+        if not self.configs.tilt:
+            self.data = ImageDataset(
+                mrcfile=self.configs.particles,
+                lazy=self.configs.lazy,
+                norm=self.configs.data_norm,
+                invert_data=self.configs.invert_data,
+                keepreal=self.configs.use_real,
+                ind=self.ind,
+                window=self.configs.window,
+                datadir=self.configs.datadir,
+                window_r=self.configs.window_r,
+                max_threads=self.configs.max_threads,
+                poses_gt_pkl=use_poses,
+                device=self.device,
+            )
+            self.particle_count = self.data.N
 
-            else:
-                self.data = TiltSeriesData(
-                    tiltstar=self.configs.particles,
-                    ind=self.ind,
-                    ntilts=self.configs.n_tilts,
-                    angle_per_tilt=self.configs.angle_per_tilt,
-                    window_r=self.configs.window_r,
-                    datadir=self.configs.datadir,
-                    max_threads=self.configs.max_threads,
-                    dose_per_tilt=self.configs.dose_per_tilt,
-                    device=self.device,
-                    poses_gt_pkl=use_poses,
-                )
-                self.particle_count = self.data.Np
-
-            self.image_count = self.data.N
-            self.resolution = self.data.D
         else:
-            self.data = None
-            self.particle_count = None
-            self.image_count = None
-            self.resolution = None
+            self.data = TiltSeriesData(
+                tiltstar=self.configs.particles,
+                ind=self.ind,
+                ntilts=self.configs.n_tilts,
+                angle_per_tilt=self.configs.angle_per_tilt,
+                window_r=self.configs.window_r,
+                datadir=self.configs.datadir,
+                max_threads=self.configs.max_threads,
+                dose_per_tilt=self.configs.dose_per_tilt,
+                device=self.device,
+                poses_gt_pkl=use_poses,
+            )
+            self.particle_count = self.data.Np
 
-        if self.configs.ctf and self.data is not None:
+        self.image_count = self.data.N
+        self.resolution = self.data.D
+
+        if self.configs.ctf:
             if self.configs.use_real:
                 raise NotImplementedError(
                     "Not implemented with real-space encoder."
@@ -412,7 +403,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
                 ctf_params = ctf_params[self.ind, ...]
             assert ctf_params.shape == (self.image_count, 8), ctf_params.shape
 
-            if self.configs.tilt and self.data is not None:
+            if self.configs.tilt:
                 ctf_params = np.concatenate(
                     (ctf_params, self.data.ctfscalefactor.reshape(-1, 1)),
                     axis=1,  # type: ignore
@@ -425,25 +416,13 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
             self.ctf_params = None
             self.apix = None
 
-        # lattice
         self.logger.info("Building lattice...")
-        if self.resolution is not None:
-            self.lattice = Lattice(
-                self.resolution, extent=self.configs.l_extent, device=self.device
-            )
-        else:
-            self.lattice = None
+        self.lattice = Lattice(
+            self.resolution, extent=self.configs.l_extent, device=self.device
+        )
 
         self.logger.info("Initializing volume model...")
-        if model is not None:
-            assert self.lattice is None or model.lattice.D == self.lattice.D
-            self.reconstruction_model = model
-            self.resolution = model.lattice.D
-            if self.lattice is None:
-                self.lattice = model.lattice
-        else:
-            self.reconstruction_model = self.make_reconstruction_model()
-
+        self.reconstruction_model = self.make_reconstruction_model()
         self.reconstruction_model.to(self.device)
         self.logger.info(self.reconstruction_model)
 
@@ -466,17 +445,14 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
         else:
             self.num_workers = self.configs.num_workers
 
-        if self.data is not None:
-            self.data_iterator = make_dataloader(
-                self.data,
-                batch_size=self.configs.batch_size,
-                shuffler_size=self.configs.shuffler_size,
-                shuffle=self.configs.shuffle,
-                num_workers=self.num_workers,
-                seed=self.configs.seed,
-            )
-        else:
-            self.data_iterator = None
+        self.data_iterator = make_dataloader(
+            self.data,
+            batch_size=self.configs.batch_size,
+            shuffler_size=self.configs.shuffler_size,
+            shuffle=self.configs.shuffle,
+            num_workers=self.num_workers,
+            seed=self.configs.seed,
+        )
 
         self.optimizer_types = {"hypervolume": self.configs.volume_optim_type}
         self.optimizers = {
@@ -495,7 +471,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
                     f"Batch size {self.configs.batch_size} not divisible by 8 "
                     f"and thus not optimal for AMP training!"
                 )
-            if self.data is not None and (self.data.D - 1) % 8 != 0:
+            if (self.data.D - 1) % 8 != 0:
                 self.logger.warning(
                     f"Image size {self.data.D - 1} not divisible by 8 "
                     f"and thus not optimal for AMP training!"
@@ -606,7 +582,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
 
         self.n_particles_pretrain = (
             self.configs.pretrain * self.particle_count
-            if self.configs.pretrain >= 0 and self.particle_count is not None
+            if self.configs.pretrain >= 0
             else self.particle_count
         )
 
@@ -867,23 +843,6 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
 
         with open(os.path.join(self.outdir, "train-configs.yaml"), "w") as f:
             yaml.dump(configs, f, default_flow_style=False, sort_keys=False)
-
-    @classmethod
-    def load_from_config(
-        cls, configs: dict[str, Any], load_data: bool = True, model=None
-    ) -> Self:
-        """Retrieves all configurations that have been saved to file."""
-
-        cfg_dict = {
-            sub_k: sub_v
-            for k, v in configs.items()
-            if isinstance(v, dict)
-            for sub_k, sub_v in v.items()
-        }
-        cfg_dict.update({k: v for k, v in configs.items() if not isinstance(v, dict)})
-        cfg_dict = {k: v for k, v in cfg_dict.items() if k in set(cls.parameters())}
-
-        return cls(cfg_dict, load_data=load_data, model=model)
 
     def begin_epoch(self) -> None:
         """Actions to perform at the beginning of each training epoch."""

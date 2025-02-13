@@ -1,113 +1,54 @@
 """Utilities shared across all types of models."""
 
-import logging
-from typing import Union, Optional
-import torch
-from torch import nn
-from cryodrgn.lattice import Lattice
-from cryodrgn.models.variational_autoencoder import HetOnlyVAE
-from cryodrgn.models.amortized_inference import DRGNai, HyperVolume
+from typing import Any
+from cryodrgn.trainers.reconstruction import (
+    ReconstructionModelTrainer,
+    ReconstructionModelConfigurations,
+)
+from cryodrgn.trainers.amortinf_trainer import (
+    AmortizedInferenceTrainer,
+    AmortizedInferenceConfigurations,
+)
+from cryodrgn.trainers.hps_trainer import (
+    HierarchicalPoseSearchTrainer,
+    HierarchicalPoseSearchConfigurations,
+)
 
-logger = logging.getLogger(__name__)
 
-
-def load_model(
-    cfg: dict[str, dict], weights=Union[str, None], device=Optional[str]
-) -> tuple[Union[HetOnlyVAE, DRGNai], Lattice, int]:
-    """Instantiate a volume model from a config.yaml
-
-    Inputs:
-        config (str, dict): Path to config.yaml or loaded config.yaml
-        weights (str): Path to weights.pkl
-        device: torch.device object
-
-    Returns:
-        nn.Module instance, Lattice instance
-    """
-
-    # cryodrgn v3 and v4
-    if (
-        "model_args" in cfg
-        and "model" not in cfg["model_args"]
-        or cfg["model_args"]["model"] == "hps"
-    ):
-        lattice_args = cfg["lattice_args"]
-        model_args = cfg["model_args"]
-
-        lattice = Lattice(
-            lattice_args["D"], extent=lattice_args["extent"], device=device
-        )
-
-        logger.info("loading a cryoDRGN v<=3 model...")
-
-        # TODO: merge with Trainer.mask_dimensions?
-        if model_args["enc_mask"] > 0:
-            enc_mask = lattice.get_circular_mask(model_args["enc_mask"])
-            in_dim = int(enc_mask.sum())
-        else:
-            assert model_args["enc_mask"] == -1
-            enc_mask = None
-            in_dim = lattice.D**2
-
-        if model_args["encode_mode"] == "tilt":
-            if "tilt_params" in model_args:
-                tilt_params = model_args["tilt_params"]
-            else:
-                tilt_params = dict(
-                    t_emb_dim=model_args["t_emb_dim"],
-                    ntilts=model_args["ntilts"],
-                    tlayers=model_args["tlayers"],
-                    tdim=model_args["tdim"],
-                )
-        else:
-            tilt_params = None
-
-        # TODO: pull activation from a global dictionary?
-        model = HetOnlyVAE(
-            lattice,
-            model_args["qlayers"],
-            model_args["qdim"],
-            model_args["players"],
-            model_args["pdim"],
-            in_dim,
-            model_args["z_dim"] if "z_dim" in model_args else model_args["zdim"],
-            encode_mode=model_args["encode_mode"],
-            enc_mask=enc_mask,
-            enc_type=model_args["pe_type"],
-            enc_dim=model_args["pe_dim"],
-            domain=model_args["domain"],
-            activation={"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[
-                model_args["activation"]
-            ],
-            feat_sigma=model_args["feat_sigma"],
-            tilt_params=tilt_params,
-        )
-
-        if weights is not None:
-            ckpt = torch.load(weights, map_location=device, weights_only=False)
-            model.load_state_dict(ckpt["model_state_dict"])
-        if device is not None:
-            model.to(device)
-
-        radius_mask = None
-
+def get_model_trainer(cfg: dict[str, Any]) -> ReconstructionModelTrainer:
+    if "model" in cfg:
+        model = cfg["model"]
+    elif "model_args" in cfg and "model" in cfg["model_args"]:
+        model = cfg["model_args"]["model"]
     else:
-        logger.info("loading a DRGNai model...")
+        model = "hps"
 
-        checkpoint = torch.load(weights, map_location=device, weights_only=False)
-        hypervolume_params = checkpoint["hypervolume_params"]
-        model = HyperVolume(**hypervolume_params)
-        model.load_state_dict(checkpoint["hypervolume_state_dict"])
-        model.to(device)
+    if model == "amort":
+        trainer_cls = AmortizedInferenceTrainer
+    elif model == "hps":
+        trainer_cls = HierarchicalPoseSearchTrainer
+    else:
+        raise ValueError(f"Unrecognized model `{model}` specified in config!")
 
-        lattice = Lattice(
-            checkpoint["hypervolume_params"]["resolution"], extent=0.5, device=device
+    return trainer_cls.load_from_config(cfg)
+
+
+def get_model_configurations(cfg: dict[str, Any]) -> ReconstructionModelConfigurations:
+    cfg = ReconstructionModelConfigurations.parse_config(cfg)
+
+    if "model" not in cfg:
+        configs_cls = HierarchicalPoseSearchConfigurations
+    elif cfg["model"] == "amort":
+        configs_cls = AmortizedInferenceConfigurations
+    elif cfg["model"] == "hps":
+        configs_cls = HierarchicalPoseSearchConfigurations
+    else:
+        raise ValueError(
+            f"Model unrecognized by cryoDRGN: `{cfg['model']}` specified in config!"
         )
+    cfg = {
+        k: configs_cls.fields_dict()[k].type(v) if v is not None else None
+        for k, v in cfg.items()
+    }
 
-        radius_mask = (
-            checkpoint["output_mask_radius"]
-            if "output_mask_radius" in checkpoint
-            else None
-        )
-
-    return model, lattice, radius_mask
+    return configs_cls(**cfg)

@@ -270,15 +270,6 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
     def make_reconstruction_model(self) -> nn.Module:
         output_mask = self.make_output_mask()
 
-        # cnn
-        cnn_params = {
-            "conf": self.configs.use_conf_encoder,
-            "depth_cnn": self.configs.depth_cnn,
-            "channels_cnn": self.configs.channels_cnn,
-            "kernel_size_cnn": self.configs.kernel_size_cnn,
-        }
-
-        # conformational encoder
         if self.configs.z_dim > 0:
             self.logger.info(
                 "Heterogeneous reconstruction with " f"z_dim = {self.configs.z_dim}"
@@ -286,63 +277,21 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
         else:
             self.logger.info("Homogeneous reconstruction")
 
-        conf_regressor_params = {
-            "z_dim": self.configs.z_dim,
-            "std_z_init": self.configs.std_z_init,
-            "variational": self.configs.variational_het,
-        }
-
-        # hypervolume
-        hyper_volume_params = {
-            "explicit_volume": self.configs.explicit_volume,
-            "n_layers": self.configs.hidden_layers,
-            "hidden_dim": self.configs.hidden_dim,
-            "pe_type": self.configs.pe_type,
-            "pe_dim": self.configs.pe_dim,
-            "feat_sigma": self.configs.feat_sigma,
-            "domain": self.configs.volume_domain,
-            "extent": self.lattice.extent,
-            "pe_type_conf": self.configs.pe_type_conf,
-        }
-
-        # pose search
-        if self.epochs_pose_search > 0:
-            ps_params = {
-                "l_min": self.configs.l_start,
-                "l_max": self.configs.l_end,
-                "t_extent": self.configs.t_extent,
-                "t_n_grid": self.configs.t_ngrid,
-                "niter": self.configs.n_iter,
-                "nkeptposes": self.configs.n_kept_poses,
-                "base_healpy": self.configs.base_healpy,
-                "t_xshift": self.configs.t_xshift,
-                "t_yshift": self.configs.t_yshift,
-                "no_trans_search_at_pose_search": self.configs.no_trans_search_at_pose_search,
-                "n_tilts_pose_search": self.configs.n_tilts_pose_search,
-                "tilting_func": (
-                    self.data.get_tilting_func()
-                    if self.configs.subtomo_averaging
-                    else None
-                ),
-                "average_over_tilts": self.configs.average_over_tilts,
-            }
-        else:
-            ps_params = None
-
+        model_args = self.get_configs()["model_args"]
         model = DRGNai(
             self.lattice,
             output_mask,
             self.particle_count,
             self.image_count,
-            cnn_params,
-            conf_regressor_params,
-            hyper_volume_params,
+            model_args["cnn_params"],
+            model_args["conf_regressor_params"],
+            model_args["hypervolume_params"],
             resolution_encoder=self.configs.resolution_encoder,
             no_trans=self.configs.no_trans,
             use_gt_poses=self.configs.pose_estimation == "fixed",
             use_gt_trans=self.configs.use_gt_trans,
             will_use_point_estimates=self.epochs_sgd >= 1,
-            ps_params=ps_params,
+            ps_params=model_args["ps_params"],
             verbose_time=self.configs.verbose_time,
             pretrain_with_gt_poses=self.configs.pretrain_with_gt_poses,
             n_tilts_pose_search=self.configs.n_tilts_pose_search,
@@ -380,8 +329,6 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
 
         if self.configs.num_epochs is None:
             self.configs.num_epochs = self.epochs_sgd + self.epochs_pose_search
-        if self.configs.load:
-            self.configs.num_epochs += self.start_epoch
 
         self.batch_size_known_poses = self.configs.batch_size_known_poses * self.n_prcs
         self.batch_size_hps = self.configs.batch_size_hps * self.n_prcs
@@ -513,6 +460,70 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
             if self.configs.z_dim > 0 and self.configs.variational_het
             else None
         )
+
+    def get_configs(self) -> dict[str, Any]:
+        """Retrieves all given and inferred configurations for downstream use."""
+        configs = super().get_configs()
+
+        # cnn
+        cnn_params = {
+            "conf": self.configs.use_conf_encoder,
+            "depth_cnn": self.configs.depth_cnn,
+            "channels_cnn": self.configs.channels_cnn,
+            "kernel_size_cnn": self.configs.kernel_size_cnn,
+        }
+        # conformational encoder
+        conf_regressor_params = {
+            "z_dim": self.configs.z_dim,
+            "std_z_init": self.configs.std_z_init,
+            "variational": self.configs.variational_het,
+        }
+        # hypervolume
+        hypervolume_params = {
+            "explicit_volume": self.configs.explicit_volume,
+            "n_layers": self.configs.hidden_layers,
+            "hidden_dim": self.configs.hidden_dim,
+            "pe_type": self.configs.pe_type,
+            "pe_dim": self.configs.pe_dim,
+            "feat_sigma": self.configs.feat_sigma,
+            "domain": self.configs.volume_domain,
+            "extent": self.lattice.extent,
+            "pe_type_conf": self.configs.pe_type_conf,
+        }
+        # pose search
+        if self.epochs_pose_search > 0:
+            ps_params = {
+                "l_min": self.configs.l_start,
+                "l_max": self.configs.l_end,
+                "t_extent": self.configs.t_extent,
+                "t_n_grid": self.configs.t_ngrid,
+                "niter": self.configs.n_iter,
+                "nkeptposes": self.configs.n_kept_poses,
+                "base_healpy": self.configs.base_healpy,
+                "t_xshift": self.configs.t_xshift,
+                "t_yshift": self.configs.t_yshift,
+                "no_trans_search_at_pose_search": self.configs.no_trans_search_at_pose_search,
+                "n_tilts_pose_search": self.configs.n_tilts_pose_search,
+                "tilting_func": (
+                    self.data.get_tilting_func()
+                    if self.configs.subtomo_averaging
+                    else None
+                ),
+                "average_over_tilts": self.configs.average_over_tilts,
+            }
+        else:
+            ps_params = None
+
+        configs["model_args"] = dict(
+            cnn_params=cnn_params,
+            hypervolume_params=hypervolume_params,
+            conf_regressor_params=conf_regressor_params,
+            **configs["model_args"],
+        )
+        if ps_params is not None:
+            configs["model_args"]["ps_params"] = ps_params
+
+        return configs
 
     def begin_epoch(self):
         self.configs: AmortizedInferenceConfigurations

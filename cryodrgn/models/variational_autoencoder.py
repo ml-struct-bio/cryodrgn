@@ -132,11 +132,13 @@ class HetOnlyVAE(nn.Module):
 
     def eval_volume(
         self,
+        lattice=None,
         coords=None,
         resolution=None,
         extent=None,
         norm=(0.0, 1.0),
         zval=None,
+        verbose=False,
         **vol_args,
     ) -> torch.Tensor:
         """
@@ -151,18 +153,22 @@ class HetOnlyVAE(nn.Module):
         """
 
         if not hasattr(self.decoder, "eval_volume"):
-            raise NotImplementedError
-
+            raise NotImplementedError(
+                f"{self.decoder.__class__} does not have a `eval_volume()` method!"
+            )
+        if lattice is None:
+            lattice = self.lattice
         if coords is None:
-            coords = self.lattice.coords
+            coords = lattice.coords
         if resolution is None:
-            resolution = self.lattice.D
+            resolution = lattice.D
         if extent is None:
-            extent = self.lattice.extent
+            extent = lattice.extent
 
         # TODO: kludge because VAE and drgnai models have different loading APIs
-        for k, v in vol_args.items():
-            logger.info(f"ignoring argument {k}={v} in VAE volume generation")
+        if verbose:
+            for k, v in vol_args.items():
+                logger.info(f"ignoring argument {k}={v} in VAE volume generation")
 
         return self.decoder.eval_volume(coords, resolution, extent, norm, zval)
 

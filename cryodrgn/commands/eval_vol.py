@@ -21,7 +21,8 @@ from typing import Optional
 import numpy as np
 import torch
 import cryodrgn.config
-from cryodrgn.models.utils import load_model
+from cryodrgn.models.utils import get_model_trainer
+from cryodrgn.lattice import Lattice
 from cryodrgn.source import write_mrc
 
 logger = logging.getLogger(__name__)
@@ -194,9 +195,10 @@ class VolumeEvaluator:
         logger.info("Loaded configuration:")
         pprint.pprint(cfg_data)
 
-        orig_d = cfg_data["lattice_args"]["D"]  # image size + 1
-        self.z_dim = cfg_data["model_args"]["z_dim"]
-        self.norm = [float(x) for x in cfg_data["dataset_args"]["norm"]]
+        self.trainer = get_model_trainer(cfg_data)
+        orig_d = self.trainer.lattice.D  # image size + 1
+        self.z_dim = self.trainer.configs.z_dim
+        self.norm = self.trainer.data.norm
 
         if downsample:
             if downsample % 2 != 0:
@@ -206,24 +208,23 @@ class VolumeEvaluator:
                     "Downsampling size must be smaller than original box size"
                 )
 
-        self.model, self.lattice, self.radius_mask = load_model(
-            cfg_data, weights, device=self.device
-        )
-        self.model.eval()
-
-        if downsample:
-            self.coords = self.lattice.get_downsample_coords(downsample + 1)
+            self.coords = self.trainer.lattice.get_downsample_coords(downsample + 1)
             self.D = downsample + 1
-            self.extent = self.lattice.extent * (downsample / (orig_d - 1))
+            self.extent = self.trainer.lattice.extent * (downsample / (orig_d - 1))
+            self.lattice = Lattice(
+                self.D, extent=self.trainer.lattice.extent, device=self.device
+            )
         else:
-            self.coords = self.lattice.coords
-            self.D = self.lattice.D
-            self.extent = self.lattice.extent
+            self.lattice = self.trainer.lattice
+            self.coords = self.trainer.lattice.coords
+            self.D = self.trainer.lattice.D
+            self.extent = self.trainer.lattice.extent
 
         self.verbose = verbose
         self.apix = apix
         self.flip = flip
         self.invert = invert
+        self.trainer.reconstruction_model.eval()
 
     def transform_volume(self, vol):
         if self.flip:
@@ -235,13 +236,16 @@ class VolumeEvaluator:
 
     def evaluate_volume(self, z):
         return self.transform_volume(
-            self.model.eval_volume(
+            self.trainer.reconstruction_model.eval_volume(
+                lattice=self.lattice,
                 coords=self.coords,
                 resolution=self.D,
                 extent=self.extent,
                 norm=self.norm,
                 zval=z,
-                radius=self.radius_mask,
+                radius=self.trainer.mask_dimensions
+                if hasattr(self.trainer, "mask_dimensions")
+                else None,
             )
         )
 

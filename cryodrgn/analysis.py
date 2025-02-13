@@ -1,4 +1,3 @@
-import argparse
 import re
 import logging
 import matplotlib.pyplot as plt
@@ -13,7 +12,6 @@ from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from sklearn.mixture import GaussianMixture
 from typing import Optional, Union, Tuple, List
-from cryodrgn.commands import eval_vol
 
 logger = logging.getLogger(__name__)
 
@@ -575,50 +573,6 @@ def plot_projections(imgs, labels=None, max_imgs=25):
 
     plt.tight_layout()
     return fig, axes
-
-
-def gen_volumes(
-    weights,
-    config,
-    zfile,
-    outdir,
-    device=None,
-    Apix=None,
-    flip=False,
-    downsample=None,
-    invert=None,
-    vol_start_index=0,
-):
-    """Call cryodrgn eval_vol to generate volumes at specified z values
-    Input:
-        weights (str): Path to model weights .pkl
-        config (str): Path to config.yaml
-        zfile (str): Path to .txt file of z values
-        outdir (str): Path to output directory for volumes,
-        device (int or None): Specify cuda device
-        Apix (float or None): Apix of output volume
-        flip (bool): Flag to flip chirality of output volumes
-        downsample (int or None): Generate volumes at this box size
-        invert (bool): Invert contrast of output volumes
-        vol_start_index (int): Start index for generated volumes
-    """
-    args = [weights, "--config", config, "--zfile", zfile, "-o", outdir]
-    if Apix is not None:
-        args += ["--Apix", f"{Apix}"]
-    if flip:
-        args += ["--flip"]
-    if downsample is not None:
-        args += ["-d", f"{downsample}"]
-    if invert:
-        args += ["--invert"]
-    if device is not None:
-        args += ["--device", f"{device}"]
-    if vol_start_index is not None:
-        args += ["--vol-start-index", f"{vol_start_index}"]
-
-    parser = argparse.ArgumentParser()
-    eval_vol.add_args(parser)
-    return eval_vol.main(parser.parse_args(args))
 
 
 def load_dataframe(

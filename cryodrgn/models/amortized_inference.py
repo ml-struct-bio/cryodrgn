@@ -18,7 +18,7 @@ class DRGNai(nn.Module):
         n_tilts_dataset,
         cnn_params,
         conf_regressor_params,
-        hyper_volume_params,
+        hypervolume_params,
         resolution_encoder=64,
         no_trans=False,
         use_gt_poses=False,
@@ -43,7 +43,7 @@ class DRGNai(nn.Module):
             z_dim: int
             std_z_init: float
             variational: bool
-        hyper_volume_params: dict
+        hypervolume_params: dict
             n_layers: int
             hidden_dim: it
             pe_type: str
@@ -157,21 +157,21 @@ class DRGNai(nn.Module):
             self.trans_search_factor = 0.0
 
         # hyper-volume
-        if not hyper_volume_params["explicit_volume"]:
+        if not hypervolume_params["explicit_volume"]:
             self.hypervolume = HyperVolume(
                 self.D,
                 self.z_dim,
-                hyper_volume_params["n_layers"],
-                hyper_volume_params["hidden_dim"],
-                hyper_volume_params["pe_type"],
-                hyper_volume_params["pe_dim"],
-                hyper_volume_params["feat_sigma"],
-                hyper_volume_params["domain"],
-                pe_type_conf=hyper_volume_params["pe_type_conf"],
+                hypervolume_params["n_layers"],
+                hypervolume_params["hidden_dim"],
+                hypervolume_params["pe_type"],
+                hypervolume_params["pe_dim"],
+                hypervolume_params["feat_sigma"],
+                hypervolume_params["domain"],
+                pe_type_conf=hypervolume_params["pe_type_conf"],
             )
         else:
             self.hypervolume = VolumeExplicit(
-                self.D, hyper_volume_params["domain"], hyper_volume_params["extent"]
+                self.D, hypervolume_params["domain"], hypervolume_params["extent"]
             )
 
     def update_trans_search_factor(self, ratio):
@@ -427,26 +427,22 @@ class DRGNai(nn.Module):
 
     def eval_volume(
         self,
+        lattice=None,
         coords=None,
-        D=None,
+        resolution=None,
         extent=None,
         norm=None,
         zval=None,
         radius=None,
     ):
-        use_lattice = self.lattice if coords is None else None
-        use_coords = coords or self.lattice.coords
-        use_D = D or self.lattice.D
-        use_extent = extent or self.lattice.extent
-
         return self.hypervolume.eval_volume(
-            lattice=use_lattice,
-            coords=use_coords,
-            resolution=use_D,
-            extent=use_extent,
+            lattice=self.lattice if lattice is None else lattice,
+            coords=self.lattice.coords if coords is None else coords,
+            resolution=self.lattice.D if resolution is None else resolution,
+            extent=self.lattice.extent if extent is None else extent,
             norm=norm,
             zval=zval,
-            radius=radius or self.output_mask.current_radius,
+            radius=self.output_mask.current_radius if radius is None else radius,
             z_dim=self.z_dim,
         )
 

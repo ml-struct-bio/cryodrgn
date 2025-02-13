@@ -16,11 +16,8 @@ import pprint
 from datetime import datetime as dt
 import logging
 import numpy as np
-import torch
-from cryodrgn import config, ctf, dataset
-from cryodrgn.models.utils import load_model
-from cryodrgn.pose import PoseTracker
-from cryodrgn.trainers import AmortizedInferenceTrainer, HierarchicalPoseSearchTrainer
+import cryodrgn.config
+from cryodrgn.models.utils import get_model_trainer
 
 logger = logging.getLogger(__name__)
 
@@ -232,121 +229,25 @@ def main(args: argparse.Namespace) -> None:
     if not os.path.exists(os.path.dirname(args.out_z)):
         os.makedirs(os.path.dirname(args.out_z))
 
-    # set the device
-    use_cuda = torch.cuda.is_available()
-    device = torch.device("cuda" if use_cuda else "cpu")
-    logger.info("Use cuda {}".format(use_cuda))
-    if not use_cuda:
-        logger.warning("WARNING: No GPUs detected")
-
     logger.info(args)
-    cfg = config.overwrite_config(args.config, args)
+    cfg = cryodrgn.config.overwrite_config(args.config, args)
+    cfg["load"] = args.weights
+    cfg["shuffle"] = False
     logger.info("Loaded configuration:")
     pprint.pprint(cfg)
 
-    z_dim = (
-        cfg["model_args"]["z_dim"]
-        if "z_dim" in cfg["model_args"]
-        else cfg["model_args"]["zdim"]
-    )
-    beta = 1.0 / z_dim if args.beta is None else args.beta
-
-    # load the particles
-    if args.ind is not None:
-        logger.info("Filtering image dataset with {}".format(args.ind))
-        ind = pickle.load(open(args.ind, "rb"))
-    else:
-        ind = None
-
-    if args.encode_mode != "tilt":
-        args.use_real = args.encode_mode == "conv"  # Must be False
-        data = dataset.ImageDataset(
-            mrcfile=args.particles,
-            lazy=args.lazy,
-            norm=args.norm,
-            invert_data=args.invert_data,
-            ind=ind,
-            keepreal=args.use_real,
-            window=args.window,
-            datadir=args.datadir,
-            window_r=args.window_r,
-            max_threads=args.max_threads,
-            device=device,
-        )
-    else:
-        assert args.encode_mode == "tilt"
-        data = dataset.TiltSeriesData(  # FIXME: maybe combine with above?
-            args.particles,
-            args.ntilts,
-            args.random_tilts,
-            norm=args.norm,
-            invert_data=args.invert_data,
-            ind=ind,
-            keepreal=args.use_real,
-            window=args.window,
-            datadir=args.datadir,
-            max_threads=args.max_threads,
-            window_r=args.window_r,
-            device=device,
-            dose_per_tilt=args.dose_per_tilt,
-            angle_per_tilt=args.angle_per_tilt,
-        )
-    if args.encode_mode == "conv":
-        assert data.D - 1 == 64, "Image size must be 64x64 for convolutional encoder"
-
     # instantiate model
-    model, lattice, _ = load_model(cfg, args.weights, device=device)
-    model.eval()
+    trainer = get_model_trainer(cfg)
+    trainer.reconstruction_model.eval()
     z_mu_all = []
     z_logvar_all = []
     gen_loss_accum = 0
     kld_accum = 0
     loss_accum = 0
     batch_it = 0
-    data_generator = dataset.make_dataloader(
-        data, batch_size=args.batch_size, shuffle=False
-    )
-
-    # load ctf
-    if args.ctf is not None:
-        if args.use_real:
-            raise NotImplementedError(
-                "Not implemented with real-space encoder!"
-                "Use phase-flipped images instead."
-            )
-        logger.info("Loading ctf params from {}".format(args.ctf))
-        ctf_params = ctf.load_ctf_for_training(data.D - 1, args.ctf)
-        if args.ind is not None:
-            ctf_params = ctf_params[ind]
-        ctf_params = torch.tensor(ctf_params, device=device)
-    else:
-        ctf_params = None
-
-    if "model" not in cfg["model_args"]:
-        cfg["model_args"]["model"] = "hps"
-        trainer = HierarchicalPoseSearchTrainer.load_from_config(
-            cfg, load_data=False, model=model
-        )
-    elif cfg["model_args"]["model"] == "amort":
-        trainer = AmortizedInferenceTrainer.load_from_config(
-            cfg, load_data=False, model=model
-        )
-    elif cfg["model_args"]["model"] == "hps":
-        trainer = HierarchicalPoseSearchTrainer.load_from_config(
-            cfg, load_data=False, model=model
-        )
-    else:
-        raise ValueError(
-            f"Unrecognized cryoDRGN model `{cfg['model_args']['model']}` specified "
-            f"in config file `{args.cfg}`!"
-        )
-
     trainer.current_epoch = -1
     trainer.use_point_estimates = True
-    trainer.ctf_params = ctf_params
-    trainer.pose_tracker = PoseTracker.load(
-        args.poses, data.N, data.D, None, ind, device=device
-    )
+
     if trainer.configs.pose_estimation == "abinit":
         trainer.predicted_rots = np.array(trainer.pose_tracker.rots)
         if trainer.pose_tracker.trans is not None:
@@ -354,13 +255,13 @@ def main(args: argparse.Namespace) -> None:
         else:
             trainer.predicted_trans = None
 
-    for minibatch in data_generator:
+    for minibatch in trainer.data_iterator:
         ind = minibatch["indices"]
         batch_size = len(ind)
         batch_it += batch_size
 
         losses, tilt_ind, ind, rot, trans, z_mu, z_logvar = trainer.train_batch(
-            batch=minibatch, lattice=lattice
+            batch=minibatch
         )
         z_mu = z_mu.detach().cpu().numpy()
         if z_logvar is not None:
@@ -377,23 +278,21 @@ def main(args: argparse.Namespace) -> None:
         gen_loss_accum += gen_loss * batch_size
         kld_accum += kld_loss * batch_size
         loss_accum += loss * batch_size
+
         if batch_it % args.log_interval == 0:
             logger.info(
-                "# [{}/{} images] gen loss={:.4f}, kld={:.4f}, beta={:.4f}, loss={:.4f}".format(
-                    batch_it, data.N, gen_loss, kld_loss, beta, loss
-                )
+                f"# [{batch_it}/{trainer.data.N} images] gen loss={gen_loss:.4f}, "
+                f"kld={kld_loss:.4f}, loss={loss:.4f}"
             )
-
     logger.info(
-        "# =====> Average gen loss = {:.6}, KLD = {:.6f}, total loss = {:.6f}".format(
-            gen_loss_accum / data.N, kld_accum / data.N, loss_accum / data.N
-        )
+        f"# =====> Average gen loss = {gen_loss_accum / trainer.data.N:.6}, "
+        f"KLD = {kld_accum / trainer.data.N:.6f}, "
+        f"total loss = {loss_accum / trainer.data.N:.6f}"
     )
 
     z_mu_all = np.vstack(z_mu_all)
     if z_logvar_all:
         z_logvar_all = np.vstack(z_logvar_all)
-
     with open(args.out_z, "wb") as f:
         pickle.dump(z_mu_all, f)
         if z_logvar_all is not None:
@@ -402,9 +301,9 @@ def main(args: argparse.Namespace) -> None:
     with open(args.o, "wb") as f:
         pickle.dump(
             {
-                "loss": loss_accum / data.N,
-                "recon": gen_loss_accum / data.N,
-                "kld": kld_accum / data.N,
+                "loss": loss_accum / trainer.data.N,
+                "recon": gen_loss_accum / trainer.data.N,
+                "kld": kld_accum / trainer.data.N,
             },
             f,
         )

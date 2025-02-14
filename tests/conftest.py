@@ -1,11 +1,16 @@
 """Fixtures used across many unit test modules."""
 
 import pytest
+import argparse
 import os
 import shutil
 from typing import Optional, Union, Any
 from dataclasses import dataclass
+
+import cryodrgn.utils
 from cryodrgn.utils import run_command
+from cryodrgn.models.utils import get_model_configurations
+from cryodrgn.trainers.reconstruction import ReconstructionModelConfigurations
 
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "tests", "data")
@@ -164,6 +169,88 @@ def weights(request) -> Union[DataFixture, dict[str, DataFixture]]:
 @pytest.fixture(scope="function")
 def configs(request) -> Union[DataFixture, dict[str, DataFixture]]:
     return produce_data_fixture(CONFIG_FILES, request.param)
+
+
+class TrainCommand:
+
+    replace_params = {
+        "lr": "learning_rate",
+        "wd": "weight_decay",
+        "zdim": "z_dim",
+        "dim": "hidden_dim",
+    }
+    bool_params = {"no-amp": {"amp", False}}
+
+    def parse_args(self) -> ReconstructionModelConfigurations:
+        cur_k = None
+        i = 1
+        while i < len(self.args):
+            if self.args[i][0] == "-":
+                cur_k = (
+                    self.args[i][2:] if self.args[i][1] == "-" else self.args[i][1:]
+                ).replace("-", "_")
+
+                if cur_k in self.replace_params:
+                    cur_k = self.replace_params[cur_k]
+                if cur_k in self.bool_params:
+                    self.cfgs.update(self.bool_params[cur_k])
+            else:
+                assert cur_k is not None
+                self.cfgs[cur_k] = self.args[i]
+
+            i += 1
+
+        if "z_dim" not in self.cfgs:
+            self.cfgs["z_dim"] = 0
+
+        return get_model_configurations(self.cfgs)
+
+    def __init__(
+        self,
+        train_cmd: str,
+        args: list[str],
+        outdir: str,
+        train_type,
+    ) -> None:
+        self.train_cmd = train_cmd
+        self.args = args
+        self.outdir = outdir
+        self.train_type = train_type
+
+        self.cfgs = {
+            "model": "amort" if self.train_type == "drgnai" else "hps",
+            "particles": self.args[0],
+        }
+
+        if self.train_cmd in {"train_nn", "train_vae"}:
+            self.cfgs["pose_estimation"] = "fixed"
+        elif self.train_cmd in {"abinit_homo", "abinit_het"}:
+            self.cfgs["pose_estimation"] = "abinit"
+
+        self.configs = self.parse_args()
+
+    def run(self) -> None:
+        self.configs = self.parse_args()
+
+        if self.train_type == "cdrgn":
+            if "--hidden-dim" in self.args:
+                i = self.args.index("--hidden-dim")
+                self.args = (
+                    self.args[:i]
+                    + ["--enc-dim", self.args[i + 1], "--dec-dim", self.args[i + 1]]
+                    + self.args[(i + 2) :]
+                )
+
+            cmd_args = self.args + ["-o", self.outdir]
+        else:
+            cfg_file = os.path.join(self.outdir, "configs.yaml")
+            cryodrgn.utils.save_yaml(self.cfgs, cfg_file)
+            cmd_args = [cfg_file, "-o", self.outdir, "--no-analysis"]
+
+        use_cmd = self.train_cmd if self.train_type == "cdrgn" else "train"
+        parser = argparse.ArgumentParser()
+        eval(use_cmd).add_args(parser)
+        eval(use_cmd).main(parser.parse_args(cmd_args))
 
 
 class TrainDir:
@@ -416,15 +503,11 @@ class AbInitioDir:
             cmd += "--enc-dim 8 --enc-layers 2 --dec-dim 8 --pe-dim 8 "
         else:
             cmd += "--dim 16 --pe-dim 8 "
-
         if self.seed is not None:
             cmd += f"--seed={self.seed} "
 
         if load_epoch is not None:
             cmd += f"--load {os.path.join(self.outdir, f'weights.{load_epoch}.pkl')} "
-            cmd += (
-                f"--load-poses {os.path.join(self.outdir, f'pose.{load_epoch}.pkl')} "
-            )
 
         out, err = run_command(cmd)
         assert ") Finished in " in out, err
@@ -442,7 +525,7 @@ class AbInitioDir:
     def backproject(self) -> None:
         out_path = os.path.join(self.outdir, "backproject")
         out_fl = os.path.join(out_path, "vol.mrc")
-        in_poses = os.path.join(self.outdir, "pose.pkl")
+        in_poses = os.path.join(self.outdir, f"pose.{self.epochs}.pkl")
 
         out, err = run_command(
             f"cryodrgn backproject_voxel {self.particles} "

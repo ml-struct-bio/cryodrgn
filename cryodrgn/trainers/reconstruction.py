@@ -535,7 +535,9 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
                 load_path = self.configs.load
 
             self.logger.info(f"Loading checkpoint from {load_path}")
-            checkpoint = torch.load(load_path, weights_only=False)
+            checkpoint = torch.load(
+                load_path, weights_only=False, map_location=self.device
+            )
             state_dict = checkpoint["model_state_dict"]
 
             if self.configs.pose_estimation == "abinit":
@@ -569,11 +571,11 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
                 self.reconstruction_model.output_mask.update_radius(
                     checkpoint["output_mask_radius"]
                 )
-
-            for key in self.optimizers:
-                self.optimizers[key].load_state_dict(
-                    checkpoint["optimizers_state_dict"][key]
-                )
+            if "optimizers_state_dict" in checkpoint:
+                for key in self.optimizers:
+                    self.optimizers[key].load_state_dict(
+                        checkpoint["optimizers_state_dict"][key]
+                    )
 
             self.start_epoch = checkpoint["epoch"] + 1
             self.do_pretrain = False

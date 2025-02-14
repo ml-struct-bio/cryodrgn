@@ -231,10 +231,16 @@ def main(args: argparse.Namespace) -> None:
 
     logger.info(args)
     cfg = cryodrgn.config.overwrite_config(args.config, args)
-    cfg["load"] = args.weights
-    cfg["shuffle"] = False
     logger.info("Loaded configuration:")
     pprint.pprint(cfg)
+
+    cfg["load"] = args.weights
+    cfg["shuffle"] = False
+    cfg["dataset_args"]["particles"] = args.particles
+    cfg["dataset_args"]["poses"] = args.poses
+    cfg["load_poses"] = args.poses
+    if args.ctf is not None:
+        cfg["dataset_args"]["ctf"] = args.ctf
 
     # instantiate model
     trainer = get_model_trainer(cfg)

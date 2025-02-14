@@ -28,8 +28,8 @@ from torch.utils.data import Dataset, DataLoader
 import cryodrgn.config
 from cryodrgn.utils import load_pkl, save_pkl
 from cryodrgn.models.neural_nets import ResidLinearMLP
-from cryodrgn.models.utils import load_model
 from cryodrgn.source import ImageSource
+from cryodrgn.commands.eval_vol import VolumeEvaluator
 
 logger = logging.getLogger(__name__)
 
@@ -201,8 +201,16 @@ def generate_and_map_volumes(
     logger.info("Loaded configuration:")
     pprint.pprint(cfg)
 
-    D = cfg["lattice_args"]["D"]  # image size + 1
-    norm = [float(x) for x in cfg["dataset_args"]["norm"]]
+    # Load model weights
+    logger.info("Loading weights from {}".format(weights))
+    volume_generator = VolumeEvaluator(
+        weights,
+        cfg,
+        args.device,
+        verbose=False,
+        flip=args.flip,
+        downsample=args.downsample,
+    )
 
     # Load landscape analysis inputs
     mask = np.array(ImageSource.from_file(mask_mrc).images().cpu())
@@ -211,18 +219,15 @@ def generate_and_map_volumes(
     if args.downsample:
         assert mask.shape == (args.downsample,) * 3
     else:
-        assert mask.shape == (D - 1, D - 1, D - 1)
-    logger.info(f"{mask.sum()} voxels in the mask")
-
-    pca = load_pkl(pca_obj_pkl)
-
-    # Load model weights
-    logger.info("Loading weights from {}".format(weights))
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model, lattice, radius_mask = load_model(cfg, weights, device)
-    model.eval()
+        assert mask.shape == (
+            volume_generator.D - 1,
+            volume_generator.D - 1,
+            volume_generator.D - 1,
+        )
 
     # Set z
+    logger.info(f"{mask.sum()} voxels in the mask")
+    pca = load_pkl(pca_obj_pkl)
     z = z_sample.astype(np.float32)
 
     # Generate volumes
@@ -233,20 +238,7 @@ def generate_and_map_volumes(
         if i % 100 == 0:
             logger.info(i)
 
-        if args.downsample:
-            extent = lattice.extent * (args.downsample / (D - 1))
-            vol = model.eval_volume(
-                lattice.get_downsample_coords(args.downsample + 1),
-                args.downsample + 1,
-                extent,
-                norm,
-                zz,
-            )
-        else:
-            vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, norm, zz)
-        if args.flip:
-            vol = vol.flip([0])
-
+        vol = volume_generator.evaluate_volume(zz)
         embeddings.append(
             pca.transform(vol.cpu()[torch.tensor(mask).bool()].reshape(1, -1))
         )

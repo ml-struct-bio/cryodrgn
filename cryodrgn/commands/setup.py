@@ -1,13 +1,7 @@
 """Utilities for creating experiment output folders and configuration files."""
 
 import argparse
-from cryodrgn.trainers.amortinf_trainer import AmortizedInferenceTrainer
-from cryodrgn.trainers.hps_trainer import HierarchicalPoseSearchTrainer
-
-TRAINER_CLASSES = {
-    "amort": AmortizedInferenceTrainer,
-    "hps": HierarchicalPoseSearchTrainer,
-}
+from cryodrgn.models.utils import get_model_configurations
 
 
 def add_args(parser: argparse.ArgumentParser) -> None:
@@ -28,6 +22,11 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--ctf", help="path to the CTF parameters (.pkl)")
     parser.add_argument("--poses", help="path to the poses (.pkl)")
     parser.add_argument("--ind", help="path to filtering indices (.pkl)")
+    parser.add_argument(
+        "--datadir",
+        help="Path prefix to particle stack if loading relative "
+        "paths from a .star or .cs file",
+    )
 
     parser.add_argument(
         "--reconstruction-type",
@@ -65,7 +64,6 @@ def add_args(parser: argparse.ArgumentParser) -> None:
 
 
 def main(args: argparse.Namespace) -> None:
-    trainer_cls = TRAINER_CLASSES[args.model]
 
     if args.reconstruction_type == "het":
         z_dim = 8
@@ -85,9 +83,10 @@ def main(args: argparse.Namespace) -> None:
         "ctf": args.ctf,
         "poses": args.poses,
         "ind": args.ind,
+        "datadir": args.datadir,
         "z_dim": z_dim,
         "pose_estimation": args.pose_estimation,
+        "tilt": args.tilt,
     }
-    cfgs.update(trainer_cls.config_cls.parse_cfg_keys(args.cfgs))
-    configs = trainer_cls.config_cls(**cfgs)
+    configs = get_model_configurations(cfgs)
     configs.write(args.config_file)

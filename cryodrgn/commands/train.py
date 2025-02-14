@@ -16,7 +16,7 @@ $ sbatch -t 3:00:00 --wrap='cryodrgn train new-test' --mem=16G -o new-test.out
 import argparse
 from typing import Optional, Any
 import cryodrgn.utils
-from cryodrgn.commands.setup import TRAINER_CLASSES
+from cryodrgn.models.utils import get_model_trainer
 from cryodrgn.commands.analyze import ModelAnalyzer
 
 
@@ -30,7 +30,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
 
     parser.add_argument(
         "--model",
-        choices=set(TRAINER_CLASSES),
+        choices={"amort", "hps"},
         help="which model to use for reconstruction",
     )
     parser.add_argument(
@@ -67,13 +67,12 @@ def main(
     else:
         use_model = "amort"
 
-    trainer_cls = TRAINER_CLASSES[use_model]
-    if additional_configs is None:
-        additional_configs = dict()
-    if args.cfgs:
-        configs = {**configs, **trainer_cls.config_cls.parse_cfg_keys(args.cfgs)}
+    configs["model"] = use_model
+    configs["outdir"] = args.outdir
+    if additional_configs is not None:
+        configs.update(additional_configs)
 
-    trainer = trainer_cls({**configs, **additional_configs, "outdir": args.outdir})
+    trainer = get_model_trainer(configs)
     cryodrgn.utils._verbose = False
     trainer.train()
 

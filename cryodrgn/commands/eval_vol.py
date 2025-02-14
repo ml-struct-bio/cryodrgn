@@ -193,9 +193,11 @@ class VolumeEvaluator:
             cfg_data, argparse.Namespace(**architecture_args)
         )
         logger.info("Loaded configuration:")
+        cfg_data["weights"] = weights
         pprint.pprint(cfg_data)
 
         self.trainer = get_model_trainer(cfg_data)
+        apix = apix if apix is not None else self.trainer.apix
         orig_d = self.trainer.lattice.D  # image size + 1
         self.z_dim = self.trainer.configs.z_dim
         self.norm = self.trainer.data.norm

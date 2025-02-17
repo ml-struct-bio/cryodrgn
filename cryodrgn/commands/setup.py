@@ -43,7 +43,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         help="homogeneous or heterogeneous reconstruction with z-dim=8?",
     )
     parser.add_argument(
-        "--z_dim",
+        "--z-dim",
         type=int,
         default=0,
         help="homogeneous (default) or heterogeneous reconstruction with z-dim=8?",

@@ -144,7 +144,7 @@ class BaseConfigurations(ABC):
                 cfgs[cfg_key] = None
 
             else:
-                for fld in cls.fields():
+                for fld in fields(cls):
                     if cfg_key == fld.name:
                         if fld.type is str:
                             cfgs[cfg_key] = str(cfg_val)
@@ -160,7 +160,7 @@ class BaseConfigurations(ABC):
 
                 else:
                     close_keys = difflib.get_close_matches(
-                        cfg_key, [fld.name for fld in cls.fields()]
+                        cfg_key, [fld.name for fld in fields(cls)]
                     )
 
                     if close_keys:

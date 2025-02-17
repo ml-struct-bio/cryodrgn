@@ -1,6 +1,6 @@
 """Utilities shared across all types of models."""
 
-from typing import Any
+from typing import Any, Optional
 from cryodrgn.trainers.reconstruction import (
     ReconstructionModelTrainer,
     ReconstructionModelConfigurations,
@@ -36,7 +36,9 @@ def update_configs(cfg: dict[str, Any]) -> dict[str, Any]:
     return cfg
 
 
-def get_model_trainer(cfg: dict[str, Any]) -> ReconstructionModelTrainer:
+def get_model_trainer(
+    cfg: dict[str, Any], add_cfgs: Optional[list[str]] = None
+) -> ReconstructionModelTrainer:
     cfg = update_configs(cfg)
 
     if "model" in cfg:
@@ -54,10 +56,15 @@ def get_model_trainer(cfg: dict[str, Any]) -> ReconstructionModelTrainer:
     else:
         raise ValueError(f"Unrecognized model `{model}` specified in config!")
 
+    if add_cfgs:
+        cfg.update(trainer_cls.config_cls.parse_cfg_keys(add_cfgs))
+
     return trainer_cls.load_from_config(cfg)
 
 
-def get_model_configurations(cfg: dict[str, Any]) -> ReconstructionModelConfigurations:
+def get_model_configurations(
+    cfg: dict[str, Any], add_cfgs: Optional[list[str]] = None
+) -> ReconstructionModelConfigurations:
     cfg = ReconstructionModelConfigurations.parse_config(update_configs(cfg))
 
     if "model" not in cfg:
@@ -70,5 +77,8 @@ def get_model_configurations(cfg: dict[str, Any]) -> ReconstructionModelConfigur
         raise ValueError(
             f"Model unrecognized by cryoDRGN: `{cfg['model']}` specified in config!"
         )
+
+    if add_cfgs:
+        cfg.update(configs_cls.parse_cfg_keys(add_cfgs))
 
     return configs_cls(**cfg)

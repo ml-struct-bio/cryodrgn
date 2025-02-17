@@ -1128,11 +1128,12 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
             with open(out_pose, "wb") as f:
                 pickle.dump(self.predicted_rots, f)
         else:
+            if self.predicted_trans is not None:
+                out_trans = self.predicted_trans / self.model_resolution
+            else:
+                out_trans = None
             with open(out_pose, "wb") as f:
-                pickle.dump(
-                    (self.predicted_rots, self.predicted_trans / self.model_resolution),
-                    f,
-                )
+                pickle.dump((self.predicted_rots, out_trans), f)
 
         if self.configs.z_dim > 0:
             out_conf = os.path.join(

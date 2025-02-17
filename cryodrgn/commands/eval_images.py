@@ -236,9 +236,10 @@ def main(args: argparse.Namespace) -> None:
 
     cfg["load"] = args.weights
     cfg["shuffle"] = False
+    cfg["load_poses"] = args.poses
+    cfg["model_args"]["pose_estimation"] = "fixed"
     cfg["dataset_args"]["particles"] = args.particles
     cfg["dataset_args"]["poses"] = args.poses
-    cfg["load_poses"] = args.poses
     if args.ctf is not None:
         cfg["dataset_args"]["ctf"] = args.ctf
 
@@ -253,13 +254,6 @@ def main(args: argparse.Namespace) -> None:
     batch_it = 0
     trainer.current_epoch = -1
     trainer.use_point_estimates = True
-
-    if trainer.configs.pose_estimation == "abinit":
-        trainer.predicted_rots = np.array(trainer.pose_tracker.rots)
-        if trainer.pose_tracker.trans is not None:
-            trainer.predicted_trans = np.array(trainer.pose_tracker.trans)
-        else:
-            trainer.predicted_trans = None
 
     for minibatch in trainer.data_iterator:
         ind = minibatch["indices"]

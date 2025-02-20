@@ -21,9 +21,9 @@ from typing import Optional
 import numpy as np
 import torch
 import cryodrgn.config
-from cryodrgn.models.utils import get_model_trainer
 from cryodrgn.lattice import Lattice
 from cryodrgn.source import write_mrc
+from cryodrgn.models.utils import get_model
 
 logger = logging.getLogger(__name__)
 
@@ -196,37 +196,41 @@ class VolumeEvaluator:
         cfg_data["weights"] = weights
         pprint.pprint(cfg_data)
 
-        self.trainer = get_model_trainer(cfg_data)
-        apix = apix if apix is not None else self.trainer.apix
-        orig_d = self.trainer.lattice.D  # image size + 1
-        self.z_dim = self.trainer.configs.z_dim
-        self.norm = self.trainer.data.norm
+        if apix is not None:
+            self.apix = apix
+        elif "apix" in cfg_data["dataset_args"]:
+            self.apix = cfg_data["dataset_args"]["apix"]
+        else:
+            self.apix = 1.0
 
+        model = get_model(cfg_data)
         if downsample:
             if downsample % 2 != 0:
                 raise ValueError("Boxsize must be even")
-            if downsample > orig_d - 1:
+            if downsample > model.lattice.D - 1:
                 raise ValueError(
                     "Downsampling size must be smaller than original box size"
                 )
 
-            self.coords = self.trainer.lattice.get_downsample_coords(downsample + 1)
+            self.coords = model.lattice.get_downsample_coords(downsample + 1)
             self.D = downsample + 1
-            self.extent = self.trainer.lattice.extent * (downsample / (orig_d - 1))
+            self.extent = model.lattice.extent * (downsample / (model.lattice.D - 1))
             self.lattice = Lattice(
-                self.D, extent=self.trainer.lattice.extent, device=self.device
+                self.D, extent=model.lattice.extent, device=self.device
             )
         else:
-            self.lattice = self.trainer.lattice
-            self.coords = self.trainer.lattice.coords
-            self.D = self.trainer.lattice.D
-            self.extent = self.trainer.lattice.extent
+            self.lattice = model.lattice
+            self.coords = model.lattice.coords
+            self.D = model.lattice.D
+            self.extent = model.lattice.extent
 
         self.verbose = verbose
         self.apix = apix
         self.flip = flip
         self.invert = invert
-        self.trainer.reconstruction_model.eval()
+        self.model = model
+        self.model.eval()
+        self.norm = cfg_data["dataset_args"]["norm"]
 
     def transform_volume(self, vol):
         if self.flip:
@@ -238,16 +242,14 @@ class VolumeEvaluator:
 
     def evaluate_volume(self, z):
         return self.transform_volume(
-            self.trainer.reconstruction_model.eval_volume(
+            self.model.eval_volume(
                 lattice=self.lattice,
                 coords=self.coords,
                 resolution=self.D,
                 extent=self.extent,
                 norm=self.norm,
                 zval=z,
-                radius=self.trainer.mask_dimensions
-                if hasattr(self.trainer, "mask_dimensions")
-                else None,
+                radius=None,
             )
         )
 
@@ -326,23 +328,21 @@ def main(args: argparse.Namespace) -> None:
                 "and z-end of equal length!"
             )
 
-    # parse user inputs for location(s) in the latent space
+    # Parse location(s) specified by the user in the latent space in various formats
     if args.zfile:
-        z_vals = np.loadtxt(args.zfile).reshape(-1, evaluator.z_dim)
-
+        z_vals = np.loadtxt(args.zfile).reshape(-1, evaluator.model.z_dim)
     elif args.z_start:
-        z_start = np.array(args.z_start)
-        z_end = np.array(args.z_end)
-
+        z_start, z_end = np.array(args.z_start), np.array(args.z_end)
+        z_dim = cfg["model_args"]["z_dim"]
         z_vals = np.repeat(
-            np.arange(args.volume_count, dtype=np.float32), evaluator.z_dim
-        ).reshape((args.volume_count, evaluator.z_dim))
+            np.arange(args.volume_count, dtype=np.float32), z_dim
+        ).reshape((args.volume_count, z_dim))
         z_vals *= (z_end - z_start) / (args.volume_count - 1)  # type: ignore
         z_vals += z_start
-
     else:
         z_vals = np.array(args.z_val)
 
+    # Evaluate the volumes at these locations and save them to file
     if len(z_vals):
         evaluator.produce_volumes(
             z_vals, args.output, args.prefix, args.vol_start_index

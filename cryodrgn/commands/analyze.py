@@ -19,6 +19,7 @@ import yaml
 from datetime import datetime as dt
 import logging
 import nbformat
+from typing import Any
 
 import numpy as np
 import torch
@@ -29,7 +30,7 @@ import seaborn as sns
 from cryodrgn import _ROOT
 import cryodrgn.analysis
 import cryodrgn.utils
-from cryodrgn.models.utils import get_model_trainer
+from cryodrgn.models.utils import get_model_configurations
 from cryodrgn.commands.eval_vol import VolumeEvaluator
 
 logger = logging.getLogger(__name__)
@@ -140,13 +141,13 @@ class ModelAnalyzer:
         self.cfg_file = os.path.join(self.traindir, "train-configs.yaml")
         if os.path.exists(self.cfg_file):
             with open(self.cfg_file, "r") as f:
-                cfg_dict: dict[str, dict[str, str]] = yaml.safe_load(f)
+                cfg_dict: dict[str, dict[str, Any]] = yaml.safe_load(f)
         else:
             raise FileNotFoundError(
                 f"Cannot find training configurations file `{self.cfg_file}` "
                 f"— has this model been trained yet?"
             )
-        self.trainer = get_model_trainer(cfg_dict)
+        self.train_configs = get_model_configurations(cfg_dict)
 
         log_fl = os.path.join(self.traindir, "training.log")
         if os.path.exists(log_fl):
@@ -170,8 +171,8 @@ class ModelAnalyzer:
 
         # find A/px from CTF if not given
         else:
-            if self.trainer.configs.ctf:
-                ctf_params = cryodrgn.utils.load_pkl(self.trainer.configs.ctf)
+            if self.train_configs.ctf:
+                ctf_params = cryodrgn.utils.load_pkl(self.train_configs.ctf)
                 orig_apixs = set(ctf_params[:, 1])
 
                 # TODO: add support for multiple optics groups
@@ -186,17 +187,15 @@ class ModelAnalyzer:
                     orig_apix = tuple(orig_apixs)[0]
                     orig_sizes = set(ctf_params[:, 0])
                     orig_size = tuple(orig_sizes)[0]
-
                     if len(orig_sizes) > 1:
                         logger.info(
                             f"Cannot find unique original box size in CTF "
                             f"parameters, defaulting to first found: {orig_size}"
                         )
 
-                    cur_size = self.trainer.lattice.D
+                    cur_size = cfg_dict["lattice_args"]["D"] - 1
                     self.apix = round(orig_apix * orig_size / cur_size, 6)
                     logger.info(f"using A/px={self.apix} as per CTF parameters")
-
             else:
                 self.apix = 1.0
                 logger.info(
@@ -219,7 +218,7 @@ class ModelAnalyzer:
                 f"to epoch {self.epoch} yet?"
             )
 
-        if self.trainer.configs.z_dim > 0:
+        if self.train_configs.z_dim > 0:
             self.z = cryodrgn.utils.load_pkl(
                 os.path.join(self.traindir, f"conf.{self.epoch}.pkl")
             )
@@ -235,7 +234,7 @@ class ModelAnalyzer:
         logger.info(f"Saving results to {self.outdir}")
 
         # We will generate volumes unless told not to or if using a homogeneous model
-        if skip_vol or self.trainer.configs.z_dim == 0:
+        if skip_vol or self.train_configs.z_dim == 0:
             self.volume_generator = None
         else:
             cfgs = cryodrgn.utils.load_yaml(self.cfg_file)
@@ -276,11 +275,11 @@ class ModelAnalyzer:
             logger.info("Skipping volume generation...")
 
     def analyze(self) -> None:
-        if self.trainer.configs.z_dim == 0:
+        if self.train_configs.z_dim == 0:
             logger.warning("No analyses available for homogeneous reconstruction!")
             return
 
-        elif self.trainer.configs.z_dim == 1:
+        elif self.train_configs.z_dim == 1:
             self.analyze_z1()
         else:
             self.analyze_zN()
@@ -288,7 +287,7 @@ class ModelAnalyzer:
         # create Jupyter notebooks for data analysis and visualization by
         # copying them over from the template directory
         ipynbs = ["cryoDRGN_figures"]
-        if self.trainer.configs.tilt:
+        if self.train_configs.tilt:
             ipynbs += ["ET-viz"]
         else:
             ipynbs += ["cryoDRGN_viz", "analysis"]
@@ -353,7 +352,7 @@ class ModelAnalyzer:
         if self.direct_traversal_txt is not None:
             dir_traversal_vertices_ind = np.loadtxt(self.direct_traversal_txt)
             travdir = os.path.join(self.outdir, "direct_traversal")
-            z_values = np.zeros((0, self.trainer.configs.z_dim))
+            z_values = np.zeros((0, self.train_configs.z_dim))
 
             for i, ind in enumerate(dir_traversal_vertices_ind[:-1]):
                 z_0 = self.z[int(int)]

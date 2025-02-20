@@ -38,6 +38,75 @@ except ImportError:
 
 @dataclass
 class HierarchicalPoseSearchConfigurations(ReconstructionModelConfigurations):
+    """The configurations used by the cryoDRGN v3 model training engine.
+
+    Arguments
+    ---------
+    > inherited from `BaseConfigurations`:
+        verbose     An integer specifiying the verbosity level for this engine, with
+                    the default value of 0 generally specifying no/minimum verbosity.
+        outdir      Path to where output produced by the engine will be saved.
+        seed        A non-negative integer used to fix the stochasticity of the random
+                    number generators used by this engine for reproducibility.
+                    The default is to not fix stochasticity and thus use a different
+                    random seed upon each run of the engine.
+        test_installation   Only perform a smoke test that this module has been
+                            installed correctly and exit immediately without running
+                            anything if this boolean value is set to `True`.
+                            Default is not to run this test.
+
+    > inherited from `ReconstructionModelConfigurations`:
+        model       A label for the reconstruction algorithm to be used — must be either
+                    `hps` for cryoDRGN v3 models or `amort` for cryoDRGN-AI models.
+        z_dim       The dimensionality of the latent space of conformations.
+                    Thus z_dim=0 for homogeneous models
+                    and z_dim>0 for hetergeneous models.
+        num_epochs  The total number of epochs to use when training the model, not
+                    including pretraining epoch(s).
+
+        dataset     Label for the particle dataset to be used as input for the model.
+                    If used, remaining input parameters can be omitted.
+        particles   Path to the stack of particle images to use as input for the model.
+                    Must be a (.mrcs/.txt/.star/.cs file).
+        ctf         Path to the file storing contrast transfer function parameters
+                    used to process the input particle images.
+        poses       Path to the input particle poses data (.pkl).
+        datadir     Path prefix to particle stack if loading relative paths from
+                    a .star or .cs file.
+        ind         Path to a numpy array saved as a .pkl used to filter
+                    input particles.
+
+        pose_estimation     Whether to perform ab-initio reconstruction ("abinit"),
+                            reconstruction using fixed poses ("fixed"), or
+                            reconstruction with SGD refinement of poses ("refine").
+                            Default is to use fixed poses if poses file is given
+                            and ab-initio otherwise.
+
+        load:       Load model from given weights.<epoch>.pkl output file saved from
+                    previous run of the engine.
+                    Can also be given as "latest", in which the latest saved epoch
+                    in the given output directory will be used.
+        lazy        Whether to use lazy loading of data into memory in smaller batches.
+                    Necessary if input dataset is too large to fit into memory.
+
+        batch_size      The number of input images to use at a time when updating
+                        the learning algorithm.
+
+        multigpu        Whether to use all available GPUs available on this machine.
+                        The default is to use only one GPU.
+
+        log_interval    Print a log message every `N` number of training images.
+        checkpoint      Save model results to file every `N` training epochs.
+
+        pe_type     Label for the type of positional encoding to use.
+        pe_dim      Number of frequencies to use in the positional encoding
+                    (default: 64).
+        volume_domain   Representation to use in the volume
+                        decoder ("hartley" or "fourier").
+
+    enc_layers      The number of hidden layers in the encoder used by the model.
+    dec_layers      The number of hidden layers in the decoder used by the model.
+    """
 
     # A parameter belongs to this configuration set if and only if it has a type and a
     # default value defined here, note that children classes inherit these parameters
@@ -70,14 +139,11 @@ class HierarchicalPoseSearchConfigurations(ReconstructionModelConfigurations):
 
     def __post_init__(self) -> None:
         super().__post_init__()
-        assert self.model == "hps"
 
-        if self.dataset is None:
-            if self.particles is None:
-                raise ValueError(
-                    "As dataset was not specified, please specify particles!"
-                )
-
+        if self.model != "hps":
+            raise ValueError(
+                f"Mismatched model `{self.model=}` for {self.__class__.__name__}!"
+            )
         if self.beta is not None:
             if not self.z_dim:
                 raise ValueError("Cannot use beta with homogeneous reconstruction!.")

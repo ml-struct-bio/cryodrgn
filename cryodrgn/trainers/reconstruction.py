@@ -50,7 +50,7 @@ class ReconstructionModelConfigurations(BaseConfigurations):
     z_dim       The dimensionality of the latent space of conformations.
                 Thus z_dim=0 for homogeneous models and z_dim>0 for hetergeneous models.
     num_epochs  The total number of epochs to use when training the model, not including
-                pretraining epochs.
+                pretraining epoch(s).
 
     dataset     Label for the particle dataset to be used as input for the model.
                 If used, remaining input parameters can be omitted.
@@ -224,7 +224,7 @@ class ReconstructionModelConfigurations(BaseConfigurations):
                 raise ValueError(
                     "To specify datasets using a label, first specify"
                     "a .yaml catalogue of datasets using the "
-                    "environment variable $DRGNAI_DATASETS!"
+                    "environment variable $CRYODRGN_DATASETS!"
                 )
 
             # you can also give the dataset as a label in the global dataset list
@@ -234,15 +234,17 @@ class ReconstructionModelConfigurations(BaseConfigurations):
             for k, v in paths.items():
                 setattr(self, k, v)
 
-        elif self.particles is None:
+        elif not self.particles:
             raise ValueError(
                 "Must specify either a dataset label stored in "
                 f"{paths_file} or the paths to a particles and "
                 "ctf settings file!"
             )
+        elif not os.path.isfile(self.particles):
+            raise ValueError(f"Given particles file `{self.particles}` does not exist!")
 
-        if isinstance(self.ind, str) and not os.path.exists(self.ind):
-            raise ValueError(f"Subset indices file {self.ind} does not exist!")
+        if isinstance(self.ind, str) and not os.path.isfile(self.ind):
+            raise ValueError(f"Given subset indices file {self.ind} does not exist!")
 
         if self.pose_estimation is None:
             self.pose_estimation = "fixed" if self.poses else "abinit"
@@ -258,6 +260,8 @@ class ReconstructionModelConfigurations(BaseConfigurations):
                 raise ValueError(
                     "Specify an input file (poses=) if using ground truth poses!"
                 )
+        if isinstance(self.poses, str) and not os.path.isfile(self.poses):
+            raise ValueError(f"Given poses file {self.poses} does not exist!")
 
         if self.batch_size_known_poses is None:
             self.batch_size_known_poses = self.batch_size
@@ -411,7 +415,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
                 self.data.voltage = float(ctf_params[0, 4])
 
             self.ctf_params = torch.tensor(ctf_params, device=self.device)
-            self.apix = self.ctf_params[0, 0]
+            self.apix = float(self.ctf_params[0, 0])
         else:
             self.ctf_params = None
             self.apix = None
@@ -787,7 +791,16 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
             )
 
     def get_configs(self) -> dict[str, Any]:
-        """Retrieves all given and inferred configurations for downstream use."""
+        """Retrieves all given and inferred configurations for downstream use.
+
+        Note that we need this in addition to the class attribute `configs` which is a
+        `ReconstructionModelConfigurations` object in order to 1) define a way of saving
+        these configurations to file in a more structured, hierarchical, human-readable
+        format where the configurations are sorted and partitioned according to the
+        facet of the engine they concern and 2) provide a method of retrieving
+        configuration values that need to be computed from the particle stack (such as
+        `data.norm`) without having to reload the stack from file.
+        """
 
         dataset_args = dict(
             particles=self.configs.particles,
@@ -795,12 +808,15 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
             norm=self.data.norm,
             invert_data=self.configs.invert_data,
             ind=self.configs.ind,
+            n_particles=self.particle_count,
+            n_images=self.image_count,
             keepreal=self.configs.use_real,
             window=self.configs.window,
             window_r=self.configs.window_r,
             datadir=self.configs.datadir,
             ctf=self.configs.ctf,
             tilt=self.configs.tilt,
+            apix=self.apix,
         )
 
         if self.lattice is not None:

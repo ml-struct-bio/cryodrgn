@@ -31,7 +31,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--model",
         choices={"amort", "hps"},
-        help="which model to use for reconstruction",
+        help="which model to use for reconstruction; default is `amort` (cryoDRGN-AI)",
     )
     parser.add_argument(
         "--no-analysis",
@@ -72,7 +72,7 @@ def main(
     if additional_configs is not None:
         configs.update(additional_configs)
 
-    trainer = get_model_trainer(configs)
+    trainer = get_model_trainer(configs, add_cfgs=args.cfgs)
     cryodrgn.utils._verbose = False
     trainer.train()
 

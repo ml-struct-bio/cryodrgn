@@ -326,7 +326,7 @@ class TestHeterogeneous:
         traincmd.run()
         out_files = os.listdir(traincmd.outdir)
         assert "weights.3.pkl" in out_files, "Missing output model weights!"
-        assert "conf.3.pkl" in out_files, "Missing output latent conformations!"
+        assert "z.3.pkl" in out_files, "Missing output latent conformations!"
 
     @pytest.mark.parametrize(
         "train_type, particles, ctf, indices, poses",
@@ -358,7 +358,7 @@ class TestHeterogeneous:
         traincmd.run()
         out_files = os.listdir(traincmd.outdir)
         assert "weights.4.pkl" in out_files, "Missing output model weights!"
-        assert "conf.4.pkl" in out_files, "Missing output latent conformations!"
+        assert "z.4.pkl" in out_files, "Missing output latent conformations!"
 
     @pytest.mark.parametrize(
         "train_type, particles, ctf, indices, poses",
@@ -578,7 +578,7 @@ class TestHeterogeneous:
 
         parser = argparse.ArgumentParser()
         cryodrgn.commands.direct_traversal.add_args(parser)
-        args = [os.path.join(traincmd.outdir, "conf.3.pkl"), "--anchors"] + anchors
+        args = [os.path.join(traincmd.outdir, "z.3.pkl"), "--anchors"] + anchors
         if points is not None:
             args += ["-n", str(points)]
 
@@ -616,7 +616,7 @@ class TestHeterogeneous:
         cryodrgn.commands.graph_traversal.add_args(parser)
         args = parser.parse_args(
             [
-                os.path.join(traincmd.outdir, f"conf.{epoch}.pkl"),
+                os.path.join(traincmd.outdir, f"z.{epoch}.pkl"),
                 "--anchors",
             ]
             + anchors

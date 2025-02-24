@@ -487,7 +487,7 @@ def main(args: argparse.Namespace) -> None:
     t1 = dt.now()
     logger.info(args)
 
-    conf_file = os.path.join(args.workdir, f"conf.{args.epoch}.pkl")
+    conf_file = os.path.join(args.workdir, f"z.{args.epoch}.pkl")
     weights_file = os.path.join(args.workdir, f"weights.{args.epoch}.pkl")
     cfgs = cryodrgn.config.load(os.path.join(args.workdir, "train-configs.yaml"))
     outdir = args.outdir or os.path.join(args.workdir, f"landscape.{args.epoch}")

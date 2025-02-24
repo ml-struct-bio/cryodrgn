@@ -272,7 +272,7 @@ class TrainDir:
             if f"reconstruct.{epoch}.mrc" in out_files:
                 cleaned = False
         elif self.train_cmd == "train_vae":
-            if f"conf.{epoch}.pkl" in out_files:
+            if f"z.{epoch}.pkl" in out_files:
                 cleaned = False
 
         return cleaned

@@ -44,7 +44,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "epoch",
         type=int,
         help="Epoch number N to analyze (0-based indexing, "
-        "corresponding to conf.N.pkl and weights.N.pkl)",
+        "corresponding to z.N.pkl and weights.N.pkl)",
     )
     parser.add_argument("--device", type=int, help="Optionally specify CUDA device")
     parser.add_argument(
@@ -309,7 +309,7 @@ def main(args: argparse.Namespace) -> None:
 
     t1 = dt.now()
     logger.info(args)
-    zfile = os.path.join(args.workdir, f"conf.{args.epoch}.pkl")
+    zfile = os.path.join(args.workdir, f"z.{args.epoch}.pkl")
     weights = os.path.join(args.workdir, f"weights.{args.epoch}.pkl")
 
     cfg = (

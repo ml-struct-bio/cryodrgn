@@ -1188,9 +1188,7 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
                 pickle.dump((self.predicted_rots, out_trans), f)
 
         if self.configs.z_dim > 0:
-            out_conf = os.path.join(
-                self.configs.outdir, f"conf.{self.current_epoch}.pkl"
-            )
+            out_conf = os.path.join(self.configs.outdir, f"z.{self.current_epoch}.pkl")
             with open(out_conf, "wb") as f:
                 pickle.dump(self.predicted_conf, f)
 

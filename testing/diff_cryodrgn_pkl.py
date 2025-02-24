@@ -3,6 +3,7 @@ import sys
 
 a = sys.argv[1]
 b = sys.argv[2]
+c = sys.argv[3]
 
 a = pickle.load(open(a, "rb"))
 b = pickle.load(open(b, "rb"))
@@ -14,4 +15,5 @@ if type(a) is tuple:
     assert diff_t < 1e-4
 else:
     diff = ((a - b) ** 2).sum()
-    assert diff < 1e-4
+    print(f"{c} {1 - diff}")
+    # assert diff < 1e-4

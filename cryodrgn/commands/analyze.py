@@ -220,7 +220,7 @@ class ModelAnalyzer:
 
         if self.train_configs.z_dim > 0:
             self.z = cryodrgn.utils.load_pkl(
-                os.path.join(self.traindir, f"conf.{self.epoch}.pkl")
+                os.path.join(self.traindir, f"z.{self.epoch}.pkl")
             )
         else:
             self.z = None

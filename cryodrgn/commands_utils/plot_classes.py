@@ -59,7 +59,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "epoch",
         type=int,
         help="Epoch number N to analyze (0-based indexing, "
-        "corresponding to conf.N.pkl, weights.N.pkl)",
+        "corresponding to z.N.pkl, weights.N.pkl)",
     )
     parser.add_argument(
         "--labels",
@@ -99,7 +99,7 @@ def main(args: argparse.Namespace) -> None:
         epoch = int(z_file.split(".")[-2])
     else:
         epoch = args.epoch
-        z_file = os.path.join(args.traindir, f"conf.{epoch}.pkl")
+        z_file = os.path.join(args.traindir, f"z.{epoch}.pkl")
 
     if args.outdir is not None:
         outdir = str(args.outdir)

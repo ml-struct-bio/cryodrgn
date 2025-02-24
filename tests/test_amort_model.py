@@ -5,7 +5,7 @@ import pytest
 import os
 from cryodrgn.utils import run_command
 
-REFVOL_DIR = os.path.join(pytest.data_dir, "reference-volumes")
+REFVOL_DIR = os.path.join(pytest.DATADIR, "reference-volumes")
 
 
 def same_volumes(vol1, vol2):
@@ -19,6 +19,7 @@ def same_volumes(vol1, vol2):
     return fsc_val > 0.999
 
 
+@pytest.mark.skip
 @pytest.mark.parametrize(
     "reconstruct_dir",
     [

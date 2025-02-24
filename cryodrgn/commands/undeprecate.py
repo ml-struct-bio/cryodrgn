@@ -81,9 +81,6 @@ def update_dir(d: Path, version: str, cfg: dict) -> None:
             if f.name == "run.log":
                 f.rename("training.log")
 
-            elif f.name[:2] == "z." and f.name[-4:] == ".pkl":
-                f.rename(f"conf.{f.name[2:]}")
-
         os.makedirs("out", exist_ok=True)
         for f in Path(".").iterdir():
             if not f.is_dir() or f.name != "out":

@@ -49,7 +49,16 @@ def parse_setup_request(
     if tilt is not None and tilt is True:
         args += ["--tilt"]
 
-    add_cfgs = ["num_epochs=2"]
+    add_cfgs = [
+        "num_epochs=2",
+        "pretrain=50",
+        "hidden_dim=8",
+        "checkpoint=1",
+        "learning_rate=0.1",
+    ]
+    if model == "hps":
+        add_cfgs += ["ps_freq=2"]
+
     if cfgs:
         add_cfgs += cfgs
     args += ["--cfgs"] + add_cfgs
@@ -76,7 +85,7 @@ def parse_setup_request(
     "pose_estimation, poses",
     [
         (None, None),
-        (None, "toy_poses"),
+        (None, "toy-poses"),
         pytest.param(
             "fixed",
             None,
@@ -85,8 +94,8 @@ def parse_setup_request(
             ),
         ),
         ("abinit", None),
-        ("fixed", "toy_poses"),
-        ("abinit", "toy_poses"),
+        ("fixed", "toy-poses"),
+        ("abinit", "toy-poses"),
     ],
     indirect=["poses"],
 )
@@ -147,7 +156,7 @@ def test_setup_and_print_command(
     "pose_estimation, poses",
     [
         (None, None),
-        (None, "toy_poses"),
+        (None, "toy-poses"),
         pytest.param(
             "fixed",
             None,
@@ -156,8 +165,8 @@ def test_setup_and_print_command(
             ),
         ),
         ("abinit", None),
-        ("fixed", "toy_poses"),
-        ("abinit", "toy_poses"),
+        ("fixed", "toy-poses"),
+        ("abinit", "toy-poses"),
     ],
     indirect=["poses"],
 )

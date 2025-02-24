@@ -128,7 +128,7 @@ def main(args: argparse.Namespace) -> None:
             f"No analysis available for epoch {epoch} "
             f"— first run `cryodrgn analyze {workdir} {epoch}`"
         )
-    conf_mat = utils.load_pkl(os.path.join(workdir, f"conf.{epoch}.pkl"))
+    conf_mat = utils.load_pkl(os.path.join(workdir, f"z.{epoch}.pkl"))
 
     # Get poses either from input file or from reconstruction results if ab-initio
     if "poses" in train_configs["dataset_args"]:

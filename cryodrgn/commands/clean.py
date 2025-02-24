@@ -71,7 +71,7 @@ def clean_dir(d: Path, every_n_epochs: int = 5) -> None:
         )
     }
 
-    for out_lbl in ["pose", "conf", "reconstruct", "weights"]:
+    for out_lbl in ["pose", "z", "reconstruct", "weights"]:
         out_fls = tuple(Path(d / "out").glob(f"{out_lbl}.*"))
 
         if out_fls:

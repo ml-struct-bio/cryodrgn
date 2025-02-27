@@ -1,6 +1,5 @@
 """Base classes for model training engines and their parameter configurations."""
 
-import os
 import argparse
 import sys
 import difflib
@@ -33,14 +32,10 @@ class BaseConfigurations(ABC):
     ---------
     verbose:        An integer specifiying the verbosity level for this engine, with
                     the default value of 0 generally specifying no/minimum verbosity.
-
-    outdir:         Path to where output produced by the engine will be saved.
-
     seed:           A non-negative integer used to fix the stochasticity of the random
                     number generators used by this engine for reproducibility.
                     The default is to not fix stochasticity and thus use a different
                     random seed upon each run of the engine.
-
     test_installation:  Only perform a smoke test that this module has been installed
                         correctly and exit immediately without running anything if this
                         boolean value is set to `True`.
@@ -50,14 +45,11 @@ class BaseConfigurations(ABC):
     # A parameter belongs to this configuration set if and only if it has a type and a
     # default value defined here, note that children classes inherit these parameters
     verbose: int = 0
-    outdir: str = os.getcwd()
     seed: int = None
     test_installation: bool = False
 
     def __post_init__(self) -> None:
         """Parsing given configuration parameter values and checking their validity."""
-        self.outdir = os.path.abspath(self.outdir)
-
         for this_field in fields(self):
             assert this_field.default is not MISSING, (
                 f"`{self.__class__.__name__}` class has no default value defined "
@@ -95,11 +87,15 @@ class BaseConfigurations(ABC):
     def __contains__(self, val) -> bool:
         return val in {k for k, _ in self}
 
+    @property
+    def file_dict(self) -> dict[str, Any]:
+        return {"seed": self.seed}
+
     def write(self, fl: str) -> None:
         """Saving configurations to file using the original order."""
 
         with open(fl, "w") as f:
-            yaml.dump(asdict(self), f, default_flow_style=False, sort_keys=False)
+            yaml.dump(self.file_dict, f, default_flow_style=False, sort_keys=False)
 
     @classmethod
     def fields_dict(cls) -> dict[str, Field]:
@@ -189,19 +185,19 @@ class BaseTrainer(ABC):
     config_cls          The configuration class that will be used to parse parameter
                         sets for this engine class. Children implementations of this
                         class will thus use children of `BaseConfigurations` here.
+    outdir:             Path to where output produced by the engine will be saved.
     label:              String used to refer to this engine for e.g. logging messages.
 
     configs (BaseConfigurations)    The parsed parameter configs for this engine.
-    outdir (str)        The path where output produced by the engine will be saved.
     logger (Logger)     Logging utility used to create info and warning messages.
     """
 
     config_cls = BaseConfigurations
     label = "cDRGN training"
 
-    def __init__(self, configs: dict[str, Any]) -> None:
+    def __init__(self, configs: dict[str, Any], outdir: str) -> None:
         self.configs = self.config_cls(**configs)
-        self.outdir = self.configs.outdir
+        self.outdir = outdir
         np.random.seed(self.configs.seed)
         self.logger = logging.getLogger(self.label)
 
@@ -216,18 +212,19 @@ class BaseTrainer(ABC):
         return [fld.name for fld in cls.config_cls.fields()]
 
     @classmethod
-    def load_from_config(cls, configs: dict[str, Any]) -> Self:
+    def load_from_config(cls, configs: dict[str, Any], outdir: str) -> Self:
         """Retrieves all configurations that have been saved to file."""
 
-        return cls(cls.config_cls.parse_config(configs))
+        return cls(cls.config_cls.parse_config(configs), outdir)
 
     @classmethod
-    def parse_args(cls, args: argparse.Namespace) -> Self:
+    def parse_args(cls, args: argparse.Namespace, outdir: str) -> Self:
         """Utility for initializing using a namespace as opposed to a dictionary."""
 
         return cls(
             {
                 par: getattr(args, par) if hasattr(args, par) else cls.defaults()[par]
                 for par in cls.parameters()
-            }
+            },
+            outdir,
         )

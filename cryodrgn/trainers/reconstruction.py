@@ -35,7 +35,6 @@ class ReconstructionModelConfigurations(BaseConfigurations):
     > inherited from `BaseConfigurations`:
         verbose     An integer specifiying the verbosity level for this engine, with
                     the default value of 0 generally specifying no/minimum verbosity.
-        outdir      Path to where output produced by the engine will be saved.
         seed        A non-negative integer used to fix the stochasticity of the random
                     number generators used by this engine for reproducibility.
                     The default is to not fix stochasticity and thus use a different
@@ -171,11 +170,11 @@ class ReconstructionModelConfigurations(BaseConfigurations):
         """Parsing given configuration parameter values and checking their validity."""
         super().__post_init__()
 
-        if self.model not in {"hps", "amort"}:
+        if self.model not in {"cryodrgn-ai", "cryodrgn"}:
             raise ValueError(
                 f"Given model `{self.model}` not in currently supported model types:\n"
-                f"`amort` (cryoDRGN v4 amortized inference pose estimation)\n"
-                f"`hps` (cryoDRGN v3,v2,v1 hierarchical pose estimation)\n"
+                f"`cryodrgn-ai` (cryoDRGN v4 pose estimation)\n"
+                f"`cryodrgn` (cryoDRGN v3,v2,v1 hierarchical-only pose estimation)\n"
             )
         if not isinstance(self.z_dim, int) or self.z_dim < 0:
             raise ValueError(
@@ -189,22 +188,11 @@ class ReconstructionModelConfigurations(BaseConfigurations):
                 f"is not a positive integer!"
             )
 
-        # turn anything that looks like a relative path into an absolute path
-        for fld_k, fld_v in self:
-            if isinstance(fld_v, str) and not os.path.isabs(fld_v):
-                new_path = os.path.abspath(fld_v)
-                if os.path.exists(new_path):
-                    setattr(self, fld_k, new_path)
-
-        paths_file = os.environ.get("CRYODRGN_DATASETS")
-        if paths_file:
-            with open(paths_file, "r") as f:
-                data_paths = yaml.safe_load(f)
-        else:
-            data_paths = None
-
         # handling different ways of specifying the input data, starting with a
         # file containing the data files
+        paths_file = os.environ.get("CRYODRGN_DATASETS")
+        data_paths = cryodrgn.utils.load_yaml(paths_file) if paths_file else None
+
         if self.dataset is not None:
             if os.path.exists(self.dataset):
                 paths = cryodrgn.utils.load_yaml(self.dataset)
@@ -243,8 +231,13 @@ class ReconstructionModelConfigurations(BaseConfigurations):
         elif not os.path.isfile(self.particles):
             raise ValueError(f"Given particles file `{self.particles}` does not exist!")
 
-        if isinstance(self.ind, str) and not os.path.isfile(self.ind):
-            raise ValueError(f"Given subset indices file {self.ind} does not exist!")
+        if isinstance(self.ind, str):
+            if not self.ind.isnumeric() and not os.path.isfile(self.ind):
+                raise ValueError(f"Subset indices file {self.ind} does not exist!")
+        elif self.ind is not None:
+            raise TypeError(
+                f"Unrecognized type for filtering indices: `{type(self.ind).__name__}`!"
+            )
 
         if self.pose_estimation is None:
             self.pose_estimation = "fixed" if self.poses else "abinit"
@@ -269,6 +262,41 @@ class ReconstructionModelConfigurations(BaseConfigurations):
             self.batch_size_sgd = self.batch_size
         if self.batch_size_hps is None:
             self.batch_size_hps = self.batch_size
+
+    @property
+    def file_dict(self) -> dict[str, Any]:
+        configs = super().file_dict
+
+        dataset_args = dict(
+            particles=self.particles,
+            poses=self.poses,
+            ctf=self.ctf,
+            ind=self.ind,
+            datadir=self.datadir,
+            invert_data=self.invert_data,
+            keepreal=self.use_real,
+            window=self.window,
+            window_r=self.window_r,
+            tilt=self.tilt,
+        )
+        model_args = dict(
+            model=self.model,
+            z_dim=self.z_dim,
+            pose_estimation=self.pose_estimation,
+            pe_type=self.pe_type,
+            pe_dim=self.pe_dim,
+            feat_sigma=self.feat_sigma,
+            domain=self.volume_domain,
+            activation=self.activation,
+            ntilts=self.n_tilts,
+            weight_decay=self.weight_decay,
+            learning_rate=self.learning_rate,
+            tdim=self.tdim,
+            tlayers=self.tlayers,
+            t_emb_dim=self.t_emb_dim,
+        )
+
+        return dict(dataset_args=dataset_args, model_args=model_args, **configs)
 
 
 class ReconstructionModelTrainer(BaseTrainer, ABC):
@@ -305,8 +333,8 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
     def make_reconstruction_model(self, weights=None) -> nn.Module:
         pass
 
-    def __init__(self, configs: dict[str, Any]) -> None:
-        super().__init__(configs)
+    def __init__(self, configs: dict[str, Any], outdir: str) -> None:
+        super().__init__(configs, outdir)
 
         # set the device
         torch.manual_seed(self.configs.seed)
@@ -327,9 +355,9 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
 
         # load index filter
         if self.configs.ind is not None:
-            if isinstance(self.configs.ind, int):
+            if self.configs.ind.isnumeric():
                 self.logger.info(f"Keeping the first {self.configs.ind} particles")
-                self.ind = np.arange(self.configs.ind)
+                self.ind = np.arange(int(self.configs.ind))
             else:
                 self.logger.info(f"Filtering image dataset with {configs['ind']}")
                 self.ind = cryodrgn.utils.load_pkl(self.configs.ind)
@@ -801,24 +829,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
         configuration values that need to be computed from the particle stack (such as
         `data.norm`) without having to reload the stack from file.
         """
-
-        dataset_args = dict(
-            particles=self.configs.particles,
-            poses=self.configs.poses,
-            norm=self.data.norm,
-            invert_data=self.configs.invert_data,
-            ind=self.configs.ind,
-            n_particles=self.particle_count,
-            n_images=self.image_count,
-            keepreal=self.configs.use_real,
-            window=self.configs.window,
-            window_r=self.configs.window_r,
-            datadir=self.configs.datadir,
-            ctf=self.configs.ctf,
-            tilt=self.configs.tilt,
-            apix=self.apix,
-        )
-
+        configs = self.configs.file_dict
         if self.lattice is not None:
             lattice_args = dict(
                 D=self.lattice.D,
@@ -828,27 +839,18 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
         else:
             lattice_args = None
 
-        model_args = dict(
-            model=self.configs.model,
-            pose_estimation=self.configs.pose_estimation,
-            z_dim=self.configs.z_dim,
-            pe_type=self.configs.pe_type,
-            pe_dim=self.configs.pe_dim,
-            feat_sigma=self.configs.feat_sigma,
-            domain=self.configs.volume_domain,
-            activation=self.configs.activation,
-            tdim=self.configs.tdim,
-            tlayers=self.configs.tlayers,
-            t_emb_dim=self.configs.t_emb_dim,
-            ntilts=self.configs.n_tilts,
+        # Properties inferred from the input dataset only once it has been loaded
+        dataset_args = dict(
+            norm=self.data.norm,
+            apix=self.apix,
+            n_particles=self.particle_count,
+            n_images=self.image_count,
         )
+        configs["dataset_args"].update(dataset_args)
+        configs["lattice_args"] = lattice_args
+        configs["outdir"] = self.outdir
 
-        return dict(
-            outdir=self.outdir,
-            dataset_args=dataset_args,
-            lattice_args=lattice_args,
-            model_args=model_args,
-        )
+        return configs
 
     def save_configs(self) -> None:
         """Saves all given and inferred configurations to file."""
@@ -859,7 +861,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
         if "time" not in configs:
             configs["time"] = dt.now()
 
-        with open(os.path.join(self.outdir, "train-configs.yaml"), "w") as f:
+        with open(os.path.join(self.outdir, "config.yaml"), "w") as f:
             yaml.dump(configs, f, default_flow_style=False, sort_keys=False)
 
     def begin_epoch(self) -> None:

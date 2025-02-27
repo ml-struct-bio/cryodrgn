@@ -40,7 +40,6 @@ class AmortizedInferenceConfigurations(ReconstructionModelConfigurations):
     > inherited from `BaseConfigurations`:
         verbose     An integer specifiying the verbosity level for this engine, with
                     the default value of 0 generally specifying no/minimum verbosity.
-        outdir      Path to where output produced by the engine will be saved.
         seed        A non-negative integer used to fix the stochasticity of the random
                     number generators used by this engine for reproducibility.
                     The default is to not fix stochasticity and thus use a different
@@ -105,7 +104,7 @@ class AmortizedInferenceConfigurations(ReconstructionModelConfigurations):
 
     # A parameter belongs to this configuration set if and only if it has a type and a
     # default value defined here, note that children classes inherit these parameters
-    model: str = "amort"
+    model: str = "cryodrgn-ai"
 
     # scheduling
     n_imgs_pose_search: int = 500000
@@ -161,9 +160,10 @@ class AmortizedInferenceConfigurations(ReconstructionModelConfigurations):
     def __post_init__(self) -> None:
         super().__post_init__()
 
-        if self.model != "amort":
+        if self.model != "cryodrgn-ai":
             raise ValueError(
-                f"Mismatched model `{self.model=}` for {self.__class__.__name__}!"
+                f"Mismatched model {self.model=}!=`cryodrgn-ai` "
+                f"for {self.__class__.__name__}!"
             )
         if self.pose_estimation is not None:
             if self.pose_estimation == "refine":
@@ -265,6 +265,65 @@ class AmortizedInferenceConfigurations(ReconstructionModelConfigurations):
         if self.t_extent == 0.0:
             self.t_n_grid = 1
 
+    @property
+    def file_dict(self) -> dict[str, Any]:
+        """Retrieves all given and inferred configurations for downstream use."""
+        configs = super().file_dict
+
+        # cnn
+        cnn_params = {
+            "conf": self.use_conf_encoder,
+            "depth_cnn": self.depth_cnn,
+            "channels_cnn": self.channels_cnn,
+            "kernel_size_cnn": self.kernel_size_cnn,
+        }
+        # conformational encoder
+        conf_regressor_params = {
+            "z_dim": self.z_dim,
+            "std_z_init": self.std_z_init,
+            "variational": self.variational_het,
+        }
+        # hypervolume
+        hypervolume_params = {
+            "explicit_volume": self.explicit_volume,
+            "n_layers": self.hidden_layers,
+            "hidden_dim": self.hidden_dim,
+            "pe_type": self.pe_type,
+            "pe_dim": self.pe_dim,
+            "feat_sigma": self.feat_sigma,
+            "domain": self.volume_domain,
+            "pe_type_conf": self.pe_type_conf,
+        }
+        # pose search
+        if self.pose_estimation != "fixed":
+            ps_params = {
+                "l_min": self.l_start,
+                "l_max": self.l_end,
+                "t_extent": self.t_extent,
+                "t_n_grid": self.t_ngrid,
+                "niter": self.n_iter,
+                "nkeptposes": self.n_kept_poses,
+                "base_healpy": self.base_healpy,
+                "t_xshift": self.t_xshift,
+                "t_yshift": self.t_yshift,
+                "no_trans_search_at_pose_search": self.no_trans_search_at_pose_search,
+                "n_tilts_pose_search": self.n_tilts_pose_search,
+                "average_over_tilts": self.average_over_tilts,
+            }
+        else:
+            ps_params = None
+
+        configs["model_args"] = dict(
+            cnn_params=cnn_params,
+            hypervolume_params=hypervolume_params,
+            conf_regressor_params=conf_regressor_params,
+            **configs["model_args"],
+        )
+        if ps_params is not None:
+            configs["model_args"]["ps_params"] = ps_params
+
+        return configs
+
 
 class AmortizedInferenceTrainer(ReconstructionModelTrainer):
     """An engine for training the reconstruction model on particle data.
@@ -343,7 +402,7 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
             use_gt_poses=self.configs.pose_estimation == "fixed",
             use_gt_trans=self.configs.use_gt_trans,
             will_use_point_estimates=self.epochs_sgd >= 1,
-            ps_params=model_args["ps_params"],
+            ps_params=model_args["ps_params"] if "ps_params" in model_args else None,
             verbose_time=self.configs.verbose_time,
             pretrain_with_gt_poses=self.configs.pretrain_with_gt_poses,
             n_tilts_pose_search=self.configs.n_tilts_pose_search,
@@ -374,8 +433,8 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
 
         return epochs_sgd
 
-    def __init__(self, configs: dict[str, Any]) -> None:
-        super().__init__(configs)
+    def __init__(self, configs: dict[str, Any], outdir: str) -> None:
+        super().__init__(configs, outdir)
         self.configs: AmortizedInferenceConfigurations
         self.do_pretrain = True
 
@@ -387,7 +446,7 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
         self.batch_size_sgd = self.configs.batch_size_sgd * self.n_prcs
 
         # tensorboard writer
-        self.summaries_dir = os.path.join(self.configs.outdir, "summaries")
+        self.summaries_dir = os.path.join(self.outdir, "summaries")
         os.makedirs(self.summaries_dir, exist_ok=True)
         self.writer = SummaryWriter(self.summaries_dir)
         self.logger.info("Will write tensorboard summaries " f"in {self.summaries_dir}")
@@ -512,70 +571,6 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
             if self.configs.z_dim > 0 and self.configs.variational_het
             else None
         )
-
-    def get_configs(self) -> dict[str, Any]:
-        """Retrieves all given and inferred configurations for downstream use."""
-        configs = super().get_configs()
-
-        # cnn
-        cnn_params = {
-            "conf": self.configs.use_conf_encoder,
-            "depth_cnn": self.configs.depth_cnn,
-            "channels_cnn": self.configs.channels_cnn,
-            "kernel_size_cnn": self.configs.kernel_size_cnn,
-        }
-        # conformational encoder
-        conf_regressor_params = {
-            "z_dim": self.configs.z_dim,
-            "std_z_init": self.configs.std_z_init,
-            "variational": self.configs.variational_het,
-        }
-        # hypervolume
-        hypervolume_params = {
-            "explicit_volume": self.configs.explicit_volume,
-            "n_layers": self.configs.hidden_layers,
-            "hidden_dim": self.configs.hidden_dim,
-            "pe_type": self.configs.pe_type,
-            "pe_dim": self.configs.pe_dim,
-            "feat_sigma": self.configs.feat_sigma,
-            "domain": self.configs.volume_domain,
-            "extent": self.lattice.extent,
-            "pe_type_conf": self.configs.pe_type_conf,
-        }
-        # pose search
-        if self.epochs_pose_search > 0:
-            ps_params = {
-                "l_min": self.configs.l_start,
-                "l_max": self.configs.l_end,
-                "t_extent": self.configs.t_extent,
-                "t_n_grid": self.configs.t_ngrid,
-                "niter": self.configs.n_iter,
-                "nkeptposes": self.configs.n_kept_poses,
-                "base_healpy": self.configs.base_healpy,
-                "t_xshift": self.configs.t_xshift,
-                "t_yshift": self.configs.t_yshift,
-                "no_trans_search_at_pose_search": self.configs.no_trans_search_at_pose_search,
-                "n_tilts_pose_search": self.configs.n_tilts_pose_search,
-                "tilting_func": (
-                    self.data.get_tilting_func()
-                    if self.configs.subtomo_averaging
-                    else None
-                ),
-                "average_over_tilts": self.configs.average_over_tilts,
-            }
-        else:
-            ps_params = None
-
-        configs["model_args"] = dict(
-            cnn_params=cnn_params,
-            hypervolume_params=hypervolume_params,
-            conf_regressor_params=conf_regressor_params,
-            **configs["model_args"],
-        )
-        if ps_params is not None:
-            configs["model_args"]["ps_params"] = ps_params
-
-        return configs
 
     def begin_epoch(self):
         self.configs: AmortizedInferenceConfigurations
@@ -1050,6 +1045,18 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
 
         return total_loss, all_losses
 
+    def get_configs(self) -> dict[str, Any]:
+        configs = super().get_configs()
+
+        configs["model_args"]["hypervolume_params"]["extent"] = self.lattice.extent
+        if self.configs.pose_estimation != "fixed":
+            tilt_fx = (
+                self.data.get_tilting_func() if self.configs.subtomo_averaging else None
+            )
+            configs["model_args"]["ps_params"]["tilting_func"] = tilt_fx
+
+        return configs
+
     def save_epoch_data(self):
         summary.make_img_summary(
             self.writer,
@@ -1126,19 +1133,16 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
 
         if self.configs.pose_estimation != "fixed":
             predicted_rots = self.predicted_rots[mask_tilt_idx]
-        else:
-            predicted_rots = None
 
-        if self.configs.pose_estimation != "fixed" and not self.configs.no_trans:
-            predicted_trans = (
-                self.predicted_trans[mask_tilt_idx]
-                if self.predicted_trans is not None
-                else None
-            )
-        else:
-            predicted_trans = None
+            if not self.configs.no_trans:
+                predicted_trans = (
+                    self.predicted_trans[mask_tilt_idx]
+                    if self.predicted_trans is not None
+                    else None
+                )
+            else:
+                predicted_trans = None
 
-        if self.predicted_rots is not None:
             summary.make_pose_summary(
                 self.writer,
                 predicted_rots,
@@ -1148,6 +1152,7 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
                 self.current_epoch,
                 shift=shift,
             )
+
         self.save_latents()
         self.save_volume()
         self.save_model()
@@ -1174,30 +1179,28 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
 
     def save_latents(self):
         """Write model's latent variables to file."""
-        out_pose = os.path.join(self.configs.outdir, f"pose.{self.current_epoch}.pkl")
+        out_pose = os.path.join(self.outdir, f"pose.{self.current_epoch}.pkl")
 
-        if self.configs.no_trans:
-            with open(out_pose, "wb") as f:
-                pickle.dump(self.predicted_rots, f)
-        else:
-            if self.predicted_trans is not None:
-                out_trans = self.predicted_trans / self.model_resolution
+        if self.configs.pose_estimation != "fixed":
+            if self.configs.no_trans:
+                with open(out_pose, "wb") as f:
+                    pickle.dump(self.predicted_rots, f)
             else:
-                out_trans = None
-            with open(out_pose, "wb") as f:
-                pickle.dump((self.predicted_rots, out_trans), f)
+                if self.predicted_trans is not None:
+                    out_trans = self.predicted_trans / self.model_resolution
+                else:
+                    out_trans = None
+                with open(out_pose, "wb") as f:
+                    pickle.dump((self.predicted_rots, out_trans), f)
 
         if self.configs.z_dim > 0:
-            out_conf = os.path.join(self.configs.outdir, f"z.{self.current_epoch}.pkl")
+            out_conf = os.path.join(self.outdir, f"z.{self.current_epoch}.pkl")
             with open(out_conf, "wb") as f:
                 pickle.dump(self.predicted_conf, f)
 
     def save_volume(self):
         """Write reconstructed volume to file."""
-        out_mrc = os.path.join(
-            self.configs.outdir, f"reconstruct.{self.current_epoch}.mrc"
-        )
-
+        out_mrc = os.path.join(self.outdir, f"reconstruct.{self.current_epoch}.mrc")
         self.reconstruction_model.hypervolume.eval()
         if hasattr(self.reconstruction_model, "conf_cnn"):
             if hasattr(self.reconstruction_model, "conf_regressor"):
@@ -1222,10 +1225,7 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
     # TODO: weights -> model and reconstruct -> volume for output labels?
     def save_model(self):
         """Write model state to file."""
-        out_weights = os.path.join(
-            self.configs.outdir, f"weights.{self.current_epoch}.pkl"
-        )
-
+        out_weights = os.path.join(self.outdir, f"weights.{self.current_epoch}.pkl")
         optimizers_state_dict = {}
         for key in self.optimizers.keys():
             optimizers_state_dict[key] = self.optimizers[key].state_dict()

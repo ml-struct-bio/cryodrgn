@@ -45,7 +45,6 @@ class HierarchicalPoseSearchConfigurations(ReconstructionModelConfigurations):
     > inherited from `BaseConfigurations`:
         verbose     An integer specifiying the verbosity level for this engine, with
                     the default value of 0 generally specifying no/minimum verbosity.
-        outdir      Path to where output produced by the engine will be saved.
         seed        A non-negative integer used to fix the stochasticity of the random
                     number generators used by this engine for reproducibility.
                     The default is to not fix stochasticity and thus use a different
@@ -110,7 +109,7 @@ class HierarchicalPoseSearchConfigurations(ReconstructionModelConfigurations):
 
     # A parameter belongs to this configuration set if and only if it has a type and a
     # default value defined here, note that children classes inherit these parameters
-    model = "hps"
+    model = "cryodrgn"
 
     # specifying size and type of model encoder and decoder
     enc_layers: int = None
@@ -140,9 +139,10 @@ class HierarchicalPoseSearchConfigurations(ReconstructionModelConfigurations):
     def __post_init__(self) -> None:
         super().__post_init__()
 
-        if self.model != "hps":
+        if self.model != "cryodrgn":
             raise ValueError(
-                f"Mismatched model `{self.model=}` for {self.__class__.__name__}!"
+                f"Mismatched model {self.model=}!=`cryodrgn` "
+                f"for {self.__class__.__name__}!"
             )
         if self.beta is not None:
             if not self.z_dim:
@@ -191,12 +191,29 @@ class HierarchicalPoseSearchConfigurations(ReconstructionModelConfigurations):
         if self.l_ramp_epochs is None:
             self.l_ramp_epochs = 25 if self.z_dim == 0 else 0
 
+    @property
+    def file_dict(self) -> dict[str, Any]:
+        """Retrieves all given and inferred configurations for downstream use."""
+        configs = super().file_dict
+
+        configs["model_args"].update(
+            dict(
+                enc_layers=self.enc_layers,
+                enc_dim=self.enc_dim,
+                dec_layers=self.dec_layers,
+                dec_dim=self.dec_dim,
+                encode_mode=self.encode_mode,
+                enc_mask=self.enc_mask,
+            )
+        )
+
+        return configs
+
 
 class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
 
     configs: HierarchicalPoseSearchConfigurations
     config_cls = HierarchicalPoseSearchConfigurations
-    label = "cDRGN v3 training"
 
     @property
     def mask_dimensions(self) -> tuple[torch.Tensor, int]:
@@ -281,8 +298,8 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
 
         return lambda x: np.clip((x - start_x) * coef + start_y, min_y, max_y).item(0)
 
-    def __init__(self, configs: dict[str, Any]) -> None:
-        super().__init__(configs)
+    def __init__(self, configs: dict[str, Any], outdir: str) -> None:
+        super().__init__(configs, outdir)
 
         # set beta schedule
         if self.configs.z_dim:
@@ -624,23 +641,6 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
             self.optimizers["hypervolume"].step()
 
         return losses, tilt_ind, ind, rot, trans, z_mu, z_logvar
-
-    def get_configs(self) -> dict[str, Any]:
-        """Retrieves all given and inferred configurations for downstream use."""
-        configs = super().get_configs()
-
-        configs["model_args"].update(
-            dict(
-                enc_layers=self.configs.enc_layers,
-                enc_dim=self.configs.enc_dim,
-                dec_layers=self.configs.dec_layers,
-                dec_dim=self.configs.dec_dim,
-                encode_mode=self.configs.encode_mode,
-                enc_mask=self.configs.enc_mask,
-            )
-        )
-
-        return configs
 
     def print_batch_summary(self, losses: dict[str, float]) -> None:
         """Create a summary at the end of a training batch and print it to the log."""

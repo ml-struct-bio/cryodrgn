@@ -95,7 +95,7 @@ class TrainCommand:
         else:
             cfg_file = os.path.join(self.outdir, "configs.yaml")
             cryodrgn.utils.save_yaml(self.cfgs, cfg_file)
-            cmd_args = [cfg_file, "-o", self.outdir, "--no-analysis"]
+            cmd_args = [self.outdir, "--no-analysis"]
 
         use_cmd = self.train_cmd if self.train_type == "cdrgn" else "train"
         parser = argparse.ArgumentParser()
@@ -103,22 +103,25 @@ class TrainCommand:
         eval(f"cryodrgn.commands.{use_cmd}").main(parser.parse_args(cmd_args))
 
 
-@pytest.mark.parametrize("train_cmd", ["train_nn", "abinit_homo"])
 @pytest.mark.parametrize(
-    "train_type, particles, ctf, indices, poses, batch_size, use_amp",
+    "train_cmd, particles, ctf, indices, poses",
     [
-        ("drgnai", "hand", "CTF-Test.100", None, "hand-poses", "8", False),
-        ("drgnai", "toy.mrcs", "CTF-Test", "random-100", "toy-poses", "8", False),
-        ("drgnai", "toy.star", "CTF-Test", "first-100", "toy-poses", "16", True),
-        ("drgnai", "toy.txt", "CTF-Test", "random-100", "toy-poses", "24", False),
-        ("cdrgn-train", "hand", "CTF-Test.100", None, "hand-poses", "8", False),
-        ("cdrgn-train", "toy.star", "CTF-Test", "first-100", "toy-poses", "16", True),
-        ("cdrgn-train", "toy.txt", None, "random-100", "toy-poses", "24", False),
-        ("cdrgn", "hand", "CTF-Test.100", None, "hand-poses", "36", False),
-        ("cdrgn", "toy.mrcs", "CTF-Test", "first-100", "toy-poses", "24", True),
-        ("cdrgn", "toy.mrcs", "CTF-Test", "first-100", "toy-angles", "24", True),
+        ("train_nn", "hand", "CTF-Test.100", None, "hand-poses"),
+        ("train_nn", "toy.mrcs", "CTF-Test", "random-100", "toy-poses"),
+        ("train_nn", "toy.star", "CTF-Test", "first-100", "toy-poses"),
+        ("train_nn", "toy.txt", "CTF-Test", "random-100", "toy-poses"),
+        ("abinit_homo", "hand-5", "CTF1", None, "hand-poses"),
+        ("abinit_homo", "hand", "CTF-Test.100", "5", None),
     ],
     indirect=["particles", "ctf", "indices", "poses"],
+)
+@pytest.mark.parametrize(
+    "train_type, batch_size, use_amp",
+    [
+        ("drgnai", "8", False),
+        ("cdrgn-train", "16", True),
+        ("cdrgn", "24", True),
+    ],
 )
 class TestHomogeneous:
     @pytest.fixture
@@ -138,11 +141,11 @@ class TestHomogeneous:
         if train_cmd == "train_nn":
             args = [
                 "--pretrain",
-                "50",
+                "10",
                 "--num-epochs",
                 "4",
                 "--dim",
-                "12",
+                "8",
                 "--checkpoint",
                 "1",
             ]
@@ -151,14 +154,16 @@ class TestHomogeneous:
                 "--lr",
                 ".01",
                 "--dim",
-                "8",
+                "4",
                 "--layers",
                 "2",
                 "--pretrain",
-                "50",
+                "20",
                 "--num-epochs",
                 "4",
                 "--ps-freq",
+                "2",
+                "--t-ngrid",
                 "2",
                 "--checkpoint",
                 "1",
@@ -188,6 +193,8 @@ class TestHomogeneous:
             cmd_args += ["--ctf", ctf.path]
         if indices.path is not None:
             cmd_args += ["--ind", indices.path]
+        elif indices.label.isnumeric():
+            cmd_args += ["--ind", indices.label]
         if not use_amp:
             cmd_args += ["--no-amp"]
 
@@ -197,8 +204,31 @@ class TestHomogeneous:
         """Train the initial homogeneous model."""
 
         traincmd.run()
-        out_files = os.listdir(traincmd.outdir)
-        assert "weights.4.pkl" in out_files, "Missing output model weights!"
+        out_files = set(os.listdir(traincmd.outdir))
+        assert "training.log" in out_files, "Missing training log file!"
+        assert "configs.yaml" in out_files, "Missing training configuration file!"
+
+        if traincmd.train_cmd == "abinit_homo" or traincmd.train_type == "drgnai":
+            epoch_iter = range(5)
+        else:
+            epoch_iter = range(1, 5)
+
+        for epoch in epoch_iter:
+            assert (
+                f"weights.{epoch}.pkl" in out_files
+            ), f"Missing output model weights for epoch {epoch}!"
+            assert (
+                f"reconstruct.{epoch}.mrc" in out_files
+            ), f"Missing output reconstructed volume for epoch {epoch}!"
+            if traincmd.train_cmd == "train_nn":
+                assert (
+                    f"pose.{epoch}.pkl" not in out_files
+                ), "Fixed-pose reconstruction shouldn't output poses!"
+            else:
+                assert traincmd.train_cmd == "abinit_homo"
+                assert (
+                    f"pose.{epoch}.pkl" in out_files
+                ), f"Missing output inferred poses for epoch {epoch}!"
 
     def test_train_from_checkpoint(self, traincmd):
         """Train the initial homogeneous model."""
@@ -210,9 +240,9 @@ class TestHomogeneous:
         traincmd.run()
         out_files = os.listdir(traincmd.outdir)
         assert "weights.5.pkl" in out_files, "Missing output model weights!"
+        assert "reconstruct.5.mrc" in out_files, "Missing output reconstructed vol!"
 
 
-@pytest.mark.parametrize("train_cmd", ["train_vae", "abinit_het"])
 class TestHeterogeneous:
     @pytest.fixture
     def traincmd(
@@ -228,10 +258,10 @@ class TestHeterogeneous:
         """Run an experiment to generate output; remove this output when finished."""
         if train_cmd == "train_vae":
             args = [
-                "--lr",
-                ".0001",
                 "--num-epochs",
                 "3",
+                "--lr",
+                ".0001",
                 "--seed",
                 "0",
                 "--zdim",
@@ -250,6 +280,8 @@ class TestHeterogeneous:
             ]
         elif train_cmd == "abinit_het":
             args = [
+                "--num-epochs",
+                "3",
                 "--zdim",
                 "4",
                 "--lr",
@@ -271,8 +303,6 @@ class TestHeterogeneous:
                 "2",
                 "--pretrain",
                 "50",
-                "--num-epochs",
-                "3",
                 "--ps-freq",
                 "2",
                 "--checkpoint",
@@ -306,17 +336,18 @@ class TestHeterogeneous:
         return TrainCommand(train_cmd, cmd_args, odir, train_type, poses=poses.path)
 
     @pytest.mark.parametrize(
-        "train_type, particles, ctf, indices, poses",
+        "train_cmd, train_type, particles, ctf, indices, poses",
         [
-            ("drgnai", "hand", "CTF-Test.100", None, "hand-poses"),
-            ("drgnai", "toy.mrcs", "CTF-Test", "random-100", "toy-poses"),
-            ("drgnai", "toy.star", "CTF-Test", "first-100", "toy-poses"),
-            ("drgnai", "toy.txt", "CTF-Test", "random-100", "toy-poses"),
-            ("cdrgn-train", "hand", "CTF-Test.100", None, "hand-poses"),
-            ("cdrgn-train", "toy.mrcs", "CTF-Test", "random-100", "toy-poses"),
-            ("cdrgn-train", "toy.txt", None, "first-100", "toy-poses"),
-            ("cdrgn", "hand", "CTF-Test.100", None, "hand-poses"),
-            ("cdrgn", "toy.mrcs", "CTF-Test", "first-100", "toy-angles"),
+            ("train_vae", "drgnai", "hand", "CTF-Test.100", None, "hand-poses"),
+            ("train_vae", "drgnai", "toy.mrcs", "CTF-Test", "random-100", "toy-poses"),
+            ("train_vae", "drgnai", "toy.star", "CTF-Test", "100", "toy-poses"),
+            ("train_vae", "drgnai", "toy.txt", "CTF-Test", "random-100", "toy-poses"),
+            ("abinit_het", "drgnai", "hand-5", "CTF1", None, "toy-poses"),
+            ("train_vae", "cdrgn-train", "hand", "CTF-Test.100", None, "hand-poses"),
+            ("train_vae", "cdrgn-train", "toy.mrcs", "CTF-Test", "100", "toy-poses"),
+            ("abinit_het", "cdrgn-train", "hand", "CTF-Test.100", "5", None),
+            ("train_vae", "cdrgn", "toy.mrcs", "CTF-Test", "first-100", "toy-angles"),
+            ("abinit_het", "cdrgn", "hand", "CTF-Test.100", "5", "hand-poses"),
         ],
         indirect=["particles", "ctf", "indices", "poses"],
     )
@@ -329,17 +360,18 @@ class TestHeterogeneous:
         assert "z.3.pkl" in out_files, "Missing output latent conformations!"
 
     @pytest.mark.parametrize(
-        "train_type, particles, ctf, indices, poses",
+        "train_cmd, train_type, particles, ctf, indices, poses",
         [
-            ("drgnai", "hand", "CTF-Test.100", None, "hand-poses"),
-            ("drgnai", "toy.mrcs", "CTF-Test", "random-100", "toy-poses"),
-            ("drgnai", "toy.star", "CTF-Test", "first-100", "toy-poses"),
-            ("drgnai", "toy.txt", "CTF-Test", "random-100", "toy-poses"),
-            ("cdrgn-train", "hand", "CTF-Test.100", None, "hand-poses"),
-            ("cdrgn-train", "toy.mrcs", "CTF-Test", "random-100", "toy-poses"),
-            ("cdrgn-train", "toy.txt", None, "first-100", "toy-poses"),
-            ("cdrgn", "hand", "CTF-Test.100", None, "hand-poses"),
-            ("cdrgn", "toy.mrcs", "CTF-Test", "first-100", "toy-angles"),
+            ("train_vae", "drgnai", "hand", "CTF-Test.100", None, "hand-poses"),
+            ("train_vae", "drgnai", "toy.mrcs", "CTF-Test", "random-100", "toy-poses"),
+            ("train_vae", "drgnai", "toy.star", "CTF-Test", "100", "toy-poses"),
+            ("train_vae", "drgnai", "toy.txt", "CTF-Test", "random-100", "toy-poses"),
+            ("abinit_het", "drgnai", "hand-5", "CTF1", None, "toy-poses"),
+            ("train_vae", "cdrgn-train", "hand", "CTF-Test.100", None, "hand-poses"),
+            ("train_vae", "cdrgn-train", "toy.mrcs", "CTF-Test", "100", "toy-poses"),
+            ("abinit_het", "cdrgn-train", "hand", "CTF-Test.100", "5", None),
+            ("train_vae", "cdrgn", "toy.mrcs", "CTF-Test", "first-100", "toy-angles"),
+            ("abinit_het", "cdrgn", "hand", "CTF-Test.100", "5", "hand-poses"),
         ],
         indirect=["particles", "ctf", "indices", "poses"],
     )
@@ -361,17 +393,18 @@ class TestHeterogeneous:
         assert "z.4.pkl" in out_files, "Missing output latent conformations!"
 
     @pytest.mark.parametrize(
-        "train_type, particles, ctf, indices, poses",
+        "train_cmd, train_type, particles, ctf, indices, poses",
         [
-            ("drgnai", "hand", "CTF-Test.100", None, "hand-poses"),
-            ("drgnai", "toy.mrcs", "CTF-Test", "random-100", "toy-poses"),
-            ("drgnai", "toy.star", "CTF-Test", "first-100", "toy-poses"),
-            ("drgnai", "toy.txt", "CTF-Test", "random-100", "toy-poses"),
-            ("cdrgn-train", "hand", "CTF-Test.100", None, "hand-poses"),
-            ("cdrgn-train", "toy.mrcs", "CTF-Test", "random-100", "toy-poses"),
-            ("cdrgn-train", "toy.txt", None, "first-100", "toy-poses"),
-            ("cdrgn", "hand", "CTF-Test.100", None, "hand-poses"),
-            ("cdrgn", "toy.mrcs", "CTF-Test", "first-100", "toy-angles"),
+            ("train_vae", "drgnai", "hand", "CTF-Test.100", None, "hand-poses"),
+            ("train_vae", "drgnai", "toy.mrcs", "CTF-Test", "random-100", "toy-poses"),
+            ("train_vae", "drgnai", "toy.star", "CTF-Test", "100", "toy-poses"),
+            ("train_vae", "drgnai", "toy.txt", "CTF-Test", "random-100", "toy-poses"),
+            ("abinit_het", "drgnai", "hand-5", "CTF1", None, "toy-poses"),
+            ("train_vae", "cdrgn-train", "hand", "CTF-Test.100", None, "hand-poses"),
+            ("train_vae", "cdrgn-train", "toy.mrcs", "CTF-Test", "100", "toy-poses"),
+            ("abinit_het", "cdrgn-train", "hand", "CTF-Test.100", "5", None),
+            ("train_vae", "cdrgn", "toy.mrcs", "CTF-Test", "first-100", "toy-angles"),
+            ("abinit_het", "cdrgn", "hand", "CTF-Test.100", "5", "hand-poses"),
         ],
         indirect=["particles", "ctf", "indices", "poses"],
     )
@@ -379,7 +412,7 @@ class TestHeterogeneous:
     def test_analyze(self, traincmd, epoch):
         """Produce standard analyses for a particular epoch."""
 
-        args = [traincmd.outdir]
+        args = [traincmd.outdir, "--ksample", "3"]
         if epoch is not None:
             args += ["--epoch", str(epoch)]
         else:
@@ -392,15 +425,29 @@ class TestHeterogeneous:
         assert os.path.exists(os.path.join(traincmd.outdir, f"analyze.{epoch}"))
 
     @pytest.mark.parametrize(
-        "train_type, particles, ctf, indices, poses",
+        "train_cmd, train_type, particles, ctf, indices, poses",
         [
-            ("drgnai", "hand", "CTF-Test.100", None, "hand-poses"),
-            ("drgnai", "toy.mrcs", "CTF-Test", "random-100", "toy-poses"),
-            ("drgnai", "toy.star", "CTF-Test", "first-100", "toy-poses"),
-            ("drgnai", "toy.txt", "CTF-Test", "random-100", "toy-poses"),
-            ("cdrgn-train", "hand", "CTF-Test.100", None, "hand-poses"),
-            ("cdrgn-train", "toy.mrcs", "CTF-Test", "random-100", "toy-poses"),
-            ("cdrgn", "hand", "CTF-Test.100", None, "hand-poses"),
+            ("train_vae", "drgnai", "hand", "CTF-Test.100", None, "hand-poses"),
+            ("train_vae", "drgnai", "toy.mrcs", "CTF-Test", "random-100", "toy-poses"),
+            ("train_vae", "drgnai", "toy.star", "CTF-Test", "100", "toy-poses"),
+            ("train_vae", "drgnai", "toy.txt", "CTF-Test", "random-100", "toy-poses"),
+            ("abinit_het", "drgnai", "hand-5", "CTF1", None, "toy-poses"),
+            ("train_vae", "cdrgn-train", "hand", "CTF-Test.100", None, "hand-poses"),
+            ("train_vae", "cdrgn-train", "toy.mrcs", "CTF-Test", "100", "toy-poses"),
+            ("abinit_het", "cdrgn-train", "hand", "CTF-Test.100", "5", None),
+            pytest.param(
+                "train_vae",
+                "cdrgn",
+                "toy.mrcs",
+                "CTF-Test",
+                "first-100",
+                "toy-angles",
+                marks=pytest.mark.xfail(
+                    raises=CellExecutionError,
+                    reason="not compatible with old pose format",
+                ),
+            ),
+            ("abinit_het", "cdrgn", "hand", "CTF-Test.100", "5", "hand-poses"),
         ],
         indirect=["particles", "ctf", "indices", "poses"],
     )
@@ -424,39 +471,36 @@ class TestHeterogeneous:
         os.chdir(orig_cwd)
 
     @pytest.mark.parametrize(
-        "train_type, particles, ctf, indices, poses, downsample_dim, flip_vol",
+        "train_cmd, train_type, particles, ctf, indices, poses",
         [
-            ("drgnai", "hand", "CTF-Test.100", None, "hand-poses", "8", False),
-            ("drgnai", "toy.mrcs", "CTF-Test", "random-100", "toy-poses", "16", False),
-            ("drgnai", "toy.star", "CTF-Test", "first-100", "toy-poses", "16", True),
+            ("train_vae", "drgnai", "toy.mrcs", "CTF-Test", "random-100", "toy-poses"),
+            ("train_vae", "drgnai", "toy.star", "CTF-Test", "100", "toy-poses"),
+            ("abinit_het", "drgnai", "hand-5", "CTF1", None, "toy-poses"),
+            ("train_vae", "cdrgn-train", "toy.mrcs", "CTF-Test", "100", "toy-poses"),
+            ("abinit_het", "cdrgn", "hand", "CTF-Test.100", "5", "hand-poses"),
+        ],
+        indirect=["particles", "ctf", "indices", "poses"],
+    )
+    @pytest.mark.parametrize(
+        "downsample_dim, flip_vol",
+        [
+            ("8", False),
+            ("16", False),
             pytest.param(
-                "drgnai",
-                "toy.txt",
-                "CTF-Test",
-                "random-100",
-                "toy-poses",
-                "64",
+                "256",
                 False,
                 marks=pytest.mark.xfail(
                     raises=ValueError, reason="box size > resolution"
                 ),
             ),
-            ("cdrgn-train", "hand", "CTF-Test.100", None, "hand-poses", "16", True),
             pytest.param(
-                "cdrgn-train",
-                "toy.mrcs",
-                "CTF-Test",
-                "random-100",
-                "toy-poses",
                 None,
                 False,
                 marks=pytest.mark.xfail(
                     raises=ValueError, reason="box size > resolution"
                 ),
             ),
-            ("cdrgn", "hand", "CTF-Test.100", None, "hand-poses", "8", False),
         ],
-        indirect=["particles", "ctf", "indices", "poses"],
     )
     def test_landscape(self, traincmd, downsample_dim, flip_vol):
         ldscp_dir = os.path.join(
@@ -466,9 +510,11 @@ class TestHeterogeneous:
             traincmd.outdir,
             "4",  # Epoch number to analyze - 0-indexed
             "--sketch-size",
-            "10",  # Number of volumes to generate for analysis
+            "2",  # Number of volumes to generate for analysis
             "--pc-dim",
-            "5",
+            "2",
+            "-M",
+            "2",
             "--vol-start-index",
             "1",
             "-o",
@@ -484,16 +530,17 @@ class TestHeterogeneous:
         cryodrgn.commands.analyze_landscape.main(parser.parse_args(args))
 
     @pytest.mark.parametrize(
-        "train_type, particles, ctf, indices, poses, downsample_dim, flip_vol",
+        "train_cmd, train_type, particles, ctf, indices, poses",
         [
-            ("drgnai", "hand", "CTF-Test.100", None, "hand-poses", "8", False),
-            ("drgnai", "toy.mrcs", "CTF-Test", "random-100", "toy-poses", "16", False),
-            ("drgnai", "toy.star", "CTF-Test", "first-100", "toy-poses", "16", True),
-            ("cdrgn-train", "hand", "CTF-Test.100", None, "hand-poses", "16", True),
-            ("cdrgn", "hand", "CTF-Test.100", None, "hand-poses", "8", False),
+            ("train_vae", "drgnai", "toy.mrcs", "CTF-Test", "random-100", "toy-poses"),
+            ("train_vae", "drgnai", "toy.star", "CTF-Test", "100", "toy-poses"),
+            ("abinit_het", "drgnai", "hand-5", "CTF1", None, "toy-poses"),
+            ("train_vae", "cdrgn-train", "toy.mrcs", "CTF-Test", "100", "toy-poses"),
+            ("abinit_het", "cdrgn", "hand", "CTF-Test.100", "5", "hand-poses"),
         ],
         indirect=["particles", "ctf", "indices", "poses"],
     )
+    @pytest.mark.parametrize("downsample_dim, flip_vol", [("8", False)])
     def test_landscape_full(self, traincmd, downsample_dim, flip_vol):
         ldscp_dir = os.path.join(
             traincmd.outdir, f"landscape.4_{downsample_dim}.{flip_vol}"
@@ -502,7 +549,7 @@ class TestHeterogeneous:
             traincmd.outdir,
             "4",
             "-N",
-            "10",
+            "2",
             "--landscape-dir",
             ldscp_dir,
         ]
@@ -516,16 +563,17 @@ class TestHeterogeneous:
         cryodrgn.commands.analyze_landscape_full.main(parser.parse_args(args))
 
     @pytest.mark.parametrize(
-        "train_type, particles, ctf, indices, poses, downsample_dim, flip_vol",
+        "train_cmd, train_type, particles, ctf, indices, poses",
         [
-            ("drgnai", "hand", "CTF-Test.100", None, "hand-poses", "8", False),
-            ("drgnai", "toy.mrcs", "CTF-Test", "random-100", "toy-poses", "16", False),
-            ("drgnai", "toy.star", "CTF-Test", "first-100", "toy-poses", "16", True),
-            ("cdrgn-train", "hand", "CTF-Test.100", None, "hand-poses", "16", True),
-            ("cdrgn", "hand", "CTF-Test.100", None, "hand-poses", "8", False),
+            ("train_vae", "drgnai", "toy.mrcs", "CTF-Test", "random-100", "toy-poses"),
+            ("train_vae", "drgnai", "toy.star", "CTF-Test", "100", "toy-poses"),
+            ("abinit_het", "drgnai", "hand-5", "CTF1", None, "toy-poses"),
+            ("train_vae", "cdrgn-train", "toy.mrcs", "CTF-Test", "100", "toy-poses"),
+            ("abinit_het", "cdrgn", "hand", "CTF-Test.100", "5", "hand-poses"),
         ],
         indirect=["particles", "ctf", "indices", "poses"],
     )
+    @pytest.mark.parametrize("downsample_dim, flip_vol", [("8", False)])
     def test_landscape_notebook(self, traincmd, downsample_dim, flip_vol):
         """Execute the demo Jupyter notebooks produced by landscape analysis."""
         orig_cwd = os.path.abspath(os.getcwd())
@@ -549,32 +597,25 @@ class TestHeterogeneous:
         os.chdir(orig_cwd)
 
     @pytest.mark.parametrize(
-        "train_type, particles, ctf, indices, poses, seed, steps, points",
+        "train_cmd, train_type, particles, ctf, indices, poses",
         [
-            ("drgnai", "hand", "CTF-Test.100", None, "hand-poses", 915, 5, None),
-            ("drgnai", "toy.mrcs", "CTF-Test", "random-100", "toy-poses", 321, 2, None),
-            ("drgnai", "toy.star", "CTF-Test", "first-100", "toy-poses", 701, 3, 1),
-            ("drgnai", "toy.txt", "CTF-Test", "random-100", "toy-poses", 701, 3, 2),
-            ("cdrgn-train", "hand", "CTF-Test.100", None, "hand-poses", 55, 3, None),
-            (
-                "cdrgn-train",
-                "toy.mrcs",
-                "CTF-Test",
-                "random-100",
-                "toy-poses",
-                915,
-                5,
-                None,
-            ),
-            ("cdrgn-train", "toy.txt", None, "first-100", "toy-poses", 777, 4, None),
-            ("cdrgn", "hand", "CTF-Test.100", None, "hand-poses", 404, 2, 1),
-            ("cdrgn", "toy.mrcs", "CTF-Test", "first-100", "toy-angles", 555, 3, None),
+            ("train_vae", "drgnai", "hand", "CTF-Test.100", None, "hand-poses"),
+            ("train_vae", "drgnai", "toy.mrcs", "CTF-Test", "random-100", "toy-poses"),
+            ("train_vae", "drgnai", "toy.star", "CTF-Test", "100", "toy-poses"),
+            ("train_vae", "drgnai", "toy.txt", "CTF-Test", "random-100", "toy-poses"),
+            ("abinit_het", "drgnai", "hand-5", "CTF1", None, "toy-poses"),
+            ("train_vae", "cdrgn-train", "hand", "CTF-Test.100", None, "hand-poses"),
+            ("train_vae", "cdrgn-train", "toy.mrcs", "CTF-Test", "100", "toy-poses"),
+            ("abinit_het", "cdrgn-train", "hand", "CTF-Test.100", "5", None),
+            ("train_vae", "cdrgn", "toy.mrcs", "CTF-Test", "first-100", "toy-angles"),
+            ("abinit_het", "cdrgn", "hand", "CTF-Test.100", "5", "hand-poses"),
         ],
         indirect=["particles", "ctf", "indices", "poses"],
     )
+    @pytest.mark.parametrize("seed, steps, points", [(915, 2, 2), (701, 3, 1)])
     def test_direct_traversal(self, traincmd, seed, steps, points):
         random.seed(seed)
-        anchors = [str(anchor) for anchor in random.sample(range(100), steps)]
+        anchors = [str(anchor) for anchor in random.sample(range(5), steps)]
 
         parser = argparse.ArgumentParser()
         cryodrgn.commands.direct_traversal.add_args(parser)
@@ -585,65 +626,57 @@ class TestHeterogeneous:
         cryodrgn.commands.direct_traversal.main(parser.parse_args(args))
 
     @pytest.mark.parametrize(
-        "train_type, particles, ctf, indices, poses, epoch, seed, steps",
+        "train_cmd, train_type, particles, ctf, indices, poses",
         [
-            ("drgnai", "hand", "CTF-Test.100", None, "hand-poses", 4, 707, 4),
-            ("drgnai", "toy.mrcs", "CTF-Test", "random-100", "toy-poses", 4, 707, 4),
-            ("drgnai", "toy.star", "CTF-Test", "first-100", "toy-poses", 3, 607, 5),
-            ("drgnai", "toy.txt", "CTF-Test", "random-100", "toy-poses", 4, 303, 2),
-            ("cdrgn-train", "hand", "CTF-Test.100", None, "hand-poses", 4, 101, 3),
-            (
-                "cdrgn-train",
-                "toy.mrcs",
-                "CTF-Test",
-                "random-100",
-                "toy-poses",
-                3,
-                103,
-                6,
-            ),
-            ("cdrgn-train", "toy.txt", None, "first-100", "toy-poses", 4, 707, 4),
-            ("cdrgn", "hand", "CTF-Test.100", None, "hand-poses", 4, 915, 5),
-            ("cdrgn", "toy.mrcs", "CTF-Test", "first-100", "toy-angles", 3, 321, 2),
+            ("train_vae", "drgnai", "hand", "CTF-Test.100", None, "hand-poses"),
+            ("train_vae", "drgnai", "toy.mrcs", "CTF-Test", "random-100", "toy-poses"),
+            ("train_vae", "drgnai", "toy.star", "CTF-Test", "100", "toy-poses"),
+            ("train_vae", "drgnai", "toy.txt", "CTF-Test", "random-100", "toy-poses"),
+            ("abinit_het", "drgnai", "hand-5", "CTF1", None, "toy-poses"),
+            ("train_vae", "cdrgn-train", "hand", "CTF-Test.100", None, "hand-poses"),
+            ("train_vae", "cdrgn-train", "toy.mrcs", "CTF-Test", "100", "toy-poses"),
+            ("abinit_het", "cdrgn-train", "hand", "CTF-Test.100", "5", None),
+            ("train_vae", "cdrgn", "toy.mrcs", "CTF-Test", "first-100", "toy-angles"),
+            ("abinit_het", "cdrgn", "hand", "CTF-Test.100", "5", "hand-poses"),
         ],
         indirect=["particles", "ctf", "indices", "poses"],
     )
+    @pytest.mark.parametrize("epoch, seed, steps", [(4, 707, 3), (2, 11, 4)])
     def test_graph_traversal(self, traincmd, epoch, seed, steps):
         random.seed(seed)
-        anchors = [str(anchor) for anchor in random.sample(range(100), steps)]
+        anchors = [str(anchor) for anchor in random.sample(range(5), steps)]
+
+        args = [os.path.join(traincmd.outdir, f"z.{epoch}.pkl")]
+        args += ["--anchors"] + anchors
+        args += [
+            "--outind",
+            os.path.join(traincmd.outdir, f"graph_traversal_path.{epoch}.txt"),
+            "--outtxt",
+            os.path.join(traincmd.outdir, f"graph_traversal_zpath.{epoch}.txt"),
+        ]
+        args += ["--max-neighbors", "2", "--avg-neighbors", "1.5"]
 
         parser = argparse.ArgumentParser()
         cryodrgn.commands.graph_traversal.add_args(parser)
-        args = parser.parse_args(
-            [
-                os.path.join(traincmd.outdir, f"z.{epoch}.pkl"),
-                "--anchors",
-            ]
-            + anchors
-            + [
-                "--outind",
-                os.path.join(traincmd.outdir, f"graph_traversal_path.{epoch}.txt"),
-                "--outtxt",
-                os.path.join(traincmd.outdir, f"graph_traversal_zpath.{epoch}.txt"),
-            ]
-        )
-        cryodrgn.commands.graph_traversal.main(args)
+        cryodrgn.commands.graph_traversal.main(parser.parse_args(args))
 
     @pytest.mark.parametrize(
-        "train_type, particles, ctf, indices, poses, epoch",
+        "train_cmd, train_type, particles, ctf, indices, poses",
         [
-            ("drgnai", "hand", "CTF-Test.100", None, "hand-poses", 4),
-            ("drgnai", "toy.mrcs", "CTF-Test", "random-100", "toy-poses", 4),
-            ("drgnai", "toy.star", "CTF-Test", "first-100", "toy-poses", 3),
-            ("drgnai", "toy.txt", "CTF-Test", "random-100", "toy-poses", 4),
-            ("cdrgn-train", "hand", "CTF-Test.100", None, "hand-poses", 4),
-            ("cdrgn-train", "toy.mrcs", "CTF-Test", "random-100", "toy-poses", 3),
-            ("cdrgn-train", "toy.txt", None, "first-100", "toy-poses", 4),
-            ("cdrgn", "hand", "CTF-Test.100", None, "hand-poses", 4),
-            ("cdrgn", "toy.mrcs", "CTF-Test", "first-100", "toy-angles", 3),
+            ("train_vae", "drgnai", "hand", "CTF-Test.100", None, "hand-poses"),
+            ("train_vae", "drgnai", "toy.mrcs", "CTF-Test", "random-100", "toy-poses"),
+            ("train_vae", "drgnai", "toy.star", "CTF-Test", "100", "toy-poses"),
+            ("train_vae", "drgnai", "toy.txt", "CTF-Test", "random-100", "toy-poses"),
+            ("abinit_het", "drgnai", "hand-5", "CTF1", None, "toy-poses"),
+            ("train_vae", "cdrgn-train", "hand", "CTF-Test.100", None, "hand-poses"),
+            ("train_vae", "cdrgn-train", "toy.mrcs", "CTF-Test", "100", "toy-poses"),
+            ("abinit_het", "cdrgn-train", "hand", "CTF-Test.100", "5", None),
+            ("train_vae", "cdrgn", "toy.mrcs", "CTF-Test", "first-100", "toy-angles"),
+            ("abinit_het", "cdrgn", "hand", "CTF-Test.100", "5", "hand-poses"),
         ],
         indirect=["particles", "ctf", "indices", "poses"],
     )
+    @pytest.mark.parametrize("epoch", [2, 4])
     def test_eval_volume(self, traincmd, epoch):
         parser = argparse.ArgumentParser()
         cryodrgn.commands.eval_vol.add_args(parser)
@@ -651,7 +684,7 @@ class TestHeterogeneous:
             [
                 os.path.join(traincmd.outdir, f"weights.{epoch}.pkl"),
                 "--config",
-                os.path.join(traincmd.outdir, "train-configs.yaml"),
+                os.path.join(traincmd.outdir, "configs.yaml"),
                 "--zfile",
                 os.path.join(traincmd.outdir, f"graph_traversal_zpath.{epoch}.txt"),
                 "-o",
@@ -661,21 +694,17 @@ class TestHeterogeneous:
         cryodrgn.commands.eval_vol.main(args)
 
     @pytest.mark.parametrize(
-        "train_type, particles, ctf, indices, poses",
+        "train_cmd, train_type, particles, ctf, indices, poses",
         [
-            ("drgnai", "hand", "CTF-Test.100", None, "hand-poses"),
-            ("drgnai", "toy.mrcs", "CTF-Test", "random-100", "toy-poses"),
-            ("drgnai", "toy.star", "CTF-Test", "first-100", "toy-poses"),
-            ("drgnai", "toy.txt", "CTF-Test", "random-100", "toy-poses"),
-            ("cdrgn-train", "hand", "CTF-Test.100", None, "hand-poses"),
-            ("cdrgn-train", "toy.mrcs", "CTF-Test", "random-100", "toy-poses"),
-            ("cdrgn-train", "toy.txt", None, "first-100", "toy-poses"),
-            ("cdrgn", "hand", "CTF-Test.100", None, "hand-poses"),
-            ("cdrgn", "toy.mrcs", "CTF-Test", "first-100", "toy-angles"),
+            ("train_vae", "drgnai", "hand", "CTF-Test.100", None, "hand-poses"),
+            ("train_vae", "drgnai", "toy.star", "CTF-Test", "100", "toy-poses"),
+            ("train_vae", "drgnai", "toy.txt", "CTF-Test", "random-100", "toy-poses"),
+            ("train_vae", "cdrgn-train", "hand", "CTF-Test.100", None, "hand-poses"),
+            ("train_vae", "cdrgn", "toy.mrcs", "CTF-Test", "first-100", "toy-angles"),
         ],
         indirect=["particles", "ctf", "indices", "poses"],
     )
-    @pytest.mark.parametrize("epoch", [2, 3])
+    @pytest.mark.parametrize("epoch", [1, 4])
     def test_eval_images(self, traincmd, epoch):
         parser = argparse.ArgumentParser()
         cryodrgn.commands.eval_images.add_args(parser)
@@ -684,7 +713,7 @@ class TestHeterogeneous:
                 traincmd.configs.particles,
                 os.path.join(traincmd.outdir, f"weights.{epoch}.pkl"),
                 "--config",
-                os.path.join(traincmd.outdir, "train-configs.yaml"),
+                os.path.join(traincmd.outdir, "configs.yaml"),
                 "-o",
                 os.path.join(traincmd.outdir, f"out_eval_images_losses.{epoch}.pkl"),
                 "--out-z",
@@ -699,12 +728,13 @@ class TestHeterogeneous:
         cryodrgn.commands.eval_images.main(args)
 
     @pytest.mark.parametrize(
-        "train_type, particles, ctf, indices, poses",
+        "train_cmd, train_type, particles, ctf, indices, poses",
         [
-            ("drgnai", "hand", "CTF-Test.100", None, "hand-poses"),
-            ("drgnai", "toy.star", "CTF-Test", "first-100", "toy-poses"),
-            ("cdrgn-train", "toy.txt", None, "first-100", "toy-poses"),
-            ("cdrgn", "toy.mrcs", "CTF-Test", "first-100", "toy-angles"),
+            ("train_vae", "drgnai", "toy.txt", "CTF-Test", "random-100", "toy-poses"),
+            ("abinit_het", "drgnai", "hand-5", "CTF1", None, "toy-poses"),
+            ("train_vae", "cdrgn-train", "toy.mrcs", "CTF-Test", "100", "toy-poses"),
+            ("abinit_het", "cdrgn-train", "hand", "CTF-Test.100", "5", None),
+            ("abinit_het", "cdrgn", "hand", "CTF-Test.100", "5", "hand-poses"),
         ],
         indirect=["particles", "ctf", "indices", "poses"],
     )
@@ -720,8 +750,8 @@ class TestHeterogeneous:
                     raises=ValueError, reason="palette not available in seaborn!"
                 ),
             ),
-            (2, None, None),
-            (2, None, "plots"),
+            (4, None, None),
+            (4, None, "plots"),
         ],
     )
     def test_plot_classes(self, traincmd, epoch, palette, plot_outdir):
@@ -757,17 +787,18 @@ class TestHeterogeneous:
         assert os.path.exists(os.path.join(use_outdir, "umap_kde_classes.png"))
 
     @pytest.mark.parametrize(
-        "train_type, particles, ctf, indices, poses",
+        "train_cmd, train_type, particles, ctf, indices, poses",
         [
-            ("drgnai", "hand", "CTF-Test.100", None, "hand-poses"),
-            ("drgnai", "toy.mrcs", "CTF-Test", "random-100", "toy-poses"),
-            ("drgnai", "toy.star", "CTF-Test", "first-100", "toy-poses"),
-            ("drgnai", "toy.txt", "CTF-Test", "random-100", "toy-poses"),
-            ("cdrgn-train", "hand", "CTF-Test.100", None, "hand-poses"),
-            ("cdrgn-train", "toy.mrcs", "CTF-Test", "random-100", "toy-poses"),
-            ("cdrgn-train", "toy.txt", None, "first-100", "toy-poses"),
-            ("cdrgn", "hand", "CTF-Test.100", None, "hand-poses"),
-            ("cdrgn", "toy.mrcs", "CTF-Test", "first-100", "toy-angles"),
+            ("train_vae", "drgnai", "hand", "CTF-Test.100", None, "hand-poses"),
+            ("train_vae", "drgnai", "toy.mrcs", "CTF-Test", "random-100", "toy-poses"),
+            ("train_vae", "drgnai", "toy.star", "CTF-Test", "100", "toy-poses"),
+            ("train_vae", "drgnai", "toy.txt", "CTF-Test", "random-100", "toy-poses"),
+            ("abinit_het", "drgnai", "hand-5", "CTF1", None, "toy-poses"),
+            ("train_vae", "cdrgn-train", "hand", "CTF-Test.100", None, "hand-poses"),
+            ("train_vae", "cdrgn-train", "toy.mrcs", "CTF-Test", "100", "toy-poses"),
+            ("abinit_het", "cdrgn-train", "hand", "CTF-Test.100", "5", None),
+            ("train_vae", "cdrgn", "toy.mrcs", "CTF-Test", "first-100", "toy-angles"),
+            ("abinit_het", "cdrgn", "hand", "CTF-Test.100", "5", "hand-poses"),
         ],
         indirect=["particles", "ctf", "indices", "poses"],
     )

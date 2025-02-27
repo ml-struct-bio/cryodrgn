@@ -113,6 +113,8 @@ def produce_data_fixture(
                 files[k] = DataFixture(
                     label=lbl, path=os.path.join(DATA_DIR, data_dict[lbl])
                 )
+            elif lbl.isnumeric():
+                files[k] = DataFixture(label=lbl, path=None)
             else:
                 files[k] = DataFixture(label=lbl, path=os.path.join(DATA_DIR, lbl))
 

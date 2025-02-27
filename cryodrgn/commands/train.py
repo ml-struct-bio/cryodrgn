@@ -13,8 +13,10 @@ $ cryodrgn train new-test --model=hps
 $ sbatch -t 3:00:00 --wrap='cryodrgn train new-test' --mem=16G -o new-test.out
 
 """
+import os
 import argparse
 from typing import Optional, Any
+import cryodrgn.config
 import cryodrgn.utils
 from cryodrgn.models.utils import get_model_trainer
 from cryodrgn.commands.analyze import ModelAnalyzer
@@ -23,28 +25,87 @@ from cryodrgn.commands.analyze import ModelAnalyzer
 def add_args(parser: argparse.ArgumentParser) -> None:
     """The command-line arguments for use with the `cryodrgn train` command."""
 
-    parser.add_argument("config_file", help="experiment config file")
     parser.add_argument(
-        "--outdir", "-o", required=True, help="where to store experiment output"
+        "outdir",
+        type=os.path.abspath,
+        help="Path to the directory that has been created for this experiment",
     )
 
     parser.add_argument(
-        "--model",
-        choices={"amort", "hps"},
-        help="which model to use for reconstruction; default is `amort` (cryoDRGN-AI)",
+        "-n",
+        "--num-epochs",
+        type=int,
+        help="Number of training epochs (default: %(default)s)",
     )
     parser.add_argument(
-        "--no-analysis",
-        action="store_false",
-        dest="do_analysis",
-        help="just do the training stage",
+        "--checkpoint",
+        type=int,
+        help="Checkpointing interval in N_EPOCHS (default: %(default)s)",
     )
+    parser.add_argument(
+        "--log-interval",
+        type=int,
+        help="Logging interval in N_IMGS",
+    )
+    parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Increase verbosity"
+    )
+    parser.add_argument("--seed", type=int, help="Random seed for use with e.g. numpy")
+
+    parser.add_argument(
+        "--lazy",
+        action="store_true",
+        help="Lazy loading if full dataset is too large to fit in memory",
+    )
+    parser.add_argument(
+        "--shuffler-size",
+        type=int,
+        help="If non-zero, will use a data shuffler for faster lazy data loading.",
+    )
+    parser.add_argument(
+        "--max-threads",
+        type=int,
+        help="Maximum number of CPU cores for data loading",
+    )
+
+    parser.add_argument(
+        "-b",
+        "--batch-size",
+        type=int,
+        help="Minibatch size (default: %(default)s)",
+    )
+
+    parser.add_argument(
+        "--no-amp",
+        action="store_false",
+        dest="amp",
+        help="Do not use mixed-precision training for accelerating training",
+    )
+    parser.add_argument(
+        "--multigpu",
+        action="store_true",
+        help="Parallelize training across all detected GPUs",
+    )
+
     parser.add_argument(
         "--cfgs",
         "-c",
         nargs="+",
         help="additional configuration parameters to pass to the model "
         "in the form of 'CFG_KEY1=CFG_VAL1' 'CFG_KEY2=CFG_VAL2' ... ",
+    )
+    parser.add_argument(
+        "--include",
+        "-i",
+        type=os.path.abspath,
+        help="Path to a .yaml file containing additional configuration parameters.",
+    )
+
+    parser.add_argument(
+        "--no-analysis",
+        action="store_false",
+        dest="do_analysis",
+        help="just do the training stage",
     )
 
 
@@ -58,22 +119,34 @@ def main(
     values specified through the `--cfgs` command-line argument.
 
     """
-    configs = cryodrgn.utils.load_yaml(args.config_file)
+    configs = cryodrgn.utils.load_yaml(os.path.join(args.outdir, "config.yaml"))
 
-    if args.model is not None:
-        use_model = args.model
-    elif "model" in configs:
-        use_model = configs["model"]
-    else:
-        use_model = "amort"
-
-    configs["model"] = use_model
-    configs["outdir"] = args.outdir
     if additional_configs is not None:
         configs.update(additional_configs)
+    if args.include:
+        configs.update(cryodrgn.utils.load_yaml(args.include))
 
-    trainer = get_model_trainer(configs, add_cfgs=args.cfgs)
-    cryodrgn.utils._verbose = False
+    if args.num_epochs is not None:
+        configs["num_epochs"] = args.num_epochs
+    if args.checkpoint is not None:
+        configs["checkpoint"] = args.checkpoint
+    if args.log_interval is not None:
+        configs["log_interval"] = args.log_interval
+    if args.lazy:
+        configs["lazy"] = args.lazy
+    if args.multigpu:
+        configs["multigpu"] = args.multigpu
+    if args.seed is not None:
+        configs["seed"] = args.seed
+    if args.shuffler_size is not None:
+        configs["shuffler_size"] = args.shuffler_size
+    if args.max_threads is not None:
+        configs["max_threads"] = args.max_threads
+    if args.batch_size is not None:
+        configs["batch_size"] = args.batch_size
+
+    trainer = get_model_trainer(configs, outdir=args.outdir, add_cfgs=args.cfgs)
+    cryodrgn.utils._verbose = args.verbose
     trainer.train()
 
     if args.do_analysis:

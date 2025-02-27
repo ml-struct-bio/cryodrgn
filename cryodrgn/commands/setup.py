@@ -1,8 +1,8 @@
 """Utilities for creating experiment output folders and configuration files."""
 
+import os
 import argparse
-import pandas as pd
-from cryodrgn.utils import save_yaml
+import cryodrgn.utils
 from cryodrgn.models.utils import get_model_configurations
 
 
@@ -10,17 +10,16 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     """The command-line arguments for use with `cryodrgn setup`."""
 
     parser.add_argument(
-        "config_file",
-        nargs="?",
-        help="experiment config file (.yaml); if not given, "
-        "will print configurations to screen",
+        "outdir",
+        type=os.path.abspath,
+        help="Path to the directory that will be created for this experiment",
     )
 
     parser.add_argument(
         "--model",
         "-m",
-        default="amort",
-        choices=["amort", "hps"],
+        default="cryodrgn-ai",
+        choices=["cryodrgn-ai", "cryodrgn"],
         help="which generation of cryoDRGN learning models to apply",
     )
 
@@ -70,10 +69,10 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "in the form of 'CFG_KEY1=CFG_VAL1' 'CFG_KEY2=CFG_VAL2' ... ",
     )
     parser.add_argument(
-        "--defaults",
-        action="store_true",
-        help="get the default values of all configuration parameters "
-        "used in this engine",
+        "--include",
+        "-i",
+        type=os.path.abspath,
+        help="Path to a .yaml file containing additional configuration parameters.",
     )
 
 
@@ -95,34 +94,54 @@ def main(args: argparse.Namespace) -> None:
     else:
         pose_estimation = args.pose_estimation
 
-    cfgs = {
-        "model": args.model,
-        "particles": args.particles,
-        "z_dim": z_dim,
-        "pose_estimation": pose_estimation,
-    }
-    if args.datadir:
-        cfgs["datadir"] = args.datadir
-    if args.ctf:
-        cfgs["ctf"] = args.ctf
-    if args.poses:
-        cfgs["poses"] = args.poses
-    if args.ind:
-        cfgs["ind"] = args.ind
-    if args.dataset:
-        cfgs["dataset"] = args.dataset
+    # handling different ways of specifying the input data, starting with a
+    # file containing the data files
+    paths_file = os.environ.get("CRYODRGN_DATASETS")
+    data_paths = cryodrgn.utils.load_yaml(paths_file) if paths_file else None
+
+    # TODO: merge with similar logic in reconstruction engine?
+    if args.dataset is not None:
+        if os.path.exists(args.dataset):
+            these_paths = cryodrgn.utils.load_yaml(args.dataset)
+
+            # resolve paths relative to the dataset file if they look relative
+            for k in list(these_paths):
+                if these_paths[k] and not os.path.isabs(these_paths[k]):
+                    these_paths[k] = os.path.abspath(
+                        os.path.join(args.dataset, these_paths[k])
+                    )
+
+        elif data_paths and args.dataset not in data_paths:
+            raise ValueError(
+                f"Given dataset {args.dataset} is not a "
+                "label in the list of known datasets!"
+            )
+
+        elif data_paths is None:
+            raise ValueError(
+                "To specify datasets using a label, first specify"
+                "a .yaml catalogue of datasets using the "
+                "environment variable $CRYODRGN_DATASETS!"
+            )
+
+        # you can also give the dataset as a label in the global dataset list
+        else:
+            these_paths = data_paths[args.dataset]
+    else:
+        these_paths = {"particles": args.particles}
+
+    cfgs = {"model": args.model, "z_dim": z_dim, "pose_estimation": pose_estimation}
     if args.tilt:
-        cfgs["tilt"] = True
+        cfgs["tilt"] = args.tilt
+
+    for data_lbl in ["particles", "poses", "ctf", "datadir", "ind"]:
+        if getattr(args, data_lbl) is not None:
+            cfgs[data_lbl] = getattr(args, data_lbl)
+        elif these_paths.get(data_lbl) is not None:
+            cfgs[data_lbl] = these_paths[data_lbl]
+
+    if args.include:
+        cfgs.update(cryodrgn.utils.load_yaml(args.include))
 
     configs = get_model_configurations(cfgs, add_cfgs=args.cfgs)
-    if args.defaults:
-        if args.config_file:
-            configs.write(args.config_file)
-        else:
-            print(configs)
-    else:
-        cfgs.update(configs.parse_cfg_keys(args.cfgs))
-        if args.config_file:
-            save_yaml(cfgs, args.config_file)
-        else:
-            print(pd.Series(cfgs).to_string())
+    configs.write(os.path.join(args.outdir, "config.yaml"))

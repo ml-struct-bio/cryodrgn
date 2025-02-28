@@ -67,7 +67,7 @@ class TrainCommand:
         self.train_type = train_type
 
         self.cfgs = {
-            "model": "amort" if self.train_type == "drgnai" else "hps",
+            "model": "cryodrgn-ai" if self.train_type == "drgnai" else "cryodrgn",
             "particles": self.args[0],
         }
 
@@ -93,7 +93,7 @@ class TrainCommand:
 
             cmd_args = self.args + ["-o", self.outdir]
         else:
-            cfg_file = os.path.join(self.outdir, "configs.yaml")
+            cfg_file = os.path.join(self.outdir, "config.yaml")
             cryodrgn.utils.save_yaml(self.cfgs, cfg_file)
             cmd_args = [self.outdir, "--no-analysis"]
 
@@ -206,7 +206,7 @@ class TestHomogeneous:
         traincmd.run()
         out_files = set(os.listdir(traincmd.outdir))
         assert "training.log" in out_files, "Missing training log file!"
-        assert "configs.yaml" in out_files, "Missing training configuration file!"
+        assert "config.yaml" in out_files, "Missing training configuration file!"
 
         if traincmd.train_cmd == "abinit_homo" or traincmd.train_type == "drgnai":
             epoch_iter = range(5)
@@ -684,7 +684,7 @@ class TestHeterogeneous:
             [
                 os.path.join(traincmd.outdir, f"weights.{epoch}.pkl"),
                 "--config",
-                os.path.join(traincmd.outdir, "configs.yaml"),
+                os.path.join(traincmd.outdir, "config.yaml"),
                 "--zfile",
                 os.path.join(traincmd.outdir, f"graph_traversal_zpath.{epoch}.txt"),
                 "-o",
@@ -713,7 +713,7 @@ class TestHeterogeneous:
                 traincmd.configs.particles,
                 os.path.join(traincmd.outdir, f"weights.{epoch}.pkl"),
                 "--config",
-                os.path.join(traincmd.outdir, "configs.yaml"),
+                os.path.join(traincmd.outdir, "config.yaml"),
                 "-o",
                 os.path.join(traincmd.outdir, f"out_eval_images_losses.{epoch}.pkl"),
                 "--out-z",
@@ -731,10 +731,8 @@ class TestHeterogeneous:
         "train_cmd, train_type, particles, ctf, indices, poses",
         [
             ("train_vae", "drgnai", "toy.txt", "CTF-Test", "random-100", "toy-poses"),
-            ("abinit_het", "drgnai", "hand-5", "CTF1", None, "toy-poses"),
             ("train_vae", "cdrgn-train", "toy.mrcs", "CTF-Test", "100", "toy-poses"),
-            ("abinit_het", "cdrgn-train", "hand", "CTF-Test.100", "5", None),
-            ("abinit_het", "cdrgn", "hand", "CTF-Test.100", "5", "hand-poses"),
+            ("train_vae", "cdrgn", "toy.mrcs", "CTF-Test", "first-100", "toy-angles"),
         ],
         indirect=["particles", "ctf", "indices", "poses"],
     )

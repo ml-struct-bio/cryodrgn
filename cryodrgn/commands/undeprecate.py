@@ -86,7 +86,7 @@ def update_dir(d: Path, version: str, cfg: dict) -> None:
             if not f.is_dir() or f.name != "out":
                 f.rename("out" / f)
 
-        with open(Path("out", "train-configs.yaml"), "w") as f:
+        with open(Path("out", "config.yaml"), "w") as f:
             yaml.dump(new_cfg, f)
 
         os.chdir(origwd)
@@ -117,7 +117,7 @@ def _prompt_dir(
         msg = "".join([msg, ", but config.pkl is corrupted"])
     elif version_code == "3C":
         msg = msg.replace("is a", "might be a")
-        msg = "".join([msg, ", but configs.yaml is corrupted"])
+        msg = "".join([msg, ", but config.yaml is corrupted"])
 
     if (
         args.dry_run
@@ -147,11 +147,11 @@ def main(args: argparse.Namespace) -> None:
         dir_ls = set(Path.iterdir(cur_dir))
 
         if (
-            Path(cur_dir, "configs.yaml") in dir_ls
+            Path(cur_dir, "config.yaml") in dir_ls
             and Path(cur_dir, "out") in dir_ls
             and Path(cur_dir, "out").is_dir()
         ):
-            cfg, version_code = check_open_config(cur_dir, "configs.yaml", "4")
+            cfg, version_code = check_open_config(cur_dir, "config.yaml", "4")
 
         elif Path(cur_dir, "config.yaml") in dir_ls:
             cfg, version_code = check_open_config(cur_dir, "config.yaml", "3")

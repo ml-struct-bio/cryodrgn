@@ -95,7 +95,7 @@ def main(args: argparse.Namespace) -> None:
 
     # Use the output from last available training epoch or the given epoch
     if args.epoch == -1:
-        z_file = utils.find_latest_output(args.traindir, "conf")
+        z_file = utils.find_latest_output(args.traindir, "z")
         epoch = int(z_file.split(".")[-2])
     else:
         epoch = args.epoch
@@ -107,9 +107,7 @@ def main(args: argparse.Namespace) -> None:
         outdir = os.path.join(args.traindir, f"analyze.{epoch}")
 
     # TODO: make this the standard config loading behaviour?
-    if os.path.exists(os.path.join(args.traindir, "train-configs.yaml")):
-        cfg_file = os.path.join(args.traindir, "train-configs.yaml")
-    elif os.path.exists(os.path.join(args.traindir, "config.yaml")):
+    if os.path.exists(os.path.join(args.traindir, "config.yaml")):
         cfg_file = os.path.join(args.traindir, "config.yaml")
     elif os.path.exists(os.path.join(args.traindir, "config.pkl")):
         cfg_file = os.path.join(args.traindir, "config.pkl")
@@ -200,37 +198,43 @@ def main(args: argparse.Namespace) -> None:
             umap_emb["Class"] = classes
 
             logger.info("Plotting UMAP clustering densities...")
-            g = sns.jointplot(
-                data=umap_emb,
-                x="UMAP1",
-                y="UMAP2",
-                kind="kde",
-                hue="Class",
-                palette=palette,
-                height=10,
-            )
-            g.ax_joint.set_xlabel("UMAP1", size=23, weight="semibold")
-            g.ax_joint.set_ylabel("UMAP2", size=23, weight="semibold")
-            save_figure("umap_kde_classes")
+            try:
+                g = sns.jointplot(
+                    data=umap_emb,
+                    x="UMAP1",
+                    y="UMAP2",
+                    kind="kde",
+                    hue="Class",
+                    palette=palette,
+                    height=10,
+                )
+                g.ax_joint.set_xlabel("UMAP1", size=23, weight="semibold")
+                g.ax_joint.set_ylabel("UMAP2", size=23, weight="semibold")
+                save_figure("umap_kde_classes")
+            except np.linalg.LinAlgError:
+                print("Data too small to produce clustering densities!")
 
         logger.info("Plotting PCA clustering densities...")
-        for pc1, pc2 in combns(range(3), 2):
-            g = sns.jointplot(
-                x=pc[:, pc1],
-                y=pc[:, pc2],
-                kind="kde",
-                hue=classes,
-                palette=palette,
-                height=10,
-            )
-            g.ax_joint.set_xlabel(
-                f"PC{pc1 + 1} ({pca.explained_variance_ratio_[pc1]:.2f})",
-                size=23,
-                weight="semibold",
-            )
-            g.ax_joint.set_ylabel(
-                f"PC{pc2 + 1} ({pca.explained_variance_ratio_[pc2]:.2f})",
-                size=23,
-                weight="semibold",
-            )
-            save_figure(f"z_pca_kde_classes_pc.{pc1 + 1}xpc.{pc2 + 1}")
+        try:
+            for pc1, pc2 in combns(range(3), 2):
+                g = sns.jointplot(
+                    x=pc[:, pc1],
+                    y=pc[:, pc2],
+                    kind="kde",
+                    hue=classes,
+                    palette=palette,
+                    height=10,
+                )
+                g.ax_joint.set_xlabel(
+                    f"PC{pc1 + 1} ({pca.explained_variance_ratio_[pc1]:.2f})",
+                    size=23,
+                    weight="semibold",
+                )
+                g.ax_joint.set_ylabel(
+                    f"PC{pc2 + 1} ({pca.explained_variance_ratio_[pc2]:.2f})",
+                    size=23,
+                    weight="semibold",
+                )
+                save_figure(f"z_pca_kde_classes_pc.{pc1 + 1}xpc.{pc2 + 1}")
+        except np.linalg.LinAlgError:
+            print("Data too small to produce clustering densities!")

@@ -325,6 +325,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
     configs: ReconstructionModelConfigurations
     config_cls = ReconstructionModelConfigurations
     model_lbl = None
+    activations = {"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}
 
     # options for optimizers to use
     optim_types = {"adam": torch.optim.Adam, "lbfgs": torch.optim.LBFGS}
@@ -340,18 +341,15 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
         torch.manual_seed(self.configs.seed)
         self.use_cuda = torch.cuda.is_available()
         self.device = torch.device("cuda" if self.use_cuda else "cpu")
+        self.activation = self.activations[self.configs.activation]
 
         if self.use_cuda:
             self.logger.info(f"Using GPU {self.device}")
-            self.n_prcs = min(torch.cuda.device_count(), 1)
+            self.n_prcs = torch.cuda.device_count()
             self.logger.info(f"Number of available gpus: {self.n_prcs}")
         else:
             self.logger.warning(f"No GPUs detected, using {self.device} instead!")
             self.n_prcs = 1
-
-        self.activation = {"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[
-            self.configs.activation
-        ]
 
         # load index filter
         if self.configs.ind is not None:
@@ -461,7 +459,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
         # parallelize
         if self.configs.multigpu and torch.cuda.device_count() > 1:
             self.logger.info(f"Using {torch.cuda.device_count()} GPUs!")
-            self.configs.batch_size *= torch.cuda.device_count()
+            self.configs.batch_size *= self.n_prcs
             self.logger.info(f"Increasing batch size to {self.configs.batch_size}")
             self.reconstruction_model = DataParallel(self.reconstruction_model)
         elif self.configs.multigpu:

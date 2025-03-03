@@ -9,7 +9,7 @@ This command can be used to train any model included in cryoDRGN, including:
 Example usages
 --------------
 
-$ cryodrgn train new-test --model=hps
+$ cryodrgn train new-test --model=cryodrgn
 $ sbatch -t 3:00:00 --wrap='cryodrgn train new-test' --mem=16G -o new-test.out
 
 """

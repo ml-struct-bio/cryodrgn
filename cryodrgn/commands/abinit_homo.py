@@ -35,9 +35,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--ctf", metavar="pkl", type=os.path.abspath, help="CTF parameters (.pkl)"
     )
-    parser.add_argument(
-        "--ind", type=os.path.abspath, help="Filter particle stack by these indices"
-    )
+    parser.add_argument("--ind", help="Filter particle stack by these indices")
     parser.add_argument(
         "--datadir",
         type=os.path.abspath,
@@ -310,8 +308,7 @@ def main(args: argparse.Namespace) -> None:
         "This command is deprecated; use `cryodrgn train` as of cryoDRGN v4.0.0."
     )
     configs = {
-        "model": "hps",
-        "outdir": args.outdir,
+        "model": "cryodrgn",
         "particles": args.particles,
         "ctf": args.ctf,
         "poses": None,
@@ -383,5 +380,5 @@ def main(args: argparse.Namespace) -> None:
     }
 
     cryodrgn.utils._verbose = False
-    trainer = HierarchicalPoseSearchTrainer(configs)
+    trainer = HierarchicalPoseSearchTrainer(configs, args.outdir)
     trainer.train()

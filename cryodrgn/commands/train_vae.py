@@ -75,12 +75,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     )
 
     group = parser.add_argument_group("Dataset loading")
-    group.add_argument(
-        "--ind",
-        type=os.path.abspath,
-        metavar="PKL",
-        help="Filter particles by these indices",
-    )
+    group.add_argument("--ind", help="Filter particle stack by these indices")
     group.add_argument(
         "--uninvert-data",
         dest="invert_data",
@@ -345,8 +340,7 @@ def main(args: argparse.Namespace) -> None:
         "This command is deprecated; use `cryodrgn train` as of cryoDRGN v4.0.0."
     )
     configs = {
-        "model": "hps",
-        "outdir": args.outdir,
+        "model": "cryodrgn",
         "particles": args.particles,
         "ctf": args.ctf,
         "poses": args.poses,
@@ -405,5 +399,5 @@ def main(args: argparse.Namespace) -> None:
     }
 
     cryodrgn.utils._verbose = False
-    trainer = HierarchicalPoseSearchTrainer(configs)
+    trainer = HierarchicalPoseSearchTrainer(configs, outdir=args.outdir)
     trainer.train()

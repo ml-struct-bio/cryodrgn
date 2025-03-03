@@ -153,19 +153,7 @@ class TestTiltFixedHetero:
         parser = argparse.ArgumentParser()
         analyze.add_args(parser)
         analyze.main(
-            parser.parse_args(
-                [
-                    outdir,
-                    "--epoch",
-                    "5",  # Epoch number to analyze - 0-indexed
-                    "--pc",
-                    "3",  # Number of principal component traversals to generate
-                    "--ksample",
-                    "2",  # Number of kmeans samples to generate
-                    "--vol-start-index",
-                    "1",
-                ]
-            )
+            parser.parse_args([outdir, "--epoch", "5", "--pc", "3", "--ksample", "2"])
         )
         assert os.path.exists(os.path.join(outdir, "analyze.5"))
 

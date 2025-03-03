@@ -313,12 +313,10 @@ def main(args: argparse.Namespace) -> None:
     weights = os.path.join(args.workdir, f"weights.{args.epoch}.pkl")
 
     cfg = (
-        os.path.join(args.workdir, "train-configs.yaml")
-        if os.path.exists(os.path.join(args.workdir, "train-configs.yaml"))
-        else os.path.join(args.workdir, "config.yaml")
-        if os.path.exists(os.path.join(args.workdir, "configs.yaml"))
+        os.path.join(args.workdir, "config.yaml")
+        if os.path.exists(os.path.join(args.workdir, "config.yaml"))
         else os.path.join(args.workdir, "config.yml")
-        if os.path.exists(os.path.join(args.workdir, "configs.yml"))
+        if os.path.exists(os.path.join(args.workdir, "config.yml"))
         else os.path.join(args.workdir, "config.pkl")
     )
     configs = cryodrgn.config.load(cfg)

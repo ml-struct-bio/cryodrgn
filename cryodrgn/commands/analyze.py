@@ -93,13 +93,6 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         default=20,
         help="Number of kmeans samples to generate (default: %(default)s)",
     )
-    group.add_argument(
-        "--vol-start-index",
-        type=int,
-        default=1,
-        help="Default value of start index for volume "
-        "generation (default: %(default)s)",
-    )
 
 
 class ModelAnalyzer:
@@ -126,7 +119,6 @@ class ModelAnalyzer:
         pc: int = 2,
         n_per_pc: int = 10,
         ksample: int = 20,
-        vol_start_index: int = 1,
         sample_z_idx: list[int] = None,
         trajectory_1d: list[int] = None,
         z_values_txt: str = None,
@@ -138,7 +130,7 @@ class ModelAnalyzer:
             )
         self.traindir = traindir
 
-        self.cfg_file = os.path.join(self.traindir, "train-configs.yaml")
+        self.cfg_file = os.path.join(self.traindir, "config.yaml")
         if os.path.exists(self.cfg_file):
             with open(self.cfg_file, "r") as f:
                 cfg_dict: dict[str, dict[str, Any]] = yaml.safe_load(f)
@@ -256,21 +248,13 @@ class ModelAnalyzer:
         self.trajectory_1d = trajectory_1d
         self.z_values_txt = z_values_txt
         self.direct_traversal_txt = direct_traversal_txt
-        self.vol_start_index = vol_start_index
         self.skip_umap = skip_umap
 
-    def generate_volumes(
-        self, z_values, voldir, prefix="vol_", suffix=None, start_index=None
-    ):
-        start_index = start_index or self.vol_start_index
-
+    def generate_volumes(self, z_values, voldir, prefix="vol_", suffix=None) -> None:
         if self.volume_generator:
             os.makedirs(voldir, exist_ok=True)
             np.savetxt(os.path.join(voldir, "z_values.txt"), z_values)
-
-            self.volume_generator.produce_volumes(
-                z_values, voldir, prefix, suffix, start_index
-            )
+            self.volume_generator.produce_volumes(z_values, voldir, prefix, suffix)
         else:
             logger.info("Skipping volume generation...")
 
@@ -768,7 +752,6 @@ def main(args: argparse.Namespace) -> None:
         downsample=args.downsample,
         pc=args.pc,
         ksample=args.ksample,
-        vol_start_index=args.vol_start_index,
     )
     analyzer.analyze()
 

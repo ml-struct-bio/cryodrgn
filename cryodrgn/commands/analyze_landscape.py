@@ -85,13 +85,6 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     group.add_argument(
         "--skip-vol", action="store_true", help="Skip generation of volumes"
     )
-    group.add_argument(
-        "--vol-start-index",
-        type=int,
-        default=1,
-        help="Default value of start index for volume generation "
-        "(default: %(default)s)",
-    )
 
     group = parser.add_argument_group("Extra arguments for mask generation")
     group.add_argument(
@@ -174,7 +167,6 @@ def make_mask(
     thresh: float,
     in_mrc: Optional[str] = None,
     Apix: float = 1.0,
-    vol_start_index: int = 1,
 ) -> None:
     """Create a masking filter for use across all volumes produced by k-means."""
     kmean_dir = os.path.join(outdir, f"kmeans{sketch_size}")
@@ -184,9 +176,7 @@ def make_mask(
             thresh = np.mean(
                 [
                     np.percentile(
-                        parse_mrc(
-                            os.path.join(kmean_dir, f"vol_{vol_start_index+i:03d}.mrc")
-                        )[0],
+                        parse_mrc(os.path.join(kmean_dir, f"vol_{i+1:03d}.mrc"))[0],
                         99.99,
                     )
                     / 2.0
@@ -200,12 +190,10 @@ def make_mask(
             )
 
         # Combine all masks by taking their union (without loading all into memory)
-        vol, _ = parse_mrc(os.path.join(kmean_dir, f"vol_{vol_start_index:03d}.mrc"))
+        vol, _ = parse_mrc(os.path.join(kmean_dir, "vol_001.mrc"))
         mask = 1.0 - mask_fx(vol)
-        for i in range(1, sketch_size):
-            vol, _ = parse_mrc(
-                os.path.join(kmean_dir, f"vol_{vol_start_index+i:03d}.mrc")
-            )
+        for i in range(2, sketch_size + 1):
+            vol, _ = parse_mrc(os.path.join(kmean_dir, f"vol_{i:03d}.mrc"))
             mask *= 1.0 - mask_fx(vol)
         mask = 1.0 - mask
     else:
@@ -258,7 +246,6 @@ def analyze_volumes(
     plot_dim=5,
     particle_ind_orig=None,
     Apix=1,
-    vol_start_index=1,
 ):
     kmean_dir = os.path.join(outdir, f"kmeans{K}")
     cmap = choose_cmap(M)
@@ -269,9 +256,7 @@ def analyze_volumes(
         volm = torch.stack(
             [
                 torch.Tensor(
-                    parse_mrc(
-                        os.path.join(kmean_dir, f"vol_{vol_start_index+i:03d}.mrc")
-                    )[0]
+                    parse_mrc(os.path.join(kmean_dir, f"vol_{i+1:03d}.mrc"))[0]
                 )
                 for i in range(K)
             ]
@@ -293,9 +278,7 @@ def analyze_volumes(
             (
                 mask[mask_inds]
                 * torch.Tensor(
-                    parse_mrc(
-                        os.path.join(kmean_dir, f"vol_{vol_start_index+i:03d}.mrc")
-                    )[0]
+                    parse_mrc(os.path.join(kmean_dir, f"vol_{i+1:03d}.mrc"))[0]
                 )[mask_inds]
             ).flatten()
             for i in range(K)
@@ -326,14 +309,13 @@ def analyze_volumes(
         subdir = f"{outdir}/vol_pcs/pc{i+1}"
         if not os.path.exists(subdir):
             os.makedirs(subdir)
+
         min_, max_ = pc[:, i].min(), pc[:, i].max()
         logger.info((min_, max_))
-        for j, val in enumerate(
-            np.linspace(min_, max_, 10, endpoint=True), start=vol_start_index
-        ):
+        for j, val in enumerate(np.linspace(min_, max_, 10, endpoint=True)):
             v = volm.clone()
             v[mask_inds] += torch.Tensor(pca.components_[i]) * val
-            write_mrc(f"{subdir}/{j}.mrc", np.array(v).astype(np.float32), Apix=Apix)
+            write_mrc(f"{subdir}/{j+1}.mrc", np.array(v).astype(np.float32), Apix=Apix)
 
     # which plots to show???
     def plot(i, j):
@@ -357,11 +339,11 @@ def analyze_volumes(
     kmeans_counts = Counter(kmeans_labels)
     for i in range(M):
         vol_i = np.where(labels == i)[0]
-        logger.info(f"State {i}: {len(vol_i)} volumes")
+        logger.info(f"State {i+1}: {len(vol_i)} volumes")
         if vol_ind is not None:
             vol_i = np.arange(K)[vol_ind][vol_i]
 
-        vol_fl = os.path.join(kmean_dir, f"vol_{vol_start_index+i:03d}.mrc")
+        vol_fl = os.path.join(kmean_dir, f"vol_{i+1:03d}.mrc")
         vol_i_all = torch.stack([torch.Tensor(parse_mrc(vol_fl)[0]) for i in vol_i])
         nparticles = np.array([kmeans_counts[i] for i in vol_i])
         vol_i_mean = np.average(vol_i_all, axis=0, weights=nparticles)
@@ -369,33 +351,33 @@ def analyze_volumes(
             np.average((vol_i_all - vol_i_mean) ** 2, axis=0, weights=nparticles) ** 0.5
         )
         write_mrc(
-            os.path.join(subdir, f"state_{i}_mean.mrc"),
+            os.path.join(subdir, f"state_{i+1}_mean.mrc"),
             vol_i_mean.astype(np.float32),
             Apix=Apix,
         )
         write_mrc(
-            os.path.join(subdir, f"state_{i}_std.mrc"),
+            os.path.join(subdir, f"state_{i+1}_std.mrc"),
             vol_i_std.astype(np.float32),
             Apix=Apix,
         )
 
-        os.makedirs(os.path.join(subdir, f"state_{i}"), exist_ok=True)
+        os.makedirs(os.path.join(subdir, f"state_{i+1}"), exist_ok=True)
         for v in vol_i:
             os.symlink(
-                os.path.join(kmean_dir, f"vol_{vol_start_index+v:03d}.mrc"),
-                os.path.join(subdir, f"state_{i}", f"vol_{vol_start_index+v:03d}.mrc"),
+                os.path.join(kmean_dir, f"vol_{v+1:03d}.mrc"),
+                os.path.join(subdir, f"state_{i+1}", f"vol_{v+1:03d}.mrc"),
             )
 
         particle_ind = analysis.get_ind_for_cluster(kmeans_labels, vol_i)
-        logger.info(f"State {i}: {len(particle_ind)} particles")
+        logger.info(f"State {i+1}: {len(particle_ind)} particles")
         if particle_ind_orig is not None:
             utils.save_pkl(
                 particle_ind_orig[particle_ind],
-                os.path.join(subdir, f"state_{i}_particle_ind.pkl"),
+                os.path.join(subdir, f"state_{i+1}_particle_ind.pkl"),
             )
         else:
             utils.save_pkl(
-                particle_ind, os.path.join(subdir, f"state_{i}_particle_ind.pkl")
+                particle_ind, os.path.join(subdir, f"state_{i+1}_particle_ind.pkl")
             )
 
     # plot clustering results
@@ -489,7 +471,7 @@ def main(args: argparse.Namespace) -> None:
 
     conf_file = os.path.join(args.workdir, f"z.{args.epoch}.pkl")
     weights_file = os.path.join(args.workdir, f"weights.{args.epoch}.pkl")
-    cfgs = cryodrgn.config.load(os.path.join(args.workdir, "train-configs.yaml"))
+    cfgs = cryodrgn.config.load(os.path.join(args.workdir, "config.yaml"))
     outdir = args.outdir or os.path.join(args.workdir, f"landscape.{args.epoch}")
     logger.info(f"Saving results to {outdir}")
 
@@ -536,16 +518,18 @@ def main(args: argparse.Namespace) -> None:
         args.thresh,
         args.mask,
         Apix=args.Apix,
-        vol_start_index=args.vol_start_index,
     )
 
     logger.info("Analyzing volumes...")
     # get particle indices if the dataset was originally filtered
-    particle_ind = (
-        utils.load_pkl(cfgs["dataset_args"]["ind"])
-        if cfgs["dataset_args"]["ind"] is not None
-        else None
-    )
+    if cfgs["dataset_args"]["ind"] is not None:
+        if cfgs["dataset_args"]["ind"].isnumeric():
+            particle_ind = np.arange(int(cfgs["dataset_args"]["ind"]))
+        else:
+            particle_ind = utils.load_pkl(cfgs["dataset_args"]["ind"])
+    else:
+        particle_ind = None
+
     analyze_volumes(
         outdir,
         args.sketch_size,
@@ -553,10 +537,9 @@ def main(args: argparse.Namespace) -> None:
         args.M,
         args.linkage,
         vol_ind=args.vol_ind,
-        plot_dim=args.plot_dim,
+        plot_dim=min(args.plot_dim, args.pc_dim),
         particle_ind_orig=particle_ind,
         Apix=args.Apix,
-        vol_start_index=args.vol_start_index,
     )
 
     td = dt.now() - t1

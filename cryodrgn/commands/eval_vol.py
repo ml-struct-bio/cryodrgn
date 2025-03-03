@@ -96,13 +96,6 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         type=int,
         help="Downsample volumes to this box size (pixels)",
     )
-    group.add_argument(
-        "--vol-start-index",
-        type=int,
-        default=1,
-        help="Default value of start index "
-        "for volume generation (default: %(default)s)",
-    )
 
     group = parser.add_argument_group(
         "Overwrite architecture hyperparameters in config.yaml"
@@ -259,7 +252,6 @@ class VolumeEvaluator:
         outpath: str,
         prefix: str = "vol_",
         suffix: Optional[str] = None,
-        vol_start_index: int = 1,
     ) -> None:
 
         # multiple latent space co-ordinates
@@ -267,13 +259,16 @@ class VolumeEvaluator:
             os.makedirs(outpath, exist_ok=True)
 
             logger.info(f"Generating {len(z_values)} volumes")
-            for i, z_val in enumerate(z_values, start=vol_start_index):
+            for i, z_val in enumerate(z_values):
                 logger.info(z_val)
                 volume = self.evaluate_volume(z_val)
                 suffix_str = "" if suffix is None else suffix
                 write_mrc(
                     os.path.join(
-                        outpath, "{}{:03d}{}.mrc".format(prefix, i, suffix_str)
+                        outpath,
+                        f"{prefix}{(i+1):03d}{suffix_str}.mrc".format(
+                            prefix, i, suffix_str
+                        ),
                     ),
                     np.array(volume.cpu()).astype(np.float32),
                     Apix=self.apix,
@@ -344,9 +339,7 @@ def main(args: argparse.Namespace) -> None:
 
     # Evaluate the volumes at these locations and save them to file
     if len(z_vals):
-        evaluator.produce_volumes(
-            z_vals, args.output, args.prefix, args.vol_start_index
-        )
+        evaluator.produce_volumes(z_vals, args.output, args.prefix)
     elif args.zfile:
         logger.warning(f"Given z-values file `{args.zfile}`is empty!")
     elif args.z_start:

@@ -1,29 +1,32 @@
-"""Volume reconstruction training with fixed poses, as well as downstream analyses."""
+"""The setup command used to help create output directories for reconstruction."""
 
 import pytest
 import os.path
 import argparse
 from cryodrgn.commands import setup, train
 import cryodrgn.utils
+from typing import Optional
 
 
 class SetupRequest:
+    """A set of parameters passed to the `cryodrgn setup `command."""
+
     def __init__(
         self,
-        outdir,
-        model,
-        dataset,
-        particles,
-        ctf,
-        poses,
-        ind,
-        datadir,
-        reconstruction_type,
-        z_dim,
-        pose_estimation,
-        tilt,
-        cfgs,
-        defaults,
+        outdir: str,
+        model: Optional[str],
+        dataset: Optional[str],
+        particles: Optional[str],
+        ctf: Optional[str],
+        poses: Optional[str],
+        ind: Optional[str],
+        datadir: Optional[str],
+        reconstruction_type: Optional[str],
+        z_dim: Optional[str],
+        pose_estimation: Optional[str],
+        tilt: Optional[bool],
+        cfgs: Optional[list[str]],
+        defaults: Optional[bool],
     ):
         args = [outdir]
         if model is not None:
@@ -78,7 +81,7 @@ class SetupRequest:
         self.z_dim = z_dim
         self.pose_estimation = pose_estimation
         self.tilt = tilt
-        self.cfgs = cfgs
+        self.cfgs = cfgs if cfgs is not None else list()
         self.defaults = defaults
 
 
@@ -126,6 +129,7 @@ class TestSetupThenRun:
         reconstruction_type,
         z_dim,
         pose_estimation,
+        cfgs,
     ):
 
         dirname = os.path.join(
@@ -141,6 +145,7 @@ class TestSetupThenRun:
             reconstruction_type if reconstruction_type is not None else "None",
             z_dim if z_dim is not None else "None",
             pose_estimation if pose_estimation is not None else "None",
+            str(hash(tuple(cfgs)))[1:10] if cfgs is not None else "None",
         )
         odir = os.path.join(tmpdir_factory.getbasetemp(), dirname)
         os.makedirs(odir, exist_ok=True)
@@ -158,21 +163,23 @@ class TestSetupThenRun:
             z_dim,
             pose_estimation,
             False,
-            None,
+            cfgs,
             None,
         )
 
     @pytest.mark.parametrize(
-        "reconstruction_type, z_dim",
+        "reconstruction_type, z_dim, cfgs",
         [
-            (None, None),
-            (None, "0"),
-            (None, "4"),
-            ("homo", None),
-            ("het", None),
+            (None, None, None),
+            (None, None, ["z_dim=2"]),
+            (None, "0", ["window_r=0.80"]),
+            (None, "4", ["window_r=0.80", "z_dim=2"]),
+            ("homo", None, ["window_r=0.80"]),
+            ("het", None, ["window_r=0.75", "z_dim=2"]),
             pytest.param(
                 "homo",
                 "4",
+                None,
                 marks=pytest.mark.xfail(
                     raises=ValueError,
                     reason="cannot specify both reconstruction-type and z_dim",
@@ -197,19 +204,31 @@ class TestSetupThenRun:
         assert configs["dataset_args"]["poses"] == setup_request.poses
         assert configs["dataset_args"]["ind"] == setup_request.ind
         assert configs["dataset_args"]["datadir"] == setup_request.datadir
-
         assert configs["model_args"]["model"] == setup_request.model
-        if setup_request.z_dim is not None:
-            assert configs["model_args"]["z_dim"] == int(setup_request.z_dim)
-        elif setup_request.reconstruction_type is None:
-            assert configs["model_args"]["z_dim"] == 0
-        elif setup_request.reconstruction_type == "homo":
-            assert configs["model_args"]["z_dim"] == 0
-        elif setup_request.reconstruction_type == "het":
-            assert configs["model_args"]["z_dim"] == 8
-        else:
-            assert False
 
+        if setup_request.z_dim is not None:
+            use_zdim = int(setup_request.z_dim)
+        elif setup_request.reconstruction_type is None:
+            use_zdim = 0
+        elif setup_request.reconstruction_type == "homo":
+            use_zdim = 0
+        elif setup_request.reconstruction_type == "het":
+            use_zdim = 8
+        else:
+            raise ValueError(
+                f"Unrecognized reconstruction type "
+                f"`{setup_request.reconstruction_type}`!"
+            )
+        for cfg in setup_request.cfgs:
+            if cfg.startswith("z_dim="):
+                use_zdim = int(cfg.split("=")[1])
+
+            elif cfg.startswith("window_r="):
+                assert configs["dataset_args"]["window_r"] == float(
+                    cfg.split("=")[1]
+                ), "Incorrect window radius!"
+
+        assert configs["model_args"]["z_dim"] == use_zdim
         assert configs["model_args"]["learning_rate"] == 0.1
         if setup_request.pose_estimation is None:
             if setup_request.poses is not None:
@@ -223,8 +242,13 @@ class TestSetupThenRun:
             )
 
     @pytest.mark.parametrize(
-        "reconstruction_type, z_dim",
-        [(None, "0"), (None, "4"), ("homo", None)],
+        "reconstruction_type, z_dim, cfgs",
+        [
+            (None, None, None),
+            (None, "0", ["window_r=0.80"]),
+            (None, "4", ["window_r=0.80", "z_dim=2"]),
+            ("homo", None, ["window_r=0.80"]),
+        ],
     )
     def test_then_run(self, setup_request):
         args = [setup_request.outdir, "--num-epochs", "2", "--no-analysis"]

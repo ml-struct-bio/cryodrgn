@@ -44,7 +44,6 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--z-dim",
         type=int,
-        default=0,
         help="homogeneous (default) or heterogeneous reconstruction with z-dim=8?",
     )
     parser.add_argument(
@@ -80,15 +79,20 @@ def main(args: argparse.Namespace) -> None:
     """Running the `cryodrgn setup` command (see `add_args` above for arguments)."""
 
     if args.reconstruction_type is None:
-        z_dim = int(args.z_dim)
-    elif args.reconstruction_type == "het":
-        z_dim = 8
-    elif args.reconstruction_type == "homo":
-        z_dim = 0
+        z_dim = int(args.z_dim) if args.z_dim is not None else 0
     else:
-        raise ValueError(
-            f"Unrecognized reconstruction type `{args.reconstruction_type}`!"
-        )
+        if args.z_dim is not None:
+            raise ValueError("Cannot specify both --reconstruction-type and --z-dim!")
+
+        if args.reconstruction_type == "het":
+            z_dim = 8
+        elif args.reconstruction_type == "homo":
+            z_dim = 0
+        else:
+            raise ValueError(
+                f"Unrecognized reconstruction type `{args.reconstruction_type}`!"
+            )
+
     if args.pose_estimation is None:
         pose_estimation = "abinit" if args.poses is None else "fixed"
     else:

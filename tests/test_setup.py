@@ -2,10 +2,11 @@
 
 import pytest
 import os.path
+import shutil
 import argparse
 from cryodrgn.commands import setup, train
 import cryodrgn.utils
-from typing import Optional
+from typing import Optional, Any
 
 
 class SetupRequest:
@@ -26,7 +27,7 @@ class SetupRequest:
         pose_estimation: Optional[str],
         tilt: Optional[bool],
         cfgs: Optional[list[str]],
-        defaults: Optional[bool],
+        include_cfgs: Optional[dict[str, Any]],
     ):
         args = [outdir]
         if model is not None:
@@ -63,11 +64,13 @@ class SetupRequest:
         if model == "cryodrgn":
             add_cfgs += ["ps_freq=2"]
 
+        if include_cfgs is not None:
+            include_fl = os.path.join(outdir, "test-include.yml")
+            cryodrgn.utils.save_yaml(include_cfgs, include_fl)
+            args += ["--include", include_fl]
         if cfgs:
             add_cfgs += cfgs
         args += ["--cfgs"] + add_cfgs
-        if defaults:
-            args += ["--defaults"]
 
         self.args = args
         self.outdir = outdir
@@ -82,37 +85,34 @@ class SetupRequest:
         self.pose_estimation = pose_estimation
         self.tilt = tilt
         self.cfgs = cfgs if cfgs is not None else list()
-        self.defaults = defaults
+        self.include_cfgs = include_cfgs if include_cfgs is not None else dict()
 
 
 @pytest.mark.parametrize(
-    "model, ctf",
-    [("cryodrgn", "CTF-Test"), ("cryodrgn", None), ("cryodrgn-ai", "CTF-Test")],
-    indirect=["ctf"],
-)
-@pytest.mark.parametrize("dataset", [None])
-@pytest.mark.parametrize(
-    "particles, datadir", [("toy.mrcs", None), ("toy.txt", None)], indirect=True
-)
-@pytest.mark.parametrize(
-    "pose_estimation, poses, indices",
+    "model, particles, ctf, poses, indices, datadir, dataset, pose_estimation",
     [
-        (None, None, "5"),
-        (None, "toy-poses", None),
+        ("cryodrgn-ai", "toy.mrcs", "CTF-Test", None, "5", None, None, None),
+        ("cryodrgn-ai", "toy.mrcs", "CTF-Test", "toy-poses", None, None, None, None),
         pytest.param(
+            "cryodrgn-ai",
+            "toy.mrcs",
+            "CTF-Test",
+            None,
+            None,
+            None,
+            None,
             "fixed",
-            None,
-            None,
             marks=pytest.mark.xfail(
                 raises=(ValueError, FileNotFoundError),
                 reason="fixed estimation but no poses given",
             ),
         ),
-        ("abinit", None, "5"),
-        ("fixed", "toy-poses", None),
-        ("abinit", "toy-poses", "5"),
+        ("cryodrgn", "toy.mrcs", None, None, "5", None, None, "abinit"),
+        ("cryodrgn-ai", "toy.txt", "CTF-Test", "toy-poses", None, None, None, "fixed"),
+        ("cryodrgn", "hand", None, "hand-poses", "5", None, None, "fixed"),
+        ("cryodrgn", "toy.txt", "CTF-Test", "toy-poses", "5", None, None, "abinit"),
     ],
-    indirect=["poses", "indices"],
+    indirect=["particles", "ctf", "poses", "indices", "datadir"],
 )
 class TestSetupThenRun:
     @pytest.fixture
@@ -130,6 +130,7 @@ class TestSetupThenRun:
         z_dim,
         pose_estimation,
         cfgs,
+        include,
     ):
 
         dirname = os.path.join(
@@ -146,6 +147,7 @@ class TestSetupThenRun:
             z_dim if z_dim is not None else "None",
             pose_estimation if pose_estimation is not None else "None",
             str(hash(tuple(cfgs)))[1:10] if cfgs is not None else "None",
+            str(hash(tuple(include))) if include is not None else "None",
         )
         odir = os.path.join(tmpdir_factory.getbasetemp(), dirname)
         os.makedirs(odir, exist_ok=True)
@@ -164,22 +166,36 @@ class TestSetupThenRun:
             pose_estimation,
             False,
             cfgs,
-            None,
+            include,
         )
 
     @pytest.mark.parametrize(
-        "reconstruction_type, z_dim, cfgs",
+        "reconstruction_type, z_dim, cfgs, include",
         [
-            (None, None, None),
-            (None, None, ["z_dim=2"]),
-            (None, "0", ["window_r=0.80"]),
-            (None, "4", ["window_r=0.80", "z_dim=2"]),
-            ("homo", None, ["window_r=0.80"]),
-            ("het", None, ["window_r=0.75", "z_dim=2"]),
+            (None, None, None, None),
+            (None, None, None, {"weight_decay": 0.05}),
+            (None, None, ["z_dim=2"], None),
+            (None, "0", ["window_r=0.80"], None),
+            (None, "4", ["window_r=0.80", "z_dim=2"], None),
+            (None, "4", ["window_r=0.80", "z_dim=2"], {"weight_decay": 0.05}),
+            ("homo", None, ["window_r=0.80"], None),
+            ("homo", None, ["window_r=0.80"], {"weight_decay": 0.05}),
+            ("het", None, ["window_r=0.75", "z_dim=2"], None),
             pytest.param(
                 "homo",
                 "4",
                 None,
+                None,
+                marks=pytest.mark.xfail(
+                    raises=ValueError,
+                    reason="cannot specify both reconstruction-type and z_dim",
+                ),
+            ),
+            pytest.param(
+                "het",
+                "12",
+                None,
+                {"weight_decay": 0.05},
                 marks=pytest.mark.xfail(
                     raises=ValueError,
                     reason="cannot specify both reconstruction-type and z_dim",
@@ -187,7 +203,9 @@ class TestSetupThenRun:
             ),
         ],
     )
-    def test_use_setup(self, setup_request):
+    def test_setup_directory(self, setup_request):
+        """Create a reconstruction directory using the setup command."""
+
         parser = argparse.ArgumentParser()
         setup.add_args(parser)
         setup.main(parser.parse_args(setup_request.args))
@@ -205,7 +223,6 @@ class TestSetupThenRun:
         assert configs["dataset_args"]["ind"] == setup_request.ind
         assert configs["dataset_args"]["datadir"] == setup_request.datadir
         assert configs["model_args"]["model"] == setup_request.model
-
         if setup_request.z_dim is not None:
             use_zdim = int(setup_request.z_dim)
         elif setup_request.reconstruction_type is None:
@@ -241,20 +258,84 @@ class TestSetupThenRun:
                 == setup_request.pose_estimation
             )
 
+        for par_k, par_v in setup_request.include_cfgs.items():
+            assert configs["model_args"][par_k] == par_v
+
     @pytest.mark.parametrize(
-        "reconstruction_type, z_dim, cfgs",
+        "reconstruction_type, z_dim, cfgs, include",
         [
-            (None, None, None),
-            (None, "0", ["window_r=0.80"]),
-            (None, "4", ["window_r=0.80", "z_dim=2"]),
-            ("homo", None, ["window_r=0.80"]),
+            (None, None, None, None),
+            (None, None, None, {"weight_decay": 0.05}),
+            (None, "0", ["window_r=0.80"], None),
+            (None, "4", ["window_r=0.80", "z_dim=2"], {"weight_decay": 0.05}),
+            ("homo", None, ["window_r=0.80"], None),
         ],
     )
-    def test_then_run(self, setup_request):
-        args = [setup_request.outdir, "--num-epochs", "2", "--no-analysis"]
+    def test_then_train(self, setup_request):
+        """Run the reconstruction experiment using the directory created by setup."""
+
+        args = [setup_request.outdir, "--num-epochs", "3", "--no-analysis"]
         parser = argparse.ArgumentParser()
         train.add_args(parser)
         train.main(parser.parse_args(args))
 
         out_files = os.listdir(setup_request.outdir)
-        assert "weights.2.pkl" in out_files, "Missing output model weights!"
+        for epoch in range(1, 10):
+            if epoch <= 3:
+                assert (
+                    f"weights.{epoch}.pkl" in out_files
+                ), f"Missing output model weights for epoch {epoch}!"
+                if (
+                    setup_request.pose_estimation == "abinit"
+                    or setup_request.poses is None
+                ):
+                    assert (
+                        f"pose.{epoch}.pkl" in out_files
+                    ), f"Missing output model poses for epoch {epoch}!"
+                else:
+                    assert (
+                        f"pose.{epoch}.pkl" not in out_files
+                    ), f"Extra output model poses for epoch {epoch}!"
+            else:
+                assert (
+                    f"weights.{epoch}.pkl" not in out_files
+                ), f"Extra output model weights for epoch {epoch}!"
+
+    @pytest.mark.parametrize(
+        "reconstruction_type, z_dim, cfgs, include",
+        [
+            (None, None, None, None),
+            (None, "4", ["window_r=0.80", "z_dim=2"], {"weight_decay": 0.05}),
+        ],
+    )
+    def test_then_rerun(self, setup_request):
+        """Copy the experiment config file to an empty directory and run again."""
+
+        rerun_dir = os.path.join(setup_request.outdir, "rerun")
+        os.makedirs(rerun_dir)
+        shutil.copyfile(
+            os.path.join(setup_request.outdir, "config.yaml"),
+            os.path.join(rerun_dir, "config.yaml"),
+        )
+        args = [rerun_dir, "--num-epochs", "1", "--no-analysis"]
+        parser = argparse.ArgumentParser()
+        train.add_args(parser)
+        train.main(parser.parse_args(args))
+
+        out_files = os.listdir(rerun_dir)
+        for epoch in range(1, 5):
+            if epoch <= 1:
+                assert (
+                    f"weights.{epoch}.pkl" in out_files
+                ), f"Missing output model weights for epoch {epoch}!"
+                if (
+                    setup_request.pose_estimation == "abinit"
+                    or setup_request.poses is None
+                ):
+                    assert (
+                        f"pose.{epoch}.pkl" in out_files
+                    ), f"Missing output model poses for epoch {epoch}!"
+            else:
+                assert (
+                    f"weights.{epoch}.pkl" not in out_files
+                ), f"Extra output model weights for epoch {epoch}!"

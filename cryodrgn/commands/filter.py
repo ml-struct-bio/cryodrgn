@@ -98,7 +98,7 @@ def main(args: argparse.Namespace) -> None:
     kmeans = args.kmeans
     plot_inds = args.plot_inds
 
-    train_configs_file = os.path.join(workdir, "train-configs.yaml")
+    train_configs_file = os.path.join(workdir, "config.yaml")
     if not os.path.exists(train_configs_file):
         raise ValueError("Missing config.yaml file " "in given output folder!")
     with open(train_configs_file, "r") as f:

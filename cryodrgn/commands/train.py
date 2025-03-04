@@ -125,25 +125,28 @@ def main(
         configs.update(additional_configs)
     if args.include:
         configs.update(cryodrgn.utils.load_yaml(args.include))
-
-    if args.num_epochs is not None:
-        configs["num_epochs"] = args.num_epochs
-    if args.checkpoint is not None:
-        configs["checkpoint"] = args.checkpoint
-    if args.log_interval is not None:
-        configs["log_interval"] = args.log_interval
-    if args.lazy:
-        configs["lazy"] = args.lazy
-    if args.multigpu:
-        configs["multigpu"] = args.multigpu
     if args.seed is not None:
         configs["seed"] = args.seed
+
+    train_args = configs["train_args"] if "train_args" in configs else configs
+    if args.num_epochs is not None:
+        train_args["num_epochs"] = args.num_epochs
+    if args.checkpoint is not None:
+        train_args["checkpoint"] = args.checkpoint
+    if args.log_interval is not None:
+        train_args["log_interval"] = args.log_interval
+    if args.lazy:
+        train_args["lazy"] = True
+    if args.multigpu:
+        train_args["multigpu"] = True
     if args.shuffler_size is not None:
-        configs["shuffler_size"] = args.shuffler_size
+        train_args["shuffler_size"] = args.shuffler_size
     if args.max_threads is not None:
-        configs["max_threads"] = args.max_threads
+        train_args["max_threads"] = args.max_threads
     if args.batch_size is not None:
-        configs["batch_size"] = args.batch_size
+        train_args["batch_size"] = args.batch_size
+    if not args.amp:
+        train_args["amp"] = False
 
     trainer = get_model_trainer(configs, outdir=args.outdir, add_cfgs=args.cfgs)
     cryodrgn.utils._verbose = args.verbose

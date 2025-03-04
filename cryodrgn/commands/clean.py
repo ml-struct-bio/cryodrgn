@@ -128,11 +128,11 @@ def main(args):
         dir_ls = set(Path.iterdir(cur_dir))
 
         if (
-            Path(cur_dir, "configs.yaml") in dir_ls
+            Path(cur_dir, "config.yaml") in dir_ls
             and Path(cur_dir, "out") in dir_ls
             and Path(cur_dir, "out").is_dir()
         ):
-            cfg, version_code = check_open_config(cur_dir, "configs.yaml", "4")
+            cfg, version_code = check_open_config(cur_dir, "config.yaml", "4")
         else:
             cfg = None
             version_code = "N"

@@ -244,7 +244,7 @@ def main(args: argparse.Namespace) -> None:
         cfg["dataset_args"]["ctf"] = args.ctf
 
     # instantiate model
-    trainer = get_model_trainer(cfg)
+    trainer = get_model_trainer(cfg, outdir=os.path.dirname(args.weights))
     trainer.reconstruction_model.eval()
     z_mu_all = []
     z_logvar_all = []

@@ -467,7 +467,7 @@ class TestHeterogeneous:
         except CellExecutionError as e:
             os.chdir(orig_cwd)
             # These errors are just an artefact of our testing dataset being very small
-            if "ZeroDivisionError: float division by zero" in str(e):
+            if "ZeroDivisionError: float division by zero" not in str(e):
                 raise e
 
         os.chdir(orig_cwd)

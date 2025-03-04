@@ -103,7 +103,7 @@ def clean_dir(d: Path, args: argparse.Namespace) -> None:
     }
 
     rmv_count = 0
-    for out_lbl in ["weights", "conf", "pose", "reconstruct"]:
+    for out_lbl in ["weights", "z", "pose", "reconstruct"]:
         for out_fl in d.glob(f"{out_lbl}.*"):
             epoch = out_fl.name.split(".")[1]
 

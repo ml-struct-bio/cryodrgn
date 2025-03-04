@@ -44,7 +44,7 @@ def update_configs(cfg: dict[str, Any]) -> dict[str, Any]:
 
 
 def get_model_trainer(
-    cfg: dict[str, Any], add_cfgs: Optional[list[str]] = None
+    cfg: dict[str, Any], outdir: str, add_cfgs: Optional[list[str]] = None
 ) -> ReconstructionModelTrainer:
     cfg = update_configs(cfg)
 
@@ -53,12 +53,12 @@ def get_model_trainer(
     elif "model_args" in cfg and "model" in cfg["model_args"]:
         model = cfg["model_args"]["model"]
     else:
-        model = "hps"
-        cfg["model"] = "hps"
+        model = "cryodrgn"
+        cfg["model"] = "cryodrgn"
 
-    if model == "amort":
+    if model == "cryodrgn-ai":
         trainer_cls = AmortizedInferenceTrainer
-    elif model == "hps":
+    elif model == "cryodrgn":
         trainer_cls = HierarchicalPoseSearchTrainer
     else:
         raise ValueError(f"Unrecognized model `{model}` specified in config!")
@@ -66,7 +66,7 @@ def get_model_trainer(
     if add_cfgs:
         cfg.update(trainer_cls.config_cls.parse_cfg_keys(add_cfgs))
 
-    return trainer_cls.load_from_config(cfg)
+    return trainer_cls.load_from_config(cfg, outdir)
 
 
 def get_model_configurations(
@@ -75,10 +75,10 @@ def get_model_configurations(
     cfg = ReconstructionModelConfigurations.parse_config(update_configs(cfg))
 
     if "model" not in cfg:
-        configs_cls = HierarchicalPoseSearchConfigurations
-    elif cfg["model"] == "amort":
         configs_cls = AmortizedInferenceConfigurations
-    elif cfg["model"] == "hps":
+    elif cfg["model"] == "cryodrgn-ai":
+        configs_cls = AmortizedInferenceConfigurations
+    elif cfg["model"] == "cryodrgn":
         configs_cls = HierarchicalPoseSearchConfigurations
     else:
         raise ValueError(
@@ -124,7 +124,7 @@ def get_model(
             else:
                 image_count = cfg["dataset_args"]["image_count"]
         else:
-            trainer = get_model_trainer(cfg, add_cfgs)
+            trainer = get_model_trainer(cfg, cfg["outdir"], add_cfgs)
             particle_count, image_count = trainer.particle_count, trainer.image_count
 
         model = DRGNai(
@@ -140,13 +140,15 @@ def get_model(
             use_gt_poses=configs.pose_estimation == "fixed",
             use_gt_trans=configs.use_gt_trans,
             will_use_point_estimates=False,
-            ps_params=cfg["model_args"]["ps_params"],
+            ps_params=cfg["model_args"]["ps_params"]
+            if "ps_params" in cfg["model_args"]
+            else None,
             verbose_time=configs.verbose_time,
             pretrain_with_gt_poses=configs.pretrain_with_gt_poses,
             n_tilts_pose_search=configs.n_tilts_pose_search,
         )
 
-    elif configs.model == "hps":
+    elif isinstance(configs, HierarchicalPoseSearchConfigurations):
         activation = {"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[configs.activation]
         if configs.z_dim > 0:
             if (

@@ -141,7 +141,7 @@ class ReconstructionModelConfigurations(BaseConfigurations):
     pretrain: int = 10000
     reset_optim_after_pretrain: bool = False
     # other learning parameters
-    weight_decay: int = 0
+    weight_decay: float = 0.0
     learning_rate: float = 1e-4
     pose_learning_rate: float = 1e-4
     l_extent: float = 0.5
@@ -294,9 +294,26 @@ class ReconstructionModelConfigurations(BaseConfigurations):
             tdim=self.tdim,
             tlayers=self.tlayers,
             t_emb_dim=self.t_emb_dim,
+            volume_optim_type=self.volume_optim_type,
+            pose_sgd_emb_type=self.pose_sgd_emb_type,
+        )
+        train_args = dict(
+            num_epochs=self.num_epochs,
+            checkpoint=self.checkpoint,
+            log_interval=self.log_interval,
+            multigpu=self.multigpu,
+            batch_size=self.batch_size,
+            amp=self.amp,
+            lazy=self.lazy,
+            shuffler_size=self.shuffler_size,
         )
 
-        return dict(dataset_args=dataset_args, model_args=model_args, **configs)
+        return dict(
+            dataset_args=dataset_args,
+            model_args=model_args,
+            train_args=train_args,
+            **configs,
+        )
 
 
 class ReconstructionModelTrainer(BaseTrainer, ABC):

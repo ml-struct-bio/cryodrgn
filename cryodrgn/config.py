@@ -58,13 +58,16 @@ def update_config_v1(config: dict) -> dict:
 
 def overwrite_config(config: dict, args: argparse.Namespace) -> dict:
     config = load(config)
+    model_args = config["model_args"] if "model_args" in config else config
+    dataset_args = config["dataset_args"] if "dataset_args" in config else config
+    lattice_args = config["lattice_args"] if "lattice_args" in config else config
 
     if hasattr(args, "norm") and args.norm is not None:
-        config["dataset_args"]["norm"] = args.norm
+        dataset_args["norm"] = args.norm
     if hasattr(args, "D") and args.D is not None:
-        config["lattice_args"]["D"] = args.D + 1
+        lattice_args["D"] = args.D + 1
     if hasattr(args, "l_extent") and args.l_extent is not None:
-        config["lattice_args"]["extent"] = args.l_extent
+        lattice_args["extent"] = args.l_extent
 
     # Overwrite any arguments that are not None
     for arg in (
@@ -82,26 +85,26 @@ def overwrite_config(config: dict, args: argparse.Namespace) -> dict:
         "activation",
     ):
         # Set default to None to maintain backwards compatibility
-        if arg in ("pe_dim", "feat_sigma") and arg not in config["model_args"]:
+        if arg in ("pe_dim", "feat_sigma") and arg not in model_args:
             assert (
                 not hasattr(args, arg) or getattr(args, arg) is None
             ), f"Should not reach here. Something is wrong: {arg}"
-            config["model_args"][arg] = None
+            model_args[arg] = None
             continue
 
         # Set default activation to ReLU to maintain backwards compatibility
         # with v0.3.1 and earlier
-        if arg == "activation" and arg not in config["model_args"]:
+        if arg == "activation" and arg not in model_args:
             assert (
                 not hasattr(args, arg) or getattr(args, arg) == "relu"
             ), f"Should not reach here. Something is wrong: {arg}"
-            config["model_args"]["activation"] = "relu"
+            model_args["activation"] = "relu"
             continue
 
         if hasattr(args, arg) and getattr(args, arg) is not None:
-            config["model_args"][arg] = getattr(args, arg)
+            model_args[arg] = getattr(args, arg)
 
-    if "zdim" in config["model_args"]:
-        config["model_args"]["z_dim"] = config["model_args"]["zdim"]
+    if "zdim" in model_args:
+        model_args["z_dim"] = model_args["zdim"]
 
     return config

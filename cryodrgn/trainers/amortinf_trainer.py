@@ -836,9 +836,9 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
             if not self.configs.no_trans and self.configs.pose_estimation != "fixed":
                 self.predicted_trans[batch["tilt_indices"]] = trans_pred.reshape(-1, 2)
 
-            if self.configs.z_dim > 0:
+            if self.configs.z_dim > 0 and self.predicted_conf is not None:
                 self.predicted_conf[batch["indices"]] = conf_pred
-                if self.configs.variational_het:
+                if self.configs.variational_het and self.predicted_logvar is not None:
                     self.predicted_logvar[batch["indices"]] = logvar_pred
 
         else:

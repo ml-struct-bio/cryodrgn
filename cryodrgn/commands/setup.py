@@ -79,7 +79,7 @@ def main(args: argparse.Namespace) -> None:
     """Running the `cryodrgn setup` command (see `add_args` above for arguments)."""
 
     if args.reconstruction_type is None:
-        z_dim = int(args.z_dim) if args.z_dim is not None else 0
+        z_dim = int(args.z_dim) if args.z_dim is not None else 8
     else:
         if args.z_dim is not None:
             raise ValueError("Cannot specify both --reconstruction-type and --z-dim!")
@@ -148,4 +148,5 @@ def main(args: argparse.Namespace) -> None:
         cfgs.update(cryodrgn.utils.load_yaml(args.include))
 
     configs = get_model_configurations(cfgs, add_cfgs=args.cfgs)
+    os.makedirs(args.outdir, exist_ok=True)
     configs.write(os.path.join(args.outdir, "config.yaml"))

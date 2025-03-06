@@ -22,23 +22,25 @@ from cryodrgn.lattice import Lattice
 from cryodrgn.masking import CircularMask, FrequencyMarchingMask
 
 
-def update_configs(cfg: dict[str, Any]) -> dict[str, Any]:
-    if "model_args" in cfg:
-        if "qlayers" in cfg["model_args"]:
-            cfg["model_args"]["enc_layers"] = cfg["model_args"]["qlayers"]
-            del cfg["model_args"]["qlayers"]
-        if "players" in cfg["model_args"]:
-            cfg["model_args"]["dec_layers"] = cfg["model_args"]["players"]
-            del cfg["model_args"]["players"]
-        if "qdim" in cfg["model_args"]:
-            cfg["model_args"]["enc_dim"] = cfg["model_args"]["qdim"]
-            del cfg["model_args"]["qdim"]
-        if "pdim" in cfg["model_args"]:
-            cfg["model_args"]["dec_dim"] = cfg["model_args"]["pdim"]
-            del cfg["model_args"]["pdim"]
-        if "domain" in cfg["model_args"]:
-            cfg["model_args"]["volume_domain"] = cfg["model_args"]["domain"]
-            del cfg["model_args"]["domain"]
+def undeprecate_configs(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Replace parameter labels found from previous cryoDRGN versions."""
+
+    model_args = cfg["model_args"] if "model_args" in cfg else cfg
+    if "qlayers" in model_args:
+        model_args["enc_layers"] = model_args["qlayers"]
+        del model_args["qlayers"]
+    if "players" in model_args:
+        model_args["dec_layers"] = model_args["players"]
+        del model_args["players"]
+    if "qdim" in model_args:
+        model_args["enc_dim"] = model_args["qdim"]
+        del model_args["qdim"]
+    if "pdim" in model_args:
+        model_args["dec_dim"] = model_args["pdim"]
+        del model_args["pdim"]
+    if "domain" in model_args:
+        model_args["volume_domain"] = model_args["domain"]
+        del model_args["domain"]
 
     return cfg
 
@@ -46,15 +48,11 @@ def update_configs(cfg: dict[str, Any]) -> dict[str, Any]:
 def get_model_trainer(
     cfg: dict[str, Any], outdir: str, add_cfgs: Optional[list[str]] = None
 ) -> ReconstructionModelTrainer:
-    cfg = update_configs(cfg)
-
-    if "model" in cfg:
-        model = cfg["model"]
-    elif "model_args" in cfg and "model" in cfg["model_args"]:
-        model = cfg["model_args"]["model"]
-    else:
-        model = "cryodrgn"
-        cfg["model"] = "cryodrgn"
+    cfg = undeprecate_configs(cfg)
+    model_args = cfg["model_args"] if "model_args" in cfg else cfg
+    model = model_args["model"] if "model" in model_args else "cryodrgn"
+    if "model" not in model_args:
+        model_args["model"] = "cryodrgn"
 
     if model == "cryodrgn-ai":
         trainer_cls = AmortizedInferenceTrainer
@@ -72,25 +70,28 @@ def get_model_trainer(
 def get_model_configurations(
     cfg: dict[str, Any], add_cfgs: Optional[list[str]] = None
 ) -> ReconstructionModelConfigurations:
-    cfg = ReconstructionModelConfigurations.parse_config(update_configs(cfg))
+    cfg = undeprecate_configs(cfg)
+    model_args = cfg["model_args"] if "model_args" in cfg else cfg
 
-    if "model" not in cfg:
+    if "model" not in model_args:
         configs_cls = AmortizedInferenceConfigurations
-    elif cfg["model"] == "cryodrgn-ai":
+    elif model_args["model"] == "cryodrgn-ai":
         configs_cls = AmortizedInferenceConfigurations
-    elif cfg["model"] == "cryodrgn":
+    elif model_args["model"] == "cryodrgn":
         configs_cls = HierarchicalPoseSearchConfigurations
     else:
         raise ValueError(
-            f"Model unrecognized by cryoDRGN: `{cfg['model']}` specified in config!"
+            f"Model unknown by cryoDRGN `{model_args['model']}` specified in config!"
         )
 
+    cfg = configs_cls.parse_config(cfg)
     if add_cfgs:
         cfg.update(configs_cls.parse_cfg_keys(add_cfgs))
 
     return configs_cls(**cfg)
 
 
+# TODO: redundancy with `make_reconstruction_model` from trainers?
 def get_model(
     cfg: dict[str, Any],
     add_cfgs: Optional[list[str]] = None,
@@ -161,6 +162,16 @@ def get_model(
                 enc_mask = None
                 in_dim = lattice.D**2
 
+            if cfg["model_args"]["encode_mode"] == "tilt":
+                tilt_params = dict(
+                    t_emb_dim=cfg["model_args"]["t_emb_dim"],
+                    tdim=cfg["model_args"]["tdim"],
+                    tlayers=cfg["model_args"]["tlayers"],
+                    ntilts=cfg["model_args"]["ntilts"],
+                )
+            else:
+                tilt_params = dict()
+
             model = HetOnlyVAE(
                 lattice=lattice,
                 qlayers=cfg["model_args"]["enc_layers"],
@@ -176,7 +187,7 @@ def get_model(
                 domain=configs.volume_domain,
                 activation=activation,
                 feat_sigma=cfg["model_args"]["feat_sigma"],
-                tilt_params=cfg["model_args"].get("tilt_params", {}),
+                tilt_params=tilt_params,
             )
         else:
             model = get_decoder(

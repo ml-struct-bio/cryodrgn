@@ -65,9 +65,11 @@ class SetupRequest:
             add_cfgs += ["ps_freq=2"]
 
         if include_cfgs is not None:
+            os.makedirs(outdir, exist_ok=True)
             include_fl = os.path.join(outdir, "test-include.yml")
             cryodrgn.utils.save_yaml(include_cfgs, include_fl)
             args += ["--include", include_fl]
+
         if cfgs:
             add_cfgs += cfgs
         args += ["--cfgs"] + add_cfgs
@@ -150,7 +152,6 @@ class TestSetupThenRun:
             str(hash(tuple(include))) if include is not None else "None",
         )
         odir = os.path.join(tmpdir_factory.getbasetemp(), dirname)
-        os.makedirs(odir, exist_ok=True)
 
         return SetupRequest(
             odir,

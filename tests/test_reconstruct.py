@@ -79,7 +79,7 @@ class TrainCommand:
         self.configs = self.parse_args()
         self.poses = poses
 
-    def run(self) -> None:
+    def run(self, no_analysis=True) -> None:
         self.configs = self.parse_args()
 
         if self.train_type == "cdrgn":
@@ -95,7 +95,9 @@ class TrainCommand:
         else:
             cfg_file = os.path.join(self.outdir, "config.yaml")
             cryodrgn.utils.save_yaml(self.cfgs, cfg_file)
-            cmd_args = [self.outdir, "--no-analysis"]
+            cmd_args = [self.outdir]
+            if no_analysis:
+                cmd_args += ["--no-analysis"]
 
         use_cmd = self.train_cmd if self.train_type == "cdrgn" else "train"
         parser = argparse.ArgumentParser()
@@ -203,10 +205,13 @@ class TestHomogeneous:
     def test_train_model(self, traincmd):
         """Train the initial homogeneous model."""
 
-        traincmd.run()
+        traincmd.run(no_analysis=False)
         out_files = set(os.listdir(traincmd.outdir))
         assert "training.log" in out_files, "Missing training log file!"
         assert "config.yaml" in out_files, "Missing training configuration file!"
+        assert not any(
+            fl.startswith("analyze.") for fl in out_files
+        ), "Created empty analysis folder!"
 
         if traincmd.train_cmd == "abinit_homo" or traincmd.train_type == "drgnai":
             epoch_iter = range(5)
@@ -237,10 +242,13 @@ class TestHomogeneous:
         i = traincmd.args.index("--num-epochs")
         traincmd.args[i + 1] = str(int(traincmd.args[i + 1]) + 1)
 
-        traincmd.run()
+        traincmd.run(no_analysis=False)
         out_files = os.listdir(traincmd.outdir)
         assert "weights.5.pkl" in out_files, "Missing output model weights!"
         assert "reconstruct.5.mrc" in out_files, "Missing output reconstructed vol!"
+        assert not any(
+            fl.startswith("analyze.") for fl in out_files
+        ), "Created empty analysis folder!"
 
 
 class TestHeterogeneous:

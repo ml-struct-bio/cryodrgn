@@ -1,4 +1,7 @@
-"""Create, train, and analyze a reconstruction experiment.
+"""Train a volume reconstruction model described by a config file in an output folder.
+
+The `train` command is used to run a reconstruction experiment using the configurations
+previously saved using a command such as `cryodrgn setup`.
 
 This command can be used to train any model included in cryoDRGN, including:
     - homogeneous and heterogeneous reconstruction with given poses (cryoDRGN v1)

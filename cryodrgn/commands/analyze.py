@@ -222,7 +222,6 @@ class ModelAnalyzer:
             self.outdir = outdir
         else:
             self.outdir = os.path.join(self.traindir, f"analyze.{self.epoch}")
-        os.makedirs(self.outdir, exist_ok=True)
         logger.info(f"Saving results to {self.outdir}")
 
         # We will generate volumes unless told not to or if using a homogeneous model
@@ -262,11 +261,12 @@ class ModelAnalyzer:
         if self.train_configs.z_dim == 0:
             logger.warning("No analyses available for homogeneous reconstruction!")
             return
-
-        elif self.train_configs.z_dim == 1:
-            self.analyze_z1()
         else:
-            self.analyze_zN()
+            os.makedirs(self.outdir, exist_ok=True)
+            if self.train_configs.z_dim == 1:
+                self.analyze_z1()
+            else:
+                self.analyze_zN()
 
         # create Jupyter notebooks for data analysis and visualization by
         # copying them over from the template directory

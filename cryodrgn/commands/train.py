@@ -151,8 +151,8 @@ def main(
     if not args.amp:
         train_args["amp"] = False
 
+    cryodrgn.utils._verbose = False
     trainer = get_model_trainer(configs, outdir=args.outdir, add_cfgs=args.cfgs)
-    cryodrgn.utils._verbose = args.verbose
     trainer.train()
 
     if args.do_analysis:

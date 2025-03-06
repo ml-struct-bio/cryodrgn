@@ -99,7 +99,7 @@ class HierarchicalPoseSearchConfigurations(ReconstructionModelConfigurations):
 
         pe_type     Label for the type of positional encoding to use.
         pe_dim      Number of frequencies to use in the positional encoding
-                    (default: 64).
+                    (default: D/2).
         volume_domain   Representation to use in the volume
                         decoder ("hartley" or "fourier").
 
@@ -114,7 +114,7 @@ class HierarchicalPoseSearchConfigurations(ReconstructionModelConfigurations):
     # specifying size and type of model encoder and decoder
     enc_layers: int = None
     enc_dim: int = None
-    encode_mode: str = "resid"
+    encode_mode: str = None
     enc_mask: int = None
     tilt_enc_only: bool = False
     dec_layers: int = None
@@ -174,6 +174,8 @@ class HierarchicalPoseSearchConfigurations(ReconstructionModelConfigurations):
         if self.dec_dim is None:
             self.dec_dim = self.hidden_dim
 
+        if self.encode_mode is None and self.z_dim > 0:
+            self.encode_mode = "resid"
         if self.equivariance is not None:
             if not self.z_dim:
                 raise ValueError(

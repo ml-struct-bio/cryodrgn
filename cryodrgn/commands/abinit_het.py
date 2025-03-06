@@ -140,7 +140,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     group.add_argument(
         "--wd",
         type=float,
-        default=0,
+        default=0.0,
         help="Weight decay in Adam optimizer (default: %(default)s)",
     )
     group.add_argument(

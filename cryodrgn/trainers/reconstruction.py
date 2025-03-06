@@ -85,7 +85,7 @@ class ReconstructionModelConfigurations(BaseConfigurations):
     checkpoint      Save model results to file every `N` training epochs.
 
     pe_type     Label for the type of positional encoding to use.
-    pe_dim      Number of frequencies to use in the positional encoding (default: 64).
+    pe_dim      Number of frequencies to use in the positional encoding (default: D/2).
     volume_domain   Representation to use in the volume
                     decoder ("hartley" or "fourier").
     """
@@ -115,12 +115,12 @@ class ReconstructionModelConfigurations(BaseConfigurations):
     batch_size_sgd: int = None
     batch_size_hps: int = None
     lazy: bool = False
-    shuffle: bool = True
+    shuffle: bool = False
     shuffler_size: int = 0
     amp: bool = True
     multigpu: bool = False
     max_threads: int = 16
-    num_workers: int = 2
+    num_workers: int = 0
     # how often to print log messages and save trained model data
     log_interval: int = 1000
     checkpoint: int = 5
@@ -154,7 +154,7 @@ class ReconstructionModelConfigurations(BaseConfigurations):
     hidden_layers: int = 3
     hidden_dim: int = 256
     pe_type: str = "gaussian"
-    pe_dim: int = 64
+    pe_dim: int = None
     volume_domain: str = None
     activation: str = "relu"
     feat_sigma: float = 0.5
@@ -192,7 +192,6 @@ class ReconstructionModelConfigurations(BaseConfigurations):
         # file containing the data files
         paths_file = os.environ.get("CRYODRGN_DATASETS")
         data_paths = cryodrgn.utils.load_yaml(paths_file) if paths_file else None
-
         if self.dataset is not None:
             if os.path.exists(self.dataset):
                 paths = cryodrgn.utils.load_yaml(self.dataset)
@@ -221,15 +220,6 @@ class ReconstructionModelConfigurations(BaseConfigurations):
 
             for k, v in paths.items():
                 setattr(self, k, v)
-
-        elif not self.particles:
-            raise ValueError(
-                "Must specify either a dataset label stored in "
-                f"{paths_file} or the paths to a particles and "
-                "ctf settings file!"
-            )
-        elif not os.path.isfile(self.particles):
-            raise ValueError(f"Given particles file `{self.particles}` does not exist!")
 
         if isinstance(self.ind, str):
             if not self.ind.isnumeric() and not os.path.isfile(self.ind):
@@ -637,6 +627,13 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
 
     def train(self) -> None:
         """Train the model to reconstruct volumes from the input particle stack."""
+
+        paths_file = os.environ.get("CRYODRGN_DATASETS")
+        if self.configs.particles is None or not os.path.isfile(self.configs.particles):
+            raise ValueError(
+                "Must specify either a dataset label stored in "
+                f"{paths_file} or the path to an existing particles file to train!"
+            )
 
         os.makedirs(self.outdir, exist_ok=True)
         self.save_configs()

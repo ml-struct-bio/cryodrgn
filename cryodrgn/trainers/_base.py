@@ -44,7 +44,7 @@ class BaseConfigurations(ABC):
 
     # A parameter belongs to this configuration set if and only if it has a type and a
     # default value defined here, note that children classes inherit these parameters
-    verbose: int = 0
+    verbose: bool = False
     seed: int = None
     test_installation: bool = False
 

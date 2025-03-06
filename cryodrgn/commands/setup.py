@@ -39,12 +39,12 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--reconstruction-type",
         choices=["het", "homo"],
-        help="homogeneous or heterogeneous reconstruction with z-dim=8?",
+        help="homogeneous or heterogeneous (default) reconstruction with z-dim=8?",
     )
     parser.add_argument(
         "--z-dim",
         type=int,
-        help="homogeneous (default) or heterogeneous reconstruction with z-dim=8?",
+        help="homogeneous or heterogeneous (default) reconstruction when z-dim>0?",
     )
     parser.add_argument(
         "--pose-estimation",

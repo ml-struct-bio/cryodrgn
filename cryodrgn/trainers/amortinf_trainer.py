@@ -176,29 +176,21 @@ class AmortizedInferenceConfigurations(ReconstructionModelConfigurations):
             raise ValueError(
                 "Explicit volumes do not support heterogeneous reconstruction."
             )
-
-        if self.dataset is None:
-            if self.ctf is None:
-                raise ValueError("Dataset wasn't specified: please specify ctf!")
-
         if self.volume_optim_type not in {"adam"}:
             raise ValueError(
                 f"Invalid value `{self.volume_optim_type=}` "
                 f"for hypervolume optimizer type!"
             )
-
         if self.pose_table_optim_type not in {"adam", "lbfgs"}:
             raise ValueError(
                 f"Invalid value `{self.pose_table_optim_type=}` "
                 f"for pose table optimizer type!"
             )
-
         if self.conf_table_optim_type not in {"adam", "lbfgs"}:
             raise ValueError(
                 f"Invalid value `{self.conf_table_optim_type=}` "
                 f"for conformation table optimizer type!"
             )
-
         if self.conf_encoder_optim_type not in {"adam"}:
             raise ValueError(
                 f"Invalid value `{self.conf_encoder_optim_type}` "
@@ -389,6 +381,9 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
             self.logger.info("Homogeneous reconstruction")
 
         model_args = self.get_configs()["model_args"]
+        if model_args["hypervolume_params"]["pe_dim"] is None:
+            model_args["hypervolume_params"]["pe_dim"] = self.lattice.D // 2
+
         model = DRGNai(
             self.lattice,
             output_mask,

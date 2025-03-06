@@ -4,9 +4,11 @@ import pytest
 import os.path
 import shutil
 import argparse
+from typing import Optional, Any
 from cryodrgn.commands import setup, train
 import cryodrgn.utils
-from typing import Optional, Any
+from cryodrgn.models.utils import get_model_configurations
+from cryodrgn.trainers.amortinf_trainer import AmortizedInferenceConfigurations
 
 
 class SetupRequest:
@@ -63,6 +65,8 @@ class SetupRequest:
         ]
         if model == "cryodrgn":
             add_cfgs += ["ps_freq=2"]
+        elif model == "cryodrgn-ai":
+            add_cfgs += ["n_imgs_pose_search=10"]
 
         if include_cfgs is not None:
             os.makedirs(outdir, exist_ok=True)
@@ -88,6 +92,18 @@ class SetupRequest:
         self.tilt = tilt
         self.cfgs = cfgs if cfgs is not None else list()
         self.include_cfgs = include_cfgs if include_cfgs is not None else dict()
+
+
+def test_empty_setup(tmpdir_factory):
+    parser = argparse.ArgumentParser()
+    setup.add_args(parser)
+    outdir = tmpdir_factory.mktemp("empty_setup").strpath
+    setup.main(parser.parse_args([outdir]))
+    assert os.path.isfile(os.path.join(outdir, "config.yaml"))
+
+    cfgs = cryodrgn.utils.load_yaml(os.path.join(outdir, "config.yaml"))
+    configs = get_model_configurations(cfgs)
+    assert configs == AmortizedInferenceConfigurations(z_dim=8, seed=configs.seed)
 
 
 @pytest.mark.parametrize(
@@ -174,7 +190,9 @@ class TestSetupThenRun:
         "reconstruction_type, z_dim, cfgs, include",
         [
             (None, None, None, None),
-            (None, None, None, {"weight_decay": 0.05}),
+            ("homo", None, None, None),
+            (None, "2", None, None),
+            ("homo", None, None, {"weight_decay": 0.05}),
             (None, None, ["z_dim=2"], None),
             (None, "0", ["window_r=0.80"], None),
             (None, "4", ["window_r=0.80", "z_dim=2"], None),
@@ -227,7 +245,7 @@ class TestSetupThenRun:
         if setup_request.z_dim is not None:
             use_zdim = int(setup_request.z_dim)
         elif setup_request.reconstruction_type is None:
-            use_zdim = 0
+            use_zdim = 8
         elif setup_request.reconstruction_type == "homo":
             use_zdim = 0
         elif setup_request.reconstruction_type == "het":
@@ -265,8 +283,9 @@ class TestSetupThenRun:
     @pytest.mark.parametrize(
         "reconstruction_type, z_dim, cfgs, include",
         [
-            (None, None, None, None),
-            (None, None, None, {"weight_decay": 0.05}),
+            ("homo", None, None, None),
+            (None, "2", None, None),
+            ("homo", None, None, {"weight_decay": 0.05}),
             (None, "0", ["window_r=0.80"], None),
             (None, "4", ["window_r=0.80", "z_dim=2"], {"weight_decay": 0.05}),
             ("homo", None, ["window_r=0.80"], None),
@@ -276,6 +295,7 @@ class TestSetupThenRun:
         """Run the reconstruction experiment using the directory created by setup."""
 
         args = [setup_request.outdir, "--num-epochs", "3", "--no-analysis"]
+        args += ["--seed", "733"]
         parser = argparse.ArgumentParser()
         train.add_args(parser)
         train.main(parser.parse_args(args))
@@ -305,7 +325,7 @@ class TestSetupThenRun:
     @pytest.mark.parametrize(
         "reconstruction_type, z_dim, cfgs, include",
         [
-            (None, None, None, None),
+            ("homo", None, None, None),
             (None, "4", ["window_r=0.80", "z_dim=2"], {"weight_decay": 0.05}),
         ],
     )
@@ -318,14 +338,22 @@ class TestSetupThenRun:
             os.path.join(setup_request.outdir, "config.yaml"),
             os.path.join(rerun_dir, "config.yaml"),
         )
-        args = [rerun_dir, "--num-epochs", "1", "--no-analysis"]
+        args = [rerun_dir, "--num-epochs", "2", "--checkpoint", "2", "--no-analysis"]
+        args += ["--seed", "8990"]
         parser = argparse.ArgumentParser()
         train.add_args(parser)
         train.main(parser.parse_args(args))
 
         out_files = os.listdir(rerun_dir)
         for epoch in range(1, 5):
-            if epoch <= 1:
+            if (
+                epoch == 2
+                or epoch == 1
+                and (
+                    setup_request.poses is None
+                    or setup_request.pose_estimation == "abinit"
+                )
+            ):
                 assert (
                     f"weights.{epoch}.pkl" in out_files
                 ), f"Missing output model weights for epoch {epoch}!"

@@ -128,6 +128,9 @@ def get_model(
             trainer = get_model_trainer(cfg, cfg["outdir"], add_cfgs)
             particle_count, image_count = trainer.particle_count, trainer.image_count
 
+        if cfg["model_args"]["hypervolume_params"]["pe_dim"] is None:
+            cfg["model_args"]["hypervolume_params"]["pe_dim"] = lattice.D // 2
+
         model = DRGNai(
             lattice=lattice,
             output_mask=output_mask,

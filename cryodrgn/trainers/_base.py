@@ -153,23 +153,26 @@ class BaseConfigurations(ABC):
                             cfgs[cfg_key] = int(cfgs[cfg_key])
 
                         break
-
                 else:
-                    close_keys = difflib.get_close_matches(
-                        cfg_key, [fld.name for fld in fields(cls)]
-                    )
-
-                    if close_keys:
-                        close_str = f"\nDid you mean one of:\n{', '.join(close_keys)}"
-                    else:
-                        close_str = ""
-
-                    raise ValueError(
-                        f"--cfgs parameter `{cfg_key}` is not a "
-                        f"valid configuration parameter!{close_str}"
-                    )
+                    cls.bad_key_error(cfg_key)
 
         return cfgs
+
+    @classmethod
+    def bad_key_error(cls, cfg_key: str) -> None:
+        close_keys = difflib.get_close_matches(
+            cfg_key, [fld.name for fld in fields(cls)]
+        )
+
+        if close_keys:
+            close_str = f"\nDid you mean one of:\n{', '.join(close_keys)}"
+        else:
+            close_str = ""
+
+        raise ValueError(
+            f"--cfgs parameter `{cfg_key}` is not a "
+            f"valid configuration parameter!{close_str}"
+        )
 
 
 class BaseTrainer(ABC):

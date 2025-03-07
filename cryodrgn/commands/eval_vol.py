@@ -186,7 +186,7 @@ class VolumeEvaluator:
             cfg_data, argparse.Namespace(**architecture_args)
         )
         logger.info("Loaded configuration:")
-        cfg_data["weights"] = weights
+        cfg_data["load"] = weights
         pprint.pprint(cfg_data)
 
         if apix is not None:
@@ -196,7 +196,7 @@ class VolumeEvaluator:
         else:
             self.apix = 1.0
 
-        model = get_model(cfg_data)
+        model = get_model(cfg_data, outdir=os.path.dirname(weights))
         if downsample:
             if downsample % 2 != 0:
                 raise ValueError("Boxsize must be even")

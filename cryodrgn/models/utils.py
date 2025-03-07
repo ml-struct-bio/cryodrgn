@@ -41,6 +41,22 @@ def undeprecate_configs(cfg: dict[str, Any]) -> dict[str, Any]:
     if "domain" in model_args:
         model_args["volume_domain"] = model_args["domain"]
         del model_args["domain"]
+    if "zdim" in model_args:
+        model_args["z_dim"] = model_args["zdim"]
+        del model_args["zdim"]
+    if "ntilts" in model_args:
+        model_args["n_tilts"] = model_args["ntilts"]
+        del model_args["ntilts"]
+
+    dataset_args = cfg["dataset_args"] if "dataset_args" in cfg else cfg
+    if "keepreal" in dataset_args:
+        dataset_args["use_real"] = dataset_args["keepreal"]
+        del dataset_args["keepreal"]
+
+    lattice_args = cfg["lattice_args"] if "lattice_args" in cfg else cfg
+    if "extent" in lattice_args:
+        lattice_args["l_extent"] = lattice_args["extent"]
+        del lattice_args["extent"]
 
     return cfg
 
@@ -94,13 +110,14 @@ def get_model_configurations(
 # TODO: redundancy with `make_reconstruction_model` from trainers?
 def get_model(
     cfg: dict[str, Any],
+    outdir: str,
     add_cfgs: Optional[list[str]] = None,
     weights=None,
     device=None,
 ) -> Union[HetOnlyVAE, DRGNai]:
     configs = get_model_configurations(cfg, add_cfgs)
     lattice = Lattice(
-        cfg["lattice_args"]["D"], extent=cfg["lattice_args"]["extent"], device=device
+        cfg["lattice_args"]["D"], extent=cfg["lattice_args"]["l_extent"], device=device
     )
 
     if isinstance(configs, AmortizedInferenceConfigurations):
@@ -118,14 +135,14 @@ def get_model(
         else:
             raise NotImplementedError
 
-        if "particle_count" in cfg["dataset_args"]:
-            particle_count = cfg["dataset_args"]["particle_count"]
-            if "image_count" not in cfg["dataset_args"]:
+        if "n_particles" in cfg["dataset_args"]:
+            particle_count = cfg["dataset_args"]["n_particles"]
+            if "n_images" not in cfg["dataset_args"]:
                 image_count = particle_count
             else:
-                image_count = cfg["dataset_args"]["image_count"]
+                image_count = cfg["dataset_args"]["n_images"]
         else:
-            trainer = get_model_trainer(cfg, cfg["outdir"], add_cfgs)
+            trainer = get_model_trainer(cfg, outdir, add_cfgs)
             particle_count, image_count = trainer.particle_count, trainer.image_count
 
         if cfg["model_args"]["hypervolume_params"]["pe_dim"] is None:
@@ -170,7 +187,7 @@ def get_model(
                     t_emb_dim=cfg["model_args"]["t_emb_dim"],
                     tdim=cfg["model_args"]["tdim"],
                     tlayers=cfg["model_args"]["tlayers"],
-                    ntilts=cfg["model_args"]["ntilts"],
+                    ntilts=cfg["model_args"]["n_tilts"],
                 )
             else:
                 tilt_params = dict()

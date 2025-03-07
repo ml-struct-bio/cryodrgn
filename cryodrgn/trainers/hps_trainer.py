@@ -364,6 +364,9 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
         self.pose_model = None
         self.do_pretrain = self.configs.pose_estimation == "abinit"
 
+        if torch.cuda.device_count() > 1:
+            self.reconstruction_model = nn.DataParallel(self.reconstruction_model)
+
         if self.configs.poses and self.image_count is not None:
             self.pose_tracker = PoseTracker.load(
                 infile=self.configs.poses,

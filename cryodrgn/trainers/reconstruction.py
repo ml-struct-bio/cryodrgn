@@ -13,11 +13,11 @@ import logging
 import numpy as np
 import torch
 from torch import nn
-from torch.nn.parallel import DataParallel
 import cryodrgn.utils
 from cryodrgn import __version__, ctf
 from cryodrgn.dataset import ImageDataset, TiltSeriesData, make_dataloader
 from cryodrgn.lattice import Lattice
+from cryodrgn.models.amortized_inference import MyDataParallel
 from cryodrgn.trainers._base import BaseConfigurations, BaseTrainer
 
 try:
@@ -264,7 +264,7 @@ class ReconstructionModelConfigurations(BaseConfigurations):
             ind=self.ind,
             datadir=self.datadir,
             invert_data=self.invert_data,
-            keepreal=self.use_real,
+            use_real=self.use_real,
             window=self.window,
             window_r=self.window_r,
             tilt=self.tilt,
@@ -276,9 +276,9 @@ class ReconstructionModelConfigurations(BaseConfigurations):
             pe_type=self.pe_type,
             pe_dim=self.pe_dim,
             feat_sigma=self.feat_sigma,
-            domain=self.volume_domain,
+            volume_domain=self.volume_domain,
             activation=self.activation,
-            ntilts=self.n_tilts,
+            n_tilts=self.n_tilts,
             weight_decay=self.weight_decay,
             learning_rate=self.learning_rate,
             tdim=self.tdim,
@@ -468,7 +468,6 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
             self.logger.info(f"Using {torch.cuda.device_count()} GPUs!")
             self.configs.batch_size *= self.n_prcs
             self.logger.info(f"Increasing batch size to {self.configs.batch_size}")
-            self.reconstruction_model = DataParallel(self.reconstruction_model)
         elif self.configs.multigpu:
             self.logger.warning(
                 f"WARNING: --multigpu selected, but {torch.cuda.device_count()} "
@@ -769,7 +768,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
 
     @property
     def model_resolution(self) -> int:
-        if isinstance(self.reconstruction_model, DataParallel):
+        if isinstance(self.reconstruction_model, (nn.DataParallel, MyDataParallel)):
             if self.configs.z_dim > 0:
                 model_resolution = self.reconstruction_model.module.lattice.D
             else:
@@ -842,14 +841,11 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
         `data.norm`) without having to reload the stack from file.
         """
         configs = self.configs.file_dict
-        if self.lattice is not None:
-            lattice_args = dict(
-                D=self.lattice.D,
-                extent=self.lattice.extent,
-                ignore_DC=self.lattice.ignore_DC,
-            )
-        else:
-            lattice_args = None
+        lattice_args = dict(
+            D=self.lattice.D,
+            l_extent=self.lattice.extent,
+            ignore_DC=self.lattice.ignore_DC,
+        )
 
         # Properties inferred from the input dataset only once it has been loaded
         dataset_args = dict(
@@ -860,7 +856,6 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
         )
         configs["dataset_args"].update(dataset_args)
         configs["lattice_args"] = lattice_args
-        configs["outdir"] = self.outdir
 
         return configs
 

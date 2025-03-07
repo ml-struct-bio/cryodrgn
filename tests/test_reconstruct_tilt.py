@@ -149,12 +149,10 @@ class TestTiltFixedHetero:
         outdir = self.get_outdir(
             tmpdir_factory, particles, poses, ctf, indices, datadir
         )
-
         parser = argparse.ArgumentParser()
         analyze.add_args(parser)
-        analyze.main(
-            parser.parse_args([outdir, "--epoch", "5", "--pc", "3", "--ksample", "2"])
-        )
+        analyze.main(parser.parse_args([outdir, "5", "--pc", "3", "--ksample", "2"]))
+
         assert os.path.exists(os.path.join(outdir, "analyze.5"))
 
     @pytest.mark.parametrize(

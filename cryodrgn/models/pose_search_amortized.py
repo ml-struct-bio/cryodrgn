@@ -15,7 +15,7 @@ def get_base_shifts(ps_params):
         base_shift_grid(
             ps_params["base_healpy"] - 1,
             ps_params["t_extent"],
-            ps_params["t_n_grid"],
+            ps_params["t_ngrid"],
             x_shift=ps_params["t_xshift"],
             y_shift=ps_params["t_yshift"],
         )
@@ -46,9 +46,9 @@ def to_tensor(x):
 
 
 def get_l(step, res, ps_params):
-    if ps_params["niter"] > 0:
+    if ps_params["n_iter"] > 0:
         l_current = ps_params["l_min"] + int(
-            step / ps_params["niter"] * (ps_params["l_max"] - ps_params["l_min"])
+            step / ps_params["n_iter"] * (ps_params["l_max"] - ps_params["l_min"])
         )
     else:
         l_current = ps_params["l_max"]
@@ -464,8 +464,8 @@ def opt_trans(model, y_gt, y_pred, lattice, ps_params, current_radius):
 
     best_trans_idx = None
     translated_images = None
-    for iter_ in range(0, ps_params["niter"] + 1):
-        if iter_ < ps_params["niter"]:
+    for iter_ in range(0, ps_params["n_iter"] + 1):
+        if iter_ < ps_params["n_iter"]:
             l_current = min(get_l(iter_, lattice.D, ps_params), current_radius)
         else:
             l_current = current_radius
@@ -604,12 +604,12 @@ def opt_theta_trans(
     )
 
     keep_b, keep_t, keep_q = PoseSearch.keep_matrix(
-        loss, batch_size, ps_params["nkeptposes"]
+        loss, batch_size, ps_params["n_kept_poses"]
     ).cpu()
 
     new_init_poses = (
         torch.cat((keep_t, keep_q), dim=-1)
-        .reshape(2, batch_size, ps_params["nkeptposes"])
+        .reshape(2, batch_size, ps_params["n_kept_poses"])
         .permute(1, 2, 0)
     )
 
@@ -621,14 +621,14 @@ def opt_theta_trans(
             gt_trans_selected.clone()
             .to(device)
             .unsqueeze(1)
-            .repeat(1, ps_params["nkeptposes"], 1)
+            .repeat(1, ps_params["n_kept_poses"], 1)
             .reshape(-1, 2)
             .unsqueeze(1)
         )  # batch_size * n_tilts * nkeptposes, 1, 2
         shifts = None
     elif ps_params["t_extent"] < 1e-6:
         trans = (
-            torch.zeros(batch_size * n_tilts * ps_params["nkeptposes"], 1, 2)
+            torch.zeros(batch_size * n_tilts * ps_params["n_kept_poses"], 1, 2)
             .float()
             .to(device)
         )
@@ -636,7 +636,7 @@ def opt_theta_trans(
     else:
         trans = base_shifts[keep_t]
         shifts = base_shifts.clone()
-    for iter_ in range(1, ps_params["niter"] + 1):
+    for iter_ in range(1, ps_params["n_iter"] + 1):
         keep_b8 = (
             keep_b.unsqueeze(1).repeat(1, 8).reshape(-1)
         )  # repeat each element 8 times
@@ -671,16 +671,16 @@ def opt_theta_trans(
             tilting_func=ps_params["tilting_func"],
             apply_tilting_scheme=apply_tilting_scheme,
         )
-        nkeptposes = ps_params["nkeptposes"] if iter_ < ps_params["niter"] else 1
+        n_kept_poses = ps_params["n_kept_poses"] if iter_ < ps_params["n_iter"] else 1
 
         keep_bn, keep_t, keep_q = PoseSearch.keep_matrix(
-            loss, batch_size, nkeptposes
+            loss, batch_size, n_kept_poses
         ).cpu()  # B x (self.Nkeptposes*32)
         keep_b = torch.div(keep_bn * batch_size, loss.shape[0], rounding_mode="trunc")
 
         assert (
-            len(keep_b) == batch_size * nkeptposes
-        ), f"{len(keep_b)} != {batch_size} x {nkeptposes} at iter {iter_}"
+            len(keep_b) == batch_size * n_kept_poses
+        ), f"{len(keep_b)} != {batch_size} x {n_kept_poses} at iter {iter_}"
         quat = quat[keep_bn, keep_q]
         q_ind = q_ind[keep_bn, keep_q]
 

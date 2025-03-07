@@ -99,7 +99,7 @@ class DRGNai(nn.Module):
 
         self.no_trans = no_trans
         self.z_dim = conf_regressor_params["z_dim"]
-        self.variational_conf = conf_regressor_params["variational"]
+        self.variational_conf = conf_regressor_params["variational_het"]
         self.std_z_init = conf_regressor_params["std_z_init"]
 
         self.pose_only = False
@@ -116,7 +116,7 @@ class DRGNai(nn.Module):
 
         # conformation
         if self.z_dim > 0:
-            if cnn_params["conf"]:
+            if cnn_params["use_conf_encoder"]:
                 self.conf_cnn = SharedCNN(
                     resolution_encoder
                     if resolution_encoder is not None
@@ -135,14 +135,14 @@ class DRGNai(nn.Module):
                     final_size,
                     conf_regressor_params["z_dim"],
                     conf_regressor_params["std_z_init"],
-                    conf_regressor_params["variational"],
+                    conf_regressor_params["variational_het"],
                 )
 
             else:
                 self.conf_table = ConfTable(
                     n_particles_dataset,
                     self.z_dim,
-                    conf_regressor_params["variational"],
+                    conf_regressor_params["variational_het"],
                     conf_regressor_params["std_z_init"],
                 )
 
@@ -161,17 +161,19 @@ class DRGNai(nn.Module):
             self.hypervolume = HyperVolume(
                 self.D,
                 self.z_dim,
-                hypervolume_params["n_layers"],
+                hypervolume_params["hidden_layers"],
                 hypervolume_params["hidden_dim"],
                 hypervolume_params["pe_type"],
                 hypervolume_params["pe_dim"],
                 hypervolume_params["feat_sigma"],
-                hypervolume_params["domain"],
+                hypervolume_params["volume_domain"],
                 pe_type_conf=hypervolume_params["pe_type_conf"],
             )
         else:
             self.hypervolume = VolumeExplicit(
-                self.D, hypervolume_params["domain"], hypervolume_params["extent"]
+                self.D,
+                hypervolume_params["volume_domain"],
+                hypervolume_params["l_extent"],
             )
 
     def update_trans_search_factor(self, ratio):

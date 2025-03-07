@@ -26,6 +26,7 @@ class TrainCommand:
         "wd": "weight_decay",
         "zdim": "z_dim",
         "dim": "hidden_dim",
+        "b": "batch_size",
     }
     bool_params = {"no-amp": {"amp", False}}
 
@@ -157,19 +158,19 @@ class TestHomogeneous:
                 ".01",
                 "--dim",
                 "4",
-                "--layers",
-                "2",
                 "--pretrain",
                 "20",
                 "--num-epochs",
                 "4",
-                "--ps-freq",
-                "2",
                 "--t-ngrid",
                 "2",
                 "--checkpoint",
                 "1",
             ]
+            if train_type == "drgnai":
+                args += ["--n-imgs-pose-search", "10"]
+            else:
+                args += ["--ps-freq", "2"]
         else:
             raise ValueError(
                 f"Unrecognized homogeneous training command: `{train_cmd}`!"
@@ -294,14 +295,8 @@ class TestHeterogeneous:
                 "4",
                 "--lr",
                 ".01",
-                "--enc-dim",
+                "--hidden-dim",
                 "8",
-                "--enc-layers",
-                "2",
-                "--dec-dim",
-                "8",
-                "--dec-layers",
-                "2",
                 "--pe-dim",
                 "8",
                 "--enc-only",
@@ -311,11 +306,13 @@ class TestHeterogeneous:
                 "2",
                 "--pretrain",
                 "50",
-                "--ps-freq",
-                "2",
                 "--checkpoint",
                 "1",
             ]
+            if train_type == "drgnai":
+                args += ["--n-imgs-pose-search", "10"]
+            else:
+                args += ["--ps-freq", "2"]
         else:
             raise ValueError(
                 f"Unrecognized heterogeneous training command: `{train_cmd}`!"
@@ -416,15 +413,16 @@ class TestHeterogeneous:
         ],
         indirect=["particles", "ctf", "indices", "poses"],
     )
-    @pytest.mark.parametrize("epoch", [1, 3, None])
-    def test_analyze(self, traincmd, epoch):
+    @pytest.mark.parametrize("epoch, ksample", [(1, 3), (3, 2), (None, 4)])
+    def test_analyze(self, traincmd, epoch, ksample):
         """Produce standard analyses for a particular epoch."""
 
-        args = [traincmd.outdir, "--ksample", "3"]
+        args = [traincmd.outdir]
         if epoch is not None:
-            args += ["--epoch", str(epoch)]
+            args += [str(epoch)]
         else:
             epoch = 4
+        args += ["--ksample", str(ksample)]
 
         parser = argparse.ArgumentParser()
         cryodrgn.commands.analyze.add_args(parser)

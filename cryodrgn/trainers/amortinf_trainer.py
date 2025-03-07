@@ -255,7 +255,7 @@ class AmortizedInferenceConfigurations(ReconstructionModelConfigurations):
         if self.no_trans:
             self.t_extent = 0.0
         if self.t_extent == 0.0:
-            self.t_n_grid = 1
+            self.t_ngrid = 1
 
     @property
     def file_dict(self) -> dict[str, Any]:
@@ -264,7 +264,7 @@ class AmortizedInferenceConfigurations(ReconstructionModelConfigurations):
 
         # cnn
         cnn_params = {
-            "conf": self.use_conf_encoder,
+            "use_conf_encoder": self.use_conf_encoder,
             "depth_cnn": self.depth_cnn,
             "channels_cnn": self.channels_cnn,
             "kernel_size_cnn": self.kernel_size_cnn,
@@ -273,28 +273,29 @@ class AmortizedInferenceConfigurations(ReconstructionModelConfigurations):
         conf_regressor_params = {
             "z_dim": self.z_dim,
             "std_z_init": self.std_z_init,
-            "variational": self.variational_het,
+            "variational_het": self.variational_het,
         }
         # hypervolume
         hypervolume_params = {
             "explicit_volume": self.explicit_volume,
-            "n_layers": self.hidden_layers,
+            "hidden_layers": self.hidden_layers,
             "hidden_dim": self.hidden_dim,
             "pe_type": self.pe_type,
             "pe_dim": self.pe_dim,
             "feat_sigma": self.feat_sigma,
-            "domain": self.volume_domain,
+            "volume_domain": self.volume_domain,
             "pe_type_conf": self.pe_type_conf,
+            "use_conf_encoder": self.use_conf_encoder,
         }
         # pose search
         if self.pose_estimation != "fixed":
             ps_params = {
-                "l_min": self.l_start,
-                "l_max": self.l_end,
+                "l_start": self.l_start,
+                "l_end": self.l_end,
                 "t_extent": self.t_extent,
-                "t_n_grid": self.t_ngrid,
-                "niter": self.n_iter,
-                "nkeptposes": self.n_kept_poses,
+                "t_ngrid": self.t_ngrid,
+                "n_iter": self.n_iter,
+                "n_kept_poses": self.n_kept_poses,
                 "base_healpy": self.base_healpy,
                 "t_xshift": self.t_xshift,
                 "t_yshift": self.t_yshift,
@@ -349,7 +350,6 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
 
     configs: AmortizedInferenceConfigurations
     config_cls = AmortizedInferenceConfigurations
-    model_lbl = "amort"
     label = "cDRGN v4 training"
 
     def make_output_mask(self) -> CircularMask:
@@ -412,7 +412,7 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
     def epochs_pose_search(self) -> int:
         if self.configs.n_imgs_pose_search > 0:
             epochs_pose_search = max(
-                2, self.configs.n_imgs_pose_search // self.particle_count + 1
+                2, self.configs.n_imgs_pose_search // (self.particle_count + 1)
             )
         else:
             epochs_pose_search = 0
@@ -450,7 +450,7 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
         )
 
         # TODO: Replace with DistributedDataParallel
-        if self.n_prcs > 1:
+        if torch.cuda.device_count() > 1:
             self.reconstruction_model = MyDataParallel(self.reconstruction_model)
 
         # pose table
@@ -1043,7 +1043,7 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
     def get_configs(self) -> dict[str, Any]:
         configs = super().get_configs()
 
-        configs["model_args"]["hypervolume_params"]["extent"] = self.lattice.extent
+        configs["model_args"]["hypervolume_params"]["l_extent"] = self.lattice.extent
         if self.configs.pose_estimation != "fixed":
             tilt_fx = (
                 self.data.get_tilting_func() if self.configs.subtomo_averaging else None
@@ -1217,7 +1217,6 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
         )
         write_mrc(out_mrc, np.array(vol, dtype=np.float32))
 
-    # TODO: weights -> model and reconstruct -> volume for output labels?
     def save_model(self):
         """Write model state to file."""
         out_weights = os.path.join(self.outdir, f"weights.{self.current_epoch}.pkl")

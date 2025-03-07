@@ -6,10 +6,10 @@ Example usage
 $ cryodrgn analyze 003_abinit-het/
 
 # It is necessary to invert handedness for some datasets
-$ cryodrgn analyze 002_train-vae/ --epoch 99 --invert
+$ cryodrgn analyze 002_train-vae/ 99 --invert
 
 # Avoid running more computationally expensive analyses
-$ cryodrgn analyze frf3_results/003_abinit-zdim.4/ --epoch 49 --skip-umap --skip-vol
+$ cryodrgn analyze frf3_results/003_abinit-zdim.4/ 49 --skip-umap --skip-vol
 
 """
 import argparse
@@ -42,8 +42,9 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "traindir", type=os.path.abspath, help="Directory with cryoDRGN results"
     )
     parser.add_argument(
-        "--epoch",
+        "epoch",
         type=int,
+        nargs="?",
         default=-1,
         help="Epoch number N to analyze, corresponding to result output files z.N.pkl, "
         "weights.N.pkl. Default is to analyze the last available epoch.",

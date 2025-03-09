@@ -343,12 +343,14 @@ def hopf_to_quat_tensor(theta, phi, psi):
 
 
 try:
-    with open(f"{os.path.dirname(__file__)}/healpy_grid.json") as hf:
+    healpy_fl = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)), "healpy_grid.json"
+    )
+    with open(healpy_fl) as hf:
         _GRIDS = {int(k): np.array(v).T for k, v in json.load(hf).items()}
-except IOError as e:
+except IOError:
     print(
-        f"WARNING: Couldn't load cached healpy grid:\n{e}\n"
-        f"Will fall back to importing healpy"
+        "WARNING: Couldn't load cached healpy grid; will fall back to importing healpy"
     )
     _GRIDS = None
 

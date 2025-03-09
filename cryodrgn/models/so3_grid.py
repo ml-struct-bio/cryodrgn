@@ -120,7 +120,10 @@ def get_neighbor(quat, s2i, s1i, cur_res):
 
 
 try:
-    with open(f"{os.path.dirname(__file__)}/healpy_grid.json") as hf:
+    healpy_fl = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)), "healpy_grid.json"
+    )
+    with open(healpy_fl) as hf:
         _GRIDS = {int(k): np.array(v).T for k, v in json.load(hf).items()}
 except IOError:
     print(

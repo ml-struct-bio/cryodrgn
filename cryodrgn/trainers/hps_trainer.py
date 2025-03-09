@@ -16,6 +16,7 @@ import numpy as np
 import torch
 from torch import nn
 import torch.nn.functional as F
+from torch.nn.parallel import DataParallel
 
 from cryodrgn import ctf, dataset
 from cryodrgn.models import lie_tools
@@ -365,7 +366,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
         self.do_pretrain = self.configs.pose_estimation == "abinit"
 
         if torch.cuda.device_count() > 1:
-            self.reconstruction_model = nn.DataParallel(self.reconstruction_model)
+            self.reconstruction_model = DataParallel(self.reconstruction_model)
 
         if self.configs.poses and self.image_count is not None:
             self.pose_tracker = PoseTracker.load(
@@ -721,7 +722,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
         if self.configs.z_dim == 0:
             out_mrc = os.path.join(self.outdir, f"reconstruct.{self.epoch_lbl}.mrc")
             self.reconstruction_model.eval()
-            vol = self.reconstruction_model.eval_volume(
+            vol = self.model_module.eval_volume(
                 coords=self.lattice.coords,
                 D=self.lattice.D,
                 extent=self.lattice.extent,

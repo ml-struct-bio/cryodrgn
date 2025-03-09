@@ -278,7 +278,6 @@ class ReconstructionModelConfigurations(BaseConfigurations):
             feat_sigma=self.feat_sigma,
             volume_domain=self.volume_domain,
             activation=self.activation,
-            n_tilts=self.n_tilts,
             weight_decay=self.weight_decay,
             learning_rate=self.learning_rate,
             tdim=self.tdim,
@@ -286,6 +285,19 @@ class ReconstructionModelConfigurations(BaseConfigurations):
             t_emb_dim=self.t_emb_dim,
             volume_optim_type=self.volume_optim_type,
             pose_sgd_emb_type=self.pose_sgd_emb_type,
+            l_extent=self.l_extent,
+            l_start=self.l_start,
+            l_end=self.l_end,
+            t_extent=self.t_extent,
+            t_ngrid=self.t_ngrid,
+            t_xshift=self.t_xshift,
+            t_yshift=self.t_yshift,
+            base_healpy=self.base_healpy,
+            tilt=self.tilt,
+            n_tilts=self.n_tilts,
+            tilt_deg=self.tilt_deg,
+            angle_per_tilt=self.angle_per_tilt,
+            dose_per_tilt=self.dose_per_tilt,
         )
         train_args = dict(
             num_epochs=self.num_epochs,
@@ -296,6 +308,8 @@ class ReconstructionModelConfigurations(BaseConfigurations):
             amp=self.amp,
             lazy=self.lazy,
             shuffler_size=self.shuffler_size,
+            pretrain=self.pretrain,
+            reset_optim_after_pretrain=False,
         )
 
         return dict(
@@ -767,19 +781,21 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
         return make_chk
 
     @property
-    def model_resolution(self) -> int:
+    def model_module(self) -> nn.Module:
         if isinstance(self.reconstruction_model, (nn.DataParallel, MyDataParallel)):
-            if self.configs.z_dim > 0:
-                model_resolution = self.reconstruction_model.module.lattice.D
-            else:
-                model_resolution = self.reconstruction_model.module.D
+            model_mdl = self.reconstruction_model.module
         else:
-            if self.configs.z_dim > 0:
-                model_resolution = self.reconstruction_model.lattice.D
-            else:
-                model_resolution = self.reconstruction_model.D
+            model_mdl = self.reconstruction_model
 
-        return model_resolution
+        return model_mdl
+
+    @property
+    def model_resolution(self) -> int:
+        return (
+            self.model_module.lattice.D
+            if self.configs.z_dim > 0
+            else self.model_module.D
+        )
 
     def pretrain(self) -> None:
         """Iterate the model before main learning epochs for better initializations."""

@@ -255,6 +255,7 @@ class ReconstructionModelConfigurations(BaseConfigurations):
 
     @property
     def file_dict(self) -> dict[str, Any]:
+        """Organizing the parameter values for use in human-readable formats."""
         configs = super().file_dict
 
         dataset_args = dict(
@@ -280,6 +281,7 @@ class ReconstructionModelConfigurations(BaseConfigurations):
             activation=self.activation,
             weight_decay=self.weight_decay,
             learning_rate=self.learning_rate,
+            pose_learning_rate=self.pose_learning_rate,
             tdim=self.tdim,
             tlayers=self.tlayers,
             t_emb_dim=self.t_emb_dim,
@@ -310,6 +312,7 @@ class ReconstructionModelConfigurations(BaseConfigurations):
             shuffler_size=self.shuffler_size,
             pretrain=self.pretrain,
             reset_optim_after_pretrain=False,
+            num_workers=self.num_workers,
         )
 
         return dict(
@@ -654,7 +657,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
             self.logger.setLevel(logging.DEBUG)
 
         self.logger.addHandler(
-            logging.FileHandler(os.path.join(self.outdir, "training.log"))
+            logging.FileHandler(os.path.join(self.outdir, "run.log"))
         )
         self.logger.info(f"cryoDRGN {__version__}")
         self.logger.info(str(self.configs))

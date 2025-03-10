@@ -89,6 +89,7 @@ class BaseConfigurations(ABC):
 
     @property
     def file_dict(self) -> dict[str, Any]:
+        """Organizing the parameter values for use in human-readable formats."""
         return {"seed": self.seed}
 
     def write(self, fl: str) -> None:

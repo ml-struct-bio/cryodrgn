@@ -196,17 +196,27 @@ class HierarchicalPoseSearchConfigurations(ReconstructionModelConfigurations):
 
     @property
     def file_dict(self) -> dict[str, Any]:
-        """Retrieves all given and inferred configurations for downstream use."""
+        """Organizing the parameter values for use in human-readable formats."""
         configs = super().file_dict
 
         configs["model_args"].update(
             dict(
+                ps_freq=self.ps_freq,
                 enc_layers=self.enc_layers,
                 enc_dim=self.enc_dim,
                 dec_layers=self.dec_layers,
                 dec_dim=self.dec_dim,
                 encode_mode=self.encode_mode,
-                enc_mask=self.enc_mask,
+                pose_model_update_freq=self.pose_model_update_freq,
+                grid_niter=self.grid_niter,
+                n_kept_poses=self.n_kept_poses,
+                equivariance=self.equivariance,
+                equivariance_start=self.equivariance_start,
+                equivariance_stop=self.equivariance_stop,
+                l_ramp_epochs=self.l_ramp_epochs,
+                l_ramp_model=self.l_ramp_model,
+                reset_model_every=self.reset_model_every,
+                reset_optim_every=self.reset_optim_every,
             )
         )
 
@@ -221,13 +231,11 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
     @property
     def mask_dimensions(self) -> tuple[torch.Tensor, int]:
         if self.configs.z_dim:
-            use_mask = self.configs.enc_mask or self.resolution // 2
-
-            if use_mask > 0:
-                assert use_mask <= self.resolution // 2
-                enc_mask = self.lattice.get_circular_mask(use_mask)
+            if self.enc_mask_dim > 0:
+                assert self.enc_mask_dim <= self.resolution // 2
+                enc_mask = self.lattice.get_circular_mask(self.enc_mask_dim)
                 in_dim = enc_mask.sum().item()
-            elif use_mask == -1:
+            elif self.enc_mask_dim == -1:
                 enc_mask, in_dim = None, self.resolution**2
             else:
                 raise RuntimeError(
@@ -301,6 +309,10 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
 
         return lambda x: np.clip((x - start_x) * coef + start_y, min_y, max_y).item(0)
 
+    @property
+    def enc_mask_dim(self) -> int:
+        return self.configs.enc_mask or self.resolution // 2
+
     def __init__(self, configs: dict[str, Any], outdir: str) -> None:
         super().__init__(configs, outdir)
 
@@ -328,8 +340,8 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
             if self.resolution - 1 != 64:
                 raise ValueError("Image size must be 64x64 for convolutional encoder!")
 
-        in_dim = self.mask_dimensions[1]
         # also check e.g. enc_mask dim?
+        in_dim = self.mask_dimensions[1]
         if self.configs.amp:
             if self.configs.enc_dim % 8 != 0:
                 self.logger.warning(
@@ -711,6 +723,12 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
         loss.backward()
         self.optimizers["hypervolume"].step()
         self.accum_losses["total"] += loss.item() * B
+
+    def get_configs(self) -> dict[str, Any]:
+        configs = super().get_configs()
+        configs["model_args"]["enc_mask"] = self.enc_mask_dim
+
+        return configs
 
     def save_epoch_data(self):
         """Save model weights, latent encoding z, and decoder volumes"""

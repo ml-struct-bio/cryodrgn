@@ -117,7 +117,6 @@ class AmortizedInferenceConfigurations(ReconstructionModelConfigurations):
     pose_table_optim_type: str = "adam"
     conf_table_optim_type: str = "adam"
     conf_encoder_optim_type: str = "adam"
-    lr_pose_table: float = 1.0e-3
     lr_conf_table: float = 1.0e-2
     lr_conf_encoder: float = 1.0e-4
     # masking
@@ -259,7 +258,7 @@ class AmortizedInferenceConfigurations(ReconstructionModelConfigurations):
 
     @property
     def file_dict(self) -> dict[str, Any]:
-        """Retrieves all given and inferred configurations for downstream use."""
+        """Organizing the parameter values for use in human-readable formats."""
         configs = super().file_dict
 
         # cnn
@@ -286,6 +285,11 @@ class AmortizedInferenceConfigurations(ReconstructionModelConfigurations):
             "volume_domain": self.volume_domain,
             "pe_type_conf": self.pe_type_conf,
             "use_conf_encoder": self.use_conf_encoder,
+            "lr_conf_table": self.lr_conf_table,
+            "lr_conf_encoder": self.lr_conf_encoder,
+            "beta_conf": self.beta_conf,
+            "trans_l1_regularizer": self.trans_l1_regularizer,
+            "l2_smoothness_regularizer": self.l2_smoothness_regularizer,
         }
         # pose search
         if self.pose_estimation != "fixed":
@@ -314,6 +318,12 @@ class AmortizedInferenceConfigurations(ReconstructionModelConfigurations):
         )
         if ps_params is not None:
             configs["model_args"]["ps_params"] = ps_params
+        configs["train_args"].update(
+            dict(
+                n_imgs_pose_search=self.n_imgs_pose_search,
+                epochs_sgd=self.epochs_sgd,
+            )
+        )
 
         return configs
 
@@ -461,7 +471,7 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
                 ]
                 self.optimizers["pose_table"] = self.optim_types[
                     self.configs.pose_table_optim_type
-                ](pose_table_params, lr=self.configs.lr_pose_table)
+                ](pose_table_params, lr=self.configs.pose_learning_rate)
                 self.optimizer_types["pose_table"] = self.configs.pose_table_optim_type
 
         # conformations

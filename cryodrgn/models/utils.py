@@ -64,6 +64,8 @@ def undeprecate_configs(cfg: dict[str, Any]) -> dict[str, Any]:
 def get_model_trainer(
     cfg: dict[str, Any], outdir: str, add_cfgs: Optional[list[str]] = None
 ) -> ReconstructionModelTrainer:
+    """Instantiate a training engine from a set of configs."""
+
     cfg = undeprecate_configs(cfg)
     model_args = cfg["model_args"] if "model_args" in cfg else cfg
     model = model_args["model"] if "model" in model_args else "cryodrgn"
@@ -86,11 +88,15 @@ def get_model_trainer(
 def get_model_configurations(
     cfg: dict[str, Any], add_cfgs: Optional[list[str]] = None
 ) -> ReconstructionModelConfigurations:
+    """Instantiate a training engine configurations class from a set of configs."""
+
     cfg = undeprecate_configs(cfg)
     model_args = cfg["model_args"] if "model_args" in cfg else cfg
 
+    # When we can't find a model label in the configs we assume it's from a v3 model
     if "model" not in model_args:
-        configs_cls = AmortizedInferenceConfigurations
+        model_args["model"] = "cryodrgn"
+        configs_cls = HierarchicalPoseSearchConfigurations
     elif model_args["model"] == "cryodrgn-ai":
         configs_cls = AmortizedInferenceConfigurations
     elif model_args["model"] == "cryodrgn":
@@ -222,7 +228,7 @@ def get_model(
                 feat_sigma=configs.feat_sigma,
             )
         if weights is not None:
-            ckpt = torch.load(weights, device=device)
+            ckpt = torch.load(weights, map_location=device, weights_only=False)
             model.load_state_dict(ckpt["model_state_dict"])
         if device is not None:
             model.to(device)

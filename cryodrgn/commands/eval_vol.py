@@ -174,7 +174,6 @@ class VolumeEvaluator:
             self.device = device
         elif device is not None:
             self.device = torch.device(f"cuda:{device}")
-
         else:
             use_cuda = torch.cuda.is_available()
             self.device = torch.device("cuda" if use_cuda else "cpu")
@@ -196,33 +195,41 @@ class VolumeEvaluator:
         else:
             self.apix = 1.0
 
-        model = get_model(cfg_data, outdir=os.path.dirname(weights))
+        self.model = get_model(
+            cfg_data,
+            outdir=os.path.dirname(weights),
+            weights=weights,
+            device=self.device,
+        )
+        if self.device is not None:
+            self.model.to(self.device)
+        self.model.eval()
+
         if downsample:
             if downsample % 2 != 0:
                 raise ValueError("Boxsize must be even")
-            if downsample > model.lattice.D - 1:
+            if downsample > self.model.lattice.D - 1:
                 raise ValueError(
                     "Downsampling size must be smaller than original box size"
                 )
-
-            self.coords = model.lattice.get_downsample_coords(downsample + 1)
+            self.coords = self.model.lattice.get_downsample_coords(downsample + 1)
             self.D = downsample + 1
-            self.extent = model.lattice.extent * (downsample / (model.lattice.D - 1))
+            self.extent = self.model.lattice.extent * (
+                downsample / (self.model.lattice.D - 1)
+            )
             self.lattice = Lattice(
-                self.D, extent=model.lattice.extent, device=self.device
+                self.D, extent=self.model.lattice.extent, device=self.device
             )
         else:
-            self.lattice = model.lattice
-            self.coords = model.lattice.coords
-            self.D = model.lattice.D
-            self.extent = model.lattice.extent
+            self.lattice = self.model.lattice
+            self.coords = self.model.lattice.coords
+            self.D = self.model.lattice.D
+            self.extent = self.model.lattice.extent
 
         self.verbose = verbose
         self.apix = apix
         self.flip = flip
         self.invert = invert
-        self.model = model
-        self.model.eval()
         self.norm = cfg_data["dataset_args"]["norm"]
 
     def transform_volume(self, vol):

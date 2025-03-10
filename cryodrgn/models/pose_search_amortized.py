@@ -1,13 +1,12 @@
 """Pose search methods specific to drgnai-style amortized inference."""
 # TODO: merge and refactor with cryoDRGN pose search class
 
-import os
-import json
 import torch
 import torch.nn.functional as F
 import numpy as np
 from cryodrgn.models import lie_tools, so3_grid, shift_grid
 from cryodrgn.models.pose_search import PoseSearch
+from cryodrgn.models.so3_grid import _GRIDS
 
 
 def get_base_shifts(ps_params):
@@ -340,19 +339,6 @@ def hopf_to_quat_tensor(theta, phi, psi):
         -1,
     )
     return quat.astype(np.float32)
-
-
-try:
-    healpy_fl = os.path.join(
-        os.path.dirname(os.path.dirname(__file__)), "healpy_grid.json"
-    )
-    with open(healpy_fl) as hf:
-        _GRIDS = {int(k): np.array(v).T for k, v in json.load(hf).items()}
-except IOError:
-    print(
-        "WARNING: Couldn't load cached healpy grid; will fall back to importing healpy"
-    )
-    _GRIDS = None
 
 
 def pix2ang_tensor(n_side, i_pix, nest=False, lonlat=False):

@@ -119,17 +119,17 @@ def get_neighbor(quat, s2i, s1i, cur_res):
     return quat_n[ii], ind[ii]
 
 
-try:
-    healpy_fl = os.path.join(
-        os.path.dirname(os.path.dirname(__file__)), "healpy_grid.json"
-    )
-    with open(healpy_fl) as hf:
-        _GRIDS = {int(k): np.array(v).T for k, v in json.load(hf).items()}
-except IOError:
+healpy_fl = os.path.join(os.path.dirname(os.path.dirname(__file__)), "healpy_grid.json")
+if not os.path.isfile(healpy_fl):
+    healpy_fl = os.path.join(os.path.dirname(__file__), "healpy_grid.json")
+if not os.path.isfile(healpy_fl):
     print(
         "WARNING: Couldn't load cached healpy grid; will fall back to importing healpy"
     )
     _GRIDS = None
+else:
+    with open(healpy_fl) as hf:
+        _GRIDS = {int(k): np.array(v).T for k, v in json.load(hf).items()}
 
 
 def pix2ang(Nside, ipix, nest=False, lonlat=False):

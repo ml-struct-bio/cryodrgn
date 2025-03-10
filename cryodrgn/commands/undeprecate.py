@@ -77,10 +77,6 @@ def update_dir(d: Path, version: str, cfg: dict) -> None:
         origwd = os.getcwd()
         os.chdir(d)
 
-        for f in Path(".").iterdir():
-            if f.name == "run.log":
-                f.rename("training.log")
-
         os.makedirs("out", exist_ok=True)
         for f in Path(".").iterdir():
             if not f.is_dir() or f.name != "out":

@@ -151,8 +151,35 @@ def get_model(
             trainer = get_model_trainer(cfg, outdir, add_cfgs)
             particle_count, image_count = trainer.particle_count, trainer.image_count
 
-        if cfg["model_args"]["hypervolume_params"]["pe_dim"] is None:
-            cfg["model_args"]["hypervolume_params"]["pe_dim"] = lattice.D // 2
+        model_args = cfg["model_args"] if "model_args" in cfg else cfg
+        if model_args["pe_dim"] is None:
+            model_args["hypervolume_params"]["pe_dim"] = lattice.D // 2
+        else:
+            model_args["hypervolume_params"]["pe_dim"] = model_args["pe_dim"]
+
+        model_args["hypervolume_params"].update(
+            dict(
+                hidden_dim=model_args["hidden_dim"],
+                hidden_layers=model_args["hidden_layers"],
+                feat_sigma=model_args["feat_sigma"],
+                volume_domain=model_args["volume_domain"],
+            )
+        )
+        model_args["conf_regressor_params"].update(
+            dict(
+                z_dim=model_args["z_dim"],
+            )
+        )
+        if "ps_params" in model_args:
+            model_args["ps_params"].update(
+                dict(
+                    base_healpy=model_args["base_healpy"],
+                    t_extent=model_args["t_extent"],
+                    t_ngrid=model_args["t_ngrid"],
+                    t_xshift=model_args["t_xshift"],
+                    t_yshift=model_args["t_yshift"],
+                )
+            )
 
         model = DRGNai(
             lattice=lattice,
@@ -200,27 +227,27 @@ def get_model(
 
             model = HetOnlyVAE(
                 lattice=lattice,
-                qlayers=cfg["model_args"]["enc_layers"],
-                qdim=cfg["model_args"]["enc_dim"],
-                players=cfg["model_args"]["dec_layers"],
-                pdim=cfg["model_args"]["dec_dim"],
+                qlayers=configs.enc_layers,
+                qdim=configs.enc_dim,
+                players=configs.dec_layers,
+                pdim=configs.dec_dim,
                 in_dim=in_dim,
                 z_dim=configs.z_dim,
-                encode_mode=cfg["model_args"]["encode_mode"],
+                encode_mode=configs.encode_mode,
                 enc_mask=enc_mask,
                 enc_type=configs.pe_type,
                 enc_dim=configs.pe_dim,
                 domain=configs.volume_domain,
                 activation=activation,
-                feat_sigma=cfg["model_args"]["feat_sigma"],
+                feat_sigma=configs.feat_sigma,
                 tilt_params=tilt_params,
             )
         else:
             model = get_decoder(
                 in_dim=3,
                 D=lattice.D,
-                layers=cfg["model_args"]["qlayers"],
-                dim=cfg["model_args"]["qlayers"],
+                layers=configs.dec_layers,
+                dim=configs.dec_dim,
                 domain=configs.volume_domain,
                 enc_type=configs.pe_type,
                 enc_dim=configs.pe_dim,

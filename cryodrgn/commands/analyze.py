@@ -142,7 +142,7 @@ class ModelAnalyzer:
             )
         self.train_configs = get_model_configurations(cfg_dict)
 
-        log_fl = os.path.join(self.traindir, "training.log")
+        log_fl = os.path.join(self.traindir, "run.log")
         if os.path.exists(log_fl):
             self.log = log_fl
         else:

@@ -208,7 +208,7 @@ class TestHomogeneous:
 
         traincmd.run(no_analysis=False)
         out_files = set(os.listdir(traincmd.outdir))
-        assert "training.log" in out_files, "Missing training log file!"
+        assert "run.log" in out_files, "Missing training log file!"
         assert "config.yaml" in out_files, "Missing training configuration file!"
         assert not any(
             fl.startswith("analyze.") for fl in out_files

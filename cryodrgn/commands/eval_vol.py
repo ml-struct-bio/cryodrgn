@@ -261,7 +261,7 @@ class VolumeEvaluator:
         suffix: Optional[str] = None,
     ) -> None:
 
-        # multiple latent space co-ordinates
+        # Multiple latent space co-ordinates
         if len(z_values.shape) > 1:
             os.makedirs(outpath, exist_ok=True)
 
@@ -271,21 +271,18 @@ class VolumeEvaluator:
                 volume = self.evaluate_volume(z_val)
                 suffix_str = "" if suffix is None else suffix
                 write_mrc(
-                    os.path.join(
-                        outpath,
-                        f"{prefix}{(i+1):03d}{suffix_str}.mrc".format(
-                            prefix, i, suffix_str
-                        ),
-                    ),
+                    os.path.join(outpath, f"{prefix}{(i+1):03d}{suffix_str}.mrc"),
                     np.array(volume.cpu()).astype(np.float32),
                     Apix=self.apix,
                 )
 
-        # single location in latent space
+        # A single location in latent space
         else:
             logger.info(z_values)
             volume = self.evaluate_volume(z_values)
-            write_mrc(outpath, np.array(volume).astype(np.float32), Apix=self.apix)
+            write_mrc(
+                outpath, np.array(volume.cpu()).astype(np.float32), Apix=self.apix
+            )
 
 
 def main(args: argparse.Namespace) -> None:

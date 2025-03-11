@@ -21,7 +21,7 @@ import argparse
 from typing import Optional, Any
 import cryodrgn.config
 import cryodrgn.utils
-from cryodrgn.models.utils import get_model_trainer
+from cryodrgn.models.utils import get_model_trainer_class
 from cryodrgn.commands.analyze import ModelAnalyzer
 
 
@@ -105,6 +105,12 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     )
 
     parser.add_argument(
+        "--new-outdir",
+        "-o",
+        type=os.path.abspath,
+        help="Copy configs in the existing directory but put output in this directory.",
+    )
+    parser.add_argument(
         "--no-analysis",
         action="store_false",
         dest="do_analysis",
@@ -123,14 +129,20 @@ def main(
 
     """
     configs = cryodrgn.utils.load_yaml(os.path.join(args.outdir, "config.yaml"))
+    trainer_cls = get_model_trainer_class(configs)
+    configs = trainer_cls.config_cls.parse_config(configs)
 
     if additional_configs is not None:
-        configs.update(additional_configs)
+        configs.update(trainer_cls.config_cls.parse_config(additional_configs))
     if args.include:
-        configs.update(cryodrgn.utils.load_yaml(args.include))
+        configs.update(
+            trainer_cls.config_cls.parse_config(cryodrgn.utils.load_yaml(args.include))
+        )
+    if args.cfgs:
+        configs.update(trainer_cls.config_cls.parse_cfg_keys(args.cfgs))
+
     if args.seed is not None:
         configs["seed"] = args.seed
-
     train_args = configs["train_args"] if "train_args" in configs else configs
     if args.num_epochs is not None:
         train_args["num_epochs"] = args.num_epochs
@@ -152,7 +164,8 @@ def main(
         train_args["amp"] = False
 
     cryodrgn.utils._verbose = False
-    trainer = get_model_trainer(configs, outdir=args.outdir, add_cfgs=args.cfgs)
+    outdir = args.new_outdir or args.outdir
+    trainer = trainer_cls(configs, outdir=outdir)
     trainer.train()
 
     if args.do_analysis:

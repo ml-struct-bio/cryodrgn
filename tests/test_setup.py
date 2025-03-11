@@ -196,7 +196,7 @@ class TestSetupThenRun:
             (None, None, ["z_dim=2"], None),
             (None, "0", ["window_r=0.80"], None),
             (None, "4", ["window_r=0.80", "z_dim=2"], None),
-            (None, "4", ["window_r=0.80", "z_dim=2"], {"weight_decay": 0.05}),
+            (None, "4", ["window_r=0.80", "z_dim=2", "ind=4"], {"weight_decay": 0.05}),
             ("homo", None, ["window_r=0.80"], None),
             ("homo", None, ["window_r=0.80"], {"weight_decay": 0.05}),
             ("het", None, ["window_r=0.75", "z_dim=2"], None),
@@ -236,12 +236,19 @@ class TestSetupThenRun:
             os.path.join(setup_request.outdir, "config.yaml")
         )
 
+        assert configs["model_args"]["model"] == setup_request.model
         assert configs["dataset_args"]["particles"] == setup_request.particles
         assert configs["dataset_args"]["ctf"] == setup_request.ctf
         assert configs["dataset_args"]["poses"] == setup_request.poses
-        assert configs["dataset_args"]["ind"] == setup_request.ind
         assert configs["dataset_args"]["datadir"] == setup_request.datadir
-        assert configs["model_args"]["model"] == setup_request.model
+
+        for cfg in setup_request.cfgs:
+            if cfg.startswith("ind="):
+                assert configs["dataset_args"]["ind"] == int(cfg.split("=")[1])
+                break
+        else:
+            assert configs["dataset_args"]["ind"] == setup_request.ind
+
         if setup_request.z_dim is not None:
             use_zdim = int(setup_request.z_dim)
         elif setup_request.reconstruction_type is None:
@@ -287,7 +294,7 @@ class TestSetupThenRun:
             (None, "2", None, None),
             ("homo", None, None, {"weight_decay": 0.05}),
             (None, "0", ["window_r=0.80"], None),
-            (None, "4", ["window_r=0.80", "z_dim=2"], {"weight_decay": 0.05}),
+            (None, "4", ["window_r=0.80", "z_dim=2", "ind=4"], {"weight_decay": 0.05}),
             ("homo", None, ["window_r=0.80"], None),
         ],
     )
@@ -326,7 +333,7 @@ class TestSetupThenRun:
         "reconstruction_type, z_dim, cfgs, include",
         [
             ("homo", None, None, None),
-            (None, "4", ["window_r=0.80", "z_dim=2"], {"weight_decay": 0.05}),
+            (None, "4", ["window_r=0.80", "z_dim=2", "ind=4"], {"weight_decay": 0.05}),
         ],
     )
     def test_then_rerun(self, setup_request):

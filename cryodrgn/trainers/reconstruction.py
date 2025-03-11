@@ -222,12 +222,10 @@ class ReconstructionModelConfigurations(BaseConfigurations):
                 setattr(self, k, v)
 
         if isinstance(self.ind, str):
-            if not self.ind.isnumeric() and not os.path.isfile(self.ind):
-                raise ValueError(f"Subset indices file {self.ind} does not exist!")
-        elif self.ind is not None:
-            raise TypeError(
-                f"Unrecognized type for filtering indices: `{type(self.ind).__name__}`!"
-            )
+            if not self.ind.isnumeric():
+                if not os.path.isfile(self.ind):
+                    raise ValueError(f"Subset indices file {self.ind} does not exist!")
+                self.ind = os.path.abspath(self.ind)
 
         if self.pose_estimation is None:
             self.pose_estimation = "fixed" if self.poses else "abinit"

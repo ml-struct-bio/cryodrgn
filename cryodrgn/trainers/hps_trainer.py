@@ -199,25 +199,24 @@ class HierarchicalPoseSearchConfigurations(ReconstructionModelConfigurations):
         """Organizing the parameter values for use in human-readable formats."""
         configs = super().file_dict
 
-        configs["model_args"].update(
-            dict(
-                ps_freq=self.ps_freq,
-                enc_layers=self.enc_layers,
-                enc_dim=self.enc_dim,
-                dec_layers=self.dec_layers,
-                dec_dim=self.dec_dim,
-                encode_mode=self.encode_mode,
-                pose_model_update_freq=self.pose_model_update_freq,
-                grid_niter=self.grid_niter,
-                n_kept_poses=self.n_kept_poses,
-                equivariance=self.equivariance,
-                equivariance_start=self.equivariance_start,
-                equivariance_stop=self.equivariance_stop,
-                l_ramp_epochs=self.l_ramp_epochs,
-                l_ramp_model=self.l_ramp_model,
-                reset_model_every=self.reset_model_every,
-                reset_optim_every=self.reset_optim_every,
-            )
+        configs["model_args"] = dict(
+            enc_layers=self.enc_layers,
+            enc_dim=self.enc_dim,
+            dec_layers=self.dec_layers,
+            dec_dim=self.dec_dim,
+            **configs["model_args"],
+            ps_freq=self.ps_freq,
+            encode_mode=self.encode_mode,
+            pose_model_update_freq=self.pose_model_update_freq,
+            grid_niter=self.grid_niter,
+            n_kept_poses=self.n_kept_poses,
+            equivariance=self.equivariance,
+            equivariance_start=self.equivariance_start,
+            equivariance_stop=self.equivariance_stop,
+            l_ramp_epochs=self.l_ramp_epochs,
+            l_ramp_model=self.l_ramp_model,
+            reset_model_every=self.reset_model_every,
+            reset_optim_every=self.reset_optim_every,
         )
 
         return configs

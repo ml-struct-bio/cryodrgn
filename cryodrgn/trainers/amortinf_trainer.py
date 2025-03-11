@@ -270,19 +270,13 @@ class AmortizedInferenceConfigurations(ReconstructionModelConfigurations):
         }
         # conformational encoder
         conf_regressor_params = {
-            "z_dim": self.z_dim,
             "std_z_init": self.std_z_init,
             "variational_het": self.variational_het,
         }
         # hypervolume
         hypervolume_params = {
             "explicit_volume": self.explicit_volume,
-            "hidden_layers": self.hidden_layers,
-            "hidden_dim": self.hidden_dim,
             "pe_type": self.pe_type,
-            "pe_dim": self.pe_dim,
-            "feat_sigma": self.feat_sigma,
-            "volume_domain": self.volume_domain,
             "pe_type_conf": self.pe_type_conf,
             "use_conf_encoder": self.use_conf_encoder,
             "lr_conf_table": self.lr_conf_table,
@@ -294,29 +288,24 @@ class AmortizedInferenceConfigurations(ReconstructionModelConfigurations):
         # pose search
         if self.pose_estimation != "fixed":
             ps_params = {
-                "l_start": self.l_start,
-                "l_end": self.l_end,
-                "t_extent": self.t_extent,
-                "t_ngrid": self.t_ngrid,
                 "n_iter": self.n_iter,
                 "n_kept_poses": self.n_kept_poses,
-                "base_healpy": self.base_healpy,
-                "t_xshift": self.t_xshift,
-                "t_yshift": self.t_yshift,
                 "no_trans_search_at_pose_search": self.no_trans_search_at_pose_search,
                 "n_tilts_pose_search": self.n_tilts_pose_search,
                 "average_over_tilts": self.average_over_tilts,
             }
         else:
-            ps_params = None
+            ps_params = dict()
 
         configs["model_args"] = dict(
+            hidden_layers=self.hidden_layers,
+            hidden_dim=self.hidden_dim,
             cnn_params=cnn_params,
             hypervolume_params=hypervolume_params,
             conf_regressor_params=conf_regressor_params,
             **configs["model_args"],
         )
-        if ps_params is not None:
+        if ps_params:
             configs["model_args"]["ps_params"] = ps_params
         configs["train_args"].update(
             dict(
@@ -324,6 +313,15 @@ class AmortizedInferenceConfigurations(ReconstructionModelConfigurations):
                 epochs_sgd=self.epochs_sgd,
             )
         )
+
+        for param_k in (
+            cnn_params.keys()
+            | conf_regressor_params.keys()
+            | hypervolume_params.keys()
+            | ps_params.keys()
+        ):
+            if param_k in configs["model_args"]:
+                del configs["model_args"][param_k]
 
         return configs
 
@@ -390,9 +388,38 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
         else:
             self.logger.info("Homogeneous reconstruction")
 
-        model_args = self.get_configs()["model_args"]
-        if model_args["hypervolume_params"]["pe_dim"] is None:
+        cfgs = self.get_configs()
+        model_args = cfgs["model_args"] if "model_args" in cfgs else cfgs
+
+        if model_args["pe_dim"] is None:
             model_args["hypervolume_params"]["pe_dim"] = self.lattice.D // 2
+        else:
+            model_args["hypervolume_params"]["pe_dim"] = model_args["pe_dim"]
+
+        model_args["hypervolume_params"].update(
+            dict(
+                hidden_dim=self.configs.hidden_dim,
+                hidden_layers=self.configs.hidden_layers,
+                pe_type=self.configs.pe_type,
+                feat_sigma=self.configs.feat_sigma,
+                volume_domain=self.configs.volume_domain,
+            )
+        )
+        model_args["conf_regressor_params"].update(
+            dict(
+                z_dim=self.configs.z_dim,
+            )
+        )
+        if "ps_params" in model_args:
+            model_args["ps_params"].update(
+                dict(
+                    base_healpy=model_args["base_healpy"],
+                    t_extent=model_args["t_extent"],
+                    t_ngrid=model_args["t_ngrid"],
+                    t_xshift=model_args["t_xshift"],
+                    t_yshift=model_args["t_yshift"],
+                )
+            )
 
         model = DRGNai(
             self.lattice,
@@ -446,10 +473,6 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
         if self.configs.num_epochs is None:
             self.configs.num_epochs = self.epochs_sgd + self.epochs_pose_search
 
-        self.batch_size_known_poses = self.configs.batch_size_known_poses * self.n_prcs
-        self.batch_size_hps = self.configs.batch_size_hps * self.n_prcs
-        self.batch_size_sgd = self.configs.batch_size_sgd * self.n_prcs
-
         # tensorboard writer
         self.summaries_dir = os.path.join(self.outdir, "summaries")
         os.makedirs(self.summaries_dir, exist_ok=True)
@@ -460,7 +483,7 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
         )
 
         # TODO: Replace with DistributedDataParallel
-        if torch.cuda.device_count() > 1:
+        if self.configs.multigpu and torch.cuda.device_count() > 1:
             self.reconstruction_model = MyDataParallel(self.reconstruction_model)
 
         # pose table
@@ -515,20 +538,20 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
         # dataloaders
         self.data_generators["hps"] = make_dataloader(
             self.data,
-            batch_size=self.batch_size_hps,
+            batch_size=self.configs.batch_size_hps,
             num_workers=self.configs.num_workers,
             shuffler_size=self.configs.shuffler_size,
         )
 
         self.data_generators["known"] = make_dataloader(
             self.data,
-            batch_size=self.batch_size_known_poses,
+            batch_size=self.configs.batch_size_known_poses,
             num_workers=self.configs.num_workers,
             shuffler_size=self.configs.shuffler_size,
         )
         self.data_generators["sgd"] = make_dataloader(
             self.data,
-            batch_size=self.batch_size_sgd,
+            batch_size=self.configs.batch_size_sgd,
             num_workers=self.configs.num_workers,
             shuffler_size=self.configs.shuffler_size,
         )
@@ -756,7 +779,7 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
 
         latent_variables_dict, y_pred, y_gt_processed = self.forward_pass(**batch)
 
-        if self.n_prcs > 1:
+        if isinstance(self.reconstruction_model, MyDataParallel):
             self.reconstruction_model.module.is_in_pose_search_step = False
         else:
             self.reconstruction_model.is_in_pose_search_step = False
@@ -930,7 +953,7 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
             else:
                 self.reconstruction_model.conf_table.eval()
 
-        if self.n_prcs > 1:
+        if isinstance(self.reconstruction_model, MyDataParallel):
             self.reconstruction_model.module.pose_only = self.pose_only
             self.reconstruction_model.module.use_point_estimates = (
                 self.use_point_estimates
@@ -1238,12 +1261,12 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
             "epoch": self.current_epoch,
             "model_state_dict": (
                 self.reconstruction_model.module.state_dict()
-                if self.n_prcs > 1
+                if isinstance(self.reconstruction_model, MyDataParallel)
                 else self.reconstruction_model.state_dict()
             ),
             "hypervolume_state_dict": (
                 self.reconstruction_model.module.hypervolume.state_dict()
-                if self.n_prcs > 1
+                if isinstance(self.reconstruction_model, MyDataParallel)
                 else self.reconstruction_model.hypervolume.state_dict()
             ),
             "hypervolume_params": (

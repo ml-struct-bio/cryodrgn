@@ -22,7 +22,7 @@ from cryodrgn import ctf, dataset
 from cryodrgn.models import lie_tools
 from cryodrgn.models.losses import EquivarianceLoss
 from cryodrgn.models.variational_autoencoder import unparallelize, HetOnlyVAE
-from cryodrgn.models.neural_nets import get_decoder
+from cryodrgn.models.neural_nets import get_decoder, DataParallelDecoder
 from cryodrgn.models.pose_search import PoseSearch
 from cryodrgn.mrcfile import write_mrc
 from cryodrgn.pose import PoseTracker
@@ -377,8 +377,13 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
         self.pose_model = None
         self.do_pretrain = self.configs.pose_estimation == "abinit"
 
-        if torch.cuda.device_count() > 1:
-            self.reconstruction_model = DataParallel(self.reconstruction_model)
+        if self.configs.multigpu and torch.cuda.device_count() > 1:
+            if self.configs.z_dim > 0:
+                self.reconstruction_model = DataParallel(self.reconstruction_model)
+            else:
+                self.reconstruction_model = DataParallelDecoder(
+                    self.reconstruction_model
+                )
 
         if self.configs.poses and self.image_count is not None:
             self.pose_tracker = PoseTracker.load(

@@ -491,6 +491,13 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
                 "GPUs detected"
             )
 
+        if self.configs.multigpu:
+            self.configs.batch_size_known_poses = (
+                self.configs.batch_size_known_poses * self.n_prcs
+            )
+            self.configs.batch_size_hps = self.configs.batch_size_hps * self.n_prcs
+            self.configs.batch_size_sgd = self.configs.batch_size_sgd * self.n_prcs
+
         cpu_count = os.cpu_count() or 1
         if self.configs.num_workers > cpu_count:
             self.logger.warning(f"Reducing workers to {cpu_count} cpus")

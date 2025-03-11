@@ -1,5 +1,20 @@
-"""Utilities for creating experiment output folders and configuration files."""
+"""Utility for creating an experiment output folder with a configuration file.
 
+Example usage
+-------------
+$ cryodrgn setup output_dir/ \
+                 --particles particles.128.mrcs --ctf ctf.pkl --poses pose.pkl --z-dim 4
+
+# Arguments not available through the command line can be specified with --cfgs/-c
+$ cryodrgn setup output_dir/ \
+                 --particles particles.128.mrcs --ctf ctf.pkl --poses pose.pkl
+                 --cfgs 'learning_rate=0.001' 'z_dim=12'
+
+See also
+--------
+commands/train      `cryodrgn train` command used to train model after this command
+
+"""
 import os
 import argparse
 import cryodrgn.utils

@@ -216,12 +216,6 @@ class BaseTrainer(ABC):
         return [fld.name for fld in cls.config_cls.fields()]
 
     @classmethod
-    def load_from_config(cls, configs: dict[str, Any], outdir: str) -> Self:
-        """Retrieves all configurations that have been saved to file."""
-
-        return cls(cls.config_cls.parse_config(configs), outdir)
-
-    @classmethod
     def parse_args(cls, args: argparse.Namespace, outdir: str) -> Self:
         """Utility for initializing using a namespace as opposed to a dictionary."""
 

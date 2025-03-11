@@ -300,18 +300,17 @@ class AmortizedInferenceConfigurations(ReconstructionModelConfigurations):
         configs["model_args"] = dict(
             hidden_layers=self.hidden_layers,
             hidden_dim=self.hidden_dim,
+            **configs["model_args"],
             cnn_params=cnn_params,
             hypervolume_params=hypervolume_params,
             conf_regressor_params=conf_regressor_params,
-            **configs["model_args"],
         )
         if ps_params:
             configs["model_args"]["ps_params"] = ps_params
-        configs["train_args"].update(
-            dict(
-                n_imgs_pose_search=self.n_imgs_pose_search,
-                epochs_sgd=self.epochs_sgd,
-            )
+        configs["train_args"] = dict(
+            **configs["train_args"],
+            n_imgs_pose_search=self.n_imgs_pose_search,
+            epochs_sgd=self.epochs_sgd,
         )
 
         for param_k in (

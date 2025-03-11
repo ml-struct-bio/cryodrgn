@@ -109,9 +109,7 @@ def main(args: argparse.Namespace) -> None:
             "of homogeneous reconstruction!"
         )
 
-    conf_fls = [
-        fl for fl in os.listdir(workdir) if re.fullmatch(r"conf\.[0-9]+\.pkl", fl)
-    ]
+    conf_fls = [fl for fl in os.listdir(workdir) if re.fullmatch(r"z\.[0-9]+\.pkl", fl)]
     if not conf_fls:
         raise RuntimeError(
             f"No latent space conformation model outputs found in {workdir}, "

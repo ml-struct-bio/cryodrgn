@@ -7,13 +7,19 @@ This command can be used to train any model included in cryoDRGN, including:
     - homogeneous and heterogeneous reconstruction with given poses (cryoDRGN v1)
     - homo and het reconstruction with ab initio poses (cryoDRGN v2)
     - reconstruction using tilt series particle stacks (cryoDRGN v3)
-    - pose estimation using amortized inference (drgnai; cryoDRGN v4)
+    - ab-initio pose estimation using cryoDRGN-AI (cryoDRGN v4)
 
-Example usages
+Example usage
 --------------
 
 $ cryodrgn train new-test --model=cryodrgn
+
+# Submit reconstruction task to a compute cluster with Slurm installed
 $ sbatch -t 3:00:00 --wrap='cryodrgn train new-test' --mem=16G -o new-test.out
+
+See also
+--------
+commands/setup      `cryodrgn setup` command used as precursor to this command
 
 """
 import os

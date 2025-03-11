@@ -61,28 +61,35 @@ def undeprecate_configs(cfg: dict[str, Any]) -> dict[str, Any]:
     return cfg
 
 
+def get_model_trainer_class(cfg: dict[str, Any]):
+    model_args = cfg["model_args"] if "model_args" in cfg else cfg
+    # When we can't find a model label in the configs we assume it's from a v3 model
+    model = model_args["model"] if "model" in model_args else "cryodrgn"
+    model_args["model"] = model
+
+    if model == "cryodrgn-ai":
+        config_cls = AmortizedInferenceTrainer
+    elif model == "cryodrgn":
+        config_cls = HierarchicalPoseSearchTrainer
+    else:
+        raise ValueError(f"Unrecognized model `{model}` specified in config!")
+
+    return config_cls
+
+
 def get_model_trainer(
     cfg: dict[str, Any], outdir: str, add_cfgs: Optional[list[str]] = None
 ) -> ReconstructionModelTrainer:
     """Instantiate a training engine from a set of configs."""
 
     cfg = undeprecate_configs(cfg)
-    model_args = cfg["model_args"] if "model_args" in cfg else cfg
-    model = model_args["model"] if "model" in model_args else "cryodrgn"
-    if "model" not in model_args:
-        model_args["model"] = "cryodrgn"
+    trainer_cls = get_model_trainer_class(cfg)
 
-    if model == "cryodrgn-ai":
-        trainer_cls = AmortizedInferenceTrainer
-    elif model == "cryodrgn":
-        trainer_cls = HierarchicalPoseSearchTrainer
-    else:
-        raise ValueError(f"Unrecognized model `{model}` specified in config!")
-
+    cfg = trainer_cls.config_cls.parse_config(cfg)
     if add_cfgs:
         cfg.update(trainer_cls.config_cls.parse_cfg_keys(add_cfgs))
 
-    return trainer_cls.load_from_config(cfg, outdir)
+    return trainer_cls(cfg, outdir)
 
 
 def get_model_configurations(
@@ -91,26 +98,13 @@ def get_model_configurations(
     """Instantiate a training engine configurations class from a set of configs."""
 
     cfg = undeprecate_configs(cfg)
-    model_args = cfg["model_args"] if "model_args" in cfg else cfg
+    trainer_cls = get_model_trainer_class(cfg)
 
-    # When we can't find a model label in the configs we assume it's from a v3 model
-    if "model" not in model_args:
-        model_args["model"] = "cryodrgn"
-        configs_cls = HierarchicalPoseSearchConfigurations
-    elif model_args["model"] == "cryodrgn-ai":
-        configs_cls = AmortizedInferenceConfigurations
-    elif model_args["model"] == "cryodrgn":
-        configs_cls = HierarchicalPoseSearchConfigurations
-    else:
-        raise ValueError(
-            f"Model unknown by cryoDRGN `{model_args['model']}` specified in config!"
-        )
-
-    cfg = configs_cls.parse_config(cfg)
+    cfg = trainer_cls.config_cls.parse_config(cfg)
     if add_cfgs:
-        cfg.update(configs_cls.parse_cfg_keys(add_cfgs))
+        cfg.update(trainer_cls.config_cls.parse_cfg_keys(add_cfgs))
 
-    return configs_cls(**cfg)
+    return trainer_cls.config_cls(**cfg)
 
 
 # TODO: redundancy with `make_reconstruction_model` from trainers?

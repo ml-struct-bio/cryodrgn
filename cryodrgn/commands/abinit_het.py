@@ -923,7 +923,7 @@ def main(args):
     if args.load:
         args.pretrain = 0
         logger.info("Loading checkpoint from {}".format(args.load))
-        checkpoint = torch.load(args.load)
+        checkpoint = torch.load(args.load, weights_only=False)
         model.load_state_dict(checkpoint["model_state_dict"])
         optim.load_state_dict(checkpoint["optimizer_state_dict"])
         start_epoch = checkpoint["epoch"] + 1
@@ -1004,7 +1004,6 @@ def main(args):
         if global_it % args.log_interval == 0:
             logger.info(f"[Pretrain Iteration {global_it}] loss={loss:4f}")
 
-        print(f"XXX: {torch.randn((2, 2)).det().item()}")
         if global_it >= args.pretrain:
             break
 

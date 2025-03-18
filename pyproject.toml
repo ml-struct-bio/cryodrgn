@@ -30,7 +30,8 @@ dependencies = [
     "notebook<7",
     "umap-learn",
     "ipywidgets<8",
-    "healpy"
+    "healpy",
+    "plotly<6",
 ]
 
 [project.optional-dependencies]

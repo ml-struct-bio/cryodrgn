@@ -2,19 +2,19 @@
 
 Example usage
 -------------
-$ cryodrgn train_vae projections.mrcs -o outs/002_trainvae --lr 0.0001 --zdim 10 \
-                                      --poses angles.pkl --ctf test_ctf.pkl -n 50
+$ cryodrgn train_vae projections.mrcs -o outs/002_trainvae --lr 0.0001 --zdim 8 \
+                                      --poses angles.pkl --ctf test_ctf.pkl -n 25
 
 # Restart after already running the same command with some epochs completed
-$ cryodrgn train_vae projections.mrcs -o outs/002_trainvae --lr 0.0001 --zdim 10 \
+$ cryodrgn train_vae projections.mrcs -o outs/002_trainvae --lr 0.0001 --zdim 8 \
                                       --poses angles.pkl --ctf test_ctf.pkl \
-                                      --load latest -n 100
+                                      --load latest -n 50
 
 # cryoDRGN-ET tilt series reconstruction
 $ cryodrgn train_vae particles_from_M.star --datadir particleseries -o your-outdir \
                                            --ctf ctf.pkl --poses pose.pkl \
                                            --encode-mode tilt --dose-per-tilt 2.93 \
-                                           --zdim 8 --num-epochs 50 --beta .025
+                                           --zdim 12 --num-epochs 50 --beta .025
 
 """
 import argparse
@@ -876,7 +876,7 @@ def main(args: argparse.Namespace) -> None:
     # restart from checkpoint
     if args.load:
         logger.info("Loading checkpoint from {}".format(args.load))
-        checkpoint = torch.load(args.load)
+        checkpoint = torch.load(args.load, weights_only=False)
         model.load_state_dict(checkpoint["model_state_dict"])
         optim.load_state_dict(checkpoint["optimizer_state_dict"])
         start_epoch = checkpoint["epoch"] + 1

@@ -66,7 +66,7 @@ class ImageDataset(torch.utils.data.Dataset):
         else:
             self.window = None
 
-        norm = (0.0, 700.0) or self.estimate_normalization()
+        norm = self.estimate_normalization()
         self.norm = [float(x) for x in norm]
         self.device = device
         self.lazy = lazy

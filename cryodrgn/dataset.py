@@ -66,7 +66,7 @@ class ImageDataset(torch.utils.data.Dataset):
         else:
             self.window = None
 
-        norm = self.estimate_normalization()
+        norm = norm or self.estimate_normalization()
         self.norm = [float(x) for x in norm]
         self.device = device
         self.lazy = lazy
@@ -486,8 +486,8 @@ def make_dataloader(
     batch_size: int,
     num_workers: int = 0,
     shuffler_size: int = 0,
-    shuffle=False,
-    seed: int = 0,
+    shuffle: bool = True,
+    seed: Optional[int] = None,
 ):
     if shuffler_size > 0 and shuffle:
         assert data.lazy, "Only enable a data shuffler for lazy loading"
@@ -496,8 +496,7 @@ def make_dataloader(
         # see https://github.com/zhonge/cryodrgn/pull/221#discussion_r1120711123
         # for discussion of why we use BatchSampler, etc.
         if shuffle:
-            generator = torch.Generator()
-            generator = generator.manual_seed(seed)
+            generator = None if seed is None else torch.Generator().manual_seed(seed)
             sampler = RandomSampler(data, generator=generator)
         else:
             sampler = SequentialSampler(data)

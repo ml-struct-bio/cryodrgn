@@ -3,7 +3,7 @@
 import pytest
 import os
 import shutil
-from typing import Optional, Union, Any
+from typing import Optional, Union, Generator, Any
 from dataclasses import dataclass
 from cryodrgn.utils import run_command
 
@@ -322,7 +322,7 @@ class TrainDir:
 
 
 @pytest.fixture(scope="session")
-def train_dir(request, tmpdir_factory) -> TrainDir:
+def train_dir(request, tmpdir_factory) -> Generator[TrainDir, None, None]:
     """Run an experiment to generate output; remove this output when finished."""
     args = TrainDir.parse_request(request.param)
     out_lbl = f"train-outs_{request.node.__class__.__name__}"
@@ -334,14 +334,14 @@ def train_dir(request, tmpdir_factory) -> TrainDir:
 
 
 @pytest.fixture(scope="function")
-def trained_dir(train_dir) -> TrainDir:
+def trained_dir(train_dir: TrainDir) -> Generator[TrainDir, None, None]:
     """Get an experiment that has been run; restore its output when done."""
     yield train_dir
     train_dir.replace_files()
 
 
 @pytest.fixture(scope="session")
-def train_dirs(request) -> list[TrainDir]:
+def train_dirs(request) -> Generator[list[TrainDir], None, None]:
     """Run experiments to generate outputs; remove these outputs when finished."""
     tdirs = [TrainDir(**TrainDir.parse_request(req)) for req in request.param]
     yield tdirs
@@ -350,7 +350,7 @@ def train_dirs(request) -> list[TrainDir]:
 
 
 @pytest.fixture(scope="function")
-def trained_dirs(train_dirs) -> list[TrainDir]:
+def trained_dirs(train_dirs) -> Generator[list[TrainDir], None, None]:
     """Get experiments that have been run; restore their output when done."""
     yield train_dirs
     for train_dir in train_dirs:

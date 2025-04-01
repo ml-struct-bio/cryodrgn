@@ -334,9 +334,14 @@ def scatter_color(
     sc = plt.scatter(x, y, s=s, alpha=alpha, rasterized=True, cmap=cmap, c=c)
     cbar = plt.colorbar(sc)
     cbar.set_alpha(1)
-    cbar.draw_all()
+
+    if hasattr(cbar, "draw_all"):
+        cbar.draw_all()
+    else:
+        cbar._draw_all()
     if label:
         cbar.set_label(label)
+
     return fig, ax
 
 

@@ -82,6 +82,12 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--seed", type=int, default=np.random.randint(0, 100000), help="Random seed"
     )
+    parser.add_argument(
+        "--shuffle-seed",
+        type=int,
+        default=None,
+        help="Random seed for data shuffling",
+    )
 
     group = parser.add_argument_group("Dataset loading")
     group.add_argument(
@@ -536,7 +542,7 @@ def main(args: argparse.Namespace) -> None:
         data,
         batch_size=args.batch_size,
         shuffler_size=args.shuffler_size,
-        seed=args.seed,
+        seed=args.shuffle_seed,
     )
 
     epoch = None

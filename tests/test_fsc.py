@@ -25,7 +25,7 @@ def test_fidelity(trained_dir) -> None:
     )
     assert np.array_equal(
         np.array(out.split("\n")[7].split(), dtype="float"),
-        np.array([0.0312, 0.8899]),
+        np.array([0.0312, 0.8930]),
     )
 
     assert out.split("\n")[1].split()[-3] == "FSC=0.5:"
@@ -38,7 +38,7 @@ def test_fidelity(trained_dir) -> None:
             sum(float(x) for x in out.split() if x[:2] == "0." and x[-1].isnumeric()),
             3,
         )
-        == 34.538
+        == 34.584
     )
     assert len(out.split("\n")) == 39
 
@@ -145,7 +145,7 @@ def test_use_cryosparc_correction(trained_dir) -> None:
         f"cryodrgn_utils gen_mask {vol_file1} {mask_file} --dist 6 --dilate 6"
     )
     assert err == ""
-    assert round(float(out.split("\n")[0].split("Threshold=")[1]), 4) == 0.1254
+    assert round(float(out.split("\n")[0].split("Threshold=")[1]), 4) == 0.1266
     out, err = run_command(
         f"cryodrgn_utils fsc {vol_file1} {vol_file2} "
         f"--ref-volume {ref_vol} --mask {mask_file}"

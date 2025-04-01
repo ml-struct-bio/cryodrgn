@@ -80,6 +80,13 @@ def add_args(parser):
         "--seed", type=int, default=np.random.randint(0, 100000), help="Random seed"
     )
     parser.add_argument(
+        "--shuffle-seed",
+        type=int,
+        default=None,
+        help="Random seed for data shuffling",
+    )
+
+    parser.add_argument(
         "--uninvert-data",
         dest="invert_data",
         action="store_false",
@@ -710,7 +717,7 @@ def main(args):
         data,
         batch_size=args.batch_size,
         shuffler_size=args.shuffler_size,
-        seed=args.seed,
+        seed=args.shuffle_seed,
     )
 
     # pretrain decoder with random poses

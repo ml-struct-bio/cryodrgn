@@ -120,7 +120,8 @@ def calculate_fsc(
     var = (np.vdot(v1, v1) * np.vdot(v2, v2)) ** 0.5
 
     if var:
-        fsc = float((np.vdot(v1, v2) / var).real)
+        v1xv2 = np.vdot(v1, v2)
+        fsc = np.nan if np.isnan(v1xv2) else float((v1xv2 / var).real)
     else:
         fsc = 1.0
 
@@ -271,6 +272,7 @@ def calculate_cryosparc_fscs(
     if sphere_mask is None:
         sphere_mask = spherical_window_mask(D=full_vol.shape[0])
 
+    # Create the masks we will use
     masks = {
         "No Mask": None,
         "Spherical": sphere_mask,
@@ -290,6 +292,8 @@ def calculate_cryosparc_fscs(
             f"size in pixels, instead given {type(tight_mask).__name__}!"
         )
 
+    # get the FSC curves for each mask, and then get the resolution thresholds at which
+    # the FSC curves pass 0.5 and 0.143
     fsc_vals = {
         mask_lbl: get_fsc_curve(half_vol1, half_vol2, initial_mask=mask)
         for mask_lbl, mask in masks.items()
@@ -299,6 +303,8 @@ def calculate_cryosparc_fscs(
         for mask_lbl, fsc_df in fsc_vals.items()
     }
 
+    # Use the cryoSPARC method to get a corrected FSC curve by subtracting null
+    # background FSC values calculated using randomized phases
     if fsc_thresh["Tight"] is not None:
         if fsc_thresh["Tight"] == fsc_vals["Tight"].pixres.values[-1]:
             rand_thresh = 0.5 * fsc_thresh["No Mask"]

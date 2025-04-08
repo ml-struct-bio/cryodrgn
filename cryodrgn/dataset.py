@@ -335,10 +335,14 @@ class DataShuffler:
     ):
         if not all(dataset.src.indices == np.arange(dataset.N)):
             raise NotImplementedError(
-                "Sorry dude, --ind is not supported for the data shuffler. "
-                "The purpose of the shuffler is to load chunks contiguously during lazy loading on huge datasets, which doesn't work with --ind. "
-                "If you really need this, maybe you should probably use `--ind` during preprocessing (e.g. cryodrgn downsample)."
+                "NotImplementedError: --ind is not supported for the data shuffler. "
+                "The purpose of the shuffler is to load chunks contiguously during "
+                "lazy loading on huge datasets, which doesn't work with --ind subsets. "
+                "We recommend instead using --ind during preprocessing (e.g. with "
+                "`cryodrgn downsample`) if you aim to use the shuffler or simply "
+                "pass --lazy for on-the-fly data loading (potentially slower)."
             )
+
         self.dataset = dataset
         self.batch_size = batch_size
         self.buffer_size = buffer_size

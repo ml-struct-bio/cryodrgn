@@ -132,7 +132,7 @@ class HetOnlyVAE(nn.Module):
             tilt_params=c.get("tilt_params", {}),
         )
         if weights is not None:
-            ckpt = torch.load(weights, map_location=device, weights_only=False)
+            ckpt = torch.load(weights, map_location=device)
             model.load_state_dict(ckpt["model_state_dict"])
         if device is not None:
             model.to(device)

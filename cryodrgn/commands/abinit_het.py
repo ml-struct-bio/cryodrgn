@@ -609,12 +609,17 @@ def eval_z(
     use_tilt=False,
     ctf_params=None,
     shuffler_size=0,
+    seed=None,
 ):
     assert not model.training
-    z_mu_all = []
-    z_logvar_all = []
+
+    z_mu_all, z_logvar_all = list(), list()
     data_generator = dataset.make_dataloader(
-        data, batch_size=batch_size, shuffler_size=shuffler_size, shuffle=False
+        data,
+        batch_size=batch_size,
+        shuffler_size=shuffler_size,
+        shuffle=False,
+        seed=seed,
     )
 
     for minibatch in data_generator:
@@ -644,9 +649,8 @@ def eval_z(
         z_mu, z_logvar = _model.encode(*input_)
         z_mu_all.append(z_mu.detach().cpu().numpy())
         z_logvar_all.append(z_logvar.detach().cpu().numpy())
-    z_mu_all = np.vstack(z_mu_all)
-    z_logvar_all = np.vstack(z_logvar_all)
-    return z_mu_all, z_logvar_all
+
+    return np.vstack(z_mu_all), np.vstack(z_logvar_all)
 
 
 def save_checkpoint(
@@ -929,7 +933,7 @@ def main(args):
     if args.load:
         args.pretrain = 0
         logger.info("Loading checkpoint from {}".format(args.load))
-        checkpoint = torch.load(args.load, weights_only=False)
+        checkpoint = torch.load(args.load)
         model.load_state_dict(checkpoint["model_state_dict"])
         optim.load_state_dict(checkpoint["optimizer_state_dict"])
         start_epoch = checkpoint["epoch"] + 1
@@ -1157,6 +1161,7 @@ def main(args):
                     use_tilt=tilt is not None,
                     ctf_params=ctf_params,
                     shuffler_size=args.shuffler_size,
+                    seed=args.shuffle_seed,
                 )
                 save_checkpoint(
                     model,
@@ -1191,6 +1196,8 @@ def main(args):
                 device,
                 use_tilt=tilt is not None,
                 ctf_params=ctf_params,
+                shuffler_size=args.shuffler_size,
+                seed=args.shuffle_seed,
             )
             save_checkpoint(
                 model,

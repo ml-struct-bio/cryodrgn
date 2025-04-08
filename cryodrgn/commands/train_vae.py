@@ -518,9 +518,11 @@ def eval_z(
     assert not model.training
     z_mu_all = []
     z_logvar_all = []
+
     data_generator = dataset.make_dataloader(
         data,
         batch_size=batch_size,
+        shuffle=False,
         shuffler_size=shuffler_size,
         seed=seed,
     )
@@ -882,7 +884,7 @@ def main(args: argparse.Namespace) -> None:
     # restart from checkpoint
     if args.load:
         logger.info("Loading checkpoint from {}".format(args.load))
-        checkpoint = torch.load(args.load, weights_only=False)
+        checkpoint = torch.load(args.load)
         model.load_state_dict(checkpoint["model_state_dict"])
         optim.load_state_dict(checkpoint["optimizer_state_dict"])
         start_epoch = checkpoint["epoch"] + 1
@@ -1021,7 +1023,7 @@ def main(args: argparse.Namespace) -> None:
                     ctf_params=ctf_params,
                     use_real=args.use_real,
                     shuffler_size=args.shuffler_size,
-                    seed=args.seed,
+                    seed=args.shuffle_seed,
                 )
                 save_checkpoint(model, optim, epoch, z_mu, z_logvar, out_weights, out_z)
             if args.do_pose_sgd and epoch >= args.pretrain:
@@ -1045,7 +1047,7 @@ def main(args: argparse.Namespace) -> None:
             ctf_params,
             args.use_real,
             shuffler_size=args.shuffler_size,
-            seed=args.seed,
+            seed=args.shuffle_seed,
         )
         save_checkpoint(model, optim, epoch, z_mu, z_logvar, out_weights, out_z)
 

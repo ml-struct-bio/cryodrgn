@@ -605,11 +605,8 @@ def main(args):
         window=args.window,
         datadir=args.datadir,
         window_r=args.window_r,
-        device=device,
     )
-
-    D = data.D
-    Nimg = data.N
+    D, Nimg = data.D, data.N
 
     # load ctf
     if args.ctf is not None:

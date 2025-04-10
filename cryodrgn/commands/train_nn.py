@@ -420,11 +420,8 @@ def main(args: argparse.Namespace) -> None:
         window=args.window,
         datadir=args.datadir,
         window_r=args.window_r,
-        device=device,
     )
-
-    D = data.D
-    Nimg = data.N
+    D, Nimg = data.D, data.N
 
     # instantiate model
     # if args.pe_type != 'none': assert args.l_extent == 0.5

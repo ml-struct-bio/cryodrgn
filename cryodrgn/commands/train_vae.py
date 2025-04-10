@@ -728,8 +728,7 @@ def main(args: argparse.Namespace) -> None:
             dose_per_tilt=args.dose_per_tilt,
             angle_per_tilt=args.angle_per_tilt,
         )
-    Nimg = data.N
-    D = data.D
+    Nimg, D = data.N, data.D
 
     if args.encode_mode == "conv":
         assert D - 1 == 64, "Image size must be 64x64 for convolutional encoder"

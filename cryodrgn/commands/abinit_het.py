@@ -823,11 +823,8 @@ def main(args):
         keepreal=args.use_real,
         datadir=args.datadir,
         window_r=args.window_r,
-        device=device,
     )
-
-    Nimg = data.N
-    D = data.D
+    Nimg, D = data.N, data.D
 
     if args.encode_mode == "conv":
         assert D - 1 == 64, "Image size must be 64x64 for convolutional encoder"

@@ -80,6 +80,12 @@ def add_args(parser):
     parser.add_argument(
         "--seed", type=int, default=np.random.randint(0, 100000), help="Random seed"
     )
+    parser.add_argument(
+        "--shuffle-seed",
+        type=int,
+        default=None,
+        help="Random seed for data shuffling",
+    )
 
     group = parser.add_argument_group("Dataset loading")
     group.add_argument(
@@ -603,12 +609,17 @@ def eval_z(
     use_tilt=False,
     ctf_params=None,
     shuffler_size=0,
+    seed=None,
 ):
     assert not model.training
-    z_mu_all = []
-    z_logvar_all = []
+
+    z_mu_all, z_logvar_all = list(), list()
     data_generator = dataset.make_dataloader(
-        data, batch_size=batch_size, shuffler_size=shuffler_size, shuffle=False
+        data,
+        batch_size=batch_size,
+        shuffler_size=shuffler_size,
+        shuffle=False,
+        seed=seed,
     )
 
     for minibatch in data_generator:
@@ -638,9 +649,8 @@ def eval_z(
         z_mu, z_logvar = _model.encode(*input_)
         z_mu_all.append(z_mu.detach().cpu().numpy())
         z_logvar_all.append(z_logvar.detach().cpu().numpy())
-    z_mu_all = np.vstack(z_mu_all)
-    z_logvar_all = np.vstack(z_logvar_all)
-    return z_mu_all, z_logvar_all
+
+    return np.vstack(z_mu_all), np.vstack(z_logvar_all)
 
 
 def save_checkpoint(
@@ -814,9 +824,7 @@ def main(args):
         datadir=args.datadir,
         window_r=args.window_r,
     )
-
-    Nimg = data.N
-    D = data.D
+    Nimg, D = data.N, data.D
 
     if args.encode_mode == "conv":
         assert D - 1 == 64, "Image size must be 64x64 for convolutional encoder"
@@ -983,25 +991,28 @@ def main(args):
     )
 
     data_iterator = dataset.make_dataloader(
-        data, batch_size=args.batch_size, shuffler_size=args.shuffler_size
+        data,
+        batch_size=args.batch_size,
+        shuffler_size=args.shuffler_size,
+        seed=args.shuffle_seed,
     )
 
     # pretrain decoder with random poses
     global_it = 0
     logger.info("Using random poses for {} iterations".format(args.pretrain))
-    while global_it < args.pretrain:
-        for batch in data_iterator:
-            global_it += len(batch[0])
-            batch = (
-                (batch[0].to(device), None)
-                if tilt is None
-                else (batch[0].to(device), batch[1].to(device))
-            )
-            loss = pretrain(model, lattice, optim, batch, tilt=ps.tilt, zdim=args.zdim)
-            if global_it % args.log_interval == 0:
-                logger.info(f"[Pretrain Iteration {global_it}] loss={loss:4f}")
-            if global_it > args.pretrain:
-                break
+    for batch in data_iterator:
+        global_it += len(batch[0])
+        batch = (
+            (batch[0].to(device), None)
+            if tilt is None
+            else (batch[0].to(device), batch[1].to(device))
+        )
+        loss = pretrain(model, lattice, optim, batch, tilt=ps.tilt, zdim=args.zdim)
+        if global_it % args.log_interval == 0:
+            logger.info(f"[Pretrain Iteration {global_it}] loss={loss:4f}")
+
+        if global_it >= args.pretrain:
+            break
 
     # reset model after pretraining
     if args.reset_optim_after_pretrain:
@@ -1147,6 +1158,7 @@ def main(args):
                     use_tilt=tilt is not None,
                     ctf_params=ctf_params,
                     shuffler_size=args.shuffler_size,
+                    seed=args.shuffle_seed,
                 )
                 save_checkpoint(
                     model,
@@ -1181,6 +1193,8 @@ def main(args):
                 device,
                 use_tilt=tilt is not None,
                 ctf_params=ctf_params,
+                shuffler_size=args.shuffler_size,
+                seed=args.shuffle_seed,
             )
             save_checkpoint(
                 model,

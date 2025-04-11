@@ -454,7 +454,7 @@ def main(args: argparse.Namespace) -> None:
 
         else:
             use_apix = 1.0
-            logger.info("cannot find A/px in CTF parameters, " "defaulting to A/px=1.0")
+            logger.info("Cannot find A/px in CTF parameters, defaulting to A/px=1.0")
 
     if E == -1:
         zfile = f"{workdir}/z.pkl"

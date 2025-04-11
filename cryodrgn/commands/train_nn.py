@@ -82,6 +82,12 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--seed", type=int, default=np.random.randint(0, 100000), help="Random seed"
     )
+    parser.add_argument(
+        "--shuffle-seed",
+        type=int,
+        default=None,
+        help="Random seed for data shuffling",
+    )
 
     group = parser.add_argument_group("Dataset loading")
     group.add_argument(
@@ -415,9 +421,7 @@ def main(args: argparse.Namespace) -> None:
         datadir=args.datadir,
         window_r=args.window_r,
     )
-
-    D = data.D
-    Nimg = data.N
+    D, Nimg = data.D, data.N
 
     # instantiate model
     # if args.pe_type != 'none': assert args.l_extent == 0.5
@@ -532,7 +536,10 @@ def main(args: argparse.Namespace) -> None:
 
     # train
     data_generator = dataset.make_dataloader(
-        data, batch_size=args.batch_size, shuffler_size=args.shuffler_size
+        data,
+        batch_size=args.batch_size,
+        shuffler_size=args.shuffler_size,
+        seed=args.shuffle_seed,
     )
 
     epoch = None
@@ -561,7 +568,7 @@ def main(args: argparse.Namespace) -> None:
             if pose_optimizer is not None and epoch >= args.pretrain:
                 pose_optimizer.step()
             loss_accum += loss_item * len(ind)
-            if batch_it % args.log_interval == 0:
+            if batch_it % args.log_interval < args.batch_size:
                 logger.info(
                     "# [Train Epoch: {}/{}] [{}/{} images] loss={:.6f}".format(
                         epoch + 1, args.num_epochs, batch_it, Nimg, loss_item

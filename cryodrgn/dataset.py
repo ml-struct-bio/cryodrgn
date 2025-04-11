@@ -335,10 +335,14 @@ class DataShuffler:
     ):
         if not all(dataset.src.indices == np.arange(dataset.N)):
             raise NotImplementedError(
-                "Sorry dude, --ind is not supported for the data shuffler. "
-                "The purpose of the shuffler is to load chunks contiguously during lazy loading on huge datasets, which doesn't work with --ind. "
-                "If you really need this, maybe you should probably use `--ind` during preprocessing (e.g. cryodrgn downsample)."
+                "NotImplementedError: --ind is not supported for the data shuffler. "
+                "The purpose of the shuffler is to load chunks contiguously during "
+                "lazy loading on huge datasets, which doesn't work with --ind subsets. "
+                "We recommend instead using --ind during preprocessing (e.g. with "
+                "`cryodrgn downsample`) if you aim to use the shuffler or simply "
+                "pass --lazy for on-the-fly data loading (potentially slower)."
             )
+
         self.dataset = dataset
         self.batch_size = batch_size
         self.buffer_size = buffer_size
@@ -486,7 +490,8 @@ def make_dataloader(
     batch_size: int,
     num_workers: int = 0,
     shuffler_size: int = 0,
-    shuffle=True,
+    shuffle: bool = True,
+    seed: Optional[int] = None,
 ):
     if shuffler_size > 0 and shuffle:
         assert data.lazy, "Only enable a data shuffler for lazy loading"
@@ -494,13 +499,16 @@ def make_dataloader(
     else:
         # see https://github.com/zhonge/cryodrgn/pull/221#discussion_r1120711123
         # for discussion of why we use BatchSampler, etc.
-        sampler_cls = RandomSampler if shuffle else SequentialSampler
+        if shuffle:
+            generator = None if seed is None else torch.Generator().manual_seed(seed)
+            sampler = RandomSampler(data, generator=generator)
+        else:
+            sampler = SequentialSampler(data)
+
         return DataLoader(
             data,
             num_workers=num_workers,
-            sampler=BatchSampler(
-                sampler_cls(data), batch_size=batch_size, drop_last=False
-            ),
+            sampler=BatchSampler(sampler, batch_size=batch_size, drop_last=False),
             batch_size=None,
             multiprocessing_context="spawn" if num_workers > 0 else None,
         )

@@ -2,19 +2,19 @@
 
 Example usage
 -------------
-$ cryodrgn train_vae projections.mrcs -o outs/002_trainvae --lr 0.0001 --zdim 10 \
-                                      --poses angles.pkl --ctf test_ctf.pkl -n 50
+$ cryodrgn train_vae projections.mrcs -o outs/002_trainvae --lr 0.0001 --zdim 8 \
+                                      --poses angles.pkl --ctf test_ctf.pkl -n 25
 
 # Restart after already running the same command with some epochs completed
-$ cryodrgn train_vae projections.mrcs -o outs/002_trainvae --lr 0.0001 --zdim 10 \
+$ cryodrgn train_vae projections.mrcs -o outs/002_trainvae --lr 0.0001 --zdim 8 \
                                       --poses angles.pkl --ctf test_ctf.pkl \
-                                      --load latest -n 100
+                                      --load latest -n 50
 
 # cryoDRGN-ET tilt series reconstruction
 $ cryodrgn train_vae particles_from_M.star --datadir particleseries -o your-outdir \
                                            --ctf ctf.pkl --poses pose.pkl \
                                            --encode-mode tilt --dose-per-tilt 2.93 \
-                                           --zdim 8 --num-epochs 50 --beta .025
+                                           --zdim 12 --num-epochs 50 --beta .025
 
 """
 import argparse
@@ -89,6 +89,12 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--seed", type=int, default=np.random.randint(0, 100000), help="Random seed"
+    )
+    parser.add_argument(
+        "--shuffle-seed",
+        type=int,
+        default=None,
+        help="Random seed for data shuffling",
     )
 
     group = parser.add_argument_group("Dataset loading")
@@ -506,13 +512,19 @@ def eval_z(
     ctf_params=None,
     use_real=False,
     shuffler_size=0,
+    seed=None,
 ):
     logger.info("Evaluating z")
     assert not model.training
     z_mu_all = []
     z_logvar_all = []
+
     data_generator = dataset.make_dataloader(
-        data, batch_size=batch_size, shuffler_size=shuffler_size, shuffle=False
+        data,
+        batch_size=batch_size,
+        shuffle=False,
+        shuffler_size=shuffler_size,
+        seed=seed,
     )
     for i, minibatch in enumerate(data_generator):
         ind = minibatch[-1]
@@ -716,8 +728,7 @@ def main(args: argparse.Namespace) -> None:
             dose_per_tilt=args.dose_per_tilt,
             angle_per_tilt=args.angle_per_tilt,
         )
-    Nimg = data.N
-    D = data.D
+    Nimg, D = data.N, data.D
 
     if args.encode_mode == "conv":
         assert D - 1 == 64, "Image size must be 64x64 for convolutional encoder"
@@ -903,6 +914,7 @@ def main(args: argparse.Namespace) -> None:
         batch_size=args.batch_size,
         num_workers=num_workers,
         shuffler_size=args.shuffler_size,
+        seed=args.shuffle_seed,
     )
 
     num_epochs = args.num_epochs
@@ -970,7 +982,7 @@ def main(args: argparse.Namespace) -> None:
             kld_accum += kld * B
             loss_accum += loss * B
 
-            if batch_it % args.log_interval == 0:
+            if batch_it % args.log_interval < args.batch_size:
                 logger.info(
                     "# [Train Epoch: {}/{}] [{}/{} particles] gen loss={:.6f}, kld={:.6f}, beta={:.6f}, "
                     "loss={:.6f}".format(
@@ -1010,6 +1022,7 @@ def main(args: argparse.Namespace) -> None:
                     ctf_params=ctf_params,
                     use_real=args.use_real,
                     shuffler_size=args.shuffler_size,
+                    seed=args.shuffle_seed,
                 )
                 save_checkpoint(model, optim, epoch, z_mu, z_logvar, out_weights, out_z)
             if args.do_pose_sgd and epoch >= args.pretrain:
@@ -1032,6 +1045,8 @@ def main(args: argparse.Namespace) -> None:
             args.encode_mode == "tilt",
             ctf_params,
             args.use_real,
+            shuffler_size=args.shuffler_size,
+            seed=args.shuffle_seed,
         )
         save_checkpoint(model, optim, epoch, z_mu, z_logvar, out_weights, out_z)
 

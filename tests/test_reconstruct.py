@@ -105,16 +105,23 @@ class TrainCommand:
         eval(f"cryodrgn.commands.{use_cmd}").add_args(parser)
         eval(f"cryodrgn.commands.{use_cmd}").main(parser.parse_args(cmd_args))
 
+    @property
+    def checkpoint(self) -> int:
+        if "--checkpoint" in self.args:
+            return int(self.args[self.args.index("--checkpoint") + 1])
+        else:
+            return 1
+
 
 @pytest.mark.parametrize(
-    "train_cmd, particles, ctf, indices, poses",
+    "train_cmd, particles, ctf, indices, poses, checkpoint",
     [
-        ("train_nn", "hand", "CTF-Test.100", None, "hand-poses"),
-        ("train_nn", "toy.mrcs", "CTF-Test", "random-100", "toy-poses"),
-        ("train_nn", "toy.star", "CTF-Test", "first-100", "toy-poses"),
-        ("train_nn", "toy.txt", "CTF-Test", "random-100", "toy-poses"),
-        ("abinit_homo", "hand-5", "CTF1", None, "hand-poses"),
-        ("abinit_homo", "hand", "CTF-Test.100", "5", None),
+        ("train_nn", "hand", "CTF-Test.100", None, "hand-poses", None),
+        ("train_nn", "toy.mrcs", "CTF-Test", "random-100", "toy-poses", 1),
+        ("train_nn", "toy.star", "CTF-Test", "first-100", "toy-poses", 2),
+        ("train_nn", "toy.txt", "CTF-Test", "random-100", "toy-poses", 4),
+        ("abinit_homo", "hand-5", "CTF1", None, "hand-poses", None),
+        ("abinit_homo", "hand", "CTF-Test.100", "5", None, 3),
     ],
     indirect=["particles", "ctf", "indices", "poses"],
 )
@@ -139,6 +146,7 @@ class TestHomogeneous:
         indices,
         batch_size,
         use_amp,
+        checkpoint,
     ):
         """Run an experiment to generate output; remove this output when finished."""
         if train_cmd == "train_nn":
@@ -146,11 +154,9 @@ class TestHomogeneous:
                 "--pretrain",
                 "10",
                 "--num-epochs",
-                "4",
+                "6",
                 "--dim",
                 "8",
-                "--checkpoint",
-                "1",
             ]
         elif train_cmd == "abinit_homo":
             args = [
@@ -161,11 +167,9 @@ class TestHomogeneous:
                 "--pretrain",
                 "20",
                 "--num-epochs",
-                "4",
+                "6",
                 "--t-ngrid",
                 "2",
-                "--checkpoint",
-                "1",
             ]
             if train_type == "drgnai":
                 args += ["--n-imgs-pose-search", "10"]
@@ -200,6 +204,8 @@ class TestHomogeneous:
             cmd_args += ["--ind", indices.label]
         if not use_amp:
             cmd_args += ["--no-amp"]
+        if checkpoint is not None:
+            cmd_args += ["--checkpoint", str(checkpoint)]
 
         return TrainCommand(train_cmd, cmd_args, odir, train_type)
 
@@ -220,38 +226,59 @@ class TestHomogeneous:
             epoch_iter = range(1, 5)
 
         for epoch in epoch_iter:
-            assert (
-                f"weights.{epoch}.pkl" in out_files
-            ), f"Missing output model weights for epoch {epoch}!"
-            assert (
-                f"reconstruct.{epoch}.mrc" in out_files
-            ), f"Missing output reconstructed volume for epoch {epoch}!"
-            if traincmd.train_cmd == "train_nn":
+            make_chk = epoch % traincmd.checkpoint == 0 or epoch == 6
+            make_chk |= (
+                traincmd.train_type == "drgnai"
+                and traincmd.train_cmd == "abinit_homo"
+                and epoch <= 2
+            )
+            make_chk |= (
+                traincmd.train_type != "drgnai"
+                and traincmd.train_cmd == "abinit_homo"
+                and (epoch - 1) % 2 == 0
+            )
+
+            if make_chk:
                 assert (
-                    f"pose.{epoch}.pkl" not in out_files
-                ), "Fixed-pose reconstruction shouldn't output poses!"
+                    f"weights.{epoch}.pkl" in out_files
+                ), f"Missing output model weights for epoch {epoch}!"
+                assert (
+                    f"reconstruct.{epoch}.mrc" in out_files
+                ), f"Missing output reconstructed volume for epoch {epoch}!"
+                if traincmd.train_cmd == "train_nn":
+                    assert (
+                        f"pose.{epoch}.pkl" not in out_files
+                    ), "Fixed-pose reconstruction shouldn't output poses!"
+                else:
+                    assert traincmd.train_cmd == "abinit_homo"
+                    assert (
+                        f"pose.{epoch}.pkl" in out_files
+                    ), f"Missing output inferred poses for epoch {epoch}!"
             else:
-                assert traincmd.train_cmd == "abinit_homo"
                 assert (
-                    f"pose.{epoch}.pkl" in out_files
-                ), f"Missing output inferred poses for epoch {epoch}!"
+                    f"weights.{epoch}.pkl" not in out_files
+                ), f"Extraneous output model weights for epoch {epoch}!"
+                assert (
+                    f"reconstruct.{epoch}.mrc" not in out_files
+                ), f"Extraneous output reconstructed volume for epoch {epoch}!"
 
     def test_train_from_checkpoint(self, traincmd):
         """Train the initial homogeneous model."""
 
-        traincmd.args += ["--load", os.path.join(traincmd.outdir, "weights.4.pkl")]
+        traincmd.args += ["--load", os.path.join(traincmd.outdir, "weights.6.pkl")]
         i = traincmd.args.index("--num-epochs")
         traincmd.args[i + 1] = str(int(traincmd.args[i + 1]) + 1)
 
         traincmd.run(no_analysis=False)
         out_files = os.listdir(traincmd.outdir)
-        assert "weights.5.pkl" in out_files, "Missing output model weights!"
-        assert "reconstruct.5.mrc" in out_files, "Missing output reconstructed vol!"
+        assert "weights.7.pkl" in out_files, "Missing output model weights!"
+        assert "reconstruct.7.mrc" in out_files, "Missing output reconstructed vol!"
         assert not any(
             fl.startswith("analyze.") for fl in out_files
         ), "Created empty analysis folder!"
 
 
+@pytest.mark.parametrize("checkpoint", [1])
 class TestHeterogeneous:
     @pytest.fixture
     def traincmd(
@@ -263,12 +290,13 @@ class TestHeterogeneous:
         poses,
         ctf,
         indices,
+        checkpoint,
     ) -> TrainCommand:
         """Run an experiment to generate output; remove this output when finished."""
         if train_cmd == "train_vae":
             args = [
                 "--num-epochs",
-                "3",
+                "5",
                 "--lr",
                 ".0001",
                 "--seed",
@@ -284,13 +312,11 @@ class TestHeterogeneous:
                 "--pe-type",
                 "gaussian",
                 "--multigpu",
-                "--checkpoint",
-                "1",
             ]
         elif train_cmd == "abinit_het":
             args = [
                 "--num-epochs",
-                "3",
+                "5",
                 "--zdim",
                 "4",
                 "--lr",
@@ -306,8 +332,6 @@ class TestHeterogeneous:
                 "2",
                 "--pretrain",
                 "50",
-                "--checkpoint",
-                "1",
             ]
             if train_type == "drgnai":
                 args += ["--n-imgs-pose-search", "10"]
@@ -337,6 +361,8 @@ class TestHeterogeneous:
             cmd_args += ["--ctf", ctf.path]
         if indices.path is not None:
             cmd_args += ["--ind", indices.path]
+        if checkpoint is not None:
+            cmd_args += ["--checkpoint", str(checkpoint)]
 
         return TrainCommand(train_cmd, cmd_args, odir, train_type, poses=poses.path)
 
@@ -361,8 +387,8 @@ class TestHeterogeneous:
 
         traincmd.run()
         out_files = os.listdir(traincmd.outdir)
-        assert "weights.3.pkl" in out_files, "Missing output model weights!"
-        assert "z.3.pkl" in out_files, "Missing output latent conformations!"
+        assert "weights.5.pkl" in out_files, "Missing output model weights!"
+        assert "z.5.pkl" in out_files, "Missing output latent conformations!"
 
     @pytest.mark.parametrize(
         "train_cmd, train_type, particles, ctf, indices, poses",
@@ -383,7 +409,7 @@ class TestHeterogeneous:
     def test_train_from_checkpoint(self, traincmd):
         """Load a cached model and run for another epoch, now without --multigpu."""
 
-        traincmd.args += ["--load", os.path.join(traincmd.outdir, "weights.3.pkl")]
+        traincmd.args += ["--load", os.path.join(traincmd.outdir, "weights.5.pkl")]
         if "--multigpu" in traincmd.args:
             i = traincmd.args.index("--multigpu")
             traincmd.args = traincmd.args[:i] + traincmd.args[(i + 1) :]
@@ -394,8 +420,8 @@ class TestHeterogeneous:
         #       current DRGN-AI?
         traincmd.run()
         out_files = os.listdir(traincmd.outdir)
-        assert "weights.4.pkl" in out_files, "Missing output model weights!"
-        assert "z.4.pkl" in out_files, "Missing output latent conformations!"
+        assert "weights.6.pkl" in out_files, "Missing output model weights!"
+        assert "z.6.pkl" in out_files, "Missing output latent conformations!"
 
     @pytest.mark.parametrize(
         "train_cmd, train_type, particles, ctf, indices, poses",
@@ -421,14 +447,18 @@ class TestHeterogeneous:
         if epoch is not None:
             args += [str(epoch)]
         else:
-            epoch = 4
+            epoch = 6
         args += ["--ksample", str(ksample)]
 
         parser = argparse.ArgumentParser()
         cryodrgn.commands.analyze.add_args(parser)
         cryodrgn.commands.analyze.main(parser.parse_args(args))
 
-        assert os.path.exists(os.path.join(traincmd.outdir, f"analyze.{epoch}"))
+        anlzdir = os.path.join(traincmd.outdir, f"analyze.{epoch}")
+        assert os.path.exists(anlzdir)
+        assert os.path.exists(os.path.join(anlzdir, "z_pca.png"))
+        assert os.path.exists(os.path.join(anlzdir, "pc2_10"))
+        assert os.path.exists(os.path.join(anlzdir, f"kmeans{ksample}"))
 
     @pytest.mark.parametrize(
         "train_cmd, train_type, particles, ctf, indices, poses",
@@ -462,7 +492,7 @@ class TestHeterogeneous:
         """Execute the demonstration Jupyter notebooks produced by analysis."""
 
         orig_cwd = os.path.abspath(os.getcwd())
-        os.chdir(os.path.join(traincmd.outdir, "analyze.3"))
+        os.chdir(os.path.join(traincmd.outdir, "analyze.5"))
         assert os.path.exists(f"{nb_lbl}.ipynb"), "Upstream tests have failed!"
 
         with open(f"{nb_lbl}.ipynb") as ff:
@@ -516,7 +546,7 @@ class TestHeterogeneous:
         )
         args = [
             traincmd.outdir,
-            "4",  # Epoch number to analyze - 0-indexed
+            "6",  # Epoch number to analyze - 0-indexed
             "--sketch-size",
             "2",  # Number of volumes to generate for analysis
             "--pc-dim",
@@ -553,7 +583,7 @@ class TestHeterogeneous:
         )
         args = [
             traincmd.outdir,
-            "4",
+            "6",
             "-N",
             "2",
             "--landscape-dir",
@@ -571,7 +601,6 @@ class TestHeterogeneous:
     @pytest.mark.parametrize(
         "train_cmd, train_type, particles, ctf, indices, poses",
         [
-            ("train_vae", "drgnai", "toy.mrcs", "CTF-Test", "random-100", "toy-poses"),
             ("train_vae", "drgnai", "toy.star", "CTF-Test", "100", "toy-poses"),
             ("abinit_het", "drgnai", "hand-5", "CTF1", None, "toy-poses"),
             ("train_vae", "cdrgn-train", "toy.mrcs", "CTF-Test", "100", "toy-poses"),
@@ -583,7 +612,7 @@ class TestHeterogeneous:
     def test_landscape_notebook(self, traincmd, downsample_dim, flip_vol):
         """Execute the demo Jupyter notebooks produced by landscape analysis."""
         orig_cwd = os.path.abspath(os.getcwd())
-        outlbl = f"landscape.4_{downsample_dim}.{flip_vol}"
+        outlbl = f"landscape.6_{downsample_dim}.{flip_vol}"
         os.chdir(os.path.join(traincmd.outdir, outlbl))
         nb_outfile = "analyze-landscape.ipynb"
         assert os.path.exists(nb_outfile)
@@ -625,7 +654,7 @@ class TestHeterogeneous:
 
         parser = argparse.ArgumentParser()
         cryodrgn.commands.direct_traversal.add_args(parser)
-        args = [os.path.join(traincmd.outdir, "z.3.pkl"), "--anchors"] + anchors
+        args = [os.path.join(traincmd.outdir, "z.5.pkl"), "--anchors"] + anchors
         if points is not None:
             args += ["-n", str(points)]
 
@@ -647,7 +676,7 @@ class TestHeterogeneous:
         ],
         indirect=["particles", "ctf", "indices", "poses"],
     )
-    @pytest.mark.parametrize("epoch, seed, steps", [(4, 707, 3), (2, 11, 4)])
+    @pytest.mark.parametrize("epoch, seed, steps", [(5, 707, 3), (2, 11, 4)])
     def test_graph_traversal(self, traincmd, epoch, seed, steps):
         random.seed(seed)
         anchors = [str(anchor) for anchor in random.sample(range(5), steps)]
@@ -682,7 +711,7 @@ class TestHeterogeneous:
         ],
         indirect=["particles", "ctf", "indices", "poses"],
     )
-    @pytest.mark.parametrize("epoch", [2, 4])
+    @pytest.mark.parametrize("epoch", [3, 5])
     def test_eval_volume(self, traincmd, epoch):
         parser = argparse.ArgumentParser()
         cryodrgn.commands.eval_vol.add_args(parser)
@@ -710,7 +739,7 @@ class TestHeterogeneous:
         ],
         indirect=["particles", "ctf", "indices", "poses"],
     )
-    @pytest.mark.parametrize("epoch", [1, 4])
+    @pytest.mark.parametrize("epoch", [1, 5])
     def test_eval_images(self, traincmd, epoch):
         parser = argparse.ArgumentParser()
         cryodrgn.commands.eval_images.add_args(parser)
@@ -754,8 +783,8 @@ class TestHeterogeneous:
                     raises=ValueError, reason="palette not available in seaborn!"
                 ),
             ),
-            (4, None, None),
-            (4, None, "plots"),
+            (6, None, None),
+            (6, None, "plots"),
         ],
     )
     def test_plot_classes(self, traincmd, epoch, palette, plot_outdir):

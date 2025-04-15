@@ -58,7 +58,6 @@ class SetupRequest:
         add_cfgs = [
             "pretrain=10",
             "hidden_dim=8",
-            "checkpoint=1",
             "learning_rate=0.1",
             "t_ngrid=2",
             "pe_dim=4",
@@ -129,6 +128,7 @@ def test_empty_setup(tmpdir_factory):
         ("cryodrgn-ai", "toy.txt", "CTF-Test", "toy-poses", None, None, None, "fixed"),
         ("cryodrgn", "hand", None, "hand-poses", "5", None, None, "fixed"),
         ("cryodrgn", "toy.txt", "CTF-Test", "toy-poses", "5", None, None, "abinit"),
+        (None, "toy.txt", "CTF-Test", None, "5", None, None, "abinit"),
     ],
     indirect=["particles", "ctf", "poses", "indices", "datadir"],
 )
@@ -236,7 +236,12 @@ class TestSetupThenRun:
             os.path.join(setup_request.outdir, "config.yaml")
         )
 
-        assert configs["model_args"]["model"] == setup_request.model
+        # Default model if not given should always be cryoDRGN-AI
+        if setup_request.model is not None:
+            assert configs["model_args"]["model"] == setup_request.model
+        else:
+            assert configs["model_args"]["model"] == "cryodrgn-ai"
+
         assert configs["dataset_args"]["particles"] == setup_request.particles
         assert configs["dataset_args"]["ctf"] == setup_request.ctf
         assert configs["dataset_args"]["poses"] == setup_request.poses

@@ -123,7 +123,7 @@ class ReconstructionModelConfigurations(BaseConfigurations):
     num_workers: int = 0
     # how often to print log messages and save trained model data
     log_interval: int = 1000
-    checkpoint: int = 5
+    checkpoint: int = 1
     # if using a cryo-ET dataset, description of dataset tilting parameters
     tilt: bool = False
     n_tilts: int = 11

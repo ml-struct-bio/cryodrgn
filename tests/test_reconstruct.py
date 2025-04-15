@@ -6,6 +6,7 @@ import os.path
 import shutil
 import random
 import numpy as np
+from typing import Optional
 
 import nbformat
 from nbclient.exceptions import CellExecutionError
@@ -111,6 +112,49 @@ class TrainCommand:
             return int(self.args[self.args.index("--checkpoint") + 1])
         else:
             return 1
+
+    @property
+    def num_epochs(self) -> int:
+        if "--num-epochs" in self.args:
+            return int(self.args[self.args.index("--num-epochs") + 1])
+        elif "-n" in self.args:
+            return int(self.args[self.args.index("-n") + 1])
+        else:
+            return 30
+
+    def make_checkpoint(self, epoch: int) -> bool:
+        make_chk = epoch % self.checkpoint == 0 or epoch == self.num_epochs
+        make_chk |= (
+            self.train_type == "drgnai"
+            and self.train_cmd in {"abinit_homo", "abinit_het"}
+            and epoch <= 2
+        )
+        make_chk |= (
+            self.train_type != "drgnai"
+            and self.train_cmd in {"abinit_homo", "abinit_het"}
+            and (epoch - 1) % 2 == 0
+        )
+
+        return make_chk
+
+    def replace_checkpoint(self, new_checkpoint: Optional[int] = None) -> None:
+        if "--checkpoint" in self.args:
+            cindx = self.args.index("--checkpoint")
+            if len(self.args) > cindx + 2:
+                self.args = self.args[:cindx] + self.args[(cindx + 2) :]
+            else:
+                self.args = self.args[:cindx]
+
+        if new_checkpoint is not None:
+            self.args += ["--checkpoint", str(new_checkpoint)]
+
+    def clean_output(self):
+        for f in os.listdir(self.outdir):
+            if f != "config.yaml":
+                if os.path.isfile(os.path.join(self.outdir, f)):
+                    os.remove(os.path.join(self.outdir, f))
+                else:
+                    shutil.rmtree(os.path.join(self.outdir, f))
 
 
 @pytest.mark.parametrize(
@@ -226,19 +270,7 @@ class TestHomogeneous:
             epoch_iter = range(1, 5)
 
         for epoch in epoch_iter:
-            make_chk = epoch % traincmd.checkpoint == 0 or epoch == 6
-            make_chk |= (
-                traincmd.train_type == "drgnai"
-                and traincmd.train_cmd == "abinit_homo"
-                and epoch <= 2
-            )
-            make_chk |= (
-                traincmd.train_type != "drgnai"
-                and traincmd.train_cmd == "abinit_homo"
-                and (epoch - 1) % 2 == 0
-            )
-
-            if make_chk:
+            if traincmd.make_checkpoint(epoch):
                 assert (
                     f"weights.{epoch}.pkl" in out_files
                 ), f"Missing output model weights for epoch {epoch}!"
@@ -278,7 +310,6 @@ class TestHomogeneous:
         ), "Created empty analysis folder!"
 
 
-@pytest.mark.parametrize("checkpoint", [1])
 class TestHeterogeneous:
     @pytest.fixture
     def traincmd(
@@ -290,7 +321,6 @@ class TestHeterogeneous:
         poses,
         ctf,
         indices,
-        checkpoint,
     ) -> TrainCommand:
         """Run an experiment to generate output; remove this output when finished."""
         if train_cmd == "train_vae":
@@ -361,10 +391,36 @@ class TestHeterogeneous:
             cmd_args += ["--ctf", ctf.path]
         if indices.path is not None:
             cmd_args += ["--ind", indices.path]
-        if checkpoint is not None:
-            cmd_args += ["--checkpoint", str(checkpoint)]
 
         return TrainCommand(train_cmd, cmd_args, odir, train_type, poses=poses.path)
+
+    def check_outputs(self, train_cmd: TrainCommand) -> None:
+        out_files = os.listdir(train_cmd.outdir)
+
+        for epoch in range(1, train_cmd.num_epochs + 1):
+            if train_cmd.make_checkpoint(epoch):
+                assert (
+                    f"weights.{epoch}.pkl" in out_files
+                ), f"Missing output model weights for epoch {epoch}!"
+                assert (
+                    f"z.{epoch}.pkl" in out_files
+                ), f"Missing latent space conformations for epoch {epoch}!"
+                if train_cmd.train_cmd == "train_vae":
+                    assert (
+                        f"pose.{epoch}.pkl" not in out_files
+                    ), "Fixed-pose reconstruction shouldn't output poses!"
+                else:
+                    assert train_cmd.train_cmd == "abinit_het"
+                    assert (
+                        f"pose.{epoch}.pkl" in out_files
+                    ), f"Missing output inferred poses for epoch {epoch}!"
+            else:
+                assert (
+                    f"weights.{epoch}.pkl" not in out_files
+                ), f"Extraneous output model weights for epoch {epoch}!"
+                assert (
+                    f"z.{epoch}.pkl" not in out_files
+                ), f"Extraneous latent space conformations for epoch {epoch}!"
 
     @pytest.mark.parametrize(
         "train_cmd, train_type, particles, ctf, indices, poses",
@@ -384,11 +440,17 @@ class TestHeterogeneous:
     )
     def test_train_model(self, traincmd):
         """Train the initial heterogeneous model."""
-
         traincmd.run()
-        out_files = os.listdir(traincmd.outdir)
-        assert "weights.5.pkl" in out_files, "Missing output model weights!"
-        assert "z.5.pkl" in out_files, "Missing output latent conformations!"
+        self.check_outputs(traincmd)
+        traincmd.clean_output()
+
+        for checkpoint in [3, 2, 1]:
+            traincmd.replace_checkpoint(checkpoint)
+            traincmd.run()
+            self.check_outputs(traincmd)
+
+            if checkpoint > 1:
+                traincmd.clean_output()
 
     @pytest.mark.parametrize(
         "train_cmd, train_type, particles, ctf, indices, poses",

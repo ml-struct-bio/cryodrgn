@@ -30,45 +30,48 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         help="Path to the directory that will be created for this experiment",
     )
 
-    parser.add_argument(
+    inputs_group = parser.add_argument_group("Listing Input Datasets")
+    inputs_group.add_argument(
+        "--dataset", help="which dataset to run the experiment on"
+    )
+    inputs_group.add_argument(
+        "--particles", help="path to the picked particles (.mrcs/.star /.txt)"
+    )
+    inputs_group.add_argument("--ctf", help="path to the CTF parameters (.pkl)")
+    inputs_group.add_argument("--poses", help="path to the poses (.pkl)")
+    inputs_group.add_argument("--ind", help="path to filtering indices (.pkl)")
+    inputs_group.add_argument(
+        "--datadir",
+        help="Path prefix to particle stack if loading relative "
+        "paths from a .star or .cs file",
+    )
+
+    training_group = parser.add_argument_group("Reconstruction Training Parameters")
+    training_group.add_argument(
         "--model",
         "-m",
         default="cryodrgn-ai",
         choices=["cryodrgn-ai", "cryodrgn"],
         help="which generation of cryoDRGN learning models to apply",
     )
-
-    parser.add_argument("--dataset", help="which dataset to run the experiment on")
-    parser.add_argument(
-        "--particles", help="path to the picked particles (.mrcs/.star /.txt)"
-    )
-    parser.add_argument("--ctf", help="path to the CTF parameters (.pkl)")
-    parser.add_argument("--poses", help="path to the poses (.pkl)")
-    parser.add_argument("--ind", help="path to filtering indices (.pkl)")
-    parser.add_argument(
-        "--datadir",
-        help="Path prefix to particle stack if loading relative "
-        "paths from a .star or .cs file",
-    )
-
-    parser.add_argument(
+    training_group.add_argument(
         "--reconstruction-type",
         choices=["het", "homo"],
         help="homogeneous or heterogeneous (default) reconstruction with z-dim=8?",
     )
-    parser.add_argument(
+    training_group.add_argument(
         "--z-dim",
         type=int,
         help="homogeneous or heterogeneous (default) reconstruction when z-dim>0?",
     )
-    parser.add_argument(
+    training_group.add_argument(
         "--pose-estimation",
         choices=["abinit", "refine", "fixed"],
         help="`abinit` for no initialization (default), `refine` to refine "
         "ground truth poses by gradient descent or `fixed` to use ground "
         "truth poses",
     )
-    parser.add_argument(
+    training_group.add_argument(
         "--tilt",
         action="store_true",
         help="specify if using a tilt series",

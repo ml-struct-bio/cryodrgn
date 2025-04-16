@@ -11,8 +11,7 @@ This command can be used to train any model included in cryoDRGN, including:
 
 Example usage
 --------------
-
-$ cryodrgn train new-test --model=cryodrgn
+$ cryodrgn train new-test
 
 # Submit reconstruction task to a compute cluster with Slurm installed
 $ sbatch -t 3:00:00 --wrap='cryodrgn train new-test' --mem=16G -o new-test.out
@@ -40,60 +39,64 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         help="Path to the directory that has been created for this experiment",
     )
 
-    parser.add_argument(
-        "-n",
-        "--num-epochs",
-        type=int,
-        help="Number of training epochs (default: %(default)s)",
-    )
-    parser.add_argument(
+    outputs_group = parser.add_argument_group("Managing Model Outputs and Logging")
+    outputs_group.add_argument(
         "--checkpoint",
         type=int,
         help="Checkpointing interval in N_EPOCHS (default: %(default)s)",
     )
-    parser.add_argument(
+    outputs_group.add_argument(
         "--log-interval",
         type=int,
         help="Logging interval in N_IMGS",
     )
-    parser.add_argument(
+    outputs_group.add_argument(
         "-v", "--verbose", action="store_true", help="Increase verbosity"
     )
-    parser.add_argument("--seed", type=int, help="Random seed for use with e.g. numpy")
 
-    parser.add_argument(
+    loading_group = parser.add_argument_group("Managing Dataset Loading and Parsing")
+    loading_group.add_argument(
         "--lazy",
         action="store_true",
         help="Lazy loading if full dataset is too large to fit in memory",
     )
-    parser.add_argument(
+    loading_group.add_argument(
         "--shuffler-size",
         type=int,
         help="If non-zero, will use a data shuffler for faster lazy data loading.",
     )
-    parser.add_argument(
+    loading_group.add_argument(
         "--max-threads",
         type=int,
         help="Maximum number of CPU cores for data loading",
     )
 
-    parser.add_argument(
+    training_group = parser.add_argument_group("Listing Input Datasets")
+    training_group.add_argument(
+        "-n",
+        "--num-epochs",
+        type=int,
+        help="Number of training epochs (default: %(default)s)",
+    )
+    training_group.add_argument(
         "-b",
         "--batch-size",
         type=int,
         help="Minibatch size (default: %(default)s)",
     )
-
-    parser.add_argument(
+    training_group.add_argument(
         "--no-amp",
         action="store_false",
         dest="amp",
         help="Do not use mixed-precision training for accelerating training",
     )
-    parser.add_argument(
+    training_group.add_argument(
         "--multigpu",
         action="store_true",
         help="Parallelize training across all detected GPUs",
+    )
+    training_group.add_argument(
+        "--seed", type=int, help="Random seed for use with e.g. numpy"
     )
 
     parser.add_argument(

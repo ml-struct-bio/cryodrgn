@@ -475,59 +475,64 @@ class ModelAnalyzer:
         plt.close()
 
         # PCA -- Style 2 -- Scatter, with marginals
-        g = sns.jointplot(
-            x=pc[:, 0], y=pc[:, 1], alpha=0.1, s=1, rasterized=True, height=4
-        )
-        plt_pc_labels_jointplot(g)
-        plt.tight_layout()
-        plt.savefig(os.path.join(self.outdir, "z_pca_marginals.png"))
-        plt.close()
-
-        # PCA -- Style 3 -- Hexbin
-        try:
-            g = sns.jointplot(x=pc[:, 0], y=pc[:, 1], height=4, kind="hex")
+        if pc.shape[0] > 10:
+            g = sns.jointplot(
+                x=pc[:, 0], y=pc[:, 1], alpha=0.1, s=1, rasterized=True, height=4
+            )
             plt_pc_labels_jointplot(g)
             plt.tight_layout()
-            plt.savefig(os.path.join(self.outdir, "z_pca_hexbin.png"))
-            plt.close()
-        except ZeroDivisionError:
-            print("Data too small to produce hexbins!")
-
-        if umap_emb is not None:
-            # Style 1 -- Scatter
-            plt.figure(figsize=(4, 4))
-            plt.scatter(umap_emb[:, 0], umap_emb[:, 1], alpha=0.1, s=1, rasterized=True)
-            plt_umap_labels()
-            plt.tight_layout()
-            plt.savefig(os.path.join(self.outdir, "umap.png"))
+            plt.savefig(os.path.join(self.outdir, "z_pca_marginals.png"))
             plt.close()
 
-            # Style 2 -- Scatter with marginal distributions
-            g = sns.jointplot(
-                x=umap_emb[:, 0],
-                y=umap_emb[:, 1],
-                alpha=0.1,
-                s=1,
-                rasterized=True,
-                height=4,
-            )
-
-            plt_umap_labels_jointplot(g)
-            plt.tight_layout()
-            plt.savefig(os.path.join(self.outdir, "umap_marginals.png"))
-            plt.close()
-
-            # Style 3 -- Hexbin / heatmap
+            # PCA -- Style 3 -- Hexbin
             try:
-                g = sns.jointplot(
-                    x=umap_emb[:, 0], y=umap_emb[:, 1], kind="hex", height=4
-                )
-                plt_umap_labels_jointplot(g)
+                g = sns.jointplot(x=pc[:, 0], y=pc[:, 1], height=4, kind="hex")
+                plt_pc_labels_jointplot(g)
                 plt.tight_layout()
-                plt.savefig(os.path.join(self.outdir, "umap_hexbin.png"))
+                plt.savefig(os.path.join(self.outdir, "z_pca_hexbin.png"))
                 plt.close()
             except ZeroDivisionError:
-                logger.warning("Data too small for marginal distribution scatterplots!")
+                print("Data too small to produce hexbins!")
+
+            if umap_emb is not None:
+                # Style 1 -- Scatter
+                plt.figure(figsize=(4, 4))
+                plt.scatter(
+                    umap_emb[:, 0], umap_emb[:, 1], alpha=0.1, s=1, rasterized=True
+                )
+                plt_umap_labels()
+                plt.tight_layout()
+                plt.savefig(os.path.join(self.outdir, "umap.png"))
+                plt.close()
+
+                # Style 2 -- Scatter with marginal distributions
+                g = sns.jointplot(
+                    x=umap_emb[:, 0],
+                    y=umap_emb[:, 1],
+                    alpha=0.1,
+                    s=1,
+                    rasterized=True,
+                    height=4,
+                )
+
+                plt_umap_labels_jointplot(g)
+                plt.tight_layout()
+                plt.savefig(os.path.join(self.outdir, "umap_marginals.png"))
+                plt.close()
+
+                # Style 3 -- Hexbin / heatmap
+                try:
+                    g = sns.jointplot(
+                        x=umap_emb[:, 0], y=umap_emb[:, 1], kind="hex", height=4
+                    )
+                    plt_umap_labels_jointplot(g)
+                    plt.tight_layout()
+                    plt.savefig(os.path.join(self.outdir, "umap_hexbin.png"))
+                    plt.close()
+                except ZeroDivisionError:
+                    logger.warning(
+                        "Data too small for marginal distribution scatterplots!"
+                    )
 
         # Plot kmeans sample points
         colors = cryodrgn.analysis._get_chimerax_colors(self.ksample)
@@ -543,7 +548,10 @@ class ModelAnalyzer:
         plt.savefig(f"{self.outdir}/kmeans{self.ksample}/z_pca.png")
         plt.close()
 
-        try:
+        if pc.shape[0] == 5 and self.outdir.endswith(".6"):
+            print("XXX")
+
+        if pc.shape[0] > 10:
             g = cryodrgn.analysis.scatter_annotate_hex(
                 pc[:, 0],
                 pc[:, 1],
@@ -551,13 +559,15 @@ class ModelAnalyzer:
                 annotate=True,
                 colors=colors,
             )
-        except ZeroDivisionError:
-            logger.warning("Data too small to generate PCA annotated hexes!")
+            plt_pc_labels_jointplot(g)
+            plt.tight_layout()
+            plt.savefig(
+                os.path.join(self.outdir, f"kmeans{self.ksample}", "z_pca_hex.png")
+            )
 
-        plt_pc_labels_jointplot(g)
-        plt.tight_layout()
-        plt.savefig(os.path.join(self.outdir, f"kmeans{self.ksample}", "z_pca_hex.png"))
-        plt.close()
+            plt.close()
+        else:
+            logger.warning("Data too small to generate PCA annotated hexes!")
 
         if umap_emb is not None:
             cryodrgn.analysis.scatter_annotate(
@@ -572,7 +582,7 @@ class ModelAnalyzer:
             plt.savefig(os.path.join(self.outdir, f"kmeans{self.ksample}", "umap.png"))
             plt.close()
 
-            try:
+            if umap_emb.shape[0] > 10:
                 g = cryodrgn.analysis.scatter_annotate_hex(
                     umap_emb[:, 0],
                     umap_emb[:, 1],
@@ -585,9 +595,8 @@ class ModelAnalyzer:
                 plt.savefig(
                     os.path.join(self.outdir, f"kmeans{self.ksample}", "umap_hex.png")
                 )
+
                 plt.close()
-            except ZeroDivisionError:
-                logger.warning("Data too small to generate UMAP annotated hexes!")
 
         # Plot PC trajectories
         for i in range(self.pc):
@@ -690,43 +699,44 @@ class ModelAnalyzer:
             plt.savefig(os.path.join(pc_path, "pca_traversal.png"))
             plt.close()
 
-            if i > 0 and i == self.pc - 1:
-                g = sns.jointplot(
-                    x=pc[:, i - 1],
-                    y=pc[:, i],
-                    alpha=0.1,
-                    s=1,
-                    rasterized=True,
-                    height=4,
-                )
-                g.ax_joint.scatter(
-                    np.zeros(self.n_per_pc),
-                    t,
-                    c="cornflowerblue",
-                    edgecolor="white",
-                )
-                plt_pc_labels_jointplot(g, i - 1, i)
+            if pc.shape[0] > 10:
+                if i > 0 and i == self.pc - 1:
+                    g = sns.jointplot(
+                        x=pc[:, i - 1],
+                        y=pc[:, i],
+                        alpha=0.1,
+                        s=1,
+                        rasterized=True,
+                        height=4,
+                    )
+                    g.ax_joint.scatter(
+                        np.zeros(self.n_per_pc),
+                        t,
+                        c="cornflowerblue",
+                        edgecolor="white",
+                    )
+                    plt_pc_labels_jointplot(g, i - 1, i)
 
-            else:
-                g = sns.jointplot(
-                    x=pc[:, i],
-                    y=pc[:, i + 1],
-                    alpha=0.1,
-                    s=1,
-                    rasterized=True,
-                    height=4,
-                )
-                g.ax_joint.scatter(
-                    t,
-                    np.zeros(self.n_per_pc),
-                    c="cornflowerblue",
-                    edgecolor="white",
-                )
-                plt_pc_labels_jointplot(g)
+                else:
+                    g = sns.jointplot(
+                        x=pc[:, i],
+                        y=pc[:, i + 1],
+                        alpha=0.1,
+                        s=1,
+                        rasterized=True,
+                        height=4,
+                    )
+                    g.ax_joint.scatter(
+                        t,
+                        np.zeros(self.n_per_pc),
+                        c="cornflowerblue",
+                        edgecolor="white",
+                    )
+                    plt_pc_labels_jointplot(g)
 
-            plt.tight_layout()
-            plt.savefig(os.path.join(pc_path, "pca_traversal_hex.png"))
-            plt.close()
+                plt.tight_layout()
+                plt.savefig(os.path.join(pc_path, "pca_traversal_hex.png"))
+                plt.close()
 
     @staticmethod
     def linear_interpolation(z_0, z_1, n, exclude_last=False):

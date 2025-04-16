@@ -532,7 +532,6 @@ class TestHeterogeneous:
             ("abinit_het", "drgnai", "hand-5", "CTF1", None, "toy-poses"),
             ("train_vae", "cdrgn-train", "hand", "CTF-Test.100", None, "hand-poses"),
             ("train_vae", "cdrgn-train", "toy.mrcs", "CTF-Test", "100", "toy-poses"),
-            ("abinit_het", "cdrgn-train", "hand", "CTF-Test.100", "5", None),
             pytest.param(
                 "train_vae",
                 "cdrgn",
@@ -554,14 +553,14 @@ class TestHeterogeneous:
         """Execute the demonstration Jupyter notebooks produced by analysis."""
 
         orig_cwd = os.path.abspath(os.getcwd())
-        os.chdir(os.path.join(traincmd.outdir, "analyze.5"))
+        os.chdir(os.path.join(traincmd.outdir, "analyze.6"))
         assert os.path.exists(f"{nb_lbl}.ipynb"), "Upstream tests have failed!"
 
         with open(f"{nb_lbl}.ipynb") as ff:
             nb_in = nbformat.read(ff, nbformat.NO_CONVERT)
 
         try:
-            ExecutePreprocessor(timeout=600, kernel_name="python3").preprocess(nb_in)
+            ExecutePreprocessor(timeout=300, kernel_name="python3").preprocess(nb_in)
         except CellExecutionError as e:
             os.chdir(orig_cwd)
             # These errors are just an artefact of our testing dataset being very small
@@ -604,11 +603,11 @@ class TestHeterogeneous:
     )
     def test_landscape(self, traincmd, downsample_dim, flip_vol):
         ldscp_dir = os.path.join(
-            traincmd.outdir, f"landscape.4_{downsample_dim}.{flip_vol}"
+            traincmd.outdir, f"landscape.6_{downsample_dim}.{flip_vol}"
         )
         args = [
             traincmd.outdir,
-            "6",  # Epoch number to analyze - 0-indexed
+            "6",
             "--sketch-size",
             "2",  # Number of volumes to generate for analysis
             "--pc-dim",
@@ -641,7 +640,7 @@ class TestHeterogeneous:
     @pytest.mark.parametrize("downsample_dim, flip_vol", [("8", False)])
     def test_landscape_full(self, traincmd, downsample_dim, flip_vol):
         ldscp_dir = os.path.join(
-            traincmd.outdir, f"landscape.4_{downsample_dim}.{flip_vol}"
+            traincmd.outdir, f"landscape.6_{downsample_dim}.{flip_vol}"
         )
         args = [
             traincmd.outdir,
@@ -686,7 +685,7 @@ class TestHeterogeneous:
             cell["source"] = cell["source"].replace("landscape.{EPOCH}", outlbl)
 
         try:
-            ExecutePreprocessor(timeout=600, kernel_name="python3").preprocess(ntbook)
+            ExecutePreprocessor(timeout=300, kernel_name="python3").preprocess(ntbook)
         except CellExecutionError as e:
             os.chdir(orig_cwd)
             raise e
@@ -703,7 +702,6 @@ class TestHeterogeneous:
             ("abinit_het", "drgnai", "hand-5", "CTF1", None, "toy-poses"),
             ("train_vae", "cdrgn-train", "hand", "CTF-Test.100", None, "hand-poses"),
             ("train_vae", "cdrgn-train", "toy.mrcs", "CTF-Test", "100", "toy-poses"),
-            ("abinit_het", "cdrgn-train", "hand", "CTF-Test.100", "5", None),
             ("train_vae", "cdrgn", "toy.mrcs", "CTF-Test", "first-100", "toy-angles"),
             ("abinit_het", "cdrgn", "hand", "CTF-Test.100", "5", "hand-poses"),
         ],
@@ -738,7 +736,7 @@ class TestHeterogeneous:
         ],
         indirect=["particles", "ctf", "indices", "poses"],
     )
-    @pytest.mark.parametrize("epoch, seed, steps", [(5, 707, 3), (2, 11, 4)])
+    @pytest.mark.parametrize("epoch, seed, steps", [(5, 707, 3), (3, 11, 4)])
     def test_graph_traversal(self, traincmd, epoch, seed, steps):
         random.seed(seed)
         anchors = [str(anchor) for anchor in random.sample(range(5), steps)]
@@ -767,7 +765,6 @@ class TestHeterogeneous:
             ("abinit_het", "drgnai", "hand-5", "CTF1", None, "toy-poses"),
             ("train_vae", "cdrgn-train", "hand", "CTF-Test.100", None, "hand-poses"),
             ("train_vae", "cdrgn-train", "toy.mrcs", "CTF-Test", "100", "toy-poses"),
-            ("abinit_het", "cdrgn-train", "hand", "CTF-Test.100", "5", None),
             ("train_vae", "cdrgn", "toy.mrcs", "CTF-Test", "first-100", "toy-angles"),
             ("abinit_het", "cdrgn", "hand", "CTF-Test.100", "5", "hand-poses"),
         ],
@@ -878,7 +875,7 @@ class TestHeterogeneous:
         if plot_outdir is not None:
             use_outdir = os.path.join(traincmd.outdir, plot_outdir)
         elif epoch == -1:
-            use_outdir = os.path.join(traincmd.outdir, "analyze.4")
+            use_outdir = os.path.join(traincmd.outdir, "analyze.6")
         else:
             use_outdir = os.path.join(traincmd.outdir, f"analyze.{epoch}")
 

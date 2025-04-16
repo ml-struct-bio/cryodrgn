@@ -20,248 +20,251 @@ from cryodrgn.trainers.hps_trainer import HierarchicalPoseSearchTrainer
 def add_args(parser: argparse.ArgumentParser) -> None:
     """The command-line arguments for use with the command `cryodrgn abinit_homo`."""
 
-    parser.add_argument(
+    inputs_group = parser.add_argument_group("Listing Input Datasets")
+    inputs_group.add_argument(
         "particles",
         type=os.path.abspath,
         help="Input particles (.mrcs, .star, .cs, or .txt)",
     )
-    parser.add_argument(
+    inputs_group.add_argument(
+        "--ctf", metavar="pkl", type=os.path.abspath, help="CTF parameters (.pkl)"
+    )
+    inputs_group.add_argument("--ind", help="Filter particle stack by these indices")
+    inputs_group.add_argument(
+        "--datadir",
+        type=os.path.abspath,
+        help="Path prefix to particle stack if loading relative paths from a .star or .cs file",
+    )
+    inputs_group.add_argument("--load", help="Initialize training from a checkpoint")
+    inputs_group.add_argument(
+        "--load-poses",
+        type=os.path.abspath,
+        help="Initialize training from a checkpoint",
+    )
+
+    outputs_group = parser.add_argument_group("Managing Model Outputs and Logging")
+    outputs_group.add_argument(
         "-o",
         "--outdir",
         type=os.path.abspath,
         required=True,
         help="Output directory to save model",
     )
-    parser.add_argument(
-        "--ctf", metavar="pkl", type=os.path.abspath, help="CTF parameters (.pkl)"
+    outputs_group.add_argument(
+        "--checkpoint",
+        type=int,
+        default=1,
+        help="Checkpointing interval in N_EPOCHS (default: %(default)s)",
     )
-    parser.add_argument("--ind", help="Filter particle stack by these indices")
-    parser.add_argument(
-        "--datadir",
-        type=os.path.abspath,
-        help="Path prefix to particle stack if loading relative paths from a .star or .cs file",
+    outputs_group.add_argument(
+        "--log-interval",
+        type=int,
+        default=1000,
+        help="Logging interval in N_IMGS (default: %(default)s)",
+    )
+    outputs_group.add_argument(
+        "-v", "--verbose", action="store_true", help="Increase verbosity"
     )
 
-    parser.add_argument(
+    loading_group = parser.add_argument_group("Managing Dataset Loading and Parsing")
+    loading_group.add_argument(
         "--norm",
         type=float,
         nargs=2,
         default=None,
         help="Data normalization as shift, 1/scale (default: mean, std of dataset)",
     )
-    parser.add_argument(
-        "--no-amp",
-        action="store_false",
-        dest="amp",
-        help="Do not use mixed-precision training",
-    )
-    parser.add_argument("--load", help="Initialize training from a checkpoint")
-    parser.add_argument(
-        "--load-poses",
-        type=os.path.abspath,
-        help="Initialize training from a checkpoint",
-    )
-    parser.add_argument(
-        "--checkpoint",
-        type=int,
-        default=1,
-        help="Checkpointing interval in N_EPOCHS (default: %(default)s)",
-    )
-    parser.add_argument(
-        "--log-interval",
-        type=int,
-        default=1000,
-        help="Logging interval in N_IMGS (default: %(default)s)",
-    )
-    parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Increase verbosity"
-    )
-    parser.add_argument(
-        "--seed", type=int, default=np.random.randint(0, 100000), help="Random seed"
-    )
-    parser.add_argument(
+    loading_group.add_argument(
         "--uninvert-data",
         dest="invert_data",
         action="store_false",
         help="Do not invert data sign",
     )
-    parser.add_argument(
+    loading_group.add_argument(
         "--no-window",
         dest="window",
         action="store_false",
         help="Turn off real space windowing of dataset",
     )
-    parser.add_argument(
+    loading_group.add_argument(
         "--window-r",
         type=float,
         default=0.85,
         help="Windowing radius (default: %(default)s)",
     )
-
-    parser.add_argument(
+    loading_group.add_argument(
         "--lazy",
         action="store_true",
         help="Lazy loading if full dataset is too large to fit in memory",
     )
-    parser.add_argument(
+    loading_group.add_argument(
         "--shuffler-size",
         type=int,
         default=0,
         help="If non-zero, will use a data shuffler for faster lazy data loading.",
     )
 
-    group = parser.add_argument_group("Tilt series")
-    group.add_argument("--tilt", help="Particle stack file (.mrcs)")
-    group.add_argument(
+    tilt_group = parser.add_argument_group("Tilt series")
+    tilt_group.add_argument("--tilt", help="Particle stack file (.mrcs)")
+    tilt_group.add_argument(
         "--tilt-deg",
         type=float,
         default=45,
         help="X-axis tilt offset in degrees (default: %(default)s)",
     )
 
-    group = parser.add_argument_group("Training parameters")
-    group.add_argument(
+    training_group = parser.add_argument_group("Reconstruction Training Parameters")
+    training_group.add_argument(
         "--t-extent",
         type=float,
         default=10,
         help="+/- pixels to search over translations (default: %(default)s)",
     )
-    group.add_argument(
+    training_group.add_argument(
         "--t-ngrid",
         type=float,
         default=7,
         help="Initial grid size for translations (default: %(default)s)",
     )
-    group.add_argument(
+    training_group.add_argument(
         "--t-xshift",
         type=float,
         default=0,
         help="X-axis translation shift (default: %(default)s)",
     )
-    group.add_argument(
+    training_group.add_argument(
         "--t-yshift",
         type=float,
         default=0,
         help="Y-axis translation shift (default: %(default)s)",
     )
-    group.add_argument(
+    training_group.add_argument(
         "--no-trans", action="store_true", help="Don't search over translations"
     )
-    group.add_argument(
+    training_group.add_argument(
         "--pretrain",
         type=int,
         default=10000,
         help="Number of initial iterations with random poses (default: %(default)s)",
     )
-    group.add_argument(
+    training_group.add_argument(
         "--ps-freq",
         type=int,
         default=5,
         help="Frequency of pose inference (default: every %(default)s epochs)",
     )
-    group.add_argument(
+    training_group.add_argument(
         "-n",
         "--num-epochs",
         type=int,
         default=30,
         help="Number of training epochs (default: %(default)s)",
     )
-    group.add_argument(
+    training_group.add_argument(
         "-b",
         "--batch-size",
         type=int,
         default=8,
         help="Minibatch size (default: %(default)s)",
     )
-    group.add_argument(
+    training_group.add_argument(
         "--wd",
         type=float,
         default=0.0,
         help="Weight decay in Adam optimizer (default: %(default)s)",
     )
-    group.add_argument(
+    training_group.add_argument(
         "--lr",
         type=float,
         default=1e-4,
         help="Learning rate in Adam optimizer (default: %(default)s)",
     )
-    group.add_argument(
+    training_group.add_argument(
         "--reset-model-every", type=int, help="If set, reset the model every N epochs"
     )
-    group.add_argument(
+    training_group.add_argument(
         "--reset-optim-every",
         type=int,
         help="If set, reset the optimizer every N epochs",
     )
-    group.add_argument(
+    training_group.add_argument(
         "--reset-optim-after-pretrain",
         type=int,
         help="If set, reset the optimizer every N epochs",
     )
+    training_group.add_argument(
+        "--no-amp",
+        action="store_false",
+        dest="amp",
+        help="Do not use mixed-precision training",
+    )
+    training_group.add_argument(
+        "--seed", type=int, default=np.random.randint(0, 100000), help="Random seed"
+    )
 
-    group = parser.add_argument_group("Pose search parameters")
-    group.add_argument(
+    pose_group = parser.add_argument_group("Pose Search Parameters")
+    pose_group.add_argument(
         "--l-start",
         type=int,
         default=12,
         help="Starting L radius (default: %(default)s)",
     )
-    group.add_argument(
+    pose_group.add_argument(
         "--l-end", type=int, default=32, help="End L radius (default: %(default)s)"
     )
-    group.add_argument(
+    pose_group.add_argument(
         "--niter",
         type=int,
         default=4,
         help="Number of iterations of grid subdivision (default: %(default)s)",
     )
-    group.add_argument(
+    pose_group.add_argument(
         "--l-ramp-epochs",
         type=int,
         default=25,
         help="Number of epochs to ramp up to --l-end (default: %(default)s)",
     )
-    group.add_argument(
+    pose_group.add_argument(
         "--probabilistic", action="store_true", help="Use probabilistic bound"
     )
-    group.add_argument(
+    pose_group.add_argument(
         "--nkeptposes",
         type=int,
         default=8,
         help="Number of poses to keep at each refinement interation during branch and bound (default: %(default)s)",
     )
-    group.add_argument(
+    pose_group.add_argument(
         "--base-healpy",
         type=int,
         default=2,
         help="Base healpy grid for pose search. Higher means exponentially higher resolution (default: %(default)s)",
     )
-    group.add_argument(
+    pose_group.add_argument(
         "--pose-model-update-freq",
         type=int,
         help="If set, only update the model used for pose search every N examples",
     )
 
-    group = parser.add_argument_group("Network Architecture")
-    group.add_argument(
+    archt_group = parser.add_argument_group("Network Architecture Parameters")
+    archt_group.add_argument(
         "--layers",
         type=int,
         default=3,
         help="Number of hidden layers (default: %(default)s)",
     )
-    group.add_argument(
+    archt_group.add_argument(
         "--dim",
         type=int,
         default=256,
         help="Number of nodes in hidden layers (default: %(default)s)",
     )
-    group.add_argument(
+    archt_group.add_argument(
         "--l-extent",
         type=float,
         default=0.5,
         help="Coordinate lattice size (if not using positional encoding) (default: %(default)s)",
     )
-    group.add_argument(
+    archt_group.add_argument(
         "--pe-type",
         choices=(
             "geom_ft",
@@ -275,24 +278,24 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         default="gaussian",
         help="Type of positional encoding (default: %(default)s)",
     )
-    group.add_argument(
+    archt_group.add_argument(
         "--pe-dim",
         type=int,
         help="Num frequencies in positional encoding (default: D/2)",
     )
-    group.add_argument(
+    archt_group.add_argument(
         "--domain",
         choices=("hartley", "fourier"),
         default="hartley",
         help="Volume decoder representation (default: %(default)s)",
     )
-    group.add_argument(
+    archt_group.add_argument(
         "--activation",
         choices=("relu", "leaky_relu"),
         default="relu",
         help="Activation (default: %(default)s)",
     )
-    group.add_argument(
+    archt_group.add_argument(
         "--feat-sigma",
         type=float,
         default=0.5,

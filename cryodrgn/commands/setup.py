@@ -3,7 +3,7 @@
 Example usage
 -------------
 $ cryodrgn setup output_dir/ \
-                 --particles particles.128.mrcs --ctf ctf.pkl --poses pose.pkl --z-dim 4
+                 --particles particles.128.mrcs --ctf ctf.pkl --poses pose.pkl --z-dim 8
 
 # Arguments not available through the command line can be specified with --cfgs/-c
 $ cryodrgn setup output_dir/ \

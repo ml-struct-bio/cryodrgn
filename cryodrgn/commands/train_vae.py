@@ -31,135 +31,141 @@ from cryodrgn.trainers.hps_trainer import HierarchicalPoseSearchTrainer
 def add_args(parser: argparse.ArgumentParser) -> None:
     """The command-line arguments for use with the command `cryodrgn train_vae`."""
 
-    parser.add_argument(
+    inputs_group = parser.add_argument_group("Listing Input Datasets")
+    inputs_group.add_argument(
         "particles",
         type=os.path.abspath,
         help="Input particles (.mrcs, .star, .cs, or .txt)",
     )
-    parser.add_argument(
+    inputs_group.add_argument(
+        "--poses", type=os.path.abspath, required=True, help="Image poses (.pkl)"
+    )
+    inputs_group.add_argument(
+        "--ctf", metavar="pkl", type=os.path.abspath, help="CTF parameters (.pkl)"
+    )
+    inputs_group.add_argument("--ind", help="Filter particle stack by these indices")
+    inputs_group.add_argument(
+        "--datadir",
+        type=os.path.abspath,
+        help="Path prefix to particle stack"
+        "if loading relative paths from a .star or .cs file",
+    )
+    inputs_group.add_argument(
+        "--load", metavar="WEIGHTS.PKL", help="Initialize training from a checkpoint"
+    )
+
+    outputs_group = parser.add_argument_group("Managing Model Outputs and Logging")
+    outputs_group.add_argument(
         "-o",
         "--outdir",
         type=os.path.abspath,
         required=True,
         help="Output directory to save model",
     )
-    parser.add_argument(
-        "--zdim", type=int, required=True, help="Dimension of latent variable"
-    )
-    parser.add_argument(
-        "--poses", type=os.path.abspath, required=True, help="Image poses (.pkl)"
-    )
-    parser.add_argument(
-        "--ctf", metavar="pkl", type=os.path.abspath, help="CTF parameters (.pkl)"
-    )
-    parser.add_argument(
-        "--load", metavar="WEIGHTS.PKL", help="Initialize training from a checkpoint"
-    )
-    parser.add_argument(
+    outputs_group.add_argument(
         "--checkpoint",
         type=int,
         default=1,
         help="Checkpointing interval in N_EPOCHS (default: %(default)s)",
     )
-    parser.add_argument(
+    outputs_group.add_argument(
         "--log-interval",
         type=int,
         default=1000,
         help="Logging interval in N_IMGS (default: %(default)s)",
     )
-    parser.add_argument(
+    outputs_group.add_argument(
         "-v", "--verbose", action="store_true", help="Increase verbosity"
     )
-    parser.add_argument(
-        "--seed", type=int, default=np.random.randint(0, 100000), help="Random seed"
-    )
 
-    group = parser.add_argument_group("Dataset loading")
-    group.add_argument("--ind", help="Filter particle stack by these indices")
-    group.add_argument(
+    loading_group = parser.add_argument_group("Managing Dataset Loading and Parsing")
+    loading_group.add_argument(
+        "--norm",
+        type=float,
+        nargs=2,
+        default=None,
+        help="Data normalization as shift, 1/scale (default: mean, std of dataset)",
+    )
+    loading_group.add_argument(
         "--uninvert-data",
         dest="invert_data",
         action="store_false",
         help="Do not invert data sign",
     )
-    group.add_argument(
+    loading_group.add_argument(
         "--no-window",
         dest="window",
         action="store_false",
         help="Turn off real space windowing of dataset",
     )
-    group.add_argument(
+    loading_group.add_argument(
         "--window-r",
         type=float,
         default=0.85,
         help="Windowing radius (default: %(default)s)",
     )
-    group.add_argument(
-        "--datadir",
-        type=os.path.abspath,
-        help="Path prefix to particle stack if loading relative paths from a .star or .cs file",
-    )
-    group.add_argument(
+    loading_group.add_argument(
         "--lazy",
         action="store_true",
         help="Lazy loading if full dataset is too large to fit in memory",
     )
-    group.add_argument(
+    loading_group.add_argument(
         "--shuffler-size",
         type=int,
         default=0,
         help="If non-zero, will use a data shuffler for faster lazy data loading.",
     )
-    group.add_argument(
+    loading_group.add_argument(
         "--num-workers",
         type=int,
         default=0,
-        help="Number of subprocesses to use as DataLoader workers. If 0, then use the main process for data loading. (default: %(default)s)",
+        help="Number of subprocesses to use as DataLoader workers."
+        "If 0, then use the main process for data loading. (default: %(default)s)",
     )
-    group.add_argument(
+    loading_group.add_argument(
         "--max-threads",
         type=int,
         default=16,
         help="Maximum number of CPU cores for data loading (default: %(default)s)",
     )
 
-    group = parser.add_argument_group("Tilt series parameters")
-    group.add_argument(
+    tilt_group = parser.add_argument_group("Tilt Series Parameters")
+    tilt_group.add_argument(
         "--ntilts",
         type=int,
         default=10,
         help="Number of tilts to encode (default: %(default)s)",
     )
-    group.add_argument(
+    tilt_group.add_argument(
         "--random-tilts",
         action="store_true",
         help="Randomize ordering of tilts series to encoder",
     )
-    group.add_argument(
+    tilt_group.add_argument(
         "--t-emb-dim",
         type=int,
         default=64,
         help="Intermediate embedding dimension (default: %(default)s)",
     )
-    group.add_argument(
+    tilt_group.add_argument(
         "--tlayers",
         type=int,
         default=3,
         help="Number of hidden layers (default: %(default)s)",
     )
-    group.add_argument(
+    tilt_group.add_argument(
         "--tdim",
         type=int,
         default=1024,
         help="Number of nodes in hidden layers (default: %(default)s)",
     )
-    group.add_argument(
+    tilt_group.add_argument(
         "-d",
         "--dose-per-tilt",
         type=float,
         help="Expected dose per tilt (electrons/A^2 per tilt) (default: %(default)s)",
     )
-    group.add_argument(
+    tilt_group.add_argument(
         "-a",
         "--angle-per-tilt",
         type=float,
@@ -167,133 +173,132 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         help="Tilt angle increment per tilt in degrees (default: %(default)s)",
     )
 
-    group = parser.add_argument_group("Training parameters")
-    group.add_argument(
+    training_group = parser.add_argument_group("Reconstruction Training Parameters")
+    training_group.add_argument(
+        "--zdim", type=int, required=True, help="Dimension of latent variable"
+    )
+    training_group.add_argument(
         "-n",
         "--num-epochs",
         type=int,
         default=20,
         help="Number of training epochs (default: %(default)s)",
     )
-    group.add_argument(
+    training_group.add_argument(
         "-b",
         "--batch-size",
         type=int,
         default=8,
         help="Minibatch size (default: %(default)s)",
     )
-    group.add_argument(
+    training_group.add_argument(
         "--wd",
         type=float,
         default=0.0,
         help="Weight decay in Adam optimizer (default: %(default)s)",
     )
-    group.add_argument(
+    training_group.add_argument(
         "--lr",
         type=float,
         default=1e-4,
         help="Learning rate in Adam optimizer (default: %(default)s)",
     )
-    group.add_argument(
+    training_group.add_argument(
         "--beta",
         default=None,
         help="Choice of beta schedule or a constant for KLD weight (default: 1/zdim)",
     )
-    group.add_argument(
+    training_group.add_argument(
         "--beta-control",
         type=float,
         help="KL-Controlled VAE gamma. Beta is KL target",
     )
-    group.add_argument(
-        "--norm",
-        type=float,
-        nargs=2,
-        default=None,
-        help="Data normalization as shift, 1/scale (default: mean, std of dataset)",
-    )
-    group.add_argument(
+    training_group.add_argument(
         "--no-amp",
         action="store_false",
         dest="amp",
         help="Do not use mixed-precision training for accelerating training",
     )
-    group.add_argument(
+    training_group.add_argument(
         "--multigpu",
         action="store_true",
         help="Parallelize training across all detected GPUs",
     )
+    training_group.add_argument(
+        "--seed", type=int, default=np.random.randint(0, 100000), help="Random seed"
+    )
 
-    group = parser.add_argument_group("Pose SGD")
-    group.add_argument(
+    pose_group = parser.add_argument_group("Pose Refinement SGD Parameters")
+    pose_group.add_argument(
         "--do-pose-sgd", action="store_true", help="Refine poses with gradient descent"
     )
-    group.add_argument(
+    pose_group.add_argument(
         "--pretrain",
         type=int,
         default=1,
         help="Number of epochs with fixed poses before pose SGD (default: %(default)s)",
     )
-    group.add_argument(
+    pose_group.add_argument(
         "--emb-type",
         choices=("s2s2", "quat"),
         default="quat",
         help="SO(3) embedding type for pose SGD (default: %(default)s)",
     )
-    group.add_argument(
+    pose_group.add_argument(
         "--pose-lr",
         type=float,
         default=3e-4,
         help="Learning rate for pose optimizer (default: %(default)s)",
     )
 
-    group = parser.add_argument_group("Encoder Network")
-    group.add_argument(
+    encoder_group = parser.add_argument_group("Encoder Network Parameters")
+    encoder_group.add_argument(
         "--enc-layers",
         dest="qlayers",
         type=int,
         default=3,
         help="Number of hidden layers (default: %(default)s)",
     )
-    group.add_argument(
+    encoder_group.add_argument(
         "--enc-dim",
         dest="qdim",
         type=int,
         default=1024,
         help="Number of nodes in hidden layers (default: %(default)s)",
     )
-    group.add_argument(
+    encoder_group.add_argument(
         "--encode-mode",
         default="resid",
         choices=("conv", "resid", "mlp", "tilt"),
         help="Type of encoder network (default: %(default)s)",
     )
-    group.add_argument(
+    encoder_group.add_argument(
         "--enc-mask",
         type=int,
         help="Circular mask of image for encoder (default: D/2; -1 for no mask)",
     )
-    group.add_argument(
+    encoder_group.add_argument(
         "--use-real",
         action="store_true",
         help="Use real space image for encoder (for convolutional encoder)",
     )
 
-    group = parser.add_argument_group("Decoder Network")
-    group.add_argument(
+    decoder_group = parser.add_argument_group("Decoder Network Parameters")
+    decoder_group.add_argument(
         "--dec-layers",
         dest="players",
         type=int,
         default=3,
         help="Number of hidden layers (default: %(default)s)",
     )
-    group.add_argument(
+    decoder_group.add_argument(
         "--dec-dim",
         dest="pdim",
         type=int,
         default=1024,
         help="Number of nodes in hidden layers (default: %(default)s)",
     )
-    group.add_argument(
+    decoder_group.add_argument(
         "--pe-type",
         choices=(
             "geom_ft",
@@ -307,28 +312,28 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         default="gaussian",
         help="Type of positional encoding (default: %(default)s)",
     )
-    group.add_argument(
-        "--feat-sigma",
-        type=float,
-        default=0.5,
-        help="Scale for random Gaussian features (default: %(default)s)",
-    )
-    group.add_argument(
+    decoder_group.add_argument(
         "--pe-dim",
         type=int,
         help="Num frequencies in positional encoding (default: image D/2)",
     )
-    group.add_argument(
+    decoder_group.add_argument(
         "--domain",
         choices=("hartley", "fourier"),
         default="fourier",
         help="Volume decoder representation (default: %(default)s)",
     )
-    group.add_argument(
+    decoder_group.add_argument(
         "--activation",
         choices=("relu", "leaky_relu"),
         default="relu",
         help="Activation (default: %(default)s)",
+    )
+    decoder_group.add_argument(
+        "--feat-sigma",
+        type=float,
+        default=0.5,
+        help="Scale for random Gaussian features (default: %(default)s)",
     )
 
 

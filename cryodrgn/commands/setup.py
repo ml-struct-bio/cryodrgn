@@ -32,9 +32,6 @@ def add_args(parser: argparse.ArgumentParser) -> None:
 
     inputs_group = parser.add_argument_group("Listing Input Datasets")
     inputs_group.add_argument(
-        "--dataset", help="which dataset to run the experiment on"
-    )
-    inputs_group.add_argument(
         "--particles", help="path to the picked particles (.mrcs/.star /.txt)"
     )
     inputs_group.add_argument("--ctf", help="path to the CTF parameters (.pkl)")
@@ -45,8 +42,13 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         help="Path prefix to particle stack if loading relative "
         "paths from a .star or .cs file",
     )
+    inputs_group.add_argument(
+        "--dataset",
+        help="which dataset from the file pointed to by the environment "
+        "variable `$CRYODRGN_DATASETS` to run the experiment on",
+    )
 
-    training_group = parser.add_argument_group("Reconstruction Training Parameters")
+    training_group = parser.add_argument_group("Reconstruction Training Settings")
     training_group.add_argument(
         "--model",
         "-m",
@@ -76,8 +78,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="specify if using a tilt series",
     )
-
-    parser.add_argument(
+    training_group.add_argument(
         "--cfgs",
         "-c",
         nargs="+",
@@ -85,7 +86,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         help="additional configuration parameters to pass to the model "
         "in the form of 'CFG_KEY1=CFG_VAL1' 'CFG_KEY2=CFG_VAL2' ... ",
     )
-    parser.add_argument(
+    training_group.add_argument(
         "--include",
         "-i",
         type=os.path.abspath,

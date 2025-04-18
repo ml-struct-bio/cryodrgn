@@ -33,13 +33,12 @@ from cryodrgn.commands.analyze import ModelAnalyzer
 def add_args(parser: argparse.ArgumentParser) -> None:
     """The command-line arguments for use with the `cryodrgn train` command."""
 
-    parser.add_argument(
+    outputs_group = parser.add_argument_group("Managing Model Outputs and Logging")
+    outputs_group.add_argument(
         "outdir",
         type=os.path.abspath,
         help="Path to the directory that has been created for this experiment",
     )
-
-    outputs_group = parser.add_argument_group("Managing Model Outputs and Logging")
     outputs_group.add_argument(
         "--checkpoint",
         type=int,
@@ -71,7 +70,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         help="Maximum number of CPU cores for data loading",
     )
 
-    training_group = parser.add_argument_group("Listing Input Datasets")
+    training_group = parser.add_argument_group("Reconstruction Training Settings")
     training_group.add_argument(
         "-n",
         "--num-epochs",
@@ -98,15 +97,14 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     training_group.add_argument(
         "--seed", type=int, help="Random seed for use with e.g. numpy"
     )
-
-    parser.add_argument(
+    training_group.add_argument(
         "--cfgs",
         "-c",
         nargs="+",
         help="additional configuration parameters to pass to the model "
         "in the form of 'CFG_KEY1=CFG_VAL1' 'CFG_KEY2=CFG_VAL2' ... ",
     )
-    parser.add_argument(
+    training_group.add_argument(
         "--include",
         "-i",
         type=os.path.abspath,

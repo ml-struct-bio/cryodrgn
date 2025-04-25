@@ -13,6 +13,8 @@ from cryodrgn.commands import (  # noqa: F401
     eval_vol,
     filter,
     graph_traversal,
+    parse_csparc,
+    parse_star,
     parse_ctf_csparc,
     parse_ctf_star,
     parse_pose_csparc,

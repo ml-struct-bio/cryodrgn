@@ -5,6 +5,8 @@ import argparse
 import os
 
 from cryodrgn.commands import (
+    parse_csparc,
+    parse_star,
     parse_ctf_csparc,
     parse_ctf_star,
     parse_pose_csparc,
@@ -109,3 +111,62 @@ def test_parse_pose_cs(tmpdir, particles):
     parse_pose_csparc.main(args)
 
     assert_pkl_close(pkl_out, os.path.join(pytest.DATADIR, "pose.cs.pkl"))
+
+
+@pytest.mark.parametrize("resolution", ["128", "300"])
+def test_parse_star(tmpdir, particles_starfile, resolution):
+    ctf_out = os.path.join(tmpdir, "ctf.pkl")
+    png_out = os.path.join(tmpdir, "ctf.png")
+    poses_out = os.path.join(tmpdir, "pose.pkl")
+
+    parser = argparse.ArgumentParser()
+    parse_star.add_args(parser)
+    args = parser.parse_args(
+        [
+            particles_starfile,
+            "-D",
+            "300",
+            "--poses",
+            poses_out,
+            "--ctf",
+            ctf_out,
+            "-w",
+            "0.1",
+            "-D",
+            resolution,
+            "--Apix",
+            "1.035",
+            "--png",
+            png_out,
+        ]
+    )
+
+    parse_star.main(args)
+
+
+@pytest.mark.parametrize("particles", ["csparc_big"], indirect=True)
+def test_parse_cs(tmpdir, particles):
+    ctf_out = os.path.join(tmpdir, "ctf.pkl")
+    png_out = os.path.join(tmpdir, "ctf.png")
+    poses_out = os.path.join(tmpdir, "pose.pkl")
+
+    parser = argparse.ArgumentParser()
+    parse_csparc.add_args(parser)
+    parse_csparc.main(
+        parser.parse_args(
+            [
+                particles.path,
+                "--ctf",
+                ctf_out,
+                "-D",
+                "180",
+                "--poses",
+                poses_out,
+                "--png",
+                png_out,
+            ]
+        )
+    )
+
+    assert_pkl_close(ctf_out, os.path.join(pytest.DATADIR, "ctf2.pkl"))
+    assert_pkl_close(poses_out, os.path.join(pytest.DATADIR, "pose.cs.pkl"))

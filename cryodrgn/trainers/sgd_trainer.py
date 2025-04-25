@@ -1,7 +1,7 @@
-"""Training engine for the amortized inference reconstruction drgnai/v4 model.
+"""Training engine for the cryoDRGN v4 (CryoDRGN-AI) reconstruction model.
 
 This module contains the model training engine and the corresponding configuration
-definitions for the amortized inference approach to particle reconstruction originally
+definitions for the aCryoDRGN-AI approach to particle reconstruction originally
 introduced by Alex Levy in the drgnai package.
 
 """
@@ -23,7 +23,7 @@ from cryodrgn.mrcfile import write_mrc
 from cryodrgn.dataset import make_dataloader
 from cryodrgn.trainers import summary
 from cryodrgn.models.losses import kl_divergence_conf, l1_regularizer, l2_frequency_bias
-from cryodrgn.models.amortized_inference import DRGNai, MyDataParallel
+from cryodrgn.models.cryodrgnai import DRGNai, MyDataParallel
 from cryodrgn.masking import CircularMask, FrequencyMarchingMask
 from cryodrgn.trainers.reconstruction import (
     ReconstructionModelTrainer,
@@ -32,7 +32,7 @@ from cryodrgn.trainers.reconstruction import (
 
 
 @dataclass
-class AmortizedInferenceConfigurations(ReconstructionModelConfigurations):
+class SGDPoseSearchConfigurations(ReconstructionModelConfigurations):
     """The configurations used by the cryoDRGN v3 model training engine.
 
     Arguments
@@ -325,7 +325,7 @@ class AmortizedInferenceConfigurations(ReconstructionModelConfigurations):
         return configs
 
 
-class AmortizedInferenceTrainer(ReconstructionModelTrainer):
+class SGDPoseSearchTrainer(ReconstructionModelTrainer):
     """An engine for training the reconstruction model on particle data.
 
     Attributes
@@ -355,8 +355,8 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
         "to_cpu",
     ]
 
-    configs: AmortizedInferenceConfigurations
-    config_cls = AmortizedInferenceConfigurations
+    configs: SGDPoseSearchConfigurations
+    config_cls = SGDPoseSearchConfigurations
     label = "cDRGN v4 training"
 
     def make_output_mask(self) -> CircularMask:
@@ -466,7 +466,7 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
 
     def __init__(self, configs: dict[str, Any], outdir: str) -> None:
         super().__init__(configs, outdir)
-        self.configs: AmortizedInferenceConfigurations
+        self.configs: SGDPoseSearchConfigurations
         self.do_pretrain = True
 
         if self.configs.num_epochs is None:
@@ -600,7 +600,7 @@ class AmortizedInferenceTrainer(ReconstructionModelTrainer):
         )
 
     def begin_epoch(self):
-        self.configs: AmortizedInferenceConfigurations
+        self.configs: SGDPoseSearchConfigurations
         self.mask_particles_seen_at_last_epoch = np.zeros(self.particle_count)
         self.mask_tilts_seen_at_last_epoch = np.zeros(self.image_count)
         self.optimized_modules = ["hypervolume"]

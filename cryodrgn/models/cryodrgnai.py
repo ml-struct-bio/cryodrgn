@@ -1,4 +1,4 @@
-"""Pytorch models implementing amortized inference."""
+"""Pytorch models implementing CryoDRGN-AI reconstruction."""
 
 import numpy as np
 import torch

@@ -8,7 +8,7 @@ from typing import Optional, Any
 from cryodrgn.commands import setup, train
 import cryodrgn.utils
 from cryodrgn.models.utils import get_model_configurations
-from cryodrgn.trainers.amortinf_trainer import AmortizedInferenceConfigurations
+from cryodrgn.trainers.sgd_trainer import SGDPoseSearchConfigurations
 
 
 class SetupRequest:
@@ -102,7 +102,7 @@ def test_empty_setup(tmpdir_factory):
 
     cfgs = cryodrgn.utils.load_yaml(os.path.join(outdir, "config.yaml"))
     configs = get_model_configurations(cfgs)
-    assert configs == AmortizedInferenceConfigurations(z_dim=8, seed=configs.seed)
+    assert configs == SGDPoseSearchConfigurations(z_dim=8, seed=configs.seed)
 
 
 @pytest.mark.parametrize(

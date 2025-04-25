@@ -17,7 +17,7 @@ import cryodrgn.utils
 from cryodrgn import __version__, ctf
 from cryodrgn.dataset import ImageDataset, TiltSeriesData, make_dataloader
 from cryodrgn.lattice import Lattice
-from cryodrgn.models.amortized_inference import MyDataParallel
+from cryodrgn.models.cryodrgnai import MyDataParallel
 from cryodrgn.trainers._base import BaseConfigurations, BaseTrainer
 
 try:

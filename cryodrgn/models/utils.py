@@ -7,15 +7,15 @@ from cryodrgn.trainers.reconstruction import (
     ReconstructionModelTrainer,
     ReconstructionModelConfigurations,
 )
-from cryodrgn.trainers.amortinf_trainer import (
-    AmortizedInferenceTrainer,
-    AmortizedInferenceConfigurations,
+from cryodrgn.trainers.sgd_trainer import (
+    SGDPoseSearchTrainer,
+    SGDPoseSearchConfigurations,
 )
 from cryodrgn.trainers.hps_trainer import (
     HierarchicalPoseSearchTrainer,
     HierarchicalPoseSearchConfigurations,
 )
-from cryodrgn.models.amortized_inference import DRGNai
+from cryodrgn.models.cryodrgnai import DRGNai
 from cryodrgn.models.variational_autoencoder import HetOnlyVAE
 from cryodrgn.models.neural_nets import get_decoder
 from cryodrgn.lattice import Lattice
@@ -68,7 +68,7 @@ def get_model_trainer_class(cfg: dict[str, Any]):
     model_args["model"] = model
 
     if model == "cryodrgn-ai":
-        config_cls = AmortizedInferenceTrainer
+        config_cls = SGDPoseSearchTrainer
     elif model == "cryodrgn":
         config_cls = HierarchicalPoseSearchTrainer
     else:
@@ -120,7 +120,7 @@ def get_model(
         cfg["lattice_args"]["D"], extent=cfg["lattice_args"]["l_extent"], device=device
     )
 
-    if isinstance(configs, AmortizedInferenceConfigurations):
+    if isinstance(configs, SGDPoseSearchConfigurations):
         if configs.output_mask == "circ":
             radius = configs.max_freq or lattice.D // 2
             output_mask = CircularMask(lattice, radius)

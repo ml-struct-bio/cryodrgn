@@ -78,6 +78,14 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         help="Number of training epochs (default: %(default)s)",
     )
     training_group.add_argument(
+        "--load",
+        "-l",
+        nargs="?",
+        const="latest",
+        help="Initialize training from a checkpoint; "
+        "give with no arguments or with `latest` to load latest available epoch",
+    )
+    training_group.add_argument(
         "-b",
         "--batch-size",
         type=int,
@@ -153,6 +161,8 @@ def main(
     train_args = configs["train_args"] if "train_args" in configs else configs
     if args.num_epochs is not None:
         train_args["num_epochs"] = args.num_epochs
+    if args.load is not None:
+        train_args["load"] = args.load
     if args.checkpoint is not None:
         train_args["checkpoint"] = args.checkpoint
     if args.log_interval is not None:

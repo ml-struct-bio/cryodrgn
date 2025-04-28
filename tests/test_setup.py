@@ -64,7 +64,7 @@ class SetupRequest:
         ]
         if model == "cryodrgn":
             add_cfgs += ["ps_freq=2"]
-        elif model == "cryodrgn-ai":
+        else:
             add_cfgs += ["n_imgs_pose_search=10"]
 
         if include_cfgs is not None:
@@ -108,6 +108,7 @@ def test_empty_setup(tmpdir_factory):
 @pytest.mark.parametrize(
     "model, particles, ctf, poses, indices, datadir, dataset, pose_estimation",
     [
+        ("cryodrgn", "toy.mrcs", "CTF-Test", None, "5", None, None, None),
         ("cryodrgn-ai", "toy.mrcs", "CTF-Test", None, "5", None, None, None),
         ("cryodrgn-ai", "toy.mrcs", "CTF-Test", "toy-poses", None, None, None, None),
         pytest.param(
@@ -133,6 +134,9 @@ def test_empty_setup(tmpdir_factory):
     indirect=["particles", "ctf", "poses", "indices", "datadir"],
 )
 class TestSetupThenRun:
+
+    num_epochs = 5
+
     @pytest.fixture
     def setup_request(
         self,
@@ -306,15 +310,21 @@ class TestSetupThenRun:
     def test_then_train(self, setup_request):
         """Run the reconstruction experiment using the directory created by setup."""
 
-        args = [setup_request.outdir, "--num-epochs", "3", "--no-analysis"]
-        args += ["--seed", "733"]
+        args = [
+            setup_request.outdir,
+            "--num-epochs",
+            str(self.num_epochs),
+            "--no-analysis",
+            "--seed",
+            "733",
+        ]
         parser = argparse.ArgumentParser()
         train.add_args(parser)
         train.main(parser.parse_args(args))
 
         out_files = os.listdir(setup_request.outdir)
         for epoch in range(1, 10):
-            if epoch <= 3:
+            if epoch <= self.num_epochs:
                 assert (
                     f"weights.{epoch}.pkl" in out_files
                 ), f"Missing output model weights for epoch {epoch}!"
@@ -350,20 +360,46 @@ class TestSetupThenRun:
             os.path.join(setup_request.outdir, "config.yaml"),
             os.path.join(rerun_dir, "config.yaml"),
         )
-        args = [rerun_dir, "--num-epochs", "2", "--checkpoint", "2", "--no-analysis"]
-        args += ["--seed", "8990"]
+        args = [
+            rerun_dir,
+            "--num-epochs",
+            str(self.num_epochs),
+            "--checkpoint",
+            "2",
+            "--no-analysis",
+            "--seed",
+            "8990",
+        ]
         parser = argparse.ArgumentParser()
         train.add_args(parser)
         train.main(parser.parse_args(args))
 
         out_files = os.listdir(rerun_dir)
-        for epoch in range(1, 5):
-            if (
-                epoch == 2
-                or epoch == 1
+        for epoch in range(1, 7):
+            if epoch == self.num_epochs or (
+                epoch < self.num_epochs
                 and (
-                    setup_request.poses is None
-                    or setup_request.pose_estimation == "abinit"
+                    epoch % 2 == 0
+                    or (
+                        epoch <= 2
+                        and (
+                            setup_request.model in {None, "cryodrgn-ai"}
+                            and (
+                                setup_request.poses is None
+                                or setup_request.pose_estimation == "abinit"
+                            )
+                        )
+                    )
+                    or (
+                        (epoch - 1) % 2 == 0
+                        and (
+                            setup_request.model == "cryodrgn"
+                            and (
+                                setup_request.poses is None
+                                or setup_request.pose_estimation == "abinit"
+                            )
+                        )
+                    )
                 )
             ):
                 assert (
@@ -380,3 +416,36 @@ class TestSetupThenRun:
                 assert (
                     f"weights.{epoch}.pkl" not in out_files
                 ), f"Extra output model weights for epoch {epoch}!"
+
+    @pytest.mark.parametrize(
+        "reconstruction_type, z_dim, cfgs, include",
+        [
+            ("homo", None, None, None),
+            (None, "4", ["window_r=0.80", "z_dim=2", "ind=4"], {"weight_decay": 0.05}),
+        ],
+    )
+    def test_then_reload(self, setup_request):
+        """Copy the experiment config file to an empty directory and run again."""
+
+        rerun_dir = os.path.join(setup_request.outdir, "rerun")
+        args = [
+            rerun_dir,
+            "--num-epochs",
+            str(self.num_epochs + 1),
+            "--load",
+            "--no-analysis",
+            "--seed",
+            "8990",
+        ]
+        parser = argparse.ArgumentParser()
+        train.add_args(parser)
+        train.main(parser.parse_args(args))
+
+        out_files = os.listdir(rerun_dir)
+        assert (
+            f"weights.{self.num_epochs + 1}.pkl" in out_files
+        ), f"Missing output model weights for epoch {self.num_epochs + 1}!"
+        if setup_request.pose_estimation == "abinit" or setup_request.poses is None:
+            assert (
+                f"pose.{self.num_epochs + 1}.pkl" in out_files
+            ), f"Missing output model poses for epoch {self.num_epochs + 1}!"

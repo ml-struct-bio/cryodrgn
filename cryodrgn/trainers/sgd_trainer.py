@@ -467,7 +467,6 @@ class SGDPoseSearchTrainer(ReconstructionModelTrainer):
     def __init__(self, configs: dict[str, Any], outdir: str) -> None:
         super().__init__(configs, outdir)
         self.configs: SGDPoseSearchConfigurations
-        self.do_pretrain = True
 
         if self.configs.num_epochs is None:
             self.configs.num_epochs = self.epochs_sgd + self.epochs_pose_search
@@ -532,9 +531,16 @@ class SGDPoseSearchTrainer(ReconstructionModelTrainer):
                 self.optimizer_types["conf_table"] = self.configs.conf_table_optim_type
 
         self.optimized_modules = []
-        self.data_generators = {"hps": None, "known": None, "sgd": None}
+        # initialization from a previous checkpoint
+        if self.configs.load:
+            for key in self.optimizers:
+                self.optimizers[key].load_state_dict(
+                    self.checkpoint["optimizers_state_dict"][key]
+                )
 
         # dataloaders
+        self.data_generators = {"hps": None, "known": None, "sgd": None}
+
         self.data_generators["hps"] = make_dataloader(
             self.data,
             batch_size=self.configs.batch_size_hps,
@@ -1284,6 +1290,8 @@ class SGDPoseSearchTrainer(ReconstructionModelTrainer):
     @property
     def in_pose_search_step(self) -> bool:
         in_pose_search = False
+
+        assert self.epochs_pose_search == 2
 
         if self.configs.pose_estimation != "fixed":
             in_pose_search = 1 <= self.current_epoch <= self.epochs_pose_search

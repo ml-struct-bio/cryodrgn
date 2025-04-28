@@ -578,10 +578,11 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
         self.predicted_trans = None
         self.predicted_conf = None
 
-        # initialization from a previous checkpoint
+        # Initializing model from a saved checkpoint if given by user
+        self.checkpoint = None
         if self.configs.load:
             if self.configs.load == "latest" or self.configs.load is True:
-                self.logger.info("Detecting latest checkpoint...")
+                self.logger.info("Automatically detecting latest checkpoint...")
 
                 weights = [
                     os.path.join(self.outdir, f"weights.{epoch}.pkl")
@@ -592,15 +593,15 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
             else:
                 load_path = self.configs.load
 
-            self.logger.info(f"Loading checkpoint from {load_path}")
-            checkpoint = torch.load(
+            self.logger.info(f"Loading checkpoint from `{load_path}` ...")
+            self.checkpoint = torch.load(
                 load_path, weights_only=False, map_location=self.device
             )
-            state_dict = checkpoint["model_state_dict"]
+            state_dict = self.checkpoint["model_state_dict"]
 
             if self.configs.pose_estimation == "abinit":
                 if self.configs.load_poses is None or self.configs.load_poses is True:
-                    epoch = self.configs.load.split(".")[-2]
+                    epoch = load_path.split(".")[-2]
                     load_poses_path = os.path.join(self.outdir, f"pose.{epoch}.pkl")
                 else:
                     load_poses_path = self.configs.load_poses
@@ -624,20 +625,15 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
             self.logger.info(
                 self.reconstruction_model.load_state_dict(state_dict, strict=False)
             )
-
-            if "output_mask_radius" in checkpoint:
+            if "output_mask_radius" in self.checkpoint:
                 self.reconstruction_model.output_mask.update_radius(
-                    checkpoint["output_mask_radius"]
+                    self.checkpoint["output_mask_radius"]
                 )
-            if "optimizers_state_dict" in checkpoint:
-                for key in self.optimizers:
-                    self.optimizers[key].load_state_dict(
-                        checkpoint["optimizers_state_dict"][key]
-                    )
 
-            self.start_epoch = checkpoint["epoch"] + 1
             self.do_pretrain = False
+            self.start_epoch = self.checkpoint["epoch"] + 1
         else:
+            self.do_pretrain = True
             self.start_epoch = 1
 
         self.n_particles_pretrain = (

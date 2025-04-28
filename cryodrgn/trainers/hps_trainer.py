@@ -315,6 +315,13 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
     def __init__(self, configs: dict[str, Any], outdir: str) -> None:
         super().__init__(configs, outdir)
 
+        if self.configs.load:
+            if "optimizers_state_dict" in self.checkpoint:
+                for key in self.optimizers:
+                    self.optimizers[key].load_state_dict(
+                        self.checkpoint["optimizers_state_dict"][key]
+                    )
+
         # set beta schedule
         if self.configs.z_dim:
             beta = self.configs.beta or self.configs.z_dim**-1

@@ -187,7 +187,7 @@ def get_model(
             no_trans=configs.no_trans,
             use_gt_poses=configs.pose_estimation == "fixed",
             use_gt_trans=configs.use_gt_trans,
-            will_use_point_estimates=False,
+            will_use_point_estimates=True,
             ps_params=cfg["model_args"]["ps_params"]
             if "ps_params" in cfg["model_args"]
             else None,
@@ -248,12 +248,13 @@ def get_model(
                 activation=activation,
                 feat_sigma=configs.feat_sigma,
             )
-        if weights is not None:
-            ckpt = torch.load(weights, map_location=device, weights_only=False)
-            model.load_state_dict(ckpt["model_state_dict"])
-        if device is not None:
-            model.to(device)
     else:
         raise ValueError(f"Unrecognized model `{configs.model}` specified in config!")
+
+    if weights is not None:
+        ckpt = torch.load(weights, map_location=device, weights_only=False)
+        model.load_state_dict(ckpt["model_state_dict"])
+    if device is not None:
+        model.to(device)
 
     return model

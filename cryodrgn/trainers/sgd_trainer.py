@@ -1291,8 +1291,6 @@ class SGDPoseSearchTrainer(ReconstructionModelTrainer):
     def in_pose_search_step(self) -> bool:
         in_pose_search = False
 
-        assert self.epochs_pose_search == 2
-
         if self.configs.pose_estimation != "fixed":
             in_pose_search = 1 <= self.current_epoch <= self.epochs_pose_search
 

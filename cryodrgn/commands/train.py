@@ -159,6 +159,7 @@ def main(
     if args.seed is not None:
         configs["seed"] = args.seed
     train_args = configs["train_args"] if "train_args" in configs else configs
+    model_args = configs["model_args"] if "model_args" in configs else configs
     if args.num_epochs is not None:
         train_args["num_epochs"] = args.num_epochs
     if args.load is not None:
@@ -186,4 +187,6 @@ def main(
     trainer.train()
 
     if args.do_analysis:
-        ModelAnalyzer(trainer.outdir).analyze()
+        ModelAnalyzer(
+            trainer.outdir, invert=model_args["model"] == "cryodrgn-ai"
+        ).analyze()

@@ -346,7 +346,6 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
 
     configs: ReconstructionModelConfigurations
     config_cls = ReconstructionModelConfigurations
-    model_lbl = None
     activations = {"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}
 
     # options for optimizers to use

@@ -62,6 +62,7 @@ class SetupRequest:
             "t_ngrid=2",
             "pe_dim=4",
         ]
+        # TODO: find a way to not hard-code these
         if model == "cryodrgn":
             add_cfgs += ["ps_freq=2"]
         else:
@@ -91,6 +92,58 @@ class SetupRequest:
         self.tilt = tilt
         self.cfgs = cfgs if cfgs is not None else list()
         self.include_cfgs = include_cfgs if include_cfgs is not None else dict()
+
+
+@pytest.fixture
+def setup_request(
+    tmpdir_factory,
+    model,
+    dataset,
+    particles,
+    ctf,
+    poses,
+    indices,
+    datadir,
+    reconstruction_type,
+    z_dim,
+    pose_estimation,
+    cfgs,
+    include,
+) -> SetupRequest:
+    dirname = os.path.join(
+        "SetupThenRun",
+        model if model is not None else "None",
+        dataset if dataset is not None else "None",
+        particles.label,
+        poses.label,
+        ctf.label,
+        poses.label,
+        indices.label,
+        datadir.label,
+        reconstruction_type if reconstruction_type is not None else "None",
+        z_dim if z_dim is not None else "None",
+        pose_estimation if pose_estimation is not None else "None",
+        str(hash(tuple(cfgs))) if cfgs is not None else "None",
+        str(hash(tuple(include))) if include is not None else "None",
+    )
+    odir = os.path.join(tmpdir_factory.getbasetemp(), dirname)
+
+    return SetupRequest(
+        odir,
+        model,
+        dataset,
+        particles.path,
+        ctf.path,
+        poses.path,
+        indices.path,
+        datadir.path,
+        reconstruction_type,
+        z_dim,
+        pose_estimation,
+        False,
+        cfgs,
+        include,
+    )
 
 
 def test_empty_setup(tmpdir_factory):
@@ -133,180 +186,140 @@ def test_empty_setup(tmpdir_factory):
     ],
     indirect=["particles", "ctf", "poses", "indices", "datadir"],
 )
+@pytest.mark.parametrize(
+    "reconstruction_type, z_dim, cfgs, include",
+    [
+        (None, None, None, None),
+        ("homo", None, None, None),
+        (None, "2", None, None),
+        ("homo", None, None, {"weight_decay": 0.05}),
+        (None, None, ["z_dim=2"], None),
+        (None, "0", ["window_r=0.80"], None),
+        (None, "4", ["window_r=0.80", "z_dim=2"], None),
+        (None, "4", ["window_r=0.80", "z_dim=2", "ind=4"], {"weight_decay": 0.05}),
+        ("homo", None, ["window_r=0.80"], None),
+        ("homo", None, ["window_r=0.80"], {"weight_decay": 0.05}),
+        ("het", None, ["window_r=0.75", "z_dim=2"], None),
+        pytest.param(
+            "homo",
+            "4",
+            None,
+            None,
+            marks=pytest.mark.xfail(
+                raises=ValueError,
+                reason="cannot specify both reconstruction-type and z_dim",
+            ),
+        ),
+        pytest.param(
+            "het",
+            "12",
+            None,
+            {"weight_decay": 0.05},
+            marks=pytest.mark.xfail(
+                raises=ValueError,
+                reason="cannot specify both reconstruction-type and z_dim",
+            ),
+        ),
+    ],
+)
+def test_setup_directory(setup_request):
+    """Create a reconstruction directory using the setup command."""
+
+    parser = argparse.ArgumentParser()
+    setup.add_args(parser)
+    setup.main(parser.parse_args(setup_request.args))
+    assert os.path.isdir(setup_request.outdir), "Missing output directory!"
+    assert os.path.isfile(
+        os.path.join(setup_request.outdir, "config.yaml")
+    ), "Missing config file!"
+    configs = cryodrgn.utils.load_yaml(
+        os.path.join(setup_request.outdir, "config.yaml")
+    )
+
+    # Default model if not given should always be cryoDRGN-AI
+    if setup_request.model is not None:
+        assert configs["model_args"]["model"] == setup_request.model
+    else:
+        assert configs["model_args"]["model"] == "cryodrgn-ai"
+
+    assert configs["dataset_args"]["particles"] == setup_request.particles
+    assert configs["dataset_args"]["ctf"] == setup_request.ctf
+    assert configs["dataset_args"]["poses"] == setup_request.poses
+    assert configs["dataset_args"]["datadir"] == setup_request.datadir
+
+    for cfg in setup_request.cfgs:
+        if cfg.startswith("ind="):
+            assert configs["dataset_args"]["ind"] == int(cfg.split("=")[1])
+            break
+    else:
+        assert configs["dataset_args"]["ind"] == setup_request.ind
+
+    if setup_request.z_dim is not None:
+        use_zdim = int(setup_request.z_dim)
+    elif setup_request.reconstruction_type is None:
+        use_zdim = 8
+    elif setup_request.reconstruction_type == "homo":
+        use_zdim = 0
+    elif setup_request.reconstruction_type == "het":
+        use_zdim = 8
+    else:
+        raise ValueError(
+            f"Unrecognized reconstruction type "
+            f"`{setup_request.reconstruction_type}`!"
+        )
+    for cfg in setup_request.cfgs:
+        if cfg.startswith("z_dim="):
+            use_zdim = int(cfg.split("=")[1])
+
+        elif cfg.startswith("window_r="):
+            assert configs["dataset_args"]["window_r"] == float(
+                cfg.split("=")[1]
+            ), "Incorrect window radius!"
+
+    assert configs["model_args"]["z_dim"] == use_zdim
+    assert configs["model_args"]["learning_rate"] == 0.1
+    if setup_request.pose_estimation is None:
+        if setup_request.poses is not None:
+            assert configs["model_args"]["pose_estimation"] == "fixed"
+        else:
+            assert configs["model_args"]["pose_estimation"] == "abinit"
+    else:
+        assert configs["model_args"]["pose_estimation"] == setup_request.pose_estimation
+
+    for par_k, par_v in setup_request.include_cfgs.items():
+        assert configs["model_args"][par_k] == par_v
+
+
+@pytest.mark.parametrize(
+    "model, particles, ctf, poses, indices, datadir, dataset, pose_estimation",
+    [
+        ("cryodrgn", "toy.mrcs", "CTF-Test", None, "5", None, None, None),
+        ("cryodrgn-ai", "toy.mrcs", "CTF-Test", None, "5", None, None, None),
+        ("cryodrgn-ai", "toy.mrcs", "CTF-Test", "toy-poses", None, None, None, None),
+        ("cryodrgn", "toy.mrcs", None, None, "5", None, None, "abinit"),
+        ("cryodrgn-ai", "toy.txt", "CTF-Test", "toy-poses", None, None, None, "fixed"),
+        ("cryodrgn", "hand", None, "hand-poses", "5", None, None, "fixed"),
+        ("cryodrgn", "toy.txt", "CTF-Test", "toy-poses", "5", None, None, "abinit"),
+        (None, "toy.txt", "CTF-Test", None, "5", None, None, "abinit"),
+    ],
+    indirect=["particles", "ctf", "poses", "indices", "datadir"],
+)
+@pytest.mark.parametrize(
+    "reconstruction_type, z_dim, cfgs, include",
+    [
+        ("homo", None, None, {"weight_decay": 0.05}),
+        (None, "4", ["window_r=0.80", "z_dim=2", "ind=4"], {"weight_decay": 0.05}),
+        ("homo", None, ["window_r=0.80"], {"weight_decay": 0.05}),
+    ],
+)
 class TestSetupThenRun:
 
     num_epochs = 5
 
-    @pytest.fixture
-    def setup_request(
-        self,
-        tmpdir_factory,
-        model,
-        dataset,
-        particles,
-        ctf,
-        poses,
-        indices,
-        datadir,
-        reconstruction_type,
-        z_dim,
-        pose_estimation,
-        cfgs,
-        include,
-    ):
-
-        dirname = os.path.join(
-            "SetupThenRun",
-            model if model is not None else "None",
-            dataset if dataset is not None else "None",
-            particles.label,
-            poses.label,
-            ctf.label,
-            poses.label,
-            indices.label,
-            datadir.label,
-            reconstruction_type if reconstruction_type is not None else "None",
-            z_dim if z_dim is not None else "None",
-            pose_estimation if pose_estimation is not None else "None",
-            str(hash(tuple(cfgs)))[1:10] if cfgs is not None else "None",
-            str(hash(tuple(include))) if include is not None else "None",
-        )
-        odir = os.path.join(tmpdir_factory.getbasetemp(), dirname)
-
-        return SetupRequest(
-            odir,
-            model,
-            dataset,
-            particles.path,
-            ctf.path,
-            poses.path,
-            indices.path,
-            datadir.path,
-            reconstruction_type,
-            z_dim,
-            pose_estimation,
-            False,
-            cfgs,
-            include,
-        )
-
-    @pytest.mark.parametrize(
-        "reconstruction_type, z_dim, cfgs, include",
-        [
-            (None, None, None, None),
-            ("homo", None, None, None),
-            (None, "2", None, None),
-            ("homo", None, None, {"weight_decay": 0.05}),
-            (None, None, ["z_dim=2"], None),
-            (None, "0", ["window_r=0.80"], None),
-            (None, "4", ["window_r=0.80", "z_dim=2"], None),
-            (None, "4", ["window_r=0.80", "z_dim=2", "ind=4"], {"weight_decay": 0.05}),
-            ("homo", None, ["window_r=0.80"], None),
-            ("homo", None, ["window_r=0.80"], {"weight_decay": 0.05}),
-            ("het", None, ["window_r=0.75", "z_dim=2"], None),
-            pytest.param(
-                "homo",
-                "4",
-                None,
-                None,
-                marks=pytest.mark.xfail(
-                    raises=ValueError,
-                    reason="cannot specify both reconstruction-type and z_dim",
-                ),
-            ),
-            pytest.param(
-                "het",
-                "12",
-                None,
-                {"weight_decay": 0.05},
-                marks=pytest.mark.xfail(
-                    raises=ValueError,
-                    reason="cannot specify both reconstruction-type and z_dim",
-                ),
-            ),
-        ],
-    )
     def test_setup_directory(self, setup_request):
         """Create a reconstruction directory using the setup command."""
+        test_setup_directory(setup_request)
 
-        parser = argparse.ArgumentParser()
-        setup.add_args(parser)
-        setup.main(parser.parse_args(setup_request.args))
-        assert os.path.isdir(setup_request.outdir), "Missing output directory!"
-        assert os.path.isfile(
-            os.path.join(setup_request.outdir, "config.yaml")
-        ), "Missing config file!"
-        configs = cryodrgn.utils.load_yaml(
-            os.path.join(setup_request.outdir, "config.yaml")
-        )
-
-        # Default model if not given should always be cryoDRGN-AI
-        if setup_request.model is not None:
-            assert configs["model_args"]["model"] == setup_request.model
-        else:
-            assert configs["model_args"]["model"] == "cryodrgn-ai"
-
-        assert configs["dataset_args"]["particles"] == setup_request.particles
-        assert configs["dataset_args"]["ctf"] == setup_request.ctf
-        assert configs["dataset_args"]["poses"] == setup_request.poses
-        assert configs["dataset_args"]["datadir"] == setup_request.datadir
-
-        for cfg in setup_request.cfgs:
-            if cfg.startswith("ind="):
-                assert configs["dataset_args"]["ind"] == int(cfg.split("=")[1])
-                break
-        else:
-            assert configs["dataset_args"]["ind"] == setup_request.ind
-
-        if setup_request.z_dim is not None:
-            use_zdim = int(setup_request.z_dim)
-        elif setup_request.reconstruction_type is None:
-            use_zdim = 8
-        elif setup_request.reconstruction_type == "homo":
-            use_zdim = 0
-        elif setup_request.reconstruction_type == "het":
-            use_zdim = 8
-        else:
-            raise ValueError(
-                f"Unrecognized reconstruction type "
-                f"`{setup_request.reconstruction_type}`!"
-            )
-        for cfg in setup_request.cfgs:
-            if cfg.startswith("z_dim="):
-                use_zdim = int(cfg.split("=")[1])
-
-            elif cfg.startswith("window_r="):
-                assert configs["dataset_args"]["window_r"] == float(
-                    cfg.split("=")[1]
-                ), "Incorrect window radius!"
-
-        assert configs["model_args"]["z_dim"] == use_zdim
-        assert configs["model_args"]["learning_rate"] == 0.1
-        if setup_request.pose_estimation is None:
-            if setup_request.poses is not None:
-                assert configs["model_args"]["pose_estimation"] == "fixed"
-            else:
-                assert configs["model_args"]["pose_estimation"] == "abinit"
-        else:
-            assert (
-                configs["model_args"]["pose_estimation"]
-                == setup_request.pose_estimation
-            )
-
-        for par_k, par_v in setup_request.include_cfgs.items():
-            assert configs["model_args"][par_k] == par_v
-
-    @pytest.mark.parametrize(
-        "reconstruction_type, z_dim, cfgs, include",
-        [
-            ("homo", None, None, None),
-            (None, "2", None, None),
-            ("homo", None, None, {"weight_decay": 0.05}),
-            (None, "0", ["window_r=0.80"], None),
-            (None, "4", ["window_r=0.80", "z_dim=2", "ind=4"], {"weight_decay": 0.05}),
-            ("homo", None, ["window_r=0.80"], None),
-        ],
-    )
     def test_then_train(self, setup_request):
         """Run the reconstruction experiment using the directory created by setup."""
 
@@ -344,14 +357,8 @@ class TestSetupThenRun:
                     f"weights.{epoch}.pkl" not in out_files
                 ), f"Extra output model weights for epoch {epoch}!"
 
-    @pytest.mark.parametrize(
-        "reconstruction_type, z_dim, cfgs, include",
-        [
-            ("homo", None, None, None),
-            (None, "4", ["window_r=0.80", "z_dim=2", "ind=4"], {"weight_decay": 0.05}),
-        ],
-    )
-    def test_then_rerun(self, setup_request):
+    @pytest.mark.parametrize("checkpoint", [1, 2, 3])
+    def test_then_rerun_with_checkpointing(self, setup_request, checkpoint):
         """Copy the experiment config file to an empty directory and run again."""
 
         rerun_dir = os.path.join(setup_request.outdir, "rerun")
@@ -365,7 +372,7 @@ class TestSetupThenRun:
             "--num-epochs",
             str(self.num_epochs),
             "--checkpoint",
-            "2",
+            str(checkpoint),
             "--no-analysis",
             "--seed",
             "8990",
@@ -375,30 +382,19 @@ class TestSetupThenRun:
         train.main(parser.parse_args(args))
 
         out_files = os.listdir(rerun_dir)
-        for epoch in range(1, 7):
+        abinit = setup_request.poses is None
+        abinit |= setup_request.pose_estimation == "abinit"
+        for epoch in range(1, 10):
             if epoch == self.num_epochs or (
                 epoch < self.num_epochs
                 and (
-                    epoch % 2 == 0
-                    or (
-                        epoch <= 2
-                        and (
-                            setup_request.model in {None, "cryodrgn-ai"}
-                            and (
-                                setup_request.poses is None
-                                or setup_request.pose_estimation == "abinit"
-                            )
-                        )
+                    (
+                        setup_request.model in {None, "cryodrgn-ai"}
+                        and (epoch % checkpoint == 0 or epoch <= 2 and abinit)
                     )
                     or (
-                        (epoch - 1) % 2 == 0
-                        and (
-                            setup_request.model == "cryodrgn"
-                            and (
-                                setup_request.poses is None
-                                or setup_request.pose_estimation == "abinit"
-                            )
-                        )
+                        setup_request.model == "cryodrgn"
+                        and (epoch % checkpoint == 0 or (epoch - 1) % 2 == 0 and abinit)
                     )
                 )
             ):
@@ -417,35 +413,39 @@ class TestSetupThenRun:
                     f"weights.{epoch}.pkl" not in out_files
                 ), f"Extra output model weights for epoch {epoch}!"
 
-    @pytest.mark.parametrize(
-        "reconstruction_type, z_dim, cfgs, include",
-        [
-            ("homo", None, None, None),
-            (None, "4", ["window_r=0.80", "z_dim=2", "ind=4"], {"weight_decay": 0.05}),
-        ],
-    )
-    def test_then_reload(self, setup_request):
-        """Copy the experiment config file to an empty directory and run again."""
+        shutil.rmtree(rerun_dir)
 
-        rerun_dir = os.path.join(setup_request.outdir, "rerun")
+    @pytest.mark.parametrize("load_epoch", [None, 2, 4])
+    def test_then_reload(self, setup_request, load_epoch):
+        """Copy the experiment config file to an empty directory and run again."""
         args = [
-            rerun_dir,
+            setup_request.outdir,
             "--num-epochs",
             str(self.num_epochs + 1),
-            "--load",
             "--no-analysis",
             "--seed",
             "8990",
+            "--load",
         ]
+        if load_epoch is not None:
+            args += [os.path.join(setup_request.outdir, f"weights.{load_epoch}.pkl")]
+
         parser = argparse.ArgumentParser()
         train.add_args(parser)
         train.main(parser.parse_args(args))
 
-        out_files = os.listdir(rerun_dir)
+        out_files = os.listdir(setup_request.outdir)
         assert (
             f"weights.{self.num_epochs + 1}.pkl" in out_files
         ), f"Missing output model weights for epoch {self.num_epochs + 1}!"
+        os.unlink(
+            os.path.join(setup_request.outdir, f"weights.{self.num_epochs + 1}.pkl")
+        )
+
         if setup_request.pose_estimation == "abinit" or setup_request.poses is None:
             assert (
                 f"pose.{self.num_epochs + 1}.pkl" in out_files
             ), f"Missing output model poses for epoch {self.num_epochs + 1}!"
+            os.unlink(
+                os.path.join(setup_request.outdir, f"pose.{self.num_epochs + 1}.pkl")
+            )

@@ -9,10 +9,9 @@ $ cryodrgn pc_traversal zvals.pkl --pc 4 -n 12 ---lim 0.10 0.90 -o z-path-new.tx
 """
 import os
 import argparse
-import pickle
 import numpy as np
 from scipy.spatial.distance import cdist
-from cryodrgn import analysis
+from cryodrgn import analysis, utils
 
 
 def add_args(parser: argparse.ArgumentParser) -> None:
@@ -59,7 +58,7 @@ def main(args):
     if args.outdir:
         os.makedirs(args.outdir)
 
-    z = pickle.load(open(args.zfile, "rb"))
+    z = utils.load_pkl(args.zfile)
     zdim = z.shape[1]
     pc, pca = analysis.run_pca(z)
     dims = args.pc if args.pc is not None else list(range(1, zdim + 1))

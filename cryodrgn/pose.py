@@ -1,12 +1,11 @@
 """Keeping track of particle alignments used in reconstruction models."""
 
-import pickle
 from typing import Optional, Tuple, Union, List
 import logging
 import numpy as np
 import torch
 import torch.nn as nn
-from cryodrgn.utils import load_pkl
+from cryodrgn.utils import load_pkl, save_pkl
 from cryodrgn.models import lie_tools
 
 logger = logging.getLogger(__name__)
@@ -159,7 +158,7 @@ class PoseTracker(nn.Module):
         else:
             poses = (r,)
 
-        pickle.dump(poses, open(out_pkl, "wb"))
+        save_pkl(poses, out_pkl, "wb")
 
     def get_pose(
         self, ind: Union[int, torch.Tensor]

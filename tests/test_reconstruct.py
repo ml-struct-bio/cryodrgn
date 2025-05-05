@@ -6,6 +6,7 @@ import os.path
 import shutil
 import random
 import numpy as np
+from pathlib import Path
 from typing import Optional
 
 import nbformat
@@ -224,17 +225,21 @@ class TestHomogeneous:
                 f"Unrecognized homogeneous training command: `{train_cmd}`!"
             )
 
-        dirname = os.path.join(
+        dirname = Path(
             "ReconstructHomo",
-            train_type,
-            train_cmd,
-            particles.label,
-            poses.label,
-            ctf.label,
-            indices.label,
-            f"b{batch_size}_amp.{use_amp}",
+            "_".join(
+                [
+                    train_type,
+                    train_cmd,
+                    particles.label,
+                    poses.label,
+                    ctf.label,
+                    indices.label,
+                    f"b{batch_size}_amp.{use_amp}",
+                ]
+            ),
         )
-        odir = os.path.join(tmpdir_factory.getbasetemp(), dirname)
+        odir = Path(tmpdir_factory.getbasetemp(), dirname)
         os.makedirs(odir, exist_ok=True)
 
         cmd_args = [particles.path, "-b", batch_size] + args
@@ -251,7 +256,7 @@ class TestHomogeneous:
         if checkpoint is not None:
             cmd_args += ["--checkpoint", str(checkpoint)]
 
-        return TrainCommand(train_cmd, cmd_args, odir, train_type)
+        return TrainCommand(train_cmd, cmd_args, str(odir), train_type)
 
     def test_train_model(self, traincmd):
         """Train the initial homogeneous model."""
@@ -295,7 +300,7 @@ class TestHomogeneous:
                 ), f"Extraneous output reconstructed volume for epoch {epoch}!"
 
     def test_train_from_checkpoint(self, traincmd):
-        """Train the initial homogeneous model."""
+        """Train another epoch after loading the final saved epoch from file."""
 
         traincmd.args += ["--load", os.path.join(traincmd.outdir, "weights.6.pkl")]
         i = traincmd.args.index("--num-epochs")
@@ -308,6 +313,16 @@ class TestHomogeneous:
         assert not any(
             fl.startswith("analyze.") for fl in out_files
         ), "Created empty analysis folder!"
+
+    def test_clean_all(self, traincmd):
+        """Use the `clean` command to remove extra outputs, and then remove them all."""
+        parser = argparse.ArgumentParser()
+        cryodrgn.commands_utils.clean.add_args(parser)
+        cryodrgn.commands_utils.clean.main(
+            parser.parse_args([os.path.relpath(traincmd.outdir)])
+        )
+
+        shutil.rmtree(traincmd.outdir)
 
 
 class TestHeterogeneous:
@@ -372,16 +387,20 @@ class TestHeterogeneous:
                 f"Unrecognized heterogeneous training command: `{train_cmd}`!"
             )
 
-        dirname = os.path.join(
+        dirname = Path(
             "ReconstructHetero",
-            train_type,
-            train_cmd,
-            particles.label,
-            poses.label,
-            ctf.label,
-            indices.label,
+            "_".join(
+                [
+                    train_type,
+                    train_cmd,
+                    particles.label,
+                    poses.label,
+                    ctf.label,
+                    indices.label,
+                ]
+            ),
         )
-        odir = os.path.join(tmpdir_factory.getbasetemp(), dirname)
+        odir = Path(tmpdir_factory.getbasetemp(), dirname)
         os.makedirs(odir, exist_ok=True)
 
         cmd_args = [particles.path] + args
@@ -392,7 +411,9 @@ class TestHeterogeneous:
         if indices.path is not None:
             cmd_args += ["--ind", indices.path]
 
-        return TrainCommand(train_cmd, cmd_args, odir, train_type, poses=poses.path)
+        return TrainCommand(
+            train_cmd, cmd_args, str(odir), train_type, poses=poses.path
+        )
 
     def check_outputs(self, train_cmd: TrainCommand) -> None:
         out_files = os.listdir(train_cmd.outdir)
@@ -556,7 +577,7 @@ class TestHeterogeneous:
         os.chdir(os.path.join(traincmd.outdir, "analyze.6"))
         assert os.path.exists(f"{nb_lbl}.ipynb"), "Upstream tests have failed!"
 
-        with open(f"{nb_lbl}.ipynb") as ff:
+        with open(f"{nb_lbl}.ipynb", "r") as ff:
             nb_in = nbformat.read(ff, nbformat.NO_CONVERT)
 
         try:

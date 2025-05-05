@@ -607,12 +607,13 @@ class TxtFileSource(_MRCDataFrameSource):
     ):
         _paths = []
         filepath_dir = os.path.dirname(filepath)
-        for line in open(filepath).readlines():
-            path = line.strip()
-            if not os.path.isabs(path):
-                _paths.append(os.path.join(filepath_dir, path))
-            else:
-                _paths.append(path)
+        with open(filepath, "r") as f:
+            for line in f.readlines():
+                path = line.strip()
+                if not os.path.isabs(path):
+                    _paths.append(os.path.join(filepath_dir, path))
+                else:
+                    _paths.append(path)
 
         _source_lengths = [MRCHeader.parse(path).N for path in _paths]
         mrc_filename, mrc_index = [], []

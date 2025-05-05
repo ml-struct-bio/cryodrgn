@@ -10,8 +10,8 @@ $ cryodrgn_utils select_random 189043 -o my-indices.pkl --frac 0.5
 
 """
 import argparse
-import pickle
 import numpy as np
+from cryodrgn.utils import save_pkl
 
 
 def add_args(parser: argparse.ArgumentParser) -> None:
@@ -40,9 +40,9 @@ def main(args: argparse.Namespace) -> None:
 
     print(f"{len(train)} particles in selection: {train}")
     print(f"Saving {args.o}")
-    pickle.dump(train, open(args.o, "wb"))
+    save_pkl(train, args.o, "wb")
 
     if args.s is not None:
         print(f"{len(test)} particles in inverted selection: {test}")
         print(f"Saving {args.s}")
-        pickle.dump(test, open(args.s, "wb"))
+        save_pkl(test, args.s, "wb")

@@ -14,13 +14,13 @@ $ cryodrgn graph_traversal zvals.pkl --anchors path-anchors.txt --outind path-in
 """
 import argparse
 import os
-import pickle
 import logging
 import numpy as np
 import pandas as pd
 from heapq import heappop, heappush
 import torch
 from cryodrgn.commands.direct_traversal import parse_anchors
+from cryodrgn import utils
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +113,7 @@ class GraphLatentTraversor(object):
 
 
 def main(args):
-    data_np = pickle.load(open(args.zfile, "rb"))
+    data_np = utils.load_pkl(args.zfile)
     data = torch.from_numpy(data_np)
 
     if args.max_images is not None:

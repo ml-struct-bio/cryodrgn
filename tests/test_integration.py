@@ -4,15 +4,17 @@ Note that the training done here has unrealistically low parameter values to all
 tests to run in any environment in a reasonable amount of time with or without GPUs.
 
 """
+import shutil
+
 import pytest
 import os
-import shutil
 import argparse
 import pickle
 import nbformat
 from nbconvert.preprocessors import ExecutePreprocessor
 import numpy as np
 import torch
+from pathlib import Path
 
 from cryodrgn.commands import (
     analyze,
@@ -33,10 +35,11 @@ import cryodrgn.utils
 @pytest.mark.parametrize("indices", [None, "first-100", "random-100"], indirect=True)
 class TestIterativeFiltering:
     def get_outdir(self, tmpdir_factory, particles, indices, poses, ctf):
-        dirname = os.path.join(
-            "IterativeFiltering", particles.label, indices.label, poses.label, ctf.label
+        dirname = Path(
+            "IterativeFiltering",
+            "_".join([particles.label, indices.label, poses.label, ctf.label]),
         )
-        odir = os.path.join(tmpdir_factory.getbasetemp(), dirname)
+        odir = tmpdir_factory.getbasetemp() / dirname
         os.makedirs(odir, exist_ok=True)
 
         return odir
@@ -47,7 +50,7 @@ class TestIterativeFiltering:
         args = [
             particles.path,
             "-o",
-            outdir,
+            str(outdir),
             "--ctf",
             ctf.path,
             "--num-epochs",
@@ -82,16 +85,16 @@ class TestIterativeFiltering:
 
         parser = argparse.ArgumentParser()
         analyze.add_args(parser)
-        analyze.main(parser.parse_args([outdir, "--pc", "2", "--ksample", "10"]))
+        analyze.main(parser.parse_args([str(outdir), "--pc", "2", "--ksample", "10"]))
 
-        assert os.path.exists(os.path.join(outdir, "analyze.10"))
+        assert (outdir / "analyze.10").exists(), "Model analyses have failed!"
 
     @pytest.mark.parametrize("nb_lbl", ["cryoDRGN_figures", "analysis", "cryoDRGN_viz"])
     def test_notebooks(self, tmpdir_factory, particles, poses, ctf, indices, nb_lbl):
         """Execute the demonstration Jupyter notebooks produced by analysis."""
         outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
         orig_cwd = os.path.abspath(os.getcwd())
-        os.chdir(os.path.join(outdir, "analyze.10"))
+        os.chdir(outdir / "analyze.10")
         assert os.path.exists(f"{nb_lbl}.ipynb"), "Upstream tests have failed!"
 
         with open(f"{nb_lbl}.ipynb") as ff:
@@ -112,7 +115,7 @@ class TestIterativeFiltering:
         else:
             ind_keep_fl = ind_keep_fl[0]
 
-        ind_keep_fl = os.path.join(outdir, ind_keep_fl)
+        ind_keep_fl = outdir / ind_keep_fl
         parser = argparse.ArgumentParser()
         train_vae.add_args(parser)
         train_vae.main(
@@ -120,11 +123,11 @@ class TestIterativeFiltering:
                 [
                     particles.path,
                     "-o",
-                    outdir,
+                    str(outdir),
                     "--ctf",
                     ctf.path,
                     "--ind",
-                    ind_keep_fl,
+                    str(ind_keep_fl),
                     "--num-epochs",
                     "5",
                     "--poses",
@@ -150,9 +153,9 @@ class TestIterativeFiltering:
 @pytest.mark.parametrize("particles", ["toy.star"], indirect=True)
 @pytest.mark.parametrize("datadir", ["default-datadir"], indirect=True)
 class TestParseWriteStar:
-    def get_outdir(self, tmpdir_factory, particles, datadir):
-        dirname = os.path.join("ParseWriteStar", particles.label, datadir.label)
-        odir = os.path.join(tmpdir_factory.getbasetemp(), dirname)
+    def get_outdir(self, tmpdir_factory, particles, datadir) -> Path:
+        dirname = Path("ParseWriteStar", "_".join([particles.label, datadir.label]))
+        odir = Path(tmpdir_factory.getbasetemp(), dirname)
         os.makedirs(odir, exist_ok=True)
 
         return odir
@@ -162,11 +165,10 @@ class TestParseWriteStar:
         out_fl = os.path.join(
             outdir, f"ctf_{os.path.splitext(os.path.basename(particles.path))[0]}.pkl"
         )
-
         parser = argparse.ArgumentParser()
         parse_ctf_star.add_args(parser)
         args = parser.parse_args(
-            [particles.path, "-o", out_fl, "-D", "30", "--Apix", "1"]
+            [particles.path, "-o", str(out_fl), "-D", "30", "--Apix", "1"]
         )
         parse_ctf_star.main(args)
 
@@ -180,25 +182,25 @@ class TestParseWriteStar:
     @pytest.mark.parametrize(
         "indices", [None, "first-100", "random-100"], indirect=True
     )
-    @pytest.mark.parametrize("poses", [None, "toy-poses"], indirect=True)
+    @pytest.mark.parametrize("poses", ["toy-poses", None], indirect=True)
     def test_write_star_from_mrcs(
         self, tmpdir_factory, particles, datadir, indices, poses
     ):
         outdir = self.get_outdir(tmpdir_factory, particles, datadir)
-        out_fl = os.path.join(outdir, f"written_{indices.label}_{poses.label}.star")
-        parsed_ctf = os.path.join(
+        out_fl = Path(outdir, f"written_{indices.label}_{poses.label}.star")
+        parsed_ctf = Path(
             outdir, f"ctf_{os.path.splitext(os.path.basename(particles.path))[0]}.pkl"
         )
-        assert os.path.exists(parsed_ctf), "Upstream tests have failed!"
+        assert parsed_ctf.exists(), "Upstream tests have failed!"
 
         parser = argparse.ArgumentParser()
         write_star.add_args(parser)
         args = [
             os.path.join(pytest.DATADIR, "toy_projections.mrcs"),
             "--ctf",
-            parsed_ctf,
+            str(parsed_ctf),
             "-o",
-            out_fl,
+            str(out_fl),
         ]
         if indices.path is not None:
             args += ["--ind", indices.path]
@@ -206,7 +208,9 @@ class TestParseWriteStar:
             args += ["--poses", poses.path]
 
         write_star.main(parser.parse_args(args))
-        data = ImageSource.from_file(out_fl, lazy=False, datadir=datadir.path).images()
+        data = ImageSource.from_file(
+            str(out_fl), lazy=False, datadir=datadir.path
+        ).images()
         assert isinstance(data, torch.Tensor)
         assert data.shape == (1000 if indices.path is None else 100, 30, 30)
 
@@ -214,15 +218,17 @@ class TestParseWriteStar:
     @pytest.mark.parametrize("poses", ["toy-poses"], indirect=True)
     def test_parse_pose(self, tmpdir_factory, particles, datadir, indices, poses):
         outdir = self.get_outdir(tmpdir_factory, particles, datadir)
-        star_in = os.path.join(outdir, f"written_{indices.label}_{poses.label}.star")
-        out_fl = os.path.join(outdir, "test_pose.pkl")
-        assert os.path.exists(star_in), "Upstream tests have failed!"
+        star_in = Path(outdir, f"written_{indices.label}_{poses.label}.star")
+        out_fl = Path(outdir, "test_pose.pkl")
+        assert star_in.exists(), "Upstream tests have failed!"
 
         parser = argparse.ArgumentParser()
         parse_pose_star.add_args(parser)
-        parse_pose_star.main(parser.parse_args([star_in, "-D", "30", "-o", out_fl]))
+        parse_pose_star.main(
+            parser.parse_args([str(star_in), "-D", "30", "-o", str(out_fl)])
+        )
 
-        out_poses = cryodrgn.utils.load_pkl(out_fl)
+        out_poses = cryodrgn.utils.load_pkl(str(out_fl))
         assert isinstance(out_poses, tuple)
         assert len(out_poses) == 2
         assert isinstance(out_poses[0], np.ndarray)
@@ -248,10 +254,8 @@ class TestParseWriteStar:
         indices,
     ):
         outdir = self.get_outdir(tmpdir_factory, particles, datadir)
-        out_mrcs = os.path.join(
-            outdir, f"downsampled_{downsample_dim}.{chunk_size}.mrcs"
-        )
-        out_txt = os.path.join(outdir, f"downsampled_{downsample_dim}.{chunk_size}.txt")
+        out_mrcs = outdir / f"downsampled_{downsample_dim}.{chunk_size}.mrcs"
+        out_txt = outdir / f"downsampled_{downsample_dim}.{chunk_size}.txt"
 
         parser = argparse.ArgumentParser()
         downsample.add_args(parser)
@@ -265,29 +269,28 @@ class TestParseWriteStar:
                 "--datadir",
                 datadir.path,
                 "-o",
-                out_mrcs,
+                str(out_mrcs),
             ]
         )
         downsample.main(args)
 
-        out_star = os.path.join(
-            outdir, f"downsampled_{downsample_dim}.{chunk_size}.star"
-        )
+        out_star = str(outdir / f"downsampled_{downsample_dim}.{chunk_size}.star")
         if indices.path is not None:
             out_star = out_star[:-5] + f"_{indices.label}.star"
-
-        parsed_ctf = os.path.join(
+        parsed_ctf = Path(
             outdir, f"ctf_{os.path.splitext(os.path.basename(particles.path))[0]}.pkl"
         )
 
         parser = argparse.ArgumentParser()
         write_star.add_args(parser)
-        args = [out_txt, "--ctf", parsed_ctf, "-o", out_star]
+        args = [str(out_txt), "--ctf", str(parsed_ctf), "-o", out_star]
         if indices.path is not None:
             args += ["--ind", indices.path]
 
         write_star.main(parser.parse_args(args))
-        data = ImageSource.from_file(out_star, lazy=False, datadir=outdir).images()
+        data = ImageSource.from_file(
+            str(out_star), lazy=False, datadir=str(outdir)
+        ).images()
         assert isinstance(data, torch.Tensor)
         assert data.shape == (
             1000 if indices.path is None else 100,
@@ -315,15 +318,17 @@ class TestParseWriteStar:
     ):
         """Use chunked downsampled .txt particle stack as input for backprojection."""
         outdir = self.get_outdir(tmpdir_factory, particles, datadir)
-        out_txt = os.path.join(outdir, f"downsampled_{downsample_dim}.{chunk_size}.txt")
+        out_txt = outdir / f"downsampled_{downsample_dim}.{chunk_size}.txt"
+        outpath = outdir / f"backproj_{downsample_dim}.{chunk_size}"
 
-        outpath = os.path.join(outdir, f"backproj_{downsample_dim}.{chunk_size}")
-        args = [out_txt, "--poses", poses.path]
+        args = [str(out_txt), "--poses", poses.path]
         if indices.path is not None:
-            outpath += f"_{indices.label}"
+            outpath_parts = list(outpath.parts)
+            outpath_parts[-1] = "_".join([outpath_parts[-1], indices.label])
+            outpath = Path(*outpath_parts)
             args += ["--ind", indices.path]
 
-        args += ["-o", outpath]
+        args += ["-o", str(outpath)]
         if ctf.path is not None:
             args += ["--ctf", ctf.path]
         if datadir.path is not None:
@@ -333,13 +338,11 @@ class TestParseWriteStar:
         backproject_voxel.add_args(parser)
         backproject_voxel.main(parser.parse_args(args))
 
-        assert os.path.exists(os.path.join(outpath, "backproject.mrc"))
-        assert os.path.exists(os.path.join(outpath, "half_map_a.mrc"))
-        assert os.path.exists(os.path.join(outpath, "half_map_b.mrc"))
-        assert os.path.exists(os.path.join(outpath, "fsc-plot.png"))
-        assert os.path.exists(os.path.join(outpath, "fsc-vals.txt"))
-
-        shutil.rmtree(outpath)
+        assert (outpath / "backproject.mrc").exists(), "Missing backprojected volume!"
+        assert (outpath / "half_map_a.mrc").exists(), "Missing half-map volume!"
+        assert (outpath / "half_map_b.mrc").exists(), "Missing half-map volume!"
+        assert (outpath / "fsc-plot.png").exists(), "Missing plot of FSC curve!"
+        assert (outpath / "fsc-vals.txt").exists(), "Missing FSC curve values!"
 
     # NOTE: these must be a subset of the parameters
     #       used in `test_downsample_and_from_txt()` above to get input .txt particles!
@@ -361,15 +364,16 @@ class TestParseWriteStar:
     ):
         """Use chunked downsampled .txt particle stack as input for backprojection."""
         outdir = self.get_outdir(tmpdir_factory, particles, datadir)
-        out_star = os.path.join(
-            outdir, f"downsampled_{downsample_dim}.{chunk_size}.star"
-        )
+        outpath = outdir / f"backproj_{downsample_dim}.{chunk_size}"
+        out_star = outdir / f"downsampled_{downsample_dim}.{chunk_size}.star"
 
-        outpath = os.path.join(outdir, f"backproj_{downsample_dim}.{chunk_size}")
         if indices.path is not None:
-            outpath += f"_{indices.label}"
+            outpath_parts = list(outpath.parts)
+            outpath_parts[-1] = "_".join([outpath_parts[-1], indices.label])
+            outpath = Path(*outpath_parts)
 
-        args = [out_star, "--poses", poses.path, "-o", outpath, "--datadir", outdir]
+        args = [str(out_star)]
+        args += ["--poses", poses.path, "-o", str(outpath), "--datadir", str(outdir)]
         if indices.path is not None:
             args += ["--ind", indices.path]
         if ctf.path is not None:
@@ -379,13 +383,15 @@ class TestParseWriteStar:
         backproject_voxel.add_args(parser)
         backproject_voxel.main(parser.parse_args(args))
 
-        assert os.path.exists(os.path.join(outpath, "backproject.mrc"))
-        assert os.path.exists(os.path.join(outpath, "half_map_a.mrc"))
-        assert os.path.exists(os.path.join(outpath, "half_map_b.mrc"))
-        assert os.path.exists(os.path.join(outpath, "fsc-plot.png"))
-        assert os.path.exists(os.path.join(outpath, "fsc-vals.txt"))
+        assert (outpath / "backproject.mrc").exists(), "Missing backprojected volume!"
+        assert (outpath / "half_map_a.mrc").exists(), "Missing half-map volume!"
+        assert (outpath / "half_map_b.mrc").exists(), "Missing half-map volume!"
+        assert (outpath / "fsc-plot.png").exists(), "Missing plot of FSC curve!"
+        assert (outpath / "fsc-vals.txt").exists(), "Missing FSC curve values!"
 
-        shutil.rmtree(outpath)
+    def test_clean(self, tmpdir_factory, particles, datadir):
+        outdir = self.get_outdir(tmpdir_factory, particles, datadir)
+        shutil.rmtree(outdir)
 
 
 @pytest.mark.parametrize(
@@ -397,17 +403,21 @@ class TestBackprojectFromChunkedDownsampled:
     def get_outpaths(
         self, tmpdir_factory, particles, poses, ctf, dsample_dim, chunksize
     ):
-        dirname = os.path.join(
+        dirname = Path(
             "BackprojectChunked",
-            particles.label,
-            poses.label,
-            ctf.label,
-            "_".join([str(dsample_dim), str(chunksize)]),
+            "_".join(
+                [
+                    particles.label,
+                    poses.label,
+                    ctf.label,
+                    str(dsample_dim),
+                    str(chunksize),
+                ]
+            ),
         )
-        odir = os.path.join(tmpdir_factory.getbasetemp(), dirname)
+        odir = tmpdir_factory.getbasetemp() / dirname
         os.makedirs(odir, exist_ok=True)
-        out_mrcs = os.path.join(odir, "downsampled.mrcs")
-        out_txt = os.path.join(odir, "downsampled.txt")
+        out_mrcs, out_txt = odir / "downsampled.mrcs", odir / "downsampled.txt"
 
         return odir, out_mrcs, out_txt
 
@@ -428,13 +438,13 @@ class TestBackprojectFromChunkedDownsampled:
                 "--chunk",
                 str(chunksize),
                 "-o",
-                out_mrcs,
+                str(out_mrcs),
             ]
         )
         downsample.main(args)
 
         orig_imgs = ImageSource.from_file(particles.path, lazy=False)
-        assert ImageSource.from_file(out_txt, lazy=False).shape == (
+        assert ImageSource.from_file(str(out_txt), lazy=False).shape == (
             orig_imgs.shape[0],
             dsample_dim,
             dsample_dim,
@@ -447,25 +457,30 @@ class TestBackprojectFromChunkedDownsampled:
         outdir, out_mrcs, out_txt = self.get_outpaths(
             tmpdir_factory, particles, poses, ctf, dsample_dim, chunksize
         )
+        outpath = outdir / "bproj"
 
-        args = [out_txt, "--poses", poses.path]
-        outpath = os.path.join(outdir, "bproj")
+        args = [str(out_txt), "--poses", poses.path]
         if ctf.path is not None:
             args += ["--ctf", ctf.path]
         if indices.path is not None:
             args += ["--ind", indices.path]
-            outpath += f"_{indices.label}"
-        args += ["-o", outpath]
+            outpath_parts = list(outpath.parts())
+            outpath_parts[-1] = "_".join([str(outpath_parts[-1]), indices.label])
+            outpath = Path(*outpath_parts)
+        args += ["-o", str(outpath)]
 
         parser = argparse.ArgumentParser()
         backproject_voxel.add_args(parser)
         backproject_voxel.main(parser.parse_args(args))
 
-        assert os.path.exists(os.path.join(outpath, "backproject.mrc"))
-        assert os.path.exists(os.path.join(outpath, "half_map_a.mrc"))
-        assert os.path.exists(os.path.join(outpath, "half_map_b.mrc"))
-        assert os.path.exists(os.path.join(outpath, "fsc-plot.png"))
-        assert os.path.exists(os.path.join(outpath, "fsc-vals.txt"))
+        assert (outpath / "backproject.mrc").exists(), "Missing backprojected volume!"
+        assert (outpath / "half_map_a.mrc").exists(), "Missing half-map volume!"
+        assert (outpath / "half_map_b.mrc").exists(), "Missing half-map volume!"
+        assert (outpath / "fsc-plot.png").exists(), "Missing plot of FSC curve!"
+        assert (outpath / "fsc-vals.txt").exists(), "Missing FSC curve values!"
 
-        if indices.path is not None:
-            shutil.rmtree(outdir)
+    def test_clean(self, tmpdir_factory, particles, poses, ctf, dsample_dim, chunksize):
+        outdir, _, _ = self.get_outpaths(
+            tmpdir_factory, particles, poses, ctf, dsample_dim, chunksize
+        )
+        shutil.rmtree(outdir)

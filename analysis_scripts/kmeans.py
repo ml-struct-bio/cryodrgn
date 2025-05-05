@@ -8,7 +8,7 @@ import numpy as np
 from scipy.spatial.distance import cdist
 from sklearn.decomposition import PCA
 
-from cryodrgn import analysis
+from cryodrgn import analysis, utils
 
 
 def parse_args():
@@ -34,7 +34,8 @@ def parse_args():
 def main(args):
     fig, ax = plt.subplots()
     print(args)
-    z = pickle.load(open(args.input, "rb"))
+    z = utils.load_pkl(args.input)
+
     if args.stride:
         z = z[:: args.stride]
     print("{} points".format(len(z)))

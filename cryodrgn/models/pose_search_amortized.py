@@ -178,7 +178,7 @@ def compute_err(
     with torch.no_grad():
         if apply_tilting_scheme:
             # x: [b * nq * ip * n_tilts, npts, 3]
-            # z: [b, z_dim], [b * nq, z_dim]
+            # z: [b, zdim], [b * nq, zdim]
             y_hat = []
             if n_in_planes > 1:  # first step
                 x = x.reshape(-1, nq, n_in_planes * n_tilts, *x.shape[-2:])
@@ -199,7 +199,7 @@ def compute_err(
             )  # [b, nq, ip * n_tilts, npts], [b * nq, n_tilts, npts]
         else:
             # x: [b, nq, npts, 3], [b * nq, npts, 3]
-            # z: [b, z_dim], [b * nq, z_dim]
+            # z: [b, zdim], [b * nq, zdim]
             y_hat = model.eval_on_slice(x, z=z)
             y_hat = y_hat.float()  # [b, nq, npts], [b * nq, npts]
     y_hat = y_hat.reshape(
@@ -503,7 +503,7 @@ def opt_theta_trans(
         'base_healpy': int
         't_xshift': float
         't_yshift': float
-    z: [batch_size, z_dim]
+    z: [batch_size, zdim]
     ctf_i: [batch_size(, n_tilts), D, D]
     gt_trans: [batch_size(, n_tilts), 2]
     trans_search_factor: float

@@ -26,7 +26,6 @@ class TrainCommand:
     replace_params = {
         "lr": "learning_rate",
         "wd": "weight_decay",
-        "zdim": "z_dim",
         "dim": "hidden_dim",
         "b": "batch_size",
     }
@@ -51,8 +50,8 @@ class TrainCommand:
 
             i += 1
 
-        if "z_dim" not in self.cfgs:
-            self.cfgs["z_dim"] = 0
+        if "zdim" not in self.cfgs:
+            self.cfgs["zdim"] = 0
 
         return get_model_configurations(self.cfgs)
 

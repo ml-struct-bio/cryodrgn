@@ -154,7 +154,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     group = parser.add_argument_group(
         "Overwrite architecture hyperparameters in config.yaml"
     )
-    group.add_argument("--z_dim", type=int, help="Dimension of latent variable")
+    group.add_argument("--zdim", type=int, help="Dimension of latent variable")
     group.add_argument(
         "--norm", type=float, nargs=2, help="Data normalization as shift, 1/scale"
     )

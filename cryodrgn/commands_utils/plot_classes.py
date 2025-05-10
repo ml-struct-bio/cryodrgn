@@ -185,8 +185,8 @@ def main(args: argparse.Namespace) -> None:
 
         plt.close()
 
-    z_dim = z_mat.shape[1]
-    if z_dim > 2:
+    zdim = z_mat.shape[1]
+    if zdim > 2:
         logger.info("Performing principal component analysis...")
         pc, pca = analysis.run_pca(z_mat)
 

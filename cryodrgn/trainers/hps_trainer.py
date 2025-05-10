@@ -58,9 +58,9 @@ class HierarchicalPoseSearchConfigurations(ReconstructionModelConfigurations):
     > inherited from `ReconstructionModelConfigurations`:
         model       A label for the reconstruction algorithm to be used — must be either
                     `hps` for cryoDRGN v3 models or `amort` for cryoDRGN-AI models.
-        z_dim       The dimensionality of the latent space of conformations.
-                    Thus z_dim=0 for homogeneous models
-                    and z_dim>0 for hetergeneous models.
+        zdim       The dimensionality of the latent space of conformations.
+                    Thus zdim=0 for homogeneous models
+                    and zdim>0 for hetergeneous models.
         num_epochs  The total number of epochs to use when training the model, not
                     including pretraining epoch(s).
 
@@ -146,7 +146,7 @@ class HierarchicalPoseSearchConfigurations(ReconstructionModelConfigurations):
                 f"for {self.__class__.__name__}!"
             )
         if self.beta is not None:
-            if not self.z_dim:
+            if not self.zdim:
                 raise ValueError("Cannot use beta with homogeneous reconstruction!.")
 
             if not isinstance(self.beta, (int, float)) and not self.beta_control:
@@ -155,12 +155,12 @@ class HierarchicalPoseSearchConfigurations(ReconstructionModelConfigurations):
                 )
 
         if self.tilt:
-            if self.z_dim and self.encode_mode != "tilt":
+            if self.zdim and self.encode_mode != "tilt":
                 raise ValueError(
                     "Must use tilt for heterogeneous reconstruction on ET capture!"
                 )
         else:
-            if self.z_dim and self.use_real != (self.encode_mode == "conv"):
+            if self.zdim and self.use_real != (self.encode_mode == "conv"):
                 raise ValueError(
                     "Using real space image is only available "
                     "for convolutional encoder in SPA heterogeneous reconstruction!"
@@ -175,10 +175,10 @@ class HierarchicalPoseSearchConfigurations(ReconstructionModelConfigurations):
         if self.dec_dim is None:
             self.dec_dim = self.hidden_dim
 
-        if self.encode_mode is None and self.z_dim > 0:
+        if self.encode_mode is None and self.zdim > 0:
             self.encode_mode = "resid"
         if self.equivariance is not None:
-            if not self.z_dim:
+            if not self.zdim:
                 raise ValueError(
                     "Cannot use equivariance with homogeneous reconstruction!."
                 )
@@ -192,7 +192,7 @@ class HierarchicalPoseSearchConfigurations(ReconstructionModelConfigurations):
                 self.volume_domain = "hartley"
 
         if self.l_ramp_epochs is None:
-            self.l_ramp_epochs = 25 if self.z_dim == 0 else 0
+            self.l_ramp_epochs = 25 if self.zdim == 0 else 0
 
     @property
     def file_dict(self) -> dict[str, Any]:
@@ -229,7 +229,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
 
     @property
     def mask_dimensions(self) -> tuple[torch.Tensor, int]:
-        if self.configs.z_dim:
+        if self.configs.zdim:
             if self.enc_mask_dim > 0:
                 assert self.enc_mask_dim <= self.resolution // 2
                 enc_mask = self.lattice.get_circular_mask(self.enc_mask_dim)
@@ -246,7 +246,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
         return enc_mask, in_dim
 
     def make_reconstruction_model(self, weights=None) -> nn.Module:
-        if not self.configs.z_dim:
+        if not self.configs.zdim:
             model = get_decoder(
                 in_dim=3,
                 D=self.resolution,
@@ -268,7 +268,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
                 players=self.configs.dec_layers,
                 pdim=self.configs.dec_dim,
                 in_dim=in_dim,
-                z_dim=self.configs.z_dim,
+                zdim=self.configs.zdim,
                 encode_mode=self.configs.encode_mode,
                 enc_mask=enc_mask,
                 enc_type=self.configs.pe_type,
@@ -323,8 +323,8 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
                     )
 
         # set beta schedule
-        if self.configs.z_dim:
-            beta = self.configs.beta or self.configs.z_dim**-1
+        if self.configs.zdim:
+            beta = self.configs.beta or self.configs.zdim**-1
 
             if isinstance(beta, float):
                 self.beta_schedule = lambda x: beta
@@ -366,7 +366,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
                 )
 
         self.equivariance_lambda = self.equivariance_loss = None
-        if self.configs.z_dim:
+        if self.configs.zdim:
             if self.configs.equivariance:
                 self.equivariance_lambda = self.create_beta_schedule(
                     self.configs.equivariance_start,
@@ -384,7 +384,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
         self.do_pretrain = self.configs.pose_estimation == "abinit"
 
         if self.configs.multigpu and torch.cuda.device_count() > 1:
-            if self.configs.z_dim > 0:
+            if self.configs.zdim > 0:
                 self.reconstruction_model = DataParallel(self.reconstruction_model)
             else:
                 self.reconstruction_model = DataParallelDecoder(
@@ -510,7 +510,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
 
         lamb = None
         losses = dict()
-        if self.configs.z_dim > 0:
+        if self.configs.zdim > 0:
             if trans is not None:
                 y_trans = lattice.translate_ht(y.view(B, -1), trans.unsqueeze(1)).view(
                     B, self.resolution, self.resolution
@@ -523,7 +523,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
                 input_ = (x * ctf_i.sign() for x in input_)  # phase flip by the ctf
 
             if self.configs.tilt:
-                if self.configs.pose_estimation == "abinit" and self.configs.z_dim > 0:
+                if self.configs.pose_estimation == "abinit" and self.configs.zdim > 0:
                     input_ += (tilt_ind,)
 
             _model = unparallelize(self.reconstruction_model)
@@ -553,7 +553,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
                         init_poses=self.base_pose,
                         ctf_i=ctf_i,
                     )
-                if self.configs.z_dim > 0:
+                if self.configs.zdim > 0:
                     self.reconstruction_model.train()
 
             else:
@@ -612,7 +612,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
             return img_trans
 
         if self.configs.tilt:
-            if self.configs.pose_estimation == "abinit" and self.configs.z_dim > 0:
+            if self.configs.pose_estimation == "abinit" and self.configs.zdim > 0:
                 tilt_ind = tilt_ind.view(B, -1)[:, mask]
                 tilt_ind = translate(tilt_ind)
 
@@ -622,7 +622,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
                 y_recon = torch.mul(gen_slice(rot), dose_filters[:, mask])
                 rot_loss = F.mse_loss(y_recon, y.view(B, -1)[:, mask])
 
-            if self.configs.pose_estimation == "abinit" and self.configs.z_dim > 0:
+            if self.configs.pose_estimation == "abinit" and self.configs.zdim > 0:
                 tilt_loss = F.mse_loss(gen_slice(bnb.tilt @ rot), tilt_ind)  # type: ignore  # noqa: F821
                 losses["gen"] = (rot_loss + tilt_loss) / 2
             else:
@@ -631,7 +631,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
             losses["gen"] = F.mse_loss(gen_slice(rot), translate(y).view(B, -1))
 
         # latent loss
-        if self.configs.z_dim:
+        if self.configs.zdim:
             losses["kld"] = torch.mean(
                 -0.5 * torch.sum(1 + z_logvar - z_mu.pow(2) - z_logvar.exp(), dim=1),
                 dim=0,
@@ -708,8 +708,8 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
         mask = self.lattice.get_circular_mask(self.lattice.D // 2)
         rot = lie_tools.random_SO3(B, device=self.device)
 
-        if self.configs.z_dim > 0:
-            z = torch.randn((B, self.configs.z_dim), device=self.device)
+        if self.configs.zdim > 0:
+            z = torch.randn((B, self.configs.zdim), device=self.device)
 
             def gen_slice(R):
                 _model = unparallelize(self.reconstruction_model)
@@ -748,7 +748,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
         out_conf = os.path.join(self.outdir, f"z.{self.epoch_lbl}.pkl")
 
         # save a reconstructed volume by evaluating model on a 3d lattice
-        if self.configs.z_dim == 0:
+        if self.configs.zdim == 0:
             out_mrc = os.path.join(self.outdir, f"reconstruct.{self.epoch_lbl}.mrc")
             self.reconstruction_model.eval()
             vol = self.model_module.eval_volume(
@@ -776,7 +776,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
         )
 
         # If we are doing heterogeneous reconstruction, also save latent conformations
-        if self.configs.z_dim > 0:
+        if self.configs.zdim > 0:
             self.reconstruction_model.eval()
 
             with torch.no_grad():

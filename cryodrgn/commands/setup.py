@@ -3,12 +3,12 @@
 Example usage
 -------------
 $ cryodrgn setup output_dir/ \
-                 --particles particles.128.mrcs --ctf ctf.pkl --poses pose.pkl --z-dim 8
+                 --particles particles.128.mrcs --ctf ctf.pkl --poses pose.pkl --zdim 8
 
 # Arguments not available through the command line can be specified with --cfgs/-c
 $ cryodrgn setup output_dir/ \
                  --particles particles.128.mrcs --ctf ctf.pkl --poses pose.pkl
-                 --cfgs 'learning_rate=0.001' 'z_dim=12'
+                 --cfgs 'learning_rate=0.0002' 'zdim=8'
 
 See also
 --------
@@ -59,12 +59,12 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     training_group.add_argument(
         "--reconstruction-type",
         choices=["het", "homo"],
-        help="homogeneous or heterogeneous (default) reconstruction with z-dim=8?",
+        help="homogeneous or heterogeneous (default) reconstruction with zdim=8?",
     )
     training_group.add_argument(
-        "--z-dim",
+        "--zdim",
         type=int,
-        help="homogeneous or heterogeneous (default) reconstruction when z-dim>0?",
+        help="homogeneous or heterogeneous (default) reconstruction when zdim>0?",
     )
     training_group.add_argument(
         "--pose-estimation",
@@ -98,15 +98,15 @@ def main(args: argparse.Namespace) -> None:
     """Running the `cryodrgn setup` command (see `add_args` above for arguments)."""
 
     if args.reconstruction_type is None:
-        z_dim = int(args.z_dim) if args.z_dim is not None else 8
+        zdim = int(args.zdim) if args.zdim is not None else 8
     else:
-        if args.z_dim is not None:
-            raise ValueError("Cannot specify both --reconstruction-type and --z-dim!")
+        if args.zdim is not None:
+            raise ValueError("Cannot specify both --reconstruction-type and --zdim!")
 
         if args.reconstruction_type == "het":
-            z_dim = 8
+            zdim = 8
         elif args.reconstruction_type == "homo":
-            z_dim = 0
+            zdim = 0
         else:
             raise ValueError(
                 f"Unrecognized reconstruction type `{args.reconstruction_type}`!"
@@ -153,7 +153,7 @@ def main(args: argparse.Namespace) -> None:
     else:
         these_paths = {"particles": args.particles}
 
-    cfgs = {"model": args.model, "z_dim": z_dim, "pose_estimation": pose_estimation}
+    cfgs = {"model": args.model, "zdim": zdim, "pose_estimation": pose_estimation}
     if args.tilt:
         cfgs["tilt"] = args.tilt
 

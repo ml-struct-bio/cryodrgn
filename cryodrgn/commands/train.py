@@ -14,7 +14,7 @@ Example usage
 $ cryodrgn train new-test
 
 # Submit reconstruction task to a compute cluster with Slurm installed
-$ sbatch -t 3:00:00 --wrap='cryodrgn train new-test' --mem=16G -o new-test.out
+$ sbatch -t 3:00:00 --mem=16G -o new-test.out --wrap='cryodrgn train new-test'
 
 See also
 --------

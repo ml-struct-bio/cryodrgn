@@ -397,7 +397,7 @@ def main(args: argparse.Namespace) -> None:
         "load": args.load,
         "load_poses": args.load_poses,
         "checkpoint": args.checkpoint,
-        "z_dim": args.zdim,
+        "zdim": args.zdim,
         "invert_data": args.invert_data,
         "lazy": args.lazy,
         "window": args.window,

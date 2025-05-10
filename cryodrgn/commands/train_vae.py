@@ -357,7 +357,7 @@ def main(args: argparse.Namespace) -> None:
         "verbose": args.verbose,
         "load": args.load,
         "checkpoint": args.checkpoint,
-        "z_dim": args.zdim,
+        "zdim": args.zdim,
         "enc_layers": args.qlayers,
         "enc_dim": args.qdim,
         "dec_layers": args.players,

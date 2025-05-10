@@ -41,9 +41,6 @@ def undeprecate_configs(cfg: dict[str, Any]) -> dict[str, Any]:
     if "domain" in model_args:
         model_args["volume_domain"] = model_args["domain"]
         del model_args["domain"]
-    if "zdim" in model_args:
-        model_args["z_dim"] = model_args["zdim"]
-        del model_args["zdim"]
     if "ntilts" in model_args:
         model_args["n_tilts"] = model_args["ntilts"]
         del model_args["ntilts"]
@@ -161,7 +158,7 @@ def get_model(
         )
         model_args["conf_regressor_params"].update(
             dict(
-                z_dim=model_args["z_dim"],
+                zdim=model_args["zdim"],
             )
         )
         if "ps_params" in model_args:
@@ -198,7 +195,7 @@ def get_model(
 
     elif isinstance(configs, HierarchicalPoseSearchConfigurations):
         activation = {"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[configs.activation]
-        if configs.z_dim > 0:
+        if configs.zdim > 0:
             if (
                 cfg["model_args"]["enc_mask"] is not None
                 and cfg["model_args"]["enc_mask"] > 0
@@ -226,7 +223,7 @@ def get_model(
                 players=configs.dec_layers,
                 pdim=configs.dec_dim,
                 in_dim=in_dim,
-                z_dim=configs.z_dim,
+                zdim=configs.zdim,
                 encode_mode=configs.encode_mode,
                 enc_mask=enc_mask,
                 enc_type=configs.pe_type,

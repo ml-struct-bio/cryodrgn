@@ -52,9 +52,9 @@ class SGDPoseSearchConfigurations(ReconstructionModelConfigurations):
     > inherited from `ReconstructionModelConfigurations`:
         model       A label for the reconstruction algorithm to be used — must be either
                     `hps` for cryoDRGN v3 models or `amort` for cryoDRGN-AI models.
-        z_dim       The dimensionality of the latent space of conformations.
-                    Thus z_dim=0 for homogeneous models
-                    and z_dim>0 for hetergeneous models.
+        zdim       The dimensionality of the latent space of conformations.
+                    Thus zdim=0 for homogeneous models
+                    and zdim>0 for hetergeneous models.
         num_epochs  The total number of epochs to use when training the model, not
                     including pretraining epoch(s).
 
@@ -171,7 +171,7 @@ class SGDPoseSearchConfigurations(ReconstructionModelConfigurations):
             if self.conf_estimation == "encoder":
                 self.use_conf_encoder = True
 
-        if self.explicit_volume and self.z_dim >= 1:
+        if self.explicit_volume and self.zdim >= 1:
             raise ValueError(
                 "Explicit volumes do not support heterogeneous reconstruction."
             )
@@ -380,9 +380,9 @@ class SGDPoseSearchTrainer(ReconstructionModelTrainer):
     def make_reconstruction_model(self, weights=None) -> nn.Module:
         output_mask = self.make_output_mask()
 
-        if self.configs.z_dim > 0:
+        if self.configs.zdim > 0:
             self.logger.info(
-                "Heterogeneous reconstruction with " f"z_dim = {self.configs.z_dim}"
+                "Heterogeneous reconstruction with " f"zdim = {self.configs.zdim}"
             )
         else:
             self.logger.info("Homogeneous reconstruction")
@@ -406,7 +406,7 @@ class SGDPoseSearchTrainer(ReconstructionModelTrainer):
         )
         model_args["conf_regressor_params"].update(
             dict(
-                z_dim=self.configs.z_dim,
+                zdim=self.configs.zdim,
             )
         )
         if "ps_params" in model_args:
@@ -496,7 +496,7 @@ class SGDPoseSearchTrainer(ReconstructionModelTrainer):
                 self.optimizer_types["pose_table"] = self.configs.pose_table_optim_type
 
         # conformations
-        if self.configs.z_dim > 0:
+        if self.configs.zdim > 0:
             if self.configs.use_conf_encoder:
                 conf_encoder_params = [
                     {
@@ -575,7 +575,7 @@ class SGDPoseSearchTrainer(ReconstructionModelTrainer):
             self.first_switch_to_point_estimates_conf = False
 
         self.use_kl_divergence = (
-            not self.configs.z_dim == 0
+            not self.configs.zdim == 0
             and self.configs.variational_het
             and self.configs.beta_conf >= epsilon
         )
@@ -600,8 +600,8 @@ class SGDPoseSearchTrainer(ReconstructionModelTrainer):
         self.end_time = None
 
         self.predicted_logvar = (
-            np.empty((self.particle_count, self.configs.z_dim))
-            if self.configs.z_dim > 0 and self.configs.variational_het
+            np.empty((self.particle_count, self.configs.zdim))
+            if self.configs.zdim > 0 and self.configs.variational_het
             else None
         )
 
@@ -611,7 +611,7 @@ class SGDPoseSearchTrainer(ReconstructionModelTrainer):
         self.mask_tilts_seen_at_last_epoch = np.zeros(self.image_count)
         self.optimized_modules = ["hypervolume"]
 
-        self.pose_only = self.configs.z_dim == 0
+        self.pose_only = self.configs.zdim == 0
         self.pose_only |= self.current_epoch == 0
         self.pose_only |= (
             self.epoch_images_seen is None
@@ -869,7 +869,7 @@ class SGDPoseSearchTrainer(ReconstructionModelTrainer):
             if not self.configs.no_trans and self.configs.pose_estimation != "fixed":
                 self.predicted_trans[batch["tilt_indices"]] = trans_pred.reshape(-1, 2)
 
-            if self.configs.z_dim > 0 and self.predicted_conf is not None:
+            if self.configs.zdim > 0 and self.predicted_conf is not None:
                 self.predicted_conf[batch["indices"]] = conf_pred
                 if self.configs.variational_het and self.predicted_logvar is not None:
                     self.predicted_logvar[batch["indices"]] = logvar_pred
@@ -902,13 +902,13 @@ class SGDPoseSearchTrainer(ReconstructionModelTrainer):
 
         conf_pred = (
             latent_variables_dict["z"].detach().cpu().numpy()
-            if self.configs.z_dim > 0 and "z" in latent_variables_dict
+            if self.configs.zdim > 0 and "z" in latent_variables_dict
             else None
         )
 
         logvar_pred = (
             latent_variables_dict["z_logvar"].detach().cpu().numpy()
-            if self.configs.z_dim > 0 and "z_logvar" in latent_variables_dict
+            if self.configs.zdim > 0 and "z_logvar" in latent_variables_dict
             else None
         )
 
@@ -1100,7 +1100,7 @@ class SGDPoseSearchTrainer(ReconstructionModelTrainer):
         )
 
         # conformation
-        if self.configs.z_dim > 0:
+        if self.configs.zdim > 0:
             labels = None
 
             if self.configs.labels is not None:
@@ -1226,7 +1226,7 @@ class SGDPoseSearchTrainer(ReconstructionModelTrainer):
                 with open(out_pose, "wb") as f:
                     pickle.dump((self.predicted_rots, out_trans), f)
 
-        if self.configs.z_dim > 0:
+        if self.configs.zdim > 0:
             out_conf = os.path.join(self.outdir, f"z.{self.current_epoch}.pkl")
             with open(out_conf, "wb") as f:
                 pickle.dump(self.predicted_conf, f)
@@ -1245,7 +1245,7 @@ class SGDPoseSearchTrainer(ReconstructionModelTrainer):
         if hasattr(self.reconstruction_model, "conf_table"):
             self.reconstruction_model.conf_table.eval()
 
-        if self.configs.z_dim > 0:
+        if self.configs.zdim > 0:
             zval = self.predicted_conf[0].reshape(-1)
         else:
             zval = None

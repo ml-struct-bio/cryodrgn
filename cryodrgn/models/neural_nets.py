@@ -32,7 +32,7 @@ class Decoder(nn.Module):
             D: size of lattice
             extent: extent of lattice [-extent, extent]
             norm: data normalization
-            zval: value of latent (z_dim x 1)
+            zval: value of latent (zdim x 1)
         """
         raise NotImplementedError
 
@@ -105,13 +105,13 @@ class PositionalDecoder(Decoder):
     ):
         super(PositionalDecoder, self).__init__()
         assert in_dim >= 3
-        self.z_dim = in_dim - 3
+        self.zdim = in_dim - 3
         self.D = D
         self.D2 = D // 2
         self.DD = 2 * (D // 2)
         self.enc_dim = self.D2 if enc_dim is None else enc_dim
         self.enc_type = enc_type
-        self.in_dim = 3 * (self.enc_dim) * 2 + self.z_dim
+        self.in_dim = 3 * (self.enc_dim) * 2 + self.zdim
         self.decoder = ResidLinearMLP(self.in_dim, nlayers, hidden_dim, 1, activation)
 
         if enc_type == "gaussian":
@@ -162,8 +162,8 @@ class PositionalDecoder(Decoder):
         s = torch.sin(k)  # B x 3 x D2
         c = torch.cos(k)  # B x 3 x D2
         x = torch.cat([s, c], -1)  # B x 3 x D
-        x = x.view(*coords.shape[:-2], self.in_dim - self.z_dim)  # B x in_dim-z_dim
-        if self.z_dim > 0:
+        x = x.view(*coords.shape[:-2], self.in_dim - self.zdim)  # B x in_dim-zdim
+        if self.zdim > 0:
             x = torch.cat([x, coords[..., 3:, :].squeeze(-1)], -1)
             assert x.shape[-1] == self.in_dim
         return x
@@ -180,8 +180,8 @@ class PositionalDecoder(Decoder):
         s = torch.sin(k)
         c = torch.cos(k)
         x = torch.cat([s, c], -1)
-        x = x.view(*coords.shape[:-1], self.in_dim - self.z_dim)
-        if self.z_dim > 0:
+        x = x.view(*coords.shape[:-1], self.in_dim - self.zdim)
+        if self.zdim > 0:
             x = torch.cat([x, coords[..., 3:]], -1)
             assert x.shape[-1] == self.in_dim
         return x
@@ -195,8 +195,8 @@ class PositionalDecoder(Decoder):
         s = torch.sin(k)  # B x 3 x D2
         c = torch.cos(k)  # B x 3 x D2
         x = torch.cat([s, c], -1)  # B x 3 x D
-        x = x.view(*coords.shape[:-2], self.in_dim - self.z_dim)  # B x in_dim-z_dim
-        if self.z_dim > 0:
+        x = x.view(*coords.shape[:-2], self.in_dim - self.zdim)  # B x in_dim-zdim
+        if self.zdim > 0:
             x = torch.cat([x, coords[..., 3:, :].squeeze(-1)], -1)
             assert x.shape[-1] == self.in_dim
         return x
@@ -222,15 +222,15 @@ class PositionalDecoder(Decoder):
             D: size of lattice
             extent: extent of lattice [-extent, extent]
             norm: data normalization
-            zval: value of latent (z_dim x 1)
+            zval: value of latent (zdim x 1)
         """
         # Note: extent should be 0.5 by default, except when a downsampled
         # volume is generated
         assert extent <= 0.5
-        z_dim = 0
+        zdim = 0
         z = torch.tensor([])
         if zval is not None:
-            z_dim = len(zval)
+            zdim = len(zval)
             z = torch.tensor(zval, dtype=torch.float32, device=coords.device)
 
         vol_f = torch.zeros((D, D, D), dtype=torch.float32)
@@ -241,7 +241,7 @@ class PositionalDecoder(Decoder):
         ):
             x = coords + torch.tensor([0, 0, dz], device=coords.device)
             if zval is not None:
-                x = torch.cat((x, z.expand(x.shape[0], z_dim)), dim=-1)
+                x = torch.cat((x, z.expand(x.shape[0], zdim)), dim=-1)
             with torch.no_grad():
                 y = self.forward(x)
                 y = y.view(D, D)
@@ -266,13 +266,13 @@ class FTPositionalDecoder(Decoder):
     ):
         super(FTPositionalDecoder, self).__init__()
         assert in_dim >= 3
-        self.z_dim = in_dim - 3
+        self.zdim = in_dim - 3
         self.D = D
         self.D2 = D // 2
         self.DD = 2 * (D // 2)
         self.enc_type = enc_type
         self.enc_dim = self.D2 if enc_dim is None else enc_dim
-        self.in_dim = 3 * (self.enc_dim) * 2 + self.z_dim
+        self.in_dim = 3 * (self.enc_dim) * 2 + self.zdim
         self.decoder = ResidLinearMLP(self.in_dim, nlayers, hidden_dim, 2, activation)
 
         if enc_type == "gaussian":
@@ -323,8 +323,8 @@ class FTPositionalDecoder(Decoder):
         s = torch.sin(k)  # B x 3 x D2
         c = torch.cos(k)  # B x 3 x D2
         x = torch.cat([s, c], -1)  # B x 3 x D
-        x = x.view(*coords.shape[:-2], self.in_dim - self.z_dim)  # B x in_dim-z_dim
-        if self.z_dim > 0:
+        x = x.view(*coords.shape[:-2], self.in_dim - self.zdim)  # B x in_dim-zdim
+        if self.zdim > 0:
             x = torch.cat([x, coords[..., 3:, :].squeeze(-1)], -1)
             assert x.shape[-1] == self.in_dim
         return x
@@ -341,8 +341,8 @@ class FTPositionalDecoder(Decoder):
         s = torch.sin(k)
         c = torch.cos(k)
         x = torch.cat([s, c], -1)
-        x = x.view(*coords.shape[:-1], self.in_dim - self.z_dim)
-        if self.z_dim > 0:
+        x = x.view(*coords.shape[:-1], self.in_dim - self.zdim)
+        if self.zdim > 0:
             x = torch.cat([x, coords[..., 3:]], -1)
             assert x.shape[-1] == self.in_dim
         return x
@@ -356,8 +356,8 @@ class FTPositionalDecoder(Decoder):
         s = torch.sin(k)  # B x 3 x D2
         c = torch.cos(k)  # B x 3 x D2
         x = torch.cat([s, c], -1)  # B x 3 x D
-        x = x.view(*coords.shape[:-2], self.in_dim - self.z_dim)  # B x in_dim-z_dim
-        if self.z_dim > 0:
+        x = x.view(*coords.shape[:-2], self.in_dim - self.zdim)  # B x in_dim-zdim
+        if self.zdim > 0:
             x = torch.cat([x, coords[..., 3:, :].squeeze(-1)], -1)
             assert x.shape[-1] == self.in_dim
         return x
@@ -367,7 +367,7 @@ class FTPositionalDecoder(Decoder):
         Call forward on central slices only
             i.e. the middle pixel should be (0,0,0)
 
-        lattice: B x N x 3+z_dim
+        lattice: B x N x 3+zdim
         """
         # if ignore_DC = False, then the size of the lattice will be odd (since it
         # includes the origin), so we need to evaluate one additional pixel
@@ -414,13 +414,13 @@ class FTPositionalDecoder(Decoder):
             D: size of lattice
             extent: extent of lattice [-extent, extent]
             norm: data normalization
-            zval: value of latent (z_dim x 1)
+            zval: value of latent (zdim x 1)
         """
         assert extent <= 0.5
-        z_dim = 0
+        zdim = 0
         z = torch.tensor([])
         if zval is not None:
-            z_dim = len(zval)
+            zdim = len(zval)
             z = torch.tensor(zval, dtype=torch.float32, device=coords.device)
 
         vol_f = torch.zeros((D, D, D), dtype=torch.float32, device=coords.device)
@@ -433,7 +433,7 @@ class FTPositionalDecoder(Decoder):
             keep = x.pow(2).sum(dim=1) <= extent**2
             x = x[keep]
             if zval is not None:
-                x = torch.cat((x, z.expand(x.shape[0], z_dim)), dim=-1)
+                x = torch.cat((x, z.expand(x.shape[0], zdim)), dim=-1)
             with torch.no_grad():
                 if dz == 0.0:
                     y = self.forward(x)
@@ -494,7 +494,7 @@ class FTSliceDecoder(Decoder):
         Call forward on central slices only
             i.e. the middle pixel should be (0,0,0)
 
-        lattice: B x N x 3+z_dim
+        lattice: B x N x 3+zdim
         """
         assert lattice.shape[-2] % 2 == 1
         c = lattice.shape[-2] // 2  # center pixel
@@ -553,11 +553,11 @@ class FTSliceDecoder(Decoder):
             D: size of lattice
             extent: extent of lattice [-extent, extent]
             norm: data normalization
-            zval: value of latent (z_dim x 1)
+            zval: value of latent (zdim x 1)
         """
         if zval is not None:
-            z_dim = len(zval)
-            z = torch.zeros(D**2, z_dim, dtype=torch.float32)
+            zdim = len(zval)
+            z = torch.zeros(D**2, zdim, dtype=torch.float32)
             z += torch.tensor(zval, dtype=torch.float32, device=coords.device)
         else:
             z = None
@@ -699,13 +699,13 @@ class ResidLinearMLP(Decoder):
             D: size of lattice
             extent: extent of lattice [-extent, extent]
             norm: data normalization
-            zval: value of latent (z_dim x 1)
+            zval: value of latent (zdim x 1)
         """
         # Note: extent should be 0.5 by default, except when a downsampled
         # volume is generated
         if zval is not None:
-            z_dim = len(zval)
-            z = torch.zeros(D**2, z_dim, dtype=torch.float32, device=coords.device)
+            zdim = len(zval)
+            z = torch.zeros(D**2, zdim, dtype=torch.float32, device=coords.device)
             z += torch.tensor(zval, dtype=torch.float32, device=coords.device)
 
         vol_f = torch.zeros((D, D, D), dtype=torch.float32)

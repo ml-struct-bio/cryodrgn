@@ -46,8 +46,8 @@ class ReconstructionModelConfigurations(BaseConfigurations):
 
     model       A label for the reconstruction algorithm to be used — must be either
                 `hps` for cryoDRGN v3 models or `amort` for cryoDRGN-AI models.
-    z_dim       The dimensionality of the latent space of conformations.
-                Thus z_dim=0 for homogeneous models and z_dim>0 for hetergeneous models.
+    zdim        The dimensionality of the latent space of conformations.
+                Thus zdim=0 for homogeneous models and zdim>0 for hetergeneous models.
     num_epochs  The total number of epochs to use when training the model, not including
                 pretraining epoch(s).
 
@@ -93,7 +93,7 @@ class ReconstructionModelConfigurations(BaseConfigurations):
     # A parameter belongs to this configuration set if and only if it has a type and a
     # default value defined here, note that children classes inherit these parameters
     model: str = None
-    z_dim: int = None
+    zdim: int = None
     num_epochs: int = 30
     dataset: str = None
     particles: str = None
@@ -176,15 +176,15 @@ class ReconstructionModelConfigurations(BaseConfigurations):
                 f"`cryodrgn-ai` (cryoDRGN v4 pose estimation)\n"
                 f"`cryodrgn` (cryoDRGN v3,v2,v1 hierarchical-only pose estimation)\n"
             )
-        if not isinstance(self.z_dim, int) or self.z_dim < 0:
+        if not isinstance(self.zdim, int) or self.zdim < 0:
             raise ValueError(
-                f"Given latent space dimension {self.z_dim=} "
+                f"Given latent space dimension {self.zdim=} "
                 f"is not zero (homogeneous reconstruction) "
                 f"or a positive integer (heterogeneous reconstruction)!"
             )
         if not isinstance(self.num_epochs, int) or self.num_epochs <= 0:
             raise ValueError(
-                f"Given number of training epochs {self.z_dim=} "
+                f"Given number of training epochs {self.zdim=} "
                 f"is not a positive integer!"
             )
 
@@ -270,7 +270,7 @@ class ReconstructionModelConfigurations(BaseConfigurations):
         )
         model_args = dict(
             model=self.model,
-            z_dim=self.z_dim,
+            zdim=self.zdim,
             pose_estimation=self.pose_estimation,
             pe_type=self.pe_type,
             pe_dim=self.pe_dim,
@@ -533,9 +533,9 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
                     f"Image size {self.data.D - 1} not divisible by 8 "
                     f"and thus not optimal for AMP training!"
                 )
-            if self.configs.z_dim % 8 != 0:
+            if self.configs.zdim % 8 != 0:
                 self.logger.warning(
-                    f"Z dimension {self.configs.z_dim} is not a multiple of 8 "
+                    f"Z dimension {self.configs.zdim} is not a multiple of 8 "
                     "-- AMP training speedup is not optimized!"
                 )
 
@@ -668,8 +668,8 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
                 np.empty((self.image_count, 2)) if not self.configs.no_trans else None
             )
         self.predicted_conf = (
-            np.empty((self.particle_count, self.configs.z_dim))
-            if self.configs.z_dim > 0
+            np.empty((self.particle_count, self.configs.zdim))
+            if self.configs.zdim > 0
             else None
         )
 
@@ -796,7 +796,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
     def model_resolution(self) -> int:
         return (
             self.model_module.lattice.D
-            if self.configs.z_dim > 0
+            if self.configs.zdim > 0
             else self.model_module.D
         )
 
@@ -925,7 +925,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
         else:
             epoch_lbl += " <volume inference>"
 
-        if self.configs.z_dim > 0:
+        if self.configs.zdim > 0:
             loss_str = ", ".join(
                 [
                     f"{loss_k} = {loss_val:.4g}"

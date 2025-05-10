@@ -103,7 +103,7 @@ def main(args: argparse.Namespace) -> None:
         raise ValueError("Missing config.yaml file " "in given output folder!")
     with open(train_configs_file, "r") as f:
         train_configs = yaml.safe_load(f)
-    if train_configs["model_args"]["z_dim"] == 0:
+    if train_configs["model_args"]["zdim"] == 0:
         raise NotImplementedError(
             "Filtering is not available for the output "
             "of homogeneous reconstruction!"

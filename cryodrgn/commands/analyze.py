@@ -211,7 +211,7 @@ class ModelAnalyzer:
                 f"to epoch {self.epoch} yet?"
             )
 
-        if self.train_configs.z_dim > 0:
+        if self.train_configs.zdim > 0:
             self.z = cryodrgn.utils.load_pkl(
                 os.path.join(self.traindir, f"z.{self.epoch}.pkl")
             )
@@ -226,7 +226,7 @@ class ModelAnalyzer:
         logger.info(f"Saving results to {self.outdir}")
 
         # We will generate volumes unless told not to or if using a homogeneous model
-        if skip_vol or self.train_configs.z_dim == 0:
+        if skip_vol or self.train_configs.zdim == 0:
             self.volume_generator = None
         else:
             cfgs = cryodrgn.utils.load_yaml(self.cfg_file)
@@ -259,12 +259,12 @@ class ModelAnalyzer:
             logger.info("Skipping volume generation...")
 
     def analyze(self) -> None:
-        if self.train_configs.z_dim == 0:
+        if self.train_configs.zdim == 0:
             logger.warning("No analyses available for homogeneous reconstruction!")
             return
         else:
             os.makedirs(self.outdir, exist_ok=True)
-            if self.train_configs.z_dim == 1:
+            if self.train_configs.zdim == 1:
                 self.analyze_z1()
             else:
                 self.analyze_zN()
@@ -337,7 +337,7 @@ class ModelAnalyzer:
         if self.direct_traversal_txt is not None:
             dir_traversal_vertices_ind = np.loadtxt(self.direct_traversal_txt)
             travdir = os.path.join(self.outdir, "direct_traversal")
-            z_values = np.zeros((0, self.train_configs.z_dim))
+            z_values = np.zeros((0, self.train_configs.zdim))
 
             for i, ind in enumerate(dir_traversal_vertices_ind[:-1]):
                 z_0 = self.z[int(int)]

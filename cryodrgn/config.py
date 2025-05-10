@@ -105,6 +105,6 @@ def overwrite_config(config: dict, args: argparse.Namespace) -> dict:
             model_args[arg] = getattr(args, arg)
 
     if "zdim" in model_args:
-        model_args["z_dim"] = model_args["zdim"]
+        model_args["zdim"] = model_args["zdim"]
 
     return config

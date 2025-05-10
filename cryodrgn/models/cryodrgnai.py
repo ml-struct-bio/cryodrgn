@@ -40,7 +40,7 @@ class DRGNai(nn.Module):
             channels_cnn: int
             kernel_size_cnn: int
         conf_regressor_params: dict
-            z_dim: int
+            zdim: int
             std_z_init: float
             variational: bool
         hypervolume_params: dict
@@ -98,7 +98,7 @@ class DRGNai(nn.Module):
             )
 
         self.no_trans = no_trans
-        self.z_dim = conf_regressor_params["z_dim"]
+        self.zdim = conf_regressor_params["zdim"]
         self.variational_conf = conf_regressor_params["variational_het"]
         self.std_z_init = conf_regressor_params["std_z_init"]
 
@@ -115,7 +115,7 @@ class DRGNai(nn.Module):
             )
 
         # conformation
-        if self.z_dim > 0:
+        if self.zdim > 0:
             if cnn_params["use_conf_encoder"]:
                 self.conf_cnn = SharedCNN(
                     resolution_encoder
@@ -133,7 +133,7 @@ class DRGNai(nn.Module):
                 self.conf_regressor = ConfRegressor(
                     final_channels,
                     final_size,
-                    conf_regressor_params["z_dim"],
+                    conf_regressor_params["zdim"],
                     conf_regressor_params["std_z_init"],
                     conf_regressor_params["variational_het"],
                 )
@@ -141,7 +141,7 @@ class DRGNai(nn.Module):
             else:
                 self.conf_table = ConfTable(
                     n_particles_dataset,
-                    self.z_dim,
+                    self.zdim,
                     conf_regressor_params["variational_het"],
                     conf_regressor_params["std_z_init"],
                 )
@@ -160,7 +160,7 @@ class DRGNai(nn.Module):
         if not hypervolume_params["explicit_volume"]:
             self.hypervolume = HyperVolume(
                 self.D,
-                self.z_dim,
+                self.zdim,
                 hypervolume_params["hidden_layers"],
                 hypervolume_params["hidden_dim"],
                 hypervolume_params["pe_type"],
@@ -203,8 +203,8 @@ class DRGNai(nn.Module):
             y_gt_processed: [batch_size, n_pts]
             R: [batch_size, 3, 3]
             t: [batch_size, 2]
-            z: [batch_size, z_dim]
-            z_logvar: [batch_size, z_dim]
+            z: [batch_size, zdim]
+            z_logvar: [batch_size, zdim]
             time_encoder: [1]
             time_decoder: [1]
         """
@@ -267,8 +267,8 @@ class DRGNai(nn.Module):
         output: dict
             R: [batch_size(, n_tilts), 3, 3]
             t: [batch_size(, n_tilts), 2]
-            z: [batch_size, z_dim]
-            z_logvar: [batch_size, z_dim]
+            z: [batch_size, zdim]
+            z_logvar: [batch_size, zdim]
         """
         latent_variables_dict = {}
         z = None
@@ -276,16 +276,16 @@ class DRGNai(nn.Module):
         batch_size = in_dict["y"].shape[0]
 
         # conformation
-        if self.z_dim > 0:
+        if self.zdim > 0:
             # pretrain and pose only
             if self.pose_only:
                 z = self.std_z_init * torch.randn(
-                    (batch_size, self.z_dim), dtype=torch.float32, device=device
+                    (batch_size, self.zdim), dtype=torch.float32, device=device
                 )
                 conf_dict = {"z": z}
                 if self.variational_conf:
                     logvar = torch.ones(
-                        (batch_size, self.z_dim), dtype=torch.float32, device=device
+                        (batch_size, self.zdim), dtype=torch.float32, device=device
                     )
                     conf_dict["z_logvar"] = logvar
             # amortized inference
@@ -354,8 +354,8 @@ class DRGNai(nn.Module):
         latent_variables_dict: dict
             R: [batch_size(, n_tilts), 3, 3]
             t: [batch_size(, n_tilts), 2]
-            z: [batch_size, z_dim]
-            z_logvar: [batch_size, z_dim]
+            z: [batch_size, zdim]
+            z_logvar: [batch_size, zdim]
         ctf_local: [batch_size(, n_tilts), D, D]
         y: [batch_size(, n_tilts), D, D]
 
@@ -366,7 +366,7 @@ class DRGNai(nn.Module):
         z = None
 
         # sample conformations
-        if self.z_dim > 0:
+        if self.zdim > 0:
             if self.variational_conf:
                 z = sample_conf(
                     latent_variables_dict["z"], latent_variables_dict["z_logvar"]
@@ -413,7 +413,7 @@ class DRGNai(nn.Module):
     def eval_on_slice(self, x, z=None):
         """
         x: [batch_size, (nq, ) n_pts, 3]
-        z: [batch_size, z_dim]
+        z: [batch_size, zdim]
 
         output: [..., n_pts]
         """
@@ -445,7 +445,7 @@ class DRGNai(nn.Module):
             norm=norm,
             zval=zval,
             radius=self.output_mask.current_radius if radius is None else radius,
-            z_dim=self.z_dim,
+            zdim=self.zdim,
         )
 
     def apply_ctf(self, y_pred, ctf_local):
@@ -464,10 +464,10 @@ class DRGNai(nn.Module):
 
 def sample_conf(z_mu, z_logvar):
     """
-    z_mu: [batch_size, z_dim]
-    z_logvar: [batch_size, z_dim]
+    z_mu: [batch_size, zdim]
+    z_logvar: [batch_size, zdim]
 
-    output: [batch_size, z_dim]
+    output: [batch_size, zdim]
     """
     # std = nn.Softplus(beta=2)(.5 * z_logvar)
     # std = nn.Softplus(beta=1)(z_logvar)
@@ -668,25 +668,25 @@ class AddCoords(nn.Module):
 
 
 class ConfTable(nn.Module):
-    def __init__(self, n_imgs, z_dim, variational, std_z_init):
+    def __init__(self, n_imgs, zdim, variational, std_z_init):
         """
         n_imgs: int
-        z_dim: int
+        zdim: int
         variational: bool
         """
         super(ConfTable, self).__init__()
         self.variational = variational
         self.conf_init = torch.tensor(
-            std_z_init * np.random.randn(n_imgs, z_dim)
+            std_z_init * np.random.randn(n_imgs, zdim)
         ).float()
         self.table_conf = nn.Parameter(self.conf_init, requires_grad=True)
         if variational:
-            logvar_init = torch.tensor(np.ones((n_imgs, z_dim))).float()
+            logvar_init = torch.tensor(np.ones((n_imgs, zdim))).float()
             self.table_logvar = nn.Parameter(logvar_init, requires_grad=True)
 
     def initialize(self, conf):
         """
-        conf: [n_imgs, z_dim] (numpy)
+        conf: [n_imgs, zdim] (numpy)
         """
         state_dict = self.state_dict()
         state_dict["table_conf"] = torch.tensor(conf).float()
@@ -703,8 +703,8 @@ class ConfTable(nn.Module):
             tilt_index: [batch_size( * n_tilts)]
 
         output: dict
-            z: [batch_size, z_dim]
-            z_logvar: [batch_size, z_dim] if variational and not pose_only
+            z: [batch_size, zdim]
+            z_logvar: [batch_size, zdim] if variational and not pose_only
         """
         conf = self.table_conf[in_dict["indices"]]
         conf_dict = {"z": conf}
@@ -784,22 +784,22 @@ class PoseTable(nn.Module):
 
 
 class ConfRegressor(nn.Module):
-    def __init__(self, channels, kernel_size, z_dim, std_z_init, variational):
+    def __init__(self, channels, kernel_size, zdim, std_z_init, variational):
         """
         channels: int
         kernel_size: int
-        z_dim: int
+        zdim: int
         std_z_init: float
         variational: bool
         """
         super(ConfRegressor, self).__init__()
-        self.z_dim = z_dim
+        self.zdim = zdim
         self.variational = variational
         self.std_z_init = std_z_init
         if variational:
-            out_features = 2 * z_dim
+            out_features = 2 * zdim
         else:
-            out_features = z_dim
+            out_features = zdim
         self.out_features = out_features
         self.regressor = nn.Conv2d(channels, out_features, kernel_size, padding="valid")
 
@@ -808,8 +808,8 @@ class ConfRegressor(nn.Module):
         shared_features: [..., channels, kernel_size, kernel_size]
 
         output: dict
-            z: [..., z_dim]
-            z_logvar: [..., z_dim] if variational and not pose_only
+            z: [..., zdim]
+            z_logvar: [..., zdim] if variational and not pose_only
         """
         in_dim = shared_features.shape[:-3]
         c = shared_features.shape[-3]
@@ -819,8 +819,8 @@ class ConfRegressor(nn.Module):
         )
         if self.variational:
             conf_dict = {
-                "z": z_full[:, : self.z_dim],
-                "z_logvar": nn.Tanh()(z_full[:, self.z_dim :] / 10.0) * 10.0,
+                "z": z_full[:, : self.zdim],
+                "z_logvar": nn.Tanh()(z_full[:, self.zdim :] / 10.0) * 10.0,
             }
         else:
             conf_dict = {"z": z_full}
@@ -831,7 +831,7 @@ class HyperVolume(nn.Module):
     def __init__(
         self,
         resolution,
-        z_dim,
+        zdim,
         n_layers,
         hidden_dim,
         pe_type,
@@ -842,7 +842,7 @@ class HyperVolume(nn.Module):
     ):
         """
         resolution: int
-        z_dim: int
+        zdim: int
         n_layers: int
         hidden_dim: int
         pe_type: str
@@ -861,7 +861,7 @@ class HyperVolume(nn.Module):
             raise NotImplementedError
         self.pe_type_conf = pe_type_conf
         if pe_type_conf is None:
-            z_pe_dim = z_dim
+            z_pe_dim = zdim
         elif pe_type_conf == "geom":
             min_freq = -4
             n_freqs = 4
@@ -870,12 +870,12 @@ class HyperVolume(nn.Module):
                 * np.pi
             )
             self.geom_freqs_conf = nn.Parameter(geom_freqs_conf, requires_grad=False)
-            z_pe_dim = z_dim * 2 * n_freqs
+            z_pe_dim = zdim * 2 * n_freqs
         else:
             raise NotImplementedError
 
         self.D = resolution
-        self.z_dim = z_dim
+        self.zdim = zdim
         self.n_layers = n_layers
         self.hidden_dim = hidden_dim
         self.feat_sigma = feat_sigma
@@ -890,7 +890,7 @@ class HyperVolume(nn.Module):
     def forward(self, x, z):
         """
         x: [batch_size(, n_tilts), n_pts, 3]
-        z: [batch_size, z_dim] or None
+        z: [batch_size, zdim] or None
 
         output: [batch_size(, n_tilts), n_pts]
         """
@@ -933,20 +933,20 @@ class HyperVolume(nn.Module):
 
     def geom_fourier_encoding_conf(self, z):
         """
-        z: [batch_size, z_dim]
+        z: [batch_size, zdim]
 
-        output: [batch_size, z_dim * 2 * pe_dim]
+        output: [batch_size, zdim * 2 * pe_dim]
         """
         in_dims = z.shape[:-1]
-        s = torch.sin(z[..., None] * self.geom_freqs_conf)  # [..., z_dim, pe_dim]
-        c = torch.cos(z[..., None] * self.geom_freqs_conf)  # [..., z_dim, pe_dim]
+        s = torch.sin(z[..., None] * self.geom_freqs_conf)  # [..., zdim, pe_dim]
+        c = torch.cos(z[..., None] * self.geom_freqs_conf)  # [..., zdim, pe_dim]
         z_encoded = torch.cat([s, c], -1).reshape(*in_dims, -1)
         return z_encoded
 
     def get_building_params(self):
         building_params = {
             "resolution": self.D,
-            "z_dim": self.z_dim,
+            "zdim": self.zdim,
             "n_layers": self.n_layers,
             "hidden_dim": self.hidden_dim,
             "pe_type": self.pe_type,
@@ -966,16 +966,16 @@ class HyperVolume(nn.Module):
         norm=None,
         zval=None,
         radius=None,
-        z_dim=None,
+        zdim=None,
     ):
         """
         lattice: Lattice
-        z_dim: int
+        zdim: int
         norm: (mean, std)
-        zval: [z_dim]
+        zval: [zdim]
         radius: int
         """
-        z_dim = z_dim or self.z_dim
+        zdim = zdim or self.zdim
         radius_normalized = extent * 2 * radius / resolution
         if coords is None:
             coords = lattice.coords
@@ -983,7 +983,7 @@ class HyperVolume(nn.Module):
         z = None
         if zval is not None:
             z = torch.tensor(zval, dtype=torch.float32, device=coords.device).reshape(
-                1, z_dim
+                1, zdim
             )
 
         volume = np.zeros((resolution, resolution, resolution), dtype=np.float32)

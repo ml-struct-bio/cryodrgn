@@ -26,7 +26,7 @@ class SetupRequest:
         ind: Optional[str],
         datadir: Optional[str],
         reconstruction_type: Optional[str],
-        z_dim: Optional[str],
+        zdim: Optional[str],
         pose_estimation: Optional[str],
         tilt: Optional[bool],
         cfgs: Optional[list[str]],
@@ -49,8 +49,8 @@ class SetupRequest:
             args += ["--datadir", datadir]
         if reconstruction_type is not None:
             args += ["--reconstruction-type", reconstruction_type]
-        if z_dim is not None:
-            args += ["--z-dim", z_dim]
+        if zdim is not None:
+            args += ["--zdim", zdim]
         if pose_estimation is not None:
             args += ["--pose-estimation", pose_estimation]
         if tilt is not None and tilt is True:
@@ -88,7 +88,7 @@ class SetupRequest:
         self.ind = ind
         self.datadir = datadir
         self.reconstruction_type = reconstruction_type
-        self.z_dim = z_dim
+        self.zdim = zdim
         self.pose_estimation = pose_estimation
         self.tilt = tilt
         self.cfgs = cfgs if cfgs is not None else list()
@@ -106,7 +106,7 @@ def setup_request(
     indices,
     datadir,
     reconstruction_type,
-    z_dim,
+    zdim,
     pose_estimation,
     cfgs,
     include,
@@ -124,7 +124,7 @@ def setup_request(
                 indices.label,
                 datadir.label,
                 reconstruction_type if reconstruction_type is not None else "None",
-                z_dim if z_dim is not None else "None",
+                zdim if zdim is not None else "None",
                 pose_estimation if pose_estimation is not None else "None",
                 str(hash(tuple(cfgs))) if cfgs is not None else "None",
                 str(hash(tuple(include))) if include is not None else "None",
@@ -143,7 +143,7 @@ def setup_request(
         indices.path,
         datadir.path,
         reconstruction_type,
-        z_dim,
+        zdim,
         pose_estimation,
         False,
         cfgs,
@@ -160,7 +160,7 @@ def test_empty_setup(tmpdir_factory):
 
     cfgs = cryodrgn.utils.load_yaml(os.path.join(outdir, "config.yaml"))
     configs = get_model_configurations(cfgs)
-    assert configs == SGDPoseSearchConfigurations(z_dim=8, seed=configs.seed)
+    assert configs == SGDPoseSearchConfigurations(zdim=8, seed=configs.seed)
 
 
 def setup_directory(setup_request):
@@ -195,8 +195,8 @@ def setup_directory(setup_request):
     else:
         assert configs["dataset_args"]["ind"] == setup_request.ind
 
-    if setup_request.z_dim is not None:
-        use_zdim = int(setup_request.z_dim)
+    if setup_request.zdim is not None:
+        use_zdim = int(setup_request.zdim)
     elif setup_request.reconstruction_type is None:
         use_zdim = 8
     elif setup_request.reconstruction_type == "homo":
@@ -209,7 +209,7 @@ def setup_directory(setup_request):
             f"`{setup_request.reconstruction_type}`!"
         )
     for cfg in setup_request.cfgs:
-        if cfg.startswith("z_dim="):
+        if cfg.startswith("zdim="):
             use_zdim = int(cfg.split("=")[1])
 
         elif cfg.startswith("window_r="):
@@ -217,7 +217,7 @@ def setup_directory(setup_request):
                 cfg.split("=")[1]
             ), "Incorrect window radius!"
 
-    assert configs["model_args"]["z_dim"] == use_zdim
+    assert configs["model_args"]["zdim"] == use_zdim
     assert configs["model_args"]["learning_rate"] == 0.1
     if setup_request.pose_estimation is None:
         if setup_request.poses is not None:
@@ -260,19 +260,19 @@ def setup_directory(setup_request):
     indirect=["particles", "ctf", "poses", "indices", "datadir"],
 )
 @pytest.mark.parametrize(
-    "reconstruction_type, z_dim, cfgs, include",
+    "reconstruction_type, zdim, cfgs, include",
     [
         (None, None, None, None),
         ("homo", None, None, None),
         (None, "2", None, None),
         ("homo", None, None, {"weight_decay": 0.05}),
-        (None, None, ["z_dim=2"], None),
+        (None, None, ["zdim=2"], None),
         (None, "0", ["window_r=0.80"], None),
-        (None, "4", ["window_r=0.80", "z_dim=2"], None),
-        (None, "4", ["window_r=0.80", "z_dim=2", "ind=4"], {"weight_decay": 0.05}),
+        (None, "4", ["window_r=0.80", "zdim=2"], None),
+        (None, "4", ["window_r=0.80", "zdim=2", "ind=4"], {"weight_decay": 0.05}),
         ("homo", None, ["window_r=0.80"], None),
         ("homo", None, ["window_r=0.80"], {"weight_decay": 0.05}),
-        ("het", None, ["window_r=0.75", "z_dim=2"], None),
+        ("het", None, ["window_r=0.75", "zdim=2"], None),
         pytest.param(
             "homo",
             "4",
@@ -280,7 +280,7 @@ def setup_directory(setup_request):
             None,
             marks=pytest.mark.xfail(
                 raises=ValueError,
-                reason="cannot specify both reconstruction-type and z_dim",
+                reason="cannot specify both reconstruction-type and zdim",
             ),
         ),
         pytest.param(
@@ -290,7 +290,7 @@ def setup_directory(setup_request):
             {"weight_decay": 0.05},
             marks=pytest.mark.xfail(
                 raises=ValueError,
-                reason="cannot specify both reconstruction-type and z_dim",
+                reason="cannot specify both reconstruction-type and zdim",
             ),
         ),
     ],
@@ -315,10 +315,10 @@ def test_setup_standalone(setup_request):
     indirect=["particles", "ctf", "poses", "indices", "datadir"],
 )
 @pytest.mark.parametrize(
-    "reconstruction_type, z_dim, cfgs, include",
+    "reconstruction_type, zdim, cfgs, include",
     [
         ("homo", None, None, {"weight_decay": 0.05}),
-        (None, "4", ["window_r=0.80", "z_dim=2", "ind=4"], {"weight_decay": 0.05}),
+        (None, "4", ["window_r=0.80", "zdim=2", "ind=4"], {"weight_decay": 0.05}),
         ("homo", None, ["window_r=0.80"], {"weight_decay": 0.05}),
     ],
 )

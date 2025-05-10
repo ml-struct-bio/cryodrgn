@@ -2,12 +2,12 @@
 
 Example usage
 -------------
-# This model used the default of z_dim=8
+# This model used the default of zdim=8
 $ cryodrgn eval_vol 004_vae128/weights.pkl -c 004_vae128/config.yaml \
                                            -o zero-vol.mrc -z 0 0 0 0 0 0 0 0
 
 # We can instead specify a z-latent-space path instead of a single location
-# Here the model was trained using z_dim=4
+# Here the model was trained using zdim=4
 $ cryodrgn eval_vol 004_vae128/weights.pkl -c 004_vae128/config.yaml -o zero-vol.mrc \
                                            --z-start 0 -1 0 0 --z-end 1 1 1 1
 
@@ -108,7 +108,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     group.add_argument(
         "--enc-dim", dest="qdim", type=int, help="Number of nodes in hidden layers"
     )
-    group.add_argument("--z_dim", type=int, help="Dimension of latent variable")
+    group.add_argument("--zdim", type=int, help="Dimension of latent variable")
     group.add_argument(
         "--encode-mode",
         choices=("conv", "resid", "mlp", "tilt"),
@@ -329,13 +329,13 @@ def main(args: argparse.Namespace) -> None:
 
     # Parse location(s) specified by the user in the latent space in various formats
     if args.zfile:
-        z_vals = np.loadtxt(args.zfile).reshape(-1, evaluator.model.z_dim)
+        z_vals = np.loadtxt(args.zfile).reshape(-1, evaluator.model.zdim)
     elif args.z_start:
         z_start, z_end = np.array(args.z_start), np.array(args.z_end)
-        z_dim = cfg["model_args"]["z_dim"]
+        zdim = cfg["model_args"]["zdim"]
         z_vals = np.repeat(
-            np.arange(args.volume_count, dtype=np.float32), z_dim
-        ).reshape((args.volume_count, z_dim))
+            np.arange(args.volume_count, dtype=np.float32), zdim
+        ).reshape((args.volume_count, zdim))
         z_vals *= (z_end - z_start) / (args.volume_count - 1)  # type: ignore
         z_vals += z_start
     else:

@@ -1233,7 +1233,7 @@ class SGDPoseSearchTrainer(ReconstructionModelTrainer):
 
     def save_volume(self):
         """Write reconstructed volume to file."""
-        out_mrc = os.path.join(self.outdir, f"reconstruct.{self.current_epoch}.mrc")
+        out_mrc = os.path.join(self.outdir, f"reconstruct.{self.epoch_lbl}.mrc")
         self.reconstruction_model.hypervolume.eval()
         if hasattr(self.reconstruction_model, "conf_cnn"):
             if hasattr(self.reconstruction_model, "conf_regressor"):

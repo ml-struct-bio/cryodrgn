@@ -743,9 +743,9 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
 
     def save_epoch_data(self):
         """Save model weights, latent encoding z, and decoder volumes"""
-        out_weights = os.path.join(self.outdir, f"weights.{self.epoch_lbl}.pkl")
-        out_poses = os.path.join(self.outdir, f"pose.{self.epoch_lbl}.pkl")
-        out_conf = os.path.join(self.outdir, f"z.{self.epoch_lbl}.pkl")
+        out_weights = os.path.join(self.outdir, f"weights.{self.current_epoch}.pkl")
+        out_poses = os.path.join(self.outdir, f"pose.{self.current_epoch}.pkl")
+        out_conf = os.path.join(self.outdir, f"z.{self.current_epoch}.pkl")
 
         # save a reconstructed volume by evaluating model on a 3d lattice
         if self.configs.zdim == 0:

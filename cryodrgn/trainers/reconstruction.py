@@ -918,13 +918,6 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
         self.configs: ReconstructionModelConfigurations
         epoch_lbl = f"[{self.current_epoch}/{self.configs.num_epochs}]"
 
-        if self.in_pretraining:
-            epoch_lbl += " <pretraining>"
-        elif self.in_pose_search_step:
-            epoch_lbl += " <pose search>"
-        else:
-            epoch_lbl += " <volume inference>"
-
         if self.configs.zdim > 0:
             loss_str = ", ".join(
                 [
@@ -959,9 +952,21 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
         return self.current_epoch is not None and self.current_epoch == 0
 
     @property
+    def epoch_type(self) -> str:
+        """A human-readable label for the type of the current training epoch."""
+        if self.in_pretraining:
+            etype = "pretraining"
+        elif self.in_pose_search_step:
+            etype = "hps"
+        else:
+            etype = "sgd"
+
+        return etype
+
+    @property
     def epoch_lbl(self) -> str:
         """A human-readable label for the current training epoch."""
-        return str(self.current_epoch)
+        return ".".join([str(self.current_epoch), self.epoch_type])
 
     @property
     def average_losses(self) -> dict[str, float]:

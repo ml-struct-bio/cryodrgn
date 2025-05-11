@@ -279,7 +279,11 @@ class TestHomogeneous:
                     f"weights.{epoch}.pkl" in out_files
                 ), f"Missing output model weights for epoch {epoch}!"
                 assert (
-                    f"reconstruct.{epoch}.mrc" in out_files
+                    sum(
+                        out_file.startswith(f"reconstruct.{epoch}")
+                        for out_file in out_files
+                    )
+                    == 1
                 ), f"Missing output reconstructed volume for epoch {epoch}!"
                 if traincmd.train_cmd == "train_nn":
                     assert (
@@ -295,7 +299,11 @@ class TestHomogeneous:
                     f"weights.{epoch}.pkl" not in out_files
                 ), f"Extraneous output model weights for epoch {epoch}!"
                 assert (
-                    f"reconstruct.{epoch}.mrc" not in out_files
+                    sum(
+                        out_file.startswith(f"reconstruct.{epoch}")
+                        for out_file in out_files
+                    )
+                    == 0
                 ), f"Extraneous output reconstructed volume for epoch {epoch}!"
 
     def test_train_from_checkpoint(self, traincmd):
@@ -304,11 +312,13 @@ class TestHomogeneous:
         traincmd.args += ["--load", os.path.join(traincmd.outdir, "weights.6.pkl")]
         i = traincmd.args.index("--num-epochs")
         traincmd.args[i + 1] = str(int(traincmd.args[i + 1]) + 1)
-
         traincmd.run(no_analysis=False)
         out_files = os.listdir(traincmd.outdir)
+
         assert "weights.7.pkl" in out_files, "Missing output model weights!"
-        assert "reconstruct.7.mrc" in out_files, "Missing output reconstructed vol!"
+        assert (
+            sum(out_file.startswith("reconstruct.7") for out_file in out_files) == 1
+        ), "Missing output reconstructed vol!"
         assert not any(
             fl.startswith("analyze.") for fl in out_files
         ), "Created empty analysis folder!"

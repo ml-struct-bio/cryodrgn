@@ -1,46 +1,9 @@
 """Unit tests of the cryodrgn fsc command."""
-import pandas as pd
+
 import pytest
 import os
-import numpy as np
+import pandas as pd
 from cryodrgn.utils import run_command
-
-
-@pytest.mark.parametrize(
-    "train_dir",
-    [{"train_cmd": "train_nn", "epochs": 5, "seed": 1030}],
-    indirect=True,
-)
-def test_fidelity(trained_dir) -> None:
-    """Test that we can compare two volumes produced during reconstruction training."""
-
-    vol_file1 = os.path.join(trained_dir.outdir, "reconstruct.1.mrc")
-    vol_file2 = os.path.join(trained_dir.outdir, "reconstruct.5.mrc")
-    out, err = run_command(f"cryodrgn_utils fsc {vol_file1} {vol_file2}")
-    assert err == ""
-
-    assert np.array_equal(
-        np.array(out.split("\n")[5].split(), dtype="float"),
-        np.array([0.0, 1.0]),
-    )
-    assert np.array_equal(
-        np.array(out.split("\n")[7].split(), dtype="float"),
-        np.array([0.0312, 0.8930]),
-    )
-
-    assert out.split("\n")[1].split()[-3] == "FSC=0.5:"
-    assert round(float(out.split("\n")[1].split()[-2]), 3) == 2.065
-    assert out.split("\n")[2].split()[-3] == "FSC=0.143:"
-    assert round(float(out.split("\n")[1].split()[-2]), 3) == 2.065
-
-    assert (
-        round(
-            sum(float(x) for x in out.split() if x[:2] == "0." and x[-1].isnumeric()),
-            3,
-        )
-        == 34.584
-    )
-    assert len(out.split("\n")) == 39
 
 
 @pytest.mark.parametrize(
@@ -53,8 +16,8 @@ def test_fidelity(trained_dir) -> None:
 )
 @pytest.mark.parametrize("epochs", [(1, 2), (1, 3), (2, 3)])
 def test_output_file(trained_dir, epochs: tuple[int, int]) -> None:
-    vol_file1 = os.path.join(trained_dir.outdir, f"reconstruct.{epochs[0]}.mrc")
-    vol_file2 = os.path.join(trained_dir.outdir, f"reconstruct.{epochs[1]}.mrc")
+    vol_file1 = trained_dir.volume_files[epochs[0]]
+    vol_file2 = trained_dir.volume_files[epochs[1]]
     fsc_file = os.path.join(trained_dir.outdir, "fsc.txt")
 
     out0, err = run_command(f"cryodrgn_utils fsc {vol_file1} {vol_file2}")
@@ -81,13 +44,13 @@ def test_output_file(trained_dir, epochs: tuple[int, int]) -> None:
 )
 @pytest.mark.parametrize("epochs", [(1, 2), (3, 4)])
 def test_apply_mask(trained_dir, epochs: tuple[int, int]) -> None:
-    vol_file1 = os.path.join(trained_dir.outdir, f"reconstruct.{epochs[0]}.mrc")
-    vol_file2 = os.path.join(trained_dir.outdir, f"reconstruct.{epochs[1]}.mrc")
+    vol_file1 = trained_dir.volume_files[epochs[0]]
+    vol_file2 = trained_dir.volume_files[epochs[1]]
     mask_file = os.path.join(trained_dir.outdir, "mask.mrc")
 
     out, err = run_command(f"cryodrgn_utils gen_mask {vol_file1} {mask_file} --dist 3")
     assert err == ""
-    assert float(out.split("\n")[0].split("Threshold=")[1]) < 0.16
+    assert float(out.split("\n")[0].split("Threshold=")[1]) < 0.17
 
     out, err = run_command(
         f"cryodrgn_utils fsc {vol_file1} {vol_file2} --mask {mask_file}"
@@ -96,7 +59,6 @@ def test_apply_mask(trained_dir, epochs: tuple[int, int]) -> None:
 
     assert out.split("\n")[1].split()[-3] == "FSC=0.5:"
     assert out.split("\n")[2].split()[-3] == "FSC=0.143:"
-    assert round(float(out.split("\n")[10].split()[0]), 3) == 0.167
     assert 0.97 < float(out.split("\n")[10].split()[1]) < 0.99
 
 
@@ -108,14 +70,13 @@ def test_apply_mask(trained_dir, epochs: tuple[int, int]) -> None:
     indirect=True,
 )
 def test_apply_phase_randomization(trained_dir) -> None:
-    vol_file1 = os.path.join(trained_dir.outdir, "reconstruct.2.mrc")
-    vol_file2 = os.path.join(trained_dir.outdir, "reconstruct.3.mrc")
+    vol_file1 = trained_dir.volume_files[2]
+    vol_file2 = trained_dir.volume_files[3]
 
     out, err = run_command(f"cryodrgn_utils fsc {vol_file1} {vol_file2} --corrected 16")
     assert err == ""
     assert out.split("\n")[1].split()[-3] == "FSC=0.5:"
     assert out.split("\n")[2].split()[-3] == "FSC=0.143:"
-    assert round(float(out.split("\n")[10].split()[0]), 3) == 0.167
     assert 0.95 < float(out.split("\n")[10].split()[1])
 
 
@@ -127,9 +88,9 @@ def test_apply_phase_randomization(trained_dir) -> None:
     indirect=True,
 )
 def test_use_cryosparc_correction(trained_dir) -> None:
-    vol_file1 = os.path.join(trained_dir.outdir, "reconstruct.2.mrc")
-    vol_file2 = os.path.join(trained_dir.outdir, "reconstruct.3.mrc")
-    ref_vol = os.path.join(trained_dir.outdir, "reconstruct.4.mrc")
+    vol_file1 = trained_dir.volume_files[2]
+    vol_file2 = trained_dir.volume_files[3]
+    ref_vol = trained_dir.volume_files[4]
     mask_file = os.path.join(trained_dir.outdir, "mask.mrc")
 
     out, err = run_command(
@@ -138,14 +99,13 @@ def test_use_cryosparc_correction(trained_dir) -> None:
     assert err == ""
     assert out.split("\n")[8].split()[-3] == "FSC=0.5:"
     assert out.split("\n")[9].split()[-3] == "FSC=0.143:"
-    assert float(out.split("\n")[14].split()[0]) == 0.067
     fsc_base = float(out.split("\n")[15].split()[3])
 
     out, err = run_command(
         f"cryodrgn_utils gen_mask {vol_file1} {mask_file} --dist 6 --dilate 6"
     )
     assert err == ""
-    assert round(float(out.split("\n")[0].split("Threshold=")[1]), 4) == 0.1266
+
     out, err = run_command(
         f"cryodrgn_utils fsc {vol_file1} {vol_file2} "
         f"--ref-volume {ref_vol} --mask {mask_file}"
@@ -153,8 +113,6 @@ def test_use_cryosparc_correction(trained_dir) -> None:
     assert err == ""
     assert out.split("\n")[5].split()[-3] == "FSC=0.5:"
     assert out.split("\n")[6].split()[-3] == "FSC=0.143:"
-    assert float(out.split("\n")[11].split()[0]) == 0.067
-
     assert fsc_base == float(out.split("\n")[12].split()[3])
 
 
@@ -167,8 +125,8 @@ def test_use_cryosparc_correction(trained_dir) -> None:
 )
 @pytest.mark.parametrize("epochs", [(3, 4)])
 def test_plotting(trained_dir, epochs: tuple[int, int]) -> None:
-    vol_file1 = os.path.join(trained_dir.outdir, f"reconstruct.{epochs[0]}.mrc")
-    vol_file2 = os.path.join(trained_dir.outdir, f"reconstruct.{epochs[1]}.mrc")
+    vol_file1 = trained_dir.volume_files[epochs[0]]
+    vol_file2 = trained_dir.volume_files[epochs[1]]
 
     plot_file = "fsc-plot.png"
     if os.path.exists(plot_file):

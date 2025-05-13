@@ -32,7 +32,8 @@ dependencies = [
     "ipywidgets<8",
     'pillow<10',
     'tensorboard',
-    "healpy"
+    "healpy",
+    "plotly<6",
 ]
 
 [project.optional-dependencies]
@@ -44,7 +45,8 @@ dev = [
     "pytest>=6",
     "sphinx",
     "sphinx-rtd-theme",
-    "twine"
+    "twine",
+    "pytest-xdist",
 ]
 
 [project.scripts]

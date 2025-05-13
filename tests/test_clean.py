@@ -29,7 +29,10 @@ def test_clean_here(trained_dir, every_n: int) -> None:
 
 
 @pytest.mark.parametrize(
-    "train_dir", [{"train_cmd": "train_nn"}, {"train_cmd": "train_vae"}], indirect=True
+    "train_dir",
+    [{"train_cmd": "train_nn"}, {"train_cmd": "train_vae"}],
+    indirect=True,
+    ids=["train_nn", "train_vae"],
 )
 @pytest.mark.parametrize("every_n", [1, 2, 5])
 def test_clean_one(trained_dir, every_n: int) -> None:
@@ -39,7 +42,9 @@ def test_clean_one(trained_dir, every_n: int) -> None:
         f"cryodrgn_utils clean {os.path.relpath(trained_dir.out_lbl)} -n {every_n} -d"
     )
 
-    rmv_count = 2 * (trained_dir.epochs - (trained_dir.epochs // every_n))
+    rmv_epochs = trained_dir.epochs - (trained_dir.epochs // every_n)
+    epoch_files = 2 if trained_dir.train_cmd == "train_nn" else 3
+    rmv_count = rmv_epochs * epoch_files
     assert out == f"\tWould remove {rmv_count} files!\n"
     assert err == ""
     assert trained_dir.all_files_present
@@ -63,6 +68,7 @@ def test_clean_one(trained_dir, every_n: int) -> None:
         )
     ],
     indirect=True,
+    ids=["train_vae+train_nn"],
 )
 @pytest.mark.parametrize("every_n", [2, 3])
 def test_clean_two(trained_dirs, every_n: int) -> None:
@@ -73,11 +79,14 @@ def test_clean_two(trained_dirs, every_n: int) -> None:
     )
     out, err = run_command(f"cryodrgn_utils clean {dir_str} -n {every_n} -d")
 
-    rmv_counts = [
-        2 * (trained_dir.epochs - (trained_dir.epochs // every_n))
+    rmv_epochs = [
+        trained_dir.epochs - (trained_dir.epochs // every_n)
         for trained_dir in trained_dirs
     ]
-
+    epoch_files = [
+        2 if trained_dir.train_cmd == "train_nn" else 3 for trained_dir in trained_dirs
+    ]
+    rmv_counts = [nepochs * nfiles for nepochs, nfiles in zip(rmv_epochs, epoch_files)]
     assert out == (
         f"\tWould remove {rmv_counts[0]} files!\n"
         f"\tWould remove {rmv_counts[1]} files!\n"

@@ -281,10 +281,12 @@ class TestTiltAbinitHomo:
             "4.0",
             "--t-ngrid",
             "2",
-            "--pretrain=1",
+            "--pretrain=4",
             "--num-epochs",
             "3",
             "--ps-freq",
+            "3",
+            "--niter",
             "2",
         ]
         if indices.path is not None:
@@ -326,10 +328,12 @@ class TestTiltAbinitHetero:
             "4.0",
             "--t-ngrid",
             "2",
-            "--pretrain=1",
+            "--pretrain=4",
             "--num-epochs",
             "3",
             "--ps-freq",
+            "3",
+            "--niter",
             "2",
         ]
         if indices.path is not None:

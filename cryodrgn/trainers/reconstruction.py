@@ -903,10 +903,38 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
         pass
 
     def pretrain_batch(self, batch: dict[str, torch.Tensor]) -> None:
+        """Process a single batch of data during a pretraining epoch of the model.
+
+        This method is called during the pretraining phase of model training, which
+        occurs before the main training epochs. It uses the same training logic as the
+        main training phase by delegating to the train_batch method, but is called with
+        a different dataloader configuration optimized for pretraining.
+
+        Parameters
+        ----------
+        batch : dict[str, torch.Tensor]
+            A dictionary containing the batch data tensors needed for training. The
+            exact contents depend on the specific model implementation.
+        """
         self.train_batch(batch)
 
     @abstractmethod
     def save_epoch_data(self) -> None:
+        """Save current model state and results at the conclusion of a training epoch.
+
+        This method is called at the end of each training epoch for which checkpointing
+        is enabled. It saves the current state of the model to files in the output
+        directory, including:
+            - Model weights and parameters (weights.*.pkl)
+            - Predicted poses and translations for ab-initio models (poses.*.pkl)
+            - Latent space embeddings for heterogeneous models (z.*.pkl)
+            - A reconstructed volume, chosen from within the latent space if
+              necessary (reconstruct.*.mrc)
+
+        The format and contents of these saved files should be consistent across
+        reconstruction model implementations.
+
+        """
         pass
 
     def print_batch_summary(self, losses: dict[str, float]) -> None:

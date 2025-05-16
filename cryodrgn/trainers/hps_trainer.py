@@ -748,49 +748,24 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
         out_conf = os.path.join(self.outdir, f"z.{self.current_epoch}.pkl")
 
         # save a reconstructed volume by evaluating model on a 3d lattice
-        if self.configs.zdim == 0:
-            out_mrc = os.path.join(self.outdir, f"reconstruct.{self.epoch_lbl}.mrc")
-            self.reconstruction_model.eval()
-            vol = self.model_module.eval_volume(
-                coords=self.lattice.coords,
-                D=self.lattice.D,
-                extent=self.lattice.extent,
-                norm=self.data.norm,
-            )
-            write_mrc(out_mrc, vol, Apix=self.apix)
+        out_mrc = os.path.join(self.outdir, f"reconstruct.{self.epoch_lbl}.mrc")
+        self.reconstruction_model.eval()
 
-        # Save reconstruction model weights to file
-        model_weights = {
-            k: optimizer.state_dict() for k, optimizer in self.optimizers.items()
-        }
-        torch.save(
-            {
-                "epoch": self.current_epoch,
-                "model_state_dict": unparallelize(
-                    self.reconstruction_model
-                ).state_dict(),
-                "optimizers_state_dict": model_weights,
-                "search_pose": (self.predicted_rots, self.predicted_trans),
-            },
-            out_weights,
-        )
-
-        # If we are doing heterogeneous reconstruction, also save latent conformations
         if self.configs.zdim > 0:
-            self.reconstruction_model.eval()
+            # For heterogeneous models, reconstruct the volume at the latent coordinates
+            # of the image whose embedding is closest to the mean of all embeddings
+            z_mu_all = []
+            z_logvar_all = []
+            data_generator = dataset.make_dataloader(
+                self.data,
+                batch_size=self.configs.batch_size,
+                shuffler_size=self.configs.shuffler_size,
+                shuffle=False,
+                seed=self.configs.seed,
+            )
 
             with torch.no_grad():
                 assert not self.reconstruction_model.training
-                z_mu_all = []
-                z_logvar_all = []
-                data_generator = dataset.make_dataloader(
-                    self.data,
-                    batch_size=self.configs.batch_size,
-                    shuffler_size=self.configs.shuffler_size,
-                    shuffle=False,
-                    seed=self.configs.seed,
-                )
-
                 for minibatch in data_generator:
                     y = minibatch["y"].to(self.device)
                     if not self.configs.tilt:
@@ -825,8 +800,43 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
                     z_mu_all.append(z_mu.detach().cpu().numpy())
                     z_logvar_all.append(z_logvar.detach().cpu().numpy())
 
-            # save z
-            z_mu_all, z_logvar_all = np.vstack(z_mu_all), np.vstack(z_logvar_all)
+            # Find the image whose embedding is closest to the mean
+            z_mu_all = np.vstack(z_mu_all)
+            z_logvar_all = np.vstack(z_logvar_all)
+            mean_z = np.mean(z_mu_all, axis=0)
+            distances = np.linalg.norm(z_mu_all - mean_z, axis=1)
+            closest_idx = np.argmin(distances)
+            zval = z_mu_all[closest_idx]
+        else:
+            zval = None
+
+        vol = self.model_module.eval_volume(
+            coords=self.lattice.coords,
+            D=self.lattice.D,
+            extent=self.lattice.extent,
+            norm=self.data.norm,
+            zval=zval,
+        )
+        write_mrc(out_mrc, vol, Apix=self.apix)
+
+        # Save reconstruction model weights to file
+        model_weights = {
+            k: optimizer.state_dict() for k, optimizer in self.optimizers.items()
+        }
+        torch.save(
+            {
+                "epoch": self.current_epoch,
+                "model_state_dict": unparallelize(
+                    self.reconstruction_model
+                ).state_dict(),
+                "optimizers_state_dict": model_weights,
+                "search_pose": (self.predicted_rots, self.predicted_trans),
+            },
+            out_weights,
+        )
+
+        # If we are doing heterogeneous reconstruction, also save latent conformations
+        if self.configs.zdim > 0:
             with open(out_conf, "wb") as f:
                 pickle.dump(z_mu_all, f)
                 pickle.dump(z_logvar_all, f)

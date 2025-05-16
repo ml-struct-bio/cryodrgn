@@ -1245,8 +1245,13 @@ class SGDPoseSearchTrainer(ReconstructionModelTrainer):
         if hasattr(self.reconstruction_model, "conf_table"):
             self.reconstruction_model.conf_table.eval()
 
+        # For heterogeneous models reconstruct the volume at the latent coordinates
+        # of the image whose embedding is closest to the mean of all embeddings
         if self.configs.zdim > 0:
-            zval = self.predicted_conf[0].reshape(-1)
+            mean_z = np.mean(self.predicted_conf, axis=0)
+            distances = np.linalg.norm(self.predicted_conf - mean_z, axis=1)
+            closest_idx = np.argmin(distances)
+            zval = self.predicted_conf[closest_idx].reshape(-1)
         else:
             zval = None
 

@@ -441,6 +441,12 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
             self.pose_search.Lmax = min(Lramp, self.configs.l_end)
 
     def train_batch(self, batch: dict[str, torch.Tensor], lattice=None) -> tuple:
+        """Training a single batch of data.
+
+        Arguments
+        ---------
+        batch   Dictionary containing the batch of data to train on.
+        """
         y = batch["y"]
         ind = batch["indices"]
         y = y.to(self.device)
@@ -736,6 +742,13 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
         self.accum_losses["total"] += loss.item() * B
 
     def get_configs(self) -> dict[str, Any]:
+        """Organizing the model engine parameter values for use in human-readable formats.
+
+        Returns
+        -------
+        configs   Dictionary containing model configuration parameters, including encoder
+                  mask dimension and other inherited configuration values.
+        """
         configs = super().get_configs()
         configs["model_args"]["enc_mask"] = self.enc_mask_dim
 
@@ -804,9 +817,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
             z_mu_all = np.vstack(z_mu_all)
             z_logvar_all = np.vstack(z_logvar_all)
             mean_z = np.mean(z_mu_all, axis=0)
-            distances = np.linalg.norm(z_mu_all - mean_z, axis=1)
-            closest_idx = np.argmin(distances)
-            zval = z_mu_all[closest_idx]
+            zval = z_mu_all[np.argmin(np.linalg.norm(z_mu_all - mean_z, axis=1))]
         else:
             zval = None
 

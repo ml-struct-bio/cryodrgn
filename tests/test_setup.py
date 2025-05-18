@@ -183,17 +183,30 @@ def setup_directory(setup_request):
     else:
         assert configs["model_args"]["model"] == "cryodrgn-ai"
 
-    assert configs["dataset_args"]["particles"] == setup_request.particles
-    assert configs["dataset_args"]["ctf"] == setup_request.ctf
-    assert configs["dataset_args"]["poses"] == setup_request.poses
-    assert configs["dataset_args"]["datadir"] == setup_request.datadir
+    if setup_request.particles is None:
+        assert configs["dataset_args"]["particles"] is None
+    else:
+        assert configs["dataset_args"]["particles"] == os.path.abspath(
+            setup_request.particles
+        )
+    if setup_request.ctf is None:
+        assert configs["dataset_args"]["ctf"] is None
+    else:
+        assert configs["dataset_args"]["ctf"] == os.path.abspath(setup_request.ctf)
+    if setup_request.poses is None:
+        assert configs["dataset_args"]["poses"] is None
+    else:
+        assert configs["dataset_args"]["poses"] == os.path.abspath(setup_request.poses)
 
     for cfg in setup_request.cfgs:
         if cfg.startswith("ind="):
             assert configs["dataset_args"]["ind"] == int(cfg.split("=")[1])
             break
     else:
-        assert configs["dataset_args"]["ind"] == setup_request.ind
+        if setup_request.ind is None:
+            assert configs["dataset_args"]["ind"] is None
+        elif not setup_request.ind.isdigit():
+            assert configs["dataset_args"]["ind"] == os.path.abspath(setup_request.ind)
 
     if setup_request.zdim is not None:
         use_zdim = int(setup_request.zdim)

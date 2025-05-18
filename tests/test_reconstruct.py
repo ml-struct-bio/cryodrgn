@@ -435,6 +435,15 @@ class TestHeterogeneous:
                 assert (
                     f"z.{epoch}.pkl" in out_files
                 ), f"Missing latent space conformations for epoch {epoch}!"
+
+                assert (
+                    sum(
+                        out_file.startswith(f"reconstruct.{epoch}")
+                        for out_file in out_files
+                    )
+                    == 1
+                ), f"Missing output reconstructed volume for epoch {epoch}!"
+
                 if train_cmd.train_cmd == "train_vae":
                     assert (
                         f"pose.{epoch}.pkl" not in out_files

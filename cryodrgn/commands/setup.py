@@ -32,13 +32,20 @@ def add_args(parser: argparse.ArgumentParser) -> None:
 
     inputs_group = parser.add_argument_group("Listing Input Datasets")
     inputs_group.add_argument(
-        "--particles", help="path to the picked particles (.mrcs/.star /.txt)"
+        "--particles",
+        type=os.path.abspath,
+        help="path to the picked particles (.mrcs/.star /.txt)",
     )
-    inputs_group.add_argument("--ctf", help="path to the CTF parameters (.pkl)")
-    inputs_group.add_argument("--poses", help="path to the poses (.pkl)")
+    inputs_group.add_argument(
+        "--ctf", type=os.path.abspath, help="path to the CTF parameters (.pkl)"
+    )
+    inputs_group.add_argument(
+        "--poses", type=os.path.abspath, help="path to the poses (.pkl)"
+    )
     inputs_group.add_argument("--ind", help="path to filtering indices (.pkl)")
     inputs_group.add_argument(
         "--datadir",
+        type=os.path.abspath,
         help="Path prefix to particle stack if loading relative "
         "paths from a .star or .cs file",
     )

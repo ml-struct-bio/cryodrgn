@@ -316,14 +316,32 @@ def test_setup_standalone(setup_request):
 @pytest.mark.parametrize(
     "model, particles, ctf, poses, indices, datadir, dataset, pose_estimation",
     [
-        ("cryodrgn", "toy.mrcs", "CTF-Test", None, "5", None, None, None),
-        ("cryodrgn-ai", "toy.mrcs", "CTF-Test", None, "5", None, None, None),
+        (
+            "cryodrgn",
+            "data/toy_projections.mrcs",
+            "CTF-Test",
+            None,
+            "just-5",
+            None,
+            None,
+            None,
+        ),
+        ("cryodrgn-ai", "toy.mrcs", "data/test_ctf.pkl", None, "5", None, None, None),
         ("cryodrgn-ai", "toy.mrcs", "CTF-Test", "toy-poses", None, None, None, None),
         ("cryodrgn", "toy.mrcs", None, None, "5", None, None, "abinit"),
         ("cryodrgn-ai", "toy.txt", "CTF-Test", "toy-poses", None, None, None, "fixed"),
-        ("cryodrgn", "hand", None, "hand-poses", "5", None, None, "fixed"),
-        ("cryodrgn", "toy.txt", "CTF-Test", "toy-poses", "5", None, None, "abinit"),
-        (None, "toy.txt", "CTF-Test", None, "5", None, None, "abinit"),
+        ("cryodrgn", "hand", None, "hand-poses", "just-5", None, None, "fixed"),
+        (
+            "cryodrgn",
+            "toy.txt",
+            "CTF-Test",
+            "data/toy_rot_trans.pkl",
+            "5",
+            None,
+            None,
+            "abinit",
+        ),
+        (None, "toy.txt", "CTF-Test", None, "just-5", None, None, "abinit"),
     ],
     indirect=["particles", "ctf", "poses", "indices", "datadir"],
 )
@@ -379,6 +397,28 @@ class TestSetupThenRun:
                 assert (
                     f"weights.{epoch}.pkl" not in out_files
                 ), f"Extra output model weights for epoch {epoch}!"
+
+    @pytest.mark.parametrize("epoch, ksample", [(1, 3), (None, 4)])
+    def test_then_analyze(self, setup_request, epoch, ksample):
+        """Produce standard analyses for a particular epoch."""
+
+        args = [setup_request.outdir]
+        if epoch is not None:
+            args += [str(epoch)]
+        else:
+            epoch = 6
+        args += ["--ksample", str(ksample)]
+
+        parser = argparse.ArgumentParser()
+        cryodrgn.commands.analyze.add_args(parser)
+        cryodrgn.commands.analyze.main(parser.parse_args(args))
+
+        if setup_request.reconstruction_type == "het":
+            anlzdir = os.path.join(setup_request.outdir, f"analyze.{epoch}")
+            assert os.path.exists(anlzdir)
+            assert os.path.exists(os.path.join(anlzdir, "z_pca.png"))
+            assert os.path.exists(os.path.join(anlzdir, "pc2_10"))
+            assert os.path.exists(os.path.join(anlzdir, f"kmeans{ksample}"))
 
     @pytest.mark.parametrize("checkpoint", [1, 2, 3])
     def test_then_rerun_with_checkpointing(self, setup_request, checkpoint):
@@ -473,5 +513,22 @@ class TestSetupThenRun:
                 os.path.join(setup_request.outdir, f"pose.{self.num_epochs + 1}.pkl")
             )
 
-        if load_epoch == 4:
-            shutil.rmtree(setup_request.outdir)
+    def test_then_rerun_analyze(self, setup_request):
+        """Produce analyses for restarted experiment after changing working dir."""
+        args = [setup_request.outdir, "--ksample", "2"]
+        parser = argparse.ArgumentParser()
+        cryodrgn.commands.analyze.add_args(parser)
+
+        curdir = os.getcwd()
+        os.chdir(os.path.join(setup_request.outdir, ".."))
+        cryodrgn.commands.analyze.main(parser.parse_args(args))
+        os.chdir(curdir)
+
+        if setup_request.reconstruction_type == "het":
+            anlzdir = os.path.join(
+                setup_request.outdir, f"analyze.{self.num_epochs + 1}"
+            )
+            assert os.path.exists(anlzdir)
+            assert os.path.exists(os.path.join(anlzdir, "z_pca.png"))
+            assert os.path.exists(os.path.join(anlzdir, "pc2_10"))
+            assert os.path.exists(os.path.join(anlzdir, "kmeans2"))

@@ -565,6 +565,39 @@ class TestHeterogeneous:
         "train_cmd, train_type, particles, ctf, indices, poses",
         [
             ("train_vae", "drgnai", "hand", "CTF-Test.100", None, "hand-poses"),
+            ("train_vae", "cdrgn-train", "toy.mrcs", "CTF-Test", "100", "toy-poses"),
+            ("abinit_het", "cdrgn", "hand", "CTF-Test.100", "5", "hand-poses"),
+        ],
+        indirect=["particles", "ctf", "indices", "poses"],
+    )
+    @pytest.mark.parametrize("epoch", [4, None])
+    def test_analyze_switch_workdir(self, traincmd, epoch):
+        """Produce standard analyses for a particular epoch after changing workdir."""
+
+        args = [traincmd.outdir]
+        if epoch is not None:
+            args += [str(epoch)]
+        else:
+            epoch = 6
+        args += ["--ksample", "2"]
+
+        parser = argparse.ArgumentParser()
+        cryodrgn.commands.analyze.add_args(parser)
+        curdir = os.getcwd()
+        os.chdir(os.path.join(traincmd.outdir, ".."))
+        cryodrgn.commands.analyze.main(parser.parse_args(args))
+        os.chdir(curdir)
+
+        anlzdir = os.path.join(traincmd.outdir, f"analyze.{epoch}")
+        assert os.path.exists(anlzdir)
+        assert os.path.exists(os.path.join(anlzdir, "z_pca.png"))
+        assert os.path.exists(os.path.join(anlzdir, "pc2_10"))
+        assert os.path.exists(os.path.join(anlzdir, "kmeans2"))
+
+    @pytest.mark.parametrize(
+        "train_cmd, train_type, particles, ctf, indices, poses",
+        [
+            ("train_vae", "drgnai", "hand", "CTF-Test.100", None, "hand-poses"),
             ("train_vae", "drgnai", "toy.mrcs", "CTF-Test", "random-100", "toy-poses"),
             ("train_vae", "drgnai", "toy.star", "CTF-Test", "100", "toy-poses"),
             ("train_vae", "drgnai", "toy.txt", "CTF-Test", "random-100", "toy-poses"),

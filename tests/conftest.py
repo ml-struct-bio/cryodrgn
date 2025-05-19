@@ -116,7 +116,23 @@ def produce_data_fixture(
             elif lbl.isnumeric():
                 files[k] = DataFixture(label=lbl, path=lbl)
             else:
-                files[k] = DataFixture(label=lbl, path=os.path.join(DATA_DIR, lbl))
+                if os.path.exists(lbl):
+                    files[k] = DataFixture(label=lbl, path=lbl)
+                elif os.path.exists(os.path.join(DATA_DIR, lbl)):
+                    files[k] = DataFixture(label=lbl, path=os.path.join(DATA_DIR, lbl))
+                elif not os.path.isabs(lbl):
+                    abspath = os.path.join(os.path.dirname(__file__), lbl)
+                    if os.path.exists(abspath):
+                        files[k] = DataFixture(
+                            label=lbl,
+                            path=os.path.relpath(
+                                os.path.normpath(abspath), os.getcwd()
+                            ),
+                        )
+                    else:
+                        raise ValueError(f"Fixture `{lbl}` does not exist!")
+                else:
+                    raise ValueError(f"Fixture file `{lbl}` does not exist!")
 
         if not isinstance(labels, dict):
             files = files[None]

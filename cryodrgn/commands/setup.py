@@ -34,7 +34,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     inputs_group.add_argument(
         "--particles",
         type=os.path.abspath,
-        help="path to the picked particles (.mrcs/.star /.txt)",
+        help="path to the picked particles (.mrcs/.star/.txt)",
     )
     inputs_group.add_argument(
         "--ctf", type=os.path.abspath, help="path to the CTF parameters (.pkl)"

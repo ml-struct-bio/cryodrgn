@@ -133,6 +133,7 @@ class HierarchicalPoseSearchConfigurations(ReconstructionModelConfigurations):
     equivariance_stop: int = 200000
     l_ramp_epochs: int = None
     l_ramp_model: int = 0
+    sgd_pretrain: int = 1
     # resetting every certain number of epochs
     reset_model_every: int = None
     reset_optim_every: int = None
@@ -545,7 +546,7 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
         else:
             z_mu = z_logvar = z = None
 
-        # getting the poses; execute a pose search if poses not given
+        # Getting the poses; execute a pose search if poses not given
         if self.pose_search:
             if self.in_pose_search_step:
                 self.base_pose = None
@@ -674,6 +675,10 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
         else:
             losses["total"].backward()
             self.optimizers["hypervolume"].step()
+
+        if self.current_epoch >= self.configs.sgd_pretrain:
+            if "pose_table" in self.optimizers:
+                self.optimizers["pose_table"].step()
 
         return losses, tilt_ind, ind, rot, trans, z_mu, z_logvar
 

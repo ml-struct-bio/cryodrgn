@@ -24,6 +24,7 @@ $ cryodrgn train_vae particles_from_M.star --datadir particleseries -o your-outd
 import os
 import argparse
 import numpy as np
+import logging
 import cryodrgn.utils
 from cryodrgn.trainers.hps_trainer import HierarchicalPoseSearchTrainer
 
@@ -340,9 +341,8 @@ def add_args(parser: argparse.ArgumentParser) -> None:
 def main(args: argparse.Namespace) -> None:
     """Passing command-line arguments as configurations to v3 model training engine."""
 
-    print(
-        "WARNING: "
-        "This command is deprecated; use `cryodrgn train` as of cryoDRGN v4.0.0."
+    logging.getLogger("cryodrgn train_vae").warning(
+        "This command is deprecated; use `cryodrgn train` as of cryoDRGN v4.0.0!"
     )
     configs = {
         "model": "cryodrgn",
@@ -378,7 +378,8 @@ def main(args: argparse.Namespace) -> None:
         "l_extent": 0.5,
         "data_norm": args.norm,
         "multigpu": args.multigpu,
-        "pretrain": args.pretrain,
+        "pretrain": 0,
+        "sgd_pretrain": args.pretrain,
         "encode_mode": args.encode_mode,
         "enc_mask": args.enc_mask,
         "use_real": args.use_real,

@@ -102,13 +102,13 @@ class ReconstructionModelConfigurations(BaseConfigurations):
     datadir: str = None
     ind: str = None
     labels: str = None
-    # whether to start with given poses to some degree, or do ab initio pose search
+    # Whether to start with given poses to some degree, or do ab initio pose search
     pose_estimation: str = None
     no_trans: bool = False
     # loading checkpoints from previous experiment runs
     load: str = None
     load_poses: str = None
-    # using a lazy data loader to minimize memory usage, shuffling training minibatches
+    # Using a lazy data loader to minimize memory usage, shuffling training minibatches
     # and controlling their size, applying parallel computation and data processing
     batch_size: int = 8
     batch_size_known_poses: int = None
@@ -121,10 +121,10 @@ class ReconstructionModelConfigurations(BaseConfigurations):
     multigpu: bool = False
     max_threads: int = 16
     num_workers: int = 0
-    # how often to print log messages and save trained model data
+    # How often to print log messages and save trained model data
     log_interval: int = 1000
     checkpoint: int = 1
-    # if using a cryo-ET dataset, description of dataset tilting parameters
+    # If using a cryo-ET dataset, description of dataset tilting parameters
     tilt: bool = False
     n_tilts: int = 11
     tilt_deg: int = 45
@@ -140,7 +140,7 @@ class ReconstructionModelConfigurations(BaseConfigurations):
     # how long to do pretraining for, and what type
     pretrain: int = 10000
     reset_optim_after_pretrain: bool = False
-    # other learning parameters
+    # Other parameters used in learning
     weight_decay: float = 0.0
     learning_rate: float = 1e-4
     pose_learning_rate: float = 1e-4
@@ -346,6 +346,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
 
     configs: ReconstructionModelConfigurations
     config_cls = ReconstructionModelConfigurations
+    label = "CryoDRGN Reconstruction Engine"
     activations = {"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}
 
     # options for optimizers to use
@@ -632,14 +633,12 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
             self.do_pretrain = False
             self.start_epoch = self.checkpoint["epoch"] + 1
         else:
-            self.do_pretrain = True
+            self.do_pretrain = self.configs.pretrain > 0
+            self.do_pretrain &= (
+                self.configs.model != "cryodrgn"
+                or self.configs.pose_estimation == "abinit"
+            )
             self.start_epoch = 1
-
-        self.n_particles_pretrain = (
-            self.configs.pretrain * self.particle_count
-            if self.configs.pretrain >= 0
-            else self.particle_count
-        )
 
     def train(self) -> None:
         """Train the model to reconstruct volumes from the input particle stack."""
@@ -660,7 +659,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
             logging.FileHandler(os.path.join(self.outdir, "run.log"))
         )
         self.logger.info(f"cryoDRGN {__version__}")
-        self.logger.info(str(self.configs))
+        self.logger.info(f"Model Configurations:\n{str(self.configs)}")
 
         if self.configs.pose_estimation != "fixed" and not self.configs.load:
             self.predicted_rots = np.empty((self.image_count, 3, 3))
@@ -723,10 +722,6 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
                     rot = rot.detach().cpu().numpy()
                 if isinstance(trans, torch.Tensor):
                     trans = trans.detach().cpu().numpy()
-
-                if "pose_table" in self.optimizers:
-                    if self.current_epoch >= self.configs.pretrain:
-                        self.optimizers["pose_table"].step()
 
                 ind_tilt = tilt_ind if tilt_ind is not None else ind
                 if rot is not None and self.predicted_rots is not None:
@@ -983,11 +978,11 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
     def epoch_type(self) -> str:
         """A human-readable label for the type of the current training epoch."""
         if self.in_pretraining:
-            etype = "pretraining"
+            etype = "pre"
         elif self.in_pose_search_step:
             etype = "hps"
         else:
-            etype = "sgd"
+            etype = "fix"
 
         return etype
 

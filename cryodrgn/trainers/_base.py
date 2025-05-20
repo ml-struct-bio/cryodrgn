@@ -197,7 +197,7 @@ class BaseTrainer(ABC):
     """
 
     config_cls = BaseConfigurations
-    label = "cDRGN training"
+    label = "CryoDRGN Training Engine"
 
     def __init__(self, configs: dict[str, Any], outdir: str) -> None:
         self.configs = self.config_cls(**configs)

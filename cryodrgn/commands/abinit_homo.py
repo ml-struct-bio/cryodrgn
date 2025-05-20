@@ -13,6 +13,7 @@ $ cryodrgn abinit_homo particles.256.txt --ctf ctf.pkl --ind chosen-particles.pk
 import os
 import argparse
 import numpy as np
+import logging
 import cryodrgn.utils
 from cryodrgn.trainers.hps_trainer import HierarchicalPoseSearchTrainer
 
@@ -306,9 +307,8 @@ def add_args(parser: argparse.ArgumentParser) -> None:
 def main(args: argparse.Namespace) -> None:
     """Passing command-line arguments as configurations to v3 model training engine."""
 
-    print(
-        "WARNING: "
-        "This command is deprecated; use `cryodrgn train` as of cryoDRGN v4.0.0."
+    logging.warning(
+        "This command is deprecated; use `cryodrgn train` as of cryoDRGN v4.0.0!"
     )
     configs = {
         "model": "cryodrgn",

@@ -357,7 +357,6 @@ class SGDPoseSearchTrainer(ReconstructionModelTrainer):
 
     configs: SGDPoseSearchConfigurations
     config_cls = SGDPoseSearchConfigurations
-    label = "cDRGN v4 training"
 
     def make_output_mask(self) -> CircularMask:
         if self.configs.output_mask == "circ":

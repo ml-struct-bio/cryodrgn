@@ -169,12 +169,15 @@ class HierarchicalPoseSearchConfigurations(ReconstructionModelConfigurations):
 
         if self.enc_layers is None:
             self.enc_layers = self.hidden_layers
-        if self.enc_dim is None:
-            self.enc_dim = self.hidden_dim
         if self.dec_layers is None:
             self.dec_layers = self.hidden_layers
+        if self.enc_dim is None:
+            if self.hidden_dim is None:
+                self.enc_dim = 256 if self.pose_estimation == "abinit" else 1024
+            else:
+                self.enc_dim = self.hidden_dim
         if self.dec_dim is None:
-            self.dec_dim = self.hidden_dim
+            self.dec_dim = self.hidden_dim or self.enc_dim
 
         if self.encode_mode is None and self.zdim > 0:
             self.encode_mode = "resid"

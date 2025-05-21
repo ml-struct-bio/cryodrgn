@@ -152,7 +152,7 @@ class ReconstructionModelConfigurations(BaseConfigurations):
     t_xshift: int = 0
     t_yshift: int = 0
     hidden_layers: int = 3
-    hidden_dim: int = 256
+    hidden_dim: int = None
     pe_type: str = "gaussian"
     pe_dim: int = None
     volume_domain: str = None

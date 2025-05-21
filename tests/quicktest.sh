@@ -2,29 +2,61 @@
 set -e
 set -x
 
-# Get output directory from the command-line; default to "output" if not specified
-OUTDIR=${1:-output}
+if [ $# -gt 2 ]; then
+    echo "Usage: $0 [output_dir] [input_dir]"
+    echo "  output_dir: Output directory (default: output)"
+    echo "  input_dir: Input directory (default: data)"
+    exit 1
+
+elif [ $# -eq 0 ]; then
+    OUTDIR=output
+    INDIR=data
+elif [ $# -eq 1 ]; then
+    OUTDIR=$1
+    INDIR=data
+else
+    INDIR=$1
+    OUTDIR=$2
+fi
+
+particles=$INDIR/hand.mrcs
+ctf=$INDIR/test_ctf.100.pkl
+poses=$INDIR/hand_rot_trans.pkl
 
 
-# cryodrgn
-cryodrgn train_vae data/hand.mrcs -o $OUTDIR/toy_recon_vae --lr .0001 --seed 0 \
-                                  --poses data/hand_rot_trans.pkl --ctf data/test_ctf.100.pkl --zdim 10
-cryodrgn analyze $OUTDIR/toy_recon_vae
+### Testing homogeneous reconstruction ###
 
-# drgnai-fixed
-cryodrgn setup $OUTDIR/toy_recon_vae_2 --particles data/hand.mrcs --poses data/hand_rot_trans.pkl \
-                                      --zdim 10 --model cryodrgn-ai --pose-estimation fixed \
-                                      --cfg hidden_dim=1024 --ctf data/test_ctf.100.pkl
-cryodrgn train $OUTDIR/toy_recon_vae_2
+# Fixed poses with cryoDRGN v3
+cryodrgn train_nn $particles --poses $poses --ctf $ctf -o $OUTDIR/hand-recon_v3-fixed-hom --lr .0001 --seed 0
 
+# Fixed poses with cryoDRGN-AI
+cryodrgn setup $OUTDIR/hand-recon_v4-fixed-hom --particles $particles --poses $poses --ctf $ctf \
+               --zdim 0 --model cryodrgn-ai --pose-estimation fixed
+cryodrgn train $OUTDIR/hand-recon_v4-fixed-hom
 
-# cryodrgn abinit
-cryodrgn abinit_het data/hand.mrcs -o $OUTDIR/toy_recon_vae_ab --lr .0001 --seed 0 \
-                                   --ctf data/test_ctf.100.pkl --zdim 10
-cryodrgn analyze $OUTDIR/toy_recon_vae_ab
+# Ab-initio with cryoDRGN v3
+cryodrgn abinit_homo $particles --ctf $ctf -o $OUTDIR/hand-recon_v3-abinit-hom --lr .0001 --seed 0
+# Ab-initio with cryoDRGN-AI
+cryodrgn setup $OUTDIR/hand-recon_v4-abinit-hom --particles $particles --ctf $ctf --zdim 0 --model cryodrgn-ai
+cryodrgn train $OUTDIR/hand-recon_v4-abinit-hom
 
-# drgnai-abinit
-cryodrgn setup $OUTDIR/toy_recon_vae_ab2 --particles data/hand.mrcs --zdim 10 --model cryodrgn-ai \
-                                        --cfg hidden_dim=1024 t_ngrid=3 n_imgs_pose_search=100 \
-                                        --ctf data/test_ctf.100.pkl
-cryodrgn train $OUTDIR/toy_recon_vae_ab2
+### Testing heterogeneous reconstruction ###
+
+# Fixed poses with cryoDRGN v3
+cryodrgn train_vae $particles --poses $poses --ctf $ctf -o $OUTDIR/hand-recon_v3-fixed-het \
+                              --lr .0001 --seed 0 --zdim 10
+cryodrgn analyze $OUTDIR/hand-recon_v3-fixed-het
+
+# Fixed poses with cryoDRGN-AI
+cryodrgn setup $OUTDIR/hand-recon_v4-fixed-het --particles $particles --poses $poses --ctf $ctf \
+                                               --zdim 10 --model cryodrgn-ai --pose-estimation fixed
+cryodrgn train $OUTDIR/hand-recon_v4-fixed-het
+
+# Ab-initio poses with cryoDRGN v3
+cryodrgn abinit_het $particles --ctf $ctf -o $OUTDIR/hand-recon_v3-abinit-het --lr .0001 --seed 0 --zdim 10
+cryodrgn analyze $OUTDIR/hand-recon_v3-abinit-het
+
+# Ab-initio poses with cryoDRGN-AI
+cryodrgn setup $OUTDIR/hand-recon_v4-abinit-het --particles $particles --ctf $ctf --zdim 10 --model cryodrgn-ai \
+                                                --cfg t_ngrid=3 n_imgs_pose_search=100
+cryodrgn train $OUTDIR/hand-recon_v4-abinit-het

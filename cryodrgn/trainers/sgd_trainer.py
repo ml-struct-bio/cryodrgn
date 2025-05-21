@@ -171,6 +171,9 @@ class SGDPoseSearchConfigurations(ReconstructionModelConfigurations):
             if self.conf_estimation == "encoder":
                 self.use_conf_encoder = True
 
+        if self.hidden_dim is None:
+            self.hidden_dim = 256 if self.pose_estimation == "abinit" else 1024
+
         if self.explicit_volume and self.zdim >= 1:
             raise ValueError(
                 "Explicit volumes do not support heterogeneous reconstruction."

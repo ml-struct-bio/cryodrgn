@@ -71,7 +71,9 @@ class SetupRequest:
 
         if include_cfgs is not None:
             os.makedirs(outdir, exist_ok=True)
-            include_fl = os.path.join(outdir, "test-include.yml")
+            include_fl = os.path.normpath(
+                os.path.join(outdir, "..", "test-include.yml")
+            )
             cryodrgn.utils.save_yaml(include_cfgs, include_fl)
             args += ["--include", include_fl]
 
@@ -161,6 +163,19 @@ def test_empty_setup(tmpdir_factory):
     cfgs = cryodrgn.utils.load_yaml(os.path.join(outdir, "config.yaml"))
     configs = get_model_configurations(cfgs)
     assert configs == SGDPoseSearchConfigurations(zdim=8, seed=configs.seed)
+
+
+@pytest.mark.xfail(
+    reason="Output directory already exists and is not empty!",
+    raises=ValueError,
+)
+def test_nonempty_setup(tmpdir_factory):
+    parser = argparse.ArgumentParser()
+    setup.add_args(parser)
+    outdir = tmpdir_factory.mktemp("nonempty_setup").strpath
+    setup.main(parser.parse_args([outdir]))
+    assert os.path.isfile(os.path.join(outdir, "config.yaml"))
+    setup.main(parser.parse_args([outdir]))
 
 
 def setup_directory(setup_request):

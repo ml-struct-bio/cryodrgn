@@ -104,6 +104,11 @@ def add_args(parser: argparse.ArgumentParser) -> None:
 def main(args: argparse.Namespace) -> None:
     """Running the `cryodrgn setup` command (see `add_args` above for arguments)."""
 
+    if os.path.exists(args.outdir) and os.listdir(args.outdir):
+        raise ValueError(
+            f"Output directory `{args.outdir}` already exists and is not empty!"
+        )
+
     if args.reconstruction_type is None:
         zdim = int(args.zdim) if args.zdim is not None else 8
     else:

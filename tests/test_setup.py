@@ -372,6 +372,56 @@ class TestSetupThenRun:
 
     num_epochs = 5
 
+    def check_outputs(
+        self,
+        setup_request,
+        new_outdir=None,
+        num_epochs=None,
+        check_epochs=None,
+        checkpoint=1,
+    ):
+        if new_outdir is None:
+            out_files = set(os.listdir(setup_request.outdir))
+        else:
+            out_files = set(os.listdir(new_outdir))
+        assert "config.yaml" in out_files
+
+        if num_epochs is None:
+            num_epochs = self.num_epochs
+        if check_epochs is None:
+            check_epochs = self.num_epochs * 2
+
+        abinit = setup_request.poses is None
+        abinit |= setup_request.pose_estimation == "abinit"
+        for epoch in range(1, check_epochs + 1):
+            if epoch == num_epochs or (
+                epoch < num_epochs
+                and (
+                    (
+                        setup_request.model in {None, "cryodrgn-ai"}
+                        and (epoch % checkpoint == 0 or epoch <= 2 and abinit)
+                    )
+                    or (
+                        setup_request.model == "cryodrgn"
+                        and (epoch % checkpoint == 0 or (epoch - 1) % 2 == 0 and abinit)
+                    )
+                )
+            ):
+                assert (
+                    f"weights.{epoch}.pkl" in out_files
+                ), f"Missing output model weights for epoch {epoch}!"
+                if (
+                    setup_request.pose_estimation == "abinit"
+                    or setup_request.poses is None
+                ):
+                    assert (
+                        f"pose.{epoch}.pkl" in out_files
+                    ), f"Missing output model poses for epoch {epoch}!"
+            else:
+                assert (
+                    f"weights.{epoch}.pkl" not in out_files
+                ), f"Extra output model weights for epoch {epoch}!"
+
     def test_setup_directory(self, setup_request):
         """Create a reconstruction directory using the setup command."""
         setup_directory(setup_request)
@@ -390,28 +440,7 @@ class TestSetupThenRun:
         parser = argparse.ArgumentParser()
         train.add_args(parser)
         train.main(parser.parse_args(args))
-
-        out_files = os.listdir(setup_request.outdir)
-        for epoch in range(1, 10):
-            if epoch <= self.num_epochs:
-                assert (
-                    f"weights.{epoch}.pkl" in out_files
-                ), f"Missing output model weights for epoch {epoch}!"
-                if (
-                    setup_request.pose_estimation == "abinit"
-                    or setup_request.poses is None
-                ):
-                    assert (
-                        f"pose.{epoch}.pkl" in out_files
-                    ), f"Missing output model poses for epoch {epoch}!"
-                else:
-                    assert (
-                        f"pose.{epoch}.pkl" not in out_files
-                    ), f"Extra output model poses for epoch {epoch}!"
-            else:
-                assert (
-                    f"weights.{epoch}.pkl" not in out_files
-                ), f"Extra output model weights for epoch {epoch}!"
+        self.check_outputs(setup_request)
 
     @pytest.mark.parametrize("epoch, ksample", [(1, 3), (None, 4)])
     def test_then_analyze(self, setup_request, epoch, ksample):
@@ -458,39 +487,7 @@ class TestSetupThenRun:
         parser = argparse.ArgumentParser()
         train.add_args(parser)
         train.main(parser.parse_args(args))
-
-        out_files = os.listdir(rerun_dir)
-        abinit = setup_request.poses is None
-        abinit |= setup_request.pose_estimation == "abinit"
-        for epoch in range(1, 10):
-            if epoch == self.num_epochs or (
-                epoch < self.num_epochs
-                and (
-                    (
-                        setup_request.model in {None, "cryodrgn-ai"}
-                        and (epoch % checkpoint == 0 or epoch <= 2 and abinit)
-                    )
-                    or (
-                        setup_request.model == "cryodrgn"
-                        and (epoch % checkpoint == 0 or (epoch - 1) % 2 == 0 and abinit)
-                    )
-                )
-            ):
-                assert (
-                    f"weights.{epoch}.pkl" in out_files
-                ), f"Missing output model weights for epoch {epoch}!"
-                if (
-                    setup_request.pose_estimation == "abinit"
-                    or setup_request.poses is None
-                ):
-                    assert (
-                        f"pose.{epoch}.pkl" in out_files
-                    ), f"Missing output model poses for epoch {epoch}!"
-            else:
-                assert (
-                    f"weights.{epoch}.pkl" not in out_files
-                ), f"Extra output model weights for epoch {epoch}!"
-
+        self.check_outputs(setup_request, rerun_dir, checkpoint=checkpoint)
         shutil.rmtree(rerun_dir)
 
     @pytest.mark.parametrize("load_epoch", [None, 2, 4])
@@ -547,3 +544,39 @@ class TestSetupThenRun:
             assert os.path.exists(os.path.join(anlzdir, "z_pca.png"))
             assert os.path.exists(os.path.join(anlzdir, "pc2_10"))
             assert os.path.exists(os.path.join(anlzdir, "kmeans2"))
+
+    def test_new_outdir(self, setup_request, tmpdir_factory):
+        """Copy configurations to a new output directory and run again."""
+        new_outdir = tmpdir_factory.mktemp("new_outdir").strpath
+        args = [
+            new_outdir,
+            "--from-outdir",
+            setup_request.outdir,
+            "--no-analysis",
+            "--num-epochs",
+            str(self.num_epochs - 1),
+        ]
+        parser = argparse.ArgumentParser()
+        train.add_args(parser)
+        train.main(parser.parse_args(args))
+
+        self.check_outputs(setup_request, new_outdir, num_epochs=self.num_epochs - 1)
+
+    def test_load_and_new_outdir(self, setup_request, tmpdir_factory):
+        """Copy configurations and run again, this time loading from the first run."""
+        new_outdir = tmpdir_factory.mktemp("new_outdir").strpath
+        args = [
+            new_outdir,
+            "--from-outdir",
+            setup_request.outdir,
+            "--no-analysis",
+            "--load",
+            "latest",
+            "--num-epochs",
+            str(self.num_epochs + 2),
+        ]
+        parser = argparse.ArgumentParser()
+        train.add_args(parser)
+        train.main(parser.parse_args(args))
+
+        self.check_outputs(setup_request, new_outdir, num_epochs=self.num_epochs + 2)

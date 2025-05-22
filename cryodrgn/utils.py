@@ -66,17 +66,18 @@ class memoized(object):
 def find_latest_output(outdir: str, outlbl: str = "weights") -> str:
     """Get the output file corresponding to the latest saved training epoch."""
 
-    return os.path.join(
-        outdir,
-        sorted(
-            [
-                f
-                for f in os.listdir(outdir)
-                if os.path.isfile(os.path.join(outdir, f)) and f.startswith(outlbl)
-            ],
-            key=lambda x: int(x.split(".")[-2]) if x.split(".")[-2].isnumeric() else -1,
-        )[-1],
+    out_files = sorted(
+        [
+            f
+            for f in os.listdir(outdir)
+            if os.path.isfile(os.path.join(outdir, f)) and f.startswith(outlbl)
+        ],
+        key=lambda x: int(x.split(".")[-2]) if x.split(".")[-2].isnumeric() else -1,
     )
+    if len(out_files) == 0:
+        raise ValueError(f"No cryoDRGN`{outlbl}` output files found in {outdir}!")
+
+    return os.path.join(outdir, out_files[-1])
 
 
 def load_pkl(pkl: str):

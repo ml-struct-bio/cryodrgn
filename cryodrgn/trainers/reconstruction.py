@@ -582,14 +582,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
         self.checkpoint = None
         if self.configs.load:
             if self.configs.load == "latest" or self.configs.load is True:
-                self.logger.info("Automatically detecting latest checkpoint...")
-
-                weights = [
-                    os.path.join(self.outdir, f"weights.{epoch}.pkl")
-                    for epoch in range(self.configs.num_epochs)
-                ]
-                weights = [f for f in weights if os.path.exists(f)]
-                load_path = weights[-1]
+                load_path = cryodrgn.utils.find_latest_output(self.outdir)
             else:
                 load_path = self.configs.load
 
@@ -629,15 +622,8 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
                 self.reconstruction_model.output_mask.update_radius(
                     self.checkpoint["output_mask_radius"]
                 )
-
-            self.do_pretrain = False
             self.start_epoch = self.checkpoint["epoch"] + 1
         else:
-            self.do_pretrain = self.configs.pretrain > 0
-            self.do_pretrain &= (
-                self.configs.model != "cryodrgn"
-                or self.configs.pose_estimation == "abinit"
-            )
             self.start_epoch = 1
 
     def train(self) -> None:

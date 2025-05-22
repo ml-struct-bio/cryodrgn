@@ -386,6 +386,8 @@ class HierarchicalPoseSearchTrainer(ReconstructionModelTrainer):
         self.pose_search = None
         self.pose_model = None
         self.do_pretrain = self.configs.pose_estimation == "abinit"
+        self.do_pretrain &= self.configs.pretrain > 0
+        self.do_pretrain &= self.configs.load is None
 
         if self.configs.multigpu and torch.cuda.device_count() > 1:
             if self.configs.zdim > 0:

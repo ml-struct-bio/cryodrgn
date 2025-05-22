@@ -570,6 +570,7 @@ class SGDPoseSearchTrainer(ReconstructionModelTrainer):
         self.use_point_estimates = False
         self.first_switch_to_point_estimates = True
         self.first_switch_to_point_estimates_conf = True
+        self.do_pretrain = self.configs.load is None
 
         if self.configs.load is not None:
             if self.start_epoch >= self.epochs_pose_search:

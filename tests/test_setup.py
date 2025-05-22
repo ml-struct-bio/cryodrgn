@@ -348,7 +348,7 @@ def test_setup_standalone(setup_request):
         ("cryodrgn", "hand", None, "hand-poses", "just-5", None, None, "fixed"),
         (
             "cryodrgn",
-            "toy.txt",
+            "data/toy_projections.txt",
             "CTF-Test",
             "data/toy_rot_trans.pkl",
             "5",
@@ -359,6 +359,16 @@ def test_setup_standalone(setup_request):
         (None, "toy.txt", "CTF-Test", None, "just-5", None, None, "abinit"),
     ],
     indirect=["particles", "ctf", "poses", "indices", "datadir"],
+    ids=[
+        "v3,relative_particles,absolute_ctf,indices_file,no_poses,implicit_abinit",
+        "v4,absolute_particles,relative_ctf,indices_int,no_poses,implicit_abinit",
+        "v4,absolute_particles,absolute_ctf,no_indices,with_poses,implicit_abinit",
+        "v3,absolute_particles,no_ctf,indices_int,no_poses,explicit_abinit",
+        "v4,abstxt_particles,absolute_ctf,no_indices,with_poses,explicit_fixed",
+        "v3,hand_particles,no_ctf,indices_file,with_poses,explicit_fixed",
+        "v4,abstxt_particles,absolute_ctf,indices_int,relative_poses,explicit_abinit",
+        "implicit_v4,absolute_particles,absolute_ctf,indices_file,with_poses,explicit_abinit",
+    ],
 )
 @pytest.mark.parametrize(
     "reconstruction_type, zdim, cfgs, include",
@@ -367,6 +377,7 @@ def test_setup_standalone(setup_request):
         (None, "4", ["window_r=0.80", "zdim=2", "ind=4"], {"weight_decay": 0.05}),
         ("homo", None, ["window_r=0.80"], {"weight_decay": 0.05}),
     ],
+    ids=["homo_with_wd", "het_through_cfgs", "homo_with_include_cfgs"],
 )
 class TestSetupThenRun:
 
@@ -379,6 +390,8 @@ class TestSetupThenRun:
         num_epochs=None,
         check_epochs=None,
         checkpoint=1,
+        start_epoch=1,
+        load=False,
     ):
         if new_outdir is None:
             out_files = set(os.listdir(setup_request.outdir))
@@ -393,9 +406,9 @@ class TestSetupThenRun:
 
         abinit = setup_request.poses is None
         abinit |= setup_request.pose_estimation == "abinit"
-        for epoch in range(1, check_epochs + 1):
+        for epoch in range(0, check_epochs + 1):
             if epoch == num_epochs or (
-                epoch < num_epochs
+                start_epoch <= epoch < num_epochs
                 and (
                     (
                         setup_request.model in {None, "cryodrgn-ai"}
@@ -405,6 +418,11 @@ class TestSetupThenRun:
                         setup_request.model == "cryodrgn"
                         and (epoch % checkpoint == 0 or (epoch - 1) % 2 == 0 and abinit)
                     )
+                )
+                or (
+                    epoch == 0
+                    and not load
+                    and (setup_request.model in {None, "cryodrgn-ai"} or abinit)
                 )
             ):
                 assert (
@@ -561,10 +579,11 @@ class TestSetupThenRun:
         train.main(parser.parse_args(args))
 
         self.check_outputs(setup_request, new_outdir, num_epochs=self.num_epochs - 1)
+        shutil.rmtree(new_outdir)
 
     def test_load_and_new_outdir(self, setup_request, tmpdir_factory):
         """Copy configurations and run again, this time loading from the first run."""
-        new_outdir = tmpdir_factory.mktemp("new_outdir").strpath
+        new_outdir = tmpdir_factory.mktemp("new_outdir_and_load").strpath
         args = [
             new_outdir,
             "--from-outdir",
@@ -579,4 +598,12 @@ class TestSetupThenRun:
         train.add_args(parser)
         train.main(parser.parse_args(args))
 
-        self.check_outputs(setup_request, new_outdir, num_epochs=self.num_epochs + 2)
+        self.check_outputs(
+            setup_request,
+            new_outdir,
+            num_epochs=self.num_epochs + 2,
+            start_epoch=self.num_epochs + 1,
+            load=True,
+        )
+
+        shutil.rmtree(new_outdir)

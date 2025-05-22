@@ -22,6 +22,7 @@ commands/setup      `cryodrgn setup` command used as precursor to this command
 
 """
 import os
+import shutil
 import argparse
 from typing import Optional, Any
 import cryodrgn.config
@@ -120,10 +121,11 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     )
 
     parser.add_argument(
-        "--new-outdir",
-        "-o",
+        "--from-outdir",
+        "-f",
         type=os.path.abspath,
-        help="Copy configs in the existing directory but put output in this directory.",
+        help="Copy configs from this directory instead of using any configs "
+        "found in the primary output directory.",
     )
     parser.add_argument(
         "--no-analysis",
@@ -143,6 +145,15 @@ def main(
     values specified through the `--cfgs` command-line argument.
 
     """
+    if args.from_outdir:
+        from_cfgs = os.path.join(args.from_outdir, "config.yaml")
+        if not os.path.exists(from_cfgs):
+            raise ValueError(
+                f"No CryoDRGN configuration file `config.yaml` "
+                f"found in `{args.from_outdir=}`!"
+            )
+        shutil.copy(from_cfgs, os.path.join(args.outdir, "config.yaml"))
+
     configs = cryodrgn.utils.load_yaml(os.path.join(args.outdir, "config.yaml"))
     trainer_cls = get_model_trainer_class(configs)
     configs = trainer_cls.config_cls.parse_config(configs)
@@ -160,10 +171,19 @@ def main(
         configs["seed"] = args.seed
     train_args = configs["train_args"] if "train_args" in configs else configs
     model_args = configs["model_args"] if "model_args" in configs else configs
+
+    if args.load is not None:
+        if args.from_outdir is not None:
+            train_args["load"] = cryodrgn.utils.find_latest_output(args.from_outdir)
+            if model_args["pose_estimation"] == "abinit":
+                train_args["load_poses"] = cryodrgn.utils.find_latest_output(
+                    args.from_outdir, outlbl="pose"
+                )
+        else:
+            train_args["load"] = args.load
+
     if args.num_epochs is not None:
         train_args["num_epochs"] = args.num_epochs
-    if args.load is not None:
-        train_args["load"] = args.load
     if args.checkpoint is not None:
         train_args["checkpoint"] = args.checkpoint
     if args.log_interval is not None:
@@ -182,8 +202,7 @@ def main(
         train_args["amp"] = False
 
     cryodrgn.utils._verbose = False
-    outdir = args.new_outdir or args.outdir
-    trainer = trainer_cls(configs, outdir=outdir)
+    trainer = trainer_cls(configs, outdir=args.outdir)
     trainer.train()
 
     if args.do_analysis:

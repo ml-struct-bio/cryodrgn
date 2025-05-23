@@ -383,7 +383,7 @@ def main(args: argparse.Namespace) -> None:
         "This command is deprecated; use `cryodrgn train` as of cryoDRGN v4.0.0!"
     )
     configs = {
-        "model": "cryodrgn",
+        "model": "autoenc",
         "particles": args.particles,
         "ctf": args.ctf,
         "poses": None,

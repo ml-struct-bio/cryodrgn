@@ -110,7 +110,7 @@ class HierarchicalPoseSearchConfigurations(ReconstructionModelConfigurations):
 
     # A parameter belongs to this configuration set if and only if it has a type and a
     # default value defined here, note that children classes inherit these parameters
-    model = "cryodrgn"
+    model = "autoenc"
 
     # specifying size and type of model encoder and decoder
     enc_layers: int = None
@@ -141,9 +141,9 @@ class HierarchicalPoseSearchConfigurations(ReconstructionModelConfigurations):
     def __post_init__(self) -> None:
         super().__post_init__()
 
-        if self.model != "cryodrgn":
+        if self.model != "autoenc":
             raise ValueError(
-                f"Mismatched model {self.model=}!=`cryodrgn` "
+                f"Mismatched model {self.model=}!=`autoenc` "
                 f"for {self.__class__.__name__}!"
             )
         if self.beta is not None:

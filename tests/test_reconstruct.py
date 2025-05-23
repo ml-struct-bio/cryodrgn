@@ -69,7 +69,7 @@ class TrainCommand:
         self.train_type = train_type
 
         self.cfgs = {
-            "model": "cryodrgn-ai" if self.train_type == "drgnai" else "cryodrgn",
+            "model": "autodec" if self.train_type == "drgnai" else "autoenc",
             "particles": self.args[0],
         }
 

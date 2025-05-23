@@ -147,7 +147,7 @@ class ReconstructionModelConfigurations(BaseConfigurations):
     l_extent: float = 0.5
     l_start: int = 12
     l_end: int = 32
-    t_extent: float = 10.0
+    t_extent: float = 20.0
     t_ngrid: int = 7
     t_xshift: int = 0
     t_yshift: int = 0
@@ -170,11 +170,11 @@ class ReconstructionModelConfigurations(BaseConfigurations):
         """Parsing given configuration parameter values and checking their validity."""
         super().__post_init__()
 
-        if self.model not in {"cryodrgn-ai", "cryodrgn"}:
+        if self.model not in {"autodec", "autoenc"}:
             raise ValueError(
                 f"Given model `{self.model}` not in currently supported model types:\n"
-                f"`cryodrgn-ai` (cryoDRGN v4 pose estimation)\n"
-                f"`cryodrgn` (cryoDRGN v3,v2,v1 hierarchical-only pose estimation)\n"
+                f"`autodec` ... cryoDRGN v4 (CryoDRGN-AI)\n"
+                f"`autoenc` ... cryoDRGN v3,v2,v1 \n"
             )
         if not isinstance(self.zdim, int) or self.zdim < 0:
             raise ValueError(

@@ -104,7 +104,7 @@ class SGDPoseSearchConfigurations(ReconstructionModelConfigurations):
 
     # A parameter belongs to this configuration set if and only if it has a type and a
     # default value defined here, note that children classes inherit these parameters
-    model: str = "cryodrgn-ai"
+    model: str = "autodec"
 
     # scheduling
     n_imgs_pose_search: int = 500000
@@ -159,9 +159,9 @@ class SGDPoseSearchConfigurations(ReconstructionModelConfigurations):
     def __post_init__(self) -> None:
         super().__post_init__()
 
-        if self.model != "cryodrgn-ai":
+        if self.model != "autodec":
             raise ValueError(
-                f"Mismatched model {self.model=}!=`cryodrgn-ai` "
+                f"Mismatched model {self.model=}!=`autodec` "
                 f"for {self.__class__.__name__}!"
             )
         if self.pose_estimation is not None:
@@ -917,7 +917,9 @@ class SGDPoseSearchTrainer(ReconstructionModelTrainer):
 
         return rot_pred, trans_pred, conf_pred, logvar_pred
 
-    def forward_pass(self, y, y_real, tilt_indices, indices, rots=None, trans=None):
+    def forward_pass(
+        self, y, tilt_indices, indices, rots=None, trans=None, y_real=None
+    ):
         if self.configs.verbose_time:
             torch.cuda.synchronize()
 

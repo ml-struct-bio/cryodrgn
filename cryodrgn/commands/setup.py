@@ -6,9 +6,11 @@ $ cryodrgn setup output_dir/ \
                  --particles particles.128.mrcs --ctf ctf.pkl --poses pose.pkl --zdim 8
 
 # Arguments not available through the command line can be specified with --cfgs/-c
+# Useful for specifying e.g. t_extent when a larger grid search is
+# needed in the case of de-centered input particles
 $ cryodrgn setup output_dir/ \
-                 --particles particles.128.mrcs --ctf ctf.pkl --poses pose.pkl
-                 --cfgs 'learning_rate=0.0002' 'zdim=8'
+                 --particles particles.128.mrcs --ctf ctf.pkl --pose-estimation abinit
+                 --cfgs 'learning_rate=0.0002' 'zdim=8' 't_extent=40'
 
 See also
 --------
@@ -59,9 +61,10 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     training_group.add_argument(
         "--model",
         "-m",
-        default="cryodrgn-ai",
-        choices=["cryodrgn-ai", "cryodrgn"],
-        help="which generation of cryoDRGN learning models to apply",
+        default="autodec",
+        choices=["autodec", "autoenc"],
+        help="which generation of cryoDRGN learning models to "
+        "apply — autoenc for v3, autodec for v4 (CryoDRGN-AI)",
     )
     training_group.add_argument(
         "--reconstruction-type",

@@ -31,13 +31,13 @@ cryodrgn train_nn $particles --poses $poses --ctf $ctf -o $OUTDIR/hand-recon_v3-
 
 # Fixed poses with cryoDRGN-AI
 cryodrgn setup $OUTDIR/hand-recon_v4-fixed-hom --particles $particles --poses $poses --ctf $ctf \
-               --zdim 0 --model cryodrgn-ai --pose-estimation fixed
+               --zdim 0 --model autodec --pose-estimation fixed
 cryodrgn train $OUTDIR/hand-recon_v4-fixed-hom
 
 # Ab-initio with cryoDRGN v3
 cryodrgn abinit_homo $particles --ctf $ctf -o $OUTDIR/hand-recon_v3-abinit-hom --lr .0001 --seed 0
 # Ab-initio with cryoDRGN-AI
-cryodrgn setup $OUTDIR/hand-recon_v4-abinit-hom --particles $particles --ctf $ctf --zdim 0 --model cryodrgn-ai
+cryodrgn setup $OUTDIR/hand-recon_v4-abinit-hom --particles $particles --ctf $ctf --zdim 0 --model autodec
 cryodrgn train $OUTDIR/hand-recon_v4-abinit-hom
 
 ### Testing heterogeneous reconstruction ###
@@ -49,7 +49,7 @@ cryodrgn analyze $OUTDIR/hand-recon_v3-fixed-het
 
 # Fixed poses with cryoDRGN-AI
 cryodrgn setup $OUTDIR/hand-recon_v4-fixed-het --particles $particles --poses $poses --ctf $ctf \
-                                               --zdim 10 --model cryodrgn-ai --pose-estimation fixed
+                                               --zdim 10 --model autodec --pose-estimation fixed
 cryodrgn train $OUTDIR/hand-recon_v4-fixed-het
 
 # Ab-initio poses with cryoDRGN v3
@@ -57,6 +57,6 @@ cryodrgn abinit_het $particles --ctf $ctf -o $OUTDIR/hand-recon_v3-abinit-het --
 cryodrgn analyze $OUTDIR/hand-recon_v3-abinit-het
 
 # Ab-initio poses with cryoDRGN-AI
-cryodrgn setup $OUTDIR/hand-recon_v4-abinit-het --particles $particles --ctf $ctf --zdim 10 --model cryodrgn-ai \
+cryodrgn setup $OUTDIR/hand-recon_v4-abinit-het --particles $particles --ctf $ctf --zdim 10 --model autodec \
                                                 --cfg t_ngrid=3 n_imgs_pose_search=100
 cryodrgn train $OUTDIR/hand-recon_v4-abinit-het

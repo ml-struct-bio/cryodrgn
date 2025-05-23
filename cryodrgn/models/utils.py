@@ -64,9 +64,9 @@ def get_model_trainer_class(cfg: dict[str, Any]):
     model = model_args["model"] if "model" in model_args else "cryodrgn"
     model_args["model"] = model
 
-    if model == "cryodrgn-ai":
+    if model == "autodec":
         config_cls = SGDPoseSearchTrainer
-    elif model == "cryodrgn":
+    elif model == "autoenc":
         config_cls = HierarchicalPoseSearchTrainer
     else:
         raise ValueError(f"Unrecognized model `{model}` specified in config!")

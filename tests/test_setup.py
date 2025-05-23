@@ -64,7 +64,7 @@ class SetupRequest:
             "pe_dim=4",
         ]
         # TODO: find a way to not hard-code these
-        if model == "cryodrgn":
+        if model == "autoenc":
             add_cfgs += ["ps_freq=2"]
         else:
             add_cfgs += ["n_imgs_pose_search=10"]
@@ -192,11 +192,11 @@ def setup_directory(setup_request):
         os.path.join(setup_request.outdir, "config.yaml")
     )
 
-    # Default model if not given should always be cryoDRGN-AI
+    # Default model if not given should always be autodec
     if setup_request.model is not None:
         assert configs["model_args"]["model"] == setup_request.model
     else:
-        assert configs["model_args"]["model"] == "cryodrgn-ai"
+        assert configs["model_args"]["model"] == "autodec"
 
     if setup_request.particles is None:
         assert configs["dataset_args"]["particles"] is None
@@ -262,11 +262,11 @@ def setup_directory(setup_request):
 @pytest.mark.parametrize(
     "model, particles, ctf, poses, indices, datadir, dataset, pose_estimation",
     [
-        ("cryodrgn", "toy.mrcs", "CTF-Test", None, "5", None, None, None),
-        ("cryodrgn-ai", "toy.mrcs", "CTF-Test", None, "5", None, None, None),
-        ("cryodrgn-ai", "toy.mrcs", "CTF-Test", "toy-poses", None, None, None, None),
+        ("autoenc", "toy.mrcs", "CTF-Test", None, "5", None, None, None),
+        ("autodec", "toy.mrcs", "CTF-Test", None, "5", None, None, None),
+        ("autodec", "toy.mrcs", "CTF-Test", "toy-poses", None, None, None, None),
         pytest.param(
-            "cryodrgn-ai",
+            "autodec",
             "toy.mrcs",
             "CTF-Test",
             None,
@@ -279,10 +279,10 @@ def setup_directory(setup_request):
                 reason="fixed estimation but no poses given",
             ),
         ),
-        ("cryodrgn", "toy.mrcs", None, None, "5", None, None, "abinit"),
-        ("cryodrgn-ai", "toy.txt", "CTF-Test", "toy-poses", None, None, None, "fixed"),
-        ("cryodrgn", "hand", None, "hand-poses", "5", None, None, "fixed"),
-        ("cryodrgn", "toy.txt", "CTF-Test", "toy-poses", "5", None, None, "abinit"),
+        ("autoenc", "toy.mrcs", None, None, "5", None, None, "abinit"),
+        ("autodec", "toy.txt", "CTF-Test", "toy-poses", None, None, None, "fixed"),
+        ("autoenc", "hand", None, "hand-poses", "5", None, None, "fixed"),
+        ("autoenc", "toy.txt", "CTF-Test", "toy-poses", "5", None, None, "abinit"),
         (None, "toy.txt", "CTF-Test", None, "5", None, None, "abinit"),
     ],
     indirect=["particles", "ctf", "poses", "indices", "datadir"],
@@ -332,7 +332,7 @@ def test_setup_standalone(setup_request):
     "model, particles, ctf, poses, indices, datadir, dataset, pose_estimation",
     [
         (
-            "cryodrgn",
+            "autoenc",
             "data/toy_projections.mrcs",
             "CTF-Test",
             None,
@@ -341,13 +341,13 @@ def test_setup_standalone(setup_request):
             None,
             None,
         ),
-        ("cryodrgn-ai", "toy.mrcs", "data/test_ctf.pkl", None, "5", None, None, None),
-        ("cryodrgn-ai", "toy.mrcs", "CTF-Test", "toy-poses", None, None, None, None),
-        ("cryodrgn", "toy.mrcs", None, None, "5", None, None, "abinit"),
-        ("cryodrgn-ai", "toy.txt", "CTF-Test", "toy-poses", None, None, None, "fixed"),
-        ("cryodrgn", "hand", None, "hand-poses", "just-5", None, None, "fixed"),
+        ("autodec", "toy.mrcs", "data/test_ctf.pkl", None, "5", None, None, None),
+        ("autodec", "toy.mrcs", "CTF-Test", "toy-poses", None, None, None, None),
+        ("autoenc", "toy.mrcs", None, None, "5", None, None, "abinit"),
+        ("autodec", "toy.txt", "CTF-Test", "toy-poses", None, None, None, "fixed"),
+        ("autoenc", "hand", None, "hand-poses", "just-5", None, None, "fixed"),
         (
-            "cryodrgn",
+            "autoenc",
             "data/toy_projections.txt",
             "CTF-Test",
             "data/toy_rot_trans.pkl",
@@ -411,18 +411,18 @@ class TestSetupThenRun:
                 start_epoch <= epoch < num_epochs
                 and (
                     (
-                        setup_request.model in {None, "cryodrgn-ai"}
+                        setup_request.model in {None, "autodec"}
                         and (epoch % checkpoint == 0 or epoch <= 2 and abinit)
                     )
                     or (
-                        setup_request.model == "cryodrgn"
+                        setup_request.model == "autoenc"
                         and (epoch % checkpoint == 0 or (epoch - 1) % 2 == 0 and abinit)
                     )
                 )
                 or (
                     epoch == 0
                     and not load
-                    and (setup_request.model in {None, "cryodrgn-ai"} or abinit)
+                    and (setup_request.model in {None, "autodec"} or abinit)
                 )
             ):
                 assert (

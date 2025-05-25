@@ -312,8 +312,7 @@ class DRGNai(nn.Module):
         # random poses
         # TODO: refactor to make pretraining a method of the trainer like for HPS?
         elif self.pretrain:
-            in_dim = in_dict["y"].shape[:-2]
-            device = in_dict["y_real"].device
+            in_dim, device = in_dict["y"].shape[:-2], in_dict["y"].device
             pose_dict = {"R": lie_tools.random_rotmat(np.prod(in_dim), device=device)}
             pose_dict["R"] = pose_dict["R"].reshape(*in_dim, 3, 3)
             if not self.no_trans:

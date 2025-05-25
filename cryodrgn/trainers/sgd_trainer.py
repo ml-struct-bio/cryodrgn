@@ -137,7 +137,7 @@ class SGDPoseSearchConfigurations(ReconstructionModelConfigurations):
     channels_cnn: int = 32
     kernel_size_cnn: int = 3
     resolution_encoder: str = None
-    initial_conf: str = None
+    load_z: str = None
     pe_type_conf: str = None
     # hypervolume
     volume_domain: str = "hartley"
@@ -216,7 +216,7 @@ class SGDPoseSearchConfigurations(ReconstructionModelConfigurations):
         if self.n_imgs_pose_search < 0:
             raise ValueError("n_imgs_pose_search must be greater than 0!")
 
-        if self.use_conf_encoder and self.initial_conf:
+        if self.use_conf_encoder and self.load_z:
             raise ValueError(
                 "Conformations cannot be initialized when also using an encoder!"
             )
@@ -695,12 +695,12 @@ class SGDPoseSearchTrainer(ReconstructionModelTrainer):
                 if self.first_switch_to_point_estimates_conf:
                     self.first_switch_to_point_estimates_conf = False
 
-                    if self.configs.initial_conf is not None:
+                    if self.configs.load_z is not None:
                         self.logger.info(
                             "Initializing conformation table " "from given z's"
                         )
                         self.reconstruction_model.conf_table.initialize(
-                            cryodrgn.utils.load_pkl(self.configs.initial_conf)
+                            cryodrgn.utils.load_pkl(self.configs.load_z)
                         )
 
                     self.reconstruction_model.to(self.device)

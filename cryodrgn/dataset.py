@@ -41,7 +41,7 @@ class ImageDataset(torch.utils.data.Dataset):
         device: Union[str, torch.device] = "cpu",
     ):
         self.logger = logging.getLogger(__name__)
-        assert not keepreal, "Not implemented yet"
+        self.keepreal = keepreal
         datadir = datadir or ""
         self.ind = ind
         self.src = ImageSource.from_file(
@@ -142,7 +142,9 @@ class ImageDataset(torch.utils.data.Dataset):
         if len(f_particles.shape) == 2:
             f_particles = f_particles[np.newaxis, ...]
 
-        in_dict = {"y": f_particles, "y_real": r_particles, "indices": index}
+        in_dict = {"y": f_particles, "indices": index}
+        if self.keepreal:
+            in_dict["y_real"] = r_particles
         if self.rot_gt is not None:
             in_dict["rots"] = self.rot_gt[index].float()
             if self.trans_gt is not None:

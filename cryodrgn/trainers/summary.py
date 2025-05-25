@@ -135,11 +135,17 @@ def make_img_summary(
     if in_dict["y"].dim() == 3:
         y = in_dict["y"][0]
         recon_y = recon_y[0]
-        y_real = in_dict["y_real"][0]
+        if "y_real" in in_dict:
+            y_real = in_dict["y_real"][0]
+        else:
+            y_real = None
     else:
         y = in_dict["y"][0, 0]
         recon_y = recon_y[0, 0]
-        y_real = in_dict["y_real"][0, 0]
+        if "y_real" in in_dict:
+            y_real = in_dict["y_real"][0, 0]
+        else:
+            y_real = None
 
     # HT
     fig = plt.figure(dpi=96, figsize=(10, 4))
@@ -182,30 +188,31 @@ def make_img_summary(
     writer.add_figure(prefix + "Log Hartley Transform", fig, global_step=steps)
 
     # Image
-    fig = plt.figure(dpi=96, figsize=(13, 4))
-    # GT
-    plt.subplot(131)
-    y_real_np = y_real.detach().cpu().numpy()
-    plt.imshow(y_real_np)
-    plt.colorbar()
-    plt.axis("off")
-    plt.title(f"Input Encoder ({y_real_np.shape[-2]}x{y_real_np.shape[-1]})")
+    if y_real is not None:
+        fig = plt.figure(dpi=96, figsize=(13, 4))
+        # ground-truth
+        plt.subplot(131)
+        y_real_np = y_real.detach().cpu().numpy()
+        plt.imshow(y_real_np)
+        plt.colorbar()
+        plt.axis("off")
+        plt.title(f"Input Encoder ({y_real_np.shape[-2]}x{y_real_np.shape[-1]})")
 
-    plt.subplot(132)
-    y_real_np = fft.ihtn_center(y.detach().cpu())
-    plt.imshow(y_real_np)
-    plt.colorbar()
-    plt.axis("off")
-    plt.title(f"Ground Truth ({y_real_np.shape[-2]}x{y_real_np.shape[-1]})")
+        plt.subplot(132)
+        y_real_np = fft.ihtn_center(y.detach().cpu())
+        plt.imshow(y_real_np)
+        plt.colorbar()
+        plt.axis("off")
+        plt.title(f"Ground Truth ({y_real_np.shape[-2]}x{y_real_np.shape[-1]})")
 
-    # Pred
-    plt.subplot(133)
-    y_real_pred = fft.ihtn_center(y_pred)
-    plt.imshow(y_real_pred.reshape(resolution, resolution))
-    plt.colorbar()
-    plt.axis("off")
-    plt.title(f"Prediction ({resolution}x{resolution})")
-    writer.add_figure(prefix + "Image", fig, global_step=steps)
+        # Pred
+        plt.subplot(133)
+        y_real_pred = fft.ihtn_center(y_pred)
+        plt.imshow(y_real_pred.reshape(resolution, resolution))
+        plt.colorbar()
+        plt.axis("off")
+        plt.title(f"Prediction ({resolution}x{resolution})")
+        writer.add_figure(prefix + "Image", fig, global_step=steps)
 
 
 def single_loss_summary(writer, per_image_loss, angles, steps, suffix):

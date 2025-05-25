@@ -52,6 +52,33 @@ class TestImageDatasetLoading:
         # minibatch is a list of (particles, tilt, indices)
         for i, minibatch in enumerate(data_loader):
             assert isinstance(minibatch, dict)
+            assert len(minibatch) == 2
+            assert sorted(minibatch.keys()) == ["indices", "y"]
+
+            # We have 100 particles. For all but the last iteration *
+            # for all but the last iteration (100//7 = 14), we'll have 7 images each
+            if i < (dataset.N // batch_size):
+                assert minibatch["y"].shape == (batch_size, dataset.D, dataset.D)
+                assert minibatch["indices"].shape == (batch_size,)
+
+            # and 100 % 7 = 2 for the very last one
+            else:
+                assert minibatch["y"].shape == (
+                    dataset.N % batch_size,
+                    dataset.D,
+                    dataset.D,
+                )
+                assert minibatch["indices"].shape == (dataset.N % batch_size,)
+
+    @pytest.mark.parametrize("batch_size", [7, 11])
+    def test_loading_real(self, particles, indices, batch_size):
+        ind = None if indices.path is None else load_pkl(indices.path)
+        dataset = ImageDataset(mrcfile=particles.path, ind=ind, keepreal=True)
+        data_loader = make_dataloader(dataset, batch_size=batch_size, shuffle=True)
+
+        # minibatch is a list of (particles, tilt, indices)
+        for i, minibatch in enumerate(data_loader):
+            assert isinstance(minibatch, dict)
             assert len(minibatch) == 3
             assert sorted(minibatch.keys()) == ["indices", "y", "y_real"]
 
@@ -100,18 +127,13 @@ class TestImageDatasetLoading:
         # minibatch is a list of (particles, tilt, indices)
         for i, minibatch in enumerate(data_loader):
             assert isinstance(minibatch, dict)
-            assert len(minibatch) == 3
-            assert sorted(minibatch.keys()) == ["indices", "y", "y_real"]
+            assert len(minibatch) == 2
+            assert sorted(minibatch.keys()) == ["indices", "y"]
 
             # We have 100 particles. For all but the last iteration *
             # for all but the last iteration (100//7 = 14), we'll have 7 images each
             if i < (dataset.N // batch_size):
                 assert minibatch["y"].shape == (batch_size, dataset.D, dataset.D)
-                assert minibatch["y_real"].shape == (
-                    batch_size,
-                    dataset.D - 1,
-                    dataset.D - 1,
-                )
                 assert minibatch["indices"].shape == (batch_size,)
 
             # and 100 % 7 = 2 for the very last one
@@ -120,11 +142,6 @@ class TestImageDatasetLoading:
                     dataset.N % batch_size,
                     dataset.D,
                     dataset.D,
-                )
-                assert minibatch["y_real"].shape == (
-                    dataset.N % batch_size,
-                    dataset.D - 1,
-                    dataset.D - 1,
                 )
                 assert minibatch["indices"].shape == (dataset.N % batch_size,)
 
@@ -222,7 +239,7 @@ def test_data_shuffler(particles, indices, batch_size, buffer_size):
     dataset = ImageDataset(mrcfile=particles.path, ind=ind)
     data_loader = DataShuffler(dataset, batch_size=batch_size, buffer_size=buffer_size)
 
-    # minibatch is a list of (particles, tilt, indices)
+    # Minibatch is a list of (particles, tilt, indices)
     epoch1_indices, epoch2_indices = list(), list()
     for i, minibatch in enumerate(data_loader):
         assert isinstance(minibatch, dict)
@@ -240,10 +257,10 @@ def test_data_shuffler(particles, indices, batch_size, buffer_size):
     epoch1_indices = np.concatenate(epoch1_indices)
     epoch2_indices = np.concatenate(epoch2_indices)
 
+    # Epochs should have all the indices exactly once
     N = len(epoch1_indices)
-    # epochs should have all the indices exactly once
     assert sorted(epoch1_indices) == list(range(N)), epoch1_indices
     assert sorted(epoch2_indices) == list(range(N)), epoch2_indices
 
-    # epochs should be shuffled differently
+    # Epochs should be shuffled differently
     assert any(epoch1_indices != epoch2_indices), epoch1_indices

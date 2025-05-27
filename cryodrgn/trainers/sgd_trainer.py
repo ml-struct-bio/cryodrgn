@@ -107,7 +107,7 @@ class SGDPoseSearchConfigurations(ReconstructionModelConfigurations):
     model: str = "autodec"
 
     # scheduling
-    n_imgs_pose_search: int = 500000
+    n_imgs_pose_search: int = None
     epochs_sgd: int = None
     pose_only_phase: int = 0
     use_gt_trans: bool = False
@@ -173,6 +173,13 @@ class SGDPoseSearchConfigurations(ReconstructionModelConfigurations):
 
         if self.hidden_dim is None:
             self.hidden_dim = 256 if self.pose_estimation == "abinit" else 1024
+        if self.epochs_sgd is not None and self.num_epochs is not None:
+            raise ValueError("Cannot specify both `epochs_sgd` and `num_epochs`!")
+        if self.n_imgs_pose_search is not None:
+            if not isinstance(self.n_imgs_pose_search, int):
+                raise ValueError("n_imgs_pose_search must be an integer!")
+            if self.n_imgs_pose_search < 0:
+                raise ValueError("n_imgs_pose_search must be greater than 0!")
 
         if self.explicit_volume and self.zdim >= 1:
             raise ValueError(
@@ -212,9 +219,6 @@ class SGDPoseSearchConfigurations(ReconstructionModelConfigurations):
             raise ValueError(
                 f"Invalid value {self.volume_domain} for hypervolume_domain."
             )
-
-        if self.n_imgs_pose_search < 0:
-            raise ValueError("n_imgs_pose_search must be greater than 0!")
 
         if self.use_conf_encoder and self.load_z:
             raise ValueError(
@@ -448,10 +452,16 @@ class SGDPoseSearchTrainer(ReconstructionModelTrainer):
 
     @property
     def epochs_pose_search(self) -> int:
-        if self.configs.n_imgs_pose_search > 0:
+        """Calculate # of epochs for p-search based on user-specified parameters."""
+
+        if self.configs.n_imgs_pose_search:
             epochs_pose_search = max(
-                2, self.configs.n_imgs_pose_search // (self.particle_count + 1)
+                2, (self.configs.n_imgs_pose_search - 1) // self.particle_count + 1
             )
+        elif self.configs.epochs_sgd:
+            epochs_pose_search = self.configs.num_epochs - self.configs.epochs_sgd
+        elif self.configs.pose_estimation == "abinit":
+            epochs_pose_search = 500000
         else:
             epochs_pose_search = 0
 
@@ -459,12 +469,8 @@ class SGDPoseSearchTrainer(ReconstructionModelTrainer):
 
     @property
     def epochs_sgd(self) -> int:
-        if self.configs.epochs_sgd is None:
-            epochs_sgd = self.configs.num_epochs - self.epochs_pose_search
-        else:
-            epochs_sgd = self.configs.epochs_sgd
-
-        return epochs_sgd
+        """Utility for internal calculation of # of SGD epochs."""
+        return self.configs.num_epochs - self.epochs_pose_search
 
     def __init__(self, configs: dict[str, Any], outdir: str) -> None:
         super().__init__(configs, outdir)

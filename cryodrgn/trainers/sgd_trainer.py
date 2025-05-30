@@ -173,9 +173,12 @@ class SGDPoseSearchConfigurations(ReconstructionModelConfigurations):
 
         if self.hidden_dim is None:
             self.hidden_dim = 256 if self.pose_estimation == "abinit" else 1024
-        if self.epochs_sgd is not None and self.num_epochs is not None:
-            raise ValueError("Cannot specify both `epochs_sgd` and `num_epochs`!")
+
         if self.n_imgs_pose_search is not None:
+            if self.epochs_sgd is not None:
+                raise ValueError(
+                    "Cannot specify both `epochs_sgd` and `n_imgs_pose_search`!"
+                )
             if not isinstance(self.n_imgs_pose_search, int):
                 raise ValueError("n_imgs_pose_search must be an integer!")
             if self.n_imgs_pose_search < 0:

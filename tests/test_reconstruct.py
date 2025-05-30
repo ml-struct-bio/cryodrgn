@@ -280,7 +280,8 @@ class TestHomogeneous:
                 ), f"Missing output model weights for epoch {epoch}!"
                 assert (
                     sum(
-                        out_file.startswith(f"reconstruct.{epoch}")
+                        out_file.startswith("reconstruct")
+                        and out_file.endswith(f"{epoch}.mrc")
                         for out_file in out_files
                     )
                     == 1
@@ -317,7 +318,11 @@ class TestHomogeneous:
 
         assert "weights.7.pkl" in out_files, "Missing output model weights!"
         assert (
-            sum(out_file.startswith("reconstruct.7") for out_file in out_files) == 1
+            sum(
+                out_file.startswith("reconstruct") and out_file.endswith("7.mrc")
+                for out_file in out_files
+            )
+            == 1
         ), "Missing output reconstructed vol!"
         assert not any(
             fl.startswith("analyze.") for fl in out_files
@@ -438,7 +443,8 @@ class TestHeterogeneous:
 
                 assert (
                     sum(
-                        out_file.startswith(f"reconstruct.{epoch}")
+                        out_file.startswith("reconstruct")
+                        and out_file.endswith(f"{epoch}.mrc")
                         for out_file in out_files
                     )
                     == 1

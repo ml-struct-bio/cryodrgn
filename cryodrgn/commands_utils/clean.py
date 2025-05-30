@@ -93,19 +93,19 @@ def add_args(parser):
 
 def clean_dir(d: Path, args: argparse.Namespace) -> None:
     analysis_epochs = {
-        int(out_dir.name.split(".")[1])
+        int(out_dir.name.split(".")[-2])
         for out_dir in d.iterdir()
         if (
             out_dir.is_dir()
             and out_dir.name[:8] == "analyze."
-            and out_dir.name.split(".")[1].isnumeric()
+            and out_dir.name.split(".")[-2].isnumeric()
         )
     }
 
     rmv_count = 0
     for out_lbl in ["weights", "z", "pose", "reconstruct"]:
         for out_fl in d.glob(f"{out_lbl}.*"):
-            epoch = out_fl.name.split(".")[1]
+            epoch = out_fl.name.split(".")[-2]
 
             if out_fl.is_file() and (
                 epoch.isnumeric()

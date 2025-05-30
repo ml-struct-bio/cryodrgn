@@ -28,7 +28,7 @@ import argparse
 from pathlib import Path
 import yaml
 from cryodrgn.commands_utils.configs import check_open_config
-from cryodrgn.commands.clean import clean_dir
+from cryodrgn.commands_utils.clean import clean_dir
 
 
 def add_args(parser: argparse.ArgumentParser) -> None:

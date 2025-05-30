@@ -975,7 +975,7 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
     @property
     def epoch_lbl(self) -> str:
         """A human-readable label for the current training epoch."""
-        return ".".join([str(self.current_epoch), self.epoch_type])
+        return ".".join([self.epoch_type, str(self.current_epoch)])
 
     @property
     def average_losses(self) -> dict[str, float]:

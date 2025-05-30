@@ -6,7 +6,6 @@ from cryodrgn.commands import (  # noqa: F401
     analyze_landscape,
     analyze_landscape_full,
     backproject_voxel,
-    clean,
     direct_traversal,
     downsample,
     eval_images,

@@ -288,7 +288,7 @@ class TrainDir:
 
         for out_file in self.out_files:
             if out_file.startswith("reconstruct."):
-                epoch = int(out_file.split(".")[1])
+                epoch = int(out_file.split(".")[2])
                 volfiles[epoch] = os.path.join(self.outdir, out_file)
 
         return volfiles

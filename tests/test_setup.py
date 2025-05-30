@@ -406,13 +406,29 @@ class TestSetupThenRun:
 
         abinit = setup_request.poses is None
         abinit |= setup_request.pose_estimation == "abinit"
+        four_ind = False
+        if setup_request.ind is not None:
+            four_ind |= "4" in os.path.basename(setup_request.ind)
+        if setup_request.cfgs is not None:
+            four_ind |= any(cfg.startswith("ind=4") for cfg in setup_request.cfgs)
+
         for epoch in range(0, check_epochs + 1):
             if epoch == num_epochs or (
                 start_epoch <= epoch < num_epochs
                 and (
                     (
                         setup_request.model in {None, "autodec"}
-                        and (epoch % checkpoint == 0 or epoch <= 2 and abinit)
+                        and (
+                            epoch % checkpoint == 0
+                            or abinit
+                            and (
+                                four_ind
+                                and epoch == 3
+                                or "5" in os.path.basename(setup_request.ind)
+                                and epoch <= 2
+                                or epoch <= 2
+                            )
+                        )
                     )
                     or (
                         setup_request.model == "autoenc"

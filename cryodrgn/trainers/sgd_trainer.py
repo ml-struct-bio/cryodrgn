@@ -117,6 +117,7 @@ class SGDPoseSearchConfigurations(ReconstructionModelConfigurations):
     pose_table_optim_type: str = "adam"
     conf_table_optim_type: str = "adam"
     conf_encoder_optim_type: str = "adam"
+    pose_learning_rate: float = 1e-3
     lr_conf_table: float = 1.0e-2
     lr_conf_encoder: float = 1.0e-4
     # masking
@@ -1269,9 +1270,9 @@ class SGDPoseSearchTrainer(ReconstructionModelTrainer):
         else:
             zval = None
 
-        vol = -1.0 * self.reconstruction_model.eval_volume(
-            norm=self.data.norm, zval=zval
-        )
+        vol = self.reconstruction_model.eval_volume(norm=self.data.norm, zval=zval)
+        if self.configs.invert_data:
+            vol *= -1.0
         write_mrc(out_mrc, np.array(vol, dtype=np.float32))
 
     def save_model(self):

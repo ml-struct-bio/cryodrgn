@@ -43,7 +43,6 @@ class ImageDataset(torch.utils.data.Dataset):
         self.logger = logging.getLogger(__name__)
         self.keepreal = keepreal
         datadir = datadir or ""
-        self.ind = ind
         self.src = ImageSource.from_file(
             mrcfile,
             lazy=lazy,
@@ -56,6 +55,7 @@ class ImageDataset(torch.utils.data.Dataset):
         self.N = self.src.n
         self.D = ny + 1  # after symmetrization
         self.invert_data = invert_data
+        self.ind = np.array(ind) if ind is not None else np.arange(self.N)
 
         if window:
             self.window = spherical_window_mask(D=ny, in_rad=window_r, out_rad=0.99).to(
@@ -77,10 +77,10 @@ class ImageDataset(torch.utils.data.Dataset):
         if poses_gt_pkl is not None:
             poses_gt = utils.load_pkl(poses_gt_pkl)
             if poses_gt[0].ndim == 3:
-                self.rot_gt = torch.Tensor(poses_gt[0]).float()
-                self.trans_gt = torch.Tensor(poses_gt[1] * self.D).float()
+                self.rot_gt = torch.Tensor(poses_gt[0][self.ind]).float()
+                self.trans_gt = torch.Tensor(poses_gt[1][self.ind] * self.D).float()
             else:
-                self.rot_gt = torch.Tensor(poses_gt).float()
+                self.rot_gt = torch.Tensor(poses_gt[self.ind]).float()
 
         if np.issubdtype(self.src.dtype, np.integer):
             self.window = self.window.int()

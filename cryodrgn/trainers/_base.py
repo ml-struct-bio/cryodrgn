@@ -6,7 +6,7 @@ import difflib
 import pandas as pd
 from abc import ABC
 from dataclasses import dataclass, fields, Field, MISSING, asdict
-from typing import Any
+from typing import Any, Union
 from typing_extensions import Self
 import yaml
 import logging
@@ -87,10 +87,39 @@ class BaseConfigurations(ABC):
     def __contains__(self, val) -> bool:
         return val in {k for k, _ in self}
 
-    @property
-    def file_dict(self) -> dict[str, Any]:
+    def _file_dict(self) -> dict[str, Union[str, dict[str, str]]]:
         """Organizing the parameter values for use in human-readable formats."""
-        return {"seed": self.seed}
+        return {"verbose": self.verbose, "seed": self.seed}
+
+    @classmethod
+    def _check_file_dict(
+        cls, cfgs_left: set[str], cfgs: dict[str, Union[str, dict[str, str]]]
+    ) -> set[str]:
+        """Checking that the file dictionary is valid."""
+        for k, v in cfgs.items():
+            if isinstance(v, dict):
+                cfgs_left = cls._check_file_dict(cfgs_left, v)
+            else:
+                assert k in cls.fields_dict(), (
+                    f"Parameter `{k}` not in the list "
+                    f"of valid parameters for `{cls.__name__}`!"
+                )
+                cfgs_left -= {k}
+
+        return cfgs_left - {"test_installation"}
+
+    @property
+    def file_dict(self) -> dict[str, Union[str, dict[str, str]]]:
+        """Generating the parameter values for use in human-readable formats."""
+        cfgs = self._file_dict()
+        cfgs_left = self._check_file_dict(set(asdict(self)), cfgs)
+
+        assert not cfgs_left, (
+            f"The following parameters are missing from the human-readable list "
+            f"of parameters for `{self.__class__.__name__}`: {cfgs_left}"
+        )
+
+        return cfgs
 
     def write(self, fl: str) -> None:
         """Saving configurations to file using the original order."""

@@ -245,6 +245,7 @@ def main(args: argparse.Namespace) -> None:
     )
     configs = {
         "model": "autoenc",
+        "zdim": 0,
         "particles": args.particles,
         "ctf": args.ctf,
         "poses": args.poses,

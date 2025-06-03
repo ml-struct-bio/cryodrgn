@@ -9,7 +9,7 @@ import os
 import pickle
 import numpy as np
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Union
 import time
 
 import torch
@@ -154,9 +154,6 @@ class SGDPoseSearchConfigurations(ReconstructionModelConfigurations):
     # others
     palette_type: str = None
 
-    # quick configs
-    conf_estimation: str = None
-
     def __post_init__(self) -> None:
         super().__post_init__()
 
@@ -168,9 +165,6 @@ class SGDPoseSearchConfigurations(ReconstructionModelConfigurations):
         if self.pose_estimation is not None:
             if self.pose_estimation == "refine":
                 self.pose_learning_rate = 1.0e-4
-        if self.conf_estimation is not None:
-            if self.conf_estimation == "encoder":
-                self.use_conf_encoder = True
 
         if self.hidden_dim is None:
             self.hidden_dim = 256 if self.pose_estimation == "abinit" else 1024
@@ -267,10 +261,9 @@ class SGDPoseSearchConfigurations(ReconstructionModelConfigurations):
         if self.t_extent == 0.0:
             self.t_ngrid = 1
 
-    @property
-    def file_dict(self) -> dict[str, Any]:
+    def _file_dict(self) -> dict[str, Union[str, dict[str, str]]]:
         """Organizing the parameter values for use in human-readable formats."""
-        configs = super().file_dict
+        configs = super()._file_dict()
 
         # cnn
         cnn_params = {
@@ -290,38 +283,45 @@ class SGDPoseSearchConfigurations(ReconstructionModelConfigurations):
             "pe_type": self.pe_type,
             "pe_type_conf": self.pe_type_conf,
             "use_conf_encoder": self.use_conf_encoder,
+            "conf_encoder_optim_type": self.conf_encoder_optim_type,
+            "conf_table_optim_type": self.conf_table_optim_type,
             "lr_conf_table": self.lr_conf_table,
             "lr_conf_encoder": self.lr_conf_encoder,
             "beta_conf": self.beta_conf,
             "trans_l1_regularizer": self.trans_l1_regularizer,
             "l2_smoothness_regularizer": self.l2_smoothness_regularizer,
         }
-        # pose search
-        if self.pose_estimation != "fixed":
-            ps_params = {
-                "n_iter": self.n_iter,
-                "n_kept_poses": self.n_kept_poses,
-                "no_trans_search_at_pose_search": self.no_trans_search_at_pose_search,
-                "n_tilts_pose_search": self.n_tilts_pose_search,
-                "average_over_tilts": self.average_over_tilts,
-            }
-        else:
-            ps_params = dict()
-
+        ps_params = {
+            "n_iter": self.n_iter,
+            "n_kept_poses": self.n_kept_poses,
+            "use_gt_trans": self.use_gt_trans,
+            "no_trans_search_at_pose_search": self.no_trans_search_at_pose_search,
+            "pose_table_optim_type": self.pose_table_optim_type,
+            "n_tilts_pose_search": self.n_tilts_pose_search,
+            "average_over_tilts": self.average_over_tilts,
+        }
         configs["model_args"] = dict(
-            hidden_layers=self.hidden_layers,
-            hidden_dim=self.hidden_dim,
             **configs["model_args"],
             cnn_params=cnn_params,
             hypervolume_params=hypervolume_params,
             conf_regressor_params=conf_regressor_params,
+            l_start_fm=self.l_start_fm,
+            max_freq=self.max_freq,
         )
-        if ps_params:
-            configs["model_args"]["ps_params"] = ps_params
+        configs["model_args"]["ps_params"] = ps_params
         configs["train_args"] = dict(
             **configs["train_args"],
+            load_z=self.load_z,
             n_imgs_pose_search=self.n_imgs_pose_search,
             epochs_sgd=self.epochs_sgd,
+            pretrain_with_gt_poses=self.pretrain_with_gt_poses,
+            add_one_frequency_every=self.add_one_frequency_every,
+            n_frequencies_per_epoch=self.n_frequencies_per_epoch,
+            output_mask=self.output_mask,
+            palette_type=self.palette_type,
+            resolution_encoder=self.resolution_encoder,
+            subtomo_averaging=self.subtomo_averaging,
+            pose_only_phase=self.pose_only_phase,
         )
 
         for param_k in (

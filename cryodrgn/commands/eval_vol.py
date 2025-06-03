@@ -304,7 +304,7 @@ def main(args: argparse.Namespace) -> None:
         args.flip,
         args.invert,
         args.downsample,
-        **{k: v for k, v in vars(args).items() if k in cfg},
+        **{k: v for k, v in vars(args).items() if k in cfg and k != "verbose"},
     )
 
     z_bounds = (args.z_start, args.z_end) if args.z_start is not None else None

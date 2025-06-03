@@ -312,6 +312,7 @@ def main(args: argparse.Namespace) -> None:
     )
     configs = {
         "model": "autoenc",
+        "zdim": 0,
         "particles": args.particles,
         "ctf": args.ctf,
         "poses": None,
@@ -325,7 +326,6 @@ def main(args: argparse.Namespace) -> None:
         "load": args.load,
         "load_poses": args.load_poses,
         "checkpoint": args.checkpoint,
-        "zdim": 0,
         "invert_data": args.invert_data,
         "lazy": args.lazy,
         "window": args.window,

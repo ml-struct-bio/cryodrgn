@@ -5,7 +5,7 @@ import pickle
 import contextlib
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Union
 import yaml
 from datetime import datetime as dt
 import logging
@@ -92,8 +92,8 @@ class ReconstructionModelConfigurations(BaseConfigurations):
 
     # A parameter belongs to this configuration set if and only if it has a type and a
     # default value defined here, note that children classes inherit these parameters
-    model: str = None
-    zdim: int = None
+    model: str = "autodec"
+    zdim: int = 8
     num_epochs: int = 30
     dataset: str = None
     particles: str = None
@@ -251,27 +251,34 @@ class ReconstructionModelConfigurations(BaseConfigurations):
         if self.batch_size_hps is None:
             self.batch_size_hps = self.batch_size
 
-    @property
-    def file_dict(self) -> dict[str, Any]:
+    def _file_dict(self) -> dict[str, Union[str, dict[str, str]]]:
         """Organizing the parameter values for use in human-readable formats."""
-        configs = super().file_dict
+        configs = super()._file_dict()
 
         dataset_args = dict(
             particles=self.particles,
             poses=self.poses,
             ctf=self.ctf,
             ind=self.ind,
+            dataset=self.dataset,
+            labels=self.labels,
             datadir=self.datadir,
+            data_norm=self.data_norm,
             invert_data=self.invert_data,
             use_real=self.use_real,
             window=self.window,
             window_r=self.window_r,
             tilt=self.tilt,
+            load=self.load,
+            load_poses=self.load_poses,
         )
         model_args = dict(
             model=self.model,
             zdim=self.zdim,
+            hidden_layers=self.hidden_layers,
+            hidden_dim=self.hidden_dim,
             pose_estimation=self.pose_estimation,
+            no_trans=self.no_trans,
             pe_type=self.pe_type,
             pe_dim=self.pe_dim,
             feat_sigma=self.feat_sigma,
@@ -302,11 +309,17 @@ class ReconstructionModelConfigurations(BaseConfigurations):
         train_args = dict(
             num_epochs=self.num_epochs,
             checkpoint=self.checkpoint,
+            verbose_time=self.verbose_time,
             log_interval=self.log_interval,
             multigpu=self.multigpu,
+            max_threads=self.max_threads,
             batch_size=self.batch_size,
+            batch_size_known_poses=self.batch_size_known_poses,
+            batch_size_sgd=self.batch_size_sgd,
+            batch_size_hps=self.batch_size_hps,
             amp=self.amp,
             lazy=self.lazy,
+            shuffle=self.shuffle,
             shuffler_size=self.shuffler_size,
             pretrain=self.pretrain,
             reset_optim_after_pretrain=False,
@@ -592,10 +605,16 @@ class ReconstructionModelTrainer(BaseTrainer, ABC):
             )
             state_dict = self.checkpoint["model_state_dict"]
 
+            # With ab-initio reconstruction we also need to load the poses saved by
+            # the model; these are looked for in the same directory as the checkpoint
             if self.configs.pose_estimation == "abinit":
                 if self.configs.load_poses is None or self.configs.load_poses is True:
                     epoch = load_path.split(".")[-2]
                     load_poses_path = os.path.join(self.outdir, f"pose.{epoch}.pkl")
+                    if not os.path.exists(load_poses_path):
+                        load_poses_path = os.path.joqin(
+                            os.path.dirname(load_path), f"pose.{epoch}.pkl"
+                        )
                 else:
                     load_poses_path = self.configs.load_poses
 

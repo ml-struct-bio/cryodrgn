@@ -11,7 +11,7 @@ reconstruction algorithm.
 import os
 import pickle
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Union, Callable
 import numpy as np
 import torch
 from torch import nn
@@ -198,10 +198,9 @@ class HierarchicalPoseSearchConfigurations(ReconstructionModelConfigurations):
         if self.l_ramp_epochs is None:
             self.l_ramp_epochs = 25 if self.zdim == 0 else 0
 
-    @property
-    def file_dict(self) -> dict[str, Any]:
+    def _file_dict(self) -> dict[str, Union[str, dict[str, str]]]:
         """Organizing the parameter values for use in human-readable formats."""
-        configs = super().file_dict
+        configs = super()._file_dict()
 
         configs["model_args"] = dict(
             enc_layers=self.enc_layers,
@@ -221,6 +220,11 @@ class HierarchicalPoseSearchConfigurations(ReconstructionModelConfigurations):
             l_ramp_model=self.l_ramp_model,
             reset_model_every=self.reset_model_every,
             reset_optim_every=self.reset_optim_every,
+            beta=self.beta,
+            beta_control=self.beta_control,
+            sgd_pretrain=self.sgd_pretrain,
+            enc_mask=self.enc_mask,
+            tilt_enc_only=self.tilt_enc_only,
         )
 
         return configs

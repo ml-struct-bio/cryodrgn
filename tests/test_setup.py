@@ -524,6 +524,24 @@ class TestSetupThenRun:
         self.check_outputs(setup_request, rerun_dir, checkpoint=checkpoint)
         shutil.rmtree(rerun_dir)
 
+    def test_new_outdir(self, setup_request, tmpdir_factory):
+        """Copy configurations to a new output directory and run again."""
+        new_outdir = tmpdir_factory.mktemp("new_outdir").strpath
+        args = [
+            new_outdir,
+            "--from-outdir",
+            setup_request.outdir,
+            "--no-analysis",
+            "--num-epochs",
+            str(self.num_epochs - 1),
+        ]
+        parser = argparse.ArgumentParser()
+        train.add_args(parser)
+        train.main(parser.parse_args(args))
+
+        self.check_outputs(setup_request, new_outdir, num_epochs=self.num_epochs - 1)
+        shutil.rmtree(new_outdir)
+
     @pytest.mark.parametrize("load_epoch", [None, 2, 4])
     def test_then_reload(self, setup_request, load_epoch):
         """Copy the experiment config file to an empty directory and run again."""
@@ -578,24 +596,6 @@ class TestSetupThenRun:
             assert os.path.exists(os.path.join(anlzdir, "z_pca.png"))
             assert os.path.exists(os.path.join(anlzdir, "pc2_10"))
             assert os.path.exists(os.path.join(anlzdir, "kmeans2"))
-
-    def test_new_outdir(self, setup_request, tmpdir_factory):
-        """Copy configurations to a new output directory and run again."""
-        new_outdir = tmpdir_factory.mktemp("new_outdir").strpath
-        args = [
-            new_outdir,
-            "--from-outdir",
-            setup_request.outdir,
-            "--no-analysis",
-            "--num-epochs",
-            str(self.num_epochs - 1),
-        ]
-        parser = argparse.ArgumentParser()
-        train.add_args(parser)
-        train.main(parser.parse_args(args))
-
-        self.check_outputs(setup_request, new_outdir, num_epochs=self.num_epochs - 1)
-        shutil.rmtree(new_outdir)
 
     def test_load_and_new_outdir(self, setup_request, tmpdir_factory):
         """Copy configurations and run again, this time loading from the first run."""

@@ -223,8 +223,6 @@ class ReconstructionModelConfigurations(BaseConfigurations):
 
         if isinstance(self.ind, str):
             if not self.ind.isnumeric():
-                if not os.path.isfile(self.ind):
-                    raise ValueError(f"Subset indices file {self.ind} does not exist!")
                 self.ind = os.path.abspath(self.ind)
 
         if self.pose_estimation is None:
@@ -241,8 +239,6 @@ class ReconstructionModelConfigurations(BaseConfigurations):
                 raise ValueError(
                     "Specify an input file (poses=) if using ground truth poses!"
                 )
-        if isinstance(self.poses, str) and not os.path.isfile(self.poses):
-            raise ValueError(f"Given poses file {self.poses} does not exist!")
 
         if self.batch_size_known_poses is None:
             self.batch_size_known_poses = self.batch_size

@@ -91,10 +91,15 @@ class ReconstructionModelConfigurations(BaseConfigurations):
     """
 
     # A parameter belongs to this configuration set if and only if it has a type and a
-    # default value defined here, note that children classes inherit these parameters
+    # default value defined here.
+    # Note that children classes inherit these parameters!
+    # We start by defining the label used to refer to the model type — the default is
+    # the CryoDRGN-AI model introduced in v4.
     model: str = "autodec"
+    # Fundamental model properties
     zdim: int = 8
     num_epochs: int = 30
+    # Input datasets
     dataset: str = None
     particles: str = None
     ctf: str = None
@@ -134,7 +139,7 @@ class ReconstructionModelConfigurations(BaseConfigurations):
     window: bool = True
     window_r: float = 0.85
     # data normalization
-    invert_data: bool = False
+    invert_data: bool = True
     data_norm: float = None
     use_real: bool = False
     # how long to do pretraining for, and what type

@@ -207,4 +207,4 @@ def main(
     trainer.train()
 
     if args.do_analysis:
-        ModelAnalyzer(trainer.outdir, invert=model_args["model"] == "autodec").analyze()
+        ModelAnalyzer(trainer.outdir).analyze()

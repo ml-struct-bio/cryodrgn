@@ -43,7 +43,9 @@ class BaseConfigurations(ABC):
     """
 
     # A parameter belongs to this configuration set if and only if it has a type and a
-    # default value defined here, note that children classes inherit these parameters
+    # default value defined here.
+    # Note that children classes inherit these parameters!
+    # The base configuration class only has parameters based on basic engine properties.
     verbose: bool = False
     seed: int = None
     test_installation: bool = False
@@ -200,7 +202,7 @@ class BaseConfigurations(ABC):
         """Retrieve the parameter values given in a list of --cfgs command line entries.
 
         This method parses the parameters given by a user via a `--cfgs` flag defined
-        for commands such as `drgnai setup` to provide an arbitrary set of
+        for commands such as `cryodrgn setup` to provide an arbitrary set of
         configuration parameters through the command line interface.
 
         """

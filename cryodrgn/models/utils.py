@@ -61,7 +61,7 @@ def undeprecate_configs(cfg: dict[str, Any]) -> dict[str, Any]:
 def get_model_trainer_class(cfg: dict[str, Any]):
     model_args = cfg["model_args"] if "model_args" in cfg else cfg
     # When we can't find a model label in the configs we assume it's from a v3 model
-    model = model_args["model"] if "model" in model_args else "autoenc"
+    model = model_args["model"] if "model" in model_args else "autodec"
     model_args["model"] = model
 
     if model == "autodec":

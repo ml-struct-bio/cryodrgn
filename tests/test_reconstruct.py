@@ -564,7 +564,7 @@ class TestHeterogeneous:
         anlzdir = os.path.join(traincmd.outdir, f"analyze.{epoch}")
         assert os.path.exists(anlzdir)
         assert os.path.exists(os.path.join(anlzdir, "z_pca.png"))
-        assert os.path.exists(os.path.join(anlzdir, "pc2_10"))
+        assert os.path.exists(os.path.join(anlzdir, "pc2"))
         assert os.path.exists(os.path.join(anlzdir, f"kmeans{ksample}"))
 
     @pytest.mark.parametrize(
@@ -597,7 +597,7 @@ class TestHeterogeneous:
         anlzdir = os.path.join(traincmd.outdir, f"analyze.{epoch}")
         assert os.path.exists(anlzdir)
         assert os.path.exists(os.path.join(anlzdir, "z_pca.png"))
-        assert os.path.exists(os.path.join(anlzdir, "pc2_10"))
+        assert os.path.exists(os.path.join(anlzdir, "pc2"))
         assert os.path.exists(os.path.join(anlzdir, "kmeans2"))
 
     @pytest.mark.parametrize(

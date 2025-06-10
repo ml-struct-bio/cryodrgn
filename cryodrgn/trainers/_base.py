@@ -135,17 +135,65 @@ class BaseConfigurations(ABC):
     @classmethod
     def parse_config(cls, configs: dict[str, Any]) -> dict[str, Any]:
         """Retrieves all configurations that have been saved to file."""
-        cfg = {
+        cfgs = {
             k.split("___")[-1]: v[0]
             for k, v in pd.json_normalize(configs, sep="___").items()
         }
-        cfg = {k: v for k, v in cfg.items() if k in cls.fields_dict()}
-        cfg = {
+
+        if "time" in cfgs:
+            del cfgs["time"]
+        if "version" in cfgs:
+            del cfgs["version"]
+        if "norm" in cfgs:
+            del cfgs["norm"]
+        if "apix" in cfgs:
+            del cfgs["apix"]
+        if "n_particles" in cfgs:
+            del cfgs["n_particles"]
+        if "n_images" in cfgs:
+            del cfgs["n_images"]
+        if "D" in cfgs:
+            del cfgs["D"]
+        if "l_extent" in cfgs:
+            del cfgs["l_extent"]
+        if "ignore_DC" in cfgs:
+            del cfgs["ignore_DC"]
+        if "tilting_func" in cfgs:
+            del cfgs["tilting_func"]
+
+        for cfg_key, cfg_val in cfgs.items():
+            for fld in fields(cls):
+                if cfg_key == fld.name:
+                    if isinstance(cfg_val, str):
+                        cfgs[cfg_key] = fld.type(cfg_val)
+                    elif cfg_val is None:
+                        cfgs[cfg_key] = None
+
+                    else:
+                        try:
+                            cfgs[cfg_key] = fld.type(cfg_val)
+                        except Exception as e:
+                            raise ValueError(
+                                f"{e}\nParameter `{cfg_key}` has value "
+                                f"`{cfg_val}` of type `{type(cfg_val)}` but should "
+                                f"be of type `{fld.type}`!"
+                            )
+
+                    # accounting for parameters like `ind` which can be paths
+                    # to files as well as integers
+                    if isinstance(cfgs[cfg_key], str) and cfgs[cfg_key].isnumeric():
+                        cfgs[cfg_key] = int(cfgs[cfg_key])
+
+                    break
+            else:
+                cls.bad_key_error(cfg_key)
+
+        cfgs = {
             k: cls.fields_dict()[k].type(v) if v is not None else None
-            for k, v in cfg.items()
+            for k, v in cfgs.items()
         }
 
-        return cfg
+        return cfgs
 
     @classmethod
     def parse_cfg_keys(cls, cfg_keys: list[str]) -> dict[str, Any]:
@@ -200,8 +248,7 @@ class BaseConfigurations(ABC):
             close_str = ""
 
         raise ValueError(
-            f"--cfgs parameter `{cfg_key}` is not a "
-            f"valid configuration parameter!{close_str}"
+            f"`{cfg_key}` is not a valid configuration parameter!{close_str}"
         )
 
 
@@ -255,3 +302,7 @@ class BaseTrainer(ABC):
             },
             outdir,
         )
+
+    def get_configs(self) -> dict[str, Any]:
+        """Retrieves all given and inferred configurations for downstream use."""
+        return self.configs.file_dict

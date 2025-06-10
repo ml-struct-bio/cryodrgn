@@ -117,6 +117,9 @@ def main(args: argparse.Namespace) -> None:
             "output folder as it does not contain a `config.yaml` or `config.pkl` file!"
         )
     cfgs = config.load(cfg_file)
+    if "training" in cfgs:
+        cfgs = cfgs["training"]
+    dataset_cfgs = cfgs["dataset_args"] if "dataset_args" in cfgs else cfgs
 
     if not os.path.exists(z_file):
         if "cmd" in cfgs and cfgs["cmd"][1] not in {"train_vae", "abinit_het"}:
@@ -137,6 +140,14 @@ def main(args: argparse.Namespace) -> None:
     classes = utils.load_pkl(args.labels)
     if classes.ndim != 1:
         raise ValueError("Class labels must be a 1D array!")
+
+    if dataset_cfgs["ind"] is not None:
+        if os.path.exists(dataset_cfgs["ind"]):
+            indices = utils.load_pkl(dataset_cfgs["ind"])
+            if len(indices) != len(classes):
+                classes = classes[indices]
+        else:
+            classes = classes[: int(dataset_cfgs["ind"])]
 
     n_imgs = z_mat.shape[0]
     if n_imgs < classes.shape[0]:

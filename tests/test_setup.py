@@ -495,7 +495,7 @@ class TestSetupThenRun:
             anlzdir = os.path.join(setup_request.outdir, f"analyze.{epoch}")
             assert os.path.exists(anlzdir)
             assert os.path.exists(os.path.join(anlzdir, "z_pca.png"))
-            assert os.path.exists(os.path.join(anlzdir, "pc2_10"))
+            assert os.path.exists(os.path.join(anlzdir, "pc2"))
             assert os.path.exists(os.path.join(anlzdir, f"kmeans{ksample}"))
 
     @pytest.mark.parametrize("checkpoint", [1, 2, 3])
@@ -594,7 +594,7 @@ class TestSetupThenRun:
             )
             assert os.path.exists(anlzdir)
             assert os.path.exists(os.path.join(anlzdir, "z_pca.png"))
-            assert os.path.exists(os.path.join(anlzdir, "pc2_10"))
+            assert os.path.exists(os.path.join(anlzdir, "pc2"))
             assert os.path.exists(os.path.join(anlzdir, "kmeans2"))
 
     def test_load_and_new_outdir(self, setup_request, tmpdir_factory):

@@ -152,6 +152,7 @@ def main(
                 f"No CryoDRGN configuration file `config.yaml` "
                 f"found in `{args.from_outdir=}`!"
             )
+        os.makedirs(args.outdir, exist_ok=True)
         shutil.copy(from_cfgs, os.path.join(args.outdir, "config.yaml"))
 
     configs = cryodrgn.utils.load_yaml(os.path.join(args.outdir, "config.yaml"))

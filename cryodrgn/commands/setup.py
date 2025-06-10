@@ -20,7 +20,7 @@ commands/train      `cryodrgn train` command used to train model after this comm
 import os
 import argparse
 import cryodrgn.utils
-from cryodrgn.models.utils import get_model_configurations
+from cryodrgn.models.utils import get_model_configurations, get_model_trainer_class
 
 
 def add_args(parser: argparse.ArgumentParser) -> None:
@@ -179,7 +179,10 @@ def main(args: argparse.Namespace) -> None:
             cfgs[data_lbl] = these_paths[data_lbl]
 
     if args.include:
-        cfgs.update(cryodrgn.utils.load_yaml(args.include))
+        include_cfgs = cryodrgn.utils.load_yaml(args.include)
+        include_cfgs["model"] = args.model
+        trainer_cls = get_model_trainer_class(include_cfgs)
+        cfgs.update(trainer_cls.config_cls.parse_config(include_cfgs))
 
     configs = get_model_configurations(cfgs, add_cfgs=args.cfgs)
     os.makedirs(args.outdir, exist_ok=True)

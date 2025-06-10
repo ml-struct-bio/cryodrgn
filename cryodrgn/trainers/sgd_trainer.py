@@ -1,8 +1,8 @@
 """Training engine for the cryoDRGN v4 (CryoDRGN-AI) reconstruction model.
 
 This module contains the model training engine and the corresponding configuration
-definitions for the aCryoDRGN-AI approach to particle reconstruction originally
-introduced by Alex Levy in the drgnai package.
+definitions for the CryoDRGN-AI approach to particle reconstruction originally
+introduced by Axel Levy in the DRGN-AI package.
 
 """
 import os
@@ -111,7 +111,6 @@ class SGDPoseSearchConfigurations(ReconstructionModelConfigurations):
     epochs_sgd: int = None
     pose_only_phase: int = 0
     use_gt_trans: bool = False
-    invert_data: bool = False
     subtomo_averaging: bool = False
     # optimizers
     pose_table_optim_type: str = "adam"
@@ -126,6 +125,7 @@ class SGDPoseSearchConfigurations(ReconstructionModelConfigurations):
     n_frequencies_per_epoch: int = 10
     max_freq: int = None
     l_start_fm: int = 1
+    invert_data: bool = True
     # loss
     beta_conf: float = 0.0
     trans_l1_regularizer: float = 0.0
@@ -1271,8 +1271,6 @@ class SGDPoseSearchTrainer(ReconstructionModelTrainer):
             zval = None
 
         vol = self.reconstruction_model.eval_volume(norm=self.data.norm, zval=zval)
-        if self.configs.invert_data:
-            vol *= -1.0
         write_mrc(out_mrc, np.array(vol, dtype=np.float32))
 
     def save_model(self):

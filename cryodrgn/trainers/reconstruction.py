@@ -134,7 +134,7 @@ class ReconstructionModelConfigurations(BaseConfigurations):
     window: bool = True
     window_r: float = 0.85
     # data normalization
-    invert_data: bool = True
+    invert_data: bool = False
     data_norm: float = None
     use_real: bool = False
     # how long to do pretraining for, and what type

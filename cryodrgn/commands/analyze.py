@@ -402,9 +402,7 @@ class ModelAnalyzer:
             z_pc = cryodrgn.analysis.get_pc_traj(
                 pca, self.z.shape[1], self.n_per_pc, i + 1, start, end
             )
-
-            volpath = os.path.join(self.outdir, f"pc{i + 1}_{self.n_per_pc}")
-            self.generate_volumes(z_pc, volpath)
+            self.generate_volumes(z_pc, os.path.join(self.outdir, f"pc{i + 1}"))
 
         # kmeans clustering
         logger.info("K-means clustering...")
@@ -601,7 +599,7 @@ class ModelAnalyzer:
         # Plot PC trajectories
         for i in range(self.pc):
             start, end = np.percentile(pc[:, i], (5, 95))
-            pc_path = os.path.join(self.outdir, f"pc{i + 1}_{self.n_per_pc}")
+            pc_path = os.path.join(self.outdir, f"pc{i + 1}")
             z_pc = cryodrgn.analysis.get_pc_traj(
                 pca, self.z.shape[1], self.n_per_pc, i + 1, start, end
             )

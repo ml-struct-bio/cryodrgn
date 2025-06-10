@@ -52,6 +52,10 @@ cryodrgn setup $OUTDIR/hand-recon_v4-fixed-het --particles $particles --poses $p
                                                --zdim 10 --model autodec --pose-estimation fixed
 cryodrgn train $OUTDIR/hand-recon_v4-fixed-het
 
+cryodrgn train $OUTDIR/hand-recon_v4-fixed-het_initial-conf \
+               --from-outdir $OUTDIR/hand-recon_v4-fixed-het \
+               --cfgs load_z=$OUTDIR/hand-recon_v4-fixed-het/z.10.pkl
+
 # Ab-initio poses with cryoDRGN v3
 cryodrgn abinit_het $particles --ctf $ctf -o $OUTDIR/hand-recon_v3-abinit-het --lr .0001 --seed 0 --zdim 10
 cryodrgn analyze $OUTDIR/hand-recon_v3-abinit-het

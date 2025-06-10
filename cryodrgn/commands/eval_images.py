@@ -234,6 +234,9 @@ def main(args: argparse.Namespace) -> None:
     logger.info("Loaded configuration:")
     pprint.pprint(cfg)
 
+    model_args = cfg["model_args"] if "model_args" in cfg else cfg
+    if "model" not in model_args:
+        model_args["model"] = "autoenc"
     cfg["load"] = args.weights
     cfg["shuffle"] = False
     cfg["load_poses"] = args.poses
@@ -242,6 +245,8 @@ def main(args: argparse.Namespace) -> None:
     cfg["dataset_args"]["poses"] = args.poses
     if args.ctf is not None:
         cfg["dataset_args"]["ctf"] = args.ctf
+    if model_args["model"] != "autoenc" and "encode_mode" in model_args:
+        del model_args["encode_mode"]
 
     # instantiate model
     trainer = get_model_trainer(cfg, outdir=os.path.dirname(args.weights))

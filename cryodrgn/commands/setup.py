@@ -1,16 +1,18 @@
-"""Utility for creating an experiment output folder with a configuration file.
+"""Setup a cryoDRGN experiment
 
 Example usage
 -------------
-$ cryodrgn setup output_dir/ \
-                 --particles particles.128.mrcs --ctf ctf.pkl --poses pose.pkl --zdim 8
+# Setup cryoDRGN with fixed poses
+$ cryodrgn setup outdir --particles particles.128.mrcs --ctf ctf.pkl --poses pose.pkl
 
-# Arguments not available through the command line can be specified with --cfgs/-c
-# Useful for specifying e.g. t_extent when a larger grid search is
-# needed in the case of de-centered input particles
-$ cryodrgn setup output_dir/ \
-                 --particles particles.128.mrcs --ctf ctf.pkl --pose-estimation abinit
-                 --cfgs 'learning_rate=0.0002' 'zdim=8' 't_extent=40'
+# Setup cryoDRGN-AI with ab initio pose estimation
+$ cryodrgn setup outdir --particles particles.128.mrcs --ctf ctf.pkl --model autodec --pose-estimation abinit
+
+# Setup cryoDRGN-ET for heterogeneous subtomogram averaging
+$ cryodrgn setup outdir --particles particles.128.star --datadir /path/to/subtilts --ctf ctf.pkl --poses pose.pkl --tilt
+
+# Additional arguments in the config.yaml file can be specified from the command line with --cfgs/-c
+# (e.g. --cfgs 't_extent=40' 'dose_per_tilt=3.5')
 
 See also
 --------
@@ -29,22 +31,22 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "outdir",
         type=os.path.abspath,
-        help="Path to the directory that will be created for this experiment",
+        help="Path to the output directory to create for this cryoDRGN job",
     )
 
-    inputs_group = parser.add_argument_group("Listing Input Datasets")
+    inputs_group = parser.add_argument_group("Input Dataset")
     inputs_group.add_argument(
         "--particles",
         type=os.path.abspath,
-        help="path to the picked particles (.mrcs/.star/.txt)",
+        help="Path to the particle stack (.mrcs/.txt/.star/.cs)",
     )
     inputs_group.add_argument(
-        "--ctf", type=os.path.abspath, help="path to the CTF parameters (.pkl)"
+        "--ctf", type=os.path.abspath, help="Path to the CTF parameters (.pkl)"
     )
     inputs_group.add_argument(
-        "--poses", type=os.path.abspath, help="path to the poses (.pkl)"
+        "--poses", type=os.path.abspath, help="Path to the poses (.pkl)"
     )
-    inputs_group.add_argument("--ind", help="path to filtering indices (.pkl)")
+    inputs_group.add_argument("--ind", help="Path to filtering indices (.pkl)")
     inputs_group.add_argument(
         "--datadir",
         type=os.path.abspath,
@@ -53,47 +55,48 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     )
     inputs_group.add_argument(
         "--dataset",
-        help="which dataset from the file pointed to by the environment "
-        "variable `$CRYODRGN_DATASETS` to run the experiment on",
+        help="Alternatively, specify a dataset name from an environmental "
+        " variable `$CRYODRGN_DATASETS` that define dataset paths"
     )
 
-    training_group = parser.add_argument_group("Reconstruction Training Settings")
+    training_group = parser.add_argument_group("Training Settings")
     training_group.add_argument(
         "--model",
         "-m",
-        default="autodec",
         choices=["autodec", "autoenc"],
-        help="which generation of cryoDRGN learning models to "
-        "apply — autoenc for v3, autodec for v4 (CryoDRGN-AI)",
+        default="autoenc",
+        help="Version of the cryoDRGN model to use: 'autoenc' for a standard cryoDRGN autoencoder, 'autodec' for a cryoDRGN-AI autodecoder. (default: %(default)s)"
     )
     training_group.add_argument(
         "--reconstruction-type",
         choices=["het", "homo"],
-        help="homogeneous or heterogeneous (default) reconstruction with zdim=8?",
+        default="het",
+        help="Homogeneous or heterogeneous reconstruction (default: %(default)s)"
     )
     training_group.add_argument(
         "--zdim",
         type=int,
-        help="homogeneous or heterogeneous (default) reconstruction when zdim>0?",
+        default=8,
+        help="Latent variable dimension for heterogeneous reconstruction (default: %(default)s)",
     )
     training_group.add_argument(
         "--pose-estimation",
         choices=["abinit", "refine", "fixed"],
-        help="`abinit` for no initialization (default), `refine` to refine "
-        "ground truth poses by gradient descent or `fixed` to use ground "
-        "truth poses",
+        default="fixed",
+        help="Pose estimation procedure: `abinit` for ab initio reconstruction, `refine` to refine "
+        "input poses by gradient descent or `fixed` to use fixed input poses (default: %(default)s)",
     )
     training_group.add_argument(
         "--tilt",
         action="store_true",
-        help="specify if using a tilt series",
+        help="Flag to specify if using a tilt series for subtomogram averaging",
     )
     training_group.add_argument(
         "--cfgs",
         "-c",
         nargs="+",
         default=list(),
-        help="additional configuration parameters to pass to the model "
+        help="Additional configuration parameters to pass to the model "
         "in the form of 'CFG_KEY1=CFG_VAL1' 'CFG_KEY2=CFG_VAL2' ... ",
     )
     training_group.add_argument(
@@ -112,33 +115,23 @@ def main(args: argparse.Namespace) -> None:
             f"Output directory `{args.outdir}` already exists and is not empty!"
         )
 
-    if args.reconstruction_type is None:
-        zdim = int(args.zdim) if args.zdim is not None else 8
+    if args.reconstruction_type == "het":
+        assert args.zdim > 0
+    elif args.reconstruction_type == "homo":
+        args.zdim = 0
     else:
-        if args.zdim is not None:
-            raise ValueError("Cannot specify both --reconstruction-type and --zdim!")
+        raise ValueError(
+            f"Unrecognized reconstruction type `{args.reconstruction_type}`!"
+        )
 
-        if args.reconstruction_type == "het":
-            zdim = 8
-        elif args.reconstruction_type == "homo":
-            zdim = 0
-        else:
-            raise ValueError(
-                f"Unrecognized reconstruction type `{args.reconstruction_type}`!"
-            )
-
-    if args.pose_estimation is None:
-        pose_estimation = "abinit" if args.poses is None else "fixed"
-    else:
-        pose_estimation = args.pose_estimation
+    if args.pose_estimation in ("fixed", "refine"):
+        assert args.poses, f"Must provide input poses for --pose-estimation {args.pose_estimation}"
 
     # handling different ways of specifying the input data, starting with a
     # file containing the data files
-    paths_file = os.environ.get("CRYODRGN_DATASETS")
-    data_paths = cryodrgn.utils.load_yaml(paths_file) if paths_file else None
-
-    # TODO: merge with similar logic in reconstruction engine?
-    if args.dataset is not None:
+    if args.dataset is not None: # TODO: We should document this somewhere
+        paths_file = os.environ.get("CRYODRGN_DATASETS")
+        data_paths = cryodrgn.utils.load_yaml(paths_file) if paths_file else None
         if os.path.exists(args.dataset):
             these_paths = cryodrgn.utils.load_yaml(args.dataset)
 
@@ -168,15 +161,19 @@ def main(args: argparse.Namespace) -> None:
     else:
         these_paths = {"particles": args.particles}
 
-    cfgs = {"model": args.model, "zdim": zdim, "pose_estimation": pose_estimation}
+    cfgs = {"model": args.model, "zdim": args.zdim, "pose_estimation": args.pose_estimation}
     if args.tilt:
-        cfgs["tilt"] = args.tilt
+        cfgs["tilt"] = args.tilt # True or False
 
-    for data_lbl in ["particles", "poses", "ctf", "datadir", "ind"]:
-        if getattr(args, data_lbl) is not None:
-            cfgs[data_lbl] = getattr(args, data_lbl)
-        elif these_paths.get(data_lbl) is not None:
-            cfgs[data_lbl] = these_paths[data_lbl]
+    for data_label in ["particles", "poses", "ctf", "datadir", "ind"]:
+        if getattr(args, data_label) is not None: # From argparse
+            cfgs[data_label] = getattr(args, data_label)
+        elif these_paths.get(data_label) is not None: # From CRYODRGN_DATASETS
+            cfgs[data_label] = these_paths[data_label]
+
+        # Check that input path is valid
+        if data_label in cfgs and cfgs[data_label] is not None:
+            assert os.path.exists(cfgs[data_label]), f"{cfgs[data_label]} does not exist"
 
     if args.include:
         include_cfgs = cryodrgn.utils.load_yaml(args.include)
@@ -187,3 +184,5 @@ def main(args: argparse.Namespace) -> None:
     configs = get_model_configurations(cfgs, add_cfgs=args.cfgs)
     os.makedirs(args.outdir, exist_ok=True)
     configs.write(os.path.join(args.outdir, "config.yaml"))
+    print(f"Wrote {os.path.join(args.outdir, 'config.yaml')}")
+    

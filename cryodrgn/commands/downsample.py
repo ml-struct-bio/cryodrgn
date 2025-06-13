@@ -1,4 +1,4 @@
-"""Downsample an image stack or volume by clipping Fourier frequencies.
+"""Downsample an image stack or volume to a lower resolution by clipping Fourier freqs.
 
 Example usage
 -------------
@@ -315,7 +315,7 @@ def main(args: argparse.Namespace) -> None:
         if isinstance(src, StarfileSource) and src.resolution is not None:
             apix = src.apix or 1.0
             src.set_optics_values(
-                "_rlnImagePixelSize", round(apix * src.resolution / args.D, 6)
+                "_rlnImagePixelSize", np.round(apix * src.resolution / args.D, 6)
             )
 
         src.write(args.outfile)

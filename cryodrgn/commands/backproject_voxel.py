@@ -1,7 +1,7 @@
-"""Backproject cryo-EM images to reconstruct a volume as well as half-maps.
+"""Voxel-based backprojection to reconstruct a volume as well as half-maps.
 
-This command performs volume reconstruction using voxel-based backprojection applied to
-the images in the given stack as well as the given poses. Unless instructed otherwise,
+This command performs volume reconstruction on the given image stack using voxel-based
+backprojection applied to as well as the given poses. Unless instructed otherwise,
 it will also produce volumes using the images in each half of the dataset, along with
 calculating an FSC curve between these two half-map reconstructions.
 All outputs will be placed in the folder specified.

@@ -244,12 +244,46 @@ class Starfile:
 
         if self.relion31 and fieldname in self.data_optics:
             if "_rlnOpticsGroup" in self.df.columns:
+                if len(set(vals)) not in {1, self.data_optics.shape[0]}: 
+                    raise ValueError(
+                        f"Given optics table has `{self.data_optics.shape[0]}` groups, "
+                        f"while new optics values have length `{len(vals)}`!"
+                    )
+
                 if len(vals) in {1, self.data_optics.shape[0]}:
                     self.data_optics.loc[:, fieldname] = vals
+                elif len(set(vals)) == 1:
+                    self.data_optics.loc[:, fieldname] = tuple(set(vals))[0]
                 else:
-                    self.df.loc = vals
-                    self.data_optics.drop(fieldname, axis=1, inplace=True)
+                    if len(vals) != self.df.shape[0]:
+                        raise ValueError(
+                            f"Given optics values have length `{len(vals)}` but this "
+                            f".star file contains {self.df.shape[0]} particles!"
+                        )
+
+                    new_vals = {
+                        g: None for g in self.data_optics["_rlnOpticsGroup"].values
+                     }
+                    for g, v in zip(self.df["_rlnOpticsGroup"].values, vals):
+                        if g not in new_vals:
+                            raise ValueError(
+                                f"This .star file has `_rlnOpticsGroup` `{g}` not "
+                                f"present in its own optics table!"
+                            )
+
+                        if new_vals[g] is None:
+                            new_vals[g] = v
+                        elif new_vals[g] != v:
+                            raise ValueError(
+                                f"This .star file has `_rlnOpticsGroup` `{g}` "
+                                f"present multiple times in its own optics table!"
+                            )
+    
+                    self.data_optics.loc[:, fieldname] = [
+                        new_vals[g] for g in self.data_optics["_rlnOpticsGroup"].values
+                    ]
             else:
+
                 if len(vals) != 1:
                     raise ValueError(
                         f"No optics mapping for this .star file, and thus new optics "

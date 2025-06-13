@@ -64,7 +64,7 @@ class SetupRequest:
             "pe_dim=4",
         ]
         # TODO: find a way to not hard-code these
-        if model == "autoenc":
+        if model == "autoenc" or model is None:
             add_cfgs += ["ps_freq=2"]
         else:
             add_cfgs += ["n_imgs_pose_search=10"]
@@ -153,11 +153,13 @@ def setup_request(
     )
 
 
-def test_empty_setup(tmpdir_factory):
+def test_minimal_setup(tmpdir_factory):
+    """Create an experiment folder using mostly default parameter values."""
     parser = argparse.ArgumentParser()
     setup.add_args(parser)
     outdir = tmpdir_factory.mktemp("empty_setup").strpath
-    setup.main(parser.parse_args([outdir]))
+    setup_args = [outdir, "--pose-estimation", "abinit", "--model", "autodec"]
+    setup.main(parser.parse_args(setup_args))
     assert os.path.isfile(os.path.join(outdir, "config.yaml"))
 
     cfgs = cryodrgn.utils.load_yaml(os.path.join(outdir, "config.yaml"))
@@ -169,13 +171,15 @@ def test_empty_setup(tmpdir_factory):
     reason="Output directory already exists and is not empty!",
     raises=ValueError,
 )
-def test_nonempty_setup(tmpdir_factory):
+def test_minimal_setup_with_existing_outdir(tmpdir_factory):
+    """Create an experiment folder using an already-existing output directory."""
     parser = argparse.ArgumentParser()
     setup.add_args(parser)
     outdir = tmpdir_factory.mktemp("nonempty_setup").strpath
-    setup.main(parser.parse_args([outdir]))
+    setup_args = [outdir, "--pose-estimation", "abinit", "--model", "autodec"]
+    setup.main(parser.parse_args(setup_args))
     assert os.path.isfile(os.path.join(outdir, "config.yaml"))
-    setup.main(parser.parse_args([outdir]))
+    setup.main(parser.parse_args(setup_args))
 
 
 def setup_directory(setup_request):
@@ -196,7 +200,7 @@ def setup_directory(setup_request):
     if setup_request.model is not None:
         assert configs["model_args"]["model"] == setup_request.model
     else:
-        assert configs["model_args"]["model"] == "autodec"
+        assert configs["model_args"]["model"] == "autoenc"
 
     if setup_request.particles is None:
         assert configs["dataset_args"]["particles"] is None
@@ -245,6 +249,9 @@ def setup_directory(setup_request):
                 cfg.split("=")[1]
             ), "Incorrect window radius!"
 
+    if setup_request.reconstruction_type == "homo":
+        use_zdim = 0
+
     assert configs["model_args"]["zdim"] == use_zdim
     assert configs["model_args"]["learning_rate"] == 0.1
     if setup_request.pose_estimation is None:
@@ -262,8 +269,8 @@ def setup_directory(setup_request):
 @pytest.mark.parametrize(
     "model, particles, ctf, poses, indices, datadir, dataset, pose_estimation",
     [
-        ("autoenc", "toy.mrcs", "CTF-Test", None, "5", None, None, None),
-        ("autodec", "toy.mrcs", "CTF-Test", None, "5", None, None, None),
+        ("autoenc", "toy.mrcs", "CTF-Test", "toy-poses", "5", None, None, None),
+        ("autodec", "toy.mrcs", "CTF-Test", "toy-poses", "5", None, None, None),
         ("autodec", "toy.mrcs", "CTF-Test", "toy-poses", None, None, None, None),
         pytest.param(
             "autodec",
@@ -275,7 +282,7 @@ def setup_directory(setup_request):
             None,
             "fixed",
             marks=pytest.mark.xfail(
-                raises=(ValueError, FileNotFoundError),
+                raises=ValueError,
                 reason="fixed estimation but no poses given",
             ),
         ),
@@ -286,6 +293,17 @@ def setup_directory(setup_request):
         (None, "toy.txt", "CTF-Test", None, "5", None, None, "abinit"),
     ],
     indirect=["particles", "ctf", "poses", "indices", "datadir"],
+    ids=[
+        "v3,toy,with_poses,integer_indices,default_abinit",
+        "v4,toy,with_poses,integer_indices,default_abinit",
+        "v4,toy,with_poses,no_indices,default_abinit",
+        "v3,toy,no_poses,no_indices,explicit_fixed",
+        "v3,toy,no_poses,integer_indices,explicit_abinit",
+        "v4,toy.txt,with_poses,no_indices,explicit_fixed",
+        "v3,hand,with_poses,integer_indices,explicit_fixed",
+        "v3,toy.txt,with_poses,integer_indices,explicit_abinit",
+        "default_v3,toy.txt,no_poses,integer_indices,explicit_abinit",
+    ],
 )
 @pytest.mark.parametrize(
     "reconstruction_type, zdim, cfgs, include",
@@ -295,32 +313,45 @@ def setup_directory(setup_request):
         (None, "2", None, None),
         ("homo", None, None, {"weight_decay": 0.05}),
         (None, None, ["zdim=2"], None),
-        (None, "0", ["window_r=0.80"], None),
         (None, "4", ["window_r=0.80", "zdim=2"], None),
         (None, "4", ["window_r=0.80", "zdim=2", "ind=4"], {"weight_decay": 0.05}),
         ("homo", None, ["window_r=0.80"], None),
-        ("homo", None, ["window_r=0.80"], {"weight_decay": 0.05}),
+        ("homo", "4", ["window_r=0.80"], {"weight_decay": 0.05}),
         ("het", None, ["window_r=0.75", "zdim=2"], None),
         pytest.param(
-            "homo",
-            "4",
             None,
+            "0",
+            ["window_r=0.80"],
             None,
             marks=pytest.mark.xfail(
                 raises=ValueError,
-                reason="cannot specify both reconstruction-type and zdim",
+                reason="if default heterogeneous reconstruction, zdim must be > 0",
             ),
         ),
         pytest.param(
             "het",
-            "12",
+            "0",
             None,
             {"weight_decay": 0.05},
             marks=pytest.mark.xfail(
                 raises=ValueError,
-                reason="cannot specify both reconstruction-type and zdim",
+                reason="if heterogeneous reconstruction, zdim must be > 0",
             ),
         ),
+    ],
+    ids=[
+        "default_het8,no_cfgs,no_include",
+        "given_homo,no_cfgs,no_include",
+        "given_het2,no_cfgs,no_include",
+        "given_homo,no_cfgs,include_wd",
+        "default_het8,cfgs_het2,no_include",
+        "given_homo,cfgs_window,no_include",
+        "given_het4,cfgs_window_zdim2,no_include",
+        "given_het4,cfgs_window_zdim2_ind4,include_wd",
+        "given_homo4,cfgs_window,include_wd",
+        "given_het_def8,cfgs_window_zdim2,no_include",
+        "default_het0,cfgs_window,no_include",
+        "given_het0,no_cfgs,include_wd",
     ],
 )
 def test_setup_standalone(setup_request):
@@ -339,9 +370,9 @@ def test_setup_standalone(setup_request):
             "just-5",
             None,
             None,
-            None,
+            "abinit",
         ),
-        ("autodec", "toy.mrcs", "data/test_ctf.pkl", None, "5", None, None, None),
+        ("autodec", "toy.mrcs", "data/test_ctf.pkl", None, "5", None, None, "abinit"),
         ("autodec", "toy.mrcs", "CTF-Test", "toy-poses", None, None, None, None),
         ("autoenc", "toy.mrcs", None, None, "5", None, None, "abinit"),
         ("autodec", "toy.txt", "CTF-Test", "toy-poses", None, None, None, "fixed"),
@@ -360,14 +391,14 @@ def test_setup_standalone(setup_request):
     ],
     indirect=["particles", "ctf", "poses", "indices", "datadir"],
     ids=[
-        "v3,relative_particles,absolute_ctf,indices_file,no_poses,implicit_abinit",
-        "v4,absolute_particles,relative_ctf,indices_int,no_poses,implicit_abinit",
-        "v4,absolute_particles,absolute_ctf,no_indices,with_poses,implicit_abinit",
+        "v3,relative_particles,absolute_ctf,indices_file,no_poses,abinit",
+        "v4,absolute_particles,relative_ctf,indices_int,no_poses,abinit",
+        "v4,absolute_particles,absolute_ctf,no_indices,with_poses,implicit_fixed",
         "v3,absolute_particles,no_ctf,indices_int,no_poses,explicit_abinit",
         "v4,abstxt_particles,absolute_ctf,no_indices,with_poses,explicit_fixed",
         "v3,hand_particles,no_ctf,indices_file,with_poses,explicit_fixed",
         "v4,abstxt_particles,absolute_ctf,indices_int,relative_poses,explicit_abinit",
-        "implicit_v4,absolute_particles,absolute_ctf,indices_file,with_poses,explicit_abinit",
+        "implicit_v3,absolute_particles,absolute_ctf,indices_file,with_poses,explicit_abinit",
     ],
 )
 @pytest.mark.parametrize(
@@ -417,7 +448,7 @@ class TestSetupThenRun:
                 start_epoch <= epoch < num_epochs
                 and (
                     (
-                        setup_request.model in {None, "autodec"}
+                        setup_request.model == "autodec"
                         and (
                             epoch % checkpoint == 0
                             or abinit
@@ -431,7 +462,7 @@ class TestSetupThenRun:
                         )
                     )
                     or (
-                        setup_request.model == "autoenc"
+                        setup_request.model != "autodec"
                         and (epoch % checkpoint == 0 or (epoch - 1) % 2 == 0 and abinit)
                     )
                 )

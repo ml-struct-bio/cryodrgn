@@ -110,7 +110,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "--cfgs",
         "-c",
         nargs="+",
-        help="additional configuration parameters to pass to the model "
+        help="Additional configuration parameters to pass to the model "
         "in the form of 'CFG_KEY1=CFG_VAL1' 'CFG_KEY2=CFG_VAL2' ... ",
     )
     training_group.add_argument(
@@ -131,7 +131,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "--no-analysis",
         action="store_false",
         dest="do_analysis",
-        help="just do the training stage",
+        help="Do not run `cryodrgn analyze` on the final training epoch",
     )
 
 
@@ -155,10 +155,14 @@ def main(
         os.makedirs(args.outdir, exist_ok=True)
         shutil.copy(from_cfgs, os.path.join(args.outdir, "config.yaml"))
 
+    # Get the configuration dataclass for this set of parameters found in file and
+    # use it to parse the these parameters and check for validity
     configs = cryodrgn.utils.load_yaml(os.path.join(args.outdir, "config.yaml"))
     trainer_cls = get_model_trainer_class(configs)
     configs = trainer_cls.config_cls.parse_config(configs)
 
+    # Update the set of parameters with any additional parameters passed in through the
+    # command line with --cfgs/-c or --include or via the `main` method's arguments
     if additional_configs is not None:
         configs.update(trainer_cls.config_cls.parse_config(additional_configs))
     if args.include:
@@ -183,6 +187,8 @@ def main(
         else:
             train_args["load"] = args.load
 
+    # Update the set of parameters with any additional parameters passed in through
+    # specific command line arguments
     if args.num_epochs is not None:
         train_args["num_epochs"] = args.num_epochs
     if args.checkpoint is not None:
@@ -202,6 +208,7 @@ def main(
     if not args.amp:
         train_args["amp"] = False
 
+    # Pass the parameters to the reconstruction model engine and execute training
     cryodrgn.utils._verbose = False
     trainer = trainer_cls(configs, outdir=args.outdir)
     trainer.train()

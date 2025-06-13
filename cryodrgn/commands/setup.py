@@ -148,12 +148,19 @@ def main(args: argparse.Namespace) -> None:
             f"Unrecognized reconstruction type `{args.reconstruction_type}`!"
         )
 
-    if args.pose_estimation in ("fixed", "refine"):
-        if args.poses is None:
-            raise ValueError(
-                f"Must provide input poses for "
-                f"--pose-estimation {args.pose_estimation} "
-            )
+    cfgs = {
+        "model": args.model,
+        "zdim": args.zdim,
+        "pose_estimation": args.pose_estimation,
+    }
+    if args.tilt:
+        cfgs["tilt"] = args.tilt  # True or False
+
+    if args.include:
+        include_cfgs = cryodrgn.utils.load_yaml(args.include)
+        include_cfgs["model"] = args.model
+        trainer_cls = get_model_trainer_class(include_cfgs)
+        cfgs.update(trainer_cls.config_cls.parse_config(include_cfgs))
 
     # handling different ways of specifying the input data, starting with a
     # file containing the data files
@@ -189,14 +196,6 @@ def main(args: argparse.Namespace) -> None:
     else:
         these_paths = {"particles": args.particles}
 
-    cfgs = {
-        "model": args.model,
-        "zdim": args.zdim,
-        "pose_estimation": args.pose_estimation,
-    }
-    if args.tilt:
-        cfgs["tilt"] = args.tilt  # True or False
-
     for data_label in ["particles", "poses", "ctf", "datadir", "ind"]:
         if getattr(args, data_label) is not None:  # From argparse
             cfgs[data_label] = getattr(args, data_label)
@@ -209,12 +208,6 @@ def main(args: argparse.Namespace) -> None:
                 assert os.path.exists(
                     cfgs[data_label]
                 ), f"{cfgs[data_label]} does not exist"
-
-    if args.include:
-        include_cfgs = cryodrgn.utils.load_yaml(args.include)
-        include_cfgs["model"] = args.model
-        trainer_cls = get_model_trainer_class(include_cfgs)
-        cfgs.update(trainer_cls.config_cls.parse_config(include_cfgs))
 
     configs = get_model_configurations(cfgs, add_cfgs=args.cfgs)
     os.makedirs(args.outdir, exist_ok=True)

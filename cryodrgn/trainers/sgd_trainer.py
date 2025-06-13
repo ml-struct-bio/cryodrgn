@@ -125,7 +125,6 @@ class SGDPoseSearchConfigurations(ReconstructionModelConfigurations):
     n_frequencies_per_epoch: int = 10
     max_freq: int = None
     l_start_fm: int = 1
-    invert_data: bool = False
     # loss
     beta_conf: float = 0.0
     trans_l1_regularizer: float = 0.0
@@ -1270,7 +1269,7 @@ class SGDPoseSearchTrainer(ReconstructionModelTrainer):
         else:
             zval = None
 
-        vol = -1 * self.reconstruction_model.eval_volume(norm=self.data.norm, zval=zval)
+        vol = self.reconstruction_model.eval_volume(norm=self.data.norm, zval=zval)
         write_mrc(out_mrc, np.array(vol, dtype=np.float32))
 
     def save_model(self):

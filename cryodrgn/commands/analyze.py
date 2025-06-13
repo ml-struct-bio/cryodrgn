@@ -19,7 +19,7 @@ import yaml
 from datetime import datetime as dt
 import logging
 import nbformat
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 import torch
@@ -115,7 +115,7 @@ class ModelAnalyzer:
         skip_umap: bool = False,
         apix: float = None,
         flip: bool = False,
-        invert: Optional[bool] = None,
+        invert: bool = False,
         downsample: int = None,
         pc: int = 2,
         n_per_pc: int = 10,
@@ -159,13 +159,6 @@ class ModelAnalyzer:
             self.device = torch.device("cuda:0" if self.use_cuda else "cpu")
         logger.info(f"Use cuda {self.use_cuda}")
 
-        # In CryoDRGN-AI models we invert output volumes by default
-        if self.train_configs.model == "autodec":
-            invert = True
-        elif invert is None:
-            invert = self.train_configs.invert_data
-        else:
-            invert = False
         if apix:
             self.apix = apix
 

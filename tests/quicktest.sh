@@ -27,18 +27,18 @@ poses=$INDIR/hand_rot_trans.pkl
 ### Testing homogeneous reconstruction ###
 
 # Fixed poses with cryoDRGN v3
-cryodrgn train_nn $particles --poses $poses --ctf $ctf -o $OUTDIR/hand-recon_v3-fixed-hom --lr .0001 --seed 0
+#cryodrgn train_nn $particles --poses $poses --ctf $ctf -o $OUTDIR/hand-recon_v3-fixed-hom --lr .0001 --seed 0
 
 # Fixed poses with cryoDRGN-AI
-cryodrgn setup $OUTDIR/hand-recon_v4-fixed-hom --particles $particles --poses $poses --ctf $ctf \
-               --zdim 0 --model autodec --pose-estimation fixed
-cryodrgn train $OUTDIR/hand-recon_v4-fixed-hom
+#cryodrgn setup $OUTDIR/hand-recon_v4-fixed-hom --particles $particles --poses $poses --ctf $ctf \
+#               --zdim 0 --model autodec --pose-estimation fixed
+#cryodrgn train $OUTDIR/hand-recon_v4-fixed-hom
 
 # Ab-initio with cryoDRGN v3
-cryodrgn abinit_homo $particles --ctf $ctf -o $OUTDIR/hand-recon_v3-abinit-hom --lr .0001 --seed 0
+#cryodrgn abinit_homo $particles --ctf $ctf -o $OUTDIR/hand-recon_v3-abinit-hom --lr .0001 --seed 0
 # Ab-initio with cryoDRGN-AI
-cryodrgn setup $OUTDIR/hand-recon_v4-abinit-hom --particles $particles --ctf $ctf --zdim 0 --model autodec
-cryodrgn train $OUTDIR/hand-recon_v4-abinit-hom
+#cryodrgn setup $OUTDIR/hand-recon_v4-abinit-hom --particles $particles --ctf $ctf --zdim 0 --model autodec
+#cryodrgn train $OUTDIR/hand-recon_v4-abinit-hom
 
 ### Testing heterogeneous reconstruction ###
 
@@ -57,8 +57,6 @@ cryodrgn setup $OUTDIR/initial-conf-setup \
                --zdim 10 --model autodec --pose-estimation fixed \
                --cfg load_z=$OUTDIR/hand-recon_v4-fixed-het/z.30.pkl lr_conf_table=0
 cryodrgn train $OUTDIR/initial-conf-setup
-
-exit 0
 
 cryodrgn train $OUTDIR/hand-recon_v4-fixed-het_initial-conf \
                --from-outdir $OUTDIR/hand-recon_v4-fixed-het \

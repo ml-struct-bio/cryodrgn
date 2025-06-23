@@ -1,51 +1,46 @@
+"""Parse CTF and pose parameters from a RELION .star file"""
+
 import argparse
-import subprocess
 import os
+import logging
+from cryodrgn import utils
+
+logger = logging.getLogger(__name__)
 
 def add_args(parser):
     parser.add_argument(
-        'input_star', help='Input RELION STAR file containing metadata for parsing')
+        'input', help='Input RELION .star file containing metadata for parsing')
     parser.add_argument(
-        '-o', '--output_dir', help='Output directory (default: current directory)')
+        '-o', '--outdir', type=os.path.abspath, default='.', help='Output directory for ctf.pkl and pose.pkl files (default: current directory)')
     parser.add_argument(
         '--overwrite', action='store_true', help='Overwrite existing output files if they exist')
 
-def run_command(command, description):
-    try:
-        print(f"Running {description}...")
-        subprocess.run(command, check=True)
-        print(f"{description} completed successfully.")
-    except subprocess.CalledProcessError as e:
-        print(f"Error while running {description}: {e}")
-        raise
-
 def main(args):
-    input_star = args.input_star
-    output_dir = os.path.abspath(args.output_dir) if args.output_dir else os.getcwd()
-    os.makedirs(output_dir, exist_ok=True)
-    ctf_output = os.path.join(output_dir, 'ctf.pkl')
-    pose_output = os.path.join(output_dir, 'pose.pkl')
+    input_star = args.input
+    os.makedirs(args.outdir, exist_ok=True)
+    ctf_out = os.path.join(args.outdir, 'ctf.pkl')
+    pose_out = os.path.join(args.outdir, 'pose.pkl')
 
     if not args.overwrite:
-        if os.path.exists(ctf_output):
-            print(f"Error: {ctf_output} already exists. Use --overwrite to overwrite.")
-            return
-        if os.path.exists(pose_output):
-            print(f"Error: {pose_output} already exists. Use --overwrite to overwrite.")
-            return
+        if os.path.exists(ctf_out):
+            raise RuntimeError(f"{ctf_out} already exists. Use --overwrite to overwrite.")
+        if os.path.exists(pose_out):
+            raise RuntimeError(f"{pose_out} already exists. Use --overwrite to overwrite.")
 
     # Run parse_ctf_star
-    run_command([
-        'cryodrgn', 'parse_ctf_star', input_star, '-o', ctf_output
-    ], "parse_ctf_star")
+    logger.info(f"Parsing CTF parameters from {input_star}...")
+    cmd = f'cryodrgn parse_ctf_star {input_star} -o {ctf_out}'
+    logger.info(f"Running command: {cmd}")
+    utils.run_command(cmd)
 
     # Run parse_pose_star
-    run_command([
-        'cryodrgn', 'parse_pose_star', input_star, '-o', pose_output
-    ], "parse_pose_star")
+    logger.info(f"Parsing pose parameters from {input_star}...")
+    cmd = f'cryodrgn parse_pose_star {input_star} -o {pose_out}'
+    logger.info(f"Running command: {cmd}")
+    utils.run_command(cmd)
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Parse RELION STAR file into CTF and pose pkl files')
+    parser = argparse.ArgumentParser(description=__doc__)
     add_args(parser)
     args = parser.parse_args()
     main(args)

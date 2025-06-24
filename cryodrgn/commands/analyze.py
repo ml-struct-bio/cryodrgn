@@ -497,7 +497,7 @@ def main(args: argparse.Namespace) -> None:
     # create demonstration Jupyter notebooks from templates if they don't already exist
     cfg = config.load(cfg)
     ipynbs = ["cryoDRGN_figures"]
-    if cfg["model_args"]["encode_mode"] == "tilt":
+    if "encode_mode" in cfg["model_args"] and cfg["model_args"]["encode_mode"] == "tilt": # autodecoder won't have encode_mode
         ipynbs += ["cryoDRGN_ET_viz"]
     else:
         ipynbs += ["cryoDRGN_viz", "cryoDRGN_filtering"]

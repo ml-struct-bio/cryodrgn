@@ -592,6 +592,8 @@ def gen_volumes(
     flip=False,
     downsample=None,
     invert=None,
+    low_pass=None,
+    clip=None,
     vol_start_index=0,
 ):
     """Call cryodrgn eval_vol to generate volumes at specified z values
@@ -616,6 +618,10 @@ def gen_volumes(
         args += ["-d", f"{downsample}"]
     if invert:
         args += ["--invert"]
+    if low_pass is not None:
+        args += ["--low-pass", f"{low_pass}"]
+    if clip is not None:
+        args += ["--clip", f"{clip}"]
     if device is not None:
         args += ["--device", f"{device}"]
     if vol_start_index is not None:

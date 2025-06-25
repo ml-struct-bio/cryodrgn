@@ -67,6 +67,12 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         help="Downsample volumes to this box size (pixels)",
     )
     group.add_argument(
+        "--low-pass", type=float, help="Low-pass filter resolution in Angstroms"
+    )
+    group.add_argument(
+        "--clip", type=int, help="Clip volume to this box size after downsampling or low-pass filtering (pixels)"
+    )
+    group.add_argument(
         "--pc",
         type=int,
         default=2,
@@ -474,8 +480,10 @@ def main(args: argparse.Namespace) -> None:
         Apix=use_apix,
         downsample=args.downsample,
         flip=args.flip,
-        device=args.device,
         invert=args.invert,
+        low_pass=args.low_pass,
+        clip=args.clip,
+        device=args.device,
         vol_start_index=args.vol_start_index,
     )
     vg = VolumeGenerator(weights, cfg, vol_args, skip_vol=args.skip_vol)

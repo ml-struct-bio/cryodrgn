@@ -22,6 +22,7 @@ import torch
 from cryodrgn import config
 from cryodrgn.models import HetOnlyVAE
 from cryodrgn.source import write_mrc
+from cryodrgn import utils
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +80,12 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "--downsample",
         type=int,
         help="Downsample volumes to this box size (pixels)",
+    )
+    group.add_argument(
+        "--low-pass", type=float, help="Low-pass filter resolution in Angstroms (need to specify --Apix)"
+    )
+    group.add_argument(
+        "--clip", type=int, help="Clip volume to this box size after downsampling or low-pass filtering (pixels)"
     )
     group.add_argument(
         "--vol-start-index",
@@ -150,6 +157,25 @@ def check_inputs(args: argparse.Namespace) -> None:
         sum((bool(args.z), bool(args.z_start), bool(args.zfile))) == 1
     ), "Must specify either -z OR --z-start/--z-end OR --zfile"
 
+def postprocess_vol(vol, args):
+    if args.flip:
+        vol = vol.flip([0])
+    if args.invert:
+        vol *= -1
+    if args.low_pass:
+        vol = utils.low_pass_filter(vol, args.Apix, args.low_pass)
+    if args.clip:
+        vol = utils.clip_real_space(vol, args.clip)
+    return vol
+
+def reset_origin(oldD, clipD, Apix):
+    '''Reset origin for cropped volume from (0,0,0) to align with uncropped volume'''
+    org = {}
+    a = int(oldD/2 - clipD/2)
+    org['xorg'] = a*Apix
+    org['yorg'] = a*Apix
+    org['zorg'] = a*Apix
+    return org
 
 def main(args: argparse.Namespace) -> None:
     if args.verbose:
@@ -182,8 +208,8 @@ def main(args: argparse.Namespace) -> None:
             raise ValueError(f"Boxsize {args.downsample} is not even!")
         if args.downsample >= D:
             raise ValueError(
-                f"New boxsize {args.downsample=} must be "
-                f"smaller than original box size {D=}!"
+                f"New boxsize {args.downsample} must be "
+                f"smaller than original box size {D}!"
             )
 
     model, lattice = HetOnlyVAE.load(cfg, args.weights, device=device)
@@ -222,12 +248,9 @@ def main(args: argparse.Namespace) -> None:
                     lattice.coords, lattice.D, lattice.extent, norm, zz
                 )
             out_mrc = "{}/{}{:03d}.mrc".format(args.o, args.prefix, i)
-            if args.flip:
-                vol = vol.flip([0])
-            if args.invert:
-                vol *= -1
-
-            write_mrc(out_mrc, np.array(vol.cpu()).astype(np.float32), Apix=args.Apix)
+            org = reset_origin(vol.shape[0], args.clip, args.Apix) if args.clip else {}
+            vol = postprocess_vol(vol, args)
+            write_mrc(out_mrc, np.array(vol.cpu()).astype(np.float32), Apix=args.Apix, **org)
 
     # Single z
     else:
@@ -246,12 +269,9 @@ def main(args: argparse.Namespace) -> None:
             vol = model.decoder.eval_volume(
                 lattice.coords, lattice.D, lattice.extent, norm, z
             )
-        if args.flip:
-            vol = vol.flip([0])
-        if args.invert:
-            vol *= -1
-
-        write_mrc(args.o, np.array(vol.cpu()).astype(np.float32), Apix=args.Apix)
+        org = reset_origin(vol.shape[0], args.clip, args.Apix) if args.clip else {}
+        vol = postprocess_vol(vol, args)
+        write_mrc(args.o, np.array(vol.cpu()).astype(np.float32), Apix=args.Apix, **org)
 
     td = dt.now() - t1
     logger.info(f"Finished in {td}")

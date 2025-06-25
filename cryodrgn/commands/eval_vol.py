@@ -23,6 +23,7 @@ from cryodrgn import config
 from cryodrgn.lattice import Lattice
 from cryodrgn.models import HetOnlyVAE, get_decoder
 from cryodrgn.source import write_mrc
+from cryodrgn import utils
 
 logger = logging.getLogger(__name__)
 
@@ -82,9 +83,15 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         help="Downsample volumes to this box size (pixels)",
     )
     group.add_argument(
+        "--low-pass", type=float, help="Low-pass filter resolution in Angstroms (need to specify --Apix)"
+    )
+    group.add_argument(
+        "--crop", type=int, help="crop volume to this box size after downsampling or low-pass filtering (pixels)"
+    )
+    group.add_argument(
         "--vol-start-index",
         type=int,
-        default=0,
+        default=1,
         help="Default value of start index for volume generation (default: %(default)s)",
     )
 
@@ -96,6 +103,25 @@ def check_inputs(args: argparse.Namespace) -> None:
         sum((bool(args.z), bool(args.z_start), bool(args.zfile))) == 1
     ), "Must specify either -z OR --z-start/--z-end OR --zfile"
 
+def postprocess_vol(vol, args):
+    if args.flip:
+        vol = vol.flip([0])
+    if args.invert:
+        vol *= -1
+    if args.low_pass:
+        vol = utils.low_pass_filter(vol, args.Apix, args.low_pass)
+    if args.crop:
+        vol = utils.crop_real_space(vol, args.crop)
+    return vol
+
+def reset_origin(oldD, cropD, Apix):
+    '''Reset origin for cropped volume from (0,0,0) to align with uncropped volume'''
+    org = {}
+    a = int(oldD/2 - cropD/2)
+    org['xorg'] = a*Apix
+    org['yorg'] = a*Apix
+    org['zorg'] = a*Apix
+    return org
 
 def main(args: argparse.Namespace) -> None:
     if args.verbose:
@@ -128,8 +154,8 @@ def main(args: argparse.Namespace) -> None:
             raise ValueError(f"Boxsize {args.downsample} is not even!")
         if args.downsample >= D:
             raise ValueError(
-                f"New boxsize {args.downsample=} must be "
-                f"smaller than original box size {D=}!"
+                f"New boxsize {args.downsample} must be "
+                f"smaller than original box size {D}!"
             )
 
     # load model
@@ -193,12 +219,9 @@ def main(args: argparse.Namespace) -> None:
                     lattice.coords, lattice.D, lattice.extent, norm, zz
                 )
             out_mrc = "{}/{}{:03d}.mrc".format(args.o, args.prefix, i)
-            if args.flip:
-                vol = vol.flip([0])
-            if args.invert:
-                vol *= -1
-
-            write_mrc(out_mrc, np.array(vol.cpu()).astype(np.float32), Apix=args.Apix)
+            org = reset_origin(vol.shape[0], args.crop, args.Apix) if args.crop else {}
+            vol = postprocess_vol(vol, args)
+            write_mrc(out_mrc, np.array(vol.cpu()).astype(np.float32), Apix=args.Apix, **org)
 
     # Single z
     else:
@@ -217,12 +240,9 @@ def main(args: argparse.Namespace) -> None:
             vol = decoder.eval_volume(
                 lattice.coords, lattice.D, lattice.extent, norm, z
             )
-        if args.flip:
-            vol = vol.flip([0])
-        if args.invert:
-            vol *= -1
-
-        write_mrc(args.o, np.array(vol.cpu()).astype(np.float32), Apix=args.Apix)
+        org = reset_origin(vol.shape[0], args.crop, args.Apix) if args.crop else {}
+        vol = postprocess_vol(vol, args)
+        write_mrc(args.o, np.array(vol.cpu()).astype(np.float32), Apix=args.Apix, **org)
 
     td = dt.now() - t1
     logger.info(f"Finished in {td}")

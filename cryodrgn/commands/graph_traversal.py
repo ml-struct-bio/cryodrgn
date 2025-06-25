@@ -2,15 +2,13 @@
 
 Example usage
 -------------
-# find the graph path between the first two points in the file, print to screen
-$ cryodrgn graph_traversal zvals.pkl --anchors 0 1
+# Find the path between kmeans cluster centers from cryodrgn analyze
+$ cryodrgn graph_traversal my_workdir/z.49.pkl --anchors my_workdir/analyze.49/centers_ind.txt -o graph_traversal/z-path.txt --outind graph_traversal/z-path.ind.txt
 
-# find the graph path connecting the first three points in order, save to file
-$ cryodrgn graph_traversal zvals.pkl --anchors 0 1 2 -o
-
-# connect the points whose indices are listed in a file; save only path indices
-$ cryodrgn graph_traversal zvals.pkl --anchors path-anchors.txt --outind path-ind.txt
-
+See also
+--------
+`cryodrgn eval_vol` for generating volumes from the path (See the cryodrgn docs for more info)
+`cryodrgn direct_traversal` for direct interpolation between points
 """
 import argparse
 import os

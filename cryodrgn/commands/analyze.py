@@ -1,4 +1,4 @@
-"""Visualize latent space and generate volumes using a trained cryoDRGN model.
+"""Visualize latent space and generate volumes from a trained cryoDRGN model.
 
 Example usage
 -------------
@@ -48,7 +48,21 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--skip-umap", action="store_true", help="Skip running UMAP")
 
-    group = parser.add_argument_group("Extra arguments for volume generation")
+    group = parser.add_argument_group("Modify number of volumes to generate")
+    group.add_argument(
+        "--pc",
+        type=int,
+        default=2,
+        help="Number of principal component traversals to generate (default: %(default)s)",
+    )
+    group.add_argument(
+        "--ksample",
+        type=int,
+        default=20,
+        help="Number of kmeans samples to generate (default: %(default)s)",
+    )
+    
+    group = parser.add_argument_group("Volume post-processing")
     group.add_argument(
         "--Apix",
         type=float,
@@ -73,23 +87,13 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "--crop", type=int, help="crop volume to this box size after downsampling or low-pass filtering (pixels)"
     )
     group.add_argument(
-        "--pc",
-        type=int,
-        default=2,
-        help="Number of principal component traversals to generate (default: %(default)s)",
-    )
-    group.add_argument(
-        "--ksample",
-        type=int,
-        default=20,
-        help="Number of kmeans samples to generate (default: %(default)s)",
-    )
-    group.add_argument(
         "--vol-start-index",
         type=int,
         default=0,
         help="Default value of start index for volume generation (default: %(default)s)",
     )
+
+
 
     return parser
 

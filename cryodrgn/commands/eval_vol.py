@@ -85,7 +85,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "--low-pass", type=float, help="Low-pass filter resolution in Angstroms (need to specify --Apix)"
     )
     group.add_argument(
-        "--clip", type=int, help="Clip volume to this box size after downsampling or low-pass filtering (pixels)"
+        "--crop", type=int, help="crop volume to this box size after downsampling or low-pass filtering (pixels)"
     )
     group.add_argument(
         "--vol-start-index",
@@ -164,14 +164,14 @@ def postprocess_vol(vol, args):
         vol *= -1
     if args.low_pass:
         vol = utils.low_pass_filter(vol, args.Apix, args.low_pass)
-    if args.clip:
-        vol = utils.clip_real_space(vol, args.clip)
+    if args.crop:
+        vol = utils.crop_real_space(vol, args.crop)
     return vol
 
-def reset_origin(oldD, clipD, Apix):
+def reset_origin(oldD, cropD, Apix):
     '''Reset origin for cropped volume from (0,0,0) to align with uncropped volume'''
     org = {}
-    a = int(oldD/2 - clipD/2)
+    a = int(oldD/2 - cropD/2)
     org['xorg'] = a*Apix
     org['yorg'] = a*Apix
     org['zorg'] = a*Apix
@@ -248,7 +248,7 @@ def main(args: argparse.Namespace) -> None:
                     lattice.coords, lattice.D, lattice.extent, norm, zz
                 )
             out_mrc = "{}/{}{:03d}.mrc".format(args.o, args.prefix, i)
-            org = reset_origin(vol.shape[0], args.clip, args.Apix) if args.clip else {}
+            org = reset_origin(vol.shape[0], args.crop, args.Apix) if args.crop else {}
             vol = postprocess_vol(vol, args)
             write_mrc(out_mrc, np.array(vol.cpu()).astype(np.float32), Apix=args.Apix, **org)
 
@@ -269,7 +269,7 @@ def main(args: argparse.Namespace) -> None:
             vol = model.decoder.eval_volume(
                 lattice.coords, lattice.D, lattice.extent, norm, z
             )
-        org = reset_origin(vol.shape[0], args.clip, args.Apix) if args.clip else {}
+        org = reset_origin(vol.shape[0], args.crop, args.Apix) if args.crop else {}
         vol = postprocess_vol(vol, args)
         write_mrc(args.o, np.array(vol.cpu()).astype(np.float32), Apix=args.Apix, **org)
 

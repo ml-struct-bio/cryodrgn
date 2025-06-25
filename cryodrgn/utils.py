@@ -288,7 +288,7 @@ def low_pass_filter(vol, apix, low_pass_res):
     vol = fft.ihtn_center(volf)
     return vol
 
-def clip_real_space(vol, D, deepcopy=False):
+def crop_real_space(vol, D, deepcopy=False):
     """Clip a volume to a new box size in real space.
 
     Args:

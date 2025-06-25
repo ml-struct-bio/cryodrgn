@@ -70,7 +70,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "--low-pass", type=float, help="Low-pass filter resolution in Angstroms"
     )
     group.add_argument(
-        "--clip", type=int, help="Clip volume to this box size after downsampling or low-pass filtering (pixels)"
+        "--crop", type=int, help="crop volume to this box size after downsampling or low-pass filtering (pixels)"
     )
     group.add_argument(
         "--pc",
@@ -482,7 +482,7 @@ def main(args: argparse.Namespace) -> None:
         flip=args.flip,
         invert=args.invert,
         low_pass=args.low_pass,
-        clip=args.clip,
+        crop=args.crop,
         device=args.device,
         vol_start_index=args.vol_start_index,
     )

@@ -593,7 +593,7 @@ def gen_volumes(
     downsample=None,
     invert=None,
     low_pass=None,
-    clip=None,
+    crop=None,
     vol_start_index=0,
 ):
     """Call cryodrgn eval_vol to generate volumes at specified z values
@@ -607,6 +607,8 @@ def gen_volumes(
         flip (bool): Flag to flip chirality of output volumes
         downsample (int or None): Generate volumes at this box size
         invert (bool): Invert contrast of output volumes
+        low_pass (float or None): Low-pass filter resolution in Angstroms
+        crop (int or None): Crop volume to this box size after downsampling or low-pass filtering
         vol_start_index (int): Start index for generated volumes
     """
     args = [weights, "--config", config, "--zfile", zfile, "-o", outdir]
@@ -620,8 +622,8 @@ def gen_volumes(
         args += ["--invert"]
     if low_pass is not None:
         args += ["--low-pass", f"{low_pass}"]
-    if clip is not None:
-        args += ["--clip", f"{clip}"]
+    if crop is not None:
+        args += ["--crop", f"{crop}"]
     if device is not None:
         args += ["--device", f"{device}"]
     if vol_start_index is not None:

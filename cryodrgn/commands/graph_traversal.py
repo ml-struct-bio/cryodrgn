@@ -21,6 +21,7 @@ import pandas as pd
 from heapq import heappop, heappush
 import torch
 from cryodrgn.commands.direct_traversal import parse_anchors
+from datetime import datetime as dt
 
 logger = logging.getLogger(__name__)
 
@@ -34,29 +35,45 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         help="List of anchor point indices in the given file, either given "
         "directly as integers, or in a .txt file(s).",
     )
-
-    parser.add_argument("--max-neighbors", type=int, default=10)
-    parser.add_argument("--avg-neighbors", type=float, default=5)
-    parser.add_argument("--batch-size", type=int, default=1000)
-    parser.add_argument("--max-images", type=int, default=None)
+    parser.add_argument(
+        "--max-neighbors",
+        type=int,
+        default=10,
+        help="Maximum number of nearest neighbors to consider when constructing "
+        "the nearest neighbor graph. This limits the number of connections per node, "
+        "improving computational efficiency. (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--avg-neighbors",
+        type=float,
+        default=5,
+        help="Average number of neighbors to aim for each point in the graph. "
+        "This parameter adjusts the maximum distance to ensure a balanced graph "
+        "density. (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=1000,
+        help="Number of data points to process at once when computing nearest "
+        "neighbors. Larger batch sizes may improve speed but require more memory. "
+        "(default: %(default)s)",
+    )
 
     parser.add_argument(
-        "--outtxt",
         "-o",
+        "--outtxt",
         type=os.path.abspath,
-        nargs="?",
-        const="z-path.txt",
+        default="z-path.txt",
         metavar="Z-PATH.TXT",
-        help="output .txt file for path z-values; "
-        "choose name automatically if flag given with no name",
+        help="Output .txt file for path z-values (default: %(default)s)",
     )
     parser.add_argument(
         "--outind",
         type=os.path.abspath,
-        nargs="?",
-        const="z-path-indices.txt",
+        default="z-path-indices.txt",
         metavar="IND-PATH.TXT",
-        help="Output .txt file for path indices",
+        help="Output .txt file for path indices (default: %(default)s)",
     )
 
 
@@ -116,9 +133,6 @@ def main(args):
     data_np = pickle.load(open(args.zfile, "rb"))
     data = torch.from_numpy(data_np)
 
-    if args.max_images is not None:
-        data = data[: args.max_images]
-
     use_cuda = torch.cuda.is_available()
     print(f"Use cuda {use_cuda}")
     device = torch.device("cuda" if use_cuda else "cpu")
@@ -168,6 +182,8 @@ def main(args):
     full_path = []
     data_df = pd.DataFrame()
 
+    t1 = dt.now()
+
     for i in range(len(anchors) - 1):
         anchor_str = f"{anchors[i]}->{anchors[i + 1]}"
         src, dest = anchors[i], anchors[i + 1]
@@ -203,19 +219,15 @@ def main(args):
     if args.outind:
         if not os.path.exists(os.path.dirname(args.outind)):
             os.makedirs(os.path.dirname(args.outind))
-        logger.info(f"Saving path indices relative to {args.zfile} to {args.outind}!")
+        logger.info(f"Saving path indices relative to {args.zfile} to {args.outind}")
         np.savetxt(args.outind, full_path, fmt="%d")
-    elif args.outtxt:
-        logger.info(f"Found shortest nearest-neighbor path with indices:\n{full_path}")
 
     if args.outtxt:
         if not os.path.exists(os.path.dirname(args.outtxt)):
             os.makedirs(os.path.dirname(args.outtxt))
-        logger.info(f"Saving path z-values to {args.outtxt}!")
+        logger.info(f"Saving path z-values to {args.outtxt}")
         np.savetxt(args.outtxt, data_np[full_path])
-    else:
-        if args.outind:
-            logger.info(f"Found shortest nearest-neighbor path:\n{data_np[full_path]}")
-        else:
-            print_data = data_df.round(3).to_csv(sep="\t")
-            logger.info(f"Found shortest nearest-neighbor path:\n{print_data}")
+
+    t2 = dt.now()
+    elapsed_time = t2 - t1
+    logger.info(f"Graph traversal completed in {elapsed_time}")

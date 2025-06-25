@@ -10,6 +10,11 @@ $ cryodrgn analyze my_workdir 49 --ksample 50
 # Low pass filter and crop output volumes
 $ cryodrgn analyze my_workdir 49 --low-pass 4 --crop 96
 
+See also
+--------
+`cryodrgn graph_traversal` and `cryodrgn direct_traversal` for making longer movies
+`cryodrgn_utils select_clusters` for selecting (kmeans) cluster indices
+
 """
 import argparse
 import os

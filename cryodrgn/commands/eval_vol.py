@@ -90,7 +90,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     group.add_argument(
         "--vol-start-index",
         type=int,
-        default=0,
+        default=1,
         help="Default value of start index for volume generation (default: %(default)s)",
     )
 

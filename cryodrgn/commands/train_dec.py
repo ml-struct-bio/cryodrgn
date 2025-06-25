@@ -16,7 +16,7 @@ except ImportError:
     pass
 
 import cryodrgn
-from cryodrgn import ctf, dataset, models
+from cryodrgn import ctf, dataset, models, utils
 from cryodrgn.lattice import Lattice
 from cryodrgn.pose import PoseTracker
 from cryodrgn.models import DataParallelDecoder, Decoder

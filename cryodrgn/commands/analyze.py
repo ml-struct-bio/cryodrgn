@@ -2,13 +2,13 @@
 
 Example usage
 -------------
-$ cryodrgn analyze 003_abinit-het/ 49
+$ cryodrgn analyze my_workdir 49
 
-# It is necessary to invert handedness for some datasets
-$ cryodrgn analyze 003_abinit-het/ 99 --invert
+# Generate more samples
+$ cryodrgn analyze my_workdir 49 --ksample 50
 
-# Avoid running more computationally expensive analyses
-$ cryodrgn analyze 003_abinit-het/ 99 --skip-umap --skip-vol
+# Low pass filter and crop output volumes
+$ cryodrgn analyze my_workdir 49 --low-pass 4 --crop 96
 
 """
 import argparse

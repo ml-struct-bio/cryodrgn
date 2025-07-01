@@ -10,9 +10,18 @@ import logging
 from typing import Tuple
 import numpy as np
 import torch
+import igraph as ig
 
 logger = logging.getLogger(__name__)
 
+def get_igraph_from_adjacency(adjacency):
+    sources, targets = adjacency.nonzero()
+    weights = (adjacency[sources, targets]).A.ravel()
+    g = ig.Graph(directed=False)
+    g.add_vertices(adjacency.shape[0])  # this adds adjacency.shape[0] vertices
+    g.add_edges(list(zip(sources, targets)))
+    g.es["weight"] = weights
+    return g
 
 def meshgrid_2d(lo, hi, n, endpoint=False):
     """

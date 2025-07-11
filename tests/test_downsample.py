@@ -125,7 +125,7 @@ class TestDownsampleToMRCS:
 @pytest.mark.parametrize(
     "particles, datadir",
     [("toydatadir.star", "toy"), ("test.star", "toy")],
-    indirect=True
+    indirect=True,
 )
 @pytest.mark.parametrize(
     "outdir", ["downsampled", None], ids=["with-outdir", "wo-outdir"]

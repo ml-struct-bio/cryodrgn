@@ -244,7 +244,7 @@ class Starfile:
 
         if self.relion31 and fieldname in self.data_optics:
             if "_rlnOpticsGroup" in self.df.columns:
-                if len(set(vals)) not in {1, self.data_optics.shape[0]}: 
+                if len(set(vals)) not in {1, self.data_optics.shape[0]}:
                     raise ValueError(
                         f"Given optics table has `{self.data_optics.shape[0]}` groups, "
                         f"while new optics values have length `{len(vals)}`!"
@@ -263,7 +263,7 @@ class Starfile:
 
                     new_vals = {
                         g: None for g in self.data_optics["_rlnOpticsGroup"].values
-                     }
+                    }
                     for g, v in zip(self.df["_rlnOpticsGroup"].values, vals):
                         if g not in new_vals:
                             raise ValueError(
@@ -278,7 +278,7 @@ class Starfile:
                                 f"This .star file has `_rlnOpticsGroup` `{g}` "
                                 f"present multiple times in its own optics table!"
                             )
-    
+
                     self.data_optics.loc[:, fieldname] = [
                         new_vals[g] for g in self.data_optics["_rlnOpticsGroup"].values
                     ]

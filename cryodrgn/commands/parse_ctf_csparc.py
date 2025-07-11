@@ -26,8 +26,12 @@ def add_args(parser):
 
 
 def main(args):
-    assert args.cs.endswith(".cs"), "Input file must be a .cs file"
-    assert args.o.endswith(".pkl"), "Output CTF parameters must be .pkl file"
+    if not os.path.exists(args.cs):
+        raise FileNotFoundError(f"Input file {args.cs} not found")
+    if not args.cs.endswith(".cs"):
+        raise ValueError("Input file must be a .cs file")
+    if not args.o.endswith(".pkl"):
+        raise ValueError("Output CTF parameters must be .pkl file")
 
     metadata = np.load(args.cs)
     N = len(metadata)

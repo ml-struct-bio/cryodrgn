@@ -963,7 +963,10 @@ def main(args):
         )
 
     if args.pose_model_update_freq:
-        assert not args.multigpu, "TODO"
+        if args.multigpu:
+            raise NotImplementedError(
+                "TODO: Implement pose model update with multiple GPUs"
+            )
         pose_model = make_model(args, lattice, enc_mask, in_dim)
         pose_model.to(device)
         pose_model.eval()

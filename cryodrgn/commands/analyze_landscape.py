@@ -24,6 +24,7 @@ import seaborn as sns
 from matplotlib.colors import ListedColormap
 from sklearn.cluster import AgglomerativeClustering
 from sklearn.decomposition import PCA
+
 from cryodrgn import analysis, utils
 from cryodrgn.commands.analyze import VolumeGenerator
 from cryodrgn.mrcfile import parse_mrc, write_mrc
@@ -528,7 +529,10 @@ def main(args: argparse.Namespace) -> None:
         if os.path.exists(umap_fl):
             shutil.copyfile(umap_fl, os.path.join(outdir, "umap.pkl"))
         else:
-            raise NotImplementedError
+            raise RuntimeError(
+                f"UMAP file {umap_fl} not found; run `cryodrgn analyze {workdir} {E}` "
+                f"first to generate the UMAP clustering!"
+            )
 
     if args.mask:
         logger.info(f"Using custom mask {args.mask}")
@@ -564,5 +568,4 @@ def main(args: argparse.Namespace) -> None:
         vol_start_index=args.vol_start_index,
     )
 
-    td = dt.now() - t1
-    logger.info(f"Finished in {td}")
+    logger.info(f"Finished analyzing landscape in total of {dt.now() - t1}")

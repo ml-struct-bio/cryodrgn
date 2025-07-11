@@ -93,6 +93,13 @@ def add_args(parser: argparse.ArgumentParser) -> None:
 
 def main(args: argparse.Namespace) -> None:
     """Launching the interactive interface for filtering particles from command-line."""
+
+    if args.sel_dir is not None:
+        if not os.path.exists(args.sel_dir):
+            raise ValueError(f"Directory {args.sel_dir} does not exist!")
+        elif not os.path.isdir(args.sel_dir):
+            raise ValueError(f"Path {args.sel_dir} is not a directory!")
+
     workdir = args.outdir
     epoch = args.epoch
     kmeans = args.kmeans
@@ -100,7 +107,7 @@ def main(args: argparse.Namespace) -> None:
 
     train_configs_file = os.path.join(workdir, "config.yaml")
     if not os.path.exists(train_configs_file):
-        raise ValueError("Missing config.yaml file " "in given output folder!")
+        raise ValueError("Missing config.yaml file in given output folder!")
 
     conf_fls = [fl for fl in os.listdir(workdir) if re.fullmatch(r"z\.[0-9]+\.pkl", fl)]
 
@@ -261,7 +268,8 @@ def main(args: argparse.Namespace) -> None:
         # Saving the selected indices
         if filename:
             selected_full_path = filename + ".pkl"
-
+            if not os.path.exists(os.path.dirname(selected_full_path)):
+                os.makedirs(os.path.dirname(selected_full_path))
             with open(selected_full_path, "wb") as file:
                 pickle.dump(np.array(selected_indices, dtype=int), file)
             print(f"Selection saved to `{selected_full_path}`")

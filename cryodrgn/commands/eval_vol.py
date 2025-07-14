@@ -22,6 +22,7 @@ import torch
 from cryodrgn import config
 from cryodrgn.models import HetOnlyVAE
 from cryodrgn.source import write_mrc
+from cryodrgn import utils
 
 logger = logging.getLogger(__name__)
 
@@ -81,65 +82,16 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         help="Downsample volumes to this box size (pixels)",
     )
     group.add_argument(
+        "--low-pass", type=float, help="Low-pass filter resolution in Angstroms (need to specify --Apix)"
+    )
+    group.add_argument(
+        "--crop", type=int, help="crop volume to this box size after downsampling or low-pass filtering (pixels)"
+    )
+    group.add_argument(
         "--vol-start-index",
         type=int,
-        default=0,
+        default=1,
         help="Default value of start index for volume generation (default: %(default)s)",
-    )
-
-    group = parser.add_argument_group(
-        "Overwrite architecture hyperparameters in config.yaml"
-    )
-    group.add_argument("--norm", nargs=2, type=float)
-    group.add_argument("-D", type=int, help="Box size")
-    group.add_argument(
-        "--enc-layers", dest="qlayers", type=int, help="Number of hidden layers"
-    )
-    group.add_argument(
-        "--enc-dim", dest="qdim", type=int, help="Number of nodes in hidden layers"
-    )
-    group.add_argument("--zdim", type=int, help="Dimension of latent variable")
-    group.add_argument(
-        "--encode-mode",
-        choices=("conv", "resid", "mlp", "tilt"),
-        help="Type of encoder network",
-    )
-    group.add_argument(
-        "--dec-layers", dest="players", type=int, help="Number of hidden layers"
-    )
-    group.add_argument(
-        "--dec-dim", dest="pdim", type=int, help="Number of nodes in hidden layers"
-    )
-    group.add_argument(
-        "--enc-mask", type=int, help="Circular mask radius for image encoder"
-    )
-    group.add_argument(
-        "--pe-type",
-        choices=(
-            "geom_ft",
-            "geom_full",
-            "geom_lowf",
-            "geom_nohighf",
-            "linear_lowf",
-            "none",
-        ),
-        help="Type of positional encoding",
-    )
-    group.add_argument(
-        "--feat-sigma", type=float, help="Scale for random Gaussian features"
-    )
-    group.add_argument(
-        "--pe-dim",
-        type=int,
-        help="Num sinusoid features in positional encoding (default: D/2)",
-    )
-    group.add_argument("--domain", choices=("hartley", "fourier"))
-    group.add_argument("--l-extent", type=float, help="Coordinate lattice size")
-    group.add_argument(
-        "--activation",
-        choices=("relu", "leaky_relu"),
-        default="relu",
-        help="Activation (default: %(default)s)",
     )
 
 
@@ -150,6 +102,25 @@ def check_inputs(args: argparse.Namespace) -> None:
         sum((bool(args.z), bool(args.z_start), bool(args.zfile))) == 1
     ), "Must specify either -z OR --z-start/--z-end OR --zfile"
 
+def postprocess_vol(vol, args):
+    if args.flip:
+        vol = vol.flip([0])
+    if args.invert:
+        vol *= -1
+    if args.low_pass:
+        vol = utils.low_pass_filter(vol, args.Apix, args.low_pass)
+    if args.crop:
+        vol = utils.crop_real_space(vol, args.crop)
+    return vol
+
+def reset_origin(oldD, cropD, Apix):
+    '''Reset origin for cropped volume from (0,0,0) to align with uncropped volume'''
+    org = {}
+    a = int(oldD/2 - cropD/2)
+    org['xorg'] = a*Apix
+    org['yorg'] = a*Apix
+    org['zorg'] = a*Apix
+    return org
 
 def main(args: argparse.Namespace) -> None:
     if args.verbose:
@@ -169,7 +140,6 @@ def main(args: argparse.Namespace) -> None:
             logger.warning("WARNING: No GPUs detected")
 
     logger.info(args)
-    cfg = config.overwrite_config(args.config, args)
     logger.info("Loaded configuration:")
     pprint.pprint(cfg)
 
@@ -182,8 +152,8 @@ def main(args: argparse.Namespace) -> None:
             raise ValueError(f"Boxsize {args.downsample} is not even!")
         if args.downsample >= D:
             raise ValueError(
-                f"New boxsize {args.downsample=} must be "
-                f"smaller than original box size {D=}!"
+                f"New boxsize {args.downsample} must be "
+                f"smaller than original box size {D}!"
             )
 
     model, lattice = HetOnlyVAE.load(cfg, args.weights, device=device)
@@ -222,12 +192,9 @@ def main(args: argparse.Namespace) -> None:
                     lattice.coords, lattice.D, lattice.extent, norm, zz
                 )
             out_mrc = "{}/{}{:03d}.mrc".format(args.o, args.prefix, i)
-            if args.flip:
-                vol = vol.flip([0])
-            if args.invert:
-                vol *= -1
-
-            write_mrc(out_mrc, np.array(vol.cpu()).astype(np.float32), Apix=args.Apix)
+            org = reset_origin(vol.shape[0], args.crop, args.Apix) if args.crop else {}
+            vol = postprocess_vol(vol, args)
+            write_mrc(out_mrc, np.array(vol.cpu()).astype(np.float32), Apix=args.Apix, **org)
 
     # Single z
     else:
@@ -246,12 +213,9 @@ def main(args: argparse.Namespace) -> None:
             vol = model.decoder.eval_volume(
                 lattice.coords, lattice.D, lattice.extent, norm, z
             )
-        if args.flip:
-            vol = vol.flip([0])
-        if args.invert:
-            vol *= -1
-
-        write_mrc(args.o, np.array(vol.cpu()).astype(np.float32), Apix=args.Apix)
+        org = reset_origin(vol.shape[0], args.crop, args.Apix) if args.crop else {}
+        vol = postprocess_vol(vol, args)
+        write_mrc(args.o, np.array(vol.cpu()).astype(np.float32), Apix=args.Apix, **org)
 
     td = dt.now() - t1
     logger.info(f"Finished in {td}")

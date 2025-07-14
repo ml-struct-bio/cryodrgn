@@ -11,6 +11,8 @@ from typing import Tuple
 import numpy as np
 import torch
 
+from cryodrgn import fft
+
 logger = logging.getLogger(__name__)
 
 
@@ -253,3 +255,60 @@ def assert_pkl_close(pkl_a: str, pkl_b: str, atol: float = 1e-4) -> None:
             assert np.linalg.norm(_a - _b) < atol
     else:
         assert np.linalg.norm(a - b) < atol
+
+def low_pass_filter(vol, apix, low_pass_res):
+    """Apply a low-pass filter to a volume in Fourier space.
+
+    Args:
+        vol (torch.Tensor): Input volume (real space)
+        apix (float): Pixel size in Angstroms
+        low_pass_res (float or None): Resolution cutoff in Angstroms. If None, uses 0.5 pixels^-1 cutoff.
+
+    Returns:
+        torch.Tensor: Filtered volume (real space)
+    """
+    # vol is a torch.Tensor
+    volf = fft.htn_center(vol)
+    D = vol.shape[0]
+
+    if low_pass_res is None:
+        r_thres = 0.5 # pixels^-1
+    else:
+        r_thres = apix / low_pass_res # pixels^-1
+        
+    # Create frequency grid
+    freqs = torch.fft.fftshift(torch.fft.fftfreq(D, device=vol.device))
+    fz, fy, fx = torch.meshgrid(freqs, freqs, freqs, indexing='ij')
+    f_r_sq = fx*fx + fy*fy + fz*fz
+        
+    # Apply filter
+    mask = f_r_sq <= r_thres**2
+    volf *= mask
+
+    vol = fft.ihtn_center(volf)
+    return vol
+
+def crop_real_space(vol, D, deepcopy=False):
+    """Clip a volume to a new box size in real space.
+
+    Args:
+        vol (torch.Tensor): Input volume (real space)
+        D (int): New box size in pixels
+
+    Returns:
+        torch.Tensor: Clipped volume (real space)
+    """
+    oldD = vol.shape[0]
+    assert D <= oldD, f'New box size {D} cannot be larger than the original box size {oldD}'
+    assert D % 2 == 0, 'New box size must be even'
+    
+    def get_start_stop(oldD, D):
+        a, b = int(oldD/2 - D/2), int(oldD/2 + D/2)
+        return a, b
+    
+    a, b = get_start_stop(oldD, D)
+    if deepcopy:
+        new_vol = vol[a:b,a:b,a:b].clone()
+    else:
+        new_vol = vol[a:b,a:b,a:b]
+    return new_vol

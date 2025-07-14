@@ -1,14 +1,19 @@
-"""Visualize latent space and generate volumes using a trained cryoDRGN model.
+"""Visualize latent space and generate volumes from a trained cryoDRGN model.
 
 Example usage
 -------------
-$ cryodrgn analyze 003_abinit-het/ 49
+$ cryodrgn analyze my_workdir 49
 
-# It is necessary to invert handedness for some datasets
-$ cryodrgn analyze 003_abinit-het/ 99 --invert
+# Generate more samples
+$ cryodrgn analyze my_workdir 49 --ksample 50
 
-# Avoid running more computationally expensive analyses
-$ cryodrgn analyze 003_abinit-het/ 99 --skip-umap --skip-vol
+# Low pass filter and crop output volumes
+$ cryodrgn analyze my_workdir 49 --low-pass 4 --crop 96
+
+See also
+--------
+`cryodrgn graph_traversal` and `cryodrgn direct_traversal` for making longer movies
+`cryodrgn_utils select_clusters` for selecting (kmeans) cluster indices
 
 """
 import argparse
@@ -48,7 +53,21 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--skip-umap", action="store_true", help="Skip running UMAP")
 
-    group = parser.add_argument_group("Extra arguments for volume generation")
+    group = parser.add_argument_group("Modify number of volumes to generate")
+    group.add_argument(
+        "--pc",
+        type=int,
+        default=2,
+        help="Number of principal component traversals to generate (default: %(default)s)",
+    )
+    group.add_argument(
+        "--ksample",
+        type=int,
+        default=20,
+        help="Number of kmeans samples to generate (default: %(default)s)",
+    )
+    
+    group = parser.add_argument_group("Volume post-processing")
     group.add_argument(
         "--Apix",
         type=float,
@@ -67,23 +86,19 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         help="Downsample volumes to this box size (pixels)",
     )
     group.add_argument(
-        "--pc",
-        type=int,
-        default=2,
-        help="Number of principal component traversals to generate (default: %(default)s)",
+        "--low-pass", type=float, help="Low-pass filter resolution in Angstroms"
     )
     group.add_argument(
-        "--ksample",
-        type=int,
-        default=20,
-        help="Number of kmeans samples to generate (default: %(default)s)",
+        "--crop", type=int, help="crop volume to this box size after downsampling or low-pass filtering (pixels)"
     )
     group.add_argument(
         "--vol-start-index",
         type=int,
-        default=0,
+        default=1,
         help="Default value of start index for volume generation (default: %(default)s)",
     )
+
+
 
     return parser
 
@@ -474,8 +489,10 @@ def main(args: argparse.Namespace) -> None:
         Apix=use_apix,
         downsample=args.downsample,
         flip=args.flip,
-        device=args.device,
         invert=args.invert,
+        low_pass=args.low_pass,
+        crop=args.crop,
+        device=args.device,
         vol_start_index=args.vol_start_index,
     )
     vg = VolumeGenerator(weights, cfg, vol_args, skip_vol=args.skip_vol)

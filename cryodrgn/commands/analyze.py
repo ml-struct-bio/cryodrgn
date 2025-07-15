@@ -66,7 +66,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         default=20,
         help="Number of kmeans samples to generate (default: %(default)s)",
     )
-    
+
     group = parser.add_argument_group("Volume post-processing")
     group.add_argument(
         "--Apix",
@@ -89,7 +89,9 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "--low-pass", type=float, help="Low-pass filter resolution in Angstroms"
     )
     group.add_argument(
-        "--crop", type=int, help="crop volume to this box size after downsampling or low-pass filtering (pixels)"
+        "--crop",
+        type=int,
+        help="crop volume to this box size after downsampling or low-pass filtering (pixels)",
     )
     group.add_argument(
         "--vol-start-index",
@@ -97,8 +99,6 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         default=1,
         help="Default value of start index for volume generation (default: %(default)s)",
     )
-
-
 
     return parser
 

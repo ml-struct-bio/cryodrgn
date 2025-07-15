@@ -82,10 +82,14 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         help="Downsample volumes to this box size (pixels)",
     )
     group.add_argument(
-        "--low-pass", type=float, help="Low-pass filter resolution in Angstroms (need to specify --Apix)"
+        "--low-pass",
+        type=float,
+        help="Low-pass filter resolution in Angstroms (need to specify --Apix)",
     )
     group.add_argument(
-        "--crop", type=int, help="crop volume to this box size after downsampling or low-pass filtering (pixels)"
+        "--crop",
+        type=int,
+        help="crop volume to this box size after downsampling or low-pass filtering (pixels)",
     )
     group.add_argument(
         "--vol-start-index",
@@ -102,6 +106,7 @@ def check_inputs(args: argparse.Namespace) -> None:
         sum((bool(args.z), bool(args.z_start), bool(args.zfile))) == 1
     ), "Must specify either -z OR --z-start/--z-end OR --zfile"
 
+
 def postprocess_vol(vol, args):
     if args.flip:
         vol = vol.flip([0])
@@ -113,14 +118,16 @@ def postprocess_vol(vol, args):
         vol = utils.crop_real_space(vol, args.crop)
     return vol
 
+
 def reset_origin(oldD, cropD, Apix):
-    '''Reset origin for cropped volume from (0,0,0) to align with uncropped volume'''
+    """Reset origin for cropped volume from (0,0,0) to align with uncropped volume"""
     org = {}
-    a = int(oldD/2 - cropD/2)
-    org['xorg'] = a*Apix
-    org['yorg'] = a*Apix
-    org['zorg'] = a*Apix
+    a = int(oldD / 2 - cropD / 2)
+    org["xorg"] = a * Apix
+    org["yorg"] = a * Apix
+    org["zorg"] = a * Apix
     return org
+
 
 def main(args: argparse.Namespace) -> None:
     if args.verbose:
@@ -129,7 +136,7 @@ def main(args: argparse.Namespace) -> None:
     check_inputs(args)
     t1 = dt.now()
 
-    # set the device
+    # Find whether there is a GPU device to compute on and set the device
     if args.device is not None:
         device = torch.device(f"cuda:{args.device}")
     else:
@@ -141,6 +148,7 @@ def main(args: argparse.Namespace) -> None:
 
     logger.info(args)
     logger.info("Loaded configuration:")
+    cfg = config.load(args.config)
     pprint.pprint(cfg)
 
     D = cfg["lattice_args"]["D"]  # image size + 1
@@ -194,7 +202,9 @@ def main(args: argparse.Namespace) -> None:
             out_mrc = "{}/{}{:03d}.mrc".format(args.o, args.prefix, i)
             org = reset_origin(vol.shape[0], args.crop, args.Apix) if args.crop else {}
             vol = postprocess_vol(vol, args)
-            write_mrc(out_mrc, np.array(vol.cpu()).astype(np.float32), Apix=args.Apix, **org)
+            write_mrc(
+                out_mrc, np.array(vol.cpu()).astype(np.float32), Apix=args.Apix, **org
+            )
 
     # Single z
     else:

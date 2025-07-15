@@ -55,12 +55,12 @@ def update_config_v1(config):
 
 
 def _overwrite_config(config, args):
-    '''Deprecated function to overwrite config with command line arguments. 
-    
-    The config.yaml file should be directly modified if necessary. Keeping this function for now, 
+    """Deprecated function to overwrite config with command line arguments.
+
+    The config.yaml file should be directly modified if necessary. Keeping this function for now,
     since it has some logic for backwards compatibility (should be implemented in update_config_v1).
-    
-    '''
+
+    """
     config = load(config)
     if args.norm is not None:
         config["dataset_args"]["norm"] = args.norm

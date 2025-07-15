@@ -59,8 +59,8 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     )
 
     parser.add_argument(
-        "-o",
         "--outtxt",
+        "-o",
         type=os.path.abspath,
         default="z-path.txt",
         metavar="Z-PATH.TXT",
@@ -72,6 +72,11 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         default="z-path-indices.txt",
         metavar="IND-PATH.TXT",
         help="Output .txt file for path indices (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Print path values, indices to screen",
     )
 
 
@@ -177,7 +182,7 @@ def main(args):
                 edges.append((int(i), int(neighbors[i, j]), float(ndist[i, j])))
 
     graph = GraphLatentTraversor(edges)
-    full_path = []
+    full_path = list()
     data_df = pd.DataFrame()
 
     t1 = dt.now()
@@ -210,21 +215,30 @@ def main(args):
             print(f" Euclidean distance {anchor_str}: {euc_dist:.4g}")
         else:
             print(f"Could not find a {anchor_str} path!")
+            exit(0)
 
-    data_df.index = [f"{i}(a)" if i in anchors else str(i) for i in data_df.index]
-    data_df.index.name = "ind"
+    if full_path:
+        if args.verbose:
+            data_df.index = [
+                f"{i}(a)" if i in anchors else str(i) for i in data_df.index
+            ]
+            data_df.index.name = "ind"
+            print_data = data_df.round(3).to_csv(sep="\t")
+            logger.info(f"Found shortest nearest-neighbor path:\n{print_data}")
 
-    if args.outind:
-        if not os.path.exists(os.path.dirname(args.outind)):
-            os.makedirs(os.path.dirname(args.outind))
-        logger.info(f"Saving path indices relative to {args.zfile} to {args.outind}")
-        np.savetxt(args.outind, full_path, fmt="%d")
+        if args.outind:
+            if not os.path.exists(os.path.dirname(args.outind)):
+                os.makedirs(os.path.dirname(args.outind))
+            logger.info(
+                f"Saving path indices relative to {args.zfile} to {args.outind}"
+            )
+            np.savetxt(args.outind, full_path, fmt="%d")
 
-    if args.outtxt:
-        if not os.path.exists(os.path.dirname(args.outtxt)):
-            os.makedirs(os.path.dirname(args.outtxt))
-        logger.info(f"Saving path z-values to {args.outtxt}")
-        np.savetxt(args.outtxt, data_np[full_path])
+        if args.outtxt:
+            if not os.path.exists(os.path.dirname(args.outtxt)):
+                os.makedirs(os.path.dirname(args.outtxt))
+            logger.info(f"Saving path z-values to {args.outtxt}")
+            np.savetxt(args.outtxt, data_np[full_path])
 
     t2 = dt.now()
     elapsed_time = t2 - t1

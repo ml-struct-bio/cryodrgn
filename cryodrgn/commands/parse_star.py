@@ -1,47 +1,61 @@
-"""Parse CTF and pose parameters from a RELION .star file"""
+"""Parse image CTF and poses from RELION .star file into separate files for cryoDRGN.
 
-import argparse
+This command is often used as a part of preparing inputs for training commands such as
+`train_vae` and `abinit_homo` when particles are coming from a .star file.
+
+Example usage
+-------------
+$ cryodrgn parse_star particles_from_M.star --ctf ctf.pkl --poses pose.pkl
+
+# Override image parameters even if given in file
+$ cryodrgn parse_star particles_from_M.star --ctf ctf.pkl --poses pose.pkl \
+                                            -D 294 --Apix 1.7
+
+"""
 import os
-import logging
-from cryodrgn import utils
+import argparse
+from cryodrgn.commands.parse_ctf_star import main as ctf_main
+from cryodrgn.commands.parse_pose_star import main as pose_main
 
-logger = logging.getLogger(__name__)
 
-def add_args(parser):
+def add_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("input", help="Input .star file")
+    parser.add_argument("--ctf", help="Output pkl of CTF parameters")
+    parser.add_argument("--poses", help="Output pkl of poses")
+
     parser.add_argument(
-        'input', help='Input RELION .star file containing metadata for parsing')
-    parser.add_argument(
-        '-o', '--outdir', type=os.path.abspath, default='.', help='Output directory for ctf.pkl and pose.pkl files (default: current directory)')
-    parser.add_argument(
-        '--overwrite', action='store_true', help='Overwrite existing output files if they exist')
+        "--png", metavar="PNG", type=os.path.abspath, help="Optionally plot the CTF"
+    )
 
-def main(args):
-    input_star = args.input
-    os.makedirs(args.outdir, exist_ok=True)
-    ctf_out = os.path.join(args.outdir, 'ctf.pkl')
-    pose_out = os.path.join(args.outdir, 'pose.pkl')
+    group = parser.add_argument_group("Optionally provide missing image parameters")
+    group.add_argument("-D", type=int, help="Image size in pixels")
+    group.add_argument("--Apix", type=float, help="Angstroms per pixel")
+    group.add_argument("--kv", type=float, help="Accelerating voltage (kV)")
+    group.add_argument("--cs", type=float, help="Spherical abberation (mm)")
+    group.add_argument("-w", type=float, help="Amplitude contrast ratio")
+    group.add_argument("--ps", type=float, help="Phase shift (deg)")
 
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Overwrite existing output files if they already exist",
+    )
+
+
+def main(args: argparse.Namespace) -> None:
     if not args.overwrite:
-        if os.path.exists(ctf_out):
-            raise RuntimeError(f"{ctf_out} already exists. Use --overwrite to overwrite.")
-        if os.path.exists(pose_out):
-            raise RuntimeError(f"{pose_out} already exists. Use --overwrite to overwrite.")
+        if os.path.exists(args.ctf):
+            raise RuntimeError(
+                f"{args.ctf} already exists. Use --overwrite to overwrite."
+            )
+        if os.path.exists(args.poses):
+            raise RuntimeError(
+                f"{args.poses} already exists. Use --overwrite to overwrite."
+            )
 
-    # Run parse_ctf_star
-    logger.info(f"Parsing CTF parameters from {input_star}...")
-    cmd = f'cryodrgn parse_ctf_star {input_star} -o {ctf_out}'
-    logger.info(f"Running command: {cmd}")
-    utils.run_command(cmd)
+    setattr(args, "star", args.input)
+    setattr(args, "o", args.ctf)
+    ctf_main(args)
 
-    # Run parse_pose_star
-    logger.info(f"Parsing pose parameters from {input_star}...")
-    cmd = f'cryodrgn parse_pose_star {input_star} -o {pose_out}'
-    logger.info(f"Running command: {cmd}")
-    utils.run_command(cmd)
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description=__doc__)
-    add_args(parser)
-    args = parser.parse_args()
-    main(args)
-
+    setattr(args, "outpkl", args.poses)
+    pose_main(args)

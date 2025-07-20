@@ -491,7 +491,10 @@ def main(args: argparse.Namespace) -> None:
 
     # load or initialize z
     if args.load_z is not None:
-        z = torch.nn.Parameter(torch.tensor(utils.load_pkl(args.load_z), dtype=torch.float32, device=device))
+        z = utils.load_pkl(args.load_z)
+        if args.ind is not None:
+            z = z[ind]
+        z = torch.nn.Parameter(torch.tensor(z, dtype=torch.float32, device=device))
         assert z.shape == (Nimg, args.zdim)
     else:
         z = torch.nn.Parameter(torch.randn(Nimg, args.zdim, device=device))

@@ -341,7 +341,7 @@ def analyze_volumes(
         plot(i, i + 1)
 
     # clustering
-    subdir = os.path.join(outdir, f"clustering_L2_{linkage}_{M}")
+    subdir = os.path.join(outdir, f"sketch_clustering_{linkage}_{M}")
     os.makedirs(subdir, exist_ok=True)
     cluster = AgglomerativeClustering(n_clusters=M, linkage=linkage)
     labels = cluster.fit_predict(vols)

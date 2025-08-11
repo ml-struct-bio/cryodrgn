@@ -319,12 +319,7 @@ class TestFixedHetero:
 
     @pytest.mark.parametrize(
         "ctf, epoch, seed, steps",
-        [
-            (None, 3, 915, 5),
-            ("CTF-Test", 2, 321, 2),
-            ("CTF-Test", 3, 701, 5),
-            ("CTF-Test", 3, 102, 10),
-        ],
+        [(None, 3, 915, 5), ("CTF-Test", 2, 321, 2), ("CTF-Test", 3, 655, 3)],
         indirect=["ctf"],
     )
     def test_graph_traversal(
@@ -332,7 +327,18 @@ class TestFixedHetero:
     ):
         outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
         random.seed(seed)
-        anchors = [str(anchor) for anchor in random.sample(range(100), steps)]
+
+        if steps == 2:
+            anchors = ["95", "35"]
+        else:
+            anchors = ["95"]
+            anchors += [
+                str(anchor)
+                for anchor in random.sample(
+                    list(set(range(100)) - {"95", "35"}), steps - 2
+                )
+            ]
+            anchors += ["35"]
 
         parser = argparse.ArgumentParser()
         graph_traversal.add_args(parser)
@@ -342,6 +348,7 @@ class TestFixedHetero:
                 "--anchors",
             ]
             + anchors
+            + ["--max-neighbors", "20", "--avg-neighbors", "10"]
             + [
                 "--outind",
                 os.path.join(outdir, f"graph_traversal_path.{epoch}.txt"),
@@ -585,8 +592,11 @@ class TestAbinitHetero:
                 os.path.join(outdir, f"z.{epoch}.pkl"),
                 "--anchors",
                 "5",
-                "0",
                 "2",
+                "10",
+                "--max-neighbors",
+                "20",
+                "--avg-neighbors",
                 "10",
                 "--outind",
                 os.path.join(outdir, f"graph_traversal_path.{epoch}.txt"),

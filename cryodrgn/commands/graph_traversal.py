@@ -3,12 +3,16 @@
 Example usage
 -------------
 # Find the path between kmeans cluster centers from cryodrgn analyze
-$ cryodrgn graph_traversal my_workdir/z.49.pkl --anchors my_workdir/analyze.49/centers_ind.txt -o graph_traversal/z-path.txt --outind graph_traversal/z-path.ind.txt
+$ cryodrgn graph_traversal my_workdir/z.49.pkl \
+                           --anchors my_workdir/analyze.49/centers_ind.txt \
+                           -o graph_traversal/z-path.txt \
+                           --outind graph_traversal/z-path.ind.txt
 
 See also
 --------
 `cryodrgn eval_vol` for generating volumes from the path (See the cryodrgn docs for more info)
 `cryodrgn direct_traversal` for direct interpolation between points
+
 """
 import argparse
 import os
@@ -80,7 +84,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
-class GraphLatentTraversor(object):
+class GraphLatentTraversor:
     def __init__(self, edges):  # edges is a list of tuples (src, dest, distance)
         # everything after here is derived from (weights, actions, probs)
         # for computational efficiency
@@ -133,26 +137,26 @@ class GraphLatentTraversor(object):
 
 
 def main(args):
-    data_np = pickle.load(open(args.zfile, "rb"))
-    data = torch.from_numpy(data_np)
+    zdata_np = pickle.load(open(args.zfile, "rb"))
+    zdata = torch.from_numpy(zdata_np)
 
     use_cuda = torch.cuda.is_available()
     print(f"Use cuda {use_cuda}")
     device = torch.device("cuda" if use_cuda else "cpu")
-    data = data.to(device)
-    N, D = data.shape
+    zdata = zdata.to(device)
+    N, D = zdata.shape
 
-    anchors = parse_anchors(args.anchors, data, args.zfile)
-    n2 = (data * data).sum(-1, keepdim=True)
+    anchors = parse_anchors(args.anchors, zdata, args.zfile)
+    n2 = (zdata * zdata).sum(-1, keepdim=True)
     B = args.batch_size
-    ndist = torch.empty(data.shape[0], args.max_neighbors, device=device)
+    ndist = torch.empty(zdata.shape[0], args.max_neighbors, device=device)
     neighbors = torch.empty(
-        data.shape[0], args.max_neighbors, dtype=torch.long, device=device
+        zdata.shape[0], args.max_neighbors, dtype=torch.long, device=device
     )
-    for i in range(0, data.shape[0], B):
+    for i in range(0, zdata.shape[0], B):
         # (a-b)^2 = a^2 + b^2 - 2ab
-        print(f"Working on images {i}-{min(data.shape[0], i+B)}")
-        batch_dist = n2[i : i + B] + n2.t() - 2 * torch.mm(data[i : i + B], data.t())
+        print(f"Working on images {i}-{min(zdata.shape[0], i+B)}")
+        batch_dist = n2[i : i + B] + n2.t() - 2 * torch.mm(zdata[i : i + B], zdata.t())
         ndist[i : i + B], neighbors[i : i + B] = batch_dist.topk(
             args.max_neighbors, dim=-1, largest=False
         )
@@ -183,7 +187,7 @@ def main(args):
 
     graph = GraphLatentTraversor(edges)
     full_path = list()
-    data_df = pd.DataFrame()
+    zdata_df = pd.DataFrame()
 
     t1 = dt.now()
 
@@ -191,8 +195,8 @@ def main(args):
         anchor_str = f"{anchors[i]}->{anchors[i + 1]}"
         src, dest = anchors[i], anchors[i + 1]
         path, total_distance = graph.find_path(src, dest)
-        dd = data[path].cpu().numpy()
-        dists = ((dd[1:, :] - dd[0:-1, :]) ** 2).sum(axis=1) ** 0.5
+        path_zdata = zdata[path].cpu().numpy()
+        dists = ((path_zdata[1:, :] - path_zdata[0:-1, :]) ** 2).sum(axis=1) ** 0.5
 
         if path is not None:
             if full_path and full_path[-1] == path[0]:
@@ -201,29 +205,29 @@ def main(args):
                 dists = [0] + dists.tolist()
 
             new_df = pd.DataFrame(
-                data_np[path],
+                zdata_np[path],
                 index=path,
                 columns=[f"z{i + 1}" for i in range(D)],
             )
-
             new_df["dist"] = dists
-            data_df = pd.concat([data_df, new_df])
+            zdata_df = pd.concat([zdata_df, new_df])
             full_path += path
 
-            euc_dist = ((dd[0] - dd[-1]) ** 2).sum() ** 0.5
+            euc_dist = ((path_zdata[0] - path_zdata[-1]) ** 2).sum() ** 0.5
             print(f"Total path distance {anchor_str}: {total_distance:.4g}")
             print(f" Euclidean distance {anchor_str}: {euc_dist:.4g}")
         else:
-            print(f"Could not find a {anchor_str} path!")
-            exit(0)
+            logger.warning(f"Could not find a {anchor_str} path!")
+            full_path = None
+            break
 
     if full_path:
         if args.verbose:
-            data_df.index = [
-                f"{i}(a)" if i in anchors else str(i) for i in data_df.index
+            zdata_df.index = [
+                f"{i}(a)" if i in anchors else str(i) for i in zdata_df.index
             ]
-            data_df.index.name = "ind"
-            print_data = data_df.round(3).to_csv(sep="\t")
+            zdata_df.index.name = "ind"
+            print_data = zdata_df.round(3).to_csv(sep="\t")
             logger.info(f"Found shortest nearest-neighbor path:\n{print_data}")
 
         if args.outind:
@@ -238,8 +242,11 @@ def main(args):
             if not os.path.exists(os.path.dirname(args.outtxt)):
                 os.makedirs(os.path.dirname(args.outtxt))
             logger.info(f"Saving path z-values to {args.outtxt}")
-            np.savetxt(args.outtxt, data_np[full_path])
+            np.savetxt(args.outtxt, zdata_np[full_path])
 
-    t2 = dt.now()
-    elapsed_time = t2 - t1
-    logger.info(f"Graph traversal completed in {elapsed_time}")
+        t2 = dt.now()
+        elapsed_time = t2 - t1
+        logger.info(f"Graph traversal completed in {elapsed_time}")
+
+    elif len(anchors) > 2:
+        logger.warning(f"Could not find a path between {anchors[0]} and {anchors[-1]}!")

@@ -20,6 +20,7 @@ import pickle
 import logging
 import numpy as np
 import pandas as pd
+from typing import List, Tuple
 from heapq import heappop, heappush
 import torch
 from cryodrgn.commands.direct_traversal import parse_anchors
@@ -29,6 +30,8 @@ logger = logging.getLogger(__name__)
 
 
 def add_args(parser: argparse.ArgumentParser) -> None:
+    """The command-line arguments for use with `cryodrgn graph_traversal`."""
+
     parser.add_argument("zfile", help="Input .pkl file containing z-embeddings")
     parser.add_argument(
         "--anchors",
@@ -85,58 +88,70 @@ def add_args(parser: argparse.ArgumentParser) -> None:
 
 
 class GraphLatentTraversor:
-    def __init__(self, edges):  # edges is a list of tuples (src, dest, distance)
-        # everything after here is derived from (weights, actions, probs)
-        # for computational efficiency
+    """An engine for finding a path between images in a z-latent-space embedding."""
 
+    def __init__(self, edges: List[Tuple[int, int, float]]) -> None:
+        """
+        Everything after here is derived from (weights, actions, probs)
+        for computational efficiency
+
+        Arguments
+        ---------
+            edges: A list of tuples (src, dest, distance)
+
+        """
         # FIXME: nodes and goal nodes should be the same
         self.nodes = set([x[0] for x in edges] + [x[1] for x in edges])
         self.edges = {x: set() for x in self.nodes}
-        self.edge_length = {}
+        self.edge_length = dict()
+
         for s, d, L in edges:
-            assert type(s) == int and type(d) == int and type(L) == float
+            assert isinstance(s, int) and isinstance(d, int) and isinstance(L, float)
             self.edges[s].add(d)
             self.edge_length[(s, d)] = L
 
-    def find_path(self, src, dest):
-        visited = set()
-        unvisited = []
-        distances = {}
-        predecessors = {}
+    def find_path(self, src: int, dest: int) -> Tuple[List[int], float]:
+        """Find the shortest path between two nodes in the graph."""
 
+        visited = set()
+        unvisited = list()
+        distances = dict()
+        predecessors = dict()
         distances[src] = 0
         heappush(unvisited, (0, src))
 
         while unvisited:
-            # visit the neighbors
+            # Visit the neighbors
             dist, v = heappop(unvisited)
             if v in visited or v not in self.edges:
                 continue
+
             visited.add(v)
             if v == dest:
-                # We build the shortest path and display it
-                path = []
+                path = list()
                 pred = v
+
                 while pred is not None:
                     path.append(pred)
                     pred = predecessors.get(pred, None)
+
                 return path[::-1], dist
 
-            neighbors = list(self.edges[v])
-
-            for idx, neighbor in enumerate(neighbors):
+            for neighbor in self.edges[v]:
                 if neighbor not in visited:
                     new_distance = dist + self.edge_length[(v, neighbor)]
+
                     if new_distance < distances.get(neighbor, float("inf")):
                         distances[neighbor] = new_distance
                         heappush(unvisited, (new_distance, neighbor))
                         predecessors[neighbor] = v
 
-        # couldn't find a path
+        # Couldn't find a path
         return None, None
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
+    """Find the shortest path in a z-space neighbor graph (see `add_args` above)."""
     zdata_np = pickle.load(open(args.zfile, "rb"))
     zdata = torch.from_numpy(zdata_np)
 
@@ -148,17 +163,18 @@ def main(args):
 
     anchors = parse_anchors(args.anchors, zdata, args.zfile)
     n2 = (zdata * zdata).sum(-1, keepdim=True)
-    B = args.batch_size
-    ndist = torch.empty(zdata.shape[0], args.max_neighbors, device=device)
-    neighbors = torch.empty(
-        zdata.shape[0], args.max_neighbors, dtype=torch.long, device=device
-    )
-    for i in range(0, zdata.shape[0], B):
+    B = min(args.batch_size, N)
+    max_neighbors = min(args.max_neighbors, B)
+    avg_neighbors = min(args.avg_neighbors, B)
+    ndist = torch.empty(N, max_neighbors, device=device)
+    neighbors = torch.empty(N, max_neighbors, dtype=torch.long, device=device)
+
+    for i in range(0, N, B):
         # (a-b)^2 = a^2 + b^2 - 2ab
-        print(f"Working on images {i}-{min(zdata.shape[0], i+B)}")
+        print(f"Working on images {i}-{min(N, i+B)}")
         batch_dist = n2[i : i + B] + n2.t() - 2 * torch.mm(zdata[i : i + B], zdata.t())
         ndist[i : i + B], neighbors[i : i + B] = batch_dist.topk(
-            args.max_neighbors, dim=-1, largest=False
+            max_neighbors, dim=-1, largest=False
         )
 
     assert ndist.min() >= -1e-3, ndist.min()
@@ -166,13 +182,13 @@ def main(args):
     # convert d^2 to d
     ndist = ndist.clamp(min=0).pow(0.5)
     if args.avg_neighbors:
-        total_neighbors = int(N * args.avg_neighbors)
+        total_neighbors = int(N * avg_neighbors)
         max_dist = ndist.view(-1).topk(total_neighbors, largest=False)[0][-1]
     else:
         max_dist = None
     print(
         f"Max dist between neighbors: {max_dist:.4g}  "
-        f"(to enforce average of {args.avg_neighbors} neighbors)"
+        f"(to enforce average of {avg_neighbors} neighbors)"
     )
 
     if max_dist is not None:

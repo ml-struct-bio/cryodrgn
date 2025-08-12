@@ -1,9 +1,11 @@
+import pytest
 import numpy as np
 from numpy.testing import assert_array_almost_equal
-
 from cryodrgn import utils
 
 
+@pytest.mark.fast
+@pytest.mark.unit
 def test_convert_from_relion_scipy():
     x = np.array([[-147.9485, 22.58999, 162.539]])
     r1 = utils.R_from_relion_scipy(x)[0]
@@ -11,6 +13,8 @@ def test_convert_from_relion_scipy():
     assert_array_almost_equal(r1, r2)
 
 
+@pytest.mark.fast
+@pytest.mark.unit
 def test_convert_from_relion():
     x = np.array([[-147.9485, 22.58999, 162.539]])
     y = np.array(
@@ -26,6 +30,8 @@ def test_convert_from_relion():
     assert_array_almost_equal(r1, y)
 
 
+@pytest.mark.fast
+@pytest.mark.unit
 def test_convert_to_relion():
     x = np.array([[-147.9485, 22.58999, 162.539]])
     r1 = utils.R_from_relion_scipy(x)

@@ -10,6 +10,8 @@ from cryodrgn.commands import view_config
 from cryodrgn import utils
 
 
+@pytest.mark.fast
+@pytest.mark.unit
 def test_add_args():
     """Test that add_args correctly sets up argument parser."""
     parser = argparse.ArgumentParser()
@@ -20,6 +22,7 @@ def test_add_args():
     assert args.workdir == "/test/path"
 
 
+@pytest.mark.integration
 def test_main_with_yaml_config(tmpdir):
     """Test main function with a yaml config file."""
     workdir = tmpdir.mkdir("test_workdir")
@@ -50,6 +53,7 @@ def test_main_with_yaml_config(tmpdir):
         mock_print.assert_called_once_with("cryodrgn train_vae test.mrcs")
 
 
+@pytest.mark.integration
 def test_main_with_pkl_config(tmpdir):
     """Test main function with a pkl config file."""
     workdir = tmpdir.mkdir("test_workdir")
@@ -72,6 +76,8 @@ def test_main_with_pkl_config(tmpdir):
         assert len(w) >= 1  # At least one warning (could be more due to pkl deprecation)
 
 
+@pytest.mark.fast
+@pytest.mark.unit
 def test_main_no_config_file(tmpdir):
     """Test main function when no config file exists."""
     workdir = tmpdir.mkdir("test_workdir")
@@ -81,6 +87,7 @@ def test_main_no_config_file(tmpdir):
         view_config.main(args)
 
 
+@pytest.mark.integration
 def test_main_yaml_preferred_over_pkl(tmpdir):
     """Test that yaml config is preferred when both yaml and pkl exist."""
     workdir = tmpdir.mkdir("test_workdir")
@@ -106,6 +113,7 @@ def test_main_yaml_preferred_over_pkl(tmpdir):
         mock_logger.info.assert_any_call('Version: 0.3.0')
 
 
+@pytest.mark.integration
 def test_main_minimal_config(tmpdir):
     """Test main function with minimal config (no version, time, or cmd)."""
     workdir = tmpdir.mkdir("test_workdir")

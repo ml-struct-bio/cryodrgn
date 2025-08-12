@@ -42,6 +42,7 @@ dev = [
     "pre-commit",
     "pyright==1.1.300",
     "pytest>=6",
+    "pytest-xdist",
     "sphinx",
     "sphinx-rtd-theme",
     "twine"
@@ -67,9 +68,23 @@ include = ["cryodrgn*"]
 
 [tool.pytest.ini_options]
 minversion = "6.0"
-addopts = "-rA"
+addopts = "-rA --strict-markers --strict-config"
 testpaths = [
     "tests"
+]
+# Parallel testing configuration
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "fast: marks tests as fast",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+    "gpu: marks tests that require GPU",
+    "large_memory: marks tests that require large amounts of memory",
+]
+# Filter out numpy 2.0 deprecation warnings during transition period
+filterwarnings = [
+    "ignore:__array__ implementation doesn't accept a copy keyword:DeprecationWarning",
+    "ignore:The `interpolation=` argument to percentile:DeprecationWarning",
 ]
 
 [tool.pyright]

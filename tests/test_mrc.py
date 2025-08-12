@@ -12,6 +12,8 @@ def mrcs_data():
     ).images()
 
 
+@pytest.mark.integration
+@pytest.mark.slow
 def test_lazy_loading(mrcs_data):
     lazy_data = ImageSource.from_file(
         os.path.join(pytest.DATADIR, "toy_projections.mrcs"), lazy=True
@@ -21,11 +23,14 @@ def test_lazy_loading(mrcs_data):
     assert isinstance(lazy_data, torch.Tensor)
     assert torch.allclose(mrcs_data, lazy_data)
 
-    lazy_np = np.array(lazy_data)
-    busy_np = np.array(mrcs_data[:])
+    # Use explicit numpy conversion methods to avoid numpy 2.0 warnings
+    lazy_np = lazy_data.numpy()
+    busy_np = mrcs_data.numpy()
     assert (lazy_np == busy_np).all()
 
 
+@pytest.mark.integration
+@pytest.mark.slow
 def test_star(mrcs_data):
     star_data = ImageSource.from_file(
         os.path.join(pytest.DATADIR, "toy_projections.star")
@@ -34,11 +39,14 @@ def test_star(mrcs_data):
     assert isinstance(star_data, torch.Tensor)
     assert torch.allclose(star_data, mrcs_data)
 
-    star_np = np.array(star_data)
-    busy_np = np.array(mrcs_data[:])
+    # Use explicit numpy conversion methods to avoid numpy 2.0 warnings
+    star_np = star_data.numpy()
+    busy_np = mrcs_data.numpy()
     assert (star_np == busy_np).all()
 
 
+@pytest.mark.integration
+@pytest.mark.slow
 def test_txt(mrcs_data):
     txt_data = ImageSource.from_file(
         os.path.join(pytest.DATADIR, "toy_projections.txt")
@@ -47,6 +55,7 @@ def test_txt(mrcs_data):
     assert isinstance(txt_data, torch.Tensor)
     assert torch.allclose(txt_data, mrcs_data)
 
-    txt_np = np.array(txt_data)
-    busy_np = np.array(mrcs_data[:])
+    # Use explicit numpy conversion methods to avoid numpy 2.0 warnings
+    txt_np = txt_data.numpy()
+    busy_np = mrcs_data.numpy()
     assert (txt_np == busy_np).all()

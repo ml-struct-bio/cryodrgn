@@ -187,6 +187,19 @@ def test_overwrite_config_none_values():
     mock_args.norm = None
     mock_args.D = None
     mock_args.zdim = None
+    # Add all the attributes that _overwrite_config expects
+    mock_args.l_extent = None
+    mock_args.qlayers = None
+    mock_args.qdim = None
+    mock_args.encode_mode = None
+    mock_args.players = None
+    mock_args.pdim = None
+    mock_args.enc_mask = None
+    mock_args.pe_type = None
+    mock_args.feat_sigma = None
+    mock_args.pe_dim = None
+    mock_args.domain = None
+    mock_args.activation = "relu"  # Default activation as expected by the function
     
     old_config = {
         "dataset_args": {"norm": [0, 1]},
@@ -196,7 +209,8 @@ def test_overwrite_config_none_values():
     
     updated_config = config._overwrite_config(old_config, mock_args)
     
-    # Should not overwrite when args are None
+    # Should not overwrite when args are None, but activation gets set to default
     assert updated_config["dataset_args"]["norm"] == [0, 1]
     assert updated_config["lattice_args"]["D"] == 65
     assert updated_config["model_args"]["zdim"] == 8
+    assert updated_config["model_args"]["activation"] == "relu"  # Default gets set

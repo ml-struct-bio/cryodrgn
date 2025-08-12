@@ -30,7 +30,7 @@ import seaborn as sns
 import umap
 
 import cryodrgn
-from cryodrgn import analysis, config, utils
+from cryodrgn import config, utils
 from cryodrgn.models import HetOnlyVAE, ResidLinearMLP
 from cryodrgn.source import ImageSource
 
@@ -128,7 +128,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         metavar="N",
         help="MLP number of hidden layers (default: 3)",
     )
-    
+
     group = parser.add_argument_group("Volume PC clustering arguments")
     group.add_argument(
         "--num-neighbors",
@@ -195,9 +195,7 @@ class MyDataset(Dataset):
         return self.x[idx], self.y[idx]
 
 
-def generate_and_map_volumes(
-    zfile, cfg, weights, mask_mrc, pca_obj_pkl, outdir, args
-):
+def generate_and_map_volumes(zfile, cfg, weights, mask_mrc, pca_obj_pkl, outdir, args):
     # Sample z
     logger.info(f"Sampling {args.training_volumes} particles from {zfile}")
     np.random.seed(args.seed)
@@ -434,10 +432,10 @@ def main(args: argparse.Namespace) -> None:
     logger.info(f"Saving results to {clustering_dir}")
     if not os.path.exists(f"{clustering_dir}"):
         os.mkdir(f"{clustering_dir}")
-    
+
     cluster_labels = np.array(part.membership, dtype=np.int32)
     utils.save_pkl(cluster_labels, f"{clustering_dir}/cluster_labels.pkl")
-    num_clusters = max(cluster_labels)+1
+    num_clusters = max(cluster_labels) + 1
 
     # Save plots
     logger.info("Saving plots...")
@@ -459,7 +457,15 @@ def main(args: argparse.Namespace) -> None:
     colors = get_colors_for_cmap(cmap, num_clusters)
     for i in range(num_clusters):
         c = umap_emb[np.where(cluster_labels == i)]
-        plt.scatter(c[:, 0], c[:, 1], label=i, color=colors[i], s=0.3, alpha=0.5, rasterized=True)
+        plt.scatter(
+            c[:, 0],
+            c[:, 1],
+            label=i,
+            color=colors[i],
+            s=0.3,
+            alpha=0.5,
+            rasterized=True,
+        )
     plt.legend(markerscale=5)
     plt.xlabel("UMAP1")
     plt.ylabel("UMAP2")
@@ -467,12 +473,16 @@ def main(args: argparse.Namespace) -> None:
     plt.close()
 
     # Plot landscape
-    g = sns.jointplot(x=embeddings_all[:,0], y=embeddings_all[:,1], kind='hex', height=4)
+    g = sns.jointplot(
+        x=embeddings_all[:, 0], y=embeddings_all[:, 1], kind="hex", height=4
+    )
     g.ax_joint.set_xlabel("Volume PC1")
     g.ax_joint.set_ylabel("Volume PC2")
-    plt.subplots_adjust(left=0.2, right=0.8, top=0.8, bottom=0.2)  # shrink fig so cbar is visible
+    plt.subplots_adjust(
+        left=0.2, right=0.8, top=0.8, bottom=0.2
+    )  # shrink fig so cbar is visible
     # make new ax object for the cbar
-    cbar_ax = g.fig.add_axes([.85, .25, .03, .4])  # x, y, width, height
+    cbar_ax = g.fig.add_axes([0.85, 0.25, 0.03, 0.4])  # x, y, width, height
     plt.colorbar(cax=cbar_ax)
     plt.savefig(f"{outdir}/volpca_landscape.png")
     plt.close()

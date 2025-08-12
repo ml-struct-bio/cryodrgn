@@ -16,6 +16,7 @@ from cryodrgn import fft
 
 logger = logging.getLogger(__name__)
 
+
 def get_igraph_from_adjacency(adjacency):
     sources, targets = adjacency.nonzero()
     weights = (adjacency[sources, targets]).A.ravel()
@@ -24,6 +25,7 @@ def get_igraph_from_adjacency(adjacency):
     g.add_edges(list(zip(sources, targets)))
     g.es["weight"] = weights
     return g
+
 
 def meshgrid_2d(lo, hi, n, endpoint=False):
     """

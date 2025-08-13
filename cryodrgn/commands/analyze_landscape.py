@@ -44,7 +44,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "epoch",
         type=str,
         help="Epoch number N to analyze "
-        "(0-based indexing, corresponding to z.N.pkl, weights.N.pkl)",
+        "(1-based indexing, corresponding to z.N.pkl, weights.N.pkl)",
     )
     parser.add_argument("--device", type=int, help="Optionally specify CUDA device")
     parser.add_argument(
@@ -252,7 +252,7 @@ def analyze_volumes(
     plot_dim=5,
     particle_ind_orig=None,
     Apix=1,
-    vol_start_index=0,
+    vol_start_index: int = 1,
 ):
     kmean_dir = os.path.join(outdir, f"kmeans{K}")
     cmap = choose_cmap(M)

@@ -280,7 +280,8 @@ class TrainDir:
     @property
     def all_files_present(self) -> bool:
         return not any(
-            self.epoch_cleaned(epoch) for epoch in list(range(self.epochs)) + [None]
+            self.epoch_cleaned(epoch)
+            for epoch in list(1, range(self.epochs) + 1) + [None]
         )
 
     def replace_files(self) -> None:
@@ -291,7 +292,7 @@ class TrainDir:
             )
 
     def train_load_epoch(self, load_epoch: int, train_epochs: int) -> None:
-        if not 0 <= load_epoch < self.epochs:
+        if not 1 <= load_epoch < self.epochs + 1:
             raise ValueError(
                 f"Given epoch to load {load_epoch} is not valid for experiment "
                 f"with {self.epochs} epochs!"
@@ -432,7 +433,7 @@ class AbInitioDir:
         out, err = run_command(cmd)
         assert ") Finished in " in out, err
         assert os.path.exists(
-            os.path.join(self.outdir, f"weights.{self.epochs - 1}.pkl")
+            os.path.join(self.outdir, f"weights.{self.epochs}.pkl")
         ), err
 
     def analyze(self, analysis_epoch: int) -> None:

@@ -594,7 +594,7 @@ def gen_volumes(
     invert=None,
     low_pass=None,
     crop=None,
-    vol_start_index=0,
+    vol_start_index=1,
 ):
     """Call cryodrgn eval_vol to generate volumes at specified z values
     Input:

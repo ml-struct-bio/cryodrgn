@@ -486,7 +486,7 @@ For example to extend the training of the previous example to 50 epochs:
             --ctf ctf.pkl \
             --zdim 8 -n 50 \
             -o 01_cryodrgn256 \
-            --load 01_cryodrgn256/weights.24.pkl # 0-based indexing
+            --load 01_cryodrgn256/weights.25.pkl # 1-based indexing
 
 ### Accelerated training with GPU parallelization
 
@@ -536,7 +536,7 @@ To analyze these results, use the `cryodrgn analyze` command to visualize the la
 
 	positional arguments:
 	  workdir               Directory with cryoDRGN results
-	  epoch                 Epoch number N to analyze (0-based indexing,
+	  epoch                 Epoch number N to analyze (1-based indexing,
 	                        corresponding to z.N.pkl, weights.N.pkl)
 
 	optional arguments:
@@ -570,7 +570,7 @@ This script runs a series of standard analyses:
 
 Example usage to analyze results from the direction `01_cryodrgn256` containing results after 25 epochs of training:
 
-    $ cryodrgn analyze 01_cryodrgn256 24 --Apix 1.31 # 24 for 0-based indexing of epoch numbers
+    $ cryodrgn analyze 01_cryodrgn256 25 --Apix 1.31  # 25 for 1-based indexing of epoch numbers
 
 Notes:
 

@@ -501,7 +501,7 @@ def train(
 def get_latest(args):
     # assumes args.num_epochs > latest checkpoint
     logger.info("Detecting latest checkpoint...")
-    weights = [f"{args.outdir}/weights.{i}.pkl" for i in range(args.num_epochs)]
+    weights = [f"{args.outdir}/weights.{i}.pkl" for i in range(1, args.num_epochs + 1)]
     weights = [f for f in weights if os.path.exists(f)]
     args.load = weights[-1]
     logger.info(f"Loading {args.load}")
@@ -708,7 +708,7 @@ def main(args):
 
             # sorted_base_poses = None   # TODO: need to save base_poses if we are going to use it
     else:
-        start_epoch = 0
+        start_epoch = 1
 
     data_iterator = dataset.make_dataloader(
         data,
@@ -749,7 +749,7 @@ def main(args):
         pose_model.load_state_dict(model.state_dict())
 
     epoch = None
-    for epoch in range(start_epoch, args.num_epochs):
+    for epoch in range(start_epoch, args.num_epochs + 1):
         t2 = dt.now()
         batch_it = 0
         loss_accum = 0
@@ -757,22 +757,22 @@ def main(args):
 
         if args.l_ramp_epochs > 0:
             Lramp = args.l_start + int(
-                epoch / args.l_ramp_epochs * (args.l_end - args.l_start)
+                (epoch - 1) / args.l_ramp_epochs * (args.l_end - args.l_start)
             )
             ps.Lmin = min(Lramp, args.l_start)
             ps.Lmax = min(Lramp, args.l_end)
 
-        if args.reset_model_every and (epoch - 1) % args.reset_model_every == 0:
+        if args.reset_model_every and (epoch - 2) % args.reset_model_every == 0:
             logger.info(">> Resetting model")
             model = make_model(args, D)
 
-        if args.reset_optim_every and (epoch - 1) % args.reset_optim_every == 0:
+        if args.reset_optim_every and (epoch - 2) % args.reset_optim_every == 0:
             logger.info(">> Resetting optim")
             optim = torch.optim.Adam(
                 model.parameters(), lr=args.lr, weight_decay=args.wd
             )
 
-        if epoch % args.ps_freq != 0:
+        if epoch % args.ps_freq != 1:
             logger.info("Using previous iteration poses")
         for batch in data_iterator:
             ind = batch[-1]
@@ -785,7 +785,7 @@ def main(args):
             batch_it += len(batch[0])
 
             # train the model
-            if epoch % args.ps_freq != 0:
+            if epoch % args.ps_freq != 1:
                 p = [torch.tensor(x[ind_np], device=device) for x in sorted_poses]  # type: ignore
                 # bp = sorted_base_poses[ind_np]
                 bp = None
@@ -819,13 +819,13 @@ def main(args):
             if batch_it % args.log_interval < args.batch_size:
                 logger.info(
                     "# [Train Epoch: {}/{}] [{}/{} images] loss={:.4f}".format(
-                        epoch + 1, args.num_epochs, batch_it, Nimg, loss_item
+                        epoch, args.num_epochs, batch_it, Nimg, loss_item
                     )
                 )
 
         logger.info(
             "# =====> Epoch: {} Average loss = {:.4}; Finished in {}".format(
-                epoch + 1, loss_accum / Nimg, dt.now() - t2
+                epoch, loss_accum / Nimg, dt.now() - t2
             )
         )
 
@@ -867,11 +867,8 @@ def main(args):
         )
 
         td = dt.now() - t1
-        logger.info(
-            "Finished in {} ({} per epoch)".format(
-                td, td / (args.num_epochs - start_epoch)
-            )
-        )
+        epoch_avg = td / (args.num_epochs - start_epoch + 1)
+        logger.info(f"Finished in {td} ({epoch_avg} per epoch)")
 
 
 if __name__ == "__main__":

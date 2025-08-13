@@ -365,7 +365,7 @@ def save_config(args, dataset, lattice, model, out_config):
 def get_latest(args):
     # assumes args.num_epochs > latest checkpoint
     logger.info("Detecting latest checkpoint...")
-    weights = [f"{args.outdir}/weights.{i}.pkl" for i in range(args.num_epochs)]
+    weights = [f"{args.outdir}/weights.{i}.pkl" for i in range(1, args.num_epochs + 1)]
     weights = [f for f in weights if os.path.exists(f)]
     args.load = weights[-1]
     logger.info(f"Loading {args.load}")
@@ -459,7 +459,7 @@ def main(args: argparse.Namespace) -> None:
         start_epoch = checkpoint["epoch"] + 1
         assert start_epoch < args.num_epochs
     else:
-        start_epoch = 0
+        start_epoch = 1
 
     # load poses
     pose_optimizer = None
@@ -543,7 +543,7 @@ def main(args: argparse.Namespace) -> None:
     )
 
     epoch = None
-    for epoch in range(start_epoch, args.num_epochs):
+    for epoch in range(start_epoch, args.num_epochs + 1):
         t2 = dt.now()
         loss_accum = 0
         batch_it = 0
@@ -571,12 +571,12 @@ def main(args: argparse.Namespace) -> None:
             if batch_it % args.log_interval < args.batch_size:
                 logger.info(
                     "# [Train Epoch: {}/{}] [{}/{} images] loss={:.6f}".format(
-                        epoch + 1, args.num_epochs, batch_it, Nimg, loss_item
+                        epoch, args.num_epochs, batch_it, Nimg, loss_item
                     )
                 )
         logger.info(
             "# =====> Epoch: {} Average loss = {:.6}; Finished in {}".format(
-                epoch + 1, loss_accum / Nimg, dt.now() - t2
+                epoch, loss_accum / Nimg, dt.now() - t2
             )
         )
         if args.checkpoint and epoch % args.checkpoint == 0:
@@ -598,6 +598,5 @@ def main(args: argparse.Namespace) -> None:
         posetracker.save(out_pose)
 
     td = dt.now() - t1
-    logger.info(
-        "Finished in {} ({} per epoch)".format(td, td / (args.num_epochs - start_epoch))
-    )
+    epoch_avg = td / (args.num_epochs - start_epoch + 1)
+    logger.info(f"Finished in {td} ({epoch_avg} per epoch)")

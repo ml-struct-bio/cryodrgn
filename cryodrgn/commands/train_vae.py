@@ -630,7 +630,7 @@ def save_config(args, dataset, lattice, model, out_config):
 def get_latest(args):
     # assumes args.num_epochs > latest checkpoint
     logger.info("Detecting latest checkpoint...")
-    weights = [f"{args.outdir}/weights.{i}.pkl" for i in range(args.num_epochs)]
+    weights = [f"{args.outdir}/weights.{i}.pkl" for i in range(1, args.num_epochs + 1)]
     weights = [f for f in weights if os.path.exists(f)]
     args.load = weights[-1]
     logger.info(f"Loading {args.load}")
@@ -889,7 +889,7 @@ def main(args: argparse.Namespace) -> None:
         start_epoch = checkpoint["epoch"] + 1
         model.train()
     else:
-        start_epoch = 0
+        start_epoch = 1
 
     # parallelize
     num_workers = args.num_workers
@@ -920,7 +920,7 @@ def main(args: argparse.Namespace) -> None:
     num_epochs = args.num_epochs
     epoch = None
     Nparticles = Nimg if args.encode_mode != "tilt" else data.Np
-    for epoch in range(start_epoch, num_epochs):
+    for epoch in range(start_epoch, num_epochs + 1):
         t2 = dt.now()
         gen_loss_accum = 0
         loss_accum = 0
@@ -931,7 +931,7 @@ def main(args: argparse.Namespace) -> None:
             y = minibatch[0].to(device)
             B = len(ind)
             batch_it += B
-            global_it = Nparticles * epoch + batch_it
+            global_it = Nparticles * (epoch - 1) + batch_it
 
             beta = beta_schedule(global_it)
 
@@ -986,7 +986,7 @@ def main(args: argparse.Namespace) -> None:
                 logger.info(
                     "# [Train Epoch: {}/{}] [{}/{} particles] gen loss={:.6f}, kld={:.6f}, beta={:.6f}, "
                     "loss={:.6f}".format(
-                        epoch + 1,
+                        epoch,
                         num_epochs,
                         batch_it,
                         Nparticles,
@@ -998,7 +998,7 @@ def main(args: argparse.Namespace) -> None:
                 )
         logger.info(
             "# =====> Epoch: {} Average gen loss = {:.6}, KLD = {:.6f}, total loss = {:.6f}; Finished in {}".format(
-                epoch + 1,
+                epoch,
                 gen_loss_accum / Nparticles,
                 kld_accum / Nparticles,
                 loss_accum / Nparticles,
@@ -1055,6 +1055,5 @@ def main(args: argparse.Namespace) -> None:
         posetracker.save(out_pose)
 
     td = dt.now() - t1
-    logger.info(
-        "Finished in {} ({} per epoch)".format(td, td / (num_epochs - start_epoch))
-    )
+    epoch_avg = td / (num_epochs - start_epoch + 1)
+    logger.info(f"Finished in {td} ({epoch_avg} per epoch)")

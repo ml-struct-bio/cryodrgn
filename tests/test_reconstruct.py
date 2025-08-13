@@ -117,7 +117,7 @@ class TestFixedHetero:
         train_vae.main(train_vae.add_args(argparse.ArgumentParser()).parse_args(args))
 
     @pytest.mark.parametrize(
-        "ctf, epoch", [("CTF-Test", 2), (None, 3), ("CTF-Test", 3)], indirect=["ctf"]
+        "ctf, epoch", [("CTF-Test", 3), (None, 4), ("CTF-Test", 4)], indirect=["ctf"]
     )
     def test_analyze(self, tmpdir_factory, particles, poses, ctf, indices, epoch):
         """Produce standard analyses for a particular epoch."""
@@ -149,7 +149,7 @@ class TestFixedHetero:
         """Execute the demonstration Jupyter notebooks produced by analysis."""
         outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
         orig_cwd = os.path.abspath(os.getcwd())
-        os.chdir(os.path.join(outdir, "analyze.3"))
+        os.chdir(os.path.join(outdir, "analyze.4"))
         assert os.path.exists(f"{nb_lbl}.ipynb")
 
         with open(f"{nb_lbl}.ipynb") as ff:
@@ -166,7 +166,7 @@ class TestFixedHetero:
     @pytest.mark.parametrize(
         "ctf, epoch",
         [
-            ("CTF-Test", 3),
+            ("CTF-Test", 4),
             ("CTF-Test", None),
             pytest.param(
                 None,
@@ -216,7 +216,7 @@ class TestFixedHetero:
         outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
         args = [
             outdir,
-            "3",  # Epoch number to analyze - 0-indexed
+            "4",  # Epoch number to analyze - 1-indexed
             "--sketch-size",
             "10",  # Number of volumes to generate for analysis
             "--pc-dim",
@@ -261,7 +261,7 @@ class TestFixedHetero:
         self, tmpdir_factory, particles, poses, ctf, indices, downsample_dim, flip_vol
     ):
         outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
-        args = [outdir, "3", "-N", "10"]
+        args = [outdir, "4", "-N", "10"]
         if downsample_dim is not None:
             args += ["--downsample", downsample_dim]
         if flip_vol:
@@ -276,7 +276,7 @@ class TestFixedHetero:
         """Execute the demo Jupyter notebooks produced by landscape analysis."""
         outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
         orig_cwd = os.path.abspath(os.getcwd())
-        os.chdir(os.path.join(outdir, "landscape.3"))
+        os.chdir(os.path.join(outdir, "landscape.4"))
         notebook_fl = "cryoDRGN_analyze_landscape.ipynb"
         assert os.path.exists(notebook_fl)
 
@@ -311,7 +311,7 @@ class TestFixedHetero:
 
         parser = argparse.ArgumentParser()
         direct_traversal.add_args(parser)
-        args = [os.path.join(outdir, "z.3.pkl"), "--anchors"] + anchors
+        args = [os.path.join(outdir, "z.4.pkl"), "--anchors"] + anchors
         if points is not None:
             args += ["-n", str(points)]
 
@@ -319,7 +319,7 @@ class TestFixedHetero:
 
     @pytest.mark.parametrize(
         "ctf, epoch, seed, steps",
-        [(None, 3, 915, 5), ("CTF-Test", 2, 321, 2), ("CTF-Test", 3, 655, 3)],
+        [(None, 4, 915, 5), ("CTF-Test", 3, 321, 2), ("CTF-Test", 4, 655, 3)],
         indirect=["ctf"],
     )
     def test_graph_traversal(
@@ -359,7 +359,7 @@ class TestFixedHetero:
         graph_traversal.main(args)
 
     @pytest.mark.parametrize("ctf", ["CTF-Test"], indirect=True)
-    @pytest.mark.parametrize("epoch", [2, 3])
+    @pytest.mark.parametrize("epoch", [3, 4])
     def test_eval_volume(self, tmpdir_factory, particles, poses, ctf, indices, epoch):
         outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
         parser = argparse.ArgumentParser()
@@ -378,7 +378,7 @@ class TestFixedHetero:
         eval_vol.main(args)
 
     @pytest.mark.parametrize("ctf", ["CTF-Test"], indirect=True)
-    @pytest.mark.parametrize("epoch", [2, 3])
+    @pytest.mark.parametrize("epoch", [3, 4])
     def test_eval_images(self, tmpdir_factory, particles, poses, ctf, indices, epoch):
         outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
         args = eval_images.add_args(argparse.ArgumentParser()).parse_args(
@@ -406,15 +406,15 @@ class TestFixedHetero:
         [
             (-1, "rocket", None),
             pytest.param(
-                3,
+                4,
                 "Rocket",
                 None,
                 marks=pytest.mark.xfail(
                     raises=ValueError, reason="palette not available in seaborn!"
                 ),
             ),
-            (2, None, None),
-            (2, None, "plots"),
+            (3, None, None),
+            (3, None, "plots"),
         ],
     )
     def test_plot_classes(
@@ -533,7 +533,7 @@ class TestAbinitHetero:
             parser.parse_args(
                 [
                     outdir,
-                    "1",  # Epoch number to analyze - 0-indexed
+                    "2",  # Epoch number to analyze - 1-indexed
                     "--pc",
                     "3",  # Number of principal component traversals to generate
                     "--ksample",
@@ -544,14 +544,14 @@ class TestAbinitHetero:
             )
         )
 
-        assert os.path.exists(os.path.join(outdir, "analyze.1"))
+        assert os.path.exists(os.path.join(outdir, "analyze.2"))
 
     @pytest.mark.parametrize("nb_lbl", ["cryoDRGN_figures"])
     def test_notebooks(self, tmpdir_factory, particles, ctf, indices, nb_lbl):
         """Execute the demonstration Jupyter notebooks produced by analysis."""
         outdir = self.get_outdir(tmpdir_factory, particles, indices, ctf)
         orig_cwd = os.path.abspath(os.getcwd())
-        os.chdir(os.path.join(outdir, "analyze.1"))
+        os.chdir(os.path.join(outdir, "analyze.2"))
         assert os.path.exists(f"{nb_lbl}.ipynb"), "Upstream tests have failed!"
 
         with open(f"{nb_lbl}.ipynb") as ff:
@@ -563,7 +563,7 @@ class TestAbinitHetero:
     @pytest.mark.parametrize(
         "epoch",
         [
-            1,
+            2,
             pytest.param(
                 None,
                 marks=pytest.mark.xfail(
@@ -582,7 +582,7 @@ class TestAbinitHetero:
         epoch_args = ["--epoch", str(epoch)] if epoch is not None else list()
         filter.main(parser.parse_args([outdir] + epoch_args))
 
-    @pytest.mark.parametrize("epoch", [1, 2])
+    @pytest.mark.parametrize("epoch", [2, 3])
     def test_graph_traversal(self, tmpdir_factory, particles, ctf, indices, epoch):
         outdir = self.get_outdir(tmpdir_factory, particles, indices, ctf)
         parser = argparse.ArgumentParser()
@@ -612,11 +612,11 @@ class TestAbinitHetero:
         eval_vol.add_args(parser)
         args = parser.parse_args(
             [
-                os.path.join(outdir, "weights.2.pkl"),
+                os.path.join(outdir, "weights.3.pkl"),
                 "--config",
                 os.path.join(outdir, "config.yaml"),
                 "--zfile",
-                os.path.join(outdir, "graph_traversal_zpath.2.txt"),
+                os.path.join(outdir, "graph_traversal_zpath.3.txt"),
                 "-o",
                 os.path.join(outdir, "eval_vols"),
             ]
@@ -650,7 +650,7 @@ def test_homogeneous_with_poses(tmpdir, particles, poses, batch_size, use_amp):
         args += ["--no-amp"]
 
     train_nn.main(train_nn.add_args(argparse.ArgumentParser()).parse_args(args))
-    assert "weights.9.pkl" in os.listdir(tmpdir)
+    assert "weights.10.pkl" in os.listdir(tmpdir)
 
 
 @pytest.mark.parametrize(
@@ -658,7 +658,7 @@ def test_homogeneous_with_poses(tmpdir, particles, poses, batch_size, use_amp):
 )
 def test_abinit_checkpoint_analysis_and_backproject(abinit_dir):
     abinit_dir.train()
-    abinit_dir.train(load_epoch=0)
+    abinit_dir.train(load_epoch=1)
     abinit_dir.backproject()
     abinit_dir.view_config()
 
@@ -668,7 +668,7 @@ def test_abinit_checkpoint_analysis_and_backproject(abinit_dir):
     [{"train_cmd": "train_nn", "epochs": 5}, {"train_cmd": "train_vae", "epochs": 5}],
     indirect=True,
 )
-@pytest.mark.parametrize("load_epoch", [0, 2])
+@pytest.mark.parametrize("load_epoch", [1, 3])
 @pytest.mark.parametrize("train_epochs", [4, 5, 6])
 def test_frompose_train_and_from_checkpoint(trained_dir, load_epoch, train_epochs):
     trained_dir.train_load_epoch(load_epoch, train_epochs)

@@ -77,13 +77,26 @@ class TestFixedHetero:
             args += ["--ind", indices.path]
 
         train_vae.main(train_vae.add_args(argparse.ArgumentParser()).parse_args(args))
+        assert os.path.exists(os.path.join(outdir, "weights.3.pkl"))
+        assert not os.path.exists(os.path.join(outdir, "weights.4.pkl"))
 
-    @pytest.mark.parametrize("ctf", [None, "CTF-Test"], indirect=True)
+    @pytest.mark.parametrize(
+        "ctf, load", [(None, "latest"), ("CTF-Test", 2)], indirect=["ctf"]
+    )
     def test_train_from_checkpoint(
-        self, tmpdir_factory, particles, poses, ctf, indices
+        self,
+        tmpdir_factory,
+        particles,
+        poses,
+        ctf,
+        indices,
+        load,
     ):
         """Load a cached model and run for another epoch, now without --multigpu."""
         outdir = self.get_outdir(tmpdir_factory, particles, indices, poses, ctf)
+        if isinstance(load, int):
+            load = os.path.join(outdir, f"weights.{load}.pkl")
+
         args = [
             particles.path,
             "-o",
@@ -107,7 +120,7 @@ class TestFixedHetero:
             "--pe-type",
             "gaussian",
             "--load",
-            os.path.join(outdir, "weights.2.pkl"),
+            load,
         ]
         if ctf.path is not None:
             args += ["--ctf", ctf.path]
@@ -115,6 +128,8 @@ class TestFixedHetero:
             args += ["--ind", indices.path]
 
         train_vae.main(train_vae.add_args(argparse.ArgumentParser()).parse_args(args))
+        assert os.path.exists(os.path.join(outdir, "weights.4.pkl"))
+        assert not os.path.exists(os.path.join(outdir, "weights.5.pkl"))
 
     @pytest.mark.parametrize(
         "ctf, epoch", [("CTF-Test", 3), (None, 4), ("CTF-Test", 4)], indirect=["ctf"]

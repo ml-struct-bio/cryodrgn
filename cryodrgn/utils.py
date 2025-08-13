@@ -7,7 +7,8 @@ import subprocess
 import pickle
 import yaml
 import logging
-from typing import Tuple
+import re
+from typing import Tuple, Union
 import numpy as np
 import torch
 import igraph as ig
@@ -327,3 +328,33 @@ def crop_real_space(vol, D, deepcopy=False):
     else:
         new_vol = vol[a:b, a:b, a:b]
     return new_vol
+
+
+def get_latest_checkpoint(outdir: str) -> tuple[str, Union[str, None]]:
+    """
+    Find the latest saved checkpoint and pose files for cryoDRGN training.
+
+    Arguments
+    ---------
+        outdir: Output directory containing checkpoints
+
+    Returns
+    -------
+        Tuple of (weight_file_path, pose_file_path)
+
+    """
+    logger.info("Detecting latest checkpoint...")
+
+    # Find all existing weight files
+    weights = [fl for fl in os.listdir(outdir) if re.match(r"weights\.\d+\.pkl", fl)]
+    if not weights:
+        raise ValueError(f"No weight files found in {outdir}")
+
+    latest_weights = os.path.join(
+        outdir, sorted(weights, key=lambda x: int(x.split(".")[-2]))[-1]
+    )
+    logger.info(f"Loading {latest_weights}")
+    load_epoch = os.path.basename(latest_weights).split(".")[-2]
+    pose_file = os.path.join(outdir, f"pose.{load_epoch}.pkl")
+
+    return latest_weights, pose_file

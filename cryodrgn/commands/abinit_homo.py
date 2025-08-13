@@ -498,20 +498,6 @@ def train(
     return loss.item(), save_pose, base_pose
 
 
-def get_latest(args):
-    # assumes args.num_epochs > latest checkpoint
-    logger.info("Detecting latest checkpoint...")
-    weights = [f"{args.outdir}/weights.{i}.pkl" for i in range(1, args.num_epochs + 1)]
-    weights = [f for f in weights if os.path.exists(f)]
-    args.load = weights[-1]
-    logger.info(f"Loading {args.load}")
-    i = args.load.split(".")[-2]
-    args.load_poses = f"{args.outdir}/pose.{i}.pkl"
-    assert os.path.exists(args.load_poses)  # Might need to relax this assert
-    logger.info(f"Loading {args.load_poses}")
-    return args
-
-
 def make_model(args, D: int):
     activation = {"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[args.activation]
     return models.get_decoder(
@@ -568,7 +554,9 @@ def main(args):
     logger.addHandler(logging.FileHandler(f"{args.outdir}/run.log"))
 
     if args.load == "latest":
-        args = get_latest(args)
+        args.load, load_poses = utils.get_latest_checkpoint(args.outdir)
+        if args.load_poses is None:
+            args.load_poses = load_poses
 
     logger.info(" ".join(sys.argv))
     logger.info(args)

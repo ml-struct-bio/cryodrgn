@@ -748,22 +748,6 @@ def sort_poses(poses):
     return (rot,)
 
 
-def get_latest(args):
-    logger.info("Detecting latest checkpoint...")
-    weights = [
-        os.path.join(args.outdir, f"weights.{i+1}.pkl") for i in range(args.num_epochs)
-    ]
-    weights = [f for f in weights if os.path.exists(f)]
-    args.load = weights[-1]
-    logger.info(f"Loading {args.load}")
-    found_epoch = args.load.split(".")[-2]
-    args.load_poses = os.path.join(args.outdir, f"pose.{found_epoch}.pkl")
-    assert os.path.exists(args.load_poses)
-    logger.info(f"Loading {args.load_poses}")
-
-    return args
-
-
 def main(args):
     if args.verbose:
         logger.setLevel(logging.DEBUG)
@@ -775,7 +759,10 @@ def main(args):
     logger.addHandler(logging.FileHandler(f"{args.outdir}/run.log"))
 
     if args.load == "latest":
-        args = get_latest(args)
+        args.load, load_poses = utils.get_latest_checkpoint(args.outdir)
+        if args.load_poses is None:
+            args.load_poses = load_poses
+
     logger.info(" ".join(sys.argv))
     logger.info(args)
 
@@ -925,9 +912,6 @@ def main(args):
                 scaler = torch.amp.GradScaler("cuda")
             except AttributeError:
                 scaler = torch.cuda.amp.grad_scaler.GradScaler()
-
-    if args.load == "latest":
-        args = get_latest(args)
 
     sorted_poses = []
     if args.load:

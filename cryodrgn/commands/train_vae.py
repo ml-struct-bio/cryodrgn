@@ -37,7 +37,7 @@ except ImportError:
     pass
 
 import cryodrgn
-from cryodrgn import __version__, ctf, dataset
+from cryodrgn import __version__, ctf, dataset, utils
 from cryodrgn.beta_schedule import get_beta_schedule
 from cryodrgn.lattice import Lattice
 from cryodrgn.models import HetOnlyVAE, unparallelize
@@ -627,21 +627,6 @@ def save_config(args, dataset, lattice, model, out_config):
     cryodrgn.config.save(config, out_config)
 
 
-def get_latest(args):
-    # assumes args.num_epochs > latest checkpoint
-    logger.info("Detecting latest checkpoint...")
-    weights = [f"{args.outdir}/weights.{i}.pkl" for i in range(1, args.num_epochs + 1)]
-    weights = [f for f in weights if os.path.exists(f)]
-    args.load = weights[-1]
-    logger.info(f"Loading {args.load}")
-    if args.do_pose_sgd:
-        i = args.load.split(".")[-2]
-        args.poses = f"{args.outdir}/pose.{i}.pkl"
-        assert os.path.exists(args.poses)
-        logger.info(f"Loading {args.poses}")
-    return args
-
-
 def main(args: argparse.Namespace) -> None:
     if args.verbose:
         logger.setLevel(logging.DEBUG)
@@ -653,7 +638,10 @@ def main(args: argparse.Namespace) -> None:
     logger.addHandler(logging.FileHandler(f"{args.outdir}/run.log"))
 
     if args.load == "latest":
-        args = get_latest(args)
+        args.load, load_poses = utils.get_latest_checkpoint(args.outdir)
+        if args.do_pose_sgd:
+            args.poses = load_poses
+
     logger.info(" ".join(sys.argv))
     logger.info(f"cryoDRGN {__version__}")
     logger.info(args)

@@ -1,6 +1,17 @@
 import os
 import logging.config
 
+# Necessary to avoid deprecation warnings from datetime.strptime when using seaborn
+# with Python 3.13
+import warnings
+
+warnings.filterwarnings(
+    "ignore",
+    category=DeprecationWarning,
+    message="Parsing dates involving a day of month without "
+    "a year specified is ambiguious.*",
+)
+
 
 # The _version.py file is managed by setuptools-scm
 #   and is not in version control.
@@ -18,7 +29,7 @@ logging.config.dictConfig(
         "formatters": {
             "standard": {
                 "format": "(%(levelname)s) (%(filename)s) (%(asctime)s) %(message)s",
-                "datefmt": "%d-%b-%y %H:%M:%S",
+                "datefmt": "%d-%b-%Y %H:%M:%S",
             }
         },
         "handlers": {

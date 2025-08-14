@@ -250,7 +250,7 @@ class TrainDir:
         return os.listdir(self.outdir)
 
     def epoch_cleaned(self, epoch: Union[int, None]) -> bool:
-        if epoch and not 0 <= epoch < self.epochs:
+        if epoch and not 1 <= epoch <= self.epochs:
             raise ValueError(
                 f"Cannot check if given epoch {epoch} has been cleaned "
                 f"for output folder `{self.outdir}` which only contains "
@@ -281,7 +281,7 @@ class TrainDir:
     def all_files_present(self) -> bool:
         return not any(
             self.epoch_cleaned(epoch)
-            for epoch in list(1, range(self.epochs) + 1) + [None]
+            for epoch in list(range(1, self.epochs + 1)) + [None]
         )
 
     def replace_files(self) -> None:
@@ -292,7 +292,7 @@ class TrainDir:
             )
 
     def train_load_epoch(self, load_epoch: int, train_epochs: int) -> None:
-        if not 1 <= load_epoch < self.epochs + 1:
+        if not 1 <= load_epoch <= self.epochs:
             raise ValueError(
                 f"Given epoch to load {load_epoch} is not valid for experiment "
                 f"with {self.epochs} epochs!"

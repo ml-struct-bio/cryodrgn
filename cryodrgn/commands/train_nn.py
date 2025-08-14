@@ -438,14 +438,18 @@ def main(args: argparse.Namespace) -> None:
     # optimizer
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
-    # load weights
+    # Load a saved model checkpoint from a previous run of train_nn
     if args.load:
         logger.info("Loading model weights from {}".format(args.load))
         checkpoint = torch.load(args.load)
+        start_epoch = checkpoint["epoch"] + 1
+        if start_epoch > args.num_epochs:
+            raise ValueError(
+                f"If starting from a saved checkpoint at epoch {start_epoch}, "
+                f"the number of epochs to train must be greater than {start_epoch}!"
+            )
         model.load_state_dict(checkpoint["model_state_dict"])
         optim.load_state_dict(checkpoint["optimizer_state_dict"])
-        start_epoch = checkpoint["epoch"] + 1
-        assert start_epoch < args.num_epochs
     else:
         start_epoch = 1
 

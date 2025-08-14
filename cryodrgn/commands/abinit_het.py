@@ -25,6 +25,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.parallel import DataParallel
 from typing import Union
+
+from cryodrgn.commands.analyze import main as analyze_main, add_args as add_analyze_args
 from cryodrgn import ctf, dataset, lie_tools, utils
 from cryodrgn.beta_schedule import LinearSchedule, get_beta_schedule
 import cryodrgn.config
@@ -62,6 +64,12 @@ def add_args(parser):
     )
     parser.add_argument("--load", help="Initialize training from a checkpoint")
     parser.add_argument("--load-poses", help="Initialize training from a checkpoint")
+    parser.add_argument(
+        "--no-analysis",
+        dest="do_analysis",
+        action="store_false",
+        help="Do not automatically run cryodrgn analyze on the final training epoch",
+    )
     parser.add_argument(
         "--checkpoint",
         type=int,
@@ -1206,8 +1214,11 @@ def main(args):
         epoch_avg = td / (num_epochs - start_epoch + 1)
         logger.info(f"Finished in {td} ({epoch_avg} per epoch)")
 
+        if args.do_analysis:
+            analyze_parser = argparse.ArgumentParser()
+            add_analyze_args(analyze_parser)
+            analyze_args = analyze_parser.parse_args(
+                [str(args.outdir), str(num_epochs)]
+            )
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    args = add_args(parser).parse_args()
-    main(args)
+            analyze_main(analyze_args)

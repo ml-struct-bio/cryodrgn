@@ -38,6 +38,7 @@ except ImportError:
 
 import cryodrgn
 from cryodrgn import __version__, ctf, dataset, utils
+from cryodrgn.commands.analyze import main as analyze_main, add_args as add_analyze_args
 from cryodrgn.beta_schedule import get_beta_schedule
 from cryodrgn.lattice import Lattice
 from cryodrgn.models import HetOnlyVAE, unparallelize
@@ -71,6 +72,12 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--load", metavar="WEIGHTS.PKL", help="Initialize training from a checkpoint"
+    )
+    parser.add_argument(
+        "--no-analysis",
+        dest="do_analysis",
+        action="store_false",
+        help="Do not automatically run cryodrgn analyze on the final training epoch",
     )
     parser.add_argument(
         "--checkpoint",
@@ -1045,3 +1052,10 @@ def main(args: argparse.Namespace) -> None:
     td = dt.now() - t1
     epoch_avg = td / (num_epochs - start_epoch + 1)
     logger.info(f"Finished in {td} ({epoch_avg} per epoch)")
+
+    if args.do_analysis:
+        analyze_parser = argparse.ArgumentParser()
+        add_analyze_args(analyze_parser)
+        analyze_args = analyze_parser.parse_args([str(args.outdir), str(num_epochs)])
+
+        analyze_main(analyze_args)

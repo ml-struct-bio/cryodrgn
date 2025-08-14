@@ -70,6 +70,7 @@ class TestFixedHetero:
             "--pe-type",
             "gaussian",
             "--multigpu",
+            "--no-analysis",
         ]
         if ctf.path is not None:
             args += ["--ctf", ctf.path]
@@ -79,6 +80,7 @@ class TestFixedHetero:
         train_vae.main(train_vae.add_args(argparse.ArgumentParser()).parse_args(args))
         assert os.path.exists(os.path.join(outdir, "weights.3.pkl"))
         assert not os.path.exists(os.path.join(outdir, "weights.4.pkl"))
+        assert not os.path.exists(os.path.join(outdir, "analyze.3"))
 
     @pytest.mark.parametrize(
         "ctf, load", [(None, "latest"), ("CTF-Test", 2)], indirect=["ctf"]
@@ -530,6 +532,7 @@ class TestAbinitHetero:
             "3",
             "--ps-freq",
             "2",
+            "--no-analysis",
         ]
         if ctf.path is not None:
             args += ["--ctf", ctf.path]
@@ -537,6 +540,7 @@ class TestAbinitHetero:
             args += ["--ind", indices.path]
 
         abinit_het.main(abinit_het.add_args(argparse.ArgumentParser()).parse_args(args))
+        assert not os.path.exists(os.path.join(outdir, "analyze.2"))
 
     def test_analyze(self, tmpdir_factory, particles, ctf, indices):
         """Produce standard analyses for a particular epoch."""

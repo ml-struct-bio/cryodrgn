@@ -195,9 +195,8 @@ class TrainDir:
             f"cryodrgn {self.train_cmd} {self.particles} -o {self.outdir} "
             f"--poses {self.poses} --no-amp -n={self.epochs} "
         )
-
         if self.train_cmd == "train_vae":
-            cmd += "--zdim=8 --tdim=16 --tlayers=1 "
+            cmd += "--zdim=8 --tdim=16 --tlayers=1 --no-analysis "
         elif self.train_cmd == "train_nn":
             cmd += "--dim=16 --layers=2 "
 
@@ -416,7 +415,7 @@ class AbInitioDir:
             f"--num-epochs {self.epochs} --no-window --pretrain 100 "
         )
         if self.zdim > 0:
-            cmd += f"--zdim {self.zdim} "
+            cmd += f"--zdim {self.zdim} --no-analysis "
             cmd += "--enc-dim 8 --enc-layers 2 --dec-dim 8 --pe-dim 8 "
         else:
             cmd += "--dim 16 --pe-dim 8 "

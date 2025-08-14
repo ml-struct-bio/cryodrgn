@@ -72,6 +72,7 @@ class TestTiltFixedHetero:
             "16",
             "--dec-dim",
             "16",
+            "--no-analysis",
         ]
         if indices.path is not None:
             args += ["--ind", indices.path]
@@ -137,6 +138,7 @@ class TestTiltFixedHetero:
             "16",
             "--dec-dim",
             "16",
+            "--no-analysis",
         ]
         train_vae.main(train_vae.add_args(argparse.ArgumentParser()).parse_args(args))
 
@@ -258,6 +260,7 @@ class TestTiltFixedHetero:
             "16",
             "--dec-dim",
             "16",
+            "--no-analysis",
         ]
 
         args = train_vae.add_args(argparse.ArgumentParser()).parse_args(args)
@@ -338,6 +341,7 @@ class TestTiltAbinitHetero:
             "3",
             "--ps-freq",
             "2",
+            "--no-analysis",
         ]
         if indices.path is not None:
             args += ["--ind", indices.path]

@@ -101,6 +101,7 @@ def main_commands() -> None:
             "pc_traversal",
             "train_nn",
             "train_vae",
+            "train_dec",
             "view_config",
         ],
         doc_str="Commands installed with cryoDRGN",

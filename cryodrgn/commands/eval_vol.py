@@ -20,7 +20,8 @@ import logging
 import numpy as np
 import torch
 from cryodrgn import config
-from cryodrgn.models import HetOnlyVAE
+from cryodrgn.lattice import Lattice
+from cryodrgn.models import HetOnlyVAE, get_decoder
 from cryodrgn.source import write_mrc
 from cryodrgn import utils
 
@@ -147,6 +148,7 @@ def main(args: argparse.Namespace) -> None:
             logger.warning("WARNING: No GPUs detected")
 
     logger.info(args)
+    cfg = config.load(args.config)
     logger.info("Loaded configuration:")
     cfg = config.load(args.config)
     pprint.pprint(cfg)
@@ -164,8 +166,34 @@ def main(args: argparse.Namespace) -> None:
                 f"smaller than original box size {D}!"
             )
 
-    model, lattice = HetOnlyVAE.load(cfg, args.weights, device=device)
-    model.eval()
+    # load model
+    is_vae = "players" in cfg["model_args"] # could be improved
+    if is_vae:
+        model, lattice = HetOnlyVAE.load(cfg, args.weights, device=device)
+        decoder = model.decoder
+    else:  # autodecoder -- TODO: use load_decoder in models.py
+        c = cfg["lattice_args"]
+        lattice = Lattice(c["D"], extent=c["extent"], device=device)
+        m_args = cfg["model_args"]
+        activation = {"relu": torch.nn.ReLU, "leaky_relu": torch.nn.LeakyReLU}[
+            m_args["activation"]
+        ]
+        decoder = get_decoder(
+            3 + m_args["zdim"],
+            lattice.D,
+            m_args["layers"],
+            m_args["dim"],
+            m_args["domain"],
+            m_args["pe_type"],
+            enc_dim=m_args.get("pe_dim"),
+            activation=activation,
+            feat_sigma=m_args["feat_sigma"],
+        )
+        if args.weights:
+            ckpt = torch.load(args.weights, map_location=device)
+            decoder.load_state_dict(ckpt["model_state_dict"])
+    decoder.to(device)
+    decoder.eval()
 
     # Multiple z
     if args.z_start or args.zfile:
@@ -187,7 +215,6 @@ def main(args: argparse.Namespace) -> None:
             logger.info(zz)
             if args.downsample:
                 extent = lattice.extent * (args.downsample / (D - 1))
-                decoder = model.decoder
                 vol = decoder.eval_volume(
                     lattice.get_downsample_coords(args.downsample + 1),
                     args.downsample + 1,
@@ -196,7 +223,7 @@ def main(args: argparse.Namespace) -> None:
                     zz,
                 )
             else:
-                vol = model.decoder.eval_volume(
+                vol = decoder.eval_volume(
                     lattice.coords, lattice.D, lattice.extent, norm, zz
                 )
             out_mrc = "{}/{}{:03d}.mrc".format(args.o, args.prefix, i)
@@ -211,8 +238,8 @@ def main(args: argparse.Namespace) -> None:
         z = np.array(args.z)
         logger.info(z)
         if args.downsample:
-            extent = lattice.extent * (args.downsample / (D - 1))
-            vol = model.decoder.eval_volume(
+            extent = lattice.extent * (args.downsample / (D -1))
+            vol = decoder.eval_volume(
                 lattice.get_downsample_coords(args.downsample + 1),
                 args.downsample + 1,
                 extent,
@@ -220,7 +247,7 @@ def main(args: argparse.Namespace) -> None:
                 z,
             )
         else:
-            vol = model.decoder.eval_volume(
+            vol = decoder.eval_volume(
                 lattice.coords, lattice.D, lattice.extent, norm, z
             )
         org = reset_origin(vol.shape[0], args.crop, args.Apix) if args.crop else {}

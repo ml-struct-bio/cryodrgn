@@ -11,7 +11,6 @@ explicitly for each folder in case the namespace is inadvertantly polluted, and 
 since automated scanning for command modules is computationally non-trivial.
 
 """
-
 import argparse
 import os
 from importlib import import_module
@@ -126,6 +125,7 @@ def util_commands() -> None:
             "gen_mask",
             "invert_contrast",
             "make_movies",
+            "parse_relion",
             "phase_flip",
             "plot_classes",
             "plot_fsc",

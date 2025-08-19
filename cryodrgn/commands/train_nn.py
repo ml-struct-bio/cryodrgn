@@ -445,8 +445,8 @@ def main(args: argparse.Namespace) -> None:
         start_epoch = checkpoint["epoch"] + 1
         if start_epoch > args.num_epochs:
             raise ValueError(
-                f"If starting from a saved checkpoint at epoch {start_epoch}, "
-                f"the number of epochs to train must be greater than {start_epoch}!"
+                f"If starting from a saved checkpoint at epoch {checkpoint['epoch']}, "
+                f"the number of epochs to train must be greater than {args.num_epochs}!"
             )
         model.load_state_dict(checkpoint["model_state_dict"])
         optim.load_state_dict(checkpoint["optimizer_state_dict"])
@@ -534,7 +534,6 @@ def main(args: argparse.Namespace) -> None:
         seed=args.shuffle_seed,
     )
 
-    epoch = None
     for epoch in range(start_epoch, args.num_epochs + 1):
         t2 = dt.now()
         loss_accum = 0

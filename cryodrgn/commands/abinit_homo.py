@@ -32,7 +32,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-def add_args(parser):
+def add_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser.add_argument(
         "particles",
         type=os.path.abspath,
@@ -543,7 +543,7 @@ def save_config(args, dataset, lattice, out_config):
     cryodrgn.config.save(config, out_config)
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
     if args.verbose:
         logger.setLevel(logging.DEBUG)
 
@@ -685,6 +685,11 @@ def main(args):
         model.load_state_dict(checkpoint["model_state_dict"])
         optim.load_state_dict(checkpoint["optimizer_state_dict"])
         start_epoch = checkpoint["epoch"] + 1
+        if start_epoch > args.num_epochs:
+            raise ValueError(
+                f"If starting from a saved checkpoint at epoch {checkpoint['epoch']}, "
+                f"the number of epochs to train must be greater than {args.num_epochs}!"
+            )
         model.train()
         if args.load_poses:
             rot, trans = utils.load_pkl(args.load_poses)
@@ -736,7 +741,6 @@ def main(args):
     if args.pose_model_update_freq:
         pose_model.load_state_dict(model.state_dict())
 
-    epoch = None
     for epoch in range(start_epoch, args.num_epochs + 1):
         t2 = dt.now()
         batch_it = 0
@@ -837,29 +841,22 @@ def main(args):
                 out_poses,
             )
 
-    if epoch is not None:
-        # save model weights and evaluate the model on 3D lattice
-        out_mrc = "{}/reconstruct.mrc".format(args.outdir)
-        out_weights = "{}/weights.pkl".format(args.outdir)
-        out_poses = "{}/pose.pkl".format(args.outdir)
-        save_checkpoint(
-            model,
-            lattice,
-            sorted_poses,
-            optim,
-            epoch,
-            data.norm,
-            out_mrc,
-            out_weights,
-            out_poses,
-        )
+    # save model weights and evaluate the model on 3D lattice
+    out_mrc = "{}/reconstruct.mrc".format(args.outdir)
+    out_weights = "{}/weights.pkl".format(args.outdir)
+    out_poses = "{}/pose.pkl".format(args.outdir)
+    save_checkpoint(
+        model,
+        lattice,
+        sorted_poses,
+        optim,
+        epoch,
+        data.norm,
+        out_mrc,
+        out_weights,
+        out_poses,
+    )
 
-        td = dt.now() - t1
-        epoch_avg = td / (args.num_epochs - start_epoch + 1)
-        logger.info(f"Finished in {td} ({epoch_avg} per epoch)")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    args = add_args(parser).parse_args()
-    main(args)
+    td = dt.now() - t1
+    epoch_avg = td / (args.num_epochs - start_epoch + 1)
+    logger.info(f"Finished in {td} ({epoch_avg} per epoch)")

@@ -929,6 +929,11 @@ def main(args):
         model.load_state_dict(checkpoint["model_state_dict"])
         optim.load_state_dict(checkpoint["optimizer_state_dict"])
         start_epoch = checkpoint["epoch"] + 1
+        if start_epoch > args.num_epochs:
+            raise ValueError(
+                f"If starting from a saved checkpoint at epoch {checkpoint['epoch']}, "
+                f"the number of epochs to train must be greater than {args.num_epochs}!"
+            )
         model.train()
         if args.load_poses:
             rot, trans = utils.load_pkl(args.load_poses)
@@ -1018,13 +1023,11 @@ def main(args):
         optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
     # training loop
-    num_epochs = args.num_epochs
     cc = 0
     if args.pose_model_update_freq:
         pose_model.load_state_dict(model.state_dict())
 
-    epoch = None
-    for epoch in range(start_epoch, num_epochs + 1):
+    for epoch in range(start_epoch, args.num_epochs + 1):
         t2 = dt.now()
         kld_accum = 0
         gen_loss_accum = 0
@@ -1117,7 +1120,7 @@ def main(args):
                     else ""
                 )
                 logger.info(
-                    f"# [Train Epoch: {epoch}/{num_epochs}] [{batch_it}/{Nimg} images] gen loss={gen_loss:.4f}, "
+                    f"# [Train Epoch: {epoch}/{args.num_epochs}] [{batch_it}/{Nimg} images] gen loss={gen_loss:.4f}, "
                     f"kld={kld:.4f}, beta={beta:.4f}, {eq_log}loss={loss:.4f}"
                 )
 
@@ -1174,51 +1177,50 @@ def main(args):
                     configs,
                 )
 
-    if epoch is not None:
-        # save model weights and evaluate the model on 3D lattice
-        model.eval()
+    # save model weights and evaluate the model on 3D lattice
+    model.eval()
 
-        out_mrc = "{}/reconstruct".format(args.outdir)
-        out_weights = "{}/weights.pkl".format(args.outdir)
-        out_poses = "{}/pose.pkl".format(args.outdir)
-        out_z = "{}/z.pkl".format(args.outdir)
-        with torch.no_grad():
-            z_mu, z_logvar = eval_z(
-                model,
-                lattice,
-                data,
-                args.batch_size,
-                device,
-                use_tilt=tilt is not None,
-                ctf_params=ctf_params,
-                shuffler_size=args.shuffler_size,
-                seed=args.shuffle_seed,
-            )
-            save_checkpoint(
-                model,
-                lattice,
-                optim,
-                epoch,
-                data.norm,
-                sorted_poses,
-                z_mu,
-                z_logvar,
-                out_mrc,
-                out_weights,
-                out_z,
-                out_poses,
-                configs,
-            )
+    out_mrc = "{}/reconstruct".format(args.outdir)
+    out_weights = "{}/weights.pkl".format(args.outdir)
+    out_poses = "{}/pose.pkl".format(args.outdir)
+    out_z = "{}/z.pkl".format(args.outdir)
+    with torch.no_grad():
+        z_mu, z_logvar = eval_z(
+            model,
+            lattice,
+            data,
+            args.batch_size,
+            device,
+            use_tilt=tilt is not None,
+            ctf_params=ctf_params,
+            shuffler_size=args.shuffler_size,
+            seed=args.shuffle_seed,
+        )
+        save_checkpoint(
+            model,
+            lattice,
+            optim,
+            epoch,
+            data.norm,
+            sorted_poses,
+            z_mu,
+            z_logvar,
+            out_mrc,
+            out_weights,
+            out_z,
+            out_poses,
+            configs,
+        )
 
-        td = dt.now() - t1
-        epoch_avg = td / (num_epochs - start_epoch + 1)
-        logger.info(f"Finished in {td} ({epoch_avg} per epoch)")
+    td = dt.now() - t1
+    epoch_avg = td / (args.num_epochs - start_epoch + 1)
+    logger.info(f"Finished in {td} ({epoch_avg} per epoch)")
 
-        if args.do_analysis:
-            analyze_parser = argparse.ArgumentParser()
-            add_analyze_args(analyze_parser)
-            analyze_args = analyze_parser.parse_args(
-                [str(args.outdir), str(num_epochs)]
-            )
+    if args.do_analysis:
+        analyze_parser = argparse.ArgumentParser()
+        add_analyze_args(analyze_parser)
+        analyze_args = analyze_parser.parse_args(
+            [str(args.outdir), str(args.num_epochs)]
+        )
 
-            analyze_main(analyze_args)
+        analyze_main(analyze_args)

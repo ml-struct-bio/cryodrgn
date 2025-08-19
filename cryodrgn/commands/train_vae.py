@@ -365,7 +365,6 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         default="relu",
         help="Activation (default: %(default)s)",
     )
-    return parser
 
 
 def train_batch(
@@ -882,6 +881,11 @@ def main(args: argparse.Namespace) -> None:
         model.load_state_dict(checkpoint["model_state_dict"])
         optim.load_state_dict(checkpoint["optimizer_state_dict"])
         start_epoch = checkpoint["epoch"] + 1
+        if start_epoch > args.num_epochs:
+            raise ValueError(
+                f"If starting from a saved checkpoint at epoch {checkpoint['epoch']}, "
+                f"the number of epochs to train must be greater than {args.num_epochs}!"
+            )
         model.train()
     else:
         start_epoch = 1
@@ -912,10 +916,8 @@ def main(args: argparse.Namespace) -> None:
         seed=args.shuffle_seed,
     )
 
-    num_epochs = args.num_epochs
-    epoch = None
     Nparticles = Nimg if args.encode_mode != "tilt" else data.Np
-    for epoch in range(start_epoch, num_epochs + 1):
+    for epoch in range(start_epoch, args.num_epochs + 1):
         t2 = dt.now()
         gen_loss_accum = 0
         loss_accum = 0
@@ -982,7 +984,7 @@ def main(args: argparse.Namespace) -> None:
                     "# [Train Epoch: {}/{}] [{}/{} particles] gen loss={:.6f}, kld={:.6f}, beta={:.6f}, "
                     "loss={:.6f}".format(
                         epoch,
-                        num_epochs,
+                        args.num_epochs,
                         batch_it,
                         Nparticles,
                         gen_loss,
@@ -1050,12 +1052,12 @@ def main(args: argparse.Namespace) -> None:
         posetracker.save(out_pose)
 
     td = dt.now() - t1
-    epoch_avg = td / (num_epochs - start_epoch + 1)
+    epoch_avg = td / (args.num_epochs - start_epoch + 1)
     logger.info(f"Finished in {td} ({epoch_avg} per epoch)")
 
     if args.do_analysis:
-        analyze_parser = argparse.ArgumentParser()
-        add_analyze_args(analyze_parser)
-        analyze_args = analyze_parser.parse_args([str(args.outdir), str(num_epochs)])
+        anlz_parser = argparse.ArgumentParser()
+        add_analyze_args(anlz_parser)
+        analyze_args = anlz_parser.parse_args([str(args.outdir), str(args.num_epochs)])
 
         analyze_main(analyze_args)

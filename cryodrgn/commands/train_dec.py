@@ -401,14 +401,14 @@ def get_latest(args):
     weights = [f for f in weights if os.path.exists(f)]
     args.load = weights[-1]
     logger.info(f"Loading {args.load}")
-    
+
     # Load corresponding z file
     i = args.load.split(".")[-2]
     z_file = f"{args.outdir}/z.{i}.pkl"
     if os.path.exists(z_file):
         args.load_z = z_file
         logger.info(f"Loading {args.load_z}")
-    
+
     if args.do_pose_sgd:
         args.poses = f"{args.outdir}/pose.{i}.pkl"
         assert os.path.exists(args.poses)
@@ -507,9 +507,13 @@ def main(args: argparse.Namespace) -> None:
         model.load_state_dict(checkpoint["model_state_dict"])
         optim.load_state_dict(checkpoint["optimizer_state_dict"])
         start_epoch = checkpoint["epoch"] + 1
-        assert start_epoch < args.num_epochs
+        if start_epoch > args.num_epochs:
+            raise ValueError(
+                f"If starting from a saved checkpoint at epoch {checkpoint['epoch']}, "
+                f"the number of epochs to train must be greater than {args.num_epochs}!"
+            )
     else:
-        start_epoch = 0
+        start_epoch = 1
 
     # load poses
     pose_optimizer = None
@@ -592,7 +596,6 @@ def main(args: argparse.Namespace) -> None:
         seed=args.shuffle_seed,
     )
 
-    epoch = None
     for epoch in range(start_epoch, args.num_epochs):
         t2 = dt.now()
         loss_accum = 0
@@ -648,7 +651,9 @@ def main(args: argparse.Namespace) -> None:
     # save model weights and evaluate the model on 3D lattice
     out_mrc = "{}/reconstruct.mrc".format(args.outdir)
     out_weights = "{}/weights.pkl".format(args.outdir)
-    save_checkpoint(model, lattice, optim, epoch, data.norm, Apix, out_mrc, out_weights, z)
+    save_checkpoint(
+        model, lattice, optim, epoch, data.norm, Apix, out_mrc, out_weights, z
+    )
     out_z = "{}/z.pkl".format(args.outdir)
     save_z(z, out_z)
     if args.do_pose_sgd and epoch >= args.pretrain_pose:

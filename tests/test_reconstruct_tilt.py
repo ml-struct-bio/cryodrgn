@@ -77,7 +77,9 @@ class TestTiltFixedHetero:
         if indices.path is not None:
             args += ["--ind", indices.path]
 
-        args = train_vae.add_args(argparse.ArgumentParser()).parse_args(args)
+        parser = argparse.ArgumentParser()
+        train_vae.add_args(parser)
+        args = parser.parse_args(args)
         train_vae.main(args)
 
     def test_filter_command(
@@ -140,7 +142,9 @@ class TestTiltFixedHetero:
             "16",
             "--no-analysis",
         ]
-        train_vae.main(train_vae.add_args(argparse.ArgumentParser()).parse_args(args))
+        parser = argparse.ArgumentParser()
+        train_vae.add_args(parser)
+        train_vae.main(parser.parse_args(args))
 
     def test_analyze(self, tmpdir_factory, particles, indices, poses, ctf, datadir):
         """Produce standard analyses for a particular epoch."""
@@ -262,8 +266,9 @@ class TestTiltFixedHetero:
             "16",
             "--no-analysis",
         ]
-
-        args = train_vae.add_args(argparse.ArgumentParser()).parse_args(args)
+        parser = argparse.ArgumentParser()
+        train_vae.add_args(parser)
+        args = parser.parse_args(args)
         train_vae.main(args)
         os.chdir(orig_cwd)
 
@@ -301,7 +306,9 @@ class TestTiltAbinitHomo:
         if indices.path is not None:
             args += ["--ind", indices.path]
 
-        args = abinit_homo.add_args(argparse.ArgumentParser()).parse_args(args)
+        parser = argparse.ArgumentParser()
+        abinit_homo.add_args(parser)
+        args = parser.parse_args(args)
         abinit_homo.main(args)
 
 
@@ -346,5 +353,7 @@ class TestTiltAbinitHetero:
         if indices.path is not None:
             args += ["--ind", indices.path]
 
-        args = abinit_het.add_args(argparse.ArgumentParser()).parse_args(args)
+        parser = argparse.ArgumentParser()
+        abinit_het.add_args(parser)
+        args = parser.parse_args(args)
         abinit_het.main(args)

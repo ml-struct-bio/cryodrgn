@@ -69,7 +69,9 @@ class TestIterativeFiltering:
         if indices.path is not None:
             args += ["--ind", indices.path]
 
-        train_vae.main(train_vae.add_args(argparse.ArgumentParser()).parse_args(args))
+        parser = argparse.ArgumentParser()
+        train_vae.add_args(parser)
+        train_vae.main(parser.parse_args(args))
 
     def test_analyze(self, tmpdir_factory, particles, poses, ctf, indices):
         """Produce standard analyses for the final epoch."""
@@ -122,33 +124,33 @@ class TestIterativeFiltering:
             ind_keep_fl = ind_keep_fl[0]
 
         ind_keep_fl = os.path.join(outdir, ind_keep_fl)
-        args = train_vae.add_args(argparse.ArgumentParser()).parse_args(
-            [
-                particles.path,
-                "-o",
-                outdir,
-                "--ctf",
-                ctf.path,
-                "--ind",
-                ind_keep_fl,
-                "--num-epochs",
-                "5",
-                "--poses",
-                poses.path,
-                "--zdim",
-                "4",
-                "--tdim",
-                "64",
-                "--enc-dim",
-                "64",
-                "--dec-dim",
-                "64",
-                "--pe-type",
-                "gaussian",
-                "--no-amp",
-            ]
-        )
-        train_vae.main(args)
+        args = [
+            particles.path,
+            "-o",
+            outdir,
+            "--ctf",
+            ctf.path,
+            "--ind",
+            ind_keep_fl,
+            "--num-epochs",
+            "5",
+            "--poses",
+            poses.path,
+            "--zdim",
+            "4",
+            "--tdim",
+            "64",
+            "--enc-dim",
+            "64",
+            "--dec-dim",
+            "64",
+            "--pe-type",
+            "gaussian",
+            "--no-amp",
+        ]
+        parser = argparse.ArgumentParser()
+        train_vae.add_args(parser)
+        train_vae.main(parser.parse_args(args))
 
         shutil.rmtree(outdir)
 

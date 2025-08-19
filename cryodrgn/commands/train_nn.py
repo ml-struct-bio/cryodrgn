@@ -254,8 +254,6 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         help="Scale for random Gaussian features (default: %(default)s)",
     )
 
-    return parser
-
 
 def save_checkpoint(
     model: Decoder, lattice, optim, epoch, norm, Apix, out_mrc, out_weights
@@ -556,7 +554,7 @@ def main(args: argparse.Namespace) -> None:
                 use_amp=args.amp,
                 scaler=scaler,
             )
-            if pose_optimizer is not None and epoch >= args.pretrain:
+            if pose_optimizer is not None and epoch > args.pretrain:
                 pose_optimizer.step()
             loss_accum += loss_item * len(ind)
             if batch_it % args.log_interval < args.batch_size:
@@ -576,7 +574,7 @@ def main(args: argparse.Namespace) -> None:
             save_checkpoint(
                 model, lattice, optim, epoch, data.norm, Apix, out_mrc, out_weights
             )
-            if args.do_pose_sgd and epoch >= args.pretrain:
+            if args.do_pose_sgd and epoch > args.pretrain:
                 out_pose = "{}/pose.{}.pkl".format(args.outdir, epoch)
                 posetracker.save(out_pose)
 
@@ -584,7 +582,7 @@ def main(args: argparse.Namespace) -> None:
     out_mrc = "{}/reconstruct.mrc".format(args.outdir)
     out_weights = "{}/weights.pkl".format(args.outdir)
     save_checkpoint(model, lattice, optim, epoch, data.norm, Apix, out_mrc, out_weights)
-    if args.do_pose_sgd and epoch >= args.pretrain:
+    if args.do_pose_sgd and epoch > args.pretrain:
         out_pose = "{}/pose.pkl".format(args.outdir)
         posetracker.save(out_pose)
 

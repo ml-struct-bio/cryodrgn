@@ -151,12 +151,17 @@ def main(args: argparse.Namespace) -> None:
     # Load the set of indices used to filter original dataset and apply it to inputs;
     # we also need the number of particles in the dataset to produce inverse selection
     pre_indices = None if plot_inds is None else utils.load_pkl(plot_inds)
-    if ctf_params is not None and train_configs["model_args"]["encode_mode"] != "tilt":
+    if "encode_mode" in train_configs["model_args"]:
+        enc_mode = train_configs["model_args"]["encode_mode"]
+    else:
+        enc_mode = "autodec"
+
+    if ctf_params is not None and enc_mode != "tilt":
         all_indices = np.array(range(ctf_params.shape[0]))
 
     # For tilt-series inputs we can't use the (tilt-level) CTF parameters to get the
     # number of particles, so we need to load the tilt-series data itself
-    elif train_configs["model_args"]["encode_mode"] == "tilt":
+    elif enc_mode == "tilt":
         all_indices = np.array(
             range(
                 dataset.TiltSeriesData(

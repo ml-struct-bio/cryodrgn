@@ -22,6 +22,7 @@ from cryodrgn.pose import PoseTracker
 from cryodrgn.models import DataParallelDecoder, Decoder
 from cryodrgn.source import write_mrc
 import cryodrgn.config
+from cryodrgn.commands.analyze import main as analyze_main, add_args as add_analyze_args
 
 logger = logging.getLogger(__name__)
 
@@ -260,8 +261,12 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         default=0.5,
         help="Scale for random Gaussian features (default: %(default)s)",
     )
-
-    return parser
+    parser.add_argument(
+        "--no-analysis",
+        dest="do_analysis",
+        action="store_false",
+        help="Do not run analysis after training",
+    )
 
 
 def save_checkpoint(
@@ -493,7 +498,13 @@ def main(args: argparse.Namespace) -> None:
     if args.load_z is not None:
         z = utils.load_pkl(args.load_z)
         if args.ind is not None:
-            z = z[ind]
+            if max(ind) >= len(z):
+                logger.warning(
+                    f"Ignoring indices from {args.ind} when loading pre-filtered "
+                    f"saved latent space embeddings from {args.load_z} !"
+                )
+            else:
+                z = z[ind]
         z = torch.nn.Parameter(torch.tensor(z, dtype=torch.float32, device=device))
         assert z.shape == (Nimg, args.zdim)
     else:
@@ -596,7 +607,7 @@ def main(args: argparse.Namespace) -> None:
         seed=args.shuffle_seed,
     )
 
-    for epoch in range(start_epoch, args.num_epochs):
+    for epoch in range(start_epoch, args.num_epochs + 1):
         t2 = dt.now()
         loss_accum = 0
         batch_it = 0
@@ -628,7 +639,7 @@ def main(args: argparse.Namespace) -> None:
             if batch_it % args.log_interval < args.batch_size:
                 logger.info(
                     "# [Train Epoch: {}/{}] [{}/{} images] loss={:.6f}".format(
-                        epoch + 1, args.num_epochs, batch_it, Nimg, loss_item
+                        epoch, args.num_epochs, batch_it, Nimg, loss_item
                     )
                 )
         logger.info(
@@ -662,5 +673,12 @@ def main(args: argparse.Namespace) -> None:
 
     td = dt.now() - t1
     logger.info(
-        "Finished in {} ({} per epoch)".format(td, td / (args.num_epochs - start_epoch))
+        f"Finished in {td} ({td / (args.num_epochs - start_epoch + 1)} per epoch)"
     )
+
+    if args.do_analysis:
+        anlz_parser = argparse.ArgumentParser()
+        add_analyze_args(anlz_parser)
+        analyze_args = anlz_parser.parse_args([str(args.outdir), str(args.num_epochs)])
+
+        analyze_main(analyze_args)

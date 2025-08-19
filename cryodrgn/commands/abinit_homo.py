@@ -32,7 +32,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-def add_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "particles",
         type=os.path.abspath,
@@ -321,8 +321,6 @@ def add_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         default=0.5,
         help="Scale for random Gaussian features (default: %(default)s)",
     )
-
-    return parser
 
 
 def save_checkpoint(

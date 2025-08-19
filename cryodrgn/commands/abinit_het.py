@@ -43,7 +43,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-def add_args(parser):
+def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "particles",
         type=os.path.abspath,
@@ -409,7 +409,6 @@ def add_args(parser):
         default="relu",
         help="Activation (default: %(default)s)",
     )
-    return parser
 
 
 def make_model(args, lattice, enc_mask, in_dim) -> HetOnlyVAE:

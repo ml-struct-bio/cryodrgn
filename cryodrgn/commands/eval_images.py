@@ -206,8 +206,11 @@ def main(args):
         ind = pickle.load(open(args.ind, "rb"))
     else:
         ind = None
+    if "encode_mode" in cfg["model_args"]:
+        enc_mode = cfg["model_args"]["encode_mode"]
+    else:
+        enc_mode = "autodec"
 
-    enc_mode = cfg["model_args"]["encode_mode"]
     if enc_mode != "tilt":
         args.use_real = enc_mode == "conv"  # Must be False
         data = dataset.ImageDataset(

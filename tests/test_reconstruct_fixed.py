@@ -505,7 +505,11 @@ class TestFixedHetero:
                 "--verbose",
             ]
         )
-        eval_images.main(args)
+        if train_cmd == "train_dec":
+            with pytest.raises(NotImplementedError):
+                eval_images.main(args)
+        else:
+            eval_images.main(args)
 
     @pytest.mark.parametrize("ctf", ["CTF-Test"], indirect=True)
     @pytest.mark.parametrize(

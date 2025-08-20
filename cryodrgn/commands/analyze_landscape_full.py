@@ -31,7 +31,8 @@ import umap
 
 import cryodrgn
 from cryodrgn import config, utils
-from cryodrgn.models import HetOnlyVAE, ResidLinearMLP
+from cryodrgn.lattice import Lattice
+from cryodrgn.models import HetOnlyVAE, ResidLinearMLP, get_decoder
 from cryodrgn.source import ImageSource
 
 logger = logging.getLogger(__name__)
@@ -231,11 +232,31 @@ def generate_and_map_volumes(zfile, cfg, weights, mask_mrc, pca_obj_pkl, outdir,
 
     pca = utils.load_pkl(pca_obj_pkl)
 
-    # Load model weights
+    # Load model weights based on whether using encoder or autodecoder
     logger.info("Loading weights from {}".format(weights))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model, lattice = HetOnlyVAE.load(cfg, weights, device)
-    model.eval()
+    if "encode_mode" in cfg["model_args"]:
+        model, lattice = HetOnlyVAE.load(cfg, weights, device)
+        decoder = model.decoder
+    else:
+        lattice = Lattice(D, extent=cfg["lattice_args"]["extent"], device=device)
+        activation = {"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[
+            cfg["model_args"]["activation"]
+        ]
+        decoder = get_decoder(
+            3 + cfg["model_args"]["zdim"],
+            D,
+            cfg["model_args"]["layers"],
+            cfg["model_args"]["dim"],
+            cfg["model_args"]["domain"],
+            cfg["model_args"]["pe_type"],
+            enc_dim=cfg["model_args"]["pe_dim"],
+            activation=activation,
+            feat_sigma=cfg["model_args"]["feat_sigma"],
+        )
+
+    decoder.to(device)
+    decoder.eval()
 
     # Set z
     z = z_sample.astype(np.float32)
@@ -246,11 +267,11 @@ def generate_and_map_volumes(zfile, cfg, weights, mask_mrc, pca_obj_pkl, outdir,
     embeddings = []
     for i, zz in enumerate(z):
         if i % 1 == 0:
-            logger.info(i)
+            logger.info(f"Generating volume {i} of {len(z)}")
 
         if args.downsample:
             extent = lattice.extent * (args.downsample / (D - 1))
-            vol = model.decoder.eval_volume(
+            vol = decoder.eval_volume(
                 lattice.get_downsample_coords(args.downsample + 1),
                 args.downsample + 1,
                 extent,
@@ -258,7 +279,7 @@ def generate_and_map_volumes(zfile, cfg, weights, mask_mrc, pca_obj_pkl, outdir,
                 zz,
             )
         else:
-            vol = model.decoder.eval_volume(
+            vol = decoder.eval_volume(
                 lattice.coords, lattice.D, lattice.extent, norm, zz
             )
 

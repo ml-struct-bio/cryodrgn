@@ -20,8 +20,7 @@ import logging
 import numpy as np
 import torch
 from cryodrgn import config
-from cryodrgn.lattice import Lattice
-from cryodrgn.models import HetOnlyVAE, get_decoder
+from cryodrgn.models import HetOnlyVAE, load_decoder
 from cryodrgn.source import write_mrc
 from cryodrgn import utils
 
@@ -167,32 +166,12 @@ def main(args: argparse.Namespace) -> None:
             )
 
     # load model
-    is_vae = "players" in cfg["model_args"] # could be improved
+    is_vae = "players" in cfg["model_args"]  # could be improved
     if is_vae:
         model, lattice = HetOnlyVAE.load(cfg, args.weights, device=device)
         decoder = model.decoder
-    else:  # autodecoder -- TODO: use load_decoder in models.py
-        c = cfg["lattice_args"]
-        lattice = Lattice(c["D"], extent=c["extent"], device=device)
-        m_args = cfg["model_args"]
-        activation = {"relu": torch.nn.ReLU, "leaky_relu": torch.nn.LeakyReLU}[
-            m_args["activation"]
-        ]
-        decoder = get_decoder(
-            3 + m_args["zdim"],
-            lattice.D,
-            m_args["layers"],
-            m_args["dim"],
-            m_args["domain"],
-            m_args["pe_type"],
-            enc_dim=m_args.get("pe_dim"),
-            activation=activation,
-            feat_sigma=m_args["feat_sigma"],
-        )
-        if args.weights:
-            ckpt = torch.load(args.weights, map_location=device)
-            decoder.load_state_dict(ckpt["model_state_dict"])
-    decoder.to(device)
+    else:
+        decoder, lattice = load_decoder(cfg, args.weights, device=device)
     decoder.eval()
 
     # Multiple z
@@ -238,7 +217,7 @@ def main(args: argparse.Namespace) -> None:
         z = np.array(args.z)
         logger.info(z)
         if args.downsample:
-            extent = lattice.extent * (args.downsample / (D -1))
+            extent = lattice.extent * (args.downsample / (D - 1))
             vol = decoder.eval_volume(
                 lattice.get_downsample_coords(args.downsample + 1),
                 args.downsample + 1,

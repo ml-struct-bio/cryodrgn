@@ -209,7 +209,10 @@ def main(args):
     if "encode_mode" in cfg["model_args"]:
         enc_mode = cfg["model_args"]["encode_mode"]
     else:
-        enc_mode = "autodec"
+        raise NotImplementedError(
+            "Image evaluation not available when using "
+            "an autodecoder reconstruction model!"
+        )
 
     if enc_mode != "tilt":
         args.use_real = enc_mode == "conv"  # Must be False

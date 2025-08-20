@@ -177,40 +177,6 @@ class HetOnlyVAE(nn.Module):
         return self.decode(*args, **kwargs)
 
 
-def load_decoder(config, weights=None, device=None):
-    """
-    Instantiate a decoder model from a config.yaml
-
-    Inputs:
-        config (str, dict): Path to config.yaml or loaded config.yaml
-        weights (str): Path to weights.pkl
-        device: torch.device object
-
-    Returns a decoder model
-    """
-    cfg = cryodrgn.config.load(config)
-    c = cfg["model_args"]
-    D = cfg["lattice_args"]["D"]
-    activation = {"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[c["activation"]]
-    model = get_decoder(
-        3,
-        D,
-        c["layers"],
-        c["dim"],
-        c["domain"],
-        c["pe_type"],
-        c["pe_dim"],
-        activation,
-        c["feat_sigma"],
-    )
-    if weights is not None:
-        ckpt = torch.load(weights)
-        model.load_state_dict(ckpt["model_state_dict"])
-    if device is not None:
-        model.to(device)
-    return model
-
-
 class Decoder(nn.Module):
     def eval_volume(
         self,
@@ -250,6 +216,45 @@ class DataParallelDecoder(Decoder):
 
     def state_dict(self, *args, **kwargs):
         return self.dp.module.state_dict(*args, **kwargs)
+
+
+def load_decoder(config, weights=None, device=None) -> Tuple[Decoder, Lattice]:
+    """
+    Instantiate a decoder model from a config.yaml
+
+    Inputs:
+        config (str, dict): Path to config.yaml or loaded config.yaml
+        weights (str): Path to weights.pkl
+        device: torch.device object
+
+    Returns a decoder model
+    """
+    cfg = cryodrgn.config.load(config)
+    c = cfg["model_args"]
+    D = cfg["lattice_args"]["D"]
+    activation = {"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[c["activation"]]
+    model = get_decoder(
+        3 + c["zdim"],
+        D,
+        c["layers"],
+        c["dim"],
+        c["domain"],
+        c["pe_type"],
+        c["pe_dim"],
+        activation,
+        c["feat_sigma"],
+    )
+    lattice = Lattice(
+        cfg["lattice_args"]["D"], extent=cfg["lattice_args"]["extent"], device=device
+    )
+
+    if weights is not None:
+        ckpt = torch.load(weights)
+        model.load_state_dict(ckpt["model_state_dict"])
+    if device is not None:
+        model.to(device)
+
+    return model, lattice
 
 
 class PositionalDecoder(Decoder):

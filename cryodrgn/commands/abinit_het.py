@@ -1216,10 +1216,6 @@ def main(args):
     logger.info(f"Finished in {td} ({epoch_avg} per epoch)")
 
     if args.do_analysis:
-        analyze_parser = argparse.ArgumentParser()
-        add_analyze_args(analyze_parser)
-        analyze_args = analyze_parser.parse_args(
-            [str(args.outdir), str(args.num_epochs)]
-        )
-
-        analyze_main(analyze_args)
+        anlz_parser = argparse.ArgumentParser()
+        add_analyze_args(anlz_parser)
+        analyze_main(anlz_parser.parse_args([str(args.outdir), str(args.num_epochs)]))

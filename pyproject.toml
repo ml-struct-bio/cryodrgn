@@ -17,7 +17,7 @@ classifiers = [
     "Operating System :: POSIX :: Linux",
 ]
 dependencies = [
-    "torch<2.6",
+    "torch",
     "pandas<3.0.0",
     "numpy<1.27",
     "matplotlib",
@@ -33,6 +33,7 @@ dependencies = [
     "healpy",
     "plotly<6",
     "igraph",
+    "starfile",
 ]
 
 [project.optional-dependencies]

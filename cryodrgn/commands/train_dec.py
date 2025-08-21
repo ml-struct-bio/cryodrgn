@@ -679,6 +679,4 @@ def main(args: argparse.Namespace) -> None:
     if args.do_analysis:
         anlz_parser = argparse.ArgumentParser()
         add_analyze_args(anlz_parser)
-        analyze_args = anlz_parser.parse_args([str(args.outdir), str(args.num_epochs)])
-
-        analyze_main(analyze_args)
+        analyze_main(anlz_parser.parse_args([str(args.outdir), str(args.num_epochs)]))

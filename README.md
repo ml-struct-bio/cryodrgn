@@ -19,19 +19,13 @@ cryoDRGN installation, training and analysis. A brief quick start is provided be
 For any feedback, questions, or bugs, please file a Github issue or start a Github discussion.
 
 
-### Updates in Version 3.4.x
-* [NEW] `cryodrgn_utils plot_classes` for analysis visualizations colored by a given set of class labels
-* [NEW] `cryodrgn_utils make_movies` for animations of `analyze*` output volumes
-* implementing [automatic mixed-precision training](https://pytorch.org/docs/stable/amp.html)
-  for ab-initio reconstruction for 2-4x speedup
-* support for RELION 3.1 .star files with separate optics tables, np.float16 number formats used in RELION .mrcs outputs
-* `cryodrgn backproject_voxel` produces cryoSPARC-style FSC curve plots with phase-randomization correction of
-  automatically generated tight masks
-* `cryodrgn downsample` can create a new .star or .txt image stack from the corresponding stack format instead of
-  always writing to an .mrcs stack; now also always puts output files into a folder
-* fixing issues with `cryodrgn filter` such as less intrusive annotation text and `np.array` instead of `list` output
-  format and `do_pose_sgd` errors
-* official support for Python 3.11
+### Updates in Version 3.5.x
+* 1-indexing of output volumes and epochs, replacing the previous 0-indexing
+* [NEW] `cryodrgn parse_relion` for parsing RELION5 3D tomo files to the cryoDRGN 2D input format
+* improved landscape analysis using Leiden clustering
+* official support for Python 3.12 and 3.13, deprecating support for Python 3.9
+* [NEW] consolidated `cryodrgn parse_star` command (merging `parse_pose_star` and `parse_ctf_star`)
+* `analyze` is now run automatically on the final epoch once training is complete
 
 
 ### Updates in Version 3.x
@@ -44,6 +38,21 @@ The official release of [cryoDRGN-ET](https://www.biorxiv.org/content/10.1101/20
 
 
 ## Previous versions
+
+<details><summary>Version 3.4</summary><ul>
+  <li>[NEW] <code>cryodrgn_utils plot_classes</code> for analysis visualizations colored by a given set of class
+  labels</li>
+  <li>[NEW] <code>cryodrgn_utils make_movies</code> for animations of <code>analyze*</code> output volumes</li>
+  <li>implementing [automatic mixed-precision training](https://pytorch.org/docs/stable/amp.html)
+  for ab-initio reconstruction for 2-4x speedup</li>
+  <li>support for RELION 3.1 .star files with separate optics tables, np.float16 number formats used in RELION .mrcs
+  outputs</li>
+  <li><code>cryodrgn backproject_voxel</code> produces cryoSPARC-style FSC curve plots with phase-randomization
+  correction of automatically generated tight masks</li>
+  <li><code>cryodrgn downsample</code> can create a new .star or .txt image stack from the corresponding stack format
+  instead of always writing to an .mrcs stack; now also always puts output files into a folder</li>
+  <li>official support for Python 3.11</li>
+</ul></details>
 
 <details><summary>Version 3.3</summary><ul>
   <li>[NEW] <code>cryodrgn direct_traversal</code> to generate interpolations in the conformation latent space
@@ -190,10 +199,11 @@ argument usage as previous versions, however tools are now available from a comm
 
 ## Installation
 
-`cryodrgn` may be installed via `pip`, and we recommend installing `cryodrgn` in a clean conda environment.
+`cryodrgn` may be installed via `pip`, and we recommend installing `cryodrgn` in a clean conda environment. Our package is compatible with Python versions 3.10 through 3.13, but
+we recommend using the latest available Python version:
 
     # Create and activate conda environment
-    (base) $ conda create --name cryodrgn python=3.9
+    (base) $ conda create --name cryodrgn python=3.13
     (cryodrgn) $ conda activate cryodrgn
 
     # install cryodrgn

@@ -124,7 +124,7 @@ class TestDownsampleToMRCS:
 
 @pytest.mark.parametrize(
     "particles, datadir",
-    [("toydatadir.star", "toy"), ("test.star", "toy")],
+    [("toydatadir.star", "toy"), ("relion5.star", "toy")],
     indirect=True,
 )
 @pytest.mark.parametrize(

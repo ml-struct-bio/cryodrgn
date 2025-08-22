@@ -185,4 +185,3 @@ def test_abinit_checkpoint_analysis_and_backproject(abinit_dir):
     abinit_dir.train()
     abinit_dir.train(load_epoch=1)
     abinit_dir.backproject()
-    abinit_dir.view_config()

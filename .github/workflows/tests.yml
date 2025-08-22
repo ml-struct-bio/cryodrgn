@@ -15,7 +15,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        python: [ '3.10', '3.11' , '3.12', '3.13' ]
+        python: [ '3.10', '3.11' , '3.12' ]
         os: [ macos-latest, ubuntu-latest ]
         include:
           - python: '3.10'
@@ -23,9 +23,7 @@ jobs:
           - python: '3.11'
             torch: '2.1'
           - python: '3.12'
-            torch: '2.4'
-          - python: '3.13'
-            torch: '2.8'
+            torch: '2.5'
       fail-fast: false
 
     steps:

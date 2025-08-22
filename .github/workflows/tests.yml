@@ -25,7 +25,7 @@ jobs:
           - python: '3.12'
             torch: '2.4'
           - python: '3.13'
-            torch: '2.5'
+            torch: '2.8'
       fail-fast: false
 
     steps:

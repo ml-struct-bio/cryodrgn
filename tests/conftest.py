@@ -68,7 +68,7 @@ WEIGHTS_FILES = {
     "het": "het_weights.pkl",
 }
 CONFIG_FILES = {
-    "het": "het_config.pkl",
+    "het": "het_config.yaml",
 }
 DATA_FOLDERS = {
     "default-datadir": ".",

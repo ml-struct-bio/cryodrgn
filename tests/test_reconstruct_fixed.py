@@ -215,15 +215,7 @@ class TestFixedHetero:
 
     @pytest.mark.parametrize(
         "ctf, epoch",
-        [
-            ("CTF-Test", 4),
-            ("CTF-Test", None),
-            pytest.param(
-                None,
-                None,
-                marks=pytest.mark.xfail(raises=NotImplementedError),
-            ),
-        ],
+        [("CTF-Test", 4), ("CTF-Test", None), (None, None)],
         indirect=["ctf"],
     )
     def test_interactive_filtering(

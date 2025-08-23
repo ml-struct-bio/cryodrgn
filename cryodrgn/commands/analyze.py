@@ -2,13 +2,13 @@
 
 Example usage
 -------------
-$ cryodrgn analyze my_workdir 49
+$ cryodrgn analyze my_workdir 50
 
 # Generate more samples
-$ cryodrgn analyze my_workdir 49 --ksample 50
+$ cryodrgn analyze my_workdir 50 --ksample 50
 
 # Low pass filter and crop output volumes
-$ cryodrgn analyze my_workdir 49 --low-pass 4 --crop 96
+$ cryodrgn analyze my_workdir 50 --low-pass 4 --crop 96
 
 See also
 --------

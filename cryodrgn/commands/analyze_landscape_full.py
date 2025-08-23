@@ -2,11 +2,11 @@
 
 Example usage
 -------------
-$ cryodrgn analyze_landscape_full 003_abinit-het/ 49
+$ cryodrgn analyze_landscape_full 003_abinit-het/ 50
 
 # Sample fewer volumes from this dataset's particles according to their position in the
 # latent space; use a larger box size for these volumes instead of downsampling to 128
-$ cryodrgn analyze_landscape_full 005_train-vae/ 39 -N 4000 -d 256
+$ cryodrgn analyze_landscape_full 005_train-vae/ 40 -N 4000 -d 256
 
 """
 import argparse

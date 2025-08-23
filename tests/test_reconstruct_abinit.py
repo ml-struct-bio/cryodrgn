@@ -1,4 +1,4 @@
-"""Running an experiment of ab-initiotraining followed by downstream analyses."""
+"""Running ab-initio volume reconstruction followed by downstream analyses."""
 
 import pytest
 import argparse

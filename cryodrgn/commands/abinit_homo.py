@@ -324,11 +324,11 @@ def add_args(parser: argparse.ArgumentParser) -> None:
 
 
 def save_checkpoint(
-    model, lattice, pose, optim, epoch, norm, out_mrc, out_weights, out_poses
+    model, lattice, pose, optim, epoch, norm, Apix, out_mrc, out_weights, out_poses
 ):
     model.eval()
     vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, norm)
-    write_mrc(out_mrc, vol)
+    write_mrc(out_mrc, vol, Apix=Apix)
     torch.save(
         {
             "norm": norm,
@@ -604,6 +604,7 @@ def main(args: argparse.Namespace) -> None:
         ctf_params = torch.tensor(ctf_params, device=device)
     else:
         ctf_params = None
+    Apix = ctf_params[0, 0] if ctf_params is not None else 1
 
     # instantiate model
     lattice = Lattice(D, extent=0.5, device=device)
@@ -834,6 +835,7 @@ def main(args: argparse.Namespace) -> None:
                 optim,
                 epoch,
                 data.norm,
+                Apix,
                 out_mrc,
                 out_weights,
                 out_poses,
@@ -850,6 +852,7 @@ def main(args: argparse.Namespace) -> None:
         optim,
         epoch,
         data.norm,
+        Apix,
         out_mrc,
         out_weights,
         out_poses,

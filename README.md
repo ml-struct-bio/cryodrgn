@@ -23,7 +23,7 @@ For any feedback, questions, or bugs, please file a Github issue or start a Gith
 * 1-indexing of output volumes and epochs, replacing the previous 0-indexing
 * [NEW] `cryodrgn parse_relion` for parsing RELION5 3D tomo files to the cryoDRGN 2D input format
 * improved landscape analysis using Leiden clustering
-* official support for Python 3.12 and 3.13, deprecating support for Python 3.9
+* official support for Python 3.12, deprecating support for Python 3.9
 * [NEW] consolidated `cryodrgn parse_star` command (merging `parse_pose_star` and `parse_ctf_star`)
 * `analyze` is now run automatically on the final epoch once training is complete
 
@@ -199,11 +199,11 @@ argument usage as previous versions, however tools are now available from a comm
 
 ## Installation
 
-`cryodrgn` may be installed via `pip`, and we recommend installing `cryodrgn` in a clean conda environment. Our package is compatible with Python versions 3.10 through 3.13, but
+`cryodrgn` may be installed via `pip`, and we recommend installing `cryodrgn` in a clean conda environment. Our package is compatible with Python versions 3.10 through 3.12, but
 we recommend using the latest available Python version:
 
     # Create and activate conda environment
-    (base) $ conda create --name cryodrgn python=3.13
+    (base) $ conda create --name cryodrgn python=3.12
     (cryodrgn) $ conda activate cryodrgn
 
     # install cryodrgn

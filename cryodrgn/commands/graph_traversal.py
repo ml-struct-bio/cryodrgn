@@ -3,8 +3,8 @@
 Example usage
 -------------
 # Find the path between kmeans cluster centers from cryodrgn analyze
-$ cryodrgn graph_traversal my_workdir/z.49.pkl \
-                           --anchors my_workdir/analyze.49/centers_ind.txt \
+$ cryodrgn graph_traversal my_workdir/z.50.pkl \
+                           --anchors my_workdir/analyze.50/centers_ind.txt \
                            -o graph_traversal/z-path.txt \
                            --outind graph_traversal/z-path.ind.txt
 

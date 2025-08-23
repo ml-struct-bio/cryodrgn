@@ -1,0 +1,30 @@
+dataset_args:
+  ctf: null
+  datadir: null
+  ind: null
+  invert_data: true
+  keepreal: false
+  norm:
+  - 0.0
+  - 94.4266
+  particles: testing/data/hand.mrcs
+  window: true
+  window_r: 0.85
+lattice_args:
+  D: 65
+  extent: 0.5
+  ignore_DC: true
+model_args:
+  activation: relu
+  domain: hartley
+  enc_mask: 32
+  encode_mode: resid
+  feat_sigma: 0.5
+  pdim: 8
+  pe_dim: 8
+  pe_type: gaussian
+  players: 3
+  qdim: 8
+  qlayers: 2
+  zdim: 8
+seed: 38928

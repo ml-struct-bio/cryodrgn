@@ -99,6 +99,7 @@ class ImageDataset(torch.utils.data.Dataset):
             data *= -1
         data = fft.symmetrize_ht(data)
         data = (data - self.norm[0]) / self.norm[1]
+
         return data
 
     def __len__(self):
@@ -335,7 +336,7 @@ class DataShuffler:
     ):
         if not all(dataset.src.indices == np.arange(dataset.N)):
             raise NotImplementedError(
-                "NotImplementedError: --ind is not supported for the data shuffler. "
+                "--ind is not supported for the data shuffler. "
                 "The purpose of the shuffler is to load chunks contiguously during "
                 "lazy loading on huge datasets, which doesn't work with --ind subsets. "
                 "We recommend instead using --ind during preprocessing (e.g. with "

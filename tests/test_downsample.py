@@ -1,3 +1,5 @@
+"""Unit testing of the `cryodrgn downsample` command."""
+
 import pytest
 import os
 import shutil
@@ -121,7 +123,9 @@ class TestDownsampleToMRCS:
 
 
 @pytest.mark.parametrize(
-    "particles, datadir", [("toydatadir.star", "toy")], indirect=True
+    "particles, datadir",
+    [("toydatadir.star", "toy"), ("relion5.star", "toy")],
+    indirect=True,
 )
 @pytest.mark.parametrize(
     "outdir", ["downsampled", None], ids=["with-outdir", "wo-outdir"]

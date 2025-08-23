@@ -3,15 +3,20 @@ import os.path
 from cryodrgn.utils import run_command
 
 
-def test_fidelity_small():
+def test_fidelity_small(tmpdir):
     zvals_fl = os.path.join(pytest.DATADIR, "zvals_het-2_1k.pkl")
+    outtxt_fl = tmpdir / "z-path.txt"
+    outind_fl = tmpdir / "z-path-indices.txt"
     out, err = run_command(
         f"cryodrgn graph_traversal {zvals_fl} --anchors 50 100 "
-        f"--max-neighbors=30 --avg-neighbors=10"
+        f"--max-neighbors=30 --avg-neighbors=10 "
+        f"--outtxt {outtxt_fl} --outind {outind_fl} --verbose"
     )
     assert err == ""
 
-    assert "\n".join(out.split("\n")[1:6] + out.split("\n")[7:]) == (
+    assert outtxt_fl.isfile()
+    assert outind_fl.isfile()
+    assert "\n".join(out.strip().split("\n")[1:6] + out.strip().split("\n")[7:-4]) == (
         "Working on images 0-1000\n"
         "Working on images 1000-1319\n"
         "Max dist between neighbors: 0.1022  (to enforce average of 10.0 neighbors)\n"
@@ -29,19 +34,24 @@ def test_fidelity_small():
         "157	-1.378	-0.068	0.062\n"
         "1006	-1.325	-0.083	0.055\n"
         "672	-1.265	-0.089	0.06\n"
-        "100(a)	-1.216	-0.04	0.069\n\n"
+        "100(a)	-1.216	-0.04	0.069"
     )
 
 
-def test_fidelity_medium():
+def test_fidelity_medium(tmpdir):
     zvals_fl = os.path.join(pytest.DATADIR, "zvals_het-2_1k.pkl")
+    outtxt_fl = tmpdir / "z-path.txt"
+    outind_fl = tmpdir / "z-path-indices.txt"
     out, err = run_command(
         f"cryodrgn graph_traversal {zvals_fl} --anchors 50 100 "
-        f"--max-neighbors=50 --avg-neighbors=20"
+        f"--max-neighbors=50 --avg-neighbors=20 "
+        f"--outtxt {outtxt_fl} --outind {outind_fl} --verbose"
     )
     assert err == ""
 
-    assert "\n".join(out.split("\n")[1:6] + out.split("\n")[7:]) == (
+    assert outtxt_fl.isfile()
+    assert outind_fl.isfile()
+    assert "\n".join(out.strip().split("\n")[1:6] + out.strip().split("\n")[7:-4]) == (
         "Working on images 0-1000\n"
         "Working on images 1000-1319\n"
         "Max dist between neighbors: 0.149  (to enforce average of 20.0 neighbors)\n"
@@ -55,19 +65,43 @@ def test_fidelity_medium():
         "1069	-1.638	-0.093	0.111\n"
         "688	-1.492	-0.084	0.147\n"
         "913	-1.35	-0.061	0.144\n"
-        "100(a)	-1.216	-0.04	0.135\n\n"
+        "100(a)	-1.216	-0.04	0.135"
     )
 
 
-def test_fidelity_large():
+@pytest.mark.parametrize("ind1, ind2", [(50, 1500), (75, 1300)])
+def test_no_path(tmpdir, ind1, ind2):
     zvals_fl = os.path.join(pytest.DATADIR, "zvals_het-8_4k.pkl")
+    outtxt_fl = tmpdir / "z-path.txt"
+    outind_fl = tmpdir / "z-path-indices.txt"
     out, err = run_command(
-        f"cryodrgn graph_traversal {zvals_fl} --anchors 2020 3030 4040 "
-        f"--max-neighbors=10 --avg-neighbors=5"
+        f"cryodrgn graph_traversal {zvals_fl} --anchors {ind1} {ind2} "
+        f"--max-neighbors=7 --avg-neighbors=3 "
+        f"--outtxt {outtxt_fl} --outind {outind_fl} --verbose"
     )
     assert err == ""
 
-    assert "\n".join(out.split("\n")[1:11] + out.split("\n")[12:]) == (
+    assert not outtxt_fl.isfile()
+    assert not outind_fl.isfile()
+    assert out.strip().endswith(f"Could not find a {ind1}->{ind2} path!")
+
+
+def test_fidelity_large(tmpdir):
+    zvals_fl = os.path.join(pytest.DATADIR, "zvals_het-8_4k.pkl")
+    outtxt_fl = tmpdir / "z-path.txt"
+    outind_fl = tmpdir / "z-path-indices.txt"
+    out, err = run_command(
+        f"cryodrgn graph_traversal {zvals_fl} --anchors 2020 3030 4040 "
+        f"--max-neighbors=10 --avg-neighbors=5 "
+        f"--outtxt {outtxt_fl} --outind {outind_fl} --verbose"
+    )
+    assert err == ""
+
+    assert outtxt_fl.isfile()
+    assert outind_fl.isfile()
+    assert "\n".join(
+        out.strip().split("\n")[1:11] + out.strip().split("\n")[12:-4]
+    ) == (
         "Working on images 0-1000\n"
         "Working on images 1000-2000\n"
         "Working on images 2000-3000\n"
@@ -93,5 +127,5 @@ def test_fidelity_large():
         "2257	-2.236	-0.028	-0.886	0.829	-0.059	0.198	0.012	0.218	0.43\n"
         "392	-2.491	0.09	-1.328	0.768	0.05	-0.031	-0.019	0.383	0.609\n"
         "301	-2.669	0.139	-1.748	0.938	-0.215	-0.042	-0.187	0.528	0.599\n"
-        "4040(a)	-2.531	0.15	-2.177	0.769	-0.414	-0.053	-0.064	0.315	0.575\n\n"
+        "4040(a)	-2.531	0.15	-2.177	0.769	-0.414	-0.053	-0.064	0.315	0.575"
     )

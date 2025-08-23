@@ -1,4 +1,4 @@
-"""Tests of compatibility with the RELION 3.1 format for .star files (optics groups)."""
+"""Tests of compatibility with RELION formats used to produce input .star files."""
 
 import pytest
 import argparse
@@ -12,32 +12,34 @@ from cryodrgn.utils import load_pkl
 
 
 @pytest.fixture
-def relion_starfile(request):
+def rln_starfile(request):
     return os.path.join(pytest.DATADIR, request.param)
 
 
-pytestmark = pytest.mark.parametrize(
-    "relion_starfile",
-    ["relion31.star", "relion31.v2.star", "relion31.6opticsgroups.star"],
-    indirect=True,
+@pytest.mark.parametrize(
+    "rln_starfile, index_fraction, index_seed",
+    [
+        ("relion31.star", 0.4, 55),
+        ("relion31.v2.star", 0.3, 101),
+        ("relion31.6opticsgroups.star", 0.2, 155),
+        ("relion5.star", 0.1, 201),
+    ],
+    indirect=["rln_starfile"],
 )
-
-
-@pytest.mark.parametrize("index_fraction, index_seed", [(0.4, 55), (0.3, 101)])
 class TestFilterStar:
-    def get_outdir(self, tmpdir_factory, relion_starfile, index_seed, index_fraction):
+    def get_outdir(self, tmpdir_factory, rln_starfile, index_seed, index_fraction):
         dirname = os.path.join(
-            "r31_FilterStar", relion_starfile, str(index_seed), str(index_fraction)
+            "r31_FilterStar", rln_starfile, str(index_seed), str(index_fraction)
         )
         odir = os.path.join(tmpdir_factory.getbasetemp(), dirname)
         os.makedirs(odir, exist_ok=True)
 
         return odir
 
-    def test_command(self, tmpdir_factory, relion_starfile, index_seed, index_fraction):
-        outlbl = os.path.basename(relion_starfile)
+    def test_command(self, tmpdir_factory, rln_starfile, index_seed, index_fraction):
+        outlbl = os.path.basename(rln_starfile)
         outdir = self.get_outdir(tmpdir_factory, outlbl, index_seed, index_fraction)
-        indata, in_optics = parse_star(relion_starfile)
+        indata, in_optics = parse_star(rln_starfile)
         sel_file = os.path.join(outdir, "random-index.pkl")
 
         parser = argparse.ArgumentParser()
@@ -63,7 +65,7 @@ class TestFilterStar:
         outfile = os.path.join(
             outdir, f"fltr_{outlbl}_{index_seed}-{index_fraction}.star"
         )
-        args = [f"{relion_starfile}", "-o", outfile, "--ind", sel_file]
+        args = [f"{rln_starfile}", "-o", outfile, "--ind", sel_file]
         filter_star.main(parser.parse_args(args))
 
         outdata, out_optics = parse_star(outfile)
@@ -73,12 +75,12 @@ class TestFilterStar:
         assert (indata.loc[selected].values == outdata.values).all()
 
     def test_relion30_consistency(
-        self, tmpdir_factory, relion_starfile, index_seed, index_fraction
+        self, tmpdir_factory, rln_starfile, index_seed, index_fraction
     ):
-        outlbl = os.path.basename(relion_starfile)
+        outlbl = os.path.basename(rln_starfile)
         outdir = self.get_outdir(tmpdir_factory, outlbl, index_seed, index_fraction)
 
-        starfile = Starfile(relion_starfile)
+        starfile = Starfile(rln_starfile)
         sel_file = os.path.join(outdir, "random-index.pkl")
         write_star(os.path.join(outdir, "r30.star"), data=starfile.to_relion30())
         parser = argparse.ArgumentParser()
@@ -101,29 +103,39 @@ class TestFilterStar:
 
 
 @pytest.mark.parametrize(
+    "rln_starfile",
+    [
+        "relion31.star",
+        "relion31.v2.star",
+        "relion31.6opticsgroups.star",
+        "relion5.star",
+    ],
+    indirect=True,
+)
+@pytest.mark.parametrize(
     "apix, resolution", [(None, None), (1.5, None), (3.0, 256), (None, 128), (2.0, 128)]
 )
 class TestParsePoseStar:
-    def get_outdir(self, tmpdir_factory, relion_starfile, apix, resolution):
+    def get_outdir(self, tmpdir_factory, rln_starfile, apix, resolution):
         dirname = os.path.join(
-            "r31_ParsePoseStar", relion_starfile, str(apix), str(resolution)
+            "r31_ParsePoseStar", rln_starfile, str(apix), str(resolution)
         )
         odir = os.path.join(tmpdir_factory.getbasetemp(), dirname)
         os.makedirs(odir, exist_ok=True)
 
         return odir
 
-    def test_command(self, tmpdir_factory, relion_starfile, apix, resolution):
-        outlbl = os.path.basename(relion_starfile)
+    def test_command(self, tmpdir_factory, rln_starfile, apix, resolution):
+        outlbl = os.path.basename(rln_starfile)
         outdir = self.get_outdir(tmpdir_factory, outlbl, apix, resolution)
 
         parser = argparse.ArgumentParser()
         parse_pose_star.add_args(parser)
         pose_file = os.path.join(outdir, "orig-poses.pkl")
-        starfile = Starfile(relion_starfile)
+        starfile = Starfile(rln_starfile)
         orig_apix, orig_D = starfile.apix, starfile.resolution
 
-        args = [f"{relion_starfile}", "-o", pose_file]
+        args = [f"{rln_starfile}", "-o", pose_file]
         parse_pose_star.main(parser.parse_args(args))
         with open(pose_file, "rb") as f:
             rots, trans = pickle.load(f)
@@ -132,7 +144,7 @@ class TestParsePoseStar:
         assert trans.shape == (starfile.df.shape[0], 2)
 
         new_posefile = os.path.join(outdir, "parsed-poses.pkl")
-        args = [f"{relion_starfile}", "-o", new_posefile]
+        args = [f"{rln_starfile}", "-o", new_posefile]
         if apix is not None:
             args += ["--Apix", str(apix)]
         if resolution is not None:
@@ -155,13 +167,11 @@ class TestParsePoseStar:
 
         assert np.allclose(check_trans, new_trans)
 
-    def test_relion30_consistency(
-        self, tmpdir_factory, relion_starfile, apix, resolution
-    ):
-        outlbl = os.path.basename(relion_starfile)
+    def test_relion30_consistency(self, tmpdir_factory, rln_starfile, apix, resolution):
+        outlbl = os.path.basename(rln_starfile)
         outdir = self.get_outdir(tmpdir_factory, outlbl, apix, resolution)
 
-        starfile = Starfile(relion_starfile)
+        starfile = Starfile(rln_starfile)
         write_star(os.path.join(outdir, "r30.star"), data=starfile.to_relion30())
         pose_file = os.path.join(outdir, "parsed-poses_r30.pkl")
         parser = argparse.ArgumentParser()
@@ -188,19 +198,25 @@ class TestParsePoseStar:
 
 
 @pytest.mark.parametrize(
-    "apix, resolution", [(None, None), (1.5, None), (3.0, 256), (None, 128), (2.0, 128)]
+    "rln_starfile, apix, resolution",
+    [
+        ("relion31.star", None, None),
+        ("relion31.v2.star", 1.5, None),
+        ("relion31.6opticsgroups.star", 3.0, 256),
+        ("relion5.star", None, 128),
+        ("relion5.star", 2.0, 128),
+    ],
+    indirect=["rln_starfile"],
 )
 @pytest.mark.parametrize("kv", [None, 300])
 @pytest.mark.parametrize("cs", [None, 2.7])
 @pytest.mark.parametrize("w", [None, 0.15])
 @pytest.mark.parametrize("ps", [None, 1.0])
 class TestParseCTFStar:
-    def get_outdir(
-        self, tmpdir_factory, relion_starfile, apix, resolution, kv, cs, w, ps
-    ):
+    def get_outdir(self, tmpdir_factory, rln_starfile, apix, resolution, kv, cs, w, ps):
         dirname = os.path.join(
             "r31_ParseCTFStar",
-            relion_starfile,
+            rln_starfile,
             str(apix),
             str(resolution),
             str(kv),
@@ -214,9 +230,9 @@ class TestParseCTFStar:
         return odir
 
     def test_command(
-        self, tmpdir_factory, relion_starfile, apix, resolution, kv, cs, w, ps
+        self, tmpdir_factory, rln_starfile, apix, resolution, kv, cs, w, ps
     ):
-        outlbl = os.path.basename(relion_starfile)
+        outlbl = os.path.basename(rln_starfile)
         outdir = self.get_outdir(
             tmpdir_factory, outlbl, apix, resolution, kv, cs, w, ps
         )
@@ -224,7 +240,7 @@ class TestParseCTFStar:
         parser = argparse.ArgumentParser()
         parse_ctf_star.add_args(parser)
         out_fl = os.path.join(outdir, "parsed-ctf.pkl")
-        args = [relion_starfile, "-o", out_fl]
+        args = [rln_starfile, "-o", out_fl]
         if apix is not None:
             args += ["--Apix", str(apix)]
         if resolution is not None:
@@ -239,7 +255,7 @@ class TestParseCTFStar:
             args += ["--ps", str(ps)]
 
         parse_ctf_star.main(parser.parse_args(args))
-        starfile = Starfile(relion_starfile)
+        starfile = Starfile(rln_starfile)
         orig_apix, orig_D = starfile.apix, starfile.resolution
         with open(os.path.join(out_fl), "rb") as f:
             ctf_params = pickle.load(f)
@@ -269,19 +285,19 @@ class TestParseCTFStar:
         assert np.allclose(new_ps, ctf_params[:, 8])
 
     def test_relion30_consistency(
-        self, tmpdir_factory, relion_starfile, apix, resolution, kv, cs, w, ps
+        self, tmpdir_factory, rln_starfile, apix, resolution, kv, cs, w, ps
     ):
-        outlbl = os.path.basename(relion_starfile)
+        outlbl = os.path.basename(rln_starfile)
         outdir = self.get_outdir(
             tmpdir_factory, outlbl, apix, resolution, kv, cs, w, ps
         )
 
-        starfile = Starfile(relion_starfile)
+        starfile = Starfile(rln_starfile)
         write_star(os.path.join(outdir, "r30.star"), data=starfile.to_relion30())
         out_fl = os.path.join(outdir, "parsed-ctf_r30.pkl")
         parser = argparse.ArgumentParser()
         parse_ctf_star.add_args(parser)
-        args = [relion_starfile, "-o", out_fl]
+        args = [rln_starfile, "-o", out_fl]
         if apix is not None:
             args += ["--Apix", str(apix)]
         if resolution is not None:
@@ -304,8 +320,13 @@ class TestParseCTFStar:
         assert np.allclose(ctf_params, orig_params)
 
 
-def test_relion50(tmpdir, relion_starfile):
-    with open(relion_starfile, "r") as f:
+@pytest.mark.parametrize(
+    "rln_starfile",
+    ["relion31.star", "relion31.v2.star", "relion31.6opticsgroups.star"],
+    indirect=True,
+)
+def test_relion50(tmpdir, rln_starfile):
+    with open(rln_starfile, "r") as f:
         starlines = f.readlines()
 
     starlines += [
@@ -320,5 +341,5 @@ def test_relion50(tmpdir, relion_starfile):
         f.writelines(starlines)
 
     newfile = Starfile(os.path.join(tmpdir, "new.star"))
-    starfile = Starfile(relion_starfile)
+    starfile = Starfile(rln_starfile)
     assert newfile == starfile

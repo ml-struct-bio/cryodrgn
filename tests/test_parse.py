@@ -1,14 +1,14 @@
-import shutil
-
 import pytest
 import argparse
 import os
+import shutil
 
 from cryodrgn.commands import (
     parse_ctf_csparc,
     parse_ctf_star,
     parse_pose_csparc,
     parse_pose_star,
+    parse_star,
 )
 from cryodrgn.commands_utils import write_star
 from cryodrgn.utils import assert_pkl_close
@@ -97,6 +97,41 @@ def test_parse_pose_star(tmpdir, particles_starfile):
     parse_pose_star.main(args)
 
     assert_pkl_close(pkl_out, os.path.join(pytest.DATADIR, "pose.star.pkl"))
+
+
+@pytest.mark.parametrize("resolution", ["128", "300"])
+def test_parse_star(tmpdir, particles_starfile, resolution):
+    ctf_out = os.path.join(tmpdir, "ctf.pkl")
+    png_out = os.path.join(tmpdir, "ctf.png")
+    poses_out = os.path.join(tmpdir, "pose.pkl")
+
+    parser = argparse.ArgumentParser()
+    parse_star.add_args(parser)
+    args = parser.parse_args(
+        [
+            particles_starfile,
+            "-D",
+            resolution,
+            "--poses",
+            poses_out,
+            "--ctf",
+            ctf_out,
+            "--png",
+            png_out,
+            "--Apix",
+            "1.035",
+            "-w",
+            "0.1",
+        ]
+    )
+    parse_star.main(args)
+
+    assert os.path.isfile(ctf_out), "Missing CTF output file!"
+    assert os.path.isfile(png_out), "Missing CTF plot file!"
+    assert os.path.isfile(poses_out), "Missing pose output file!"
+    if resolution == "300":
+        assert_pkl_close(poses_out, os.path.join(pytest.DATADIR, "pose.star.pkl"))
+        assert_pkl_close(ctf_out, os.path.join(pytest.DATADIR, "ctf1.pkl"))
 
 
 @pytest.mark.parametrize("particles", ["csparc_big"], indirect=True)

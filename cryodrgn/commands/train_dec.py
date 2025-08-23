@@ -1,20 +1,4 @@
-"""Train a neural net to model a 3D density map given 2D images with pose assignments.
-
-Example usage
--------------
-$ cryodrgn train_nn projections.mrcs --poses angles.pkl --ctf ctf.pkl \
-                                     -o output/train_nn -n 10
-
-# Run with more epochs
-$ cryodrgn train_nn projections.star --poses angles.pkl --ctf.pkl \
-                                     -o outs/003_train-nn --num-epochs 30 --lr 0.01
-
-# Restart after already running the same command with some epochs completed
-$ cryodrgn train_nn projections.star --poses angles.pkl --ctf.pkl \
-                                     -o outs/003_train-nn --num-epochs 75 --lr 0.01 \
-                                     --load latest
-
-"""
+"""Train an autodecoder"""
 import argparse
 import os
 import pickle
@@ -38,6 +22,7 @@ from cryodrgn.pose import PoseTracker
 from cryodrgn.models import DataParallelDecoder, Decoder
 from cryodrgn.source import write_mrc
 import cryodrgn.config
+from cryodrgn.commands.analyze import main as analyze_main, add_args as add_analyze_args
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +72,29 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         type=int,
         default=None,
         help="Random seed for data shuffling",
+    )
+
+    group = parser.add_argument_group("Latent Variables")
+    group.add_argument(
+        "--zdim", type=int, required=True, help="Dimension of latent variable"
+    )
+    group.add_argument(
+        "--load-z",
+        type=os.path.abspath,
+        help="Path to .pkl file to initialize latent z (optional)",
+        default=None,
+    )
+    group.add_argument(
+        "--z-lr",
+        type=float,
+        default=1e-4,
+        help="Learning rate for latent z optimizer (default: %(default)s)",
+    )
+    group.add_argument(
+        "--pretrain-z",
+        type=int,
+        default=0,
+        help="Number of epochs to pretrain z before training model (default: %(default)s)",
     )
 
     group = parser.add_argument_group("Dataset loading")
@@ -179,7 +187,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "--do-pose-sgd", action="store_true", help="Refine poses with gradient descent"
     )
     group.add_argument(
-        "--pretrain",
+        "--pretrain-pose",
         type=int,
         default=5,
         help="Number of epochs with fixed poses before pose SGD (default: %(default)s)",
@@ -253,13 +261,22 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         default=0.5,
         help="Scale for random Gaussian features (default: %(default)s)",
     )
+    parser.add_argument(
+        "--no-analysis",
+        dest="do_analysis",
+        action="store_false",
+        help="Do not run analysis after training",
+    )
 
 
 def save_checkpoint(
-    model: Decoder, lattice, optim, epoch, norm, Apix, out_mrc, out_weights
+    model: Decoder, lattice, optim, epoch, norm, Apix, out_mrc, out_weights, z
 ):
     model.eval()
-    vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, norm)
+    # For autodecoder, we need to pass z to eval_volume
+    # Use the mean of z values for volume generation
+    z_mean = z.data.mean(dim=0).cpu().numpy()
+    vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, norm, z_mean)
     write_mrc(out_mrc, np.array(vol.cpu()).astype(np.float32), Apix=Apix)
     torch.save(
         {
@@ -272,11 +289,30 @@ def save_checkpoint(
     )
 
 
+def save_z(z, out_z):
+    """Save latent variables z as pickle file"""
+    with open(out_z, "wb") as f:
+        pickle.dump(z.data.cpu().numpy(), f)
+
+
+def cat_z(coords, z, zdim):
+    """
+    Concatenate coordinates with latent variable z
+    coords: Bx...x3
+    z: Bxzdim
+    """
+    assert coords.size(0) == z.size(0), (coords.shape, z.shape)
+    z = z.view(z.size(0), *([1] * (coords.ndimension() - 2)), zdim)
+    z = torch.cat((coords, z.expand(*coords.shape[:-1], zdim)), dim=-1)
+    return z
+
+
 def train(
     model,
     lattice,
     optim,
     y,
+    z,
     rot,
     trans=None,
     ctf_params=None,
@@ -292,7 +328,9 @@ def train(
         """Helper function"""
         # reconstruct circle of pixels instead of whole image
         mask = lattice.get_circular_mask(D // 2)
-        yhat = model(lattice.coords[mask] @ rot).view(B, -1)
+        coords = lattice.coords[mask] @ rot
+        input_coords = cat_z(coords, z, z.size(1))
+        yhat = model(input_coords).view(B, -1)
         if ctf_params is not None:
             freqs = lattice.freqs2d[mask]
             freqs = freqs.unsqueeze(0).expand(B, *freqs.shape) / ctf_params[:, 0].view(
@@ -347,6 +385,7 @@ def save_config(args, dataset, lattice, model, out_config):
     model_args = dict(
         layers=args.layers,
         dim=args.dim,
+        zdim=args.zdim,
         pe_type=args.pe_type,
         feat_sigma=args.feat_sigma,
         pe_dim=args.pe_dim,
@@ -360,6 +399,28 @@ def save_config(args, dataset, lattice, model, out_config):
     cryodrgn.config.save(config, out_config)
 
 
+def get_latest(args):
+    # assumes args.num_epochs > latest checkpoint
+    logger.info("Detecting latest checkpoint...")
+    weights = [f"{args.outdir}/weights.{i}.pkl" for i in range(args.num_epochs)]
+    weights = [f for f in weights if os.path.exists(f)]
+    args.load = weights[-1]
+    logger.info(f"Loading {args.load}")
+
+    # Load corresponding z file
+    i = args.load.split(".")[-2]
+    z_file = f"{args.outdir}/z.{i}.pkl"
+    if os.path.exists(z_file):
+        args.load_z = z_file
+        logger.info(f"Loading {args.load_z}")
+
+    if args.do_pose_sgd:
+        args.poses = f"{args.outdir}/pose.{i}.pkl"
+        assert os.path.exists(args.poses)
+        logger.info(f"Loading {args.poses}")
+    return args
+
+
 def main(args: argparse.Namespace) -> None:
     if args.verbose:
         logger.setLevel(logging.DEBUG)
@@ -371,10 +432,7 @@ def main(args: argparse.Namespace) -> None:
     logger.addHandler(logging.FileHandler(f"{args.outdir}/run.log"))
 
     if args.load == "latest":
-        args.load, load_poses = utils.get_latest_checkpoint(args.outdir)
-        if args.do_pose_sgd:
-            args.poses = load_poses
-
+        args = get_latest(args)
     logger.info(" ".join(sys.argv))
     logger.info(args)
 
@@ -415,7 +473,7 @@ def main(args: argparse.Namespace) -> None:
 
     activation = {"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[args.activation]
     model = models.get_decoder(
-        3,
+        3 + args.zdim,
         D,
         args.layers,
         args.dim,
@@ -436,18 +494,35 @@ def main(args: argparse.Namespace) -> None:
     # optimizer
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
-    # Load a saved model checkpoint from a previous run of train_nn
+    # load or initialize z
+    if args.load_z is not None:
+        z = utils.load_pkl(args.load_z)
+        if args.ind is not None:
+            if max(ind) >= len(z):
+                logger.warning(
+                    f"Ignoring indices from {args.ind} when loading pre-filtered "
+                    f"saved latent space embeddings from {args.load_z} !"
+                )
+            else:
+                z = z[ind]
+        z = torch.nn.Parameter(torch.tensor(z, dtype=torch.float32, device=device))
+        assert z.shape == (Nimg, args.zdim)
+    else:
+        z = torch.nn.Parameter(torch.randn(Nimg, args.zdim, device=device))
+    z_optim = torch.optim.Adam([z], lr=args.z_lr)
+
+    # load weights
     if args.load:
         logger.info("Loading model weights from {}".format(args.load))
         checkpoint = torch.load(args.load)
+        model.load_state_dict(checkpoint["model_state_dict"])
+        optim.load_state_dict(checkpoint["optimizer_state_dict"])
         start_epoch = checkpoint["epoch"] + 1
         if start_epoch > args.num_epochs:
             raise ValueError(
                 f"If starting from a saved checkpoint at epoch {checkpoint['epoch']}, "
                 f"the number of epochs to train must be greater than {args.num_epochs}!"
             )
-        model.load_state_dict(checkpoint["model_state_dict"])
-        optim.load_state_dict(checkpoint["optimizer_state_dict"])
     else:
         start_epoch = 1
 
@@ -539,6 +614,7 @@ def main(args: argparse.Namespace) -> None:
         for batch, _, ind in data_generator:
             batch_it += len(ind)
             ind = ind.to(device)
+            z_optim.zero_grad()
             if pose_optimizer is not None:
                 pose_optimizer.zero_grad()
             r, t = posetracker.get_pose(ind)
@@ -548,13 +624,16 @@ def main(args: argparse.Namespace) -> None:
                 lattice,
                 optim,
                 batch.to(device),
+                z[ind],
                 r,
                 t,
                 c,
                 use_amp=args.amp,
                 scaler=scaler,
             )
-            if pose_optimizer is not None and epoch > args.pretrain:
+            if epoch >= args.pretrain_z:
+                z_optim.step()
+            if pose_optimizer is not None and epoch >= args.pretrain_pose:
                 pose_optimizer.step()
             loss_accum += loss_item * len(ind)
             if batch_it % args.log_interval < args.batch_size:
@@ -565,27 +644,39 @@ def main(args: argparse.Namespace) -> None:
                 )
         logger.info(
             "# =====> Epoch: {} Average loss = {:.6}; Finished in {}".format(
-                epoch, loss_accum / Nimg, dt.now() - t2
+                epoch + 1, loss_accum / Nimg, dt.now() - t2
             )
         )
         if args.checkpoint and epoch % args.checkpoint == 0:
             out_mrc = "{}/reconstruct.{}.mrc".format(args.outdir, epoch)
             out_weights = "{}/weights.{}.pkl".format(args.outdir, epoch)
             save_checkpoint(
-                model, lattice, optim, epoch, data.norm, Apix, out_mrc, out_weights
+                model, lattice, optim, epoch, data.norm, Apix, out_mrc, out_weights, z
             )
-            if args.do_pose_sgd and epoch > args.pretrain:
+            out_z = "{}/z.{}.pkl".format(args.outdir, epoch)
+            save_z(z, out_z)
+            if args.do_pose_sgd and epoch >= args.pretrain_pose:
                 out_pose = "{}/pose.{}.pkl".format(args.outdir, epoch)
                 posetracker.save(out_pose)
 
     # save model weights and evaluate the model on 3D lattice
     out_mrc = "{}/reconstruct.mrc".format(args.outdir)
     out_weights = "{}/weights.pkl".format(args.outdir)
-    save_checkpoint(model, lattice, optim, epoch, data.norm, Apix, out_mrc, out_weights)
-    if args.do_pose_sgd and epoch > args.pretrain:
+    save_checkpoint(
+        model, lattice, optim, epoch, data.norm, Apix, out_mrc, out_weights, z
+    )
+    out_z = "{}/z.pkl".format(args.outdir)
+    save_z(z, out_z)
+    if args.do_pose_sgd and epoch >= args.pretrain_pose:
         out_pose = "{}/pose.pkl".format(args.outdir)
         posetracker.save(out_pose)
 
     td = dt.now() - t1
-    epoch_avg = td / (args.num_epochs - start_epoch + 1)
-    logger.info(f"Finished in {td} ({epoch_avg} per epoch)")
+    logger.info(
+        f"Finished in {td} ({td / (args.num_epochs - start_epoch + 1)} per epoch)"
+    )
+
+    if args.do_analysis:
+        anlz_parser = argparse.ArgumentParser()
+        add_analyze_args(anlz_parser)
+        analyze_main(anlz_parser.parse_args([str(args.outdir), str(args.num_epochs)]))

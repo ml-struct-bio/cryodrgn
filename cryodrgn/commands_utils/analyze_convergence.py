@@ -41,7 +41,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "epoch",
         type=int,
-        help="Latest epoch number N to analyze convergence (0-based indexing, corresponding to z.N.pkl, weights.N.pkl",
+        help="Latest epoch number N to analyze convergence (1-based indexing, corresponding to z.N.pkl, weights.N.pkl",
     )
     parser.add_argument(
         "-o",

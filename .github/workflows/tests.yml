@@ -23,7 +23,7 @@ jobs:
           - python: '3.11'
             torch: '2.1'
           - python: '3.12'
-            torch: '2.4'
+            torch: '2.5'
       fail-fast: false
 
     steps:
@@ -45,4 +45,4 @@ jobs:
 
       - name: Pytest
         run: |
-          pytest -v -n2 --dist=loadscope
+          pytest -v -n2 --dist=loadscope --show-capture=stderr

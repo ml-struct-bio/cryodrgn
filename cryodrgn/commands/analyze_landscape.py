@@ -2,11 +2,11 @@
 
 Example usage
 -------------
-$ cryodrgn analyze_landscape 003_abinit-het/ 49
+$ cryodrgn analyze_landscape 003_abinit-het/ 50
 
 # Sample more volumes from k-means centroids generated from the latent space; use a
 # larger box size for the sampled volumes instead of downsampling to 128x128
-$ cryodrgn analyze_landscape 005_train-vae/ 39 -N 5000 -d 256
+$ cryodrgn analyze_landscape 005_train-vae/ 40 -N 5000 -d 256
 
 """
 import argparse

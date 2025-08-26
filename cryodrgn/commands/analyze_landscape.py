@@ -2,11 +2,11 @@
 
 Example usage
 -------------
-$ cryodrgn analyze_landscape 003_abinit-het/ 49
+$ cryodrgn analyze_landscape 003_abinit-het/ 50
 
 # Sample more volumes from k-means centroids generated from the latent space; use a
 # larger box size for the sampled volumes instead of downsampling to 128x128
-$ cryodrgn analyze_landscape 005_train-vae/ 39 -N 5000 -d 256
+$ cryodrgn analyze_landscape 005_train-vae/ 40 -N 5000 -d 256
 
 """
 import argparse
@@ -24,6 +24,7 @@ import seaborn as sns
 from matplotlib.colors import ListedColormap
 from sklearn.cluster import AgglomerativeClustering
 from sklearn.decomposition import PCA
+
 from cryodrgn import analysis, utils
 from cryodrgn.commands.analyze import VolumeGenerator
 from cryodrgn.mrcfile import parse_mrc, write_mrc
@@ -43,7 +44,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "epoch",
         type=str,
         help="Epoch number N to analyze "
-        "(0-based indexing, corresponding to z.N.pkl, weights.N.pkl)",
+        "(1-based indexing, corresponding to z.N.pkl, weights.N.pkl)",
     )
     parser.add_argument("--device", type=int, help="Optionally specify CUDA device")
     parser.add_argument(
@@ -251,7 +252,7 @@ def analyze_volumes(
     plot_dim=5,
     particle_ind_orig=None,
     Apix=1,
-    vol_start_index=0,
+    vol_start_index: int = 1,
 ):
     kmean_dir = os.path.join(outdir, f"kmeans{K}")
     cmap = choose_cmap(M)
@@ -340,7 +341,7 @@ def analyze_volumes(
         plot(i, i + 1)
 
     # clustering
-    subdir = os.path.join(outdir, f"clustering_L2_{linkage}_{M}")
+    subdir = os.path.join(outdir, f"sketch_clustering_{linkage}_{M}")
     os.makedirs(subdir, exist_ok=True)
     cluster = AgglomerativeClustering(n_clusters=M, linkage=linkage)
     labels = cluster.fit_predict(vols)
@@ -528,7 +529,10 @@ def main(args: argparse.Namespace) -> None:
         if os.path.exists(umap_fl):
             shutil.copyfile(umap_fl, os.path.join(outdir, "umap.pkl"))
         else:
-            raise NotImplementedError
+            raise RuntimeError(
+                f"UMAP file {umap_fl} not found; run `cryodrgn analyze {workdir} {E}` "
+                f"first to generate the UMAP clustering!"
+            )
 
     if args.mask:
         logger.info(f"Using custom mask {args.mask}")
@@ -564,5 +568,4 @@ def main(args: argparse.Namespace) -> None:
         vol_start_index=args.vol_start_index,
     )
 
-    td = dt.now() - t1
-    logger.info(f"Finished in {td}")
+    logger.info(f"Finished analyzing landscape in total of {dt.now() - t1}")

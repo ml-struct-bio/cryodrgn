@@ -66,7 +66,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "epoch",
         type=str,
         help="Epoch number N to analyze "
-        "(0-based indexing, corresponding to z.N.pkl, weights.N.pkl)",
+        "(1-based indexing, corresponding to z.N.pkl, weights.N.pkl)",
     )
     parser.add_argument(
         "type",

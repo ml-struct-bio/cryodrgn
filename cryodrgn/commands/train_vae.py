@@ -37,7 +37,8 @@ except ImportError:
     pass
 
 import cryodrgn
-from cryodrgn import __version__, ctf, dataset
+from cryodrgn import __version__, ctf, dataset, utils
+from cryodrgn.commands.analyze import main as analyze_main, add_args as add_analyze_args
 from cryodrgn.beta_schedule import get_beta_schedule
 from cryodrgn.lattice import Lattice
 from cryodrgn.models import HetOnlyVAE, unparallelize
@@ -71,6 +72,12 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--load", metavar="WEIGHTS.PKL", help="Initialize training from a checkpoint"
+    )
+    parser.add_argument(
+        "--no-analysis",
+        dest="do_analysis",
+        action="store_false",
+        help="Do not automatically run cryodrgn analyze on the final training epoch",
     )
     parser.add_argument(
         "--checkpoint",
@@ -358,7 +365,6 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         default="relu",
         help="Activation (default: %(default)s)",
     )
-    return parser
 
 
 def train_batch(
@@ -627,21 +633,6 @@ def save_config(args, dataset, lattice, model, out_config):
     cryodrgn.config.save(config, out_config)
 
 
-def get_latest(args):
-    # assumes args.num_epochs > latest checkpoint
-    logger.info("Detecting latest checkpoint...")
-    weights = [f"{args.outdir}/weights.{i}.pkl" for i in range(args.num_epochs)]
-    weights = [f for f in weights if os.path.exists(f)]
-    args.load = weights[-1]
-    logger.info(f"Loading {args.load}")
-    if args.do_pose_sgd:
-        i = args.load.split(".")[-2]
-        args.poses = f"{args.outdir}/pose.{i}.pkl"
-        assert os.path.exists(args.poses)
-        logger.info(f"Loading {args.poses}")
-    return args
-
-
 def main(args: argparse.Namespace) -> None:
     if args.verbose:
         logger.setLevel(logging.DEBUG)
@@ -653,7 +644,10 @@ def main(args: argparse.Namespace) -> None:
     logger.addHandler(logging.FileHandler(f"{args.outdir}/run.log"))
 
     if args.load == "latest":
-        args = get_latest(args)
+        args.load, load_poses = utils.get_latest_checkpoint(args.outdir)
+        if args.do_pose_sgd:
+            args.poses = load_poses
+
     logger.info(" ".join(sys.argv))
     logger.info(f"cryoDRGN {__version__}")
     logger.info(args)
@@ -887,9 +881,14 @@ def main(args: argparse.Namespace) -> None:
         model.load_state_dict(checkpoint["model_state_dict"])
         optim.load_state_dict(checkpoint["optimizer_state_dict"])
         start_epoch = checkpoint["epoch"] + 1
+        if start_epoch > args.num_epochs:
+            raise ValueError(
+                f"If starting from a saved checkpoint at epoch {checkpoint['epoch']}, "
+                f"the number of epochs to train must be greater than {args.num_epochs}!"
+            )
         model.train()
     else:
-        start_epoch = 0
+        start_epoch = 1
 
     # parallelize
     num_workers = args.num_workers
@@ -917,10 +916,8 @@ def main(args: argparse.Namespace) -> None:
         seed=args.shuffle_seed,
     )
 
-    num_epochs = args.num_epochs
-    epoch = None
     Nparticles = Nimg if args.encode_mode != "tilt" else data.Np
-    for epoch in range(start_epoch, num_epochs):
+    for epoch in range(start_epoch, args.num_epochs + 1):
         t2 = dt.now()
         gen_loss_accum = 0
         loss_accum = 0
@@ -931,7 +928,7 @@ def main(args: argparse.Namespace) -> None:
             y = minibatch[0].to(device)
             B = len(ind)
             batch_it += B
-            global_it = Nparticles * epoch + batch_it
+            global_it = Nparticles * (epoch - 1) + batch_it
 
             beta = beta_schedule(global_it)
 
@@ -986,8 +983,8 @@ def main(args: argparse.Namespace) -> None:
                 logger.info(
                     "# [Train Epoch: {}/{}] [{}/{} particles] gen loss={:.6f}, kld={:.6f}, beta={:.6f}, "
                     "loss={:.6f}".format(
-                        epoch + 1,
-                        num_epochs,
+                        epoch,
+                        args.num_epochs,
                         batch_it,
                         Nparticles,
                         gen_loss,
@@ -998,7 +995,7 @@ def main(args: argparse.Namespace) -> None:
                 )
         logger.info(
             "# =====> Epoch: {} Average gen loss = {:.6}, KLD = {:.6f}, total loss = {:.6f}; Finished in {}".format(
-                epoch + 1,
+                epoch,
                 gen_loss_accum / Nparticles,
                 kld_accum / Nparticles,
                 loss_accum / Nparticles,
@@ -1055,6 +1052,10 @@ def main(args: argparse.Namespace) -> None:
         posetracker.save(out_pose)
 
     td = dt.now() - t1
-    logger.info(
-        "Finished in {} ({} per epoch)".format(td, td / (num_epochs - start_epoch))
-    )
+    epoch_avg = td / (args.num_epochs - start_epoch + 1)
+    logger.info(f"Finished in {td} ({epoch_avg} per epoch)")
+
+    if args.do_analysis:
+        anlz_parser = argparse.ArgumentParser()
+        add_analyze_args(anlz_parser)
+        analyze_main(anlz_parser.parse_args([str(args.outdir), str(args.num_epochs)]))

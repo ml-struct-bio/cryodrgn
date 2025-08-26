@@ -153,71 +153,6 @@ def add_args(parser):
         default=3,
         help="Tilt angle increment per tilt in degrees (default: %(default)s)",
     )
-
-    group = parser.add_argument_group(
-        "Overwrite architecture hyperparameters in config.yaml"
-    )
-    group.add_argument("--zdim", type=int, help="Dimension of latent variable")
-    group.add_argument(
-        "--norm", type=float, nargs=2, help="Data normalization as shift, 1/scale"
-    )
-    group.add_argument(
-        "--enc-layers", dest="qlayers", type=int, help="Number of hidden layers"
-    )
-    group.add_argument(
-        "--enc-dim", dest="qdim", type=int, help="Number of nodes in hidden layers"
-    )
-    group.add_argument(
-        "--encode-mode",
-        choices=("conv", "resid", "mlp", "tilt"),
-        help="Type of encoder network",
-    )
-    group.add_argument(
-        "--enc-mask", type=int, help="Circular mask of image for encoder"
-    )
-    group.add_argument(
-        "--use-real",
-        action="store_true",
-        help="Use real space image for encoder (for convolutional encoder)",
-    )
-    group.add_argument(
-        "--dec-layers", dest="players", type=int, help="Number of hidden layers"
-    )
-    group.add_argument(
-        "--dec-dim", dest="pdim", type=int, help="Number of nodes in hidden layers"
-    )
-    group.add_argument(
-        "--pe-type",
-        choices=(
-            "geom_ft",
-            "geom_full",
-            "geom_lowf",
-            "geom_nohighf",
-            "linear_lowf",
-            "none",
-        ),
-        help="Type of positional encoding",
-    )
-    group.add_argument(
-        "--feat-sigma",
-        type=float,
-        default=0.5,
-        help="Scale for random Gaussian features",
-    )
-    group.add_argument(
-        "--pe-dim",
-        type=int,
-        help="Num sinusoid features in positional encoding (default: D/2)",
-    )
-    group.add_argument(
-        "--domain", choices=("hartley", "fourier"), help="Decoder representation domain"
-    )
-    group.add_argument(
-        "--activation",
-        choices=("relu", "leaky_relu"),
-        default="relu",
-        help="Activation (default: %(default)s)",
-    )
     return parser
 
 
@@ -247,13 +182,13 @@ def main(args):
 
     t1 = dt.now()
 
-    # make output directories
+    # Create the directories where the eval outputs will be saved
     if not os.path.exists(os.path.dirname(args.o)):
         os.makedirs(os.path.dirname(args.o))
     if not os.path.exists(os.path.dirname(args.out_z)):
         os.makedirs(os.path.dirname(args.out_z))
 
-    # set the device
+    # Find whether there is a GPU device to compute on and set the device
     use_cuda = torch.cuda.is_available()
     device = torch.device("cuda" if use_cuda else "cpu")
     logger.info("Use cuda {}".format(use_cuda))
@@ -261,26 +196,30 @@ def main(args):
         logger.warning("WARNING: No GPUs detected")
 
     logger.info(args)
-    cfg = config.overwrite_config(args.config, args)
+    cfg = config.load(args.config)
     logger.info("Loaded configuration:")
     pprint.pprint(cfg)
 
-    zdim = cfg["model_args"]["zdim"]
-    beta = 1.0 / zdim if args.beta is None else args.beta
-
-    # load the particles
+    # Load the particle stack used as input for the reconstruction model
     if args.ind is not None:
         logger.info("Filtering image dataset with {}".format(args.ind))
         ind = pickle.load(open(args.ind, "rb"))
     else:
         ind = None
+    if "encode_mode" in cfg["model_args"]:
+        enc_mode = cfg["model_args"]["encode_mode"]
+    else:
+        raise NotImplementedError(
+            "Image evaluation not available when using "
+            "an autodecoder reconstruction model!"
+        )
 
-    if args.encode_mode != "tilt":
-        args.use_real = args.encode_mode == "conv"  # Must be False
+    if enc_mode != "tilt":
+        args.use_real = enc_mode == "conv"  # Must be False
         data = dataset.ImageDataset(
             mrcfile=args.particles,
             lazy=args.lazy,
-            norm=args.norm,
+            norm=cfg["dataset_args"]["norm"],
             invert_data=args.invert_data,
             ind=ind,
             keepreal=args.use_real,
@@ -291,12 +230,12 @@ def main(args):
             device=device,
         )
     else:
-        assert args.encode_mode == "tilt"
+        assert enc_mode == "tilt"
         data = dataset.TiltSeriesData(  # FIXME: maybe combine with above?
             args.particles,
             args.ntilts,
             args.random_tilts,
-            norm=args.norm,
+            norm=cfg["dataset_args"]["norm"],
             invert_data=args.invert_data,
             ind=ind,
             keepreal=args.use_real,
@@ -311,7 +250,7 @@ def main(args):
     Nimg = data.N
     D = data.D
 
-    if args.encode_mode == "conv":
+    if enc_mode == "conv":
         assert D - 1 == 64, "Image size must be 64x64 for convolutional encoder"
 
     # load poses
@@ -343,6 +282,8 @@ def main(args):
     data_generator = dataset.make_dataloader(
         data, batch_size=args.batch_size, shuffle=False
     )
+    zdim = cfg["model_args"]["zdim"]
+    beta = 1.0 / zdim if args.beta is None else args.beta
 
     for minibatch in data_generator:
         ind = minibatch[-1].to(device)
@@ -357,7 +298,7 @@ def main(args):
 
         # TODO -- finish implementing
         # dose_filters = None
-        if args.encode_mode == "tilt":
+        if enc_mode == "tilt":
             tilt_ind = minibatch[1].to(device)
             assert all(tilt_ind >= 0), tilt_ind
             rot, tran = posetracker.get_pose(tilt_ind.view(-1))

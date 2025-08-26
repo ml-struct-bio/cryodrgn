@@ -2,11 +2,11 @@
 
 Example usage
 -------------
-$ cryodrgn analyze_landscape_full 003_abinit-het/ 49
+$ cryodrgn analyze_landscape_full 003_abinit-het/ 50
 
 # Sample fewer volumes from this dataset's particles according to their position in the
 # latent space; use a larger box size for these volumes instead of downsampling to 128
-$ cryodrgn analyze_landscape_full 005_train-vae/ 39 -N 4000 -d 256
+$ cryodrgn analyze_landscape_full 005_train-vae/ 40 -N 4000 -d 256
 
 """
 import argparse
@@ -24,10 +24,15 @@ import torch.nn.functional as F
 from sklearn.model_selection import train_test_split
 from torch.utils.data.dataloader import default_collate
 from torch.utils.data import Dataset, DataLoader
+import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
+import seaborn as sns
+import umap
 
 import cryodrgn
 from cryodrgn import config, utils
-from cryodrgn.models import HetOnlyVAE, ResidLinearMLP
+from cryodrgn.lattice import Lattice
+from cryodrgn.models import HetOnlyVAE, ResidLinearMLP, get_decoder
 from cryodrgn.source import ImageSource
 
 logger = logging.getLogger(__name__)
@@ -42,7 +47,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "epoch",
         type=int,
-        help="Epoch number N to analyze (0-based indexing, "
+        help="Epoch number N to analyze (1-based indexing, "
         "corresponding to z.N.pkl and weights.N.pkl)",
     )
     parser.add_argument("--device", type=int, help="Optionally specify CUDA device")
@@ -99,16 +104,16 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     group.add_argument(
         "--epochs",
         type=int,
-        default=50,
+        default=200,
         metavar="N",
-        help="number of epochs to train (default: 14)",
+        help="number of epochs to train (default: 200)",
     )
     group.add_argument(
         "--lr",
         type=float,
-        default=1e-3,
+        default=1e-4,
         metavar="LR",
-        help="learning rate (default: 1e-3)",
+        help="learning rate (default: 1e-4)",
     )
     group.add_argument(
         "--dim",
@@ -125,8 +130,23 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         help="MLP number of hidden layers (default: 3)",
     )
 
+    group = parser.add_argument_group("Volume PC clustering arguments")
+    group.add_argument(
+        "--num-neighbors",
+        type=int,
+        default=50,
+        metavar="K",
+        help="number of nearest neighbors to consider (default: 30)",
+    )
+    group.add_argument(
+        "--resolution",
+        type=float,
+        default=1.5,
+        help="Leiden resolution (default: 1.5)",
+    )
 
-def train(args, model, device, train_loader, optimizer, epoch):
+
+def train(model, device, train_loader, optimizer, epoch):
     model.train()
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
@@ -176,9 +196,7 @@ class MyDataset(Dataset):
         return self.x[idx], self.y[idx]
 
 
-def generate_and_map_volumes(
-    zfile, cfg, weights, mask_mrc, pca_obj_pkl, landscape_dir, outdir, args
-):
+def generate_and_map_volumes(zfile, cfg, weights, mask_mrc, pca_obj_pkl, outdir, args):
     # Sample z
     logger.info(f"Sampling {args.training_volumes} particles from {zfile}")
     np.random.seed(args.seed)
@@ -214,11 +232,31 @@ def generate_and_map_volumes(
 
     pca = utils.load_pkl(pca_obj_pkl)
 
-    # Load model weights
+    # Load model weights based on whether using encoder or autodecoder
     logger.info("Loading weights from {}".format(weights))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model, lattice = HetOnlyVAE.load(cfg, weights, device)
-    model.eval()
+    if "encode_mode" in cfg["model_args"]:
+        model, lattice = HetOnlyVAE.load(cfg, weights, device)
+        decoder = model.decoder
+    else:
+        lattice = Lattice(D, extent=cfg["lattice_args"]["extent"], device=device)
+        activation = {"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[
+            cfg["model_args"]["activation"]
+        ]
+        decoder = get_decoder(
+            3 + cfg["model_args"]["zdim"],
+            D,
+            cfg["model_args"]["layers"],
+            cfg["model_args"]["dim"],
+            cfg["model_args"]["domain"],
+            cfg["model_args"]["pe_type"],
+            enc_dim=cfg["model_args"]["pe_dim"],
+            activation=activation,
+            feat_sigma=cfg["model_args"]["feat_sigma"],
+        )
+
+    decoder.to(device)
+    decoder.eval()
 
     # Set z
     z = z_sample.astype(np.float32)
@@ -229,11 +267,11 @@ def generate_and_map_volumes(
     embeddings = []
     for i, zz in enumerate(z):
         if i % 1 == 0:
-            logger.info(i)
+            logger.info(f"Generating volume {i} of {len(z)}")
 
         if args.downsample:
             extent = lattice.extent * (args.downsample / (D - 1))
-            vol = model.decoder.eval_volume(
+            vol = decoder.eval_volume(
                 lattice.get_downsample_coords(args.downsample + 1),
                 args.downsample + 1,
                 extent,
@@ -241,7 +279,7 @@ def generate_and_map_volumes(
                 zz,
             )
         else:
-            vol = model.decoder.eval_volume(
+            vol = decoder.eval_volume(
                 lattice.coords, lattice.D, lattice.extent, norm, zz
             )
 
@@ -294,7 +332,7 @@ def train_model(x, y, outdir, zfile, args):
 
     # Train
     for epoch in range(1, args.epochs + 1):
-        train(args, model, device, train_loader, optimizer, epoch)
+        train(model, device, train_loader, optimizer, epoch)
         test(model, device, test_loader)
 
     # Evaluate
@@ -311,6 +349,24 @@ def train_model(x, y, outdir, zfile, args):
     torch.save(model.state_dict(), f"{outdir}/model.pt")
 
     return yhat_all
+
+
+def choose_cmap(M):
+    if M <= 10:
+        cmap = "tab10"
+    elif M <= 20:
+        cmap = "tab20"
+    else:
+        cmap = ListedColormap(sns.color_palette("husl").as_hex())
+    return cmap
+
+
+def get_colors_for_cmap(cmap, M):
+    if M <= 20:
+        colors = plt.cm.get_cmap(cmap)(np.arange(M) / (np.ceil(M / 10) * 10))
+    else:
+        colors = plt.cm.get_cmap(cmap)(np.linspace(0, 1, M))
+    return colors
 
 
 def main(args: argparse.Namespace) -> None:
@@ -340,16 +396,16 @@ def main(args: argparse.Namespace) -> None:
         pca_obj_pkl
     ), f"{pca_obj_pkl} missing. Did you run cryodrgn analyze_landscape?"
 
-    kmeans_folder = [
-        p for p in os.listdir(landscape_dir) if p.startswith("clustering_L2_")
+    cluster_folder = [
+        p for p in os.listdir(landscape_dir) if p.startswith("sketch_clustering_")
     ]
-    if len(kmeans_folder) == 0:
+    if len(cluster_folder) == 0:
         raise RuntimeError(
-            "No clustering folders `clustering_L2_` found. "
+            "No clustering folders `sketch_clustering_` found. "
             "Did you run cryodrgn analyze_landscape?"
         )
-    kmeans_folder = kmeans_folder[0]
-    link_method, kmeans_K = kmeans_folder.split("_")[-2:]
+    cluster_folder = cluster_folder[0]
+    link_method, M = cluster_folder.split("_")[-2:]
 
     logger.info(f"Saving results to {outdir}")
     if not os.path.exists(outdir):
@@ -368,13 +424,89 @@ def main(args: argparse.Namespace) -> None:
         z = utils.load_pkl(z_sampled_pkl)
     else:
         z, embeddings = generate_and_map_volumes(
-            zfile, cfg, weights, mask_mrc, pca_obj_pkl, landscape_dir, outdir, args
+            zfile, cfg, weights, mask_mrc, pca_obj_pkl, outdir, args
         )
         utils.save_pkl(embeddings, embeddings_pkl)
 
     # Train model
     embeddings_all = train_model(z, embeddings, outdir, zfile, args)
     utils.save_pkl(embeddings_all, f"{outdir}/vol_pca_all.pkl")
+
+    # Run UMAP
+    logger.info("Running UMAP...")
+    reducer = umap.UMAP(n_neighbors=args.num_neighbors)
+    umap_emb = reducer.fit_transform(embeddings_all)
+    utils.save_pkl(umap_emb, f"{outdir}/umap_vol_pca.pkl")
+
+    logger.info("Running clustering...")
+    g = utils.get_igraph_from_adjacency(reducer.graph_)
+
+    # Run Leiden clustering
+    part = g.community_leiden(
+        resolution=args.resolution,
+        weights="weight",
+        objective_function="modularity",
+    )
+
+    clustering_dir = f"{outdir}/full_clustering"
+    # Save clustering results
+    logger.info(f"Saving results to {clustering_dir}")
+    if not os.path.exists(f"{clustering_dir}"):
+        os.mkdir(f"{clustering_dir}")
+
+    cluster_labels = np.array(part.membership, dtype=np.int32)
+    utils.save_pkl(cluster_labels, f"{clustering_dir}/cluster_labels.pkl")
+    num_clusters = max(cluster_labels) + 1
+
+    # Save plots
+    logger.info("Saving plots...")
+
+    # Plot UMAP hexbins
+    try:
+        g = sns.jointplot(x=umap_emb[:, 0], y=umap_emb[:, 1], kind="hex", height=4)
+        g.ax_joint.set_xlabel("UMAP1")
+        g.ax_joint.set_ylabel("UMAP2")
+        plt.tight_layout()
+        plt.savefig(f"{outdir}/umap_vol_pca_hexbin.png")
+        plt.close()
+    except ZeroDivisionError:
+        logger.warning("Data too small to generate UMAP hexbins!")
+
+    # Plot UMAP scatter with clusters
+    plt.figure(figsize=(10, 10))
+    cmap = choose_cmap(num_clusters)
+    colors = get_colors_for_cmap(cmap, num_clusters)
+    for i in range(num_clusters):
+        c = umap_emb[np.where(cluster_labels == i)]
+        plt.scatter(
+            c[:, 0],
+            c[:, 1],
+            label=i,
+            color=colors[i],
+            s=0.3,
+            alpha=0.5,
+            rasterized=True,
+        )
+    plt.legend(markerscale=5)
+    plt.xlabel("UMAP1")
+    plt.ylabel("UMAP2")
+    plt.savefig(f"{clustering_dir}/umap.png")
+    plt.close()
+
+    # Plot landscape
+    g = sns.jointplot(
+        x=embeddings_all[:, 0], y=embeddings_all[:, 1], kind="hex", height=4
+    )
+    g.ax_joint.set_xlabel("Volume PC1")
+    g.ax_joint.set_ylabel("Volume PC2")
+    plt.subplots_adjust(
+        left=0.2, right=0.8, top=0.8, bottom=0.2
+    )  # shrink fig so cbar is visible
+    # make new ax object for the cbar
+    cbar_ax = g.fig.add_axes([0.85, 0.25, 0.03, 0.4])  # x, y, width, height
+    plt.colorbar(cax=cbar_ax)
+    plt.savefig(f"{outdir}/volpca_landscape.png")
+    plt.close()
 
     # Copy viz notebook
     out_ipynb = os.path.join(landscape_dir, "cryoDRGN_analyze_landscape.ipynb")
@@ -399,7 +531,7 @@ def main(args: argparse.Namespace) -> None:
         cell["source"] = cell["source"].replace(
             "K = None", f"K = {args.training_volumes}"
         )
-        cell["source"] = cell["source"].replace("M = None", f"M = {kmeans_K}")
+        cell["source"] = cell["source"].replace("M = None", f"M = {M}")
         cell["source"] = cell["source"].replace(
             "linkage = None", f'linkage = "{link_method}"'
         )

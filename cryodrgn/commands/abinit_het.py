@@ -25,6 +25,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.parallel import DataParallel
 from typing import Union
+
+from cryodrgn.commands.analyze import main as analyze_main, add_args as add_analyze_args
 from cryodrgn import ctf, dataset, lie_tools, utils
 from cryodrgn.beta_schedule import LinearSchedule, get_beta_schedule
 import cryodrgn.config
@@ -41,7 +43,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-def add_args(parser):
+def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "particles",
         type=os.path.abspath,
@@ -62,6 +64,12 @@ def add_args(parser):
     )
     parser.add_argument("--load", help="Initialize training from a checkpoint")
     parser.add_argument("--load-poses", help="Initialize training from a checkpoint")
+    parser.add_argument(
+        "--no-analysis",
+        dest="do_analysis",
+        action="store_false",
+        help="Do not automatically run cryodrgn analyze on the final training epoch",
+    )
     parser.add_argument(
         "--checkpoint",
         type=int,
@@ -401,7 +409,6 @@ def add_args(parser):
         default="relu",
         help="Activation (default: %(default)s)",
     )
-    return parser
 
 
 def make_model(args, lattice, enc_mask, in_dim) -> HetOnlyVAE:
@@ -748,19 +755,6 @@ def sort_poses(poses):
     return (rot,)
 
 
-def get_latest(args):
-    logger.info("Detecting latest checkpoint...")
-    weights = [f"{args.outdir}/weights.{i}.pkl" for i in range(args.num_epochs)]
-    weights = [f for f in weights if os.path.exists(f)]
-    args.load = weights[-1]
-    logger.info(f"Loading {args.load}")
-    i = args.load.split(".")[-2]
-    args.load_poses = f"{args.outdir}/pose.{i}.pkl"
-    assert os.path.exists(args.load_poses)
-    logger.info(f"Loading {args.load_poses}")
-    return args
-
-
 def main(args):
     if args.verbose:
         logger.setLevel(logging.DEBUG)
@@ -772,7 +766,10 @@ def main(args):
     logger.addHandler(logging.FileHandler(f"{args.outdir}/run.log"))
 
     if args.load == "latest":
-        args = get_latest(args)
+        args.load, load_poses = utils.get_latest_checkpoint(args.outdir)
+        if args.load_poses is None:
+            args.load_poses = load_poses
+
     logger.info(" ".join(sys.argv))
     logger.info(args)
 
@@ -923,9 +920,6 @@ def main(args):
             except AttributeError:
                 scaler = torch.cuda.amp.grad_scaler.GradScaler()
 
-    if args.load == "latest":
-        args = get_latest(args)
-
     sorted_poses = []
     if args.load:
         args.pretrain = 0
@@ -934,6 +928,11 @@ def main(args):
         model.load_state_dict(checkpoint["model_state_dict"])
         optim.load_state_dict(checkpoint["optimizer_state_dict"])
         start_epoch = checkpoint["epoch"] + 1
+        if start_epoch > args.num_epochs:
+            raise ValueError(
+                f"If starting from a saved checkpoint at epoch {checkpoint['epoch']}, "
+                f"the number of epochs to train must be greater than {args.num_epochs}!"
+            )
         model.train()
         if args.load_poses:
             rot, trans = utils.load_pkl(args.load_poses)
@@ -949,7 +948,7 @@ def main(args):
                 D = model.lattice.D
             sorted_poses = (rot, trans * D)
     else:
-        start_epoch = 0
+        start_epoch = 1
 
     # parallelize
     if args.multigpu and torch.cuda.device_count() > 1:
@@ -963,7 +962,10 @@ def main(args):
         )
 
     if args.pose_model_update_freq:
-        assert not args.multigpu, "TODO"
+        if args.multigpu:
+            raise NotImplementedError(
+                "TODO: Implement pose model update with multiple GPUs"
+            )
         pose_model = make_model(args, lattice, enc_mask, in_dim)
         pose_model.to(device)
         pose_model.eval()
@@ -1020,13 +1022,11 @@ def main(args):
         optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
     # training loop
-    num_epochs = args.num_epochs
     cc = 0
     if args.pose_model_update_freq:
         pose_model.load_state_dict(model.state_dict())
 
-    epoch = None
-    for epoch in range(start_epoch, num_epochs):
+    for epoch in range(start_epoch, args.num_epochs + 1):
         t2 = dt.now()
         kld_accum = 0
         gen_loss_accum = 0
@@ -1038,24 +1038,24 @@ def main(args):
         L_model = lattice.D // 2
         if args.l_ramp_epochs > 0:
             Lramp = args.l_start + int(
-                epoch / args.l_ramp_epochs * (args.l_end - args.l_start)
+                (epoch - 1) / args.l_ramp_epochs * (args.l_end - args.l_start)
             )
             ps.Lmin = min(Lramp, args.l_start)
             ps.Lmax = min(Lramp, args.l_end)
             if epoch < args.l_ramp_epochs and args.l_ramp_model:
                 L_model = ps.Lmax
 
-        if args.reset_model_every and (epoch - 1) % args.reset_model_every == 0:
+        if args.reset_model_every and (epoch - 2) % args.reset_model_every == 0:
             logger.info(">> Resetting model")
             model = make_model(args, lattice, enc_mask, in_dim)
 
-        if args.reset_optim_every and (epoch - 1) % args.reset_optim_every == 0:
+        if args.reset_optim_every and (epoch - 2) % args.reset_optim_every == 0:
             logger.info(">> Resetting optim")
             optim = torch.optim.Adam(
                 model.parameters(), lr=args.lr, weight_decay=args.wd
             )
 
-        if epoch % args.ps_freq != 0:
+        if epoch % args.ps_freq != 1:
             logger.info("Using previous iteration poses")
         for batch in data_iterator:
             ind = batch[-1]
@@ -1066,7 +1066,7 @@ def main(args):
                 else (batch[0].to(device), batch[1].to(device))
             )
             batch_it += len(batch[0])
-            global_it = Nimg * epoch + batch_it
+            global_it = Nimg * (epoch - 1) + batch_it
 
             lamb = None
             beta = beta_schedule(global_it)
@@ -1078,7 +1078,7 @@ def main(args):
 
             # train the model
             p = None
-            if epoch % args.ps_freq != 0:
+            if epoch % args.ps_freq != 1:
                 p = [torch.tensor(x[ind_np], device=device) for x in sorted_poses]  # type: ignore
 
             cc += len(batch[0])
@@ -1119,7 +1119,7 @@ def main(args):
                     else ""
                 )
                 logger.info(
-                    f"# [Train Epoch: {epoch+1}/{num_epochs}] [{batch_it}/{Nimg} images] gen loss={gen_loss:.4f}, "
+                    f"# [Train Epoch: {epoch}/{args.num_epochs}] [{batch_it}/{Nimg} images] gen loss={gen_loss:.4f}, "
                     f"kld={kld:.4f}, beta={beta:.4f}, {eq_log}loss={loss:.4f}"
                 )
 
@@ -1130,7 +1130,7 @@ def main(args):
         )
         logger.info(
             "# =====> Epoch: {} Average gen loss = {:.4}, KLD = {:.4f}, {}total loss = {:.4f}; Finished in {}".format(
-                epoch + 1,
+                epoch,
                 gen_loss_accum / Nimg,
                 kld_accum / Nimg,
                 eq_log,
@@ -1176,49 +1176,46 @@ def main(args):
                     configs,
                 )
 
-    if epoch is not None:
-        # save model weights and evaluate the model on 3D lattice
-        model.eval()
+    # save model weights and evaluate the model on 3D lattice
+    model.eval()
 
-        out_mrc = "{}/reconstruct".format(args.outdir)
-        out_weights = "{}/weights.pkl".format(args.outdir)
-        out_poses = "{}/pose.pkl".format(args.outdir)
-        out_z = "{}/z.pkl".format(args.outdir)
-        with torch.no_grad():
-            z_mu, z_logvar = eval_z(
-                model,
-                lattice,
-                data,
-                args.batch_size,
-                device,
-                use_tilt=tilt is not None,
-                ctf_params=ctf_params,
-                shuffler_size=args.shuffler_size,
-                seed=args.shuffle_seed,
-            )
-            save_checkpoint(
-                model,
-                lattice,
-                optim,
-                epoch,
-                data.norm,
-                sorted_poses,
-                z_mu,
-                z_logvar,
-                out_mrc,
-                out_weights,
-                out_z,
-                out_poses,
-                configs,
-            )
-
-        td = dt.now() - t1
-        logger.info(
-            "Finished in {} ({} per epoch)".format(td, td / (num_epochs - start_epoch))
+    out_mrc = "{}/reconstruct".format(args.outdir)
+    out_weights = "{}/weights.pkl".format(args.outdir)
+    out_poses = "{}/pose.pkl".format(args.outdir)
+    out_z = "{}/z.pkl".format(args.outdir)
+    with torch.no_grad():
+        z_mu, z_logvar = eval_z(
+            model,
+            lattice,
+            data,
+            args.batch_size,
+            device,
+            use_tilt=tilt is not None,
+            ctf_params=ctf_params,
+            shuffler_size=args.shuffler_size,
+            seed=args.shuffle_seed,
+        )
+        save_checkpoint(
+            model,
+            lattice,
+            optim,
+            epoch,
+            data.norm,
+            sorted_poses,
+            z_mu,
+            z_logvar,
+            out_mrc,
+            out_weights,
+            out_z,
+            out_poses,
+            configs,
         )
 
+    td = dt.now() - t1
+    epoch_avg = td / (args.num_epochs - start_epoch + 1)
+    logger.info(f"Finished in {td} ({epoch_avg} per epoch)")
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    args = add_args(parser).parse_args()
-    main(args)
+    if args.do_analysis:
+        anlz_parser = argparse.ArgumentParser()
+        add_analyze_args(anlz_parser)
+        analyze_main(anlz_parser.parse_args([str(args.outdir), str(args.num_epochs)]))

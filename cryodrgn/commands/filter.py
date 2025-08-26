@@ -93,6 +93,13 @@ def add_args(parser: argparse.ArgumentParser) -> None:
 
 def main(args: argparse.Namespace) -> None:
     """Launching the interactive interface for filtering particles from command-line."""
+
+    if args.sel_dir is not None:
+        if not os.path.exists(args.sel_dir):
+            raise ValueError(f"Directory {args.sel_dir} does not exist!")
+        elif not os.path.isdir(args.sel_dir):
+            raise ValueError(f"Path {args.sel_dir} is not a directory!")
+
     workdir = args.outdir
     epoch = args.epoch
     kmeans = args.kmeans
@@ -100,7 +107,7 @@ def main(args: argparse.Namespace) -> None:
 
     train_configs_file = os.path.join(workdir, "config.yaml")
     if not os.path.exists(train_configs_file):
-        raise ValueError("Missing config.yaml file " "in given output folder!")
+        raise ValueError("Missing config.yaml file in given output folder!")
 
     conf_fls = [fl for fl in os.listdir(workdir) if re.fullmatch(r"z\.[0-9]+\.pkl", fl)]
 
@@ -113,10 +120,13 @@ def main(args: argparse.Namespace) -> None:
     with open(train_configs_file, "r") as f:
         train_configs = yaml.safe_load(f)
 
+    # Default behavior: use latest epoch in the output folder with available results
     if epoch == -1:
         epoch = max(int(x.split(".")[1]) for x in conf_fls)
         logger.info(f"Using epoch {epoch} for filtering...")
 
+    # Find folder containing analysis outputs for the given epoch; load z-latent-space
+    # embeddings produced by the heterogeneous reconstruction model
     anlzdir = os.path.join(workdir, f"analyze.{epoch}")
     if not os.path.isdir(anlzdir):
         raise ValueError(
@@ -138,10 +148,33 @@ def main(args: argparse.Namespace) -> None:
     else:
         ctf_params = None
 
-    # Load the set of indices used to filter original dataset and apply it to inputs
+    # Load the set of indices used to filter original dataset and apply it to inputs;
+    # we also need the number of particles in the dataset to produce inverse selection
     pre_indices = None if plot_inds is None else utils.load_pkl(plot_inds)
-    if ctf_params is not None:
+    if "encode_mode" in train_configs["model_args"]:
+        enc_mode = train_configs["model_args"]["encode_mode"]
+    else:
+        enc_mode = "autodec"
+
+    if ctf_params is not None and enc_mode != "tilt":
         all_indices = np.array(range(ctf_params.shape[0]))
+
+    # For tilt-series inputs we can't use the (tilt-level) CTF parameters to get the
+    # number of particles, so we need to load the tilt-series data itself
+    elif enc_mode == "tilt":
+        all_indices = np.array(
+            range(
+                dataset.TiltSeriesData(
+                    tiltstar=train_configs["dataset_args"]["particles"],
+                    datadir=train_configs["dataset_args"]["datadir"],
+                    lazy=True,
+                    ntilts=train_configs["dataset_args"]["ntilts"],
+                ).Np
+            )
+        )
+
+    # We thus also need to load the image dataset metadata to get the number of
+    # particles for inverse selection in the case of SPA inputs with no CTF parameters
     else:
         all_indices = np.array(
             range(
@@ -168,6 +201,8 @@ def main(args: argparse.Namespace) -> None:
             rot = rot[indices, :, :]
             trans = trans[indices, :]
 
+    # Load PCA and UMAP clusterings of z-latent-space embeddings of particles, and the
+    # k-means segmentations of these clusterings
     pc, pca = analysis.run_pca(z)
     umap = utils.load_pkl(os.path.join(anlzdir, "umap.pkl"))
 
@@ -260,20 +295,21 @@ def main(args: argparse.Namespace) -> None:
 
         # Saving the selected indices
         if filename:
-            selected_full_path = filename + ".pkl"
+            selected_dir = os.path.dirname(filename)
+            if selected_dir:
+                os.makedirs(selected_dir, exist_ok=True)
 
+            selected_full_path = filename + ".pkl"
+            print(f"Saving selection to `{selected_full_path}`")
             with open(selected_full_path, "wb") as file:
                 pickle.dump(np.array(selected_indices, dtype=int), file)
-            print(f"Selection saved to `{selected_full_path}`")
 
             # Saving the inverse selection
             inverse_filename = filename + "_inverse.pkl"
             inverse_indices = np.setdiff1d(all_indices, selected_indices)
-
+            print(f"Saving inverse selection to `{inverse_filename}`")
             with open(inverse_filename, "wb") as file:
                 pickle.dump(np.array(inverse_indices, dtype=int), file)
-
-            print(f"Inverse selection saved to `{inverse_filename}`")
 
     else:
         print("Exiting without having made a selection.")
@@ -304,7 +340,7 @@ class SelectFromScatter:
         self.color_col = "None"
         self.pnt_colors = None
 
-        # Create user interfaces for selecting the covariates to plot using the legends
+        # Create user interfaces for selecting the covariates to plot and each axis
         lax = self.fig.add_subplot(gs[0, 0])
         lax.axis("off")
         lax.set_title("choose\nx-axis", size=13)
@@ -317,7 +353,15 @@ class SelectFromScatter:
         self.menu_y = RadioButtons(rax, labels=self.select_cols, active=1)
         self.menu_y.on_clicked(self.update_yaxis)
 
-        # add save button only when selection is made
+        # Create interface for coloring the plotted points by the values of a covariate
+        cax = self.fig.add_subplot(gs[:, 2])
+        cax.axis("off")
+        cax.set_title("choose\ncolors", size=13)
+        self.menu_col = RadioButtons(cax, labels=["None"] + self.select_cols, active=0)
+        self.menu_col.on_clicked(self.choose_colors)
+
+        # Add the interface buttons for saving a selection to file and exiting without
+        # saving; the save button is only made visible when a selection is made
         self.save_ax = self.fig.add_subplot(gs[2, 0])
         self.exit_ax = self.fig.add_subplot(gs[3, 0])
         self.save_btn = Button(
@@ -338,12 +382,6 @@ class SelectFromScatter:
         self.exit_btn.on_clicked(self.exit_click)
         self.save_ax.set_visible(False)
         self.exit_ax.set_visible(True)
-
-        cax = self.fig.add_subplot(gs[:, 2])
-        cax.axis("off")
-        cax.set_title("choose\ncolors", size=13)
-        self.menu_col = RadioButtons(cax, labels=["None"] + self.select_cols, active=0)
-        self.menu_col.on_clicked(self.choose_colors)
 
         # Create and initialize user interface for selecting points in the scatterplot
         self.lasso = LassoSelector(self.main_ax, onselect=self.choose_points)
@@ -370,18 +408,16 @@ class SelectFromScatter:
         self.main_ax.clear()
         pnt_colors = ["gray" for _ in range(self.data_table.shape[0])]
 
-        if len(self.indices):
+        # With a non-empty selection, change the color of the selected points
+        # and make the save button visible; otherwise, remove the save button again
+        if len(self.indices) > 0:
             for idx in self.indices:
                 pnt_colors[idx] = "goldenrod"
-
-            # with selection, set save button visible
             self.save_ax.set_visible(True)
-
-        elif ~len(self.indices):
-            # remove save button if no selection is made
+        else:
             self.save_ax.set_visible(False)
 
-        elif self.color_col != "None":
+        if self.color_col != "None" and len(self.indices) == 0:
             clr_vals = self.data_table[self.color_col]
 
             if clr_vals.dtype == np.int64:
@@ -404,14 +440,14 @@ class SelectFromScatter:
 
             pnt_colors = use_cmap(use_norm(self.data_table[self.color_col]))
 
+        # Plot the points with the chosen colors and axes on a labelled scatterplot
         self.scatter = self.main_ax.scatter(
             x=self.data_table[self.xcol],
             y=self.data_table[self.ycol],
             s=1,
             alpha=0.5,
-            color=pnt_colors,
+            c=pnt_colors,
         )
-
         self.main_ax.set_xlabel(self.xcol, size=17, weight="semibold")
         self.main_ax.set_ylabel(self.ycol, size=17, weight="semibold")
         self.main_ax.set_title("Select Points Manually", size=23, weight="semibold")
@@ -510,12 +546,11 @@ class SelectFromScatter:
     def save_click(self, event: MouseEvent) -> None:
         """When the save button is clicked, we close display."""
         if hasattr(event, "button") and event.button is MouseButton.LEFT:
-            # close the plt so we can move onto saving it
+            # Close the plot so we can move on to saving the selection
             plt.close("all")
 
     def exit_click(self, event: MouseEvent) -> None:
         """When the exit button is clicked, we clear the selection and close display."""
         if hasattr(event, "button") and event.button is MouseButton.LEFT:
-            # close the plt so we can move onto saving it
             self.indices = list()
             plt.close("all")

@@ -32,7 +32,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-def add_args(parser):
+def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "particles",
         type=os.path.abspath,
@@ -322,15 +322,13 @@ def add_args(parser):
         help="Scale for random Gaussian features (default: %(default)s)",
     )
 
-    return parser
-
 
 def save_checkpoint(
-    model, lattice, pose, optim, epoch, norm, out_mrc, out_weights, out_poses
+    model, lattice, pose, optim, epoch, norm, Apix, out_mrc, out_weights, out_poses
 ):
     model.eval()
     vol = model.eval_volume(lattice.coords, lattice.D, lattice.extent, norm)
-    write_mrc(out_mrc, vol)
+    write_mrc(out_mrc, vol, Apix=Apix)
     torch.save(
         {
             "norm": norm,
@@ -498,20 +496,6 @@ def train(
     return loss.item(), save_pose, base_pose
 
 
-def get_latest(args):
-    # assumes args.num_epochs > latest checkpoint
-    logger.info("Detecting latest checkpoint...")
-    weights = [f"{args.outdir}/weights.{i}.pkl" for i in range(args.num_epochs)]
-    weights = [f for f in weights if os.path.exists(f)]
-    args.load = weights[-1]
-    logger.info(f"Loading {args.load}")
-    i = args.load.split(".")[-2]
-    args.load_poses = f"{args.outdir}/pose.{i}.pkl"
-    assert os.path.exists(args.load_poses)  # Might need to relax this assert
-    logger.info(f"Loading {args.load_poses}")
-    return args
-
-
 def make_model(args, D: int):
     activation = {"relu": nn.ReLU, "leaky_relu": nn.LeakyReLU}[args.activation]
     return models.get_decoder(
@@ -557,7 +541,7 @@ def save_config(args, dataset, lattice, out_config):
     cryodrgn.config.save(config, out_config)
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
     if args.verbose:
         logger.setLevel(logging.DEBUG)
 
@@ -568,7 +552,9 @@ def main(args):
     logger.addHandler(logging.FileHandler(f"{args.outdir}/run.log"))
 
     if args.load == "latest":
-        args = get_latest(args)
+        args.load, load_poses = utils.get_latest_checkpoint(args.outdir)
+        if args.load_poses is None:
+            args.load_poses = load_poses
 
     logger.info(" ".join(sys.argv))
     logger.info(args)
@@ -618,6 +604,7 @@ def main(args):
         ctf_params = torch.tensor(ctf_params, device=device)
     else:
         ctf_params = None
+    Apix = ctf_params[0, 0] if ctf_params is not None else 1
 
     # instantiate model
     lattice = Lattice(D, extent=0.5, device=device)
@@ -697,6 +684,11 @@ def main(args):
         model.load_state_dict(checkpoint["model_state_dict"])
         optim.load_state_dict(checkpoint["optimizer_state_dict"])
         start_epoch = checkpoint["epoch"] + 1
+        if start_epoch > args.num_epochs:
+            raise ValueError(
+                f"If starting from a saved checkpoint at epoch {checkpoint['epoch']}, "
+                f"the number of epochs to train must be greater than {args.num_epochs}!"
+            )
         model.train()
         if args.load_poses:
             rot, trans = utils.load_pkl(args.load_poses)
@@ -708,7 +700,7 @@ def main(args):
 
             # sorted_base_poses = None   # TODO: need to save base_poses if we are going to use it
     else:
-        start_epoch = 0
+        start_epoch = 1
 
     data_iterator = dataset.make_dataloader(
         data,
@@ -748,8 +740,7 @@ def main(args):
     if args.pose_model_update_freq:
         pose_model.load_state_dict(model.state_dict())
 
-    epoch = None
-    for epoch in range(start_epoch, args.num_epochs):
+    for epoch in range(start_epoch, args.num_epochs + 1):
         t2 = dt.now()
         batch_it = 0
         loss_accum = 0
@@ -757,22 +748,22 @@ def main(args):
 
         if args.l_ramp_epochs > 0:
             Lramp = args.l_start + int(
-                epoch / args.l_ramp_epochs * (args.l_end - args.l_start)
+                (epoch - 1) / args.l_ramp_epochs * (args.l_end - args.l_start)
             )
             ps.Lmin = min(Lramp, args.l_start)
             ps.Lmax = min(Lramp, args.l_end)
 
-        if args.reset_model_every and (epoch - 1) % args.reset_model_every == 0:
+        if args.reset_model_every and (epoch - 2) % args.reset_model_every == 0:
             logger.info(">> Resetting model")
             model = make_model(args, D)
 
-        if args.reset_optim_every and (epoch - 1) % args.reset_optim_every == 0:
+        if args.reset_optim_every and (epoch - 2) % args.reset_optim_every == 0:
             logger.info(">> Resetting optim")
             optim = torch.optim.Adam(
                 model.parameters(), lr=args.lr, weight_decay=args.wd
             )
 
-        if epoch % args.ps_freq != 0:
+        if epoch % args.ps_freq != 1:
             logger.info("Using previous iteration poses")
         for batch in data_iterator:
             ind = batch[-1]
@@ -785,7 +776,7 @@ def main(args):
             batch_it += len(batch[0])
 
             # train the model
-            if epoch % args.ps_freq != 0:
+            if epoch % args.ps_freq != 1:
                 p = [torch.tensor(x[ind_np], device=device) for x in sorted_poses]  # type: ignore
                 # bp = sorted_base_poses[ind_np]
                 bp = None
@@ -819,13 +810,13 @@ def main(args):
             if batch_it % args.log_interval < args.batch_size:
                 logger.info(
                     "# [Train Epoch: {}/{}] [{}/{} images] loss={:.4f}".format(
-                        epoch + 1, args.num_epochs, batch_it, Nimg, loss_item
+                        epoch, args.num_epochs, batch_it, Nimg, loss_item
                     )
                 )
 
         logger.info(
             "# =====> Epoch: {} Average loss = {:.4}; Finished in {}".format(
-                epoch + 1, loss_accum / Nimg, dt.now() - t2
+                epoch, loss_accum / Nimg, dt.now() - t2
             )
         )
 
@@ -844,37 +835,29 @@ def main(args):
                 optim,
                 epoch,
                 data.norm,
+                Apix,
                 out_mrc,
                 out_weights,
                 out_poses,
             )
 
-    if epoch is not None:
-        # save model weights and evaluate the model on 3D lattice
-        out_mrc = "{}/reconstruct.mrc".format(args.outdir)
-        out_weights = "{}/weights.pkl".format(args.outdir)
-        out_poses = "{}/pose.pkl".format(args.outdir)
-        save_checkpoint(
-            model,
-            lattice,
-            sorted_poses,
-            optim,
-            epoch,
-            data.norm,
-            out_mrc,
-            out_weights,
-            out_poses,
-        )
+    # save model weights and evaluate the model on 3D lattice
+    out_mrc = "{}/reconstruct.mrc".format(args.outdir)
+    out_weights = "{}/weights.pkl".format(args.outdir)
+    out_poses = "{}/pose.pkl".format(args.outdir)
+    save_checkpoint(
+        model,
+        lattice,
+        sorted_poses,
+        optim,
+        epoch,
+        data.norm,
+        Apix,
+        out_mrc,
+        out_weights,
+        out_poses,
+    )
 
-        td = dt.now() - t1
-        logger.info(
-            "Finished in {} ({} per epoch)".format(
-                td, td / (args.num_epochs - start_epoch)
-            )
-        )
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    args = add_args(parser).parse_args()
-    main(args)
+    td = dt.now() - t1
+    epoch_avg = td / (args.num_epochs - start_epoch + 1)
+    logger.info(f"Finished in {td} ({epoch_avg} per epoch)")

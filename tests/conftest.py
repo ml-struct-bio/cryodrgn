@@ -68,7 +68,7 @@ WEIGHTS_FILES = {
     "het": "het_weights.pkl",
 }
 CONFIG_FILES = {
-    "het": "het_config.pkl",
+    "het": "het_config.yaml",
 }
 DATA_FOLDERS = {
     "default-datadir": ".",
@@ -195,9 +195,8 @@ class TrainDir:
             f"cryodrgn {self.train_cmd} {self.particles} -o {self.outdir} "
             f"--poses {self.poses} --no-amp -n={self.epochs} "
         )
-
         if self.train_cmd == "train_vae":
-            cmd += "--zdim=8 --tdim=16 --tlayers=1 "
+            cmd += "--zdim=8 --tdim=16 --tlayers=1 --no-analysis "
         elif self.train_cmd == "train_nn":
             cmd += "--dim=16 --layers=2 "
 
@@ -250,7 +249,7 @@ class TrainDir:
         return os.listdir(self.outdir)
 
     def epoch_cleaned(self, epoch: Union[int, None]) -> bool:
-        if epoch and not 0 <= epoch < self.epochs:
+        if epoch and not 1 <= epoch <= self.epochs:
             raise ValueError(
                 f"Cannot check if given epoch {epoch} has been cleaned "
                 f"for output folder `{self.outdir}` which only contains "
@@ -280,7 +279,8 @@ class TrainDir:
     @property
     def all_files_present(self) -> bool:
         return not any(
-            self.epoch_cleaned(epoch) for epoch in list(range(self.epochs)) + [None]
+            self.epoch_cleaned(epoch)
+            for epoch in list(range(1, self.epochs + 1)) + [None]
         )
 
     def replace_files(self) -> None:
@@ -291,7 +291,7 @@ class TrainDir:
             )
 
     def train_load_epoch(self, load_epoch: int, train_epochs: int) -> None:
-        if not 0 <= load_epoch < self.epochs:
+        if not 1 <= load_epoch <= self.epochs:
             raise ValueError(
                 f"Given epoch to load {load_epoch} is not valid for experiment "
                 f"with {self.epochs} epochs!"
@@ -415,7 +415,7 @@ class AbInitioDir:
             f"--num-epochs {self.epochs} --no-window --pretrain 100 "
         )
         if self.zdim > 0:
-            cmd += f"--zdim {self.zdim} "
+            cmd += f"--zdim {self.zdim} --no-analysis "
             cmd += "--enc-dim 8 --enc-layers 2 --dec-dim 8 --pe-dim 8 "
         else:
             cmd += "--dim 16 --pe-dim 8 "
@@ -432,7 +432,7 @@ class AbInitioDir:
         out, err = run_command(cmd)
         assert ") Finished in " in out, err
         assert os.path.exists(
-            os.path.join(self.outdir, f"weights.{self.epochs - 1}.pkl")
+            os.path.join(self.outdir, f"weights.{self.epochs}.pkl")
         ), err
 
     def analyze(self, analysis_epoch: int) -> None:

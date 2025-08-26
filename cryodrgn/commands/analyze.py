@@ -125,7 +125,15 @@ def analyze_z1(z, outdir, vg):
 
 
 def analyze_zN(
-    z, outdir, vg, workdir, epoch, skip_umap=False, num_pcs=2, num_ksamples=20
+    z,
+    outdir,
+    vg,
+    workdir,
+    epoch,
+    skip_umap=False,
+    num_pcs=2,
+    num_ksamples=20,
+    vol_start_index=1,
 ):
     zdim = z.shape[1]
 
@@ -151,12 +159,16 @@ def analyze_zN(
     logger.info("Generating volumes...")
     vg.gen_volumes(f"{outdir}/kmeans{K}", centers)
 
-    # UMAP -- slow step
+    # UMAP -- slow step, but we can load from file if we've already ran it
     umap_emb = None
     if zdim > 2 and not skip_umap:
-        logger.info("Running UMAP...")
-        umap_emb = analysis.run_umap(z)
-        utils.save_pkl(umap_emb, f"{outdir}/umap.pkl")
+        umap_fl = os.path.join(outdir, "umap.pkl")
+        if not os.path.exists(umap_fl):
+            logger.info("Running UMAP...")
+            umap_emb = analysis.run_umap(z)
+            utils.save_pkl(umap_emb, umap_fl)
+        else:
+            umap_emb = utils.load_pkl(umap_fl)
 
     # Make some plots
     logger.info("Generating plots...")
@@ -259,6 +271,7 @@ def analyze_zN(
         pc[:, 1],
         centers_ind=centers_ind,
         annotate=True,
+        labels=np.arange(len(centers)) + vol_start_index,
         colors=colors,
     )
     plt_pc_labels()
@@ -301,6 +314,7 @@ def analyze_zN(
                 umap_emb[:, 1],
                 centers_ind=centers_ind,
                 annotate=True,
+                labels=np.arange(len(centers)) + vol_start_index,
                 colors=colors,
             )
             plt_umap_labels_jointplot(g)
@@ -509,9 +523,10 @@ def main(args: argparse.Namespace) -> None:
             skip_umap=args.skip_umap,
             num_pcs=args.pc,
             num_ksamples=args.ksample,
+            vol_start_index=args.vol_start_index,
         )
 
-    # create demonstration Jupyter notebooks from templates if they don't already exist
+    # Create demonstration Jupyter notebooks from templates if they don't already exist
     cfg = config.load(cfg)
     ipynbs = ["cryoDRGN_figures"]
     if (
@@ -534,7 +549,7 @@ def main(args: argparse.Namespace) -> None:
         else:
             logger.info(f"{nb_outfile} already exists. Skipping")
 
-        # lazily look at the beginning of the notebook for the epoch number to update
+        # Lazily look at the beginning of the notebook for the epoch number to update
         with open(nb_outfile, "r") as f:
             filter_ntbook = nbformat.read(f, as_version=nbformat.NO_CONVERT)
 

@@ -146,6 +146,12 @@ def add_args(parser):
         help="Number of tilts per particle to backproject (default: %(default)s)",
     )
     group.add_argument(
+        "--force-ntilts",
+        action="store_true",
+        dest="force_ntilts",
+        help="Automatically keep only particles with ≥ --ntilts tilts"
+    )
+    group.add_argument(
         "-d",
         "--dose-per-tilt",
         type=float,
@@ -204,6 +210,22 @@ def main(args):
     logger.info("Use cuda {}".format(use_cuda))
     if not use_cuda:
         logger.warning("WARNING: No GPUs detected")
+
+    # generate indices if forcing ntilts
+    if args.force_ntilts:
+        if args.ind is not None and args.tilt:
+            logger.warning("--force-ntilts overrides --ind; ignoring your --ind file.")
+        if args.tilt:
+            logger.info(f"Filtering to particles with ≥ {args.ntilts} tilts (–force-ntilts)")
+            pt, _ = dataset.TiltSeriesData.parse_particle_tilt(args.particles)
+            counts = [len(tilt_list) for tilt_list in pt]
+            valid_particles = np.where(np.array(counts) >= args.ntilts)[0]
+            if valid_particles.size == 0:
+                raise ValueError(f"No particles have at least {args.ntilts} tilts.")
+            idx_file = os.path.join(args.outdir, f"indices_force_ntilts_{args.ntilts}.pkl")
+            utils.save_pkl(valid_particles.astype(int), idx_file)
+            logger.info(f"→ saved {valid_particles.size} particle IDs to {idx_file}")
+            args.ind = idx_file
 
     # load the particles
     if args.ind is not None:

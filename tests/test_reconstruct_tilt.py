@@ -5,6 +5,7 @@ import argparse
 import os.path
 import shutil
 import pickle
+import numpy as np
 import nbformat
 from nbconvert.preprocessors import ExecutePreprocessor
 
@@ -14,6 +15,7 @@ from cryodrgn.commands import (
     train_vae,
     abinit_homo,
     abinit_het,
+    filter,
 )
 from cryodrgn.commands_utils import filter_star
 from cryodrgn.dataset import TiltSeriesData
@@ -21,10 +23,11 @@ from cryodrgn import utils
 
 
 @pytest.mark.parametrize("particles", ["tilts.star"], indirect=True)
-@pytest.mark.parametrize("indices", ["just-4", "just-5"], indirect=True)
+@pytest.mark.parametrize("indices", ["just-4"], indirect=True)
 @pytest.mark.parametrize("poses", ["tilt-poses"], indirect=True)
 @pytest.mark.parametrize("ctf", ["CTF-Tilt"], indirect=True)
 @pytest.mark.parametrize("datadir", ["default-datadir"], indirect=True)
+@pytest.mark.parametrize("ntilts", [None, 30])
 class TestTiltFixedHetero:
     """Run heterogeneous reconstruction using tilt series from a .star file and poses.
 
@@ -32,7 +35,9 @@ class TestTiltFixedHetero:
     having the same number of tilts and another that produces a ragged tilt-series.
     """
 
-    def get_outdir(self, tmpdir_factory, particles, poses, ctf, indices, datadir):
+    def get_outdir(
+        self, tmpdir_factory, particles, poses, ctf, indices, datadir, ntilts
+    ):
         dirname = os.path.join(
             "TiltFixedHetero",
             particles.label,
@@ -40,15 +45,18 @@ class TestTiltFixedHetero:
             ctf.label,
             indices.label,
             datadir.label,
+            f"ntilts.{ntilts}" if ntilts is not None else "ntilts.def",
         )
         odir = os.path.join(tmpdir_factory.getbasetemp(), dirname)
         os.makedirs(odir, exist_ok=True)
 
         return odir
 
-    def test_train_model(self, tmpdir_factory, particles, indices, poses, ctf, datadir):
+    def test_train_model(
+        self, tmpdir_factory, particles, indices, poses, ctf, datadir, ntilts
+    ):
         outdir = self.get_outdir(
-            tmpdir_factory, particles, poses, ctf, indices, datadir
+            tmpdir_factory, particles, poses, ctf, indices, datadir, ntilts
         )
         args = [
             particles.path,
@@ -76,6 +84,8 @@ class TestTiltFixedHetero:
         ]
         if indices.path is not None:
             args += ["--ind", indices.path]
+        if ntilts is not None:
+            args += ["--ntilts", str(ntilts)]
 
         parser = argparse.ArgumentParser()
         train_vae.add_args(parser)
@@ -83,10 +93,10 @@ class TestTiltFixedHetero:
         train_vae.main(args)
 
     def test_filter_command(
-        self, tmpdir_factory, particles, indices, poses, ctf, datadir
+        self, tmpdir_factory, particles, indices, poses, ctf, datadir, ntilts
     ):
         outdir = self.get_outdir(
-            tmpdir_factory, particles, poses, ctf, indices, datadir
+            tmpdir_factory, particles, poses, ctf, indices, datadir, ntilts
         )
 
         # filter the tilt-series particles
@@ -146,10 +156,12 @@ class TestTiltFixedHetero:
         train_vae.add_args(parser)
         train_vae.main(parser.parse_args(args))
 
-    def test_analyze(self, tmpdir_factory, particles, indices, poses, ctf, datadir):
+    def test_analyze(
+        self, tmpdir_factory, particles, indices, poses, ctf, datadir, ntilts
+    ):
         """Produce standard analyses for a particular epoch."""
         outdir = self.get_outdir(
-            tmpdir_factory, particles, poses, ctf, indices, datadir
+            tmpdir_factory, particles, poses, ctf, indices, datadir, ntilts
         )
 
         parser = argparse.ArgumentParser()
@@ -158,17 +170,15 @@ class TestTiltFixedHetero:
             parser.parse_args(
                 [
                     outdir,
-                    "4",  # Epoch number to analyze - 0-indexed
+                    "5",  # Epoch number to analyze - 1-indexed
                     "--pc",
                     "3",  # Number of principal component traversals to generate
                     "--ksample",
                     "2",  # Number of kmeans samples to generate
-                    "--vol-start-index",
-                    "1",
                 ]
             )
         )
-        assert os.path.exists(os.path.join(outdir, "analyze.4"))
+        assert os.path.exists(os.path.join(outdir, "analyze.5"))
 
     @pytest.mark.parametrize(
         "new_indices_file",
@@ -176,11 +186,19 @@ class TestTiltFixedHetero:
         ids=("no-new-ind", "new-ind"),
     )
     def test_backproject(
-        self, tmpdir_factory, particles, indices, poses, ctf, datadir, new_indices_file
+        self,
+        tmpdir_factory,
+        particles,
+        indices,
+        poses,
+        ctf,
+        datadir,
+        ntilts,
+        new_indices_file,
     ):
         """Run backprojection using the given particles."""
         outdir = self.get_outdir(
-            tmpdir_factory, particles, poses, ctf, indices, datadir
+            tmpdir_factory, particles, poses, ctf, indices, datadir, ntilts
         )
         args = [
             os.path.join(outdir, "filtered_sta_testing_bin8.star"),
@@ -208,14 +226,14 @@ class TestTiltFixedHetero:
 
     @pytest.mark.parametrize("nb_lbl", ["cryoDRGN_figures", "cryoDRGN_ET_viz"])
     def test_notebooks(
-        self, tmpdir_factory, particles, indices, poses, ctf, datadir, nb_lbl
+        self, tmpdir_factory, particles, indices, poses, ctf, datadir, ntilts, nb_lbl
     ):
         """Execute the demonstration Jupyter notebooks produced by analysis."""
         outdir = self.get_outdir(
-            tmpdir_factory, particles, poses, ctf, indices, datadir
+            tmpdir_factory, particles, poses, ctf, indices, datadir, ntilts
         )
         orig_cwd = os.path.abspath(os.getcwd())
-        os.chdir(os.path.join(outdir, "analyze.4"))
+        os.chdir(os.path.join(outdir, "analyze.5"))
         assert os.path.exists(f"{nb_lbl}.ipynb"), "Upstream tests have failed!"
 
         with open(f"{nb_lbl}.ipynb") as ff:
@@ -224,21 +242,36 @@ class TestTiltFixedHetero:
         ExecutePreprocessor(timeout=600, kernel_name="python3").preprocess(nb_in)
         os.chdir(orig_cwd)
 
-    def test_refiltering(self, tmpdir_factory, particles, indices, poses, ctf, datadir):
+    @pytest.mark.parametrize("plot_ind", [False, True])
+    def test_interactive_filtering(
+        self, tmpdir_factory, particles, indices, poses, ctf, datadir, ntilts, plot_ind
+    ):
+        """Launch interface for filtering particles using model covariates."""
+        outdir = self.get_outdir(
+            tmpdir_factory, particles, poses, ctf, indices, datadir, ntilts
+        )
+        parser = argparse.ArgumentParser()
+        filter.add_args(parser)
+        args = [outdir] + ["--epoch", "5", "--force"]
+        if plot_ind:
+            ind_fl = os.path.join(outdir, "analyze.5", "tmp_ind_test.pkl")
+            with open(ind_fl, "wb") as f:
+                pickle.dump(np.array([1, 2]), f)
+            args += ["--plot-inds", ind_fl]
+
+        filter.main(parser.parse_args(args))
+        assert os.path.exists("indices.pkl")
+        assert os.path.exists("indices_inverse.pkl")
+
+    @pytest.mark.parametrize("newinds", ["indices.pkl", "indices_inverse.pkl"])
+    def test_refiltering(
+        self, tmpdir_factory, particles, indices, poses, ctf, datadir, ntilts, newinds
+    ):
         """Use particle index creating during analysis."""
         outdir = self.get_outdir(
-            tmpdir_factory, particles, poses, ctf, indices, datadir
+            tmpdir_factory, particles, poses, ctf, indices, datadir, ntilts
         )
-        orig_cwd = os.path.abspath(os.getcwd())
-        os.chdir(os.path.join(outdir, "analyze.4"))
-        assert os.path.exists("tmp_ind_selected.pkl"), "Upstream tests have failed!"
-
-        with open("tmp_ind_selected.pkl", "rb") as f:
-            indices = pickle.load(f)
-
-        new_indices = indices[:3]
-        with open("tmp_ind_selected.pkl", "wb") as f:
-            pickle.dump(new_indices, f)
+        shutil.rmtree(outdir)
 
         args = [
             particles.path,
@@ -251,11 +284,11 @@ class TestTiltFixedHetero:
             "--ctf",
             ctf.path,
             "--ind",
-            "tmp_ind_selected.pkl",
+            newinds,
             "--num-epochs",
-            "5",
+            "3",
             "--zdim",
-            "4",
+            "8",
             "-o",
             outdir,
             "--tdim",
@@ -265,12 +298,14 @@ class TestTiltFixedHetero:
             "--dec-dim",
             "16",
             "--no-analysis",
+            "--checkpoint",
+            "1",
         ]
         parser = argparse.ArgumentParser()
         train_vae.add_args(parser)
-        args = parser.parse_args(args)
-        train_vae.main(args)
-        os.chdir(orig_cwd)
+        train_vae.main(parser.parse_args(args))
+        assert os.path.exists(os.path.join(outdir, "weights.3.pkl"))
+        assert not os.path.exists(os.path.join(outdir, "weights.4.pkl"))
 
         shutil.rmtree(outdir)
 

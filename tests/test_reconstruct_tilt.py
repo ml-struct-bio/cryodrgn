@@ -23,11 +23,14 @@ from cryodrgn import utils
 
 
 @pytest.mark.parametrize("particles", ["tilts.star"], indirect=True)
-@pytest.mark.parametrize("indices", ["just-4"], indirect=True)
+@pytest.mark.parametrize(
+    "indices, ntilts",
+    [("just-4", None), ("just-5", None), ("just-4", 30)],
+    indirect=["indices"],
+)
 @pytest.mark.parametrize("poses", ["tilt-poses"], indirect=True)
 @pytest.mark.parametrize("ctf", ["CTF-Tilt"], indirect=True)
 @pytest.mark.parametrize("datadir", ["default-datadir"], indirect=True)
-@pytest.mark.parametrize("ntilts", [None, 30])
 class TestTiltFixedHetero:
     """Run heterogeneous reconstruction using tilt series from a .star file and poses.
 
@@ -352,7 +355,21 @@ class TestTiltAbinitHomo:
 @pytest.mark.parametrize("ctf", ["CTF-Tilt"], indirect=True)
 @pytest.mark.parametrize("datadir", ["default-datadir"], indirect=True)
 class TestTiltAbinitHetero:
-    def test_train_model(self, tmpdir, particles, indices, ctf, datadir):
+    def get_outdir(self, tmpdir_factory, particles, ctf, indices, datadir):
+        dirname = os.path.join(
+            "TiltFixedHetero",
+            particles.label,
+            ctf.label,
+            indices.label,
+            datadir.label,
+        )
+        odir = os.path.join(tmpdir_factory.getbasetemp(), dirname)
+        os.makedirs(odir, exist_ok=True)
+
+        return odir
+
+    def test_train_model(self, tmpdir_factory, particles, indices, ctf, datadir):
+        outdir = self.get_outdir(tmpdir_factory, particles, ctf, indices, datadir)
         args = [
             particles.path,
             "--datadir",
@@ -360,9 +377,9 @@ class TestTiltAbinitHetero:
             "--ctf",
             ctf.path,
             "--zdim",
-            "8",
+            "2",
             "-o",
-            str(tmpdir),
+            outdir,
             "--enc-dim",
             "4",
             "--enc-layers",
@@ -373,7 +390,8 @@ class TestTiltAbinitHetero:
             "2",
             "--pe-dim",
             "4",
-            "--enc-only",
+            "--encode-mode",
+            "tilt",
             "--t-extent",
             "4.0",
             "--t-ngrid",
@@ -390,5 +408,106 @@ class TestTiltAbinitHetero:
 
         parser = argparse.ArgumentParser()
         abinit_het.add_args(parser)
-        args = parser.parse_args(args)
-        abinit_het.main(args)
+        abinit_het.main(parser.parse_args(args))
+
+        assert os.path.exists(os.path.join(outdir, "weights.3.pkl"))
+        assert not os.path.exists(os.path.join(outdir, "weights.4.pkl"))
+        assert os.path.exists(os.path.join(outdir, "analyze.3"))
+
+    @pytest.mark.parametrize("epoch", [2, 3])
+    def test_analyze(self, tmpdir_factory, particles, indices, ctf, datadir, epoch):
+        """Produce standard analyses for a particular epoch."""
+        outdir = self.get_outdir(tmpdir_factory, particles, ctf, indices, datadir)
+
+        parser = argparse.ArgumentParser()
+        analyze.add_args(parser)
+        analyze.main(
+            parser.parse_args(
+                [
+                    outdir,
+                    str(epoch),  # Epoch number to analyze - 1-indexed
+                    "--pc",
+                    "1",  # Number of principal component traversals to generate
+                    "--ksample",
+                    "2",  # Number of kmeans samples to generate
+                ]
+            )
+        )
+        assert os.path.exists(os.path.join(outdir, f"analyze.{epoch}"))
+
+    @pytest.mark.parametrize("nb_lbl", ["cryoDRGN_figures", "cryoDRGN_ET_viz"])
+    def test_notebooks(self, tmpdir_factory, particles, indices, ctf, datadir, nb_lbl):
+        """Execute the demonstration Jupyter notebooks produced by analysis."""
+
+        outdir = self.get_outdir(tmpdir_factory, particles, ctf, indices, datadir)
+        orig_cwd = os.path.abspath(os.getcwd())
+        os.chdir(os.path.join(outdir, "analyze.3"))
+        assert os.path.exists(f"{nb_lbl}.ipynb"), "Upstream tests have failed!"
+
+        with open(f"{nb_lbl}.ipynb") as ff:
+            nb_in = nbformat.read(ff, nbformat.NO_CONVERT)
+
+        ExecutePreprocessor(timeout=600, kernel_name="python3").preprocess(nb_in)
+        os.chdir(orig_cwd)
+
+    @pytest.mark.parametrize("plot_ind", [False, True])
+    def test_interactive_filtering(
+        self, tmpdir_factory, particles, indices, ctf, datadir, plot_ind
+    ):
+        """Launch interface for filtering particles using model covariates."""
+
+        outdir = self.get_outdir(tmpdir_factory, particles, ctf, indices, datadir)
+        parser = argparse.ArgumentParser()
+        filter.add_args(parser)
+        args = [outdir] + ["--epoch", "3", "--force"]
+        if plot_ind:
+            ind_fl = os.path.join(outdir, "analyze.3", "tmp_ind_test.pkl")
+            with open(ind_fl, "wb") as f:
+                pickle.dump(np.array([1, 2]), f)
+            args += ["--plot-inds", ind_fl]
+
+        filter.main(parser.parse_args(args))
+        assert os.path.exists("indices.pkl")
+        assert os.path.exists("indices_inverse.pkl")
+
+    @pytest.mark.parametrize("newinds", ["indices.pkl", "indices_inverse.pkl"])
+    def test_refiltering(
+        self, tmpdir_factory, particles, indices, ctf, datadir, newinds
+    ):
+        """Use particle index creating during analysis."""
+        outdir = self.get_outdir(tmpdir_factory, particles, ctf, indices, datadir)
+        shutil.rmtree(outdir)
+
+        args = [
+            particles.path,
+            "--datadir",
+            datadir.path,
+            "--encode-mode",
+            "tilt",
+            "--ctf",
+            ctf.path,
+            "--ind",
+            newinds,
+            "--num-epochs",
+            "2",
+            "--zdim",
+            "8",
+            "-o",
+            outdir,
+            "--tdim",
+            "16",
+            "--enc-dim",
+            "16",
+            "--dec-dim",
+            "16",
+            "--no-analysis",
+            "--checkpoint",
+            "1",
+        ]
+        parser = argparse.ArgumentParser()
+        abinit_het.add_args(parser)
+        abinit_het.main(parser.parse_args(args))
+        assert os.path.exists(os.path.join(outdir, "weights.2.pkl"))
+        assert not os.path.exists(os.path.join(outdir, "weights.3.pkl"))
+
+        shutil.rmtree(outdir)

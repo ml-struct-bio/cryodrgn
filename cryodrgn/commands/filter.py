@@ -169,6 +169,7 @@ def main(args: argparse.Namespace) -> None:
                     datadir=train_configs["dataset_args"]["datadir"],
                     lazy=True,
                     ntilts=train_configs["dataset_args"]["ntilts"],
+                    ind=train_configs["dataset_args"]["ind"],
                 ).Np
             )
         )

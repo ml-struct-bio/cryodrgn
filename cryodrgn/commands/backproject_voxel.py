@@ -149,7 +149,7 @@ def add_args(parser):
         "--force-ntilts",
         action="store_true",
         dest="force_ntilts",
-        help="Automatically keep only particles with ≥ --ntilts tilts"
+        help="Automatically keep only particles with ≥ --ntilts tilts",
     )
     group.add_argument(
         "-d",
@@ -216,13 +216,17 @@ def main(args):
         if args.ind is not None and args.tilt:
             logger.warning("--force-ntilts overrides --ind; ignoring your --ind file.")
         if args.tilt:
-            logger.info(f"Filtering to particles with ≥ {args.ntilts} tilts (–force-ntilts)")
+            logger.info(
+                f"Filtering to particles with ≥ {args.ntilts} tilts (–force-ntilts)"
+            )
             pt, _ = dataset.TiltSeriesData.parse_particle_tilt(args.particles)
             counts = [len(tilt_list) for tilt_list in pt]
             valid_particles = np.where(np.array(counts) >= args.ntilts)[0]
             if valid_particles.size == 0:
                 raise ValueError(f"No particles have at least {args.ntilts} tilts.")
-            idx_file = os.path.join(args.outdir, f"indices_force_ntilts_{args.ntilts}.pkl")
+            idx_file = os.path.join(
+                args.outdir, f"indices_force_ntilts_{args.ntilts}.pkl"
+            )
             utils.save_pkl(valid_particles.astype(int), idx_file)
             logger.info(f"→ saved {valid_particles.size} particle IDs to {idx_file}")
             args.ind = idx_file

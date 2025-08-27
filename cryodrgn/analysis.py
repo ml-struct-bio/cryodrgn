@@ -383,7 +383,7 @@ def plot_by_cluster(
 ):
     fig, ax = plt.subplots(figsize=figsize)
     if type(K) is int:
-        K = list(range(K))
+        K = list(range(1, K + 1))
 
     if colors is None:
         colors = _get_colors(len(K), cmap)
@@ -399,7 +399,7 @@ def plot_by_cluster(
             s=s,
             alpha=alpha,
             label="cluster {}".format(i),
-            color=colors[i],
+            color=colors[i - 1],
             rasterized=True,
         )
 
@@ -411,8 +411,8 @@ def plot_by_cluster(
         plt.scatter(centers[:, 0], centers[:, 1], c="k")
     if annotate:
         assert centers is not None
-        for i in K:
-            ax.annotate(str(i), centers[i, 0:2])
+        for ii, i in enumerate(K):
+            ax.annotate(str(i), centers[ii, 0:2])
 
     return fig, ax
 
@@ -421,19 +421,18 @@ def plot_by_cluster_subplot(
     x, y, K, labels, s=2, alpha=0.1, colors=None, cmap=None, figsize=None
 ):
     if type(K) is int:
-        K = list(range(K))
+        K = list(range(1, K + 1))
     ncol = int(np.ceil(len(K) ** 0.5))
     nrow = int(np.ceil(len(K) / ncol))
     fig, ax = plt.subplots(ncol, nrow, sharex=True, sharey=True, figsize=(10, 10))
     if colors is None:
         colors = _get_colors(len(K), cmap)
-    for i in K:
+    for i, ax in zip(K, ax.ravel()):
         ii = labels == i
         x_sub = x[ii]
         y_sub = y[ii]
-        a = ax.ravel()[i]
-        a.scatter(x_sub, y_sub, s=s, alpha=alpha, rasterized=True, color=colors[i])
-        a.set_title(i)
+        ax.scatter(x_sub, y_sub, s=s, alpha=alpha, rasterized=True, color=colors[i - 1])
+        ax.set_title(i)
 
     return fig, ax
 

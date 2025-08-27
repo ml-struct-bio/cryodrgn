@@ -226,6 +226,7 @@ class TestFixedHetero:
         "ctf, epoch",
         [("CTF-Test", 3), ("CTF-Test", None), (None, None)],
         indirect=["ctf"],
+        ids=["with.CTF,epoch.3", "with.CTF,last.epoch", "no.CTF,last.epoch"],
     )
     def test_interactive_filtering(
         self,
@@ -274,28 +275,27 @@ class TestFixedHetero:
             assert not os.path.exists(os.path.join(sel_dir, "indices_inverse.pkl"))
 
     @pytest.mark.parametrize(
-        "ctf, downsample_dim, flip_vol",
+        "ctf, downsample_dim, flip_vol, sketch_size, num_clusters",
         [
-            (None, "16", False),
-            ("CTF-Test", "16", True),
-            pytest.param(
-                "CTF-Test",
-                "64",
-                False,
-                marks=pytest.mark.xfail(
-                    raises=ValueError, reason="box size > resolution"
-                ),
-            ),
+            (None, "16", False, 10, 3),
+            ("CTF-Test", "16", True, 5, 5),
             pytest.param(
                 "CTF-Test",
                 None,
                 False,
+                5,
+                5,
                 marks=pytest.mark.xfail(
                     raises=ValueError, reason="box size > resolution"
                 ),
             ),
         ],
         indirect=["ctf"],
+        ids=[
+            "no.CTF,downsample.16,flip.False,sketch.10,clusters.3",
+            "with.CTF,downsample.16,flip.True,sketch.5,clusters.5",
+            "with.CTF,downsample.None,flip.False,sketch.5,clusters.5",
+        ],
     )
     def test_landscape(
         self,
@@ -307,6 +307,8 @@ class TestFixedHetero:
         indices,
         downsample_dim,
         flip_vol,
+        sketch_size,
+        num_clusters,
     ):
         outdir = self.get_outdir(
             tmpdir_factory, train_cmd, particles, indices, poses, ctf
@@ -315,11 +317,11 @@ class TestFixedHetero:
             outdir,
             "4",  # Epoch number to analyze - 1-indexed
             "--sketch-size",
-            "10",  # Number of volumes to generate for analysis
+            str(sketch_size),  # Number of volumes to generate for analysis
             "--pc-dim",
             "5",
-            "--vol-start-index",
-            "1",
+            "-M",
+            str(num_clusters),
         ]
         if downsample_dim:
             args += ["--downsample", downsample_dim]
@@ -343,16 +345,13 @@ class TestFixedHetero:
                     raises=AssertionError, reason="box size > resolution"
                 ),
             ),
-            pytest.param(
-                "CTF-Test",
-                None,
-                False,
-                marks=pytest.mark.xfail(
-                    raises=AssertionError, reason="box size > resolution"
-                ),
-            ),
         ],
         indirect=["ctf"],
+        ids=[
+            "no.CTF,downsample.16,flip.False",
+            "with.CTF,downsample.16,flip.True",
+            "with.CTF,downsample.64,flip.False",
+        ],
     )
     def test_landscape_full(
         self,
@@ -368,7 +367,7 @@ class TestFixedHetero:
         outdir = self.get_outdir(
             tmpdir_factory, train_cmd, particles, indices, poses, ctf
         )
-        args = [outdir, "4", "-N", "10"]
+        args = [outdir, "4", "-N", "20"]
         if downsample_dim is not None:
             args += ["--downsample", downsample_dim]
         if flip_vol:
@@ -406,13 +405,18 @@ class TestFixedHetero:
     @pytest.mark.parametrize(
         "ctf, seed, steps, points",
         [
-            (None, 915, 5, None),
-            ("CTF-Test", 321, 2, None),
-            ("CTF-Test", 701, 3, 1),
-            ("CTF-Test", 701, 3, 2),
-            ("CTF-Test", 55, 3, None),
+            (None, 915, 2, None),
+            ("CTF-Test", 321, 3, None),
+            ("CTF-Test", 701, 2, 3),
+            ("CTF-Test", 544, 3, 10),
         ],
         indirect=["ctf"],
+        ids=[
+            "no.CTF,two.steps,default.points",
+            "with.CTF,three.steps,default.points",
+            "with.CTF,two.steps,three.points",
+            "with.CTF,three.steps,ten.points",
+        ],
     )
     def test_direct_traversal(
         self,

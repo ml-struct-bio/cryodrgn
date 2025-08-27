@@ -89,7 +89,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     group.add_argument(
         "--vol-start-index",
         type=int,
-        default=0,
+        default=1,
         help="Default value of start index for volume generation "
         "(default: %(default)s)",
     )
@@ -346,12 +346,12 @@ def analyze_volumes(
     subdir = os.path.join(outdir, f"sketch_clustering_{linkage}_{M}")
     os.makedirs(subdir, exist_ok=True)
     cluster = AgglomerativeClustering(n_clusters=M, linkage=linkage)
-    state_labels = cluster.fit_predict(vols) + vol_start_index
+    state_labels = cluster.fit_predict(vols) + 1
     utils.save_pkl(state_labels, os.path.join(subdir, "state_labels.pkl"))
 
     kmeans_labels = utils.load_pkl(os.path.join(outdir, f"kmeans{K}", "labels.pkl"))
     kmeans_counts = Counter(kmeans_labels)
-    for cluster_i in kmeans_counts:
+    for cluster_i in range(1, M + 1):
         vol_indices = np.where(state_labels == cluster_i)[0]
         logger.info(f"State {cluster_i}: {len(vol_indices)} volumes")
         if vol_ind is not None:

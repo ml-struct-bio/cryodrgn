@@ -156,8 +156,8 @@ def train(model, device, train_loader, optimizer, epoch):
         loss.backward()
         optimizer.step()
         if batch_idx % 10 == 0:
-            print(
-                "Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}".format(
+            logger.info(
+                "Train Epoch: {} [ {}/{} ({:.0f}%) ]\tLoss: {:.6f}".format(
                     epoch,
                     batch_idx * len(data),
                     len(train_loader.dataset),
@@ -180,7 +180,7 @@ def test(model, device, test_loader):
 
     test_loss /= len(test_loader.dataset)
 
-    print("\nTest set: Average loss: {:.4f}\n".format(test_loss))
+    logger.info(f"\nTest set: Average loss: {test_loss:.4f}\n")
 
 
 class MyDataset(Dataset):
@@ -266,8 +266,8 @@ def generate_and_map_volumes(zfile, cfg, weights, mask_mrc, pca_obj_pkl, outdir,
     t1 = dt.now()
     embeddings = []
     for i, zz in enumerate(z):
-        if i % 1 == 0:
-            logger.info(f"Generating volume {i} of {len(z)}")
+        if (i + 1) % 100 == 0:
+            logger.info(f"Generating volume {i + 1} of {len(z)}")
 
         if args.downsample:
             extent = lattice.extent * (args.downsample / (D - 1))
@@ -454,9 +454,9 @@ def main(args: argparse.Namespace) -> None:
     if not os.path.exists(f"{clustering_dir}"):
         os.mkdir(f"{clustering_dir}")
 
-    cluster_labels = np.array(part.membership, dtype=np.int32)
-    utils.save_pkl(cluster_labels, f"{clustering_dir}/cluster_labels.pkl")
-    num_clusters = max(cluster_labels) + 1
+    cluster_labels = np.array(part.membership, dtype=np.int32) + 1
+    utils.save_pkl(cluster_labels, os.path.join(clustering_dir, "cluster_labels.pkl"))
+    num_clusters = max(cluster_labels)
 
     # Save plots
     logger.info("Saving plots...")
@@ -476,13 +476,13 @@ def main(args: argparse.Namespace) -> None:
     plt.figure(figsize=(10, 10))
     cmap = choose_cmap(num_clusters)
     colors = get_colors_for_cmap(cmap, num_clusters)
-    for i in range(num_clusters):
+    for i in range(1, num_clusters + 1):
         c = umap_emb[np.where(cluster_labels == i)]
         plt.scatter(
             c[:, 0],
             c[:, 1],
             label=i,
-            color=colors[i],
+            color=colors[i - 1],
             s=0.3,
             alpha=0.5,
             rasterized=True,
@@ -523,14 +523,19 @@ def main(args: argparse.Namespace) -> None:
     with open(out_ipynb, "r") as f:
         filter_ntbook = nbformat.read(f, as_version=nbformat.NO_CONVERT)
 
+    kmeans_lbls = [
+        f.split("kmeans")[1]
+        for f in os.listdir(landscape_dir)
+        if f.startswith("kmeans") and os.path.isdir(os.path.join(landscape_dir, f))
+    ]
+    K = max(int(x) for x in kmeans_lbls if x.isnumeric())
+
     for cell in filter_ntbook["cells"]:
         cell["source"] = cell["source"].replace("EPOCH = None", f"EPOCH = {args.epoch}")
         cell["source"] = cell["source"].replace(
             "WORKDIR = None", f'WORKDIR = "{args.workdir}"'
         )
-        cell["source"] = cell["source"].replace(
-            "K = None", f"K = {args.training_volumes}"
-        )
+        cell["source"] = cell["source"].replace("K = None", f"K = {K}")
         cell["source"] = cell["source"].replace("M = None", f"M = {M}")
         cell["source"] = cell["source"].replace(
             "linkage = None", f'linkage = "{link_method}"'

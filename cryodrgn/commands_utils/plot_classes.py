@@ -23,14 +23,14 @@ directory for saving output plots, unless `cryodrgn analyze` has done so already
 
 Example usages
 --------------
-$ cryodrgn_utils plot_classes my_work_dir/003_train-vae 49 --labels new_classes.pkl
+$ cryodrgn_utils plot_classes my_work_dir/003_train-vae 50 --labels new_classes.pkl
 
 # Use your own color palette saved to a file
-$ cryodrgn_utils plot_classes my_work_dir/003_train-vae 49 --labels new_classes.pkl \
+$ cryodrgn_utils plot_classes my_work_dir/003_train-vae 50 --labels new_classes.pkl \
                               --palette my_colours.pkl
 
 # Use a colour palette from the seaborn plotting package
-$ cryodrgn_utils plot_classes my_work_dir/003_train-vae 49 --labels new_classes.pkl \
+$ cryodrgn_utils plot_classes my_work_dir/003_train-vae 50 --labels new_classes.pkl \
                               --palette rocket
 
 # Save plots to .svg files instead of .pngs, which will preserve resolution with scaling

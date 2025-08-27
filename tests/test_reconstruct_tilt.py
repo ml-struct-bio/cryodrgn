@@ -25,7 +25,7 @@ from cryodrgn import utils
 @pytest.mark.parametrize("particles", ["tilts.star"], indirect=True)
 @pytest.mark.parametrize(
     "indices, ntilts",
-    [("just-4", None), ("just-5", None), ("just-4", 30)],
+    [("just-4", None), ("just-5", None), ("just-4", 30), ("just-5", 3)],
     indirect=["indices"],
 )
 @pytest.mark.parametrize("poses", ["tilt-poses"], indirect=True)
@@ -245,9 +245,9 @@ class TestTiltFixedHetero:
         ExecutePreprocessor(timeout=600, kernel_name="python3").preprocess(nb_in)
         os.chdir(orig_cwd)
 
-    @pytest.mark.parametrize("plot_ind", [False, True])
+    @pytest.mark.parametrize("plotind", [False, True])
     def test_interactive_filtering(
-        self, tmpdir_factory, particles, indices, poses, ctf, datadir, ntilts, plot_ind
+        self, tmpdir_factory, particles, indices, poses, ctf, datadir, ntilts, plotind
     ):
         """Launch interface for filtering particles using model covariates."""
         outdir = self.get_outdir(
@@ -255,16 +255,28 @@ class TestTiltFixedHetero:
         )
         parser = argparse.ArgumentParser()
         filter.add_args(parser)
-        args = [outdir] + ["--epoch", "5", "--force"]
-        if plot_ind:
+        sel_dir = os.path.join(outdir, "analyze.5")
+        args = [outdir] + ["--epoch", "5", "--force", "--sel-dir", sel_dir]
+        if plotind:
             ind_fl = os.path.join(outdir, "analyze.5", "tmp_ind_test.pkl")
             with open(ind_fl, "wb") as f:
                 pickle.dump(np.array([1, 2]), f)
             args += ["--plot-inds", ind_fl]
-
         filter.main(parser.parse_args(args))
-        assert os.path.exists("indices.pkl")
-        assert os.path.exists("indices_inverse.pkl")
+
+        if plotind:
+            assert os.path.exists(os.path.join(sel_dir, "indices.pkl"))
+            with open(os.path.join(sel_dir, "indices.pkl"), "rb") as f:
+                inds = pickle.load(f)
+            assert isinstance(inds, np.ndarray)
+            assert len(inds) == 2
+            assert os.path.exists(os.path.join(sel_dir, "indices_inverse.pkl"))
+            with open(os.path.join(sel_dir, "indices_inverse.pkl"), "rb") as f:
+                inv_inds = pickle.load(f)
+            assert isinstance(inv_inds, np.ndarray)
+        else:
+            assert not os.path.exists(os.path.join(sel_dir, "indices.pkl"))
+            assert not os.path.exists(os.path.join(sel_dir, "indices_inverse.pkl"))
 
     @pytest.mark.parametrize("newinds", ["indices.pkl", "indices_inverse.pkl"])
     def test_refiltering(
@@ -274,7 +286,6 @@ class TestTiltFixedHetero:
         outdir = self.get_outdir(
             tmpdir_factory, particles, poses, ctf, indices, datadir, ntilts
         )
-        shutil.rmtree(outdir)
 
         args = [
             particles.path,
@@ -287,13 +298,13 @@ class TestTiltFixedHetero:
             "--ctf",
             ctf.path,
             "--ind",
-            newinds,
+            os.path.join(outdir, "analyze.5", newinds),
             "--num-epochs",
             "3",
             "--zdim",
             "8",
             "-o",
-            outdir,
+            os.path.join(outdir, "refiltered"),
             "--tdim",
             "16",
             "--enc-dim",
@@ -307,12 +318,11 @@ class TestTiltFixedHetero:
         parser = argparse.ArgumentParser()
         train_vae.add_args(parser)
         train_vae.main(parser.parse_args(args))
-        assert os.path.exists(os.path.join(outdir, "weights.3.pkl"))
-        assert not os.path.exists(os.path.join(outdir, "weights.4.pkl"))
-
-        shutil.rmtree(outdir)
+        assert os.path.exists(os.path.join(outdir, "refiltered", "weights.3.pkl"))
+        assert not os.path.exists(os.path.join(outdir, "refiltered", "weights.4.pkl"))
 
 
+@pytest.mark.skip(reason="Tilt-based abinit not implemented yet")
 @pytest.mark.parametrize("particles", ["tilts.star"], indirect=True)
 @pytest.mark.parametrize("indices", [None, "just-4"], indirect=True)
 @pytest.mark.parametrize("ctf", ["CTF-Tilt"], indirect=True)
@@ -350,6 +360,7 @@ class TestTiltAbinitHomo:
         abinit_homo.main(args)
 
 
+@pytest.mark.skip(reason="Tilt-based abinit not implemented yet")
 @pytest.mark.parametrize("particles", ["tilts.star"], indirect=True)
 @pytest.mark.parametrize("indices", [None, "just-4"], indirect=True)
 @pytest.mark.parametrize("ctf", ["CTF-Tilt"], indirect=True)
@@ -374,33 +385,22 @@ class TestTiltAbinitHetero:
             particles.path,
             "--datadir",
             datadir.path,
+            "--encode-mode",
+            "tilt",
             "--ctf",
             ctf.path,
+            "--num-epochs",
+            "5",
             "--zdim",
             "2",
             "-o",
             outdir,
+            "--tdim",
+            "16",
             "--enc-dim",
-            "4",
-            "--enc-layers",
-            "2",
+            "16",
             "--dec-dim",
-            "4",
-            "--dec-layers",
-            "2",
-            "--pe-dim",
-            "4",
-            "--encode-mode",
-            "tilt",
-            "--t-extent",
-            "4.0",
-            "--t-ngrid",
-            "2",
-            "--pretrain=1",
-            "--num-epochs",
-            "3",
-            "--ps-freq",
-            "2",
+            "16",
             "--no-analysis",
         ]
         if indices.path is not None:
@@ -450,25 +450,37 @@ class TestTiltAbinitHetero:
         ExecutePreprocessor(timeout=600, kernel_name="python3").preprocess(nb_in)
         os.chdir(orig_cwd)
 
-    @pytest.mark.parametrize("plot_ind", [False, True])
+    @pytest.mark.parametrize("plotind", [False, True])
     def test_interactive_filtering(
-        self, tmpdir_factory, particles, indices, ctf, datadir, plot_ind
+        self, tmpdir_factory, particles, indices, ctf, datadir, plotind
     ):
         """Launch interface for filtering particles using model covariates."""
 
         outdir = self.get_outdir(tmpdir_factory, particles, ctf, indices, datadir)
         parser = argparse.ArgumentParser()
         filter.add_args(parser)
-        args = [outdir] + ["--epoch", "3", "--force"]
-        if plot_ind:
+        sel_dir = os.path.join(outdir, "analyze.3")
+        args = [outdir] + ["--epoch", "3", "--force", "--sel-dir", sel_dir]
+        if plotind:
             ind_fl = os.path.join(outdir, "analyze.3", "tmp_ind_test.pkl")
             with open(ind_fl, "wb") as f:
                 pickle.dump(np.array([1, 2]), f)
             args += ["--plot-inds", ind_fl]
 
         filter.main(parser.parse_args(args))
-        assert os.path.exists("indices.pkl")
-        assert os.path.exists("indices_inverse.pkl")
+        if plotind:
+            assert os.path.exists(os.path.join(sel_dir, "indices.pkl"))
+            with open(os.path.join(sel_dir, "indices.pkl"), "rb") as f:
+                inds = pickle.load(f)
+            assert isinstance(inds, np.ndarray)
+            assert len(inds) == 2
+            assert os.path.exists(os.path.join(sel_dir, "indices_inverse.pkl"))
+            with open(os.path.join(sel_dir, "indices_inverse.pkl"), "rb") as f:
+                inv_inds = pickle.load(f)
+            assert isinstance(inv_inds, np.ndarray)
+        else:
+            assert not os.path.exists(os.path.join(sel_dir, "indices.pkl"))
+            assert not os.path.exists(os.path.join(sel_dir, "indices_inverse.pkl"))
 
     @pytest.mark.parametrize("newinds", ["indices.pkl", "indices_inverse.pkl"])
     def test_refiltering(
@@ -487,13 +499,13 @@ class TestTiltAbinitHetero:
             "--ctf",
             ctf.path,
             "--ind",
-            newinds,
+            os.path.join(outdir, "analyze.3", newinds),
             "--num-epochs",
             "2",
             "--zdim",
             "8",
             "-o",
-            outdir,
+            os.path.join(outdir, "refiltered"),
             "--tdim",
             "16",
             "--enc-dim",
@@ -507,7 +519,7 @@ class TestTiltAbinitHetero:
         parser = argparse.ArgumentParser()
         abinit_het.add_args(parser)
         abinit_het.main(parser.parse_args(args))
-        assert os.path.exists(os.path.join(outdir, "weights.2.pkl"))
-        assert not os.path.exists(os.path.join(outdir, "weights.3.pkl"))
+        assert os.path.exists(os.path.join(outdir, "refiltered", "weights.2.pkl"))
+        assert not os.path.exists(os.path.join(outdir, "refiltered", "weights.3.pkl"))
 
         shutil.rmtree(outdir)

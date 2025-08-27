@@ -47,7 +47,8 @@ from matplotlib.gridspec import GridSpec
 from scipy.spatial import transform
 from typing import Optional, Sequence
 
-from cryodrgn import analysis, utils, dataset
+from cryodrgn import analysis, utils
+from cryodrgn.dataset import ImageDataset, TiltSeriesData
 
 logger = logging.getLogger(__name__)
 
@@ -164,22 +165,20 @@ def main(args: argparse.Namespace) -> None:
     else:
         indices = None
 
-    particles_fl = train_configs["dataset_args"]["particles"]
+    imgs_fl = train_configs["dataset_args"]["particles"]
     if ctf_params is not None and enc_mode != "tilt":
         all_indices = np.array(range(ctf_params.shape[0]))
 
     # For tilt-series inputs we can't use the (tilt-level) CTF parameters to get the
     # number of particles, so we need to load the tilt-series data itself
     elif enc_mode == "tilt":
-        pt, tp = dataset.TiltSeriesData.parse_particle_tilt(particles_fl)
+        pt, tp = TiltSeriesData.parse_particle_tilt(imgs_fl)
         all_indices = np.array(range(len(pt)))
 
     # We thus also need to load the image dataset metadata to get the number of
     # particles for inverse selection in the case of SPA inputs with no CTF parameters
     else:
-        all_indices = np.array(
-            range(dataset.ImageDataset(mrcfile=particles_fl, lazy=True).Np)
-        )
+        all_indices = np.array(range(len(ImageDataset(mrcfile=imgs_fl, lazy=True))))
 
     if indices is not None:
         ctf_params = ctf_params[indices, :] if ctf_params is not None else None

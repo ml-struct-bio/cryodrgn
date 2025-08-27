@@ -4,6 +4,7 @@ import pytest
 import argparse
 import os.path
 import shutil
+import pickle
 import random
 import nbformat
 from nbclient.exceptions import CellExecutionError
@@ -213,13 +214,22 @@ class TestFixedHetero:
 
         os.chdir(orig_cwd)
 
+    @pytest.mark.parametrize("plotind", [False, True])
     @pytest.mark.parametrize(
         "ctf, epoch",
-        [("CTF-Test", 4), ("CTF-Test", None), (None, None)],
+        [("CTF-Test", 3), ("CTF-Test", None), (None, None)],
         indirect=["ctf"],
     )
     def test_interactive_filtering(
-        self, tmpdir_factory, train_cmd, particles, poses, ctf, indices, epoch
+        self,
+        tmpdir_factory,
+        train_cmd,
+        particles,
+        poses,
+        ctf,
+        indices,
+        epoch,
+        plotind,
     ):
         """Launch interface for filtering particles using model covariates."""
         outdir = self.get_outdir(
@@ -227,8 +237,34 @@ class TestFixedHetero:
         )
         parser = argparse.ArgumentParser()
         filter.add_args(parser)
-        epoch_args = ["--epoch", str(epoch)] if epoch is not None else list()
-        filter.main(parser.parse_args([outdir] + epoch_args))
+        args = [outdir, "--force"]
+        if epoch is not None:
+            args += ["--epoch", str(epoch)]
+            sel_dir = os.path.join(outdir, f"analyze.{epoch}")
+        else:
+            sel_dir = os.path.join(outdir, "analyze.4")
+        args += ["--sel-dir", sel_dir]
+
+        if plotind:
+            ind_fl = os.path.join(outdir, "tmp_ind_test.pkl")
+            with open(ind_fl, "wb") as f:
+                pickle.dump(np.array([1, 2]), f)
+            args += ["--plot-inds", ind_fl]
+
+        filter.main(parser.parse_args(args))
+        if plotind:
+            assert os.path.exists(os.path.join(sel_dir, "indices.pkl"))
+            with open(os.path.join(sel_dir, "indices.pkl"), "rb") as f:
+                inds = pickle.load(f)
+            assert isinstance(inds, np.ndarray)
+            assert len(inds) == 2
+            assert os.path.exists(os.path.join(sel_dir, "indices_inverse.pkl"))
+            with open(os.path.join(sel_dir, "indices_inverse.pkl"), "rb") as f:
+                inv_inds = pickle.load(f)
+            assert isinstance(inv_inds, np.ndarray)
+        else:
+            assert not os.path.exists(os.path.join(sel_dir, "indices.pkl"))
+            assert not os.path.exists(os.path.join(sel_dir, "indices_inverse.pkl"))
 
     @pytest.mark.parametrize(
         "ctf, downsample_dim, flip_vol",

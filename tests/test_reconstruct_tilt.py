@@ -245,7 +245,7 @@ class TestTiltFixedHetero:
         ExecutePreprocessor(timeout=600, kernel_name="python3").preprocess(nb_in)
         os.chdir(orig_cwd)
 
-    @pytest.mark.parametrize("plotind", [False, True])
+    @pytest.mark.parametrize("plotind", [False, True], ids=["dontsave.ind", "save.ind"])
     def test_interactive_filtering(
         self, tmpdir_factory, particles, indices, poses, ctf, datadir, ntilts, plotind
     ):
@@ -362,7 +362,9 @@ class TestTiltAbinitHomo:
 
 @pytest.mark.skip(reason="Tilt-based abinit not implemented yet")
 @pytest.mark.parametrize("particles", ["tilts.star"], indirect=True)
-@pytest.mark.parametrize("indices", [None, "just-4"], indirect=True)
+@pytest.mark.parametrize(
+    "indices", [None, "just-4"], indirect=True, ids=["no.ind", "ind.4"]
+)
 @pytest.mark.parametrize("ctf", ["CTF-Tilt"], indirect=True)
 @pytest.mark.parametrize("datadir", ["default-datadir"], indirect=True)
 class TestTiltAbinitHetero:
@@ -414,7 +416,7 @@ class TestTiltAbinitHetero:
         assert not os.path.exists(os.path.join(outdir, "weights.4.pkl"))
         assert os.path.exists(os.path.join(outdir, "analyze.3"))
 
-    @pytest.mark.parametrize("epoch", [2, 3])
+    @pytest.mark.parametrize("epoch", [2, 3], ids=["epoch.2", "epoch.3"])
     def test_analyze(self, tmpdir_factory, particles, indices, ctf, datadir, epoch):
         """Produce standard analyses for a particular epoch."""
         outdir = self.get_outdir(tmpdir_factory, particles, ctf, indices, datadir)
@@ -450,7 +452,7 @@ class TestTiltAbinitHetero:
         ExecutePreprocessor(timeout=600, kernel_name="python3").preprocess(nb_in)
         os.chdir(orig_cwd)
 
-    @pytest.mark.parametrize("plotind", [False, True])
+    @pytest.mark.parametrize("plotind", [False, True], ids=["save.ind", "dontsave.ind"])
     def test_interactive_filtering(
         self, tmpdir_factory, particles, indices, ctf, datadir, plotind
     ):

@@ -221,7 +221,7 @@ class TestFixedHetero:
 
         os.chdir(orig_cwd)
 
-    @pytest.mark.parametrize("plotind", [False, True])
+    @pytest.mark.parametrize("plotind", [False, True], ids=["dontsave.ind", "save.ind"])
     @pytest.mark.parametrize(
         "ctf, epoch",
         [("CTF-Test", 3), ("CTF-Test", None), (None, None)],

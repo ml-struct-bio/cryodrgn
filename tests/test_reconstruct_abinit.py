@@ -21,6 +21,13 @@ from cryodrgn.commands import analyze, eval_vol, filter, graph_traversal, abinit
         ("toy.star-13", None, None),
     ],
     indirect=True,
+    ids=[
+        "hand,no.ind,no.ctf",
+        "hand,no.ind,with.ctf",
+        "toy.txt,ind.rand.100,with.ctf",
+        "toy.star,ind.f100,with.ctf",
+        "toy.star-13,no.ind,no.ctf",
+    ],
 )
 class TestAbinitHetero:
     def get_outdir(self, tmpdir_factory, particles, ctf, indices):
@@ -75,7 +82,11 @@ class TestAbinitHetero:
         abinit_het.main(parser.parse_args(args))
         assert not os.path.exists(os.path.join(outdir, "analyze.2"))
 
-    @pytest.mark.parametrize("epoch, vol_start_index", [(2, 1), (1, 0)])
+    @pytest.mark.parametrize(
+        "epoch, vol_start_index",
+        [(2, 1), (1, 0)],
+        ids=["epoch.2,volstart.1", "epoch.1,volstart.0"],
+    )
     def test_analyze(
         self, tmpdir_factory, particles, ctf, indices, epoch, vol_start_index
     ):
@@ -121,7 +132,7 @@ class TestAbinitHetero:
         ExecutePreprocessor(timeout=600, kernel_name="python3").preprocess(nb_in)
         os.chdir(orig_cwd)
 
-    @pytest.mark.parametrize("plotind", [False, True])
+    @pytest.mark.parametrize("plotind", [False, True], ids=["dontsave.ind", "save.ind"])
     @pytest.mark.parametrize(
         "epoch",
         [
@@ -133,6 +144,7 @@ class TestAbinitHetero:
                 ),
             ),
         ],
+        ids=["epoch.2", "epoch.None"],
     )
     def test_interactive_filtering(
         self, tmpdir_factory, particles, ctf, indices, epoch, plotind
@@ -171,7 +183,7 @@ class TestAbinitHetero:
             assert not os.path.exists(os.path.join(sel_dir, "indices.pkl"))
             assert not os.path.exists(os.path.join(sel_dir, "indices_inverse.pkl"))
 
-    @pytest.mark.parametrize("epoch", [2, 3])
+    @pytest.mark.parametrize("epoch", [2, 3], ids=["epoch.2", "epoch.3"])
     def test_graph_traversal(self, tmpdir_factory, particles, ctf, indices, epoch):
         outdir = self.get_outdir(tmpdir_factory, particles, indices, ctf)
         parser = argparse.ArgumentParser()

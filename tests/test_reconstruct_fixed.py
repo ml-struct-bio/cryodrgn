@@ -34,7 +34,9 @@ from cryodrgn import utils
     "particles", ["toy.mrcs", "toy.txt", "toy.star"], indirect=True
 )
 @pytest.mark.parametrize("poses", ["toy-poses"], indirect=True)
-@pytest.mark.parametrize("indices", [None, "random-100"], indirect=True)
+@pytest.mark.parametrize(
+    "indices", [None, "random-100"], indirect=True, ids=["no.indices", "with.indices"]
+)
 class TestFixedHetero:
     def get_outdir(self, tmpdir_factory, train_cmd, particles, poses, ctf, indices):
         dirname = os.path.join(
@@ -45,7 +47,9 @@ class TestFixedHetero:
 
         return odir
 
-    @pytest.mark.parametrize("ctf", [None, "CTF-Test"], indirect=True)
+    @pytest.mark.parametrize(
+        "ctf", [None, "CTF-Test"], indirect=True, ids=["no.CTF", "with.CTF"]
+    )
     def test_train_model(
         self, tmpdir_factory, train_cmd, particles, poses, ctf, indices
     ):
@@ -97,7 +101,10 @@ class TestFixedHetero:
         assert not os.path.exists(os.path.join(outdir, "analyze.3"))
 
     @pytest.mark.parametrize(
-        "ctf, load", [(None, "latest"), ("CTF-Test", 2)], indirect=["ctf"]
+        "ctf, load",
+        [(None, "latest"), ("CTF-Test", 2)],
+        indirect=["ctf"],
+        ids=["no.CTF,load.latest", "with.CTF,load.epoch.2"],
     )
     def test_train_from_checkpoint(
         self,
@@ -371,7 +378,7 @@ class TestFixedHetero:
         analyze_landscape_full.add_args(parser)
         analyze_landscape_full.main(parser.parse_args(args))
 
-    @pytest.mark.parametrize("ctf", ["CTF-Test"], indirect=True)
+    @pytest.mark.parametrize("ctf", ["CTF-Test"], indirect=True, ids=["with.CTF"])
     def test_landscape_notebook(
         self, tmpdir_factory, train_cmd, particles, poses, ctf, indices
     ):
@@ -485,7 +492,7 @@ class TestFixedHetero:
         )
         graph_traversal.main(args)
 
-    @pytest.mark.parametrize("ctf", ["CTF-Test"], indirect=True)
+    @pytest.mark.parametrize("ctf", ["CTF-Test"], indirect=True, ids=["with.CTF"])
     @pytest.mark.parametrize("epoch", [3, 4])
     def test_eval_volume(
         self, tmpdir_factory, train_cmd, particles, poses, ctf, indices, epoch
@@ -508,7 +515,7 @@ class TestFixedHetero:
         )
         eval_vol.main(args)
 
-    @pytest.mark.parametrize("ctf", ["CTF-Test"], indirect=True)
+    @pytest.mark.parametrize("ctf", ["CTF-Test"], indirect=True, ids=["with.CTF"])
     @pytest.mark.parametrize("epoch", [3, 4])
     def test_eval_images(
         self, tmpdir_factory, train_cmd, particles, poses, ctf, indices, epoch
@@ -539,21 +546,28 @@ class TestFixedHetero:
         else:
             eval_images.main(args)
 
-    @pytest.mark.parametrize("ctf", ["CTF-Test"], indirect=True)
+    @pytest.mark.parametrize("ctf", ["CTF-Test"], indirect=True, ids=["with.CTF"])
     @pytest.mark.parametrize(
-        "epoch, palette, plot_outdir",
+        "epoch, palette, plot_outdir, plot_types",
         [
-            (-1, "rocket", None),
+            (-1, "rocket", None, None),
             pytest.param(
                 4,
                 "Rocket",
+                None,
                 None,
                 marks=pytest.mark.xfail(
                     raises=ValueError, reason="palette not available in seaborn!"
                 ),
             ),
-            (3, None, None),
-            (3, None, "plots"),
+            (3, None, None, ["kde", "scatter"]),
+            (4, None, "plots", ["kde"]),
+        ],
+        ids=[
+            "plot.defaults",
+            "plot.defaults,bad.palette",
+            "all.plots,epoch.3",
+            "kdeplot.only,chosen.outdir",
         ],
     )
     def test_plot_classes(
@@ -567,6 +581,7 @@ class TestFixedHetero:
         epoch,
         palette,
         plot_outdir,
+        plot_types,
     ):
         outdir = self.get_outdir(
             tmpdir_factory, train_cmd, particles, indices, poses, ctf
@@ -585,6 +600,8 @@ class TestFixedHetero:
             args += ["--palette", palette]
         if plot_outdir is not None:
             args += ["--outdir", os.path.join(outdir, plot_outdir)]
+        if plot_types is not None:
+            args += ["--plot-types"] + plot_types
 
         plot_classes.main(parser.parse_args(args))
         if plot_outdir is not None:
@@ -594,7 +611,13 @@ class TestFixedHetero:
         else:
             use_outdir = os.path.join(outdir, f"analyze.{epoch}")
 
-        assert os.path.exists(os.path.join(use_outdir, "umap_kde_classes.png"))
+        if plot_types is None:
+            plot_types = ["scatter"]
+
+        scatter_fl = os.path.join(use_outdir, "umap_scatter_classes.png")
+        kde_fl = os.path.join(use_outdir, "umap_kde_classes.png")
+        assert os.path.exists(scatter_fl) == ("scatter" in plot_types)
+        assert os.path.exists(kde_fl) == ("kde" in plot_types)
 
     @pytest.mark.parametrize("ctf", [None, "CTF-Test"], indirect=True)
     def test_clean_all(self, tmpdir_factory, train_cmd, particles, poses, ctf, indices):

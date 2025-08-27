@@ -211,7 +211,7 @@ def main(args: argparse.Namespace) -> None:
             logger.info("Plotting UMAP clustering densities...")
             if "kde" in args.plot_types:
                 g = sns.jointplot(
-                    data=umap_emb,
+                    data=umap_df,
                     x="UMAP1",
                     y="UMAP2",
                     kind="kde",

@@ -116,11 +116,12 @@ def _write_star_block(
     f.write(f"{block_header}\n\n")
     f.write("loop_\n")
 
-    # write the header
-    f.write("\n".join(data.columns))
-    f.write("\n")
+    # Write the header consisting of the column names and their indices
+    for i, col in enumerate(data.columns):
+        f.write(" ".join([col, f"#{i+1}"]))
+        f.write("\n")
 
-    # write the values in the same order as the DataFrame columns used in the header
+    # Write the values in the same order as the DataFrame columns used in the header
     for _, vals in data.iterrows():
         f.write(" ".join([str(val) for val in vals]))
         f.write("\n")

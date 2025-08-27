@@ -168,6 +168,7 @@ def analyze_zN(
             umap_emb = analysis.run_umap(z)
             utils.save_pkl(umap_emb, umap_fl)
         else:
+            logger.info(f"Loading existing UMAP embeddings from {umap_fl}...")
             umap_emb = utils.load_pkl(umap_fl)
 
     # Make some plots

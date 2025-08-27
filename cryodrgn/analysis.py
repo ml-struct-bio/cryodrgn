@@ -1,6 +1,7 @@
 import argparse
 import re
 import logging
+import warnings
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure, Axes
 import numpy as np
@@ -16,6 +17,13 @@ from typing import Optional, Union, Tuple, List
 from cryodrgn.commands import eval_vol
 
 logger = logging.getLogger(__name__)
+
+# Necessary to avoid warnings from UMAP when using newer versions of numpy/scipy
+warnings.filterwarnings(
+    "ignore",
+    category=FutureWarning,
+    message=".*force_all_finite.*ensure_all_finite.*",
+)
 
 
 def parse_loss(f: str) -> np.ndarray:

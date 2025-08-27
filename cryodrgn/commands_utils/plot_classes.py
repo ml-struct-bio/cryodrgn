@@ -69,6 +69,13 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     )
 
     parser.add_argument(
+        "--plot-types",
+        nargs="+",
+        choices=["kde", "scatter"],
+        default=["scatter"],
+        help="Types of plots to generate (default: scatterplot)",
+    )
+    parser.add_argument(
         "--palette",
         help="Path to class colours for use in plotting, "
         "or the name of a seaborn color palette",
@@ -81,7 +88,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--skip-umap",
         action="store_true",
-        help="Skip running computationally-intensive UMAP step",
+        help="Skip running computationally-intensive UMAP step if not already run",
     )
     parser.add_argument(
         "--svg",
@@ -188,45 +195,79 @@ def main(args: argparse.Namespace) -> None:
         logger.info("Performing principal component analysis...")
         pc, pca = analysis.run_pca(z_mat)
 
-        if not args.skip_umap:
-            logger.info("Running UMAP...")
-            umap_emb = pd.DataFrame(
-                analysis.run_umap(z_mat), columns=["UMAP1", "UMAP2"]
-            )
-            umap_emb["Class"] = classes
+        umap_fl = os.path.join(outdir, "umap.pkl")
+        if not args.skip_umap or os.path.exists(umap_fl):
+            if not os.path.exists(umap_fl):
+                logger.info("Running UMAP...")
+                umap_emb = analysis.run_umap(z_mat)
+                utils.save_pkl(umap_emb, umap_fl)
+            else:
+                logger.info(f"Loading existing UMAP embeddings from {umap_fl}...")
+                umap_emb = utils.load_pkl(umap_fl)
+
+            umap_df = pd.DataFrame(umap_emb, columns=["UMAP1", "UMAP2"])
+            umap_df["Class"] = classes
 
             logger.info("Plotting UMAP clustering densities...")
-            g = sns.jointplot(
-                data=umap_emb,
-                x="UMAP1",
-                y="UMAP2",
-                kind="kde",
-                hue="Class",
-                palette=palette,
-                height=10,
-            )
-            g.ax_joint.set_xlabel("UMAP1", size=23, weight="semibold")
-            g.ax_joint.set_ylabel("UMAP2", size=23, weight="semibold")
-            save_figure("umap_kde_classes")
+            if "kde" in args.plot_types:
+                g = sns.jointplot(
+                    data=umap_emb,
+                    x="UMAP1",
+                    y="UMAP2",
+                    kind="kde",
+                    hue="Class",
+                    palette=palette,
+                    height=10,
+                )
+                g.ax_joint.set_xlabel("UMAP1", size=23, weight="semibold")
+                g.ax_joint.set_ylabel("UMAP2", size=23, weight="semibold")
+                save_figure("umap_kde_classes")
+
+            if "scatter" in args.plot_types:
+                ax = sns.scatterplot(
+                    data=umap_df,
+                    x="UMAP1",
+                    y="UMAP2",
+                    hue="Class",
+                    palette=palette,
+                    s=1,
+                    alpha=0.07,
+                )
+                ax.legend(title="Class", markerscale=8)
+                save_figure("umap_scatter_classes")
 
         logger.info("Plotting PCA clustering densities...")
         for pc1, pc2 in combns(range(3), 2):
-            g = sns.jointplot(
-                x=pc[:, pc1],
-                y=pc[:, pc2],
-                kind="kde",
-                hue=classes,
-                palette=palette,
-                height=10,
-            )
-            g.ax_joint.set_xlabel(
-                f"PC{pc1 + 1} ({pca.explained_variance_ratio_[pc1]:.2f})",
-                size=23,
-                weight="semibold",
-            )
-            g.ax_joint.set_ylabel(
-                f"PC{pc2 + 1} ({pca.explained_variance_ratio_[pc2]:.2f})",
-                size=23,
-                weight="semibold",
-            )
-            save_figure(f"z_pca_kde_classes_pc.{pc1 + 1}xpc.{pc2 + 1}")
+            if "kde" in args.plot_types:
+                g = sns.jointplot(
+                    x=pc[:, pc1],
+                    y=pc[:, pc2],
+                    kind="kde",
+                    hue=classes,
+                    palette=palette,
+                    height=10,
+                )
+                g.ax_joint.set_xlabel(
+                    f"PC{pc1 + 1} ({pca.explained_variance_ratio_[pc1]:.2f})",
+                    size=23,
+                    weight="semibold",
+                )
+                g.ax_joint.set_ylabel(
+                    f"PC{pc2 + 1} ({pca.explained_variance_ratio_[pc2]:.2f})",
+                    size=23,
+                    weight="semibold",
+                )
+                save_figure(f"z_pca_kde_classes_pc.{pc1 + 1}xpc.{pc2 + 1}")
+
+            if "scatter" in args.plot_types:
+                ax = sns.scatterplot(
+                    data=umap_df,
+                    x="UMAP1",
+                    y="UMAP2",
+                    hue="Class",
+                    palette=palette,
+                    s=1,
+                    alpha=0.07,
+                )
+                ax.legend(title="Class", markerscale=8)
+                save_figure(f"z_pca_scatter_classes_pc.{pc1 + 1}xpc.{pc2 + 1}")

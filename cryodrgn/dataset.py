@@ -160,7 +160,16 @@ class TiltSeriesData(ImageDataset):
         # star_df = self.src.df
         if ind is not None:
             star_df = star_df.loc[ind]
-        group_name = list(star_df["_rlnGroupName"])
+
+        if "_rlnGroupName" in star_df.columns:
+            group_name = list(star_df["_rlnGroupName"])
+        elif "_rlnGroupNumber" in star_df.columns:
+            group_name = list(star_df["_rlnGroupNumber"])
+        else:
+            raise ValueError(
+                "No tilt-series group name or number column found in star file!"
+            )
+
         particles = OrderedDict()
         for ii, gn in enumerate(group_name):
             if gn not in particles:
@@ -221,11 +230,18 @@ class TiltSeriesData(ImageDataset):
     def parse_particle_tilt(
         cls, tiltstar: str
     ) -> tuple[list[np.ndarray], dict[np.int64, int]]:
-        # Parse unique particles from _rlnGroupName
         star_df, _ = parse_star(tiltstar)
-        group_name = list(star_df["_rlnGroupName"])
-        particles = OrderedDict()
 
+        if "_rlnGroupName" in star_df.columns:
+            group_name = list(star_df["_rlnGroupName"])
+        elif "_rlnGroupNumber" in star_df.columns:
+            group_name = list(star_df["_rlnGroupNumber"])
+        else:
+            raise ValueError(
+                "No tilt-series group name or number column found in star file!"
+            )
+
+        particles = OrderedDict()
         for ii, gn in enumerate(group_name):
             if gn not in particles:
                 particles[gn] = []

@@ -89,7 +89,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     group.add_argument(
         "--vol-start-index",
         type=int,
-        default=0,
+        default=1,
         help="Default value of start index for volume generation "
         "(default: %(default)s)",
     )
@@ -146,10 +146,12 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def generate_volumes(z, outdir, vg, K):
+def generate_volumes(z, outdir, vg, K, vol_start_index):
     # kmeans clustering
     logger.info("Sketching distribution...")
-    kmeans_labels, centers = analysis.cluster_kmeans(z, K, on_data=True, reorder=True)
+    kmeans_labels, centers = analysis.cluster_kmeans(
+        z, K, on_data=True, reorder=True, vol_start_index=vol_start_index
+    )
     centers, centers_ind = analysis.get_nearest_point(z, centers)
     if not os.path.exists(f"{outdir}/kmeans{K}"):
         os.mkdir(f"{outdir}/kmeans{K}")
@@ -344,20 +346,20 @@ def analyze_volumes(
     subdir = os.path.join(outdir, f"sketch_clustering_{linkage}_{M}")
     os.makedirs(subdir, exist_ok=True)
     cluster = AgglomerativeClustering(n_clusters=M, linkage=linkage)
-    labels = cluster.fit_predict(vols)
-    utils.save_pkl(labels, os.path.join(subdir, "state_labels.pkl"))
+    state_labels = cluster.fit_predict(vols) + 1
+    utils.save_pkl(state_labels, os.path.join(subdir, "state_labels.pkl"))
 
     kmeans_labels = utils.load_pkl(os.path.join(outdir, f"kmeans{K}", "labels.pkl"))
     kmeans_counts = Counter(kmeans_labels)
-    for cluster_i in range(M):
-        vol_indices = np.where(labels == cluster_i)[0]
+    for cluster_i in range(1, M + 1):
+        vol_indices = np.where(state_labels == cluster_i)[0]
         logger.info(f"State {cluster_i}: {len(vol_indices)} volumes")
         if vol_ind is not None:
-            vol_indices = np.arange(K)[vol_ind][vol_indices]
+            vol_indices = (np.arange(K)[vol_ind] + vol_start_index)[vol_indices]
 
+        vol_indices += 1
         vol_fls = [
-            os.path.join(kmean_dir, f"vol_{vol_start_index + vol_i:03d}.mrc")
-            for vol_i in vol_indices
+            os.path.join(kmean_dir, f"vol_{vol_i:03d}.mrc") for vol_i in vol_indices
         ]
         vol_i_all = torch.stack(
             [torch.Tensor(parse_mrc(vol_fl)[0]) for vol_fl in vol_fls]
@@ -410,7 +412,7 @@ def analyze_volumes(
         return g
 
     plt.figure()
-    counts = Counter(labels)
+    counts = Counter(state_labels)
     g = hack_barplot([counts[i] for i in range(M)])  # type: ignore  (bug in Counter type-checking?)
     for i in range(M):
         g.text(i - 0.1, counts[i] + 2, counts[i])  # type: ignore  (bug in Counter type-checking?)
@@ -420,7 +422,8 @@ def analyze_volumes(
 
     plt.figure()
     particle_counts = [
-        np.sum([kmeans_counts[ii] for ii in np.where(labels == i)[0]]) for i in range(M)
+        np.sum([kmeans_counts[ii] for ii in np.where(state_labels == i)[0]])
+        for i in range(M)
     ]
     g = hack_barplot(particle_counts)
     for i in range(M):
@@ -431,7 +434,7 @@ def analyze_volumes(
 
     def plot_w_labels(i, j):
         plt.figure()
-        plt.scatter(pc[:, i], pc[:, j], c=labels, cmap=cmap)
+        plt.scatter(pc[:, i], pc[:, j], c=state_labels, cmap=cmap)
         plt.xlabel(f"Volume PC{i+1} (EV: {pca.explained_variance_ratio_[i]:03f})")
         plt.ylabel(f"Volume PC{j+1} (EV: {pca.explained_variance_ratio_[j]:03f})")
         plt.savefig(os.path.join(subdir, f"vol_pca_{K}_{i+1}_{j+1}.png"))
@@ -441,7 +444,7 @@ def analyze_volumes(
 
     def plot_w_labels_annotated(i, j):
         fig, ax = plt.subplots(figsize=(16, 16))
-        plt.scatter(pc[:, i], pc[:, j], c=labels, cmap=cmap)
+        plt.scatter(pc[:, i], pc[:, j], c=state_labels, cmap=cmap)
         annots = np.arange(K)
         if vol_ind is not None:
             annots = annots[vol_ind]
@@ -462,7 +465,7 @@ def analyze_volumes(
     )
     colors = get_colors_for_cmap(cmap, M)
     for i in range(M):
-        c = umap_i[np.where(labels == i)]
+        c = umap_i[np.where(state_labels == i)]
         plt.scatter(c[:, 0], c[:, 1], label=i, color=colors[i])
     plt.legend()
     plt.xlabel("UMAP1")
@@ -473,7 +476,7 @@ def analyze_volumes(
     plt.scatter(
         umap[:, 0], umap[:, 1], alpha=0.1, s=1, rasterized=True, color="lightgrey"
     )
-    plt.scatter(umap_i[:, 0], umap_i[:, 1], c=labels, cmap=cmap)
+    plt.scatter(umap_i[:, 0], umap_i[:, 1], c=state_labels, cmap=cmap)
     annots = np.arange(K)
     if vol_ind is not None:
         annots = annots[vol_ind]
@@ -516,7 +519,7 @@ def main(args: argparse.Namespace) -> None:
         args.vol_ind = utils.load_pkl(args.vol_ind)
 
     if not args.skip_vol:
-        generate_volumes(z, outdir, vg, K)
+        generate_volumes(z, outdir, vg, K, args.vol_start_index)
     else:
         logger.info("Skipping volume generation")
 

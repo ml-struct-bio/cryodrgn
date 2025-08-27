@@ -24,13 +24,19 @@ from cryodrgn.commands import (
 )
 from cryodrgn.commands_utils import write_star
 from cryodrgn.source import ImageSource
+from cryodrgn.dataset import TiltSeriesData
 import cryodrgn.utils
 
 
 @pytest.mark.parametrize("particles", ["toy.mrcs"], indirect=True)
 @pytest.mark.parametrize("poses", ["toy-poses"], indirect=True)
-@pytest.mark.parametrize("ctf", ["CTF-Test"], indirect=True)
-@pytest.mark.parametrize("indices", [None, "first-100", "random-100"], indirect=True)
+@pytest.mark.parametrize("ctf", ["CTF-Test"], indirect=True, ids=["with.CTF"])
+@pytest.mark.parametrize(
+    "indices",
+    [None, "first-100", "random-100"],
+    indirect=True,
+    ids=["no.indices", "ind.first.100", "ind.random.100"],
+)
 class TestIterativeFiltering:
     def get_outdir(self, tmpdir_factory, particles, indices, poses, ctf):
         dirname = os.path.join(
@@ -186,7 +192,10 @@ class TestParseWriteStar:
         assert np.allclose(out_ctf[:, 1], 1.0)  # Apix
 
     @pytest.mark.parametrize(
-        "indices", [None, "first-100", "random-100"], indirect=True
+        "indices",
+        [None, "first-100", "random-100"],
+        indirect=True,
+        ids=["no.indices", "ind.first.100", "ind.random.100"],
     )
     @pytest.mark.parametrize("poses", [None, "toy-poses"], indirect=True)
     def test_write_star_from_mrcs(
@@ -243,7 +252,10 @@ class TestParseWriteStar:
         assert np.allclose(old_poses[1], out_poses[1], atol=1e-5)
 
     @pytest.mark.parametrize(
-        "indices", [None, "first-100", "random-100"], indirect=True
+        "indices",
+        [None, "first-100", "random-100"],
+        indirect=True,
+        ids=["no.indices", "ind.first.100", "ind.random.100"],
     )
     @pytest.mark.parametrize("downsample_dim, chunk_size", [(28, 80), (14, 100)])
     def test_downsample_and_from_txt(
@@ -305,11 +317,23 @@ class TestParseWriteStar:
 
     # NOTE: these must be a subset of the parameters
     #       used in `test_downsample_and_from_txt()` above to get input .txt particles!
-    @pytest.mark.parametrize("downsample_dim, chunk_size", [(28, 80), (14, 100)])
     @pytest.mark.parametrize(
-        "poses, ctf", [("toy-poses", "CTF-Test"), ("toy-poses", None)], indirect=True
+        "downsample_dim, chunk_size",
+        [(28, 80), (14, 100)],
+        ids=["downsample.dim.28,chunk.80", "downsample.dim.14,chunk.100"],
     )
-    @pytest.mark.parametrize("indices", [None, "random-100"], indirect=True)
+    @pytest.mark.parametrize(
+        "poses, ctf",
+        [("toy-poses", "CTF-Test"), ("toy-poses", None)],
+        indirect=True,
+        ids=["with.CTF", "no.CTF"],
+    )
+    @pytest.mark.parametrize(
+        "indices",
+        [None, "random-100"],
+        indirect=True,
+        ids=["no.indices", "ind.random.100"],
+    )
     def test_backproject_from_downsample_txt(
         self,
         tmpdir_factory,
@@ -350,12 +374,24 @@ class TestParseWriteStar:
         shutil.rmtree(outpath)
 
     # NOTE: these must be a subset of the parameters
-    #       used in `test_downsample_and_from_txt()` above to get input .txt particles!
-    @pytest.mark.parametrize("downsample_dim, chunk_size", [(28, 80), (14, 100)])
+    #       used in `test_downsample_and_from_txt()` above to get input .star particles!
     @pytest.mark.parametrize(
-        "poses, ctf", [("toy-poses", "CTF-Test"), ("toy-poses", None)], indirect=True
+        "downsample_dim, chunk_size",
+        [(28, 80), (14, 100)],
+        ids=["downsample.dim.28,chunk.80", "downsample.dim.14,chunk.100"],
     )
-    @pytest.mark.parametrize("indices", [None, "random-100"], indirect=True)
+    @pytest.mark.parametrize(
+        "poses, ctf",
+        [("toy-poses", "CTF-Test"), ("toy-poses", None)],
+        indirect=True,
+        ids=["with.CTF", "no.CTF"],
+    )
+    @pytest.mark.parametrize(
+        "indices",
+        [None, "random-100"],
+        indirect=True,
+        ids=["no.indices", "ind.random.100"],
+    )
     def test_backproject_from_downsample_star(
         self,
         tmpdir_factory,
@@ -367,7 +403,7 @@ class TestParseWriteStar:
         ctf,
         indices,
     ):
-        """Use chunked downsampled .txt particle stack as input for backprojection."""
+        """Use chunked downsampled .star particle stack as input for backprojection."""
         outdir = self.get_outdir(tmpdir_factory, particles, datadir)
         out_star = os.path.join(
             outdir, f"downsampled_{downsample_dim}.{chunk_size}.star"
@@ -477,3 +513,68 @@ class TestBackprojectFromChunkedDownsampled:
 
         if indices.path is not None:
             shutil.rmtree(outdir)
+
+
+@pytest.mark.parametrize(
+    "particles, poses, ctf, datadir",
+    [("tilts.star", "toy-poses", "CTF-Test", "default-datadir")],
+    indirect=True,
+)
+@pytest.mark.parametrize(
+    "ntilts",
+    [None, 30, pytest.param(50, marks=pytest.mark.xfail(raises=ValueError))],
+)
+class TestBackprojectTilts:
+    def get_outpaths(self, tmpdir_factory, particles, poses, ctf, datadir):
+        dirname = os.path.join(
+            "BackprojectTilts",
+            particles.label,
+            poses.label,
+            ctf.label,
+            datadir.label,
+        )
+        odir = os.path.join(tmpdir_factory.getbasetemp(), dirname)
+        os.makedirs(odir, exist_ok=True)
+
+        return odir
+
+    def test_backprojection_from_newind(
+        self, tmpdir_factory, particles, poses, ctf, datadir, ntilts
+    ):
+        outdir = self.get_outpaths(tmpdir_factory, particles, poses, ctf, datadir)
+
+        args = [particles.path, "--poses", poses.path, "--datadir", datadir.path]
+        args += ["--tilt", "--force-ntilts", "--dose-per-tilt", "2.93"]
+        if ntilts is not None:
+            args += ["--ntilts", str(ntilts)]
+        outpath = os.path.join(outdir, "bproj")
+        if ctf.path is not None:
+            args += ["--ctf", ctf.path]
+        args += ["-o", outpath]
+        parser = argparse.ArgumentParser()
+        backproject_voxel.add_args(parser)
+        backproject_voxel.main(parser.parse_args(args))
+
+        assert os.path.exists(os.path.join(outpath, "backproject.mrc"))
+        assert os.path.exists(os.path.join(outpath, "half_map_a.mrc"))
+        assert os.path.exists(os.path.join(outpath, "half_map_b.mrc"))
+        assert os.path.exists(os.path.join(outpath, "fsc-plot.png"))
+        assert os.path.exists(os.path.join(outpath, "fsc-vals.txt"))
+
+        if ntilts is None:
+            tilts_lbl = "10"
+        else:
+            tilts_lbl = str(ntilts)
+        tilts_pkl = os.path.join(outpath, f"indices_force_ntilts_{tilts_lbl}.pkl")
+        assert os.path.exists(tilts_pkl)
+        with open(tilts_pkl, "rb") as f:
+            tilt_inds = pickle.load(f)
+
+        pt, _ = TiltSeriesData.parse_particle_tilt(particles.path)
+        assert isinstance(tilt_inds, np.ndarray)
+        assert len(tilt_inds.shape) == 1
+        assert np.equal(
+            tilt_inds, np.where([len(p) > int(tilts_lbl) for p in pt])[0]
+        ).all()
+
+        shutil.rmtree(outdir)

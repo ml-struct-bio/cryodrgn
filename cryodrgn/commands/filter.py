@@ -47,7 +47,8 @@ from matplotlib.gridspec import GridSpec
 from scipy.spatial import transform
 from typing import Optional, Sequence
 
-from cryodrgn import analysis, utils, dataset
+from cryodrgn import analysis, utils
+from cryodrgn.dataset import ImageDataset, TiltSeriesData
 
 logger = logging.getLogger(__name__)
 
@@ -156,34 +157,6 @@ def main(args: argparse.Namespace) -> None:
     else:
         enc_mode = "autodec"
 
-    if ctf_params is not None and enc_mode != "tilt":
-        all_indices = np.array(range(ctf_params.shape[0]))
-
-    # For tilt-series inputs we can't use the (tilt-level) CTF parameters to get the
-    # number of particles, so we need to load the tilt-series data itself
-    elif enc_mode == "tilt":
-        all_indices = np.array(
-            range(
-                dataset.TiltSeriesData(
-                    tiltstar=train_configs["dataset_args"]["particles"],
-                    datadir=train_configs["dataset_args"]["datadir"],
-                    lazy=True,
-                    ntilts=train_configs["dataset_args"]["ntilts"],
-                ).Np
-            )
-        )
-
-    # We thus also need to load the image dataset metadata to get the number of
-    # particles for inverse selection in the case of SPA inputs with no CTF parameters
-    else:
-        all_indices = np.array(
-            range(
-                dataset.ImageDataset(
-                    mrcfile=train_configs["dataset_args"]["particles"], lazy=True
-                ).N
-            )
-        )
-
     # Load the set of indices used to filter the original dataset and apply it to inputs
     if isinstance(train_configs["dataset_args"]["ind"], int):
         indices = slice(train_configs["dataset_args"]["ind"])
@@ -191,6 +164,21 @@ def main(args: argparse.Namespace) -> None:
         indices = utils.load_pkl(train_configs["dataset_args"]["ind"])
     else:
         indices = None
+
+    imgs_fl = train_configs["dataset_args"]["particles"]
+    if ctf_params is not None and enc_mode != "tilt":
+        all_indices = np.array(range(ctf_params.shape[0]))
+
+    # For tilt-series inputs we can't use the (tilt-level) CTF parameters to get the
+    # number of particles, so we need to load the tilt-series data itself
+    elif enc_mode == "tilt":
+        pt, tp = TiltSeriesData.parse_particle_tilt(imgs_fl)
+        all_indices = np.array(range(len(pt)))
+
+    # We thus also need to load the image dataset metadata to get the number of
+    # particles for inverse selection in the case of SPA inputs with no CTF parameters
+    else:
+        all_indices = np.array(range(len(ImageDataset(mrcfile=imgs_fl, lazy=True))))
 
     if indices is not None:
         ctf_params = ctf_params[indices, :] if ctf_params is not None else None

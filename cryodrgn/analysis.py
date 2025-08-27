@@ -1,6 +1,7 @@
 import argparse
 import re
 import logging
+import warnings
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure, Axes
 import numpy as np
@@ -16,6 +17,13 @@ from typing import Optional, Union, Tuple, List
 from cryodrgn.commands import eval_vol
 
 logger = logging.getLogger(__name__)
+
+# Necessary to avoid warnings from UMAP when using newer versions of numpy/scipy
+warnings.filterwarnings(
+    "ignore",
+    category=FutureWarning,
+    message=".*force_all_finite.*ensure_all_finite.*",
+)
 
 
 def parse_loss(f: str) -> np.ndarray:
@@ -105,7 +113,11 @@ def run_umap(z: np.ndarray, **kwargs) -> np.ndarray:
 
 
 def cluster_kmeans(
-    z: np.ndarray, K: int, on_data: bool = True, reorder: bool = True
+    z: np.ndarray,
+    K: int,
+    on_data: bool = True,
+    reorder: bool = True,
+    vol_start_index: int = 1,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Cluster z by K means clustering
@@ -126,8 +138,10 @@ def cluster_kmeans(
         centers = centers[reordered]
         if centers_ind is not None:
             centers_ind = centers_ind[reordered]
-        tmp = {k: i for i, k in enumerate(reordered)}
+
+        tmp = {k: i + vol_start_index for i, k in enumerate(reordered)}
         labels = np.array([tmp[k] for k in labels])
+
     return labels, centers
 
 
@@ -136,6 +150,7 @@ def cluster_gmm(
     K: int,
     on_data: bool = True,
     random_state: Union[int, np.random.RandomState, None] = None,
+    vol_start_index: int = 1,
     **kwargs,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
@@ -159,6 +174,7 @@ def cluster_gmm(
     centers = clf.means_
     if on_data:
         centers, centers_ind = get_nearest_point(z, centers)
+
     return labels, centers
 
 
@@ -278,10 +294,12 @@ def scatter_annotate(
     if annotate:
         assert centers is not None
         if labels is None:
-            labels = np.arange(len(centers))
+            labels = np.arange(len(centers)) + 1
         assert labels is not None
-        for i in labels:
-            ax.annotate(str(i), centers[i, 0:2] + np.array([0.1, 0.1]))
+
+        for i, lbl in enumerate(labels):
+            ax.annotate(str(lbl), centers[i, 0:2] + np.array([0.1, 0.1]))
+
     return fig, ax
 
 
@@ -300,22 +318,26 @@ def scatter_annotate_hex(
     if centers_ind is not None:
         assert centers is None
         centers = np.array([[x[i], y[i]] for i in centers_ind])
+
     if centers is not None:
         if colors is None:
             colors = "k"
         g.ax_joint.scatter(centers[:, 0], centers[:, 1], c=colors, edgecolor="black")
+
     if annotate:
         assert centers is not None
         if labels is None:
-            labels = np.arange(len(centers))
+            labels = np.arange(len(centers)) + 1
         assert labels is not None
-        for i in labels:
+
+        for i, lbl in enumerate(labels):
             g.ax_joint.annotate(
-                str(i),
+                str(lbl),
                 centers[i, 0:2] + np.array([0.1, 0.1]),
                 color="black",
                 bbox=dict(boxstyle="square,pad=.1", ec="None", fc="1", alpha=0.5),
             )
+
     return g
 
 
@@ -361,7 +383,7 @@ def plot_by_cluster(
 ):
     fig, ax = plt.subplots(figsize=figsize)
     if type(K) is int:
-        K = list(range(K))
+        K = list(range(1, K + 1))
 
     if colors is None:
         colors = _get_colors(len(K), cmap)
@@ -377,7 +399,7 @@ def plot_by_cluster(
             s=s,
             alpha=alpha,
             label="cluster {}".format(i),
-            color=colors[i],
+            color=colors[i - 1],
             rasterized=True,
         )
 
@@ -389,8 +411,9 @@ def plot_by_cluster(
         plt.scatter(centers[:, 0], centers[:, 1], c="k")
     if annotate:
         assert centers is not None
-        for i in K:
-            ax.annotate(str(i), centers[i, 0:2])
+        for ii, i in enumerate(K):
+            ax.annotate(str(i), centers[ii, 0:2])
+
     return fig, ax
 
 
@@ -398,19 +421,19 @@ def plot_by_cluster_subplot(
     x, y, K, labels, s=2, alpha=0.1, colors=None, cmap=None, figsize=None
 ):
     if type(K) is int:
-        K = list(range(K))
+        K = list(range(1, K + 1))
     ncol = int(np.ceil(len(K) ** 0.5))
     nrow = int(np.ceil(len(K) / ncol))
     fig, ax = plt.subplots(ncol, nrow, sharex=True, sharey=True, figsize=(10, 10))
     if colors is None:
         colors = _get_colors(len(K), cmap)
-    for i in K:
+    for i, ax in zip(K, ax.ravel()):
         ii = labels == i
         x_sub = x[ii]
         y_sub = y[ii]
-        a = ax.ravel()[i]
-        a.scatter(x_sub, y_sub, s=s, alpha=alpha, rasterized=True, color=colors[i])
-        a.set_title(i)
+        ax.scatter(x_sub, y_sub, s=s, alpha=alpha, rasterized=True, color=colors[i - 1])
+        ax.set_title(i)
+
     return fig, ax
 
 
@@ -485,6 +508,7 @@ def ipy_plot_interactive_annotate(df, ind, opacity=0.3):
         color_by=df.columns,
         colorscale=[None, "hsv", "plotly3", "deep", "portland", "picnic", "armyrose"],
     )
+
     return widget, f
 
 
@@ -631,6 +655,7 @@ def gen_volumes(
 
     parser = argparse.ArgumentParser()
     eval_vol.add_args(parser)
+
     return eval_vol.main(parser.parse_args(args))
 
 
@@ -666,4 +691,5 @@ def load_dataframe(
         data[kk] = vv
     df = pd.DataFrame(data=data)
     df["index"] = df.index
+
     return df

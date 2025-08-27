@@ -4,6 +4,8 @@ import pytest
 import argparse
 import os.path
 import shutil
+import pickle
+import numpy as np
 import nbformat
 from nbconvert.preprocessors import ExecutePreprocessor
 from cryodrgn.commands import analyze, eval_vol, filter, graph_traversal, abinit_het
@@ -19,6 +21,13 @@ from cryodrgn.commands import analyze, eval_vol, filter, graph_traversal, abinit
         ("toy.star-13", None, None),
     ],
     indirect=True,
+    ids=[
+        "hand,no.ind,no.ctf",
+        "hand,no.ind,with.ctf",
+        "toy.txt,ind.rand.100,with.ctf",
+        "toy.star,ind.f100,with.ctf",
+        "toy.star-13,no.ind,no.ctf",
+    ],
 )
 class TestAbinitHetero:
     def get_outdir(self, tmpdir_factory, particles, ctf, indices):
@@ -73,7 +82,14 @@ class TestAbinitHetero:
         abinit_het.main(parser.parse_args(args))
         assert not os.path.exists(os.path.join(outdir, "analyze.2"))
 
-    def test_analyze(self, tmpdir_factory, particles, ctf, indices):
+    @pytest.mark.parametrize(
+        "epoch, vol_start_index",
+        [(2, 1), (1, 0)],
+        ids=["epoch.2,volstart.1", "epoch.1,volstart.0"],
+    )
+    def test_analyze(
+        self, tmpdir_factory, particles, ctf, indices, epoch, vol_start_index
+    ):
         """Produce standard analyses for a particular epoch."""
 
         outdir = self.get_outdir(tmpdir_factory, particles, indices, ctf)
@@ -83,18 +99,23 @@ class TestAbinitHetero:
             parser.parse_args(
                 [
                     outdir,
-                    "2",  # Epoch number to analyze - 1-indexed
+                    str(epoch),  # Epoch number to analyze - 1-indexed
                     "--pc",
                     "3",  # Number of principal component traversals to generate
                     "--ksample",
                     "10",  # Number of kmeans samples to generate
                     "--vol-start-index",
-                    "1",
+                    str(vol_start_index),
                 ]
             )
         )
 
-        assert os.path.exists(os.path.join(outdir, "analyze.2"))
+        kmeans_dir = os.path.join(outdir, f"analyze.{epoch}", "kmeans10")
+        for i in range(vol_start_index, 10 + vol_start_index):
+            assert os.path.exists(os.path.join(kmeans_dir, f"vol_{i:03d}.mrc"))
+        assert not os.path.exists(
+            os.path.join(kmeans_dir, f"vol_{(10 + vol_start_index):03d}.mrc")
+        )
 
     @pytest.mark.parametrize("nb_lbl", ["cryoDRGN_figures"])
     def test_notebooks(self, tmpdir_factory, particles, ctf, indices, nb_lbl):
@@ -111,6 +132,7 @@ class TestAbinitHetero:
         ExecutePreprocessor(timeout=600, kernel_name="python3").preprocess(nb_in)
         os.chdir(orig_cwd)
 
+    @pytest.mark.parametrize("plotind", [False, True], ids=["dontsave.ind", "save.ind"])
     @pytest.mark.parametrize(
         "epoch",
         [
@@ -122,19 +144,46 @@ class TestAbinitHetero:
                 ),
             ),
         ],
+        ids=["epoch.2", "epoch.None"],
     )
     def test_interactive_filtering(
-        self, tmpdir_factory, particles, ctf, indices, epoch
+        self, tmpdir_factory, particles, ctf, indices, epoch, plotind
     ):
         """Launch interface for filtering particles using model covariates."""
 
         outdir = self.get_outdir(tmpdir_factory, particles, indices, ctf)
         parser = argparse.ArgumentParser()
         filter.add_args(parser)
-        epoch_args = ["--epoch", str(epoch)] if epoch is not None else list()
-        filter.main(parser.parse_args([outdir] + epoch_args))
+        args = [outdir, "--force"]
+        if epoch is not None:
+            args += ["--epoch", str(epoch)]
+            sel_dir = os.path.join(outdir, f"analyze.{epoch}")
+        else:
+            sel_dir = os.path.join(outdir, "analyze.3")
+        args += ["--sel-dir", sel_dir]
 
-    @pytest.mark.parametrize("epoch", [2, 3])
+        if plotind:
+            ind_fl = os.path.join(outdir, "tmp_ind_test.pkl")
+            with open(ind_fl, "wb") as f:
+                pickle.dump(np.array([1, 2]), f)
+            args += ["--plot-inds", ind_fl]
+
+        filter.main(parser.parse_args(args))
+        if plotind:
+            assert os.path.exists(os.path.join(sel_dir, "indices.pkl"))
+            with open(os.path.join(sel_dir, "indices.pkl"), "rb") as f:
+                inds = pickle.load(f)
+            assert isinstance(inds, np.ndarray)
+            assert len(inds) == 2
+            assert os.path.exists(os.path.join(sel_dir, "indices_inverse.pkl"))
+            with open(os.path.join(sel_dir, "indices_inverse.pkl"), "rb") as f:
+                inv_inds = pickle.load(f)
+            assert isinstance(inv_inds, np.ndarray)
+        else:
+            assert not os.path.exists(os.path.join(sel_dir, "indices.pkl"))
+            assert not os.path.exists(os.path.join(sel_dir, "indices_inverse.pkl"))
+
+    @pytest.mark.parametrize("epoch", [2, 3], ids=["epoch.2", "epoch.3"])
     def test_graph_traversal(self, tmpdir_factory, particles, ctf, indices, epoch):
         outdir = self.get_outdir(tmpdir_factory, particles, indices, ctf)
         parser = argparse.ArgumentParser()

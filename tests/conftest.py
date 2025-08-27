@@ -453,11 +453,6 @@ class AbInitioDir:
         )
         assert "Backprojected 100 images in" in out, err
 
-    def view_config(self) -> None:
-        out, err = run_command(f"cryodrgn view_config {self.outdir}")
-        assert "'cmd'" in out and "'dataset_args'" in out and "'model_args'" in out, out
-        assert err == "", err
-
 
 @pytest.fixture
 def abinit_dir(request, tmpdir_factory) -> AbInitioDir:

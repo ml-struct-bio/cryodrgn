@@ -180,11 +180,29 @@ class TiltSeriesData(ImageDataset):
         self.ctfscalefactor = np.asarray(
             star_df["_rlnCtfScalefactor"], dtype=np.float32
         )
+        
+        # Check if _rlnMicrographPreExposure column exists for priority sorting
+        if "_rlnMicrographPreExposure" in star_df.columns:
+            self.preexposure = np.asarray(
+                star_df["_rlnMicrographPreExposure"], dtype=np.float32
+            )
+            logger.info("Using _rlnMicrographPreExposure for tilt ordering (ascending)")
+        else:
+            self.preexposure = None
+            logger.info("Using _rlnCtfScalefactor for tilt ordering (descending)")
+        
         self.tilt_numbers = np.zeros(self.N)
         for ind in self.particles:
-            sort_idxs = self.ctfscalefactor[ind].argsort()
+            if self.preexposure is not None:
+                sort_idxs = self.preexposure[ind].argsort()
+            else:
+                sort_idxs = self.ctfscalefactor[ind].argsort()
+            
             ranks = np.empty_like(sort_idxs)
-            ranks[sort_idxs[::-1]] = np.arange(len(ind))
+            if self.preexposure is not None:
+                ranks[sort_idxs] = np.arange(len(ind))
+            else:
+                ranks[sort_idxs[::-1]] = np.arange(len(ind))
             self.tilt_numbers[ind] = ranks
         self.tilt_numbers = torch.tensor(self.tilt_numbers).to(self.device)
         logger.info(f"Loaded {self.N} tilts for {self.Np} particles")

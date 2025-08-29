@@ -42,6 +42,7 @@ import argparse
 import math
 import os
 import logging
+import time
 import numpy as np
 import torch
 from collections.abc import Iterable
@@ -76,6 +77,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "-b",
+        "--batch-size",
         type=int,
         default=5000,
         help="Batch size for processing images (default: %(default)s)",
@@ -114,10 +116,10 @@ def downsample_mrc_images(
     out_fl: str,
     batch_size: int,
     chunk_size: Optional[int] = None,
-):
+) -> None:
     """Downsample the images in a single particle stack into a new .mrcs file.
 
-    This utlility function also simplifies handling each of the individual .mrcs files
+    This utility function also simplifies handling each of the individual .mrcs files
     listed in a .txt or .star file into a new collection of downsampled .mrcs files.
 
     Arguments
@@ -180,7 +182,7 @@ def downsample_mrc_images(
             chunksize=batch_size,
         )
 
-    # downsample images, saving one chunk of N images at a time
+    # Downsample images, saving one chunk of N images at a time
     else:
         nchunks = math.ceil(len(src) / chunk_size)
         out_mrcs = [f".{i}".join(os.path.splitext(out_fl)) for i in range(nchunks)]
@@ -217,19 +219,26 @@ def downsample_mrc_images(
 
 def main(args: argparse.Namespace) -> None:
     """Downsampling the given particle stack into a new stack (see `add_args` above)."""
+
     utils.create_basedir(args.outfile)
     utils.warn_file_exists(args.outfile)
     out_ext = os.path.splitext(args.outfile)[1]
+    t0 = time.time()
 
+    # Load filtering indices if provided
     ind = None
     if args.ind is not None:
         assert not args.is_vol
         logger.info(f"Filtering image dataset with {args.ind}")
         ind = utils.load_pkl(args.ind).astype(int)
 
-    # Load image data (in lazy mode unless we are loading a volume)
+    # Load image data (using pointers instead of raw data unless loading a volume)
     src = ImageSource.from_file(
-        args.input, lazy=not args.is_vol, indices=ind, datadir=args.datadir
+        args.input,
+        lazy=not args.is_vol,
+        indices=ind,
+        datadir=args.datadir,
+        max_threads=args.max_threads,
     )
     if args.D > src.D:
         raise ValueError(
@@ -256,7 +265,7 @@ def main(args: argparse.Namespace) -> None:
 
     # Downsample images into a .mrcs image stack file, no matter the input format was
     elif out_ext in {".mrcs", ".mrc"}:
-        downsample_mrc_images(src, args.D, args.outfile, args.b, args.chunk)
+        downsample_mrc_images(src, args.D, args.outfile, args.batch_size, args.chunk)
 
     # Downsample images referenced in a .star file, using the original image stack file
     # structure where possible
@@ -292,7 +301,9 @@ def main(args: argparse.Namespace) -> None:
         }
         for fl, fl_src in src.sources:
             os.makedirs(os.path.dirname(newpaths[fl]), exist_ok=True)
-            downsample_mrc_images(fl_src, args.D, newpaths[fl], args.b, chunk_size=None)
+            downsample_mrc_images(
+                fl_src, args.D, newpaths[fl], args.batch_size, chunk_size=None
+            )
 
         src.df["__mrc_filepath"] = src.df["__mrc_filepath"].map(newpaths)
         if out_ext == ".star":
@@ -325,3 +336,5 @@ def main(args: argparse.Namespace) -> None:
             f"Unrecognized output extension `{out_ext}` "
             f"not in {{.mrc,.mrcs,.star,.txt}}!"
         )
+
+    logger.info(f"Downsampling completed in {time.time() - t0:.1f} seconds")

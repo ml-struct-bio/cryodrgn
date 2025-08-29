@@ -26,6 +26,16 @@ from cryodrgn.starfile import parse_star, write_star
         ("relion31.v2.star", None, None),
     ],
     indirect=True,
+    ids=[
+        "toy.mrcs_no.ind",
+        "toy.mrcs_5.indices",
+        "toy.txt_no.ind",
+        "toy.txt_5.indices",
+        "toy.star-13_no.ind",
+        "toy.star-13_just-4.indices",
+        "toydatadir.star_no.ind",
+        "relion31.v2.star_no.ind",
+    ],
 )
 class TestDownsampleToMRCS:
     """Downsampling various image stack formats to .mrcs-formatted stacks."""
@@ -123,15 +133,18 @@ class TestDownsampleToMRCS:
 
 
 @pytest.mark.parametrize(
-    "particles, datadir",
-    [("toydatadir.star", "toy"), ("relion5.star", "toy")],
-    indirect=True,
+    "particles, datadir, threads",
+    [("toydatadir.star", "toy", 1), ("relion5.star", "toy", 2)],
+    indirect=["particles", "datadir"],
+    ids=["toydatadir.star_1thread", "relion5.star_2threads"],
 )
 @pytest.mark.parametrize(
     "outdir", ["downsampled", None], ids=["with-outdir", "wo-outdir"]
 )
 @pytest.mark.parametrize("downsample_dim", [16, 8])
-def test_downsample_starout(tmpdir, particles, datadir, outdir, downsample_dim):
+def test_downsample_starout(
+    tmpdir, particles, datadir, outdir, downsample_dim, threads
+):
     """Downsampling a .star image stack to another .star image stack."""
 
     in_imgs = ImageSource.from_file(
@@ -149,6 +162,8 @@ def test_downsample_starout(tmpdir, particles, datadir, outdir, downsample_dim):
         datadir.path,  # If specified, prefixed to each _rlnImageName in starfile
         "-o",
         out_star,
+        "--max-threads",
+        str(threads),
     ]
     if outdir is not None:
         outpath = os.path.join(

@@ -168,6 +168,7 @@ def add_args(parser):
 
 def add_slice(volume, counts, ff_coord, ff, D, ctf_mul):
     d2 = int(D / 2)
+    res = volume.shape[0]
     ff_coord = ff_coord.transpose(0, 1).clip(-d2, d2)
     xf, yf, zf = ff_coord.floor().long()
     xc, yc, zc = ff_coord.ceil().long()
@@ -176,8 +177,9 @@ def add_slice(volume, counts, ff_coord, ff, D, ctf_mul):
         dist = torch.stack([xi, yi, zi]).float() - ff_coord
         w = 1 - dist.pow(2).sum(0).pow(0.5)
         w[w < 0] = 0
-        volume[(zi + d2, yi + d2, xi + d2)] += w * ff * ctf_mul
-        counts[(zi + d2, yi + d2, xi + d2)] += w * ctf_mul**2
+        flat_idx = (xi + d2) + (yi + d2) * res + (zi + d2) * res**2
+        volume.put_(flat_idx, w * ff * ctf_mul, accumulate=True)
+        counts.put_(flat_idx, w * ctf_mul**2, accumulate=True)
 
     add_for_corner(xf, yf, zf)
     add_for_corner(xc, yf, zf)

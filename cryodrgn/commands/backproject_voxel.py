@@ -165,6 +165,71 @@ def add_args(parser):
         help="Tilt angle increment per tilt in degrees (default: %(default)s)",
     )
 
+@torch.inference_mode()
+def _prepare_corner_indices_and_weights(ff_coord_T_3xN: torch.Tensor, D: int):
+    """
+    Vectorized version of the 8-corner 'splat' precomputation.
+
+    ff_coord_T_3xN: (3, Npts) float coords in voxel-space, clipped to [-D/2, D/2].
+    Returns:
+      linear_idx_8N: (8, Npts) int64 flattened indices into a D^3 volume
+      w_8N:          (8, Npts) float32 weights, w = 1 - ||dist||, clamped to [0, ∞)
+    """
+    d2 = int(D // 2)
+
+    # floor/ceil for each axis, shape (N,)
+    xf, yf, zf = ff_coord_T_3xN.floor().long()
+    xc, yc, zc = ff_coord_T_3xN.ceil().long()
+
+    # 8 corner combinations (xi, yi, zi), each shape (N,)
+    xi = torch.stack([xf, xc, xf, xf, xc, xf, xc, xc], dim=0)
+    yi = torch.stack([yf, yf, yc, yf, yc, yc, yf, yc], dim=0)
+    zi = torch.stack([zf, zf, zf, zc, zf, zc, zc, zc], dim=0)
+
+    # distances to each corner: sqrt((dx)^2+(dy)^2+(dz)^2), shapes (8, N)
+    fx, fy, fz = ff_coord_T_3xN  # each (N,)
+    dx = xi.to(torch.float32) - fx.unsqueeze(0)
+    dy = yi.to(torch.float32) - fy.unsqueeze(0)
+    dz = zi.to(torch.float32) - fz.unsqueeze(0)
+    dist = (dx * dx + dy * dy + dz * dz).sqrt()
+
+    w = (1.0 - dist).clamp_min_(0.0)  # match original w definition and clamp
+
+    # convert (xi,yi,zi) to flattened linear indices for volume.view(-1)
+    # target index = (zi + d2) * D*D + (yi + d2) * D + (xi + d2)
+    xi = (xi + d2).clamp_(0, D - 1)
+    yi = (yi + d2).clamp_(0, D - 1)
+    zi = (zi + d2).clamp_(0, D - 1)
+
+    linear_idx = zi * (D * D) + yi * D + xi
+    return linear_idx.to(torch.int64), w.to(torch.float32)
+
+
+@torch.inference_mode()
+def _accumulate_slice(volume_1d: torch.Tensor,
+                      counts_1d: torch.Tensor,
+                      linear_idx_8N: torch.Tensor,
+                      w_8N: torch.Tensor,
+                      ff_eff_N: torch.Tensor,
+                      ctfmul_sq_N: torch.Tensor):
+    """
+    Single scatter_add for volume and counts given precomputed corner indices/weights.
+
+    volume_1d, counts_1d: D^3 flattened (float32) on device
+    linear_idx_8N: (8, N), int64
+    w_8N:          (8, N), float32
+    ff_eff_N:           (N), float32  (ff * ctf_mul)
+    ctfmul_sq_N:        (N), float32  (ctf_mul ** 2)
+    """
+    # Expand per-pixel scalars across the 8 corners
+    vol_contrib_8N = w_8N * ff_eff_N.unsqueeze(0)     # (8, N)
+    cnt_contrib_8N = w_8N * ctfmul_sq_N.unsqueeze(0)  # (8, N)
+
+    # Flatten and scatter-add
+    idx = linear_idx_8N.reshape(-1)
+    volume_1d.scatter_add_(0, idx, vol_contrib_8N.reshape(-1))
+    counts_1d.scatter_add_(0, idx, cnt_contrib_8N.reshape(-1))
+
 
 def add_slice(volume, counts, ff_coord, ff, D, ctf_mul):
     d2 = int(D / 2)
@@ -295,20 +360,35 @@ def main(args):
     lattice_mask = lattice.get_circular_mask(D // 2)
     img_iterator = range(min(args.first, Nimg)) if args.first else range(Nimg)
 
+    # Keep masked coords on device once; shape (Npts, 3)
+    coords_masked = lattice.coords[lattice_mask].to(device)
+
     if args.tilt:
         use_tilts = set(range(args.ntilts))
         img_iterator = [
             ii for ii in img_iterator if int(data.tilt_numbers[ii].item()) in use_tilts
         ]
 
+    infer_ctx = torch.inference_mode()  # no-op on older torch if unavailable
+
     # Initialize tensors that will store backprojection results
     img_count = len(img_iterator)
-    volume_full = torch.zeros((D, D, D), device=device)
-    counts_full = torch.zeros((D, D, D), device=device)
-    volume_half1 = torch.zeros((D, D, D), device=device)
-    counts_half1 = torch.zeros((D, D, D), device=device)
-    volume_half2 = torch.zeros((D, D, D), device=device)
-    counts_half2 = torch.zeros((D, D, D), device=device)
+    volume_full = torch.zeros((D, D, D), device=device, dtype=torch.float32)
+    counts_full = torch.zeros((D, D, D), device=device, dtype=torch.float32)
+    volume_half1 = torch.zeros((D, D, D), device=device, dtype=torch.float32)
+    counts_half1 = torch.zeros((D, D, D), device=device, dtype=torch.float32)
+    volume_half2 = torch.zeros((D, D, D), device=device, dtype=torch.float32)
+    counts_half2 = torch.zeros((D, D, D), device=device, dtype=torch.float32)
+
+    # Pre-flatten views to avoid repeated .view(-1) inside loop
+    vol_full_1d = volume_full.view(-1)
+    cnt_full_1d = counts_full.view(-1)
+    if args.half_maps:
+        vol_h1_1d = volume_half1.view(-1)
+        cnt_h1_1d = counts_half1.view(-1)
+        vol_h2_1d = volume_half2.view(-1)
+        cnt_h2_1d = counts_half2.view(-1)
+
 
     # Figure out how often we are going to report progress w.r.t. images processed
     if args.log_interval == "auto":
@@ -321,46 +401,57 @@ def main(args):
             f"Given value must be an integer or the label 'auto'!"
         )
 
-    for i, ii in enumerate(img_iterator):
-        if i % log_interval == 0:
-            logger.info(f"fimage {ii} — {(i / img_count * 100):.1f}% done")
+    with infer_ctx:
+        for i, ii in enumerate(img_iterator):
+            if i % log_interval == 0:
+                logger.info(f"fimage {ii} — {(i / img_count * 100):.1f}% done")
 
-        r, t = posetracker.get_pose(ii)
-        ff = data.get_tilt(ii) if args.tilt else data[ii]
-        assert isinstance(ff, tuple)
-        ff = ff[0].to(device)
-        ff = ff.view(-1)[lattice_mask]
-        ctf_mul = 1
+            # Pose and data fetch
+            r, t = posetracker.get_pose(ii)  # r: (3,3), t: (2,) or None
+            ff_tup = data.get_tilt(ii) if args.tilt else data[ii]
+            assert isinstance(ff_tup, tuple)
+            ff = ff_tup[0].to(device)  # (D,D)
+            ff = ff.view(-1)[lattice_mask]  # (Npts,)
 
-        if ctf_params is not None:
-            freqs = lattice.freqs2d / ctf_params[ii, 0]
-            c = ctf.compute_ctf(freqs, *ctf_params[ii, 1:]).view(-1)[lattice_mask]
+            # CTF / filters (per-pixel)
+            ctf_mul = 1.0
+            if ctf_params is not None:
+                freqs = lattice.freqs2d / ctf_params[ii, 0]
+                c = ctf.compute_ctf(freqs, *ctf_params[ii, 1:]).view(-1)[lattice_mask]
+                if args.ctf_alg == "flip":
+                    ff = ff * c.sign()
+                else:
+                    ctf_mul = c
 
-            if args.ctf_alg == "flip":
-                ff *= c.sign()
-            else:
-                ctf_mul = c
+            # In-plane real-space translation (phase shift in Fourier domain)
+            if t is not None:
+                ff = lattice.translate_ht(ff.view(1, -1), t.view(1, 1, 2), lattice_mask).view(-1)
 
-        if t is not None:
-            ff = lattice.translate_ht(
-                ff.view(1, -1), t.view(1, 1, 2), lattice_mask
-            ).view(-1)
+            # Dose filters for tilt data
+            if args.tilt:
+                # build once per ii without creating large temporaries
+                tilt_idxs = torch.tensor([ii], device=device)
+                dose_filters = data.get_dose_filters(tilt_idxs, lattice, ctf_params[ii, 0])[0]
+                ctf_mul = ctf_mul * dose_filters[lattice_mask]
 
-        if args.tilt:
-            tilt_idxs = torch.tensor([ii]).to(device)
-            dose_filters = data.get_dose_filters(tilt_idxs, lattice, ctf_params[ii, 0])[
-                0
-            ]
-            ctf_mul *= dose_filters[lattice_mask]
+            # Precompute 8-corner indices & weights once for this image
+            # coords_masked: (Npts, 3). We need (3, Npts) for the helper.
+            ff_coord_T = (coords_masked @ r).T.clamp_(min=-D/2, max=D/2)  # (3, Npts)
+            linear_idx_8N, w_8N = _prepare_corner_indices_and_weights(ff_coord_T, D)
 
-        ff_coord = lattice.coords[lattice_mask] @ r
-        add_slice(volume_full, counts_full, ff_coord, ff, D, ctf_mul)
+            # Expand per-pixel scalars; reuse for full + half
+            ff_eff    = (ff * ctf_mul).to(torch.float32)      # (Npts,)
+            ctfmul_sq = (ctf_mul * ctf_mul).to(torch.float32) # (Npts,)
 
-        if args.half_maps:
-            if ii % 2 == 0:
-                add_slice(volume_half1, counts_half1, ff_coord, ff, D, ctf_mul)
-            else:
-                add_slice(volume_half2, counts_half2, ff_coord, ff, D, ctf_mul)
+            # Accumulate into full map
+            _accumulate_slice(vol_full_1d, cnt_full_1d, linear_idx_8N, w_8N, ff_eff, ctfmul_sq)
+
+            # Accumulate into the appropriate half-map without recomputing indices/weights
+            if args.half_maps:
+                if (ii % 2) == 0:
+                    _accumulate_slice(vol_h1_1d, cnt_h1_1d, linear_idx_8N, w_8N, ff_eff, ctfmul_sq)
+                else:
+                    _accumulate_slice(vol_h2_1d, cnt_h2_1d, linear_idx_8N, w_8N, ff_eff, ctfmul_sq)
 
     td = time.time() - t1
     logger.info(

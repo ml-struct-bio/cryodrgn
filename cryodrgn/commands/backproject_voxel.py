@@ -29,6 +29,7 @@ $ cryodrgn backproject_voxel particles_from_M.star --datadir subtilts/128/ \
                              -o backproject-tilt/ --lazy --tilt --ntilts 5
 
 """
+import argparse
 import os
 import time
 import numpy as np
@@ -43,7 +44,7 @@ from cryodrgn.source import write_mrc
 logger = logging.getLogger(__name__)
 
 
-def add_args(parser):
+def add_args(parser: argparse.ArgumentParser) -> None:
     """The command-line arguments for use with `cryodrgn backproject_voxel`."""
 
     parser.add_argument(
@@ -79,6 +80,21 @@ def add_args(parser):
         help="Don't calculate FSCs, but still produce half-maps.",
         dest="fsc_vals",
     )
+    parser.add_argument(
+        "-b",
+        "--batch-size",
+        type=int,
+        default=5000,
+        help="Number of images to process in each batch (default: %(default)s)",
+    )
+    parser.add_argument(
+        "-n",
+        "--num-workers",
+        type=int,
+        default=16,
+        help="Number of workers to use for parallel processing (default: %(default)s)",
+    )
+
     parser.add_argument("--ctf-alg", type=str, choices=("flip", "mul"), default="mul")
     parser.add_argument(
         "--reg-weight",
@@ -169,17 +185,23 @@ def add_args(parser):
 def add_slice(volume, counts, ff_coord, ff, D, ctf_mul):
     d2 = int(D / 2)
     res = volume.shape[0]
-    ff_coord = ff_coord.transpose(0, 1).clip(-d2, d2)
-    xf, yf, zf = ff_coord.floor().long()
-    xc, yc, zc = ff_coord.ceil().long()
+    use_coord = ff_coord.transpose(0, 2).clip(-d2, d2)
+    xf, yf, zf = use_coord.floor().long()
+    xc, yc, zc = use_coord.ceil().long()
 
     def add_for_corner(xi, yi, zi):
-        dist = torch.stack([xi, yi, zi]).float() - ff_coord
-        w = 1 - dist.pow(2).sum(0).pow(0.5)
-        w[w < 0] = 0
-        flat_idx = (xi + d2) + (yi + d2) * res + (zi + d2) * res**2
-        volume.put_(flat_idx, w * ff * ctf_mul, accumulate=True)
-        counts.put_(flat_idx, w * ctf_mul**2, accumulate=True)
+        dist = torch.stack([xi, yi, zi]).float() - use_coord
+        wvals = 1 - dist.pow(2).sum(0).pow(0.5).T
+        wvals[wvals < 0] = 0
+        vol_add = wvals * ff * ctf_mul
+        cnt_add = wvals * ctf_mul**2
+        flat_idx = (
+            (zi.T.flatten() + d2) * res**2
+            + (yi.T.flatten() + d2) * res
+            + (xi.T.flatten() + d2)
+        )
+        volume.put_(flat_idx, vol_add.flatten(), accumulate=True)
+        counts.put_(flat_idx, cnt_add.flatten(), accumulate=True)
 
     add_for_corner(xf, yf, zf)
     add_for_corner(xc, yf, zf)
@@ -201,7 +223,7 @@ def regularize_volume(
     return fft.ihtn_center(reg_volume[0:-1, 0:-1, 0:-1].cpu())
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
     t1 = time.time()
     logger.info(args)
     os.makedirs(args.outdir, exist_ok=True)
@@ -272,9 +294,8 @@ def main(args):
         )
 
     D = data.D
-    Nimg = data.N
     lattice = Lattice(D, extent=D // 2, device=device)
-    posetracker = PoseTracker.load(args.poses, Nimg, D, None, indices, device=device)
+    posetracker = PoseTracker.load(args.poses, data.N, D, None, indices, device=device)
 
     if args.ctf is not None:
         logger.info(f"Loading ctf params from {args.ctf}")
@@ -295,16 +316,8 @@ def main(args):
     voltage = float(ctf_params[0, 4]) if ctf_params is not None else None
     data.voltage = voltage
     lattice_mask = lattice.get_circular_mask(D // 2)
-    img_iterator = range(min(args.first, Nimg)) if args.first else range(Nimg)
-
-    if args.tilt:
-        use_tilts = set(range(args.ntilts))
-        img_iterator = [
-            ii for ii in img_iterator if int(data.tilt_numbers[ii].item()) in use_tilts
-        ]
 
     # Initialize tensors that will store backprojection results
-    img_count = len(img_iterator)
     volume_full = torch.zeros((D, D, D), device=device)
     counts_full = torch.zeros((D, D, D), device=device)
     volume_half1 = torch.zeros((D, D, D), device=device)
@@ -313,8 +326,9 @@ def main(args):
     counts_half2 = torch.zeros((D, D, D), device=device)
 
     # Figure out how often we are going to report progress w.r.t. images processed
+    Nimg = min(args.first, data.N) if args.first is not None else data.N
     if args.log_interval == "auto":
-        log_interval = max(round((img_count // 1000), -2), 100)
+        log_interval = max(round((Nimg // 1000), -2), 100)
     elif args.log_interval.isnumeric():
         log_interval = int(args.log_interval)
     else:
@@ -323,52 +337,69 @@ def main(args):
             f"Given value must be an integer or the label 'auto'!"
         )
 
-    for i, ii in enumerate(img_iterator):
-        if i % log_interval == 0:
-            logger.info(f"fimage {ii} — {(i / img_count * 100):.1f}% done")
+    # Training loop over batches of images from the dataset
+    data_generator = dataset.make_dataloader(
+        data,
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
+        shuffle=False,
+    )
+    img_count = 0
+    for i, (imgs, tilts, inds) in enumerate(data_generator):
+        B = imgs.shape[0]
+        img_count += B
 
-        r, t = posetracker.get_pose(ii)
-        ff = data.get_tilt(ii) if args.tilt else data[ii]
-        assert isinstance(ff, tuple)
-        ff = ff[0].to(device)
-        ff = ff.view(-1)[lattice_mask]
+        if (img_count % log_interval) < args.batch_size:
+            logger.info(f"fimage {img_count} — {(img_count / Nimg * 100):.1f}% done")
+
+        rot, trans = posetracker.get_pose(inds)
+        rot, trans = rot.to(device), trans.to(device)
+        imgs = imgs.to(device)
+        ff = imgs.view(-1, D**2)[:, lattice_mask]
+
+        if tilts is not None:
+            tilts = tilts.to(device)
+
         ctf_mul = 1
-
         if ctf_params is not None:
-            freqs = lattice.freqs2d / ctf_params[ii, 0]
-            c = ctf.compute_ctf(freqs, *ctf_params[ii, 1:]).view(-1)[lattice_mask]
+            freqs = lattice.freqs2d.unsqueeze(0).expand(
+                B, *lattice.freqs2d.shape
+            ) / ctf_params[inds, 0].view(B, 1, 1)
+            c = ctf.compute_ctf(freqs, *torch.split(ctf_params[inds, 1:], 1, 1)).view(
+                B, -1
+            )[:, lattice_mask]
 
             if args.ctf_alg == "flip":
                 ff *= c.sign()
             else:
                 ctf_mul = c
 
-        if t is not None:
-            ff = lattice.translate_ht(
-                ff.view(1, -1), t.view(1, 1, 2), lattice_mask
-            ).view(-1)
+        if trans is not None:
+            ff = lattice.translate_ht(ff, trans.unsqueeze(1), lattice_mask).view(B, -1)
 
         if args.tilt:
-            tilt_idxs = torch.tensor([ii]).to(device)
-            dose_filters = data.get_dose_filters(tilt_idxs, lattice, ctf_params[ii, 0])[
-                0
-            ]
+            tilt_idxs = torch.tensor(inds).to(device)
+            dose_filters = data.get_dose_filters(
+                tilt_idxs, lattice, ctf_params[inds, 0]
+            )[0]
             ctf_mul *= dose_filters[lattice_mask]
 
-        ff_coord = lattice.coords[lattice_mask] @ r
+        ff_coord = lattice.coords[lattice_mask] @ rot
         add_slice(volume_full, counts_full, ff_coord, ff, D, ctf_mul)
-
         if args.half_maps:
-            if ii % 2 == 0:
-                add_slice(volume_half1, counts_half1, ff_coord, ff, D, ctf_mul)
-            else:
-                add_slice(volume_half2, counts_half2, ff_coord, ff, D, ctf_mul)
+            add_slice(
+                volume_half1, counts_half1, ff_coord[0::2], ff[0::2], D, ctf_mul[0::2]
+            )
+            add_slice(
+                volume_half2, counts_half2, ff_coord[1::2], ff[1::2], D, ctf_mul[1::2]
+            )
+
+        if args.first is not None and img_count >= args.first:
+            break
 
     td = time.time() - t1
-    logger.info(
-        f"Backprojected {img_count} images "
-        f"in {td:.2f}s ({(td / img_count):4f}s per image)"
-    )
+    img_avg = td / Nimg
+    logger.info(f"Backprojected {Nimg} images in {td:.2f}s ({img_avg:4f}s per image)")
 
     counts_full[counts_full == 0] = 1
     counts_half1[counts_half1 == 0] = 1

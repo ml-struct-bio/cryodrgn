@@ -142,7 +142,7 @@ class TiltSeriesData(ImageDataset):
     def __init__(
         self,
         tiltstar,
-        ntilts,
+        ntilts=None,
         random_tilts=False,
         ind=None,
         voltage=None,
@@ -186,16 +186,17 @@ class TiltSeriesData(ImageDataset):
             ranks = np.empty_like(sort_idxs)
             ranks[sort_idxs[::-1]] = np.arange(len(ind))
             self.tilt_numbers[ind] = ranks
+
         self.tilt_numbers = torch.tensor(self.tilt_numbers).to(self.device)
         logger.info(f"Loaded {self.N} tilts for {self.Np} particles")
         counts = Counter(group_name)
         unique_counts = set(counts.values())
         logger.info(f"{unique_counts} tilts per particle")
-        self.counts = counts
-        assert ntilts <= min(unique_counts)
-        self.ntilts = ntilts
-        self.random_tilts = random_tilts
 
+        self.counts = counts
+        self.ntilts = ntilts or min(unique_counts)
+        assert self.ntilts <= min(unique_counts)
+        self.random_tilts = random_tilts
         self.voltage = voltage
         self.dose_per_tilt = dose_per_tilt
 
@@ -204,7 +205,7 @@ class TiltSeriesData(ImageDataset):
         self.tilt_angles = None
         if angle_per_tilt is not None:
             self.tilt_angles = angle_per_tilt * torch.ceil(self.tilt_numbers / 2)
-            self.tilt_angles = torch.tensor(self.tilt_angles).to(self.device)
+            self.tilt_angles = self.tilt_angles.to(self.device)
 
     def __len__(self):
         return self.Np

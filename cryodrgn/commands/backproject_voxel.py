@@ -84,15 +84,8 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "-b",
         "--batch-size",
         type=int,
-        default=5000,
+        default=1000,
         help="Number of images to process in each batch (default: %(default)s)",
-    )
-    parser.add_argument(
-        "-n",
-        "--num-workers",
-        type=int,
-        default=16,
-        help="Number of workers to use for parallel processing (default: %(default)s)",
     )
 
     parser.add_argument("--ctf-alg", type=str, choices=("flip", "mul"), default="mul")
@@ -145,7 +138,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--log-interval",
         type=str,
-        default="100",
+        default="5000",
         help="Logging interval in N_IMGS (default: %(default)s)",
     )
 
@@ -273,7 +266,7 @@ def main(args: argparse.Namespace) -> None:
         ), "Argument --dose-per-tilt is required for backprojecting tilt series data"
         data = dataset.TiltSeriesData(
             args.particles,
-            args.ntilts,
+            ntilts=None,
             norm=(0, 1),
             invert_data=args.invert_data,
             datadir=args.datadir,
@@ -316,6 +309,7 @@ def main(args: argparse.Namespace) -> None:
     voltage = float(ctf_params[0, 4]) if ctf_params is not None else None
     data.voltage = voltage
     lattice_mask = lattice.get_circular_mask(D // 2)
+    mask_size = lattice_mask.sum().item()
 
     # Initialize tensors that will store backprojection results
     volume_full = torch.zeros((D, D, D), device=device)
@@ -325,10 +319,13 @@ def main(args: argparse.Namespace) -> None:
     volume_half2 = torch.zeros((D, D, D), device=device)
     counts_half2 = torch.zeros((D, D, D), device=device)
 
+    Nimg = data.Np * args.ntilts if args.tilt else data.N
+    if args.first is not None:
+        Nimg = min(args.first, Nimg)
+
     # Figure out how often we are going to report progress w.r.t. images processed
-    Nimg = min(args.first, data.N) if args.first is not None else data.N
     if args.log_interval == "auto":
-        log_interval = max(round((Nimg // 1000), -2), 100)
+        log_interval = max(round((Nimg // 100), -2), 100)
     elif args.log_interval.isnumeric():
         log_interval = int(args.log_interval)
     else:
@@ -337,30 +334,43 @@ def main(args: argparse.Namespace) -> None:
             f"Given value must be an integer or the label 'auto'!"
         )
 
+    use_tilts = set(range(args.ntilts)) if args.tilt else None
+    if args.tilt:
+        tilt_numbers = data.tilt_numbers.cpu().numpy()
+        batch_size = args.batch_size // max(data.counts.values())
+    else:
+        tilt_numbers = None
+        batch_size = args.batch_size
+
     # Training loop over batches of images from the dataset
     data_generator = dataset.make_dataloader(
         data,
-        batch_size=args.batch_size,
-        num_workers=args.num_workers,
+        batch_size=batch_size,
+        num_workers=0,
         shuffle=False,
     )
     img_count = 0
-    for i, (imgs, tilts, inds) in enumerate(data_generator):
-        B = imgs.shape[0]
+    for i, (imgs, tilt_inds, particle_inds) in enumerate(data_generator):
+        if args.tilt:
+            use_stat = [int(tilt_numbers[tilt_i]) in use_tilts for tilt_i in tilt_inds]
+            inds = torch.tensor(
+                [ii for tilt_i, ii in enumerate(tilt_inds) if use_stat[tilt_i]]
+            ).to(device)
+            imgs = imgs[use_stat, ...]
+        else:
+            inds = particle_inds
+
+        B = len(inds)
         img_count += B
+        if (img_count % log_interval) < B:
+            logger.info(f"fimage {img_count:,d} — {(img_count / Nimg * 100):.1f}% done")
 
-        if (img_count % log_interval) < args.batch_size:
-            logger.info(f"fimage {img_count} — {(img_count / Nimg * 100):.1f}% done")
-
+        ff = imgs.view(-1, D**2).to(device)[:, lattice_mask]
         rot, trans = posetracker.get_pose(inds)
-        rot, trans = rot.to(device), trans.to(device)
-        imgs = imgs.to(device)
-        ff = imgs.view(-1, D**2)[:, lattice_mask]
+        rot = rot.to(device)
+        if trans is not None:
+            trans = trans.to(device)
 
-        if tilts is not None:
-            tilts = tilts.to(device)
-
-        ctf_mul = 1
         if ctf_params is not None:
             freqs = lattice.freqs2d.unsqueeze(0).expand(
                 B, *lattice.freqs2d.shape
@@ -371,18 +381,19 @@ def main(args: argparse.Namespace) -> None:
 
             if args.ctf_alg == "flip":
                 ff *= c.sign()
+                ctf_mul = torch.tensor(np.tile(1, (B, mask_size)), device=device)
             else:
                 ctf_mul = c
+        else:
+            ctf_mul = torch.tensor(np.tile(1, (B, mask_size)), device=device)
 
         if trans is not None:
             ff = lattice.translate_ht(ff, trans.unsqueeze(1), lattice_mask).view(B, -1)
 
         if args.tilt:
-            tilt_idxs = torch.tensor(inds).to(device)
-            dose_filters = data.get_dose_filters(
-                tilt_idxs, lattice, ctf_params[inds, 0]
-            )[0]
-            ctf_mul *= dose_filters[lattice_mask]
+            for i in range(B):
+                dose_filters = data.get_dose_filters([inds[i]], lattice, Apix)[0]
+                ctf_mul[i] *= dose_filters[lattice_mask]
 
         ff_coord = lattice.coords[lattice_mask] @ rot
         add_slice(volume_full, counts_full, ff_coord, ff, D, ctf_mul)
@@ -399,7 +410,15 @@ def main(args: argparse.Namespace) -> None:
 
     td = time.time() - t1
     img_avg = td / Nimg
-    logger.info(f"Backprojected {Nimg} images in {td:.2f}s ({img_avg:4f}s per image)")
+    if args.tilt:
+        logger.info(
+            f"Backprojected {Nimg} tilts from {data.Np} particles in {td:.2f}s "
+            f"({img_avg:4f}s per tilt image)"
+        )
+    else:
+        logger.info(
+            f"Backprojected {Nimg} images in {td:.2f}s ({img_avg:4f}s per image)"
+        )
 
     counts_full[counts_full == 0] = 1
     counts_half1[counts_half1 == 0] = 1

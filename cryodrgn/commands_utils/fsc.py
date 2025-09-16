@@ -330,11 +330,13 @@ def calculate_cryosparc_fscs(
 
     if plot_file is not None:
         fsc_angs = {
-            mask_lbl: ((1 / fsc_val) * apix) for mask_lbl, fsc_val in fsc_thresh.items()
+            mask_lbl: ((1 / fsc_val) * apix) if fsc_val is not None else None
+            for mask_lbl, fsc_val in fsc_thresh.items()
         }
         fsc_plot_vals = {
             f"{mask_lbl}  ({fsc_angs[mask_lbl]:.2f}Å)": fsc_df
             for mask_lbl, fsc_df in fsc_vals.items()
+            if fsc_angs[mask_lbl] is not None
         }
         create_fsc_plot(fsc_vals=fsc_plot_vals, outfile=plot_file, apix=apix)
 

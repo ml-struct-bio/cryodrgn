@@ -18,6 +18,95 @@ cryoDRGN installation, training and analysis. A brief quick start is provided be
 
 For any feedback, questions, or bugs, please file a Github issue or start a Github discussion.
 
+## Testing and Development
+
+CryoDRGN includes a comprehensive testing suite to ensure code quality and reliability. The testing system is organized into multiple categories for different types of validation.
+
+### Quick Start for Testing
+
+```bash
+# Install with development dependencies
+make install
+
+# Run quick development tests
+make test-quick
+
+# Run all tests
+make test-all
+
+# Run tests with coverage
+make test-coverage
+```
+
+### Test Categories
+
+The testing suite includes the following categories:
+
+- **Unit Tests**: Fast, isolated tests of individual components
+- **Integration Tests**: End-to-end testing of complete workflows
+- **Performance Tests**: Benchmarking and regression testing
+- **Error Handling Tests**: Edge cases and error conditions
+- **Property-based Tests**: Automated testing with Hypothesis
+- **Documentation Tests**: Validation of examples and docstrings
+
+### Running Specific Test Categories
+
+```bash
+# Run unit tests (fastest)
+make test-unit
+
+# Run integration tests
+make test-integration
+
+# Run performance benchmarks
+make test-performance
+
+# Run error handling tests
+make test-error-handling
+
+# List all available test categories
+make list-test-categories
+```
+
+### Using the Test Runner
+
+The comprehensive test runner provides fine-grained control:
+
+```bash
+# Check testing environment
+python tests/run_test_suite.py --check-env
+
+# Run specific category
+python tests/run_test_suite.py --category unit
+
+# Run all tests except slow ones
+python tests/run_test_suite.py --all --exclude slow performance
+
+# Quick development tests
+python tests/run_test_suite.py --quick
+```
+
+### Coverage Reports
+
+Test coverage reports are generated automatically:
+
+```bash
+make test-coverage
+# View results in htmlcov/index.html
+```
+
+### Development Workflow
+
+For active development, use the quick test cycle:
+
+```bash
+make test-quick    # Run essential tests (~2-3 minutes)
+make lint          # Check code style
+make format        # Auto-format code
+```
+
+See the [Makefile](Makefile) for all available development commands.
+
 
 ### Updates in Version 3.5.x
 * 1-indexing of output volumes and epochs replacing the previous 0-indexing

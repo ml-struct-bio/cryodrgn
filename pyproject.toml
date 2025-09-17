@@ -43,6 +43,10 @@ dev = [
     "pre-commit",
     "pyright==1.1.300",
     "pytest>=6",
+    "pytest-cov",
+    "pytest-benchmark",
+    "pytest-mock",
+    "hypothesis",
     "sphinx",
     "sphinx-rtd-theme",
     "twine"
@@ -68,10 +72,46 @@ include = ["cryodrgn*"]
 
 [tool.pytest.ini_options]
 minversion = "6.0"
-addopts = "-rA"
+addopts = "-rA --cov=cryodrgn --cov-report=term-missing --cov-report=html --cov-report=xml"
 testpaths = [
     "tests"
 ]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests", 
+    "gpu: marks tests that require GPU",
+    "performance: marks performance/benchmark tests",
+    "cmdline: marks command line interface tests",
+]
+
+[tool.coverage.run]
+source = ["cryodrgn"]
+omit = [
+    "cryodrgn/_version.py",
+    "cryodrgn/templates/*",
+    "*/tests/*",
+    "setup.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
+skip_covered = false
+show_missing = true
+
+[tool.coverage.html]
+directory = "htmlcov"
 
 [tool.pyright]
 exclude = ["build/**"]

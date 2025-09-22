@@ -319,11 +319,19 @@ def main(args: argparse.Namespace) -> None:
     volume_half2 = torch.zeros((D, D, D), device=device)
     counts_half2 = torch.zeros((D, D, D), device=device)
 
-    Nimg = data.Np * args.ntilts if args.tilt else data.N
-    if args.first is not None:
-        Nimg = min(args.first, Nimg)
+    # Determine which images to backproject if only using the first N images from the
+    # stack or the best N tilts per particle according to CTF scalefactor
+    img_iterator = range(min(args.first, data.N)) if args.first else range(data.N)
+    if args.tilt:
+        use_tilts = set(range(args.ntilts))
+        img_iterator = [
+            ii for ii in img_iterator if int(data.tilt_numbers[ii].item()) in use_tilts
+        ]
+    else:
+        img_iterator = list(img_iterator)
 
     # Figure out how often we are going to report progress w.r.t. images processed
+    Nimg = len(img_iterator)
     if args.log_interval == "auto":
         log_interval = max(round((Nimg // 100), -2), 100)
     elif args.log_interval.isnumeric():
@@ -334,39 +342,23 @@ def main(args: argparse.Namespace) -> None:
             f"Given value must be an integer or the label 'auto'!"
         )
 
-    use_tilts = set(range(args.ntilts)) if args.tilt else None
-    if args.tilt:
-        tilt_numbers = data.tilt_numbers.cpu().numpy()
-        batch_size = args.batch_size // max(data.counts.values())
-    else:
-        tilt_numbers = None
-        batch_size = args.batch_size
-
     # Training loop over batches of images from the dataset
-    data_generator = dataset.make_dataloader(
-        data,
-        batch_size=batch_size,
-        num_workers=0,
-        shuffle=False,
-    )
     img_count = 0
-    for i, (imgs, tilt_inds, particle_inds) in enumerate(data_generator):
-        if args.tilt:
-            use_stat = [int(tilt_numbers[tilt_i]) in use_tilts for tilt_i in tilt_inds]
-            inds = torch.tensor(
-                [ii for tilt_i, ii in enumerate(tilt_inds) if use_stat[tilt_i]]
-            ).to(device)
-            imgs = imgs[use_stat, ...]
-        else:
-            inds = particle_inds
-
-        B = len(inds)
+    half_odd = False
+    while img_iterator:
+        img_idxs = img_iterator[: args.batch_size]
+        img_iterator = img_iterator[args.batch_size :]
+        B = len(img_idxs)
         img_count += B
+
         if (img_count % log_interval) < B:
             logger.info(f"fimage {img_count:,d} — {(img_count / Nimg * 100):.1f}% done")
 
-        ff = imgs.view(-1, D**2).to(device)[:, lattice_mask]
-        rot, trans = posetracker.get_pose(inds)
+        ff = data.get_tilt(img_idxs) if args.tilt else data[img_idxs]
+        assert isinstance(ff, tuple)
+        ff = ff[0].to(device)
+        ff = ff.view(-1, D**2).to(device)[:, lattice_mask]
+        rot, trans = posetracker.get_pose(img_idxs)
         rot = rot.to(device)
         if trans is not None:
             trans = trans.to(device)
@@ -374,16 +366,17 @@ def main(args: argparse.Namespace) -> None:
         if ctf_params is not None:
             freqs = lattice.freqs2d.unsqueeze(0).expand(
                 B, *lattice.freqs2d.shape
-            ) / ctf_params[inds, 0].view(B, 1, 1)
-            c = ctf.compute_ctf(freqs, *torch.split(ctf_params[inds, 1:], 1, 1)).view(
-                B, -1
-            )[:, lattice_mask]
+            ) / ctf_params[img_idxs, 0].view(B, 1, 1)
+            c = ctf.compute_ctf(
+                freqs, *torch.split(ctf_params[img_idxs, 1:], 1, 1)
+            ).view(B, -1)[:, lattice_mask]
 
             if args.ctf_alg == "flip":
                 ff *= c.sign()
                 ctf_mul = torch.tensor(np.tile(1, (B, mask_size)), device=device)
             else:
                 ctf_mul = c
+
         else:
             ctf_mul = torch.tensor(np.tile(1, (B, mask_size)), device=device)
 
@@ -392,21 +385,37 @@ def main(args: argparse.Namespace) -> None:
 
         if args.tilt:
             for i in range(B):
-                dose_filters = data.get_dose_filters([inds[i]], lattice, Apix)[0]
+                dose_filters = data.get_dose_filters([img_idxs[i]], lattice, Apix)[0]
                 ctf_mul[i] *= dose_filters[lattice_mask]
 
         ff_coord = lattice.coords[lattice_mask] @ rot
         add_slice(volume_full, counts_full, ff_coord, ff, D, ctf_mul)
         if args.half_maps:
-            add_slice(
-                volume_half1, counts_half1, ff_coord[0::2], ff[0::2], D, ctf_mul[0::2]
-            )
-            add_slice(
-                volume_half2, counts_half2, ff_coord[1::2], ff[1::2], D, ctf_mul[1::2]
-            )
+            even_idx = 1 if half_odd else 0
+            odd_idx = 0 if half_odd else 1
+            if not half_odd or B > 1:
+                add_slice(
+                    volume_half1,
+                    counts_half1,
+                    ff_coord[even_idx::2],
+                    ff[even_idx::2],
+                    D,
+                    ctf_mul[even_idx::2],
+                )
+            if half_odd or B > 1:
+                add_slice(
+                    volume_half2,
+                    counts_half2,
+                    ff_coord[odd_idx::2],
+                    ff[odd_idx::2],
+                    D,
+                    ctf_mul[odd_idx::2],
+                )
 
-        if args.first is not None and img_count >= args.first:
-            break
+            # When the number of images in the batch is odd, the first image in the
+            # next batch will accumulate to the other half-map and vice versa
+            if B % 2 == 1:
+                half_odd = not half_odd
 
     td = time.time() - t1
     img_avg = td / Nimg

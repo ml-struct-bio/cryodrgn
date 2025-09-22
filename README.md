@@ -27,6 +27,7 @@ For any feedback, questions, or bugs, please file a Github issue or start a Gith
 * official support for Python 3.12, deprecating support for Python 3.9
 * [NEW] consolidated `cryodrgn parse_star` command (merging `parse_pose_star` and `parse_ctf_star`)
 * `analyze` is now run automatically on the final epoch once model training is complete
+* faster backprojection and downsampling
 
 
 ### Updates in Version 3.x
@@ -38,164 +39,8 @@ The official release of [cryoDRGN-ET](https://www.biorxiv.org/content/10.1101/20
 * Major refactor of dataset loading for handling large datasets
 
 
-## Previous versions
-
-<details><summary>Version 3.4</summary><ul>
-  <li>[NEW] <code>cryodrgn_utils plot_classes</code> for analysis visualizations colored by a given set of class
-  labels</li>
-  <li>[NEW] <code>cryodrgn_utils make_movies</code> for animations of <code>analyze*</code> output volumes</li>
-  <li>implementing [automatic mixed-precision training](https://pytorch.org/docs/stable/amp.html)
-  for ab-initio reconstruction for 2-4x speedup</li>
-  <li>support for RELION 3.1 .star files with separate optics tables, np.float16 number formats used in RELION .mrcs
-  outputs</li>
-  <li><code>cryodrgn backproject_voxel</code> produces cryoSPARC-style FSC curve plots with phase-randomization
-  correction of automatically generated tight masks</li>
-  <li><code>cryodrgn downsample</code> can create a new .star or .txt image stack from the corresponding stack format
-  instead of always writing to an .mrcs stack; now also always puts output files into a folder</li>
-  <li>official support for Python 3.11</li>
-</ul></details>
-
-<details><summary>Version 3.3</summary><ul>
-  <li>[NEW] <code>cryodrgn direct_traversal</code> to generate interpolations in the conformation latent space
-between two points</li>
-  <li>support for .txt files in <code>write_star</code></li>
-  <li>adding <code>--datadir</code> to <code>cryodrgn abinit_homo</code> for use with .star files</li>
-  <li>fixing various bugs in <code>backproject_voxel</code>, Jupyter demonstration notebooks</li>
-  <li>support for TestPyPI beta release deployments via <code>pip</code></li>
-</ul></details>
-
-<details><summary>Version 3.2</summary><ul>
-  <li>[NEW] <code>cryodrgn_utils clean</code> for removing extraneous output files from completed experiments</li>
-  <li>[NEW] <code>cryodrgn_utils fsc</code>, <code>cryodrgn_utils fsc_plot</code>,
-<code>cryodrgn_utils gen_mask</code>adapted from existing scripts — for calculating FSCs, plotting them, and
-generating masks for volumes respectively</li>
-  <li><code>cryodrgn backproject_voxel</code> now produces half-maps and a half-map FSC</li>
-  <li>fixing <code>filter_star</code> to accept tilt series as well</li>
-  <li>fixing assorted bugs in e.g. <code>write_star</code>, <code>invert_constrast</code>, and
-<code>train_vae</code> (see release notes)
-</ul></details>
-
-<details><summary>Version 3.1</summary><ul>
-  <li><code>cryodrgn filter</code> interface for interactive filtering of particles as an alternative to the
-cryoDRGN_filter Jupyter notebook</li>
-</ul></details>
-
-<details><summary>Version 2.3</summary><ul>
-  <li>Model configuration files are now saved as human-readable config.yaml files
-(https://github.com/zhonge/cryodrgn/issues/235)</li>
-  <li>Fix machine stamp in output .mrc files for better compatibility with downstream tools
-(https://github.com/zhonge/cryodrgn/pull/260)</li>
-  <li>Better documentation of help flags in ab initio reconstruction tools
-(https://github.com/zhonge/cryodrgn/issues/258)</li>
-  <li>[FIX] By default, window images in <code>cryodrgn abinit_homo</code> (now consistent with other reconstruction
-tools) (https://github.com/zhonge/cryodrgn/issues/258)</li>
-  <li>[FIX] Reduce memory usage when using <code>--preprocessed</code>
-and <code>--ind</code> (https://github.com/zhonge/cryodrgn/pull/272)</li>
-</ul></details>
-
-<details><summary>Version 2.2</summary><ul>
-  <li>[NEW] Tools for ab initio homogeneous and heterogeneous reconstruction:
-
-    (cryodrgn) $ cryodrgn abinit_homo -h
-    (cryodrgn) $ cryodrgn abinit_het -h
-  </li>
-
-  <li>[NEW] Utils function for writing cryoSPARC .cs/.csg files
-[to reimport data into cryoSPARC](https://github.com/zhonge/cryodrgn/issues/150#issuecomment-1465094751):
-
-
-    (cryodrgn) $ cryodrgn_utils write_cs
-  </li>
-  <li>[Improved plotting](https://github.com/zhonge/cryodrgn/issues/219) in <code>cryodrgn analyze</code></li>
-  <li>Many codebase improvements with open-source software development practices (e.g. continuous integration tests,
-black, flake8, pyright, logging, and PyPi packaging).</li>
-</ul></details>
-
-<details><summary>Version 1.1.x</summary>
-Updated default parameters for <code>cryodrgn train_vae</code> with modified positional encoding, larger model
-architecture, and accelerated mixed-precision training turned on by default:
-<ul>
-  <li>Mixed precision training is now turned on by default (Use <code>--no-amp</code> to revert to single precision
-training)</li>
-  <li>Encoder/decoder architecture is now 1024x3 by default (Use <code>--enc-dim 256</code> and <code>--dec-dim
-256</code> to revert)
-</li>
-  <li>Gaussian Fourier featurization for faster training and higher resolution density maps (Use <code>--pe-type
-geom_lowf</code>
-to revert)</li>
-</ul></details>
-
-<details><summary>Version 1.0.x</summary>
-The official version 1.0 release. This version introduces several new tools for analysis of the reconstructed ensembles,
-and adds functionality for calling utility scripts with <code>cryodrgn_utils {command}</code>.
-<ul>
-  <li>NEW: <code>cryodrgn analyze_landscape</code> and <code>cryodrgn analyze_landscape_full</code> for automatic
-assignment of classes and conformational landscape visualization. Documentation for this new feature is here:
-https://www.notion.so/cryodrgn-conformational-landscape-analysis-a5af129288d54d1aa95388bdac48235a.</li>
-  <li>NEW: Faster training and higher resolution model
-with Gaussian Fourier featurization (Use <code>--pe-type gaussian</code>)</li>
-  <li>NEW: <code>cryodrgn_utils {command} -h</code> for standalone utility scripts</li>
-  <li>NEW: <code>cryodrgn_utils write_star</code> for converting cryoDRGN particle selections to .star files</li>
-  <li>Add pytorch native mixed precision training and fix support for pytorch 1.9+</li>
-</ul></details>
-
-<details><summary>Version 0.3.4</summary><ul>
-    <li>FIX: Bug in write_starfile.py when provided particle stack is chunked (.txt file)</li>
-    <li>Support micrograph coordinates and additional column headers to write_starfile.py</li>
-    <li>New helper scripts: analyze_convergence.py (<i>in beta testing</i>) contributed by <a href="bmp@mit.
-edu">Barrett
-Powell</a> (thanks!) and make_random_selection.py for splitting up particle stacks for training</li>
-</ul></details>
-
-<details><summary>Version 0.3.3</summary><ul>
-    <li>Faster image preprocessing and smaller memory footprint</li>
-    <li>New: <code>cryodrgn preprocess</code> for large datasets (<i>in beta testing</i> - see
-<a href="https://www.notion.so/cryodrgn-preprocess-d84a9d9df8634a6a8bfd32d6b5e737ef">this Notion doc</a> for details)
-</li>
-    <li>* Known <a href="https://github.com/zhonge/cryodrgn/issues/66">issue</a> with PyTorch version 1.9+</li>
-</ul></details>
-
-<details><summary>Version 0.3.2</summary><ul>
-    <li>New: cryoDRGN_filtering.ipynb for interactive filtering and selection of images from the dataset</li>
-    <li>New: <code>cryodrgn view_config</code></li>
-    <li>Minor performance improvements and compatibility fixes</li>
-</ul></details>
-
-<details><summary>Version 0.3.1</summary><ul>
-    <li>New: Script write_starfile.py to convert (filtered) particle selection to a .star file</li>
-    <li>More visualizations in <code>cryodrgn analyze</code></li>
-</ul></details>
-
-<details><summary>Version 0.3.0</summary><ul>
-    <li>New: GPU parallelization with flag <code>--multigpu</code></li>
-    <li>New: Mode for accelerated mixed precision training with flag <code>--amp</code>, available for NVIDIA
-tensor core GPUs</li>
-    <li>Interface update: renamed encoder arguments <code>--qdim</code> and <code>--qlayers</code> to
-<code>--enc-dim</code> and <code>--enc-layers</code>; renamed decoder arguments <code>--pdim</code> and
-<code>--players</code> to <code>--dec-dim</code> and <code>--dec-layers</code></li>
-    <li>Argument default changes: flipped the default for <code>--invert-data</code> to True by default, and
-flipped the default for <code>--window</code> to True by default</li>
-    <li>Updated training recommendations in below quick start guide</li>
-    <li>Updates to cryodrgn analyze: more visualizations, ordering kmeans volumes according to distances in latent
-space (previously random), and more features for particle selection and filtering in the Jupiter notebook</li>
-</ul></details>
-
-<details><summary>Version 0.2.1</summary><ul>
-    <li>New: Parsing of RELION 3.1 files</li>
-    <li>Fix: Compatibility with pytorch 1.5</li>
-</ul></details>
-
-<details><summary>Version 0.2.0</summary><ul>
-    <li>New interface and proper python packaging with setup.py. This version has identical functionality and
-argument usage as previous versions, however tools are now available from a common entry point. See:
-
-```$ cryodrgn -h```
-
-</li>
-<li>New analysis pipeline <code>cryodrgn analyze</code></li>
-<li>New latent space traversal scripts with
-<code>cryodrgn graph_traversal</code> and <code>cryodrgn pc_traversal</code>.</li>
-</ul></details>
+A full list of cryoDRGN version updates can be found at our
+[release notes](https://github.com/ml-struct-bio/cryodrgn/releases).
 
 
 ## Installation
@@ -215,6 +60,7 @@ You can alternatively install a newer, less stable, development version of `cryo
     (cryodrgn) $ pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ cryodrgn --pre
 
 More installation instructions are found in the [documentation](https://ez-lab.gitbook.io/cryodrgn/installation).
+
 
 ## Quickstart: heterogeneous reconstruction with consensus poses
 
@@ -325,6 +171,7 @@ entire stack instead (without `--first`).
 **Note:** If the volume does not resemble your structure, you may need to use the flag `--uninvert-data`.
 This flips the data sign (e.g. light-on-dark or dark-on-light), which may be needed depending on the
 convention used in upstream processing tools.
+
 
 ### 5. Running cryoDRGN heterogeneous reconstruction
 
@@ -728,6 +575,7 @@ Documentation: https://ez-lab.gitbook.io/cryodrgn/cryodrgn2-ab-initio-reconstruc
 Available in beta release starting in version 3.x. Documentation for getting started can be found
 in the [user guide](https://ez-lab.gitbook.io/cryodrgn/cryodrgn-et-subtomogram-analysis). Please reach out if you have any questions!
 
+
 ## References:
 
 For a complete description of the method, see:
@@ -759,6 +607,7 @@ Heterogeneous subtomogram averaging:
 * Deep reconstructing generative networks for visualizing dynamic biomolecules inside cells
 Rangan et al.
 bioRxiv 2023, https://www.biorxiv.org/content/10.1101/2023.08.18.553799v1
+
 
 ## Contact
 

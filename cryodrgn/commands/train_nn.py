@@ -140,7 +140,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "-b",
         "--batch-size",
         type=int,
-        default=8,
+        default=16,
         help="Minibatch size (default: %(default)s)",
     )
     group.add_argument(

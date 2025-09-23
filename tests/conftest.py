@@ -193,7 +193,7 @@ class TrainDir:
 
         cmd = (
             f"cryodrgn {self.train_cmd} {self.particles} -o {self.outdir} "
-            f"--poses {self.poses} --no-amp -n={self.epochs} "
+            f"--poses {self.poses} -b 8 --no-amp -n={self.epochs} "
         )
         if self.train_cmd == "train_vae":
             cmd += "--zdim=8 --tdim=16 --tlayers=1 --no-analysis "

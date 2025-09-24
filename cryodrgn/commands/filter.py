@@ -7,6 +7,11 @@ of particles within this space which can then be saved upon closing the window;
 you can also colour the points by a third model variable, or select another pair of
 model variables to use as axes.
 
+Additionally, if k-means clustering results are available, you can:
+- Use the 'labels' option in the color menu to visualize cluster assignments
+- Click 'Kmeans Centers' to show/hide cluster centers as red stars with labels
+- Click 'Select Clusters' to choose particles by cluster membership via command-line input
+
 Note that `cryodrgn analyze` must be run first in the given workdir using the
 epoch to filter on!
 
@@ -26,6 +31,12 @@ $ cryodrgn filter my_outdir/ -k 25
 
 # If you already have indices you can start by plotting them
 $ cryodrgn filter my_outdir/01_trainvae --plot-inds candidate-particles.pkl
+
+# The interactive interface supports both lasso selection and cluster-based selection.
+# When k-means results are available, two cluster buttons appear:
+# 'Kmeans Centers' - toggle display of cluster centers as red stars
+# 'Select Clusters' - select particles by entering cluster IDs at command line
+# Use the 'labels' option in the color menu to color points by cluster membership
 
 """
 import os
@@ -253,11 +264,22 @@ def main(args: argparse.Namespace) -> None:
 
     # Launch the plot and the interactive command-line prompt; once points are selected,
     # close the figure to avoid interference with other plots
-    selector = SelectFromScatter(plot_df, pre_indices)
-    selected_indices = [all_indices[i] for i in selector.indices]
-    plt.close()
+    selector = SelectFromScatter(plot_df, pre_indices, kmeans_lbls, kmeans_dir)
 
-    if selected_indices:
+    # Wait for the user to interact with the plot (blocking)
+    # The figure will be closed when save or exit buttons are clicked
+    try:
+        # Keep the event loop running until the figure is closed
+        while plt.get_fignums():  # While figures are still open
+            plt.pause(0.1)  # Allow events to be processed
+    except KeyboardInterrupt:
+        print("\nInterrupted by user")
+
+    selected_indices = [all_indices[i] for i in selector.indices]
+    plt.close('all')
+
+    # Only proceed with saving if the user clicked the save button
+    if selector.should_save and selected_indices:
         select_str = " ... ".join(
             [
                 ",".join([str(i) for i in selected_indices[:6]]),
@@ -299,6 +321,8 @@ def main(args: argparse.Namespace) -> None:
             with open(inverse_filename, "wb") as file:
                 pickle.dump(np.array(inverse_indices, dtype=int), file)
 
+    elif selector.should_save and not selected_indices:
+        print("No particles selected. Exiting without saving.")
     else:
         print("Exiting without having made a selection.")
 
@@ -307,10 +331,25 @@ class SelectFromScatter:
     """An interactive scatterplot for choosing particles using a lasso tool."""
 
     def __init__(
-        self, data_table: pd.DataFrame, pre_indices: Optional[Sequence[int]] = None
+        self, data_table: pd.DataFrame, pre_indices: Optional[Sequence[int]] = None,
+        kmeans_labels: Optional[np.ndarray] = None, kmeans_dir: Optional[str] = None
     ) -> None:
         self.data_table = data_table
         self.scatter = None
+        self.kmeans_labels = kmeans_labels
+        self.kmeans_dir = kmeans_dir
+        self.cluster_selection = set() if kmeans_labels is not None else None
+        self.show_centers = False
+        self.kmeans_centers = None
+        self.centers_ind = None
+        self.should_save = False
+
+        # Load kmeans centers if available
+        if kmeans_dir and os.path.exists(os.path.join(kmeans_dir, "centers.txt")):
+            self.kmeans_centers = np.loadtxt(os.path.join(kmeans_dir, "centers.txt"))
+            centers_ind_file = os.path.join(kmeans_dir, "centers_ind.txt")
+            if os.path.exists(centers_ind_file):
+                self.centers_ind = np.loadtxt(centers_ind_file, dtype=int)
 
         # Create a plotting region subdivided into three parts vertically, the middle
         # big part being used for the scatterplot and the thin sides used for legends
@@ -348,10 +387,15 @@ class SelectFromScatter:
         self.menu_col = RadioButtons(cax, labels=["None"] + self.select_cols, active=0)
         self.menu_col.on_clicked(self.choose_colors)
 
+        # Add cluster buttons if kmeans labels are available
+        if self.kmeans_labels is not None:
+            self.setup_cluster_buttons(gs)
+
         # Add the interface buttons for saving a selection to file and exiting without
         # saving; the save button is only made visible when a selection is made
-        self.save_ax = self.fig.add_subplot(gs[2, 0])
-        self.exit_ax = self.fig.add_subplot(gs[3, 0])
+        button_row = 4 if self.kmeans_labels is not None else 2
+        self.save_ax = self.fig.add_subplot(gs[button_row, 0])
+        self.exit_ax = self.fig.add_subplot(gs[button_row + 1, 0])
         self.save_btn = Button(
             self.save_ax,
             "Save Selection",
@@ -384,12 +428,44 @@ class SelectFromScatter:
         self.fig.canvas.mpl_connect("button_release_event", self.on_release)
 
         self.plot()
+        plt.show()
+
+    def setup_cluster_buttons(self, gs: GridSpec) -> None:
+        """Setup the cluster buttons interface."""
+        # Get unique cluster labels and sort them
+        unique_clusters = sorted(np.unique(self.kmeans_labels))
+        self.unique_clusters = unique_clusters
+
+        # Create kmeans centers button
+        centers_ax = self.fig.add_subplot(gs[2, 0])
+        self.centers_btn = Button(
+            centers_ax,
+            "Kmeans\nCenters",
+            color="lightgreen",
+            hovercolor="green",
+        )
+        self.centers_btn.on_clicked(self.toggle_kmeans_centers)
+
+        # Create cluster selection button
+        select_cluster_ax = self.fig.add_subplot(gs[3, 0])
+        self.select_cluster_btn = Button(
+            select_cluster_ax,
+            "Select\nClusters",
+            color="lightblue",
+            hovercolor="blue",
+        )
+        self.select_cluster_btn.on_clicked(self.select_by_clusters)
 
     def gridspec(self) -> GridSpec:
         """Defines the layout of the plots and menus in the interactive interface."""
-        return self.fig.add_gridspec(
-            4, 3, width_ratios=[1, 7, 1], height_ratios=[7, 7, 1, 1]
-        )
+        if self.kmeans_labels is not None:
+            return self.fig.add_gridspec(
+                6, 3, width_ratios=[1, 7, 1], height_ratios=[7, 7, 1, 1, 1, 1]
+            )
+        else:
+            return self.fig.add_gridspec(
+                4, 3, width_ratios=[1, 7, 1], height_ratios=[7, 7, 1, 1]
+            )
 
     def plot(self) -> None:
         """Redraw the plot using the current plot info upon e.g. input from user."""
@@ -404,6 +480,12 @@ class SelectFromScatter:
             self.save_ax.set_visible(True)
         else:
             self.save_ax.set_visible(False)
+
+
+        if (self.kmeans_labels is not None and self.cluster_selection):
+            cluster_indices = self.select_clusters(list(self.cluster_selection))
+            for idx in cluster_indices:
+                pnt_colors[idx] = "goldenrod"
 
         if self.color_col != "None" and len(self.indices) == 0:
             clr_vals = self.data_table[self.color_col]
@@ -450,8 +532,53 @@ class SelectFromScatter:
             va="bottom",
             transform=self.main_ax.transAxes,
         )
-        plt.show()
-        plt.draw()
+
+        # Plot kmeans centers if enabled
+        if self.show_centers and self.kmeans_centers is not None:
+            # Transform centers to current plotting coordinates
+            if self.xcol.startswith('PC') and self.ycol.startswith('PC'):
+                # Use PCA-transformed centers
+                x_pc_idx = int(self.xcol[2:]) - 1  # PC1 -> index 0
+                y_pc_idx = int(self.ycol[2:]) - 1  # PC2 -> index 1
+
+                # Get PCA object from analysis
+                z = np.array([self.data_table[f'z{i}'].values for i in range(len([col for col in self.data_table.columns if col.startswith('z')]))]).T
+                pc, pca = analysis.run_pca(z)
+                centers_pc = pca.transform(self.kmeans_centers)
+
+                center_x = centers_pc[:, x_pc_idx]
+                center_y = centers_pc[:, y_pc_idx]
+            elif self.xcol.startswith('UMAP') and self.ycol.startswith('UMAP'):
+                if self.centers_ind is not None:
+                    center_x = self.data_table.iloc[self.centers_ind][self.xcol].values
+                    center_y = self.data_table.iloc[self.centers_ind][self.ycol].values
+                else:
+                    # Skip if no centers_ind available for UMAP
+                    center_x = center_y = []
+            else:
+                # For other coordinates, skip center plotting
+                center_x = center_y = []
+
+            if len(center_x) > 0:
+                # Get the same color scheme used for cluster labels
+                n_clusters = len(self.unique_clusters)
+                cluster_colors = sns.color_palette("tab10", n_clusters)
+
+                for i, (x, y) in enumerate(zip(center_x, center_y)):
+                    cluster_idx = self.unique_clusters[i]
+                    color = cluster_colors[i]
+
+                    self.main_ax.scatter(x, y, s=200, c=[color], marker='*',
+                                       edgecolors='black', linewidth=2, alpha=0.9, zorder=10)
+
+                    self.main_ax.annotate(f'{cluster_idx}', (x, y), xytext=(10, 10),
+                                        textcoords='offset points', fontsize=12,
+                                        fontweight='bold', color='black',
+                                        bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
+                                                edgecolor='black', alpha=0.9))
+
+ 
+        self.fig.canvas.draw()
 
     def update_xaxis(self, xlbl: str) -> None:
         """When we choose a new x-axis label, we remake the plot with the new axes."""
@@ -474,9 +601,20 @@ class SelectFromScatter:
 
     def choose_points(self, verts: np.array) -> None:
         """Update the chosen points and the plot when points are circled by the user."""
-        self.indices = np.where(
+        lasso_indices = np.where(
             PlotPath(verts).contains_points(self.scatter.get_offsets())
         )[0]
+
+        # If clusters are selected, combine with lasso selection
+        if self.kmeans_labels is not None and self.cluster_selection:
+            cluster_indices = self.select_clusters(list(self.cluster_selection))
+            self.indices = self.combine_selection(lasso_indices, cluster_indices, 'union')
+        else:
+            self.indices = lasso_indices
+
+        # Clear any kmeans centers when making manual selection
+        if self.kmeans_labels is not None:
+            pass  
 
         self.color_col = "None"
         self.menu_col.set_active(0)
@@ -534,11 +672,88 @@ class SelectFromScatter:
     def save_click(self, event: MouseEvent) -> None:
         """When the save button is clicked, we close display."""
         if hasattr(event, "button") and event.button is MouseButton.LEFT:
-            # Close the plot so we can move on to saving the selection
+            self.should_save = True
             plt.close("all")
 
     def exit_click(self, event: MouseEvent) -> None:
         """When the exit button is clicked, we clear the selection and close display."""
         if hasattr(event, "button") and event.button is MouseButton.LEFT:
             self.indices = list()
+            if self.kmeans_labels is not None:
+                self.cluster_selection = set()
+                self.show_centers = False
+            # Make sure save flag is False when exiting
+            self.should_save = False
             plt.close("all")
+
+    def invert_selection(self, ind_selected: np.ndarray) -> np.ndarray:
+        """Return the inverse of the selected indices."""
+        return np.array(sorted(set(np.arange(len(self.data_table))) - set(ind_selected)))
+
+    def combine_selection(self, ind_sel1: np.ndarray, ind_sel2: np.ndarray, kind: str = 'union') -> np.ndarray:
+        """Combine two index selections using union or intersection."""
+        assert kind in ('union', 'intersection')
+        if kind == 'union':
+            return np.array(sorted(set(ind_sel1) | set(ind_sel2)))
+        else:
+            return np.array(sorted(set(ind_sel1) & set(ind_sel2)))
+
+    def select_clusters(self, cluster_ids: list) -> np.ndarray:
+        """Return indices of particles in the specified clusters."""
+        return analysis.get_ind_for_cluster(self.kmeans_labels, np.array(cluster_ids))
+
+
+    def toggle_kmeans_centers(self, event) -> None:
+        """Toggle display of kmeans centers on the plot."""
+        if hasattr(event, "button") and event.button is MouseButton.LEFT:
+            if self.kmeans_centers is None:
+                print("No kmeans centers available for this dataset.")
+                return
+
+            self.show_centers = not self.show_centers
+            print(f"Kmeans centers {'shown' if self.show_centers else 'hidden'}")
+            self.plot()
+
+    def select_by_clusters(self, event) -> None:
+        """Select particles by cluster membership with command-line input."""
+        if hasattr(event, "button") and event.button is MouseButton.LEFT:
+            try:
+                # Get cluster counts for display
+                cluster_counts = {cluster: np.sum(self.kmeans_labels == cluster) for cluster in self.unique_clusters}
+                cluster_info = ", ".join([f"{c}({cluster_counts[c]})" for c in self.unique_clusters])
+
+                print(f"\nAvailable clusters: {cluster_info}")
+                print("Format: cluster_id(particle_count)")
+
+                cluster_input = input("Enter comma-separated cluster IDs to select (e.g., 0,2,5): ").strip()
+
+                if cluster_input:
+                    # Parse the input
+                    cluster_ids = [int(x.strip()) for x in cluster_input.split(',')]
+
+                    # Validate cluster IDs
+                    invalid_clusters = [c for c in cluster_ids if c not in self.unique_clusters]
+                    if invalid_clusters:
+                        print(f"Warning: Invalid cluster IDs {invalid_clusters} ignored.")
+                        cluster_ids = [c for c in cluster_ids if c in self.unique_clusters]
+
+                    if cluster_ids:
+                        self.cluster_selection = set(cluster_ids)
+                        self.indices = self.select_clusters(cluster_ids)
+
+                        # Clear color menu selection
+                        self.color_col = "None"
+                        self.menu_col.set_active(0)
+
+                        print(f"Selected {len(self.indices)} particles from clusters {cluster_ids}")
+                        self.plot()
+                    else:
+                        print("No valid clusters selected.")
+                else:
+                    print("No clusters selected.")
+
+            except ValueError as e:
+                print(f"Error parsing cluster IDs: {e}")
+                print("Please enter comma-separated integers (e.g., 0,2,5)")
+            except Exception as e:
+                print(f"Error selecting clusters: {e}")

@@ -237,18 +237,28 @@ def main(args: argparse.Namespace) -> None:
         )
 
         tilts_per_particle, _ = dataset.TiltSeriesData.parse_particle_tilt(args.particles)
-
+            
         counts = [len(tilts) for tilts in tilts_per_particle]
         valid_particles = np.where(np.array(counts) >= args.ntilts)[0]
         
         if args.ind is not None:
             particle_ind = utils.load_pkl(args.ind).astype(int)
             valid_particles = np.intersect1d(particle_ind.ravel(), valid_particles.ravel()) # find overlap between input --ind and --force-ntilts indices
-
+                                        
         valid_tilts = np.concatenate([tilts_per_particle[i] for i in valid_particles])
-
+        
         if valid_particles.size == 0:
             raise ValueError(f"No particles have at least {args.ntilts} tilts.")
+        
+        valid_particles_file = os.path.join(args.outdir, f"indices_force_ntilts_{args.ntilts}.pkl")
+        valid_tilts_file = os.path.join(args.outdir, f"tilt_indices_force_ntilts_{args.ntilts}.pkl")
+        
+        utils.save_pkl(valid_particles.astype(int), valid_particles_file)
+        utils.save_pkl(valid_tilts.astype(int), valid_tilts_file)
+        logger.info(f"→ saved {valid_particles.size} particle IDs to {valid_particles_file}"),
+        logger.info(f"→ saved {valid_tilts.size} tilt IDs to {valid_tilts_file}")
+        
+        args.ind = valid_particles_file
 
         valid_particles_file = os.path.join(args.outdir, f"indices_force_ntilts_{args.ntilts}.pkl")
         valid_tilts_file = os.path.join(args.outdir, f"tilt_indices_force_ntilts_{args.ntilts}.pkl")

@@ -334,7 +334,8 @@ def main(args: argparse.Namespace) -> None:
 
         # Add extra columns
         df_2d["rlnOriginalParticle"] = idx + 1
-        df_2d["rlnRandomSubset"] = row["rlnRandomSubset"]
+        if "rlnRandomSubset" in row:
+            df_2d["rlnRandomSubset"] = row["rlnRandomSubset"]
         df_2d["rlnDetectorPixelSize"] = angpix
         df_2d["rlnVoltage"] = voltage
         df_2d["rlnSphericalAberration"] = cs

@@ -162,15 +162,14 @@ Example usage:
             -o backproject.128 \
             --first 10000
 
-The output structure `backproject.128/backproject.mrc` will not match the consensus reconstruction exactly
-as the `backproject_voxel` command backprojects phase-flipped particles onto the voxel grid, and because here we
-performed backprojection using only the first 10k images in the stack for quicker results.
-If the structure is too noisy, we can try using more images with `--first` or the
-entire stack instead (without `--first`).
+The output structure `backproject.128/backproject.mrc` will not be identical to the consensus reconstruction because we
+only used the first 10k particles images for quicker results.
+If the structure is too noisy to interpret, you can use more images with `--first 25000` or use the
+entire particle stack (by leaving off the `--first` flag).
 
 **Note:** If the volume does not resemble your structure, you may need to use the flag `--uninvert-data`.
 This flips the data sign (e.g. light-on-dark or dark-on-light), which may be needed depending on the
-convention used in upstream processing tools.
+convention used in upstream processing tools. 
 
 
 ### 5. Running cryoDRGN heterogeneous reconstruction
@@ -297,36 +296,36 @@ Many of the parameters of this script have sensible defaults. The required argum
 * `--zdim`, the dimension of the latent variable
 * `-o`, a clean output directory for saving results
 
-Additional parameters which are typically set include:
+Additional parameters that may be adjusted include:
 
 * `-n`, Number of epochs to train
-* `--uninvert-data`, Use if particles are dark on light (negative stain format)
+* `--uninvert-data`, Used if particles are dark on light (negative stain format)
 * Architecture parameters with `--enc-layers`, `--enc-dim`, `--dec-layers`, `--dec-dim`
 * `--multigpu` to enable parallelized training across multiple GPUs
+* `-b`, Minibatch size (affects training speed/dynamics)
 
 ### Recommended usage:
 
-1) It is highly recommended to first train on lower resolution images (e.g. D=128) to sanity check results
-2) and perform any particle filtering.
+1) We highly recommend first training on downsampled images (e.g. D=128) to sanity check results and perform any particle filtering (e.g. of junk particles). If your dataset is very large (>300k particles), we also recommend training on a subset of your dataset. 
 
-Example command to train a cryoDRGN model for 25 epochs on an image dataset `projections.128.mrcs`
+Example command to train a cryoDRGN model for 25 epochs on an image dataset `particles.128.mrcs`
 with poses `pose.pkl` and ctf parameters `ctf.pkl`:
 
     # 8-D latent variable model, small images
-    $ cryodrgn train_vae projections.128.mrcs \
+    $ cryodrgn train_vae particles.128.mrcs \
             --poses pose.pkl \
             --ctf ctf.pkl \
             --zdim 8 -n 25 \
             -o 00_cryodrgn128
 
-2) After validation, pose optimization, and any necessary particle filtering,
+2) After validating that the initial cryodrgn results are sensible (e.g. after any particle filtering or pose optimization),
 then train on the full resolution images (up to D=256):
 
-Example command to train a cryoDRGN model for 25 epochs on an image dataset `projections.256.mrcs`
+Example command to train a cryoDRGN model for 25 epochs on an image dataset `particles.256.mrcs`
 with poses `pose.pkl` and ctf parameters `ctf.pkl`:
 
     # 8-D latent variable model, larger images
-    $ cryodrgn train_vae projections.256.mrcs \
+    $ cryodrgn train_vae particles.256.mrcs \
             --poses pose.pkl \
             --ctf ctf.pkl \
             --zdim 8 -n 25 \
@@ -339,7 +338,7 @@ the above settings required ~12 min/epoch for D=128 images and ~47 min/epoch for
 If you would like to train longer, a training job can be extended with the `--load` argument.
 For example to extend the training of the previous example to 50 epochs:
 
-    $ cryodrgn train_vae projections.256.mrcs \
+    $ cryodrgn train_vae particles.256.mrcs \
             --poses pose.pkl \
             --ctf ctf.pkl \
             --zdim 8 -n 50 \
@@ -348,8 +347,8 @@ For example to extend the training of the previous example to 50 epochs:
 
 ### Accelerated training with GPU parallelization
 
-Use cryoDRGN's `--multigpu` flag to enable parallelized training across all detected GPUs on the machine.
-To select specific GPUs for cryoDRGN to run on, use the environmental variable `CUDA_VISIBLE_DEVICES`, e.g.:
+Use cryoDRGN's `--multigpu` flag to parallelize training across all detected GPUs on the machine.
+To select specific GPUs for cryoDRGN, use the environmental variable `CUDA_VISIBLE_DEVICES`, e.g.:
 
     $ cryodrgn train_vae ... # Run on GPU 0
     $ cryodrgn train_vae ... --multigpu # Run on all GPUs on the machine
@@ -361,15 +360,19 @@ In this case, `--multigpu` may not speed up training (while taking up additional
 
 With `--multigpu`, the batch size is multiplied by the number of available GPUs to better utilize GPU resources.
 We note that GPU utilization may be further improved by increasing the batch size (e.g. `-b 16`), however,
-faster wall-clock time per epoch does not necessarily lead to faster *model training* since the training dynamics
-are affected (fewer model updates per epoch with larger `-b`),
-and using `--multigpu` may require increasing the total number of epochs.
+faster wall-clock time per epoch does not necessarily lead to faster *convergence* since the training dynamics
+are affected (fewer model updates per epoch with larger `-b`).
+Thus, using `--multigpu` may require increasing the total number of epochs. As a best practice, we recommend
+first training for 25 epochs (or however many is practical for your dataset size), and then doubling to 50 epochs
+to check for model convergence by inspecting if the final results have changed.
 
 ### Local pose refinement -- *beta*
 
 Depending on the quality of the consensus reconstruction, image poses may contain errors.
 Image poses may be *locally* refined using the `--do-pose-sgd` flag, however, we recommend reaching out to the
-developers for recommended training settings.
+developers for recommended training settings. 
+
+For global pose optimization or ab initio reconstruction, please see our [cryoDRGN-AI](https://cryodrgnai.cs.princeton.edu/) method.
 
 ## 6. Analysis of results
 
@@ -444,7 +447,7 @@ These scripts are located in the `analysis_scripts` directory within the source 
 [3] In particular, you may find it useful to perform filtering of particles separately from other analyses. This can
 done using our interactive interface available from the command line: `cryodrgn filter 01_cryodrgn256`.
 
-[4] `--Apix` only needs to be given if it is not present (or not accurate) in the CTF file that was used in training.
+[4] `--Apix` only needs to be given if it is not present in the CTF file that was used in training.
 
 
 ### Generating additional volumes
@@ -544,10 +547,11 @@ The input to `--zfile` is expected to be an array of dimension (N_volumes x zdim
 
 ### Making trajectories
 
-Two additional commands can be used in conjunction with `cryodrgn eval_vol` to generate trajectories:
+Three additional commands can be used in conjunction with `cryodrgn eval_vol` to generate trajectories:
 
     $ cryodrgn pc_traversal -h
     $ cryodrgn graph_traversal -h
+	$ cryodrgn direct_traversal -h
 
 These scripts produce a text file of z values that can be input to `cryodrgn eval_vol` to generate a series of
 structures that can be visualized as a trajectory in ChimeraX (https://www.cgl.ucsf.edu/chimerax).
@@ -561,20 +565,20 @@ for more comprehensive and automated analyses of cryodrgn results.
 
 Documentation: https://ez-lab.gitbook.io/cryodrgn/cryodrgn-conformational-landscape-analysis
 
-## CryoDRGN2 for *Ab Initio* Reconstruction
+## *Ab Initio* Reconstruction
 
-To perform *ab initio* heterogeneous reconstruction, use `cryodrgn abinit_het`.
+An early version of *ab initio* reconstruction was developed as cryoDRGN2 and available with the `cryodrgn abinit_het` and `cryodrgn abinit_homo` executables. 
 The arguments are similar to `cryodrgn train_vae`, but the `--poses` argument is not required.
 
-For homogeneous reconstruction, use `cryodrgn abinit_homo`.
+CryoDRGN2 documentation: https://ez-lab.gitbook.io/cryodrgn/cryodrgn2-ab-initio-reconstruction
 
-Documentation: https://ez-lab.gitbook.io/cryodrgn/cryodrgn2-ab-initio-reconstruction
+Please see the [cryoDRGN-AI](https://cryodrgnai.cs.princeton.edu/) manuscript and software for our latest version of *ab initio* reconstruction. 
+CryoDRGN-AI is currently available as a standalone [tool](https://github.com/ml-struct-bio/drgnai), however, we are working on integrating cryoDRGN-AI into `cryodrgn` software version 4.0+. 
 
 ## CryoDRGN-ET for subtomogram analysis
 
-Available in beta release starting in version 3.x. Documentation for getting started can be found
-in the [user guide](https://ez-lab.gitbook.io/cryodrgn/cryodrgn-et-subtomogram-analysis). Please reach out if you have any questions!
-
+CryoDRGN-ET for heterogeneous subtomogram averaging is available in cryodrgn version 3.0+. Documentation for getting started can be found
+in the [user guide](https://ez-lab.gitbook.io/cryodrgn/cryodrgn-et-subtomogram-analysis).
 
 ## References:
 
@@ -582,15 +586,27 @@ For a complete description of the method, see:
 
 * CryoDRGN: reconstruction of heterogeneous cryo-EM structures using neural networks
 Ellen D. Zhong, Tristan Bepler, Bonnie Berger*, Joseph H Davis*
-Nature Methods 2021, https://doi.org/10.1038/s41592-020-01049-4 [pdf](https://ezlab.princeton.edu/assets/pdf/2021_cryodrgn_nature_methods.pdf)
+Nature Methods, 2021, https://doi.org/10.1038/s41592-020-01049-4 [pdf](https://ezlab.princeton.edu/assets/pdf/2021_cryodrgn_nature_methods.pdf)
 
-An earlier version of this work appeared at ICLR 2020:
+For a description of our extension to heterogeneous subtomogram averaging, see:
+
+* CryoDRGN-ET: deep reconstructing generative networks for visualizing dynamic biomolecules inside cells
+Ramya Rangan*, Ryan Feathers*, Sagar Khavnekar, Adam Lerer, Jake Johnston, Ron Kelley, Martin Obr, Abhay Kotecha, and Ellen D. Zhong
+Nature Methods, 2024, https://doi.org/10.1038/s41592-024-02340-4 [pdf](https://ezlab.cs.princeton.edu/assets/pdf/2024_cryodrgnet.pdf)
+
+For a description of our ab initio reconstruction method, see:
+
+* CryoDRGN-AI: neural ab initio reconstruction of challenging cryo-EM and cryo-ET datasets
+Axel Levy, Rishwanth Raghu, Ryan Feathers, Michal Grzadkowski, Frederic Poitevin, Jake D. Johnston, Francesca Vallese, Oliver B. Clarke, Gordon Wetzstein, and Ellen D. Zhong
+Nature Methods, 2025, https://doi.org/10.1038/s41592-025-02720-4 
+
+A preliminary version of cryoDRGN was presented at ICLR 2020:
 
 * Reconstructing continuous distributions of protein structure from cryo-EM images
 Ellen D. Zhong, Tristan Bepler, Joseph H. Davis*, Bonnie Berger*
 ICLR 2020, Spotlight, https://arxiv.org/abs/1909.05215
 
-CryoDRGN2's ab initio reconstruction algorithms were published at ICCV:
+A preliminary version of ab initio reconstruction in cryoDRGN2 was presented at ICCV 2021:
 
 * CryoDRGN2: Ab Initio Neural Reconstruction of 3D Protein Structures From Real Cryo-EM Images
 Ellen D. Zhong, Adam Lerer, Joseph H Davis, and Bonnie Berger
@@ -602,13 +618,7 @@ A protocols paper that describes the analysis of the EMPIAR-10076 assembling rib
 Laurel Kinman, Barrett Powell, Ellen D. Zhong*, Bonnie Berger*, Joseph H Davis*
 Nature Protocols 2023, https://doi.org/10.1038/s41596-022-00763-x
 
-Heterogeneous subtomogram averaging:
-
-* Deep reconstructing generative networks for visualizing dynamic biomolecules inside cells
-Rangan et al.
-bioRxiv 2023, https://www.biorxiv.org/content/10.1101/2023.08.18.553799v1
-
 
 ## Contact
 
-Please submit any bug reports, feature requests, or general usage feedback as a github issue or discussion.
+Please submit any bug reports, feature requests, or general usage feedback as a github issue or discussion! Thank you!

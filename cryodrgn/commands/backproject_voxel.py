@@ -133,7 +133,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     group.add_argument(
         "--first",
         type=int,
-        help="Backproject the first N images (default: all images)",
+        help="Backproject using only the first N images (default: all images)",
     )
     parser.add_argument(
         "--log-interval",
@@ -248,7 +248,7 @@ def main(args: argparse.Namespace) -> None:
         logger.info(f"→ saved {valid_particles.size} particle IDs to {idx_file}")
         args.ind = idx_file
 
-    # load the particles
+    # Load the filtering indices and the image dataset to use for backprojection
     if args.ind is not None:
         if args.tilt:
             particle_ind = utils.load_pkl(args.ind).astype(int)
@@ -321,7 +321,7 @@ def main(args: argparse.Namespace) -> None:
 
     # Determine which images to backproject if only using the first N images from the
     # stack or the best N tilts per particle according to CTF scalefactor
-    img_iterator = range(min(args.first, data.N)) if args.first else range(data.N)
+    img_iterator = range(data.N)
     if args.tilt:
         use_tilts = set(range(args.ntilts))
         img_iterator = [
@@ -330,8 +330,12 @@ def main(args: argparse.Namespace) -> None:
     else:
         img_iterator = list(img_iterator)
 
+    if args.first:
+        img_iterator = img_iterator[: args.first]
+
     # Figure out how often we are going to report progress w.r.t. images processed
     Nimg = len(img_iterator)
+    Npart = 0 if args.tilt else Nimg
     if args.log_interval == "auto":
         log_interval = max(round((Nimg // 100), -2), 100)
     elif args.log_interval.isnumeric():
@@ -350,6 +354,8 @@ def main(args: argparse.Namespace) -> None:
         img_iterator = img_iterator[args.batch_size :]
         B = len(img_idxs)
         img_count += B
+        if args.tilt:
+            Npart += len(set([data.get_tilt_particle(img_idx) for img_idx in img_idxs]))
 
         if (img_count % log_interval) < B:
             logger.info(f"fimage {img_count:,d} — {(img_count / Nimg * 100):.1f}% done")
@@ -388,6 +394,8 @@ def main(args: argparse.Namespace) -> None:
                 dose_filters = data.get_dose_filters([img_idxs[i]], lattice, Apix)[0]
                 ctf_mul[i] *= dose_filters[lattice_mask]
 
+        # Accumulate backprojection results for this batch to the variables storing the
+        # final results for the full dataset as well as the half-maps if applicable
         ff_coord = lattice.coords[lattice_mask] @ rot
         add_slice(volume_full, counts_full, ff_coord, ff, D, ctf_mul)
         if args.half_maps:
@@ -421,12 +429,12 @@ def main(args: argparse.Namespace) -> None:
     img_avg = td / Nimg
     if args.tilt:
         logger.info(
-            f"Backprojected {Nimg} tilts from {data.Np} particles in {td:.2f}s "
+            f"Backprojected {Nimg:,d} tilts from {Npart:,d} particles in {td:.2f}s "
             f"({img_avg:4f}s per tilt image)"
         )
     else:
         logger.info(
-            f"Backprojected {Nimg} images in {td:.2f}s ({img_avg:4f}s per image)"
+            f"Backprojected {Nimg:,d} images in {td:.2f}s ({img_avg:4f}s per image)"
         )
 
     counts_full[counts_full == 0] = 1

@@ -8,7 +8,9 @@ from cryodrgn.commands_utils import plot_fsc
 
 # TODO: test different Apix values, both given and found in the CTF file
 class TestBackprojection:
-    def get_outdir(self, tmpdir_factory, particles, poses, ctf, indices, datadir):
+    def get_outdir(
+        self, tmpdir_factory, particles, poses, ctf, indices, datadir, first=None
+    ):
         dirname = os.path.join(
             "Backprojection",
             particles.label,
@@ -16,6 +18,7 @@ class TestBackprojection:
             ctf.label,
             indices.label,
             datadir.label,
+            f"first.{first}" if first is not None else "first.all",
         )
         odir = os.path.join(tmpdir_factory.getbasetemp(), dirname)
         os.makedirs(odir, exist_ok=True)
@@ -34,10 +37,16 @@ class TestBackprojection:
         ],
         indirect=True,
     )
-    @pytest.mark.parametrize("indices", [None, "just-5"], indirect=True)
-    def test_train(self, tmpdir_factory, particles, poses, ctf, indices, datadir):
+    @pytest.mark.parametrize(
+        "indices, first",
+        [(None, None), (None, 7), ("just-5", None)],
+        indirect=["indices"],
+    )
+    def test_train(
+        self, tmpdir_factory, particles, poses, ctf, indices, datadir, first
+    ):
         outdir = self.get_outdir(
-            tmpdir_factory, particles, poses, ctf, indices, datadir
+            tmpdir_factory, particles, poses, ctf, indices, datadir, first
         )
         outpath = os.path.join(outdir, "backprojection-test")
 
@@ -48,6 +57,8 @@ class TestBackprojection:
             args += ["--ind", indices.path]
         if datadir.path is not None:
             args += ["--datadir", datadir.path]
+        if first is not None:
+            args += ["--first", str(first)]
 
         parser = argparse.ArgumentParser()
         backproject_voxel.add_args(parser)

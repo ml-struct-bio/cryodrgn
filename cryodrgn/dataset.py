@@ -276,6 +276,14 @@ class TiltSeriesData(ImageDataset):
     def get_tilt(self, index):
         return super().__getitem__(index)
 
+    def get_tilt_particle(self, index) -> int:
+        """Get the particle index for a given tilt index."""
+        for p_i, p_tilts in enumerate(self.particles):
+            if index in p_tilts:
+                return p_i
+
+        return None
+
     def get_slice(self, start: int, stop: int) -> Tuple[np.ndarray, np.ndarray]:
         # we have to fetch all the tilts to stay contiguous, and then subset
         tilt_indices = [self.particles[index] for index in range(start, stop)]

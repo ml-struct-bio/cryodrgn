@@ -169,7 +169,7 @@ entire particle stack (by leaving off the `--first` flag).
 
 **Note:** If the volume does not resemble your structure, you may need to use the flag `--uninvert-data`.
 This flips the data sign (e.g. light-on-dark or dark-on-light), which may be needed depending on the
-convention used in upstream processing tools. 
+convention used in upstream processing tools.
 
 
 ### 5. Running cryoDRGN heterogeneous reconstruction
@@ -306,7 +306,7 @@ Additional parameters that may be adjusted include:
 
 ### Recommended usage:
 
-1) We highly recommend first training on downsampled images (e.g. D=128) to sanity check results and perform any particle filtering (e.g. of junk particles). If your dataset is very large (>300k particles), we also recommend training on a subset of your dataset. 
+1) We highly recommend first training on downsampled images (e.g. D=128) to sanity check results and perform any particle filtering (e.g. of junk particles). If your dataset is very large (>300k particles), we also recommend training on a subset of your dataset.
 
 Example command to train a cryoDRGN model for 25 epochs on an image dataset `particles.128.mrcs`
 with poses `pose.pkl` and ctf parameters `ctf.pkl`:
@@ -370,7 +370,7 @@ to check for model convergence by inspecting if the final results have changed.
 
 Depending on the quality of the consensus reconstruction, image poses may contain errors.
 Image poses may be *locally* refined using the `--do-pose-sgd` flag, however, we recommend reaching out to the
-developers for recommended training settings. 
+developers for recommended training settings.
 
 For global pose optimization or ab initio reconstruction, please see our [cryoDRGN-AI](https://cryodrgnai.cs.princeton.edu/) method.
 
@@ -567,13 +567,13 @@ Documentation: https://ez-lab.gitbook.io/cryodrgn/cryodrgn-conformational-landsc
 
 ## *Ab Initio* Reconstruction
 
-An early version of *ab initio* reconstruction was developed as cryoDRGN2 and available with the `cryodrgn abinit_het` and `cryodrgn abinit_homo` executables. 
+An early version of *ab initio* reconstruction was developed as cryoDRGN2 and available with the `cryodrgn abinit_het` and `cryodrgn abinit_homo` executables.
 The arguments are similar to `cryodrgn train_vae`, but the `--poses` argument is not required.
 
 CryoDRGN2 documentation: https://ez-lab.gitbook.io/cryodrgn/cryodrgn2-ab-initio-reconstruction
 
-Please see the [cryoDRGN-AI](https://cryodrgnai.cs.princeton.edu/) manuscript and software for our latest version of *ab initio* reconstruction. 
-CryoDRGN-AI is currently available as a standalone [tool](https://github.com/ml-struct-bio/drgnai), however, we are working on integrating cryoDRGN-AI into `cryodrgn` software version 4.0+. 
+Please see the [cryoDRGN-AI](https://cryodrgnai.cs.princeton.edu/) manuscript and software for our latest version of *ab initio* reconstruction.
+CryoDRGN-AI is currently available as a standalone [tool](https://github.com/ml-struct-bio/drgnai), however, we are working on integrating cryoDRGN-AI into `cryodrgn` software version 4.0+.
 
 ## CryoDRGN-ET for subtomogram analysis
 
@@ -598,7 +598,7 @@ For a description of our ab initio reconstruction method, see:
 
 * CryoDRGN-AI: neural ab initio reconstruction of challenging cryo-EM and cryo-ET datasets
 Axel Levy, Rishwanth Raghu, Ryan Feathers, Michal Grzadkowski, Frederic Poitevin, Jake D. Johnston, Francesca Vallese, Oliver B. Clarke, Gordon Wetzstein, and Ellen D. Zhong
-Nature Methods, 2025, https://doi.org/10.1038/s41592-025-02720-4 
+Nature Methods, 2025, https://doi.org/10.1038/s41592-025-02720-4
 
 A preliminary version of cryoDRGN was presented at ICLR 2020:
 

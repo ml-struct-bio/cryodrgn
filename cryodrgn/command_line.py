@@ -107,6 +107,15 @@ def main_commands() -> None:
     )
 
 
+def drgnai_commands() -> None:
+    """cryoDRGN-AI commands installed with cryoDRGN as `drgnai <cmd_module_name>."""
+    _get_commands(
+        cmd_dir=os.path.join(os.path.dirname(__file__), "commands_drgnai"),
+        cmds=["abinit"],
+        doc_str="cryoDRGN-AI commands installed with cryoDRGN",
+    )
+
+
 def util_commands() -> None:
     """Utility commands installed with cryoDRGN as `cryodrgn_utils <cmd_module_name>."""
     _get_commands(

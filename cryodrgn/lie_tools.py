@@ -194,7 +194,7 @@ def random_quaternions(n, dtype=torch.float32, device=None):
     )
 
 
-def random_SO3(n, dtype=torch.float32, device=None):
+def random_rotmat(n, dtype=torch.float32, device=None):
     return quaternions_to_SO3(random_quaternions(n, dtype, device))
 
 

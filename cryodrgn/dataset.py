@@ -43,7 +43,7 @@ class ImageDataset(torch.utils.data.Dataset):
         max_threads=16,
         device: Union[str, torch.device] = "cpu",
     ):
-        assert not keepreal, "Not implemented yet"
+        self.keepreal = keepreal
         datadir = datadir or ""
         self.ind = ind
         self.src = ImageSource.from_file(
@@ -67,6 +67,8 @@ class ImageDataset(torch.utils.data.Dataset):
             self.window = None
 
         norm = norm or self.estimate_normalization()
+        norm_real = self.estimate_normalization_real()
+        self.norm_real = [float(x) for x in norm_real]
         self.norm = [float(x) for x in norm]
         self.device = device
         self.lazy = lazy
@@ -88,19 +90,33 @@ class ImageDataset(torch.utils.data.Dataset):
 
         return norm
 
+    def estimate_normalization_real(self, n=1000):
+        n = min(n, self.N) if n is not None else self.N
+        indices = range(0, self.N, self.N // n)  # FIXME: what if the data is not IID??
+        imgs = self.src.images(indices)
+        norm = (torch.mean(imgs), torch.std(imgs))
+        logger.info("Normalized real space images by {} +/- {}".format(*norm))
+
+        return norm
+
     def _process(self, data):
         if data.ndim == 2:
             data = data[np.newaxis, ...]
         if self.window is not None:
             data *= self.window
-
-        data = fft.ht2_center(data)
         if self.invert_data:
             data *= -1
-        data = fft.symmetrize_ht(data)
-        data = (data - self.norm[0]) / self.norm[1]
 
-        return data
+        f_data = fft.ht2_center(data)
+        f_data = fft.symmetrize_ht(f_data)
+        f_data = (f_data - self.norm[0]) / self.norm[1]
+
+        if self.keepreal:
+            r_data = (data - self.norm_real[0]) / self.norm_real[1]
+        else:
+            r_data = None
+
+        return r_data, f_data
 
     def __len__(self):
         return self.N
@@ -109,11 +125,13 @@ class ImageDataset(torch.utils.data.Dataset):
         if isinstance(index, list):
             index = torch.Tensor(index).to(torch.long)
 
-        particles = self._process(self.src.images(index).to(self.device))
+        r_particles, f_particles = self._process(self.src.images(index).to(self.device))
 
         # this is why it is tricky for index to be allowed to be a list!
-        if len(particles.shape) == 2:
-            particles = particles[np.newaxis, ...]
+        if r_particles is not None and len(r_particles.shape) == 2:
+            r_particles = r_particles[np.newaxis, ...]
+        if f_particles is not None and len(f_particles.shape) == 2:
+            f_particles = f_particles[np.newaxis, ...]
 
         if isinstance(index, (int, np.integer)):
             logger.debug(f"ImageDataset returning images at index ({index})")
@@ -123,7 +141,13 @@ class ImageDataset(torch.utils.data.Dataset):
                 f" ({index[0]}..{index[-1]})"
             )
 
-        return particles, None, index
+        return {
+            "y_real": r_particles,
+            "y": f_particles,
+            "r_tilt": None,
+            "tilt": None,
+            "index": index,
+        }
 
     def get_slice(
         self, start: int, stop: int

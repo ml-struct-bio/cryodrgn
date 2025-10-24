@@ -35,3 +35,20 @@ jobs:
         run: |
           pyright --version
           #pyright
+
+      - name: Run documentation tests
+        run: |
+          python tests/run_test_suite.py --category documentation --timeout 300
+
+      - name: Validate test configuration
+        run: |
+          python -c "
+          import sys
+          sys.path.append('tests')
+          from test_config import *
+          print('Test configuration validated')
+          "
+
+      - name: Check test coverage configuration
+        run: |
+          python -m pytest --collect-only --quiet tests/ | head -20

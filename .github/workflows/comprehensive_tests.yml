@@ -1,0 +1,350 @@
+name: Comprehensive Testing
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags:
+      - '[0-9]+\.[0-9]+\.[0-9]+'
+      - '[0-9]+\.[0-9]+\.[0-9]+-*'
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run weekly performance tests
+    - cron: '0 2 * * 0'  # Sunday at 2 AM UTC
+  workflow_dispatch:
+    inputs:
+      test_category:
+        description: 'Test category to run (or "all")'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+        - all
+        - unit
+        - integration
+        - performance
+        - error_handling
+        - property_based
+        - mocking
+        - documentation
+
+jobs:
+  test-matrix:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        python: [ '3.10', '3.11' , '3.12' ]
+        os: [ macos-latest, ubuntu-latest ]
+        include:
+          - python: '3.10'
+            torch: '1.12'
+          - python: '3.11'
+            torch: '2.1'
+          - python: '3.12'
+            torch: '2.5'
+      fail-fast: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ matrix.python }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-${{ matrix.python }}-
+
+      - name: Install cryoDRGN with dev dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install pytest-xdist
+          python3 -m pip install .[dev]
+          python3 -m pip uninstall -y torch
+          python3 -m pip cache purge
+          python3 -m pip install torch==${{ matrix.torch }}
+
+      - name: Check test environment
+        run: |
+          python tests/run_test_suite.py --check-env
+
+      - name: Run unit tests with coverage
+        run: |
+          python tests/run_test_suite.py --category unit --coverage
+        timeout-minutes: 15
+
+      - name: Run integration tests
+        if: matrix.python == '3.11' && matrix.os == 'ubuntu-latest'
+        run: |
+          python tests/run_test_suite.py --category integration
+        timeout-minutes: 30
+
+      - name: Run error handling tests
+        run: |
+          python tests/run_test_suite.py --category error_handling
+        timeout-minutes: 10
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        if: matrix.python == '3.11' && matrix.os == 'ubuntu-latest'
+        with:
+          file: ./coverage.xml
+          fail_ci_if_error: false
+          verbose: true
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-${{ matrix.os }}-${{ matrix.python }}
+          path: |
+            test_results/
+            coverage.xml
+            htmlcov/
+
+  performance-tests:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event.inputs.test_category == 'performance' || github.event.inputs.test_category == 'all'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install .[dev]
+
+      - name: Run performance tests
+        run: |
+          python tests/run_test_suite.py --category performance
+        timeout-minutes: 45
+
+      - name: Upload performance results
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-results
+          path: test_results/
+
+  property-based-tests:
+    runs-on: ubuntu-latest
+    if: github.event.inputs.test_category == 'property_based' || github.event.inputs.test_category == 'all'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install .[dev]
+
+      - name: Run property-based tests
+        run: |
+          python tests/run_test_suite.py --category property_based
+        timeout-minutes: 20
+
+  documentation-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install .[dev]
+          python3 -m pip install nbformat  # For notebook validation
+
+      - name: Run documentation tests
+        run: |
+          python tests/run_test_suite.py --category documentation
+        timeout-minutes: 10
+
+      - name: Check README examples
+        run: |
+          # Extract and validate code examples from README
+          python -c "
+          import re
+          from pathlib import Path
+          import ast
+          
+          readme = Path('README.md').read_text()
+          code_blocks = re.findall(r'```python\n(.*?)```', readme, re.DOTALL)
+          
+          errors = []
+          for i, block in enumerate(code_blocks):
+              try:
+                  ast.parse(block)
+              except SyntaxError as e:
+                  errors.append(f'Block {i}: {e}')
+          
+          if errors:
+              print('README syntax errors:', errors)
+              exit(1)
+          else:
+              print('README code examples validated')
+          "
+
+  comprehensive-report:
+    runs-on: ubuntu-latest
+    needs: [test-matrix, performance-tests, property-based-tests, documentation-tests]
+    if: always() && (github.event.inputs.test_category == 'all' || github.event_name == 'push' || github.event_name == 'pull_request')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install .[dev]
+
+      - name: Download all test artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Generate comprehensive test report
+        run: |
+          python -c "
+          import json
+          from pathlib import Path
+          import time
+          
+          # Collect all test results
+          artifacts_dir = Path('artifacts')
+          results = {}
+          
+          for artifact_dir in artifacts_dir.iterdir():
+              if artifact_dir.is_dir():
+                  summary_file = artifact_dir / 'test_results' / 'test_summary.json'
+                  if summary_file.exists():
+                      with open(summary_file) as f:
+                          data = json.load(f)
+                          results[artifact_dir.name] = data
+          
+          # Generate combined report
+          report = {
+              'timestamp': time.time(),
+              'github_event': '${{ github.event_name }}',
+              'github_ref': '${{ github.ref }}',
+              'total_test_runs': len(results),
+              'individual_results': results
+          }
+          
+          # Calculate overall stats
+          total_passed = sum(r.get('passed', 0) for r in results.values())
+          total_failed = sum(r.get('failed', 0) for r in results.values())
+          total_duration = sum(r.get('total_duration', 0) for r in results.values())
+          
+          report.update({
+              'overall_passed': total_passed,
+              'overall_failed': total_failed, 
+              'overall_duration': total_duration,
+              'success_rate': total_passed / max(total_passed + total_failed, 1)
+          })
+          
+          with open('comprehensive_test_report.json', 'w') as f:
+              json.dump(report, f, indent=2)
+          
+          print(f'Generated comprehensive report: {len(results)} test runs analyzed')
+          print(f'Overall: {total_passed} passed, {total_failed} failed')
+          print(f'Success rate: {report[\"success_rate\"]:.2%}')
+          "
+
+      - name: Upload comprehensive report
+        uses: actions/upload-artifact@v4
+        with:
+          name: comprehensive-test-report
+          path: comprehensive_test_report.json
+
+      - name: Comment PR with test results
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            
+            if (fs.existsSync('comprehensive_test_report.json')) {
+              const report = JSON.parse(fs.readFileSync('comprehensive_test_report.json'));
+              
+              const body = `## 🧪 Comprehensive Test Results
+              
+              **Overall Results:**
+              - ✅ Passed: ${report.overall_passed}
+              - ❌ Failed: ${report.overall_failed}  
+              - ⏱️ Duration: ${Math.round(report.overall_duration)}s
+              - 📊 Success Rate: ${(report.success_rate * 100).toFixed(1)}%
+              
+              **Test Categories:**
+              ${Object.entries(report.individual_results).map(([name, data]) => 
+                `- **${name}**: ${data.passed || 0} passed, ${data.failed || 0} failed`
+              ).join('\n')}
+              
+              <details>
+              <summary>View detailed results</summary>
+              
+              \`\`\`json
+              ${JSON.stringify(report, null, 2)}
+              \`\`\`
+              </details>`;
+              
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: body
+              });
+            }
+
+  notify-on-failure:
+    runs-on: ubuntu-latest
+    needs: [test-matrix, performance-tests, property-based-tests, documentation-tests]
+    if: failure() && (github.event_name == 'push' || github.event_name == 'schedule')
+
+    steps:
+      - name: Notify on failure
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Create an issue for test failures on main branch
+            if (context.ref === 'refs/heads/main' || context.ref === 'refs/heads/develop') {
+              github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `🚨 Test Failure Alert - ${context.ref.split('/').pop()}`,
+                body: `Automated test failure detected in comprehensive test suite.
+                
+                **Details:**
+                - Branch: ${context.ref}
+                - Commit: ${context.sha}
+                - Workflow: ${context.workflow}
+                - Run: ${context.runNumber}
+                
+                Please investigate and fix the failing tests.`,
+                labels: ['bug', 'tests', 'ci']
+              });
+            }

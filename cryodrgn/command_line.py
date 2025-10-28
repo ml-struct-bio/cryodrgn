@@ -3,7 +3,7 @@
 Here we add modules under the `cryodrgn.commands` and `cryodrgn.commands_utils` folders
 to the namespace of commands that are installed as part of the cryoDRGN package.
 Each module in the former folder thus corresponds to a `cryodrgn <module_name>` command,
-while those in the latter folder correspond to a `cryodgn_utils <module_name>` command.
+while those in the latter folder correspond to a `cryodrgn_utils <module_name>` command.
 
 See the `[project.scripts]` entry in the `pyproject.toml` file for how this module
 is used to create the commands during installation. We list the modules to use

@@ -78,6 +78,30 @@ def cosine_dilation_mask(
     apix: float = 1.0,
     verbose: bool = True,
 ) -> np.ndarray:
+    """Create a radial mask centered within a square image with a cosine dilated edge.
+
+    Given a volume, this function creates a masking array using a threshold density
+    value where values are 1.0 for voxels within the threshold boundary plus an edge
+    distance, 0.0 for voxels outside the threshold boundary plus an edge distance and
+    an additional dilation distance, and values between 0.0 and 1.0 according to a
+    binary cosine dilation between the edge distance and the dilation distance from
+    the threshold boundary.
+
+    Arguments
+    ---------
+    vol:        A volume array to create a mask for.
+    threshold:  The density value to use as the initial threshold for masking.
+    dilation:   The amount to dilate the initial mask by in Angstroms.
+    edge_dist:  The width of the cosine edge in Angstroms.
+    apix:       The pixel size of the volume.
+    verbose:    Whether to log information about the mask creation.
+
+    Returns
+    -------
+    mask:     A 3D numpy array of shape (D,D,D) with mask values between
+              0 (masked) and 1 (unmasked) inclusive.
+
+    """
     threshold = threshold or np.percentile(vol, 99.99) / 2
     if verbose:
         logger.info(f"Mask A/px={apix:.5g}; Threshold={threshold:.5g}")

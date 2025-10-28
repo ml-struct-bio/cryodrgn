@@ -105,13 +105,13 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "--dilate",
         type=int,
         default=5,
-        help="Dilate initial mask by this amount (default: %(default)s pixels)",
+        help="Dilate initial mask by this amount (default: %(default)s Angstroms)",
     )
     group.add_argument(
         "--cosine-edge",
         type=int,
         default=0,
-        help="Apply a cosine edge to the mask (default: %(default)s pixels)",
+        help="Apply a cosine edge to the mask (default: %(default)s Angstroms)",
     )
     group.add_argument(
         "--mask",

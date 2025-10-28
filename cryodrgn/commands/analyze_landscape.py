@@ -153,13 +153,15 @@ def generate_volumes(z, outdir, vg, K, vol_start_index):
         z, K, on_data=True, reorder=True, vol_start_index=vol_start_index
     )
     centers, centers_ind = analysis.get_nearest_point(z, centers)
-    if not os.path.exists(f"{outdir}/kmeans{K}"):
-        os.mkdir(f"{outdir}/kmeans{K}")
-    utils.save_pkl(kmeans_labels, f"{outdir}/kmeans{K}/labels.pkl")
-    np.savetxt(f"{outdir}/kmeans{K}/centers.txt", centers)
-    np.savetxt(f"{outdir}/kmeans{K}/centers_ind.txt", centers_ind, fmt="%d")
+    if not os.path.exists(os.path.join(outdir, f"kmeans{K}")):
+        os.mkdir(os.path.join(outdir, f"kmeans{K}"))
+    utils.save_pkl(kmeans_labels, os.path.join(outdir, f"kmeans{K}", "labels.pkl"))
+    np.savetxt(os.path.join(outdir, f"kmeans{K}", "centers.txt"), centers)
+    np.savetxt(
+        os.path.join(outdir, f"kmeans{K}", "centers_ind.txt"), centers_ind, fmt="%d"
+    )
     logger.info("Generating volumes...")
-    vg.gen_volumes(f"{outdir}/kmeans{K}", centers)
+    vg.gen_volumes(os.path.join(outdir, f"kmeans{K}"), centers)
 
 
 def make_mask(
@@ -264,7 +266,7 @@ def analyze_volumes(
     if not os.path.exists(vol_mean_fl):
         volm = torch.stack(
             [
-                torch.Tensor(
+                torch.tensor(
                     parse_mrc(
                         os.path.join(kmean_dir, f"vol_{vol_start_index+i:03d}.mrc")
                     )[0]
@@ -274,12 +276,12 @@ def analyze_volumes(
         ).mean(dim=0)
         write_mrc(vol_mean_fl, np.array(volm).astype(np.float32), Apix=Apix)
     else:
-        volm = torch.Tensor(parse_mrc(vol_mean_fl)[0])
+        volm = torch.tensor(parse_mrc(vol_mean_fl)[0])
 
     assert isinstance(volm, torch.Tensor)
 
     # Load the mask; we will only use the non-zero co-ordinates for analyses
-    mask = torch.Tensor(parse_mrc(os.path.join(outdir, "mask.mrc"))[0])
+    mask = torch.tensor(parse_mrc(os.path.join(outdir, "mask.mrc"))[0])
     mask_inds = mask > 0.0
     logger.info(f"{mask_inds.sum()} voxels in mask")
 
@@ -288,7 +290,7 @@ def analyze_volumes(
         [
             (
                 mask[mask_inds]
-                * torch.Tensor(
+                * torch.tensor(
                     parse_mrc(
                         os.path.join(kmean_dir, f"vol_{vol_start_index+i:03d}.mrc")
                     )[0]
@@ -300,8 +302,8 @@ def analyze_volumes(
     vols[vols < 0] = 0
 
     # load umap
-    umap = utils.load_pkl(f"{outdir}/umap.pkl")
-    ind = np.loadtxt(f"{outdir}/kmeans{K}/centers_ind.txt").astype(int)
+    umap = utils.load_pkl(os.path.join(outdir, "umap.pkl"))
+    ind = np.loadtxt(os.path.join(outdir, f"kmeans{K}", "centers_ind.txt")).astype(int)
 
     if vol_ind is not None:
         logger.info(f"Filtering to {len(vol_ind)} volumes")
@@ -319,7 +321,7 @@ def analyze_volumes(
 
     # save rxn coordinates
     for i in range(plot_dim):
-        subdir = f"{outdir}/vol_pcs/pc{i+1}"
+        subdir = os.path.join(outdir, "vol_pcs", f"pc{i+1}")
         if not os.path.exists(subdir):
             os.makedirs(subdir)
         min_, max_ = pc[:, i].min(), pc[:, i].max()
@@ -357,12 +359,12 @@ def analyze_volumes(
         if vol_ind is not None:
             vol_indices = (np.arange(K)[vol_ind] + vol_start_index)[vol_indices]
 
-        vol_indices += 1
+        vol_indices += vol_start_index
         vol_fls = [
             os.path.join(kmean_dir, f"vol_{vol_i:03d}.mrc") for vol_i in vol_indices
         ]
         vol_i_all = torch.stack(
-            [torch.Tensor(parse_mrc(vol_fl)[0]) for vol_fl in vol_fls]
+            [torch.tensor(parse_mrc(vol_fl)[0]) for vol_fl in vol_fls]
         )
 
         nparticles = np.array([kmeans_counts[vol_i] for vol_i in vol_indices])
@@ -385,8 +387,8 @@ def analyze_volumes(
         statedir = os.path.join(subdir, f"state_{cluster_i}")
         os.makedirs(statedir, exist_ok=True)
         for vol_i in vol_indices:
-            kmean_fl = os.path.join(kmean_dir, f"vol_{vol_start_index+vol_i:03d}.mrc")
-            sub_fl = os.path.join(statedir, f"vol_{vol_start_index+vol_i:03d}.mrc")
+            kmean_fl = os.path.join(kmean_dir, f"vol_{vol_i:03d}.mrc")
+            sub_fl = os.path.join(statedir, f"vol_{vol_i:03d}.mrc")
             os.symlink(kmean_fl, sub_fl)
 
         particle_ind = analysis.get_ind_for_cluster(kmeans_labels, vol_indices)
@@ -406,28 +408,35 @@ def analyze_volumes(
     def hack_barplot(counts_):
         if M <= 20:  # HACK TO GET COLORS
             with sns.color_palette(cmap):
-                g = sns.barplot(x=np.arange(M), y=counts_)
+                g = sns.barplot(x=np.arange(M) + vol_start_index, y=counts_)
         else:  # default is husl
-            g = sns.barplot(x=np.arange(M), y=counts_)
+            g = sns.barplot(x=np.arange(M) + vol_start_index, y=counts_)
         return g
 
     plt.figure()
     counts = Counter(state_labels)
-    g = hack_barplot([counts[i] for i in range(M)])  # type: ignore  (bug in Counter type-checking?)
-    for i in range(M):
-        g.text(i - 0.1, counts[i] + 2, counts[i])  # type: ignore  (bug in Counter type-checking?)
+    g = hack_barplot([counts[i] for i in range(1, M + 1)])  # type: ignore  (bug in Counter type-checking?)
+    for i in range(1, M + 1):
+        g.text(i - 1, counts[i] * 1.01, counts[i], ha="center", va="bottom")  # type: ignore  (bug in Counter type-checking?)
     plt.xlabel("State")
     plt.ylabel("Count")
     plt.savefig(os.path.join(subdir, "state_volume_counts.png"))
 
     plt.figure()
     particle_counts = [
-        np.sum([kmeans_counts[ii] for ii in np.where(state_labels == i)[0]])
-        for i in range(M)
+        np.sum(
+            [
+                kmeans_counts[ii + vol_start_index]
+                for ii in np.where(state_labels == i)[0]
+            ]
+        )
+        for i in range(1, M + 1)
     ]
     g = hack_barplot(particle_counts)
     for i in range(M):
-        g.text(i - 0.1, particle_counts[i] + 2, particle_counts[i])
+        g.text(
+            i, particle_counts[i] * 1.01, particle_counts[i], ha="center", va="bottom"
+        )
     plt.xlabel("State")
     plt.ylabel("Count")
     plt.savefig(os.path.join(subdir, "state_particle_counts.png"))
@@ -445,7 +454,7 @@ def analyze_volumes(
     def plot_w_labels_annotated(i, j):
         fig, ax = plt.subplots(figsize=(16, 16))
         plt.scatter(pc[:, i], pc[:, j], c=state_labels, cmap=cmap)
-        annots = np.arange(K)
+        annots = np.arange(K) + vol_start_index
         if vol_ind is not None:
             annots = annots[vol_ind]
         for ii, k in enumerate(annots):
@@ -477,7 +486,7 @@ def analyze_volumes(
         umap[:, 0], umap[:, 1], alpha=0.1, s=1, rasterized=True, color="lightgrey"
     )
     plt.scatter(umap_i[:, 0], umap_i[:, 1], c=state_labels, cmap=cmap)
-    annots = np.arange(K)
+    annots = np.arange(K) + vol_start_index
     if vol_ind is not None:
         annots = annots[vol_ind]
     for i, k in enumerate(annots):
@@ -550,14 +559,15 @@ def main(args: argparse.Namespace) -> None:
         vol_start_index=args.vol_start_index,
     )
 
-    logger.info("Analyzing volumes...")
-    # get particle indices if the dataset was originally filtered
+    # Load particle indices if the dataset was originally filtered
     cfgs = cryodrgn.config.load(cfg_file)
     particle_ind = (
         utils.load_pkl(cfgs["dataset_args"]["ind"])
         if cfgs["dataset_args"]["ind"] is not None
         else None
     )
+
+    logger.info("Analyzing volumes...")
     analyze_volumes(
         outdir,
         K,
@@ -571,4 +581,4 @@ def main(args: argparse.Namespace) -> None:
         vol_start_index=args.vol_start_index,
     )
 
-    logger.info(f"Finished analyzing landscape in total of {dt.now() - t1}")
+    logger.info(f"Finished analyzing landscape in a total of {dt.now() - t1}")

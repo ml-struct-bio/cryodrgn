@@ -160,6 +160,34 @@ def SO3_to_quaternions(r):
     return quaternions.view(*batch_dims, 4)
 
 
+def rotmat_to_s2s2(rotmat):
+    """
+    rotmat: [..., 3, 3]
+
+    output: [..., 6]
+    """
+    return torch.cat([rotmat[..., 0, :], rotmat[..., 1, :]], -1)
+
+
+def s2s2_to_rotmat(s2s2):
+    """
+    Normalize 2 3-vectors. Project second to orthogonal component.
+    Take cross product for third. Stack to form SO matrix.
+
+    s2s2: [..., 6]
+
+    output: [..., 3, 3]
+    """
+    v2 = s2s2[..., 3:]
+    v1 = s2s2[..., 0:3]
+    u1 = v1
+    e1 = u1 / u1.norm(p=2, dim=-1, keepdim=True).clamp(min=1e-5)
+    u2 = v2 - (e1 * v2).sum(-1, keepdim=True) * e1
+    e2 = u2 / u2.norm(p=2, dim=-1, keepdim=True).clamp(min=1e-5)
+    e3 = torch.linalg.cross(e1, e2)
+    return torch.cat([e1[..., None, :], e2[..., None, :], e3[..., None, :]], -2)
+
+
 def quaternions_to_SO3(q):
     """Normalizes q and maps to group matrix."""
     q = q / q.norm(p=2, dim=-1, keepdim=True)

@@ -17,7 +17,7 @@ from torch.utils.data import DataLoader
 from cryodrgn.mrcfile import write_mrc
 from cryodrgn.lattice import Lattice
 from cryodrgn import utils, dataset, ctf
-from cryodrgn.losses_ai import kl_divergence_conf, l1_regularizer, l2_frequency_bias
+from cryodrgn.losses import kl_divergence_conf, l1_regularizer, l2_frequency_bias
 from cryodrgn.models_ai import DrgnAI, MyDataParallel
 from cryodrgn.masking import CircularMask, FrequencyMarchingMask
 

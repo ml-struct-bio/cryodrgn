@@ -97,7 +97,7 @@ class Lattice:
 
         return mask
 
-    def get_circular_mask(self, radius: float) -> Tensor:
+    def get_circular_mask(self, radius: float, verbose: bool = False) -> Tensor:
         """Return a binary mask for these coords corresponding to a centered circle."""
         if radius in self.circle_masks:
             mask = self.circle_masks[radius]
@@ -107,7 +107,8 @@ class Lattice:
                 raise ValueError(
                     f"Mask with {radius=} too large for lattice with size {self.D}"
                 )
-            logger.info(f"Using circular lattice with {radius=}")
+            if verbose:
+                logger.info(f"Using circular lattice with {radius=}")
 
             normed_radius = radius / (self.D // 2) * self.extent
             distances = self.coords.pow(2).sum(-1)

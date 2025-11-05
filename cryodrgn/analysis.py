@@ -104,7 +104,7 @@ def run_tsne(
 def run_umap(z: np.ndarray, **kwargs) -> np.ndarray:
     import umap  # CAN GET STUCK IN INFINITE IMPORT LOOP
 
-    reducer = umap.UMAP(**kwargs)
+    reducer = umap.UMAP(**kwargs, random_state=0)
     z_embedded = reducer.fit_transform(z)
     return z_embedded
 

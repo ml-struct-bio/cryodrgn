@@ -15,6 +15,8 @@ import shutil
 from collections import Counter
 from datetime import datetime as dt
 import logging
+import joblib
+from tempfile import TemporaryDirectory
 from typing import Optional
 
 import matplotlib.pyplot as plt
@@ -119,6 +121,11 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         type=os.path.abspath,
         help="Path to a custom mask. Must be same box size as generated volumes.",
     )
+    parser.add_argument(
+        "--multigpu",
+        action="store_true",
+        help="Use multiple GPUs for volume generation if available",
+    )
 
     group = parser.add_argument_group("Extra arguments for clustering")
     group.add_argument(
@@ -146,7 +153,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def generate_volumes(z, outdir, vg, K, vol_start_index):
+def generate_volumes(z, outdir, vg_list, K, vol_start_index):
     # kmeans clustering
     logger.info("Sketching distribution...")
     kmeans_labels, centers = analysis.cluster_kmeans(
@@ -155,13 +162,29 @@ def generate_volumes(z, outdir, vg, K, vol_start_index):
     centers, centers_ind = analysis.get_nearest_point(z, centers)
     if not os.path.exists(os.path.join(outdir, f"kmeans{K}")):
         os.mkdir(os.path.join(outdir, f"kmeans{K}"))
+
     utils.save_pkl(kmeans_labels, os.path.join(outdir, f"kmeans{K}", "labels.pkl"))
     np.savetxt(os.path.join(outdir, f"kmeans{K}", "centers.txt"), centers)
     np.savetxt(
         os.path.join(outdir, f"kmeans{K}", "centers_ind.txt"), centers_ind, fmt="%d"
     )
     logger.info("Generating volumes...")
-    vg.gen_volumes(os.path.join(outdir, f"kmeans{K}"), centers)
+    if len(vg_list) == 1:
+        vg_list[0].gen_volumes(os.path.join(outdir, f"kmeans{K}"), centers)
+    else:
+        with TemporaryDirectory() as tmpdir:
+            joblib.Parallel(n_jobs=len(vg_list), verbose=0)(
+                joblib.delayed(vg.gen_volumes)(
+                    os.path.join(tmpdir, f"kmeans_{i}"), centers[i :: len(vg_list)]
+                )
+                for i, vg in enumerate(vg_list)
+            )
+            for i in range(len(vg_list)):
+                for f in os.listdir(os.path.join(tmpdir, f"kmeans_{i}")):
+                    shutil.move(
+                        os.path.join(tmpdir, f"kmeans_{i}", f),
+                        os.path.join(outdir, f"kmeans{K}", f),
+                    )
 
 
 def make_mask(
@@ -522,13 +545,29 @@ def main(args: argparse.Namespace) -> None:
         device=args.device,
         vol_start_index=args.vol_start_index,
     )
-    vg = VolumeGenerator(weights, cfg_file, vol_args, skip_vol=args.skip_vol)
+    if args.multigpu and torch.cuda.is_available() and torch.cuda.device_count() > 1:
+        vg_list = [
+            VolumeGenerator(
+                weights,
+                cfg_file,
+                {
+                    **vol_args,
+                    "device": i,
+                    "vol_start_index": args.vol_start_index
+                    + i * (K // torch.cuda.device_count()),
+                },
+                skip_vol=args.skip_vol,
+            )
+            for i in range(torch.cuda.device_count())
+        ]
+    else:
+        vg_list = [VolumeGenerator(weights, cfg_file, vol_args, skip_vol=args.skip_vol)]
 
     if args.vol_ind is not None:
         args.vol_ind = utils.load_pkl(args.vol_ind)
 
     if not args.skip_vol:
-        generate_volumes(z, outdir, vg, K, args.vol_start_index)
+        generate_volumes(z, outdir, vg_list, K, args.vol_start_index)
     else:
         logger.info("Skipping volume generation")
 

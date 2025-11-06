@@ -111,7 +111,7 @@ def drgnai_commands() -> None:
     """cryoDRGN-AI commands installed with cryoDRGN as `drgnai <cmd_module_name>."""
     _get_commands(
         cmd_dir=os.path.join(os.path.dirname(__file__), "commands_drgnai"),
-        cmds=["abinit"],
+        cmds=["abinit", "analyze"],
         doc_str="cryoDRGN-AI commands installed with cryoDRGN",
     )
 

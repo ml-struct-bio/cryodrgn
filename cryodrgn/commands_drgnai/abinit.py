@@ -20,6 +20,7 @@ from cryodrgn import utils, dataset, ctf
 from cryodrgn.losses import kl_divergence_conf, l1_regularizer, l2_frequency_bias
 from cryodrgn.models_ai import DrgnAI, MyDataParallel
 from cryodrgn.masking import CircularMask, FrequencyMarchingMask
+from cryodrgn.commands_drgnai.analyze import ModelAnalyzer
 
 
 def add_args(parser: argparse.ArgumentParser) -> None:
@@ -60,7 +61,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--verbose-time", action="store_true")
 
     # Data loading and parallelism
-    parser.add_argument("--shuffle", action="store_true")
+    parser.add_argument("--no-shuffle", dest="shuffle", action="store_false")
     parser.add_argument("--num-workers", type=int, default=2)
     parser.add_argument("--fast-dataloading", action="store_true")
     parser.add_argument("--shuffler-size", type=int, default=32768)
@@ -162,6 +163,13 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         help="Data normalization as shift, 1/scale (default: mean, std of dataset)",
     )
 
+    parser.add_argument(
+        "--no-analysis",
+        dest="do_analysis",
+        action="store_false",
+        help="Do not run analysis on the final training epoch",
+    )
+
 
 class ModelTrainer:
     """An engine for training the DRGN-AI reconstruction model on particle data.
@@ -211,24 +219,6 @@ class ModelTrainer:
             shuffle=self.configs.shuffle,
             seed=self.configs.seed,
         )
-
-    @classmethod
-    def load_configs(cls, outdir: str) -> dict[str, Any]:
-        """Get the configurations from different versions of output folders."""
-        train_configs = dict()
-
-        if not os.path.isdir(outdir):
-            raise ValueError(f"Output folder {outdir} does not exist!")
-
-        if os.path.exists(os.path.join(outdir, "drgnai-configs.yaml")):
-            with open(os.path.join(outdir, "drgnai-configs.yaml"), "r") as f:
-                train_configs = yaml.safe_load(f)
-
-        elif os.path.exists(os.path.join(outdir, "train-configs.yaml")):
-            with open(os.path.join(outdir, "train-configs.yaml"), "r") as f:
-                train_configs = {"training": yaml.safe_load(f)}
-
-        return train_configs
 
     def __init__(self, outdir: str, config_vals: dict[str, Any]) -> None:
         """Initialize model parameters and variables.
@@ -571,7 +561,7 @@ class ModelTrainer:
         )
 
         # Save configurations within the output directory for future reference
-        cfg_path = os.path.join(self.outdir, "drgnai-configs.yaml")
+        cfg_path = os.path.join(self.outdir, "config.yaml")
         data_norm_mean = float(self.data.norm[0])
         data_norm_std = float(self.data.norm[1])
         payload = {
@@ -1383,3 +1373,22 @@ def main(args: argparse.Namespace) -> None:
 
     trainer = ModelTrainer(args.outdir, cfg)
     trainer.train()
+
+    if args.do_analysis:
+        anlz_cfgs = {
+            "workdir": args.outdir,
+            "epoch": trainer.epoch,
+            "invert": cfg["invert_data"],
+            "device": trainer.device,
+            "skip_vol": False,
+            "skip_umap": False,
+            "pc": 2,
+            "n_per_pc": 10,
+            "ksample": 20,
+            "apix": None,
+            "flip": False,
+            "downsample": None,
+            "vol_start_index": 1,
+        }
+        analyzer = ModelAnalyzer(args.outdir, anlz_cfgs, cfg)
+        analyzer.analyze()

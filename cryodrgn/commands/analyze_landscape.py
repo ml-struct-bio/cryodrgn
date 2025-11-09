@@ -175,7 +175,10 @@ def generate_volumes(z, outdir, vg_list, K, vol_start_index):
         with TemporaryDirectory() as tmpdir:
             joblib.Parallel(n_jobs=len(vg_list), verbose=0)(
                 joblib.delayed(vg.gen_volumes)(
-                    os.path.join(tmpdir, f"kmeans_{i}"), centers[i :: len(vg_list)]
+                    os.path.join(tmpdir, f"kmeans_{i}"),
+                    centers[
+                        i * (K // len(vg_list)) : min((i + 1) * (K // len(vg_list)), K)
+                    ],
                 )
                 for i, vg in enumerate(vg_list)
             )
@@ -232,11 +235,11 @@ def make_mask(
     else:
         mask = np.array(parse_mrc(in_mrc)[0])
 
-    # Save mask, and then view its slices from three acxes as saved plots
+    # Save mask, and then view its slices from three axes as saved plots
     out_mrc = os.path.join(outdir, "mask.mrc")
     logger.info(f"Saving {out_mrc}")
     write_mrc(out_mrc, mask.astype(np.float32), Apix=Apix)
-    view_slices(mask, out_png=os.path.join(outdir, "mask_slices.png"))
+    view_slices(mask > 0.0, out_png=os.path.join(outdir, "mask_slices.png"))
 
 
 def view_slices(y: np.array, out_png: str, D: Optional[int] = None) -> None:
@@ -354,7 +357,12 @@ def analyze_volumes(
         ):
             v = volm.clone()
             v[mask_inds] += torch.Tensor(pca.components_[i]) * val
-            write_mrc(f"{subdir}/{j}.mrc", np.array(v).astype(np.float32), Apix=Apix)
+
+            write_mrc(
+                os.path.join(subdir, f"{j:03d}.mrc"),
+                np.array(v).astype(np.float32),
+                Apix=Apix,
+            )
 
     # which plots to show???
     def plot(i, j):
@@ -429,11 +437,12 @@ def analyze_volumes(
 
     # plot clustering results
     def hack_barplot(counts_):
+        xlbls = [f"#{x}" for x in np.arange(M) + vol_start_index]
         if M <= 20:  # HACK TO GET COLORS
             with sns.color_palette(cmap):
-                g = sns.barplot(x=np.arange(M) + vol_start_index, y=counts_)
+                g = sns.barplot(x=xlbls, y=counts_)
         else:  # default is husl
-            g = sns.barplot(x=np.arange(M) + vol_start_index, y=counts_)
+            g = sns.barplot(x=xlbls, y=counts_)
         return g
 
     plt.figure()

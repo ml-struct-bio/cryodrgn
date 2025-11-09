@@ -286,8 +286,8 @@ def main(args):
     beta = 1.0 / zdim if args.beta is None else args.beta
 
     for minibatch in data_generator:
-        ind = minibatch[-1].to(device)
-        y = minibatch[0].to(device)
+        ind = minibatch["index"].to(device)
+        y = minibatch["y"].to(device)
         B = len(ind)
         batch_it += B
 
@@ -299,7 +299,7 @@ def main(args):
         # TODO -- finish implementing
         # dose_filters = None
         if enc_mode == "tilt":
-            tilt_ind = minibatch[1].to(device)
+            tilt_ind = minibatch["tilt_index"].to(device)
             assert all(tilt_ind >= 0), tilt_ind
             rot, tran = posetracker.get_pose(tilt_ind.view(-1))
             ctf_param = (

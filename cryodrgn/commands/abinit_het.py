@@ -438,7 +438,7 @@ def pretrain(model, lattice, optim, minibatch, tilt, zdim):
     model.train()
     optim.zero_grad()
 
-    rot = lie_tools.random_SO3(B, device=y.device)
+    rot = lie_tools.random_rotmat(B, device=y.device)
     z = torch.randn((B, zdim), device=y.device)
 
     # reconstruct circle of pixels instead of whole image
@@ -630,11 +630,11 @@ def eval_z(
     )
 
     for minibatch in data_generator:
-        ind = minibatch[-1]
-        y = minibatch[0].to(device)
+        ind = minibatch["index"]
+        y = minibatch["y"].to(device)
         yt = None
         if use_tilt:
-            yt = minibatch[1].to(device)
+            yt = minibatch["tilt"].to(device)
         B = len(ind)
         D = lattice.D
         c = None
@@ -1003,11 +1003,11 @@ def main(args):
     global_it = 0
     logger.info("Using random poses for {} iterations".format(args.pretrain))
     for batch in data_iterator:
-        global_it += len(batch[0])
+        global_it += len(batch["index"])
         batch = (
-            (batch[0].to(device), None)
+            (batch["y"].to(device), None)
             if tilt is None
-            else (batch[0].to(device), batch[1].to(device))
+            else (batch["y"].to(device), batch["tilt"].to(device))
         )
         loss = pretrain(model, lattice, optim, batch, tilt=ps.tilt, zdim=args.zdim)
         if global_it % args.log_interval == 0:
@@ -1058,12 +1058,12 @@ def main(args):
         if epoch % args.ps_freq != 1:
             logger.info("Using previous iteration poses")
         for batch in data_iterator:
-            ind = batch[-1]
+            ind = batch["index"]
             ind_np = ind.cpu().numpy()
             batch = (
-                (batch[0].to(device), None)
+                (batch["y"].to(device), None)
                 if tilt is None
-                else (batch[0].to(device), batch[1].to(device))
+                else (batch["y"].to(device), batch["tilt"].to(device))
             )
             batch_it += len(batch[0])
             global_it = Nimg * (epoch - 1) + batch_it

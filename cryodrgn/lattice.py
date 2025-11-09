@@ -180,10 +180,10 @@ class Lattice:
         img must be 1D unraveled image, symmetric around DC component
         """
         # H'(k) = cos(2*pi*k*t0)H(k) + sin(2*pi*k*t0)H(-k)
-        coords = self.freqs2d if mask is None else self.freqs2d[mask]
+        coords = self.freqs2d if mask is None else self.freqs2d[mask.to(self.device)]
         img = img.unsqueeze(1)  # Bx1xN
         t = t.unsqueeze(-1)  # BxTx2x1 to be able to do bmm
-        tfilt = coords @ t * 2 * np.pi  # BxTxNx1
+        tfilt = coords.to(t.device) @ t * 2 * np.pi  # BxTxNx1
         tfilt = tfilt.squeeze(-1)  # BxTxN
         c = torch.cos(tfilt)  # BxTxN
         s = torch.sin(tfilt)  # BxTxN

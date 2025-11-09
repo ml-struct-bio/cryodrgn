@@ -611,19 +611,19 @@ def main(args: argparse.Namespace) -> None:
         t2 = dt.now()
         loss_accum = 0
         batch_it = 0
-        for batch, _, ind in data_generator:
-            batch_it += len(ind)
-            ind = ind.to(device)
+        for batch in data_generator:
+            batch_it += len(batch["index"])
+            ind = batch["index"].to(device)
             z_optim.zero_grad()
             if pose_optimizer is not None:
                 pose_optimizer.zero_grad()
-            r, t = posetracker.get_pose(ind)
+            r, t = posetracker.get_pose(batch["index"])
             c = ctf_params[ind] if ctf_params is not None else None
             loss_item = train(
                 model,
                 lattice,
                 optim,
-                batch.to(device),
+                batch["y"].to(device),
                 z[ind],
                 r,
                 t,
@@ -635,7 +635,7 @@ def main(args: argparse.Namespace) -> None:
                 z_optim.step()
             if pose_optimizer is not None and epoch >= args.pretrain_pose:
                 pose_optimizer.step()
-            loss_accum += loss_item * len(ind)
+            loss_accum += loss_item * len(batch["index"])
             if batch_it % args.log_interval < args.batch_size:
                 logger.info(
                     "# [Train Epoch: {}/{}] [{}/{} images] loss={:.6f}".format(

@@ -361,8 +361,8 @@ def main(args: argparse.Namespace) -> None:
             logger.info(f"fimage {img_count:,d} — {(img_count / Nimg * 100):.1f}% done")
 
         ff = data.get_tilt(img_idxs) if args.tilt else data[img_idxs]
-        assert isinstance(ff, tuple)
-        ff = ff[0].to(device)
+        assert isinstance(ff, dict)
+        ff = ff["y"].to(device)
         ff = ff.view(-1, D**2).to(device)[:, lattice_mask]
         rot, trans = posetracker.get_pose(img_idxs)
         rot = rot.to(device)

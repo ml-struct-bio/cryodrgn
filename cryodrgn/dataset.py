@@ -234,10 +234,11 @@ class TiltSeriesData(ImageDataset):
     def __len__(self):
         return self.Np
 
-    def __getitem__(self, index):
+    def __getitem__(self, index) -> dict[str, torch.Tensor]:
         if isinstance(index, list):
             index = torch.Tensor(index).to(torch.long)
         tilt_indices = []
+
         for ii in index:
             if self.random_tilts:
                 tilt_index = np.random.choice(
@@ -247,9 +248,18 @@ class TiltSeriesData(ImageDataset):
                 # take the first ntilts
                 tilt_index = self.particles[ii][0 : self.ntilts]
             tilt_indices.append(tilt_index)
+
         tilt_indices = np.concatenate(tilt_indices)
-        images = self._process(self.src.images(tilt_indices).to(self.device))
-        return images, tilt_indices, index
+        r_images, f_images = self._process(
+            self.src.images(tilt_indices).to(self.device)
+        )
+
+        return {
+            "y": f_images,
+            "y_real": r_images,
+            "tilt_index": tilt_indices,
+            "index": index,
+        }
 
     @classmethod
     def parse_particle_tilt(
@@ -531,7 +541,11 @@ class _DataShufflerIterator:
 
         particles = self.dataset._process(particles.to(self.dataset.device))
         # print('ZZZ', particles.shape, tilt_indices.shape, particle_indices.shape)
-        return particles, tilt_indices, particle_indices
+        return {
+            "y": particles,
+            "tilt_index": tilt_indices,
+            "index": particle_indices,
+        }
 
 
 def make_dataloader(

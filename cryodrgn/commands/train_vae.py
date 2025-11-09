@@ -533,12 +533,12 @@ def eval_z(
         seed=seed,
     )
     for i, minibatch in enumerate(data_generator):
-        ind = minibatch[-1]
-        y = minibatch[0].to(device)
+        ind = minibatch["index"]
+        y = minibatch["y"].to(device)
         D = lattice.D
         if use_tilt:
             y = y.view(-1, D, D)
-            ind = minibatch[1].to(device).view(-1)
+            ind = minibatch["tilt_index"].to(device).view(-1)
         B = len(ind)
 
         c = None
@@ -924,8 +924,8 @@ def main(args: argparse.Namespace) -> None:
         kld_accum = 0
         batch_it = 0
         for i, minibatch in enumerate(data_generator):  # minibatch: [y, ind]
-            ind = minibatch[-1].to(device)
-            y = minibatch[0].to(device)
+            ind = minibatch["index"].to(device)
+            y = minibatch["y"].to(device)
             B = len(ind)
             batch_it += B
             global_it = Nparticles * (epoch - 1) + batch_it
@@ -941,7 +941,7 @@ def main(args: argparse.Namespace) -> None:
 
             dose_filters = None
             if args.encode_mode == "tilt":
-                tilt_ind = minibatch[1].to(device)
+                tilt_ind = minibatch["tilt_index"].to(device)
                 assert all(tilt_ind >= 0), tilt_ind
                 rot, tran = posetracker.get_pose(tilt_ind.view(-1))
                 ctf_param = (

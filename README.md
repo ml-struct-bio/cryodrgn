@@ -27,7 +27,7 @@ For any feedback, questions, or bugs, please file a Github issue or start a Gith
 * official support for Python 3.12, deprecating support for Python 3.9
 * [NEW] consolidated `cryodrgn parse_star` command (merging `parse_pose_star` and `parse_ctf_star`)
 * `analyze` is now run automatically on the final epoch once model training is complete
-* faster backprojection and downsampling
+* faster backprojection and downsampling; `--multigpu` for faster landscape analysis
 
 
 ### Updates in Version 3.x

@@ -100,7 +100,14 @@ class VolumeGenerator:
     """Helper class to call analysis.gen_volumes"""
 
     def __init__(
-        self, hypervolume, lattice, zdim, invert, radius_mask, data_norm=(0, 1)
+        self,
+        hypervolume,
+        lattice,
+        zdim,
+        invert,
+        radius_mask,
+        data_norm=(0, 1),
+        vol_start_index=1,
     ):
         self.hypervolume = hypervolume
         self.lattice = lattice
@@ -108,6 +115,7 @@ class VolumeGenerator:
         self.invert = invert
         self.radius_mask = radius_mask
         self.data_norm = data_norm
+        self.vol_start_index = vol_start_index
 
     def gen_volumes(self, outdir, z_values, suffix=None):
         """
@@ -120,7 +128,9 @@ class VolumeGenerator:
 
         for i, z in enumerate(z_values):
             if suffix is None:
-                out_mrc = "{}/{}{:03d}.mrc".format(outdir, "vol_", i)
+                out_mrc = "{}/{}{:03d}.mrc".format(
+                    outdir, "vol_", i + self.vol_start_index
+                )
             else:
                 out_mrc = "{}/{}{:03d}.mrc".format(outdir, "vol_", suffix)
 
@@ -178,7 +188,7 @@ class ModelAnalyzer:
         self.logger = logging.getLogger(__name__)
 
         self.configs = SimpleNamespace(**config_vals)
-        self.train_configs = SimpleNamespace(**train_config_vals)
+        self.train_configs = SimpleNamespace(**train_config_vals["training"])
         self.traindir = traindir
 
         # Find how input data was normalized for training
@@ -637,5 +647,5 @@ def main(args: argparse.Namespace) -> None:
             f"Has the model for {args.workdir} been trained yet?"
         )
 
-    analyzer = ModelAnalyzer(args.workdir, cfg, utils.load_yaml(cfg_file)["training"])
+    analyzer = ModelAnalyzer(args.workdir, cfg, utils.load_yaml(cfg_file))
     analyzer.analyze()

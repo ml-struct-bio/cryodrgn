@@ -39,7 +39,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
 
     # Basic training controls
     parser.add_argument(
-        "--load", type=os.path.abspath, help="Load a previous checkpoint weights.pkl"
+        "--load", type=str, help="Load a previous checkpoint weights.pkl"
     )
     parser.add_argument("--seed", type=int, default=np.random.randint(0, 100000))
     parser.add_argument("-v", "--verbose", action="store_true")
@@ -1284,6 +1284,7 @@ def main(args: argparse.Namespace) -> None:
         ind=args.ind,
         relion31=args.relion31,
         invert_data=args.invert_data,
+        load=args.load,
         lazy=args.lazy,
         max_threads=args.max_threads,
         log_interval=args.log_interval,
@@ -1351,25 +1352,17 @@ def main(args: argparse.Namespace) -> None:
     )
 
     # Support --load latest (resolve from outdir or outdir/out)
-    if args.load is not None and args.load.strip().lower() == "latest":
-        # Prefer checkpoints in outdir/out if present
-        search_dirs = [os.path.join(args.outdir, "out"), args.outdir]
-        for d in search_dirs:
-            if os.path.isdir(d):
-                try:
-                    weights_pkl, pose_pkl = utils.get_latest_checkpoint(d)
-                    cfg["load"] = weights_pkl
-                    # Optionally expose pose file to initialize pose table later
-                    cfg["load_poses"] = pose_pkl if os.path.exists(pose_pkl) else None
-                    break
-                except Exception:
-                    continue
-        if "load" not in cfg:
+    if cfg["load"] is not None:
+        if cfg["load"].strip().lower() == "latest":
+            weights_pkl, pose_pkl = utils.get_latest_checkpoint(cfg["outdir"])
+            cfg["load"] = weights_pkl
+            # Optionally expose pose file to initialize pose table later
+            cfg["load_poses"] = pose_pkl if os.path.exists(pose_pkl) else None
+        elif not os.path.exists(cfg["load"]):
             raise ValueError(
-                f"--load latest requested, but no checkpoints found under {args.outdir} or {args.outdir}/out"
+                f"Invalid load argument which must be a path to "
+                f"a .pkl file or `latest`: {args.load}"
             )
-    else:
-        cfg["load"] = args.load
 
     trainer = ModelTrainer(args.outdir, cfg)
     trainer.train()
@@ -1390,5 +1383,6 @@ def main(args: argparse.Namespace) -> None:
             "downsample": None,
             "vol_start_index": 1,
         }
-        analyzer = ModelAnalyzer(args.outdir, anlz_cfgs, cfg)
+        cfg_file = os.path.join(args.outdir, "config.yaml")
+        analyzer = ModelAnalyzer(args.outdir, anlz_cfgs, utils.load_yaml(cfg_file))
         analyzer.analyze()

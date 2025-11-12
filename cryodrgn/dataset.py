@@ -539,10 +539,13 @@ class _DataShufflerIterator:
         particles = particles.view(-1, *particles.shape[2:])
         tilt_indices = tilt_indices.view(-1, *tilt_indices.shape[2:])
 
-        particles = self.dataset._process(particles.to(self.dataset.device))
+        r_particles, f_particles = self.dataset._process(
+            particles.to(self.dataset.device)
+        )
         # print('ZZZ', particles.shape, tilt_indices.shape, particle_indices.shape)
         return {
-            "y": particles,
+            "y": f_particles,
+            "y_real": r_particles,
             "tilt_index": tilt_indices,
             "index": particle_indices,
         }

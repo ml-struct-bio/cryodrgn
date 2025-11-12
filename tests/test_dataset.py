@@ -1,7 +1,6 @@
 import pytest
 import os
 import numpy as np
-from typing import Sequence
 from torch.utils.data.sampler import BatchSampler, RandomSampler
 from torch.utils.data import DataLoader
 from cryodrgn.dataset import DataShuffler, ImageDataset, TiltSeriesData, make_dataloader
@@ -14,15 +13,12 @@ def test_particles(particles):
     # correct values after normalization/fft/symmetrization etc.
     dataset = ImageDataset(mrcfile=particles.path, invert_data=True)
     indices = np.array([43, 12, 53, 64, 31, 56, 75, 63, 27, 62, 96])
-    particles_arr, _, _ = dataset[indices]
+    particles_arr = dataset[indices]["y"].cpu().numpy()
 
     # the tolerance (atol) of 1e-5 accounts for minor fft differences between
     # numpy fft (legacy) and torch fft
-    assert np.allclose(
-        np.load(os.path.join(pytest.DATADIR, "hand_11_particles.npy")),
-        particles_arr.cpu().numpy(),
-        atol=1e-5,
-    )
+    comp_file = os.path.join(pytest.DATADIR, "hand_11_particles.npy")
+    assert np.allclose(np.load(comp_file), particles_arr, atol=1e-5)
 
 
 @pytest.mark.parametrize(
@@ -51,27 +47,24 @@ class TestImageDatasetLoading:
         dataset = ImageDataset(mrcfile=particles.path, ind=ind)
         data_loader = make_dataloader(dataset, batch_size=batch_size, shuffle=True)
 
-        # minibatch is a list of (particles, tilt, indices)
         for i, minibatch in enumerate(data_loader):
-            assert isinstance(minibatch, Sequence)
-            assert len(minibatch) == 3
+            assert isinstance(minibatch, dict)
+            assert {"y", "index"}.issubset(minibatch.keys())
 
             # We have 100 particles. For all but the last iteration *
             # for all but the last iteration (100//7 = 14), we'll have 7 images each
             if i < (dataset.N // batch_size):
-                assert minibatch[0].shape == (batch_size, dataset.D, dataset.D)
-                assert minibatch[1] is None
-                assert minibatch[2].shape == (batch_size,)
+                assert minibatch["y"].shape == (batch_size, dataset.D, dataset.D)
+                assert minibatch["index"].shape == (batch_size,)
 
             # and 100 % 7 = 2 for the very last one
             else:
-                assert minibatch[0].shape == (
+                assert minibatch["y"].shape == (
                     dataset.N % batch_size,
                     dataset.D,
                     dataset.D,
                 )
-                assert minibatch[1] is None
-                assert minibatch[2].shape == (dataset.N % batch_size,)
+                assert minibatch["index"].shape == (dataset.N % batch_size,)
 
     @pytest.mark.parametrize("batch_size", [11, 25, 61])
     def test_loading_fast(self, particles, indices, batch_size):
@@ -92,26 +85,23 @@ class TestImageDatasetLoading:
 
         # minibatch is a list of (particles, tilt, indices)
         for i, minibatch in enumerate(data_loader):
-            assert isinstance(minibatch, Sequence)
-            assert len(minibatch) == 3
+            assert isinstance(minibatch, dict)
+            assert {"y", "index"}.issubset(minibatch.keys())
 
             # We have 100 particles. For all but the last iteration *
             # for all but the last iteration (100//7 = 14), we'll have 7 images each
             if i < (dataset.N // batch_size):
-                assert minibatch[0].shape == (batch_size, dataset.D, dataset.D)
-                assert minibatch[1] is None
-                assert minibatch[2].shape == (batch_size,)
+                assert minibatch["y"].shape == (batch_size, dataset.D, dataset.D)
+                assert minibatch["index"].shape == (batch_size,)
 
             # and 100 % 7 = 2 for the very last one
             else:
-                assert minibatch[0].shape == (
+                assert minibatch["y"].shape == (
                     dataset.N % batch_size,
                     dataset.D,
                     dataset.D,
                 )
-
-                assert minibatch[1] is None
-                assert minibatch[2].shape == (dataset.N % batch_size,)
+                assert minibatch["index"].shape == (dataset.N % batch_size,)
 
 
 @pytest.mark.parametrize(
@@ -139,25 +129,31 @@ class TestTiltSeriesLoading:
 
         # minibatch is a list of (particles, tilt, indices)
         for i, minibatch in enumerate(data_loader):
-            assert isinstance(minibatch, Sequence)
-            assert len(minibatch) == 3
+            assert isinstance(minibatch, dict)
+            assert {"y", "index"}.issubset(minibatch.keys())
 
             # We have 100 particles. For all but the last iteration *
             # for all but the last iteration (100//7 = 14), we'll have 7 images each
             if i < (dataset.Np // batch_size):
-                assert minibatch[0].shape == (batch_size * ntilts, dataset.D, dataset.D)
-                assert minibatch[1].shape == (batch_size * ntilts,)
-                assert minibatch[2].shape == (batch_size,)
+                assert minibatch["y"].shape == (
+                    batch_size * ntilts,
+                    dataset.D,
+                    dataset.D,
+                )
+                assert minibatch["tilt_index"].shape == (batch_size * ntilts,)
+                assert minibatch["index"].shape == (batch_size,)
 
             # and 100 % 7 = 2 for the very last one
             else:
-                assert minibatch[0].shape == (
+                assert minibatch["y"].shape == (
                     (dataset.Np % batch_size) * ntilts,
                     dataset.D,
                     dataset.D,
                 )
-                assert minibatch[1].shape == ((dataset.Np % batch_size) * ntilts,)
-                assert minibatch[2].shape == (dataset.Np % batch_size,)
+                assert minibatch["tilt_index"].shape == (
+                    (dataset.Np % batch_size) * ntilts,
+                )
+                assert minibatch["index"].shape == (dataset.Np % batch_size,)
 
 
 @pytest.mark.parametrize(
@@ -196,16 +192,14 @@ def test_data_shuffler(particles, indices, batch_size, buffer_size):
     # minibatch is a list of (particles, tilt, indices)
     epoch1_indices, epoch2_indices = list(), list()
     for i, minibatch in enumerate(data_loader):
-        assert isinstance(minibatch, Sequence)
-        assert len(minibatch) == 3
-
-        assert minibatch[0].shape == (batch_size, dataset.D, dataset.D)
-        assert minibatch[1].shape == (batch_size,)
-        assert minibatch[2].shape == (batch_size,)
-        epoch1_indices.append(minibatch[2])
+        assert isinstance(minibatch, dict)
+        assert {"y", "index"}.issubset(minibatch.keys())
+        assert minibatch["y"].shape == (batch_size, dataset.D, dataset.D)
+        assert minibatch["index"].shape == (batch_size,)
+        epoch1_indices.append(minibatch["index"])
 
     for i, minibatch in enumerate(data_loader):
-        epoch2_indices.append(minibatch[2])
+        epoch2_indices.append(minibatch["index"])
 
     epoch1_indices = np.concatenate(epoch1_indices)
     epoch2_indices = np.concatenate(epoch2_indices)

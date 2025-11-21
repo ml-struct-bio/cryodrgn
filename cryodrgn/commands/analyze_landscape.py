@@ -156,13 +156,16 @@ def add_args(parser: argparse.ArgumentParser) -> None:
 def generate_volumes(z, outdir, vg_list, K, vol_start_index):
     # kmeans clustering
     logger.info("Sketching distribution...")
-    kmeans_labels, centers = analysis.cluster_kmeans(
-        z, K, on_data=True, reorder=True, vol_start_index=vol_start_index
-    )
+    kmeans_groups, centers = analysis.cluster_kmeans(z, K, on_data=True, reorder=True)
     centers, centers_ind = analysis.get_nearest_point(z, centers)
     if not os.path.exists(os.path.join(outdir, f"kmeans{K}")):
         os.mkdir(os.path.join(outdir, f"kmeans{K}"))
 
+    kmeans_labels = np.apply_along_axis(
+        np.vectorize(lambda i: f"kmeans_{i + vol_start_index}"),
+        axis=0,
+        arr=kmeans_groups,
+    )
     utils.save_pkl(kmeans_labels, os.path.join(outdir, f"kmeans{K}", "labels.pkl"))
     np.savetxt(os.path.join(outdir, f"kmeans{K}", "centers.txt"), centers)
     np.savetxt(
@@ -175,7 +178,7 @@ def generate_volumes(z, outdir, vg_list, K, vol_start_index):
         with TemporaryDirectory() as tmpdir:
             joblib.Parallel(n_jobs=len(vg_list), verbose=0)(
                 joblib.delayed(vg.gen_volumes)(
-                    os.path.join(tmpdir, f"kmeans_{i}"),
+                    os.path.join(tmpdir, f"kmeans_{i + vol_start_index}"),
                     centers[
                         i * (K // len(vg_list)) : min((i + 1) * (K // len(vg_list)), K)
                     ],
@@ -183,9 +186,11 @@ def generate_volumes(z, outdir, vg_list, K, vol_start_index):
                 for i, vg in enumerate(vg_list)
             )
             for i in range(len(vg_list)):
-                for f in os.listdir(os.path.join(tmpdir, f"kmeans_{i}")):
+                for f in os.listdir(
+                    os.path.join(tmpdir, f"kmeans_{i + vol_start_index}")
+                ):
                     shutil.move(
-                        os.path.join(tmpdir, f"kmeans_{i}", f),
+                        os.path.join(tmpdir, f"kmeans_{i + vol_start_index}", f),
                         os.path.join(outdir, f"kmeans{K}", f),
                     )
 
@@ -198,7 +203,7 @@ def make_mask(
     thresh: float,
     in_mrc: Optional[str] = None,
     Apix: float = 1.0,
-    vol_start_index: int = 0,
+    vol_start_index: int = 1,
 ) -> None:
     """Create a masking filter for use across all volumes produced by k-means."""
     kmean_dir = os.path.join(outdir, f"kmeans{K}")
@@ -379,16 +384,23 @@ def analyze_volumes(
     subdir = os.path.join(outdir, f"sketch_clustering_{linkage}_{M}")
     os.makedirs(subdir, exist_ok=True)
     cluster = AgglomerativeClustering(n_clusters=M, linkage=linkage)
-    state_labels = cluster.fit_predict(vols) + 1
+    state_groups = cluster.fit_predict(vols)
+    state_labels = np.apply_along_axis(
+        np.vectorize(lambda i: f"state_{i + 1}"), axis=0, arr=state_groups
+    )
     utils.save_pkl(state_labels, os.path.join(subdir, "state_labels.pkl"))
 
     kmeans_labels = utils.load_pkl(os.path.join(outdir, f"kmeans{K}", "labels.pkl"))
-    kmeans_counts = Counter(kmeans_labels)
-    for cluster_i in range(1, M + 1):
-        vol_indices = np.where(state_labels == cluster_i)[0]
-        logger.info(f"State {cluster_i}: {len(vol_indices)} volumes")
+    kmeans_groups = np.array(
+        [int(label.split("kmeans_")[1]) for label in kmeans_labels]
+    )
+    kmeans_counts = Counter[int](kmeans_groups)
+
+    for state_group in range(M):
+        vol_indices = np.where(state_groups == state_group)[0]
+        logger.info(f"State {state_group + 1}: {len(vol_indices)} volumes")
         if vol_ind is not None:
-            vol_indices = (np.arange(K)[vol_ind] + vol_start_index)[vol_indices]
+            vol_indices = np.arange(K)[vol_ind][vol_indices]
 
         vol_indices += vol_start_index
         vol_fls = [
@@ -404,40 +416,41 @@ def analyze_volumes(
             np.average((vol_i_all - vol_i_mean) ** 2, axis=0, weights=nparticles) ** 0.5
         )
 
+        state_txt = f"state_{state_group + 1:03d}"
         write_mrc(
-            os.path.join(subdir, f"state_{cluster_i}_mean.mrc"),
+            os.path.join(subdir, f"{state_txt}_mean.mrc"),
             vol_i_mean.astype(np.float32),
             Apix=Apix,
         )
         write_mrc(
-            os.path.join(subdir, f"state_{cluster_i}_std.mrc"),
+            os.path.join(subdir, f"{state_txt}_std.mrc"),
             vol_i_std.astype(np.float32),
             Apix=Apix,
         )
 
-        statedir = os.path.join(subdir, f"state_{cluster_i}")
+        statedir = os.path.join(subdir, f"{state_txt}")
         os.makedirs(statedir, exist_ok=True)
         for vol_i in vol_indices:
             kmean_fl = os.path.join(kmean_dir, f"vol_{vol_i:03d}.mrc")
             sub_fl = os.path.join(statedir, f"vol_{vol_i:03d}.mrc")
             os.symlink(kmean_fl, sub_fl)
 
-        particle_ind = analysis.get_ind_for_cluster(kmeans_labels, vol_indices)
-        logger.info(f"State {cluster_i}: {len(particle_ind)} particles")
+        particle_ind = analysis.get_ind_for_cluster(kmeans_groups, vol_indices)
+        logger.info(f"State {state_group + 1}: {len(particle_ind)} particles")
         if particle_ind_orig is not None:
             utils.save_pkl(
                 particle_ind_orig[particle_ind],
-                os.path.join(subdir, f"state_{cluster_i}_particle_ind.pkl"),
+                os.path.join(subdir, f"{state_txt}_particle_ind.pkl"),
             )
         else:
             utils.save_pkl(
                 particle_ind,
-                os.path.join(subdir, f"state_{cluster_i}_particle_ind.pkl"),
+                os.path.join(subdir, f"{state_txt}_particle_ind.pkl"),
             )
 
     # plot clustering results
     def hack_barplot(counts_):
-        xlbls = [f"#{x}" for x in np.arange(M) + vol_start_index]
+        xlbls = [f"#{x + 1}" for x in np.arange(M)]
         if M <= 20:  # HACK TO GET COLORS
             with sns.color_palette(cmap):
                 g = sns.barplot(x=xlbls, y=counts_)
@@ -446,10 +459,11 @@ def analyze_volumes(
         return g
 
     plt.figure()
-    counts = Counter(state_labels)
-    g = hack_barplot([counts[i] for i in range(1, M + 1)])  # type: ignore  (bug in Counter type-checking?)
-    for i in range(1, M + 1):
-        g.text(i - 1, counts[i] * 1.01, counts[i], ha="center", va="bottom")  # type: ignore  (bug in Counter type-checking?)
+    state_counts = Counter(state_groups)
+    g = hack_barplot([state_counts[state_group] for state_group in range(M)])  # type: ignore  (bug in Counter type-checking?)
+    for state_group in range(M):
+        count = state_counts[state_group]
+        g.text(state_group, count * 1.02, count, ha="center", va="bottom")  # type: ignore  (bug in Counter type-checking?)
     plt.xlabel("State")
     plt.ylabel("Count")
     plt.savefig(os.path.join(subdir, "state_volume_counts.png"))
@@ -458,24 +472,23 @@ def analyze_volumes(
     particle_counts = [
         np.sum(
             [
-                kmeans_counts[ii + vol_start_index]
-                for ii in np.where(state_labels == i)[0]
+                kmeans_counts[vol_i + vol_start_index]
+                for vol_i in np.where(state_groups == state_group)[0]
             ]
         )
-        for i in range(1, M + 1)
+        for state_group in range(M)
     ]
     g = hack_barplot(particle_counts)
-    for i in range(M):
-        g.text(
-            i, particle_counts[i] * 1.01, particle_counts[i], ha="center", va="bottom"
-        )
+    for state_group in range(M):
+        count = particle_counts[state_group]
+        g.text(state_group, count * 1.02, count, ha="center", va="bottom")
     plt.xlabel("State")
     plt.ylabel("Count")
     plt.savefig(os.path.join(subdir, "state_particle_counts.png"))
 
     def plot_w_labels(i, j):
         plt.figure()
-        plt.scatter(pc[:, i], pc[:, j], c=state_labels, cmap=cmap)
+        plt.scatter(pc[:, i], pc[:, j], c=state_groups, cmap=cmap)
         plt.xlabel(f"Volume PC{i+1} (EV: {pca.explained_variance_ratio_[i]:03f})")
         plt.ylabel(f"Volume PC{j+1} (EV: {pca.explained_variance_ratio_[j]:03f})")
         plt.savefig(os.path.join(subdir, f"vol_pca_{K}_{i+1}_{j+1}.png"))
@@ -485,7 +498,7 @@ def analyze_volumes(
 
     def plot_w_labels_annotated(i, j):
         fig, ax = plt.subplots(figsize=(16, 16))
-        plt.scatter(pc[:, i], pc[:, j], c=state_labels, cmap=cmap)
+        plt.scatter(pc[:, i], pc[:, j], c=state_groups, cmap=cmap)
         annots = np.arange(K) + vol_start_index
         if vol_ind is not None:
             annots = annots[vol_ind]
@@ -505,9 +518,9 @@ def analyze_volumes(
         umap[:, 0], umap[:, 1], alpha=0.1, s=1, rasterized=True, color="lightgrey"
     )
     colors = get_colors_for_cmap(cmap, M)
-    for i in range(M):
-        c = umap_i[np.where(state_labels == i)]
-        plt.scatter(c[:, 0], c[:, 1], label=i, color=colors[i])
+    for state_group in range(M):
+        c = umap_i[np.where(state_groups == state_group)]
+        plt.scatter(c[:, 0], c[:, 1], label=state_group, color=colors[state_group])
     plt.legend()
     plt.xlabel("UMAP1")
     plt.ylabel("UMAP2")
@@ -517,7 +530,7 @@ def analyze_volumes(
     plt.scatter(
         umap[:, 0], umap[:, 1], alpha=0.1, s=1, rasterized=True, color="lightgrey"
     )
-    plt.scatter(umap_i[:, 0], umap_i[:, 1], c=state_labels, cmap=cmap)
+    plt.scatter(umap_i[:, 0], umap_i[:, 1], c=state_groups, cmap=cmap)
     annots = np.arange(K) + vol_start_index
     if vol_ind is not None:
         annots = annots[vol_ind]

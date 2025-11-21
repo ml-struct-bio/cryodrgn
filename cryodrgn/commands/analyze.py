@@ -286,6 +286,7 @@ def analyze_zN(
             pc[:, 1],
             centers_ind=centers_ind,
             annotate=True,
+            labels=np.arange(len(centers)) + vol_start_index,
             colors=colors,
         )
     except ZeroDivisionError:

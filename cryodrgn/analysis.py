@@ -117,7 +117,6 @@ def cluster_kmeans(
     K: int,
     on_data: bool = True,
     reorder: bool = True,
-    vol_start_index: int = 1,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Cluster z by K means clustering
@@ -125,7 +124,7 @@ def cluster_kmeans(
     If reorder=True, reorders clusters according to agglomerative clustering of cluster centers
     """
     kmeans = KMeans(n_clusters=K, random_state=0, max_iter=10)
-    labels = kmeans.fit_predict(z)
+    kmeans_groups = kmeans.fit_predict(z)
     centers = kmeans.cluster_centers_
 
     centers_ind = None
@@ -139,10 +138,10 @@ def cluster_kmeans(
         if centers_ind is not None:
             centers_ind = centers_ind[reordered]
 
-        tmp = {k: i + vol_start_index for i, k in enumerate(reordered)}
-        labels = np.array([tmp[k] for k in labels])
+        tmp = {k: i for i, k in enumerate(reordered)}
+        kmeans_groups = np.array([tmp[k] for k in kmeans_groups])
 
-    return labels, centers
+    return kmeans_groups, centers
 
 
 def cluster_gmm(
@@ -150,7 +149,6 @@ def cluster_gmm(
     K: int,
     on_data: bool = True,
     random_state: Union[int, np.random.RandomState, None] = None,
-    vol_start_index: int = 1,
     **kwargs,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """

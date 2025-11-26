@@ -16,6 +16,7 @@ import shutil
 from datetime import datetime as dt
 import logging
 import nbformat
+import joblib
 
 import numpy as np
 import torch
@@ -50,7 +51,14 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         help="Epoch number N to analyze (1-based indexing, "
         "corresponding to z.N.pkl and weights.N.pkl)",
     )
+
     parser.add_argument("--device", type=int, help="Optionally specify CUDA device")
+    parser.add_argument(
+        "--multigpu",
+        action="store_true",
+        help="Use multiple GPUs for volume generation if available",
+    )
+
     parser.add_argument(
         "--landscape-dir",
         type=os.path.abspath,
@@ -264,31 +272,48 @@ def generate_and_map_volumes(zfile, cfg, weights, mask_mrc, pca_obj_pkl, outdir,
     # Generate volumes
     logger.info(f"Generating {len(z)} volume embeddings")
     t1 = dt.now()
-    embeddings = []
-    for i, zz in enumerate(z):
-        if (i + 1) % 100 == 0:
-            logger.info(f"Generating volume {i + 1} of {len(z)}")
+    embeddings = list()
+    ngpus = 0 if not torch.cuda.is_available() else torch.cuda.device_count()
 
-        if args.downsample:
-            extent = lattice.extent * (args.downsample / (D - 1))
-            vol = decoder.eval_volume(
-                lattice.get_downsample_coords(args.downsample + 1),
-                args.downsample + 1,
-                extent,
-                norm,
-                zz,
+    def generate_embeddings(i_list, z_list):
+        embedding_list = list()
+
+        for i, zz in zip(i_list, z_list):
+            if (i + 1) % 100 == 0:
+                logger.info(f"Generating volume {i + 1} of {len(z)}")
+
+            if args.downsample:
+                extent = lattice.extent * (args.downsample / (D - 1))
+                vol = decoder.eval_volume(
+                    lattice.get_downsample_coords(args.downsample + 1),
+                    args.downsample + 1,
+                    extent,
+                    norm,
+                    zz,
+                )
+            else:
+                vol = decoder.eval_volume(
+                    lattice.coords, lattice.D, lattice.extent, norm, zz
+                )
+            if args.flip:
+                vol = vol.flip([0])
+
+            embedding_list.append(
+                pca.transform(vol.cpu()[torch.tensor(mask).bool()].reshape(1, -1))
             )
-        else:
-            vol = decoder.eval_volume(
-                lattice.coords, lattice.D, lattice.extent, norm, zz
+
+        return np.concatenate(embedding_list, axis=0)
+
+    if args.multigpu and ngpus > 1:
+        embeddings: list[np.ndarray] = joblib.Parallel(n_jobs=ngpus, verbose=0)(
+            joblib.delayed(generate_embeddings)(i_list, z_list)
+            for i_list, z_list in zip(
+                np.array_split(np.arange(len(z)), ngpus), np.array_split(z, ngpus)
             )
-
-        if args.flip:
-            vol = vol.flip([0])
-
-        embeddings.append(
-            pca.transform(vol.cpu()[torch.tensor(mask).bool()].reshape(1, -1))
         )
+        embeddings = np.concatenate(embeddings, axis=0)
+    else:
+        embeddings = generate_embeddings(list(range(len(z))), z)
 
     embeddings = np.array(embeddings).reshape(len(z), -1).astype(np.float32)
     td = dt.now() - t1
@@ -337,7 +362,7 @@ def train_model(x, y, outdir, zfile, args):
 
     # Evaluate
     model.eval()
-    yhat_all = []
+    yhat_all = list()
     eval_dataset = utils.load_pkl(zfile).astype(np.float32)
     with torch.no_grad():
         for x in np.array_split(eval_dataset, args.test_batch_size):

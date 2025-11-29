@@ -213,9 +213,9 @@ def generate_and_map_volumes(zfile, cfg, weights, mask_mrc, pca_obj_pkl, outdir,
         sorted(np.random.choice(len(z_all), args.training_volumes, replace=False))
     )  # type: ignore
     z_sample = z_all[ind]
-    utils.save_pkl(z_sample, f"{outdir}/z.sampled.pkl")
-    utils.save_pkl(ind, f"{outdir}/ind.sampled.pkl")
-    logger.info(f"Saved {outdir}/z.sampled.pkl")
+    utils.save_pkl(z_sample, os.path.join(outdir, "z.sampled.pkl"))
+    utils.save_pkl(ind, os.path.join(outdir, "ind.sampled.pkl"))
+    logger.info(f"Saved {os.path.join(outdir, 'z.sampled.pkl')}")
 
     # Set the device
     # if torch.cuda.is_available():
@@ -371,7 +371,7 @@ def train_model(x, y, outdir, zfile, args):
             yhat_all.append(yhat.detach().cpu().numpy())
 
     yhat_all = np.concatenate(yhat_all)
-    torch.save(model.state_dict(), f"{outdir}/model.pt")
+    torch.save(model.state_dict(), os.path.join(outdir, "model.pt"))
 
     return yhat_all
 
@@ -400,20 +400,25 @@ def main(args: argparse.Namespace) -> None:
 
     E = args.epoch
     workdir = args.workdir
-    zfile = f"{workdir}/z.{E}.pkl"
-    weights = f"{workdir}/weights.{E}.pkl"
+    zfile = os.path.join(workdir, f"z.{E}.pkl")
+    weights = os.path.join(workdir, f"weights.{E}.pkl")
     cfg = (
-        f"{workdir}/config.yaml"
+        os.path.join(workdir, "config.yaml")
         if os.path.exists(f"{workdir}/config.yaml")
-        else f"{workdir}/config.pkl"
+        else os.path.join(workdir, "config.pkl")
     )
     landscape_dir = (
-        f"{workdir}/landscape.{E}" if args.landscape_dir is None else args.landscape_dir
+        os.path.join(workdir, f"landscape.{E}")
+        if args.landscape_dir is None
+        else args.landscape_dir
     )
-    outdir = f"{landscape_dir}/landscape_full" if args.outdir is None else args.outdir
+    if args.outdir is None:
+        outdir = os.path.join(landscape_dir, "landscape_full")
+    else:
+        outdir = args.outdir
 
-    mask_mrc = f"{landscape_dir}/mask.mrc"
-    pca_obj_pkl = f"{landscape_dir}/vol_pca_obj.pkl"
+    mask_mrc = os.path.join(landscape_dir, "mask.mrc")
+    pca_obj_pkl = os.path.join(landscape_dir, "vol_pca_obj.pkl")
     assert os.path.exists(
         mask_mrc
     ), f"{mask_mrc} missing. Did you run cryodrgn analyze_landscape?"
@@ -436,8 +441,8 @@ def main(args: argparse.Namespace) -> None:
     if not os.path.exists(outdir):
         os.mkdir(outdir)
 
-    embeddings_pkl = f"{outdir}/vol_pca_sampled.pkl"
-    z_sampled_pkl = f"{outdir}/z.sampled.pkl"
+    embeddings_pkl = os.path.join(outdir, "vol_pca_sampled.pkl")
+    z_sampled_pkl = os.path.join(outdir, "z.sampled.pkl")
     if args.skip_vol:
         assert os.path.exists(
             embeddings_pkl
@@ -455,13 +460,13 @@ def main(args: argparse.Namespace) -> None:
 
     # Train model
     embeddings_all = train_model(z, embeddings, outdir, zfile, args)
-    utils.save_pkl(embeddings_all, f"{outdir}/vol_pca_all.pkl")
+    utils.save_pkl(embeddings_all, os.path.join(outdir, "vol_pca_all.pkl"))
 
     # Run UMAP
     logger.info("Running UMAP...")
     reducer = umap.UMAP(n_neighbors=args.num_neighbors)
     umap_emb = reducer.fit_transform(embeddings_all)
-    utils.save_pkl(umap_emb, f"{outdir}/umap_vol_pca.pkl")
+    utils.save_pkl(umap_emb, os.path.join(outdir, "umap_vol_pca.pkl"))
 
     logger.info("Running clustering...")
     g = utils.get_igraph_from_adjacency(reducer.graph_)
@@ -473,7 +478,7 @@ def main(args: argparse.Namespace) -> None:
         objective_function="modularity",
     )
 
-    clustering_dir = f"{outdir}/full_clustering"
+    clustering_dir = os.path.join(outdir, "full_clustering")
     # Save clustering results
     logger.info(f"Saving results to {clustering_dir}")
     if not os.path.exists(f"{clustering_dir}"):
@@ -492,7 +497,7 @@ def main(args: argparse.Namespace) -> None:
         g.ax_joint.set_xlabel("UMAP1")
         g.ax_joint.set_ylabel("UMAP2")
         plt.tight_layout()
-        plt.savefig(f"{outdir}/umap_vol_pca_hexbin.png")
+        plt.savefig(os.path.join(outdir, "umap_vol_pca_hexbin.png"))
         plt.close()
     except ZeroDivisionError:
         logger.warning("Data too small to generate UMAP hexbins!")
@@ -564,6 +569,10 @@ def main(args: argparse.Namespace) -> None:
         cell["source"] = cell["source"].replace("M = None", f"M = {M}")
         cell["source"] = cell["source"].replace(
             "linkage = None", f'linkage = "{link_method}"'
+        )
+        cell["source"] = cell["source"].replace(
+            "landscape_dir = f'{WORKDIR}/landscape.{EPOCH}'",
+            f"landscape_dir = '{landscape_dir}'",
         )
 
     with open(out_ipynb, "w") as f:

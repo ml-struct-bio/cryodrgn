@@ -50,7 +50,14 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         help="Epoch number N to analyze "
         "(1-based indexing, corresponding to z.N.pkl, weights.N.pkl)",
     )
+
     parser.add_argument("--device", type=int, help="Optionally specify CUDA device")
+    parser.add_argument(
+        "--multigpu",
+        action="store_true",
+        help="Use multiple GPUs for volume generation if available",
+    )
+
     parser.add_argument(
         "-o",
         "--outdir",
@@ -122,11 +129,6 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         metavar="MRC",
         type=os.path.abspath,
         help="Path to a custom mask. Must be same box size as generated volumes.",
-    )
-    parser.add_argument(
-        "--multigpu",
-        action="store_true",
-        help="Use multiple GPUs for volume generation if available",
     )
 
     group = parser.add_argument_group("Extra arguments for clustering")

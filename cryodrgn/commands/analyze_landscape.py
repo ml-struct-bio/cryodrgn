@@ -458,7 +458,7 @@ def analyze_volumes(
     g = hack_barplot([state_counts[state_i] for state_i in range(M)])  # type: ignore  (bug in Counter type-checking?)
     for state_i in range(M):
         count = state_counts[state_i]
-        g.text(state_i + 1, count * 1.02, count, ha="center", va="bottom")  # type: ignore  (bug in Counter type-checking?)
+        g.text(state_i, count * 1.02, count, ha="center", va="bottom")  # type: ignore  (bug in Counter type-checking?)
     plt.xlabel("State")
     plt.ylabel("Count")
     plt.savefig(os.path.join(subdir, "state_volume_counts.png"))
@@ -476,7 +476,7 @@ def analyze_volumes(
     g = hack_barplot(particle_counts)
     for state_i in range(M):
         count = particle_counts[state_i]
-        g.text(state_i + 1, count * 1.02, count, ha="center", va="bottom")
+        g.text(state_i, count * 1.02, count, ha="center", va="bottom")
     plt.xlabel("State")
     plt.ylabel("Count")
     plt.savefig(os.path.join(subdir, "state_particle_counts.png"))

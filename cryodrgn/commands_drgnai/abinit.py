@@ -1366,14 +1366,12 @@ def main(args: argparse.Namespace) -> None:
     # Support --load latest (resolve from outdir or outdir/out)
     if cfg["load"] is not None:
         if cfg["load"].strip().lower() == "latest":
-            weights_pkl, pose_pkl = utils.get_latest_checkpoint(cfg["outdir"])
+            weights_pkl, _ = utils.get_latest_checkpoint(args.outdir)
             cfg["load"] = weights_pkl
-            # Optionally expose pose file to initialize pose table later
-            cfg["load_poses"] = pose_pkl if os.path.exists(pose_pkl) else None
         elif not os.path.exists(cfg["load"]):
             raise ValueError(
                 f"Invalid load argument which must be a path to "
-                f"a .pkl file or `latest`: {args.load}"
+                f"a .pkl file or `latest`: {cfg['load']}"
             )
 
     trainer = ModelTrainer(args.outdir, cfg)

@@ -75,8 +75,8 @@ def add_args(parser: argparse.ArgumentParser) -> None:
 
     # Batch sizes
     parser.add_argument("--batch-size-hps", type=int, default=8)
+    parser.add_argument("--batch-size-known-poses", type=int, default=16)
     parser.add_argument("--batch-size-sgd", type=int, default=32)
-    parser.add_argument("--batch-size-known-poses", type=int, default=128)
 
     # Optimizers
     parser.add_argument("--lr", type=float, default=1e-4)
@@ -98,8 +98,10 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     )
 
     # Scheduling
-    parser.add_argument("--n-imgs-pose-search", type=int, default=500000)
-    parser.add_argument("--epochs-sgd", type=int, default=100)
+    parser.add_argument("--num-epochs", "-n", type=int, default=30)
+    parser.add_argument("--epochs-pose-search", type=int, default=None)
+    parser.add_argument("--n-imgs-pose-search", type=int, default=None)
+    parser.add_argument("--epochs-sgd", type=int, default=None)
     parser.add_argument("--pose-only-phase", type=int, default=0)
 
     # Masking
@@ -377,9 +379,23 @@ class ModelTrainer:
             raise NotImplementedError
 
         # Set up the pose search parameters
-        self.epochs_pose_search = max(
-            2, self.configs.n_imgs_pose_search // self.n_particles_dataset + 1
-        )
+        if self.configs.n_imgs_pose_search is not None:
+            self.epochs_pose_search = max(
+                2, self.configs.n_imgs_pose_search // self.n_particles_dataset + 1
+            )
+        elif self.configs.epochs_pose_search is not None:
+            self.epochs_pose_search = self.configs.epochs_pose_search
+        elif self.configs.epochs_sgd is not None:
+            self.epochs_pose_search = self.configs.num_epochs - self.configs.epochs_sgd
+        else:
+            self.epochs_pose_search = 2
+
+        if self.configs.epochs_sgd is None:
+            self.configs.epochs_sgd = self.configs.num_epochs - self.epochs_pose_search
+            self.num_epochs = self.configs.num_epochs
+        else:
+            self.num_epochs = self.epochs_pose_search + self.configs.epochs_sgd
+
         ps_params = {
             "l_min": self.configs.l_start,
             "l_max": self.configs.l_end,
@@ -600,12 +616,6 @@ class ModelTrainer:
         self.use_l2_smoothness_regularizer = (
             self.configs.l2_smoothness_regularizer >= epsilon
         )
-
-        if self.configs.load:
-            self.num_epochs = self.start_epoch + self.configs.epochs_sgd
-            self.num_epochs += max(self.epochs_pose_search - self.start_epoch, 0)
-        else:
-            self.num_epochs = self.epochs_pose_search + self.configs.epochs_sgd
 
         self.n_particles_pretrain = (
             self.configs.n_imgs_pretrain
@@ -1308,7 +1318,9 @@ def main(args: argparse.Namespace) -> None:
         lr_conf_encoder=args.lr_conf_encoder,
         wd=args.wd,
         n_imgs_pose_search=args.n_imgs_pose_search,
+        num_epochs=args.num_epochs,
         epochs_sgd=args.epochs_sgd,
+        epochs_pose_search=args.epochs_pose_search,
         pose_only_phase=args.pose_only_phase,
         output_mask=args.output_mask,
         add_one_frequency_every=args.add_one_frequency_every,

@@ -1371,7 +1371,7 @@ def main(args: argparse.Namespace) -> None:
         anlz_cfgs = {
             "workdir": args.outdir,
             "epoch": trainer.epoch,
-            "invert": cfg["invert_data"],
+            "invert": False,
             "device": trainer.device,
             "skip_vol": False,
             "skip_umap": False,

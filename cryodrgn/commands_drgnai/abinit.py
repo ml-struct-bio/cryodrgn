@@ -34,15 +34,22 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "--outdir",
         type=os.path.abspath,
         required=True,
-        help="Working directory containing out/ for outputs",
+        help="Output directory to save model",
     )
 
     # Basic training controls
     parser.add_argument(
         "--load", type=str, help="Load a previous checkpoint weights.pkl"
     )
-    parser.add_argument("--seed", type=int, default=np.random.randint(0, 100000))
-    parser.add_argument("-v", "--verbose", action="store_true")
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=np.random.randint(0, 100000),
+        help="Fix the random seed used by numpy and PyTorch operations",
+    )
+    parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Increase verbosity"
+    )
 
     # Dataset loading
     parser.add_argument("--ctf", type=os.path.abspath, help="CTF parameters (.pkl)")
@@ -56,16 +63,43 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--max-threads", type=int, default=16)
 
     # Logging
-    parser.add_argument("--log-interval", type=int, default=10000)
-    parser.add_argument("--log-heavy-interval", type=int, default=5)
-    parser.add_argument("--verbose-time", action="store_true")
+    parser.add_argument(
+        "--log-interval",
+        type=int,
+        default=10000,
+        help="Logging interval in N_IMGS (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--log-heavy-interval",
+        type=int,
+        default=5,
+        help="Logging interval in N_EPOCHS (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--verbose-time",
+        action="store_true",
+        help="Print time taken for each training step",
+    )
 
     # Data loading and parallelism
     parser.add_argument("--no-shuffle", dest="shuffle", action="store_false")
-    parser.add_argument("--num-workers", type=int, default=2)
-    parser.add_argument("--fast-dataloading", action="store_true")
-    parser.add_argument("--shuffler-size", type=int, default=32768)
-    parser.add_argument("--multigpu", action="store_true")
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=2,
+        help="Number of subprocesses to use for data loading (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--shuffler-size",
+        type=int,
+        default=32768,
+        help="If non-zero, will use a data shuffler for faster lazy data loading.",
+    )
+    parser.add_argument(
+        "--multigpu",
+        action="store_true",
+        help="Parallelize training across all detected GPUs",
+    )
     parser.add_argument(
         "--no-amp",
         action="store_false",
@@ -74,16 +108,56 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     )
 
     # Batch sizes
-    parser.add_argument("--batch-size-hps", type=int, default=8)
-    parser.add_argument("--batch-size-known-poses", type=int, default=16)
-    parser.add_argument("--batch-size-sgd", type=int, default=32)
+    parser.add_argument(
+        "--batch-size-hps",
+        type=int,
+        default=8,
+        help="Training batch size used for hierarchical pose search (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--batch-size-known-poses",
+        type=int,
+        default=16,
+        help="Training batch size used for pose refinement (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--batch-size-sgd",
+        type=int,
+        default=32,
+        help="Training batch size used for stochastic gradient descent (default: %(default)s)",
+    )
 
     # Optimizers
-    parser.add_argument("--lr", type=float, default=1e-4)
-    parser.add_argument("--lr-pose-table", type=float, default=1e-3)
-    parser.add_argument("--lr-conf-table", type=float, default=1e-2)
-    parser.add_argument("--lr-conf-encoder", type=float, default=1e-4)
-    parser.add_argument("--wd", type=float, default=0.0)
+    parser.add_argument(
+        "--lr",
+        type=float,
+        default=1e-4,
+        help="Learning rate for the optimizer (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--lr-pose-table",
+        type=float,
+        default=1e-3,
+        help="Learning rate for the pose table optimizer (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--lr-conf-table",
+        type=float,
+        default=1e-2,
+        help="Learning rate for the conf table optimizer (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--lr-conf-encoder",
+        type=float,
+        default=1e-4,
+        help="Learning rate for the conf encoder optimizer (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--wd",
+        type=float,
+        default=0.0,
+        help="Weight decay for the optimizer (default: %(default)s)",
+    )
     parser.add_argument(
         "--hypervolume-optimizer-type", choices=("adam",), default="adam"
     )
@@ -386,7 +460,9 @@ class ModelTrainer:
         elif self.configs.epochs_pose_search is not None:
             self.epochs_pose_search = self.configs.epochs_pose_search
         elif self.configs.epochs_sgd is not None:
-            self.epochs_pose_search = self.configs.num_epochs - self.configs.epochs_sgd
+            self.epochs_pose_search = max(
+                2, self.configs.num_epochs - self.configs.epochs_sgd
+            )
         else:
             self.epochs_pose_search = 2
 

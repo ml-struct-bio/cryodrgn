@@ -275,16 +275,18 @@ class TestFixedHetero:
             assert not os.path.exists(os.path.join(sel_dir, "indices_inverse.pkl"))
 
     @pytest.mark.parametrize(
-        "ctf, downsample_dim, flip_vol, sketch_size, num_clusters",
+        "ctf, downsample_dim, flip_vol, sketch_size, num_clusters, vol_start_index",
         [
-            (None, "16", False, 10, 3),
-            ("CTF-Test", "16", True, 5, 5),
+            (None, "16", False, 10, 3, None),
+            ("CTF-Test", "16", True, 5, 5, 1),
+            ("CTF-Test", "16", False, 5, 3, 0),
             pytest.param(
                 "CTF-Test",
                 None,
                 False,
                 5,
                 5,
+                None,
                 marks=pytest.mark.xfail(
                     raises=ValueError, reason="box size > resolution"
                 ),
@@ -292,9 +294,10 @@ class TestFixedHetero:
         ],
         indirect=["ctf"],
         ids=[
-            "no.CTF,downsample.16,flip.False,sketch.10,clusters.3",
-            "with.CTF,downsample.16,flip.True,sketch.5,clusters.5",
-            "with.CTF,downsample.None,flip.False,sketch.5,clusters.5",
+            "no.CTF,downsample.16,sketch.10,clusters.3",
+            "with.CTF,downsample.16,flipvol,sketch.5,clusters.5",
+            "with.CTF,downsample.32,flipvol,sketch.5,clusters.5,0-indexed",
+            "with.CTF,downsample.None,sketch.5,clusters.5",
         ],
     )
     def test_landscape(
@@ -309,9 +312,15 @@ class TestFixedHetero:
         flip_vol,
         sketch_size,
         num_clusters,
+        vol_start_index,
     ):
         outdir = self.get_outdir(
-            tmpdir_factory, train_cmd, particles, indices, poses, ctf
+            tmpdir_factory,
+            train_cmd,
+            particles,
+            indices,
+            poses,
+            ctf,
         )
         args = [
             outdir,
@@ -327,10 +336,23 @@ class TestFixedHetero:
             args += ["--downsample", downsample_dim]
         if flip_vol:
             args += ["--flip"]
+        if vol_start_index is not None:
+            args += ["--vol-start-index", str(vol_start_index)]
 
         parser = argparse.ArgumentParser()
         analyze_landscape.add_args(parser)
         analyze_landscape.main(parser.parse_args(args))
+
+        lndscp_dir = os.path.join(outdir, "landscape.4")
+        assert os.path.exists(lndscp_dir)
+        assert os.path.exists(os.path.join(lndscp_dir, "umap.pkl"))
+        assert os.path.exists(os.path.join(lndscp_dir, "vol_pca_obj.pkl"))
+
+        kmeans_dir = os.path.join(lndscp_dir, f"kmeans{sketch_size}")
+        assert os.path.exists(kmeans_dir)
+        vi = vol_start_index if vol_start_index is not None else 1
+        for i in range(vi, vi + num_clusters):
+            assert os.path.exists(os.path.join(kmeans_dir, f"vol_{i:03d}.mrc"))
 
     @pytest.mark.parametrize(
         "ctf, downsample_dim, flip_vol",

@@ -16,7 +16,6 @@ import shutil
 from datetime import datetime as dt
 import logging
 import nbformat
-import joblib
 
 import numpy as np
 import torch
@@ -53,11 +52,6 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     )
 
     parser.add_argument("--device", type=int, help="Optionally specify CUDA device")
-    parser.add_argument(
-        "--multigpu",
-        action="store_true",
-        help="Use multiple GPUs for volume generation if available",
-    )
 
     parser.add_argument(
         "--landscape-dir",
@@ -273,7 +267,6 @@ def generate_and_map_volumes(zfile, cfg, weights, mask_mrc, pca_obj_pkl, outdir,
     logger.info(f"Generating {len(z)} volume embeddings")
     t1 = dt.now()
     embeddings = list()
-    ngpus = 0 if not torch.cuda.is_available() else torch.cuda.device_count()
 
     def generate_embeddings(i_list, z_list):
         embedding_list = list()
@@ -304,17 +297,7 @@ def generate_and_map_volumes(zfile, cfg, weights, mask_mrc, pca_obj_pkl, outdir,
 
         return np.concatenate(embedding_list, axis=0)
 
-    if args.multigpu and ngpus > 1:
-        embeddings: list[np.ndarray] = joblib.Parallel(n_jobs=ngpus, verbose=0)(
-            joblib.delayed(generate_embeddings)(i_list, z_list)
-            for i_list, z_list in zip(
-                np.array_split(np.arange(len(z)), ngpus), np.array_split(z, ngpus)
-            )
-        )
-        embeddings = np.concatenate(embeddings, axis=0)
-    else:
-        embeddings = generate_embeddings(list(range(len(z))), z)
-
+    embeddings = generate_embeddings(list(range(len(z))), z)
     embeddings = np.array(embeddings).reshape(len(z), -1).astype(np.float32)
     td = dt.now() - t1
     logger.info(f"Finished generating {args.training_volumes} volumes in {td}")

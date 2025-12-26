@@ -38,11 +38,18 @@ jobs:
         run: |
           python3 -m pip install --upgrade pip
           python3 -m pip install pytest-xdist
-          python3 -m pip install .
+          python3 -m pip install .[dev]
           python3 -m pip uninstall -y torch
           python3 -m pip cache purge
           python3 -m pip install torch==${{ matrix.torch }}
 
-      - name: Pytest
+      - name: Run tests with coverage
         run: |
-          pytest -v -n2 --dist=loadscope --show-capture=stderr
+          pytest -v -n2 --dist=loadscope --show-capture=stderr --cov=cryodrgn --cov-report=xml --cov-report=term
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        if: matrix.python == '3.11' && matrix.os == 'ubuntu-latest'
+        with:
+          file: ./coverage.xml
+          fail_ci_if_error: false

@@ -307,9 +307,9 @@ def main(args: argparse.Namespace) -> None:
         )
 
         # Particle orientation
-        rot_particle = row["rlnAngleRot"]
-        tilt_particle = row["rlnAngleTilt"]
-        psi_particle = row["rlnAnglePsi"]
+        rot_particle = row.get("rlnAngleRot", 0.0)
+        tilt_particle = row.get("rlnAngleTilt", 0.0)
+        psi_particle = row.get("rlnAnglePsi", 0.0)
         R_particle = R.from_euler(
             "ZYZ", [rot_particle, tilt_particle, psi_particle], degrees=True
         )

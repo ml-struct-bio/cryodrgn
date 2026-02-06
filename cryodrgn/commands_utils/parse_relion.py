@@ -94,8 +94,13 @@ class Tomogram:
             r1 = self._rotation_matrix([0, 1, 0], self.y_tilts[i])
             r2 = self._rotation_matrix([0, 0, 1], self.z_rots[i])
 
-            shift_in_angst = np.array([self.x_shifts[i], self.y_shifts[i], 0.0])
-            s1 = self._translation_matrix(shift_in_angst)
+            shift_in_pix = np.array([
+                self.x_shifts[i] / self.pixel_size,
+                self.y_shifts[i] / self.pixel_size,
+                0.0
+            ])
+            s1 = self._translation_matrix(shift_in_pix)
+
 
             tilt_img_center = np.array(
                 [self.tilt_image_dims[0] / 2.0, self.tilt_image_dims[1] / 2.0, 0.0]
@@ -126,7 +131,8 @@ class Tomogram:
         Apply the 4x4 transformation for tilt i_tilt to project a 3D coordinate
         (in tomogram voxels) to 2D tilt coords.
         """
-        pt_homog = np.append(point_3d, 1.0)
+        pt_pix = point_3d / self.pixel_size
+        pt_homog = np.append(pt_pix, 1.0)
         M = self.projection_matrices[i_tilt]
         return (M @ pt_homog)[:2]
 
@@ -265,11 +271,18 @@ def main(args: argparse.Namespace) -> None:
         else:
             ts_df = tilt_series_cache[tomo_name]
 
-        frames_list = row["rlnTomoVisibleFrames"]
-        visible_indices = [
-            i for i, val in enumerate(literal_eval(frames_list), start=1) if val == 1
-        ]
-        sub_ts_df = ts_df.iloc[[i - 1 for i in visible_indices]].copy()
+        if "rlnTomoVisibleFrames" in particles_df.columns:
+            frames_list = row["rlnTomoVisibleFrames"]
+
+            if isinstance(frames_list, str):
+                vis = literal_eval(frames_list)
+            else:
+                vis = list(frames_list)
+
+            visible_indices = [i for i, val in enumerate(vis) if int(val) == 1]  # 0-based
+            sub_ts_df = ts_df.iloc[visible_indices].copy()
+        else:
+            sub_ts_df = ts_df.copy()
 
         handedness = tomo_row.get("rlnTomoHand", 1)
         set_hand = -1 if handedness == -1 else 1
@@ -301,9 +314,9 @@ def main(args: argparse.Namespace) -> None:
         )
 
         # Particle orientation
-        rot_particle = row["rlnAngleRot"]
-        tilt_particle = row["rlnAngleTilt"]
-        psi_particle = row["rlnAnglePsi"]
+        rot_particle = row.get("rlnAngleRot", 0.0)
+        tilt_particle = row.get("rlnAngleTilt", 0.0)
+        psi_particle = row.get("rlnAnglePsi", 0.0)
         R_particle = R.from_euler(
             "ZYZ", [rot_particle, tilt_particle, psi_particle], degrees=True
         )
@@ -321,7 +334,13 @@ def main(args: argparse.Namespace) -> None:
         x_ang = row["rlnCenteredCoordinateXAngst"]
         y_ang = row["rlnCenteredCoordinateYAngst"]
         z_ang = row["rlnCenteredCoordinateZAngst"]
-        point_3d_rotated = np.array([x_ang, y_ang, z_ang])
+
+        ox = row["rlnOriginXAngst"] if "rlnOriginXAngst" in particles_df.columns else 0.0
+        oy = row["rlnOriginYAngst"] if "rlnOriginYAngst" in particles_df.columns else 0.0
+        oz = row["rlnOriginZAngst"] if "rlnOriginZAngst" in particles_df.columns else 0.0
+
+        point_3d_ang = np.array([x_ang - ox, y_ang - oy, z_ang - oz], dtype=float)
+        point_3d_rotated = point_3d_ang
 
         # Expand into 2D rows
         df_2d = tomogram.expand_particle_to_2drows(
@@ -334,7 +353,7 @@ def main(args: argparse.Namespace) -> None:
 
         # Add extra columns
         df_2d["rlnOriginalParticle"] = idx + 1
-        df_2d["rlnRandomSubset"] = row["rlnRandomSubset"]
+        df_2d["rlnRandomSubset"] = row.get("rlnRandomSubset", 0)
         df_2d["rlnDetectorPixelSize"] = angpix
         df_2d["rlnVoltage"] = voltage
         df_2d["rlnSphericalAberration"] = cs

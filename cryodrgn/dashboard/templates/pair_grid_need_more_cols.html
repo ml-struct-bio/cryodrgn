@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Pair grid · cryoDRGN{% endblock %}
+{% block content %}
+<p><a href="/">← Back</a></p>
+<h1>Pair grid</h1>
+{% if kind == "zdim" %}
+<p class="lead">This view needs at least two latent dimensions (<code>z0</code>, <code>z1</code>, …). This run has <strong>z_dim = {{ n }}</strong>.</p>
+{% elif kind == "pca" %}
+<p class="lead">PCA components <code>PC1</code> / <code>PC2</code> are missing from the analysis table — re-run <code>cryodrgn analyze</code> for this epoch.</p>
+{% else %}
+<p class="lead">No numeric columns are available to colour the lower triangle.</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Scatter explorer · cryoDRGN{% endblock %}
+{% block content %}
+<p><a href="/">← Back</a></p>
+<h1>Scatter + particle preview</h1>
+<p class="lead">Hover over points to load thumbnails (montage) for the hovered particles. Row indices map to your filtered stack.</p>
+
+<div style="margin:1rem 0;">
+  <label for="sx">X axis</label>
+  <select id="sx"></select>
+  <label for="sy">Y axis</label>
+  <select id="sy"></select>
+  <label for="sc">Colour (optional)</label>
+  <select id="sc"><option value="none">None</option></select>
+  <p style="margin-top:0.75rem;">
+    <button type="button" class="btn" id="redraw">Redraw</button>
+  </p>
+</div>
+
+<div class="layout-split">
+  <div id="scatter"></div>
+  <div class="preview-panel">
+    <strong style="font-size:0.9rem;">Particle montage</strong>
+    <img id="preview" alt="hover for preview" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"/>
+    <p id="hover-meta" class="status"></p>
+  </div>
+</div>
+
+<script>
+(function() {
+  var cols = {{ numeric_cols | tojson }};
+  var dx = {{ default_x | tojson }};
+  var dy = {{ default_y | tojson }};
+
+  function fillSelect(sel, includeNone) {
+    sel.innerHTML = "";
+    if (includeNone) {
+      var o = document.createElement("option");
+      o.value = "none";
+      o.textContent = "None";
+      sel.appendChild(o);
+    }
+    cols.forEach(function(c) {
+      var o = document.createElement("option");
+      o.value = c;
+      o.textContent = c;
+      sel.appendChild(o);
+    });
+  }
+
+  var sx = document.getElementById("sx");
+  var sy = document.getElementById("sy");
+  var sc = document.getElementById("sc");
+  fillSelect(sx, false);
+  fillSelect(sy, false);
+  fillSelect(sc, true);
+  sx.value = cols.indexOf(dx) >= 0 ? dx : cols[0];
+  sy.value = cols.indexOf(dy) >= 0 ? dy : cols[Math.min(1, cols.length - 1)];
+
+  var gd = document.getElementById("scatter");
+  var preview = document.getElementById("preview");
+  var hoverMeta = document.getElementById("hover-meta");
+
+  function loadPlot() {
+    var x = sx.value;
+    var y = sy.value;
+    var c = sc.value;
+    var q = "x=" + encodeURIComponent(x) + "&y=" + encodeURIComponent(y) + "&color=" + encodeURIComponent(c);
+    fetch("{{ url_for('api_scatter') }}?" + q)
+      .then(function(r) {
+        return r.text().then(function(text) {
+          var j;
+          try { j = JSON.parse(text); }
+          catch (e) { throw new Error("Scatter API did not return JSON"); }
+          if (!r.ok) throw new Error(j.error || r.statusText);
+          return j;
+        });
+      })
+      .then(function(fig) {
+        Plotly.react(gd, fig.data, fig.layout, {responsive: true});
+      })
+      .catch(function(e) { console.error(e); });
+  }
+
+  gd.on("plotly_hover", function(ev) {
+    if (!ev.points || !ev.points.length) return;
+    var rows = [];
+    ev.points.forEach(function(p) {
+      if (p.customdata && p.customdata.length > 1) rows.push(p.customdata[1]);
+    });
+    if (!rows.length) return;
+    var q = "rows=" + rows.slice(0, 12).join(",");
+    preview.src = "{{ url_for('api_preview_montage') }}?" + q + "&t=" + Date.now();
+    hoverMeta.textContent = "Rows: " + rows.slice(0, 8).join(", ") + (rows.length > 8 ? "…" : "");
+  });
+
+  gd.on("plotly_unhover", function() {
+    hoverMeta.textContent = "";
+  });
+
+  document.getElementById("redraw").addEventListener("click", loadPlot);
+  loadPlot();
+})();
+</script>
+{% endblock %}

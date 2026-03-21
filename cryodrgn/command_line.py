@@ -88,6 +88,7 @@ def main_commands() -> None:
             "analyze_landscape",
             "analyze_landscape_full",
             "backproject_voxel",
+            "dashboard",
             "direct_traversal",
             "downsample",
             "eval_images",

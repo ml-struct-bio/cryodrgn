@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}cryoDRGN dashboard{% endblock %}
+{% block content %}
+<h1>Analysis dashboard</h1>
+<p class="lead">
+  Pick a workflow below. This hub mirrors the spirit of the
+  <a href="https://ezlab.princeton.edu/" target="_blank" rel="noopener">E.Z. Lab</a>
+  site — clean layout, strong type, and a focus on cryo-EM + ML tooling.
+</p>
+
+<div class="cards">
+  <div class="card">
+    <h3>Desktop filter</h3>
+    <p>The original lasso-based <code>cryodrgn filter</code> UI (matplotlib + Tk). We spawn it in a separate process so you keep this browser tab open.</p>
+    <a class="btn" href="{{ url_for('filter_page') }}">Open launcher</a>
+  </div>
+  <div class="card">
+    <h3>Scatter + particle preview</h3>
+    <p>Plotly scatter (same covariates as filtering). Hover points to see a montage of nearby particles on the right — similar to the viz notebook workflow.</p>
+    {% if can_images %}
+    <a class="btn" href="{{ url_for('explorer') }}">Open explorer</a>
+    {% else %}
+    <p class="muted">Not available for this experiment (tilt series).</p>
+    {% endif %}
+  </div>
+  <div class="card">
+    <h3>Pair grid</h3>
+    <p><code>z_dim×z_dim</code> latent axes, diagonal PC or UMAP, pastel blue upper triangle (scatter or hex), lower triangle coloured by one covariate you pick with radios.</p>
+    <a class="btn" href="{{ url_for('pairplot_page') }}">Open pair grid</a>
+  </div>
+</div>
+{% endblock %}

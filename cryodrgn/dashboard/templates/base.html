@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>{% block title %}cryoDRGN dashboard{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet"/>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+  <style>
+    :root {
+      --ink: #1a2332;
+      --muted: #5c6b7a;
+      --cream: #faf8f4;
+      --paper: #ffffff;
+      --nav-bg: #243b53;
+      --nav-border: #1e3247;
+      --accent: #c4703a;
+      --accent-hover: #a85a2e;
+      --link: #2c5282;
+      --card-shadow: 0 2px 12px rgba(36, 59, 83, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+      font-size: 1.05rem;
+      line-height: 1.55;
+      color: var(--ink);
+      background: var(--cream);
+    }
+    .nav {
+      background: var(--nav-bg);
+      color: #e8eef4;
+      border-bottom: 3px solid var(--accent);
+      padding: 0.75rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+    .nav a {
+      color: #e8eef4;
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .nav a:hover { color: #fff; text-decoration: underline; }
+    .nav-brand {
+      font-family: "Libre Baskerville", Georgia, serif;
+      font-size: 1.35rem;
+      letter-spacing: 0.02em;
+    }
+    .nav-meta {
+      font-size: 0.88rem;
+      opacity: 0.9;
+      max-width: 42rem;
+      text-align: right;
+    }
+    main {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem 3rem;
+    }
+    h1 {
+      font-family: "Libre Baskerville", Georgia, serif;
+      font-weight: 700;
+      font-size: 2rem;
+      margin: 0 0 0.75rem;
+      color: var(--nav-bg);
+    }
+    h2 {
+      font-family: "Libre Baskerville", Georgia, serif;
+      font-size: 1.35rem;
+      margin: 1.75rem 0 0.75rem;
+      color: var(--nav-bg);
+    }
+    p.lead {
+      color: var(--muted);
+      font-size: 1.1rem;
+      max-width: 52rem;
+    }
+    a { color: var(--link); }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.25rem;
+      margin-top: 2rem;
+    }
+    .card {
+      background: var(--paper);
+      border-radius: 4px;
+      padding: 1.35rem 1.5rem;
+      box-shadow: var(--card-shadow);
+      border: 1px solid rgba(36, 59, 83, 0.12);
+    }
+    .card h3 {
+      font-family: "Libre Baskerville", Georgia, serif;
+      margin: 0 0 0.5rem;
+      font-size: 1.2rem;
+      color: var(--nav-bg);
+    }
+    .card p { margin: 0 0 1rem; color: var(--muted); font-size: 0.98rem; }
+    .btn {
+      display: inline-block;
+      background: var(--accent);
+      color: #fff !important;
+      padding: 0.5rem 1.1rem;
+      border-radius: 3px;
+      text-decoration: none !important;
+      font-weight: 600;
+      font-size: 0.95rem;
+      border: none;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .btn:hover { background: var(--accent-hover); }
+    .btn-secondary {
+      background: var(--nav-bg);
+    }
+    .btn-secondary:hover { background: var(--nav-border); }
+    label { display: block; font-weight: 600; margin: 0.75rem 0 0.25rem; font-size: 0.92rem; }
+    input[type="text"], select, textarea {
+      width: 100%;
+      max-width: 32rem;
+      padding: 0.45rem 0.6rem;
+      border: 1px solid #c5cdd6;
+      border-radius: 3px;
+      font-family: inherit;
+      font-size: 0.95rem;
+    }
+    textarea { min-height: 4rem; }
+    .muted { color: var(--muted); font-size: 0.92rem; }
+    .layout-split {
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      gap: 1rem;
+      align-items: start;
+    }
+    @media (max-width: 900px) {
+      .layout-split { grid-template-columns: 1fr; }
+    }
+    #scatter { min-height: 520px; }
+    .preview-panel {
+      position: sticky;
+      top: 1rem;
+      background: var(--paper);
+      padding: 1rem;
+      border-radius: 4px;
+      box-shadow: var(--card-shadow);
+      border: 1px solid rgba(36, 59, 83, 0.12);
+    }
+    .preview-panel img { width: 100%; height: auto; display: block; border-radius: 2px; }
+    .status { margin-top: 0.5rem; font-size: 0.88rem; color: var(--muted); }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <header class="nav">
+    <a href="/" class="nav-brand">cryoDRGN · dashboard</a>
+    <div class="nav-meta">
+      {{ exp_workdir }} · epoch {{ exp_epoch }} · k-means {{ exp_kmeans }}
+    </div>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

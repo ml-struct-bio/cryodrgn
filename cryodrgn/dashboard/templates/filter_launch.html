@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Desktop filter · cryoDRGN{% endblock %}
+{% block content %}
+<p><a href="/">← Back</a></p>
+<h1>Launch desktop filter</h1>
+<p class="lead">Starts <code>cryodrgn filter</code> with this workdir and epoch. Use the matplotlib window to lasso particles and save indices.</p>
+
+<form id="launch-form" class="card" style="max-width:36rem;">
+  <label><input type="checkbox" name="force"/> Save to <code>indices.pkl</code> without prompting (<code>-f</code>)</label>
+  <label for="sel_dir">Save directory (optional, <code>--sel-dir</code>)</label>
+  <input type="text" id="sel_dir" name="sel_dir" placeholder="/path/to/folder"/>
+  <label for="plot_inds">Existing indices pickle (optional, <code>--plot-inds</code>)</label>
+  <input type="text" id="plot_inds" name="plot_inds" placeholder="/path/to/candidate.pkl" value="{{ filter_plot_inds_default }}"/>
+  <p style="margin-top:1rem;">
+    <button type="submit" class="btn">Launch filter window</button>
+  </p>
+  <p id="launch-status" class="status"></p>
+</form>
+
+<script>
+document.getElementById("launch-form").addEventListener("submit", function(ev) {
+  ev.preventDefault();
+  var fd = new FormData(ev.target);
+  var status = document.getElementById("launch-status");
+  status.textContent = "Starting…";
+  fetch("{{ url_for('api_launch_filter') }}", { method: "POST", body: fd })
+    .then(function(r) { return r.json(); })
+    .then(function(j) {
+      status.textContent = j.message || (j.ok ? "Started." : "Error.");
+    })
+    .catch(function() { status.textContent = "Request failed."; });
+});
+</script>
+{% endblock %}

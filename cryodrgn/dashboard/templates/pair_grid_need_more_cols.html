@@ -1,13 +1,21 @@
 {% extends "base.html" %}
-{% block title %}Pair grid · cryoDRGN{% endblock %}
+{% block title %}
+{% if kind == "z3" %}3D latent · cryoDRGN{% else %}Pair grid · cryoDRGN{% endif %}
+{% endblock %}
+{% block nav_page_title %}
+{% if kind == "z3" %}<span class="nav-page-title">Three-dimensional latent view</span>{% else %}<span class="nav-page-title">Pairwise latent view</span>{% endif %}
+{% endblock %}
 {% block content %}
-<p><a href="/">← Back</a></p>
-<h1>Pair grid</h1>
+<div class="cryo-dash-page">
+<div class="cryo-dash-top"><a href="/">← Back</a></div>
 {% if kind == "zdim" %}
-<p class="lead">This view needs at least two latent dimensions (<code>z0</code>, <code>z1</code>, …). This run has <strong>z_dim = {{ n }}</strong>.</p>
+<p class="lead">The pairwise grid needs at least two latent coordinates. This reconstruction has <strong>{{ n }}</strong>.</p>
+{% elif kind == "z3" %}
+<p class="lead">The 3D latent view needs at least three latent coordinates. This reconstruction has <strong>{{ n }}</strong>.</p>
 {% elif kind == "pca" %}
-<p class="lead">PCA components <code>PC1</code> / <code>PC2</code> are missing from the analysis table — re-run <code>cryodrgn analyze</code> for this epoch.</p>
+<p class="lead">The diagonal embedding needs PCA components in the analysis table for this epoch.</p>
 {% else %}
-<p class="lead">No numeric columns are available to colour the lower triangle.</p>
+<p class="lead">There is no numeric column available to colour the lower panels.</p>
 {% endif %}
+</div>
 {% endblock %}

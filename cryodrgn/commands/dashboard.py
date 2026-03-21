@@ -1,16 +1,14 @@
 """Launch a local web dashboard for cryoDRGN interactive analyses.
 
-The dashboard opens in your browser with three entry points:
-
-1. **Desktop filter** — spawns the classic ``cryodrgn filter`` Tk/matplotlib UI.
-2. **Scatter explorer** — Plotly scatter with particle thumbnails on hover (SPA only).
-3. **Pair grid** — Interactive latent-style grid (as on the ``new_plots`` branch) with
-   optional custom X/Y for all lower-triangle panels.
+The dashboard opens in your browser with views for particle selection (lasso in 2D),
+scatter plots with optional thumbnails, pairwise latent panels, and a 3D latent scatter.
 
 Example
 -------
 $ cryodrgn dashboard 00_trainvae
 $ cryodrgn dashboard 00_trainvae --epoch 30 --port 8080
+$ cryodrgn dashboard 00_trainvae --three-dimensional
+$ cryodrgn dashboard 00_trainvae --particle --filter-max 10000
 """
 from __future__ import annotations
 
@@ -35,7 +33,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "-e",
         type=int,
         default=-1,
-        help="train epoch to load (default: latest z.N.pkl)",
+        help="train epoch to load (default: latest epoch with analyze.N/ output)",
     )
     parser.add_argument(
         "--kmeans",
@@ -48,7 +46,19 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "--plot-inds",
         type=str,
         default=None,
-        help="optional path to indices.pkl (passed through to desktop filter only)",
+        help="optional path to indices.pkl to pre-highlight on the web selection page",
+    )
+    parser.add_argument(
+        "--filter-max-points",
+        "--filter-max",
+        type=int,
+        default=None,
+        metavar="N",
+        dest="filter_max_points",
+        help=(
+            "max particles drawn in the web filter scatter (default 500000; "
+            "clamped 50k–2M; same as env CRYODRGN_DASHBOARD_FILTER_MAX_POINTS)"
+        ),
     )
     parser.add_argument(
         "--host",
@@ -68,6 +78,30 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="do not open a browser tab automatically",
     )
+    view = parser.add_mutually_exclusive_group()
+    view.add_argument(
+        "--particle-selection",
+        "--particle",
+        "--filter",
+        action="store_true",
+        dest="particle_selection",
+        help="open the particle selection (lasso) view instead of the launch menu",
+    )
+    view.add_argument(
+        "--scatter",
+        action="store_true",
+        help="open the 2D scatter explorer instead of the launch menu",
+    )
+    view.add_argument(
+        "--pair-grid",
+        action="store_true",
+        help="open the pairwise latent grid instead of the launch menu",
+    )
+    view.add_argument(
+        "--three-dimensional",
+        action="store_true",
+        help="open the 3D latent scatter instead of the launch menu",
+    )
     parser.add_argument(
         "--debug",
         action="store_true",
@@ -76,22 +110,39 @@ def add_args(parser: argparse.ArgumentParser) -> None:
 
 
 def main(args: argparse.Namespace) -> None:
+    import os
+
+    if args.filter_max_points is not None:
+        os.environ["CRYODRGN_DASHBOARD_FILTER_MAX_POINTS"] = str(args.filter_max_points)
+
     outdir = args.outdir
+    _VIEW_PATHS = {
+        "particle_selection": "/filter",
+        "scatter": "/explorer",
+        "pair_grid": "/pairplot",
+        "three_dimensional": "/latent-3d",
+    }
+    initial_path = next(
+        (p for flag, p in _VIEW_PATHS.items() if getattr(args, flag, False)),
+        "/",
+    )
+
     if not args.no_browser:
 
         def _open() -> None:
-            webbrowser.open(f"http://{args.host}:{args.port}/")
+            webbrowser.open(f"http://{args.host}:{args.port}{initial_path}")
 
         Timer(1.0, _open).start()
 
     from cryodrgn.dashboard.app import run_server
 
     logger.info(
-        "Starting dashboard for %s (epoch=%s) at http://%s:%s/",
+        "Starting dashboard for %s (epoch=%s) at http://%s:%s%s",
         outdir,
         args.epoch,
         args.host,
         args.port,
+        initial_path,
     )
     run_server(
         workdir=outdir,

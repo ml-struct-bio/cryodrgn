@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -14,6 +14,21 @@ from scipy.spatial import transform
 
 from cryodrgn import analysis, utils
 from cryodrgn.dataset import ImageDataset, TiltSeriesData
+
+
+def list_z_epochs(workdir: str) -> list[int]:
+    """Return sorted epochs with both ``z.{{epoch}}.pkl`` and ``analyze.{{epoch}}/`` under ``workdir``."""
+    if not os.path.isdir(workdir):
+        return []
+    out: list[int] = []
+    for name in os.listdir(workdir):
+        m = re.fullmatch(r"z\.([0-9]+)\.pkl", name)
+        if not m:
+            continue
+        ep = int(m.group(1))
+        if os.path.isdir(os.path.join(workdir, f"analyze.{ep}")):
+            out.append(ep)
+    return sorted(out)
 
 
 @dataclass
@@ -30,7 +45,7 @@ class DashboardExperiment:
     datadir: str
     enc_mode: str
     kmeans_labels: np.ndarray
-    umap: Optional[np.ndarray]
+    umap: np.ndarray | None
     pc: np.ndarray
     z: np.ndarray
 
@@ -67,7 +82,13 @@ def load_experiment(
         train_configs = yaml.safe_load(f)
 
     if epoch == -1:
-        epoch = max(int(x.split(".")[1]) for x in conf_fls)
+        analyzed = list_z_epochs(workdir)
+        if not analyzed:
+            raise ValueError(
+                "No epochs with analysis outputs — run `cryodrgn analyze` for at least one epoch "
+                f"(need {workdir}/analyze.N/ next to z.N.pkl)."
+            )
+        epoch = max(analyzed)
 
     anlzdir = os.path.join(workdir, f"analyze.{epoch}")
     if not os.path.isdir(anlzdir):
@@ -78,31 +99,28 @@ def load_experiment(
 
     z = utils.load_pkl(os.path.join(workdir, f"z.{epoch}.pkl"))
 
-    if "poses" in train_configs["dataset_args"]:
-        pose_pkl = train_configs["dataset_args"]["poses"]
-    else:
-        pose_pkl = os.path.join(workdir, f"pose.{epoch}.pkl")
-
+    ds_args = train_configs["dataset_args"]
+    pose_pkl = ds_args.get("poses") or os.path.join(
+        workdir,
+        f"pose.{epoch}.pkl",
+    )
     rot, trans = utils.load_pkl(pose_pkl)
-    if train_configs["dataset_args"]["ctf"] is not None:
-        ctf_params = utils.load_pkl(train_configs["dataset_args"]["ctf"])
-    else:
-        ctf_params = None
 
-    if "encode_mode" in train_configs["model_args"]:
-        enc_mode = train_configs["model_args"]["encode_mode"]
-    else:
-        enc_mode = "autodec"
+    ctf_path = ds_args["ctf"]
+    ctf_params = utils.load_pkl(ctf_path) if ctf_path is not None else None
 
-    if isinstance(train_configs["dataset_args"]["ind"], int):
-        indices = slice(train_configs["dataset_args"]["ind"])
-    elif train_configs["dataset_args"]["ind"] is not None:
-        indices = utils.load_pkl(train_configs["dataset_args"]["ind"])
+    enc_mode = train_configs["model_args"].get("encode_mode", "autodec")
+
+    ind_raw = ds_args["ind"]
+    if isinstance(ind_raw, int):
+        indices = slice(ind_raw)
+    elif ind_raw is not None:
+        indices = utils.load_pkl(ind_raw)
     else:
         indices = None
 
-    imgs_fl = train_configs["dataset_args"]["particles"]
-    datadir = train_configs["dataset_args"].get("datadir") or ""
+    imgs_fl = ds_args["particles"]
+    datadir = ds_args.get("datadir") or ""
 
     if ctf_params is not None and enc_mode != "tilt":
         all_indices = np.array(range(ctf_params.shape[0]))
@@ -115,7 +133,7 @@ def load_experiment(
     if indices is not None:
         ctf_params = ctf_params[indices, :] if ctf_params is not None else None
         all_indices = all_indices[indices]
-        if "poses" in train_configs["dataset_args"]:
+        if "poses" in ds_args:
             rot = rot[indices, :, :]
             trans = trans[indices, :]
 

@@ -1,29 +1,55 @@
 {% extends "base.html" %}
-{% block title %}Scatter explorer · cryoDRGN{% endblock %}
+{% block title %}Scatter plots · cryoDRGN{% endblock %}
+{% block nav_page_title %}<span class="nav-page-title">Two-dimensional scatter</span>{% endblock %}
 {% block content %}
-<p><a href="/">← Back</a></p>
-<h1>Scatter + particle preview</h1>
-<p class="lead">Hover over points to load thumbnails (montage) for the hovered particles. Row indices map to your filtered stack.</p>
-
-<div style="margin:1rem 0;">
-  <label for="sx">X axis</label>
-  <select id="sx"></select>
-  <label for="sy">Y axis</label>
-  <select id="sy"></select>
-  <label for="sc">Colour (optional)</label>
-  <select id="sc"><option value="none">None</option></select>
-  <p style="margin-top:0.75rem;">
-    <button type="button" class="btn" id="redraw">Redraw</button>
-  </p>
+<div class="cryo-dash-page">
+<div class="cryo-dash-top">
+  <a href="/">← Back</a>
 </div>
+<p class="cryo-dash-lead">Choose horizontal and vertical quantities from the analysis table. Hover a point to see a small montage of nearby particles when image data exists.</p>
 
-<div class="layout-split">
-  <div id="scatter"></div>
-  <div class="preview-panel">
-    <strong style="font-size:0.9rem;">Particle montage</strong>
-    <img id="preview" alt="hover for preview" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"/>
-    <p id="hover-meta" class="status"></p>
+<div class="cryo-dash-row">
+  <div class="cryo-dash-side">
+    <div class="card cryo-dash-controls">
+      <fieldset>
+        <legend>Axes</legend>
+        <label class="cryo-select-line" for="sx">Horizontal (X)</label>
+        <select id="sx"></select>
+        <label class="cryo-select-line" for="sy">Vertical (Y)</label>
+        <select id="sy"></select>
+      </fieldset>
+      <fieldset>
+        <legend>Colour scale</legend>
+        <p class="cryo-dash-legend-note" style="margin:0 0 0.35rem;">Optional third variable shown as point colour.</p>
+        <label class="cryo-select-line" for="sc">Colour by</label>
+        <select id="sc"><option value="none">None</option></select>
+      </fieldset>
+      <fieldset>
+        <legend>Actions</legend>
+        <p class="btn-row" style="margin:0;">
+          <button type="button" class="btn" id="redraw">Redraw</button>
+        </p>
+      </fieldset>
+    </div>
   </div>
+  <div class="cryo-dash-main">
+    <div class="cryo-dash-main-split">
+      <div class="cryo-dash-viewport--plotly">
+        <p id="scatter-plot-status" class="cryo-dash-legend-note" style="margin:0 0 0.35rem;color:var(--accent,#c4703a);min-height:1.2em;"></p>
+        <div class="cryo-plotly-stack">
+          <div id="scatter" class="cryo-plotly-graph-host"></div>
+          <div id="scatter-rendering-overlay" class="cryo-plot-rendering-overlay cryo-plot-rendering-overlay--show" aria-hidden="false">Rendering…</div>
+        </div>
+      </div>
+      <aside class="cryo-dash-figure-legend" aria-label="Particle preview legend">
+        <strong>Particle montage</strong>
+        <p class="cryo-dash-legend-note">Hover any point in the plot. A small grid of nearby particles appears here (dataset row indices in the caption).</p>
+        <img id="preview" alt="Hover a point for preview" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" style="width:100%;height:auto;display:block;border-radius:2px;margin-top:0.5rem;"/>
+        <p id="hover-meta" class="status" style="margin-top:0.45rem;"></p>
+      </aside>
+    </div>
+  </div>
+</div>
 </div>
 
 <script>
@@ -58,45 +84,134 @@
   sy.value = cols.indexOf(dy) >= 0 ? dy : cols[Math.min(1, cols.length - 1)];
 
   var gd = document.getElementById("scatter");
+  var overlay = document.getElementById("scatter-rendering-overlay");
+  var plotStatus = document.getElementById("scatter-plot-status");
   var preview = document.getElementById("preview");
   var hoverMeta = document.getElementById("hover-meta");
+  var scatterPlotWatchdog = null;
+  var SCATTER_PLOT_TIMEOUT_MS = 90000;
+  var scatterLoadGeneration = 0;
+  var pendingScatterAfterPlot = null;
+
+  function cancelPendingScatterAfterPlot() {
+    if (pendingScatterAfterPlot) {
+      gd.removeListener("plotly_afterplot", pendingScatterAfterPlot);
+      pendingScatterAfterPlot = null;
+    }
+  }
+
+  function clearScatterPlotWatchdog() {
+    if (scatterPlotWatchdog) {
+      clearTimeout(scatterPlotWatchdog);
+      scatterPlotWatchdog = null;
+    }
+  }
+
+  function setRendering(on) {
+    if (!overlay) return;
+    overlay.classList.toggle("cryo-plot-rendering-overlay--show", on);
+    overlay.setAttribute("aria-hidden", on ? "false" : "true");
+  }
 
   function loadPlot() {
+    var gen = ++scatterLoadGeneration;
+    cancelPendingScatterAfterPlot();
+    clearScatterPlotWatchdog();
+    if (plotStatus) plotStatus.textContent = "";
+    setRendering(true);
+    scatterPlotWatchdog = setTimeout(function() {
+      scatterPlotWatchdog = null;
+      if (!overlay || !overlay.classList.contains("cryo-plot-rendering-overlay--show")) return;
+      cancelPendingScatterAfterPlot();
+      setRendering(false);
+      if (plotStatus) {
+        plotStatus.textContent = "Plot took too long — try a hard refresh.";
+      }
+    }, SCATTER_PLOT_TIMEOUT_MS);
     var x = sx.value;
     var y = sy.value;
     var c = sc.value;
     var q = "x=" + encodeURIComponent(x) + "&y=" + encodeURIComponent(y) + "&color=" + encodeURIComponent(c);
-    fetch("{{ url_for('api_scatter') }}?" + q)
-      .then(function(r) {
-        return r.text().then(function(text) {
-          var j;
-          try { j = JSON.parse(text); }
-          catch (e) { throw new Error("Scatter API did not return JSON"); }
-          if (!r.ok) throw new Error(j.error || r.statusText);
-          return j;
-        });
-      })
-      .then(function(fig) {
-        Plotly.react(gd, fig.data, fig.layout, {responsive: true});
-      })
-      .catch(function(e) { console.error(e); });
+    requestAnimationFrame(function() {
+      requestAnimationFrame(function() {
+        fetch("{{ url_for('api_scatter') }}?" + q)
+          .then(function(r) {
+            return r.text().then(function(text) {
+              var j;
+              try { j = JSON.parse(text); }
+              catch (e) { throw new Error("Scatter API did not return JSON"); }
+              if (!r.ok) throw new Error(j.error || r.statusText);
+              return j;
+            });
+          })
+          .then(function(fig) {
+            function finishScatterDraw() {
+              if (gen !== scatterLoadGeneration) return;
+              cancelPendingScatterAfterPlot();
+              wireUpPlotlyEvents();
+              clearScatterPlotWatchdog();
+              setRendering(false);
+              requestAnimationFrame(function() {
+                try { Plotly.Plots.resize(gd); } catch (e) {}
+              });
+            }
+            var opts = {responsive: true};
+            var p;
+            try {
+              if (!gd.data || gd.data.length === 0) {
+                p = Plotly.newPlot(gd, fig.data, fig.layout, opts);
+              } else {
+                p = Plotly.react(gd, fig.data, fig.layout, opts);
+              }
+            } catch (err) {
+              throw err;
+            }
+            pendingScatterAfterPlot = finishScatterDraw;
+            gd.on("plotly_afterplot", pendingScatterAfterPlot);
+            setTimeout(function() {
+              if (gen !== scatterLoadGeneration) return;
+              if (pendingScatterAfterPlot && gd.data && gd.data.length) {
+                finishScatterDraw();
+              }
+            }, 800);
+            if (p && typeof p.then === "function") {
+              return p.catch(function(err) {
+                cancelPendingScatterAfterPlot();
+                throw err;
+              });
+            }
+            return Promise.resolve();
+          })
+          .catch(function(e) {
+            console.error(e);
+            cancelPendingScatterAfterPlot();
+            clearScatterPlotWatchdog();
+            setRendering(false);
+            if (plotStatus) plotStatus.textContent = e.message || "Could not load scatter.";
+          });
+      });
+    });
   }
 
-  gd.on("plotly_hover", function(ev) {
-    if (!ev.points || !ev.points.length) return;
-    var rows = [];
-    ev.points.forEach(function(p) {
-      if (p.customdata && p.customdata.length > 1) rows.push(p.customdata[1]);
+  var plotlyEventsWired = false;
+  function wireUpPlotlyEvents() {
+    if (plotlyEventsWired) return;
+    plotlyEventsWired = true;
+    gd.on("plotly_hover", function(ev) {
+      if (!ev.points || !ev.points.length) return;
+      var rows = [];
+      ev.points.forEach(function(p) {
+        if (p.customdata && p.customdata.length > 1) rows.push(p.customdata[1]);
+      });
+      if (!rows.length) return;
+      var q = "rows=" + rows.slice(0, 12).join(",");
+      preview.src = "{{ url_for('api_preview_montage') }}?" + q + "&t=" + Date.now();
+      hoverMeta.textContent = "Rows: " + rows.slice(0, 8).join(", ") + (rows.length > 8 ? "…" : "");
     });
-    if (!rows.length) return;
-    var q = "rows=" + rows.slice(0, 12).join(",");
-    preview.src = "{{ url_for('api_preview_montage') }}?" + q + "&t=" + Date.now();
-    hoverMeta.textContent = "Rows: " + rows.slice(0, 8).join(", ") + (rows.length > 8 ? "…" : "");
-  });
-
-  gd.on("plotly_unhover", function() {
-    hoverMeta.textContent = "";
-  });
+    gd.on("plotly_unhover", function() {
+      hoverMeta.textContent = "";
+    });
+  }
 
   document.getElementById("redraw").addEventListener("click", loadPlot);
   loadPlot();

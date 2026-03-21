@@ -1,7 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Unavailable · cryoDRGN{% endblock %}
+{% block title %}Thumbnails unavailable · cryoDRGN{% endblock %}
+{% block nav_page_title %}<span class="nav-page-title">No particle thumbnails</span>{% endblock %}
 {% block content %}
-<p><a href="/">← Back</a></p>
-<h1>Particle previews unavailable</h1>
+<div class="cryo-dash-page">
+<div class="cryo-dash-top"><a href="/">← Back</a></div>
 <p class="lead">{{ reason }}</p>
+</div>
 {% endblock %}

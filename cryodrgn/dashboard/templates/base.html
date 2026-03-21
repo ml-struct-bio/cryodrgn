@@ -6,10 +6,13 @@
   <title>{% block title %}cryoDRGN dashboard{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-  <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet"/>
+  {# Match E.Z. Lab (https://ezlab.princeton.edu/) — Barlow + Roboto in main.css #}
+  <link href="https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,300;0,400;0,500;0,700;1,400&family=Roboto:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap" rel="stylesheet"/>
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
   <style>
     :root {
+      --font-sans: Barlow, Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", Oxygen,
+        Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
       --ink: #1a2332;
       --muted: #5c6b7a;
       --cream: #faf8f4;
@@ -25,7 +28,7 @@
     body {
       margin: 0;
       min-height: 100vh;
-      font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+      font-family: var(--font-sans);
       font-size: 1.05rem;
       line-height: 1.55;
       color: var(--ink);
@@ -40,7 +43,26 @@
       align-items: center;
       justify-content: space-between;
       flex-wrap: wrap;
-      gap: 0.5rem;
+      gap: 0.5rem 1rem;
+    }
+    .nav-left {
+      display: flex;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 0.35rem 1rem;
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+    .nav-page-title {
+      font-family: var(--font-sans);
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #e8eef4;
+      letter-spacing: 0.02em;
+      margin: 0;
+      line-height: 1.25;
+      padding-left: 1rem;
+      border-left: 2px solid rgba(232, 238, 244, 0.35);
     }
     .nav a {
       color: #e8eef4;
@@ -49,15 +71,50 @@
     }
     .nav a:hover { color: #fff; text-decoration: underline; }
     .nav-brand {
-      font-family: "Libre Baskerville", Georgia, serif;
+      font-family: var(--font-sans);
       font-size: 1.35rem;
+      font-weight: 700;
       letter-spacing: 0.02em;
+    }
+    .nav-right {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 0.65rem 1.1rem;
+      max-width: min(100%, 52rem);
+    }
+    .nav-epoch {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+    .nav-epoch label {
+      margin: 0;
+      font-size: 0.82rem;
+      font-weight: 600;
+      opacity: 0.92;
+    }
+    .nav-epoch select {
+      width: auto;
+      min-width: 4.5rem;
+      max-width: 8rem;
+      margin: 0;
+      padding: 0.32rem 0.45rem;
+      font-size: 0.88rem;
+      background: rgba(255, 255, 255, 0.12);
+      color: #e8eef4;
+      border: 1px solid rgba(255, 255, 255, 0.28);
+    }
+    .nav-epoch select option {
+      color: #1a2332;
+      background: #fff;
     }
     .nav-meta {
       font-size: 0.88rem;
       opacity: 0.9;
-      max-width: 42rem;
       text-align: right;
+      line-height: 1.35;
     }
     main {
       max-width: 1200px;
@@ -65,14 +122,15 @@
       padding: 2rem 1.5rem 3rem;
     }
     h1 {
-      font-family: "Libre Baskerville", Georgia, serif;
+      font-family: var(--font-sans);
       font-weight: 700;
       font-size: 2rem;
       margin: 0 0 0.75rem;
       color: var(--nav-bg);
     }
     h2 {
-      font-family: "Libre Baskerville", Georgia, serif;
+      font-family: var(--font-sans);
+      font-weight: 600;
       font-size: 1.35rem;
       margin: 1.75rem 0 0.75rem;
       color: var(--nav-bg);
@@ -97,7 +155,8 @@
       border: 1px solid rgba(36, 59, 83, 0.12);
     }
     .card h3 {
-      font-family: "Libre Baskerville", Georgia, serif;
+      font-family: var(--font-sans);
+      font-weight: 600;
       margin: 0 0 0.5rem;
       font-size: 1.2rem;
       color: var(--nav-bg);
@@ -142,7 +201,6 @@
     @media (max-width: 900px) {
       .layout-split { grid-template-columns: 1fr; }
     }
-    #scatter { min-height: 520px; }
     .preview-panel {
       position: sticky;
       top: 1rem;
@@ -154,18 +212,278 @@
     }
     .preview-panel img { width: 100%; height: auto; display: block; border-radius: 2px; }
     .status { margin-top: 0.5rem; font-size: 0.88rem; color: var(--muted); }
+
+    /* Shared analysis layout (pair grid, scatter, filter, 3D): controls | plot (+ optional figure aside). */
+    main:has(.cryo-dash-page) {
+      max-width: min(100%, 1680px);
+      padding-top: 0.85rem;
+      padding-bottom: 1rem;
+    }
+    .cryo-dash-page .cryo-dash-top {
+      margin-bottom: 0.35rem;
+    }
+    .cryo-dash-page .cryo-dash-top a {
+      font-size: 0.85rem;
+    }
+    .cryo-dash-page .cryo-dash-lead {
+      margin: 0 0 0.35rem;
+      font-size: 0.82rem;
+      line-height: 1.35;
+      color: var(--muted, #5c6b7a);
+      max-width: 56rem;
+    }
+    .cryo-dash-page .cryo-dash-row {
+      display: flex;
+      flex-direction: row;
+      align-items: stretch;
+      gap: 1rem;
+      margin-top: 0.35rem;
+    }
+    .cryo-dash-page .cryo-dash-side {
+      flex: 0 0 min(280px, 28vw);
+      max-width: 340px;
+      min-width: 240px;
+    }
+    .cryo-dash-page .cryo-dash-main {
+      flex: 1 1 auto;
+      min-width: 0;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+    }
+    .cryo-dash-main > .cryo-dash-main-split {
+      flex: 1 1 auto;
+      width: 100%;
+      min-width: 0;
+    }
+    .cryo-dash-viewport--plotly {
+      box-sizing: border-box;
+      width: 100%;
+      min-height: min(520px, 55vh);
+      background: var(--cream, #faf8f4);
+      border-radius: 2px;
+    }
+    /* Standard "Rendering…" layer over interactive plots (Plotly + pair grid full refresh). */
+    .cryo-plotly-stack {
+      position: relative;
+      width: 100%;
+      min-height: min(520px, 55vh);
+      isolation: isolate;
+    }
+    .cryo-plotly-graph-host {
+      position: relative;
+      z-index: 0;
+      min-height: min(520px, 55vh);
+      width: 100%;
+    }
+    .cryo-plot-rendering-overlay {
+      position: absolute;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(250, 248, 244, 0.94);
+      color: var(--nav-bg, #243b53);
+      font-weight: 800;
+      font-size: clamp(1rem, 2.5vw, 1.35rem);
+      z-index: 2147483646;
+      pointer-events: none;
+      border-radius: 2px;
+    }
+    .cryo-plot-rendering-overlay.cryo-plot-rendering-overlay--show {
+      display: flex;
+      pointer-events: auto;
+      transform: translateZ(0);
+      backface-visibility: hidden;
+    }
+    .cryo-dash-main-split {
+      display: flex;
+      flex-direction: row;
+      align-items: stretch;
+      gap: 1rem;
+      width: 100%;
+      min-width: 0;
+    }
+    .cryo-dash-main-split .cryo-dash-viewport--plotly {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+    .cryo-dash-figure-legend {
+      flex: 0 0 min(260px, 26vw);
+      max-width: 300px;
+      min-width: 200px;
+      background: var(--paper, #fff);
+      padding: 0.85rem 1rem;
+      border-radius: 4px;
+      box-shadow: var(--card-shadow);
+      border: 1px solid rgba(36, 59, 83, 0.12);
+      align-self: flex-start;
+      position: sticky;
+      top: 1rem;
+    }
+    .cryo-dash-figure-legend strong {
+      font-size: 0.88rem;
+      color: var(--nav-bg, #243b53);
+    }
+    .cryo-dash-figure-legend .cryo-dash-legend-note {
+      margin: 0.5rem 0 0;
+      font-size: 0.8rem;
+      color: var(--muted, #5c6b7a);
+      line-height: 1.35;
+    }
+    .cryo-dash-controls.card {
+      padding: 0.75rem 0.9rem;
+    }
+    .cryo-dash-controls fieldset {
+      border: 1px solid rgba(36, 59, 83, 0.18);
+      border-radius: 3px;
+      padding: 0.45rem 0.65rem 0.55rem;
+      margin: 0 0 0.55rem;
+      background: var(--paper, #fff);
+    }
+    .cryo-dash-controls legend {
+      font-weight: 700;
+      font-size: 0.82rem;
+      color: var(--nav-bg, #243b53);
+      padding: 0 0.25rem;
+      width: auto;
+    }
+    .cryo-dash-controls .legend-row {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+    .cryo-dash-controls label.cryo-select-line {
+      display: block;
+      font-weight: 600;
+      margin: 0.35rem 0 0.15rem;
+      font-size: 0.82rem;
+    }
+    .cryo-dash-controls label.cryo-select-line:first-of-type {
+      margin-top: 0;
+    }
+    .cryo-dash-controls select,
+    .cryo-dash-controls input[type="text"] {
+      width: 100%;
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+    .cryo-dash-controls .btn-row {
+      margin-top: 0.35rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+    }
+    .cryo-dash-controls .btn-row .btn {
+      font-size: 0.88rem;
+      padding: 0.4rem 0.85rem;
+    }
+    .cryo-dash-controls .status {
+      margin-top: 0.35rem;
+      font-size: 0.8rem;
+    }
+    /* 3D latent: tall plot column (remaining viewport under nav + lead + controls). */
+    main:has(.cryo-dash-page--latent3d) {
+      padding-top: 0.65rem;
+    }
+    .cryo-dash-page--latent3d .cryo-dash-row {
+      align-items: stretch;
+    }
+    .cryo-dash-page--latent3d .cryo-dash-main {
+      align-items: stretch;
+    }
+    .cryo-dash-page--latent3d .cryo-dash-main-split {
+      align-items: stretch;
+    }
+    .cryo-dash-page--latent3d .cryo-dash-viewport--plotly {
+      display: flex;
+      flex-direction: column;
+      min-height: max(22rem, calc(100svh - 11.5rem));
+      height: calc(100svh - 11.5rem);
+    }
+    .cryo-dash-page--latent3d .cryo-plotly-stack {
+      flex: 1 1 auto;
+      min-height: 0;
+      height: 100%;
+      width: 100%;
+    }
+    .cryo-dash-page--latent3d .cryo-plotly-graph-host,
+    .cryo-dash-page--latent3d #latent3d {
+      flex: 1 1 auto;
+      min-height: 0;
+      height: 100% !important;
+      width: 100%;
+    }
+    @media (max-width: 900px) {
+      .cryo-dash-page .cryo-dash-row {
+        flex-direction: column;
+      }
+      .cryo-dash-page .cryo-dash-side {
+        flex: none;
+        max-width: none;
+        width: 100%;
+      }
+      .cryo-dash-main-split {
+        flex-direction: column;
+      }
+      .cryo-dash-figure-legend {
+        position: static;
+        max-width: none;
+        flex: none;
+        width: 100%;
+        min-width: 0;
+      }
+      .cryo-dash-page--latent3d .cryo-dash-viewport--plotly {
+        height: max(20rem, calc(100svh - 16rem));
+        min-height: max(20rem, calc(100svh - 16rem));
+      }
+    }
   </style>
   {% block head %}{% endblock %}
 </head>
 <body>
   <header class="nav">
-    <a href="/" class="nav-brand">cryoDRGN · dashboard</a>
-    <div class="nav-meta">
-      {{ exp_workdir }} · epoch {{ exp_epoch }} · k-means {{ exp_kmeans }}
+    <div class="nav-left">
+      <a href="/" class="nav-brand">cryoDRGN · dashboard</a>
+      {% block nav_page_title %}{% endblock %}
+    </div>
+    <div class="nav-right">
+      <div class="nav-epoch">
+        <label for="dash-epoch">Epoch</label>
+        <select id="dash-epoch" title="Analysis checkpoint (z.N.pkl)">
+          {% for ep in dashboard_epochs %}
+          <option value="{{ ep }}" {% if ep == exp_epoch %}selected{% endif %}>{{ ep }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="nav-meta">
+        Output · {{ exp_workdir }}<br/>
+        <span class="muted" style="opacity:0.88;">Clustering {{ exp_kmeans }}</span>
+      </div>
     </div>
   </header>
   <main>
     {% block content %}{% endblock %}
   </main>
+  <script>
+  (function() {
+    var sel = document.getElementById("dash-epoch");
+    if (!sel || sel.options.length <= 1) return;
+    sel.addEventListener("change", function() {
+      var v = parseInt(this.value, 10);
+      if (isNaN(v)) return;
+      fetch("{{ url_for('api_set_epoch') }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ epoch: v })
+      })
+        .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+        .then(function(res) {
+          if (res.ok && res.j.ok) window.location.reload();
+        })
+        .catch(function() {});
+    });
+  })();
+  </script>
 </body>
 </html>

@@ -1,32 +1,131 @@
 {% extends "base.html" %}
 {% block title %}cryoDRGN dashboard{% endblock %}
+{% block head %}
+<style>
+  .landing-hub {
+    max-width: 56rem;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100svh - 5rem);
+  }
+  .landing-hub .lead {
+    margin: 0 0 1rem;
+    flex: 0 0 auto;
+  }
+  .landing-cards {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    min-height: 0;
+  }
+  .landing-card {
+    flex: 1 1 0;
+    background: var(--paper, #fff);
+    border-radius: 6px;
+    padding: 1.15rem 1.5rem 1rem;
+    box-shadow: var(--card-shadow, 0 2px 12px rgba(36, 59, 83, 0.08));
+    border: 1px solid rgba(36, 59, 83, 0.12);
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    min-height: 0;
+    transition:
+      transform 0.22s ease,
+      box-shadow 0.22s ease,
+      border-color 0.22s ease,
+      background-color 0.22s ease;
+  }
+  .landing-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 10px 28px rgba(36, 59, 83, 0.14);
+    border-color: rgba(196, 112, 58, 0.45);
+    background: #fffefb;
+  }
+  .landing-card:focus-within {
+    outline: 2px solid var(--accent, #c4703a);
+    outline-offset: 2px;
+  }
+  .landing-card h2 {
+    font-family: var(--font-sans);
+    font-weight: 700;
+    font-size: 1.22rem;
+    margin: 0 0 0.4rem;
+    color: var(--nav-bg, #243b53);
+  }
+  .landing-card p {
+    margin: 0 0 0.65rem;
+    color: var(--muted, #5c6b7a);
+    font-size: 0.97rem;
+    flex: 1 1 auto;
+  }
+  .landing-card .landing-card-actions {
+    margin-top: auto;
+    padding-top: 0.85rem;
+    width: 100%;
+    text-align: center;
+  }
+  .landing-card .landing-card-actions .btn {
+    display: inline-block;
+  }
+  @media (max-width: 700px) {
+    .landing-hub {
+      min-height: auto;
+    }
+    .landing-cards {
+      flex: none;
+    }
+    .landing-card {
+      flex: none;
+      min-height: min(200px, 28vh);
+    }
+  }
+</style>
+{% endblock %}
 {% block content %}
-<h1>Analysis dashboard</h1>
+<div class="landing-hub">
 <p class="lead">
-  Pick a workflow below. This hub mirrors the spirit of the
-  <a href="https://ezlab.princeton.edu/" target="_blank" rel="noopener">E.Z. Lab</a>
-  site — clean layout, strong type, and a focus on cryo-EM + ML tooling.
+  Latent coordinates, embeddings, and covariates for this reconstruction — explore structure, colour by metadata, and inspect particles where thumbnails are available.
 </p>
 
-<div class="cards">
-  <div class="card">
-    <h3>Desktop filter</h3>
-    <p>The original lasso-based <code>cryodrgn filter</code> UI (matplotlib + Tk). We spawn it in a separate process so you keep this browser tab open.</p>
-    <a class="btn" href="{{ url_for('filter_page') }}">Open launcher</a>
-  </div>
-  <div class="card">
-    <h3>Scatter + particle preview</h3>
-    <p>Plotly scatter (same covariates as filtering). Hover points to see a montage of nearby particles on the right — similar to the viz notebook workflow.</p>
-    {% if can_images %}
-    <a class="btn" href="{{ url_for('explorer') }}">Open explorer</a>
-    {% else %}
-    <p class="muted">Not available for this experiment (tilt series).</p>
-    {% endif %}
-  </div>
-  <div class="card">
-    <h3>Pair grid</h3>
-    <p><code>z_dim×z_dim</code> latent axes, diagonal PC or UMAP, pastel blue upper triangle (scatter or hex), lower triangle coloured by one covariate you pick with radios.</p>
-    <a class="btn" href="{{ url_for('pairplot_page') }}">Open pair grid</a>
-  </div>
+<div class="landing-cards">
+  <article class="landing-card">
+    <h2>Particle selection</h2>
+    <p>Draw a lasso around points in any 2D projection of the table, then save dataset indices (and an inverse list) as pickle files.</p>
+    <div class="landing-card-actions">
+      <a class="btn" href="{{ url_for('filter_page') }}">Open selection</a>
+    </div>
+  </article>
+  <article class="landing-card">
+    <h2>Scatter plots and images</h2>
+    <p>Two-dimensional views of any numeric columns in the analysis table. Hover a point to see a montage of nearby particles when image data is available.</p>
+    <div class="landing-card-actions">
+      {% if can_images %}
+      <a class="btn" href="{{ url_for('explorer') }}">Open scatter</a>
+      {% else %}
+      <p class="muted" style="margin:0;font-size:0.92rem;">Thumbnails are not available for this dataset type.</p>
+      {% endif %}
+    </div>
+  </article>
+  <article class="landing-card">
+    <h2>Pairwise latent panels</h2>
+    <p>Every pair of latent dimensions in a grid: optional 2D embedding on the diagonal, covariate colour in one triangle, and a simple density or scatter pattern in the other.</p>
+    <div class="landing-card-actions">
+      <a class="btn" href="{{ url_for('pairplot_page') }}">Open pair grid</a>
+    </div>
+  </article>
+  <article class="landing-card">
+    <h2>3D latent space</h2>
+    <p>Three latent axes at once, with the same optional colour encoding as the scatter view. Rotate and zoom to see structure in three dimensions.</p>
+    <div class="landing-card-actions">
+      {% if zdim >= 3 %}
+      <a class="btn" href="{{ url_for('latent_3d_page') }}">Open 3D view</a>
+      {% else %}
+      <p class="muted" style="margin:0;font-size:0.92rem;">Needs at least three latent dimensions (this run has {{ zdim }}).</p>
+      {% endif %}
+    </div>
+  </article>
+</div>
 </div>
 {% endblock %}

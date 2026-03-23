@@ -1,0 +1,611 @@
+{% extends "base.html" %}
+{% block title %}Command builder · cryoDRGN{% endblock %}
+{% block nav_page_title %}<span class="nav-page-title">Command builder</span>{% endblock %}
+{% block head %}
+<style>
+  /* Viewport column: scroll form, command dock pinned to bottom of main */
+  main:has(.cryo-dash-page.cmd-builder-page--dock) {
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    height: calc(100vh - 7.25rem);
+    height: calc(100dvh - 7.25rem);
+    max-height: calc(100vh - 7.25rem);
+    max-height: calc(100dvh - 7.25rem);
+    min-height: calc(100vh - 7.25rem);
+    min-height: calc(100dvh - 7.25rem);
+    overflow: hidden;
+    padding-bottom: max(0.35rem, env(safe-area-inset-bottom, 0px));
+  }
+  .cmd-builder-page--dock {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    max-width: min(100%, 112rem);
+    margin: 0 auto;
+    width: 100%;
+  }
+  .cmd-builder-page--dock .cmd-builder-header {
+    flex-shrink: 0;
+  }
+  .cmd-builder-page--dock .cryo-dash-top { margin-bottom: 0.35rem; }
+  .cmd-builder-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    padding-right: 0.2rem;
+    padding-bottom: 0.5rem;
+  }
+  .cmd-builder-cmd-dock {
+    flex-shrink: 0;
+    margin-top: 0.25rem;
+    padding-top: 0.4rem;
+    border-top: 1px solid rgba(36, 59, 83, 0.12);
+    background: linear-gradient(to bottom, rgba(250, 248, 244, 0) 0%, var(--cream, #faf8f4) 12%);
+  }
+  .cmd-form.card { padding: 1rem 1.25rem; }
+  .cmd-builder-program {
+    margin-bottom: 0.25rem;
+  }
+  .cmd-builder-program .cryo-select-line { margin-top: 0; }
+  .cmd-builder-top-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem 1rem;
+    align-items: stretch;
+  }
+  @media (max-width: 720px) {
+    .cmd-builder-top-row { grid-template-columns: 1fr; }
+  }
+  .cmd-builder-required-fieldset {
+    background: rgba(196, 112, 58, 0.1);
+    border-color: rgba(196, 112, 58, 0.45);
+    box-shadow: inset 0 0 0 1px rgba(196, 112, 58, 0.06);
+  }
+  .cmd-builder-required-fieldset > legend {
+    color: var(--accent, #c4703a);
+  }
+  .cmd-builder-rest-grid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0.75rem 1rem;
+    align-items: start;
+    margin-top: 0.75rem;
+  }
+  @media (max-width: 1400px) {
+    .cmd-builder-rest-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+  @media (max-width: 1000px) {
+    .cmd-builder-rest-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 640px) {
+    .cmd-builder-rest-grid { grid-template-columns: 1fr; }
+  }
+  .cmd-form fieldset {
+    border: 1px solid rgba(36, 59, 83, 0.15);
+    border-radius: 4px;
+    margin: 0;
+    padding: 0.65rem 0.85rem 0.85rem;
+    min-width: 0;
+  }
+  .cmd-form legend {
+    font-weight: 700;
+    font-size: 0.88rem;
+    color: var(--nav-bg, #243b53);
+    padding: 0 0.35rem;
+  }
+  .cmd-form label.cryo-select-line {
+    display: block;
+    margin: 0.35rem 0 0.15rem;
+    font-size: 0.86rem;
+    font-weight: 600;
+    color: var(--muted, #5c6b7a);
+  }
+  .cmd-form input[type="text"],
+  .cmd-form input[type="number"],
+  .cmd-form select {
+    width: 100%;
+    max-width: none;
+    box-sizing: border-box;
+    margin-bottom: 0.25rem;
+  }
+  .cmd-form .check-line {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin: 0.35rem 0;
+    font-size: 0.88rem;
+    font-weight: 500;
+  }
+  .cmd-form .check-line input { width: auto; margin: 0; }
+  .cmd-panel { display: none; }
+  .cmd-panel.cmd-panel--active { display: block; }
+  .cmd-output.card {
+    padding: 0.55rem 0.75rem 0.6rem;
+    background: #1a2332;
+    color: #e8eef4;
+    border: 1px solid rgba(36, 59, 83, 0.4);
+  }
+  .cmd-output-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.35rem 0.85rem;
+    align-items: center;
+  }
+  .cmd-output-main {
+    min-width: 0;
+  }
+  .cmd-output-heading {
+    display: block;
+    font-size: 0.78rem;
+    font-weight: 700;
+    margin: 0 0 0.25rem;
+    letter-spacing: 0.02em;
+    opacity: 0.95;
+  }
+  .cmd-output pre {
+    margin: 0;
+    font-size: 0.72rem;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-all;
+    font-family: ui-monospace, "Cascadia Code", monospace;
+    max-height: 4.75rem;
+    overflow-y: auto;
+  }
+  .cmd-output-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    align-self: stretch;
+  }
+  .cmd-output .btn-copy {
+    background: var(--accent, #c4703a);
+    color: #fff;
+    border: none;
+    padding: 0.35rem 0.75rem;
+    border-radius: 3px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.82rem;
+    white-space: nowrap;
+  }
+  .cmd-output .btn-copy:hover { background: var(--accent-hover, #a85a2e); }
+  .cmd-output .hint {
+    margin: 0.3rem 0 0;
+    font-size: 0.76rem;
+    opacity: 0.82;
+    line-height: 1.3;
+  }
+  .cmd-output .cmd-copy-status {
+    margin-top: 0.2rem;
+    min-height: 1em;
+  }
+  @media (max-width: 520px) {
+    .cmd-output-grid {
+      grid-template-columns: 1fr;
+      gap: 0.45rem;
+      align-items: start;
+    }
+    .cmd-output-actions {
+      justify-content: flex-start;
+      align-self: auto;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+{% macro title_attr(text) -%}
+{%- if text %} title="{{ text|e }}"{% endif -%}
+{%- endmacro %}
+{% macro schema_arg_title(a) -%}
+{%- if a.help -%}{{ a.help }}{%- endif -%}
+{%- endmacro %}
+{% macro ctf_row_title(field_id) -%}
+{%- set h = command_builder_required_field_titles.get(field_id) -%}
+{%- if h and default_ctf %} title="{{ (h ~ ' · ' ~ default_ctf)|trim|e }}"
+{%- elif h %} title="{{ h|e }}"
+{%- elif default_ctf %} title="{{ default_ctf|e }}"
+{%- endif -%}
+{%- endmacro %}
+{% macro render_cmd_arg(a) %}
+  {% set st = schema_arg_title(a)|trim %}
+  {% if a.w == 'flag_true' %}
+    <label class="check-line"{{ title_attr(st) }}><input type="checkbox" id="{{ a.id }}"{{ title_attr(st) }}/> <span><code>{{ a.cli[0] }}</code></span></label>
+  {% elif a.w == 'flag_false' %}
+    <label class="check-line"{{ title_attr(st) }}><input type="checkbox" id="{{ a.id }}" checked{{ title_attr(st) }}/> <span>On by default — uncheck for <code>{{ a.cli[0] }}</code></span></label>
+  {% elif a.w == 'no_amp' %}
+    <label class="check-line"{{ title_attr(st) }}><input type="checkbox" id="{{ a.id }}" checked{{ title_attr(st) }}/> <span>Mixed precision (AMP) — uncheck for <code>--no-amp</code></span></label>
+  {% elif a.w == 'norm2' %}
+    <label class="cryo-select-line" for="{{ a.id }}_a"{{ title_attr(st) }}><code>{{ a.cli[0] }}</code> (shift, scale)</label>
+    <input type="text" id="{{ a.id }}_a" placeholder="shift" autocomplete="off"{{ title_attr(st) }}/>
+    <input type="text" id="{{ a.id }}_b" placeholder="scale" autocomplete="off"{{ title_attr(st) }}/>
+  {% elif a.w == 'select' %}
+    <label class="cryo-select-line" for="{{ a.id }}"{{ title_attr(st) }}><code>{{ a.cli[0] }}</code></label>
+    <select id="{{ a.id }}"{{ title_attr(st) }}>
+      {% if not (a.choices and a.choices[0] == '') %}
+      <option value="">(omit)</option>
+      {% endif %}
+      {% for c in a.choices %}
+      <option value="{{ c }}">{% if a.labels and loop.index0 < a.labels|length %}{{ a.labels[loop.index0] }}{% elif c == '' %}(empty){% else %}{{ c }}{% endif %}</option>
+      {% endfor %}
+    </select>
+  {% elif a.w == 'number' %}
+    <label class="cryo-select-line" for="{{ a.id }}"{{ title_attr(st) }}><code>{{ a.cli[0] }}</code></label>
+    <input type="number" id="{{ a.id }}"{% if a.placeholder %} placeholder="{{ a.placeholder|e }}"{% endif %} autocomplete="off"{{ title_attr(st) }}/>
+  {% else %}
+    <label class="cryo-select-line" for="{{ a.id }}"{{ title_attr(st) }}><code>{{ a.cli[0] }}</code></label>
+    <input type="text" id="{{ a.id }}"
+      placeholder="{{ (a.placeholder|e) if a.placeholder else '(omit if blank)' }}"
+      autocomplete="off"
+      {{ title_attr(st) }}/>
+  {% endif %}
+{% endmacro %}
+<div class="cryo-dash-page cmd-builder-page cmd-builder-page--dock">
+<div class="cmd-builder-header">
+  <div class="cryo-dash-top">
+    <a href="/">← Back</a>
+  </div>
+  <p class="cryo-dash-lead" style="margin-top:0.35rem;">
+    Pick a primary reconstruction command. The line below lists <strong>required</strong> arguments plus options you actually set (empty fields and CLI defaults are omitted).
+  </p>
+</div>
+
+<div class="cmd-builder-scroll">
+<form class="cmd-form card" id="cmd-form" action="#" onsubmit="return false;">
+  <div class="cmd-builder-program">
+    <label class="cryo-select-line" for="cmd-type">Program</label>
+    <select id="cmd-type" name="cmd_type">
+      <option value="abinit" selected>cryodrgn abinit</option>
+      <option value="train_vae">cryodrgn train_vae</option>
+      <option value="train_nn">cryodrgn train_nn</option>
+      <option value="train_dec">cryodrgn train_dec</option>
+    </select>
+  </div>
+
+  <div id="panel-abinit" class="cmd-panel cmd-panel--active" data-cmd="abinit">
+    <div class="cmd-builder-top-row">
+      <fieldset class="cmd-builder-required-fieldset">
+        <legend>Required</legend>
+        <label class="cryo-select-line" for="ab_particles"{{ title_attr(command_builder_required_field_titles.get('ab_particles')) }}>Particles</label>
+        <input type="text" id="ab_particles" value="{{ default_particles|e }}" autocomplete="off"{{ title_attr(command_builder_required_field_titles.get('ab_particles')) }}/>
+        <label class="cryo-select-line" for="ab_out"{{ title_attr(command_builder_required_field_titles.get('ab_out')) }}>Output directory (<code>-o</code>)</label>
+        <input type="text" id="ab_out" value="{{ default_outdir_abinit|e }}" autocomplete="off"{{ title_attr(command_builder_required_field_titles.get('ab_out')) }}/>
+        <label class="cryo-select-line" for="ab_zdim"{{ title_attr(command_builder_required_field_titles.get('ab_zdim')) }}><code>--zdim</code></label>
+        <input type="number" id="ab_zdim" min="0" step="1" value="{{ default_zdim }}"{{ title_attr(command_builder_required_field_titles.get('ab_zdim')) }}/>
+        <label class="cryo-select-line" for="ab_ctf"{{ ctf_row_title('ab_ctf') }}><code>--ctf</code></label>
+        <input type="text" id="ab_ctf" value="{{ default_ctf|e }}" placeholder="path to CTF .pkl" autocomplete="off"{{ ctf_row_title('ab_ctf') }}/>
+      </fieldset>
+      <fieldset>
+        <legend>Dataset loading</legend>
+        <label class="cryo-select-line" for="ab_datadir"{{ title_attr(command_builder_required_field_titles.get('ab_datadir')) }}><code>--datadir</code></label>
+        <input type="text" id="ab_datadir" value="" placeholder="(omit if blank)" autocomplete="off"{{ title_attr(command_builder_required_field_titles.get('ab_datadir')) }}/>
+      </fieldset>
+    </div>
+    <div class="cmd-builder-rest-grid">
+      {% for group in command_builder_schema['abinit'] %}
+      <fieldset>
+        <legend>{{ group.title }}</legend>
+        {% for a in group.args %}
+          {{ render_cmd_arg(a) }}
+        {% endfor %}
+      </fieldset>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div id="panel-train_vae" class="cmd-panel" data-cmd="train_vae">
+    <div class="cmd-builder-top-row">
+      <fieldset class="cmd-builder-required-fieldset">
+        <legend>Required</legend>
+        <label class="cryo-select-line" for="vae_particles"{{ title_attr(command_builder_required_field_titles.get('vae_particles')) }}>Particles</label>
+        <input type="text" id="vae_particles" value="{{ default_particles|e }}" autocomplete="off"{{ title_attr(command_builder_required_field_titles.get('vae_particles')) }}/>
+        <label class="cryo-select-line" for="vae_out"{{ title_attr(command_builder_required_field_titles.get('vae_out')) }}>Output directory (<code>-o</code>)</label>
+        <input type="text" id="vae_out" value="{{ default_outdir_train|e }}" autocomplete="off"{{ title_attr(command_builder_required_field_titles.get('vae_out')) }}/>
+        <label class="cryo-select-line" for="vae_poses"{{ title_attr(command_builder_required_field_titles.get('vae_poses')) }}><code>--poses</code></label>
+        <input type="text" id="vae_poses" value="{{ default_poses|e }}" autocomplete="off"{{ title_attr(command_builder_required_field_titles.get('vae_poses')) }}/>
+        <label class="cryo-select-line" for="vae_zdim"{{ title_attr(command_builder_required_field_titles.get('vae_zdim')) }}><code>--zdim</code></label>
+        <input type="number" id="vae_zdim" min="1" step="1" value="{{ default_zdim }}"{{ title_attr(command_builder_required_field_titles.get('vae_zdim')) }}/>
+        <label class="cryo-select-line" for="vae_ctf"{{ ctf_row_title('vae_ctf') }}><code>--ctf</code></label>
+        <input type="text" id="vae_ctf" value="{{ default_ctf|e }}" placeholder="path to CTF .pkl" autocomplete="off"{{ ctf_row_title('vae_ctf') }}/>
+      </fieldset>
+      <fieldset>
+        <legend>Dataset loading</legend>
+        <label class="cryo-select-line" for="vae_datadir"{{ title_attr(command_builder_required_field_titles.get('vae_datadir')) }}><code>--datadir</code></label>
+        <input type="text" id="vae_datadir" value="" placeholder="(omit if blank)" autocomplete="off"{{ title_attr(command_builder_required_field_titles.get('vae_datadir')) }}/>
+      </fieldset>
+    </div>
+    <div class="cmd-builder-rest-grid">
+      {% for group in command_builder_schema['train_vae'] %}
+      <fieldset>
+        <legend>{{ group.title }}</legend>
+        {% for a in group.args %}
+          {{ render_cmd_arg(a) }}
+        {% endfor %}
+      </fieldset>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div id="panel-train_nn" class="cmd-panel" data-cmd="train_nn">
+    <div class="cmd-builder-top-row">
+      <fieldset class="cmd-builder-required-fieldset">
+        <legend>Required</legend>
+        <label class="cryo-select-line" for="nn_particles"{{ title_attr(command_builder_required_field_titles.get('nn_particles')) }}>Particles</label>
+        <input type="text" id="nn_particles" value="{{ default_particles|e }}" autocomplete="off"{{ title_attr(command_builder_required_field_titles.get('nn_particles')) }}/>
+        <label class="cryo-select-line" for="nn_out"{{ title_attr(command_builder_required_field_titles.get('nn_out')) }}>Output directory (<code>-o</code>)</label>
+        <input type="text" id="nn_out" value="{{ default_outdir_train|e }}" autocomplete="off"{{ title_attr(command_builder_required_field_titles.get('nn_out')) }}/>
+        <label class="cryo-select-line" for="nn_poses"{{ title_attr(command_builder_required_field_titles.get('nn_poses')) }}><code>--poses</code></label>
+        <input type="text" id="nn_poses" value="{{ default_poses|e }}" autocomplete="off"{{ title_attr(command_builder_required_field_titles.get('nn_poses')) }}/>
+        <label class="cryo-select-line" for="nn_ctf"{{ ctf_row_title('nn_ctf') }}><code>--ctf</code></label>
+        <input type="text" id="nn_ctf" value="{{ default_ctf|e }}" placeholder="path to CTF .pkl" autocomplete="off"{{ ctf_row_title('nn_ctf') }}/>
+      </fieldset>
+      <fieldset>
+        <legend>Dataset loading</legend>
+        <label class="cryo-select-line" for="nn_datadir"{{ title_attr(command_builder_required_field_titles.get('nn_datadir')) }}><code>--datadir</code></label>
+        <input type="text" id="nn_datadir" value="" placeholder="(omit if blank)" autocomplete="off"{{ title_attr(command_builder_required_field_titles.get('nn_datadir')) }}/>
+      </fieldset>
+    </div>
+    <div class="cmd-builder-rest-grid">
+      {% for group in command_builder_schema['train_nn'] %}
+      <fieldset>
+        <legend>{{ group.title }}</legend>
+        {% for a in group.args %}
+          {{ render_cmd_arg(a) }}
+        {% endfor %}
+      </fieldset>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div id="panel-train_dec" class="cmd-panel" data-cmd="train_dec">
+    <div class="cmd-builder-top-row">
+      <fieldset class="cmd-builder-required-fieldset">
+        <legend>Required</legend>
+        <label class="cryo-select-line" for="dec_particles"{{ title_attr(command_builder_required_field_titles.get('dec_particles')) }}>Particles</label>
+        <input type="text" id="dec_particles" value="{{ default_particles|e }}" autocomplete="off"{{ title_attr(command_builder_required_field_titles.get('dec_particles')) }}/>
+        <label class="cryo-select-line" for="dec_out"{{ title_attr(command_builder_required_field_titles.get('dec_out')) }}>Output directory (<code>-o</code>)</label>
+        <input type="text" id="dec_out" value="{{ default_outdir_train|e }}" autocomplete="off"{{ title_attr(command_builder_required_field_titles.get('dec_out')) }}/>
+        <label class="cryo-select-line" for="dec_poses"{{ title_attr(command_builder_required_field_titles.get('dec_poses')) }}><code>--poses</code></label>
+        <input type="text" id="dec_poses" value="{{ default_poses|e }}" autocomplete="off"{{ title_attr(command_builder_required_field_titles.get('dec_poses')) }}/>
+        <label class="cryo-select-line" for="dec_zdim"{{ title_attr(command_builder_required_field_titles.get('dec_zdim')) }}><code>--zdim</code></label>
+        <input type="number" id="dec_zdim" min="1" step="1" value="{{ default_zdim }}"{{ title_attr(command_builder_required_field_titles.get('dec_zdim')) }}/>
+        <label class="cryo-select-line" for="dec_ctf"{{ ctf_row_title('dec_ctf') }}><code>--ctf</code></label>
+        <input type="text" id="dec_ctf" value="{{ default_ctf|e }}" placeholder="path to CTF .pkl" autocomplete="off"{{ ctf_row_title('dec_ctf') }}/>
+      </fieldset>
+      <fieldset>
+        <legend>Dataset loading</legend>
+        <label class="cryo-select-line" for="dec_datadir"{{ title_attr(command_builder_required_field_titles.get('dec_datadir')) }}><code>--datadir</code></label>
+        <input type="text" id="dec_datadir" value="" placeholder="(omit if blank)" autocomplete="off"{{ title_attr(command_builder_required_field_titles.get('dec_datadir')) }}/>
+      </fieldset>
+    </div>
+    <div class="cmd-builder-rest-grid">
+      {% for group in command_builder_schema['train_dec'] %}
+      <fieldset>
+        <legend>{{ group.title }}</legend>
+        {% for a in group.args %}
+          {{ render_cmd_arg(a) }}
+        {% endfor %}
+      </fieldset>
+      {% endfor %}
+    </div>
+  </div>
+</form>
+</div>
+
+<div class="cmd-builder-cmd-dock">
+  <div class="cmd-output card">
+    <div class="cmd-output-grid">
+      <div class="cmd-output-main">
+        <strong class="cmd-output-heading">Command</strong>
+        <pre id="cmd-out">cryodrgn abinit …</pre>
+        <p class="hint">This page does not run training — copy the line into your shell or job script.</p>
+        <p id="cmd-copy-status" class="hint cmd-copy-status"></p>
+      </div>
+      <div class="cmd-output-actions">
+        <button type="button" class="btn-copy" id="cmd-copy">Copy command</button>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+(function() {
+  var CMD_SCHEMA = {{ command_builder_schema | tojson }};
+
+  function shquote(s) {
+    if (!s || !String(s).trim()) return "";
+    s = String(s).trim();
+    if (/^[-\w@%+=:,./]+$/.test(s)) return s;
+    return "'" + s.replace(/'/g, "'\\''") + "'";
+  }
+
+  function val(id) {
+    var el = document.getElementById(id);
+    return el ? String(el.value || "").trim() : "";
+  }
+
+  function appendOpt(parts, flag, value) {
+    if (!value) return;
+    parts.push(flag);
+    parts.push(shquote(value));
+  }
+
+  function cliFlag(a) {
+    return a.cli && a.cli.length ? a.cli[0] : "";
+  }
+
+  function collectSchemaParts(cmdKey, parts) {
+    var groups = CMD_SCHEMA[cmdKey];
+    if (!groups) return;
+    for (var gi = 0; gi < groups.length; gi++) {
+      var g = groups[gi];
+      for (var ai = 0; ai < g.args.length; ai++) {
+        var a = g.args[ai];
+        var w = a.w;
+        if (w === "no_amp") {
+          var ampEl = document.getElementById(a.id);
+          if (ampEl && !ampEl.checked) parts.push("--no-amp");
+          continue;
+        }
+        if (w === "flag_true") {
+          var ft = document.getElementById(a.id);
+          if (ft && ft.checked) parts.push(cliFlag(a));
+          continue;
+        }
+        if (w === "flag_false") {
+          var ff = document.getElementById(a.id);
+          if (ff && !ff.checked) parts.push(cliFlag(a));
+          continue;
+        }
+        if (w === "norm2") {
+          var n0 = val(a.id + "_a");
+          var n1 = val(a.id + "_b");
+          if (n0 !== "" && n1 !== "") {
+            parts.push(cliFlag(a));
+            parts.push(shquote(n0));
+            parts.push(shquote(n1));
+          }
+          continue;
+        }
+        if (w === "text" || w === "number") {
+          var tv = val(a.id);
+          if (tv !== "") {
+            parts.push(cliFlag(a));
+            parts.push(shquote(tv));
+          }
+          continue;
+        }
+        if (w === "select") {
+          var sel = document.getElementById(a.id);
+          if (!sel) continue;
+          var sv = String(sel.value || "");
+          if (sv !== "") {
+            parts.push(cliFlag(a));
+            parts.push(shquote(sv));
+          }
+          continue;
+        }
+      }
+    }
+  }
+
+  function buildAbinit() {
+    var parts = ["cryodrgn", "abinit"];
+    var particles = val("ab_particles");
+    if (particles) parts.push(shquote(particles));
+    appendOpt(parts, "-o", val("ab_out"));
+    var zdim = val("ab_zdim");
+    if (zdim !== "") {
+      parts.push("--zdim");
+      parts.push(shquote(zdim));
+    }
+    appendOpt(parts, "--ctf", val("ab_ctf"));
+    appendOpt(parts, "--datadir", val("ab_datadir"));
+    collectSchemaParts("abinit", parts);
+    return parts.join(" ");
+  }
+
+  function buildTrainVae() {
+    var parts = ["cryodrgn", "train_vae"];
+    var p = val("vae_particles");
+    if (p) parts.push(shquote(p));
+    appendOpt(parts, "-o", val("vae_out"));
+    appendOpt(parts, "--poses", val("vae_poses"));
+    var zd = val("vae_zdim");
+    if (zd !== "") {
+      parts.push("--zdim");
+      parts.push(shquote(zd));
+    }
+    appendOpt(parts, "--ctf", val("vae_ctf"));
+    appendOpt(parts, "--datadir", val("vae_datadir"));
+    collectSchemaParts("train_vae", parts);
+    return parts.join(" ");
+  }
+
+  function buildTrainNn() {
+    var parts = ["cryodrgn", "train_nn"];
+    var p = val("nn_particles");
+    if (p) parts.push(shquote(p));
+    appendOpt(parts, "-o", val("nn_out"));
+    appendOpt(parts, "--poses", val("nn_poses"));
+    appendOpt(parts, "--ctf", val("nn_ctf"));
+    appendOpt(parts, "--datadir", val("nn_datadir"));
+    collectSchemaParts("train_nn", parts);
+    return parts.join(" ");
+  }
+
+  function buildTrainDec() {
+    var parts = ["cryodrgn", "train_dec"];
+    var p = val("dec_particles");
+    if (p) parts.push(shquote(p));
+    appendOpt(parts, "-o", val("dec_out"));
+    appendOpt(parts, "--poses", val("dec_poses"));
+    var zd = val("dec_zdim");
+    if (zd !== "") {
+      parts.push("--zdim");
+      parts.push(shquote(zd));
+    }
+    appendOpt(parts, "--ctf", val("dec_ctf"));
+    appendOpt(parts, "--datadir", val("dec_datadir"));
+    collectSchemaParts("train_dec", parts);
+    return parts.join(" ");
+  }
+
+  function build() {
+    var t = document.getElementById("cmd-type").value;
+    if (t === "abinit") return buildAbinit();
+    if (t === "train_vae") return buildTrainVae();
+    if (t === "train_nn") return buildTrainNn();
+    if (t === "train_dec") return buildTrainDec();
+    return "";
+  }
+
+  var out = document.getElementById("cmd-out");
+  var form = document.getElementById("cmd-form");
+  var cmdType = document.getElementById("cmd-type");
+
+  function syncPanels() {
+    var t = cmdType.value;
+    var panels = document.querySelectorAll(".cmd-panel");
+    for (var i = 0; i < panels.length; i++) {
+      panels[i].classList.toggle("cmd-panel--active", panels[i].getAttribute("data-cmd") === t);
+    }
+    refresh();
+  }
+
+  function refresh() {
+    out.textContent = build();
+  }
+
+  cmdType.addEventListener("change", syncPanels);
+  form.addEventListener("input", refresh);
+  form.addEventListener("change", refresh);
+
+  document.getElementById("cmd-copy").addEventListener("click", function() {
+    var text = build();
+    var st = document.getElementById("cmd-copy-status");
+    function ok() {
+      st.textContent = "Copied.";
+      setTimeout(function() { st.textContent = ""; }, 2000);
+    }
+    function fail() {
+      st.textContent = "Copy failed — select the command manually.";
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(ok).catch(fail);
+    } else {
+      fail();
+    }
+  });
+
+  syncPanels();
+})();
+</script>
+{% endblock %}

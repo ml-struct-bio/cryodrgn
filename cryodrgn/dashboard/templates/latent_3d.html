@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% block title %}3D latent view · cryoDRGN{% endblock %}
+{% block nav_page_title %}<span class="nav-page-title">Three-dimensional latent space</span>{% endblock %}
+{% block content %}
+<div class="cryo-dash-page cryo-dash-page--latent3d">
+<div class="cryo-dash-top">
+  <a href="/">← Back</a>
+</div>
+<p class="cryo-dash-lead">Each point is a particle in the space of three latent coordinates you choose. Optional color encodes another quantity from the analysis table.</p>
+
+<div class="cryo-dash-row">
+  <div class="cryo-dash-side">
+    <div class="card cryo-dash-controls">
+      <fieldset>
+        <legend>Latent axes</legend>
+        <p class="cryo-dash-legend-note" style="margin:0 0 0.35rem;">Pick three <strong>different</strong> coordinates (z0, z1, …). The plot uses WebGL — &ldquo;Rendering…&rdquo; appears in the plot area while data loads.</p>
+        <label class="cryo-select-line" for="sx">First axis</label>
+        <select id="sx"></select>
+        <label class="cryo-select-line" for="sy">Second axis</label>
+        <select id="sy"></select>
+        <label class="cryo-select-line" for="sz">Third axis</label>
+        <select id="sz"></select>
+      </fieldset>
+      <fieldset>
+        <legend>Color scale</legend>
+        <p class="cryo-dash-legend-note" style="margin:0 0 0.35rem;">Optional point color from the analysis table (same idea as the 2D scatter view).</p>
+        <label class="cryo-select-line" for="sc">Color by</label>
+        <select id="sc"><option value="none">None</option></select>
+      </fieldset>
+      <p id="z3-axis-status" class="status"></p>
+    </div>
+  </div>
+  <div class="cryo-dash-main">
+    <div class="cryo-dash-main-split">
+      <div class="cryo-dash-viewport--plotly">
+        <div class="cryo-plotly-stack">
+          <div id="latent3d" class="cryo-plotly-graph-host"></div>
+          <div id="latent3d-rendering-overlay" class="cryo-plot-rendering-overlay cryo-plot-rendering-overlay--show" aria-hidden="false">
+            <div class="cryo-plot-rendering-overlay__inner">
+              <span class="cryo-plot-rendering-overlay__label">Rendering…</span>
+              <div class="cryo-plot-rendering-overlay__track" role="progressbar" aria-valuetext="Loading plot">
+                <div class="cryo-plot-rendering-overlay__indeterminate"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <aside class="cryo-dash-figure-legend" aria-label="3D view legend">
+        <strong>Interpreting the view</strong>
+        <p class="cryo-dash-legend-note">Drag to rotate, scroll to zoom, toolbar for reset and camera. Points are particles in latent space; color follows your choice above (or a single color if none).</p>
+      </aside>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+(function() {
+  var zcols = {{ z_cols | tojson }};
+  var cols = {{ numeric_cols | tojson }};
+  var dx = {{ default_x | tojson }};
+  var dy = {{ default_y | tojson }};
+  var dz = {{ default_z | tojson }};
+
+  function fillZSelect(sel, val) {
+    sel.innerHTML = "";
+    zcols.forEach(function(c) {
+      var o = document.createElement("option");
+      o.value = c;
+      o.textContent = c;
+      sel.appendChild(o);
+    });
+    if (zcols.indexOf(val) >= 0) {
+      sel.value = val;
+    } else {
+      sel.value = zcols[0];
+    }
+  }
+
+  function fillColorSelect(sel) {
+    sel.innerHTML = "";
+    var none = document.createElement("option");
+    none.value = "none";
+    none.textContent = "None";
+    sel.appendChild(none);
+    cols.forEach(function(c) {
+      var o = document.createElement("option");
+      o.value = c;
+      o.textContent = c;
+      sel.appendChild(o);
+    });
+  }
+
+  var sx = document.getElementById("sx");
+  var sy = document.getElementById("sy");
+  var sz = document.getElementById("sz");
+  var sc = document.getElementById("sc");
+  fillZSelect(sx, dx);
+  fillZSelect(sy, dy);
+  fillZSelect(sz, dz);
+  fillColorSelect(sc);
+
+  var gd = document.getElementById("latent3d");
+  var overlay = document.getElementById("latent3d-rendering-overlay");
+
+  function setRendering(on) {
+    if (!overlay) return;
+    overlay.classList.toggle("cryo-plot-rendering-overlay--show", on);
+    overlay.setAttribute("aria-hidden", on ? "false" : "true");
+  }
+
+  function loadPlot() {
+    var x = sx.value;
+    var y = sy.value;
+    var z = sz.value;
+    var c = sc.value;
+    var st = document.getElementById("z3-axis-status");
+    if (x === y || x === z || y === z) {
+      if (st) st.textContent = "Choose three different latent axes.";
+      setRendering(false);
+      return;
+    }
+    if (st) st.textContent = "";
+    setRendering(true);
+    var q = "x=" + encodeURIComponent(x)
+      + "&y=" + encodeURIComponent(y)
+      + "&z=" + encodeURIComponent(z)
+      + "&color=" + encodeURIComponent(c);
+    requestAnimationFrame(function() {
+      requestAnimationFrame(function() {
+        fetch("{{ url_for('api_scatter3d_z') }}?" + q)
+          .then(function(r) {
+            return r.text().then(function(text) {
+              var j;
+              try { j = JSON.parse(text); }
+              catch (e) { throw new Error("API did not return JSON"); }
+              if (!r.ok) throw new Error(j.error || r.statusText);
+              return j;
+            });
+          })
+          .then(function(fig) {
+            return Plotly.react(gd, fig.data, fig.layout, {responsive: true});
+          })
+          .then(function() {
+            setRendering(false);
+            requestAnimationFrame(function() {
+              try {
+                Plotly.Plots.resize(gd);
+              } catch (e) {}
+            });
+          })
+          .catch(function(e) {
+            console.error(e);
+            setRendering(false);
+            var st2 = document.getElementById("z3-axis-status");
+            if (st2) st2.textContent = e.message || "Could not draw plot.";
+          });
+      });
+    });
+  }
+
+  [sx, sy, sz, sc].forEach(function(s) {
+    s.addEventListener("change", loadPlot);
+  });
+  window.addEventListener("resize", function() {
+    try {
+      Plotly.Plots.resize(gd);
+    } catch (e) {}
+  });
+  loadPlot();
+})();
+</script>
+{% endblock %}

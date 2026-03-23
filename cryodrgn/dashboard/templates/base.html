@@ -38,30 +38,29 @@
       background: var(--nav-bg);
       color: #e8eef4;
       border-bottom: 3px solid var(--accent);
-      padding: 0.75rem 1.5rem;
-      display: flex;
+      padding: 0.45rem 1.15rem;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, auto) auto;
       align-items: center;
-      justify-content: space-between;
-      flex-wrap: wrap;
-      gap: 0.5rem 1rem;
+      gap: 0.35rem 1rem;
     }
     .nav-left {
       display: flex;
       align-items: baseline;
       flex-wrap: wrap;
-      gap: 0.35rem 1rem;
+      gap: 0.3rem 0.85rem;
       min-width: 0;
-      flex: 1 1 auto;
+      justify-self: start;
     }
     .nav-page-title {
       font-family: var(--font-sans);
-      font-size: 1.05rem;
+      font-size: 0.98rem;
       font-weight: 700;
       color: #e8eef4;
       letter-spacing: 0.02em;
       margin: 0;
-      line-height: 1.25;
-      padding-left: 1rem;
+      line-height: 1.2;
+      padding-left: 0.85rem;
       border-left: 2px solid rgba(232, 238, 244, 0.35);
     }
     .nav a {
@@ -72,36 +71,68 @@
     .nav a:hover { color: #fff; text-decoration: underline; }
     .nav-brand {
       font-family: var(--font-sans);
-      font-size: 1.35rem;
+      font-size: 1.12rem;
       font-weight: 700;
       letter-spacing: 0.02em;
     }
+    .nav-center {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.1rem;
+      min-width: 0;
+      max-width: min(100%, 48rem);
+      justify-self: center;
+      text-align: center;
+    }
+    .nav-config-field {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.08rem;
+      width: 100%;
+      max-width: min(40rem, 80vw);
+      font-size: 0.7rem;
+      font-weight: 600;
+      line-height: 1.22;
+      opacity: 0.92;
+    }
+    .nav-config-line1 {
+      white-space: nowrap;
+      text-align: center;
+    }
+    .nav-config-line2 {
+      font-weight: 500;
+      opacity: 0.86;
+      text-align: center;
+    }
     .nav-right {
       display: flex;
-      flex-wrap: wrap;
       align-items: center;
       justify-content: flex-end;
-      gap: 0.65rem 1.1rem;
-      max-width: min(100%, 52rem);
+      justify-self: end;
+      min-width: 0;
     }
     .nav-epoch {
       display: flex;
       align-items: center;
-      gap: 0.45rem;
+      gap: 0.35rem;
+      flex-shrink: 0;
     }
     .nav-epoch label {
       margin: 0;
-      font-size: 0.82rem;
+      font-size: 0.68rem;
       font-weight: 600;
-      opacity: 0.92;
+      opacity: 0.9;
     }
     .nav-epoch select {
       width: auto;
-      min-width: 4.5rem;
-      max-width: 8rem;
+      min-width: 4rem;
+      max-width: 7rem;
       margin: 0;
-      padding: 0.32rem 0.45rem;
-      font-size: 0.88rem;
+      padding: 0.2rem 0.38rem;
+      font-size: 0.74rem;
       background: rgba(255, 255, 255, 0.12);
       color: #e8eef4;
       border: 1px solid rgba(255, 255, 255, 0.28);
@@ -110,11 +141,41 @@
       color: #1a2332;
       background: #fff;
     }
-    .nav-meta {
-      font-size: 0.88rem;
-      opacity: 0.9;
-      text-align: right;
-      line-height: 1.35;
+    .nav-output-row {
+      font-size: 0.65rem;
+      font-weight: 500;
+      line-height: 1.28;
+      opacity: 0.86;
+      text-align: center;
+      width: 100%;
+      max-width: min(40rem, 80vw);
+    }
+    .nav-output-row .nav-kmeans-bit {
+      opacity: 0.78;
+      font-weight: 500;
+    }
+    @media (max-width: 720px) {
+      .nav {
+        grid-template-columns: 1fr;
+        justify-items: stretch;
+      }
+      .nav-left {
+        order: 1;
+      }
+      .nav-center {
+        order: 2;
+        max-width: 100%;
+        align-items: center;
+      }
+      .nav-config-field,
+      .nav-output-row {
+        max-width: 100%;
+      }
+      .nav-right {
+        order: 3;
+        justify-self: stretch;
+        justify-content: flex-end;
+      }
     }
     main {
       max-width: 1200px;
@@ -280,12 +341,11 @@
       position: absolute;
       inset: 0;
       display: none;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
       background: rgba(250, 248, 244, 0.94);
       color: var(--nav-bg, #243b53);
-      font-weight: 800;
-      font-size: clamp(1rem, 2.5vw, 1.35rem);
       z-index: 2147483646;
       pointer-events: none;
       border-radius: 2px;
@@ -295,6 +355,56 @@
       pointer-events: auto;
       transform: translateZ(0);
       backface-visibility: hidden;
+    }
+    .cryo-plot-rendering-overlay__inner {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.55rem;
+      max-width: min(90%, 22rem);
+    }
+    .cryo-plot-rendering-overlay__label {
+      font-weight: 800;
+      font-size: clamp(1rem, 2.5vw, 1.35rem);
+      line-height: 1.2;
+      text-align: center;
+    }
+    .cryo-plot-rendering-overlay__track {
+      width: min(13.5rem, 70vw);
+      height: 5px;
+      border-radius: 3px;
+      background: rgba(36, 59, 83, 0.14);
+      overflow: hidden;
+      position: relative;
+    }
+    .cryo-plot-rendering-overlay__indeterminate {
+      position: absolute;
+      top: 0;
+      height: 100%;
+      width: 38%;
+      border-radius: 3px;
+      background: var(--accent, #c4703a);
+      opacity: 0.95;
+      animation: cryo-dash-render-bar 1.15s ease-in-out infinite alternate;
+    }
+    @keyframes cryo-dash-render-bar {
+      0% {
+        left: 0;
+        transform: translateX(0);
+      }
+      100% {
+        left: 100%;
+        transform: translateX(-100%);
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .cryo-plot-rendering-overlay__indeterminate {
+        animation: none;
+        left: 0;
+        transform: none;
+        width: 100%;
+        opacity: 0.35;
+      }
     }
     .cryo-dash-main-split {
       display: flex;
@@ -382,6 +492,129 @@
       margin-top: 0.35rem;
       font-size: 0.8rem;
     }
+    /* Image viewer: square plot in flex center; montage shrinks (narrower) as needed. */
+    main:has(.cryo-dash-page--image-viewer) {
+      padding-top: 0.45rem;
+    }
+    .cryo-dash-page--image-viewer .cryo-dash-row {
+      display: flex;
+      flex-direction: row;
+      align-items: stretch;
+      gap: 1rem;
+      height: calc(100svh - 7.25rem);
+      min-height: calc(100svh - 7.25rem);
+      max-height: calc(100svh - 7.25rem);
+    }
+    .cryo-dash-page--image-viewer .cryo-dash-side {
+      flex: 0 0 auto;
+      min-width: 130px;
+      max-width: 196px;
+      width: min(196px, 14vw);
+    }
+    .cryo-dash-page--image-viewer .cryo-dash-viewport--plotly {
+      flex: 1 1 0;
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      /* Match .cryo-dash-controls.card padding-top so status / plot stack line up with the side & montage panels. */
+      padding-top: 0.75rem;
+    }
+    .cryo-dash-page--image-viewer .cryo-plotly-stack {
+      flex: 0 1 auto;
+      align-self: center;
+      box-sizing: border-box;
+      width: 100%;
+      max-width: 100%;
+      max-height: calc(100% - 2.35rem);
+      aspect-ratio: 1 / 1;
+      min-height: 0;
+      min-width: 0;
+      height: auto;
+    }
+    /* Fixed row height: size the square from both column width and height so the plot is never non-square. */
+    @media (min-width: 901px) {
+      .cryo-dash-page--image-viewer .cryo-dash-viewport--plotly {
+        container-type: size;
+        container-name: cryo-image-viewer-plot;
+      }
+      .cryo-dash-page--image-viewer .cryo-plotly-stack {
+        width: min(100cqw, calc(100cqh - 2.35rem));
+        max-width: 100%;
+        max-height: calc(100cqh - 2.35rem);
+      }
+    }
+    .cryo-dash-page--image-viewer .cryo-plotly-graph-host {
+      flex: 1 1 auto;
+      min-height: 0;
+      min-width: 0;
+      height: 100% !important;
+      width: 100% !important;
+    }
+    .cryo-dash-page--image-viewer .cryo-dash-montage {
+      flex: 0 1 auto;
+      width: auto;
+      max-width: min(28rem, calc(100svh - 7.75rem));
+      min-width: 0;
+      background: var(--paper, #fff);
+      /* Match .cryo-dash-controls.card vertical padding so column tops line up with the menu card. */
+      padding: 0.75rem 0.85rem;
+      border-radius: 4px;
+      box-shadow: var(--card-shadow);
+      border: 1px solid rgba(36, 59, 83, 0.12);
+      align-self: flex-start;
+      position: sticky;
+      top: 1rem;
+      overflow: auto;
+      max-height: calc(100svh - 7.25rem);
+    }
+    .cryo-dash-page--image-viewer .cryo-dash-montage strong {
+      font-size: 0.88rem;
+      color: var(--nav-bg, #243b53);
+    }
+    .cryo-dash-page--image-viewer .cryo-dash-montage .cryo-dash-legend-note {
+      margin: 0.5rem 0 0;
+      font-size: 0.8rem;
+      color: var(--muted, #5c6b7a);
+      line-height: 1.35;
+    }
+    .cryo-dash-page--image-viewer .cryo-dash-montage .cryo-dash-legend-note:first-child {
+      margin-top: 0;
+    }
+
+    /* Particle selection (filter): fill viewport vertically like 3D view. */
+    main:has(.cryo-dash-page--filter) {
+      padding-top: 0.65rem;
+    }
+    .cryo-dash-page--filter .cryo-dash-row {
+      align-items: stretch;
+    }
+    .cryo-dash-page--filter .cryo-dash-main {
+      align-items: stretch;
+    }
+    .cryo-dash-page--filter .cryo-dash-main-split {
+      align-items: stretch;
+    }
+    .cryo-dash-page--filter .cryo-dash-viewport--plotly {
+      display: flex;
+      flex-direction: column;
+      min-height: max(22rem, calc(100svh - 11.5rem));
+      height: calc(100svh - 11.5rem);
+    }
+    .cryo-dash-page--filter .cryo-plotly-stack {
+      flex: 1 1 auto;
+      min-height: 0;
+      height: 100%;
+      width: 100%;
+    }
+    .cryo-dash-page--filter .cryo-plotly-graph-host {
+      flex: 1 1 auto;
+      min-height: 0;
+      height: 100% !important;
+      width: 100%;
+    }
+
     /* 3D latent: tall plot column (remaining viewport under nav + lead + controls). */
     main:has(.cryo-dash-page--latent3d) {
       padding-top: 0.65rem;
@@ -437,6 +670,31 @@
         height: max(20rem, calc(100svh - 16rem));
         min-height: max(20rem, calc(100svh - 16rem));
       }
+      .cryo-dash-page--image-viewer .cryo-dash-row {
+        height: auto;
+        min-height: auto;
+        max-height: none;
+      }
+      .cryo-dash-page--image-viewer .cryo-dash-montage {
+        max-height: none;
+      }
+      .cryo-dash-page--image-viewer .cryo-plotly-stack {
+        max-height: min(92vw, calc(100svh - 14rem));
+      }
+      .cryo-dash-page--image-viewer .cryo-dash-side,
+      .cryo-dash-page--image-viewer .cryo-dash-viewport--plotly,
+      .cryo-dash-page--image-viewer .cryo-dash-montage {
+        flex: none;
+        max-width: none;
+        width: 100%;
+      }
+      .cryo-dash-page--image-viewer .cryo-dash-montage {
+        position: static;
+      }
+      .cryo-dash-page--filter .cryo-dash-viewport--plotly {
+        height: max(20rem, calc(100svh - 16rem));
+        min-height: max(20rem, calc(100svh - 16rem));
+      }
     }
   </style>
   {% block head %}{% endblock %}
@@ -447,6 +705,15 @@
       <a href="/" class="nav-brand">cryoDRGN · dashboard</a>
       {% block nav_page_title %}{% endblock %}
     </div>
+    <div class="nav-center">
+      <div class="nav-config-field" aria-label="Run configuration">
+        <div class="nav-config-line1">{{ cfg_model_type }} z{{ cfg_zdim }}</div>
+        <div class="nav-config-line2" title="{{ cfg_particles }}">{{ cfg_particles|abbrev_middle(60) }}</div>
+        <div class="nav-output-row" title="Output · {{ exp_workdir }} · k-means {{ exp_kmeans }}">
+          Output · <span title="{{ exp_workdir }}">{{ exp_workdir|abbrev_middle(60) }}</span><span class="nav-kmeans-bit"> · k-means {{ exp_kmeans }}</span>
+        </div>
+      </div>
+    </div>
     <div class="nav-right">
       <div class="nav-epoch">
         <label for="dash-epoch">Epoch</label>
@@ -455,10 +722,6 @@
           <option value="{{ ep }}" {% if ep == exp_epoch %}selected{% endif %}>{{ ep }}</option>
           {% endfor %}
         </select>
-      </div>
-      <div class="nav-meta">
-        Output · {{ exp_workdir }}<br/>
-        <span class="muted" style="opacity:0.88;">Clustering {{ exp_kmeans }}</span>
       </div>
     </div>
   </header>

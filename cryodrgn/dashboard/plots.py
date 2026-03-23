@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import re
 from collections.abc import Collection
 from typing import Any, cast
 
@@ -32,7 +33,7 @@ from cryodrgn.dashboard.mpl_style import ezlab_matplotlib_rc
 
 
 def _lower_color_series_is_discrete(s: pd.Series) -> bool:
-    """Treat integer / categorical / few whole-valued floats as discrete colouring."""
+    """Treat integer / categorical / few whole-valued floats as discrete coloring."""
     s = s.dropna()
     if len(s) == 0:
         return False
@@ -72,7 +73,8 @@ _PAIR_GRID_BOTTOM = 0.06
 _PAIR_GRID_RIGHT_INITIAL = 0.68
 _PAIR_GRID_RIGHT_PLACEHOLDER = 0.712
 
-# Shared Plotly font (matches base.html --font-sans).
+_UMAP_RE = re.compile(r"(?i)^umap")
+
 _PLOTLY_FONT = dict(
     family="Barlow, Roboto, -apple-system, BlinkMacSystemFont, sans-serif",
     size=13,
@@ -187,7 +189,7 @@ def _refine_pair_grid_right_margin(
     right_artist,
     max_gap_inches: float,
 ) -> None:
-    """Set subplot ``right`` so gap to legend / colour bar is at most ``max_gap_inches`` wide."""
+    """Set subplot ``right`` so gap to legend / color bar is at most ``max_gap_inches`` wide."""
     h_frac = top_m - bottom_m
     fig_h = grid_side_in / h_frac
     for _ in range(2):
@@ -323,18 +325,19 @@ def scatter_json(
     *,
     preselect_plot_df_rows: Collection[int] | None = None,
     use_webgl: bool = True,
+    marker_size: float = 4,
 ) -> str:
     sub, row_indices = _subsample(exp.plot_df, max_points, seed=0)
 
     if color_col and color_col != "none" and color_col in sub.columns:
         marker = dict(
-            size=4,
+            size=marker_size,
             opacity=0.35,
             color=sub[color_col],
             colorscale="Viridis",
         )
     else:
-        marker = dict(size=4, opacity=0.35, color="#4a5568")
+        marker = dict(size=marker_size, opacity=0.35, color="#4a5568")
 
     customdata = np.column_stack(
         [sub["index"].to_numpy(), row_indices],
@@ -346,22 +349,30 @@ def scatter_json(
         y=sub[ycol],
         mode="markers",
         customdata=customdata,
-        hovertemplate=(
-            "row %{customdata[1]} · index %{customdata[0]}" "<extra></extra>"
-        ),
+        hovertemplate="row %{customdata[1]} · index %{customdata[0]}<extra></extra>",
         marker=marker,
     )
+
+    xaxis_kw: dict[str, Any] = dict(title=xcol)
+    yaxis_kw: dict[str, Any] = dict(title=ycol)
+    if _UMAP_RE.match(xcol):
+        xaxis_kw["showticklabels"] = False
+        xaxis_kw["showgrid"] = False
+    if _UMAP_RE.match(ycol):
+        yaxis_kw["showticklabels"] = False
+        yaxis_kw["showgrid"] = False
 
     layout_kw: dict[str, Any] = dict(
         template="plotly_white",
         paper_bgcolor=_DASHBOARD_CREAM,
-        margin=dict(l=50, r=20, t=40, b=50),
-        title=f"{ycol} vs {xcol}",
-        xaxis_title=xcol,
-        yaxis_title=ycol,
+        margin=dict(l=50, r=20, t=16, b=50),
+        title=None,
+        xaxis=xaxis_kw,
+        yaxis=yaxis_kw,
         dragmode="lasso",
         uirevision="scatter",
         font=_PLOTLY_FONT,
+        showlegend=False,
     )
     if preselect_plot_df_rows is not None:
         want = frozenset(int(x) for x in preselect_plot_df_rows)
@@ -416,9 +427,7 @@ def scatter3d_z_json(
         z=sub[zcol],
         mode="markers",
         customdata=customdata,
-        hovertemplate=(
-            "row %{customdata[1]} · index %{customdata[0]}" "<extra></extra>"
-        ),
+        hovertemplate="row %{customdata[1]} · index %{customdata[0]}<extra></extra>",
         marker=marker,
     )
     transparent = "rgba(0,0,0,0)"
@@ -464,7 +473,7 @@ def pair_grid_png(
             raise ValueError(f"Missing latent column {c} in analysis table.")
 
     if lower_color_col not in df.columns:
-        raise ValueError(f"Unknown colour column: {lower_color_col}")
+        raise ValueError(f"Unknown color column: {lower_color_col}")
     raw_color = df[lower_color_col]
     discrete = _lower_color_series_is_discrete(raw_color)
 
@@ -481,7 +490,7 @@ def pair_grid_png(
         codes = np.asarray(codes_arr, dtype=np.int64)
         if len(uniques) == 0:
             raise ValueError(
-                f"Lower-triangle colour column `{lower_color_col}` has no values."
+                f"Lower-triangle color column `{lower_color_col}` has no values."
             )
         n_u = len(uniques)
         pal = list(analysis._get_chimerax_colors(max(n_u, 1)))
@@ -496,7 +505,7 @@ def pair_grid_png(
         color_num = cast(pd.Series, pd.to_numeric(raw_color, errors="coerce"))
         if bool(color_num.isna().all()):
             raise ValueError(
-                f"Lower-triangle colour column `{lower_color_col}` has no numeric values."
+                f"Lower-triangle color column `{lower_color_col}` has no numeric values."
             )
         cvals = np.asarray(color_num, dtype=np.float64)
         cfinite = cvals[np.isfinite(cvals)]
@@ -535,9 +544,11 @@ def pair_grid_png(
         hex_cmap = _pair_jointplot_hex_cmap()
 
         inch_per = max(2.35, min(2.85, 11.0 / max(zdim, 1)))
-        left_m, top_m = _PAIR_GRID_LEFT, _PAIR_GRID_TOP
+        left_m = _PAIR_GRID_LEFT
+        # Reserve extra headroom for enlarged top edge labels.
+        top_m = min(_PAIR_GRID_TOP, 0.955)
         bottom_m = _PAIR_GRID_BOTTOM
-        # Subplot grid right edge (legend / vertical colour bar sit to the right).
+        # Subplot grid right edge (legend / vertical color bar sit to the right).
         right_axes = _PAIR_GRID_RIGHT_INITIAL
         legend_handles: list[mlines.Line2D] | None = None
         if discrete:
@@ -571,7 +582,7 @@ def pair_grid_png(
                     )
                 )
 
-        # Square axes region; reserve a strip on the right for legend or colour bar.
+        # Square axes region; reserve a strip on the right for legend or color bar.
         w_frac = right_axes - left_m
         h_frac = top_m - bottom_m
         grid_side_in = inch_per * zdim
@@ -595,6 +606,7 @@ def pair_grid_png(
         fig.patch.set_facecolor(_DASHBOARD_CREAM)
 
         lower_cbar_mappable = None
+        diagonal_color_ranges: list[tuple[float, float] | None] = [None] * zdim
 
         for i in range(zdim):
             for j in range(zdim):
@@ -603,6 +615,13 @@ def pair_grid_png(
                 yi = df[zcols[i]].to_numpy(dtype=np.float64)
                 if i == j:
                     zi = df[zcols[i]].to_numpy(dtype=np.float64)
+                    zmask = np.isfinite(zi)
+                    if np.any(zmask):
+                        zmin = float(np.min(zi[zmask]))
+                        zmax = float(np.max(zi[zmask]))
+                        if zmax <= zmin:
+                            zmax = zmin + 1e-9
+                        diagonal_color_ranges[i] = (zmin, zmax)
                     ax.scatter(
                         emb_x,
                         emb_y,
@@ -682,9 +701,10 @@ def pair_grid_png(
                 ax.set_aspect("equal", adjustable="datalim")
                 ax.set_box_aspect(1)
                 ax.set_facecolor(_DASHBOARD_CREAM)
+                is_diag = i == j
                 for spine in ax.spines.values():
-                    spine.set_linewidth(1.05)
-                    spine.set_color("#5a6b7a")
+                    spine.set_linewidth(2.1 if is_diag else 1.05)
+                    spine.set_color("#334e68" if is_diag else "#5a6b7a")
 
         fig.subplots_adjust(
             left=left_m,
@@ -697,12 +717,16 @@ def pair_grid_png(
 
         max_side_gap_in = inch_per / 6.0
         leg = None
-        _plot_center_y_fig = (bottom_m + top_m) / 2.0
-        _legend_x_fig = right_axes + 0.018
+        # Use realized axes extents for vertical alignment (matches the visible plotting region).
+        top_bb = axes[0, 0].get_position()
+        bot_bb = axes[zdim - 1, 0].get_position()
+        _plot_center_y_fig = (bot_bb.y0 + top_bb.y1) / 2.0
+        # Center the main legend in the right-side free strip.
+        _legend_x_fig = right_axes + (1.0 - right_axes) * 0.5
         if discrete and legend_handles is not None:
             leg = fig.legend(
                 handles=legend_handles,
-                loc="center left",
+                loc="center",
                 bbox_to_anchor=(_legend_x_fig, _plot_center_y_fig),
                 bbox_transform=fig.transFigure,
                 ncol=2,
@@ -762,36 +786,130 @@ def pair_grid_png(
                 max_gap_inches=max_side_gap_in,
             )
 
-        _zk_h = max(11.0, min(16.0, 4.9 * inch_per / 3.05))
-        _zk_v = _zk_h
+        _zk = max(11.0, min(16.0, 4.9 * inch_per / 3.05))
+        _edge_label_fs = _zk * 1.5
+        _edge_label_gap = 0.008
+        _right_edge_label_gap = _edge_label_gap * 0.6
+        # Column labels along the top edge of the full grid.
+        for j in range(1, zdim):
+            top_ax = axes[0, j]
+            bb = top_ax.get_position()
+            fig.text(
+                bb.x0 + bb.width / 2.0,
+                top_m + _edge_label_gap,
+                f"zdim {j + 1}",
+                ha="center",
+                va="bottom",
+                fontsize=_edge_label_fs,
+                color="#243b53",
+                fontweight="bold",
+            )
+        # Column labels along the bottom edge (skip last column to avoid facing diagonal).
+        for j in range(zdim - 1):
+            bot_ax = axes[zdim - 1, j]
+            bb = bot_ax.get_position()
+            fig.text(
+                bb.x0 + bb.width / 2.0,
+                bottom_m - _edge_label_gap,
+                f"zdim {j + 1}",
+                ha="center",
+                va="top",
+                fontsize=_edge_label_fs,
+                color="#243b53",
+                fontweight="bold",
+            )
+        # Row labels along the right edge (skip last row), moved 40% closer to the grid.
+        for i in range(zdim - 1):
+            right_ax = axes[i, zdim - 1]
+            bb = right_ax.get_position()
+            fig.text(
+                right_axes + _right_edge_label_gap,
+                bb.y0 + bb.height / 2.0,
+                f"zdim {i + 1}",
+                ha="left",
+                va="center",
+                fontsize=_edge_label_fs,
+                color="#243b53",
+                fontweight="bold",
+                rotation=270,
+            )
+        # Row labels along the left edge (skip first row to avoid facing diagonal).
+        for i in range(1, zdim):
+            left_ax = axes[i, 0]
+            bb = left_ax.get_position()
+            fig.text(
+                left_m - _edge_label_gap,
+                bb.y0 + bb.height / 2.0,
+                f"zdim {i + 1}",
+                ha="right",
+                va="center",
+                fontsize=_edge_label_fs,
+                color="#243b53",
+                fontweight="bold",
+                rotation=90,
+            )
+        # Small diagonal legends (bottom-left) showing each panel's viridis scale.
         for k in range(zdim):
             ax = axes[k, k]
-            _zlab = f"zdim {k + 1}"
-            # Horizontal title inside (top-right).
+            zrange = diagonal_color_ranges[k]
+            zlabel = f"zdim {k + 1}"
+            grad_left = 0.115
+            grad_bottom = 0.028
+            grad_width = 0.24
+            grad_height = 0.044
+            side_gap = grad_bottom * 0.5
             ax.text(
-                0.97,
-                0.96,
-                _zlab,
+                grad_left + grad_width / 2.0,
+                0.10,
+                zlabel,
                 transform=ax.transAxes,
-                fontsize=_zk_h,
+                fontsize=max(9.6, _zk * 0.864),
                 color="#243b53",
                 fontweight="bold",
+                ha="center",
+                va="bottom",
+                clip_on=True,
+                bbox={
+                    "boxstyle": "round,pad=0.16",
+                    "facecolor": (250 / 255, 248 / 255, 244 / 255, 0.9),
+                    "edgecolor": "none",
+                },
+            )
+            if zrange is None:
+                continue
+            zmin, zmax = zrange
+            grad_ax = ax.inset_axes(
+                [grad_left, grad_bottom, grad_width, grad_height],
+                transform=ax.transAxes,
+            )
+            grad = np.linspace(0.0, 1.0, 128, dtype=np.float64).reshape(1, -1)
+            grad_ax.imshow(grad, cmap="viridis", aspect="auto", origin="lower")
+            grad_ax.set_xticks([])
+            grad_ax.set_yticks([])
+            for spine in grad_ax.spines.values():
+                spine.set_linewidth(0.6)
+                spine.set_color("#6b7c8d")
+            y_mid = grad_bottom + grad_height / 2.0
+            ax.text(
+                grad_left - side_gap,
+                y_mid,
+                f"{zmin:.2g}",
+                transform=ax.transAxes,
+                fontsize=max(8.4, _zk * 0.672),
+                color="#243b53",
                 ha="right",
-                va="top",
+                va="center",
                 clip_on=True,
             )
-            # Vertical title along the top of the left edge (row-style).
             ax.text(
-                0.05,
-                0.96,
-                _zlab,
+                grad_left + grad_width + side_gap,
+                y_mid,
+                f"{zmax:.2g}",
                 transform=ax.transAxes,
-                fontsize=_zk_v,
+                fontsize=max(8.4, _zk * 0.672),
                 color="#243b53",
-                fontweight="bold",
-                ha="right",
-                va="top",
-                rotation=90,
+                ha="left",
+                va="center",
                 clip_on=True,
             )
 

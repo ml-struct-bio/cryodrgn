@@ -1,13 +1,13 @@
 """Launch a local web dashboard for cryoDRGN interactive analyses.
 
-The dashboard opens in your browser with views for particle selection (lasso in 2D),
-scatter plots with optional thumbnails, pairwise latent panels, and a 3D latent scatter.
+The dashboard opens in your browser with a particle explorer (scatter, selection,
+optional thumbnails), pairwise latent panels, a 3D latent scatter, and a command builder.
 
 Example
 -------
 $ cryodrgn dashboard 00_trainvae
 $ cryodrgn dashboard 00_trainvae --epoch 30 --port 8080
-$ cryodrgn dashboard 00_trainvae --three-dimensional
+$ cryodrgn dashboard 00_trainvae --image-viewer
 $ cryodrgn dashboard 00_trainvae --particle --filter-max 10000
 """
 from __future__ import annotations
@@ -46,7 +46,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "--plot-inds",
         type=str,
         default=None,
-        help="optional path to indices.pkl to pre-highlight on the web selection page",
+        help="optional path to indices.pkl to pre-highlight on the particle explorer",
     )
     parser.add_argument(
         "--filter-max-points",
@@ -85,12 +85,14 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "--filter",
         action="store_true",
         dest="particle_selection",
-        help="open the particle selection (lasso) view instead of the launch menu",
+        help="open the particle explorer instead of the launch menu",
     )
     view.add_argument(
+        "--image-viewer",
         "--scatter",
         action="store_true",
-        help="open the 2D scatter explorer instead of the launch menu",
+        dest="image_viewer",
+        help="open the image viewer instead of the launch menu",
     )
     view.add_argument(
         "--pair-grid",
@@ -101,6 +103,13 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "--three-dimensional",
         action="store_true",
         help="open the 3D latent scatter instead of the launch menu",
+    )
+    parser.add_argument(
+        "--cpus",
+        "-c",
+        type=int,
+        default=4,
+        help="CPU cores for image cache generation (default: %(default)s)",
     )
     parser.add_argument(
         "--debug",
@@ -117,8 +126,8 @@ def main(args: argparse.Namespace) -> None:
 
     outdir = args.outdir
     _VIEW_PATHS = {
-        "particle_selection": "/filter",
-        "scatter": "/explorer",
+        "particle_selection": "/explorer",
+        "image_viewer": "/explorer",
         "pair_grid": "/pairplot",
         "three_dimensional": "/latent-3d",
     }
@@ -152,4 +161,5 @@ def main(args: argparse.Namespace) -> None:
         host=args.host,
         port=args.port,
         debug=args.debug,
+        cpus=args.cpus,
     )

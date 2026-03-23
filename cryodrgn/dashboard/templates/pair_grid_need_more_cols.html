@@ -3,7 +3,7 @@
 {% if kind == "z3" %}3D latent · cryoDRGN{% else %}Pair grid · cryoDRGN{% endif %}
 {% endblock %}
 {% block nav_page_title %}
-{% if kind == "z3" %}<span class="nav-page-title">Three-dimensional latent view</span>{% else %}<span class="nav-page-title">Pairwise latent view</span>{% endif %}
+{% if kind == "z3" %}<span class="nav-page-title">3-D Visualizer</span>{% else %}<span class="nav-page-title">Pairwise plot generator</span>{% endif %}
 {% endblock %}
 {% block content %}
 <div class="cryo-dash-page">
@@ -15,7 +15,7 @@
 {% elif kind == "pca" %}
 <p class="lead">The diagonal embedding needs PCA components in the analysis table for this epoch.</p>
 {% else %}
-<p class="lead">There is no numeric column available to colour the lower panels.</p>
+<p class="lead">There is no numeric column available to color the lower panels.</p>
 {% endif %}
 </div>
 {% endblock %}

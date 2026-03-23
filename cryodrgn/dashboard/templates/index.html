@@ -2,130 +2,175 @@
 {% block title %}cryoDRGN dashboard{% endblock %}
 {% block head %}
 <style>
-  .landing-hub {
-    max-width: 56rem;
+  main:has(.landing-hub) {
+    max-width: none;
     margin: 0 auto;
+    padding: 1.25rem 1.5rem 1.5rem;
+    box-sizing: border-box;
+  }
+  .landing-hub {
+    width: 100%;
+    max-width: none;
+    margin: 0 auto;
+    min-height: calc(100vh - 5.5rem);
     display: flex;
     flex-direction: column;
-    min-height: calc(100svh - 5rem);
-  }
-  .landing-hub .lead {
-    margin: 0 0 1rem;
-    flex: 0 0 auto;
   }
   .landing-cards {
-    flex: 1 1 auto;
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
     gap: 1rem;
+    align-items: stretch;
+    flex: 1 1 auto;
     min-height: 0;
   }
   .landing-card {
-    flex: 1 1 0;
+    position: relative;
     background: var(--paper, #fff);
     border-radius: 6px;
-    padding: 1.15rem 1.5rem 1rem;
+    padding: 1.15rem 1.35rem 1rem;
     box-shadow: var(--card-shadow, 0 2px 12px rgba(36, 59, 83, 0.08));
     border: 1px solid rgba(36, 59, 83, 0.12);
     display: flex;
     flex-direction: column;
-    justify-content: flex-start;
-    min-height: 0;
+    min-width: 0;
+    min-height: 100%;
     transition:
-      transform 0.22s ease,
-      box-shadow 0.22s ease,
-      border-color 0.22s ease,
-      background-color 0.22s ease;
+      transform 0.26s cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 0.26s cubic-bezier(0.22, 1, 0.36, 1),
+      border-color 0.26s ease,
+      background 0.26s ease;
   }
   .landing-card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 10px 28px rgba(36, 59, 83, 0.14);
-    border-color: rgba(196, 112, 58, 0.45);
-    background: #fffefb;
+    transform: translateY(-8px) scale(1.02);
+    box-shadow:
+      0 6px 12px rgba(36, 59, 83, 0.08),
+      0 22px 48px rgba(36, 59, 83, 0.18),
+      0 0 0 1px rgba(196, 112, 58, 0.4),
+      0 0 40px rgba(196, 112, 58, 0.22);
+    border-color: rgba(196, 112, 58, 0.65);
+    background: linear-gradient(165deg, #fffefb 0%, #fff 55%, #faf8f4 100%);
   }
   .landing-card:focus-within {
+    transform: translateY(-5px) scale(1.015);
+    box-shadow:
+      0 4px 10px rgba(36, 59, 83, 0.07),
+      0 16px 36px rgba(36, 59, 83, 0.14),
+      0 0 0 1px rgba(196, 112, 58, 0.35),
+      0 0 28px rgba(196, 112, 58, 0.16);
+    border-color: rgba(196, 112, 58, 0.55);
     outline: 2px solid var(--accent, #c4703a);
-    outline-offset: 2px;
+    outline-offset: 3px;
   }
-  .landing-card h2 {
+  .landing-card h2.landing-card-title {
     font-family: var(--font-sans);
     font-weight: 700;
-    font-size: 1.22rem;
-    margin: 0 0 0.4rem;
+    font-size: 1.794rem;
+    line-height: 1.15;
+    margin: 0 0 0.45rem;
     color: var(--nav-bg, #243b53);
+    flex: 0 0 auto;
+    letter-spacing: 0.01em;
+  }
+  .landing-card-thumb {
+    width: 100%;
+    flex: 1 1 auto;
+    max-height: min(28vh, 220px);
+    min-height: 88px;
+    border-radius: 3px;
+    margin: 0.45rem 0 0.6rem;
+    display: block;
+    object-fit: contain;
+    object-position: center top;
   }
   .landing-card p {
-    margin: 0 0 0.65rem;
+    margin: 0;
     color: var(--muted, #5c6b7a);
-    font-size: 0.97rem;
-    flex: 1 1 auto;
+    font-size: 1.17rem;
+    line-height: 1.4;
+    flex: 0 1 auto;
   }
-  .landing-card .landing-card-actions {
+  .landing-card .muted {
     margin-top: auto;
-    padding-top: 0.85rem;
-    width: 100%;
-    text-align: center;
+    padding-top: 0.75rem;
+    font-size: 1.196rem;
+    line-height: 1.35;
   }
-  .landing-card .landing-card-actions .btn {
-    display: inline-block;
+  .landing-card-link {
+    text-decoration: none;
+    color: inherit;
+    cursor: pointer;
   }
-  @media (max-width: 700px) {
-    .landing-hub {
-      min-height: auto;
-    }
+  .landing-card-link:visited {
+    color: inherit;
+  }
+  .landing-card-link:focus-visible {
+    transform: translateY(-5px) scale(1.015);
+    box-shadow:
+      0 4px 10px rgba(36, 59, 83, 0.07),
+      0 16px 36px rgba(36, 59, 83, 0.14),
+      0 0 0 1px rgba(196, 112, 58, 0.35),
+      0 0 28px rgba(196, 112, 58, 0.16);
+    border-color: rgba(196, 112, 58, 0.55);
+    outline: 2px solid var(--accent, #c4703a);
+    outline-offset: 3px;
+  }
+  @media (max-width: 900px) {
     .landing-cards {
-      flex: none;
+      grid-template-columns: repeat(2, 1fr);
     }
-    .landing-card {
-      flex: none;
-      min-height: min(200px, 28vh);
+  }
+  @media (max-width: 520px) {
+    .landing-cards {
+      grid-template-columns: 1fr;
+    }
+    .landing-card-thumb {
+      max-height: min(36vh, 240px);
     }
   }
 </style>
 {% endblock %}
 {% block content %}
 <div class="landing-hub">
-<p class="lead">
-  Latent coordinates, embeddings, and covariates for this reconstruction — explore structure, colour by metadata, and inspect particles where thumbnails are available.
-</p>
-
 <div class="landing-cards">
+  {% if can_images %}
+  <a class="landing-card landing-card-link" href="{{ url_for('explorer') }}">
+    <h2 class="landing-card-title">Particle explorer</h2>
+    <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_viewer.png') }}"/>
+    <p>Scatter plots with your usual axes and colour scale, lasso or box selection to write <code>--ind</code> <code>.pkl</code> files, and optional thumbnail neighbourhoods after you load the image cache.</p>
+  </a>
+  {% else %}
   <article class="landing-card">
-    <h2>Particle selection</h2>
-    <p>Draw a lasso around points in any 2D projection of the table, then save dataset indices (and an inverse list) as pickle files.</p>
-    <div class="landing-card-actions">
-      <a class="btn" href="{{ url_for('filter_page') }}">Open selection</a>
-    </div>
+    <h2 class="landing-card-title">Particle explorer</h2>
+    <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_viewer.png') }}"/>
+    <p>Scatter plots with your usual axes and colour scale, lasso or box selection to write <code>--ind</code> <code>.pkl</code> files, and optional thumbnail neighbourhoods after you load the image cache.</p>
+    <p class="muted">Tilt-series runs do not expose particle thumbnails here, so this view is unavailable.</p>
   </article>
+  {% endif %}
+  <a class="landing-card landing-card-link" href="{{ url_for('pairplot_page') }}">
+    <h2 class="landing-card-title">Pairwise plot generator</h2>
+    <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_pair.png') }}" onerror="this.style.display='none'"/>
+    <p>Grid of scatters across latent dimensions and embeddings (PCA / UMAP on the diagonal when available).</p>
+  </a>
+  {% if zdim >= 3 %}
+  <a class="landing-card landing-card-link" href="{{ url_for('latent_3d_page') }}">
+    <h2 class="landing-card-title">3-D Visualizer</h2>
+    <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_3d.png') }}" onerror="this.style.display='none'"/>
+    <p>Interactive 3D scatter of three latent axes, with optional colour from analysis columns when you have at least three <code>z</code> dimensions.</p>
+  </a>
+  {% else %}
   <article class="landing-card">
-    <h2>Scatter plots and images</h2>
-    <p>Two-dimensional views of any numeric columns in the analysis table. Hover a point to see a montage of nearby particles when image data is available.</p>
-    <div class="landing-card-actions">
-      {% if can_images %}
-      <a class="btn" href="{{ url_for('explorer') }}">Open scatter</a>
-      {% else %}
-      <p class="muted" style="margin:0;font-size:0.92rem;">Thumbnails are not available for this dataset type.</p>
-      {% endif %}
-    </div>
+    <h2 class="landing-card-title">3-D Visualizer</h2>
+    <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_3d.png') }}" onerror="this.style.display='none'"/>
+    <p>Interactive 3D scatter of three latent axes, with optional colour from analysis columns when you have at least three <code>z</code> dimensions.</p>
+    <p class="muted">This run has {{ zdim }} latent dimension(s); open the 3D view when at least three are available.</p>
   </article>
-  <article class="landing-card">
-    <h2>Pairwise latent panels</h2>
-    <p>Every pair of latent dimensions in a grid: optional 2D embedding on the diagonal, covariate colour in one triangle, and a simple density or scatter pattern in the other.</p>
-    <div class="landing-card-actions">
-      <a class="btn" href="{{ url_for('pairplot_page') }}">Open pair grid</a>
-    </div>
-  </article>
-  <article class="landing-card">
-    <h2>3D latent space</h2>
-    <p>Three latent axes at once, with the same optional colour encoding as the scatter view. Rotate and zoom to see structure in three dimensions.</p>
-    <div class="landing-card-actions">
-      {% if zdim >= 3 %}
-      <a class="btn" href="{{ url_for('latent_3d_page') }}">Open 3D view</a>
-      {% else %}
-      <p class="muted" style="margin:0;font-size:0.92rem;">Needs at least three latent dimensions (this run has {{ zdim }}).</p>
-      {% endif %}
-    </div>
-  </article>
+  {% endif %}
+  <a class="landing-card landing-card-link" href="{{ url_for('command_builder_page') }}">
+    <h2 class="landing-card-title">Command builder</h2>
+    <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_command_builder.png') }}" onerror="this.style.display='none'"/>
+    <p style="margin-top:0.35rem;">Compose a concise <code>cryodrgn</code> command for <code>abinit</code>, <code>train_vae</code>, <code>train_nn</code>, or <code>train_dec</code> — required args plus only the options you fill in.</p>
+  </a>
 </div>
 </div>
 {% endblock %}

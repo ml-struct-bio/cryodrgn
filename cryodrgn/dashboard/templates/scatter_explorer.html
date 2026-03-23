@@ -151,13 +151,13 @@
 {% endblock %}
 {% block content %}
 <div class="cryo-dash-page cryo-dash-page--image-viewer">
-<div class="cryo-dash-top" style="margin-bottom:0.25rem;">
-  <a href="/">← Back</a>
-</div>
-
 <div class="cryo-dash-row">
   <div class="cryo-dash-side">
-    <div class="card cryo-dash-controls">
+    <div class="cryo-dash-top" style="margin-bottom:0.25rem;">
+      <a href="/">← Back</a>
+    </div>
+    <p class="cryo-dash-lead">Choose axes and optional color to explore particles in 2D latent space, then select points to inspect images or generate volumes.</p>
+    <div class="card cryo-dash-controls" id="scatter-controls-card">
       <fieldset>
         <legend>Choose axes</legend>
         <label class="cryo-select-line" for="sx">Horizontal (X)</label>
@@ -189,7 +189,7 @@
 
   <div class="cryo-dash-viewport--plotly">
     <p id="scatter-plot-status" class="cryo-dash-legend-note" style="margin:0 0 0.35rem;color:var(--accent,#c4703a);min-height:1.2em;"></p>
-    <div class="cryo-plotly-stack">
+    <div class="cryo-plotly-stack" id="scatter-plot-stack">
       <div id="scatter" class="cryo-plotly-graph-host"></div>
       <div id="scatter-rendering-overlay" class="cryo-plot-rendering-overlay cryo-plot-rendering-overlay--show" aria-hidden="false">
         <div class="cryo-plot-rendering-overlay__inner">
@@ -275,6 +275,9 @@
   var btnVolumeAnimate = document.getElementById("btn-volume-animate");
   var volumeStatusEl = document.getElementById("volume-status");
   var gridSizeSelect = document.getElementById("grid-size");
+  var scatterControlsCard = document.getElementById("scatter-controls-card");
+  var scatterControlsSide = scatterControlsCard ? scatterControlsCard.closest(".cryo-dash-side") : null;
+  var scatterPlotStack = document.getElementById("scatter-plot-stack");
 
   var montageDisplayMode = "images";
   var volumeStaticDataUrls = null;
@@ -491,10 +494,31 @@
   sy.value = cols.indexOf(dy) >= 0 ? dy : cols[Math.min(1, cols.length - 1)];
 
   var gd = document.getElementById("scatter");
+  function syncScatterControlsAlignment() {
+    if (!scatterControlsCard || !scatterControlsSide || !scatterPlotStack) return;
+    var minGapPx = 8;
+    var stackRect = scatterPlotStack.getBoundingClientRect();
+    var sideRect = scatterControlsSide.getBoundingClientRect();
+    if (!stackRect || stackRect.height <= 0 || !sideRect) {
+      scatterControlsCard.style.marginTop = "0px";
+      return;
+    }
+    var previousMargin = scatterControlsCard.style.marginTop;
+    scatterControlsCard.style.marginTop = "0px";
+    var baseTop = scatterControlsCard.offsetTop;
+    var cardHalf = scatterControlsCard.offsetHeight * 0.5;
+    scatterControlsCard.style.marginTop = previousMargin;
+    var plotCenterLocal = (stackRect.top + stackRect.height * 0.5) - sideRect.top;
+    var desiredTop = plotCenterLocal - cardHalf;
+    var px = Math.max(minGapPx, desiredTop - baseTop);
+    scatterControlsCard.style.marginTop = Math.round(px) + "px";
+  }
+
   var plotlyStackEl = gd && gd.parentElement;
   if (plotlyStackEl && typeof ResizeObserver !== "undefined") {
     var plotStackResizeObserver = new ResizeObserver(function() {
       window.requestAnimationFrame(function() {
+        syncScatterControlsAlignment();
         if (!gd || !gd.data || !gd.data.length) return;
         try { Plotly.Plots.resize(gd); } catch (e) {}
       });
@@ -1150,6 +1174,7 @@
                 }
               }
               if (showVolumeExplorer) syncVolumeExploreButtons();
+              syncScatterControlsAlignment();
               requestAnimationFrame(function() {
                 try { Plotly.Plots.resize(gd); } catch (e) {}
               });
@@ -1419,6 +1444,7 @@
   [sx, sy, sc].forEach(function(s) { s.addEventListener("change", triggerRedraw); });
   updateParticleSelFieldset();
   if (showVolumeExplorer) syncVolumeExploreButtons();
+  syncScatterControlsAlignment();
   loadPlot(true);
 })();
 </script>

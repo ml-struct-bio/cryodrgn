@@ -69,16 +69,16 @@ def load_experiment(
     kmeans: int = -1,
 ) -> DashboardExperiment:
     train_configs_file = os.path.join(workdir, "config.yaml")
-    if not os.path.exists(train_configs_file):
+    if not os.path.isfile(train_configs_file):
         raise ValueError("Missing config.yaml file in given output folder!")
 
-    conf_fls = [fl for fl in os.listdir(workdir) if re.fullmatch(r"z\.[0-9]+\.pkl", fl)]
-    if not conf_fls:
+    has_z_pkl = any(re.fullmatch(r"z\.[0-9]+\.pkl", fl) for fl in os.listdir(workdir))
+    if not has_z_pkl:
         raise NotImplementedError(
-            "Dashboard filtering views need heterogeneous outputs (z.N.pkl)."
+            "Dashboard scatter views need heterogeneous outputs (z.N.pkl)."
         )
 
-    with open(train_configs_file, "r") as f:
+    with open(train_configs_file) as f:
         train_configs = yaml.safe_load(f)
 
     if epoch == -1:
@@ -123,12 +123,12 @@ def load_experiment(
     datadir = ds_args.get("datadir") or ""
 
     if ctf_params is not None and enc_mode != "tilt":
-        all_indices = np.array(range(ctf_params.shape[0]))
+        all_indices = np.arange(ctf_params.shape[0])
     elif enc_mode == "tilt":
-        pt, tp = TiltSeriesData.parse_particle_tilt(imgs_fl)
-        all_indices = np.array(range(len(pt)))
+        pt, _tp = TiltSeriesData.parse_particle_tilt(imgs_fl)
+        all_indices = np.arange(len(pt))
     else:
-        all_indices = np.array(range(len(ImageDataset(mrcfile=imgs_fl, lazy=True))))
+        all_indices = np.arange(len(ImageDataset(mrcfile=imgs_fl, lazy=True)))
 
     if indices is not None:
         ctf_params = ctf_params[indices, :] if ctf_params is not None else None
@@ -147,12 +147,12 @@ def load_experiment(
             if os.path.isdir(os.path.join(anlzdir, d))
             and re.match(r"^kmeans[0-9]+$", d)
         ]
-        if len(kmeans_dirs) == 0:
+        if not kmeans_dirs:
             raise RuntimeError("No k-means outputs found under the analysis folder.")
         kmeans_dir = os.path.join(anlzdir, kmeans_dirs[0])
     else:
         kmeans_dir = os.path.join(anlzdir, f"kmeans{kmeans}")
-        if not os.path.exists(kmeans_dir):
+        if not os.path.isdir(kmeans_dir):
             raise ValueError(f"No k-means results for k={kmeans}.")
 
     km_match = re.search(r"kmeans(\d+)$", os.path.basename(kmeans_dir))

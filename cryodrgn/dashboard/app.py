@@ -540,6 +540,7 @@ def explorer():
         default_x=dx,
         default_y=dy,
         initial_rows=initial_rows,
+        total_particles=int(len(e.all_indices)),
         workdir=e.workdir,
         preload_cache_time_hint=_format_preload_cache_time_hint(pc),
         show_volume_explorer=explorer_volumes_eligible(e),
@@ -638,7 +639,7 @@ def api_scatter():
     elif full:
         max_pts = None
     else:
-        max_pts = 120_000
+        max_pts = 200_000
     preselect_rows, pre_err = _parse_preselect_rows_param(
         request.args.get("preselect_rows"),
     )

@@ -8,6 +8,13 @@
     gap: 4px;
     margin-top: 0.5rem;
   }
+  .cryo-montage-grid-wrap {
+    position: relative;
+  }
+  .cryo-montage-grid-wrap .cryo-plot-rendering-overlay {
+    border-radius: 4px;
+    background: rgba(250, 248, 244, 0.92);
+  }
   .cryo-montage-cell {
     display: flex;
     flex-direction: column;
@@ -147,6 +154,19 @@
     min-width: 0;
     line-height: 1.35;
   }
+  .cryo-volume-status-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0.15rem 0 0;
+    font-size: 0.82rem;
+    color: var(--muted, #5c6b7a);
+    min-height: 1.1em;
+  }
+  .cryo-volume-status-row .cryo-plot-rendering-overlay__track {
+    width: min(11rem, 55vw);
+    flex: 0 0 auto;
+  }
 </style>
 {% endblock %}
 {% block content %}
@@ -173,7 +193,7 @@
       <fieldset id="particle-sel-fieldset" disabled>
         <legend>Create particle indices</legend>
         <p class="cryo-dash-legend-note" style="margin:0 0 0.4rem;">Active after you lasso or box-select on the plot.</p>
-        <p id="sel-count" class="status" style="margin:0;font-weight:600;color:var(--nav-bg,#243b53);">Selected: 0 particles</p>
+        <p id="sel-count" class="status" style="margin:0;font-weight:600;color:var(--nav-bg,#243b53);">Selected: 0/0 particles</p>
         <div class="cryo-explorer-save-btns">
           <button type="button" class="btn" id="save-indices-pkl">Save selection<br/>as <code>indices.pkl</code></button>
           <button type="button" class="btn btn-secondary" id="save-indices-custom">Save selection<br/>as…</button>
@@ -229,7 +249,18 @@
           Rotate currently displayed volumes.
         </p>
       </div>
-      <p id="volume-status" class="status" style="margin:0.15rem 0 0;font-size:0.82rem;color:var(--muted,#5c6b7a);min-height:1.1em;"></p>
+      <div class="cryo-volume-status-row" aria-live="polite">
+        <span id="volume-status" class="status" style="margin:0;"></span>
+        <div
+          id="volume-status-progress"
+          class="cryo-plot-rendering-overlay__track"
+          role="progressbar"
+          aria-valuetext="Generating volumes"
+          hidden
+        >
+          <div class="cryo-plot-rendering-overlay__indeterminate"></div>
+        </div>
+      </div>
       {% endif %}
     </div>
     <div id="montage-inner" class="cryo-dash-montage-inner cryo-dash-montage-inner--disabled">
@@ -248,7 +279,17 @@
           </select>
         </label>
       </div>
-      <div id="montage-grid" class="cryo-montage-grid"></div>
+      <div class="cryo-montage-grid-wrap">
+        <div id="montage-grid" class="cryo-montage-grid"></div>
+        <div id="montage-preload-overlay" class="cryo-plot-rendering-overlay" aria-hidden="true">
+          <div class="cryo-plot-rendering-overlay__inner">
+            <span class="cryo-plot-rendering-overlay__label">Loading image cache…</span>
+            <div class="cryo-plot-rendering-overlay__track" role="progressbar" aria-valuetext="Loading image cache">
+              <div class="cryo-plot-rendering-overlay__indeterminate"></div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </aside>
 </div>
@@ -260,6 +301,7 @@
   var dx = {{ default_x | tojson }};
   var dy = {{ default_y | tojson }};
   var initialRows = {{ initial_rows | tojson }};
+  var totalParticles = {{ total_particles | tojson }};
   var workdirForSaveHint = {{ workdir | tojson }};
   var showVolumeExplorer = {{ show_volume_explorer | default(false) | tojson }};
 
@@ -270,14 +312,17 @@
   var particleSelFs = document.getElementById("particle-sel-fieldset");
   var selCountEl = document.getElementById("sel-count");
   var montageInner = document.getElementById("montage-inner");
+  var montagePreloadOverlayEl = document.getElementById("montage-preload-overlay");
   var btnViewImages = document.getElementById("btn-view-images");
   var btnVolumeGenerate = document.getElementById("btn-volume-generate");
   var btnVolumeAnimate = document.getElementById("btn-volume-animate");
   var volumeStatusEl = document.getElementById("volume-status");
+  var volumeStatusProgressEl = document.getElementById("volume-status-progress");
   var gridSizeSelect = document.getElementById("grid-size");
   var scatterControlsCard = document.getElementById("scatter-controls-card");
   var scatterControlsSide = scatterControlsCard ? scatterControlsCard.closest(".cryo-dash-side") : null;
   var scatterPlotStack = document.getElementById("scatter-plot-stack");
+  var montageActionsEl = document.getElementById("montage-actions");
 
   var montageDisplayMode = "images";
   var volumeStaticDataUrls = null;
@@ -294,6 +339,17 @@
     return lastMontageRows.length ? lastMontageRows.join(",") : "";
   }
 
+  function setMontagePreloadOverlay(on) {
+    if (!montagePreloadOverlayEl) return;
+    montagePreloadOverlayEl.classList.toggle("cryo-plot-rendering-overlay--show", !!on);
+    montagePreloadOverlayEl.setAttribute("aria-hidden", on ? "false" : "true");
+  }
+
+  function setVolumeStatus(msg, showProgress) {
+    if (volumeStatusEl) volumeStatusEl.textContent = msg || "";
+    if (volumeStatusProgressEl) volumeStatusProgressEl.hidden = !showProgress;
+  }
+
   function invalidateVolumeArtifacts() {
     if (!showVolumeExplorer) return;
     volumeStaticDataUrls = null;
@@ -303,7 +359,7 @@
     volumeCacheId = null;
     volumeAnimateGeneration++;
     montageDisplayMode = "images";
-    if (volumeStatusEl) volumeStatusEl.textContent = "";
+    setVolumeStatus("", false);
     syncVolumeExploreButtons();
   }
 
@@ -354,7 +410,11 @@
 
   function updateParticleSelFieldset() {
     var n = saveSelectionRows.length;
-    if (selCountEl) selCountEl.textContent = "Selected: " + n + " particles";
+    if (selCountEl) {
+      var nFmt = Number(n).toLocaleString("en-CA");
+      var totalFmt = Number(totalParticles).toLocaleString("en-CA");
+      selCountEl.textContent = "Selected: " + nFmt + "/" + totalFmt + " particles";
+    }
     if (particleSelFs) particleSelFs.disabled = (n === 0);
   }
 
@@ -514,11 +574,31 @@
     scatterControlsCard.style.marginTop = Math.round(px) + "px";
   }
 
+  function equalizeMontageActionButtonWidths() {
+    if (!montageActionsEl) return;
+    var btns = montageActionsEl.querySelectorAll(".cryo-explorer-action-row__btn .btn");
+    if (!btns || !btns.length) return;
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].style.width = "auto";
+    }
+    var maxW = 0;
+    for (var j = 0; j < btns.length; j++) {
+      var w = btns[j].getBoundingClientRect().width;
+      if (w > maxW) maxW = w;
+    }
+    if (!maxW) return;
+    var px = Math.ceil(maxW) + "px";
+    for (var k = 0; k < btns.length; k++) {
+      btns[k].style.width = px;
+    }
+  }
+
   var plotlyStackEl = gd && gd.parentElement;
   if (plotlyStackEl && typeof ResizeObserver !== "undefined") {
     var plotStackResizeObserver = new ResizeObserver(function() {
       window.requestAnimationFrame(function() {
         syncScatterControlsAlignment();
+        equalizeMontageActionButtonWidths();
         if (!gd || !gd.data || !gd.data.length) return;
         try { Plotly.Plots.resize(gd); } catch (e) {}
       });
@@ -622,6 +702,7 @@
   function fetchPreload(xcol, ycol, onDone) {
     preloadedAxes = {x: xcol, y: ycol};
     if (preloadStatus) preloadStatus.textContent = "Loading image cache…";
+    setMontagePreloadOverlay(true);
     var body = { x: xcol, y: ycol };
     fetch("{{ url_for('api_preload_images') }}", {
       method: "POST",
@@ -635,12 +716,14 @@
         if (!res.ok) {
           var msg = (res.j && res.j.error) ? res.j.error : "Image cache request failed.";
           if (preloadStatus) preloadStatus.textContent = msg;
+          setMontagePreloadOverlay(false);
           if (onDone) onDone(new Error(msg));
           return;
         }
         var data = res.j;
         if (!data.rows || !data.images || !data.rows.length) {
           if (preloadStatus) preloadStatus.textContent = "No images available.";
+          setMontagePreloadOverlay(false);
           if (onDone) onDone(new Error("no images"));
           return;
         }
@@ -674,12 +757,14 @@
             preloadStatus.textContent = msg + ".";
           }
         }
+        setMontagePreloadOverlay(false);
         showRandomPreloaded();
         if (onDone) onDone(null);
       })
       .catch(function(e) {
         console.error("preload failed", e);
         if (preloadStatus) preloadStatus.textContent = "Image cache failed.";
+        setMontagePreloadOverlay(false);
         if (onDone) onDone(e);
       });
   }
@@ -724,8 +809,9 @@
         if (!res.ok) {
           if (res.j.need_chimerax) {
             window.alert(res.j.error || "Set CHIMERAX_PATH to your ChimeraX executable and try again.");
-          } else if (volumeStatusEl) {
-            volumeStatusEl.textContent = res.j.error || "Volume request failed.";
+            setVolumeStatus("", false);
+          } else {
+            setVolumeStatus(res.j.error || "Volume request failed.", false);
           }
           return null;
         }
@@ -751,8 +837,9 @@
         if (!res.ok) {
           if (res.j.need_chimerax) {
             window.alert(res.j.error || "Set CHIMERAX_PATH to your ChimeraX executable and try again.");
-          } else if (volumeStatusEl) {
-            volumeStatusEl.textContent = res.j.error || "Animate request failed.";
+            setVolumeStatus("", false);
+          } else {
+            setVolumeStatus(res.j.error || "Animate request failed.", false);
           }
           return null;
         }
@@ -777,11 +864,11 @@
       if (myGen !== volumeAnimateGeneration) return;
       if (i >= n) {
         volumeGifsKey = key;
-        if (volumeStatusEl) volumeStatusEl.textContent = "";
+        setVolumeStatus("", false);
         syncVolumeExploreButtons();
         return;
       }
-      if (volumeStatusEl) volumeStatusEl.textContent = "GIF " + (i + 1) + " / " + n + "…";
+      setVolumeStatus("GIF " + (i + 1) + " / " + n + "…", false);
       postVolumeAnimateCell(volumeCacheId, i)
         .then(function(j) {
           if (myGen !== volumeAnimateGeneration) return;
@@ -796,8 +883,8 @@
           step();
         })
         .catch(function() {
-          if (volumeStatusEl && myGen === volumeAnimateGeneration) {
-            volumeStatusEl.textContent = "Request failed.";
+          if (myGen === volumeAnimateGeneration) {
+            setVolumeStatus("Request failed.", false);
           }
           syncVolumeExploreButtons();
         });
@@ -820,7 +907,7 @@
       var key = montageRowsOrderKey();
       btnVolumeGenerate.disabled = true;
       if (btnVolumeAnimate) btnVolumeAnimate.disabled = true;
-      if (volumeStatusEl) volumeStatusEl.textContent = "Decoding volumes and rendering (ChimeraX)…";
+      setVolumeStatus("Decoding volumes and rendering (ChimeraX)…", true);
       postVolumeStatic()
         .then(function(j) {
           if (!j || !j.images || !j.volume_cache_id) {
@@ -833,10 +920,10 @@
           volumeGifsKey = null;
           volumeCacheId = j.volume_cache_id;
           showVolumesInMontage();
-          if (volumeStatusEl) volumeStatusEl.textContent = "";
+          setVolumeStatus("", false);
         })
         .catch(function() {
-          if (volumeStatusEl) volumeStatusEl.textContent = "Request failed.";
+          setVolumeStatus("Request failed.", false);
         })
         .then(function() { syncVolumeExploreButtons(); });
     });
@@ -862,10 +949,13 @@
   }
 
   function showRandomPreloaded() {
-    if (!preloaded || !preloaded.traceMap || preloaded.traceMap.length < neighborK) return;
-    /* Prefer lasso/box (saveSelectionRows / activePool), same as pickRandomMontageItemsFilled — not whole cache. */
-    var picked = pickRandomMontageItemsFilled(neighborK);
-    if (picked.length) updateMontage(picked);
+    if (!preloaded || !preloaded.traceMap) return;
+    /* Only sample from cached rows so first "View images" never picks uncached (blank) cells. */
+    var pool = (activePool && activePool.length) ? activePool : preloaded.traceMap;
+    if (!pool.length) return;
+    var shuffled = pool.slice();
+    shuffleInPlace(shuffled);
+    updateMontage(shuffled.slice(0, Math.min(neighborK, shuffled.length)));
   }
 
   function updateMontage(nbs) {
@@ -890,7 +980,13 @@
       }
       nbs = nbs.slice().sort(function(a, b) { return markerColors[a.ti] - markerColors[b.ti]; });
     } else {
-      nbs = nbs.slice().sort(function(a, b) { return a.row - b.row; });
+      var xs = gd.data && gd.data[0] ? gd.data[0].x : null;
+      nbs = nbs.slice().sort(function(a, b) {
+        var ax = xs ? xs[a.ti] : 0;
+        var bx = xs ? xs[b.ti] : 0;
+        if (ax !== bx) return ax - bx;
+        return a.row - b.row;
+      });
     }
     for (var i = 0; i < montageCells.length; i++) {
       if (i < nbs.length) {
@@ -1139,6 +1235,7 @@
               clearScatterPlotWatchdog();
               setRendering(false);
               buildTraceMap();
+              updateParticleSelFieldset();
               if (preselectRowsForNextFetch.length) {
                 saveSelectionRows = preselectRowsForNextFetch.slice();
                 updateParticleSelFieldset();
@@ -1362,14 +1459,22 @@
     updateMontage(pool.slice(0, neighborK));
   }
 
-  function triggerRedraw() {
+  function triggerRedraw(preserveSelectionAndMontage) {
     var axesChanged = sx.value !== preloadedAxes.x || sy.value !== preloadedAxes.y;
-    saveSelectionRows = [];
-    preselectRowsForNextFetch = [];
+    var keepState = !!preserveSelectionAndMontage && !axesChanged;
+    if (keepState) {
+      /* Re-apply selection highlight after colour-only redraw (keep URI size bounded). */
+      preselectRowsForNextFetch = (saveSelectionRows && saveSelectionRows.length && saveSelectionRows.length <= 5000)
+        ? saveSelectionRows.slice()
+        : [];
+    } else {
+      saveSelectionRows = [];
+      preselectRowsForNextFetch = [];
+      activePool = null;
+      lassoSelectedRowSet = null;
+      lastMontageRows = [];
+    }
     updateParticleSelFieldset();
-    activePool = null;
-    lassoSelectedRowSet = null;
-    lastMontageRows = [];
     invalidateVolumeArtifacts();
     if (axesChanged) {
       imagesViewEnabled = false;
@@ -1441,10 +1546,15 @@
     postSaveSelection({ force: false, sel_dir: "", basename: bn });
   });
 
-  [sx, sy, sc].forEach(function(s) { s.addEventListener("change", triggerRedraw); });
+  [sx, sy].forEach(function(s) {
+    s.addEventListener("change", function() { triggerRedraw(false); });
+  });
+  sc.addEventListener("change", function() { triggerRedraw(true); });
   updateParticleSelFieldset();
   if (showVolumeExplorer) syncVolumeExploreButtons();
   syncScatterControlsAlignment();
+  equalizeMontageActionButtonWidths();
+  window.addEventListener("resize", equalizeMontageActionButtonWidths);
   loadPlot(true);
 })();
 </script>

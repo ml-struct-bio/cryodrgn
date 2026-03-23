@@ -1,54 +1,256 @@
 {% extends "base.html" %}
-{% block title %}Scatter plots · cryoDRGN{% endblock %}
-{% block nav_page_title %}<span class="nav-page-title">Two-dimensional scatter</span>{% endblock %}
+{% block title %}Particle explorer · cryoDRGN{% endblock %}
+{% block nav_page_title %}<span class="nav-page-title">Particle explorer</span>{% endblock %}
+{% block head %}
+<style>
+  .cryo-montage-grid {
+    display: grid;
+    gap: 4px;
+    margin-top: 0.5rem;
+  }
+  .cryo-montage-cell {
+    display: flex;
+    flex-direction: column;
+    background: var(--accent, #c4703a);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .cryo-montage-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 1px 4px;
+    min-height: 0;
+    line-height: 1.15;
+    text-shadow: 0 0 3px rgba(0,0,0,0.6);
+  }
+  .cryo-montage-label {
+    font-weight: 700;
+    color: #fff;
+    font-family: Georgia, "Times New Roman", serif;
+    white-space: nowrap;
+  }
+  .cryo-montage-covar {
+    font-size: 0.52rem;
+    color: rgba(255,255,255,0.88);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-variant-numeric: tabular-nums;
+    margin-left: 2px;
+  }
+  .cryo-montage-img-wrap {
+    position: relative;
+    aspect-ratio: 1;
+    flex: 1 1 auto;
+  }
+  .cryo-montage-img-wrap img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    background: #e8ecf1;
+    object-fit: cover;
+  }
+  .cryo-montage-img-wrap img[src=""] { visibility: hidden; }
+  .cryo-montage-footer {
+    padding: 0 4px 1px;
+    line-height: 1.15;
+    min-height: 0;
+    text-shadow: 0 0 3px rgba(0,0,0,0.6);
+  }
+  .cryo-montage-idx {
+    font-size: 0.52rem;
+    color: rgba(255,255,255,0.88);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .cryo-dash-montage-inner--disabled {
+    opacity: 0.48;
+    pointer-events: none;
+    user-select: none;
+  }
+  fieldset#particle-sel-fieldset:disabled {
+    opacity: 0.55;
+  }
+  fieldset#particle-sel-fieldset:disabled .cryo-dash-legend-note {
+    display: none;
+  }
+  .cryo-explorer-save-btns {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin-top: 0.45rem;
+  }
+  .cryo-explorer-save-btns .btn {
+    width: 100%;
+    box-sizing: border-box;
+    line-height: 1.25;
+    padding-top: 0.45rem;
+    padding-bottom: 0.45rem;
+    white-space: normal;
+    text-align: center;
+  }
+  .cryo-explorer-montage-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    margin-top: 0.45rem;
+  }
+  .cryo-explorer-action-row {
+    display: grid;
+    grid-template-columns: max-content minmax(11.5rem, 1fr);
+    gap: 0.4rem 0.55rem;
+    align-items: center;
+  }
+  .cryo-explorer-action-row__btn {
+    flex-shrink: 0;
+  }
+  .cryo-explorer-action-row__btn .btn {
+    width: auto;
+    max-width: min(10.25rem, 100%);
+    box-sizing: border-box;
+    margin: 0;
+    line-height: 1.2;
+    padding: 0.4rem 0.55rem;
+    white-space: normal;
+    text-align: center;
+  }
+  .cryo-explorer-action-row__hint {
+    margin: 0;
+    font-size: 0.78rem;
+    line-height: 1.32;
+    color: var(--muted, #5c6b7a);
+    min-width: 0;
+    hyphens: auto;
+    overflow-wrap: break-word;
+  }
+  /* Beat base.html montage .cryo-dash-legend-note margins for these rows */
+  .cryo-dash-page--image-viewer .cryo-explorer-action-row .cryo-dash-legend-note {
+    margin: 0;
+  }
+  .cryo-explorer-save-inverse-label {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.35rem;
+    margin: 0.55rem 0 0;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .cryo-explorer-save-inverse-label input[type="checkbox"] {
+    flex-shrink: 0;
+    margin: 0.2rem 0 0;
+  }
+  .cryo-explorer-save-inverse-label span {
+    flex: 1 1 auto;
+    min-width: 0;
+    line-height: 1.35;
+  }
+</style>
+{% endblock %}
 {% block content %}
-<div class="cryo-dash-page">
-<div class="cryo-dash-top">
+<div class="cryo-dash-page cryo-dash-page--image-viewer">
+<div class="cryo-dash-top" style="margin-bottom:0.25rem;">
   <a href="/">← Back</a>
 </div>
-<p class="cryo-dash-lead">Choose horizontal and vertical quantities from the analysis table. Hover a point to see a small montage of nearby particles when image data exists.</p>
 
 <div class="cryo-dash-row">
   <div class="cryo-dash-side">
     <div class="card cryo-dash-controls">
       <fieldset>
-        <legend>Axes</legend>
+        <legend>Choose axes</legend>
         <label class="cryo-select-line" for="sx">Horizontal (X)</label>
         <select id="sx"></select>
         <label class="cryo-select-line" for="sy">Vertical (Y)</label>
         <select id="sy"></select>
       </fieldset>
       <fieldset>
-        <legend>Colour scale</legend>
-        <p class="cryo-dash-legend-note" style="margin:0 0 0.35rem;">Optional third variable shown as point colour.</p>
-        <label class="cryo-select-line" for="sc">Colour by</label>
+        <legend>Choose color scale</legend>
+        <label class="cryo-select-line" for="sc">Color by</label>
         <select id="sc"><option value="none">None</option></select>
       </fieldset>
-      <fieldset>
-        <legend>Actions</legend>
-        <p class="btn-row" style="margin:0;">
-          <button type="button" class="btn" id="redraw">Redraw</button>
-        </p>
+      <fieldset id="particle-sel-fieldset" disabled>
+        <legend>Create particle indices</legend>
+        <p class="cryo-dash-legend-note" style="margin:0 0 0.4rem;">Active after you lasso or box-select on the plot.</p>
+        <p id="sel-count" class="status" style="margin:0;font-weight:600;color:var(--nav-bg,#243b53);">Selected: 0 particles</p>
+        <div class="cryo-explorer-save-btns">
+          <button type="button" class="btn" id="save-indices-pkl">Save selection<br/>as <code>indices.pkl</code></button>
+          <button type="button" class="btn btn-secondary" id="save-indices-custom">Save selection<br/>as…</button>
+        </div>
+        <label class="cryo-explorer-save-inverse-label" for="save-inverse">
+          <input type="checkbox" id="save-inverse"/>
+          <span>Also save inverse selection (<code>*_inverse.pkl</code>)</span>
+        </label>
+        <p id="save-status" class="status" style="margin:0.35rem 0 0;font-size:0.88rem;"></p>
       </fieldset>
     </div>
   </div>
-  <div class="cryo-dash-main">
-    <div class="cryo-dash-main-split">
-      <div class="cryo-dash-viewport--plotly">
-        <p id="scatter-plot-status" class="cryo-dash-legend-note" style="margin:0 0 0.35rem;color:var(--accent,#c4703a);min-height:1.2em;"></p>
-        <div class="cryo-plotly-stack">
-          <div id="scatter" class="cryo-plotly-graph-host"></div>
-          <div id="scatter-rendering-overlay" class="cryo-plot-rendering-overlay cryo-plot-rendering-overlay--show" aria-hidden="false">Rendering…</div>
+
+  <div class="cryo-dash-viewport--plotly">
+    <p id="scatter-plot-status" class="cryo-dash-legend-note" style="margin:0 0 0.35rem;color:var(--accent,#c4703a);min-height:1.2em;"></p>
+    <div class="cryo-plotly-stack">
+      <div id="scatter" class="cryo-plotly-graph-host"></div>
+      <div id="scatter-rendering-overlay" class="cryo-plot-rendering-overlay cryo-plot-rendering-overlay--show" aria-hidden="false">
+        <div class="cryo-plot-rendering-overlay__inner">
+          <span class="cryo-plot-rendering-overlay__label">Rendering…</span>
+          <div class="cryo-plot-rendering-overlay__track" role="progressbar" aria-valuetext="Loading plot">
+            <div class="cryo-plot-rendering-overlay__indeterminate"></div>
+          </div>
         </div>
       </div>
-      <aside class="cryo-dash-figure-legend" aria-label="Particle preview legend">
-        <strong>Particle montage</strong>
-        <p class="cryo-dash-legend-note">Hover any point in the plot. A small grid of nearby particles appears here (dataset row indices in the caption).</p>
-        <img id="preview" alt="Hover a point for preview" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" style="width:100%;height:auto;display:block;border-radius:2px;margin-top:0.5rem;"/>
-        <p id="hover-meta" class="status" style="margin-top:0.45rem;"></p>
-      </aside>
     </div>
   </div>
+
+  <aside class="cryo-dash-montage" aria-label="Particle preview">
+    <div id="montage-actions" class="cryo-explorer-montage-actions">
+      <div class="cryo-explorer-action-row">
+        <div class="cryo-explorer-action-row__btn">
+          <button type="button" class="btn" id="btn-view-images">View images</button>
+        </div>
+        <p id="preload-status" class="cryo-explorer-action-row__hint cryo-dash-legend-note">
+          First click builds image cache for these plot axes ({{ preload_cache_time_hint }}) before displaying images.
+        </p>
+      </div>
+      {% if show_volume_explorer %}
+      <div class="cryo-explorer-action-row">
+        <div class="cryo-explorer-action-row__btn">
+          <button type="button" class="btn btn-secondary" id="btn-volume-generate" disabled>Generate volumes</button>
+        </div>
+        <p class="cryo-explorer-action-row__hint cryo-dash-legend-note">
+          Use decoder to produce and display volumes for particles currently shown in grid.
+        </p>
+      </div>
+      <div class="cryo-explorer-action-row">
+        <div class="cryo-explorer-action-row__btn">
+          <button type="button" class="btn btn-secondary" id="btn-volume-animate" disabled>Animate volumes</button>
+        </div>
+        <p class="cryo-explorer-action-row__hint cryo-dash-legend-note">
+          Rotate currently displayed volumes.
+        </p>
+      </div>
+      <p id="volume-status" class="status" style="margin:0.15rem 0 0;font-size:0.82rem;color:var(--muted,#5c6b7a);min-height:1.1em;"></p>
+      {% endif %}
+    </div>
+    <div id="montage-inner" class="cryo-dash-montage-inner cryo-dash-montage-inner--disabled">
+      <div style="display:flex;align-items:baseline;gap:0.6rem;flex-wrap:wrap;margin-top:0.45rem;">
+        <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.82rem;color:var(--muted,#5c6b7a);">
+          Grid
+          <select id="grid-size" disabled style="width:4.2rem;padding:0.1rem 0.2rem;font-size:0.82rem;">
+            <option value="1">1 × 1</option>
+            <option value="2">2 × 2</option>
+            <option value="3" selected>3 × 3</option>
+            <option value="4">4 × 4</option>
+            <option value="5">5 × 5</option>
+            <option value="6">6 × 6</option>
+            <option value="7">7 × 7</option>
+            <option value="8">8 × 8</option>
+          </select>
+        </label>
+      </div>
+      <div id="montage-grid" class="cryo-montage-grid"></div>
+    </div>
+  </aside>
 </div>
 </div>
 
@@ -57,19 +259,224 @@
   var cols = {{ numeric_cols | tojson }};
   var dx = {{ default_x | tojson }};
   var dy = {{ default_y | tojson }};
+  var initialRows = {{ initial_rows | tojson }};
+  var workdirForSaveHint = {{ workdir | tojson }};
+  var showVolumeExplorer = {{ show_volume_explorer | default(false) | tojson }};
+
+  var preselectRowsForNextFetch = (initialRows && initialRows.length && initialRows.length <= 5000)
+    ? initialRows.slice() : [];
+  var saveSelectionRows = [];
+  var imagesViewEnabled = false;
+  var particleSelFs = document.getElementById("particle-sel-fieldset");
+  var selCountEl = document.getElementById("sel-count");
+  var montageInner = document.getElementById("montage-inner");
+  var btnViewImages = document.getElementById("btn-view-images");
+  var btnVolumeGenerate = document.getElementById("btn-volume-generate");
+  var btnVolumeAnimate = document.getElementById("btn-volume-animate");
+  var volumeStatusEl = document.getElementById("volume-status");
+  var gridSizeSelect = document.getElementById("grid-size");
+
+  var montageDisplayMode = "images";
+  var volumeStaticDataUrls = null;
+  var volumeStaticKey = null;
+  var volumeGifDataUrls = null;
+  var volumeGifsKey = null;
+  var EXPLORER_GIF_FRAMES = 40;
+  var EXPLORER_CHIMERAX_CPUS = 16;
+  var lastMontageRows = [];
+  var volumeCacheId = null;
+  var volumeAnimateGeneration = 0;
+
+  function montageRowsOrderKey() {
+    return lastMontageRows.length ? lastMontageRows.join(",") : "";
+  }
+
+  function invalidateVolumeArtifacts() {
+    if (!showVolumeExplorer) return;
+    volumeStaticDataUrls = null;
+    volumeStaticKey = null;
+    volumeGifDataUrls = null;
+    volumeGifsKey = null;
+    volumeCacheId = null;
+    volumeAnimateGeneration++;
+    montageDisplayMode = "images";
+    if (volumeStatusEl) volumeStatusEl.textContent = "";
+    syncVolumeExploreButtons();
+  }
+
+  function syncVolumeExploreButtons() {
+    if (!showVolumeExplorer) return;
+    var hasGrid = lastMontageRows && lastMontageRows.length > 0;
+    var key = montageRowsOrderKey();
+    var hasStatic = volumeStaticDataUrls && volumeStaticKey === key && volumeStaticDataUrls.length;
+    var hasCache = !!(volumeCacheId && volumeStaticKey === key);
+    if (btnVolumeGenerate) {
+      btnVolumeGenerate.disabled = !plotHasScatterData();
+    }
+    if (btnVolumeAnimate) {
+      btnVolumeAnimate.disabled = !hasGrid || !hasStatic || !hasCache;
+    }
+  }
+
+  function showImagesInMontageFromCache() {
+    if (!preloaded || !lastMontageRows.length) return;
+    for (var i = 0; i < montageCells.length; i++) {
+      if (i < lastMontageRows.length) {
+        var r = lastMontageRows[i];
+        var src = preloaded.rowToSrc.get(r);
+        if (src) montageCells[i].img.src = src;
+      }
+    }
+    montageDisplayMode = "images";
+    syncVolumeExploreButtons();
+  }
+
+  function showVolumesInMontage() {
+    if (!lastMontageRows.length) return;
+    var key = montageRowsOrderKey();
+    if (!(volumeStaticDataUrls && volumeStaticKey === key && volumeStaticDataUrls.length)) return;
+    var n = Math.min(montageCells.length, lastMontageRows.length, volumeStaticDataUrls.length);
+    for (var i = 0; i < montageCells.length; i++) {
+      if (i < n) {
+        var g = volumeGifDataUrls && volumeGifDataUrls[i];
+        var s = volumeStaticDataUrls[i];
+        montageCells[i].img.src = g || s || "";
+      } else {
+        montageCells[i].img.src = "";
+      }
+    }
+    montageDisplayMode = "volumes";
+    syncVolumeExploreButtons();
+  }
+
+  function updateParticleSelFieldset() {
+    var n = saveSelectionRows.length;
+    if (selCountEl) selCountEl.textContent = "Selected: " + n + " particles";
+    if (particleSelFs) particleSelFs.disabled = (n === 0);
+  }
+
+  /** A–Z omitting I, O, U (easier to read vs 1/0 and avoids ambiguous glyphs). */
+  var SAFE_LETTERS = (function() {
+    var out = [];
+    for (var c = 65; c <= 90; c++) {
+      if (c !== 73 && c !== 79 && c !== 85) out.push(String.fromCharCode(c));
+    }
+    return out;
+  })();
+
+  /**
+   * Generate labels for the current grid.
+   * ≤26 images: first labels are single safe letters; any past 23 use pairs (AA, AB, …).
+   * >26 images: row letter from safe alphabet × column number (e.g. A1…An, B1…Bn).
+   */
+  function makeLabels(gridSz) {
+    var k = gridSz * gridSz;
+    function labelAt(idx) {
+      if (idx < SAFE_LETTERS.length) return SAFE_LETTERS[idx];
+      var j = idx - SAFE_LETTERS.length;
+      return SAFE_LETTERS[Math.floor(j / SAFE_LETTERS.length)]
+        + SAFE_LETTERS[j % SAFE_LETTERS.length];
+    }
+    if (k <= 26) {
+      var out = [];
+      for (var i = 0; i < k; i++) out.push(labelAt(i));
+      return out;
+    }
+    var out2 = [];
+    for (var row = 0; row < gridSz; row++) {
+      var letter = SAFE_LETTERS[row];
+      for (var col = 0; col < gridSz; col++) {
+        out2.push(letter + (col + 1));
+      }
+    }
+    return out2;
+  }
+
+  /* ---------- Viridis color interpolation ---------- */
+  var VIRIDIS = [
+    [68,1,84],[72,36,117],[65,68,135],[53,95,141],
+    [33,145,140],[34,168,132],[122,209,81],[189,223,38],[253,231,37]
+  ];
+  function viridisCSS(t) {
+    t = Math.max(0, Math.min(1, t));
+    var n = VIRIDIS.length - 1, i = Math.min(Math.floor(t * n), n - 1), f = t * n - i;
+    var a = VIRIDIS[i], b = VIRIDIS[i + 1];
+    return "rgb(" + Math.round(a[0]+(b[0]-a[0])*f) + ","
+                  + Math.round(a[1]+(b[1]-a[1])*f) + ","
+                  + Math.round(a[2]+(b[2]-a[2])*f) + ")";
+  }
+  var ACCENT = "#c4703a";
+
+  var gridSize = 3;
+  var neighborK = gridSize * gridSize;
+  var labels = makeLabels(gridSize);
+
+  /* ---------- montage grid DOM ---------- */
+  var gridEl = document.getElementById("montage-grid");
+  var montageCells = [];  /* [{img, idx, covar, cell}] */
+
+  function rebuildGrid() {
+    neighborK = gridSize * gridSize;
+    labels = makeLabels(gridSize);
+    gridEl.innerHTML = "";
+    gridEl.style.gridTemplateColumns = "repeat(" + gridSize + ", 1fr)";
+    montageCells = [];
+    var labelSize = gridSize <= 3 ? "0.82rem" : gridSize <= 5 ? "0.65rem" : "0.52rem";
+    var metaSize = gridSize <= 3 ? "0.52rem" : gridSize <= 5 ? "0.46rem" : "0.4rem";
+    for (var i = 0; i < neighborK; i++) {
+      var cell = document.createElement("div");
+      cell.className = "cryo-montage-cell";
+
+      var hdr = document.createElement("div");
+      hdr.className = "cryo-montage-header";
+      var lbl = document.createElement("span");
+      lbl.className = "cryo-montage-label";
+      lbl.textContent = labels[i];
+      lbl.style.fontSize = labelSize;
+      var covar = document.createElement("span");
+      covar.className = "cryo-montage-covar";
+      covar.style.fontSize = metaSize;
+      hdr.appendChild(lbl);
+      hdr.appendChild(covar);
+
+      var wrap = document.createElement("div");
+      wrap.className = "cryo-montage-img-wrap";
+      var img = document.createElement("img");
+      img.src = ""; img.alt = "";
+      wrap.appendChild(img);
+
+      var ftr = document.createElement("div");
+      ftr.className = "cryo-montage-footer";
+      var idxSpan = document.createElement("span");
+      idxSpan.className = "cryo-montage-idx";
+      idxSpan.style.fontSize = metaSize;
+      ftr.appendChild(idxSpan);
+
+      cell.appendChild(hdr);
+      cell.appendChild(wrap);
+      cell.appendChild(ftr);
+      gridEl.appendChild(cell);
+      montageCells.push({img: img, idx: idxSpan, covar: covar, cell: cell});
+    }
+  }
+  rebuildGrid();
+
+  gridSizeSelect.addEventListener("change", function() {
+    gridSize = parseInt(this.value) || 3;
+    rebuildGrid();
+    refillMontageForNewGridSize();
+  });
 
   function fillSelect(sel, includeNone) {
     sel.innerHTML = "";
     if (includeNone) {
       var o = document.createElement("option");
-      o.value = "none";
-      o.textContent = "None";
+      o.value = "none"; o.textContent = "None";
       sel.appendChild(o);
     }
     cols.forEach(function(c) {
       var o = document.createElement("option");
-      o.value = c;
-      o.textContent = c;
+      o.value = c; o.textContent = c;
       sel.appendChild(o);
     });
   }
@@ -84,37 +491,584 @@
   sy.value = cols.indexOf(dy) >= 0 ? dy : cols[Math.min(1, cols.length - 1)];
 
   var gd = document.getElementById("scatter");
+  var plotlyStackEl = gd && gd.parentElement;
+  if (plotlyStackEl && typeof ResizeObserver !== "undefined") {
+    var plotStackResizeObserver = new ResizeObserver(function() {
+      window.requestAnimationFrame(function() {
+        if (!gd || !gd.data || !gd.data.length) return;
+        try { Plotly.Plots.resize(gd); } catch (e) {}
+      });
+    });
+    plotStackResizeObserver.observe(plotlyStackEl);
+  }
   var overlay = document.getElementById("scatter-rendering-overlay");
   var plotStatus = document.getElementById("scatter-plot-status");
-  var preview = document.getElementById("preview");
-  var hoverMeta = document.getElementById("hover-meta");
+  var preloadStatus = document.getElementById("preload-status");
   var scatterPlotWatchdog = null;
   var SCATTER_PLOT_TIMEOUT_MS = 90000;
   var scatterLoadGeneration = 0;
   var pendingScatterAfterPlot = null;
+  var highlightTraceAdded = false;
 
+  function plotHasScatterData() {
+    return !!(gd && gd.data && gd.data[0] && gd.data[0].customdata && gd.data[0].customdata.length);
+  }
+
+  function shuffleInPlace(arr) {
+    for (var i = arr.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var t = arr[i];
+      arr[i] = arr[j];
+      arr[j] = t;
+    }
+    return arr;
+  }
+
+  function allPlotRowsFromTrace() {
+    var cd = gd.data[0].customdata;
+    var out = [];
+    for (var i = 0; i < cd.length; i++) {
+      out.push(cd[i][1]);
+    }
+    return out;
+  }
+
+  function rowToTraceIndex(row) {
+    var cd = gd.data[0].customdata;
+    for (var i = 0; i < cd.length; i++) {
+      if (cd[i][1] === row) return i;
+    }
+    return -1;
+  }
+
+  function montageItemForRow(r) {
+    var ti = rowToTraceIndex(r);
+    if (ti < 0) return null;
+    var src = "";
+    if (preloaded && preloaded.rowToSrc) {
+      src = preloaded.rowToSrc.get(r) || "";
+    }
+    return { ti: ti, row: r, src: src };
+  }
+
+  /** Random grid: prefer lasso/box selection, pad from full plot if needed. */
+  function pickRandomMontageItemsFilled(want) {
+    if (!plotHasScatterData()) return [];
+    var primary = [];
+    if (saveSelectionRows && saveSelectionRows.length) {
+      primary = saveSelectionRows.slice();
+      shuffleInPlace(primary);
+    } else {
+      primary = allPlotRowsFromTrace();
+      shuffleInPlace(primary);
+    }
+    var seen = new Set();
+    var out = [];
+    for (var a = 0; a < primary.length && out.length < want; a++) {
+      var r = primary[a];
+      if (seen.has(r)) continue;
+      var it = montageItemForRow(r);
+      if (!it) continue;
+      seen.add(r);
+      out.push(it);
+    }
+    if (out.length < want) {
+      var fallback = allPlotRowsFromTrace();
+      shuffleInPlace(fallback);
+      for (var b = 0; b < fallback.length && out.length < want; b++) {
+        var r2 = fallback[b];
+        if (seen.has(r2)) continue;
+        var it2 = montageItemForRow(r2);
+        if (!it2) continue;
+        seen.add(r2);
+        out.push(it2);
+      }
+    }
+    return out;
+  }
+
+  /* ---------- preloaded image cache ---------- */
+  var preloaded = null;
+  var preloadedAxes = {x: "", y: ""};
+
+  function axesMatchPreloadedCache() {
+    return !!(preloaded && sx.value === preloadedAxes.x && sy.value === preloadedAxes.y);
+  }
+
+  function fetchPreload(xcol, ycol, onDone) {
+    preloadedAxes = {x: xcol, y: ycol};
+    if (preloadStatus) preloadStatus.textContent = "Loading image cache…";
+    var body = { x: xcol, y: ycol };
+    fetch("{{ url_for('api_preload_images') }}", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+      .then(function(r) {
+        return r.json().then(function(j) { return { ok: r.ok, j: j }; });
+      })
+      .then(function(res) {
+        if (!res.ok) {
+          var msg = (res.j && res.j.error) ? res.j.error : "Image cache request failed.";
+          if (preloadStatus) preloadStatus.textContent = msg;
+          if (onDone) onDone(new Error(msg));
+          return;
+        }
+        var data = res.j;
+        if (!data.rows || !data.images || !data.rows.length) {
+          if (preloadStatus) preloadStatus.textContent = "No images available.";
+          if (onDone) onDone(new Error("no images"));
+          return;
+        }
+        var rowToSrc = new Map();
+        data.rows.forEach(function(r, i) {
+          rowToSrc.set(r, "data:image/jpeg;base64," + data.images[i]);
+        });
+        preloaded = {rows: new Set(data.rows), rowToSrc: rowToSrc, traceMap: null};
+        buildTraceMap();
+        /* Lasso/box before “View images” only set saveSelectionRows — rebuild activePool for montage + clicks. */
+        if (saveSelectionRows && saveSelectionRows.length) {
+          var sset = new Set(saveSelectionRows);
+          var ap = preloaded.traceMap.filter(function(item) {
+            return sset.has(item.row);
+          });
+          if (ap.length) {
+            activePool = ap;
+            lassoSelectedRowSet = new Set();
+            for (var li = 0; li < ap.length; li++) {
+              lassoSelectedRowSet.add(ap[li].row);
+            }
+          }
+        }
+        var msg = data.rows.length + " images cached";
+        if (data.elapsed != null) msg += " in " + data.elapsed + "s";
+        if (preloadStatus) {
+          if (activePool && activePool.length) {
+            preloadStatus.textContent = activePool.length + " of " + preloaded.traceMap.length
+              + " in selection — " + msg + ".";
+          } else {
+            preloadStatus.textContent = msg + ".";
+          }
+        }
+        showRandomPreloaded();
+        if (onDone) onDone(null);
+      })
+      .catch(function(e) {
+        console.error("preload failed", e);
+        if (preloadStatus) preloadStatus.textContent = "Image cache failed.";
+        if (onDone) onDone(e);
+      });
+  }
+
+  btnViewImages.addEventListener("click", function() {
+    if (imagesViewEnabled && preloaded && montageDisplayMode === "volumes") {
+      showImagesInMontageFromCache();
+      return;
+    }
+    if (imagesViewEnabled && preloaded && axesMatchPreloadedCache()) {
+      montageInner.classList.remove("cryo-dash-montage-inner--disabled");
+      gridSizeSelect.disabled = false;
+      buildTraceMap();
+      if (montageDisplayMode === "images") {
+        restoreMontageAfterScatterReload();
+      }
+      if (preloadStatus && preloaded.rows) {
+        preloadStatus.textContent = preloaded.rows.size + " images in cache (no reload).";
+      }
+      syncVolumeExploreButtons();
+      return;
+    }
+    btnViewImages.disabled = true;
+    fetchPreload(sx.value, sy.value, function(err) {
+      btnViewImages.disabled = false;
+      if (err) return;
+      imagesViewEnabled = true;
+      montageInner.classList.remove("cryo-dash-montage-inner--disabled");
+      gridSizeSelect.disabled = false;
+      syncVolumeExploreButtons();
+    });
+  });
+
+  function postVolumeStatic() {
+    return fetch("{{ url_for('api_explorer_volume_media') }}", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rows: lastMontageRows.slice(), mode: "static" }),
+    })
+      .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+      .then(function(res) {
+        if (!res.ok) {
+          if (res.j.need_chimerax) {
+            window.alert(res.j.error || "Set CHIMERAX_PATH to your ChimeraX executable and try again.");
+          } else if (volumeStatusEl) {
+            volumeStatusEl.textContent = res.j.error || "Volume request failed.";
+          }
+          return null;
+        }
+        return res.j;
+      });
+  }
+
+  function postVolumeAnimateCell(cacheId, cellIndex) {
+    return fetch("{{ url_for('api_explorer_volume_media') }}", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mode: "animate",
+        volume_cache_id: cacheId,
+        cell_index: cellIndex,
+        rows: lastMontageRows.slice(),
+        gif_frames: EXPLORER_GIF_FRAMES,
+        chimerax_cpus: EXPLORER_CHIMERAX_CPUS,
+      }),
+    })
+      .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+      .then(function(res) {
+        if (!res.ok) {
+          if (res.j.need_chimerax) {
+            window.alert(res.j.error || "Set CHIMERAX_PATH to your ChimeraX executable and try again.");
+          } else if (volumeStatusEl) {
+            volumeStatusEl.textContent = res.j.error || "Animate request failed.";
+          }
+          return null;
+        }
+        return res.j;
+      });
+  }
+
+  function runVolumeAnimateSequential() {
+    var key = montageRowsOrderKey();
+    if (!volumeCacheId || !lastMontageRows.length || volumeStaticKey !== key) return;
+    var n = lastMontageRows.length;
+    volumeAnimateGeneration++;
+    var myGen = volumeAnimateGeneration;
+    btnVolumeAnimate.disabled = true;
+    if (btnVolumeGenerate) btnVolumeGenerate.disabled = true;
+    volumeGifDataUrls = new Array(n);
+    volumeGifsKey = null;
+    montageDisplayMode = "volumes";
+    showVolumesInMontage();
+    var i = 0;
+    function step() {
+      if (myGen !== volumeAnimateGeneration) return;
+      if (i >= n) {
+        volumeGifsKey = key;
+        if (volumeStatusEl) volumeStatusEl.textContent = "";
+        syncVolumeExploreButtons();
+        return;
+      }
+      if (volumeStatusEl) volumeStatusEl.textContent = "GIF " + (i + 1) + " / " + n + "…";
+      postVolumeAnimateCell(volumeCacheId, i)
+        .then(function(j) {
+          if (myGen !== volumeAnimateGeneration) return;
+          if (!j || !j.image) {
+            syncVolumeExploreButtons();
+            return;
+          }
+          var url = "data:image/gif;base64," + j.image;
+          volumeGifDataUrls[i] = url;
+          if (i < montageCells.length) montageCells[i].img.src = url;
+          i++;
+          step();
+        })
+        .catch(function() {
+          if (volumeStatusEl && myGen === volumeAnimateGeneration) {
+            volumeStatusEl.textContent = "Request failed.";
+          }
+          syncVolumeExploreButtons();
+        });
+    }
+    step();
+  }
+
+  if (showVolumeExplorer && btnVolumeGenerate) {
+    btnVolumeGenerate.addEventListener("click", function() {
+      if (!plotHasScatterData()) return;
+      if (!lastMontageRows.length) {
+        ensureHighlightTrace();
+        var picked = pickRandomMontageItemsFilled(neighborK);
+        if (!picked.length) return;
+        montageInner.classList.remove("cryo-dash-montage-inner--disabled");
+        gridSizeSelect.disabled = false;
+        updateMontage(picked);
+      }
+      if (!lastMontageRows.length) return;
+      var key = montageRowsOrderKey();
+      btnVolumeGenerate.disabled = true;
+      if (btnVolumeAnimate) btnVolumeAnimate.disabled = true;
+      if (volumeStatusEl) volumeStatusEl.textContent = "Decoding volumes and rendering (ChimeraX)…";
+      postVolumeStatic()
+        .then(function(j) {
+          if (!j || !j.images || !j.volume_cache_id) {
+            syncVolumeExploreButtons();
+            return;
+          }
+          volumeStaticDataUrls = j.images.map(function(b) { return "data:image/png;base64," + b; });
+          volumeStaticKey = key;
+          volumeGifDataUrls = null;
+          volumeGifsKey = null;
+          volumeCacheId = j.volume_cache_id;
+          showVolumesInMontage();
+          if (volumeStatusEl) volumeStatusEl.textContent = "";
+        })
+        .catch(function() {
+          if (volumeStatusEl) volumeStatusEl.textContent = "Request failed.";
+        })
+        .then(function() { syncVolumeExploreButtons(); });
+    });
+  }
+
+  if (showVolumeExplorer && btnVolumeAnimate) {
+    btnVolumeAnimate.addEventListener("click", function() {
+      runVolumeAnimateSequential();
+    });
+  }
+
+  function buildTraceMap() {
+    if (!preloaded || !gd.data || !gd.data[0]) return;
+    var cd = gd.data[0].customdata;
+    var tm = [];
+    for (var i = 0; i < cd.length; i++) {
+      var row = cd[i][1];
+      if (preloaded.rows.has(row)) {
+        tm.push({ti: i, src: preloaded.rowToSrc.get(row), row: row});
+      }
+    }
+    preloaded.traceMap = tm;
+  }
+
+  function showRandomPreloaded() {
+    if (!preloaded || !preloaded.traceMap || preloaded.traceMap.length < neighborK) return;
+    /* Prefer lasso/box (saveSelectionRows / activePool), same as pickRandomMontageItemsFilled — not whole cache. */
+    var picked = pickRandomMontageItemsFilled(neighborK);
+    if (picked.length) updateMontage(picked);
+  }
+
+  function updateMontage(nbs) {
+    nbs = nbs.slice();
+    var newOrdered = nbs.map(function(x) { return x.row; }).join(",");
+    var oldOrdered = lastMontageRows.join(",");
+    var newStable = nbs.map(function(x) { return x.row; }).slice().sort(function(a, b) { return a - b; }).join(",");
+    var oldStable = lastMontageRows.length
+      ? lastMontageRows.slice().sort(function(a, b) { return a - b; }).join(",")
+      : "";
+    if (newOrdered !== oldOrdered || newStable !== oldStable) {
+      invalidateVolumeArtifacts();
+    }
+    var colorCol = sc.value;
+    var markerColors = gd.data && gd.data[0] && gd.data[0].marker ? gd.data[0].marker.color : null;
+    var hasColor = colorCol !== "none" && Array.isArray(markerColors);
+    var cmin = Infinity, cmax = -Infinity;
+    if (hasColor) {
+      for (var ci = 0; ci < markerColors.length; ci++) {
+        if (markerColors[ci] < cmin) cmin = markerColors[ci];
+        if (markerColors[ci] > cmax) cmax = markerColors[ci];
+      }
+      nbs = nbs.slice().sort(function(a, b) { return markerColors[a.ti] - markerColors[b.ti]; });
+    } else {
+      nbs = nbs.slice().sort(function(a, b) { return a.row - b.row; });
+    }
+    for (var i = 0; i < montageCells.length; i++) {
+      if (i < nbs.length) {
+        montageCells[i].img.src = nbs[i].src || "";
+        montageCells[i].idx.textContent = "idx " + nbs[i].row;
+        if (hasColor) {
+          var val = markerColors[nbs[i].ti];
+          montageCells[i].covar.textContent = colorCol + "=" + (typeof val === "number" ? val.toFixed(2) : val);
+          var t = cmax > cmin ? (val - cmin) / (cmax - cmin) : 0.5;
+          montageCells[i].cell.style.background = viridisCSS(t);
+        } else {
+          montageCells[i].covar.textContent = "";
+          montageCells[i].cell.style.background = "";
+        }
+      } else {
+        montageCells[i].img.src = "";
+        montageCells[i].idx.textContent = "";
+        montageCells[i].covar.textContent = "";
+        montageCells[i].cell.style.background = "";
+      }
+    }
+    if (highlightTraceAdded && gd.data && gd.data[0]) {
+      var nx = [], ny = [], txt = [];
+      for (var k = 0; k < nbs.length; k++) {
+        nx.push(gd.data[0].x[nbs[k].ti]);
+        ny.push(gd.data[0].y[nbs[k].ti]);
+        txt.push(labels[k]);
+      }
+      var restyleData = {x: [nx], y: [ny], text: [txt]};
+      if (hasColor) {
+        var colorVals = [];
+        for (var k = 0; k < nbs.length; k++) colorVals.push(markerColors[nbs[k].ti]);
+        restyleData["marker.color"] = [colorVals];
+        restyleData["marker.colorscale"] = ["Viridis"];
+        restyleData["marker.cmin"] = cmin;
+        restyleData["marker.cmax"] = cmax;
+        restyleData["marker.line.color"] = ["#fff"];
+        restyleData["marker.line.width"] = [1.5];
+      } else {
+        restyleData["marker.color"] = [ACCENT];
+        restyleData["marker.line.width"] = [0];
+      }
+      queueHighlightRestyle(restyleData);
+    }
+    lastMontageRows = [];
+    for (var mi = 0; mi < nbs.length; mi++) {
+      lastMontageRows.push(nbs[mi].row);
+    }
+    if (montageDisplayMode === "volumes") {
+      var vkey = montageRowsOrderKey();
+      if (volumeStaticDataUrls && volumeStaticKey === vkey && volumeStaticDataUrls.length) {
+        showVolumesInMontage();
+      } else {
+        syncVolumeExploreButtons();
+      }
+    } else {
+      syncVolumeExploreButtons();
+    }
+  }
+
+  /** After color-only scatter reload: same particles, pad from lasso pool or full cache if grid needs more. */
+  function restoreMontageAfterScatterReload() {
+    if (!preloaded || !preloaded.traceMap) return;
+    var rowToItem = new Map();
+    for (var ri = 0; ri < preloaded.traceMap.length; ri++) {
+      var it0 = preloaded.traceMap[ri];
+      rowToItem.set(it0.row, it0);
+    }
+    var want = neighborK;
+    var items = [];
+    if (lastMontageRows && lastMontageRows.length) {
+      for (var i = 0; i < lastMontageRows.length && items.length < want; i++) {
+        var found = rowToItem.get(lastMontageRows[i]);
+        if (found) items.push(found);
+      }
+    }
+    var poolItems = (activePool && activePool.length) ? activePool : preloaded.traceMap;
+    if (items.length < want && poolItems.length) {
+      var used = new Set();
+      for (var u = 0; u < items.length; u++) used.add(items[u].row);
+      var extras = [];
+      for (var pi = 0; pi < poolItems.length; pi++) {
+        if (!used.has(poolItems[pi].row)) extras.push(poolItems[pi]);
+      }
+      for (var ei = extras.length - 1; ei > 0; ei--) {
+        var j = Math.floor(Math.random() * (ei + 1));
+        var tmp = extras[ei]; extras[ei] = extras[j]; extras[j] = tmp;
+      }
+      for (var k = 0; k < extras.length && items.length < want; k++) items.push(extras[k]);
+    }
+    if (items.length) {
+      updateMontage(items);
+    } else if (activePool && activePool.length >= neighborK) {
+      showRandomFromPool();
+    } else {
+      showRandomPreloaded();
+    }
+  }
+
+  /** After grid size change: keep current rows where possible; add more only from lasso pool if active, else full cache. */
+  function refillMontageForNewGridSize() {
+    var want = neighborK;
+    if (!preloaded || !preloaded.traceMap) {
+      if (!plotHasScatterData() || !lastMontageRows.length) return;
+      ensureHighlightTrace();
+      var picked = pickRandomMontageItemsFilled(want);
+      if (picked.length) updateMontage(picked);
+      return;
+    }
+    var poolItems = (activePool && activePool.length) ? activePool : preloaded.traceMap;
+    if (!poolItems.length) return;
+    var byRow = new Map();
+    for (var pi = 0; pi < poolItems.length; pi++) {
+      byRow.set(poolItems[pi].row, poolItems[pi]);
+    }
+    var items = [];
+    if (lastMontageRows && lastMontageRows.length) {
+      for (var i = 0; i < lastMontageRows.length && items.length < want; i++) {
+        var it = byRow.get(lastMontageRows[i]);
+        if (it) items.push(it);
+      }
+    }
+    if (items.length < want) {
+      var used2 = new Set();
+      for (var u2 = 0; u2 < items.length; u2++) used2.add(items[u2].row);
+      var extras2 = [];
+      for (var ex = 0; ex < poolItems.length; ex++) {
+        if (!used2.has(poolItems[ex].row)) extras2.push(poolItems[ex]);
+      }
+      for (var ei2 = extras2.length - 1; ei2 > 0; ei2--) {
+        var j2 = Math.floor(Math.random() * (ei2 + 1));
+        var t2 = extras2[ei2]; extras2[ei2] = extras2[j2]; extras2[j2] = t2;
+      }
+      for (var kk = 0; kk < extras2.length && items.length < want; kk++) {
+        items.push(extras2[kk]);
+      }
+    }
+    if (items.length) {
+      updateMontage(items);
+    } else if (poolItems.length >= want) {
+      if (activePool && activePool.length) showRandomFromPool();
+      else showRandomPreloaded();
+    }
+  }
+
+  /* ---------- rendering overlay ---------- */
   function cancelPendingScatterAfterPlot() {
     if (pendingScatterAfterPlot) {
       gd.removeListener("plotly_afterplot", pendingScatterAfterPlot);
       pendingScatterAfterPlot = null;
     }
   }
-
   function clearScatterPlotWatchdog() {
-    if (scatterPlotWatchdog) {
-      clearTimeout(scatterPlotWatchdog);
-      scatterPlotWatchdog = null;
-    }
+    if (scatterPlotWatchdog) { clearTimeout(scatterPlotWatchdog); scatterPlotWatchdog = null; }
   }
-
   function setRendering(on) {
     if (!overlay) return;
     overlay.classList.toggle("cryo-plot-rendering-overlay--show", on);
     overlay.setAttribute("aria-hidden", on ? "false" : "true");
   }
 
-  function loadPlot() {
+  /* ---------- lasso / selection state (shared by scatter load + events) ---------- */
+  var activePool = null;
+  var lassoSelectedRowSet = null;
+  var lassoSelectionDebounceTimer = null;
+  var LASSO_SELECTION_DEBOUNCE_MS = 200;
+  var highlightRestyleRaf = null;
+  var pendingHighlightRestyle = null;
+
+  function applyPreselectedTraceIndices() {
+    var meta = gd.layout && gd.layout.meta;
+    var pre = meta && meta.cdrgn_preselected;
+    if (!pre || !pre.length) return;
+    try {
+      Plotly.restyle(gd, { selectedpoints: [pre] }, [0]);
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  /* ---------- highlight trace ---------- */
+  function ensureHighlightTrace() {
+    if (highlightTraceAdded) return;
+    highlightTraceAdded = true;
+    Plotly.addTraces(gd, [{
+      x: [], y: [],
+      mode: "markers+text",
+      text: [],
+      textposition: "middle center",
+      textfont: {size: 9, color: "#fff", family: "Georgia, 'Times New Roman', serif"},
+      marker: {size: 15, color: "#c4703a", line: {width: 0}},
+      hoverinfo: "skip",
+      showlegend: false
+    }]);
+  }
+
+  /* ---------- scatter load ---------- */
+  function loadPlot(axesChanged) {
     var gen = ++scatterLoadGeneration;
+    highlightTraceAdded = false;
+    cancelLassoSelectionDebounce();
+    cancelPendingHighlightRestyle();
     cancelPendingScatterAfterPlot();
     clearScatterPlotWatchdog();
     if (plotStatus) plotStatus.textContent = "";
@@ -124,14 +1078,16 @@
       if (!overlay || !overlay.classList.contains("cryo-plot-rendering-overlay--show")) return;
       cancelPendingScatterAfterPlot();
       setRendering(false);
-      if (plotStatus) {
-        plotStatus.textContent = "Plot took too long — try a hard refresh.";
-      }
+      if (plotStatus) plotStatus.textContent = "Plot took too long — try a hard refresh.";
     }, SCATTER_PLOT_TIMEOUT_MS);
-    var x = sx.value;
-    var y = sy.value;
-    var c = sc.value;
-    var q = "x=" + encodeURIComponent(x) + "&y=" + encodeURIComponent(y) + "&color=" + encodeURIComponent(c);
+    var x = sx.value, y = sy.value, c = sc.value;
+    var q = "x=" + encodeURIComponent(x)
+      + "&y=" + encodeURIComponent(y)
+      + "&color=" + encodeURIComponent(c)
+      + "&marker_size=2";
+    if (preselectRowsForNextFetch.length) {
+      q += "&preselect_rows=" + preselectRowsForNextFetch.map(Number).join(",");
+    }
     requestAnimationFrame(function() {
       requestAnimationFrame(function() {
         fetch("{{ url_for('api_scatter') }}?" + q)
@@ -145,12 +1101,55 @@
             });
           })
           .then(function(fig) {
+            fig.layout.title = "";
+            fig.layout.margin = Object.assign(fig.layout.margin || {}, {t: 16});
+            var axFont = {size: 15, family: "Barlow, sans-serif", color: "#243b53"};
+            fig.layout.xaxis = Object.assign(fig.layout.xaxis || {}, {title: {text: x, font: axFont}});
+            fig.layout.yaxis = Object.assign(fig.layout.yaxis || {}, {title: {text: y, font: axFont}});
+            if (/^umap/i.test(x)) fig.layout.xaxis.showticklabels = false;
+            if (/^umap/i.test(y)) fig.layout.yaxis.showticklabels = false;
             function finishScatterDraw() {
               if (gen !== scatterLoadGeneration) return;
               cancelPendingScatterAfterPlot();
               wireUpPlotlyEvents();
               clearScatterPlotWatchdog();
               setRendering(false);
+              buildTraceMap();
+              if (preselectRowsForNextFetch.length) {
+                saveSelectionRows = preselectRowsForNextFetch.slice();
+                updateParticleSelFieldset();
+                applyPreselectedTraceIndices();
+                preselectRowsForNextFetch = [];
+              }
+              if (imagesViewEnabled && preloaded && preloaded.traceMap) {
+                if (lassoSelectedRowSet && lassoSelectedRowSet.size) {
+                  activePool = preloaded.traceMap.filter(function(item) {
+                    return lassoSelectedRowSet.has(item.row);
+                  });
+                  if (preloadStatus) {
+                    if (activePool.length) {
+                      preloadStatus.textContent = activePool.length + " of " + preloaded.traceMap.length
+                        + " cached images in selection.";
+                    } else {
+                      preloadStatus.textContent = preloaded.traceMap.length + " images cached.";
+                    }
+                  }
+                }
+                restoreMontageAfterScatterReload();
+              } else if (!imagesViewEnabled) {
+                if (lastMontageRows.length) {
+                  ensureHighlightTrace();
+                  var keepItems = [];
+                  for (var li = 0; li < lastMontageRows.length; li++) {
+                    var itKeep = montageItemForRow(lastMontageRows[li]);
+                    if (itKeep) keepItems.push(itKeep);
+                  }
+                  if (keepItems.length) updateMontage(keepItems);
+                } else {
+                  updateMontage([]);
+                }
+              }
+              if (showVolumeExplorer) syncVolumeExploreButtons();
               requestAnimationFrame(function() {
                 try { Plotly.Plots.resize(gd); } catch (e) {}
               });
@@ -163,22 +1162,15 @@
               } else {
                 p = Plotly.react(gd, fig.data, fig.layout, opts);
               }
-            } catch (err) {
-              throw err;
-            }
+            } catch (err) { throw err; }
             pendingScatterAfterPlot = finishScatterDraw;
             gd.on("plotly_afterplot", pendingScatterAfterPlot);
             setTimeout(function() {
               if (gen !== scatterLoadGeneration) return;
-              if (pendingScatterAfterPlot && gd.data && gd.data.length) {
-                finishScatterDraw();
-              }
+              if (pendingScatterAfterPlot && gd.data && gd.data.length) finishScatterDraw();
             }, 800);
             if (p && typeof p.then === "function") {
-              return p.catch(function(err) {
-                cancelPendingScatterAfterPlot();
-                throw err;
-              });
+              return p.catch(function(err) { cancelPendingScatterAfterPlot(); throw err; });
             }
             return Promise.resolve();
           })
@@ -193,28 +1185,241 @@
     });
   }
 
+  function cancelLassoSelectionDebounce() {
+    if (lassoSelectionDebounceTimer) {
+      clearTimeout(lassoSelectionDebounceTimer);
+      lassoSelectionDebounceTimer = null;
+    }
+  }
+
+  function cancelPendingHighlightRestyle() {
+    if (highlightRestyleRaf != null) {
+      cancelAnimationFrame(highlightRestyleRaf);
+      highlightRestyleRaf = null;
+    }
+    pendingHighlightRestyle = null;
+  }
+
+  /** Copy indices immediately — Plotly may reuse the event object on the next tick. */
+  function snapshotSelectedPoints(ev) {
+    if (!ev || !ev.points || !ev.points.length) return [];
+    var pts = ev.points;
+    var out = new Array(pts.length);
+    for (var i = 0; i < pts.length; i++) {
+      var p = pts[i];
+      out[i] = {curveNumber: p.curveNumber, pointIndex: p.pointIndex};
+    }
+    return out;
+  }
+
+  function snapshotRowsFromPoints(ev) {
+    var set = new Set();
+    if (ev && ev.points) {
+      for (var i = 0; i < ev.points.length; i++) {
+        var p = ev.points[i];
+        if (p.curveNumber !== 0) continue;
+        if (p.customdata != null && p.customdata.length > 1) {
+          set.add(p.customdata[1]);
+        }
+      }
+    }
+    return Array.from(set);
+  }
+
+  function queueHighlightRestyle(restyleData) {
+    pendingHighlightRestyle = restyleData;
+    if (highlightRestyleRaf != null) return;
+    highlightRestyleRaf = requestAnimationFrame(function() {
+      highlightRestyleRaf = null;
+      var payload = pendingHighlightRestyle;
+      pendingHighlightRestyle = null;
+      if (!payload || !highlightTraceAdded || !gd.data || !gd.data[0]) return;
+      try {
+        Plotly.restyle(gd, payload, [1]);
+      } catch (err) {
+        console.error(err);
+      }
+    });
+  }
+
+  function findKNearestInPool(px, py, k) {
+    var items = activePool || (preloaded && preloaded.traceMap) || [];
+    if (!items.length) return [];
+    var xs = gd.data[0].x, ys = gd.data[0].y;
+    var best = [];
+    for (var j = 0; j < items.length; j++) {
+      var ti = items[j].ti;
+      var ddx = xs[ti] - px, ddy = ys[ti] - py;
+      var d2 = ddx * ddx + ddy * ddy;
+      if (best.length < k) {
+        best.push({j: j, d: d2});
+        if (best.length === k) best.sort(function(a, b) { return a.d - b.d; });
+      } else if (d2 < best[k - 1].d) {
+        best[k - 1] = {j: j, d: d2};
+        best.sort(function(a, b) { return a.d - b.d; });
+      }
+    }
+    return best.map(function(b) { return items[b.j]; });
+  }
+
+  /* ---------- plot events ---------- */
   var plotlyEventsWired = false;
   function wireUpPlotlyEvents() {
     if (plotlyEventsWired) return;
     plotlyEventsWired = true;
-    gd.on("plotly_hover", function(ev) {
+    ensureHighlightTrace();
+    gd.on("plotly_click", function(ev) {
+      if (!imagesViewEnabled || !preloaded || !preloaded.traceMap) return;
       if (!ev.points || !ev.points.length) return;
-      var rows = [];
-      ev.points.forEach(function(p) {
-        if (p.customdata && p.customdata.length > 1) rows.push(p.customdata[1]);
-      });
-      if (!rows.length) return;
-      var q = "rows=" + rows.slice(0, 12).join(",");
-      preview.src = "{{ url_for('api_preview_montage') }}?" + q + "&t=" + Date.now();
-      hoverMeta.textContent = "Rows: " + rows.slice(0, 8).join(", ") + (rows.length > 8 ? "…" : "");
+      var pt = ev.points[0];
+      if (pt.curveNumber !== 0) return;
+      var nbs = findKNearestInPool(pt.x, pt.y, neighborK);
+      if (nbs.length) updateMontage(nbs);
     });
-    gd.on("plotly_unhover", function() {
-      hoverMeta.textContent = "";
+    function applyLassoSelectionFromSnapshot(snap) {
+      if (!preloaded || !preloaded.traceMap) return;
+      if (!snap.length) {
+        activePool = null;
+        lassoSelectedRowSet = null;
+        if (preloadStatus) preloadStatus.textContent = preloaded.traceMap.length + " images cached.";
+        return;
+      }
+      var selectedTi = new Set();
+      for (var i = 0; i < snap.length; i++) {
+        if (snap[i].curveNumber === 0) selectedTi.add(snap[i].pointIndex);
+      }
+      activePool = preloaded.traceMap.filter(function(item) {
+        return selectedTi.has(item.ti);
+      });
+      lassoSelectedRowSet = new Set();
+      for (var lp = 0; lp < activePool.length; lp++) {
+        lassoSelectedRowSet.add(activePool[lp].row);
+      }
+      var msg = activePool.length + " of " + preloaded.traceMap.length + " cached images in selection";
+      if (preloadStatus) preloadStatus.textContent = msg + ".";
+      if (activePool.length) {
+        showRandomFromPool();
+      }
+    }
+
+    gd.on("plotly_selected", function(ev) {
+      var snap = snapshotSelectedPoints(ev);
+      var rowsSnap = snapshotRowsFromPoints(ev);
+      cancelLassoSelectionDebounce();
+        lassoSelectionDebounceTimer = setTimeout(function() {
+        lassoSelectionDebounceTimer = null;
+        saveSelectionRows = rowsSnap;
+        updateParticleSelFieldset();
+        if (imagesViewEnabled && preloaded && preloaded.traceMap) {
+          applyLassoSelectionFromSnapshot(snap);
+        }
+      }, LASSO_SELECTION_DEBOUNCE_MS);
+    });
+    gd.on("plotly_deselect", function() {
+      cancelLassoSelectionDebounce();
+      saveSelectionRows = [];
+      updateParticleSelFieldset();
+      activePool = null;
+      lassoSelectedRowSet = null;
+      if (imagesViewEnabled && preloaded && preloadStatus) {
+        preloadStatus.textContent = preloaded.traceMap.length + " images cached.";
+      }
     });
   }
 
-  document.getElementById("redraw").addEventListener("click", loadPlot);
-  loadPlot();
+  function showRandomFromPool() {
+    var pool = (activePool || (preloaded && preloaded.traceMap) || []).slice();
+    if (pool.length < neighborK) return;
+    for (var i = pool.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var tmp = pool[i]; pool[i] = pool[j]; pool[j] = tmp;
+    }
+    updateMontage(pool.slice(0, neighborK));
+  }
+
+  function triggerRedraw() {
+    var axesChanged = sx.value !== preloadedAxes.x || sy.value !== preloadedAxes.y;
+    saveSelectionRows = [];
+    preselectRowsForNextFetch = [];
+    updateParticleSelFieldset();
+    activePool = null;
+    lassoSelectedRowSet = null;
+    lastMontageRows = [];
+    invalidateVolumeArtifacts();
+    if (axesChanged) {
+      imagesViewEnabled = false;
+      preloaded = null;
+      montageInner.classList.add("cryo-dash-montage-inner--disabled");
+      gridSizeSelect.disabled = true;
+      if (preloadStatus) {
+        preloadStatus.textContent = "First click builds image cache for these plot axes before displaying images.";
+      }
+    }
+    cancelLassoSelectionDebounce();
+    cancelPendingHighlightRestyle();
+    plotlyEventsWired = false;
+    loadPlot(axesChanged);
+  }
+
+  function saveInverseChecked() {
+    var el = document.getElementById("save-inverse");
+    return el && el.checked;
+  }
+
+  function promptSelectionBasename() {
+    var raw = window.prompt(
+      "Base name for the selection file (no .pkl extension). Saved under:\n" + workdirForSaveHint,
+      "indices"
+    );
+    if (raw === null) return null;
+    raw = String(raw).trim().replace(/\.pkl$/i, "");
+    if (!raw) raw = "indices";
+    var base = raw.split(/[/\\]/).pop();
+    return base || "indices";
+  }
+
+  function postSaveSelection(payload) {
+    var status = document.getElementById("save-status");
+    status.textContent = "";
+    if (!saveSelectionRows.length) {
+      status.textContent = "Select particles on the plot before saving.";
+      return;
+    }
+    payload.rows = saveSelectionRows;
+    payload.save_inverse = saveInverseChecked();
+    fetch("{{ url_for('api_save_selection') }}", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    })
+      .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+      .then(function(res) {
+        if (!res.ok) {
+          status.textContent = res.j.error || "Save failed.";
+          return;
+        }
+        var msg = "Saved " + res.j.n_selected + " indices to " + res.j.path;
+        if (res.j.inverse_path) {
+          msg += "; inverse to " + res.j.inverse_path;
+        }
+        status.textContent = msg + ".";
+      })
+      .catch(function() { status.textContent = "Request failed."; });
+  }
+
+  document.getElementById("save-indices-pkl").addEventListener("click", function() {
+    postSaveSelection({ force: true, sel_dir: "", basename: "indices" });
+  });
+  document.getElementById("save-indices-custom").addEventListener("click", function() {
+    var bn = promptSelectionBasename();
+    if (bn === null) return;
+    postSaveSelection({ force: false, sel_dir: "", basename: bn });
+  });
+
+  [sx, sy, sc].forEach(function(s) { s.addEventListener("change", triggerRedraw); });
+  updateParticleSelFieldset();
+  if (showVolumeExplorer) syncVolumeExploreButtons();
+  loadPlot(true);
 })();
 </script>
 {% endblock %}

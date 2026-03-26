@@ -198,6 +198,9 @@
     margin: 0;
     font-weight: 500;
   }
+  #scatter-palette-radios.scatter-palette-radios--suppressed {
+    display: none;
+  }
 </style>
 {% endblock %}
 {% block content %}
@@ -251,8 +254,8 @@
         </div>
       </div>
     </div>
-    <fieldset class="cryo-palette-radios" aria-label="Continuous colour palette">
-      <legend>Palette (continuous colour)</legend>
+    <fieldset id="scatter-palette-radios" class="cryo-palette-radios scatter-palette-radios--suppressed" aria-label="Continuous color palette">
+      <legend>Palette (continuous color)</legend>
       <div class="cryo-palette-radios__row">
         <label><input type="radio" name="scatter_palette" value="Viridis" checked/> Viridis</label>
         <label><input type="radio" name="scatter_palette" value="Plasma"/> Plasma</label>
@@ -660,6 +663,7 @@
     plotStackResizeObserver.observe(plotlyStackEl);
   }
   var overlay = document.getElementById("scatter-rendering-overlay");
+  var paletteFieldset = document.getElementById("scatter-palette-radios");
   var plotStatus = document.getElementById("scatter-plot-status");
   var preloadStatus = document.getElementById("preload-status");
   var scatterPlotWatchdog = null;
@@ -989,6 +993,86 @@
     });
   }
 
+  function scatterTraceColorMode() {
+    var meta = gd.layout && gd.layout.meta;
+    var m = meta && meta.cdrgn_color_mode;
+    if (m === "discrete" || m === "continuous") return m;
+    var mc = gd.data && gd.data[0] && gd.data[0].marker && gd.data[0].marker.color;
+    if (Array.isArray(mc) && mc.length && typeof mc[0] === "string" && /^#/.test(String(mc[0]))) {
+      return "discrete";
+    }
+    return "continuous";
+  }
+
+  function traceCustomdataColorDisp(ti) {
+    var cd = gd.data[0].customdata;
+    if (!cd || ti < 0 || ti >= cd.length) return null;
+    var row = cd[ti];
+    if (row && row.length > 2 && row[2] != null && row[2] !== "") return row[2];
+    return null;
+  }
+
+  /** Parse #rgb / #rrggbb → {r,g,b} or null. */
+  function parseMarkerHexRgb(hex) {
+    if (typeof hex !== "string") return null;
+    var h = hex.trim();
+    if (h.charAt(0) !== "#") return null;
+    h = h.slice(1);
+    var r;
+    var g;
+    var b;
+    if (h.length === 3) {
+      r = parseInt(h.charAt(0) + h.charAt(0), 16);
+      g = parseInt(h.charAt(1) + h.charAt(1), 16);
+      b = parseInt(h.charAt(2) + h.charAt(2), 16);
+    } else if (h.length === 6) {
+      r = parseInt(h.slice(0, 2), 16);
+      g = parseInt(h.slice(2, 4), 16);
+      b = parseInt(h.slice(4, 6), 16);
+    } else {
+      return null;
+    }
+    if (!isFinite(r) || !isFinite(g) || !isFinite(b)) return null;
+    return { r: r, g: g, b: b };
+  }
+
+  /**
+   * k-means / discrete ChimeraX colours: bright pastel cell fill (blend toward white) plus
+   * a darker saturated tint for the covariate line so it stays readable on the light chip.
+   */
+  function discreteLabelMontageStyles(hex) {
+    var rgb = parseMarkerHexRgb(hex);
+    if (!rgb) return { bg: "", covarColor: "" };
+    var r = rgb.r;
+    var g = rgb.g;
+    var b = rgb.b;
+    var towardWhite = 0.5;
+    var rf = Math.round(r * (1 - towardWhite) + 255 * towardWhite);
+    var gf = Math.round(g * (1 - towardWhite) + 255 * towardWhite);
+    var bf = Math.round(b * (1 - towardWhite) + 255 * towardWhite);
+    rf = Math.max(0, Math.min(255, rf));
+    gf = Math.max(0, Math.min(255, gf));
+    bf = Math.max(0, Math.min(255, bf));
+    var textDim = 0.46;
+    var rt = Math.max(0, Math.min(255, Math.round(r * textDim)));
+    var gt = Math.max(0, Math.min(255, Math.round(g * textDim)));
+    var bt = Math.max(0, Math.min(255, Math.round(b * textDim)));
+    return {
+      bg: "rgb(" + rf + "," + gf + "," + bf + ")",
+      covarColor: "rgb(" + rt + "," + gt + "," + bt + ")"
+    };
+  }
+
+  function discreteMontageSortKey(ti) {
+    var d = traceCustomdataColorDisp(ti);
+    if (d == null) return { n: NaN, s: "" };
+    if (typeof d === "number" && isFinite(d)) return { n: d, s: String(d) };
+    var sn = String(d);
+    var pn = parseFloat(sn);
+    if (sn !== "" && isFinite(pn) && String(pn) === sn) return { n: pn, s: sn };
+    return { n: NaN, s: sn };
+  }
+
   function buildTraceMap() {
     if (!preloaded || !gd.data || !gd.data[0]) return;
     var cd = gd.data[0].customdata;
@@ -1027,13 +1111,30 @@
     var colorColLabel = covariateDisplayMap[colorCol] || colorCol;
     var markerColors = gd.data && gd.data[0] && gd.data[0].marker ? gd.data[0].marker.color : null;
     var hasColor = colorCol !== "none" && Array.isArray(markerColors);
-    var cmin = Infinity, cmax = -Infinity;
-    if (hasColor) {
+    var colorMode = hasColor ? scatterTraceColorMode() : "continuous";
+    var cmin = Infinity;
+    var cmax = -Infinity;
+    if (hasColor && colorMode === "continuous") {
       for (var ci = 0; ci < markerColors.length; ci++) {
-        if (markerColors[ci] < cmin) cmin = markerColors[ci];
-        if (markerColors[ci] > cmax) cmax = markerColors[ci];
+        var vci = markerColors[ci];
+        if (typeof vci === "number" && isFinite(vci)) {
+          if (vci < cmin) cmin = vci;
+          if (vci > cmax) cmax = vci;
+        }
       }
-      nbs = nbs.slice().sort(function(a, b) { return markerColors[a.ti] - markerColors[b.ti]; });
+    }
+    if (hasColor && colorMode === "discrete") {
+      nbs = nbs.slice().sort(function(a, b) {
+        var ka = discreteMontageSortKey(a.ti);
+        var kb = discreteMontageSortKey(b.ti);
+        if (isFinite(ka.n) && isFinite(kb.n) && ka.n !== kb.n) return ka.n - kb.n;
+        if (ka.s !== kb.s) return ka.s < kb.s ? -1 : ka.s > kb.s ? 1 : 0;
+        return a.row - b.row;
+      });
+    } else if (hasColor) {
+      nbs = nbs.slice().sort(function(a, b) {
+        return markerColors[a.ti] - markerColors[b.ti];
+      });
     } else {
       var xs = gd.data && gd.data[0] ? gd.data[0].x : null;
       nbs = nbs.slice().sort(function(a, b) {
@@ -1048,18 +1149,39 @@
         montageCells[i].img.src = nbs[i].src || "";
         montageCells[i].idx.textContent = "idx " + nbs[i].row;
         if (hasColor) {
-          var val = markerColors[nbs[i].ti];
-          montageCells[i].covar.textContent = colorColLabel + "=" + (typeof val === "number" ? val.toFixed(2) : val);
-          var t = cmax > cmin ? (val - cmin) / (cmax - cmin) : 0.5;
-          montageCells[i].cell.style.background = covariateScaleCSS(t);
+          var ti = nbs[i].ti;
+          var dispVal = traceCustomdataColorDisp(ti);
+          if (dispVal == null && colorMode === "continuous") {
+            var vmc = markerColors[ti];
+            dispVal = typeof vmc === "number" && isFinite(vmc) ? vmc : vmc;
+          }
+          var dispStr = dispVal == null ? "—" : (
+            typeof dispVal === "number" && isFinite(dispVal) ? dispVal.toFixed(2) : String(dispVal)
+          );
+          montageCells[i].covar.textContent = colorColLabel + "=" + dispStr;
+          if (colorMode === "discrete") {
+            var hexCol = markerColors[ti];
+            var dStyles = discreteLabelMontageStyles(String(hexCol));
+            montageCells[i].cell.style.background = dStyles.bg;
+            montageCells[i].covar.style.color = dStyles.covarColor || "";
+          } else {
+            montageCells[i].covar.style.color = "";
+            var val = markerColors[ti];
+            var t = cmax > cmin && typeof val === "number" && isFinite(val)
+              ? (val - cmin) / (cmax - cmin)
+              : 0.5;
+            montageCells[i].cell.style.background = covariateScaleCSS(t);
+          }
         } else {
           montageCells[i].covar.textContent = "";
+          montageCells[i].covar.style.color = "";
           montageCells[i].cell.style.background = "";
         }
       } else {
         montageCells[i].img.src = "";
         montageCells[i].idx.textContent = "";
         montageCells[i].covar.textContent = "";
+        montageCells[i].covar.style.color = "";
         montageCells[i].cell.style.background = "";
       }
     }
@@ -1075,9 +1197,11 @@
         var colorVals = [];
         for (var k = 0; k < nbs.length; k++) colorVals.push(markerColors[nbs[k].ti]);
         restyleData["marker.color"] = [colorVals];
-        restyleData["marker.colorscale"] = [selectedScatterPalette()];
-        restyleData["marker.cmin"] = cmin;
-        restyleData["marker.cmax"] = cmax;
+        if (colorMode === "continuous") {
+          restyleData["marker.colorscale"] = [selectedScatterPalette()];
+          restyleData["marker.cmin"] = cmin;
+          restyleData["marker.cmax"] = cmax;
+        }
         restyleData["marker.line.color"] = ["#fff"];
         restyleData["marker.line.width"] = [1.5];
       } else {
@@ -1197,10 +1321,24 @@
   function clearScatterPlotWatchdog() {
     if (scatterPlotWatchdog) { clearTimeout(scatterPlotWatchdog); scatterPlotWatchdog = null; }
   }
+  function scatterColorByIsDiscrete() {
+    /* Matches ``scatter_json``: only ``labels`` uses ChimeraX discrete colours (no sequential palette). */
+    return sc.value === "labels";
+  }
+
+  function syncScatterPaletteFieldset() {
+    if (!paletteFieldset) return;
+    var rendering = !!(overlay && overlay.classList.contains("cryo-plot-rendering-overlay--show"));
+    var hasColor = sc.value && sc.value !== "none";
+    var suppress = rendering || !hasColor || scatterColorByIsDiscrete();
+    paletteFieldset.classList.toggle("scatter-palette-radios--suppressed", suppress);
+  }
   function setRendering(on) {
-    if (!overlay) return;
-    overlay.classList.toggle("cryo-plot-rendering-overlay--show", on);
-    overlay.setAttribute("aria-hidden", on ? "false" : "true");
+    if (overlay) {
+      overlay.classList.toggle("cryo-plot-rendering-overlay--show", on);
+      overlay.setAttribute("aria-hidden", on ? "false" : "true");
+    }
+    syncScatterPaletteFieldset();
   }
 
   /* ---------- lasso / selection state (shared by scatter load + events) ---------- */
@@ -1519,7 +1657,7 @@
     var axesChanged = sx.value !== preloadedAxes.x || sy.value !== preloadedAxes.y;
     var keepState = !!preserveSelectionAndMontage && !axesChanged;
     if (keepState) {
-      /* Re-apply selection highlight after colour-only redraw (keep URI size bounded). */
+      /* Re-apply selection highlight after color-only redraw (keep URI size bounded). */
       preselectRowsForNextFetch = (saveSelectionRows && saveSelectionRows.length && saveSelectionRows.length <= 5000)
         ? saveSelectionRows.slice()
         : [];
@@ -1614,6 +1752,7 @@
   syncScatterControlsAlignment();
   equalizeMontageActionButtonWidths();
   window.addEventListener("resize", equalizeMontageActionButtonWidths);
+  syncScatterPaletteFieldset();
   loadPlot(true);
 })();
 </script>

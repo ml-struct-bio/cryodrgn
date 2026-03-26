@@ -386,9 +386,27 @@ def scatter_json(
     else:
         marker = dict(size=marker_size, opacity=0.35, color="#4a5568")
 
-    customdata = np.column_stack(
-        [sub["index"].to_numpy(), row_indices],
-    )
+    idx_arr = sub["index"].to_numpy()
+    row_arr = np.asarray(row_indices, dtype=np.int64)
+    n_pts = len(sub)
+    if color_col and color_col != "none" and color_col in sub.columns:
+        disp = np.empty(n_pts, dtype=object)
+        if color_col == "labels":
+            cv = sub[color_col]
+            for i in range(n_pts):
+                disp[i] = _lower_legend_entry_label("labels", cv.iloc[i])
+        else:
+            color_num = cast(pd.Series, pd.to_numeric(sub[color_col], errors="coerce"))
+            for i in range(n_pts):
+                v = color_num.iloc[i]
+                if pd.isna(v):
+                    disp[i] = None
+                else:
+                    fv = float(v)
+                    disp[i] = fv if np.isfinite(fv) else None
+        customdata = np.column_stack([idx_arr, row_arr, disp])
+    else:
+        customdata = np.column_stack([idx_arr, row_arr])
     # Scattergl can leave Plotly.react() pending on some browsers/GPUs.
     trace_cls = go.Scattergl if use_webgl else go.Scatter
     sc = trace_cls(
@@ -421,13 +439,18 @@ def scatter_json(
         font=_PLOTLY_FONT,
         showlegend=False,
     )
+    layout_meta: dict[str, Any] = {}
     if preselect_plot_df_rows is not None:
         want = frozenset(int(x) for x in preselect_plot_df_rows)
-        layout_kw["meta"] = dict(
-            cdrgn_preselected=[
-                int(i) for i in range(len(row_indices)) if int(row_indices[i]) in want
-            ]
+        layout_meta["cdrgn_preselected"] = [
+            int(i) for i in range(len(row_indices)) if int(row_indices[i]) in want
+        ]
+    if color_col and color_col != "none" and color_col in sub.columns:
+        layout_meta["cdrgn_color_mode"] = (
+            "discrete" if color_col == "labels" else "continuous"
         )
+    if layout_meta:
+        layout_kw["meta"] = layout_meta
 
     fig = go.Figure(sc)
     fig.update_layout(**layout_kw)
@@ -537,8 +560,7 @@ def scatter3d_z_json(
         template="plotly_white",
         autosize=True,
         paper_bgcolor=_DASHBOARD_CREAM,
-        margin=dict(l=0, r=0, t=44, b=0),
-        title=f"{zcol} · {ycol} · {xcol}",
+        margin=dict(l=0, r=0, t=0, b=0),
         scene=dict(
             xaxis_title=xcol,
             yaxis_title=ycol,

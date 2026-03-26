@@ -48,9 +48,27 @@
   }
   .cmd-form.card { padding: 1rem 1.25rem; }
   .cmd-builder-program {
-    margin-bottom: 0.25rem;
+    margin-bottom: 0.35rem;
   }
-  .cmd-builder-program .cryo-select-line { margin-top: 0; }
+  .cmd-builder-program .cryo-select-line {
+    margin-top: 0;
+    font-size: calc(0.86rem * 1.5);
+    font-weight: 800;
+    color: var(--nav-bg, #243b53);
+    letter-spacing: 0.015em;
+  }
+  .cmd-builder-program select#cmd-type {
+    font-size: calc(1rem * 1.5);
+    font-weight: 700;
+    line-height: 1.35;
+    color: var(--nav-bg, #243b53);
+    padding: 0.5rem 0.65rem;
+    min-height: 2.85rem;
+    border-radius: 4px;
+    border-width: 2px;
+    border-color: rgba(36, 59, 83, 0.35);
+    background-color: var(--paper, #fff);
+  }
   .cmd-builder-top-row {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -313,7 +331,7 @@
 <div class="cmd-builder-scroll">
 <form class="cmd-form card" id="cmd-form" action="#" onsubmit="return false;">
   <div class="cmd-builder-program">
-    <label class="cryo-select-line" for="cmd-type">Program</label>
+    <label class="cryo-select-line" for="cmd-type">Reconstruction command</label>
     <select id="cmd-type" name="cmd_type">
       <option value="abinit" selected>cryodrgn abinit</option>
       <option value="train_vae">cryodrgn train_vae</option>

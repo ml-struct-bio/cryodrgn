@@ -139,39 +139,41 @@
   <a class="landing-card landing-card-link" href="{{ url_for('explorer') }}">
     <h2 class="landing-card-title">Particle explorer</h2>
     <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_viewer.png') }}"/>
-    <p>Scatter plots with your usual axes and colour scale, lasso or box selection to write <code>--ind</code> <code>.pkl</code> files, and optional thumbnail neighbourhoods after you load the image cache.</p>
+    <p>Plot dataset particles by model outputs such as z-latent-space dimensions or analysis covariates such as UMAP embeddings.<br /><br />
+       Use lasso selection to write <code>--ind</code> <code>.pkl</code> files,
+       and optionally view dataset images or volume reconstructions for each particle.</p>
   </a>
   {% else %}
   <article class="landing-card">
     <h2 class="landing-card-title">Particle explorer</h2>
     <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_viewer.png') }}"/>
-    <p>Scatter plots with your usual axes and colour scale, lasso or box selection to write <code>--ind</code> <code>.pkl</code> files, and optional thumbnail neighbourhoods after you load the image cache.</p>
-    <p class="muted">Tilt-series runs do not expose particle thumbnails here, so this view is unavailable.</p>
+    <p>Plot dataset particles by model outputs such as z-latent-space dimensions or analysis covariates such as UMAP embeddings.<br /><br />
+       Use lasso selection to write <code>--ind</code> <code>.pkl</code> files.
   </article>
   {% endif %}
   <a class="landing-card landing-card-link" href="{{ url_for('pairplot_page') }}">
-    <h2 class="landing-card-title">Pairwise plot generator</h2>
+    <h2 class="landing-card-title">Pair-plot generator</h2>
     <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_pair.png') }}"/>
     <p>Grid of scatters across latent dimensions and embeddings (PCA / UMAP on the diagonal when available).</p>
   </a>
   {% if zdim >= 3 %}
   <a class="landing-card landing-card-link" href="{{ url_for('latent_3d_page') }}">
-    <h2 class="landing-card-title">3-D Latent Space Visualizer</h2>
+    <h2 class="landing-card-title">3D visualizer</h2>
     <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_3d.png') }}"/>
-    <p>Interactive 3D scatter of three latent axes, with optional colour from analysis columns when you have at least three <code>z</code> dimensions.</p>
+    <p>Interactive 3D scatter of three latent axes, with optional color from analysis columns when you have at least three <code>z</code> dimensions.</p>
   </a>
   {% else %}
   <article class="landing-card">
-    <h2 class="landing-card-title">3-D Latent Space Visualizer</h2>
+    <h2 class="landing-card-title">3D visualizer</h2>
     <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_3d.png') }}"/>
-    <p>Interactive 3D scatter of three latent axes, with optional colour from analysis columns when you have at least three <code>z</code> dimensions.</p>
+    <p>Interactive 3D scatter of three latent axes, with optional color from analysis columns when you have at least three <code>z</code> dimensions.</p>
     <p class="muted">This run has {{ zdim }} latent dimension(s); open this view when at least three are available.</p>
   </article>
   {% endif %}
   <a class="landing-card landing-card-link" href="{{ url_for('command_builder_page') }}">
     <h2 class="landing-card-title">Command builder</h2>
     <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_command_builder.png') }}"/>
-    <p style="margin-top:0.35rem;">Compose a concise <code>cryodrgn</code> command for <code>abinit</code>, <code>train_vae</code>, <code>train_nn</code>, or <code>train_dec</code> — required args plus only the options you fill in.</p>
+    <p style="margin-top:0.35rem;">Compose a <code>cryodrgn</code> command you can copy and paste for tools such as <code>abinit</code> and <code>train_vae</code> — required args plus only the options you fill in.</p>
   </a>
   {# ── Row 2 ── #}
   {% if show_trajectory_creator %}

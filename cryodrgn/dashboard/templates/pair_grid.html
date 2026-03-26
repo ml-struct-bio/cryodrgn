@@ -245,18 +245,23 @@
       --pairplot-max-h: min(82vh, calc(100svh - 9.5rem));
     }
   }
+  #pair-controls-card legend {
+    font-size: calc(0.82rem * 1.35 * 0.9);
+    line-height: 1.28;
+  }
   .cryo-dash-controls .legend-row .pair-picto {
     flex-shrink: 0;
     border-radius: 2px;
     box-shadow: 0 0 0 1px rgba(36, 59, 83, 0.12);
+    display: block;
   }
-  .cryo-dash-controls label.radio-line {
+  #pair-controls-card label.radio-line {
     display: flex;
     align-items: center;
     gap: 0.4rem;
     margin: 0.22rem 0;
     font-weight: 400;
-    font-size: 0.86rem;
+    font-size: calc(0.86rem * 1.2);
     cursor: pointer;
   }
   .cryo-dash-controls .color-grid {
@@ -267,7 +272,7 @@
     overflow-y: auto;
     margin-top: 0.15rem;
   }
-  .cryo-dash-controls .color-grid label.radio-line {
+  #pair-controls-card .color-grid label.radio-line {
     margin: 0;
   }
   .cryo-dash-controls .btn-row {
@@ -281,7 +286,7 @@
   }
 </style>
 {% endblock %}
-{% block nav_page_title %}<span class="nav-title-sep" aria-hidden="true">·</span><span class="nav-page-title">Pairwise plot generator</span>{% endblock %}
+{% block nav_page_title %}<span class="nav-title-sep" aria-hidden="true">·</span><span class="nav-page-title">Pair-plot generator</span>{% endblock %}
 {% block content %}
 <div class="cryo-dash-page">
 <div class="cryo-dash-row">
@@ -293,20 +298,20 @@
     <div class="card cryo-dash-controls" id="pair-controls-card">
       <fieldset>
         <legend>
-          <span class="legend-row">{{ picto_lower() }}<span>Covariate color (below diagonal)</span></span>
+          <span class="legend-row">{{ picto_lower() }}<span>Covariate coloring<br>(below diagonal)</span></span>
         </legend>
         <div class="color-grid">
           {% for c in color_choices %}
           <label class="radio-line">
             <input type="radio" name="color_cov" value="{{ c }}" {% if c == default_color %}checked{% endif %}/>
-            <span><code>{{ covariate_display_map.get(c, c) }}</code></span>
+            <span>{{ covariate_display_map.get(c, c) }}</span>
           </label>
           {% endfor %}
         </div>
       </fieldset>
       <fieldset>
         <legend>
-          <span class="legend-row">{{ picto_diagonal() }}<span>Diagonal embedding</span></span>
+          <span class="legend-row">{{ picto_diagonal() }}<span>Embedding method<br>(on the diagonal)</span></span>
         </legend>
         <label class="radio-line">
           <input type="radio" name="diag_emb" value="umap" {% if has_umap %}checked{% endif %} {% if not has_umap %}disabled{% endif %}/>
@@ -319,7 +324,7 @@
       </fieldset>
       <fieldset>
         <legend>
-          <span class="legend-row">{{ picto_upper() }}<span>Above diagonal</span></span>
+          <span class="legend-row">{{ picto_upper() }}<span>Plotting method<br>(above diagonal)</span></span>
         </legend>
         <label class="radio-line">
           <input type="radio" name="upper_style" value="scatter" checked/>
@@ -367,8 +372,8 @@
           </div>
         </div>
       </div>
-      <fieldset class="cryo-palette-radios" aria-label="Continuous colour palette">
-        <legend>Palette (continuous colour)</legend>
+      <fieldset id="pairplot-palette-radios" class="cryo-palette-radios cryo-palette-radios--hidden-during-plot-render" aria-label="Continuous color palette">
+        <legend>Palette (continuous color)</legend>
         <div class="cryo-palette-radios__row">
           <label><input type="radio" name="pairplot_palette" value="Viridis" checked/> Viridis</label>
           <label><input type="radio" name="pairplot_palette" value="Plasma"/> Plasma</label>
@@ -390,6 +395,7 @@
   var stack = document.getElementById("pairplot-stack");
   var skel = document.getElementById("pairplot-skeleton");
   var renderOverlay = document.getElementById("pairplot-rendering-overlay");
+  var paletteFieldset = document.getElementById("pairplot-palette-radios");
   var controlsCard = document.getElementById("pair-controls-card");
   var controlsSide = controlsCard ? controlsCard.closest(".cryo-dash-side") : null;
   var hasUmap = {{ has_umap | tojson }};
@@ -588,6 +594,9 @@
       }
     } else {
       el.classList.add("pairplot-img--ready");
+    }
+    if (paletteFieldset) {
+      paletteFieldset.classList.toggle("cryo-palette-radios--hidden-during-plot-render", on);
     }
   }
 

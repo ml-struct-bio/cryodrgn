@@ -166,6 +166,20 @@
     min-height: 0;
     max-height: calc(100svh - var(--cryo-dash-below-nav));
     overflow: hidden;
+    /* Same column width before/after volumes (30% of the row); overrides base width:auto shrink. */
+    flex: 0 0 30%;
+    width: 30%;
+    min-width: 30%;
+    max-width: 30%;
+    box-sizing: border-box;
+  }
+  @media (max-width: 900px) {
+    .cryo-dash-page--image-viewer .cryo-dash-montage.cryo-dash-montage--trajectory-volumes {
+      flex: none;
+      width: 100%;
+      min-width: 0;
+      max-width: none;
+    }
   }
   .cryo-palette-radios {
     margin: 0.5rem 0 0;
@@ -197,6 +211,9 @@
     cursor: pointer;
     margin: 0;
     font-weight: 500;
+  }
+  #traj-palette-radios.traj-palette-radios--suppressed {
+    display: none;
   }
 </style>
 {% endblock %}
@@ -252,8 +269,8 @@
         </div>
       </div>
     </div>
-    <fieldset class="cryo-palette-radios" aria-label="Continuous colour palette">
-      <legend>Palette (continuous colour)</legend>
+    <fieldset id="traj-palette-radios" class="cryo-palette-radios traj-palette-radios--suppressed" aria-label="Continuous color palette">
+      <legend>Palette (continuous color)</legend>
       <div class="cryo-palette-radios__row">
         <label><input type="radio" name="traj_palette" value="Viridis" checked/> Viridis</label>
         <label><input type="radio" name="traj_palette" value="Plasma"/> Plasma</label>
@@ -298,6 +315,7 @@
 
   var gd = document.getElementById("scatter");
   var overlay = document.getElementById("scatter-rendering-overlay");
+  var paletteFieldset = document.getElementById("traj-palette-radios");
   var plotStatus = document.getElementById("scatter-plot-status");
   var trajStatus = document.getElementById("traj-status");
   var trajProgress = document.getElementById("traj-progress");
@@ -344,10 +362,25 @@
   sx.value = cols.indexOf(dx) >= 0 ? dx : cols[0];
   sy.value = cols.indexOf(dy) >= 0 ? dy : cols[Math.min(1, cols.length - 1)];
 
+  /* Matches scatter_json / particle explorer: only ``labels`` is discrete (no sequential palette). */
+  function trajColorByIsDiscrete() {
+    return sc.value === "labels";
+  }
+
+  function syncTrajPaletteFieldset() {
+    if (!paletteFieldset) return;
+    var rendering = !!(overlay && overlay.classList.contains("cryo-plot-rendering-overlay--show"));
+    var hasColor = sc.value && sc.value !== "none";
+    var suppress = rendering || !hasColor || trajColorByIsDiscrete();
+    paletteFieldset.classList.toggle("traj-palette-radios--suppressed", suppress);
+  }
+
   function setRendering(on) {
-    if (!overlay) return;
-    overlay.classList.toggle("cryo-plot-rendering-overlay--show", on);
-    overlay.setAttribute("aria-hidden", on ? "false" : "true");
+    if (overlay) {
+      overlay.classList.toggle("cryo-plot-rendering-overlay--show", on);
+      overlay.setAttribute("aria-hidden", on ? "false" : "true");
+    }
+    syncTrajPaletteFieldset();
   }
 
   function setTrajStatus(msg, showProgress) {
@@ -566,7 +599,7 @@
     btnGenerateVolumesEl.addEventListener("click", function() { generateTrajectory(); });
   }
 
-  /* ── Before reloading scatter (axes / colour): cancel volumes, clear trajectory state ── */
+  /* ── Before reloading scatter (axes / color): cancel volumes, clear trajectory state ── */
   function preparePlotReload() {
     volumeGeneration++;
     dragEndpoint = null;

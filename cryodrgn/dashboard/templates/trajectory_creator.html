@@ -1,0 +1,842 @@
+{% extends "base.html" %}
+{% block title %}Trajectory creator · cryoDRGN{% endblock %}
+{% block nav_page_title %}<span class="nav-page-title">Trajectory creator</span>{% endblock %}
+{% block head %}
+<style>
+  .cryo-traj-vol-column {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    flex: 1 1 0;
+    min-height: 0;
+    margin-top: 0.5rem;
+  }
+  /* Extra space under the indeterminate bar while volumes are generating */
+  #traj-progress:not([hidden]) + .cryo-traj-vol-column {
+    margin-top: 0.85rem;
+  }
+  .cryo-traj-vol-cell {
+    position: relative;
+    flex: 0 0 auto;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    min-height: 0;
+    border-radius: 3px;
+    overflow: hidden;
+    background: var(--paper, #fff);
+    border: 1px solid rgba(36, 59, 83, 0.12);
+    box-sizing: border-box;
+  }
+  .cryo-traj-vol-cell img.cryo-traj-vol-main {
+    width: 100%;
+    height: 100%;
+    display: block;
+    background: #e8ecf1;
+    object-fit: contain;
+  }
+  .cryo-traj-vol-cell img.cryo-traj-vol-main[src=""] { visibility: hidden; }
+  .cryo-traj-vol-label {
+    position: absolute;
+    top: 2px;
+    left: 4px;
+    font-weight: 700;
+    font-size: 1.36rem;
+    color: #fff;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+    font-family: Georgia, "Times New Roman", serif;
+    pointer-events: none;
+    z-index: 2;
+  }
+  .cryo-traj-vol-meta {
+    position: absolute;
+    top: 3px;
+    right: 4px;
+    z-index: 3;
+    max-width: 62%;
+    text-align: right;
+    font-size: 0.58rem;
+    line-height: 1.28;
+    font-weight: 600;
+    font-family: "Barlow", ui-sans-serif, system-ui, sans-serif;
+    color: #fff;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.95), 0 0 8px rgba(0,0,0,0.5);
+    white-space: pre-line;
+    pointer-events: none;
+  }
+  .cryo-traj-vol-inset {
+    position: absolute;
+    bottom: 4px;
+    right: 4px;
+    width: 17%;
+    height: 17%;
+    min-width: 28px;
+    min-height: 28px;
+    z-index: 4;
+    box-sizing: border-box;
+    border-radius: 2px;
+    border: 1px solid rgba(255,255,255,0.85);
+    box-shadow: 0 2px 10px rgba(0,0,0,0.45);
+    background: rgba(10, 14, 20, 0.92);
+    overflow: hidden;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .cryo-traj-vol-inset.cryo-traj-vol-inset--show {
+    visibility: visible;
+  }
+  .cryo-traj-vol-inset img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: contain;
+  }
+  .cryo-traj-mode-btns {
+    display: flex;
+    gap: 0.4rem;
+    margin-bottom: 0.5rem;
+    flex: 0 0 auto;
+  }
+  .cryo-traj-mode-btns .btn {
+    flex: 1 1 0;
+    text-align: center;
+    padding: 0.48rem 0.45rem;
+    font-size: 0.82rem;
+    line-height: 1.2;
+    border-width: 2px;
+    border-style: solid;
+    border-radius: 4px;
+    transition: transform 0.12s ease, box-shadow 0.18s ease, background 0.18s ease,
+      color 0.18s ease, border-color 0.18s ease;
+  }
+  .cryo-traj-mode-btns .btn.btn-secondary {
+    background: rgba(36, 59, 83, 0.07);
+    color: var(--muted, #5c6b7a);
+    border-color: rgba(36, 59, 83, 0.22);
+    box-shadow: none;
+    font-weight: 600;
+  }
+  .cryo-traj-mode-btns .btn.active {
+    background: linear-gradient(168deg, #d9844f 0%, #b85a28 42%, #8f4119 100%);
+    color: #fff;
+    border-color: #5c2a0f;
+    font-weight: 700;
+    box-shadow:
+      0 5px 18px rgba(180, 90, 40, 0.5),
+      0 0 0 1px rgba(255, 255, 255, 0.22) inset,
+      0 -2px 12px rgba(0, 0, 0, 0.12) inset;
+    transform: translateY(-2px);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  }
+  .cryo-traj-npoints-label {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.82rem;
+    color: var(--muted, #5c6b7a);
+    font-weight: 600;
+  }
+  .cryo-traj-npoints-label select {
+    width: 4.5rem;
+    padding: 0.1rem 0.25rem;
+    font-size: 0.82rem;
+  }
+  .cryo-traj-status {
+    font-size: 0.82rem;
+    color: var(--muted, #5c6b7a);
+    min-height: 1.2em;
+    line-height: 1.35;
+    flex: 0 0 auto;
+  }
+  .cryo-traj-hint {
+    font-size: 0.78rem;
+    color: var(--muted, #5c6b7a);
+    line-height: 1.32;
+    margin: 0;
+  }
+  .cryo-dash-page--image-viewer .cryo-dash-montage {
+    display: flex;
+    flex-direction: column;
+  }
+  /* Base montage uses align-self: flex-start, so height is content-sized — the flex:1 volume
+     column then gets ~0 height. Stretch this panel to the fixed row height so cells share space. */
+  .cryo-dash-page--image-viewer .cryo-dash-montage.cryo-dash-montage--trajectory-volumes {
+    align-self: stretch;
+    min-height: 0;
+    max-height: calc(100svh - 7.25rem);
+    overflow: hidden;
+  }
+</style>
+{% endblock %}
+{% block content %}
+<div class="cryo-dash-page cryo-dash-page--image-viewer">
+<div class="cryo-dash-row">
+  <div class="cryo-dash-side">
+    <div class="cryo-dash-top" style="margin-bottom:0.25rem;">
+      <a href="/">← Back</a>
+    </div>
+    <p class="cryo-dash-lead">A default trajectory spans the long axis of the point cloud; drag the Start and End handles to move it. Press <strong>Generate</strong> in the right panel to decode volumes along the path.</p>
+    <div class="card cryo-dash-controls" id="scatter-controls-card">
+      <fieldset>
+        <legend>Choose axes</legend>
+        <label class="cryo-select-line" for="sx">Horizontal (X)</label>
+        <select id="sx"></select>
+        <label class="cryo-select-line" for="sy">Vertical (Y)</label>
+        <select id="sy"></select>
+      </fieldset>
+      <fieldset>
+        <legend>Choose color scale</legend>
+        <label class="cryo-select-line" for="sc">Color by</label>
+        <select id="sc"><option value="none">None</option></select>
+      </fieldset>
+      <fieldset>
+        <legend>Trajectory settings</legend>
+        <div class="cryo-traj-npoints-label">
+          Points
+          <select id="n-points">
+            {% for n in range(2, 21) %}
+            <option value="{{ n }}"{% if n == 4 %} selected{% endif %}>{{ n }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <p class="cryo-traj-hint" style="margin-top:0.35rem;">Drag the orange (Start) and navy (End) handles on the plot to edit the trajectory.</p>
+      </fieldset>
+      <div style="margin-top:0.35rem;">
+        <button type="button" class="btn" id="btn-reset" style="width:100%;font-size:0.88rem;padding:0.4rem 0.5rem;">Reset trajectory</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="cryo-dash-viewport--plotly">
+    <p id="scatter-plot-status" class="cryo-dash-legend-note" style="margin:0 0 0.35rem;color:var(--accent,#c4703a);min-height:1.2em;"></p>
+    <div class="cryo-plotly-stack" id="scatter-plot-stack">
+      <div id="scatter" class="cryo-plotly-graph-host"></div>
+      <div id="scatter-rendering-overlay" class="cryo-plot-rendering-overlay cryo-plot-rendering-overlay--show" aria-hidden="false">
+        <div class="cryo-plot-rendering-overlay__inner">
+          <span class="cryo-plot-rendering-overlay__label">Rendering…</span>
+          <div class="cryo-plot-rendering-overlay__track" role="progressbar" aria-valuetext="Loading plot">
+            <div class="cryo-plot-rendering-overlay__indeterminate"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="cryo-dash-montage cryo-dash-montage--trajectory-volumes" aria-label="Trajectory volumes">
+    <div class="cryo-traj-mode-btns">
+      <button type="button" class="btn active" id="btn-mode-direct">Direct traversal</button>
+      <button type="button" class="btn btn-secondary" id="btn-mode-nearest">Nearest neighbour</button>
+    </div>
+    <button type="button" class="btn" id="btn-generate-volumes" style="width:100%;margin-top:0.45rem;font-size:0.88rem;padding:0.45rem 0.5rem;">Generate 4 volumes</button>
+    <p id="traj-status" class="cryo-traj-status"></p>
+    <div id="traj-progress" class="cryo-plot-rendering-overlay__track" role="progressbar" aria-valuetext="Generating volumes" hidden style="flex:0 0 auto;">
+      <div class="cryo-plot-rendering-overlay__indeterminate"></div>
+    </div>
+    <div id="traj-vol-column" class="cryo-traj-vol-column"></div>
+  </aside>
+</div>
+</div>
+
+<script>
+(function() {
+  var cols = {{ numeric_cols | tojson }};
+  var covariateDisplayMap = {{ covariate_display_map | tojson }};
+  var dx = {{ default_x | tojson }};
+  var dy = {{ default_y | tojson }};
+  var zdim = {{ zdim | tojson }};
+
+  var trajectoryMode = "direct";
+  var startXY = null;
+  var endXY = null;
+  var scatterLoadGeneration = 0;
+  var volumeGeneration = 0;
+  var dragEndpoint = null;
+  var dragListenersWired = false;
+
+  var gd = document.getElementById("scatter");
+  var overlay = document.getElementById("scatter-rendering-overlay");
+  var plotStatus = document.getElementById("scatter-plot-status");
+  var trajStatus = document.getElementById("traj-status");
+  var trajProgress = document.getElementById("traj-progress");
+  var trajVolColumn = document.getElementById("traj-vol-column");
+  var btnModeDirectEl = document.getElementById("btn-mode-direct");
+  var btnModeNearestEl = document.getElementById("btn-mode-nearest");
+  var btnGenerateVolumesEl = document.getElementById("btn-generate-volumes");
+  var btnResetEl = document.getElementById("btn-reset");
+  var nPointsEl = document.getElementById("n-points");
+
+  var scatterControlsCard = document.getElementById("scatter-controls-card");
+  var scatterControlsSide = scatterControlsCard ? scatterControlsCard.closest(".cryo-dash-side") : null;
+  var scatterPlotStack = document.getElementById("scatter-plot-stack");
+  var plotlyStackEl = gd && gd.parentElement;
+
+  function fillSelect(sel, includeNone) {
+    sel.innerHTML = "";
+    if (includeNone) {
+      var o = document.createElement("option");
+      o.value = "none"; o.textContent = "None";
+      sel.appendChild(o);
+    }
+    cols.forEach(function(c) {
+      var o = document.createElement("option");
+      o.value = c;
+      o.textContent = covariateDisplayMap[c] || c;
+      sel.appendChild(o);
+    });
+  }
+
+  var sx = document.getElementById("sx");
+  var sy = document.getElementById("sy");
+  var sc = document.getElementById("sc");
+  fillSelect(sx, false);
+  fillSelect(sy, false);
+  fillSelect(sc, true);
+  sx.value = cols.indexOf(dx) >= 0 ? dx : cols[0];
+  sy.value = cols.indexOf(dy) >= 0 ? dy : cols[Math.min(1, cols.length - 1)];
+
+  function setRendering(on) {
+    if (!overlay) return;
+    overlay.classList.toggle("cryo-plot-rendering-overlay--show", on);
+    overlay.setAttribute("aria-hidden", on ? "false" : "true");
+  }
+
+  function setTrajStatus(msg, showProgress) {
+    if (trajStatus) trajStatus.textContent = msg || "";
+    if (trajProgress) trajProgress.hidden = !showProgress;
+  }
+
+  function currentNPoints() {
+    var n = parseInt(nPointsEl.value, 10);
+    if (!Number.isFinite(n)) n = 4;
+    return Math.max(2, Math.min(20, n));
+  }
+
+  function updateGenerateVolumesButtonLabel() {
+    if (!btnGenerateVolumesEl) return;
+    btnGenerateVolumesEl.textContent = "Generate " + currentNPoints() + " volumes";
+  }
+
+  function redrawTrajectoryOverlay() {
+    if (!startXY || !endXY || !gd || !gd.data || !gd.data.length) return;
+    drawLineAndEndpoints(startXY[0], startXY[1], endXY[0], endXY[1]);
+  }
+
+  function clearVolumeMontage() {
+    volumeGeneration++;
+    if (trajVolColumn) trajVolColumn.innerHTML = "";
+    if (gd && gd.data && gd.data.length > 3) {
+      try { Plotly.deleteTraces(gd, [3]); } catch (e) {}
+    }
+  }
+
+  /** Drop numbered trajectory markers without touching thumbnails or in-flight decode. */
+  function removeTrajectorySampleMarkersOnly() {
+    if (gd && gd.data && gd.data.length > 3) {
+      try { Plotly.deleteTraces(gd, [3]); } catch (e) {}
+    }
+  }
+
+  var dragRestyleRaf = 0;
+
+  function cancelDragRestyleRaf() {
+    if (dragRestyleRaf) {
+      cancelAnimationFrame(dragRestyleRaf);
+      dragRestyleRaf = 0;
+    }
+  }
+
+  /** Update line + endpoint traces (indices 1 and 2) without touching sample markers. */
+  function restyleTrajectoryLineOnly() {
+    if (!gd || !gd.data || gd.data.length < 3) return;
+    try {
+      var xup = [[startXY[0], endXY[0]]];
+      var yup = [[startXY[1], endXY[1]]];
+      Plotly.restyle(gd, { x: xup, y: yup }, [1]);
+      Plotly.restyle(gd, { x: xup, y: yup }, [2]);
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  function scheduleTrajectoryRestyle() {
+    if (dragRestyleRaf) return;
+    dragRestyleRaf = requestAnimationFrame(function() {
+      dragRestyleRaf = 0;
+      restyleTrajectoryLineOnly();
+    });
+  }
+
+  function fmtCoord(v) {
+    if (v == null) return "?";
+    var a = Math.abs(v);
+    if (a === 0) return "0";
+    if (a >= 100) return v.toFixed(0);
+    if (a >= 1) return v.toFixed(1);
+    return v.toPrecision(3);
+  }
+  function fmtXY(xy) {
+    if (!xy) return "(?, ?)";
+    return "(" + fmtCoord(xy[0]) + ", " + fmtCoord(xy[1]) + ")";
+  }
+
+  function axisDisplayName(col) {
+    return covariateDisplayMap[col] || col;
+  }
+
+  function applyVolumeCellAnnotations(entries, j) {
+    var mode = (j && j.mode) || trajectoryMode;
+    var traj_xy = (j && j.traj_xy) || [];
+    var xcol = (j && j.xcol) || sx.value;
+    var ycol = (j && j.ycol) || sy.value;
+    var xdn = axisDisplayName(xcol);
+    var ydn = axisDisplayName(ycol);
+    for (var i = 0; i < entries.length; i++) {
+      var ent = entries[i];
+      var xy = traj_xy[i];
+      ent.inset.classList.remove("cryo-traj-vol-inset--show");
+      ent.insetImg.src = "";
+      if (!xy || xy.length < 2) {
+        ent.meta.textContent = "";
+        continue;
+      }
+      if (mode === "nearest" && j.traj_particle_indices && j.traj_particle_indices[i] != null) {
+        var pidx = j.traj_particle_indices[i];
+        var row = j.traj_rows && j.traj_rows[i] != null ? j.traj_rows[i] : "";
+        ent.meta.textContent = "#" + pidx + (row !== "" ? " · row " + row : "")
+          + "\n" + xdn + ": " + fmtCoord(xy[0]) + "\n" + ydn + ": " + fmtCoord(xy[1]);
+        var thumb = j.particle_thumbs && j.particle_thumbs[i];
+        if (thumb) {
+          ent.insetImg.src = "data:image/jpeg;base64," + thumb;
+          ent.inset.classList.add("cryo-traj-vol-inset--show");
+        }
+      } else {
+        ent.meta.textContent = xdn + ": " + fmtCoord(xy[0]) + "\n" + ydn + ": " + fmtCoord(xy[1]);
+      }
+    }
+  }
+
+  function syncScatterControlsAlignment() {
+    if (!scatterControlsCard || !scatterControlsSide || !scatterPlotStack) return;
+    var minGapPx = 8;
+    var stackRect = scatterPlotStack.getBoundingClientRect();
+    var sideRect = scatterControlsSide.getBoundingClientRect();
+    if (!stackRect || stackRect.height <= 0 || !sideRect) {
+      scatterControlsCard.style.marginTop = "0px";
+      return;
+    }
+    var previousMargin = scatterControlsCard.style.marginTop;
+    scatterControlsCard.style.marginTop = "0px";
+    var baseTop = scatterControlsCard.offsetTop;
+    var cardHalf = scatterControlsCard.offsetHeight * 0.5;
+    scatterControlsCard.style.marginTop = previousMargin;
+    var plotCenterLocal = (stackRect.top + stackRect.height * 0.5) - sideRect.top;
+    var desiredTop = plotCenterLocal - cardHalf;
+    var px = Math.max(minGapPx, desiredTop - baseTop);
+    scatterControlsCard.style.marginTop = Math.round(px) + "px";
+  }
+
+  if (plotlyStackEl && typeof ResizeObserver !== "undefined") {
+    var plotStackResizeObserver = new ResizeObserver(function() {
+      window.requestAnimationFrame(function() {
+        syncScatterControlsAlignment();
+        if (!gd || !gd.data || !gd.data.length) return;
+        try { Plotly.Plots.resize(gd); } catch (e) {}
+      });
+    });
+    plotStackResizeObserver.observe(plotlyStackEl);
+  }
+
+  /* ── Convert a DOM click on the plot to data coordinates ── */
+  function plotClickToData(evt, clamp) {
+    var dragLayer = gd.querySelector(".nsewdrag");
+    if (!dragLayer) return null;
+    var rect = dragLayer.getBoundingClientRect();
+    var fracX = (evt.clientX - rect.left) / rect.width;
+    var fracY = (evt.clientY - rect.top) / rect.height;
+    if (clamp) {
+      fracX = Math.max(0, Math.min(1, fracX));
+      fracY = Math.max(0, Math.min(1, fracY));
+    } else if (fracX < 0 || fracX > 1 || fracY < 0 || fracY > 1) {
+      return null;
+    }
+    var fl = gd._fullLayout;
+    if (!fl || !fl.xaxis || !fl.yaxis) return null;
+    var xr = fl.xaxis.range;
+    var yr = fl.yaxis.range;
+    var dataX = xr[0] + fracX * (xr[1] - xr[0]);
+    var dataY = yr[1] - fracY * (yr[1] - yr[0]);
+    return [dataX, dataY];
+  }
+
+  function dataToPixelXY(dataX, dataY) {
+    var fl = gd._fullLayout;
+    if (!fl || !fl.xaxis || !fl.yaxis) return null;
+    var dragLayer = gd.querySelector(".nsewdrag");
+    if (!dragLayer) return null;
+    var rect = dragLayer.getBoundingClientRect();
+    var xr = fl.xaxis.range;
+    var yr = fl.yaxis.range;
+    if (xr[1] === xr[0] || yr[1] === yr[0]) return null;
+    var fracX = (dataX - xr[0]) / (xr[1] - xr[0]);
+    var fracY = (yr[1] - dataY) / (yr[1] - yr[0]);
+    return [rect.left + fracX * rect.width, rect.top + fracY * rect.height];
+  }
+
+  function pixelDist(ax, ay, bx, by) {
+    var ddx = ax - bx, ddy = ay - by;
+    return Math.sqrt(ddx * ddx + ddy * ddy);
+  }
+
+  var DRAG_HANDLE_PX = 18;
+
+  function restyleLineAndHandles() {
+    if (!gd || !gd.data || gd.data.length < 3) return;
+    try {
+      if (gd.data.length > 3) Plotly.deleteTraces(gd, [3]);
+    } catch (e) {}
+    restyleTrajectoryLineOnly();
+  }
+
+  /* ── Mode toggle ── */
+  function setMode(mode) {
+    if (mode === trajectoryMode) return;
+    trajectoryMode = mode;
+    btnModeDirectEl.classList.toggle("active", mode === "direct");
+    btnModeDirectEl.classList.toggle("btn-secondary", mode !== "direct");
+    btnModeNearestEl.classList.toggle("active", mode === "nearest");
+    btnModeNearestEl.classList.toggle("btn-secondary", mode !== "nearest");
+    if (startXY && endXY) {
+      removeTrajectorySampleMarkersOnly();
+      redrawTrajectoryOverlay();
+    }
+  }
+  btnModeDirectEl.addEventListener("click", function() { setMode("direct"); });
+  btnModeNearestEl.addEventListener("click", function() { setMode("nearest"); });
+  if (btnGenerateVolumesEl) {
+    btnGenerateVolumesEl.addEventListener("click", function() { generateTrajectory(); });
+  }
+
+  /* ── Before reloading scatter (axes / colour): cancel volumes, clear trajectory state ── */
+  function preparePlotReload() {
+    volumeGeneration++;
+    dragEndpoint = null;
+    startXY = null;
+    endXY = null;
+    setTrajStatus("", false);
+    trajVolColumn.innerHTML = "";
+  }
+
+  function resetTrajectory() {
+    initDefaultTrajectory(scatterLoadGeneration);
+  }
+  btnResetEl.addEventListener("click", resetTrajectory);
+
+  /* ── Overlay traces (markers + line) on the scatter ── */
+  function removeOverlayTraces() {
+    if (!gd || !gd.data) return;
+    var toRemove = [];
+    for (var i = gd.data.length - 1; i >= 1; i--) toRemove.push(i);
+    if (toRemove.length) {
+      try { Plotly.deleteTraces(gd, toRemove); } catch (e) {}
+    }
+  }
+
+  function drawLineAndEndpoints(sx, sy, ex, ey) {
+    removeOverlayTraces();
+    Plotly.addTraces(gd, [
+      {
+        x: [sx, ex], y: [sy, ey],
+        mode: "lines",
+        line: { color: "#c4703a", width: 2.5, dash: "dot" },
+        hoverinfo: "skip",
+        showlegend: false
+      },
+      {
+        x: [sx, ex], y: [sy, ey],
+        mode: "markers+text",
+        text: ["Start", "End"],
+        textposition: ["top center", "bottom center"],
+        textfont: { size: 11, color: "#243b53", family: "Barlow, sans-serif" },
+        marker: { size: 12, color: ["#c4703a", "#243b53"],
+                  line: { width: 2, color: "#fff" } },
+        hoverinfo: "skip",
+        showlegend: false
+      }
+    ]);
+  }
+
+  function drawTrajectoryPoints(points) {
+    if (!gd || !gd.data) return;
+    var xs = points.map(function(p) { return p[0]; });
+    var ys = points.map(function(p) { return p[1]; });
+    var labels = [];
+    for (var i = 0; i < points.length; i++) labels.push(String(i + 1));
+    Plotly.addTraces(gd, [{
+      x: xs, y: ys,
+      mode: "markers+text",
+      text: labels,
+      textposition: "top center",
+      textfont: { size: 14, color: "#243b53", family: "Barlow, sans-serif", weight: 700 },
+      marker: { size: 10, color: "#243b53", symbol: "diamond",
+                line: { width: 1, color: "#fff" } },
+      hoverinfo: "skip",
+      showlegend: false
+    }]);
+  }
+
+  /* ── Volume column ── */
+  function buildVolumeColumn(n) {
+    trajVolColumn.innerHTML = "";
+    var entries = [];
+    for (var i = 0; i < n; i++) {
+      var cell = document.createElement("div");
+      cell.className = "cryo-traj-vol-cell";
+      var mainImg = document.createElement("img");
+      mainImg.className = "cryo-traj-vol-main";
+      mainImg.src = "";
+      mainImg.alt = "Volume " + (i + 1);
+      var lbl = document.createElement("span");
+      lbl.className = "cryo-traj-vol-label";
+      lbl.textContent = String(i + 1);
+      var meta = document.createElement("div");
+      meta.className = "cryo-traj-vol-meta";
+      meta.setAttribute("aria-hidden", "true");
+      var inset = document.createElement("div");
+      inset.className = "cryo-traj-vol-inset";
+      var insetImg = document.createElement("img");
+      insetImg.alt = "";
+      inset.appendChild(insetImg);
+      cell.appendChild(mainImg);
+      cell.appendChild(lbl);
+      cell.appendChild(meta);
+      cell.appendChild(inset);
+      trajVolColumn.appendChild(cell);
+      entries.push({
+        mainImg: mainImg,
+        meta: meta,
+        inset: inset,
+        insetImg: insetImg
+      });
+    }
+    return entries;
+  }
+
+  /* ── Generate trajectory volumes ── */
+  function generateTrajectory() {
+    if (!startXY || !endXY) return;
+    var myGen = ++volumeGeneration;
+    var n = currentNPoints();
+    var volumeEntries = buildVolumeColumn(n);
+    setTrajStatus("Decoding " + n + " volumes and rendering (ChimeraX)…", true);
+    if (plotStatus) plotStatus.textContent = "Generating trajectory…";
+
+    drawLineAndEndpoints(startXY[0], startXY[1], endXY[0], endXY[1]);
+
+    var payload = {
+      mode: trajectoryMode,
+      start: startXY,
+      end: endXY,
+      x: sx.value,
+      y: sy.value,
+      n_points: n
+    };
+    fetch("{{ url_for('api_trajectory_volumes') }}", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    })
+      .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+      .then(function(res) {
+        if (myGen !== volumeGeneration) return;
+        if (!res.ok) {
+          if (res.j.need_chimerax) {
+            window.alert(res.j.error || "Set CHIMERAX_PATH and try again.");
+          }
+          setTrajStatus(res.j.error || "Volume generation failed.", false);
+          if (plotStatus) plotStatus.textContent = "Volume generation failed.";
+          return;
+        }
+        var imgs = res.j.images || [];
+        for (var ci = 0; ci < volumeEntries.length && ci < imgs.length; ci++) {
+          volumeEntries[ci].mainImg.src = "data:image/png;base64," + imgs[ci];
+        }
+        applyVolumeCellAnnotations(volumeEntries, res.j);
+        if (res.j.traj_xy && res.j.traj_xy.length) {
+          drawTrajectoryPoints(res.j.traj_xy);
+        }
+        setTrajStatus(imgs.length + " volumes generated.", false);
+        if (plotStatus) {
+          plotStatus.textContent = "Showing trajectory between "
+            + fmtXY(startXY) + " and " + fmtXY(endXY)
+            + " — drag the Start / End handles to adjust.";
+        }
+      })
+      .catch(function(err) {
+        if (myGen !== volumeGeneration) return;
+        console.error(err);
+        setTrajStatus("Request failed.", false);
+        if (plotStatus) plotStatus.textContent = "Request failed.";
+      });
+  }
+
+  function initDefaultTrajectory(gen) {
+    var q = "x=" + encodeURIComponent(sx.value) + "&y=" + encodeURIComponent(sy.value);
+    fetch("{{ url_for('api_default_trajectory_endpoints') }}?" + q)
+      .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+      .then(function(res) {
+        if (gen !== scatterLoadGeneration) return;
+        if (!res.ok || !res.j.ok || !res.j.start || !res.j.end) {
+          if (plotStatus) {
+            plotStatus.textContent = (res.j && res.j.error)
+              ? String(res.j.error)
+              : "Could not compute default trajectory for these axes.";
+          }
+          return;
+        }
+        /* New default path (load / axis change / reset): drop stale thumbnails; drag/mode/n alone do not. */
+        clearVolumeMontage();
+        startXY = res.j.start.slice();
+        endXY = res.j.end.slice();
+        redrawTrajectoryOverlay();
+        setTrajStatus("Press Generate above to decode volumes along this path.", false);
+        if (plotStatus) {
+          plotStatus.textContent = "Default trajectory on long axis — press Generate to decode volumes.";
+        }
+      })
+      .catch(function() {
+        if (gen !== scatterLoadGeneration) return;
+        if (plotStatus) plotStatus.textContent = "Could not load default trajectory.";
+      });
+  }
+
+  /* ── Scatter plot load ── */
+  function loadPlot() {
+    var gen = ++scatterLoadGeneration;
+    dragEndpoint = null;
+    setRendering(true);
+    if (plotStatus) plotStatus.textContent = "";
+    var x = sx.value, y = sy.value, c = sc.value;
+    var q = "x=" + encodeURIComponent(x)
+      + "&y=" + encodeURIComponent(y)
+      + "&color=" + encodeURIComponent(c)
+      + "&marker_size=2";
+    fetch("{{ url_for('api_scatter') }}?" + q)
+      .then(function(r) {
+        return r.text().then(function(text) {
+          var j;
+          try { j = JSON.parse(text); }
+          catch (e) { throw new Error("Scatter API did not return JSON"); }
+          if (!r.ok) throw new Error(j.error || r.statusText);
+          return j;
+        });
+      })
+      .then(function(fig) {
+        if (gen !== scatterLoadGeneration) return;
+        fig.layout.title = "";
+        fig.layout.margin = Object.assign(fig.layout.margin || {}, {t: 16});
+        fig.layout.dragmode = "pan";
+        var axFont = {size: 15, family: "Barlow, sans-serif", color: "#243b53"};
+        fig.layout.xaxis = Object.assign(fig.layout.xaxis || {}, {title: {text: x, font: axFont}});
+        fig.layout.yaxis = Object.assign(fig.layout.yaxis || {}, {title: {text: y, font: axFont}});
+        if (/^umap/i.test(x)) fig.layout.xaxis.showticklabels = false;
+        if (/^umap/i.test(y)) fig.layout.yaxis.showticklabels = false;
+        var opts = {responsive: true};
+        var p;
+        if (!gd.data || gd.data.length === 0) {
+          p = Plotly.newPlot(gd, fig.data, fig.layout, opts);
+        } else {
+          p = Plotly.react(gd, fig.data, fig.layout, opts);
+        }
+        function afterPlot() {
+          if (gen !== scatterLoadGeneration) return;
+          setRendering(false);
+          wireUpPlotDrag();
+          syncScatterControlsAlignment();
+          initDefaultTrajectory(gen);
+          requestAnimationFrame(function() {
+            try { Plotly.Plots.resize(gd); } catch (e) {}
+          });
+        }
+        if (p && typeof p.then === "function") {
+          p.then(afterPlot).catch(function(err) {
+            setRendering(false);
+            if (plotStatus) plotStatus.textContent = err.message || "Could not load scatter.";
+          });
+        } else {
+          afterPlot();
+        }
+      })
+      .catch(function(e) {
+        console.error(e);
+        setRendering(false);
+        if (plotStatus) plotStatus.textContent = e.message || "Could not load scatter.";
+      });
+  }
+
+  /* ── Drag handles (Start / End) ── */
+  function wireUpPlotDrag() {
+    if (dragListenersWired) return;
+    dragListenersWired = true;
+    gd.addEventListener("mousedown", function(evt) {
+      if (!startXY || !endXY) return;
+      var pClick = [evt.clientX, evt.clientY];
+      var pS = dataToPixelXY(startXY[0], startXY[1]);
+      var pE = dataToPixelXY(endXY[0], endXY[1]);
+      if (!pS || !pE) return;
+      var ds = pixelDist(pClick[0], pClick[1], pS[0], pS[1]);
+      var de = pixelDist(pClick[0], pClick[1], pE[0], pE[1]);
+      if (ds <= DRAG_HANDLE_PX && ds <= de) {
+        dragEndpoint = "start";
+        removeTrajectorySampleMarkersOnly();
+        evt.preventDefault();
+        evt.stopPropagation();
+      } else if (de <= DRAG_HANDLE_PX) {
+        dragEndpoint = "end";
+        removeTrajectorySampleMarkersOnly();
+        evt.preventDefault();
+        evt.stopPropagation();
+      }
+    }, true);
+    window.addEventListener("mousemove", function(evt) {
+      if (!dragEndpoint) return;
+      var pt = plotClickToData(evt, true);
+      if (!pt) return;
+      if (dragEndpoint === "start") {
+        startXY = [pt[0], pt[1]];
+      } else {
+        endXY = [pt[0], pt[1]];
+      }
+      scheduleTrajectoryRestyle();
+    });
+    window.addEventListener("mouseup", function() {
+      if (!dragEndpoint) return;
+      dragEndpoint = null;
+      cancelDragRestyleRaf();
+      restyleTrajectoryLineOnly();
+    });
+  }
+
+  /* ── Axis/color change ── */
+  function triggerRedraw() {
+    preparePlotReload();
+    loadPlot();
+  }
+  [sx, sy].forEach(function(s) {
+    s.addEventListener("change", triggerRedraw);
+  });
+  sc.addEventListener("change", function() {
+    preparePlotReload();
+    loadPlot();
+  });
+  nPointsEl.addEventListener("change", function() {
+    updateGenerateVolumesButtonLabel();
+    removeTrajectorySampleMarkersOnly();
+  });
+
+  updateGenerateVolumesButtonLabel();
+  syncScatterControlsAlignment();
+  loadPlot();
+})();
+</script>
+{% endblock %}

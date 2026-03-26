@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Particle explorer · cryoDRGN{% endblock %}
-{% block nav_page_title %}<span class="nav-page-title">Particle explorer</span>{% endblock %}
+{% block nav_page_title %}<span class="nav-title-sep" aria-hidden="true">·</span><span class="nav-page-title">Particle explorer</span>{% endblock %}
 {% block head %}
 <style>
   .cryo-montage-grid {
@@ -167,6 +167,37 @@
     width: min(11rem, 55vw);
     flex: 0 0 auto;
   }
+  .cryo-palette-radios {
+    margin: 0.5rem 0 0;
+    padding: 0.4rem 0.55rem;
+    border: 1px solid rgba(36, 59, 83, 0.15);
+    border-radius: 4px;
+    background: rgba(250, 248, 244, 0.75);
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  .cryo-palette-radios legend {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--nav-bg, #243b53);
+    padding: 0 0.2rem;
+  }
+  .cryo-palette-radios__row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.85rem;
+    align-items: center;
+  }
+  .cryo-palette-radios label {
+    font-size: 0.78rem;
+    color: var(--nav-bg, #243b53);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    cursor: pointer;
+    margin: 0;
+    font-weight: 500;
+  }
 </style>
 {% endblock %}
 {% block content %}
@@ -220,6 +251,17 @@
         </div>
       </div>
     </div>
+    <fieldset class="cryo-palette-radios" aria-label="Continuous colour palette">
+      <legend>Palette (continuous colour)</legend>
+      <div class="cryo-palette-radios__row">
+        <label><input type="radio" name="scatter_palette" value="Viridis" checked/> Viridis</label>
+        <label><input type="radio" name="scatter_palette" value="Plasma"/> Plasma</label>
+        <label><input type="radio" name="scatter_palette" value="Inferno"/> Inferno</label>
+        <label><input type="radio" name="scatter_palette" value="Magma"/> Magma</label>
+        <label><input type="radio" name="scatter_palette" value="Cividis"/> Cividis</label>
+        <label><input type="radio" name="scatter_palette" value="Turbo"/> Turbo</label>
+      </div>
+    </fieldset>
   </div>
 
   <aside class="cryo-dash-montage" aria-label="Particle preview">
@@ -298,6 +340,7 @@
 <script>
 (function() {
   var cols = {{ numeric_cols | tojson }};
+  var covariateDisplayMap = {{ covariate_display_map | tojson }};
   var dx = {{ default_x | tojson }};
   var dy = {{ default_y | tojson }};
   var initialRows = {{ initial_rows | tojson }};
@@ -455,15 +498,25 @@
     return out2;
   }
 
-  /* ---------- Viridis color interpolation ---------- */
-  var VIRIDIS = [
-    [68,1,84],[72,36,117],[65,68,135],[53,95,141],
-    [33,145,140],[34,168,132],[122,209,81],[189,223,38],[253,231,37]
-  ];
-  function viridisCSS(t) {
+  /* RGB stops for montage cell tinting (aligned with Plotly sequential scales). */
+  var CONTINUOUS_PALETTE_RGB = {
+    Viridis: [[68,1,84],[72,39,119],[63,74,138],[49,104,142],[38,130,142],[31,157,138],[53,183,121],[109,205,89],[253,231,37]],
+    Plasma: [[13,8,135],[76,2,161],[126,3,168],[170,35,149],[204,71,120],[230,108,92],[248,149,64],[253,197,39],[240,249,33]],
+    Inferno: [[0,0,4],[41,10,108],[108,2,112],[187,55,84],[249,142,8],[252,208,74],[252,254,164]],
+    Magma: [[0,0,4],[59,15,112],[122,4,111],[203,62,65],[252,141,89],[252,208,136],[252,253,191]],
+    Cividis: [[0,34,78],[0,57,112],[68,90,129],[115,128,131],[159,161,135],[206,186,122],[253,231,37]],
+    Turbo: [[48,18,59],[61,99,221],[26,152,223],[25,189,114],[208,230,28],[250,85,8],[144,12,2]]
+  };
+  function selectedScatterPalette() {
+    var r = document.querySelector("input[name=\"scatter_palette\"]:checked");
+    var v = r && r.value ? String(r.value) : "Viridis";
+    return CONTINUOUS_PALETTE_RGB[v] ? v : "Viridis";
+  }
+  function covariateScaleCSS(t) {
     t = Math.max(0, Math.min(1, t));
-    var n = VIRIDIS.length - 1, i = Math.min(Math.floor(t * n), n - 1), f = t * n - i;
-    var a = VIRIDIS[i], b = VIRIDIS[i + 1];
+    var pal = CONTINUOUS_PALETTE_RGB[selectedScatterPalette()] || CONTINUOUS_PALETTE_RGB.Viridis;
+    var n = pal.length - 1, i = Math.min(Math.floor(t * n), n - 1), f = t * n - i;
+    var a = pal[i], b = pal[i + 1];
     return "rgb(" + Math.round(a[0]+(b[0]-a[0])*f) + ","
                   + Math.round(a[1]+(b[1]-a[1])*f) + ","
                   + Math.round(a[2]+(b[2]-a[2])*f) + ")";
@@ -539,7 +592,8 @@
     }
     cols.forEach(function(c) {
       var o = document.createElement("option");
-      o.value = c; o.textContent = c;
+      o.value = c;
+      o.textContent = covariateDisplayMap[c] || c;
       sel.appendChild(o);
     });
   }
@@ -970,6 +1024,7 @@
       invalidateVolumeArtifacts();
     }
     var colorCol = sc.value;
+    var colorColLabel = covariateDisplayMap[colorCol] || colorCol;
     var markerColors = gd.data && gd.data[0] && gd.data[0].marker ? gd.data[0].marker.color : null;
     var hasColor = colorCol !== "none" && Array.isArray(markerColors);
     var cmin = Infinity, cmax = -Infinity;
@@ -994,9 +1049,9 @@
         montageCells[i].idx.textContent = "idx " + nbs[i].row;
         if (hasColor) {
           var val = markerColors[nbs[i].ti];
-          montageCells[i].covar.textContent = colorCol + "=" + (typeof val === "number" ? val.toFixed(2) : val);
+          montageCells[i].covar.textContent = colorColLabel + "=" + (typeof val === "number" ? val.toFixed(2) : val);
           var t = cmax > cmin ? (val - cmin) / (cmax - cmin) : 0.5;
-          montageCells[i].cell.style.background = viridisCSS(t);
+          montageCells[i].cell.style.background = covariateScaleCSS(t);
         } else {
           montageCells[i].covar.textContent = "";
           montageCells[i].cell.style.background = "";
@@ -1020,7 +1075,7 @@
         var colorVals = [];
         for (var k = 0; k < nbs.length; k++) colorVals.push(markerColors[nbs[k].ti]);
         restyleData["marker.color"] = [colorVals];
-        restyleData["marker.colorscale"] = ["Viridis"];
+        restyleData["marker.colorscale"] = [selectedScatterPalette()];
         restyleData["marker.cmin"] = cmin;
         restyleData["marker.cmax"] = cmax;
         restyleData["marker.line.color"] = ["#fff"];
@@ -1204,7 +1259,8 @@
     var q = "x=" + encodeURIComponent(x)
       + "&y=" + encodeURIComponent(y)
       + "&color=" + encodeURIComponent(c)
-      + "&marker_size=2";
+      + "&marker_size=2"
+      + "&palette=" + encodeURIComponent(selectedScatterPalette());
     if (preselectRowsForNextFetch.length) {
       q += "&preselect_rows=" + preselectRowsForNextFetch.map(Number).join(",");
     }
@@ -1550,6 +1606,9 @@
     s.addEventListener("change", function() { triggerRedraw(false); });
   });
   sc.addEventListener("change", function() { triggerRedraw(true); });
+  document.querySelectorAll("input[name=\"scatter_palette\"]").forEach(function(inp) {
+    inp.addEventListener("change", function() { triggerRedraw(true); });
+  });
   updateParticleSelFieldset();
   if (showVolumeExplorer) syncVolumeExploreButtons();
   syncScatterControlsAlignment();

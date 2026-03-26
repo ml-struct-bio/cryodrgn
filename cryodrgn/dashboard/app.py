@@ -7,6 +7,7 @@ import io
 import logging
 import os
 import pickle
+import shlex
 import time
 
 import matplotlib.pyplot as plt
@@ -40,10 +41,12 @@ from cryodrgn.dashboard.explorer_volumes import (
     DEFAULT_GIF_FRAMES,
     explorer_volumes_eligible,
     generate_montage_volume_pngs,
+    generate_trajectory_volume_pngs,
     volume_cell_gif_from_cache,
 )
 from cryodrgn.dashboard.mpl_style import ezlab_matplotlib_rc
 from cryodrgn.dashboard.plots import (
+    normalize_continuous_palette,
     pair_grid_png,
     pair_grid_skeleton_placeholder_layout,
     scatter3d_z_json,
@@ -119,6 +122,20 @@ def _default_xy_cols(cols: list[str]) -> tuple[str, str]:
     return x, y
 
 
+def _trajectory_default_xy_cols(cols: list[str]) -> tuple[str, str]:
+    """Trajectory creator defaults to PC1 vs PC2 when present, else UMAP / first columns."""
+    if "PC1" in cols and "PC2" in cols:
+        return "PC1", "PC2"
+    return _default_xy_cols(cols)
+
+
+def _covariate_display_name(name: str) -> str:
+    """Human-friendly covariate names in dashboard selectors."""
+    if name == "labels":
+        return "k-means labels"
+    return name
+
+
 def _montage_bytes(exp: DashboardExperiment, row_indices: list[int]) -> bytes:
     rows = [int(r) for r in row_indices[:25]]
     with ezlab_matplotlib_rc():
@@ -155,6 +172,57 @@ def _montage_bytes(exp: DashboardExperiment, row_indices: list[int]) -> bytes:
         plt.close(fig)
         buf.seek(0)
         return buf.getvalue()
+
+
+def _particle_thumbnail_b64_from_row(
+    exp: DashboardExperiment, row_index: int, max_side: int = 72
+) -> str | None:
+    """Small greyscale JPEG (base64) for trajectory NN inset previews."""
+    if not exp.can_preview_particles:
+        return None
+    try:
+        from PIL import Image
+
+        img = particle_image_array(exp, int(row_index))
+        lo, hi = np.percentile(img, (2, 98))
+        disp = np.clip((img - lo) / (hi - lo + 1e-9), 0, 1)
+        u8 = (disp * 255).astype(np.uint8)
+        pil = Image.fromarray(u8, mode="L")
+        w, h = pil.size
+        s = max(w, h)
+        if s > max_side:
+            scale = max_side / float(s)
+            pil = pil.resize(
+                (max(1, int(w * scale)), max(1, int(h * scale))),
+                Image.LANCZOS,
+            )
+        buf = io.BytesIO()
+        pil.save(buf, format="JPEG", quality=88)
+        return base64.standard_b64encode(buf.getvalue()).decode("ascii")
+    except Exception:
+        logger.debug("particle thumbnail encode failed", exc_info=True)
+        return None
+
+
+def _plot_row_particle_index(exp: DashboardExperiment, row_index: int) -> int:
+    ri = int(row_index)
+    if "index" in exp.plot_df.columns:
+        return int(exp.plot_df.iloc[ri]["index"])
+    return ri
+
+
+def _round_direct_mode_traj_xy(traj_xy: np.ndarray) -> np.ndarray:
+    """Snap axis coordinates to a short decimal representation (2 or 3 places per axis)."""
+    out = np.asarray(traj_xy, dtype=np.float64).copy()
+    for j in range(out.shape[1]):
+        col = out[:, j]
+        finite = col[np.isfinite(col)]
+        if finite.size == 0:
+            continue
+        mx = float(np.nanmax(np.abs(finite)))
+        decimals = 2 if mx >= 100.0 else 3
+        out[:, j] = np.round(col, decimals)
+    return out
 
 
 def _plot_df_rows_for_dataset_indices(
@@ -405,13 +473,147 @@ def _bind_dashboard_exp() -> None:
     g.dashboard_exp = _get_dashboard_exp(current_app)
 
 
+def _cmd_argv_for_nav_display(cmd_parts: list[str]) -> list[str]:
+    """Drop the filesystem path to the cryodrgn entrypoint; show ``cryodrgn <args>``."""
+    if not cmd_parts:
+        return []
+    parts = [str(x) for x in cmd_parts]
+    if len(parts) >= 3 and parts[1] == "-m":
+        mod = parts[2]
+        if mod == "cryodrgn" or mod.startswith("cryodrgn."):
+            return ["cryodrgn", *parts[3:]]
+    base0 = os.path.basename(parts[0])
+    if base0 == "cryodrgn" or base0.lower().startswith("cryodrgn."):
+        return ["cryodrgn", *parts[1:]]
+    if len(parts) >= 2:
+        base1 = os.path.basename(parts[1])
+        if base1 == "cryodrgn" or base1.lower().startswith("cryodrgn."):
+            return ["cryodrgn", *parts[2:]]
+    return parts
+
+
+def _argv_four_command_lines(argv: list[str]) -> list[str]:
+    """Format argv as at most four lines.
+
+    Line 1 is argv[0:2] (so it shows e.g. ``cryodrgn abinit``).
+    Args longer than 120 characters are abbreviated with an ellipsis-in-the-middle.
+    """
+
+    def _abbrev_middle_token(text: str, maxlen: int = 120) -> str:
+        s = "" if text is None else str(text)
+        if len(s) <= maxlen:
+            return s
+        if maxlen < 4:
+            return s[:maxlen]
+        ell = "…"
+        inner = maxlen - len(ell)
+        left = inner // 2
+        right = inner - left
+        return s[:left] + ell + s[-right:]
+
+    def _display_join(tokens: list[str]) -> str:
+        return " ".join(_abbrev_middle_token(t) for t in tokens)
+
+    if not argv:
+        return []
+    if len(argv) == 1:
+        return [_abbrev_middle_token(argv[0])]
+    if len(argv) == 2:
+        return [_display_join(argv)]
+
+    head_tokens = argv[0:2]
+    head = _display_join(head_tokens)
+    rest = argv[2:]
+
+    def _can_break_after(token: str) -> bool:
+        """Allow a line break only after argument values or key=value pairs."""
+        if "=" in token:
+            return True
+        # Argument "values" are tokens not starting with "-" / "--".
+        return not token.startswith("-")
+
+    def chunk_weight(chunk: list[str]) -> int:
+        # Keep line-splitting based on original token lengths (not abbreviated display),
+        # so we still get "similar amounts of space".
+        if not chunk:
+            return 0
+        return sum(len(x) for x in chunk) + max(0, len(chunk) - 1)
+
+    # If the tail is tiny, keep it compact (fewer than 4 lines).
+    if len(rest) == 1:
+        return [head, _abbrev_middle_token(rest[0])]
+    if len(rest) == 2:
+        # Only split into 3 lines if the first tail token is a valid break point.
+        if _can_break_after(rest[0]):
+            return [
+                head,
+                _abbrev_middle_token(rest[0]),
+                _abbrev_middle_token(rest[1]),
+            ]
+        # Otherwise keep both tail tokens on the same line.
+        return [head, _display_join(rest)]
+
+    # Split rest into three chunks (lines 2-4) with similar token "weight".
+    # Brute force two cut points; `rest` is small (typically CLI args), so O(n^2) is fine.
+    n = len(rest)
+    avg = chunk_weight(rest) / 3.0
+    best_score: float | None = None
+    best_i = 1
+    best_j = n - 1
+
+    # Cut points i and j are boundaries:
+    # - boundary at i breaks after rest[i-1] (so rest[i-1] must be breakable)
+    # - boundary at j breaks after rest[j-1] (so rest[j-1] must be breakable)
+    for i in range(1, n - 1):
+        if not _can_break_after(rest[i - 1]):
+            continue
+        for j in range(i + 1, n):
+            if not _can_break_after(rest[j - 1]):
+                continue
+            c1 = rest[:i]
+            c2 = rest[i:j]
+            c3 = rest[j:]
+            if not c1 or not c2 or not c3:
+                continue
+            w1 = chunk_weight(c1)
+            w2 = chunk_weight(c2)
+            w3 = chunk_weight(c3)
+            score = (w1 - avg) ** 2 + (w2 - avg) ** 2 + (w3 - avg) ** 2
+            if best_score is None or score < best_score:
+                best_score = score
+                best_i = i
+                best_j = j
+
+    # If no feasible cut points exist (e.g. tail is all flags), fall back to the
+    # unconstrained split so we still get a readable display.
+    if best_score is None:
+        best_score = 0.0
+        best_i = 1
+        best_j = n - 1
+
+    mid1 = _display_join(rest[:best_i])
+    mid2 = _display_join(rest[best_i:best_j])
+    last = _display_join(rest[best_j:])
+    return [head, mid1, mid2, last]
+
+
 def inject_meta():
     e: DashboardExperiment = g.dashboard_exp
     cfg = e.train_configs
     cmd_list = cfg.get("cmd", [])
-    model_type = cmd_list[1] if len(cmd_list) > 1 else "unknown"
     zdim = cfg.get("model_args", {}).get("zdim", "?")
-    particles = cfg.get("dataset_args", {}).get("particles", "?")
+    raw_parts = [str(x) for x in cmd_list] if isinstance(cmd_list, list) else []
+    cmd_parts = _cmd_argv_for_nav_display(raw_parts)
+    if len(cmd_parts) > 1:
+        model_type = cmd_parts[1]
+    elif len(cmd_list) > 1:
+        model_type = cmd_list[1]
+    else:
+        model_type = "unknown"
+    cfg_train_command = shlex.join(cmd_parts) if cmd_parts else ""
+    cfg_cmd_display_lines = (
+        _argv_four_command_lines(cmd_parts) if cmd_parts else [f"{model_type} z{zdim}"]
+    )
     return {
         "exp_workdir": e.workdir,
         "exp_epoch": e.epoch,
@@ -420,7 +622,8 @@ def inject_meta():
         "dashboard_epochs": current_app.config["DASHBOARD_EPOCHS"],
         "cfg_model_type": model_type,
         "cfg_zdim": zdim,
-        "cfg_particles": particles,
+        "cfg_train_command": cfg_train_command,
+        "cfg_cmd_display_lines": cfg_cmd_display_lines,
     }
 
 
@@ -447,6 +650,7 @@ def index():
         "index.html",
         can_images=e.can_preview_particles,
         zdim=int(e.z.shape[1]),
+        show_trajectory_creator=explorer_volumes_eligible(e),
     )
 
 
@@ -537,6 +741,7 @@ def explorer():
     return render_template(
         "scatter_explorer.html",
         numeric_cols=cols,
+        covariate_display_map={c: _covariate_display_name(c) for c in cols},
         default_x=dx,
         default_y=dy,
         initial_rows=initial_rows,
@@ -662,6 +867,7 @@ def api_scatter():
             preselect_plot_df_rows=preselect_rows,
             use_webgl=False,
             marker_size=marker_size,
+            continuous_palette=request.args.get("palette"),
         )
     except Exception as err:
         logger.exception("scatter plot failed")
@@ -687,6 +893,7 @@ def latent_3d_page():
         "latent_3d.html",
         z_cols=z_cols,
         numeric_cols=cols,
+        covariate_display_map={c: _covariate_display_name(c) for c in cols},
         default_x="z0",
         default_y="z1",
         default_z="z2",
@@ -708,11 +915,12 @@ def api_scatter3d_z():
             ycol,
             zcol,
             None if ccol == "none" else ccol,
+            continuous_palette=request.args.get("palette"),
         )
     except ValueError as err:
         return jsonify(error=str(err)), 400
     except Exception as err:
-        logger.exception("3D latent scatter failed")
+        logger.exception("3-D Latent Space Visualizer failed")
         return jsonify(error=str(err)), 500
     return Response(js, mimetype="application/json")
 
@@ -882,6 +1090,7 @@ def pairplot_page():
     return render_template(
         "pair_grid.html",
         color_choices=color_choices,
+        covariate_display_map={c: _covariate_display_name(c) for c in color_choices},
         default_color=default_color,
         has_umap=has_umap,
         zdim=zdim,
@@ -910,6 +1119,10 @@ def api_pairplot():
     else:
         diagonal_emb = str(raw_diag).lower()
     upper_style = (payload.get("upper_style") or "scatter").lower()
+    raw_palette = payload.get("palette")
+    pair_palette = normalize_continuous_palette(
+        str(raw_palette) if raw_palette is not None else None,
+    )
     if diagonal_emb not in ("pc", "umap"):
         return jsonify(error="diagonal_emb must be pc or umap."), 400
     if upper_style not in ("scatter", "hex"):
@@ -924,6 +1137,7 @@ def api_pairplot():
             lower_color_col=color_col,
             diagonal_emb=diagonal_emb,
             upper_style=upper_style,
+            continuous_palette=pair_palette,
         )
     except ValueError as err:
         return jsonify(error=str(err)), 400
@@ -962,6 +1176,11 @@ def api_save_pairplot_png():
     if diagonal_emb == "pc" and not _has_pc_columns(e):
         return jsonify(error="PCA components are not available."), 400
 
+    raw_palette_save = payload.get("palette")
+    pair_palette_save = normalize_continuous_palette(
+        str(raw_palette_save) if raw_palette_save is not None else None,
+    )
+
     raw_name = str(payload.get("filename") or "zdim_pairplot.png").strip()
     filename = os.path.basename(raw_name) or "zdim_pairplot.png"
     if not filename.lower().endswith(".png"):
@@ -975,6 +1194,7 @@ def api_save_pairplot_png():
             lower_color_col=color_col,
             diagonal_emb=diagonal_emb,
             upper_style=upper_style,
+            continuous_palette=pair_palette_save,
         )
         with open(out_path, "wb") as fh:
             fh.write(png)
@@ -987,6 +1207,191 @@ def api_save_pairplot_png():
         logger.exception("save pairplot failed")
         return jsonify(error=str(err)), 500
     return jsonify(ok=True, path=out_path, filename=filename)
+
+
+def api_default_trajectory_endpoints():
+    """Return start/end in plot space along the long axis of the point cloud (2D PCA).
+
+    The segment passes through the centroid and spans from the minimum to the maximum
+    projection of points onto the first principal direction — a line through the
+    middle of the mass with endpoints at opposite extents of the occupied region.
+    """
+    e: DashboardExperiment = g.dashboard_exp
+    if not explorer_volumes_eligible(e):
+        return (
+            jsonify(
+                error="Trajectory creator needs a CUDA GPU, single-particle data, "
+                "and weights for the current epoch.",
+            ),
+            400,
+        )
+    xcol = request.args.get("x", "")
+    ycol = request.args.get("y", "")
+    if xcol not in e.plot_df.columns or ycol not in e.plot_df.columns:
+        return jsonify(error="bad axis column"), 400
+
+    sub = e.plot_df[[xcol, ycol]].dropna()
+    if len(sub) < 2:
+        return jsonify(error="not enough finite points for default trajectory"), 400
+    xy = sub.values.astype(np.float64)
+    mu = xy.mean(axis=0)
+    xc = xy - mu
+    span = xc.max(axis=0) - xc.min(axis=0)
+    if not np.any(np.isfinite(span)) or float(np.nanmax(span)) < 1e-15:
+        return jsonify(
+            ok=True,
+            start=mu.tolist(),
+            end=(mu + np.array([1e-6, 0.0])).tolist(),
+        )
+
+    if float(span[0]) >= float(span[1]):
+        v = np.array([1.0, 0.0])
+    else:
+        v = np.array([0.0, 1.0])
+
+    try:
+        _u, _s, vt = np.linalg.svd(xc, full_matrices=False)
+        if vt.shape[0] >= 1:
+            cand = vt[0].astype(np.float64)
+            nrm = float(np.linalg.norm(cand))
+            if nrm > 1e-15:
+                v = cand / nrm
+    except np.linalg.LinAlgError:
+        pass
+
+    t = xc @ v
+    t_min = float(np.min(t))
+    t_max = float(np.max(t))
+    if np.isclose(t_min, t_max):
+        bump = max(float(np.nanmax(span)), 1.0) * 0.05
+        start = (mu + (t_min - bump) * v).tolist()
+        end = (mu + (t_max + bump) * v).tolist()
+    else:
+        start = (mu + t_min * v).tolist()
+        end = (mu + t_max * v).tolist()
+    return jsonify(ok=True, start=start, end=end)
+
+
+def trajectory_creator_page():
+    e: DashboardExperiment = g.dashboard_exp
+    if not explorer_volumes_eligible(e):
+        return (
+            render_template(
+                "no_images.html",
+                reason="Trajectory creator needs a CUDA GPU and model weights for the current epoch.",
+            ),
+            200,
+        )
+    cols = e.numeric_columns
+    dx, dy = _trajectory_default_xy_cols(cols)
+    return render_template(
+        "trajectory_creator.html",
+        numeric_cols=cols,
+        covariate_display_map={c: _covariate_display_name(c) for c in cols},
+        default_x=dx,
+        default_y=dy,
+        zdim=int(e.z.shape[1]),
+    )
+
+
+def api_trajectory_volumes():
+    e: DashboardExperiment = g.dashboard_exp
+    if not explorer_volumes_eligible(e):
+        return (
+            jsonify(
+                error="Trajectory creator needs a CUDA GPU, single-particle data, "
+                "and weights for the current epoch.",
+            ),
+            400,
+        )
+    data = request.get_json(force=True, silent=True) or {}
+    mode = str(data.get("mode", "direct")).strip().lower()
+    if mode not in ("direct", "nearest"):
+        return jsonify(error='mode must be "direct" or "nearest".'), 400
+
+    start_xy = data.get("start")
+    end_xy = data.get("end")
+    if (
+        not isinstance(start_xy, list)
+        or len(start_xy) != 2
+        or not isinstance(end_xy, list)
+        or len(end_xy) != 2
+    ):
+        return jsonify(error="start and end must be [x, y] coordinate pairs."), 400
+    try:
+        sx0, sy0 = float(start_xy[0]), float(start_xy[1])
+        ex0, ey0 = float(end_xy[0]), float(end_xy[1])
+    except (TypeError, ValueError):
+        return jsonify(error="start/end coordinates must be numeric."), 400
+
+    xcol = str(data.get("x", ""))
+    ycol = str(data.get("y", ""))
+    if xcol not in e.plot_df.columns or ycol not in e.plot_df.columns:
+        return jsonify(error="bad axis column"), 400
+
+    raw_n = data.get("n_points", 4)
+    try:
+        n_points = max(2, min(int(raw_n), 20))
+    except (TypeError, ValueError):
+        n_points = 4
+
+    coords = e.plot_df[[xcol, ycol]].values.astype(np.float64)
+
+    try:
+        if mode == "direct":
+            start_pt = np.array([sx0, sy0])
+            end_pt = np.array([ex0, ey0])
+            dists_start = np.sum((coords - start_pt) ** 2, axis=1)
+            dists_end = np.sum((coords - end_pt) ** 2, axis=1)
+            start_row = int(np.argmin(dists_start))
+            end_row = int(np.argmin(dists_end))
+            z_start = e.z[start_row]
+            z_end = e.z[end_row]
+            t = np.linspace(0.0, 1.0, n_points, dtype=np.float64)
+            z_traj = np.outer(1.0 - t, z_start) + np.outer(t, z_end)
+            traj_rows = None
+            traj_xy = np.outer(1.0 - t, start_pt) + np.outer(t, end_pt)
+            traj_xy = _round_direct_mode_traj_xy(traj_xy)
+        else:
+            t = np.linspace(0.0, 1.0, n_points, dtype=np.float64)
+            line_xy = np.outer(1.0 - t, np.array([sx0, sy0])) + np.outer(
+                t, np.array([ex0, ey0])
+            )
+            traj_rows = []
+            for pt in line_xy:
+                dists = np.sum((coords - pt) ** 2, axis=1)
+                traj_rows.append(int(np.argmin(dists)))
+            z_traj = e.z[np.array(traj_rows)]
+            traj_xy = coords[np.array(traj_rows)]
+
+        blobs, cache_token = generate_trajectory_volume_pngs(e, z_traj)
+        b64s = [base64.standard_b64encode(b).decode("ascii") for b in blobs]
+        payload: dict = {
+            "ok": True,
+            "images": b64s,
+            "n_points": n_points,
+            "mode": mode,
+            "traj_rows": traj_rows,
+            "traj_xy": traj_xy.tolist(),
+            "xcol": xcol,
+            "ycol": ycol,
+            "volume_cache_id": cache_token,
+        }
+        if mode == "nearest" and traj_rows is not None:
+            payload["traj_particle_indices"] = [
+                _plot_row_particle_index(e, r) for r in traj_rows
+            ]
+            payload["particle_thumbs"] = [
+                _particle_thumbnail_b64_from_row(e, int(r)) for r in traj_rows
+            ]
+        return jsonify(payload)
+    except EnvironmentError as err:
+        return jsonify(error=str(err), need_chimerax=True), 503
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    except Exception as err:
+        logger.exception("trajectory volume generation failed")
+        return jsonify(error=str(err)), 500
 
 
 def create_app(
@@ -1056,6 +1461,17 @@ def create_app(
     app.add_url_rule("/api/pairplot", view_func=api_pairplot, methods=["POST"])
     app.add_url_rule(
         "/api/save_pairplot_png", view_func=api_save_pairplot_png, methods=["POST"]
+    )
+    app.add_url_rule("/trajectory", view_func=trajectory_creator_page, methods=["GET"])
+    app.add_url_rule(
+        "/api/trajectory_volumes",
+        view_func=api_trajectory_volumes,
+        methods=["POST"],
+    )
+    app.add_url_rule(
+        "/api/default_trajectory_endpoints",
+        view_func=api_default_trajectory_endpoints,
+        methods=["GET"],
     )
 
     return app

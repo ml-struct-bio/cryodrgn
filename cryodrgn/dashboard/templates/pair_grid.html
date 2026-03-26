@@ -76,8 +76,9 @@
     max-width: 100%;
     max-height: var(--pairplot-max-h);
     display: flex;
-    justify-content: center;
-    align-items: flex-start;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: center;
     min-width: 240px;
     background: var(--cream, #faf8f4);
     border-radius: 2px;
@@ -106,6 +107,39 @@
   }
   .pairplot-img.pairplot-img--ready {
     opacity: 1;
+  }
+  .cryo-palette-radios {
+    margin: 0.5rem auto 0;
+    padding: 0.4rem 0.55rem;
+    border: 1px solid rgba(36, 59, 83, 0.15);
+    border-radius: 4px;
+    background: rgba(250, 248, 244, 0.75);
+    max-width: 100%;
+    box-sizing: border-box;
+    flex: 0 0 auto;
+  }
+  .cryo-palette-radios legend {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--nav-bg, #243b53);
+    padding: 0 0.2rem;
+  }
+  .cryo-palette-radios__row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.85rem;
+    align-items: center;
+    justify-content: center;
+  }
+  .cryo-palette-radios label {
+    font-size: 0.78rem;
+    color: var(--nav-bg, #243b53);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    cursor: pointer;
+    margin: 0;
+    font-weight: 500;
   }
   .pairplot-skeleton {
     position: absolute;
@@ -247,7 +281,7 @@
   }
 </style>
 {% endblock %}
-{% block nav_page_title %}<span class="nav-page-title">Pairwise plot generator</span>{% endblock %}
+{% block nav_page_title %}<span class="nav-title-sep" aria-hidden="true">·</span><span class="nav-page-title">Pairwise plot generator</span>{% endblock %}
 {% block content %}
 <div class="cryo-dash-page">
 <div class="cryo-dash-row">
@@ -265,7 +299,7 @@
           {% for c in color_choices %}
           <label class="radio-line">
             <input type="radio" name="color_cov" value="{{ c }}" {% if c == default_color %}checked{% endif %}/>
-            <span><code>{{ c }}</code></span>
+            <span><code>{{ covariate_display_map.get(c, c) }}</code></span>
           </label>
           {% endfor %}
         </div>
@@ -333,6 +367,17 @@
           </div>
         </div>
       </div>
+      <fieldset class="cryo-palette-radios" aria-label="Continuous colour palette">
+        <legend>Palette (continuous colour)</legend>
+        <div class="cryo-palette-radios__row">
+          <label><input type="radio" name="pairplot_palette" value="Viridis" checked/> Viridis</label>
+          <label><input type="radio" name="pairplot_palette" value="Plasma"/> Plasma</label>
+          <label><input type="radio" name="pairplot_palette" value="Inferno"/> Inferno</label>
+          <label><input type="radio" name="pairplot_palette" value="Magma"/> Magma</label>
+          <label><input type="radio" name="pairplot_palette" value="Cividis"/> Cividis</label>
+          <label><input type="radio" name="pairplot_palette" value="Turbo"/> Turbo</label>
+        </div>
+      </fieldset>
     </div>
   </div>
 </div>
@@ -366,7 +411,8 @@
     return {
       color_col: checkedVal("color_cov"),
       diagonal_emb: checkedVal("diag_emb") || (hasUmap ? "umap" : "pc"),
-      upper_style: checkedVal("upper_style") || "scatter"
+      upper_style: checkedVal("upper_style") || "scatter",
+      palette: checkedVal("pairplot_palette") || "Viridis"
     };
   }
 
@@ -473,12 +519,22 @@
       }
       return all;
     }
+    var palPrev = prev.palette || "Viridis";
+    var palCur = cur.palette || "Viridis";
     if (
       prev.color_col === cur.color_col
       && prev.diagonal_emb === cur.diagonal_emb
       && prev.upper_style === cur.upper_style
+      && palPrev === palCur
     ) {
       return [];
+    }
+    if (palPrev !== palCur) {
+      var allPal = [];
+      for (var tp = 0; tp < zdim * zdim; tp++) {
+        allPal.push(tp);
+      }
+      return allPal;
     }
     var s = new Set();
     if (prev.color_col !== cur.color_col) {
@@ -657,6 +713,7 @@
           color_col: payload.color_col,
           diagonal_emb: payload.diagonal_emb,
           upper_style: payload.upper_style,
+          palette: payload.palette || "Viridis",
           filename: filename
         })
       })

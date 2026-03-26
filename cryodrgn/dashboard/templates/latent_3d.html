@@ -1,6 +1,91 @@
 {% extends "base.html" %}
-{% block title %}3D latent view · cryoDRGN{% endblock %}
-{% block nav_page_title %}<span class="nav-page-title">3-D Visualizer</span>{% endblock %}
+{% block title %}3-D Latent Space Visualizer · cryoDRGN{% endblock %}
+{% block nav_page_title %}<span class="nav-title-sep" aria-hidden="true">·</span><span class="nav-page-title">3-D Latent Space Visualizer</span>{% endblock %}
+{% block head %}
+<style>
+  .latent3d-legend-items {
+    margin-top: 0.45rem;
+  }
+  .latent3d-legend-title {
+    font-size: 0.86rem;
+    font-weight: 700;
+    color: var(--nav-bg, #243b53);
+    margin: 0 0 0.35rem;
+  }
+  .latent3d-legend-continuous-bar {
+    height: 0.62rem;
+    border-radius: 999px;
+    /* Fallback; JS sets gradient from selected palette. */
+    background: linear-gradient(90deg, #440154 0%, #21918c 50%, #fde725 100%);
+    border: 1px solid rgba(36, 59, 83, 0.2);
+  }
+  .latent3d-legend-continuous-range {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-top: 0.3rem;
+    font-size: 0.8rem;
+    color: var(--muted, #5c6b7a);
+    font-variant-numeric: tabular-nums;
+  }
+  .latent3d-legend-discrete-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.25rem 0.75rem;
+  }
+  .latent3d-legend-discrete-item {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-width: 0;
+    font-size: 0.82rem;
+    color: var(--nav-bg, #243b53);
+  }
+  .latent3d-legend-discrete-swatch {
+    width: 0.65rem;
+    height: 0.65rem;
+    border-radius: 999px;
+    border: 1px solid rgba(36, 59, 83, 0.3);
+    flex-shrink: 0;
+  }
+  .latent3d-legend-discrete-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cryo-palette-radios {
+    margin: 0.5rem 0 0;
+    padding: 0.4rem 0.55rem;
+    border: 1px solid rgba(36, 59, 83, 0.15);
+    border-radius: 4px;
+    background: rgba(250, 248, 244, 0.75);
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  .cryo-palette-radios legend {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--nav-bg, #243b53);
+    padding: 0 0.2rem;
+  }
+  .cryo-palette-radios__row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.85rem;
+    align-items: center;
+  }
+  .cryo-palette-radios label {
+    font-size: 0.78rem;
+    color: var(--nav-bg, #243b53);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    cursor: pointer;
+    margin: 0;
+    font-weight: 500;
+  }
+</style>
+{% endblock %}
 {% block content %}
 <div class="cryo-dash-page cryo-dash-page--latent3d">
 <div class="cryo-dash-row">
@@ -43,10 +128,22 @@
             </div>
           </div>
         </div>
+        <fieldset class="cryo-palette-radios" aria-label="Continuous colour palette">
+          <legend>Palette (continuous colour)</legend>
+          <div class="cryo-palette-radios__row">
+            <label><input type="radio" name="latent3d_palette" value="Viridis" checked/> Viridis</label>
+            <label><input type="radio" name="latent3d_palette" value="Plasma"/> Plasma</label>
+            <label><input type="radio" name="latent3d_palette" value="Inferno"/> Inferno</label>
+            <label><input type="radio" name="latent3d_palette" value="Magma"/> Magma</label>
+            <label><input type="radio" name="latent3d_palette" value="Cividis"/> Cividis</label>
+            <label><input type="radio" name="latent3d_palette" value="Turbo"/> Turbo</label>
+          </div>
+        </fieldset>
       </div>
-      <aside class="cryo-dash-figure-legend" aria-label="3D view legend">
+      <aside class="cryo-dash-figure-legend" aria-label="3-D latent space view legend">
         <strong>Interpreting the view</strong>
         <p class="cryo-dash-legend-note">Drag to rotate, scroll to zoom, toolbar for reset and camera. Points are particles in latent space; color follows your choice above (or a single color if none).</p>
+        <div id="latent3d-color-legend" class="latent3d-legend-items"></div>
       </aside>
     </div>
   </div>
@@ -57,6 +154,7 @@
 (function() {
   var zcols = {{ z_cols | tojson }};
   var cols = {{ numeric_cols | tojson }};
+  var covariateDisplayMap = {{ covariate_display_map | tojson }};
   var dx = {{ default_x | tojson }};
   var dy = {{ default_y | tojson }};
   var dz = {{ default_z | tojson }};
@@ -85,7 +183,7 @@
     cols.forEach(function(c) {
       var o = document.createElement("option");
       o.value = c;
-      o.textContent = c;
+      o.textContent = covariateDisplayMap[c] || c;
       sel.appendChild(o);
     });
   }
@@ -100,6 +198,7 @@
   fillColorSelect(sc);
 
   var gd = document.getElementById("latent3d");
+  var colorLegend = document.getElementById("latent3d-color-legend");
   var overlay = document.getElementById("latent3d-rendering-overlay");
   var controlsCard = document.getElementById("latent3d-controls-card");
   var controlsSide = controlsCard ? controlsCard.closest(".cryo-dash-side") : null;
@@ -131,6 +230,72 @@
     overlay.setAttribute("aria-hidden", on ? "false" : "true");
   }
 
+  function fmtLegendNumber(v) {
+    if (typeof v !== "number" || !isFinite(v)) return "";
+    var av = Math.abs(v);
+    if (av >= 1000 || (av > 0 && av < 0.01)) return v.toExponential(2);
+    return v.toFixed(3).replace(/\.?0+$/, "");
+  }
+
+  var LATENT_CONTINUOUS_BAR_BG = {
+    Viridis: "linear-gradient(90deg,#440154 0%,#482878 14%,#3e4989 29%,#31688e 43%,#26828e 57%,#1f9e89 71%,#35b779 82%,#90d743 92%,#fde725 100%)",
+    Plasma: "linear-gradient(90deg,#0d0887 0%,#6a00a8 20%,#b12a90 40%,#e16462 60%,#fca636 82%,#f0f921 100%)",
+    Inferno: "linear-gradient(90deg,#000004 0%,#420a68 35%,#932667 55%,#dd513a 72%,#fca50a 88%,#fcffa4 100%)",
+    Magma: "linear-gradient(90deg,#000004 0%,#3b0f70 30%,#8c2981 50%,#de4968 68%,#fe9f6d 85%,#fcfdbf 100%)",
+    Cividis: "linear-gradient(90deg,#00224e 0%,#123570 25%,#575d6d 50%,#8c8c78 72%,#cfe49a 88%,#fdea45 100%)",
+    Turbo: "linear-gradient(90deg,#30123b 0%,#1a4ac2 17%,#32b4ec 33%,#7cd250 50%,#f8d940 67%,#fe5626 83%,#d73401 100%)"
+  };
+  function selectedLatentPalette() {
+    var r = document.querySelector("input[name=\"latent3d_palette\"]:checked");
+    var v = r && r.value ? String(r.value) : "Viridis";
+    return LATENT_CONTINUOUS_BAR_BG[v] ? v : "Viridis";
+  }
+
+  function renderColorLegend(fig, colorKey) {
+    if (!colorLegend) return;
+    if (!colorKey || colorKey === "none") {
+      colorLegend.innerHTML = "";
+      return;
+    }
+    var meta = (fig && fig.layout && fig.layout.meta) ? fig.layout.meta : null;
+    var legend = (meta && meta.cdrgn_color_legend) ? meta.cdrgn_color_legend : null;
+    var title = covariateDisplayMap[colorKey] || colorKey;
+    if (!legend || !legend.type) {
+      colorLegend.innerHTML = "";
+      return;
+    }
+    if (legend.type === "discrete" && Array.isArray(legend.items) && legend.items.length) {
+      var itemsHtml = legend.items.map(function(item) {
+        var label = (item && item.label != null) ? String(item.label) : "";
+        var col = (item && item.color) ? String(item.color) : "#aab4bf";
+        return (
+          '<div class="latent3d-legend-discrete-item">' +
+          '<span class="latent3d-legend-discrete-swatch" style="background:' + col + ';"></span>' +
+          '<span class="latent3d-legend-discrete-label">' + label + "</span>" +
+          "</div>"
+        );
+      }).join("");
+      colorLegend.innerHTML =
+        '<p class="latent3d-legend-title">' + title + "</p>" +
+        '<div class="latent3d-legend-discrete-grid">' + itemsHtml + "</div>";
+      return;
+    }
+    if (legend.type === "continuous") {
+      var vmin = fmtLegendNumber(Number(legend.min));
+      var vmax = fmtLegendNumber(Number(legend.max));
+      colorLegend.innerHTML =
+        '<p class="latent3d-legend-title">' + title + "</p>" +
+        '<div class="latent3d-legend-continuous-bar"></div>' +
+        '<div class="latent3d-legend-continuous-range"><span>' + vmin + "</span><span>" + vmax + "</span></div>";
+      var bar = colorLegend.querySelector(".latent3d-legend-continuous-bar");
+      if (bar) {
+        bar.style.background = LATENT_CONTINUOUS_BAR_BG[selectedLatentPalette()] || LATENT_CONTINUOUS_BAR_BG.Viridis;
+      }
+      return;
+    }
+    colorLegend.innerHTML = "";
+  }
+
   function loadPlot() {
     var x = sx.value;
     var y = sy.value;
@@ -147,7 +312,8 @@
     var q = "x=" + encodeURIComponent(x)
       + "&y=" + encodeURIComponent(y)
       + "&z=" + encodeURIComponent(z)
-      + "&color=" + encodeURIComponent(c);
+      + "&color=" + encodeURIComponent(c)
+      + "&palette=" + encodeURIComponent(selectedLatentPalette());
     requestAnimationFrame(function() {
       requestAnimationFrame(function() {
         fetch("{{ url_for('api_scatter3d_z') }}?" + q)
@@ -161,6 +327,7 @@
             });
           })
           .then(function(fig) {
+            renderColorLegend(fig, c);
             return Plotly.react(gd, fig.data, fig.layout, {responsive: true});
           })
           .then(function() {
@@ -184,6 +351,9 @@
 
   [sx, sy, sz, sc].forEach(function(s) {
     s.addEventListener("change", loadPlot);
+  });
+  document.querySelectorAll("input[name=\"latent3d_palette\"]").forEach(function(inp) {
+    inp.addEventListener("change", loadPlot);
   });
   window.addEventListener("resize", function() {
     syncControlsAlignment();

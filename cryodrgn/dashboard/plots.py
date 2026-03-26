@@ -61,6 +61,35 @@ def _lower_color_series_is_discrete(s: pd.Series) -> bool:
 _UPPER_SCATTER_BLUE = "#9ec5e8"
 # Matches ``base.html`` ``--cream`` (page background).
 _DASHBOARD_CREAM = "#faf8f4"
+# Default sequential scale for continuous covariates (Plotly name + Matplotlib cmap).
+DEFAULT_DASHBOARD_CONTINUOUS_PALETTE = "Viridis"
+_DASHBOARD_PALETTE_TO_MPL: dict[str, str] = {
+    "Viridis": "viridis",
+    "Plasma": "plasma",
+    "Inferno": "inferno",
+    "Magma": "magma",
+    "Cividis": "cividis",
+    "Turbo": "turbo",
+}
+
+
+def normalize_continuous_palette(raw: str | None) -> str:
+    """Map a user/API string to a supported Plotly colorscale name."""
+    if not raw or not isinstance(raw, str):
+        return DEFAULT_DASHBOARD_CONTINUOUS_PALETTE
+    s = raw.strip()
+    for pk in _DASHBOARD_PALETTE_TO_MPL:
+        if pk.lower() == s.lower():
+            return pk
+    return DEFAULT_DASHBOARD_CONTINUOUS_PALETTE
+
+
+def mpl_cmap_for_palette(plotly_palette: str) -> str:
+    return _DASHBOARD_PALETTE_TO_MPL.get(
+        plotly_palette,
+        _DASHBOARD_PALETTE_TO_MPL[DEFAULT_DASHBOARD_CONTINUOUS_PALETTE],
+    )
+
 
 # Pair grid: gutter between cells (fraction of average subplot width/height).
 _PAIR_CELL_WSPACE = 0.06
@@ -326,16 +355,34 @@ def scatter_json(
     preselect_plot_df_rows: Collection[int] | None = None,
     use_webgl: bool = True,
     marker_size: float = 4,
+    continuous_palette: str | None = None,
 ) -> str:
+    plotly_cs = normalize_continuous_palette(continuous_palette)
     sub, row_indices = _subsample(exp.plot_df, max_points, seed=0)
 
     if color_col and color_col != "none" and color_col in sub.columns:
-        marker = dict(
-            size=marker_size,
-            opacity=0.35,
-            color=sub[color_col],
-            colorscale="Viridis",
-        )
+        if color_col == "labels":
+            codes_arr, uniques = pd.factorize(sub[color_col], sort=True)
+            codes = np.asarray(codes_arr, dtype=np.int64)
+            pal = list(analysis._get_chimerax_colors(max(len(uniques), 1)))
+            colors: list[str] = []
+            for code in codes:
+                if int(code) < 0:
+                    colors.append("#aab4bf")
+                else:
+                    colors.append(pal[int(code) % len(pal)])
+            marker = dict(
+                size=marker_size,
+                opacity=0.35,
+                color=colors,
+            )
+        else:
+            marker = dict(
+                size=marker_size,
+                opacity=0.35,
+                color=sub[color_col],
+                colorscale=plotly_cs,
+            )
     else:
         marker = dict(size=marker_size, opacity=0.35, color="#4a5568")
 
@@ -394,8 +441,11 @@ def scatter3d_z_json(
     zcol: str,
     color_col: str | None,
     max_points: int = 120_000,
+    *,
+    continuous_palette: str | None = None,
 ) -> str:
     """Interactive 3D scatter of three latent ``z*`` columns."""
+    plotly_cs = normalize_continuous_palette(continuous_palette)
     df = exp.plot_df
     z_allowed = {f"z{i}" for i in range(int(exp.z.shape[1]))}
     for c in (xcol, ycol, zcol):
@@ -408,13 +458,64 @@ def scatter3d_z_json(
 
     sub, row_indices = _subsample(df, max_points, seed=1)
 
+    legend_meta: dict[str, Any] | None = None
     if color_col and color_col != "none" and color_col in sub.columns:
-        marker = dict(
-            size=0.75,
-            opacity=0.4,
-            color=sub[color_col],
-            colorscale="Viridis",
-        )
+        if color_col == "labels":
+            codes_arr, uniques = pd.factorize(sub[color_col], sort=True)
+            codes = np.asarray(codes_arr, dtype=np.int64)
+            pal = list(analysis._get_chimerax_colors(max(len(uniques), 1)))
+            colors: list[str] = []
+            for code in codes:
+                if int(code) < 0:
+                    colors.append("#aab4bf")
+                else:
+                    colors.append(pal[int(code) % len(pal)])
+            marker = dict(
+                size=0.75,
+                opacity=0.4,
+                color=colors,
+            )
+            items: list[dict[str, str]] = []
+            for idx, u in enumerate(uniques):
+                if pd.isna(u):
+                    continue
+                items.append(
+                    {
+                        "label": _lower_legend_entry_label(color_col, u),
+                        "color": pal[idx % len(pal)],
+                    }
+                )
+            if bool(sub[color_col].isna().any()):
+                items.append({"label": "(missing)", "color": "#aab4bf"})
+            legend_meta = {
+                "type": "discrete",
+                "title": "k-means labels",
+                "items": items,
+            }
+        else:
+            color_num = cast(pd.Series, pd.to_numeric(sub[color_col], errors="coerce"))
+            cvals = np.asarray(color_num, dtype=np.float64)
+            cfinite = cvals[np.isfinite(cvals)]
+            if cfinite.size == 0:
+                cmin, cmax = 0.0, 1.0
+            elif np.isclose(cfinite.min(), cfinite.max()):
+                cmin = float(cfinite.min()) - 0.5
+                cmax = float(cfinite.max()) + 0.5
+            else:
+                cmin = float(np.min(cfinite))
+                cmax = float(np.max(cfinite))
+            marker = dict(
+                size=0.75,
+                opacity=0.4,
+                color=sub[color_col],
+                colorscale=plotly_cs,
+            )
+            legend_meta = {
+                "type": "continuous",
+                "title": color_col,
+                "min": cmin,
+                "max": cmax,
+            }
     else:
         marker = dict(size=0.75, opacity=0.4, color="#4a5568")
 
@@ -450,6 +551,7 @@ def scatter3d_z_json(
         ),
         uirevision="scatter3d_z",
         font=_PLOTLY_FONT,
+        meta={"cdrgn_color_legend": legend_meta},
     )
     return _plotly_to_json(fig)
 
@@ -460,11 +562,14 @@ def pair_grid_png(
     diagonal_emb: str,
     upper_style: str,
     dpi: int = 120,
+    *,
+    continuous_palette: str | None = None,
 ) -> tuple[bytes, list[dict[str, float]]]:
     """z_dim × z_dim Matplotlib grid (square cells); upper hex matches ``sns.jointplot(..., kind=\"hex\")``.
 
     Returns PNG bytes and per-cell axis bboxes in figure coordinates (for HTML overlay alignment).
     """
+    mpl_cmap = mpl_cmap_for_palette(normalize_continuous_palette(continuous_palette))
     df = exp.plot_df
     zdim = int(exp.z.shape[1])
     zcols = [f"z{i}" for i in range(zdim)]
@@ -626,7 +731,7 @@ def pair_grid_png(
                         emb_x,
                         emb_y,
                         c=zi,
-                        cmap="viridis",
+                        cmap=mpl_cmap,
                         s=2,
                         alpha=0.55,
                         linewidths=0,
@@ -684,7 +789,7 @@ def pair_grid_png(
                             xi,
                             yi,
                             c=cvals_plot,
-                            cmap="viridis",
+                            cmap=mpl_cmap,
                             vmin=cmin,
                             vmax=cmax,
                             s=2.5,
@@ -848,7 +953,7 @@ def pair_grid_png(
                 fontweight="bold",
                 rotation=90,
             )
-        # Small diagonal legends (bottom-left) showing each panel's viridis scale.
+        # Small diagonal legends (bottom-left) showing each panel's sequential scale.
         for k in range(zdim):
             ax = axes[k, k]
             zrange = diagonal_color_ranges[k]
@@ -883,7 +988,7 @@ def pair_grid_png(
                 transform=ax.transAxes,
             )
             grad = np.linspace(0.0, 1.0, 128, dtype=np.float64).reshape(1, -1)
-            grad_ax.imshow(grad, cmap="viridis", aspect="auto", origin="lower")
+            grad_ax.imshow(grad, cmap=mpl_cmap, aspect="auto", origin="lower")
             grad_ax.set_xticks([])
             grad_ax.set_yticks([])
             for spine in grad_ax.spines.values():

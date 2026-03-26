@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Trajectory creator · cryoDRGN{% endblock %}
-{% block nav_page_title %}<span class="nav-page-title">Trajectory creator</span>{% endblock %}
+{% block nav_page_title %}<span class="nav-title-sep" aria-hidden="true">·</span><span class="nav-page-title">Trajectory creator</span>{% endblock %}
 {% block head %}
 <style>
   .cryo-traj-vol-column {
@@ -164,8 +164,39 @@
   .cryo-dash-page--image-viewer .cryo-dash-montage.cryo-dash-montage--trajectory-volumes {
     align-self: stretch;
     min-height: 0;
-    max-height: calc(100svh - 7.25rem);
+    max-height: calc(100svh - var(--cryo-dash-below-nav));
     overflow: hidden;
+  }
+  .cryo-palette-radios {
+    margin: 0.5rem 0 0;
+    padding: 0.4rem 0.55rem;
+    border: 1px solid rgba(36, 59, 83, 0.15);
+    border-radius: 4px;
+    background: rgba(250, 248, 244, 0.75);
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  .cryo-palette-radios legend {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--nav-bg, #243b53);
+    padding: 0 0.2rem;
+  }
+  .cryo-palette-radios__row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.85rem;
+    align-items: center;
+  }
+  .cryo-palette-radios label {
+    font-size: 0.78rem;
+    color: var(--nav-bg, #243b53);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    cursor: pointer;
+    margin: 0;
+    font-weight: 500;
   }
 </style>
 {% endblock %}
@@ -221,6 +252,17 @@
         </div>
       </div>
     </div>
+    <fieldset class="cryo-palette-radios" aria-label="Continuous colour palette">
+      <legend>Palette (continuous colour)</legend>
+      <div class="cryo-palette-radios__row">
+        <label><input type="radio" name="traj_palette" value="Viridis" checked/> Viridis</label>
+        <label><input type="radio" name="traj_palette" value="Plasma"/> Plasma</label>
+        <label><input type="radio" name="traj_palette" value="Inferno"/> Inferno</label>
+        <label><input type="radio" name="traj_palette" value="Magma"/> Magma</label>
+        <label><input type="radio" name="traj_palette" value="Cividis"/> Cividis</label>
+        <label><input type="radio" name="traj_palette" value="Turbo"/> Turbo</label>
+      </div>
+    </fieldset>
   </div>
 
   <aside class="cryo-dash-montage cryo-dash-montage--trajectory-volumes" aria-label="Trajectory volumes">
@@ -270,6 +312,13 @@
   var scatterControlsSide = scatterControlsCard ? scatterControlsCard.closest(".cryo-dash-side") : null;
   var scatterPlotStack = document.getElementById("scatter-plot-stack");
   var plotlyStackEl = gd && gd.parentElement;
+
+  var TRAJ_PALETTE_KEYS = { Viridis: 1, Plasma: 1, Inferno: 1, Magma: 1, Cividis: 1, Turbo: 1 };
+  function selectedTrajPalette() {
+    var r = document.querySelector("input[name=\"traj_palette\"]:checked");
+    var v = r && r.value ? String(r.value) : "Viridis";
+    return TRAJ_PALETTE_KEYS[v] ? v : "Viridis";
+  }
 
   function fillSelect(sel, includeNone) {
     sel.innerHTML = "";
@@ -720,7 +769,8 @@
     var q = "x=" + encodeURIComponent(x)
       + "&y=" + encodeURIComponent(y)
       + "&color=" + encodeURIComponent(c)
-      + "&marker_size=2";
+      + "&marker_size=2"
+      + "&palette=" + encodeURIComponent(selectedTrajPalette());
     fetch("{{ url_for('api_scatter') }}?" + q)
       .then(function(r) {
         return r.text().then(function(text) {
@@ -828,6 +878,12 @@
   sc.addEventListener("change", function() {
     preparePlotReload();
     loadPlot();
+  });
+  document.querySelectorAll("input[name=\"traj_palette\"]").forEach(function(inp) {
+    inp.addEventListener("change", function() {
+      preparePlotReload();
+      loadPlot();
+    });
   });
   nPointsEl.addEventListener("change", function() {
     updateGenerateVolumesButtonLabel();

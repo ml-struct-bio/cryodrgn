@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Command builder · cryoDRGN{% endblock %}
-{% block nav_page_title %}<span class="nav-page-title">Command builder</span>{% endblock %}
+{% block nav_page_title %}<span class="nav-title-sep" aria-hidden="true">·</span><span class="nav-page-title">Command builder</span>{% endblock %}
 {% block head %}
 <style>
   /* Viewport column: scroll form, command dock pinned to bottom of main */
@@ -8,12 +8,12 @@
     display: flex;
     flex-direction: column;
     box-sizing: border-box;
-    height: calc(100vh - 7.25rem);
-    height: calc(100dvh - 7.25rem);
-    max-height: calc(100vh - 7.25rem);
-    max-height: calc(100dvh - 7.25rem);
-    min-height: calc(100vh - 7.25rem);
-    min-height: calc(100dvh - 7.25rem);
+    height: calc(100vh - var(--cryo-dash-below-nav));
+    height: calc(100dvh - var(--cryo-dash-below-nav));
+    max-height: calc(100vh - var(--cryo-dash-below-nav));
+    max-height: calc(100dvh - var(--cryo-dash-below-nav));
+    min-height: calc(100vh - var(--cryo-dash-below-nav));
+    min-height: calc(100dvh - var(--cryo-dash-below-nav));
     overflow: hidden;
     padding-bottom: max(0.35rem, env(safe-area-inset-bottom, 0px));
   }
@@ -121,6 +121,40 @@
     font-weight: 500;
   }
   .cmd-form .check-line input { width: auto; margin: 0; }
+  .cmd-form .choice-line {
+    display: block;
+    margin: 0.35rem 0 0.15rem;
+    font-size: 0.86rem;
+    font-weight: 600;
+    color: var(--muted, #5c6b7a);
+  }
+  .cmd-form .choice-options {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.3rem 0.85rem;
+    margin: 0.15rem 0 0.35rem;
+  }
+  .cmd-form .choice-options .check-line {
+    margin: 0;
+    font-size: 0.84rem;
+    white-space: nowrap;
+  }
+  .cmd-builder-dataset-flags {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem 0.85rem;
+    margin: 0.3rem 0 0.15rem;
+  }
+  .cmd-builder-dataset-flags .check-line {
+    margin: 0;
+    white-space: nowrap;
+    font-size: 0.84rem;
+  }
+  .cmd-builder-dataset-flags + .cryo-select-line {
+    margin-top: 0.45rem;
+  }
   .cmd-panel { display: none; }
   .cmd-panel.cmd-panel--active { display: block; }
   .cmd-output.card {
@@ -226,15 +260,17 @@
     <input type="text" id="{{ a.id }}_a" placeholder="shift" autocomplete="off"{{ title_attr(st) }}/>
     <input type="text" id="{{ a.id }}_b" placeholder="scale" autocomplete="off"{{ title_attr(st) }}/>
   {% elif a.w == 'select' %}
-    <label class="cryo-select-line" for="{{ a.id }}"{{ title_attr(st) }}><code>{{ a.cli[0] }}</code></label>
-    <select id="{{ a.id }}"{{ title_attr(st) }}>
-      {% if not (a.choices and a.choices[0] == '') %}
-      <option value="">(omit)</option>
-      {% endif %}
+    {% set default_choice = a.default if a.default is defined else (a.choices[0] if a.choices else '') %}
+    <span class="choice-line"{{ title_attr(st) }}><code>{{ a.cli[0] }}</code></span>
+    <div class="choice-options">
       {% for c in a.choices %}
-      <option value="{{ c }}">{% if a.labels and loop.index0 < a.labels|length %}{{ a.labels[loop.index0] }}{% elif c == '' %}(empty){% else %}{{ c }}{% endif %}</option>
+      {% set rid = a.id ~ '_' ~ loop.index0 %}
+      <label class="check-line" for="{{ rid }}"{{ title_attr(st) }}>
+        <input type="radio" id="{{ rid }}" name="{{ a.id }}" value="{{ c }}" {% if c == default_choice %}checked{% endif %}{{ title_attr(st) }}/>
+        <span>{% if a.labels and loop.index0 < a.labels|length %}{{ a.labels[loop.index0] }}{% elif c == '' %}(empty){% else %}{{ c }}{% endif %}</span>
+      </label>
       {% endfor %}
-    </select>
+    </div>
   {% elif a.w == 'number' %}
     <label class="cryo-select-line" for="{{ a.id }}"{{ title_attr(st) }}><code>{{ a.cli[0] }}</code></label>
     <input type="number" id="{{ a.id }}"{% if a.placeholder %} placeholder="{{ a.placeholder|e }}"{% endif %} autocomplete="off"{{ title_attr(st) }}/>
@@ -245,6 +281,24 @@
       autocomplete="off"
       {{ title_attr(st) }}/>
   {% endif %}
+{% endmacro %}
+{% macro render_dataset_fieldset(cmd_key, datadir_id) %}
+  {% set ds = (command_builder_schema[cmd_key] | selectattr('title', 'equalto', 'Dataset loading') | list | first) %}
+  <fieldset>
+    <legend>Dataset loading</legend>
+    <label class="cryo-select-line" for="{{ datadir_id }}"{{ title_attr(command_builder_required_field_titles.get(datadir_id)) }}><code>--datadir</code></label>
+    <input type="text" id="{{ datadir_id }}" value="" placeholder="(omit if blank)" autocomplete="off"{{ title_attr(command_builder_required_field_titles.get(datadir_id)) }}/>
+    {% if ds and ds.args %}
+      <div class="cmd-builder-dataset-flags">
+        {% for a in ds.args if a.w in ['flag_true', 'flag_false'] %}
+          {{ render_cmd_arg(a) }}
+        {% endfor %}
+      </div>
+      {% for a in ds.args if a.w not in ['flag_true', 'flag_false'] %}
+        {{ render_cmd_arg(a) }}
+      {% endfor %}
+    {% endif %}
+  </fieldset>
 {% endmacro %}
 <div class="cryo-dash-page cmd-builder-page cmd-builder-page--dock">
 <div class="cmd-builder-header">
@@ -281,20 +335,18 @@
         <label class="cryo-select-line" for="ab_ctf"{{ ctf_row_title('ab_ctf') }}><code>--ctf</code></label>
         <input type="text" id="ab_ctf" value="{{ default_ctf|e }}" placeholder="path to CTF .pkl" autocomplete="off"{{ ctf_row_title('ab_ctf') }}/>
       </fieldset>
-      <fieldset>
-        <legend>Dataset loading</legend>
-        <label class="cryo-select-line" for="ab_datadir"{{ title_attr(command_builder_required_field_titles.get('ab_datadir')) }}><code>--datadir</code></label>
-        <input type="text" id="ab_datadir" value="" placeholder="(omit if blank)" autocomplete="off"{{ title_attr(command_builder_required_field_titles.get('ab_datadir')) }}/>
-      </fieldset>
+      {{ render_dataset_fieldset('abinit', 'ab_datadir') }}
     </div>
     <div class="cmd-builder-rest-grid">
       {% for group in command_builder_schema['abinit'] %}
+      {% if group.title != 'Dataset loading' %}
       <fieldset>
         <legend>{{ group.title }}</legend>
         {% for a in group.args %}
           {{ render_cmd_arg(a) }}
         {% endfor %}
       </fieldset>
+      {% endif %}
       {% endfor %}
     </div>
   </div>
@@ -314,20 +366,18 @@
         <label class="cryo-select-line" for="vae_ctf"{{ ctf_row_title('vae_ctf') }}><code>--ctf</code></label>
         <input type="text" id="vae_ctf" value="{{ default_ctf|e }}" placeholder="path to CTF .pkl" autocomplete="off"{{ ctf_row_title('vae_ctf') }}/>
       </fieldset>
-      <fieldset>
-        <legend>Dataset loading</legend>
-        <label class="cryo-select-line" for="vae_datadir"{{ title_attr(command_builder_required_field_titles.get('vae_datadir')) }}><code>--datadir</code></label>
-        <input type="text" id="vae_datadir" value="" placeholder="(omit if blank)" autocomplete="off"{{ title_attr(command_builder_required_field_titles.get('vae_datadir')) }}/>
-      </fieldset>
+      {{ render_dataset_fieldset('train_vae', 'vae_datadir') }}
     </div>
     <div class="cmd-builder-rest-grid">
       {% for group in command_builder_schema['train_vae'] %}
+      {% if group.title != 'Dataset loading' %}
       <fieldset>
         <legend>{{ group.title }}</legend>
         {% for a in group.args %}
           {{ render_cmd_arg(a) }}
         {% endfor %}
       </fieldset>
+      {% endif %}
       {% endfor %}
     </div>
   </div>
@@ -345,20 +395,18 @@
         <label class="cryo-select-line" for="nn_ctf"{{ ctf_row_title('nn_ctf') }}><code>--ctf</code></label>
         <input type="text" id="nn_ctf" value="{{ default_ctf|e }}" placeholder="path to CTF .pkl" autocomplete="off"{{ ctf_row_title('nn_ctf') }}/>
       </fieldset>
-      <fieldset>
-        <legend>Dataset loading</legend>
-        <label class="cryo-select-line" for="nn_datadir"{{ title_attr(command_builder_required_field_titles.get('nn_datadir')) }}><code>--datadir</code></label>
-        <input type="text" id="nn_datadir" value="" placeholder="(omit if blank)" autocomplete="off"{{ title_attr(command_builder_required_field_titles.get('nn_datadir')) }}/>
-      </fieldset>
+      {{ render_dataset_fieldset('train_nn', 'nn_datadir') }}
     </div>
     <div class="cmd-builder-rest-grid">
       {% for group in command_builder_schema['train_nn'] %}
+      {% if group.title != 'Dataset loading' %}
       <fieldset>
         <legend>{{ group.title }}</legend>
         {% for a in group.args %}
           {{ render_cmd_arg(a) }}
         {% endfor %}
       </fieldset>
+      {% endif %}
       {% endfor %}
     </div>
   </div>
@@ -378,20 +426,18 @@
         <label class="cryo-select-line" for="dec_ctf"{{ ctf_row_title('dec_ctf') }}><code>--ctf</code></label>
         <input type="text" id="dec_ctf" value="{{ default_ctf|e }}" placeholder="path to CTF .pkl" autocomplete="off"{{ ctf_row_title('dec_ctf') }}/>
       </fieldset>
-      <fieldset>
-        <legend>Dataset loading</legend>
-        <label class="cryo-select-line" for="dec_datadir"{{ title_attr(command_builder_required_field_titles.get('dec_datadir')) }}><code>--datadir</code></label>
-        <input type="text" id="dec_datadir" value="" placeholder="(omit if blank)" autocomplete="off"{{ title_attr(command_builder_required_field_titles.get('dec_datadir')) }}/>
-      </fieldset>
+      {{ render_dataset_fieldset('train_dec', 'dec_datadir') }}
     </div>
     <div class="cmd-builder-rest-grid">
       {% for group in command_builder_schema['train_dec'] %}
+      {% if group.title != 'Dataset loading' %}
       <fieldset>
         <legend>{{ group.title }}</legend>
         {% for a in group.args %}
           {{ render_cmd_arg(a) }}
         {% endfor %}
       </fieldset>
+      {% endif %}
       {% endfor %}
     </div>
   </div>
@@ -483,10 +529,16 @@
           continue;
         }
         if (w === "select") {
-          var sel = document.getElementById(a.id);
+          var sel = document.querySelector('input[name="' + a.id + '"]:checked');
           if (!sel) continue;
           var sv = String(sel.value || "");
-          if (sv !== "") {
+          var defaultChoice = "";
+          if (Object.prototype.hasOwnProperty.call(a, "default")) {
+            defaultChoice = String(a.default == null ? "" : a.default);
+          } else if (a.choices && a.choices.length) {
+            defaultChoice = String(a.choices[0]);
+          }
+          if (sv !== "" && sv !== defaultChoice) {
             parts.push(cliFlag(a));
             parts.push(shquote(sv));
           }

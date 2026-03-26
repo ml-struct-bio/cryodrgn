@@ -350,6 +350,123 @@ def mrc_to_rotating_gif(
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+def _write_z_values_to_mrcs_classic(
+    exp: DashboardExperiment,
+    z_values: np.ndarray,
+    out_dir: str,
+    device: int = 0,
+) -> None:
+    """Decode arbitrary z-values (not tied to specific particles) to .mrc volumes."""
+    from cryodrgn import analysis
+
+    os.makedirs(out_dir, exist_ok=True)
+    zfile = os.path.join(out_dir, "z_values.txt")
+    np.savetxt(zfile, z_values)
+    weights = os.path.join(exp.workdir, f"weights.{exp.epoch}.pkl")
+    cfg = _config_yaml_path(exp.workdir)
+    analysis.gen_volumes(
+        weights,
+        cfg,
+        zfile,
+        out_dir,
+        device=device,
+        Apix=1.0,
+        vol_start_index=1,
+    )
+
+
+def _write_z_values_to_mrcs_drgnai(
+    exp: DashboardExperiment,
+    z_values: np.ndarray,
+    out_dir: str,
+) -> None:
+    import torch
+
+    from cryodrgn import models_ai as models
+    from cryodrgn.analysis_drgnai import VolumeGenerator
+    from cryodrgn.lattice import Lattice
+
+    os.makedirs(out_dir, exist_ok=True)
+    ckpt_path = os.path.join(exp.workdir, f"weights.{exp.epoch}.pkl")
+    try:
+        checkpoint = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+    except TypeError:
+        checkpoint = torch.load(ckpt_path, map_location="cpu")
+    hypervolume_params = checkpoint["hypervolume_params"]
+    hypervolume = models.HyperVolume(**hypervolume_params)
+    hypervolume.load_state_dict(checkpoint["hypervolume_state_dict"])
+    hypervolume.eval()
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    hypervolume.to(device)
+
+    lattice = Lattice(
+        checkpoint["hypervolume_params"]["resolution"],
+        extent=0.5,
+        device=device,
+    )
+    zdim = int(checkpoint["hypervolume_params"]["z_dim"])
+    radius_mask = checkpoint.get("output_mask_radius")
+    tc = exp.train_configs
+    data_norm = (
+        float(tc.get("data_norm_mean", 0.0)),
+        float(tc.get("data_norm_std", 1.0)),
+    )
+    vg = VolumeGenerator(
+        hypervolume,
+        lattice,
+        zdim,
+        invert=False,
+        radius_mask=radius_mask,
+        data_norm=data_norm,
+        vol_start_index=1,
+        apix=1.0,
+    )
+    vg.gen_volumes(out_dir, z_values)
+
+
+def _decode_z_values_to_vol_paths(
+    exp: DashboardExperiment, z_values: np.ndarray, mrc_dir: str
+) -> list[str]:
+    if _is_drgnai_config(exp.train_configs):
+        _write_z_values_to_mrcs_drgnai(exp, z_values, mrc_dir)
+    else:
+        _write_z_values_to_mrcs_classic(exp, z_values, mrc_dir, device=0)
+    return _sorted_vol_mrc_paths(mrc_dir, len(z_values))
+
+
+def generate_trajectory_volume_pngs(
+    exp: DashboardExperiment,
+    z_values: np.ndarray,
+) -> tuple[list[bytes], str]:
+    """Decode volumes along a z-space trajectory and render ChimeraX static PNGs.
+
+    ``z_values`` is an ``(n_points, zdim)`` array of z-latent-space coordinates
+    (e.g. from direct interpolation or nearest-neighbour lookup).
+    Returns ``(png_bytes_list, cache_token)``.
+    """
+    z_values = np.asarray(z_values, dtype=np.float64)
+    if z_values.ndim != 2 or z_values.shape[1] != exp.z.shape[1]:
+        raise ValueError(
+            f"z_values must be (n, {exp.z.shape[1]}); got shape {z_values.shape}"
+        )
+
+    mrc_dir = tempfile.mkdtemp(prefix="cryodrgn_trajectory_mrc_")
+    try:
+        vol_files = _decode_z_values_to_vol_paths(exp, z_values, mrc_dir)
+        png_bytes_list: list[bytes] = []
+        with tempfile.TemporaryDirectory(prefix="cryodrgn_trajectory_png_") as png_dir:
+            for i, vf in enumerate(vol_files):
+                out_png = os.path.join(png_dir, f"cell_{i}.png")
+                mrc_to_static_png(vf, out_png)
+                with open(out_png, "rb") as fh:
+                    png_bytes_list.append(fh.read())
+        token = _register_vol_mrc_cache(mrc_dir, vol_files, ())
+        return png_bytes_list, token
+    except Exception:
+        shutil.rmtree(mrc_dir, ignore_errors=True)
+        raise
+
+
 def generate_montage_volume_pngs(
     exp: DashboardExperiment,
     rows: list[int],

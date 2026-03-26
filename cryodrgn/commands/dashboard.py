@@ -1,7 +1,7 @@
 """Launch a local web dashboard for cryoDRGN interactive analyses.
 
 The dashboard opens in your browser with a particle explorer (scatter, selection,
-optional thumbnails), pairwise latent panels, a 3D latent scatter, and a command builder.
+optional thumbnails), pairwise latent panels, the 3-D Latent Space Visualizer, and a command builder.
 
 Example
 -------
@@ -81,18 +81,11 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     view = parser.add_mutually_exclusive_group()
     view.add_argument(
         "--particle-selection",
-        "--particle",
         "--filter",
+        "--image-viewer",
         action="store_true",
         dest="particle_selection",
         help="open the particle explorer instead of the launch menu",
-    )
-    view.add_argument(
-        "--image-viewer",
-        "--scatter",
-        action="store_true",
-        dest="image_viewer",
-        help="open the image viewer instead of the launch menu",
     )
     view.add_argument(
         "--pair-grid",
@@ -102,7 +95,17 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     view.add_argument(
         "--three-dimensional",
         action="store_true",
-        help="open the 3D latent scatter instead of the launch menu",
+        help="open the 3-D Latent Space Visualizer instead of the launch menu",
+    )
+    view.add_argument(
+        "--command-builder",
+        action="store_true",
+        help="open the command builder instead of the launch menu",
+    )
+    view.add_argument(
+        "--trajectory-creator",
+        action="store_true",
+        help="open the trajectory creator instead of the launch menu",
     )
     parser.add_argument(
         "--cpus",
@@ -127,9 +130,10 @@ def main(args: argparse.Namespace) -> None:
     outdir = args.outdir
     _VIEW_PATHS = {
         "particle_selection": "/explorer",
-        "image_viewer": "/explorer",
         "pair_grid": "/pairplot",
         "three_dimensional": "/latent-3d",
+        "command_builder": "/command-builder",
+        "trajectory_creator": "/trajectory",
     }
     initial_path = next(
         (p for flag, p in _VIEW_PATHS.items() if getattr(args, flag, False)),

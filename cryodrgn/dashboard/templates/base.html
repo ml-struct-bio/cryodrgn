@@ -4,6 +4,7 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>{% block title %}cryoDRGN dashboard{% endblock %}</title>
+  <link rel="icon" type="image/png" sizes="64x64" href="{{ url_for('static', filename='favicon.png') }}"/>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   {# Match E.Z. Lab (https://ezlab.princeton.edu/) — Barlow + Roboto in main.css #}
@@ -23,6 +24,9 @@
       --accent-hover: #a85a2e;
       --link: #2c5282;
       --card-shadow: 0 2px 12px rgba(36, 59, 83, 0.08);
+      /* Full-viewport dash layouts: reserve space for taller header + logo. */
+      --cryo-dash-below-nav: 9.5rem;
+      --cryo-dash-below-nav-tall: 13.75rem;
     }
     * { box-sizing: border-box; }
     body {
@@ -38,7 +42,7 @@
       background: var(--nav-bg);
       color: #e8eef4;
       border-bottom: 3px solid var(--accent);
-      padding: 0.45rem 1.15rem;
+      padding: 0.5rem 1.15rem;
       display: grid;
       grid-template-columns: minmax(0, 1fr) minmax(0, auto) auto;
       align-items: center;
@@ -46,22 +50,32 @@
     }
     .nav-left {
       display: flex;
-      align-items: baseline;
-      flex-wrap: wrap;
-      gap: 0.3rem 0.85rem;
+      align-items: center;
+      flex-wrap: nowrap;
+      gap: 0.3rem 0.65rem;
       min-width: 0;
       justify-self: start;
     }
+    .nav-title-sep {
+      font-weight: 700;
+      color: #e8eef4;
+      opacity: 0.55;
+      letter-spacing: 0.02em;
+      margin: 0 0.15rem;
+      user-select: none;
+      white-space: nowrap;
+    }
     .nav-page-title {
       font-family: var(--font-sans);
-      font-size: 0.98rem;
+      font-size: calc(0.98rem * 1.15);
       font-weight: 700;
       color: #e8eef4;
       letter-spacing: 0.02em;
       margin: 0;
       line-height: 1.2;
-      padding-left: 0.85rem;
-      border-left: 2px solid rgba(232, 238, 244, 0.35);
+      padding-left: 0;
+      border-left: 0;
+      white-space: nowrap;
     }
     .nav a {
       color: #e8eef4;
@@ -69,11 +83,121 @@
       font-weight: 600;
     }
     .nav a:hover { color: #fff; text-decoration: underline; }
-    .nav-brand {
+    .nav-brand-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.65rem;
+      text-decoration: none;
+      color: inherit;
+      border-radius: 10px;
+      padding: 0.2rem 0.35rem 0.2rem 0.15rem;
+      margin: -0.2rem -0.35rem -0.2rem -0.15rem;
+      transition:
+        background 0.22s ease,
+        box-shadow 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .nav a.nav-brand-link:hover {
+      color: #fff;
+      text-decoration: none;
+      background: rgba(255, 255, 255, 0.1);
+      box-shadow:
+        0 0 0 1px rgba(255, 255, 255, 0.22),
+        0 6px 24px rgba(0, 0, 0, 0.22);
+    }
+    .nav a.nav-brand-link:focus-visible {
+      color: #fff;
+      text-decoration: none;
+      outline: none;
+      background: rgba(255, 255, 255, 0.12);
+      box-shadow:
+        0 0 0 2px rgba(255, 255, 255, 0.9),
+        0 0 0 6px rgba(196, 112, 58, 0.35),
+        0 8px 28px rgba(0, 0, 0, 0.25);
+    }
+    .nav-logo-wrap {
+      width: min(4.85rem, 15vw);
+      height: min(4.85rem, 15vw);
+      min-width: 3.6rem;
+      min-height: 3.6rem;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .nav-logo {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      object-position: center;
+      display: block;
+      transition:
+        transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+        filter 0.28s ease;
+    }
+    .nav a.nav-brand-link:hover .nav-logo,
+    .nav a.nav-brand-link:focus-visible .nav-logo {
+      transform: scale(1.07);
+      filter: brightness(1.14) drop-shadow(0 0 12px rgba(255, 230, 200, 0.45));
+    }
+    .nav-brand-text {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      line-height: 1.15;
+      gap: 0.05rem;
+      transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .nav a.nav-brand-link:hover .nav-brand-text,
+    .nav a.nav-brand-link:focus-visible .nav-brand-text {
+      transform: translateY(-2px);
+    }
+    .nav-brand-line1,
+    .nav-brand-line2 {
       font-family: var(--font-sans);
-      font-size: 1.12rem;
       font-weight: 700;
       letter-spacing: 0.02em;
+      transition:
+        color 0.22s ease,
+        text-shadow 0.28s ease,
+        opacity 0.22s ease;
+    }
+    .nav-brand-line1 {
+      font-size: calc(1.12rem * 1.2);
+    }
+    .nav a.nav-brand-link:hover .nav-brand-line1,
+    .nav a.nav-brand-link:focus-visible .nav-brand-line1 {
+      color: #fff;
+      text-shadow:
+        0 0 22px rgba(255, 214, 180, 0.65),
+        0 0 2px rgba(255, 255, 255, 0.95);
+    }
+    .nav-brand-line2 {
+      font-size: calc(0.95rem * 1.25 * 1.2);
+      font-weight: 600;
+      opacity: 0.92;
+      position: relative;
+      padding-bottom: 3px;
+    }
+    .nav-brand-line2::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      bottom: 0;
+      height: 2px;
+      width: 0;
+      border-radius: 1px;
+      background: linear-gradient(90deg, var(--accent, #c4703a), #f0b892);
+      transition: width 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .nav a.nav-brand-link:hover .nav-brand-line2,
+    .nav a.nav-brand-link:focus-visible .nav-brand-line2 {
+      color: #ffe8d9;
+      opacity: 1;
+      text-shadow: 0 0 14px rgba(196, 112, 58, 0.55);
+    }
+    .nav a.nav-brand-link:hover .nav-brand-line2::after,
+    .nav a.nav-brand-link:focus-visible .nav-brand-line2::after {
+      width: 100%;
     }
     .nav-center {
       display: flex;
@@ -82,7 +206,7 @@
       justify-content: center;
       gap: 0.1rem;
       min-width: 0;
-      max-width: min(100%, 48rem);
+      max-width: min(100%, calc(48rem * 1.2));
       justify-self: center;
       text-align: center;
     }
@@ -91,21 +215,50 @@
       flex-direction: column;
       align-items: stretch;
       gap: 0.08rem;
-      width: 100%;
-      max-width: min(40rem, 80vw);
+      box-sizing: border-box;
+      width: min(calc(52rem * 1.2), calc(88vw * 1.2));
+      max-width: min(calc(52rem * 1.2), calc(88vw * 1.2));
+      /* ~20% wider; shift left so growth uses space toward the logo. */
+      margin-left: clamp(-1rem, -5vw, -5.25rem);
       font-size: 0.7rem;
       font-weight: 600;
       line-height: 1.22;
       opacity: 0.92;
     }
-    .nav-config-line1 {
-      white-space: nowrap;
+    .nav-cmd-multiline {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.06rem;
+      line-height: 1.2;
+      font-size: 0.7rem;
+      max-height: min(5.75rem, 24vh);
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 0.08rem 0;
+    }
+    .nav-cmd-line {
+      max-width: 100%;
+      word-break: break-word;
+      overflow-wrap: anywhere;
       text-align: center;
     }
-    .nav-config-line2 {
-      font-weight: 500;
-      opacity: 0.86;
+    .nav-cmd-line--head {
+      font-weight: 800;
+      color: var(--accent);
+      letter-spacing: 0.03em;
+      font-size: 1.25em;
+    }
+    .nav-cmd-line--tail {
+      /* Last three lines should read a bit quieter than the command prefix. */
+      font-size: 0.8em;
+    }
+    .nav-cmd-multiline--fallback {
       text-align: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .nav-right {
       display: flex;
@@ -113,6 +266,8 @@
       justify-content: flex-end;
       justify-self: end;
       min-width: 0;
+      /* Grid column-gap is 1rem; +4rem => 5rem space between config block and epoch UI. */
+      margin-left: 4rem;
     }
     .nav-epoch {
       display: flex;
@@ -122,7 +277,7 @@
     }
     .nav-epoch label {
       margin: 0;
-      font-size: 0.68rem;
+      font-size: calc(1.36rem * 0.88);
       font-weight: 600;
       opacity: 0.9;
     }
@@ -132,7 +287,8 @@
       max-width: 7rem;
       margin: 0;
       padding: 0.2rem 0.38rem;
-      font-size: 0.74rem;
+      font-size: calc(0.74rem * 1.2);
+      font-weight: 700;
       background: rgba(255, 255, 255, 0.12);
       color: #e8eef4;
       border: 1px solid rgba(255, 255, 255, 0.28);
@@ -141,18 +297,18 @@
       color: #1a2332;
       background: #fff;
     }
-    .nav-output-row {
-      font-size: 0.65rem;
-      font-weight: 500;
-      line-height: 1.28;
-      opacity: 0.86;
-      text-align: center;
-      width: 100%;
-      max-width: min(40rem, 80vw);
+    .nav-right-stack {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.28rem;
     }
-    .nav-output-row .nav-kmeans-bit {
-      opacity: 0.78;
-      font-weight: 500;
+    .nav-kmeans-row {
+      font-size: 0.68rem;
+      font-weight: 600;
+      line-height: 1.2;
+      opacity: 0.88;
+      white-space: nowrap;
     }
     @media (max-width: 720px) {
       .nav {
@@ -161,20 +317,23 @@
       }
       .nav-left {
         order: 1;
+        flex-wrap: wrap;
       }
       .nav-center {
         order: 2;
         max-width: 100%;
         align-items: center;
       }
-      .nav-config-field,
-      .nav-output-row {
+      .nav-config-field {
+        width: 100%;
         max-width: 100%;
+        margin-left: 0;
       }
       .nav-right {
         order: 3;
         justify-self: stretch;
         justify-content: flex-end;
+        margin-left: 0;
       }
     }
     main {
@@ -501,9 +660,9 @@
       flex-direction: row;
       align-items: stretch;
       gap: 1rem;
-      height: calc(100svh - 7.25rem);
-      min-height: calc(100svh - 7.25rem);
-      max-height: calc(100svh - 7.25rem);
+      height: calc(100svh - var(--cryo-dash-below-nav));
+      min-height: calc(100svh - var(--cryo-dash-below-nav));
+      max-height: calc(100svh - var(--cryo-dash-below-nav));
     }
     .cryo-dash-page--image-viewer .cryo-dash-side {
       flex: 0 0 auto;
@@ -555,7 +714,7 @@
     .cryo-dash-page--image-viewer .cryo-dash-montage {
       flex: 0 1 auto;
       width: auto;
-      max-width: min(28rem, calc(100svh - 7.75rem));
+      max-width: min(28rem, calc(100svh - (var(--cryo-dash-below-nav) + 0.5rem)));
       min-width: 0;
       background: var(--paper, #fff);
       /* Match .cryo-dash-controls.card vertical padding so column tops line up with the menu card. */
@@ -567,7 +726,7 @@
       position: sticky;
       top: 1rem;
       overflow: auto;
-      max-height: calc(100svh - 7.25rem);
+      max-height: calc(100svh - var(--cryo-dash-below-nav));
     }
     .cryo-dash-page--image-viewer .cryo-dash-montage strong {
       font-size: 0.88rem;
@@ -599,8 +758,8 @@
     .cryo-dash-page--filter .cryo-dash-viewport--plotly {
       display: flex;
       flex-direction: column;
-      min-height: max(22rem, calc(100svh - 11.5rem));
-      height: calc(100svh - 11.5rem);
+      min-height: max(22rem, calc(100svh - var(--cryo-dash-below-nav-tall)));
+      height: calc(100svh - var(--cryo-dash-below-nav-tall));
     }
     .cryo-dash-page--filter .cryo-plotly-stack {
       flex: 1 1 auto;
@@ -631,8 +790,8 @@
     .cryo-dash-page--latent3d .cryo-dash-viewport--plotly {
       display: flex;
       flex-direction: column;
-      min-height: max(22rem, calc(100svh - 11.5rem));
-      height: calc(100svh - 11.5rem);
+      min-height: max(22rem, calc(100svh - var(--cryo-dash-below-nav-tall)));
+      height: calc(100svh - var(--cryo-dash-below-nav-tall));
     }
     .cryo-dash-page--latent3d .cryo-plotly-stack {
       flex: 1 1 auto;
@@ -667,8 +826,8 @@
         min-width: 0;
       }
       .cryo-dash-page--latent3d .cryo-dash-viewport--plotly {
-        height: max(20rem, calc(100svh - 16rem));
-        min-height: max(20rem, calc(100svh - 16rem));
+        height: max(20rem, calc(100svh - 18rem));
+        min-height: max(20rem, calc(100svh - 18rem));
       }
       .cryo-dash-page--image-viewer .cryo-dash-row {
         height: auto;
@@ -679,7 +838,7 @@
         max-height: none;
       }
       .cryo-dash-page--image-viewer .cryo-plotly-stack {
-        max-height: min(92vw, calc(100svh - 14rem));
+        max-height: min(92vw, calc(100svh - 16rem));
       }
       .cryo-dash-page--image-viewer .cryo-dash-side,
       .cryo-dash-page--image-viewer .cryo-dash-viewport--plotly,
@@ -692,8 +851,8 @@
         position: static;
       }
       .cryo-dash-page--filter .cryo-dash-viewport--plotly {
-        height: max(20rem, calc(100svh - 16rem));
-        min-height: max(20rem, calc(100svh - 16rem));
+        height: max(20rem, calc(100svh - 18rem));
+        min-height: max(20rem, calc(100svh - 18rem));
       }
     }
   </style>
@@ -702,26 +861,43 @@
 <body>
   <header class="nav">
     <div class="nav-left">
-      <a href="/" class="nav-brand">cryoDRGN · dashboard</a>
+      <a href="/" class="nav-brand-link" aria-label="cryoDRGN dashboard home">
+        <span class="nav-logo-wrap">
+          <img
+            class="nav-logo"
+            src="{{ url_for('static', filename='cryodrgn_logo.png') }}"
+            width="78"
+            height="78"
+            alt=""
+          />
+        </span>
+        <span class="nav-brand-text">
+          <span class="nav-brand-line1">cryoDRGN</span>
+          <span class="nav-brand-line2">dashboard</span>
+        </span>
+      </a>
       {% block nav_page_title %}{% endblock %}
     </div>
     <div class="nav-center">
-      <div class="nav-config-field" aria-label="Run configuration">
-        <div class="nav-config-line1">{{ cfg_model_type }} z{{ cfg_zdim }}</div>
-        <div class="nav-config-line2" title="{{ cfg_particles }}">{{ cfg_particles|abbrev_middle(60) }}</div>
-        <div class="nav-output-row" title="Output · {{ exp_workdir }} · k-means {{ exp_kmeans }}">
-          Output · <span title="{{ exp_workdir }}">{{ exp_workdir|abbrev_middle(60) }}</span><span class="nav-kmeans-bit"> · k-means {{ exp_kmeans }}</span>
+      <div class="nav-config-field" aria-label="Training command">
+        <div class="nav-cmd-multiline" title="{% if cfg_train_command %}{{ cfg_train_command|e }}{% else %}{{ cfg_model_type|e }} z{{ cfg_zdim }}{% endif %}">
+          {% for line in cfg_cmd_display_lines %}
+          <span class="nav-cmd-line{% if cfg_train_command and loop.index0 == 0 %} nav-cmd-line--head{% elif cfg_train_command and loop.index0 > 0 %} nav-cmd-line--tail{% endif %}{% if cfg_cmd_display_lines|length == 1 %} nav-cmd-multiline--fallback{% endif %}">{{ line|e }}</span>
+          {% endfor %}
         </div>
       </div>
     </div>
     <div class="nav-right">
-      <div class="nav-epoch">
-        <label for="dash-epoch">Epoch</label>
-        <select id="dash-epoch" title="Analysis checkpoint (z.N.pkl)">
-          {% for ep in dashboard_epochs %}
-          <option value="{{ ep }}" {% if ep == exp_epoch %}selected{% endif %}>{{ ep }}</option>
-          {% endfor %}
-        </select>
+      <div class="nav-right-stack">
+        <div class="nav-epoch">
+          <label for="dash-epoch">Epoch</label>
+          <select id="dash-epoch" title="Analysis checkpoint (z.N.pkl)">
+            {% for ep in dashboard_epochs %}
+            <option value="{{ ep }}" {% if ep == exp_epoch %}selected{% endif %}>{{ ep }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="nav-kmeans-row" title="k-means folder under analyze.{{ exp_epoch }}">k-means {{ exp_kmeans }}</div>
       </div>
     </div>
   </header>

@@ -9,9 +9,12 @@ import os
 import pickle
 import shlex
 import time
+import uuid
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+import yaml
 from flask import (
     Flask,
     Response,
@@ -97,13 +100,76 @@ def _encode_particle_batch(
     return out
 
 
-# (epoch, kmeans) -> loaded experiment (invalidated when epoch changes in session).
-_EXP_CACHE: dict[tuple[int, int], DashboardExperiment] = {}
+# (workdir, epoch, kmeans) -> loaded experiment (invalidated when workdir/epoch changes).
+_EXP_CACHE: dict[tuple[str, int, int], DashboardExperiment] = {}
 # (epoch, kmeans, xcol, ycol, selection_tuple_or_None) -> (rows, images_b64, elapsed_s).
 _PRELOAD_CACHE: dict[
     tuple[int, int, str, str, tuple[int, ...] | None],
     tuple[list[int], list[str], float],
 ] = {}
+_EPOCHS_BY_WORKDIR_CACHE: dict[str, list[int]] = {}
+_EXP_REQUIRED_ENDPOINTS = {
+    "abinit_builder_redirect",
+    "filter_page_redirect",
+    "api_save_selection",
+    "explorer",
+    "api_explorer_volume_media",
+    "api_scatter",
+    "latent_3d_page",
+    "api_scatter3d_z",
+    "api_preview_montage",
+    "api_preload_images",
+    "pairplot_page",
+    "api_pairplot",
+    "api_save_pairplot_png",
+    "trajectory_creator_page",
+    "api_trajectory_volumes",
+    "api_default_trajectory_endpoints",
+}
+
+
+def _config_has_cryodrgn_cmd(config: object) -> bool:
+    if not isinstance(config, dict):
+        return False
+    cmd = config.get("cmd")
+    if isinstance(cmd, str):
+        return "cryodrgn" in cmd.lower()
+    if isinstance(cmd, list):
+        return any("cryodrgn" in str(part).lower() for part in cmd)
+    return False
+
+
+def _discover_cryodrgn_workdirs(cwd: str) -> list[str]:
+    """Direct subfolders of cwd with config.yaml containing a cryodrgn command."""
+    out: list[str] = []
+    base = Path(cwd)
+    if not base.is_dir():
+        return out
+    for child in sorted(base.iterdir(), key=lambda p: p.name.lower()):
+        if not child.is_dir():
+            continue
+        cfg = child / "config.yaml"
+        if not cfg.is_file():
+            continue
+        try:
+            with cfg.open("r", encoding="utf-8") as fh:
+                parsed = yaml.safe_load(fh)
+        except Exception:
+            continue
+        if _config_has_cryodrgn_cmd(parsed):
+            out.append(str(child.resolve()))
+    return out
+
+
+def _workdir_options(abs_paths: list[str], base_cwd: str) -> list[dict[str, str]]:
+    out: list[dict[str, str]] = []
+    for wd in abs_paths:
+        try:
+            label = os.path.relpath(wd, base_cwd)
+        except Exception:
+            label = wd
+        out.append({"value": wd, "label": label})
+    return out
 
 
 def _filter_ui_scatter_max_points() -> int:
@@ -275,8 +341,22 @@ def _parse_preselect_rows_param(raw: str | None) -> tuple[list[int] | None, str 
         return None, f"invalid preselect_rows: {exc}"
 
 
-def _command_builder_template_kwargs(exp: DashboardExperiment) -> dict[str, object]:
+def _command_builder_template_kwargs(
+    exp: DashboardExperiment | None,
+) -> dict[str, object]:
     """Template variables for ``command_builder.html`` from experiment config."""
+    if exp is None:
+        return {
+            "default_particles": "",
+            "default_ctf": "",
+            "default_zdim": 8,
+            "default_outdir_abinit": "abinit_run",
+            "default_outdir_train": "train_next",
+            "default_poses": "",
+            "command_builder_schema": COMMAND_BUILDER_SCHEMA,
+            "command_builder_required_field_titles": COMMAND_BUILDER_REQUIRED_FIELD_TITLES,
+        }
+
     cfg = exp.train_configs
     da = cfg.get("dataset_args", {}) or {}
     ma = cfg.get("model_args", {}) or {}
@@ -310,29 +390,71 @@ def _redirect(endpoint: str):
     return redirect(url_for(endpoint), code=302)
 
 
+def _sync_discovery_session_boot() -> None:
+    """Drop stale session workdir when restarting ``cryodrgn dashboard`` with CWD discovery.
+
+    Only applies when the server was started without an outdir and at least one output
+    folder was discovered — avoids auto-resuming a previous run from the cookie.
+    """
+    boot = current_app.config.get("DASHBOARD_DISCOVERY_BOOT_ID")
+    if not boot:
+        return
+    if session.get("dashboard_discovery_boot") == boot:
+        return
+    session.pop("dashboard_workdir", None)
+    session.pop("dashboard_epoch", None)
+    session["dashboard_discovery_boot"] = boot
+
+
+def _active_workdir(app: Flask) -> str | None:
+    default_wd = app.config.get("DASHBOARD_WORKDIR")
+    candidates = set(app.config.get("DASHBOARD_DISCOVERED_WORKDIRS", []))
+    if default_wd:
+        candidates.add(default_wd)
+    selected = session.get("dashboard_workdir")
+    if selected and selected in candidates:
+        return str(selected)
+    return default_wd
+
+
+def _epochs_for_workdir(workdir: str) -> list[int]:
+    cached = _EPOCHS_BY_WORKDIR_CACHE.get(workdir)
+    if cached is not None:
+        return cached
+    epochs = list_z_epochs(workdir)
+    _EPOCHS_BY_WORKDIR_CACHE[workdir] = epochs
+    return epochs
+
+
 def _resolve_epoch(app: Flask) -> int:
-    epochs: list[int] = app.config["DASHBOARD_EPOCHS"]
+    wd = _active_workdir(app)
+    if not wd:
+        return 0
+    epochs = _epochs_for_workdir(wd)
     if not epochs:
         raise RuntimeError("No z.N.pkl epochs in workdir.")
     sess = session.get("dashboard_epoch")
     if sess is None:
-        return int(app.config["DASHBOARD_START_EPOCH"])
+        return max(epochs)
     try:
         ep = int(sess)
     except (TypeError, ValueError):
-        return int(app.config["DASHBOARD_START_EPOCH"])
+        return max(epochs)
     if ep not in epochs:
         return max(epochs)
     return ep
 
 
 def _get_dashboard_exp(app: Flask) -> DashboardExperiment:
+    wd = _active_workdir(app)
+    if not wd:
+        raise RuntimeError("No output directory selected.")
     ep = _resolve_epoch(app)
     km = int(app.config["DASHBOARD_KMEANS"])
-    key = (ep, km)
+    key = (wd, ep, km)
     if key not in _EXP_CACHE:
         _EXP_CACHE[key] = load_experiment(
-            app.config["DASHBOARD_WORKDIR"],
+            wd,
             epoch=ep,
             kmeans=km,
         )
@@ -470,6 +592,12 @@ def abbrev_middle(text: object, maxlen: int = 30) -> str:
 
 
 def _bind_dashboard_exp() -> None:
+    _sync_discovery_session_boot()
+    wd = _active_workdir(current_app)
+    if not wd:
+        if request.endpoint in _EXP_REQUIRED_ENDPOINTS:
+            return _redirect("index")
+        return
     g.dashboard_exp = _get_dashboard_exp(current_app)
 
 
@@ -599,6 +727,9 @@ def _argv_four_command_lines(argv: list[str]) -> list[str]:
 
 def inject_meta():
     e: DashboardExperiment = g.dashboard_exp
+    discovered_workdirs = current_app.config.get("DASHBOARD_DISCOVERED_WORKDIRS", [])
+    discovery_cwd = current_app.config.get("DASHBOARD_DISCOVERY_CWD", os.getcwd())
+    epochs = _epochs_for_workdir(e.workdir)
     cfg = e.train_configs
     cmd_list = cfg.get("cmd", [])
     zdim = cfg.get("model_args", {}).get("zdim", "?")
@@ -619,15 +750,55 @@ def inject_meta():
         "exp_epoch": e.epoch,
         "exp_kmeans": e.kmeans_folder_id,
         "filter_plot_inds_default": current_app.config["FILTER_PLOT_INDS"] or "",
-        "dashboard_epochs": current_app.config["DASHBOARD_EPOCHS"],
+        "dashboard_epochs": epochs if epochs else [e.epoch],
         "cfg_model_type": model_type,
         "cfg_zdim": zdim,
         "cfg_train_command": cfg_train_command,
         "cfg_cmd_display_lines": cfg_cmd_display_lines,
+        "command_builder_only": False,
+        "discovered_workdirs": discovered_workdirs,
+        "discovered_workdir_options": _workdir_options(
+            discovered_workdirs, discovery_cwd
+        ),
+        "selected_workdir": e.workdir,
+    }
+
+
+def inject_meta_command_builder_only():
+    if _active_workdir(current_app) and hasattr(g, "dashboard_exp"):
+        return inject_meta()
+    discovered_workdirs = current_app.config.get("DASHBOARD_DISCOVERED_WORKDIRS", [])
+    discovery_cwd = current_app.config.get("DASHBOARD_DISCOVERY_CWD", os.getcwd())
+    active_wd = _active_workdir(current_app)
+    if active_wd:
+        epochs = _epochs_for_workdir(active_wd)
+        exp_epoch = _resolve_epoch(current_app) if epochs else 0
+    else:
+        epochs = []
+        exp_epoch = 0
+    return {
+        "exp_workdir": "",
+        "exp_epoch": exp_epoch,
+        "exp_kmeans": -1,
+        "filter_plot_inds_default": "",
+        "dashboard_epochs": epochs if epochs else [0],
+        "cfg_model_type": "cryodrgn",
+        "cfg_zdim": "",
+        "cfg_train_command": "",
+        "cfg_cmd_display_lines": ["No experiment loaded"],
+        "command_builder_only": not bool(active_wd),
+        "discovered_workdirs": discovered_workdirs,
+        "discovered_workdir_options": _workdir_options(
+            discovered_workdirs, discovery_cwd
+        ),
+        "selected_workdir": active_wd or "",
     }
 
 
 def api_set_epoch():
+    wd = _active_workdir(current_app)
+    if not wd:
+        return jsonify(error="Select an output folder first."), 400
     data = request.get_json(force=True, silent=True) or {}
     raw_epoch = data.get("epoch")
     if raw_epoch is None:
@@ -636,7 +807,7 @@ def api_set_epoch():
         ep = int(raw_epoch)
     except (TypeError, ValueError):
         return jsonify(error="Invalid epoch."), 400
-    if ep not in current_app.config["DASHBOARD_EPOCHS"]:
+    if ep not in _epochs_for_workdir(wd):
         return jsonify(error="Epoch not available for this output folder."), 400
     session["dashboard_epoch"] = ep
     _EXP_CACHE.clear()
@@ -644,18 +815,64 @@ def api_set_epoch():
     return jsonify(ok=True, epoch=ep)
 
 
+def api_set_workdir():
+    data = request.get_json(force=True, silent=True) or {}
+    raw = data.get("workdir")
+    candidates = set(current_app.config.get("DASHBOARD_DISCOVERED_WORKDIRS", []))
+
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        if not current_app.config.get("COMMAND_BUILDER_ONLY"):
+            return jsonify(error="Cannot clear output folder in this mode."), 400
+        if not candidates:
+            return jsonify(error="No output folders available."), 400
+        session.pop("dashboard_workdir", None)
+        session.pop("dashboard_epoch", None)
+        boot = current_app.config.get("DASHBOARD_DISCOVERY_BOOT_ID")
+        if boot:
+            session["dashboard_discovery_boot"] = boot
+        _EXP_CACHE.clear()
+        _PRELOAD_CACHE.clear()
+        return jsonify(ok=True, workdir=None)
+
+    requested = str(raw).strip()
+    if requested not in candidates:
+        return jsonify(error="Invalid output folder."), 400
+    epochs = _epochs_for_workdir(requested)
+    if not epochs:
+        return jsonify(error="No analyzed epochs found in selected output folder."), 400
+    session["dashboard_workdir"] = requested
+    session["dashboard_epoch"] = max(epochs)
+    boot = current_app.config.get("DASHBOARD_DISCOVERY_BOOT_ID")
+    if boot:
+        session["dashboard_discovery_boot"] = boot
+    _EXP_CACHE.clear()
+    _PRELOAD_CACHE.clear()
+    return jsonify(ok=True, workdir=requested, epoch=max(epochs))
+
+
 def index():
+    if not _active_workdir(current_app):
+        return render_template(
+            "index.html",
+            can_images=False,
+            zdim=0,
+            show_trajectory_creator=False,
+            command_builder_only=True,
+        )
     e: DashboardExperiment = g.dashboard_exp
     return render_template(
         "index.html",
         can_images=e.can_preview_particles,
         zdim=int(e.z.shape[1]),
         show_trajectory_creator=explorer_volumes_eligible(e),
+        command_builder_only=False,
     )
 
 
 def command_builder_page():
-    e: DashboardExperiment = g.dashboard_exp
+    e: DashboardExperiment | None = None
+    if _active_workdir(current_app):
+        e = g.dashboard_exp
     return render_template(
         "command_builder.html",
         **_command_builder_template_kwargs(e),
@@ -1395,7 +1612,7 @@ def api_trajectory_volumes():
 
 
 def create_app(
-    workdir: str,
+    workdir: str | None,
     epoch: int = -1,
     kmeans: int = -1,
     filter_plot_inds: str | None = None,
@@ -1412,25 +1629,43 @@ def create_app(
     app.secret_key = os.environ.get(
         "CRYODRGN_DASHBOARD_SECRET", "cryodrgn-dashboard-dev-key"
     )
-    workdir = os.path.abspath(workdir)
-    epochs = list_z_epochs(workdir)
-    if not epochs:
-        raise ValueError(
-            f"No analyzed epochs under {workdir!r} — need z.N.pkl and analyze.N/ "
-            "(run `cryodrgn analyze` first)."
-        )
-    start_epoch = epoch if epoch != -1 else max(epochs)
-    if start_epoch not in epochs:
-        start_epoch = max(epochs)
-    app.config["DASHBOARD_WORKDIR"] = workdir
-    app.config["DASHBOARD_KMEANS"] = kmeans
-    app.config["DASHBOARD_EPOCHS"] = epochs
-    app.config["DASHBOARD_START_EPOCH"] = start_epoch
-    app.config["FILTER_PLOT_INDS"] = filter_plot_inds
-
+    command_builder_only = workdir is None
+    app.config["COMMAND_BUILDER_ONLY"] = command_builder_only
+    app.config["DASHBOARD_DISCOVERY_CWD"] = os.getcwd()
+    discovered = (
+        _discover_cryodrgn_workdirs(os.getcwd()) if command_builder_only else []
+    )
+    app.config["DASHBOARD_DISCOVERED_WORKDIRS"] = discovered
+    app.config["DASHBOARD_DISCOVERY_BOOT_ID"] = (
+        str(uuid.uuid4()) if command_builder_only and discovered else None
+    )
     app.before_request(_bind_dashboard_exp)
-    app.context_processor(inject_meta)
+    if command_builder_only:
+        app.config["DASHBOARD_WORKDIR"] = None
+        app.config["DASHBOARD_KMEANS"] = -1
+        app.config["DASHBOARD_EPOCHS"] = [0]
+        app.config["DASHBOARD_START_EPOCH"] = 0
+        app.config["FILTER_PLOT_INDS"] = None
+        app.context_processor(inject_meta_command_builder_only)
+    else:
+        workdir = os.path.abspath(workdir)
+        epochs = list_z_epochs(workdir)
+        if not epochs:
+            raise ValueError(
+                f"No analyzed epochs under {workdir!r} — need z.N.pkl and analyze.N/ "
+                "(run `cryodrgn analyze` first)."
+            )
+        start_epoch = epoch if epoch != -1 else max(epochs)
+        if start_epoch not in epochs:
+            start_epoch = max(epochs)
+        app.config["DASHBOARD_WORKDIR"] = workdir
+        app.config["DASHBOARD_KMEANS"] = kmeans
+        app.config["DASHBOARD_EPOCHS"] = epochs
+        app.config["DASHBOARD_START_EPOCH"] = start_epoch
+        app.config["FILTER_PLOT_INDS"] = filter_plot_inds
+        app.context_processor(inject_meta)
     app.add_url_rule("/api/set_epoch", view_func=api_set_epoch, methods=["POST"])
+    app.add_url_rule("/api/set_workdir", view_func=api_set_workdir, methods=["POST"])
     app.add_url_rule("/", view_func=index, methods=["GET"])
     app.add_url_rule(
         "/command-builder", view_func=command_builder_page, methods=["GET"]
@@ -1478,7 +1713,7 @@ def create_app(
 
 
 def run_server(
-    workdir: str,
+    workdir: str | None,
     epoch: int = -1,
     kmeans: int = -1,
     plot_inds: str | None = None,

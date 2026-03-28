@@ -43,8 +43,10 @@
       color: #e8eef4;
       border-bottom: 3px solid var(--accent);
       padding: 0.5rem 1.15rem;
+      /* auto | 1fr | auto — middle column fills remaining width so its start edge
+         stays fixed for a given viewport; output-folder control stays pinned at left of middle. */
       display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(0, auto) auto;
+      grid-template-columns: auto minmax(0, 1fr) auto;
       align-items: center;
       gap: 0.35rem 1rem;
     }
@@ -202,13 +204,30 @@
     .nav-center {
       display: flex;
       flex-direction: column;
-      align-items: center;
+      align-items: stretch;
       justify-content: center;
       gap: 0.1rem;
       min-width: 0;
-      max-width: min(100%, calc(48rem * 1.2));
-      justify-self: center;
+      justify-self: stretch;
       text-align: center;
+      width: 100%;
+    }
+    .nav-center-row {
+      display: grid;
+      grid-template-columns: minmax(12.75rem, 19rem) minmax(0, 1fr);
+      align-items: center;
+      gap: 0.65rem 0.9rem;
+      width: 100%;
+      min-width: 0;
+    }
+    .nav-center-row--solo {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .nav-center-row--outdir-only {
+      grid-template-columns: minmax(12.75rem, 22rem);
+    }
+    .nav-center-row--outdir-only .nav-workdir-field {
+      max-width: 22rem;
     }
     .nav-config-field {
       display: flex;
@@ -224,6 +243,56 @@
       font-weight: 600;
       line-height: 1.22;
       opacity: 0.92;
+    }
+    .nav-center-row .nav-config-field {
+      grid-column: 2;
+      min-width: 0;
+      width: auto;
+      max-width: none;
+      margin-left: 0;
+      align-self: center;
+    }
+    .nav-center-row--solo .nav-config-field {
+      grid-column: 1;
+    }
+    .nav-workdir-field {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 0.45rem;
+      grid-column: 1;
+      width: 100%;
+      min-width: 0;
+      max-width: 19rem;
+      font-size: 0.82rem;
+      font-weight: 600;
+      line-height: 1.22;
+      opacity: 0.96;
+      color: #e8eef4;
+      align-self: center;
+    }
+    .nav-workdir-field label {
+      margin: 0;
+      font-size: 0.82rem;
+      font-weight: 700;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .nav-workdir-field select {
+      flex: 1 1 auto;
+      min-width: 0;
+      max-width: 100%;
+      background: rgba(255, 255, 255, 0.12);
+      color: #e8eef4;
+      border: 1px solid rgba(255, 255, 255, 0.28);
+      font-size: 0.8rem;
+      font-weight: 600;
+      padding: 0.24rem 0.4rem;
+    }
+    .nav-workdir-field select option {
+      color: #1a2332;
+      background: #fff;
     }
     .nav-cmd-multiline {
       display: flex;
@@ -310,6 +379,21 @@
       opacity: 0.88;
       white-space: nowrap;
     }
+    @media (max-width: 960px) {
+      .nav-center-row,
+      .nav-center-row--solo,
+      .nav-center-row--outdir-only {
+        grid-template-columns: 1fr;
+      }
+      .nav-center-row .nav-config-field {
+        grid-column: 1;
+      }
+      .nav-workdir-field {
+        grid-column: 1;
+        max-width: 100%;
+        width: 100%;
+      }
+    }
     @media (max-width: 720px) {
       .nav {
         grid-template-columns: 1fr;
@@ -322,7 +406,20 @@
       .nav-center {
         order: 2;
         max-width: 100%;
-        align-items: center;
+        align-items: stretch;
+      }
+      .nav-center-row,
+      .nav-center-row--solo,
+      .nav-center-row--outdir-only {
+        grid-template-columns: 1fr;
+      }
+      .nav-center-row .nav-config-field {
+        grid-column: 1;
+      }
+      .nav-workdir-field {
+        grid-column: 1;
+        max-width: 100%;
+        width: 100%;
       }
       .nav-config-field {
         width: 100%;
@@ -883,14 +980,38 @@
       {% block nav_page_title %}{% endblock %}
     </div>
     <div class="nav-center">
-      <div class="nav-config-field" aria-label="Training command">
-        <div class="nav-cmd-multiline" title="{% if cfg_train_command %}{{ cfg_train_command|e }}{% else %}{{ cfg_model_type|e }} z{{ cfg_zdim }}{% endif %}">
-          {% for line in cfg_cmd_display_lines %}
-          <span class="nav-cmd-line{% if cfg_train_command and loop.index0 == 0 %} nav-cmd-line--head{% elif cfg_train_command and loop.index0 > 0 %} nav-cmd-line--tail{% endif %}{% if cfg_cmd_display_lines|length == 1 %} nav-cmd-multiline--fallback{% endif %}">{{ line|e }}</span>
-          {% endfor %}
+      <div class="nav-center-row{% if not discovered_workdirs or discovered_workdirs|length == 0 %} nav-center-row--solo{% elif command_builder_only %} nav-center-row--outdir-only{% endif %}">
+        {% if discovered_workdirs and discovered_workdirs|length > 0 %}
+        <div class="nav-workdir-field">
+          <label for="dash-workdir">Output folder</label>
+          <select id="dash-workdir" title="Select cryoDRGN output folder in current working directory">
+            <option value="" {% if not selected_workdir %}selected{% endif %}>{% if selected_workdir %}No output folder{% else %}Choose output folder…{% endif %}</option>
+            {% for wd in discovered_workdir_options %}
+            <option value="{{ wd.value }}" {% if wd.value == selected_workdir %}selected{% endif %}>{{ wd.label }}</option>
+            {% endfor %}
+          </select>
         </div>
+        {% endif %}
+        {% if not command_builder_only %}
+        <div class="nav-config-field" aria-label="Training command">
+          <div class="nav-cmd-multiline" title="{% if cfg_train_command %}{{ cfg_train_command|e }}{% else %}{{ cfg_model_type|e }} z{{ cfg_zdim }}{% endif %}">
+            {% for line in cfg_cmd_display_lines %}
+            <span class="nav-cmd-line{% if cfg_train_command and loop.index0 == 0 %} nav-cmd-line--head{% elif cfg_train_command and loop.index0 > 0 %} nav-cmd-line--tail{% endif %}{% if cfg_cmd_display_lines|length == 1 %} nav-cmd-multiline--fallback{% endif %}">{{ line|e }}</span>
+            {% endfor %}
+          </div>
+        </div>
+        {% elif not discovered_workdirs or discovered_workdirs|length == 0 %}
+        <div class="nav-config-field" aria-label="Training command">
+          <div class="nav-cmd-multiline nav-cmd-multiline--fallback">
+            {% for line in cfg_cmd_display_lines %}
+            <span class="nav-cmd-line{% if cfg_cmd_display_lines|length == 1 %} nav-cmd-multiline--fallback{% endif %}">{{ line|e }}</span>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
       </div>
     </div>
+    {% if not command_builder_only %}
     <div class="nav-right">
       <div class="nav-right-stack">
         <div class="nav-epoch">
@@ -904,12 +1025,30 @@
         <div class="nav-kmeans-row" title="k-means folder under analyze.{{ exp_epoch }}">k-means {{ exp_kmeans }}</div>
       </div>
     </div>
+    {% endif %}
   </header>
   <main>
     {% block content %}{% endblock %}
   </main>
   <script>
   (function() {
+    var wdSel = document.getElementById("dash-workdir");
+    if (wdSel) {
+      wdSel.addEventListener("change", function() {
+        var wd = String(this.value || "").trim();
+        fetch("{{ url_for('api_set_workdir') }}", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ workdir: wd ? wd : null })
+        })
+          .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+          .then(function(res) {
+            if (res.ok && res.j.ok) window.location.reload();
+          })
+          .catch(function() {});
+      });
+    }
+
     var sel = document.getElementById("dash-epoch");
     if (!sel || sel.options.length <= 1) return;
     sel.addEventListener("change", function() {

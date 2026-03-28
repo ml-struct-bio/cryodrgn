@@ -5,6 +5,7 @@ optional thumbnails), pairwise latent panels, the 3-D Latent Space Visualizer, a
 
 Example
 -------
+$ cryodrgn dashboard
 $ cryodrgn dashboard 00_trainvae
 $ cryodrgn dashboard 00_trainvae --epoch 30 --port 8080
 $ cryodrgn dashboard 00_trainvae --image-viewer
@@ -25,8 +26,10 @@ def add_args(parser: argparse.ArgumentParser) -> None:
 
     parser.add_argument(
         "outdir",
+        nargs="?",
+        default=None,
         type=os.path.abspath,
-        help="experiment output directory (same as ``cryodrgn filter``)",
+        help="experiment output directory (optional; omit for command-builder-only launch mode)",
     )
     parser.add_argument(
         "--epoch",
@@ -128,6 +131,18 @@ def main(args: argparse.Namespace) -> None:
         os.environ["CRYODRGN_DASHBOARD_FILTER_MAX_POINTS"] = str(args.filter_max_points)
 
     outdir = args.outdir
+    command_builder_only = outdir is None
+
+    if command_builder_only and (
+        args.particle_selection
+        or args.pair_grid
+        or args.three_dimensional
+        or args.trajectory_creator
+    ):
+        raise ValueError(
+            "Dashboard views that require experiment data need an output directory. "
+            "Use `cryodrgn dashboard <outdir>` for explorer/pair-grid/3D/trajectory."
+        )
     _VIEW_PATHS = {
         "particle_selection": "/explorer",
         "pair_grid": "/pairplot",
@@ -149,14 +164,22 @@ def main(args: argparse.Namespace) -> None:
 
     from cryodrgn.dashboard.app import run_server
 
-    logger.info(
-        "Starting dashboard for %s (epoch=%s) at http://%s:%s%s",
-        outdir,
-        args.epoch,
-        args.host,
-        args.port,
-        initial_path,
-    )
+    if command_builder_only:
+        logger.info(
+            "Starting dashboard in command-builder-only mode at http://%s:%s%s",
+            args.host,
+            args.port,
+            initial_path,
+        )
+    else:
+        logger.info(
+            "Starting dashboard for %s (epoch=%s) at http://%s:%s%s",
+            outdir,
+            args.epoch,
+            args.host,
+            args.port,
+            initial_path,
+        )
     run_server(
         workdir=outdir,
         epoch=args.epoch,

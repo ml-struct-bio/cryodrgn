@@ -95,6 +95,53 @@
     font-size: 1.196rem;
     line-height: 1.35;
   }
+  .landing-card--inactive {
+    border-color: rgba(140, 29, 64, 0.45);
+    background: linear-gradient(170deg, #fff8f9 0%, #fff 52%, #fff4f6 100%);
+    box-shadow:
+      0 2px 14px rgba(140, 29, 64, 0.1),
+      inset 0 0 0 1px rgba(140, 29, 64, 0.1);
+  }
+  .landing-card--inactive .landing-card-thumb {
+    filter: saturate(0.45) contrast(0.92) brightness(0.97);
+    opacity: 0.92;
+  }
+  .landing-card--inactive .muted {
+    color: #8c1d40;
+    font-weight: 650;
+  }
+  .landing-card--inactive:hover,
+  .landing-card--inactive:focus,
+  .landing-card--inactive:focus-within {
+    transform: none;
+    box-shadow:
+      0 2px 14px rgba(140, 29, 64, 0.1),
+      inset 0 0 0 1px rgba(140, 29, 64, 0.1);
+    border-color: rgba(140, 29, 64, 0.45);
+    background: linear-gradient(170deg, #fff8f9 0%, #fff 52%, #fff4f6 100%);
+    outline: none;
+  }
+  .landing-inactive-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    align-self: flex-start;
+    margin-bottom: 0.4rem;
+    padding: 0.14rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.82rem;
+    line-height: 1.2;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: #fff;
+    background: #8c1d40;
+    box-shadow: 0 1px 6px rgba(140, 29, 64, 0.26);
+  }
+  .landing-row-break {
+    grid-column: 1 / -1;
+    width: 100%;
+    height: 0;
+  }
   .landing-card-link {
     text-decoration: none;
     color: inherit;
@@ -134,8 +181,14 @@
 {% block content %}
 <div class="landing-hub">
 <div class="landing-cards">
-  {# ── Row 1 ── #}
-  {% if can_images %}
+  {% set explorer_active = can_images and not command_builder_only %}
+  {% set pair_active = not command_builder_only %}
+  {% set latent3d_active = (zdim >= 3) and (not command_builder_only) %}
+  {% set trajectory_active = show_trajectory_creator and not command_builder_only %}
+  {% set any_inactive = (not explorer_active) or (not pair_active) or (not latent3d_active) or (not trajectory_active) %}
+
+  {# Active interfaces first #}
+  {% if explorer_active %}
   <a class="landing-card landing-card-link" href="{{ url_for('explorer') }}">
     <h2 class="landing-card-title">Particle explorer</h2>
     <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_viewer.png') }}"/>
@@ -143,51 +196,86 @@
        Use lasso selection to write <code>--ind</code> <code>.pkl</code> files,
        and optionally view dataset images or volume reconstructions for each particle.</p>
   </a>
-  {% else %}
-  <article class="landing-card">
-    <h2 class="landing-card-title">Particle explorer</h2>
-    <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_viewer.png') }}"/>
-    <p>Plot dataset particles by model outputs such as z-latent-space dimensions or analysis covariates such as UMAP embeddings.<br /><br />
-       Use lasso selection to write <code>--ind</code> <code>.pkl</code> files.
-  </article>
   {% endif %}
+  {% if pair_active %}
   <a class="landing-card landing-card-link" href="{{ url_for('pairplot_page') }}">
     <h2 class="landing-card-title">Pair-plot generator</h2>
     <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_pair.png') }}"/>
     <p>Grid of scatters across latent dimensions and embeddings (PCA / UMAP on the diagonal when available).</p>
   </a>
-  {% if zdim >= 3 %}
+  {% endif %}
+  {% if latent3d_active %}
   <a class="landing-card landing-card-link" href="{{ url_for('latent_3d_page') }}">
     <h2 class="landing-card-title">3D visualizer</h2>
     <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_3d.png') }}"/>
     <p>Interactive 3D scatter of three latent axes, with optional color from analysis columns when you have at least three <code>z</code> dimensions.</p>
   </a>
-  {% else %}
-  <article class="landing-card">
-    <h2 class="landing-card-title">3D visualizer</h2>
-    <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_3d.png') }}"/>
-    <p>Interactive 3D scatter of three latent axes, with optional color from analysis columns when you have at least three <code>z</code> dimensions.</p>
-    <p class="muted">This run has {{ zdim }} latent dimension(s); open this view when at least three are available.</p>
-  </article>
   {% endif %}
   <a class="landing-card landing-card-link" href="{{ url_for('command_builder_page') }}">
     <h2 class="landing-card-title">Command builder</h2>
     <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_command_builder.png') }}"/>
     <p style="margin-top:0.35rem;">Compose a <code>cryodrgn</code> command you can copy and paste for tools such as <code>abinit</code> and <code>train_vae</code> — required args plus only the options you fill in.</p>
   </a>
-  {# ── Row 2 ── #}
-  {% if show_trajectory_creator %}
+  {% if trajectory_active %}
   <a class="landing-card landing-card-link" href="{{ url_for('trajectory_creator_page') }}">
     <h2 class="landing-card-title">Trajectory creator</h2>
     <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_trajectory.png') }}"/>
     <p>Draw a line through the latent scatter to generate volumes along a trajectory — direct interpolation or nearest-neighbour mode — with ChimeraX previews.</p>
   </a>
-  {% else %}
-  <article class="landing-card">
+  {% endif %}
+
+  {# Inactive interfaces start on next row #}
+  {% if any_inactive %}
+  <div class="landing-row-break" aria-hidden="true"></div>
+  {% endif %}
+
+  {% if not explorer_active %}
+  <article class="landing-card landing-card--inactive">
+    <span class="landing-inactive-badge">Inactive</span>
+    <h2 class="landing-card-title">Particle explorer</h2>
+    <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_viewer.png') }}"/>
+    <p>Plot dataset particles by model outputs such as z-latent-space dimensions or analysis covariates such as UMAP embeddings.<br /><br />
+       Use lasso selection to write <code>--ind</code> <code>.pkl</code> files.
+    {% if command_builder_only %}
+    <p class="muted">Activate this interface by running <code>cryodrgn dashboard &lt;outdir&gt;</code>.</p>
+    {% else %}
+    <p class="muted">Activate this interface by loading an output directory with single-particle image previews.</p>
+    {% endif %}
+  </article>
+  {% endif %}
+  {% if not pair_active %}
+  <article class="landing-card landing-card--inactive">
+    <span class="landing-inactive-badge">Inactive</span>
+    <h2 class="landing-card-title">Pair-plot generator</h2>
+    <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_pair.png') }}"/>
+    <p>Grid of scatters across latent dimensions and embeddings (PCA / UMAP on the diagonal when available).</p>
+    <p class="muted">Activate this interface by running <code>cryodrgn dashboard &lt;outdir&gt;</code>.</p>
+  </article>
+  {% endif %}
+  {% if not latent3d_active %}
+  <article class="landing-card landing-card--inactive">
+    <span class="landing-inactive-badge">Inactive</span>
+    <h2 class="landing-card-title">3D visualizer</h2>
+    <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_3d.png') }}"/>
+    <p>Interactive 3D scatter of three latent axes, with optional color from analysis columns when you have at least three <code>z</code> dimensions.</p>
+    {% if command_builder_only %}
+    <p class="muted">Activate this interface by running <code>cryodrgn dashboard &lt;outdir&gt;</code>.</p>
+    {% else %}
+    <p class="muted">Activate this interface by loading a run with at least three latent dimensions (current: {{ zdim }}).</p>
+    {% endif %}
+  </article>
+  {% endif %}
+  {% if not trajectory_active %}
+  <article class="landing-card landing-card--inactive">
+    <span class="landing-inactive-badge">Inactive</span>
     <h2 class="landing-card-title">Trajectory creator</h2>
     <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_trajectory.png') }}"/>
     <p>Draw a line through the latent scatter to generate volumes along a trajectory — direct interpolation or nearest-neighbour mode — with ChimeraX previews.</p>
-    <p class="muted">Needs a CUDA GPU and model weights for the current epoch.</p>
+    {% if command_builder_only %}
+    <p class="muted">Activate this interface by running <code>cryodrgn dashboard &lt;outdir&gt;</code>.</p>
+    {% else %}
+    <p class="muted">Activate this interface by using a CUDA-enabled machine and loading a run with model weights for the selected epoch.</p>
+    {% endif %}
   </article>
   {% endif %}
 </div>

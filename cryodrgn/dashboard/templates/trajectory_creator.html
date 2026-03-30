@@ -111,11 +111,12 @@
       color 0.18s ease, border-color 0.18s ease;
   }
   .cryo-traj-mode-btns .btn.btn-secondary {
-    background: rgba(36, 59, 83, 0.07);
-    color: var(--muted, #5c6b7a);
-    border-color: rgba(36, 59, 83, 0.22);
+    background: linear-gradient(168deg, #f0b188 0%, #dd8e59 48%, #c16d37 100%);
+    color: #fff;
+    border-color: #9a4f24;
     box-shadow: none;
-    font-weight: 600;
+    font-weight: 700;
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.22);
   }
   .cryo-traj-mode-btns .btn.active {
     background: linear-gradient(168deg, #d9844f 0%, #b85a28 42%, #8f4119 100%);
@@ -123,11 +124,10 @@
     border-color: #5c2a0f;
     font-weight: 700;
     box-shadow:
-      0 5px 18px rgba(180, 90, 40, 0.5),
-      0 0 0 1px rgba(255, 255, 255, 0.22) inset,
-      0 -2px 12px rgba(0, 0, 0, 0.12) inset;
-    transform: translateY(-2px);
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+      0 4px 14px rgba(180, 90, 40, 0.45),
+      0 0 0 1px rgba(255, 255, 255, 0.2) inset;
+    transform: translateY(-1px);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
   }
   .cryo-traj-npoints-label {
     display: flex;
@@ -138,6 +138,26 @@
     font-weight: 600;
   }
   .cryo-traj-npoints-label select {
+    width: 4.5rem;
+    padding: 0.1rem 0.25rem;
+    font-size: 0.82rem;
+  }
+  .cryo-traj-neighbor-row {
+    display: none;
+    margin-top: 0.35rem;
+    gap: 0.45rem;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .cryo-traj-neighbor-row.cryo-traj-neighbor-row--show {
+    display: flex;
+  }
+  .cryo-traj-neighbor-row label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--muted, #5c6b7a);
+  }
+  .cryo-traj-neighbor-row select {
     width: 4.5rem;
     padding: 0.1rem 0.25rem;
     font-size: 0.82rem;
@@ -215,6 +235,232 @@
   #traj-palette-radios.traj-palette-radios--suppressed {
     display: none;
   }
+  .cryo-traj-z-panel {
+    margin-top: 0.45rem;
+    flex: 0 0 auto;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  .cryo-traj-z-details {
+    border: 1px solid rgba(36, 59, 83, 0.18);
+    border-radius: 4px;
+    padding: 0.35rem 0.5rem 0.45rem;
+    background: rgba(250, 248, 244, 0.85);
+  }
+  .cryo-traj-z-details summary {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--nav-bg, #243b53);
+    cursor: pointer;
+  }
+  .cryo-traj-z-actions {
+    margin: 0.25rem 0 0.35rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+  .cryo-traj-z-actions .btn {
+    font-size: 0.78rem;
+    padding: 0.28rem 0.45rem;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .cryo-traj-anchor-row {
+    margin-top: 0.35rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .cryo-traj-anchor-import-grid {
+    display: grid;
+    grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+    gap: 0.35rem 0.65rem;
+    align-items: center;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .cryo-traj-anchor-import-grid .btn {
+    justify-self: start;
+    width: 100%;
+    max-width: 12.5rem;
+    font-size: 0.72rem;
+    padding: 0.32rem 0.4rem;
+    line-height: 1.25;
+    box-sizing: border-box;
+    text-align: center;
+  }
+  .cryo-traj-anchor-desc-line {
+    margin: 0;
+    font-size: 0.72rem;
+    line-height: 1.38;
+    color: var(--muted, #5c6b7a);
+  }
+  .cryo-traj-anchor-manual-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.35rem;
+    align-items: center;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .cryo-traj-anchor-manual-input {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    font-size: 0.74rem;
+    padding: 0.28rem 0.42rem;
+    border: 1px solid rgba(36, 59, 83, 0.22);
+    border-radius: 4px;
+  }
+  .cryo-traj-anchor-manual-btn {
+    font-size: 0.74rem;
+    padding: 0.28rem 0.45rem;
+    white-space: nowrap;
+  }
+  .cryo-traj-file-browser-panel {
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .cryo-traj-file-browser-panel[hidden] {
+    display: none !important;
+  }
+  @media (max-width: 520px) {
+    .cryo-traj-anchor-import-grid {
+      grid-template-columns: 1fr;
+    }
+    .cryo-traj-anchor-import-grid .btn {
+      max-width: none;
+    }
+  }
+  #btn-anchor-remove {
+    display: none;
+    width: 100%;
+    font-size: 0.78rem;
+    padding: 0.28rem 0.45rem;
+    box-sizing: border-box;
+  }
+  #btn-anchor-remove.cryo-traj-remove--visible {
+    display: block;
+  }
+  .cryo-file-browser {
+    border: 1px solid rgba(36, 59, 83, 0.15);
+    border-radius: 4px;
+    background: #fff;
+    max-height: 14rem;
+    display: flex;
+    flex-direction: column;
+    font-size: 0.72rem;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .cryo-file-browser-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.3rem 0.4rem;
+    border-bottom: 1px solid rgba(36, 59, 83, 0.10);
+    background: rgba(36, 59, 83, 0.04);
+    flex-shrink: 0;
+  }
+  .cryo-file-browser-bar button {
+    background: none;
+    border: 1px solid rgba(36, 59, 83, 0.18);
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 0.72rem;
+    padding: 0.15rem 0.4rem;
+    color: #243b53;
+    flex-shrink: 0;
+  }
+  .cryo-file-browser-bar button:hover {
+    background: rgba(36, 59, 83, 0.08);
+  }
+  .cryo-file-browser-path {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    direction: rtl;
+    text-align: left;
+    color: rgba(36, 59, 83, 0.6);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.65rem;
+  }
+  .cryo-file-browser-list {
+    overflow-y: auto;
+    flex: 1;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .cryo-file-browser-list li {
+    padding: 0.22rem 0.45rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    border-bottom: 1px solid rgba(36, 59, 83, 0.04);
+  }
+  .cryo-file-browser-list li:hover {
+    background: rgba(36, 59, 83, 0.06);
+  }
+  .cryo-file-browser-list .fb-icon {
+    flex-shrink: 0;
+    width: 1rem;
+    text-align: center;
+    opacity: 0.5;
+  }
+  .cryo-file-browser-list .fb-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cryo-file-browser-empty {
+    padding: 0.6rem 0.45rem;
+    color: rgba(36, 59, 83, 0.45);
+    text-align: center;
+    font-style: italic;
+  }
+  .cryo-traj-mode-btns .btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+  .cryo-traj-z-wrap {
+    display: flex;
+    max-height: 9rem;
+    overflow: auto;
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(36, 59, 83, 0.12);
+    border-radius: 3px;
+  }
+  .cryo-traj-z-nums {
+    margin: 0;
+    padding: 0.35rem 0.3rem 0.35rem 0.4rem;
+    font-size: 0.65rem;
+    line-height: 1.25;
+    white-space: pre;
+    text-align: right;
+    color: rgba(36, 59, 83, 0.5);
+    border-right: 1px solid rgba(36, 59, 83, 0.10);
+    user-select: none;
+    flex-shrink: 0;
+  }
+  .cryo-traj-z-pre {
+    margin: 0;
+    font-size: 0.65rem;
+    line-height: 1.25;
+    padding: 0.35rem 0.4rem;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    white-space: pre;
+    word-break: normal;
+    flex: 1;
+  }
 </style>
 {% endblock %}
 {% block content %}
@@ -224,7 +470,6 @@
     <div class="cryo-dash-top" style="margin-bottom:0.25rem;">
       <a href="/">← Back</a>
     </div>
-    <p class="cryo-dash-lead">A default trajectory spans the long axis of the point cloud; drag the Start and End handles to move it. Press <strong>Generate</strong> in the right panel to decode volumes along the path.</p>
     <div class="card cryo-dash-controls" id="scatter-controls-card">
       <fieldset>
         <legend>Choose axes</legend>
@@ -240,15 +485,29 @@
       </fieldset>
       <fieldset>
         <legend>Trajectory settings</legend>
-        <div class="cryo-traj-npoints-label">
-          Points
+        <div class="cryo-traj-npoints-label" id="traj-points-row">
+          <span id="traj-points-label">Points</span>
           <select id="n-points">
             {% for n in range(2, 21) %}
             <option value="{{ n }}"{% if n == 4 %} selected{% endif %}>{{ n }}</option>
             {% endfor %}
           </select>
         </div>
-        <p class="cryo-traj-hint" style="margin-top:0.35rem;">Drag the orange (Start) and navy (End) handles on the plot to edit the trajectory.</p>
+        <div class="cryo-traj-neighbor-row" id="traj-neighbor-row">
+          <label for="max-neighbors">Max neighbors</label>
+          <select id="max-neighbors">
+            {% for n in range(2, 21) %}
+            <option value="{{ n }}"{% if n == 10 %} selected{% endif %}>{{ n }}</option>
+            {% endfor %}
+          </select>
+          <label for="avg-neighbors">Avg. neighbors</label>
+          <select id="avg-neighbors">
+            {% for n in range(2, 21) %}
+            <option value="{{ n }}"{% if n == 5 %} selected{% endif %}>{{ n }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <p class="cryo-traj-hint" id="traj-settings-hint" style="margin-top:0.35rem;">Drag the orange and navy handles on the plot to edit the trajectory.</p>
       </fieldset>
       <div style="margin-top:0.35rem;">
         <button type="button" class="btn" id="btn-reset" style="width:100%;font-size:0.88rem;padding:0.4rem 0.5rem;">Reset trajectory</button>
@@ -285,10 +544,54 @@
   <aside class="cryo-dash-montage cryo-dash-montage--trajectory-volumes" aria-label="Trajectory volumes">
     <div class="cryo-traj-mode-btns">
       <button type="button" class="btn active" id="btn-mode-direct">Direct traversal</button>
-      <button type="button" class="btn btn-secondary" id="btn-mode-nearest">Nearest neighbour</button>
+      <button type="button" class="btn btn-secondary" id="btn-mode-nearest">Graph traversal</button>
+    </div>
+    <div class="cryo-traj-anchor-row" id="traj-anchor-wrap">
+      <div class="cryo-traj-anchor-import-grid" id="traj-anchor-pick">
+        <button type="button" class="btn btn-secondary" id="btn-anchor-import-pkl">Import anchor indices</button>
+        <p class="cryo-traj-anchor-desc-line">Open a server-side file picker to choose a <code>.pkl</code> of particle indices (folders under your output directory).</p>
+        <button type="button" class="btn btn-secondary" id="btn-anchor-kmeans">K-means centers</button>
+        <p class="cryo-traj-anchor-desc-line">Build the path from cluster centers in <code>kmeansK/centers_ind.txt</code> for the current analysis folder.</p>
+        <button type="button" class="btn btn-secondary" id="btn-anchor-random">10 random indices</button>
+        <p class="cryo-traj-anchor-desc-line">Sample ten random particles from the dataset as anchor points along the trajectory.</p>
+      </div>
+      <div class="cryo-traj-anchor-manual-row" id="traj-anchor-manual-row">
+        <input
+          type="text"
+          id="anchor-indices-manual"
+          class="cryo-traj-anchor-manual-input"
+          placeholder="Enter anchors, e.g. 0, 105, 220 351"
+          aria-label="Manual anchor indices"
+        />
+        <button type="button" class="btn btn-secondary cryo-traj-anchor-manual-btn" id="btn-anchor-manual-load">Use typed indices</button>
+      </div>
+      <div id="traj-file-browser-panel" class="cryo-traj-file-browser-panel" hidden aria-hidden="true">
+        <div class="cryo-file-browser" id="server-file-browser">
+          <div class="cryo-file-browser-bar">
+            <button type="button" id="fb-up" title="Parent directory">&#8593; Up</button>
+            <span class="cryo-file-browser-path" id="fb-path"></span>
+            <button type="button" id="fb-cancel">Cancel</button>
+          </div>
+          <ul class="cryo-file-browser-list" id="fb-list"></ul>
+        </div>
+      </div>
+      <button type="button" class="btn btn-secondary" id="btn-anchor-remove">Remove indices</button>
     </div>
     <button type="button" class="btn" id="btn-generate-volumes" style="width:100%;margin-top:0.45rem;font-size:0.88rem;padding:0.45rem 0.5rem;">Generate 4 volumes</button>
     <p id="traj-status" class="cryo-traj-status"></p>
+    <div id="traj-z-panel" class="cryo-traj-z-panel" hidden>
+      <details class="cryo-traj-z-details">
+        <summary>Latent <code>z</code> for each trajectory point</summary>
+        <div class="cryo-traj-z-actions">
+          <button type="button" class="btn btn-secondary" id="btn-save-zpath-workdir">Save z-path.txt to output folder</button>
+          <button type="button" class="btn btn-secondary" id="btn-save-zpath-as">Save as…</button>
+        </div>
+        <div class="cryo-traj-z-wrap">
+          <pre id="traj-z-nums" class="cryo-traj-z-nums"></pre>
+          <pre id="traj-z-pre" class="cryo-traj-z-pre" aria-label="Trajectory z values"></pre>
+        </div>
+      </details>
+    </div>
     <div id="traj-progress" class="cryo-plot-rendering-overlay__track" role="progressbar" aria-valuetext="Generating volumes" hidden style="flex:0 0 auto;">
       <div class="cryo-plot-rendering-overlay__indeterminate"></div>
     </div>
@@ -299,13 +602,17 @@
 
 <script>
 (function() {
-  var cols = {{ numeric_cols | tojson }};
+  var trajAxisCols = {{ traj_axis_cols | tojson }};
+  var colorCols = {{ numeric_cols | tojson }};
   var covariateDisplayMap = {{ covariate_display_map | tojson }};
   var dx = {{ default_x | tojson }};
   var dy = {{ default_y | tojson }};
   var zdim = {{ zdim | tojson }};
+  var expWorkdir = {{ exp_workdir | tojson }};
 
   var trajectoryMode = "direct";
+  var anchorIndicesActive = null;
+  var anchorTrajXY = null;
   var startXY = null;
   var endXY = null;
   var scatterLoadGeneration = 0;
@@ -325,6 +632,35 @@
   var btnGenerateVolumesEl = document.getElementById("btn-generate-volumes");
   var btnResetEl = document.getElementById("btn-reset");
   var nPointsEl = document.getElementById("n-points");
+  var trajPointsRowEl = document.getElementById("traj-points-row");
+  var trajNeighborRowEl = document.getElementById("traj-neighbor-row");
+  var maxNeighborsEl = document.getElementById("max-neighbors");
+  var avgNeighborsEl = document.getElementById("avg-neighbors");
+  var trajPointsLabelEl = document.getElementById("traj-points-label");
+  var trajSettingsHintEl = document.getElementById("traj-settings-hint");
+  var trajZPanel = document.getElementById("traj-z-panel");
+  var trajZNums = document.getElementById("traj-z-nums");
+  var trajZPre = document.getElementById("traj-z-pre");
+  var btnSaveZpathWorkdir = document.getElementById("btn-save-zpath-workdir");
+  var btnSaveZpathAs = document.getElementById("btn-save-zpath-as");
+  var trajAnchorPick = document.getElementById("traj-anchor-pick");
+  var trajAnchorManualRow = document.getElementById("traj-anchor-manual-row");
+  var btnAnchorImportPkl = document.getElementById("btn-anchor-import-pkl");
+  var btnAnchorKmeans = document.getElementById("btn-anchor-kmeans");
+  var btnAnchorRandom = document.getElementById("btn-anchor-random");
+  var anchorIndicesManualEl = document.getElementById("anchor-indices-manual");
+  var btnAnchorManualLoad = document.getElementById("btn-anchor-manual-load");
+  var btnAnchorRemove = document.getElementById("btn-anchor-remove");
+  var trajFileBrowserPanel = document.getElementById("traj-file-browser-panel");
+  var serverFileBrowser = document.getElementById("server-file-browser");
+  var fbList = document.getElementById("fb-list");
+  var fbPath = document.getElementById("fb-path");
+  var fbUp = document.getElementById("fb-up");
+  var fbCancel = document.getElementById("fb-cancel");
+  var fbCurrentDir = null;
+  var lastZPathTxt = null;
+  var coordsRequestId = 0;
+  var coordsDragTimer = 0;
 
   var scatterControlsCard = document.getElementById("scatter-controls-card");
   var scatterControlsSide = scatterControlsCard ? scatterControlsCard.closest(".cryo-dash-side") : null;
@@ -338,14 +674,14 @@
     return TRAJ_PALETTE_KEYS[v] ? v : "Viridis";
   }
 
-  function fillSelect(sel, includeNone) {
+  function fillSelect(sel, values, includeNone) {
     sel.innerHTML = "";
     if (includeNone) {
       var o = document.createElement("option");
       o.value = "none"; o.textContent = "None";
       sel.appendChild(o);
     }
-    cols.forEach(function(c) {
+    values.forEach(function(c) {
       var o = document.createElement("option");
       o.value = c;
       o.textContent = covariateDisplayMap[c] || c;
@@ -356,11 +692,11 @@
   var sx = document.getElementById("sx");
   var sy = document.getElementById("sy");
   var sc = document.getElementById("sc");
-  fillSelect(sx, false);
-  fillSelect(sy, false);
-  fillSelect(sc, true);
-  sx.value = cols.indexOf(dx) >= 0 ? dx : cols[0];
-  sy.value = cols.indexOf(dy) >= 0 ? dy : cols[Math.min(1, cols.length - 1)];
+  fillSelect(sx, trajAxisCols, false);
+  fillSelect(sy, trajAxisCols, false);
+  fillSelect(sc, colorCols, true);
+  sx.value = trajAxisCols.indexOf(dx) >= 0 ? dx : trajAxisCols[0];
+  sy.value = trajAxisCols.indexOf(dy) >= 0 ? dy : trajAxisCols[Math.min(1, trajAxisCols.length - 1)];
 
   /* Matches scatter_json / particle explorer: only ``labels`` is discrete (no sequential palette). */
   function trajColorByIsDiscrete() {
@@ -394,19 +730,91 @@
     return Math.max(2, Math.min(20, n));
   }
 
+  function currentMaxNeighbors() {
+    var n = parseInt(maxNeighborsEl && maxNeighborsEl.value, 10);
+    if (!Number.isFinite(n)) n = 10;
+    return Math.max(2, Math.min(20, n));
+  }
+
+  function currentAvgNeighbors() {
+    var n = parseInt(avgNeighborsEl && avgNeighborsEl.value, 10);
+    if (!Number.isFinite(n)) n = 5;
+    return Math.max(2, Math.min(20, n));
+  }
+
+  function hasAnchorIndices() {
+    return !!(anchorIndicesActive && anchorIndicesActive.length >= 2);
+  }
+
+  function currentAnchorTraversalMode() {
+    return trajectoryMode === "graph" ? "graph" : "direct";
+  }
+
+  function syncTraversalSettingsText() {
+    var hasAnchors = hasAnchorIndices();
+    if (btnModeNearestEl) {
+      btnModeNearestEl.textContent = hasAnchors ? "Graph traversal" : "Nearest neighbor";
+    }
+    if (!trajPointsLabelEl || !trajSettingsHintEl) return;
+    var graphMode = hasAnchors && currentAnchorTraversalMode() === "graph";
+    if (trajPointsRowEl) trajPointsRowEl.style.display = graphMode ? "none" : "flex";
+    if (trajNeighborRowEl) {
+      trajNeighborRowEl.classList.toggle("cryo-traj-neighbor-row--show", graphMode);
+    }
+    if (!hasAnchors) {
+      trajPointsLabelEl.textContent = "Points";
+      trajSettingsHintEl.textContent = "Drag the orange and navy handles on the plot to edit the trajectory.";
+      return;
+    }
+    if (graphMode) {
+      trajSettingsHintEl.textContent =
+        "Anchors are fixed. Max and Avg. neighbors control graph traversal between each anchor pair.";
+      return;
+    }
+    trajPointsLabelEl.textContent = "Interpolation points";
+    trajSettingsHintEl.textContent =
+      "Anchors are fixed. Points sets interpolation points (inclusive) between each consecutive anchor pair.";
+  }
+
+  function currentVolumeCount() {
+    if (hasAnchorIndices()) {
+      if (currentAnchorTraversalMode() === "direct") {
+        var segs = Math.max(0, anchorIndicesActive.length - 1);
+        return segs * (currentNPoints() - 1) + 1;
+      }
+      if (anchorTrajXY && anchorTrajXY.length) return anchorTrajXY.length;
+      return anchorIndicesActive.length;
+    }
+    return currentNPoints();
+  }
+
   function updateGenerateVolumesButtonLabel() {
     if (!btnGenerateVolumesEl) return;
-    btnGenerateVolumesEl.textContent = "Generate " + currentNPoints() + " volumes";
+    btnGenerateVolumesEl.textContent = "Generate " + currentVolumeCount() + " volumes";
   }
 
   function redrawTrajectoryOverlay() {
-    if (!startXY || !endXY || !gd || !gd.data || !gd.data.length) return;
+    if (!gd || !gd.data || !gd.data.length) return;
+    if (anchorIndicesActive && anchorTrajXY && anchorTrajXY.length >= 2) {
+      drawAnchorPolyline(anchorTrajXY);
+      return;
+    }
+    if (!startXY || !endXY) return;
     drawLineAndEndpoints(startXY[0], startXY[1], endXY[0], endXY[1]);
+  }
+
+  function clearTrajectoryZPanel() {
+    lastZPathTxt = null;
+    if (trajZNums) trajZNums.textContent = "";
+    if (trajZPre) trajZPre.textContent = "";
+    if (trajZPanel) trajZPanel.hidden = true;
   }
 
   function clearVolumeMontage() {
     volumeGeneration++;
+    coordsRequestId++;
     if (trajVolColumn) trajVolColumn.innerHTML = "";
+    clearTrajectoryZPanel();
     if (gd && gd.data && gd.data.length > 3) {
       try { Plotly.deleteTraces(gd, [3]); } catch (e) {}
     }
@@ -462,6 +870,29 @@
     return "(" + fmtCoord(xy[0]) + ", " + fmtCoord(xy[1]) + ")";
   }
 
+  function formatZPathDisplayFromZTraj(zTraj) {
+    if (!zTraj || !zTraj.length) return "";
+    return zTraj.map(function(row) {
+      return row.map(function(v) {
+        var x = Number(v);
+        if (!Number.isFinite(x)) return String(v);
+        return x.toFixed(3);
+      }).join(" ");
+    }).join("\n");
+  }
+
+  function formatZPathLineNumbers(n) {
+    if (!n) return "";
+    var nDigits = String(n).length;
+    var lines = [];
+    for (var i = 1; i <= n; i++) {
+      var s = String(i);
+      while (s.length < nDigits) s = " " + s;
+      lines.push(s);
+    }
+    return lines.join("\n");
+  }
+
   function axisDisplayName(col) {
     return covariateDisplayMap[col] || col;
   }
@@ -482,7 +913,7 @@
         ent.meta.textContent = "";
         continue;
       }
-      if (mode === "nearest" && j.traj_particle_indices && j.traj_particle_indices[i] != null) {
+      if ((mode === "nearest" || mode === "graph") && j.traj_particle_indices && j.traj_particle_indices[i] != null) {
         var pidx = j.traj_particle_indices[i];
         var row = j.traj_rows && j.traj_rows[i] != null ? j.traj_rows[i] : "";
         ent.meta.textContent = "#" + pidx + (row !== "" ? " · row " + row : "")
@@ -580,36 +1011,395 @@
     restyleTrajectoryLineOnly();
   }
 
-  /* ── Mode toggle ── */
+  function setTrajectoryModesLockedForAnchors(on) {
+    // Keep signature for call sites; mode buttons now remain active with anchors loaded.
+    syncTraversalModeButtonStates();
+  }
+
+  function directTraversalAllowedForAxes(xc, yc) {
+    function zCol(c) { return /^z[0-9]+$/.test(c); }
+    function pcCol(c) { return /^PC[0-9]+$/.test(c); }
+    return (zCol(xc) || pcCol(xc)) && (zCol(yc) || pcCol(yc));
+  }
+
+  function syncTraversalModeButtonStates() {
+    var hasAnchors = hasAnchorIndices();
+    syncTraversalSettingsText();
+    if (hasAnchors) {
+      if (btnModeDirectEl) btnModeDirectEl.disabled = false;
+      if (btnModeNearestEl) btnModeNearestEl.disabled = false;
+      if (trajectoryMode !== "direct" && trajectoryMode !== "graph") {
+        trajectoryMode = "direct";
+      }
+      if (btnModeDirectEl) {
+        btnModeDirectEl.classList.toggle("active", trajectoryMode === "direct");
+        btnModeDirectEl.classList.toggle("btn-secondary", trajectoryMode !== "direct");
+      }
+      if (btnModeNearestEl) {
+        btnModeNearestEl.classList.toggle("active", trajectoryMode === "graph");
+        btnModeNearestEl.classList.toggle("btn-secondary", trajectoryMode !== "graph");
+      }
+      return;
+    }
+    var allowDirect = directTraversalAllowedForAxes(sx.value, sy.value);
+    if (btnModeDirectEl) {
+      btnModeDirectEl.disabled = !allowDirect;
+    }
+    if (btnModeNearestEl) {
+      btnModeNearestEl.disabled = false;
+    }
+    if (!allowDirect && trajectoryMode === "direct") {
+      trajectoryMode = "nearest";
+      if (btnModeDirectEl) {
+        btnModeDirectEl.classList.remove("active");
+        btnModeDirectEl.classList.add("btn-secondary");
+      }
+      if (btnModeNearestEl) {
+        btnModeNearestEl.classList.add("active");
+        btnModeNearestEl.classList.remove("btn-secondary");
+      }
+      if (startXY && endXY) {
+        fetchTrajectoryCoords();
+      }
+    } else {
+      if (btnModeDirectEl) {
+        btnModeDirectEl.classList.toggle("active", trajectoryMode === "direct");
+        btnModeDirectEl.classList.toggle("btn-secondary", trajectoryMode !== "direct");
+      }
+      if (btnModeNearestEl) {
+        btnModeNearestEl.classList.toggle("active", trajectoryMode === "nearest");
+        btnModeNearestEl.classList.toggle("btn-secondary", trajectoryMode !== "nearest");
+      }
+    }
+  }
+
+  function syncAnchorIndicesUI() {
+    var on = anchorIndicesActive && anchorIndicesActive.length >= 2;
+    if (trajAnchorPick) trajAnchorPick.hidden = !!on;
+    if (trajAnchorManualRow) trajAnchorManualRow.hidden = !!on;
+    if (on) {
+      closeFileBrowser();
+    }
+    if (btnAnchorRemove) {
+      btnAnchorRemove.classList.toggle("cryo-traj-remove--visible", !!on);
+      btnAnchorRemove.setAttribute("aria-hidden", on ? "false" : "true");
+    }
+  }
+
+  function clearAnchorMode() {
+    anchorIndicesActive = null;
+    anchorTrajXY = null;
+    if (nPointsEl) nPointsEl.disabled = false;
+    setTrajectoryModesLockedForAnchors(false);
+    updateGenerateVolumesButtonLabel();
+    syncAnchorIndicesUI();
+    closeFileBrowser();
+  }
+
+  function onTrajectoryIndicesLoaded(res) {
+    anchorIndicesActive = res.anchor_indices ? res.anchor_indices.slice() : null;
+    anchorTrajXY = res.traj_xy ? res.traj_xy.slice() : null;
+    if (res && (res.mode === "direct" || res.mode === "graph")) {
+      trajectoryMode = res.mode;
+    }
+    if (nPointsEl) nPointsEl.disabled = false;
+    setTrajectoryModesLockedForAnchors(true);
+    updateGenerateVolumesButtonLabel();
+    syncAnchorIndicesUI();
+    applyTrajectoryCoordsPayload(res);
+    redrawTrajectoryOverlay();
+    setTrajStatus("Index trajectory ready — press Generate to decode volumes.", false);
+  }
+
+  /* ── Mode toggle (also refreshes latent z via coords API) ── */
   function setMode(mode) {
-    if (mode === trajectoryMode) return;
+    var hasAnchors = hasAnchorIndices();
+    if (hasAnchors) {
+      if (mode !== "direct" && mode !== "graph") return;
+    } else if (mode !== "direct" && mode !== "nearest") {
+      return;
+    }
+    if (!hasAnchors && mode === "direct" && btnModeDirectEl && btnModeDirectEl.disabled) return;
     trajectoryMode = mode;
-    btnModeDirectEl.classList.toggle("active", mode === "direct");
-    btnModeDirectEl.classList.toggle("btn-secondary", mode !== "direct");
-    btnModeNearestEl.classList.toggle("active", mode === "nearest");
-    btnModeNearestEl.classList.toggle("btn-secondary", mode !== "nearest");
+    syncTraversalModeButtonStates();
+    updateGenerateVolumesButtonLabel();
+    if (hasAnchors) {
+      fetchTrajectoryCoords();
+      return;
+    }
     if (startXY && endXY) {
-      removeTrajectorySampleMarkersOnly();
       redrawTrajectoryOverlay();
+      fetchTrajectoryCoords();
     }
   }
   btnModeDirectEl.addEventListener("click", function() { setMode("direct"); });
-  btnModeNearestEl.addEventListener("click", function() { setMode("nearest"); });
+  btnModeNearestEl.addEventListener("click", function() {
+    setMode(hasAnchorIndices() ? "graph" : "nearest");
+  });
   if (btnGenerateVolumesEl) {
     btnGenerateVolumesEl.addEventListener("click", function() { generateTrajectory(); });
   }
+  if (btnSaveZpathAs) {
+    btnSaveZpathAs.addEventListener("click", function() {
+      if (!lastZPathTxt) return;
+      var blob = new Blob([lastZPathTxt], { type: "text/plain;charset=utf-8" });
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "z-path.txt";
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(a.href);
+    });
+  }
+  if (btnSaveZpathWorkdir) {
+    btnSaveZpathWorkdir.addEventListener("click", function() {
+      if (!lastZPathTxt) return;
+      fetch("{{ url_for('api_trajectory_save_zpath') }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ z_path_txt: lastZPathTxt })
+      })
+        .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+        .then(function(res) {
+          if (!res.ok) {
+            setTrajStatus(res.j.error || "Could not save z-path.txt.", false);
+            return;
+          }
+          var p = res.j.path || (expWorkdir ? expWorkdir + "/z-path.txt" : "z-path.txt");
+          setTrajStatus("Saved " + p, false);
+        })
+        .catch(function(err) {
+          console.error(err);
+          setTrajStatus("Save failed.", false);
+        });
+    });
+  }
+  function postTrajectoryIndices(url, statusMsg, errPrefix) {
+    closeFileBrowser();
+    setTrajStatus(statusMsg, false);
+    var anchorMode = currentAnchorTraversalMode();
+    fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        x: sx.value,
+        y: sy.value,
+        mode: anchorMode,
+        n_points: currentNPoints(),
+        max_neighbors: currentMaxNeighbors(),
+        avg_neighbors: currentAvgNeighbors()
+      })
+    })
+      .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+      .then(function(res) {
+        if (!res.ok) {
+          setTrajStatus(res.j.error || (errPrefix + " failed."), false);
+          return;
+        }
+        onTrajectoryIndicesLoaded(res.j);
+      })
+      .catch(function(err) {
+        console.error(err);
+        setTrajStatus(errPrefix + " request failed.", false);
+      });
+  }
 
-  /* ── Before reloading scatter (axes / color): cancel volumes, clear trajectory state ── */
+  function parseManualAnchorIndices(raw) {
+    var txt = String(raw || "").trim();
+    if (!txt) return [];
+    txt = txt.replace(/[\[\]\(\)]/g, " ");
+    var toks = txt.split(/[\s,;]+/).filter(Boolean);
+    var out = [];
+    for (var i = 0; i < toks.length; i++) {
+      var t = toks[i];
+      if (!/^-?[0-9]+$/.test(t)) return null;
+      out.push(parseInt(t, 10));
+    }
+    return out;
+  }
+
+  function loadManualAnchorIndices() {
+    closeFileBrowser();
+    var parsed = parseManualAnchorIndices(anchorIndicesManualEl && anchorIndicesManualEl.value);
+    if (!parsed || parsed.length < 2) {
+      setTrajStatus("Enter at least two integer anchor indices (comma or space separated).", false);
+      return;
+    }
+    anchorIndicesActive = parsed.slice();
+    anchorTrajXY = null;
+    if (nPointsEl) nPointsEl.disabled = false;
+    setTrajectoryModesLockedForAnchors(true);
+    updateGenerateVolumesButtonLabel();
+    syncAnchorIndicesUI();
+    fetchTrajectoryCoords();
+  }
+
+  function openFileBrowser(startDir) {
+    if (!trajFileBrowserPanel || !serverFileBrowser) return;
+    trajFileBrowserPanel.hidden = false;
+    trajFileBrowserPanel.setAttribute("aria-hidden", "false");
+    loadFileBrowserDir(startDir || "");
+  }
+
+  function closeFileBrowser() {
+    if (trajFileBrowserPanel) {
+      trajFileBrowserPanel.hidden = true;
+      trajFileBrowserPanel.setAttribute("aria-hidden", "true");
+    }
+    fbCurrentDir = null;
+  }
+
+  function loadFileBrowserDir(dir) {
+    if (!fbList || !fbPath) return;
+    fbList.innerHTML = "<li class='cryo-file-browser-empty'>Loading…</li>";
+    var q = dir ? ("?dir=" + encodeURIComponent(dir)) : "";
+    fetch("{{ url_for('api_list_server_files') }}" + q)
+      .then(function(r) { return r.json(); })
+      .then(function(j) {
+        if (!j.ok) {
+          fbList.innerHTML = "<li class='cryo-file-browser-empty'>" + (j.error || "Error") + "</li>";
+          return;
+        }
+        fbCurrentDir = j.dir;
+        fbPath.textContent = j.dir;
+        fbPath.title = j.dir;
+        fbList.innerHTML = "";
+        if (!j.entries || !j.entries.length) {
+          fbList.innerHTML = "<li class='cryo-file-browser-empty'>No .pkl files or folders here</li>";
+          return;
+        }
+        j.entries.forEach(function(ent) {
+          var li = document.createElement("li");
+          var icon = document.createElement("span");
+          icon.className = "fb-icon";
+          icon.textContent = ent.type === "dir" ? "\uD83D\uDCC1" : "\uD83D\uDCC4";
+          var name = document.createElement("span");
+          name.className = "fb-name";
+          name.textContent = ent.name;
+          li.appendChild(icon);
+          li.appendChild(name);
+          if (ent.type === "dir") {
+            li.addEventListener("click", function() {
+              loadFileBrowserDir(j.dir + "/" + ent.name);
+            });
+          } else {
+            li.addEventListener("click", function() {
+              var fullPath = j.dir + "/" + ent.name;
+              closeFileBrowser();
+              importServerPklFile(fullPath);
+            });
+          }
+          fbList.appendChild(li);
+        });
+      })
+      .catch(function() {
+        fbList.innerHTML = "<li class='cryo-file-browser-empty'>Could not list directory</li>";
+      });
+  }
+
+  function importServerPklFile(serverPath) {
+    setTrajStatus("Loading anchor indices…", false);
+    fetch("{{ url_for('api_trajectory_import_anchors') }}", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        server_path: serverPath,
+        x: sx.value,
+        y: sy.value,
+        mode: currentAnchorTraversalMode(),
+        n_points: currentNPoints(),
+        max_neighbors: currentMaxNeighbors(),
+        avg_neighbors: currentAvgNeighbors()
+      })
+    })
+      .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+      .then(function(res) {
+        if (!res.ok) {
+          setTrajStatus(res.j.error || "Import failed.", false);
+          return;
+        }
+        onTrajectoryIndicesLoaded(res.j);
+      })
+      .catch(function(err) {
+        console.error(err);
+        setTrajStatus("Import request failed.", false);
+      });
+  }
+
+  if (btnAnchorImportPkl) {
+    btnAnchorImportPkl.addEventListener("click", function() {
+      openFileBrowser();
+    });
+  }
+  if (fbUp) {
+    fbUp.addEventListener("click", function() {
+      if (fbCurrentDir) {
+        var parent = fbCurrentDir.replace(/\/[^\/]*\/?$/, "") || "/";
+        loadFileBrowserDir(parent);
+      }
+    });
+  }
+  if (fbCancel) {
+    fbCancel.addEventListener("click", function() {
+      closeFileBrowser();
+    });
+  }
+  if (btnAnchorKmeans) {
+    btnAnchorKmeans.addEventListener("click", function() {
+      postTrajectoryIndices(
+        "{{ url_for('api_trajectory_kmeans_centers') }}",
+        "Loading k-means centers…",
+        "K-means centers"
+      );
+    });
+  }
+  if (btnAnchorRandom) {
+    btnAnchorRandom.addEventListener("click", function() {
+      postTrajectoryIndices(
+        "{{ url_for('api_trajectory_random_indices') }}",
+        "Sampling random indices…",
+        "Random indices"
+      );
+    });
+  }
+  if (btnAnchorManualLoad) {
+    btnAnchorManualLoad.addEventListener("click", loadManualAnchorIndices);
+  }
+  if (anchorIndicesManualEl) {
+    anchorIndicesManualEl.addEventListener("keydown", function(evt) {
+      if (evt.key === "Enter") {
+        evt.preventDefault();
+        loadManualAnchorIndices();
+      }
+    });
+  }
+  if (btnAnchorRemove) {
+    btnAnchorRemove.addEventListener("click", function() {
+      clearAnchorMode();
+      clearTrajectoryZPanel();
+      initDefaultTrajectory(scatterLoadGeneration);
+    });
+  }
+
+  /* ── Before reloading scatter (axes / color): cancel in-flight requests, clear stale 2D state ── */
   function preparePlotReload() {
     volumeGeneration++;
+    coordsRequestId++;
     dragEndpoint = null;
     startXY = null;
     endXY = null;
+    anchorTrajXY = null;
     setTrajStatus("", false);
-    trajVolColumn.innerHTML = "";
+    if (!anchorIndicesActive) {
+      trajVolColumn.innerHTML = "";
+      clearTrajectoryZPanel();
+    }
   }
 
   function resetTrajectory() {
+    clearAnchorMode();
     initDefaultTrajectory(scatterLoadGeneration);
   }
   btnResetEl.addEventListener("click", resetTrajectory);
@@ -624,6 +1414,27 @@
     }
   }
 
+  function drawAnchorPolyline(traj_xy) {
+    if (!gd || !gd.data || !traj_xy || traj_xy.length < 2) return;
+    removeOverlayTraces();
+    var xs = traj_xy.map(function(p) { return p[0]; });
+    var ys = traj_xy.map(function(p) { return p[1]; });
+    var showLabels = traj_xy.length <= 40;
+    var labels = showLabels ? traj_xy.map(function(_, i) { return "<b>" + (i + 1) + "</b>"; }) : [];
+    Plotly.addTraces(gd, [{
+      x: xs,
+      y: ys,
+      mode: showLabels ? "lines+markers+text" : "lines+markers",
+      line: { color: "#c4703a", width: 2.5, dash: "dot" },
+      marker: { size: 11, color: "#243b53", line: { width: 2, color: "#fff" } },
+      text: labels,
+      textposition: "top center",
+      textfont: { size: 19, color: "#243b53", family: "Barlow, sans-serif" },
+      hoverinfo: "skip",
+      showlegend: false
+    }]);
+  }
+
   function drawLineAndEndpoints(sx, sy, ex, ey) {
     removeOverlayTraces();
     Plotly.addTraces(gd, [
@@ -636,10 +1447,7 @@
       },
       {
         x: [sx, ex], y: [sy, ey],
-        mode: "markers+text",
-        text: ["Start", "End"],
-        textposition: ["top center", "bottom center"],
-        textfont: { size: 11, color: "#243b53", family: "Barlow, sans-serif" },
+        mode: "markers",
         marker: { size: 12, color: ["#c4703a", "#243b53"],
                   line: { width: 2, color: "#fff" } },
         hoverinfo: "skip",
@@ -653,18 +1461,121 @@
     var xs = points.map(function(p) { return p[0]; });
     var ys = points.map(function(p) { return p[1]; });
     var labels = [];
-    for (var i = 0; i < points.length; i++) labels.push(String(i + 1));
+    for (var i = 0; i < points.length; i++) labels.push("<b>" + (i + 1) + "</b>");
     Plotly.addTraces(gd, [{
       x: xs, y: ys,
       mode: "markers+text",
       text: labels,
       textposition: "top center",
-      textfont: { size: 14, color: "#243b53", family: "Barlow, sans-serif", weight: 700 },
+      textfont: { size: 19, color: "#243b53", family: "Barlow, sans-serif" },
       marker: { size: 10, color: "#243b53", symbol: "diamond",
                 line: { width: 1, color: "#fff" } },
       hoverinfo: "skip",
       showlegend: false
     }]);
+  }
+
+  function applyTrajectoryCoordsPayload(j) {
+    if (!j || !j.ok) return;
+    removeTrajectorySampleMarkersOnly();
+    if (hasAnchorIndices() && j.traj_xy) {
+      anchorTrajXY = j.traj_xy;
+    } else if (j.traj_xy && j.traj_xy.length) {
+      drawTrajectoryPoints(j.traj_xy);
+    }
+    if (j.z_path_txt && trajZPre && trajZPanel) {
+      lastZPathTxt = j.z_path_txt;
+      var hasZTraj = j.z_traj && j.z_traj.length;
+      trajZPre.textContent = hasZTraj
+        ? formatZPathDisplayFromZTraj(j.z_traj)
+        : j.z_path_txt;
+      if (trajZNums) trajZNums.textContent = hasZTraj
+        ? formatZPathLineNumbers(j.z_traj.length)
+        : "";
+      trajZPanel.hidden = false;
+    } else {
+      clearTrajectoryZPanel();
+    }
+  }
+
+  function scheduleCoordsAfterDrag() {
+    if (anchorIndicesActive && anchorIndicesActive.length >= 2) return;
+    if (coordsDragTimer) {
+      clearTimeout(coordsDragTimer);
+      coordsDragTimer = 0;
+    }
+    coordsDragTimer = setTimeout(function() {
+      coordsDragTimer = 0;
+      fetchTrajectoryCoords();
+    }, 300);
+  }
+
+  function fetchTrajectoryCoords() {
+    if (hasAnchorIndices()) {
+      var myIdA = ++coordsRequestId;
+      setTrajStatus("Computing latent z…", false);
+      fetch("{{ url_for('api_trajectory_coords') }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          anchor_indices: anchorIndicesActive,
+          mode: currentAnchorTraversalMode(),
+          n_points: currentNPoints(),
+          max_neighbors: currentMaxNeighbors(),
+          avg_neighbors: currentAvgNeighbors(),
+          x: sx.value,
+          y: sy.value
+        })
+      })
+        .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+        .then(function(res) {
+          if (myIdA !== coordsRequestId) return;
+          if (!res.ok) {
+            setTrajStatus(res.j.error || "Could not compute latent z.", false);
+            return;
+          }
+          applyTrajectoryCoordsPayload(res.j);
+          redrawTrajectoryOverlay();
+          setTrajStatus("Latent z ready — press Generate to decode volumes.", false);
+        })
+        .catch(function(err) {
+          if (myIdA !== coordsRequestId) return;
+          console.error(err);
+          setTrajStatus("Latent z request failed.", false);
+        });
+      return;
+    }
+    if (!startXY || !endXY) return;
+    var myId = ++coordsRequestId;
+    setTrajStatus("Computing latent z…", false);
+    var payload = {
+      mode: trajectoryMode,
+      start: startXY,
+      end: endXY,
+      x: sx.value,
+      y: sy.value,
+      n_points: currentNPoints()
+    };
+    fetch("{{ url_for('api_trajectory_coords') }}", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    })
+      .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+      .then(function(res) {
+        if (myId !== coordsRequestId) return;
+        if (!res.ok) {
+          setTrajStatus(res.j.error || "Could not compute latent z.", false);
+          return;
+        }
+        applyTrajectoryCoordsPayload(res.j);
+        setTrajStatus("Latent z ready — press Generate to decode volumes.", false);
+      })
+      .catch(function(err) {
+        if (myId !== coordsRequestId) return;
+        console.error(err);
+        setTrajStatus("Latent z request failed.", false);
+      });
   }
 
   /* ── Volume column ── */
@@ -706,23 +1617,38 @@
 
   /* ── Generate trajectory volumes ── */
   function generateTrajectory() {
-    if (!startXY || !endXY) return;
+    var useAnchors = hasAnchorIndices();
+    if (!useAnchors && (!startXY || !endXY)) return;
     var myGen = ++volumeGeneration;
-    var n = currentNPoints();
+    var n = currentVolumeCount();
     var volumeEntries = buildVolumeColumn(n);
     setTrajStatus("Decoding " + n + " volumes and rendering (ChimeraX)…", true);
     if (plotStatus) plotStatus.textContent = "Generating trajectory…";
 
-    drawLineAndEndpoints(startXY[0], startXY[1], endXY[0], endXY[1]);
+    if (useAnchors && anchorTrajXY && anchorTrajXY.length >= 2) {
+      drawAnchorPolyline(anchorTrajXY);
+    } else if (startXY && endXY) {
+      drawLineAndEndpoints(startXY[0], startXY[1], endXY[0], endXY[1]);
+    }
 
-    var payload = {
-      mode: trajectoryMode,
-      start: startXY,
-      end: endXY,
-      x: sx.value,
-      y: sy.value,
-      n_points: n
-    };
+    var payload = useAnchors
+      ? {
+          anchor_indices: anchorIndicesActive,
+          mode: currentAnchorTraversalMode(),
+          n_points: currentNPoints(),
+          max_neighbors: currentMaxNeighbors(),
+          avg_neighbors: currentAvgNeighbors(),
+          x: sx.value,
+          y: sy.value
+        }
+      : {
+          mode: trajectoryMode,
+          start: startXY,
+          end: endXY,
+          x: sx.value,
+          y: sy.value,
+          n_points: currentNPoints()
+        };
     fetch("{{ url_for('api_trajectory_volumes') }}", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -744,14 +1670,19 @@
           volumeEntries[ci].mainImg.src = "data:image/png;base64," + imgs[ci];
         }
         applyVolumeCellAnnotations(volumeEntries, res.j);
-        if (res.j.traj_xy && res.j.traj_xy.length) {
-          drawTrajectoryPoints(res.j.traj_xy);
+        applyTrajectoryCoordsPayload(res.j);
+        if (useAnchors && res.j.traj_xy) {
+          redrawTrajectoryOverlay();
         }
         setTrajStatus(imgs.length + " volumes generated.", false);
         if (plotStatus) {
-          plotStatus.textContent = "Showing trajectory between "
-            + fmtXY(startXY) + " and " + fmtXY(endXY)
-            + " — drag the Start / End handles to adjust.";
+          if (useAnchors) {
+            plotStatus.textContent = "Index trajectory — click Remove indices or change axes to edit.";
+          } else {
+            plotStatus.textContent = "Showing trajectory between "
+              + fmtXY(startXY) + " and " + fmtXY(endXY)
+              + " — drag the Start / End handles to adjust.";
+          }
         }
       })
       .catch(function(err) {
@@ -781,9 +1712,9 @@
         startXY = res.j.start.slice();
         endXY = res.j.end.slice();
         redrawTrajectoryOverlay();
-        setTrajStatus("Press Generate above to decode volumes along this path.", false);
+        fetchTrajectoryCoords();
         if (plotStatus) {
-          plotStatus.textContent = "Default trajectory on long axis — press Generate to decode volumes.";
+          plotStatus.textContent = "Default trajectory on long axis — choose mode for z, then Generate for volumes.";
         }
       })
       .catch(function() {
@@ -836,7 +1767,11 @@
           setRendering(false);
           wireUpPlotDrag();
           syncScatterControlsAlignment();
-          initDefaultTrajectory(gen);
+          if (anchorIndicesActive && anchorIndicesActive.length >= 2) {
+            fetchTrajectoryCoords();
+          } else {
+            initDefaultTrajectory(gen);
+          }
           requestAnimationFrame(function() {
             try { Plotly.Plots.resize(gd); } catch (e) {}
           });
@@ -862,6 +1797,7 @@
     if (dragListenersWired) return;
     dragListenersWired = true;
     gd.addEventListener("mousedown", function(evt) {
+      if (anchorIndicesActive && anchorIndicesActive.length >= 2) return;
       if (!startXY || !endXY) return;
       var pClick = [evt.clientX, evt.clientY];
       var pS = dataToPixelXY(startXY[0], startXY[1]);
@@ -894,15 +1830,20 @@
     });
     window.addEventListener("mouseup", function() {
       if (!dragEndpoint) return;
+      var hadDrag = dragEndpoint;
       dragEndpoint = null;
       cancelDragRestyleRaf();
       restyleTrajectoryLineOnly();
+      if (!anchorIndicesActive && (hadDrag === "start" || hadDrag === "end") && startXY && endXY) {
+        scheduleCoordsAfterDrag();
+      }
     });
   }
 
   /* ── Axis/color change ── */
   function triggerRedraw() {
     preparePlotReload();
+    syncTraversalModeButtonStates();
     loadPlot();
   }
   [sx, sy].forEach(function(s) {
@@ -921,9 +1862,33 @@
   nPointsEl.addEventListener("change", function() {
     updateGenerateVolumesButtonLabel();
     removeTrajectorySampleMarkersOnly();
+    if (hasAnchorIndices() && currentAnchorTraversalMode() === "graph") return;
+    if (hasAnchorIndices()) {
+      fetchTrajectoryCoords();
+      return;
+    }
+    if (startXY && endXY) {
+      fetchTrajectoryCoords();
+    }
   });
+  if (maxNeighborsEl) {
+    maxNeighborsEl.addEventListener("change", function() {
+      if (hasAnchorIndices() && currentAnchorTraversalMode() === "graph") {
+        fetchTrajectoryCoords();
+      }
+    });
+  }
+  if (avgNeighborsEl) {
+    avgNeighborsEl.addEventListener("change", function() {
+      if (hasAnchorIndices() && currentAnchorTraversalMode() === "graph") {
+        fetchTrajectoryCoords();
+      }
+    });
+  }
 
   updateGenerateVolumesButtonLabel();
+  syncAnchorIndicesUI();
+  syncTraversalModeButtonStates();
   syncScatterControlsAlignment();
   loadPlot();
 })();

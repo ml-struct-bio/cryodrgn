@@ -578,6 +578,126 @@ def scatter3d_z_json(
     return _plotly_to_json(fig)
 
 
+def scatter3d_z_preview_png(
+    exp: DashboardExperiment,
+    xcol: str,
+    ycol: str,
+    zcol: str,
+    color_col: str | None,
+    max_points: int = 120_000,
+    *,
+    continuous_palette: str | None = None,
+    dpi: int = 100,
+    elev: float = 22.0,
+    azim: float = -65.0,
+) -> bytes:
+    """Matplotlib 3D scatter PNG using the same subsample/colouring rules as ``scatter3d_z_json``.
+
+    Used for dashboard GIF capture where headless browsers often fail to composite WebGL.
+    """
+    plotly_cs = normalize_continuous_palette(continuous_palette)
+    mpl_cmap_name = mpl_cmap_for_palette(plotly_cs)
+    df = exp.plot_df
+    z_allowed = {f"z{i}" for i in range(int(exp.z.shape[1]))}
+    for c in (xcol, ycol, zcol):
+        if c not in z_allowed:
+            raise ValueError(f"Axis {c!r} is not a latent dimension for this run.")
+        if c not in df.columns:
+            raise ValueError(f"Missing column {c!r} in analysis table.")
+    if len({xcol, ycol, zcol}) < 3:
+        raise ValueError("Choose three distinct latent axes.")
+
+    sub, _row_indices = _subsample(df, max_points, seed=1)
+    xs = sub[xcol].to_numpy(dtype=np.float64)
+    ys = sub[ycol].to_numpy(dtype=np.float64)
+    zs = sub[zcol].to_numpy(dtype=np.float64)
+
+    with ezlab_matplotlib_rc():
+        fig = plt.figure(figsize=(5.2, 4.6), facecolor=_DASHBOARD_CREAM)
+        ax = fig.add_subplot(111, projection="3d", facecolor=_DASHBOARD_CREAM)
+
+        if color_col and color_col != "none" and color_col in sub.columns:
+            if color_col == "labels":
+                codes_arr, uniques = pd.factorize(sub[color_col], sort=True)
+                codes = np.asarray(codes_arr, dtype=np.int64)
+                pal = list(analysis._get_chimerax_colors(max(len(uniques), 1)))
+                colors: list[str] = []
+                for code in codes:
+                    if int(code) < 0:
+                        colors.append("#aab4bf")
+                    else:
+                        colors.append(pal[int(code) % len(pal)])
+                ax.scatter(
+                    xs,
+                    ys,
+                    zs,
+                    c=colors,
+                    s=0.8,
+                    alpha=0.1,
+                    linewidths=0,
+                    depthshade=True,
+                )
+            else:
+                color_num = cast(
+                    pd.Series, pd.to_numeric(sub[color_col], errors="coerce")
+                )
+                cvals = np.asarray(color_num, dtype=np.float64)
+                cfinite = cvals[np.isfinite(cvals)]
+                if cfinite.size == 0:
+                    cmin, cmax = 0.0, 1.0
+                elif np.isclose(cfinite.min(), cfinite.max()):
+                    cmin = float(cfinite.min()) - 0.5
+                    cmax = float(cfinite.max()) + 0.5
+                else:
+                    cmin = float(np.min(cfinite))
+                    cmax = float(np.max(cfinite))
+                norm = mcolors.Normalize(vmin=cmin, vmax=cmax)
+                cmap = plt.get_cmap(mpl_cmap_name)
+                cplot = np.where(np.isfinite(cvals), cvals, 0.5 * (cmin + cmax))
+                m = ax.scatter(
+                    xs,
+                    ys,
+                    zs,
+                    c=cplot,
+                    s=0.8,
+                    cmap=cmap,
+                    norm=norm,
+                    alpha=0.1,
+                    linewidths=0,
+                    depthshade=True,
+                )
+                fig.colorbar(m, ax=ax, shrink=0.5, pad=0.12, label=color_col)
+        else:
+            ax.scatter(
+                xs,
+                ys,
+                zs,
+                c="#4a5568",
+                s=0.8,
+                alpha=0.1,
+                linewidths=0,
+                depthshade=True,
+            )
+
+        ax.set_xlabel(xcol, fontsize=10)
+        ax.set_ylabel(ycol, fontsize=10)
+        ax.set_zlabel(zcol, fontsize=10)
+        ax.tick_params(axis="both", labelsize=7)
+        ax.view_init(elev=float(elev), azim=float(azim))
+        fig.tight_layout(pad=0.6)
+        buf = io.BytesIO()
+        fig.savefig(
+            buf,
+            format="png",
+            dpi=dpi,
+            facecolor=_DASHBOARD_CREAM,
+            bbox_inches="tight",
+        )
+        plt.close(fig)
+
+    return buf.getvalue()
+
+
 def pair_grid_png(
     exp: DashboardExperiment,
     lower_color_col: str,

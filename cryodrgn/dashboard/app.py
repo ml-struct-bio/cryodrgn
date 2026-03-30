@@ -6,10 +6,12 @@ import base64
 import io
 import logging
 import os
+import re
 import pickle
 import shlex
 import time
 import uuid
+from heapq import heappop, heappush
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -53,6 +55,7 @@ from cryodrgn.dashboard.plots import (
     pair_grid_png,
     pair_grid_skeleton_placeholder_layout,
     scatter3d_z_json,
+    scatter3d_z_preview_png,
     scatter_json,
 )
 
@@ -108,6 +111,10 @@ _PRELOAD_CACHE: dict[
     tuple[list[int], list[str], float],
 ] = {}
 _EPOCHS_BY_WORKDIR_CACHE: dict[str, list[int]] = {}
+# (workdir, epoch, max_neighbors, avg_neighbors) -> (neighbor_ids, neighbor_dists)
+_TRAJ_GRAPH_NEIGHBOR_CACHE: dict[
+    tuple[str, int, int, int], tuple[np.ndarray, np.ndarray]
+] = {}
 _EXP_REQUIRED_ENDPOINTS = {
     "abinit_builder_redirect",
     "filter_page_redirect",
@@ -117,6 +124,7 @@ _EXP_REQUIRED_ENDPOINTS = {
     "api_scatter",
     "latent_3d_page",
     "api_scatter3d_z",
+    "api_latent3d_preview_png",
     "api_preview_montage",
     "api_preload_images",
     "pairplot_page",
@@ -124,6 +132,12 @@ _EXP_REQUIRED_ENDPOINTS = {
     "api_save_pairplot_png",
     "trajectory_creator_page",
     "api_trajectory_volumes",
+    "api_trajectory_coords",
+    "api_trajectory_save_zpath",
+    "api_trajectory_import_anchors",
+    "api_list_server_files",
+    "api_trajectory_kmeans_centers",
+    "api_trajectory_random_indices",
     "api_default_trajectory_endpoints",
 }
 
@@ -188,11 +202,73 @@ def _default_xy_cols(cols: list[str]) -> tuple[str, str]:
     return x, y
 
 
-def _trajectory_default_xy_cols(cols: list[str]) -> tuple[str, str]:
-    """Trajectory creator defaults to PC1 vs PC2 when present, else UMAP / first columns."""
-    if "PC1" in cols and "PC2" in cols:
+def _trajectory_default_xy_cols(cols: list[str], zdim: int) -> tuple[str, str]:
+    """Pick default X/Y from the trajectory-allowed axis list only."""
+    if zdim > 2 and "PC1" in cols and "PC2" in cols:
         return "PC1", "PC2"
-    return _default_xy_cols(cols)
+    if "UMAP1" in cols and "UMAP2" in cols:
+        return "UMAP1", "UMAP2"
+    if len(cols) >= 2:
+        return cols[0], cols[1]
+    if len(cols) == 1:
+        return cols[0], cols[0]
+    return cols[0] if cols else "z0", cols[1] if len(cols) > 1 else "z1"
+
+
+def _trajectory_plot_axis_columns(e: DashboardExperiment) -> list[str]:
+    """Axes allowed: z0..z_{D-1}, PC1..PC_D when D>2, UMAP* when UMAP embedding exists."""
+    zdim = int(e.z.shape[1])
+    seen: set[str] = set()
+    ordered: list[str] = []
+
+    def add(name: str) -> None:
+        if name in e.plot_df.columns and name not in seen:
+            seen.add(name)
+            ordered.append(name)
+
+    for i in range(zdim):
+        add(f"z{i}")
+    if zdim > 2:
+        for i in range(1, zdim + 1):
+            add(f"PC{i}")
+    if _has_umap_columns(e):
+        umap_cols = [
+            str(c) for c in e.plot_df.columns if re.fullmatch(r"UMAP[0-9]+", str(c))
+        ]
+        umap_cols.sort(key=lambda c: int(c.replace("UMAP", "")))
+        for c in umap_cols:
+            add(c)
+    return ordered
+
+
+def _trajectory_axis_column_set(e: DashboardExperiment) -> frozenset[str]:
+    return frozenset(_trajectory_plot_axis_columns(e))
+
+
+def _trajectory_xy_ok_for_direct(xcol: str, ycol: str) -> bool:
+    """Direct traversal linearly interpolates z between NN endpoints — only valid in z or PC plot space."""
+
+    def ok_one(c: str) -> bool:
+        return bool(re.fullmatch(r"z[0-9]+", c) or re.fullmatch(r"PC[0-9]+", c))
+
+    return ok_one(xcol) and ok_one(ycol)
+
+
+def _validate_trajectory_plot_axes(
+    e: DashboardExperiment, xcol: str, ycol: str
+) -> None:
+    allowed = _trajectory_axis_column_set(e)
+    if xcol not in allowed or ycol not in allowed:
+        raise ValueError(
+            "That axis combination is not available in trajectory creator."
+        )
+
+
+def _z_traj_to_savetxt_str(z_traj: np.ndarray) -> str:
+    """Same text layout as ``cryodrgn graph_traversal -o`` / ``np.savetxt`` on the z rows."""
+    buf = io.StringIO()
+    np.savetxt(buf, z_traj)
+    return buf.getvalue()
 
 
 def _covariate_display_name(name: str) -> str:
@@ -289,6 +365,465 @@ def _round_direct_mode_traj_xy(traj_xy: np.ndarray) -> np.ndarray:
         decimals = 2 if mx >= 100.0 else 3
         out[:, j] = np.round(col, decimals)
     return out
+
+
+def _parse_anchor_indices_pickle(raw: bytes) -> list[int]:
+    """Load anchor indices from a pickle (1d array or list), as for ``graph_traversal --anchors``."""
+    obj = pickle.load(io.BytesIO(raw))
+    arr = np.asarray(obj).astype(int).ravel()
+    if arr.size < 2:
+        raise ValueError("Need at least two anchor indices")
+    return arr.tolist()
+
+
+def _compute_trajectory_from_anchor_indices(
+    e: DashboardExperiment,
+    anchor_indices: list[int],
+    xcol: str,
+    ycol: str,
+) -> tuple[np.ndarray, list[int], np.ndarray]:
+    """One latent point per anchor (rows in ``z.N.pkl``), in order."""
+    n = int(e.z.shape[0])
+    rows: list[int] = []
+    for a in anchor_indices:
+        ai = int(a)
+        if ai < 0 or ai >= n:
+            raise ValueError(
+                f"Anchor index {ai} out of range for z embeddings [0, {n})."
+            )
+        rows.append(ai)
+    zs = np.asarray(rows, dtype=int)
+    z_traj = e.z[zs]
+    coords = e.plot_df[[xcol, ycol]].values.astype(np.float64)
+    traj_xy = coords[zs]
+    return z_traj, rows, traj_xy
+
+
+def _parse_traj_points_value(data: dict, default: int = 4) -> int:
+    raw_n = data.get("n_points", default)
+    try:
+        n_points = max(2, min(int(raw_n), 20))
+    except (TypeError, ValueError):
+        n_points = default
+    return n_points
+
+
+def _parse_traj_neighbor_value(data: dict, key: str, default: int) -> int:
+    raw_v = data.get(key, default)
+    try:
+        v = int(raw_v)
+    except (TypeError, ValueError):
+        v = default
+    return max(2, min(v, 200))
+
+
+def _compute_direct_anchor_trajectory(
+    e: DashboardExperiment,
+    anchor_indices: list[int],
+    xcol: str,
+    ycol: str,
+    n_points: int,
+) -> tuple[np.ndarray, list[int] | None, np.ndarray]:
+    """Match ``cryodrgn direct_traversal`` for anchor interpolation in z-space."""
+    z_anchor, rows, anchor_xy = _compute_trajectory_from_anchor_indices(
+        e, anchor_indices, xcol, ycol
+    )
+    if len(rows) < 2:
+        raise ValueError("Need at least two anchor indices")
+    if n_points < 2:
+        raise ValueError("n_points must be at least 2")
+
+    z_parts: list[np.ndarray] = []
+    xy_parts: list[np.ndarray] = []
+    for i in range(len(rows) - 1):
+        z_start = z_anchor[i]
+        z_end = z_anchor[i + 1]
+        xy_start = anchor_xy[i]
+        xy_end = anchor_xy[i + 1]
+        t = np.linspace(0.0, 1.0, n_points, dtype=np.float64)
+        z_seg = np.outer(1.0 - t, z_start) + np.outer(t, z_end)
+        xy_seg = np.outer(1.0 - t, xy_start) + np.outer(t, xy_end)
+        z_parts.append(z_seg[:-1])
+        xy_parts.append(xy_seg[:-1])
+
+    z_parts.append(z_anchor[-1:].copy())
+    xy_parts.append(anchor_xy[-1:].copy())
+    return np.concatenate(z_parts, axis=0), None, np.concatenate(xy_parts, axis=0)
+
+
+def _graph_neighbor_arrays(
+    e: DashboardExperiment,
+    *,
+    max_neighbors: int,
+    avg_neighbors: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Nearest-neighbor arrays for graph traversal, cached by workdir+epoch."""
+    k = max(2, int(max_neighbors))
+    avg = max(1, int(avg_neighbors))
+    key = (e.workdir, int(e.epoch), k, avg)
+    cached = _TRAJ_GRAPH_NEIGHBOR_CACHE.get(key)
+    if cached is not None:
+        return cached
+
+    from scipy import spatial
+
+    z = np.asarray(e.z, dtype=np.float64)
+    n = int(z.shape[0])
+    if n < 2:
+        raise ValueError("Need at least two latent points for graph traversal.")
+    k_eff = min(k + 1, n)
+    tree = spatial.KDTree(z)
+    q_dist, q_neighbors = tree.query(z, k=k_eff)
+    neighbors = np.atleast_2d(np.asarray(q_neighbors, dtype=np.int64))
+    ndist = np.atleast_2d(np.asarray(q_dist, dtype=np.float64))
+
+    # Drop self-neighbor (distance 0); keep up to ``k`` true neighbors.
+    neighbors = np.asarray(neighbors[:, 1:], dtype=np.int64)
+    ndist = np.asarray(ndist[:, 1:], dtype=np.float64)
+    if neighbors.shape[1] == 0:
+        raise ValueError("Could not build nearest-neighbor graph from latent points.")
+
+    # Match graph_traversal's average-neighbor thresholding behaviour.
+    total_neighbors = max(1, min(int(n * avg), int(ndist.size)))
+    flat = np.sort(ndist.reshape(-1))
+    max_dist = float(flat[total_neighbors - 1])
+    keep = ndist <= max_dist
+    neighbors = np.where(keep, neighbors, -1)
+    ndist = np.where(keep, ndist, np.inf)
+
+    _TRAJ_GRAPH_NEIGHBOR_CACHE[key] = (neighbors, ndist)
+    return neighbors, ndist
+
+
+def _dijkstra_path_from_neighbors(
+    neighbors: np.ndarray, dists: np.ndarray, src: int, dest: int
+) -> list[int] | None:
+    """Shortest path in a sparse directed neighbor graph."""
+    if src == dest:
+        return [int(src)]
+    n = int(neighbors.shape[0])
+    inf = float("inf")
+    dist = np.full(n, inf, dtype=np.float64)
+    pred = np.full(n, -1, dtype=np.int64)
+    visited = np.zeros(n, dtype=bool)
+    dist[src] = 0.0
+    q: list[tuple[float, int]] = [(0.0, int(src))]
+
+    while q:
+        cur_d, v = heappop(q)
+        if visited[v]:
+            continue
+        visited[v] = True
+        if v == dest:
+            break
+        n_ids = neighbors[v]
+        n_ds = dists[v]
+        for j in range(n_ids.shape[0]):
+            u = int(n_ids[j])
+            w = float(n_ds[j])
+            if u < 0 or not np.isfinite(w):
+                continue
+            nd = cur_d + w
+            if nd < dist[u]:
+                dist[u] = nd
+                pred[u] = v
+                heappush(q, (nd, u))
+
+    if not np.isfinite(dist[dest]):
+        return None
+    path = [int(dest)]
+    cur = int(dest)
+    while cur != int(src):
+        cur = int(pred[cur])
+        if cur < 0:
+            return None
+        path.append(cur)
+    path.reverse()
+    return path
+
+
+def _compute_graph_anchor_trajectory(
+    e: DashboardExperiment,
+    anchor_indices: list[int],
+    xcol: str,
+    ycol: str,
+    max_neighbors: int,
+    avg_neighbors: int,
+) -> tuple[np.ndarray, list[int], np.ndarray]:
+    """Match ``cryodrgn graph_traversal`` semantics for anchor-to-anchor shortest paths."""
+    _z_anchor, rows, _anchor_xy = _compute_trajectory_from_anchor_indices(
+        e, anchor_indices, xcol, ycol
+    )
+    neighbors, ndist = _graph_neighbor_arrays(
+        e, max_neighbors=max_neighbors, avg_neighbors=avg_neighbors
+    )
+    full_path: list[int] = []
+    for i in range(len(rows) - 1):
+        src = int(rows[i])
+        dest = int(rows[i + 1])
+        path = _dijkstra_path_from_neighbors(neighbors, ndist, src, dest)
+        if not path:
+            raise ValueError(
+                f"Could not find graph path between anchors {src} and {dest}."
+            )
+        if full_path and full_path[-1] == path[0]:
+            full_path.extend(path[1:])
+        else:
+            full_path.extend(path)
+
+    if not full_path:
+        raise ValueError("Could not construct graph traversal path from given anchors.")
+
+    pidx = np.asarray(full_path, dtype=int)
+    z_traj = e.z[pidx]
+    coords = e.plot_df[[xcol, ycol]].values.astype(np.float64)
+    traj_xy = coords[pidx]
+    return z_traj, full_path, traj_xy
+
+
+def _parse_trajectory_request_body(e: DashboardExperiment, data: dict) -> dict:
+    """Validate trajectory POST JSON (shared by coords-only and volume decode)."""
+    raw_anchors = data.get("anchor_indices")
+    if isinstance(raw_anchors, list) and len(raw_anchors) >= 2:
+        try:
+            anchor_indices = [int(x) for x in raw_anchors]
+        except (TypeError, ValueError) as err:
+            raise ValueError("anchor_indices must be a list of integers") from err
+        xcol = str(data.get("x", ""))
+        ycol = str(data.get("y", ""))
+        if xcol not in e.plot_df.columns or ycol not in e.plot_df.columns:
+            raise ValueError("bad axis column")
+        _validate_trajectory_plot_axes(e, xcol, ycol)
+        mode = str(data.get("mode", "direct")).strip().lower()
+        if mode not in ("direct", "graph"):
+            raise ValueError('anchor mode must be "direct" or "graph".')
+        n_points = _parse_traj_points_value(data, default=4)
+        max_neighbors = _parse_traj_neighbor_value(
+            data, "max_neighbors", default=max(2, n_points)
+        )
+        avg_neighbors = _parse_traj_neighbor_value(
+            data, "avg_neighbors", default=max(2, n_points)
+        )
+        return {
+            "use_anchors": True,
+            "anchor_indices": anchor_indices,
+            "xcol": xcol,
+            "ycol": ycol,
+            "mode": mode,
+            "n_points": n_points,
+            "max_neighbors": max_neighbors,
+            "avg_neighbors": avg_neighbors,
+        }
+
+    mode = str(data.get("mode", "direct")).strip().lower()
+    if mode not in ("direct", "nearest"):
+        raise ValueError('mode must be "direct" or "nearest".')
+
+    start_xy = data.get("start")
+    end_xy = data.get("end")
+    if (
+        not isinstance(start_xy, list)
+        or len(start_xy) != 2
+        or not isinstance(end_xy, list)
+        or len(end_xy) != 2
+    ):
+        raise ValueError("start and end must be [x, y] coordinate pairs.")
+    try:
+        sx0, sy0 = float(start_xy[0]), float(start_xy[1])
+        ex0, ey0 = float(end_xy[0]), float(end_xy[1])
+    except (TypeError, ValueError) as err:
+        raise ValueError("start/end coordinates must be numeric.") from err
+
+    xcol = str(data.get("x", ""))
+    ycol = str(data.get("y", ""))
+    if xcol not in e.plot_df.columns or ycol not in e.plot_df.columns:
+        raise ValueError("bad axis column")
+    _validate_trajectory_plot_axes(e, xcol, ycol)
+    if mode == "direct" and not _trajectory_xy_ok_for_direct(xcol, ycol):
+        raise ValueError(
+            "Direct traversal is only available for principal-component or z latent axes."
+        )
+
+    n_points = _parse_traj_points_value(data, default=4)
+
+    return {
+        "use_anchors": False,
+        "mode": mode,
+        "sx0": sx0,
+        "sy0": sy0,
+        "ex0": ex0,
+        "ey0": ey0,
+        "xcol": xcol,
+        "ycol": ycol,
+        "n_points": n_points,
+    }
+
+
+def _compute_trajectory_latent_path(
+    e: DashboardExperiment, p: dict
+) -> tuple[np.ndarray, list[int] | None, np.ndarray]:
+    """Return (z_traj, traj_rows or None, traj_xy) for the trajectory line and settings."""
+    if p.get("use_anchors"):
+        if p["mode"] == "direct":
+            return _compute_direct_anchor_trajectory(
+                e,
+                p["anchor_indices"],
+                p["xcol"],
+                p["ycol"],
+                int(p["n_points"]),
+            )
+        return _compute_graph_anchor_trajectory(
+            e,
+            p["anchor_indices"],
+            p["xcol"],
+            p["ycol"],
+            max_neighbors=int(p.get("max_neighbors", p["n_points"])),
+            avg_neighbors=int(p.get("avg_neighbors", p["n_points"])),
+        )
+
+    mode = p["mode"]
+    sx0, sy0 = p["sx0"], p["sy0"]
+    ex0, ey0 = p["ex0"], p["ey0"]
+    xcol, ycol = p["xcol"], p["ycol"]
+    n_points = p["n_points"]
+    coords = e.plot_df[[xcol, ycol]].values.astype(np.float64)
+
+    if mode == "direct":
+        start_pt = np.array([sx0, sy0])
+        end_pt = np.array([ex0, ey0])
+        dists_start = np.sum((coords - start_pt) ** 2, axis=1)
+        dists_end = np.sum((coords - end_pt) ** 2, axis=1)
+        start_row = int(np.argmin(dists_start))
+        end_row = int(np.argmin(dists_end))
+        z_start = e.z[start_row]
+        z_end = e.z[end_row]
+        t = np.linspace(0.0, 1.0, n_points, dtype=np.float64)
+        z_traj = np.outer(1.0 - t, z_start) + np.outer(t, z_end)
+        traj_rows = None
+        traj_xy = np.outer(1.0 - t, start_pt) + np.outer(t, end_pt)
+        traj_xy = _round_direct_mode_traj_xy(traj_xy)
+    else:
+        t = np.linspace(0.0, 1.0, n_points, dtype=np.float64)
+        line_xy = np.outer(1.0 - t, np.array([sx0, sy0])) + np.outer(
+            t, np.array([ex0, ey0])
+        )
+        traj_rows = []
+        for pt in line_xy:
+            dists = np.sum((coords - pt) ** 2, axis=1)
+            traj_rows.append(int(np.argmin(dists)))
+        z_traj = e.z[np.array(traj_rows)]
+        traj_xy = coords[np.array(traj_rows)]
+
+    return z_traj, traj_rows, traj_xy
+
+
+def _trajectory_shared_json_payload(
+    e: DashboardExperiment,
+    z_traj: np.ndarray,
+    traj_rows: list[int] | None,
+    traj_xy: np.ndarray,
+    *,
+    mode: str,
+    n_points: int,
+    xcol: str,
+    ycol: str,
+) -> dict:
+    payload: dict = {
+        "ok": True,
+        "n_points": n_points,
+        "mode": mode,
+        "traj_rows": traj_rows,
+        "traj_xy": traj_xy.tolist(),
+        "z_traj": z_traj.tolist(),
+        "z_path_txt": _z_traj_to_savetxt_str(z_traj),
+        "xcol": xcol,
+        "ycol": ycol,
+    }
+    if traj_rows is not None and mode in ("nearest", "graph"):
+        payload["traj_particle_indices"] = [
+            _plot_row_particle_index(e, r) for r in traj_rows
+        ]
+    return payload
+
+
+def _trajectory_anchor_payload_from_indices(
+    e: DashboardExperiment,
+    anchor_indices: list[int],
+    xcol: str,
+    ycol: str,
+    *,
+    mode: str = "direct",
+    n_points: int = 4,
+    max_neighbors: int | None = None,
+    avg_neighbors: int | None = None,
+) -> dict:
+    """Build coords/volume JSON for a list of dataset indices (``z.N.pkl`` rows)."""
+    mode = str(mode).strip().lower()
+    if mode not in ("direct", "graph"):
+        mode = "direct"
+    n_points = max(2, min(int(n_points), 20))
+    max_neighbors = (
+        n_points if max_neighbors is None else max(2, min(int(max_neighbors), 200))
+    )
+    avg_neighbors = (
+        n_points if avg_neighbors is None else max(2, min(int(avg_neighbors), 200))
+    )
+    p = {
+        "use_anchors": True,
+        "anchor_indices": anchor_indices,
+        "xcol": xcol,
+        "ycol": ycol,
+        "mode": mode,
+        "n_points": n_points,
+        "max_neighbors": max_neighbors,
+        "avg_neighbors": avg_neighbors,
+    }
+    z_traj, traj_rows, traj_xy = _compute_trajectory_latent_path(e, p)
+    payload = _trajectory_shared_json_payload(
+        e,
+        z_traj,
+        traj_rows,
+        traj_xy,
+        mode=mode,
+        n_points=n_points,
+        xcol=xcol,
+        ycol=ycol,
+    )
+    payload["anchor_indices"] = anchor_indices
+    return payload
+
+
+def _kmeans_centers_ind_path(e: DashboardExperiment) -> str:
+    return os.path.join(
+        e.workdir,
+        f"analyze.{e.epoch}",
+        f"kmeans{e.kmeans_folder_id}",
+        "centers_ind.txt",
+    )
+
+
+def _load_kmeans_center_indices(e: DashboardExperiment) -> list[int]:
+    path = _kmeans_centers_ind_path(e)
+    if not os.path.isfile(path):
+        raise ValueError(
+            f"No k-means centers_ind.txt at {path}. Run cryodrgn analyze with k-means first."
+        )
+    raw = np.loadtxt(path)
+    arr = np.atleast_1d(raw).astype(int).ravel()
+    if arr.size < 2:
+        raise ValueError("Need at least two k-means center indices")
+    return arr.tolist()
+
+
+def _random_dataset_indices(e: DashboardExperiment, k: int = 10) -> list[int]:
+    """Up to ``k`` distinct random row indices into ``z`` (fewer if the dataset is smaller)."""
+    n = int(e.z.shape[0])
+    if n < 2:
+        raise ValueError("Dataset has fewer than 2 particles")
+    take = min(int(k), n)
+    rng = np.random.default_rng()
+    inds = rng.choice(n, size=take, replace=False).astype(int)
+    return inds.tolist()
 
 
 def _plot_df_rows_for_dataset_indices(
@@ -812,6 +1347,7 @@ def api_set_epoch():
     session["dashboard_epoch"] = ep
     _EXP_CACHE.clear()
     _PRELOAD_CACHE.clear()
+    _TRAJ_GRAPH_NEIGHBOR_CACHE.clear()
     return jsonify(ok=True, epoch=ep)
 
 
@@ -832,6 +1368,7 @@ def api_set_workdir():
             session["dashboard_discovery_boot"] = boot
         _EXP_CACHE.clear()
         _PRELOAD_CACHE.clear()
+        _TRAJ_GRAPH_NEIGHBOR_CACHE.clear()
         return jsonify(ok=True, workdir=None)
 
     requested = str(raw).strip()
@@ -847,6 +1384,7 @@ def api_set_workdir():
         session["dashboard_discovery_boot"] = boot
     _EXP_CACHE.clear()
     _PRELOAD_CACHE.clear()
+    _TRAJ_GRAPH_NEIGHBOR_CACHE.clear()
     return jsonify(ok=True, workdir=requested, epoch=max(epochs))
 
 
@@ -1142,6 +1680,39 @@ def api_scatter3d_z():
     return Response(js, mimetype="application/json")
 
 
+def api_latent3d_preview_png():
+    """PNG snapshot of the 3D latent scatter (matplotlib), same data rules as ``api_scatter3d_z``."""
+    e: DashboardExperiment = g.dashboard_exp
+    xcol = request.args.get("x", "z0")
+    ycol = request.args.get("y", "z1")
+    zcol = request.args.get("z", "z2")
+    ccol = request.args.get("color") or "none"
+    try:
+        elev = float(request.args.get("elev", "22"))
+        azim = float(request.args.get("azim", "-65"))
+    except ValueError:
+        return jsonify(error="elev/azim must be numeric"), 400
+    if ccol != "none" and ccol not in e.plot_df.columns:
+        return jsonify(error="bad color column"), 400
+    try:
+        png = scatter3d_z_preview_png(
+            e,
+            xcol,
+            ycol,
+            zcol,
+            None if ccol == "none" else ccol,
+            continuous_palette=request.args.get("palette"),
+            elev=elev,
+            azim=azim,
+        )
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    except Exception as err:
+        logger.exception("3-D latent preview PNG failed")
+        return jsonify(error=str(err)), 500
+    return Response(png, mimetype="image/png")
+
+
 def api_preview_montage():
     e: DashboardExperiment = g.dashboard_exp
     raw = request.args.get("rows", "")
@@ -1161,7 +1732,7 @@ def api_preload_images():
     """Return a subsample of particle images as base64 JPEGs for the viewer.
 
     Selection: ~2/3 random, ~1/6 high mean distance to reference points,
-    ~1/6 high nearest-neighbour distance (see ``_sample_plot_df_rows_for_preload``).
+    ~1/6 high nearest-neighbor distance (see ``_sample_plot_df_rows_for_preload``).
 
     Use **POST** with a JSON body when ``selected_rows`` is large (lasso selections);
     query strings hit proxy/server URI length limits (414).
@@ -1446,6 +2017,10 @@ def api_default_trajectory_endpoints():
     ycol = request.args.get("y", "")
     if xcol not in e.plot_df.columns or ycol not in e.plot_df.columns:
         return jsonify(error="bad axis column"), 400
+    try:
+        _validate_trajectory_plot_axes(e, xcol, ycol)
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
 
     sub = e.plot_df[[xcol, ycol]].dropna()
     if len(sub) < 2:
@@ -1499,16 +2074,253 @@ def trajectory_creator_page():
             ),
             200,
         )
-    cols = e.numeric_columns
-    dx, dy = _trajectory_default_xy_cols(cols)
+    zdim = int(e.z.shape[1])
+    traj_cols = _trajectory_plot_axis_columns(e)
+    color_cols = e.numeric_columns
+    dx, dy = _trajectory_default_xy_cols(traj_cols, zdim)
+    cov_keys = list(dict.fromkeys(traj_cols + color_cols))
     return render_template(
         "trajectory_creator.html",
-        numeric_cols=cols,
-        covariate_display_map={c: _covariate_display_name(c) for c in cols},
+        traj_axis_cols=traj_cols,
+        numeric_cols=color_cols,
+        covariate_display_map={c: _covariate_display_name(c) for c in cov_keys},
         default_x=dx,
         default_y=dy,
-        zdim=int(e.z.shape[1]),
+        zdim=zdim,
+        exp_workdir=e.workdir,
     )
+
+
+def api_trajectory_save_zpath():
+    """Write ``z-path.txt`` into the current experiment output folder (full precision)."""
+    e: DashboardExperiment = g.dashboard_exp
+    if not explorer_volumes_eligible(e):
+        return (
+            jsonify(
+                error="Trajectory creator needs a CUDA GPU, single-particle data, "
+                "and weights for the current epoch.",
+            ),
+            400,
+        )
+    data = request.get_json(force=True, silent=True) or {}
+    txt = data.get("z_path_txt")
+    if not isinstance(txt, str):
+        return jsonify(error="z_path_txt must be a string"), 400
+    out_dir = os.path.abspath(e.workdir)
+    out_path = os.path.join(out_dir, "z-path.txt")
+    try:
+        os.makedirs(out_dir, exist_ok=True)
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(txt)
+    except OSError as err:
+        return jsonify(error=str(err)), 500
+    return jsonify(ok=True, path=out_path)
+
+
+def api_trajectory_import_anchors():
+    """Import anchor indices from a server-side ``.pkl`` path."""
+    e: DashboardExperiment = g.dashboard_exp
+    if not explorer_volumes_eligible(e):
+        return (
+            jsonify(
+                error="Trajectory creator needs a CUDA GPU, single-particle data, "
+                "and weights for the current epoch.",
+            ),
+            400,
+        )
+    data = request.get_json(force=True, silent=True) or {}
+    server_path = str(data.get("server_path", "") or "").strip()
+    if not server_path:
+        return jsonify(error="no file path provided"), 400
+    if not server_path.lower().endswith(".pkl"):
+        return jsonify(error="select a .pkl file"), 400
+    abs_path = os.path.abspath(server_path)
+    if not os.path.isfile(abs_path):
+        return jsonify(error="file not found on server"), 400
+    xcol = str(data.get("x", "") or "")
+    ycol = str(data.get("y", "") or "")
+    if xcol not in e.plot_df.columns or ycol not in e.plot_df.columns:
+        return jsonify(error="bad axis column"), 400
+    try:
+        _validate_trajectory_plot_axes(e, xcol, ycol)
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    mode = str(data.get("mode", "direct") or "direct")
+    n_points = _parse_traj_points_value(data, default=4)
+    max_neighbors = _parse_traj_neighbor_value(data, "max_neighbors", default=n_points)
+    avg_neighbors = _parse_traj_neighbor_value(data, "avg_neighbors", default=n_points)
+    try:
+        raw = Path(abs_path).read_bytes()
+        anchor_indices = _parse_anchor_indices_pickle(raw)
+        return jsonify(
+            _trajectory_anchor_payload_from_indices(
+                e,
+                anchor_indices,
+                xcol,
+                ycol,
+                mode=mode,
+                n_points=n_points,
+                max_neighbors=max_neighbors,
+                avg_neighbors=avg_neighbors,
+            )
+        )
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    except Exception as err:
+        logger.exception("trajectory anchor import failed")
+        return jsonify(error=str(err)), 500
+
+
+def api_list_server_files():
+    """List directories and ``.pkl`` files for the server-side file browser."""
+    e: DashboardExperiment = g.dashboard_exp
+    req_dir = request.args.get("dir", "").strip()
+    root = os.path.abspath(e.workdir)
+    if req_dir:
+        browse = os.path.abspath(req_dir)
+    else:
+        analyze_dir = os.path.join(root, f"analyze.{e.epoch}")
+        browse = analyze_dir if os.path.isdir(analyze_dir) else root
+    if not os.path.isdir(browse):
+        return jsonify(error="directory not found"), 400
+    entries: list[dict] = []
+    try:
+        for name in sorted(os.listdir(browse)):
+            full = os.path.join(browse, name)
+            if os.path.isdir(full):
+                entries.append({"name": name, "type": "dir"})
+            elif name.lower().endswith(".pkl"):
+                entries.append({"name": name, "type": "file"})
+    except PermissionError:
+        return jsonify(error="permission denied"), 403
+    parent = os.path.dirname(browse) if browse != "/" else None
+    return jsonify(ok=True, dir=browse, parent=parent, entries=entries)
+
+
+def api_trajectory_kmeans_centers():
+    """Load ``kmeansK/centers_ind.txt`` for the current ``analyze.N`` / k-means folder."""
+    e: DashboardExperiment = g.dashboard_exp
+    if not explorer_volumes_eligible(e):
+        return (
+            jsonify(
+                error="Trajectory creator needs a CUDA GPU, single-particle data, "
+                "and weights for the current epoch.",
+            ),
+            400,
+        )
+    data = request.get_json(force=True, silent=True) or {}
+    xcol = str(data.get("x", "") or "")
+    ycol = str(data.get("y", "") or "")
+    if xcol not in e.plot_df.columns or ycol not in e.plot_df.columns:
+        return jsonify(error="bad axis column"), 400
+    try:
+        _validate_trajectory_plot_axes(e, xcol, ycol)
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    mode = str(data.get("mode", "direct") or "direct")
+    n_points = _parse_traj_points_value(data, default=4)
+    max_neighbors = _parse_traj_neighbor_value(data, "max_neighbors", default=n_points)
+    avg_neighbors = _parse_traj_neighbor_value(data, "avg_neighbors", default=n_points)
+    try:
+        anchor_indices = _load_kmeans_center_indices(e)
+        return jsonify(
+            _trajectory_anchor_payload_from_indices(
+                e,
+                anchor_indices,
+                xcol,
+                ycol,
+                mode=mode,
+                n_points=n_points,
+                max_neighbors=max_neighbors,
+                avg_neighbors=avg_neighbors,
+            )
+        )
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    except Exception as err:
+        logger.exception("trajectory k-means centers failed")
+        return jsonify(error=str(err)), 500
+
+
+def api_trajectory_random_indices():
+    """Choose up to 10 random dataset indices (fewer if the stack is smaller)."""
+    e: DashboardExperiment = g.dashboard_exp
+    if not explorer_volumes_eligible(e):
+        return (
+            jsonify(
+                error="Trajectory creator needs a CUDA GPU, single-particle data, "
+                "and weights for the current epoch.",
+            ),
+            400,
+        )
+    data = request.get_json(force=True, silent=True) or {}
+    xcol = str(data.get("x", "") or "")
+    ycol = str(data.get("y", "") or "")
+    if xcol not in e.plot_df.columns or ycol not in e.plot_df.columns:
+        return jsonify(error="bad axis column"), 400
+    try:
+        _validate_trajectory_plot_axes(e, xcol, ycol)
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    mode = str(data.get("mode", "direct") or "direct")
+    n_points = _parse_traj_points_value(data, default=4)
+    max_neighbors = _parse_traj_neighbor_value(data, "max_neighbors", default=n_points)
+    avg_neighbors = _parse_traj_neighbor_value(data, "avg_neighbors", default=n_points)
+    try:
+        anchor_indices = _random_dataset_indices(e, 10)
+        return jsonify(
+            _trajectory_anchor_payload_from_indices(
+                e,
+                anchor_indices,
+                xcol,
+                ycol,
+                mode=mode,
+                n_points=n_points,
+                max_neighbors=max_neighbors,
+                avg_neighbors=avg_neighbors,
+            )
+        )
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    except Exception as err:
+        logger.exception("trajectory random indices failed")
+        return jsonify(error=str(err)), 500
+
+
+def api_trajectory_coords():
+    """Latent z along the trajectory line (no ChimeraX / volume decode)."""
+    e: DashboardExperiment = g.dashboard_exp
+    if not explorer_volumes_eligible(e):
+        return (
+            jsonify(
+                error="Trajectory creator needs a CUDA GPU, single-particle data, "
+                "and weights for the current epoch.",
+            ),
+            400,
+        )
+    data = request.get_json(force=True, silent=True) or {}
+    try:
+        p = _parse_trajectory_request_body(e, data)
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    try:
+        z_traj, traj_rows, traj_xy = _compute_trajectory_latent_path(e, p)
+        payload = _trajectory_shared_json_payload(
+            e,
+            z_traj,
+            traj_rows,
+            traj_xy,
+            mode=p["mode"],
+            n_points=p["n_points"],
+            xcol=p["xcol"],
+            ycol=p["ycol"],
+        )
+        return jsonify(payload)
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    except Exception as err:
+        logger.exception("trajectory coords failed")
+        return jsonify(error=str(err)), 500
 
 
 def api_trajectory_volumes():
@@ -1522,82 +2334,33 @@ def api_trajectory_volumes():
             400,
         )
     data = request.get_json(force=True, silent=True) or {}
-    mode = str(data.get("mode", "direct")).strip().lower()
-    if mode not in ("direct", "nearest"):
-        return jsonify(error='mode must be "direct" or "nearest".'), 400
-
-    start_xy = data.get("start")
-    end_xy = data.get("end")
-    if (
-        not isinstance(start_xy, list)
-        or len(start_xy) != 2
-        or not isinstance(end_xy, list)
-        or len(end_xy) != 2
-    ):
-        return jsonify(error="start and end must be [x, y] coordinate pairs."), 400
     try:
-        sx0, sy0 = float(start_xy[0]), float(start_xy[1])
-        ex0, ey0 = float(end_xy[0]), float(end_xy[1])
-    except (TypeError, ValueError):
-        return jsonify(error="start/end coordinates must be numeric."), 400
-
-    xcol = str(data.get("x", ""))
-    ycol = str(data.get("y", ""))
-    if xcol not in e.plot_df.columns or ycol not in e.plot_df.columns:
-        return jsonify(error="bad axis column"), 400
-
-    raw_n = data.get("n_points", 4)
-    try:
-        n_points = max(2, min(int(raw_n), 20))
-    except (TypeError, ValueError):
-        n_points = 4
-
-    coords = e.plot_df[[xcol, ycol]].values.astype(np.float64)
+        p = _parse_trajectory_request_body(e, data)
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
 
     try:
-        if mode == "direct":
-            start_pt = np.array([sx0, sy0])
-            end_pt = np.array([ex0, ey0])
-            dists_start = np.sum((coords - start_pt) ** 2, axis=1)
-            dists_end = np.sum((coords - end_pt) ** 2, axis=1)
-            start_row = int(np.argmin(dists_start))
-            end_row = int(np.argmin(dists_end))
-            z_start = e.z[start_row]
-            z_end = e.z[end_row]
-            t = np.linspace(0.0, 1.0, n_points, dtype=np.float64)
-            z_traj = np.outer(1.0 - t, z_start) + np.outer(t, z_end)
-            traj_rows = None
-            traj_xy = np.outer(1.0 - t, start_pt) + np.outer(t, end_pt)
-            traj_xy = _round_direct_mode_traj_xy(traj_xy)
-        else:
-            t = np.linspace(0.0, 1.0, n_points, dtype=np.float64)
-            line_xy = np.outer(1.0 - t, np.array([sx0, sy0])) + np.outer(
-                t, np.array([ex0, ey0])
-            )
-            traj_rows = []
-            for pt in line_xy:
-                dists = np.sum((coords - pt) ** 2, axis=1)
-                traj_rows.append(int(np.argmin(dists)))
-            z_traj = e.z[np.array(traj_rows)]
-            traj_xy = coords[np.array(traj_rows)]
+        z_traj, traj_rows, traj_xy = _compute_trajectory_latent_path(e, p)
+        mode = p["mode"]
+        n_points = p["n_points"]
+        xcol = p["xcol"]
+        ycol = p["ycol"]
 
         blobs, cache_token = generate_trajectory_volume_pngs(e, z_traj)
         b64s = [base64.standard_b64encode(b).decode("ascii") for b in blobs]
-        payload: dict = {
-            "ok": True,
-            "images": b64s,
-            "n_points": n_points,
-            "mode": mode,
-            "traj_rows": traj_rows,
-            "traj_xy": traj_xy.tolist(),
-            "xcol": xcol,
-            "ycol": ycol,
-            "volume_cache_id": cache_token,
-        }
-        if mode == "nearest" and traj_rows is not None:
-            payload["traj_particle_indices"] = [
-                _plot_row_particle_index(e, r) for r in traj_rows
-            ]
+        payload = _trajectory_shared_json_payload(
+            e,
+            z_traj,
+            traj_rows,
+            traj_xy,
+            mode=mode,
+            n_points=n_points,
+            xcol=xcol,
+            ycol=ycol,
+        )
+        payload["images"] = b64s
+        payload["volume_cache_id"] = cache_token
+        if traj_rows is not None and mode in ("nearest", "graph"):
             payload["particle_thumbs"] = [
                 _particle_thumbnail_b64_from_row(e, int(r)) for r in traj_rows
             ]
@@ -1687,6 +2450,11 @@ def create_app(
     app.add_url_rule("/latent-3d", view_func=latent_3d_page, methods=["GET"])
     app.add_url_rule("/api/scatter3d_z", view_func=api_scatter3d_z, methods=["GET"])
     app.add_url_rule(
+        "/api/latent3d_preview.png",
+        view_func=api_latent3d_preview_png,
+        methods=["GET"],
+    )
+    app.add_url_rule(
         "/api/preview_montage", view_func=api_preview_montage, methods=["GET"]
     )
     app.add_url_rule(
@@ -1701,6 +2469,36 @@ def create_app(
     app.add_url_rule(
         "/api/trajectory_volumes",
         view_func=api_trajectory_volumes,
+        methods=["POST"],
+    )
+    app.add_url_rule(
+        "/api/trajectory_coords",
+        view_func=api_trajectory_coords,
+        methods=["POST"],
+    )
+    app.add_url_rule(
+        "/api/trajectory_save_zpath",
+        view_func=api_trajectory_save_zpath,
+        methods=["POST"],
+    )
+    app.add_url_rule(
+        "/api/trajectory_import_anchors",
+        view_func=api_trajectory_import_anchors,
+        methods=["POST"],
+    )
+    app.add_url_rule(
+        "/api/list_server_files",
+        view_func=api_list_server_files,
+        methods=["GET"],
+    )
+    app.add_url_rule(
+        "/api/trajectory_kmeans_centers",
+        view_func=api_trajectory_kmeans_centers,
+        methods=["POST"],
+    )
+    app.add_url_rule(
+        "/api/trajectory_random_indices",
+        view_func=api_trajectory_random_indices,
         methods=["POST"],
     )
     app.add_url_rule(

@@ -441,7 +441,7 @@ def generate_trajectory_volume_pngs(
     """Decode volumes along a z-space trajectory and render ChimeraX static PNGs.
 
     ``z_values`` is an ``(n_points, zdim)`` array of z-latent-space coordinates
-    (e.g. from direct interpolation or nearest-neighbour lookup).
+    (e.g. from direct interpolation or nearest-neighbor lookup).
     Returns ``(png_bytes_list, cache_token)``.
     """
     z_values = np.asarray(z_values, dtype=np.float64)

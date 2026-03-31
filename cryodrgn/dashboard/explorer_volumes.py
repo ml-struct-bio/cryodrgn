@@ -98,6 +98,42 @@ def volume_cell_gif_from_cache(
             return fh.read()
 
 
+def save_cached_volumes_to_dir(
+    token: str,
+    out_dir: str,
+    *,
+    filename_prefix: str = "volume",
+) -> list[str]:
+    """Copy cached decoded ``.mrc`` files to a user-selected folder.
+
+    Returns absolute output paths in save order.
+    """
+    if not out_dir:
+        raise ValueError("Choose an output folder.")
+    out_dir = os.path.abspath(out_dir)
+    with _VOL_CACHE_LOCK:
+        meta = _VOL_MRC_CACHE.get(token)
+        if not meta:
+            raise ValueError("Unknown or expired volume cache id.")
+        if time.monotonic() - meta["t0"] > _VOL_CACHE_TTL_S:
+            _vol_cache_evict_unlocked(token)
+            raise ValueError("Volume cache expired. Generate volumes again.")
+        vol_files = list(meta["vol_files"])
+    if not vol_files:
+        raise ValueError("No cached volumes available to save.")
+    os.makedirs(out_dir, exist_ok=True)
+    saved_paths: list[str] = []
+    for i, src in enumerate(vol_files, start=1):
+        if not os.path.isfile(src):
+            raise ValueError(
+                "Cached volume files are no longer available. Regenerate first."
+            )
+        dst = os.path.join(out_dir, f"{filename_prefix}_{i:03d}.mrc")
+        shutil.copy2(src, dst)
+        saved_paths.append(dst)
+    return saved_paths
+
+
 def torch_cuda_available() -> bool:
     try:
         import torch

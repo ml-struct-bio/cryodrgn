@@ -22,6 +22,7 @@
       --nav-border: #1e3247;
       --accent: #c4703a;
       --accent-hover: #a85a2e;
+      --error: #b42318;
       --link: #2c5282;
       --card-shadow: 0 2px 12px rgba(36, 59, 83, 0.08);
       /* Full-viewport dash layouts: reserve space for taller header + logo. */
@@ -752,6 +753,9 @@
       margin-top: 0.35rem;
       font-size: 0.8rem;
     }
+    .cryo-status-error {
+      color: var(--error, #b42318) !important;
+    }
     /* Image viewer: square plot in flex center; montage shrinks (narrower) as needed. */
     main:has(.cryo-dash-page--image-viewer) {
       padding-top: 0.45rem;
@@ -957,6 +961,39 @@
       }
     }
   </style>
+  <script>
+    (function() {
+      var ERROR_RE = /\b(error|failed|failure|invalid|unable|cannot|could not|not found|request failed|bad)\b/i;
+      function asText(msg) {
+        return String(msg == null ? "" : msg).trim();
+      }
+      window.cryoIsErrorMessage = function(msg) {
+        var s = asText(msg);
+        if (!s) return false;
+        return ERROR_RE.test(s);
+      };
+      window.cryoApplyStatusTone = function(el, msg) {
+        if (!el || !el.classList) return;
+        var s = asText(msg);
+        el.classList.toggle("cryo-status-error", window.cryoIsErrorMessage(s));
+      };
+      window.cryoSetStatus = function(el, msg) {
+        if (!el) return;
+        var s = asText(msg);
+        el.textContent = s;
+        window.cryoApplyStatusTone(el, s);
+      };
+      window.cryoRefreshStatusTones = function(scope) {
+        var root = scope || document;
+        var nodes = root.querySelectorAll("[id*='status'], .status, .cryo-dash-legend-note, .cmd-copy-status");
+        for (var i = 0; i < nodes.length; i++) {
+          var el = nodes[i];
+          if (!el || !el.classList) continue;
+          window.cryoApplyStatusTone(el, el.textContent || "");
+        }
+      };
+    })();
+  </script>
   {% block head %}{% endblock %}
 </head>
 <body>
@@ -1032,6 +1069,18 @@
   </main>
   <script>
   (function() {
+    if (window.cryoRefreshStatusTones) {
+      window.cryoRefreshStatusTones(document);
+      var statusToneObserver = new MutationObserver(function() {
+        window.cryoRefreshStatusTones(document);
+      });
+      statusToneObserver.observe(document.body, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      });
+    }
+
     var wdSel = document.getElementById("dash-workdir");
     if (wdSel) {
       wdSel.addEventListener("change", function() {

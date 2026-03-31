@@ -47,6 +47,7 @@ from cryodrgn.dashboard.explorer_volumes import (
     explorer_volumes_eligible,
     generate_montage_volume_pngs,
     generate_trajectory_volume_pngs,
+    save_cached_volumes_to_dir,
     volume_cell_gif_from_cache,
 )
 from cryodrgn.dashboard.mpl_style import ezlab_matplotlib_rc
@@ -133,6 +134,7 @@ _EXP_REQUIRED_ENDPOINTS = {
     "trajectory_creator_page",
     "api_trajectory_volumes",
     "api_trajectory_coords",
+    "api_trajectory_save_volumes",
     "api_trajectory_save_zpath",
     "api_trajectory_import_anchors",
     "api_list_server_files",
@@ -367,13 +369,23 @@ def _round_direct_mode_traj_xy(traj_xy: np.ndarray) -> np.ndarray:
     return out
 
 
-def _parse_anchor_indices_pickle(raw: bytes) -> list[int]:
-    """Load anchor indices from a pickle (1d array or list), as for ``graph_traversal --anchors``."""
-    obj = pickle.load(io.BytesIO(raw))
-    arr = np.asarray(obj).astype(int).ravel()
-    if arr.size < 2:
+def _parse_anchor_indices_txt(raw: bytes) -> list[int]:
+    """Parse anchor indices from a text file of whitespace-delimited integers."""
+    try:
+        txt = raw.decode("utf-8")
+    except UnicodeDecodeError as err:
+        raise ValueError(
+            "Anchor file must be UTF-8 text with space-delimited indices."
+        ) from err
+    toks = [t for t in re.split(r"[\s,;]+", txt.strip()) if t]
+    if len(toks) < 2:
         raise ValueError("Need at least two anchor indices")
-    return arr.tolist()
+    out: list[int] = []
+    for t in toks:
+        if not re.fullmatch(r"-?\d+", t):
+            raise ValueError(f"Invalid anchor index token: {t!r}")
+        out.append(int(t))
+    return out
 
 
 def _compute_trajectory_from_anchor_indices(
@@ -408,6 +420,17 @@ def _parse_traj_points_value(data: dict, default: int = 4) -> int:
     return n_points
 
 
+def _parse_traj_interpolation_value(
+    data: dict, key: str = "n_points", default: int = 4
+) -> int:
+    raw_n = data.get(key, default)
+    try:
+        n_points = int(raw_n)
+    except (TypeError, ValueError):
+        n_points = default
+    return max(0, min(n_points, 20))
+
+
 def _parse_traj_neighbor_value(data: dict, key: str, default: int) -> int:
     raw_v = data.get(key, default)
     try:
@@ -422,7 +445,7 @@ def _compute_direct_anchor_trajectory(
     anchor_indices: list[int],
     xcol: str,
     ycol: str,
-    n_points: int,
+    interpolation_points: int,
 ) -> tuple[np.ndarray, list[int] | None, np.ndarray]:
     """Match ``cryodrgn direct_traversal`` for anchor interpolation in z-space."""
     z_anchor, rows, anchor_xy = _compute_trajectory_from_anchor_indices(
@@ -430,8 +453,9 @@ def _compute_direct_anchor_trajectory(
     )
     if len(rows) < 2:
         raise ValueError("Need at least two anchor indices")
-    if n_points < 2:
-        raise ValueError("n_points must be at least 2")
+    if interpolation_points < 0:
+        raise ValueError("Interpolation points must be >= 0")
+    n_points = int(interpolation_points) + 2
 
     z_parts: list[np.ndarray] = []
     xy_parts: list[np.ndarray] = []
@@ -597,7 +621,10 @@ def _parse_trajectory_request_body(e: DashboardExperiment, data: dict) -> dict:
         mode = str(data.get("mode", "direct")).strip().lower()
         if mode not in ("direct", "graph"):
             raise ValueError('anchor mode must be "direct" or "graph".')
-        n_points = _parse_traj_points_value(data, default=4)
+        if mode == "direct":
+            n_points = _parse_traj_interpolation_value(data, key="n_points", default=0)
+        else:
+            n_points = _parse_traj_points_value(data, default=4)
         max_neighbors = _parse_traj_neighbor_value(
             data, "max_neighbors", default=max(2, n_points)
         )
@@ -619,20 +646,38 @@ def _parse_trajectory_request_body(e: DashboardExperiment, data: dict) -> dict:
     if mode not in ("direct", "nearest"):
         raise ValueError('mode must be "direct" or "nearest".')
 
-    start_xy = data.get("start")
-    end_xy = data.get("end")
-    if (
-        not isinstance(start_xy, list)
-        or len(start_xy) != 2
-        or not isinstance(end_xy, list)
-        or len(end_xy) != 2
-    ):
-        raise ValueError("start and end must be [x, y] coordinate pairs.")
-    try:
-        sx0, sy0 = float(start_xy[0]), float(start_xy[1])
-        ex0, ey0 = float(end_xy[0]), float(end_xy[1])
-    except (TypeError, ValueError) as err:
-        raise ValueError("start/end coordinates must be numeric.") from err
+    raw_traj_xy = data.get("traj_xy")
+    traj_xy_custom = None
+    sx0 = sy0 = ex0 = ey0 = 0.0
+    if isinstance(raw_traj_xy, list) and len(raw_traj_xy) >= 2:
+        pts: list[list[float]] = []
+        for i, p in enumerate(raw_traj_xy[:200]):
+            if not isinstance(p, list) or len(p) != 2:
+                raise ValueError(f"traj_xy[{i}] must be [x, y].")
+            try:
+                px = float(p[0])
+                py = float(p[1])
+            except (TypeError, ValueError) as err:
+                raise ValueError(f"traj_xy[{i}] has non-numeric coordinates.") from err
+            pts.append([px, py])
+        traj_xy_custom = pts
+        sx0, sy0 = pts[0]
+        ex0, ey0 = pts[-1]
+    else:
+        start_xy = data.get("start")
+        end_xy = data.get("end")
+        if (
+            not isinstance(start_xy, list)
+            or len(start_xy) != 2
+            or not isinstance(end_xy, list)
+            or len(end_xy) != 2
+        ):
+            raise ValueError("start and end must be [x, y] coordinate pairs.")
+        try:
+            sx0, sy0 = float(start_xy[0]), float(start_xy[1])
+            ex0, ey0 = float(end_xy[0]), float(end_xy[1])
+        except (TypeError, ValueError) as err:
+            raise ValueError("start/end coordinates must be numeric.") from err
 
     xcol = str(data.get("x", ""))
     ycol = str(data.get("y", ""))
@@ -656,6 +701,7 @@ def _parse_trajectory_request_body(e: DashboardExperiment, data: dict) -> dict:
         "xcol": xcol,
         "ycol": ycol,
         "n_points": n_points,
+        "traj_xy_custom": traj_xy_custom,
     }
 
 
@@ -687,6 +733,20 @@ def _compute_trajectory_latent_path(
     xcol, ycol = p["xcol"], p["ycol"]
     n_points = p["n_points"]
     coords = e.plot_df[[xcol, ycol]].values.astype(np.float64)
+
+    custom_xy = p.get("traj_xy_custom")
+    if custom_xy is not None:
+        pts = np.asarray(custom_xy, dtype=np.float64)
+        traj_rows = []
+        for pt in pts:
+            dists = np.sum((coords - pt) ** 2, axis=1)
+            traj_rows.append(int(np.argmin(dists)))
+        z_traj = e.z[np.asarray(traj_rows, dtype=int)]
+        if mode == "nearest":
+            traj_xy = coords[np.asarray(traj_rows, dtype=int)]
+            return z_traj, traj_rows, traj_xy
+        traj_xy = _round_direct_mode_traj_xy(pts)
+        return z_traj, None, traj_xy
 
     if mode == "direct":
         start_pt = np.array([sx0, sy0])
@@ -761,7 +821,10 @@ def _trajectory_anchor_payload_from_indices(
     mode = str(mode).strip().lower()
     if mode not in ("direct", "graph"):
         mode = "direct"
-    n_points = max(2, min(int(n_points), 20))
+    if mode == "direct":
+        n_points = max(0, min(int(n_points), 20))
+    else:
+        n_points = max(2, min(int(n_points), 20))
     max_neighbors = (
         n_points if max_neighbors is None else max(2, min(int(max_neighbors), 200))
     )
@@ -789,8 +852,43 @@ def _trajectory_anchor_payload_from_indices(
         xcol=xcol,
         ycol=ycol,
     )
+    if "traj_particle_indices" not in payload and mode == "direct":
+        n_total = int(np.asarray(z_traj).shape[0])
+        pidx = _direct_anchor_particle_indices_payload(
+            anchor_indices=anchor_indices,
+            interpolation_points=n_points,
+            n_total=n_total,
+        )
+        if pidx is not None:
+            payload["traj_particle_indices"] = pidx
     payload["anchor_indices"] = anchor_indices
     return payload
+
+
+def _direct_anchor_particle_indices_payload(
+    *, anchor_indices: list[int], interpolation_points: int, n_total: int
+) -> list[int | None] | None:
+    """Return row-aligned particle IDs for direct-anchor trajectories.
+
+    Anchor rows carry particle indices; interpolated rows are ``None``.
+    """
+    if len(anchor_indices) < 2 or n_total <= 0:
+        return None
+    if interpolation_points <= 0:
+        if len(anchor_indices) != n_total:
+            return None
+        return [int(a) for a in anchor_indices]
+    per_seg = int(interpolation_points) + 1
+    expected = (len(anchor_indices) - 1) * per_seg + 1
+    if expected != n_total:
+        return None
+    out: list[int | None] = [None] * n_total
+    out[0] = int(anchor_indices[0])
+    for seg_i in range(1, len(anchor_indices)):
+        row_i = seg_i * per_seg
+        if 0 <= row_i < n_total:
+            out[row_i] = int(anchor_indices[seg_i])
+    return out
 
 
 def _kmeans_centers_ind_path(e: DashboardExperiment) -> str:
@@ -2092,7 +2190,7 @@ def trajectory_creator_page():
 
 
 def api_trajectory_save_zpath():
-    """Write ``z-path.txt`` into the current experiment output folder (full precision)."""
+    """Write z-path text to a server-side path (defaults to ``workdir/z-path.txt``)."""
     e: DashboardExperiment = g.dashboard_exp
     if not explorer_volumes_eligible(e):
         return (
@@ -2106,8 +2204,22 @@ def api_trajectory_save_zpath():
     txt = data.get("z_path_txt")
     if not isinstance(txt, str):
         return jsonify(error="z_path_txt must be a string"), 400
-    out_dir = os.path.abspath(e.workdir)
-    out_path = os.path.join(out_dir, "z-path.txt")
+    raw_out_path = data.get("out_path")
+    if raw_out_path is None or str(raw_out_path).strip() == "":
+        out_path = os.path.join(os.path.abspath(e.workdir), "z-path.txt")
+    else:
+        if not isinstance(raw_out_path, str):
+            return jsonify(error="out_path must be a string path"), 400
+        req_path = raw_out_path.strip()
+        if not req_path:
+            return jsonify(error="out_path must not be empty"), 400
+        if not req_path.lower().endswith(".txt"):
+            req_path = req_path + ".txt"
+        if os.path.isabs(req_path):
+            out_path = os.path.abspath(req_path)
+        else:
+            out_path = os.path.abspath(os.path.join(e.workdir, req_path))
+    out_dir = os.path.dirname(out_path) or os.path.abspath(e.workdir)
     try:
         os.makedirs(out_dir, exist_ok=True)
         with open(out_path, "w", encoding="utf-8") as f:
@@ -2117,8 +2229,41 @@ def api_trajectory_save_zpath():
     return jsonify(ok=True, path=out_path)
 
 
+def api_trajectory_save_volumes():
+    """Save cached trajectory ``.mrc`` files into a chosen server-side folder."""
+    e: DashboardExperiment = g.dashboard_exp
+    if not explorer_volumes_eligible(e):
+        return (
+            jsonify(
+                error="Trajectory creator needs a CUDA GPU, single-particle data, "
+                "and weights for the current epoch.",
+            ),
+            400,
+        )
+    data = request.get_json(force=True, silent=True) or {}
+    token = str(data.get("volume_cache_id", "") or "").strip()
+    out_dir = str(data.get("out_dir", "") or "").strip()
+    if not token:
+        return jsonify(error="Missing volume_cache_id. Generate volumes first."), 400
+    if not out_dir:
+        return jsonify(error="Choose an output folder."), 400
+    try:
+        saved = save_cached_volumes_to_dir(
+            token,
+            out_dir,
+            filename_prefix="trajectory_volume",
+        )
+        return jsonify(
+            ok=True, out_dir=os.path.abspath(out_dir), files=saved, n_saved=len(saved)
+        )
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    except OSError as err:
+        return jsonify(error=str(err)), 500
+
+
 def api_trajectory_import_anchors():
-    """Import anchor indices from a server-side ``.pkl`` path."""
+    """Import anchor indices from a server-side ``.txt`` path."""
     e: DashboardExperiment = g.dashboard_exp
     if not explorer_volumes_eligible(e):
         return (
@@ -2132,8 +2277,8 @@ def api_trajectory_import_anchors():
     server_path = str(data.get("server_path", "") or "").strip()
     if not server_path:
         return jsonify(error="no file path provided"), 400
-    if not server_path.lower().endswith(".pkl"):
-        return jsonify(error="select a .pkl file"), 400
+    if not server_path.lower().endswith(".txt"):
+        return jsonify(error="select a .txt file"), 400
     abs_path = os.path.abspath(server_path)
     if not os.path.isfile(abs_path):
         return jsonify(error="file not found on server"), 400
@@ -2146,12 +2291,15 @@ def api_trajectory_import_anchors():
     except ValueError as err:
         return jsonify(error=str(err)), 400
     mode = str(data.get("mode", "direct") or "direct")
-    n_points = _parse_traj_points_value(data, default=4)
+    if mode.strip().lower() == "direct":
+        n_points = _parse_traj_interpolation_value(data, key="n_points", default=0)
+    else:
+        n_points = _parse_traj_points_value(data, default=4)
     max_neighbors = _parse_traj_neighbor_value(data, "max_neighbors", default=n_points)
     avg_neighbors = _parse_traj_neighbor_value(data, "avg_neighbors", default=n_points)
     try:
         raw = Path(abs_path).read_bytes()
-        anchor_indices = _parse_anchor_indices_pickle(raw)
+        anchor_indices = _parse_anchor_indices_txt(raw)
         return jsonify(
             _trajectory_anchor_payload_from_indices(
                 e,
@@ -2172,7 +2320,7 @@ def api_trajectory_import_anchors():
 
 
 def api_list_server_files():
-    """List directories and ``.pkl`` files for the server-side file browser."""
+    """List directories and ``.txt`` files for the server-side file browser."""
     e: DashboardExperiment = g.dashboard_exp
     req_dir = request.args.get("dir", "").strip()
     root = os.path.abspath(e.workdir)
@@ -2189,7 +2337,7 @@ def api_list_server_files():
             full = os.path.join(browse, name)
             if os.path.isdir(full):
                 entries.append({"name": name, "type": "dir"})
-            elif name.lower().endswith(".pkl"):
+            elif name.lower().endswith(".txt"):
                 entries.append({"name": name, "type": "file"})
     except PermissionError:
         return jsonify(error="permission denied"), 403
@@ -2218,7 +2366,10 @@ def api_trajectory_kmeans_centers():
     except ValueError as err:
         return jsonify(error=str(err)), 400
     mode = str(data.get("mode", "direct") or "direct")
-    n_points = _parse_traj_points_value(data, default=4)
+    if mode.strip().lower() == "direct":
+        n_points = _parse_traj_interpolation_value(data, key="n_points", default=0)
+    else:
+        n_points = _parse_traj_points_value(data, default=4)
     max_neighbors = _parse_traj_neighbor_value(data, "max_neighbors", default=n_points)
     avg_neighbors = _parse_traj_neighbor_value(data, "avg_neighbors", default=n_points)
     try:
@@ -2263,7 +2414,10 @@ def api_trajectory_random_indices():
     except ValueError as err:
         return jsonify(error=str(err)), 400
     mode = str(data.get("mode", "direct") or "direct")
-    n_points = _parse_traj_points_value(data, default=4)
+    if mode.strip().lower() == "direct":
+        n_points = _parse_traj_interpolation_value(data, key="n_points", default=0)
+    else:
+        n_points = _parse_traj_points_value(data, default=4)
     max_neighbors = _parse_traj_neighbor_value(data, "max_neighbors", default=n_points)
     avg_neighbors = _parse_traj_neighbor_value(data, "avg_neighbors", default=n_points)
     try:
@@ -2315,6 +2469,14 @@ def api_trajectory_coords():
             xcol=p["xcol"],
             ycol=p["ycol"],
         )
+        if p.get("use_anchors") and p["mode"] == "direct":
+            pidx = _direct_anchor_particle_indices_payload(
+                anchor_indices=p["anchor_indices"],
+                interpolation_points=p["n_points"],
+                n_total=int(np.asarray(z_traj).shape[0]),
+            )
+            if pidx is not None:
+                payload["traj_particle_indices"] = pidx
         return jsonify(payload)
     except ValueError as err:
         return jsonify(error=str(err)), 400
@@ -2358,6 +2520,14 @@ def api_trajectory_volumes():
             xcol=xcol,
             ycol=ycol,
         )
+        if p.get("use_anchors") and mode == "direct":
+            pidx = _direct_anchor_particle_indices_payload(
+                anchor_indices=p["anchor_indices"],
+                interpolation_points=p["n_points"],
+                n_total=int(np.asarray(z_traj).shape[0]),
+            )
+            if pidx is not None:
+                payload["traj_particle_indices"] = pidx
         payload["images"] = b64s
         payload["volume_cache_id"] = cache_token
         if traj_rows is not None and mode in ("nearest", "graph"):
@@ -2479,6 +2649,11 @@ def create_app(
     app.add_url_rule(
         "/api/trajectory_save_zpath",
         view_func=api_trajectory_save_zpath,
+        methods=["POST"],
+    )
+    app.add_url_rule(
+        "/api/trajectory_save_volumes",
+        view_func=api_trajectory_save_volumes,
         methods=["POST"],
     )
     app.add_url_rule(

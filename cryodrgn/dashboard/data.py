@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
@@ -48,6 +48,9 @@ class DashboardExperiment:
     umap: np.ndarray | None
     pc: np.ndarray
     z: np.ndarray
+    _image_dataset: ImageDataset | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
 
     @property
     def numeric_columns(self) -> list[str]:
@@ -203,8 +206,11 @@ def particle_image_array(exp: DashboardExperiment, row_index: int) -> np.ndarray
     if not exp.can_preview_particles:
         raise RuntimeError("Particle previews are not supported for tilt-series data.")
     g = int(exp.all_indices[int(row_index)])
-    ds = ImageDataset(mrcfile=exp.particles_path, lazy=True, datadir=exp.datadir)
-    img = ds.src.images(g, as_numpy=True)
+    if exp._image_dataset is None:
+        exp._image_dataset = ImageDataset(
+            mrcfile=exp.particles_path, lazy=True, datadir=exp.datadir
+        )
+    img = exp._image_dataset.src.images(g, as_numpy=True)
     if img.ndim == 3:
         img = img[0]
     return np.asarray(img, dtype=np.float32)

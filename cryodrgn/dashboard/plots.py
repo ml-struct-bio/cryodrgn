@@ -161,6 +161,50 @@ def _plotly_to_json(fig: go.Figure) -> str:
     return sj
 
 
+def _labels_colors_and_legend_items(
+    values: pd.Series,
+) -> tuple[list[str], list[dict[str, str]]]:
+    """Point colors and legend items for k-means-style integer labels."""
+    codes_arr, uniques = pd.factorize(values, sort=True)
+    codes = np.asarray(codes_arr, dtype=np.int64)
+    pal = list(analysis._get_chimerax_colors(max(len(uniques), 1)))
+    colors: list[str] = []
+    for code in codes:
+        if int(code) < 0:
+            colors.append("#aab4bf")
+        else:
+            colors.append(pal[int(code) % len(pal)])
+    items: list[dict[str, str]] = []
+    for idx, u in enumerate(uniques):
+        if pd.isna(u):
+            continue
+        items.append(
+            {
+                "label": _lower_legend_entry_label("labels", u),
+                "color": pal[idx % len(pal)],
+            }
+        )
+    if bool(values.isna().any()):
+        items.append({"label": "(missing)", "color": "#aab4bf"})
+    return colors, items
+
+
+def _continuous_series_stats(values: pd.Series) -> tuple[np.ndarray, float, float]:
+    """Return numeric array plus robust (min,max) bounds for continuous colouring."""
+    color_num = cast(pd.Series, pd.to_numeric(values, errors="coerce"))
+    cvals = np.asarray(color_num, dtype=np.float64)
+    cfinite = cvals[np.isfinite(cvals)]
+    if cfinite.size == 0:
+        cmin, cmax = 0.0, 1.0
+    elif np.isclose(cfinite.min(), cfinite.max()):
+        cmin = float(cfinite.min()) - 0.5
+        cmax = float(cfinite.max()) + 0.5
+    else:
+        cmin = float(np.min(cfinite))
+        cmax = float(np.max(cfinite))
+    return cvals, cmin, cmax
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -362,15 +406,7 @@ def scatter_json(
 
     if color_col and color_col != "none" and color_col in sub.columns:
         if color_col == "labels":
-            codes_arr, uniques = pd.factorize(sub[color_col], sort=True)
-            codes = np.asarray(codes_arr, dtype=np.int64)
-            pal = list(analysis._get_chimerax_colors(max(len(uniques), 1)))
-            colors: list[str] = []
-            for code in codes:
-                if int(code) < 0:
-                    colors.append("#aab4bf")
-                else:
-                    colors.append(pal[int(code) % len(pal)])
+            colors, _legend_items = _labels_colors_and_legend_items(sub[color_col])
             marker = dict(
                 size=marker_size,
                 opacity=0.35,
@@ -484,49 +520,19 @@ def scatter3d_z_json(
     legend_meta: dict[str, Any] | None = None
     if color_col and color_col != "none" and color_col in sub.columns:
         if color_col == "labels":
-            codes_arr, uniques = pd.factorize(sub[color_col], sort=True)
-            codes = np.asarray(codes_arr, dtype=np.int64)
-            pal = list(analysis._get_chimerax_colors(max(len(uniques), 1)))
-            colors: list[str] = []
-            for code in codes:
-                if int(code) < 0:
-                    colors.append("#aab4bf")
-                else:
-                    colors.append(pal[int(code) % len(pal)])
+            colors, items = _labels_colors_and_legend_items(sub[color_col])
             marker = dict(
                 size=0.75,
                 opacity=0.4,
                 color=colors,
             )
-            items: list[dict[str, str]] = []
-            for idx, u in enumerate(uniques):
-                if pd.isna(u):
-                    continue
-                items.append(
-                    {
-                        "label": _lower_legend_entry_label(color_col, u),
-                        "color": pal[idx % len(pal)],
-                    }
-                )
-            if bool(sub[color_col].isna().any()):
-                items.append({"label": "(missing)", "color": "#aab4bf"})
             legend_meta = {
                 "type": "discrete",
                 "title": "k-means labels",
                 "items": items,
             }
         else:
-            color_num = cast(pd.Series, pd.to_numeric(sub[color_col], errors="coerce"))
-            cvals = np.asarray(color_num, dtype=np.float64)
-            cfinite = cvals[np.isfinite(cvals)]
-            if cfinite.size == 0:
-                cmin, cmax = 0.0, 1.0
-            elif np.isclose(cfinite.min(), cfinite.max()):
-                cmin = float(cfinite.min()) - 0.5
-                cmax = float(cfinite.max()) + 0.5
-            else:
-                cmin = float(np.min(cfinite))
-                cmax = float(np.max(cfinite))
+            _cvals, cmin, cmax = _continuous_series_stats(sub[color_col])
             marker = dict(
                 size=0.75,
                 opacity=0.4,
@@ -618,15 +624,7 @@ def scatter3d_z_preview_png(
 
         if color_col and color_col != "none" and color_col in sub.columns:
             if color_col == "labels":
-                codes_arr, uniques = pd.factorize(sub[color_col], sort=True)
-                codes = np.asarray(codes_arr, dtype=np.int64)
-                pal = list(analysis._get_chimerax_colors(max(len(uniques), 1)))
-                colors: list[str] = []
-                for code in codes:
-                    if int(code) < 0:
-                        colors.append("#aab4bf")
-                    else:
-                        colors.append(pal[int(code) % len(pal)])
+                colors, _legend_items = _labels_colors_and_legend_items(sub[color_col])
                 ax.scatter(
                     xs,
                     ys,
@@ -638,19 +636,7 @@ def scatter3d_z_preview_png(
                     depthshade=True,
                 )
             else:
-                color_num = cast(
-                    pd.Series, pd.to_numeric(sub[color_col], errors="coerce")
-                )
-                cvals = np.asarray(color_num, dtype=np.float64)
-                cfinite = cvals[np.isfinite(cvals)]
-                if cfinite.size == 0:
-                    cmin, cmax = 0.0, 1.0
-                elif np.isclose(cfinite.min(), cfinite.max()):
-                    cmin = float(cfinite.min()) - 0.5
-                    cmax = float(cfinite.max()) + 0.5
-                else:
-                    cmin = float(np.min(cfinite))
-                    cmax = float(np.max(cfinite))
+                cvals, cmin, cmax = _continuous_series_stats(sub[color_col])
                 norm = mcolors.Normalize(vmin=cmin, vmax=cmax)
                 cmap = plt.get_cmap(mpl_cmap_name)
                 cplot = np.where(np.isfinite(cvals), cvals, 0.5 * (cmin + cmax))

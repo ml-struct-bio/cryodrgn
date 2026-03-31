@@ -84,6 +84,14 @@
   fieldset#particle-sel-fieldset:disabled .cryo-dash-legend-note {
     display: none;
   }
+  #scatter-controls-card {
+    min-width: 0;
+  }
+  #particle-sel-fieldset {
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: clip;
+  }
   .cryo-explorer-save-btns {
     display: flex;
     flex-direction: column;
@@ -154,6 +162,126 @@
     min-width: 0;
     line-height: 1.35;
   }
+  #save-status {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    min-height: 1.2em;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+  .cryo-traj-file-browser-panel {
+    width: 100%;
+    box-sizing: border-box;
+    margin-top: 0.55rem;
+  }
+  .cryo-traj-file-browser-panel[hidden] {
+    display: none !important;
+  }
+  .cryo-file-browser {
+    border: 1px solid rgba(36, 59, 83, 0.15);
+    border-radius: 4px;
+    background: #fff;
+    max-height: 14rem;
+    display: flex;
+    flex-direction: column;
+    font-size: 0.72rem;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .cryo-file-browser-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.3rem 0.4rem;
+    border-bottom: 1px solid rgba(36, 59, 83, 0.10);
+    background: rgba(36, 59, 83, 0.04);
+    flex-shrink: 0;
+  }
+  .cryo-file-browser-bar button {
+    background: none;
+    border: 1px solid rgba(36, 59, 83, 0.18);
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 0.72rem;
+    padding: 0.15rem 0.4rem;
+    color: #243b53;
+    flex-shrink: 0;
+  }
+  .cryo-file-browser-bar button:hover {
+    background: rgba(36, 59, 83, 0.08);
+  }
+  .cryo-file-browser-path {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    direction: rtl;
+    text-align: left;
+    color: rgba(36, 59, 83, 0.6);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.65rem;
+  }
+  .cryo-file-browser-list {
+    overflow-y: auto;
+    flex: 1;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .cryo-file-browser-list li {
+    padding: 0.22rem 0.45rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    border-bottom: 1px solid rgba(36, 59, 83, 0.04);
+  }
+  .cryo-file-browser-list li:hover {
+    background: rgba(36, 59, 83, 0.06);
+  }
+  .cryo-file-browser-list .fb-icon {
+    flex-shrink: 0;
+    width: 1rem;
+    text-align: center;
+    opacity: 0.5;
+  }
+  .cryo-file-browser-list .fb-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cryo-file-browser-empty {
+    padding: 0.6rem 0.45rem;
+    color: rgba(36, 59, 83, 0.45);
+    text-align: center;
+    font-style: italic;
+  }
+  .cryo-file-browser-save-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.3rem;
+    align-items: center;
+    padding: 0.35rem 0.4rem;
+    border-top: 1px solid rgba(36, 59, 83, 0.10);
+    background: rgba(36, 59, 83, 0.03);
+  }
+  .cryo-file-browser-save-input {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    font-size: 0.72rem;
+    padding: 0.2rem 0.35rem;
+    border: 1px solid rgba(36, 59, 83, 0.22);
+    border-radius: 3px;
+    font-family: "IBM Plex Mono", monospace;
+  }
+  .cryo-file-browser-save-row .btn {
+    font-size: 0.72rem;
+    padding: 0.2rem 0.45rem;
+    white-space: nowrap;
+  }
   .cryo-volume-status-row {
     display: flex;
     align-items: center;
@@ -210,7 +338,7 @@
     <div class="cryo-dash-top" style="margin-bottom:0.25rem;">
       <a href="/">← Back</a>
     </div>
-    <p class="cryo-dash-lead">Choose axes and optional color to explore particles in 2D latent space, then select points to inspect images or generate volumes.</p>
+    <p class="cryo-dash-lead">Choose covariates for plot axes and point coloring. Use lasso selection to create a particle filtering index; generate images and volumes with or without a selection using the interface on the right.</p>
     <div class="card cryo-dash-controls" id="scatter-controls-card">
       <fieldset>
         <legend>Choose axes</legend>
@@ -238,6 +366,27 @@
         </label>
         <p id="save-status" class="status" style="margin:0.35rem 0 0;font-size:0.88rem;"></p>
       </fieldset>
+    </div>
+    <div id="sel-file-browser-panel" class="cryo-traj-file-browser-panel" hidden aria-hidden="true">
+      <div class="cryo-file-browser">
+        <div class="cryo-file-browser-bar">
+          <button type="button" id="sel-fb-up" title="Parent directory">&#8593; Up</button>
+          <span class="cryo-file-browser-path" id="sel-fb-path"></span>
+          <button type="button" id="sel-fb-cancel">Cancel</button>
+        </div>
+        <ul class="cryo-file-browser-list" id="sel-fb-list"></ul>
+        <div class="cryo-file-browser-save-row">
+          <input
+            id="sel-fb-save-name"
+            class="cryo-file-browser-save-input"
+            type="text"
+            value="indices.pkl"
+            spellcheck="false"
+            aria-label="Selection filename"
+          />
+          <button type="button" id="sel-fb-save-btn" class="btn btn-secondary">Save here</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -609,6 +758,7 @@
   fillSelect(sc, true);
   sx.value = cols.indexOf(dx) >= 0 ? dx : cols[0];
   sy.value = cols.indexOf(dy) >= 0 ? dy : cols[Math.min(1, cols.length - 1)];
+  var renderedScatterAxes = {x: sx.value, y: sy.value};
 
   var gd = document.getElementById("scatter");
   function syncScatterControlsAlignment() {
@@ -671,6 +821,16 @@
   var scatterLoadGeneration = 0;
   var pendingScatterAfterPlot = null;
   var highlightTraceAdded = false;
+  var suppressSelectionEvents = false;
+
+  var selFileBrowserPanel = document.getElementById("sel-file-browser-panel");
+  var selFbList = document.getElementById("sel-fb-list");
+  var selFbPath = document.getElementById("sel-fb-path");
+  var selFbUp = document.getElementById("sel-fb-up");
+  var selFbCancel = document.getElementById("sel-fb-cancel");
+  var selFbSaveName = document.getElementById("sel-fb-save-name");
+  var selFbSaveBtn = document.getElementById("sel-fb-save-btn");
+  var selFbCurrentDir = null;
 
   function plotHasScatterData() {
     return !!(gd && gd.data && gd.data[0] && gd.data[0].customdata && gd.data[0].customdata.length);
@@ -1360,6 +1520,33 @@
     }
   }
 
+  function applySavedSelectionToCurrentTrace() {
+    if (!gd || !gd.data || !gd.data[0] || !gd.data[0].customdata) return;
+    var rows = saveSelectionRows && saveSelectionRows.length ? saveSelectionRows : [];
+    if (!rows.length) {
+      try { Plotly.restyle(gd, { selectedpoints: [null] }, [0]); } catch (err) {}
+      lassoSelectedRowSet = null;
+      return;
+    }
+    var rowSet = new Set(rows);
+    var cd = gd.data[0].customdata;
+    var selected = [];
+    for (var i = 0; i < cd.length; i++) {
+      var row = cd[i] && cd[i].length > 1 ? cd[i][1] : null;
+      if (rowSet.has(row)) selected.push(i);
+    }
+    try {
+      Plotly.restyle(gd, { selectedpoints: [selected] }, [0]);
+    } catch (err) {
+      console.error(err);
+    }
+    lassoSelectedRowSet = new Set();
+    for (var si = 0; si < selected.length; si++) {
+      var r = cd[selected[si]][1];
+      lassoSelectedRowSet.add(r);
+    }
+  }
+
   /* ---------- highlight trace ---------- */
   function ensureHighlightTrace() {
     if (highlightTraceAdded) return;
@@ -1379,6 +1566,11 @@
   /* ---------- scatter load ---------- */
   function loadPlot(axesChanged) {
     var gen = ++scatterLoadGeneration;
+    var preservedDragMode = (
+      gd && gd.layout && gd.layout.dragmode
+    ) ? String(gd.layout.dragmode) : "";
+    var hasActiveSelection = !!(saveSelectionRows && saveSelectionRows.length);
+    suppressSelectionEvents = true;
     highlightTraceAdded = false;
     cancelLassoSelectionDebounce();
     cancelPendingHighlightRestyle();
@@ -1391,6 +1583,7 @@
       if (!overlay || !overlay.classList.contains("cryo-plot-rendering-overlay--show")) return;
       cancelPendingScatterAfterPlot();
       setRendering(false);
+      suppressSelectionEvents = false;
       if (plotStatus) plotStatus.textContent = "Plot took too long — try a hard refresh.";
     }, SCATTER_PLOT_TIMEOUT_MS);
     var x = sx.value, y = sy.value, c = sc.value;
@@ -1417,6 +1610,15 @@
           .then(function(fig) {
             fig.layout.title = "";
             fig.layout.margin = Object.assign(fig.layout.margin || {}, {t: 16});
+            var nextDragMode = preservedDragMode;
+            if (hasActiveSelection) {
+              if (nextDragMode !== "lasso" && nextDragMode !== "select") {
+                nextDragMode = "select";
+              }
+            }
+            if (nextDragMode) {
+              fig.layout.dragmode = nextDragMode;
+            }
             var axFont = {size: 15, family: "Barlow, sans-serif", color: "#243b53"};
             fig.layout.xaxis = Object.assign(fig.layout.xaxis || {}, {title: {text: x, font: axFont}});
             fig.layout.yaxis = Object.assign(fig.layout.yaxis || {}, {title: {text: y, font: axFont}});
@@ -1426,6 +1628,8 @@
               if (gen !== scatterLoadGeneration) return;
               cancelPendingScatterAfterPlot();
               wireUpPlotlyEvents();
+              suppressSelectionEvents = true;
+              renderedScatterAxes = {x: x, y: y};
               clearScatterPlotWatchdog();
               setRendering(false);
               buildTraceMap();
@@ -1436,6 +1640,7 @@
                 applyPreselectedTraceIndices();
                 preselectRowsForNextFetch = [];
               }
+              applySavedSelectionToCurrentTrace();
               if (imagesViewEnabled && preloaded && preloaded.traceMap) {
                 if (lassoSelectedRowSet && lassoSelectedRowSet.size) {
                   activePool = preloaded.traceMap.filter(function(item) {
@@ -1469,6 +1674,7 @@
               requestAnimationFrame(function() {
                 try { Plotly.Plots.resize(gd); } catch (e) {}
               });
+              setTimeout(function() { suppressSelectionEvents = false; }, 0);
             }
             var opts = {responsive: true};
             var p;
@@ -1495,6 +1701,7 @@
             cancelPendingScatterAfterPlot();
             clearScatterPlotWatchdog();
             setRendering(false);
+            suppressSelectionEvents = false;
             if (plotStatus) plotStatus.textContent = e.message || "Could not load scatter.";
           });
       });
@@ -1619,6 +1826,7 @@
     }
 
     gd.on("plotly_selected", function(ev) {
+      if (suppressSelectionEvents) return;
       var snap = snapshotSelectedPoints(ev);
       var rowsSnap = snapshotRowsFromPoints(ev);
       cancelLassoSelectionDebounce();
@@ -1632,6 +1840,7 @@
       }, LASSO_SELECTION_DEBOUNCE_MS);
     });
     gd.on("plotly_deselect", function() {
+      if (suppressSelectionEvents) return;
       cancelLassoSelectionDebounce();
       saveSelectionRows = [];
       updateParticleSelFieldset();
@@ -1654,7 +1863,7 @@
   }
 
   function triggerRedraw(preserveSelectionAndMontage) {
-    var axesChanged = sx.value !== preloadedAxes.x || sy.value !== preloadedAxes.y;
+    var axesChanged = sx.value !== renderedScatterAxes.x || sy.value !== renderedScatterAxes.y;
     var keepState = !!preserveSelectionAndMontage && !axesChanged;
     if (keepState) {
       /* Re-apply selection highlight after color-only redraw (keep URI size bounded). */
@@ -1690,23 +1899,100 @@
     return el && el.checked;
   }
 
-  function promptSelectionBasename() {
-    var raw = window.prompt(
-      "Base name for the selection file (no .pkl extension). Saved under:\n" + workdirForSaveHint,
-      "indices"
-    );
-    if (raw === null) return null;
-    raw = String(raw).trim().replace(/\.pkl$/i, "");
-    if (!raw) raw = "indices";
-    var base = raw.split(/[/\\]/).pop();
+  function openSelectionFileBrowser(startDir) {
+    if (!selFileBrowserPanel || !selFbList || !selFbPath) return;
+    if (selFbSaveName && !String(selFbSaveName.value || "").trim()) {
+      selFbSaveName.value = "indices.pkl";
+    }
+    selFileBrowserPanel.hidden = false;
+    selFileBrowserPanel.setAttribute("aria-hidden", "false");
+    loadSelectionFileBrowserDir(startDir || "");
+  }
+
+  function closeSelectionFileBrowser() {
+    if (!selFileBrowserPanel) return;
+    selFileBrowserPanel.hidden = true;
+    selFileBrowserPanel.setAttribute("aria-hidden", "true");
+    selFbCurrentDir = null;
+  }
+
+  function normalizedSelectionBasename() {
+    var raw = String((selFbSaveName && selFbSaveName.value) || "").trim();
+    if (!raw) raw = "indices.pkl";
+    if (raw.indexOf("/") >= 0 || raw.indexOf("\\") >= 0) return null;
+    if (!/\.pkl$/i.test(raw)) raw += ".pkl";
+    var base = raw.replace(/\.pkl$/i, "");
     return base || "indices";
+  }
+
+  function loadSelectionFileBrowserDir(dir) {
+    if (!selFbList || !selFbPath) return;
+    selFbList.innerHTML = "<li class='cryo-file-browser-empty'>Loading…</li>";
+    var q = dir ? ("?dir=" + encodeURIComponent(dir)) : "";
+    fetch("{{ url_for('api_list_server_files') }}" + q)
+      .then(function(r) { return r.json(); })
+      .then(function(j) {
+        if (!j.ok) {
+          selFbList.innerHTML = "<li class='cryo-file-browser-empty'>" + (j.error || "Error") + "</li>";
+          return;
+        }
+        selFbCurrentDir = j.dir;
+        selFbPath.textContent = j.dir;
+        selFbPath.title = j.dir;
+        selFbList.innerHTML = "";
+        if (!j.entries || !j.entries.length) {
+          selFbList.innerHTML = "<li class='cryo-file-browser-empty'>No entries here</li>";
+          return;
+        }
+        j.entries.forEach(function(ent) {
+          var li = document.createElement("li");
+          var icon = document.createElement("span");
+          icon.className = "fb-icon";
+          icon.textContent = ent.type === "dir" ? "\uD83D\uDCC1" : "\uD83D\uDCC4";
+          var name = document.createElement("span");
+          name.className = "fb-name";
+          name.textContent = ent.name;
+          li.appendChild(icon);
+          li.appendChild(name);
+          if (ent.type === "dir") {
+            li.addEventListener("click", function() {
+              loadSelectionFileBrowserDir(j.dir + "/" + ent.name);
+            });
+          } else {
+            li.addEventListener("click", function() {
+              if (selFbSaveName) selFbSaveName.value = ent.name;
+            });
+          }
+          selFbList.appendChild(li);
+        });
+      })
+      .catch(function() {
+        selFbList.innerHTML = "<li class='cryo-file-browser-empty'>Could not list directory</li>";
+      });
+  }
+
+  function saveSelectionViaBrowser() {
+    var status = document.getElementById("save-status");
+    if (!selFbCurrentDir) {
+      status.textContent = "Choose a destination folder first.";
+      return;
+    }
+    var basename = normalizedSelectionBasename();
+    if (!basename) {
+      status.textContent = "Filename cannot contain path separators.";
+      return;
+    }
+    closeSelectionFileBrowser();
+    postSaveSelection({ force: false, sel_dir: selFbCurrentDir, basename: basename });
   }
 
   function postSaveSelection(payload) {
     var status = document.getElementById("save-status");
     status.textContent = "";
+    status.title = "";
     if (!saveSelectionRows.length) {
       status.textContent = "Select particles on the plot before saving.";
+      status.title = status.textContent;
       return;
     }
     payload.rows = saveSelectionRows;
@@ -1720,6 +2006,7 @@
       .then(function(res) {
         if (!res.ok) {
           status.textContent = res.j.error || "Save failed.";
+          status.title = status.textContent;
           return;
         }
         var msg = "Saved " + res.j.n_selected + " indices to " + res.j.path;
@@ -1727,18 +2014,47 @@
           msg += "; inverse to " + res.j.inverse_path;
         }
         status.textContent = msg + ".";
+        status.title = status.textContent;
       })
-      .catch(function() { status.textContent = "Request failed."; });
+      .catch(function() {
+        status.textContent = "Request failed.";
+        status.title = status.textContent;
+      });
   }
 
   document.getElementById("save-indices-pkl").addEventListener("click", function() {
     postSaveSelection({ force: true, sel_dir: "", basename: "indices" });
   });
   document.getElementById("save-indices-custom").addEventListener("click", function() {
-    var bn = promptSelectionBasename();
-    if (bn === null) return;
-    postSaveSelection({ force: false, sel_dir: "", basename: bn });
+    if (selFbSaveName) selFbSaveName.value = "indices.pkl";
+    openSelectionFileBrowser(workdirForSaveHint || "");
   });
+  if (selFbUp) {
+    selFbUp.addEventListener("click", function() {
+      if (selFbCurrentDir) {
+        var parent = selFbCurrentDir.replace(/\/[^\/]*\/?$/, "") || "/";
+        loadSelectionFileBrowserDir(parent);
+      }
+    });
+  }
+  if (selFbCancel) {
+    selFbCancel.addEventListener("click", function() {
+      closeSelectionFileBrowser();
+    });
+  }
+  if (selFbSaveBtn) {
+    selFbSaveBtn.addEventListener("click", function() {
+      saveSelectionViaBrowser();
+    });
+  }
+  if (selFbSaveName) {
+    selFbSaveName.addEventListener("keydown", function(evt) {
+      if (evt.key === "Enter") {
+        evt.preventDefault();
+        saveSelectionViaBrowser();
+      }
+    });
+  }
 
   [sx, sy].forEach(function(s) {
     s.addEventListener("change", function() { triggerRedraw(false); });

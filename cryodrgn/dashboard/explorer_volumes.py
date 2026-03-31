@@ -197,18 +197,18 @@ def _is_drgnai_config(train_configs: dict) -> bool:
     return "data_norm_mean" in train_configs
 
 
-def _write_mrcs_classic(
+def _decode_z_values_classic(
     exp: DashboardExperiment,
-    rows: list[int],
+    z_values: np.ndarray,
     out_dir: str,
     device: int = 0,
 ) -> None:
+    """Decode arbitrary z-values to ``.mrc`` volumes using classic cryoDRGN."""
     from cryodrgn import analysis
 
     os.makedirs(out_dir, exist_ok=True)
-    zsel = exp.z[np.asarray(rows, dtype=int)]
     zfile = os.path.join(out_dir, "z_values.txt")
-    np.savetxt(zfile, zsel)
+    np.savetxt(zfile, z_values)
     weights = os.path.join(exp.workdir, f"weights.{exp.epoch}.pkl")
     cfg = _config_yaml_path(exp.workdir)
     analysis.gen_volumes(
@@ -222,14 +222,14 @@ def _write_mrcs_classic(
     )
 
 
-def _write_mrcs_drgnai(exp: DashboardExperiment, rows: list[int], out_dir: str) -> None:
+def _drgnai_volume_generator(exp: DashboardExperiment):
+    """Build a DRGN-AI ``VolumeGenerator`` from checkpoint + train config."""
     import torch
 
     from cryodrgn import models_ai as models
     from cryodrgn.analysis_drgnai import VolumeGenerator
     from cryodrgn.lattice import Lattice
 
-    os.makedirs(out_dir, exist_ok=True)
     ckpt_path = os.path.join(exp.workdir, f"weights.{exp.epoch}.pkl")
     try:
         checkpoint = torch.load(ckpt_path, map_location="cpu", weights_only=False)
@@ -264,8 +264,18 @@ def _write_mrcs_drgnai(exp: DashboardExperiment, rows: list[int], out_dir: str) 
         vol_start_index=1,
         apix=1.0,
     )
-    zsel = exp.z[np.asarray(rows, dtype=int)]
-    vg.gen_volumes(out_dir, zsel)
+    return vg
+
+
+def _decode_z_values_drgnai(
+    exp: DashboardExperiment,
+    z_values: np.ndarray,
+    out_dir: str,
+) -> None:
+    """Decode arbitrary z-values to ``.mrc`` volumes using DRGN-AI."""
+    os.makedirs(out_dir, exist_ok=True)
+    vg = _drgnai_volume_generator(exp)
+    vg.gen_volumes(out_dir, z_values)
 
 
 def _sorted_vol_mrc_paths(mrc_dir: str, n_take: int) -> list[str]:
@@ -286,10 +296,11 @@ def _sorted_vol_mrc_paths(mrc_dir: str, n_take: int) -> list[str]:
 def _decode_plot_rows_to_vol_paths(
     exp: DashboardExperiment, rows: list[int], mrc_dir: str
 ) -> list[str]:
+    zsel = exp.z[np.asarray(rows, dtype=int)]
     if _is_drgnai_config(exp.train_configs):
-        _write_mrcs_drgnai(exp, rows, mrc_dir)
+        _decode_z_values_drgnai(exp, zsel, mrc_dir)
     else:
-        _write_mrcs_classic(exp, rows, mrc_dir, device=0)
+        _decode_z_values_classic(exp, zsel, mrc_dir, device=0)
     return _sorted_vol_mrc_paths(mrc_dir, len(rows))
 
 
@@ -386,87 +397,13 @@ def mrc_to_rotating_gif(
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-def _write_z_values_to_mrcs_classic(
-    exp: DashboardExperiment,
-    z_values: np.ndarray,
-    out_dir: str,
-    device: int = 0,
-) -> None:
-    """Decode arbitrary z-values (not tied to specific particles) to .mrc volumes."""
-    from cryodrgn import analysis
-
-    os.makedirs(out_dir, exist_ok=True)
-    zfile = os.path.join(out_dir, "z_values.txt")
-    np.savetxt(zfile, z_values)
-    weights = os.path.join(exp.workdir, f"weights.{exp.epoch}.pkl")
-    cfg = _config_yaml_path(exp.workdir)
-    analysis.gen_volumes(
-        weights,
-        cfg,
-        zfile,
-        out_dir,
-        device=device,
-        Apix=1.0,
-        vol_start_index=1,
-    )
-
-
-def _write_z_values_to_mrcs_drgnai(
-    exp: DashboardExperiment,
-    z_values: np.ndarray,
-    out_dir: str,
-) -> None:
-    import torch
-
-    from cryodrgn import models_ai as models
-    from cryodrgn.analysis_drgnai import VolumeGenerator
-    from cryodrgn.lattice import Lattice
-
-    os.makedirs(out_dir, exist_ok=True)
-    ckpt_path = os.path.join(exp.workdir, f"weights.{exp.epoch}.pkl")
-    try:
-        checkpoint = torch.load(ckpt_path, map_location="cpu", weights_only=False)
-    except TypeError:
-        checkpoint = torch.load(ckpt_path, map_location="cpu")
-    hypervolume_params = checkpoint["hypervolume_params"]
-    hypervolume = models.HyperVolume(**hypervolume_params)
-    hypervolume.load_state_dict(checkpoint["hypervolume_state_dict"])
-    hypervolume.eval()
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    hypervolume.to(device)
-
-    lattice = Lattice(
-        checkpoint["hypervolume_params"]["resolution"],
-        extent=0.5,
-        device=device,
-    )
-    zdim = int(checkpoint["hypervolume_params"]["z_dim"])
-    radius_mask = checkpoint.get("output_mask_radius")
-    tc = exp.train_configs
-    data_norm = (
-        float(tc.get("data_norm_mean", 0.0)),
-        float(tc.get("data_norm_std", 1.0)),
-    )
-    vg = VolumeGenerator(
-        hypervolume,
-        lattice,
-        zdim,
-        invert=False,
-        radius_mask=radius_mask,
-        data_norm=data_norm,
-        vol_start_index=1,
-        apix=1.0,
-    )
-    vg.gen_volumes(out_dir, z_values)
-
-
 def _decode_z_values_to_vol_paths(
     exp: DashboardExperiment, z_values: np.ndarray, mrc_dir: str
 ) -> list[str]:
     if _is_drgnai_config(exp.train_configs):
-        _write_z_values_to_mrcs_drgnai(exp, z_values, mrc_dir)
+        _decode_z_values_drgnai(exp, z_values, mrc_dir)
     else:
-        _write_z_values_to_mrcs_classic(exp, z_values, mrc_dir, device=0)
+        _decode_z_values_classic(exp, z_values, mrc_dir, device=0)
     return _sorted_vol_mrc_paths(mrc_dir, len(z_values))
 
 

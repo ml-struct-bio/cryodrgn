@@ -188,6 +188,12 @@ def _workdir_options(abs_paths: list[str], base_cwd: str) -> list[dict[str, str]
     return out
 
 
+def _request_json_dict() -> dict:
+    """Return request JSON payload as a mapping, defaulting to ``{}``."""
+    data = request.get_json(force=True, silent=True)
+    return data if isinstance(data, dict) else {}
+
+
 def _filter_ui_scatter_max_points() -> int:
     """Max points when ``filter_ui=1`` on ``/api/scatter`` (env ``CRYODRGN_DASHBOARD_FILTER_MAX_POINTS``)."""
     try:
@@ -438,6 +444,28 @@ def _parse_traj_neighbor_value(data: dict, key: str, default: int) -> int:
     except (TypeError, ValueError):
         v = default
     return max(2, min(v, 200))
+
+
+def _trajectory_axes_from_payload(
+    e: DashboardExperiment, data: dict
+) -> tuple[str, str]:
+    xcol = str(data.get("x", "") or "")
+    ycol = str(data.get("y", "") or "")
+    if xcol not in e.plot_df.columns or ycol not in e.plot_df.columns:
+        raise ValueError("bad axis column")
+    _validate_trajectory_plot_axes(e, xcol, ycol)
+    return xcol, ycol
+
+
+def _trajectory_anchor_mode_params(data: dict) -> tuple[str, int, int, int]:
+    mode = str(data.get("mode", "direct") or "direct")
+    if mode.strip().lower() == "direct":
+        n_points = _parse_traj_interpolation_value(data, key="n_points", default=0)
+    else:
+        n_points = _parse_traj_points_value(data, default=4)
+    max_neighbors = _parse_traj_neighbor_value(data, "max_neighbors", default=n_points)
+    avg_neighbors = _parse_traj_neighbor_value(data, "avg_neighbors", default=n_points)
+    return mode, n_points, max_neighbors, avg_neighbors
 
 
 def _compute_direct_anchor_trajectory(
@@ -1432,7 +1460,7 @@ def api_set_epoch():
     wd = _active_workdir(current_app)
     if not wd:
         return jsonify(error="Select an output folder first."), 400
-    data = request.get_json(force=True, silent=True) or {}
+    data = _request_json_dict()
     raw_epoch = data.get("epoch")
     if raw_epoch is None:
         return jsonify(error="Invalid epoch."), 400
@@ -1450,7 +1478,7 @@ def api_set_epoch():
 
 
 def api_set_workdir():
-    data = request.get_json(force=True, silent=True) or {}
+    data = _request_json_dict()
     raw = data.get("workdir")
     candidates = set(current_app.config.get("DASHBOARD_DISCOVERED_WORKDIRS", []))
 
@@ -1525,7 +1553,7 @@ def filter_page_redirect():
 
 def api_save_selection():
     e: DashboardExperiment = g.dashboard_exp
-    data = request.get_json(force=True, silent=True) or {}
+    data = _request_json_dict()
     rows_raw = data.get("rows")
     if not isinstance(rows_raw, list) or len(rows_raw) == 0:
         return jsonify(error="No particles selected."), 400
@@ -1615,7 +1643,7 @@ def api_explorer_volume_media():
             ),
             400,
         )
-    data = request.get_json(force=True, silent=True) or {}
+    data = _request_json_dict()
     rows_raw = data.get("rows")
     if not isinstance(rows_raw, list) or len(rows_raw) == 0:
         return jsonify(error="No montage rows supplied."), 400
@@ -1843,7 +1871,7 @@ def api_preload_images():
     restrict_list: list[int] | None = None
 
     if request.method == "POST":
-        data = request.get_json(force=True, silent=True) or {}
+        data = _request_json_dict()
         xcol = str(data.get("x") or "")
         ycol = str(data.get("y") or "")
         raw_list = data.get("selected_rows")
@@ -1986,37 +2014,46 @@ def pairplot_page():
     )
 
 
-def api_pairplot():
-    e: DashboardExperiment = g.dashboard_exp
-    payload = request.get_json(force=True, silent=True) or {}
+def _parse_pairplot_request(
+    e: DashboardExperiment, payload: dict
+) -> tuple[str, str, str, str]:
     color_col = payload.get("color_col") or payload.get("lower_color_col")
     if not color_col or not isinstance(color_col, str):
-        return jsonify(error="Choose a color covariate."), 400
+        raise ValueError("Choose a color covariate.")
     if color_col not in e.plot_df.columns:
-        return jsonify(error="Invalid color column."), 400
+        raise ValueError("Invalid color column.")
     if color_col in {f"z{i}" for i in range(int(e.z.shape[1]))}:
-        return (
-            jsonify(error="Latent z columns cannot be used as the color covariate."),
-            400,
-        )
+        raise ValueError("Latent z columns cannot be used as the color covariate.")
     raw_diag = payload.get("diagonal_emb")
     if raw_diag is None or (isinstance(raw_diag, str) and raw_diag.strip() == ""):
         diagonal_emb = "umap" if _has_umap_columns(e) else "pc"
     else:
         diagonal_emb = str(raw_diag).lower()
     upper_style = (payload.get("upper_style") or "scatter").lower()
+    if diagonal_emb not in ("pc", "umap"):
+        raise ValueError("diagonal_emb must be pc or umap.")
+    if upper_style not in ("scatter", "hex"):
+        raise ValueError("upper_style must be scatter or hex.")
+    if diagonal_emb == "umap" and not _has_umap_columns(e):
+        raise ValueError("UMAP is not available for this run.")
+    if diagonal_emb == "pc" and not _has_pc_columns(e):
+        raise ValueError("PCA components are not available.")
     raw_palette = payload.get("palette")
     pair_palette = normalize_continuous_palette(
         str(raw_palette) if raw_palette is not None else None,
     )
-    if diagonal_emb not in ("pc", "umap"):
-        return jsonify(error="diagonal_emb must be pc or umap."), 400
-    if upper_style not in ("scatter", "hex"):
-        return jsonify(error="upper_style must be scatter or hex."), 400
-    if diagonal_emb == "umap" and not _has_umap_columns(e):
-        return jsonify(error="UMAP is not available for this run."), 400
-    if diagonal_emb == "pc" and not _has_pc_columns(e):
-        return jsonify(error="PCA components are not available."), 400
+    return color_col, diagonal_emb, upper_style, pair_palette
+
+
+def api_pairplot():
+    e: DashboardExperiment = g.dashboard_exp
+    payload = _request_json_dict()
+    try:
+        color_col, diagonal_emb, upper_style, pair_palette = _parse_pairplot_request(
+            e, payload
+        )
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
     try:
         png, cells = pair_grid_png(
             e,
@@ -2036,36 +2073,16 @@ def api_pairplot():
 
 def api_save_pairplot_png():
     e: DashboardExperiment = g.dashboard_exp
-    payload = request.get_json(force=True, silent=True) or {}
-    color_col = payload.get("color_col") or payload.get("lower_color_col")
-    if not color_col or not isinstance(color_col, str):
-        return jsonify(error="Choose a color covariate."), 400
-    if color_col not in e.plot_df.columns:
-        return jsonify(error="Invalid color column."), 400
-    if color_col in {f"z{i}" for i in range(int(e.z.shape[1]))}:
-        return (
-            jsonify(error="Latent z columns cannot be used as the color covariate."),
-            400,
-        )
-    raw_diag = payload.get("diagonal_emb")
-    if raw_diag is None or (isinstance(raw_diag, str) and raw_diag.strip() == ""):
-        diagonal_emb = "umap" if _has_umap_columns(e) else "pc"
-    else:
-        diagonal_emb = str(raw_diag).lower()
-    upper_style = (payload.get("upper_style") or "scatter").lower()
-    if diagonal_emb not in ("pc", "umap"):
-        return jsonify(error="diagonal_emb must be pc or umap."), 400
-    if upper_style not in ("scatter", "hex"):
-        return jsonify(error="upper_style must be scatter or hex."), 400
-    if diagonal_emb == "umap" and not _has_umap_columns(e):
-        return jsonify(error="UMAP is not available for this run."), 400
-    if diagonal_emb == "pc" and not _has_pc_columns(e):
-        return jsonify(error="PCA components are not available."), 400
-
-    raw_palette_save = payload.get("palette")
-    pair_palette_save = normalize_continuous_palette(
-        str(raw_palette_save) if raw_palette_save is not None else None,
-    )
+    payload = _request_json_dict()
+    try:
+        (
+            color_col,
+            diagonal_emb,
+            upper_style,
+            pair_palette_save,
+        ) = _parse_pairplot_request(e, payload)
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
 
     raw_name = str(payload.get("filename") or "zdim_pairplot.png").strip()
     filename = os.path.basename(raw_name) or "zdim_pairplot.png"
@@ -2200,7 +2217,7 @@ def api_trajectory_save_zpath():
             ),
             400,
         )
-    data = request.get_json(force=True, silent=True) or {}
+    data = _request_json_dict()
     txt = data.get("z_path_txt")
     if not isinstance(txt, str):
         return jsonify(error="z_path_txt must be a string"), 400
@@ -2240,7 +2257,7 @@ def api_trajectory_save_volumes():
             ),
             400,
         )
-    data = request.get_json(force=True, silent=True) or {}
+    data = _request_json_dict()
     token = str(data.get("volume_cache_id", "") or "").strip()
     out_dir = str(data.get("out_dir", "") or "").strip()
     if not token:
@@ -2273,7 +2290,7 @@ def api_trajectory_import_anchors():
             ),
             400,
         )
-    data = request.get_json(force=True, silent=True) or {}
+    data = _request_json_dict()
     server_path = str(data.get("server_path", "") or "").strip()
     if not server_path:
         return jsonify(error="no file path provided"), 400
@@ -2282,21 +2299,11 @@ def api_trajectory_import_anchors():
     abs_path = os.path.abspath(server_path)
     if not os.path.isfile(abs_path):
         return jsonify(error="file not found on server"), 400
-    xcol = str(data.get("x", "") or "")
-    ycol = str(data.get("y", "") or "")
-    if xcol not in e.plot_df.columns or ycol not in e.plot_df.columns:
-        return jsonify(error="bad axis column"), 400
     try:
-        _validate_trajectory_plot_axes(e, xcol, ycol)
+        xcol, ycol = _trajectory_axes_from_payload(e, data)
     except ValueError as err:
         return jsonify(error=str(err)), 400
-    mode = str(data.get("mode", "direct") or "direct")
-    if mode.strip().lower() == "direct":
-        n_points = _parse_traj_interpolation_value(data, key="n_points", default=0)
-    else:
-        n_points = _parse_traj_points_value(data, default=4)
-    max_neighbors = _parse_traj_neighbor_value(data, "max_neighbors", default=n_points)
-    avg_neighbors = _parse_traj_neighbor_value(data, "avg_neighbors", default=n_points)
+    mode, n_points, max_neighbors, avg_neighbors = _trajectory_anchor_mode_params(data)
     try:
         raw = Path(abs_path).read_bytes()
         anchor_indices = _parse_anchor_indices_txt(raw)
@@ -2356,22 +2363,12 @@ def api_trajectory_kmeans_centers():
             ),
             400,
         )
-    data = request.get_json(force=True, silent=True) or {}
-    xcol = str(data.get("x", "") or "")
-    ycol = str(data.get("y", "") or "")
-    if xcol not in e.plot_df.columns or ycol not in e.plot_df.columns:
-        return jsonify(error="bad axis column"), 400
+    data = _request_json_dict()
     try:
-        _validate_trajectory_plot_axes(e, xcol, ycol)
+        xcol, ycol = _trajectory_axes_from_payload(e, data)
     except ValueError as err:
         return jsonify(error=str(err)), 400
-    mode = str(data.get("mode", "direct") or "direct")
-    if mode.strip().lower() == "direct":
-        n_points = _parse_traj_interpolation_value(data, key="n_points", default=0)
-    else:
-        n_points = _parse_traj_points_value(data, default=4)
-    max_neighbors = _parse_traj_neighbor_value(data, "max_neighbors", default=n_points)
-    avg_neighbors = _parse_traj_neighbor_value(data, "avg_neighbors", default=n_points)
+    mode, n_points, max_neighbors, avg_neighbors = _trajectory_anchor_mode_params(data)
     try:
         anchor_indices = _load_kmeans_center_indices(e)
         return jsonify(
@@ -2404,22 +2401,12 @@ def api_trajectory_random_indices():
             ),
             400,
         )
-    data = request.get_json(force=True, silent=True) or {}
-    xcol = str(data.get("x", "") or "")
-    ycol = str(data.get("y", "") or "")
-    if xcol not in e.plot_df.columns or ycol not in e.plot_df.columns:
-        return jsonify(error="bad axis column"), 400
+    data = _request_json_dict()
     try:
-        _validate_trajectory_plot_axes(e, xcol, ycol)
+        xcol, ycol = _trajectory_axes_from_payload(e, data)
     except ValueError as err:
         return jsonify(error=str(err)), 400
-    mode = str(data.get("mode", "direct") or "direct")
-    if mode.strip().lower() == "direct":
-        n_points = _parse_traj_interpolation_value(data, key="n_points", default=0)
-    else:
-        n_points = _parse_traj_points_value(data, default=4)
-    max_neighbors = _parse_traj_neighbor_value(data, "max_neighbors", default=n_points)
-    avg_neighbors = _parse_traj_neighbor_value(data, "avg_neighbors", default=n_points)
+    mode, n_points, max_neighbors, avg_neighbors = _trajectory_anchor_mode_params(data)
     try:
         anchor_indices = _random_dataset_indices(e, 10)
         return jsonify(
@@ -2452,7 +2439,7 @@ def api_trajectory_coords():
             ),
             400,
         )
-    data = request.get_json(force=True, silent=True) or {}
+    data = _request_json_dict()
     try:
         p = _parse_trajectory_request_body(e, data)
     except ValueError as err:
@@ -2495,7 +2482,7 @@ def api_trajectory_volumes():
             ),
             400,
         )
-    data = request.get_json(force=True, silent=True) or {}
+    data = _request_json_dict()
     try:
         p = _parse_trajectory_request_body(e, data)
     except ValueError as err:

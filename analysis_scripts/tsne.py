@@ -18,12 +18,16 @@ def parse_args():
 
 
 def main(args):
-    z = pickle.load(open(args.input, "rb"))
+    with open(args.input, "rb") as f:
+        z = pickle.load(f)
+
     if args.stride:
         z = z[:: args.stride]
     print(z.shape)
     z_embedded = TSNE(n_components=2, perplexity=args.p).fit_transform(z)
-    pickle.dump(z_embedded, open(args.o, "wb"))
+
+    with open(args.o, "wb") as f:
+        pickle.dump(z_embedded, f)
 
 
 if __name__ == "__main__":

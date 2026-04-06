@@ -7,9 +7,17 @@ import pickle
 import numpy as np
 import torch
 from itertools import product
+
 from cryodrgn.source import ImageSource
 from cryodrgn.commands import parse_ctf_star
-from cryodrgn.commands_utils import filter_star, filter_cs, write_cs, write_star
+from cryodrgn.commands_utils import (
+    filter_star,
+    filter_cs,
+    write_cs,
+    write_star,
+    concat_pkls,
+)
+from cryodrgn.utils import save_pkl, load_pkl
 
 
 @pytest.fixture
@@ -41,6 +49,26 @@ def test_read_starfile(particles, datadir):
     assert isinstance(data, torch.Tensor)
     # We have 13 particles in our starfile, of size 30x30 to begin with
     assert data.shape == (13, 30, 30)
+
+
+def test_concat_indices_pkls(tmpdir):
+    """Test that we can concatenate 1-D pickled arrays into a single 1-D array."""
+
+    pkl1 = os.path.join(tmpdir, "pkl1.pkl")
+    pkl2 = os.path.join(tmpdir, "pkl2.pkl")
+    pkl3 = os.path.join(tmpdir, "pkl3.pkl")
+    out_pkl = os.path.join(tmpdir, "concat.pkl")
+    save_pkl(np.array([1, 2, 3]), pkl1)
+    save_pkl(np.array([4, 5, 6]), pkl2)
+    save_pkl(np.array([7, 8, 9]), pkl3)
+
+    parser = argparse.ArgumentParser()
+    concat_pkls.add_args(parser)
+    args = parser.parse_args([pkl1, pkl2, pkl3, "-o", out_pkl])
+    concat_pkls.main(args)
+    concat = load_pkl(out_pkl)
+
+    assert np.allclose(concat, np.array([1, 2, 3, 4, 5, 6, 7, 8, 9]))
 
 
 @pytest.mark.parametrize("particles", ["toy.star", "toy.star-13"], indirect=True)

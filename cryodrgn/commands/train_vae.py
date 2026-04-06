@@ -676,11 +676,11 @@ def main(args: argparse.Namespace) -> None:
     if args.ind is not None:
         logger.info("Filtering image dataset with {}".format(args.ind))
         if args.encode_mode == "tilt":
-            particle_ind = pickle.load(open(args.ind, "rb"))
+            particle_ind = utils.load_pkl(args.ind)
             pt, tp = dataset.TiltSeriesData.parse_particle_tilt(args.particles)
             ind = dataset.TiltSeriesData.particles_to_tilts(pt, particle_ind)
         else:
-            ind = pickle.load(open(args.ind, "rb"))
+            ind = utils.load_pkl(args.ind)
     else:
         ind = None
 

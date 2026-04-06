@@ -1,7 +1,6 @@
 """Train an autodecoder"""
 import argparse
 import os
-import pickle
 import sys
 from datetime import datetime as dt
 import logging
@@ -291,8 +290,7 @@ def save_checkpoint(
 
 def save_z(z, out_z):
     """Save latent variables z as pickle file"""
-    with open(out_z, "wb") as f:
-        pickle.dump(z.data.cpu().numpy(), f)
+    utils.save_pkl(z.data.cpu().numpy(), out_z)
 
 
 def cat_z(coords, z, zdim):
@@ -447,7 +445,7 @@ def main(args: argparse.Namespace) -> None:
     # load the particles
     if args.ind is not None:
         logger.info("Filtering image dataset with {}".format(args.ind))
-        ind = pickle.load(open(args.ind, "rb"))
+        ind = utils.load_pkl(args.ind)
     else:
         ind = None
 

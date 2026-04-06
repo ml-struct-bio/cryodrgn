@@ -570,7 +570,7 @@ def main(args: argparse.Namespace) -> None:
     # load the particles
     if args.ind is not None:
         logger.info("Filtering image dataset with {}".format(args.ind))
-        ind = pickle.load(open(args.ind, "rb"))
+        ind = utils.load_pkl(args.ind)
     else:
         ind = None
 

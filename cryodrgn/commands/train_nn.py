@@ -17,7 +17,6 @@ $ cryodrgn train_nn projections.star --poses angles.pkl --ctf.pkl \
 """
 import argparse
 import os
-import pickle
 import sys
 from datetime import datetime as dt
 import logging
@@ -389,7 +388,7 @@ def main(args: argparse.Namespace) -> None:
     # load the particles
     if args.ind is not None:
         logger.info("Filtering image dataset with {}".format(args.ind))
-        ind = pickle.load(open(args.ind, "rb"))
+        ind = utils.load_pkl(args.ind)
     else:
         ind = None
 

@@ -661,7 +661,7 @@ class ModelTrainer:
                     )
 
                 self.logger.info(f"Filtering dataset with {self.configs.ind}")
-                self.index = pickle.load(open(self.configs.ind, "rb"))
+                self.index = utils.load_pkl(self.configs.ind)
 
         else:
             self.index = None

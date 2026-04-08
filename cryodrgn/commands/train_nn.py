@@ -28,9 +28,9 @@ import torch.nn.functional as F
 try:
     import apex.amp as amp  # type: ignore
 except ImportError:
+    # Apex AMP is optional; if unavailable, fall back to PyTorch AMP without it.
     pass
 
-import cryodrgn
 from cryodrgn import ctf, dataset, models, utils
 from cryodrgn.lattice import Lattice
 from cryodrgn.pose import PoseTracker

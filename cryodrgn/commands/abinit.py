@@ -36,10 +36,10 @@ import warnings
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
-# If we can't import apex amp, we'll just use the default PyTorch AMP
 try:
     import apex.amp as amp  # type: ignore
 except ImportError:
+    # Apex AMP is optional; if unavailable, fall back to PyTorch AMP without it.
     pass
 
 
@@ -166,6 +166,12 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         type=int,
         default=None,
         help="Number of epochs to train for SGD (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--n-imgs-pretrain",
+        type=int,
+        default=10000,
+        help="Number of images to use for pre-training (default: %(default)s).",
     )
     group.add_argument(
         "--pose-only-phase",
@@ -441,14 +447,6 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         type=os.path.abspath,
         help="Path to initial conformations (.pkl). "
         "Conformations are randomly initialized if not set.",
-    )
-
-    # Pretrain
-    parser.add_argument(
-        "--n-imgs-pretrain",
-        type=int,
-        default=10000,
-        help="Number of images to use for pre-training (default: %(default)s).",
     )
 
     group = parser.add_argument_group("Pose search")

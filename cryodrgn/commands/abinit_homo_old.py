@@ -27,6 +27,7 @@ import cryodrgn.config
 try:
     import apex.amp as amp  # type: ignore  # PYR01
 except ImportError:
+    # Apex AMP is optional; if unavailable, fall back to PyTorch AMP without it.
     pass
 
 logger = logging.getLogger(__name__)

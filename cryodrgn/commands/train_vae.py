@@ -34,9 +34,9 @@ import torch.nn.functional as F
 try:
     import apex.amp as amp  # type: ignore  # PYR01
 except ImportError:
+    # Apex AMP is optional; if unavailable, fall back to PyTorch AMP without it.
     pass
 
-import cryodrgn
 from cryodrgn import __version__, ctf, dataset, utils
 from cryodrgn.commands.analyze import main as analyze_main, add_args as add_analyze_args
 from cryodrgn.beta_schedule import get_beta_schedule

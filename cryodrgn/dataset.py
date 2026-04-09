@@ -12,6 +12,7 @@ image data is retrieved during model training using __getitem__, the data is whi
 using these parameters.
 
 """
+
 import numpy as np
 from collections import Counter, OrderedDict
 
@@ -23,9 +24,57 @@ from cryodrgn.source import ImageSource, StarfileSource, parse_star
 from cryodrgn.masking import spherical_window_mask
 
 from torch.utils.data import DataLoader
+from torch.utils.data._utils.collate import default_collate
 from torch.utils.data.sampler import BatchSampler, RandomSampler, SequentialSampler
+from torch.utils.data.distributed import DistributedSampler
 
 logger = logging.getLogger(__name__)
+
+
+def cryodrgn_batch_collate(batch: list) -> object:
+    """Collate list of sample dicts; keys whose values are all None remain None.
+
+    ImageDataset (non-tilt) returns None for ``r_tilt``, ``tilt``, and often
+    ``y_real``; :func:`torch.utils.data.default_collate` cannot stack those.
+
+    Single-image ``__getitem__(int)`` yields ``y`` shaped ``[1, D, D]``; stacking
+    gives ``[B, 1, D, D]``, but batched ``__getitem__(list)`` uses ``[B, D, D]``.
+    Training (e.g. pose search) expects the latter layout, so drop the singleton
+    frequency dimension when present.
+    """
+    elem = batch[0]
+    if not isinstance(elem, dict):
+        return default_collate(batch)
+    out: dict = {}
+    for key in elem.keys():
+        vals = [b[key] for b in batch]
+        if all(v is None for v in vals):
+            out[key] = None
+        else:
+            out[key] = default_collate(vals)
+    for k in ("y", "y_real"):
+        t = out.get(k)
+        if isinstance(t, torch.Tensor) and t.ndim == 4 and t.shape[1] == 1:
+            out[k] = t.squeeze(1)
+    return out
+
+
+def set_dataloader_dist_epoch(data_loader: DataLoader, epoch: int) -> None:
+    """Call ``DistributedSampler.set_epoch`` for loaders built by :func:`make_dataloader`."""
+    bs = getattr(data_loader, "batch_sampler", None)
+    if bs is not None:
+        inner = getattr(bs, "sampler", None)
+        if inner is not None and hasattr(inner, "set_epoch"):
+            inner.set_epoch(epoch)
+            return
+    s = getattr(data_loader, "sampler", None)
+    if s is not None and hasattr(s, "set_epoch"):
+        s.set_epoch(epoch)
+        return
+    if s is not None:
+        inner = getattr(s, "sampler", None)
+        if inner is not None and hasattr(inner, "set_epoch"):
+            inner.set_epoch(epoch)
 
 
 class ImageDataset(torch.utils.data.Dataset):
@@ -450,9 +499,9 @@ class _DataShufflerIterator:
         for i in range(self.batch_capacity):
             chunk, maybe_tilt_indices, chunk_indices = self._get_next_chunk()
             self.buffer[i * self.batch_size : (i + 1) * self.batch_size] = chunk
-            self.index_buffer[
-                i * self.batch_size : (i + 1) * self.batch_size
-            ] = chunk_indices
+            self.index_buffer[i * self.batch_size : (i + 1) * self.batch_size] = (
+                chunk_indices
+            )
             if maybe_tilt_indices is not None:
                 self.tilt_index_buffer[
                     i * self.batch_size : (i + 1) * self.batch_size
@@ -559,23 +608,53 @@ def make_dataloader(
     shuffler_size: int = 0,
     shuffle: bool = True,
     seed: Optional[int] = None,
+    distributed: bool = False,
+    pin_memory: bool = True,
+    prefetch_factor: Optional[int] = None,
 ):
     if shuffler_size > 0 and shuffle:
         assert data.lazy, "Only enable a data shuffler for lazy loading"
+        assert not distributed, "DataShuffler not supported with DDP"
         return DataShuffler(data, batch_size=batch_size, buffer_size=shuffler_size)
     else:
         # see https://github.com/zhonge/cryodrgn/pull/221#discussion_r1120711123
         # for discussion of why we use BatchSampler, etc.
-        if shuffle:
+        if distributed:
+            sampler = DistributedSampler(data, shuffle=shuffle, seed=seed or 0)
+            batch_sampler = BatchSampler(
+                sampler, batch_size=batch_size, drop_last=False
+            )
+        elif shuffle:
             generator = None if seed is None else torch.Generator().manual_seed(seed)
             sampler = RandomSampler(data, generator=generator)
+            batch_sampler = BatchSampler(
+                sampler, batch_size=batch_size, drop_last=False
+            )
         else:
             sampler = SequentialSampler(data)
+            batch_sampler = BatchSampler(
+                sampler, batch_size=batch_size, drop_last=False
+            )
 
-        return DataLoader(
-            data,
+        # Only use pin_memory if data is on CPU (pin_memory only works for CPU tensors)
+        if hasattr(data, "device"):
+            device = data.device
+            if isinstance(device, str):
+                data_on_gpu = device.startswith("cuda")
+            else:
+                data_on_gpu = device.type == "cuda"
+        else:
+            data_on_gpu = False
+        use_pin_memory = pin_memory and torch.cuda.is_available() and not data_on_gpu
+
+        loader_kwargs = dict(
             num_workers=num_workers,
-            sampler=BatchSampler(sampler, batch_size=batch_size, drop_last=False),
-            batch_size=None,
+            batch_sampler=batch_sampler,
+            collate_fn=cryodrgn_batch_collate,
             multiprocessing_context="spawn" if num_workers > 0 else None,
+            pin_memory=use_pin_memory,
         )
+        if num_workers > 0 and prefetch_factor is not None:
+            loader_kwargs["prefetch_factor"] = prefetch_factor
+
+        return DataLoader(data, **loader_kwargs)

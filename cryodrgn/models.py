@@ -8,6 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.parameter import Parameter
 from torch.nn.parallel import DataParallel
+from torch.nn.parallel import DistributedDataParallel as DDP
 from cryodrgn import fft, lie_tools, utils
 import cryodrgn.config
 from cryodrgn.lattice import Lattice
@@ -18,7 +19,7 @@ Norm = Sequence[Any]  # mean, std
 def unparallelize(model: nn.Module) -> nn.Module:
     if isinstance(model, DataParallelDecoder):
         return model.dp.module
-    if isinstance(model, DataParallel):
+    if isinstance(model, (DataParallel, DDP)):
         return model.module
     return model
 
@@ -212,7 +213,7 @@ class DataParallelDecoder(Decoder):
         return module.eval_volume(*args, **kwargs)
 
     def forward(self, *args, **kwargs):
-        return self.dp.module.forward(*args, **kwargs)
+        return self.dp(*args, **kwargs)
 
     def state_dict(self, *args, **kwargs):
         return self.dp.module.state_dict(*args, **kwargs)

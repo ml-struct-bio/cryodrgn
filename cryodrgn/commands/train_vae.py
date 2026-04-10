@@ -29,6 +29,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.nn.parallel import DataParallel
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.nn.functional as F
 
 try:
@@ -256,6 +258,11 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "--multigpu",
         action="store_true",
         help="Parallelize training across all detected GPUs",
+    )
+    parser.add_argument(
+        "--_args-file",
+        type=str,
+        help=argparse.SUPPRESS,
     )
 
     group = parser.add_argument_group("Pose SGD")
@@ -585,6 +592,31 @@ def save_checkpoint(model, optim, epoch, z_mu, z_logvar, out_weights, out_z):
         pickle.dump(z_logvar, f)
 
 
+def setup_ddp():
+    """Initialize distributed training when launched with torchrun."""
+    if "RANK" in os.environ and "WORLD_SIZE" in os.environ:
+        rank = int(os.environ["RANK"])
+        world_size = int(os.environ["WORLD_SIZE"])
+        local_rank = int(os.environ.get("LOCAL_RANK", 0))
+        torch.cuda.set_device(local_rank)
+        init_kwargs = dict(backend="nccl", rank=rank, world_size=world_size)
+        try:
+            dist.init_process_group(**init_kwargs, device_id=torch.device(local_rank))
+        except TypeError:
+            dist.init_process_group(**init_kwargs)
+        return rank, world_size, local_rank
+    return 0, 1, 0
+
+
+def cleanup_ddp():
+    if dist.is_initialized():
+        dist.destroy_process_group()
+
+
+def is_main_process():
+    return not dist.is_initialized() or dist.get_rank() == 0
+
+
 def save_config(args, dataset, lattice, model, out_config):
     dataset_args = dict(
         particles=args.particles,
@@ -631,23 +663,61 @@ def save_config(args, dataset, lattice, model, out_config):
 
 
 def main(args: argparse.Namespace) -> None:
+    # Relaunch under torchrun so each GPU runs one process (DDP).
+    in_distributed_env = "RANK" in os.environ and "WORLD_SIZE" in os.environ
+    if args.multigpu and not in_distributed_env and torch.cuda.device_count() > 1:
+        import subprocess
+        import tempfile
+
+        world_size = torch.cuda.device_count()
+        with tempfile.NamedTemporaryFile(mode="wb", suffix=".pkl", delete=False) as f:
+            pickle.dump(args, f)
+            args_file = f.name
+
+        cmd = [
+            sys.executable,
+            "-m",
+            "torch.distributed.run",
+            "--standalone",
+            f"--nproc_per_node={world_size}",
+            "-m",
+            "cryodrgn.commands.train_vae",
+            "--_args-file",
+            args_file,
+        ]
+        logger.info(f"Relaunching with DDP using {world_size} GPUs...")
+        result = subprocess.run(cmd)
+        os.unlink(args_file)
+        sys.exit(result.returncode)
+
     if args.verbose:
         logger.setLevel(logging.DEBUG)
 
+    rank, world_size, local_rank = 0, 1, 0
+    use_ddp = False
+    if args.multigpu:
+        rank, world_size, local_rank = setup_ddp()
+        use_ddp = world_size > 1
+
     t1 = dt.now()
     if args.outdir is not None and not os.path.exists(args.outdir):
-        os.makedirs(args.outdir)
+        if is_main_process():
+            os.makedirs(args.outdir)
+        if use_ddp:
+            dist.barrier()
 
-    logger.addHandler(logging.FileHandler(f"{args.outdir}/run.log"))
+    if is_main_process():
+        logger.addHandler(logging.FileHandler(f"{args.outdir}/run.log"))
 
     if args.load == "latest":
         args.load, load_poses = utils.get_latest_checkpoint(args.outdir)
         if args.do_pose_sgd:
             args.poses = load_poses
 
-    logger.info(" ".join(sys.argv))
-    logger.info(f"cryoDRGN {__version__}")
-    logger.info(args)
+    if is_main_process():
+        logger.info(" ".join(sys.argv))
+        logger.info(f"cryoDRGN {__version__}")
+        logger.info(args)
 
     # set the random seed
     np.random.seed(args.seed)
@@ -655,9 +725,15 @@ def main(args: argparse.Namespace) -> None:
 
     # set the device
     use_cuda = torch.cuda.is_available()
-    device_str = "cuda" if use_cuda else "cpu"
-    device = torch.device(device_str)
-    logger.info("Use cuda {}".format(use_cuda))
+    if use_ddp:
+        device = torch.device(f"cuda:{local_rank}")
+    else:
+        device_str = "cuda" if use_cuda else "cpu"
+        device = torch.device(device_str)
+    if is_main_process():
+        logger.info("Use cuda {}".format(use_cuda))
+        if use_ddp:
+            logger.info(f"Using DDP with {world_size} GPUs")
     if not use_cuda:
         logger.warning("WARNING: No GPUs detected")
 
@@ -800,26 +876,30 @@ def main(args: argparse.Namespace) -> None:
         tilt_params=tilt_params,
     )
     model.to(device)
-    logger.info(model)
-    logger.info(
-        "{} parameters in model".format(
-            sum(p.numel() for p in model.parameters() if p.requires_grad)
+    if is_main_process():
+        logger.info(model)
+        logger.info(
+            "{} parameters in model".format(
+                sum(p.numel() for p in model.parameters() if p.requires_grad)
+            )
         )
-    )
-    logger.info(
-        "{} parameters in encoder".format(
-            sum(p.numel() for p in model.encoder.parameters() if p.requires_grad)
+        logger.info(
+            "{} parameters in encoder".format(
+                sum(p.numel() for p in model.encoder.parameters() if p.requires_grad)
+            )
         )
-    )
-    logger.info(
-        "{} parameters in decoder".format(
-            sum(p.numel() for p in model.decoder.parameters() if p.requires_grad)
+        logger.info(
+            "{} parameters in decoder".format(
+                sum(p.numel() for p in model.decoder.parameters() if p.requires_grad)
+            )
         )
-    )
 
     # save configuration
     out_config = "{}/config.yaml".format(args.outdir)
-    save_config(args, data, lattice, model, out_config)
+    if is_main_process():
+        save_config(args, data, lattice, model, out_config)
+    if use_ddp:
+        dist.barrier()
 
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
@@ -886,7 +966,23 @@ def main(args: argparse.Namespace) -> None:
 
     # parallelize
     num_workers = args.num_workers
-    if args.multigpu and torch.cuda.device_count() > 1:
+    if use_ddp:
+        if is_main_process():
+            logger.info(f"Using DDP with {world_size} GPUs!")
+            logger.info(f"Batch size per GPU: {args.batch_size}")
+            logger.info(f"Effective batch size: {args.batch_size * world_size}")
+        # Debug: all ranks must agree on parameter tensors before DDP verify (see LOG.md nw8 / 6670897).
+        _pc = sum(1 for _ in model.parameters())
+        _pel = sum(p.numel() for p in model.parameters())
+        print(
+            f"[train_vae DDP pre-wrap] rank={dist.get_rank()}/{world_size} "
+            f"local_rank={local_rank} param_tensors={_pc} numel={_pel}",
+            file=sys.stderr,
+            flush=True,
+        )
+        dist.barrier()
+        model = DDP(model, device_ids=[local_rank], output_device=local_rank)
+    elif args.multigpu and torch.cuda.device_count() > 1:
         logger.info(f"Using {torch.cuda.device_count()} GPUs!")
         args.batch_size *= torch.cuda.device_count()
         logger.info(f"Increasing batch size to {args.batch_size}")
@@ -908,10 +1004,14 @@ def main(args: argparse.Namespace) -> None:
         num_workers=num_workers,
         shuffler_size=args.shuffler_size,
         seed=args.shuffle_seed,
+        distributed=use_ddp,
+        prefetch_factor=2 if num_workers > 0 else None,
     )
 
     Nparticles = Nimg if args.encode_mode != "tilt" else data.Np
     for epoch in range(start_epoch, args.num_epochs + 1):
+        if use_ddp:
+            dataset.set_dataloader_dist_epoch(data_generator, epoch)
         t2 = dt.now()
         gen_loss_accum = 0
         loss_accum = 0
@@ -922,7 +1022,13 @@ def main(args: argparse.Namespace) -> None:
             y = minibatch["y"].to(device)
             B = len(ind)
             batch_it += B
-            global_it = Nparticles * (epoch - 1) + batch_it
+            if use_ddp:
+                _bt = torch.tensor([batch_it], device=device, dtype=torch.long)
+                dist.all_reduce(_bt, op=dist.ReduceOp.SUM)
+                global_batch_it = int(_bt.item())
+            else:
+                global_batch_it = batch_it
+            global_it = Nparticles * (epoch - 1) + global_batch_it
 
             beta = beta_schedule(global_it)
 
@@ -973,13 +1079,17 @@ def main(args: argparse.Namespace) -> None:
             kld_accum += kld * B
             loss_accum += loss * B
 
-            if batch_it % args.log_interval < args.batch_size:
+            if (
+                is_main_process()
+                and global_batch_it % args.log_interval
+                < args.batch_size * max(world_size, 1)
+            ):
                 logger.info(
                     "# [Train Epoch: {}/{}] [{}/{} particles] gen loss={:.6f}, kld={:.6f}, beta={:.6f}, "
                     "loss={:.6f}".format(
                         epoch,
                         args.num_epochs,
-                        batch_it,
+                        global_batch_it,
                         Nparticles,
                         gen_loss,
                         kld,
@@ -987,17 +1097,25 @@ def main(args: argparse.Namespace) -> None:
                         loss,
                     )
                 )
-        logger.info(
-            "# =====> Epoch: {} Average gen loss = {:.6}, KLD = {:.6f}, total loss = {:.6f}; Finished in {}".format(
-                epoch,
-                gen_loss_accum / Nparticles,
-                kld_accum / Nparticles,
-                loss_accum / Nparticles,
-                dt.now() - t2,
+        if use_ddp:
+            loss_tensor = torch.tensor(
+                [gen_loss_accum, kld_accum, loss_accum], device=device
             )
-        )
+            dist.all_reduce(loss_tensor, op=dist.ReduceOp.SUM)
+            gen_loss_accum, kld_accum, loss_accum = loss_tensor.tolist()
 
-        if args.checkpoint and epoch % args.checkpoint == 0:
+        if is_main_process():
+            logger.info(
+                "# =====> Epoch: {} Average gen loss = {:.6}, KLD = {:.6f}, total loss = {:.6f}; Finished in {}".format(
+                    epoch,
+                    gen_loss_accum / Nparticles,
+                    kld_accum / Nparticles,
+                    loss_accum / Nparticles,
+                    dt.now() - t2,
+                )
+            )
+
+        if args.checkpoint and epoch % args.checkpoint == 0 and is_main_process():
             out_weights = "{}/weights.{}.pkl".format(args.outdir, epoch)
             out_z = "{}/z.{}.pkl".format(args.outdir, epoch)
             model.eval()
@@ -1020,36 +1138,60 @@ def main(args: argparse.Namespace) -> None:
                 out_pose = "{}/pose.{}.pkl".format(args.outdir, epoch)
                 posetracker.save(out_pose)
 
-    logger.info("Training complete")
-    # save model weights, latent encoding, and evaluate the model on 3D lattice
-    out_weights = "{}/weights.pkl".format(args.outdir)
-    out_z = "{}/z.pkl".format(args.outdir)
-    model.eval()
-    with torch.no_grad():
-        z_mu, z_logvar = eval_z(
-            model,
-            lattice,
-            data,
-            args.batch_size,
-            device,
-            posetracker.trans,
-            args.encode_mode == "tilt",
-            ctf_params,
-            args.use_real,
-            shuffler_size=args.shuffler_size,
-            seed=args.shuffle_seed,
-        )
-        save_checkpoint(model, optim, epoch, z_mu, z_logvar, out_weights, out_z)
+        if use_ddp:
+            dist.barrier()
 
-    if args.do_pose_sgd and epoch >= args.pretrain:
-        out_pose = "{}/pose.pkl".format(args.outdir)
-        posetracker.save(out_pose)
+    if is_main_process():
+        logger.info("Training complete")
+        # save model weights, latent encoding, and evaluate the model on 3D lattice
+        out_weights = "{}/weights.pkl".format(args.outdir)
+        out_z = "{}/z.pkl".format(args.outdir)
+        model.eval()
+        with torch.no_grad():
+            z_mu, z_logvar = eval_z(
+                model,
+                lattice,
+                data,
+                args.batch_size,
+                device,
+                posetracker.trans,
+                args.encode_mode == "tilt",
+                ctf_params,
+                args.use_real,
+                shuffler_size=args.shuffler_size,
+                seed=args.shuffle_seed,
+            )
+            save_checkpoint(model, optim, epoch, z_mu, z_logvar, out_weights, out_z)
 
-    td = dt.now() - t1
-    epoch_avg = td / (args.num_epochs - start_epoch + 1)
-    logger.info(f"Finished in {td} ({epoch_avg} per epoch)")
+        if args.do_pose_sgd and epoch >= args.pretrain:
+            out_pose = "{}/pose.pkl".format(args.outdir)
+            posetracker.save(out_pose)
 
-    if args.do_analysis:
-        anlz_parser = argparse.ArgumentParser()
-        add_analyze_args(anlz_parser)
-        analyze_main(anlz_parser.parse_args([str(args.outdir), str(args.num_epochs)]))
+        td = dt.now() - t1
+        epoch_avg = td / (args.num_epochs - start_epoch + 1)
+        logger.info(f"Finished in {td} ({epoch_avg} per epoch)")
+
+        if args.do_analysis:
+            anlz_parser = argparse.ArgumentParser()
+            add_analyze_args(anlz_parser)
+            analyze_main(
+                anlz_parser.parse_args([str(args.outdir), str(args.num_epochs)])
+            )
+
+    if use_ddp:
+        dist.barrier()
+
+    cleanup_ddp()
+
+
+if __name__ == "__main__":
+    if "--_args-file" in sys.argv:
+        idx = sys.argv.index("--_args-file")
+        args_file = sys.argv[idx + 1]
+        with open(args_file, "rb") as f:
+            args = pickle.load(f)
+    else:
+        parser = argparse.ArgumentParser(description=__doc__)
+        add_args(parser)
+        args = parser.parse_args()
+    main(args)

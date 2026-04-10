@@ -499,9 +499,9 @@ class _DataShufflerIterator:
         for i in range(self.batch_capacity):
             chunk, maybe_tilt_indices, chunk_indices = self._get_next_chunk()
             self.buffer[i * self.batch_size : (i + 1) * self.batch_size] = chunk
-            self.index_buffer[i * self.batch_size : (i + 1) * self.batch_size] = (
-                chunk_indices
-            )
+            self.index_buffer[
+                i * self.batch_size : (i + 1) * self.batch_size
+            ] = chunk_indices
             if maybe_tilt_indices is not None:
                 self.tilt_index_buffer[
                     i * self.batch_size : (i + 1) * self.batch_size

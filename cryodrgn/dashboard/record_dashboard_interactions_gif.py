@@ -1,23 +1,32 @@
 #!/usr/bin/env python3
 """Headless capture: particle explorer (lasso + image cache), 3D latent view, pair-plot covariates.
 
-Uses a uniform ~33 ms frame interval (30 fps). Total GIF duration is capped at **16 s**;
-long segments (image preload, pair-plot re-renders) are trimmed with frame caps and shorter holds.
+Uses a **50 ms** frame interval by default (~20 fps) for a slower, easier-to-follow GIF. Everything is
+written to **one** output GIF (default ``dashboard_interactions_demo.gif``), capped at **30 s** wall
+time. Pair-plot segments wait for the PNG grid to finish, then hold on the finished grid so covariate
+changes read clearly.
 
-**3D plot:** WebGL screenshots are often blank in automated Chromium. Frames for the latent-3D page
-composite a server-rendered matplotlib PNG (``GET /api/latent3d_preview.png``) over the ``#latent3d``
-panel, so the GIF shows the same data as the live Plotly view without needing ``--headed`` / xvfb.
+Before each major interface segment, the recorder shows a short clip on the **launch hub** (hover +
+click the corresponding card) so the transition from hub → tool is visible in the GIF. Hub dwell times
+are scaled by ``HUB_CLIP_TIME_SCALE`` (default 1.5×). While plots and montages load, only every
+``RENDER_POLL_SNAPSHOT_STRIDE``-th poll is kept in the GIF so those segments read faster.
+
+**3D plot:** WebGL screenshots are often blank in automated Chromium. The recorder composites a
+server PNG (``GET /api/latent3d_preview.png``) **inside the ``#latent3d`` plot host** on a full-page
+screenshot, so controls, palette radios, and the right-hand legend column match the real 3D
+visualizer layout while the plotted points stay visible.
 
 Depends on the same setup as ``record_dashboard_demo_gif.py`` (playwright, pillow, chromium).
-
-Optional ``--pairplot-companion`` also writes ``dashboard_interactions_pairplot_after_selection.gif``
-(long holds after covariate changes) as a separate file.
 
 Example::
 
     PYTHONPATH=/path/to/cryodrgn_beta conda run -n cdrgn-4.2.0_py-3.13_beta \\
-        python scripts/record_dashboard_interactions_gif.py \\
+        python -m cryodrgn.dashboard.record_dashboard_interactions_gif \\
         /scratch/.../004_train-vae_1gpu_dim.1024/
+
+Or from the repo root (same entrypoint)::
+
+    python cryodrgn/dashboard/record_dashboard_interactions_gif.py /scratch/.../outdir/
 
 By default the script logs progress and elapsed time for slow steps. Pass ``-q`` / ``--quiet`` for
 minimal output (final ``Wrote …`` lines only, plus errors on stderr).
@@ -40,15 +49,17 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-FRAME_MS_30FPS = 33
-MAX_GIF_WALL_MS = 16_000
-# Companion GIF can run longer — mostly static holds on the finished pairplot PNG.
-COMPANION_MAX_WALL_MS = 20_000
-DEFAULT_PAIRPLOT_COMPANION = (
-    REPO_ROOT
-    / "cryodrgn/dashboard/static/dashboard_interactions_pairplot_after_selection.gif"
-)
+# Repo root: …/cryodrgn/dashboard/this_file.py → parents[2] == checkout containing ``cryodrgn/``.
+REPO_ROOT = Path(__file__).resolve().parents[2]
+FRAME_MS_DEFAULT = 50
+MAX_GIF_WALL_MS = 30_000
+# Pair-plot: sample many frames while the overlay/skeleton is up, then block until PNG is ready.
+PAIRPLOT_SNAP_MAX_STEPS = 150
+PAIRPLOT_WAIT_MS = 300_000
+# Launch hub: scale all dwell times in ``_hub_launch_clip`` (1.5 = 50% longer on card selection).
+HUB_CLIP_TIME_SCALE = 1.5
+# During render polling, keep every Nth screenshot so loading segments read ~N× faster in the GIF.
+RENDER_POLL_SNAPSHOT_STRIDE = 2
 
 _LOG_PREFIX = "[record-dashboard-interactions-gif]"
 
@@ -183,8 +194,9 @@ def _wait_pairplot_ready(page, timeout_ms: float) -> None:
 
 
 def _snap_until_pairplot_ready(buf: FrameBuffer, page, max_steps: int = 120) -> None:
-    for _ in range(max_steps):
-        buf.snap(page)
+    for step in range(max_steps):
+        if step % RENDER_POLL_SNAPSHOT_STRIDE == 0:
+            buf.snap(page)
         if page.evaluate(_pairplot_ready_js()):
             return
         time.sleep(buf.frame_ms / 1000.0)
@@ -222,10 +234,13 @@ def _append_latent3d_composite(
     elev: float = 22.0,
     azim: float = -65.0,
     plot_only: bool = False,
+    locked_query: dict[str, str] | None = None,
 ) -> None:
     from PIL import Image
 
-    params = _latent3d_query_from_dom(page)
+    params = (
+        locked_query if locked_query is not None else _latent3d_query_from_dom(page)
+    )
     if not params:
         buf.snap(page)
         return
@@ -266,7 +281,8 @@ def _append_latent3d_composite(
         buf.pngs.append(page.screenshot(type="png", full_page=False))
         return
     panel = Image.new("RGBA", (bw, bh), (250, 248, 244, 255))
-    scale = min(bw / pw, bh / ph) * 0.97 * max(0.5, zoom)
+    # Slightly inset so the composite reads like the in-page Plotly viewport (not edge-to-edge).
+    scale = min(bw / pw, bh / ph) * 0.94 * max(0.5, zoom)
     nw, nh = max(1, int(pw * scale)), max(1, int(ph * scale))
     pr = preview.resize((nw, nh), Image.Resampling.LANCZOS)
     ox = (bw - nw) // 2 + int(pan_x * bw * 0.14)
@@ -295,6 +311,10 @@ def sleep_snap_composite_3d(
     plot_only: bool = False,
 ) -> None:
     n = max(1, int(round(seconds * 1000 / buf.frame_ms)))
+    # Lock axis / colour / palette for the whole sweep. Re-reading the DOM every frame can
+    # briefly miss a checked palette radio during Plotly refresh, which flips the preview
+    # API default (Viridis) vs the real selection and reads as palette popping in the GIF.
+    locked = _latent3d_query_from_dom(page)
     for i in range(n):
         t = i / max(1, n - 1)
         z = zoom_start + (zoom_end - zoom_start) * t
@@ -314,8 +334,60 @@ def sleep_snap_composite_3d(
             elev=elev,
             azim=azim,
             plot_only=plot_only,
+            locked_query=locked,
         )
         time.sleep(buf.frame_ms / 1000.0)
+
+
+_HUB_CARD_TITLES: dict[str, str] = {
+    "explorer": "Particle explorer",
+    "latent_3d": "3D visualizer",
+    "pairplot": "Pair-plot generator",
+}
+_HUB_DIRECT_PATHS: dict[str, str] = {
+    "explorer": "/explorer",
+    "latent_3d": "/latent-3d",
+    "pairplot": "/pairplot",
+}
+
+
+def _hub_launch_clip(
+    buf: FrameBuffer,
+    page,
+    base: str,
+    interface_key: str,
+    *,
+    log,
+) -> None:
+    """On the dashboard hub: show cards, hover the right interface, click to navigate."""
+    s = HUB_CLIP_TIME_SCALE
+    title = _HUB_CARD_TITLES[interface_key]
+    direct = _HUB_DIRECT_PATHS[interface_key]
+    with _timed_step(
+        log,
+        f"Launch hub: highlight and open “{title}” (~{1.0 * s:.1f}s clip)",
+        slow_note=False,
+    ):
+        page.goto(base + "/", wait_until="domcontentloaded", timeout=120_000)
+        buf.sleep_snap(page, 0.35 * s)
+        link = page.locator("a.landing-card-link").filter(
+            has=page.locator("h2.landing-card-title", has_text=title)
+        )
+        if link.count() == 0:
+            log(
+                f"No active hub link for “{title}” (interface inactive?); navigating to {direct}"
+            )
+            page.goto(base + direct, wait_until="domcontentloaded", timeout=120_000)
+            buf.sleep_snap(page, 0.65 * s)
+            return
+        card = link.first
+        card.scroll_into_view_if_needed()
+        buf.sleep_snap(page, 0.2 * s)
+        card.hover()
+        buf.sleep_snap(page, 0.12 * s)
+        with page.expect_navigation(wait_until="domcontentloaded", timeout=120_000):
+            card.click()
+        buf.sleep_snap(page, 0.33 * s)
 
 
 def _montage_cache_ready_js() -> str:
@@ -335,10 +407,12 @@ def _montage_cache_ready_js() -> str:
 
 def record_sequence(page, base: str, buf: FrameBuffer, *, log) -> None:
     # --- Particle explorer ---
-    with _timed_step(log, "Particle explorer: load page and wait for scatter plot"):
-        page.goto(base + "/explorer", wait_until="domcontentloaded", timeout=120_000)
+    _hub_launch_clip(buf, page, base, "explorer", log=log)
+    with _timed_step(
+        log, "Particle explorer: wait for scatter plot after hub navigation"
+    ):
         _wait_scatter_ready(page, 180_000)
-    buf.sleep_snap(page, 0.55)
+    buf.sleep_snap(page, 0.7)
 
     box = _scatter_plot_box(page)
     if not box:
@@ -370,7 +444,7 @@ def record_sequence(page, base: str, buf: FrameBuffer, *, log) -> None:
             time.sleep(buf.frame_ms / 1000.0)
             buf.snap(page)
         page.mouse.up()
-        buf.sleep_snap(page, 0.55)
+        buf.sleep_snap(page, 0.7)
 
     with _timed_step(
         log,
@@ -379,10 +453,11 @@ def record_sequence(page, base: str, buf: FrameBuffer, *, log) -> None:
     ):
         page.locator("#btn-view-images").click()
         max_preload_frames = 40
-        for _ in range(max_preload_frames):
+        for step in range(max_preload_frames):
             if page.evaluate(_montage_cache_ready_js()):
                 break
-            buf.snap(page)
+            if step % RENDER_POLL_SNAPSHOT_STRIDE == 0:
+                buf.snap(page)
             time.sleep(buf.frame_ms / 1000.0)
         try:
             page.wait_for_function(_montage_cache_ready_js(), timeout=120_000)
@@ -408,25 +483,29 @@ def record_sequence(page, base: str, buf: FrameBuffer, *, log) -> None:
                         turbo.scroll_into_view_if_needed()
                         turbo.click(force=True)
                         _wait_scatter_ready(page, 180_000)
-    buf.sleep_snap(page, 1.35)
+    buf.sleep_snap(page, 1.6)
 
-    # --- 3D visualizer (matplotlib composite over #latent3d; WebGL capture is unreliable) ---
+    # --- 3D visualizer: composite PNG inside #latent3d on full page (matches real chrome + legend) ---
+    _hub_launch_clip(buf, page, base, "latent_3d", log=log)
     with _timed_step(
-        log, "3D latent page: load and wait for Plotly overlay", slow_note=True
+        log, "3D latent page: wait for Plotly overlay after hub navigation"
     ):
-        page.goto(base + "/latent-3d", wait_until="domcontentloaded", timeout=120_000)
         _wait_latent3d_ready(page, 180_000)
-    # Keep this section concise since we now only retain the latter half of the 3D sweep.
+    buf.sleep_snap(page, 0.45)
     sleep_snap_composite_3d(
         buf,
         page,
         base,
-        0.35,
-        elev_start=18.0,
-        elev_end=22.0,
-        azim_start=-80.0,
-        azim_end=-65.0,
-        plot_only=True,
+        0.65,
+        zoom_start=1.0,
+        zoom_end=1.02,
+        pan_start=(0.0, 0.0),
+        pan_end=(0.04, 0.02),
+        elev_start=20.0,
+        elev_end=24.0,
+        azim_start=-72.0,
+        azim_end=-62.0,
+        plot_only=False,
     )
 
     with _timed_step(
@@ -445,12 +524,16 @@ def record_sequence(page, base: str, buf: FrameBuffer, *, log) -> None:
         buf,
         page,
         base,
-        0.45,
-        elev_start=22.0,
-        elev_end=30.0,
-        azim_start=-65.0,
-        azim_end=-38.0,
-        plot_only=True,
+        0.75,
+        zoom_start=1.02,
+        zoom_end=1.04,
+        pan_start=(0.04, 0.02),
+        pan_end=(-0.03, 0.05),
+        elev_start=24.0,
+        elev_end=28.0,
+        azim_start=-62.0,
+        azim_end=-48.0,
+        plot_only=False,
     )
 
     with _timed_step(log, "3D: Plasma palette and wait for redraw", slow_note=True):
@@ -463,116 +546,90 @@ def record_sequence(page, base: str, buf: FrameBuffer, *, log) -> None:
         buf,
         page,
         base,
-        0.35,
-        elev_start=30.0,
-        elev_end=28.0,
-        azim_start=-38.0,
-        azim_end=-22.0,
-        plot_only=True,
+        0.65,
+        zoom_start=1.04,
+        zoom_end=1.06,
+        pan_start=(-0.03, 0.05),
+        pan_end=(0.02, -0.02),
+        elev_start=28.0,
+        elev_end=26.0,
+        azim_start=-48.0,
+        azim_end=-35.0,
+        plot_only=False,
     )
 
     with _timed_step(
         log,
-        "3D: capture plot-only frames (many server PNG composites — slow)",
+        "3D: in-page orbit + gentle zoom (server PNG in plot host — slow)",
         slow_note=True,
     ):
         sleep_snap_composite_3d(
             buf,
             page,
             base,
-            2.4,
-            zoom_start=1.2,
-            zoom_end=1.42,
-            pan_start=(0.28, 0.16),
-            pan_end=(-0.12, 0.26),
-            elev_start=14.0,
-            elev_end=34.0,
-            azim_start=42.0,
-            azim_end=88.0,
-            plot_only=True,
+            3.2,
+            zoom_start=1.06,
+            zoom_end=1.14,
+            pan_start=(0.02, -0.02),
+            pan_end=(-0.06, 0.08),
+            elev_start=24.0,
+            elev_end=18.0,
+            azim_start=-35.0,
+            azim_end=28.0,
+            plot_only=False,
         )
         sleep_snap_composite_3d(
             buf,
             page,
             base,
-            1.0,
-            zoom_start=1.42,
-            zoom_end=1.5,
-            elev_start=34.0,
-            elev_end=30.0,
-            azim_start=88.0,
-            azim_end=96.0,
-            plot_only=True,
+            1.35,
+            zoom_start=1.14,
+            zoom_end=1.12,
+            pan_start=(-0.06, 0.08),
+            pan_end=(0.0, 0.03),
+            elev_start=18.0,
+            elev_end=22.0,
+            azim_start=28.0,
+            azim_end=42.0,
+            plot_only=False,
         )
 
+    _hub_launch_clip(buf, page, base, "pairplot", log=log)
     with _timed_step(
-        log, "Pair plot: load page and wait for initial PNG", slow_note=True
+        log,
+        "Pair plot: initial grid render to completion (sample frames + wait)",
+        slow_note=True,
     ):
-        page.goto(base + "/pairplot", wait_until="domcontentloaded", timeout=120_000)
-        _wait_pairplot_ready(page, 180_000)
-    buf.sleep_snap(page, 0.45)
+        _snap_until_pairplot_ready(buf, page, max_steps=PAIRPLOT_SNAP_MAX_STEPS)
+        _wait_pairplot_ready(page, PAIRPLOT_WAIT_MS)
+    buf.sleep_snap(page, 2.0)
 
     radios = page.locator('input[name="color_cov"]')
     rc = radios.count()
     if rc >= 2:
         with _timed_step(
             log,
-            "Pair plot: first covariate change and wait for PNG",
+            "Pair plot: first covariate change — render to completion",
             slow_note=True,
         ):
             r = radios.nth(min(1, rc - 1))
             r.scroll_into_view_if_needed()
             r.click(force=True)
-            _snap_until_pairplot_ready(buf, page, max_steps=22)
-            _wait_pairplot_ready(page, 120_000)
-        buf.sleep_snap(page, 1.05)
+            _snap_until_pairplot_ready(buf, page, max_steps=PAIRPLOT_SNAP_MAX_STEPS)
+            _wait_pairplot_ready(page, PAIRPLOT_WAIT_MS)
+        buf.sleep_snap(page, 2.35)
 
     if rc >= 3:
         with _timed_step(
             log,
-            "Pair plot: second covariate change and wait for PNG",
+            "Pair plot: second covariate change — render to completion",
             slow_note=True,
         ):
             r2 = radios.nth(min(2, rc - 1))
             r2.scroll_into_view_if_needed()
             r2.click(force=True)
-            _snap_until_pairplot_ready(buf, page, max_steps=22)
-            _wait_pairplot_ready(page, 120_000)
-        buf.sleep_snap(page, 1.25)
-
-
-def record_pairplot_after_selection_sequence(
-    page, base: str, buf: FrameBuffer, *, log
-) -> None:
-    """Pair-plot only: covariate radio ``selection`` → wait for PNG → long hold on finished grid."""
-    with _timed_step(log, "Companion: pair plot load + initial PNG", slow_note=True):
-        page.goto(base + "/pairplot", wait_until="domcontentloaded", timeout=120_000)
-        _wait_pairplot_ready(page, 180_000)
-    buf.sleep_snap(page, 0.55)
-
-    radios = page.locator('input[name="color_cov"]')
-    rc = radios.count()
-    if rc >= 2:
-        with _timed_step(
-            log,
-            "Companion: pair plot covariate 1 + long hold segment",
-            slow_note=True,
-        ):
-            r = radios.nth(1)
-            r.scroll_into_view_if_needed()
-            r.click(force=True)
-            _snap_until_pairplot_ready(buf, page, max_steps=120)
-        buf.sleep_snap(page, 2.35)
-    if rc >= 3:
-        with _timed_step(
-            log,
-            "Companion: pair plot covariate 2 + long hold segment",
-            slow_note=True,
-        ):
-            r2 = radios.nth(2)
-            r2.scroll_into_view_if_needed()
-            r2.click(force=True)
-            _snap_until_pairplot_ready(buf, page, max_steps=120)
+            _snap_until_pairplot_ready(buf, page, max_steps=PAIRPLOT_SNAP_MAX_STEPS)
+            _wait_pairplot_ready(page, PAIRPLOT_WAIT_MS)
         buf.sleep_snap(page, 3.85)
     elif rc < 2:
         buf.snap(page)
@@ -586,7 +643,7 @@ def _save_buf_to_gif(
     max_width: int,
     max_wall_ms: int,
     log,
-    label: str,
+    label: str = "GIF",
 ) -> tuple[int, float]:
     from PIL import Image
 
@@ -640,8 +697,8 @@ def main() -> int:
     parser.add_argument(
         "--frame-ms",
         type=int,
-        default=FRAME_MS_30FPS,
-        help="Frame duration (33 ≈ 30 fps)",
+        default=FRAME_MS_DEFAULT,
+        help=f"Frame duration in ms (default {FRAME_MS_DEFAULT} ≈ 20 fps)",
     )
     parser.add_argument(
         "--max-width",
@@ -653,17 +710,6 @@ def main() -> int:
         "--headed",
         action="store_true",
         help="Run Chromium with a visible window (optional; 3D GIF frames use server PNG composite, not WebGL)",
-    )
-    parser.add_argument(
-        "--pairplot-companion",
-        action="store_true",
-        help="Also write dashboard_interactions_pairplot_after_selection.gif (long holds, separate file)",
-    )
-    parser.add_argument(
-        "--pairplot-companion-output",
-        type=Path,
-        default=DEFAULT_PAIRPLOT_COMPANION,
-        help="Output path for the pair-plot-after-selection companion GIF",
     )
     parser.add_argument(
         "-q",
@@ -742,28 +788,11 @@ def main() -> int:
             )
             page = context.new_page()
             with _timed_step(
-                log, "Main capture sequence (explorer → 3D → pair plot)", slow_note=True
+                log,
+                "Full capture (explorer → 3D → pair plot, single GIF)",
+                slow_note=True,
             ):
                 record_sequence(page, base, buf, log=log)
-            if args.pairplot_companion:
-                buf_pf = FrameBuffer(args.frame_ms)
-                with _timed_step(log, "Companion pair-plot sequence", slow_note=True):
-                    record_pairplot_after_selection_sequence(
-                        page, base, buf_pf, log=log
-                    )
-                nf, wall_s_pf = _save_buf_to_gif(
-                    buf_pf,
-                    args.pairplot_companion_output,
-                    frame_ms=args.frame_ms,
-                    max_width=args.max_width,
-                    max_wall_ms=COMPANION_MAX_WALL_MS,
-                    log=log,
-                    label="companion",
-                )
-                print(
-                    f"Wrote {args.pairplot_companion_output} ({nf} frames × {args.frame_ms} ms "
-                    f"≈ {wall_s_pf:.2f} s @ {1000/args.frame_ms:.0f} fps)"
-                )
             browser.close()
 
         if not buf.pngs:
@@ -776,7 +805,6 @@ def main() -> int:
             max_width=args.max_width,
             max_wall_ms=MAX_GIF_WALL_MS,
             log=log,
-            label="main",
         )
         print(
             f"Wrote {args.output} ({nf} frames × {args.frame_ms} ms ≈ {wall_s:.2f} s @ {1000/args.frame_ms:.0f} fps)"

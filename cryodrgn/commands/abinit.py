@@ -36,12 +36,6 @@ import warnings
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
-try:
-    import apex.amp as amp  # type: ignore
-except ImportError:
-    # Apex AMP is optional; if unavailable, fall back to PyTorch AMP without it.
-    pass
-
 
 def add_args(parser: argparse.ArgumentParser) -> None:
     """The command-line arguments for use with the command `cryodrgn abinit`."""
@@ -1043,8 +1037,9 @@ class ModelTrainer:
         self.norm_mean, self.norm_std = self.data.norm
 
         # Activating Automatic Mixed Precision (AMP) model training through `torch.amp`
-        self.scaler = None
         if self.configs.amp:
+            self.logger.info("Using Automatic Mixed Precision training via torch.amp")
+
             if self.configs.pose_table_optimizer_type == "lbfgs":
                 raise ValueError("AMP is not compatible with the lbfgs optimizer!")
             if (self.data.D - 1) % 8 != 0:
@@ -1078,17 +1073,9 @@ class ModelTrainer:
                     f"{self.configs.hypervolume_dim=} is not a multiple of 8!"
                 )
 
-            try:
-                self.scaler = amp.initialize(self.scaler, opt_level="O1")
-            except:  # noqa: E722
-                self.scaler = torch.cuda.amp.GradScaler()
-                self.logger.info(
-                    "Using Automatic Mixed Precision training via torch.amp"
-                )
-            else:
-                self.logger.info(
-                    "Using Automatic Mixed Precision training via apex.amp"
-                )
+            self.scaler = torch.cuda.amp.GradScaler()
+        else:
+            self.scaler = None
 
     def train(self):
         self.logger.info("--- Training Starts Now ---")

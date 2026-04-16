@@ -9,12 +9,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-try:
-    import apex.amp as amp  # type: ignore
-except ImportError:
-    # Apex AMP is optional; if unavailable, fall back to PyTorch AMP without it.
-    pass
-
 import cryodrgn.config
 from cryodrgn import ctf, dataset, models, utils
 from cryodrgn.lattice import Lattice
@@ -347,18 +341,14 @@ def train(
     else:
         loss = run_model(y)
 
-    if use_amp:
-        if scaler is not None:  # torch mixed precision
-            scaler.scale(loss).backward()
-            scaler.step(optim)
-            scaler.update()
-        else:  # apex.amp mixed precision
-            with amp.scale_loss(loss, optim) as scaled_loss:
-                scaled_loss.backward()
-            optim.step()
+    if use_amp and scaler is not None:
+        scaler.scale(loss).backward()
+        scaler.step(optim)
+        scaler.update()
     else:
         loss.backward()
         optim.step()
+
     return loss.item()
 
 
@@ -551,7 +541,6 @@ def main(args: argparse.Namespace) -> None:
     save_config(args, data, lattice, model, out_config)
 
     # Mixed precision training with AMP
-    scaler = None
     if args.amp:
         if args.batch_size % 8 != 0:
             logger.warning(
@@ -571,12 +560,9 @@ def main(args: argparse.Namespace) -> None:
                 f"and thus not optimal for AMP training!"
             )
 
-        # mixed precision with apex.amp
-        try:
-            model, optim = amp.initialize(model, optim, opt_level="O1")
-        # Mixed precision with pytorch (v1.6+)
-        except:  # noqa: E722
-            scaler = torch.cuda.amp.GradScaler()
+        scaler = torch.cuda.amp.GradScaler()
+    else:
+        scaler = None
 
     # parallelize
     if args.multigpu and torch.cuda.device_count() > 1:

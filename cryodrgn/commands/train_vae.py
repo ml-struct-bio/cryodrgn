@@ -31,12 +31,6 @@ import torch.nn as nn
 from torch.nn.parallel import DataParallel
 import torch.nn.functional as F
 
-try:
-    import apex.amp as amp  # type: ignore  # PYR01
-except ImportError:
-    # Apex AMP is optional; if unavailable, fall back to PyTorch AMP without it.
-    pass
-
 from cryodrgn import __version__, ctf, dataset, utils
 from cryodrgn.commands.analyze import main as analyze_main, add_args as add_analyze_args
 from cryodrgn.beta_schedule import get_beta_schedule
@@ -410,15 +404,10 @@ def train_batch(
             dose_filters,
         )
 
-    if use_amp:
-        if scaler is not None:  # torch mixed precision
-            scaler.scale(loss).backward()
-            scaler.step(optim)
-            scaler.update()
-        else:  # apex.amp mixed precision
-            with amp.scale_loss(loss, optim) as scaled_loss:
-                scaled_loss.backward()
-            optim.step()
+    if use_amp and scaler is not None:
+        scaler.scale(loss).backward()
+        scaler.step(optim)
+        scaler.update()
     else:
         loss.backward()
         optim.step()
@@ -824,7 +813,6 @@ def main(args: argparse.Namespace) -> None:
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
     # Mixed precision training
-    scaler = None
     if args.amp:
         if args.batch_size % 8 != 0:
             logger.warning(
@@ -861,12 +849,9 @@ def main(args: argparse.Namespace) -> None:
                 "-- AMP training speedup is not optimized!"
             )
 
-        # mixed precision with apex.amp
-        try:
-            model, optim = amp.initialize(model, optim, opt_level="O1")
-        # mixed precision with pytorch (v1.6+)
-        except:  # noqa: E722
-            scaler = torch.cuda.amp.GradScaler()
+        scaler = torch.cuda.amp.GradScaler()
+    else:
+        scaler = None
 
     # restart from checkpoint
     if args.load:

@@ -35,12 +35,6 @@ from cryodrgn.losses import EquivarianceLoss
 from cryodrgn.models import HetOnlyVAE, unparallelize
 from cryodrgn.pose_search import PoseSearch
 
-try:
-    import apex.amp as amp  # type: ignore  # PYR01
-except ImportError:
-    # Apex AMP is optional; if unavailable, fall back to PyTorch AMP without it.
-    pass
-
 logger = logging.getLogger(__name__)
 
 
@@ -580,15 +574,10 @@ def train(
         if loss is not None and eq_loss is not None:
             loss += lamb * eq_loss
 
-    if use_amp:
-        if scaler is not None:
-            scaler.scale(loss).backward()
-            scaler.step(optim)
-            scaler.update()
-        else:  # apex.amp mixed precision
-            with amp.scale_loss(loss, optim) as scaled_loss:
-                scaled_loss.backward()
-            optim.step()
+    if use_amp and scaler is not None:
+        scaler.scale(loss).backward()
+        scaler.step(optim)
+        scaler.update()
     else:
         loss.backward()
         optim.step()
@@ -871,7 +860,6 @@ def main(args):
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
     # Mixed precision training
-    scaler = None
     if args.amp:
         if args.batch_size % 8 != 0:
             logger.warning(
@@ -908,12 +896,9 @@ def main(args):
                 "-- AMP training speedup is not optimized!"
             )
 
-        # mixed precision with apex.amp
-        try:
-            model, optim = amp.initialize(model, optim, opt_level="O1")
-        # mixed precision with pytorch (v1.6+)
-        except:  # noqa: E722
-            scaler = torch.cuda.amp.GradScaler()
+        scaler = torch.cuda.amp.GradScaler()
+    else:
+        scaler = None
 
     sorted_poses = []
     if args.load:

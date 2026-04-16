@@ -142,8 +142,10 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     group.add_argument(
         "--num-workers",
         type=int,
-        default=0,
-        help="Number of subprocesses to use as DataLoader workers. If 0, then use the main process for data loading. (default: %(default)s)",
+        default=None,
+        help="Number of subprocesses to use as DataLoader workers. "
+        "Default behavior is to use main process for data loading in eager mode, "
+        "and two processes in lazy mode.",
     )
     group.add_argument(
         "--max-threads",
@@ -870,7 +872,20 @@ def main(args: argparse.Namespace) -> None:
         start_epoch = 1
 
     # parallelize
-    num_workers = args.num_workers
+    if args.num_workers is not None:
+        num_workers = int(args.num_workers)
+    else:
+        if args.lazy:
+            num_workers = 2
+        else:
+            num_workers = 0
+
+    logger.info(f"Using {num_workers} workers for data loading")
+    cpu_count = os.cpu_count() or 1
+    if num_workers > cpu_count:
+        logger.warning(f"Reducing workers to {cpu_count} cpus")
+        num_workers = cpu_count
+
     if args.multigpu and torch.cuda.device_count() > 1:
         logger.info(f"Using {torch.cuda.device_count()} GPUs!")
         args.batch_size *= torch.cuda.device_count()
@@ -880,11 +895,6 @@ def main(args: argparse.Namespace) -> None:
         logger.warning(
             f"WARNING: --multigpu selected, but {torch.cuda.device_count()} GPUs detected"
         )
-
-    cpu_count = os.cpu_count() or 1
-    if num_workers > cpu_count:
-        logger.warning(f"Reducing workers to {cpu_count} cpus")
-        num_workers = cpu_count
 
     # training loop
     data_generator = dataset.make_dataloader(

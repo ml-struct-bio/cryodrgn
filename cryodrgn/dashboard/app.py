@@ -675,8 +675,7 @@ def _parse_trajectory_request_body(e: DashboardExperiment, data: dict) -> dict:
         raise ValueError('mode must be "direct" or "nearest".')
 
     raw_traj_xy = data.get("traj_xy")
-    traj_xy_custom = None
-    sx0 = sy0 = ex0 = ey0 = 0.0
+    traj_xy_custom = sx0 = sy0 = ex0 = ey0 = None
     if isinstance(raw_traj_xy, list) and len(raw_traj_xy) >= 2:
         pts: list[list[float]] = []
         for i, p in enumerate(raw_traj_xy[:200]):

@@ -22,6 +22,44 @@ from threading import Timer
 logger = logging.getLogger(__name__)
 
 
+def _configure_dashboard_logging(verbosity: int) -> None:
+    """Configure dashboard-related logger levels from ``-v`` count.
+
+    Levels:
+    - 0 (default): quiet; suppress werkzeug internal/request chatter.
+    - 1 (``-v``): dashboard info logs.
+    - 2 (``-vv``): dashboard debug logs.
+    - 3+ (``-vvv``): include werkzeug debug logs.
+    """
+
+    verbosity = max(0, int(verbosity or 0))
+    if verbosity <= 0:
+        dashboard_level = logging.WARNING
+        web_level = logging.WARNING
+    elif verbosity == 1:
+        dashboard_level = logging.INFO
+        web_level = logging.WARNING
+    elif verbosity == 2:
+        dashboard_level = logging.DEBUG
+        web_level = logging.INFO
+    else:
+        dashboard_level = logging.DEBUG
+        web_level = logging.DEBUG
+
+    root = logging.getLogger()
+    if not root.handlers:
+        logging.basicConfig(
+            level=min(dashboard_level, web_level),
+            format="%(levelname)s:%(name)s:%(message)s",
+        )
+
+    logging.getLogger("cryodrgn.dashboard").setLevel(dashboard_level)
+    logging.getLogger(__name__).setLevel(dashboard_level)
+    # Default suppression target requested by user.
+    logging.getLogger("werkzeug").setLevel(web_level)
+    logging.getLogger("werkzeug._internal").setLevel(web_level)
+
+
 def add_args(parser: argparse.ArgumentParser) -> None:
     import os
 
@@ -123,10 +161,22 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Flask debug mode (reloads; not for production)",
     )
+    parser.add_argument(
+        "--verbose",
+        "-v",
+        action="count",
+        default=0,
+        help=(
+            "increase dashboard log verbosity (repeat: -v info, -vv debug, "
+            "-vvv includes werkzeug internals)"
+        ),
+    )
 
 
 def main(args: argparse.Namespace) -> None:
     import os
+
+    _configure_dashboard_logging(args.verbose)
 
     if args.filter_max_points is not None:
         os.environ["CRYODRGN_DASHBOARD_FILTER_MAX_POINTS"] = str(args.filter_max_points)

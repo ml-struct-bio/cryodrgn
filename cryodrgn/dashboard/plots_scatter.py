@@ -802,14 +802,21 @@ def scatter3d_z_preview_png(
     *,
     plot_df: pd.DataFrame | None = None,
     continuous_palette: str | None = None,
+    show_colorbar: bool = True,
+    stable_size: bool = False,
     dpi: int = 100,
     elev: float = 22.0,
     azim: float = -65.0,
 ) -> bytes:
     """Matplotlib 3D scatter PNG using the same rules as ``scatter3d_z_json``.
 
-    Used for dashboard GIF capture where headless browsers often fail
-    to composite WebGL.
+    Used for dashboard GIF capture where headless browsers often fail to composite WebGL.
+    Set ``show_colorbar=False`` for a plot-only frame (e.g. GIF) so the PNG matches a clipped
+    3-D viewport without a colour bar.
+    Set ``stable_size=True`` to disable ``bbox_inches="tight"`` so the PNG dimensions are
+    deterministic across calls (``elev``/``azim`` change tick-label extents, which otherwise
+    jitters the output size by a pixel or two — visible as flicker along the plot edges when
+    composited frame-by-frame).
     """
     plotly_cs = normalize_continuous_palette(continuous_palette)
     mpl_cmap_name = mpl_cmap_for_palette(plotly_cs)
@@ -855,7 +862,8 @@ def scatter3d_z_preview_png(
                     linewidths=0,
                     depthshade=True,
                 )
-                fig.colorbar(m, ax=ax, shrink=0.5, pad=0.12, label=color_col)
+                if show_colorbar:
+                    fig.colorbar(m, ax=ax, shrink=0.5, pad=0.12, label=color_col)
         else:
             ax.scatter(
                 xs,
@@ -875,13 +883,14 @@ def scatter3d_z_preview_png(
         ax.view_init(elev=float(elev), azim=float(azim))
         fig.tight_layout(pad=0.6)
         buf = io.BytesIO()
-        fig.savefig(
-            buf,
-            format="png",
-            dpi=dpi,
-            facecolor=_DASHBOARD_CREAM,
-            bbox_inches="tight",
-        )
+        savefig_kwargs: dict = {
+            "format": "png",
+            "dpi": dpi,
+            "facecolor": _DASHBOARD_CREAM,
+        }
+        if not stable_size:
+            savefig_kwargs["bbox_inches"] = "tight"
+        fig.savefig(buf, **savefig_kwargs)
         plt.close(fig)
 
     return buf.getvalue()

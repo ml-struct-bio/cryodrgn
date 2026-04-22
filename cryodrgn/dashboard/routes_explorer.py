@@ -799,7 +799,14 @@ def api_scatter3d_z_landscape_full():
 
 
 def api_latent3d_preview_png():
-    """PNG snapshot of the 3D latent scatter (matplotlib)."""
+    """PNG snapshot of the 3D latent scatter (matplotlib).
+
+    Same data rules as ``api_scatter3d_z``. Query ``colorbar=0`` (or ``false`` /
+    ``no`` / ``off``) omits the continuous colour bar (useful for GIF capture).
+    Query ``stable_size=1`` disables the ``bbox_inches="tight"`` auto-crop so the
+    PNG dimensions are deterministic across different ``elev``/``azim`` values —
+    avoids ~1 px frame-to-frame jitter when compositing a camera sweep.
+    """
     e: DashboardExperiment = g.dashboard_exp
     xcol = request.args.get("x", "z0")
     ycol = request.args.get("y", "z1")
@@ -812,6 +819,10 @@ def api_latent3d_preview_png():
         return jsonify(error="elev/azim must be numeric"), 400
     if ccol != "none" and ccol not in e.plot_df.columns:
         return jsonify(error="bad color column"), 400
+    cb_raw = (request.args.get("colorbar") or "1").strip().lower()
+    show_colorbar = cb_raw not in ("0", "false", "no", "off")
+    ss_raw = (request.args.get("stable_size") or "0").strip().lower()
+    stable_size = ss_raw in ("1", "true", "yes", "on")
     try:
         png = scatter3d_z_preview_png(
             e,
@@ -820,6 +831,8 @@ def api_latent3d_preview_png():
             zcol,
             None if ccol == "none" else ccol,
             continuous_palette=request.args.get("palette"),
+            show_colorbar=show_colorbar,
+            stable_size=stable_size,
             elev=elev,
             azim=azim,
         )

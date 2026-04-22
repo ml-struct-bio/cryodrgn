@@ -11,6 +11,7 @@ $ cryodrgn dashboard 00_trainvae --epoch 30 --port 8080
 $ cryodrgn dashboard 00_trainvae --image-viewer
 $ cryodrgn dashboard 00_trainvae --particle --filter-max 10000
 """
+
 from __future__ import annotations
 
 import argparse
@@ -133,25 +134,21 @@ def main(args: argparse.Namespace) -> None:
     outdir = args.outdir
     command_builder_only = outdir is None
 
-    if command_builder_only and (
-        args.particle_selection
-        or args.pair_grid
-        or args.three_dimensional
-        or args.trajectory_creator
-    ):
-        raise ValueError(
-            "Dashboard views that require experiment data need an output directory. "
-            "Use `cryodrgn dashboard <outdir>` for explorer/pair-grid/3D/trajectory."
-        )
-    _VIEW_PATHS = {
+    view_paths = {
         "particle_selection": "/explorer",
         "pair_grid": "/pairplot",
         "three_dimensional": "/latent-3d",
         "command_builder": "/command-builder",
         "trajectory_creator": "/trajectory",
     }
+    experiment_views = set(view_paths) - {"command_builder"}
+    if command_builder_only and any(getattr(args, f, False) for f in experiment_views):
+        raise ValueError(
+            "Dashboard views that require experiment data need an output directory. "
+            "Use `cryodrgn dashboard <outdir>` for explorer/pair-grid/3D/trajectory."
+        )
     initial_path = next(
-        (p for flag, p in _VIEW_PATHS.items() if getattr(args, flag, False)),
+        (p for flag, p in view_paths.items() if getattr(args, flag, False)),
         "/",
     )
 

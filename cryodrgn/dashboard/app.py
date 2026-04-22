@@ -417,33 +417,32 @@ def _compute_trajectory_from_anchor_indices(
     return z_traj, rows, traj_xy
 
 
-def _parse_traj_points_value(data: dict, default: int = 4) -> int:
-    raw_n = data.get("n_points", default)
+def _parse_int_from_dict(
+    data: dict, key: str, *, default: int, lo: int, hi: int
+) -> int:
+    """Coerce ``data[key]`` to an int; clamp to ``[lo, hi]``; fall back to ``default``."""
     try:
-        n_points = max(2, min(int(raw_n), 20))
+        v = int(data.get(key, default))
     except (TypeError, ValueError):
-        n_points = default
-    return n_points
+        return default
+    return max(lo, min(v, hi))
+
+
+def _parse_traj_points_value(data: dict, default: int = 4) -> int:
+    """Anchor-count for graph / nearest trajectories (``[2, 20]``)."""
+    return _parse_int_from_dict(data, "n_points", default=default, lo=2, hi=20)
 
 
 def _parse_traj_interpolation_value(
     data: dict, key: str = "n_points", default: int = 4
 ) -> int:
-    raw_n = data.get(key, default)
-    try:
-        n_points = int(raw_n)
-    except (TypeError, ValueError):
-        n_points = default
-    return max(0, min(n_points, 20))
+    """Interpolation-count for direct trajectories (``[0, 20]``)."""
+    return _parse_int_from_dict(data, key, default=default, lo=0, hi=20)
 
 
 def _parse_traj_neighbor_value(data: dict, key: str, default: int) -> int:
-    raw_v = data.get(key, default)
-    try:
-        v = int(raw_v)
-    except (TypeError, ValueError):
-        v = default
-    return max(2, min(v, 200))
+    """Neighbor-count for graph trajectories (``[2, 200]``)."""
+    return _parse_int_from_dict(data, key, default=default, lo=2, hi=200)
 
 
 def _trajectory_axes_from_payload(
@@ -1050,6 +1049,23 @@ def _redirect(endpoint: str):
     return redirect(url_for(endpoint), code=302)
 
 
+_TRAJECTORY_INELIGIBLE_MSG = (
+    "Trajectory creator needs a CUDA GPU, single-particle data, "
+    "and weights for the current epoch."
+)
+_EXPLORER_VOLUMES_INELIGIBLE_MSG = (
+    "Volume explorer needs a CUDA GPU, single-particle data, "
+    "and weights for the current epoch."
+)
+
+
+def _trajectory_eligibility_error(e: DashboardExperiment):
+    """JSON 400 response when the trajectory creator is not available, else ``None``."""
+    if explorer_volumes_eligible(e):
+        return None
+    return jsonify(error=_TRAJECTORY_INELIGIBLE_MSG), 400
+
+
 def _sync_discovery_session_boot() -> None:
     """Drop stale session workdir when restarting ``cryodrgn dashboard`` with CWD discovery.
 
@@ -1425,23 +1441,23 @@ def inject_meta():
 
 
 def inject_meta_command_builder_only():
-    if _active_workdir(current_app) and hasattr(g, "dashboard_exp"):
+    """Template context for the command-builder-only launch mode.
+
+    Falls back to :func:`inject_meta` once a workdir has been selected.
+    """
+    active_wd = _active_workdir(current_app)
+    if active_wd and hasattr(g, "dashboard_exp"):
         return inject_meta()
     discovered_workdirs = current_app.config.get("DASHBOARD_DISCOVERED_WORKDIRS", [])
     discovery_cwd = current_app.config.get("DASHBOARD_DISCOVERY_CWD", os.getcwd())
-    active_wd = _active_workdir(current_app)
-    if active_wd:
-        epochs = _epochs_for_workdir(active_wd)
-        exp_epoch = _resolve_epoch(current_app) if epochs else 0
-    else:
-        epochs = []
-        exp_epoch = 0
+    epochs = _epochs_for_workdir(active_wd) if active_wd else []
+    exp_epoch = _resolve_epoch(current_app) if active_wd and epochs else 0
     return {
         "exp_workdir": "",
         "exp_epoch": exp_epoch,
         "exp_kmeans": -1,
         "filter_plot_inds_default": "",
-        "dashboard_epochs": epochs if epochs else [0],
+        "dashboard_epochs": epochs or [0],
         "cfg_model_type": "cryodrgn",
         "cfg_zdim": "",
         "cfg_train_command": "",
@@ -1635,13 +1651,7 @@ def explorer():
 def api_explorer_volume_media():
     e: DashboardExperiment = g.dashboard_exp
     if not explorer_volumes_eligible(e):
-        return (
-            jsonify(
-                error="Volume explorer needs a CUDA GPU, single-particle data, "
-                "and weights for the current epoch.",
-            ),
-            400,
-        )
+        return jsonify(error=_EXPLORER_VOLUMES_INELIGIBLE_MSG), 400
     data = _request_json_dict()
     rows_raw = data.get("rows")
     if not isinstance(rows_raw, list) or len(rows_raw) == 0:
@@ -2102,9 +2112,6 @@ def api_save_pairplot_png():
             fh.write(png)
     except ValueError as err:
         return jsonify(error=str(err)), 400
-    except OSError as err:
-        logger.exception("save pairplot failed")
-        return jsonify(error=str(err)), 500
     except Exception as err:
         logger.exception("save pairplot failed")
         return jsonify(error=str(err)), 500
@@ -2119,14 +2126,9 @@ def api_default_trajectory_endpoints():
     middle of the mass with endpoints at opposite extents of the occupied region.
     """
     e: DashboardExperiment = g.dashboard_exp
-    if not explorer_volumes_eligible(e):
-        return (
-            jsonify(
-                error="Trajectory creator needs a CUDA GPU, single-particle data, "
-                "and weights for the current epoch.",
-            ),
-            400,
-        )
+    err = _trajectory_eligibility_error(e)
+    if err is not None:
+        return err
     xcol = request.args.get("x", "")
     ycol = request.args.get("y", "")
     if xcol not in e.plot_df.columns or ycol not in e.plot_df.columns:
@@ -2208,14 +2210,9 @@ def trajectory_creator_page():
 def api_trajectory_save_zpath():
     """Write z-path text to a server-side path (defaults to ``workdir/z-path.txt``)."""
     e: DashboardExperiment = g.dashboard_exp
-    if not explorer_volumes_eligible(e):
-        return (
-            jsonify(
-                error="Trajectory creator needs a CUDA GPU, single-particle data, "
-                "and weights for the current epoch.",
-            ),
-            400,
-        )
+    err = _trajectory_eligibility_error(e)
+    if err is not None:
+        return err
     data = _request_json_dict()
     txt = data.get("z_path_txt")
     if not isinstance(txt, str):
@@ -2248,14 +2245,9 @@ def api_trajectory_save_zpath():
 def api_trajectory_save_volumes():
     """Save cached trajectory ``.mrc`` files into a chosen server-side folder."""
     e: DashboardExperiment = g.dashboard_exp
-    if not explorer_volumes_eligible(e):
-        return (
-            jsonify(
-                error="Trajectory creator needs a CUDA GPU, single-particle data, "
-                "and weights for the current epoch.",
-            ),
-            400,
-        )
+    err = _trajectory_eligibility_error(e)
+    if err is not None:
+        return err
     data = _request_json_dict()
     token = str(data.get("volume_cache_id", "") or "").strip()
     out_dir = str(data.get("out_dir", "") or "").strip()
@@ -2281,14 +2273,9 @@ def api_trajectory_save_volumes():
 def api_trajectory_import_anchors():
     """Import anchor indices from a server-side ``.txt`` path."""
     e: DashboardExperiment = g.dashboard_exp
-    if not explorer_volumes_eligible(e):
-        return (
-            jsonify(
-                error="Trajectory creator needs a CUDA GPU, single-particle data, "
-                "and weights for the current epoch.",
-            ),
-            400,
-        )
+    err = _trajectory_eligibility_error(e)
+    if err is not None:
+        return err
     data = _request_json_dict()
     server_path = str(data.get("server_path", "") or "").strip()
     if not server_path:
@@ -2354,14 +2341,9 @@ def api_list_server_files():
 def api_trajectory_kmeans_centers():
     """Load ``kmeansK/centers_ind.txt`` for the current ``analyze.N`` / k-means folder."""
     e: DashboardExperiment = g.dashboard_exp
-    if not explorer_volumes_eligible(e):
-        return (
-            jsonify(
-                error="Trajectory creator needs a CUDA GPU, single-particle data, "
-                "and weights for the current epoch.",
-            ),
-            400,
-        )
+    err = _trajectory_eligibility_error(e)
+    if err is not None:
+        return err
     data = _request_json_dict()
     try:
         xcol, ycol = _trajectory_axes_from_payload(e, data)
@@ -2392,14 +2374,9 @@ def api_trajectory_kmeans_centers():
 def api_trajectory_random_indices():
     """Choose up to 10 random dataset indices (fewer if the stack is smaller)."""
     e: DashboardExperiment = g.dashboard_exp
-    if not explorer_volumes_eligible(e):
-        return (
-            jsonify(
-                error="Trajectory creator needs a CUDA GPU, single-particle data, "
-                "and weights for the current epoch.",
-            ),
-            400,
-        )
+    err = _trajectory_eligibility_error(e)
+    if err is not None:
+        return err
     data = _request_json_dict()
     try:
         xcol, ycol = _trajectory_axes_from_payload(e, data)
@@ -2430,14 +2407,9 @@ def api_trajectory_random_indices():
 def api_trajectory_coords():
     """Latent z along the trajectory line (no ChimeraX / volume decode)."""
     e: DashboardExperiment = g.dashboard_exp
-    if not explorer_volumes_eligible(e):
-        return (
-            jsonify(
-                error="Trajectory creator needs a CUDA GPU, single-particle data, "
-                "and weights for the current epoch.",
-            ),
-            400,
-        )
+    err = _trajectory_eligibility_error(e)
+    if err is not None:
+        return err
     data = _request_json_dict()
     try:
         p = _parse_trajectory_request_body(e, data)
@@ -2473,14 +2445,9 @@ def api_trajectory_coords():
 
 def api_trajectory_volumes():
     e: DashboardExperiment = g.dashboard_exp
-    if not explorer_volumes_eligible(e):
-        return (
-            jsonify(
-                error="Trajectory creator needs a CUDA GPU, single-particle data, "
-                "and weights for the current epoch.",
-            ),
-            400,
-        )
+    err = _trajectory_eligibility_error(e)
+    if err is not None:
+        return err
     data = _request_json_dict()
     try:
         p = _parse_trajectory_request_body(e, data)

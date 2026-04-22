@@ -293,32 +293,10 @@ def _sorted_vol_mrc_paths(mrc_dir: str, n_take: int) -> list[str]:
     return vol_files[:n_take]
 
 
-def _decode_plot_rows_to_vol_paths(
-    exp: DashboardExperiment, rows: list[int], mrc_dir: str
-) -> list[str]:
-    zsel = exp.z[np.asarray(rows, dtype=int)]
-    if _is_drgnai_config(exp.train_configs):
-        _decode_z_values_drgnai(exp, zsel, mrc_dir)
-    else:
-        _decode_z_values_classic(exp, zsel, mrc_dir, device=0)
-    return _sorted_vol_mrc_paths(mrc_dir, len(rows))
-
-
-def mrc_to_static_png(mrc_path: str, out_png: str, dpi: int = 100) -> None:
-    """Single ChimeraX view (default camera after ``volume center``) — no rotation."""
+def _mpl_retrim_png(out_png: str, dpi: int) -> None:
+    """Re-save ``out_png`` with matplotlib (removes ChimeraX border and pads evenly)."""
     import matplotlib.pyplot as plt
 
-    qvol = shlex.quote(mrc_path)
-    qpng = shlex.quote(out_png)
-    chimerax_cmds = [
-        f"open {qvol} name vol000 ",
-        "set bgColor white ",
-        "volume center #1",
-        "volume color cornflowerblue",
-        f"save {qpng} width {dpi * 5} height {dpi * 5} ",
-        "exit",
-    ]
-    run_chimerax_cmds(chimerax_cmds, catch_errors=False)
     fig, ax = plt.subplots(figsize=(5, 5))
     ax.imshow(plt.imread(out_png))
     ax.set_xticks([])
@@ -327,6 +305,31 @@ def mrc_to_static_png(mrc_path: str, out_png: str, dpi: int = 100) -> None:
         s.set_visible(False)
     fig.savefig(out_png, dpi=dpi, bbox_inches="tight", pad_inches=0)
     plt.close(fig)
+
+
+def _chimerax_render_cmds(
+    mrc_path: str, out_png: str, dpi: int, *, vol_name: str, turn_y: float | None
+) -> list[str]:
+    """ChimeraX cmd list rendering a single view (optional Y-axis rotation)."""
+    qvol = shlex.quote(mrc_path)
+    qpng = shlex.quote(out_png)
+    cmds = [
+        f"open {qvol} name {vol_name} ",
+        "set bgColor white ",
+        "volume center #1",
+        "volume color cornflowerblue",
+    ]
+    if turn_y is not None:
+        cmds.append(f"turn y {turn_y} ")
+    cmds += [f"save {qpng} width {dpi * 5} height {dpi * 5} ", "exit"]
+    return cmds
+
+
+def mrc_to_static_png(mrc_path: str, out_png: str, dpi: int = 100) -> None:
+    """Single ChimeraX view (default camera after ``volume center``) — no rotation."""
+    cmds = _chimerax_render_cmds(mrc_path, out_png, dpi, vol_name="vol000", turn_y=None)
+    run_chimerax_cmds(cmds, catch_errors=False)
+    _mpl_retrim_png(out_png, dpi)
 
 
 def mrc_to_rotating_gif(
@@ -339,7 +342,6 @@ def mrc_to_rotating_gif(
 ) -> None:
     """ChimeraX renders each rotation frame; assemble an animated GIF (cf. pipelines/tile.py)."""
     from PIL import Image
-    import matplotlib.pyplot as plt
 
     gif_frames = max(4, int(gif_frames))
     ncpus = max(1, int(ncpus))
@@ -349,27 +351,12 @@ def mrc_to_rotating_gif(
 
         def one_frame(frame_rot: float) -> tuple[float, str]:
             png = os.path.join(tmpdir, f"f{frame_rot:.6f}.png")
-            frame_lbl = f"frame{frame_rot:.4g}"
-            qvol = shlex.quote(mrc_path)
-            qpng = shlex.quote(png)
-            chimerax_cmds = [
-                f"open {qvol} name vol000_{frame_lbl} ",
-                "set bgColor white ",
-                "volume center #1",
-                "volume color cornflowerblue",
-                f"turn y {frame_rot} ",
-                f"save {qpng} width {dpi * 5} height {dpi * 5} ",
-                "exit",
-            ]
-            run_chimerax_cmds(chimerax_cmds, catch_errors=False)
-            fig, ax = plt.subplots(figsize=(5, 5))
-            ax.imshow(plt.imread(png))
-            ax.set_xticks([])
-            ax.set_yticks([])
-            for s in ax.spines.values():
-                s.set_visible(False)
-            fig.savefig(png, dpi=dpi, bbox_inches="tight", pad_inches=0)
-            plt.close(fig)
+            vol_name = f"vol000_frame{frame_rot:.4g}"
+            cmds = _chimerax_render_cmds(
+                mrc_path, png, dpi, vol_name=vol_name, turn_y=float(frame_rot)
+            )
+            run_chimerax_cmds(cmds, catch_errors=False)
+            _mpl_retrim_png(png, dpi)
             return frame_rot, png
 
         try:
@@ -456,7 +443,8 @@ def generate_montage_volume_pngs(
 
     mrc_dir = tempfile.mkdtemp(prefix="cryodrgn_explorer_mrc_")
     try:
-        vol_files = _decode_plot_rows_to_vol_paths(exp, rows, mrc_dir)
+        zsel = exp.z[np.asarray(rows, dtype=int)]
+        vol_files = _decode_z_values_to_vol_paths(exp, zsel, mrc_dir)
         png_bytes_list: list[bytes] = []
         with tempfile.TemporaryDirectory(prefix="cryodrgn_explorer_png_") as png_dir:
             for i, vf in enumerate(vol_files):

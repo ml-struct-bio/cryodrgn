@@ -355,6 +355,137 @@ def _lower_legend_entry_label(lower_color_col: str, u: Any) -> str:
     return str(u)
 
 
+_EDGE_LABEL_COLOR = "#243b53"
+
+
+def _draw_pair_grid_edge_labels(
+    fig: plt.Figure,
+    axes: np.ndarray,
+    *,
+    zdim: int,
+    left_m: float,
+    top_m: float,
+    bottom_m: float,
+    right_axes: float,
+    fontsize: float,
+    edge_gap: float = 0.008,
+) -> None:
+    """Draw ``zdim N`` labels on all four edges of the pair grid."""
+    right_gap = edge_gap * 0.6
+    common = dict(fontsize=fontsize, color=_EDGE_LABEL_COLOR, fontweight="bold")
+    # Top edge (skip col 0 to avoid the diagonal).
+    for j in range(1, zdim):
+        bb = axes[0, j].get_position()
+        fig.text(
+            bb.x0 + bb.width / 2.0,
+            top_m + edge_gap,
+            f"zdim {j + 1}",
+            ha="center",
+            va="bottom",
+            **common,
+        )
+    # Bottom edge (skip the last column to avoid the diagonal).
+    for j in range(zdim - 1):
+        bb = axes[zdim - 1, j].get_position()
+        fig.text(
+            bb.x0 + bb.width / 2.0,
+            bottom_m - edge_gap,
+            f"zdim {j + 1}",
+            ha="center",
+            va="top",
+            **common,
+        )
+    # Right edge (skip the last row to avoid the diagonal).
+    for i in range(zdim - 1):
+        bb = axes[i, zdim - 1].get_position()
+        fig.text(
+            right_axes + right_gap,
+            bb.y0 + bb.height / 2.0,
+            f"zdim {i + 1}",
+            ha="left",
+            va="center",
+            rotation=270,
+            **common,
+        )
+    # Left edge (skip the first row to avoid the diagonal).
+    for i in range(1, zdim):
+        bb = axes[i, 0].get_position()
+        fig.text(
+            left_m - edge_gap,
+            bb.y0 + bb.height / 2.0,
+            f"zdim {i + 1}",
+            ha="right",
+            va="center",
+            rotation=90,
+            **common,
+        )
+
+
+def _draw_pair_grid_diagonal_legends(
+    axes: np.ndarray,
+    *,
+    zdim: int,
+    mpl_cmap: str,
+    diagonal_color_ranges: list[tuple[float, float] | None],
+    label_fontsize: float,
+) -> None:
+    """Inset colour-bar + label in the bottom-left of each diagonal panel."""
+    grad_left, grad_bottom = 0.115, 0.028
+    grad_width, grad_height = 0.24, 0.044
+    side_gap = grad_bottom * 0.5
+    bbox = {
+        "boxstyle": "round,pad=0.16",
+        "facecolor": (250 / 255, 248 / 255, 244 / 255, 0.9),
+        "edgecolor": "none",
+    }
+    for k in range(zdim):
+        ax = axes[k, k]
+        ax.text(
+            grad_left + grad_width / 2.0,
+            0.10,
+            f"zdim {k + 1}",
+            transform=ax.transAxes,
+            fontsize=max(9.6, label_fontsize * 0.864),
+            color=_EDGE_LABEL_COLOR,
+            fontweight="bold",
+            ha="center",
+            va="bottom",
+            clip_on=True,
+            bbox=bbox,
+        )
+        zrange = diagonal_color_ranges[k]
+        if zrange is None:
+            continue
+        zmin, zmax = zrange
+        grad_ax = ax.inset_axes(
+            [grad_left, grad_bottom, grad_width, grad_height],
+            transform=ax.transAxes,
+        )
+        grad = np.linspace(0.0, 1.0, 128, dtype=np.float64).reshape(1, -1)
+        grad_ax.imshow(grad, cmap=mpl_cmap, aspect="auto", origin="lower")
+        grad_ax.set_xticks([])
+        grad_ax.set_yticks([])
+        for spine in grad_ax.spines.values():
+            spine.set_linewidth(0.6)
+            spine.set_color("#6b7c8d")
+        y_mid = grad_bottom + grad_height / 2.0
+        tick_kwargs = dict(
+            transform=ax.transAxes,
+            fontsize=max(8.4, label_fontsize * 0.672),
+            color=_EDGE_LABEL_COLOR,
+            va="center",
+            clip_on=True,
+        )
+        ax.text(grad_left - side_gap, y_mid, f"{zmin:.2g}", ha="right", **tick_kwargs)
+        ax.text(
+            grad_left + grad_width + side_gap,
+            y_mid,
+            f"{zmax:.2g}",
+            ha="left",
+            **tick_kwargs,
+        )
+
+
 def _attach_pair_lower_legend_caption(
     fig: plt.Figure,
     leg: Any,
@@ -725,33 +856,17 @@ def pair_grid_png(
             raise ValueError(
                 f"Lower-triangle color column `{lower_color_col}` has no values."
             )
-        n_u = len(uniques)
-        pal = list(analysis._get_chimerax_colors(max(n_u, 1)))
-        point_colors = []
-        for k in range(len(df)):
-            code = int(codes[k])
-            if code < 0:
-                point_colors.append("#aab4bf")
-            else:
-                point_colors.append(pal[code % len(pal)])
+        pal = list(analysis._get_chimerax_colors(max(len(uniques), 1)))
+        point_colors = [
+            "#aab4bf" if int(c) < 0 else pal[int(c) % len(pal)] for c in codes
+        ]
     else:
-        color_num = cast(pd.Series, pd.to_numeric(raw_color, errors="coerce"))
-        if bool(color_num.isna().all()):
+        if bool(pd.to_numeric(raw_color, errors="coerce").isna().all()):
             raise ValueError(
                 f"Lower-triangle color column `{lower_color_col}` has no numeric values."
             )
-        cvals = np.asarray(color_num, dtype=np.float64)
-        cfinite = cvals[np.isfinite(cvals)]
-        if cfinite.size == 0:
-            cmin, cmax = 0.0, 1.0
-        elif np.isclose(cfinite.min(), cfinite.max()):
-            cmin = float(cfinite.min()) - 0.5
-            cmax = float(cfinite.max()) + 0.5
-        else:
-            cmin = float(np.min(cfinite))
-            cmax = float(np.max(cfinite))
-        c_mid = 0.5 * (cmin + cmax)
-        cvals_plot = np.where(np.isfinite(cvals), cvals, c_mid)
+        cvals, cmin, cmax = _continuous_series_stats(raw_color)
+        cvals_plot = np.where(np.isfinite(cvals), cvals, 0.5 * (cmin + cmax))
 
     emb = (diagonal_emb or "pc").lower()
     if emb == "umap":
@@ -1019,132 +1134,24 @@ def pair_grid_png(
                 max_gap_inches=max_side_gap_in,
             )
 
-        _zk = max(11.0, min(16.0, 4.9 * inch_per / 3.05))
-        _edge_label_fs = _zk * 1.5
-        _edge_label_gap = 0.008
-        _right_edge_label_gap = _edge_label_gap * 0.6
-        # Column labels along the top edge of the full grid.
-        for j in range(1, zdim):
-            top_ax = axes[0, j]
-            bb = top_ax.get_position()
-            fig.text(
-                bb.x0 + bb.width / 2.0,
-                top_m + _edge_label_gap,
-                f"zdim {j + 1}",
-                ha="center",
-                va="bottom",
-                fontsize=_edge_label_fs,
-                color="#243b53",
-                fontweight="bold",
-            )
-        # Column labels along the bottom edge (skip last column to avoid facing diagonal).
-        for j in range(zdim - 1):
-            bot_ax = axes[zdim - 1, j]
-            bb = bot_ax.get_position()
-            fig.text(
-                bb.x0 + bb.width / 2.0,
-                bottom_m - _edge_label_gap,
-                f"zdim {j + 1}",
-                ha="center",
-                va="top",
-                fontsize=_edge_label_fs,
-                color="#243b53",
-                fontweight="bold",
-            )
-        # Row labels along the right edge (skip last row), moved 40% closer to the grid.
-        for i in range(zdim - 1):
-            right_ax = axes[i, zdim - 1]
-            bb = right_ax.get_position()
-            fig.text(
-                right_axes + _right_edge_label_gap,
-                bb.y0 + bb.height / 2.0,
-                f"zdim {i + 1}",
-                ha="left",
-                va="center",
-                fontsize=_edge_label_fs,
-                color="#243b53",
-                fontweight="bold",
-                rotation=270,
-            )
-        # Row labels along the left edge (skip first row to avoid facing diagonal).
-        for i in range(1, zdim):
-            left_ax = axes[i, 0]
-            bb = left_ax.get_position()
-            fig.text(
-                left_m - _edge_label_gap,
-                bb.y0 + bb.height / 2.0,
-                f"zdim {i + 1}",
-                ha="right",
-                va="center",
-                fontsize=_edge_label_fs,
-                color="#243b53",
-                fontweight="bold",
-                rotation=90,
-            )
-        # Small diagonal legends (bottom-left) showing each panel's sequential scale.
-        for k in range(zdim):
-            ax = axes[k, k]
-            zrange = diagonal_color_ranges[k]
-            zlabel = f"zdim {k + 1}"
-            grad_left = 0.115
-            grad_bottom = 0.028
-            grad_width = 0.24
-            grad_height = 0.044
-            side_gap = grad_bottom * 0.5
-            ax.text(
-                grad_left + grad_width / 2.0,
-                0.10,
-                zlabel,
-                transform=ax.transAxes,
-                fontsize=max(9.6, _zk * 0.864),
-                color="#243b53",
-                fontweight="bold",
-                ha="center",
-                va="bottom",
-                clip_on=True,
-                bbox={
-                    "boxstyle": "round,pad=0.16",
-                    "facecolor": (250 / 255, 248 / 255, 244 / 255, 0.9),
-                    "edgecolor": "none",
-                },
-            )
-            if zrange is None:
-                continue
-            zmin, zmax = zrange
-            grad_ax = ax.inset_axes(
-                [grad_left, grad_bottom, grad_width, grad_height],
-                transform=ax.transAxes,
-            )
-            grad = np.linspace(0.0, 1.0, 128, dtype=np.float64).reshape(1, -1)
-            grad_ax.imshow(grad, cmap=mpl_cmap, aspect="auto", origin="lower")
-            grad_ax.set_xticks([])
-            grad_ax.set_yticks([])
-            for spine in grad_ax.spines.values():
-                spine.set_linewidth(0.6)
-                spine.set_color("#6b7c8d")
-            y_mid = grad_bottom + grad_height / 2.0
-            ax.text(
-                grad_left - side_gap,
-                y_mid,
-                f"{zmin:.2g}",
-                transform=ax.transAxes,
-                fontsize=max(8.4, _zk * 0.672),
-                color="#243b53",
-                ha="right",
-                va="center",
-                clip_on=True,
-            )
-            ax.text(
-                grad_left + grad_width + side_gap,
-                y_mid,
-                f"{zmax:.2g}",
-                transform=ax.transAxes,
-                fontsize=max(8.4, _zk * 0.672),
-                color="#243b53",
-                ha="left",
-                va="center",
-                clip_on=True,
-            )
+        label_fs = max(11.0, min(16.0, 4.9 * inch_per / 3.05))
+        _draw_pair_grid_edge_labels(
+            fig,
+            axes,
+            zdim=zdim,
+            left_m=left_m,
+            top_m=top_m,
+            bottom_m=bottom_m,
+            right_axes=right_axes,
+            fontsize=label_fs * 1.5,
+        )
+        _draw_pair_grid_diagonal_legends(
+            axes,
+            zdim=zdim,
+            mpl_cmap=mpl_cmap,
+            diagonal_color_ranges=diagonal_color_ranges,
+            label_fontsize=label_fs,
+        )
 
         cell_layout = _axes_cell_bboxes(np.asarray(axes))
 

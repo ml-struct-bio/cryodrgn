@@ -52,6 +52,7 @@ try:
 
     matplotlib.use("TkAgg")
 except ImportError:
+    # If TkAgg is not available, fall back upon the default interactive backend.
     pass
 
 from cryodrgn import analysis, utils

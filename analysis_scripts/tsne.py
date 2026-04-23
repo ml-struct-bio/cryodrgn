@@ -2,8 +2,10 @@
 
 import argparse
 import pickle
-
+import logging
 from sklearn.manifold import TSNE
+
+logger = logging.getLogger(__name__)
 
 
 def parse_args():
@@ -18,12 +20,24 @@ def parse_args():
 
 
 def main(args):
-    z = pickle.load(open(args.input, "rb"))
+    with open(args.input, "rb") as f:
+        z = pickle.load(f)
+
     if args.stride:
         z = z[:: args.stride]
-    print(z.shape)
+        logger.info(
+            f"Loaded zdim={z.shape[1]} latent space and used "
+            f"striding to reduce to {z.shape[0]} datapoints"
+        )
+    else:
+        logger.info(
+            f"Loaded zdim={z.shape[1]} latent space with {z.shape[0]} datapoints"
+        )
+
+    logger.info("Fitting t-SNE...")
     z_embedded = TSNE(n_components=2, perplexity=args.p).fit_transform(z)
-    pickle.dump(z_embedded, open(args.o, "wb"))
+    with open(args.o, "wb") as f:
+        pickle.dump(z_embedded, f)
 
 
 if __name__ == "__main__":

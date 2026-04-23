@@ -24,11 +24,6 @@ from cryodrgn.pose_search import PoseSearch
 from cryodrgn.source import write_mrc
 import cryodrgn.config
 
-try:
-    import apex.amp as amp  # type: ignore  # PYR01
-except ImportError:
-    pass
-
 logger = logging.getLogger(__name__)
 
 
@@ -473,15 +468,10 @@ def train(
         else:
             loss = F.mse_loss(gen_slice(rot), y)
 
-    if use_amp:
-        if scaler is not None:
-            scaler.scale(loss).backward()
-            scaler.step(optim)
-            scaler.update()
-        else:  # apex.amp mixed precision
-            with amp.scale_loss(loss, optim) as scaled_loss:
-                scaled_loss.backward()
-            optim.step()
+    if use_amp and scaler is not None:
+        scaler.scale(loss).backward()
+        scaler.step(optim)
+        scaler.update()
     else:
         loss.backward()
         optim.step()
@@ -570,7 +560,7 @@ def main(args: argparse.Namespace) -> None:
     # load the particles
     if args.ind is not None:
         logger.info("Filtering image dataset with {}".format(args.ind))
-        ind = pickle.load(open(args.ind, "rb"))
+        ind = utils.load_pkl(args.ind)
     else:
         ind = None
 
@@ -645,7 +635,6 @@ def main(args: argparse.Namespace) -> None:
     optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
     # Mixed precision training
-    scaler = None
     if args.amp:
         if args.batch_size % 8 != 0:
             logger.warning(
@@ -663,12 +652,9 @@ def main(args: argparse.Namespace) -> None:
                 f"and thus not optimal for AMP training!"
             )
 
-        # mixed precision with apex.amp
-        try:
-            model, optim = amp.initialize(model, optim, opt_level="O1")
-        # mixed precision with pytorch (v1.6+)
-        except:  # noqa: E722
-            scaler = torch.cuda.amp.GradScaler()
+        scaler = torch.cuda.amp.GradScaler()
+    else:
+        scaler = None
 
     sorted_poses = []
     if args.load:

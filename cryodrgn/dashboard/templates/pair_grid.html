@@ -1,0 +1,759 @@
+{% extends "base.html" %}
+{# 4×4 mini-grids: row i = top→bottom, col j = left→right; matches zᵢ (row) vs zⱼ (col) #}
+{% macro picto_lower() %}
+<svg class="pair-picto" width="32" height="32" viewBox="0 0 34 34" aria-hidden="true" focusable="false" role="presentation">
+  {% set lo = "#e8ecf1" %}
+  {% set hi = "#3d5a80" %}
+  <rect x="1" y="1" width="7" height="7" fill="{{ lo }}"/>
+  <rect x="9" y="1" width="7" height="7" fill="{{ lo }}"/>
+  <rect x="17" y="1" width="7" height="7" fill="{{ lo }}"/>
+  <rect x="25" y="1" width="7" height="7" fill="{{ lo }}"/>
+  <rect x="1" y="9" width="7" height="7" fill="{{ hi }}"/>
+  <rect x="9" y="9" width="7" height="7" fill="{{ lo }}"/>
+  <rect x="17" y="9" width="7" height="7" fill="{{ lo }}"/>
+  <rect x="25" y="9" width="7" height="7" fill="{{ lo }}"/>
+  <rect x="1" y="17" width="7" height="7" fill="{{ hi }}"/>
+  <rect x="9" y="17" width="7" height="7" fill="{{ hi }}"/>
+  <rect x="17" y="17" width="7" height="7" fill="{{ lo }}"/>
+  <rect x="25" y="17" width="7" height="7" fill="{{ lo }}"/>
+  <rect x="1" y="25" width="7" height="7" fill="{{ hi }}"/>
+  <rect x="9" y="25" width="7" height="7" fill="{{ hi }}"/>
+  <rect x="17" y="25" width="7" height="7" fill="{{ hi }}"/>
+  <rect x="25" y="25" width="7" height="7" fill="{{ lo }}"/>
+</svg>
+{% endmacro %}
+{% macro picto_diagonal() %}
+<svg class="pair-picto" width="32" height="32" viewBox="0 0 34 34" aria-hidden="true" focusable="false" role="presentation">
+  {% set lo = "#e8ecf1" %}
+  {% set hi = "#3d5a80" %}
+  <rect x="1" y="1" width="7" height="7" fill="{{ hi }}"/>
+  <rect x="9" y="1" width="7" height="7" fill="{{ lo }}"/>
+  <rect x="17" y="1" width="7" height="7" fill="{{ lo }}"/>
+  <rect x="25" y="1" width="7" height="7" fill="{{ lo }}"/>
+  <rect x="1" y="9" width="7" height="7" fill="{{ lo }}"/>
+  <rect x="9" y="9" width="7" height="7" fill="{{ hi }}"/>
+  <rect x="17" y="9" width="7" height="7" fill="{{ lo }}"/>
+  <rect x="25" y="9" width="7" height="7" fill="{{ lo }}"/>
+  <rect x="1" y="17" width="7" height="7" fill="{{ lo }}"/>
+  <rect x="9" y="17" width="7" height="7" fill="{{ lo }}"/>
+  <rect x="17" y="17" width="7" height="7" fill="{{ hi }}"/>
+  <rect x="25" y="17" width="7" height="7" fill="{{ lo }}"/>
+  <rect x="1" y="25" width="7" height="7" fill="{{ lo }}"/>
+  <rect x="9" y="25" width="7" height="7" fill="{{ lo }}"/>
+  <rect x="17" y="25" width="7" height="7" fill="{{ lo }}"/>
+  <rect x="25" y="25" width="7" height="7" fill="{{ hi }}"/>
+</svg>
+{% endmacro %}
+{% macro picto_upper() %}
+<svg class="pair-picto" width="32" height="32" viewBox="0 0 34 34" aria-hidden="true" focusable="false" role="presentation">
+  {% set lo = "#e8ecf1" %}
+  {% set hi = "#3d5a80" %}
+  <rect x="1" y="1" width="7" height="7" fill="{{ lo }}"/>
+  <rect x="9" y="1" width="7" height="7" fill="{{ hi }}"/>
+  <rect x="17" y="1" width="7" height="7" fill="{{ hi }}"/>
+  <rect x="25" y="1" width="7" height="7" fill="{{ hi }}"/>
+  <rect x="1" y="9" width="7" height="7" fill="{{ lo }}"/>
+  <rect x="9" y="9" width="7" height="7" fill="{{ lo }}"/>
+  <rect x="17" y="9" width="7" height="7" fill="{{ hi }}"/>
+  <rect x="25" y="9" width="7" height="7" fill="{{ hi }}"/>
+  <rect x="1" y="17" width="7" height="7" fill="{{ lo }}"/>
+  <rect x="9" y="17" width="7" height="7" fill="{{ lo }}"/>
+  <rect x="17" y="17" width="7" height="7" fill="{{ lo }}"/>
+  <rect x="25" y="17" width="7" height="7" fill="{{ hi }}"/>
+  <rect x="1" y="25" width="7" height="7" fill="{{ lo }}"/>
+  <rect x="9" y="25" width="7" height="7" fill="{{ lo }}"/>
+  <rect x="17" y="25" width="7" height="7" fill="{{ lo }}"/>
+  <rect x="25" y="25" width="7" height="7" fill="{{ lo }}"/>
+</svg>
+{% endmacro %}
+{% block title %}Latent pairs · cryoDRGN{% endblock %}
+{% block head %}
+<style>
+  .pairplot-viewport {
+    --pairplot-max-h: min(90vh, calc(100svh - 6.5rem));
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    max-height: var(--pairplot-max-h);
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: center;
+    min-width: 240px;
+    background: var(--cream, #faf8f4);
+    border-radius: 2px;
+  }
+  .pairplot-stack {
+    position: relative;
+    display: inline-block;
+    width: 100%;
+    max-width: 100%;
+    max-height: var(--pairplot-max-h);
+    min-height: min(280px, 42vh);
+    vertical-align: top;
+  }
+  .pairplot-img {
+    position: relative;
+    z-index: 1;
+    max-width: 100%;
+    max-height: var(--pairplot-max-h);
+    width: auto;
+    height: auto;
+    object-fit: scale-down;
+    display: block;
+    margin: 0 auto;
+    opacity: 0;
+    transition: opacity 0.2s ease-out;
+  }
+  .pairplot-img.pairplot-img--ready {
+    opacity: 1;
+  }
+  .cryo-palette-radios {
+    margin: 0.5rem auto 0;
+    padding: 0.4rem 0.55rem;
+    border: 1px solid rgba(36, 59, 83, 0.15);
+    border-radius: 4px;
+    background: rgba(250, 248, 244, 0.75);
+    max-width: 100%;
+    box-sizing: border-box;
+    flex: 0 0 auto;
+  }
+  .cryo-palette-radios legend {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--nav-bg, #243b53);
+    padding: 0 0.2rem;
+  }
+  .cryo-palette-radios__row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.85rem;
+    align-items: center;
+    justify-content: center;
+  }
+  .cryo-palette-radios label {
+    font-size: 0.78rem;
+    color: var(--nav-bg, #243b53);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    cursor: pointer;
+    margin: 0;
+    font-weight: 500;
+  }
+  .pairplot-skeleton {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 2;
+    box-sizing: border-box;
+    background: transparent;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.15s ease-out, visibility 0.15s;
+  }
+  .pairplot-skeleton.pairplot-skeleton--show {
+    opacity: 1;
+    visibility: visible;
+  }
+  .pairplot-skel-cell {
+    position: absolute;
+    box-sizing: border-box;
+    container-type: size;
+    container-name: pair-skel;
+    background: var(--cream, #faf8f4);
+    border: 1px solid rgba(36, 59, 83, 0.22);
+    border-radius: 1px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px;
+    min-width: 0;
+    min-height: 0;
+  }
+  .pairplot-skel-cell:not(.pairplot-skel-cell--busy) {
+    background: transparent;
+    border-color: transparent;
+  }
+  .pairplot-skel-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: clamp(2px, 4cqmin, 7px);
+    width: min(88%, 30rem);
+    max-width: 88%;
+    min-width: 0;
+  }
+  .pairplot-skel-text {
+    line-height: 1.05;
+    color: var(--nav-bg, #243b53);
+    font-weight: 800;
+    white-space: nowrap;
+    max-width: 100%;
+    width: max-content;
+    margin: 0 auto;
+    overflow: hidden;
+    text-overflow: clip;
+    font-size: clamp(0.8rem, 11cqmin, 2.85rem);
+  }
+  .pairplot-skel-track {
+    width: min(78%, 10rem);
+    max-width: 100%;
+    height: clamp(2px, 2.8cqmin, 5px);
+    border-radius: 999px;
+    background: rgba(36, 59, 83, 0.14);
+    overflow: hidden;
+    position: relative;
+  }
+  .pairplot-skel-indeterminate {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    width: 38%;
+    border-radius: 999px;
+    background: var(--accent, #c4703a);
+    opacity: 0.95;
+    animation: cryo-dash-render-bar 1.15s ease-in-out infinite alternate;
+  }
+  @supports not (container-type: size) {
+    .pairplot-skel-text {
+      max-width: 70%;
+      font-size: clamp(0.75rem, 2.8vw, 1.85rem);
+    }
+    .pairplot-skel-track {
+      width: min(72%, 9rem);
+      height: clamp(2px, 0.6vw, 4px);
+    }
+  }
+  .pairplot-skel-cell:not(.pairplot-skel-cell--busy) .pairplot-skel-inner {
+    display: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pairplot-skel-indeterminate {
+      animation: none;
+      left: 0;
+      transform: none;
+      width: 100%;
+      opacity: 0.35;
+    }
+  }
+  @media (max-width: 900px) {
+    .cryo-dash-page .pairplot-viewport {
+      --pairplot-max-h: min(82vh, calc(100svh - 9.5rem));
+    }
+  }
+  #pair-controls-card legend {
+    font-size: calc(0.82rem * 1.35 * 0.9);
+    line-height: 1.28;
+  }
+  .cryo-dash-controls .legend-row .pair-picto {
+    flex-shrink: 0;
+    border-radius: 2px;
+    box-shadow: 0 0 0 1px rgba(36, 59, 83, 0.12);
+    display: block;
+  }
+  #pair-controls-card label.radio-line {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0.22rem 0;
+    font-weight: 400;
+    font-size: calc(0.86rem * 1.2);
+    cursor: pointer;
+  }
+  .cryo-dash-controls .color-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    max-height: 13rem;
+    overflow-y: auto;
+    margin-top: 0.15rem;
+  }
+  #pair-controls-card .color-grid label.radio-line {
+    margin: 0;
+  }
+  .cryo-dash-controls .btn-row {
+    width: 100%;
+  }
+  .cryo-dash-controls .btn-row .btn {
+    width: 100%;
+    box-sizing: border-box;
+    display: block;
+    text-align: center;
+  }
+</style>
+{% endblock %}
+{% block nav_page_title %}<span class="nav-title-sep" aria-hidden="true">·</span><span class="nav-page-title">Pair-plot generator</span>{% endblock %}
+{% block content %}
+<div class="cryo-dash-page">
+<div class="cryo-dash-row">
+  <div class="cryo-dash-side">
+    <div class="cryo-dash-top">
+      <a href="/">← Back</a>
+    </div>
+    <p class="cryo-dash-lead">Each panel compares two latent coordinates. The diagonal shows a 2D embedding; one triangle colors particles by a covariate; the other shows a light scatter or density pattern.</p>
+    <div class="card cryo-dash-controls" id="pair-controls-card">
+      <fieldset>
+        <legend>
+          <span class="legend-row">{{ picto_lower() }}<span>Covariate coloring<br>(below diagonal)</span></span>
+        </legend>
+        <div class="color-grid">
+          {% for c in color_choices %}
+          <label class="radio-line">
+            <input type="radio" name="color_cov" value="{{ c }}" {% if c == default_color %}checked{% endif %}/>
+            <span>{{ covariate_display_map.get(c, c) }}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>
+          <span class="legend-row">{{ picto_diagonal() }}<span>Embedding method<br>(on the diagonal)</span></span>
+        </legend>
+        <label class="radio-line">
+          <input type="radio" name="diag_emb" value="umap" {% if has_umap %}checked{% endif %} {% if not has_umap %}disabled{% endif %}/>
+          <span>UMAP{% if not has_umap %} <span class="muted">(n/a)</span>{% endif %}</span>
+        </label>
+        <label class="radio-line">
+          <input type="radio" name="diag_emb" value="pc" {% if not has_umap %}checked{% endif %}/>
+          <span>PCA</span>
+        </label>
+      </fieldset>
+      <fieldset>
+        <legend>
+          <span class="legend-row">{{ picto_upper() }}<span>Plotting method<br>(above diagonal)</span></span>
+        </legend>
+        <label class="radio-line">
+          <input type="radio" name="upper_style" value="scatter" checked/>
+          <span>Scatter</span>
+        </label>
+        <label class="radio-line">
+          <input type="radio" name="upper_style" value="hex"/>
+          <span>Hex density</span>
+        </label>
+      </fieldset>
+      <p class="btn-row">
+        <button type="button" class="btn" id="save-pairplot-png">Save to PNG</button>
+      </p>
+      <p id="pair-status" class="status"></p>
+    </div>
+  </div>
+  <div class="cryo-dash-main">
+    <div class="pairplot-viewport" id="pairplot-viewport" aria-busy="true">
+      <div class="pairplot-stack" id="pairplot-stack">
+        <img id="pairplot" class="pairplot-img" alt="Latent pair grid"/>
+        <div
+          class="pairplot-skeleton pairplot-skeleton--show"
+          id="pairplot-skeleton"
+          aria-hidden="true"
+        >
+          {% for i in range(zdim) %}
+          {% for j in range(zdim) %}
+          <div class="pairplot-skel-cell" data-row="{{ i }}" data-col="{{ j }}" data-idx="{{ i * zdim + j }}">
+            <div class="pairplot-skel-inner" aria-hidden="true">
+              <span class="pairplot-skel-text">Rendering…</span>
+              <div class="pairplot-skel-track">
+                <div class="pairplot-skel-indeterminate"></div>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+          {% endfor %}
+        </div>
+        <div id="pairplot-rendering-overlay" class="cryo-plot-rendering-overlay cryo-plot-rendering-overlay--show" aria-hidden="false">
+          <div class="cryo-plot-rendering-overlay__inner">
+            <span class="cryo-plot-rendering-overlay__label">Rendering…</span>
+            <div class="cryo-plot-rendering-overlay__track" role="progressbar" aria-valuetext="Loading plot">
+              <div class="cryo-plot-rendering-overlay__indeterminate"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <fieldset id="pairplot-palette-radios" class="cryo-palette-radios cryo-palette-radios--hidden-during-plot-render" aria-label="Continuous color palette">
+        <legend>Palette (continuous color)</legend>
+        <div class="cryo-palette-radios__row">
+          <label><input type="radio" name="pairplot_palette" value="Viridis" checked/> Viridis</label>
+          <label><input type="radio" name="pairplot_palette" value="Plasma"/> Plasma</label>
+          <label><input type="radio" name="pairplot_palette" value="Inferno"/> Inferno</label>
+          <label><input type="radio" name="pairplot_palette" value="Magma"/> Magma</label>
+          <label><input type="radio" name="pairplot_palette" value="Cividis"/> Cividis</label>
+          <label><input type="radio" name="pairplot_palette" value="Turbo"/> Turbo</label>
+        </div>
+      </fieldset>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  var el = document.getElementById("pairplot");
+  var status = document.getElementById("pair-status");
+  var viewport = document.getElementById("pairplot-viewport");
+  var stack = document.getElementById("pairplot-stack");
+  var skel = document.getElementById("pairplot-skeleton");
+  var renderOverlay = document.getElementById("pairplot-rendering-overlay");
+  var paletteFieldset = document.getElementById("pairplot-palette-radios");
+  var controlsCard = document.getElementById("pair-controls-card");
+  var controlsSide = controlsCard ? controlsCard.closest(".cryo-dash-side") : null;
+  var hasUmap = {{ has_umap | tojson }};
+  var zdim = {{ zdim | int }};
+  var pairplotObjectUrl = null;
+  var lastPayload = null;
+  var placeholderCells = {{ skeleton_placeholder_cells | tojson }};
+  var activeCellLayout = placeholderCells;
+  var saveDefaultName = {{ pairplot_save_default_name | tojson }};
+  var saveDefaultDir = {{ pairplot_save_default_dir | tojson }};
+  var saveBtn = document.getElementById("save-pairplot-png");
+
+  function checkedVal(name) {
+    var r = document.querySelector("input[name=\"" + name + "\"]:checked");
+    return r ? r.value : null;
+  }
+
+  function currentPayload() {
+    return {
+      color_col: checkedVal("color_cov"),
+      diagonal_emb: checkedVal("diag_emb") || (hasUmap ? "umap" : "pc"),
+      upper_style: checkedVal("upper_style") || "scatter",
+      palette: checkedVal("pairplot_palette") || "Viridis"
+    };
+  }
+
+  function applyCellLayout(cells) {
+    if (!cells || !cells.length) {
+      return;
+    }
+    cells.forEach(function(c, idx) {
+      var cell = skel.querySelector("[data-idx=\"" + idx + "\"]");
+      if (!cell) {
+        return;
+      }
+      var x0 = c.x0;
+      var x1 = c.x1;
+      var y0 = c.y0;
+      var y1 = c.y1;
+      cell.style.left = (x0 * 100) + "%";
+      cell.style.width = ((x1 - x0) * 100) + "%";
+      cell.style.top = ((1 - y1) * 100) + "%";
+      cell.style.height = ((y1 - y0) * 100) + "%";
+    });
+  }
+
+  function gridVerticalInsetsFromCells(cells) {
+    if (!cells || !cells.length) {
+      return { top: 0, bottom: 0 };
+    }
+    var minTop = 1;
+    var minBottom = 1;
+    cells.forEach(function(c) {
+      var topInset = 1 - c.y1;
+      var bottomInset = c.y0;
+      if (topInset < minTop) {
+        minTop = topInset;
+      }
+      if (bottomInset < minBottom) {
+        minBottom = bottomInset;
+      }
+    });
+    if (!isFinite(minTop) || !isFinite(minBottom)) {
+      return { top: 0, bottom: 0 };
+    }
+    return {
+      top: Math.max(0, Math.min(1, minTop)),
+      bottom: Math.max(0, Math.min(1, minBottom))
+    };
+  }
+
+  function syncSkeletonBounds() {
+    if (!stack || !skel || !el) {
+      return;
+    }
+    var stackRect = stack.getBoundingClientRect();
+    if (!stackRect.width || !stackRect.height) {
+      return;
+    }
+    var imgRect = el.getBoundingClientRect();
+    var useImgRect = imgRect.width > 0 && imgRect.height > 0;
+    var left = 0;
+    var top = 0;
+    var width = stackRect.width;
+    var height = stackRect.height;
+    if (useImgRect) {
+      left = imgRect.left - stackRect.left;
+      top = imgRect.top - stackRect.top;
+      width = imgRect.width;
+      height = imgRect.height;
+    }
+    skel.style.left = left + "px";
+    skel.style.top = top + "px";
+    skel.style.width = width + "px";
+    skel.style.height = height + "px";
+  }
+
+  function syncControlsAlignment(cells) {
+    if (!controlsCard || !controlsSide || !el) {
+      return;
+    }
+    var minGapPx = 8;
+    var insets = gridVerticalInsetsFromCells(cells || placeholderCells);
+    var imgRect = el.getBoundingClientRect();
+    var sideRect = controlsSide.getBoundingClientRect();
+    if (!imgRect || imgRect.height <= 0 || !sideRect) {
+      controlsCard.style.marginTop = "0px";
+      return;
+    }
+    var previousMargin = controlsCard.style.marginTop;
+    controlsCard.style.marginTop = "0px";
+    var baseTop = controlsCard.offsetTop;
+    var cardHalf = controlsCard.offsetHeight * 0.5;
+    controlsCard.style.marginTop = previousMargin;
+    var plotCenterGlobal = imgRect.top + imgRect.height * (insets.top + (1 - insets.top - insets.bottom) * 0.5);
+    var plotCenterLocal = plotCenterGlobal - sideRect.top;
+    var desiredTop = plotCenterLocal - cardHalf;
+    var px = Math.max(minGapPx, desiredTop - baseTop);
+    controlsCard.style.marginTop = Math.round(px) + "px";
+  }
+
+  function dirtyIndices(prev, cur) {
+    if (!prev) {
+      var all = [];
+      for (var t = 0; t < zdim * zdim; t++) {
+        all.push(t);
+      }
+      return all;
+    }
+    var palPrev = prev.palette || "Viridis";
+    var palCur = cur.palette || "Viridis";
+    if (
+      prev.color_col === cur.color_col
+      && prev.diagonal_emb === cur.diagonal_emb
+      && prev.upper_style === cur.upper_style
+      && palPrev === palCur
+    ) {
+      return [];
+    }
+    if (palPrev !== palCur) {
+      var allPal = [];
+      for (var tp = 0; tp < zdim * zdim; tp++) {
+        allPal.push(tp);
+      }
+      return allPal;
+    }
+    var s = new Set();
+    if (prev.color_col !== cur.color_col) {
+      for (var i = 0; i < zdim; i++) {
+        for (var j = 0; j < zdim; j++) {
+          if (i > j) {
+            s.add(i * zdim + j);
+          }
+        }
+      }
+    }
+    if (prev.diagonal_emb !== cur.diagonal_emb) {
+      for (var k = 0; k < zdim; k++) {
+        s.add(k * zdim + k);
+      }
+    }
+    if (prev.upper_style !== cur.upper_style) {
+      for (var ii = 0; ii < zdim; ii++) {
+        for (var jj = 0; jj < zdim; jj++) {
+          if (ii < jj) {
+            s.add(ii * zdim + jj);
+          }
+        }
+      }
+    }
+    return Array.from(s);
+  }
+
+  function applyBusy(indices) {
+    var busy = new Set(indices);
+    skel.querySelectorAll(".pairplot-skel-cell").forEach(function(cell) {
+      var idx = parseInt(cell.getAttribute("data-idx"), 10);
+      var on = busy.has(idx);
+      cell.classList.toggle("pairplot-skel-cell--busy", on);
+    });
+  }
+
+  function setPairLoading(on, opts) {
+    opts = opts || {};
+    var keepImageVisible = !!opts.keepImageVisible;
+    viewport.setAttribute("aria-busy", on ? "true" : "false");
+    skel.classList.toggle("pairplot-skeleton--show", on);
+    if (renderOverlay) {
+      var showFull = on && !keepImageVisible;
+      renderOverlay.classList.toggle("cryo-plot-rendering-overlay--show", showFull);
+      renderOverlay.setAttribute("aria-hidden", showFull ? "false" : "true");
+    }
+    if (on) {
+      if (!keepImageVisible) {
+        el.classList.remove("pairplot-img--ready");
+      }
+    } else {
+      el.classList.add("pairplot-img--ready");
+    }
+    if (paletteFieldset) {
+      paletteFieldset.classList.toggle("cryo-palette-radios--hidden-during-plot-render", on);
+    }
+  }
+
+  applyCellLayout(placeholderCells);
+  syncSkeletonBounds();
+  syncControlsAlignment(placeholderCells);
+
+  function draw() {
+    var colorCol = checkedVal("color_cov");
+    if (!colorCol) {
+      status.textContent = "Pick a color covariate.";
+      setPairLoading(false);
+      return;
+    }
+    var payload = currentPayload();
+    status.textContent = "";
+    var dirty = dirtyIndices(lastPayload, payload);
+    if (dirty.length === 0) {
+      return;
+    }
+    var allBusy = dirty.length >= zdim * zdim;
+    var hasRenderableImg = !!(pairplotObjectUrl && el.complete && el.naturalWidth > 0);
+    var showPerTileBusy = hasRenderableImg && !allBusy;
+    applyBusy(showPerTileBusy ? dirty : []);
+    setPairLoading(true, { keepImageVisible: hasRenderableImg && !allBusy });
+    syncSkeletonBounds();
+    syncControlsAlignment(activeCellLayout);
+    var prevUrl = pairplotObjectUrl;
+    requestAnimationFrame(function() {
+      requestAnimationFrame(function() {
+        fetch("{{ url_for('api_pairplot') }}", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        })
+          .then(function(r) {
+            return r.text().then(function(text) {
+              var data;
+              try {
+                data = JSON.parse(text);
+              } catch (parseErr) {
+                throw new Error(
+                  r.ok
+                    ? "Invalid JSON from server."
+                    : "Server error (non-JSON — check terminal / logs)."
+                );
+              }
+              if (!r.ok) {
+                throw new Error((data && data.error) || r.statusText || "Request failed");
+              }
+              if (!data.png_b64 || !data.cells) {
+                throw new Error("Invalid pairplot response.");
+              }
+              return data;
+            });
+          })
+          .then(function(data) {
+            applyCellLayout(data.cells);
+            activeCellLayout = data.cells;
+            syncControlsAlignment(data.cells);
+            var bin = atob(data.png_b64);
+            var bytes = new Uint8Array(bin.length);
+            for (var b = 0; b < bin.length; b++) {
+              bytes[b] = bin.charCodeAt(b);
+            }
+            var blob = new Blob([bytes], { type: "image/png" });
+            var nextUrl = URL.createObjectURL(blob);
+            pairplotObjectUrl = nextUrl;
+            el.onload = function() {
+              if (prevUrl) {
+                URL.revokeObjectURL(prevUrl);
+              }
+              el.onload = null;
+              lastPayload = payload;
+              syncSkeletonBounds();
+              syncControlsAlignment(data.cells);
+              setPairLoading(false);
+              el.classList.add("pairplot-img--ready");
+            };
+            el.onerror = function() {
+              el.onerror = null;
+              el.onload = null;
+              URL.revokeObjectURL(nextUrl);
+              pairplotObjectUrl = prevUrl || null;
+              setPairLoading(false);
+              status.textContent = "Image failed to load.";
+            };
+            el.src = nextUrl;
+            if (el.complete && el.naturalWidth) {
+              el.onload();
+            }
+          })
+          .catch(function(e) {
+            setPairLoading(false);
+            status.textContent = e.message || "Failed.";
+          });
+      });
+    });
+  }
+
+  document.querySelectorAll(".cryo-dash-controls input[type=radio]").forEach(function(inp) {
+    inp.addEventListener("change", draw);
+  });
+  if (saveBtn) {
+    saveBtn.addEventListener("click", function() {
+      var payload = currentPayload();
+      if (!payload.color_col) {
+        status.textContent = "Pick a color covariate before saving.";
+        return;
+      }
+      var entered = window.prompt(
+        "PNG filename (saved under: " + saveDefaultDir + ")",
+        saveDefaultName
+      );
+      if (entered === null) return;
+      var filename = String(entered).trim() || saveDefaultName;
+      saveBtn.disabled = true;
+      status.textContent = "Saving PNG…";
+      fetch("{{ url_for('api_save_pairplot_png') }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          color_col: payload.color_col,
+          diagonal_emb: payload.diagonal_emb,
+          upper_style: payload.upper_style,
+          palette: payload.palette || "Viridis",
+          filename: filename
+        })
+      })
+        .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+        .then(function(res) {
+          if (!res.ok) {
+            status.textContent = (res.j && res.j.error) ? res.j.error : "Save failed.";
+            return;
+          }
+          status.textContent = "Saved PNG to " + res.j.path;
+        })
+        .catch(function(err) {
+          status.textContent = (err && err.message) ? err.message : "Save failed.";
+        })
+        .finally(function() {
+          saveBtn.disabled = false;
+        });
+    });
+  }
+  window.addEventListener("resize", syncSkeletonBounds);
+  window.addEventListener("resize", function() { syncControlsAlignment(activeCellLayout); });
+  if (window.ResizeObserver) {
+    var pairplotBoundsObserver = new ResizeObserver(function() {
+      syncSkeletonBounds();
+      syncControlsAlignment(activeCellLayout);
+    });
+    pairplotBoundsObserver.observe(stack);
+    pairplotBoundsObserver.observe(el);
+  }
+  draw();
+})();
+</script>
+</div>
+{% endblock %}

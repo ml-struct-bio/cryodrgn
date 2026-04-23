@@ -27,9 +27,9 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
-import cryodrgn
 from cryodrgn import analysis, utils, config
 from cryodrgn.analysis_drgnai import ModelAnalyzer
+from cryodrgn import _ROOT as CRYODRGN_ROOT
 
 logger = logging.getLogger(__name__)
 
@@ -578,9 +578,8 @@ def main(args: argparse.Namespace) -> None:
 
         if not os.path.exists(nb_outfile):
             logger.info(f"Creating demo Jupyter notebook {nb_outfile}...")
-            nb_infile = os.path.join(
-                cryodrgn._ROOT, "templates", f"{ipynb}_template.ipynb"
-            )
+            template_dir = os.path.join(CRYODRGN_ROOT, "templates")
+            nb_infile = os.path.join(template_dir, f"{ipynb}_template.ipynb")
             shutil.copyfile(nb_infile, nb_outfile)
         else:
             logger.info(f"{nb_outfile} already exists. Skipping")

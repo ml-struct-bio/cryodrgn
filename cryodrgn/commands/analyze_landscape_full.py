@@ -29,12 +29,12 @@ from matplotlib.colors import ListedColormap
 import seaborn as sns
 import umap
 
-import cryodrgn
 from cryodrgn import config, utils
 from cryodrgn.lattice import Lattice
 from cryodrgn.models import HetOnlyVAE, ResidLinearMLP, get_decoder
 from cryodrgn.models_ai import HyperVolume, eval_volume_method as eval_volume_method_ai
 from cryodrgn.source import ImageSource
+from cryodrgn import _ROOT as CRYODRGN_ROOT
 
 logger = logging.getLogger(__name__)
 
@@ -563,11 +563,10 @@ def main(args: argparse.Namespace) -> None:
 
     # Copy viz notebook
     out_ipynb = os.path.join(landscape_dir, "cryoDRGN_analyze_landscape.ipynb")
+    template_dir = os.path.join(CRYODRGN_ROOT, "templates")
     if not os.path.exists(out_ipynb):
         logger.info("Creating jupyter notebook...")
-        ipynb = os.path.join(
-            cryodrgn._ROOT, "templates", "cryoDRGN_analyze_landscape_template.ipynb"
-        )
+        ipynb = os.path.join(template_dir, "cryoDRGN_analyze_landscape_template.ipynb")
         shutil.copyfile(ipynb, out_ipynb)
     else:
         logger.info(f"{out_ipynb} already exists. Skipping")

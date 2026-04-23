@@ -34,6 +34,7 @@ dependencies = [
     "plotly<6",
     "igraph",
     "starfile",
+    "flask>=3.0.0",
 ]
 
 [project.optional-dependencies]
@@ -61,6 +62,9 @@ write_to = "cryodrgn/_version.py"
 [tool.setuptools]
 include-package-data = true
 zip-safe = false
+
+[tool.setuptools.package-data]
+"cryodrgn.dashboard" = ["templates/*.html", "static/*"]
 
 [tool.setuptools.packages.find]
 where = ["."]

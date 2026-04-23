@@ -1,10 +1,9 @@
 """Tools for working with cryoDRGN configuration parameters saved to .yaml files."""
 
-from datetime import datetime
 import os.path
 import sys
+from datetime import datetime
 from typing import Optional, Union
-import cryodrgn
 from cryodrgn import utils
 
 
@@ -33,7 +32,9 @@ def save(
 
     # Add extra useful information to incoming config dict
     if "version" not in config:
-        config["version"] = cryodrgn.__version__
+        from cryodrgn import __version__ as CRYODRGN_VERSION
+
+        config["version"] = CRYODRGN_VERSION
     if "time" not in config:
         config["time"] = datetime.now()
     if "cmd" not in config:

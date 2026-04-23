@@ -55,7 +55,6 @@ cryodrgn graph_traversal output/toy_recon_vae/z.pkl --anchors 0 10 100 \
                          -o output/toy_recon_vae/graph_traversal/path.txt \
                          --outind output/toy_recon_vae/graph_traversal/z.path.txt
 
-# Test apex.amp
 cryodrgn train_nn data/hand.mrcs --poses data/hand_rot.pkl -o output/hand_recon -b 8 --no-amp
 cryodrgn train_nn data/hand.mrcs --poses data/hand_rot.pkl -o output/hand_recon -b 16
 

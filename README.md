@@ -20,6 +20,7 @@ For any feedback, questions, or bugs, please file a Github issue or start a Gith
 
 
 ### Updates in Version 4.2.x
+* [NEW] interactive dashboard for visualizing cryoDRGN results in a series of web apps
 * [NEW] cryoDRGN-AI *ab initio* reconstruction method integrated into cryoDRGN as `cryodrgn abinit`
 	* former ab-initio reconstruction methods are deprecated as `cryodrgn abinit_het_old` and `cryodrgn abinit_homo_old`
 	* `cryodrgn analyze`, `landscape`, etc. now support cryoDRGN-AI models as well as the previous cryoDRGN models

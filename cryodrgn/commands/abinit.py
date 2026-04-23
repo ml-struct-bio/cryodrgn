@@ -36,12 +36,6 @@ import warnings
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
-# If we can't import apex amp, we'll just use the default PyTorch AMP
-try:
-    import apex.amp as amp  # type: ignore
-except ImportError:
-    pass
-
 
 def add_args(parser: argparse.ArgumentParser) -> None:
     """The command-line arguments for use with the command `cryodrgn abinit`."""
@@ -166,6 +160,12 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         type=int,
         default=None,
         help="Number of epochs to train for SGD (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--n-imgs-pretrain",
+        type=int,
+        default=10000,
+        help="Number of images to use for pre-training (default: %(default)s).",
     )
     group.add_argument(
         "--pose-only-phase",
@@ -443,14 +443,6 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "Conformations are randomly initialized if not set.",
     )
 
-    # Pretrain
-    parser.add_argument(
-        "--n-imgs-pretrain",
-        type=int,
-        default=10000,
-        help="Number of images to use for pre-training (default: %(default)s).",
-    )
-
     group = parser.add_argument_group("Pose search")
     group.add_argument(
         "--l-start",
@@ -661,7 +653,7 @@ class ModelTrainer:
                     )
 
                 self.logger.info(f"Filtering dataset with {self.configs.ind}")
-                self.index = pickle.load(open(self.configs.ind, "rb"))
+                self.index = utils.load_pkl(self.configs.ind)
 
         else:
             self.index = None
@@ -1045,8 +1037,9 @@ class ModelTrainer:
         self.norm_mean, self.norm_std = self.data.norm
 
         # Activating Automatic Mixed Precision (AMP) model training through `torch.amp`
-        self.scaler = None
         if self.configs.amp:
+            self.logger.info("Using Automatic Mixed Precision training via torch.amp")
+
             if self.configs.pose_table_optimizer_type == "lbfgs":
                 raise ValueError("AMP is not compatible with the lbfgs optimizer!")
             if (self.data.D - 1) % 8 != 0:
@@ -1080,17 +1073,9 @@ class ModelTrainer:
                     f"{self.configs.hypervolume_dim=} is not a multiple of 8!"
                 )
 
-            try:
-                self.scaler = amp.initialize(self.scaler, opt_level="O1")
-            except:  # noqa: E722
-                self.scaler = torch.cuda.amp.GradScaler()
-                self.logger.info(
-                    "Using Automatic Mixed Precision training via torch.amp"
-                )
-            else:
-                self.logger.info(
-                    "Using Automatic Mixed Precision training via apex.amp"
-                )
+            self.scaler = torch.cuda.amp.GradScaler()
+        else:
+            self.scaler = None
 
     def train(self):
         self.logger.info("--- Training Starts Now ---")

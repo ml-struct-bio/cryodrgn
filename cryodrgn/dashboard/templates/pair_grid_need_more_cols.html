@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}
+{% if kind == "z3" %}3-D Latent Space Visualizer · cryoDRGN{% else %}Pair grid · cryoDRGN{% endif %}
+{% endblock %}
+{% block nav_page_title %}
+{% if kind == "z3" %}<span class="nav-page-title">3-D Latent Space Visualizer</span>{% else %}<span class="nav-page-title">Pairwise plot generator</span>{% endif %}
+{% endblock %}
+{% block content %}
+<div class="cryo-dash-page">
+<div class="cryo-dash-top"><a href="/">← Back</a></div>
+{% if kind == "zdim" %}
+<p class="lead">The pairwise grid needs at least two latent coordinates. This reconstruction has <strong>{{ n }}</strong>.</p>
+{% elif kind == "z3" %}
+<p class="lead">The 3-D Latent Space Visualizer needs at least three latent coordinates. This reconstruction has <strong>{{ n }}</strong>.</p>
+{% elif kind == "pca" %}
+<p class="lead">The diagonal embedding needs PCA components in the analysis table for this epoch.</p>
+{% else %}
+<p class="lead">There is no numeric column available to color the lower panels.</p>
+{% endif %}
+</div>
+{% endblock %}

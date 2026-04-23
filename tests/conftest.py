@@ -2,9 +2,14 @@
 
 import pytest
 import os
+import argparse
 import shutil
 from typing import Optional, Union, Generator, Any
 from dataclasses import dataclass
+
+from cryodrgn.commands import analyze, train_vae
+from cryodrgn.dashboard import app as dash_app
+from cryodrgn.dashboard.data import DashboardExperiment, load_experiment
 from cryodrgn.utils import run_command
 
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
@@ -463,3 +468,93 @@ def abinit_dir(request, tmpdir_factory) -> AbInitioDir:
     adir = AbInitioDir(**args)
     yield adir
     shutil.rmtree(adir.outdir)
+
+
+# ---------------------------------------------------------------------------
+# Dashboard split-suite shared fixtures
+# ---------------------------------------------------------------------------
+
+DASHBOARD_TRAIN_EPOCHS = 3
+DASHBOARD_ANALYZE_EPOCH = 2
+
+
+def _dashboard_data_dir() -> str:
+    return os.path.join(os.path.dirname(__file__), "data")
+
+
+def _dashboard_is_usable_workdir(workdir: str) -> bool:
+    required = [
+        os.path.join(workdir, "config.yaml"),
+        os.path.join(workdir, f"weights.{DASHBOARD_ANALYZE_EPOCH}.pkl"),
+        os.path.join(workdir, f"z.{DASHBOARD_ANALYZE_EPOCH}.pkl"),
+        os.path.join(workdir, f"analyze.{DASHBOARD_ANALYZE_EPOCH}", "umap.pkl"),
+    ]
+    return all(os.path.exists(p) for p in required)
+
+
+def _dashboard_run_train_and_analyze(workdir: str) -> None:
+    data_dir = _dashboard_data_dir()
+    parser = argparse.ArgumentParser()
+    train_vae.add_args(parser)
+    train_args = parser.parse_args(
+        [
+            os.path.join(data_dir, "hand.mrcs"),
+            "-o",
+            workdir,
+            "--poses",
+            os.path.join(data_dir, "hand_rot_trans.pkl"),
+            "--ctf",
+            os.path.join(data_dir, "test_ctf.100.pkl"),
+            "-b",
+            "8",
+            "--no-amp",
+            "-n",
+            str(DASHBOARD_TRAIN_EPOCHS),
+            "--zdim",
+            "4",
+            "--tdim",
+            "16",
+            "--tlayers",
+            "1",
+            "--seed",
+            "0",
+            "--no-analysis",
+        ]
+    )
+    train_vae.main(train_args)
+
+    parser = argparse.ArgumentParser()
+    analyze.add_args(parser)
+    analyze_args = parser.parse_args(
+        [workdir, str(DASHBOARD_ANALYZE_EPOCH), "--ksample", "5", "--pc", "2"]
+    )
+    analyze.main(analyze_args)
+
+
+@pytest.fixture(scope="session")
+def dashboard_workdir(tmp_path_factory: pytest.TempPathFactory) -> str:
+    cache = os.environ.get("CRYODRGN_DASHBOARD_TEST_OUTDIR")
+    if cache:
+        workdir = os.path.join(cache, "pytest_dashboard_fixture")
+        os.makedirs(workdir, exist_ok=True)
+    else:
+        workdir = str(tmp_path_factory.mktemp("dashboard_vae"))
+
+    if not _dashboard_is_usable_workdir(workdir):
+        _dashboard_run_train_and_analyze(workdir)
+        assert _dashboard_is_usable_workdir(
+            workdir
+        ), f"Dashboard fixture incomplete at {workdir!r}"
+    return workdir
+
+
+@pytest.fixture(scope="session")
+def dashboard_experiment(dashboard_workdir: str) -> DashboardExperiment:
+    return load_experiment(dashboard_workdir)
+
+
+@pytest.fixture(scope="function")
+def flask_client(dashboard_workdir: str):
+    app = dash_app.create_app(workdir=dashboard_workdir)
+    with app.test_client() as client:
+        yield client

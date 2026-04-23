@@ -11,13 +11,12 @@ import seaborn as sns
 import torch
 import nbformat
 
-import cryodrgn
 from cryodrgn import analysis, utils
+from cryodrgn import _ROOT as CRYODRGN_ROOT
 from cryodrgn import models_ai as models
 from cryodrgn.mrcfile import write_mrc
 from cryodrgn.lattice import Lattice
 
-TEMPLATE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
 matplotlib.use("Agg")
 
 
@@ -205,12 +204,10 @@ class ModelAnalyzer:
 
         for ipynb in ["cryoDRGN_figures", "cryoDRGN_filtering"]:
             out_ipynb = os.path.join(self.outdir, f"{ipynb}.ipynb")
-
+            template_dir = os.path.join(CRYODRGN_ROOT, "templates")
             if not os.path.exists(out_ipynb):
                 self.logger.info(f"Creating demo Jupyter notebook {out_ipynb}...")
-                ipynb = os.path.join(
-                    cryodrgn._ROOT, "templates", f"{ipynb}_template.ipynb"
-                )
+                ipynb = os.path.join(template_dir, f"{ipynb}_template.ipynb")
                 shutil.copyfile(ipynb, out_ipynb)
             else:
                 self.logger.info(f"{out_ipynb} already exists. Skipping")

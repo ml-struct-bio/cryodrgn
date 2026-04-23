@@ -18,6 +18,7 @@ import yaml
 
 from cryodrgn.commands import dashboard as dash_cli, train_vae
 from cryodrgn.dashboard import app as dash_app
+from cryodrgn.dashboard.app import _TRAJECTORY_INELIGIBLE_MSG
 from cryodrgn.dashboard.command_builder_cli_help import (
     help_map_from_command_py,
     load_cli_help_maps,
@@ -63,6 +64,19 @@ from cryodrgn.dashboard.trajectory import (
 )
 
 ANALYZE_EPOCH = 2
+
+
+def _traj_flask_200_or_ineligible(r, experiment: DashboardExperiment) -> bool:
+    """If ``explorer_volumes_eligible`` is true, require HTTP 200; else require 400 + standard error."""
+    if explorer_volumes_eligible(experiment):
+        assert (
+            r.status_code == 200
+        ), f"{r.status_code}: {r.get_data(as_text=True)[:500]!r}"
+        return True
+    assert r.status_code == 400
+    err = (r.get_json() or {}).get("error")
+    assert err == _TRAJECTORY_INELIGIBLE_MSG, err
+    return False
 
 
 class TestConfigHasCryodrgnCmd:
@@ -625,7 +639,10 @@ class TestFlaskErrorPaths:
 
 class TestTrajectoryImportAnchors:
     def test_import_happy_path(
-        self, flask_client, dashboard_workdir: str, tmp_path
+        self,
+        flask_client,
+        dashboard_experiment: DashboardExperiment,
+        tmp_path,
     ) -> None:
         anchors_file = tmp_path / "anchors.txt"
         anchors_file.write_text("0 5 10\n")
@@ -639,7 +656,8 @@ class TestTrajectoryImportAnchors:
                 "n_points": 2,
             },
         )
-        assert r.status_code == 200
+        if not _traj_flask_200_or_ineligible(r, dashboard_experiment):
+            return
         js = r.get_json()
         assert js["ok"] is True
         assert js["anchor_indices"] == [0, 5, 10]
@@ -686,7 +704,9 @@ class TestListServerFiles:
 
 
 class TestSaveZPath:
-    def test_roundtrip(self, flask_client, tmp_path) -> None:
+    def test_roundtrip(
+        self, flask_client, tmp_path, dashboard_experiment: DashboardExperiment
+    ) -> None:
         z_arr = np.arange(8, dtype=np.float64).reshape(2, 4)
         txt = z_traj_to_savetxt_str(z_arr)
         out_path = str(tmp_path / "z-path.txt")
@@ -694,7 +714,8 @@ class TestSaveZPath:
             "/api/trajectory_save_zpath",
             json={"z_path_txt": txt, "out_path": out_path},
         )
-        assert r.status_code == 200
+        if not _traj_flask_200_or_ineligible(r, dashboard_experiment):
+            return
         assert os.path.isfile(out_path)
         loaded = np.loadtxt(out_path)
         np.testing.assert_allclose(loaded, z_arr)
@@ -837,7 +858,9 @@ class TestRoutesTableIntegrity:
 
 
 class TestIndexTemplateNavLinks:
-    def test_index_has_expected_nav_links(self, flask_client) -> None:
+    def test_index_has_expected_nav_links(
+        self, flask_client, dashboard_experiment: DashboardExperiment
+    ) -> None:
         r = flask_client.get("/")
         assert r.status_code == 200
         body = r.get_data(as_text=True)
@@ -845,10 +868,15 @@ class TestIndexTemplateNavLinks:
             "/explorer",
             "/pairplot",
             "/latent-3d",
-            "/trajectory",
             "/command-builder",
         ):
             assert link in body, f"nav link {link!r} missing from /"
+        if explorer_volumes_eligible(dashboard_experiment):
+            assert "/trajectory" in body, "nav link '/trajectory' missing from /"
+        else:
+            assert "CUDA-enabled machine" in body
+            assert "Trajectory creator" in body
+            assert "/trajectory" not in body
 
 
 class TestCommandBuilderOnlyMode:

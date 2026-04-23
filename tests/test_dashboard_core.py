@@ -16,10 +16,14 @@ import pandas as pd
 import pytest
 
 from cryodrgn.dashboard import app as dash_app
-from cryodrgn.dashboard.app import _trajectory_eligibility_error
+from cryodrgn.dashboard.app import (
+    _trajectory_eligibility_error,
+    _TRAJECTORY_INELIGIBLE_MSG,
+)
 from cryodrgn.dashboard.data import DashboardExperiment, list_z_epochs
 from cryodrgn.dashboard.explorer_volumes import (
     _chimerax_render_cmds,
+    explorer_volumes_eligible,
 )
 from cryodrgn.dashboard.plots import pair_grid_png
 from cryodrgn.dashboard.preload import (
@@ -61,6 +65,19 @@ from cryodrgn.dashboard.trajectory import (
 )
 
 ANALYZE_EPOCH = 2
+
+
+def _traj_flask_200_or_ineligible(r, experiment: DashboardExperiment) -> bool:
+    """If ``explorer_volumes_eligible`` is true, require HTTP 200; else require 400 + standard error."""
+    if explorer_volumes_eligible(experiment):
+        assert (
+            r.status_code == 200
+        ), f"{r.status_code}: {r.get_data(as_text=True)[:500]!r}"
+        return True
+    assert r.status_code == 400
+    err = (r.get_json() or {}).get("error")
+    assert err == _TRAJECTORY_INELIGIBLE_MSG, err
+    return False
 
 
 class TestParseIntFromDict:
@@ -288,9 +305,11 @@ class TestDashboardPairPlot:
 
 
 class TestDashboardTrajectoryCoords:
-    """Trajectory coord-only endpoints don't need ChimeraX / GPU."""
+    """Flask tests for trajectory JSON APIs (gated by ``explorer_volumes_eligible`` in the app)."""
 
-    def test_direct_interpolation(self, flask_client) -> None:
+    def test_direct_interpolation(
+        self, flask_client, dashboard_experiment: DashboardExperiment
+    ) -> None:
         r = flask_client.post(
             "/api/trajectory_coords",
             json={
@@ -302,14 +321,17 @@ class TestDashboardTrajectoryCoords:
                 "n_points": 3,
             },
         )
-        assert r.status_code == 200
+        if not _traj_flask_200_or_ineligible(r, dashboard_experiment):
+            return
         js = r.get_json()
         # 3 interpolation pts + 2 endpoints = 5 (matches live-server observation).
         assert len(js["z_traj"]) >= 2
         assert all(len(z) == 4 for z in js["z_traj"])
         assert js["mode"] == "direct"
 
-    def test_nearest_mode(self, flask_client) -> None:
+    def test_nearest_mode(
+        self, flask_client, dashboard_experiment: DashboardExperiment
+    ) -> None:
         r = flask_client.post(
             "/api/trajectory_coords",
             json={
@@ -321,10 +343,13 @@ class TestDashboardTrajectoryCoords:
                 "n_points": 3,
             },
         )
-        assert r.status_code == 200
+        if not _traj_flask_200_or_ineligible(r, dashboard_experiment):
+            return
         assert r.get_json()["mode"] == "nearest"
 
-    def test_anchor_driven_trajectory(self, flask_client) -> None:
+    def test_anchor_driven_trajectory(
+        self, flask_client, dashboard_experiment: DashboardExperiment
+    ) -> None:
         r = flask_client.post(
             "/api/trajectory_coords",
             json={
@@ -335,27 +360,37 @@ class TestDashboardTrajectoryCoords:
                 "n_points": 3,
             },
         )
-        assert r.status_code == 200
+        if not _traj_flask_200_or_ineligible(r, dashboard_experiment):
+            return
         js = r.get_json()
         assert js.get("traj_particle_indices"), "missing anchor particle indices"
 
-    def test_kmeans_centers(self, flask_client) -> None:
+    def test_kmeans_centers(
+        self, flask_client, dashboard_experiment: DashboardExperiment
+    ) -> None:
         r = flask_client.post(
             "/api/trajectory_kmeans_centers",
             json={"x": "z0", "y": "z1", "mode": "direct", "n_points": 2},
         )
-        assert r.status_code == 200
+        if not _traj_flask_200_or_ineligible(r, dashboard_experiment):
+            return
 
-    def test_random_indices(self, flask_client) -> None:
+    def test_random_indices(
+        self, flask_client, dashboard_experiment: DashboardExperiment
+    ) -> None:
         r = flask_client.post(
             "/api/trajectory_random_indices",
             json={"x": "z0", "y": "z1", "mode": "direct", "n_points": 2},
         )
-        assert r.status_code == 200
+        if not _traj_flask_200_or_ineligible(r, dashboard_experiment):
+            return
 
-    def test_default_endpoints(self, flask_client) -> None:
+    def test_default_endpoints(
+        self, flask_client, dashboard_experiment: DashboardExperiment
+    ) -> None:
         r = flask_client.get("/api/default_trajectory_endpoints?x=z0&y=z1")
-        assert r.status_code == 200
+        if not _traj_flask_200_or_ineligible(r, dashboard_experiment):
+            return
 
 
 class TestDashboardZPkl:

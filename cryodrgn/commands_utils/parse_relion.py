@@ -14,16 +14,16 @@ cryodrgn_utils parse_relion -t tomograms.star -p particles.3D.star -D 5760 4092 
 """
 
 
-# minimum required columns for tomograms .star file
-TOMOGRAMS_REQUIRED_COLUMNS = {
+# minimum required columns for tomograms .star file (unordered)
+TOMOGRAMS_REQUIRED_COLUMNS = [
     "rlnTomoName",
     "rlnTomoHand",
     "rlnTomoTiltSeriesStarFile",
     "rlnTomoTiltSeriesPixelSize",
-}
+]
 
-# minimum required columns for 3D particles .star file
-PARTICLES_3D_REQUIRED_COLUMNS = {
+# minimum required columns for 3D particles .star file (unordered)
+PARTICLES_3D_REQUIRED_COLUMNS = [
     "rlnImageName",
     "rlnTomoName",
     "rlnTomoParticleName",
@@ -42,10 +42,10 @@ PARTICLES_3D_REQUIRED_COLUMNS = {
     "rlnAmplitudeContrast",
     "rlnImageSize",
     "rlnImagePixelSize",
-}
+]
 
-# minimum required columns for tilt series .star file
-TILT_SERIES_REQUIRED_COLUMNS = {
+# minimum required columns for tilt series .star file (unordered)
+TILT_SERIES_REQUIRED_COLUMNS = [
     "rlnMicrographName",
     "rlnTomoXTilt",
     "rlnTomoYTilt",
@@ -57,8 +57,8 @@ TILT_SERIES_REQUIRED_COLUMNS = {
     "rlnDefocusU",
     "rlnDefocusV",
     "rlnDefocusAngle",
-    "rlnPhaseShift",
-}
+    # "rlnPhaseShift", # optional
+]
 
 # output columns for 2D particles .star file (ordered)
 PARTICLES_2D_OUTPUT_COLUMNS = [
@@ -314,7 +314,7 @@ def main(args):
 
     print(f"loaded {len(tomograms_df)} tomograms from [{args.tomograms}]")
 
-    missing_columns = TOMOGRAMS_REQUIRED_COLUMNS - set(tomograms_df.columns)
+    missing_columns = [col for col in TOMOGRAMS_REQUIRED_COLUMNS if col not in tomograms_df.columns]
     if missing_columns:
         raise ValueError(
             f"tomograms .star file [{args.tomograms}] is missing required columns: {missing_columns}"
@@ -349,7 +349,7 @@ def main(args):
 
     print(f"loaded {len(particles_3D_df)} particles from [{args.particles}]")
 
-    missing_columns = PARTICLES_3D_REQUIRED_COLUMNS - set(particles_3D_df.columns)
+    missing_columns = [col for col in PARTICLES_3D_REQUIRED_COLUMNS if col not in particles_3D_df.columns]
     if missing_columns:
         raise ValueError(
             f"3D particles .star file [{args.particles}] is missing required columns: {missing_columns}"
@@ -400,7 +400,7 @@ def main(args):
 
             print(f"loaded {len(tilt_series_i_df)} tilts for tomogram [{tomograms_i_tomo_name}] from tilt series .star file [{tomograms_i_tilt_series_star_file}]")
 
-            missing_columns = TILT_SERIES_REQUIRED_COLUMNS - set(tilt_series_i_df.columns)
+            missing_columns = [col for col in TILT_SERIES_REQUIRED_COLUMNS if col not in tilt_series_i_df.columns]
             if missing_columns:
                 raise ValueError(
                     f"tilt series .star file [{tomograms_i_tilt_series_star_file}] is missing required columns: {missing_columns}"
@@ -482,7 +482,7 @@ def main(args):
         _particle["rlnImageSize"] = particles_3D_i_image_size
         _particle["rlnImagePixelSize"] = particles_3D_i_image_pixel_size
         _particle["rlnMicrographPreExposure"] = tilt_series_i_df_visible["rlnMicrographPreExposure"].to_numpy()
-        _particle["rlnPhaseShift"] = tilt_series_i_df_visible["rlnPhaseShift"].to_numpy()
+        _particle["rlnPhaseShift"] = tilt_series_i_df_visible["rlnPhaseShift"].to_numpy() if "rlnPhaseShift" in tilt_series_i_df_visible.columns else 0.0
         _particle["rlnVoltage"] = particles_3D_i_voltage
         _particle["rlnSphericalAberration"] = particles_3D_i_spherical_aberration
         _particle["rlnAmplitudeContrast"] = particles_3D_i_amplitude_contrast
@@ -518,6 +518,12 @@ def main(args):
     # combine all particles_2D_i into single particles_2D_df dataframe
     particles_2D_df = pd.concat(particles_2D_list, ignore_index=True)
     particles_2D_df["_image_index"] = particles_2D_df.index # unique index for each 2D particle row
+
+    missing_columns = [col for col in PARTICLES_2D_OUTPUT_COLUMNS if col not in particles_2D_df.columns]
+    if missing_columns:
+        raise ValueError(
+            f"2D particles .star file [{args.output}] is missing required columns: {missing_columns}"
+        )
 
     # reorder columns
     if args.full_data:

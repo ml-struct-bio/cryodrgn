@@ -78,6 +78,10 @@ class TestAbinitHetero:
             "-o",
             outdir,
             *self.model_args,
+            "--seed",
+            "0",
+            "--shuffle-seed",
+            "0",
             "--pretrain",
             "1",
             "--num-epochs",
@@ -220,6 +224,9 @@ class TestAbinitHetero:
             ]
         )
         graph_traversal.main(args)
+        assert os.path.exists(
+            os.path.join(outdir, f"graph_traversal_zpath.{epoch}.txt")
+        ), "graph_traversal must write z-path; check anchors / NN graph for this seed"
 
     def test_analyze_landscape(self, tmpdir_factory, particles, ctf, indices):
         outdir = self.get_outdir(tmpdir_factory, particles, indices, ctf)

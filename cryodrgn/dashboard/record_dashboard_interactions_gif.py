@@ -33,6 +33,9 @@ Or from the repo root (same entrypoint)::
 
 By default the script logs progress and elapsed time for slow steps. Pass ``-q`` / ``--quiet`` for
 minimal output (final ``Wrote …`` lines only, plus errors on stderr).
+
+Pass ``--low-res-output PATH`` to also write a smaller GIF that is scaled down until it fits under
+``--low-res-max-mb`` (default **10** MiB) — handy for READMEs, Slack, or Git hosting limits.
 """
 
 from __future__ import annotations
@@ -889,6 +892,141 @@ def record_sequence(page, base: str, buf: FrameBuffer, *, log) -> None:
         buf.snap(page)
 
 
+def _prepare_gif_frame_lists(
+    buf: FrameBuffer,
+    *,
+    max_width: int,
+    max_wall_ms: int,
+) -> tuple[list, list[int]]:
+    """Build resized RGB frames and durations, honouring ``max_wall_ms`` truncation."""
+    from PIL import Image
+
+    if not buf.pngs:
+        raise RuntimeError("no frames to save")
+    if len(buf.durations_ms) != len(buf.pngs):
+        raise RuntimeError("internal error: durations_ms out of sync with pngs")
+    pngs_out: list[bytes] = []
+    durs_out: list[int] = []
+    used_ms = 0
+    for raw, d in zip(buf.pngs, buf.durations_ms):
+        d = max(1, int(d))
+        if used_ms + d > max_wall_ms:
+            break
+        pngs_out.append(raw)
+        durs_out.append(d)
+        used_ms += d
+    if not pngs_out:
+        pngs_out = [buf.pngs[0]]
+        durs_out = [max(1, min(buf.durations_ms[0], max_wall_ms))]
+    pil_frames: list[Image.Image] = []
+    for raw in pngs_out:
+        im = Image.open(io.BytesIO(raw)).convert("RGB")
+        if max_width and im.width > max_width:
+            ratio = max_width / im.width
+            pil_frames.append(
+                im.resize(
+                    (max_width, max(1, int(im.height * ratio))),
+                    Image.Resampling.LANCZOS,
+                )
+            )
+        else:
+            pil_frames.append(im)
+    return pil_frames, durs_out
+
+
+def _pil_frames_to_gif_bytes(
+    pil_frames: list,
+    durs_out: list[int],
+) -> bytes:
+    out = io.BytesIO()
+    pil_frames[0].save(
+        out,
+        format="GIF",
+        save_all=True,
+        append_images=pil_frames[1:],
+        duration=durs_out,
+        loop=0,
+        optimize=True,
+    )
+    return out.getvalue()
+
+
+def _gif_max_width_candidates(primary_max_width: int) -> list[int]:
+    """Descending widths to try when fitting a GIF under a byte budget."""
+    cap = primary_max_width if primary_max_width > 0 else 10_000
+    seeds = [896, 768, 640, 560, 512, 448, 384, 336, 288, 256, 224, 192, 160]
+    out: list[int] = []
+    for w in seeds:
+        if w <= cap and w not in out:
+            out.append(w)
+    if cap not in out and cap >= 160:
+        out.insert(0, int(cap))
+    result = sorted(set(out), reverse=True)
+    if not result:
+        result = [max(120, min(int(cap), 160))]
+    return result
+
+
+def _save_buf_to_gif_under_budget(
+    buf: FrameBuffer,
+    output: Path,
+    *,
+    frame_ms: int,
+    primary_max_width: int,
+    max_wall_ms: int,
+    max_bytes: int,
+    log,
+) -> tuple[int, float, int, int]:
+    """Write a GIF no larger than ``max_bytes`` if possible by lowering width.
+
+    Returns ``(n_frames, wall_s, chosen_max_width, final_size_bytes)``.
+    If the budget cannot be met, writes the smallest attempt and logs a warning.
+    """
+    if not buf.pngs:
+        raise RuntimeError("no frames to save")
+    widths = _gif_max_width_candidates(primary_max_width)
+    best_data: bytes | None = None
+    best_w: int = widths[-1] if widths else 160
+    best_frames: list | None = None
+    best_durs: list[int] | None = None
+    with _timed_step(
+        log,
+        f"Encode low-res GIF: try widths down to budget ({output.name}, ≤{max_bytes / (1024 * 1024):.1f} MiB)",
+        slow_note=True,
+    ):
+        for mw in widths:
+            pil_frames, durs_out = _prepare_gif_frame_lists(
+                buf, max_width=mw, max_wall_ms=max_wall_ms
+            )
+            data = _pil_frames_to_gif_bytes(pil_frames, durs_out)
+            best_data = data
+            best_w = mw
+            best_frames = pil_frames
+            best_durs = durs_out
+            if len(data) <= max_bytes:
+                break
+            # Drop references so PIL can release memory before the next attempt.
+            for im in pil_frames:
+                with contextlib.suppress(Exception):
+                    im.close()
+        assert (
+            best_data is not None and best_frames is not None and best_durs is not None
+        )
+        if len(best_data) > max_bytes:
+            log(
+                f"Low-res GIF still {len(best_data) / (1024 * 1024):.2f} MiB at width {best_w}px "
+                f"(budget {max_bytes / (1024 * 1024):.1f} MiB); writing smallest attempt anyway"
+            )
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(best_data)
+        wall_s = sum(best_durs) / 1000.0
+        nf = len(best_frames)
+        for im in best_frames:
+            with contextlib.suppress(Exception):
+                im.close()
+        return nf, wall_s, best_w, len(best_data)
+
+
 def _save_buf_to_gif(
     buf: FrameBuffer,
     output: Path,
@@ -899,43 +1037,16 @@ def _save_buf_to_gif(
     log,
     label: str = "GIF",
 ) -> tuple[int, float]:
-    from PIL import Image
-
     if not buf.pngs:
         raise RuntimeError("no frames to save")
-    if len(buf.durations_ms) != len(buf.pngs):
-        raise RuntimeError("internal error: durations_ms out of sync with pngs")
     with _timed_step(
         log,
         f"Encode GIF ({label}): resize {len(buf.pngs)} frames, write {output.name}",
         slow_note=True,
     ):
-        pngs_out: list[bytes] = []
-        durs_out: list[int] = []
-        used_ms = 0
-        for raw, d in zip(buf.pngs, buf.durations_ms):
-            d = max(1, int(d))
-            if used_ms + d > max_wall_ms:
-                break
-            pngs_out.append(raw)
-            durs_out.append(d)
-            used_ms += d
-        if not pngs_out:
-            pngs_out = [buf.pngs[0]]
-            durs_out = [max(1, min(buf.durations_ms[0], max_wall_ms))]
-        pil_frames: list[Image.Image] = []
-        for raw in pngs_out:
-            im = Image.open(io.BytesIO(raw)).convert("RGB")
-            if max_width and im.width > max_width:
-                ratio = max_width / im.width
-                pil_frames.append(
-                    im.resize(
-                        (max_width, max(1, int(im.height * ratio))),
-                        Image.Resampling.LANCZOS,
-                    )
-                )
-            else:
-                pil_frames.append(im)
+        pil_frames, durs_out = _prepare_gif_frame_lists(
+            buf, max_width=max_width, max_wall_ms=max_wall_ms
+        )
         output.parent.mkdir(parents=True, exist_ok=True)
         pil_frames[0].save(
             output,
@@ -983,10 +1094,30 @@ def main() -> int:
         action="store_true",
         help="Minimal output (only final 'Wrote …' lines and errors)",
     )
+    parser.add_argument(
+        "--low-res-output",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help=(
+            "Also write a smaller GIF at PATH by shrinking width until it fits "
+            "under --low-res-max-mb (default 10 MiB), after the main encode"
+        ),
+    )
+    parser.add_argument(
+        "--low-res-max-mb",
+        type=float,
+        default=10.0,
+        metavar="MB",
+        help="Size ceiling for --low-res-output (default: %(default)s MiB)",
+    )
     args = parser.parse_args()
     outdir = args.outdir.resolve()
     if not outdir.is_dir():
         print(f"error: not a directory: {outdir}", file=sys.stderr)
+        return 1
+    if args.low_res_max_mb <= 0:
+        print("error: --low-res-max-mb must be positive", file=sys.stderr)
         return 1
 
     try:
@@ -1097,6 +1228,25 @@ def main() -> int:
             f"Wrote {args.output} ({nf} frames, ≈ {wall_s:.2f} s playback, "
             f"mean {mean_ms:.1f} ms/frame)"
         )
+        if args.low_res_output is not None:
+            low_path = args.low_res_output.resolve()
+            max_bytes = int(max(args.low_res_max_mb, 1e-6) * 1024 * 1024)
+            lw = args.max_width if args.max_width > 0 else 896
+            nf2, wall2, picked_w, nbytes = _save_buf_to_gif_under_budget(
+                buf,
+                low_path,
+                frame_ms=args.frame_ms,
+                primary_max_width=lw,
+                max_wall_ms=MAX_GIF_WALL_MS,
+                max_bytes=max_bytes,
+                log=log,
+            )
+            mean2 = (wall2 * 1000.0 / nf2) if nf2 else 0.0
+            print(
+                f"Wrote {low_path} ({nf2} frames, max width {picked_w}px, "
+                f"{nbytes / (1024 * 1024):.2f} MiB, ≈ {wall2:.2f} s playback, "
+                f"mean {mean2:.1f} ms/frame)"
+            )
         return 0
     except Exception as e:
         print(f"error: {e}", file=sys.stderr)

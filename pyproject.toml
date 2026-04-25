@@ -49,6 +49,12 @@ dev = [
     "sphinx-rtd-theme",
     "twine"
 ]
+# Headless dashboard GIF capture (``record_dashboard_interactions_gif``): after install, run
+# ``playwright install chromium`` so the browser binary is available.
+dashboard-gif = [
+    "playwright>=1.41.0",
+    "pillow>=9.0.0",
+]
 
 [project.scripts]
 cryodrgn = "cryodrgn.command_line:main_commands"

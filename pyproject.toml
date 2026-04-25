@@ -44,6 +44,7 @@ dev = [
     "pre-commit",
     "pyright==1.1.300",
     "pytest>=6",
+    "pytest-xdist",
     "sphinx",
     "sphinx-rtd-theme",
     "twine"

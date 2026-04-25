@@ -4,6 +4,7 @@ import pytest
 import argparse
 import os.path
 import pickle
+import shutil
 import numpy as np
 import nbformat
 from nbconvert.preprocessors import ExecutePreprocessor
@@ -12,6 +13,7 @@ from cryodrgn.commands import (
     abinit,
     analyze_landscape,
     analyze_landscape_full,
+    eval_vol,
     filter,
     graph_traversal,
 )
@@ -413,3 +415,23 @@ class TestAbinitHetero:
         landfull_dir = os.path.join(outdir, "landscape.3", "landscape_full")
         assert os.path.exists(os.path.join(landfull_dir, "vol_pca_sampled.pkl"))
         assert os.path.exists(os.path.join(landfull_dir, "z.sampled.pkl"))
+
+    def test_eval_volume(self, tmpdir_factory, particles, ctf, indices):
+        """Parity with legacy abinit: eval_vol along graph-traversal z-path (new abinit config)."""
+        outdir = self.get_outdir(tmpdir_factory, particles, indices, ctf)
+        parser = argparse.ArgumentParser()
+        eval_vol.add_args(parser)
+        args = parser.parse_args(
+            [
+                os.path.join(outdir, "weights.3.pkl"),
+                "--config",
+                os.path.join(outdir, "config.yaml"),
+                "--zfile",
+                os.path.join(outdir, "graph_traversal_zpath.3.txt"),
+                "-o",
+                os.path.join(outdir, "eval_vols"),
+            ]
+        )
+        eval_vol.main(args)
+        assert os.path.isdir(os.path.join(outdir, "eval_vols"))
+        shutil.rmtree(outdir)

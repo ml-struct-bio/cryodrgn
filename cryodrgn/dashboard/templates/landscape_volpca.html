@@ -1,0 +1,468 @@
+{% extends "base.html" %}
+{% block title %}Volume sketched landscape explorer · cryoDRGN{% endblock %}
+{% block nav_page_title %}<span class="nav-title-sep" aria-hidden="true">·</span><span class="nav-page-title">Volume sketched landscape explorer</span>{% endblock %}
+{% block head %}
+<style>
+  .cryo-dash-page--volsketch .volsketch-grid {
+    display: grid;
+    grid-template-columns: minmax(200px, 260px) minmax(260px, 1fr) minmax(260px, 380px);
+    gap: 1rem 1.1rem;
+    align-items: start;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  .cryo-dash-page--volsketch .volsketch-plot-cell {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-width: 0;
+  }
+  /* As square as practical: limit by viewport minus side columns and header. */
+  .cryo-dash-page--volsketch .volsketch-plot-square {
+    width: min(100%, calc(100vh - 11rem), calc(100vw - 36rem));
+    aspect-ratio: 1 / 1;
+    max-width: 100%;
+    min-height: 240px;
+    min-width: 0;
+    position: relative;
+  }
+  .cryo-dash-page--volsketch .volsketch-plot-square .cryo-plotly-graph-host {
+    position: absolute;
+    inset: 0;
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 0 !important;
+  }
+  .cryo-dash-page--volsketch .volsketch-animate-card {
+    min-width: 0;
+  }
+  .cryo-dash-page--volsketch .volsketch-preview-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+    margin-top: 0.65rem;
+    max-height: min(55vh, 28rem);
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+  }
+  .cryo-dash-page--volsketch .volsketch-preview-grid figure {
+    margin: 0;
+    border: 1px solid rgba(36, 59, 83, 0.15);
+    border-radius: 4px;
+    overflow: hidden;
+    background: #fff;
+    min-width: 0;
+  }
+  .cryo-dash-page--volsketch .volsketch-preview-grid figcaption {
+    font-size: 0.72rem;
+    padding: 0.2rem 0.3rem;
+    color: var(--muted, #5c6b7a);
+    font-variant-numeric: tabular-nums;
+  }
+  .cryo-dash-page--volsketch .volsketch-preview-grid img {
+    width: 100%;
+    display: block;
+    vertical-align: middle;
+    background: #e8ecf1;
+  }
+  .cryo-dash-page--volsketch #volsketch-sel-list {
+    font-variant-numeric: tabular-nums;
+    word-break: break-all;
+  }
+  @media (max-width: 1180px) {
+    .cryo-dash-page--volsketch .volsketch-grid {
+      grid-template-columns: 1fr 1fr;
+    }
+    .cryo-dash-page--volsketch .volsketch-side {
+      grid-column: 1 / -1;
+    }
+    .cryo-dash-page--volsketch .volsketch-plot-cell {
+      grid-column: 1 / 2;
+    }
+    .cryo-dash-page--volsketch .volsketch-animate-card {
+      grid-column: 2 / 3;
+    }
+    .cryo-dash-page--volsketch .volsketch-plot-square {
+      width: min(100%, calc(100vh - 12rem), calc(100vw - 22rem));
+    }
+  }
+  @media (max-width: 780px) {
+    .cryo-dash-page--volsketch .volsketch-grid {
+      grid-template-columns: 1fr;
+    }
+    .cryo-dash-page--volsketch .volsketch-side,
+    .cryo-dash-page--volsketch .volsketch-plot-cell,
+    .cryo-dash-page--volsketch .volsketch-animate-card {
+      grid-column: 1 / -1;
+    }
+    .cryo-dash-page--volsketch .volsketch-plot-square {
+      width: min(100%, 92vw);
+    }
+  }
+</style>
+{% endblock %}
+{% block content %}
+<div class="cryo-dash-page cryo-dash-page--volsketch">
+  <div class="cryo-dash-top">
+    <a href="/">← Back</a>
+  </div>
+  {% if no_landscape %}
+  <p class="cryo-dash-lead">{{ reason|safe }}</p>
+  {% else %}
+  <div class="volsketch-grid">
+    <aside class="volsketch-side">
+      <p class="cryo-dash-lead" style="margin-top:0;">Sketched volumes for <strong>epoch {{ exp_epoch }}</strong> (nav bar). Double-click a point to toggle it; lasso or box adds to the selection.</p>
+      <div class="card cryo-dash-controls" id="volsketch-controls">
+        <fieldset>
+          <legend>PCA axes</legend>
+          <label class="cryo-select-line" for="volsketch-pcx">X axis (PC)</label>
+          <select id="volsketch-pcx"></select>
+          <label class="cryo-select-line" for="volsketch-pcy">Y axis (PC)</label>
+          <select id="volsketch-pcy"></select>
+        </fieldset>
+        <fieldset>
+          <legend>Color</legend>
+          <label class="cryo-select-line" for="volsketch-color">Color by</label>
+          <select id="volsketch-color"></select>
+        </fieldset>
+        <fieldset>
+          <legend>Selection</legend>
+          <p class="cryo-dash-legend-note" style="margin:0 0 0.35rem;">Up to <strong>10</strong> volumes. Double-click toggles one point; lasso adds.</p>
+          <p id="volsketch-sel-list" class="status" style="margin:0 0 0.5rem;">Selected: (none)</p>
+          <button type="button" class="btn" id="volsketch-clear-sel">Clear selection</button>
+        </fieldset>
+        <p id="volsketch-status" class="status"></p>
+      </div>
+    </aside>
+    <div class="volsketch-plot-cell">
+      <div class="volsketch-plot-square">
+        <div id="volsketch" class="cryo-plotly-graph-host"></div>
+      </div>
+    </div>
+    <div class="card volsketch-animate-card" id="volsketch-animate-panel">
+      <h3 style="margin:0 0 0.65rem;font-size:1.08rem;color:var(--nav-bg,#243b53);">Animations</h3>
+      <p class="cryo-dash-legend-note" style="margin:0 0 0.5rem;">GIFs use ChimeraX offscreen, stay in a temp cache until you quit the dashboard, and can be saved under <code>kmeans*</code>.</p>
+      <label class="cryo-select-line" for="volsketch-gif-mode">Mode</label>
+      <select id="volsketch-gif-mode">
+        <option value="cycle" selected>Cycle volumes (single GIF, fixed view)</option>
+        <option value="rotate_each">Rotate each volume (one GIF per volume)</option>
+        <option value="both">Both</option>
+      </select>
+      <label class="cryo-select-line" for="volsketch-gif-frames">GIF frames (rotation)</label>
+      <input id="volsketch-gif-frames" type="number" min="4" max="120" value="20" style="width:5rem"/>
+      <p class="cryo-dash-legend-note" style="margin:0.5rem 0 0;">GIF previews update automatically a moment after you change the selection (ChimeraX offscreen).</p>
+      <div class="cryo-explorer-save-btns" style="margin-top:0.55rem;">
+        <button type="button" class="btn" id="volsketch-refresh-gif">Refresh previews</button>
+        <button type="button" class="btn btn--primary" id="volsketch-save-gif">Save GIFs to k-means folder…</button>
+      </div>
+      <div id="volsketch-preview-wrap" style="margin-top:0.75rem;">
+        <h4 style="margin:0 0 0.35rem;font-size:0.95rem;color:var(--nav-bg,#243b53);">Previews</h4>
+        <div id="volsketch-preview-grid" class="volsketch-preview-grid"></div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% if not no_landscape %}
+<script>
+(function() {
+  var gd = document.getElementById("volsketch");
+  var statusEl = document.getElementById("volsketch-status");
+  var selListEl = document.getElementById("volsketch-sel-list");
+  var pcx = document.getElementById("volsketch-pcx");
+  var pcy = document.getElementById("volsketch-pcy");
+  var colorSel = document.getElementById("volsketch-color");
+  var gifMode = document.getElementById("volsketch-gif-mode");
+  var gifFrames = document.getElementById("volsketch-gif-frames");
+  var previewGrid = document.getElementById("volsketch-preview-grid");
+
+  var META = null;
+  var selectedVols = new Set();
+  var lastAnimToken = null;
+  var clickTimer = null;
+  var clickLastVol = null;
+  var debounceGifTimer = null;
+  var gifReqGen = 0;
+
+  function setStatus(msg, isErr) {
+    statusEl.textContent = msg || "";
+    statusEl.style.color = isErr ? "var(--error, #b42318)" : "";
+  }
+
+  function updateSelLabel() {
+    var arr = Array.from(selectedVols).sort(function(a,b){ return a-b; });
+    selListEl.textContent = arr.length ? ("Selected: " + arr.join(", ") + " (" + arr.length + "/10)") : "Selected: (none)";
+  }
+
+  function volFromPoint(pt) {
+    if (!pt) return NaN;
+    var cd = pt.customdata;
+    return parseInt(Array.isArray(cd) ? cd[0] : cd, 10);
+  }
+
+  function toggleVol(v) {
+    if (selectedVols.has(v)) {
+      selectedVols.delete(v);
+    } else {
+      if (selectedVols.size >= 10) {
+        setStatus("Selection capped at 10 volumes.", true);
+        return;
+      }
+      selectedVols.add(v);
+    }
+    setStatus("");
+    updateSelLabel();
+    scheduleAutoGif();
+  }
+
+  function scheduleAutoGif() {
+    if (debounceGifTimer) clearTimeout(debounceGifTimer);
+    debounceGifTimer = setTimeout(function() {
+      debounceGifTimer = null;
+      runAutoGif();
+    }, 600);
+  }
+
+  function runAutoGif() {
+    var vols = Array.from(selectedVols).sort(function(a,b){ return a-b; });
+    if (!vols.length) {
+      previewGrid.innerHTML = "";
+      lastAnimToken = null;
+      setStatus("");
+      return;
+    }
+    var myGen = ++gifReqGen;
+    setStatus("Rendering GIFs with ChimeraX…");
+    previewGrid.innerHTML = "";
+    postJson("/api/landscape_volpca/generate_animations", {
+      vol_indices: vols,
+      mode: gifMode.value,
+      gif_frames: parseInt(gifFrames.value, 10) || 20,
+    }).then(function(j) {
+      if (myGen !== gifReqGen) return;
+      lastAnimToken = j.token;
+      setStatus("Done.");
+      if (!j.items || !j.items.length) return;
+      j.items.forEach(function(it) {
+        var fig = document.createElement("figure");
+        var cap = document.createElement("figcaption");
+        cap.textContent = it.kind + (it.vol != null ? (" · vol " + it.vol) : "");
+        var img = document.createElement("img");
+        img.alt = it.filename || "";
+        img.src = "data:image/gif;base64," + it.gif_b64;
+        fig.appendChild(img);
+        fig.appendChild(cap);
+        previewGrid.appendChild(fig);
+      });
+    }).catch(function(e) {
+      if (myGen !== gifReqGen) return;
+      setStatus(String(e), true);
+    });
+  }
+
+  function refreshPreviewsNow() {
+    if (debounceGifTimer) {
+      clearTimeout(debounceGifTimer);
+      debounceGifTimer = null;
+    }
+    runAutoGif();
+  }
+
+  function fillAxisSelects(nPc) {
+    var ix = parseInt(pcx.value, 10);
+    var iy = parseInt(pcy.value, 10);
+    if (isNaN(ix) || ix < 0) ix = 0;
+    if (isNaN(iy) || iy < 0) iy = Math.min(1, nPc - 1);
+    pcx.innerHTML = "";
+    pcy.innerHTML = "";
+    for (var j = 0; j < nPc; j++) {
+      var ox = document.createElement("option");
+      ox.value = String(j);
+      ox.textContent = "PC" + (j + 1);
+      pcx.appendChild(ox);
+      var oy = document.createElement("option");
+      oy.value = String(j);
+      oy.textContent = "PC" + (j + 1);
+      pcy.appendChild(oy);
+    }
+    pcx.value = String(Math.min(ix, nPc - 1));
+    pcy.value = String(Math.min(iy, nPc - 1));
+    if (pcx.value === pcy.value) {
+      pcy.value = String((parseInt(pcx.value, 10) + 1) % nPc);
+    }
+  }
+
+  function fillColorSelect(meta) {
+    var opts = meta.color_options || [];
+    var prev = colorSel.value;
+    colorSel.innerHTML = "";
+    opts.forEach(function(o) {
+      var el = document.createElement("option");
+      el.value = o.value;
+      el.textContent = o.label;
+      if (o.value === "state" && !meta.has_state_color) el.disabled = true;
+      colorSel.appendChild(el);
+    });
+    var want = prev;
+    if (want === "state" && !meta.has_state_color) want = "none";
+    var ok = false;
+    for (var i = 0; i < colorSel.options.length; i++) {
+      var opt = colorSel.options[i];
+      if (opt.value === want && !opt.disabled) { ok = true; break; }
+    }
+    colorSel.value = ok ? want : "none";
+  }
+
+  function loadMeta(cb) {
+    fetch("/api/landscape_volpca/meta")
+      .then(function(r) { return r.json(); })
+      .then(function(j) {
+        if (!j.ok) {
+          setStatus(j.error || "Meta failed", true);
+          return;
+        }
+        META = j;
+        fillAxisSelects(j.n_pc);
+        fillColorSelect(j);
+        if (cb) cb();
+      })
+      .catch(function(e) { setStatus(String(e), true); });
+  }
+
+  function bindPlotEvents() {
+    gd.on("plotly_selected", function(ev) {
+      if (!ev || !ev.points || !ev.points.length) return;
+      ev.points.forEach(function(pt) {
+        var v = volFromPoint(pt);
+        if (!isNaN(v)) selectedVols.add(v);
+      });
+      if (selectedVols.size > 10) {
+        var arr = Array.from(selectedVols).sort(function(a,b){ return a-b; });
+        selectedVols = new Set(arr.slice(0, 10));
+        setStatus("Selection capped at 10 volumes.", true);
+      } else {
+        setStatus("");
+      }
+      updateSelLabel();
+      scheduleAutoGif();
+    });
+    gd.on("plotly_click", function(ev) {
+      if (!ev || !ev.points || !ev.points.length) return;
+      var v = volFromPoint(ev.points[0]);
+      if (isNaN(v)) return;
+      if (clickTimer !== null && clickLastVol === v) {
+        clearTimeout(clickTimer);
+        clickTimer = null;
+        clickLastVol = null;
+        toggleVol(v);
+        return;
+      }
+      clickLastVol = v;
+      if (clickTimer) clearTimeout(clickTimer);
+      clickTimer = setTimeout(function() {
+        clickTimer = null;
+        clickLastVol = null;
+      }, 320);
+    });
+  }
+
+  function reloadScatter() {
+    if (!META) return;
+    var x = pcx.value;
+    var y = pcy.value;
+    var c = colorSel.value;
+    var url = "/api/landscape_volpca/scatter?pc_x=" + encodeURIComponent(x)
+      + "&pc_y=" + encodeURIComponent(y) + "&color=" + encodeURIComponent(c);
+    setStatus("Loading scatter…");
+    fetch(url)
+      .then(function(r) {
+        if (!r.ok) return r.json().then(function(j) { throw new Error(j.error || r.status); });
+        return r.json();
+      })
+      .then(function(fig) {
+        var opts = { responsive: true, displayModeBar: true };
+        Plotly.purge(gd);
+        return Plotly.newPlot(gd, fig.data, fig.layout, opts).then(function() {
+          setStatus("");
+          bindPlotEvents();
+          Plotly.Plots.resize(gd);
+        });
+      })
+      .catch(function(e) { setStatus(String(e), true); });
+  }
+
+  pcx.addEventListener("change", function() {
+    if (!META) return;
+    if (pcx.value === pcy.value) pcy.value = String((parseInt(pcx.value, 10) + 1) % META.n_pc);
+    reloadScatter();
+  });
+  pcy.addEventListener("change", function() {
+    if (!META) return;
+    if (pcx.value === pcy.value) pcx.value = String((parseInt(pcy.value, 10) + 1) % META.n_pc);
+    reloadScatter();
+  });
+  colorSel.addEventListener("change", reloadScatter);
+
+  document.getElementById("volsketch-clear-sel").addEventListener("click", function() {
+    selectedVols.clear();
+    updateSelLabel();
+    setStatus("");
+    scheduleAutoGif();
+  });
+
+  function postJson(url, body) {
+    return fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body || {}),
+    }).then(function(r) {
+      return r.json().then(function(j) {
+        if (!r.ok) throw new Error(j.error || r.status);
+        return j;
+      });
+    });
+  }
+
+  document.getElementById("volsketch-refresh-gif").addEventListener("click", function() {
+    var vols = Array.from(selectedVols).sort(function(a,b){ return a-b; });
+    if (!vols.length) {
+      setStatus("Select at least one volume on the plot.", true);
+      return;
+    }
+    refreshPreviewsNow();
+  });
+
+  gifMode.addEventListener("change", scheduleAutoGif);
+  gifFrames.addEventListener("change", scheduleAutoGif);
+
+  document.getElementById("volsketch-save-gif").addEventListener("click", function() {
+    if (!lastAnimToken) {
+      setStatus("Select volumes and wait for previews, or click Refresh previews.", true);
+      return;
+    }
+    var custom = window.prompt(
+      "Save folder (leave empty for default: this run’s landscape k-means directory):",
+      ""
+    );
+    if (custom === null) return;
+    setStatus("Saving…");
+    var body = { token: lastAnimToken };
+    if (custom && custom.trim()) body.out_dir = custom.trim();
+    postJson("/api/landscape_volpca/save_animations", body)
+      .then(function(j) {
+        setStatus("Saved: " + (j.paths || []).join(", "));
+      })
+      .catch(function(e) { setStatus(String(e), true); });
+  });
+
+  window.addEventListener("resize", function() {
+    if (gd && gd.layout) Plotly.Plots.resize(gd);
+  });
+
+  loadMeta(reloadScatter);
+  updateSelLabel();
+})();
+</script>
+{% endif %}
+{% endblock %}

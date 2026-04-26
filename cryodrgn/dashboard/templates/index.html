@@ -16,12 +16,41 @@
     display: flex;
     flex-direction: column;
   }
+  /* Scroll the card grid in-place; keep a vertical scrollbar gutter always reserved. */
+  .landing-cards-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: calc(100vh - 5.5rem);
+    overflow-x: hidden;
+    overflow-y: scroll;
+    scrollbar-gutter: stable;
+    scrollbar-width: auto;
+    scrollbar-color: rgba(36, 59, 83, 0.42) rgba(36, 59, 83, 0.09);
+    padding-right: 2px;
+    box-sizing: border-box;
+  }
+  .landing-cards-scroll::-webkit-scrollbar {
+    width: 14px;
+  }
+  .landing-cards-scroll::-webkit-scrollbar-track {
+    background: rgba(36, 59, 83, 0.09);
+    border-radius: 7px;
+  }
+  .landing-cards-scroll::-webkit-scrollbar-thumb {
+    background: rgba(36, 59, 83, 0.38);
+    border-radius: 7px;
+    border: 3px solid transparent;
+    background-clip: padding-box;
+  }
+  .landing-cards-scroll::-webkit-scrollbar-thumb:hover {
+    background: rgba(36, 59, 83, 0.52);
+    border: 3px solid transparent;
+    background-clip: padding-box;
+  }
   .landing-cards {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: 1rem;
-    flex: 1 1 auto;
-    min-height: 0;
   }
   .landing-card {
     position: relative;
@@ -137,11 +166,6 @@
     background: #8c1d40;
     box-shadow: 0 1px 6px rgba(140, 29, 64, 0.26);
   }
-  .landing-row-break {
-    grid-column: 1 / -1;
-    width: 100%;
-    height: 0;
-  }
   .landing-card-link {
     text-decoration: none;
     color: inherit;
@@ -180,12 +204,13 @@
 {% endblock %}
 {% block content %}
 <div class="landing-hub">
+<div class="landing-cards-scroll">
 <div class="landing-cards">
   {% set explorer_active = can_images and not command_builder_only %}
   {% set pair_active = not command_builder_only %}
   {% set latent3d_active = (zdim >= 3) and (not command_builder_only) %}
   {% set trajectory_active = show_trajectory_creator and not command_builder_only %}
-  {% set any_inactive = (not explorer_active) or (not pair_active) or (not latent3d_active) or (not trajectory_active) %}
+  {% set landscape_card_active = landscape_volpca_active and not command_builder_only %}
 
   {# Active interfaces first #}
   {% if explorer_active %}
@@ -211,6 +236,13 @@
     <p>Interactive 3D scatter of three latent axes, with optional color from analysis columns when you have at least three <code>z</code> dimensions.</p>
   </a>
   {% endif %}
+  {% if landscape_card_active %}
+  <a class="landing-card landing-card-link" href="{{ url_for('landscape_volpca_page') }}">
+    <h2 class="landing-card-title">Volume sketched landscape explorer</h2>
+    <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_pair.png') }}"/>
+    <p>Explore k-means sketch volumes in PCA space from <code>analyze_landscape</code> for <strong>epoch {{ exp_epoch }}</strong>, select volumes, preview GIFs (cycle or rotate), and save under <code>landscape.N/kmeansK/</code>.</p>
+  </a>
+  {% endif %}
   <a class="landing-card landing-card-link" href="{{ url_for('command_builder_page') }}">
     <h2 class="landing-card-title">Command builder</h2>
     <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_command_builder.png') }}"/>
@@ -222,11 +254,6 @@
     <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_trajectory.png') }}"/>
     <p>Draw a line through the latent scatter to generate volumes along a trajectory — direct interpolation or nearest-neighbor mode — with ChimeraX previews.</p>
   </a>
-  {% endif %}
-
-  {# Inactive interfaces start on next row #}
-  {% if any_inactive %}
-  <div class="landing-row-break" aria-hidden="true"></div>
   {% endif %}
 
   {% if not explorer_active %}
@@ -278,6 +305,20 @@
     {% endif %}
   </article>
   {% endif %}
+  {% if not landscape_card_active %}
+  <article class="landing-card landing-card--inactive">
+    <span class="landing-inactive-badge">Inactive</span>
+    <h2 class="landing-card-title">Volume sketched landscape explorer</h2>
+    <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_pair.png') }}"/>
+    <p>Explore k-means sketch volumes in PCA space from <code>analyze_landscape</code>, select volumes, preview GIFs (cycle or rotate), and save under <code>landscape.N/kmeansK/</code>.</p>
+    {% if command_builder_only %}
+    <p class="muted">Activate this interface by running <code>cryodrgn dashboard &lt;outdir&gt;</code>, then run <code>cryodrgn analyze_landscape</code> for an epoch.</p>
+    {% else %}
+    <p class="muted">No complete landscape output for <strong>epoch {{ exp_epoch }}</strong> (<code>landscape.{{ exp_epoch }}</code> with <code>vol_pca_*</code> and matching <code>kmeans*</code>). Run <code>cryodrgn analyze_landscape &lt;outdir&gt; {{ exp_epoch }}</code> or switch epoch in the nav.</p>
+    {% endif %}
+  </article>
+  {% endif %}
+</div>
 </div>
 </div>
 {% endblock %}

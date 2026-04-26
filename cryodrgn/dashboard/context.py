@@ -71,6 +71,11 @@ EXP_REQUIRED_ENDPOINTS = frozenset(
         "api_trajectory_kmeans_centers",
         "api_trajectory_random_indices",
         "api_default_trajectory_endpoints",
+        "landscape_volpca_page",
+        "api_landscape_volpca_meta",
+        "api_landscape_volpca_scatter",
+        "api_landscape_volpca_generate_animations",
+        "api_landscape_volpca_save_animations",
     }
 )
 
@@ -173,16 +178,25 @@ def resolve_epoch(app: Flask) -> int:
     epochs = epochs_for_workdir(wd)
     if not epochs:
         raise RuntimeError("No z.N.pkl epochs in workdir.")
+    # New server process: drop stale session epoch so ``cryodrgn dashboard -e N`` applies.
+    boot = app.config.get("DASHBOARD_SESSION_BOOT_ID")
+    if boot and session.get("dashboard_session_boot") != boot:
+        session["dashboard_session_boot"] = boot
+        session.pop("dashboard_epoch", None)
     sess = session.get("dashboard_epoch")
-    if sess is None:
-        return max(epochs)
-    try:
-        ep = int(sess)
-    except (TypeError, ValueError):
-        return max(epochs)
-    if ep not in epochs:
-        return max(epochs)
-    return ep
+    if sess is not None:
+        try:
+            ep = int(sess)
+        except (TypeError, ValueError):
+            ep = None
+        else:
+            if ep in epochs:
+                return ep
+            return max(epochs)
+    start = app.config.get("DASHBOARD_START_EPOCH")
+    if isinstance(start, int) and start in epochs:
+        return int(start)
+    return max(epochs)
 
 
 def get_dashboard_exp(app: Flask) -> DashboardExperiment:

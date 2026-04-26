@@ -57,6 +57,18 @@ from cryodrgn.dashboard.explorer_volumes import (
     save_cached_volumes_to_dir,
     volume_cell_gif_from_cache,
 )
+from cryodrgn.dashboard.landscape_volpca import (
+    animation_payload_b64,
+    generate_landscape_volume_animations,
+    landscape_analysis_ready,
+    landscape_dir_for_epoch,
+    landscape_volpca_scatter_json,
+    list_landscape_epochs,
+    load_sketch_state_labels,
+    meta_for_api,
+    save_landscape_animations,
+)
+
 from cryodrgn.dashboard.plots import (
     normalize_continuous_palette,
     pair_grid_png,
@@ -93,6 +105,9 @@ from cryodrgn.dashboard.trajectory import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Default rotation-frame count for the volume sketched landscape explorer GIFs only.
+LANDSCAPE_SKETCH_GIF_FRAMES_DEFAULT = 20
 
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 _TEMPLATE_DIR = os.path.join(_THIS_DIR, "templates")
@@ -220,6 +235,8 @@ def index():
             can_images=False,
             zdim=0,
             show_trajectory_creator=False,
+            landscape_volpca_active=False,
+            exp_epoch=0,
             command_builder_only=True,
         )
     e: DashboardExperiment = g.dashboard_exp
@@ -228,6 +245,8 @@ def index():
         can_images=e.can_preview_particles,
         zdim=int(e.z.shape[1]),
         show_trajectory_creator=explorer_volumes_eligible(e),
+        landscape_volpca_active=landscape_analysis_ready(e.workdir, e.epoch),
+        exp_epoch=int(e.epoch),
         command_builder_only=False,
     )
 
@@ -1035,6 +1054,177 @@ def api_trajectory_volumes():
 
 
 # ---------------------------------------------------------------------------
+# Landscape volume PCA (analyze_landscape outputs)
+# ---------------------------------------------------------------------------
+
+
+def landscape_volpca_page():
+    e: DashboardExperiment = g.dashboard_exp
+    if not list_landscape_epochs(e.workdir):
+        return render_template(
+            "landscape_volpca.html",
+            no_landscape=True,
+            reason=(
+                "No landscape.N folders in this output directory — run "
+                "<code>cryodrgn analyze_landscape</code> first."
+            ),
+            exp_epoch=int(e.epoch),
+        )
+    if not landscape_analysis_ready(e.workdir, e.epoch):
+        return render_template(
+            "landscape_volpca.html",
+            no_landscape=True,
+            reason=(
+                f"No complete landscape output for <strong>epoch {e.epoch}</strong>. "
+                "Switch epoch in the nav or run "
+                "<code>cryodrgn analyze_landscape</code> for this epoch."
+            ),
+            exp_epoch=int(e.epoch),
+        )
+    return render_template(
+        "landscape_volpca.html",
+        no_landscape=False,
+        reason="",
+        exp_epoch=int(e.epoch),
+    )
+
+
+def api_landscape_volpca_meta():
+    e: DashboardExperiment = g.dashboard_exp
+    try:
+        return jsonify(meta_for_api(e))
+    except FileNotFoundError as err:
+        return jsonify(ok=False, error=str(err)), 400
+    except Exception as err:
+        logger.exception("landscape volpca meta failed")
+        return jsonify(ok=False, error=str(err)), 500
+
+
+def api_landscape_volpca_scatter():
+    e: DashboardExperiment = g.dashboard_exp
+    epochs = list_landscape_epochs(e.workdir)
+    if not epochs:
+        return jsonify(error="No landscape outputs for this workdir."), 400
+    le = int(e.epoch)
+    if le not in epochs:
+        return (
+            jsonify(
+                error=(
+                    f"No landscape.{le} for the current dashboard epoch. "
+                    "Switch epoch in the nav or run analyze_landscape."
+                ),
+            ),
+            400,
+        )
+    pc_x = int(request.args.get("pc_x", "0"))
+    pc_y = int(request.args.get("pc_y", "1"))
+    color = (request.args.get("color") or "none").strip().lower()
+    landscape_dir = landscape_dir_for_epoch(e.workdir, le)
+    if color not in ("none", "state") and color not in e.numeric_columns:
+        return jsonify(error="bad color column"), 400
+    if color == "state":
+        if load_sketch_state_labels(landscape_dir) is None:
+            return (
+                jsonify(
+                    error=(
+                        "Agglomerative state coloring is not available for this landscape."
+                    ),
+                ),
+                400,
+            )
+    try:
+        js = landscape_volpca_scatter_json(
+            landscape_dir,
+            e,
+            pc_x=pc_x,
+            pc_y=pc_y,
+            color_mode=color,
+            continuous_palette=request.args.get("palette"),
+        )
+    except FileNotFoundError as err:
+        return jsonify(error=str(err)), 400
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    except Exception as err:
+        logger.exception("landscape volpca scatter failed")
+        return jsonify(error=str(err)), 500
+    return Response(js, mimetype="application/json")
+
+
+def api_landscape_volpca_generate_animations():
+    e: DashboardExperiment = g.dashboard_exp
+    epochs = list_landscape_epochs(e.workdir)
+    if not epochs:
+        return jsonify(error="No landscape outputs for this workdir."), 400
+    data = _request_json_dict()
+    le = int(e.epoch)
+    if le not in epochs:
+        return jsonify(error=f"No folder landscape.{le} for the current epoch."), 400
+    vol_raw = data.get("vol_indices") or data.get("volumes")
+    if not isinstance(vol_raw, list) or not vol_raw:
+        return jsonify(error="Provide vol_indices (1–10 integers)."), 400
+    try:
+        vol_indices = sorted({int(v) for v in vol_raw})
+    except (TypeError, ValueError):
+        return jsonify(error="vol_indices must be integers."), 400
+    if len(vol_indices) > 10:
+        return jsonify(error="At most 10 volumes."), 400
+    mode = str(data.get("mode") or "cycle").strip().lower()
+    gf = int(data.get("gif_frames", LANDSCAPE_SKETCH_GIF_FRAMES_DEFAULT))
+    cc = int(data.get("chimerax_cpus", DEFAULT_CHIMERAX_PARALLEL))
+    cf = int(data.get("cycle_frames_per_vol", 8))
+    landscape_dir = landscape_dir_for_epoch(e.workdir, le)
+    try:
+        token, _files = generate_landscape_volume_animations(
+            landscape_dir,
+            vol_indices,
+            mode=mode,
+            gif_frames=gf,
+            chimerax_cpus=cc,
+            cycle_frames_per_vol=cf,
+        )
+        items = animation_payload_b64(token)
+        return jsonify(
+            ok=True,
+            token=token,
+            items=items,
+            landscape_epoch=le,
+        )
+    except EnvironmentError as err:
+        return jsonify(error=str(err), need_chimerax=True), 503
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    except Exception as err:
+        logger.exception("landscape volpca animation generate failed")
+        return jsonify(error=str(err)), 500
+
+
+def api_landscape_volpca_save_animations():
+    e: DashboardExperiment = g.dashboard_exp
+    data = _request_json_dict()
+    token = data.get("token")
+    if not token or not isinstance(token, str):
+        return jsonify(error="Missing token."), 400
+    le = int(e.epoch)
+    out_dir = data.get("out_dir")
+    if out_dir is not None and not isinstance(out_dir, str):
+        return jsonify(error="out_dir must be a string or omitted."), 400
+    try:
+        paths = save_landscape_animations(
+            token,
+            out_dir if isinstance(out_dir, str) else None,
+            exp=e,
+            landscape_epoch=le,
+        )
+        return jsonify(ok=True, paths=paths)
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    except Exception as err:
+        logger.exception("landscape volpca save animations failed")
+        return jsonify(error=str(err)), 500
+
+
+# ---------------------------------------------------------------------------
 # App factory + route table
 # ---------------------------------------------------------------------------
 
@@ -1068,6 +1258,19 @@ _ROUTES = (
     ("/api/trajectory_kmeans_centers", api_trajectory_kmeans_centers, ("POST",)),
     ("/api/trajectory_random_indices", api_trajectory_random_indices, ("POST",)),
     ("/api/default_trajectory_endpoints", api_default_trajectory_endpoints, ("GET",)),
+    ("/landscape-volpca", landscape_volpca_page, ("GET",)),
+    ("/api/landscape_volpca/meta", api_landscape_volpca_meta, ("GET",)),
+    ("/api/landscape_volpca/scatter", api_landscape_volpca_scatter, ("GET",)),
+    (
+        "/api/landscape_volpca/generate_animations",
+        api_landscape_volpca_generate_animations,
+        ("POST",),
+    ),
+    (
+        "/api/landscape_volpca/save_animations",
+        api_landscape_volpca_save_animations,
+        ("POST",),
+    ),
 )
 
 
@@ -1089,6 +1292,9 @@ def create_app(
     app.secret_key = os.environ.get(
         "CRYODRGN_DASHBOARD_SECRET", "cryodrgn-dashboard-dev-key"
     )
+    # Invalidates Flask session epoch when the dashboard process restarts so CLI
+    # ``--epoch`` matches the first load (see :func:`resolve_epoch`).
+    app.config["DASHBOARD_SESSION_BOOT_ID"] = str(uuid.uuid4())
     command_builder_only = workdir is None
     app.config["COMMAND_BUILDER_ONLY"] = command_builder_only
     app.config["DASHBOARD_DISCOVERY_CWD"] = os.getcwd()

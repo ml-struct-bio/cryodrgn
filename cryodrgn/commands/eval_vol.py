@@ -20,7 +20,9 @@ import logging
 import numpy as np
 import torch
 from cryodrgn import config
+from cryodrgn.lattice import Lattice
 from cryodrgn.models import HetOnlyVAE, load_decoder
+from cryodrgn.models_ai import HyperVolume, eval_volume_method as eval_volume_method_ai
 from cryodrgn.source import write_mrc
 from cryodrgn import utils
 
@@ -149,12 +151,20 @@ def main(args: argparse.Namespace) -> None:
     logger.info(args)
     cfg = config.load(args.config)
     logger.info("Loaded configuration:")
-    cfg = config.load(args.config)
     pprint.pprint(cfg)
 
     D = cfg["lattice_args"]["D"]  # image size + 1
     zdim = cfg["model_args"]["zdim"]
-    norm = [float(x) for x in cfg["dataset_args"]["norm"]]
+    dataset_args = cfg.get("dataset_args") or {}
+    if "norm" in dataset_args:
+        norm = [float(x) for x in dataset_args["norm"]]
+    elif "data_norm_mean" in cfg and "data_norm_std" in cfg:
+        norm = [float(cfg["data_norm_mean"]), float(cfg["data_norm_std"])]
+    else:
+        raise KeyError(
+            "config must include dataset_args['norm'] or "
+            "data_norm_mean and data_norm_std (abinit-style configs)"
+        )
 
     if args.downsample:
         if args.downsample % 2 != 0:
@@ -165,14 +175,70 @@ def main(args: argparse.Namespace) -> None:
                 f"smaller than original box size {D}!"
             )
 
+    use_abinit_hypervolume = "data_norm_mean" in cfg
+    if use_abinit_hypervolume and args.downsample:
+        raise ValueError(
+            "cryodrgn eval_vol does not support --downsample for abinit "
+            "(DrgnAI / HyperVolume) checkpoints"
+        )
+
     # load model
-    is_vae = "players" in cfg["model_args"]  # could be improved
-    if is_vae:
+    decoder = None
+    hypervolume = None
+    zdim_hv = None
+    radius_mask = None
+
+    if use_abinit_hypervolume:
+        checkpoint = torch.load(args.weights, map_location=device, weights_only=False)
+        hypervolume_params = checkpoint["hypervolume_params"]
+        hypervolume = HyperVolume(**hypervolume_params)
+        hypervolume.load_state_dict(checkpoint["hypervolume_state_dict"])
+        hypervolume.eval()
+        hypervolume.to(device)
+        lattice = Lattice(
+            checkpoint["hypervolume_params"]["resolution"],
+            extent=0.5,
+            device=device,
+        )
+        zdim_hv = int(checkpoint["hypervolume_params"]["z_dim"])
+        if zdim_hv != zdim:
+            logger.warning(
+                "model_args zdim (%s) != hypervolume z_dim (%s); using config zdim "
+                "for z-file layout",
+                zdim,
+                zdim_hv,
+            )
+        radius_mask = checkpoint.get("output_mask_radius")
+    elif "players" in cfg["model_args"]:  # could be improved
         model, lattice = HetOnlyVAE.load(cfg, args.weights, device=device)
         decoder = model.decoder
+        decoder.eval()
     else:
         decoder, lattice = load_decoder(cfg, args.weights, device=device)
-    decoder.eval()
+        decoder.eval()
+
+    def eval_volume_at_z(zz: np.ndarray):
+        if use_abinit_hypervolume:
+            assert hypervolume is not None and zdim_hv is not None
+            return eval_volume_method_ai(
+                hypervolume,
+                lattice,
+                z_dim=zdim_hv,
+                norm=(norm[0], norm[1]),
+                zval=zz,
+                radius=radius_mask,
+            )
+        assert decoder is not None
+        if args.downsample:
+            extent = lattice.extent * (args.downsample / (D - 1))
+            return decoder.eval_volume(
+                lattice.get_downsample_coords(args.downsample + 1),
+                args.downsample + 1,
+                extent,
+                norm,
+                zz,
+            )
+        return decoder.eval_volume(lattice.coords, lattice.D, lattice.extent, norm, zz)
 
     # Multiple z
     if args.z_start or args.zfile:
@@ -192,19 +258,7 @@ def main(args: argparse.Namespace) -> None:
         logger.info(f"Generating {len(z)} volumes")
         for i, zz in enumerate(z, start=args.vol_start_index):
             logger.info(zz)
-            if args.downsample:
-                extent = lattice.extent * (args.downsample / (D - 1))
-                vol = decoder.eval_volume(
-                    lattice.get_downsample_coords(args.downsample + 1),
-                    args.downsample + 1,
-                    extent,
-                    norm,
-                    zz,
-                )
-            else:
-                vol = decoder.eval_volume(
-                    lattice.coords, lattice.D, lattice.extent, norm, zz
-                )
+            vol = eval_volume_at_z(zz)
             out_mrc = "{}/{}{:03d}.mrc".format(args.o, args.prefix, i)
             org = reset_origin(vol.shape[0], args.crop, args.Apix) if args.crop else {}
             vol = postprocess_vol(vol, args)
@@ -216,19 +270,7 @@ def main(args: argparse.Namespace) -> None:
     else:
         z = np.array(args.z)
         logger.info(z)
-        if args.downsample:
-            extent = lattice.extent * (args.downsample / (D - 1))
-            vol = decoder.eval_volume(
-                lattice.get_downsample_coords(args.downsample + 1),
-                args.downsample + 1,
-                extent,
-                norm,
-                z,
-            )
-        else:
-            vol = decoder.eval_volume(
-                lattice.coords, lattice.D, lattice.extent, norm, z
-            )
+        vol = eval_volume_at_z(z)
         org = reset_origin(vol.shape[0], args.crop, args.Apix) if args.crop else {}
         vol = postprocess_vol(vol, args)
         write_mrc(args.o, np.array(vol.cpu()).astype(np.float32), Apix=args.Apix, **org)

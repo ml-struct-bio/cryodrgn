@@ -432,6 +432,17 @@ class TestAbinitHetero:
                 os.path.join(outdir, "eval_vols"),
             ]
         )
+        expected_n_vols = np.atleast_2d(
+            np.loadtxt(os.path.join(outdir, "graph_traversal_zpath.3.txt"))
+        ).shape[0]
         eval_vol.main(args)
-        assert os.path.isdir(os.path.join(outdir, "eval_vols"))
+        eval_dir = os.path.join(outdir, "eval_vols")
+        assert os.path.isdir(eval_dir)
+        generated_vols = sorted(
+            f
+            for f in os.listdir(eval_dir)
+            if f.startswith("vol_") and f.endswith(".mrc")
+        )
+        assert generated_vols, "eval_vol did not produce any .mrc outputs"
+        assert len(generated_vols) == expected_n_vols
         shutil.rmtree(outdir)

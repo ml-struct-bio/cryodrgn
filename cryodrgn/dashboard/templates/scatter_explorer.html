@@ -1020,7 +1020,11 @@
     return fetch("{{ url_for('api_explorer_volume_media') }}", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ rows: lastMontageRows.slice(), mode: "static" }),
+      body: JSON.stringify({
+        rows: lastMontageRows.slice(),
+        mode: "static",
+        chimerax_cpus: EXPLORER_CHIMERAX_CPUS,
+      }),
     })
       .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
       .then(function(res) {

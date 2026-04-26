@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 import glob
 import os
 import re
@@ -294,30 +295,73 @@ def _sorted_vol_mrc_paths(mrc_dir: str, n_take: int) -> list[str]:
 
 
 def _mpl_retrim_png(out_png: str, dpi: int) -> None:
-    """Re-save ``out_png`` with matplotlib (removes ChimeraX border and pads evenly)."""
+    """Re-save ``out_png`` with matplotlib for uniform framing.
+
+    Pads to a centered square and uses a fixed figure bbox so GIF frames stay
+    aligned across rotation angles and across volumes of different extents.
+    """
     import matplotlib.pyplot as plt
+    import numpy as np
+
+    img = np.asarray(plt.imread(out_png))
+    if img.ndim == 2:
+        img = np.stack([img, img, img], axis=-1)
+    elif img.shape[2] == 1:
+        img = np.repeat(img, 3, axis=2)
+
+    is_float = np.issubdtype(img.dtype, np.floating)
+    h, w, c = int(img.shape[0]), int(img.shape[1]), int(img.shape[2])
+    side = max(h, w)
+    pad_y = (side - h) // 2
+    pad_x = (side - w) // 2
+
+    canvas = np.empty((side, side, c), dtype=img.dtype)
+    if is_float:
+        canvas[:] = 1.0
+        if c == 4:
+            canvas[..., 3] = 1.0
+    else:
+        canvas[:] = 255
+        if c == 4:
+            canvas[..., 3] = 255
+    canvas[pad_y : pad_y + h, pad_x : pad_x + w] = img
 
     fig, ax = plt.subplots(figsize=(5, 5))
-    ax.imshow(plt.imread(out_png))
+    ax.imshow(canvas, interpolation="nearest", aspect="equal")
     ax.set_xticks([])
     ax.set_yticks([])
-    for s in ax.spines.values():
-        s.set_visible(False)
-    fig.savefig(out_png, dpi=dpi, bbox_inches="tight", pad_inches=0)
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    ax.set_xlim(-0.5, side - 0.5)
+    ax.set_ylim(side - 0.5, -0.5)
+    fig.savefig(out_png, dpi=dpi, bbox_inches=None, pad_inches=0)
     plt.close(fig)
 
 
 def _chimerax_render_cmds(
-    mrc_path: str, out_png: str, dpi: int, *, vol_name: str, turn_y: float | None
+    mrc_path: str,
+    out_png: str,
+    dpi: int,
+    *,
+    vol_name: str,
+    turn_y: float | None,
+    volume_color: str | None = None,
 ) -> list[str]:
     """ChimeraX cmd list rendering a single view (optional Y-axis rotation)."""
     qvol = shlex.quote(mrc_path)
     qpng = shlex.quote(out_png)
+    vc = (volume_color or "cornflowerblue").strip()
+    if not vc:
+        vc = "cornflowerblue"
     cmds = [
         f"open {qvol} name {vol_name} ",
         "set bgColor white ",
         "volume center #1",
-        "volume color cornflowerblue",
+        f"volume color {vc} ",
+        # Standard orientation + zoom-to-fit for consistent framing.  Do not use
+        # ``camera ortho`` here: ``--offscreen`` uses OffScreenRenderingContext,
+        # which lacks attributes the ortho camera path expects (e.g. stereo).
+        "view #1 orient ",
     ]
     if turn_y is not None:
         cmds.append(f"turn y {turn_y} ")
@@ -325,11 +369,65 @@ def _chimerax_render_cmds(
     return cmds
 
 
-def mrc_to_static_png(mrc_path: str, out_png: str, dpi: int = 100) -> None:
+def mrc_to_static_png(
+    mrc_path: str,
+    out_png: str,
+    dpi: int = 100,
+    *,
+    volume_color: str | None = None,
+) -> None:
     """Single ChimeraX view (default camera after ``volume center``) — no rotation."""
-    cmds = _chimerax_render_cmds(mrc_path, out_png, dpi, vol_name="vol000", turn_y=None)
+    cmds = _chimerax_render_cmds(
+        mrc_path,
+        out_png,
+        dpi,
+        vol_name="vol000",
+        turn_y=None,
+        volume_color=volume_color,
+    )
     run_chimerax_cmds(cmds, catch_errors=False)
     _mpl_retrim_png(out_png, dpi)
+
+
+ChimeraxPngTask = tuple[int, str, str, int] | tuple[int, str, str, int, str | None]
+
+
+def parallel_chimerax_static_pngs(
+    tasks: Sequence[ChimeraxPngTask],
+    *,
+    chimerax_cpus: int,
+) -> list[str]:
+    """Run :func:`mrc_to_static_png` for each task in parallel.
+
+    Each task is ``(sort_index, mrc_path, out_png_path, dpi)`` or the same with an
+    optional fifth element ``volume_color`` (hex or ChimeraX colour name).
+    Returns ``out_png`` paths sorted by ``sort_index``.
+    """
+    n = len(tasks)
+    if n == 0:
+        return []
+    n_jobs = max(1, min(int(chimerax_cpus), 32, n))
+
+    def _one(task: ChimeraxPngTask) -> tuple[int, str]:
+        if len(task) == 5:
+            idx, mrc_path, out_png, dpi, vcol = task
+            mrc_to_static_png(mrc_path, out_png, dpi=dpi, volume_color=vcol)
+        else:
+            idx, mrc_path, out_png, dpi = task
+            mrc_to_static_png(mrc_path, out_png, dpi=dpi)
+        return idx, out_png
+
+    if n_jobs <= 1:
+        pairs = [_one(t) for t in tasks]
+    else:
+        try:
+            from joblib import Parallel, delayed
+
+            pairs = Parallel(n_jobs=n_jobs)(delayed(_one)(t) for t in tasks)
+        except ImportError:
+            pairs = [_one(t) for t in tasks]
+    pairs.sort(key=lambda x: x[0])
+    return [p for _, p in pairs]
 
 
 def mrc_to_rotating_gif(
@@ -339,12 +437,13 @@ def mrc_to_rotating_gif(
     gif_frames: int = DEFAULT_GIF_FRAMES,
     ncpus: int = DEFAULT_CHIMERAX_PARALLEL,
     dpi: int = 100,
+    volume_color: str | None = None,
 ) -> None:
     """ChimeraX renders each rotation frame; assemble an animated GIF (cf. pipelines/tile.py)."""
     from PIL import Image
 
     gif_frames = max(4, int(gif_frames))
-    ncpus = max(1, int(ncpus))
+    ncpus = max(1, min(int(ncpus), 32))
     frame_rots = np.linspace(0, 360, gif_frames, endpoint=False)
     tmpdir = tempfile.mkdtemp(prefix="cryodrgn_explorer_vol_")
     try:
@@ -353,7 +452,12 @@ def mrc_to_rotating_gif(
             png = os.path.join(tmpdir, f"f{frame_rot:.6f}.png")
             vol_name = f"vol000_frame{frame_rot:.4g}"
             cmds = _chimerax_render_cmds(
-                mrc_path, png, dpi, vol_name=vol_name, turn_y=float(frame_rot)
+                mrc_path,
+                png,
+                dpi,
+                vol_name=vol_name,
+                turn_y=float(frame_rot),
+                volume_color=volume_color,
             )
             run_chimerax_cmds(cmds, catch_errors=False)
             _mpl_retrim_png(png, dpi)
@@ -397,6 +501,8 @@ def _decode_z_values_to_vol_paths(
 def generate_trajectory_volume_pngs(
     exp: DashboardExperiment,
     z_values: np.ndarray,
+    *,
+    chimerax_cpus: int = DEFAULT_CHIMERAX_PARALLEL,
 ) -> tuple[list[bytes], str]:
     """Decode volumes along a z-space trajectory and render ChimeraX static PNGs.
 
@@ -413,12 +519,16 @@ def generate_trajectory_volume_pngs(
     mrc_dir = tempfile.mkdtemp(prefix="cryodrgn_trajectory_mrc_")
     try:
         vol_files = _decode_z_values_to_vol_paths(exp, z_values, mrc_dir)
-        png_bytes_list: list[bytes] = []
+        cc = max(1, min(int(chimerax_cpus), 32))
         with tempfile.TemporaryDirectory(prefix="cryodrgn_trajectory_png_") as png_dir:
-            for i, vf in enumerate(vol_files):
-                out_png = os.path.join(png_dir, f"cell_{i}.png")
-                mrc_to_static_png(vf, out_png)
-                with open(out_png, "rb") as fh:
+            tasks = [
+                (i, vf, os.path.join(png_dir, f"cell_{i}.png"), 100)
+                for i, vf in enumerate(vol_files)
+            ]
+            paths = parallel_chimerax_static_pngs(tasks, chimerax_cpus=cc)
+            png_bytes_list: list[bytes] = []
+            for pth in paths:
+                with open(pth, "rb") as fh:
                     png_bytes_list.append(fh.read())
         token = _register_vol_mrc_cache(mrc_dir, vol_files, ())
         return png_bytes_list, token
@@ -430,6 +540,8 @@ def generate_trajectory_volume_pngs(
 def generate_montage_volume_pngs(
     exp: DashboardExperiment,
     rows: list[int],
+    *,
+    chimerax_cpus: int = DEFAULT_CHIMERAX_PARALLEL,
 ) -> tuple[list[bytes], str]:
     """Decode volumes for ``rows``, static ChimeraX PNG per cell, and cache .mrc paths.
 
@@ -445,12 +557,16 @@ def generate_montage_volume_pngs(
     try:
         zsel = exp.z[np.asarray(rows, dtype=int)]
         vol_files = _decode_z_values_to_vol_paths(exp, zsel, mrc_dir)
-        png_bytes_list: list[bytes] = []
+        cc = max(1, min(int(chimerax_cpus), 32))
         with tempfile.TemporaryDirectory(prefix="cryodrgn_explorer_png_") as png_dir:
-            for i, vf in enumerate(vol_files):
-                out_png = os.path.join(png_dir, f"cell_{i}.png")
-                mrc_to_static_png(vf, out_png)
-                with open(out_png, "rb") as fh:
+            tasks = [
+                (i, vf, os.path.join(png_dir, f"cell_{i}.png"), 100)
+                for i, vf in enumerate(vol_files)
+            ]
+            paths = parallel_chimerax_static_pngs(tasks, chimerax_cpus=cc)
+            png_bytes_list: list[bytes] = []
+            for pth in paths:
+                with open(pth, "rb") as fh:
                     png_bytes_list.append(fh.read())
         token = _register_vol_mrc_cache(mrc_dir, vol_files, tuple(rows))
         return png_bytes_list, token

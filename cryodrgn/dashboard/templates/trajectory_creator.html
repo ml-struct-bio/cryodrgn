@@ -656,6 +656,7 @@
   var dy = {{ default_y | tojson }};
   var zdim = {{ zdim | tojson }};
   var expWorkdir = {{ exp_workdir | tojson }};
+  var trajChimeraxCpus = {{ chimerax_cpus_default | tojson }};
 
   var trajectoryMode = "direct";
   var anchorIndicesActive = null;
@@ -1953,6 +1954,7 @@
     if (!useAnchors && editableTrajXY && editableTrajXY.length >= 2) {
       payload.traj_xy = editableTrajXY;
     }
+    payload.chimerax_cpus = trajChimeraxCpus;
     fetch("{{ url_for('api_trajectory_volumes') }}", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

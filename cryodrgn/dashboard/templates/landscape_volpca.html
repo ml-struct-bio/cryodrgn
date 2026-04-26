@@ -70,6 +70,85 @@
     font-variant-numeric: tabular-nums;
     word-break: break-all;
   }
+  .cryo-dash-page--volsketch .volsketch-animate-status-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0 0 0.65rem;
+    font-size: 0.82rem;
+    min-height: 1.15em;
+  }
+  .cryo-dash-page--volsketch .volsketch-animate-status-text {
+    font-weight: 600;
+    color: var(--nav-bg, #243b53);
+    margin: 0;
+    flex: 1 1 auto;
+    min-width: min(100%, 10rem);
+  }
+  .cryo-dash-page--volsketch .volsketch-animate-status-row .cryo-plot-rendering-overlay__track {
+    width: min(11rem, 100%);
+    flex: 0 0 auto;
+  }
+  .cryo-dash-page--volsketch .volsketch-gif-modes {
+    margin: 0.75rem 0 0;
+    padding: 0;
+    border: none;
+    min-width: 0;
+  }
+  .cryo-dash-page--volsketch .volsketch-gif-modes > legend {
+    padding: 0;
+    margin-bottom: 0.35rem;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--nav-bg, #243b53);
+  }
+  .cryo-dash-page--volsketch .volsketch-seg {
+    display: flex;
+    width: 100%;
+    margin: 0.35rem 0 0;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid rgba(36, 59, 83, 0.28);
+    background: #e8ecf1;
+    box-sizing: border-box;
+  }
+  .cryo-dash-page--volsketch .volsketch-seg input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+    margin: 0;
+  }
+  .cryo-dash-page--volsketch .volsketch-seg label {
+    flex: 1 1 0;
+    text-align: center;
+    padding: 0.5rem 0.3rem;
+    font-size: 0.78rem;
+    line-height: 1.2;
+    cursor: pointer;
+    margin: 0;
+    color: var(--muted, #5c6b7a);
+    user-select: none;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  .cryo-dash-page--volsketch .volsketch-seg label:not(:last-of-type) {
+    border-right: 1px solid rgba(36, 59, 83, 0.18);
+  }
+  .cryo-dash-page--volsketch .volsketch-seg input:focus-visible + label {
+    outline: 2px solid var(--nav-bg, #243b53);
+    outline-offset: -2px;
+    z-index: 1;
+  }
+  .cryo-dash-page--volsketch .volsketch-seg input:checked + label {
+    background: var(--nav-bg, #243b53);
+    color: #fff;
+    font-weight: 600;
+  }
+  .cryo-dash-page--volsketch #volsketch-mode-desc {
+    margin: 0.45rem 0 0;
+    line-height: 1.35;
+  }
   @media (max-width: 1180px) {
     .cryo-dash-page--volsketch .volsketch-grid {
       grid-template-columns: 1fr 1fr;
@@ -112,7 +191,7 @@
   {% else %}
   <div class="volsketch-grid">
     <aside class="volsketch-side">
-      <p class="cryo-dash-lead" style="margin-top:0;">Sketched volumes for <strong>epoch {{ exp_epoch }}</strong> (nav bar). Double-click a point to toggle it; lasso or box adds to the selection.</p>
+      <p class="cryo-dash-lead" style="margin-top:0;">Sketched volumes for <strong>epoch {{ exp_epoch }}</strong> (nav bar). Double-click toggles a point in or out of the selection; lasso or box replaces the selection with the enclosed points.</p>
       <div class="card cryo-dash-controls" id="volsketch-controls">
         <fieldset>
           <legend>PCA axes</legend>
@@ -126,13 +205,15 @@
           <label class="cryo-select-line" for="volsketch-color">Color by</label>
           <select id="volsketch-color"></select>
         </fieldset>
-        <fieldset>
+        <p id="volsketch-plot-status" class="status cryo-dash-legend-note" style="margin:0.5rem 0 0;min-height:1.2em;"></p>
+      </div>
+      <div class="card cryo-dash-controls" id="volsketch-selection-panel" style="margin-top:0.75rem;">
+        <fieldset style="margin:0;">
           <legend>Selection</legend>
-          <p class="cryo-dash-legend-note" style="margin:0 0 0.35rem;">Up to <strong>10</strong> volumes. Double-click toggles one point; lasso adds.</p>
+          <p class="cryo-dash-legend-note" style="margin:0 0 0.35rem;">Double-click a point to add or remove it. Lasso or box selection replaces the current selection, as does <strong>Choose volumes at random</strong>.</p>
           <p id="volsketch-sel-list" class="status" style="margin:0 0 0.5rem;">Selected: (none)</p>
           <button type="button" class="btn" id="volsketch-clear-sel">Clear selection</button>
         </fieldset>
-        <p id="volsketch-status" class="status"></p>
       </div>
     </aside>
     <div class="volsketch-plot-cell">
@@ -142,24 +223,44 @@
     </div>
     <div class="card volsketch-animate-card" id="volsketch-animate-panel">
       <h3 style="margin:0 0 0.65rem;font-size:1.08rem;color:var(--nav-bg,#243b53);">Animations</h3>
-      <p class="cryo-dash-legend-note" style="margin:0 0 0.5rem;">GIFs use ChimeraX offscreen, stay in a temp cache until you quit the dashboard, and can be saved under <code>kmeans*</code>.</p>
-      <label class="cryo-select-line" for="volsketch-gif-mode">Mode</label>
-      <select id="volsketch-gif-mode">
-        <option value="cycle" selected>Cycle volumes (single GIF, fixed view)</option>
-        <option value="rotate_each">Rotate each volume (one GIF per volume)</option>
-        <option value="both">Both</option>
-      </select>
-      <label class="cryo-select-line" for="volsketch-gif-frames">GIF frames (rotation)</label>
-      <input id="volsketch-gif-frames" type="number" min="4" max="120" value="20" style="width:5rem"/>
+      <fieldset class="volsketch-gif-modes" style="margin:0 0 0.65rem;">
+        <legend>Animation output</legend>
+        <div class="volsketch-seg" role="radiogroup" aria-label="Animation output style">
+          <input type="radio" name="volsketch-gif-mode" id="volsketch-mode-cycle" value="cycle" checked />
+          <label for="volsketch-mode-cycle">Cycle</label>
+          <input type="radio" name="volsketch-gif-mode" id="volsketch-mode-rotate" value="rotate_each" />
+          <label for="volsketch-mode-rotate">Rotate</label>
+        </div>
+        <p id="volsketch-mode-desc" class="cryo-dash-legend-note"></p>
+      </fieldset>
+      <div id="volsketch-gif-frames-wrap" style="display:none;">
+        <label class="cryo-select-line" for="volsketch-gif-frames">GIF frames (rotation)</label>
+        <input id="volsketch-gif-frames" type="number" min="4" max="120" value="20" style="width:5rem"/>
+      </div>
+      <div class="volsketch-animate-status-row" aria-live="polite">
+        <span id="volsketch-animate-status" class="volsketch-animate-status-text"></span>
+        <div
+          id="volsketch-animate-progress"
+          class="cryo-plot-rendering-overlay__track"
+          role="progressbar"
+          aria-valuetext="Rendering GIFs"
+          hidden
+        >
+          <div class="cryo-plot-rendering-overlay__indeterminate"></div>
+        </div>
+      </div>
+      <div id="volsketch-preview-wrap" style="margin-top:0;">
+        <h4 style="margin:0 0 0.35rem;font-size:0.95rem;color:var(--nav-bg,#243b53);">Previews</h4>
+        <div id="volsketch-preview-grid" class="volsketch-preview-grid"></div>
+      </div>
       <p class="cryo-dash-legend-note" style="margin:0.5rem 0 0;">GIF previews update automatically a moment after you change the selection (ChimeraX offscreen).</p>
       <div class="cryo-explorer-save-btns" style="margin-top:0.55rem;">
         <button type="button" class="btn" id="volsketch-refresh-gif">Refresh previews</button>
         <button type="button" class="btn btn--primary" id="volsketch-save-gif">Save GIFs to k-means folder…</button>
       </div>
-      <div id="volsketch-preview-wrap" style="margin-top:0.75rem;">
-        <h4 style="margin:0 0 0.35rem;font-size:0.95rem;color:var(--nav-bg,#243b53);">Previews</h4>
-        <div id="volsketch-preview-grid" class="volsketch-preview-grid"></div>
-      </div>
+      <button type="button" class="btn" id="volsketch-random-sel" style="margin-top:1rem;width:100%;" disabled>
+        Choose volumes at random
+      </button>
     </div>
   </div>
   {% endif %}
@@ -168,14 +269,49 @@
 <script>
 (function() {
   var gd = document.getElementById("volsketch");
-  var statusEl = document.getElementById("volsketch-status");
+  var plotStatusEl = document.getElementById("volsketch-plot-status");
+  var animateStatusEl = document.getElementById("volsketch-animate-status");
+  var animateProgressEl = document.getElementById("volsketch-animate-progress");
   var selListEl = document.getElementById("volsketch-sel-list");
   var pcx = document.getElementById("volsketch-pcx");
   var pcy = document.getElementById("volsketch-pcy");
   var colorSel = document.getElementById("volsketch-color");
-  var gifMode = document.getElementById("volsketch-gif-mode");
+  var gifModeDescEl = document.getElementById("volsketch-mode-desc");
   var gifFrames = document.getElementById("volsketch-gif-frames");
+  var gifFramesWrap = document.getElementById("volsketch-gif-frames-wrap");
   var previewGrid = document.getElementById("volsketch-preview-grid");
+  var randomSelBtn = document.getElementById("volsketch-random-sel");
+
+  var GIF_MODE_DESC = {
+    cycle: (
+      "Single GIF, fixed camera: steps through your selected volumes. "
+      + "If you select more than fit, up to <strong>50</strong> are chosen at random for the cycle."
+    ),
+    rotate_each: (
+      "One rotating GIF per selected sketch. "
+      + "If you select more than fit, up to <strong>5</strong> volumes are chosen at random."
+    ),
+  };
+
+  function currentGifMode() {
+    var el = document.querySelector('input[name="volsketch-gif-mode"]:checked');
+    return el ? el.value : "cycle";
+  }
+
+  function syncGifModeDescription() {
+    if (!gifModeDescEl) return;
+    var m = currentGifMode();
+    gifModeDescEl.innerHTML = GIF_MODE_DESC[m] || GIF_MODE_DESC.cycle;
+  }
+
+  function syncGifFramesVisibility() {
+    if (!gifFramesWrap) return;
+    var m = currentGifMode();
+    var showRot = m === "rotate_each";
+    gifFramesWrap.style.display = showRot ? "block" : "none";
+  }
+  syncGifModeDescription();
+  syncGifFramesVisibility();
 
   var META = null;
   var selectedVols = new Set();
@@ -184,66 +320,234 @@
   var clickLastVol = null;
   var debounceGifTimer = null;
   var gifReqGen = 0;
+  var debouncedGifReason = "selection";
 
-  function setStatus(msg, isErr) {
-    statusEl.textContent = msg || "";
-    statusEl.style.color = isErr ? "var(--error, #b42318)" : "";
+  function setPlotStatus(msg, isErr) {
+    if (!plotStatusEl) return;
+    plotStatusEl.textContent = msg || "";
+    plotStatusEl.style.color = isErr ? "var(--error, #b42318)" : "";
+  }
+
+  function setAnimateStatus(msg, showProgress, isErr) {
+    if (!animateStatusEl) return;
+    animateStatusEl.textContent = msg || "";
+    animateStatusEl.style.color = isErr ? "var(--error, #b42318)" : "";
+    if (animateProgressEl) {
+      animateProgressEl.hidden = !showProgress || !!isErr;
+      if (showProgress && !isErr) {
+        animateProgressEl.setAttribute("aria-busy", "true");
+      } else {
+        animateProgressEl.removeAttribute("aria-busy");
+      }
+    }
+  }
+
+  function maxSelectable() {
+    return META && META.n_volumes ? META.n_volumes : 10000;
+  }
+
+  function syncRandomSelButton() {
+    if (!randomSelBtn || !META || META.chimerax_cpus == null) return;
+    var n = Math.max(1, Number(META.chimerax_cpus));
+    randomSelBtn.textContent = "Choose " + n + " volume" + (n === 1 ? "" : "s") + " at random";
+    randomSelBtn.disabled = false;
+  }
+
+  function customDataRowAsArray(row) {
+    if (row == null) return [];
+    if (Array.isArray(row)) return row;
+    if (typeof row === "object" && row.length !== undefined) {
+      try {
+        return Array.from(row);
+      } catch (e) {
+        return [];
+      }
+    }
+    return [row];
+  }
+
+  function volIdAtPointIndex(trace, i) {
+    if (trace.ids && trace.ids.length === trace.x.length && trace.ids[i] != null && trace.ids[i] !== "") {
+      var vid = parseInt(String(trace.ids[i]), 10);
+      if (!isNaN(vid)) return vid;
+    }
+    var cd = trace.customdata;
+    if (cd && cd.length === trace.x.length && cd[i] != null) {
+      var row = customDataRowAsArray(cd[i]);
+      if (row.length) return parseInt(String(row[0]), 10);
+    }
+    return NaN;
+  }
+
+  function allPlotVolIds() {
+    if (!gd || !gd.data || !gd.data[0]) return [];
+    var trace = gd.data[0];
+    var n = trace.x ? trace.x.length : 0;
+    if (!n) return [];
+    var s = new Set();
+    for (var i = 0; i < n; i++) {
+      var v = volIdAtPointIndex(trace, i);
+      if (!isNaN(v)) s.add(v);
+    }
+    return Array.from(s).sort(function(a, b) { return a - b; });
+  }
+
+  function shufflePick(arr, k) {
+    var a = arr.slice();
+    for (var i = a.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var t = a[i];
+      a[i] = a[j];
+      a[j] = t;
+    }
+    return a.slice(0, k);
   }
 
   function updateSelLabel() {
     var arr = Array.from(selectedVols).sort(function(a,b){ return a-b; });
-    selListEl.textContent = arr.length ? ("Selected: " + arr.join(", ") + " (" + arr.length + "/10)") : "Selected: (none)";
+    var cap = maxSelectable();
+    selListEl.textContent = arr.length
+      ? ("Selected: " + arr.join(", ") + " (" + arr.length + "/" + cap + ")")
+      : "Selected: (none)";
   }
 
   function volFromPoint(pt) {
     if (!pt) return NaN;
-    var cd = pt.customdata;
-    return parseInt(Array.isArray(cd) ? cd[0] : cd, 10);
+    if (pt.id != null && String(pt.id) !== "") {
+      var idv = parseInt(String(pt.id), 10);
+      if (!isNaN(idv)) return idv;
+    }
+    var trace = gd && gd.data && gd.data[0];
+    if (trace && pt.pointNumber != null && pt.pointNumber >= 0) {
+      var vi = volIdAtPointIndex(trace, pt.pointNumber);
+      if (!isNaN(vi)) return vi;
+    }
+    var row = customDataRowAsArray(pt.customdata);
+    return row.length ? parseInt(String(row[0]), 10) : NaN;
+  }
+
+  function refreshSelectionHighlight() {
+    if (!gd || !gd.data || !gd.data[0]) return;
+    var trace = gd.data[0];
+    var xs = trace.x;
+    if (!xs || !xs.length) return;
+    var n = xs.length;
+    var hasIds = trace.ids && trace.ids.length === n;
+    var cd = trace.customdata;
+    if (!hasIds && (!cd || cd.length !== n)) return;
+    var baseSize = 9;
+    var baseOp = 0.75;
+    var hiSize = 11;
+    var hiOp = 0.86;
+    var dimOp = 0.66;
+    var hasSel = selectedVols.size > 0;
+    var sizes = new Array(n);
+    var opacities = new Array(n);
+    var selIdx = [];
+    for (var i = 0; i < n; i++) {
+      var v = volIdAtPointIndex(trace, i);
+      var on = !isNaN(v) && selectedVols.has(v);
+      if (on) selIdx.push(i);
+      if (on) {
+        sizes[i] = hiSize;
+        opacities[i] = hiOp;
+      } else {
+        sizes[i] = baseSize;
+        opacities[i] = hasSel ? dimOp : baseOp;
+      }
+    }
+    var sp = selIdx.length ? selIdx : null;
+    var upd = {
+      "marker.size": [sizes],
+      "marker.opacity": [opacities],
+      selectedpoints: [sp],
+    };
+    Plotly.restyle(gd, upd, [0]).catch(function() {
+      Plotly.restyle(
+        gd,
+        { "marker.size": [sizes], "marker.opacity": [opacities] },
+        [0]
+      );
+    });
   }
 
   function toggleVol(v) {
     if (selectedVols.has(v)) {
       selectedVols.delete(v);
     } else {
-      if (selectedVols.size >= 10) {
-        setStatus("Selection capped at 10 volumes.", true);
+      if (selectedVols.size >= maxSelectable()) {
+        setAnimateStatus("Selection capped at the number of sketch volumes.", false, true);
         return;
       }
       selectedVols.add(v);
     }
-    setStatus("");
+    setPlotStatus("", false);
+    setAnimateStatus("", false, false);
     updateSelLabel();
-    scheduleAutoGif();
+    refreshSelectionHighlight();
+    scheduleAutoGif("selection");
   }
 
-  function scheduleAutoGif() {
+  function scheduleAutoGif(reason) {
+    debouncedGifReason = reason || "selection";
     if (debounceGifTimer) clearTimeout(debounceGifTimer);
     debounceGifTimer = setTimeout(function() {
       debounceGifTimer = null;
-      runAutoGif();
+      var r = debouncedGifReason;
+      debouncedGifReason = "selection";
+      runAutoGif(r);
     }, 600);
   }
 
-  function runAutoGif() {
+  function runAutoGif(reason) {
+    reason = reason || "selection";
     var vols = Array.from(selectedVols).sort(function(a,b){ return a-b; });
     if (!vols.length) {
       previewGrid.innerHTML = "";
       lastAnimToken = null;
-      setStatus("");
+      setAnimateStatus("", false, false);
       return;
     }
     var myGen = ++gifReqGen;
-    setStatus("Rendering GIFs with ChimeraX…");
-    previewGrid.innerHTML = "";
+    var cpus = META && META.chimerax_cpus != null ? Number(META.chimerax_cpus) : 1;
+    var cpuPhrase = cpus === 1 ? "1 CPU" : cpus + " CPUs";
+    var keepPreviews = previewGrid && previewGrid.children.length > 0 && (
+      reason === "color" || reason === "gif_mode" || reason === "gif_frames"
+    );
+    var statusMsg;
+    if (keepPreviews && reason === "color") {
+      statusMsg = (
+        "Re-rendering volume previews with the new plot colours — current GIFs keep playing until the update finishes (ChimeraX, "
+        + cpuPhrase + ")…"
+      );
+    } else if (keepPreviews && (reason === "gif_mode" || reason === "gif_frames")) {
+      statusMsg = (
+        "Re-rendering volume previews for the new animation settings — current GIFs keep playing until the update finishes (ChimeraX, "
+        + cpuPhrase + ")…"
+      );
+    } else {
+      statusMsg = "Rendering GIFs with ChimeraX (using " + cpuPhrase + ")…";
+    }
+    setAnimateStatus(statusMsg, true, false);
+    if (!keepPreviews) {
+      previewGrid.innerHTML = "";
+    }
     postJson("/api/landscape_volpca/generate_animations", {
       vol_indices: vols,
-      mode: gifMode.value,
+      mode: currentGifMode(),
       gif_frames: parseInt(gifFrames.value, 10) || 20,
+      chimerax_cpus: cpus,
+      color_mode: colorSel.value,
     }).then(function(j) {
       if (myGen !== gifReqGen) return;
       lastAnimToken = j.token;
-      setStatus("Done.");
+      var ds = j.duration_s != null ? Number(j.duration_s) : NaN;
+      var doneMsg = !isNaN(ds)
+        ? ("Finished animating in " + ds.toFixed(1) + " s.")
+        : "Finished animating.";
+      setAnimateStatus(doneMsg, false, false);
       if (!j.items || !j.items.length) return;
+      previewGrid.innerHTML = "";
       j.items.forEach(function(it) {
         var fig = document.createElement("figure");
         var cap = document.createElement("figcaption");
@@ -255,9 +559,19 @@
         fig.appendChild(cap);
         previewGrid.appendChild(fig);
       });
+      if (j.rendered_vol_indices && j.rendered_vol_indices.length) {
+        var synced = new Set();
+        j.rendered_vol_indices.forEach(function(x) {
+          var v = parseInt(x, 10);
+          if (!isNaN(v)) synced.add(v);
+        });
+        selectedVols = synced;
+        updateSelLabel();
+        refreshSelectionHighlight();
+      }
     }).catch(function(e) {
       if (myGen !== gifReqGen) return;
-      setStatus(String(e), true);
+      setAnimateStatus(String(e), false, true);
     });
   }
 
@@ -266,7 +580,8 @@
       clearTimeout(debounceGifTimer);
       debounceGifTimer = null;
     }
-    runAutoGif();
+    debouncedGifReason = "selection";
+    runAutoGif("selection");
   }
 
   function fillAxisSelects(nPc) {
@@ -319,33 +634,47 @@
       .then(function(r) { return r.json(); })
       .then(function(j) {
         if (!j.ok) {
-          setStatus(j.error || "Meta failed", true);
+          setPlotStatus(j.error || "Meta failed", true);
+          if (randomSelBtn) {
+            randomSelBtn.disabled = true;
+            randomSelBtn.textContent = "Choose volumes at random";
+          }
           return;
         }
         META = j;
         fillAxisSelects(j.n_pc);
         fillColorSelect(j);
+        syncRandomSelButton();
+        updateSelLabel();
         if (cb) cb();
       })
-      .catch(function(e) { setStatus(String(e), true); });
+      .catch(function(e) {
+        setPlotStatus(String(e), true);
+        if (randomSelBtn) {
+          randomSelBtn.disabled = true;
+          randomSelBtn.textContent = "Choose volumes at random";
+        }
+      });
   }
 
   function bindPlotEvents() {
     gd.on("plotly_selected", function(ev) {
       if (!ev || !ev.points || !ev.points.length) return;
+      selectedVols.clear();
       ev.points.forEach(function(pt) {
         var v = volFromPoint(pt);
         if (!isNaN(v)) selectedVols.add(v);
       });
-      if (selectedVols.size > 10) {
+      if (selectedVols.size > maxSelectable()) {
         var arr = Array.from(selectedVols).sort(function(a,b){ return a-b; });
-        selectedVols = new Set(arr.slice(0, 10));
-        setStatus("Selection capped at 10 volumes.", true);
+        selectedVols = new Set(arr.slice(0, maxSelectable()));
+        setAnimateStatus("Selection capped at the number of sketch volumes.", false, true);
       } else {
-        setStatus("");
+        setAnimateStatus("", false, false);
       }
       updateSelLabel();
-      scheduleAutoGif();
+      refreshSelectionHighlight();
+      scheduleAutoGif("selection");
     });
     gd.on("plotly_click", function(ev) {
       if (!ev || !ev.points || !ev.points.length) return;
@@ -367,29 +696,87 @@
     });
   }
 
-  function reloadScatter() {
+  function reloadScatter(scatterOpts) {
+    scatterOpts = scatterOpts || {};
     if (!META) return;
     var x = pcx.value;
     var y = pcy.value;
     var c = colorSel.value;
     var url = "/api/landscape_volpca/scatter?pc_x=" + encodeURIComponent(x)
       + "&pc_y=" + encodeURIComponent(y) + "&color=" + encodeURIComponent(c);
-    setStatus("Loading scatter…");
+    setPlotStatus("Loading scatter…", false);
     fetch(url)
       .then(function(r) {
         if (!r.ok) return r.json().then(function(j) { throw new Error(j.error || r.status); });
         return r.json();
       })
       .then(function(fig) {
-        var opts = { responsive: true, displayModeBar: true };
-        Plotly.purge(gd);
-        return Plotly.newPlot(gd, fig.data, fig.layout, opts).then(function() {
-          setStatus("");
-          bindPlotEvents();
-          Plotly.Plots.resize(gd);
-        });
+        var plotOpts = { responsive: true, displayModeBar: true };
+        var afterColor = !!scatterOpts.afterColorChange;
+        var hasPlot = !!(gd && gd.data && gd.data.length);
+        var prevSelections = null;
+        if (afterColor && gd && gd.layout && gd.layout.selections && gd.layout.selections.length) {
+          try {
+            prevSelections = JSON.parse(JSON.stringify(gd.layout.selections));
+          } catch (err) {
+            prevSelections = null;
+          }
+        }
+        var plotPromise;
+        function redrawFull() {
+          if (afterColor && hasPlot && typeof Plotly.react === "function") {
+            return Plotly.react(gd, fig.data, fig.layout, plotOpts);
+          }
+          Plotly.purge(gd);
+          return Plotly.newPlot(gd, fig.data, fig.layout, plotOpts);
+        }
+
+        var usedFullRedraw = false;
+        if (afterColor && hasPlot && fig.data && fig.data[0] && gd.data && gd.data[0]) {
+          var g0 = gd.data[0];
+          var d0 = fig.data[0];
+          var nOld = g0.x ? g0.x.length : 0;
+          var nNew = d0.x ? d0.x.length : 0;
+          if (nOld === nNew && typeof Plotly.restyle === "function") {
+            plotPromise = Plotly.restyle(
+              gd,
+              {
+                marker: d0.marker,
+                hovertemplate: d0.hovertemplate,
+                customdata: d0.customdata,
+              },
+              [0]
+            ).catch(function() {
+              usedFullRedraw = true;
+              return redrawFull();
+            });
+          } else {
+            usedFullRedraw = true;
+            plotPromise = redrawFull();
+          }
+        } else {
+          usedFullRedraw = true;
+          plotPromise = redrawFull();
+        }
+        return plotPromise
+          .then(function() {
+            if (usedFullRedraw && prevSelections && prevSelections.length) {
+              return Plotly.relayout(gd, { selections: prevSelections }).catch(
+                function() { /* older Plotly or incompatible selection payload */ }
+              );
+            }
+          })
+          .then(function() {
+            setPlotStatus("", false);
+            bindPlotEvents();
+            refreshSelectionHighlight();
+            Plotly.Plots.resize(gd);
+            if (scatterOpts.afterColorChange && selectedVols.size > 0) {
+              scheduleAutoGif("color");
+            }
+          });
       })
-      .catch(function(e) { setStatus(String(e), true); });
+      .catch(function(e) { setPlotStatus(String(e), true); });
   }
 
   pcx.addEventListener("change", function() {
@@ -402,13 +789,16 @@
     if (pcx.value === pcy.value) pcx.value = String((parseInt(pcy.value, 10) + 1) % META.n_pc);
     reloadScatter();
   });
-  colorSel.addEventListener("change", reloadScatter);
+  colorSel.addEventListener("change", function() {
+    reloadScatter({ afterColorChange: true });
+  });
 
   document.getElementById("volsketch-clear-sel").addEventListener("click", function() {
     selectedVols.clear();
     updateSelLabel();
-    setStatus("");
-    scheduleAutoGif();
+    refreshSelectionHighlight();
+    setAnimateStatus("", false, false);
+    scheduleAutoGif("selection");
   });
 
   function postJson(url, body) {
@@ -427,18 +817,60 @@
   document.getElementById("volsketch-refresh-gif").addEventListener("click", function() {
     var vols = Array.from(selectedVols).sort(function(a,b){ return a-b; });
     if (!vols.length) {
-      setStatus("Select at least one volume on the plot.", true);
+      setAnimateStatus("Select at least one volume on the plot.", false, true);
       return;
     }
     refreshPreviewsNow();
   });
 
-  gifMode.addEventListener("change", scheduleAutoGif);
-  gifFrames.addEventListener("change", scheduleAutoGif);
+  document.querySelectorAll('input[name="volsketch-gif-mode"]').forEach(function(radio) {
+    radio.addEventListener("change", function() {
+      syncGifModeDescription();
+      syncGifFramesVisibility();
+      scheduleAutoGif("gif_mode");
+    });
+  });
+  gifFrames.addEventListener("change", function() {
+    scheduleAutoGif("gif_frames");
+  });
+
+  if (randomSelBtn) {
+    randomSelBtn.addEventListener("click", function() {
+      var ids = allPlotVolIds();
+      if (!ids.length) {
+        setAnimateStatus("Wait for the scatter plot to finish loading.", false, true);
+        return;
+      }
+      if (debounceGifTimer) {
+        clearTimeout(debounceGifTimer);
+        debounceGifTimer = null;
+      }
+      gifReqGen++;
+      previewGrid.innerHTML = "";
+      lastAnimToken = null;
+      setAnimateStatus("", false, false);
+      function applyRandomPickAndHighlight() {
+        var k = META && META.chimerax_cpus != null ? Number(META.chimerax_cpus) : 1;
+        k = Math.max(1, Math.min(k, ids.length, maxSelectable()));
+        selectedVols.clear();
+        shufflePick(ids, k).forEach(function(v) { selectedVols.add(v); });
+        updateSelLabel();
+        refreshSelectionHighlight();
+        scheduleAutoGif("selection");
+      }
+      if (gd && typeof Plotly !== "undefined" && Plotly.relayout) {
+        var rp = Plotly.relayout(gd, { selections: [] });
+        var p = rp && typeof rp.then === "function" ? rp.catch(function() {}) : Promise.resolve();
+        p.then(applyRandomPickAndHighlight);
+      } else {
+        applyRandomPickAndHighlight();
+      }
+    });
+  }
 
   document.getElementById("volsketch-save-gif").addEventListener("click", function() {
     if (!lastAnimToken) {
-      setStatus("Select volumes and wait for previews, or click Refresh previews.", true);
+      setAnimateStatus("Select volumes and wait for previews, or click Refresh previews.", false, true);
       return;
     }
     var custom = window.prompt(
@@ -446,14 +878,14 @@
       ""
     );
     if (custom === null) return;
-    setStatus("Saving…");
+    setAnimateStatus("Saving…", true, false);
     var body = { token: lastAnimToken };
     if (custom && custom.trim()) body.out_dir = custom.trim();
     postJson("/api/landscape_volpca/save_animations", body)
       .then(function(j) {
-        setStatus("Saved: " + (j.paths || []).join(", "));
+        setAnimateStatus("Saved: " + (j.paths || []).join(", "), false, false);
       })
-      .catch(function(e) { setStatus(String(e), true); });
+      .catch(function(e) { setAnimateStatus(String(e), false, true); });
   });
 
   window.addEventListener("resize", function() {

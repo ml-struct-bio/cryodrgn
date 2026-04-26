@@ -6,6 +6,7 @@ import atexit
 import base64
 import glob
 import os
+import random
 import re
 import secrets
 import shutil
@@ -25,6 +26,7 @@ from cryodrgn.dashboard.explorer_volumes import (
     DEFAULT_GIF_FRAMES,
     mrc_to_rotating_gif,
     mrc_to_static_png,
+    parallel_chimerax_static_pngs,
 )
 from cryodrgn.dashboard.plots import (
     _DASHBOARD_CREAM,
@@ -42,6 +44,18 @@ _LANDSCAPE_ANIM_ENTRIES: dict[str, dict[str, Any]] = {}
 
 _LANDSCAPE_VOLPCA_KMEANS_RE = re.compile(r"^kmeans(\d+)$")
 _LANDSCAPE_VOLPCA_PKL_RE = re.compile(r"^vol_pca_(\d+)\.pkl$")
+# ``vol_mean.mrc`` and similar match ``vol_*.mrc`` but are not k-means centroids.
+_KMEANS_SKETCH_VOL_MRC_RE = re.compile(r"^vol_(\d+)\.mrc$")
+
+# ChimeraX cost: cap how many volumes go into each animation style (extras subsampled).
+LANDSCAPE_ANIM_MAX_ROTATE = 5
+LANDSCAPE_ANIM_MAX_CYCLE = 50
+
+
+def _sample_landscape_vols(vols: list[int], k: int, rng: random.Random) -> list[int]:
+    if len(vols) <= k:
+        return list(vols)
+    return sorted(rng.sample(vols, k))
 
 
 def list_landscape_epochs(workdir: str) -> list[int]:
@@ -89,13 +103,14 @@ def landscape_analysis_ready(workdir: str, epoch: int) -> bool:
 
 
 def kmeans_sorted_vol_indices(kmeans_dir: str) -> list[int]:
+    """Sorted numeric indices for ``vol_NNN.mrc`` sketch maps only (excludes ``vol_mean.mrc``, etc.)."""
     paths = glob.glob(os.path.join(kmeans_dir, "vol_*.mrc"))
-
-    def _idx(p: str) -> int:
-        mm = re.search(r"vol_(\d+)", os.path.basename(p))
-        return int(mm.group(1)) if mm else 0
-
-    return sorted(_idx(p) for p in paths)
+    idx: list[int] = []
+    for p in paths:
+        m = _KMEANS_SKETCH_VOL_MRC_RE.fullmatch(os.path.basename(p))
+        if m:
+            idx.append(int(m.group(1)))
+    return sorted(idx)
 
 
 def load_vol_pca_matrix(landscape_dir: str, k_sketch: int) -> np.ndarray:
@@ -140,10 +155,34 @@ def load_sketch_state_labels(landscape_dir: str) -> np.ndarray | None:
     return np.asarray(utils.load_pkl(lab_path), dtype=np.int64)
 
 
+def landscape_vol_state_hex_by_vol_index(
+    landscape_dir: str,
+    kmeans_dir: str,
+    k_sketch: int,
+) -> dict[int, str] | None:
+    """Vol index (``11`` for ``vol_011.mrc``) → fill hex, matching state scatter colours."""
+    states = load_sketch_state_labels(landscape_dir)
+    if states is None:
+        return None
+    pc = load_vol_pca_matrix(landscape_dir, k_sketch)
+    n = int(pc.shape[0])
+    if len(states) != n:
+        return None
+    sorted_vols = kmeans_sorted_vol_indices(kmeans_dir)
+    vol_ids = sorted_vols[:n] if len(sorted_vols) >= n else sorted_vols
+    if len(vol_ids) < n:
+        return None
+    ser = pd.Series(states)
+    colors, _ = _labels_colors_and_legend_items(ser)
+    return {int(vol_ids[i]): str(colors[i]) for i in range(n)}
+
+
 def vol_mrc_path(kmeans_dir: str, vol_index: int) -> str:
     p = os.path.join(kmeans_dir, f"vol_{int(vol_index):03d}.mrc")
     if not os.path.isfile(p):
-        raise FileNotFoundError(p)
+        raise FileNotFoundError(
+            f"Sketched k-means volume not found: {p}",
+        )
     return p
 
 
@@ -295,10 +334,13 @@ def landscape_volpca_scatter_figure(
         )
         hover = "vol %{customdata[0]} · training image %{customdata[1]}<extra></extra>"
 
+    sketch_ids = [str(int(v)) for v in vol_ids]
+
     sc = go.Scattergl(
         x=pc[:, pc_x],
         y=pc[:, pc_y],
         mode="markers",
+        ids=sketch_ids,
         customdata=customdata,
         hovertemplate=hover,
         marker=marker,
@@ -367,21 +409,30 @@ def _mrc_cycle_gif(
     *,
     frames_per_vol: int = 8,
     dpi: int = 100,
+    chimerax_cpus: int = DEFAULT_CHIMERAX_PARALLEL,
+    volume_colors: list[str | None] | None = None,
 ) -> None:
     """GIF that holds each volume at a fixed view for ``frames_per_vol`` frames."""
     from PIL import Image
 
     frames_per_vol = max(2, min(int(frames_per_vol), 30))
+    cc = max(1, min(int(chimerax_cpus), 32))
     tmpdir = tempfile.mkdtemp(prefix="cryodrgn_volpca_cycle_")
     try:
-        pil_frames: list[Any] = []
-        for mrc_path in mrc_paths:
+        tasks: list[tuple[int, str, str, int, str | None]] = []
+        t = 0
+        for j, mrc_path in enumerate(mrc_paths):
+            vcol: str | None = None
+            if volume_colors and j < len(volume_colors):
+                vcol = volume_colors[j]
             for _ in range(frames_per_vol):
-                png = os.path.join(tmpdir, f"f_{len(pil_frames)}.png")
-                mrc_to_static_png(mrc_path, png, dpi=dpi)
-                pil_frames.append(Image.open(png))
-        if not pil_frames:
+                png = os.path.join(tmpdir, f"f_{t:06d}.png")
+                tasks.append((t, mrc_path, png, dpi, vcol))
+                t += 1
+        if not tasks:
             raise ValueError("No frames for cycle GIF.")
+        png_paths = parallel_chimerax_static_pngs(tasks, chimerax_cpus=cc)
+        pil_frames = [Image.open(p) for p in png_paths]
         duration_ms = max(30, int(800 / frames_per_vol))
         pil_frames[0].save(
             out_gif,
@@ -396,14 +447,20 @@ def _mrc_cycle_gif(
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-def _mrc_single_frame_cycle_gif(mrc_path: str, out_gif: str, *, dpi: int = 100) -> None:
+def _mrc_single_frame_cycle_gif(
+    mrc_path: str,
+    out_gif: str,
+    *,
+    dpi: int = 100,
+    volume_color: str | None = None,
+) -> None:
     """One fixed ChimeraX view, single GIF frame (no rotation)."""
     from PIL import Image
 
     tmpdir = tempfile.mkdtemp(prefix="cryodrgn_volpca_cycle1_")
     try:
         png = os.path.join(tmpdir, "f0.png")
-        mrc_to_static_png(mrc_path, png, dpi=dpi)
+        mrc_to_static_png(mrc_path, png, dpi=dpi, volume_color=volume_color)
         im = Image.open(png)
         im.save(out_gif, duration=500, loop=0)
         im.close()
@@ -419,20 +476,54 @@ def generate_landscape_volume_animations(
     gif_frames: int = DEFAULT_GIF_FRAMES,
     chimerax_cpus: int = DEFAULT_CHIMERAX_PARALLEL,
     cycle_frames_per_vol: int = 8,
-) -> tuple[str, list[dict[str, Any]]]:
-    """Write GIF(s) under a new token directory; return ``(token, file_metadata)``."""
+    color_mode: str = "none",
+) -> tuple[str, list[dict[str, Any]], list[int]]:
+    """Write GIF(s) under a new token directory.
+
+    Returns ``(token, file_metadata, rendered_vol_indices)`` — the last list is the
+    sketch volume indices actually rendered (after subsampling caps), sorted unique.
+    """
     vol_indices = sorted({int(v) for v in vol_indices})
     if not vol_indices:
         raise ValueError("Select at least one k-means volume.")
-    if len(vol_indices) > 10:
-        raise ValueError("At most 10 volumes per animation batch.")
-
-    k_sketch, kmeans_dir = resolve_kmeans_sketch_bundle(landscape_dir)
-    mrc_paths = [vol_mrc_path(kmeans_dir, v) for v in vol_indices]
 
     mode = (mode or "cycle").strip().lower()
-    if mode not in ("rotate_each", "cycle", "both"):
-        raise ValueError('mode must be "rotate_each", "cycle", or "both".')
+    if mode == "both":
+        raise ValueError(
+            'mode "both" is no longer supported; use "cycle" or "rotate_each".'
+        )
+    if mode not in ("rotate_each", "cycle"):
+        raise ValueError('mode must be "cycle" or "rotate_each".')
+
+    k_sketch, kmeans_dir = resolve_kmeans_sketch_bundle(landscape_dir)
+    valid_sketch = set(kmeans_sorted_vol_indices(kmeans_dir))
+    vol_indices = sorted(set(vol_indices) & valid_sketch)
+    if not vol_indices:
+        raise ValueError(
+            "No valid k-means sketch volumes in the selection — indices must match "
+            "vol_NNN.mrc files exported under the landscape k-means folder."
+        )
+
+    rng = random.Random()
+    rot_vols: list[int] = []
+    cyc_vols: list[int] = []
+
+    if mode == "rotate_each":
+        rot_vols = _sample_landscape_vols(vol_indices, LANDSCAPE_ANIM_MAX_ROTATE, rng)
+    else:
+        cyc_vols = _sample_landscape_vols(vol_indices, LANDSCAPE_ANIM_MAX_CYCLE, rng)
+
+    color_mode = (color_mode or "none").strip().lower()
+    vol_state_hex: dict[int, str] | None = None
+    if color_mode == "state":
+        vol_state_hex = landscape_vol_state_hex_by_vol_index(
+            landscape_dir, kmeans_dir, k_sketch
+        )
+
+    def _vol_fill(vol: int) -> str | None:
+        if vol_state_hex is None:
+            return None
+        return vol_state_hex.get(int(vol))
 
     gif_frames = max(4, min(int(gif_frames), 120))
     chimerax_cpus = max(1, min(int(chimerax_cpus), 32))
@@ -443,17 +534,16 @@ def generate_landscape_volume_animations(
 
     out_files: list[dict[str, Any]] = []
 
-    # Rotating GIFs only when the user asks for rotation and (if "both") there
-    # are at least two volumes — a single selection stays fixed-view until then.
-    do_rotate_each = mode == "rotate_each" or (mode == "both" and len(mrc_paths) >= 2)
-    if do_rotate_each:
-        for v, mp in zip(vol_indices, mrc_paths):
+    if mode == "rotate_each" and rot_vols:
+        for v in rot_vols:
+            mp = vol_mrc_path(kmeans_dir, v)
             out_gif = os.path.join(job_dir, f"vol_{v:03d}_rotate.gif")
             mrc_to_rotating_gif(
                 mp,
                 out_gif,
                 gif_frames=gif_frames,
                 ncpus=chimerax_cpus,
+                volume_color=_vol_fill(v),
             )
             out_files.append(
                 {
@@ -464,11 +554,12 @@ def generate_landscape_volume_animations(
                 }
             )
 
-    if mode in ("cycle", "both"):
-        if len(mrc_paths) == 1:
-            v0, mp0 = vol_indices[0], mrc_paths[0]
+    if mode == "cycle" and cyc_vols:
+        cyc_mrc = [vol_mrc_path(kmeans_dir, v) for v in cyc_vols]
+        if len(cyc_mrc) == 1:
+            v0, mp0 = cyc_vols[0], cyc_mrc[0]
             out_gif = os.path.join(job_dir, f"vol_{v0:03d}_cycle.gif")
-            _mrc_single_frame_cycle_gif(mp0, out_gif)
+            _mrc_single_frame_cycle_gif(mp0, out_gif, volume_color=_vol_fill(v0))
             out_files.append(
                 {
                     "vol": v0,
@@ -480,12 +571,14 @@ def generate_landscape_volume_animations(
         else:
             out_gif = os.path.join(
                 job_dir,
-                "cycle_" + "_".join(f"{v:03d}" for v in vol_indices) + ".gif",
+                "cycle_" + "_".join(f"{v:03d}" for v in cyc_vols) + ".gif",
             )
             _mrc_cycle_gif(
-                mrc_paths,
+                cyc_mrc,
                 out_gif,
                 frames_per_vol=cycle_frames_per_vol,
+                chimerax_cpus=chimerax_cpus,
+                volume_colors=[_vol_fill(v) for v in cyc_vols],
             )
             out_files.append(
                 {
@@ -506,7 +599,10 @@ def generate_landscape_volume_animations(
             "mode": mode,
         }
 
-    return token, out_files
+    rendered_vol_indices = sorted(
+        {int(v) for v in rot_vols} | {int(v) for v in cyc_vols}
+    )
+    return token, out_files, rendered_vol_indices
 
 
 def animation_payload_b64(token: str) -> list[dict[str, Any]]:
@@ -600,6 +696,7 @@ def meta_for_api(exp: DashboardExperiment) -> dict[str, Any]:
     evr = load_pca_explained_variance(landscape_dir)
     evr_list = [float(x) for x in evr] if evr is not None else None
     states = load_sketch_state_labels(landscape_dir)
+    chimerax_cpus = max(1, min(int(DEFAULT_CHIMERAX_PARALLEL), 32))
 
     return {
         "ok": True,
@@ -613,4 +710,5 @@ def meta_for_api(exp: DashboardExperiment) -> dict[str, Any]:
         "has_state_color": states is not None,
         "color_options": landscape_color_options(exp),
         "default_save_dir": kmeans_dir,
+        "chimerax_cpus": int(chimerax_cpus),
     }

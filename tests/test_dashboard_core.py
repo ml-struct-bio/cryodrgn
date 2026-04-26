@@ -25,6 +25,7 @@ from cryodrgn.dashboard.explorer_volumes import (
     _chimerax_render_cmds,
     explorer_volumes_eligible,
 )
+from cryodrgn.dashboard.landscape_volpca import kmeans_sorted_vol_indices
 from cryodrgn.dashboard.plots import pair_grid_png
 from cryodrgn.dashboard.preload import (
     _preload_cache_time_estimate_bounds,
@@ -155,6 +156,7 @@ class TestChimeraxRenderCmds:
         assert cmds[0].startswith("open ")
         assert cmds[-1] == "exit"
         assert any("save " in c for c in cmds)
+        assert any("view #1 orient" in c for c in cmds)
 
     def test_rotated_view_injects_turn(self) -> None:
         cmds = _chimerax_render_cmds(
@@ -173,6 +175,29 @@ class TestChimeraxRenderCmds:
         # shlex.quote wraps paths with spaces in single quotes.
         assert any("'/with space/x.mrc'" in c for c in cmds)
         assert any("'/out dir/y.png'" in c for c in cmds)
+
+    def test_volume_color_override(self) -> None:
+        cmds = _chimerax_render_cmds(
+            "/tmp/x.mrc",
+            "/tmp/x.png",
+            100,
+            vol_name="vol000",
+            turn_y=None,
+            volume_color="#ff5500",
+        )
+        assert any("volume color #ff5500" in c for c in cmds)
+
+
+class TestKmeansSortedVolIndices:
+    """``vol_mean.mrc`` matches ``vol_*.mrc`` but must not become a fake vol 000 index."""
+
+    def test_excludes_vol_mean(self, tmp_path) -> None:
+        d = tmp_path / "kmeans100"
+        d.mkdir()
+        (d / "vol_mean.mrc").write_bytes(b"x")
+        (d / "vol_001.mrc").write_bytes(b"x")
+        (d / "vol_100.mrc").write_bytes(b"x")
+        assert kmeans_sorted_vol_indices(str(d)) == [1, 100]
 
 
 # ---------------------------------------------------------------------------

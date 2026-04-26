@@ -371,7 +371,8 @@ def api_explorer_volume_media():
     mode = str(data.get("mode") or "static").strip().lower()
     try:
         if mode == "static":
-            blobs, cache_token = generate_montage_volume_pngs(e, rows)
+            cc = int(data.get("chimerax_cpus", DEFAULT_CHIMERAX_PARALLEL))
+            blobs, cache_token = generate_montage_volume_pngs(e, rows, chimerax_cpus=cc)
             b64s = [base64.standard_b64encode(b).decode("ascii") for b in blobs]
             return jsonify(
                 ok=True,
@@ -810,6 +811,7 @@ def trajectory_creator_page():
         default_y=dy,
         zdim=zdim,
         exp_workdir=e.workdir,
+        chimerax_cpus_default=DEFAULT_CHIMERAX_PARALLEL,
     )
 
 
@@ -1018,12 +1020,16 @@ def api_trajectory_volumes():
     if err is not None:
         return err
     try:
-        p = parse_trajectory_request_body(e, _request_json_dict())
+        data = _request_json_dict()
+        p = parse_trajectory_request_body(e, data)
     except ValueError as err:
         return jsonify(error=str(err)), 400
     try:
         z_traj, traj_rows, traj_xy = compute_trajectory_latent_path(e, p)
-        blobs, cache_token = generate_trajectory_volume_pngs(e, z_traj)
+        cc = int(data.get("chimerax_cpus", DEFAULT_CHIMERAX_PARALLEL))
+        blobs, cache_token = generate_trajectory_volume_pngs(
+            e, z_traj, chimerax_cpus=cc
+        )
         payload = trajectory_shared_json_payload(
             e,
             z_traj,
@@ -1162,33 +1168,41 @@ def api_landscape_volpca_generate_animations():
         return jsonify(error=f"No folder landscape.{le} for the current epoch."), 400
     vol_raw = data.get("vol_indices") or data.get("volumes")
     if not isinstance(vol_raw, list) or not vol_raw:
-        return jsonify(error="Provide vol_indices (1–10 integers)."), 400
+        return jsonify(error="Provide vol_indices (integers)."), 400
     try:
         vol_indices = sorted({int(v) for v in vol_raw})
     except (TypeError, ValueError):
         return jsonify(error="vol_indices must be integers."), 400
-    if len(vol_indices) > 10:
-        return jsonify(error="At most 10 volumes."), 400
     mode = str(data.get("mode") or "cycle").strip().lower()
     gf = int(data.get("gif_frames", LANDSCAPE_SKETCH_GIF_FRAMES_DEFAULT))
     cc = int(data.get("chimerax_cpus", DEFAULT_CHIMERAX_PARALLEL))
     cf = int(data.get("cycle_frames_per_vol", 8))
+    cm = str(data.get("color_mode") or data.get("color") or "none").strip().lower()
+    if cm != "state":
+        cm = "none"
     landscape_dir = landscape_dir_for_epoch(e.workdir, le)
+    if cm == "state" and load_sketch_state_labels(landscape_dir) is None:
+        cm = "none"
     try:
-        token, _files = generate_landscape_volume_animations(
+        t0 = time.perf_counter()
+        token, _files, rendered_vol_indices = generate_landscape_volume_animations(
             landscape_dir,
             vol_indices,
             mode=mode,
             gif_frames=gf,
             chimerax_cpus=cc,
             cycle_frames_per_vol=cf,
+            color_mode=cm,
         )
         items = animation_payload_b64(token)
+        elapsed_s = time.perf_counter() - t0
         return jsonify(
             ok=True,
             token=token,
             items=items,
             landscape_epoch=le,
+            duration_s=round(elapsed_s, 1),
+            rendered_vol_indices=rendered_vol_indices,
         )
     except EnvironmentError as err:
         return jsonify(error=str(err), need_chimerax=True), 503

@@ -152,6 +152,7 @@ def _sync_discovery_session_boot() -> None:
 
 
 def active_workdir(app: Flask) -> str | None:
+    """Resolved output folder: session choice if allowed, else ``DASHBOARD_WORKDIR``."""
     default_wd = app.config.get("DASHBOARD_WORKDIR")
     candidates = set(app.config.get("DASHBOARD_DISCOVERED_WORKDIRS", []))
     if default_wd:
@@ -163,6 +164,7 @@ def active_workdir(app: Flask) -> str | None:
 
 
 def epochs_for_workdir(workdir: str) -> list[int]:
+    """Epochs with both ``z.N.pkl`` and ``analyze.N/`` (memoised per workdir)."""
     cached = _EPOCHS_BY_WORKDIR_CACHE.get(workdir)
     if cached is not None:
         return cached
@@ -172,6 +174,7 @@ def epochs_for_workdir(workdir: str) -> list[int]:
 
 
 def resolve_epoch(app: Flask) -> int:
+    """Epoch from session, ``DASHBOARD_START_EPOCH``, or the latest in the workdir."""
     wd = active_workdir(app)
     if not wd:
         return 0
@@ -200,6 +203,7 @@ def resolve_epoch(app: Flask) -> int:
 
 
 def get_dashboard_exp(app: Flask) -> DashboardExperiment:
+    """Load (or return cached) experiment for active workdir, epoch, and k-means id."""
     wd = active_workdir(app)
     if not wd:
         raise RuntimeError("No output directory selected.")
@@ -228,11 +232,13 @@ def bind_dashboard_exp() -> None:
 
 
 def _request_json_dict() -> dict:
+    """Parsed JSON object from the request body, or ``{}`` if missing / invalid."""
     data = request.get_json(force=True, silent=True)
     return data if isinstance(data, dict) else {}
 
 
 def api_set_epoch():
+    """API: persist a validated epoch index in the session and clear caches."""
     wd = active_workdir(current_app)
     if not wd:
         return jsonify(error="Select an output folder first."), 400
@@ -252,6 +258,7 @@ def api_set_epoch():
 
 
 def api_set_workdir():
+    """API: switch or clear the session workdir (command-builder-only may clear)."""
     data = _request_json_dict()
     raw = data.get("workdir")
     candidates = set(current_app.config.get("DASHBOARD_DISCOVERED_WORKDIRS", []))
@@ -322,15 +329,8 @@ def _cmd_argv_for_nav_display(cmd_parts: list[str]) -> list[str]:
 
 
 def _abbrev_middle_token(text: str, maxlen: int = 120) -> str:
-    s = "" if text is None else str(text)
-    if len(s) <= maxlen:
-        return s
-    if maxlen < 4:
-        return s[:maxlen]
-    ell = "\u2026"
-    inner = maxlen - len(ell)
-    left = inner // 2
-    return s[:left] + ell + s[-(inner - left) :]
+    """Like :func:`abbrev_middle` with a longer default for raw CLI tokens."""
+    return abbrev_middle(text, maxlen)
 
 
 def _argv_four_command_lines(argv: list[str]) -> list[str]:

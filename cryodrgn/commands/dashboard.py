@@ -149,6 +149,12 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="open the trajectory creator instead of the launch menu",
     )
+    view.add_argument(
+        "--landscape-explorer",
+        action="store_true",
+        help="open the landscape explorer instead of the launch menu",
+    )
+
     parser.add_argument(
         "--cpus",
         "-c",
@@ -190,6 +196,7 @@ def main(args: argparse.Namespace) -> None:
         "three_dimensional": "/latent-3d",
         "command_builder": "/command-builder",
         "trajectory_creator": "/trajectory",
+        "landscape_explorer": "/landscape-volpca",
     }
     experiment_views = set(view_paths) - {"command_builder"}
     if command_builder_only and any(getattr(args, f, False) for f in experiment_views):

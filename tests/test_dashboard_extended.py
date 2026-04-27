@@ -50,6 +50,7 @@ from cryodrgn.dashboard.explorer_volumes import (
     _mpl_retrim_png,
     _sorted_vol_mrc_paths,
     explorer_volumes_eligible,
+    montage_cell_label,
 )
 from cryodrgn.dashboard.plots import (
     _continuous_series_stats,
@@ -441,6 +442,14 @@ class TestExplorerVolumesEligible:
             "cryodrgn.dashboard.explorer_volumes.torch_cuda_available", lambda: False
         )
         assert not explorer_volumes_eligible(dashboard_experiment)
+
+
+class TestMontageCellLabel:
+    def test_matches_particle_explorer_linear_scheme(self) -> None:
+        assert montage_cell_label(0) == "A"
+        assert montage_cell_label(22) == "Z"
+        assert montage_cell_label(23) == "AA"
+        assert montage_cell_label(24) == "AB"
 
 
 class TestMplRetrimPng:

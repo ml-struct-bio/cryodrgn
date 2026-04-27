@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass, field
+from functools import cached_property
 from typing import Any
 
 import numpy as np
@@ -21,13 +22,16 @@ def list_z_epochs(workdir: str) -> list[int]:
     if not os.path.isdir(workdir):
         return []
     out: list[int] = []
-    for name in os.listdir(workdir):
-        m = re.fullmatch(r"z\.([0-9]+)\.pkl", name)
-        if not m:
-            continue
-        ep = int(m.group(1))
-        if os.path.isdir(os.path.join(workdir, f"analyze.{ep}")):
-            out.append(ep)
+    with os.scandir(workdir) as it:
+        for entry in it:
+            if not entry.is_file():
+                continue
+            m = re.fullmatch(r"z\.([0-9]+)\.pkl", entry.name)
+            if not m:
+                continue
+            ep = int(m.group(1))
+            if os.path.isdir(os.path.join(workdir, f"analyze.{ep}")):
+                out.append(ep)
     return sorted(out)
 
 
@@ -52,14 +56,14 @@ class DashboardExperiment:
         default=None, init=False, repr=False, compare=False
     )
 
-    @property
+    @cached_property
     def numeric_columns(self) -> list[str]:
-        cols = [
+        """Numeric ``plot_df`` columns except ``index`` (cached per instance; ``plot_df`` is fixed after load)."""
+        return [
             c
             for c in self.plot_df.select_dtypes(include=[np.number]).columns
             if c != "index"
         ]
-        return cols
 
     @property
     def can_preview_particles(self) -> bool:
@@ -71,6 +75,12 @@ def load_experiment(
     epoch: int = -1,
     kmeans: int = -1,
 ) -> DashboardExperiment:
+    """Build a :class:`DashboardExperiment` from a training output folder.
+
+    When ``epoch`` is ``-1``, uses the latest epoch that has both ``z.N.pkl``
+    and ``analyze.N/``. When ``kmeans`` is ``-1``, uses the first ``kmeans*``
+    directory found under that analysis folder.
+    """
     train_configs_file = os.path.join(workdir, "config.yaml")
     if not os.path.isfile(train_configs_file):
         raise ValueError("Missing config.yaml file in given output folder!")

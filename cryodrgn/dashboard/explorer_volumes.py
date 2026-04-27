@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-import glob
 import os
 import re
 import secrets
@@ -13,6 +11,7 @@ import subprocess
 import tempfile
 import threading
 import time
+from collections.abc import Sequence
 
 import numpy as np
 
@@ -21,6 +20,27 @@ from cryodrgn.dashboard.data import DashboardExperiment
 DEFAULT_GIF_FRAMES = 40
 DEFAULT_CHIMERAX_PARALLEL = 16
 GIF_DURATION_S = 3.0
+
+# A–Z omitting I, O, U — matches scatter_explorer.html SAFE_LETTERS / labelAt.
+_MONTAGE_SAFE_LETTERS: tuple[str, ...] = tuple(
+    chr(c)
+    for c in range(ord("A"), ord("Z") + 1)
+    if c not in (ord("I"), ord("O"), ord("U"))
+)
+
+
+def montage_cell_label(idx: int) -> str:
+    """Montage-style label for linear index ``idx`` (0-based), matching the particle explorer grid."""
+    idx = int(idx)
+    if idx < 0:
+        raise ValueError("montage_cell_label idx must be non-negative")
+    letters = _MONTAGE_SAFE_LETTERS
+    n = len(letters)
+    if idx < n:
+        return letters[idx]
+    j = idx - n
+    return letters[j // n] + letters[j % n]
+
 
 _VOL_MRC_CACHE: dict[str, dict] = {}
 _VOL_CACHE_LOCK = threading.Lock()
@@ -94,6 +114,7 @@ def volume_cell_gif_from_cache(
             out_gif,
             gif_frames=gif_frames,
             ncpus=chimerax_cpus,
+            corner_label=montage_cell_label(cell_index),
         )
         with open(out_gif, "rb") as fh:
             return fh.read()
@@ -136,6 +157,7 @@ def save_cached_volumes_to_dir(
 
 
 def torch_cuda_available() -> bool:
+    """True if ``torch.cuda.is_available()`` (import errors count as False)."""
     try:
         import torch
 
@@ -145,6 +167,7 @@ def torch_cuda_available() -> bool:
 
 
 def chimerax_path() -> str:
+    """ChimeraX executable from ``CHIMERAX_PATH`` or raise if unset."""
     p = os.environ.get("CHIMERAX_PATH", "").strip()
     if not p:
         raise EnvironmentError(
@@ -280,21 +303,24 @@ def _decode_z_values_drgnai(
 
 
 def _sorted_vol_mrc_paths(mrc_dir: str, n_take: int) -> list[str]:
-    vol_files = glob.glob(os.path.join(mrc_dir, "vol_*.mrc"))
-
-    def _vol_index(p: str) -> int:
-        m = re.search(r"vol_(\d+)", os.path.basename(p))
-        return int(m.group(1)) if m else 0
-
-    vol_files.sort(key=_vol_index)
-    if len(vol_files) < n_take:
+    indexed: list[tuple[int, str]] = []
+    with os.scandir(mrc_dir) as it:
+        for entry in it:
+            if not entry.is_file():
+                continue
+            m = re.search(r"vol_(\d+)", entry.name)
+            if m:
+                indexed.append((int(m.group(1)), entry.path))
+    indexed.sort(key=lambda t: t[0])
+    paths = [p for _, p in indexed]
+    if len(paths) < n_take:
         raise RuntimeError(
-            f"Expected {n_take} volumes, found {len(vol_files)} under {mrc_dir}."
+            f"Expected {n_take} volumes, found {len(paths)} under {mrc_dir}."
         )
-    return vol_files[:n_take]
+    return paths[:n_take]
 
 
-def _mpl_retrim_png(out_png: str, dpi: int) -> None:
+def _mpl_retrim_png(out_png: str, dpi: int, *, corner_label: str | None = None) -> None:
     """Re-save ``out_png`` with matplotlib for uniform framing.
 
     Pads to a centered square and uses a fixed figure bbox so GIF frames stay
@@ -334,6 +360,26 @@ def _mpl_retrim_png(out_png: str, dpi: int) -> None:
         spine.set_visible(False)
     ax.set_xlim(-0.5, side - 0.5)
     ax.set_ylim(side - 0.5, -0.5)
+    if corner_label:
+        fs = max(11, int(dpi * 0.14))
+        ax.text(
+            0.02,
+            0.98,
+            corner_label,
+            transform=ax.transAxes,
+            fontsize=fs,
+            fontweight="bold",
+            color="#1a1a1a",
+            ha="left",
+            va="top",
+            bbox=dict(
+                boxstyle="round,pad=0.28",
+                facecolor="white",
+                edgecolor="#374151",
+                linewidth=0.8,
+                alpha=0.92,
+            ),
+        )
     fig.savefig(out_png, dpi=dpi, bbox_inches=None, pad_inches=0)
     plt.close(fig)
 
@@ -375,6 +421,7 @@ def mrc_to_static_png(
     dpi: int = 100,
     *,
     volume_color: str | None = None,
+    corner_label: str | None = None,
 ) -> None:
     """Single ChimeraX view (default camera after ``volume center``) — no rotation."""
     cmds = _chimerax_render_cmds(
@@ -386,10 +433,14 @@ def mrc_to_static_png(
         volume_color=volume_color,
     )
     run_chimerax_cmds(cmds, catch_errors=False)
-    _mpl_retrim_png(out_png, dpi)
+    _mpl_retrim_png(out_png, dpi, corner_label=corner_label)
 
 
-ChimeraxPngTask = tuple[int, str, str, int] | tuple[int, str, str, int, str | None]
+ChimeraxPngTask = (
+    tuple[int, str, str, int]
+    | tuple[int, str, str, int, str | None]
+    | tuple[int, str, str, int, str | None, str | None]
+)
 
 
 def parallel_chimerax_static_pngs(
@@ -399,8 +450,8 @@ def parallel_chimerax_static_pngs(
 ) -> list[str]:
     """Run :func:`mrc_to_static_png` for each task in parallel.
 
-    Each task is ``(sort_index, mrc_path, out_png_path, dpi)`` or the same with an
-    optional fifth element ``volume_color`` (hex or ChimeraX colour name).
+    Each task is ``(sort_index, mrc_path, out_png_path, dpi)`` or with optional
+    ``volume_color`` and/or ``corner_label`` (hex or ChimeraX colour name for colour).
     Returns ``out_png`` paths sorted by ``sort_index``.
     """
     n = len(tasks)
@@ -409,7 +460,16 @@ def parallel_chimerax_static_pngs(
     n_jobs = max(1, min(int(chimerax_cpus), 32, n))
 
     def _one(task: ChimeraxPngTask) -> tuple[int, str]:
-        if len(task) == 5:
+        if len(task) == 6:
+            idx, mrc_path, out_png, dpi, vcol, clab = task
+            mrc_to_static_png(
+                mrc_path,
+                out_png,
+                dpi=dpi,
+                volume_color=vcol,
+                corner_label=clab,
+            )
+        elif len(task) == 5:
             idx, mrc_path, out_png, dpi, vcol = task
             mrc_to_static_png(mrc_path, out_png, dpi=dpi, volume_color=vcol)
         else:
@@ -438,6 +498,7 @@ def mrc_to_rotating_gif(
     ncpus: int = DEFAULT_CHIMERAX_PARALLEL,
     dpi: int = 100,
     volume_color: str | None = None,
+    corner_label: str | None = None,
 ) -> None:
     """ChimeraX renders each rotation frame; assemble an animated GIF (cf. pipelines/tile.py)."""
     from PIL import Image
@@ -460,7 +521,7 @@ def mrc_to_rotating_gif(
                 volume_color=volume_color,
             )
             run_chimerax_cmds(cmds, catch_errors=False)
-            _mpl_retrim_png(png, dpi)
+            _mpl_retrim_png(png, dpi, corner_label=corner_label)
             return frame_rot, png
 
         try:

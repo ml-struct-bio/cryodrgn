@@ -21,6 +21,7 @@ import os
 import pickle
 import time
 import uuid
+from collections.abc import Iterable
 
 import numpy as np
 from flask import (
@@ -46,6 +47,7 @@ from cryodrgn.dashboard.context import (
     discover_cryodrgn_workdirs,
     inject_meta,
     inject_meta_command_builder_only,
+    _request_json_dict,
 )
 from cryodrgn.dashboard.data import DashboardExperiment, list_z_epochs
 from cryodrgn.dashboard.explorer_volumes import (
@@ -128,12 +130,6 @@ _EXPLORER_VOLUMES_INELIGIBLE_MSG = (
 # ---------------------------------------------------------------------------
 
 
-def _request_json_dict() -> dict:
-    """Return request JSON payload as a mapping, defaulting to ``{}``."""
-    data = request.get_json(force=True, silent=True)
-    return data if isinstance(data, dict) else {}
-
-
 def _filter_ui_scatter_max_points() -> int:
     """Cap for ``/api/scatter`` when ``filter_ui=1`` (env override available)."""
     try:
@@ -157,6 +153,11 @@ def _covariate_display_name(name: str) -> str:
     return name
 
 
+def _covariate_display_map(names: Iterable[str]) -> dict[str, str]:
+    """Map column names to display strings for template covariate dropdowns."""
+    return {c: _covariate_display_name(c) for c in names}
+
+
 def _parse_preselect_rows_param(raw: str | None) -> tuple[list[int] | None, str | None]:
     """Parse ``preselect_rows`` query (comma-separated ints). Returns ``(rows, err)``."""
     s = (raw or "").strip()
@@ -169,6 +170,7 @@ def _parse_preselect_rows_param(raw: str | None) -> tuple[list[int] | None, str 
 
 
 def _redirect(endpoint: str):
+    """302 redirect to a named view (same-origin)."""
     return redirect(url_for(endpoint), code=302)
 
 
@@ -229,6 +231,7 @@ def _add_direct_anchor_pidx(payload: dict, p: dict, z_traj: np.ndarray) -> None:
 
 
 def index():
+    """Landing page: feature flags and links depend on workdir / GPU / landscape outputs."""
     if not active_workdir(current_app):
         return render_template(
             "index.html",
@@ -252,6 +255,7 @@ def index():
 
 
 def command_builder_page():
+    """CryoDRGN CLI command builder (optional experiment defaults when a workdir is selected)."""
     e: DashboardExperiment | None = None
     if active_workdir(current_app):
         e = g.dashboard_exp
@@ -262,14 +266,17 @@ def command_builder_page():
 
 
 def abinit_builder_redirect():
+    """Legacy URL → command builder."""
     return _redirect("command_builder_page")
 
 
 def filter_page_redirect():
+    """Legacy ``/filter`` URL → scatter explorer."""
     return _redirect("explorer")
 
 
 def api_save_selection():
+    """Persist selected ``plot_df`` rows as a dataset-index pickle (and optional inverse)."""
     e: DashboardExperiment = g.dashboard_exp
     data = _request_json_dict()
     rows_raw = data.get("rows")
@@ -322,6 +329,7 @@ def api_save_selection():
 
 
 def explorer():
+    """Interactive 2-D scatter with optional particle montage and volume explorer."""
     e: DashboardExperiment = g.dashboard_exp
     if not e.can_preview_particles:
         return (
@@ -343,7 +351,7 @@ def explorer():
     return render_template(
         "scatter_explorer.html",
         numeric_cols=cols,
-        covariate_display_map={c: _covariate_display_name(c) for c in cols},
+        covariate_display_map=_covariate_display_map(cols),
         default_x=dx,
         default_y=dy,
         initial_rows=initial_rows,
@@ -355,6 +363,7 @@ def explorer():
 
 
 def api_explorer_volume_media():
+    """Decode montage cells to PNG or per-cell rotating GIF (ChimeraX); returns cache id for GIFs."""
     e: DashboardExperiment = g.dashboard_exp
     if not explorer_volumes_eligible(e):
         return jsonify(error=_EXPLORER_VOLUMES_INELIGIBLE_MSG), 400
@@ -425,6 +434,7 @@ def api_explorer_volume_media():
 
 
 def api_scatter():
+    """Plotly JSON for the explorer / filter scatter (subsample caps via query flags)."""
     e: DashboardExperiment = g.dashboard_exp
     xcol = request.args.get("x", e.numeric_columns[0])
     ycol = request.args.get("y", e.numeric_columns[0])
@@ -472,6 +482,7 @@ def api_scatter():
 
 
 def latent_3d_page():
+    """3-D latent visualizer shell (requires ``zdim >= 3``)."""
     e: DashboardExperiment = g.dashboard_exp
     zdim = int(e.z.shape[1])
     if zdim < 3:
@@ -484,7 +495,7 @@ def latent_3d_page():
         "latent_3d.html",
         z_cols=[f"z{i}" for i in range(zdim)],
         numeric_cols=cols,
-        covariate_display_map={c: _covariate_display_name(c) for c in cols},
+        covariate_display_map=_covariate_display_map(cols),
         default_x="z0",
         default_y="z1",
         default_z="z2",
@@ -492,6 +503,7 @@ def latent_3d_page():
 
 
 def api_scatter3d_z():
+    """Plotly JSON for the 3-D latent scatter."""
     e: DashboardExperiment = g.dashboard_exp
     xcol = request.args.get("x", "z0")
     ycol = request.args.get("y", "z1")
@@ -663,6 +675,7 @@ def api_preload_images():
 
 
 def pairplot_page():
+    """Pair-grid UI: latent vs latent with chosen colour covariate (needs PCA + numeric colour column)."""
     e: DashboardExperiment = g.dashboard_exp
     zdim = int(e.z.shape[1])
     if zdim < 2:
@@ -675,7 +688,7 @@ def pairplot_page():
             render_template("pair_grid_need_more_cols.html", kind="pca", n=zdim),
             200,
         )
-    z_names = {f"z{i}" for i in range(zdim)}
+    z_names = frozenset(f"z{i}" for i in range(zdim))
     color_choices = [c for c in e.numeric_columns if c not in z_names]
     if not color_choices:
         return (
@@ -689,7 +702,7 @@ def pairplot_page():
     return render_template(
         "pair_grid.html",
         color_choices=color_choices,
-        covariate_display_map={c: _covariate_display_name(c) for c in color_choices},
+        covariate_display_map=_covariate_display_map(color_choices),
         default_color=default_color,
         has_umap=has_umap_columns(e),
         zdim=zdim,
@@ -700,6 +713,7 @@ def pairplot_page():
 
 
 def api_pairplot():
+    """Render the z-dimensional pair grid to an in-memory PNG; returns base64 + cell layout JSON."""
     e: DashboardExperiment = g.dashboard_exp
     try:
         color_col, diagonal_emb, upper_style, palette = _parse_pairplot_request(
@@ -727,6 +741,7 @@ def api_pairplot():
 
 
 def api_save_pairplot_png():
+    """Write the same pair grid as ``api_pairplot`` to ``analyze.{epoch}/`` on disk."""
     e: DashboardExperiment = g.dashboard_exp
     payload = _request_json_dict()
     try:
@@ -785,6 +800,7 @@ def api_default_trajectory_endpoints():
 
 
 def trajectory_creator_page():
+    """Trajectory creator UI (requires CUDA + weights like the volume explorer)."""
     e: DashboardExperiment = g.dashboard_exp
     if not explorer_volumes_eligible(e):
         return (
@@ -806,7 +822,7 @@ def trajectory_creator_page():
         "trajectory_creator.html",
         traj_axis_cols=traj_cols,
         numeric_cols=color_cols,
-        covariate_display_map={c: _covariate_display_name(c) for c in cov_keys},
+        covariate_display_map=_covariate_display_map(cov_keys),
         default_x=dx,
         default_y=dy,
         zdim=zdim,
@@ -937,12 +953,14 @@ def api_list_server_files():
         return jsonify(error="directory not found"), 400
     entries: list[dict] = []
     try:
-        for name in sorted(os.listdir(browse)):
-            full = os.path.join(browse, name)
-            if os.path.isdir(full):
-                entries.append({"name": name, "type": "dir"})
-            elif name.lower().endswith(".txt"):
-                entries.append({"name": name, "type": "file"})
+        with os.scandir(browse) as it:
+            for entry in it:
+                name = entry.name
+                if entry.is_dir():
+                    entries.append({"name": name, "type": "dir"})
+                elif name.lower().endswith(".txt"):
+                    entries.append({"name": name, "type": "file"})
+        entries.sort(key=lambda row: row["name"])
     except PermissionError:
         return jsonify(error="permission denied"), 403
     parent = os.path.dirname(browse) if browse != "/" else None
@@ -1065,6 +1083,7 @@ def api_trajectory_volumes():
 
 
 def landscape_volpca_page():
+    """Volume PCA / sketch landscape view (``analyze_landscape`` outputs)."""
     e: DashboardExperiment = g.dashboard_exp
     if not list_landscape_epochs(e.workdir):
         return render_template(
@@ -1177,22 +1196,36 @@ def api_landscape_volpca_generate_animations():
     gf = int(data.get("gif_frames", LANDSCAPE_SKETCH_GIF_FRAMES_DEFAULT))
     cc = int(data.get("chimerax_cpus", DEFAULT_CHIMERAX_PARALLEL))
     cf = int(data.get("cycle_frames_per_vol", 8))
-    cm = str(data.get("color_mode") or data.get("color") or "none").strip().lower()
-    if cm != "state":
-        cm = "none"
+    plot_color_raw = (
+        str(data.get("color_mode") or data.get("color") or "none").strip().lower()
+    )
+    cm = "state" if plot_color_raw == "state" else "none"
+    palette = data.get("palette")
+    if palette is not None:
+        palette = str(palette).strip() or None
     landscape_dir = landscape_dir_for_epoch(e.workdir, le)
     if cm == "state" and load_sketch_state_labels(landscape_dir) is None:
         cm = "none"
+    pcm = plot_color_raw
+    if pcm == "state" and load_sketch_state_labels(landscape_dir) is None:
+        pcm = "none"
+    reuse_tok = data.get("reuse_rotate_keyframes_token")
+    if reuse_tok is not None:
+        reuse_tok = str(reuse_tok).strip() or None
     try:
         t0 = time.perf_counter()
         token, _files, rendered_vol_indices = generate_landscape_volume_animations(
             landscape_dir,
             vol_indices,
+            exp=e,
             mode=mode,
             gif_frames=gf,
             chimerax_cpus=cc,
             cycle_frames_per_vol=cf,
             color_mode=cm,
+            plot_color_mode=pcm,
+            continuous_palette=palette,
+            reuse_rotate_keyframes_token=reuse_tok,
         )
         items = animation_payload_b64(token)
         elapsed_s = time.perf_counter() - t0
@@ -1203,6 +1236,7 @@ def api_landscape_volpca_generate_animations():
             landscape_epoch=le,
             duration_s=round(elapsed_s, 1),
             rendered_vol_indices=rendered_vol_indices,
+            batch_mode=mode,
         )
     except EnvironmentError as err:
         return jsonify(error=str(err), need_chimerax=True), 503
@@ -1295,6 +1329,7 @@ def create_app(
     filter_plot_inds: str | None = None,
     cpus: int = 4,
 ) -> Flask:
+    """Construct the Flask app: config, discovery mode, ``before_request``, and all routes."""
     app = Flask(
         __name__,
         template_folder=_TEMPLATE_DIR,
@@ -1359,6 +1394,7 @@ def run_server(
     debug: bool = False,
     cpus: int = 4,
 ) -> None:
+    """Entry point for ``cryodrgn dashboard``: threaded Werkzeug development server."""
     app = create_app(
         workdir=workdir,
         epoch=epoch,

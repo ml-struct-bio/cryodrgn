@@ -37,6 +37,22 @@ def main() -> int:
         scatter_json,
     )
 
+    def pairplot_color_and_diagonal(exp):
+        """Default pair-grid colour column and diagonal (UMAP vs PC) for ``exp``."""
+        cols = exp.numeric_columns
+        color = next(
+            (
+                c
+                for c in ("labels", "znorm", "UMAP1", "PC1")
+                if c in exp.plot_df.columns
+            ),
+            cols[0],
+        )
+        diag = (
+            "umap" if exp.umap is not None and "UMAP1" in exp.plot_df.columns else "pc"
+        )
+        return color, diag
+
     epochs = list_z_epochs(workdir)
     if not epochs:
         print("No epochs with analyze.N/ found.", file=sys.stderr)
@@ -94,17 +110,7 @@ def main() -> int:
                     120_000,
                 ),
             )
-        color = next(
-            (
-                c
-                for c in ("labels", "znorm", "UMAP1", "PC1")
-                if c in exp.plot_df.columns
-            ),
-            cols[0],
-        )
-        diag = (
-            "umap" if exp.umap is not None and "UMAP1" in exp.plot_df.columns else "pc"
-        )
+        color, diag = pairplot_color_and_diagonal(exp)
         bench(
             "Pair grid PNG (default-ish color)",
             lambda: pair_grid_png(
@@ -120,17 +126,7 @@ def main() -> int:
 
     if args.profile_pairplot:
         exp = load_experiment(workdir, ep, kmeans=-1)
-        color = next(
-            (
-                c
-                for c in ("labels", "znorm", "UMAP1", "PC1")
-                if c in exp.plot_df.columns
-            ),
-            exp.numeric_columns[0],
-        )
-        diag = (
-            "umap" if exp.umap is not None and "UMAP1" in exp.plot_df.columns else "pc"
-        )
+        color, diag = pairplot_color_and_diagonal(exp)
         pr = cProfile.Profile()
         pr.enable()
         pair_grid_png(

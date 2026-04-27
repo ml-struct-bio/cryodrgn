@@ -85,6 +85,7 @@ def normalize_continuous_palette(raw: str | None) -> str:
 
 
 def mpl_cmap_for_palette(plotly_palette: str) -> str:
+    """Matplotlib colormap name for a Plotly palette (falls back to Viridis)."""
     return _DASHBOARD_PALETTE_TO_MPL.get(
         plotly_palette,
         _DASHBOARD_PALETTE_TO_MPL[DEFAULT_DASHBOARD_CONTINUOUS_PALETTE],

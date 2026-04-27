@@ -29,6 +29,7 @@ _TRAJ_GRAPH_NEIGHBOR_CACHE: dict[
 
 
 def has_umap_columns(exp: DashboardExperiment) -> bool:
+    """True when UMAP coordinates were loaded into ``plot_df``."""
     return (
         exp.umap is not None
         and "UMAP1" in exp.plot_df.columns
@@ -37,6 +38,7 @@ def has_umap_columns(exp: DashboardExperiment) -> bool:
 
 
 def has_pc_columns(exp: DashboardExperiment) -> bool:
+    """True when at least PC1 and PC2 exist (PCA latent embedding in the dataframe)."""
     return "PC1" in exp.plot_df.columns and "PC2" in exp.plot_df.columns
 
 

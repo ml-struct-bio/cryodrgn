@@ -226,6 +226,7 @@ def _preload_cache_time_estimate_bounds(cpus: int) -> tuple[int, int]:
 
 
 def format_preload_cache_time_hint(cpus: int) -> str:
+    """Human-readable wall-time hint for thumbnail preload (e.g. UI copy)."""
     lo, hi = _preload_cache_time_estimate_bounds(cpus)
     cpus = max(1, int(cpus))
     span = f"~{lo}s" if lo == hi else f"~{lo}\u2013{hi}s"

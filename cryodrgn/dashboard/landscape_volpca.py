@@ -229,6 +229,57 @@ def load_sketch_centroid_plot_df_rows(kmeans_dir: str, n_expected: int) -> np.nd
     return ind
 
 
+def load_landscape_sketch_umap_coords(
+    landscape_dir: str,
+    kmeans_dir: str,
+    n: int,
+) -> np.ndarray | None:
+    """Sketch-centroid rows in the particle UMAP from ``landscape.*/umap.pkl``.
+
+    Row ``i`` aligns with ``vol_pca`` row ``i`` via ``centers_ind.txt`` (same as
+    ``analyze_landscape`` plots). Returns ``(n, d)`` float64 or ``None`` if UMAP
+    is missing, mis-shaped, or indices are out of range.
+    """
+    umap_path = os.path.join(landscape_dir, "umap.pkl")
+    if not os.path.isfile(umap_path):
+        return None
+    try:
+        umap_full = np.asarray(utils.load_pkl(umap_path), dtype=np.float64)
+    except Exception:
+        return None
+    if umap_full.ndim != 2 or umap_full.shape[0] < 1 or umap_full.shape[1] < 1:
+        return None
+    try:
+        centers = load_sketch_centroid_plot_df_rows(kmeans_dir, n)
+    except (FileNotFoundError, ValueError):
+        return None
+    centers_i = centers.astype(np.intp, copy=False)
+    if np.any(centers_i < 0) or np.any(centers_i >= umap_full.shape[0]):
+        return None
+    return umap_full[centers_i].astype(np.float64, copy=False)
+
+
+def parse_landscape_axis_spec(spec: str) -> tuple[str, int]:
+    """Parse ``pc:0`` / ``umap:1`` style axis strings from the scatter API."""
+    s = (spec or "").strip().lower().replace(" ", "")
+    if ":" not in s:
+        raise ValueError(
+            f"Invalid axis {spec!r}; expected a form like pc:0 or umap:1.",
+        )
+    kind, idx_s = s.split(":", 1)
+    if kind not in ("pc", "umap"):
+        raise ValueError(
+            f"Unknown axis kind in {spec!r} (expected pc or umap).",
+        )
+    try:
+        idx = int(idx_s)
+    except ValueError as err:
+        raise ValueError(f"Invalid axis index in {spec!r}.") from err
+    if idx < 0:
+        raise ValueError("Axis index must be non-negative.")
+    return (kind, idx)
+
+
 def _numeric_array_to_plotly_hex(vals: np.ndarray, plotly_cs: str) -> list[str]:
     """Map finite floats through a Plotly colorscale name; NaN → neutral gray."""
     vals = np.asarray(vals, dtype=float)
@@ -310,18 +361,18 @@ def landscape_volpca_scatter_figure(
     landscape_dir: str,
     exp: DashboardExperiment,
     *,
-    pc_x: int,
-    pc_y: int,
+    axis_x: tuple[str, int],
+    axis_y: tuple[str, int],
     color_mode: str,
     continuous_palette: str | None = None,
 ) -> go.Figure:
     k_sketch, kmeans_dir = resolve_kmeans_sketch_bundle(landscape_dir)
     pc = load_vol_pca_matrix(landscape_dir, k_sketch)
     n, dim = pc.shape
-    if pc_x < 0 or pc_x >= dim or pc_y < 0 or pc_y >= dim:
-        raise ValueError(f"PCA axis out of range (0..{dim - 1}).")
-    if pc_x == pc_y:
-        raise ValueError("Choose two distinct PCA axes.")
+    kx, ix = axis_x
+    ky, iy = axis_y
+    if (kx, ix) == (ky, iy):
+        raise ValueError("Choose two distinct axes.")
 
     sorted_vols = kmeans_sorted_vol_indices(kmeans_dir)
     if len(sorted_vols) < n:
@@ -349,12 +400,53 @@ def landscape_volpca_scatter_figure(
         states = None
 
     evr = load_pca_explained_variance(landscape_dir)
-    xtitle = f"Volume PC{pc_x + 1}"
-    ytitle = f"Volume PC{pc_y + 1}"
-    if evr is not None and pc_x < len(evr):
-        xtitle += f" (EV: {float(evr[pc_x]):.4f})"
-    if evr is not None and pc_y < len(evr):
-        ytitle += f" (EV: {float(evr[pc_y]):.4f})"
+    umap_sk = load_landscape_sketch_umap_coords(landscape_dir, kmeans_dir, n)
+
+    def _axis_coord_and_title(
+        kind: str,
+        index: int,
+        *,
+        evr_local: np.ndarray | None,
+        umap_local: np.ndarray | None,
+        pc_local: np.ndarray,
+        dim_local: int,
+    ) -> tuple[np.ndarray, str]:
+        if kind == "pc":
+            if index < 0 or index >= dim_local:
+                raise ValueError(f"PCA axis out of range (0..{dim_local - 1}).")
+            title = f"Volume PC{index + 1}"
+            if evr_local is not None and index < len(evr_local):
+                title += f" (EV: {float(evr_local[index]):.4f})"
+            return pc_local[:, index], title
+        if kind == "umap":
+            if umap_local is None:
+                raise ValueError(
+                    "UMAP axes need landscape umap.pkl (particle embedding) "
+                    "and valid centroid indices in centers_ind.txt.",
+                )
+            if index < 0 or index >= umap_local.shape[1]:
+                raise ValueError(
+                    f"UMAP axis out of range (0..{umap_local.shape[1] - 1}).",
+                )
+            return umap_local[:, index], f"Volume UMAP{index + 1}"
+        raise ValueError(f"Unknown axis kind {kind!r}.")
+
+    xv, xtitle = _axis_coord_and_title(
+        kx,
+        ix,
+        evr_local=evr,
+        umap_local=umap_sk,
+        pc_local=pc,
+        dim_local=dim,
+    )
+    yv, ytitle = _axis_coord_and_title(
+        ky,
+        iy,
+        evr_local=evr,
+        umap_local=umap_sk,
+        pc_local=pc,
+        dim_local=dim,
+    )
 
     plotly_cs = normalize_continuous_palette(continuous_palette)
     color_mode = (color_mode or "none").strip().lower()
@@ -425,8 +517,8 @@ def landscape_volpca_scatter_figure(
     sketch_ids = [str(int(v)) for v in vol_ids]
 
     sc = go.Scattergl(
-        x=pc[:, pc_x],
-        y=pc[:, pc_y],
+        x=xv,
+        y=yv,
         mode="markers",
         ids=sketch_ids,
         customdata=customdata,
@@ -453,16 +545,18 @@ def landscape_volpca_scatter_json(
     landscape_dir: str,
     exp: DashboardExperiment,
     *,
-    pc_x: int,
-    pc_y: int,
+    axis_x: str | tuple[str, int],
+    axis_y: str | tuple[str, int],
     color_mode: str,
     continuous_palette: str | None = None,
 ) -> str:
+    ax_x = parse_landscape_axis_spec(axis_x) if isinstance(axis_x, str) else axis_x
+    ax_y = parse_landscape_axis_spec(axis_y) if isinstance(axis_y, str) else axis_y
     fig = landscape_volpca_scatter_figure(
         landscape_dir,
         exp,
-        pc_x=pc_x,
-        pc_y=pc_y,
+        axis_x=ax_x,
+        axis_y=ax_y,
         color_mode=color_mode,
         continuous_palette=continuous_palette,
     )
@@ -865,9 +959,17 @@ def save_landscape_animations(
 
     os.makedirs(target, exist_ok=True)
     saved: list[str] = []
+    rotate_seq = 0
     for ent in files:
         src = ent["path"]
-        dst_name = ent["filename"]
+        kind = str(ent.get("kind") or "")
+        if kind == "cycle":
+            dst_name = "cycle.gif"
+        elif kind == "rotate":
+            rotate_seq += 1
+            dst_name = f"rotate_{rotate_seq:02d}.gif"
+        else:
+            dst_name = str(ent.get("filename") or os.path.basename(src))
         dst = os.path.join(target, dst_name)
         if os.path.isfile(dst):
             root, ext = os.path.splitext(dst_name)
@@ -901,7 +1003,9 @@ def meta_for_api(exp: DashboardExperiment) -> dict[str, Any]:
         return {"ok": False, "error": str(err), "epochs": epochs}
 
     pc = load_vol_pca_matrix(landscape_dir, k_sketch)
-    _, dim = pc.shape
+    n_vol, dim = pc.shape
+    umap_sk = load_landscape_sketch_umap_coords(landscape_dir, kmeans_dir, n_vol)
+    n_umap = int(umap_sk.shape[1]) if umap_sk is not None else 0
     evr = load_pca_explained_variance(landscape_dir)
     evr_list = [float(x) for x in evr] if evr is not None else None
     states = load_sketch_state_labels(landscape_dir)
@@ -915,6 +1019,7 @@ def meta_for_api(exp: DashboardExperiment) -> dict[str, Any]:
         "kmeans_dir": kmeans_dir,
         "n_volumes": int(pc.shape[0]),
         "n_pc": int(dim),
+        "n_umap": n_umap,
         "explained_variance_ratio": evr_list,
         "has_state_color": states is not None,
         "color_options": landscape_color_options(exp),

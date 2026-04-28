@@ -1141,8 +1141,22 @@ def api_landscape_volpca_scatter():
             ),
             400,
         )
-    pc_x = int(request.args.get("pc_x", "0"))
-    pc_y = int(request.args.get("pc_y", "1"))
+    ax_x_q = (request.args.get("axis_x") or "").strip()
+    ax_y_q = (request.args.get("axis_y") or "").strip()
+    if ax_x_q and ax_y_q:
+        axis_x = ax_x_q
+        axis_y = ax_y_q
+    elif ax_x_q or ax_y_q:
+        return (
+            jsonify(
+                error="Provide both axis_x and axis_y (e.g. pc:0 and umap:1), "
+                "or use legacy pc_x and pc_y.",
+            ),
+            400,
+        )
+    else:
+        axis_x = f"pc:{int(request.args.get('pc_x', '0'))}"
+        axis_y = f"pc:{int(request.args.get('pc_y', '1'))}"
     color = (request.args.get("color") or "none").strip().lower()
     landscape_dir = landscape_dir_for_epoch(e.workdir, le)
     if color not in ("none", "state") and color not in e.numeric_columns:
@@ -1161,8 +1175,8 @@ def api_landscape_volpca_scatter():
         js = landscape_volpca_scatter_json(
             landscape_dir,
             e,
-            pc_x=pc_x,
-            pc_y=pc_y,
+            axis_x=axis_x,
+            axis_y=axis_y,
             color_mode=color,
             continuous_palette=request.args.get("palette"),
         )

@@ -34,6 +34,45 @@
     height: 100% !important;
     min-height: 0 !important;
   }
+  .cryo-dash-page--volsketch .volsketch-sel-indices-wrap {
+    margin: 0 0 0.5rem;
+  }
+  .cryo-dash-page--volsketch .volsketch-sel-indices-details {
+    margin: 0;
+    border: 1px solid rgba(36, 59, 83, 0.16);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.72);
+    box-sizing: border-box;
+  }
+  .cryo-dash-page--volsketch .volsketch-sel-indices-details[hidden] {
+    display: none !important;
+  }
+  .cryo-dash-page--volsketch .volsketch-sel-indices-summary {
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.82rem;
+    padding: 0.42rem 0.55rem;
+    list-style: none;
+    user-select: none;
+    color: var(--nav-bg, #243b53);
+  }
+  .cryo-dash-page--volsketch .volsketch-sel-indices-summary::-webkit-details-marker {
+    display: none;
+  }
+  .cryo-dash-page--volsketch .volsketch-sel-indices-details[open] > .volsketch-sel-indices-summary {
+    border-bottom: 1px solid rgba(36, 59, 83, 0.1);
+  }
+  .cryo-dash-page--volsketch .volsketch-sel-indices-list {
+    margin: 0;
+    padding: 0.4rem 0.55rem 0.5rem 1.35rem;
+    max-height: 10rem;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.8rem;
+    line-height: 1.45;
+    color: var(--nav-bg, #243b53);
+  }
   .cryo-dash-page--volsketch .volsketch-animate-card {
     min-width: 0;
   }
@@ -105,9 +144,15 @@
   .cryo-dash-page--volsketch .volsketch-gif-overlay[hidden] {
     display: none !important;
   }
-  .cryo-dash-page--volsketch #volsketch-sel-list {
+  .cryo-dash-page--volsketch #volsketch-sel-summary {
     font-variant-numeric: tabular-nums;
-    word-break: break-all;
+  }
+  .cryo-dash-page--volsketch #volsketch-save-gif:disabled {
+    opacity: 0.52;
+    cursor: not-allowed;
+    filter: grayscale(0.2);
+    box-shadow: none;
+    transform: none;
   }
   .cryo-dash-page--volsketch .volsketch-animate-status-row {
     display: flex;
@@ -233,10 +278,10 @@
       <p class="cryo-dash-lead" style="margin-top:0;">Sketched volumes for <strong>epoch {{ exp_epoch }}</strong> (nav bar). Double-click toggles a point in or out of the selection; lasso or box replaces the selection with the enclosed points.</p>
       <div class="card cryo-dash-controls" id="volsketch-controls">
         <fieldset>
-          <legend>PCA axes</legend>
-          <label class="cryo-select-line" for="volsketch-pcx">X axis (PC)</label>
+          <legend>Plot axes</legend>
+          <label class="cryo-select-line" for="volsketch-pcx">X axis</label>
           <select id="volsketch-pcx"></select>
-          <label class="cryo-select-line" for="volsketch-pcy">Y axis (PC)</label>
+          <label class="cryo-select-line" for="volsketch-pcy">Y axis</label>
           <select id="volsketch-pcy"></select>
         </fieldset>
         <fieldset>
@@ -250,7 +295,15 @@
         <fieldset style="margin:0;">
           <legend>Selection</legend>
           <p class="cryo-dash-legend-note" style="margin:0 0 0.35rem;">Double-click a point to add or remove it. Lasso or box selection replaces the current selection, as does <strong>Choose volumes at random</strong>.</p>
-          <p id="volsketch-sel-list" class="status" style="margin:0 0 0.5rem;">Selected: (none)</p>
+          <p id="volsketch-sel-summary" class="status" style="margin:0 0 0.35rem;" role="status" aria-live="polite">No sketched volumes selected</p>
+          <div class="volsketch-sel-indices-wrap">
+            <details class="volsketch-sel-indices-details" id="volsketch-sel-indices-details" hidden>
+              <summary class="volsketch-sel-indices-summary">
+                <span id="volsketch-sel-indices-summary-label">Selected volume indices</span>
+              </summary>
+              <ul id="volsketch-sel-indices-list" class="volsketch-sel-indices-list" aria-label="Selected sketch volume indices"></ul>
+            </details>
+          </div>
           <button type="button" class="btn" id="volsketch-clear-sel">Clear selection</button>
         </fieldset>
       </div>
@@ -293,7 +346,7 @@
       </div>
       <p class="cryo-dash-legend-note" style="margin:0.5rem 0 0;">GIF previews update automatically a moment after you change the selection (ChimeraX offscreen).</p>
       <div class="cryo-explorer-save-btns" style="margin-top:0.55rem;">
-        <button type="button" class="btn btn--primary" id="volsketch-save-gif">Save GIFs to k-means folder…</button>
+        <button type="button" class="btn btn--primary" id="volsketch-save-gif" disabled>Save GIFs to k-means folder…</button>
       </div>
       <button type="button" class="btn" id="volsketch-random-sel" style="margin-top:1rem;width:100%;" disabled>
         Choose volumes at random
@@ -309,7 +362,10 @@
   var plotStatusEl = document.getElementById("volsketch-plot-status");
   var animateStatusEl = document.getElementById("volsketch-animate-status");
   var animateProgressEl = document.getElementById("volsketch-animate-progress");
-  var selListEl = document.getElementById("volsketch-sel-list");
+  var selSummaryEl = document.getElementById("volsketch-sel-summary");
+  var selIndicesDetails = document.getElementById("volsketch-sel-indices-details");
+  var selIndicesSummaryLabel = document.getElementById("volsketch-sel-indices-summary-label");
+  var selIndicesList = document.getElementById("volsketch-sel-indices-list");
   var pcx = document.getElementById("volsketch-pcx");
   var pcy = document.getElementById("volsketch-pcy");
   var colorSel = document.getElementById("volsketch-color");
@@ -318,6 +374,7 @@
   var gifFramesWrap = document.getElementById("volsketch-gif-frames-wrap");
   var previewGrid = document.getElementById("volsketch-preview-grid");
   var randomSelBtn = document.getElementById("volsketch-random-sel");
+  var saveGifBtn = document.getElementById("volsketch-save-gif");
 
   function teardownVolsketchPreviews() {
     if (!previewGrid) return;
@@ -499,6 +556,22 @@
   var debounceGifTimer = null;
   var gifReqGen = 0;
   var debouncedGifReason = "selection";
+  /** True while a generate_animations request is in flight (disable save until rerender completes). */
+  var landscapeAnimInFlight = false;
+
+  function syncSaveGifButton() {
+    if (!saveGifBtn) return;
+    var hasPreviews = previewGrid && previewGrid.children.length > 0;
+    var canSave = !!lastAnimToken && hasPreviews && !landscapeAnimInFlight;
+    saveGifBtn.disabled = !canSave;
+    if (canSave) {
+      saveGifBtn.removeAttribute("title");
+    } else if (landscapeAnimInFlight) {
+      saveGifBtn.title = "Available after ChimeraX finishes rendering the current previews.";
+    } else {
+      saveGifBtn.title = "Select volumes and wait for GIF previews to finish rendering.";
+    }
+  }
 
   /** A–Z omitting I, O, U — matches particle explorer / montage_cell_label. */
   var SAFE_LETTERS = (function() {
@@ -514,6 +587,13 @@
     var j = idx - SAFE_LETTERS.length;
     return SAFE_LETTERS[Math.floor(j / SAFE_LETTERS.length)]
       + SAFE_LETTERS[j % SAFE_LETTERS.length];
+  }
+
+  /** Vol index as in ``vol_NNN.mrc`` (``:03d`` in Python). */
+  function volSketchFilenameIndex(v) {
+    var n = typeof v === "number" ? v : parseInt(String(v), 10);
+    if (isNaN(n)) return String(v);
+    return String(n).padStart(3, "0");
   }
 
   function setPlotStatus(msg, isErr) {
@@ -599,10 +679,42 @@
 
   function updateSelLabel() {
     var arr = Array.from(selectedVols).sort(function(a,b){ return a-b; });
-    var cap = maxSelectable();
-    selListEl.textContent = arr.length
-      ? ("Selected: " + arr.join(", ") + " (" + arr.length + "/" + cap + ")")
-      : "Selected: (none)";
+    var nTotal = META && META.n_volumes != null ? Number(META.n_volumes) : NaN;
+    if (selSummaryEl) {
+      if (!isNaN(nTotal) && nTotal >= 0) {
+        selSummaryEl.textContent = arr.length + "/" + nTotal + " sketched volumes selected";
+      } else {
+        selSummaryEl.textContent = arr.length
+          ? (arr.length + " sketched volumes selected")
+          : "No sketched volumes selected";
+      }
+    }
+    if (selIndicesDetails && selIndicesList && selIndicesSummaryLabel) {
+      selIndicesList.innerHTML = "";
+      if (!arr.length) {
+        selIndicesDetails.hidden = true;
+        selIndicesDetails.open = false;
+      } else {
+        selIndicesDetails.hidden = false;
+        selIndicesSummaryLabel.textContent = (
+          "Selected volume indices (" + arr.length + ")"
+        );
+        var listParts = [];
+        arr.forEach(function(v, i) {
+          listParts.push(volSketchFilenameIndex(v) + " (" + montageLabelAt(i) + ")");
+        });
+        var listLabel = listParts.join(", ");
+        selIndicesList.setAttribute(
+          "aria-label",
+          "Selected sketch volume indices: " + listLabel
+        );
+        arr.forEach(function(v, i) {
+          var li = document.createElement("li");
+          li.textContent = volSketchFilenameIndex(v) + " (" + montageLabelAt(i) + ")";
+          selIndicesList.appendChild(li);
+        });
+      }
+    }
   }
 
   function volFromPoint(pt) {
@@ -720,13 +832,17 @@
     reason = reason || "selection";
     var vols = Array.from(selectedVols).sort(function(a,b){ return a-b; });
     if (!vols.length) {
+      landscapeAnimInFlight = false;
       clearVolsketchPreviewGrid();
       lastAnimToken = null;
       lastBatchMode = null;
       setAnimateStatus("", false, false);
+      syncSaveGifButton();
       return;
     }
     var myGen = ++gifReqGen;
+    landscapeAnimInFlight = true;
+    syncSaveGifButton();
     var cpus = META && META.chimerax_cpus != null ? Number(META.chimerax_cpus) : 1;
     var cpuPhrase = cpus === 1 ? "1 CPU" : cpus + " CPUs";
     var keepPreviews = previewGrid && previewGrid.children.length > 0 && (
@@ -767,6 +883,7 @@
     }
     postJson("/api/landscape_volpca/generate_animations", animPayload).then(function(j) {
       if (myGen !== gifReqGen) return;
+      landscapeAnimInFlight = false;
       lastAnimToken = j.token;
       lastBatchMode = j.batch_mode != null ? j.batch_mode : null;
       var ds = j.duration_s != null ? Number(j.duration_s) : NaN;
@@ -774,7 +891,10 @@
         ? ("Finished animating in " + ds.toFixed(1) + " s.")
         : "Finished animating.";
       setAnimateStatus(doneMsg, false, false);
-      if (!j.items || !j.items.length) return;
+      if (!j.items || !j.items.length) {
+        syncSaveGifButton();
+        return;
+      }
       teardownVolsketchPreviews();
       previewGrid.innerHTML = "";
       j.items.forEach(function(it) {
@@ -803,34 +923,66 @@
         updateSelLabel();
         refreshSelectionHighlight();
       }
+      syncSaveGifButton();
     }).catch(function(e) {
       if (myGen !== gifReqGen) return;
+      landscapeAnimInFlight = false;
       setAnimateStatus(String(e), false, true);
+      syncSaveGifButton();
     });
   }
 
-  function fillAxisSelects(nPc) {
-    var ix = parseInt(pcx.value, 10);
-    var iy = parseInt(pcy.value, 10);
-    if (isNaN(ix) || ix < 0) ix = 0;
-    if (isNaN(iy) || iy < 0) iy = Math.min(1, nPc - 1);
+  function allVolsketchAxisValues() {
+    var out = [];
+    var j;
+    var nPc = META && META.n_pc != null ? META.n_pc : 0;
+    var nUm = META && META.n_umap != null ? META.n_umap : 0;
+    for (j = 0; j < nPc; j++) out.push("pc:" + j);
+    for (j = 0; j < nUm; j++) out.push("umap:" + j);
+    return out;
+  }
+
+  function bumpVolsketchYIfSameAxis() {
+    var vals = allVolsketchAxisValues();
+    if (vals.length < 2 || pcx.value !== pcy.value) return;
+    var ix = vals.indexOf(pcx.value);
+    var next = (ix + 1) % vals.length;
+    pcy.value = vals[next];
+  }
+
+  function fillAxisSelects() {
+    if (!META) return;
+    var nPc = META.n_pc || 0;
+    var nUm = META.n_umap || 0;
+    var evr = META.explained_variance_ratio || null;
+    var prevX = pcx.value;
+    var prevY = pcy.value;
     pcx.innerHTML = "";
     pcy.innerHTML = "";
-    for (var j = 0; j < nPc; j++) {
-      var ox = document.createElement("option");
-      ox.value = String(j);
-      ox.textContent = "PC" + (j + 1);
-      pcx.appendChild(ox);
-      var oy = document.createElement("option");
-      oy.value = String(j);
-      oy.textContent = "PC" + (j + 1);
-      pcy.appendChild(oy);
+    function appendOptions(sel) {
+      var j;
+      for (j = 0; j < nPc; j++) {
+        var ox = document.createElement("option");
+        ox.value = "pc:" + j;
+        var lab = "PC" + (j + 1);
+        if (evr && j < evr.length) lab += " (EV: " + Number(evr[j]).toFixed(4) + ")";
+        ox.textContent = lab;
+        sel.appendChild(ox);
+      }
+      for (j = 0; j < nUm; j++) {
+        var ou = document.createElement("option");
+        ou.value = "umap:" + j;
+        ou.textContent = "UMAP" + (j + 1);
+        sel.appendChild(ou);
+      }
     }
-    pcx.value = String(Math.min(ix, nPc - 1));
-    pcy.value = String(Math.min(iy, nPc - 1));
-    if (pcx.value === pcy.value) {
-      pcy.value = String((parseInt(pcx.value, 10) + 1) % nPc);
-    }
+    appendOptions(pcx);
+    appendOptions(pcy);
+    var vals = allVolsketchAxisValues();
+    if (!vals.length) return;
+    pcx.value = vals.indexOf(prevX) >= 0 ? prevX : vals[0];
+    pcy.value = vals.indexOf(prevY) >= 0 ? prevY : vals[Math.min(1, vals.length - 1)];
+    bumpVolsketchYIfSameAxis();
   }
 
   function fillColorSelect(meta) {
@@ -867,7 +1019,7 @@
           return;
         }
         META = j;
-        fillAxisSelects(j.n_pc);
+        fillAxisSelects();
         fillColorSelect(j);
         syncRandomSelButton();
         updateSelLabel();
@@ -927,8 +1079,8 @@
     var x = pcx.value;
     var y = pcy.value;
     var c = colorSel.value;
-    var url = "/api/landscape_volpca/scatter?pc_x=" + encodeURIComponent(x)
-      + "&pc_y=" + encodeURIComponent(y) + "&color=" + encodeURIComponent(c);
+    var url = "/api/landscape_volpca/scatter?axis_x=" + encodeURIComponent(x)
+      + "&axis_y=" + encodeURIComponent(y) + "&color=" + encodeURIComponent(c);
     setPlotStatus("Loading scatter…", false);
     fetch(url)
       .then(function(r) {
@@ -1006,12 +1158,18 @@
 
   pcx.addEventListener("change", function() {
     if (!META) return;
-    if (pcx.value === pcy.value) pcy.value = String((parseInt(pcx.value, 10) + 1) % META.n_pc);
+    bumpVolsketchYIfSameAxis();
     reloadScatter();
   });
   pcy.addEventListener("change", function() {
     if (!META) return;
-    if (pcx.value === pcy.value) pcx.value = String((parseInt(pcy.value, 10) + 1) % META.n_pc);
+    if (pcx.value === pcy.value) {
+      var vals = allVolsketchAxisValues();
+      if (vals.length >= 2) {
+        var iy = vals.indexOf(pcy.value);
+        pcx.value = vals[(iy + 1) % vals.length];
+      }
+    }
     reloadScatter();
   });
   colorSel.addEventListener("change", function() {
@@ -1062,10 +1220,12 @@
         debounceGifTimer = null;
       }
       gifReqGen++;
+      landscapeAnimInFlight = false;
       clearVolsketchPreviewGrid();
       lastAnimToken = null;
       lastBatchMode = null;
       setAnimateStatus("", false, false);
+      syncSaveGifButton();
       function applyRandomPickAndHighlight() {
         var k = META && META.chimerax_cpus != null ? Number(META.chimerax_cpus) : 1;
         k = Math.max(1, Math.min(k, ids.length, maxSelectable()));
@@ -1111,6 +1271,7 @@
 
   loadMeta(reloadScatter);
   updateSelLabel();
+  syncSaveGifButton();
 })();
 </script>
 {% endif %}

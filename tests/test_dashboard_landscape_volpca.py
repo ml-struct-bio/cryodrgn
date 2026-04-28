@@ -85,6 +85,11 @@ def _write_minimal_landscape(workdir: str, epoch: int = _ANALYZE_EPOCH) -> str:
     with open(centers_path, "w", encoding="utf-8") as fh:
         for row in range(_LANDSCAPE_K):
             fh.write(f"{row}\n")
+    umap_full = np.array(
+        [[0.0, 1.0], [2.0, 3.0], [4.0, 5.0], [6.0, 7.0], [8.0, 9.0]],
+        dtype=np.float64,
+    )
+    utils.save_pkl(umap_full, os.path.join(land, "umap.pkl"))
     return land
 
 
@@ -179,6 +184,7 @@ class TestLandscapeVolpcaMetaAndScatter:
         assert m["landscape_epoch"] == _ANALYZE_EPOCH
         assert m["n_volumes"] == _LANDSCAPE_K
         assert m["n_pc"] == 2
+        assert m["n_umap"] == 2
         assert m["has_state_color"] is False
         assert m["kmeans_k"] == _LANDSCAPE_K
         opts = m["color_options"]
@@ -202,8 +208,8 @@ class TestLandscapeVolpcaMetaAndScatter:
         js = landscape_volpca_scatter_json(
             land,
             experiment_landscape,
-            pc_x=0,
-            pc_y=1,
+            axis_x="pc:0",
+            axis_y="pc:1",
             color_mode="none",
             continuous_palette=None,
         )
@@ -225,10 +231,27 @@ class TestLandscapeVolpcaMetaAndScatter:
             landscape_volpca_scatter_json(
                 land,
                 experiment_landscape,
-                pc_x=0,
-                pc_y=0,
+                axis_x="pc:0",
+                axis_y="pc:0",
                 color_mode="none",
             )
+
+    def test_scatter_umap_axes(self, experiment_landscape: DashboardExperiment) -> None:
+        land = landscape_dir_for_epoch(
+            experiment_landscape.workdir,
+            _ANALYZE_EPOCH,
+        )
+        js = landscape_volpca_scatter_json(
+            land,
+            experiment_landscape,
+            axis_x="umap:0",
+            axis_y="umap:1",
+            color_mode="none",
+        )
+        fig = json.loads(js)
+        trace = fig["data"][0]
+        assert trace["x"] == [0.0, 2.0, 4.0]
+        assert trace["y"] == [1.0, 3.0, 5.0]
 
 
 class TestLandscapeVolpcaFlaskRoutes:
@@ -240,6 +263,15 @@ class TestLandscapeVolpcaFlaskRoutes:
         assert m["n_volumes"] == _LANDSCAPE_K
 
     def test_scatter_route(self, flask_client_landscape) -> None:
+        r = flask_client_landscape.get(
+            "/api/landscape_volpca/scatter",
+            query_string={"axis_x": "pc:0", "axis_y": "pc:1", "color": "none"},
+        )
+        assert r.status_code == 200
+        fig = json.loads(r.get_data(as_text=True))
+        assert fig["data"][0]["type"] == "scattergl"
+
+    def test_scatter_route_legacy_pc_params(self, flask_client_landscape) -> None:
         r = flask_client_landscape.get(
             "/api/landscape_volpca/scatter",
             query_string={"pc_x": 0, "pc_y": 1, "color": "none"},

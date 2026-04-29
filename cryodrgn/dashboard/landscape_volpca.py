@@ -47,6 +47,8 @@ _LANDSCAPE_VOLPCA_KMEANS_RE = re.compile(r"^kmeans(\d+)$")
 _LANDSCAPE_VOLPCA_PKL_RE = re.compile(r"^vol_pca_(\d+)\.pkl$")
 # ``vol_mean.mrc`` and similar match ``vol_*.mrc`` but are not k-means centroids.
 _KMEANS_SKETCH_VOL_MRC_RE = re.compile(r"^vol_(\d+)\.mrc$")
+# Particle PCA columns from ``analysis.load_dataframe`` (``PC1``, ``PC2``, …).
+_PARTICLE_PC_COV_COL_RE = re.compile(r"^PC(\d+)$", re.IGNORECASE)
 
 # ChimeraX cost: cap how many volumes go into each animation style (extras subsampled).
 LANDSCAPE_ANIM_MAX_ROTATE = 5
@@ -204,6 +206,20 @@ def _volsketch_covariate_display(name: str) -> str:
     return str(name)
 
 
+def sketch_plot_color_covariate_variable_label(plot_color_mode: str) -> str | None:
+    """Human-readable colour dimension name for GIF preview (matches Color by column)."""
+    raw = (plot_color_mode or "").strip()
+    pcm = raw.lower()
+    if pcm in ("none", ""):
+        return None
+    if pcm == "state":
+        return "Agglomerative state"
+    m = _PARTICLE_PC_COV_COL_RE.match(raw)
+    if m:
+        return f"latent-space PC{m.group(1)}"
+    return _volsketch_covariate_display(pcm)
+
+
 def landscape_color_options(exp: DashboardExperiment) -> list[dict[str, str]]:
     opts: list[dict[str, str]] = [
         {"value": "none", "label": "None"},
@@ -357,6 +373,60 @@ def sketch_vol_marker_hex_by_vol_index(
     return {int(vol_ids[i]): "#4a5568" for i in range(n)}
 
 
+def sketch_vol_color_covariate_overlay_text(
+    landscape_dir: str,
+    kmeans_dir: str,
+    k_sketch: int,
+    exp: DashboardExperiment,
+    plot_color_mode: str,
+    vol_index: int,
+) -> str | None:
+    """Display string for the plot colour column at this sketch volume (preview badge)."""
+    pcm = (plot_color_mode or "none").strip().lower()
+    if pcm == "none":
+        return None
+
+    n = int(load_vol_pca_matrix(landscape_dir, k_sketch).shape[0])
+    sorted_vols = kmeans_sorted_vol_indices(kmeans_dir)
+    vol_ids = sorted_vols[:n] if len(sorted_vols) >= n else sorted_vols
+    if len(vol_ids) < n:
+        return None
+    try:
+        row_idx = vol_ids.index(int(vol_index))
+    except ValueError:
+        return None
+
+    centers_plot_rows = load_sketch_centroid_plot_df_rows(kmeans_dir, n)
+    states = load_sketch_state_labels(landscape_dir)
+    if states is not None and len(states) != n:
+        states = None
+    df = exp.plot_df
+    r_plot = int(centers_plot_rows[row_idx])
+
+    if pcm == "state" and states is not None:
+        return str(int(states[row_idx]))
+
+    if (
+        pcm not in ("none", "state")
+        and pcm in df.columns
+        and pcm in exp.numeric_columns
+    ):
+        if r_plot < 0 or r_plot >= len(df):
+            return "—"
+        raw = df.iloc[r_plot][pcm]
+        if pcm == "labels":
+            return _lower_legend_entry_label("labels", raw)
+        color_num = pd.to_numeric(pd.Series([raw]), errors="coerce").iloc[0]
+        if pd.isna(color_num):
+            return "—"
+        fv = float(color_num)
+        if not np.isfinite(fv):
+            return "—"
+        return f"{fv:.6g}"
+
+    return None
+
+
 def landscape_volpca_scatter_figure(
     landscape_dir: str,
     exp: DashboardExperiment,
@@ -416,7 +486,7 @@ def landscape_volpca_scatter_figure(
                 raise ValueError(f"PCA axis out of range (0..{dim_local - 1}).")
             title = f"Volume PC{index + 1}"
             if evr_local is not None and index < len(evr_local):
-                title += f" (EV: {float(evr_local[index]):.4f})"
+                title += f" (EV: {100.0 * float(evr_local[index]):.1f}%)"
             return pc_local[:, index], title
         if kind == "umap":
             if umap_local is None:
@@ -734,6 +804,26 @@ def generate_landscape_volume_animations(
             return ""
         return hex_by_vol_anim.get(int(vol), "#4a5568")
 
+    def _cov_preview_fields(vol: int) -> dict[str, Any]:
+        s = sketch_vol_color_covariate_overlay_text(
+            landscape_dir,
+            kmeans_dir,
+            k_sketch,
+            exp,
+            pcm,
+            int(vol),
+        )
+        if not s:
+            return {}
+        out: dict[str, Any] = {
+            "covariate_text": s,
+            "covariate_badge_background": _label_hex(int(vol)),
+        }
+        vlab = sketch_plot_color_covariate_variable_label(pcm)
+        if vlab:
+            out["covariate_variable_label"] = vlab
+        return out
+
     rng = random.Random()
     rot_vols: list[int] = []
     cyc_vols: list[int] = []
@@ -792,6 +882,7 @@ def generate_landscape_volume_animations(
                         "style": "static",
                         "text": label_for_vol[int(v)],
                         "badge_background": _label_hex(int(v)),
+                        **_cov_preview_fields(int(v)),
                     },
                 }
             )
@@ -844,6 +935,7 @@ def generate_landscape_volume_animations(
                             "style": "static",
                             "text": label_for_vol[int(v0)],
                             "badge_background": _label_hex(int(v0)),
+                            **_cov_preview_fields(int(v0)),
                         },
                     }
                 )
@@ -857,6 +949,30 @@ def generate_landscape_volume_animations(
                     out_gif,
                     cycle_frames_per_vol=cycle_frames_per_vol,
                 )
+                cyc_preview: dict[str, Any] = {
+                    "style": "cycle_segments",
+                    "segment_labels": [label_for_vol[int(v)] for v in cyc_vols],
+                    "segment_backgrounds": [_label_hex(int(v)) for v in cyc_vols],
+                    "frames_per_segment": fpv_c,
+                    "frame_duration_ms": frame_ms,
+                    "total_frames": int(len(cyc_vols) * fpv_c),
+                }
+                if pcm != "none":
+                    cyc_preview["segment_covariate_texts"] = [
+                        sketch_vol_color_covariate_overlay_text(
+                            landscape_dir,
+                            kmeans_dir,
+                            k_sketch,
+                            exp,
+                            pcm,
+                            int(vx),
+                        )
+                        or ""
+                        for vx in cyc_vols
+                    ]
+                    vlab_c = sketch_plot_color_covariate_variable_label(pcm)
+                    if vlab_c:
+                        cyc_preview["covariate_variable_label"] = vlab_c
                 out_files.append(
                     {
                         "vol": None,
@@ -864,16 +980,7 @@ def generate_landscape_volume_animations(
                         "filename": os.path.basename(out_gif),
                         "path": out_gif,
                         "label": ", ".join(label_for_vol[int(v)] for v in cyc_vols),
-                        "preview_overlay": {
-                            "style": "cycle_segments",
-                            "segment_labels": [label_for_vol[int(v)] for v in cyc_vols],
-                            "segment_backgrounds": [
-                                _label_hex(int(v)) for v in cyc_vols
-                            ],
-                            "frames_per_segment": fpv_c,
-                            "frame_duration_ms": frame_ms,
-                            "total_frames": int(len(cyc_vols) * fpv_c),
-                        },
+                        "preview_overlay": cyc_preview,
                     }
                 )
         finally:

@@ -451,6 +451,12 @@ def api_scatter():
         max_pts = None
     else:
         max_pts = 200_000
+        raw_max_pts = request.args.get("max_points")
+        if raw_max_pts:
+            try:
+                max_pts = max(1, min(int(raw_max_pts), 200_000))
+            except ValueError:
+                pass
     preselect_rows, pre_err = _parse_preselect_rows_param(
         request.args.get("preselect_rows"),
     )
@@ -1248,7 +1254,7 @@ def api_landscape_volpca_generate_animations():
             token=token,
             items=items,
             landscape_epoch=le,
-            duration_s=round(elapsed_s, 1),
+            duration_s=int(round(elapsed_s)),
             rendered_vol_indices=rendered_vol_indices,
             batch_mode=mode,
         )

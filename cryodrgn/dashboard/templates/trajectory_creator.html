@@ -1927,11 +1927,7 @@
     setTrajStatus("Decoding " + n + " volumes and rendering (ChimeraX)…", true);
     if (plotStatus) plotStatus.textContent = "Generating trajectory…";
 
-    if (useAnchors && anchorTrajXY && anchorTrajXY.length >= 2) {
-      drawAnchorPolyline(anchorTrajXY);
-    } else if (startXY && endXY) {
-      drawLineAndEndpoints(startXY[0], startXY[1], endXY[0], endXY[1]);
-    }
+    redrawTrajectoryOverlay();
 
     var payload = useAnchors
       ? {
@@ -2086,6 +2082,7 @@
       + "&y=" + encodeURIComponent(y)
       + "&color=" + encodeURIComponent(c)
       + "&marker_size=2"
+      + "&max_points=60000"
       + "&palette=" + encodeURIComponent(selectedTrajPalette());
     fetch("{{ url_for('api_scatter') }}?" + q)
       .then(function(r) {

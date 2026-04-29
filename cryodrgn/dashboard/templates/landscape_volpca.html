@@ -12,6 +12,30 @@
     max-width: 100%;
     box-sizing: border-box;
   }
+  /* Let the left strip honour the grid column width (avoid overflow from nowrap / long tokens). */
+  .cryo-dash-page--volsketch aside.volsketch-side {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-wrap: break-word;
+    box-sizing: border-box;
+  }
+  .cryo-dash-page--volsketch aside.volsketch-side .cryo-dash-lead {
+    max-width: 100%;
+  }
+  .cryo-dash-page--volsketch #volsketch-selection-panel,
+  .cryo-dash-page--volsketch #volsketch-selection-panel fieldset {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .cryo-dash-page--volsketch #volsketch-selection-panel p.status,
+  .cryo-dash-page--volsketch #volsketch-selection-panel .cryo-dash-legend-note,
+  .cryo-dash-page--volsketch #volsketch-selection-panel legend {
+    overflow-wrap: anywhere;
+    word-wrap: break-word;
+    hyphens: auto;
+    max-width: 100%;
+  }
   .cryo-dash-page--volsketch .volsketch-plot-cell {
     display: flex;
     justify-content: center;
@@ -39,28 +63,96 @@
   }
   .cryo-dash-page--volsketch .volsketch-sel-indices-details {
     margin: 0;
-    border: 1px solid rgba(36, 59, 83, 0.16);
+    border: 1px solid rgba(36, 59, 83, 0.2);
     border-radius: 6px;
-    background: rgba(255, 255, 255, 0.72);
+    background: rgba(255, 255, 255, 0.88);
     box-sizing: border-box;
+    min-width: 0;
+    max-width: 100%;
+    box-shadow: 0 1px 4px rgba(36, 59, 83, 0.07);
+    transition:
+      border-color 0.15s ease,
+      box-shadow 0.15s ease;
+  }
+  .cryo-dash-page--volsketch .volsketch-sel-indices-details:hover {
+    border-color: rgba(36, 59, 83, 0.32);
+    box-shadow: 0 2px 8px rgba(36, 59, 83, 0.1);
   }
   .cryo-dash-page--volsketch .volsketch-sel-indices-details[hidden] {
     display: none !important;
   }
   .cryo-dash-page--volsketch .volsketch-sel-indices-summary {
     cursor: pointer;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 0.35rem 0.45rem;
+    align-items: start;
+    width: 100%;
+    box-sizing: border-box;
     font-weight: 600;
     font-size: 0.82rem;
-    padding: 0.42rem 0.55rem;
+    padding: 0.42rem 0.55rem 0.42rem 0.45rem;
     list-style: none;
     user-select: none;
     color: var(--nav-bg, #243b53);
+    border-radius: 5px;
+    transition: background 0.15s ease;
+  }
+  .cryo-dash-page--volsketch .volsketch-sel-indices-summary:hover {
+    background: rgba(196, 112, 58, 0.09);
+  }
+  .cryo-dash-page--volsketch .volsketch-sel-indices-summary:focus-visible {
+    outline: 2px solid var(--accent, #c4703a);
+    outline-offset: 2px;
+  }
+  .cryo-dash-page--volsketch .volsketch-sel-indices-chevron {
+    grid-column: 1;
+    grid-row: 1;
+    display: block;
+    width: 0.55rem;
+    height: 0.55rem;
+    margin-top: 0.2em;
+    border-right: 2px solid rgba(36, 59, 83, 0.55);
+    border-bottom: 2px solid rgba(36, 59, 83, 0.55);
+    transform: rotate(-45deg) translateY(-0.05rem);
+    transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .cryo-dash-page--volsketch .volsketch-sel-indices-details[open] > .volsketch-sel-indices-summary .volsketch-sel-indices-chevron {
+    transform: rotate(45deg) translateY(0.06rem);
+  }
+  .cryo-dash-page--volsketch .volsketch-sel-indices-summary-label {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0;
+    text-align: left;
+    overflow-wrap: anywhere;
+    word-wrap: break-word;
+    hyphens: auto;
+  }
+  .cryo-dash-page--volsketch .volsketch-sel-indices-summary-hint {
+    grid-column: 3;
+    grid-row: 1;
+    justify-self: end;
+    max-width: 100%;
+    font-weight: 600;
+    font-size: 0.65rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: rgba(36, 59, 83, 0.48);
+    white-space: normal;
+    text-align: right;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
   }
   .cryo-dash-page--volsketch .volsketch-sel-indices-summary::-webkit-details-marker {
     display: none;
   }
+  .cryo-dash-page--volsketch .volsketch-sel-indices-summary::marker {
+    content: "";
+  }
   .cryo-dash-page--volsketch .volsketch-sel-indices-details[open] > .volsketch-sel-indices-summary {
-    border-bottom: 1px solid rgba(36, 59, 83, 0.1);
+    border-bottom: 1px solid rgba(36, 59, 83, 0.12);
+    border-radius: 5px 5px 0 0;
   }
   .cryo-dash-page--volsketch .volsketch-sel-indices-list {
     margin: 0;
@@ -129,20 +221,102 @@
     top: 0.35rem;
     left: 0.35rem;
     z-index: 1;
-    font-size: clamp(0.744rem, 2.28vw, 0.984rem);
+    font-size: clamp(0.893rem, 2.74vw, 1.181rem);
     font-weight: 700;
     font-variant-numeric: tabular-nums;
     color: #1a1a1a;
     line-height: 1.15;
-    padding: 0.14rem 0.38rem;
+    padding: 0.168rem 0.456rem;
     border-radius: 4px;
     background: rgba(255, 255, 255, 0.92);
     border: 1px solid rgba(55, 65, 81, 0.35);
     pointer-events: none;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+    /* Light fringe for contrast on GIF noise — keep subtle */
+    text-shadow:
+      0 1px 1px rgba(255, 255, 255, 0.5),
+      0 1px 2px rgba(0, 0, 0, 0.07);
+  }
+  /**
+   * Plot-colour chip fills — soft rim + restrained halo vs saturated tints.
+   */
+  .cryo-dash-page--volsketch .volsketch-gif-overlay--on-tint {
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.32),
+      0 1px 3px rgba(0, 0, 0, 0.08),
+      0 1px 5px rgba(0, 0, 0, 0.04);
+    border-color: rgba(27, 31, 36, 0.22);
+    text-shadow:
+      0 0 1px rgba(255, 255, 255, 0.85),
+      0 1px 2px rgba(255, 255, 255, 0.45),
+      0 2px 3px rgba(0, 0, 0, 0.12);
   }
   .cryo-dash-page--volsketch .volsketch-gif-overlay[hidden] {
     display: none !important;
+  }
+  .cryo-dash-page--volsketch .volsketch-gif-overlay--cov {
+    left: auto;
+    right: 0.35rem;
+    max-width: min(78%, calc(100% - 4.8rem));
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.1rem;
+    line-height: 1.2;
+    text-align: right;
+    overflow: hidden;
+    /* 23% smaller than the montage letter overlay (same stack, covariate side). */
+    font-size: clamp(0.688rem, 2.11vw, 0.909rem);
+    padding: 0.129rem 0.351rem;
+  }
+  .cryo-dash-page--volsketch .volsketch-gif-overlay--cov.volsketch-gif-overlay--on-tint
+    .volsketch-gif-cov-var {
+    text-shadow:
+      0 0 2px rgba(255, 255, 248, 0.5),
+      0 1px 2px rgba(0, 0, 0, 0.1);
+    color: #141418;
+  }
+  .cryo-dash-page--volsketch .volsketch-gif-overlay--cov.volsketch-gif-overlay--on-tint
+    .volsketch-gif-cov-val {
+    text-shadow:
+      0 0 2px rgba(255, 255, 255, 0.55),
+      0 2px 3px rgba(0, 0, 0, 0.12);
+    color: #121217;
+  }
+  .cryo-dash-page--volsketch .volsketch-gif-cov-var {
+    display: block;
+    max-width: 100%;
+    font-family: inherit;
+    font-size: 0.78em;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    line-height: 1.18;
+    color: rgba(26, 26, 26, 0.92);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cryo-dash-page--volsketch .volsketch-gif-cov-var[hidden] {
+    display: none !important;
+  }
+  .cryo-dash-page--volsketch .volsketch-gif-cov-val {
+    display: block;
+    max-width: 100%;
+    font-family:
+      ui-serif,
+      Charter,
+      "Iowan Old Style",
+      "Apple Garamond",
+      Georgia,
+      "Times New Roman",
+      serif;
+    font-size: 1em;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.15;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .cryo-dash-page--volsketch #volsketch-sel-summary {
     font-variant-numeric: tabular-nums;
@@ -299,7 +473,9 @@
           <div class="volsketch-sel-indices-wrap">
             <details class="volsketch-sel-indices-details" id="volsketch-sel-indices-details" hidden>
               <summary class="volsketch-sel-indices-summary">
-                <span id="volsketch-sel-indices-summary-label">Selected volume indices</span>
+                <span class="volsketch-sel-indices-chevron" aria-hidden="true"></span>
+                <span id="volsketch-sel-indices-summary-label" class="volsketch-sel-indices-summary-label"></span>
+                <span class="volsketch-sel-indices-summary-hint" aria-hidden="true">Tap to toggle</span>
               </summary>
               <ul id="volsketch-sel-indices-list" class="volsketch-sel-indices-list" aria-label="Selected sketch volume indices"></ul>
             </details>
@@ -404,6 +580,7 @@
   /** Volume colour → tinted badge background; letters stay black. */
   function volsketchApplyBadgeBackground(badge, colour) {
     badge.style.color = "#1a1a1a";
+    badge.classList.remove("volsketch-gif-overlay--on-tint");
     if (typeof colour !== "string" || !colour.trim()) {
       badge.style.backgroundColor = "";
       badge.style.borderColor = "";
@@ -420,6 +597,7 @@
     if (rgba) {
       badge.style.backgroundColor = rgba;
       badge.style.borderColor = "rgba(27, 31, 36, 0.28)";
+      badge.classList.add("volsketch-gif-overlay--on-tint");
       return;
     }
     badge.style.backgroundColor = "";
@@ -430,35 +608,70 @@
     badge.style.backgroundColor = "";
     badge.style.borderColor = "";
     badge.style.color = "#1a1a1a";
+    badge.classList.remove("volsketch-gif-overlay--on-tint");
   }
 
   /** In-dashboard labels only; GIF bytes on disk / save API stay unannotated. */
-  function mountVolsketchPreviewOverlay(wrap, badge, img, spec) {
+  function mountVolsketchPreviewOverlay(wrap, badge, covBadge, covVarEl, covValEl, img, spec) {
     wrap._volsketchCancelOverlay = null;
+    function hideCov() {
+      covVarEl.textContent = "";
+      covValEl.textContent = "";
+      covVarEl.hidden = true;
+      covBadge.hidden = true;
+      volsketchResetBadgeChrome(covBadge);
+    }
     if (!spec || !spec.style) {
       badge.textContent = "";
       badge.hidden = true;
       volsketchResetBadgeChrome(badge);
+      hideCov();
       return;
     }
     if (spec.style === "static") {
       badge.textContent = spec.text || "";
       badge.hidden = !badge.textContent;
       volsketchApplyBadgeBackground(badge, spec.badge_background);
+      var ctext = spec.covariate_text != null ? String(spec.covariate_text).trim() : "";
+      if (ctext) {
+        var vLabStatic = (
+          spec.covariate_variable_label != null
+            ? String(spec.covariate_variable_label).trim()
+            : ""
+        );
+        covVarEl.textContent = vLabStatic;
+        covVarEl.hidden = !vLabStatic;
+        covValEl.textContent = ctext;
+        covBadge.hidden = false;
+        volsketchApplyBadgeBackground(
+          covBadge,
+          spec.covariate_badge_background != null ? spec.covariate_badge_background : ""
+        );
+      } else {
+        hideCov();
+      }
       return;
     }
     if (spec.style !== "cycle_segments") {
       badge.hidden = true;
       volsketchResetBadgeChrome(badge);
+      hideCov();
       return;
     }
     var labels = spec.segment_labels || [];
     var segBgs = spec.segment_backgrounds || [];
+    var segCov = spec.segment_covariate_texts || [];
+    var covVarLabelCycle = (
+      spec.covariate_variable_label != null
+        ? String(spec.covariate_variable_label).trim()
+        : ""
+    );
     var fpv = Math.max(1, parseInt(spec.frames_per_segment, 10) || 8);
     var fd = Math.max(1, parseInt(spec.frame_duration_ms, 10) || 100);
     if (!labels.length) {
       badge.hidden = true;
       volsketchResetBadgeChrome(badge);
+      hideCov();
       return;
     }
     badge.hidden = false;
@@ -469,7 +682,25 @@
     function applySegmentIdx(idx) {
       idx = Math.max(0, Math.min(labels.length - 1, idx | 0));
       badge.textContent = labels[idx] || "";
-      volsketchApplyBadgeBackground(badge, segBgs[idx] != null ? segBgs[idx] : "");
+      var bg = segBgs[idx] != null ? segBgs[idx] : "";
+      volsketchApplyBadgeBackground(badge, bg);
+      var covt = "";
+      if (segCov.length > idx && segCov[idx] != null) {
+        covt = String(segCov[idx]).trim();
+      }
+      covVarEl.textContent = covVarLabelCycle;
+      covVarEl.hidden = !covVarLabelCycle;
+      if (covt) {
+        covValEl.textContent = covt;
+        covBadge.hidden = false;
+        volsketchApplyBadgeBackground(covBadge, bg);
+      } else {
+        covVarEl.hidden = true;
+        covVarEl.textContent = "";
+        covValEl.textContent = "";
+        covBadge.hidden = true;
+        volsketchResetBadgeChrome(covBadge);
+      }
     }
     function tick(now) {
       if (!wrap.isConnected) {
@@ -888,7 +1119,7 @@
       lastBatchMode = j.batch_mode != null ? j.batch_mode : null;
       var ds = j.duration_s != null ? Number(j.duration_s) : NaN;
       var doneMsg = !isNaN(ds)
-        ? ("Finished animating in " + ds.toFixed(1) + " s.")
+        ? ("Finished animating in " + Math.round(ds) + " s.")
         : "Finished animating.";
       setAnimateStatus(doneMsg, false, false);
       if (!j.items || !j.items.length) {
@@ -903,13 +1134,23 @@
         wrap.className = "volsketch-anim-wrap";
         var badge = document.createElement("span");
         badge.className = "volsketch-gif-overlay";
+        var covBadge = document.createElement("span");
+        covBadge.className = "volsketch-gif-overlay volsketch-gif-overlay--cov";
+        var covVarEl = document.createElement("span");
+        covVarEl.className = "volsketch-gif-cov-var";
+        covVarEl.hidden = true;
+        var covValEl = document.createElement("span");
+        covValEl.className = "volsketch-gif-cov-val";
+        covBadge.appendChild(covVarEl);
+        covBadge.appendChild(covValEl);
         var img = document.createElement("img");
         img.alt = "";
         img.src = "data:image/gif;base64," + it.gif_b64;
         wrap.appendChild(img);
         wrap.appendChild(badge);
+        wrap.appendChild(covBadge);
         fig.appendChild(wrap);
-        mountVolsketchPreviewOverlay(wrap, badge, img, it.preview_overlay);
+        mountVolsketchPreviewOverlay(wrap, badge, covBadge, covVarEl, covValEl, img, it.preview_overlay);
         previewGrid.appendChild(fig);
       });
       syncPreviewGridLayout();
@@ -965,7 +1206,9 @@
         var ox = document.createElement("option");
         ox.value = "pc:" + j;
         var lab = "PC" + (j + 1);
-        if (evr && j < evr.length) lab += " (EV: " + Number(evr[j]).toFixed(4) + ")";
+        if (evr && j < evr.length) {
+          lab += " (EV: " + (100 * Number(evr[j])).toFixed(1) + "%)";
+        }
         ox.textContent = lab;
         sel.appendChild(ox);
       }

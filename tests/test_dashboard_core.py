@@ -257,6 +257,12 @@ class TestDashboardScatterApis:
         r = flask_client.get("/api/scatter?x=UMAP1&y=UMAP2&color=none&marker_size=3")
         assert r.status_code == 200
 
+    def test_api_scatter_honors_explicit_max_points(self, flask_client) -> None:
+        r = flask_client.get("/api/scatter?x=UMAP1&y=UMAP2&color=none&max_points=2")
+        assert r.status_code == 200
+        js = r.get_json()
+        assert len(js["data"][0]["customdata"]) == 2
+
     def test_api_scatter3d_z(self, flask_client) -> None:
         r = flask_client.get("/api/scatter3d_z?x=z0&y=z1&z=z2&color=znorm")
         assert r.status_code == 200

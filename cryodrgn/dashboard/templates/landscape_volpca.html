@@ -407,6 +407,55 @@
     margin: 0.45rem 0 0;
     line-height: 1.35;
   }
+  .cryo-dash-page--volsketch .volsketch-view-rotate-row {
+    display: flex;
+    align-items: end;
+    gap: 0.45rem;
+    margin: 0.44rem 0 0;
+    min-width: 0;
+    transition: opacity 0.15s ease, filter 0.15s ease;
+  }
+  .cryo-dash-page--volsketch .volsketch-view-rotate-row.is-disabled {
+    opacity: 0.52;
+    filter: grayscale(0.25);
+  }
+  .cryo-dash-page--volsketch .volsketch-view-rotate-row label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.14rem;
+    margin: 0;
+    min-width: 4.8rem;
+    flex: 0 0 auto;
+    font-size: 0.72rem;
+    font-weight: 600;
+    line-height: 1.1;
+    color: var(--nav-bg, #243b53);
+  }
+  .cryo-dash-page--volsketch .volsketch-view-rotate-row input {
+    width: 4.8rem;
+    padding-top: 0.28rem;
+    padding-bottom: 0.28rem;
+  }
+  .cryo-dash-page--volsketch .volsketch-view-rotate-row button {
+    flex: 1 1 0;
+    min-width: 0;
+    padding-left: 0.3rem;
+    padding-right: 0.3rem;
+    padding-top: 0.4rem;
+    padding-bottom: 0.4rem;
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .cryo-dash-page--volsketch .volsketch-view-rotate-summary {
+    margin: 0.28rem 0 0;
+    font-size: 0.74rem;
+    line-height: 1.25;
+    color: var(--muted, #5c6b7a);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
   @media (max-width: 1180px) {
     .cryo-dash-page--volsketch .volsketch-grid {
       grid-template-columns: 1fr 1fr;
@@ -435,6 +484,9 @@
     }
     .cryo-dash-page--volsketch .volsketch-plot-square {
       width: min(100%, 92vw);
+    }
+    .cryo-dash-page--volsketch .volsketch-view-rotate-row {
+      align-items: stretch;
     }
   }
 </style>
@@ -520,6 +572,16 @@
       <div id="volsketch-preview-wrap" class="volsketch-preview-wrap" style="margin-top:0;">
         <div id="volsketch-preview-grid" class="volsketch-preview-grid"></div>
       </div>
+      <div class="volsketch-view-rotate-row is-disabled" aria-label="Rotate animation viewing angle" title="Load an animation preview before rotating the view.">
+        <label for="volsketch-view-rotate-angle">
+          Degrees
+          <input id="volsketch-view-rotate-angle" type="number" step="1" value="15" />
+        </label>
+        <button type="button" class="btn" data-volsketch-view-axis="x">Rotate X</button>
+        <button type="button" class="btn" data-volsketch-view-axis="y">Rotate Y</button>
+        <button type="button" class="btn" data-volsketch-view-axis="z">Rotate Z</button>
+      </div>
+      <p id="volsketch-view-rotate-summary" class="volsketch-view-rotate-summary">ChimeraX view matrix: available after animation loads.</p>
       <p class="cryo-dash-legend-note" style="margin:0.5rem 0 0;">GIF previews update automatically a moment after you change the selection (ChimeraX offscreen).</p>
       <div class="cryo-explorer-save-btns" style="margin-top:0.55rem;">
         <button type="button" class="btn btn--primary" id="volsketch-save-gif" disabled>Save GIFs to k-means folder…</button>
@@ -551,6 +613,10 @@
   var previewGrid = document.getElementById("volsketch-preview-grid");
   var randomSelBtn = document.getElementById("volsketch-random-sel");
   var saveGifBtn = document.getElementById("volsketch-save-gif");
+  var viewRotateRow = document.querySelector(".volsketch-view-rotate-row");
+  var viewRotateAngleEl = document.getElementById("volsketch-view-rotate-angle");
+  var viewRotateSummaryEl = document.getElementById("volsketch-view-rotate-summary");
+  var viewRotateBtns = Array.from(document.querySelectorAll("[data-volsketch-view-axis]"));
 
   function teardownVolsketchPreviews() {
     if (!previewGrid) return;
@@ -565,6 +631,7 @@
   function clearVolsketchPreviewGrid() {
     teardownVolsketchPreviews();
     if (previewGrid) previewGrid.innerHTML = "";
+    syncViewRotationControls();
   }
 
   function volsketchHex6ToRgba(hex, a) {
@@ -787,6 +854,9 @@
   var debounceGifTimer = null;
   var gifReqGen = 0;
   var debouncedGifReason = "selection";
+  var viewRotations = { x: 0, y: 0, z: 0 };
+  var lastChimeraxViewMatrix = "";
+  var chimeraxViewMatrixUnavailable = false;
   /** True while a generate_animations request is in flight (disable save until rerender completes). */
   var landscapeAnimInFlight = false;
 
@@ -802,6 +872,31 @@
     } else {
       saveGifBtn.title = "Select volumes and wait for GIF previews to finish rendering.";
     }
+    syncViewRotationControls();
+  }
+
+  function syncViewRotationControls() {
+    var hasLoadedPreview = !!(
+      lastAnimToken
+      && previewGrid
+      && previewGrid.children.length > 0
+      && !landscapeAnimInFlight
+    );
+    var hint = hasLoadedPreview
+      ? "Rotate the loaded animation preview by the entered angle."
+      : "Load an animation preview before rotating the view.";
+    if (viewRotateRow) {
+      viewRotateRow.classList.toggle("is-disabled", !hasLoadedPreview);
+      viewRotateRow.title = hint;
+    }
+    if (viewRotateAngleEl) {
+      viewRotateAngleEl.disabled = !hasLoadedPreview;
+      viewRotateAngleEl.title = hint;
+    }
+    viewRotateBtns.forEach(function(btn) {
+      btn.disabled = !hasLoadedPreview;
+      btn.title = hint;
+    });
   }
 
   /** A–Z omitting I, O, U — matches particle explorer / montage_cell_label. */
@@ -856,6 +951,58 @@
     var n = Math.max(1, Number(META.chimerax_cpus));
     randomSelBtn.textContent = "Choose " + n + " volume" + (n === 1 ? "" : "s") + " at random";
     randomSelBtn.disabled = false;
+  }
+
+  function normalizeViewDegrees(degrees) {
+    var d = Number(degrees);
+    if (!isFinite(d)) return 0;
+    d = d % 360;
+    if (Math.abs(d) < 1e-9) return 0;
+    return d;
+  }
+
+  function currentViewRotationPayload() {
+    return {
+      x: normalizeViewDegrees(viewRotations.x),
+      y: normalizeViewDegrees(viewRotations.y),
+      z: normalizeViewDegrees(viewRotations.z),
+    };
+  }
+
+  function viewRotationSummary() {
+    var r = currentViewRotationPayload();
+    return "requested view turns X " + r.x.toFixed(1)
+      + "°, Y " + r.y.toFixed(1)
+      + "°, Z " + r.z.toFixed(1) + "°";
+  }
+
+  function syncViewRotationSummary() {
+    if (!viewRotateSummaryEl) return;
+    if (lastChimeraxViewMatrix) {
+      viewRotateSummaryEl.textContent = "ChimeraX view matrix:\n" + lastChimeraxViewMatrix;
+    } else if (chimeraxViewMatrixUnavailable) {
+      viewRotateSummaryEl.textContent = "ChimeraX view matrix: not reported by ChimeraX for this render.";
+    } else if (landscapeAnimInFlight) {
+      viewRotateSummaryEl.textContent = "ChimeraX view matrix: rendering…";
+    } else {
+      viewRotateSummaryEl.textContent = "ChimeraX view matrix: available after animation loads.";
+    }
+  }
+
+  function applyViewRotation(axis) {
+    var deg = viewRotateAngleEl ? Number(viewRotateAngleEl.value) : NaN;
+    if (!isFinite(deg)) {
+      setAnimateStatus("Enter a finite rotation angle in degrees.", false, true);
+      return;
+    }
+    viewRotations[axis] = normalizeViewDegrees(Number(viewRotations[axis] || 0) + deg);
+    syncViewRotationSummary();
+    setAnimateStatus("Updated " + viewRotationSummary() + ".", false, false);
+    if (selectedVols.size > 0) {
+      scheduleAutoGif("view_rotation");
+    } else {
+      syncSaveGifButton();
+    }
   }
 
   function customDataRowAsArray(row) {
@@ -1067,17 +1214,24 @@
       clearVolsketchPreviewGrid();
       lastAnimToken = null;
       lastBatchMode = null;
+      lastChimeraxViewMatrix = "";
+      chimeraxViewMatrixUnavailable = false;
+      syncViewRotationSummary();
       setAnimateStatus("", false, false);
       syncSaveGifButton();
       return;
     }
     var myGen = ++gifReqGen;
     landscapeAnimInFlight = true;
+    lastChimeraxViewMatrix = "";
+    chimeraxViewMatrixUnavailable = false;
     syncSaveGifButton();
+    syncViewRotationSummary();
     var cpus = META && META.chimerax_cpus != null ? Number(META.chimerax_cpus) : 1;
     var cpuPhrase = cpus === 1 ? "1 CPU" : cpus + " CPUs";
     var keepPreviews = previewGrid && previewGrid.children.length > 0 && (
       reason === "color" || reason === "gif_mode" || reason === "gif_frames"
+      || reason === "view_rotation"
     );
     var statusMsg;
     if (keepPreviews && reason === "color") {
@@ -1088,6 +1242,11 @@
     } else if (keepPreviews && (reason === "gif_mode" || reason === "gif_frames")) {
       statusMsg = (
         "Re-rendering volume previews for the new animation settings — current GIFs keep playing until the update finishes (ChimeraX, "
+        + cpuPhrase + ")…"
+      );
+    } else if (keepPreviews && reason === "view_rotation") {
+      statusMsg = (
+        "Re-rendering volume previews for the new view angle — current GIFs keep playing until the update finishes (ChimeraX, "
         + cpuPhrase + ")…"
       );
     } else {
@@ -1104,6 +1263,7 @@
       gif_frames: parseInt(gifFrames.value, 10) || 20,
       chimerax_cpus: cpus,
       color_mode: colorSel.value,
+      view_rotations: currentViewRotationPayload(),
     };
     if (
       currentGifMode() === "cycle"
@@ -1117,6 +1277,12 @@
       landscapeAnimInFlight = false;
       lastAnimToken = j.token;
       lastBatchMode = j.batch_mode != null ? j.batch_mode : null;
+      lastChimeraxViewMatrix = j.view_matrix != null ? String(j.view_matrix).trim() : "";
+      if (!lastChimeraxViewMatrix && j.items && j.items.length && j.items[0].view_matrix != null) {
+        lastChimeraxViewMatrix = String(j.items[0].view_matrix).trim();
+      }
+      chimeraxViewMatrixUnavailable = !lastChimeraxViewMatrix;
+      syncViewRotationSummary();
       var ds = j.duration_s != null ? Number(j.duration_s) : NaN;
       var doneMsg = !isNaN(ds)
         ? ("Finished animating in " + Math.round(ds) + " s.")
@@ -1168,6 +1334,8 @@
     }).catch(function(e) {
       if (myGen !== gifReqGen) return;
       landscapeAnimInFlight = false;
+      chimeraxViewMatrixUnavailable = false;
+      syncViewRotationSummary();
       setAnimateStatus(String(e), false, true);
       syncSaveGifButton();
     });
@@ -1450,6 +1618,14 @@
   gifFrames.addEventListener("change", function() {
     scheduleAutoGif("gif_frames");
   });
+  document.querySelectorAll("[data-volsketch-view-axis]").forEach(function(btn) {
+    btn.addEventListener("click", function() {
+      var axis = String(btn.getAttribute("data-volsketch-view-axis") || "").toLowerCase();
+      if (axis === "x" || axis === "y" || axis === "z") {
+        applyViewRotation(axis);
+      }
+    });
+  });
 
   if (randomSelBtn) {
     randomSelBtn.addEventListener("click", function() {
@@ -1514,6 +1690,7 @@
 
   loadMeta(reloadScatter);
   updateSelLabel();
+  syncViewRotationSummary();
   syncSaveGifButton();
 })();
 </script>

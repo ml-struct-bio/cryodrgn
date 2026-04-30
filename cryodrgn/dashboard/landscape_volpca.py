@@ -22,6 +22,7 @@ from plotly.colors import sample_colorscale
 from cryodrgn import utils
 from cryodrgn.dashboard.data import DashboardExperiment
 from cryodrgn.dashboard.explorer_volumes import (
+    ChimeraxViewTurn,
     DEFAULT_CHIMERAX_PARALLEL,
     DEFAULT_GIF_FRAMES,
     montage_cell_label,
@@ -53,6 +54,7 @@ _PARTICLE_PC_COV_COL_RE = re.compile(r"^PC(\d+)$", re.IGNORECASE)
 # ChimeraX cost: cap how many volumes go into each animation style (extras subsampled).
 LANDSCAPE_ANIM_MAX_ROTATE = 5
 LANDSCAPE_ANIM_MAX_CYCLE = 50
+_LANDSCAPE_VIEW_ROTATION_AXES: tuple[str, ...] = ("x", "y", "z")
 
 
 def _sample_landscape_vols(vols: list[int], k: int, rng: random.Random) -> list[int]:
@@ -60,6 +62,28 @@ def _sample_landscape_vols(vols: list[int], k: int, rng: random.Random) -> list[
     if len(vols) <= k:
         return list(vols)
     return sorted(rng.sample(vols, k))
+
+
+def normalize_landscape_view_rotations(
+    view_rotations: dict[str, Any] | None,
+) -> list[ChimeraxViewTurn]:
+    """Return validated base-view rotations for ChimeraX animation previews."""
+    if not view_rotations:
+        return []
+    if not isinstance(view_rotations, dict):
+        raise ValueError("view_rotations must be an object with x, y, and z degrees.")
+    out: list[ChimeraxViewTurn] = []
+    for axis in _LANDSCAPE_VIEW_ROTATION_AXES:
+        raw = view_rotations.get(axis, 0.0)
+        try:
+            degrees = float(raw)
+        except (TypeError, ValueError) as err:
+            raise ValueError(f"view_rotations.{axis} must be a number.") from err
+        if not np.isfinite(degrees):
+            raise ValueError(f"view_rotations.{axis} must be finite.")
+        if abs(degrees) > 1e-9:
+            out.append((axis, degrees))
+    return out
 
 
 def list_landscape_epochs(workdir: str) -> list[int]:
@@ -711,8 +735,9 @@ def _lookup_rotate_keyframe_pngs(
     color_mode: str,
     plot_color_mode: str,
     continuous_palette: str | None,
-) -> dict[int, str] | None:
-    """Return ``vol → png`` from a prior rotate batch if valid for reuse, else ``None``."""
+    view_turns: list[ChimeraxViewTurn],
+) -> tuple[dict[int, str], str | None] | None:
+    """Return reusable keyframes and their ChimeraX view matrix, if valid."""
     if (
         not reuse_rotate_keyframes_token
         or not str(reuse_rotate_keyframes_token).strip()
@@ -734,6 +759,8 @@ def _lookup_rotate_keyframe_pngs(
     if "continuous_palette" in prev:
         if (prev.get("continuous_palette") or None) != (continuous_palette or None):
             return None
+    if tuple(prev.get("view_turns") or ()) != tuple(view_turns):
+        return None
     rk = prev.get("rotate_keyframes")
     if not isinstance(rk, dict) or not rk:
         return None
@@ -742,7 +769,10 @@ def _lookup_rotate_keyframe_pngs(
         p = str(v)
         if os.path.isfile(p):
             out[int(k)] = p
-    return out or None
+    if not out:
+        return None
+    vm = prev.get("view_matrix")
+    return out, str(vm) if vm else None
 
 
 def generate_landscape_volume_animations(
@@ -758,6 +788,7 @@ def generate_landscape_volume_animations(
     plot_color_mode: str = "none",
     continuous_palette: str | None = None,
     reuse_rotate_keyframes_token: str | None = None,
+    view_rotations: dict[str, Any] | None = None,
 ) -> tuple[str, list[dict[str, Any]], list[int]]:
     """Write GIF(s) under a new token directory.
 
@@ -775,6 +806,7 @@ def generate_landscape_volume_animations(
         )
     if mode not in ("rotate_each", "cycle"):
         raise ValueError('mode must be "cycle" or "rotate_each".')
+    view_turns = normalize_landscape_view_rotations(view_rotations)
 
     k_sketch, kmeans_dir = resolve_kmeans_sketch_bundle(landscape_dir)
     valid_sketch = set(kmeans_sorted_vol_indices(kmeans_dir))
@@ -854,6 +886,7 @@ def generate_landscape_volume_animations(
 
     out_files: list[dict[str, Any]] = []
     rotate_keyframes: dict[int, str] = {}
+    view_matrix_text: str | None = None
     keyframe_dir = os.path.join(job_dir, "keyframes")
 
     if mode == "rotate_each" and rot_vols:
@@ -861,13 +894,17 @@ def generate_landscape_volume_animations(
         for v in rot_vols:
             mp = vol_mrc_path(kmeans_dir, v)
             out_gif = os.path.join(job_dir, f"vol_{v:03d}_rotate.gif")
-            mrc_to_rotating_gif(
+            vm = mrc_to_rotating_gif(
                 mp,
                 out_gif,
                 gif_frames=gif_frames,
                 ncpus=chimerax_cpus,
                 volume_color=_vol_fill(v),
+                view_turns=view_turns,
+                report_view_matrix=view_matrix_text is None,
             )
+            if vm and view_matrix_text is None:
+                view_matrix_text = vm
             kpng = os.path.join(keyframe_dir, f"vol_{int(v):03d}.png")
             _gif_first_frame_to_png(out_gif, kpng)
             rotate_keyframes[int(v)] = kpng
@@ -887,13 +924,17 @@ def generate_landscape_volume_animations(
                 }
             )
 
-    reuse_pngs = _lookup_rotate_keyframe_pngs(
+    reuse = _lookup_rotate_keyframe_pngs(
         reuse_rotate_keyframes_token,
         landscape_dir,
         color_mode,
         pcm,
         continuous_palette,
+        view_turns,
     )
+    reuse_pngs = reuse[0] if reuse else None
+    if reuse and view_matrix_text is None:
+        view_matrix_text = reuse[1]
 
     if mode == "cycle" and cyc_vols:
         fpv_c, frame_ms = _landscape_cycle_gif_timing(cycle_frames_per_vol)
@@ -907,12 +948,16 @@ def generate_landscape_volume_animations(
                 else:
                     mp = vol_mrc_path(kmeans_dir, v)
                     tmp = os.path.join(job_dir, f"_cyc_vol_{int(v):03d}.png")
-                    mrc_to_static_png(
+                    vm = mrc_to_static_png(
                         mp,
                         tmp,
                         dpi=100,
                         volume_color=_vol_fill(v),
+                        view_turns=view_turns,
+                        report_view_matrix=view_matrix_text is None,
                     )
+                    if vm and view_matrix_text is None:
+                        view_matrix_text = vm
                     png_sequence.append(tmp)
                     tmp_cycle_pngs.append(tmp)
 
@@ -1004,6 +1049,9 @@ def generate_landscape_volume_animations(
             entry["rotate_keyframes"] = rotate_keyframes
         entry["plot_color_mode"] = pcm
         entry["continuous_palette"] = continuous_palette
+        entry["view_turns"] = tuple(view_turns)
+        if view_matrix_text:
+            entry["view_matrix"] = view_matrix_text
         _LANDSCAPE_ANIM_ENTRIES[token] = entry
 
     rendered_vol_indices = sorted(
@@ -1017,6 +1065,7 @@ def animation_payload_b64(token: str) -> list[dict[str, Any]]:
         meta = _LANDSCAPE_ANIM_ENTRIES.get(token)
         if not meta:
             raise ValueError("Unknown or expired animation batch id.")
+        view_matrix = meta.get("view_matrix")
     items: list[dict[str, Any]] = []
     for ent in meta["files"]:
         p = ent["path"]
@@ -1032,6 +1081,8 @@ def animation_payload_b64(token: str) -> list[dict[str, Any]]:
             item["label"] = ent["label"]
         if "preview_overlay" in ent:
             item["preview_overlay"] = ent["preview_overlay"]
+        if view_matrix:
+            item["view_matrix"] = str(view_matrix)
         items.append(item)
     return items
 

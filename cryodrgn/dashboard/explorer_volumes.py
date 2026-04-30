@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import os
 import re
 import secrets
@@ -12,6 +13,7 @@ import tempfile
 import threading
 import time
 from collections.abc import Sequence
+from typing import cast
 
 import numpy as np
 
@@ -20,6 +22,7 @@ from cryodrgn.dashboard.data import DashboardExperiment
 DEFAULT_GIF_FRAMES = 40
 DEFAULT_CHIMERAX_PARALLEL = 16
 GIF_DURATION_S = 3.0
+ChimeraxViewTurn = tuple[str, float]
 
 # A–Z omitting I, O, U — matches scatter_explorer.html SAFE_LETTERS / labelAt.
 _MONTAGE_SAFE_LETTERS: tuple[str, ...] = tuple(
@@ -40,6 +43,73 @@ def montage_cell_label(idx: int) -> str:
         return letters[idx]
     j = idx - n
     return letters[j // n] + letters[j % n]
+
+
+def normalize_chimerax_view_turns(
+    view_turns: Sequence[tuple[str, float]] | None,
+) -> list[ChimeraxViewTurn]:
+    """Validated ChimeraX ``turn <axis> <degrees>`` commands for the base view."""
+    out: list[ChimeraxViewTurn] = []
+    if not view_turns:
+        return out
+    for axis_raw, degrees_raw in view_turns:
+        axis = str(axis_raw).strip().lower()
+        if axis not in ("x", "y", "z"):
+            raise ValueError(f"Invalid ChimeraX view rotation axis: {axis_raw!r}.")
+        degrees = float(degrees_raw)
+        if not np.isfinite(degrees):
+            raise ValueError("ChimeraX view rotation degrees must be finite.")
+        if abs(degrees) > 1e-9:
+            out.append((axis, degrees))
+    return out
+
+
+def _extract_chimerax_view_matrix_text(
+    stdout: str,
+    stderr: str,
+    log_path: str | None = None,
+) -> str | None:
+    """Best-effort extraction of ChimeraX ``view matrix`` output from logs."""
+    chunks = [x for x in (stdout, stderr) if x]
+    if log_path and os.path.isfile(log_path):
+        try:
+            with open(log_path, encoding="utf-8", errors="replace") as fh:
+                chunks.append(fh.read())
+        except OSError:
+            pass
+    text = "\n".join(chunks)
+    if not text.strip():
+        return None
+    text = html.unescape(re.sub(r"<[^>]+>", "\n", text))
+    lines = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        low = line.lower()
+        if low.startswith("executing:") or low == "view matrix":
+            continue
+        lines.append(line)
+    num_re = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?"
+
+    def _matrix_from_text(label: str, txt: str) -> str | None:
+        nums = re.findall(num_re, txt)
+        if len(nums) < 12:
+            return None
+        return label + " " + ",".join(nums[:12])
+
+    camera_lines = [ln for ln in lines if "camera" in ln.lower()]
+    for line in camera_lines:
+        got = _matrix_from_text("camera", line)
+        if got:
+            return got
+    joined = "\n".join(lines)
+    m = re.search(r"camera\b(.{0,800})", joined, flags=re.IGNORECASE | re.DOTALL)
+    if m:
+        got = _matrix_from_text("camera", m.group(1))
+        if got:
+            return got
+    return None
 
 
 _VOL_MRC_CACHE: dict[str, dict] = {}
@@ -392,8 +462,11 @@ def _chimerax_render_cmds(
     vol_name: str,
     turn_y: float | None,
     volume_color: str | None = None,
+    view_turns: Sequence[tuple[str, float]] | None = None,
+    report_view_matrix: bool = False,
+    view_matrix_log_path: str | None = None,
 ) -> list[str]:
-    """ChimeraX cmd list rendering a single view (optional Y-axis rotation)."""
+    """ChimeraX cmd list rendering a single view with optional camera turns."""
     qvol = shlex.quote(mrc_path)
     qpng = shlex.quote(out_png)
     vc = (volume_color or "cornflowerblue").strip()
@@ -409,8 +482,14 @@ def _chimerax_render_cmds(
         # which lacks attributes the ortho camera path expects (e.g. stereo).
         "view #1 orient ",
     ]
+    for axis, degrees in normalize_chimerax_view_turns(view_turns):
+        cmds.append(f"turn {axis} {degrees} ")
     if turn_y is not None:
         cmds.append(f"turn y {turn_y} ")
+    if report_view_matrix:
+        cmds.append("view matrix ")
+        if view_matrix_log_path:
+            cmds.append(f"log save {shlex.quote(view_matrix_log_path)} ")
     cmds += [f"save {qpng} width {dpi * 5} height {dpi * 5} ", "exit"]
     return cmds
 
@@ -422,8 +501,11 @@ def mrc_to_static_png(
     *,
     volume_color: str | None = None,
     corner_label: str | None = None,
-) -> None:
-    """Single ChimeraX view (default camera after ``volume center``) — no rotation."""
+    view_turns: Sequence[tuple[str, float]] | None = None,
+    report_view_matrix: bool = False,
+) -> str | None:
+    """Single ChimeraX view after ``volume center`` and optional base-view turns."""
+    matrix_log = os.path.splitext(out_png)[0] + "_view_matrix.html"
     cmds = _chimerax_render_cmds(
         mrc_path,
         out_png,
@@ -431,9 +513,21 @@ def mrc_to_static_png(
         vol_name="vol000",
         turn_y=None,
         volume_color=volume_color,
+        view_turns=view_turns,
+        report_view_matrix=report_view_matrix,
+        view_matrix_log_path=matrix_log if report_view_matrix else None,
     )
-    run_chimerax_cmds(cmds, catch_errors=False)
+    out, err = run_chimerax_cmds(cmds, catch_errors=False)
     _mpl_retrim_png(out_png, dpi, corner_label=corner_label)
+    if report_view_matrix:
+        try:
+            return _extract_chimerax_view_matrix_text(out, err, matrix_log)
+        finally:
+            try:
+                os.remove(matrix_log)
+            except OSError:
+                pass
+    return None
 
 
 ChimeraxPngTask = (
@@ -499,7 +593,9 @@ def mrc_to_rotating_gif(
     dpi: int = 100,
     volume_color: str | None = None,
     corner_label: str | None = None,
-) -> None:
+    view_turns: Sequence[tuple[str, float]] | None = None,
+    report_view_matrix: bool = False,
+) -> str | None:
     """ChimeraX renders each rotation frame; assemble an animated GIF (cf. pipelines/tile.py)."""
     from PIL import Image
 
@@ -509,9 +605,11 @@ def mrc_to_rotating_gif(
     tmpdir = tempfile.mkdtemp(prefix="cryodrgn_explorer_vol_")
     try:
 
-        def one_frame(frame_rot: float) -> tuple[float, str]:
+        def one_frame(frame_rot: float) -> tuple[float, str, str | None]:
             png = os.path.join(tmpdir, f"f{frame_rot:.6f}.png")
+            matrix_log = os.path.join(tmpdir, f"f{frame_rot:.6f}_view_matrix.html")
             vol_name = f"vol000_frame{frame_rot:.4g}"
+            report_matrix = report_view_matrix and abs(float(frame_rot)) < 1e-9
             cmds = _chimerax_render_cmds(
                 mrc_path,
                 png,
@@ -519,21 +617,33 @@ def mrc_to_rotating_gif(
                 vol_name=vol_name,
                 turn_y=float(frame_rot),
                 volume_color=volume_color,
+                view_turns=view_turns,
+                report_view_matrix=report_matrix,
+                view_matrix_log_path=matrix_log if report_matrix else None,
             )
-            run_chimerax_cmds(cmds, catch_errors=False)
+            out, err = run_chimerax_cmds(cmds, catch_errors=False)
             _mpl_retrim_png(png, dpi, corner_label=corner_label)
-            return frame_rot, png
+            matrix = (
+                _extract_chimerax_view_matrix_text(out, err, matrix_log)
+                if report_matrix
+                else None
+            )
+            return frame_rot, png, matrix
 
         try:
             from joblib import Parallel, delayed
 
-            pairs = Parallel(n_jobs=min(ncpus, gif_frames))(
-                delayed(one_frame)(rot) for rot in frame_rots
+            pairs = cast(
+                list[tuple[float, str, str | None]],
+                Parallel(n_jobs=min(ncpus, gif_frames))(
+                    delayed(one_frame)(rot) for rot in frame_rots
+                ),
             )
         except ImportError:
             pairs = [one_frame(float(rot)) for rot in frame_rots]
         pairs.sort(key=lambda x: x[0])
-        paths = [p for _, p in pairs]
+        view_matrix = next((m for _, _, m in pairs if m), None)
+        paths = [p for _, p, _ in pairs]
         images = [Image.open(p) for p in paths]
         frame_ms = max(20, int(GIF_DURATION_S * 1000 / gif_frames))
         images[0].save(
@@ -545,6 +655,7 @@ def mrc_to_rotating_gif(
         )
         for im in images:
             im.close()
+        return view_matrix
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 

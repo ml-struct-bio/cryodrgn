@@ -1232,6 +1232,12 @@ def api_landscape_volpca_generate_animations():
     reuse_tok = data.get("reuse_rotate_keyframes_token")
     if reuse_tok is not None:
         reuse_tok = str(reuse_tok).strip() or None
+    view_rotations = data.get("view_rotations")
+    if view_rotations is not None and not isinstance(view_rotations, dict):
+        return (
+            jsonify(error="view_rotations must be an object with x, y, and z degrees."),
+            400,
+        )
     try:
         t0 = time.perf_counter()
         token, _files, rendered_vol_indices = generate_landscape_volume_animations(
@@ -1246,8 +1252,13 @@ def api_landscape_volpca_generate_animations():
             plot_color_mode=pcm,
             continuous_palette=palette,
             reuse_rotate_keyframes_token=reuse_tok,
+            view_rotations=view_rotations,
         )
         items = animation_payload_b64(token)
+        view_matrix = next(
+            (it.get("view_matrix") for it in items if it.get("view_matrix")),
+            None,
+        )
         elapsed_s = time.perf_counter() - t0
         return jsonify(
             ok=True,
@@ -1257,6 +1268,7 @@ def api_landscape_volpca_generate_animations():
             duration_s=int(round(elapsed_s)),
             rendered_vol_indices=rendered_vol_indices,
             batch_mode=mode,
+            view_matrix=view_matrix,
         )
     except EnvironmentError as err:
         return jsonify(error=str(err), need_chimerax=True), 503

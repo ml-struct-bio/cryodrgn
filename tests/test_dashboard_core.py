@@ -21,7 +21,7 @@ from cryodrgn.dashboard.app import (
     _TRAJECTORY_INELIGIBLE_MSG,
 )
 from cryodrgn.dashboard.data import DashboardExperiment, list_z_epochs
-from cryodrgn.dashboard.explorer_volumes import (
+from cryodrgn.dashboard.particle_explorer import (
     _chimerax_render_cmds,
     explorer_volumes_eligible,
 )

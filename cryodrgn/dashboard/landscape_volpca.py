@@ -21,7 +21,7 @@ from plotly.colors import sample_colorscale
 
 from cryodrgn import utils
 from cryodrgn.dashboard.data import DashboardExperiment
-from cryodrgn.dashboard.explorer_volumes import (
+from cryodrgn.dashboard.particle_explorer import (
     ChimeraxViewTurn,
     DEFAULT_CHIMERAX_PARALLEL,
     DEFAULT_GIF_FRAMES,

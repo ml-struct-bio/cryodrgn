@@ -44,7 +44,7 @@ from cryodrgn.dashboard.context import (
     resolve_epoch,
 )
 from cryodrgn.dashboard.data import DashboardExperiment, list_z_epochs
-from cryodrgn.dashboard.explorer_volumes import (
+from cryodrgn.dashboard.particle_explorer import (
     _config_yaml_path,
     _is_drgnai_config,
     _mpl_retrim_png,
@@ -350,7 +350,7 @@ class TestPairGridHexAndSkeleton:
 
 
 # ---------------------------------------------------------------------------
-# explorer_volumes.py: helpers that don't require ChimeraX / CUDA
+# particle_explorer.py: helpers that don't require ChimeraX / CUDA
 # ---------------------------------------------------------------------------
 
 
@@ -397,7 +397,7 @@ class TestExplorerVolumesEligible:
         self, dashboard_experiment: DashboardExperiment, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(
-            "cryodrgn.dashboard.explorer_volumes.torch_cuda_available", lambda: True
+            "cryodrgn.dashboard.particle_explorer.torch_cuda_available", lambda: True
         )
         weight_path = os.path.join(
             dashboard_experiment.workdir, f"weights.{dashboard_experiment.epoch}.pkl"
@@ -419,7 +419,7 @@ class TestExplorerVolumesEligible:
         tmp_path,
     ) -> None:
         monkeypatch.setattr(
-            "cryodrgn.dashboard.explorer_volumes.torch_cuda_available", lambda: True
+            "cryodrgn.dashboard.particle_explorer.torch_cuda_available", lambda: True
         )
         weight = os.path.join(
             dashboard_experiment.workdir, f"weights.{dashboard_experiment.epoch}.pkl"
@@ -439,7 +439,7 @@ class TestExplorerVolumesEligible:
         self, dashboard_experiment: DashboardExperiment, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(
-            "cryodrgn.dashboard.explorer_volumes.torch_cuda_available", lambda: False
+            "cryodrgn.dashboard.particle_explorer.torch_cuda_available", lambda: False
         )
         assert not explorer_volumes_eligible(dashboard_experiment)
 

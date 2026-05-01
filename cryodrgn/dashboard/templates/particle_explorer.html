@@ -87,6 +87,9 @@
   #scatter-controls-card {
     min-width: 0;
   }
+  .cryo-dash-page--image-viewer .cryo-dash-row {
+    gap: 0.5rem;
+  }
   #particle-sel-fieldset {
     min-width: 0;
     max-width: 100%;
@@ -295,39 +298,105 @@
     width: min(11rem, 55vw);
     flex: 0 0 auto;
   }
-  .cryo-palette-radios {
-    margin: 0.5rem 0 0;
-    padding: 0.4rem 0.55rem;
-    border: 1px solid rgba(36, 59, 83, 0.15);
-    border-radius: 4px;
-    background: rgba(250, 248, 244, 0.75);
-    max-width: 100%;
-    box-sizing: border-box;
-  }
-  .cryo-palette-radios legend {
+  .cryo-palette-select {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: stretch;
+    gap: 0.45rem;
+    width: 100%;
+    margin-top: 0.28rem;
+    padding-top: 0.28rem;
+    border-top: 1px solid rgba(36, 59, 83, 0.1);
     font-size: 0.78rem;
-    font-weight: 600;
     color: var(--nav-bg, #243b53);
-    padding: 0 0.2rem;
   }
-  .cryo-palette-radios__row {
+  .cryo-palette-select__title {
     display: flex;
-    flex-wrap: wrap;
-    gap: 0.25rem 0.85rem;
     align-items: center;
+    line-height: 1.05;
+    font-weight: 600;
   }
-  .cryo-palette-radios label {
-    font-size: 0.78rem;
-    color: var(--nav-bg, #243b53);
+  .cryo-palette-select__options {
+    display: grid;
+    grid-auto-flow: column;
+    grid-template-rows: repeat(2, auto);
+    grid-auto-columns: max-content;
+    align-items: stretch;
+    column-gap: 0.35rem;
+    row-gap: 0.04rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0.04rem 0 0.22rem;
+    scrollbar-width: thin;
+  }
+  .cryo-palette-select.scatter-palette-radios--suppressed {
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .cryo-palette-option {
+    flex: 0 0 auto;
     display: inline-flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: 0.28rem;
+    padding: 0.18rem 0.35rem;
+    border: 1px solid rgba(36, 59, 83, 0.12);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.55);
+    white-space: nowrap;
     cursor: pointer;
-    margin: 0;
     font-weight: 500;
   }
-  #scatter-palette-radios.scatter-palette-radios--suppressed {
-    display: none;
+  .cryo-palette-option:hover {
+    background: rgba(36, 59, 83, 0.06);
+  }
+  .cryo-palette-option input[type="radio"] {
+    margin: 0;
+    flex: 0 0 auto;
+  }
+  .cryo-palette-select__swatch {
+    flex: 0 0 2.8rem;
+    height: 0.62rem;
+    border-radius: 999px;
+    border: 1px solid rgba(36, 59, 83, 0.16);
+  }
+  .cryo-color-hist-panel {
+    margin-top: 0.35rem;
+    padding: 0.35rem 0.45rem 0.25rem;
+    border: 1px solid rgba(36, 59, 83, 0.13);
+    border-radius: 4px;
+    background: rgba(250, 248, 244, 0.78);
+    width: min(83.333%, 52rem);
+    box-sizing: border-box;
+  }
+  .cryo-color-hist-panel[hidden] {
+    display: block !important;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  #color-hist {
+    height: 5rem;
+    width: 100%;
+  }
+  .cryo-color-hist-controls {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.3rem 0.85rem;
+    margin-top: 0.1rem;
+    font-size: 0.78rem;
+    color: var(--muted, #5c6b7a);
+  }
+  .cryo-color-hist-controls label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin: 0;
+    cursor: pointer;
+    color: var(--nav-bg, #243b53);
+    font-weight: 500;
+  }
+  #color-threshold-status {
+    min-height: 1.1em;
   }
 </style>
 {% endblock %}
@@ -403,17 +472,44 @@
         </div>
       </div>
     </div>
-    <fieldset id="scatter-palette-radios" class="cryo-palette-radios scatter-palette-radios--suppressed" aria-label="Continuous color palette">
-      <legend>Palette (continuous color)</legend>
-      <div class="cryo-palette-radios__row">
-        <label><input type="radio" name="scatter_palette" value="Viridis" checked/> Viridis</label>
-        <label><input type="radio" name="scatter_palette" value="Plasma"/> Plasma</label>
-        <label><input type="radio" name="scatter_palette" value="Inferno"/> Inferno</label>
-        <label><input type="radio" name="scatter_palette" value="Magma"/> Magma</label>
-        <label><input type="radio" name="scatter_palette" value="Cividis"/> Cividis</label>
-        <label><input type="radio" name="scatter_palette" value="Turbo"/> Turbo</label>
+    <div id="color-hist-panel" class="cryo-color-hist-panel" hidden aria-hidden="true">
+      <div id="color-hist"></div>
+      <div class="cryo-color-hist-controls">
+        <span>Click violin to select particles above that colour value.</span>
+        <label for="color-threshold-use-max">
+          <input type="checkbox" id="color-threshold-use-max"/>
+          Use as maximum (≤)
+        </label>
+        <span id="color-threshold-status" class="status"></span>
       </div>
-    </fieldset>
+      <div id="scatter-palette-radios" class="cryo-palette-select scatter-palette-radios--suppressed" aria-label="Continuous color palette">
+        <span class="cryo-palette-select__title">Choose<br/>palette</span>
+        <div class="cryo-palette-select__options">
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Viridis" checked/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#440154,#3b528b,#21918c,#5ec962,#fde725);"></span>Viridis</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Plasma"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#0d0887,#7e03a8,#cc4778,#f89540,#f0f921);"></span>Plasma</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Inferno"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#000004,#420a68,#932667,#dd513a,#fca50a,#fcffa4);"></span>Inferno</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Magma"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#000004,#3b0f70,#8c2981,#de4968,#fe9f6d,#fcfdbf);"></span>Magma</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Cividis"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#00224e,#30496c,#7b7c78,#c8b866,#fde725);"></span>Cividis</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Turbo"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#30123b,#4662d7,#1ae4b6,#a4fc3c,#f98c0a,#7a0403);"></span>Turbo</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Blues"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#f7fbff,#c6dbef,#6baed6,#2171b5,#08306b);"></span>Blues</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Greens"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#f7fcf5,#c7e9c0,#74c476,#238b45,#00441b);"></span>Greens</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Greys"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#ffffff,#d9d9d9,#969696,#525252,#000000);"></span>Greys</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Oranges"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#fff5eb,#fdd0a2,#fd8d3c,#d94801,#7f2704);"></span>Oranges</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Purples"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#fcfbfd,#dadaeb,#9e9ac8,#6a51a3,#3f007d);"></span>Purples</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Reds"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#fff5f0,#fcbba1,#fb6a4a,#cb181d,#67000d);"></span>Reds</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="YlGnBu"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#ffffd9,#c7e9b4,#41b6c4,#2c7fb8,#081d58);"></span>YlGnBu</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="YlOrRd"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#ffffcc,#ffeda0,#feb24c,#f03b20,#800026);"></span>YlOrRd</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="RdBu"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#67001f,#d6604d,#f7f7f7,#4393c3,#053061);"></span>RdBu</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Portland"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#0c3383,#0a88ba,#f2d338,#f28f38,#d91e1e);"></span>Portland</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Jet"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#00007f,#0000ff,#00ffff,#ffff00,#ff0000,#7f0000);"></span>Jet</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Hot"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#000000,#b00000,#ff8c00,#ffff66,#ffffff);"></span>Hot</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Blackbody"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#000000,#5b0c6b,#b83289,#f26d4b,#f9f871);"></span>Blackbody</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Electric"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#000000,#1e006d,#8d17a5,#d94fd5,#ffffff);"></span>Electric</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Rainbow"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#6e40aa,#4776e6,#1ac7c2,#7bd94c,#f4d03f,#f25f5c);"></span>Rainbow</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Earth"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#000082,#00b5c8,#7dbe42,#c8b64a,#8b4513);"></span>Earth</label>
+        </div>
+      </div>
+    </div>
   </div>
 
   <aside class="cryo-dash-montage" aria-label="Particle preview">
@@ -657,21 +753,40 @@
     Inferno: [[0,0,4],[41,10,108],[108,2,112],[187,55,84],[249,142,8],[252,208,74],[252,254,164]],
     Magma: [[0,0,4],[59,15,112],[122,4,111],[203,62,65],[252,141,89],[252,208,136],[252,253,191]],
     Cividis: [[0,34,78],[0,57,112],[68,90,129],[115,128,131],[159,161,135],[206,186,122],[253,231,37]],
-    Turbo: [[48,18,59],[61,99,221],[26,152,223],[25,189,114],[208,230,28],[250,85,8],[144,12,2]]
+    Turbo: [[48,18,59],[61,99,221],[26,152,223],[25,189,114],[208,230,28],[250,85,8],[144,12,2]],
+    Blues: [[247,251,255],[198,219,239],[107,174,214],[33,113,181],[8,48,107]],
+    Greens: [[247,252,245],[199,233,192],[116,196,118],[35,139,69],[0,68,27]],
+    Greys: [[255,255,255],[217,217,217],[150,150,150],[82,82,82],[0,0,0]],
+    Oranges: [[255,245,235],[253,208,162],[253,141,60],[217,72,1],[127,39,4]],
+    Purples: [[252,251,253],[218,218,235],[158,154,200],[106,81,163],[63,0,125]],
+    Reds: [[255,245,240],[252,187,161],[251,106,74],[203,24,29],[103,0,13]],
+    YlGnBu: [[255,255,217],[199,233,180],[65,182,196],[44,127,184],[8,29,88]],
+    YlOrRd: [[255,255,204],[255,237,160],[254,178,76],[240,59,32],[128,0,38]],
+    RdBu: [[103,0,31],[214,96,77],[247,247,247],[67,147,195],[5,48,97]],
+    Portland: [[12,51,131],[10,136,186],[242,211,56],[242,143,56],[217,30,30]],
+    Jet: [[0,0,127],[0,0,255],[0,255,255],[255,255,0],[255,0,0],[127,0,0]],
+    Hot: [[0,0,0],[176,0,0],[255,140,0],[255,255,102],[255,255,255]],
+    Blackbody: [[0,0,0],[91,12,107],[184,50,137],[242,109,75],[249,248,113]],
+    Electric: [[0,0,0],[30,0,109],[141,23,165],[217,79,213],[255,255,255]],
+    Rainbow: [[110,64,170],[71,118,230],[26,199,194],[123,217,76],[244,208,63],[242,95,92]],
+    Earth: [[0,0,130],[0,181,200],[125,190,66],[200,182,74],[139,69,19]]
   };
   function selectedScatterPalette() {
     var r = document.querySelector("input[name=\"scatter_palette\"]:checked");
     var v = r && r.value ? String(r.value) : "Viridis";
     return CONTINUOUS_PALETTE_RGB[v] ? v : "Viridis";
   }
-  function covariateScaleCSS(t) {
+  function paletteScaleCSS(paletteName, t) {
     t = Math.max(0, Math.min(1, t));
-    var pal = CONTINUOUS_PALETTE_RGB[selectedScatterPalette()] || CONTINUOUS_PALETTE_RGB.Viridis;
+    var pal = CONTINUOUS_PALETTE_RGB[paletteName] || CONTINUOUS_PALETTE_RGB.Viridis;
     var n = pal.length - 1, i = Math.min(Math.floor(t * n), n - 1), f = t * n - i;
     var a = pal[i], b = pal[i + 1];
     return "rgb(" + Math.round(a[0]+(b[0]-a[0])*f) + ","
                   + Math.round(a[1]+(b[1]-a[1])*f) + ","
                   + Math.round(a[2]+(b[2]-a[2])*f) + ")";
+  }
+  function covariateScaleCSS(t) {
+    return paletteScaleCSS(selectedScatterPalette(), t);
   }
   var ACCENT = "#c4703a";
 
@@ -761,6 +876,16 @@
   var renderedScatterAxes = {x: sx.value, y: sy.value};
 
   var gd = document.getElementById("scatter");
+  var colorHistPanel = document.getElementById("color-hist-panel");
+  var colorHistDiv = document.getElementById("color-hist");
+  var colorThresholdUseMax = document.getElementById("color-threshold-use-max");
+  var colorThresholdStatus = document.getElementById("color-threshold-status");
+  var colorHistEventsWired = false;
+  var colorThresholdLevel = null;
+  var colorThresholdColorCol = null;
+  var colorHistHoverLevel = null;
+  var colorHistHoverRaf = null;
+  var colorViolinBaseShapes = [];
   function syncScatterControlsAlignment() {
     if (!scatterControlsCard || !scatterControlsSide || !scatterPlotStack) return;
     var minGapPx = 8;
@@ -808,6 +933,9 @@
         equalizeMontageActionButtonWidths();
         if (!gd || !gd.data || !gd.data.length) return;
         try { Plotly.Plots.resize(gd); } catch (e) {}
+        if (colorHistPanel && !colorHistPanel.hidden && colorHistDiv) {
+          try { Plotly.Plots.resize(colorHistDiv); } catch (e2) {}
+        }
       });
     });
     plotStackResizeObserver.observe(plotlyStackEl);
@@ -1166,6 +1294,357 @@
       return "discrete";
     }
     return "continuous";
+  }
+
+  function formatColorThresholdValue(v) {
+    if (typeof v !== "number" || !isFinite(v)) return "";
+    var av = Math.abs(v);
+    if (av !== 0 && (av < 0.001 || av >= 10000)) return v.toExponential(3);
+    return String(Math.round(v * 1000) / 1000);
+  }
+
+  function escapeHtmlText(s) {
+    return String(s).replace(/[&<>"']/g, function(ch) {
+      return {"&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;"}[ch];
+    });
+  }
+
+  function traceColorNumericValue(ti) {
+    if (!gd || !gd.data || !gd.data[0]) return null;
+    var trace = gd.data[0];
+    var markerColors = trace.marker ? trace.marker.color : null;
+    if (Array.isArray(markerColors)) {
+      var mv = Number(markerColors[ti]);
+      if (isFinite(mv)) return mv;
+    }
+    var cd = trace.customdata;
+    if (cd && cd[ti] && cd[ti].length > 2) {
+      var dv = Number(cd[ti][2]);
+      if (isFinite(dv)) return dv;
+    }
+    return null;
+  }
+
+  function currentColorValueItems() {
+    if (!gd || !gd.data || !gd.data[0] || !gd.data[0].customdata) return [];
+    if (!sc.value || sc.value === "none") return [];
+    var cd = gd.data[0].customdata;
+    var out = [];
+    for (var i = 0; i < cd.length; i++) {
+      var row = cd[i] && cd[i].length > 1 ? cd[i][1] : null;
+      var val = traceColorNumericValue(i);
+      if (row != null && val != null) out.push({ti: i, row: row, value: val});
+    }
+    return out;
+  }
+
+  function hideColorHistogram() {
+    if (colorHistPanel) {
+      colorHistPanel.hidden = true;
+      colorHistPanel.setAttribute("aria-hidden", "true");
+    }
+    colorHistHoverLevel = null;
+    colorViolinBaseShapes = [];
+    if (colorThresholdStatus) colorThresholdStatus.textContent = "";
+  }
+
+  function colorHistogramGuideShapes() {
+    var shapes = colorViolinBaseShapes.slice();
+    if (colorThresholdLevel != null && colorThresholdColorCol === sc.value) {
+      shapes.push({
+        type: "line",
+        xref: "x",
+        yref: "paper",
+        x0: colorThresholdLevel,
+        x1: colorThresholdLevel,
+        y0: 0,
+        y1: 1,
+        line: {color: ACCENT, width: 2}
+      });
+    }
+    if (colorHistHoverLevel != null) {
+      shapes.push({
+        type: "line",
+        xref: "x",
+        yref: "paper",
+        x0: colorHistHoverLevel,
+        x1: colorHistHoverLevel,
+        y0: 0,
+        y1: 1,
+        line: {color: "#243b53", width: 1.5, dash: "dot"}
+      });
+    }
+    return shapes;
+  }
+
+  function colorHistogramGuideAnnotations() {
+    if (colorHistHoverLevel == null) return [];
+    return [{
+      xref: "x",
+      yref: "paper",
+      x: colorHistHoverLevel,
+      y: 1,
+      yanchor: "bottom",
+      text: formatColorThresholdValue(colorHistHoverLevel),
+      showarrow: false,
+      bgcolor: "rgba(255,255,255,0.94)",
+      bordercolor: "rgba(36,59,83,0.35)",
+      borderwidth: 1,
+      borderpad: 3,
+      font: {size: 10, color: "#243b53"}
+    }];
+  }
+
+  function relayoutColorHistogramGuides() {
+    if (!colorHistDiv || !colorHistDiv.data) return;
+    try {
+      Plotly.relayout(colorHistDiv, {
+        shapes: colorHistogramGuideShapes(),
+        annotations: colorHistogramGuideAnnotations()
+      });
+    } catch (err) {}
+  }
+
+  function scheduleColorHistogramGuideRelayout(level) {
+    colorHistHoverLevel = level;
+    if (colorHistHoverRaf != null) return;
+    colorHistHoverRaf = requestAnimationFrame(function() {
+      colorHistHoverRaf = null;
+      relayoutColorHistogramGuides();
+    });
+  }
+
+  function colorHistogramLevelFromPointerEvent(evt) {
+    if (!colorHistDiv || !colorHistDiv._fullLayout) return null;
+    var xaxis = colorHistDiv._fullLayout.xaxis;
+    var sz = colorHistDiv._fullLayout._size;
+    if (!xaxis || !sz || typeof xaxis.p2c !== "function") return null;
+    var rect = colorHistDiv.getBoundingClientRect();
+    var px = evt.clientX - rect.left - sz.l;
+    if (px < 0 || px > sz.w) return null;
+    var level = xaxis.p2c(px);
+    return typeof level === "number" && isFinite(level) ? level : null;
+  }
+
+  function handleColorHistogramMouseMove(evt) {
+    scheduleColorHistogramGuideRelayout(colorHistogramLevelFromPointerEvent(evt));
+  }
+
+  function handleColorHistogramMouseLeave() {
+    scheduleColorHistogramGuideRelayout(null);
+  }
+
+  function colorThresholdDescription(nSelected, nTotal) {
+    if (colorThresholdLevel == null || colorThresholdColorCol !== sc.value) return "";
+    var op = colorThresholdUseMax && colorThresholdUseMax.checked ? "≤" : "≥";
+    return "Threshold " + op + " " + formatColorThresholdValue(colorThresholdLevel)
+      + " selects " + Number(nSelected).toLocaleString("en-CA")
+      + "/" + Number(nTotal).toLocaleString("en-CA") + ".";
+  }
+
+  function quantileSorted(sorted, q) {
+    if (!sorted.length) return NaN;
+    var pos = (sorted.length - 1) * q;
+    var lo = Math.floor(pos);
+    var hi = Math.ceil(pos);
+    if (lo === hi) return sorted[lo];
+    var f = pos - lo;
+    return sorted[lo] * (1 - f) + sorted[hi] * f;
+  }
+
+  function violinDistribution(xs) {
+    var n = xs.length;
+    var xmin = Infinity, xmax = -Infinity;
+    for (var i = 0; i < n; i++) {
+      if (xs[i] < xmin) xmin = xs[i];
+      if (xs[i] > xmax) xmax = xs[i];
+    }
+    if (!isFinite(xmin) || !isFinite(xmax)) {
+      return {outlineX: [], outlineY: [], fillTraces: [], outlierX: [], outlierY: [], range: null};
+    }
+    var sorted = xs.slice().sort(function(a, b) { return a - b; });
+    var q1 = quantileSorted(sorted, 0.25);
+    var q3 = quantileSorted(sorted, 0.75);
+    var iqr = q3 - q1;
+    var loFence = q1 - 3.0 * iqr;
+    var hiFence = q3 + 3.0 * iqr;
+    var outlierX = [], outlierY = [], vals = [];
+    for (var oi = 0; oi < n; oi++) {
+      var xv = xs[oi];
+      if (iqr > 0 && (xv < loFence || xv > hiFence)) {
+        outlierX.push(xv);
+        outlierY.push(0);
+      } else {
+        vals.push(xv);
+      }
+    }
+    if (!vals.length) vals = xs.slice();
+    if (xmax <= xmin) {
+      var oneColour = paletteScaleCSS(selectedScatterPalette(), 0.5);
+      return {
+        outlineX: [xmin, xmin, xmin],
+        outlineY: [-0.38, 0.38, -0.38],
+        fillTraces: [{
+          type: "scatter",
+          mode: "lines",
+          x: [xmin - 0.5, xmin + 0.5, xmin + 0.5, xmin - 0.5, xmin - 0.5],
+          y: [-0.38, -0.38, 0.38, 0.38, -0.38],
+          fill: "toself",
+          fillcolor: oneColour,
+          line: {width: 0, color: oneColour},
+          hoverinfo: "skip",
+          showlegend: false
+        }],
+        outlierX: outlierX,
+        outlierY: outlierY,
+        range: [xmin - 0.6, xmax + 0.6]
+      };
+    }
+    var gridN = 96;
+    var span = xmax - xmin;
+    var mean = 0;
+    for (var mi = 0; mi < vals.length; mi++) mean += vals[mi];
+    mean /= vals.length;
+    var variance = 0;
+    for (var vi = 0; vi < vals.length; vi++) {
+      var dv = vals[vi] - mean;
+      variance += dv * dv;
+    }
+    var std = Math.sqrt(variance / Math.max(1, vals.length - 1));
+    var bandwidth = 1.06 * (std || span / 6) * Math.pow(vals.length, -0.2);
+    if (!isFinite(bandwidth) || bandwidth <= 0) bandwidth = span / 24;
+    bandwidth = Math.max(bandwidth, span / 200);
+    var gridX = [], dens = [], maxD = 0;
+    var invTwoBw2 = 1 / (2 * bandwidth * bandwidth);
+    for (var g = 0; g < gridN; g++) {
+      var gx = xmin + span * g / (gridN - 1);
+      var dsum = 0;
+      for (var k = 0; k < vals.length; k++) {
+        var dx = gx - vals[k];
+        dsum += Math.exp(-(dx * dx) * invTwoBw2);
+      }
+      var d = dsum / vals.length;
+      if (d > maxD) maxD = d;
+      gridX.push(gx);
+      dens.push(d);
+    }
+    var half = [];
+    for (var hi = 0; hi < dens.length; hi++) {
+      half.push(maxD > 0 ? 0.42 * dens[hi] / maxD : 0);
+    }
+    var outlineX = [], outlineY = [];
+    for (var ux = 0; ux < gridX.length; ux++) {
+      outlineX.push(gridX[ux]);
+      outlineY.push(half[ux]);
+    }
+    for (var lx = gridX.length - 1; lx >= 0; lx--) {
+      outlineX.push(gridX[lx]);
+      outlineY.push(-half[lx]);
+    }
+    outlineX.push(gridX[0]);
+    outlineY.push(half[0]);
+    var fillTraces = [];
+    var palName = selectedScatterPalette();
+    for (var s = 0; s < gridX.length - 1; s++) {
+      var x0 = gridX[s], x1 = gridX[s + 1];
+      var y = Math.max(half[s], half[s + 1]);
+      if (y <= 0) continue;
+      var t = ((x0 + x1) * 0.5 - xmin) / span;
+      var fillColor = paletteScaleCSS(palName, t);
+      fillTraces.push({
+        type: "scatter",
+        mode: "lines",
+        x: [x0, x1, x1, x0, x0],
+        y: [-y, -y, y, y, -y],
+        fill: "toself",
+        fillcolor: fillColor,
+        line: {width: 0, color: fillColor},
+        hoverinfo: "skip",
+        showlegend: false
+      });
+    }
+    var pad = span * 0.04;
+    return {
+      outlineX: outlineX,
+      outlineY: outlineY,
+      fillTraces: fillTraces,
+      outlierX: outlierX,
+      outlierY: outlierY,
+      range: [xmin - pad, xmax + pad]
+    };
+  }
+
+  function renderColorHistogram() {
+    if (!colorHistPanel || !colorHistDiv) return;
+    var items = currentColorValueItems();
+    if (!items.length) {
+      hideColorHistogram();
+      return;
+    }
+    colorHistPanel.hidden = false;
+    colorHistPanel.setAttribute("aria-hidden", "false");
+    if (!colorHistEventsWired) {
+      colorHistEventsWired = true;
+      colorHistDiv.addEventListener("click", handleColorHistogramClick);
+      colorHistDiv.addEventListener("mousemove", handleColorHistogramMouseMove);
+      colorHistDiv.addEventListener("mouseleave", handleColorHistogramMouseLeave);
+    }
+    var xs = items.map(function(item) { return item.value; });
+    var violin = violinDistribution(xs);
+    colorViolinBaseShapes = [];
+    var colorColLabel = covariateDisplayMap[sc.value] || sc.value;
+    var layout = {
+      template: "plotly_white",
+      paper_bgcolor: "rgba(250,248,244,0)",
+      plot_bgcolor: "rgba(255,255,255,0.62)",
+      margin: {l: 42, r: 14, t: 4, b: 28},
+      height: 80,
+      dragmode: false,
+      showlegend: false,
+      font: {family: "Barlow, sans-serif", color: "#243b53", size: 11},
+      xaxis: {title: {text: "<b>" + escapeHtmlText(colorColLabel) + "</b>", standoff: 2, font: {weight: 700}}, zeroline: false, fixedrange: true, range: violin.range},
+      yaxis: {visible: false, fixedrange: true, range: [-0.55, 0.55]},
+      shapes: colorHistogramGuideShapes(),
+      annotations: colorHistogramGuideAnnotations()
+    };
+    var data = violin.fillTraces.slice();
+    data.push(
+      {
+        type: "scatter",
+        mode: "lines",
+        x: violin.outlineX,
+        y: violin.outlineY,
+        line: {color: "rgba(36,59,83,0.72)", width: 1},
+        hoverinfo: "skip"
+      },
+      {
+        type: "scatter",
+        mode: "markers",
+        x: violin.outlierX,
+        y: violin.outlierY,
+        marker: {symbol: "circle-open", color: "#111", size: 4, line: {color: "#111", width: 1}},
+        hovertemplate: colorColLabel + " %{x}<br>outlier<extra></extra>"
+      }
+    );
+    var opts = {
+      responsive: true,
+      displayModeBar: false,
+      doubleClick: false,
+      scrollZoom: false,
+      modeBarButtonsToRemove: ["zoom2d", "pan2d", "select2d", "lasso2d", "autoScale2d", "resetScale2d"]
+    };
+    try {
+      Plotly.react(colorHistDiv, data, layout, opts);
+    } catch (err) {
+      Plotly.newPlot(colorHistDiv, data, layout, opts);
+    }
+    if (colorThresholdStatus) {
+      if (colorThresholdLevel != null && colorThresholdColorCol === sc.value) {
+        colorThresholdStatus.textContent = colorThresholdDescription(saveSelectionRows.length, items.length);
+      } else {
+        colorThresholdStatus.textContent = "";
+      }
+    }
   }
 
   function traceCustomdataColorDisp(ti) {
@@ -1581,6 +2060,7 @@
     cancelPendingScatterAfterPlot();
     clearScatterPlotWatchdog();
     if (plotStatus) plotStatus.textContent = "";
+    hideColorHistogram();
     setRendering(true);
     scatterPlotWatchdog = setTimeout(function() {
       scatterPlotWatchdog = null;
@@ -1623,9 +2103,9 @@
             if (nextDragMode) {
               fig.layout.dragmode = nextDragMode;
             }
-            var axFont = {size: 15, family: "Barlow, sans-serif", color: "#243b53"};
-            fig.layout.xaxis = Object.assign(fig.layout.xaxis || {}, {title: {text: x, font: axFont}});
-            fig.layout.yaxis = Object.assign(fig.layout.yaxis || {}, {title: {text: y, font: axFont}});
+            var axFont = {size: 15, family: "Barlow, sans-serif", color: "#243b53", weight: 700};
+            fig.layout.xaxis = Object.assign(fig.layout.xaxis || {}, {title: {text: "<b>" + escapeHtmlText(x) + "</b>", font: axFont}});
+            fig.layout.yaxis = Object.assign(fig.layout.yaxis || {}, {title: {text: "<b>" + escapeHtmlText(y) + "</b>", font: axFont}});
             if (/^umap/i.test(x)) fig.layout.xaxis.showticklabels = false;
             if (/^umap/i.test(y)) fig.layout.yaxis.showticklabels = false;
             function finishScatterDraw() {
@@ -1645,6 +2125,7 @@
                 preselectRowsForNextFetch = [];
               }
               applySavedSelectionToCurrentTrace();
+              renderColorHistogram();
               if (imagesViewEnabled && preloaded && preloaded.traceMap) {
                 if (lassoSelectedRowSet && lassoSelectedRowSet.size) {
                   activePool = preloaded.traceMap.filter(function(item) {
@@ -1677,6 +2158,9 @@
               syncScatterControlsAlignment();
               requestAnimationFrame(function() {
                 try { Plotly.Plots.resize(gd); } catch (e) {}
+                if (colorHistPanel && !colorHistPanel.hidden && colorHistDiv) {
+                  try { Plotly.Plots.resize(colorHistDiv); } catch (e2) {}
+                }
               });
               setTimeout(function() { suppressSelectionEvents = false; }, 0);
             }
@@ -1751,6 +2235,87 @@
       }
     }
     return Array.from(set);
+  }
+
+  function selectionRowsToTraceIndices(rows) {
+    var rowSet = new Set(rows || []);
+    var selected = [];
+    if (!gd || !gd.data || !gd.data[0] || !gd.data[0].customdata) return selected;
+    var cd = gd.data[0].customdata;
+    for (var i = 0; i < cd.length; i++) {
+      var row = cd[i] && cd[i].length > 1 ? cd[i][1] : null;
+      if (rowSet.has(row)) selected.push(i);
+    }
+    return selected;
+  }
+
+  function applyRowsSelection(rows, statusPrefix) {
+    rows = rows || [];
+    var rowSet = new Set(rows);
+    saveSelectionRows = Array.from(rowSet);
+    updateParticleSelFieldset();
+    var selectedTi = selectionRowsToTraceIndices(saveSelectionRows);
+    suppressSelectionEvents = true;
+    try {
+      Plotly.restyle(gd, { selectedpoints: [selectedTi.length ? selectedTi : null] }, [0]);
+    } catch (err) {
+      console.error(err);
+    }
+    setTimeout(function() { suppressSelectionEvents = false; }, 0);
+
+    if (!saveSelectionRows.length) {
+      activePool = null;
+      lassoSelectedRowSet = null;
+      if (imagesViewEnabled && preloaded && preloadStatus) {
+        preloadStatus.textContent = preloaded.traceMap.length + " images cached.";
+      }
+      invalidateVolumeArtifacts();
+      return;
+    }
+
+    lassoSelectedRowSet = new Set(saveSelectionRows);
+    if (imagesViewEnabled && preloaded && preloaded.traceMap) {
+      activePool = preloaded.traceMap.filter(function(item) {
+        return rowSet.has(item.row);
+      });
+      if (preloadStatus) {
+        preloadStatus.textContent = (statusPrefix || "Selection") + ": "
+          + activePool.length + " of " + preloaded.traceMap.length + " cached images.";
+      }
+      if (activePool.length) {
+        showRandomFromPool();
+      } else {
+        invalidateVolumeArtifacts();
+      }
+    } else if (lastMontageRows.length || montageDisplayMode === "volumes") {
+      ensureHighlightTrace();
+      var picked = pickRandomMontageItemsFilled(neighborK);
+      if (picked.length) updateMontage(picked);
+      else invalidateVolumeArtifacts();
+    } else {
+      invalidateVolumeArtifacts();
+    }
+  }
+
+  function applyColorThresholdSelection(level) {
+    var items = currentColorValueItems();
+    if (!items.length || typeof level !== "number" || !isFinite(level)) return;
+    var useMax = !!(colorThresholdUseMax && colorThresholdUseMax.checked);
+    var rows = [];
+    for (var i = 0; i < items.length; i++) {
+      if (useMax ? items[i].value <= level : items[i].value >= level) rows.push(items[i].row);
+    }
+    colorThresholdLevel = level;
+    colorThresholdColorCol = sc.value;
+    applyRowsSelection(rows, "Colour threshold");
+    renderColorHistogram();
+  }
+
+  function handleColorHistogramClick(evt) {
+    evt.preventDefault();
+    var level = colorHistogramLevelFromPointerEvent(evt);
+    if (level == null) return;
+    applyColorThresholdSelection(level);
   }
 
   function queueHighlightRestyle(restyleData) {
@@ -1831,6 +2396,9 @@
 
     gd.on("plotly_selected", function(ev) {
       if (suppressSelectionEvents) return;
+      colorThresholdLevel = null;
+      colorThresholdColorCol = null;
+      renderColorHistogram();
       var snap = snapshotSelectedPoints(ev);
       var rowsSnap = snapshotRowsFromPoints(ev);
       cancelLassoSelectionDebounce();
@@ -1845,6 +2413,9 @@
     });
     gd.on("plotly_deselect", function() {
       if (suppressSelectionEvents) return;
+      colorThresholdLevel = null;
+      colorThresholdColorCol = null;
+      renderColorHistogram();
       cancelLassoSelectionDebounce();
       saveSelectionRows = [];
       updateParticleSelFieldset();
@@ -1858,7 +2429,7 @@
 
   function showRandomFromPool() {
     var pool = (activePool || (preloaded && preloaded.traceMap) || []).slice();
-    if (pool.length < neighborK) return;
+    if (!pool.length) return;
     for (var i = pool.length - 1; i > 0; i--) {
       var j = Math.floor(Math.random() * (i + 1));
       var tmp = pool[i]; pool[i] = pool[j]; pool[j] = tmp;
@@ -1880,6 +2451,8 @@
       activePool = null;
       lassoSelectedRowSet = null;
       lastMontageRows = [];
+      colorThresholdLevel = null;
+      colorThresholdColorCol = null;
     }
     updateParticleSelFieldset();
     invalidateVolumeArtifacts();
@@ -2063,10 +2636,23 @@
   [sx, sy].forEach(function(s) {
     s.addEventListener("change", function() { triggerRedraw(false); });
   });
-  sc.addEventListener("change", function() { triggerRedraw(true); });
+  sc.addEventListener("change", function() {
+    colorThresholdLevel = null;
+    colorThresholdColorCol = null;
+    triggerRedraw(true);
+  });
   document.querySelectorAll("input[name=\"scatter_palette\"]").forEach(function(inp) {
     inp.addEventListener("change", function() { triggerRedraw(true); });
   });
+  if (colorThresholdUseMax) {
+    colorThresholdUseMax.addEventListener("change", function() {
+      if (colorThresholdLevel != null && colorThresholdColorCol === sc.value) {
+        applyColorThresholdSelection(colorThresholdLevel);
+      } else {
+        renderColorHistogram();
+      }
+    });
+  }
   updateParticleSelFieldset();
   if (showVolumeExplorer) syncVolumeExploreButtons();
   syncScatterControlsAlignment();

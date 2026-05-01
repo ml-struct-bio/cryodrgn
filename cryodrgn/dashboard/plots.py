@@ -70,6 +70,22 @@ _DASHBOARD_PALETTE_TO_MPL: dict[str, str] = {
     "Magma": "magma",
     "Cividis": "cividis",
     "Turbo": "turbo",
+    "Blues": "Blues",
+    "Greens": "Greens",
+    "Greys": "Greys",
+    "Oranges": "Oranges",
+    "Purples": "Purples",
+    "Reds": "Reds",
+    "YlGnBu": "YlGnBu",
+    "YlOrRd": "YlOrRd",
+    "RdBu": "RdBu",
+    "Portland": "turbo",
+    "Jet": "jet",
+    "Hot": "hot",
+    "Blackbody": "afmhot",
+    "Electric": "magma",
+    "Rainbow": "rainbow",
+    "Earth": "gist_earth",
 }
 
 

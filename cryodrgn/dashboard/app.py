@@ -50,7 +50,7 @@ from cryodrgn.dashboard.context import (
     _request_json_dict,
 )
 from cryodrgn.dashboard.data import DashboardExperiment, list_z_epochs
-from cryodrgn.dashboard.explorer_volumes import (
+from cryodrgn.dashboard.particle_explorer import (
     DEFAULT_CHIMERAX_PARALLEL,
     DEFAULT_GIF_FRAMES,
     explorer_volumes_eligible,
@@ -349,7 +349,7 @@ def explorer():
     )
     pc = int(current_app.config["PRELOAD_CPUS"])
     return render_template(
-        "scatter_explorer.html",
+        "particle_explorer.html",
         numeric_cols=cols,
         covariate_display_map=_covariate_display_map(cols),
         default_x=dx,

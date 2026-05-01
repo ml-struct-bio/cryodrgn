@@ -24,7 +24,7 @@ DEFAULT_CHIMERAX_PARALLEL = 16
 GIF_DURATION_S = 3.0
 ChimeraxViewTurn = tuple[str, float]
 
-# A–Z omitting I, O, U — matches scatter_explorer.html SAFE_LETTERS / labelAt.
+# A–Z omitting I, O, U — matches particle_explorer.html SAFE_LETTERS / labelAt.
 _MONTAGE_SAFE_LETTERS: tuple[str, ...] = tuple(
     chr(c)
     for c in range(ord("A"), ord("Z") + 1)

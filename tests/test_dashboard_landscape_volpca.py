@@ -33,6 +33,7 @@ from cryodrgn import utils
 from cryodrgn.dashboard import app as dash_app
 from cryodrgn.dashboard.data import DashboardExperiment, load_experiment
 from cryodrgn.dashboard.landscape_volpca import (
+    kmeans_sorted_vol_indices,
     landscape_analysis_ready,
     landscape_dir_for_epoch,
     landscape_volpca_scatter_json,
@@ -148,6 +149,18 @@ def flask_client_no_landscape(dashboard_workdir_plain_copy: str):
     app = dash_app.create_app(workdir=dashboard_workdir_plain_copy)
     with app.test_client() as client:
         yield client
+
+
+class TestLandscapeVolpcaKmeansHelpers:
+    """``vol_mean.mrc`` must not become a fake vol 000 index."""
+
+    def test_kmeans_sorted_vol_indices_excludes_vol_mean(self, tmp_path) -> None:
+        d = tmp_path / "kmeans100"
+        d.mkdir()
+        (d / "vol_mean.mrc").write_bytes(b"x")
+        (d / "vol_001.mrc").write_bytes(b"x")
+        (d / "vol_100.mrc").write_bytes(b"x")
+        assert kmeans_sorted_vol_indices(str(d)) == [1, 100]
 
 
 class TestLandscapeVolpcaFilesystemHelpers:

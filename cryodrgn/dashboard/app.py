@@ -80,6 +80,7 @@ from cryodrgn.dashboard.plots import (
     scatter_json,
 )
 from cryodrgn.dashboard.preload import (
+    DEFAULT_PRELOAD_IMAGE_LIMIT,
     encode_particle_batch,
     format_preload_cache_time_hint,
     load_plot_df_rows_from_plot_inds_file,
@@ -167,6 +168,23 @@ def _parse_preselect_rows_param(raw: str | None) -> tuple[list[int] | None, str 
         return [int(p) for p in s.split(",") if p.strip()][:5000], None
     except ValueError as exc:
         return None, f"invalid preselect_rows: {exc}"
+
+
+def _parse_preload_image_limit(raw: object) -> int:
+    """Positive thumbnail cache size from a request value, defaulting to 5000."""
+    if raw is None or raw == "":
+        return DEFAULT_PRELOAD_IMAGE_LIMIT
+    if isinstance(raw, bool) or not isinstance(raw, (int, float, str)):
+        raise ValueError("cache_size must be a positive integer.")
+    if isinstance(raw, float) and not raw.is_integer():
+        raise ValueError("cache_size must be a positive integer.")
+    try:
+        value = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("cache_size must be a positive integer.") from exc
+    if value < 1:
+        raise ValueError("cache_size must be a positive integer.")
+    return value
 
 
 def _redirect(endpoint: str):
@@ -357,6 +375,8 @@ def explorer():
         initial_rows=initial_rows,
         total_particles=int(len(e.all_indices)),
         workdir=e.workdir,
+        preload_image_limit=DEFAULT_PRELOAD_IMAGE_LIMIT,
+        preload_cpus=pc,
         preload_cache_time_hint=format_preload_cache_time_hint(pc),
         show_volume_explorer=explorer_volumes_eligible(e),
     )
@@ -594,11 +614,17 @@ def api_preload_images():
 
     cols = e.plot_df.columns
     restrict_list: list[int] | None = None
+    initial_list: list[int] | None = None
 
     if request.method == "POST":
         data = _request_json_dict()
         xcol = str(data.get("x") or "")
         ycol = str(data.get("y") or "")
+        response_mode = str(data.get("response_mode") or "full")
+        try:
+            max_images = _parse_preload_image_limit(data.get("cache_size"))
+        except ValueError as err:
+            return jsonify(error=str(err)), 400
         raw_list = data.get("selected_rows")
         if raw_list is None:
             restrict_list = None
@@ -614,9 +640,29 @@ def api_preload_images():
                 )
             if not restrict_list:
                 restrict_list = None
+        raw_initial_list = data.get("initial_rows")
+        if raw_initial_list is None:
+            initial_list = None
+        elif not isinstance(raw_initial_list, list):
+            return jsonify(error="initial_rows must be a JSON array of integers."), 400
+        else:
+            try:
+                initial_list = [int(r) for r in raw_initial_list]
+            except (TypeError, ValueError):
+                return (
+                    jsonify(error="initial_rows must be a JSON array of integers."),
+                    400,
+                )
+            if not initial_list:
+                initial_list = None
     else:
         xcol = request.args.get("x", "")
         ycol = request.args.get("y", "")
+        response_mode = str(request.args.get("response_mode") or "full")
+        try:
+            max_images = _parse_preload_image_limit(request.args.get("cache_size"))
+        except ValueError as err:
+            return jsonify(error=str(err)), 400
         raw_sel = (request.args.get("selected_rows") or "").strip()
         if raw_sel:
             try:
@@ -635,44 +681,98 @@ def api_preload_images():
         xcol = str(cols[0])
     if ycol not in cols:
         ycol = str(cols[min(1, len(cols) - 1)])
+    delta_response = response_mode == "delta"
     sel_key: tuple[int, ...] | None = (
         tuple(sorted(set(restrict_list))) if restrict_list else None
     )
     key = (e.epoch, e.kmeans_folder_id, xcol, ycol, sel_key)
-    if key in PRELOAD_CACHE:
-        rows, imgs, elapsed = PRELOAD_CACHE[key]
+    cpus = int(current_app.config.get("PRELOAD_CPUS") or 4)
+
+    def _encode_indices(global_indices: list[int]) -> list[str]:
+        parallel_threshold = max(128, cpus * 32)
+        if cpus > 1 and len(global_indices) >= parallel_threshold:
+            from concurrent.futures import ProcessPoolExecutor
+
+            chunk_sz = -(-len(global_indices) // cpus)
+            chunks = [
+                global_indices[i : i + chunk_sz]
+                for i in range(0, len(global_indices), chunk_sz)
+            ]
+            with ProcessPoolExecutor(max_workers=len(chunks)) as pool:
+                futures = [
+                    pool.submit(
+                        encode_particle_batch, e.particles_path, e.datadir, ch, 96
+                    )
+                    for ch in chunks
+                ]
+                imgs: list[str] = []
+                for f in futures:
+                    imgs.extend(f.result())
+                return imgs
+        return encode_particle_batch(e.particles_path, e.datadir, global_indices, 96)
+
+    cached = PRELOAD_CACHE.get(key)
+    if cached:
+        cached_rows, cached_imgs, cached_elapsed = cached
+        if len(cached_rows) >= max_images:
+            if delta_response:
+                return jsonify(
+                    rows=[],
+                    images=[],
+                    elapsed=cached_elapsed,
+                    total_cached=len(cached_rows),
+                )
+            return jsonify(
+                rows=cached_rows[:max_images],
+                images=cached_imgs[:max_images],
+                elapsed=cached_elapsed,
+                total_cached=min(len(cached_rows), max_images),
+            )
+        t0 = time.monotonic()
+        add_rows, add_global_indices = sample_plot_df_rows_for_preload(
+            e,
+            xcol,
+            ycol,
+            restrict_to_rows=restrict_list,
+            exclude_rows=cached_rows,
+            max_images=max_images - len(cached_rows),
+        )
+        if not add_global_indices:
+            if delta_response:
+                return jsonify(
+                    rows=[],
+                    images=[],
+                    elapsed=cached_elapsed,
+                    total_cached=len(cached_rows),
+                )
+            return jsonify(rows=cached_rows, images=cached_imgs, elapsed=cached_elapsed)
+        add_imgs = _encode_indices(add_global_indices)
+        rows = cached_rows + add_rows
+        imgs = cached_imgs + add_imgs
+        elapsed = round(cached_elapsed + time.monotonic() - t0, 1)
+        PRELOAD_CACHE[key] = (rows, imgs, elapsed)
+        if delta_response:
+            return jsonify(
+                rows=add_rows,
+                images=add_imgs,
+                elapsed=elapsed,
+                total_cached=len(rows),
+            )
         return jsonify(rows=rows, images=imgs, elapsed=elapsed)
 
     t0 = time.monotonic()
-    cpus = int(current_app.config.get("PRELOAD_CPUS") or 4)
+    preload_restrict_list = restrict_list if restrict_list is not None else initial_list
     rows, global_indices = sample_plot_df_rows_for_preload(
-        e, xcol, ycol, restrict_to_rows=restrict_list
+        e, xcol, ycol, restrict_to_rows=preload_restrict_list, max_images=max_images
     )
     if not global_indices:
         return jsonify(rows=[], images=[], elapsed=0.0)
 
-    if cpus > 1 and len(global_indices) > cpus:
-        from concurrent.futures import ProcessPoolExecutor
-
-        chunk_sz = -(-len(global_indices) // cpus)
-        chunks = [
-            global_indices[i : i + chunk_sz]
-            for i in range(0, len(global_indices), chunk_sz)
-        ]
-        with ProcessPoolExecutor(max_workers=len(chunks)) as pool:
-            futures = [
-                pool.submit(encode_particle_batch, e.particles_path, e.datadir, ch, 96)
-                for ch in chunks
-            ]
-            imgs: list[str] = []
-            for f in futures:
-                imgs.extend(f.result())
-    else:
-        imgs = encode_particle_batch(e.particles_path, e.datadir, global_indices, 96)
+    imgs = _encode_indices(global_indices)
 
     elapsed = round(time.monotonic() - t0, 1)
     PRELOAD_CACHE[key] = (rows, imgs, elapsed)
-    return jsonify(rows=rows, images=imgs, elapsed=elapsed)
+    return jsonify(rows=rows, images=imgs, elapsed=elapsed, total_cached=len(rows))
 
 
 # ---------------------------------------------------------------------------

@@ -113,7 +113,7 @@
   .cryo-explorer-montage-actions {
     display: flex;
     flex-direction: column;
-    gap: 0.55rem;
+    gap: 0.35rem;
     margin-top: 0.45rem;
   }
   .cryo-explorer-action-row {
@@ -135,6 +135,12 @@
     white-space: normal;
     text-align: center;
   }
+  .cryo-explorer-action-row__btn .btn:disabled {
+    opacity: 0.48;
+    filter: grayscale(0.85);
+    cursor: not-allowed;
+    box-shadow: none;
+  }
   .cryo-explorer-action-row__hint {
     margin: 0;
     font-size: 0.78rem;
@@ -143,6 +149,35 @@
     min-width: 0;
     hyphens: auto;
     overflow-wrap: break-word;
+  }
+  .cryo-image-cache-progress {
+    display: grid;
+    grid-column: 2;
+    grid-row: 1;
+    gap: 0.2rem;
+    width: min(100%, 18rem);
+  }
+  .cryo-image-cache-progress[hidden] {
+    display: none;
+  }
+  .cryo-image-cache-progress__track {
+    height: 0.42rem;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(36, 59, 83, 0.16);
+  }
+  .cryo-image-cache-progress__bar {
+    width: 0%;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--accent, #c4703a);
+    transition: width 0.18s ease;
+  }
+  .cryo-image-cache-progress__label {
+    font-size: 0.76rem;
+    line-height: 1.2;
+    color: var(--muted, #5c6b7a);
+    font-variant-numeric: tabular-nums;
   }
   /* Beat base.html montage .cryo-dash-legend-note margins for these rows */
   .cryo-dash-page--image-viewer .cryo-explorer-action-row .cryo-dash-legend-note {
@@ -164,6 +199,18 @@
     flex: 1 1 auto;
     min-width: 0;
     line-height: 1.35;
+  }
+  .cryo-explorer-plot-annotation-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin: 0;
+    font-size: 0.82rem;
+    color: var(--muted, #5c6b7a);
+    cursor: pointer;
+  }
+  .cryo-explorer-plot-annotation-label input[type="checkbox"] {
+    margin: 0;
   }
   #save-status {
     display: block;
@@ -289,10 +336,10 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    margin: 0.15rem 0 0;
+    margin: 0;
     font-size: 0.82rem;
     color: var(--muted, #5c6b7a);
-    min-height: 1.1em;
+    min-height: 0.35rem;
   }
   .cryo-volume-status-row .cryo-plot-rendering-overlay__track {
     width: min(11rem, 55vw);
@@ -311,10 +358,30 @@
     color: var(--nav-bg, #243b53);
   }
   .cryo-palette-select__title {
-    display: flex;
+    display: inline-flex;
     align-items: center;
+    gap: 0.28rem;
     line-height: 1.05;
     font-weight: 600;
+    cursor: pointer;
+    border: 1px solid rgba(36, 59, 83, 0.14);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.6);
+    color: var(--nav-bg, #243b53);
+    padding: 0.18rem 0.34rem;
+    font: inherit;
+    font-weight: 600;
+  }
+  .cryo-palette-select__title:hover {
+    background: rgba(36, 59, 83, 0.06);
+  }
+  .cryo-palette-select__chevron {
+    flex: 0 0 auto;
+    font-size: 0.7rem;
+    transition: transform 0.12s ease;
+  }
+  .cryo-palette-select__title[aria-expanded="true"] .cryo-palette-select__chevron {
+    transform: rotate(90deg);
   }
   .cryo-palette-select__options {
     display: grid;
@@ -328,6 +395,27 @@
     overflow-y: hidden;
     padding: 0.04rem 0 0.22rem;
     scrollbar-width: thin;
+  }
+  .cryo-palette-select__options--collapsed {
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .cryo-box-select-tooltip {
+    position: absolute;
+    z-index: 8;
+    max-width: min(30rem, 82%);
+    padding: 0.35rem 0.5rem;
+    border-radius: 4px;
+    background: rgba(36, 59, 83, 0.94);
+    color: #fff;
+    font-size: 0.76rem;
+    line-height: 1.25;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+    pointer-events: none;
+    transform: translate(0.55rem, -0.55rem);
+  }
+  .cryo-box-select-tooltip[hidden] {
+    display: none;
   }
   .cryo-palette-select.scatter-palette-radios--suppressed {
     visibility: hidden;
@@ -396,7 +484,9 @@
     font-weight: 500;
   }
   #color-threshold-status {
+    margin-left: auto;
     min-height: 1.1em;
+    text-align: right;
   }
 </style>
 {% endblock %}
@@ -407,24 +497,21 @@
     <div class="cryo-dash-top" style="margin-bottom:0.25rem;">
       <a href="/">← Back</a>
     </div>
-    <p class="cryo-dash-lead">Choose covariates for plot axes and point coloring. Use lasso selection to create a particle filtering index; generate images and volumes with or without a selection using the interface on the right.</p>
+    <p class="cryo-dash-lead">Use lasso selection to create a particle filtering index; generate images and volumes with or without a selection using the interface on the right.</p>
     <div class="card cryo-dash-controls" id="scatter-controls-card">
       <fieldset>
-        <legend>Choose axes</legend>
+        <legend>Choose axes<br/>and point color scale</legend>
         <label class="cryo-select-line" for="sx">Horizontal (X)</label>
         <select id="sx"></select>
         <label class="cryo-select-line" for="sy">Vertical (Y)</label>
         <select id="sy"></select>
-      </fieldset>
-      <fieldset>
-        <legend>Choose color scale</legend>
         <label class="cryo-select-line" for="sc">Color by</label>
         <select id="sc"><option value="none">None</option></select>
       </fieldset>
+      <p id="sel-count" class="status" style="margin:0.45rem 0 0.35rem;font-weight:600;font-size:0.96rem;color:var(--nav-bg,#243b53);">Selected: 0/0 particles</p>
       <fieldset id="particle-sel-fieldset" disabled>
         <legend>Create particle indices</legend>
         <p class="cryo-dash-legend-note" style="margin:0 0 0.4rem;">Active after you lasso or box-select on the plot.</p>
-        <p id="sel-count" class="status" style="margin:0;font-weight:600;color:var(--nav-bg,#243b53);">Selected: 0/0 particles</p>
         <div class="cryo-explorer-save-btns">
           <button type="button" class="btn" id="save-indices-pkl">Save selection<br/>as <code>indices.pkl</code></button>
           <button type="button" class="btn btn-secondary" id="save-indices-custom">Save selection<br/>as…</button>
@@ -463,6 +550,7 @@
     <p id="scatter-plot-status" class="cryo-dash-legend-note" style="margin:0 0 0.35rem;color:var(--accent,#c4703a);min-height:1.2em;"></p>
     <div class="cryo-plotly-stack" id="scatter-plot-stack">
       <div id="scatter" class="cryo-plotly-graph-host"></div>
+      <div id="box-select-tooltip" class="cryo-box-select-tooltip" hidden></div>
       <div id="scatter-rendering-overlay" class="cryo-plot-rendering-overlay cryo-plot-rendering-overlay--show" aria-hidden="false">
         <div class="cryo-plot-rendering-overlay__inner">
           <span class="cryo-plot-rendering-overlay__label">Rendering…</span>
@@ -483,8 +571,11 @@
         <span id="color-threshold-status" class="status"></span>
       </div>
       <div id="scatter-palette-radios" class="cryo-palette-select scatter-palette-radios--suppressed" aria-label="Continuous color palette">
-        <span class="cryo-palette-select__title">Choose<br/>palette</span>
-        <div class="cryo-palette-select__options">
+        <button type="button" id="scatter-palette-toggle" class="cryo-palette-select__title" aria-expanded="false" aria-controls="scatter-palette-options">
+          <span class="cryo-palette-select__chevron" aria-hidden="true">▶</span>
+          <span>Choose<br/>palette</span>
+        </button>
+        <div id="scatter-palette-options" class="cryo-palette-select__options cryo-palette-select__options--collapsed">
           <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Viridis" checked/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#440154,#3b528b,#21918c,#5ec962,#fde725);"></span>Viridis</label>
           <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Plasma"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#0d0887,#7e03a8,#cc4778,#f89540,#f0f921);"></span>Plasma</label>
           <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Inferno"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#000004,#420a68,#932667,#dd513a,#fca50a,#fcffa4);"></span>Inferno</label>
@@ -516,11 +607,23 @@
     <div id="montage-actions" class="cryo-explorer-montage-actions">
       <div class="cryo-explorer-action-row">
         <div class="cryo-explorer-action-row__btn">
-          <button type="button" class="btn" id="btn-view-images">View images</button>
+          <button type="button" class="btn" id="btn-view-images" disabled>Load all images</button>
         </div>
-        <p id="preload-status" class="cryo-explorer-action-row__hint cryo-dash-legend-note">
-          First click builds image cache for these plot axes ({{ preload_cache_time_hint }}) before displaying images.
-        </p>
+        <p id="preload-status" class="cryo-explorer-action-row__hint cryo-dash-legend-note"></p>
+        <div
+          id="image-cache-progress"
+          class="cryo-image-cache-progress"
+          role="progressbar"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow="0"
+          hidden
+        >
+          <div class="cryo-image-cache-progress__track">
+            <div id="image-cache-progress-bar" class="cryo-image-cache-progress__bar"></div>
+          </div>
+          <span id="image-cache-progress-label" class="cryo-image-cache-progress__label">0%</span>
+        </div>
       </div>
       {% if show_volume_explorer %}
       <div class="cryo-explorer-action-row">
@@ -554,9 +657,9 @@
       {% endif %}
     </div>
     <div id="montage-inner" class="cryo-dash-montage-inner cryo-dash-montage-inner--disabled">
-      <div style="display:flex;align-items:baseline;gap:0.6rem;flex-wrap:wrap;margin-top:0.45rem;">
+      <div style="display:flex;align-items:baseline;gap:0.6rem;flex-wrap:wrap;margin-top:0.2rem;">
         <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.82rem;color:var(--muted,#5c6b7a);">
-          Grid
+          Image grid
           <select id="grid-size" disabled style="width:4.2rem;padding:0.1rem 0.2rem;font-size:0.82rem;">
             <option value="1">1 × 1</option>
             <option value="2">2 × 2</option>
@@ -568,12 +671,16 @@
             <option value="8">8 × 8</option>
           </select>
         </label>
+        <label class="cryo-explorer-plot-annotation-label" for="show-grid-annotations">
+          <input type="checkbox" id="show-grid-annotations" checked/>
+          <span>Show grid highlights on plot</span>
+        </label>
       </div>
       <div class="cryo-montage-grid-wrap">
         <div id="montage-grid" class="cryo-montage-grid"></div>
         <div id="montage-preload-overlay" class="cryo-plot-rendering-overlay" aria-hidden="true">
           <div class="cryo-plot-rendering-overlay__inner">
-            <span class="cryo-plot-rendering-overlay__label">Loading image cache…</span>
+            <span id="montage-preload-overlay-label" class="cryo-plot-rendering-overlay__label">Loading image cache...</span>
             <div class="cryo-plot-rendering-overlay__track" role="progressbar" aria-valuetext="Loading image cache">
               <div class="cryo-plot-rendering-overlay__indeterminate"></div>
             </div>
@@ -595,24 +702,35 @@
   var totalParticles = {{ total_particles | tojson }};
   var workdirForSaveHint = {{ workdir | tojson }};
   var showVolumeExplorer = {{ show_volume_explorer | default(false) | tojson }};
+  var defaultPreloadImageLimit = {{ preload_image_limit | tojson }};
+  var preloadCpus = {{ preload_cpus | tojson }};
+  var initialPreloadImageCount = defaultPreloadImageLimit;
+  var initialImageCacheStarted = false;
 
   var preselectRowsForNextFetch = (initialRows && initialRows.length && initialRows.length <= 5000)
     ? initialRows.slice() : [];
   var saveSelectionRows = [];
+  var selectionTooltipText = "";
   var imagesViewEnabled = false;
   var particleSelFs = document.getElementById("particle-sel-fieldset");
   var selCountEl = document.getElementById("sel-count");
+  var imageCacheProgressEl = document.getElementById("image-cache-progress");
+  var imageCacheProgressBarEl = document.getElementById("image-cache-progress-bar");
+  var imageCacheProgressLabelEl = document.getElementById("image-cache-progress-label");
   var montageInner = document.getElementById("montage-inner");
   var montagePreloadOverlayEl = document.getElementById("montage-preload-overlay");
+  var montagePreloadOverlayLabel = document.getElementById("montage-preload-overlay-label");
   var btnViewImages = document.getElementById("btn-view-images");
   var btnVolumeGenerate = document.getElementById("btn-volume-generate");
   var btnVolumeAnimate = document.getElementById("btn-volume-animate");
   var volumeStatusEl = document.getElementById("volume-status");
   var volumeStatusProgressEl = document.getElementById("volume-status-progress");
   var gridSizeSelect = document.getElementById("grid-size");
+  var showGridAnnotationsCheckbox = document.getElementById("show-grid-annotations");
   var scatterControlsCard = document.getElementById("scatter-controls-card");
   var scatterControlsSide = scatterControlsCard ? scatterControlsCard.closest(".cryo-dash-side") : null;
   var scatterPlotStack = document.getElementById("scatter-plot-stack");
+  var boxSelectTooltipEl = document.getElementById("box-select-tooltip");
   var montageActionsEl = document.getElementById("montage-actions");
 
   var montageDisplayMode = "images";
@@ -630,8 +748,11 @@
     return lastMontageRows.length ? lastMontageRows.join(",") : "";
   }
 
-  function setMontagePreloadOverlay(on) {
+  function setMontagePreloadOverlay(on, label) {
     if (!montagePreloadOverlayEl) return;
+    if (label && montagePreloadOverlayLabel) {
+      montagePreloadOverlayLabel.textContent = label;
+    }
     montagePreloadOverlayEl.classList.toggle("cryo-plot-rendering-overlay--show", !!on);
     montagePreloadOverlayEl.setAttribute("aria-hidden", on ? "false" : "true");
   }
@@ -665,6 +786,9 @@
     }
     if (btnVolumeAnimate) {
       btnVolumeAnimate.disabled = !hasGrid || !hasStatic || !hasCache;
+      btnVolumeAnimate.title = btnVolumeAnimate.disabled
+        ? "Generate volumes for the current image grid before animating."
+        : "";
     }
   }
 
@@ -705,6 +829,7 @@
       var nFmt = Number(n).toLocaleString("en-CA");
       var totalFmt = Number(totalParticles).toLocaleString("en-CA");
       selCountEl.textContent = "Selected: " + nFmt + "/" + totalFmt + " particles";
+      selCountEl.title = selectionTooltipText || "";
     }
     if (particleSelFs) particleSelFs.disabled = (n === 0);
   }
@@ -880,6 +1005,8 @@
   var colorHistDiv = document.getElementById("color-hist");
   var colorThresholdUseMax = document.getElementById("color-threshold-use-max");
   var colorThresholdStatus = document.getElementById("color-threshold-status");
+  var scatterPaletteToggle = document.getElementById("scatter-palette-toggle");
+  var scatterPaletteOptions = document.getElementById("scatter-palette-options");
   var colorHistEventsWired = false;
   var colorThresholdLevel = null;
   var colorThresholdColorCol = null;
@@ -949,6 +1076,7 @@
   var scatterLoadGeneration = 0;
   var pendingScatterAfterPlot = null;
   var highlightTraceAdded = false;
+  var suppressPlotGridHighlights = false;
   var suppressSelectionEvents = false;
 
   var selFileBrowserPanel = document.getElementById("sel-file-browser-panel");
@@ -981,6 +1109,16 @@
       out.push(cd[i][1]);
     }
     return out;
+  }
+
+  function randomPlotRows(count) {
+    var n = Math.max(0, Number(totalParticles) || 0);
+    var want = Math.min(Math.max(0, count), n);
+    var seen = new Set();
+    while (seen.size < want) {
+      seen.add(Math.floor(Math.random() * n));
+    }
+    return Array.from(seen);
   }
 
   function rowToTraceIndex(row) {
@@ -1041,16 +1179,79 @@
   var preloaded = null;
   var preloadedAxes = {x: "", y: ""};
 
-  function axesMatchPreloadedCache() {
-    return !!(preloaded && sx.value === preloadedAxes.x && sy.value === preloadedAxes.y);
+  function cachedImageCount() {
+    return preloaded && preloaded.rows ? preloaded.rows.size : 0;
   }
 
-  function fetchPreload(xcol, ycol, onDone) {
+  function allImagesCached() {
+    return cachedImageCount() >= Math.max(0, Number(totalParticles) || 0);
+  }
+
+  function syncImageCacheButton(loading) {
+    btnViewImages.textContent = "Load all images";
+    btnViewImages.disabled = !!loading || !preloaded || allImagesCached();
+    btnViewImages.title = allImagesCached()
+      ? "All dataset images are loaded."
+      : (btnViewImages.disabled ? "Image cache is not ready yet." : "");
+  }
+
+  function setImageCacheProgress(on, current, total) {
+    if (!imageCacheProgressEl) return;
+    if (!on) {
+      imageCacheProgressEl.hidden = true;
+      imageCacheProgressEl.setAttribute("aria-valuenow", "0");
+      if (imageCacheProgressBarEl) imageCacheProgressBarEl.style.width = "0%";
+      if (imageCacheProgressLabelEl) imageCacheProgressLabelEl.textContent = "0%";
+      return;
+    }
+    total = Math.max(1, Number(total) || 1);
+    current = Math.max(0, Math.min(Number(current) || 0, total));
+    var pct = Math.round((current / total) * 100);
+    imageCacheProgressEl.hidden = false;
+    imageCacheProgressEl.setAttribute("aria-valuenow", String(pct));
+    if (imageCacheProgressBarEl) imageCacheProgressBarEl.style.width = pct + "%";
+    if (imageCacheProgressLabelEl) {
+      imageCacheProgressLabelEl.textContent = pct + "% loaded ("
+        + Number(current).toLocaleString("en-CA") + " / "
+        + Number(total).toLocaleString("en-CA") + ")";
+    }
+  }
+
+  function imageCacheChunkSize(total) {
+    total = Math.max(0, Number(total) || 0);
+    if (!total) return 0;
+    var cpus = Math.max(1, Number(preloadCpus) || 1);
+    var parallelThreshold = Math.max(128, cpus * 32);
+    var minChunk = cpus > 1 ? parallelThreshold : 250;
+    var targetChunk = Math.ceil(total / 200);
+    return Math.min(5000, Math.max(minChunk, targetChunk));
+  }
+
+  function axesMatchPreloadedCache() {
+    return !!(
+      preloaded
+      && sx.value === preloadedAxes.x
+      && sy.value === preloadedAxes.y
+    );
+  }
+
+  function fetchPreload(xcol, ycol, onDone, opts) {
+    opts = opts || {};
+    var cacheSize = opts.cacheSize || totalParticles;
     preloadedAxes = {x: xcol, y: ycol};
-    if (preloadStatus) preloadStatus.textContent = "Loading image cache…";
-    setMontagePreloadOverlay(true);
-    var body = { x: xcol, y: ycol };
-    fetch("{{ url_for('api_preload_images') }}", {
+    var overlayLabel = opts.fullLoad
+      ? "Loading all " + Number(totalParticles).toLocaleString("en-CA") + " dataset images..."
+      : "Loading image cache...";
+    setMontagePreloadOverlay(true, overlayLabel);
+    syncImageCacheButton(true);
+    var body = { x: xcol, y: ycol, cache_size: cacheSize };
+    if (opts.delta) {
+      body.response_mode = "delta";
+    }
+    if (opts.initialRows && opts.initialRows.length) {
+      body.initial_rows = opts.initialRows.slice();
+    }
+    return fetch("{{ url_for('api_preload_images') }}", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -1064,22 +1265,33 @@
           if (preloadStatus) preloadStatus.textContent = msg;
           setMontagePreloadOverlay(false);
           if (onDone) onDone(new Error(msg));
-          return;
+          throw new Error(msg);
         }
         var data = res.j;
-        if (!data.rows || !data.images || !data.rows.length) {
+        if (!data.rows || !data.images || (!data.rows.length && !opts.delta)) {
           if (preloadStatus) preloadStatus.textContent = "No images available.";
           setMontagePreloadOverlay(false);
           if (onDone) onDone(new Error("no images"));
-          return;
+          throw new Error("no images");
         }
-        var rowToSrc = new Map();
+        var rowToSrc = (opts.delta && preloaded && preloaded.rowToSrc)
+          ? new Map(preloaded.rowToSrc)
+          : new Map();
+        var rowsSet = (opts.delta && preloaded && preloaded.rows)
+          ? new Set(preloaded.rows)
+          : new Set();
         data.rows.forEach(function(r, i) {
           rowToSrc.set(r, "data:image/jpeg;base64," + data.images[i]);
+          rowsSet.add(r);
         });
-        preloaded = {rows: new Set(data.rows), rowToSrc: rowToSrc, traceMap: null};
+        preloaded = {rows: rowsSet, rowToSrc: rowToSrc, traceMap: null};
+        if (opts.enableImages) {
+          imagesViewEnabled = true;
+          montageInner.classList.remove("cryo-dash-montage-inner--disabled");
+          gridSizeSelect.disabled = false;
+        }
         buildTraceMap();
-        /* Lasso/box before “View images” only set saveSelectionRows — rebuild activePool for montage + clicks. */
+        /* Lasso/box before image display only set saveSelectionRows — rebuild activePool for montage + clicks. */
         if (saveSelectionRows && saveSelectionRows.length) {
           var sset = new Set(saveSelectionRows);
           var ap = preloaded.traceMap.filter(function(item) {
@@ -1093,9 +1305,10 @@
             }
           }
         }
-        var msg = data.rows.length + " images cached";
+        var cachedTotal = data.total_cached || preloaded.rows.size;
+        var msg = cachedTotal + " images cached";
         if (data.elapsed != null) msg += " in " + data.elapsed + "s";
-        if (preloadStatus) {
+        if (preloadStatus && !opts.suppressStatus) {
           if (activePool && activePool.length) {
             preloadStatus.textContent = activePool.length + " of " + preloaded.traceMap.length
               + " in selection — " + msg + ".";
@@ -1103,24 +1316,116 @@
             preloadStatus.textContent = msg + ".";
           }
         }
-        setMontagePreloadOverlay(false);
-        showRandomPreloaded();
+        if (!opts.keepOverlayAfterSuccess) {
+          setMontagePreloadOverlay(false);
+        }
+        if (!opts.suppressMontageUpdate) {
+          showRandomPreloaded();
+        }
+        syncImageCacheButton(!!opts.keepOverlayAfterSuccess);
         if (onDone) onDone(null);
+        return data;
       })
       .catch(function(e) {
         console.error("preload failed", e);
         if (preloadStatus) preloadStatus.textContent = "Image cache failed.";
         setMontagePreloadOverlay(false);
+        syncImageCacheButton(false);
         if (onDone) onDone(e);
+        if (onDone) return null;
+        throw e;
+      });
+  }
+
+  function startInitialImageCache() {
+    if (initialImageCacheStarted || !totalParticles) return Promise.resolve(null);
+    initialImageCacheStarted = true;
+    var rows = randomPlotRows(initialPreloadImageCount);
+    if (!rows.length) return Promise.resolve(null);
+    return fetchPreload(sx.value, sy.value, null, {
+      cacheSize: rows.length,
+      initialRows: rows,
+      enableImages: true
+    }).catch(function(e) {
+      console.error("initial preload failed", e);
+      return null;
+    });
+  }
+
+  function initializeExplorerView() {
+    if (Number(preloadCpus) > 1) {
+      startInitialImageCache();
+      loadPlot(true);
+      return;
+    }
+    startInitialImageCache().then(function() {
+      loadPlot(true);
+    });
+  }
+
+  function loadAllImagesInChunks() {
+    var total = Math.max(0, Number(totalParticles) || 0);
+    var chunkSize = imageCacheChunkSize(total);
+    setMontagePreloadOverlay(
+      true,
+      "Loading all " + Number(total).toLocaleString("en-CA") + " dataset images..."
+    );
+    if (preloadStatus) preloadStatus.textContent = "";
+    setImageCacheProgress(true, cachedImageCount(), total);
+    suppressPlotGridHighlights = true;
+    syncHighlightTraceAnnotations();
+    syncImageCacheButton(true);
+
+    function nextChunk() {
+      var before = cachedImageCount();
+      if (before >= total) {
+        setMontagePreloadOverlay(false);
+        setImageCacheProgress(true, total, total);
+        suppressPlotGridHighlights = false;
+        syncHighlightTraceAnnotations();
+        syncImageCacheButton(false);
+        syncVolumeExploreButtons();
+        return Promise.resolve(null);
+      }
+      var target = Math.min(total, before + chunkSize);
+      return fetchPreload(sx.value, sy.value, null, {
+        cacheSize: target,
+        enableImages: true,
+        delta: true,
+        fullLoad: true,
+        keepOverlayAfterSuccess: true,
+        suppressStatus: true,
+        suppressMontageUpdate: true
+      }).then(function() {
+        if (cachedImageCount() <= before) {
+          throw new Error("Image cache did not advance.");
+        }
+        setImageCacheProgress(true, cachedImageCount(), total);
+        return nextChunk();
+      });
+    }
+
+    return nextChunk()
+      .catch(function(e) {
+        console.error("load all images failed", e);
+        setImageCacheProgress(false);
+        suppressPlotGridHighlights = false;
+        syncHighlightTraceAnnotations();
+        if (preloadStatus) preloadStatus.textContent = e.message || "Image cache failed.";
+        setMontagePreloadOverlay(false);
+      })
+      .then(function() {
+        syncImageCacheButton(false);
+        syncVolumeExploreButtons();
       });
   }
 
   btnViewImages.addEventListener("click", function() {
-    if (imagesViewEnabled && preloaded && montageDisplayMode === "volumes") {
+    if (imagesViewEnabled && preloaded && montageDisplayMode === "volumes" && axesMatchPreloadedCache() && allImagesCached()) {
       showImagesInMontageFromCache();
       return;
     }
-    if (imagesViewEnabled && preloaded && axesMatchPreloadedCache()) {
+    if (imagesViewEnabled && preloaded && axesMatchPreloadedCache() && allImagesCached()) {
       montageInner.classList.remove("cryo-dash-montage-inner--disabled");
       gridSizeSelect.disabled = false;
       buildTraceMap();
@@ -1134,14 +1439,7 @@
       return;
     }
     btnViewImages.disabled = true;
-    fetchPreload(sx.value, sy.value, function(err) {
-      btnViewImages.disabled = false;
-      if (err) return;
-      imagesViewEnabled = true;
-      montageInner.classList.remove("cryo-dash-montage-inner--disabled");
-      gridSizeSelect.disabled = false;
-      syncVolumeExploreButtons();
-    });
+    loadAllImagesInChunks();
   });
 
   function postVolumeStatic() {
@@ -1383,8 +1681,8 @@
       xref: "x",
       yref: "paper",
       x: colorHistHoverLevel,
-      y: 1,
-      yanchor: "bottom",
+      y: 0,
+      yanchor: "top",
       text: formatColorThresholdValue(colorHistHoverLevel),
       showarrow: false,
       bgcolor: "rgba(255,255,255,0.94)",
@@ -1437,9 +1735,7 @@
   function colorThresholdDescription(nSelected, nTotal) {
     if (colorThresholdLevel == null || colorThresholdColorCol !== sc.value) return "";
     var op = colorThresholdUseMax && colorThresholdUseMax.checked ? "≤" : "≥";
-    return "Threshold " + op + " " + formatColorThresholdValue(colorThresholdLevel)
-      + " selects " + Number(nSelected).toLocaleString("en-CA")
-      + "/" + Number(nTotal).toLocaleString("en-CA") + ".";
+    return "Current threshold: " + op + " " + formatColorThresholdValue(colorThresholdLevel);
   }
 
   function quantileSorted(sorted, q) {
@@ -1460,7 +1756,7 @@
       if (xs[i] > xmax) xmax = xs[i];
     }
     if (!isFinite(xmin) || !isFinite(xmax)) {
-      return {outlineX: [], outlineY: [], fillTraces: [], outlierX: [], outlierY: [], range: null};
+      return {outlineX: [], outlineY: [], fillTraces: [], outlierX: [], outlierY: [], outlierColors: [], range: null};
     }
     var sorted = xs.slice().sort(function(a, b) { return a - b; });
     var q1 = quantileSorted(sorted, 0.25);
@@ -1481,6 +1777,8 @@
     if (!vals.length) vals = xs.slice();
     if (xmax <= xmin) {
       var oneColour = paletteScaleCSS(selectedScatterPalette(), 0.5);
+      var singleOutlierColors = [];
+      for (var soc = 0; soc < outlierX.length; soc++) singleOutlierColors.push(oneColour);
       return {
         outlineX: [xmin, xmin, xmin],
         outlineY: [-0.38, 0.38, -0.38],
@@ -1497,6 +1795,7 @@
         }],
         outlierX: outlierX,
         outlierY: outlierY,
+        outlierColors: singleOutlierColors,
         range: [xmin - 0.6, xmax + 0.6]
       };
     }
@@ -1545,6 +1844,10 @@
     outlineY.push(half[0]);
     var fillTraces = [];
     var palName = selectedScatterPalette();
+    var outlierColors = [];
+    for (var oc = 0; oc < outlierX.length; oc++) {
+      outlierColors.push(paletteScaleCSS(palName, (outlierX[oc] - xmin) / span));
+    }
     for (var s = 0; s < gridX.length - 1; s++) {
       var x0 = gridX[s], x1 = gridX[s + 1];
       var y = Math.max(half[s], half[s + 1]);
@@ -1570,6 +1873,7 @@
       fillTraces: fillTraces,
       outlierX: outlierX,
       outlierY: outlierY,
+      outlierColors: outlierColors,
       range: [xmin - pad, xmax + pad]
     };
   }
@@ -1602,7 +1906,7 @@
       dragmode: false,
       showlegend: false,
       font: {family: "Barlow, sans-serif", color: "#243b53", size: 11},
-      xaxis: {title: {text: "<b>" + escapeHtmlText(colorColLabel) + "</b>", standoff: 2, font: {weight: 700}}, zeroline: false, fixedrange: true, range: violin.range},
+      xaxis: {title: {text: "<b>" + escapeHtmlText(colorColLabel) + "</b>", standoff: 2, font: {size: 15.7, weight: 700}}, zeroline: false, fixedrange: true, range: violin.range},
       yaxis: {visible: false, fixedrange: true, range: [-0.55, 0.55]},
       shapes: colorHistogramGuideShapes(),
       annotations: colorHistogramGuideAnnotations()
@@ -1622,7 +1926,7 @@
         mode: "markers",
         x: violin.outlierX,
         y: violin.outlierY,
-        marker: {symbol: "circle-open", color: "#111", size: 4, line: {color: "#111", width: 1}},
+        marker: {symbol: "circle-open", color: violin.outlierColors, size: 5.76, line: {color: violin.outlierColors, width: 1.44}},
         hovertemplate: colorColLabel + " %{x}<br>outlier<extra></extra>"
       }
     );
@@ -1731,7 +2035,7 @@
 
   function showRandomPreloaded() {
     if (!preloaded || !preloaded.traceMap) return;
-    /* Only sample from cached rows so first "View images" never picks uncached (blank) cells. */
+    /* Only sample from cached rows so the image grid never picks uncached (blank) cells. */
     var pool = (activePool && activePool.length) ? activePool : preloaded.traceMap;
     if (!pool.length) return;
     var shuffled = pool.slice();
@@ -1830,12 +2134,19 @@
     }
     if (highlightTraceAdded && gd.data && gd.data[0]) {
       var nx = [], ny = [], txt = [];
+      var showPlotHighlights = showGridHighlightsOnPlot();
       for (var k = 0; k < nbs.length; k++) {
         nx.push(gd.data[0].x[nbs[k].ti]);
         ny.push(gd.data[0].y[nbs[k].ti]);
-        txt.push(labels[k]);
+        if (showPlotHighlights) txt.push(labels[k]);
       }
-      var restyleData = {x: [nx], y: [ny], text: [txt]};
+      var restyleData = {
+        x: [nx],
+        y: [ny],
+        mode: [showPlotHighlights ? "markers+text" : "markers"],
+        text: [txt],
+        visible: [showPlotHighlights]
+      };
       if (hasColor) {
         var colorVals = [];
         for (var k = 0; k < nbs.length; k++) colorVals.push(markerColors[nbs[k].ti]);
@@ -1975,6 +2286,17 @@
     var hasColor = sc.value && sc.value !== "none";
     var suppress = rendering || !hasColor || scatterColorByIsDiscrete();
     paletteFieldset.classList.toggle("scatter-palette-radios--suppressed", suppress);
+    syncScatterPaletteOptions();
+  }
+  function syncScatterPaletteOptions() {
+    if (!scatterPaletteOptions) return;
+    var showOptions = !!(
+      scatterPaletteToggle
+      && scatterPaletteToggle.getAttribute("aria-expanded") === "true"
+      && paletteFieldset
+      && !paletteFieldset.classList.contains("scatter-palette-radios--suppressed")
+    );
+    scatterPaletteOptions.classList.toggle("cryo-palette-select__options--collapsed", !showOptions);
   }
   function setRendering(on) {
     if (overlay) {
@@ -2031,16 +2353,42 @@
   }
 
   /* ---------- highlight trace ---------- */
+  function showGridHighlightsOnPlot() {
+    return !suppressPlotGridHighlights
+      && (!showGridAnnotationsCheckbox || showGridAnnotationsCheckbox.checked);
+  }
+
+  function syncHighlightTraceAnnotations() {
+    if (!highlightTraceAdded || !gd.data || !gd.data[1]) return;
+    var showHighlights = showGridHighlightsOnPlot();
+    var text = [];
+    if (showHighlights && lastMontageRows && lastMontageRows.length) {
+      for (var i = 0; i < lastMontageRows.length && i < labels.length; i++) {
+        text.push(labels[i]);
+      }
+    }
+    try {
+      Plotly.restyle(gd, {
+        mode: [showHighlights ? "markers+text" : "markers"],
+        text: [text],
+        visible: [showHighlights]
+      }, [1]);
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
   function ensureHighlightTrace() {
     if (highlightTraceAdded) return;
     highlightTraceAdded = true;
     Plotly.addTraces(gd, [{
       x: [], y: [],
-      mode: "markers+text",
+      mode: showGridHighlightsOnPlot() ? "markers+text" : "markers",
       text: [],
       textposition: "middle center",
       textfont: {size: 9, color: "#fff", family: "Georgia, 'Times New Roman', serif"},
       marker: {size: 15, color: "#c4703a", line: {width: 0}},
+      visible: showGridHighlightsOnPlot(),
       hoverinfo: "skip",
       showlegend: false
     }]);
@@ -2103,7 +2451,7 @@
             if (nextDragMode) {
               fig.layout.dragmode = nextDragMode;
             }
-            var axFont = {size: 15, family: "Barlow, sans-serif", color: "#243b53", weight: 700};
+            var axFont = {size: 21.45, family: "Barlow, sans-serif", color: "#243b53", weight: 700};
             fig.layout.xaxis = Object.assign(fig.layout.xaxis || {}, {title: {text: "<b>" + escapeHtmlText(x) + "</b>", font: axFont}});
             fig.layout.yaxis = Object.assign(fig.layout.yaxis || {}, {title: {text: "<b>" + escapeHtmlText(y) + "</b>", font: axFont}});
             if (/^umap/i.test(x)) fig.layout.xaxis.showticklabels = false;
@@ -2140,7 +2488,11 @@
                     }
                   }
                 }
-                restoreMontageAfterScatterReload();
+                if (lastMontageRows.length) {
+                  restoreMontageAfterScatterReload();
+                } else {
+                  showRandomPreloaded();
+                }
               } else if (!imagesViewEnabled) {
                 if (lastMontageRows.length) {
                   ensureHighlightTrace();
@@ -2253,6 +2605,7 @@
     rows = rows || [];
     var rowSet = new Set(rows);
     saveSelectionRows = Array.from(rowSet);
+    selectionTooltipText = "";
     updateParticleSelFieldset();
     var selectedTi = selectionRowsToTraceIndices(saveSelectionRows);
     suppressSelectionEvents = true;
@@ -2334,6 +2687,49 @@
     });
   }
 
+  function formatSelectionBound(v) {
+    var n = Number(v);
+    if (!isFinite(n)) return String(v);
+    return Number(n.toPrecision(6)).toString();
+  }
+
+  function boxSelectionTooltip(ev) {
+    if (!ev || !ev.range || !ev.range.x || !ev.range.y) return "";
+    var xr = ev.range.x.slice().sort(function(a, b) { return a - b; });
+    var yr = ev.range.y.slice().sort(function(a, b) { return a - b; });
+    if (xr.length < 2 || yr.length < 2) return "";
+    return "Box filter: "
+      + formatSelectionBound(xr[0]) + " <= val_x <= " + formatSelectionBound(xr[1])
+      + "; "
+      + formatSelectionBound(yr[0]) + " <= val_y <= " + formatSelectionBound(yr[1])
+      + " (val_x = " + sx.value + ", val_y = " + sy.value + ")";
+  }
+
+  function hideBoxSelectTooltip() {
+    if (!boxSelectTooltipEl) return;
+    boxSelectTooltipEl.hidden = true;
+    boxSelectTooltipEl.textContent = "";
+  }
+
+  function showBoxSelectTooltip(ev) {
+    if (!boxSelectTooltipEl || !scatterPlotStack) return;
+    var text = boxSelectionTooltip(ev);
+    if (!text) {
+      hideBoxSelectTooltip();
+      return;
+    }
+    var rect = scatterPlotStack.getBoundingClientRect();
+    var src = ev && ev.event ? ev.event : null;
+    var left = src && typeof src.clientX === "number" ? src.clientX - rect.left : 12;
+    var top = src && typeof src.clientY === "number" ? src.clientY - rect.top : 12;
+    left = Math.max(8, Math.min(left, rect.width - 24));
+    top = Math.max(8, Math.min(top, rect.height - 8));
+    boxSelectTooltipEl.textContent = text;
+    boxSelectTooltipEl.style.left = left + "px";
+    boxSelectTooltipEl.style.top = top + "px";
+    boxSelectTooltipEl.hidden = false;
+  }
+
   function findKNearestInPool(px, py, k) {
     var items = activePool || (preloaded && preloaded.traceMap) || [];
     if (!items.length) return [];
@@ -2368,6 +2764,10 @@
       var nbs = findKNearestInPool(pt.x, pt.y, neighborK);
       if (nbs.length) updateMontage(nbs);
     });
+    gd.on("plotly_selecting", function(ev) {
+      if (suppressSelectionEvents) return;
+      showBoxSelectTooltip(ev);
+    });
     function applyLassoSelectionFromSnapshot(snap) {
       if (!preloaded || !preloaded.traceMap) return;
       if (!snap.length) {
@@ -2401,6 +2801,8 @@
       renderColorHistogram();
       var snap = snapshotSelectedPoints(ev);
       var rowsSnap = snapshotRowsFromPoints(ev);
+      selectionTooltipText = boxSelectionTooltip(ev);
+      hideBoxSelectTooltip();
       cancelLassoSelectionDebounce();
         lassoSelectionDebounceTimer = setTimeout(function() {
         lassoSelectionDebounceTimer = null;
@@ -2416,8 +2818,10 @@
       colorThresholdLevel = null;
       colorThresholdColorCol = null;
       renderColorHistogram();
+      hideBoxSelectTooltip();
       cancelLassoSelectionDebounce();
       saveSelectionRows = [];
+      selectionTooltipText = "";
       updateParticleSelFieldset();
       activePool = null;
       lassoSelectedRowSet = null;
@@ -2425,6 +2829,7 @@
         preloadStatus.textContent = preloaded.traceMap.length + " images cached.";
       }
     });
+    gd.addEventListener("mouseleave", hideBoxSelectTooltip);
   }
 
   function showRandomFromPool() {
@@ -2450,6 +2855,7 @@
       preselectRowsForNextFetch = [];
       activePool = null;
       lassoSelectedRowSet = null;
+      selectionTooltipText = "";
       lastMontageRows = [];
       colorThresholdLevel = null;
       colorThresholdColorCol = null;
@@ -2461,14 +2867,18 @@
       preloaded = null;
       montageInner.classList.add("cryo-dash-montage-inner--disabled");
       gridSizeSelect.disabled = true;
+      initialImageCacheStarted = false;
+      syncImageCacheButton(false);
       if (preloadStatus) {
-        preloadStatus.textContent = "First click builds image cache for these plot axes before displaying images.";
+        preloadStatus.textContent = "";
       }
+      setImageCacheProgress(false);
     }
     cancelLassoSelectionDebounce();
     cancelPendingHighlightRestyle();
     plotlyEventsWired = false;
-    loadPlot(axesChanged);
+    if (axesChanged) initializeExplorerView();
+    else loadPlot(axesChanged);
   }
 
   function saveInverseChecked() {
@@ -2644,6 +3054,16 @@
   document.querySelectorAll("input[name=\"scatter_palette\"]").forEach(function(inp) {
     inp.addEventListener("change", function() { triggerRedraw(true); });
   });
+  if (scatterPaletteToggle) {
+    scatterPaletteToggle.addEventListener("click", function() {
+      var expanded = scatterPaletteToggle.getAttribute("aria-expanded") === "true";
+      scatterPaletteToggle.setAttribute("aria-expanded", expanded ? "false" : "true");
+      syncScatterPaletteOptions();
+    });
+  }
+  if (showGridAnnotationsCheckbox) {
+    showGridAnnotationsCheckbox.addEventListener("change", syncHighlightTraceAnnotations);
+  }
   if (colorThresholdUseMax) {
     colorThresholdUseMax.addEventListener("change", function() {
       if (colorThresholdLevel != null && colorThresholdColorCol === sc.value) {
@@ -2659,7 +3079,7 @@
   equalizeMontageActionButtonWidths();
   window.addEventListener("resize", equalizeMontageActionButtonWidths);
   syncScatterPaletteFieldset();
-  loadPlot(true);
+  initializeExplorerView();
 })();
 </script>
 {% endblock %}

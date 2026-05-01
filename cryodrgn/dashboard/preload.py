@@ -21,6 +21,8 @@ from cryodrgn.dashboard.mpl_style import ezlab_matplotlib_rc
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_PRELOAD_IMAGE_LIMIT = 1000
+
 
 def encode_particle_batch(
     mrcfile: str,
@@ -28,9 +30,11 @@ def encode_particle_batch(
     global_indices: Iterable[int],
     max_px: int,
 ) -> list[str]:
-    """Load and encode particles as base64 JPEGs for a ``ProcessPoolExecutor`` worker.
+    """Load and encode raw particles as base64 JPEGs for thumbnail preloading.
 
-    All imports are local so the function is self-contained after fork.
+    Use :class:`ImageSource` directly instead of :class:`ImageDataset`; dashboard
+    thumbnails do their own percentile scaling and do not need ImageDataset's
+    costly normalization estimates.
     """
     import base64 as _b64
     import io as _io
@@ -38,12 +42,12 @@ def encode_particle_batch(
     import numpy as _np
     from PIL import Image as PILImage
 
-    from cryodrgn.dataset import ImageDataset
+    from cryodrgn.source import ImageSource
 
-    ds = ImageDataset(mrcfile=mrcfile, lazy=True, datadir=datadir)
+    src = ImageSource.from_file(mrcfile, lazy=True, datadir=datadir or "")
     out: list[str] = []
     for gidx in global_indices:
-        raw = ds.src.images(gidx, as_numpy=True)
+        raw = src.images(gidx, as_numpy=True)
         if raw.ndim == 3:
             raw = raw[0]
         arr = _np.asarray(raw, dtype=_np.float32)
@@ -183,12 +187,15 @@ def sample_plot_df_rows_for_preload(
     ycol: str,
     *,
     restrict_to_rows: list[int] | None = None,
+    exclude_rows: list[int] | None = None,
+    max_images: int = DEFAULT_PRELOAD_IMAGE_LIMIT,
 ) -> tuple[list[int], list[int]]:
-    """Pick up to 5k plot_df rows for thumbnail preload (random + spread-out in XY).
+    """Pick plot_df rows for thumbnail preload (random + spread-out in XY).
 
     If ``restrict_to_rows`` is set, only those plot_df indices are eligible.
     Returns ``(plot_df_rows, dataset_indices)`` sorted by dataset index.
     """
+    max_images = max(1, int(max_images))
     n = len(exp.plot_df)
     coords_full = exp.plot_df[[xcol, ycol]].values.astype(np.float64)
     rng = np.random.default_rng(42)
@@ -203,7 +210,15 @@ def sample_plot_df_rows_for_preload(
         coords = coords_full
         inv_map = list(range(n))
 
-    local_sel = _stratified_xy_row_indices(coords, rng, min(len(coords), 5000))
+    if exclude_rows:
+        excluded = {int(r) for r in exclude_rows}
+        keep = [i for i, r in enumerate(inv_map) if r not in excluded]
+        if not keep:
+            return [], []
+        coords = coords[np.array(keep, dtype=int)]
+        inv_map = [inv_map[i] for i in keep]
+
+    local_sel = _stratified_xy_row_indices(coords, rng, min(len(coords), max_images))
     plot_rows_set = {inv_map[i] for i in local_sel}
     pairs = sorted(
         ((r, int(exp.all_indices[r])) for r in plot_rows_set),

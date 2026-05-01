@@ -131,6 +131,9 @@ class Tomogram:
     def project_point(self, point_3d, i_tilt):
         """Project a 3D coordinate in tomogram voxels to 2D tilt coordinates.
 
+        Apply the 4x4 transformation for tilt i_tilt to project a 3D coordinate
+        (in tomogram voxels) to 2D tilt coords.
+
         Args:
             point_3d: 3D coordinate in tomogram voxels
             i_tilt: index of 4x4 projection matrix to use to transform the 3D point
@@ -277,11 +280,20 @@ def main(args: argparse.Namespace) -> None:
         else:
             ts_df = tilt_series_cache[tomo_name]
 
-        frames_list = row["rlnTomoVisibleFrames"]
-        visible_indices = [
-            i for i, val in enumerate(literal_eval(frames_list), start=1) if val == 1
-        ]
-        sub_ts_df = ts_df.iloc[[i - 1 for i in visible_indices]].copy()
+        if "rlnTomoVisibleFrames" in particles_df.columns:
+            frames_list = row["rlnTomoVisibleFrames"]
+
+            if isinstance(frames_list, str):
+                vis = literal_eval(frames_list)
+            else:
+                vis = list(frames_list)
+
+            visible_indices = [
+                i for i, val in enumerate(vis) if int(val) == 1
+            ]  # 0-based
+            sub_ts_df = ts_df.iloc[visible_indices].copy()
+        else:
+            sub_ts_df = ts_df.copy()
 
         handedness = tomo_row.get("rlnTomoHand", 1)
         set_hand = -1 if handedness == -1 else 1

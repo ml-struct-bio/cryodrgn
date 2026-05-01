@@ -24,11 +24,11 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         help="Flag if results are from a heterogeneous refinements (default: homogeneous refinement)",
     )
     parser.add_argument(
-        "-D", type=int, required=True, help="Box size of reconstruction (pixels)"
-    )
-    parser.add_argument(
         "-o", metavar="PKL", type=os.path.abspath, required=True, help="Output pose.pkl"
     )
+
+    group = parser.add_argument_group("Optionally provide missing image parameters")
+    group.add_argument("-D", type=int, help="Image size in pixels")
     return parser
 
 
@@ -67,7 +67,17 @@ def main(args: argparse.Namespace) -> None:
     logger.info(trans.shape)
 
     # convert translations from pixels to fraction
-    trans /= args.D
+    metadata = np.load(args.input)
+    N = len(metadata)
+    logger.info("{} particles".format(N))
+
+    try:
+        D = metadata["blob/shape"][0][0]
+    except ValueError:
+        assert args.D, "Must provide image size with -D"
+        D = args.D
+    
+    trans /= D
 
     # write output
     logger.info(f"Writing {args.o}")

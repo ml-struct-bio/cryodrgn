@@ -76,7 +76,7 @@ def main(args: argparse.Namespace) -> None:
     except ValueError:
         assert args.D, "Must provide image size with -D"
         D = args.D
-    
+
     trans /= D
 
     # write output

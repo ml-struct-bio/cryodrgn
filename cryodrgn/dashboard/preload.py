@@ -130,55 +130,110 @@ def particle_thumbnail_b64_from_row(
         return None
 
 
-def _stratified_xy_row_indices(
+# k-th NN distance for outlier scoring; grid sizing uses sqrt(n_outlier * factor) bins per axis.
+_PRELOAD_KNN_OUTLIER_K = 10
+_PRELOAD_SPACING_BIN_FACTOR = 2.0
+
+
+def _kth_nn_distances(coords: np.ndarray, k: int) -> np.ndarray:
+    """Per-point distance to the *k*-th nearest neighbour in 2-D (requires ``k < n_points``)."""
+    from scipy.spatial import cKDTree
+
+    m = int(coords.shape[0])
+    d = np.zeros(m, dtype=np.float64)
+    if m <= 1 or k < 1:
+        return d
+    kk = min(int(k), m - 1)
+    k_query = kk + 1
+    tree = cKDTree(coords)
+    dists, _ = tree.query(coords, k=k_query)
+    if dists.ndim == 1:
+        dists = dists.reshape(m, k_query)
+    return dists[:, -1].astype(np.float64, copy=False)
+
+
+def _grid_spaced_outlier_pick(
+    coords: np.ndarray,
+    order_by_score_desc: np.ndarray,
+    want: int,
+    exclude: set[int],
+    *,
+    n_bins: int,
+) -> list[int]:
+    """Take up to ``want`` local indices: prefer high scores, at most one per grid cell."""
+    m = int(coords.shape[0])
+    if want <= 0 or m == 0:
+        return []
+    x0, y0 = coords.min(axis=0)
+    x1, y1 = coords.max(axis=0)
+    rx = float(x1 - x0) + 1e-12
+    ry = float(y1 - y0) + 1e-12
+    nx = (coords[:, 0] - x0) / rx
+    ny = (coords[:, 1] - y0) / ry
+
+    picked: list[int] = []
+    used_cells: set[tuple[int, int]] = set()
+    nb = max(2, int(n_bins))
+
+    for li in order_by_score_desc:
+        if len(picked) >= want:
+            break
+        i = int(li)
+        if i in exclude:
+            continue
+        cx = min(int(nx[i] * nb), nb - 1)
+        cy = min(int(ny[i] * nb), nb - 1)
+        cell = (cx, cy)
+        if cell in used_cells:
+            continue
+        used_cells.add(cell)
+        picked.append(i)
+
+    if len(picked) < want:
+        for li in order_by_score_desc:
+            if len(picked) >= want:
+                break
+            i = int(li)
+            if i in exclude or i in picked:
+                continue
+            picked.append(i)
+    return picked[:want]
+
+
+def _hybrid_random_knn_spaced_local_indices(
     coords: np.ndarray,
     rng: np.random.Generator,
     total_k: int,
+    *,
+    k_nn: int = _PRELOAD_KNN_OUTLIER_K,
+    spacing_bin_factor: float = _PRELOAD_SPACING_BIN_FACTOR,
 ) -> set[int]:
-    """Mix: random + far-from-reference-centroids + large NN distance (``total_k`` picks)."""
-    from scipy.spatial import cKDTree
-    from scipy.spatial.distance import cdist as _cdist
-
+    """``total_k`` local indices: half uniform random, half high k-NN distance with XY grid spacing."""
     m = int(coords.shape[0])
     if m == 0:
         return set()
-    total_k = min(m, total_k)
-    k_random = total_k * 2 // 3
-    k_mean = total_k // 6
-    random_rows = set(rng.choice(m, size=min(k_random, m), replace=False).tolist())
+    total_k = min(m, int(total_k))
 
-    n_ref = min(m, 500)
-    ref_coords = coords[rng.choice(m, size=n_ref, replace=False)]
-    avg_dists = np.zeros(m)
-    batch = 20_000
-    for start in range(0, m, batch):
-        avg_dists[start : start + batch] = _cdist(
-            coords[start : start + batch],
-            ref_coords,
-        ).mean(axis=1)
+    n_rand = total_k // 2
+    n_out = total_k - n_rand
 
-    mean_rows: set[int] = set()
-    for idx in np.argsort(-avg_dists):
-        if len(mean_rows) >= k_mean:
-            break
-        r = int(idx)
-        if r not in random_rows:
-            mean_rows.add(r)
+    rand_local = rng.choice(m, size=n_rand, replace=False)
+    rand_set = {int(x) for x in rand_local}
 
-    tree = cKDTree(coords)
-    nn_dists = tree.query(coords, k=2)[0][:, 1]
+    kk = min(max(1, int(k_nn)), m - 1)
+    scores = _kth_nn_distances(coords, kk)
+    order = np.argsort(-scores)
+    n_bins = max(2, int(np.ceil(np.sqrt(max(n_out, 1) * float(spacing_bin_factor)))))
+    outlier_list = _grid_spaced_outlier_pick(
+        coords,
+        order,
+        n_out,
+        rand_set,
+        n_bins=n_bins,
+    )
+    out_set = {int(x) for x in outlier_list}
 
-    k_nn = max(0, total_k - k_random - len(mean_rows))
-    excluded = random_rows | mean_rows
-    nn_rows: set[int] = set()
-    for idx in np.argsort(-nn_dists):
-        if len(nn_rows) >= k_nn:
-            break
-        r = int(idx)
-        if r not in excluded:
-            nn_rows.add(r)
-
-    return random_rows | mean_rows | nn_rows
+    return rand_set | out_set
 
 
 def sample_plot_df_rows_for_preload(
@@ -190,7 +245,12 @@ def sample_plot_df_rows_for_preload(
     exclude_rows: list[int] | None = None,
     max_images: int = DEFAULT_PRELOAD_IMAGE_LIMIT,
 ) -> tuple[list[int], list[int]]:
-    """Pick plot_df rows for thumbnail preload (random + spread-out in XY).
+    """Pick plot_df rows for thumbnail preload.
+
+    Uses a hybrid rule on the current scatter axes: half of the picks are uniform
+    random; the other half favour large k-th nearest-neighbour distances in the
+    2-D embedding, with a coarse XY grid so high-scoring outliers do not stack
+    in the same visual bin.
 
     If ``restrict_to_rows`` is set, only those plot_df indices are eligible.
     Returns ``(plot_df_rows, dataset_indices)`` sorted by dataset index.
@@ -218,7 +278,9 @@ def sample_plot_df_rows_for_preload(
         coords = coords[np.array(keep, dtype=int)]
         inv_map = [inv_map[i] for i in keep]
 
-    local_sel = _stratified_xy_row_indices(coords, rng, min(len(coords), max_images))
+    local_sel = _hybrid_random_knn_spaced_local_indices(
+        coords, rng, min(len(coords), max_images)
+    )
     plot_rows_set = {inv_map[i] for i in local_sel}
     pairs = sorted(
         ((r, int(exp.all_indices[r])) for r in plot_rows_set),

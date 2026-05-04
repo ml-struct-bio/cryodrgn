@@ -24,6 +24,7 @@ import uuid
 from collections.abc import Iterable
 
 import numpy as np
+import pandas as pd
 from flask import (
     Flask,
     Response,
@@ -75,6 +76,7 @@ from cryodrgn.dashboard.plots import (
     normalize_continuous_palette,
     pair_grid_png,
     pair_grid_skeleton_placeholder_layout,
+    plot_df_row_indices_for_explorer_scatter,
     scatter3d_z_json,
     scatter3d_z_preview_png,
     scatter_json,
@@ -138,6 +140,34 @@ def _filter_ui_scatter_max_points() -> int:
     except ValueError:
         v = 500_000
     return max(50_000, min(v, 2_000_000))
+
+
+def _particle_explorer_scatter_max_points() -> int:
+    """Cap for particle explorer scatter + thumbnail restrict pool.
+
+    When ``CRYODRGN_DASHBOARD_FILTER_MAX_POINTS`` is set (e.g. ``cryodrgn dashboard
+    … --filter-max N``), use that clamped cap. Otherwise keep the historical
+    200k default for ``/api/scatter`` without ``filter_ui``.
+    """
+    raw = (os.environ.get("CRYODRGN_DASHBOARD_FILTER_MAX_POINTS") or "").strip()
+    if raw:
+        try:
+            return max(50_000, min(int(raw), 2_000_000))
+        except ValueError:
+            pass
+    return 200_000
+
+
+def _particle_explorer_scatter_cap_from_env() -> bool:
+    """True when the explorer scatter cap comes from FILTER_MAX_POINTS (CLI or env)."""
+    raw = (os.environ.get("CRYODRGN_DASHBOARD_FILTER_MAX_POINTS") or "").strip()
+    if not raw:
+        return False
+    try:
+        int(raw)
+    except ValueError:
+        return False
+    return True
 
 
 def _default_xy_cols(cols: list[str]) -> tuple[str, str]:
@@ -341,6 +371,41 @@ def api_save_selection():
     return jsonify(payload)
 
 
+def api_covariate_threshold_rows():
+    """All ``plot_df`` row indices where a numeric covariate passes a threshold.
+
+    Matches the colour-by histogram semantics (≥ or ≤ level). Used so histogram
+    selections cover the full dataset like saved lasso indices, not only points
+    on the scatter subsample.
+    """
+    e: DashboardExperiment = g.dashboard_exp
+    data = _request_json_dict()
+    col = data.get("column")
+    if not col or not isinstance(col, str) or col not in e.plot_df.columns:
+        return jsonify(error="Invalid column.", rows=[]), 400
+    if col == "index":
+        return jsonify(error="Cannot threshold index column.", rows=[]), 400
+    raw_level = data.get("level")
+    try:
+        level = float(raw_level)
+    except (TypeError, ValueError):
+        return jsonify(error="Invalid threshold level.", rows=[]), 400
+    use_max = bool(data.get("use_max"))
+    series = pd.to_numeric(e.plot_df[col], errors="coerce")
+    if not series.notna().any():
+        return (
+            jsonify(error="Covariate has no numeric values for thresholding.", rows=[]),
+            400,
+        )
+    if use_max:
+        mask = series <= level
+    else:
+        mask = series >= level
+    mask = mask & series.notna()
+    rows_arr = np.flatnonzero(np.asarray(mask, dtype=bool)).astype(np.int64, copy=False)
+    return jsonify(rows=rows_arr.tolist(), n=int(rows_arr.size))
+
+
 # ---------------------------------------------------------------------------
 # Explorer + scatter routes
 # ---------------------------------------------------------------------------
@@ -379,6 +444,8 @@ def explorer():
         preload_cpus=pc,
         preload_cache_time_hint=format_preload_cache_time_hint(pc),
         show_volume_explorer=explorer_volumes_eligible(e),
+        explorer_scatter_max_points=_particle_explorer_scatter_max_points(),
+        explorer_scatter_cap_from_env=_particle_explorer_scatter_cap_from_env(),
     )
 
 
@@ -460,6 +527,7 @@ def api_scatter():
     ycol = request.args.get("y", e.numeric_columns[0])
     ccol = request.args.get("color") or "none"
     filter_ui = request.args.get("filter_ui") == "1"
+    explorer_scatter = request.args.get("explorer_scatter") == "1"
     full = request.args.get("full") == "1"
     if xcol not in e.plot_df.columns or ycol not in e.plot_df.columns:
         return jsonify(error="bad axis column"), 400
@@ -469,6 +537,8 @@ def api_scatter():
         max_pts = _filter_ui_scatter_max_points()
     elif full:
         max_pts = None
+    elif explorer_scatter:
+        max_pts = _particle_explorer_scatter_max_points()
     else:
         max_pts = 200_000
         raw_max_pts = request.args.get("max_points")
@@ -601,12 +671,18 @@ def api_preview_montage():
 
 
 def api_preload_images():
-    """Return a stratified subsample of particle images as base64 JPEGs.
+    """Return base64 JPEG thumbnails for a preload cache.
 
-    Selection: ~2/3 random, ~1/6 high mean distance to reference points, ~1/6
-    high nearest-neighbor distance. Use **POST** with a JSON body when
-    ``selected_rows`` is large (lasso selections); query strings hit proxy /
-    server URI length limits (414).
+    Selection (see :func:`sample_plot_df_rows_for_preload`): half of the picks are
+    uniform random; half favour large k-th nearest-neighbour distance in the
+    scatter plane, with a coarse XY grid so outliers do not pile into one bin.
+
+    Use **POST** with a JSON body when ``selected_rows`` is large (lasso
+    selections); query strings hit proxy / server URI length limits (414).
+
+    With ``restrict_to_scatter_plot`` (particle explorer), thumbnails are drawn only
+    from rows visible in the scatter subsample (same rule as ``api_scatter``, default
+    200k points, seed 0).
     """
     e: DashboardExperiment = g.dashboard_exp
     if not e.can_preview_particles:
@@ -615,12 +691,21 @@ def api_preload_images():
     cols = e.plot_df.columns
     restrict_list: list[int] | None = None
     initial_list: list[int] | None = None
+    restrict_to_scatter = False
+    scatter_max_points = 200_000
 
     if request.method == "POST":
         data = _request_json_dict()
         xcol = str(data.get("x") or "")
         ycol = str(data.get("y") or "")
         response_mode = str(data.get("response_mode") or "full")
+        restrict_to_scatter = bool(data.get("restrict_to_scatter_plot"))
+        smp = data.get("scatter_max_points")
+        if smp is not None and smp != "":
+            try:
+                scatter_max_points = max(1, min(int(smp), 2_000_000))
+            except (TypeError, ValueError):
+                scatter_max_points = 200_000
         try:
             max_images = _parse_preload_image_limit(data.get("cache_size"))
         except ValueError as err:
@@ -659,6 +744,13 @@ def api_preload_images():
         xcol = request.args.get("x", "")
         ycol = request.args.get("y", "")
         response_mode = str(request.args.get("response_mode") or "full")
+        restrict_to_scatter = request.args.get("restrict_to_scatter_plot") == "1"
+        sms = (request.args.get("scatter_max_points") or "").strip()
+        if sms:
+            try:
+                scatter_max_points = max(1, min(int(sms), 2_000_000))
+            except ValueError:
+                scatter_max_points = 200_000
         try:
             max_images = _parse_preload_image_limit(request.args.get("cache_size"))
         except ValueError as err:
@@ -682,10 +774,43 @@ def api_preload_images():
     if ycol not in cols:
         ycol = str(cols[min(1, len(cols) - 1)])
     delta_response = response_mode == "delta"
-    sel_key: tuple[int, ...] | None = (
-        tuple(sorted(set(restrict_list))) if restrict_list else None
-    )
-    key = (e.epoch, e.kmeans_folder_id, xcol, ycol, sel_key)
+
+    scatter_pool: list[int] | None = None
+    if restrict_to_scatter:
+        scatter_pool = [
+            int(x)
+            for x in plot_df_row_indices_for_explorer_scatter(
+                e.plot_df, scatter_max_points
+            )
+        ]
+    sp_set: set[int] | None = set(scatter_pool) if scatter_pool is not None else None
+
+    if restrict_list is not None:
+        if sp_set is not None:
+            preload_restrict_list = [r for r in restrict_list if r in sp_set]
+        else:
+            preload_restrict_list = list(restrict_list)
+    elif scatter_pool is not None:
+        preload_restrict_list = scatter_pool
+    else:
+        preload_restrict_list = initial_list
+
+    def _preload_restriction_key() -> tuple:
+        if restrict_list is not None and sp_set is not None:
+            return (
+                "scatter_sel",
+                scatter_max_points,
+                tuple(sorted({int(r) for r in restrict_list})),
+            )
+        if restrict_list is not None:
+            return ("sel", tuple(sorted({int(r) for r in restrict_list})))
+        if restrict_to_scatter:
+            return ("scatter", scatter_max_points)
+        if initial_list is not None:
+            return ("initial", tuple(sorted({int(r) for r in initial_list})))
+        return ("full",)
+
+    key = (e.epoch, e.kmeans_folder_id, xcol, ycol, _preload_restriction_key())
     cpus = int(current_app.config.get("PRELOAD_CPUS") or 4)
 
     def _encode_indices(global_indices: list[int]) -> list[str]:
@@ -733,7 +858,7 @@ def api_preload_images():
             e,
             xcol,
             ycol,
-            restrict_to_rows=restrict_list,
+            restrict_to_rows=preload_restrict_list,
             exclude_rows=cached_rows,
             max_images=max_images - len(cached_rows),
         )
@@ -761,7 +886,6 @@ def api_preload_images():
         return jsonify(rows=rows, images=imgs, elapsed=elapsed)
 
     t0 = time.monotonic()
-    preload_restrict_list = restrict_list if restrict_list is not None else initial_list
     rows, global_indices = sample_plot_df_rows_for_preload(
         e, xcol, ycol, restrict_to_rows=preload_restrict_list, max_images=max_images
     )
@@ -1417,6 +1541,7 @@ _ROUTES = (
     ("/abinit-builder", abinit_builder_redirect, ("GET",)),
     ("/filter", filter_page_redirect, ("GET",)),
     ("/api/save_selection", api_save_selection, ("POST",)),
+    ("/api/covariate_threshold_rows", api_covariate_threshold_rows, ("POST",)),
     ("/explorer", explorer, ("GET",)),
     ("/api/explorer_volume_media", api_explorer_volume_media, ("POST",)),
     ("/api/scatter", api_scatter, ("GET",)),

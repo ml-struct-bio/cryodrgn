@@ -78,11 +78,10 @@
     pointer-events: none;
     user-select: none;
   }
+  /* Side card height must not change on first selection: legend note stays in flow; disabled
+     state is indicated by fieldset opacity only. */
   fieldset#particle-sel-fieldset:disabled {
     opacity: 0.55;
-  }
-  fieldset#particle-sel-fieldset:disabled .cryo-dash-legend-note {
-    display: none;
   }
   #scatter-controls-card {
     min-width: 0;
@@ -124,16 +123,31 @@
     gap: 0.5rem 0.6rem;
     margin: 0.21rem 0 0.32rem;
   }
+  .cryo-explorer-sel-count-text-col {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.12rem;
+    padding-top: calc(var(--sel-pie-d) * 0.15);
+  }
   /* Beat .card p { margin-bottom: 1rem } so the row height matches the label, not the card paragraph gap. */
   .cryo-explorer-sel-count-row .cryo-explorer-sel-count-text {
     margin: 0 !important;
-    flex: 1 1 auto;
     min-width: 0;
     font-weight: 600;
     font-size: inherit;
     line-height: var(--sel-count-lh);
     color: var(--nav-bg, #243b53);
-    padding-top: calc(var(--sel-pie-d) * 0.15);
+  }
+  .cryo-explorer-sel-count-footnote {
+    margin: 0 !important;
+    /* Was 0.82em; 40% smaller for a muted secondary line */
+    font-size: calc(0.82em * 0.6);
+    font-weight: 400;
+    line-height: 1.3;
+    color: rgba(36, 59, 83, 0.72);
   }
   /* In-flow flex stack (no absolute positioning): avoids zero-height / calc bugs that hid the donut and pinned % to the row top. */
   .cryo-explorer-sel-pie-col {
@@ -554,6 +568,8 @@
     margin-top: 0.1rem;
     font-size: 0.78rem;
     color: var(--muted, #5c6b7a);
+    /* Stable height when labels wrap or threshold copy appears — keeps scatter plot size steady */
+    min-height: 3.25rem;
   }
   .cryo-color-hist-controls label {
     display: inline-flex;
@@ -566,15 +582,18 @@
   }
   #color-threshold-status {
     margin-left: auto;
-    min-height: 1.1em;
+    line-height: 1.35;
+    min-height: 2.7em;
     text-align: right;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
   }
   /*
-   * With a continuous colour covariate, the violin + palette sit under the scatter.
-   * The image-viewer row is normally capped at one viewport height, which squeezes the
-   * square plot stack; let the row grow downward so the stack keeps a true square.
+   * Unfix row height (vs default image-viewer) so plot + colour chrome share one flex column
+   * without the scatter snapping when histogram threshold copy or row expand class toggled.
    */
-  .cryo-dash-page--particle-explorer.cryo-particle-explorer--plot-stack-expand .cryo-dash-row {
+  .cryo-dash-page--particle-explorer.cryo-dash-page--image-viewer .cryo-dash-row {
     height: auto;
     min-height: calc(100svh - var(--cryo-dash-below-nav, 9.5rem));
     max-height: none;
@@ -588,7 +607,7 @@
     <div class="cryo-dash-top" style="margin-bottom:0.25rem;">
       <a href="/">← Back</a>
     </div>
-    <p class="cryo-dash-lead">Use lasso selection to create a particle filtering index; generate images and volumes with or without a selection using the interface on the right.</p>
+    <p class="cryo-dash-lead">Use lasso, box-select, or the colour histogram threshold to define a particle index; generate images and volumes with or without a selection using the interface on the right.</p>
     <div class="card cryo-dash-controls" id="scatter-controls-card">
       <fieldset>
         <legend>Choose axes<br/>and point color scale</legend>
@@ -600,7 +619,10 @@
         <select id="sc"><option value="none">None</option></select>
       </fieldset>
       <div id="sel-count-row" class="cryo-explorer-sel-count-row" role="status" aria-atomic="true">
-        <p id="sel-count" class="cryo-explorer-sel-count-text">Selected: 0/0 particles</p>
+        <div class="cryo-explorer-sel-count-text-col">
+          <p id="sel-count" class="cryo-explorer-sel-count-text">Selected: 0/0 particles</p>
+          <p id="sel-count-footnote" class="cryo-explorer-sel-count-footnote" hidden></p>
+        </div>
         <div class="cryo-explorer-sel-pie-col" aria-hidden="true">
           <div id="sel-pie" class="cryo-explorer-sel-pie" title=""></div>
           <p id="sel-pie-pct" class="cryo-explorer-sel-pie-pct">0.0%</p>
@@ -608,7 +630,7 @@
       </div>
       <fieldset id="particle-sel-fieldset" disabled>
         <legend>Create particle indices</legend>
-        <p class="cryo-dash-legend-note" style="margin:0 0 0.4rem;">Active after you lasso or box-select on the plot.</p>
+        <p class="cryo-dash-legend-note" style="margin:0 0 0.4rem;">Active after you select particles on the plot or with the colour histogram.</p>
         <div class="cryo-explorer-save-btns">
           <button type="button" class="btn" id="save-indices-pkl">Save selection<br/>as <code>indices.pkl</code></button>
           <button type="button" class="btn btn-secondary" id="save-indices-custom">Save selection<br/>as…</button>
@@ -802,6 +824,9 @@
   var defaultPreloadImageLimit = {{ preload_image_limit | tojson }};
   var preloadCpus = {{ preload_cpus | tojson }};
   var initialPreloadImageCount = defaultPreloadImageLimit;
+  /** Match ``api_scatter`` when ``explorer_scatter=1`` (``--filter-max`` or 200k default). */
+  var explorerScatterMaxPoints = {{ explorer_scatter_max_points | tojson }};
+  var explorerScatterCapFromEnv = {{ explorer_scatter_cap_from_env | tojson }};
   var initialImageCacheStarted = false;
 
   var preselectRowsForNextFetch = (initialRows && initialRows.length && initialRows.length <= 5000)
@@ -812,6 +837,7 @@
   var particleSelFs = document.getElementById("particle-sel-fieldset");
   var selCountRowEl = document.getElementById("sel-count-row");
   var selCountEl = document.getElementById("sel-count");
+  var selCountFootnoteEl = document.getElementById("sel-count-footnote");
   var selPieEl = document.getElementById("sel-pie");
   var selPiePctEl = document.getElementById("sel-pie-pct");
   var imageCacheProgressEl = document.getElementById("image-cache-progress");
@@ -830,7 +856,6 @@
   var scatterControlsCard = document.getElementById("scatter-controls-card");
   var scatterControlsSide = scatterControlsCard ? scatterControlsCard.closest(".cryo-dash-side") : null;
   var scatterPlotStack = document.getElementById("scatter-plot-stack");
-  var particleExplorerPageEl = document.querySelector(".cryo-dash-page--particle-explorer");
   var boxSelectTooltipEl = document.getElementById("box-select-tooltip");
   var montageActionsEl = document.getElementById("montage-actions");
 
@@ -928,8 +953,24 @@
     var n = saveSelectionRows.length;
     var nFmt = Number(n).toLocaleString("en-CA");
     var totalFmt = Number(totalParticles).toLocaleString("en-CA");
+    var plotCap = scatterSubsetRowCount();
+    var plotCapFmt = Number(plotCap).toLocaleString("en-CA");
+    var curtailed = totalParticles > plotCap;
     if (selCountEl) {
       selCountEl.textContent = "Selected: " + nFmt + "/" + totalFmt + " particles";
+    }
+    if (selCountFootnoteEl) {
+      if (curtailed) {
+        var capWhy = explorerScatterCapFromEnv
+          ? "The scatter plot subsamples points — cap from --filter-max or CRYODRGN_DASHBOARD_FILTER_MAX_POINTS."
+          : "The scatter plot subsamples points — built-in explorer cap.";
+        selCountFootnoteEl.textContent =
+          "— scatter shows " + plotCapFmt + " of " + totalFmt + ". " + capWhy;
+        selCountFootnoteEl.hidden = false;
+      } else {
+        selCountFootnoteEl.textContent = "";
+        selCountFootnoteEl.hidden = true;
+      }
     }
     var frac = 0;
     var pctStr = "0.0%";
@@ -943,11 +984,20 @@
       selPieEl.title = pctStr + " of dataset particles selected";
     }
     if (selCountRowEl) {
-      selCountRowEl.title = selectionTooltipText || "";
-      selCountRowEl.setAttribute(
-        "aria-label",
-        "Selected " + nFmt + " of " + totalFmt + " particles, " + pctStr
-      );
+      var scatterHint = "";
+      if (curtailed) {
+        scatterHint = "Lasso and box apply only to plotted points.";
+      }
+      if (selectionTooltipText && scatterHint) {
+        selCountRowEl.title = selectionTooltipText + " — " + scatterHint;
+      } else {
+        selCountRowEl.title = selectionTooltipText || scatterHint;
+      }
+      var aria = "Selected " + nFmt + " of " + totalFmt + " particles, " + pctStr;
+      if (curtailed) {
+        aria += "; scatter " + plotCapFmt + " of " + totalFmt;
+      }
+      selCountRowEl.setAttribute("aria-label", aria);
     }
     if (particleSelFs) particleSelFs.disabled = (n === 0);
   }
@@ -1229,14 +1279,15 @@
     return out;
   }
 
-  function randomPlotRows(count) {
+  function scatterPlottedRowBudget() {
     var n = Math.max(0, Number(totalParticles) || 0);
-    var want = Math.min(Math.max(0, count), n);
-    var seen = new Set();
-    while (seen.size < want) {
-      seen.add(Math.floor(Math.random() * n));
-    }
-    return Array.from(seen);
+    return Math.min(n, explorerScatterMaxPoints);
+  }
+
+  /** Rows in the scatter subsample (matches server ``restrict_to_scatter_plot`` pool). */
+  function scatterSubsetRowCount() {
+    if (plotHasScatterData()) return gd.data[0].customdata.length;
+    return scatterPlottedRowBudget();
   }
 
   function rowToTraceIndex(row) {
@@ -1301,15 +1352,37 @@
     return preloaded && preloaded.rows ? preloaded.rows.size : 0;
   }
 
+  /** Cached rows that also appear on the current scatter trace (subsample may omit most dataset rows). */
+  function traceMapCachedCount() {
+    return preloaded && preloaded.traceMap ? preloaded.traceMap.length : 0;
+  }
+
+  function formatCachedSelectionStatusCore(activeInSelection) {
+    var nPlot = traceMapCachedCount();
+    var nTot = cachedImageCount();
+    if (!nTot) return "";
+    if (nPlot === nTot) {
+      return activeInSelection + " of " + nTot + " cached images in selection";
+    }
+    return activeInSelection + " of " + nPlot + " on-scatter cached in selection ("
+      + nTot + " thumbnails loaded)";
+  }
+
+  function setPreloadStatusCachedTotalOnly() {
+    if (!preloadStatus || !preloaded) return;
+    var n = cachedImageCount();
+    preloadStatus.textContent = n ? n + " images cached." : "";
+  }
+
   function allImagesCached() {
-    return cachedImageCount() >= Math.max(0, Number(totalParticles) || 0);
+    return cachedImageCount() >= scatterSubsetRowCount();
   }
 
   function syncImageCacheButton(loading) {
     btnViewImages.textContent = "Load all images";
     btnViewImages.disabled = !!loading || !preloaded || allImagesCached();
     btnViewImages.title = allImagesCached()
-      ? "All dataset images are loaded."
+      ? "All particle images on the current scatter are loaded."
       : (btnViewImages.disabled ? "Image cache is not ready yet." : "");
   }
 
@@ -1355,16 +1428,23 @@
 
   function fetchPreload(xcol, ycol, onDone, opts) {
     opts = opts || {};
-    var cacheSize = opts.cacheSize || totalParticles;
+    var cacheSize = opts.cacheSize || scatterSubsetRowCount();
     preloadedAxes = {x: xcol, y: ycol};
+    var plottedCap = scatterSubsetRowCount();
     var overlayLabel = opts.fullLoad
-      ? "Loading all " + Number(totalParticles).toLocaleString("en-CA") + " dataset images..."
+      ? "Loading all " + Number(plottedCap).toLocaleString("en-CA") + " plotted particle images..."
       : "Loading image cache...";
     setMontagePreloadOverlay(true, overlayLabel);
     syncImageCacheButton(true);
     var body = { x: xcol, y: ycol, cache_size: cacheSize };
     if (opts.delta) {
       body.response_mode = "delta";
+    }
+    if (opts.restrictToScatterPlot) {
+      body.restrict_to_scatter_plot = true;
+      body.scatter_max_points = opts.scatterMaxPoints != null
+        ? opts.scatterMaxPoints
+        : explorerScatterMaxPoints;
     }
     if (opts.initialRows && opts.initialRows.length) {
       body.initial_rows = opts.initialRows.slice();
@@ -1428,8 +1508,8 @@
         if (data.elapsed != null) msg += " in " + data.elapsed + "s";
         if (preloadStatus && !opts.suppressStatus) {
           if (activePool && activePool.length) {
-            preloadStatus.textContent = activePool.length + " of " + preloaded.traceMap.length
-              + " in selection — " + msg + ".";
+            preloadStatus.textContent = formatCachedSelectionStatusCore(activePool.length)
+              + " — " + msg + ".";
           } else {
             preloadStatus.textContent = msg + ".";
           }
@@ -1458,12 +1538,10 @@
   function startInitialImageCache() {
     if (initialImageCacheStarted || !totalParticles) return Promise.resolve(null);
     initialImageCacheStarted = true;
-    var rows = randomPlotRows(initialPreloadImageCount);
-    if (!rows.length) return Promise.resolve(null);
     return fetchPreload(sx.value, sy.value, null, {
-      cacheSize: rows.length,
-      initialRows: rows,
-      enableImages: true
+      cacheSize: initialPreloadImageCount,
+      enableImages: true,
+      restrictToScatterPlot: true
     }).catch(function(e) {
       console.error("initial preload failed", e);
       return null;
@@ -1471,22 +1549,16 @@
   }
 
   function initializeExplorerView() {
-    if (Number(preloadCpus) > 1) {
-      startInitialImageCache();
-      loadPlot(true);
-      return;
-    }
-    startInitialImageCache().then(function() {
-      loadPlot(true);
-    });
+    startInitialImageCache();
+    loadPlot(true);
   }
 
   function loadAllImagesInChunks() {
-    var total = Math.max(0, Number(totalParticles) || 0);
+    var total = scatterSubsetRowCount();
     var chunkSize = imageCacheChunkSize(total);
     setMontagePreloadOverlay(
       true,
-      "Loading all " + Number(total).toLocaleString("en-CA") + " dataset images..."
+      "Loading all " + Number(total).toLocaleString("en-CA") + " plotted particle images..."
     );
     if (preloadStatus) preloadStatus.textContent = "";
     setImageCacheProgress(true, cachedImageCount(), total);
@@ -1513,7 +1585,8 @@
         fullLoad: true,
         keepOverlayAfterSuccess: true,
         suppressStatus: true,
-        suppressMontageUpdate: true
+        suppressMontageUpdate: true,
+        restrictToScatterPlot: true
       }).then(function() {
         if (cachedImageCount() <= before) {
           throw new Error("Image cache did not advance.");
@@ -1755,9 +1828,6 @@
   }
 
   function syncParticleExplorerRowExpandForColorHist() {
-    if (!particleExplorerPageEl) return;
-    var expand = !!(colorHistPanel && !colorHistPanel.hidden);
-    particleExplorerPageEl.classList.toggle("cryo-particle-explorer--plot-stack-expand", expand);
     window.requestAnimationFrame(function() {
       syncScatterControlsAlignment();
       try {
@@ -1838,6 +1908,20 @@
         annotations: colorHistogramGuideAnnotations()
       });
     } catch (err) {}
+  }
+
+  /**
+   * Lasso/box selection invalidates colour-threshold mode. Drop the threshold guide
+   * and status text without rebuilding the violin (avoids O(n log n) histogram work).
+   */
+  function clearColorHistogramThresholdForGeometricSelection() {
+    var hadThresholdGuide = colorThresholdLevel != null && colorThresholdColorCol === sc.value;
+    colorThresholdLevel = null;
+    colorThresholdColorCol = null;
+    if (colorThresholdStatus) colorThresholdStatus.textContent = "";
+    if (hadThresholdGuide && colorHistDiv && colorHistDiv.data) {
+      relayoutColorHistogramGuides();
+    }
   }
 
   function scheduleColorHistogramGuideRelayout(level) {
@@ -2452,6 +2536,17 @@
   var highlightRestyleRaf = null;
   var pendingHighlightRestyle = null;
 
+  function clearScatterGeometricSelection() {
+    if (!gd) return;
+    try {
+      Plotly.relayout(gd, { selections: [] });
+    } catch (e) {
+      try {
+        Plotly.relayout(gd, { selections: [], selectionrevision: Date.now() });
+      } catch (e2) {}
+    }
+  }
+
   function applyPreselectedTraceIndices() {
     var meta = gd.layout && gd.layout.meta;
     var pre = meta && meta.cdrgn_preselected;
@@ -2538,6 +2633,14 @@
     var preservedDragMode = (
       gd && gd.layout && gd.layout.dragmode
     ) ? String(gd.layout.dragmode) : "";
+    var preservedSelections = null;
+    if (!axesChanged && gd && gd.layout && gd.layout.selections && gd.layout.selections.length) {
+      try {
+        preservedSelections = JSON.parse(JSON.stringify(gd.layout.selections));
+      } catch (e) {
+        preservedSelections = null;
+      }
+    }
     var hasActiveSelection = !!(saveSelectionRows && saveSelectionRows.length);
     suppressSelectionEvents = true;
     highlightTraceAdded = false;
@@ -2560,6 +2663,7 @@
     var q = "x=" + encodeURIComponent(x)
       + "&y=" + encodeURIComponent(y)
       + "&color=" + encodeURIComponent(c)
+      + "&explorer_scatter=1"
       + "&marker_size=2"
       + "&palette=" + encodeURIComponent(selectedScatterPalette());
     if (preselectRowsForNextFetch.length) {
@@ -2621,6 +2725,17 @@
                 preselectRowsForNextFetch = [];
               }
               applySavedSelectionToCurrentTrace();
+              if (preservedSelections && preservedSelections.length) {
+                try {
+                  var srev = gd.layout && gd.layout.selectionrevision != null
+                    ? gd.layout.selectionrevision
+                    : 0;
+                  Plotly.relayout(gd, {
+                    selections: preservedSelections,
+                    selectionrevision: srev + 1
+                  });
+                } catch (e) {}
+              }
               renderColorHistogram();
               if (imagesViewEnabled && preloaded && preloaded.traceMap) {
                 if (lassoSelectedRowSet && lassoSelectedRowSet.size) {
@@ -2629,10 +2744,9 @@
                   });
                   if (preloadStatus) {
                     if (activePool.length) {
-                      preloadStatus.textContent = activePool.length + " of " + preloaded.traceMap.length
-                        + " cached images in selection.";
+                      preloadStatus.textContent = formatCachedSelectionStatusCore(activePool.length) + ".";
                     } else {
-                      preloadStatus.textContent = preloaded.traceMap.length + " images cached.";
+                      setPreloadStatusCachedTotalOnly();
                     }
                   }
                 }
@@ -2768,7 +2882,7 @@
       activePool = null;
       lassoSelectedRowSet = null;
       if (imagesViewEnabled && preloaded && preloadStatus) {
-        preloadStatus.textContent = preloaded.traceMap.length + " images cached.";
+        setPreloadStatusCachedTotalOnly();
       }
       invalidateVolumeArtifacts();
       return;
@@ -2781,7 +2895,7 @@
       });
       if (preloadStatus) {
         preloadStatus.textContent = (statusPrefix || "Selection") + ": "
-          + activePool.length + " of " + preloaded.traceMap.length + " cached images.";
+          + formatCachedSelectionStatusCore(activePool.length) + ".";
       }
       if (activePool.length) {
         showRandomFromPool();
@@ -2798,18 +2912,46 @@
     }
   }
 
-  function applyColorThresholdSelection(level) {
-    var items = currentColorValueItems();
-    if (!items.length || typeof level !== "number" || !isFinite(level)) return;
-    var useMax = !!(colorThresholdUseMax && colorThresholdUseMax.checked);
+  function rowsMatchingColorThresholdFromTrace(items, level, useMax) {
     var rows = [];
     for (var i = 0; i < items.length; i++) {
       if (useMax ? items[i].value <= level : items[i].value >= level) rows.push(items[i].row);
     }
+    return rows;
+  }
+
+  function applyColorThresholdSelection(level) {
+    var items = currentColorValueItems();
+    if (!items.length || typeof level !== "number" || !isFinite(level)) return;
+    cancelLassoSelectionDebounce();
+    clearScatterGeometricSelection();
+    var useMax = !!(colorThresholdUseMax && colorThresholdUseMax.checked);
     colorThresholdLevel = level;
     colorThresholdColorCol = sc.value;
-    applyRowsSelection(rows, "Colour threshold");
-    renderColorHistogram();
+    fetch("{{ url_for('api_covariate_threshold_rows') }}", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        column: sc.value,
+        level: level,
+        use_max: useMax
+      })
+    })
+      .then(function(r) {
+        return r.json().then(function(j) { return { ok: r.ok, j: j }; });
+      })
+      .then(function(res) {
+        var rows = (res.ok && res.j && Array.isArray(res.j.rows))
+          ? res.j.rows
+          : rowsMatchingColorThresholdFromTrace(items, level, useMax);
+        applyRowsSelection(rows, "Colour threshold");
+        renderColorHistogram();
+      })
+      .catch(function() {
+        var rows = rowsMatchingColorThresholdFromTrace(items, level, useMax);
+        applyRowsSelection(rows, "Colour threshold");
+        renderColorHistogram();
+      });
   }
 
   function handleColorHistogramClick(evt) {
@@ -2921,7 +3063,7 @@
       if (!snap.length) {
         activePool = null;
         lassoSelectedRowSet = null;
-        if (preloadStatus) preloadStatus.textContent = preloaded.traceMap.length + " images cached.";
+        if (preloadStatus) setPreloadStatusCachedTotalOnly();
         return;
       }
       var selectedTi = new Set();
@@ -2935,8 +3077,9 @@
       for (var lp = 0; lp < activePool.length; lp++) {
         lassoSelectedRowSet.add(activePool[lp].row);
       }
-      var msg = activePool.length + " of " + preloaded.traceMap.length + " cached images in selection";
-      if (preloadStatus) preloadStatus.textContent = msg + ".";
+      if (preloadStatus) {
+        preloadStatus.textContent = formatCachedSelectionStatusCore(activePool.length) + ".";
+      }
       if (activePool.length) {
         showRandomFromPool();
       }
@@ -2944,9 +3087,7 @@
 
     gd.on("plotly_selected", function(ev) {
       if (suppressSelectionEvents) return;
-      colorThresholdLevel = null;
-      colorThresholdColorCol = null;
-      renderColorHistogram();
+      clearColorHistogramThresholdForGeometricSelection();
       var snap = snapshotSelectedPoints(ev);
       var rowsSnap = snapshotRowsFromPoints(ev);
       selectionTooltipText = boxSelectionTooltip(ev);
@@ -2963,9 +3104,7 @@
     });
     gd.on("plotly_deselect", function() {
       if (suppressSelectionEvents) return;
-      colorThresholdLevel = null;
-      colorThresholdColorCol = null;
-      renderColorHistogram();
+      clearColorHistogramThresholdForGeometricSelection();
       hideBoxSelectTooltip();
       cancelLassoSelectionDebounce();
       saveSelectionRows = [];
@@ -2974,7 +3113,7 @@
       activePool = null;
       lassoSelectedRowSet = null;
       if (imagesViewEnabled && preloaded && preloadStatus) {
-        preloadStatus.textContent = preloaded.traceMap.length + " images cached.";
+        setPreloadStatusCachedTotalOnly();
       }
     });
     gd.addEventListener("mouseleave", hideBoxSelectTooltip);
@@ -3126,7 +3265,7 @@
     status.textContent = "";
     status.title = "";
     if (!saveSelectionRows.length) {
-      status.textContent = "Select particles on the plot before saving.";
+      status.textContent = "Select particles (plot or colour histogram) before saving.";
       status.title = status.textContent;
       return;
     }

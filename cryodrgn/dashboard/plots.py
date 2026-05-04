@@ -153,6 +153,26 @@ def _subsample(
     return df, np.arange(n, dtype=np.int64)
 
 
+def plot_df_row_indices_for_explorer_scatter(
+    plot_df: pd.DataFrame,
+    max_points: int = 200_000,
+    *,
+    seed: int = 0,
+) -> np.ndarray:
+    """``plot_df`` row positions shown in the particle explorer scatter (``api_scatter`` defaults).
+
+    Matches :func:`scatter_json` / ``api_scatter`` when the request does not set
+    ``filter_ui`` or ``full`` — same ``max_points`` cap and fixed RNG ``seed``.
+
+    Returns
+    -------
+    np.ndarray
+        Integer indices into ``plot_df`` (same as ``customdata[:, 1]`` for those points).
+    """
+    _, row_indices = _subsample(plot_df, max_points, seed=seed)
+    return row_indices
+
+
 def _axes_cell_bboxes(axes: np.ndarray) -> list[dict[str, float]]:
     """Per-cell axis bounding boxes in figure coordinates (row-major)."""
     zdim = int(axes.shape[0])

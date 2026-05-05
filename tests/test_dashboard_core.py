@@ -17,6 +17,7 @@ from cryodrgn.dashboard.context import (
     _argv_four_command_lines,
     _cmd_argv_for_nav_display,
     _config_has_cryodrgn_cmd,
+    _run_log_cryodrgn_version,
     _workdir_options,
     abbrev_middle,
     active_workdir,
@@ -252,6 +253,51 @@ class TestConfigHasCryodrgnCmd:
     )
     def test_detects_cryodrgn(self, cfg: object, expected: bool) -> None:
         assert _config_has_cryodrgn_cmd(cfg) is expected
+
+
+class TestRunLogCryodrgnVersion:
+    """``run.log`` parsing for the dashboard ``trained with cryoDRGN …`` stamp.
+
+    The first line is often ``sys.argv`` (``.../cryodrgn train_vae ...``). The parser
+    must not treat ``train_vae`` as a version string.
+    """
+
+    def test_prefers_version_line_after_argv(self, tmp_path) -> None:
+        log = tmp_path / "run.log"
+        log.write_text(
+            "/opt/conda/bin/cryodrgn train_vae particles.txt -o out\n"
+            "cryoDRGN 4.2.2.dev3+g7c39d6d22.d20260426\n",
+            encoding="utf-8",
+        )
+        full, short, title = _run_log_cryodrgn_version(str(tmp_path))
+        assert full == "4.2.2.dev3+g7c39d6d22.d20260426"
+        assert short == "4.2.2.dev3"
+        assert title is not None
+        assert "4.2.2.dev3" in title
+        assert str(log.resolve()) in title or str(log) in title
+
+    def test_skips_subcommand_without_leading_digit(self, tmp_path) -> None:
+        (tmp_path / "run.log").write_text(
+            "prefix cryodrgn train_vae suffix\n",
+            encoding="utf-8",
+        )
+        assert _run_log_cryodrgn_version(str(tmp_path)) == (None, None, None)
+
+    def test_matches_logged_line_with_level_prefix(self, tmp_path) -> None:
+        (tmp_path / "run.log").write_text(
+            "INFO:__main__:cryoDRGN 3.1.0\n",
+            encoding="utf-8",
+        )
+        full, short, title = _run_log_cryodrgn_version(str(tmp_path))
+        assert full == "3.1.0"
+        assert short == "3.1.0"
+        assert title and "3.1.0" in title
+
+    def test_missing_run_log_returns_none(self, tmp_path) -> None:
+        assert _run_log_cryodrgn_version(str(tmp_path)) == (None, None, None)
+
+    def test_empty_workdir_returns_none(self) -> None:
+        assert _run_log_cryodrgn_version("") == (None, None, None)
 
 
 class TestDiscoverCryodrgnWorkdirs:

@@ -1460,13 +1460,12 @@
     var target = have + uncached.length;
     var overlayLabel = "Caching " + fmtInt(uncached.length) + " selected image"
       + (uncached.length === 1 ? "" : "s") + "…";
-    fetchPreload(sx.value, sy.value, null, {
-      cacheSize: target,
-      delta: !!preloaded,
+    preloadImagesInChunksToTarget({
+      finalTarget: target,
+      overlayLabel: overlayLabel,
       enableImages: true,
       restrictToScatterPlot: true,
-      selectedRows: uncached,
-      overlayLabel: overlayLabel
+      selectedRows: uncached
     }).catch(function(e) {
       console.error("cache selection failed", e);
     });
@@ -2110,6 +2109,153 @@
     return Math.min(5000, Math.max(minChunk, targetChunk));
   }
 
+  /** Next absolute ``cache_size`` for one preload request when growing toward ``finalTarget``. */
+  function computeNextCacheChunkTarget(before, finalTarget, scatterTotalForStepping) {
+    if (before >= finalTarget) return before;
+    var step;
+    if (scatterTotalForStepping != null) {
+      var st = scatterTotalForStepping;
+      step = imageCacheChunkSize(st);
+      var userTarget = readMontageCacheSizeInput();
+      var roomTowardUser = userTarget - before;
+      if (roomTowardUser > 0) {
+        step = Math.max(1, Math.min(step, roomTowardUser));
+      } else {
+        step = Math.max(1, Math.min(step, st - before));
+      }
+      return Math.min(finalTarget, Math.min(st, before + step));
+    }
+    step = imageCacheChunkSize(finalTarget);
+    step = Math.max(1, Math.min(step, finalTarget - before));
+    return Math.min(finalTarget, before + step);
+  }
+
+  function refreshPreloadStatusAfterChunkedLoad() {
+    if (!preloadStatus || !preloaded) return;
+    var msg = fmtInt(cachedImageCount()) + " images cached.";
+    if (activePool && activePool.length) {
+      preloadStatus.textContent = formatCachedSelectionStatusCore(activePool.length) + " — " + msg;
+    } else {
+      preloadStatus.textContent = msg;
+    }
+  }
+
+  /**
+   * Grow the server+client cache toward ``finalTarget`` with chunked requests so the
+   * progress bar updates during build, expand, selection fetch, and load-all.
+   */
+  function preloadImagesInChunksToTarget(opts) {
+    opts = opts || {};
+    var finalTarget = Math.max(0, Number(opts.finalTarget) || 0);
+    var overlayLabel = opts.overlayLabel || "Loading image cache...";
+    var scatterTotalForStepping = opts.scatterTotalForStepping != null
+      ? opts.scatterTotalForStepping
+      : null;
+    var enableImages = opts.enableImages !== false;
+    var restrictToScatterPlot = !!opts.restrictToScatterPlot;
+    var scatterMaxPoints = opts.scatterMaxPoints;
+    var selectedRows = opts.selectedRows || null;
+    var suppressHighlightsDuring = !!opts.suppressHighlightsDuring;
+    var fullLoad = !!opts.fullLoad;
+
+    if (finalTarget < 1) {
+      return Promise.resolve(null);
+    }
+
+    setMontagePreloadOverlay(true, overlayLabel);
+    if (opts.clearStatusAtStart && preloadStatus) preloadStatus.textContent = "";
+    setImageCacheProgress(true, cachedImageCount(), finalTarget);
+    if (suppressHighlightsDuring) {
+      suppressPlotGridHighlights = true;
+      syncHighlightTraceAnnotations();
+    }
+    syncImageCacheButton(true);
+
+    function finishSuccess() {
+      setMontagePreloadOverlay(false);
+      setImageCacheProgress(true, finalTarget, finalTarget);
+      if (suppressHighlightsDuring) {
+        suppressPlotGridHighlights = false;
+        syncHighlightTraceAnnotations();
+      }
+      refreshPreloadStatusAfterChunkedLoad();
+      showRandomPreloaded();
+      syncImageCacheButton(false);
+      syncVolumeExploreButtons();
+    }
+
+    /** Server returned OK but added no new thumbnails (common for selection vs scatter subsample). */
+    function finishPlateauNoNewImages() {
+      setMontagePreloadOverlay(false);
+      var n = cachedImageCount();
+      setImageCacheProgress(true, n, finalTarget);
+      if (suppressHighlightsDuring) {
+        suppressPlotGridHighlights = false;
+        syncHighlightTraceAnnotations();
+      }
+      refreshPreloadStatusAfterChunkedLoad();
+      if (preloadStatus && n < finalTarget) {
+        preloadStatus.textContent = (preloadStatus.textContent || "").trim()
+          + " — Could not add more (off-scatter selection, already cached, or server cache cap).";
+      }
+      showRandomPreloaded();
+      syncImageCacheButton(false);
+      syncVolumeExploreButtons();
+    }
+
+    function nextChunk() {
+      var before = cachedImageCount();
+      if (before >= finalTarget) {
+        finishSuccess();
+        return Promise.resolve(null);
+      }
+      var target = computeNextCacheChunkTarget(before, finalTarget, scatterTotalForStepping);
+      if (target <= before) {
+        finishSuccess();
+        return Promise.resolve(null);
+      }
+      var isDelta = !!preloaded;
+      return fetchPreload(sx.value, sy.value, null, {
+        cacheSize: target,
+        enableImages: enableImages,
+        delta: isDelta,
+        fullLoad: fullLoad,
+        keepOverlayAfterSuccess: true,
+        suppressStatus: true,
+        suppressMontageUpdate: true,
+        restrictToScatterPlot: restrictToScatterPlot,
+        scatterMaxPoints: scatterMaxPoints,
+        selectedRows: selectedRows,
+        overlayLabel: overlayLabel
+      }).then(function() {
+        if (cachedImageCount() <= before) {
+          if (isDelta) {
+            finishPlateauNoNewImages();
+            return Promise.resolve(null);
+          }
+          throw new Error("Image cache did not advance.");
+        }
+        setImageCacheProgress(true, cachedImageCount(), finalTarget);
+        return nextChunk();
+      });
+    }
+
+    return nextChunk()
+      .catch(function(e) {
+        console.error("chunked preload failed", e);
+        setImageCacheProgress(false);
+        if (suppressHighlightsDuring) {
+          suppressPlotGridHighlights = false;
+          syncHighlightTraceAnnotations();
+        }
+        if (preloadStatus) preloadStatus.textContent = e.message || "Image cache failed.";
+        setMontagePreloadOverlay(false);
+        syncImageCacheButton(false);
+        syncVolumeExploreButtons();
+        throw e;
+      });
+  }
+
   function fetchPreload(xcol, ycol, onDone, opts) {
     opts = opts || {};
     var cacheSize = opts.cacheSize || scatterSubsetRowCount();
@@ -2242,12 +2388,13 @@
     var before = cachedImageCount();
     if (target <= before) return;
     var label = "Expanding cache to " + fmtInt(target) + " images…";
-    fetchPreload(sx.value, sy.value, null, {
-      cacheSize: target,
-      delta: true,
+    preloadImagesInChunksToTarget({
+      finalTarget: target,
+      overlayLabel: label,
       enableImages: true,
-      restrictToScatterPlot: true,
-      overlayLabel: label
+      restrictToScatterPlot: true
+    }).catch(function(e) {
+      console.error("expand cache failed", e);
     });
   }
 
@@ -2255,11 +2402,11 @@
     if (preloaded || !totalParticles || !plotHasScatterData()) return;
     if (scatterSubsetRowCount() < 1) return;
     var sz = readMontageCacheSizeInput();
-    fetchPreload(sx.value, sy.value, null, {
-      cacheSize: sz,
+    preloadImagesInChunksToTarget({
+      finalTarget: sz,
+      overlayLabel: "Building cache (" + fmtInt(sz) + " images)…",
       enableImages: true,
-      restrictToScatterPlot: true,
-      overlayLabel: "Building cache (" + fmtInt(sz) + " images)…"
+      restrictToScatterPlot: true
     }).catch(function(e) {
       console.error("build cache failed", e);
     });
@@ -2271,66 +2418,18 @@
 
   function loadAllImagesInChunks() {
     var total = scatterSubsetRowCount();
-    setMontagePreloadOverlay(
-      true,
-      "Loading all " + fmtInt(total) + " plotted particle images..."
-    );
-    if (preloadStatus) preloadStatus.textContent = "";
-    setImageCacheProgress(true, cachedImageCount(), total);
-    suppressPlotGridHighlights = true;
-    syncHighlightTraceAnnotations();
-    syncImageCacheButton(true);
-
-    function nextChunk() {
-      var before = cachedImageCount();
-      if (before >= total) {
-        setMontagePreloadOverlay(false);
-        setImageCacheProgress(true, total, total);
-        suppressPlotGridHighlights = false;
-        syncHighlightTraceAnnotations();
-        syncImageCacheButton(false);
-        syncVolumeExploreButtons();
-        return Promise.resolve(null);
-      }
-      var step = imageCacheChunkSize(total);
-      var userTarget = readMontageCacheSizeInput();
-      var roomTowardUser = userTarget - before;
-      if (roomTowardUser > 0) {
-        step = Math.max(1, Math.min(step, roomTowardUser));
-      } else {
-        step = Math.max(1, Math.min(step, total - before));
-      }
-      var target = Math.min(total, before + step);
-      return fetchPreload(sx.value, sy.value, null, {
-        cacheSize: target,
-        enableImages: true,
-        delta: true,
-        fullLoad: true,
-        keepOverlayAfterSuccess: true,
-        suppressStatus: true,
-        suppressMontageUpdate: true,
-        restrictToScatterPlot: true
-      }).then(function() {
-        if (cachedImageCount() <= before) {
-          throw new Error("Image cache did not advance.");
-        }
-        setImageCacheProgress(true, cachedImageCount(), total);
-        return nextChunk();
-      });
-    }
-
-    return nextChunk()
+    return preloadImagesInChunksToTarget({
+      finalTarget: total,
+      scatterTotalForStepping: total,
+      overlayLabel: "Loading all " + fmtInt(total) + " plotted particle images...",
+      enableImages: true,
+      restrictToScatterPlot: true,
+      suppressHighlightsDuring: true,
+      fullLoad: true,
+      clearStatusAtStart: true
+    })
       .catch(function(e) {
         console.error("load all images failed", e);
-        setImageCacheProgress(false);
-        suppressPlotGridHighlights = false;
-        syncHighlightTraceAnnotations();
-        if (preloadStatus) preloadStatus.textContent = e.message || "Image cache failed.";
-        setMontagePreloadOverlay(false);
-      })
-      .then(function() {
-        syncImageCacheButton(false);
-        syncVolumeExploreButtons();
       });
   }
 

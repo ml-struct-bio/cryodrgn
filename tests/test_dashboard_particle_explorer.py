@@ -630,6 +630,43 @@ class TestApiPreloadImages:
         assert pool
         assert set(js["rows"]).issubset(pool)
 
+    def test_selected_rows_only_off_scatter_subsample_returns_no_images(
+        self,
+        flask_client,
+        dashboard_experiment: DashboardExperiment,
+    ) -> None:
+        """Selection-only preload intersects with scatter pool; off-pool rows encode nothing.
+
+        Matches chunked ``Add selection images`` when some picks are not in the
+        downsampled scatter — the UI should plateau instead of erroring.
+        """
+        from cryodrgn.dashboard.plots import plot_df_row_indices_for_explorer_scatter
+
+        PRELOAD_CACHE.clear()
+        cap = 10
+        pool = set(
+            plot_df_row_indices_for_explorer_scatter(dashboard_experiment.plot_df, cap)
+        )
+        assert len(pool) == cap
+        n = len(dashboard_experiment.plot_df)
+        off_scatter = next(i for i in range(n) if i not in pool)
+
+        r = flask_client.post(
+            "/api/preload_images",
+            json={
+                "x": "UMAP1",
+                "y": "UMAP2",
+                "cache_size": 5,
+                "restrict_to_scatter_plot": True,
+                "scatter_max_points": cap,
+                "selected_rows": [off_scatter],
+            },
+        )
+        assert r.status_code == 200
+        js = r.get_json()
+        assert js["rows"] == []
+        assert js["images"] == []
+
 
 class TestParticleExplorerTemplateRegressions:
     def test_particle_page_exposes_cache_progress_and_image_grid_shell(
@@ -716,6 +753,77 @@ class TestPreloadDeltaResponses:
         assert second.get_json()["images"] == []
         assert second.get_json()["total_cached"] == cached_count
         assert second.get_json().get("batch_elapsed") == 0.0
+
+    def test_delta_response_empty_when_cache_size_below_server_rows(
+        self, flask_client
+    ) -> None:
+        """Smaller ``cache_size`` than the stored PRELOAD_CACHE row count → empty delta.
+
+        The particle explorer must treat this as a plateau (no client-side error), not
+        assume every chunk grows ``cachedImageCount()``.
+        """
+        PRELOAD_CACHE.clear()
+        first = flask_client.post(
+            "/api/preload_images",
+            json={"x": "UMAP1", "y": "UMAP2", "cache_size": 6},
+        )
+        assert first.status_code == 200, first.get_json()
+        cached_count = first.get_json()["total_cached"]
+        assert cached_count >= 1
+
+        second = flask_client.post(
+            "/api/preload_images",
+            json={
+                "x": "UMAP1",
+                "y": "UMAP2",
+                "cache_size": 2,
+                "response_mode": "delta",
+            },
+        )
+        assert second.status_code == 200, second.get_json()
+        js = second.get_json()
+        assert js["rows"] == []
+        assert js["images"] == []
+        assert js["total_cached"] == cached_count
+
+    def test_delta_nothing_new_when_extending_with_same_cap_and_full_cache(
+        self, flask_client
+    ) -> None:
+        PRELOAD_CACHE.clear()
+        first = flask_client.post(
+            "/api/preload_images",
+            json={"x": "UMAP1", "y": "UMAP2", "cache_size": 4},
+        )
+        assert first.status_code == 200, first.get_json()
+        n0 = first.get_json()["total_cached"]
+
+        second = flask_client.post(
+            "/api/preload_images",
+            json={
+                "x": "UMAP1",
+                "y": "UMAP2",
+                "cache_size": 8,
+                "response_mode": "delta",
+            },
+        )
+        assert second.status_code == 200, second.get_json()
+        n1 = second.get_json()["total_cached"]
+        assert n1 >= n0
+
+        third = flask_client.post(
+            "/api/preload_images",
+            json={
+                "x": "UMAP1",
+                "y": "UMAP2",
+                "cache_size": 8,
+                "response_mode": "delta",
+            },
+        )
+        assert third.status_code == 200, third.get_json()
+        js = third.get_json()
+        assert js["rows"] == []
+        assert js["images"] == []
+        assert js["total_cached"] == n1
 
     @pytest.mark.parametrize("bad_cache_size", [True, False, 2.5, "2.5"])
     def test_non_integer_cache_sizes_are_rejected(

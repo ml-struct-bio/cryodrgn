@@ -8,7 +8,9 @@ read everything through these helpers so cache invalidation stays centralised.
 
 from __future__ import annotations
 
+import datetime
 import os
+import re
 import shlex
 from pathlib import Path
 
@@ -20,6 +22,83 @@ from cryodrgn.dashboard.command_builder_data import (
     COMMAND_BUILDER_SCHEMA,
 )
 from cryodrgn.dashboard.data import DashboardExperiment, list_z_epochs, load_experiment
+
+# ---------------------------------------------------------------------------
+# Template helpers (version / epoch stamp)
+# ---------------------------------------------------------------------------
+
+
+def _cryodrgn_version_context() -> dict[str, str]:
+    """Installed package version for nav (full string in tooltips)."""
+    try:
+        from cryodrgn import __version__ as ver  # type: ignore[attr-defined]
+    except Exception:
+        ver = "unknown"
+    ver = str(ver).strip() or "unknown"
+    short = ver.split("+", 1)[0].strip() if "+" in ver else ver
+    return {"cryodrgn_version": ver, "cryodrgn_version_short": short}
+
+
+def _epoch_output_stamp(workdir: str, epoch: int) -> tuple[str | None, str | None]:
+    """Human-readable stamp from ``analyze.N`` directory mtime (local time)."""
+    if not workdir:
+        return None, None
+    try:
+        ep = int(epoch)
+    except (TypeError, ValueError):
+        return None, None
+    path = os.path.join(workdir, f"analyze.{ep}")
+    if not os.path.isdir(path):
+        return None, None
+    try:
+        m = os.path.getmtime(path)
+    except OSError:
+        return None, None
+    dt_local = datetime.datetime.fromtimestamp(m)
+    short = dt_local.strftime("%Y-%m-%d %H:%M")
+    title = f"{path} — last modified {short} (local time)"
+    return short, title
+
+
+# train_vae logs ``logger.info(f"cryoDRGN {__version__}")`` early in ``run.log``.
+# The first line is usually ``sys.argv`` (``.../cryodrgn train_vae ...``); require a
+# version-shaped token (leading digit) so we do not capture the subcommand name.
+_RUN_LOG_CRYODRGN_VERSION_RE = re.compile(r"(?i)cryodrgn\s+([0-9]\S*)")
+_RUN_LOG_HEAD_SCAN_LINES = 900
+
+
+def _run_log_cryodrgn_version(
+    workdir: str,
+) -> tuple[str | None, str | None, str | None]:
+    """Version string from training ``run.log`` (first ``cryoDRGN <semver>``-style line).
+
+    Returns ``(full, short, title_tooltip)``; pieces may be ``None`` if missing.
+    """
+    if not workdir:
+        return None, None, None
+    path = os.path.join(workdir, "run.log")
+    if not os.path.isfile(path):
+        return None, None, None
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            for i, line in enumerate(fh):
+                if i >= _RUN_LOG_HEAD_SCAN_LINES:
+                    break
+                m = _RUN_LOG_CRYODRGN_VERSION_RE.search(line)
+                if not m:
+                    continue
+                full = m.group(1).strip()
+                if not full:
+                    continue
+                short = full.split("+", 1)[0].strip() if "+" in full else full
+                if not short:
+                    continue
+                title = f"{path} — cryoDRGN version from training log: {full}"
+                return full, short, title
+    except OSError:
+        return None, None, None
+    return None, None, None
+
 
 # ---------------------------------------------------------------------------
 # Module-level caches (invalidated whenever the active workdir/epoch changes).
@@ -483,6 +562,10 @@ def inject_meta() -> dict:
     cfg_cmd_display_lines = (
         _argv_four_command_lines(cmd_parts) if cmd_parts else [f"{model_type} z{zdim}"]
     )
+    stamp_short, stamp_title = _epoch_output_stamp(e.workdir, e.epoch)
+    runlog_ver, runlog_ver_short, runlog_ver_title = _run_log_cryodrgn_version(
+        e.workdir
+    )
     return {
         "exp_workdir": e.workdir,
         "exp_epoch": e.epoch,
@@ -499,6 +582,12 @@ def inject_meta() -> dict:
             discovered_workdirs, discovery_cwd
         ),
         "selected_workdir": e.workdir,
+        "exp_epoch_output_stamp": stamp_short,
+        "exp_epoch_output_stamp_title": stamp_title,
+        "exp_run_log_cryodrgn_version": runlog_ver,
+        "exp_run_log_cryodrgn_version_short": runlog_ver_short,
+        "exp_run_log_cryodrgn_version_title": runlog_ver_title,
+        **_cryodrgn_version_context(),
     }
 
 
@@ -514,6 +603,14 @@ def inject_meta_command_builder_only() -> dict:
     discovery_cwd = current_app.config.get("DASHBOARD_DISCOVERY_CWD", os.getcwd())
     epochs = epochs_for_workdir(active_wd) if active_wd else []
     exp_epoch = resolve_epoch(current_app) if active_wd and epochs else 0
+    stamp_short, stamp_title = (
+        _epoch_output_stamp(active_wd, exp_epoch)
+        if active_wd and exp_epoch
+        else (None, None)
+    )
+    runlog_ver, runlog_ver_short, runlog_ver_title = (
+        _run_log_cryodrgn_version(active_wd) if active_wd else (None, None, None)
+    )
     return {
         "exp_workdir": "",
         "exp_epoch": exp_epoch,
@@ -530,4 +627,10 @@ def inject_meta_command_builder_only() -> dict:
             discovered_workdirs, discovery_cwd
         ),
         "selected_workdir": active_wd or "",
+        "exp_epoch_output_stamp": stamp_short,
+        "exp_epoch_output_stamp_title": stamp_title,
+        "exp_run_log_cryodrgn_version": runlog_ver,
+        "exp_run_log_cryodrgn_version_short": runlog_ver_short,
+        "exp_run_log_cryodrgn_version_title": runlog_ver_title,
+        **_cryodrgn_version_context(),
     }

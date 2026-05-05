@@ -1129,7 +1129,17 @@
         restrictToScatterPlot: true
       }).then(function() {
         if (cachedImageCount() <= before) {
-          throw new Error("Image cache did not advance.");
+          setMontagePreloadOverlay(false);
+          setImageCacheProgress(true, cachedImageCount(), total);
+          suppressPlotGridHighlights = false;
+          syncHighlightTraceAnnotations();
+          if (preloadStatus && cachedImageCount() < total) {
+            preloadStatus.textContent = (preloadStatus.textContent || "").trim()
+              + " — Could not add more (already cached or server cache cap).";
+          }
+          syncImageCacheButton(false);
+          syncVolumeExploreButtons();
+          return Promise.resolve(null);
         }
         setImageCacheProgress(true, cachedImageCount(), total);
         return nextChunk();

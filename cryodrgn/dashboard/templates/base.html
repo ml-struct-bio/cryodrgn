@@ -153,7 +153,7 @@
       flex-direction: column;
       align-items: flex-start;
       line-height: 1.15;
-      gap: 0.05rem;
+      gap: 0.08rem;
       transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
     }
     .nav a.nav-brand-link:hover .nav-brand-text,
@@ -169,6 +169,12 @@
         color 0.22s ease,
         text-shadow 0.28s ease,
         opacity 0.22s ease;
+    }
+    .nav-brand-line1-row {
+      display: inline-flex;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 0.28rem 0.42rem;
     }
     .nav-brand-line1 {
       font-size: calc(1.12rem * 1.2);
@@ -186,6 +192,22 @@
       opacity: 0.92;
       position: relative;
       padding-bottom: 3px;
+    }
+    .nav-brand-line2-inner {
+      display: inline-flex;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 0.22rem 0.35rem;
+    }
+    .nav-brand-version {
+      font-weight: 600;
+      opacity: 0.88;
+      letter-spacing: 0.01em;
+      line-height: 1.2;
+    }
+    /* Beside “cryoDRGN”: same smaller size as previous below-title annotation. */
+    .nav-brand-version--inline {
+      font-size: calc(0.95rem * 1.25 * 1.2 * 0.72 * 0.8);
     }
     .nav-brand-line2::after {
       content: "";
@@ -348,16 +370,60 @@
     .nav-epoch {
       display: flex;
       align-items: center;
+      justify-content: flex-end;
+      flex-direction: row;
+      flex-wrap: nowrap;
+      gap: 0.45rem;
+      flex-shrink: 0;
+      min-width: 0;
+      max-width: 100%;
+    }
+    .nav-epoch-meta {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.12rem;
+      flex: 0 1 auto;
+      min-width: 0;
+      max-width: min(13.5rem, 28vw);
+    }
+    .nav-epoch-stamp {
+      font-size: 0.62rem;
+      font-weight: 500;
+      line-height: 1.2;
+      opacity: 0.78;
+      color: rgba(232, 238, 244, 0.92);
+      min-width: 0;
+      width: 100%;
+      text-align: right;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .nav-epoch-runlog-version {
+      font-size: 0.58rem;
+      font-weight: 500;
+      line-height: 1.2;
+      opacity: 0.72;
+      color: rgba(232, 238, 244, 0.88);
+      min-width: 0;
+      width: 100%;
+      text-align: right;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .nav-epoch-controls {
+      display: flex;
+      align-items: center;
       gap: 0.35rem;
       flex-shrink: 0;
     }
-    .nav-epoch label {
+    .nav-epoch-controls label {
       margin: 0;
       font-size: calc(1.36rem * 0.88);
       font-weight: 600;
       opacity: 0.9;
     }
-    .nav-epoch select {
+    .nav-epoch-controls select {
       width: auto;
       min-width: 4rem;
       max-width: 7rem;
@@ -369,7 +435,7 @@
       color: #e8eef4;
       border: 1px solid rgba(255, 255, 255, 0.28);
     }
-    .nav-epoch select option {
+    .nav-epoch-controls select option {
       color: #1a2332;
       background: #fff;
     }
@@ -1016,8 +1082,17 @@
           />
         </span>
         <span class="nav-brand-text">
-          <span class="nav-brand-line1">cryoDRGN</span>
-          <span class="nav-brand-line2">dashboard</span>
+          <span class="nav-brand-line1-row">
+            <span class="nav-brand-line1">cryoDRGN</span>
+            {% if cryodrgn_version_short %}
+            <span class="nav-brand-version nav-brand-version--inline" title="Dashboard: cryoDRGN {{ cryodrgn_version|e }}">v{{ cryodrgn_version_short|e }}</span>
+            {% endif %}
+          </span>
+          <span class="nav-brand-line2">
+            <span class="nav-brand-line2-inner">
+              <span class="nav-brand-line2-main">dashboard</span>
+            </span>
+          </span>
         </span>
       </a>
       {% block nav_page_title %}{% endblock %}
@@ -1086,12 +1161,24 @@
     <div class="nav-right">
       <div class="nav-right-stack">
         <div class="nav-epoch">
-          <label for="dash-epoch">Epoch</label>
-          <select id="dash-epoch" title="Analysis checkpoint (z.N.pkl)">
-            {% for ep in dashboard_epochs %}
-            <option value="{{ ep }}" {% if ep == exp_epoch %}selected{% endif %}>{{ ep }}</option>
-            {% endfor %}
-          </select>
+          {% if exp_epoch_output_stamp or exp_run_log_cryodrgn_version %}
+          <div class="nav-epoch-meta">
+            {% if exp_epoch_output_stamp %}
+            <span class="nav-epoch-stamp" {% if exp_epoch_output_stamp_title %}title="{{ exp_epoch_output_stamp_title|e }}"{% endif %}>analyze.{{ exp_epoch }} updated {{ exp_epoch_output_stamp|e }}</span>
+            {% endif %}
+            {% if exp_run_log_cryodrgn_version %}
+            <span class="nav-epoch-runlog-version" {% if exp_run_log_cryodrgn_version_title %}title="{{ exp_run_log_cryodrgn_version_title|e }}"{% endif %}>trained with cryoDRGN v{{ exp_run_log_cryodrgn_version_short|e }}</span>
+            {% endif %}
+          </div>
+          {% endif %}
+          <div class="nav-epoch-controls">
+            <label for="dash-epoch">Epoch</label>
+            <select id="dash-epoch" title="Analysis checkpoint (z.N.pkl)">
+              {% for ep in dashboard_epochs %}
+              <option value="{{ ep }}" {% if ep == exp_epoch %}selected{% endif %}>{{ ep }}</option>
+              {% endfor %}
+            </select>
+          </div>
         </div>
         <div class="nav-kmeans-row" title="k-means folder under analyze.{{ exp_epoch }}">k-means {{ exp_kmeans }}</div>
       </div>

@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import io
 import logging
+import math
 import os
 from typing import Iterable
 
@@ -22,6 +23,32 @@ from cryodrgn.dashboard.mpl_style import ezlab_matplotlib_rc
 logger = logging.getLogger(__name__)
 
 DEFAULT_PRELOAD_IMAGE_LIMIT = 1000
+
+
+def explorer_cache_size_power10_step(scatter_plotted_point_count: int) -> int:
+    """Largest power of ten not greater than 5% of scatter-plotted point count.
+
+    Used as the HTML ``step`` for the particle-explorer cache size field and as
+    the scale for the default initial cache size (clamped to the plotted cap).
+    """
+    n = max(0, int(scatter_plotted_point_count))
+    if n == 0:
+        return 1
+    x = 0.05 * n
+    if x < 1:
+        return 1
+    k = int(math.floor(math.log10(x)))
+    step = 10**k
+    return max(1, int(step))
+
+
+def explorer_initial_preload_image_limit(scatter_plotted_point_count: int) -> int:
+    """Default first-build cache size: :func:`explorer_cache_size_power10_step` capped by plotted *n*."""
+    n = max(0, int(scatter_plotted_point_count))
+    if n == 0:
+        return 1
+    step = explorer_cache_size_power10_step(n)
+    return min(n, step)
 
 
 def encode_particle_batch(

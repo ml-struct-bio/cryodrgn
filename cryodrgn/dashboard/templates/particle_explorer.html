@@ -141,13 +141,21 @@
     line-height: var(--sel-count-lh);
     color: var(--nav-bg, #243b53);
   }
-  .cryo-explorer-sel-count-footnote {
+  /* Must beat base `.card p { font-size: 0.98rem }` (higher specificity). */
+  .cryo-explorer-sel-count-text-col p.cryo-explorer-sel-count-footnote {
     margin: 0 !important;
-    /* Was 0.82em; 40% smaller for a muted secondary line */
-    font-size: calc(0.82em * 0.6);
+    /* Match `#particle-sel-fieldset > p.cryo-dash-legend-note` / montage explanatory copy */
+    font-size: 0.8rem;
     font-weight: 400;
-    line-height: 1.3;
-    color: rgba(36, 59, 83, 0.72);
+    line-height: 1.35;
+    color: var(--muted, #5c6b7a);
+  }
+  /* Same as `.cryo-dash-controls .status` / montage `.cryo-dash-legend-note` (0.8rem), not `.card p` (0.98rem). */
+  #particle-sel-fieldset > p.cryo-dash-legend-note {
+    margin: 0 0 0.4rem !important;
+    font-size: 0.8rem;
+    line-height: 1.35;
+    color: var(--muted, #5c6b7a);
   }
   /* In-flow flex stack (no absolute positioning): avoids zero-height / calc bugs that hid the donut and pinned % to the row top. */
   .cryo-explorer-sel-pie-col {
@@ -190,6 +198,16 @@
     max-width: 100%;
     overflow-x: clip;
   }
+  .cryo-explorer-clear-selection {
+    margin: 0.28rem 0 0.42rem;
+  }
+  .cryo-explorer-clear-selection .btn {
+    width: 100%;
+    box-sizing: border-box;
+    line-height: 1.25;
+    padding-top: 0.4rem;
+    padding-bottom: 0.4rem;
+  }
   .cryo-explorer-save-btns {
     display: flex;
     flex-direction: column;
@@ -208,8 +226,83 @@
   .cryo-explorer-montage-actions {
     display: flex;
     flex-direction: column;
-    gap: 0.35rem;
+    gap: 0.55rem;
     margin-top: 0.45rem;
+  }
+  .cryo-explorer-montage-group {
+    border: 1px solid rgba(36, 59, 83, 0.14);
+    border-radius: 4px;
+    padding: 0.48rem 0.62rem 0.55rem;
+    margin: 0;
+    min-width: 0;
+    background: rgba(255, 255, 255, 0.45);
+  }
+  .cryo-explorer-montage-group legend {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--nav-bg, #243b53);
+    padding: 0 0.3rem;
+    margin: 0;
+  }
+  .cryo-explorer-load-images-toolbar {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 0.3rem 0.4rem;
+    min-width: 0;
+  }
+  .cryo-explorer-load-images-toolbar .cryo-explorer-cache-size-label {
+    flex: 0 1 auto;
+    min-width: 0;
+    align-self: center;
+    display: inline-flex;
+    align-items: center;
+  }
+  .cryo-explorer-load-images-toolbar .cryo-explorer-action-row__btn {
+    flex: 0 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    align-self: center;
+  }
+  .cryo-explorer-load-images-toolbar .cryo-explorer-action-row__btn .btn {
+    padding: 0.26rem 0.4rem;
+    font-size: 0.72rem;
+    line-height: 1.15;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+  .cryo-explorer-cache-size-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin: 0;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--nav-bg, #243b53);
+    white-space: nowrap;
+  }
+  .cryo-explorer-cache-size-label__text {
+    color: var(--muted, #5c6b7a);
+    font-weight: 500;
+  }
+  .cryo-explorer-cache-size-label input[type="number"] {
+    width: 4.25rem;
+    box-sizing: border-box;
+    padding: 0.2rem 0.35rem;
+    font-size: 0.78rem;
+    border: 1px solid rgba(36, 59, 83, 0.22);
+    border-radius: 3px;
+    font-variant-numeric: tabular-nums;
+  }
+  .cryo-explorer-preload-status {
+    margin: 0.38rem 0 0;
+    font-size: 0.78rem;
+    line-height: 1.35;
+    color: var(--muted, #5c6b7a);
+    min-width: 0;
   }
   .cryo-explorer-action-row {
     display: grid;
@@ -247,10 +340,9 @@
   }
   .cryo-image-cache-progress {
     display: grid;
-    grid-column: 2;
-    grid-row: 1;
     gap: 0.2rem;
     width: min(100%, 18rem);
+    margin-top: 0.35rem;
   }
   .cryo-image-cache-progress[hidden] {
     display: none;
@@ -274,9 +366,20 @@
     color: var(--muted, #5c6b7a);
     font-variant-numeric: tabular-nums;
   }
-  /* Beat base.html montage .cryo-dash-legend-note margins for these rows */
-  .cryo-dash-page--image-viewer .cryo-explorer-action-row .cryo-dash-legend-note {
+  .cryo-dash-page--image-viewer .cryo-explorer-preload-status.cryo-dash-legend-note {
+    margin: 0.38rem 0 0;
+  }
+  .cryo-explorer-action-row .cryo-explorer-action-row__hint {
     margin: 0;
+  }
+  /* Montage `.cryo-dash-legend-note` uses margin-top: 0.5rem (base.html); that pushed hints below the volume buttons. */
+  .cryo-dash-page--particle-explorer .cryo-dash-montage .cryo-explorer-action-row .cryo-explorer-action-row__hint.cryo-dash-legend-note {
+    margin: 0 !important;
+  }
+  .cryo-dash-page--particle-explorer .cryo-dash-montage .cryo-explorer-action-row .cryo-explorer-action-row__btn {
+    display: flex;
+    align-items: center;
+    align-self: center;
   }
   .cryo-explorer-save-inverse-label {
     display: flex;
@@ -628,9 +731,12 @@
           <p id="sel-pie-pct" class="cryo-explorer-sel-pie-pct">0.0%</p>
         </div>
       </div>
+      <div class="cryo-explorer-clear-selection">
+        <button type="button" class="btn btn-secondary" id="clear-explorer-selection" disabled>Clear selection</button>
+      </div>
       <fieldset id="particle-sel-fieldset" disabled>
-        <legend>Create particle indices</legend>
-        <p class="cryo-dash-legend-note" style="margin:0 0 0.4rem;">Active after you select particles on the plot or with the colour histogram.</p>
+        <legend>Create indices file</legend>
+        <p class="cryo-dash-legend-note">Active after you select particles on the plot or with the colour histogram.</p>
         <div class="cryo-explorer-save-btns">
           <button type="button" class="btn" id="save-indices-pkl">Save selection<br/>as <code>indices.pkl</code></button>
           <button type="button" class="btn btn-secondary" id="save-indices-custom">Save selection<br/>as…</button>
@@ -724,11 +830,30 @@
 
   <aside class="cryo-dash-montage" aria-label="Particle preview">
     <div id="montage-actions" class="cryo-explorer-montage-actions">
-      <div class="cryo-explorer-action-row">
-        <div class="cryo-explorer-action-row__btn">
-          <button type="button" class="btn" id="btn-view-images" disabled>Load all images</button>
+      <fieldset class="cryo-explorer-montage-group">
+        <legend>Load particle images</legend>
+        <div class="cryo-explorer-load-images-toolbar">
+          <label class="cryo-explorer-cache-size-label" for="montage-cache-size-input">
+            <span class="cryo-explorer-cache-size-label__text" id="montage-cache-size-label-text">Cache size</span>
+            <input
+              type="number"
+              id="montage-cache-size-input"
+              name="montage_cache_size"
+              min="1"
+              step="{{ preload_cache_step }}"
+              inputmode="numeric"
+              value="{{ preload_image_limit }}"
+              max="{{ scatter_plotted_n }}"
+              title="Thumbnails to fetch on Build cache, or target size when expanding (capped at plotted points)"
+            />
+          </label>
+          <div class="cryo-explorer-action-row__btn">
+            <button type="button" class="btn btn-secondary" id="btn-expand-cache" disabled>Build cache</button>
+          </div>
+          <div class="cryo-explorer-action-row__btn">
+            <button type="button" class="btn" id="btn-view-images" disabled>Load all images</button>
+          </div>
         </div>
-        <p id="preload-status" class="cryo-explorer-action-row__hint cryo-dash-legend-note"></p>
         <div
           id="image-cache-progress"
           class="cryo-image-cache-progress"
@@ -743,8 +868,11 @@
           </div>
           <span id="image-cache-progress-label" class="cryo-image-cache-progress__label">0%</span>
         </div>
-      </div>
+        <p id="preload-status" class="cryo-explorer-preload-status cryo-dash-legend-note"></p>
+      </fieldset>
       {% if show_volume_explorer %}
+      <fieldset class="cryo-explorer-montage-group">
+        <legend>Display reconstructed volumes</legend>
       <div class="cryo-explorer-action-row">
         <div class="cryo-explorer-action-row__btn">
           <button type="button" class="btn btn-secondary" id="btn-volume-generate" disabled>Generate volumes</button>
@@ -773,6 +901,7 @@
           <div class="cryo-plot-rendering-overlay__indeterminate"></div>
         </div>
       </div>
+      </fieldset>
       {% endif %}
     </div>
     <div id="montage-inner" class="cryo-dash-montage-inner cryo-dash-montage-inner--disabled">
@@ -792,7 +921,7 @@
         </label>
         <label class="cryo-explorer-plot-annotation-label" for="show-grid-annotations">
           <input type="checkbox" id="show-grid-annotations" checked/>
-          <span>Show grid highlights on plot</span>
+          <span>Show grid highlights</span>
         </label>
       </div>
       <div class="cryo-montage-grid-wrap">
@@ -821,13 +950,12 @@
   var totalParticles = {{ total_particles | tojson }};
   var workdirForSaveHint = {{ workdir | tojson }};
   var showVolumeExplorer = {{ show_volume_explorer | default(false) | tojson }};
-  var defaultPreloadImageLimit = {{ preload_image_limit | tojson }};
   var preloadCpus = {{ preload_cpus | tojson }};
-  var initialPreloadImageCount = defaultPreloadImageLimit;
   /** Match ``api_scatter`` when ``explorer_scatter=1`` (``--filter-max`` or 200k default). */
   var explorerScatterMaxPoints = {{ explorer_scatter_max_points | tojson }};
   var explorerScatterCapFromEnv = {{ explorer_scatter_cap_from_env | tojson }};
-  var initialImageCacheStarted = false;
+  /** While montage preload overlay is up: show this requested ``cache_size`` in the number field. */
+  var preloadRequestedCacheTarget = null;
 
   var preselectRowsForNextFetch = (initialRows && initialRows.length && initialRows.length <= 5000)
     ? initialRows.slice() : [];
@@ -835,6 +963,7 @@
   var selectionTooltipText = "";
   var imagesViewEnabled = false;
   var particleSelFs = document.getElementById("particle-sel-fieldset");
+  var clearExplorerSelectionBtn = document.getElementById("clear-explorer-selection");
   var selCountRowEl = document.getElementById("sel-count-row");
   var selCountEl = document.getElementById("sel-count");
   var selCountFootnoteEl = document.getElementById("sel-count-footnote");
@@ -846,6 +975,7 @@
   var montageInner = document.getElementById("montage-inner");
   var montagePreloadOverlayEl = document.getElementById("montage-preload-overlay");
   var montagePreloadOverlayLabel = document.getElementById("montage-preload-overlay-label");
+  var btnExpandCache = document.getElementById("btn-expand-cache");
   var btnViewImages = document.getElementById("btn-view-images");
   var btnVolumeGenerate = document.getElementById("btn-volume-generate");
   var btnVolumeAnimate = document.getElementById("btn-volume-animate");
@@ -874,6 +1004,10 @@
     return lastMontageRows.length ? lastMontageRows.join(",") : "";
   }
 
+  function montagePreloadOverlayIsShown() {
+    return !!(montagePreloadOverlayEl && montagePreloadOverlayEl.classList.contains("cryo-plot-rendering-overlay--show"));
+  }
+
   function setMontagePreloadOverlay(on, label) {
     if (!montagePreloadOverlayEl) return;
     if (label && montagePreloadOverlayLabel) {
@@ -881,6 +1015,7 @@
     }
     montagePreloadOverlayEl.classList.toggle("cryo-plot-rendering-overlay--show", !!on);
     montagePreloadOverlayEl.setAttribute("aria-hidden", on ? "false" : "true");
+    if (!on) preloadRequestedCacheTarget = null;
   }
 
   function setVolumeStatus(msg, showProgress) {
@@ -961,11 +1096,10 @@
     }
     if (selCountFootnoteEl) {
       if (curtailed) {
-        var capWhy = explorerScatterCapFromEnv
-          ? "The scatter plot subsamples points — cap from --filter-max or CRYODRGN_DASHBOARD_FILTER_MAX_POINTS."
-          : "The scatter plot subsamples points — built-in explorer cap.";
-        selCountFootnoteEl.textContent =
-          "— scatter shows " + plotCapFmt + " of " + totalFmt + ". " + capWhy;
+        var foot = explorerScatterCapFromEnv
+          ? "Scatter only shows " + plotCapFmt + " particles due to `--filter-max`."
+          : "Scatter only shows " + plotCapFmt + " particles (default cap).";
+        selCountFootnoteEl.textContent = foot;
         selCountFootnoteEl.hidden = false;
       } else {
         selCountFootnoteEl.textContent = "";
@@ -1000,6 +1134,7 @@
       selCountRowEl.setAttribute("aria-label", aria);
     }
     if (particleSelFs) particleSelFs.disabled = (n === 0);
+    if (clearExplorerSelectionBtn) clearExplorerSelectionBtn.disabled = (n === 0);
   }
 
   /** A–Z omitting I, O, U (easier to read vs 1/0 and avoids ambiguous glyphs). */
@@ -1203,21 +1338,25 @@
 
   function equalizeMontageActionButtonWidths() {
     if (!montageActionsEl) return;
-    var btns = montageActionsEl.querySelectorAll(".cryo-explorer-action-row__btn .btn");
-    if (!btns || !btns.length) return;
-    for (var i = 0; i < btns.length; i++) {
-      btns[i].style.width = "auto";
+    function runGroup(selector) {
+      var btns = montageActionsEl.querySelectorAll(selector);
+      if (!btns || !btns.length) return;
+      for (var i = 0; i < btns.length; i++) {
+        btns[i].style.width = "auto";
+      }
+      var maxW = 0;
+      for (var j = 0; j < btns.length; j++) {
+        var w = btns[j].getBoundingClientRect().width;
+        if (w > maxW) maxW = w;
+      }
+      if (!maxW) return;
+      var px = Math.ceil(maxW) + "px";
+      for (var k = 0; k < btns.length; k++) {
+        btns[k].style.width = px;
+      }
     }
-    var maxW = 0;
-    for (var j = 0; j < btns.length; j++) {
-      var w = btns[j].getBoundingClientRect().width;
-      if (w > maxW) maxW = w;
-    }
-    if (!maxW) return;
-    var px = Math.ceil(maxW) + "px";
-    for (var k = 0; k < btns.length; k++) {
-      btns[k].style.width = px;
-    }
+    runGroup(".cryo-explorer-load-images-toolbar .cryo-explorer-action-row__btn .btn");
+    runGroup(".cryo-explorer-action-row .cryo-explorer-action-row__btn .btn");
   }
 
   var plotlyStackEl = gd && gd.parentElement;
@@ -1288,6 +1427,108 @@
   function scatterSubsetRowCount() {
     if (plotHasScatterData()) return gd.data[0].customdata.length;
     return scatterPlottedRowBudget();
+  }
+
+  /** Largest power of 10 ≤ 5% of plotted count (matches ``explorer_cache_size_power10_step``). */
+  function cacheSizePower10StepFromCap(cap) {
+    cap = Math.max(0, Math.floor(Number(cap) || 0));
+    if (cap === 0) return 1;
+    var x = 0.05 * cap;
+    if (x < 1) return 1;
+    var k = Math.floor(Math.log10(x));
+    var step = Math.pow(10, k);
+    return Math.max(1, Math.floor(step));
+  }
+
+  /** Default first-build target: step above, capped at plotted count (matches server ``preload_image_limit``). */
+  function firstBuildCacheSizeDefault() {
+    var cap = scatterSubsetRowCount();
+    if (cap === 0) return 1;
+    var step = cacheSizePower10StepFromCap(cap);
+    return Math.min(cap, Math.max(1, step));
+  }
+
+  /** Suggested new cache total after a cache exists: min(2 × current, cap), always &gt; current when possible. */
+  function defaultMontageNewCacheSizeSuggestion() {
+    if (!preloaded) return firstBuildCacheSizeDefault();
+    var have = cachedImageCount();
+    var cap = scatterSubsetRowCount();
+    if (have >= cap) return cap;
+    var twiceCapped = Math.min(2 * have, cap);
+    return Math.max(twiceCapped, have + 1);
+  }
+
+  function syncMontageCacheSizeLabelEl() {
+    var sp = document.getElementById("montage-cache-size-label-text");
+    var inp = document.getElementById("montage-cache-size-input");
+    if (sp) sp.textContent = preloaded ? "New cache size" : "Cache size";
+    if (inp) {
+      inp.title = preloaded
+        ? "Total cached images to grow toward (must be greater than the current cache; capped at plotted points)"
+        : "Number of thumbnails to fetch when you click Build cache (capped at plotted scatter points)";
+    }
+  }
+
+  /** Keep min/max/value in range; during preload overlay show requested target (disabled). */
+  function syncMontageNewCacheSizeField() {
+    var el = document.getElementById("montage-cache-size-input");
+    if (!el) return;
+    var cap = scatterSubsetRowCount();
+    var stepAttr = String(cacheSizePower10StepFromCap(cap));
+    el.setAttribute("step", stepAttr);
+    el.setAttribute("max", String(cap));
+    syncMontageCacheSizeLabelEl();
+    if (montagePreloadOverlayIsShown()) {
+      el.disabled = true;
+      el.setAttribute("min", "1");
+      if (preloadRequestedCacheTarget != null) {
+        el.value = String(preloadRequestedCacheTarget);
+      }
+      return;
+    }
+    var have = cachedImageCount();
+    if (preloaded && have >= cap) {
+      el.disabled = true;
+      el.setAttribute("min", String(cap));
+      el.value = String(cap);
+      return;
+    }
+    el.disabled = false;
+    if (!preloaded) {
+      el.setAttribute("min", "1");
+      var d0 = firstBuildCacheSizeDefault();
+      var raw0 = parseInt(String(el.value).replace(/\s/g, "").replace(/,/g, ""), 10);
+      if (!isFinite(raw0) || raw0 < 1 || raw0 > cap) {
+        el.value = String(d0);
+      } else {
+        el.value = String(Math.min(Math.max(raw0, 1), cap));
+      }
+      return;
+    }
+    var floor = Math.min(have + 1, cap);
+    el.setAttribute("min", String(floor));
+    var suggestion = defaultMontageNewCacheSizeSuggestion();
+    var raw = parseInt(String(el.value).replace(/\s/g, "").replace(/,/g, ""), 10);
+    if (!isFinite(raw) || raw <= have || raw > cap) {
+      el.value = String(suggestion);
+    } else {
+      el.value = String(Math.min(Math.max(raw, floor), cap));
+    }
+  }
+
+  /** Target cache size from field (first build: [1, cap]; expand: (have, cap]). */
+  function readMontageCacheSizeInput() {
+    var cap = scatterSubsetRowCount();
+    var el = document.getElementById("montage-cache-size-input");
+    var raw = el ? parseInt(String(el.value).replace(/\s/g, "").replace(/,/g, ""), 10) : NaN;
+    if (!preloaded) {
+      if (!isFinite(raw)) raw = firstBuildCacheSizeDefault();
+      return Math.min(cap, Math.max(1, raw));
+    }
+    var have = cachedImageCount();
+    var floor = have >= cap ? cap : have + 1;
+    if (!isFinite(raw)) raw = defaultMontageNewCacheSizeSuggestion();
+    return Math.min(cap, Math.max(floor, raw));
   }
 
   function rowToTraceIndex(row) {
@@ -1378,12 +1619,55 @@
     return cachedImageCount() >= scatterSubsetRowCount();
   }
 
+  function syncExpandCacheButton(loading) {
+    if (!btnExpandCache) return;
+    syncMontageCacheSizeLabelEl();
+    if (loading) {
+      btnExpandCache.disabled = true;
+      return;
+    }
+    if (!preloaded) {
+      btnExpandCache.textContent = "Build cache";
+      var capB = scatterSubsetRowCount();
+      var canBuild = !!(totalParticles && plotHasScatterData() && capB > 0);
+      btnExpandCache.disabled = !canBuild;
+      btnExpandCache.title = !totalParticles
+        ? "No particles in this experiment."
+        : !plotHasScatterData()
+          ? "Wait for the scatter plot to finish loading."
+          : "Fetch up to " + Number(capB).toLocaleString("en-CA")
+            + " thumbnails (see cache size).";
+      return;
+    }
+    btnExpandCache.textContent = "Expand cache";
+    var have = cachedImageCount();
+    var want = readMontageCacheSizeInput();
+    var cap = scatterSubsetRowCount();
+    var canExpand = !!(
+      axesMatchPreloadedCache()
+      && want > have
+      && have < cap
+    );
+    btnExpandCache.disabled = !canExpand;
+    if (!axesMatchPreloadedCache()) {
+      btnExpandCache.title = "Change axes back or reload to match the cached plot.";
+    } else if (have >= cap) {
+      btnExpandCache.title = "All plotted particle images are already cached.";
+    } else if (want <= have) {
+      btnExpandCache.title = "Set new cache size above " + Number(have).toLocaleString("en-CA") + " to expand.";
+    } else {
+      btnExpandCache.title = "Fetch thumbnails up to the new cache size (now " + Number(have).toLocaleString("en-CA") + " cached).";
+    }
+  }
+
   function syncImageCacheButton(loading) {
     btnViewImages.textContent = "Load all images";
     btnViewImages.disabled = !!loading || !preloaded || allImagesCached();
     btnViewImages.title = allImagesCached()
       ? "All particle images on the current scatter are loaded."
-      : (btnViewImages.disabled ? "Image cache is not ready yet." : "");
+      : (btnViewImages.disabled ? "Build the image cache first." : "");
+    syncMontageNewCacheSizeField();
+    syncExpandCacheButton(loading);
   }
 
   function setImageCacheProgress(on, current, total) {
@@ -1429,11 +1713,14 @@
   function fetchPreload(xcol, ycol, onDone, opts) {
     opts = opts || {};
     var cacheSize = opts.cacheSize || scatterSubsetRowCount();
+    preloadRequestedCacheTarget = cacheSize;
     preloadedAxes = {x: xcol, y: ycol};
     var plottedCap = scatterSubsetRowCount();
-    var overlayLabel = opts.fullLoad
-      ? "Loading all " + Number(plottedCap).toLocaleString("en-CA") + " plotted particle images..."
-      : "Loading image cache...";
+    var overlayLabel = opts.overlayLabel
+      ? opts.overlayLabel
+      : (opts.fullLoad
+        ? "Loading all " + Number(plottedCap).toLocaleString("en-CA") + " plotted particle images..."
+        : "Loading image cache...");
     setMontagePreloadOverlay(true, overlayLabel);
     syncImageCacheButton(true);
     var body = { x: xcol, y: ycol, cache_size: cacheSize };
@@ -1535,27 +1822,41 @@
       });
   }
 
-  function startInitialImageCache() {
-    if (initialImageCacheStarted || !totalParticles) return Promise.resolve(null);
-    initialImageCacheStarted = true;
-    return fetchPreload(sx.value, sy.value, null, {
-      cacheSize: initialPreloadImageCount,
+  function expandImageCacheToTarget() {
+    if (!preloaded || !axesMatchPreloadedCache()) return;
+    var target = readMontageCacheSizeInput();
+    var before = cachedImageCount();
+    if (target <= before) return;
+    var label = "Expanding cache to " + Number(target).toLocaleString("en-CA") + " images…";
+    fetchPreload(sx.value, sy.value, null, {
+      cacheSize: target,
+      delta: true,
       enableImages: true,
-      restrictToScatterPlot: true
+      restrictToScatterPlot: true,
+      overlayLabel: label
+    });
+  }
+
+  function buildInitialImageCache() {
+    if (preloaded || !totalParticles || !plotHasScatterData()) return;
+    if (scatterSubsetRowCount() < 1) return;
+    var sz = readMontageCacheSizeInput();
+    fetchPreload(sx.value, sy.value, null, {
+      cacheSize: sz,
+      enableImages: true,
+      restrictToScatterPlot: true,
+      overlayLabel: "Building cache (" + Number(sz).toLocaleString("en-CA") + " images)…"
     }).catch(function(e) {
-      console.error("initial preload failed", e);
-      return null;
+      console.error("build cache failed", e);
     });
   }
 
   function initializeExplorerView() {
-    startInitialImageCache();
     loadPlot(true);
   }
 
   function loadAllImagesInChunks() {
     var total = scatterSubsetRowCount();
-    var chunkSize = imageCacheChunkSize(total);
     setMontagePreloadOverlay(
       true,
       "Loading all " + Number(total).toLocaleString("en-CA") + " plotted particle images..."
@@ -1577,7 +1878,15 @@
         syncVolumeExploreButtons();
         return Promise.resolve(null);
       }
-      var target = Math.min(total, before + chunkSize);
+      var step = imageCacheChunkSize(total);
+      var userTarget = readMontageCacheSizeInput();
+      var roomTowardUser = userTarget - before;
+      if (roomTowardUser > 0) {
+        step = Math.max(1, Math.min(step, roomTowardUser));
+      } else {
+        step = Math.max(1, Math.min(step, total - before));
+      }
+      var target = Math.min(total, before + step);
       return fetchPreload(sx.value, sy.value, null, {
         cacheSize: target,
         enableImages: true,
@@ -1609,6 +1918,34 @@
         syncImageCacheButton(false);
         syncVolumeExploreButtons();
       });
+  }
+
+  if (btnExpandCache) {
+    btnExpandCache.addEventListener("click", function() {
+      if (!preloaded) {
+        buildInitialImageCache();
+      } else {
+        expandImageCacheToTarget();
+      }
+    });
+  }
+
+  var montageCacheSizeInput = document.getElementById("montage-cache-size-input");
+  if (montageCacheSizeInput) {
+    var montageCacheOverlayBusy = function() {
+      return !!(montagePreloadOverlayEl && montagePreloadOverlayEl.classList.contains("cryo-plot-rendering-overlay--show"));
+    };
+    montageCacheSizeInput.addEventListener("input", function() {
+      syncExpandCacheButton(montageCacheOverlayBusy());
+    });
+    montageCacheSizeInput.addEventListener("change", function() {
+      syncMontageNewCacheSizeField();
+      syncExpandCacheButton(montageCacheOverlayBusy());
+    });
+    montageCacheSizeInput.addEventListener("blur", function() {
+      syncMontageNewCacheSizeField();
+      syncExpandCacheButton(montageCacheOverlayBusy());
+    });
   }
 
   btnViewImages.addEventListener("click", function() {
@@ -1853,8 +2190,47 @@
     syncParticleExplorerRowExpandForColorHist();
   }
 
-  function colorHistogramGuideShapes() {
+  function colorHistogramSelectionBandShape(xRangeOpt) {
+    if (colorThresholdLevel == null || colorThresholdColorCol !== sc.value) return null;
+    var rng = xRangeOpt;
+    if (!rng || rng.length < 2) {
+      if (colorHistDiv && colorHistDiv._fullLayout && colorHistDiv._fullLayout.xaxis) {
+        rng = colorHistDiv._fullLayout.xaxis.range;
+      }
+    }
+    if (!rng || rng.length < 2) return null;
+    var xLo = Math.min(rng[0], rng[1]);
+    var xHi = Math.max(rng[0], rng[1]);
+    var t = colorThresholdLevel;
+    var useMax = !!(colorThresholdUseMax && colorThresholdUseMax.checked);
+    var bx0;
+    var bx1;
+    if (useMax) {
+      bx0 = xLo;
+      bx1 = Math.min(Math.max(t, xLo), xHi);
+    } else {
+      bx0 = Math.max(Math.min(t, xHi), xLo);
+      bx1 = xHi;
+    }
+    if (!(bx1 > bx0)) return null;
+    return {
+      type: "rect",
+      xref: "x",
+      yref: "paper",
+      x0: bx0,
+      x1: bx1,
+      y0: 0,
+      y1: 1,
+      fillcolor: "rgba(196, 112, 58, 0.14)",
+      line: {width: 0},
+      layer: "above"
+    };
+  }
+
+  function colorHistogramGuideShapes(xRangeOpt) {
     var shapes = colorViolinBaseShapes.slice();
+    var band = colorHistogramSelectionBandShape(xRangeOpt);
+    if (band) shapes.push(band);
     if (colorThresholdLevel != null && colorThresholdColorCol === sc.value) {
       shapes.push({
         type: "line",
@@ -1864,7 +2240,8 @@
         x1: colorThresholdLevel,
         y0: 0,
         y1: 1,
-        line: {color: ACCENT, width: 2}
+        line: {color: ACCENT, width: 2},
+        layer: "above"
       });
     }
     if (colorHistHoverLevel != null) {
@@ -1876,7 +2253,8 @@
         x1: colorHistHoverLevel,
         y0: 0,
         y1: 1,
-        line: {color: "#243b53", width: 1.5, dash: "dot"}
+        line: {color: "#243b53", width: 1.5, dash: "dot"},
+        layer: "above"
       });
     }
     return shapes;
@@ -2129,7 +2507,7 @@
       font: {family: "Barlow, sans-serif", color: "#243b53", size: 11},
       xaxis: {title: {text: "<b>" + escapeHtmlText(colorColLabel) + "</b>", standoff: 2, font: {size: 15.7, weight: 700}}, zeroline: false, fixedrange: true, range: violin.range},
       yaxis: {visible: false, fixedrange: true, range: [-0.55, 0.55]},
-      shapes: colorHistogramGuideShapes(),
+      shapes: colorHistogramGuideShapes(violin.range),
       annotations: colorHistogramGuideAnnotations()
     };
     var data = violin.fillTraces.slice();
@@ -2267,6 +2645,9 @@
 
   function updateMontage(nbs) {
     nbs = nbs.slice();
+    if (!showGridHighlightsEnabled()) {
+      nbs = [];
+    }
     var newOrdered = nbs.map(function(x) { return x.row; }).join(",");
     var oldOrdered = lastMontageRows.join(",");
     var newStable = nbs.map(function(x) { return x.row; }).slice().sort(function(a, b) { return a - b; }).join(",");
@@ -2585,10 +2966,13 @@
     }
   }
 
-  /* ---------- highlight trace ---------- */
+  /* ---------- highlight trace + montage grid coupling ---------- */
+  function showGridHighlightsEnabled() {
+    return !showGridAnnotationsCheckbox || showGridAnnotationsCheckbox.checked;
+  }
+
   function showGridHighlightsOnPlot() {
-    return !suppressPlotGridHighlights
-      && (!showGridAnnotationsCheckbox || showGridAnnotationsCheckbox.checked);
+    return !suppressPlotGridHighlights && showGridHighlightsEnabled();
   }
 
   function syncHighlightTraceAnnotations() {
@@ -2769,6 +3153,9 @@
                 }
               }
               if (showVolumeExplorer) syncVolumeExploreButtons();
+              var montageOverlayBusy = montagePreloadOverlayEl
+                && montagePreloadOverlayEl.classList.contains("cryo-plot-rendering-overlay--show");
+              if (!montageOverlayBusy) syncImageCacheButton(false);
               syncScatterControlsAlignment();
               requestAnimationFrame(function() {
                 try { Plotly.Plots.resize(gd); } catch (e) {}
@@ -2912,6 +3299,24 @@
     }
   }
 
+  function clearExplorerSelection() {
+    if (!gd) return;
+    cancelLassoSelectionDebounce();
+    hideBoxSelectTooltip();
+    selectionTooltipText = "";
+    colorThresholdLevel = null;
+    colorThresholdColorCol = null;
+    if (colorThresholdStatus) colorThresholdStatus.textContent = "";
+    if (colorHistDiv && colorHistDiv.data) {
+      try { relayoutColorHistogramGuides(); } catch (e) {}
+    }
+    clearScatterGeometricSelection();
+    applyRowsSelection([]);
+    if (imagesViewEnabled && preloaded) {
+      showRandomPreloaded();
+    }
+  }
+
   function rowsMatchingColorThresholdFromTrace(items, level, useMax) {
     var rows = [];
     for (var i = 0; i < items.length; i++) {
@@ -3048,6 +3453,7 @@
     ensureHighlightTrace();
     gd.on("plotly_click", function(ev) {
       if (!imagesViewEnabled || !preloaded || !preloaded.traceMap) return;
+      if (!showGridHighlightsEnabled()) return;
       if (!ev.points || !ev.points.length) return;
       var pt = ev.points[0];
       if (pt.curveNumber !== 0) return;
@@ -3154,7 +3560,6 @@
       preloaded = null;
       montageInner.classList.add("cryo-dash-montage-inner--disabled");
       gridSizeSelect.disabled = true;
-      initialImageCacheStarted = false;
       syncImageCacheButton(false);
       if (preloadStatus) {
         preloadStatus.textContent = "";
@@ -3299,6 +3704,11 @@
   document.getElementById("save-indices-pkl").addEventListener("click", function() {
     postSaveSelection({ force: true, sel_dir: "", basename: "indices" });
   });
+  if (clearExplorerSelectionBtn) {
+    clearExplorerSelectionBtn.addEventListener("click", function() {
+      clearExplorerSelection();
+    });
+  }
   document.getElementById("save-indices-custom").addEventListener("click", function() {
     if (selFbSaveName) selFbSaveName.value = "indices.pkl";
     openSelectionFileBrowser(workdirForSaveHint || "");
@@ -3349,7 +3759,14 @@
     });
   }
   if (showGridAnnotationsCheckbox) {
-    showGridAnnotationsCheckbox.addEventListener("change", syncHighlightTraceAnnotations);
+    showGridAnnotationsCheckbox.addEventListener("change", function() {
+      if (!showGridHighlightsEnabled()) {
+        updateMontage([]);
+      } else if (imagesViewEnabled && preloaded && preloaded.traceMap) {
+        showRandomPreloaded();
+      }
+      syncHighlightTraceAnnotations();
+    });
   }
   if (colorThresholdUseMax) {
     colorThresholdUseMax.addEventListener("change", function() {

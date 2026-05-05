@@ -84,6 +84,8 @@ from cryodrgn.dashboard.plots import (
 from cryodrgn.dashboard.preload import (
     DEFAULT_PRELOAD_IMAGE_LIMIT,
     encode_particle_batch,
+    explorer_cache_size_power10_step,
+    explorer_initial_preload_image_limit,
     format_preload_cache_time_hint,
     load_plot_df_rows_from_plot_inds_file,
     montage_bytes,
@@ -431,6 +433,10 @@ def explorer():
         e, current_app.config.get("FILTER_PLOT_INDS")
     )
     pc = int(current_app.config["PRELOAD_CPUS"])
+    scatter_cap = _particle_explorer_scatter_max_points()
+    scatter_plotted_n = min(int(len(e.plot_df)), scatter_cap)
+    preload_limit = explorer_initial_preload_image_limit(scatter_plotted_n)
+    preload_cache_step = explorer_cache_size_power10_step(scatter_plotted_n)
     return render_template(
         "particle_explorer.html",
         numeric_cols=cols,
@@ -440,12 +446,14 @@ def explorer():
         initial_rows=initial_rows,
         total_particles=int(len(e.all_indices)),
         workdir=e.workdir,
-        preload_image_limit=DEFAULT_PRELOAD_IMAGE_LIMIT,
+        preload_image_limit=preload_limit,
+        preload_cache_step=preload_cache_step,
         preload_cpus=pc,
         preload_cache_time_hint=format_preload_cache_time_hint(pc),
         show_volume_explorer=explorer_volumes_eligible(e),
         explorer_scatter_max_points=_particle_explorer_scatter_max_points(),
         explorer_scatter_cap_from_env=_particle_explorer_scatter_cap_from_env(),
+        scatter_plotted_n=scatter_plotted_n,
     )
 
 

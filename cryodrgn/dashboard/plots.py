@@ -227,7 +227,7 @@ def _labels_colors_and_legend_items(
 
 
 def _continuous_series_stats(values: pd.Series) -> tuple[np.ndarray, float, float]:
-    """Return numeric array plus robust (min,max) bounds for continuous colouring."""
+    """Return numeric array plus robust (min,max) bounds for continuous coloring."""
     color_num = cast(pd.Series, pd.to_numeric(values, errors="coerce"))
     cvals = np.asarray(color_num, dtype=np.float64)
     cfinite = cvals[np.isfinite(cvals)]
@@ -466,7 +466,7 @@ def _draw_pair_grid_diagonal_legends(
     diagonal_color_ranges: list[tuple[float, float] | None],
     label_fontsize: float,
 ) -> None:
-    """Inset colour-bar + label in the bottom-left of each diagonal panel."""
+    """Inset color-bar + label in the bottom-left of each diagonal panel."""
     grad_left, grad_bottom = 0.115, 0.028
     grad_width, grad_height = 0.24, 0.044
     side_gap = grad_bottom * 0.5
@@ -765,7 +765,7 @@ def scatter3d_z_preview_png(
     elev: float = 22.0,
     azim: float = -65.0,
 ) -> bytes:
-    """Matplotlib 3D scatter PNG using the same subsample/colouring rules as ``scatter3d_z_json``.
+    """Matplotlib 3D scatter PNG using the same subsample/coloring rules as ``scatter3d_z_json``.
 
     Used for dashboard GIF capture where headless browsers often fail to composite WebGL.
     """

@@ -23,9 +23,11 @@ from cryodrgn.dashboard.particle_explorer import (
 )
 from cryodrgn.dashboard.preload import (
     DEFAULT_PRELOAD_IMAGE_LIMIT,
+    _hybrid_random_knn_spaced_local_indices,
     _preload_cache_time_estimate_bounds,
-    _stratified_xy_row_indices,
     encode_particle_batch,
+    explorer_cache_size_power10_step,
+    explorer_initial_preload_image_limit,
     format_preload_cache_time_hint,
     load_plot_df_rows_from_plot_inds_file,
     montage_bytes,
@@ -94,18 +96,71 @@ class TestPreloadTimeHints:
         assert s.startswith("~")
 
 
-class TestStratifiedXYRowIndices:
+class TestHybridRandomKnnSpacedPreload:
     def test_count_is_bounded_and_unique(self) -> None:
         rng = np.random.default_rng(123)
         coords = rng.normal(size=(500, 2))
         total_k = 200
-        picks = _stratified_xy_row_indices(coords, rng, total_k)
+        picks = _hybrid_random_knn_spaced_local_indices(coords, rng, total_k)
         assert len(picks) <= total_k
+        assert len(picks) == len(set(picks))
         assert all(0 <= i < 500 for i in picks)
 
     def test_empty_coords_returns_empty(self) -> None:
         rng = np.random.default_rng(0)
-        assert _stratified_xy_row_indices(np.zeros((0, 2)), rng, total_k=10) == set()
+        assert (
+            _hybrid_random_knn_spaced_local_indices(np.zeros((0, 2)), rng, total_k=10)
+            == set()
+        )
+
+    def test_grid_spacing_takes_one_per_bin_first(
+        self,
+    ) -> None:
+        from cryodrgn.dashboard.preload import _grid_spaced_outlier_pick
+
+        coords = np.array(
+            [
+                [0.0, 0.0],
+                [1.0, 0.0],
+                [0.0, 1.0],
+                [1.0, 1.0],
+                [0.5, 0.5],
+            ],
+            dtype=np.float64,
+        )
+        order = np.array([4, 0, 1, 2, 3])
+        picks = _grid_spaced_outlier_pick(
+            coords, order, want=4, exclude=set(), n_bins=2
+        )
+        assert picks[0] == 4
+        assert len(picks) == 4
+        assert len(set(picks)) == 4
+
+
+class TestExplorerCacheSizePower10Step:
+    def test_largest_power_of_ten_at_most_five_percent(self) -> None:
+        assert explorer_cache_size_power10_step(0) == 1
+        assert explorer_cache_size_power10_step(100) == 1
+        assert explorer_cache_size_power10_step(1000) == 10
+        assert explorer_cache_size_power10_step(10_000) == 100
+        assert explorer_cache_size_power10_step(50_000) == 1000
+        assert explorer_cache_size_power10_step(100_000) == 1000
+
+
+class TestExplorerInitialPreloadLimit:
+    def test_zero_points(self) -> None:
+        assert explorer_initial_preload_image_limit(0) == 1
+
+    def test_default_matches_step_capped_by_plotted_count(self) -> None:
+        assert explorer_initial_preload_image_limit(100) == 1
+        assert explorer_initial_preload_image_limit(1000) == 10
+        assert explorer_initial_preload_image_limit(49_999) == 1000
+        assert explorer_initial_preload_image_limit(50_000) == 1000
+        assert explorer_initial_preload_image_limit(50_001) == 1000
+        assert explorer_initial_preload_image_limit(100_000) == 1000
+
+    def test_small_plotted_count(self) -> None:
+        assert explorer_initial_preload_image_limit(5) == 1
 
 
 class TestSamplePlotDfRowsForPreload:
@@ -358,6 +413,25 @@ class TestSaveSelectionRoundTrip:
         assert saved.size == 4
 
 
+class TestApiCovariateThresholdRows:
+    def test_threshold_api_returns_rows(self, flask_client) -> None:
+        r = flask_client.post(
+            "/api/covariate_threshold_rows",
+            json={"column": "UMAP1", "level": 1e30, "use_max": False},
+        )
+        assert r.status_code == 200
+        js = r.get_json()
+        assert isinstance(js["rows"], list)
+        assert js["n"] == len(js["rows"])
+
+    def test_invalid_column_rejected(self, flask_client) -> None:
+        r = flask_client.post(
+            "/api/covariate_threshold_rows",
+            json={"column": "not_a_column", "level": 0.0, "use_max": False},
+        )
+        assert r.status_code == 400
+
+
 class TestApiPreloadImages:
     def test_get_small_selection(self, flask_client) -> None:
         r = flask_client.get(
@@ -407,7 +481,7 @@ class TestApiPreloadImages:
         key = next(iter(PRELOAD_CACHE))
         assert PRELOAD_CACHE[key][0] == second_rows
 
-    def test_initial_rows_seed_primary_axes_cache(self, flask_client) -> None:
+    def test_initial_rows_separate_cache_from_full_pool(self, flask_client) -> None:
         PRELOAD_CACHE.clear()
         r1 = flask_client.post(
             "/api/preload_images",
@@ -425,6 +499,33 @@ class TestApiPreloadImages:
         r2 = flask_client.post(
             "/api/preload_images",
             json={"x": "UMAP1", "y": "UMAP2", "cache_size": 4},
+        )
+        assert r2.status_code == 200
+        assert len(PRELOAD_CACHE) == 2
+
+    def test_initial_rows_extends_same_restriction_cache(self, flask_client) -> None:
+        PRELOAD_CACHE.clear()
+        r1 = flask_client.post(
+            "/api/preload_images",
+            json={
+                "x": "UMAP1",
+                "y": "UMAP2",
+                "cache_size": 2,
+                "initial_rows": [0, 1],
+            },
+        )
+        assert r1.status_code == 200
+        first_rows = r1.get_json()["rows"]
+        assert len(PRELOAD_CACHE) == 1
+
+        r2 = flask_client.post(
+            "/api/preload_images",
+            json={
+                "x": "UMAP1",
+                "y": "UMAP2",
+                "cache_size": 4,
+                "initial_rows": [0, 1],
+            },
         )
         assert r2.status_code == 200
         second_rows = r2.get_json()["rows"]
@@ -456,7 +557,9 @@ class TestParticleExplorerTemplateRegressions:
         assert 'id="image-cache-progress"' in body
         assert 'role="progressbar"' in body
         assert 'id="show-grid-annotations"' in body
-        assert "Show grid highlights on plot" in body
+        assert "Show highlights in grid using image cache" in body
+        assert "Build cache" in body
+        assert 'id="montage-cache-size-label-text"' in body
 
     def test_full_cache_load_suppresses_montage_and_plot_highlight_updates(
         self, flask_client
@@ -495,6 +598,9 @@ class TestPreloadDeltaResponses:
         assert second_js["total_cached"] >= len(first_js["rows"])
         assert set(second_js["rows"]).isdisjoint(set(first_js["rows"]))
         assert len(second_js["rows"]) == len(second_js["images"])
+        assert "batch_elapsed" in second_js
+        assert isinstance(second_js["batch_elapsed"], int | float)
+        assert second_js["batch_elapsed"] >= 0
 
     def test_delta_response_empty_when_target_already_cached(
         self, flask_client
@@ -520,6 +626,7 @@ class TestPreloadDeltaResponses:
         assert second.get_json()["rows"] == []
         assert second.get_json()["images"] == []
         assert second.get_json()["total_cached"] == cached_count
+        assert second.get_json().get("batch_elapsed") == 0.0
 
     @pytest.mark.parametrize("bad_cache_size", [True, False, 2.5, "2.5"])
     def test_non_integer_cache_sizes_are_rejected(

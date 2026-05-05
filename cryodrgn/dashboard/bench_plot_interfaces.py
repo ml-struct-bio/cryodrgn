@@ -38,7 +38,7 @@ def main() -> int:
     )
 
     def pairplot_color_and_diagonal(exp):
-        """Default pair-grid colour column and diagonal (UMAP vs PC) for ``exp``."""
+        """Default pair-grid color column and diagonal (UMAP vs PC) for ``exp``."""
         cols = exp.numeric_columns
         color = next(
             (

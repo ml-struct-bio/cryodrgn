@@ -131,7 +131,7 @@ def montage_bytes(exp: DashboardExperiment, row_indices: list[int]) -> bytes:
 def particle_thumbnail_b64_from_row(
     exp: DashboardExperiment, row_index: int, max_side: int = 72
 ) -> str | None:
-    """Small greyscale JPEG (base64) for trajectory NN inset previews."""
+    """Small grayscale JPEG (base64) for trajectory NN inset previews."""
     if not exp.can_preview_particles:
         return None
     try:
@@ -163,7 +163,7 @@ _PRELOAD_SPACING_BIN_FACTOR = 2.0
 
 
 def _kth_nn_distances(coords: np.ndarray, k: int) -> np.ndarray:
-    """Per-point distance to the *k*-th nearest neighbour in 2-D (requires ``k < n_points``)."""
+    """Per-point distance to the *k*-th nearest neighbor in 2-D (requires ``k < n_points``)."""
     from scipy.spatial import cKDTree
 
     m = int(coords.shape[0])
@@ -275,7 +275,7 @@ def sample_plot_df_rows_for_preload(
     """Pick plot_df rows for thumbnail preload.
 
     Uses a hybrid rule on the current scatter axes: half of the picks are uniform
-    random; the other half favour large k-th nearest-neighbour distances in the
+    random; the other half favor large k-th nearest-neighbor distances in the
     2-D embedding, with a coarse XY grid so high-scoring outliers do not stack
     in the same visual bin.
 

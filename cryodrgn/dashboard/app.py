@@ -376,7 +376,7 @@ def api_save_selection():
 def api_covariate_threshold_rows():
     """All ``plot_df`` row indices where a numeric covariate passes a threshold.
 
-    Matches the colour-by histogram semantics (≥ or ≤ level). Used so histogram
+    Matches the color-by histogram semantics (≥ or ≤ level). Used so histogram
     selections cover the full dataset like saved lasso indices, not only points
     on the scatter subsample.
     """
@@ -682,7 +682,7 @@ def api_preload_images():
     """Return base64 JPEG thumbnails for a preload cache.
 
     Selection (see :func:`sample_plot_df_rows_for_preload`): half of the picks are
-    uniform random; half favour large k-th nearest-neighbour distance in the
+    uniform random; half favor large k-th nearest-neighbor distance in the
     scatter plane, with a coarse XY grid so outliers do not pile into one bin.
 
     Use **POST** with a JSON body when ``selected_rows`` is large (lasso
@@ -691,6 +691,10 @@ def api_preload_images():
     With ``restrict_to_scatter_plot`` (particle explorer), thumbnails are drawn only
     from rows visible in the scatter subsample (same rule as ``api_scatter``, default
     200k points, seed 0).
+
+    Delta responses (``response_mode: "delta"``) include ``batch_elapsed``: wall seconds
+    for this request only (sampling + encode). ``elapsed`` remains cumulative for the
+    server-side cache entry.
     """
     e: DashboardExperiment = g.dashboard_exp
     if not e.can_preview_particles:
@@ -854,6 +858,7 @@ def api_preload_images():
                     images=[],
                     elapsed=cached_elapsed,
                     total_cached=len(cached_rows),
+                    batch_elapsed=0.0,
                 )
             return jsonify(
                 rows=cached_rows[:max_images],
@@ -877,12 +882,14 @@ def api_preload_images():
                     images=[],
                     elapsed=cached_elapsed,
                     total_cached=len(cached_rows),
+                    batch_elapsed=0.0,
                 )
             return jsonify(rows=cached_rows, images=cached_imgs, elapsed=cached_elapsed)
         add_imgs = _encode_indices(add_global_indices)
         rows = cached_rows + add_rows
         imgs = cached_imgs + add_imgs
-        elapsed = round(cached_elapsed + time.monotonic() - t0, 1)
+        batch_elapsed = round(time.monotonic() - t0, 1)
+        elapsed = round(cached_elapsed + batch_elapsed, 1)
         PRELOAD_CACHE[key] = (rows, imgs, elapsed)
         if delta_response:
             return jsonify(
@@ -890,6 +897,7 @@ def api_preload_images():
                 images=add_imgs,
                 elapsed=elapsed,
                 total_cached=len(rows),
+                batch_elapsed=batch_elapsed,
             )
         return jsonify(rows=rows, images=imgs, elapsed=elapsed)
 
@@ -913,7 +921,7 @@ def api_preload_images():
 
 
 def pairplot_page():
-    """Pair-grid UI: latent vs latent with chosen colour covariate (needs PCA + numeric colour column)."""
+    """Pair-grid UI: latent vs latent with chosen color covariate (needs PCA + numeric color column)."""
     e: DashboardExperiment = g.dashboard_exp
     zdim = int(e.z.shape[1])
     if zdim < 2:

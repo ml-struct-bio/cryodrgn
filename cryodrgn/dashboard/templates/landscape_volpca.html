@@ -12,7 +12,7 @@
     max-width: 100%;
     box-sizing: border-box;
   }
-  /* Let the left strip honour the grid column width (avoid overflow from nowrap / long tokens). */
+  /* Let the left strip honor the grid column width (avoid overflow from nowrap / long tokens). */
   .cryo-dash-page--volsketch aside.volsketch-side {
     min-width: 0;
     max-width: 100%;
@@ -238,7 +238,7 @@
       0 1px 2px rgba(0, 0, 0, 0.07);
   }
   /**
-   * Plot-colour chip fills — soft rim + restrained halo vs saturated tints.
+   * Plot-color chip fills — soft rim + restrained halo vs saturated tints.
    */
   .cryo-dash-page--volsketch .volsketch-gif-overlay--on-tint {
     box-shadow:
@@ -644,16 +644,16 @@
     return "rgba(" + r + "," + g + "," + b + "," + a + ")";
   }
 
-  /** Volume colour → tinted badge background; letters stay black. */
-  function volsketchApplyBadgeBackground(badge, colour) {
+  /** Volume color → tinted badge background; letters stay black. */
+  function volsketchApplyBadgeBackground(badge, color) {
     badge.style.color = "#1a1a1a";
     badge.classList.remove("volsketch-gif-overlay--on-tint");
-    if (typeof colour !== "string" || !colour.trim()) {
+    if (typeof color !== "string" || !color.trim()) {
       badge.style.backgroundColor = "";
       badge.style.borderColor = "";
       return;
     }
-    var c = colour.trim();
+    var c = color.trim();
     var rgba = null;
     if (/^#([0-9a-fA-F]{6})$/.test(c)) {
       rgba = volsketchHex6ToRgba(c, 0.88);
@@ -1236,7 +1236,7 @@
     var statusMsg;
     if (keepPreviews && reason === "color") {
       statusMsg = (
-        "Re-rendering volume previews with the new plot colours — current GIFs keep playing until the update finishes (ChimeraX, "
+        "Re-rendering volume previews with the new plot colors — current GIFs keep playing until the update finishes (ChimeraX, "
         + cpuPhrase + ")…"
       );
     } else if (keepPreviews && (reason === "gif_mode" || reason === "gif_frames")) {

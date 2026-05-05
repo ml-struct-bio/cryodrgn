@@ -693,7 +693,7 @@
     justify-content: flex-end;
   }
   /*
-   * Unfix row height (vs default image-viewer) so plot + colour chrome share one flex column
+   * Unfix row height (vs default image-viewer) so plot + color chrome share one flex column
    * without the scatter snapping when histogram threshold copy or row expand class toggled.
    */
   .cryo-dash-page--particle-explorer.cryo-dash-page--image-viewer .cryo-dash-row {
@@ -710,7 +710,7 @@
     <div class="cryo-dash-top" style="margin-bottom:0.25rem;">
       <a href="/">← Back</a>
     </div>
-    <p class="cryo-dash-lead">Use lasso, box-select, or the colour histogram threshold to define a particle index; generate images and volumes with or without a selection using the interface on the right.</p>
+    <p class="cryo-dash-lead">Use lasso, box-select, or the color histogram threshold to define a particle index; generate images and volumes with or without a selection using the interface on the right.</p>
     <div class="card cryo-dash-controls" id="scatter-controls-card">
       <fieldset>
         <legend>Choose axes<br/>and point color scale</legend>
@@ -736,7 +736,7 @@
       </div>
       <fieldset id="particle-sel-fieldset" disabled>
         <legend>Create indices file</legend>
-        <p class="cryo-dash-legend-note">Active after you select particles on the plot or with the colour histogram.</p>
+        <p class="cryo-dash-legend-note">Active after you select particles on the plot or with the color histogram.</p>
         <div class="cryo-explorer-save-btns">
           <button type="button" class="btn" id="save-indices-pkl">Save selection<br/>as <code>indices.pkl</code></button>
           <button type="button" class="btn btn-secondary" id="save-indices-custom">Save selection<br/>as…</button>
@@ -788,7 +788,7 @@
     <div id="color-hist-panel" class="cryo-color-hist-panel" hidden aria-hidden="true">
       <div id="color-hist"></div>
       <div class="cryo-color-hist-controls">
-        <span>Click violin to select particles above that colour value.</span>
+        <span>Click violin to select particles above that color value.</span>
         <label for="color-threshold-use-max">
           <input type="checkbox" id="color-threshold-use-max"/>
           Use as maximum (≤)
@@ -839,7 +839,7 @@
               type="number"
               id="montage-cache-size-input"
               name="montage_cache_size"
-              min="1"
+              min="0"
               step="{{ preload_cache_step }}"
               inputmode="numeric"
               value="{{ preload_image_limit }}"
@@ -921,7 +921,7 @@
         </label>
         <label class="cryo-explorer-plot-annotation-label" for="show-grid-annotations">
           <input type="checkbox" id="show-grid-annotations" checked/>
-          <span>Show grid highlights</span>
+          <span>Show highlights in grid using image cache</span>
         </label>
       </div>
       <div class="cryo-montage-grid-wrap">
@@ -1440,6 +1440,43 @@
     return Math.max(1, Math.floor(step));
   }
 
+  /**
+   * ``<input type="number">`` only steps correctly when (value − min) is a multiple of step.
+   * We keep min/step/value on that lattice so browser spinners use the power-of-ten step.
+   */
+  function montageCacheSizeStepperGrid(cap) {
+    cap = Math.max(0, Math.floor(Number(cap) || 0));
+    if (cap === 0) return { minG: 0, step: 1 };
+    var step = cacheSizePower10StepFromCap(cap);
+    if (!preloaded) {
+      var stepUse = Math.min(step, cap);
+      return { minG: 0, step: Math.max(1, stepUse) };
+    }
+    var have = cachedImageCount();
+    var floor = Math.min(have + 1, cap);
+    if (have >= cap) return { minG: cap, step: 1 };
+    var minAligned = Math.ceil(floor / step) * step;
+    if (minAligned > cap) return { minG: floor, step: 1 };
+    return { minG: minAligned, step: step };
+  }
+
+  function snapMontageCacheSizeToGridNearest(val, cap, grid) {
+    var minG = grid.minG;
+    var step = grid.step;
+    cap = Math.max(0, Math.floor(Number(cap) || 0));
+    if (cap === 0) return 0;
+    if (!isFinite(val)) val = minG;
+    val = Math.floor(Number(val));
+    val = Math.min(cap, Math.max(minG, val));
+    if (step <= 1) return val;
+    var k = Math.round((val - minG) / step);
+    if (!isFinite(k)) k = 0;
+    var out = minG + k * step;
+    if (out > cap) out = minG + Math.floor((cap - minG) / step) * step;
+    if (out < minG) out = minG;
+    return out;
+  }
+
   /** Default first-build target: step above, capped at plotted count (matches server ``preload_image_limit``). */
   function firstBuildCacheSizeDefault() {
     var cap = scatterSubsetRowCount();
@@ -1474,15 +1511,16 @@
     var el = document.getElementById("montage-cache-size-input");
     if (!el) return;
     var cap = scatterSubsetRowCount();
-    var stepAttr = String(cacheSizePower10StepFromCap(cap));
-    el.setAttribute("step", stepAttr);
+    var grid = montageCacheSizeStepperGrid(cap);
+    el.setAttribute("min", String(grid.minG));
+    el.setAttribute("step", String(grid.step));
     el.setAttribute("max", String(cap));
     syncMontageCacheSizeLabelEl();
     if (montagePreloadOverlayIsShown()) {
       el.disabled = true;
-      el.setAttribute("min", "1");
       if (preloadRequestedCacheTarget != null) {
-        el.value = String(preloadRequestedCacheTarget);
+        var tgt = snapMontageCacheSizeToGridNearest(preloadRequestedCacheTarget, cap, grid);
+        el.value = String(tgt);
       }
       return;
     }
@@ -1490,30 +1528,28 @@
     if (preloaded && have >= cap) {
       el.disabled = true;
       el.setAttribute("min", String(cap));
+      el.setAttribute("step", "1");
       el.value = String(cap);
       return;
     }
     el.disabled = false;
     if (!preloaded) {
-      el.setAttribute("min", "1");
       var d0 = firstBuildCacheSizeDefault();
       var raw0 = parseInt(String(el.value).replace(/\s/g, "").replace(/,/g, ""), 10);
-      if (!isFinite(raw0) || raw0 < 1 || raw0 > cap) {
-        el.value = String(d0);
-      } else {
-        el.value = String(Math.min(Math.max(raw0, 1), cap));
-      }
+      if (!isFinite(raw0) || raw0 < 0 || raw0 > cap) raw0 = d0;
+      var snapped0 = snapMontageCacheSizeToGridNearest(raw0, cap, grid);
+      if (snapped0 < 1) snapped0 = snapMontageCacheSizeToGridNearest(d0, cap, grid);
+      if (snapped0 < 1) snapped0 = 1;
+      el.value = String(Math.min(cap, snapped0));
       return;
     }
-    var floor = Math.min(have + 1, cap);
-    el.setAttribute("min", String(floor));
     var suggestion = defaultMontageNewCacheSizeSuggestion();
     var raw = parseInt(String(el.value).replace(/\s/g, "").replace(/,/g, ""), 10);
-    if (!isFinite(raw) || raw <= have || raw > cap) {
-      el.value = String(suggestion);
-    } else {
-      el.value = String(Math.min(Math.max(raw, floor), cap));
-    }
+    var floor = Math.min(have + 1, cap);
+    if (!isFinite(raw) || raw <= have || raw > cap) raw = suggestion;
+    var snapped = snapMontageCacheSizeToGridNearest(raw, cap, grid);
+    if (snapped < floor) snapped = snapMontageCacheSizeToGridNearest(suggestion, cap, grid);
+    el.value = String(Math.min(cap, Math.max(floor, snapped)));
   }
 
   /** Target cache size from field (first build: [1, cap]; expand: (have, cap]). */
@@ -1521,14 +1557,18 @@
     var cap = scatterSubsetRowCount();
     var el = document.getElementById("montage-cache-size-input");
     var raw = el ? parseInt(String(el.value).replace(/\s/g, "").replace(/,/g, ""), 10) : NaN;
+    var grid = montageCacheSizeStepperGrid(cap);
     if (!preloaded) {
       if (!isFinite(raw)) raw = firstBuildCacheSizeDefault();
-      return Math.min(cap, Math.max(1, raw));
+      var v = snapMontageCacheSizeToGridNearest(raw, cap, grid);
+      if (v < 1) v = snapMontageCacheSizeToGridNearest(firstBuildCacheSizeDefault(), cap, grid);
+      return Math.min(cap, Math.max(1, v));
     }
     var have = cachedImageCount();
     var floor = have >= cap ? cap : have + 1;
     if (!isFinite(raw)) raw = defaultMontageNewCacheSizeSuggestion();
-    return Math.min(cap, Math.max(floor, raw));
+    var v2 = snapMontageCacheSizeToGridNearest(raw, cap, grid);
+    return Math.min(cap, Math.max(floor, v2));
   }
 
   function rowToTraceIndex(row) {
@@ -1587,7 +1627,6 @@
 
   /* ---------- preloaded image cache ---------- */
   var preloaded = null;
-  var preloadedAxes = {x: "", y: ""};
 
   function cachedImageCount() {
     return preloaded && preloaded.rows ? preloaded.rows.size : 0;
@@ -1643,15 +1682,9 @@
     var have = cachedImageCount();
     var want = readMontageCacheSizeInput();
     var cap = scatterSubsetRowCount();
-    var canExpand = !!(
-      axesMatchPreloadedCache()
-      && want > have
-      && have < cap
-    );
+    var canExpand = !!(want > have && have < cap);
     btnExpandCache.disabled = !canExpand;
-    if (!axesMatchPreloadedCache()) {
-      btnExpandCache.title = "Change axes back or reload to match the cached plot.";
-    } else if (have >= cap) {
+    if (have >= cap) {
       btnExpandCache.title = "All plotted particle images are already cached.";
     } else if (want <= have) {
       btnExpandCache.title = "Set new cache size above " + Number(have).toLocaleString("en-CA") + " to expand.";
@@ -1702,19 +1735,10 @@
     return Math.min(5000, Math.max(minChunk, targetChunk));
   }
 
-  function axesMatchPreloadedCache() {
-    return !!(
-      preloaded
-      && sx.value === preloadedAxes.x
-      && sy.value === preloadedAxes.y
-    );
-  }
-
   function fetchPreload(xcol, ycol, onDone, opts) {
     opts = opts || {};
     var cacheSize = opts.cacheSize || scatterSubsetRowCount();
     preloadRequestedCacheTarget = cacheSize;
-    preloadedAxes = {x: xcol, y: ycol};
     var plottedCap = scatterSubsetRowCount();
     var overlayLabel = opts.overlayLabel
       ? opts.overlayLabel
@@ -1790,9 +1814,18 @@
             }
           }
         }
-        var cachedTotal = data.total_cached || preloaded.rows.size;
-        var msg = cachedTotal + " images cached";
-        if (data.elapsed != null) msg += " in " + data.elapsed + "s";
+        var totalNow = preloaded.rows.size;
+        var msg;
+        if (opts.delta && data.rows && data.rows.length && data.batch_elapsed != null) {
+          var nNew = data.rows.length;
+          msg = nNew + (nNew === 1 ? " new image cached in " : " new images cached in ")
+            + data.batch_elapsed + "s — " + totalNow + " total in cache";
+        } else {
+          var cachedTotal = data.total_cached != null ? data.total_cached : totalNow;
+          msg = cachedTotal + " images cached";
+          if (data.elapsed != null) msg += " in " + data.elapsed + "s";
+          msg += " — " + totalNow + " total in cache";
+        }
         if (preloadStatus && !opts.suppressStatus) {
           if (activePool && activePool.length) {
             preloadStatus.textContent = formatCachedSelectionStatusCore(activePool.length)
@@ -1823,7 +1856,7 @@
   }
 
   function expandImageCacheToTarget() {
-    if (!preloaded || !axesMatchPreloadedCache()) return;
+    if (!preloaded) return;
     var target = readMontageCacheSizeInput();
     var before = cachedImageCount();
     if (target <= before) return;
@@ -1949,11 +1982,11 @@
   }
 
   btnViewImages.addEventListener("click", function() {
-    if (imagesViewEnabled && preloaded && montageDisplayMode === "volumes" && axesMatchPreloadedCache() && allImagesCached()) {
+    if (imagesViewEnabled && preloaded && montageDisplayMode === "volumes" && allImagesCached()) {
       showImagesInMontageFromCache();
       return;
     }
-    if (imagesViewEnabled && preloaded && axesMatchPreloadedCache() && allImagesCached()) {
+    if (imagesViewEnabled && preloaded && allImagesCached()) {
       montageInner.classList.remove("cryo-dash-montage-inner--disabled");
       gridSizeSelect.disabled = false;
       buildTraceMap();
@@ -2289,7 +2322,7 @@
   }
 
   /**
-   * Lasso/box selection invalidates colour-threshold mode. Drop the threshold guide
+   * Lasso/box selection invalidates color-threshold mode. Drop the threshold guide
    * and status text without rebuilding the violin (avoids O(n log n) histogram work).
    */
   function clearColorHistogramThresholdForGeometricSelection() {
@@ -2375,9 +2408,9 @@
     }
     if (!vals.length) vals = xs.slice();
     if (xmax <= xmin) {
-      var oneColour = paletteScaleCSS(selectedScatterPalette(), 0.5);
+      var oneColor = paletteScaleCSS(selectedScatterPalette(), 0.5);
       var singleOutlierColors = [];
-      for (var soc = 0; soc < outlierX.length; soc++) singleOutlierColors.push(oneColour);
+      for (var soc = 0; soc < outlierX.length; soc++) singleOutlierColors.push(oneColor);
       return {
         outlineX: [xmin, xmin, xmin],
         outlineY: [-0.38, 0.38, -0.38],
@@ -2387,8 +2420,8 @@
           x: [xmin - 0.5, xmin + 0.5, xmin + 0.5, xmin - 0.5, xmin - 0.5],
           y: [-0.38, -0.38, 0.38, 0.38, -0.38],
           fill: "toself",
-          fillcolor: oneColour,
-          line: {width: 0, color: oneColour},
+          fillcolor: oneColor,
+          line: {width: 0, color: oneColor},
           hoverinfo: "skip",
           showlegend: false
         }],
@@ -2584,7 +2617,7 @@
   }
 
   /**
-   * k-means / discrete ChimeraX colours: bright pastel cell fill (blend toward white) plus
+   * k-means / discrete ChimeraX colors: bright pastel cell fill (blend toward white) plus
    * a darker saturated tint for the covariate line so it stays readable on the light chip.
    */
   function discreteLabelMontageStyles(hex) {
@@ -2879,7 +2912,7 @@
     if (scatterPlotWatchdog) { clearTimeout(scatterPlotWatchdog); scatterPlotWatchdog = null; }
   }
   function scatterColorByIsDiscrete() {
-    /* Matches ``scatter_json``: only ``labels`` uses ChimeraX discrete colours (no sequential palette). */
+    /* Matches ``scatter_json``: only ``labels`` uses ChimeraX discrete colors (no sequential palette). */
     return sc.value === "labels";
   }
 
@@ -3349,12 +3382,12 @@
         var rows = (res.ok && res.j && Array.isArray(res.j.rows))
           ? res.j.rows
           : rowsMatchingColorThresholdFromTrace(items, level, useMax);
-        applyRowsSelection(rows, "Colour threshold");
+        applyRowsSelection(rows, "Color threshold");
         renderColorHistogram();
       })
       .catch(function() {
         var rows = rowsMatchingColorThresholdFromTrace(items, level, useMax);
-        applyRowsSelection(rows, "Colour threshold");
+        applyRowsSelection(rows, "Color threshold");
         renderColorHistogram();
       });
   }
@@ -3556,15 +3589,17 @@
     updateParticleSelFieldset();
     invalidateVolumeArtifacts();
     if (axesChanged) {
-      imagesViewEnabled = false;
-      preloaded = null;
-      montageInner.classList.add("cryo-dash-montage-inner--disabled");
-      gridSizeSelect.disabled = true;
-      syncImageCacheButton(false);
-      if (preloadStatus) {
-        preloadStatus.textContent = "";
-      }
       setImageCacheProgress(false);
+      if (preloaded) {
+        syncImageCacheButton(false);
+        if (preloadStatus) setPreloadStatusCachedTotalOnly();
+      } else {
+        imagesViewEnabled = false;
+        montageInner.classList.add("cryo-dash-montage-inner--disabled");
+        gridSizeSelect.disabled = true;
+        syncImageCacheButton(false);
+        if (preloadStatus) preloadStatus.textContent = "";
+      }
     }
     cancelLassoSelectionDebounce();
     cancelPendingHighlightRestyle();
@@ -3670,7 +3705,7 @@
     status.textContent = "";
     status.title = "";
     if (!saveSelectionRows.length) {
-      status.textContent = "Select particles (plot or colour histogram) before saving.";
+      status.textContent = "Select particles (plot or color histogram) before saving.";
       status.title = status.textContent;
       return;
     }

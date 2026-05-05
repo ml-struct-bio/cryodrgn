@@ -545,7 +545,7 @@ def parallel_chimerax_static_pngs(
     """Run :func:`mrc_to_static_png` for each task in parallel.
 
     Each task is ``(sort_index, mrc_path, out_png_path, dpi)`` or with optional
-    ``volume_color`` and/or ``corner_label`` (hex or ChimeraX colour name for colour).
+    ``volume_color`` and/or ``corner_label`` (hex or ChimeraX color name).
     Returns ``out_png`` paths sorted by ``sort_index``.
     """
     n = len(tasks)

@@ -292,7 +292,7 @@ def _graph_neighbor_arrays(
     if neighbors.shape[1] == 0:
         raise ValueError("Could not build nearest-neighbor graph from latent points.")
 
-    # Match graph_traversal's average-neighbor thresholding behaviour.
+    # Match graph_traversal's average-neighbor thresholding behavior.
     total_neighbors = max(1, min(int(n * avg), int(ndist.size)))
     flat = np.sort(ndist.reshape(-1))
     max_dist = float(flat[total_neighbors - 1])
@@ -708,7 +708,7 @@ def default_trajectory_endpoints_xy(
 
     The segment passes through the centroid and spans from the minimum to the
     maximum projection of points onto the first principal direction (SVD of
-    the centred coordinates, with an axis-aligned fallback).
+    the centered coordinates, with an axis-aligned fallback).
     """
     sub = e.plot_df[[xcol, ycol]].dropna()
     if len(sub) < 2:

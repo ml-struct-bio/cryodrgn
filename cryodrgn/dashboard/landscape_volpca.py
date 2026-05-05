@@ -197,7 +197,7 @@ def landscape_vol_state_hex_by_vol_index(
     kmeans_dir: str,
     k_sketch: int,
 ) -> dict[int, str] | None:
-    """Vol index (``11`` for ``vol_011.mrc``) → fill hex, matching state scatter colours."""
+    """Vol index (``11`` for ``vol_011.mrc``) → fill hex, matching state scatter colors."""
     states = load_sketch_state_labels(landscape_dir)
     if states is None:
         return None
@@ -231,7 +231,7 @@ def _volsketch_covariate_display(name: str) -> str:
 
 
 def sketch_plot_color_covariate_variable_label(plot_color_mode: str) -> str | None:
-    """Human-readable colour dimension name for GIF preview (matches Color by column)."""
+    """Human-readable color dimension name for GIF preview (matches Color by column)."""
     raw = (plot_color_mode or "").strip()
     pcm = raw.lower()
     if pcm in ("none", ""):
@@ -405,7 +405,7 @@ def sketch_vol_color_covariate_overlay_text(
     plot_color_mode: str,
     vol_index: int,
 ) -> str | None:
-    """Display string for the plot colour column at this sketch volume (preview badge)."""
+    """Display string for the plot color column at this sketch volume (preview badge)."""
     pcm = (plot_color_mode or "none").strip().lower()
     if pcm == "none":
         return None

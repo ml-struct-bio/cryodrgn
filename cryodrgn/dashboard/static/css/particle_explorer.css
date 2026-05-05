@@ -95,8 +95,12 @@
   }
   @media (min-width: 901px) {
     .cryo-dash-page--particle-explorer.cryo-dash-page--image-viewer .cryo-plotly-stack {
-      width: min(100cqw, calc(100cqh - 1.45rem));
-      max-height: calc(100cqh - 1.45rem);
+    /*
+     * Keep the scatter square stable regardless of extra controls (histogram/palette)
+     * appearing above or below it — do not tie square size to container height.
+     */
+    width: min(100cqw, calc(100svh - var(--cryo-dash-below-nav, 9.5rem) - 1.45rem));
+    max-height: none;
     }
   }
   .cryo-dash-page--particle-explorer .cryo-particle-explorer-plot-status {
@@ -646,8 +650,7 @@
     display: none;
   }
   .cryo-palette-select.scatter-palette-radios--suppressed {
-    visibility: hidden;
-    pointer-events: none;
+  display: none;
   }
   .cryo-palette-option {
     flex: 0 0 auto;
@@ -685,10 +688,11 @@
     box-sizing: border-box;
   }
   .cryo-color-hist-panel[hidden] {
-    display: block !important;
-    visibility: hidden;
-    pointer-events: none;
+  display: none !important;
   }
+#scatter-palette-radios {
+  order: 2;
+}
   #color-hist {
     height: 5rem;
     width: 100%;
@@ -698,11 +702,9 @@
     align-items: center;
     flex-wrap: wrap;
     gap: 0.3rem 0.85rem;
-    margin-top: 0.1rem;
+  margin-top: 0.05rem;
     font-size: 0.78rem;
     color: var(--muted, #5c6b7a);
-    /* Stable height when labels wrap or threshold copy appears — keeps scatter plot size steady */
-    min-height: 3.25rem;
   }
   .cryo-color-hist-controls label {
     display: inline-flex;
@@ -716,7 +718,6 @@
   #color-threshold-status {
     margin-left: auto;
     line-height: 1.35;
-    min-height: 2.7em;
     text-align: right;
     display: flex;
     align-items: center;
@@ -745,8 +746,7 @@
       9.5rem)));
     align-items: stretch;
     gap: 0.35rem 0.5rem;
-    margin: 0.15rem 0 0.2rem;
-    min-height: 3.25rem;
+  margin: 0.05rem 0 0;
   }
   .cryo-color-discrete-switch {
     display: inline-flex;
@@ -789,12 +789,20 @@
     accent-color: var(--accent, #c4703a);
     cursor: pointer;
   }
-  .cryo-color-discrete-hint {
-    margin: 0.15rem 0 0 !important;
-    font-size: 0.78rem;
-    line-height: 1.35;
-    color: var(--muted, #5c6b7a);
-  }
+.cryo-color-discrete-actions {
+  display: contents;
+}
+.cryo-color-discrete-action-cell {
+  display: flex;
+  align-items: stretch;
+}
+.cryo-color-discrete-action-cell #btn-discrete-invert-selection {
+  width: 100%;
+  text-align: center;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.75rem;
+  line-height: 1.2;
+}
   .cryo-explorer-cache-selection-btn-wrap {
     margin-top: 0.45rem;
     width: 100%;
@@ -822,6 +830,9 @@
     margin: 0;
     line-height: 1.35;
   }
+.cryo-explorer-lead-list li.cryo-explorer-lead-item--active {
+  font-weight: 700;
+}
   /*
    * Unfix row height (vs default image-viewer) so plot + color chrome share one flex column
    * without the scatter snapping when histogram threshold copy or row expand class toggled.

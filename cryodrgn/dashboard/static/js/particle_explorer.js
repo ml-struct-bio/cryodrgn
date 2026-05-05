@@ -14,11 +14,19 @@
   var explorerScatterCapFromEnv = b.explorerScatterCapFromEnv;
 
   var preloadRequestedCacheTarget = null;
+  var intFormatter = new Intl.NumberFormat("en-US", {maximumFractionDigits: 0});
+
+  function fmtInt(value) {
+    var num = Number(value);
+    if (!Number.isFinite(num)) return "0";
+    return intFormatter.format(Math.round(num));
+  }
 
   var preselectRowsForNextFetch = (initialRows && initialRows.length && initialRows.length <= 5000)
     ? initialRows.slice() : [];
   var saveSelectionRows = [];
   var selectionTooltipText = "";
+  var activeSelectionMode = "";
   var imagesViewEnabled = false;
   var particleSelFs = document.getElementById("particle-sel-fieldset");
   var clearExplorerSelectionBtn = document.getElementById("clear-explorer-selection");
@@ -171,10 +179,10 @@
 
   function updateParticleSelFieldset() {
     var n = saveSelectionRows.length;
-    var nFmt = Number(n).toLocaleString("en-CA");
-    var totalFmt = Number(totalParticles).toLocaleString("en-CA");
+    var nFmt = fmtInt(n);
+    var totalFmt = fmtInt(totalParticles);
     var plotCap = scatterSubsetRowCount();
-    var plotCapFmt = Number(plotCap).toLocaleString("en-CA");
+    var plotCapFmt = fmtInt(plotCap);
     var curtailed = totalParticles > plotCap;
     if (selCountEl) {
       selCountEl.textContent = "Selected: " + nFmt + "/" + totalFmt + " particles";
@@ -221,6 +229,7 @@
     if (particleSelFs) particleSelFs.disabled = (n === 0);
     if (clearExplorerSelectionBtn) clearExplorerSelectionBtn.disabled = (n === 0);
     syncCacheSelectionUncachedButton();
+    syncLeadSelectionModeHighlight();
   }
 
   function countUncachedSelectionRows() {
@@ -246,13 +255,13 @@
       && !busy
     );
     btnCacheSelectionUncached.disabled = !can;
-    btnCacheSelectionUncached.textContent = "Add " + String(nUnc) + " selection images to cache";
+    btnCacheSelectionUncached.textContent = "Add " + fmtInt(nUnc) + " selection images to cache";
     btnCacheSelectionUncached.setAttribute("aria-label", btnCacheSelectionUncached.textContent);
     btnCacheSelectionUncached.title = !saveSelectionRows || !saveSelectionRows.length
       ? "Select particles on the plot or via color controls first."
       : nUnc === 0
         ? "All selected particles are already in the image cache."
-        : "Fetch thumbnails for " + nUnc + " selected particle"
+        : "Fetch thumbnails for " + fmtInt(nUnc) + " selected particle"
           + (nUnc === 1 ? "" : "s") + " not yet cached.";
   }
 
@@ -266,7 +275,7 @@
     if (!uncached.length) return;
     var have = preloaded ? cachedImageCount() : 0;
     var target = have + uncached.length;
-    var overlayLabel = "Caching " + uncached.length + " selected image"
+    var overlayLabel = "Caching " + fmtInt(uncached.length) + " selected image"
       + (uncached.length === 1 ? "" : "s") + "…";
     fetchPreload(sx.value, sy.value, null, {
       cacheSize: target,
@@ -454,6 +463,8 @@
   var colorContinuousWrap = document.getElementById("color-continuous-hist-wrap");
   var colorDiscreteWrap = document.getElementById("color-discrete-wrap");
   var colorDiscreteSwitches = document.getElementById("color-discrete-switches");
+  var colorDiscreteActions = document.querySelector(".cryo-color-discrete-actions");
+  var btnDiscreteInvertSelection = document.getElementById("btn-discrete-invert-selection");
   var btnCacheSelectionUncached = document.getElementById("btn-cache-selection-uncached");
   var suppressDiscreteSwitchProgrammatic = false;
   var colorThresholdUseMax = document.getElementById("color-threshold-use-max");
@@ -466,6 +477,28 @@
   var colorHistHoverLevel = null;
   var colorHistHoverRaf = null;
   var colorViolinBaseShapes = [];
+  var leadModeLassoEl = document.getElementById("lead-mode-lasso");
+  var leadModeThresholdEl = document.getElementById("lead-mode-threshold");
+  var leadModeDiscreteEl = document.getElementById("lead-mode-discrete");
+
+  function syncLeadSelectionModeHighlight() {
+    var mode = activeSelectionMode || "";
+    if (leadModeLassoEl) {
+      leadModeLassoEl.classList.toggle("cryo-explorer-lead-item--active", mode === "lasso");
+    }
+    if (leadModeThresholdEl) {
+      leadModeThresholdEl.classList.toggle("cryo-explorer-lead-item--active", mode === "threshold");
+    }
+    if (leadModeDiscreteEl) {
+      leadModeDiscreteEl.classList.toggle("cryo-explorer-lead-item--active", mode === "discrete");
+    }
+  }
+
+  function setActiveSelectionMode(mode) {
+    activeSelectionMode = mode || "";
+    syncLeadSelectionModeHighlight();
+  }
+
   function syncScatterControlsAlignment() {
     if (!scatterControlsCard || !scatterControlsSide || !scatterPlotStack) return;
     var minGapPx = 8;
@@ -526,6 +559,9 @@
   }
   var overlay = document.getElementById("scatter-rendering-overlay");
   var paletteFieldset = document.getElementById("scatter-palette-radios");
+  if (paletteFieldset && scatterPlotStack && scatterPlotStack.parentNode) {
+    scatterPlotStack.insertAdjacentElement("afterend", paletteFieldset);
+  }
   var plotStatus = document.getElementById("scatter-plot-status");
   var preloadStatus = document.getElementById("preload-status");
   var scatterPlotWatchdog = null;
@@ -790,18 +826,21 @@
   function formatCachedSelectionStatusCore(activeInSelection) {
     var nPlot = traceMapCachedCount();
     var nTot = cachedImageCount();
+    var nSelFmt = fmtInt(activeInSelection);
+    var nPlotFmt = fmtInt(nPlot);
+    var nTotFmt = fmtInt(nTot);
     if (!nTot) return "";
     if (nPlot === nTot) {
-      return activeInSelection + " of " + nTot + " cached images in selection";
+      return nSelFmt + " of " + nTotFmt + " cached images in selection";
     }
-    return activeInSelection + " of " + nPlot + " on-scatter cached in selection ("
-      + nTot + " thumbnails loaded)";
+    return nSelFmt + " of " + nPlotFmt + " on-scatter cached in selection ("
+      + nTotFmt + " thumbnails loaded)";
   }
 
   function setPreloadStatusCachedTotalOnly() {
     if (!preloadStatus || !preloaded) return;
     var n = cachedImageCount();
-    preloadStatus.textContent = n ? n + " images cached." : "";
+    preloadStatus.textContent = n ? fmtInt(n) + " images cached." : "";
   }
 
   function allImagesCached() {
@@ -824,7 +863,7 @@
         ? "No particles in this experiment."
         : !plotHasScatterData()
           ? "Wait for the scatter plot to finish loading."
-          : "Fetch up to " + Number(capB).toLocaleString("en-CA")
+          : "Fetch up to " + fmtInt(capB)
             + " thumbnails (see cache size).";
       return;
     }
@@ -837,9 +876,9 @@
     if (have >= cap) {
       btnExpandCache.title = "All plotted particle images are already cached.";
     } else if (want <= have) {
-      btnExpandCache.title = "Set new cache size above " + Number(have).toLocaleString("en-CA") + " to expand.";
+      btnExpandCache.title = "Set new cache size above " + fmtInt(have) + " to expand.";
     } else {
-      btnExpandCache.title = "Fetch thumbnails up to the new cache size (now " + Number(have).toLocaleString("en-CA") +
+      btnExpandCache.title = "Fetch thumbnails up to the new cache size (now " + fmtInt(have) +
         " cached).";
     }
   }
@@ -873,8 +912,8 @@
     if (imageCacheProgressBarEl) imageCacheProgressBarEl.style.width = pct + "%";
     if (imageCacheProgressLabelEl) {
       imageCacheProgressLabelEl.textContent = pct + "% loaded ("
-        + Number(current).toLocaleString("en-CA") + " / "
-        + Number(total).toLocaleString("en-CA") + ")";
+        + fmtInt(current) + " / "
+        + fmtInt(total) + ")";
     }
   }
 
@@ -896,7 +935,7 @@
     var overlayLabel = opts.overlayLabel
       ? opts.overlayLabel
       : (opts.fullLoad
-        ? "Loading all " + Number(plottedCap).toLocaleString("en-CA") + " plotted particle images..."
+        ? "Loading all " + fmtInt(plottedCap) + " plotted particle images..."
         : "Loading image cache...");
     setMontagePreloadOverlay(true, overlayLabel);
     syncImageCacheButton(true);
@@ -977,13 +1016,13 @@
         var msg;
         if (opts.delta && data.rows && data.rows.length && data.batch_elapsed != null) {
           var nNew = data.rows.length;
-          msg = nNew + (nNew === 1 ? " new image cached in " : " new images cached in ")
-            + data.batch_elapsed + "s — " + totalNow + " total in cache";
+          msg = fmtInt(nNew) + (nNew === 1 ? " new image cached in " : " new images cached in ")
+            + data.batch_elapsed + "s — " + fmtInt(totalNow) + " total in cache";
         } else {
           var cachedTotal = data.total_cached != null ? data.total_cached : totalNow;
-          msg = cachedTotal + " images cached";
+          msg = fmtInt(cachedTotal) + " images cached";
           if (data.elapsed != null) msg += " in " + data.elapsed + "s";
-          msg += " — " + totalNow + " total in cache";
+          msg += " — " + fmtInt(totalNow) + " total in cache";
         }
         if (preloadStatus && !opts.suppressStatus) {
           if (activePool && activePool.length) {
@@ -1019,7 +1058,7 @@
     var target = readMontageCacheSizeInput();
     var before = cachedImageCount();
     if (target <= before) return;
-    var label = "Expanding cache to " + Number(target).toLocaleString("en-CA") + " images…";
+    var label = "Expanding cache to " + fmtInt(target) + " images…";
     fetchPreload(sx.value, sy.value, null, {
       cacheSize: target,
       delta: true,
@@ -1037,7 +1076,7 @@
       cacheSize: sz,
       enableImages: true,
       restrictToScatterPlot: true,
-      overlayLabel: "Building cache (" + Number(sz).toLocaleString("en-CA") + " images)…"
+      overlayLabel: "Building cache (" + fmtInt(sz) + " images)…"
     }).catch(function(e) {
       console.error("build cache failed", e);
     });
@@ -1051,7 +1090,7 @@
     var total = scatterSubsetRowCount();
     setMontagePreloadOverlay(
       true,
-      "Loading all " + Number(total).toLocaleString("en-CA") + " plotted particle images..."
+      "Loading all " + fmtInt(total) + " plotted particle images..."
     );
     if (preloadStatus) preloadStatus.textContent = "";
     setImageCacheProgress(true, cachedImageCount(), total);
@@ -1160,7 +1199,7 @@
         restoreMontageAfterScatterReload();
       }
       if (preloadStatus && preloaded.rows) {
-        preloadStatus.textContent = preloaded.rows.size + " images in cache (no reload).";
+        preloadStatus.textContent = fmtInt(preloaded.rows.size) + " images in cache (no reload).";
       }
       syncVolumeExploreButtons();
       return;
@@ -1392,6 +1431,7 @@
       colorDiscreteWrap.classList.remove("cryo-color-discrete-wrap--show");
     }
     if (colorDiscreteSwitches) colorDiscreteSwitches.innerHTML = "";
+    syncDiscreteInvertSelectionButton();
     syncParticleExplorerRowExpandForColorHist();
   }
 
@@ -1479,6 +1519,25 @@
     }
   }
 
+  function syncDiscreteInvertSelectionButton() {
+    if (!btnDiscreteInvertSelection || !colorDiscreteSwitches) return;
+    var inputs = colorDiscreteSwitches.querySelectorAll("input[type=\"checkbox\"]");
+    var anyChecked = false;
+    for (var i = 0; i < inputs.length; i++) {
+      if (inputs[i].checked) {
+        anyChecked = true;
+        break;
+      }
+    }
+    if (!anyChecked) {
+      btnDiscreteInvertSelection.disabled = true;
+      btnDiscreteInvertSelection.textContent = "no selection made!";
+      return;
+    }
+    btnDiscreteInvertSelection.disabled = false;
+    btnDiscreteInvertSelection.textContent = "Invert selection";
+  }
+
   function applyDiscreteCategorySelectionFromSwitches() {
     if (!gd || !gd.data || !gd.data[0] || scatterTraceColorMode() !== "discrete") return;
     if (!colorDiscreteSwitches) return;
@@ -1495,6 +1554,7 @@
     if (colorThresholdStatus) colorThresholdStatus.textContent = "";
     if (!keySet.size) {
       applyRowsSelection([], "Discrete");
+      syncDiscreteInvertSelectionButton();
       return;
     }
     var cd = gd.data[0].customdata;
@@ -1504,6 +1564,7 @@
       if (keySet.has(k)) rows.push(cd[j][1]);
     }
     applyRowsSelection(rows, "Discrete");
+    syncDiscreteInvertSelectionButton();
   }
 
   function renderDiscreteColorSwitches() {
@@ -1551,7 +1612,7 @@
       var countSpan = document.createElement("span");
       countSpan.className = "cryo-color-discrete-switch-count";
       var nForKey = keyCounts.get(key) || 0;
-      var countText = String(nForKey) + (nForKey === 1 ? " particle" : " particles");
+      var countText = fmtInt(nForKey) + (nForKey === 1 ? " particle" : " particles");
       countSpan.textContent = countText;
       labelItems.push({label: labelText, count: countText});
       var keyHex = keyToColor.get(key);
@@ -1576,7 +1637,12 @@
     var colW = measureDiscreteSwitchColumnWidthPx(labelItems);
     if (colW > 0) colorDiscreteSwitches.style.setProperty("--cryo-discrete-col-w", String(colW) + "px");
     else colorDiscreteSwitches.style.removeProperty("--cryo-discrete-col-w");
+    if (colorDiscreteActions && btnDiscreteInvertSelection) {
+      colorDiscreteActions.classList.add("cryo-color-discrete-action-cell");
+      colorDiscreteSwitches.appendChild(colorDiscreteActions);
+    }
     syncDiscreteSwitchesFromSelection();
+    syncDiscreteInvertSelectionButton();
   }
 
   function syncDiscreteSwitchesFromSelection() {
@@ -1605,6 +1671,7 @@
     } finally {
       suppressDiscreteSwitchProgrammatic = false;
     }
+    syncDiscreteInvertSelectionButton();
   }
 
   function syncColorCovariateSidePanel() {
@@ -1622,12 +1689,14 @@
         colorDiscreteWrap.classList.add("cryo-color-discrete-wrap--show");
       }
       renderDiscreteColorSwitches();
+      if (colorThresholdStatus) colorThresholdStatus.textContent = "";
     } else {
       if (colorDiscreteWrap) {
         colorDiscreteWrap.hidden = true;
         colorDiscreteWrap.classList.remove("cryo-color-discrete-wrap--show");
       }
       if (colorDiscreteSwitches) colorDiscreteSwitches.innerHTML = "";
+      syncDiscreteInvertSelectionButton();
       if (colorContinuousWrap) colorContinuousWrap.hidden = false;
       renderColorHistogram();
     }
@@ -1993,7 +2062,7 @@
       if (colorThresholdLevel != null && colorThresholdColorCol === sc.value) {
         colorThresholdStatus.textContent = colorThresholdDescription(saveSelectionRows.length, items.length);
       } else {
-        colorThresholdStatus.textContent = "";
+        colorThresholdStatus.textContent = "no selection made!";
       }
     }
     syncParticleExplorerRowExpandForColorHist();
@@ -2704,6 +2773,13 @@
   function applyRowsSelection(rows, statusPrefix) {
     rows = rows || [];
     var rowSet = new Set(rows);
+    var mode = "";
+    if (rowSet.size) {
+      if (statusPrefix === "Color threshold") mode = "threshold";
+      else if (statusPrefix === "Discrete") mode = "discrete";
+      else mode = "lasso";
+    }
+    setActiveSelectionMode(mode);
     saveSelectionRows = Array.from(rowSet);
     selectionTooltipText = "";
     updateParticleSelFieldset();
@@ -2755,6 +2831,7 @@
     cancelLassoSelectionDebounce();
     hideBoxSelectTooltip();
     selectionTooltipText = "";
+    setActiveSelectionMode("");
     colorThresholdLevel = null;
     colorThresholdColorCol = null;
     if (colorThresholdStatus) colorThresholdStatus.textContent = "";
@@ -2955,6 +3032,7 @@
       var snap = snapshotSelectedPoints(ev);
       var rowsSnap = snapshotRowsFromPoints(ev);
       selectionTooltipText = boxSelectionTooltip(ev);
+      setActiveSelectionMode(rowsSnap.length ? "lasso" : "");
       hideBoxSelectTooltip();
       cancelLassoSelectionDebounce();
         lassoSelectionDebounceTimer = setTimeout(function() {
@@ -2973,6 +3051,7 @@
       cancelLassoSelectionDebounce();
       saveSelectionRows = [];
       selectionTooltipText = "";
+      setActiveSelectionMode("");
       updateParticleSelFieldset();
       activePool = null;
       lassoSelectedRowSet = null;
@@ -3007,6 +3086,7 @@
       activePool = null;
       lassoSelectedRowSet = null;
       selectionTooltipText = "";
+      setActiveSelectionMode("");
       lastMontageRows = [];
       colorThresholdLevel = null;
       colorThresholdColorCol = null;
@@ -3231,6 +3311,23 @@
       } else {
         syncColorCovariateSidePanel();
       }
+    });
+  }
+  if (btnDiscreteInvertSelection) {
+    btnDiscreteInvertSelection.addEventListener("click", function() {
+      if (!colorDiscreteSwitches || btnDiscreteInvertSelection.disabled) return;
+      var inputs = colorDiscreteSwitches.querySelectorAll("input[type=\"checkbox\"]");
+      if (!inputs.length) return;
+      suppressDiscreteSwitchProgrammatic = true;
+      try {
+        for (var i = 0; i < inputs.length; i++) {
+          inputs[i].checked = !inputs[i].checked;
+          inputs[i].setAttribute("aria-checked", inputs[i].checked ? "true" : "false");
+        }
+      } finally {
+        suppressDiscreteSwitchProgrammatic = false;
+      }
+      applyDiscreteCategorySelectionFromSwitches();
     });
   }
   updateParticleSelFieldset();

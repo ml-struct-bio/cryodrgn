@@ -1,0 +1,833 @@
+  .cryo-montage-grid {
+    display: grid;
+    gap: 4px;
+    margin-top: 0.5rem;
+  }
+  .cryo-montage-grid-wrap {
+    position: relative;
+  }
+  .cryo-montage-grid-wrap .cryo-plot-rendering-overlay {
+    border-radius: 4px;
+    background: rgba(250, 248, 244, 0.92);
+  }
+  .cryo-montage-cell {
+    display: flex;
+    flex-direction: column;
+    background: var(--accent, #c4703a);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .cryo-montage-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 1px 4px;
+    min-height: 0;
+    line-height: 1.15;
+    text-shadow: 0 0 3px rgba(0,0,0,0.6);
+  }
+  .cryo-montage-label {
+    font-weight: 700;
+    color: #fff;
+    font-family: Georgia, "Times New Roman", serif;
+    white-space: nowrap;
+  }
+  .cryo-montage-covar {
+    font-size: 0.52rem;
+    color: rgba(255,255,255,0.88);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-variant-numeric: tabular-nums;
+    margin-left: 2px;
+  }
+  .cryo-montage-img-wrap {
+    position: relative;
+    aspect-ratio: 1;
+    flex: 1 1 auto;
+  }
+  .cryo-montage-img-wrap img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    background: #e8ecf1;
+    object-fit: cover;
+  }
+  .cryo-montage-img-wrap img[src=""] { visibility: hidden; }
+  .cryo-montage-footer {
+    padding: 0 4px 1px;
+    line-height: 1.15;
+    min-height: 0;
+    text-shadow: 0 0 3px rgba(0,0,0,0.6);
+  }
+  .cryo-montage-idx {
+    font-size: 0.52rem;
+    color: rgba(255,255,255,0.88);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .cryo-dash-montage-inner--disabled {
+    opacity: 0.48;
+  }
+  /* Side card height must not change on first selection: legend note stays in flow; disabled
+     state is indicated by fieldset opacity only. */
+  fieldset#particle-sel-fieldset:disabled {
+    opacity: 0.55;
+  }
+  #scatter-controls-card {
+    min-width: 0;
+  }
+  /* Tighter gap above “Selected: …” (half of default fieldset bottom + row top margins). */
+  #scatter-controls-card > fieldset:first-of-type {
+    margin-bottom: 0.275rem;
+  }
+  .cryo-dash-page--particle-explorer.cryo-dash-page--image-viewer .cryo-dash-row {
+    gap: 0.4rem;
+  }
+  /* Tighter chrome above the scatter (pre–zero-margin layout). */
+  .cryo-dash-page--particle-explorer.cryo-dash-page--image-viewer .cryo-dash-viewport--plotly {
+    padding-top: 0.28rem;
+  }
+  .cryo-dash-page--particle-explorer.cryo-dash-page--image-viewer .cryo-plotly-stack {
+    max-height: calc(100% - 1.45rem);
+  }
+  @media (min-width: 901px) {
+    .cryo-dash-page--particle-explorer.cryo-dash-page--image-viewer .cryo-plotly-stack {
+      width: min(100cqw, calc(100cqh - 1.45rem));
+      max-height: calc(100cqh - 1.45rem);
+    }
+  }
+  .cryo-dash-page--particle-explorer .cryo-particle-explorer-plot-status {
+    margin: 0 0 0.12rem !important;
+    min-height: 1.15em;
+    line-height: 1.25;
+  }
+  .cryo-explorer-sel-count-row {
+    --sel-count-fs: calc(0.96rem * 1.11);
+    --sel-count-lh: 1.3;
+    --sel-pie-d: 2.688rem;
+    --sel-pie-pct-fs: calc(0.576rem * 1.25);
+    /* Pie + gap + percentage line — used to size the main "Selected:" line box (footnote is outside this band). */
+    --sel-pie-stack-h: calc(var(--sel-pie-d) + 0.2rem + (var(--sel-pie-pct-fs) * 1.15));
+    font-size: var(--sel-count-fs);
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.12rem;
+    margin: 0.21rem 0 0.32rem;
+  }
+  .cryo-explorer-sel-count-main-row {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    /* Vertically center the label block with the pie + % column (do not use a huge line-height on the <p> — that blows
+      up multi-line spacing). */
+    align-items: center;
+    gap: 0.5rem 0.6rem;
+    min-width: 0;
+  }
+  /* Beat .card p { margin-bottom: 1rem } so the row height matches the label, not the card paragraph gap. */
+  .cryo-explorer-sel-count-main-row .cryo-explorer-sel-count-text {
+    flex: 1 1 auto;
+    margin: 0 !important;
+    min-width: 0;
+    font-weight: 600;
+    font-size: inherit;
+    line-height: var(--sel-count-lh);
+    color: var(--nav-bg, #243b53);
+  }
+  /* Must beat base `.card p { font-size: 0.98rem }` (higher specificity). */
+  .cryo-explorer-sel-count-row > p.cryo-explorer-sel-count-footnote {
+    margin: 0 !important;
+    /* Match `#particle-sel-fieldset > p.cryo-dash-legend-note` / montage explanatory copy */
+    font-size: 0.8rem;
+    font-weight: 400;
+    line-height: 1.35;
+    color: var(--muted, #5c6b7a);
+    width: 100%;
+    box-sizing: border-box;
+  }
+  /* Same as `.cryo-dash-controls .status` / montage `.cryo-dash-legend-note` (0.8rem), not `.card p` (0.98rem). */
+  #particle-sel-fieldset > p.cryo-dash-legend-note {
+    margin: 0 0 0.4rem !important;
+    font-size: 0.8rem;
+    line-height: 1.35;
+    color: var(--muted, #5c6b7a);
+  }
+  /* In-flow flex stack (no absolute positioning): avoids zero-height / calc bugs that hid the donut and pinned % to
+    the row top. */
+  .cryo-explorer-sel-pie-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.2rem;
+    flex-shrink: 0;
+    width: 3.032rem;
+    min-height: var(--sel-pie-stack-h);
+    box-sizing: border-box;
+  }
+  .cryo-explorer-sel-pie {
+    --sel-frac: 0;
+    width: var(--sel-pie-d);
+    height: var(--sel-pie-d);
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: conic-gradient(
+      from -90deg,
+      var(--accent, #c4703a) 0,
+      var(--accent, #c4703a) calc(var(--sel-frac) * 100%),
+      rgba(36, 59, 83, 0.14) 0
+    );
+    box-shadow: inset 0 0 0 0.368rem var(--paper, #fff);
+    box-sizing: border-box;
+  }
+  /* Beat `.card p { margin-bottom: 1rem }` (base.html) — same specificity trick as sel-count-text. */
+  .cryo-explorer-sel-count-main-row .cryo-explorer-sel-pie-pct {
+    margin: 0;
+    font-size: var(--sel-pie-pct-fs);
+    line-height: 1.15;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--nav-bg, #243b53);
+    text-align: center;
+    white-space: nowrap;
+  }
+  #particle-sel-fieldset {
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: clip;
+  }
+  .cryo-explorer-clear-selection {
+    margin: 0.28rem 0 0.42rem;
+  }
+  .cryo-explorer-clear-selection .btn {
+    width: 100%;
+    box-sizing: border-box;
+    line-height: 1.25;
+    padding-top: 0.4rem;
+    padding-bottom: 0.4rem;
+  }
+  .cryo-explorer-save-btns {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin-top: 0.45rem;
+  }
+  .cryo-explorer-save-btns .btn {
+    width: 100%;
+    box-sizing: border-box;
+    line-height: 1.25;
+    padding-top: 0.45rem;
+    padding-bottom: 0.45rem;
+    white-space: normal;
+    text-align: center;
+  }
+  .cryo-explorer-montage-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    margin-top: 0.45rem;
+  }
+  .cryo-explorer-montage-group {
+    border: 1px solid rgba(36, 59, 83, 0.14);
+    border-radius: 4px;
+    padding: 0.48rem 0.62rem 0.55rem;
+    margin: 0;
+    min-width: 0;
+    background: rgba(255, 255, 255, 0.45);
+  }
+  .cryo-explorer-montage-group legend {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--nav-bg, #243b53);
+    padding: 0 0.3rem;
+    margin: 0;
+  }
+  .cryo-explorer-load-images-toolbar {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 0.3rem 0.4rem;
+    min-width: 0;
+  }
+  .cryo-explorer-load-images-toolbar .cryo-explorer-cache-size-label {
+    flex: 0 1 auto;
+    min-width: 0;
+    align-self: center;
+    display: inline-flex;
+    align-items: center;
+  }
+  .cryo-explorer-load-images-toolbar .cryo-explorer-action-row__btn {
+    flex: 0 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    align-self: center;
+  }
+  .cryo-explorer-load-images-toolbar .cryo-explorer-action-row__btn .btn {
+    padding: 0.26rem 0.4rem;
+    font-size: 0.72rem;
+    line-height: 1.15;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+  .cryo-explorer-cache-size-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin: 0;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--nav-bg, #243b53);
+    white-space: nowrap;
+  }
+  .cryo-explorer-cache-size-label__text {
+    color: var(--muted, #5c6b7a);
+    font-weight: 500;
+  }
+  .cryo-explorer-cache-size-label input[type="number"] {
+    width: 4.25rem;
+    box-sizing: border-box;
+    padding: 0.2rem 0.35rem;
+    font-size: 0.78rem;
+    border: 1px solid rgba(36, 59, 83, 0.22);
+    border-radius: 3px;
+    font-variant-numeric: tabular-nums;
+  }
+  .cryo-explorer-preload-status {
+    margin: 0.38rem 0 0;
+    font-size: 0.78rem;
+    line-height: 1.35;
+    color: var(--muted, #5c6b7a);
+    min-width: 0;
+  }
+  .cryo-explorer-action-row {
+    display: grid;
+    grid-template-columns: max-content minmax(11.5rem, 1fr);
+    gap: 0.4rem 0.55rem;
+    align-items: center;
+  }
+  .cryo-explorer-action-row__btn {
+    flex-shrink: 0;
+  }
+  .cryo-explorer-action-row__btn .btn {
+    width: auto;
+    max-width: min(10.25rem, 100%);
+    box-sizing: border-box;
+    margin: 0;
+    line-height: 1.2;
+    padding: 0.4rem 0.55rem;
+    white-space: normal;
+    text-align: center;
+  }
+  .cryo-explorer-action-row__btn .btn:disabled {
+    opacity: 0.48;
+    filter: grayscale(0.85);
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+  .cryo-explorer-action-row__hint {
+    margin: 0;
+    font-size: 0.78rem;
+    line-height: 1.32;
+    color: var(--muted, #5c6b7a);
+    min-width: 0;
+    hyphens: auto;
+    overflow-wrap: break-word;
+  }
+  .cryo-image-cache-progress {
+    display: grid;
+    gap: 0.2rem;
+    width: min(100%, 18rem);
+    margin-top: 0.35rem;
+  }
+  .cryo-image-cache-progress[hidden] {
+    display: none;
+  }
+  .cryo-image-cache-progress__track {
+    height: 0.42rem;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(36, 59, 83, 0.16);
+  }
+  .cryo-image-cache-progress__bar {
+    width: 0%;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--accent, #c4703a);
+    transition: width 0.18s ease;
+  }
+  .cryo-image-cache-progress__label {
+    font-size: 0.76rem;
+    line-height: 1.2;
+    color: var(--muted, #5c6b7a);
+    font-variant-numeric: tabular-nums;
+  }
+  .cryo-dash-page--image-viewer .cryo-explorer-preload-status.cryo-dash-legend-note {
+    margin: 0.38rem 0 0;
+  }
+  .cryo-explorer-action-row .cryo-explorer-action-row__hint {
+    margin: 0;
+  }
+  /* Montage `.cryo-dash-legend-note` uses margin-top: 0.5rem (base.html); that pushed hints below the volume buttons.
+    */
+  .cryo-dash-page--particle-explorer .cryo-dash-montage .cryo-explorer-action-row
+    .cryo-explorer-action-row__hint.cryo-dash-legend-note {
+    margin: 0 !important;
+  }
+  .cryo-dash-page--particle-explorer .cryo-dash-montage .cryo-explorer-action-row .cryo-explorer-action-row__btn {
+    display: flex;
+    align-items: center;
+    align-self: center;
+  }
+  .cryo-explorer-save-inverse-label {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.35rem;
+    margin: 0.55rem 0 0;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .cryo-explorer-save-inverse-label input[type="checkbox"] {
+    flex-shrink: 0;
+    margin: 0.2rem 0 0;
+  }
+  .cryo-explorer-save-inverse-label span {
+    flex: 1 1 auto;
+    min-width: 0;
+    line-height: 1.35;
+  }
+  .cryo-explorer-plot-annotation-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin: 0;
+    font-size: 0.82rem;
+    color: var(--muted, #5c6b7a);
+    cursor: pointer;
+  }
+  .cryo-explorer-plot-annotation-label input[type="checkbox"] {
+    margin: 0;
+  }
+  .cryo-image-grid-menu-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.38rem;
+    border: 1px solid rgba(36, 59, 83, 0.2);
+    border-radius: 0.42rem;
+    background: rgba(255, 255, 255, 0.82);
+    color: var(--nav-bg, #243b53);
+    font-size: 0.82rem;
+    font-weight: 600;
+    line-height: 1.15;
+    padding: 0.22rem 0.45rem;
+    cursor: pointer;
+  }
+  .cryo-image-grid-menu-toggle__chev {
+    display: inline-block;
+    width: 0.78rem;
+    text-align: center;
+    transform-origin: 50% 50%;
+  }
+  .cryo-image-grid-menu-toggle[aria-expanded="true"] .cryo-image-grid-menu-toggle__chev {
+    transform: rotate(90deg);
+  }
+  .cryo-image-grid-menu-body[hidden] {
+    display: none !important;
+  }
+  #save-status {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    min-height: 1.2em;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+  .cryo-traj-file-browser-panel {
+    width: 100%;
+    box-sizing: border-box;
+    margin-top: 0.55rem;
+  }
+  .cryo-traj-file-browser-panel[hidden] {
+    display: none !important;
+  }
+  .cryo-file-browser {
+    border: 1px solid rgba(36, 59, 83, 0.15);
+    border-radius: 4px;
+    background: #fff;
+    max-height: 14rem;
+    display: flex;
+    flex-direction: column;
+    font-size: 0.72rem;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .cryo-file-browser-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.3rem 0.4rem;
+    border-bottom: 1px solid rgba(36, 59, 83, 0.10);
+    background: rgba(36, 59, 83, 0.04);
+    flex-shrink: 0;
+  }
+  .cryo-file-browser-bar button {
+    background: none;
+    border: 1px solid rgba(36, 59, 83, 0.18);
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 0.72rem;
+    padding: 0.15rem 0.4rem;
+    color: #243b53;
+    flex-shrink: 0;
+  }
+  .cryo-file-browser-bar button:hover {
+    background: rgba(36, 59, 83, 0.08);
+  }
+  .cryo-file-browser-path {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    direction: rtl;
+    text-align: left;
+    color: rgba(36, 59, 83, 0.6);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.65rem;
+  }
+  .cryo-file-browser-list {
+    overflow-y: auto;
+    flex: 1;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .cryo-file-browser-list li {
+    padding: 0.22rem 0.45rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    border-bottom: 1px solid rgba(36, 59, 83, 0.04);
+  }
+  .cryo-file-browser-list li:hover {
+    background: rgba(36, 59, 83, 0.06);
+  }
+  .cryo-file-browser-list .fb-icon {
+    flex-shrink: 0;
+    width: 1rem;
+    text-align: center;
+    opacity: 0.5;
+  }
+  .cryo-file-browser-list .fb-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cryo-file-browser-empty {
+    padding: 0.6rem 0.45rem;
+    color: rgba(36, 59, 83, 0.45);
+    text-align: center;
+    font-style: italic;
+  }
+  .cryo-file-browser-save-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.3rem;
+    align-items: center;
+    padding: 0.35rem 0.4rem;
+    border-top: 1px solid rgba(36, 59, 83, 0.10);
+    background: rgba(36, 59, 83, 0.03);
+  }
+  .cryo-file-browser-save-input {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    font-size: 0.72rem;
+    padding: 0.2rem 0.35rem;
+    border: 1px solid rgba(36, 59, 83, 0.22);
+    border-radius: 3px;
+    font-family: "IBM Plex Mono", monospace;
+  }
+  .cryo-file-browser-save-row .btn {
+    font-size: 0.72rem;
+    padding: 0.2rem 0.45rem;
+    white-space: nowrap;
+  }
+  .cryo-volume-status-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+    font-size: 0.82rem;
+    color: var(--muted, #5c6b7a);
+    min-height: 0.35rem;
+  }
+  .cryo-volume-status-row .cryo-plot-rendering-overlay__track {
+    width: min(11rem, 55vw);
+    flex: 0 0 auto;
+  }
+  .cryo-palette-select {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: stretch;
+    gap: 0.45rem;
+    width: 100%;
+    margin-top: 0.28rem;
+    padding-top: 0.28rem;
+    border-top: 1px solid rgba(36, 59, 83, 0.1);
+    font-size: 0.78rem;
+    color: var(--nav-bg, #243b53);
+  }
+  .cryo-palette-select__title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+    line-height: 1.05;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid rgba(36, 59, 83, 0.14);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.6);
+    color: var(--nav-bg, #243b53);
+    padding: 0.18rem 0.34rem;
+    font: inherit;
+    font-weight: 600;
+  }
+  .cryo-palette-select__title:hover {
+    background: rgba(36, 59, 83, 0.06);
+  }
+  .cryo-palette-select__chevron {
+    flex: 0 0 auto;
+    font-size: 0.7rem;
+    transition: transform 0.12s ease;
+  }
+  .cryo-palette-select__title[aria-expanded="true"] .cryo-palette-select__chevron {
+    transform: rotate(90deg);
+  }
+  .cryo-palette-select__options {
+    display: grid;
+    grid-auto-flow: column;
+    grid-template-rows: repeat(2, auto);
+    grid-auto-columns: max-content;
+    align-items: stretch;
+    column-gap: 0.35rem;
+    row-gap: 0.04rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0.04rem 0 0.22rem;
+    scrollbar-width: thin;
+  }
+  .cryo-palette-select__options--collapsed {
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .cryo-box-select-tooltip {
+    position: absolute;
+    z-index: 8;
+    max-width: min(30rem, 82%);
+    padding: 0.35rem 0.5rem;
+    border-radius: 4px;
+    background: rgba(36, 59, 83, 0.94);
+    color: #fff;
+    font-size: 0.76rem;
+    line-height: 1.25;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+    pointer-events: none;
+    transform: translate(0.55rem, -0.55rem);
+  }
+  .cryo-box-select-tooltip[hidden] {
+    display: none;
+  }
+  .cryo-palette-select.scatter-palette-radios--suppressed {
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .cryo-palette-option {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+    padding: 0.18rem 0.35rem;
+    border: 1px solid rgba(36, 59, 83, 0.12);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.55);
+    white-space: nowrap;
+    cursor: pointer;
+    font-weight: 500;
+  }
+  .cryo-palette-option:hover {
+    background: rgba(36, 59, 83, 0.06);
+  }
+  .cryo-palette-option input[type="radio"] {
+    margin: 0;
+    flex: 0 0 auto;
+  }
+  .cryo-palette-select__swatch {
+    flex: 0 0 2.8rem;
+    height: 0.62rem;
+    border-radius: 999px;
+    border: 1px solid rgba(36, 59, 83, 0.16);
+  }
+  .cryo-color-hist-panel {
+    margin-top: 0.35rem;
+    padding: 0.35rem 0.45rem 0.25rem;
+    border: 1px solid rgba(36, 59, 83, 0.13);
+    border-radius: 4px;
+    background: rgba(250, 248, 244, 0.78);
+    width: min(83.333%, 52rem);
+    box-sizing: border-box;
+  }
+  .cryo-color-hist-panel[hidden] {
+    display: block !important;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  #color-hist {
+    height: 5rem;
+    width: 100%;
+  }
+  .cryo-color-hist-controls {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.3rem 0.85rem;
+    margin-top: 0.1rem;
+    font-size: 0.78rem;
+    color: var(--muted, #5c6b7a);
+    /* Stable height when labels wrap or threshold copy appears — keeps scatter plot size steady */
+    min-height: 3.25rem;
+  }
+  .cryo-color-hist-controls label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin: 0;
+    cursor: pointer;
+    color: var(--nav-bg, #243b53);
+    font-weight: 500;
+  }
+  #color-threshold-status {
+    margin-left: auto;
+    line-height: 1.35;
+    min-height: 2.7em;
+    text-align: right;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+  }
+  /*
+   * Do not set display:block on #color-continuous-hist-wrap — it beats the [hidden] attribute
+   * (ID wins over attribute-only UA rules), so the violin plot box stayed visible above discrete toggles.
+   */
+  #color-continuous-hist-wrap[hidden] {
+    display: none !important;
+  }
+  #color-discrete-wrap {
+    display: none;
+  }
+  #color-discrete-wrap.cryo-color-discrete-wrap--show {
+    display: block;
+  }
+  .cryo-color-discrete-switches {
+    display: grid;
+    /*
+     * Filled from JS using the longest label width; fixed column tracks keep all chips
+     * the same size while auto-fit keeps row count as low as available width allows.
+     */
+    grid-template-columns: repeat(auto-fit, minmax(var(--cryo-discrete-col-w, 9.5rem), var(--cryo-discrete-col-w,
+      9.5rem)));
+    align-items: stretch;
+    gap: 0.35rem 0.5rem;
+    margin: 0.15rem 0 0.2rem;
+    min-height: 3.25rem;
+  }
+  .cryo-color-discrete-switch {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: 0.28rem;
+    margin: 0;
+    padding: 0.2rem 0.36rem;
+    border: 1px solid rgba(36, 59, 83, 0.18);
+    border-radius: 0.42rem;
+    box-sizing: border-box;
+    font-size: 0.76rem;
+    font-weight: 500;
+    color: var(--nav-bg, #243b53);
+    cursor: pointer;
+    user-select: none;
+  }
+  .cryo-color-discrete-switch-text {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    min-width: 0;
+    line-height: 1.15;
+  }
+  .cryo-color-discrete-switch-label {
+    line-height: 1.15;
+  }
+  .cryo-color-discrete-switch-count {
+    margin-top: 0.06rem;
+    font-size: 0.69em;
+    font-weight: 500;
+    opacity: 0.86;
+    line-height: 1.1;
+    white-space: nowrap;
+  }
+  .cryo-color-discrete-switch input[type="checkbox"] {
+    margin: 0;
+    width: 1.05rem;
+    height: 1.05rem;
+    flex-shrink: 0;
+    accent-color: var(--accent, #c4703a);
+    cursor: pointer;
+  }
+  .cryo-color-discrete-hint {
+    margin: 0.15rem 0 0 !important;
+    font-size: 0.78rem;
+    line-height: 1.35;
+    color: var(--muted, #5c6b7a);
+  }
+  .cryo-explorer-cache-selection-btn-wrap {
+    margin-top: 0.45rem;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .cryo-explorer-cache-selection-btn-wrap .btn {
+    width: 100%;
+    box-sizing: border-box;
+    margin: 0;
+    line-height: 1.2;
+    padding: 0.4rem 0.55rem;
+    font-size: 0.72rem;
+  }
+  .cryo-explorer-cache-selection-btn-wrap .btn:disabled {
+    opacity: 0.48;
+    filter: grayscale(0.85);
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+  .cryo-explorer-lead-list {
+    margin: 0.08rem 0 0.12rem 1.05rem;
+    padding: 0;
+  }
+  .cryo-explorer-lead-list li {
+    margin: 0;
+    line-height: 1.35;
+  }
+  /*
+   * Unfix row height (vs default image-viewer) so plot + color chrome share one flex column
+   * without the scatter snapping when histogram threshold copy or row expand class toggled.
+   */
+  .cryo-dash-page--particle-explorer.cryo-dash-page--image-viewer .cryo-dash-row {
+    height: auto;
+    min-height: calc(100svh - var(--cryo-dash-below-nav, 9.5rem));
+    max-height: none;
+  }

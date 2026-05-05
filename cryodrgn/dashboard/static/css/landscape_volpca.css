@@ -1,0 +1,487 @@
+  .cryo-dash-page--volsketch .volsketch-grid {
+    display: grid;
+    grid-template-columns: minmax(200px, 260px) minmax(260px, 1fr) minmax(260px, 380px);
+    gap: 1rem 1.1rem;
+    align-items: start;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  /* Let the left strip honor the grid column width (avoid overflow from nowrap / long tokens). */
+  .cryo-dash-page--volsketch aside.volsketch-side {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-wrap: break-word;
+    box-sizing: border-box;
+  }
+  .cryo-dash-page--volsketch aside.volsketch-side .cryo-dash-lead {
+    max-width: 100%;
+  }
+  .cryo-dash-page--volsketch #volsketch-selection-panel,
+  .cryo-dash-page--volsketch #volsketch-selection-panel fieldset {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .cryo-dash-page--volsketch #volsketch-selection-panel p.status,
+  .cryo-dash-page--volsketch #volsketch-selection-panel .cryo-dash-legend-note,
+  .cryo-dash-page--volsketch #volsketch-selection-panel legend {
+    overflow-wrap: anywhere;
+    word-wrap: break-word;
+    hyphens: auto;
+    max-width: 100%;
+  }
+  .cryo-dash-page--volsketch .volsketch-plot-cell {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-width: 0;
+  }
+  /* As square as practical: limit by viewport minus side columns and header. */
+  .cryo-dash-page--volsketch .volsketch-plot-square {
+    width: min(100%, calc(100vh - 11rem), calc(100vw - 36rem));
+    aspect-ratio: 1 / 1;
+    max-width: 100%;
+    min-height: 240px;
+    min-width: 0;
+    position: relative;
+  }
+  .cryo-dash-page--volsketch .volsketch-plot-square .cryo-plotly-graph-host {
+    position: absolute;
+    inset: 0;
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 0 !important;
+  }
+  .cryo-dash-page--volsketch .volsketch-sel-indices-wrap {
+    margin: 0 0 0.5rem;
+  }
+  .cryo-dash-page--volsketch .volsketch-sel-indices-details {
+    margin: 0;
+    border: 1px solid rgba(36, 59, 83, 0.2);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.88);
+    box-sizing: border-box;
+    min-width: 0;
+    max-width: 100%;
+    box-shadow: 0 1px 4px rgba(36, 59, 83, 0.07);
+    transition:
+      border-color 0.15s ease,
+      box-shadow 0.15s ease;
+  }
+  .cryo-dash-page--volsketch .volsketch-sel-indices-details:hover {
+    border-color: rgba(36, 59, 83, 0.32);
+    box-shadow: 0 2px 8px rgba(36, 59, 83, 0.1);
+  }
+  .cryo-dash-page--volsketch .volsketch-sel-indices-details[hidden] {
+    display: none !important;
+  }
+  .cryo-dash-page--volsketch .volsketch-sel-indices-summary {
+    cursor: pointer;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 0.35rem 0.45rem;
+    align-items: start;
+    width: 100%;
+    box-sizing: border-box;
+    font-weight: 600;
+    font-size: 0.82rem;
+    padding: 0.42rem 0.55rem 0.42rem 0.45rem;
+    list-style: none;
+    user-select: none;
+    color: var(--nav-bg, #243b53);
+    border-radius: 5px;
+    transition: background 0.15s ease;
+  }
+  .cryo-dash-page--volsketch .volsketch-sel-indices-summary:hover {
+    background: rgba(196, 112, 58, 0.09);
+  }
+  .cryo-dash-page--volsketch .volsketch-sel-indices-summary:focus-visible {
+    outline: 2px solid var(--accent, #c4703a);
+    outline-offset: 2px;
+  }
+  .cryo-dash-page--volsketch .volsketch-sel-indices-chevron {
+    grid-column: 1;
+    grid-row: 1;
+    display: block;
+    width: 0.55rem;
+    height: 0.55rem;
+    margin-top: 0.2em;
+    border-right: 2px solid rgba(36, 59, 83, 0.55);
+    border-bottom: 2px solid rgba(36, 59, 83, 0.55);
+    transform: rotate(-45deg) translateY(-0.05rem);
+    transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .cryo-dash-page--volsketch .volsketch-sel-indices-details[open] > .volsketch-sel-indices-summary
+    .volsketch-sel-indices-chevron {
+    transform: rotate(45deg) translateY(0.06rem);
+  }
+  .cryo-dash-page--volsketch .volsketch-sel-indices-summary-label {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0;
+    text-align: left;
+    overflow-wrap: anywhere;
+    word-wrap: break-word;
+    hyphens: auto;
+  }
+  .cryo-dash-page--volsketch .volsketch-sel-indices-summary-hint {
+    grid-column: 3;
+    grid-row: 1;
+    justify-self: end;
+    max-width: 100%;
+    font-weight: 600;
+    font-size: 0.65rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: rgba(36, 59, 83, 0.48);
+    white-space: normal;
+    text-align: right;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+  }
+  .cryo-dash-page--volsketch .volsketch-sel-indices-summary::-webkit-details-marker {
+    display: none;
+  }
+  .cryo-dash-page--volsketch .volsketch-sel-indices-summary::marker {
+    content: "";
+  }
+  .cryo-dash-page--volsketch .volsketch-sel-indices-details[open] > .volsketch-sel-indices-summary {
+    border-bottom: 1px solid rgba(36, 59, 83, 0.12);
+    border-radius: 5px 5px 0 0;
+  }
+  .cryo-dash-page--volsketch .volsketch-sel-indices-list {
+    margin: 0;
+    padding: 0.4rem 0.55rem 0.5rem 1.35rem;
+    max-height: 10rem;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.8rem;
+    line-height: 1.45;
+    color: var(--nav-bg, #243b53);
+  }
+  .cryo-dash-page--volsketch .volsketch-animate-card {
+    min-width: 0;
+  }
+  .cryo-dash-page--volsketch #volsketch-preview-wrap {
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .cryo-dash-page--volsketch .volsketch-preview-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+    margin-top: 0.65rem;
+    max-height: min(55vh, 28rem);
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .cryo-dash-page--volsketch .volsketch-preview-grid.volsketch-preview-grid--cycle {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cryo-dash-page--volsketch .volsketch-preview-grid.volsketch-preview-grid--cycle figure {
+    width: 100%;
+    max-width: 100%;
+  }
+  .cryo-dash-page--volsketch .volsketch-preview-grid figure {
+    margin: 0;
+    border: 1px solid rgba(36, 59, 83, 0.15);
+    border-radius: 4px;
+    overflow: hidden;
+    background: #fff;
+    min-width: 0;
+  }
+  .cryo-dash-page--volsketch .volsketch-preview-grid figcaption {
+    font-size: 0.72rem;
+    padding: 0.2rem 0.3rem;
+    color: var(--muted, #5c6b7a);
+    font-variant-numeric: tabular-nums;
+  }
+  .cryo-dash-page--volsketch .volsketch-preview-grid img {
+    width: 100%;
+    display: block;
+    vertical-align: middle;
+    background: #e8ecf1;
+  }
+  .cryo-dash-page--volsketch .volsketch-anim-wrap {
+    position: relative;
+    display: block;
+    width: 100%;
+    line-height: 0;
+  }
+  .cryo-dash-page--volsketch .volsketch-gif-overlay {
+    position: absolute;
+    top: 0.35rem;
+    left: 0.35rem;
+    z-index: 1;
+    font-size: clamp(0.893rem, 2.74vw, 1.181rem);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: #1a1a1a;
+    line-height: 1.15;
+    padding: 0.168rem 0.456rem;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(55, 65, 81, 0.35);
+    pointer-events: none;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+    /* Light fringe for contrast on GIF noise — keep subtle */
+    text-shadow:
+      0 1px 1px rgba(255, 255, 255, 0.5),
+      0 1px 2px rgba(0, 0, 0, 0.07);
+  }
+  /**
+   * Plot-color chip fills — soft rim + restrained halo vs saturated tints.
+   */
+  .cryo-dash-page--volsketch .volsketch-gif-overlay--on-tint {
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.32),
+      0 1px 3px rgba(0, 0, 0, 0.08),
+      0 1px 5px rgba(0, 0, 0, 0.04);
+    border-color: rgba(27, 31, 36, 0.22);
+    text-shadow:
+      0 0 1px rgba(255, 255, 255, 0.85),
+      0 1px 2px rgba(255, 255, 255, 0.45),
+      0 2px 3px rgba(0, 0, 0, 0.12);
+  }
+  .cryo-dash-page--volsketch .volsketch-gif-overlay[hidden] {
+    display: none !important;
+  }
+  .cryo-dash-page--volsketch .volsketch-gif-overlay--cov {
+    left: auto;
+    right: 0.35rem;
+    max-width: min(78%, calc(100% - 4.8rem));
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.1rem;
+    line-height: 1.2;
+    text-align: right;
+    overflow: hidden;
+    /* 23% smaller than the montage letter overlay (same stack, covariate side). */
+    font-size: clamp(0.688rem, 2.11vw, 0.909rem);
+    padding: 0.129rem 0.351rem;
+  }
+  .cryo-dash-page--volsketch .volsketch-gif-overlay--cov.volsketch-gif-overlay--on-tint
+    .volsketch-gif-cov-var {
+    text-shadow:
+      0 0 2px rgba(255, 255, 248, 0.5),
+      0 1px 2px rgba(0, 0, 0, 0.1);
+    color: #141418;
+  }
+  .cryo-dash-page--volsketch .volsketch-gif-overlay--cov.volsketch-gif-overlay--on-tint
+    .volsketch-gif-cov-val {
+    text-shadow:
+      0 0 2px rgba(255, 255, 255, 0.55),
+      0 2px 3px rgba(0, 0, 0, 0.12);
+    color: #121217;
+  }
+  .cryo-dash-page--volsketch .volsketch-gif-cov-var {
+    display: block;
+    max-width: 100%;
+    font-family: inherit;
+    font-size: 0.78em;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    line-height: 1.18;
+    color: rgba(26, 26, 26, 0.92);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cryo-dash-page--volsketch .volsketch-gif-cov-var[hidden] {
+    display: none !important;
+  }
+  .cryo-dash-page--volsketch .volsketch-gif-cov-val {
+    display: block;
+    max-width: 100%;
+    font-family:
+      ui-serif,
+      Charter,
+      "Iowan Old Style",
+      "Apple Garamond",
+      Georgia,
+      "Times New Roman",
+      serif;
+    font-size: 1em;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.15;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cryo-dash-page--volsketch #volsketch-sel-summary {
+    font-variant-numeric: tabular-nums;
+  }
+  .cryo-dash-page--volsketch #volsketch-save-gif:disabled {
+    opacity: 0.52;
+    cursor: not-allowed;
+    filter: grayscale(0.2);
+    box-shadow: none;
+    transform: none;
+  }
+  .cryo-dash-page--volsketch .volsketch-animate-status-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0 0 0.65rem;
+    font-size: 0.82rem;
+    min-height: 1.15em;
+  }
+  .cryo-dash-page--volsketch .volsketch-animate-status-text {
+    font-weight: 600;
+    color: var(--nav-bg, #243b53);
+    margin: 0;
+    flex: 1 1 auto;
+    min-width: min(100%, 10rem);
+  }
+  .cryo-dash-page--volsketch .volsketch-animate-status-row .cryo-plot-rendering-overlay__track {
+    width: min(11rem, 100%);
+    flex: 0 0 auto;
+  }
+  .cryo-dash-page--volsketch .volsketch-gif-modes {
+    margin: 0.75rem 0 0;
+    padding: 0;
+    border: none;
+    min-width: 0;
+  }
+  .cryo-dash-page--volsketch .volsketch-gif-modes > legend {
+    padding: 0;
+    margin-bottom: 0.35rem;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--nav-bg, #243b53);
+  }
+  .cryo-dash-page--volsketch .volsketch-seg {
+    display: flex;
+    width: 100%;
+    margin: 0.35rem 0 0;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid rgba(36, 59, 83, 0.28);
+    background: #e8ecf1;
+    box-sizing: border-box;
+  }
+  .cryo-dash-page--volsketch .volsketch-seg input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+    margin: 0;
+  }
+  .cryo-dash-page--volsketch .volsketch-seg label {
+    flex: 1 1 0;
+    text-align: center;
+    padding: 0.5rem 0.3rem;
+    font-size: 0.78rem;
+    line-height: 1.2;
+    cursor: pointer;
+    margin: 0;
+    color: var(--muted, #5c6b7a);
+    user-select: none;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  .cryo-dash-page--volsketch .volsketch-seg label:not(:last-of-type) {
+    border-right: 1px solid rgba(36, 59, 83, 0.18);
+  }
+  .cryo-dash-page--volsketch .volsketch-seg input:focus-visible + label {
+    outline: 2px solid var(--nav-bg, #243b53);
+    outline-offset: -2px;
+    z-index: 1;
+  }
+  .cryo-dash-page--volsketch .volsketch-seg input:checked + label {
+    background: var(--nav-bg, #243b53);
+    color: #fff;
+    font-weight: 600;
+  }
+  .cryo-dash-page--volsketch #volsketch-mode-desc {
+    margin: 0.45rem 0 0;
+    line-height: 1.35;
+  }
+  .cryo-dash-page--volsketch .volsketch-view-rotate-row {
+    display: flex;
+    align-items: end;
+    gap: 0.45rem;
+    margin: 0.44rem 0 0;
+    min-width: 0;
+    transition: opacity 0.15s ease, filter 0.15s ease;
+  }
+  .cryo-dash-page--volsketch .volsketch-view-rotate-row.is-disabled {
+    opacity: 0.52;
+    filter: grayscale(0.25);
+  }
+  .cryo-dash-page--volsketch .volsketch-view-rotate-row label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.14rem;
+    margin: 0;
+    min-width: 4.8rem;
+    flex: 0 0 auto;
+    font-size: 0.72rem;
+    font-weight: 600;
+    line-height: 1.1;
+    color: var(--nav-bg, #243b53);
+  }
+  .cryo-dash-page--volsketch .volsketch-view-rotate-row input {
+    width: 4.8rem;
+    padding-top: 0.28rem;
+    padding-bottom: 0.28rem;
+  }
+  .cryo-dash-page--volsketch .volsketch-view-rotate-row button {
+    flex: 1 1 0;
+    min-width: 0;
+    padding-left: 0.3rem;
+    padding-right: 0.3rem;
+    padding-top: 0.4rem;
+    padding-bottom: 0.4rem;
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .cryo-dash-page--volsketch .volsketch-view-rotate-summary {
+    margin: 0.28rem 0 0;
+    font-size: 0.74rem;
+    line-height: 1.25;
+    color: var(--muted, #5c6b7a);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  @media (max-width: 1180px) {
+    .cryo-dash-page--volsketch .volsketch-grid {
+      grid-template-columns: 1fr 1fr;
+    }
+    .cryo-dash-page--volsketch .volsketch-side {
+      grid-column: 1 / -1;
+    }
+    .cryo-dash-page--volsketch .volsketch-plot-cell {
+      grid-column: 1 / 2;
+    }
+    .cryo-dash-page--volsketch .volsketch-animate-card {
+      grid-column: 2 / 3;
+    }
+    .cryo-dash-page--volsketch .volsketch-plot-square {
+      width: min(100%, calc(100vh - 12rem), calc(100vw - 22rem));
+    }
+  }
+  @media (max-width: 780px) {
+    .cryo-dash-page--volsketch .volsketch-grid {
+      grid-template-columns: 1fr;
+    }
+    .cryo-dash-page--volsketch .volsketch-side,
+    .cryo-dash-page--volsketch .volsketch-plot-cell,
+    .cryo-dash-page--volsketch .volsketch-animate-card {
+      grid-column: 1 / -1;
+    }
+    .cryo-dash-page--volsketch .volsketch-plot-square {
+      width: min(100%, 92vw);
+    }
+    .cryo-dash-page--volsketch .volsketch-view-rotate-row {
+      align-items: stretch;
+    }
+  }

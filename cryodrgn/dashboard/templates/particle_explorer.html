@@ -75,8 +75,6 @@
   }
   .cryo-dash-montage-inner--disabled {
     opacity: 0.48;
-    pointer-events: none;
-    user-select: none;
   }
   /* Side card height must not change on first selection: legend note stays in flow; disabled
      state is indicated by fieldset opacity only. */
@@ -417,6 +415,32 @@
   .cryo-explorer-plot-annotation-label input[type="checkbox"] {
     margin: 0;
   }
+  .cryo-image-grid-menu-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.38rem;
+    border: 1px solid rgba(36, 59, 83, 0.2);
+    border-radius: 0.42rem;
+    background: rgba(255, 255, 255, 0.82);
+    color: var(--nav-bg, #243b53);
+    font-size: 0.82rem;
+    font-weight: 600;
+    line-height: 1.15;
+    padding: 0.22rem 0.45rem;
+    cursor: pointer;
+  }
+  .cryo-image-grid-menu-toggle__chev {
+    display: inline-block;
+    width: 0.78rem;
+    text-align: center;
+    transform-origin: 50% 50%;
+  }
+  .cryo-image-grid-menu-toggle[aria-expanded="true"] .cryo-image-grid-menu-toggle__chev {
+    transform: rotate(90deg);
+  }
+  .cryo-image-grid-menu-body[hidden] {
+    display: none !important;
+  }
   #save-status {
     display: block;
     width: 100%;
@@ -713,23 +737,49 @@
     display: block;
   }
   .cryo-color-discrete-switches {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.35rem 0.65rem;
+    display: grid;
+    /*
+     * Filled from JS using the longest label width; fixed column tracks keep all chips
+     * the same size while auto-fit keeps row count as low as available width allows.
+     */
+    grid-template-columns: repeat(auto-fit, minmax(var(--cryo-discrete-col-w, 9.5rem), var(--cryo-discrete-col-w, 9.5rem)));
+    align-items: stretch;
+    gap: 0.35rem 0.5rem;
     margin: 0.15rem 0 0.2rem;
     min-height: 3.25rem;
   }
   .cryo-color-discrete-switch {
     display: inline-flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 0.28rem;
     margin: 0;
+    padding: 0.2rem 0.36rem;
+    border: 1px solid rgba(36, 59, 83, 0.18);
+    border-radius: 0.42rem;
+    box-sizing: border-box;
     font-size: 0.76rem;
     font-weight: 500;
     color: var(--nav-bg, #243b53);
     cursor: pointer;
     user-select: none;
+  }
+  .cryo-color-discrete-switch-text {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    min-width: 0;
+    line-height: 1.15;
+  }
+  .cryo-color-discrete-switch-label {
+    line-height: 1.15;
+  }
+  .cryo-color-discrete-switch-count {
+    margin-top: 0.06rem;
+    font-size: 0.69em;
+    font-weight: 500;
+    opacity: 0.86;
+    line-height: 1.1;
+    white-space: nowrap;
   }
   .cryo-color-discrete-switch input[type="checkbox"] {
     margin: 0;
@@ -764,6 +814,14 @@
     cursor: not-allowed;
     box-shadow: none;
   }
+  .cryo-explorer-lead-list {
+    margin: 0.08rem 0 0.12rem 1.05rem;
+    padding: 0;
+  }
+  .cryo-explorer-lead-list li {
+    margin: 0;
+    line-height: 1.35;
+  }
   /*
    * Unfix row height (vs default image-viewer) so plot + color chrome share one flex column
    * without the scatter snapping when histogram threshold copy or row expand class toggled.
@@ -782,7 +840,15 @@
     <div class="cryo-dash-top" style="margin-bottom:0.25rem;">
       <a href="/">← Back</a>
     </div>
-    <p class="cryo-dash-lead">Use lasso, box-select, the color histogram (continuous covariates), or discrete value toggles (e.g. k-means labels) to define a particle index; generate images and volumes with or without a selection using the interface on the right.</p>
+    <div class="cryo-dash-lead">
+      Select particle subset using either:
+      <ul class="cryo-explorer-lead-list">
+        <li>Lasso or box selection in the scatterplot</li>
+        <li>Choosing threshold values in the color histogram when using a continuous color covariate like <code>znorm</code></li>
+        <li>Toggling value filters when using a discrete color covariate like k-means labels</li>
+      </ul>
+      <p>Load particle images and generate volumes with or without a selection using the interface on the right.</p>
+    </div>
     <div class="card cryo-dash-controls" id="scatter-controls-card">
       <fieldset>
         <legend>Choose axes<br/>and point color scale</legend>
@@ -988,9 +1054,13 @@
       {% endif %}
     </div>
     <div id="montage-inner" class="cryo-dash-montage-inner cryo-dash-montage-inner--disabled">
-      <div style="display:flex;align-items:baseline;gap:0.6rem;flex-wrap:wrap;margin-top:0.2rem;">
-        <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.82rem;color:var(--muted,#5c6b7a);">
-          Image grid
+      <div style="display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;margin-top:0.2rem;">
+        <button type="button" id="image-grid-menu-toggle" class="cryo-image-grid-menu-toggle" aria-expanded="false" aria-controls="image-grid-menu-body">
+          <span class="cryo-image-grid-menu-toggle__chev" aria-hidden="true">&#9656;</span>
+          <span>Image grid</span>
+        </button>
+        <label id="image-grid-size-inline" style="display:flex;align-items:center;gap:0.3rem;font-size:0.82rem;color:var(--muted,#5c6b7a);" hidden>
+          Grid size
           <select id="grid-size" disabled style="width:4.2rem;padding:0.1rem 0.2rem;font-size:0.82rem;">
             <option value="1">1 × 1</option>
             <option value="2">2 × 2</option>
@@ -1002,18 +1072,17 @@
             <option value="8">8 × 8</option>
           </select>
         </label>
-        <label class="cryo-explorer-plot-annotation-label" for="show-grid-annotations">
-          <input type="checkbox" id="show-grid-annotations" checked/>
-          <span>Show highlights in grid using image cache</span>
-        </label>
       </div>
-      <div class="cryo-montage-grid-wrap">
-        <div id="montage-grid" class="cryo-montage-grid"></div>
-        <div id="montage-preload-overlay" class="cryo-plot-rendering-overlay" aria-hidden="true">
-          <div class="cryo-plot-rendering-overlay__inner">
-            <span id="montage-preload-overlay-label" class="cryo-plot-rendering-overlay__label">Loading image cache...</span>
-            <div class="cryo-plot-rendering-overlay__track" role="progressbar" aria-valuetext="Loading image cache">
-              <div class="cryo-plot-rendering-overlay__indeterminate"></div>
+      <p id="image-grid-inactive-note" class="cryo-dash-legend-note" style="margin:0.22rem 0 0;" hidden>Build image cache to populate grid</p>
+      <div id="image-grid-menu-body" class="cryo-image-grid-menu-body" hidden>
+        <div class="cryo-montage-grid-wrap">
+          <div id="montage-grid" class="cryo-montage-grid"></div>
+          <div id="montage-preload-overlay" class="cryo-plot-rendering-overlay" aria-hidden="true">
+            <div class="cryo-plot-rendering-overlay__inner">
+              <span id="montage-preload-overlay-label" class="cryo-plot-rendering-overlay__label">Loading image cache...</span>
+              <div class="cryo-plot-rendering-overlay__track" role="progressbar" aria-valuetext="Loading image cache">
+                <div class="cryo-plot-rendering-overlay__indeterminate"></div>
+              </div>
             </div>
           </div>
         </div>
@@ -1065,7 +1134,10 @@
   var volumeStatusEl = document.getElementById("volume-status");
   var volumeStatusProgressEl = document.getElementById("volume-status-progress");
   var gridSizeSelect = document.getElementById("grid-size");
-  var showGridAnnotationsCheckbox = document.getElementById("show-grid-annotations");
+  var imageGridMenuToggle = document.getElementById("image-grid-menu-toggle");
+  var imageGridSizeInline = document.getElementById("image-grid-size-inline");
+  var imageGridMenuBody = document.getElementById("image-grid-menu-body");
+  var imageGridInactiveNote = document.getElementById("image-grid-inactive-note");
   var scatterControlsCard = document.getElementById("scatter-controls-card");
   var scatterControlsSide = scatterControlsCard ? scatterControlsCard.closest(".cryo-dash-side") : null;
   var scatterPlotStack = document.getElementById("scatter-plot-stack");
@@ -1082,6 +1154,29 @@
   var lastMontageRows = [];
   var volumeCacheId = null;
   var volumeAnimateGeneration = 0;
+
+  function imageGridMenuIsOpen() {
+    return !!(imageGridMenuToggle && imageGridMenuToggle.getAttribute("aria-expanded") === "true");
+  }
+
+  function setImageGridMenuOpen(open) {
+    var isOpen = !!open;
+    if (imageGridMenuToggle) imageGridMenuToggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+    if (imageGridSizeInline) imageGridSizeInline.hidden = !isOpen;
+    if (imageGridMenuBody) imageGridMenuBody.hidden = !isOpen;
+    if (!isOpen) {
+      updateMontage([]);
+    } else if (imagesViewEnabled && preloaded && preloaded.traceMap) {
+      showRandomPreloaded();
+    }
+    syncHighlightTraceAnnotations();
+  }
+
+  function syncImageGridInactiveNote() {
+    if (!imageGridInactiveNote) return;
+    var inactiveNoCache = !preloaded && !imagesViewEnabled;
+    imageGridInactiveNote.hidden = !inactiveNoCache;
+  }
 
   function montageRowsOrderKey() {
     return lastMontageRows.length ? lastMontageRows.join(",") : "";
@@ -1848,6 +1943,7 @@
     syncMontageNewCacheSizeField();
     syncExpandCacheButton(loading);
     syncCacheSelectionUncachedButton();
+    syncImageGridInactiveNote();
   }
 
   function setImageCacheProgress(on, current, total) {
@@ -1950,6 +2046,7 @@
           imagesViewEnabled = true;
           montageInner.classList.remove("cryo-dash-montage-inner--disabled");
           gridSizeSelect.disabled = false;
+          setImageGridMenuOpen(true);
         }
         buildTraceMap();
         /* Lasso/box before image display only set saveSelectionRows — rebuild activePool for montage + clicks. */
@@ -2146,6 +2243,7 @@
     if (imagesViewEnabled && preloaded && allImagesCached()) {
       montageInner.classList.remove("cryo-dash-montage-inner--disabled");
       gridSizeSelect.disabled = false;
+      setImageGridMenuOpen(true);
       buildTraceMap();
       if (montageDisplayMode === "images") {
         restoreMontageAfterScatterReload();
@@ -2395,7 +2493,48 @@
   }
 
   function discreteCategoryLabelForKey(key) {
-    return key === "__na__" ? "(missing)" : key;
+    if (key === "__na__") return "(missing)";
+    var rawColorCol = sc && sc.value ? String(sc.value) : "";
+    var dispColorCol = covariateDisplayMap && sc && sc.value ? String(covariateDisplayMap[sc.value] || "") : "";
+    var isKmeans = /k[\s_-]*means/i.test(rawColorCol)
+      || /k[\s_-]*means/i.test(dispColorCol)
+      || /^labels$/i.test(rawColorCol);
+    if (isKmeans) return "kmeans=" + String(key);
+    return key;
+  }
+
+  function measureDiscreteSwitchColumnWidthPx(labelItems) {
+    if (!labelItems || !labelItems.length) return 0;
+    var probe = document.createElement("label");
+    probe.className = "cryo-color-discrete-switch";
+    probe.style.position = "absolute";
+    probe.style.visibility = "hidden";
+    probe.style.left = "-9999px";
+    probe.style.top = "-9999px";
+    probe.style.width = "auto";
+    var inp = document.createElement("input");
+    inp.type = "checkbox";
+    var textWrap = document.createElement("span");
+    textWrap.className = "cryo-color-discrete-switch-text";
+    var labelSpan = document.createElement("span");
+    labelSpan.className = "cryo-color-discrete-switch-label";
+    var countSpan = document.createElement("span");
+    countSpan.className = "cryo-color-discrete-switch-count";
+    textWrap.appendChild(labelSpan);
+    textWrap.appendChild(countSpan);
+    probe.appendChild(inp);
+    probe.appendChild(textWrap);
+    document.body.appendChild(probe);
+    var maxW = 0;
+    for (var i = 0; i < labelItems.length; i++) {
+      var item = labelItems[i] || {};
+      labelSpan.textContent = item.label || "";
+      countSpan.textContent = item.count || "";
+      var w = Math.ceil(probe.getBoundingClientRect().width);
+      if (w > maxW) maxW = w;
+    }
+    probe.remove();
+    return maxW;
   }
 
   function sortDiscreteCategoryKeys(keys) {
@@ -2462,11 +2601,24 @@
     var colLabel = covariateDisplayMap[sc.value] || sc.value;
     colorDiscreteSwitches.setAttribute("aria-label", "Filter by " + colLabel);
     var cd = gd.data[0].customdata;
+    var markerColors = (gd.data[0].marker && gd.data[0].marker.color) || null;
     var seen = new Set();
+    var keyToColor = new Map();
     for (var si = 0; si < cd.length; si++) {
-      seen.add(discreteCategoryKeyFromCustomRow(cd[si]));
+      var kSeen = discreteCategoryKeyFromCustomRow(cd[si]);
+      seen.add(kSeen);
+      if (!keyToColor.has(kSeen) && Array.isArray(markerColors)) {
+        var cval = markerColors[si];
+        if (typeof cval === "string" && /^#/.test(cval)) keyToColor.set(kSeen, cval);
+      }
     }
     var keys = sortDiscreteCategoryKeys(Array.from(seen));
+    var keyCounts = new Map();
+    for (var ci = 0; ci < cd.length; ci++) {
+      var kCount = discreteCategoryKeyFromCustomRow(cd[ci]);
+      keyCounts.set(kCount, (keyCounts.get(kCount) || 0) + 1);
+    }
+    var labelItems = [];
     for (var ki = 0; ki < keys.length; ki++) {
       var key = keys[ki];
       var safeId = "disc-sw-" + ki + "-" + String(key).replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -2479,10 +2631,28 @@
       inp.setAttribute("role", "switch");
       inp.setAttribute("aria-checked", "false");
       inp.dataset.catKey = key;
+      var textWrap = document.createElement("span");
+      textWrap.className = "cryo-color-discrete-switch-text";
       var span = document.createElement("span");
-      span.textContent = discreteCategoryLabelForKey(key);
+      span.className = "cryo-color-discrete-switch-label";
+      var labelText = discreteCategoryLabelForKey(key);
+      span.textContent = labelText;
+      var countSpan = document.createElement("span");
+      countSpan.className = "cryo-color-discrete-switch-count";
+      var nForKey = keyCounts.get(key) || 0;
+      var countText = String(nForKey) + (nForKey === 1 ? " particle" : " particles");
+      countSpan.textContent = countText;
+      labelItems.push({label: labelText, count: countText});
+      var keyHex = keyToColor.get(key);
+      if (keyHex) {
+        var keyStyles = discreteLabelMontageStyles(String(keyHex));
+        if (keyStyles.bg) lab.style.backgroundColor = keyStyles.bg;
+        if (keyStyles.covarColor) lab.style.color = keyStyles.covarColor;
+      }
+      textWrap.appendChild(span);
+      textWrap.appendChild(countSpan);
       lab.appendChild(inp);
-      lab.appendChild(span);
+      lab.appendChild(textWrap);
       colorDiscreteSwitches.appendChild(lab);
       inp.addEventListener("change", (function(input) {
         return function() {
@@ -2492,6 +2662,9 @@
         };
       })(inp));
     }
+    var colW = measureDiscreteSwitchColumnWidthPx(labelItems);
+    if (colW > 0) colorDiscreteSwitches.style.setProperty("--cryo-discrete-col-w", String(colW) + "px");
+    else colorDiscreteSwitches.style.removeProperty("--cryo-discrete-col-w");
     syncDiscreteSwitchesFromSelection();
   }
 
@@ -2946,8 +3119,8 @@
   }
 
   /**
-   * k-means / discrete ChimeraX colors: bright pastel cell fill (blend toward white) plus
-   * a darker saturated tint for the covariate line so it stays readable on the light chip.
+   * k-means / discrete ChimeraX colors: lightly pastel cell fill (small blend toward white)
+   * plus a darker saturated tint for the covariate line so it stays readable on the chip.
    */
   function discreteLabelMontageStyles(hex) {
     var rgb = parseMarkerHexRgb(hex);
@@ -2955,7 +3128,7 @@
     var r = rgb.r;
     var g = rgb.g;
     var b = rgb.b;
-    var towardWhite = 0.5;
+    var towardWhite = 0.3;
     var rf = Math.round(r * (1 - towardWhite) + 255 * towardWhite);
     var gf = Math.round(g * (1 - towardWhite) + 255 * towardWhite);
     var bf = Math.round(b * (1 - towardWhite) + 255 * towardWhite);
@@ -3332,7 +3505,7 @@
 
   /* ---------- highlight trace + montage grid coupling ---------- */
   function showGridHighlightsEnabled() {
-    return !showGridAnnotationsCheckbox || showGridAnnotationsCheckbox.checked;
+    return imageGridMenuIsOpen();
   }
 
   function showGridHighlightsOnPlot() {
@@ -3935,6 +4108,7 @@
         imagesViewEnabled = false;
         montageInner.classList.add("cryo-dash-montage-inner--disabled");
         gridSizeSelect.disabled = true;
+        setImageGridMenuOpen(false);
         syncImageCacheButton(false);
         if (preloadStatus) preloadStatus.textContent = "";
       }
@@ -4131,14 +4305,9 @@
       syncScatterPaletteOptions();
     });
   }
-  if (showGridAnnotationsCheckbox) {
-    showGridAnnotationsCheckbox.addEventListener("change", function() {
-      if (!showGridHighlightsEnabled()) {
-        updateMontage([]);
-      } else if (imagesViewEnabled && preloaded && preloaded.traceMap) {
-        showRandomPreloaded();
-      }
-      syncHighlightTraceAnnotations();
+  if (imageGridMenuToggle) {
+    imageGridMenuToggle.addEventListener("click", function() {
+      setImageGridMenuOpen(!imageGridMenuIsOpen());
     });
   }
   if (colorThresholdUseMax) {

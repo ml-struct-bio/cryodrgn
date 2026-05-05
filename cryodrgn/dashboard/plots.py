@@ -27,7 +27,6 @@ from seaborn.distributions import (
 from seaborn.palettes import blend_palette
 from seaborn.utils import set_hls_values
 
-from cryodrgn import analysis
 from cryodrgn.dashboard.data import DashboardExperiment
 from cryodrgn.dashboard.mpl_style import ezlab_matplotlib_rc
 
@@ -126,6 +125,29 @@ _PLOTLY_FONT = dict(
     size=13,
 )
 
+# Dashboard-only discrete palette for labels/k-means (kept out of non-dashboard tools).
+_DASHBOARD_CHIMERAX_COLORS: tuple[str, ...] = (
+    "#949494",
+    "#ffd84d",
+    "#81bfd1",
+    "#929ad1",
+    "#c39bc3",
+    "#d1a0a0",
+    "#92c29a",
+    "#b5a086",
+    "#829db1",
+    "#b5b547",
+)
+
+
+def _dashboard_chimerax_colors(k: int) -> list[str]:
+    if k <= 0:
+        return []
+    return [
+        _DASHBOARD_CHIMERAX_COLORS[i % len(_DASHBOARD_CHIMERAX_COLORS)]
+        for i in range(k)
+    ]
+
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -204,7 +226,7 @@ def _labels_colors_and_legend_items(
     """Point colors and legend items for k-means-style integer labels."""
     codes_arr, uniques = pd.factorize(values, sort=True)
     codes = np.asarray(codes_arr, dtype=np.int64)
-    pal = list(analysis._get_chimerax_colors(max(len(uniques), 1)))
+    pal = _dashboard_chimerax_colors(max(len(uniques), 1))
     colors: list[str] = []
     for code in codes:
         if int(code) < 0:
@@ -893,7 +915,7 @@ def pair_grid_png(
             raise ValueError(
                 f"Lower-triangle color column `{lower_color_col}` has no values."
             )
-        pal = list(analysis._get_chimerax_colors(max(len(uniques), 1)))
+        pal = _dashboard_chimerax_colors(max(len(uniques), 1))
         point_colors = [
             "#aab4bf" if int(c) < 0 else pal[int(c) % len(pal)] for c in codes
         ]

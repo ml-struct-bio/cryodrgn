@@ -114,26 +114,29 @@
   .cryo-explorer-sel-count-row {
     --sel-count-fs: calc(0.96rem * 1.11);
     --sel-count-lh: 1.3;
-    --sel-pie-d: 3.36rem;
+    --sel-pie-d: 2.688rem;
+    --sel-pie-pct-fs: calc(0.576rem * 1.25);
+    /* Pie + gap + percentage line — used to size the main "Selected:" line box (footnote is outside this band). */
+    --sel-pie-stack-h: calc(var(--sel-pie-d) + 0.2rem + (var(--sel-pie-pct-fs) * 1.15));
     font-size: var(--sel-count-fs);
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.12rem;
+    margin: 0.21rem 0 0.32rem;
+  }
+  .cryo-explorer-sel-count-main-row {
     display: flex;
     flex-direction: row;
     flex-wrap: nowrap;
-    align-items: flex-start;
+    /* Vertically center the label block with the pie + % column (do not use a huge line-height on the <p> — that blows up multi-line spacing). */
+    align-items: center;
     gap: 0.5rem 0.6rem;
-    margin: 0.21rem 0 0.32rem;
-  }
-  .cryo-explorer-sel-count-text-col {
-    flex: 1 1 auto;
     min-width: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.12rem;
-    padding-top: calc(var(--sel-pie-d) * 0.15);
   }
   /* Beat .card p { margin-bottom: 1rem } so the row height matches the label, not the card paragraph gap. */
-  .cryo-explorer-sel-count-row .cryo-explorer-sel-count-text {
+  .cryo-explorer-sel-count-main-row .cryo-explorer-sel-count-text {
+    flex: 1 1 auto;
     margin: 0 !important;
     min-width: 0;
     font-weight: 600;
@@ -142,13 +145,15 @@
     color: var(--nav-bg, #243b53);
   }
   /* Must beat base `.card p { font-size: 0.98rem }` (higher specificity). */
-  .cryo-explorer-sel-count-text-col p.cryo-explorer-sel-count-footnote {
+  .cryo-explorer-sel-count-row > p.cryo-explorer-sel-count-footnote {
     margin: 0 !important;
     /* Match `#particle-sel-fieldset > p.cryo-dash-legend-note` / montage explanatory copy */
     font-size: 0.8rem;
     font-weight: 400;
     line-height: 1.35;
     color: var(--muted, #5c6b7a);
+    width: 100%;
+    box-sizing: border-box;
   }
   /* Same as `.cryo-dash-controls .status` / montage `.cryo-dash-legend-note` (0.8rem), not `.card p` (0.98rem). */
   #particle-sel-fieldset > p.cryo-dash-legend-note {
@@ -162,10 +167,11 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: flex-start;
+    justify-content: space-between;
     gap: 0.2rem;
     flex-shrink: 0;
-    width: 3.79rem;
+    width: 3.032rem;
+    min-height: var(--sel-pie-stack-h);
     box-sizing: border-box;
   }
   .cryo-explorer-sel-pie {
@@ -180,12 +186,13 @@
       var(--accent, #c4703a) calc(var(--sel-frac) * 100%),
       rgba(36, 59, 83, 0.14) 0
     );
-    box-shadow: inset 0 0 0 0.46rem var(--paper, #fff);
+    box-shadow: inset 0 0 0 0.368rem var(--paper, #fff);
     box-sizing: border-box;
   }
-  .cryo-explorer-sel-pie-pct {
+  /* Beat `.card p { margin-bottom: 1rem }` (base.html) — same specificity trick as sel-count-text. */
+  .cryo-explorer-sel-count-main-row .cryo-explorer-sel-pie-pct {
     margin: 0;
-    font-size: 0.72rem;
+    font-size: var(--sel-pie-pct-fs);
     line-height: 1.15;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
@@ -693,6 +700,71 @@
     justify-content: flex-end;
   }
   /*
+   * Do not set display:block on #color-continuous-hist-wrap — it beats the [hidden] attribute
+   * (ID wins over attribute-only UA rules), so the violin plot box stayed visible above discrete toggles.
+   */
+  #color-continuous-hist-wrap[hidden] {
+    display: none !important;
+  }
+  #color-discrete-wrap {
+    display: none;
+  }
+  #color-discrete-wrap.cryo-color-discrete-wrap--show {
+    display: block;
+  }
+  .cryo-color-discrete-switches {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem 0.65rem;
+    margin: 0.15rem 0 0.2rem;
+    min-height: 3.25rem;
+  }
+  .cryo-color-discrete-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+    margin: 0;
+    font-size: 0.76rem;
+    font-weight: 500;
+    color: var(--nav-bg, #243b53);
+    cursor: pointer;
+    user-select: none;
+  }
+  .cryo-color-discrete-switch input[type="checkbox"] {
+    margin: 0;
+    width: 1.05rem;
+    height: 1.05rem;
+    flex-shrink: 0;
+    accent-color: var(--accent, #c4703a);
+    cursor: pointer;
+  }
+  .cryo-color-discrete-hint {
+    margin: 0.15rem 0 0 !important;
+    font-size: 0.78rem;
+    line-height: 1.35;
+    color: var(--muted, #5c6b7a);
+  }
+  .cryo-explorer-cache-selection-btn-wrap {
+    margin-top: 0.45rem;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .cryo-explorer-cache-selection-btn-wrap .btn {
+    width: 100%;
+    box-sizing: border-box;
+    margin: 0;
+    line-height: 1.2;
+    padding: 0.4rem 0.55rem;
+    font-size: 0.72rem;
+  }
+  .cryo-explorer-cache-selection-btn-wrap .btn:disabled {
+    opacity: 0.48;
+    filter: grayscale(0.85);
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+  /*
    * Unfix row height (vs default image-viewer) so plot + color chrome share one flex column
    * without the scatter snapping when histogram threshold copy or row expand class toggled.
    */
@@ -710,7 +782,7 @@
     <div class="cryo-dash-top" style="margin-bottom:0.25rem;">
       <a href="/">← Back</a>
     </div>
-    <p class="cryo-dash-lead">Use lasso, box-select, or the color histogram threshold to define a particle index; generate images and volumes with or without a selection using the interface on the right.</p>
+    <p class="cryo-dash-lead">Use lasso, box-select, the color histogram (continuous covariates), or discrete value toggles (e.g. k-means labels) to define a particle index; generate images and volumes with or without a selection using the interface on the right.</p>
     <div class="card cryo-dash-controls" id="scatter-controls-card">
       <fieldset>
         <legend>Choose axes<br/>and point color scale</legend>
@@ -722,21 +794,21 @@
         <select id="sc"><option value="none">None</option></select>
       </fieldset>
       <div id="sel-count-row" class="cryo-explorer-sel-count-row" role="status" aria-atomic="true">
-        <div class="cryo-explorer-sel-count-text-col">
+        <div class="cryo-explorer-sel-count-main-row">
           <p id="sel-count" class="cryo-explorer-sel-count-text">Selected: 0/0 particles</p>
-          <p id="sel-count-footnote" class="cryo-explorer-sel-count-footnote" hidden></p>
+          <div class="cryo-explorer-sel-pie-col" aria-hidden="true">
+            <div id="sel-pie" class="cryo-explorer-sel-pie" title=""></div>
+            <p id="sel-pie-pct" class="cryo-explorer-sel-pie-pct">0.0%</p>
+          </div>
         </div>
-        <div class="cryo-explorer-sel-pie-col" aria-hidden="true">
-          <div id="sel-pie" class="cryo-explorer-sel-pie" title=""></div>
-          <p id="sel-pie-pct" class="cryo-explorer-sel-pie-pct">0.0%</p>
-        </div>
+        <p id="sel-count-footnote" class="cryo-explorer-sel-count-footnote" hidden></p>
       </div>
       <div class="cryo-explorer-clear-selection">
         <button type="button" class="btn btn-secondary" id="clear-explorer-selection" disabled>Clear selection</button>
       </div>
       <fieldset id="particle-sel-fieldset" disabled>
         <legend>Create indices file</legend>
-        <p class="cryo-dash-legend-note">Active after you select particles on the plot or with the color histogram.</p>
+        <p class="cryo-dash-legend-note">Active after you select particles on the plot, with the color histogram, or with discrete color toggles.</p>
         <div class="cryo-explorer-save-btns">
           <button type="button" class="btn" id="save-indices-pkl">Save selection<br/>as <code>indices.pkl</code></button>
           <button type="button" class="btn btn-secondary" id="save-indices-custom">Save selection<br/>as…</button>
@@ -786,14 +858,20 @@
       </div>
     </div>
     <div id="color-hist-panel" class="cryo-color-hist-panel" hidden aria-hidden="true">
-      <div id="color-hist"></div>
-      <div class="cryo-color-hist-controls">
-        <span>Click violin to select particles above that color value.</span>
-        <label for="color-threshold-use-max">
-          <input type="checkbox" id="color-threshold-use-max"/>
-          Use as maximum (≤)
-        </label>
-        <span id="color-threshold-status" class="status"></span>
+      <div id="color-continuous-hist-wrap">
+        <div id="color-hist"></div>
+        <div class="cryo-color-hist-controls">
+          <span>Click violin to select particles above that color value.</span>
+          <label for="color-threshold-use-max">
+            <input type="checkbox" id="color-threshold-use-max"/>
+            Use as maximum (≤)
+          </label>
+          <span id="color-threshold-status" class="status"></span>
+        </div>
+      </div>
+      <div id="color-discrete-wrap">
+        <div id="color-discrete-switches" class="cryo-color-discrete-switches" role="group" aria-label="Discrete color filter"></div>
+        <p class="cryo-color-discrete-hint cryo-dash-legend-note">Toggle values to set the selection (clears lasso and box). All off means no selection from this control.</p>
       </div>
       <div id="scatter-palette-radios" class="cryo-palette-select scatter-palette-radios--suppressed" aria-label="Continuous color palette">
         <button type="button" id="scatter-palette-toggle" class="cryo-palette-select__title" aria-expanded="false" aria-controls="scatter-palette-options">
@@ -853,6 +931,11 @@
           <div class="cryo-explorer-action-row__btn">
             <button type="button" class="btn" id="btn-view-images" disabled>Load all images</button>
           </div>
+        </div>
+        <div class="cryo-explorer-cache-selection-btn-wrap">
+          <button type="button" class="btn btn-secondary" id="btn-cache-selection-uncached" disabled title="Select particles first.">
+            Add 0 selection images to cache
+          </button>
         </div>
         <div
           id="image-cache-progress"
@@ -1135,6 +1218,64 @@
     }
     if (particleSelFs) particleSelFs.disabled = (n === 0);
     if (clearExplorerSelectionBtn) clearExplorerSelectionBtn.disabled = (n === 0);
+    syncCacheSelectionUncachedButton();
+  }
+
+  function countUncachedSelectionRows() {
+    if (!saveSelectionRows || !saveSelectionRows.length) return 0;
+    var n = 0;
+    for (var i = 0; i < saveSelectionRows.length; i++) {
+      var r = saveSelectionRows[i];
+      if (!preloaded || !preloaded.rows || !preloaded.rows.has(r)) n++;
+    }
+    return n;
+  }
+
+  function syncCacheSelectionUncachedButton() {
+    if (!btnCacheSelectionUncached) return;
+    var busy = montagePreloadOverlayIsShown();
+    var nUnc = countUncachedSelectionRows();
+    var can = !!(
+      saveSelectionRows
+      && saveSelectionRows.length
+      && nUnc > 0
+      && totalParticles
+      && plotHasScatterData()
+      && !busy
+    );
+    btnCacheSelectionUncached.disabled = !can;
+    btnCacheSelectionUncached.textContent = "Add " + String(nUnc) + " selection images to cache";
+    btnCacheSelectionUncached.setAttribute("aria-label", btnCacheSelectionUncached.textContent);
+    btnCacheSelectionUncached.title = !saveSelectionRows || !saveSelectionRows.length
+      ? "Select particles on the plot or via color controls first."
+      : nUnc === 0
+        ? "All selected particles are already in the image cache."
+        : "Fetch thumbnails for " + nUnc + " selected particle"
+          + (nUnc === 1 ? "" : "s") + " not yet cached.";
+  }
+
+  function loadUncachedSelectionIntoCache() {
+    if (!saveSelectionRows || !saveSelectionRows.length) return;
+    var uncached = [];
+    for (var i = 0; i < saveSelectionRows.length; i++) {
+      var r = saveSelectionRows[i];
+      if (!preloaded || !preloaded.rows || !preloaded.rows.has(r)) uncached.push(r);
+    }
+    if (!uncached.length) return;
+    var have = preloaded ? cachedImageCount() : 0;
+    var target = have + uncached.length;
+    var overlayLabel = "Caching " + uncached.length + " selected image"
+      + (uncached.length === 1 ? "" : "s") + "…";
+    fetchPreload(sx.value, sy.value, null, {
+      cacheSize: target,
+      delta: !!preloaded,
+      enableImages: true,
+      restrictToScatterPlot: true,
+      selectedRows: uncached,
+      overlayLabel: overlayLabel
+    }).catch(function(e) {
+      console.error("cache selection failed", e);
+    });
   }
 
   /** A–Z omitting I, O, U (easier to read vs 1/0 and avoids ambiguous glyphs). */
@@ -1306,6 +1447,11 @@
   var gd = document.getElementById("scatter");
   var colorHistPanel = document.getElementById("color-hist-panel");
   var colorHistDiv = document.getElementById("color-hist");
+  var colorContinuousWrap = document.getElementById("color-continuous-hist-wrap");
+  var colorDiscreteWrap = document.getElementById("color-discrete-wrap");
+  var colorDiscreteSwitches = document.getElementById("color-discrete-switches");
+  var btnCacheSelectionUncached = document.getElementById("btn-cache-selection-uncached");
+  var suppressDiscreteSwitchProgrammatic = false;
   var colorThresholdUseMax = document.getElementById("color-threshold-use-max");
   var colorThresholdStatus = document.getElementById("color-threshold-status");
   var scatterPaletteToggle = document.getElementById("scatter-palette-toggle");
@@ -1701,6 +1847,7 @@
       : (btnViewImages.disabled ? "Build the image cache first." : "");
     syncMontageNewCacheSizeField();
     syncExpandCacheButton(loading);
+    syncCacheSelectionUncachedButton();
   }
 
   function setImageCacheProgress(on, current, total) {
@@ -1759,6 +1906,11 @@
     }
     if (opts.initialRows && opts.initialRows.length) {
       body.initial_rows = opts.initialRows.slice();
+    }
+    if (opts.selectedRows && opts.selectedRows.length) {
+      body.selected_rows = opts.selectedRows.map(Number).filter(function(x) {
+        return isFinite(x);
+      });
     }
     return fetch("{{ url_for('api_preload_images') }}", {
       method: "POST",
@@ -1960,6 +2112,11 @@
       } else {
         expandImageCacheToTarget();
       }
+    });
+  }
+  if (btnCacheSelectionUncached) {
+    btnCacheSelectionUncached.addEventListener("click", function() {
+      loadUncachedSelectionIntoCache();
     });
   }
 
@@ -2220,6 +2377,176 @@
     colorHistHoverLevel = null;
     colorViolinBaseShapes = [];
     if (colorThresholdStatus) colorThresholdStatus.textContent = "";
+    if (colorContinuousWrap) colorContinuousWrap.hidden = false;
+    if (colorDiscreteWrap) {
+      colorDiscreteWrap.hidden = true;
+      colorDiscreteWrap.classList.remove("cryo-color-discrete-wrap--show");
+    }
+    if (colorDiscreteSwitches) colorDiscreteSwitches.innerHTML = "";
+    syncParticleExplorerRowExpandForColorHist();
+  }
+
+  function discreteCategoryKeyFromCustomRow(cdrow) {
+    if (!cdrow || cdrow.length < 3) return "__na__";
+    var v = cdrow[2];
+    if (v == null || v === "") return "__na__";
+    if (typeof v === "number" && !isFinite(v)) return "__na__";
+    return String(v);
+  }
+
+  function discreteCategoryLabelForKey(key) {
+    return key === "__na__" ? "(missing)" : key;
+  }
+
+  function sortDiscreteCategoryKeys(keys) {
+    var rest = keys.filter(function(k) { return k !== "__na__"; });
+    var allNum = rest.length > 0 && rest.every(function(k) {
+      var n = Number(k);
+      return isFinite(n) && String(n) === String(k).trim();
+    });
+    if (allNum) {
+      rest.sort(function(a, b) { return Number(a) - Number(b); });
+    } else {
+      rest.sort(function(a, b) {
+        return String(a).localeCompare(String(b), undefined, {numeric: true});
+      });
+    }
+    if (keys.indexOf("__na__") >= 0) rest.push("__na__");
+    return rest;
+  }
+
+  function resetDiscreteCategorySwitches() {
+    if (!colorDiscreteSwitches) return;
+    suppressDiscreteSwitchProgrammatic = true;
+    try {
+      var inputs = colorDiscreteSwitches.querySelectorAll("input[type=\"checkbox\"]");
+      for (var i = 0; i < inputs.length; i++) {
+        inputs[i].checked = false;
+        inputs[i].setAttribute("aria-checked", "false");
+      }
+    } finally {
+      suppressDiscreteSwitchProgrammatic = false;
+    }
+  }
+
+  function applyDiscreteCategorySelectionFromSwitches() {
+    if (!gd || !gd.data || !gd.data[0] || scatterTraceColorMode() !== "discrete") return;
+    if (!colorDiscreteSwitches) return;
+    var inputs = colorDiscreteSwitches.querySelectorAll("input[type=\"checkbox\"]");
+    var keySet = new Set();
+    for (var i = 0; i < inputs.length; i++) {
+      if (inputs[i].checked && inputs[i].dataset.catKey != null) {
+        keySet.add(inputs[i].dataset.catKey);
+      }
+    }
+    clearScatterGeometricSelection();
+    colorThresholdLevel = null;
+    colorThresholdColorCol = null;
+    if (colorThresholdStatus) colorThresholdStatus.textContent = "";
+    if (!keySet.size) {
+      applyRowsSelection([], "Discrete");
+      return;
+    }
+    var cd = gd.data[0].customdata;
+    var rows = [];
+    for (var j = 0; j < cd.length; j++) {
+      var k = discreteCategoryKeyFromCustomRow(cd[j]);
+      if (keySet.has(k)) rows.push(cd[j][1]);
+    }
+    applyRowsSelection(rows, "Discrete");
+  }
+
+  function renderDiscreteColorSwitches() {
+    if (!colorDiscreteSwitches || !gd || !gd.data || !gd.data[0] || !gd.data[0].customdata) return;
+    colorDiscreteSwitches.innerHTML = "";
+    var colLabel = covariateDisplayMap[sc.value] || sc.value;
+    colorDiscreteSwitches.setAttribute("aria-label", "Filter by " + colLabel);
+    var cd = gd.data[0].customdata;
+    var seen = new Set();
+    for (var si = 0; si < cd.length; si++) {
+      seen.add(discreteCategoryKeyFromCustomRow(cd[si]));
+    }
+    var keys = sortDiscreteCategoryKeys(Array.from(seen));
+    for (var ki = 0; ki < keys.length; ki++) {
+      var key = keys[ki];
+      var safeId = "disc-sw-" + ki + "-" + String(key).replace(/[^a-zA-Z0-9_-]/g, "_");
+      var lab = document.createElement("label");
+      lab.className = "cryo-color-discrete-switch";
+      lab.setAttribute("for", safeId);
+      var inp = document.createElement("input");
+      inp.type = "checkbox";
+      inp.id = safeId;
+      inp.setAttribute("role", "switch");
+      inp.setAttribute("aria-checked", "false");
+      inp.dataset.catKey = key;
+      var span = document.createElement("span");
+      span.textContent = discreteCategoryLabelForKey(key);
+      lab.appendChild(inp);
+      lab.appendChild(span);
+      colorDiscreteSwitches.appendChild(lab);
+      inp.addEventListener("change", (function(input) {
+        return function() {
+          input.setAttribute("aria-checked", input.checked ? "true" : "false");
+          if (suppressDiscreteSwitchProgrammatic) return;
+          applyDiscreteCategorySelectionFromSwitches();
+        };
+      })(inp));
+    }
+    syncDiscreteSwitchesFromSelection();
+  }
+
+  function syncDiscreteSwitchesFromSelection() {
+    if (!colorDiscreteSwitches || !gd || !gd.data || !gd.data[0] || scatterTraceColorMode() !== "discrete") return;
+    var cd = gd.data[0].customdata;
+    var sel = new Set(saveSelectionRows || []);
+    var keyToRows = new Map();
+    for (var i = 0; i < cd.length; i++) {
+      var k = discreteCategoryKeyFromCustomRow(cd[i]);
+      var row = cd[i][1];
+      if (!keyToRows.has(k)) keyToRows.set(k, []);
+      keyToRows.get(k).push(row);
+    }
+    suppressDiscreteSwitchProgrammatic = true;
+    try {
+      var inputs = colorDiscreteSwitches.querySelectorAll("input[type=\"checkbox\"]");
+      for (var j = 0; j < inputs.length; j++) {
+        var inp = inputs[j];
+        var key = inp.dataset.catKey;
+        var rowsForK = keyToRows.get(key);
+        var full = rowsForK && rowsForK.length
+          && rowsForK.every(function(r) { return sel.has(r); });
+        inp.checked = !!full;
+        inp.setAttribute("aria-checked", full ? "true" : "false");
+      }
+    } finally {
+      suppressDiscreteSwitchProgrammatic = false;
+    }
+  }
+
+  function syncColorCovariateSidePanel() {
+    if (!colorHistPanel) return;
+    if (!plotHasScatterData() || !sc.value || sc.value === "none") {
+      hideColorHistogram();
+      return;
+    }
+    colorHistPanel.hidden = false;
+    colorHistPanel.setAttribute("aria-hidden", "false");
+    if (scatterTraceColorMode() === "discrete") {
+      if (colorContinuousWrap) colorContinuousWrap.hidden = true;
+      if (colorDiscreteWrap) {
+        colorDiscreteWrap.hidden = false;
+        colorDiscreteWrap.classList.add("cryo-color-discrete-wrap--show");
+      }
+      renderDiscreteColorSwitches();
+    } else {
+      if (colorDiscreteWrap) {
+        colorDiscreteWrap.hidden = true;
+        colorDiscreteWrap.classList.remove("cryo-color-discrete-wrap--show");
+      }
+      if (colorDiscreteSwitches) colorDiscreteSwitches.innerHTML = "";
+      if (colorContinuousWrap) colorContinuousWrap.hidden = false;
+      renderColorHistogram();
+    }
     syncParticleExplorerRowExpandForColorHist();
   }
 
@@ -2330,6 +2657,7 @@
     colorThresholdLevel = null;
     colorThresholdColorCol = null;
     if (colorThresholdStatus) colorThresholdStatus.textContent = "";
+    resetDiscreteCategorySwitches();
     if (hadThresholdGuide && colorHistDiv && colorHistDiv.data) {
       relayoutColorHistogramGuides();
     }
@@ -2512,6 +2840,7 @@
 
   function renderColorHistogram() {
     if (!colorHistPanel || !colorHistDiv) return;
+    if (gd && gd.data && gd.data[0] && scatterTraceColorMode() === "discrete") return;
     var items = currentColorValueItems();
     if (!items.length) {
       hideColorHistogram();
@@ -2741,7 +3070,9 @@
           var dispStr = dispVal == null ? "—" : (
             typeof dispVal === "number" && isFinite(dispVal) ? dispVal.toFixed(2) : String(dispVal)
           );
-          montageCells[i].covar.textContent = colorColLabel + "=" + dispStr;
+          montageCells[i].covar.textContent = colorCol === "labels"
+            ? ("k-means cluster = " + dispStr)
+            : (colorColLabel + "=" + dispStr);
           if (colorMode === "discrete") {
             var hexCol = markerColors[ti];
             var dStyles = discreteLabelMontageStyles(String(hexCol));
@@ -3153,7 +3484,7 @@
                   });
                 } catch (e) {}
               }
-              renderColorHistogram();
+              syncColorCovariateSidePanel();
               if (imagesViewEnabled && preloaded && preloaded.traceMap) {
                 if (lassoSelectedRowSet && lassoSelectedRowSet.size) {
                   activePool = preloaded.traceMap.filter(function(item) {
@@ -3340,6 +3671,7 @@
     colorThresholdLevel = null;
     colorThresholdColorCol = null;
     if (colorThresholdStatus) colorThresholdStatus.textContent = "";
+    resetDiscreteCategorySwitches();
     if (colorHistDiv && colorHistDiv.data) {
       try { relayoutColorHistogramGuides(); } catch (e) {}
     }
@@ -3362,6 +3694,12 @@
     var items = currentColorValueItems();
     if (!items.length || typeof level !== "number" || !isFinite(level)) return;
     cancelLassoSelectionDebounce();
+    resetDiscreteCategorySwitches();
+    if (colorDiscreteWrap) {
+      colorDiscreteWrap.hidden = true;
+      colorDiscreteWrap.classList.remove("cryo-color-discrete-wrap--show");
+    }
+    if (colorContinuousWrap) colorContinuousWrap.hidden = false;
     clearScatterGeometricSelection();
     var useMax = !!(colorThresholdUseMax && colorThresholdUseMax.checked);
     colorThresholdLevel = level;
@@ -3383,12 +3721,12 @@
           ? res.j.rows
           : rowsMatchingColorThresholdFromTrace(items, level, useMax);
         applyRowsSelection(rows, "Color threshold");
-        renderColorHistogram();
+        syncColorCovariateSidePanel();
       })
       .catch(function() {
         var rows = rowsMatchingColorThresholdFromTrace(items, level, useMax);
         applyRowsSelection(rows, "Color threshold");
-        renderColorHistogram();
+        syncColorCovariateSidePanel();
       });
   }
 
@@ -3705,7 +4043,7 @@
     status.textContent = "";
     status.title = "";
     if (!saveSelectionRows.length) {
-      status.textContent = "Select particles (plot or color histogram) before saving.";
+      status.textContent = "Select particles (plot, color histogram, or discrete toggles) before saving.";
       status.title = status.textContent;
       return;
     }
@@ -3808,7 +4146,7 @@
       if (colorThresholdLevel != null && colorThresholdColorCol === sc.value) {
         applyColorThresholdSelection(colorThresholdLevel);
       } else {
-        renderColorHistogram();
+        syncColorCovariateSidePanel();
       }
     });
   }

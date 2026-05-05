@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Particle explorer · cryoDRGN{% endblock %}
-{% block nav_page_title %}<span class="nav-title-sep" aria-hidden="true">·</span><span class="nav-page-title">Particle explorer</span>{% endblock %}
+{% from "_macros.html" import nav_page_title_span %}
+{% block nav_page_title %}{{ nav_page_title_span("Particle explorer") }}{% endblock %}
 {% block head %}
 <style>
   .cryo-montage-grid {
@@ -127,7 +128,8 @@
     display: flex;
     flex-direction: row;
     flex-wrap: nowrap;
-    /* Vertically center the label block with the pie + % column (do not use a huge line-height on the <p> — that blows up multi-line spacing). */
+    /* Vertically center the label block with the pie + % column (do not use a huge line-height on the <p> — that blows
+      up multi-line spacing). */
     align-items: center;
     gap: 0.5rem 0.6rem;
     min-width: 0;
@@ -160,7 +162,8 @@
     line-height: 1.35;
     color: var(--muted, #5c6b7a);
   }
-  /* In-flow flex stack (no absolute positioning): avoids zero-height / calc bugs that hid the donut and pinned % to the row top. */
+  /* In-flow flex stack (no absolute positioning): avoids zero-height / calc bugs that hid the donut and pinned % to
+    the row top. */
   .cryo-explorer-sel-pie-col {
     display: flex;
     flex-direction: column;
@@ -377,8 +380,10 @@
   .cryo-explorer-action-row .cryo-explorer-action-row__hint {
     margin: 0;
   }
-  /* Montage `.cryo-dash-legend-note` uses margin-top: 0.5rem (base.html); that pushed hints below the volume buttons. */
-  .cryo-dash-page--particle-explorer .cryo-dash-montage .cryo-explorer-action-row .cryo-explorer-action-row__hint.cryo-dash-legend-note {
+  /* Montage `.cryo-dash-legend-note` uses margin-top: 0.5rem (base.html); that pushed hints below the volume buttons.
+    */
+  .cryo-dash-page--particle-explorer .cryo-dash-montage .cryo-explorer-action-row
+    .cryo-explorer-action-row__hint.cryo-dash-legend-note {
     margin: 0 !important;
   }
   .cryo-dash-page--particle-explorer .cryo-dash-montage .cryo-explorer-action-row .cryo-explorer-action-row__btn {
@@ -742,7 +747,8 @@
      * Filled from JS using the longest label width; fixed column tracks keep all chips
      * the same size while auto-fit keeps row count as low as available width allows.
      */
-    grid-template-columns: repeat(auto-fit, minmax(var(--cryo-discrete-col-w, 9.5rem), var(--cryo-discrete-col-w, 9.5rem)));
+    grid-template-columns: repeat(auto-fit, minmax(var(--cryo-discrete-col-w, 9.5rem), var(--cryo-discrete-col-w,
+      9.5rem)));
     align-items: stretch;
     gap: 0.35rem 0.5rem;
     margin: 0.15rem 0 0.2rem;
@@ -834,6 +840,7 @@
 </style>
 {% endblock %}
 {% block content %}
+<!-- === Particle explorer: controls + Plotly scatter + optional montage / volumes === -->
 <div class="cryo-dash-page cryo-dash-page--image-viewer cryo-dash-page--particle-explorer">
 <div class="cryo-dash-row">
   <div class="cryo-dash-side">
@@ -844,7 +851,8 @@
       Select particle subset using either:
       <ul class="cryo-explorer-lead-list">
         <li>Lasso or box selection in the scatterplot</li>
-        <li>Choosing threshold values in the color histogram when using a continuous color covariate like <code>znorm</code></li>
+        <li>Choosing threshold values in the color histogram when using a continuous color covariate like
+          <code>znorm</code></li>
         <li>Toggling value filters when using a discrete color covariate like k-means labels</li>
       </ul>
       <p>Load particle images and generate volumes with or without a selection using the interface on the right.</p>
@@ -874,9 +882,11 @@
       </div>
       <fieldset id="particle-sel-fieldset" disabled>
         <legend>Create indices file</legend>
-        <p class="cryo-dash-legend-note">Active after you select particles on the plot, with the color histogram, or with discrete color toggles.</p>
+        <p class="cryo-dash-legend-note">Active after you select particles on the plot, with the color histogram, or
+          with discrete color toggles.</p>
         <div class="cryo-explorer-save-btns">
-          <button type="button" class="btn" id="save-indices-pkl">Save selection<br/>as <code>indices.pkl</code></button>
+          <button type="button" class="btn" id="save-indices-pkl">Save selection<br/>as
+            <code>indices.pkl</code></button>
           <button type="button" class="btn btn-secondary" id="save-indices-custom">Save selection<br/>as…</button>
         </div>
         <label class="cryo-explorer-save-inverse-label" for="save-inverse">
@@ -910,11 +920,13 @@
   </div>
 
   <div class="cryo-dash-viewport--plotly">
-    <p id="scatter-plot-status" class="cryo-dash-legend-note cryo-particle-explorer-plot-status" style="color:var(--accent,#c4703a);"></p>
+    <p id="scatter-plot-status" class="cryo-dash-legend-note cryo-particle-explorer-plot-status"
+      style="color:var(--accent,#c4703a);"></p>
     <div class="cryo-plotly-stack" id="scatter-plot-stack">
       <div id="scatter" class="cryo-plotly-graph-host"></div>
       <div id="box-select-tooltip" class="cryo-box-select-tooltip" hidden></div>
-      <div id="scatter-rendering-overlay" class="cryo-plot-rendering-overlay cryo-plot-rendering-overlay--show" aria-hidden="false">
+      <div id="scatter-rendering-overlay" class="cryo-plot-rendering-overlay cryo-plot-rendering-overlay--show"
+        aria-hidden="false">
         <div class="cryo-plot-rendering-overlay__inner">
           <span class="cryo-plot-rendering-overlay__label">Rendering…</span>
           <div class="cryo-plot-rendering-overlay__track" role="progressbar" aria-valuetext="Loading plot">
@@ -936,37 +948,90 @@
         </div>
       </div>
       <div id="color-discrete-wrap">
-        <div id="color-discrete-switches" class="cryo-color-discrete-switches" role="group" aria-label="Discrete color filter"></div>
-        <p class="cryo-color-discrete-hint cryo-dash-legend-note">Toggle values to set the selection (clears lasso and box). All off means no selection from this control.</p>
+        <div id="color-discrete-switches" class="cryo-color-discrete-switches" role="group"
+          aria-label="Discrete color filter"></div>
+        <p class="cryo-color-discrete-hint cryo-dash-legend-note">Toggle values to set the selection (clears lasso and
+          box). All off means no selection from this control.</p>
       </div>
-      <div id="scatter-palette-radios" class="cryo-palette-select scatter-palette-radios--suppressed" aria-label="Continuous color palette">
-        <button type="button" id="scatter-palette-toggle" class="cryo-palette-select__title" aria-expanded="false" aria-controls="scatter-palette-options">
+      <div id="scatter-palette-radios" class="cryo-palette-select scatter-palette-radios--suppressed"
+        aria-label="Continuous color palette">
+        <button type="button" id="scatter-palette-toggle" class="cryo-palette-select__title" aria-expanded="false"
+          aria-controls="scatter-palette-options">
           <span class="cryo-palette-select__chevron" aria-hidden="true">▶</span>
           <span>Choose<br/>palette</span>
         </button>
         <div id="scatter-palette-options" class="cryo-palette-select__options cryo-palette-select__options--collapsed">
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Viridis" checked/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#440154,#3b528b,#21918c,#5ec962,#fde725);"></span>Viridis</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Plasma"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#0d0887,#7e03a8,#cc4778,#f89540,#f0f921);"></span>Plasma</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Inferno"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#000004,#420a68,#932667,#dd513a,#fca50a,#fcffa4);"></span>Inferno</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Magma"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#000004,#3b0f70,#8c2981,#de4968,#fe9f6d,#fcfdbf);"></span>Magma</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Cividis"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#00224e,#30496c,#7b7c78,#c8b866,#fde725);"></span>Cividis</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Turbo"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#30123b,#4662d7,#1ae4b6,#a4fc3c,#f98c0a,#7a0403);"></span>Turbo</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Blues"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#f7fbff,#c6dbef,#6baed6,#2171b5,#08306b);"></span>Blues</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Greens"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#f7fcf5,#c7e9c0,#74c476,#238b45,#00441b);"></span>Greens</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Greys"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#ffffff,#d9d9d9,#969696,#525252,#000000);"></span>Greys</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Oranges"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#fff5eb,#fdd0a2,#fd8d3c,#d94801,#7f2704);"></span>Oranges</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Purples"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#fcfbfd,#dadaeb,#9e9ac8,#6a51a3,#3f007d);"></span>Purples</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Reds"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#fff5f0,#fcbba1,#fb6a4a,#cb181d,#67000d);"></span>Reds</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="YlGnBu"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#ffffd9,#c7e9b4,#41b6c4,#2c7fb8,#081d58);"></span>YlGnBu</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="YlOrRd"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#ffffcc,#ffeda0,#feb24c,#f03b20,#800026);"></span>YlOrRd</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="RdBu"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#67001f,#d6604d,#f7f7f7,#4393c3,#053061);"></span>RdBu</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Portland"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#0c3383,#0a88ba,#f2d338,#f28f38,#d91e1e);"></span>Portland</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Jet"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#00007f,#0000ff,#00ffff,#ffff00,#ff0000,#7f0000);"></span>Jet</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Hot"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#000000,#b00000,#ff8c00,#ffff66,#ffffff);"></span>Hot</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Blackbody"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#000000,#5b0c6b,#b83289,#f26d4b,#f9f871);"></span>Blackbody</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Electric"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#000000,#1e006d,#8d17a5,#d94fd5,#ffffff);"></span>Electric</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Rainbow"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#6e40aa,#4776e6,#1ac7c2,#7bd94c,#f4d03f,#f25f5c);"></span>Rainbow</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Earth"/><span class="cryo-palette-select__swatch" style="background:linear-gradient(90deg,#000082,#00b5c8,#7dbe42,#c8b64a,#8b4513);"></span>Earth</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Viridis" checked/><span
+            class="cryo-palette-select__swatch"
+            style="background:linear-gradient(90deg,#440154,#3b528b,#21918c,#5ec962,#fde725);"></span>Viridis</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Plasma"/><span
+            class="cryo-palette-select__swatch"
+            style="background:linear-gradient(90deg,#0d0887,#7e03a8,#cc4778,#f89540,#f0f921);"></span>Plasma</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Inferno"/><span
+            class="cryo-palette-select__swatch"
+            style="background:linear-gradient(90deg,#000004,#420a68,#932667,#dd513a,#fca50a,#fcffa4);"></span>Inferno</l
+            abel>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Magma"/><span
+            class="cryo-palette-select__swatch"
+            style="background:linear-gradient(90deg,#000004,#3b0f70,#8c2981,#de4968,#fe9f6d,#fcfdbf);"></span>Magma</lab
+            el>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Cividis"/><span
+            class="cryo-palette-select__swatch"
+            style="background:linear-gradient(90deg,#00224e,#30496c,#7b7c78,#c8b866,#fde725);"></span>Cividis</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Turbo"/><span
+            class="cryo-palette-select__swatch"
+            style="background:linear-gradient(90deg,#30123b,#4662d7,#1ae4b6,#a4fc3c,#f98c0a,#7a0403);"></span>Turbo</lab
+            el>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Blues"/><span
+            class="cryo-palette-select__swatch"
+            style="background:linear-gradient(90deg,#f7fbff,#c6dbef,#6baed6,#2171b5,#08306b);"></span>Blues</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Greens"/><span
+            class="cryo-palette-select__swatch"
+            style="background:linear-gradient(90deg,#f7fcf5,#c7e9c0,#74c476,#238b45,#00441b);"></span>Greens</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Greys"/><span
+            class="cryo-palette-select__swatch"
+            style="background:linear-gradient(90deg,#ffffff,#d9d9d9,#969696,#525252,#000000);"></span>Greys</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Oranges"/><span
+            class="cryo-palette-select__swatch"
+            style="background:linear-gradient(90deg,#fff5eb,#fdd0a2,#fd8d3c,#d94801,#7f2704);"></span>Oranges</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Purples"/><span
+            class="cryo-palette-select__swatch"
+            style="background:linear-gradient(90deg,#fcfbfd,#dadaeb,#9e9ac8,#6a51a3,#3f007d);"></span>Purples</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Reds"/><span
+            class="cryo-palette-select__swatch"
+            style="background:linear-gradient(90deg,#fff5f0,#fcbba1,#fb6a4a,#cb181d,#67000d);"></span>Reds</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="YlGnBu"/><span
+            class="cryo-palette-select__swatch"
+            style="background:linear-gradient(90deg,#ffffd9,#c7e9b4,#41b6c4,#2c7fb8,#081d58);"></span>YlGnBu</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="YlOrRd"/><span
+            class="cryo-palette-select__swatch"
+            style="background:linear-gradient(90deg,#ffffcc,#ffeda0,#feb24c,#f03b20,#800026);"></span>YlOrRd</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="RdBu"/><span
+            class="cryo-palette-select__swatch"
+            style="background:linear-gradient(90deg,#67001f,#d6604d,#f7f7f7,#4393c3,#053061);"></span>RdBu</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Portland"/><span
+            class="cryo-palette-select__swatch"
+            style="background:linear-gradient(90deg,#0c3383,#0a88ba,#f2d338,#f28f38,#d91e1e);"></span>Portland</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Jet"/><span
+            class="cryo-palette-select__swatch"
+            style="background:linear-gradient(90deg,#00007f,#0000ff,#00ffff,#ffff00,#ff0000,#7f0000);"></span>Jet</label
+            >
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Hot"/><span
+            class="cryo-palette-select__swatch"
+            style="background:linear-gradient(90deg,#000000,#b00000,#ff8c00,#ffff66,#ffffff);"></span>Hot</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Blackbody"/><span
+            class="cryo-palette-select__swatch"
+            style="background:linear-gradient(90deg,#000000,#5b0c6b,#b83289,#f26d4b,#f9f871);"></span>Blackbody</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Electric"/><span
+            class="cryo-palette-select__swatch"
+            style="background:linear-gradient(90deg,#000000,#1e006d,#8d17a5,#d94fd5,#ffffff);"></span>Electric</label>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Rainbow"/><span
+            class="cryo-palette-select__swatch"
+            style="background:linear-gradient(90deg,#6e40aa,#4776e6,#1ac7c2,#7bd94c,#f4d03f,#f25f5c);"></span>Rainbow</l
+            abel>
+          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Earth"/><span
+            class="cryo-palette-select__swatch"
+            style="background:linear-gradient(90deg,#000082,#00b5c8,#7dbe42,#c8b64a,#8b4513);"></span>Earth</label>
         </div>
       </div>
     </div>
@@ -999,7 +1064,8 @@
           </div>
         </div>
         <div class="cryo-explorer-cache-selection-btn-wrap">
-          <button type="button" class="btn btn-secondary" id="btn-cache-selection-uncached" disabled title="Select particles first.">
+          <button type="button" class="btn btn-secondary" id="btn-cache-selection-uncached" disabled
+            title="Select particles first.">
             Add 0 selection images to cache
           </button>
         </div>
@@ -1055,11 +1121,13 @@
     </div>
     <div id="montage-inner" class="cryo-dash-montage-inner cryo-dash-montage-inner--disabled">
       <div style="display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;margin-top:0.2rem;">
-        <button type="button" id="image-grid-menu-toggle" class="cryo-image-grid-menu-toggle" aria-expanded="false" aria-controls="image-grid-menu-body">
+        <button type="button" id="image-grid-menu-toggle" class="cryo-image-grid-menu-toggle" aria-expanded="false"
+          aria-controls="image-grid-menu-body">
           <span class="cryo-image-grid-menu-toggle__chev" aria-hidden="true">&#9656;</span>
           <span>Image grid</span>
         </button>
-        <label id="image-grid-size-inline" style="display:flex;align-items:center;gap:0.3rem;font-size:0.82rem;color:var(--muted,#5c6b7a);" hidden>
+        <label id="image-grid-size-inline"
+          style="display:flex;align-items:center;gap:0.3rem;font-size:0.82rem;color:var(--muted,#5c6b7a);" hidden>
           Grid size
           <select id="grid-size" disabled style="width:4.2rem;padding:0.1rem 0.2rem;font-size:0.82rem;">
             <option value="1">1 × 1</option>
@@ -1073,13 +1141,17 @@
           </select>
         </label>
       </div>
-      <p id="image-grid-inactive-note" class="cryo-dash-legend-note" style="margin:0.22rem 0 0;" hidden>Build image cache to populate grid</p>
+      <p id="image-grid-inactive-note"
+        class="cryo-dash-legend-note"
+        style="margin:0.22rem 0 0;"
+        hidden>Build image cache to populate grid</p>
       <div id="image-grid-menu-body" class="cryo-image-grid-menu-body" hidden>
         <div class="cryo-montage-grid-wrap">
           <div id="montage-grid" class="cryo-montage-grid"></div>
           <div id="montage-preload-overlay" class="cryo-plot-rendering-overlay" aria-hidden="true">
             <div class="cryo-plot-rendering-overlay__inner">
-              <span id="montage-preload-overlay-label" class="cryo-plot-rendering-overlay__label">Loading image cache...</span>
+              <span id="montage-preload-overlay-label" class="cryo-plot-rendering-overlay__label">Loading image
+                cache...</span>
               <div class="cryo-plot-rendering-overlay__track" role="progressbar" aria-valuetext="Loading image cache">
                 <div class="cryo-plot-rendering-overlay__indeterminate"></div>
               </div>
@@ -1183,7 +1255,8 @@
   }
 
   function montagePreloadOverlayIsShown() {
-    return !!(montagePreloadOverlayEl && montagePreloadOverlayEl.classList.contains("cryo-plot-rendering-overlay--show"));
+    return !!(montagePreloadOverlayEl &&
+      montagePreloadOverlayEl.classList.contains("cryo-plot-rendering-overlay--show"));
   }
 
   function setMontagePreloadOverlay(on, label) {
@@ -1412,8 +1485,10 @@
 
   /* RGB stops for montage cell tinting (aligned with Plotly sequential scales). */
   var CONTINUOUS_PALETTE_RGB = {
-    Viridis: [[68,1,84],[72,39,119],[63,74,138],[49,104,142],[38,130,142],[31,157,138],[53,183,121],[109,205,89],[253,231,37]],
-    Plasma: [[13,8,135],[76,2,161],[126,3,168],[170,35,149],[204,71,120],[230,108,92],[248,149,64],[253,197,39],[240,249,33]],
+    Viridis:
+      [[68,1,84],[72,39,119],[63,74,138],[49,104,142],[38,130,142],[31,157,138],[53,183,121],[109,205,89],[253,231,37]],
+    Plasma:
+      [[13,8,135],[76,2,161],[126,3,168],[170,35,149],[204,71,120],[230,108,92],[248,149,64],[253,197,39],[240,249,33]],
     Inferno: [[0,0,4],[41,10,108],[108,2,112],[187,55,84],[249,142,8],[252,208,74],[252,254,164]],
     Magma: [[0,0,4],[59,15,112],[122,4,111],[203,62,65],[252,141,89],[252,208,136],[252,253,191]],
     Cividis: [[0,34,78],[0,57,112],[68,90,129],[115,128,131],[159,161,135],[206,186,122],[253,231,37]],
@@ -1930,7 +2005,8 @@
     } else if (want <= have) {
       btnExpandCache.title = "Set new cache size above " + Number(have).toLocaleString("en-CA") + " to expand.";
     } else {
-      btnExpandCache.title = "Fetch thumbnails up to the new cache size (now " + Number(have).toLocaleString("en-CA") + " cached).";
+      btnExpandCache.title = "Fetch thumbnails up to the new cache size (now " + Number(have).toLocaleString("en-CA") +
+        " cached).";
     }
   }
 
@@ -2220,7 +2296,8 @@
   var montageCacheSizeInput = document.getElementById("montage-cache-size-input");
   if (montageCacheSizeInput) {
     var montageCacheOverlayBusy = function() {
-      return !!(montagePreloadOverlayEl && montagePreloadOverlayEl.classList.contains("cryo-plot-rendering-overlay--show"));
+      return !!(montagePreloadOverlayEl &&
+        montagePreloadOverlayEl.classList.contains("cryo-plot-rendering-overlay--show"));
     };
     montageCacheSizeInput.addEventListener("input", function() {
       syncExpandCacheButton(montageCacheOverlayBusy());
@@ -3040,7 +3117,8 @@
       dragmode: false,
       showlegend: false,
       font: {family: "Barlow, sans-serif", color: "#243b53", size: 11},
-      xaxis: {title: {text: "<b>" + escapeHtmlText(colorColLabel) + "</b>", standoff: 2, font: {size: 15.7, weight: 700}}, zeroline: false, fixedrange: true, range: violin.range},
+      xaxis: {title: {text: "<b>" + escapeHtmlText(colorColLabel) + "</b>", standoff: 2, font: {size: 15.7, weight:
+        700}}, zeroline: false, fixedrange: true, range: violin.range},
       yaxis: {visible: false, fixedrange: true, range: [-0.55, 0.55]},
       shapes: colorHistogramGuideShapes(violin.range),
       annotations: colorHistogramGuideAnnotations()
@@ -3060,7 +3138,8 @@
         mode: "markers",
         x: violin.outlierX,
         y: violin.outlierY,
-        marker: {symbol: "circle-open", color: violin.outlierColors, size: 5.76, line: {color: violin.outlierColors, width: 1.44}},
+        marker: {symbol: "circle-open", color: violin.outlierColors, size: 5.76, line: {color: violin.outlierColors,
+          width: 1.44}},
         hovertemplate: colorColLabel + " %{x}<br>outlier<extra></extra>"
       }
     );
@@ -3359,7 +3438,8 @@
     }
   }
 
-  /** After grid size change: keep current rows where possible; add more only from lasso pool if active, else full cache. */
+  /** After grid size change: keep current rows where possible; add more only from lasso pool if active, else full
+    cache. */
   function refillMontageForNewGridSize() {
     var want = neighborK;
     if (!preloaded || !preloaded.traceMap) {

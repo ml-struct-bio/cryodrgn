@@ -44,7 +44,8 @@ def clear_experiment_caches() -> None:
 
 
 # Endpoints that require a loaded experiment; every other endpoint is reachable
-# in command-builder-only mode too.
+# in command-builder-only mode too. Names must match Flask endpoint strings from
+# :func:`~flask.Flask.add_url_rule` (plain function name, no blueprint prefix).
 EXP_REQUIRED_ENDPOINTS = frozenset(
     {
         "abinit_builder_redirect",

@@ -1,8 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Command builder · cryoDRGN{% endblock %}
-{% block nav_page_title %}<span class="nav-title-sep" aria-hidden="true">·</span><span class="nav-page-title">Command builder</span>{% endblock %}
+{% from "_macros.html" import nav_page_title_span %}
+{% block nav_page_title %}{{ nav_page_title_span("Command builder") }}{% endblock %}
 {% block head %}
-<style>
+  <style>
   /* Viewport column: scroll form, command dock pinned to bottom of main */
   main:has(.cryo-dash-page.cmd-builder-page--dock) {
     display: flex;
@@ -248,238 +249,383 @@
       align-self: auto;
     }
   }
-</style>
+  </style>
 {% endblock %}
-
 {% block content %}
-{% macro title_attr(text) -%}
-{%- if text %} title="{{ text|e }}"{% endif -%}
-{%- endmacro %}
-{% macro schema_arg_title(a) -%}
-{%- if a.help -%}{{ a.help }}{%- endif -%}
-{%- endmacro %}
-{% macro ctf_row_title(field_id) -%}
-{%- set h = command_builder_required_field_titles.get(field_id) -%}
-{%- if h and default_ctf %} title="{{ (h ~ ' · ' ~ default_ctf)|trim|e }}"
-{%- elif h %} title="{{ h|e }}"
-{%- elif default_ctf %} title="{{ default_ctf|e }}"
-{%- endif -%}
-{%- endmacro %}
-{% macro render_cmd_arg(a) %}
-  {% set st = schema_arg_title(a)|trim %}
-  {% if a.w == 'flag_true' %}
-    <label class="check-line"{{ title_attr(st) }}><input type="checkbox" id="{{ a.id }}"{{ title_attr(st) }}/> <span><code>{{ a.cli[0] }}</code></span></label>
-  {% elif a.w == 'flag_false' %}
-    <label class="check-line"{{ title_attr(st) }}><input type="checkbox" id="{{ a.id }}" checked{{ title_attr(st) }}/> <span>On by default — uncheck for <code>{{ a.cli[0] }}</code></span></label>
-  {% elif a.w == 'no_amp' %}
-    <label class="check-line"{{ title_attr(st) }}><input type="checkbox" id="{{ a.id }}" checked{{ title_attr(st) }}/> <span>Mixed precision (AMP) — uncheck for <code>--no-amp</code></span></label>
-  {% elif a.w == 'norm2' %}
-    <label class="cryo-select-line" for="{{ a.id }}_a"{{ title_attr(st) }}><code>{{ a.cli[0] }}</code> (shift, scale)</label>
-    <input type="text" id="{{ a.id }}_a" placeholder="shift" autocomplete="off"{{ title_attr(st) }}/>
-    <input type="text" id="{{ a.id }}_b" placeholder="scale" autocomplete="off"{{ title_attr(st) }}/>
-  {% elif a.w == 'select' %}
-    {% set default_choice = a.default if a.default is defined else (a.choices[0] if a.choices else '') %}
-    <span class="choice-line"{{ title_attr(st) }}><code>{{ a.cli[0] }}</code></span>
-    <div class="choice-options">
-      {% for c in a.choices %}
-      {% set rid = a.id ~ '_' ~ loop.index0 %}
-      <label class="check-line" for="{{ rid }}"{{ title_attr(st) }}>
-        <input type="radio" id="{{ rid }}" name="{{ a.id }}" value="{{ c }}" {% if c == default_choice %}checked{% endif %}{{ title_attr(st) }}/>
-        <span>{% if a.labels and loop.index0 < a.labels|length %}{{ a.labels[loop.index0] }}{% elif c == '' %}(empty){% else %}{{ c }}{% endif %}</span>
-      </label>
-      {% endfor %}
-    </div>
-  {% elif a.w == 'number' %}
-    <label class="cryo-select-line" for="{{ a.id }}"{{ title_attr(st) }}><code>{{ a.cli[0] }}</code></label>
-    <input type="number" id="{{ a.id }}"{% if a.placeholder %} placeholder="{{ a.placeholder|e }}"{% endif %} autocomplete="off"{{ title_attr(st) }}/>
-  {% else %}
-    <label class="cryo-select-line" for="{{ a.id }}"{{ title_attr(st) }}><code>{{ a.cli[0] }}</code></label>
-    <input type="text" id="{{ a.id }}"
-      placeholder="{{ (a.placeholder|e) if a.placeholder else '(omit if blank)' }}"
-      autocomplete="off"
-      {{ title_attr(st) }}/>
-  {% endif %}
-{% endmacro %}
-{% macro render_dataset_fieldset(cmd_key, datadir_id) %}
-  {% set ds = (command_builder_schema[cmd_key] | selectattr('title', 'equalto', 'Dataset loading') | list | first) %}
-  <fieldset>
-    <legend>Dataset loading</legend>
-    <label class="cryo-select-line" for="{{ datadir_id }}"{{ title_attr(command_builder_required_field_titles.get(datadir_id)) }}><code>--datadir</code></label>
-    <input type="text" id="{{ datadir_id }}" value="" placeholder="(omit if blank)" autocomplete="off"{{ title_attr(command_builder_required_field_titles.get(datadir_id)) }}/>
-    {% if ds and ds.args %}
-      <div class="cmd-builder-dataset-flags">
-        {% for a in ds.args if a.w in ['flag_true', 'flag_false'] %}
-          {{ render_cmd_arg(a) }}
-        {% endfor %}
+  {% macro title_attr(text) -%}
+    {%- if text %} title="{{ text|e }}"
+    {% endif -%}
+  {%- endmacro %}
+  {% macro schema_arg_title(a) -%}
+    {%- if a.help -%}{{ a.help }}{%- endif -%}
+    {%- endmacro %}
+    {% macro ctf_row_title(field_id) -%}
+      {%- set h = command_builder_required_field_titles.get(field_id) -%}
+      {%- if h and default_ctf %} title="{{ (h ~ ' · ' ~ default_ctf)|trim|e }}"
+      {%- elif h %} title="{{ h|e }}"
+      {%- elif default_ctf %} title="{{ default_ctf|e }}"
+      {%- endif -%}
+    {%- endmacro %}
+    {% macro render_cmd_arg(a) %}
+      {% set st = schema_arg_title(a)|trim %}
+      {% if a.w == 'flag_true' %}
+        <label class="check-line"{{ title_attr(st) }}
+          ><input type="checkbox" id="{{ a.id }}"{{ title_attr(st) }} /> <span><code>{{ a.cli[0] }}</code></span>
+        </label>
+      {% elif a.w == 'flag_false' %}
+        <label class="check-line"{{ title_attr(st) }}
+          ><input type="checkbox" id="{{ a.id }}" checked{{ title_attr(st) }} />
+          <span>On by default — uncheck for <code>{{ a.cli[0] }}</code></span>
+        </label>
+      {% elif a.w == 'no_amp' %}
+        <label class="check-line"{{ title_attr(st) }}
+          ><input type="checkbox" id="{{ a.id }}" checked{{ title_attr(st) }} />
+          <span>Mixed precision (AMP) — uncheck for <code>--no-amp</code></span>
+        </label>
+      {% elif a.w == 'norm2' %}
+        <label class="cryo-select-line" for="{{ a.id }}_a"{{ title_attr(st) }}
+          ><code>{{ a.cli[0] }}</code> (shift, scale)
+        </label>
+        <input type="text" id="{{ a.id }}_a" placeholder="shift" autocomplete="off"{{ title_attr(st) }} />
+        <input type="text" id="{{ a.id }}_b" placeholder="scale" autocomplete="off"{{ title_attr(st) }} />
+      {% elif a.w == 'select' %}
+        {% set default_choice = a.default if a.default is defined else (a.choices[0] if a.choices else '') %}
+        <span class="choice-line"{{ title_attr(st) }}><code>{{ a.cli[0] }}</code></span>
+        <div class="choice-options">
+          {% for c in a.choices %}
+            {% set rid = a.id ~ '_' ~ loop.index0 %}
+            <label class="check-line" for="{{ rid }}"{{ title_attr(st) }}>
+              <input type="radio"
+                     id="{{ rid }}"
+                     name="{{ a.id }}"
+                     value="{{ c }}"
+                     {% if c == default_choice %}checked{% endif %}
+                     {{ title_attr(st) }} />
+              <span>
+                {% if a.labels and loop.index0 < a.labels|length %}
+                  {{ a.labels[loop.index0] }}
+                {% elif c == '' %}
+                  (empty)
+                {% else %}
+                  {{ c }}
+                {% endif %}
+              </span>
+            </label>
+          {% endfor %}
+        </div>
+      {% elif a.w == 'number' %}
+        <label class="cryo-select-line" for="{{ a.id }}"{{ title_attr(st) }}><code>{{ a.cli[0] }}</code>
+        </label>
+        <input type="number"
+               id="{{ a.id }}"
+               {% if a.placeholder %}placeholder="{{ a.placeholder|e }}"{% endif %}
+               autocomplete="off"
+               {{ title_attr(st) }} />
+      {% else %}
+        <label class="cryo-select-line" for="{{ a.id }}"{{ title_attr(st) }}><code>{{ a.cli[0] }}</code>
+        </label>
+        <input type="text"
+               id="{{ a.id }}"
+               placeholder="{{ (a.placeholder|e) if a.placeholder else '(omit if blank)' }}"
+               autocomplete="off"
+               {{ title_attr(st) }} />
+      {% endif %}
+    {% endmacro %}
+    {% macro render_dataset_fieldset(cmd_key, datadir_id) %}
+      {% set ds = (command_builder_schema[cmd_key]
+        | selectattr('title', 'equalto', 'Dataset loading')
+        | list
+        | first) %}
+      <fieldset>
+        <legend>Dataset loading</legend>
+        <label class="cryo-select-line" for="{{ datadir_id }}"
+          {{ title_attr(command_builder_required_field_titles.get(datadir_id) ) }}
+          ><code>--datadir</code>
+        </label>
+        <input type="text"
+               id="{{ datadir_id }}"
+               value=""
+               placeholder="(omit if blank)"
+               autocomplete="off"
+               {{ title_attr(command_builder_required_field_titles.get(datadir_id) ) }} />
+        {% if ds and ds.args %}
+          <div class="cmd-builder-dataset-flags">
+            {% for a in ds.args if a.w in ['flag_true', 'flag_false'] %}{{ render_cmd_arg(a) }}{% endfor %}
+          </div>
+          {% for a in ds.args if a.w not in ['flag_true', 'flag_false'] %}{{ render_cmd_arg(a) }}{% endfor %}
+        {% endif %}
+      </fieldset>
+    {% endmacro %}
+    <div class="cryo-dash-page cmd-builder-page cmd-builder-page--dock">
+      <div class="cmd-builder-header">
+        <div class="cryo-dash-top">
+          <a href="/">← Back</a>
+        </div>
+        <p class="cryo-dash-lead" style="margin-top:0.35rem;">
+          Pick a primary reconstruction command.
+          The line below lists <strong>required</strong> arguments plus options you actually set (empty fields and CLI
+          defaults are omitted).
+        </p>
       </div>
-      {% for a in ds.args if a.w not in ['flag_true', 'flag_false'] %}
-        {{ render_cmd_arg(a) }}
-      {% endfor %}
-    {% endif %}
-  </fieldset>
-{% endmacro %}
-<div class="cryo-dash-page cmd-builder-page cmd-builder-page--dock">
-<div class="cmd-builder-header">
-  <div class="cryo-dash-top">
-    <a href="/">← Back</a>
-  </div>
-  <p class="cryo-dash-lead" style="margin-top:0.35rem;">
-    Pick a primary reconstruction command. The line below lists <strong>required</strong> arguments plus options you actually set (empty fields and CLI defaults are omitted).
-  </p>
-</div>
-
-<div class="cmd-builder-scroll">
-<form class="cmd-form card" id="cmd-form" action="#" onsubmit="return false;">
-  <div class="cmd-builder-program">
-    <label class="cryo-select-line" for="cmd-type">Reconstruction command</label>
-    <select id="cmd-type" name="cmd_type">
-      <option value="abinit" selected>cryodrgn abinit</option>
-      <option value="train_vae">cryodrgn train_vae</option>
-      <option value="train_nn">cryodrgn train_nn</option>
-      <option value="train_dec">cryodrgn train_dec</option>
-    </select>
-  </div>
-
-  <div id="panel-abinit" class="cmd-panel cmd-panel--active" data-cmd="abinit">
-    <div class="cmd-builder-top-row">
-      <fieldset class="cmd-builder-required-fieldset">
-        <legend>Required</legend>
-        <label class="cryo-select-line" for="ab_particles"{{ title_attr(command_builder_required_field_titles.get('ab_particles')) }}>Particles</label>
-        <input type="text" id="ab_particles" value="{{ default_particles|e }}" autocomplete="off"{{ title_attr(command_builder_required_field_titles.get('ab_particles')) }}/>
-        <label class="cryo-select-line" for="ab_out"{{ title_attr(command_builder_required_field_titles.get('ab_out')) }}>Output directory (<code>-o</code>)</label>
-        <input type="text" id="ab_out" value="{{ default_outdir_abinit|e }}" autocomplete="off"{{ title_attr(command_builder_required_field_titles.get('ab_out')) }}/>
-        <label class="cryo-select-line" for="ab_zdim"{{ title_attr(command_builder_required_field_titles.get('ab_zdim')) }}><code>--zdim</code></label>
-        <input type="number" id="ab_zdim" min="0" step="1" value="{{ default_zdim }}"{{ title_attr(command_builder_required_field_titles.get('ab_zdim')) }}/>
-        <label class="cryo-select-line" for="ab_ctf"{{ ctf_row_title('ab_ctf') }}><code>--ctf</code></label>
-        <input type="text" id="ab_ctf" value="{{ default_ctf|e }}" placeholder="path to CTF .pkl" autocomplete="off"{{ ctf_row_title('ab_ctf') }}/>
-      </fieldset>
-      {{ render_dataset_fieldset('abinit', 'ab_datadir') }}
-    </div>
-    <div class="cmd-builder-rest-grid">
-      {% for group in command_builder_schema['abinit'] %}
-      {% if group.title != 'Dataset loading' %}
-      <fieldset>
-        <legend>{{ group.title }}</legend>
-        {% for a in group.args %}
-          {{ render_cmd_arg(a) }}
-        {% endfor %}
-      </fieldset>
-      {% endif %}
-      {% endfor %}
-    </div>
-  </div>
-
-  <div id="panel-train_vae" class="cmd-panel" data-cmd="train_vae">
-    <div class="cmd-builder-top-row">
-      <fieldset class="cmd-builder-required-fieldset">
-        <legend>Required</legend>
-        <label class="cryo-select-line" for="vae_particles"{{ title_attr(command_builder_required_field_titles.get('vae_particles')) }}>Particles</label>
-        <input type="text" id="vae_particles" value="{{ default_particles|e }}" autocomplete="off"{{ title_attr(command_builder_required_field_titles.get('vae_particles')) }}/>
-        <label class="cryo-select-line" for="vae_out"{{ title_attr(command_builder_required_field_titles.get('vae_out')) }}>Output directory (<code>-o</code>)</label>
-        <input type="text" id="vae_out" value="{{ default_outdir_train|e }}" autocomplete="off"{{ title_attr(command_builder_required_field_titles.get('vae_out')) }}/>
-        <label class="cryo-select-line" for="vae_poses"{{ title_attr(command_builder_required_field_titles.get('vae_poses')) }}><code>--poses</code></label>
-        <input type="text" id="vae_poses" value="{{ default_poses|e }}" autocomplete="off"{{ title_attr(command_builder_required_field_titles.get('vae_poses')) }}/>
-        <label class="cryo-select-line" for="vae_zdim"{{ title_attr(command_builder_required_field_titles.get('vae_zdim')) }}><code>--zdim</code></label>
-        <input type="number" id="vae_zdim" min="1" step="1" value="{{ default_zdim }}"{{ title_attr(command_builder_required_field_titles.get('vae_zdim')) }}/>
-        <label class="cryo-select-line" for="vae_ctf"{{ ctf_row_title('vae_ctf') }}><code>--ctf</code></label>
-        <input type="text" id="vae_ctf" value="{{ default_ctf|e }}" placeholder="path to CTF .pkl" autocomplete="off"{{ ctf_row_title('vae_ctf') }}/>
-      </fieldset>
-      {{ render_dataset_fieldset('train_vae', 'vae_datadir') }}
-    </div>
-    <div class="cmd-builder-rest-grid">
-      {% for group in command_builder_schema['train_vae'] %}
-      {% if group.title != 'Dataset loading' %}
-      <fieldset>
-        <legend>{{ group.title }}</legend>
-        {% for a in group.args %}
-          {{ render_cmd_arg(a) }}
-        {% endfor %}
-      </fieldset>
-      {% endif %}
-      {% endfor %}
-    </div>
-  </div>
-
-  <div id="panel-train_nn" class="cmd-panel" data-cmd="train_nn">
-    <div class="cmd-builder-top-row">
-      <fieldset class="cmd-builder-required-fieldset">
-        <legend>Required</legend>
-        <label class="cryo-select-line" for="nn_particles"{{ title_attr(command_builder_required_field_titles.get('nn_particles')) }}>Particles</label>
-        <input type="text" id="nn_particles" value="{{ default_particles|e }}" autocomplete="off"{{ title_attr(command_builder_required_field_titles.get('nn_particles')) }}/>
-        <label class="cryo-select-line" for="nn_out"{{ title_attr(command_builder_required_field_titles.get('nn_out')) }}>Output directory (<code>-o</code>)</label>
-        <input type="text" id="nn_out" value="{{ default_outdir_train|e }}" autocomplete="off"{{ title_attr(command_builder_required_field_titles.get('nn_out')) }}/>
-        <label class="cryo-select-line" for="nn_poses"{{ title_attr(command_builder_required_field_titles.get('nn_poses')) }}><code>--poses</code></label>
-        <input type="text" id="nn_poses" value="{{ default_poses|e }}" autocomplete="off"{{ title_attr(command_builder_required_field_titles.get('nn_poses')) }}/>
-        <label class="cryo-select-line" for="nn_ctf"{{ ctf_row_title('nn_ctf') }}><code>--ctf</code></label>
-        <input type="text" id="nn_ctf" value="{{ default_ctf|e }}" placeholder="path to CTF .pkl" autocomplete="off"{{ ctf_row_title('nn_ctf') }}/>
-      </fieldset>
-      {{ render_dataset_fieldset('train_nn', 'nn_datadir') }}
-    </div>
-    <div class="cmd-builder-rest-grid">
-      {% for group in command_builder_schema['train_nn'] %}
-      {% if group.title != 'Dataset loading' %}
-      <fieldset>
-        <legend>{{ group.title }}</legend>
-        {% for a in group.args %}
-          {{ render_cmd_arg(a) }}
-        {% endfor %}
-      </fieldset>
-      {% endif %}
-      {% endfor %}
-    </div>
-  </div>
-
-  <div id="panel-train_dec" class="cmd-panel" data-cmd="train_dec">
-    <div class="cmd-builder-top-row">
-      <fieldset class="cmd-builder-required-fieldset">
-        <legend>Required</legend>
-        <label class="cryo-select-line" for="dec_particles"{{ title_attr(command_builder_required_field_titles.get('dec_particles')) }}>Particles</label>
-        <input type="text" id="dec_particles" value="{{ default_particles|e }}" autocomplete="off"{{ title_attr(command_builder_required_field_titles.get('dec_particles')) }}/>
-        <label class="cryo-select-line" for="dec_out"{{ title_attr(command_builder_required_field_titles.get('dec_out')) }}>Output directory (<code>-o</code>)</label>
-        <input type="text" id="dec_out" value="{{ default_outdir_train|e }}" autocomplete="off"{{ title_attr(command_builder_required_field_titles.get('dec_out')) }}/>
-        <label class="cryo-select-line" for="dec_poses"{{ title_attr(command_builder_required_field_titles.get('dec_poses')) }}><code>--poses</code></label>
-        <input type="text" id="dec_poses" value="{{ default_poses|e }}" autocomplete="off"{{ title_attr(command_builder_required_field_titles.get('dec_poses')) }}/>
-        <label class="cryo-select-line" for="dec_zdim"{{ title_attr(command_builder_required_field_titles.get('dec_zdim')) }}><code>--zdim</code></label>
-        <input type="number" id="dec_zdim" min="1" step="1" value="{{ default_zdim }}"{{ title_attr(command_builder_required_field_titles.get('dec_zdim')) }}/>
-        <label class="cryo-select-line" for="dec_ctf"{{ ctf_row_title('dec_ctf') }}><code>--ctf</code></label>
-        <input type="text" id="dec_ctf" value="{{ default_ctf|e }}" placeholder="path to CTF .pkl" autocomplete="off"{{ ctf_row_title('dec_ctf') }}/>
-      </fieldset>
-      {{ render_dataset_fieldset('train_dec', 'dec_datadir') }}
-    </div>
-    <div class="cmd-builder-rest-grid">
-      {% for group in command_builder_schema['train_dec'] %}
-      {% if group.title != 'Dataset loading' %}
-      <fieldset>
-        <legend>{{ group.title }}</legend>
-        {% for a in group.args %}
-          {{ render_cmd_arg(a) }}
-        {% endfor %}
-      </fieldset>
-      {% endif %}
-      {% endfor %}
-    </div>
-  </div>
-</form>
-</div>
-
-<div class="cmd-builder-cmd-dock">
-  <div class="cmd-output card">
-    <div class="cmd-output-grid">
-      <div class="cmd-output-main">
-        <strong class="cmd-output-heading">Command</strong>
-        <pre id="cmd-out">cryodrgn abinit …</pre>
-        <p class="hint">This page does not run training — copy the line into your shell or job script.</p>
-        <p id="cmd-copy-status" class="hint cmd-copy-status"></p>
+      <div class="cmd-builder-scroll">
+        <form class="cmd-form card" id="cmd-form" action="#" onsubmit="return false;">
+          <div class="cmd-builder-program">
+            <label class="cryo-select-line" for="cmd-type">Reconstruction command</label>
+            <select id="cmd-type" name="cmd_type">
+              <option value="abinit" selected>cryodrgn abinit</option>
+              <option value="train_vae">cryodrgn train_vae</option>
+              <option value="train_nn">cryodrgn train_nn</option>
+              <option value="train_dec">cryodrgn train_dec</option>
+            </select>
+          </div>
+          <div id="panel-abinit" class="cmd-panel cmd-panel--active" data-cmd="abinit">
+            <div class="cmd-builder-top-row">
+              <fieldset class="cmd-builder-required-fieldset">
+                <legend>Required</legend>
+                <label class="cryo-select-line" for="ab_particles"
+                  {{ title_attr(command_builder_required_field_titles.get('ab_particles') ) }}>Particles
+                </label>
+                <input type="text"
+                       id="ab_particles"
+                       value="{{ default_particles|e }}"
+                       autocomplete="off"
+                       {{ title_attr(command_builder_required_field_titles.get('ab_particles') ) }} />
+                <label class="cryo-select-line"
+                       for="ab_out"
+                       {{ title_attr(command_builder_required_field_titles.get('ab_out') ) }}>
+                  Output directory (<code>-o</code>)
+                </label>
+                <input type="text"
+                       id="ab_out"
+                       value="{{ default_outdir_abinit|e }}"
+                       autocomplete="off"
+                       {{ title_attr(command_builder_required_field_titles.get('ab_out') ) }} />
+                <label class="cryo-select-line" for="ab_zdim"
+                  {{ title_attr(command_builder_required_field_titles.get('ab_zdim') ) }}><code>--zdim</code>
+                </label>
+                <input type="number"
+                       id="ab_zdim"
+                       min="0"
+                       step="1"
+                       value="{{ default_zdim }}"
+                       {{ title_attr(command_builder_required_field_titles.get('ab_zdim') ) }} />
+                <label class="cryo-select-line" for="ab_ctf"{{ ctf_row_title("ab_ctf") }}><code>--ctf</code>
+                </label>
+                <input type="text"
+                       id="ab_ctf"
+                       value="{{ default_ctf|e }}"
+                       placeholder="path to CTF .pkl"
+                       autocomplete="off"
+                       {{ ctf_row_title("ab_ctf") }} />
+              </fieldset>
+              {{ render_dataset_fieldset('abinit', 'ab_datadir') }}
+            </div>
+            <div class="cmd-builder-rest-grid">
+              {% for group in command_builder_schema['abinit'] %}
+                {% if group.title != 'Dataset loading' %}
+                  <fieldset>
+                    <legend>{{ group.title }}</legend>
+                    {% for a in group.args %}{{ render_cmd_arg(a) }}{% endfor %}
+                  </fieldset>
+                {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+          <div id="panel-train_vae" class="cmd-panel" data-cmd="train_vae">
+            <div class="cmd-builder-top-row">
+              <fieldset class="cmd-builder-required-fieldset">
+                <legend>Required</legend>
+                <label class="cryo-select-line"
+                       for="vae_particles"
+                       {{ title_attr(command_builder_required_field_titles.get('vae_particles') ) }}>Particles
+                </label>
+                <input type="text"
+                       id="vae_particles"
+                       value="{{ default_particles|e }}"
+                       autocomplete="off"
+                       {{ title_attr(command_builder_required_field_titles.get('vae_particles') ) }} />
+                <label class="cryo-select-line"
+                       for="vae_out"
+                       {{ title_attr(command_builder_required_field_titles.get('vae_out') ) }}>
+                  Output directory (<code>-o</code>)
+                </label>
+                <input type="text"
+                       id="vae_out"
+                       value="{{ default_outdir_train|e }}"
+                       autocomplete="off"
+                       {{ title_attr(command_builder_required_field_titles.get('vae_out') ) }} />
+                <label class="cryo-select-line" for="vae_poses"
+                  {{ title_attr(command_builder_required_field_titles.get('vae_poses') ) }}><code>--poses</code>
+                </label>
+                <input type="text"
+                       id="vae_poses"
+                       value="{{ default_poses|e }}"
+                       autocomplete="off"
+                       {{ title_attr(command_builder_required_field_titles.get('vae_poses') ) }} />
+                <label class="cryo-select-line" for="vae_zdim"
+                  {{ title_attr(command_builder_required_field_titles.get('vae_zdim') ) }}><code>--zdim</code>
+                </label>
+                <input type="number"
+                       id="vae_zdim"
+                       min="1"
+                       step="1"
+                       value="{{ default_zdim }}"
+                       {{ title_attr(command_builder_required_field_titles.get('vae_zdim') ) }} />
+                <label class="cryo-select-line" for="vae_ctf"{{ ctf_row_title("vae_ctf") }}><code>--ctf</code>
+                </label>
+                <input type="text"
+                       id="vae_ctf"
+                       value="{{ default_ctf|e }}"
+                       placeholder="path to CTF .pkl"
+                       autocomplete="off"
+                       {{ ctf_row_title("vae_ctf") }} />
+              </fieldset>
+              {{ render_dataset_fieldset('train_vae', 'vae_datadir') }}
+            </div>
+            <div class="cmd-builder-rest-grid">
+              {% for group in command_builder_schema['train_vae'] %}
+                {% if group.title != 'Dataset loading' %}
+                  <fieldset>
+                    <legend>{{ group.title }}</legend>
+                    {% for a in group.args %}{{ render_cmd_arg(a) }}{% endfor %}
+                  </fieldset>
+                {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+          <div id="panel-train_nn" class="cmd-panel" data-cmd="train_nn">
+            <div class="cmd-builder-top-row">
+              <fieldset class="cmd-builder-required-fieldset">
+                <legend>Required</legend>
+                <label class="cryo-select-line" for="nn_particles"
+                  {{ title_attr(command_builder_required_field_titles.get('nn_particles') ) }}>Particles
+                </label>
+                <input type="text"
+                       id="nn_particles"
+                       value="{{ default_particles|e }}"
+                       autocomplete="off"
+                       {{ title_attr(command_builder_required_field_titles.get('nn_particles') ) }} />
+                <label class="cryo-select-line"
+                       for="nn_out"
+                       {{ title_attr(command_builder_required_field_titles.get('nn_out') ) }}>
+                  Output directory (<code>-o</code>)
+                </label>
+                <input type="text"
+                       id="nn_out"
+                       value="{{ default_outdir_train|e }}"
+                       autocomplete="off"
+                       {{ title_attr(command_builder_required_field_titles.get('nn_out') ) }} />
+                <label class="cryo-select-line" for="nn_poses"
+                  {{ title_attr(command_builder_required_field_titles.get('nn_poses') ) }}><code>--poses</code>
+                </label>
+                <input type="text"
+                       id="nn_poses"
+                       value="{{ default_poses|e }}"
+                       autocomplete="off"
+                       {{ title_attr(command_builder_required_field_titles.get('nn_poses') ) }} />
+                <label class="cryo-select-line" for="nn_ctf"{{ ctf_row_title("nn_ctf") }}><code>--ctf</code>
+                </label>
+                <input type="text"
+                       id="nn_ctf"
+                       value="{{ default_ctf|e }}"
+                       placeholder="path to CTF .pkl"
+                       autocomplete="off"
+                       {{ ctf_row_title("nn_ctf") }} />
+              </fieldset>
+              {{ render_dataset_fieldset('train_nn', 'nn_datadir') }}
+            </div>
+            <div class="cmd-builder-rest-grid">
+              {% for group in command_builder_schema['train_nn'] %}
+                {% if group.title != 'Dataset loading' %}
+                  <fieldset>
+                    <legend>{{ group.title }}</legend>
+                    {% for a in group.args %}{{ render_cmd_arg(a) }}{% endfor %}
+                  </fieldset>
+                {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+          <div id="panel-train_dec" class="cmd-panel" data-cmd="train_dec">
+            <div class="cmd-builder-top-row">
+              <fieldset class="cmd-builder-required-fieldset">
+                <legend>Required</legend>
+                <label class="cryo-select-line"
+                       for="dec_particles"
+                       {{ title_attr(command_builder_required_field_titles.get('dec_particles') ) }}>Particles
+                </label>
+                <input type="text"
+                       id="dec_particles"
+                       value="{{ default_particles|e }}"
+                       autocomplete="off"
+                       {{ title_attr(command_builder_required_field_titles.get('dec_particles') ) }} />
+                <label class="cryo-select-line"
+                       for="dec_out"
+                       {{ title_attr(command_builder_required_field_titles.get('dec_out') ) }}>
+                  Output directory (<code>-o</code>)
+                </label>
+                <input type="text"
+                       id="dec_out"
+                       value="{{ default_outdir_train|e }}"
+                       autocomplete="off"
+                       {{ title_attr(command_builder_required_field_titles.get('dec_out') ) }} />
+                <label class="cryo-select-line" for="dec_poses"
+                  {{ title_attr(command_builder_required_field_titles.get('dec_poses') ) }}><code>--poses</code>
+                </label>
+                <input type="text"
+                       id="dec_poses"
+                       value="{{ default_poses|e }}"
+                       autocomplete="off"
+                       {{ title_attr(command_builder_required_field_titles.get('dec_poses') ) }} />
+                <label class="cryo-select-line" for="dec_zdim"
+                  {{ title_attr(command_builder_required_field_titles.get('dec_zdim') ) }}><code>--zdim</code>
+                </label>
+                <input type="number"
+                       id="dec_zdim"
+                       min="1"
+                       step="1"
+                       value="{{ default_zdim }}"
+                       {{ title_attr(command_builder_required_field_titles.get('dec_zdim') ) }} />
+                <label class="cryo-select-line" for="dec_ctf"{{ ctf_row_title("dec_ctf") }}><code>--ctf</code>
+                </label>
+                <input type="text"
+                       id="dec_ctf"
+                       value="{{ default_ctf|e }}"
+                       placeholder="path to CTF .pkl"
+                       autocomplete="off"
+                       {{ ctf_row_title("dec_ctf") }} />
+              </fieldset>
+              {{ render_dataset_fieldset('train_dec', 'dec_datadir') }}
+            </div>
+            <div class="cmd-builder-rest-grid">
+              {% for group in command_builder_schema['train_dec'] %}
+                {% if group.title != 'Dataset loading' %}
+                  <fieldset>
+                    <legend>{{ group.title }}</legend>
+                    {% for a in group.args %}{{ render_cmd_arg(a) }}{% endfor %}
+                  </fieldset>
+                {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+        </form>
       </div>
-      <div class="cmd-output-actions">
-        <button type="button" class="btn-copy" id="cmd-copy">Copy command</button>
+      <div class="cmd-builder-cmd-dock">
+        <div class="cmd-output card">
+          <div class="cmd-output-grid">
+            <div class="cmd-output-main">
+              <strong class="cmd-output-heading">Command</strong>
+              <pre id="cmd-out">cryodrgn abinit …</pre>
+              <p class="hint">This page does not run training — copy the line into your shell or job script.</p>
+              <p id="cmd-copy-status" class="hint cmd-copy-status"></p>
+            </div>
+            <div class="cmd-output-actions">
+              <button type="button" class="btn-copy" id="cmd-copy">Copy command</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
-  </div>
-</div>
-</div>
-
-<script>
+    <script>
 (function() {
   var CMD_SCHEMA = {{ command_builder_schema | tojson }};
 
@@ -677,5 +823,5 @@
 
   syncPanels();
 })();
-</script>
-{% endblock %}
+    </script>
+  {% endblock %}

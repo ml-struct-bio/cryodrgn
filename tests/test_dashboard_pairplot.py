@@ -51,6 +51,19 @@ class TestDashboardPairPlot:
         assert js.get("cells"), "pairplot response missing cells"
         assert len(js["cells"]) == 16  # zdim=4 -> 4x4 grid
 
+    def test_api_pairplot_accepts_continuous_palette(self, flask_client) -> None:
+        r = flask_client.post(
+            "/api/pairplot",
+            json={
+                "color_col": "znorm",
+                "diagonal_emb": "pc",
+                "upper_style": "hex",
+                "palette": "plasma",
+            },
+        )
+        assert r.status_code == 200, r.get_json()
+        assert r.get_json().get("png_b64")
+
     def test_pair_grid_png_is_deterministic(
         self, dashboard_experiment: DashboardExperiment
     ) -> None:

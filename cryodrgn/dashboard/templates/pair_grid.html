@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 {# 4×4 mini-grids: row i = top→bottom, col j = left→right; matches zᵢ (row) vs zⱼ (col) #}
 {% macro picto_lower() %}
-<svg class="pair-picto" width="32" height="32" viewBox="0 0 34 34" aria-hidden="true" focusable="false" role="presentation">
+<svg class="pair-picto" width="32" height="32" viewBox="0 0 34 34" aria-hidden="true" focusable="false"
+  role="presentation">
   {% set lo = "#e8ecf1" %}
   {% set hi = "#3d5a80" %}
   <rect x="1" y="1" width="7" height="7" fill="{{ lo }}"/>
@@ -23,7 +24,8 @@
 </svg>
 {% endmacro %}
 {% macro picto_diagonal() %}
-<svg class="pair-picto" width="32" height="32" viewBox="0 0 34 34" aria-hidden="true" focusable="false" role="presentation">
+<svg class="pair-picto" width="32" height="32" viewBox="0 0 34 34" aria-hidden="true" focusable="false"
+  role="presentation">
   {% set lo = "#e8ecf1" %}
   {% set hi = "#3d5a80" %}
   <rect x="1" y="1" width="7" height="7" fill="{{ hi }}"/>
@@ -45,7 +47,8 @@
 </svg>
 {% endmacro %}
 {% macro picto_upper() %}
-<svg class="pair-picto" width="32" height="32" viewBox="0 0 34 34" aria-hidden="true" focusable="false" role="presentation">
+<svg class="pair-picto" width="32" height="32" viewBox="0 0 34 34" aria-hidden="true" focusable="false"
+  role="presentation">
   {% set lo = "#e8ecf1" %}
   {% set hi = "#3d5a80" %}
   <rect x="1" y="1" width="7" height="7" fill="{{ lo }}"/>
@@ -286,7 +289,8 @@
   }
 </style>
 {% endblock %}
-{% block nav_page_title %}<span class="nav-title-sep" aria-hidden="true">·</span><span class="nav-page-title">Pair-plot generator</span>{% endblock %}
+{% from "_macros.html" import nav_page_title_span %}
+{% block nav_page_title %}{{ nav_page_title_span("Pair-plot generator") }}{% endblock %}
 {% block content %}
 <div class="cryo-dash-page">
 <div class="cryo-dash-row">
@@ -294,7 +298,8 @@
     <div class="cryo-dash-top">
       <a href="/">← Back</a>
     </div>
-    <p class="cryo-dash-lead">Each panel compares two latent coordinates. The diagonal shows a 2D embedding; one triangle colors particles by a covariate; the other shows a light scatter or density pattern.</p>
+    <p class="cryo-dash-lead">Each panel compares two latent coordinates. The diagonal shows a 2D embedding; one
+      triangle colors particles by a covariate; the other shows a light scatter or density pattern.</p>
     <div class="card cryo-dash-controls" id="pair-controls-card">
       <fieldset>
         <legend>
@@ -314,7 +319,8 @@
           <span class="legend-row">{{ picto_diagonal() }}<span>Embedding method<br>(on the diagonal)</span></span>
         </legend>
         <label class="radio-line">
-          <input type="radio" name="diag_emb" value="umap" {% if has_umap %}checked{% endif %} {% if not has_umap %}disabled{% endif %}/>
+          <input type="radio" name="diag_emb" value="umap" {% if has_umap %}checked{% endif %}
+            {% if not has_umap %}disabled{% endif %}/>
           <span>UMAP{% if not has_umap %} <span class="muted">(n/a)</span>{% endif %}</span>
         </label>
         <label class="radio-line">
@@ -363,7 +369,8 @@
           {% endfor %}
           {% endfor %}
         </div>
-        <div id="pairplot-rendering-overlay" class="cryo-plot-rendering-overlay cryo-plot-rendering-overlay--show" aria-hidden="false">
+        <div id="pairplot-rendering-overlay" class="cryo-plot-rendering-overlay cryo-plot-rendering-overlay--show"
+          aria-hidden="false">
           <div class="cryo-plot-rendering-overlay__inner">
             <span class="cryo-plot-rendering-overlay__label">Rendering…</span>
             <div class="cryo-plot-rendering-overlay__track" role="progressbar" aria-valuetext="Loading plot">
@@ -372,7 +379,8 @@
           </div>
         </div>
       </div>
-      <fieldset id="pairplot-palette-radios" class="cryo-palette-radios cryo-palette-radios--hidden-during-plot-render" aria-label="Continuous color palette">
+      <fieldset id="pairplot-palette-radios" class="cryo-palette-radios cryo-palette-radios--hidden-during-plot-render"
+        aria-label="Continuous color palette">
         <legend>Palette (continuous color)</legend>
         <div class="cryo-palette-radios__row">
           <label><input type="radio" name="pairplot_palette" value="Viridis" checked/> Viridis</label>

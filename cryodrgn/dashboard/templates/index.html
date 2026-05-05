@@ -217,7 +217,8 @@
   <a class="landing-card landing-card-link" href="{{ url_for('explorer') }}">
     <h2 class="landing-card-title">Particle explorer</h2>
     <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_viewer.png') }}"/>
-    <p>Plot dataset particles by model outputs such as z-latent-space dimensions or analysis covariates such as UMAP embeddings.<br /><br />
+    <p>Plot dataset particles by model outputs such as z-latent-space dimensions or analysis covariates such as UMAP
+      embeddings.<br /><br />
        Use lasso selection to write <code>--ind</code> <code>.pkl</code> files,
        and optionally view dataset images or volume reconstructions for each particle.</p>
   </a>
@@ -233,26 +234,31 @@
   <a class="landing-card landing-card-link" href="{{ url_for('latent_3d_page') }}">
     <h2 class="landing-card-title">3D visualizer</h2>
     <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_3d.png') }}"/>
-    <p>Interactive 3D scatter of three latent axes, with optional color from analysis columns when you have at least three <code>z</code> dimensions.</p>
+    <p>Interactive 3D scatter of three latent axes, with optional color from analysis columns when you have at least
+      three <code>z</code> dimensions.</p>
   </a>
   {% endif %}
   {% if landscape_card_active %}
   <a class="landing-card landing-card-link" href="{{ url_for('landscape_volpca_page') }}">
     <h2 class="landing-card-title">Volume sketched landscape explorer</h2>
     <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_landscape_volpca.png') }}"/>
-    <p>Explore k-means sketch volumes in PCA space from <code>analyze_landscape</code> for <strong>epoch {{ exp_epoch }}</strong>, select volumes, preview GIFs (cycle or rotate), and save under <code>landscape.N/kmeansK/</code>.</p>
+    <p>Explore k-means sketch volumes in PCA space from <code>analyze_landscape</code> for
+      <strong>epoch {{ exp_epoch }}</strong>, select volumes, preview GIFs (cycle or rotate), and save under
+      <code>landscape.N/kmeansK/</code>.</p>
   </a>
   {% endif %}
   <a class="landing-card landing-card-link" href="{{ url_for('command_builder_page') }}">
     <h2 class="landing-card-title">Command builder</h2>
     <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_command_builder.png') }}"/>
-    <p style="margin-top:0.35rem;">Compose a <code>cryodrgn</code> command you can copy and paste for tools such as <code>abinit</code> and <code>train_vae</code> — required args plus only the options you fill in.</p>
+    <p style="margin-top:0.35rem;">Compose a <code>cryodrgn</code> command you can copy and paste for tools such as
+      <code>abinit</code> and <code>train_vae</code> — required args plus only the options you fill in.</p>
   </a>
   {% if trajectory_active %}
   <a class="landing-card landing-card-link" href="{{ url_for('trajectory_creator_page') }}">
     <h2 class="landing-card-title">Trajectory creator</h2>
     <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_trajectory.png') }}"/>
-    <p>Draw a line through the latent scatter to generate volumes along a trajectory — direct interpolation or nearest-neighbor mode — with ChimeraX previews.</p>
+    <p>Draw a line through the latent scatter to generate volumes along a trajectory — direct interpolation or
+      nearest-neighbor mode — with ChimeraX previews.</p>
   </a>
   {% endif %}
 
@@ -261,7 +267,8 @@
     <span class="landing-inactive-badge">Inactive</span>
     <h2 class="landing-card-title">Particle explorer</h2>
     <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_viewer.png') }}"/>
-    <p>Plot dataset particles by model outputs such as z-latent-space dimensions or analysis covariates such as UMAP embeddings.<br /><br />
+    <p>Plot dataset particles by model outputs such as z-latent-space dimensions or analysis covariates such as UMAP
+      embeddings.<br /><br />
        Use lasso selection to write <code>--ind</code> <code>.pkl</code> files.
     {% if command_builder_only %}
     <p class="muted">Activate this interface by running <code>cryodrgn dashboard &lt;outdir&gt;</code>.</p>
@@ -284,11 +291,13 @@
     <span class="landing-inactive-badge">Inactive</span>
     <h2 class="landing-card-title">3D visualizer</h2>
     <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_3d.png') }}"/>
-    <p>Interactive 3D scatter of three latent axes, with optional color from analysis columns when you have at least three <code>z</code> dimensions.</p>
+    <p>Interactive 3D scatter of three latent axes, with optional color from analysis columns when you have at least
+      three <code>z</code> dimensions.</p>
     {% if command_builder_only %}
     <p class="muted">Activate this interface by running <code>cryodrgn dashboard &lt;outdir&gt;</code>.</p>
     {% else %}
-    <p class="muted">Activate this interface by loading a run with at least three latent dimensions (current: {{ zdim }}).</p>
+    <p class="muted">Activate this interface by loading a run with at least three latent dimensions (current:
+      {{ zdim }}).</p>
     {% endif %}
   </article>
   {% endif %}
@@ -297,11 +306,13 @@
     <span class="landing-inactive-badge">Inactive</span>
     <h2 class="landing-card-title">Trajectory creator</h2>
     <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_trajectory.png') }}"/>
-    <p>Draw a line through the latent scatter to generate volumes along a trajectory — direct interpolation or nearest-neighbor mode — with ChimeraX previews.</p>
+    <p>Draw a line through the latent scatter to generate volumes along a trajectory — direct interpolation or
+      nearest-neighbor mode — with ChimeraX previews.</p>
     {% if command_builder_only %}
     <p class="muted">Activate this interface by running <code>cryodrgn dashboard &lt;outdir&gt;</code>.</p>
     {% else %}
-    <p class="muted">Activate this interface by using a CUDA-enabled machine and loading a run with model weights for the selected epoch.</p>
+    <p class="muted">Activate this interface by using a CUDA-enabled machine and loading a run with model weights for
+      the selected epoch.</p>
     {% endif %}
   </article>
   {% endif %}
@@ -310,11 +321,15 @@
     <span class="landing-inactive-badge">Inactive</span>
     <h2 class="landing-card-title">Volume sketched landscape explorer</h2>
     <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_landscape_volpca.png') }}"/>
-    <p>Explore k-means sketch volumes in PCA space from <code>analyze_landscape</code>, select volumes, preview GIFs (cycle or rotate), and save under <code>landscape.N/kmeansK/</code>.</p>
+    <p>Explore k-means sketch volumes in PCA space from <code>analyze_landscape</code>, select volumes, preview GIFs
+      (cycle or rotate), and save under <code>landscape.N/kmeansK/</code>.</p>
     {% if command_builder_only %}
-    <p class="muted">Activate this interface by running <code>cryodrgn dashboard &lt;outdir&gt;</code>, then run <code>cryodrgn analyze_landscape</code> for an epoch.</p>
+    <p class="muted">Activate this interface by running <code>cryodrgn dashboard &lt;outdir&gt;</code>, then run
+      <code>cryodrgn analyze_landscape</code> for an epoch.</p>
     {% else %}
-    <p class="muted">No complete landscape output for <strong>epoch {{ exp_epoch }}</strong> (<code>landscape.{{ exp_epoch }}</code> with <code>vol_pca_*</code> and matching <code>kmeans*</code>). Run <code>cryodrgn analyze_landscape &lt;outdir&gt; {{ exp_epoch }}</code> or switch epoch in the nav.</p>
+    <p class="muted">No complete landscape output for <strong>epoch {{ exp_epoch }}</strong>
+      (<code>landscape.{{ exp_epoch }}</code> with <code>vol_pca_*</code> and matching <code>kmeans*</code>).
+      Run <code>cryodrgn analyze_landscape &lt;outdir&gt; {{ exp_epoch }}</code> or switch epoch in the nav.</p>
     {% endif %}
   </article>
   {% endif %}

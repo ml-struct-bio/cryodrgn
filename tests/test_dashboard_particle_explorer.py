@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import os
 import pickle
+import re
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -424,12 +425,68 @@ class TestApiCovariateThresholdRows:
         assert isinstance(js["rows"], list)
         assert js["n"] == len(js["rows"])
 
+    def test_use_max_selects_points_below_level(self, flask_client) -> None:
+        r = flask_client.post(
+            "/api/covariate_threshold_rows",
+            json={"column": "UMAP1", "level": 1e30, "use_max": True},
+        )
+        assert r.status_code == 200
+        js = r.get_json()
+        assert js["n"] == 100
+
     def test_invalid_column_rejected(self, flask_client) -> None:
         r = flask_client.post(
             "/api/covariate_threshold_rows",
             json={"column": "not_a_column", "level": 0.0, "use_max": False},
         )
         assert r.status_code == 400
+
+    def test_index_column_rejected(self, flask_client) -> None:
+        r = flask_client.post(
+            "/api/covariate_threshold_rows",
+            json={"column": "index", "level": 0.0, "use_max": False},
+        )
+        assert r.status_code == 400
+
+    def test_invalid_level_rejected(self, flask_client) -> None:
+        r = flask_client.post(
+            "/api/covariate_threshold_rows",
+            json={"column": "UMAP1", "level": "nope", "use_max": False},
+        )
+        assert r.status_code == 400
+
+
+class TestApiExplorerVolumeMedia:
+    def test_ineligible_returns_400(self, flask_client, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.app.explorer_volumes_eligible", lambda _e: False
+        )
+        r = flask_client.post(
+            "/api/explorer_volume_media",
+            json={"rows": [0], "mode": "static"},
+        )
+        assert r.status_code == 400
+
+    def test_empty_rows_returns_400(self, flask_client, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.app.explorer_volumes_eligible", lambda _e: True
+        )
+        r = flask_client.post(
+            "/api/explorer_volume_media",
+            json={"rows": [], "mode": "static"},
+        )
+        assert r.status_code == 400
+
+    def test_bad_mode_returns_400(self, flask_client, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.app.explorer_volumes_eligible", lambda _e: True
+        )
+        r = flask_client.post(
+            "/api/explorer_volume_media",
+            json={"rows": [0, 1], "mode": "movie"},
+        )
+        assert r.status_code == 400
+        assert "mode" in (r.get_json() or {}).get("error", "").lower()
 
 
 class TestApiPreloadImages:
@@ -546,9 +603,36 @@ class TestApiPreloadImages:
         )
         assert r.status_code == 400
 
+    def test_restrict_to_scatter_limits_pool(
+        self,
+        flask_client,
+        dashboard_experiment: DashboardExperiment,
+    ) -> None:
+        from cryodrgn.dashboard.plots import plot_df_row_indices_for_explorer_scatter
+
+        PRELOAD_CACHE.clear()
+        cap = 12
+        r = flask_client.post(
+            "/api/preload_images",
+            json={
+                "x": "UMAP1",
+                "y": "UMAP2",
+                "cache_size": 50,
+                "restrict_to_scatter_plot": True,
+                "scatter_max_points": cap,
+            },
+        )
+        assert r.status_code == 200
+        js = r.get_json()
+        pool = set(
+            plot_df_row_indices_for_explorer_scatter(dashboard_experiment.plot_df, cap)
+        )
+        assert pool
+        assert set(js["rows"]).issubset(pool)
+
 
 class TestParticleExplorerTemplateRegressions:
-    def test_particle_page_exposes_cache_progress_and_plot_highlight_toggle(
+    def test_particle_page_exposes_cache_progress_and_image_grid_shell(
         self, flask_client
     ) -> None:
         r = flask_client.get("/explorer")
@@ -556,13 +640,15 @@ class TestParticleExplorerTemplateRegressions:
         body = r.get_data(as_text=True)
         assert 'id="image-cache-progress"' in body
         assert 'role="progressbar"' in body
-        assert 'id="show-grid-annotations"' in body
-        assert "Show highlights in grid using image cache" in body
+        assert 'id="image-grid-menu-toggle"' in body
+        assert "Image grid" in body
+        assert re.search(r"Build\s+image\s+cache\s+to\s+populate\s+grid", body)
         assert "Build cache" in body
         assert 'id="montage-cache-size-label-text"' in body
         assert 'id="btn-cache-selection-uncached"' in body
         assert "Add 0 selection images to cache" in body
         assert 'id="color-discrete-switches"' in body
+        assert "function showGridHighlightsEnabled()" in body
 
     def test_full_cache_load_suppresses_montage_and_plot_highlight_updates(
         self, flask_client

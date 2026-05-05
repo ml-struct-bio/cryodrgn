@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Trajectory creator · cryoDRGN{% endblock %}
-{% block nav_page_title %}<span class="nav-title-sep" aria-hidden="true">·</span><span class="nav-page-title">Trajectory creator</span>{% endblock %}
+{% from "_macros.html" import nav_page_title_span %}
+{% block nav_page_title %}{{ nav_page_title_span("Trajectory creator") }}{% endblock %}
 {% block head %}
 <style>
   .cryo-traj-vol-column {
@@ -498,6 +499,7 @@
 </style>
 {% endblock %}
 {% block content %}
+<!-- === Trajectory creator: interactive path + volume strip === -->
 <div class="cryo-dash-page cryo-dash-page--image-viewer">
 <div class="cryo-dash-row">
   <div class="cryo-dash-side">
@@ -541,19 +543,23 @@
             {% endfor %}
           </select>
         </div>
-        <p class="cryo-traj-hint" id="traj-settings-hint" style="margin-top:0.35rem;">Drag the orange and navy handles on the plot to edit the trajectory.</p>
+        <p class="cryo-traj-hint" id="traj-settings-hint" style="margin-top:0.35rem;">Drag the orange and navy handles
+          on the plot to edit the trajectory.</p>
       </fieldset>
       <div style="margin-top:0.35rem;">
-        <button type="button" class="btn" id="btn-reset" style="width:100%;font-size:0.88rem;padding:0.4rem 0.5rem;">Reset trajectory</button>
+        <button type="button" class="btn" id="btn-reset"
+          style="width:100%;font-size:0.88rem;padding:0.4rem 0.5rem;">Reset trajectory</button>
       </div>
     </div>
   </div>
 
   <div class="cryo-dash-viewport--plotly">
-    <p id="scatter-plot-status" class="cryo-dash-legend-note" style="margin:0 0 0.35rem;color:var(--accent,#c4703a);min-height:1.2em;"></p>
+    <p id="scatter-plot-status" class="cryo-dash-legend-note"
+      style="margin:0 0 0.35rem;color:var(--accent,#c4703a);min-height:1.2em;"></p>
     <div class="cryo-plotly-stack" id="scatter-plot-stack">
       <div id="scatter" class="cryo-plotly-graph-host"></div>
-      <div id="scatter-rendering-overlay" class="cryo-plot-rendering-overlay cryo-plot-rendering-overlay--show" aria-hidden="false">
+      <div id="scatter-rendering-overlay" class="cryo-plot-rendering-overlay cryo-plot-rendering-overlay--show"
+        aria-hidden="false">
         <div class="cryo-plot-rendering-overlay__inner">
           <span class="cryo-plot-rendering-overlay__label">Rendering…</span>
           <div class="cryo-plot-rendering-overlay__track" role="progressbar" aria-valuetext="Loading plot">
@@ -562,7 +568,8 @@
         </div>
       </div>
     </div>
-    <fieldset id="traj-palette-radios" class="cryo-palette-radios traj-palette-radios--suppressed" aria-label="Continuous color palette">
+    <fieldset id="traj-palette-radios" class="cryo-palette-radios traj-palette-radios--suppressed"
+      aria-label="Continuous color palette">
       <legend>Palette (continuous color)</legend>
       <div class="cryo-palette-radios__row">
         <label><input type="radio" name="traj_palette" value="Viridis" checked/> Viridis</label>
@@ -583,11 +590,14 @@
     <div class="cryo-traj-anchor-row" id="traj-anchor-wrap">
       <div class="cryo-traj-anchor-import-grid" id="traj-anchor-pick">
         <button type="button" class="btn btn-secondary" id="btn-anchor-import-pkl">Import anchor .txt</button>
-        <p class="cryo-traj-anchor-desc-line">Open a server-side file picker to choose a <code>.txt</code> file containing a whitespace-delimited list of particle indices.</p>
+        <p class="cryo-traj-anchor-desc-line">Open a server-side file picker to choose a <code>.txt</code> file
+          containing a whitespace-delimited list of particle indices.</p>
         <button type="button" class="btn btn-secondary" id="btn-anchor-kmeans">K-means centers</button>
-        <p class="cryo-traj-anchor-desc-line">Build the path from cluster centers in <code>kmeansK/centers_ind.txt</code> for the current analysis folder.</p>
+        <p class="cryo-traj-anchor-desc-line">Build the path from cluster centers in
+          <code>kmeansK/centers_ind.txt</code> for the current analysis folder.</p>
         <button type="button" class="btn btn-secondary" id="btn-anchor-random">10 random indices</button>
-        <p class="cryo-traj-anchor-desc-line">Sample ten random particles from the dataset as anchor points along the trajectory.</p>
+        <p class="cryo-traj-anchor-desc-line">Sample ten random particles from the dataset as anchor points along the
+          trajectory.</p>
       </div>
       <div class="cryo-traj-anchor-manual-row" id="traj-anchor-manual-row">
         <input
@@ -597,7 +607,8 @@
           placeholder="Enter anchors, e.g. 0, 105, 220 351"
           aria-label="Manual anchor indices"
         />
-        <button type="button" class="btn btn-secondary cryo-traj-anchor-manual-btn" id="btn-anchor-manual-load">Use typed indices</button>
+        <button type="button" class="btn btn-secondary cryo-traj-anchor-manual-btn" id="btn-anchor-manual-load">Use
+          typed indices</button>
       </div>
       <div id="traj-file-browser-panel" class="cryo-traj-file-browser-panel" hidden aria-hidden="true">
         <div class="cryo-file-browser" id="server-file-browser">
@@ -622,13 +633,15 @@
       </div>
       <button type="button" class="btn btn-secondary" id="btn-anchor-remove">Remove indices</button>
     </div>
-    <button type="button" class="btn" id="btn-generate-volumes" style="width:100%;margin-top:0.45rem;font-size:0.88rem;padding:0.45rem 0.5rem;">Generate 4 volumes</button>
+    <button type="button" class="btn" id="btn-generate-volumes"
+      style="width:100%;margin-top:0.45rem;font-size:0.88rem;padding:0.45rem 0.5rem;">Generate 4 volumes</button>
     <p id="traj-status" class="cryo-traj-status"></p>
     <div id="traj-z-panel" class="cryo-traj-z-panel" hidden>
       <details class="cryo-traj-z-details">
         <summary>Latent <code>z</code> for each trajectory point</summary>
         <div class="cryo-traj-z-actions">
-          <button type="button" class="btn btn-secondary" id="btn-save-zpath-workdir">Save z-path.txt to output folder</button>
+          <button type="button" class="btn btn-secondary" id="btn-save-zpath-workdir">Save z-path.txt to output
+            folder</button>
           <button type="button" class="btn btn-secondary" id="btn-save-zpath-as">Save as…</button>
         </div>
         <div class="cryo-traj-z-wrap">
@@ -640,7 +653,8 @@
   </aside>
 </div>
 <section class="cryo-traj-vol-display-region" aria-label="Trajectory volume gallery">
-  <div id="traj-progress" class="cryo-plot-rendering-overlay__track" role="progressbar" aria-valuetext="Generating volumes" hidden style="flex:0 0 auto;">
+  <div id="traj-progress" class="cryo-plot-rendering-overlay__track" role="progressbar"
+    aria-valuetext="Generating volumes" hidden style="flex:0 0 auto;">
     <div class="cryo-plot-rendering-overlay__indeterminate"></div>
   </div>
   <div id="traj-vol-column" class="cryo-traj-vol-column"></div>
@@ -2211,9 +2225,11 @@
           var fixedFirst = editableTrajXY[0];
           var fixedLast = editableTrajXY[lastIdx];
           if (dragPointIndex === 0) {
-            editableTrajXY = makeLinearEditablePath([ptd[0], ptd[1]], fixedLast, editableTrajXY.length) || editableTrajXY;
+            editableTrajXY = makeLinearEditablePath([ptd[0], ptd[1]], fixedLast, editableTrajXY.length) ||
+              editableTrajXY;
           } else {
-            editableTrajXY = makeLinearEditablePath(fixedFirst, [ptd[0], ptd[1]], editableTrajXY.length) || editableTrajXY;
+            editableTrajXY = makeLinearEditablePath(fixedFirst, [ptd[0], ptd[1]], editableTrajXY.length) ||
+              editableTrajXY;
           }
         } else {
           editableTrajXY[dragPointIndex] = [ptd[0], ptd[1]];

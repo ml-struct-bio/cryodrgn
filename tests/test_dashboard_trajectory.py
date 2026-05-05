@@ -11,7 +11,7 @@ import pandas as pd
 import pytest
 
 from cryodrgn.dashboard import app as dash_app
-from cryodrgn.dashboard.app import (
+from cryodrgn.dashboard.route_helpers import (
     _TRAJECTORY_INELIGIBLE_MSG,
     _trajectory_eligibility_error,
 )
@@ -107,7 +107,8 @@ class TestTrajectoryEligibilityError:
     def test_eligible_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
         app = dash_app.create_app(workdir=None)
         monkeypatch.setattr(
-            "cryodrgn.dashboard.app.explorer_volumes_eligible", lambda _e: True
+            "cryodrgn.dashboard.route_helpers.explorer_volumes_eligible",
+            lambda _e: True,
         )
         with app.test_request_context():
             assert _trajectory_eligibility_error(object()) is None  # type: ignore[arg-type]
@@ -115,7 +116,8 @@ class TestTrajectoryEligibilityError:
     def test_ineligible_returns_400_json(self, monkeypatch: pytest.MonkeyPatch) -> None:
         app = dash_app.create_app(workdir=None)
         monkeypatch.setattr(
-            "cryodrgn.dashboard.app.explorer_volumes_eligible", lambda _e: False
+            "cryodrgn.dashboard.route_helpers.explorer_volumes_eligible",
+            lambda _e: False,
         )
         with app.test_request_context():
             resp, status = _trajectory_eligibility_error(object())  # type: ignore[arg-type,misc]

@@ -323,3 +323,51 @@ class TestLandscapeVolpcaFlaskRoutes:
         assert r.status_code == 200
         body = r.get_data(as_text=True)
         assert "/landscape-volpca" in body
+
+    def test_scatter_requires_both_axis_params(self, flask_client_landscape) -> None:
+        r = flask_client_landscape.get(
+            "/api/landscape_volpca/scatter",
+            query_string={"axis_x": "pc:0", "color": "none"},
+        )
+        assert r.status_code == 400
+        assert "axis_y" in (r.get_json() or {}).get("error", "")
+
+    def test_scatter_state_color_unavailable_is_400(
+        self, flask_client_landscape
+    ) -> None:
+        r = flask_client_landscape.get(
+            "/api/landscape_volpca/scatter",
+            query_string={"axis_x": "pc:0", "axis_y": "pc:1", "color": "state"},
+        )
+        assert r.status_code == 400
+        assert "state" in (r.get_json() or {}).get("error", "").lower()
+
+    def test_generate_animations_requires_volumes(self, flask_client_landscape) -> None:
+        r = flask_client_landscape.post(
+            "/api/landscape_volpca/generate_animations",
+            json={},
+        )
+        assert r.status_code == 400
+
+    def test_generate_animations_rejects_bad_view_rotations(
+        self, flask_client_landscape
+    ) -> None:
+        r = flask_client_landscape.post(
+            "/api/landscape_volpca/generate_animations",
+            json={"vol_indices": [1], "view_rotations": [1, 2, 3]},
+        )
+        assert r.status_code == 400
+
+    def test_save_animations_requires_token(self, flask_client_landscape) -> None:
+        r = flask_client_landscape.post(
+            "/api/landscape_volpca/save_animations",
+            json={},
+        )
+        assert r.status_code == 400
+
+    def test_save_animations_rejects_bad_out_dir(self, flask_client_landscape) -> None:
+        r = flask_client_landscape.post(
+            "/api/landscape_volpca/save_animations",
+            json={"token": "nope", "out_dir": 123},
+        )
+        assert r.status_code == 400

@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+{# Base layout: shared nav, global CSS (static/css/dashboard.css), status helpers (static/js/*.js). #}
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
@@ -8,7 +9,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   {# Match E.Z. Lab (https://ezlab.princeton.edu/) — Barlow + Roboto in main.css #}
-  <link href="https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,300;0,400;0,500;0,700;1,400&family=Roboto:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap" rel="stylesheet"/>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap"
+    rel="stylesheet"/>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap"
+    rel="stylesheet"/>
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
   <style>
     :root {
@@ -1017,23 +1023,47 @@
       {% block nav_page_title %}{% endblock %}
     </div>
     <div class="nav-center">
-      <div class="nav-center-row{% if not discovered_workdirs or discovered_workdirs|length == 0 %} nav-center-row--solo{% elif command_builder_only %} nav-center-row--outdir-only{% endif %}">
+      {% set ns_nav = namespace(cls='nav-center-row') %}
+      {% if not discovered_workdirs or discovered_workdirs|length == 0 %}
+        {% set ns_nav.cls = ns_nav.cls ~ ' nav-center-row--solo' %}
+      {% elif command_builder_only %}
+        {% set ns_nav.cls = ns_nav.cls ~ ' nav-center-row--outdir-only' %}
+      {% endif %}
+      <div class="{{ ns_nav.cls }}">
         {% if discovered_workdirs and discovered_workdirs|length > 0 %}
         <div class="nav-workdir-field">
           <label for="dash-workdir">Output folder</label>
           <select id="dash-workdir" title="Select cryoDRGN output folder in current working directory">
-            <option value="" {% if not selected_workdir %}selected{% endif %}>{% if selected_workdir %}No output folder{% else %}Choose output folder…{% endif %}</option>
+            <option value="" {% if not selected_workdir %}selected{% endif %}>
+              {% if selected_workdir %}No output folder{% else %}Choose output folder…{% endif %}
+            </option>
             {% for wd in discovered_workdir_options %}
-            <option value="{{ wd.value }}" {% if wd.value == selected_workdir %}selected{% endif %}>{{ wd.label }}</option>
+            <option value="{{ wd.value }}" {% if wd.value == selected_workdir %}selected{% endif %}>
+              {{ wd.label }}
+            </option>
             {% endfor %}
           </select>
         </div>
         {% endif %}
         {% if not command_builder_only %}
         <div class="nav-config-field" aria-label="Training command">
-          <div class="nav-cmd-multiline" title="{% if cfg_train_command %}{{ cfg_train_command|e }}{% else %}{{ cfg_model_type|e }} z{{ cfg_zdim }}{% endif %}">
+          {% if cfg_train_command %}
+            {% set _nav_cmd_title = cfg_train_command|e %}
+          {% else %}
+            {% set _nav_cmd_title = cfg_model_type|e ~ ' z' ~ (cfg_zdim|string) %}
+          {% endif %}
+          <div class="nav-cmd-multiline" title="{{ _nav_cmd_title }}">
             {% for line in cfg_cmd_display_lines %}
-            <span class="nav-cmd-line{% if cfg_train_command and loop.index0 == 0 %} nav-cmd-line--head{% elif cfg_train_command and loop.index0 > 0 %} nav-cmd-line--tail{% endif %}{% if cfg_cmd_display_lines|length == 1 %} nav-cmd-multiline--fallback{% endif %}">{{ line|e }}</span>
+            {% set ns_cmd = namespace(cls='nav-cmd-line') %}
+            {% if cfg_train_command and loop.index0 == 0 %}
+              {% set ns_cmd.cls = ns_cmd.cls ~ ' nav-cmd-line--head' %}
+            {% elif cfg_train_command and loop.index0 > 0 %}
+              {% set ns_cmd.cls = ns_cmd.cls ~ ' nav-cmd-line--tail' %}
+            {% endif %}
+            {% if cfg_cmd_display_lines|length == 1 %}
+              {% set ns_cmd.cls = ns_cmd.cls ~ ' nav-cmd-multiline--fallback' %}
+            {% endif %}
+            <span class="{{ ns_cmd.cls }}">{{ line|e }}</span>
             {% endfor %}
           </div>
         </div>
@@ -1041,7 +1071,11 @@
         <div class="nav-config-field" aria-label="Training command">
           <div class="nav-cmd-multiline nav-cmd-multiline--fallback">
             {% for line in cfg_cmd_display_lines %}
-            <span class="nav-cmd-line{% if cfg_cmd_display_lines|length == 1 %} nav-cmd-multiline--fallback{% endif %}">{{ line|e }}</span>
+            {% set ns_fb = namespace(cls='nav-cmd-line') %}
+            {% if cfg_cmd_display_lines|length == 1 %}
+              {% set ns_fb.cls = ns_fb.cls ~ ' nav-cmd-multiline--fallback' %}
+            {% endif %}
+            <span class="{{ ns_fb.cls }}">{{ line|e }}</span>
             {% endfor %}
           </div>
         </div>

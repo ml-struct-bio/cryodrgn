@@ -50,6 +50,20 @@ class TestDashboardExperiment:
             assert col in e.plot_df.columns, col
 
 
+class TestLegacyRedirects:
+    """Old bookmark URLs should still land on the right shell."""
+
+    def test_abinit_builder_redirects_to_command_builder(self, flask_client) -> None:
+        r = flask_client.get("/abinit-builder", follow_redirects=False)
+        assert r.status_code == 302
+        assert r.headers.get("Location", "").endswith("/command-builder")
+
+    def test_filter_redirects_to_explorer(self, flask_client) -> None:
+        r = flask_client.get("/filter", follow_redirects=False)
+        assert r.status_code == 302
+        assert r.headers.get("Location", "").endswith("/explorer")
+
+
 class TestDashboardPages:
     """Every top-level Flask view should render without error."""
 
@@ -62,6 +76,7 @@ class TestDashboardPages:
             "/latent-3d",
             "/trajectory",
             "/command-builder",
+            "/landscape-volpca",
         ],
     )
     def test_page_renders(self, flask_client, path: str) -> None:
@@ -105,6 +120,69 @@ class TestDashboardScatterApis:
         r = flask_client.get("/api/preview_montage?rows=0,1,2,3")
         assert r.status_code == 200
         assert r.data[:8] == b"\x89PNG\r\n\x1a\n"
+
+    def test_api_scatter_preselect_rows_highlights_points(self, flask_client) -> None:
+        r = flask_client.get(
+            "/api/scatter?x=UMAP1&y=UMAP2&color=labels&preselect_rows=3,7,11"
+        )
+        assert r.status_code == 200
+        js = r.get_json()
+        meta = (js.get("layout") or {}).get("meta") or {}
+        pre_trace_idx = meta.get("cdrgn_preselected")
+        assert pre_trace_idx is not None and len(pre_trace_idx) == 3
+        cd = js["data"][0]["customdata"]
+        rows_highlighted = {int(cd[int(i)][1]) for i in pre_trace_idx}
+        assert rows_highlighted == {3, 7, 11}
+
+    def test_api_scatter_invalid_preselect_rows_is_400(self, flask_client) -> None:
+        r = flask_client.get(
+            "/api/scatter?x=UMAP1&y=UMAP2&color=labels&preselect_rows=0,foo"
+        )
+        assert r.status_code == 400
+        assert "preselect" in (r.get_json().get("error") or "").lower()
+
+    def test_api_scatter_explorer_flag_uses_explorer_cap_path(
+        self, flask_client
+    ) -> None:
+        r = flask_client.get(
+            "/api/scatter?x=UMAP1&y=UMAP2&color=none&explorer_scatter=1"
+        )
+        assert r.status_code == 200
+        js = r.get_json()
+        assert len(js["data"][0]["customdata"]) == 100
+
+    def test_api_scatter_full_returns_entire_df(self, flask_client) -> None:
+        r = flask_client.get("/api/scatter?x=UMAP1&y=UMAP2&color=none&full=1")
+        assert r.status_code == 200
+        js = r.get_json()
+        assert len(js["data"][0]["customdata"]) == 100
+
+
+class TestDashboardScatterCapHelpers:
+    """Caps shared by the CLI ``--filter-max`` flag and explorer scatter."""
+
+    def test_explorer_scatter_cap_reads_filter_max_env(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("CRYODRGN_DASHBOARD_FILTER_MAX_POINTS", "120000")
+        assert dash_app._particle_explorer_scatter_max_points() == 120_000
+        assert dash_app._particle_explorer_scatter_cap_from_env() is True
+        monkeypatch.delenv("CRYODRGN_DASHBOARD_FILTER_MAX_POINTS", raising=False)
+
+    def test_explorer_scatter_cap_invalid_env_falls_back_to_default(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("CRYODRGN_DASHBOARD_FILTER_MAX_POINTS", "not_an_int")
+        assert dash_app._particle_explorer_scatter_max_points() == 200_000
+        assert dash_app._particle_explorer_scatter_cap_from_env() is False
+        monkeypatch.delenv("CRYODRGN_DASHBOARD_FILTER_MAX_POINTS", raising=False)
+
+    def test_filter_ui_cap_invalid_env_uses_half_million_default(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("CRYODRGN_DASHBOARD_FILTER_MAX_POINTS", "nope")
+        assert dash_app._filter_ui_scatter_max_points() == 500_000
+        monkeypatch.delenv("CRYODRGN_DASHBOARD_FILTER_MAX_POINTS", raising=False)
 
 
 class TestDashboardZPkl:
@@ -497,6 +575,16 @@ class TestIndexTemplateNavLinks:
             assert "CUDA-enabled machine" in body
             assert "Trajectory creator" in body
             assert "/trajectory" not in body
+
+    def test_index_landscape_is_inactive_without_analyze_landscape(
+        self, flask_client
+    ) -> None:
+        r = flask_client.get("/")
+        assert r.status_code == 200
+        body = r.get_data(as_text=True)
+        assert "/landscape-volpca" not in body
+        assert "Volume sketched landscape explorer" in body
+        assert "analyze_landscape" in body
 
 
 class TestCommandBuilderOnlyMode:

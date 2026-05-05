@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Thumbnails unavailable · cryoDRGN{% endblock %}
-{% block nav_page_title %}<span class="nav-title-sep" aria-hidden="true">·</span><span class="nav-page-title">No particle thumbnails</span>{% endblock %}
+{% from "_macros.html" import nav_page_title_span %}
+{% block nav_page_title %}{{ nav_page_title_span("No particle thumbnails") }}{% endblock %}
 {% block content %}
 <div class="cryo-dash-page">
 <div class="cryo-dash-top"><a href="/">← Back</a></div>

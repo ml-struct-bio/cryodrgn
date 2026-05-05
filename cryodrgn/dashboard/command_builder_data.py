@@ -4,6 +4,9 @@ Mirrors ``add_argument_group`` titles and flags from:
 ``cryodrgn.commands.abinit``, ``train_vae``, ``train_nn``, ``train_dec``.
 ``--ctf`` and ``--datadir`` are rendered in the template (required row and
 top-row dataset column), not listed here. Other required fields are template-only.
+
+When CLI argument groups change, update this module and
+``command_builder_cli_help`` together so the dashboard stays aligned.
 """
 
 from __future__ import annotations

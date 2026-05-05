@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}3-D Latent Space Visualizer · cryoDRGN{% endblock %}
-{% block nav_page_title %}<span class="nav-title-sep" aria-hidden="true">·</span><span class="nav-page-title">3D visualizer</span>{% endblock %}
+{% from "_macros.html" import nav_page_title_span %}
+{% block nav_page_title %}{{ nav_page_title_span("3D visualizer") }}{% endblock %}
 {% block head %}
 <style>
   .cryo-dash-page--latent3d .latent3d-figure-legend {
@@ -163,11 +164,13 @@
     <div class="cryo-dash-top">
       <a href="/">← Back</a>
     </div>
-    <p class="cryo-dash-lead">Each point is a particle in the space of three latent coordinates you choose. Optional color encodes another quantity from the analysis table.</p>
+    <p class="cryo-dash-lead">Each point is a particle in the space of three latent coordinates you choose. Optional
+      color encodes another quantity from the analysis table.</p>
     <div class="card cryo-dash-controls" id="latent3d-controls-card">
       <fieldset>
         <legend>Latent axes</legend>
-        <p class="cryo-dash-legend-note" style="margin:0 0 0.35rem;">Pick three <strong>different</strong> coordinates (z0, z1, …). The plot uses WebGL — &ldquo;Rendering…&rdquo; appears in the plot area while data loads.</p>
+        <p class="cryo-dash-legend-note" style="margin:0 0 0.35rem;">Pick three <strong>different</strong> coordinates
+          (z0, z1, …). The plot uses WebGL — &ldquo;Rendering…&rdquo; appears in the plot area while data loads.</p>
         <label class="cryo-select-line" for="sx">First axis</label>
         <select id="sx"></select>
         <label class="cryo-select-line" for="sy">Second axis</label>
@@ -177,7 +180,8 @@
       </fieldset>
       <fieldset>
         <legend>Color scale</legend>
-        <p class="cryo-dash-legend-note" style="margin:0 0 0.35rem;">Optional point color from the analysis table (same idea as the 2D scatter view).</p>
+        <p class="cryo-dash-legend-note" style="margin:0 0 0.35rem;">Optional point color from the analysis table (same
+          idea as the 2D scatter view).</p>
         <label class="cryo-select-line" for="sc">Color by</label>
         <select id="sc"><option value="none">None</option></select>
       </fieldset>
@@ -189,7 +193,8 @@
       <div class="cryo-dash-viewport--plotly">
         <div class="cryo-plotly-stack" id="latent3d-plot-stack">
           <div id="latent3d" class="cryo-plotly-graph-host"></div>
-          <div id="latent3d-rendering-overlay" class="cryo-plot-rendering-overlay cryo-plot-rendering-overlay--show" aria-hidden="false">
+          <div id="latent3d-rendering-overlay" class="cryo-plot-rendering-overlay cryo-plot-rendering-overlay--show"
+            aria-hidden="false">
             <div class="cryo-plot-rendering-overlay__inner">
               <span class="cryo-plot-rendering-overlay__label">Rendering…</span>
               <div class="cryo-plot-rendering-overlay__track" role="progressbar" aria-valuetext="Loading plot">
@@ -198,7 +203,8 @@
             </div>
           </div>
         </div>
-        <fieldset id="latent3d-palette-radios" class="cryo-palette-radios latent3d-palette-radios--suppressed" aria-label="Continuous color palette">
+        <fieldset id="latent3d-palette-radios" class="cryo-palette-radios latent3d-palette-radios--suppressed"
+          aria-label="Continuous color palette">
           <legend>Palette (continuous color)</legend>
           <div class="cryo-palette-radios__row">
             <label><input type="radio" name="latent3d_palette" value="Viridis" checked/> Viridis</label>
@@ -213,7 +219,8 @@
       <aside class="cryo-dash-figure-legend latent3d-figure-legend" aria-label="3-D latent space view legend">
         <div class="latent3d-figure-legend__intro">
           <strong>Interpreting the view</strong>
-          <p class="cryo-dash-legend-note">Drag to rotate, scroll to zoom, toolbar for reset and camera. Points are particles in latent space; color follows your choice above (or a single color if none).</p>
+          <p class="cryo-dash-legend-note">Drag to rotate, scroll to zoom, toolbar for reset and camera. Points are
+            particles in latent space; color follows your choice above (or a single color if none).</p>
         </div>
         <div id="latent3d-color-legend" class="latent3d-legend-items latent3d-legend-items--inactive"></div>
       </aside>
@@ -326,7 +333,9 @@
   }
 
   var LATENT_CONTINUOUS_BAR_BG = {
-    Viridis: "linear-gradient(90deg,#440154 0%,#482878 14%,#3e4989 29%,#31688e 43%,#26828e 57%,#1f9e89 71%,#35b779 82%,#90d743 92%,#fde725 100%)",
+    Viridis:
+      "linear-gradient(90deg,#440154 0%,#482878 14%,#3e4989 29%,#31688e 43%,"
+      + "#26828e 57%,#1f9e89 71%,#35b779 82%,#90d743 92%,#fde725 100%)",
     Plasma: "linear-gradient(90deg,#0d0887 0%,#6a00a8 20%,#b12a90 40%,#e16462 60%,#fca636 82%,#f0f921 100%)",
     Inferno: "linear-gradient(90deg,#000004 0%,#420a68 35%,#932667 55%,#dd513a 72%,#fca50a 88%,#fcffa4 100%)",
     Magma: "linear-gradient(90deg,#000004 0%,#3b0f70 30%,#8c2981 50%,#de4968 68%,#fe9f6d 85%,#fcfdbf 100%)",

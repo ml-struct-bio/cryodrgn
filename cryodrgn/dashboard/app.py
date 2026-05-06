@@ -75,6 +75,7 @@ from cryodrgn.dashboard.landscape_volpca import (
 )
 
 from cryodrgn.dashboard.plots import (
+    covariate_legend_context_payload,
     pair_grid_png,
     pair_grid_skeleton_placeholder_layout,
     plot_df_row_indices_for_explorer_scatter,
@@ -98,6 +99,7 @@ from cryodrgn.dashboard.route_helpers import (
     _covariate_display_map,
     _default_xy_cols,
     _filter_ui_scatter_max_points,
+    _parse_color_filter_for_column,
     _parse_pairplot_request,
     _parse_preload_image_limit,
     _parse_preselect_rows_param,
@@ -265,6 +267,20 @@ def api_covariate_threshold_rows():
     mask = mask & series.notna()
     rows_arr = np.flatnonzero(np.asarray(mask, dtype=bool)).astype(np.int64, copy=False)
     return jsonify(rows=rows_arr.tolist(), n=int(rows_arr.size))
+
+
+def api_covariate_legend_context():
+    """Histogram sample or discrete category list for covariate colour UI (pair-grid, 3D)."""
+    e: DashboardExperiment = g.dashboard_exp
+    data = _request_json_dict()
+    col = data.get("column")
+    if not col or not isinstance(col, str) or col not in e.plot_df.columns:
+        return jsonify(error="Invalid column."), 400
+    try:
+        payload = covariate_legend_context_payload(e, col)
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    return jsonify(payload)
 
 
 # ---------------------------------------------------------------------------
@@ -468,6 +484,35 @@ def latent_3d_page():
 def api_scatter3d_z():
     """Plotly JSON for the 3-D latent scatter."""
     e: DashboardExperiment = g.dashboard_exp
+    color_filter = None
+    if request.method == "POST":
+        payload = _request_json_dict()
+        xcol = str(payload.get("x") or "z0")
+        ycol = str(payload.get("y") or "z1")
+        zcol = str(payload.get("z") or "z2")
+        ccol = str(payload.get("color") or "none")
+        raw_palette = payload.get("palette")
+        if ccol != "none" and ccol not in e.plot_df.columns:
+            return jsonify(error="bad color column"), 400
+        try:
+            if ccol != "none":
+                color_filter = _parse_color_filter_for_column(ccol, payload)
+            js = scatter3d_z_json(
+                e,
+                xcol,
+                ycol,
+                zcol,
+                None if ccol == "none" else ccol,
+                continuous_palette=raw_palette,
+                color_filter=color_filter,
+            )
+        except ValueError as err:
+            return jsonify(error=str(err)), 400
+        except Exception as err:
+            logger.exception("3-D Latent Space Visualizer failed")
+            return jsonify(error=str(err)), 500
+        return Response(js, mimetype="application/json")
+
     xcol = request.args.get("x", "z0")
     ycol = request.args.get("y", "z1")
     zcol = request.args.get("z", "z2")
@@ -820,10 +865,12 @@ def pairplot_page():
 def api_pairplot():
     """Render the z-dimensional pair grid to an in-memory PNG; returns base64 + cell layout JSON."""
     e: DashboardExperiment = g.dashboard_exp
+    payload = _request_json_dict()
     try:
         color_col, diagonal_emb, upper_style, palette = _parse_pairplot_request(
-            e, _request_json_dict()
+            e, payload
         )
+        color_filter = _parse_color_filter_for_column(color_col, payload)
     except ValueError as err:
         return jsonify(error=str(err)), 400
     try:
@@ -833,6 +880,7 @@ def api_pairplot():
             diagonal_emb=diagonal_emb,
             upper_style=upper_style,
             continuous_palette=palette,
+            color_filter=color_filter,
         )
     except ValueError as err:
         return jsonify(error=str(err)), 400
@@ -853,6 +901,7 @@ def api_save_pairplot_png():
         color_col, diagonal_emb, upper_style, palette = _parse_pairplot_request(
             e, payload
         )
+        color_filter = _parse_color_filter_for_column(color_col, payload)
     except ValueError as err:
         return jsonify(error=str(err)), 400
 
@@ -870,6 +919,7 @@ def api_save_pairplot_png():
             diagonal_emb=diagonal_emb,
             upper_style=upper_style,
             continuous_palette=palette,
+            color_filter=color_filter,
         )
         with open(out_path, "wb") as fh:
             fh.write(png)
@@ -1418,11 +1468,12 @@ _ROUTES = (
     ("/filter", filter_page_redirect, ("GET",)),
     ("/api/save_selection", api_save_selection, ("POST",)),
     ("/api/covariate_threshold_rows", api_covariate_threshold_rows, ("POST",)),
+    ("/api/covariate_legend_context", api_covariate_legend_context, ("POST",)),
     ("/explorer", explorer, ("GET",)),
     ("/api/explorer_volume_media", api_explorer_volume_media, ("POST",)),
     ("/api/scatter", api_scatter, ("GET",)),
     ("/latent-3d", latent_3d_page, ("GET",)),
-    ("/api/scatter3d_z", api_scatter3d_z, ("GET",)),
+    ("/api/scatter3d_z", api_scatter3d_z, ("GET", "POST")),
     ("/api/latent3d_preview.png", api_latent3d_preview_png, ("GET",)),
     ("/api/preview_montage", api_preview_montage, ("GET",)),
     ("/api/preload_images", api_preload_images, ("GET", "POST")),

@@ -69,6 +69,30 @@
   <rect x="25" y="25" width="7" height="7" fill="{{ lo }}"/>
 </svg>
 {% endmacro %}
+{# Full 4×4 grid — same layout as other pair-pictos; accents pair with .cryo-cc-legend__filter-em #}
+{% macro picto_filter_all_panels() %}
+<svg class="pair-picto pair-picto--filter-grid" width="32" height="32" viewBox="0 0 34 34" aria-hidden="true" focusable="false"
+  role="presentation">
+  {% set soft = "#f6efea" %}
+  {% set acc = "rgba(196, 112, 58, 0.42)" %}
+  <rect x="1" y="1" width="7" height="7" fill="{{ soft }}" stroke="{{ acc }}" stroke-width="0.55"/>
+  <rect x="9" y="1" width="7" height="7" fill="{{ soft }}" stroke="{{ acc }}" stroke-width="0.55"/>
+  <rect x="17" y="1" width="7" height="7" fill="{{ soft }}" stroke="{{ acc }}" stroke-width="0.55"/>
+  <rect x="25" y="1" width="7" height="7" fill="{{ soft }}" stroke="{{ acc }}" stroke-width="0.55"/>
+  <rect x="1" y="9" width="7" height="7" fill="{{ soft }}" stroke="{{ acc }}" stroke-width="0.55"/>
+  <rect x="9" y="9" width="7" height="7" fill="{{ soft }}" stroke="{{ acc }}" stroke-width="0.55"/>
+  <rect x="17" y="9" width="7" height="7" fill="{{ soft }}" stroke="{{ acc }}" stroke-width="0.55"/>
+  <rect x="25" y="9" width="7" height="7" fill="{{ soft }}" stroke="{{ acc }}" stroke-width="0.55"/>
+  <rect x="1" y="17" width="7" height="7" fill="{{ soft }}" stroke="{{ acc }}" stroke-width="0.55"/>
+  <rect x="9" y="17" width="7" height="7" fill="{{ soft }}" stroke="{{ acc }}" stroke-width="0.55"/>
+  <rect x="17" y="17" width="7" height="7" fill="{{ soft }}" stroke="{{ acc }}" stroke-width="0.55"/>
+  <rect x="25" y="17" width="7" height="7" fill="{{ soft }}" stroke="{{ acc }}" stroke-width="0.55"/>
+  <rect x="1" y="25" width="7" height="7" fill="{{ soft }}" stroke="{{ acc }}" stroke-width="0.55"/>
+  <rect x="9" y="25" width="7" height="7" fill="{{ soft }}" stroke="{{ acc }}" stroke-width="0.55"/>
+  <rect x="17" y="25" width="7" height="7" fill="{{ soft }}" stroke="{{ acc }}" stroke-width="0.55"/>
+  <rect x="25" y="25" width="7" height="7" fill="{{ soft }}" stroke="{{ acc }}" stroke-width="0.55"/>
+</svg>
+{% endmacro %}
 {% block title %}Latent pairs · cryoDRGN{% endblock %}
 {% block head %}
 <style>
@@ -81,8 +105,8 @@
     display: flex;
     flex-direction: column;
     justify-content: flex-start;
-    align-items: center;
-    min-width: 240px;
+    align-items: stretch;
+    min-width: 0;
     background: var(--cream, #faf8f4);
     border-radius: 2px;
   }
@@ -102,47 +126,15 @@
     max-height: var(--pairplot-max-h);
     width: auto;
     height: auto;
-    object-fit: scale-down;
+    object-fit: contain;
     display: block;
     margin: 0 auto;
     opacity: 0;
     transition: opacity 0.2s ease-out;
+    box-sizing: border-box;
   }
   .pairplot-img.pairplot-img--ready {
     opacity: 1;
-  }
-  .cryo-palette-radios {
-    margin: 0.5rem auto 0;
-    padding: 0.4rem 0.55rem;
-    border: 1px solid rgba(36, 59, 83, 0.15);
-    border-radius: 4px;
-    background: rgba(250, 248, 244, 0.75);
-    max-width: 100%;
-    box-sizing: border-box;
-    flex: 0 0 auto;
-  }
-  .cryo-palette-radios legend {
-    font-size: 0.78rem;
-    font-weight: 600;
-    color: var(--nav-bg, #243b53);
-    padding: 0 0.2rem;
-  }
-  .cryo-palette-radios__row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.25rem 0.85rem;
-    align-items: center;
-    justify-content: center;
-  }
-  .cryo-palette-radios label {
-    font-size: 0.78rem;
-    color: var(--nav-bg, #243b53);
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    cursor: pointer;
-    margin: 0;
-    font-weight: 500;
   }
   .pairplot-skeleton {
     position: absolute;
@@ -287,25 +279,360 @@
     display: block;
     text-align: center;
   }
+  .cryo-dash-row--plot-triple .pairplot-viewport-col {
+    width: 100%;
+    min-width: 0;
+  }
+  /* Fill grid cell: stretch plot column. */
+  .cryo-dash-page--pairplot .cryo-dash-main {
+    justify-content: flex-start;
+    align-items: stretch;
+  }
+  .pairplot-viewport-col {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    max-width: 100%;
+    align-self: stretch;
+  }
+  .pairplot-color-legend-aside {
+    flex: 0 0 auto;
+    width: max-content;
+    max-width: 100%;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-self: flex-start;
+  }
+  .pairplot-color-legend-aside .cryo-cc-legend {
+    box-sizing: border-box;
+    padding: 0.4rem 0.45rem 0.35rem;
+    border: 1px solid rgba(36, 59, 83, 0.13);
+    border-radius: 4px;
+    background: rgba(250, 248, 244, 0.85);
+    width: max-content;
+    max-width: 100%;
+    flex: 0 0 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .cryo-cc-legend--vertical {
+    gap: 0.35rem;
+  }
+  .pairplot-color-legend-aside .cryo-cc-legend__heading {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-shrink: 0;
+    font-size: calc(0.82rem * 1.35 * 0.9);
+    line-height: 1.28;
+    font-weight: 700;
+    color: var(--nav-bg, #243b53);
+    margin: 0;
+    max-width: 100%;
+    flex-wrap: wrap;
+  }
+  .pairplot-color-legend-aside .cryo-cc-legend__heading .pair-picto {
+    flex-shrink: 0;
+    border-radius: 2px;
+    box-shadow: 0 0 0 1px rgba(36, 59, 83, 0.12);
+    display: block;
+  }
+  .pairplot-color-legend-aside .pair-picto--filter-grid {
+    box-shadow:
+      0 0 0 1px rgba(36, 59, 83, 0.12),
+      0 0 0 2px rgba(196, 112, 58, 0.1);
+  }
+  .pairplot-color-legend-aside .cryo-cc-legend__heading-text {
+    font-weight: 700;
+    color: var(--nav-bg, #243b53);
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+  .pairplot-color-legend-aside .cryo-cc-legend__filter-em {
+    color: rgba(149, 87, 45, 0.92);
+    font-weight: 600;
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-decoration-color: rgba(196, 112, 58, 0.28);
+    text-underline-offset: 0.1em;
+  }
+  .pairplot-color-legend-aside #pair-color-continuous-wrap:not([hidden]) {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+    min-width: 0;
+  }
+  .pairplot-color-legend-aside .pair-legend-continuous-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    box-sizing: border-box;
+    width: var(--pair-legend-middle-w, max-content);
+    max-width: 100%;
+    min-width: min(10.5rem, 100%);
+  }
+  .pairplot-color-legend-aside .pair-legend-middle-track--continuous {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.35rem 0.4rem;
+    padding-right: 0.15rem;
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+  }
+  .pairplot-color-legend-aside .pair-legend-middle-track--continuous #pair-color-hist {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-width: 0;
+  }
+  .pairplot-color-legend-aside .cryo-cc-legend__footer--continuous {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    flex-shrink: 0;
+    margin-top: 0.35rem;
+    width: 100%;
+    min-width: 0;
+  }
+  .pairplot-color-legend-aside .cryo-cc-legend__footer--continuous #pairplot-palette-select {
+    margin-top: 0;
+  }
+  .pairplot-color-legend-aside #pair-color-hist.cryo-cc-hist--pair-vertical {
+    flex: 0 0 auto;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    min-height: 120px;
+    box-sizing: border-box;
+    align-self: stretch;
+  }
+  .cryo-cc-legend #pair-color-hist {
+    flex: 1 1 auto;
+    min-height: 7rem;
+    width: 100%;
+    min-width: 10.5rem;
+    box-sizing: border-box;
+  }
+  .cryo-cc-legend-hist-ctrl {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    font-size: 0.75rem;
+    color: var(--muted, #5c6b7a);
+    flex-shrink: 0;
+  }
+  .pairplot-color-legend-aside #pairplot-palette-select {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: stretch;
+    gap: 0.45rem;
+    width: 100%;
+    max-width: 100%;
+    margin-top: 0.35rem;
+    padding-top: 0.35rem;
+    border-top: 1px solid rgba(36, 59, 83, 0.1);
+    font-size: 0.78rem;
+    color: var(--nav-bg, #243b53);
+    box-sizing: border-box;
+  }
+  .pairplot-color-legend-aside #pairplot-palette-select.pairplot-palette-select--hidden-during-plot-render {
+    opacity: 0.45;
+    pointer-events: none;
+  }
+  .pairplot-color-legend-aside .pairplot-palette-select__title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+    line-height: 1.05;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid rgba(36, 59, 83, 0.14);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.6);
+    color: var(--nav-bg, #243b53);
+    padding: 0.18rem 0.34rem;
+    font: inherit;
+    font-weight: 600;
+  }
+  .pairplot-color-legend-aside .pairplot-palette-select__title:hover {
+    background: rgba(36, 59, 83, 0.06);
+  }
+  .pairplot-color-legend-aside .pairplot-palette-select__chevron {
+    flex: 0 0 auto;
+    font-size: 0.7rem;
+    transition: transform 0.12s ease;
+  }
+  .pairplot-color-legend-aside .pairplot-palette-select__title[aria-expanded="true"] .pairplot-palette-select__chevron {
+    transform: rotate(90deg);
+  }
+  .pairplot-color-legend-aside .pairplot-palette-select__options {
+    display: grid;
+    grid-auto-flow: column;
+    grid-template-rows: repeat(2, auto);
+    grid-auto-columns: max-content;
+    align-items: stretch;
+    column-gap: 0.35rem;
+    row-gap: 0.04rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0.04rem 0 0.22rem;
+    scrollbar-width: thin;
+  }
+  .pairplot-color-legend-aside .pairplot-palette-select__options--collapsed {
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .pairplot-color-legend-aside .pairplot-palette-option {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+    padding: 0.18rem 0.35rem;
+    border: 1px solid rgba(36, 59, 83, 0.12);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.55);
+    white-space: nowrap;
+    cursor: pointer;
+    font-weight: 500;
+  }
+  .pairplot-color-legend-aside .pairplot-palette-option:hover {
+    background: rgba(36, 59, 83, 0.06);
+  }
+  .pairplot-color-legend-aside .pairplot-palette-option input[type="radio"] {
+    margin: 0;
+    flex: 0 0 auto;
+  }
+  .pairplot-color-legend-aside .pairplot-palette-select__swatch {
+    flex: 0 0 2.8rem;
+    height: 0.62rem;
+    border-radius: 999px;
+    border: 1px solid rgba(36, 59, 83, 0.16);
+  }
+  .cryo-cc-legend-hist-ctrl label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin: 0;
+    cursor: pointer;
+    color: var(--nav-bg, #243b53);
+    font-weight: 500;
+  }
+  #pair-color-continuous-wrap[hidden] {
+    display: none !important;
+  }
+  #pair-color-discrete-wrap {
+    display: none;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    flex-direction: column;
+  }
+  #pair-color-discrete-wrap.cryo-cc-discrete-wrap--show {
+    display: flex;
+  }
+  .cryo-cc-discrete-switches {
+    display: flex;
+    flex-direction: column;
+    gap: 0.32rem;
+    overflow-y: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+    padding-right: 0.15rem;
+  }
+  .pairplot-color-legend-aside .cryo-cc-discrete-switches--pair-2col {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-rows: minmax(3.4rem, auto);
+    gap: 0.35rem 0.4rem;
+    align-items: stretch;
+    padding-right: 0.15rem;
+    width: max-content;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  .pairplot-color-legend-aside .cryo-cc-discrete-switches--pair-2col .cryo-cc-discrete-switch {
+    min-height: 3.4rem;
+    height: 100%;
+    box-sizing: border-box;
+  }
+  .cryo-cc-discrete-switch {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.28rem;
+    margin: 0;
+    padding: 0.22rem 0.34rem;
+    border: 1px solid rgba(36, 59, 83, 0.16);
+    border-radius: 0.4rem;
+    background: rgba(255, 255, 255, 0.55);
+    cursor: pointer;
+    font-size: 0.78rem;
+  }
+  .cryo-cc-discrete-switch-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.06rem;
+    min-width: 0;
+  }
+  .cryo-cc-discrete-switch-label {
+    font-weight: 600;
+    color: var(--nav-bg, #243b53);
+    word-break: break-word;
+  }
+  .cryo-cc-discrete-switch-count {
+    font-size: 0.72rem;
+    color: var(--muted, #5c6b7a);
+  }
+  .cryo-cc-discrete-switch input[type="checkbox"] {
+    margin: 0.12rem 0 0;
+    flex-shrink: 0;
+  }
+  .cryo-cc-discrete-actions {
+    flex-shrink: 0;
+    margin-top: 0.35rem;
+  }
+  @media (max-width: 900px) {
+    .pairplot-color-legend-aside {
+      flex: none;
+      width: max-content;
+      max-width: 100%;
+      min-width: 0;
+      align-self: center;
+    }
+    .cryo-cc-legend #pair-color-hist {
+      min-height: 5.5rem;
+    }
+  }
 </style>
 {% endblock %}
 {% from "_macros.html" import nav_page_title_span %}
 {% block nav_page_title %}{{ nav_page_title_span("Pair-plot generator") }}{% endblock %}
 {% block content %}
-<div class="cryo-dash-page">
-<div class="cryo-dash-row">
+<div class="cryo-dash-page cryo-dash-page--pairplot">
+<div class="cryo-dash-row cryo-dash-row--plot-triple">
   <div class="cryo-dash-side">
     <div class="cryo-dash-top">
       <a href="/">← Back</a>
     </div>
     <p class="cryo-dash-lead">Each panel compares two latent coordinates. The diagonal shows a 2D embedding; one
-      triangle colors particles by a covariate; the other shows a light scatter or density pattern.</p>
+      triangle colours particles by a covariate; the other shows a light scatter or density pattern. Filter which
+      particles appear with the tall colour histogram (continuous covariates) or toggle switches (discrete);
+      the continuous palette lives in the drop-down below the histogram.</p>
     <div class="card cryo-dash-controls" id="pair-controls-card">
       <fieldset>
         <legend>
           <span class="legend-row">{{ picto_lower() }}<span>Covariate coloring<br>(below diagonal)</span></span>
         </legend>
         <div class="color-grid">
+          <label class="radio-line">
+            <input type="radio" name="color_cov" value="none" {% if default_color == "none" %}checked{% endif %}/>
+            <span>None</span>
+          </label>
           {% for c in color_choices %}
           <label class="radio-line">
             <input type="radio" name="color_cov" value="{{ c }}" {% if c == default_color %}checked{% endif %}/>
@@ -348,53 +675,109 @@
     </div>
   </div>
   <div class="cryo-dash-main">
-    <div class="pairplot-viewport" id="pairplot-viewport" aria-busy="true">
-      <div class="pairplot-stack" id="pairplot-stack">
-        <img id="pairplot" class="pairplot-img" alt="Latent pair grid"/>
-        <div
-          class="pairplot-skeleton pairplot-skeleton--show"
-          id="pairplot-skeleton"
-          aria-hidden="true"
-        >
-          {% for i in range(zdim) %}
-          {% for j in range(zdim) %}
-          <div class="pairplot-skel-cell" data-row="{{ i }}" data-col="{{ j }}" data-idx="{{ i * zdim + j }}">
-            <div class="pairplot-skel-inner" aria-hidden="true">
-              <span class="pairplot-skel-text">Rendering…</span>
-              <div class="pairplot-skel-track">
-                <div class="pairplot-skel-indeterminate"></div>
+    <div class="pairplot-viewport-col">
+        <div class="pairplot-viewport" id="pairplot-viewport" aria-busy="true">
+          <div class="pairplot-stack" id="pairplot-stack">
+            <img id="pairplot" class="pairplot-img" alt="Latent pair grid"/>
+            <div
+              class="pairplot-skeleton pairplot-skeleton--show"
+              id="pairplot-skeleton"
+              aria-hidden="true"
+            >
+              {% for i in range(zdim) %}
+              {% for j in range(zdim) %}
+              <div class="pairplot-skel-cell" data-row="{{ i }}" data-col="{{ j }}" data-idx="{{ i * zdim + j }}">
+                <div class="pairplot-skel-inner" aria-hidden="true">
+                  <span class="pairplot-skel-text">Rendering…</span>
+                  <div class="pairplot-skel-track">
+                    <div class="pairplot-skel-indeterminate"></div>
+                  </div>
+                </div>
               </div>
+              {% endfor %}
+              {% endfor %}
             </div>
-          </div>
-          {% endfor %}
-          {% endfor %}
-        </div>
-        <div id="pairplot-rendering-overlay" class="cryo-plot-rendering-overlay cryo-plot-rendering-overlay--show"
-          aria-hidden="false">
-          <div class="cryo-plot-rendering-overlay__inner">
-            <span class="cryo-plot-rendering-overlay__label">Rendering…</span>
-            <div class="cryo-plot-rendering-overlay__track" role="progressbar" aria-valuetext="Loading plot">
-              <div class="cryo-plot-rendering-overlay__indeterminate"></div>
+            <div id="pairplot-rendering-overlay" class="cryo-plot-rendering-overlay cryo-plot-rendering-overlay--show"
+              aria-hidden="false">
+              <div class="cryo-plot-rendering-overlay__inner">
+                <span class="cryo-plot-rendering-overlay__label">Rendering…</span>
+                <div class="cryo-plot-rendering-overlay__track" role="progressbar" aria-valuetext="Loading plot">
+                  <div class="cryo-plot-rendering-overlay__indeterminate"></div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </div>
-      <fieldset id="pairplot-palette-radios" class="cryo-palette-radios cryo-palette-radios--hidden-during-plot-render"
-        aria-label="Continuous color palette">
-        <legend>Palette (continuous color)</legend>
-        <div class="cryo-palette-radios__row">
-          <label><input type="radio" name="pairplot_palette" value="Viridis" checked/> Viridis</label>
-          <label><input type="radio" name="pairplot_palette" value="Plasma"/> Plasma</label>
-          <label><input type="radio" name="pairplot_palette" value="Inferno"/> Inferno</label>
-          <label><input type="radio" name="pairplot_palette" value="Magma"/> Magma</label>
-          <label><input type="radio" name="pairplot_palette" value="Cividis"/> Cividis</label>
-          <label><input type="radio" name="pairplot_palette" value="Turbo"/> Turbo</label>
-        </div>
-      </fieldset>
     </div>
-  </div>
+      <aside class="pairplot-color-legend-aside" aria-label="Colour covariate filter">
+        <div id="pair-color-legend-panel" class="cryo-cc-legend" hidden aria-hidden="true">
+          <div class="cryo-cc-legend__heading legend-row"
+            title="Covariate colours in the legend; filtering applies to every square in the pair grid.">
+            {{ picto_lower() }}
+            <span class="cryo-cc-legend__heading-text">Color legend<br/>and <span class="cryo-cc-legend__filter-em">filtering</span></span>
+            {{ picto_filter_all_panels() }}
+          </div>
+          <div id="pair-color-continuous-wrap">
+            <div class="pair-legend-continuous-stack">
+              <div class="pair-legend-middle-track pair-legend-middle-track--continuous">
+                <div id="pair-color-hist" class="cryo-cc-hist--pair-vertical"></div>
+              </div>
+              <div class="cryo-cc-legend__footer cryo-cc-legend__footer--continuous">
+                <div class="cryo-cc-legend-hist-ctrl">
+                  <label for="pair-color-threshold-use-max">
+                    <input type="checkbox" id="pair-color-threshold-use-max"/>
+                    Use as maximum (≤)
+                  </label>
+                  <span id="pair-color-threshold-status" class="status"></span>
+                </div>
+                <div id="pairplot-palette-select" class="pairplot-palette-select cryo-palette-select"
+                  aria-label="Continuous color palette">
+                  <button type="button" id="pair-palette-toggle" class="pairplot-palette-select__title cryo-palette-select__title"
+                    aria-expanded="false" aria-controls="pair-palette-options">
+                    <span class="pairplot-palette-select__chevron cryo-palette-select__chevron" aria-hidden="true">▶</span>
+                    <span>Choose<br/>palette</span>
+                  </button>
+                  <div id="pair-palette-options"
+                    class="pairplot-palette-select__options cryo-palette-select__options pairplot-palette-select__options--collapsed">
+                    <label class="pairplot-palette-option"><input type="radio" name="pairplot_palette" value="Viridis" checked/><span
+                      class="pairplot-palette-select__swatch"
+                      style="background:linear-gradient(90deg,#440154,#3b528b,#21918c,#5ec962,#fde725);"></span>Viridis</label>
+                    <label class="pairplot-palette-option"><input type="radio" name="pairplot_palette" value="Plasma"/><span
+                      class="pairplot-palette-select__swatch"
+                      style="background:linear-gradient(90deg,#0d0887,#7e03a8,#cc4778,#f89441,#f0f921);"></span>Plasma</label>
+                    <label class="pairplot-palette-option"><input type="radio" name="pairplot_palette" value="Inferno"/><span
+                      class="pairplot-palette-select__swatch"
+                      style="background:linear-gradient(90deg,#000004,#6f0918,#d04e3a,#fbc026,#fcffa4);"></span>Inferno</label>
+                    <label class="pairplot-palette-option"><input type="radio" name="pairplot_palette" value="Magma"/><span
+                      class="pairplot-palette-select__swatch"
+                      style="background:linear-gradient(90deg,#000004,#3b0f70,#8c2981,#de4968,#febb81);"></span>Magma</label>
+                    <label class="pairplot-palette-option"><input type="radio" name="pairplot_palette" value="Cividis"/><span
+                      class="pairplot-palette-select__swatch"
+                      style="background:linear-gradient(90deg,#00224e,#124176,#5c6d69,#bec290,#fde725);"></span>Cividis</label>
+                    <label class="pairplot-palette-option"><input type="radio" name="pairplot_palette" value="Turbo"/><span
+                      class="pairplot-palette-select__swatch"
+                      style="background:linear-gradient(90deg,#30123b,#4777ef,#1fa187,#ffbe32,#991200);"></span>Turbo</label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div id="pair-color-discrete-wrap">
+            <div id="pair-color-discrete-switches" class="cryo-cc-discrete-switches cryo-cc-discrete-switches--pair-2col"
+              role="group" aria-label="Discrete colour filter"></div>
+            <div class="cryo-cc-discrete-actions">
+              <button type="button" id="pair-btn-discrete-invert" class="btn btn-secondary" disabled>
+                no selection
+              </button>
+            </div>
+          </div>
+        </div>
+      </aside>
+</div>
 </div>
 
+<script src="{{ url_for('static', filename='js/color_covariate_legend.js') }}"></script>
 <script>
 (function() {
   var el = document.getElementById("pairplot");
@@ -403,7 +786,10 @@
   var stack = document.getElementById("pairplot-stack");
   var skel = document.getElementById("pairplot-skeleton");
   var renderOverlay = document.getElementById("pairplot-rendering-overlay");
-  var paletteFieldset = document.getElementById("pairplot-palette-radios");
+  var pairPaletteSelect = document.getElementById("pairplot-palette-select");
+  var pairPaletteToggle = document.getElementById("pair-palette-toggle");
+  var pairPaletteOptions = document.getElementById("pair-palette-options");
+  var pairColorHist = document.getElementById("pair-color-hist");
   var controlsCard = document.getElementById("pair-controls-card");
   var controlsSide = controlsCard ? controlsCard.closest(".cryo-dash-side") : null;
   var hasUmap = {{ has_umap | tojson }};
@@ -415,18 +801,129 @@
   var saveDefaultName = {{ pairplot_save_default_name | tojson }};
   var saveDefaultDir = {{ pairplot_save_default_dir | tojson }};
   var saveBtn = document.getElementById("save-pairplot-png");
+  var covariateDisplayMap = {{ covariate_display_map | tojson }};
+  var legendContextUrl = "{{ url_for('api_covariate_legend_context') }}";
 
   function checkedVal(name) {
     var r = document.querySelector("input[name=\"" + name + "\"]:checked");
     return r ? r.value : null;
   }
 
+  function syncPairplotPaletteOptions() {
+    if (!pairPaletteOptions || !pairPaletteToggle || !pairPaletteSelect) {
+      return;
+    }
+    var show = pairPaletteToggle.getAttribute("aria-expanded") === "true"
+      && !pairPaletteSelect.classList.contains("pairplot-palette-select--hidden-during-plot-render");
+    pairPaletteOptions.classList.toggle("pairplot-palette-select__options--collapsed", !show);
+  }
+
+  if (pairPaletteToggle) {
+    pairPaletteToggle.addEventListener("click", function() {
+      var expanded = pairPaletteToggle.getAttribute("aria-expanded") === "true";
+      pairPaletteToggle.setAttribute("aria-expanded", expanded ? "false" : "true");
+      syncPairplotPaletteOptions();
+    });
+  }
+
+  /** Pixel width of the discrete 2-col switch grid; drives continuous histogram column width. */
+  var pairLegendMiddleWidthPx = null;
+
+  function syncPairLegendMiddleWidth() {
+    var panel = document.getElementById("pair-color-legend-panel");
+    var sw = document.getElementById("pair-color-discrete-switches");
+    var disc = document.getElementById("pair-color-discrete-wrap");
+    if (!panel || !sw) {
+      return;
+    }
+    if (disc && !disc.hidden && disc.classList.contains("cryo-cc-discrete-wrap--show")) {
+      var w = sw.offsetWidth;
+      if (w > 0) {
+        pairLegendMiddleWidthPx = w;
+      }
+    }
+    if (pairLegendMiddleWidthPx != null && pairLegendMiddleWidthPx > 0) {
+      panel.style.setProperty("--pair-legend-middle-w", pairLegendMiddleWidthPx + "px");
+    } else {
+      panel.style.removeProperty("--pair-legend-middle-w");
+    }
+  }
+
+  function syncPairHistVerticalMetrics() {
+    var histEl = pairColorHist;
+    if (!histEl || !histEl.classList.contains("cryo-cc-hist--pair-vertical")) {
+      return;
+    }
+    var panel = document.getElementById("pair-color-legend-panel");
+    if (panel && (panel.hidden || panel.getAttribute("aria-hidden") === "true")) {
+      return;
+    }
+    var wrap = document.getElementById("pair-color-continuous-wrap");
+    if (!wrap || wrap.hidden) {
+      return;
+    }
+    var vw = window.innerWidth || document.documentElement.clientWidth || 0;
+    var vh = window.innerHeight || document.documentElement.clientHeight || 0;
+    if (vw < 1 || vh < 1) {
+      return;
+    }
+    histEl.style.maxWidth = "";
+    var rect = histEl.getBoundingClientRect();
+    var targetBottom = vh * 0.9;
+    var padding = 6;
+    var h = Math.floor(targetBottom - rect.top - padding);
+    var minH = 120;
+    if (h < minH) {
+      h = minH;
+    }
+    var maxH = Math.floor(vh * 0.92);
+    if (h > maxH) {
+      h = maxH;
+    }
+    histEl.style.height = h + "px";
+    histEl.style.minHeight = minH + "px";
+    try {
+      if (window.Plotly && histEl.data && histEl.data.length) {
+        window.Plotly.Plots.resize(histEl);
+      }
+    } catch (e1) { /* ignore */ }
+  }
+
+  function syncPairContinuousHistogramLayout() {
+    syncPairLegendMiddleWidth();
+    syncPairHistVerticalMetrics();
+  }
+
+  var pairColorLegend = new CryoColorCovariateLegend({
+    legendContextUrl: legendContextUrl,
+    covariateDisplayMap: covariateDisplayMap,
+    getColorColumn: function() { return checkedVal("color_cov"); },
+    getPaletteName: function() { return checkedVal("pairplot_palette") || "Viridis"; },
+    panel: document.getElementById("pair-color-legend-panel"),
+    continuousWrap: document.getElementById("pair-color-continuous-wrap"),
+    discreteWrap: document.getElementById("pair-color-discrete-wrap"),
+    histDiv: document.getElementById("pair-color-hist"),
+    thresholdUseMax: document.getElementById("pair-color-threshold-use-max"),
+    thresholdStatus: document.getElementById("pair-color-threshold-status"),
+    discreteSwitches: document.getElementById("pair-color-discrete-switches"),
+    invertBtn: document.getElementById("pair-btn-discrete-invert"),
+    vertical: true,
+    histPlotVertical: true,
+    onContinuousHistogramLayout: syncPairContinuousHistogramLayout,
+    onDiscreteLayout: syncPairLegendMiddleWidth,
+    onFilterChange: function() {
+      draw();
+    }
+  });
+
   function currentPayload() {
+    var cf = pairColorLegend.getFilterForApi();
     return {
       color_col: checkedVal("color_cov"),
       diagonal_emb: checkedVal("diag_emb") || (hasUmap ? "umap" : "pc"),
       upper_style: checkedVal("upper_style") || "scatter",
-      palette: checkedVal("pairplot_palette") || "Viridis"
+      palette: checkedVal("pairplot_palette") || "Viridis",
+      color_filter: cf || null
     };
   }
 
@@ -475,10 +972,62 @@
     };
   }
 
+  function readCssLengthPx(elem, prop) {
+    if (!elem) {
+      return null;
+    }
+    var raw = window.getComputedStyle(elem)[prop];
+    if (!raw || raw === "none") {
+      return null;
+    }
+    var m = /^([\d.]+)px$/.exec(raw);
+    if (!m) {
+      return null;
+    }
+    var x = parseFloat(m[1]);
+    return isFinite(x) && x > 0 ? x : null;
+  }
+
+  /**
+   * Scale the pairplot PNG to use stack width and viewport height while keeping
+   * aspect ratio (square cells in the figure stay square on screen).
+   */
+  function syncPairplotImgScale() {
+    if (!el || !stack || !viewport) {
+      return;
+    }
+    if (!pairplotObjectUrl || !el.naturalWidth || !el.naturalHeight) {
+      el.style.width = "";
+      el.style.height = "";
+      return;
+    }
+    var maxW = stack.clientWidth;
+    if (!maxW) {
+      return;
+    }
+    var cssCap =
+      readCssLengthPx(viewport, "maxHeight") ||
+      readCssLengthPx(stack, "maxHeight") ||
+      Math.min(window.innerHeight * 0.88, 1200);
+    var palH = 0;
+    var maxH = Math.max(160, cssCap - palH - 10);
+    var nw = el.naturalWidth;
+    var nh = el.naturalHeight;
+    var scale = Math.min(maxW / nw, maxH / nh);
+    if (!isFinite(scale) || scale <= 0) {
+      return;
+    }
+    el.style.width = Math.round(nw * scale) + "px";
+    el.style.height = Math.round(nh * scale) + "px";
+  }
+
   function syncSkeletonBounds() {
+    syncPairLegendMiddleWidth();
+    syncPairHistVerticalMetrics();
     if (!stack || !skel || !el) {
       return;
     }
+    syncPairplotImgScale();
     var stackRect = stack.getBoundingClientRect();
     if (!stackRect.width || !stackRect.height) {
       return;
@@ -535,6 +1084,15 @@
     }
     var palPrev = prev.palette || "Viridis";
     var palCur = cur.palette || "Viridis";
+    var cfPrev = JSON.stringify(prev.color_filter != null ? prev.color_filter : null);
+    var cfCur = JSON.stringify(cur.color_filter != null ? cur.color_filter : null);
+    if (cfPrev !== cfCur) {
+      var allF = [];
+      for (var tf = 0; tf < zdim * zdim; tf++) {
+        allF.push(tf);
+      }
+      return allF;
+    }
     if (
       prev.color_col === cur.color_col
       && prev.diagonal_emb === cur.diagonal_emb
@@ -603,8 +1161,12 @@
     } else {
       el.classList.add("pairplot-img--ready");
     }
-    if (paletteFieldset) {
-      paletteFieldset.classList.toggle("cryo-palette-radios--hidden-during-plot-render", on);
+    if (pairPaletteSelect) {
+      pairPaletteSelect.classList.toggle("pairplot-palette-select--hidden-during-plot-render", on);
+    }
+    if (!on && pairPaletteToggle) {
+      pairPaletteToggle.setAttribute("aria-expanded", "false");
+      syncPairplotPaletteOptions();
     }
   }
 
@@ -614,9 +1176,16 @@
 
   function draw() {
     var colorCol = checkedVal("color_cov");
-    if (!colorCol) {
+    if (!colorCol || colorCol === "none") {
       status.textContent = "Pick a color covariate.";
       setPairLoading(false);
+      lastPayload = null;
+      if (pairplotObjectUrl) {
+        URL.revokeObjectURL(pairplotObjectUrl);
+        pairplotObjectUrl = null;
+      }
+      el.removeAttribute("src");
+      el.classList.remove("pairplot-img--ready");
       return;
     }
     var payload = currentPayload();
@@ -679,9 +1248,9 @@
               }
               el.onload = null;
               lastPayload = payload;
+              setPairLoading(false);
               syncSkeletonBounds();
               syncControlsAlignment(data.cells);
-              setPairLoading(false);
               el.classList.add("pairplot-img--ready");
             };
             el.onerror = function() {
@@ -705,13 +1274,27 @@
     });
   }
 
+  document.querySelectorAll("input[name=\"color_cov\"]").forEach(function(inp) {
+    inp.addEventListener("change", function() {
+      pairColorLegend.refresh();
+    });
+  });
   document.querySelectorAll(".cryo-dash-controls input[type=radio]").forEach(function(inp) {
+    if (inp.name === "color_cov") {
+      return;
+    }
     inp.addEventListener("change", draw);
+  });
+  document.querySelectorAll("#pairplot-palette-select input[name=\"pairplot_palette\"]").forEach(function(inp) {
+    inp.addEventListener("change", function() {
+      pairColorLegend.refreshHistogramColors();
+      draw();
+    });
   });
   if (saveBtn) {
     saveBtn.addEventListener("click", function() {
       var payload = currentPayload();
-      if (!payload.color_col) {
+      if (!payload.color_col || payload.color_col === "none") {
         status.textContent = "Pick a color covariate before saving.";
         return;
       }
@@ -731,6 +1314,7 @@
           diagonal_emb: payload.diagonal_emb,
           upper_style: payload.upper_style,
           palette: payload.palette || "Viridis",
+          color_filter: payload.color_filter || null,
           filename: filename
         })
       })
@@ -760,7 +1344,7 @@
     pairplotBoundsObserver.observe(stack);
     pairplotBoundsObserver.observe(el);
   }
-  draw();
+  pairColorLegend.refresh();
 })();
 </script>
 </div>

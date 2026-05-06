@@ -8,19 +8,11 @@ from collections.abc import Collection
 from typing import Any, cast
 
 import matplotlib.colors as mcolors
-import matplotlib.lines as mlines
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import seaborn as sns
-from matplotlib.offsetbox import (
-    AnchoredOffsetbox,
-    DrawingArea,
-    HPacker,
-    TextArea,
-)
-from matplotlib.patches import Rectangle
 from seaborn.distributions import (
     _freedman_diaconis_bins,  # type: ignore[attr-defined]
 )
@@ -111,12 +103,12 @@ def mpl_cmap_for_palette(plotly_palette: str) -> str:
 _PAIR_CELL_WSPACE = 0.06
 _PAIR_CELL_HSPACE = 0.06
 
-# Figure margins for the pair subplot block (before ``_refine_pair_grid_right_margin``).
+# Figure margins for the pair subplot block (no matplotlib covariate legend — UI).
 _PAIR_GRID_LEFT = 0.035
 _PAIR_GRID_TOP = 0.98
 _PAIR_GRID_BOTTOM = 0.06
-_PAIR_GRID_RIGHT_INITIAL = 0.68
-_PAIR_GRID_RIGHT_PLACEHOLDER = 0.712
+_PAIR_GRID_RIGHT = 0.965
+_PAIR_GRID_RIGHT_PLACEHOLDER = _PAIR_GRID_RIGHT
 
 _UMAP_RE = re.compile(r"(?i)^umap")
 
@@ -284,7 +276,7 @@ def pair_grid_skeleton_placeholder_layout(
         )
         fig.subplots_adjust(
             left=_PAIR_GRID_LEFT,
-            right=_PAIR_GRID_RIGHT_PLACEHOLDER,
+            right=_PAIR_GRID_RIGHT,
             top=_PAIR_GRID_TOP,
             bottom=_PAIR_GRID_BOTTOM,
             wspace=_PAIR_CELL_WSPACE,
@@ -309,81 +301,6 @@ def _pair_jointplot_hex_gridsize(x: np.ndarray, y: np.ndarray) -> int:
     xb = min(_freedman_diaconis_bins(x), 50)
     yb = min(_freedman_diaconis_bins(y), 50)
     return max(int(np.mean([xb, yb])), 1)
-
-
-def _refine_pair_grid_right_margin(
-    fig: plt.Figure,
-    *,
-    grid_side_in: float,
-    left_m: float,
-    top_m: float,
-    bottom_m: float,
-    right_artist,
-    max_gap_inches: float,
-) -> None:
-    """Set subplot ``right`` so gap to legend / color bar is at most ``max_gap_inches`` wide."""
-    h_frac = top_m - bottom_m
-    fig_h = grid_side_in / h_frac
-    for _ in range(2):
-        fig.canvas.draw()
-        renderer = fig.canvas.get_renderer()
-        if hasattr(right_artist, "get_tightbbox"):
-            bb = right_artist.get_tightbbox(renderer)
-        else:
-            bb = right_artist.get_window_extent(renderer)
-        bb_fig = bb.transformed(fig.transFigure.inverted())
-        x0 = float(bb_fig.x0)
-        fig_w_in = float(fig.get_figwidth())
-        max_gap_frac = max_gap_inches / fig_w_in
-        eps = 2.0 / (fig.dpi * fig_w_in)
-        right_m2 = x0 - max(max_gap_frac, eps)
-        right_m2 = max(right_m2, left_m + 0.12)
-        right_m2 = min(right_m2, x0 - eps)
-        w_sub = right_m2 - left_m
-        if w_sub <= 0.02:
-            break
-        fig_w_new = grid_side_in / w_sub
-        fig.set_size_inches(fig_w_new, fig_h)
-        fig.subplots_adjust(
-            left=left_m,
-            right=right_m2,
-            top=top_m,
-            bottom=bottom_m,
-            wspace=_PAIR_CELL_WSPACE,
-            hspace=_PAIR_CELL_HSPACE,
-        )
-
-
-def _pair_lower_triangle_pictogram_da(px: float = 28.0) -> DrawingArea:
-    """4×4 lower-triangle mini-grid (matches dashboard ``picto_lower`` SVG)."""
-    gap = 0.75
-    inner = max(px - 3 * gap, 1.0)
-    cs = inner / 4.0
-    da = DrawingArea(px, px, clip=False)
-    lo = "#e8ecf1"
-    hi = "#3d5a80"
-    # Rows bottom → top in figure space (matches SVG rows bottom → top).
-    fills_from_bottom = (
-        (hi, hi, hi, lo),
-        (hi, hi, lo, lo),
-        (hi, lo, lo, lo),
-        (lo, lo, lo, lo),
-    )
-    for row in range(4):
-        for col in range(4):
-            x = col * (cs + gap)
-            y = row * (cs + gap)
-            da.add_artist(
-                Rectangle(
-                    (x, y),
-                    cs,
-                    cs,
-                    facecolor=fills_from_bottom[row][col],
-                    edgecolor="#8899aa",
-                    linewidth=0.35,
-                )
-            )
-    return da
 
 
 def _lower_legend_covariate_title(
@@ -412,6 +329,105 @@ def _lower_legend_entry_label(lower_color_col: str, u: Any) -> str:
         except (TypeError, ValueError):
             pass
     return str(u)
+
+
+def covariate_row_filter_key(color_col: str, u: Any) -> str:
+    """Stable string key for a covariate value (matches dashboard scatter customdata)."""
+    if pd.isna(u):
+        return "__na__"
+    if color_col == "labels":
+        return str(_lower_legend_entry_label(color_col, u))
+    num = pd.to_numeric(pd.Series([u], dtype=object), errors="coerce").iloc[0]
+    if pd.notna(num):
+        fv = float(num)
+        if np.isfinite(fv) and abs(fv - round(fv)) < 1e-8:
+            return str(int(round(fv)))
+        return str(fv)
+    return str(u)
+
+
+def plot_df_color_filter_mask(
+    df: pd.DataFrame,
+    color_col: str,
+    color_filter: dict[str, Any] | None,
+) -> np.ndarray:
+    """Boolean mask aligned with ``df`` rows (True = include)."""
+    if not color_filter:
+        return np.ones(len(df), dtype=bool)
+    kind = color_filter.get("kind")
+    if kind == "threshold":
+        level = float(color_filter["level"])
+        use_max = bool(color_filter.get("use_max"))
+        series = pd.to_numeric(df[color_col], errors="coerce")
+        if use_max:
+            mask = (series <= level) & series.notna()
+        else:
+            mask = (series >= level) & series.notna()
+        return mask.to_numpy(dtype=bool)
+    if kind == "discrete":
+        keys_inc = frozenset(str(k) for k in color_filter.get("keys") or ())
+        ser = df[color_col]
+        keys_series = ser.map(lambda u, cc=color_col: covariate_row_filter_key(cc, u))
+        return keys_series.isin(keys_inc).to_numpy(dtype=bool)
+    return np.ones(len(df), dtype=bool)
+
+
+def _discrete_legend_sort_tuple(key: str) -> tuple:
+    if key == "__na__":
+        return (2, "")
+    try:
+        return (0, float(key))
+    except ValueError:
+        return (1, str(key))
+
+
+def covariate_legend_context_payload(
+    exp: DashboardExperiment,
+    column: str,
+    *,
+    violin_sample_max: int = 12_000,
+) -> dict[str, Any]:
+    """JSONable payload for building the colour histogram / discrete toggles."""
+    if column not in exp.plot_df.columns:
+        raise ValueError("Unknown column.")
+    s = exp.plot_df[column]
+    if _lower_color_series_is_discrete(s):
+        codes_arr, uniques = pd.factorize(s, sort=True)
+        codes = np.asarray(codes_arr, dtype=np.int64)
+        pal = _dashboard_chimerax_colors(max(len(uniques), 1))
+        cats: list[dict[str, Any]] = []
+        for idx, u in enumerate(uniques):
+            if pd.isna(u):
+                continue
+            cnt = int(np.sum(codes == idx))
+            if cnt == 0:
+                continue
+            cats.append(
+                {
+                    "key": covariate_row_filter_key(column, u),
+                    "label": _lower_legend_entry_label(column, u),
+                    "count": cnt,
+                    "color": pal[idx % len(pal)],
+                }
+            )
+        if bool(s.isna().any()):
+            cats.append(
+                {
+                    "key": "__na__",
+                    "label": "(missing)",
+                    "count": int(s.isna().sum()),
+                    "color": "#aab4bf",
+                }
+            )
+        cats.sort(key=lambda c: _discrete_legend_sort_tuple(str(c["key"])))
+        return {"mode": "discrete", "categories": cats}
+    vals = pd.to_numeric(s, errors="coerce").dropna().to_numpy(dtype=np.float64)
+    if vals.size == 0:
+        return {"mode": "continuous", "values": []}
+    rng = np.random.default_rng(0)
+    if vals.size > violin_sample_max:
+        vals = rng.choice(vals, size=violin_sample_max, replace=False)
+    return {"mode": "continuous", "values": vals.tolist()}
 
 
 _EDGE_LABEL_COLOR = "#243b53"
@@ -545,40 +561,6 @@ def _draw_pair_grid_diagonal_legends(
         )
 
 
-def _attach_pair_lower_legend_caption(
-    fig: plt.Figure,
-    leg: Any,
-    covariate_title: str,
-    *,
-    title_fontsize: float = 24.0,
-) -> None:
-    """Legend title row: lower-triangle pictogram + covariate name (no ▽ glyph)."""
-    fig.canvas.draw()
-    renderer = fig.canvas.get_renderer()
-    bb_disp = leg.get_window_extent(renderer)
-    bb_fig = bb_disp.transformed(fig.transFigure.inverted())
-    pict = _pair_lower_triangle_pictogram_da(26.0)
-    text_area = TextArea(
-        f"  {covariate_title}",
-        textprops=dict(
-            fontsize=title_fontsize,
-            fontweight="bold",
-            color="#243b53",
-        ),
-    )
-    pack = HPacker(children=[pict, text_area], align="center", pad=0, sep=2)
-    y_top = min(0.998, float(bb_fig.y1) + 0.014)
-    ab = AnchoredOffsetbox(
-        "lower left",
-        child=pack,
-        frameon=False,
-        bbox_to_anchor=(float(bb_fig.x0), y_top),
-        bbox_transform=fig.transFigure,
-        borderpad=0,
-    )
-    fig.add_artist(ab)
-
-
 def scatter_json(
     exp: DashboardExperiment,
     xcol: str,
@@ -692,6 +674,7 @@ def scatter3d_z_json(
     max_points: int = 120_000,
     *,
     continuous_palette: str | None = None,
+    color_filter: dict[str, Any] | None = None,
 ) -> str:
     """Interactive 3D scatter of three latent ``z*`` columns."""
     plotly_cs = normalize_continuous_palette(continuous_palette)
@@ -704,6 +687,12 @@ def scatter3d_z_json(
             raise ValueError(f"Missing column {c!r} in analysis table.")
     if len({xcol, ycol, zcol}) < 3:
         raise ValueError("Choose three distinct latent axes.")
+
+    if color_filter and color_col and color_col != "none":
+        mask = plot_df_color_filter_mask(df, color_col, color_filter)
+        if not bool(np.any(mask)):
+            raise ValueError("No particles match the current colour covariate filter.")
+        df = df.loc[mask].reset_index(drop=True)
 
     sub, row_indices = _subsample(df, max_points, seed=1)
 
@@ -882,21 +871,29 @@ def pair_grid_png(
     dpi: int = 120,
     *,
     continuous_palette: str | None = None,
+    color_filter: dict[str, Any] | None = None,
 ) -> tuple[bytes, list[dict[str, float]]]:
     """z_dim × z_dim Matplotlib grid (square cells); upper hex matches ``sns.jointplot(..., kind=\"hex\")``.
 
     Returns PNG bytes and per-cell axis bboxes in figure coordinates (for HTML overlay alignment).
     """
     mpl_cmap = mpl_cmap_for_palette(normalize_continuous_palette(continuous_palette))
-    df = exp.plot_df
+    full_df = exp.plot_df
     zdim = int(exp.z.shape[1])
     zcols = [f"z{i}" for i in range(zdim)]
     for c in zcols:
-        if c not in df.columns:
+        if c not in full_df.columns:
             raise ValueError(f"Missing latent column {c} in analysis table.")
 
-    if lower_color_col not in df.columns:
+    if lower_color_col not in full_df.columns:
         raise ValueError(f"Unknown color column: {lower_color_col}")
+    if color_filter:
+        mask = plot_df_color_filter_mask(full_df, lower_color_col, color_filter)
+        if not bool(np.any(mask)):
+            raise ValueError("No particles match the current colour covariate filter.")
+        df = full_df.loc[mask].reset_index(drop=True)
+    else:
+        df = full_df
     raw_color = df[lower_color_col]
     discrete = _lower_color_series_is_discrete(raw_color)
 
@@ -950,46 +947,13 @@ def pair_grid_png(
     with ezlab_matplotlib_rc():
         hex_cmap = _pair_jointplot_hex_cmap()
 
-        inch_per = max(2.35, min(2.85, 11.0 / max(zdim, 1)))
+        inch_per = max(2.45, min(3.35, 13.0 / max(zdim, 1)))
         left_m = _PAIR_GRID_LEFT
         # Reserve extra headroom for enlarged top edge labels.
         top_m = min(_PAIR_GRID_TOP, 0.955)
         bottom_m = _PAIR_GRID_BOTTOM
-        # Subplot grid right edge (legend / vertical color bar sit to the right).
-        right_axes = _PAIR_GRID_RIGHT_INITIAL
-        legend_handles: list[mlines.Line2D] | None = None
-        if discrete:
-            legend_handles = []
-            for idx, u in enumerate(uniques):
-                if pd.isna(u):
-                    continue
-                legend_handles.append(
-                    mlines.Line2D(
-                        [0],
-                        [0],
-                        marker="o",
-                        color="w",
-                        label=_lower_legend_entry_label(lower_color_col, u),
-                        markerfacecolor=pal[idx % len(pal)],
-                        markersize=16.5,
-                        linestyle="None",
-                    )
-                )
-            if bool(raw_color.isna().any()):
-                legend_handles.append(
-                    mlines.Line2D(
-                        [0],
-                        [0],
-                        marker="o",
-                        color="w",
-                        label="(missing)",
-                        markerfacecolor="#aab4bf",
-                        markersize=16.5,
-                        linestyle="None",
-                    )
-                )
+        right_axes = _PAIR_GRID_RIGHT
 
-        # Square axes region; reserve a strip on the right for legend or color bar.
         w_frac = right_axes - left_m
         h_frac = top_m - bottom_m
         grid_side_in = inch_per * zdim
@@ -1012,7 +976,6 @@ def pair_grid_png(
             )
         fig.patch.set_facecolor(_DASHBOARD_CREAM)
 
-        lower_cbar_mappable = None
         diagonal_color_ranges: list[tuple[float, float] | None] = [None] * zdim
 
         for i in range(zdim):
@@ -1087,7 +1050,7 @@ def pair_grid_png(
                             and cmin is not None
                             and cmax is not None
                         )
-                        sc = ax.scatter(
+                        ax.scatter(
                             xi,
                             yi,
                             c=cvals_plot,
@@ -1099,8 +1062,6 @@ def pair_grid_png(
                             linewidths=0,
                             rasterized=True,
                         )
-                        if lower_cbar_mappable is None:
-                            lower_cbar_mappable = sc
 
                 ax.set_xticks([])
                 ax.set_yticks([])
@@ -1121,77 +1082,6 @@ def pair_grid_png(
             wspace=_PAIR_CELL_WSPACE,
             hspace=_PAIR_CELL_HSPACE,
         )
-
-        max_side_gap_in = inch_per / 6.0
-        leg = None
-        # Use realized axes extents for vertical alignment (matches the visible plotting region).
-        top_bb = axes[0, 0].get_position()
-        bot_bb = axes[zdim - 1, 0].get_position()
-        _plot_center_y_fig = (bot_bb.y0 + top_bb.y1) / 2.0
-        # Center the main legend in the right-side free strip.
-        _legend_x_fig = right_axes + (1.0 - right_axes) * 0.5
-        if discrete and legend_handles is not None:
-            leg = fig.legend(
-                handles=legend_handles,
-                loc="center",
-                bbox_to_anchor=(_legend_x_fig, _plot_center_y_fig),
-                bbox_transform=fig.transFigure,
-                ncol=2,
-                frameon=True,
-                fancybox=False,
-                fontsize=22.5,
-                borderaxespad=0.2,
-                columnspacing=1.5,
-                handletextpad=0.65,
-            )
-            leg.get_frame().set_linewidth(0.8)
-            leg.get_frame().set_edgecolor("#8899aa")
-            leg.get_frame().set_facecolor(_DASHBOARD_CREAM)
-            _refine_pair_grid_right_margin(
-                fig,
-                grid_side_in=grid_side_in,
-                left_m=left_m,
-                top_m=top_m,
-                bottom_m=bottom_m,
-                right_artist=leg,
-                max_gap_inches=max_side_gap_in,
-            )
-            _attach_pair_lower_legend_caption(
-                fig,
-                leg,
-                _lower_legend_covariate_title(lower_color_col, exp),
-                title_fontsize=24.0,
-            )
-
-        if not discrete and lower_cbar_mappable is not None:
-            flat_ax = list(axes.ravel())
-            cb = fig.colorbar(
-                lower_cbar_mappable,
-                ax=flat_ax,
-                orientation="vertical",
-                fraction=0.04,
-                pad=0.03,
-                aspect=22,
-                shrink=1.0,
-                anchor=(0.5, 0.5),
-            )
-            cb.ax.tick_params(labelsize=22.5, length=4, pad=2)
-            cb.ax.set_facecolor(_DASHBOARD_CREAM)
-            cb.set_label(
-                _lower_legend_covariate_title(lower_color_col, exp),
-                fontsize=24,
-                rotation=270,
-                labelpad=28,
-            )
-            _refine_pair_grid_right_margin(
-                fig,
-                grid_side_in=grid_side_in,
-                left_m=left_m,
-                top_m=top_m,
-                bottom_m=bottom_m,
-                right_artist=cb.ax,
-                max_gap_inches=max_side_gap_in,
-            )
 
         label_fs = max(11.0, min(16.0, 4.9 * inch_per / 3.05))
         _draw_pair_grid_edge_labels(

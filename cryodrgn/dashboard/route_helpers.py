@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterable
+from typing import Any
 
 import numpy as np
 from flask import jsonify, redirect, url_for
@@ -153,6 +154,31 @@ def _parse_pairplot_request(
         str(raw_palette) if raw_palette is not None else None,
     )
     return color_col, diagonal_emb, upper_style, pair_palette
+
+
+def _parse_color_filter_for_column(
+    color_col: str, payload: dict
+) -> dict[str, Any] | None:
+    """Parse optional ``color_filter`` from a JSON body (threshold or discrete keys)."""
+    raw = payload.get("color_filter")
+    if raw in (None, "", {}):
+        return None
+    if not isinstance(raw, dict):
+        raise ValueError("color_filter must be an object.")
+    kind = raw.get("kind")
+    if kind == "threshold":
+        try:
+            level = float(raw["level"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("Invalid colour threshold level.") from exc
+        use_max = bool(raw.get("use_max"))
+        return {"kind": "threshold", "level": level, "use_max": use_max}
+    if kind == "discrete":
+        keys = raw.get("keys")
+        if not isinstance(keys, list):
+            raise ValueError("Discrete colour filter requires a keys array.")
+        return {"kind": "discrete", "keys": [str(k) for k in keys]}
+    raise ValueError("color_filter kind must be threshold or discrete.")
 
 
 def _add_direct_anchor_pidx(payload: dict, p: dict, z_traj: np.ndarray) -> None:

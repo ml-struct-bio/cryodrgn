@@ -4,168 +4,347 @@
 {% block nav_page_title %}{{ nav_page_title_span("3D visualizer") }}{% endblock %}
 {% block head %}
 <style>
-  .cryo-dash-page--latent3d .latent3d-figure-legend {
-    align-self: stretch;
-    position: static;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    flex: 0 0 min(260px, 30vw);
-    max-width: 320px;
-    min-width: 200px;
+  /* Plot | legend share a column boundary (no gap); keep space after controls only. */
+  .cryo-dash-page--latent3d .cryo-dash-row.cryo-dash-row--plot-triple {
+    column-gap: 0;
+    row-gap: 1rem;
   }
-  .latent3d-figure-legend__intro {
+  .cryo-dash-page--latent3d .cryo-dash-row.cryo-dash-row--plot-triple > .cryo-dash-side {
+    margin-right: 1rem;
+  }
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside {
     flex: 0 0 auto;
-  }
-  .latent3d-legend-items {
-    flex: 1 1 auto;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    margin-top: 0.65rem;
-    overflow: hidden;
-  }
-  .latent3d-legend-items.latent3d-legend-items--inactive {
-    flex: 0 0 auto;
-    margin-top: 0.35rem;
-    min-height: 0;
-    overflow: visible;
-  }
-  .latent3d-legend-title {
-    font-size: 1.05rem;
-    font-weight: 700;
-    color: var(--nav-bg, #243b53);
-    margin: 0 0 0.45rem;
-    flex-shrink: 0;
-    line-height: 1.25;
-  }
-  .latent3d-legend-continuous-v {
-    display: flex;
-    flex-direction: column;
-    flex: 1 1 auto;
-    min-height: 0;
-    align-items: stretch;
-  }
-  .latent3d-legend-continuous-v-inner {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    flex: 1 1 auto;
-    min-height: 6rem;
-    gap: 0.35rem;
-  }
-  .latent3d-legend-continuous-bar-v {
-    flex: 1 1 auto;
-    width: 0.95rem;
-    min-height: 4rem;
-    border-radius: 4px;
-    /* Fallback; JS sets gradient from selected palette (vertical: low → high bottom → top). */
-    background: linear-gradient(0deg, #440154 0%, #21918c 50%, #fde725 100%);
-    border: 1px solid rgba(36, 59, 83, 0.2);
-    align-self: center;
-  }
-  .latent3d-legend-vlab {
-    font-size: 0.98rem;
-    color: var(--muted, #5c6b7a);
-    font-variant-numeric: tabular-nums;
-    line-height: 1.25;
-    text-align: center;
+    width: 100%;
     max-width: 100%;
-    font-weight: 600;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    align-self: stretch;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    margin: 0;
+    position: static;
   }
-  /* Two columns so discrete classes use less vertical space beside the 3D view */
-  .latent3d-legend-discrete-v {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    column-gap: 0.55rem;
-    row-gap: 0.42rem;
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow-y: auto;
-    overflow-x: hidden;
-    padding-right: 0.2rem;
-    align-content: start;
-  }
-  .latent3d-legend-discrete-item {
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside .cryo-cc-legend__heading {
     display: flex;
     align-items: center;
     gap: 0.45rem;
-    min-width: 0;
-    font-size: 0.98rem;
+    flex-shrink: 0;
+    line-height: 1.28;
+    font-weight: 700;
     color: var(--nav-bg, #243b53);
-    flex-shrink: 0;
-  }
-  .latent3d-legend-discrete-swatch {
-    width: 0.8rem;
-    height: 0.8rem;
-    border-radius: 999px;
-    border: 1px solid rgba(36, 59, 83, 0.3);
-    flex-shrink: 0;
-  }
-  .latent3d-legend-discrete-label {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    margin: 0;
+    max-width: 100%;
+    flex-wrap: nowrap;
     min-width: 0;
-    font-weight: 500;
-    line-height: 1.2;
   }
-  #latent3d-palette-radios.latent3d-palette-radios--suppressed {
-    display: none;
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside .cryo-cc-legend__heading-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    white-space: nowrap;
+    font-weight: 700;
+    color: var(--nav-bg, #243b53);
+    font-size: calc(0.82rem * 1.35 * 0.9 * 0.72);
+  }
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside .cryo-cc-legend__filter-em {
+    color: rgba(149, 87, 45, 0.92);
+    font-weight: 600;
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-decoration-color: rgba(196, 112, 58, 0.28);
+    text-underline-offset: 0.1em;
   }
   @media (max-width: 900px) {
-    .cryo-dash-page--latent3d .latent3d-figure-legend {
+    .cryo-dash-page--latent3d .cryo-dash-row.cryo-dash-row--plot-triple > .cryo-dash-side {
+      margin-right: 0;
+    }
+    .cryo-dash-page--latent3d .latent3d-color-legend-aside {
       flex: none;
       width: 100%;
-      max-width: none;
+      max-width: 100%;
       min-width: 0;
+      align-self: center;
     }
-    .cryo-dash-page--latent3d .latent3d-legend-items {
+    .cryo-dash-page--latent3d .cryo-cc-legend #latent3d-color-hist {
+      min-height: 5.5rem;
+    }
+    .cryo-dash-page--latent3d #latent3d-color-discrete-wrap.cryo-cc-discrete-wrap--show {
       max-height: min(45vh, 22rem);
     }
   }
-  .cryo-palette-radios {
-    margin: 0.5rem 0 0;
-    padding: 0.4rem 0.55rem;
-    border: 1px solid rgba(36, 59, 83, 0.15);
+  .cryo-dash-page--latent3d #latent3d-color-legend-panel {
+    width: 100%;
+    max-width: 100%;
+    margin-left: 0;
+    box-sizing: border-box;
+    /* Default continuous strip; overridden inline when discrete grid was measured (unused when stack is full-width). */
+    --pair-legend-middle-w: min(5.25rem, 14vw);
+  }
+  .cryo-dash-page--latent3d #latent3d-color-continuous-wrap:not([hidden]) {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+    min-width: 0;
+  }
+  .cryo-dash-page--latent3d .pair-legend-continuous-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+  .cryo-dash-page--latent3d .pair-legend-middle-track--continuous {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.175rem 0.2rem;
+    padding-right: 0.08rem;
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+  }
+  .cryo-dash-page--latent3d .pair-legend-middle-track--continuous #latent3d-color-hist {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-width: 0;
+  }
+  .cryo-dash-page--latent3d .cryo-cc-legend__footer--continuous {
+    display: flex;
+    flex-direction: column;
+    gap: 0.175rem;
+    flex-shrink: 0;
+    margin-top: 0.175rem;
+    width: 100%;
+    min-width: 0;
+  }
+  .cryo-dash-page--latent3d .cryo-cc-legend__footer--continuous #latent3d-palette-select {
+    margin-top: 0;
+  }
+  .cryo-dash-page--latent3d #latent3d-color-hist.cryo-cc-hist--pair-vertical {
+    flex: 0 0 auto;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    min-height: 72px;
+    box-sizing: border-box;
+    align-self: stretch;
+  }
+  .cryo-dash-page--latent3d .cryo-cc-legend {
+    box-sizing: border-box;
+    padding: 0.2rem 0.23rem 0.18rem;
+    border: 1px solid rgba(36, 59, 83, 0.13);
     border-radius: 4px;
-    background: rgba(250, 248, 244, 0.75);
+    background: rgba(250, 248, 244, 0.85);
+    width: max-content;
+    max-width: 100%;
+    flex: 0 0 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    margin-top: 0;
+  }
+  .cryo-dash-page--latent3d .cryo-cc-legend--vertical {
+    gap: 0.175rem;
+  }
+  .cryo-dash-page--latent3d .cryo-cc-legend-hist-ctrl {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    font-size: 0.65rem;
+    color: var(--muted, #5c6b7a);
+    flex-shrink: 0;
+  }
+  .cryo-dash-page--latent3d .cryo-cc-legend-hist-ctrl label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin: 0;
+    cursor: pointer;
+    color: var(--nav-bg, #243b53);
+    font-weight: 500;
+  }
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside #latent3d-palette-select {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: stretch;
+    gap: 0.45rem;
+    width: 100%;
+    max-width: 100%;
+    margin-top: 0.35rem;
+    padding-top: 0.35rem;
+    border-top: 1px solid rgba(36, 59, 83, 0.1);
+    font-size: 0.68rem;
+    color: var(--nav-bg, #243b53);
+    box-sizing: border-box;
+  }
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside #latent3d-palette-select.latent3d-palette-select--hidden-during-plot-render {
+    opacity: 0.45;
+    pointer-events: none;
+  }
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside .pairplot-palette-select__title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+    line-height: 1.05;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid rgba(36, 59, 83, 0.14);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.6);
+    color: var(--nav-bg, #243b53);
+    padding: 0.18rem 0.34rem;
+    font: inherit;
+    font-weight: 600;
+  }
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside .pairplot-palette-select__title:hover {
+    background: rgba(36, 59, 83, 0.06);
+  }
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside .pairplot-palette-select__chevron {
+    flex: 0 0 auto;
+    font-size: 0.7rem;
+    transition: transform 0.12s ease;
+  }
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside .pairplot-palette-select__title[aria-expanded="true"] .pairplot-palette-select__chevron {
+    transform: rotate(90deg);
+  }
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside .pairplot-palette-select__options {
+    display: grid;
+    grid-auto-flow: column;
+    grid-template-rows: repeat(2, auto);
+    grid-auto-columns: max-content;
+    align-items: stretch;
+    column-gap: 0.35rem;
+    row-gap: 0.04rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0.04rem 0 0.22rem;
+    scrollbar-width: thin;
+  }
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside .pairplot-palette-select__options--collapsed {
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside .pairplot-palette-option {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+    padding: 0.18rem 0.35rem;
+    border: 1px solid rgba(36, 59, 83, 0.12);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.55);
+    white-space: nowrap;
+    cursor: pointer;
+    font-weight: 500;
+  }
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside .pairplot-palette-option:hover {
+    background: rgba(36, 59, 83, 0.06);
+  }
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside .pairplot-palette-option input[type="radio"] {
+    margin: 0;
+    flex: 0 0 auto;
+  }
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside .pairplot-palette-select__swatch {
+    flex: 0 0 1.4rem;
+    height: 0.31rem;
+    border-radius: 999px;
+    border: 1px solid rgba(36, 59, 83, 0.16);
+  }
+  #latent3d-color-continuous-wrap[hidden] {
+    display: none !important;
+  }
+  #latent3d-color-discrete-wrap {
+    display: none;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    flex-direction: column;
+  }
+  #latent3d-color-discrete-wrap.cryo-cc-discrete-wrap--show {
+    display: flex;
+  }
+  .cryo-dash-page--latent3d .cryo-cc-discrete-switches {
+    display: flex;
+    flex-direction: column;
+    gap: 0.32rem;
+    overflow-y: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+    padding-right: 0.15rem;
+  }
+  .cryo-dash-page--latent3d .cryo-cc-discrete-switches--pair-2col {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-rows: minmax(1.7rem, auto);
+    gap: 0.175rem 0.2rem;
+    align-items: stretch;
+    padding-right: 0.08rem;
+    width: 100%;
     max-width: 100%;
     box-sizing: border-box;
   }
-  .cryo-palette-radios legend {
-    font-size: 0.78rem;
+  .cryo-dash-page--latent3d .cryo-cc-discrete-switches--pair-2col .cryo-cc-discrete-switch {
+    min-height: 1.7rem;
+    height: 100%;
+    box-sizing: border-box;
+  }
+  .cryo-dash-page--latent3d .cryo-cc-discrete-switch {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.14rem;
+    margin: 0;
+    padding: 0.11rem 0.17rem;
+    border: 1px solid rgba(36, 59, 83, 0.16);
+    border-radius: 0.4rem;
+    background: rgba(255, 255, 255, 0.55);
+    cursor: pointer;
+    font-size: 0.65rem;
+  }
+  .cryo-dash-page--latent3d .cryo-cc-discrete-switch-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.06rem;
+    min-width: 0;
+  }
+  .cryo-dash-page--latent3d .cryo-cc-discrete-switch-label {
     font-weight: 600;
     color: var(--nav-bg, #243b53);
-    padding: 0 0.2rem;
+    word-break: break-word;
   }
-  .cryo-palette-radios__row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.25rem 0.85rem;
-    align-items: center;
+  .cryo-dash-page--latent3d .cryo-cc-discrete-switch-count {
+    font-size: 0.6rem;
+    color: var(--muted, #5c6b7a);
   }
-  .cryo-palette-radios label {
-    font-size: 0.78rem;
-    color: var(--nav-bg, #243b53);
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    cursor: pointer;
-    margin: 0;
-    font-weight: 500;
+  .cryo-dash-page--latent3d .cryo-cc-discrete-switch input[type="checkbox"] {
+    margin: 0.12rem 0 0;
+    flex-shrink: 0;
+  }
+  .cryo-dash-page--latent3d .cryo-cc-discrete-actions {
+    flex-shrink: 0;
+    margin-top: 0.35rem;
   }
 </style>
 {% endblock %}
 {% block content %}
 <div class="cryo-dash-page cryo-dash-page--latent3d">
-<div class="cryo-dash-row">
+<div class="cryo-dash-row cryo-dash-row--plot-triple">
   <div class="cryo-dash-side">
     <div class="cryo-dash-top">
       <a href="/">← Back</a>
     </div>
-    <p class="cryo-dash-lead">Each point is a particle in the space of three latent coordinates you choose. Optional
-      color encodes another quantity from the analysis table.</p>
+    <p class="cryo-dash-lead">Each point is a particle in the space of three latent coordinates you choose (drag to
+      rotate, scroll to zoom). Optional colour encodes another quantity from the analysis table. Use the histogram or
+      discrete toggles in the legend beside the plot to filter particles; the continuous palette lives in the drop-down
+      under the histogram.</p>
     <div class="card cryo-dash-controls" id="latent3d-controls-card">
       <fieldset>
         <legend>Latent axes</legend>
@@ -189,8 +368,7 @@
     </div>
   </div>
   <div class="cryo-dash-main">
-    <div class="cryo-dash-main-split">
-      <div class="cryo-dash-viewport--plotly">
+    <div class="cryo-dash-viewport--plotly">
         <div class="cryo-plotly-stack" id="latent3d-plot-stack">
           <div id="latent3d" class="cryo-plotly-graph-host"></div>
           <div id="latent3d-rendering-overlay" class="cryo-plot-rendering-overlay cryo-plot-rendering-overlay--show"
@@ -203,32 +381,75 @@
             </div>
           </div>
         </div>
-        <fieldset id="latent3d-palette-radios" class="cryo-palette-radios latent3d-palette-radios--suppressed"
-          aria-label="Continuous color palette">
-          <legend>Palette (continuous color)</legend>
-          <div class="cryo-palette-radios__row">
-            <label><input type="radio" name="latent3d_palette" value="Viridis" checked/> Viridis</label>
-            <label><input type="radio" name="latent3d_palette" value="Plasma"/> Plasma</label>
-            <label><input type="radio" name="latent3d_palette" value="Inferno"/> Inferno</label>
-            <label><input type="radio" name="latent3d_palette" value="Magma"/> Magma</label>
-            <label><input type="radio" name="latent3d_palette" value="Cividis"/> Cividis</label>
-            <label><input type="radio" name="latent3d_palette" value="Turbo"/> Turbo</label>
-          </div>
-        </fieldset>
       </div>
-      <aside class="cryo-dash-figure-legend latent3d-figure-legend" aria-label="3-D latent space view legend">
-        <div class="latent3d-figure-legend__intro">
-          <strong>Interpreting the view</strong>
-          <p class="cryo-dash-legend-note">Drag to rotate, scroll to zoom, toolbar for reset and camera. Points are
-            particles in latent space; color follows your choice above (or a single color if none).</p>
-        </div>
-        <div id="latent3d-color-legend" class="latent3d-legend-items latent3d-legend-items--inactive"></div>
-      </aside>
     </div>
-  </div>
+      <aside class="latent3d-color-legend-aside" aria-label="Colour covariate filter">
+        <div id="latent3d-color-legend-panel" class="cryo-cc-legend" hidden aria-hidden="true"
+          title="Covariate colours in the legend; filtering applies to the 3-D view.">
+          <div class="cryo-cc-legend__heading">
+            <span id="latent3d-cc-legend-heading-title" class="cryo-cc-legend__heading-text">Colour legend and <span
+              class="cryo-cc-legend__filter-em">filtering</span></span>
+          </div>
+          <div id="latent3d-color-continuous-wrap">
+            <div class="pair-legend-continuous-stack">
+              <div class="pair-legend-middle-track pair-legend-middle-track--continuous">
+                <div id="latent3d-color-hist" class="cryo-cc-hist--pair-vertical"></div>
+              </div>
+              <div class="cryo-cc-legend__footer cryo-cc-legend__footer--continuous">
+                <div class="cryo-cc-legend-hist-ctrl">
+                  <label for="latent3d-color-threshold-use-max">
+                    <input type="checkbox" id="latent3d-color-threshold-use-max"/>
+                    Use as maximum (≤)
+                  </label>
+                  <span id="latent3d-color-threshold-status" class="status"></span>
+                </div>
+                <div id="latent3d-palette-select" class="pairplot-palette-select cryo-palette-select latent3d-palette-select"
+                  aria-label="Continuous color palette">
+                  <button type="button" id="latent3d-palette-toggle" class="pairplot-palette-select__title cryo-palette-select__title"
+                    aria-expanded="false" aria-controls="latent3d-palette-options">
+                    <span class="pairplot-palette-select__chevron cryo-palette-select__chevron" aria-hidden="true">▶</span>
+                    <span>Choose<br/>palette</span>
+                  </button>
+                  <div id="latent3d-palette-options"
+                    class="pairplot-palette-select__options cryo-palette-select__options pairplot-palette-select__options--collapsed">
+                    <label class="pairplot-palette-option"><input type="radio" name="latent3d_palette" value="Viridis" checked/><span
+                      class="pairplot-palette-select__swatch"
+                      style="background:linear-gradient(90deg,#440154,#3b528b,#21918c,#5ec962,#fde725);"></span>Viridis</label>
+                    <label class="pairplot-palette-option"><input type="radio" name="latent3d_palette" value="Plasma"/><span
+                      class="pairplot-palette-select__swatch"
+                      style="background:linear-gradient(90deg,#0d0887,#7e03a8,#cc4778,#f89441,#f0f921);"></span>Plasma</label>
+                    <label class="pairplot-palette-option"><input type="radio" name="latent3d_palette" value="Inferno"/><span
+                      class="pairplot-palette-select__swatch"
+                      style="background:linear-gradient(90deg,#000004,#6f0918,#d04e3a,#fbc026,#fcffa4);"></span>Inferno</label>
+                    <label class="pairplot-palette-option"><input type="radio" name="latent3d_palette" value="Magma"/><span
+                      class="pairplot-palette-select__swatch"
+                      style="background:linear-gradient(90deg,#000004,#3b0f70,#8c2981,#de4968,#febb81);"></span>Magma</label>
+                    <label class="pairplot-palette-option"><input type="radio" name="latent3d_palette" value="Cividis"/><span
+                      class="pairplot-palette-select__swatch"
+                      style="background:linear-gradient(90deg,#00224e,#124176,#5c6d69,#bec290,#fde725);"></span>Cividis</label>
+                    <label class="pairplot-palette-option"><input type="radio" name="latent3d_palette" value="Turbo"/><span
+                      class="pairplot-palette-select__swatch"
+                      style="background:linear-gradient(90deg,#30123b,#4777ef,#1fa187,#ffbe32,#991200);"></span>Turbo</label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div id="latent3d-color-discrete-wrap">
+            <div id="latent3d-color-discrete-switches" class="cryo-cc-discrete-switches cryo-cc-discrete-switches--pair-2col"
+              role="group" aria-label="Discrete colour filter"></div>
+            <div class="cryo-cc-discrete-actions">
+              <button type="button" id="latent3d-btn-discrete-invert" class="btn btn-secondary" disabled>
+                no selection
+              </button>
+            </div>
+          </div>
+        </div>
+      </aside>
 </div>
 </div>
 
+<script src="{{ url_for('static', filename='js/color_covariate_legend.js') }}"></script>
 <script>
 (function() {
   var zcols = {{ z_cols | tojson }};
@@ -277,9 +498,13 @@
   fillColorSelect(sc);
 
   var gd = document.getElementById("latent3d");
-  var colorLegend = document.getElementById("latent3d-color-legend");
+  var scatter3dUrl = "{{ url_for('api_scatter3d_z') }}";
+  var legendContextUrl = "{{ url_for('api_covariate_legend_context') }}";
   var overlay = document.getElementById("latent3d-rendering-overlay");
-  var paletteFieldset = document.getElementById("latent3d-palette-radios");
+  var latent3dPaletteSelect = document.getElementById("latent3d-palette-select");
+  var latent3dPaletteToggle = document.getElementById("latent3d-palette-toggle");
+  var latent3dPaletteOptions = document.getElementById("latent3d-palette-options");
+  var latent3dColorHist = document.getElementById("latent3d-color-hist");
   var controlsCard = document.getElementById("latent3d-controls-card");
   var controlsSide = controlsCard ? controlsCard.closest(".cryo-dash-side") : null;
   var plotStack = document.getElementById("latent3d-plot-stack");
@@ -304,17 +529,147 @@
     controlsCard.style.marginTop = Math.round(px) + "px";
   }
 
-  function latent3dColorByIsDiscrete() {
-    /* Matches ``scatter3d_z_json``: only ``labels`` uses a fixed discrete palette. */
-    return sc.value === "labels";
+  function fitLatent3dLegendHeadingTitle() {
+    var panel = document.getElementById("latent3d-color-legend-panel");
+    var title = document.getElementById("latent3d-cc-legend-heading-title");
+    if (!panel || !title) {
+      return;
+    }
+    if (panel.hidden || panel.getAttribute("aria-hidden") === "true") {
+      title.style.fontSize = "";
+      return;
+    }
+    var heading = title.closest(".cryo-cc-legend__heading");
+    if (!heading || heading.clientWidth < 4) {
+      return;
+    }
+    var maxW = heading.clientWidth;
+    var lo = 4;
+    var hi = 56;
+    var i;
+    for (i = 0; i < 24; i++) {
+      var mid = (lo + hi) * 0.5;
+      title.style.fontSize = mid + "px";
+      if (title.scrollWidth <= maxW) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+    }
+    title.style.fontSize = Math.max(4, lo) + "px";
+  }
+
+  function scheduleLatent3dLegendHeadingTitleFit() {
+    requestAnimationFrame(function() {
+      requestAnimationFrame(fitLatent3dLegendHeadingTitle);
+    });
+  }
+
+  function syncLatent3dPaletteOptions() {
+    if (!latent3dPaletteOptions || !latent3dPaletteToggle || !latent3dPaletteSelect) {
+      return;
+    }
+    var show = latent3dPaletteToggle.getAttribute("aria-expanded") === "true"
+      && !latent3dPaletteSelect.classList.contains("latent3d-palette-select--hidden-during-plot-render");
+    latent3dPaletteOptions.classList.toggle("pairplot-palette-select__options--collapsed", !show);
+  }
+
+  if (latent3dPaletteToggle) {
+    latent3dPaletteToggle.addEventListener("click", function() {
+      var expanded = latent3dPaletteToggle.getAttribute("aria-expanded") === "true";
+      latent3dPaletteToggle.setAttribute("aria-expanded", expanded ? "false" : "true");
+      syncLatent3dPaletteOptions();
+    });
   }
 
   function syncLatent3dPaletteFieldset() {
-    if (!paletteFieldset) return;
+    if (!latent3dPaletteSelect) return;
     var rendering = !!(overlay && overlay.classList.contains("cryo-plot-rendering-overlay--show"));
     var hasColor = sc.value && sc.value !== "none";
-    var suppress = rendering || !hasColor || latent3dColorByIsDiscrete();
-    paletteFieldset.classList.toggle("latent3d-palette-radios--suppressed", suppress);
+    var disc = document.getElementById("latent3d-color-discrete-wrap");
+    var discreteVisible = !!(disc && !disc.hidden && disc.classList.contains("cryo-cc-discrete-wrap--show"));
+    var suppress = rendering || !hasColor || discreteVisible;
+    latent3dPaletteSelect.classList.toggle("latent3d-palette-select--hidden-during-plot-render", suppress);
+    if (suppress && latent3dPaletteToggle) {
+      latent3dPaletteToggle.setAttribute("aria-expanded", "false");
+    }
+    syncLatent3dPaletteOptions();
+  }
+
+  var latent3dLegendMiddleWidthPx = null;
+
+  function syncLatent3dLegendMiddleWidth() {
+    var panel = document.getElementById("latent3d-color-legend-panel");
+    var sw = document.getElementById("latent3d-color-discrete-switches");
+    var disc = document.getElementById("latent3d-color-discrete-wrap");
+    if (!panel || !sw) {
+      return;
+    }
+    if (disc && !disc.hidden && disc.classList.contains("cryo-cc-discrete-wrap--show")) {
+      var w = sw.offsetWidth;
+      if (w > 0) {
+        latent3dLegendMiddleWidthPx = w;
+      }
+    }
+    if (latent3dLegendMiddleWidthPx != null && latent3dLegendMiddleWidthPx > 0) {
+      var halfW = Math.max(1, Math.round(latent3dLegendMiddleWidthPx * 0.5));
+      panel.style.setProperty("--pair-legend-middle-w", halfW + "px");
+    } else {
+      panel.style.removeProperty("--pair-legend-middle-w");
+    }
+    scheduleLatent3dLegendHeadingTitleFit();
+  }
+
+  function syncLatent3dHistVerticalMetrics() {
+    var histEl = latent3dColorHist;
+    if (!histEl || !histEl.classList.contains("cryo-cc-hist--pair-vertical")) {
+      return;
+    }
+    var panel = document.getElementById("latent3d-color-legend-panel");
+    if (panel && (panel.hidden || panel.getAttribute("aria-hidden") === "true")) {
+      return;
+    }
+    var wrap = document.getElementById("latent3d-color-continuous-wrap");
+    if (!wrap || wrap.hidden) {
+      return;
+    }
+    var vw = window.innerWidth || document.documentElement.clientWidth || 0;
+    var vh = window.innerHeight || document.documentElement.clientHeight || 0;
+    if (vw < 1 || vh < 1) {
+      return;
+    }
+    histEl.style.maxWidth = "";
+    var rect = histEl.getBoundingClientRect();
+    var targetBottom = vh * 0.9;
+    var padding = 6;
+    var h = Math.floor(targetBottom - rect.top - padding);
+    var minH = 72;
+    if (h < minH) {
+      h = minH;
+    }
+    var maxH = Math.floor(vh * 0.92);
+    if (h > maxH) {
+      h = maxH;
+    }
+    histEl.style.height = h + "px";
+    histEl.style.minHeight = minH + "px";
+    try {
+      if (window.Plotly && histEl.data && histEl.data.length) {
+        window.Plotly.Plots.resize(histEl);
+      }
+    } catch (e0) { /* ignore */ }
+  }
+
+  function syncLatent3dContinuousHistogramLayout() {
+    syncLatent3dLegendMiddleWidth();
+    syncLatent3dHistVerticalMetrics();
+    scheduleLatent3dLegendHeadingTitleFit();
+  }
+
+  function syncLatent3dAsideLayout() {
+    syncLatent3dLegendMiddleWidth();
+    syncLatent3dHistVerticalMetrics();
+    scheduleLatent3dLegendHeadingTitleFit();
   }
 
   function setRendering(on) {
@@ -325,85 +680,37 @@
     syncLatent3dPaletteFieldset();
   }
 
-  function fmtLegendNumber(v) {
-    if (typeof v !== "number" || !isFinite(v)) return "";
-    var av = Math.abs(v);
-    if (av >= 1000 || (av > 0 && av < 0.01)) return v.toExponential(2);
-    return v.toFixed(3).replace(/\.?0+$/, "");
-  }
-
-  var LATENT_CONTINUOUS_BAR_BG = {
-    Viridis:
-      "linear-gradient(90deg,#440154 0%,#482878 14%,#3e4989 29%,#31688e 43%,"
-      + "#26828e 57%,#1f9e89 71%,#35b779 82%,#90d743 92%,#fde725 100%)",
-    Plasma: "linear-gradient(90deg,#0d0887 0%,#6a00a8 20%,#b12a90 40%,#e16462 60%,#fca636 82%,#f0f921 100%)",
-    Inferno: "linear-gradient(90deg,#000004 0%,#420a68 35%,#932667 55%,#dd513a 72%,#fca50a 88%,#fcffa4 100%)",
-    Magma: "linear-gradient(90deg,#000004 0%,#3b0f70 30%,#8c2981 50%,#de4968 68%,#fe9f6d 85%,#fcfdbf 100%)",
-    Cividis: "linear-gradient(90deg,#00224e 0%,#123570 25%,#575d6d 50%,#8c8c78 72%,#cfe49a 88%,#fdea45 100%)",
-    Turbo: "linear-gradient(90deg,#30123b 0%,#1a4ac2 17%,#32b4ec 33%,#7cd250 50%,#f8d940 67%,#fe5626 83%,#d73401 100%)"
-  };
-  function latent3dContinuousBarBackgroundVertical(paletteName) {
-    var h = LATENT_CONTINUOUS_BAR_BG[paletteName] || LATENT_CONTINUOUS_BAR_BG.Viridis;
-    return h.replace("90deg", "0deg");
-  }
   function selectedLatentPalette() {
     var r = document.querySelector("input[name=\"latent3d_palette\"]:checked");
     var v = r && r.value ? String(r.value) : "Viridis";
-    return LATENT_CONTINUOUS_BAR_BG[v] ? v : "Viridis";
+    var allowed = { Viridis: 1, Plasma: 1, Inferno: 1, Magma: 1, Cividis: 1, Turbo: 1 };
+    return allowed[v] ? v : "Viridis";
   }
 
-  function renderColorLegend(fig, colorKey) {
-    if (!colorLegend) return;
-    if (!colorKey || colorKey === "none") {
-      colorLegend.innerHTML = "";
-      colorLegend.classList.add("latent3d-legend-items--inactive");
-      return;
+  var latent3dColorLegend = new CryoColorCovariateLegend({
+    legendContextUrl: legendContextUrl,
+    covariateDisplayMap: covariateDisplayMap,
+    getColorColumn: function() { return sc.value; },
+    getPaletteName: selectedLatentPalette,
+    panel: document.getElementById("latent3d-color-legend-panel"),
+    continuousWrap: document.getElementById("latent3d-color-continuous-wrap"),
+    discreteWrap: document.getElementById("latent3d-color-discrete-wrap"),
+    histDiv: document.getElementById("latent3d-color-hist"),
+    thresholdUseMax: document.getElementById("latent3d-color-threshold-use-max"),
+    thresholdStatus: document.getElementById("latent3d-color-threshold-status"),
+    discreteSwitches: document.getElementById("latent3d-color-discrete-switches"),
+    invertBtn: document.getElementById("latent3d-btn-discrete-invert"),
+    vertical: true,
+    histPlotVertical: true,
+    onContinuousHistogramLayout: syncLatent3dContinuousHistogramLayout,
+    onDiscreteLayout: syncLatent3dLegendMiddleWidth,
+    onModeChange: function() {
+      syncLatent3dPaletteFieldset();
+    },
+    onFilterChange: function() {
+      loadPlot();
     }
-    var meta = (fig && fig.layout && fig.layout.meta) ? fig.layout.meta : null;
-    var legend = (meta && meta.cdrgn_color_legend) ? meta.cdrgn_color_legend : null;
-    var title = covariateDisplayMap[colorKey] || colorKey;
-    if (!legend || !legend.type) {
-      colorLegend.innerHTML = "";
-      colorLegend.classList.add("latent3d-legend-items--inactive");
-      return;
-    }
-    colorLegend.classList.remove("latent3d-legend-items--inactive");
-    if (legend.type === "discrete" && Array.isArray(legend.items) && legend.items.length) {
-      var itemsHtml = legend.items.map(function(item) {
-        var label = (item && item.label != null) ? String(item.label) : "";
-        var col = (item && item.color) ? String(item.color) : "#aab4bf";
-        return (
-          '<div class="latent3d-legend-discrete-item">' +
-          '<span class="latent3d-legend-discrete-swatch" style="background:' + col + ';"></span>' +
-          '<span class="latent3d-legend-discrete-label">' + label + "</span>" +
-          "</div>"
-        );
-      }).join("");
-      colorLegend.innerHTML =
-        '<p class="latent3d-legend-title">' + title + "</p>" +
-        '<div class="latent3d-legend-discrete-v">' + itemsHtml + "</div>";
-      return;
-    }
-    if (legend.type === "continuous") {
-      var vmin = fmtLegendNumber(Number(legend.min));
-      var vmax = fmtLegendNumber(Number(legend.max));
-      colorLegend.innerHTML =
-        '<div class="latent3d-legend-continuous-v">' +
-        '<p class="latent3d-legend-title">' + title + "</p>" +
-        '<div class="latent3d-legend-continuous-v-inner">' +
-        '<span class="latent3d-legend-vlab latent3d-legend-vlab--max">' + vmax + "</span>" +
-        '<div class="latent3d-legend-continuous-bar-v"></div>' +
-        '<span class="latent3d-legend-vlab latent3d-legend-vlab--min">' + vmin + "</span>" +
-        "</div></div>";
-      var bar = colorLegend.querySelector(".latent3d-legend-continuous-bar-v");
-      if (bar) {
-        bar.style.background = latent3dContinuousBarBackgroundVertical(selectedLatentPalette());
-      }
-      return;
-    }
-    colorLegend.innerHTML = "";
-    colorLegend.classList.add("latent3d-legend-items--inactive");
-  }
+  });
 
   function loadPlot() {
     var x = sx.value;
@@ -418,14 +725,22 @@
     }
     if (st) st.textContent = "";
     setRendering(true);
-    var q = "x=" + encodeURIComponent(x)
-      + "&y=" + encodeURIComponent(y)
-      + "&z=" + encodeURIComponent(z)
-      + "&color=" + encodeURIComponent(c)
-      + "&palette=" + encodeURIComponent(selectedLatentPalette());
+    var cf = c !== "none" ? latent3dColorLegend.getFilterForApi() : null;
+    var payload = {
+      x: x,
+      y: y,
+      z: z,
+      color: c,
+      palette: selectedLatentPalette(),
+      color_filter: cf || null
+    };
     requestAnimationFrame(function() {
       requestAnimationFrame(function() {
-        fetch("{{ url_for('api_scatter3d_z') }}?" + q)
+        fetch(scatter3dUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        })
           .then(function(r) {
             return r.text().then(function(text) {
               var j;
@@ -436,7 +751,6 @@
             });
           })
           .then(function(fig) {
-            renderColorLegend(fig, c);
             return Plotly.react(gd, fig.data, fig.layout, {responsive: true});
           })
           .then(function() {
@@ -446,6 +760,7 @@
               try {
                 Plotly.Plots.resize(gd);
               } catch (e) {}
+              syncLatent3dAsideLayout();
             });
           })
           .catch(function(e) {
@@ -458,25 +773,45 @@
     });
   }
 
-  [sx, sy, sz, sc].forEach(function(s) {
+  [sx, sy, sz].forEach(function(s) {
     s.addEventListener("change", loadPlot);
   });
+  sc.addEventListener("change", function() {
+    latent3dColorLegend.refresh();
+  });
   document.querySelectorAll("input[name=\"latent3d_palette\"]").forEach(function(inp) {
-    inp.addEventListener("change", loadPlot);
+    inp.addEventListener("change", function() {
+      latent3dColorLegend.refreshHistogramColors();
+      loadPlot();
+    });
   });
   window.addEventListener("resize", function() {
     syncControlsAlignment();
+    syncLatent3dAsideLayout();
     try {
       Plotly.Plots.resize(gd);
     } catch (e) {}
   });
+  if (window.ResizeObserver) {
+    var panelEl = document.getElementById("latent3d-color-legend-panel");
+    if (panelEl) {
+      var latent3dLegendHeadingFitObserver = new ResizeObserver(function() {
+        scheduleLatent3dLegendHeadingTitleFit();
+      });
+      latent3dLegendHeadingFitObserver.observe(panelEl);
+    }
+  }
   if (window.ResizeObserver && plotStack) {
-    var latent3dPlotStackObserver = new ResizeObserver(syncControlsAlignment);
+    var latent3dPlotStackObserver = new ResizeObserver(function() {
+      syncControlsAlignment();
+      syncLatent3dAsideLayout();
+    });
     latent3dPlotStackObserver.observe(plotStack);
   }
   syncLatent3dPaletteFieldset();
   syncControlsAlignment();
-  loadPlot();
+  syncLatent3dAsideLayout();
+  latent3dColorLegend.refresh();
 })();
 </script>
 {% endblock %}

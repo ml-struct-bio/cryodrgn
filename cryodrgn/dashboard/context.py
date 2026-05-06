@@ -131,6 +131,7 @@ EXP_REQUIRED_ENDPOINTS = frozenset(
         "filter_page_redirect",
         "api_save_selection",
         "api_covariate_threshold_rows",
+        "api_covariate_legend_context",
         "explorer",
         "api_explorer_volume_media",
         "api_scatter",

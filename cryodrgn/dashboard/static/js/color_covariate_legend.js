@@ -1,7 +1,8 @@
 /**
  * Colour covariate histogram + discrete toggles (particle-explorer style) for
  * pair-grid and 3-D latent views. Optional `histPlotVertical`: covariate on y,
- * density on x (pair-plot aside). Panel `vertical` controls CSS layout class.
+ * density on x (pair-plot aside). Optional `onDiscreteLayout` / `onContinuousHistogramLayout`
+ * run after DOM / Plotly layout. Panel `vertical` controls CSS layout class.
  */
 (function (global) {
   "use strict";
@@ -289,6 +290,7 @@
     this.onFilterChange = opts.onFilterChange || function () {};
     this.onModeChange = opts.onModeChange || function () {};
     this.onContinuousHistogramLayout = opts.onContinuousHistogramLayout || null;
+    this.onDiscreteLayout = opts.onDiscreteLayout || null;
     this.vertical = opts.vertical !== false;
     this.histPlotVertical = opts.histPlotVertical === true;
     this._mode = null;
@@ -330,6 +332,7 @@
     if (this.panel) {
       this.panel.hidden = true;
       this.panel.setAttribute("aria-hidden", "true");
+      this.panel.classList.remove("cryo-cc-legend--heading-only");
     }
     this._mode = null;
     this._allCatKeys = [];
@@ -338,10 +341,42 @@
     this._histValueRange = null;
   };
 
+  /** Panel visible with only the heading (no histogram / discrete UI). Used when no colour covariate is selected. */
+  CryoColorCovariateLegend.prototype.showHeadingOnly = function () {
+    this._mode = null;
+    this._allCatKeys = [];
+    this._thresholdLevel = null;
+    this._thresholdCol = null;
+    this._histValueRange = null;
+    this._continuousValues = [];
+    this.clearThreshold();
+    if (this.histDiv) {
+      try {
+        if (typeof Plotly !== "undefined" && Plotly && Plotly.purge) {
+          Plotly.purge(this.histDiv);
+        }
+      } catch (e0) { /* ignore */ }
+    }
+    if (this.continuousWrap) {
+      this.continuousWrap.hidden = true;
+    }
+    if (this.discreteWrap) {
+      this.discreteWrap.hidden = true;
+      this.discreteWrap.classList.remove("cryo-cc-discrete-wrap--show");
+    }
+    if (this.panel) {
+      this.panel.hidden = false;
+      this.panel.setAttribute("aria-hidden", "false");
+      this.panel.classList.add("cryo-cc-legend--heading-only");
+      this.panel.style.removeProperty("--pair-legend-middle-w");
+    }
+  };
+
   CryoColorCovariateLegend.prototype.show = function () {
     if (this.panel) {
       this.panel.hidden = false;
       this.panel.setAttribute("aria-hidden", "false");
+      this.panel.classList.remove("cryo-cc-legend--heading-only");
     }
   };
 
@@ -391,8 +426,7 @@
     var self = this;
     var col = this.getColorColumn();
     if (!col || col === "none") {
-      this.hide();
-      this.clearThreshold();
+      this.showHeadingOnly();
       this.onModeChange(null);
       this._notify();
       return;
@@ -739,6 +773,12 @@
       }(inp));
     }
     this._syncInvertBtn();
+    if (typeof this.onDiscreteLayout === "function") {
+      var dLay = this.onDiscreteLayout;
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () { dLay(); });
+      });
+    }
   };
 
   CryoColorCovariateLegend.prototype._syncInvertBtn = function () {

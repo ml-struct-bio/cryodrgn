@@ -2,7 +2,7 @@
 """Headless capture: particle explorer (lasso + image cache), 3D latent view, pair-plot covariates.
 
 Uses a **50 ms** frame interval by default (~20 fps) for a slower, easier-to-follow GIF. Everything is
-written to **one** output GIF (default ``dashboard_interactions_demo.gif``), capped at **30 s** wall
+written to **one** output GIF (default ``demo_animations/dashboard_interactions_demo.gif``), capped at **30 s** wall
 time. Pair-plot segments wait for the PNG grid to finish, then hold on the finished grid for the same
 duration as the preceding ``Rendering…`` clip (so the two read as equal-length halves of the update).
 
@@ -57,6 +57,8 @@ from pathlib import Path
 
 # Repo root: …/cryodrgn/dashboard/this_file.py → parents[2] == checkout containing ``cryodrgn/``.
 REPO_ROOT = Path(__file__).resolve().parents[2]
+# Default output directory for dashboard GIF recorders (``-o`` overrides per file).
+DEMO_ANIMATIONS_DIR = REPO_ROOT / "cryodrgn/dashboard/static/demo_animations"
 FRAME_MS_DEFAULT = 50
 MAX_GIF_WALL_MS = 30_000
 # Pair-plot: poll while overlay/skeleton is up, then block until PNG is ready.
@@ -1067,7 +1069,7 @@ def main() -> int:
         "-o",
         "--output",
         type=Path,
-        default=REPO_ROOT / "cryodrgn/dashboard/static/dashboard_interactions_demo.gif",
+        default=DEMO_ANIMATIONS_DIR / "dashboard_interactions_demo.gif",
     )
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--conda-env", type=str, default=None)

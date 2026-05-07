@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from cryodrgn.dashboard.record_dashboard_interactions_gif import (
+    DEMO_ANIMATIONS_DIR,
     PLOTLY_CDN_ROUTE_GLOB,
     REPO_ROOT,
     FrameBuffer,
@@ -826,7 +827,7 @@ def main() -> int:
         "-o",
         "--output",
         type=Path,
-        default=REPO_ROOT / "cryodrgn/dashboard/static/landscape_volpca_demo.gif",
+        default=DEMO_ANIMATIONS_DIR / "landscape_volpca_demo.gif",
     )
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--conda-env", type=str, default=None)

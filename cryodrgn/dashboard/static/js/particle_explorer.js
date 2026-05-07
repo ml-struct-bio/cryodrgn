@@ -14,6 +14,8 @@
   var explorerScatterCapFromEnv = b.explorerScatterCapFromEnv;
 
   var preloadRequestedCacheTarget = null;
+  /** Original selection-add count shown on the button until that preload finishes. */
+  var selectionCacheAdditionFreezeCount = null;
   var intFormatter = new Intl.NumberFormat("en-US", {maximumFractionDigits: 0});
 
   function fmtInt(value) {
@@ -244,8 +246,24 @@
 
   function syncCacheSelectionUncachedButton() {
     if (!btnCacheSelectionUncached) return;
+    if (selectionCacheAdditionFreezeCount != null && !montagePreloadOverlayIsShown()) {
+      selectionCacheAdditionFreezeCount = null;
+      btnCacheSelectionUncached.classList.remove("cryo-explorer-cache-selection-btn--busy");
+    }
     var busy = montagePreloadOverlayIsShown();
     var nUnc = countUncachedSelectionRows();
+    if (selectionCacheAdditionFreezeCount != null && busy) {
+      var nf = fmtInt(selectionCacheAdditionFreezeCount);
+      var addingText = "Adding " + nf + " selection images to the cache";
+      btnCacheSelectionUncached.disabled = true;
+      btnCacheSelectionUncached.textContent = addingText;
+      btnCacheSelectionUncached.setAttribute("aria-label", addingText);
+      btnCacheSelectionUncached.title = "Loading thumbnails for " + nf + " selected particle"
+        + (selectionCacheAdditionFreezeCount === 1 ? "" : "s") + "…";
+      btnCacheSelectionUncached.classList.add("cryo-explorer-cache-selection-btn--busy");
+      return;
+    }
+    btnCacheSelectionUncached.classList.remove("cryo-explorer-cache-selection-btn--busy");
     var can = !!(
       saveSelectionRows
       && saveSelectionRows.length
@@ -283,7 +301,9 @@
       enableImages: true,
       restrictToScatterPlot: true,
       selectedRows: uncached,
-      overlayLabel: overlayLabel
+      overlayLabel: overlayLabel,
+      selectionAdditionFreeze: true,
+      selectionAdditionFreezeCount: uncached.length
     }).catch(function(e) {
       console.error("cache selection failed", e);
     });
@@ -466,6 +486,7 @@
   var colorDiscreteActions = document.querySelector(".cryo-color-discrete-actions");
   var btnDiscreteInvertSelection = document.getElementById("btn-discrete-invert-selection");
   var btnCacheSelectionUncached = document.getElementById("btn-cache-selection-uncached");
+  var btnClearImageCache = document.getElementById("btn-clear-image-cache");
   var suppressDiscreteSwitchProgrammatic = false;
   var colorThresholdUseMax = document.getElementById("color-threshold-use-max");
   var colorThresholdStatus = document.getElementById("color-threshold-status");
@@ -521,6 +542,13 @@
 
   function equalizeMontageActionButtonWidths() {
     if (!montageActionsEl) return;
+    var loadTb = montageActionsEl.querySelectorAll(
+      ".cryo-explorer-load-images-toolbar .cryo-explorer-action-row__btn .btn"
+    );
+    for (var li = 0; li < loadTb.length; li++) {
+      loadTb[li].style.width = "";
+      loadTb[li].style.maxWidth = "";
+    }
     function runGroup(selector) {
       var btns = montageActionsEl.querySelectorAll(selector);
       if (!btns || !btns.length) return;
@@ -538,7 +566,6 @@
         btns[k].style.width = px;
       }
     }
-    runGroup(".cryo-explorer-load-images-toolbar .cryo-explorer-action-row__btn .btn");
     runGroup(".cryo-explorer-action-row .cryo-explorer-action-row__btn .btn");
   }
 
@@ -684,11 +711,11 @@
   function syncMontageCacheSizeLabelEl() {
     var sp = document.getElementById("montage-cache-size-label-text");
     var inp = document.getElementById("montage-cache-size-input");
-    if (sp) sp.textContent = preloaded ? "New cache size" : "Cache size";
+    if (sp) sp.textContent = "New cache\nsize";
     if (inp) {
       inp.title = preloaded
         ? "Total cached images to grow toward (must be greater than the current cache; capped at plotted points)"
-        : "Number of thumbnails to fetch when you click Build cache (capped at plotted scatter points)";
+        : "Number of thumbnails to fetch when you build new cache (capped at plotted scatter points)";
     }
   }
 
@@ -855,7 +882,7 @@
       return;
     }
     if (!preloaded) {
-      btnExpandCache.textContent = "Build cache";
+      btnExpandCache.textContent = "Build new\ncache";
       var capB = scatterSubsetRowCount();
       var canBuild = !!(totalParticles && plotHasScatterData() && capB > 0);
       btnExpandCache.disabled = !canBuild;
@@ -867,7 +894,9 @@
             + " thumbnails (see cache size).";
       return;
     }
-    btnExpandCache.textContent = "Expand cache";
+    btnExpandCache.textContent = "Expand cache by\n" + fmtInt(Math.max(0,
+      readMontageCacheSizeInput() - cachedImageCount()
+    )) + " images";
     var have = cachedImageCount();
     var want = readMontageCacheSizeInput();
     var cap = scatterSubsetRowCount();
@@ -883,16 +912,86 @@
     }
   }
 
+  function remainingScatterImagesToLoad() {
+    var cap = scatterSubsetRowCount();
+    var have = cachedImageCount();
+    return Math.max(0, cap - have);
+  }
+
+  function syncClearCacheButton(loading) {
+    if (!btnClearImageCache) return;
+    var cacheReadyToClear = !!(preloaded && !montagePreloadOverlayIsShown());
+    btnClearImageCache.disabled = !!(loading || !cacheReadyToClear);
+    btnClearImageCache.title = !preloaded
+      ? "Build new cache before you can clear one."
+      : montagePreloadOverlayIsShown()
+        ? "Wait until loading finishes."
+        : "Discard all downloaded thumbnails from this explorer session.";
+  }
+
+  function clearExplorerImageCache() {
+    if (!preloaded) return;
+    selectionCacheAdditionFreezeCount = null;
+    if (btnCacheSelectionUncached) {
+      btnCacheSelectionUncached.classList.remove("cryo-explorer-cache-selection-btn--busy");
+    }
+    preloaded = null;
+    imagesViewEnabled = false;
+    montageInner.classList.add("cryo-dash-montage-inner--disabled");
+    gridSizeSelect.disabled = true;
+    setImageGridMenuOpen(false);
+    lastMontageRows = [];
+    activePool = null;
+    preloadRequestedCacheTarget = null;
+    setMontagePreloadOverlay(false);
+    setImageCacheProgress(false);
+    if (preloadStatus) preloadStatus.textContent = "";
+    montageDisplayMode = "images";
+    invalidateVolumeArtifacts();
+    updateMontage([]);
+    syncMontageNewCacheSizeField();
+    syncImageCacheButton(false);
+    syncHighlightTraceAnnotations();
+    syncVolumeExploreButtons();
+  }
+
   function syncImageCacheButton(loading) {
-    btnViewImages.textContent = "Load all images";
+    if (!btnViewImages) return;
+    if (!preloaded) {
+      btnViewImages.textContent = "Load all\n" + fmtInt(scatterSubsetRowCount()) + " images";
+    } else if (allImagesCached()) {
+      btnViewImages.textContent = "Load remaining\n" + fmtInt(0) + " images";
+    } else {
+      var rem = remainingScatterImagesToLoad();
+      btnViewImages.textContent = "Load remaining\n" + fmtInt(rem) + " images";
+    }
     btnViewImages.disabled = !!loading || !preloaded || allImagesCached();
-    btnViewImages.title = allImagesCached()
-      ? "All particle images on the current scatter are loaded."
-      : (btnViewImages.disabled ? "Build the image cache first." : "");
+    btnViewImages.setAttribute("aria-label", btnViewImages.textContent);
+    btnViewImages.title = !preloaded
+      ? "Build new cache first."
+      : allImagesCached()
+        ? "All particle images on the current scatter are loaded."
+        : (btnViewImages.disabled ? "Finish loading cache first." : "");
     syncMontageNewCacheSizeField();
     syncExpandCacheButton(loading);
+    syncClearCacheButton(loading);
     syncCacheSelectionUncachedButton();
     syncImageGridInactiveNote();
+  }
+
+  function syncImageCacheLoadPanelVsProgress() {
+    if (!imageCacheProgressEl) return;
+    var fs = document.getElementById("cryo-explorer-image-cache-fieldset");
+    var body = document.getElementById("cryo-explorer-cache-load-body");
+    var wrap = document.getElementById("cryo-explorer-cache-load-progress-wrap");
+    var show = !imageCacheProgressEl.hidden;
+    if (fs) fs.classList.toggle("cryo-explorer-montage-group--image-cache-loading", show);
+    if (body) body.setAttribute("aria-hidden", show ? "true" : "false");
+    if (wrap) {
+      wrap.hidden = !show;
+      wrap.setAttribute("aria-hidden", show ? "false" : "true");
+    }
+    imageCacheProgressEl.setAttribute("aria-hidden", show ? "false" : "true");
   }
 
   function setImageCacheProgress(on, current, total) {
@@ -902,6 +1001,7 @@
       imageCacheProgressEl.setAttribute("aria-valuenow", "0");
       if (imageCacheProgressBarEl) imageCacheProgressBarEl.style.width = "0%";
       if (imageCacheProgressLabelEl) imageCacheProgressLabelEl.textContent = "0%";
+      syncImageCacheLoadPanelVsProgress();
       return;
     }
     total = Math.max(1, Number(total) || 1);
@@ -915,6 +1015,7 @@
         + fmtInt(current) + " / "
         + fmtInt(total) + ")";
     }
+    syncImageCacheLoadPanelVsProgress();
   }
 
   function imageCacheChunkSize(total) {
@@ -929,6 +1030,10 @@
 
   function fetchPreload(xcol, ycol, onDone, opts) {
     opts = opts || {};
+    if (opts.selectionAdditionFreeze) {
+      var fc = Math.round(Number(opts.selectionAdditionFreezeCount)) || 0;
+      selectionCacheAdditionFreezeCount = fc > 0 ? fc : null;
+    }
     var cacheSize = opts.cacheSize || scatterSubsetRowCount();
     preloadRequestedCacheTarget = cacheSize;
     var plottedCap = scatterSubsetRowCount();
@@ -970,6 +1075,7 @@
           var msg = (res.j && res.j.error) ? res.j.error : "Image cache request failed.";
           if (preloadStatus) preloadStatus.textContent = msg;
           setMontagePreloadOverlay(false);
+          if (opts.selectionAdditionFreeze) selectionCacheAdditionFreezeCount = null;
           if (onDone) onDone(new Error(msg));
           throw new Error(msg);
         }
@@ -977,6 +1083,7 @@
         if (!data.rows || !data.images || (!data.rows.length && !opts.delta)) {
           if (preloadStatus) preloadStatus.textContent = "No images available.";
           setMontagePreloadOverlay(false);
+          if (opts.selectionAdditionFreeze) selectionCacheAdditionFreezeCount = null;
           if (onDone) onDone(new Error("no images"));
           throw new Error("no images");
         }
@@ -1034,6 +1141,7 @@
         }
         if (!opts.keepOverlayAfterSuccess) {
           setMontagePreloadOverlay(false);
+          if (opts.selectionAdditionFreeze) selectionCacheAdditionFreezeCount = null;
         }
         if (!opts.suppressMontageUpdate) {
           showRandomPreloaded();
@@ -1046,6 +1154,7 @@
         console.error("preload failed", e);
         if (preloadStatus) preloadStatus.textContent = "Image cache failed.";
         setMontagePreloadOverlay(false);
+        if (opts.selectionAdditionFreeze) selectionCacheAdditionFreezeCount = null;
         syncImageCacheButton(false);
         if (onDone) onDone(e);
         if (onDone) return null;
@@ -1102,7 +1211,7 @@
       var before = cachedImageCount();
       if (before >= total) {
         setMontagePreloadOverlay(false);
-        setImageCacheProgress(true, total, total);
+        setImageCacheProgress(false);
         suppressPlotGridHighlights = false;
         syncHighlightTraceAnnotations();
         syncImageCacheButton(false);
@@ -1130,7 +1239,7 @@
       }).then(function() {
         if (cachedImageCount() <= before) {
           setMontagePreloadOverlay(false);
-          setImageCacheProgress(true, cachedImageCount(), total);
+          setImageCacheProgress(false);
           suppressPlotGridHighlights = false;
           syncHighlightTraceAnnotations();
           if (preloadStatus && cachedImageCount() < total) {
@@ -1168,6 +1277,11 @@
       } else {
         expandImageCacheToTarget();
       }
+    });
+  }
+  if (btnClearImageCache) {
+    btnClearImageCache.addEventListener("click", function() {
+      clearExplorerImageCache();
     });
   }
   if (btnCacheSelectionUncached) {

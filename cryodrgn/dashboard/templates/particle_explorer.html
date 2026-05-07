@@ -259,32 +259,43 @@
   .cryo-explorer-load-images-toolbar {
     display: flex;
     flex-wrap: nowrap;
-    align-items: center;
-    gap: 0.3rem 0.4rem;
+    align-items: stretch;
+    gap: 0.35rem 0.45rem;
     min-width: 0;
+    width: 100%;
+    min-height: 2.95rem;
+    padding: 0.15rem 0;
+    box-sizing: border-box;
   }
   .cryo-explorer-load-images-toolbar .cryo-explorer-cache-size-label {
     flex: 0 1 auto;
     min-width: 0;
-    align-self: center;
+    align-self: stretch;
     display: inline-flex;
     align-items: center;
   }
   .cryo-explorer-load-images-toolbar .cryo-explorer-action-row__btn {
-    flex: 0 1 auto;
+    flex: 1 1 0;
     min-width: 0;
     display: flex;
-    align-items: center;
-    align-self: center;
+    align-items: stretch;
+    align-self: stretch;
   }
   .cryo-explorer-load-images-toolbar .cryo-explorer-action-row__btn .btn {
-    padding: 0.26rem 0.4rem;
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    padding: 0.48rem 0.42rem;
     font-size: 0.72rem;
-    line-height: 1.15;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 100%;
+    line-height: 1.2;
+    white-space: pre-line;
+    text-align: center;
+    min-height: 2.65rem;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
   .cryo-explorer-cache-size-label {
     display: inline-flex;
@@ -294,11 +305,15 @@
     font-size: 0.78rem;
     font-weight: 600;
     color: var(--nav-bg, #243b53);
-    white-space: nowrap;
+    white-space: normal;
+    min-height: 2.65rem;
   }
   .cryo-explorer-cache-size-label__text {
     color: var(--muted, #5c6b7a);
     font-weight: 500;
+    white-space: pre-line;
+    line-height: 1.2;
+    max-width: 5rem;
   }
   .cryo-explorer-cache-size-label input[type="number"] {
     width: 4.25rem;
@@ -352,9 +367,53 @@
   }
   .cryo-image-cache-progress {
     display: grid;
-    gap: 0.2rem;
+    gap: 0.35rem;
     width: min(100%, 18rem);
     margin-top: 0.35rem;
+  }
+  /* While cache batches load: replace full "Load particle images…" fieldset body with progress */
+  .cryo-explorer-cache-load-body {
+    margin: 0;
+    padding: 0;
+    border: none;
+    min-width: 0;
+  }
+  .cryo-explorer-cache-load-progress-wrap {
+    margin: 0;
+    padding: 0;
+    min-width: 0;
+  }
+  .cryo-explorer-cache-load-progress-wrap[hidden] {
+    display: none !important;
+  }
+  .cryo-explorer-montage-group--image-cache-loading > legend {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  .cryo-explorer-montage-group.cryo-explorer-montage-group--image-cache-loading {
+    position: relative;
+  }
+  .cryo-explorer-montage-group--image-cache-loading .cryo-explorer-cache-load-body {
+    display: none;
+  }
+  .cryo-explorer-cache-load-progress-heading {
+    margin: 0 0 0.25rem;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--nav-bg, #243b53);
+    line-height: 1.3;
+  }
+  .cryo-explorer-cache-load-progress-wrap .cryo-image-cache-progress {
+    width: 100%;
+    max-width: none;
+    margin-top: 0;
   }
   .cryo-image-cache-progress[hidden] {
     display: none;
@@ -813,12 +872,21 @@
     font-size: 0.75rem;
     line-height: 1.2;
   }
-  .cryo-explorer-cache-selection-btn-wrap {
-    margin-top: 0.45rem;
+  /* Selection row: Add left, Clear right; Add 10% wider & Clear 20% narrower vs old 6:3;
+     gap = (2/3)×Clear ⇒ 6.6fr | 1.6fr | 2.4fr. */
+  .cryo-explorer-cache-selection-row {
+    display: grid;
+    grid-template-columns: minmax(0, 6.6fr) minmax(0, 1.6fr) minmax(0, 2.4fr);
+    align-items: stretch;
     width: 100%;
     box-sizing: border-box;
+    min-width: 0;
+    margin-top: 0.45rem;
   }
-  .cryo-explorer-cache-selection-btn-wrap .btn {
+  .cryo-explorer-cache-selection-row__gap {
+    min-width: 0;
+  }
+  .cryo-explorer-cache-selection-row .btn {
     width: 100%;
     box-sizing: border-box;
     margin: 0;
@@ -826,11 +894,40 @@
     padding: 0.4rem 0.55rem;
     font-size: 0.72rem;
   }
-  .cryo-explorer-cache-selection-btn-wrap .btn:disabled {
+  /* Add = accent `.btn`; Clear = softer outline vs navy secondary used elsewhere */
+  .cryo-explorer-cache-selection-row .cryo-explorer-cache-clear-btn:not(:disabled) {
+    background: rgba(248, 250, 252, 0.95);
+    color: var(--nav-bg, #243b53) !important;
+    border: 1px solid rgba(36, 59, 83, 0.28);
+  }
+  .cryo-explorer-cache-selection-row .cryo-explorer-cache-clear-btn:not(:disabled):hover {
+    background: rgba(232, 236, 241, 0.98);
+    border-color: rgba(36, 59, 83, 0.38);
+  }
+  .cryo-explorer-cache-selection-row .btn:disabled {
     opacity: 0.48;
     filter: grayscale(0.85);
     cursor: not-allowed;
     box-shadow: none;
+  }
+  /* While selection images are fetching, read like a disabled text field rather than an action chip. */
+  .cryo-explorer-cache-selection-row #btn-cache-selection-uncached.cryo-explorer-cache-selection-btn--busy:disabled {
+    display: inline-flex;
+    align-items: center;
+    width: 100%;
+    opacity: 1;
+    filter: none;
+    cursor: progress;
+    text-align: left;
+    justify-content: flex-start;
+    font-weight: 500;
+    color: var(--muted, #5c6b7a);
+    background: #fff;
+    border: 1px solid rgba(36, 59, 83, 0.22);
+    border-radius: 3px;
+    box-shadow: none;
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
   }
   .cryo-explorer-lead-list {
     margin: 0.08rem 0 0.12rem 1.05rem;
@@ -1056,11 +1153,12 @@
 
   <aside class="cryo-dash-montage" aria-label="Particle preview">
     <div id="montage-actions" class="cryo-explorer-montage-actions">
-      <fieldset class="cryo-explorer-montage-group">
-        <legend>Load particle images</legend>
+      <fieldset id="cryo-explorer-image-cache-fieldset" class="cryo-explorer-montage-group">
+        <legend>Load particle images into cache to display in grid</legend>
+        <div id="cryo-explorer-cache-load-body" class="cryo-explorer-cache-load-body">
         <div class="cryo-explorer-load-images-toolbar">
           <label class="cryo-explorer-cache-size-label" for="montage-cache-size-input">
-            <span class="cryo-explorer-cache-size-label__text" id="montage-cache-size-label-text">Cache size</span>
+            <span class="cryo-explorer-cache-size-label__text" id="montage-cache-size-label-text">New cache&#10;size</span>
             <input
               type="number"
               id="montage-cache-size-input"
@@ -1070,37 +1168,47 @@
               inputmode="numeric"
               value="{{ preload_image_limit }}"
               max="{{ scatter_plotted_n }}"
-              title="Thumbnails to fetch on Build cache, or target size when expanding (capped at plotted points)"
+              title="Thumbnails to fetch when you build new cache, or expansion target size (capped at plotted points)"
             />
           </label>
           <div class="cryo-explorer-action-row__btn">
-            <button type="button" class="btn btn-secondary" id="btn-expand-cache" disabled>Build cache</button>
+            <button type="button" class="btn btn-secondary" id="btn-expand-cache" disabled>Build new&#10;cache</button>
           </div>
           <div class="cryo-explorer-action-row__btn">
-            <button type="button" class="btn" id="btn-view-images" disabled>Load all images</button>
+            <button type="button" class="btn" id="btn-view-images" disabled>Load all&#10;{{ scatter_plotted_n }} images</button>
           </div>
         </div>
-        <div class="cryo-explorer-cache-selection-btn-wrap">
-          <button type="button" class="btn btn-secondary" id="btn-cache-selection-uncached" disabled
+        <div class="cryo-explorer-cache-selection-row" aria-label="Selection cache actions">
+          <button type="button" class="btn" id="btn-cache-selection-uncached" disabled
             title="Select particles first.">
             Add 0 selection images to cache
           </button>
-        </div>
-        <div
-          id="image-cache-progress"
-          class="cryo-image-cache-progress"
-          role="progressbar"
-          aria-valuemin="0"
-          aria-valuemax="100"
-          aria-valuenow="0"
-          hidden
-        >
-          <div class="cryo-image-cache-progress__track">
-            <div id="image-cache-progress-bar" class="cryo-image-cache-progress__bar"></div>
-          </div>
-          <span id="image-cache-progress-label" class="cryo-image-cache-progress__label">0%</span>
+          <span class="cryo-explorer-cache-selection-row__gap" aria-hidden="true"></span>
+          <button type="button" class="btn btn-secondary cryo-explorer-cache-clear-btn" id="btn-clear-image-cache" disabled
+            title="Build new cache before you can clear one.">
+            Clear cache
+          </button>
         </div>
         <p id="preload-status" class="cryo-explorer-preload-status cryo-dash-legend-note"></p>
+        </div>
+        <div id="cryo-explorer-cache-load-progress-wrap" class="cryo-explorer-cache-load-progress-wrap" hidden aria-hidden="true">
+          <p class="cryo-explorer-cache-load-progress-heading">Loading particle images into cache…</p>
+          <div
+            id="image-cache-progress"
+            class="cryo-image-cache-progress"
+            role="progressbar"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="0"
+            aria-hidden="true"
+            hidden
+          >
+            <div class="cryo-image-cache-progress__track">
+              <div id="image-cache-progress-bar" class="cryo-image-cache-progress__bar"></div>
+            </div>
+            <span id="image-cache-progress-label" class="cryo-image-cache-progress__label">0%</span>
+          </div>
+        </div>
       </fieldset>
       {% if show_volume_explorer %}
       <fieldset class="cryo-explorer-montage-group">
@@ -1197,6 +1305,8 @@
   var explorerScatterCapFromEnv = {{ explorer_scatter_cap_from_env | tojson }};
   /** While montage preload overlay is up: show this requested ``cache_size`` in the number field. */
   var preloadRequestedCacheTarget = null;
+  /** Original selection-add count; frozen label on the button until that preload finishes. */
+  var selectionCacheAdditionFreezeCount = null;
   var intFormatter = new Intl.NumberFormat("en-US", {maximumFractionDigits: 0});
 
   function fmtInt(value) {
@@ -1427,8 +1537,24 @@
 
   function syncCacheSelectionUncachedButton() {
     if (!btnCacheSelectionUncached) return;
+    if (selectionCacheAdditionFreezeCount != null && !montagePreloadOverlayIsShown()) {
+      selectionCacheAdditionFreezeCount = null;
+      btnCacheSelectionUncached.classList.remove("cryo-explorer-cache-selection-btn--busy");
+    }
     var busy = montagePreloadOverlayIsShown();
     var nUnc = countUncachedSelectionRows();
+    if (selectionCacheAdditionFreezeCount != null && busy) {
+      var nf = fmtInt(selectionCacheAdditionFreezeCount);
+      var addingText = "Adding " + nf + " selection images to the cache";
+      btnCacheSelectionUncached.disabled = true;
+      btnCacheSelectionUncached.textContent = addingText;
+      btnCacheSelectionUncached.setAttribute("aria-label", addingText);
+      btnCacheSelectionUncached.title = "Loading thumbnails for " + nf + " selected particle"
+        + (selectionCacheAdditionFreezeCount === 1 ? "" : "s") + "…";
+      btnCacheSelectionUncached.classList.add("cryo-explorer-cache-selection-btn--busy");
+      return;
+    }
+    btnCacheSelectionUncached.classList.remove("cryo-explorer-cache-selection-btn--busy");
     var can = !!(
       saveSelectionRows
       && saveSelectionRows.length
@@ -1465,7 +1591,8 @@
       overlayLabel: overlayLabel,
       enableImages: true,
       restrictToScatterPlot: true,
-      selectedRows: uncached
+      selectedRows: uncached,
+      selectionAdditionTotal: uncached.length
     }).catch(function(e) {
       console.error("cache selection failed", e);
     });
@@ -1648,6 +1775,7 @@
   var colorDiscreteActions = document.querySelector(".cryo-color-discrete-actions");
   var btnDiscreteInvertSelection = document.getElementById("btn-discrete-invert-selection");
   var btnCacheSelectionUncached = document.getElementById("btn-cache-selection-uncached");
+  var btnClearImageCache = document.getElementById("btn-clear-image-cache");
   var suppressDiscreteSwitchProgrammatic = false;
   var colorThresholdUseMax = document.getElementById("color-threshold-use-max");
   var colorThresholdStatus = document.getElementById("color-threshold-status");
@@ -1703,6 +1831,14 @@
 
   function equalizeMontageActionButtonWidths() {
     if (!montageActionsEl) return;
+    /* Load-images toolbar: equal width via flex CSS; clear any stale inline widths. */
+    var loadTb = montageActionsEl.querySelectorAll(
+      ".cryo-explorer-load-images-toolbar .cryo-explorer-action-row__btn .btn"
+    );
+    for (var li = 0; li < loadTb.length; li++) {
+      loadTb[li].style.width = "";
+      loadTb[li].style.maxWidth = "";
+    }
     function runGroup(selector) {
       var btns = montageActionsEl.querySelectorAll(selector);
       if (!btns || !btns.length) return;
@@ -1720,7 +1856,6 @@
         btns[k].style.width = px;
       }
     }
-    runGroup(".cryo-explorer-load-images-toolbar .cryo-explorer-action-row__btn .btn");
     runGroup(".cryo-explorer-action-row .cryo-explorer-action-row__btn .btn");
   }
 
@@ -1866,11 +2001,11 @@
   function syncMontageCacheSizeLabelEl() {
     var sp = document.getElementById("montage-cache-size-label-text");
     var inp = document.getElementById("montage-cache-size-input");
-    if (sp) sp.textContent = preloaded ? "New cache size" : "Cache size";
+    if (sp) sp.textContent = "New cache\nsize";
     if (inp) {
       inp.title = preloaded
         ? "Total cached images to grow toward (must be greater than the current cache; capped at plotted points)"
-        : "Number of thumbnails to fetch when you click Build cache (capped at plotted scatter points)";
+        : "Number of thumbnails to fetch when you build new cache (capped at plotted scatter points)";
     }
   }
 
@@ -2037,7 +2172,7 @@
       return;
     }
     if (!preloaded) {
-      btnExpandCache.textContent = "Build cache";
+      btnExpandCache.textContent = "Build new\ncache";
       var capB = scatterSubsetRowCount();
       var canBuild = !!(totalParticles && plotHasScatterData() && capB > 0);
       btnExpandCache.disabled = !canBuild;
@@ -2049,7 +2184,9 @@
             + " thumbnails (see cache size).";
       return;
     }
-    btnExpandCache.textContent = "Expand cache";
+    btnExpandCache.textContent = "Expand cache by\n" + fmtInt(Math.max(0,
+      readMontageCacheSizeInput() - cachedImageCount()
+    )) + " images";
     var have = cachedImageCount();
     var want = readMontageCacheSizeInput();
     var cap = scatterSubsetRowCount();
@@ -2065,16 +2202,86 @@
     }
   }
 
+  function remainingScatterImagesToLoad() {
+    var cap = scatterSubsetRowCount();
+    var have = cachedImageCount();
+    return Math.max(0, cap - have);
+  }
+
+  function syncClearCacheButton(loading) {
+    if (!btnClearImageCache) return;
+    var cacheReadyToClear = !!(preloaded && !montagePreloadOverlayIsShown());
+    btnClearImageCache.disabled = !!(loading || !cacheReadyToClear);
+    btnClearImageCache.title = !preloaded
+      ? "Build new cache before you can clear one."
+      : montagePreloadOverlayIsShown()
+        ? "Wait until loading finishes."
+        : "Discard all downloaded thumbnails from this explorer session.";
+  }
+
+  function clearExplorerImageCache() {
+    if (!preloaded) return;
+    selectionCacheAdditionFreezeCount = null;
+    if (btnCacheSelectionUncached) {
+      btnCacheSelectionUncached.classList.remove("cryo-explorer-cache-selection-btn--busy");
+    }
+    preloaded = null;
+    imagesViewEnabled = false;
+    montageInner.classList.add("cryo-dash-montage-inner--disabled");
+    gridSizeSelect.disabled = true;
+    setImageGridMenuOpen(false);
+    lastMontageRows = [];
+    activePool = null;
+    preloadRequestedCacheTarget = null;
+    setMontagePreloadOverlay(false);
+    setImageCacheProgress(false);
+    if (preloadStatus) preloadStatus.textContent = "";
+    montageDisplayMode = "images";
+    invalidateVolumeArtifacts();
+    updateMontage([]);
+    syncMontageNewCacheSizeField();
+    syncImageCacheButton(false);
+    syncHighlightTraceAnnotations();
+    syncVolumeExploreButtons();
+  }
+
   function syncImageCacheButton(loading) {
-    btnViewImages.textContent = "Load all images";
+    if (!btnViewImages) return;
+    if (!preloaded) {
+      btnViewImages.textContent = "Load all\n" + fmtInt(scatterSubsetRowCount()) + " images";
+    } else if (allImagesCached()) {
+      btnViewImages.textContent = "Load remaining\n" + fmtInt(0) + " images";
+    } else {
+      var rem = remainingScatterImagesToLoad();
+      btnViewImages.textContent = "Load remaining\n" + fmtInt(rem) + " images";
+    }
     btnViewImages.disabled = !!loading || !preloaded || allImagesCached();
-    btnViewImages.title = allImagesCached()
-      ? "All particle images on the current scatter are loaded."
-      : (btnViewImages.disabled ? "Build the image cache first." : "");
+    btnViewImages.setAttribute("aria-label", btnViewImages.textContent);
+    btnViewImages.title = !preloaded
+      ? "Build new cache first."
+      : allImagesCached()
+        ? "All particle images on the current scatter are loaded."
+        : (btnViewImages.disabled ? "Finish loading cache first." : "");
     syncMontageNewCacheSizeField();
     syncExpandCacheButton(loading);
+    syncClearCacheButton(loading);
     syncCacheSelectionUncachedButton();
     syncImageGridInactiveNote();
+  }
+
+  function syncImageCacheLoadPanelVsProgress() {
+    if (!imageCacheProgressEl) return;
+    var fs = document.getElementById("cryo-explorer-image-cache-fieldset");
+    var body = document.getElementById("cryo-explorer-cache-load-body");
+    var wrap = document.getElementById("cryo-explorer-cache-load-progress-wrap");
+    var show = !imageCacheProgressEl.hidden;
+    if (fs) fs.classList.toggle("cryo-explorer-montage-group--image-cache-loading", show);
+    if (body) body.setAttribute("aria-hidden", show ? "true" : "false");
+    if (wrap) {
+      wrap.hidden = !show;
+      wrap.setAttribute("aria-hidden", show ? "false" : "true");
+    }
+    imageCacheProgressEl.setAttribute("aria-hidden", show ? "false" : "true");
   }
 
   function setImageCacheProgress(on, current, total) {
@@ -2084,6 +2291,7 @@
       imageCacheProgressEl.setAttribute("aria-valuenow", "0");
       if (imageCacheProgressBarEl) imageCacheProgressBarEl.style.width = "0%";
       if (imageCacheProgressLabelEl) imageCacheProgressLabelEl.textContent = "0%";
+      syncImageCacheLoadPanelVsProgress();
       return;
     }
     total = Math.max(1, Number(total) || 1);
@@ -2097,6 +2305,7 @@
         + fmtInt(current) + " / "
         + fmtInt(total) + ")";
     }
+    syncImageCacheLoadPanelVsProgress();
   }
 
   function imageCacheChunkSize(total) {
@@ -2157,9 +2366,15 @@
     var selectedRows = opts.selectedRows || null;
     var suppressHighlightsDuring = !!opts.suppressHighlightsDuring;
     var fullLoad = !!opts.fullLoad;
+    var selAddN = opts.selectionAdditionTotal != null ? Math.round(Number(opts.selectionAdditionTotal)) : 0;
+    var trackSelectionAdditionFreeze = selAddN > 0;
 
     if (finalTarget < 1) {
       return Promise.resolve(null);
+    }
+
+    if (trackSelectionAdditionFreeze) {
+      selectionCacheAdditionFreezeCount = selAddN;
     }
 
     setMontagePreloadOverlay(true, overlayLabel);
@@ -2171,9 +2386,16 @@
     }
     syncImageCacheButton(true);
 
+    function doneWithSelectionAdditionFreeze() {
+      if (trackSelectionAdditionFreeze) {
+        selectionCacheAdditionFreezeCount = null;
+      }
+    }
+
     function finishSuccess() {
+      doneWithSelectionAdditionFreeze();
       setMontagePreloadOverlay(false);
-      setImageCacheProgress(true, finalTarget, finalTarget);
+      setImageCacheProgress(false);
       if (suppressHighlightsDuring) {
         suppressPlotGridHighlights = false;
         syncHighlightTraceAnnotations();
@@ -2186,9 +2408,10 @@
 
     /** Server returned OK but added no new thumbnails (common for selection vs scatter subsample). */
     function finishPlateauNoNewImages() {
+      doneWithSelectionAdditionFreeze();
       setMontagePreloadOverlay(false);
       var n = cachedImageCount();
-      setImageCacheProgress(true, n, finalTarget);
+      setImageCacheProgress(false);
       if (suppressHighlightsDuring) {
         suppressPlotGridHighlights = false;
         syncHighlightTraceAnnotations();
@@ -2243,6 +2466,7 @@
     return nextChunk()
       .catch(function(e) {
         console.error("chunked preload failed", e);
+        doneWithSelectionAdditionFreeze();
         setImageCacheProgress(false);
         if (suppressHighlightsDuring) {
           suppressPlotGridHighlights = false;
@@ -2440,6 +2664,11 @@
       } else {
         expandImageCacheToTarget();
       }
+    });
+  }
+  if (btnClearImageCache) {
+    btnClearImageCache.addEventListener("click", function() {
+      clearExplorerImageCache();
     });
   }
   if (btnCacheSelectionUncached) {

@@ -679,8 +679,17 @@ class TestParticleExplorerTemplateRegressions:
         assert 'role="progressbar"' in body
         assert 'id="image-grid-menu-toggle"' in body
         assert "Image grid" in body
-        assert re.search(r"Build\s+image\s+cache\s+to\s+populate\s+grid", body)
-        assert "Build cache" in body
+        assert re.search(
+            r"Load\s+particle\s+images\s+into\s+cache\s+to\s+display\s+in\s+grid",
+            body,
+        )
+        assert 'id="cryo-explorer-image-cache-fieldset"' in body
+        assert 'id="cryo-explorer-cache-load-body"' in body
+        assert 'id="cryo-explorer-cache-load-progress-wrap"' in body
+        assert "Loading particle images into cache" in body
+        assert 'id="btn-expand-cache"' in body
+        assert "Build new" in body
+        assert 'id="btn-clear-image-cache"' in body
         assert 'id="montage-cache-size-label-text"' in body
         assert 'id="btn-cache-selection-uncached"' in body
         assert "Add 0 selection images to cache" in body

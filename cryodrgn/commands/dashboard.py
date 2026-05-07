@@ -126,6 +126,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     view = parser.add_mutually_exclusive_group()
     view.add_argument(
         "--particle-selection",
+        "--particle",
         "--filter",
         "--image-viewer",
         action="store_true",

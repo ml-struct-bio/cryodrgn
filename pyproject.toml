@@ -71,7 +71,11 @@ include-package-data = true
 zip-safe = false
 
 [tool.setuptools.package-data]
-"cryodrgn.dashboard" = ["templates/*.html", "static/*"]
+"cryodrgn.dashboard" = [
+    "templates/*.html",
+    "static/*",
+    "static/demo_animations/*",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]

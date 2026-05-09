@@ -455,6 +455,47 @@ class TestApiCovariateThresholdRows:
         )
         assert r.status_code == 400
 
+    def test_range_selects_inside_interval(self, flask_client) -> None:
+        r = flask_client.post(
+            "/api/covariate_threshold_rows",
+            json={
+                "column": "UMAP1",
+                "range_min": -1e30,
+                "range_max": 1e30,
+                "invert_range": False,
+            },
+        )
+        assert r.status_code == 200
+        js = r.get_json()
+        assert js["n"] == len(js["rows"])
+        assert js["n"] == 100
+
+    def test_range_invert_outside_full_interval_is_empty(self, flask_client) -> None:
+        r = flask_client.post(
+            "/api/covariate_threshold_rows",
+            json={
+                "column": "UMAP1",
+                "range_min": -1e30,
+                "range_max": 1e30,
+                "invert_range": True,
+            },
+        )
+        assert r.status_code == 200
+        js = r.get_json()
+        assert js["n"] == 0
+
+    def test_range_invalid_bounds_rejected(self, flask_client) -> None:
+        r = flask_client.post(
+            "/api/covariate_threshold_rows",
+            json={
+                "column": "UMAP1",
+                "range_min": "x",
+                "range_max": 1.0,
+                "invert_range": False,
+            },
+        )
+        assert r.status_code == 400
+
 
 class TestApiExplorerVolumeMedia:
     def test_ineligible_returns_400(self, flask_client, monkeypatch) -> None:

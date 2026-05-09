@@ -786,6 +786,8 @@
   #color-hist {
     height: 5rem;
     width: 100%;
+    user-select: none;
+    cursor: crosshair;
   }
   .cryo-color-hist-controls {
     display: flex;
@@ -984,8 +986,8 @@
       Select particle subset using either:
       <ul class="cryo-explorer-lead-list">
         <li id="lead-mode-lasso">Lasso or box selection in the scatterplot</li>
-        <li id="lead-mode-threshold">Choosing threshold values in the color histogram when using a continuous color covariate like
-          <code>znorm</code></li>
+        <li id="lead-mode-threshold">Click the color histogram for a single threshold, or drag across it to select a value range,
+          when using a continuous color covariate like <code>znorm</code></li>
         <li id="lead-mode-discrete">Toggling value filters when using a discrete color covariate like k-means labels</li>
       </ul>
       <p>Load particle images and generate volumes with or without a selection using the interface on the right.</p>
@@ -1072,9 +1074,9 @@
       <div id="color-continuous-hist-wrap">
         <div id="color-hist"></div>
         <div class="cryo-color-hist-controls">
-          <label for="color-threshold-use-max">
-            <input type="checkbox" id="color-threshold-use-max"/>
-            Use as maximum (≤)
+          <label id="color-hist-mode-check-wrap" for="color-hist-mode-check">
+            <input type="checkbox" id="color-hist-mode-check"/>
+            <span id="color-hist-mode-check-caption">Use as maximum (≤)</span>
           </label>
           <span id="color-threshold-status" class="status"></span>
         </div>
@@ -1797,16 +1799,26 @@
   var btnCacheSelectionUncached = document.getElementById("btn-cache-selection-uncached");
   var btnClearImageCache = document.getElementById("btn-clear-image-cache");
   var suppressDiscreteSwitchProgrammatic = false;
-  var colorThresholdUseMax = document.getElementById("color-threshold-use-max");
+  var colorHistModeCheck = document.getElementById("color-hist-mode-check");
+  var colorHistModeCheckCaption = document.getElementById("color-hist-mode-check-caption");
+  var colorHistModeCheckWasRange = false;
   var colorThresholdStatus = document.getElementById("color-threshold-status");
   var scatterPaletteToggle = document.getElementById("scatter-palette-toggle");
   var scatterPaletteOptions = document.getElementById("scatter-palette-options");
   var colorHistEventsWired = false;
   var colorThresholdLevel = null;
+  var colorThresholdRange = null;
   var colorThresholdColorCol = null;
   var colorHistHoverLevel = null;
   var colorHistHoverRaf = null;
   var colorViolinBaseShapes = [];
+  var colorHistPointerDown = false;
+  var colorHistDragMoved = false;
+  var colorHistDragStartLevel = null;
+  var colorHistDragStartClientX = null;
+  var colorHistDragPreview = null;
+  var colorHistSuppressClick = false;
+  var COLOR_HIST_DRAG_MIN_PX = 5;
   var leadModeLassoEl = document.getElementById("lead-mode-lasso");
   var leadModeThresholdEl = document.getElementById("lead-mode-threshold");
   var leadModeDiscreteEl = document.getElementById("lead-mode-discrete");
@@ -2999,6 +3011,13 @@
     }
     colorHistHoverLevel = null;
     colorViolinBaseShapes = [];
+    colorHistPointerDown = false;
+    colorHistDragMoved = false;
+    colorHistDragStartLevel = null;
+    colorHistDragStartClientX = null;
+    colorHistDragPreview = null;
+    window.removeEventListener("mousemove", handleColorHistogramWindowMouseMove);
+    window.removeEventListener("mouseup", endColorHistogramDrag, true);
     if (colorThresholdStatus) colorThresholdStatus.textContent = "";
     if (colorContinuousWrap) colorContinuousWrap.hidden = false;
     if (colorDiscreteWrap) {
@@ -3125,8 +3144,10 @@
     }
     clearScatterGeometricSelection();
     colorThresholdLevel = null;
+    colorThresholdRange = null;
     colorThresholdColorCol = null;
     if (colorThresholdStatus) colorThresholdStatus.textContent = "";
+    syncColorHistModeCheckboxCaption();
     if (!keySet.size) {
       applyRowsSelection([], "Discrete");
       syncDiscreteInvertSelectionButton();
@@ -3278,35 +3299,40 @@
     syncParticleExplorerRowExpandForColorHist();
   }
 
-  function colorHistogramSelectionBandShape(xRangeOpt) {
-    if (colorThresholdLevel == null || colorThresholdColorCol !== sc.value) return null;
-    var rng = xRangeOpt;
-    if (!rng || rng.length < 2) {
-      if (colorHistDiv && colorHistDiv._fullLayout && colorHistDiv._fullLayout.xaxis) {
-        rng = colorHistDiv._fullLayout.xaxis.range;
-      }
+  function colorHistContinuousRangeModeActive() {
+    return colorThresholdRange != null && colorThresholdColorCol === sc.value;
+  }
+
+  function colorHistModeCheckOn() {
+    return !!(colorHistModeCheck && colorHistModeCheck.checked);
+  }
+
+  /** One shared checkbox: threshold mode → “use as maximum (≤)”; range mode → invert outside range. */
+  function syncColorHistModeCheckboxCaption() {
+    var rangeMode = colorHistContinuousRangeModeActive();
+    if (colorHistModeCheckCaption) {
+      colorHistModeCheckCaption.textContent = rangeMode
+        ? "Invert range selection"
+        : "Use as maximum (≤)";
     }
-    if (!rng || rng.length < 2) return null;
-    var xLo = Math.min(rng[0], rng[1]);
-    var xHi = Math.max(rng[0], rng[1]);
-    var t = colorThresholdLevel;
-    var useMax = !!(colorThresholdUseMax && colorThresholdUseMax.checked);
-    var bx0;
-    var bx1;
-    if (useMax) {
-      bx0 = xLo;
-      bx1 = Math.min(Math.max(t, xLo), xHi);
-    } else {
-      bx0 = Math.max(Math.min(t, xHi), xLo);
-      bx1 = xHi;
+    if (colorHistModeCheckWasRange !== rangeMode) {
+      if (colorHistModeCheck) colorHistModeCheck.checked = false;
     }
-    if (!(bx1 > bx0)) return null;
+    colorHistModeCheckWasRange = rangeMode;
+  }
+
+  function oneHistogramHighlightRect(xLoPlot, xHiPlot, bx0, bx1) {
+    var a = Math.min(bx0, bx1);
+    var b = Math.max(bx0, bx1);
+    var x0 = Math.max(xLoPlot, a);
+    var x1 = Math.min(xHiPlot, b);
+    if (!(x1 > x0)) return null;
     return {
       type: "rect",
       xref: "x",
       yref: "paper",
-      x0: bx0,
-      x1: bx1,
+      x0: x0,
+      x1: x1,
       y0: 0,
       y1: 1,
       fillcolor: "rgba(196, 112, 58, 0.14)",
@@ -3315,24 +3341,119 @@
     };
   }
 
+  function colorHistogramSelectionHighlightRects(xRangeOpt) {
+    var rng = xRangeOpt;
+    if (!rng || rng.length < 2) {
+      if (colorHistDiv && colorHistDiv._fullLayout && colorHistDiv._fullLayout.xaxis) {
+        rng = colorHistDiv._fullLayout.xaxis.range;
+      }
+    }
+    if (!rng || rng.length < 2) return [];
+    var xLoPlot = Math.min(rng[0], rng[1]);
+    var xHiPlot = Math.max(rng[0], rng[1]);
+    function rectPair(b0, b1) {
+      var r = oneHistogramHighlightRect(xLoPlot, xHiPlot, b0, b1);
+      return r ? [r] : [];
+    }
+    if (colorHistDragPreview != null && typeof colorHistDragPreview.lo === "number"
+        && typeof colorHistDragPreview.hi === "number") {
+      var dLo = Math.min(colorHistDragPreview.lo, colorHistDragPreview.hi);
+      var dHi = Math.max(colorHistDragPreview.lo, colorHistDragPreview.hi);
+      return rectPair(dLo, dHi);
+    }
+    if (colorThresholdColorCol !== sc.value) return [];
+    if (colorThresholdRange != null && typeof colorThresholdRange.lo === "number"
+        && typeof colorThresholdRange.hi === "number") {
+      var rLo = Math.min(colorThresholdRange.lo, colorThresholdRange.hi);
+      var rHi = Math.max(colorThresholdRange.lo, colorThresholdRange.hi);
+      var invert = colorHistModeCheckOn();
+      if (!invert) return rectPair(rLo, rHi);
+      var out = [];
+      var b1 = oneHistogramHighlightRect(xLoPlot, xHiPlot, xLoPlot, rLo);
+      var b2 = oneHistogramHighlightRect(xLoPlot, xHiPlot, rHi, xHiPlot);
+      if (b1) out.push(b1);
+      if (b2) out.push(b2);
+      return out;
+    }
+    if (colorThresholdLevel == null) return [];
+    var t = colorThresholdLevel;
+    var useMax = colorHistModeCheckOn();
+    var bx0 = useMax ? xLoPlot : Math.max(Math.min(t, xHiPlot), xLoPlot);
+    var bx1 = useMax ? Math.min(Math.max(t, xLoPlot), xHiPlot) : xHiPlot;
+    var br = oneHistogramHighlightRect(xLoPlot, xHiPlot, bx0, bx1);
+    return br ? [br] : [];
+  }
+
   function colorHistogramGuideShapes(xRangeOpt) {
     var shapes = colorViolinBaseShapes.slice();
-    var band = colorHistogramSelectionBandShape(xRangeOpt);
-    if (band) shapes.push(band);
-    if (colorThresholdLevel != null && colorThresholdColorCol === sc.value) {
+    var rects = colorHistogramSelectionHighlightRects(xRangeOpt);
+    for (var ri = 0; ri < rects.length; ri++) shapes.push(rects[ri]);
+    if (colorHistDragPreview != null && typeof colorHistDragPreview.lo === "number") {
+      var pLo = Math.min(colorHistDragPreview.lo, colorHistDragPreview.hi);
+      var pHi = Math.max(colorHistDragPreview.lo, colorHistDragPreview.hi);
       shapes.push({
         type: "line",
         xref: "x",
         yref: "paper",
-        x0: colorThresholdLevel,
-        x1: colorThresholdLevel,
+        x0: pLo,
+        x1: pLo,
         y0: 0,
         y1: 1,
         line: {color: ACCENT, width: 2},
         layer: "above"
       });
+      shapes.push({
+        type: "line",
+        xref: "x",
+        yref: "paper",
+        x0: pHi,
+        x1: pHi,
+        y0: 0,
+        y1: 1,
+        line: {color: ACCENT, width: 2},
+        layer: "above"
+      });
+    } else if (colorThresholdColorCol === sc.value) {
+      if (colorThresholdRange != null && typeof colorThresholdRange.lo === "number") {
+        var eLo = Math.min(colorThresholdRange.lo, colorThresholdRange.hi);
+        var eHi = Math.max(colorThresholdRange.lo, colorThresholdRange.hi);
+        shapes.push({
+          type: "line",
+          xref: "x",
+          yref: "paper",
+          x0: eLo,
+          x1: eLo,
+          y0: 0,
+          y1: 1,
+          line: {color: ACCENT, width: 2},
+          layer: "above"
+        });
+        shapes.push({
+          type: "line",
+          xref: "x",
+          yref: "paper",
+          x0: eHi,
+          x1: eHi,
+          y0: 0,
+          y1: 1,
+          line: {color: ACCENT, width: 2},
+          layer: "above"
+        });
+      } else if (colorThresholdLevel != null) {
+        shapes.push({
+          type: "line",
+          xref: "x",
+          yref: "paper",
+          x0: colorThresholdLevel,
+          x1: colorThresholdLevel,
+          y0: 0,
+          y1: 1,
+          line: {color: ACCENT, width: 2},
+          layer: "above"
+        });
+      }
     }
-    if (colorHistHoverLevel != null) {
+    if (colorHistHoverLevel != null && !colorHistPointerDown) {
       shapes.push({
         type: "line",
         xref: "x",
@@ -3348,22 +3469,66 @@
     return shapes;
   }
 
-  function colorHistogramGuideAnnotations() {
-    if (colorHistHoverLevel == null) return [];
-    return [{
+  function colorHistogramActiveCovariateLabel() {
+    return covariateDisplayMap[sc.value] || sc.value;
+  }
+
+  function colorThresholdRangeInequalityPhrase(rLo, rHi) {
+    var lo = Math.min(rLo, rHi);
+    var hi = Math.max(rLo, rHi);
+    return formatColorThresholdValue(lo) + " <= " + colorHistogramActiveCovariateLabel()
+      + " <= " + formatColorThresholdValue(hi);
+  }
+
+  function colorHistogramRangeInequalityAnnotation(rLo, rHi) {
+    var lo = Math.min(rLo, rHi);
+    var hi = Math.max(rLo, rHi);
+    return {
       xref: "x",
       yref: "paper",
-      x: colorHistHoverLevel,
+      x: (lo + hi) * 0.5,
       y: 0,
       yanchor: "top",
-      text: formatColorThresholdValue(colorHistHoverLevel),
+      text: colorThresholdRangeInequalityPhrase(rLo, rHi),
       showarrow: false,
       bgcolor: "rgba(255,255,255,0.94)",
       bordercolor: "rgba(36,59,83,0.35)",
       borderwidth: 1,
       borderpad: 3,
       font: {size: 10, color: "#243b53"}
-    }];
+    };
+  }
+
+  function colorHistogramValueAnnotation(xVal) {
+    return {
+      xref: "x",
+      yref: "paper",
+      x: xVal,
+      y: 0,
+      yanchor: "top",
+      text: formatColorThresholdValue(xVal),
+      showarrow: false,
+      bgcolor: "rgba(255,255,255,0.94)",
+      bordercolor: "rgba(36,59,83,0.35)",
+      borderwidth: 1,
+      borderpad: 3,
+      font: {size: 10, color: "#243b53"}
+    };
+  }
+
+  function colorHistogramGuideAnnotations() {
+    if (colorHistDragPreview != null && typeof colorHistDragPreview.lo === "number"
+        && typeof colorHistDragPreview.hi === "number") {
+      return [colorHistogramRangeInequalityAnnotation(colorHistDragPreview.lo, colorHistDragPreview.hi)];
+    }
+    if (colorHistContinuousRangeModeActive() && colorThresholdRange != null
+        && typeof colorThresholdRange.lo === "number" && typeof colorThresholdRange.hi === "number") {
+      return [colorHistogramRangeInequalityAnnotation(colorThresholdRange.lo, colorThresholdRange.hi)];
+    }
+    if (colorHistHoverLevel != null && !colorHistPointerDown) {
+      return [colorHistogramValueAnnotation(colorHistHoverLevel)];
+    }
+    return [];
   }
 
   function relayoutColorHistogramGuides() {
@@ -3381,12 +3546,22 @@
    * and status text without rebuilding the violin (avoids O(n log n) histogram work).
    */
   function clearColorHistogramThresholdForGeometricSelection() {
-    var hadThresholdGuide = colorThresholdLevel != null && colorThresholdColorCol === sc.value;
+    var hadGuide = (colorThresholdLevel != null || colorThresholdRange != null)
+      && colorThresholdColorCol === sc.value;
     colorThresholdLevel = null;
+    colorThresholdRange = null;
     colorThresholdColorCol = null;
+    colorHistDragPreview = null;
+    colorHistPointerDown = false;
+    colorHistDragMoved = false;
+    colorHistDragStartLevel = null;
+    colorHistDragStartClientX = null;
+    window.removeEventListener("mousemove", handleColorHistogramWindowMouseMove);
+    window.removeEventListener("mouseup", endColorHistogramDrag, true);
     if (colorThresholdStatus) colorThresholdStatus.textContent = "";
+    syncColorHistModeCheckboxCaption();
     resetDiscreteCategorySwitches();
-    if (hadThresholdGuide && colorHistDiv && colorHistDiv.data) {
+    if (hadGuide && colorHistDiv && colorHistDiv.data) {
       relayoutColorHistogramGuides();
     }
   }
@@ -3400,29 +3575,102 @@
     });
   }
 
-  function colorHistogramLevelFromPointerEvent(evt) {
+  function colorHistogramLevelFromPointerEvent(evt, opts) {
+    opts = opts || {};
+    var clamp = !!opts.clamp;
     if (!colorHistDiv || !colorHistDiv._fullLayout) return null;
     var xaxis = colorHistDiv._fullLayout.xaxis;
     var sz = colorHistDiv._fullLayout._size;
     if (!xaxis || !sz || typeof xaxis.p2c !== "function") return null;
     var rect = colorHistDiv.getBoundingClientRect();
     var px = evt.clientX - rect.left - sz.l;
-    if (px < 0 || px > sz.w) return null;
+    if (clamp) {
+      if (sz.w <= 0) return null;
+      px = Math.max(0, Math.min(sz.w, px));
+    } else if (px < 0 || px > sz.w) {
+      return null;
+    }
     var level = xaxis.p2c(px);
     return typeof level === "number" && isFinite(level) ? level : null;
   }
 
   function handleColorHistogramMouseMove(evt) {
+    if (colorHistPointerDown) return;
     scheduleColorHistogramGuideRelayout(colorHistogramLevelFromPointerEvent(evt));
   }
 
   function handleColorHistogramMouseLeave() {
+    if (colorHistPointerDown) return;
     scheduleColorHistogramGuideRelayout(null);
   }
 
+  function handleColorHistogramWindowMouseMove(evt) {
+    if (!colorHistPointerDown || colorHistDragStartLevel == null) return;
+    var level = colorHistogramLevelFromPointerEvent(evt, {clamp: true});
+    if (level == null) return;
+    colorHistDragMoved = true;
+    colorHistDragPreview = {
+      lo: colorHistDragStartLevel,
+      hi: level
+    };
+    relayoutColorHistogramGuides();
+  }
+
+  function endColorHistogramDrag(evt) {
+    window.removeEventListener("mousemove", handleColorHistogramWindowMouseMove);
+    window.removeEventListener("mouseup", endColorHistogramDrag, true);
+    if (!colorHistPointerDown) return;
+    colorHistPointerDown = false;
+    var appliedRange = false;
+    var pxSpan = 0;
+    if (colorHistDragStartClientX != null && evt && typeof evt.clientX === "number") {
+      pxSpan = Math.abs(evt.clientX - colorHistDragStartClientX);
+    }
+    var levelEnd = colorHistogramLevelFromPointerEvent(evt, {clamp: true});
+    if (colorHistDragMoved && levelEnd != null && pxSpan >= COLOR_HIST_DRAG_MIN_PX) {
+      applyColorRangeSelection(colorHistDragStartLevel, levelEnd);
+      appliedRange = true;
+      colorHistSuppressClick = true;
+    }
+    colorHistDragPreview = null;
+    colorHistDragStartLevel = null;
+    colorHistDragStartClientX = null;
+    colorHistDragMoved = false;
+    relayoutColorHistogramGuides();
+    if (!appliedRange) {
+      scheduleColorHistogramGuideRelayout(colorHistogramLevelFromPointerEvent(evt));
+    }
+  }
+
+  function handleColorHistogramMouseDown(evt) {
+    if (evt.button !== 0) return;
+    var level = colorHistogramLevelFromPointerEvent(evt);
+    if (level == null) return;
+    colorHistPointerDown = true;
+    colorHistDragMoved = false;
+    colorHistDragStartLevel = level;
+    colorHistDragStartClientX = evt.clientX;
+    colorHistDragPreview = null;
+    window.addEventListener("mousemove", handleColorHistogramWindowMouseMove);
+    window.addEventListener("mouseup", endColorHistogramDrag, true);
+    evt.preventDefault();
+  }
+
   function colorThresholdDescription(nSelected, nTotal) {
-    if (colorThresholdLevel == null || colorThresholdColorCol !== sc.value) return "";
-    var op = colorThresholdUseMax && colorThresholdUseMax.checked ? "≤" : "≥";
+    if (colorThresholdColorCol !== sc.value) return "";
+    if (colorThresholdRange != null && typeof colorThresholdRange.lo === "number"
+        && typeof colorThresholdRange.hi === "number") {
+      var rl = Math.min(colorThresholdRange.lo, colorThresholdRange.hi);
+      var rh = Math.max(colorThresholdRange.lo, colorThresholdRange.hi);
+      var inv = colorHistModeCheckOn();
+      var phrase = colorThresholdRangeInequalityPhrase(rl, rh);
+      if (inv) {
+        return "Outside " + phrase;
+      }
+      return "Range " + phrase;
+    }
+    if (colorThresholdLevel == null) return "";
+    var op = colorHistModeCheckOn() ? "≤" : "≥";
     return "Current threshold: " + op + " " + formatColorThresholdValue(colorThresholdLevel);
   }
 
@@ -3579,6 +3827,7 @@
     if (!colorHistEventsWired) {
       colorHistEventsWired = true;
       colorHistDiv.addEventListener("click", handleColorHistogramClick);
+      colorHistDiv.addEventListener("mousedown", handleColorHistogramMouseDown);
       colorHistDiv.addEventListener("mousemove", handleColorHistogramMouseMove);
       colorHistDiv.addEventListener("mouseleave", handleColorHistogramMouseLeave);
     }
@@ -3634,12 +3883,15 @@
       Plotly.newPlot(colorHistDiv, data, layout, opts);
     }
     if (colorThresholdStatus) {
-      if (colorThresholdLevel != null && colorThresholdColorCol === sc.value) {
+      var hasThresh = colorThresholdLevel != null && colorThresholdColorCol === sc.value;
+      var hasRange = colorThresholdRange != null && colorThresholdColorCol === sc.value;
+      if (hasThresh || hasRange) {
         colorThresholdStatus.textContent = colorThresholdDescription(saveSelectionRows.length, items.length);
       } else {
         colorThresholdStatus.textContent = "no selection made!";
       }
     }
+    syncColorHistModeCheckboxCaption();
     syncParticleExplorerRowExpandForColorHist();
   }
 
@@ -4408,8 +4660,10 @@
     selectionTooltipText = "";
     setActiveSelectionMode("");
     colorThresholdLevel = null;
+    colorThresholdRange = null;
     colorThresholdColorCol = null;
     if (colorThresholdStatus) colorThresholdStatus.textContent = "";
+    syncColorHistModeCheckboxCaption();
     resetDiscreteCategorySwitches();
     if (colorHistDiv && colorHistDiv.data) {
       try { relayoutColorHistogramGuides(); } catch (e) {}
@@ -4429,6 +4683,18 @@
     return rows;
   }
 
+  function rowsMatchingColorRangeFromTrace(items, lo, hi, invert) {
+    var rows = [];
+    var a = Math.min(lo, hi);
+    var b = Math.max(lo, hi);
+    for (var j = 0; j < items.length; j++) {
+      var v = items[j].value;
+      var inside = v >= a && v <= b;
+      if (invert ? !inside : inside) rows.push(items[j].row);
+    }
+    return rows;
+  }
+
   function applyColorThresholdSelection(level) {
     var items = currentColorValueItems();
     if (!items.length || typeof level !== "number" || !isFinite(level)) return;
@@ -4440,9 +4706,11 @@
     }
     if (colorContinuousWrap) colorContinuousWrap.hidden = false;
     clearScatterGeometricSelection();
-    var useMax = !!(colorThresholdUseMax && colorThresholdUseMax.checked);
+    var useMax = colorHistModeCheckOn();
+    colorThresholdRange = null;
     colorThresholdLevel = level;
     colorThresholdColorCol = sc.value;
+    syncColorHistModeCheckboxCaption();
     fetch("{{ url_for('api_covariate_threshold_rows') }}", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -4469,8 +4737,58 @@
       });
   }
 
+  function applyColorRangeSelection(lo, hi) {
+    var items = currentColorValueItems();
+    if (!items.length || typeof lo !== "number" || typeof hi !== "number"
+        || !isFinite(lo) || !isFinite(hi)) return;
+    cancelLassoSelectionDebounce();
+    resetDiscreteCategorySwitches();
+    if (colorDiscreteWrap) {
+      colorDiscreteWrap.hidden = true;
+      colorDiscreteWrap.classList.remove("cryo-color-discrete-wrap--show");
+    }
+    if (colorContinuousWrap) colorContinuousWrap.hidden = false;
+    clearScatterGeometricSelection();
+    var loN = Math.min(lo, hi);
+    var hiN = Math.max(lo, hi);
+    var invert = colorHistModeCheckOn();
+    colorThresholdLevel = null;
+    colorThresholdRange = { lo: loN, hi: hiN };
+    colorThresholdColorCol = sc.value;
+    syncColorHistModeCheckboxCaption();
+    fetch("{{ url_for('api_covariate_threshold_rows') }}", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        column: sc.value,
+        range_min: loN,
+        range_max: hiN,
+        invert_range: invert
+      })
+    })
+      .then(function(r) {
+        return r.json().then(function(j) { return { ok: r.ok, j: j }; });
+      })
+      .then(function(res) {
+        var rows = (res.ok && res.j && Array.isArray(res.j.rows))
+          ? res.j.rows
+          : rowsMatchingColorRangeFromTrace(items, loN, hiN, invert);
+        applyRowsSelection(rows, "Color threshold");
+        syncColorCovariateSidePanel();
+      })
+      .catch(function() {
+        var rows = rowsMatchingColorRangeFromTrace(items, loN, hiN, invert);
+        applyRowsSelection(rows, "Color threshold");
+        syncColorCovariateSidePanel();
+      });
+  }
+
   function handleColorHistogramClick(evt) {
     evt.preventDefault();
+    if (colorHistSuppressClick) {
+      colorHistSuppressClick = false;
+      return;
+    }
     var level = colorHistogramLevelFromPointerEvent(evt);
     if (level == null) return;
     applyColorThresholdSelection(level);
@@ -4664,6 +4982,7 @@
       setActiveSelectionMode("");
       lastMontageRows = [];
       colorThresholdLevel = null;
+      colorThresholdRange = null;
       colorThresholdColorCol = null;
     }
     updateParticleSelFieldset();
@@ -4861,6 +5180,7 @@
   });
   sc.addEventListener("change", function() {
     colorThresholdLevel = null;
+    colorThresholdRange = null;
     colorThresholdColorCol = null;
     triggerRedraw(true);
   });
@@ -4879,9 +5199,11 @@
       setImageGridMenuOpen(!imageGridMenuIsOpen());
     });
   }
-  if (colorThresholdUseMax) {
-    colorThresholdUseMax.addEventListener("change", function() {
-      if (colorThresholdLevel != null && colorThresholdColorCol === sc.value) {
+  if (colorHistModeCheck) {
+    colorHistModeCheck.addEventListener("change", function() {
+      if (colorHistContinuousRangeModeActive()) {
+        applyColorRangeSelection(colorThresholdRange.lo, colorThresholdRange.hi);
+      } else if (colorThresholdLevel != null && colorThresholdColorCol === sc.value) {
         applyColorThresholdSelection(colorThresholdLevel);
       } else {
         syncColorCovariateSidePanel();

@@ -238,7 +238,8 @@ def api_save_selection():
 def api_covariate_threshold_rows():
     """All ``plot_df`` row indices where a numeric covariate passes a threshold.
 
-    Matches the color-by histogram semantics (≥ or ≤ level). Used so histogram
+    Matches the color-by histogram semantics (≥ or ≤ level), or an inclusive
+    ``range_min`` … ``range_max`` interval (optionally inverted). Used so histogram
     selections cover the full dataset like saved lasso indices, not only points
     on the scatter subsample.
     """
@@ -251,18 +252,38 @@ def api_covariate_threshold_rows():
     if col == "index":
         return jsonify(error="Cannot threshold index column.", rows=[]), 400
 
-    raw_level = data.get("level")
-    try:
-        level = float(raw_level)
-    except (TypeError, ValueError):
-        return jsonify(error="Invalid threshold level.", rows=[]), 400
-
     series = pd.Series(pd.to_numeric(e.plot_df[col], errors="coerce"))
     if not series.notna().any():
         return (
             jsonify(error="Covariate has no numeric values for thresholding.", rows=[]),
             400,
         )
+
+    raw_r0 = data.get("range_min")
+    raw_r1 = data.get("range_max")
+    if raw_r0 is not None and raw_r1 is not None:
+        try:
+            r0 = float(raw_r0)
+            r1 = float(raw_r1)
+        except (TypeError, ValueError):
+            return jsonify(error="Invalid range bounds.", rows=[]), 400
+        if r0 > r1:
+            r0, r1 = r1, r0
+        inside = series.ge(r0) & series.le(r1) & series.notna()
+        if bool(data.get("invert_range")):
+            mask = (~inside) & series.notna()
+        else:
+            mask = inside
+        rows_arr = np.flatnonzero(np.asarray(mask, dtype=bool)).astype(
+            np.int64, copy=False
+        )
+        return jsonify(rows=rows_arr.tolist(), n=int(rows_arr.size))
+
+    raw_level = data.get("level")
+    try:
+        level = float(raw_level)
+    except (TypeError, ValueError):
+        return jsonify(error="Invalid threshold level.", rows=[]), 400
 
     mask = series.le(level) if bool(data.get("use_max")) else series.ge(level)
     mask &= series.notna()

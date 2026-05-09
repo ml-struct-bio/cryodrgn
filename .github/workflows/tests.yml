@@ -13,6 +13,14 @@ jobs:
   run_tests:
 
     runs-on: ${{ matrix.os }}
+    # Stabilize MKL / OpenMP when pytest-xdist runs multiple workers importing PyTorch.
+    # Without this, CI can intermittently hit: "Intel MKL FATAL ERROR: Cannot load ... libtorch_cpu.so".
+    env:
+      OMP_NUM_THREADS: 1
+      MKL_NUM_THREADS: 1
+      MKL_THREADING_LAYER: GNU
+      OPENBLAS_NUM_THREADS: 1
+      NUMEXPR_NUM_THREADS: 1
     strategy:
       matrix:
         python: [ '3.10', '3.11' , '3.12' , '3.13' ]
@@ -40,9 +48,9 @@ jobs:
         run: |
           python3 -m pip install --upgrade pip
           python3 -m pip install ".[dev]"
-          python3 -m pip uninstall -y torch
-          python3 -m pip cache purge
-          python3 -m pip install torch==${{ matrix.torch }}
+          # Pin torch for this matrix cell without uninstall/cache churn (cleaner than
+          # uninstall + cache purge + reinstall, which can exacerbate flaky loads).
+          python3 -m pip install --force-reinstall --no-cache-dir "torch==${{ matrix.torch }}"
 
       - name: Pytest
         run: |

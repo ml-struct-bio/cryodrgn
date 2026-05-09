@@ -921,6 +921,7 @@ def api_pairplot():
     except Exception as err:
         logger.exception("pair grid failed")
         return jsonify(error=str(err)), 500
+
     return jsonify(
         png_b64=base64.standard_b64encode(png).decode("ascii"),
         cells=cells,
@@ -962,6 +963,7 @@ def api_save_pairplot_png():
     except Exception as err:
         logger.exception("save pairplot failed")
         return jsonify(error=str(err)), 500
+
     return jsonify(ok=True, path=out_path, filename=filename)
 
 
@@ -985,6 +987,7 @@ def api_default_trajectory_endpoints():
         start, end = default_trajectory_endpoints_xy(e, xcol, ycol)
     except ValueError as err:
         return jsonify(error=str(err)), 400
+
     return jsonify(ok=True, start=start, end=end)
 
 
@@ -1007,6 +1010,7 @@ def trajectory_creator_page():
     color_cols = e.numeric_columns
     dx, dy = trajectory_default_xy_cols(traj_cols, zdim)
     cov_keys = list(dict.fromkeys(traj_cols + color_cols))
+
     return render_template(
         "trajectory_creator.html",
         traj_axis_cols=traj_cols,
@@ -1052,6 +1056,7 @@ def api_trajectory_save_zpath():
             f.write(txt)
     except OSError as err:
         return jsonify(error=str(err)), 500
+
     return jsonify(ok=True, path=out_path)
 
 
@@ -1064,10 +1069,12 @@ def api_trajectory_save_volumes():
     data = _request_json_dict()
     token = str(data.get("volume_cache_id", "") or "").strip()
     out_dir = str(data.get("out_dir", "") or "").strip()
+
     if not token:
         return jsonify(error="Missing volume_cache_id. Generate volumes first."), 400
     if not out_dir:
         return jsonify(error="Choose an output folder."), 400
+
     try:
         saved = save_cached_volumes_to_dir(
             token, out_dir, filename_prefix="trajectory_volume"
@@ -1104,9 +1111,11 @@ def _trajectory_anchor_driven_json(
 def api_trajectory_import_anchors():
     """Import anchor indices from a server-side ``.txt`` path."""
     e: DashboardExperiment = g.dashboard_exp
+
     err = _trajectory_eligibility_error(e)
     if err is not None:
         return err
+
     data = _request_json_dict()
     server_path = str(data.get("server_path", "") or "").strip()
     if not server_path:
@@ -1116,6 +1125,7 @@ def api_trajectory_import_anchors():
     abs_path = os.path.abspath(server_path)
     if not os.path.isfile(abs_path):
         return jsonify(error="file not found on server"), 400
+
     try:
         from pathlib import Path as _Path
 
@@ -1153,6 +1163,7 @@ def api_list_server_files():
     except PermissionError:
         return jsonify(error="permission denied"), 403
     parent = os.path.dirname(browse) if browse != "/" else None
+
     return jsonify(ok=True, dir=browse, parent=parent, entries=entries)
 
 
@@ -1162,6 +1173,7 @@ def api_trajectory_kmeans_centers():
     err = _trajectory_eligibility_error(e)
     if err is not None:
         return err
+
     try:
         return _trajectory_anchor_driven_json(
             e, load_kmeans_center_indices(e), _request_json_dict()
@@ -1179,6 +1191,7 @@ def api_trajectory_random_indices():
     err = _trajectory_eligibility_error(e)
     if err is not None:
         return err
+
     try:
         return _trajectory_anchor_driven_json(
             e, random_dataset_indices(e, 10), _request_json_dict()
@@ -1196,6 +1209,7 @@ def api_trajectory_coords():
     err = _trajectory_eligibility_error(e)
     if err is not None:
         return err
+
     try:
         p = parse_trajectory_request_body(e, _request_json_dict())
     except ValueError as err:
@@ -1226,6 +1240,7 @@ def api_trajectory_volumes():
     err = _trajectory_eligibility_error(e)
     if err is not None:
         return err
+
     try:
         data = _request_json_dict()
         p = parse_trajectory_request_body(e, data)
@@ -1295,6 +1310,7 @@ def landscape_volpca_page():
             ),
             exp_epoch=int(e.epoch),
         )
+
     return render_template(
         "landscape_volpca.html",
         no_landscape=False,
@@ -1305,6 +1321,7 @@ def landscape_volpca_page():
 
 def api_landscape_volpca_meta():
     e: DashboardExperiment = g.dashboard_exp
+
     try:
         return jsonify(meta_for_api(e))
     except FileNotFoundError as err:
@@ -1376,6 +1393,7 @@ def api_landscape_volpca_scatter():
     except Exception as err:
         logger.exception("landscape volpca scatter failed")
         return jsonify(error=str(err)), 500
+
     return Response(js, mimetype="application/json")
 
 
@@ -1421,6 +1439,7 @@ def api_landscape_volpca_generate_animations():
             jsonify(error="view_rotations must be an object with x, y, and z degrees."),
             400,
         )
+
     try:
         t0 = time.perf_counter()
         token, _files, rendered_vol_indices = generate_landscape_volume_animations(
@@ -1473,6 +1492,7 @@ def api_landscape_volpca_save_animations():
     out_dir = data.get("out_dir")
     if out_dir is not None and not isinstance(out_dir, str):
         return jsonify(error="out_dir must be a string or omitted."), 400
+
     try:
         paths = save_landscape_animations(
             token,
@@ -1599,6 +1619,7 @@ def create_app(
 
     for rule, view_func, methods in _ROUTES:
         app.add_url_rule(rule, view_func=view_func, methods=list(methods))
+
     return app
 
 
@@ -1620,4 +1641,5 @@ def run_server(
         filter_plot_inds=plot_inds,
         cpus=cpus,
     )
+
     app.run(host=host, port=port, debug=debug, threaded=True)

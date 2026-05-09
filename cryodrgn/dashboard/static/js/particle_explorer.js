@@ -690,6 +690,18 @@
     return out;
   }
 
+  /** Largest grid-aligned montage total ≤ bound (same lattice as ``snapMontageCacheSizeToGridNearest``). */
+  function largestSnappedMontageTotalNotAbove(bound, cap, grid) {
+    cap = Math.max(0, Math.floor(Number(cap) || 0));
+    bound = Math.min(Math.floor(Number(bound) || 0), cap);
+    var minG = grid.minG;
+    var step = grid.step;
+    if (bound < minG) return null;
+    if (step <= 1) return bound;
+    var k = Math.floor((bound - minG) / step);
+    return minG + k * step;
+  }
+
   /** Default first-build target: step above, capped at plotted count (matches server ``preload_image_limit``). */
   function firstBuildCacheSizeDefault() {
     var cap = scatterSubsetRowCount();
@@ -698,14 +710,23 @@
     return Math.min(cap, Math.max(1, step));
   }
 
-  /** Suggested new cache total after a cache exists: min(2 × current, cap), always &gt; current when possible. */
+  /**
+   * Suggested new cache total when expanding: largest snap-to value strictly below 2× current cache,
+   * capped at plotted count; else minimum valid expansion.
+   */
   function defaultMontageNewCacheSizeSuggestion() {
     if (!preloaded) return firstBuildCacheSizeDefault();
     var have = cachedImageCount();
     var cap = scatterSubsetRowCount();
     if (have >= cap) return cap;
-    var twiceCapped = Math.min(2 * have, cap);
-    return Math.max(twiceCapped, have + 1);
+    var grid = montageCacheSizeStepperGrid(cap);
+    var floor = Math.min(have + 1, cap);
+    var bound = Math.min(cap, 2 * have - 1);
+    var cand = largestSnappedMontageTotalNotAbove(bound, cap, grid);
+    if (cand == null || cand < floor) {
+      return snapMontageCacheSizeToGridNearest(floor, cap, grid);
+    }
+    return cand;
   }
 
   function syncMontageCacheSizeLabelEl() {
@@ -929,30 +950,43 @@
         : "Discard all downloaded thumbnails from this explorer session.";
   }
 
+  /** Drop server PRELOAD_CACHE for this epoch — keeps chunked rebuild aligned after UI clear. */
+  function invalidateServerPreloadCache() {
+    return fetch(b.urls.apiPreloadImages, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ invalidate_cache: true }),
+      keepalive: true,
+    }).catch(function() {});
+  }
+
   function clearExplorerImageCache() {
     if (!preloaded) return;
-    selectionCacheAdditionFreezeCount = null;
-    if (btnCacheSelectionUncached) {
-      btnCacheSelectionUncached.classList.remove("cryo-explorer-cache-selection-btn--busy");
-    }
-    preloaded = null;
-    imagesViewEnabled = false;
-    montageInner.classList.add("cryo-dash-montage-inner--disabled");
-    gridSizeSelect.disabled = true;
-    setImageGridMenuOpen(false);
-    lastMontageRows = [];
-    activePool = null;
-    preloadRequestedCacheTarget = null;
-    setMontagePreloadOverlay(false);
-    setImageCacheProgress(false);
-    if (preloadStatus) preloadStatus.textContent = "";
-    montageDisplayMode = "images";
-    invalidateVolumeArtifacts();
-    updateMontage([]);
-    syncMontageNewCacheSizeField();
-    syncImageCacheButton(false);
-    syncHighlightTraceAnnotations();
-    syncVolumeExploreButtons();
+    invalidateServerPreloadCache().finally(function flushLocalExplorerPreloadAfterServer() {
+      if (!preloaded) return;
+      selectionCacheAdditionFreezeCount = null;
+      if (btnCacheSelectionUncached) {
+        btnCacheSelectionUncached.classList.remove("cryo-explorer-cache-selection-btn--busy");
+      }
+      preloaded = null;
+      imagesViewEnabled = false;
+      montageInner.classList.add("cryo-dash-montage-inner--disabled");
+      gridSizeSelect.disabled = true;
+      setImageGridMenuOpen(false);
+      lastMontageRows = [];
+      activePool = null;
+      preloadRequestedCacheTarget = null;
+      setMontagePreloadOverlay(false);
+      setImageCacheProgress(false);
+      if (preloadStatus) preloadStatus.textContent = "";
+      montageDisplayMode = "images";
+      invalidateVolumeArtifacts();
+      updateMontage([]);
+      syncMontageNewCacheSizeField();
+      syncImageCacheButton(false);
+      syncHighlightTraceAnnotations();
+      syncVolumeExploreButtons();
+    });
   }
 
   function syncImageCacheButton(loading) {
@@ -1197,12 +1231,20 @@
 
   function loadAllImagesInChunks() {
     var total = scatterSubsetRowCount();
+    var progressStartCount = cachedImageCount();
+    var progressTotal = progressStartCount > 0
+      ? Math.max(1, total - progressStartCount)
+      : Math.max(1, total);
+    function updateImageCacheChunkProgress() {
+      var added = Math.max(0, cachedImageCount() - progressStartCount);
+      setImageCacheProgress(true, added, progressTotal);
+    }
     setMontagePreloadOverlay(
       true,
       "Loading all " + fmtInt(total) + " plotted particle images..."
     );
     if (preloadStatus) preloadStatus.textContent = "";
-    setImageCacheProgress(true, cachedImageCount(), total);
+    updateImageCacheChunkProgress();
     suppressPlotGridHighlights = true;
     syncHighlightTraceAnnotations();
     syncImageCacheButton(true);
@@ -1250,7 +1292,7 @@
           syncVolumeExploreButtons();
           return Promise.resolve(null);
         }
-        setImageCacheProgress(true, cachedImageCount(), total);
+        updateImageCacheChunkProgress();
         return nextChunk();
       });
     }

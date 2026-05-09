@@ -113,6 +113,21 @@ PRELOAD_CACHE: dict[
 _EPOCHS_BY_WORKDIR_CACHE: dict[str, list[int]] = {}
 
 
+def clear_preload_cache_for_experiment(e: object) -> int:
+    """Drop explorer thumbnail preload entries for this experiment (epoch + kmeans).
+
+    Keeps preload keys from other epochs or analysis folders untouched. Matches the
+    first two components of :data:`PRELOAD_CACHE` keys: ``(epoch, kmeans_folder_id, ...)``.
+    """
+    epoch = int(getattr(e, "epoch"))
+    km = int(getattr(e, "kmeans_folder_id"))
+    prefix = (epoch, km)
+    to_drop = [k for k in list(PRELOAD_CACHE.keys()) if k[:2] == prefix]
+    for k in to_drop:
+        del PRELOAD_CACHE[k]
+    return len(to_drop)
+
+
 def clear_experiment_caches() -> None:
     """Drop cached experiments / preloads / graph neighbors across the process."""
     from cryodrgn.dashboard.trajectory import _TRAJ_GRAPH_NEIGHBOR_CACHE

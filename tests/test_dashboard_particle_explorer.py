@@ -795,6 +795,30 @@ class TestPreloadDeltaResponses:
         assert js["images"] == []
         assert js["total_cached"] == cached_count
 
+    def test_post_invalidate_cache_clears_epoch_preloads(self, flask_client) -> None:
+        PRELOAD_CACHE.clear()
+        first = flask_client.post(
+            "/api/preload_images",
+            json={"x": "UMAP1", "y": "UMAP2", "cache_size": 6},
+        )
+        assert first.status_code == 200, first.get_json()
+        assert len(PRELOAD_CACHE) >= 1
+
+        inv = flask_client.post(
+            "/api/preload_images",
+            json={"invalidate_cache": True},
+        )
+        assert inv.status_code == 200, inv.get_json()
+        assert inv.get_json().get("ok") is True
+        assert PRELOAD_CACHE == {}
+
+        again = flask_client.post(
+            "/api/preload_images",
+            json={"x": "UMAP1", "y": "UMAP2", "cache_size": 3},
+        )
+        assert again.status_code == 200, again.get_json()
+        assert again.get_json()["total_cached"] <= 3
+
     def test_delta_nothing_new_when_extending_with_same_cap_and_full_cache(
         self, flask_client
     ) -> None:

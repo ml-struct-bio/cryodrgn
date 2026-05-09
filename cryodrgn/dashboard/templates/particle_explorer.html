@@ -509,6 +509,27 @@
   .cryo-image-grid-menu-body[hidden] {
     display: none !important;
   }
+  .cryo-image-grid-toolbar {
+    display: flex;
+    align-items: center;
+    align-content: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    margin-top: 0.2rem;
+  }
+  .cryo-image-grid-size-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin: 0;
+    font-size: 0.82rem;
+    color: var(--muted, #5c6b7a);
+  }
+  .cryo-image-grid-size-inline select {
+    width: 4.2rem;
+    padding: 0.1rem 0.2rem;
+    font-size: 0.82rem;
+  }
   #save-status {
     display: block;
     width: 100%;
@@ -1245,16 +1266,15 @@
       {% endif %}
     </div>
     <div id="montage-inner" class="cryo-dash-montage-inner cryo-dash-montage-inner--disabled">
-      <div style="display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;margin-top:0.2rem;">
+      <div class="cryo-image-grid-toolbar">
         <button type="button" id="image-grid-menu-toggle" class="cryo-image-grid-menu-toggle" aria-expanded="false"
           aria-controls="image-grid-menu-body">
           <span class="cryo-image-grid-menu-toggle__chev" aria-hidden="true">&#9656;</span>
           <span>Image grid</span>
         </button>
-        <label id="image-grid-size-inline"
-          style="display:flex;align-items:center;gap:0.3rem;font-size:0.82rem;color:var(--muted,#5c6b7a);" hidden>
+        <label id="image-grid-size-inline" class="cryo-image-grid-size-inline" hidden>
           Grid size
-          <select id="grid-size" disabled style="width:4.2rem;padding:0.1rem 0.2rem;font-size:0.82rem;">
+          <select id="grid-size" disabled>
             <option value="1">1 × 1</option>
             <option value="2">2 × 2</option>
             <option value="3" selected>3 × 3</option>
@@ -1980,6 +2000,18 @@
     return out;
   }
 
+  /** Largest grid-aligned montage total ≤ bound (same lattice as ``snapMontageCacheSizeToGridNearest``). */
+  function largestSnappedMontageTotalNotAbove(bound, cap, grid) {
+    cap = Math.max(0, Math.floor(Number(cap) || 0));
+    bound = Math.min(Math.floor(Number(bound) || 0), cap);
+    var minG = grid.minG;
+    var step = grid.step;
+    if (bound < minG) return null;
+    if (step <= 1) return bound;
+    var k = Math.floor((bound - minG) / step);
+    return minG + k * step;
+  }
+
   /** Default first-build target: step above, capped at plotted count (matches server ``preload_image_limit``). */
   function firstBuildCacheSizeDefault() {
     var cap = scatterSubsetRowCount();
@@ -1988,14 +2020,23 @@
     return Math.min(cap, Math.max(1, step));
   }
 
-  /** Suggested new cache total after a cache exists: min(2 × current, cap), always &gt; current when possible. */
+  /**
+   * Suggested new cache total when expanding: largest snap-to value strictly below 2× current cache
+   * (i.e. ≤ 2×have − 1 on the integer lattice), capped at plotted count; else minimum valid expansion.
+   */
   function defaultMontageNewCacheSizeSuggestion() {
     if (!preloaded) return firstBuildCacheSizeDefault();
     var have = cachedImageCount();
     var cap = scatterSubsetRowCount();
     if (have >= cap) return cap;
-    var twiceCapped = Math.min(2 * have, cap);
-    return Math.max(twiceCapped, have + 1);
+    var grid = montageCacheSizeStepperGrid(cap);
+    var floor = Math.min(have + 1, cap);
+    var bound = Math.min(cap, 2 * have - 1);
+    var cand = largestSnappedMontageTotalNotAbove(bound, cap, grid);
+    if (cand == null || cand < floor) {
+      return snapMontageCacheSizeToGridNearest(floor, cap, grid);
+    }
+    return cand;
   }
 
   function syncMontageCacheSizeLabelEl() {
@@ -2219,30 +2260,43 @@
         : "Discard all downloaded thumbnails from this explorer session.";
   }
 
+  /** Drop server PRELOAD_CACHE for this epoch so chunked rebuild stays in sync after a clear. */
+  function invalidateServerPreloadCache() {
+    return fetch("{{ url_for('api_preload_images') }}", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ invalidate_cache: true }),
+      keepalive: true
+    }).catch(function() {});
+  }
+
   function clearExplorerImageCache() {
     if (!preloaded) return;
-    selectionCacheAdditionFreezeCount = null;
-    if (btnCacheSelectionUncached) {
-      btnCacheSelectionUncached.classList.remove("cryo-explorer-cache-selection-btn--busy");
-    }
-    preloaded = null;
-    imagesViewEnabled = false;
-    montageInner.classList.add("cryo-dash-montage-inner--disabled");
-    gridSizeSelect.disabled = true;
-    setImageGridMenuOpen(false);
-    lastMontageRows = [];
-    activePool = null;
-    preloadRequestedCacheTarget = null;
-    setMontagePreloadOverlay(false);
-    setImageCacheProgress(false);
-    if (preloadStatus) preloadStatus.textContent = "";
-    montageDisplayMode = "images";
-    invalidateVolumeArtifacts();
-    updateMontage([]);
-    syncMontageNewCacheSizeField();
-    syncImageCacheButton(false);
-    syncHighlightTraceAnnotations();
-    syncVolumeExploreButtons();
+    invalidateServerPreloadCache().finally(function flushLocalExplorerPreloadAfterServer() {
+      if (!preloaded) return;
+      selectionCacheAdditionFreezeCount = null;
+      if (btnCacheSelectionUncached) {
+        btnCacheSelectionUncached.classList.remove("cryo-explorer-cache-selection-btn--busy");
+      }
+      preloaded = null;
+      imagesViewEnabled = false;
+      montageInner.classList.add("cryo-dash-montage-inner--disabled");
+      gridSizeSelect.disabled = true;
+      setImageGridMenuOpen(false);
+      lastMontageRows = [];
+      activePool = null;
+      preloadRequestedCacheTarget = null;
+      setMontagePreloadOverlay(false);
+      setImageCacheProgress(false);
+      if (preloadStatus) preloadStatus.textContent = "";
+      montageDisplayMode = "images";
+      invalidateVolumeArtifacts();
+      updateMontage([]);
+      syncMontageNewCacheSizeField();
+      syncImageCacheButton(false);
+      syncHighlightTraceAnnotations();
+      syncVolumeExploreButtons();
+    });
   }
 
   function syncImageCacheButton(loading) {
@@ -2373,13 +2427,23 @@
       return Promise.resolve(null);
     }
 
+    var progressStartCount = cachedImageCount();
+    var progressTotal = progressStartCount > 0
+      ? Math.max(1, finalTarget - progressStartCount)
+      : Math.max(1, finalTarget);
+
+    function updateImageCacheChunkProgress() {
+      var added = Math.max(0, cachedImageCount() - progressStartCount);
+      setImageCacheProgress(true, added, progressTotal);
+    }
+
     if (trackSelectionAdditionFreeze) {
       selectionCacheAdditionFreezeCount = selAddN;
     }
 
     setMontagePreloadOverlay(true, overlayLabel);
     if (opts.clearStatusAtStart && preloadStatus) preloadStatus.textContent = "";
-    setImageCacheProgress(true, cachedImageCount(), finalTarget);
+    updateImageCacheChunkProgress();
     if (suppressHighlightsDuring) {
       suppressPlotGridHighlights = true;
       syncHighlightTraceAnnotations();
@@ -2458,7 +2522,7 @@
           }
           throw new Error("Image cache did not advance.");
         }
-        setImageCacheProgress(true, cachedImageCount(), finalTarget);
+        updateImageCacheChunkProgress();
         return nextChunk();
       });
     }

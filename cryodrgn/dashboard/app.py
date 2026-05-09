@@ -44,6 +44,7 @@ from cryodrgn.dashboard.context import (
     abbrev_middle,
     active_workdir,
     api_set_epoch,
+    clear_preload_cache_for_experiment,
     api_set_workdir,
     bind_dashboard_exp,
     command_builder_template_kwargs,
@@ -244,28 +245,29 @@ def api_covariate_threshold_rows():
     e: DashboardExperiment = g.dashboard_exp
     data = _request_json_dict()
     col = data.get("column")
+
     if not col or not isinstance(col, str) or col not in e.plot_df.columns:
         return jsonify(error="Invalid column.", rows=[]), 400
     if col == "index":
         return jsonify(error="Cannot threshold index column.", rows=[]), 400
+
     raw_level = data.get("level")
     try:
         level = float(raw_level)
     except (TypeError, ValueError):
         return jsonify(error="Invalid threshold level.", rows=[]), 400
-    use_max = bool(data.get("use_max"))
-    series = pd.to_numeric(e.plot_df[col], errors="coerce")
+
+    series = pd.Series(pd.to_numeric(e.plot_df[col], errors="coerce"))
     if not series.notna().any():
         return (
             jsonify(error="Covariate has no numeric values for thresholding.", rows=[]),
             400,
         )
-    if use_max:
-        mask = series <= level
-    else:
-        mask = series >= level
-    mask = mask & series.notna()
+
+    mask = series.le(level) if bool(data.get("use_max")) else series.ge(level)
+    mask &= series.notna()
     rows_arr = np.flatnonzero(np.asarray(mask, dtype=bool)).astype(np.int64, copy=False)
+
     return jsonify(rows=rows_arr.tolist(), n=int(rows_arr.size))
 
 
@@ -274,12 +276,14 @@ def api_covariate_legend_context():
     e: DashboardExperiment = g.dashboard_exp
     data = _request_json_dict()
     col = data.get("column")
+
     if not col or not isinstance(col, str) or col not in e.plot_df.columns:
         return jsonify(error="Invalid column."), 400
     try:
         payload = covariate_legend_context_payload(e, col)
     except ValueError as err:
         return jsonify(error=str(err)), 400
+
     return jsonify(payload)
 
 
@@ -599,8 +603,17 @@ def api_preload_images():
     Delta responses (``response_mode: "delta"``) include ``batch_elapsed``: wall seconds
     for this request only (sampling + encode). ``elapsed`` remains cumulative for the
     server-side cache entry.
+
+    POST with ``{"invalidate_cache": true}`` drops server-side thumbnails for this
+    experiment epoch (used when the browser clears its local preload state).
     """
     e: DashboardExperiment = g.dashboard_exp
+    if request.method == "POST":
+        _inv_payload = _request_json_dict()
+        if _inv_payload.get("invalidate_cache"):
+            n_cleared = clear_preload_cache_for_experiment(e)
+            return jsonify(ok=True, cleared=n_cleared)
+
     if not e.can_preview_particles:
         return jsonify(rows=[], images=[], elapsed=0)
 

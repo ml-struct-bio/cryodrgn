@@ -502,6 +502,27 @@
   .cryo-image-grid-menu-body[hidden] {
     display: none !important;
   }
+  .cryo-image-grid-toolbar {
+    display: flex;
+    align-items: center;
+    align-content: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    margin-top: 0.2rem;
+  }
+  .cryo-image-grid-size-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin: 0;
+    font-size: 0.82rem;
+    color: var(--muted, #5c6b7a);
+  }
+  .cryo-image-grid-size-inline select {
+    width: 4.2rem;
+    padding: 0.1rem 0.2rem;
+    font-size: 0.82rem;
+  }
   #save-status {
     display: block;
     width: 100%;

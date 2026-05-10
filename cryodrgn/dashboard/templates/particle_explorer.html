@@ -855,6 +855,21 @@
     cursor: pointer;
     user-select: none;
   }
+  #color-discrete-switches .cryo-cc-discrete-switch {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: 0.28rem;
+    margin: 0;
+    padding: 0.2rem 0.36rem;
+    border: 1px solid rgba(36, 59, 83, 0.18);
+    border-radius: 0.42rem;
+    box-sizing: border-box;
+    font-size: 0.76rem;
+    font-weight: 500;
+    color: var(--nav-bg, #243b53);
+    cursor: pointer;
+    user-select: none;
+  }
   .cryo-color-discrete-switch-text {
     display: inline-flex;
     flex-direction: column;
@@ -873,7 +888,33 @@
     line-height: 1.1;
     white-space: nowrap;
   }
+  #color-discrete-switches .cryo-cc-discrete-switch-text {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    min-width: 0;
+    line-height: 1.15;
+  }
+  #color-discrete-switches .cryo-cc-discrete-switch-label {
+    line-height: 1.15;
+  }
+  #color-discrete-switches .cryo-cc-discrete-switch-count {
+    margin-top: 0.06rem;
+    font-size: 0.69em;
+    font-weight: 500;
+    opacity: 0.86;
+    line-height: 1.1;
+    white-space: nowrap;
+  }
   .cryo-color-discrete-switch input[type="checkbox"] {
+    margin: 0;
+    width: 1.05rem;
+    height: 1.05rem;
+    flex-shrink: 0;
+    accent-color: var(--accent, #c4703a);
+    cursor: pointer;
+  }
+  #color-discrete-switches .cryo-cc-discrete-switch input[type="checkbox"] {
     margin: 0;
     width: 1.05rem;
     height: 1.05rem;
@@ -1076,7 +1117,7 @@
         <div class="cryo-color-hist-controls">
           <label id="color-hist-mode-check-wrap" for="color-hist-mode-check">
             <input type="checkbox" id="color-hist-mode-check"/>
-            <span id="color-hist-mode-check-caption">Use as maximum (≤)</span>
+                    <span id="color-hist-mode-check-caption">Use as maximum (≤)</span>
           </label>
           <span id="color-threshold-status" class="status"></span>
         </div>
@@ -1311,6 +1352,7 @@
 </div>
 </div>
 
+<script src="{{ url_for('static', filename='js/color_covariate_legend.js') }}"></script>
 <script>
 (function() {
   var cols = {{ numeric_cols | tojson }};
@@ -1657,49 +1699,13 @@
     return out2;
   }
 
-  /* RGB stops for montage cell tinting (aligned with Plotly sequential scales). */
-  var CONTINUOUS_PALETTE_RGB = {
-    Viridis:
-      [[68,1,84],[72,39,119],[63,74,138],[49,104,142],[38,130,142],[31,157,138],[53,183,121],[109,205,89],[253,231,37]],
-    Plasma:
-      [[13,8,135],[76,2,161],[126,3,168],[170,35,149],[204,71,120],[230,108,92],[248,149,64],[253,197,39],[240,249,33]],
-    Inferno: [[0,0,4],[41,10,108],[108,2,112],[187,55,84],[249,142,8],[252,208,74],[252,254,164]],
-    Magma: [[0,0,4],[59,15,112],[122,4,111],[203,62,65],[252,141,89],[252,208,136],[252,253,191]],
-    Cividis: [[0,34,78],[0,57,112],[68,90,129],[115,128,131],[159,161,135],[206,186,122],[253,231,37]],
-    Turbo: [[48,18,59],[61,99,221],[26,152,223],[25,189,114],[208,230,28],[250,85,8],[144,12,2]],
-    Blues: [[247,251,255],[198,219,239],[107,174,214],[33,113,181],[8,48,107]],
-    Greens: [[247,252,245],[199,233,192],[116,196,118],[35,139,69],[0,68,27]],
-    Greys: [[255,255,255],[217,217,217],[150,150,150],[82,82,82],[0,0,0]],
-    Oranges: [[255,245,235],[253,208,162],[253,141,60],[217,72,1],[127,39,4]],
-    Purples: [[252,251,253],[218,218,235],[158,154,200],[106,81,163],[63,0,125]],
-    Reds: [[255,245,240],[252,187,161],[251,106,74],[203,24,29],[103,0,13]],
-    YlGnBu: [[255,255,217],[199,233,180],[65,182,196],[44,127,184],[8,29,88]],
-    YlOrRd: [[255,255,204],[255,237,160],[254,178,76],[240,59,32],[128,0,38]],
-    RdBu: [[103,0,31],[214,96,77],[247,247,247],[67,147,195],[5,48,97]],
-    Portland: [[12,51,131],[10,136,186],[242,211,56],[242,143,56],[217,30,30]],
-    Jet: [[0,0,127],[0,0,255],[0,255,255],[255,255,0],[255,0,0],[127,0,0]],
-    Hot: [[0,0,0],[176,0,0],[255,140,0],[255,255,102],[255,255,255]],
-    Blackbody: [[0,0,0],[91,12,107],[184,50,137],[242,109,75],[249,248,113]],
-    Electric: [[0,0,0],[30,0,109],[141,23,165],[217,79,213],[255,255,255]],
-    Rainbow: [[110,64,170],[71,118,230],[26,199,194],[123,217,76],[244,208,63],[242,95,92]],
-    Earth: [[0,0,130],[0,181,200],[125,190,66],[200,182,74],[139,69,19]]
-  };
   function selectedScatterPalette() {
     var r = document.querySelector("input[name=\"scatter_palette\"]:checked");
     var v = r && r.value ? String(r.value) : "Viridis";
-    return CONTINUOUS_PALETTE_RGB[v] ? v : "Viridis";
-  }
-  function paletteScaleCSS(paletteName, t) {
-    t = Math.max(0, Math.min(1, t));
-    var pal = CONTINUOUS_PALETTE_RGB[paletteName] || CONTINUOUS_PALETTE_RGB.Viridis;
-    var n = pal.length - 1, i = Math.min(Math.floor(t * n), n - 1), f = t * n - i;
-    var a = pal[i], b = pal[i + 1];
-    return "rgb(" + Math.round(a[0]+(b[0]-a[0])*f) + ","
-                  + Math.round(a[1]+(b[1]-a[1])*f) + ","
-                  + Math.round(a[2]+(b[2]-a[2])*f) + ")";
+    return CryoColorCovariateLegend.hasPalette(v) ? v : "Viridis";
   }
   function covariateScaleCSS(t) {
-    return paletteScaleCSS(selectedScatterPalette(), t);
+    return CryoColorCovariateLegend.paletteScaleCSS(selectedScatterPalette(), t);
   }
   var ACCENT = "#c4703a";
 
@@ -1819,6 +1825,7 @@
   var colorHistDragPreview = null;
   var colorHistSuppressClick = false;
   var COLOR_HIST_DRAG_MIN_PX = 5;
+  var explorerColorLegend = null;
   var leadModeLassoEl = document.getElementById("lead-mode-lasso");
   var leadModeThresholdEl = document.getElementById("lead-mode-threshold");
   var leadModeDiscreteEl = document.getElementById("lead-mode-discrete");
@@ -2948,10 +2955,7 @@
   }
 
   function formatColorThresholdValue(v) {
-    if (typeof v !== "number" || !isFinite(v)) return "";
-    var av = Math.abs(v);
-    if (av !== 0 && (av < 0.001 || av >= 10000)) return v.toExponential(3);
-    return String(Math.round(v * 1000) / 1000);
+    return CryoColorCovariateLegend.formatThresholdValue(v);
   }
 
   function escapeHtmlText(s) {
@@ -3005,6 +3009,9 @@
   }
 
   function hideColorHistogram() {
+    if (explorerColorLegend) {
+      explorerColorLegend.hide();
+    }
     if (colorHistPanel) {
       colorHistPanel.hidden = true;
       colorHistPanel.setAttribute("aria-hidden", "true");
@@ -3270,32 +3277,143 @@
     syncDiscreteInvertSelectionButton();
   }
 
+  function explorerLegendContextData() {
+    if (!gd || !gd.data || !gd.data[0] || !sc.value || sc.value === "none") return {};
+    if (scatterTraceColorMode() === "discrete") {
+      var cd = gd.data[0].customdata || [];
+      var markerColors = (gd.data[0].marker && gd.data[0].marker.color) || null;
+      var byKey = new Map();
+      for (var i = 0; i < cd.length; i++) {
+        var key = discreteCategoryKeyFromCustomRow(cd[i]);
+        var rec = byKey.get(key);
+        if (!rec) {
+          rec = {key: key, count: 0};
+          byKey.set(key, rec);
+        }
+        rec.count++;
+        if (!rec.color && Array.isArray(markerColors)) {
+          var cval = markerColors[i];
+          if (typeof cval === "string" && /^#/.test(cval)) rec.color = cval;
+        }
+      }
+      return {mode: "discrete", categories: Array.from(byKey.values())};
+    }
+    return {
+      mode: "continuous",
+      values: currentColorValueItems().map(function(item) { return item.value; })
+    };
+  }
+
+  function setExplorerLegendDiscreteKeysForSelection() {
+    if (!explorerColorLegend || !gd || !gd.data || !gd.data[0] || scatterTraceColorMode() !== "discrete") return;
+    var cd = gd.data[0].customdata || [];
+    var sel = new Set(saveSelectionRows || []);
+    var keyToRows = new Map();
+    for (var i = 0; i < cd.length; i++) {
+      var k = discreteCategoryKeyFromCustomRow(cd[i]);
+      var row = cd[i][1];
+      if (!keyToRows.has(k)) keyToRows.set(k, []);
+      keyToRows.get(k).push(row);
+    }
+    var checkedKeys = [];
+    keyToRows.forEach(function(rows, key) {
+      if (rows.length && rows.every(function(r) { return sel.has(r); })) checkedKeys.push(key);
+    });
+    explorerColorLegend.setDiscreteCheckedKeys(checkedKeys);
+  }
+
+  function applyExplorerDiscreteFilter(filter) {
+    if (!gd || !gd.data || !gd.data[0] || scatterTraceColorMode() !== "discrete") return;
+    var keys = filter && Array.isArray(filter.keys) ? filter.keys : [];
+    var keySet = new Set(keys.map(function(k) { return String(k); }));
+    clearScatterGeometricSelection();
+    colorThresholdLevel = null;
+    colorThresholdRange = null;
+    colorThresholdColorCol = null;
+    if (colorThresholdStatus) colorThresholdStatus.textContent = "";
+    if (!keySet.size) {
+      applyRowsSelection([], "Discrete");
+      return;
+    }
+    var cd = gd.data[0].customdata || [];
+    var rows = [];
+    for (var i = 0; i < cd.length; i++) {
+      var k = discreteCategoryKeyFromCustomRow(cd[i]);
+      if (keySet.has(k)) rows.push(cd[i][1]);
+    }
+    applyRowsSelection(rows, "Discrete");
+  }
+
+  function applyExplorerContinuousFilter(filter) {
+    var items = currentColorValueItems();
+    if (!filter || !items.length) return;
+    cancelLassoSelectionDebounce();
+    if (explorerColorLegend) explorerColorLegend.setDiscreteCheckedKeys([]);
+    clearScatterGeometricSelection();
+    var body = {column: sc.value};
+    var fallbackRows;
+    if (filter.kind === "threshold") {
+      var level = Number(filter.level);
+      if (!isFinite(level)) return;
+      colorThresholdLevel = level;
+      colorThresholdRange = null;
+      colorThresholdColorCol = sc.value;
+      body.level = level;
+      body.use_max = !!filter.use_max;
+      fallbackRows = function() {
+        return rowsMatchingColorThresholdFromTrace(items, level, !!filter.use_max);
+      };
+    } else if (filter.kind === "range") {
+      var lo = Number(filter.range_min);
+      var hi = Number(filter.range_max);
+      if (!isFinite(lo) || !isFinite(hi)) return;
+      var loN = Math.min(lo, hi);
+      var hiN = Math.max(lo, hi);
+      colorThresholdLevel = null;
+      colorThresholdRange = {lo: loN, hi: hiN};
+      colorThresholdColorCol = sc.value;
+      body.range_min = loN;
+      body.range_max = hiN;
+      body.invert_range = !!filter.invert_range;
+      fallbackRows = function() {
+        return rowsMatchingColorRangeFromTrace(items, loN, hiN, !!filter.invert_range);
+      };
+    } else {
+      return;
+    }
+    fetch("{{ url_for('api_covariate_threshold_rows') }}", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body)
+    })
+      .then(function(r) {
+        return r.json().then(function(j) { return {ok: r.ok, j: j}; });
+      })
+      .then(function(res) {
+        var rows = (res.ok && res.j && Array.isArray(res.j.rows)) ? res.j.rows : fallbackRows();
+        applyRowsSelection(rows, "Color threshold");
+      })
+      .catch(function() {
+        applyRowsSelection(fallbackRows(), "Color threshold");
+      });
+  }
+
+  function handleExplorerLegendFilter(filter) {
+    if (!filter) return;
+    if (filter.kind === "discrete") {
+      applyExplorerDiscreteFilter(filter);
+    } else {
+      applyExplorerContinuousFilter(filter);
+    }
+  }
+
   function syncColorCovariateSidePanel() {
     if (!colorHistPanel) return;
     if (!plotHasScatterData() || !sc.value || sc.value === "none") {
       hideColorHistogram();
       return;
     }
-    colorHistPanel.hidden = false;
-    colorHistPanel.setAttribute("aria-hidden", "false");
-    if (scatterTraceColorMode() === "discrete") {
-      if (colorContinuousWrap) colorContinuousWrap.hidden = true;
-      if (colorDiscreteWrap) {
-        colorDiscreteWrap.hidden = false;
-        colorDiscreteWrap.classList.add("cryo-color-discrete-wrap--show");
-      }
-      renderDiscreteColorSwitches();
-      if (colorThresholdStatus) colorThresholdStatus.textContent = "";
-    } else {
-      if (colorDiscreteWrap) {
-        colorDiscreteWrap.hidden = true;
-        colorDiscreteWrap.classList.remove("cryo-color-discrete-wrap--show");
-      }
-      if (colorDiscreteSwitches) colorDiscreteSwitches.innerHTML = "";
-      syncDiscreteInvertSelectionButton();
-      if (colorContinuousWrap) colorContinuousWrap.hidden = false;
-      renderColorHistogram();
-    }
+    if (explorerColorLegend) explorerColorLegend.refresh();
     syncParticleExplorerRowExpandForColorHist();
   }
 
@@ -3558,9 +3676,11 @@
     colorHistDragStartClientX = null;
     window.removeEventListener("mousemove", handleColorHistogramWindowMouseMove);
     window.removeEventListener("mouseup", endColorHistogramDrag, true);
+    if (explorerColorLegend) explorerColorLegend.clearThreshold();
     if (colorThresholdStatus) colorThresholdStatus.textContent = "";
     syncColorHistModeCheckboxCaption();
     resetDiscreteCategorySwitches();
+    if (explorerColorLegend) explorerColorLegend.setDiscreteCheckedKeys([]);
     if (hadGuide && colorHistDiv && colorHistDiv.data) {
       relayoutColorHistogramGuides();
     }
@@ -3712,7 +3832,7 @@
     }
     if (!vals.length) vals = xs.slice();
     if (xmax <= xmin) {
-      var oneColor = paletteScaleCSS(selectedScatterPalette(), 0.5);
+      var oneColor = CryoColorCovariateLegend.paletteScaleCSS(selectedScatterPalette(), 0.5);
       var singleOutlierColors = [];
       for (var soc = 0; soc < outlierX.length; soc++) singleOutlierColors.push(oneColor);
       return {
@@ -3782,14 +3902,14 @@
     var palName = selectedScatterPalette();
     var outlierColors = [];
     for (var oc = 0; oc < outlierX.length; oc++) {
-      outlierColors.push(paletteScaleCSS(palName, (outlierX[oc] - xmin) / span));
+      outlierColors.push(CryoColorCovariateLegend.paletteScaleCSS(palName, (outlierX[oc] - xmin) / span));
     }
     for (var s = 0; s < gridX.length - 1; s++) {
       var x0 = gridX[s], x1 = gridX[s + 1];
       var y = Math.max(half[s], half[s + 1]);
       if (y <= 0) continue;
       var t = ((x0 + x1) * 0.5 - xmin) / span;
-      var fillColor = paletteScaleCSS(palName, t);
+      var fillColor = CryoColorCovariateLegend.paletteScaleCSS(palName, t);
       fillTraces.push({
         type: "scatter",
         mode: "lines",
@@ -4662,6 +4782,10 @@
     colorThresholdLevel = null;
     colorThresholdRange = null;
     colorThresholdColorCol = null;
+    if (explorerColorLegend) {
+      explorerColorLegend.clearThreshold();
+      explorerColorLegend.setDiscreteCheckedKeys([]);
+    }
     if (colorThresholdStatus) colorThresholdStatus.textContent = "";
     syncColorHistModeCheckboxCaption();
     resetDiscreteCategorySwitches();
@@ -5175,6 +5299,41 @@
     });
   }
 
+  explorerColorLegend = new CryoColorCovariateLegend({
+    legendContextUrl: "{{ url_for('api_covariate_legend_context') }}",
+    getLegendContextData: explorerLegendContextData,
+    covariateDisplayMap: covariateDisplayMap,
+    getColorColumn: function() { return sc.value; },
+    getPaletteName: selectedScatterPalette,
+    panel: colorHistPanel,
+    continuousWrap: colorContinuousWrap,
+    discreteWrap: colorDiscreteWrap,
+    histDiv: colorHistDiv,
+    thresholdUseMax: colorHistModeCheck,
+    thresholdModeCaption: colorHistModeCheckCaption,
+    thresholdStatus: colorThresholdStatus,
+    discreteSwitches: colorDiscreteSwitches,
+    invertBtn: btnDiscreteInvertSelection,
+    vertical: false,
+    histPlotVertical: false,
+    discreteCheckedDefault: false,
+    allDiscreteSelectedIsNull: false,
+    noDiscreteSelectionText: "no selection made!",
+    thresholdEmptyStatusText: "no selection made!",
+    notifyOnRefresh: false,
+    formatParticleCount: function(n) {
+      var v = Number(n);
+      if (!isFinite(v)) v = 0;
+      return fmtInt(v) + (Math.round(v) === 1 ? " particle" : " particles");
+    },
+    onContinuousHistogramLayout: syncParticleExplorerRowExpandForColorHist,
+    onDiscreteLayout: syncParticleExplorerRowExpandForColorHist,
+    onModeChange: function(mode) {
+      if (mode === "discrete") setExplorerLegendDiscreteKeysForSelection();
+    },
+    onFilterChange: handleExplorerLegendFilter
+  });
+
   [sx, sy].forEach(function(s) {
     s.addEventListener("change", function() { triggerRedraw(false); });
   });
@@ -5197,34 +5356,6 @@
   if (imageGridMenuToggle) {
     imageGridMenuToggle.addEventListener("click", function() {
       setImageGridMenuOpen(!imageGridMenuIsOpen());
-    });
-  }
-  if (colorHistModeCheck) {
-    colorHistModeCheck.addEventListener("change", function() {
-      if (colorHistContinuousRangeModeActive()) {
-        applyColorRangeSelection(colorThresholdRange.lo, colorThresholdRange.hi);
-      } else if (colorThresholdLevel != null && colorThresholdColorCol === sc.value) {
-        applyColorThresholdSelection(colorThresholdLevel);
-      } else {
-        syncColorCovariateSidePanel();
-      }
-    });
-  }
-  if (btnDiscreteInvertSelection) {
-    btnDiscreteInvertSelection.addEventListener("click", function() {
-      if (!colorDiscreteSwitches || btnDiscreteInvertSelection.disabled) return;
-      var inputs = colorDiscreteSwitches.querySelectorAll("input[type=\"checkbox\"]");
-      if (!inputs.length) return;
-      suppressDiscreteSwitchProgrammatic = true;
-      try {
-        for (var i = 0; i < inputs.length; i++) {
-          inputs[i].checked = !inputs[i].checked;
-          inputs[i].setAttribute("aria-checked", inputs[i].checked ? "true" : "false");
-        }
-      } finally {
-        suppressDiscreteSwitchProgrammatic = false;
-      }
-      applyDiscreteCategorySelectionFromSwitches();
     });
   }
   updateParticleSelFieldset();

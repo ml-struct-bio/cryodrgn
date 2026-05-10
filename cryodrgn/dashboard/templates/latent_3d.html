@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_palette_options.html" import continuous_palette_options %}
 {% block title %}3-D Latent Space Visualizer · cryoDRGN{% endblock %}
 {% from "_macros.html" import nav_page_title_span %}
 {% block nav_page_title %}{{ nav_page_title_span("3D visualizer") }}{% endblock %}
@@ -399,7 +400,7 @@
                 <div class="cryo-cc-legend-hist-ctrl">
                   <label for="latent3d-color-threshold-use-max">
                     <input type="checkbox" id="latent3d-color-threshold-use-max"/>
-                    Use as maximum (≤)
+                    <span id="latent3d-color-threshold-mode-caption">Use as maximum (≤)</span>
                   </label>
                   <span id="latent3d-color-threshold-status" class="status"></span>
                 </div>
@@ -412,24 +413,7 @@
                   </button>
                   <div id="latent3d-palette-options"
                     class="pairplot-palette-select__options cryo-palette-select__options pairplot-palette-select__options--collapsed">
-                    <label class="pairplot-palette-option"><input type="radio" name="latent3d_palette" value="Viridis" checked/><span
-                      class="pairplot-palette-select__swatch"
-                      style="background:linear-gradient(90deg,#440154,#3b528b,#21918c,#5ec962,#fde725);"></span>Viridis</label>
-                    <label class="pairplot-palette-option"><input type="radio" name="latent3d_palette" value="Plasma"/><span
-                      class="pairplot-palette-select__swatch"
-                      style="background:linear-gradient(90deg,#0d0887,#7e03a8,#cc4778,#f89441,#f0f921);"></span>Plasma</label>
-                    <label class="pairplot-palette-option"><input type="radio" name="latent3d_palette" value="Inferno"/><span
-                      class="pairplot-palette-select__swatch"
-                      style="background:linear-gradient(90deg,#000004,#6f0918,#d04e3a,#fbc026,#fcffa4);"></span>Inferno</label>
-                    <label class="pairplot-palette-option"><input type="radio" name="latent3d_palette" value="Magma"/><span
-                      class="pairplot-palette-select__swatch"
-                      style="background:linear-gradient(90deg,#000004,#3b0f70,#8c2981,#de4968,#febb81);"></span>Magma</label>
-                    <label class="pairplot-palette-option"><input type="radio" name="latent3d_palette" value="Cividis"/><span
-                      class="pairplot-palette-select__swatch"
-                      style="background:linear-gradient(90deg,#00224e,#124176,#5c6d69,#bec290,#fde725);"></span>Cividis</label>
-                    <label class="pairplot-palette-option"><input type="radio" name="latent3d_palette" value="Turbo"/><span
-                      class="pairplot-palette-select__swatch"
-                      style="background:linear-gradient(90deg,#30123b,#4777ef,#1fa187,#ffbe32,#991200);"></span>Turbo</label>
+                    {{ continuous_palette_options("latent3d_palette") }}
                   </div>
                 </div>
               </div>
@@ -565,22 +549,12 @@
     });
   }
 
-  function syncLatent3dPaletteOptions() {
-    if (!latent3dPaletteOptions || !latent3dPaletteToggle || !latent3dPaletteSelect) {
-      return;
-    }
-    var show = latent3dPaletteToggle.getAttribute("aria-expanded") === "true"
-      && !latent3dPaletteSelect.classList.contains("latent3d-palette-select--hidden-during-plot-render");
-    latent3dPaletteOptions.classList.toggle("pairplot-palette-select__options--collapsed", !show);
-  }
-
-  if (latent3dPaletteToggle) {
-    latent3dPaletteToggle.addEventListener("click", function() {
-      var expanded = latent3dPaletteToggle.getAttribute("aria-expanded") === "true";
-      latent3dPaletteToggle.setAttribute("aria-expanded", expanded ? "false" : "true");
-      syncLatent3dPaletteOptions();
-    });
-  }
+  var latent3dPaletteMenu = CryoColorCovariateLegend.wirePaletteSelect({
+    toggle: latent3dPaletteToggle,
+    options: latent3dPaletteOptions,
+    select: latent3dPaletteSelect,
+    hiddenClass: "latent3d-palette-select--hidden-during-plot-render"
+  });
 
   function syncLatent3dPaletteFieldset() {
     if (!latent3dPaletteSelect) return;
@@ -590,10 +564,8 @@
     var discreteVisible = !!(disc && !disc.hidden && disc.classList.contains("cryo-cc-discrete-wrap--show"));
     var suppress = rendering || !hasColor || discreteVisible;
     latent3dPaletteSelect.classList.toggle("latent3d-palette-select--hidden-during-plot-render", suppress);
-    if (suppress && latent3dPaletteToggle) {
-      latent3dPaletteToggle.setAttribute("aria-expanded", "false");
-    }
-    syncLatent3dPaletteOptions();
+    if (suppress) latent3dPaletteMenu.close();
+    else latent3dPaletteMenu.sync();
   }
 
   var latent3dLegendMiddleWidthPx = null;
@@ -683,8 +655,7 @@
   function selectedLatentPalette() {
     var r = document.querySelector("input[name=\"latent3d_palette\"]:checked");
     var v = r && r.value ? String(r.value) : "Viridis";
-    var allowed = { Viridis: 1, Plasma: 1, Inferno: 1, Magma: 1, Cividis: 1, Turbo: 1 };
-    return allowed[v] ? v : "Viridis";
+    return CryoColorCovariateLegend.hasPalette(v) ? v : "Viridis";
   }
 
   var latent3dColorLegend = new CryoColorCovariateLegend({
@@ -697,6 +668,7 @@
     discreteWrap: document.getElementById("latent3d-color-discrete-wrap"),
     histDiv: document.getElementById("latent3d-color-hist"),
     thresholdUseMax: document.getElementById("latent3d-color-threshold-use-max"),
+    thresholdModeCaption: document.getElementById("latent3d-color-threshold-mode-caption"),
     thresholdStatus: document.getElementById("latent3d-color-threshold-status"),
     discreteSwitches: document.getElementById("latent3d-color-discrete-switches"),
     invertBtn: document.getElementById("latent3d-btn-discrete-invert"),

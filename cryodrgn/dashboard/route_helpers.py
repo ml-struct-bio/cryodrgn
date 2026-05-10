@@ -29,13 +29,21 @@ _EXPLORER_VOLUMES_INELIGIBLE_MSG = (
 )
 
 
+def _dashboard_scatter_cap_from_env(default: int) -> tuple[int, bool]:
+    """Return clamped scatter cap and whether a valid env override was present."""
+    raw = (os.environ.get("CRYODRGN_DASHBOARD_FILTER_MAX_POINTS") or "").strip()
+    if not raw:
+        return default, False
+    try:
+        value = int(raw)
+    except ValueError:
+        return default, False
+    return max(50_000, min(value, 2_000_000)), True
+
+
 def _filter_ui_scatter_max_points() -> int:
     """Cap for ``/api/scatter`` when ``filter_ui=1`` (env override available)."""
-    try:
-        v = int(os.environ.get("CRYODRGN_DASHBOARD_FILTER_MAX_POINTS", "500000"))
-    except ValueError:
-        v = 500_000
-    return max(50_000, min(v, 2_000_000))
+    return _dashboard_scatter_cap_from_env(500_000)[0]
 
 
 def _particle_explorer_scatter_max_points() -> int:
@@ -45,25 +53,12 @@ def _particle_explorer_scatter_max_points() -> int:
     … --filter-max N``), use that clamped cap. Otherwise keep the historical
     200k default for ``/api/scatter`` without ``filter_ui``.
     """
-    raw = (os.environ.get("CRYODRGN_DASHBOARD_FILTER_MAX_POINTS") or "").strip()
-    if raw:
-        try:
-            return max(50_000, min(int(raw), 2_000_000))
-        except ValueError:
-            pass
-    return 200_000
+    return _dashboard_scatter_cap_from_env(200_000)[0]
 
 
 def _particle_explorer_scatter_cap_from_env() -> bool:
     """True when the explorer scatter cap comes from FILTER_MAX_POINTS (CLI or env)."""
-    raw = (os.environ.get("CRYODRGN_DASHBOARD_FILTER_MAX_POINTS") or "").strip()
-    if not raw:
-        return False
-    try:
-        int(raw)
-    except ValueError:
-        return False
-    return True
+    return _dashboard_scatter_cap_from_env(200_000)[1]
 
 
 def _default_xy_cols(cols: list[str]) -> tuple[str, str]:
@@ -159,7 +154,7 @@ def _parse_pairplot_request(
 def _parse_color_filter_for_column(
     color_col: str, payload: dict
 ) -> dict[str, Any] | None:
-    """Parse optional ``color_filter`` from a JSON body (threshold or discrete keys)."""
+    """Parse optional ``color_filter`` from a JSON body."""
     raw = payload.get("color_filter")
     if raw in (None, "", {}):
         return None
@@ -173,12 +168,26 @@ def _parse_color_filter_for_column(
             raise ValueError("Invalid colour threshold level.") from exc
         use_max = bool(raw.get("use_max"))
         return {"kind": "threshold", "level": level, "use_max": use_max}
+    if kind == "range":
+        try:
+            r0 = float(raw["range_min"])
+            r1 = float(raw["range_max"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("Invalid colour range bounds.") from exc
+        if r0 > r1:
+            r0, r1 = r1, r0
+        return {
+            "kind": "range",
+            "range_min": r0,
+            "range_max": r1,
+            "invert_range": bool(raw.get("invert_range")),
+        }
     if kind == "discrete":
         keys = raw.get("keys")
         if not isinstance(keys, list):
             raise ValueError("Discrete colour filter requires a keys array.")
         return {"kind": "discrete", "keys": [str(k) for k in keys]}
-    raise ValueError("color_filter kind must be threshold or discrete.")
+    raise ValueError("color_filter kind must be threshold, range, or discrete.")
 
 
 def _add_direct_anchor_pidx(payload: dict, p: dict, z_traj: np.ndarray) -> None:

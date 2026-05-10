@@ -735,6 +735,8 @@ class TestParticleExplorerTemplateRegressions:
         assert 'id="btn-cache-selection-uncached"' in body
         assert "Add 0 selection images to cache" in body
         assert 'id="color-discrete-switches"' in body
+        assert "js/color_covariate_legend.js" in body
+        assert "new CryoColorCovariateLegend" in body
         assert "function showGridHighlightsEnabled()" in body
 
     def test_full_cache_load_suppresses_montage_and_plot_highlight_updates(

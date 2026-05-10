@@ -364,6 +364,18 @@ def plot_df_color_filter_mask(
         else:
             mask = (series >= level) & series.notna()
         return mask.to_numpy(dtype=bool)
+    if kind == "range":
+        r0 = float(color_filter["range_min"])
+        r1 = float(color_filter["range_max"])
+        if r0 > r1:
+            r0, r1 = r1, r0
+        series = pd.to_numeric(df[color_col], errors="coerce")
+        inside = (series >= r0) & (series <= r1) & series.notna()
+        if bool(color_filter.get("invert_range")):
+            mask = (~inside) & series.notna()
+        else:
+            mask = inside
+        return mask.to_numpy(dtype=bool)
     if kind == "discrete":
         keys_inc = frozenset(str(k) for k in color_filter.get("keys") or ())
         ser = df[color_col]
@@ -665,6 +677,22 @@ def scatter_json(
     return _plotly_to_json(fig)
 
 
+def _validate_three_latent_axes(
+    exp: DashboardExperiment,
+    df: pd.DataFrame,
+    axes: tuple[str, str, str],
+) -> None:
+    """Validate three distinct latent ``z*`` axes against the experiment table."""
+    z_allowed = {f"z{i}" for i in range(int(exp.z.shape[1]))}
+    for col in axes:
+        if col not in z_allowed:
+            raise ValueError(f"Axis {col!r} is not a latent dimension for this run.")
+        if col not in df.columns:
+            raise ValueError(f"Missing column {col!r} in analysis table.")
+    if len(set(axes)) < 3:
+        raise ValueError("Choose three distinct latent axes.")
+
+
 def scatter3d_z_json(
     exp: DashboardExperiment,
     xcol: str,
@@ -679,14 +707,7 @@ def scatter3d_z_json(
     """Interactive 3D scatter of three latent ``z*`` columns."""
     plotly_cs = normalize_continuous_palette(continuous_palette)
     df = exp.plot_df
-    z_allowed = {f"z{i}" for i in range(int(exp.z.shape[1]))}
-    for c in (xcol, ycol, zcol):
-        if c not in z_allowed:
-            raise ValueError(f"Axis {c!r} is not a latent dimension for this run.")
-        if c not in df.columns:
-            raise ValueError(f"Missing column {c!r} in analysis table.")
-    if len({xcol, ycol, zcol}) < 3:
-        raise ValueError("Choose three distinct latent axes.")
+    _validate_three_latent_axes(exp, df, (xcol, ycol, zcol))
 
     if color_filter and color_col and color_col != "none":
         mask = plot_df_color_filter_mask(df, color_col, color_filter)
@@ -783,14 +804,7 @@ def scatter3d_z_preview_png(
     plotly_cs = normalize_continuous_palette(continuous_palette)
     mpl_cmap_name = mpl_cmap_for_palette(plotly_cs)
     df = exp.plot_df
-    z_allowed = {f"z{i}" for i in range(int(exp.z.shape[1]))}
-    for c in (xcol, ycol, zcol):
-        if c not in z_allowed:
-            raise ValueError(f"Axis {c!r} is not a latent dimension for this run.")
-        if c not in df.columns:
-            raise ValueError(f"Missing column {c!r} in analysis table.")
-    if len({xcol, ycol, zcol}) < 3:
-        raise ValueError("Choose three distinct latent axes.")
+    _validate_three_latent_axes(exp, df, (xcol, ycol, zcol))
 
     sub, _row_indices = _subsample(df, max_points, seed=1)
     xs = sub[xcol].to_numpy(dtype=np.float64)

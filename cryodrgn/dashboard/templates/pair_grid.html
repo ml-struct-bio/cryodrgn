@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_palette_options.html" import continuous_palette_options %}
 {# 4×4 mini-grids: row i = top→bottom, col j = left→right; matches zᵢ (row) vs zⱼ (col) #}
 {% macro picto_lower() %}
 <svg class="pair-picto" width="32" height="32" viewBox="0 0 34 34" aria-hidden="true" focusable="false"
@@ -727,7 +728,7 @@
                 <div class="cryo-cc-legend-hist-ctrl">
                   <label for="pair-color-threshold-use-max">
                     <input type="checkbox" id="pair-color-threshold-use-max"/>
-                    Use as maximum (≤)
+                    <span id="pair-color-threshold-mode-caption">Use as maximum (≤)</span>
                   </label>
                   <span id="pair-color-threshold-status" class="status"></span>
                 </div>
@@ -740,24 +741,7 @@
                   </button>
                   <div id="pair-palette-options"
                     class="pairplot-palette-select__options cryo-palette-select__options pairplot-palette-select__options--collapsed">
-                    <label class="pairplot-palette-option"><input type="radio" name="pairplot_palette" value="Viridis" checked/><span
-                      class="pairplot-palette-select__swatch"
-                      style="background:linear-gradient(90deg,#440154,#3b528b,#21918c,#5ec962,#fde725);"></span>Viridis</label>
-                    <label class="pairplot-palette-option"><input type="radio" name="pairplot_palette" value="Plasma"/><span
-                      class="pairplot-palette-select__swatch"
-                      style="background:linear-gradient(90deg,#0d0887,#7e03a8,#cc4778,#f89441,#f0f921);"></span>Plasma</label>
-                    <label class="pairplot-palette-option"><input type="radio" name="pairplot_palette" value="Inferno"/><span
-                      class="pairplot-palette-select__swatch"
-                      style="background:linear-gradient(90deg,#000004,#6f0918,#d04e3a,#fbc026,#fcffa4);"></span>Inferno</label>
-                    <label class="pairplot-palette-option"><input type="radio" name="pairplot_palette" value="Magma"/><span
-                      class="pairplot-palette-select__swatch"
-                      style="background:linear-gradient(90deg,#000004,#3b0f70,#8c2981,#de4968,#febb81);"></span>Magma</label>
-                    <label class="pairplot-palette-option"><input type="radio" name="pairplot_palette" value="Cividis"/><span
-                      class="pairplot-palette-select__swatch"
-                      style="background:linear-gradient(90deg,#00224e,#124176,#5c6d69,#bec290,#fde725);"></span>Cividis</label>
-                    <label class="pairplot-palette-option"><input type="radio" name="pairplot_palette" value="Turbo"/><span
-                      class="pairplot-palette-select__swatch"
-                      style="background:linear-gradient(90deg,#30123b,#4777ef,#1fa187,#ffbe32,#991200);"></span>Turbo</label>
+                    {{ continuous_palette_options("pairplot_palette") }}
                   </div>
                 </div>
               </div>
@@ -809,22 +793,12 @@
     return r ? r.value : null;
   }
 
-  function syncPairplotPaletteOptions() {
-    if (!pairPaletteOptions || !pairPaletteToggle || !pairPaletteSelect) {
-      return;
-    }
-    var show = pairPaletteToggle.getAttribute("aria-expanded") === "true"
-      && !pairPaletteSelect.classList.contains("pairplot-palette-select--hidden-during-plot-render");
-    pairPaletteOptions.classList.toggle("pairplot-palette-select__options--collapsed", !show);
-  }
-
-  if (pairPaletteToggle) {
-    pairPaletteToggle.addEventListener("click", function() {
-      var expanded = pairPaletteToggle.getAttribute("aria-expanded") === "true";
-      pairPaletteToggle.setAttribute("aria-expanded", expanded ? "false" : "true");
-      syncPairplotPaletteOptions();
-    });
-  }
+  var pairPaletteMenu = CryoColorCovariateLegend.wirePaletteSelect({
+    toggle: pairPaletteToggle,
+    options: pairPaletteOptions,
+    select: pairPaletteSelect,
+    hiddenClass: "pairplot-palette-select--hidden-during-plot-render"
+  });
 
   /** Pixel width of the discrete 2-col switch grid; drives continuous histogram column width. */
   var pairLegendMiddleWidthPx = null;
@@ -904,6 +878,7 @@
     discreteWrap: document.getElementById("pair-color-discrete-wrap"),
     histDiv: document.getElementById("pair-color-hist"),
     thresholdUseMax: document.getElementById("pair-color-threshold-use-max"),
+    thresholdModeCaption: document.getElementById("pair-color-threshold-mode-caption"),
     thresholdStatus: document.getElementById("pair-color-threshold-status"),
     discreteSwitches: document.getElementById("pair-color-discrete-switches"),
     invertBtn: document.getElementById("pair-btn-discrete-invert"),
@@ -1164,10 +1139,7 @@
     if (pairPaletteSelect) {
       pairPaletteSelect.classList.toggle("pairplot-palette-select--hidden-during-plot-render", on);
     }
-    if (!on && pairPaletteToggle) {
-      pairPaletteToggle.setAttribute("aria-expanded", "false");
-      syncPairplotPaletteOptions();
-    }
+    if (!on) pairPaletteMenu.close();
   }
 
   applyCellLayout(placeholderCells);

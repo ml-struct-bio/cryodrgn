@@ -1,8 +1,9 @@
 /**
- * Colour covariate histogram + discrete toggles (particle-explorer style) for
- * pair-grid and 3-D latent views. Optional `histPlotVertical`: covariate on y,
- * density on x (pair-plot aside). Optional `onDiscreteLayout` / `onContinuousHistogramLayout`
- * run after DOM / Plotly layout. Panel `vertical` controls CSS layout class.
+ * Colour covariate histogram + discrete toggles shared by particle explorer,
+ * pair-grid, and 3-D latent views. Continuous legends support click thresholds
+ * and drag ranges; optional `histPlotVertical` swaps covariate onto y and
+ * density onto x (pair-plot/3-D asides). Optional layout callbacks run after
+ * DOM / Plotly layout. Panel `vertical` controls CSS layout class.
  */
 (function (global) {
   "use strict";
@@ -13,7 +14,23 @@
     Inferno: [[0, 0, 4], [41, 10, 108], [108, 2, 112], [187, 55, 84], [249, 142, 8], [252, 208, 74], [252, 254, 164]],
     Magma: [[0, 0, 4], [59, 15, 112], [122, 4, 111], [203, 62, 65], [252, 141, 89], [252, 208, 136], [252, 253, 191]],
     Cividis: [[0, 34, 78], [0, 57, 112], [68, 90, 129], [115, 128, 131], [159, 161, 135], [206, 186, 122], [253, 231, 37]],
-    Turbo: [[48, 18, 59], [61, 99, 221], [26, 152, 223], [25, 189, 114], [208, 230, 28], [250, 85, 8], [144, 12, 2]]
+    Turbo: [[48, 18, 59], [61, 99, 221], [26, 152, 223], [25, 189, 114], [208, 230, 28], [250, 85, 8], [144, 12, 2]],
+    Blues: [[247, 251, 255], [198, 219, 239], [107, 174, 214], [33, 113, 181], [8, 48, 107]],
+    Greens: [[247, 252, 245], [199, 233, 192], [116, 196, 118], [35, 139, 69], [0, 68, 27]],
+    Greys: [[255, 255, 255], [217, 217, 217], [150, 150, 150], [82, 82, 82], [0, 0, 0]],
+    Oranges: [[255, 245, 235], [253, 208, 162], [253, 141, 60], [217, 72, 1], [127, 39, 4]],
+    Purples: [[252, 251, 253], [218, 218, 235], [158, 154, 200], [106, 81, 163], [63, 0, 125]],
+    Reds: [[255, 245, 240], [252, 187, 161], [251, 106, 74], [203, 24, 29], [103, 0, 13]],
+    YlGnBu: [[255, 255, 217], [199, 233, 180], [65, 182, 196], [44, 127, 184], [8, 29, 88]],
+    YlOrRd: [[255, 255, 204], [255, 237, 160], [254, 178, 76], [240, 59, 32], [128, 0, 38]],
+    RdBu: [[103, 0, 31], [214, 96, 77], [247, 247, 247], [67, 147, 195], [5, 48, 97]],
+    Portland: [[12, 51, 131], [10, 136, 186], [242, 211, 56], [242, 143, 56], [217, 30, 30]],
+    Jet: [[0, 0, 127], [0, 0, 255], [0, 255, 255], [255, 255, 0], [255, 0, 0], [127, 0, 0]],
+    Hot: [[0, 0, 0], [176, 0, 0], [255, 140, 0], [255, 255, 102], [255, 255, 255]],
+    Blackbody: [[0, 0, 0], [91, 12, 107], [184, 50, 137], [242, 109, 75], [249, 248, 113]],
+    Electric: [[0, 0, 0], [30, 0, 109], [141, 23, 165], [217, 79, 213], [255, 255, 255]],
+    Rainbow: [[110, 64, 170], [71, 118, 230], [26, 199, 194], [123, 217, 76], [244, 208, 63], [242, 95, 92]],
+    Earth: [[0, 0, 130], [0, 181, 200], [125, 190, 66], [200, 182, 74], [139, 69, 19]]
   };
 
   function paletteScaleCSS(paletteName, t) {
@@ -34,6 +51,11 @@
     var av = Math.abs(v);
     if (av !== 0 && (av < 0.001 || av >= 10000)) return v.toExponential(3);
     return String(Math.round(v * 1000) / 1000);
+  }
+
+  function rangeInequalityPhrase(lo, hi, label) {
+    return formatThresholdValue(Math.min(lo, hi)) + " <= " + label + " <= "
+      + formatThresholdValue(Math.max(lo, hi));
   }
 
   function quantileSorted(sorted, q) {
@@ -276,6 +298,7 @@
 
   function CryoColorCovariateLegend(opts) {
     this.legendContextUrl = opts.legendContextUrl;
+    this.getLegendContextData = opts.getLegendContextData || null;
     this.covariateDisplayMap = opts.covariateDisplayMap || {};
     this.getColorColumn = opts.getColorColumn;
     this.getPaletteName = opts.getPaletteName;
@@ -284,11 +307,18 @@
     this.discreteWrap = opts.discreteWrap;
     this.histDiv = opts.histDiv;
     this.thresholdUseMax = opts.thresholdUseMax;
+    this.thresholdModeCaption = opts.thresholdModeCaption || null;
     this.thresholdStatus = opts.thresholdStatus;
     this.discreteSwitches = opts.discreteSwitches;
     this.invertBtn = opts.invertBtn;
+    this.discreteCheckedDefault = opts.discreteCheckedDefault !== false;
+    this.allDiscreteSelectedIsNull = opts.allDiscreteSelectedIsNull !== false;
+    this.noDiscreteSelectionText = opts.noDiscreteSelectionText || "no selection";
+    this.thresholdEmptyStatusText = opts.thresholdEmptyStatusText || "";
+    this.formatParticleCount = opts.formatParticleCount || formatParticleCount;
     this.onFilterChange = opts.onFilterChange || function () {};
     this.onModeChange = opts.onModeChange || function () {};
+    this.notifyOnRefresh = opts.notifyOnRefresh !== false;
     this.onContinuousHistogramLayout = opts.onContinuousHistogramLayout || null;
     this.onDiscreteLayout = opts.onDiscreteLayout || null;
     this.vertical = opts.vertical !== false;
@@ -296,11 +326,19 @@
     this._mode = null;
     this._allCatKeys = [];
     this._thresholdLevel = null;
+    this._thresholdRange = null;
     this._thresholdCol = null;
     this._histWired = false;
     this._suppressDiscrete = false;
     this._hoverRaf = null;
     this._hoverLevel = null;
+    this._histPointerDown = false;
+    this._histDragMoved = false;
+    this._histDragStartLevel = null;
+    this._histDragStartClientCoord = null;
+    this._histDragPreview = null;
+    this._histSuppressClick = false;
+    this._thresholdModeWasRange = false;
     this._continuousValues = [];
     this._histValueRange = null;
     if (this.panel && this.vertical) {
@@ -309,11 +347,7 @@
     var self = this;
     if (this.thresholdUseMax) {
       this.thresholdUseMax.addEventListener("change", function () {
-        if (self._thresholdLevel != null && self.thresholdStatus) {
-          var useMax = !!(self.thresholdUseMax && self.thresholdUseMax.checked);
-          var op = useMax ? "\u2264" : "\u2265";
-          self.thresholdStatus.textContent = "Threshold: " + op + " " + formatThresholdValue(self._thresholdLevel);
-        }
+        self._syncThresholdModeCaption();
         self._notify();
         self._relayoutHistGuides();
       });
@@ -337,8 +371,12 @@
     this._mode = null;
     this._allCatKeys = [];
     this._thresholdLevel = null;
+    this._thresholdRange = null;
     this._thresholdCol = null;
     this._histValueRange = null;
+    this._histDragPreview = null;
+    this._histPointerDown = false;
+    this._syncThresholdModeCaption();
   };
 
   /** Panel visible with only the heading (no histogram / discrete UI). Used when no colour covariate is selected. */
@@ -346,8 +384,11 @@
     this._mode = null;
     this._allCatKeys = [];
     this._thresholdLevel = null;
+    this._thresholdRange = null;
     this._thresholdCol = null;
     this._histValueRange = null;
+    this._histDragPreview = null;
+    this._histPointerDown = false;
     this._continuousValues = [];
     this.clearThreshold();
     if (this.histDiv) {
@@ -394,7 +435,16 @@
     var col = this.getColorColumn();
     if (!col || col === "none") return null;
     if (this._mode === "continuous") {
-      if (this._thresholdLevel == null || this._thresholdCol !== col) return null;
+      if (this._thresholdCol !== col) return null;
+      if (this._thresholdRange != null) {
+        return {
+          kind: "range",
+          range_min: Math.min(this._thresholdRange.lo, this._thresholdRange.hi),
+          range_max: Math.max(this._thresholdRange.lo, this._thresholdRange.hi),
+          invert_range: !!(this.thresholdUseMax && this.thresholdUseMax.checked)
+        };
+      }
+      if (this._thresholdLevel == null) return null;
       return {
         kind: "threshold",
         level: this._thresholdLevel,
@@ -410,7 +460,11 @@
         var k = inputs[i].getAttribute("data-cat-key");
         if (k != null) keys.push(k);
       }
-      if (this._allCatKeys.length && keys.length === this._allCatKeys.length) return null;
+      if (
+        this.allDiscreteSelectedIsNull
+        && this._allCatKeys.length
+        && keys.length === this._allCatKeys.length
+      ) return null;
       return { kind: "discrete", keys: keys };
     }
     return null;
@@ -418,8 +472,57 @@
 
   CryoColorCovariateLegend.prototype.clearThreshold = function () {
     this._thresholdLevel = null;
+    this._thresholdRange = null;
     this._thresholdCol = null;
+    this._histDragPreview = null;
+    this._histPointerDown = false;
+    if (this._boundHistWindowMouseMove) {
+      window.removeEventListener("mousemove", this._boundHistWindowMouseMove);
+    }
+    if (this._boundEndHistDrag) {
+      window.removeEventListener("mouseup", this._boundEndHistDrag, true);
+    }
     if (this.thresholdStatus) this.thresholdStatus.textContent = "";
+    this._syncThresholdModeCaption();
+  };
+
+  CryoColorCovariateLegend.prototype._activeColorLabel = function () {
+    var col = this.getColorColumn ? this.getColorColumn() : "";
+    return (this.covariateDisplayMap && col) ? String(this.covariateDisplayMap[col] || col) : String(col || "value");
+  };
+
+  CryoColorCovariateLegend.prototype._rangeModeActive = function () {
+    return this._thresholdRange != null && this._thresholdCol === this.getColorColumn();
+  };
+
+  CryoColorCovariateLegend.prototype._syncThresholdModeCaption = function () {
+    var rangeMode = this._rangeModeActive();
+    if (this.thresholdModeCaption) {
+      this.thresholdModeCaption.textContent = rangeMode ? "Invert range selection" : "Use as maximum (\u2264)";
+    }
+    if (this._thresholdModeWasRange !== rangeMode && this.thresholdUseMax) {
+      this.thresholdUseMax.checked = false;
+    }
+    this._thresholdModeWasRange = rangeMode;
+    if (!this.thresholdStatus) return;
+    if (this._thresholdCol !== this.getColorColumn()) {
+      this.thresholdStatus.textContent = "";
+      return;
+    }
+    if (this._thresholdRange != null) {
+      var phrase = rangeInequalityPhrase(this._thresholdRange.lo, this._thresholdRange.hi, this._activeColorLabel());
+      this.thresholdStatus.textContent = (this.thresholdUseMax && this.thresholdUseMax.checked)
+        ? "Outside " + phrase
+        : "Range: " + phrase;
+      return;
+    }
+    if (this._thresholdLevel != null) {
+      var useMax = !!(this.thresholdUseMax && this.thresholdUseMax.checked);
+      var op = useMax ? "\u2264" : "\u2265";
+      this.thresholdStatus.textContent = "Threshold: " + op + " " + formatThresholdValue(this._thresholdLevel);
+      return;
+    }
+    this.thresholdStatus.textContent = this.thresholdEmptyStatusText;
   };
 
   CryoColorCovariateLegend.prototype.refresh = function () {
@@ -431,14 +534,18 @@
       this._notify();
       return;
     }
-    fetch(this.legendContextUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ column: col })
-    })
-      .then(function (r) {
-        return r.json().then(function (j) { return { ok: r.ok, j: j }; });
+    var contextPromise = this.getLegendContextData
+      ? Promise.resolve().then(function () {
+        return { ok: true, j: self.getLegendContextData(col) || {} };
       })
+      : fetch(this.legendContextUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ column: col })
+      }).then(function (r) {
+        return r.json().then(function (j) { return { ok: r.ok, j: j }; });
+      });
+    contextPromise
       .then(function (res) {
         if (!res.ok) {
           self.hide();
@@ -471,7 +578,7 @@
           self.hide();
         }
         self.onModeChange(self._mode);
-        self._notify();
+        if (self.notifyOnRefresh) self._notify();
       })
       .catch(function () {
         self.hide();
@@ -500,6 +607,7 @@
         paper_bgcolor: "rgba(250,248,244,0)",
         plot_bgcolor: "rgba(255,255,255,0.62)",
         margin: { l: 4, r: 4, t: 2, b: 2 },
+        dragmode: false,
         xaxis: {
           visible: false,
           range: [-0.55, 0.55],
@@ -510,6 +618,7 @@
           range: violin.range,
           showgrid: true,
           zeroline: false,
+          fixedrange: true,
           tickfont: { size: 9, color: "#243b53" }
         },
         showlegend: false,
@@ -521,10 +630,12 @@
         paper_bgcolor: "rgba(250,248,244,0)",
         plot_bgcolor: "rgba(255,255,255,0.62)",
         margin: { l: 4, r: 4, t: 2, b: 2 },
+        dragmode: false,
         xaxis: {
           range: violin.range,
           showgrid: true,
           zeroline: false,
+          fixedrange: true,
           tickfont: { size: 9, color: "#243b53" }
         },
         yaxis: {
@@ -545,7 +656,14 @@
       hoverinfo: "skip",
       showlegend: false
     }]);
-    Plotly.react(this.histDiv, traces, layout, { displayModeBar: false, responsive: true });
+    Plotly.react(this.histDiv, traces, layout, {
+      displayModeBar: false,
+      doubleClick: false,
+      scrollZoom: false,
+      responsive: true
+    });
+    this._syncThresholdModeCaption();
+    this._relayoutHistGuides();
     if (typeof this.onContinuousHistogramLayout === "function") {
       var layCb = this.onContinuousHistogramLayout;
       requestAnimationFrame(function() {
@@ -555,19 +673,28 @@
     if (!this._histWired) {
       this._histWired = true;
       this.histDiv.addEventListener("click", function (evt) { self._onHistClick(evt); });
+      this.histDiv.addEventListener("mousedown", function (evt) { self._onHistMouseDown(evt); }, true);
       this.histDiv.addEventListener("mousemove", function (evt) { self._onHistMove(evt); });
       this.histDiv.addEventListener("mouseleave", function () { self._onHistLeave(); });
     }
   };
 
-  CryoColorCovariateLegend.prototype._histDataValueFromEvent = function (evt) {
+  CryoColorCovariateLegend.prototype._histDataValueFromEvent = function (evt, opts) {
+    opts = opts || {};
+    if (!evt) return null;
+    var clamp = !!opts.clamp;
     if (!this.histDiv || !this.histDiv._fullLayout) return null;
     var sz = this.histDiv._fullLayout._size;
     if (!sz) return null;
     var rect = this.histDiv.getBoundingClientRect();
     if (this.histPlotVertical) {
       var py = evt.clientY - rect.top - sz.t;
-      if (py < 0 || py > sz.h) return null;
+      if (clamp) {
+        if (sz.h <= 0) return null;
+        py = Math.max(0, Math.min(sz.h, py));
+      } else if (py < 0 || py > sz.h) {
+        return null;
+      }
       var r = this._histValueRange;
       if (r && r.length >= 2 && r[1] !== r[0]) {
         var frac = 1 - py / sz.h;
@@ -584,12 +711,18 @@
     var xaxis = this.histDiv._fullLayout.xaxis;
     if (!xaxis || typeof xaxis.p2c !== "function") return null;
     var px = evt.clientX - rect.left - sz.l;
-    if (px < 0 || px > sz.w) return null;
+    if (clamp) {
+      if (sz.w <= 0) return null;
+      px = Math.max(0, Math.min(sz.w, px));
+    } else if (px < 0 || px > sz.w) {
+      return null;
+    }
     var level = xaxis.p2c(px);
     return typeof level === "number" && isFinite(level) ? level : null;
   };
 
   CryoColorCovariateLegend.prototype._onHistMove = function (evt) {
+    if (this._histPointerDown) return;
     var self = this;
     var lv = this._histDataValueFromEvent(evt);
     this._hoverLevel = lv;
@@ -601,6 +734,7 @@
   };
 
   CryoColorCovariateLegend.prototype._onHistLeave = function () {
+    if (this._histPointerDown) return;
     var self = this;
     this._hoverLevel = null;
     if (this._hoverRaf != null) return;
@@ -610,91 +744,199 @@
     });
   };
 
+  CryoColorCovariateLegend.prototype._plotValueRange = function () {
+    var r = this._histValueRange;
+    if (!r || r.length < 2) return null;
+    return [Math.min(r[0], r[1]), Math.max(r[0], r[1])];
+  };
+
+  CryoColorCovariateLegend.prototype._oneHighlightRect = function (range, lo, hi) {
+    if (!range) return null;
+    var a = Math.max(range[0], Math.min(lo, hi));
+    var b = Math.min(range[1], Math.max(lo, hi));
+    if (!(b > a)) return null;
+    if (this.histPlotVertical) {
+      return {
+        type: "rect",
+        xref: "paper",
+        yref: "y",
+        x0: 0,
+        x1: 1,
+        y0: a,
+        y1: b,
+        fillcolor: "rgba(196, 112, 58, 0.14)",
+        line: { width: 0 },
+        layer: "above"
+      };
+    }
+    return {
+      type: "rect",
+      xref: "x",
+      yref: "paper",
+      x0: a,
+      x1: b,
+      y0: 0,
+      y1: 1,
+      fillcolor: "rgba(196, 112, 58, 0.14)",
+      line: { width: 0 },
+      layer: "above"
+    };
+  };
+
+  CryoColorCovariateLegend.prototype._selectionHighlightRects = function () {
+    var range = this._plotValueRange();
+    if (!range) return [];
+    if (this._histDragPreview != null) {
+      var dr = this._oneHighlightRect(range, this._histDragPreview.lo, this._histDragPreview.hi);
+      return dr ? [dr] : [];
+    }
+    if (this._thresholdCol !== this.getColorColumn()) return [];
+    if (this._thresholdRange != null) {
+      var lo = Math.min(this._thresholdRange.lo, this._thresholdRange.hi);
+      var hi = Math.max(this._thresholdRange.lo, this._thresholdRange.hi);
+      if (!(this.thresholdUseMax && this.thresholdUseMax.checked)) {
+        var rr = this._oneHighlightRect(range, lo, hi);
+        return rr ? [rr] : [];
+      }
+      var out = [];
+      var r1 = this._oneHighlightRect(range, range[0], lo);
+      var r2 = this._oneHighlightRect(range, hi, range[1]);
+      if (r1) out.push(r1);
+      if (r2) out.push(r2);
+      return out;
+    }
+    if (this._thresholdLevel == null) return [];
+    var useMax = !!(this.thresholdUseMax && this.thresholdUseMax.checked);
+    var bx0 = useMax ? range[0] : this._thresholdLevel;
+    var bx1 = useMax ? this._thresholdLevel : range[1];
+    var br = this._oneHighlightRect(range, bx0, bx1);
+    return br ? [br] : [];
+  };
+
+  CryoColorCovariateLegend.prototype._guideLine = function (value, opts) {
+    opts = opts || {};
+    var color = opts.color || "#c4703a";
+    var line = { color: color, width: opts.width || 2 };
+    if (opts.dash) line.dash = opts.dash;
+    if (this.histPlotVertical) {
+      return {
+        type: "line",
+        xref: "paper",
+        yref: "y",
+        x0: 0,
+        x1: 1,
+        y0: value,
+        y1: value,
+        line: line,
+        layer: "above"
+      };
+    }
+    return {
+      type: "line",
+      xref: "x",
+      yref: "paper",
+      x0: value,
+      x1: value,
+      y0: 0,
+      y1: 1,
+      line: line,
+      layer: "above"
+    };
+  };
+
+  CryoColorCovariateLegend.prototype._valueAnnotation = function (value) {
+    if (this.histPlotVertical) {
+      return {
+        xref: "paper",
+        yref: "y",
+        x: 1,
+        xanchor: "left",
+        y: value,
+        yanchor: "middle",
+        text: formatThresholdValue(value),
+        showarrow: false,
+        bgcolor: "rgba(255,255,255,0.94)",
+        bordercolor: "rgba(36,59,83,0.35)",
+        borderwidth: 1,
+        borderpad: 3,
+        font: { size: 10, color: "#243b53" }
+      };
+    }
+    return {
+      xref: "x",
+      yref: "paper",
+      x: value,
+      y: 0,
+      yanchor: "top",
+      text: formatThresholdValue(value),
+      showarrow: false,
+      bgcolor: "rgba(255,255,255,0.94)",
+      bordercolor: "rgba(36,59,83,0.35)",
+      borderwidth: 1,
+      borderpad: 3,
+      font: { size: 10, color: "#243b53" }
+    };
+  };
+
+  CryoColorCovariateLegend.prototype._rangeAnnotation = function (lo, hi) {
+    var text = rangeInequalityPhrase(lo, hi, this._activeColorLabel());
+    if (this.histPlotVertical) {
+      return {
+        xref: "paper",
+        yref: "y",
+        x: 1,
+        xanchor: "left",
+        y: (lo + hi) * 0.5,
+        yanchor: "middle",
+        text: text,
+        showarrow: false,
+        bgcolor: "rgba(255,255,255,0.94)",
+        bordercolor: "rgba(36,59,83,0.35)",
+        borderwidth: 1,
+        borderpad: 3,
+        font: { size: 10, color: "#243b53" }
+      };
+    }
+    return {
+      xref: "x",
+      yref: "paper",
+      x: (lo + hi) * 0.5,
+      y: 0,
+      yanchor: "top",
+      text: text,
+      showarrow: false,
+      bgcolor: "rgba(255,255,255,0.94)",
+      bordercolor: "rgba(36,59,83,0.35)",
+      borderwidth: 1,
+      borderpad: 3,
+      font: { size: 10, color: "#243b53" }
+    };
+  };
+
   CryoColorCovariateLegend.prototype._relayoutHistGuides = function () {
     if (!this.histDiv || !this.histDiv.data) return;
-    var shapes = [];
+    var shapes = this._selectionHighlightRects();
     var annotations = [];
-    if (this.histPlotVertical) {
-      if (this._thresholdLevel != null && this._thresholdCol === this.getColorColumn()) {
-        shapes.push({
-          type: "line",
-          xref: "paper",
-          yref: "y",
-          x0: 0,
-          x1: 1,
-          y0: this._thresholdLevel,
-          y1: this._thresholdLevel,
-          line: { color: "#c4703a", width: 2 }
-        });
-      } else if (this._hoverLevel != null) {
-        shapes.push({
-          type: "line",
-          xref: "paper",
-          yref: "y",
-          x0: 0,
-          x1: 1,
-          y0: this._hoverLevel,
-          y1: this._hoverLevel,
-          line: { color: "#243b53", width: 1.5, dash: "dot" }
-        });
+    if (this._histDragPreview != null) {
+      var pLo = Math.min(this._histDragPreview.lo, this._histDragPreview.hi);
+      var pHi = Math.max(this._histDragPreview.lo, this._histDragPreview.hi);
+      shapes.push(this._guideLine(pLo));
+      shapes.push(this._guideLine(pHi));
+      annotations.push(this._rangeAnnotation(pLo, pHi));
+    } else if (this._thresholdCol === this.getColorColumn()) {
+      if (this._thresholdRange != null) {
+        var rLo = Math.min(this._thresholdRange.lo, this._thresholdRange.hi);
+        var rHi = Math.max(this._thresholdRange.lo, this._thresholdRange.hi);
+        shapes.push(this._guideLine(rLo));
+        shapes.push(this._guideLine(rHi));
+        annotations.push(this._rangeAnnotation(rLo, rHi));
+      } else if (this._thresholdLevel != null) {
+        shapes.push(this._guideLine(this._thresholdLevel));
       }
-      if (this._hoverLevel != null) {
-        annotations.push({
-          xref: "paper",
-          yref: "y",
-          x: 1,
-          xanchor: "left",
-          y: this._hoverLevel,
-          yanchor: "middle",
-          text: formatThresholdValue(this._hoverLevel),
-          showarrow: false,
-          bgcolor: "rgba(255,255,255,0.94)",
-          bordercolor: "rgba(36,59,83,0.35)",
-          borderwidth: 1,
-          borderpad: 3,
-          font: { size: 10, color: "#243b53" }
-        });
-      }
-    } else {
-      if (this._thresholdLevel != null && this._thresholdCol === this.getColorColumn()) {
-        shapes.push({
-          type: "line",
-          xref: "x",
-          yref: "paper",
-          x0: this._thresholdLevel,
-          x1: this._thresholdLevel,
-          y0: 0,
-          y1: 1,
-          line: { color: "#c4703a", width: 2 }
-        });
-      } else if (this._hoverLevel != null) {
-        shapes.push({
-          type: "line",
-          xref: "x",
-          yref: "paper",
-          x0: this._hoverLevel,
-          x1: this._hoverLevel,
-          y0: 0,
-          y1: 1,
-          line: { color: "#243b53", width: 1.5, dash: "dot" }
-        });
-      }
-      if (this._hoverLevel != null) {
-        annotations.push({
-          xref: "x",
-          yref: "paper",
-          x: this._hoverLevel,
-          y: 0,
-          yanchor: "top",
-          text: formatThresholdValue(this._hoverLevel),
-          showarrow: false,
-          bgcolor: "rgba(255,255,255,0.94)",
-          bordercolor: "rgba(36,59,83,0.35)",
-          borderwidth: 1,
-          borderpad: 3,
-          font: { size: 10, color: "#243b53" }
-        });
-      }
+    }
+    if (this._hoverLevel != null && !this._histPointerDown) {
+      shapes.push(this._guideLine(this._hoverLevel, { color: "#243b53", width: 1.5, dash: "dot" }));
+      annotations.push(this._valueAnnotation(this._hoverLevel));
     }
     try {
       Plotly.relayout(this.histDiv, { shapes: shapes, annotations: annotations });
@@ -703,17 +945,83 @@
 
   CryoColorCovariateLegend.prototype._onHistClick = function (evt) {
     evt.preventDefault();
+    if (this._histSuppressClick) {
+      this._histSuppressClick = false;
+      return;
+    }
     var level = this._histDataValueFromEvent(evt);
     if (level == null) return;
+    this._thresholdRange = null;
     this._thresholdLevel = level;
     this._thresholdCol = this.getColorColumn();
-    var useMax = !!(this.thresholdUseMax && this.thresholdUseMax.checked);
-    var op = useMax ? "\u2264" : "\u2265";
-    if (this.thresholdStatus) {
-      this.thresholdStatus.textContent = "Threshold: " + op + " " + formatThresholdValue(level);
-    }
+    this._syncThresholdModeCaption();
     this._relayoutHistGuides();
     this._notify();
+  };
+
+  CryoColorCovariateLegend.prototype._onHistWindowMouseMove = function (evt) {
+    if (!this._histPointerDown || this._histDragStartLevel == null) return;
+    var level = this._histDataValueFromEvent(evt, { clamp: true });
+    if (level == null) return;
+    this._histDragMoved = true;
+    this._histDragPreview = { lo: this._histDragStartLevel, hi: level };
+    this._relayoutHistGuides();
+  };
+
+  CryoColorCovariateLegend.prototype._endHistDrag = function (evt) {
+    window.removeEventListener("mousemove", this._boundHistWindowMouseMove);
+    window.removeEventListener("mouseup", this._boundEndHistDrag, true);
+    if (!this._histPointerDown) return;
+    this._histPointerDown = false;
+    var appliedRange = false;
+    var pxSpan = 0;
+    var coord = this.histPlotVertical ? "clientY" : "clientX";
+    if (this._histDragStartClientCoord != null && evt && typeof evt[coord] === "number") {
+      pxSpan = Math.abs(evt[coord] - this._histDragStartClientCoord);
+    }
+    var levelEnd = this._histDataValueFromEvent(evt, { clamp: true });
+    if (this._histDragMoved && levelEnd != null && pxSpan >= 5) {
+      this._thresholdLevel = null;
+      this._thresholdRange = {
+        lo: Math.min(this._histDragStartLevel, levelEnd),
+        hi: Math.max(this._histDragStartLevel, levelEnd)
+      };
+      this._thresholdCol = this.getColorColumn();
+      appliedRange = true;
+      this._histSuppressClick = true;
+      this._syncThresholdModeCaption();
+      this._notify();
+    }
+    this._histDragPreview = null;
+    this._histDragStartLevel = null;
+    this._histDragStartClientCoord = null;
+    this._histDragMoved = false;
+    this._relayoutHistGuides();
+    if (!appliedRange) {
+      this._onHistMove(evt);
+    }
+  };
+
+  CryoColorCovariateLegend.prototype._onHistMouseDown = function (evt) {
+    if (evt.button !== 0) return;
+    var level = this._histDataValueFromEvent(evt);
+    if (level == null) return;
+    this._histPointerDown = true;
+    this._histDragMoved = false;
+    this._histDragStartLevel = level;
+    this._histDragStartClientCoord = this.histPlotVertical ? evt.clientY : evt.clientX;
+    this._histDragPreview = null;
+    var self = this;
+    this._boundHistWindowMouseMove = this._boundHistWindowMouseMove || function (e) {
+      self._onHistWindowMouseMove(e);
+    };
+    this._boundEndHistDrag = this._boundEndHistDrag || function (e) {
+      self._endHistDrag(e);
+    };
+    window.addEventListener("mousemove", this._boundHistWindowMouseMove);
+    window.addEventListener("mouseup", this._boundEndHistDrag, true);
+    evt.preventDefault();
+    evt.stopPropagation();
   };
 
   CryoColorCovariateLegend.prototype._renderDiscrete = function (categories) {
@@ -745,9 +1053,9 @@
       inp.type = "checkbox";
       inp.id = safeId;
       inp.setAttribute("role", "switch");
-      inp.setAttribute("aria-checked", "true");
+      inp.setAttribute("aria-checked", this.discreteCheckedDefault ? "true" : "false");
       inp.setAttribute("data-cat-key", key);
-      inp.checked = true;
+      inp.checked = this.discreteCheckedDefault;
       var tw = document.createElement("span");
       tw.className = "cryo-cc-discrete-switch-text";
       var sp = document.createElement("span");
@@ -756,7 +1064,7 @@
       if (dSt && dSt.labelColor) sp.style.color = dSt.labelColor;
       var cn = document.createElement("span");
       cn.className = "cryo-cc-discrete-switch-count";
-      cn.textContent = formatParticleCount(cat.count != null ? cat.count : 0);
+      cn.textContent = this.formatParticleCount(cat.count != null ? cat.count : 0);
       if (dSt && dSt.countColor) cn.style.color = dSt.countColor;
       tw.appendChild(sp);
       tw.appendChild(cn);
@@ -789,7 +1097,25 @@
       if (inputs[i].checked) { any = true; break; }
     }
     this.invertBtn.disabled = !any;
-    this.invertBtn.textContent = any ? "Invert selection" : "no selection";
+    this.invertBtn.textContent = any ? "Invert selection" : this.noDiscreteSelectionText;
+  };
+
+  CryoColorCovariateLegend.prototype.setDiscreteCheckedKeys = function (keys) {
+    if (!this.discreteSwitches) return;
+    var keySet = new Set((keys || []).map(function (k) { return String(k); }));
+    this._suppressDiscrete = true;
+    try {
+      var inputs = this.discreteSwitches.querySelectorAll("input[type=\"checkbox\"]");
+      for (var i = 0; i < inputs.length; i++) {
+        var k = inputs[i].getAttribute("data-cat-key");
+        var checked = keySet.has(String(k));
+        inputs[i].checked = checked;
+        inputs[i].setAttribute("aria-checked", checked ? "true" : "false");
+      }
+    } finally {
+      this._suppressDiscrete = false;
+    }
+    this._syncInvertBtn();
   };
 
   CryoColorCovariateLegend.prototype.invertDiscrete = function () {
@@ -806,6 +1132,39 @@
     }
     this._syncInvertBtn();
     this._notify();
+  };
+
+  CryoColorCovariateLegend.paletteScaleCSS = paletteScaleCSS;
+  CryoColorCovariateLegend.formatThresholdValue = formatThresholdValue;
+  CryoColorCovariateLegend.hasPalette = function (paletteName) {
+    return Object.prototype.hasOwnProperty.call(PALETTE_RGB, paletteName);
+  };
+  CryoColorCovariateLegend.wirePaletteSelect = function (opts) {
+    opts = opts || {};
+    var toggle = opts.toggle;
+    var options = opts.options;
+    var select = opts.select;
+    var hiddenClass = opts.hiddenClass;
+    function sync() {
+      if (!options || !toggle || !select) return;
+      var show = toggle.getAttribute("aria-expanded") === "true"
+        && !(hiddenClass && select.classList.contains(hiddenClass));
+      options.classList.toggle("pairplot-palette-select__options--collapsed", !show);
+    }
+    if (toggle) {
+      toggle.addEventListener("click", function () {
+        var expanded = toggle.getAttribute("aria-expanded") === "true";
+        toggle.setAttribute("aria-expanded", expanded ? "false" : "true");
+        sync();
+      });
+    }
+    return {
+      sync: sync,
+      close: function () {
+        if (toggle) toggle.setAttribute("aria-expanded", "false");
+        sync();
+      }
+    };
   };
 
   global.CryoColorCovariateLegend = CryoColorCovariateLegend;

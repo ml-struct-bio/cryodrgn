@@ -79,6 +79,7 @@ from cryodrgn.dashboard.plots import (
     covariate_legend_context_payload,
     pair_grid_png,
     pair_grid_skeleton_placeholder_layout,
+    plot_df_color_filter_mask,
     plot_df_row_indices_for_explorer_scatter,
     scatter3d_z_json,
     scatter3d_z_preview_png,
@@ -259,6 +260,7 @@ def api_covariate_threshold_rows():
             400,
         )
 
+    color_filter: dict[str, object]
     raw_r0 = data.get("range_min")
     raw_r1 = data.get("range_max")
     if raw_r0 is not None and raw_r1 is not None:
@@ -267,27 +269,31 @@ def api_covariate_threshold_rows():
             r1 = float(raw_r1)
         except (TypeError, ValueError):
             return jsonify(error="Invalid range bounds.", rows=[]), 400
-        if r0 > r1:
-            r0, r1 = r1, r0
-        inside = series.ge(r0) & series.le(r1) & series.notna()
-        if bool(data.get("invert_range")):
-            mask = (~inside) & series.notna()
-        else:
-            mask = inside
-        rows_arr = np.flatnonzero(np.asarray(mask, dtype=bool)).astype(
-            np.int64, copy=False
-        )
+        color_filter = {
+            "kind": "range",
+            "range_min": min(r0, r1),
+            "range_max": max(r0, r1),
+            "invert_range": bool(data.get("invert_range")),
+        }
+        mask = plot_df_color_filter_mask(e.plot_df, col, color_filter)
+        rows_arr = np.flatnonzero(mask).astype(np.int64, copy=False)
         return jsonify(rows=rows_arr.tolist(), n=int(rows_arr.size))
 
     raw_level = data.get("level")
     try:
+        if raw_level is None:
+            raise ValueError
         level = float(raw_level)
     except (TypeError, ValueError):
         return jsonify(error="Invalid threshold level.", rows=[]), 400
 
-    mask = series.le(level) if bool(data.get("use_max")) else series.ge(level)
-    mask &= series.notna()
-    rows_arr = np.flatnonzero(np.asarray(mask, dtype=bool)).astype(np.int64, copy=False)
+    color_filter = {
+        "kind": "threshold",
+        "level": level,
+        "use_max": bool(data.get("use_max")),
+    }
+    mask = plot_df_color_filter_mask(e.plot_df, col, color_filter)
+    rows_arr = np.flatnonzero(mask).astype(np.int64, copy=False)
 
     return jsonify(rows=rows_arr.tolist(), n=int(rows_arr.size))
 

@@ -771,8 +771,12 @@
     border: 1px solid rgba(36, 59, 83, 0.13);
     border-radius: 4px;
     background: rgba(250, 248, 244, 0.78);
-    width: min(83.333%, 52rem);
     box-sizing: border-box;
+    /* Match centred scatter-stack width — discrete legend aligns with scatter column */
+    width: min(100%, min(100cqw, calc(100svh - var(--cryo-dash-below-nav, 9.5rem) - 1.45rem)));
+    max-width: 100%;
+    margin-left: auto;
+    margin-right: auto;
   }
   .cryo-color-hist-panel[hidden] {
     display: none !important;
@@ -836,15 +840,22 @@
   }
   .cryo-color-discrete-switches {
     display: grid;
-    /*
-     * Filled from JS using the longest label width; fixed column tracks keep all chips
-     * the same size while auto-fit keeps row count as low as available width allows.
-     */
-    grid-template-columns: repeat(auto-fit, minmax(var(--cryo-discrete-col-w, 9.5rem), var(--cryo-discrete-col-w,
-      9.5rem)));
+    /* Compact auto-fit: as many cells as possible per row */
+    grid-template-columns: repeat(auto-fit, minmax(5.5rem, 1fr));
     align-items: stretch;
-    gap: 0.35rem 0.5rem;
+    justify-content: start;
+    gap: 1px 3px;
     margin: 0.05rem 0 0;
+  }
+  /* Discrete cell with corner buttons */
+  #color-discrete-switches .cryo-cc-discrete-cell {
+    box-sizing: border-box;
+    min-width: 0;
+    padding: 0;
+    border-radius: 2px;
+  }
+  #color-discrete-switches .cryo-cc-discrete-cell--plastic:not(.cryo-cc-discrete-cell--invert) {
+    border-radius: 7px;
   }
   .cryo-color-discrete-switch {
     display: inline-flex;
@@ -862,19 +873,28 @@
     user-select: none;
   }
   #color-discrete-switches .cryo-cc-discrete-switch {
-    display: inline-flex;
-    align-items: flex-start;
-    gap: 0.28rem;
-    margin: 0;
-    padding: 0.2rem 0.36rem;
-    border: 1px solid rgba(36, 59, 83, 0.18);
-    border-radius: 0.42rem;
-    box-sizing: border-box;
-    font-size: 0.76rem;
+    font-size: 0.72rem;
     font-weight: 500;
-    color: var(--nav-bg, #243b53);
-    cursor: pointer;
+    cursor: default;
     user-select: none;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+  #color-discrete-switches .cryo-cc-discrete-switch-label {
+    font-weight: 600;
+    font-size: 0.68rem;
+    line-height: 1.1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  #color-discrete-switches .cryo-cc-discrete-switch-count {
+    font-size: 0.58rem;
+    line-height: 1.1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .cryo-color-discrete-switch-text {
     display: inline-flex;
@@ -898,6 +918,7 @@
     display: inline-flex;
     flex-direction: column;
     align-items: flex-start;
+    gap: 1px;
     min-width: 0;
     line-height: 1.15;
   }
@@ -905,7 +926,7 @@
     line-height: 1.15;
   }
   #color-discrete-switches .cryo-cc-discrete-switch-count {
-    margin-top: 0.06rem;
+    margin-top: 1px;
     font-size: 0.69em;
     font-weight: 500;
     opacity: 0.86;
@@ -921,26 +942,16 @@
     cursor: pointer;
   }
   #color-discrete-switches .cryo-cc-discrete-switch input[type="checkbox"] {
-    margin: 0;
-    width: 1.05rem;
-    height: 1.05rem;
+    margin: 0 0.35rem 0 0;
+    width: 0.62rem;
+    height: 0.62rem;
     flex-shrink: 0;
     accent-color: var(--accent, #c4703a);
     cursor: pointer;
   }
+  /* Invert button now part of the grid - hide original container */
   .cryo-color-discrete-actions {
-    display: contents;
-  }
-  .cryo-color-discrete-action-cell {
-    display: flex;
-    align-items: stretch;
-  }
-  .cryo-color-discrete-action-cell #btn-discrete-invert-selection {
-    width: 100%;
-    text-align: center;
-    padding: 0.25rem 0.55rem;
-    font-size: 0.75rem;
-    line-height: 1.2;
+    display: none !important;
   }
   /* Selection row: Add left, Clear right; Add 10% wider & Clear 20% narrower vs old 6:3;
      gap = (2/3)×Clear ⇒ 6.6fr | 1.6fr | 2.4fr. */
@@ -1811,7 +1822,6 @@
   var btnDiscreteInvertSelection = document.getElementById("btn-discrete-invert-selection");
   var btnCacheSelectionUncached = document.getElementById("btn-cache-selection-uncached");
   var btnClearImageCache = document.getElementById("btn-clear-image-cache");
-  var suppressDiscreteSwitchProgrammatic = false;
   var colorHistModeCheck = document.getElementById("color-hist-mode-check");
   var colorHistModeCheckCaption = document.getElementById("color-hist-mode-check-caption");
   var colorHistModeCheckWasRange = false;
@@ -1833,6 +1843,7 @@
   var colorHistSuppressClick = false;
   var COLOR_HIST_DRAG_MIN_PX = 5;
   var explorerColorLegend = null;
+  var explorerDiscreteLabelColors = {};
   var leadModeLassoEl = document.getElementById("lead-mode-lasso");
   var leadModeThresholdEl = document.getElementById("lead-mode-threshold");
   var leadModeDiscreteEl = document.getElementById("lead-mode-discrete");
@@ -3053,88 +3064,12 @@
     return String(v);
   }
 
-  function discreteCategoryLabelForKey(key) {
-    if (key === "__na__") return "(missing)";
-    var rawColorCol = sc && sc.value ? String(sc.value) : "";
-    var dispColorCol = covariateDisplayMap && sc && sc.value ? String(covariateDisplayMap[sc.value] || "") : "";
-    var isKmeans = /k[\s_-]*means/i.test(rawColorCol)
-      || /k[\s_-]*means/i.test(dispColorCol)
-      || /^labels$/i.test(rawColorCol);
-    if (isKmeans) return "kmeans=" + String(key);
-    return key;
-  }
-
-  function measureDiscreteSwitchColumnWidthPx(labelItems) {
-    if (!labelItems || !labelItems.length) return 0;
-    var probe = document.createElement("label");
-    probe.className = "cryo-color-discrete-switch";
-    probe.style.position = "absolute";
-    probe.style.visibility = "hidden";
-    probe.style.left = "-9999px";
-    probe.style.top = "-9999px";
-    probe.style.width = "auto";
-    var inp = document.createElement("input");
-    inp.type = "checkbox";
-    var textWrap = document.createElement("span");
-    textWrap.className = "cryo-color-discrete-switch-text";
-    var labelSpan = document.createElement("span");
-    labelSpan.className = "cryo-color-discrete-switch-label";
-    var countSpan = document.createElement("span");
-    countSpan.className = "cryo-color-discrete-switch-count";
-    textWrap.appendChild(labelSpan);
-    textWrap.appendChild(countSpan);
-    probe.appendChild(inp);
-    probe.appendChild(textWrap);
-    document.body.appendChild(probe);
-    var maxW = 0;
-    for (var i = 0; i < labelItems.length; i++) {
-      var item = labelItems[i] || {};
-      labelSpan.textContent = item.label || "";
-      countSpan.textContent = item.count || "";
-      var w = Math.ceil(probe.getBoundingClientRect().width);
-      if (w > maxW) maxW = w;
-    }
-    probe.remove();
-    return maxW;
-  }
-
-  function sortDiscreteCategoryKeys(keys) {
-    var rest = keys.filter(function(k) { return k !== "__na__"; });
-    var allNum = rest.length > 0 && rest.every(function(k) {
-      var n = Number(k);
-      return isFinite(n) && String(n) === String(k).trim();
-    });
-    if (allNum) {
-      rest.sort(function(a, b) { return Number(a) - Number(b); });
-    } else {
-      rest.sort(function(a, b) {
-        return String(a).localeCompare(String(b), undefined, {numeric: true});
-      });
-    }
-    if (keys.indexOf("__na__") >= 0) rest.push("__na__");
-    return rest;
-  }
-
-  function resetDiscreteCategorySwitches() {
-    if (!colorDiscreteSwitches) return;
-    suppressDiscreteSwitchProgrammatic = true;
-    try {
-      var inputs = colorDiscreteSwitches.querySelectorAll("input[type=\"checkbox\"]");
-      for (var i = 0; i < inputs.length; i++) {
-        inputs[i].checked = false;
-        inputs[i].setAttribute("aria-checked", "false");
-      }
-    } finally {
-      suppressDiscreteSwitchProgrammatic = false;
-    }
-  }
-
   function syncDiscreteInvertSelectionButton() {
     if (!btnDiscreteInvertSelection || !colorDiscreteSwitches) return;
     var inputs = colorDiscreteSwitches.querySelectorAll("input[type=\"checkbox\"]");
     var anyChecked = false;
-    for (var i = 0; i < inputs.length; i++) {
-      if (inputs[i].checked) {
+    for (var sx = 0; sx < inputs.length; sx++) {
+      if (inputs[sx].checked) {
         anyChecked = true;
         break;
       }
@@ -3148,142 +3083,41 @@
     btnDiscreteInvertSelection.textContent = "Invert selection";
   }
 
-  function applyDiscreteCategorySelectionFromSwitches() {
+  function explorerApplyDiscreteMarkerColoursFromOverrides() {
     if (!gd || !gd.data || !gd.data[0] || scatterTraceColorMode() !== "discrete") return;
-    if (!colorDiscreteSwitches) return;
-    var inputs = colorDiscreteSwitches.querySelectorAll("input[type=\"checkbox\"]");
-    var keySet = new Set();
-    for (var i = 0; i < inputs.length; i++) {
-      if (inputs[i].checked && inputs[i].dataset.catKey != null) {
-        keySet.add(inputs[i].dataset.catKey);
+    var tr = gd.data[0];
+    var cd = tr.customdata || [];
+    var mcSrc = tr.marker && tr.marker.color ? tr.marker.color : null;
+    if (!cd.length || !Array.isArray(mcSrc) || mcSrc.length !== cd.length) return;
+    var mc = mcSrc.slice();
+    var changed = false;
+    for (var pi = 0; pi < cd.length; pi++) {
+      var pk = discreteCategoryKeyFromCustomRow(cd[pi]);
+      var cand = explorerDiscreteLabelColors[String(pk)];
+      var hx =
+        cand
+          ? CryoColorCovariateLegend.normalizeDiscreteLegendHex(String(cand))
+          : "";
+      if (hx && mc[pi] !== hx) {
+        mc[pi] = hx;
+        changed = true;
       }
     }
-    clearScatterGeometricSelection();
-    colorThresholdLevel = null;
-    colorThresholdRange = null;
-    colorThresholdColorCol = null;
-    if (colorThresholdStatus) colorThresholdStatus.textContent = "";
-    syncColorHistModeCheckboxCaption();
-    if (!keySet.size) {
-      applyRowsSelection([], "Discrete");
-      syncDiscreteInvertSelectionButton();
-      return;
-    }
-    var cd = gd.data[0].customdata;
-    var rows = [];
-    for (var j = 0; j < cd.length; j++) {
-      var k = discreteCategoryKeyFromCustomRow(cd[j]);
-      if (keySet.has(k)) rows.push(cd[j][1]);
-    }
-    applyRowsSelection(rows, "Discrete");
-    syncDiscreteInvertSelectionButton();
-  }
-
-  function renderDiscreteColorSwitches() {
-    if (!colorDiscreteSwitches || !gd || !gd.data || !gd.data[0] || !gd.data[0].customdata) return;
-    colorDiscreteSwitches.innerHTML = "";
-    var colLabel = covariateDisplayMap[sc.value] || sc.value;
-    colorDiscreteSwitches.setAttribute("aria-label", "Filter by " + colLabel);
-    var cd = gd.data[0].customdata;
-    var markerColors = (gd.data[0].marker && gd.data[0].marker.color) || null;
-    var seen = new Set();
-    var keyToColor = new Map();
-    for (var si = 0; si < cd.length; si++) {
-      var kSeen = discreteCategoryKeyFromCustomRow(cd[si]);
-      seen.add(kSeen);
-      if (!keyToColor.has(kSeen) && Array.isArray(markerColors)) {
-        var cval = markerColors[si];
-        if (typeof cval === "string" && /^#/.test(cval)) keyToColor.set(kSeen, cval);
-      }
-    }
-    var keys = sortDiscreteCategoryKeys(Array.from(seen));
-    var keyCounts = new Map();
-    for (var ci = 0; ci < cd.length; ci++) {
-      var kCount = discreteCategoryKeyFromCustomRow(cd[ci]);
-      keyCounts.set(kCount, (keyCounts.get(kCount) || 0) + 1);
-    }
-    var labelItems = [];
-    for (var ki = 0; ki < keys.length; ki++) {
-      var key = keys[ki];
-      var safeId = "disc-sw-" + ki + "-" + String(key).replace(/[^a-zA-Z0-9_-]/g, "_");
-      var lab = document.createElement("label");
-      lab.className = "cryo-color-discrete-switch";
-      lab.setAttribute("for", safeId);
-      var inp = document.createElement("input");
-      inp.type = "checkbox";
-      inp.id = safeId;
-      inp.setAttribute("role", "switch");
-      inp.setAttribute("aria-checked", "false");
-      inp.dataset.catKey = key;
-      var textWrap = document.createElement("span");
-      textWrap.className = "cryo-color-discrete-switch-text";
-      var span = document.createElement("span");
-      span.className = "cryo-color-discrete-switch-label";
-      var labelText = discreteCategoryLabelForKey(key);
-      span.textContent = labelText;
-      var countSpan = document.createElement("span");
-      countSpan.className = "cryo-color-discrete-switch-count";
-      var nForKey = keyCounts.get(key) || 0;
-      var countText = fmtInt(nForKey) + (nForKey === 1 ? " particle" : " particles");
-      countSpan.textContent = countText;
-      labelItems.push({label: labelText, count: countText});
-      var keyHex = keyToColor.get(key);
-      if (keyHex) {
-        var keyStyles = discreteLabelMontageStyles(String(keyHex));
-        if (keyStyles.bg) lab.style.backgroundColor = keyStyles.bg;
-        if (keyStyles.covarColor) lab.style.color = keyStyles.covarColor;
-      }
-      textWrap.appendChild(span);
-      textWrap.appendChild(countSpan);
-      lab.appendChild(inp);
-      lab.appendChild(textWrap);
-      colorDiscreteSwitches.appendChild(lab);
-      inp.addEventListener("change", (function(input) {
-        return function() {
-          input.setAttribute("aria-checked", input.checked ? "true" : "false");
-          if (suppressDiscreteSwitchProgrammatic) return;
-          applyDiscreteCategorySelectionFromSwitches();
-        };
-      })(inp));
-    }
-    var colW = measureDiscreteSwitchColumnWidthPx(labelItems);
-    if (colW > 0) colorDiscreteSwitches.style.setProperty("--cryo-discrete-col-w", String(colW) + "px");
-    else colorDiscreteSwitches.style.removeProperty("--cryo-discrete-col-w");
-    if (colorDiscreteActions && btnDiscreteInvertSelection) {
-      colorDiscreteActions.classList.add("cryo-color-discrete-action-cell");
-      colorDiscreteSwitches.appendChild(colorDiscreteActions);
-    }
-    syncDiscreteSwitchesFromSelection();
-    syncDiscreteInvertSelectionButton();
-  }
-
-  function syncDiscreteSwitchesFromSelection() {
-    if (!colorDiscreteSwitches || !gd || !gd.data || !gd.data[0] || scatterTraceColorMode() !== "discrete") return;
-    var cd = gd.data[0].customdata;
-    var sel = new Set(saveSelectionRows || []);
-    var keyToRows = new Map();
-    for (var i = 0; i < cd.length; i++) {
-      var k = discreteCategoryKeyFromCustomRow(cd[i]);
-      var row = cd[i][1];
-      if (!keyToRows.has(k)) keyToRows.set(k, []);
-      keyToRows.get(k).push(row);
-    }
-    suppressDiscreteSwitchProgrammatic = true;
+    if (!changed) return;
     try {
-      var inputs = colorDiscreteSwitches.querySelectorAll("input[type=\"checkbox\"]");
-      for (var j = 0; j < inputs.length; j++) {
-        var inp = inputs[j];
-        var key = inp.dataset.catKey;
-        var rowsForK = keyToRows.get(key);
-        var full = rowsForK && rowsForK.length
-          && rowsForK.every(function(r) { return sel.has(r); });
-        inp.checked = !!full;
-        inp.setAttribute("aria-checked", full ? "true" : "false");
-      }
-    } finally {
-      suppressDiscreteSwitchProgrammatic = false;
+      Plotly.restyle(gd, { "marker.color": [mc] }, [0]);
+    } catch (re0) {}
+    explorerMontageReloadAfterDiscretePaletteEdit();
+  }
+
+  function explorerMontageReloadAfterDiscretePaletteEdit() {
+    if (!lastMontageRows || !lastMontageRows.length) return;
+    var items = [];
+    for (var mm = 0; mm < lastMontageRows.length; mm++) {
+      var mw = montageItemForRow(lastMontageRows[mm]);
+      if (mw) items.push(mw);
     }
-    syncDiscreteInvertSelectionButton();
+    if (items.length) updateMontage(items);
   }
 
   function explorerLegendContextData() {
@@ -3305,7 +3139,12 @@
           if (typeof cval === "string" && /^#/.test(cval)) rec.color = cval;
         }
       }
-      return {mode: "discrete", categories: Array.from(byKey.values())};
+      var cats = Array.from(byKey.values());
+      for (var c = 0; c < cats.length; c++) {
+        var ovh = explorerDiscreteLabelColors[String(cats[c].key)];
+        if (ovh) cats[c].color = String(ovh);
+      }
+      return {mode: "discrete", categories: cats};
     }
     return {
       mode: "continuous",
@@ -3688,7 +3527,6 @@
     if (explorerColorLegend) explorerColorLegend.clearThreshold();
     if (colorThresholdStatus) colorThresholdStatus.textContent = "";
     syncColorHistModeCheckboxCaption();
-    resetDiscreteCategorySwitches();
     if (explorerColorLegend) explorerColorLegend.setDiscreteCheckedKeys([]);
     if (hadGuide && colorHistDiv && colorHistDiv.data) {
       relayoutColorHistogramGuides();
@@ -4832,7 +4670,6 @@
     }
     if (colorThresholdStatus) colorThresholdStatus.textContent = "";
     syncColorHistModeCheckboxCaption();
-    resetDiscreteCategorySwitches();
     if (colorHistDiv && colorHistDiv.data) {
       try { relayoutColorHistogramGuides(); } catch (e) {}
     }
@@ -4867,7 +4704,7 @@
     var items = currentColorValueItems();
     if (!items.length || typeof level !== "number" || !isFinite(level)) return;
     cancelLassoSelectionDebounce();
-    resetDiscreteCategorySwitches();
+    if (explorerColorLegend) explorerColorLegend.setDiscreteCheckedKeys([]);
     if (colorDiscreteWrap) {
       colorDiscreteWrap.hidden = true;
       colorDiscreteWrap.classList.remove("cryo-color-discrete-wrap--show");
@@ -4911,7 +4748,7 @@
     if (!items.length || typeof lo !== "number" || typeof hi !== "number"
         || !isFinite(lo) || !isFinite(hi)) return;
     cancelLassoSelectionDebounce();
-    resetDiscreteCategorySwitches();
+    if (explorerColorLegend) explorerColorLegend.setDiscreteCheckedKeys([]);
     if (colorDiscreteWrap) {
       colorDiscreteWrap.hidden = true;
       colorDiscreteWrap.classList.remove("cryo-color-discrete-wrap--show");
@@ -5380,6 +5217,12 @@
         if (scatterPaletteToggle) scatterPaletteToggle.setAttribute("aria-expanded", "true");
       }
       syncScatterPaletteFieldset();
+    },
+    onDiscreteColorChange: function(evt) {
+      if (evt && evt.catKey && evt.hex) {
+        explorerDiscreteLabelColors[String(evt.catKey)] = String(evt.hex);
+        triggerRedraw(true);
+      }
     },
     onFilterChange: handleExplorerLegendFilter
   });

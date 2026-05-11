@@ -569,6 +569,12 @@
       width: 100%;
       max-width: 100%;
       min-width: 0;
+      align-self: stretch;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: stretch;
+      box-sizing: border-box;
     }
     .cryo-dash-row.cryo-dash-row--plot-triple > .pairplot-color-legend-aside .cryo-cc-legend,
     .cryo-dash-row.cryo-dash-row--plot-triple > .latent3d-color-legend-aside .cryo-cc-legend {

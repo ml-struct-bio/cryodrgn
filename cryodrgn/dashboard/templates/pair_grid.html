@@ -342,7 +342,9 @@
     min-width: 0;
     display: flex;
     flex-direction: column;
-    align-self: flex-start;
+    align-self: stretch;
+    justify-content: center;
+    align-items: stretch;
   }
   .pairplot-color-legend-aside .cryo-cc-legend {
     box-sizing: border-box;
@@ -585,37 +587,58 @@
   }
   .pairplot-color-legend-aside .cryo-cc-discrete-switches--pair-2col {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-auto-rows: minmax(3.4rem, auto);
-    gap: 0.35rem 0.4rem;
+    grid-template-columns: repeat(auto-fit, minmax(5rem, 1fr));
+    grid-auto-rows: minmax(1.35rem, auto);
+    gap: 1px 2px;
     align-items: stretch;
-    padding-right: 0.15rem;
-    width: max-content;
+    padding-right: 0;
+    width: 100%;
     max-width: 100%;
     box-sizing: border-box;
   }
-  .pairplot-color-legend-aside .cryo-cc-discrete-switches--pair-2col .cryo-cc-discrete-switch {
-    min-height: 3.4rem;
+  .pairplot-color-legend-aside .cryo-cc-discrete-switches--pair-2col .cryo-cc-discrete-cell {
+    min-height: 1.25rem;
     height: 100%;
     box-sizing: border-box;
+    min-width: 0;
   }
-  .cryo-cc-discrete-switch {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.28rem;
-    margin: 0;
-    padding: 0.22rem 0.34rem;
-    border: 1px solid rgba(36, 59, 83, 0.16);
-    border-radius: 0.4rem;
-    background: rgba(255, 255, 255, 0.55);
-    cursor: pointer;
-    font-size: 0.78rem;
+  .pairplot-color-legend-aside .cryo-cc-discrete-cell {
+    padding: 0;
+    border-radius: 2px;
+    box-sizing: border-box;
+    min-width: 0;
+  }
+  .pairplot-color-legend-aside .cryo-cc-discrete-cell--plastic:not(.cryo-cc-discrete-cell--invert) {
+    border-radius: 7px;
+  }
+  .pairplot-color-legend-aside .cryo-cc-discrete-switch {
+    font-size: 0.72rem;
+    box-sizing: border-box;
+    min-width: 0;
+  }
+  .cryo-cc-discrete-switch-label {
+    font-weight: 600;
+    font-size: 0.7rem;
+    line-height: 1.1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cryo-cc-discrete-switch-count {
+    font-size: 0.6rem;
+    line-height: 1.1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .cryo-cc-discrete-switch-text {
     display: flex;
     flex-direction: column;
     gap: 0.06rem;
     min-width: 0;
+  }
+  .pairplot-color-legend-aside .cryo-cc-discrete-switch-text {
+    gap: 1px;
   }
   .cryo-cc-discrete-switch-label {
     font-weight: 600;
@@ -626,13 +649,13 @@
     font-size: 0.72rem;
     color: var(--muted, #5c6b7a);
   }
-  .cryo-cc-discrete-switch input[type="checkbox"] {
-    margin: 0.12rem 0 0;
+  .pairplot-color-legend-aside .cryo-cc-discrete-switch input[type="checkbox"] {
+    margin: 0 0.35rem 0 0;
     flex-shrink: 0;
   }
+  /* Invert button now part of the grid - hide original container */
   .cryo-cc-discrete-actions {
-    flex-shrink: 0;
-    margin-top: 0.35rem;
+    display: none !important;
   }
   @media (max-width: 900px) {
     .pairplot-color-legend-aside {
@@ -910,6 +933,9 @@
     syncPairHistVerticalMetrics();
   }
 
+  // Store discrete color overrides for pair plot
+  var pairDiscreteColorOverrides = {};
+
   var pairColorLegend = new CryoColorCovariateLegend({
     legendContextUrl: legendContextUrl,
     covariateDisplayMap: covariateDisplayMap,
@@ -924,10 +950,17 @@
     thresholdStatus: document.getElementById("pair-color-threshold-status"),
     discreteSwitches: document.getElementById("pair-color-discrete-switches"),
     invertBtn: document.getElementById("pair-btn-discrete-invert"),
+    discreteChipMatplotlibBlend: false,
     vertical: true,
     histPlotVertical: true,
     onContinuousHistogramLayout: syncPairContinuousHistogramLayout,
     onDiscreteLayout: syncPairLegendMiddleWidth,
+    onDiscreteColorChange: function(evt) {
+      if (evt && evt.catKey && evt.hex) {
+        pairDiscreteColorOverrides[String(evt.catKey)] = String(evt.hex);
+        draw();
+      }
+    },
     onFilterChange: function() {
       draw();
     }
@@ -935,13 +968,25 @@
 
   function currentPayload() {
     var cf = pairColorLegend.getFilterForApi();
-    return {
+    var payload = {
       color_col: checkedVal("color_cov"),
       diagonal_emb: checkedVal("diag_emb") || (hasUmap ? "umap" : "pc"),
       upper_style: checkedVal("upper_style") || "scatter",
       palette: checkedVal("pairplot_palette") || "Viridis",
       color_filter: cf || null
     };
+    // Include discrete color overrides if any exist
+    var hasOverrides = false;
+    for (var k in pairDiscreteColorOverrides) {
+      if (Object.prototype.hasOwnProperty.call(pairDiscreteColorOverrides, k)) {
+        hasOverrides = true;
+        break;
+      }
+    }
+    if (hasOverrides) {
+      payload.discrete_label_colors = pairDiscreteColorOverrides;
+    }
+    return payload;
   }
 
   function syncPairplotEdgeLabels(cells) {
@@ -1198,6 +1243,20 @@
     controlsCard.style.marginTop = Math.round(px) + "px";
   }
 
+  function discreteLabelColorsSig(p) {
+    var d = (p && p.discrete_label_colors) || {};
+    if (!d || typeof d !== "object") {
+      return "";
+    }
+    var ks = Object.keys(d).sort();
+    var parts = [];
+    var ki;
+    for (ki = 0; ki < ks.length; ki++) {
+      parts.push(ks[ki] + "=" + String(d[ks[ki]]));
+    }
+    return parts.join("|");
+  }
+
   function dirtyIndices(prev, cur) {
     if (!prev) {
       var all = [];
@@ -1216,6 +1275,13 @@
         allF.push(tf);
       }
       return allF;
+    }
+    if (discreteLabelColorsSig(prev) !== discreteLabelColorsSig(cur)) {
+      var allD = [];
+      for (var td = 0; td < zdim * zdim; td++) {
+        allD.push(td);
+      }
+      return allD;
     }
     if (
       prev.color_col === cur.color_col

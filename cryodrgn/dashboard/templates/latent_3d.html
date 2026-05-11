@@ -22,6 +22,7 @@
     flex-direction: column;
     align-items: stretch;
     align-self: stretch;
+    justify-content: center;
     background: transparent;
     border: none;
     box-shadow: none;
@@ -286,36 +287,54 @@
   }
   .cryo-dash-page--latent3d .cryo-cc-discrete-switches--pair-2col {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-auto-rows: minmax(1.7rem, auto);
-    gap: 0.175rem 0.2rem;
+    grid-template-columns: repeat(auto-fit, minmax(4.5rem, 1fr));
+    grid-auto-rows: minmax(1.3rem, auto);
+    gap: 1px 2px;
     align-items: stretch;
-    padding-right: 0.08rem;
+    padding-right: 0;
     width: 100%;
     max-width: 100%;
     box-sizing: border-box;
   }
-  .cryo-dash-page--latent3d .cryo-cc-discrete-switches--pair-2col .cryo-cc-discrete-switch {
-    min-height: 1.7rem;
+  .cryo-dash-page--latent3d .cryo-cc-discrete-switches--pair-2col .cryo-cc-discrete-cell {
+    min-height: 1.2rem;
     height: 100%;
     box-sizing: border-box;
+    min-width: 0;
+  }
+  .cryo-dash-page--latent3d .cryo-cc-discrete-cell {
+    padding: 0;
+    border-radius: 2px;
+    box-sizing: border-box;
+    min-width: 0;
+  }
+  .cryo-dash-page--latent3d .cryo-cc-discrete-cell--plastic:not(.cryo-cc-discrete-cell--invert) {
+    border-radius: 7px;
   }
   .cryo-dash-page--latent3d .cryo-cc-discrete-switch {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.14rem;
-    margin: 0;
-    padding: 0.11rem 0.17rem;
-    border: 1px solid rgba(36, 59, 83, 0.16);
-    border-radius: 0.4rem;
-    background: rgba(255, 255, 255, 0.55);
-    cursor: pointer;
-    font-size: 0.65rem;
+    font-size: 0.62rem;
+    box-sizing: border-box;
+    min-width: 0;
+  }
+  .cryo-dash-page--latent3d .cryo-cc-discrete-switch-label {
+    font-weight: 600;
+    font-size: 0.6rem;
+    line-height: 1.1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cryo-dash-page--latent3d .cryo-cc-discrete-switch-count {
+    font-size: 0.52rem;
+    line-height: 1.1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .cryo-dash-page--latent3d .cryo-cc-discrete-switch-text {
     display: flex;
     flex-direction: column;
-    gap: 0.06rem;
+    gap: 1px;
     min-width: 0;
   }
   .cryo-dash-page--latent3d .cryo-cc-discrete-switch-label {
@@ -328,12 +347,12 @@
     color: var(--muted, #5c6b7a);
   }
   .cryo-dash-page--latent3d .cryo-cc-discrete-switch input[type="checkbox"] {
-    margin: 0.12rem 0 0;
+    margin: 0 0.35rem 0 0;
     flex-shrink: 0;
   }
+  /* Invert button now part of the grid - hide original container */
   .cryo-dash-page--latent3d .cryo-cc-discrete-actions {
-    flex-shrink: 0;
-    margin-top: 0.35rem;
+    display: none !important;
   }
 </style>
 {% endblock %}
@@ -662,6 +681,9 @@
     return CryoColorCovariateLegend.hasPalette(v) ? v : "Viridis";
   }
 
+  // Store discrete color overrides for 3D plot
+  var latent3dDiscreteColorOverrides = {};
+
   var latent3dColorLegend = new CryoColorCovariateLegend({
     legendContextUrl: legendContextUrl,
     covariateDisplayMap: covariateDisplayMap,
@@ -683,6 +705,12 @@
     onDiscreteLayout: syncLatent3dLegendMiddleWidth,
     onModeChange: function() {
       syncLatent3dPaletteFieldset();
+    },
+    onDiscreteColorChange: function(evt) {
+      if (evt && evt.catKey && evt.hex) {
+        latent3dDiscreteColorOverrides[String(evt.catKey)] = String(evt.hex);
+        loadPlot();
+      }
     },
     onFilterChange: function() {
       loadPlot();
@@ -711,6 +739,17 @@
       palette: selectedLatentPalette(),
       color_filter: cf || null
     };
+    // Include discrete color overrides if any exist
+    var hasOverrides = false;
+    for (var k in latent3dDiscreteColorOverrides) {
+      if (Object.prototype.hasOwnProperty.call(latent3dDiscreteColorOverrides, k)) {
+        hasOverrides = true;
+        break;
+      }
+    }
+    if (hasOverrides) {
+      payload.discrete_label_colors = latent3dDiscreteColorOverrides;
+    }
     requestAnimationFrame(function() {
       requestAnimationFrame(function() {
         fetch(scatter3dUrl, {

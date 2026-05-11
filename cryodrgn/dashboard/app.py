@@ -104,6 +104,7 @@ from cryodrgn.dashboard.route_helpers import (
     _default_xy_cols,
     _filter_ui_scatter_max_points,
     _parse_color_filter_for_column,
+    _parse_optional_discrete_label_colors,
     _parse_pairplot_request,
     _parse_preload_image_limit,
     _parse_preselect_rows_param,
@@ -915,6 +916,9 @@ def api_pairplot():
             e, payload
         )
         color_filter = _parse_color_filter_for_column(color_col, payload)
+        discrete_label_colors = _parse_optional_discrete_label_colors(
+            payload.get("discrete_label_colors")
+        )
     except ValueError as err:
         return jsonify(error=str(err)), 400
     try:
@@ -925,6 +929,7 @@ def api_pairplot():
             upper_style=upper_style,
             continuous_palette=palette,
             color_filter=color_filter,
+            discrete_label_colors=discrete_label_colors,
         )
     except ValueError as err:
         return jsonify(error=str(err)), 400
@@ -947,6 +952,9 @@ def api_save_pairplot_png():
             e, payload
         )
         color_filter = _parse_color_filter_for_column(color_col, payload)
+        discrete_label_colors = _parse_optional_discrete_label_colors(
+            payload.get("discrete_label_colors")
+        )
     except ValueError as err:
         return jsonify(error=str(err)), 400
 
@@ -965,6 +973,7 @@ def api_save_pairplot_png():
             upper_style=upper_style,
             continuous_palette=palette,
             color_filter=color_filter,
+            discrete_label_colors=discrete_label_colors,
         )
         with open(out_path, "wb") as fh:
             fh.write(png)

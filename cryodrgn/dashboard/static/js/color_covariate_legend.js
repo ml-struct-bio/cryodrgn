@@ -2,10 +2,10 @@
  * Colour covariate histogram + discrete toggles shared by particle explorer,
  * pair-grid, and 3-D latent views. Continuous legends support click thresholds
  * and drag ranges; optional `histPlotVertical` swaps covariate onto y and
- * density onto x (pair-plot/3-D asides). Optional `histVerticalMargins` shallow-
- * merges into the vertical histogram layout margin (e.g. larger `l` for y-axis
- * ticks). Optional layout callbacks run after DOM / Plotly layout. Panel
- * `vertical` controls CSS layout class.
+ * density onto x (pair-plot/3-D asides). Discrete colour picking uses one anchored
+ * panel (RGB sliders + hex field + Apply / Cancel) with no separate OS colour dialog. Plastic styling for toggle chips is on by default
+ * (`discreteChipPlasticLabel` opt-out). Optional `histVerticalMargins` shallow-
+ * merges into the vertical histogram layout margin. Panel `vertical` controls CSS layout class.
  */
 (function (global) {
   "use strict";
@@ -34,6 +34,325 @@
     Rainbow: [[110, 64, 170], [71, 118, 230], [26, 199, 194], [123, 217, 76], [244, 208, 63], [242, 95, 92]],
     Earth: [[0, 0, 130], [0, 181, 200], [125, 190, 66], [200, 182, 74], [139, 69, 19]]
   };
+
+  function injectCryoCcLegendStylesOnce() {
+    if (document.getElementById("cryo-cc-legend-dynamic-style")) {
+      return;
+    }
+    var st = document.createElement("style");
+    st.id = "cryo-cc-legend-dynamic-style";
+    st.textContent = ""
+      // Single flex row: [checkbox][gap][label stack][icons flush]; chip paint on .cryo-cc-discrete-cell
+      + ".cryo-cc-discrete-cell{box-sizing:border-box;min-width:0;padding:0;border-radius:2px;"
+      + "border:1px solid transparent;}"
+      + ".cryo-cc-discrete-switch{display:flex;flex-direction:row;flex-wrap:nowrap;align-items:center;"
+      + "gap:0;margin:0;padding:0;width:100%;min-width:0;"
+      + "cursor:default;user-select:none;border:none;background:transparent;border-radius:0;}"
+      + ".cryo-cc-discrete-switch > input[type=\"checkbox\"]{flex-shrink:0;margin:0 0.35rem 0 0;"
+      + "accent-color:#c4703a;cursor:pointer;width:0.62rem;height:0.62rem;}"
+      + ".cryo-cc-discrete-switch-text{display:flex;flex-direction:column;align-items:flex-start;"
+      + "flex:1 1 auto;min-width:0;line-height:1;}"
+      + ".cryo-cc-discrete-cell-controls{display:flex;flex-direction:column;align-items:center;"
+      + "justify-content:center;gap:0;flex-shrink:0;margin:0;padding:0;line-height:0;}"
+      + ".cryo-cc-discrete-cell-controls--solo-only{justify-content:center;}"
+      // Colour wheel slot (native picker sits over the icon button)
+      + ".cryo-cc-discrete-wheel-slot{position:relative;flex-shrink:0;width:1rem;height:1rem;}"
+      + ".cryo-cc-discrete-native-color{position:absolute;inset:0;width:100%;height:100%;"
+      + "opacity:0;pointer-events:none;z-index:0;padding:0;border:none;margin:0;cursor:pointer;}"
+      + ".cryo-cc-discrete-colorwheel-btn{position:absolute;inset:0;"
+      + "display:inline-flex;align-items:center;justify-content:center;"
+      + "width:100%;height:100%;margin:0;padding:0;"
+      + "border:none;border-radius:999px;background:transparent;"
+      + "cursor:pointer;color:#243b53;line-height:0;z-index:2;}"
+      + ".cryo-cc-discrete-colorwheel-btn:focus-visible{outline:2px solid var(--accent,#c4703a);outline-offset:1px;}"
+      + ".cryo-cc-discrete-colorwheel-btn:hover{transform:scale(1.15);}"
+      + ".cryo-cc-discrete-colorwheel-btn svg{display:block;width:0.83rem;height:0.83rem;}"
+      // Solo \"1\" button — same column as wheel, vertically separated by flex layout
+      + ".cryo-cc-discrete-solo-btn{display:inline-flex;align-items:center;justify-content:center;"
+      + "flex-shrink:0;width:1rem;height:1rem;margin:0;padding:0;"
+      + "border:none;border-radius:2px;background:transparent;"
+      + "cursor:pointer;color:#1a2332;font-size:0.58rem;font-weight:900;"
+      + "font-family:Georgia,serif;font-style:italic;line-height:1;"
+      + "text-shadow:-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff,1px 1px 0 #fff,"
+      + "-1px 0 0 #fff,1px 0 0 #fff,0 -1px 0 #fff,0 1px 0 #fff,"
+      + "0 0 3px rgba(255,255,255,0.95);}"
+      + ".cryo-cc-discrete-solo-btn:focus-visible{outline:2px solid var(--accent,#c4703a);outline-offset:1px;}"
+      + ".cryo-cc-discrete-solo-btn:hover{color:#000;transform:scale(1.2);}"
+      // Invert chip matches data chips (paint applied via _applyDiscreteCellPaint)
+      + ".cryo-cc-discrete-cell--invert{cursor:pointer;transition:opacity 0.15s ease;padding:0;}"
+      + ".cryo-cc-discrete-cell--invert:hover{opacity:0.85;}"
+      + ".cryo-cc-discrete-cell--invert .cryo-cc-discrete-switch{cursor:inherit;}"
+      + ".cryo-cc-discrete-cell--plastic:not(.cryo-cc-discrete-cell--invert){"
+      + "position:relative;border-radius:7px;overflow:visible;"
+      + "box-shadow:"
+      + "inset 0 2px 3px rgba(255,255,255,0.68),"
+      + "inset 0 -3px 6px rgba(0,0,0,0.16),"
+      + "inset 0 0 0 1px rgba(255,255,255,0.28),"
+      + "0 2px 5px rgba(26,35,50,0.2);}"
+      + ".cryo-cc-discrete-color-popover{position:fixed;z-index:2147483646;"
+      + "background:var(--paper,#fafaf8);color:var(--nav-bg,#243b53);"
+      + "border:1px solid rgba(36,59,83,0.26);border-radius:10px;"
+      + "padding:0.65rem 0.72rem;box-shadow:0 14px 44px rgba(36,59,83,0.22);"
+      + "display:flex;flex-direction:column;gap:0.55rem;min-width:14.25rem;"
+      + "max-width:calc(100vw - 20px);}"
+      + ".cryo-cc-discrete-color-popover[hidden]{display:none!important;}"
+      + ".cryo-cc-discrete-color-popover-title{font-size:0.82rem;font-weight:700;"
+      + "letter-spacing:0.02em;color:#1a2332;margin:0;line-height:1.2;}"
+      + ".cryo-cc-discrete-color-popover-preview{width:100%;height:2.85rem;"
+      + "border-radius:8px;border:1px solid rgba(36,59,83,0.22);"
+      + "box-sizing:border-box;box-shadow:inset 0 1px 2px rgba(255,255,255,0.35);}"
+      + ".cryo-cc-discrete-color-popover-sliders{display:flex;flex-direction:column;"
+      + "gap:0.38rem;width:100%;}"
+      + ".cryo-cc-discrete-color-popover-slider-row{display:flex;align-items:center;"
+      + "gap:0.42rem;width:100%;min-width:0;}"
+      + ".cryo-cc-discrete-color-popover-slider-row label{flex:0 0 1.05rem;"
+      + "font-size:0.68rem;font-weight:800;color:#334e68;text-align:center;line-height:1;}"
+      + ".cryo-cc-discrete-color-popover-slider-row input[type=range]{flex:1 1 auto;"
+      + "min-width:0;height:0.42rem;accent-color:#c4703a;}"
+      + ".cryo-cc-discrete-color-popover-hex-row{display:flex;align-items:center;"
+      + "gap:0.45rem;width:100%;min-width:0;}"
+      + ".cryo-cc-discrete-color-popover-hex-row label{flex:0 0 auto;font-size:0.72rem;"
+      + "font-weight:700;color:#334e68;}"
+      + ".cryo-cc-discrete-color-popover-hex{flex:1 1 auto;min-width:0;font-family:ui-monospace,Menlo,Consolas,monospace;"
+      + "font-size:0.76rem;padding:0.28rem 0.38rem;border:1px solid rgba(36,59,83,0.22);"
+      + "border-radius:6px;background:#fff;color:#1a2332;box-sizing:border-box;}"
+      + ".cryo-cc-discrete-color-popover-actions{display:flex;justify-content:flex-end;"
+      + "gap:0.42rem;flex-wrap:wrap;padding-top:0.15rem;"
+      + "border-top:1px solid rgba(36,59,83,0.1);margin-top:0.05rem;}"
+      + ".cryo-cc-discrete-color-popover-apply,.cryo-cc-discrete-color-popover-cancel{"
+      + "font:inherit;font-size:0.78rem;font-weight:600;padding:0.32rem 0.72rem;"
+      + "border-radius:6px;cursor:pointer;line-height:1.2;"
+      + "touch-action:manipulation;}"
+      + ".cryo-cc-discrete-color-popover-apply{border:1px solid rgba(196,112,58,0.55);"
+      + "background:#c4703a;color:#fff;}"
+      + ".cryo-cc-discrete-color-popover-apply:hover{filter:brightness(1.05);}"
+      + ".cryo-cc-discrete-color-popover-cancel{border:1px solid rgba(36,59,83,0.28);"
+      + "background:rgba(255,255,255,0.95);color:#243b53;}"
+      + ".cryo-cc-discrete-color-popover-cancel:hover{background:#fff;"
+      + "border-color:rgba(36,59,83,0.4);}"
+      + ".cryo-cc-discrete-switch-checkbox-spacer{flex-shrink:0;width:0.62rem;height:0.62rem;"
+      + "margin:0 0.35rem 0 0;box-sizing:border-box;pointer-events:none;}"
+      // Text label and count - readable on colored backgrounds
+      + ".cryo-cc-discrete-switch-label{font-weight:600;font-size:0.7rem;line-height:1.1;}"
+      + ".cryo-cc-discrete-switch-count{font-size:0.6rem;line-height:1.1;}"
+      // Legacy pick button (kept for backwards compatibility)
+      + ".cryo-cc-discrete-pick-btn{display:inline-flex;align-items:center;justify-content:center;"
+      + "flex-shrink:0;width:1.32rem;height:1.32rem;margin:0;padding:0;"
+      + "border:1px solid rgba(36,59,83,0.28);border-radius:999px;background:rgba(255,255,255,0.92);"
+      + "cursor:pointer;color:#243b53;line-height:0;"
+      + "touch-action:manipulation;transition:background 0.12s ease,border-color 0.12s ease;}"
+      + ".cryo-cc-discrete-pick-btn:focus-visible{outline:2px solid var(--accent,#c4703a);outline-offset:2px;}"
+      + ".cryo-cc-discrete-pick-btn:hover{border-color:rgba(36,59,83,0.45);background:#fff;"
+      + "box-shadow:0 1px 3px rgba(36,59,83,0.12);}"
+      + ".cryo-cc-discrete-pick-btn svg{display:block;width:0.92rem;height:0.92rem;}"
+      // RGB dialog styles (kept for backwards compatibility)
+      + ".cryo-cc-rgb-dialog-backdrop{position:fixed;inset:0;background:rgba(26,35,50,0.38);"
+      + "z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:1rem;}"
+      + ".cryo-cc-rgb-dialog{background:var(--paper,#fff);color:var(--nav-bg,#243b53);border-radius:8px;"
+      + "box-shadow:0 12px 40px rgba(36,59,83,0.22);padding:1rem 1.1rem;width:min(22rem,calc(100vw - 2rem));"
+      + "border:1px solid rgba(36,59,83,0.14);}"
+      + ".cryo-cc-rgb-dialog h3{margin:0 0 0.62rem;font-size:1.02rem;line-height:1.25;color:var(--nav-bg,#243b53);}"
+      + ".cryo-cc-rgb-row{display:flex;align-items:center;gap:0.5rem;margin:0 0 0.55rem;flex-wrap:wrap;}"
+      + ".cryo-cc-rgb-row label{font-size:0.82rem;font-weight:600;min-width:4.25rem;color:var(--nav-bg,#243b53);}"
+      + ".cryo-cc-rgb-row input[type=number]{width:4.75rem;font-size:0.88rem;padding:0.22rem 0.35rem;"
+      + "border:1px solid rgba(36,59,83,0.22);border-radius:4px;}"
+      + ".cryo-cc-rgb-colorwheel{width:3.05rem;height:2.05rem;padding:2px;"
+      + "border:1px solid rgba(36,59,83,0.26);border-radius:6px;cursor:pointer;background:#fff;"
+      + "touch-action:manipulation;}"
+      + ".cryo-cc-rgb-dialog-actions{display:flex;justify-content:flex-end;gap:0.48rem;"
+      + "flex-wrap:wrap;margin-top:0.82rem;padding-top:0.58rem;"
+      + "border-top:1px solid rgba(36,59,83,0.08);}";
+    document.head.appendChild(st);
+  }
+
+  injectCryoCcLegendStylesOnce();
+
+  function normalizeDiscreteLegendHex(hex) {
+    if (hex == null) return "";
+    var s = String(hex).trim();
+    if (/^#[0-9a-fA-F]{6}$/.test(s)) {
+      return s.toLowerCase();
+    }
+    if (/^[0-9a-fA-F]{6}$/.test(s)) {
+      return ("#" + s).toLowerCase();
+    }
+    return "";
+  }
+
+  function discreteLegendRgbTuple(hexNorm) {
+    var h = normalizeDiscreteLegendHex(hexNorm);
+    if (!h || h.length !== 7) return { r: 0, g: 0, b: 0 };
+    return {
+      r: parseInt(h.slice(1, 3), 16),
+      g: parseInt(h.slice(3, 5), 16),
+      b: parseInt(h.slice(5, 7), 16)
+    };
+  }
+
+  function cryoDiscreteColorWheelSvg() {
+    // Rainbow-themed color wheel icon
+    return "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" aria-hidden=\"true\""
+      + " focusable=\"false\"><defs>"
+      + "<linearGradient id=\"cryo-cc-rainbow\" x1=\"0%\" y1=\"0%\" x2=\"100%\" y2=\"100%\">"
+      + "<stop offset=\"0%\" stop-color=\"#ff0000\"/>"
+      + "<stop offset=\"16%\" stop-color=\"#ff8000\"/>"
+      + "<stop offset=\"33%\" stop-color=\"#ffff00\"/>"
+      + "<stop offset=\"50%\" stop-color=\"#00ff00\"/>"
+      + "<stop offset=\"66%\" stop-color=\"#0080ff\"/>"
+      + "<stop offset=\"83%\" stop-color=\"#4000ff\"/>"
+      + "<stop offset=\"100%\" stop-color=\"#ff00ff\"/>"
+      + "</linearGradient></defs>"
+      + "<circle cx=\"12\" cy=\"12\" r=\"9\" stroke=\"rgba(36,59,83,0.35)\""
+      + " stroke-width=\"1.2\" fill=\"url(#cryo-cc-rainbow)\"/>"
+      + "<circle cx=\"12\" cy=\"12\" r=\"3.5\" fill=\"white\" opacity=\"0.9\"/>"
+      + "</svg>";
+  }
+
+  function createDiscreteRgbPopover() {
+    var backdrop = document.createElement("div");
+    backdrop.className = "cryo-cc-rgb-dialog-backdrop";
+    backdrop.hidden = true;
+    var dlg = document.createElement("div");
+    dlg.className = "cryo-cc-rgb-dialog";
+    dlg.setAttribute("role", "dialog");
+    dlg.setAttribute("aria-modal", "true");
+    var titleEl = document.createElement("h3");
+    dlg.appendChild(titleEl);
+
+    function numRow(txt, inp) {
+      var row = document.createElement("div");
+      row.className = "cryo-cc-rgb-row";
+      var lab = document.createElement("label");
+      lab.textContent = txt;
+      row.appendChild(lab);
+      row.appendChild(inp);
+      dlg.appendChild(row);
+      return inp;
+    }
+
+    var clr = document.createElement("input");
+    clr.type = "color";
+    clr.className = "cryo-cc-rgb-colorwheel";
+    clr.setAttribute("aria-label", "Colour wheel picker");
+    numRow("Preview", clr);
+
+    var rIn = document.createElement("input");
+    var gIn = document.createElement("input");
+    var bIn = document.createElement("input");
+    rIn.type = "number"; gIn.type = "number"; bIn.type = "number";
+    rIn.min = "0"; rIn.max = "255"; gIn.min = "0"; gIn.max = "255"; bIn.min = "0"; bIn.max = "255";
+    numRow("Red", rIn);
+    numRow("Green", gIn);
+    numRow("Blue", bIn);
+
+    var actions = document.createElement("div");
+    actions.className = "cryo-cc-rgb-dialog-actions";
+    var cancelBt = document.createElement("button");
+    cancelBt.type = "button";
+    cancelBt.className = "btn btn-secondary";
+    cancelBt.textContent = "Cancel";
+    var okBt = document.createElement("button");
+    okBt.type = "button";
+    okBt.className = "btn";
+    okBt.textContent = "Apply";
+    actions.appendChild(cancelBt);
+    actions.appendChild(okBt);
+    dlg.appendChild(actions);
+    backdrop.appendChild(dlg);
+    document.body.appendChild(backdrop);
+
+    function clampByte(v) {
+      var n = Math.round(Number(v));
+      if (!isFinite(n)) return 0;
+      return Math.max(0, Math.min(255, n));
+    }
+
+    function syncRgbFromClr() {
+      var hx = normalizeDiscreteLegendHex(clr.value || "#808080") || "#808080";
+      var t = discreteLegendRgbTuple(hx);
+      rIn.value = String(t.r);
+      gIn.value = String(t.g);
+      bIn.value = String(t.b);
+      clr.value = hx;
+    }
+
+    function syncClrFromRgb() {
+      var rs = clampByte(rIn.value).toString(16);
+      var gs = clampByte(gIn.value).toString(16);
+      var bs = clampByte(bIn.value).toString(16);
+      clr.value = "#"
+        + (rs.length === 1 ? "0" : "") + rs
+        + (gs.length === 1 ? "0" : "") + gs
+        + (bs.length === 1 ? "0" : "") + bs;
+    }
+
+    clr.addEventListener("input", function () { syncRgbFromClr(); });
+    rIn.addEventListener("input", function () { syncClrFromRgb(); });
+    gIn.addEventListener("input", function () { syncClrFromRgb(); });
+    bIn.addEventListener("input", function () { syncClrFromRgb(); });
+
+    var onCommit = null;
+    var trapKey = null;
+    function close() {
+      backdrop.hidden = true;
+      backdrop.setAttribute("aria-hidden", "true");
+      titleEl.textContent = "";
+      onCommit = null;
+      if (trapKey) {
+        document.removeEventListener("keydown", trapKey, true);
+        trapKey = null;
+      }
+    }
+
+    backdrop.addEventListener("click", function (ev) {
+      if (ev.target === backdrop) {
+        close();
+      }
+    });
+    cancelBt.addEventListener("click", function () { close(); });
+    okBt.addEventListener("click", function () {
+      syncClrFromRgb();
+      var hxFin = normalizeDiscreteLegendHex(clr.value);
+      if (onCommit && hxFin) {
+        onCommit(hxFin);
+      }
+      close();
+    });
+
+    function open(meta) {
+      meta = meta || {};
+      injectCryoCcLegendStylesOnce();
+      var start = normalizeDiscreteLegendHex(meta.initialHex || "#8899aa");
+      if (!start) start = "#8899aa";
+      titleEl.textContent = meta.title || "Choose RGB colour";
+      clr.value = start;
+      syncRgbFromClr();
+      dlg.setAttribute("aria-label", meta.title || "RGB colour picker");
+      onCommit = typeof meta.onCommit === "function" ? meta.onCommit : null;
+      backdrop.hidden = false;
+      backdrop.setAttribute("aria-hidden", "false");
+      try {
+        clr.focus();
+      } catch (fe) { /* ignore */ }
+      if (!trapKey) {
+        trapKey = function (kev) {
+          if (kev.key === "Escape") {
+            kev.preventDefault();
+            close();
+          }
+        };
+        document.addEventListener("keydown", trapKey, true);
+      }
+    }
+
+    return { open: open, close: close, element: backdrop };
+  }
+
+  var _cryoRgbPopoverInst = null;
+  function discreteRgbPopover() {
+    if (!_cryoRgbPopoverInst) _cryoRgbPopoverInst = createDiscreteRgbPopover();
+    return _cryoRgbPopoverInst;
+  }
 
   function paletteScaleCSS(paletteName, t) {
     t = Math.max(0, Math.min(1, t));
@@ -238,6 +557,20 @@
     return { r: r, g: g, b: b };
   }
 
+  function rgbChannelByte(n) {
+    var x = Math.round(Number(n));
+    if (!isFinite(x)) return 0;
+    return Math.max(0, Math.min(255, x));
+  }
+
+  function rgbToHex6(r, g, b) {
+    function hb(v) {
+      var s = rgbChannelByte(v).toString(16);
+      return s.length === 1 ? "0" + s : s;
+    }
+    return ("#" + hb(r) + hb(g) + hb(b)).toLowerCase();
+  }
+
   /**
    * Pastel chip fill from legend hex (matches particle explorer montage chips) plus readable text.
    */
@@ -263,6 +596,39 @@
       borderColor: "rgba(" + r + "," + g + "," + b + ",0.38)",
       labelColor: "rgb(" + rt + "," + gt + "," + bt + ")",
       countColor: "rgba(" + rt + "," + gt + "," + bt + ",0.88)"
+    };
+  }
+
+  /**
+   * Discrete chip fill matches plotted markers: optional blend over dashboard cream
+   * using the same alpha as matplotlib pair-grid lower-triangle scatter.
+   */
+  function discretePlotMatchedChipStyles(hex, blend, plastic) {
+    var rgb0 = parseMarkerHexRgb(hex);
+    if (!rgb0) return { bg: "", borderColor: "", labelColor: "", countColor: "" };
+    var r = rgb0.r;
+    var g = rgb0.g;
+    var b = rgb0.b;
+    if (blend && blend.alpha != null && blend.bgHex) {
+      var bgHx = normalizeDiscreteLegendHex(blend.bgHex) || blend.bgHex;
+      var bg = parseMarkerHexRgb(bgHx.charAt(0) === "#" ? bgHx : "#" + bgHx);
+      if (bg) {
+        var a = Number(blend.alpha);
+        if (isFinite(a)) {
+          a = Math.max(0, Math.min(1, a));
+          r = Math.round(r * a + bg.r * (1 - a));
+          g = Math.round(g * a + bg.g * (1 - a));
+          b = Math.round(b * a + bg.b * (1 - a));
+        }
+      }
+    }
+    var lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+    var ba = plastic ? 0.58 : 0.48;
+    return {
+      bg: "rgb(" + r + "," + g + "," + b + ")",
+      borderColor: "rgba(" + r + "," + g + "," + b + "," + ba + ")",
+      labelColor: lum > 0.52 ? "#131820" : "#f8fafc",
+      countColor: lum > 0.52 ? "rgba(36,59,83,0.88)" : "rgba(248,250,252,0.82)"
     };
   }
 
@@ -326,6 +692,17 @@
     this.vertical = opts.vertical !== false;
     this.histPlotVertical = opts.histPlotVertical === true;
     this.histVerticalMargins = opts.histVerticalMargins || null;
+    this.getDiscreteColorOverrides = opts.getDiscreteColorOverrides || null;
+    this.enableDiscreteColorPicker = opts.enableDiscreteColorPicker !== false;
+    this.onDiscreteColorChange = opts.onDiscreteColorChange || null;
+    this.discreteChipMatplotlibBlend = opts.discreteChipMatplotlibBlend === true;
+    this.discreteChipPlasticLabel = opts.discreteChipPlasticLabel !== false;
+    this._discreteChipBlendAlpha = null;
+    this._discreteChipBlendBg = null;
+    this._discreteColorPopover = null;
+    this._discreteColorPopoverState = null;
+    this._docDiscretePopoverCloser = null;
+    this._discretePopoverEscape = null;
     this._mode = null;
     this._allCatKeys = [];
     this._thresholdLevel = null;
@@ -344,6 +721,9 @@
     this._thresholdModeWasRange = false;
     this._continuousValues = [];
     this._histValueRange = null;
+    if (this._discreteColorPopover && !this._discreteColorPopover.hidden) {
+      this._closeDiscreteColorPopover(true);
+    }
     if (this.panel && this.vertical) {
       this.panel.classList.add("cryo-cc-legend--vertical");
     }
@@ -366,6 +746,9 @@
   };
 
   CryoColorCovariateLegend.prototype.hide = function () {
+    if (this._discreteColorPopover && !this._discreteColorPopover.hidden) {
+      this._closeDiscreteColorPopover(true);
+    }
     if (this.panel) {
       this.panel.hidden = true;
       this.panel.setAttribute("aria-hidden", "true");
@@ -379,11 +762,16 @@
     this._histValueRange = null;
     this._histDragPreview = null;
     this._histPointerDown = false;
+    this._discreteChipBlendAlpha = null;
+    this._discreteChipBlendBg = null;
     this._syncThresholdModeCaption();
   };
 
   /** Panel visible with only the heading (no histogram / discrete UI). Used when no colour covariate is selected. */
   CryoColorCovariateLegend.prototype.showHeadingOnly = function () {
+    if (this._discreteColorPopover && !this._discreteColorPopover.hidden) {
+      this._closeDiscreteColorPopover(true);
+    }
     this._mode = null;
     this._allCatKeys = [];
     this._thresholdLevel = null;
@@ -393,6 +781,8 @@
     this._histDragPreview = null;
     this._histPointerDown = false;
     this._continuousValues = [];
+    this._discreteChipBlendAlpha = null;
+    this._discreteChipBlendBg = null;
     this.clearThreshold();
     if (this.histDiv) {
       try {
@@ -457,7 +847,7 @@
     if (this._mode === "discrete") {
       var keys = [];
       var inputs = this.discreteSwitches
-        ? this.discreteSwitches.querySelectorAll("input[type=\"checkbox\"]:checked")
+        ? this.discreteSwitches.querySelectorAll("input[type=\"checkbox\"][data-cat-key]:checked")
         : [];
       for (var i = 0; i < inputs.length; i++) {
         var k = inputs[i].getAttribute("data-cat-key");
@@ -528,13 +918,15 @@
     this.thresholdStatus.textContent = this.thresholdEmptyStatusText;
   };
 
-  CryoColorCovariateLegend.prototype.refresh = function () {
+  CryoColorCovariateLegend.prototype.refresh = function (extra) {
+    var ex = extra && typeof extra === "object" ? extra : {};
+    var suppressNotify = !!ex.suppressNotify;
     var self = this;
     var col = this.getColorColumn();
     if (!col || col === "none") {
       this.showHeadingOnly();
       this.onModeChange(null);
-      this._notify();
+      if (this.notifyOnRefresh && !suppressNotify) this._notify();
       return;
     }
     var contextPromise = this.getLegendContextData
@@ -560,6 +952,8 @@
         if (data.mode === "continuous") {
           self._mode = "continuous";
           self._continuousValues = data.values || [];
+          self._discreteChipBlendAlpha = null;
+          self._discreteChipBlendBg = null;
           self.show();
           if (self.continuousWrap) self.continuousWrap.hidden = false;
           if (self.discreteWrap) {
@@ -569,6 +963,12 @@
           self._renderContinuousHistogram(self._continuousValues);
         } else if (data.mode === "discrete") {
           self._continuousValues = [];
+          self._discreteChipBlendAlpha =
+            typeof data.chip_blend_alpha === "number" && isFinite(data.chip_blend_alpha)
+              ? data.chip_blend_alpha
+              : null;
+          self._discreteChipBlendBg =
+            typeof data.chip_blend_bg === "string" ? data.chip_blend_bg : null;
           self._mode = "discrete";
           self.show();
           if (self.continuousWrap) self.continuousWrap.hidden = true;
@@ -581,7 +981,7 @@
           self.hide();
         }
         self.onModeChange(self._mode);
-        if (self.notifyOnRefresh) self._notify();
+        if (self.notifyOnRefresh && !suppressNotify) self._notify();
       })
       .catch(function () {
         self.hide();
@@ -1042,53 +1442,428 @@
     evt.stopPropagation();
   };
 
+  CryoColorCovariateLegend.prototype._applyDiscreteRowPaint = function (
+    labEl,
+    labelSpanEl,
+    countSpanEl,
+    hex
+  ) {
+    var hx = normalizeDiscreteLegendHex(hex);
+    if (!hx) return;
+    var dSt = discreteCardStyles(hx);
+    labEl.style.borderLeft = "";
+    labEl.style.backgroundColor = "";
+    labEl.style.border = "";
+    if (dSt && dSt.bg) {
+      labEl.style.backgroundColor = dSt.bg;
+      labEl.style.border = "1px solid " + dSt.borderColor;
+    }
+    if (labelSpanEl) {
+      if (dSt && dSt.labelColor) labelSpanEl.style.color = dSt.labelColor;
+      else labelSpanEl.style.color = "";
+    }
+    if (countSpanEl) {
+      if (dSt && dSt.countColor) countSpanEl.style.color = dSt.countColor;
+      else countSpanEl.style.color = "";
+    }
+  };
+
+  CryoColorCovariateLegend.prototype._closeDiscreteColorPopover = function (asCancel) {
+    var pop = this._discreteColorPopover;
+    var st = this._discreteColorPopoverState;
+    if (!pop || pop.hidden) return;
+    if (asCancel && st) {
+      var comm = normalizeDiscreteLegendHex(st.commitHex) || "#aab4bf";
+      this._applyDiscreteCellPaint(st.cellEl, comm);
+      this._discretePopoverSetUiFromHex(comm);
+    }
+    pop.hidden = true;
+    this._discreteColorPopoverState = null;
+  };
+
+  CryoColorCovariateLegend.prototype._discretePopoverSetUiFromHex = function (hex) {
+    var pop = this._discreteColorPopover;
+    if (!pop) return;
+    var hx = normalizeDiscreteLegendHex(hex) || "#aab4bf";
+    var rgb = discreteLegendRgbTuple(hx);
+    var preview = pop.querySelector(".cryo-cc-discrete-color-popover-preview");
+    var hexIn = pop.querySelector(".cryo-cc-discrete-color-popover-hex");
+    var rr = pop.querySelector('input[type=\"range\"][data-channel=\"r\"]');
+    var gg = pop.querySelector('input[type=\"range\"][data-channel=\"g\"]');
+    var bb = pop.querySelector('input[type=\"range\"][data-channel=\"b\"]');
+    if (preview) preview.style.backgroundColor = hx;
+    if (hexIn) hexIn.value = hx;
+    if (rr) rr.value = String(rgb.r);
+    if (gg) gg.value = String(rgb.g);
+    if (bb) bb.value = String(rgb.b);
+  };
+
+  CryoColorCovariateLegend.prototype._discretePopoverReadHexFromUi = function () {
+    var pop = this._discreteColorPopover;
+    if (!pop) return "";
+    var rr = pop.querySelector('input[type=\"range\"][data-channel=\"r\"]');
+    var gg = pop.querySelector('input[type=\"range\"][data-channel=\"g\"]');
+    var bb = pop.querySelector('input[type=\"range\"][data-channel=\"b\"]');
+    if (!rr || !gg || !bb) return "";
+    var r = rgbChannelByte(rr.value);
+    var g = rgbChannelByte(gg.value);
+    var b = rgbChannelByte(bb.value);
+    return rgbToHex6(r, g, b);
+  };
+
+  CryoColorCovariateLegend.prototype._discretePopoverPushLivePreview = function () {
+    var st = this._discreteColorPopoverState;
+    var pop = this._discreteColorPopover;
+    if (!st || !pop) return;
+    var hx = this._discretePopoverReadHexFromUi();
+    if (!hx) return;
+    var preview = pop.querySelector(".cryo-cc-discrete-color-popover-preview");
+    var hexIn = pop.querySelector(".cryo-cc-discrete-color-popover-hex");
+    if (preview) preview.style.backgroundColor = hx;
+    if (hexIn) hexIn.value = hx;
+    this._applyDiscreteCellPaint(st.cellEl, hx);
+  };
+
+  CryoColorCovariateLegend.prototype._ensureDiscreteColorPopover = function () {
+    var self = this;
+    if (this._discreteColorPopover) return this._discreteColorPopover;
+    var uid =
+      "ccdp-" +
+      (typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID().slice(0, 8)
+        : String(Math.random()).slice(2, 10));
+
+    var root = document.createElement("div");
+    root.className = "cryo-cc-discrete-color-popover";
+    root.setAttribute("role", "dialog");
+    root.setAttribute("aria-label", "Choose category colour");
+    root.hidden = true;
+
+    var title = document.createElement("div");
+    title.className = "cryo-cc-discrete-color-popover-title";
+    title.textContent = "Category colour";
+
+    var preview = document.createElement("div");
+    preview.className = "cryo-cc-discrete-color-popover-preview";
+
+    var slidersWrap = document.createElement("div");
+    slidersWrap.className = "cryo-cc-discrete-color-popover-sliders";
+
+    function addSlider(channel, letter) {
+      var row = document.createElement("div");
+      row.className = "cryo-cc-discrete-color-popover-slider-row";
+      var lab = document.createElement("label");
+      lab.setAttribute("for", uid + "-" + channel);
+      lab.textContent = letter;
+      var rg = document.createElement("input");
+      rg.type = "range";
+      rg.id = uid + "-" + channel;
+      rg.setAttribute("data-channel", channel);
+      rg.min = "0";
+      rg.max = "255";
+      rg.value = "128";
+      rg.addEventListener("input", function () {
+        self._discretePopoverPushLivePreview();
+      });
+      row.appendChild(lab);
+      row.appendChild(rg);
+      slidersWrap.appendChild(row);
+    }
+    addSlider("r", "R");
+    addSlider("g", "G");
+    addSlider("b", "B");
+
+    var hexRow = document.createElement("div");
+    hexRow.className = "cryo-cc-discrete-color-popover-hex-row";
+    var hexLab = document.createElement("label");
+    hexLab.setAttribute("for", uid + "-hex");
+    hexLab.textContent = "Hex";
+    var hexIn = document.createElement("input");
+    hexIn.type = "text";
+    hexIn.className = "cryo-cc-discrete-color-popover-hex";
+    hexIn.id = uid + "-hex";
+    hexIn.setAttribute("spellcheck", "false");
+    hexIn.setAttribute("autocomplete", "off");
+    hexIn.setAttribute("aria-label", "Colour as #rrggbb");
+    hexIn.addEventListener("input", function () {
+      var raw = String(hexIn.value || "").trim();
+      var hx = normalizeDiscreteLegendHex(raw);
+      if (!hx && /^[0-9a-fA-F]{6}$/.test(raw.replace(/^#/, ""))) {
+        hx = normalizeDiscreteLegendHex("#" + raw.replace(/^#/, ""));
+      }
+      if (!hx || hx.length !== 7) return;
+      self._discretePopoverSetUiFromHex(hx);
+      var st = self._discreteColorPopoverState;
+      if (st) self._applyDiscreteCellPaint(st.cellEl, hx);
+    });
+
+    hexRow.appendChild(hexLab);
+    hexRow.appendChild(hexIn);
+
+    var actions = document.createElement("div");
+    actions.className = "cryo-cc-discrete-color-popover-actions";
+    var applyBtn = document.createElement("button");
+    applyBtn.type = "button";
+    applyBtn.className = "cryo-cc-discrete-color-popover-apply";
+    applyBtn.textContent = "Apply";
+    var cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.className = "cryo-cc-discrete-color-popover-cancel";
+    cancelBtn.textContent = "Cancel";
+
+    applyBtn.addEventListener("click", function () {
+      var st = self._discreteColorPopoverState;
+      if (!st) return;
+      var hexInEl = root.querySelector(".cryo-cc-discrete-color-popover-hex");
+      var hx = hexInEl ? normalizeDiscreteLegendHex(hexInEl.value) : "";
+      if (!hx) hx = normalizeDiscreteLegendHex(self._discretePopoverReadHexFromUi());
+      if (!hx) return;
+      self._discretePopoverSetUiFromHex(hx);
+      self._applyDiscreteCellPaint(st.cellEl, hx);
+      if (typeof self.onDiscreteColorChange === "function") {
+        self.onDiscreteColorChange({ catKey: st.catKey, hex: hx.toLowerCase() });
+      }
+      self._closeDiscreteColorPopover(false);
+    });
+
+    cancelBtn.addEventListener("click", function () {
+      self._closeDiscreteColorPopover(true);
+    });
+
+    actions.appendChild(cancelBtn);
+    actions.appendChild(applyBtn);
+
+    root.appendChild(title);
+    root.appendChild(preview);
+    root.appendChild(slidersWrap);
+    root.appendChild(hexRow);
+    root.appendChild(actions);
+
+    this._docDiscretePopoverCloser = function (ev) {
+      var pop = self._discreteColorPopover;
+      if (!pop || pop.hidden) return;
+      var st = self._discreteColorPopoverState;
+      var t = ev.target;
+      if (pop.contains(t)) return;
+      if (st && st.anchorEl && st.anchorEl.contains(t)) return;
+      self._closeDiscreteColorPopover(true);
+    };
+    document.addEventListener("mousedown", this._docDiscretePopoverCloser, true);
+
+    this._discretePopoverEscape = function (ev) {
+      if (ev.key !== "Escape") return;
+      var pop = self._discreteColorPopover;
+      if (!pop || pop.hidden) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      self._closeDiscreteColorPopover(true);
+    };
+    document.addEventListener("keydown", this._discretePopoverEscape, true);
+
+    this._discreteColorPopover = root;
+    return root;
+  };
+
+  CryoColorCovariateLegend.prototype._openDiscreteColorPopover = function (
+    anchorEl,
+    cellEl,
+    catKey,
+    currentHex
+  ) {
+    if (this._discreteColorPopover && !this._discreteColorPopover.hidden) {
+      this._closeDiscreteColorPopover(true);
+    }
+    var pop = this._ensureDiscreteColorPopover();
+    var hx = normalizeDiscreteLegendHex(currentHex) || "#aab4bf";
+    this._discreteColorPopoverState = {
+      cellEl: cellEl,
+      catKey: String(catKey),
+      commitHex: hx,
+      anchorEl: anchorEl
+    };
+    this._discretePopoverSetUiFromHex(hx);
+    pop.hidden = false;
+    if (!pop.parentNode) {
+      document.body.appendChild(pop);
+    }
+    var ar = anchorEl.getBoundingClientRect();
+    pop.style.left = Math.round(ar.left) + "px";
+    pop.style.top = Math.round(ar.bottom + 6) + "px";
+    var self = this;
+    requestAnimationFrame(function () {
+      if (!self._discreteColorPopover || self._discreteColorPopover.hidden) return;
+      var p = self._discreteColorPopover;
+      var pr = p.getBoundingClientRect();
+      var vw = window.innerWidth;
+      var vh = window.innerHeight;
+      var pad = 10;
+      var left = pr.left;
+      var top = pr.top;
+      if (pr.right > vw - pad) left -= pr.right - vw + pad;
+      if (pr.bottom > vh - pad) top -= pr.bottom - vh + pad;
+      if (left < pad) left = pad;
+      if (top < pad) top = pad;
+      p.style.left = Math.round(left) + "px";
+      p.style.top = Math.round(top) + "px";
+    });
+    var rg0 = pop.querySelector('input[type=\"range\"][data-channel=\"r\"]');
+    try {
+      if (rg0 && rg0.focus) rg0.focus({ preventScroll: true });
+    } catch (e0) {
+      try {
+        if (rg0) rg0.focus();
+      } catch (e1) { /* ignore */ }
+    }
+  };
+
   CryoColorCovariateLegend.prototype._renderDiscrete = function (categories) {
     var self = this;
     if (!this.discreteSwitches) return;
+    var prevChecked = new Set();
+    var prevKeySet = new Set();
+    var prevInputs = this.discreteSwitches.querySelectorAll(
+      "input[type=\"checkbox\"][data-cat-key]"
+    );
+    for (var pi = 0; pi < prevInputs.length; pi++) {
+      var pk = String(prevInputs[pi].getAttribute("data-cat-key"));
+      prevKeySet.add(pk);
+      if (prevInputs[pi].checked) {
+        prevChecked.add(pk);
+      }
+    }
     this.discreteSwitches.innerHTML = "";
     var col = this.getColorColumn();
+    var ov =
+      typeof this.getDiscreteColorOverrides === "function"
+        ? this.getDiscreteColorOverrides()
+        : null;
     var byKey = {};
     for (var j = 0; j < (categories || []).length; j++) {
       var cj = categories[j];
       byKey[String(cj.key)] = cj;
     }
     this._allCatKeys = sortDiscreteKeys(Object.keys(byKey));
+    var nextKeySet = new Set(this._allCatKeys);
+    var preserveDiscreteChecks =
+      prevKeySet.size > 0 &&
+      prevKeySet.size === nextKeySet.size &&
+      (function (a, b) {
+        var ok = true;
+        a.forEach(function (x) {
+          if (!b.has(x)) ok = false;
+        });
+        return ok;
+      }(prevKeySet, nextKeySet));
     for (var i = 0; i < this._allCatKeys.length; i++) {
       var cat = byKey[this._allCatKeys[i]];
       if (!cat) continue;
       var key = String(cat.key);
+      var ovHex = ov && typeof ov[key] !== "undefined" && ov[key] != null ? String(ov[key]) : "";
+      var hx = normalizeDiscreteLegendHex(ovHex) || normalizeDiscreteLegendHex(cat.color);
       var safeId = "cc-disc-" + i + "-" + key.replace(/[^a-zA-Z0-9_-]/g, "_");
+      var initialHex =
+        normalizeDiscreteLegendHex(ov && ov[key] != null ? String(ov[key]) : "") ||
+        normalizeDiscreteLegendHex(hx) ||
+        normalizeDiscreteLegendHex(cat.color) ||
+        "#aab4bf";
+
+      // Create cell wrapper (single flex row lives inside .cryo-cc-discrete-switch)
+      var cell = document.createElement("div");
+      cell.className = "cryo-cc-discrete-cell";
+      if (this.discreteChipPlasticLabel) {
+        cell.classList.add("cryo-cc-discrete-cell--plastic");
+      }
+      cell.setAttribute("data-cat-key", key);
+
+      var controlsWrap = document.createElement("div");
+      controlsWrap.className = "cryo-cc-discrete-cell-controls";
+
+      // Colour wheel opens anchored popover (preview + Apply / Cancel).
+      if (this.enableDiscreteColorPicker) {
+        var pickTitle = discreteDisplayLabel(key, col, this.covariateDisplayMap);
+
+        var wheelSlot = document.createElement("div");
+        wheelSlot.className = "cryo-cc-discrete-wheel-slot";
+
+        var pick = document.createElement("button");
+        pick.type = "button";
+        pick.className = "cryo-cc-discrete-colorwheel-btn";
+        pick.title = "Choose colour…";
+        pick.setAttribute("aria-label", "Choose colour for " + pickTitle);
+        pick.innerHTML = cryoDiscreteColorWheelSvg();
+
+        pick.addEventListener("mousedown", function (ev) {
+          ev.preventDefault();
+          ev.stopPropagation();
+        });
+        pick.addEventListener("click", function (ce, kk, ih) {
+          return function (ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            self._openDiscreteColorPopover(pick, ce, kk, ih);
+          };
+        }(cell, key, initialHex));
+
+        wheelSlot.appendChild(pick);
+        controlsWrap.appendChild(wheelSlot);
+      } else {
+        controlsWrap.classList.add("cryo-cc-discrete-cell-controls--solo-only");
+      }
+
+      var soloBtn = document.createElement("button");
+      soloBtn.type = "button";
+      soloBtn.className = "cryo-cc-discrete-solo-btn";
+      soloBtn.title = "Select only this category";
+      soloBtn.setAttribute("aria-label", "Select only " + discreteDisplayLabel(key, col, this.covariateDisplayMap));
+      soloBtn.textContent = "1";
+      soloBtn.addEventListener("mousedown", function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+      });
+      soloBtn.addEventListener("click", function (k) {
+        return function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          self.soloDiscrete(k);
+        };
+      }(key));
+      controlsWrap.appendChild(soloBtn);
+
       var lab = document.createElement("label");
       lab.className = "cryo-cc-discrete-switch";
-      var dSt = cat.color ? discreteCardStyles(String(cat.color)) : null;
-      if (dSt && dSt.bg) {
-        lab.style.backgroundColor = dSt.bg;
-        lab.style.border = "1px solid " + dSt.borderColor;
-      } else if (cat.color) {
-        lab.style.borderLeft = "3px solid " + String(cat.color);
-      }
+
       var inp = document.createElement("input");
       inp.type = "checkbox";
       inp.id = safeId;
       inp.setAttribute("role", "switch");
-      inp.setAttribute("aria-checked", this.discreteCheckedDefault ? "true" : "false");
+      inp.setAttribute(
+        "aria-checked",
+        preserveDiscreteChecks
+          ? (prevChecked.has(key) ? "true" : "false")
+          : (this.discreteCheckedDefault ? "true" : "false")
+      );
       inp.setAttribute("data-cat-key", key);
-      inp.checked = this.discreteCheckedDefault;
+      inp.checked = preserveDiscreteChecks ? prevChecked.has(key) : this.discreteCheckedDefault;
+
       var tw = document.createElement("span");
       tw.className = "cryo-cc-discrete-switch-text";
       var sp = document.createElement("span");
       sp.className = "cryo-cc-discrete-switch-label";
       sp.textContent = discreteDisplayLabel(key, col, this.covariateDisplayMap);
-      if (dSt && dSt.labelColor) sp.style.color = dSt.labelColor;
       var cn = document.createElement("span");
       cn.className = "cryo-cc-discrete-switch-count";
       cn.textContent = this.formatParticleCount(cat.count != null ? cat.count : 0);
-      if (dSt && dSt.countColor) cn.style.color = dSt.countColor;
+
       tw.appendChild(sp);
       tw.appendChild(cn);
       lab.appendChild(inp);
       lab.appendChild(tw);
-      this.discreteSwitches.appendChild(lab);
+      lab.appendChild(controlsWrap);
+      cell.appendChild(lab);
+      this.discreteSwitches.appendChild(cell);
+
+      this._applyDiscreteCellPaint(cell, initialHex);
+
       inp.addEventListener("change", function (input) {
         return function () {
           input.setAttribute("aria-checked", input.checked ? "true" : "false");
@@ -1098,6 +1873,44 @@
         };
       }(inp));
     }
+
+    // Add invert selection button as a grid cell in the bottom-right corner
+    if (this.invertBtn) {
+      var invertCell = document.createElement("div");
+      invertCell.className = "cryo-cc-discrete-cell cryo-cc-discrete-cell--invert";
+      invertCell.setAttribute("data-invert-cell", "true");
+      invertCell.setAttribute("role", "button");
+      invertCell.setAttribute("aria-disabled", "true");
+
+      var invertInner = document.createElement("div");
+      invertInner.className = "cryo-cc-discrete-switch cryo-cc-discrete-switch--invert";
+
+      var spacer = document.createElement("span");
+      spacer.className = "cryo-cc-discrete-switch-checkbox-spacer";
+      spacer.setAttribute("aria-hidden", "true");
+
+      var invertText = document.createElement("span");
+      invertText.className = "cryo-cc-discrete-switch-text";
+      var invertSpan = document.createElement("span");
+      invertSpan.className = "cryo-cc-discrete-switch-label";
+      invertSpan.textContent = "";
+
+      invertText.appendChild(invertSpan);
+      invertInner.appendChild(spacer);
+      invertInner.appendChild(invertText);
+      invertCell.appendChild(invertInner);
+
+      invertCell.addEventListener("click", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        self.invertDiscrete();
+      });
+
+      this._applyDiscreteCellPaint(invertCell, "#cfd8e3");
+
+      this.discreteSwitches.appendChild(invertCell);
+    }
+
     this._syncInvertBtn();
     if (typeof this.onDiscreteLayout === "function") {
       var dLay = this.onDiscreteLayout;
@@ -1107,15 +1920,70 @@
     }
   };
 
+  CryoColorCovariateLegend.prototype._discreteChipBlendForPaint = function () {
+    if (!this.discreteChipMatplotlibBlend || this._discreteChipBlendAlpha == null || !this._discreteChipBlendBg) {
+      return null;
+    }
+    return { alpha: this._discreteChipBlendAlpha, bgHex: this._discreteChipBlendBg };
+  };
+
+  CryoColorCovariateLegend.prototype._applyDiscreteCellPaint = function (
+    cellEl,
+    hex
+  ) {
+    var hx = normalizeDiscreteLegendHex(hex);
+    if (!hx) return;
+    var plastic =
+      this.discreteChipPlasticLabel &&
+      !cellEl.classList.contains("cryo-cc-discrete-cell--invert");
+    var dSt = discretePlotMatchedChipStyles(
+      hx,
+      this._discreteChipBlendForPaint(),
+      plastic
+    );
+    var lab = cellEl.querySelector(".cryo-cc-discrete-switch");
+    var sp = cellEl.querySelector(".cryo-cc-discrete-switch-label");
+    var cn = cellEl.querySelector(".cryo-cc-discrete-switch-count");
+    if (!lab) return;
+    lab.style.backgroundColor = "transparent";
+    lab.style.border = "none";
+    if (dSt && dSt.bg) {
+      cellEl.style.backgroundColor = dSt.bg;
+      cellEl.style.border = "1px solid " + dSt.borderColor;
+    }
+    if (sp) {
+      if (dSt && dSt.labelColor) sp.style.color = dSt.labelColor;
+      else sp.style.color = "";
+    }
+    if (cn) {
+      if (dSt && dSt.countColor) cn.style.color = dSt.countColor;
+      else cn.style.color = "";
+    }
+  };
+
   CryoColorCovariateLegend.prototype._syncInvertBtn = function () {
     if (!this.invertBtn || !this.discreteSwitches) return;
-    var inputs = this.discreteSwitches.querySelectorAll("input[type=\"checkbox\"]");
+    var inputs = this.discreteSwitches.querySelectorAll("input[type=\"checkbox\"][data-cat-key]");
     var any = false;
     for (var i = 0; i < inputs.length; i++) {
       if (inputs[i].checked) { any = true; break; }
     }
+    // Update original invert button (hidden but kept for accessibility/legacy)
     this.invertBtn.disabled = !any;
     this.invertBtn.textContent = any ? "Invert selection" : this.noDiscreteSelectionText;
+
+    // Update the invert cell in the grid
+    var invertCell = this.discreteSwitches.querySelector(".cryo-cc-discrete-cell--invert");
+    if (invertCell) {
+      var invertLabel = invertCell.querySelector(".cryo-cc-discrete-switch-label");
+      if (invertLabel) {
+        invertLabel.textContent = any ? "Invert selection" : "";
+      }
+      invertCell.style.opacity = any ? "1" : "0.45";
+      invertCell.style.pointerEvents = any ? "auto" : "none";
+      invertCell.setAttribute("aria-disabled", any ? "false" : "true");
+      invertCell.setAttribute("aria-label", any ? "Invert selection" : (this.noDiscreteSelectionText || ""));
+    }
   };
 
   CryoColorCovariateLegend.prototype.setDiscreteCheckedKeys = function (keys) {
@@ -1123,7 +1991,7 @@
     var keySet = new Set((keys || []).map(function (k) { return String(k); }));
     this._suppressDiscrete = true;
     try {
-      var inputs = this.discreteSwitches.querySelectorAll("input[type=\"checkbox\"]");
+      var inputs = this.discreteSwitches.querySelectorAll("input[type=\"checkbox\"][data-cat-key]");
       for (var i = 0; i < inputs.length; i++) {
         var k = inputs[i].getAttribute("data-cat-key");
         var checked = keySet.has(String(k));
@@ -1140,7 +2008,7 @@
     if (!this.discreteSwitches) return;
     this._suppressDiscrete = true;
     try {
-      var inputs = this.discreteSwitches.querySelectorAll("input[type=\"checkbox\"]");
+      var inputs = this.discreteSwitches.querySelectorAll("input[type=\"checkbox\"][data-cat-key]");
       for (var i = 0; i < inputs.length; i++) {
         inputs[i].checked = !inputs[i].checked;
         inputs[i].setAttribute("aria-checked", inputs[i].checked ? "true" : "false");
@@ -1152,8 +2020,27 @@
     this._notify();
   };
 
+  CryoColorCovariateLegend.prototype.soloDiscrete = function (soloKey) {
+    if (!this.discreteSwitches) return;
+    this._suppressDiscrete = true;
+    try {
+      var inputs = this.discreteSwitches.querySelectorAll("input[type=\"checkbox\"][data-cat-key]");
+      for (var i = 0; i < inputs.length; i++) {
+        var k = inputs[i].getAttribute("data-cat-key");
+        var checked = String(k) === String(soloKey);
+        inputs[i].checked = checked;
+        inputs[i].setAttribute("aria-checked", checked ? "true" : "false");
+      }
+    } finally {
+      this._suppressDiscrete = false;
+    }
+    this._syncInvertBtn();
+    this._notify();
+  };
+
   CryoColorCovariateLegend.paletteScaleCSS = paletteScaleCSS;
   CryoColorCovariateLegend.formatThresholdValue = formatThresholdValue;
+  CryoColorCovariateLegend.normalizeDiscreteLegendHex = normalizeDiscreteLegendHex;
   CryoColorCovariateLegend.hasPalette = function (paletteName) {
     return Object.prototype.hasOwnProperty.call(PALETTE_RGB, paletteName);
   };

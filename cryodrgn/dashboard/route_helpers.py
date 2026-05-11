@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Iterable
 from typing import Any
 
@@ -18,6 +19,8 @@ from cryodrgn.dashboard.trajectory import (
     has_pc_columns,
     has_umap_columns,
 )
+
+_PAIR_DISCRETE_HEX6 = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 _TRAJECTORY_INELIGIBLE_MSG = (
     "Trajectory creator needs a CUDA GPU, single-particle data, "
@@ -188,6 +191,44 @@ def _parse_color_filter_for_column(
             raise ValueError("Discrete colour filter requires a keys array.")
         return {"kind": "discrete", "keys": [str(k) for k in keys]}
     raise ValueError("color_filter kind must be threshold, range, or discrete.")
+
+
+def _parse_optional_discrete_label_colors(
+    raw: dict[str, Any] | Any,
+    *,
+    max_keys: int = 128,
+) -> dict[str, str] | None:
+    """Validate optional ``discrete_label_colors`` from JSON (pair grid / APIs).
+
+    Maps legend filter keys (__na__, integers as strings, etc.) to ``#RRGGBB``.
+    Unknown keys are ignored server-side during rendering.
+    """
+    if raw in (None, "", {}):
+        return None
+    if not isinstance(raw, dict):
+        raise ValueError("discrete_label_colors must be an object.")
+    out: dict[str, str] = {}
+    for k, v in raw.items():
+        if len(out) >= max_keys:
+            break
+        ks = str(k).strip()
+        if not ks:
+            continue
+        if not isinstance(v, str):
+            raise ValueError("discrete_label_colors values must be hex strings.")
+        hraw = v.strip()
+        if hraw.startswith("#") and len(hraw) == 7:
+            cand = hraw
+        elif len(hraw) == 6:
+            cand = "#" + hraw
+        else:
+            cand = ""
+        if not _PAIR_DISCRETE_HEX6.match(cand):
+            raise ValueError(
+                "Bad hex colour for key " f"{ks!r} (use #RRGGBB — got {str(v)!r})."
+            )
+        out[ks] = cand.lower()
+    return out if out else None
 
 
 def _add_direct_anchor_pidx(payload: dict, p: dict, z_traj: np.ndarray) -> None:

@@ -293,6 +293,65 @@ def _continuous_series_stats(values: pd.Series) -> tuple[np.ndarray, float, floa
     return cvals, cmin, cmax
 
 
+def _pair_grid_finite_axis_lim(values: pd.Series) -> tuple[float, float]:
+    """Min/max of finite entries (for stable pair-grid axes across colour filters)."""
+    v = values.to_numpy(dtype=np.float64)
+    m = np.isfinite(v)
+    if not np.any(m):
+        return -1.0, 1.0
+    lo = float(np.min(v[m]))
+    hi = float(np.max(v[m]))
+    if hi <= lo:
+        hi = lo + 1e-9
+    return lo, hi
+
+
+# Fraction of the axis span added as padding on each side (pair grid + pinned 3-D axes).
+_PAIR_GRID_AXIS_PAD_FRAC = 0.045
+
+
+def _pair_grid_axis_lim_padded(
+    values: pd.Series,
+    *,
+    pad_frac: float | None = None,
+) -> tuple[float, float]:
+    """Finite axis bounds widened symmetrically so points clear the panel edges."""
+    pf = _PAIR_GRID_AXIS_PAD_FRAC if pad_frac is None else pad_frac
+    pf = max(0.0, float(pf))
+    lo, hi = _pair_grid_finite_axis_lim(values)
+    span = hi - lo
+    pad = span * pf if span > 0 else max(abs(lo), abs(hi), 1.0) * pf
+    return lo - pad, hi + pad
+
+
+def _pair_grid_square_xy_limits(
+    xlim: tuple[float, float],
+    ylim: tuple[float, float],
+) -> tuple[tuple[float, float], tuple[float, float]]:
+    """Align x/y data ranges so span matches on square ``equal``-aspect axes.
+
+    Matplotlib ≥3.10 logs when ``set_xlim`` / ``set_ylim`` are later overridden by
+    ``set_aspect(..., adjustable=\"datalim\")``. Matching spans avoids that adjustment.
+    """
+    lo_x, hi_x = float(xlim[0]), float(xlim[1])
+    lo_y, hi_y = float(ylim[0]), float(ylim[1])
+    span_x = hi_x - lo_x
+    span_y = hi_y - lo_y
+    if not math.isfinite(span_x) or span_x <= 0:
+        span_x = max(abs(lo_x), abs(hi_x), 1.0) * 1e-9 + 1e-15
+        hi_x = lo_x + span_x
+    if not math.isfinite(span_y) or span_y <= 0:
+        span_y = max(abs(lo_y), abs(hi_y), 1.0) * 1e-9 + 1e-15
+        hi_y = lo_y + span_y
+    cx = 0.5 * (lo_x + hi_x)
+    cy = 0.5 * (lo_y + hi_y)
+    if span_x >= span_y:
+        half = 0.5 * span_x
+        return (lo_x, hi_x), (cy - half, cy + half)
+    half = 0.5 * span_y
+    return (cx - half, cx + half), (lo_y, hi_y)
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -538,7 +597,22 @@ def covariate_legend_context_payload(
                 }
             )
         cats.sort(key=lambda c: _discrete_legend_sort_tuple(str(c["key"])))
-        return {"mode": "discrete", "categories": cats}
+        n_pts = len(exp.plot_df)
+        point_cap = max(n_pts, 1)
+        _, chip_blend_alpha = _mpl_pair_grid_marker_s_alpha(
+            n_pts,
+            point_cap=point_cap,
+            dense_s=2.5,
+            dense_a=0.2,
+            sparse_s=10.0,
+            sparse_a=0.78,
+        )
+        return {
+            "mode": "discrete",
+            "categories": cats,
+            "chip_blend_alpha": float(chip_blend_alpha),
+            "chip_blend_bg": _DASHBOARD_CREAM,
+        }
     vals = pd.to_numeric(s, errors="coerce").dropna().to_numpy(dtype=np.float64)
     if vals.size == 0:
         return {"mode": "continuous", "values": []}
@@ -812,20 +886,21 @@ def scatter3d_z_json(
 ) -> str:
     """Interactive 3D scatter of three latent ``z*`` columns."""
     plotly_cs = normalize_continuous_palette(continuous_palette)
-    df = exp.plot_df
+    df_all = exp.plot_df
+    df = df_all
     _validate_three_latent_axes(exp, df, (xcol, ycol, zcol))
 
     pinned_color_range: tuple[float, float] | None = None
     if color_filter and color_col and color_col != "none":
         if color_col != "labels" and color_col in df.columns:
-            _, pcmin, pcmax = _continuous_series_stats(df[color_col])
+            _, pcmin, pcmax = _continuous_series_stats(df_all[color_col])
             pinned_color_range = (pcmin, pcmax)
 
     if color_filter and color_col and color_col != "none":
-        mask = plot_df_color_filter_mask(df, color_col, color_filter)
+        mask = plot_df_color_filter_mask(df_all, color_col, color_filter)
         if not bool(np.any(mask)):
             raise ValueError("No particles match the current colour covariate filter.")
-        df = df.loc[mask].reset_index(drop=True)
+        df = df_all.loc[mask].reset_index(drop=True)
 
     sub, row_indices = _subsample(df, max_points, seed=1)
     cap = max_points if max_points is not None else max(len(sub), 1)
@@ -866,9 +941,21 @@ def scatter3d_z_json(
     else:
         marker = dict(size=msize, opacity=mopacity, color="#4a5568")
 
-    customdata = np.column_stack(
-        [sub["index"].to_numpy(), row_indices],
-    )
+    idx_cd = sub["index"].to_numpy()
+    row_cd = np.asarray(row_indices, dtype=np.int64)
+    if (
+        color_col
+        and color_col != "none"
+        and color_col in sub.columns
+        and color_col == "labels"
+    ):
+        cv3 = sub[color_col]
+        disp_ca = np.empty(len(sub), dtype=object)
+        for ii in range(len(sub)):
+            disp_ca[ii] = _lower_legend_entry_label("labels", cv3.iloc[ii])
+        customdata = np.column_stack([idx_cd, row_cd, disp_ca])
+    else:
+        customdata = np.column_stack([idx_cd, row_cd])
     sc = go.Scatter3d(
         x=sub[xcol],
         y=sub[ycol],
@@ -879,6 +966,29 @@ def scatter3d_z_json(
         marker=marker,
     )
     transparent = "rgba(0,0,0,0)"
+
+    def _scene_axis(extra: dict[str, Any] | None = None) -> dict[str, Any]:
+        d: dict[str, Any] = dict(backgroundcolor=transparent)
+        if extra:
+            d.update(extra)
+        return d
+
+    scene_axes_extra: dict[str, dict[str, Any]] = {}
+    if color_filter:
+        scene_axes_extra["xaxis"] = _scene_axis(
+            {"range": list(_pair_grid_axis_lim_padded(df_all[xcol]))}
+        )
+        scene_axes_extra["yaxis"] = _scene_axis(
+            {"range": list(_pair_grid_axis_lim_padded(df_all[ycol]))}
+        )
+        scene_axes_extra["zaxis"] = _scene_axis(
+            {"range": list(_pair_grid_axis_lim_padded(df_all[zcol]))}
+        )
+    else:
+        scene_axes_extra["xaxis"] = _scene_axis()
+        scene_axes_extra["yaxis"] = _scene_axis()
+        scene_axes_extra["zaxis"] = _scene_axis()
+
     fig = go.Figure(sc)
     fig.update_layout(
         template="plotly_white",
@@ -891,9 +1001,7 @@ def scatter3d_z_json(
             zaxis_title=zcol,
             aspectmode="data",
             bgcolor="rgba(250,248,244,0.95)",
-            xaxis=dict(backgroundcolor=transparent),
-            yaxis=dict(backgroundcolor=transparent),
-            zaxis=dict(backgroundcolor=transparent),
+            **scene_axes_extra,
         ),
         uirevision="scatter3d_z",
         font=_PLOTLY_FONT,
@@ -1004,6 +1112,7 @@ def pair_grid_png(
     *,
     continuous_palette: str | None = None,
     color_filter: dict[str, Any] | None = None,
+    discrete_label_colors: dict[str, str] | None = None,
 ) -> tuple[bytes, list[dict[str, float]]]:
     """z_dim × z_dim Matplotlib grid (square cells); upper hex matches ``sns.jointplot(..., kind=\"hex\")``.
 
@@ -1016,6 +1125,8 @@ def pair_grid_png(
     for c in zcols:
         if c not in full_df.columns:
             raise ValueError(f"Missing latent column {c} in analysis table.")
+
+    z_axis_lim = [_pair_grid_axis_lim_padded(full_df[zc]) for zc in zcols]
 
     if lower_color_col not in full_df.columns:
         raise ValueError(f"Unknown color column: {lower_color_col}")
@@ -1044,34 +1155,73 @@ def pair_grid_png(
         sparse_s=8.0,
         sparse_a=0.9,
     )
+    # Upper-triangle scatter (fixed pastel blue): scale like lower cells so small
+    # selections stay readable; keep dense plots lighter than the coloured lower panels.
+    up_scatter_s, up_scatter_a = _mpl_pair_grid_marker_s_alpha(
+        n_pts,
+        point_cap=point_cap,
+        dense_s=1.85,
+        dense_a=0.085,
+        sparse_s=14.5,
+        sparse_a=0.88,
+    )
     raw_color = df[lower_color_col]
     discrete = _lower_color_series_is_discrete(raw_color)
 
-    pal: list[str] = []
-    uniques: np.ndarray | pd.Index = np.array([])
-    codes: np.ndarray | None = None
     point_colors: list[str] | None = None
     cvals_plot: np.ndarray | None = None
     cmin: float | None = None
     cmax: float | None = None
 
     if discrete:
-        codes_arr, uniques = pd.factorize(raw_color, sort=True)
-        codes = np.asarray(codes_arr, dtype=np.int64)
-        if len(uniques) == 0:
+        raw_full_color = full_df[lower_color_col]
+        _, uniques_f = pd.factorize(raw_full_color, sort=True)
+        if len(uniques_f) == 0:
             raise ValueError(
                 f"Lower-triangle color column `{lower_color_col}` has no values."
             )
-        pal = _dashboard_chimerax_colors(max(len(uniques), 1))
-        point_colors = [
-            "#aab4bf" if int(c) < 0 else pal[int(c) % len(pal)] for c in codes
-        ]
+        pal = _dashboard_chimerax_colors(max(len(uniques_f), 1))
+
+        def _discrete_hex_for_key(fk: str, palette_idx: int) -> str:
+            override = discrete_label_colors.get(fk) if discrete_label_colors else None
+            if isinstance(override, str) and re.match(
+                r"^#[0-9a-fA-F]{6}$", override.strip()
+            ):
+                return override.strip().lower()
+            return pal[palette_idx % len(pal)]
+
+        # Stable colours keyed like the legend API — never re-factorize the filtered
+        # subset (that would remap the sole remaining category to palette slot 0).
+        stable_hex_by_key: dict[str, str] = {}
+        for idx, u in enumerate(uniques_f):
+            if pd.isna(u):
+                continue
+            fk = covariate_row_filter_key(lower_color_col, u)
+            stable_hex_by_key[fk] = _discrete_hex_for_key(fk, idx)
+
+        if bool(raw_full_color.isna().any()):
+            fk_na = "__na__"
+            ov_na = discrete_label_colors.get(fk_na) if discrete_label_colors else None
+            if isinstance(ov_na, str) and re.match(r"^#[0-9a-fA-F]{6}$", ov_na.strip()):
+                stable_hex_by_key[fk_na] = ov_na.strip().lower()
+            else:
+                stable_hex_by_key[fk_na] = "#aab4bf"
+
+        point_colors = []
+        for u in raw_color.to_numpy(dtype=object):
+            if pd.isna(u):
+                point_colors.append(stable_hex_by_key.get("__na__", "#aab4bf"))
+            else:
+                fk = covariate_row_filter_key(lower_color_col, u)
+                point_colors.append(stable_hex_by_key.get(fk, "#aab4bf"))
     else:
         if bool(pd.to_numeric(raw_color, errors="coerce").isna().all()):
             raise ValueError(
                 f"Lower-triangle color column `{lower_color_col}` has no numeric values."
             )
-        cvals, cmin, cmax = _continuous_series_stats(raw_color)
+        _, cmin, cmax = _continuous_series_stats(full_df[lower_color_col])
+        color_num = cast(pd.Series, pd.to_numeric(raw_color, errors="coerce"))
+        cvals = np.asarray(color_num, dtype=np.float64)
         cvals_plot = np.where(np.isfinite(cvals), cvals, 0.5 * (cmin + cmax))
 
     emb = (diagonal_emb or "pc").lower()
@@ -1080,11 +1230,15 @@ def pair_grid_png(
             raise ValueError("UMAP embedding is not available for this run.")
         emb_x = df["UMAP1"].to_numpy(dtype=np.float64)
         emb_y = df["UMAP2"].to_numpy(dtype=np.float64)
+        emb_x_lim = _pair_grid_axis_lim_padded(full_df["UMAP1"])
+        emb_y_lim = _pair_grid_axis_lim_padded(full_df["UMAP2"])
     elif emb == "pc":
         if "PC1" not in df.columns or "PC2" not in df.columns:
             raise ValueError("PCA components PC1/PC2 are not available.")
         emb_x = df["PC1"].to_numpy(dtype=np.float64)
         emb_y = df["PC2"].to_numpy(dtype=np.float64)
+        emb_x_lim = _pair_grid_axis_lim_padded(full_df["PC1"])
+        emb_y_lim = _pair_grid_axis_lim_padded(full_df["PC2"])
     else:
         raise ValueError("diagonal_emb must be 'pc' or 'umap'.")
 
@@ -1133,13 +1287,17 @@ def pair_grid_png(
                 yi = df[zcols[i]].to_numpy(dtype=np.float64)
                 if i == j:
                     zi = df[zcols[i]].to_numpy(dtype=np.float64)
-                    zmask = np.isfinite(zi)
-                    if np.any(zmask):
-                        zmin = float(np.min(zi[zmask]))
-                        zmax = float(np.max(zi[zmask]))
-                        if zmax <= zmin:
-                            zmax = zmin + 1e-9
-                        diagonal_color_ranges[i] = (zmin, zmax)
+                    zi_full = full_df[zcols[i]].to_numpy(dtype=np.float64)
+                    zm_full = np.isfinite(zi_full)
+                    z_scatter_kw: dict[str, Any] = {}
+                    if np.any(zm_full):
+                        zmin_g = float(np.min(zi_full[zm_full]))
+                        zmax_g = float(np.max(zi_full[zm_full]))
+                        if zmax_g <= zmin_g:
+                            zmax_g = zmin_g + 1e-9
+                        diagonal_color_ranges[i] = (zmin_g, zmax_g)
+                        z_scatter_kw["vmin"] = zmin_g
+                        z_scatter_kw["vmax"] = zmax_g
                     ax.scatter(
                         emb_x,
                         emb_y,
@@ -1149,6 +1307,7 @@ def pair_grid_png(
                         alpha=diag_a,
                         linewidths=0,
                         rasterized=True,
+                        **z_scatter_kw,
                     )
                 elif i < j:
                     if upper == "hex":
@@ -1175,8 +1334,8 @@ def pair_grid_png(
                             xi,
                             yi,
                             c=_UPPER_SCATTER_BLUE,
-                            s=1.2,
-                            alpha=0.05,
+                            s=up_scatter_s,
+                            alpha=up_scatter_a,
                             linewidths=0,
                             rasterized=True,
                         )
@@ -1213,6 +1372,15 @@ def pair_grid_png(
 
                 ax.set_xticks([])
                 ax.set_yticks([])
+                # Freeze axes to the unfiltered table so legend selections only subset points.
+                if i == j:
+                    xl, yl = _pair_grid_square_xy_limits(emb_x_lim, emb_y_lim)
+                    ax.set_xlim(xl[0], xl[1])
+                    ax.set_ylim(yl[0], yl[1])
+                else:
+                    xl, yl = _pair_grid_square_xy_limits(z_axis_lim[j], z_axis_lim[i])
+                    ax.set_xlim(xl[0], xl[1])
+                    ax.set_ylim(yl[0], yl[1])
                 # Equal data aspect without shrinking panels unevenly (``box`` gives ragged cell sizes).
                 ax.set_aspect("equal", adjustable="datalim")
                 ax.set_box_aspect(1)

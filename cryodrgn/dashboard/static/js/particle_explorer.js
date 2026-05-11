@@ -585,6 +585,7 @@
     plotStackResizeObserver.observe(plotlyStackEl);
   }
   var overlay = document.getElementById("scatter-rendering-overlay");
+  var scatterRenderingEverCompleted = false;
   var paletteFieldset = document.getElementById("scatter-palette-radios");
   if (paletteFieldset && scatterPlotStack && scatterPlotStack.parentNode) {
     scatterPlotStack.insertAdjacentElement("afterend", paletteFieldset);
@@ -2628,7 +2629,15 @@
   }
   function setRendering(on) {
     if (overlay) {
-      overlay.classList.add("cryo-plot-rendering-overlay--nonblocking");
+      if (on) {
+        if (scatterRenderingEverCompleted) {
+          overlay.classList.add("cryo-plot-rendering-overlay--nonblocking");
+        } else {
+          overlay.classList.remove("cryo-plot-rendering-overlay--nonblocking");
+        }
+      } else {
+        overlay.classList.remove("cryo-plot-rendering-overlay--nonblocking");
+      }
       overlay.classList.toggle("cryo-plot-rendering-overlay--show", on);
       overlay.setAttribute("aria-hidden", on ? "false" : "true");
     }
@@ -2825,6 +2834,7 @@
               suppressSelectionEvents = true;
               renderedScatterAxes = {x: x, y: y};
               clearScatterPlotWatchdog();
+              scatterRenderingEverCompleted = true;
               setRendering(false);
               buildTraceMap();
               updateParticleSelFieldset();

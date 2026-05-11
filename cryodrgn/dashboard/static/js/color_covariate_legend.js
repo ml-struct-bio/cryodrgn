@@ -635,12 +635,12 @@
     };
   }
 
-  /** Full-table particle counts shown on discrete covariate chips (not plotted subsample). */
+  /** Full-table counts shown on discrete covariate chips (not plotted subsample). */
   function formatDiscreteDatasetCount(n) {
     var v = Number(n);
     if (!isFinite(v)) v = 0;
     var nlab = v.toLocaleString("en-CA");
-    return nlab + " particle" + (Math.round(v) === 1 ? "" : "s");
+    return nlab + " pts";
   }
 
   function discreteDisplayLabel(key, rawCol, displayMap) {
@@ -683,11 +683,19 @@
     this.thresholdModeCaption = opts.thresholdModeCaption || null;
     this.thresholdStatus = opts.thresholdStatus;
     this.discreteSwitches = opts.discreteSwitches;
+    /** When true, category cells stay in a wrapping grid and invert sits in a dedicated right column (particle explorer). */
+    this.discreteInvertAsideColumn = opts.discreteInvertAsideColumn === true;
+    /** When true, invert sits on its own final row spanning the toggle grid, centred (pair plot); ignored if aside column is on. */
+    this.discreteInvertFooterRow =
+      opts.discreteInvertFooterRow === true && !this.discreteInvertAsideColumn;
     this.invertBtn = opts.invertBtn;
     this.discreteCheckedDefault = opts.discreteCheckedDefault !== false;
     this.allDiscreteSelectedIsNull = opts.allDiscreteSelectedIsNull !== false;
     this.noDiscreteSelectionText = opts.noDiscreteSelectionText || "no selection";
     this.thresholdEmptyStatusText = opts.thresholdEmptyStatusText || "";
+    this.regionHeadingEl = opts.regionHeadingEl || null;
+    this.regionHeadingContinuousText = opts.regionHeadingContinuousText || "Range selection";
+    this.regionHeadingDiscreteText = opts.regionHeadingDiscreteText || "Toggle selection";
     this.formatDiscreteDatasetCount =
       opts.formatDiscreteDatasetCount || formatDiscreteDatasetCount;
     this.onFilterChange = opts.onFilterChange || function () {};
@@ -727,6 +735,7 @@
     this._thresholdModeWasRange = false;
     this._continuousValues = [];
     this._histValueRange = null;
+    this._invertTypographyFitScheduled = false;
     if (this._discreteColorPopover && !this._discreteColorPopover.hidden) {
       this._closeDiscreteColorPopover(true);
     }
@@ -743,6 +752,16 @@
     }
     if (this.invertBtn) {
       this.invertBtn.addEventListener("click", function () { self.invertDiscrete(); });
+    }
+    if (this.discreteSwitches) {
+      this.discreteSwitches.classList.toggle(
+        "cryo-color-discrete-switches--invert-aside",
+        !!this.discreteInvertAsideColumn
+      );
+      this.discreteSwitches.classList.toggle(
+        "cryo-color-discrete-switches--invert-footer-row",
+        !!this.discreteInvertFooterRow
+      );
     }
   }
 
@@ -771,6 +790,7 @@
     this._discreteChipBlendAlpha = null;
     this._discreteChipBlendBg = null;
     this._syncThresholdModeCaption();
+    this._updateRegionHeading();
   };
 
   /** Panel visible with only the heading (no histogram / discrete UI). Used when no colour covariate is selected. */
@@ -810,6 +830,7 @@
       this.panel.classList.add("cryo-cc-legend--heading-only");
       this.panel.style.removeProperty("--pair-legend-middle-w");
     }
+    this._updateRegionHeading();
   };
 
   CryoColorCovariateLegend.prototype.show = function () {
@@ -893,6 +914,58 @@
     this._syncThresholdModeCaption();
   };
 
+  /**
+   * Reapply threshold/range selection onto the legend histogram after host-driven refresh
+   * (e.g. particle explorer keeps parallel colour-filter state).
+   */
+  CryoColorCovariateLegend.prototype.syncThresholdMirrorFromHost = function (host) {
+    if (!host || this._mode !== "continuous" || !this.histDiv) return;
+    var col = this.getColorColumn ? this.getColorColumn() : null;
+    if (!col || host.thresholdCol == null || String(host.thresholdCol) !== String(col)) return;
+    var hasRange =
+      host.range != null &&
+      typeof host.range.lo === "number" &&
+      typeof host.range.hi === "number" &&
+      isFinite(host.range.lo) &&
+      isFinite(host.range.hi);
+    var hasLevel = host.level != null && isFinite(Number(host.level));
+    if (!hasRange && !hasLevel) return;
+    if (hasRange) {
+      this._thresholdLevel = null;
+      this._thresholdRange = {
+        lo: Math.min(host.range.lo, host.range.hi),
+        hi: Math.max(host.range.lo, host.range.hi)
+      };
+    } else {
+      this._thresholdRange = null;
+      this._thresholdLevel = Number(host.level);
+    }
+    this._thresholdCol = col;
+    // Align "previous mode" with the new threshold/range before touching the checkbox so
+    // `_syncThresholdModeCaption` does not treat host-driven updates as a level↔range flip and
+    // force-clear `thresholdUseMax` (breaking invert / ≤ highlighting on first mirror sync).
+    this._thresholdModeWasRange = this._rangeModeActive();
+    if (this.thresholdUseMax && typeof host.useMaxChecked === "boolean") {
+      this.thresholdUseMax.checked = !!host.useMaxChecked;
+    }
+    this._syncThresholdModeCaption();
+    this._relayoutHistGuides();
+  };
+
+  CryoColorCovariateLegend.prototype._updateRegionHeading = function () {
+    if (!this.regionHeadingEl) return;
+    if (this._mode === "continuous") {
+      this.regionHeadingEl.hidden = false;
+      this.regionHeadingEl.textContent = this.regionHeadingContinuousText;
+    } else if (this._mode === "discrete") {
+      this.regionHeadingEl.hidden = false;
+      this.regionHeadingEl.textContent = this.regionHeadingDiscreteText;
+    } else {
+      this.regionHeadingEl.hidden = true;
+      this.regionHeadingEl.textContent = "";
+    }
+  };
+
   CryoColorCovariateLegend.prototype._activeColorLabel = function () {
     var col = this.getColorColumn ? this.getColorColumn() : "";
     return (this.covariateDisplayMap && col) ? String(this.covariateDisplayMap[col] || col) : String(col || "value");
@@ -968,6 +1041,19 @@
           return res;
         }
         var data = res.j;
+        var preservedContinuousThreshold = null;
+        if (
+          self._mode === "continuous"
+          && self._thresholdCol === col
+          && (self._thresholdLevel != null || self._thresholdRange != null)
+        ) {
+          preservedContinuousThreshold = {
+            level: self._thresholdLevel,
+            range: self._thresholdRange,
+            thresholdCol: self._thresholdCol,
+            useMaxChecked: !!(self.thresholdUseMax && self.thresholdUseMax.checked)
+          };
+        }
         self.clearThreshold();
         if (data.mode === "continuous") {
           if (self._discreteColorPopover && !self._discreteColorPopover.hidden) {
@@ -987,8 +1073,24 @@
             self.discreteSwitches.innerHTML = "";
           }
           self._allCatKeys = [];
-          self._renderContinuousHistogram(self._continuousValues);
-        } else if (data.mode === "discrete") {
+          if (
+            preservedContinuousThreshold
+            && preservedContinuousThreshold.thresholdCol === col
+          ) {
+            self._thresholdLevel = preservedContinuousThreshold.level;
+            self._thresholdRange = preservedContinuousThreshold.range;
+            self._thresholdCol = preservedContinuousThreshold.thresholdCol;
+            if (self.thresholdUseMax) {
+              self.thresholdUseMax.checked = preservedContinuousThreshold.useMaxChecked;
+            }
+            self._thresholdModeWasRange = preservedContinuousThreshold.range != null;
+          }
+          return self._renderContinuousHistogram(self._continuousValues).then(function () {
+            finishLegendLayout();
+            return res;
+          });
+        }
+        if (data.mode === "discrete") {
           self._continuousValues = [];
           self._discreteChipBlendAlpha =
             typeof data.chip_blend_alpha === "number" && isFinite(data.chip_blend_alpha)
@@ -1012,14 +1114,19 @@
         } else {
           self.hide();
         }
-        self.onModeChange(self._mode);
-        if (typeof afterLayout === "function") {
-          try {
-            afterLayout(self._mode);
-          } catch (eLay) { /* ignore */ }
-        }
-        if (self.notifyOnRefresh && !suppressNotify) self._notify();
+        finishLegendLayout();
         return res;
+
+        function finishLegendLayout() {
+          self._updateRegionHeading();
+          self.onModeChange(self._mode);
+          if (typeof afterLayout === "function") {
+            try {
+              afterLayout(self._mode);
+            } catch (eLay) { /* ignore */ }
+          }
+          if (self.notifyOnRefresh && !suppressNotify) self._notify();
+        }
       })
       .catch(function () {
         self.hide();
@@ -1029,11 +1136,11 @@
 
   CryoColorCovariateLegend.prototype._renderContinuousHistogram = function (values) {
     var self = this;
-    if (!this.histDiv) return;
+    if (!this.histDiv) return Promise.resolve();
     if (!values.length) {
       Plotly.purge(this.histDiv);
       this._histValueRange = null;
-      return;
+      return Promise.resolve();
     }
     var pal = this._palette();
     var violin = violinDistribution(values, pal);
@@ -1106,7 +1213,7 @@
       hoverinfo: "skip",
       showlegend: false
     }]);
-    Plotly.react(this.histDiv, traces, layout, {
+    var reactMaybe = Plotly.react(this.histDiv, traces, layout, {
       displayModeBar: false,
       doubleClick: false,
       scrollZoom: false,
@@ -1114,6 +1221,11 @@
     });
     this._syncThresholdModeCaption();
     this._relayoutHistGuides();
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        self._relayoutHistGuides();
+      });
+    });
     if (typeof this.onContinuousHistogramLayout === "function") {
       var layCb = this.onContinuousHistogramLayout;
       requestAnimationFrame(function() {
@@ -1127,6 +1239,18 @@
       this.histDiv.addEventListener("mousemove", function (evt) { self._onHistMove(evt); });
       this.histDiv.addEventListener("mouseleave", function () { self._onHistLeave(); });
     }
+    var pr = Promise.resolve(reactMaybe && typeof reactMaybe.then === "function" ? reactMaybe : null);
+    return pr.catch(function () {}).then(function () {
+      self._relayoutHistGuides();
+      return new Promise(function (resolve) {
+        requestAnimationFrame(function () {
+          requestAnimationFrame(function () {
+            self._relayoutHistGuides();
+            resolve();
+          });
+        });
+      });
+    });
   };
 
   CryoColorCovariateLegend.prototype._histDataValueFromEvent = function (evt, opts) {
@@ -1196,8 +1320,14 @@
 
   CryoColorCovariateLegend.prototype._plotValueRange = function () {
     var r = this._histValueRange;
-    if (!r || r.length < 2) return null;
-    return [Math.min(r[0], r[1]), Math.max(r[0], r[1])];
+    if (r && r.length >= 2) {
+      return [Math.min(r[0], r[1]), Math.max(r[0], r[1])];
+    }
+    if (!this.histDiv || !this.histDiv._fullLayout) return null;
+    var ax = this.histPlotVertical ? this.histDiv._fullLayout.yaxis : this.histDiv._fullLayout.xaxis;
+    if (!ax || !ax.range || ax.range.length < 2) return null;
+    var rng = ax.range;
+    return [Math.min(rng[0], rng[1]), Math.max(rng[0], rng[1])];
   };
 
   CryoColorCovariateLegend.prototype._oneHighlightRect = function (range, lo, hi) {
@@ -1382,6 +1512,7 @@
         annotations.push(this._rangeAnnotation(rLo, rHi));
       } else if (this._thresholdLevel != null) {
         shapes.push(this._guideLine(this._thresholdLevel));
+        annotations.push(this._valueAnnotation(this._thresholdLevel));
       }
     }
     if (this._hoverLevel != null && !this._histPointerDown) {
@@ -1389,7 +1520,8 @@
       var colNow = this.getColorColumn ? this.getColorColumn() : null;
       var showHoverValueAnnot =
         this._histDragPreview == null
-        && !(this._thresholdCol === colNow && this._thresholdRange != null);
+        && !(this._thresholdCol === colNow && this._thresholdRange != null)
+        && !(this._thresholdCol === colNow && this._thresholdLevel != null);
       if (showHoverValueAnnot) {
         annotations.push(this._valueAnnotation(this._hoverLevel));
       }
@@ -1814,6 +1946,18 @@
       }
     }
     this.discreteSwitches.innerHTML = "";
+    var cellsMount = this.discreteSwitches;
+    var invertMount = this.discreteSwitches;
+    if (this.discreteInvertAsideColumn) {
+      var cellsWrap = document.createElement("div");
+      cellsWrap.className = "cryo-cc-discrete-cells-wrap";
+      var invertAside = document.createElement("div");
+      invertAside.className = "cryo-cc-discrete-invert-aside";
+      this.discreteSwitches.appendChild(cellsWrap);
+      this.discreteSwitches.appendChild(invertAside);
+      cellsMount = cellsWrap;
+      invertMount = invertAside;
+    }
     var col = this.getColorColumn();
     var ov =
       typeof this.getDiscreteColorOverrides === "function"
@@ -1964,7 +2108,7 @@
       rowWrap.appendChild(lab);
       rowWrap.appendChild(controlsWrap);
       cell.appendChild(rowWrap);
-      this.discreteSwitches.appendChild(cell);
+      cellsMount.appendChild(cell);
 
       this._applyDiscreteCellPaint(cell, initialHex);
 
@@ -1978,50 +2122,179 @@
       }(inp));
     }
 
-    // Add invert selection button as a grid cell in the bottom-right corner
+    // Add invert control as its own cell (styling: idle label vs action button — see base CSS).
     if (this.invertBtn) {
       var invertCell = document.createElement("div");
       invertCell.className = "cryo-cc-discrete-cell cryo-cc-discrete-cell--invert";
       invertCell.setAttribute("data-invert-cell", "true");
-      invertCell.setAttribute("role", "button");
+      invertCell.setAttribute("role", "status");
+      invertCell.setAttribute("aria-live", "polite");
       invertCell.setAttribute("aria-disabled", "true");
+      invertCell.tabIndex = -1;
+      invertCell.classList.add("cryo-cc-discrete-cell--invert-idle");
 
       var invertInner = document.createElement("div");
       invertInner.className = "cryo-cc-discrete-switch cryo-cc-discrete-switch--invert";
 
-      var spacer = document.createElement("span");
-      spacer.className = "cryo-cc-discrete-switch-checkbox-spacer";
-      spacer.setAttribute("aria-hidden", "true");
+      var fitBox = document.createElement("div");
+      fitBox.className = "cryo-cc-discrete-invert-fitbox";
 
-      var invertText = document.createElement("span");
-      invertText.className = "cryo-cc-discrete-switch-text";
       var invertSpan = document.createElement("span");
       invertSpan.className = "cryo-cc-discrete-switch-label";
       invertSpan.textContent = "";
 
-      invertText.appendChild(invertSpan);
-      invertInner.appendChild(spacer);
-      invertInner.appendChild(invertText);
+      fitBox.appendChild(invertSpan);
+      invertInner.appendChild(fitBox);
       invertCell.appendChild(invertInner);
 
       invertCell.addEventListener("click", function (e) {
+        if (!invertCell.classList.contains("cryo-cc-discrete-cell--invert-action")) {
+          return;
+        }
         e.preventDefault();
         e.stopPropagation();
         self.invertDiscrete();
       });
+      invertCell.addEventListener("keydown", function (e) {
+        if (!invertCell.classList.contains("cryo-cc-discrete-cell--invert-action")) {
+          return;
+        }
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          e.stopPropagation();
+          self.invertDiscrete();
+        }
+      });
 
-      this._applyDiscreteCellPaint(invertCell, "#cfd8e3");
+      if (this.discreteInvertAsideColumn) {
+        invertCell.classList.add("cryo-cc-discrete-cell--invert-aside");
+      } else if (this.discreteInvertFooterRow) {
+        invertCell.classList.add("cryo-cc-discrete-cell--invert-footer");
+      }
 
-      this.discreteSwitches.appendChild(invertCell);
+      invertMount.appendChild(invertCell);
     }
 
     this._syncInvertBtn();
     this._syncDiscretePopoverAnchorAfterDiscreteRender();
-    if (typeof this.onDiscreteLayout === "function") {
-      var dLay = this.onDiscreteLayout;
-      requestAnimationFrame(function () {
-        requestAnimationFrame(function () { dLay(); });
-      });
+    var afterDiscreteLay = function () {
+      self.measureDiscreteInvertAsideColumn();
+      self.scheduleInvertTypographyFit();
+      if (typeof self.onDiscreteLayout === "function") {
+        self.onDiscreteLayout();
+      }
+    };
+    requestAnimationFrame(function () {
+      requestAnimationFrame(afterDiscreteLay);
+    });
+  };
+
+  CryoColorCovariateLegend.prototype.measureDiscreteInvertAsideColumn = function () {
+    if (!this.discreteInvertAsideColumn || !this.discreteSwitches) return;
+    var wrap = this.discreteSwitches.querySelector(".cryo-cc-discrete-cells-wrap");
+    if (!wrap) return;
+    var probe = wrap.querySelector(".cryo-cc-discrete-cell:not(.cryo-cc-discrete-cell--invert)");
+    if (probe && probe.offsetWidth > 0 && probe.offsetHeight > 0) {
+      this.discreteSwitches.style.setProperty(
+        "--cryo-explorer-discrete-cell-w",
+        probe.offsetWidth + "px"
+      );
+      this.discreteSwitches.style.setProperty(
+        "--cryo-explorer-discrete-cell-h",
+        probe.offsetHeight + "px"
+      );
+    }
+    this.scheduleInvertTypographyFit();
+  };
+
+  CryoColorCovariateLegend.prototype.scheduleInvertTypographyFit = function () {
+    var self = this;
+    if (!this.discreteSwitches || this._invertTypographyFitScheduled) return;
+    this._invertTypographyFitScheduled = true;
+    requestAnimationFrame(function () {
+      self._invertTypographyFitScheduled = false;
+      var cell = self.discreteSwitches.querySelector(".cryo-cc-discrete-cell--invert");
+      if (cell) self._fitInvertCellTypography(cell);
+    });
+  };
+
+  CryoColorCovariateLegend.prototype._fitInvertCellTypography = function (invertCell) {
+    var fitBox = invertCell.querySelector(".cryo-cc-discrete-invert-fitbox");
+    var label = invertCell.querySelector(".cryo-cc-discrete-switch-label");
+    if (!fitBox || !label) return;
+    /* Content box inside padding — clientWidth/Height include padding, but text lays out in the inner box */
+    var innerW = fitBox.clientWidth;
+    var innerH = fitBox.clientHeight;
+    if (typeof window !== "undefined" && window.getComputedStyle) {
+      var bxs = window.getComputedStyle(fitBox);
+      var pl = parseFloat(bxs.paddingLeft) || 0;
+      var pr = parseFloat(bxs.paddingRight) || 0;
+      var pt = parseFloat(bxs.paddingTop) || 0;
+      var pb = parseFloat(bxs.paddingBottom) || 0;
+      innerW -= pl + pr;
+      innerH -= pt + pb;
+    }
+    if (!(innerW > 2 && innerH > 2)) {
+      return;
+    }
+    label.style.fontSize = "";
+    var text = (label.textContent || "").replace(/\s+/g, " ").trim();
+    if (!text) return;
+
+    var words = text.split(/\s+/).filter(Boolean);
+    var cs = typeof window !== "undefined" && window.getComputedStyle
+      ? window.getComputedStyle(label)
+      : null;
+    var probe = document.createElement("span");
+    probe.setAttribute("aria-hidden", "true");
+    probe.style.cssText =
+      "visibility:hidden;position:absolute;left:-9999px;top:0;white-space:nowrap;padding:0;margin:0;";
+    if (cs) {
+      probe.style.fontFamily = cs.fontFamily;
+      probe.style.fontWeight = cs.fontWeight;
+      probe.style.fontStyle = cs.fontStyle;
+      probe.style.letterSpacing = cs.letterSpacing;
+    }
+    document.body.appendChild(probe);
+
+    /* Multi-line: largest font so (a) every whole word fits inner width and (b) wrapped block fits box */
+    var minPx = 5;
+    var lo = minPx;
+    var hi = 144;
+    var best = lo;
+    var padPx = 2;
+    var vertSlack = 6;
+    try {
+      while (lo <= hi) {
+        var mid = (lo + hi) >> 1;
+        label.style.fontSize = mid + "px";
+        probe.style.fontSize = mid + "px";
+        var wordsFit = true;
+        for (var wi = 0; wi < words.length; wi++) {
+          probe.textContent = words[wi];
+          if (probe.offsetWidth > innerW + padPx) {
+            wordsFit = false;
+            break;
+          }
+        }
+        var fits =
+          wordsFit &&
+          label.scrollWidth <= innerW + padPx &&
+          label.scrollHeight <= innerH - vertSlack;
+        if (fits) {
+          best = mid;
+          lo = mid + 1;
+        } else {
+          hi = mid - 1;
+        }
+      }
+      label.style.fontSize = best + "px";
+      while (best > minPx && label.scrollHeight > innerH - vertSlack) {
+        best -= 1;
+        label.style.fontSize = best + "px";
+      }
+    } finally {
+      if (probe.parentNode) probe.parentNode.removeChild(probe);
     }
   };
 
@@ -2082,12 +2355,22 @@
     if (invertCell) {
       var invertLabel = invertCell.querySelector(".cryo-cc-discrete-switch-label");
       if (invertLabel) {
-        invertLabel.textContent = any ? "Invert selection" : "";
+        invertLabel.textContent = any
+          ? "Invert selection"
+          : (this.noDiscreteSelectionText || "");
       }
-      invertCell.style.opacity = any ? "1" : "0.45";
-      invertCell.style.pointerEvents = any ? "auto" : "none";
+      invertCell.classList.toggle("cryo-cc-discrete-cell--invert-idle", !any);
+      invertCell.classList.toggle("cryo-cc-discrete-cell--invert-action", any);
+      invertCell.setAttribute("role", any ? "button" : "status");
       invertCell.setAttribute("aria-disabled", any ? "false" : "true");
       invertCell.setAttribute("aria-label", any ? "Invert selection" : (this.noDiscreteSelectionText || ""));
+      invertCell.tabIndex = any ? 0 : -1;
+      if (any) {
+        invertCell.removeAttribute("aria-live");
+      } else {
+        invertCell.setAttribute("aria-live", "polite");
+      }
+      this.scheduleInvertTypographyFit();
     }
   };
 

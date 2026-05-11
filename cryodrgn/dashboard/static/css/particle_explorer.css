@@ -10,6 +10,20 @@
     border-radius: 4px;
     background: rgba(250, 248, 244, 0.92);
   }
+  .cryo-montage-grid-wrap .cryo-plot-rendering-overlay .cryo-plot-rendering-overlay__inner {
+    gap: 0.42rem;
+    max-width: 96%;
+  }
+  .cryo-montage-grid-wrap .cryo-plot-rendering-overlay .cryo-plot-rendering-overlay__label {
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0;
+    line-height: 1.2;
+  }
+  .cryo-montage-grid-wrap .cryo-plot-rendering-overlay .cryo-plot-rendering-overlay__track {
+    width: min(9rem, 90%);
+    height: 4px;
+  }
   .cryo-montage-cell {
     display: flex;
     flex-direction: column;

@@ -640,14 +640,14 @@
     }
     .cryo-plot-rendering-overlay--nonblocking.cryo-plot-rendering-overlay--show {
       inset: auto;
-      top: 0.45rem;
-      right: 0.45rem;
+      top: calc(0.45rem * 1.35);
+      right: calc(0.45rem * 1.35);
       left: auto;
       bottom: auto;
       width: auto;
-      min-width: 10.5rem;
-      max-width: min(44vw, 17rem);
-      padding: 0.45rem 0.6rem;
+      min-width: calc(10.5rem * 1.35);
+      max-width: min(44vw, calc(17rem * 1.35));
+      padding: calc(0.45rem * 1.35) calc(0.6rem * 1.35);
       justify-content: center;
       align-items: stretch;
       background: rgba(250, 248, 244, 0.93);
@@ -662,10 +662,10 @@
       width: 100%;
       flex-direction: row;
       align-items: center;
-      gap: 0.5rem;
+      gap: calc(0.5rem * 1.35);
     }
     .cryo-plot-rendering-overlay--nonblocking .cryo-plot-rendering-overlay__label {
-      font-size: 0.8rem;
+      font-size: calc(0.8rem * 1.35);
       font-weight: 700;
       line-height: 1.2;
       text-align: left;
@@ -673,7 +673,7 @@
       min-width: 0;
     }
     .cryo-plot-rendering-overlay--nonblocking .cryo-plot-rendering-overlay__track {
-      width: 3.6rem;
+      width: calc(3.6rem * 1.35);
       flex: 0 0 auto;
       max-width: 42%;
     }
@@ -689,6 +689,22 @@
       font-size: clamp(1rem, 2.5vw, 1.35rem);
       line-height: 1.2;
       text-align: center;
+    }
+    .cryo-plot-rendering-overlay.cryo-plot-rendering-overlay--show:not(.cryo-plot-rendering-overlay--nonblocking)
+      .cryo-plot-rendering-overlay__inner {
+      gap: 1rem;
+      max-width: min(94%, 32rem);
+    }
+    .cryo-plot-rendering-overlay.cryo-plot-rendering-overlay--show:not(.cryo-plot-rendering-overlay--nonblocking)
+      .cryo-plot-rendering-overlay__label {
+      font-size: clamp(1.55rem, 5.5vw, 2.55rem);
+      line-height: 1.15;
+      letter-spacing: 0.03em;
+    }
+    .cryo-plot-rendering-overlay.cryo-plot-rendering-overlay--show:not(.cryo-plot-rendering-overlay--nonblocking)
+      .cryo-plot-rendering-overlay__track {
+      width: min(20rem, 85vw);
+      height: 6px;
     }
     .cryo-plot-rendering-overlay__track {
       width: min(13.5rem, 70vw);

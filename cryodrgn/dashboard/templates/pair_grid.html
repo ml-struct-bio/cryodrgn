@@ -592,7 +592,7 @@
     gap: 1px 2px;
     align-items: stretch;
     padding-right: 0;
-    /* --cryo-discrete-legend-w set from JS as 90% of pairplot viewport column width */
+    /* --cryo-discrete-legend-w set from JS from pairplot viewport column width */
     width: var(--cryo-discrete-legend-w, 100%);
     max-width: 100%;
     margin-left: auto;
@@ -604,6 +604,18 @@
     height: 100%;
     box-sizing: border-box;
     min-width: 0;
+  }
+  /* Invert / “no selection” on final grid row: 71% × chip width, 135% × chip height, centred across columns */
+  .pairplot-color-legend-aside #pair-color-discrete-switches.cryo-cc-discrete-switches--invert-footer-row.cryo-cc-discrete-switches--pair-2col .cryo-cc-discrete-cell--invert-footer {
+    grid-column: 1 / -1;
+    justify-self: center;
+    align-self: center;
+    width: calc(0.71 * var(--pair-discrete-cell-w, 5.5rem));
+    height: calc(1.35 * var(--pair-discrete-cell-h, 1.35rem));
+    min-height: calc(1.35 * var(--pair-discrete-cell-h, 1.35rem));
+    max-width: 100%;
+    box-sizing: border-box;
+    margin-top: 2px;
   }
   .pairplot-color-legend-aside .cryo-cc-discrete-cell {
     padding: 0;
@@ -659,6 +671,19 @@
   /* Invert button now part of the grid - hide original container */
   .cryo-cc-discrete-actions {
     display: none !important;
+  }
+  #pair-color-discrete-switches .cryo-cc-discrete-cell--invert .cryo-cc-discrete-invert-fitbox .cryo-cc-discrete-switch-label {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+    overflow-wrap: normal;
+    word-break: normal;
+    text-align: center;
+    margin-left: auto;
+    margin-right: auto;
+    align-self: center;
+    max-height: 100%;
+    box-sizing: border-box;
   }
   @media (max-width: 900px) {
     .pairplot-color-legend-aside {
@@ -871,6 +896,45 @@
   /** Pixel width of the discrete 2-col switch grid; drives continuous histogram column width. */
   var pairLegendMiddleWidthPx = null;
 
+  /**
+   * Legend column width: 77% × ((viewport width − left controls panel width)
+   * − (viewport height − nav header height)), clamped so the plot column keeps room.
+   */
+  function syncPairplotTripleGridColumns() {
+    var row = document.querySelector(".cryo-dash-page--pairplot .cryo-dash-row--plot-triple");
+    var side = row && row.querySelector(":scope > .cryo-dash-side");
+    var nav = document.querySelector("header.nav");
+    if (!row || !side) return;
+    var vw = document.documentElement.clientWidth || window.innerWidth || 0;
+    var vh = window.innerHeight || document.documentElement.clientHeight || 0;
+    if (vw < 320) return;
+    var sideW = Math.max(0, Math.round(side.getBoundingClientRect().width));
+    var headerH = nav ? Math.round(nav.getBoundingClientRect().height) : 0;
+    var belowHeader = Math.max(0, vh - headerH);
+    var raw = (vw - sideW) - belowHeader;
+    var minLegend = 160;
+    var legendW = Math.round(0.77 * raw);
+    if (!isFinite(legendW) || legendW < minLegend) legendW = minLegend;
+    var gapApprox = 32;
+    var minPlot = 240;
+    var maxLegend = Math.max(minLegend, vw - sideW - gapApprox - minPlot);
+    if (legendW > maxLegend) legendW = maxLegend;
+    row.style.gridTemplateColumns =
+      "minmax(0," + sideW + "px) minmax(0,1fr) minmax(0," + legendW + "px)";
+  }
+
+  /** Probe chip cell size so invert footer can use 71% × 135%. */
+  function syncPairDiscreteInvertFooterMetrics() {
+    var sw = document.getElementById("pair-color-discrete-switches");
+    var disc = document.getElementById("pair-color-discrete-wrap");
+    if (!sw || !sw.classList.contains("cryo-color-discrete-switches--invert-footer-row")) return;
+    if (!disc || disc.hidden || !disc.classList.contains("cryo-cc-discrete-wrap--show")) return;
+    var probe = sw.querySelector(".cryo-cc-discrete-cell:not(.cryo-cc-discrete-cell--invert)");
+    if (!probe || probe.offsetWidth < 2 || probe.offsetHeight < 2) return;
+    sw.style.setProperty("--pair-discrete-cell-w", probe.offsetWidth + "px");
+    sw.style.setProperty("--pair-discrete-cell-h", probe.offsetHeight + "px");
+  }
+
   function syncPairDiscreteLegendTargetWidth() {
     var panelLegend = document.getElementById("pair-color-legend-panel");
     var viewportCol = document.querySelector(".cryo-dash-page--pairplot .pairplot-viewport-col");
@@ -895,6 +959,7 @@
 
   function syncPairLegendMiddleWidth() {
     syncPairDiscreteLegendTargetWidth();
+    syncPairDiscreteInvertFooterMetrics();
     var panel = document.getElementById("pair-color-legend-panel");
     var sw = document.getElementById("pair-color-discrete-switches");
     var disc = document.getElementById("pair-color-discrete-wrap");
@@ -911,6 +976,9 @@
       panel.style.setProperty("--pair-legend-middle-w", pairLegendMiddleWidthPx + "px");
     } else {
       panel.style.removeProperty("--pair-legend-middle-w");
+    }
+    if (typeof pairColorLegend !== "undefined" && pairColorLegend && typeof pairColorLegend.scheduleInvertTypographyFit === "function") {
+      pairColorLegend.scheduleInvertTypographyFit();
     }
   }
 
@@ -976,6 +1044,7 @@
     thresholdModeCaption: document.getElementById("pair-color-threshold-mode-caption"),
     thresholdStatus: document.getElementById("pair-color-threshold-status"),
     discreteSwitches: document.getElementById("pair-color-discrete-switches"),
+    discreteInvertFooterRow: true,
     invertBtn: document.getElementById("pair-btn-discrete-invert"),
     discreteChipMatplotlibBlend: false,
     vertical: true,
@@ -1383,6 +1452,10 @@
         renderOverlay.classList.remove("cryo-plot-rendering-overlay--nonblocking");
         renderOverlay.classList.add("cryo-plot-rendering-overlay--show");
         renderOverlay.setAttribute("aria-hidden", "false");
+      } else if (on && keepImageVisible) {
+        renderOverlay.classList.add("cryo-plot-rendering-overlay--nonblocking");
+        renderOverlay.classList.add("cryo-plot-rendering-overlay--show");
+        renderOverlay.setAttribute("aria-hidden", "false");
       } else {
         renderOverlay.classList.remove("cryo-plot-rendering-overlay--show");
         renderOverlay.classList.remove("cryo-plot-rendering-overlay--nonblocking");
@@ -1599,18 +1672,28 @@
   }
   window.addEventListener("resize", syncSkeletonBounds);
   window.addEventListener("resize", function() {
+    syncPairplotTripleGridColumns();
     syncPairLegendMiddleWidth();
     syncControlsAlignment(activeCellLayout);
   });
   if (window.ResizeObserver) {
     var pairplotBoundsObserver = new ResizeObserver(function() {
+      syncPairplotTripleGridColumns();
       syncPairLegendMiddleWidth();
       syncSkeletonBounds();
       syncControlsAlignment(activeCellLayout);
     });
     pairplotBoundsObserver.observe(stack);
     pairplotBoundsObserver.observe(el);
+    var pairTripleRow = document.querySelector(".cryo-dash-page--pairplot .cryo-dash-row--plot-triple");
+    if (pairTripleRow) pairplotBoundsObserver.observe(pairTripleRow);
   }
+  requestAnimationFrame(function() {
+    requestAnimationFrame(function() {
+      syncPairplotTripleGridColumns();
+      syncPairLegendMiddleWidth();
+    });
+  });
   pairColorLegend.refresh({
     afterLayout: function() {
       if (checkedVal("color_cov") && checkedVal("color_cov") !== "none") {

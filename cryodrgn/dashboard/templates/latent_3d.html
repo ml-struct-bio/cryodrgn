@@ -357,6 +357,19 @@
   .cryo-dash-page--latent3d .cryo-cc-discrete-actions {
     display: none !important;
   }
+  .cryo-dash-page--latent3d #latent3d-color-discrete-switches .cryo-cc-discrete-cell--invert .cryo-cc-discrete-invert-fitbox .cryo-cc-discrete-switch-label {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+    overflow-wrap: normal;
+    word-break: normal;
+    text-align: center;
+    margin-left: auto;
+    margin-right: auto;
+    align-self: center;
+    max-height: 100%;
+    box-sizing: border-box;
+  }
 </style>
 {% endblock %}
 {% block content %}
@@ -397,7 +410,7 @@
         <div class="cryo-plotly-stack" id="latent3d-plot-stack">
           <div id="latent3d" class="cryo-plotly-graph-host"></div>
           <div id="latent3d-rendering-overlay"
-            class="cryo-plot-rendering-overlay cryo-plot-rendering-overlay--nonblocking cryo-plot-rendering-overlay--show"
+            class="cryo-plot-rendering-overlay cryo-plot-rendering-overlay--show"
             aria-hidden="false">
             <div class="cryo-plot-rendering-overlay__inner">
               <span class="cryo-plot-rendering-overlay__label">Rendering…</span>
@@ -510,6 +523,7 @@
   var scatter3dUrl = "{{ url_for('api_scatter3d_z') }}";
   var legendContextUrl = "{{ url_for('api_covariate_legend_context') }}";
   var overlay = document.getElementById("latent3d-rendering-overlay");
+  var latent3dRenderingEverCompleted = false;
   var latent3dPaletteSelect = document.getElementById("latent3d-palette-select");
   var latent3dPaletteToggle = document.getElementById("latent3d-palette-toggle");
   var latent3dPaletteOptions = document.getElementById("latent3d-palette-options");
@@ -637,6 +651,9 @@
       panel.style.removeProperty("--pair-legend-middle-w");
     }
     scheduleLatent3dLegendHeadingTitleFit();
+    if (typeof latent3dColorLegend !== "undefined" && latent3dColorLegend && typeof latent3dColorLegend.scheduleInvertTypographyFit === "function") {
+      latent3dColorLegend.scheduleInvertTypographyFit();
+    }
   }
 
   function syncLatent3dHistVerticalMetrics() {
@@ -693,7 +710,15 @@
 
   function setRendering(on) {
     if (overlay) {
-      overlay.classList.add("cryo-plot-rendering-overlay--nonblocking");
+      if (on) {
+        if (latent3dRenderingEverCompleted) {
+          overlay.classList.add("cryo-plot-rendering-overlay--nonblocking");
+        } else {
+          overlay.classList.remove("cryo-plot-rendering-overlay--nonblocking");
+        }
+      } else {
+        overlay.classList.remove("cryo-plot-rendering-overlay--nonblocking");
+      }
       overlay.classList.toggle("cryo-plot-rendering-overlay--show", on);
       overlay.setAttribute("aria-hidden", on ? "false" : "true");
     }
@@ -798,6 +823,7 @@
             return Plotly.react(gd, fig.data, fig.layout, {responsive: true});
           })
           .then(function() {
+            latent3dRenderingEverCompleted = true;
             setRendering(false);
             syncControlsAlignment();
             requestAnimationFrame(function() {

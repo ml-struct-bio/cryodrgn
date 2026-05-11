@@ -16,6 +16,20 @@
     border-radius: 4px;
     background: rgba(250, 248, 244, 0.92);
   }
+  .cryo-montage-grid-wrap .cryo-plot-rendering-overlay .cryo-plot-rendering-overlay__inner {
+    gap: 0.42rem;
+    max-width: 96%;
+  }
+  .cryo-montage-grid-wrap .cryo-plot-rendering-overlay .cryo-plot-rendering-overlay__label {
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0;
+    line-height: 1.2;
+  }
+  .cryo-montage-grid-wrap .cryo-plot-rendering-overlay .cryo-plot-rendering-overlay__track {
+    width: min(9rem, 90%);
+    height: 4px;
+  }
   .cryo-montage-cell {
     display: flex;
     flex-direction: column;
@@ -96,16 +110,12 @@
   .cryo-dash-page--particle-explorer.cryo-dash-page--image-viewer .cryo-dash-viewport--plotly {
     padding-top: 0.28rem;
   }
-  .cryo-dash-page--particle-explorer.cryo-dash-page--image-viewer .cryo-plotly-stack {
-    max-height: calc(100% - 1.45rem);
-  }
   @media (min-width: 901px) {
     .cryo-dash-page--particle-explorer.cryo-dash-page--image-viewer .cryo-plotly-stack {
       /*
-       * Keep the scatter square stable regardless of extra controls (histogram/palette)
-       * appearing above or below it — do not tie square size to container height.
+       * Scatter square in the centre column; colour histogram / discrete toggles live in the montage column.
        */
-      width: min(100cqw, calc(100svh - var(--cryo-dash-below-nav, 9.5rem) - 1.45rem));
+      width: min(100cqw, calc(100svh - var(--cryo-dash-below-nav, 9.5rem) - 1.05rem));
       max-height: none;
     }
   }
@@ -765,27 +775,51 @@
     border: 1px solid rgba(36, 59, 83, 0.16);
   }
   .cryo-color-hist-panel {
-    order: 0;
-    margin: 0 0 0.35rem;
+    margin: 0;
     padding: 0.35rem 0.45rem 0.25rem;
     border: 1px solid rgba(36, 59, 83, 0.13);
     border-radius: 4px;
     background: rgba(250, 248, 244, 0.78);
     box-sizing: border-box;
-    /* Match centred scatter-stack width — discrete legend aligns with scatter column */
-    width: min(100%, min(100cqw, calc(100svh - var(--cryo-dash-below-nav, 9.5rem) - 1.45rem)));
-    max-width: 100%;
+  }
+  .cryo-color-legend-region-heading {
+    margin: 0 0 0.28rem;
+    padding: 0;
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--nav-bg, #243b53);
+    line-height: 1.15;
+  }
+  .cryo-color-legend-region-heading[hidden] {
+    display: none !important;
+  }
+  /* Right column: same horizontal band as #montage-actions (“Load particle images…”); histogram height unchanged (#color-hist 5rem). */
+  .cryo-dash-page--particle-explorer .cryo-dash-montage > .cryo-color-hist-panel {
+    width: 95%;
+    max-width: 95%;
     margin-left: auto;
     margin-right: auto;
+    margin-bottom: 0.65rem;
+    flex-shrink: 0;
+    box-sizing: border-box;
+  }
+  /* Match legend width to the load-images / volumes menu stack below. */
+  .cryo-dash-page--particle-explorer .cryo-dash-montage > #montage-actions.cryo-explorer-montage-actions {
+    width: 95%;
+    max-width: 95%;
+    margin-left: auto;
+    margin-right: auto;
+    margin-top: 0;
+    box-sizing: border-box;
+  }
+  .cryo-dash-page--particle-explorer
+    .cryo-dash-montage:not(:has(> .cryo-color-hist-panel:not([hidden])))
+    > #montage-actions.cryo-explorer-montage-actions {
+    margin-top: 0.45rem;
   }
   .cryo-color-hist-panel[hidden] {
     display: none !important;
-  }
-  .cryo-dash-page--particle-explorer .cryo-plotly-stack {
-    order: 1;
-  }
-  #scatter-palette-radios {
-    order: 2;
   }
   #color-hist {
     height: 5rem;
@@ -846,6 +880,89 @@
     justify-content: start;
     gap: 1px 3px;
     margin: 0.05rem 0 0;
+  }
+  /*
+   * Toggle legend (particle explorer): invert / “no selection” in its own right-hand column.
+   * Width & height use JS-measured category cells (--cryo-explorer-discrete-cell-*).
+   */
+  #color-discrete-switches.cryo-color-discrete-switches--invert-aside {
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    gap: 6px 8px;
+    margin: 0.05rem 0 0;
+  }
+  #color-discrete-switches.cryo-color-discrete-switches--invert-aside .cryo-cc-discrete-cells-wrap {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(5.5rem, 1fr));
+    align-items: stretch;
+    justify-content: start;
+    gap: 1px 3px;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  #color-discrete-switches.cryo-color-discrete-switches--invert-aside .cryo-cc-discrete-invert-aside {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    align-self: stretch;
+  }
+  #color-discrete-switches.cryo-color-discrete-switches--invert-aside .cryo-cc-discrete-cell--invert.cryo-cc-discrete-cell--invert-aside {
+    box-sizing: border-box;
+    width: calc(0.83 * var(--cryo-explorer-discrete-cell-w, 5.5rem));
+    height: calc(1.53 * var(--cryo-explorer-discrete-cell-h, 2.25rem));
+    flex-shrink: 0;
+    margin: 0;
+    border-radius: 7px;
+  }
+  #color-discrete-switches.cryo-color-discrete-switches--invert-aside .cryo-cc-discrete-cell--invert-aside.cryo-cc-discrete-cell--invert-idle {
+    background: linear-gradient(152deg, #fff4f4 0%, #f0dede 40%, #e8cfcf 55%, #faf2f2 100%);
+    border: 1px solid rgba(120, 44, 44, 0.38);
+    box-shadow:
+      inset 0 2px 5px rgba(255, 255, 255, 0.75),
+      inset 0 -4px 11px rgba(90, 24, 24, 0.11),
+      0 1px 0 rgba(255, 255, 255, 0.45);
+  }
+  #color-discrete-switches.cryo-color-discrete-switches--invert-aside .cryo-cc-discrete-cell--invert-aside.cryo-cc-discrete-cell--invert-action {
+    background: linear-gradient(175deg, #ffecec 0%, #eca9a9 44%, #d87373 58%, #f8dede 100%);
+    border: 1px solid rgba(94, 18, 18, 0.52);
+    box-shadow:
+      inset 0 2px 4px rgba(255, 255, 255, 0.55),
+      inset 0 -3px 10px rgba(62, 8, 8, 0.28),
+      0 4px 14px rgba(62, 8, 8, 0.28),
+      0 1px 2px rgba(255, 255, 255, 0.35);
+  }
+  #color-discrete-switches.cryo-color-discrete-switches--invert-aside .cryo-cc-discrete-cell--invert-aside .cryo-cc-discrete-switch {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    box-sizing: border-box;
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    padding: 0 !important;
+    border: none !important;
+    background: transparent !important;
+  }
+  #color-discrete-switches.cryo-color-discrete-switches--invert-aside .cryo-cc-discrete-cell--invert-aside.cryo-cc-discrete-cell--invert-idle .cryo-cc-discrete-invert-fitbox .cryo-cc-discrete-switch-label {
+    color: #6f2828;
+  }
+  #color-discrete-switches.cryo-color-discrete-switches--invert-aside .cryo-cc-discrete-cell--invert-aside.cryo-cc-discrete-cell--invert-action .cryo-cc-discrete-invert-fitbox .cryo-cc-discrete-switch-label {
+    color: #3f0808;
+  }
+  #color-discrete-switches .cryo-cc-discrete-cell--invert .cryo-cc-discrete-invert-fitbox .cryo-cc-discrete-switch-label {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+    overflow-wrap: normal;
+    word-break: normal;
+    text-align: center;
+    margin-left: auto;
+    margin-right: auto;
+    align-self: center;
+    max-height: 100%;
+    box-sizing: border-box;
   }
   /* Discrete cell with corner buttons */
   #color-discrete-switches .cryo-cc-discrete-cell {
@@ -1119,7 +1236,7 @@
       <div id="scatter" class="cryo-plotly-graph-host"></div>
       <div id="box-select-tooltip" class="cryo-box-select-tooltip" hidden></div>
       <div id="scatter-rendering-overlay"
-        class="cryo-plot-rendering-overlay cryo-plot-rendering-overlay--nonblocking cryo-plot-rendering-overlay--show"
+        class="cryo-plot-rendering-overlay cryo-plot-rendering-overlay--show"
         aria-hidden="false">
         <div class="cryo-plot-rendering-overlay__inner">
           <span class="cryo-plot-rendering-overlay__label">Rendering…</span>
@@ -1129,7 +1246,11 @@
         </div>
       </div>
     </div>
+  </div>
+
+  <aside class="cryo-dash-montage" aria-label="Particle preview">
     <div id="color-hist-panel" class="cryo-color-hist-panel" hidden aria-hidden="true">
+      <h3 id="color-legend-region-heading" class="cryo-color-legend-region-heading" hidden></h3>
       <div id="color-continuous-hist-wrap">
         <div id="color-hist"></div>
         <div class="cryo-color-hist-controls">
@@ -1231,9 +1352,7 @@
         </div>
       </div>
     </div>
-  </div>
 
-  <aside class="cryo-dash-montage" aria-label="Particle preview">
     <div id="montage-actions" class="cryo-explorer-montage-actions">
       <fieldset id="cryo-explorer-image-cache-fieldset" class="cryo-explorer-montage-group">
         <legend>Load particle images into cache to display in grid</legend>
@@ -1835,6 +1954,8 @@
   var colorHistHoverLevel = null;
   var colorHistHoverRaf = null;
   var colorViolinBaseShapes = [];
+  /** Last known colour-histogram x-axis extent (plot coords); used when relayout runs before Plotly exposes xaxis.range. */
+  var colorHistSavedXRange = null;
   var colorHistPointerDown = false;
   var colorHistDragMoved = false;
   var colorHistDragStartLevel = null;
@@ -1933,6 +2054,7 @@
     plotStackResizeObserver.observe(plotlyStackEl);
   }
   var overlay = document.getElementById("scatter-rendering-overlay");
+  var scatterRenderingEverCompleted = false;
   var paletteFieldset = document.getElementById("scatter-palette-radios");
   if (paletteFieldset && scatterPlotStack && scatterPlotStack.parentNode) {
     scatterPlotStack.insertAdjacentElement("afterend", paletteFieldset);
@@ -3024,6 +3146,9 @@
         } catch (e2) {}
       }
       equalizeMontageActionButtonWidths();
+      if (explorerColorLegend && typeof explorerColorLegend.measureDiscreteInvertAsideColumn === "function") {
+        explorerColorLegend.measureDiscreteInvertAsideColumn();
+      }
     });
   }
 
@@ -3037,6 +3162,7 @@
     }
     colorHistHoverLevel = null;
     colorViolinBaseShapes = [];
+    colorHistSavedXRange = null;
     colorHistPointerDown = false;
     colorHistDragMoved = false;
     colorHistDragStartLevel = null;
@@ -3211,6 +3337,7 @@
       if (keySet.has(k)) rows.push(cd[i][1]);
     }
     applyRowsSelection(rows, "Discrete");
+    setExplorerLegendDiscreteKeysForSelection();
   }
 
   function applyExplorerContinuousFilter(filter) {
@@ -3250,6 +3377,12 @@
     } else {
       return;
     }
+    syncColorHistModeCheckboxCaption();
+    if (colorHistDiv && colorHistDiv.data) {
+      try {
+        relayoutColorHistogramGuides();
+      } catch (eRg) { /* ignore */ }
+    }
     fetch("{{ url_for('api_covariate_threshold_rows') }}", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
@@ -3276,13 +3409,40 @@
     }
   }
 
+  function snapshotColorHistSavedXRange() {
+    if (!colorHistDiv || !colorHistDiv._fullLayout || !colorHistDiv._fullLayout.xaxis) return;
+    var xr = colorHistDiv._fullLayout.xaxis.range;
+    if (xr && xr.length >= 2) {
+      colorHistSavedXRange = [Math.min(xr[0], xr[1]), Math.max(xr[0], xr[1])];
+    }
+  }
+
+  function onExplorerContinuousHistogramLayout() {
+    syncParticleExplorerRowExpandForColorHist();
+    snapshotColorHistSavedXRange();
+  }
+
   function syncColorCovariateSidePanel() {
     if (!colorHistPanel) return;
     if (!plotHasScatterData() || !sc.value || sc.value === "none") {
       hideColorHistogram();
       return;
     }
-    if (explorerColorLegend) explorerColorLegend.refresh();
+    if (explorerColorLegend && typeof explorerColorLegend.refresh === "function") {
+      explorerColorLegend.refresh().then(function() {
+        if (explorerColorLegend && typeof explorerColorLegend.syncThresholdMirrorFromHost === "function") {
+          explorerColorLegend.syncThresholdMirrorFromHost({
+            thresholdCol: sc.value,
+            level: colorThresholdLevel,
+            range: colorThresholdRange,
+            useMaxChecked: colorHistModeCheckOn()
+          });
+        }
+        try {
+          if (colorHistDiv && colorHistDiv.data) relayoutColorHistogramGuides();
+        } catch (eSyncHist) { /* ignore */ }
+      }).catch(function() { /* refresh failed */ });
+    }
     syncParticleExplorerRowExpandForColorHist();
   }
 
@@ -3334,6 +3494,9 @@
       if (colorHistDiv && colorHistDiv._fullLayout && colorHistDiv._fullLayout.xaxis) {
         rng = colorHistDiv._fullLayout.xaxis.range;
       }
+    }
+    if ((!rng || rng.length < 2) && colorHistSavedXRange && colorHistSavedXRange.length >= 2) {
+      rng = colorHistSavedXRange;
     }
     if (!rng || rng.length < 2) return [];
     var xLoPlot = Math.min(rng[0], rng[1]);
@@ -3512,6 +3675,9 @@
         && typeof colorThresholdRange.lo === "number" && typeof colorThresholdRange.hi === "number") {
       return [colorHistogramRangeInequalityAnnotation(colorThresholdRange.lo, colorThresholdRange.hi)];
     }
+    if (colorThresholdLevel != null && colorThresholdColorCol === sc.value && colorThresholdRange == null) {
+      return [colorHistogramValueAnnotation(colorThresholdLevel)];
+    }
     if (colorHistHoverLevel != null && !colorHistPointerDown) {
       return [colorHistogramValueAnnotation(colorHistHoverLevel)];
     }
@@ -3525,6 +3691,7 @@
         shapes: colorHistogramGuideShapes(),
         annotations: colorHistogramGuideAnnotations()
       });
+      snapshotColorHistSavedXRange();
     } catch (err) {}
   }
 
@@ -4272,11 +4439,51 @@
   }
   function setRendering(on) {
     if (overlay) {
-      overlay.classList.add("cryo-plot-rendering-overlay--nonblocking");
+      if (on) {
+        if (scatterRenderingEverCompleted) {
+          overlay.classList.add("cryo-plot-rendering-overlay--nonblocking");
+        } else {
+          overlay.classList.remove("cryo-plot-rendering-overlay--nonblocking");
+        }
+      } else {
+        overlay.classList.remove("cryo-plot-rendering-overlay--nonblocking");
+      }
       overlay.classList.toggle("cryo-plot-rendering-overlay--show", on);
       overlay.setAttribute("aria-hidden", on ? "false" : "true");
     }
     syncScatterPaletteFieldset();
+  }
+
+  var scatterSelectionRenderingDepth = 0;
+
+  function beginScatterSelectionRenderingOverlay() {
+    if (!overlay || !scatterRenderingEverCompleted) return;
+    scatterSelectionRenderingDepth++;
+    if (scatterSelectionRenderingDepth !== 1) return;
+    overlay.classList.add("cryo-plot-rendering-overlay--nonblocking");
+    overlay.classList.add("cryo-plot-rendering-overlay--show");
+    overlay.setAttribute("aria-hidden", "false");
+    var lab = overlay.querySelector(".cryo-plot-rendering-overlay__label");
+    if (lab) lab.textContent = "Rendering\u2026";
+  }
+
+  function endScatterSelectionRenderingOverlay() {
+    if (!scatterRenderingEverCompleted) {
+      scatterSelectionRenderingDepth = Math.max(0, scatterSelectionRenderingDepth - 1);
+      return;
+    }
+    scatterSelectionRenderingDepth = Math.max(0, scatterSelectionRenderingDepth - 1);
+    if (scatterSelectionRenderingDepth > 0) return;
+    window.requestAnimationFrame(function() {
+      window.requestAnimationFrame(function() {
+        if (scatterSelectionRenderingDepth > 0 || !overlay) return;
+        if (!overlay.classList.contains("cryo-plot-rendering-overlay--nonblocking")) return;
+        overlay.classList.remove("cryo-plot-rendering-overlay--show");
+        overlay.classList.remove("cryo-plot-rendering-overlay--nonblocking");
+        overlay.setAttribute("aria-hidden", "true");
+        syncScatterPaletteFieldset();
+      });
+    });
   }
 
   /* ---------- lasso / selection state (shared by scatter load + events) ---------- */
@@ -4313,7 +4520,9 @@
     if (!gd || !gd.data || !gd.data[0] || !gd.data[0].customdata) return;
     var rows = saveSelectionRows && saveSelectionRows.length ? saveSelectionRows : [];
     if (!rows.length) {
+      beginScatterSelectionRenderingOverlay();
       try { Plotly.restyle(gd, { selectedpoints: [null] }, [0]); } catch (err) {}
+      finally { endScatterSelectionRenderingOverlay(); }
       lassoSelectedRowSet = null;
       return;
     }
@@ -4324,10 +4533,13 @@
       var row = cd[i] && cd[i].length > 1 ? cd[i][1] : null;
       if (rowSet.has(row)) selected.push(i);
     }
+    beginScatterSelectionRenderingOverlay();
     try {
       Plotly.restyle(gd, { selectedpoints: [selected] }, [0]);
     } catch (err) {
       console.error(err);
+    } finally {
+      endScatterSelectionRenderingOverlay();
     }
     lassoSelectedRowSet = new Set();
     for (var si = 0; si < selected.length; si++) {
@@ -4469,6 +4681,7 @@
               suppressSelectionEvents = true;
               renderedScatterAxes = {x: x, y: y};
               clearScatterPlotWatchdog();
+              scatterRenderingEverCompleted = true;
               setRendering(false);
               buildTraceMap();
               updateParticleSelFieldset();
@@ -4623,6 +4836,7 @@
 
   function applyRowsSelection(rows, statusPrefix) {
     rows = rows || [];
+    cancelLassoSelectionDebounce();
     var rowSet = new Set(rows);
     var mode = "";
     if (rowSet.size) {
@@ -4636,12 +4850,22 @@
     updateParticleSelFieldset();
     var selectedTi = selectionRowsToTraceIndices(saveSelectionRows);
     suppressSelectionEvents = true;
+    beginScatterSelectionRenderingOverlay();
     try {
       Plotly.restyle(gd, { selectedpoints: [selectedTi.length ? selectedTi : null] }, [0]);
     } catch (err) {
       console.error(err);
+    } finally {
+      endScatterSelectionRenderingOverlay();
     }
-    setTimeout(function() { suppressSelectionEvents = false; }, 0);
+    /* Legend-driven discrete/threshold restyles still emit plotly_selected after a tick; its
+       debounced handler (200ms) would overwrite saveSelectionRows and clear toggle checkboxes
+       unless we keep suppression past that window. */
+    var suppressClearMs = 0;
+    if (selectedTi.length && (statusPrefix === "Discrete" || statusPrefix === "Color threshold")) {
+      suppressClearMs = LASSO_SELECTION_DEBOUNCE_MS + 100;
+    }
+    setTimeout(function() { suppressSelectionEvents = false; }, suppressClearMs);
 
     if (!saveSelectionRows.length) {
       activePool = null;
@@ -4739,6 +4963,11 @@
     colorThresholdLevel = level;
     colorThresholdColorCol = sc.value;
     syncColorHistModeCheckboxCaption();
+    if (colorHistDiv && colorHistDiv.data) {
+      try {
+        relayoutColorHistogramGuides();
+      } catch (eTh) { /* ignore */ }
+    }
     fetch("{{ url_for('api_covariate_threshold_rows') }}", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -4785,6 +5014,11 @@
     colorThresholdRange = { lo: loN, hi: hiN };
     colorThresholdColorCol = sc.value;
     syncColorHistModeCheckboxCaption();
+    if (colorHistDiv && colorHistDiv.data) {
+      try {
+        relayoutColorHistogramGuides();
+      } catch (eRng) { /* ignore */ }
+    }
     fetch("{{ url_for('api_covariate_threshold_rows') }}", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -4831,10 +5065,13 @@
       var payload = pendingHighlightRestyle;
       pendingHighlightRestyle = null;
       if (!payload || !highlightTraceAdded || !gd.data || !gd.data[0]) return;
+      beginScatterSelectionRenderingOverlay();
       try {
         Plotly.restyle(gd, payload, [1]);
       } catch (err) {
         console.error(err);
+      } finally {
+        endScatterSelectionRenderingOverlay();
       }
     });
   }
@@ -4961,6 +5198,7 @@
         lassoSelectionDebounceTimer = null;
         saveSelectionRows = rowsSnap;
         updateParticleSelFieldset();
+        if (scatterTraceColorMode() === "discrete") setExplorerLegendDiscreteKeysForSelection();
         if (imagesViewEnabled && preloaded && preloaded.traceMap) {
           applyLassoSelectionFromSnapshot(snap);
         }
@@ -4975,6 +5213,7 @@
       selectionTooltipText = "";
       setActiveSelectionMode("");
       updateParticleSelFieldset();
+      if (scatterTraceColorMode() === "discrete") setExplorerLegendDiscreteKeysForSelection();
       activePool = null;
       lassoSelectedRowSet = null;
       if (imagesViewEnabled && preloaded && preloadStatus) {
@@ -5210,6 +5449,9 @@
     getDiscreteColorOverrides: function() { return explorerDiscreteLabelColors; },
     discreteChipMatplotlibBlend: false,
     covariateDisplayMap: covariateDisplayMap,
+    regionHeadingEl: document.getElementById("color-legend-region-heading"),
+    regionHeadingContinuousText: "Range selection",
+    regionHeadingDiscreteText: "Toggle selection",
     getColorColumn: function() { return sc.value; },
     getPaletteName: selectedScatterPalette,
     panel: colorHistPanel,
@@ -5220,6 +5462,7 @@
     thresholdModeCaption: colorHistModeCheckCaption,
     thresholdStatus: colorThresholdStatus,
     discreteSwitches: colorDiscreteSwitches,
+    discreteInvertAsideColumn: true,
     invertBtn: btnDiscreteInvertSelection,
     vertical: false,
     histPlotVertical: false,
@@ -5228,7 +5471,7 @@
     noDiscreteSelectionText: "no selection made!",
     thresholdEmptyStatusText: "no selection made!",
     notifyOnRefresh: false,
-    onContinuousHistogramLayout: syncParticleExplorerRowExpandForColorHist,
+    onContinuousHistogramLayout: onExplorerContinuousHistogramLayout,
     onDiscreteLayout: syncParticleExplorerRowExpandForColorHist,
     onModeChange: function(mode) {
       var prev = explorerCcLegendPrevMode;

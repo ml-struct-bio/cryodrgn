@@ -23,6 +23,7 @@
 
   var gd = document.getElementById("scatter");
   var overlay = document.getElementById("scatter-rendering-overlay");
+  var trajScatterRenderingEverCompleted = false;
   var paletteFieldset = document.getElementById("traj-palette-radios");
   var plotStatus = document.getElementById("scatter-plot-status");
   var trajStatus = document.getElementById("traj-status");
@@ -120,6 +121,15 @@
 
   function setRendering(on) {
     if (overlay) {
+      if (on) {
+        if (trajScatterRenderingEverCompleted) {
+          overlay.classList.add("cryo-plot-rendering-overlay--nonblocking");
+        } else {
+          overlay.classList.remove("cryo-plot-rendering-overlay--nonblocking");
+        }
+      } else {
+        overlay.classList.remove("cryo-plot-rendering-overlay--nonblocking");
+      }
       overlay.classList.toggle("cryo-plot-rendering-overlay--show", on);
       overlay.setAttribute("aria-hidden", on ? "false" : "true");
     }
@@ -1464,6 +1474,7 @@
         }
         function afterPlot() {
           if (gen !== scatterLoadGeneration) return;
+          trajScatterRenderingEverCompleted = true;
           setRendering(false);
           wireUpPlotDrag();
           syncScatterControlsAlignment();

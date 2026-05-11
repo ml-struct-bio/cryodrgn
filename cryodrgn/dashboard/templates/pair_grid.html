@@ -592,8 +592,11 @@
     gap: 1px 2px;
     align-items: stretch;
     padding-right: 0;
-    width: 100%;
+    /* --cryo-discrete-legend-w set from JS as 90% of pairplot viewport column width */
+    width: var(--cryo-discrete-legend-w, 100%);
     max-width: 100%;
+    margin-left: auto;
+    margin-right: auto;
     box-sizing: border-box;
   }
   .pairplot-color-legend-aside .cryo-cc-discrete-switches--pair-2col .cryo-cc-discrete-cell {
@@ -868,7 +871,30 @@
   /** Pixel width of the discrete 2-col switch grid; drives continuous histogram column width. */
   var pairLegendMiddleWidthPx = null;
 
+  function syncPairDiscreteLegendTargetWidth() {
+    var panelLegend = document.getElementById("pair-color-legend-panel");
+    var viewportCol = document.querySelector(".cryo-dash-page--pairplot .pairplot-viewport-col");
+    var disc = document.getElementById("pair-color-discrete-wrap");
+    if (!panelLegend || !viewportCol) {
+      return;
+    }
+    var showDiscrete =
+      disc && !disc.hidden && disc.classList.contains("cryo-cc-discrete-wrap--show");
+    if (showDiscrete) {
+      var pw = viewportCol.getBoundingClientRect().width;
+      if (pw > 1) {
+        panelLegend.style.setProperty(
+          "--cryo-discrete-legend-w",
+          Math.max(1, Math.floor(pw * 0.9)) + "px"
+        );
+      }
+    } else {
+      panelLegend.style.removeProperty("--cryo-discrete-legend-w");
+    }
+  }
+
   function syncPairLegendMiddleWidth() {
+    syncPairDiscreteLegendTargetWidth();
     var panel = document.getElementById("pair-color-legend-panel");
     var sw = document.getElementById("pair-color-discrete-switches");
     var disc = document.getElementById("pair-color-discrete-wrap");
@@ -938,6 +964,7 @@
 
   var pairColorLegend = new CryoColorCovariateLegend({
     legendContextUrl: legendContextUrl,
+    getDiscreteColorOverrides: function() { return pairDiscreteColorOverrides; },
     covariateDisplayMap: covariateDisplayMap,
     getColorColumn: function() { return checkedVal("color_cov"); },
     getPaletteName: function() { return checkedVal("pairplot_palette") || "Viridis"; },
@@ -1503,7 +1530,12 @@
 
   document.querySelectorAll("input[name=\"color_cov\"]").forEach(function(inp) {
     inp.addEventListener("change", function() {
-      pairColorLegend.refresh();
+      pairDiscreteColorOverrides = {};
+      pairColorLegend.refresh({
+        afterLayout: function() {
+          draw();
+        }
+      });
     });
   });
   document.querySelectorAll(".cryo-dash-controls input[type=radio]").forEach(function(inp) {
@@ -1533,17 +1565,21 @@
       var filename = String(entered).trim() || saveDefaultName;
       saveBtn.disabled = true;
       status.textContent = "Saving PNG…";
+      var saveBody = {
+        color_col: payload.color_col,
+        diagonal_emb: payload.diagonal_emb,
+        upper_style: payload.upper_style,
+        palette: payload.palette || "Viridis",
+        color_filter: payload.color_filter || null,
+        filename: filename
+      };
+      if (payload.discrete_label_colors) {
+        saveBody.discrete_label_colors = payload.discrete_label_colors;
+      }
       fetch("{{ url_for('api_save_pairplot_png') }}", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          color_col: payload.color_col,
-          diagonal_emb: payload.diagonal_emb,
-          upper_style: payload.upper_style,
-          palette: payload.palette || "Viridis",
-          color_filter: payload.color_filter || null,
-          filename: filename
-        })
+        body: JSON.stringify(saveBody)
       })
         .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
         .then(function(res) {
@@ -1562,19 +1598,26 @@
     });
   }
   window.addEventListener("resize", syncSkeletonBounds);
-  window.addEventListener("resize", function() { syncControlsAlignment(activeCellLayout); });
+  window.addEventListener("resize", function() {
+    syncPairLegendMiddleWidth();
+    syncControlsAlignment(activeCellLayout);
+  });
   if (window.ResizeObserver) {
     var pairplotBoundsObserver = new ResizeObserver(function() {
+      syncPairLegendMiddleWidth();
       syncSkeletonBounds();
       syncControlsAlignment(activeCellLayout);
     });
     pairplotBoundsObserver.observe(stack);
     pairplotBoundsObserver.observe(el);
   }
-  pairColorLegend.refresh();
-  if (checkedVal("color_cov") && checkedVal("color_cov") !== "none") {
-    draw();
-  }
+  pairColorLegend.refresh({
+    afterLayout: function() {
+      if (checkedVal("color_cov") && checkedVal("color_cov") !== "none") {
+        draw();
+      }
+    }
+  });
 })();
 </script>
 </div>

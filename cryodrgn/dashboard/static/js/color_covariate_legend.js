@@ -3,7 +3,8 @@
  * pair-grid, and 3-D latent views. Continuous legends support click thresholds
  * and drag ranges; optional `histPlotVertical` swaps covariate onto y and
  * density onto x (pair-plot/3-D asides). Discrete colour picking uses one anchored
- * panel (RGB sliders + hex field + Apply / Cancel) with no separate OS colour dialog. Plastic styling for toggle chips is on by default
+ * panel (RGB sliders + hex field + Apply / Cancel) with no separate OS colour dialog;
+ * Apply commits but leaves the panel open (Cancel, Escape, or outside click closes). Plastic styling for toggle chips is on by default
  * (`discreteChipPlasticLabel` opt-out). Optional `histVerticalMargins` shallow-
  * merges into the vertical histogram layout margin. Panel `vertical` controls CSS layout class.
  */
@@ -50,6 +51,8 @@
       + "cursor:default;user-select:none;border:none;background:transparent;border-radius:0;}"
       + ".cryo-cc-discrete-switch > input[type=\"checkbox\"]{flex-shrink:0;margin:0 0.35rem 0 0;"
       + "accent-color:#c4703a;cursor:pointer;width:0.62rem;height:0.62rem;}"
+      + ".cryo-cc-discrete-switch > label[for]{flex:1 1 auto;min-width:0;margin:0;padding:0;"
+      + "cursor:pointer;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;}"
       + ".cryo-cc-discrete-switch-text{display:flex;flex-direction:column;align-items:flex-start;"
       + "flex:1 1 auto;min-width:0;line-height:1;}"
       + ".cryo-cc-discrete-cell-controls{display:flex;flex-direction:column;align-items:center;"
@@ -632,10 +635,12 @@
     };
   }
 
-  function formatParticleCount(n) {
+  /** Full-table particle counts shown on discrete covariate chips (not plotted subsample). */
+  function formatDiscreteDatasetCount(n) {
     var v = Number(n);
     if (!isFinite(v)) v = 0;
-    return v.toLocaleString("en-CA") + " pts";
+    var nlab = v.toLocaleString("en-CA");
+    return nlab + " particle" + (Math.round(v) === 1 ? "" : "s");
   }
 
   function discreteDisplayLabel(key, rawCol, displayMap) {
@@ -683,7 +688,8 @@
     this.allDiscreteSelectedIsNull = opts.allDiscreteSelectedIsNull !== false;
     this.noDiscreteSelectionText = opts.noDiscreteSelectionText || "no selection";
     this.thresholdEmptyStatusText = opts.thresholdEmptyStatusText || "";
-    this.formatParticleCount = opts.formatParticleCount || formatParticleCount;
+    this.formatDiscreteDatasetCount =
+      opts.formatDiscreteDatasetCount || formatDiscreteDatasetCount;
     this.onFilterChange = opts.onFilterChange || function () {};
     this.onModeChange = opts.onModeChange || function () {};
     this.notifyOnRefresh = opts.notifyOnRefresh !== false;
@@ -864,11 +870,19 @@
   };
 
   CryoColorCovariateLegend.prototype.clearThreshold = function () {
+    if (this._hoverRaf != null) {
+      cancelAnimationFrame(this._hoverRaf);
+      this._hoverRaf = null;
+    }
+    this._hoverLevel = null;
     this._thresholdLevel = null;
     this._thresholdRange = null;
     this._thresholdCol = null;
     this._histDragPreview = null;
     this._histPointerDown = false;
+    if (this.thresholdUseMax) {
+      this.thresholdUseMax.checked = false;
+    }
     if (this._boundHistWindowMouseMove) {
       window.removeEventListener("mousemove", this._boundHistWindowMouseMove);
     }
@@ -921,35 +935,44 @@
   CryoColorCovariateLegend.prototype.refresh = function (extra) {
     var ex = extra && typeof extra === "object" ? extra : {};
     var suppressNotify = !!ex.suppressNotify;
+    var afterLayout = ex.afterLayout;
     var self = this;
     var col = this.getColorColumn();
     if (!col || col === "none") {
       this.showHeadingOnly();
       this.onModeChange(null);
       if (this.notifyOnRefresh && !suppressNotify) this._notify();
-      return;
+      if (typeof afterLayout === "function") {
+        try {
+          afterLayout(null);
+        } catch (e0) { /* ignore */ }
+      }
+      return Promise.resolve({ ok: true, j: {} });
     }
     var contextPromise = this.getLegendContextData
       ? Promise.resolve().then(function () {
-        return { ok: true, j: self.getLegendContextData(col) || {} };
-      })
+          return { ok: true, j: self.getLegendContextData(col) || {} };
+        })
       : fetch(this.legendContextUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ column: col })
-      }).then(function (r) {
-        return r.json().then(function (j) { return { ok: r.ok, j: j }; });
-      });
-    contextPromise
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ column: col })
+        }).then(function (r) {
+          return r.json().then(function (j) { return { ok: r.ok, j: j }; });
+        });
+    return contextPromise
       .then(function (res) {
         if (!res.ok) {
           self.hide();
           self.onModeChange(null);
-          return;
+          return res;
         }
         var data = res.j;
         self.clearThreshold();
         if (data.mode === "continuous") {
+          if (self._discreteColorPopover && !self._discreteColorPopover.hidden) {
+            self._closeDiscreteColorPopover(true);
+          }
           self._mode = "continuous";
           self._continuousValues = data.values || [];
           self._discreteChipBlendAlpha = null;
@@ -960,6 +983,10 @@
             self.discreteWrap.hidden = true;
             self.discreteWrap.classList.remove("cryo-cc-discrete-wrap--show");
           }
+          if (self.discreteSwitches) {
+            self.discreteSwitches.innerHTML = "";
+          }
+          self._allCatKeys = [];
           self._renderContinuousHistogram(self._continuousValues);
         } else if (data.mode === "discrete") {
           self._continuousValues = [];
@@ -977,11 +1004,22 @@
             self.discreteWrap.classList.add("cryo-cc-discrete-wrap--show");
           }
           self._renderDiscrete(data.categories || []);
+          try {
+            if (self.histDiv && self.histDiv._fullLayout) {
+              Plotly.relayout(self.histDiv, { shapes: [], annotations: [] });
+            }
+          } catch (eHist) { /* ignore */ }
         } else {
           self.hide();
         }
         self.onModeChange(self._mode);
+        if (typeof afterLayout === "function") {
+          try {
+            afterLayout(self._mode);
+          } catch (eLay) { /* ignore */ }
+        }
         if (self.notifyOnRefresh && !suppressNotify) self._notify();
+        return res;
       })
       .catch(function () {
         self.hide();
@@ -1623,7 +1661,7 @@
       if (typeof self.onDiscreteColorChange === "function") {
         self.onDiscreteColorChange({ catKey: st.catKey, hex: hx.toLowerCase() });
       }
-      self._closeDiscreteColorPopover(false);
+      st.commitHex = hx;
     });
 
     cancelBtn.addEventListener("click", function () {
@@ -1664,6 +1702,69 @@
     return root;
   };
 
+  CryoColorCovariateLegend.prototype._relayoutDiscreteColorPopover = function (anchorEl) {
+    var pop = this._discreteColorPopover;
+    if (!pop || pop.hidden || !anchorEl) return;
+    var ar = anchorEl.getBoundingClientRect();
+    pop.style.left = Math.round(ar.left) + "px";
+    pop.style.top = Math.round(ar.bottom + 6) + "px";
+    var self = this;
+    requestAnimationFrame(function () {
+      if (!self._discreteColorPopover || self._discreteColorPopover.hidden) return;
+      var p = self._discreteColorPopover;
+      var pr = p.getBoundingClientRect();
+      var vw = window.innerWidth;
+      var vh = window.innerHeight;
+      var pad = 10;
+      var left = pr.left;
+      var top = pr.top;
+      if (pr.right > vw - pad) left -= pr.right - vw + pad;
+      if (pr.bottom > vh - pad) top -= pr.bottom - vh + pad;
+      if (left < pad) left = pad;
+      if (top < pad) top = pad;
+      p.style.left = Math.round(left) + "px";
+      p.style.top = Math.round(top) + "px";
+    });
+  };
+
+  /** Reattach popover cell/anchor after `_renderDiscrete` rebuilds the switch list. */
+  CryoColorCovariateLegend.prototype._syncDiscretePopoverAnchorAfterDiscreteRender = function () {
+    var st = this._discreteColorPopoverState;
+    var pop = this._discreteColorPopover;
+    if (!st || !pop || pop.hidden) return;
+    var sw = this.discreteSwitches;
+    if (!sw) {
+      this._closeDiscreteColorPopover(true);
+      return;
+    }
+    var want = String(st.catKey);
+    var cells = sw.querySelectorAll(".cryo-cc-discrete-cell[data-cat-key]");
+    var cell = null;
+    var ci;
+    for (ci = 0; ci < cells.length; ci++) {
+      if (String(cells[ci].getAttribute("data-cat-key")) === want) {
+        cell = cells[ci];
+        break;
+      }
+    }
+    if (!cell) {
+      this._closeDiscreteColorPopover(true);
+      return;
+    }
+    st.cellEl = cell;
+    var anchor =
+      cell.querySelector(".cryo-cc-discrete-colorwheel-btn") ||
+      cell.querySelector(".cryo-cc-discrete-solo-btn");
+    if (!anchor) {
+      this._closeDiscreteColorPopover(true);
+      return;
+    }
+    st.anchorEl = anchor;
+    var hx = normalizeDiscreteLegendHex(st.commitHex) || "#aab4bf";
+    this._applyDiscreteCellPaint(cell, hx);
+    this._relayoutDiscreteColorPopover(anchor);
+  };
+
   CryoColorCovariateLegend.prototype._openDiscreteColorPopover = function (
     anchorEl,
     cellEl,
@@ -1686,26 +1787,7 @@
     if (!pop.parentNode) {
       document.body.appendChild(pop);
     }
-    var ar = anchorEl.getBoundingClientRect();
-    pop.style.left = Math.round(ar.left) + "px";
-    pop.style.top = Math.round(ar.bottom + 6) + "px";
-    var self = this;
-    requestAnimationFrame(function () {
-      if (!self._discreteColorPopover || self._discreteColorPopover.hidden) return;
-      var p = self._discreteColorPopover;
-      var pr = p.getBoundingClientRect();
-      var vw = window.innerWidth;
-      var vh = window.innerHeight;
-      var pad = 10;
-      var left = pr.left;
-      var top = pr.top;
-      if (pr.right > vw - pad) left -= pr.right - vw + pad;
-      if (pr.bottom > vh - pad) top -= pr.bottom - vh + pad;
-      if (left < pad) left = pad;
-      if (top < pad) top = pad;
-      p.style.left = Math.round(left) + "px";
-      p.style.top = Math.round(top) + "px";
-    });
+    this._relayoutDiscreteColorPopover(anchorEl);
     var rg0 = pop.querySelector('input[type=\"range\"][data-channel=\"r\"]');
     try {
       if (rg0 && rg0.focus) rg0.focus({ preventScroll: true });
@@ -1767,7 +1849,8 @@
         normalizeDiscreteLegendHex(cat.color) ||
         "#aab4bf";
 
-      // Create cell wrapper (single flex row lives inside .cryo-cc-discrete-switch)
+      // Create cell wrapper; checkbox row uses .cryo-cc-discrete-switch flex container.
+      // Keep solo/colour buttons outside <label for> so clicks don't toggle the checkbox twice.
       var cell = document.createElement("div");
       cell.className = "cryo-cc-discrete-cell";
       if (this.discreteChipPlasticLabel) {
@@ -1775,12 +1858,27 @@
       }
       cell.setAttribute("data-cat-key", key);
 
+      var dispLbl = discreteDisplayLabel(key, col, this.covariateDisplayMap);
+      var cntDispRaw = cat.count != null ? cat.count : 0;
+      var cntDisp = Number(cntDispRaw);
+      if (!isFinite(cntDisp)) cntDisp = 0;
+      var countPhrase = this.formatDiscreteDatasetCount(cntDisp);
+      cell.title =
+        dispLbl +
+        " — " +
+        countPhrase +
+        " in full analysis table. Checkbox toggles visibility on the plot.";
+      cell.setAttribute(
+        "aria-label",
+        dispLbl + ". " + countPhrase + " in full analysis table."
+      );
+
       var controlsWrap = document.createElement("div");
       controlsWrap.className = "cryo-cc-discrete-cell-controls";
 
       // Colour wheel opens anchored popover (preview + Apply / Cancel).
       if (this.enableDiscreteColorPicker) {
-        var pickTitle = discreteDisplayLabel(key, col, this.covariateDisplayMap);
+        var pickTitle = dispLbl;
 
         var wheelSlot = document.createElement("div");
         wheelSlot.className = "cryo-cc-discrete-wheel-slot";
@@ -1814,7 +1912,7 @@
       soloBtn.type = "button";
       soloBtn.className = "cryo-cc-discrete-solo-btn";
       soloBtn.title = "Select only this category";
-      soloBtn.setAttribute("aria-label", "Select only " + discreteDisplayLabel(key, col, this.covariateDisplayMap));
+      soloBtn.setAttribute("aria-label", "Select only " + dispLbl);
       soloBtn.textContent = "1";
       soloBtn.addEventListener("mousedown", function (ev) {
         ev.preventDefault();
@@ -1829,8 +1927,8 @@
       }(key));
       controlsWrap.appendChild(soloBtn);
 
-      var lab = document.createElement("label");
-      lab.className = "cryo-cc-discrete-switch";
+      var rowWrap = document.createElement("div");
+      rowWrap.className = "cryo-cc-discrete-switch";
 
       var inp = document.createElement("input");
       inp.type = "checkbox";
@@ -1845,21 +1943,27 @@
       inp.setAttribute("data-cat-key", key);
       inp.checked = preserveDiscreteChecks ? prevChecked.has(key) : this.discreteCheckedDefault;
 
+      var lab = document.createElement("label");
+      lab.setAttribute("for", safeId);
+
       var tw = document.createElement("span");
       tw.className = "cryo-cc-discrete-switch-text";
       var sp = document.createElement("span");
       sp.className = "cryo-cc-discrete-switch-label";
-      sp.textContent = discreteDisplayLabel(key, col, this.covariateDisplayMap);
+      sp.textContent = dispLbl;
       var cn = document.createElement("span");
       cn.className = "cryo-cc-discrete-switch-count";
-      cn.textContent = this.formatParticleCount(cat.count != null ? cat.count : 0);
+      cn.textContent = countPhrase;
+      cn.title = countPhrase + " in full analysis table";
 
       tw.appendChild(sp);
       tw.appendChild(cn);
-      lab.appendChild(inp);
       lab.appendChild(tw);
-      lab.appendChild(controlsWrap);
-      cell.appendChild(lab);
+
+      rowWrap.appendChild(inp);
+      rowWrap.appendChild(lab);
+      rowWrap.appendChild(controlsWrap);
+      cell.appendChild(rowWrap);
       this.discreteSwitches.appendChild(cell);
 
       this._applyDiscreteCellPaint(cell, initialHex);
@@ -1912,6 +2016,7 @@
     }
 
     this._syncInvertBtn();
+    this._syncDiscretePopoverAnchorAfterDiscreteRender();
     if (typeof this.onDiscreteLayout === "function") {
       var dLay = this.onDiscreteLayout;
       requestAnimationFrame(function () {
@@ -2038,6 +2143,7 @@
     this._notify();
   };
 
+  CryoColorCovariateLegend.sortDiscreteKeys = sortDiscreteKeys;
   CryoColorCovariateLegend.paletteScaleCSS = paletteScaleCSS;
   CryoColorCovariateLegend.formatThresholdValue = formatThresholdValue;
   CryoColorCovariateLegend.normalizeDiscreteLegendHex = normalizeDiscreteLegendHex;

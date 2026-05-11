@@ -1844,6 +1844,7 @@
   var COLOR_HIST_DRAG_MIN_PX = 5;
   var explorerColorLegend = null;
   var explorerDiscreteLabelColors = {};
+  var explorerCcLegendPrevMode = null;
   var leadModeLassoEl = document.getElementById("lead-mode-lasso");
   var leadModeThresholdEl = document.getElementById("lead-mode-threshold");
   var leadModeDiscreteEl = document.getElementById("lead-mode-discrete");
@@ -3123,26 +3124,46 @@
   function explorerLegendContextData() {
     if (!gd || !gd.data || !gd.data[0] || !sc.value || sc.value === "none") return {};
     if (scatterTraceColorMode() === "discrete") {
+      var meta = gd.layout && gd.layout.meta;
+      var datasetCounts = (meta && meta.cdrgn_discrete_category_counts) || {};
       var cd = gd.data[0].customdata || [];
       var markerColors = (gd.data[0].marker && gd.data[0].marker.color) || null;
-      var byKey = new Map();
+      var colorByKey = {};
+      var tracedCountByKey = {};
       for (var i = 0; i < cd.length; i++) {
-        var key = discreteCategoryKeyFromCustomRow(cd[i]);
-        var rec = byKey.get(key);
-        if (!rec) {
-          rec = {key: key, count: 0};
-          byKey.set(key, rec);
-        }
-        rec.count++;
-        if (!rec.color && Array.isArray(markerColors)) {
+        var fk = discreteCategoryKeyFromCustomRow(cd[i]);
+        tracedCountByKey[fk] = (tracedCountByKey[fk] || 0) + 1;
+        if (!colorByKey[fk] && Array.isArray(markerColors)) {
           var cval = markerColors[i];
-          if (typeof cval === "string" && /^#/.test(cval)) rec.color = cval;
+          if (typeof cval === "string" && /^#/.test(cval)) colorByKey[fk] = cval;
         }
       }
-      var cats = Array.from(byKey.values());
-      for (var c = 0; c < cats.length; c++) {
-        var ovh = explorerDiscreteLabelColors[String(cats[c].key)];
-        if (ovh) cats[c].color = String(ovh);
+      var keyUnion = {};
+      var kk;
+      for (kk in datasetCounts) {
+        if (Object.prototype.hasOwnProperty.call(datasetCounts, kk)) keyUnion[kk] = true;
+      }
+      for (kk in tracedCountByKey) {
+        if (Object.prototype.hasOwnProperty.call(tracedCountByKey, kk)) keyUnion[kk] = true;
+      }
+      var allKeys = Object.keys(keyUnion);
+      var sortFn =
+        CryoColorCovariateLegend.sortDiscreteKeys ||
+        function (keys) {
+          return keys.slice().sort();
+        };
+      var sortedKeys = sortFn(allKeys);
+      var cats = [];
+      for (var j = 0; j < sortedKeys.length; j++) {
+        var k = sortedKeys[j];
+        var cnt =
+          datasetCounts[k] != null
+            ? Number(datasetCounts[k])
+            : tracedCountByKey[k] || 0;
+        var colHx = colorByKey[k];
+        var ovh = explorerDiscreteLabelColors[String(k)];
+        if (ovh) colHx = String(ovh);
+        cats.push({ key: k, color: colHx || "#aab4bf", count: cnt });
       }
       return {mode: "discrete", categories: cats};
     }
@@ -4512,6 +4533,7 @@
                   try { Plotly.Plots.resize(colorHistDiv); } catch (e2) {}
                 }
               });
+              explorerApplyDiscreteMarkerColoursFromOverrides();
               setTimeout(function() { suppressSelectionEvents = false; }, 0);
             }
             var opts = {responsive: true};
@@ -5185,6 +5207,8 @@
   explorerColorLegend = new CryoColorCovariateLegend({
     legendContextUrl: "{{ url_for('api_covariate_legend_context') }}",
     getLegendContextData: explorerLegendContextData,
+    getDiscreteColorOverrides: function() { return explorerDiscreteLabelColors; },
+    discreteChipMatplotlibBlend: false,
     covariateDisplayMap: covariateDisplayMap,
     getColorColumn: function() { return sc.value; },
     getPaletteName: selectedScatterPalette,
@@ -5204,14 +5228,30 @@
     noDiscreteSelectionText: "no selection made!",
     thresholdEmptyStatusText: "no selection made!",
     notifyOnRefresh: false,
-    formatParticleCount: function(n) {
-      var v = Number(n);
-      if (!isFinite(v)) v = 0;
-      return fmtInt(v) + (Math.round(v) === 1 ? " particle" : " particles");
-    },
     onContinuousHistogramLayout: syncParticleExplorerRowExpandForColorHist,
     onDiscreteLayout: syncParticleExplorerRowExpandForColorHist,
     onModeChange: function(mode) {
+      var prev = explorerCcLegendPrevMode;
+      explorerCcLegendPrevMode = mode;
+      if (prev === "discrete" && mode === "continuous") {
+        if (activeSelectionMode === "discrete") {
+          applyRowsSelection([], "Covariate change");
+        }
+      } else if (prev === "continuous" && mode === "discrete") {
+        if (activeSelectionMode === "threshold") {
+          applyRowsSelection([], "Covariate change");
+        }
+        colorThresholdLevel = null;
+        colorThresholdRange = null;
+        colorThresholdColorCol = null;
+        if (colorThresholdStatus) colorThresholdStatus.textContent = "";
+        syncColorHistModeCheckboxCaption();
+        if (colorHistDiv && colorHistDiv.data) {
+          try {
+            relayoutColorHistogramGuides();
+          } catch (eHg) { /* ignore */ }
+        }
+      }
       if (mode === "discrete") {
         setExplorerLegendDiscreteKeysForSelection();
         if (scatterPaletteToggle) scatterPaletteToggle.setAttribute("aria-expanded", "true");
@@ -5234,6 +5274,10 @@
     colorThresholdLevel = null;
     colorThresholdRange = null;
     colorThresholdColorCol = null;
+    explorerDiscreteLabelColors = {};
+    if (activeSelectionMode === "discrete" || activeSelectionMode === "threshold") {
+      applyRowsSelection([], "Covariate change");
+    }
     triggerRedraw(true);
   });
   document.querySelectorAll("input[name=\"scatter_palette\"]").forEach(function(inp) {

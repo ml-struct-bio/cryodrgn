@@ -292,8 +292,11 @@
     gap: 1px 2px;
     align-items: stretch;
     padding-right: 0;
-    width: 100%;
+    /* --cryo-discrete-legend-w set from JS as 90% of 3-D plot stack width */
+    width: var(--cryo-discrete-legend-w, 100%);
     max-width: 100%;
+    margin-left: auto;
+    margin-right: auto;
     box-sizing: border-box;
   }
   .cryo-dash-page--latent3d .cryo-cc-discrete-switches--pair-2col .cryo-cc-discrete-cell {
@@ -592,7 +595,29 @@
 
   var latent3dLegendMiddleWidthPx = null;
 
+  function syncLatent3dDiscreteLegendTargetWidth() {
+    var panelLegend = document.getElementById("latent3d-color-legend-panel");
+    var disc = document.getElementById("latent3d-color-discrete-wrap");
+    if (!panelLegend || !plotStack) {
+      return;
+    }
+    var showDiscrete =
+      disc && !disc.hidden && disc.classList.contains("cryo-cc-discrete-wrap--show");
+    if (showDiscrete) {
+      var pw = plotStack.getBoundingClientRect().width;
+      if (pw > 1) {
+        panelLegend.style.setProperty(
+          "--cryo-discrete-legend-w",
+          Math.max(1, Math.floor(pw * 0.9)) + "px"
+        );
+      }
+    } else {
+      panelLegend.style.removeProperty("--cryo-discrete-legend-w");
+    }
+  }
+
   function syncLatent3dLegendMiddleWidth() {
+    syncLatent3dDiscreteLegendTargetWidth();
     var panel = document.getElementById("latent3d-color-legend-panel");
     var sw = document.getElementById("latent3d-color-discrete-switches");
     var disc = document.getElementById("latent3d-color-discrete-wrap");
@@ -686,6 +711,9 @@
 
   var latent3dColorLegend = new CryoColorCovariateLegend({
     legendContextUrl: legendContextUrl,
+    getDiscreteColorOverrides: function() { return latent3dDiscreteColorOverrides; },
+    discreteChipMatplotlibBlend: false,
+    notifyOnRefresh: false,
     covariateDisplayMap: covariateDisplayMap,
     getColorColumn: function() { return sc.value; },
     getPaletteName: selectedLatentPalette,
@@ -777,6 +805,7 @@
                 Plotly.Plots.resize(gd);
               } catch (e) {}
               syncLatent3dAsideLayout();
+              latent3dColorLegend.refresh({ suppressNotify: true });
             });
           })
           .catch(function(e) {
@@ -793,7 +822,13 @@
     s.addEventListener("change", loadPlot);
   });
   sc.addEventListener("change", function() {
-    latent3dColorLegend.refresh();
+    latent3dDiscreteColorOverrides = {};
+    latent3dColorLegend.refresh({
+      suppressNotify: true,
+      afterLayout: function() {
+        loadPlot();
+      }
+    });
   });
   document.querySelectorAll("input[name=\"latent3d_palette\"]").forEach(function(inp) {
     inp.addEventListener("change", function() {
@@ -827,7 +862,7 @@
   syncLatent3dPaletteFieldset();
   syncControlsAlignment();
   syncLatent3dAsideLayout();
-  latent3dColorLegend.refresh();
+  loadPlot();
 })();
 </script>
 {% endblock %}

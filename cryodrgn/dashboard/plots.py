@@ -558,6 +558,89 @@ def _discrete_legend_sort_tuple(key: str) -> tuple:
         return (1, str(key))
 
 
+def _stable_discrete_covariate_hex_map(
+    plot_df: pd.DataFrame,
+    color_col: str,
+    discrete_label_colors: dict[str, str] | None,
+) -> dict[str, str]:
+    """Filter-key → marker hex; palette order matches :func:`covariate_legend_context_payload`."""
+    raw_full = plot_df[color_col]
+    _, uniques_f = pd.factorize(raw_full, sort=True)
+    pal = _dashboard_chimerax_colors(max(len(uniques_f), 1))
+
+    def hex_for_key(fk: str, palette_idx: int) -> str:
+        override = discrete_label_colors.get(fk) if discrete_label_colors else None
+        if isinstance(override, str) and re.match(
+            r"^#[0-9a-fA-F]{6}$", override.strip()
+        ):
+            return override.strip().lower()
+        return pal[palette_idx % len(pal)]
+
+    stable_hex_by_key: dict[str, str] = {}
+    for idx, u in enumerate(uniques_f):
+        if pd.isna(u):
+            continue
+        fk = covariate_row_filter_key(color_col, u)
+        stable_hex_by_key[fk] = hex_for_key(fk, idx)
+
+    if bool(raw_full.isna().any()):
+        fk_na = "__na__"
+        ov_na = discrete_label_colors.get(fk_na) if discrete_label_colors else None
+        if isinstance(ov_na, str) and re.match(r"^#[0-9a-fA-F]{6}$", ov_na.strip()):
+            stable_hex_by_key[fk_na] = ov_na.strip().lower()
+        else:
+            stable_hex_by_key[fk_na] = "#aab4bf"
+
+    return stable_hex_by_key
+
+
+def _scatter_discrete_marker_arrays(
+    plot_df: pd.DataFrame,
+    sub_df: pd.DataFrame,
+    color_col: str,
+    discrete_label_colors: dict[str, str] | None,
+) -> tuple[list[str], list[str]]:
+    """Per-row ChimeraX hex colours + covariate filter keys for Plotly ``marker.color`` / ``customdata``."""
+    lookup = _stable_discrete_covariate_hex_map(
+        plot_df, color_col, discrete_label_colors
+    )
+    ser = sub_df[color_col]
+    n = len(sub_df)
+    colors: list[str] = []
+    keys: list[str] = []
+    for i in range(n):
+        v = ser.iloc[i]
+        if pd.isna(v):
+            fk = "__na__"
+        else:
+            fk = covariate_row_filter_key(color_col, v)
+        colors.append(lookup.get(fk, "#aab4bf"))
+        keys.append(fk)
+    return colors, keys
+
+
+def discrete_category_counts_by_filter_key(
+    plot_df: pd.DataFrame, color_col: str
+) -> dict[str, int]:
+    """Covariate filter-key → particle count in the full ``plot_df`` analysis table."""
+    if color_col not in plot_df.columns:
+        return {}
+    s = plot_df[color_col]
+    if not _lower_color_series_is_discrete(s):
+        return {}
+    codes_arr, uniques = pd.factorize(s, sort=True)
+    codes = np.asarray(codes_arr, dtype=np.int64)
+    out: dict[str, int] = {}
+    for idx, u in enumerate(uniques):
+        if pd.isna(u):
+            continue
+        fk = covariate_row_filter_key(color_col, u)
+        out[fk] = int(np.sum(codes == idx))
+    if bool(s.isna().any()):
+        out["__na__"] = int(s.isna().sum())
+    return out
+
+
 def covariate_legend_context_payload(
     exp: DashboardExperiment,
     column: str,
@@ -569,22 +652,23 @@ def covariate_legend_context_payload(
         raise ValueError("Unknown column.")
     s = exp.plot_df[column]
     if _lower_color_series_is_discrete(s):
-        codes_arr, uniques = pd.factorize(s, sort=True)
-        codes = np.asarray(codes_arr, dtype=np.int64)
-        pal = _dashboard_chimerax_colors(max(len(uniques), 1))
+        _codes_arr, uniques = pd.factorize(s, sort=True)
+        lookup = _stable_discrete_covariate_hex_map(exp.plot_df, column, None)
+        counts_map = discrete_category_counts_by_filter_key(exp.plot_df, column)
         cats: list[dict[str, Any]] = []
         for idx, u in enumerate(uniques):
             if pd.isna(u):
                 continue
-            cnt = int(np.sum(codes == idx))
+            fk = covariate_row_filter_key(column, u)
+            cnt = counts_map.get(fk, 0)
             if cnt == 0:
                 continue
             cats.append(
                 {
-                    "key": covariate_row_filter_key(column, u),
+                    "key": fk,
                     "label": _lower_legend_entry_label(column, u),
                     "count": cnt,
-                    "color": pal[idx % len(pal)],
+                    "color": lookup.get(fk, "#aab4bf"),
                 }
             )
         if bool(s.isna().any()):
@@ -592,8 +676,8 @@ def covariate_legend_context_payload(
                 {
                     "key": "__na__",
                     "label": "(missing)",
-                    "count": int(s.isna().sum()),
-                    "color": "#aab4bf",
+                    "count": counts_map.get("__na__", int(s.isna().sum())),
+                    "color": lookup.get("__na__", "#aab4bf"),
                 }
             )
         cats.sort(key=lambda c: _discrete_legend_sort_tuple(str(c["key"])))
@@ -768,44 +852,51 @@ def scatter_json(
     plotly_cs = normalize_continuous_palette(continuous_palette)
     sub, row_indices = _subsample(exp.plot_df, max_points, seed=0)
 
-    if color_col and color_col != "none" and color_col in sub.columns:
-        if color_col == "labels":
-            colors, _legend_items = _labels_colors_and_legend_items(sub[color_col])
-            marker = dict(
-                size=marker_size,
-                opacity=0.35,
-                color=colors,
-            )
-        else:
-            marker = dict(
-                size=marker_size,
-                opacity=0.35,
-                color=sub[color_col],
-                colorscale=plotly_cs,
-            )
-    else:
-        marker = dict(size=marker_size, opacity=0.35, color="#4a5568")
-
     idx_arr = sub["index"].to_numpy()
     row_arr = np.asarray(row_indices, dtype=np.int64)
     n_pts = len(sub)
-    if color_col and color_col != "none" and color_col in sub.columns:
+
+    discrete_trace = (
+        color_col
+        and color_col != "none"
+        and color_col in exp.plot_df.columns
+        and color_col in sub.columns
+        and _lower_color_series_is_discrete(exp.plot_df[color_col])
+    )
+
+    if discrete_trace:
+        hex_colors, fk_list = _scatter_discrete_marker_arrays(
+            exp.plot_df,
+            sub,
+            color_col,
+            None,
+        )
+        marker = dict(
+            size=marker_size,
+            opacity=0.35,
+            color=hex_colors,
+        )
+        fk_arr = np.asarray(fk_list, dtype=object)
+        customdata = np.column_stack([idx_arr, row_arr, fk_arr])
+    elif color_col and color_col != "none" and color_col in sub.columns:
+        marker = dict(
+            size=marker_size,
+            opacity=0.35,
+            color=sub[color_col],
+            colorscale=plotly_cs,
+        )
         disp = np.empty(n_pts, dtype=object)
-        if color_col == "labels":
-            cv = sub[color_col]
-            for i in range(n_pts):
-                disp[i] = _lower_legend_entry_label("labels", cv.iloc[i])
-        else:
-            color_num = cast(pd.Series, pd.to_numeric(sub[color_col], errors="coerce"))
-            for i in range(n_pts):
-                v = color_num.iloc[i]
-                if pd.isna(v):
-                    disp[i] = None
-                else:
-                    fv = float(v)
-                    disp[i] = fv if np.isfinite(fv) else None
+        color_num = cast(pd.Series, pd.to_numeric(sub[color_col], errors="coerce"))
+        for i in range(n_pts):
+            v = color_num.iloc[i]
+            if pd.isna(v):
+                disp[i] = None
+            else:
+                fv = float(v)
+                disp[i] = fv if np.isfinite(fv) else None
         customdata = np.column_stack([idx_arr, row_arr, disp])
     else:
+        marker = dict(size=marker_size, opacity=0.35, color="#4a5568")
         customdata = np.column_stack([idx_arr, row_arr])
     # Scattergl can leave Plotly.react() pending on some browsers/GPUs.
     trace_cls = go.Scattergl if use_webgl else go.Scatter
@@ -846,9 +937,11 @@ def scatter_json(
             int(i) for i in range(len(row_indices)) if int(row_indices[i]) in want
         ]
     if color_col and color_col != "none" and color_col in sub.columns:
-        layout_meta["cdrgn_color_mode"] = (
-            "discrete" if color_col == "labels" else "continuous"
-        )
+        layout_meta["cdrgn_color_mode"] = "discrete" if discrete_trace else "continuous"
+        if discrete_trace and color_col:
+            layout_meta[
+                "cdrgn_discrete_category_counts"
+            ] = discrete_category_counts_by_filter_key(exp.plot_df, color_col)
     if layout_meta:
         layout_kw["meta"] = layout_meta
 
@@ -883,6 +976,7 @@ def scatter3d_z_json(
     *,
     continuous_palette: str | None = None,
     color_filter: dict[str, Any] | None = None,
+    discrete_label_colors: dict[str, str] | None = None,
 ) -> str:
     """Interactive 3D scatter of three latent ``z*`` columns."""
     plotly_cs = normalize_continuous_palette(continuous_palette)
@@ -891,10 +985,15 @@ def scatter3d_z_json(
     _validate_three_latent_axes(exp, df, (xcol, ycol, zcol))
 
     pinned_color_range: tuple[float, float] | None = None
-    if color_filter and color_col and color_col != "none":
-        if color_col != "labels" and color_col in df.columns:
-            _, pcmin, pcmax = _continuous_series_stats(df_all[color_col])
-            pinned_color_range = (pcmin, pcmax)
+    if (
+        color_filter
+        and color_col
+        and color_col != "none"
+        and color_col in df.columns
+        and not _lower_color_series_is_discrete(df_all[color_col])
+    ):
+        _, pcmin, pcmax = _continuous_series_stats(df_all[color_col])
+        pinned_color_range = (pcmin, pcmax)
 
     if color_filter and color_col and color_col != "none":
         mask = plot_df_color_filter_mask(df_all, color_col, color_filter)
@@ -906,19 +1005,44 @@ def scatter3d_z_json(
     cap = max_points if max_points is not None else max(len(sub), 1)
     msize, mopacity = _scatter3d_marker_size_opacity(len(sub), point_cap=cap)
 
+    discrete_trace = (
+        color_col
+        and color_col != "none"
+        and color_col in df_all.columns
+        and color_col in sub.columns
+        and _lower_color_series_is_discrete(df_all[color_col])
+    )
+
     legend_meta: dict[str, Any] | None = None
     if color_col and color_col != "none" and color_col in sub.columns:
-        if color_col == "labels":
-            colors, items = _labels_colors_and_legend_items(sub[color_col])
+        if discrete_trace:
+            hex_colors, fk_list = _scatter_discrete_marker_arrays(
+                df_all,
+                sub,
+                color_col,
+                discrete_label_colors,
+            )
             marker = dict(
                 size=msize,
                 opacity=mopacity,
-                color=colors,
+                color=hex_colors,
             )
+            lookup_preview = _stable_discrete_covariate_hex_map(
+                df_all, color_col, discrete_label_colors
+            )
+            counts_map = discrete_category_counts_by_filter_key(df_all, color_col)
+            sort_keys = sorted(lookup_preview.keys(), key=_discrete_legend_sort_tuple)
             legend_meta = {
                 "type": "discrete",
-                "title": "k-means labels",
-                "items": items,
+                "title": color_col,
+                "items": [
+                    {
+                        "label": k,
+                        "color": lookup_preview[k],
+                        "count": counts_map.get(k, 0),
+                    }
+                    for k in sort_keys
+                ],
             }
         else:
             _cvals, cmin, cmax = _continuous_series_stats(sub[color_col])
@@ -943,17 +1067,9 @@ def scatter3d_z_json(
 
     idx_cd = sub["index"].to_numpy()
     row_cd = np.asarray(row_indices, dtype=np.int64)
-    if (
-        color_col
-        and color_col != "none"
-        and color_col in sub.columns
-        and color_col == "labels"
-    ):
-        cv3 = sub[color_col]
-        disp_ca = np.empty(len(sub), dtype=object)
-        for ii in range(len(sub)):
-            disp_ca[ii] = _lower_legend_entry_label("labels", cv3.iloc[ii])
-        customdata = np.column_stack([idx_cd, row_cd, disp_ca])
+    if discrete_trace:
+        fk_arr = np.asarray(fk_list, dtype=object)
+        customdata = np.column_stack([idx_cd, row_cd, fk_arr])
     else:
         customdata = np.column_stack([idx_cd, row_cd])
     sc = go.Scatter3d(
@@ -989,6 +1105,16 @@ def scatter3d_z_json(
         scene_axes_extra["yaxis"] = _scene_axis()
         scene_axes_extra["zaxis"] = _scene_axis()
 
+    plot_meta: dict[str, Any] = {}
+    if legend_meta is not None:
+        plot_meta["cdrgn_color_legend"] = legend_meta
+    if discrete_trace and color_col and color_col != "none":
+        plot_meta[
+            "cdrgn_discrete_category_counts"
+        ] = discrete_category_counts_by_filter_key(df_all, color_col)
+    if color_col and color_col != "none" and color_col in sub.columns:
+        plot_meta["cdrgn_color_mode"] = "discrete" if discrete_trace else "continuous"
+
     fig = go.Figure(sc)
     fig.update_layout(
         template="plotly_white",
@@ -1005,7 +1131,7 @@ def scatter3d_z_json(
         ),
         uirevision="scatter3d_z",
         font=_PLOTLY_FONT,
-        meta={"cdrgn_color_legend": legend_meta},
+        meta=plot_meta,
     )
     return _plotly_to_json(fig)
 

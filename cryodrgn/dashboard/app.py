@@ -531,6 +531,9 @@ def api_scatter3d_z():
         try:
             if ccol != "none":
                 color_filter = _parse_color_filter_for_column(ccol, payload)
+            discrete_label_colors = _parse_optional_discrete_label_colors(
+                payload.get("discrete_label_colors")
+            )
             js = scatter3d_z_json(
                 e,
                 xcol,
@@ -539,6 +542,7 @@ def api_scatter3d_z():
                 None if ccol == "none" else ccol,
                 continuous_palette=raw_palette,
                 color_filter=color_filter,
+                discrete_label_colors=discrete_label_colors,
             )
         except ValueError as err:
             return jsonify(error=str(err)), 400

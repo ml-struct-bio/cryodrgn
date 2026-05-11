@@ -721,6 +721,46 @@
       transform: translateZ(0);
       backface-visibility: hidden;
     }
+    /* Small corner badge: previous frame stays visible (3D / pair plot / explorer). */
+    .cryo-plot-rendering-overlay--nonblocking.cryo-plot-rendering-overlay--show {
+      inset: auto;
+      top: 0.45rem;
+      right: 0.45rem;
+      left: auto;
+      bottom: auto;
+      width: auto;
+      min-width: 10.5rem;
+      max-width: min(44vw, 17rem);
+      padding: 0.45rem 0.6rem;
+      justify-content: center;
+      align-items: stretch;
+      background: rgba(250, 248, 244, 0.93);
+      box-shadow: 0 2px 14px rgba(36, 59, 83, 0.14);
+      border: 1px solid rgba(36, 59, 83, 0.14);
+      border-radius: 6px;
+      pointer-events: none;
+      z-index: 5;
+    }
+    .cryo-plot-rendering-overlay--nonblocking .cryo-plot-rendering-overlay__inner {
+      max-width: none;
+      width: 100%;
+      flex-direction: row;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .cryo-plot-rendering-overlay--nonblocking .cryo-plot-rendering-overlay__label {
+      font-size: 0.8rem;
+      font-weight: 700;
+      line-height: 1.2;
+      text-align: left;
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+    .cryo-plot-rendering-overlay--nonblocking .cryo-plot-rendering-overlay__track {
+      width: 3.6rem;
+      flex: 0 0 auto;
+      max-width: 42%;
+    }
     .cryo-plot-rendering-overlay__inner {
       display: flex;
       flex-direction: column;

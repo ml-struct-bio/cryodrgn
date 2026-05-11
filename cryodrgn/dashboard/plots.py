@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import math
 import re
 from collections.abc import Collection
 from typing import Any, cast
@@ -167,6 +168,42 @@ def _subsample(
     return df, np.arange(n, dtype=np.int64)
 
 
+def _scatter3d_marker_size_opacity(
+    n_points: int, *, point_cap: int
+) -> tuple[float, float]:
+    """Scale 3D point glyphs for readability — larger / more opaque when fewer points."""
+    n = max(1, int(n_points))
+    hi_n = float(max(2, int(point_cap)))
+    if n >= hi_n:
+        return 0.75, 0.4
+    t = math.log10(float(n)) / math.log10(hi_n)
+    t = max(0.0, min(1.0, t))
+    size = 6.0 + t * (0.75 - 6.0)
+    opacity = 0.95 + t * (0.4 - 0.95)
+    return float(size), float(opacity)
+
+
+def _mpl_pair_grid_marker_s_alpha(
+    n_points: int,
+    *,
+    point_cap: int,
+    dense_s: float,
+    dense_a: float,
+    sparse_s: float,
+    sparse_a: float,
+) -> tuple[float, float]:
+    """Matplotlib scatter ``s`` / ``alpha`` vs row count (pair-grid cells)."""
+    n = max(1, int(n_points))
+    hi_n = float(max(2, int(point_cap)))
+    if n >= hi_n:
+        return dense_s, dense_a
+    t = math.log10(float(n)) / math.log10(hi_n)
+    t = max(0.0, min(1.0, t))
+    s = sparse_s + t * (dense_s - sparse_s)
+    a = sparse_a + t * (dense_a - sparse_a)
+    return float(s), float(a)
+
+
 def plot_df_row_indices_for_explorer_scatter(
     plot_df: pd.DataFrame,
     max_points: int = 200_000,
@@ -264,27 +301,96 @@ def _continuous_series_stats(values: pd.Series) -> tuple[np.ndarray, float, floa
 def pair_grid_skeleton_placeholder_layout(
     zdim: int,
 ) -> list[dict[str, float]]:
-    """Cell bboxes for the HTML skeleton before the first PNG loads."""
+    """Cell bboxes for the HTML skeleton before the first PNG loads.
+
+    Mirrors the Matplotlib grid setup in :func:`pair_grid_png` (figure size, per-axis
+    ``set_aspect`` / ``set_box_aspect``, spine widths, ``subplots_adjust``) so
+    normalized axes positions match the delivered PNG. Uses symmetric axis limits
+    instead of real data so ``adjustable=\"datalim\"`` matches typical behaviour.
+    """
     if zdim < 1:
         return []
+    inch_per = max(2.45, min(3.35, 13.0 / max(zdim, 1)))
+    left_m = _PAIR_GRID_LEFT
+    top_m = min(_PAIR_GRID_TOP, 0.955)
+    bottom_m = _PAIR_GRID_BOTTOM
+    right_axes = _PAIR_GRID_RIGHT
+    w_frac = right_axes - left_m
+    h_frac = top_m - bottom_m
+    grid_side_in = inch_per * zdim
+    fig_w = grid_side_in / w_frac
+    fig_h = grid_side_in / h_frac
     with ezlab_matplotlib_rc():
-        fig, axes = plt.subplots(
-            zdim,
-            zdim,
-            figsize=(4, 4),
-            squeeze=False,
-        )
+        with sns.axes_style(
+            "white",
+            rc={
+                "axes.facecolor": _DASHBOARD_CREAM,
+                "figure.facecolor": _DASHBOARD_CREAM,
+            },
+        ):
+            fig, axes = plt.subplots(
+                zdim,
+                zdim,
+                figsize=(fig_w, fig_h),
+                squeeze=False,
+                constrained_layout=False,
+            )
+        fig.patch.set_facecolor(_DASHBOARD_CREAM)
+        for i in range(zdim):
+            for j in range(zdim):
+                ax = axes[i, j]
+                ax.set_xticks([])
+                ax.set_yticks([])
+                ax.set_xlim(-6.0, 6.0)
+                ax.set_ylim(-6.0, 6.0)
+                ax.set_aspect("equal", adjustable="datalim")
+                ax.set_box_aspect(1)
+                ax.set_facecolor(_DASHBOARD_CREAM)
+                is_diag = i == j
+                for spine in ax.spines.values():
+                    spine.set_linewidth(2.1 if is_diag else 1.05)
+                    spine.set_color("#334e68" if is_diag else "#5a6b7a")
         fig.subplots_adjust(
-            left=_PAIR_GRID_LEFT,
-            right=_PAIR_GRID_RIGHT,
-            top=_PAIR_GRID_TOP,
-            bottom=_PAIR_GRID_BOTTOM,
+            left=left_m,
+            right=right_axes,
+            top=top_m,
+            bottom=bottom_m,
             wspace=_PAIR_CELL_WSPACE,
             hspace=_PAIR_CELL_HSPACE,
         )
-        out = _axes_cell_bboxes(np.asarray(axes))
+        cells = _axes_cell_bboxes(np.asarray(axes))
         plt.close(fig)
-        return out
+    return cells
+
+
+def pair_grid_margin_fractions_for_js() -> dict[str, float]:
+    """Figure-edge parameters for pair-plot skeleton labels (aligned with ``_draw_pair_grid_edge_labels``)."""
+    edge_gap = 0.008
+    return {
+        "left_m": float(_PAIR_GRID_LEFT),
+        "top_m": float(min(_PAIR_GRID_TOP, 0.955)),
+        "bottom_m": float(_PAIR_GRID_BOTTOM),
+        "right_axes": float(_PAIR_GRID_RIGHT),
+        "edge_gap": float(edge_gap),
+        "right_gap": float(edge_gap * 0.6),
+    }
+
+
+def pair_grid_figure_aspect_ratio(zdim: int) -> float:
+    """Figure width ÷ height for :func:`pair_grid_png` (stable layout before the PNG loads)."""
+    if zdim < 1:
+        return 1.0
+    inch_per = max(2.45, min(3.35, 13.0 / max(zdim, 1)))
+    left_m = _PAIR_GRID_LEFT
+    top_m = min(_PAIR_GRID_TOP, 0.955)
+    bottom_m = _PAIR_GRID_BOTTOM
+    right_axes = _PAIR_GRID_RIGHT
+    w_frac = right_axes - left_m
+    h_frac = top_m - bottom_m
+    grid_side_in = inch_per * zdim
+    fig_w = grid_side_in / w_frac
+    fig_h = grid_side_in / h_frac
+    return float(fig_w / fig_h) if fig_h > 0 else 1.0
 
 
 def _pair_jointplot_hex_cmap(color: str | None = None):
@@ -709,6 +815,12 @@ def scatter3d_z_json(
     df = exp.plot_df
     _validate_three_latent_axes(exp, df, (xcol, ycol, zcol))
 
+    pinned_color_range: tuple[float, float] | None = None
+    if color_filter and color_col and color_col != "none":
+        if color_col != "labels" and color_col in df.columns:
+            _, pcmin, pcmax = _continuous_series_stats(df[color_col])
+            pinned_color_range = (pcmin, pcmax)
+
     if color_filter and color_col and color_col != "none":
         mask = plot_df_color_filter_mask(df, color_col, color_filter)
         if not bool(np.any(mask)):
@@ -716,14 +828,16 @@ def scatter3d_z_json(
         df = df.loc[mask].reset_index(drop=True)
 
     sub, row_indices = _subsample(df, max_points, seed=1)
+    cap = max_points if max_points is not None else max(len(sub), 1)
+    msize, mopacity = _scatter3d_marker_size_opacity(len(sub), point_cap=cap)
 
     legend_meta: dict[str, Any] | None = None
     if color_col and color_col != "none" and color_col in sub.columns:
         if color_col == "labels":
             colors, items = _labels_colors_and_legend_items(sub[color_col])
             marker = dict(
-                size=0.75,
-                opacity=0.4,
+                size=msize,
+                opacity=mopacity,
                 color=colors,
             )
             legend_meta = {
@@ -734,11 +848,15 @@ def scatter3d_z_json(
         else:
             _cvals, cmin, cmax = _continuous_series_stats(sub[color_col])
             marker = dict(
-                size=0.75,
-                opacity=0.4,
+                size=msize,
+                opacity=mopacity,
                 color=sub[color_col],
                 colorscale=plotly_cs,
             )
+            if pinned_color_range is not None:
+                cmin, cmax = pinned_color_range
+                marker["cmin"] = cmin
+                marker["cmax"] = cmax
             legend_meta = {
                 "type": "continuous",
                 "title": color_col,
@@ -746,7 +864,7 @@ def scatter3d_z_json(
                 "max": cmax,
             }
     else:
-        marker = dict(size=0.75, opacity=0.4, color="#4a5568")
+        marker = dict(size=msize, opacity=mopacity, color="#4a5568")
 
     customdata = np.column_stack(
         [sub["index"].to_numpy(), row_indices],
@@ -908,6 +1026,24 @@ def pair_grid_png(
         df = full_df.loc[mask].reset_index(drop=True)
     else:
         df = full_df
+    n_pts = len(df)
+    point_cap = max(len(full_df), 1)
+    lo_s, lo_a = _mpl_pair_grid_marker_s_alpha(
+        n_pts,
+        point_cap=point_cap,
+        dense_s=2.5,
+        dense_a=0.2,
+        sparse_s=10.0,
+        sparse_a=0.78,
+    )
+    diag_s, diag_a = _mpl_pair_grid_marker_s_alpha(
+        n_pts,
+        point_cap=point_cap,
+        dense_s=2.0,
+        dense_a=0.55,
+        sparse_s=8.0,
+        sparse_a=0.9,
+    )
     raw_color = df[lower_color_col]
     discrete = _lower_color_series_is_discrete(raw_color)
 
@@ -955,8 +1091,6 @@ def pair_grid_png(
     upper = (upper_style or "scatter").lower()
     if upper not in ("scatter", "hex"):
         raise ValueError("upper_style must be 'scatter' or 'hex'.")
-
-    n_pts = len(df)
 
     with ezlab_matplotlib_rc():
         hex_cmap = _pair_jointplot_hex_cmap()
@@ -1011,8 +1145,8 @@ def pair_grid_png(
                         emb_y,
                         c=zi,
                         cmap=mpl_cmap,
-                        s=2,
-                        alpha=0.55,
+                        s=diag_s,
+                        alpha=diag_a,
                         linewidths=0,
                         rasterized=True,
                     )
@@ -1053,8 +1187,8 @@ def pair_grid_png(
                             xi,
                             yi,
                             c=point_colors,
-                            s=2.5,
-                            alpha=0.2,
+                            s=lo_s,
+                            alpha=lo_a,
                             linewidths=0,
                             rasterized=True,
                         )
@@ -1071,8 +1205,8 @@ def pair_grid_png(
                             cmap=mpl_cmap,
                             vmin=cmin,
                             vmax=cmax,
-                            s=2.5,
-                            alpha=0.2,
+                            s=lo_s,
+                            alpha=lo_a,
                             linewidths=0,
                             rasterized=True,
                         )

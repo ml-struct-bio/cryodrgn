@@ -2,8 +2,10 @@
  * Colour covariate histogram + discrete toggles shared by particle explorer,
  * pair-grid, and 3-D latent views. Continuous legends support click thresholds
  * and drag ranges; optional `histPlotVertical` swaps covariate onto y and
- * density onto x (pair-plot/3-D asides). Optional layout callbacks run after
- * DOM / Plotly layout. Panel `vertical` controls CSS layout class.
+ * density onto x (pair-plot/3-D asides). Optional `histVerticalMargins` shallow-
+ * merges into the vertical histogram layout margin (e.g. larger `l` for y-axis
+ * ticks). Optional layout callbacks run after DOM / Plotly layout. Panel
+ * `vertical` controls CSS layout class.
  */
 (function (global) {
   "use strict";
@@ -323,6 +325,7 @@
     this.onDiscreteLayout = opts.onDiscreteLayout || null;
     this.vertical = opts.vertical !== false;
     this.histPlotVertical = opts.histPlotVertical === true;
+    this.histVerticalMargins = opts.histVerticalMargins || null;
     this._mode = null;
     this._allCatKeys = [];
     this._thresholdLevel = null;
@@ -602,11 +605,20 @@
     this._histValueRange = violin.range.slice();
     var layout;
     if (this.histPlotVertical) {
+      var vMargin = { l: 4, r: 4, t: 2, b: 2 };
+      if (this.histVerticalMargins && typeof this.histVerticalMargins === "object") {
+        var hv = this.histVerticalMargins;
+        for (var mk in hv) {
+          if (Object.prototype.hasOwnProperty.call(hv, mk)) {
+            vMargin[mk] = hv[mk];
+          }
+        }
+      }
       layout = {
         template: "plotly_white",
         paper_bgcolor: "rgba(250,248,244,0)",
         plot_bgcolor: "rgba(255,255,255,0.62)",
-        margin: { l: 4, r: 4, t: 2, b: 2 },
+        margin: vMargin,
         dragmode: false,
         xaxis: {
           visible: false,
@@ -629,7 +641,7 @@
         template: "plotly_white",
         paper_bgcolor: "rgba(250,248,244,0)",
         plot_bgcolor: "rgba(255,255,255,0.62)",
-        margin: { l: 4, r: 4, t: 2, b: 2 },
+        margin: { l: 4, r: 4, t: 2, b: 17 },
         dragmode: false,
         xaxis: {
           range: violin.range,
@@ -850,7 +862,7 @@
         xref: "paper",
         yref: "y",
         x: 1,
-        xanchor: "left",
+        xanchor: "right",
         y: value,
         yanchor: "middle",
         text: formatThresholdValue(value),
@@ -885,7 +897,7 @@
         xref: "paper",
         yref: "y",
         x: 1,
-        xanchor: "left",
+        xanchor: "right",
         y: (lo + hi) * 0.5,
         yanchor: "middle",
         text: text,
@@ -936,7 +948,13 @@
     }
     if (this._hoverLevel != null && !this._histPointerDown) {
       shapes.push(this._guideLine(this._hoverLevel, { color: "#243b53", width: 1.5, dash: "dot" }));
-      annotations.push(this._valueAnnotation(this._hoverLevel));
+      var colNow = this.getColorColumn ? this.getColorColumn() : null;
+      var showHoverValueAnnot =
+        this._histDragPreview == null
+        && !(this._thresholdCol === colNow && this._thresholdRange != null);
+      if (showHoverValueAnnot) {
+        annotations.push(this._valueAnnotation(this._hoverLevel));
+      }
     }
     try {
       Plotly.relayout(this.histDiv, { shapes: shapes, annotations: annotations });

@@ -117,7 +117,8 @@
     width: 100%;
     max-width: 100%;
     max-height: var(--pairplot-max-h);
-    min-height: min(280px, 42vh);
+    /* Height comes from the PNG (or reserved slot); avoid min-height so the slot matches the real figure. */
+    min-height: 0;
     vertical-align: top;
   }
   .pairplot-img {
@@ -160,45 +161,81 @@
     box-sizing: border-box;
     container-type: size;
     container-name: pair-skel;
-    background: var(--cream, #faf8f4);
-    border: 1px solid rgba(36, 59, 83, 0.22);
-    border-radius: 1px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 2px;
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    display: block;
     min-width: 0;
     min-height: 0;
+    overflow: visible;
+    z-index: 1;
   }
-  .pairplot-skel-cell:not(.pairplot-skel-cell--busy) {
-    background: transparent;
-    border-color: transparent;
+  .pairplot-skeleton.pairplot-skeleton--show .pairplot-skel-cell {
+    border: 1.05px solid rgba(90, 107, 122, 0.55);
   }
-  .pairplot-skel-inner {
+  .pairplot-skeleton.pairplot-skeleton--show .pairplot-skel-cell--diag {
+    border-width: 2.1px;
+    border-color: #334e68;
+  }
+  .pairplot-skel-edge-labels {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    pointer-events: none;
+  }
+  .pairplot-skel-edge-label {
+    position: absolute;
+    left: 0;
+    top: 0;
+    margin: 0;
+    padding: 0;
+    line-height: 1.05;
+    font-weight: 700;
+    color: #243b53;
+    white-space: nowrap;
+    font-size: clamp(0.52rem, 2.2cqw, 0.78rem);
+    letter-spacing: 0.01em;
+  }
+  .pairplot-skel-cell--busy .pairplot-skel-inner {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     align-items: center;
-    gap: clamp(2px, 4cqmin, 7px);
-    width: min(88%, 30rem);
-    max-width: 88%;
-    min-width: 0;
+    justify-content: flex-end;
+    gap: clamp(3px, 1cqmin, 5px);
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    left: auto;
+    bottom: auto;
+    width: auto;
+    max-width: calc(100% - 4px);
+    padding: clamp(2px, 0.7cqmin, 4px) clamp(4px, 1.2cqmin, 6px);
+    margin: 0;
+    border-radius: 4px;
+    background: rgba(250, 248, 244, 0.94);
+    border: 1px solid rgba(36, 59, 83, 0.13);
+    box-shadow: 0 1px 7px rgba(36, 59, 83, 0.1);
+    box-sizing: border-box;
+    pointer-events: none;
+    z-index: 1;
   }
   .pairplot-skel-text {
     line-height: 1.05;
     color: var(--nav-bg, #243b53);
-    font-weight: 800;
+    font-weight: 700;
     white-space: nowrap;
-    max-width: 100%;
-    width: max-content;
-    margin: 0 auto;
+    margin: 0;
     overflow: hidden;
-    text-overflow: clip;
-    font-size: clamp(0.8rem, 11cqmin, 2.85rem);
+    text-overflow: ellipsis;
+    font-size: clamp(0.52rem, 7.5cqmin, 0.68rem);
+    max-width: 5.2rem;
   }
   .pairplot-skel-track {
-    width: min(78%, 10rem);
+    width: clamp(1.35rem, 22cqmin, 2.25rem);
+    min-width: 1.2rem;
+    flex-shrink: 0;
     max-width: 100%;
-    height: clamp(2px, 2.8cqmin, 5px);
+    height: clamp(2px, 2cqmin, 3px);
     border-radius: 999px;
     background: rgba(36, 59, 83, 0.14);
     overflow: hidden;
@@ -216,12 +253,12 @@
   }
   @supports not (container-type: size) {
     .pairplot-skel-text {
-      max-width: 70%;
-      font-size: clamp(0.75rem, 2.8vw, 1.85rem);
+      max-width: 4.5rem;
+      font-size: clamp(0.5rem, 2.2vw, 0.65rem);
     }
     .pairplot-skel-track {
-      width: min(72%, 9rem);
-      height: clamp(2px, 0.6vw, 4px);
+      width: min(2rem, 24vw);
+      height: clamp(2px, 0.45vw, 3px);
     }
   }
   .pairplot-skel-cell:not(.pairplot-skel-cell--busy) .pairplot-skel-inner {
@@ -681,13 +718,14 @@
           <div class="pairplot-stack" id="pairplot-stack">
             <img id="pairplot" class="pairplot-img" alt="Latent pair grid"/>
             <div
-              class="pairplot-skeleton pairplot-skeleton--show"
+              class="pairplot-skeleton"
               id="pairplot-skeleton"
               aria-hidden="true"
             >
+              <div class="pairplot-skel-edge-labels" id="pairplot-skel-edge-labels" aria-hidden="true"></div>
               {% for i in range(zdim) %}
               {% for j in range(zdim) %}
-              <div class="pairplot-skel-cell" data-row="{{ i }}" data-col="{{ j }}" data-idx="{{ i * zdim + j }}">
+              <div class="pairplot-skel-cell{% if i == j %} pairplot-skel-cell--diag{% endif %}" data-row="{{ i }}" data-col="{{ j }}" data-idx="{{ i * zdim + j }}">
                 <div class="pairplot-skel-inner" aria-hidden="true">
                   <span class="pairplot-skel-text">Rendering…</span>
                   <div class="pairplot-skel-track">
@@ -698,8 +736,8 @@
               {% endfor %}
               {% endfor %}
             </div>
-            <div id="pairplot-rendering-overlay" class="cryo-plot-rendering-overlay cryo-plot-rendering-overlay--show"
-              aria-hidden="false">
+            <div id="pairplot-rendering-overlay" class="cryo-plot-rendering-overlay"
+              aria-hidden="true">
               <div class="cryo-plot-rendering-overlay__inner">
                 <span class="cryo-plot-rendering-overlay__label">Rendering…</span>
                 <div class="cryo-plot-rendering-overlay__track" role="progressbar" aria-valuetext="Loading plot">
@@ -779,8 +817,12 @@
   var hasUmap = {{ has_umap | tojson }};
   var zdim = {{ zdim | int }};
   var pairplotObjectUrl = null;
+  /** When true, ignore naturalWidth/height so we size from pairplotFigAspect (avoids stale intrinsics after src change). */
+  var pairplotImgIntrinsicStale = false;
   var lastPayload = null;
   var placeholderCells = {{ skeleton_placeholder_cells | tojson }};
+  var pairplotFigAspect = {{ pairplot_fig_aspect | tojson }};
+  var pairplotMarginFracs = {{ pairplot_margin_fractions | tojson }};
   var activeCellLayout = placeholderCells;
   var saveDefaultName = {{ pairplot_save_default_name | tojson }};
   var saveDefaultDir = {{ pairplot_save_default_dir | tojson }};
@@ -902,7 +944,95 @@
     };
   }
 
-  function applyCellLayout(cells) {
+  function syncPairplotEdgeLabels(cells) {
+    var wrap = document.getElementById("pairplot-skel-edge-labels");
+    if (!wrap || !cells || cells.length !== zdim * zdim) {
+      return;
+    }
+    var m = pairplotMarginFracs;
+    if (!m || typeof m.left_m !== "number") {
+      return;
+    }
+    var eg = m.edge_gap;
+    var rg = m.right_gap;
+    var leftM = m.left_m;
+    var topM = m.top_m;
+    var bottomM = m.bottom_m;
+    var rightAxes = m.right_axes;
+    function cellAt(row, col) {
+      return cells[row * zdim + col];
+    }
+    var parts = [];
+    var j;
+    var i;
+    var c;
+    var fx;
+    var fy;
+    for (j = 1; j < zdim; j++) {
+      c = cellAt(0, j);
+      fx = (c.x0 + c.x1) / 2;
+      fy = topM + eg;
+      parts.push({
+        text: "zdim " + (j + 1),
+        left_pct: fx * 100,
+        top_pct: (1 - fy) * 100,
+        transform: "translate(-50%, -100%)",
+        origin: "center bottom"
+      });
+    }
+    for (j = 0; j < zdim - 1; j++) {
+      c = cellAt(zdim - 1, j);
+      fx = (c.x0 + c.x1) / 2;
+      fy = bottomM - eg;
+      parts.push({
+        text: "zdim " + (j + 1),
+        left_pct: fx * 100,
+        top_pct: (1 - fy) * 100,
+        transform: "translate(-50%, 0)",
+        origin: "center top"
+      });
+    }
+    for (i = 0; i < zdim - 1; i++) {
+      c = cellAt(i, zdim - 1);
+      fy = (c.y0 + c.y1) / 2;
+      fx = rightAxes + rg;
+      parts.push({
+        text: "zdim " + (i + 1),
+        left_pct: fx * 100,
+        top_pct: (1 - fy) * 100,
+        transform: "translate(0, -50%) rotate(-90deg)",
+        origin: "left center"
+      });
+    }
+    for (i = 1; i < zdim; i++) {
+      c = cellAt(i, 0);
+      fy = (c.y0 + c.y1) / 2;
+      fx = leftM - eg;
+      parts.push({
+        text: "zdim " + (i + 1),
+        left_pct: fx * 100,
+        top_pct: (1 - fy) * 100,
+        transform: "translate(0, -50%) rotate(90deg)",
+        origin: "right center"
+      });
+    }
+    wrap.innerHTML = "";
+    for (var p = 0; p < parts.length; p++) {
+      var sp = document.createElement("span");
+      sp.className = "pairplot-skel-edge-label";
+      sp.setAttribute("aria-hidden", "true");
+      var pr = parts[p];
+      sp.style.left = pr.left_pct + "%";
+      sp.style.top = pr.top_pct + "%";
+      sp.style.transform = pr.transform;
+      sp.style.transformOrigin = pr.origin;
+      sp.textContent = pr.text;
+      wrap.appendChild(sp);
+    }
+  }
+
+  function applyCellLayout(cells, opts) {
+    opts = opts || {};
     if (!cells || !cells.length) {
       return;
     }
@@ -920,6 +1050,14 @@
       cell.style.top = ((1 - y1) * 100) + "%";
       cell.style.height = ((y1 - y0) * 100) + "%";
     });
+    if (opts.edgeLabels === false) {
+      var edgeWrap = document.getElementById("pairplot-skel-edge-labels");
+      if (edgeWrap) {
+        edgeWrap.innerHTML = "";
+      }
+    } else {
+      syncPairplotEdgeLabels(cells);
+    }
   }
 
   function gridVerticalInsetsFromCells(cells) {
@@ -971,11 +1109,6 @@
     if (!el || !stack || !viewport) {
       return;
     }
-    if (!pairplotObjectUrl || !el.naturalWidth || !el.naturalHeight) {
-      el.style.width = "";
-      el.style.height = "";
-      return;
-    }
     var maxW = stack.clientWidth;
     if (!maxW) {
       return;
@@ -986,8 +1119,24 @@
       Math.min(window.innerHeight * 0.88, 1200);
     var palH = 0;
     var maxH = Math.max(160, cssCap - palH - 10);
-    var nw = el.naturalWidth;
-    var nh = el.naturalHeight;
+    var nw;
+    var nh;
+    if (
+      pairplotObjectUrl &&
+      el.naturalWidth &&
+      el.naturalHeight &&
+      !pairplotImgIntrinsicStale
+    ) {
+      nw = el.naturalWidth;
+      nh = el.naturalHeight;
+    } else if (pairplotFigAspect && isFinite(pairplotFigAspect) && pairplotFigAspect > 0) {
+      nh = 1000;
+      nw = 1000 * pairplotFigAspect;
+    } else {
+      el.style.width = "";
+      el.style.height = "";
+      return;
+    }
     var scale = Math.min(maxW / nw, maxH / nh);
     if (!isFinite(scale) || scale <= 0) {
       return;
@@ -1122,12 +1271,30 @@
   function setPairLoading(on, opts) {
     opts = opts || {};
     var keepImageVisible = !!opts.keepImageVisible;
+    /** First PNG load: no grid skeleton — only the full-stack overlay message. */
+    var simpleInitialLoad = on && !keepImageVisible;
     viewport.setAttribute("aria-busy", on ? "true" : "false");
-    skel.classList.toggle("pairplot-skeleton--show", on);
+    /** PNG already includes axis labels — drop any HTML copies before showing skeleton on top. */
+    if (on && keepImageVisible) {
+      var edgeLabEarly = document.getElementById("pairplot-skel-edge-labels");
+      if (edgeLabEarly) {
+        edgeLabEarly.innerHTML = "";
+      }
+    }
+    skel.classList.toggle("pairplot-skeleton--show", on && !simpleInitialLoad);
+    if (!on) {
+      applyBusy([]);
+    }
     if (renderOverlay) {
-      var showFull = on && !keepImageVisible;
-      renderOverlay.classList.toggle("cryo-plot-rendering-overlay--show", showFull);
-      renderOverlay.setAttribute("aria-hidden", showFull ? "false" : "true");
+      if (simpleInitialLoad) {
+        renderOverlay.classList.remove("cryo-plot-rendering-overlay--nonblocking");
+        renderOverlay.classList.add("cryo-plot-rendering-overlay--show");
+        renderOverlay.setAttribute("aria-hidden", "false");
+      } else {
+        renderOverlay.classList.remove("cryo-plot-rendering-overlay--show");
+        renderOverlay.classList.remove("cryo-plot-rendering-overlay--nonblocking");
+        renderOverlay.setAttribute("aria-hidden", "true");
+      }
     }
     if (on) {
       if (!keepImageVisible) {
@@ -1156,8 +1323,13 @@
         URL.revokeObjectURL(pairplotObjectUrl);
         pairplotObjectUrl = null;
       }
+      pairplotImgIntrinsicStale = false;
       el.removeAttribute("src");
+      el.style.width = "";
+      el.style.height = "";
       el.classList.remove("pairplot-img--ready");
+      syncSkeletonBounds();
+      syncControlsAlignment(placeholderCells);
       return;
     }
     var payload = currentPayload();
@@ -1166,14 +1338,20 @@
     if (dirty.length === 0) {
       return;
     }
-    var allBusy = dirty.length >= zdim * zdim;
     var hasRenderableImg = !!(pairplotObjectUrl && el.complete && el.naturalWidth > 0);
-    var showPerTileBusy = hasRenderableImg && !allBusy;
-    applyBusy(showPerTileBusy ? dirty : []);
-    setPairLoading(true, { keepImageVisible: hasRenderableImg && !allBusy });
+    if (hasRenderableImg) {
+      applyBusy(dirty);
+    } else {
+      applyBusy([]);
+    }
+    setPairLoading(true, {
+      keepImageVisible: hasRenderableImg
+    });
     syncSkeletonBounds();
     syncControlsAlignment(activeCellLayout);
     var prevUrl = pairplotObjectUrl;
+    /** PNG already has Matplotlib axis labels — skip HTML duplicates during incremental refresh. */
+    var skipHtmlEdgeLabels = hasRenderableImg;
     requestAnimationFrame(function() {
       requestAnimationFrame(function() {
         fetch("{{ url_for('api_pairplot') }}", {
@@ -1203,9 +1381,13 @@
             });
           })
           .then(function(data) {
-            applyCellLayout(data.cells);
+            applyCellLayout(data.cells, {
+              edgeLabels: !skipHtmlEdgeLabels
+            });
             activeCellLayout = data.cells;
             syncControlsAlignment(data.cells);
+            syncPairplotImgScale();
+            syncSkeletonBounds();
             var bin = atob(data.png_b64);
             var bytes = new Uint8Array(bin.length);
             for (var b = 0; b < bin.length; b++) {
@@ -1214,13 +1396,16 @@
             var blob = new Blob([bytes], { type: "image/png" });
             var nextUrl = URL.createObjectURL(blob);
             pairplotObjectUrl = nextUrl;
+            pairplotImgIntrinsicStale = true;
             el.onload = function() {
               if (prevUrl) {
                 URL.revokeObjectURL(prevUrl);
               }
               el.onload = null;
+              pairplotImgIntrinsicStale = false;
               lastPayload = payload;
               setPairLoading(false);
+              syncPairplotImgScale();
               syncSkeletonBounds();
               syncControlsAlignment(data.cells);
               el.classList.add("pairplot-img--ready");
@@ -1230,10 +1415,14 @@
               el.onload = null;
               URL.revokeObjectURL(nextUrl);
               pairplotObjectUrl = prevUrl || null;
+              pairplotImgIntrinsicStale = false;
               setPairLoading(false);
               status.textContent = "Image failed to load.";
             };
             el.src = nextUrl;
+            syncPairplotImgScale();
+            syncSkeletonBounds();
+            syncControlsAlignment(data.cells);
             if (el.complete && el.naturalWidth) {
               el.onload();
             }
@@ -1317,6 +1506,9 @@
     pairplotBoundsObserver.observe(el);
   }
   pairColorLegend.refresh();
+  if (checkedVal("color_cov") && checkedVal("color_cov") !== "none") {
+    draw();
+  }
 })();
 </script>
 </div>

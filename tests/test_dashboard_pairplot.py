@@ -13,6 +13,8 @@ from cryodrgn.dashboard.plots import (
     _continuous_series_stats,
     mpl_cmap_for_palette,
     normalize_continuous_palette,
+    pair_grid_figure_aspect_ratio,
+    pair_grid_margin_fractions_for_js,
     pair_grid_png,
     pair_grid_skeleton_placeholder_layout,
 )
@@ -155,6 +157,39 @@ class TestPairGridHexAndSkeleton:
 
     def test_placeholder_zdim_zero_is_empty(self) -> None:
         assert pair_grid_skeleton_placeholder_layout(0) == []
+
+    def test_margin_fractions_for_js(self) -> None:
+        m = pair_grid_margin_fractions_for_js()
+        for k in (
+            "left_m",
+            "top_m",
+            "bottom_m",
+            "right_axes",
+            "edge_gap",
+            "right_gap",
+        ):
+            assert k in m
+            assert isinstance(m[k], float)
+
+    def test_placeholder_cell_bboxes_match_png(
+        self, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        zdim = int(dashboard_experiment.z.shape[1])
+        ph = pair_grid_skeleton_placeholder_layout(zdim)
+        _, cells = pair_grid_png(
+            dashboard_experiment,
+            lower_color_col="labels",
+            diagonal_emb="pc",
+            upper_style="scatter",
+        )
+        assert len(ph) == len(cells)
+        for a, b in zip(ph, cells, strict=True):
+            for k in ("x0", "y0", "x1", "y1"):
+                assert abs(float(a[k]) - float(b[k])) < 1e-9
+
+    def test_figure_aspect_ratio_uses_zdim(self) -> None:
+        assert pair_grid_figure_aspect_ratio(0) == 1.0
+        assert pair_grid_figure_aspect_ratio(3) > 0
 
 
 class TestSavePairPlotPng:

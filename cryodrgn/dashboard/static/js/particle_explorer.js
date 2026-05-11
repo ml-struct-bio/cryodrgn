@@ -1595,6 +1595,8 @@
     if (colorDiscreteWrap) {
       colorDiscreteWrap.hidden = true;
       colorDiscreteWrap.classList.remove("cryo-color-discrete-wrap--show");
+      colorDiscreteWrap.classList.remove("cryo-cc-discrete-wrap--show");
+      colorDiscreteWrap.classList.remove("cryo-discrete-legend--collapsed");
     }
     if (colorDiscreteSwitches) colorDiscreteSwitches.innerHTML = "";
     syncDiscreteInvertSelectionButton();
@@ -1856,10 +1858,12 @@
       }
       renderDiscreteColorSwitches();
       if (colorThresholdStatus) colorThresholdStatus.textContent = "";
+      if (scatterPaletteToggle) scatterPaletteToggle.setAttribute("aria-expanded", "true");
     } else {
       if (colorDiscreteWrap) {
         colorDiscreteWrap.hidden = true;
         colorDiscreteWrap.classList.remove("cryo-color-discrete-wrap--show");
+        colorDiscreteWrap.classList.remove("cryo-cc-discrete-wrap--show");
       }
       if (colorDiscreteSwitches) colorDiscreteSwitches.innerHTML = "";
       syncDiscreteInvertSelectionButton();
@@ -1867,6 +1871,7 @@
       renderColorHistogram();
     }
     syncParticleExplorerRowExpandForColorHist();
+    syncScatterPaletteFieldset();
   }
 
   function colorHistogramSelectionBandShape(xRangeOpt) {
@@ -2181,7 +2186,7 @@
       template: "plotly_white",
       paper_bgcolor: "rgba(250,248,244,0)",
       plot_bgcolor: "rgba(255,255,255,0.62)",
-      margin: {l: 42, r: 14, t: 4, b: 28},
+      margin: {l: 42, r: 14, t: 4, b: 20},
       height: 80,
       dragmode: false,
       showlegend: false,
@@ -2569,26 +2574,61 @@
     return sc.value === "labels";
   }
 
+  function discreteLegendWrapIsActive() {
+    if (!colorDiscreteWrap) return false;
+    return colorDiscreteWrap.classList.contains("cryo-cc-discrete-wrap--show")
+      || colorDiscreteWrap.classList.contains("cryo-color-discrete-wrap--show");
+  }
+
+  function syncScatterLegendToggleCaption() {
+    if (!scatterPaletteToggle) return;
+    var labelSpan = document.getElementById("scatter-palette-toggle-label");
+    if (labelSpan) {
+      if (scatterColorByIsDiscrete()) {
+        labelSpan.innerHTML = "K-means<br/>legend";
+      } else {
+        labelSpan.innerHTML = "Choose<br/>palette";
+      }
+    }
+    scatterPaletteToggle.setAttribute(
+      "aria-controls",
+      scatterColorByIsDiscrete() ? "color-discrete-wrap" : "scatter-palette-options"
+    );
+  }
+
   function syncScatterPaletteFieldset() {
     if (!paletteFieldset) return;
     var rendering = !!(overlay && overlay.classList.contains("cryo-plot-rendering-overlay--show"));
     var hasColor = sc.value && sc.value !== "none";
-    var suppress = rendering || !hasColor || scatterColorByIsDiscrete();
+    var suppress = rendering || !hasColor;
     paletteFieldset.classList.toggle("scatter-palette-radios--suppressed", suppress);
+    syncScatterLegendToggleCaption();
     syncScatterPaletteOptions();
   }
   function syncScatterPaletteOptions() {
-    if (!scatterPaletteOptions) return;
-    var showOptions = !!(
-      scatterPaletteToggle
-      && scatterPaletteToggle.getAttribute("aria-expanded") === "true"
-      && paletteFieldset
-      && !paletteFieldset.classList.contains("scatter-palette-radios--suppressed")
-    );
-    scatterPaletteOptions.classList.toggle("cryo-palette-select__options--collapsed", !showOptions);
+    if (!scatterPaletteOptions || !paletteFieldset) return;
+    if (paletteFieldset.classList.contains("scatter-palette-radios--suppressed")) {
+      scatterPaletteOptions.classList.add("cryo-palette-select__options--collapsed");
+      return;
+    }
+    var expanded = !!(scatterPaletteToggle && scatterPaletteToggle.getAttribute("aria-expanded") === "true");
+    if (scatterColorByIsDiscrete()) {
+      scatterPaletteOptions.classList.add("cryo-palette-select__options--collapsed");
+      if (colorDiscreteWrap) {
+        if (discreteLegendWrapIsActive()) {
+          colorDiscreteWrap.classList.toggle("cryo-discrete-legend--collapsed", !expanded);
+        } else {
+          colorDiscreteWrap.classList.remove("cryo-discrete-legend--collapsed");
+        }
+      }
+    } else {
+      if (colorDiscreteWrap) colorDiscreteWrap.classList.remove("cryo-discrete-legend--collapsed");
+      scatterPaletteOptions.classList.toggle("cryo-palette-select__options--collapsed", !expanded);
+    }
   }
   function setRendering(on) {
     if (overlay) {
+      overlay.classList.add("cryo-plot-rendering-overlay--nonblocking");
       overlay.classList.toggle("cryo-plot-rendering-overlay--show", on);
       overlay.setAttribute("aria-hidden", on ? "false" : "true");
     }
@@ -3028,6 +3068,7 @@
     if (colorDiscreteWrap) {
       colorDiscreteWrap.hidden = true;
       colorDiscreteWrap.classList.remove("cryo-color-discrete-wrap--show");
+      colorDiscreteWrap.classList.remove("cryo-cc-discrete-wrap--show");
     }
     if (colorContinuousWrap) colorContinuousWrap.hidden = false;
     clearScatterGeometricSelection();

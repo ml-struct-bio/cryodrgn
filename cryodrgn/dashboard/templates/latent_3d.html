@@ -114,8 +114,10 @@
   }
   .cryo-dash-page--latent3d .pair-legend-middle-track--continuous #latent3d-color-hist {
     grid-column: 1 / -1;
-    width: 100%;
+    width: 92%;
+    max-width: 92%;
     min-width: 0;
+    justify-self: end;
   }
   .cryo-dash-page--latent3d .cryo-cc-legend__footer--continuous {
     display: flex;
@@ -131,8 +133,8 @@
   }
   .cryo-dash-page--latent3d #latent3d-color-hist.cryo-cc-hist--pair-vertical {
     flex: 0 0 auto;
-    width: 100%;
-    max-width: 100%;
+    width: 92%;
+    max-width: 92%;
     min-width: 0;
     min-height: 72px;
     box-sizing: border-box;
@@ -372,7 +374,8 @@
     <div class="cryo-dash-viewport--plotly">
         <div class="cryo-plotly-stack" id="latent3d-plot-stack">
           <div id="latent3d" class="cryo-plotly-graph-host"></div>
-          <div id="latent3d-rendering-overlay" class="cryo-plot-rendering-overlay cryo-plot-rendering-overlay--show"
+          <div id="latent3d-rendering-overlay"
+            class="cryo-plot-rendering-overlay cryo-plot-rendering-overlay--nonblocking cryo-plot-rendering-overlay--show"
             aria-hidden="false">
             <div class="cryo-plot-rendering-overlay__inner">
               <span class="cryo-plot-rendering-overlay__label">Rendering…</span>
@@ -646,6 +649,7 @@
 
   function setRendering(on) {
     if (overlay) {
+      overlay.classList.add("cryo-plot-rendering-overlay--nonblocking");
       overlay.classList.toggle("cryo-plot-rendering-overlay--show", on);
       overlay.setAttribute("aria-hidden", on ? "false" : "true");
     }
@@ -674,6 +678,7 @@
     invertBtn: document.getElementById("latent3d-btn-discrete-invert"),
     vertical: true,
     histPlotVertical: true,
+    histVerticalMargins: { l: 16, r: 36 },
     onContinuousHistogramLayout: syncLatent3dContinuousHistogramLayout,
     onDiscreteLayout: syncLatent3dLegendMiddleWidth,
     onModeChange: function() {

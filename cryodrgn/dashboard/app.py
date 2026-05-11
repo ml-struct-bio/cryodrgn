@@ -77,6 +77,8 @@ from cryodrgn.dashboard.landscape_volpca import (
 
 from cryodrgn.dashboard.plots import (
     covariate_legend_context_payload,
+    pair_grid_figure_aspect_ratio,
+    pair_grid_margin_fractions_for_js,
     pair_grid_png,
     pair_grid_skeleton_placeholder_layout,
     plot_df_color_filter_mask,
@@ -897,6 +899,8 @@ def pairplot_page():
         has_umap=has_umap_columns(e),
         zdim=zdim,
         skeleton_placeholder_cells=pair_grid_skeleton_placeholder_layout(zdim),
+        pairplot_margin_fractions=pair_grid_margin_fractions_for_js(),
+        pairplot_fig_aspect=pair_grid_figure_aspect_ratio(zdim),
         pairplot_save_default_name="zdim_pairplot.png",
         pairplot_save_default_dir=os.path.join(e.workdir, f"analyze.{e.epoch}"),
     )

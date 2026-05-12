@@ -10,6 +10,7 @@ $ cryodrgn dashboard 00_trainvae
 $ cryodrgn dashboard 00_trainvae --epoch 30 --port 8080
 $ cryodrgn dashboard 00_trainvae --image-viewer
 $ cryodrgn dashboard 00_trainvae --particle --filter-max 10000
+$ cryodrgn dashboard experiments/   # parent folder: discover analyzed run subfolders
 """
 
 from __future__ import annotations
@@ -182,12 +183,23 @@ def add_args(parser: argparse.ArgumentParser) -> None:
 def main(args: argparse.Namespace) -> None:
     import os
 
+    from cryodrgn.dashboard.data import list_z_epochs
+
     _configure_dashboard_logging(args.verbose)
 
     if args.filter_max_points is not None:
         os.environ["CRYODRGN_DASHBOARD_FILTER_MAX_POINTS"] = str(args.filter_max_points)
 
     outdir = args.outdir
+    discovery_root: str | None = None
+    if outdir is not None:
+        outdir = os.path.abspath(outdir)
+        if not os.path.isdir(outdir):
+            raise ValueError(f"Not a directory: {outdir!r}")
+        if not list_z_epochs(outdir):
+            discovery_root = outdir
+            outdir = None
+
     command_builder_only = outdir is None
 
     view_paths = {
@@ -219,12 +231,21 @@ def main(args: argparse.Namespace) -> None:
     from cryodrgn.dashboard.app import run_server
 
     if command_builder_only:
-        logger.info(
-            "Starting dashboard in command-builder-only mode at http://%s:%s%s",
-            args.host,
-            args.port,
-            initial_path,
-        )
+        if discovery_root is not None:
+            logger.info(
+                "Starting dashboard (discover runs under %s) at http://%s:%s%s",
+                discovery_root,
+                args.host,
+                args.port,
+                initial_path,
+            )
+        else:
+            logger.info(
+                "Starting dashboard in command-builder-only mode at http://%s:%s%s",
+                args.host,
+                args.port,
+                initial_path,
+            )
     else:
         logger.info(
             "Starting dashboard for %s (epoch=%s) at http://%s:%s%s",
@@ -243,4 +264,5 @@ def main(args: argparse.Namespace) -> None:
         port=args.port,
         debug=args.debug,
         cpus=args.cpus,
+        discovery_root=discovery_root,
     )

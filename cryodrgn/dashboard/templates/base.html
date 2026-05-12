@@ -301,12 +301,23 @@
       color: #e8eef4;
       align-self: center;
     }
+    .nav-workdir-field--launch-scroll {
+      align-items: flex-start;
+    }
     .nav-workdir-field label {
       margin: 0;
       font-size: 0.82rem;
       font-weight: 700;
       white-space: nowrap;
       flex-shrink: 0;
+    }
+    .nav-workdir-scroll-label {
+      margin: 0;
+      font-size: 0.82rem;
+      font-weight: 700;
+      white-space: nowrap;
+      flex-shrink: 0;
+      color: #e8eef4;
     }
     .nav-workdir-field select {
       flex: 1 1 auto;
@@ -322,6 +333,73 @@
     .nav-workdir-field select option {
       color: #1a2332;
       background: #fff;
+    }
+    /* Launch page (/) when started without outdir: scrollable list of cwd discoveries. */
+    .nav-workdir-scroll-list {
+      flex: 1 1 auto;
+      min-width: 0;
+      max-width: 100%;
+      max-height: 5.25rem;
+      overflow-y: auto;
+      overflow-x: hidden;
+      border-radius: 3px;
+      border: 1px solid rgba(255, 255, 255, 0.28);
+      background: rgba(0, 0, 0, 0.18);
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255, 255, 255, 0.45) rgba(255, 255, 255, 0.08);
+    }
+    .nav-workdir-scroll-list::-webkit-scrollbar {
+      width: 10px;
+    }
+    .nav-workdir-scroll-list::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 4px;
+    }
+    .nav-workdir-scroll-list::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.38);
+      border-radius: 4px;
+      border: 2px solid transparent;
+      background-clip: padding-box;
+    }
+    .nav-workdir-scroll-list::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.52);
+      border: 2px solid transparent;
+      background-clip: padding-box;
+    }
+    .nav-workdir-scroll-ul {
+      list-style: none;
+      margin: 0;
+      padding: 0.12rem 0;
+    }
+    .nav-workdir-scroll-item {
+      display: block;
+      width: 100%;
+      margin: 0;
+      padding: 0.22rem 0.45rem;
+      border: none;
+      border-radius: 0;
+      background: transparent;
+      color: #e8eef4;
+      font-size: 0.78rem;
+      font-weight: 600;
+      font-family: var(--font-sans);
+      text-align: left;
+      cursor: pointer;
+      line-height: 1.25;
+      word-break: break-word;
+    }
+    .nav-workdir-scroll-item:hover,
+    .nav-workdir-scroll-item:focus-visible {
+      background: rgba(255, 255, 255, 0.14);
+      outline: none;
+    }
+    .nav-workdir-scroll-item--selected {
+      background: rgba(196, 112, 58, 0.35);
+      box-shadow: inset 3px 0 0 0 var(--accent, #c4703a);
+    }
+    .nav-workdir-scroll-item--selected:hover,
+    .nav-workdir-scroll-item--selected:focus-visible {
+      background: rgba(196, 112, 58, 0.48);
     }
     .nav-cmd-multiline {
       display: flex;
@@ -1318,7 +1396,32 @@
       {% endif %}
       <div class="{{ ns_nav.cls }}">
         {% if discovered_workdirs and discovered_workdirs|length > 0 %}
-        <div class="nav-workdir-field">
+        {% set _launch_scroll = config.get('COMMAND_BUILDER_ONLY') and request.endpoint == 'index' %}
+        <div class="nav-workdir-field{% if _launch_scroll %} nav-workdir-field--launch-scroll{% endif %}">
+          {% if _launch_scroll %}
+          <span class="nav-workdir-scroll-label" id="dash-workdir-launch-label">Output folders (cwd)</span>
+          <div
+            class="nav-workdir-scroll-list"
+            role="listbox"
+            aria-labelledby="dash-workdir-launch-label"
+            aria-activedescendant=""
+            title="Reconstruction output folders found when the dashboard was started"
+          >
+            <ul class="nav-workdir-scroll-ul">
+              {% for wd in discovered_workdir_options %}
+              <li role="presentation">
+                <button
+                  type="button"
+                  class="nav-workdir-scroll-item cryo-dash-set-workdir{% if wd.value == selected_workdir %} nav-workdir-scroll-item--selected{% endif %}"
+                  role="option"
+                  {% if wd.value == selected_workdir %}aria-selected="true"{% else %}aria-selected="false"{% endif %}
+                  data-workdir="{{ wd.value|e }}"
+                >{{ wd.label|e }}</button>
+              </li>
+              {% endfor %}
+            </ul>
+          </div>
+          {% else %}
           <label for="dash-workdir">Output folder</label>
           <select id="dash-workdir" title="Select cryoDRGN output folder in current working directory">
             <option value="" {% if not selected_workdir %}selected{% endif %}>
@@ -1330,6 +1433,7 @@
             </option>
             {% endfor %}
           </select>
+          {% endif %}
         </div>
         {% endif %}
         {% if not command_builder_only %}
@@ -1414,20 +1518,32 @@
       });
     }
 
+    function cryoPostWorkdir(wd) {
+      fetch("{{ url_for('api_set_workdir') }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workdir: wd ? wd : null })
+      })
+        .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+        .then(function(res) {
+          if (res.ok && res.j.ok) window.location.reload();
+        })
+        .catch(function() {});
+    }
+
     var wdSel = document.getElementById("dash-workdir");
     if (wdSel) {
       wdSel.addEventListener("change", function() {
-        var wd = String(this.value || "").trim();
-        fetch("{{ url_for('api_set_workdir') }}", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ workdir: wd ? wd : null })
-        })
-          .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
-          .then(function(res) {
-            if (res.ok && res.j.ok) window.location.reload();
-          })
-          .catch(function() {});
+        cryoPostWorkdir(String(this.value || "").trim());
+      });
+    }
+
+    var wdLaunchBtns = document.querySelectorAll(".cryo-dash-set-workdir[data-workdir]");
+    for (var bi = 0; bi < wdLaunchBtns.length; bi++) {
+      wdLaunchBtns[bi].addEventListener("click", function() {
+        var w = String(this.getAttribute("data-workdir") || "").trim();
+        if (!w) return;
+        cryoPostWorkdir(w);
       });
     }
 

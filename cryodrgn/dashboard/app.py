@@ -53,7 +53,11 @@ from cryodrgn.dashboard.context import (
     inject_meta_command_builder_only,
     _request_json_dict,
 )
-from cryodrgn.dashboard.data import DashboardExperiment, list_z_epochs
+from cryodrgn.dashboard.data import (
+    DashboardExperiment,
+    discover_analyzed_workdirs,
+    list_z_epochs,
+)
 from cryodrgn.dashboard.particle_explorer import (
     DEFAULT_CHIMERAX_PARALLEL,
     DEFAULT_GIF_FRAMES,
@@ -1589,6 +1593,7 @@ def create_app(
     kmeans: int = -1,
     filter_plot_inds: str | None = None,
     cpus: int = 4,
+    discovery_root: str | None = None,
 ) -> Flask:
     """Construct the Flask app: config, discovery mode, ``before_request``, and all routes."""
     app = Flask(
@@ -1607,8 +1612,28 @@ def create_app(
     app.config["DASHBOARD_SESSION_BOOT_ID"] = str(uuid.uuid4())
     command_builder_only = workdir is None
     app.config["COMMAND_BUILDER_ONLY"] = command_builder_only
-    app.config["DASHBOARD_DISCOVERY_CWD"] = os.getcwd()
-    discovered = discover_cryodrgn_workdirs(os.getcwd()) if command_builder_only else []
+
+    if command_builder_only:
+        base = (
+            os.path.abspath(discovery_root)
+            if discovery_root is not None
+            else os.getcwd()
+        )
+        app.config["DASHBOARD_DISCOVERY_CWD"] = base
+        discovered = (
+            discover_analyzed_workdirs(base)
+            if discovery_root is not None
+            else discover_cryodrgn_workdirs(base)
+        )
+        if discovery_root is not None and not discovered:
+            raise ValueError(
+                f"No cryoDRGN analyzed outputs found under {base!r}. Expected a run "
+                "folder with z.N.pkl and analyze.N/, or a directory whose immediate "
+                "subfolders are such outputs (after `cryodrgn analyze`)."
+            )
+    else:
+        app.config["DASHBOARD_DISCOVERY_CWD"] = os.getcwd()
+        discovered = []
     app.config["DASHBOARD_DISCOVERED_WORKDIRS"] = discovered
     app.config["DASHBOARD_DISCOVERY_BOOT_ID"] = (
         str(uuid.uuid4()) if command_builder_only and discovered else None
@@ -1655,6 +1680,7 @@ def run_server(
     port: int = 5050,
     debug: bool = False,
     cpus: int = 4,
+    discovery_root: str | None = None,
 ) -> None:
     """Entry point for ``cryodrgn dashboard``: threaded Werkzeug development server."""
     app = create_app(
@@ -1663,6 +1689,7 @@ def run_server(
         kmeans=kmeans,
         filter_plot_inds=plot_inds,
         cpus=cpus,
+        discovery_root=discovery_root,
     )
 
     app.run(host=host, port=port, debug=debug, threaded=True)

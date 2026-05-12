@@ -442,6 +442,23 @@ class TestClearExperimentCaches:
         assert not _TRAJ_GRAPH_NEIGHBOR_CACHE
 
 
+class TestDiscoveryRootApp:
+    def test_create_app_discovery_root_lists_child_runs(self, tmp_path) -> None:
+        run = tmp_path / "run1"
+        (run / "analyze.0").mkdir(parents=True)
+        (run / "z.0.pkl").write_bytes(b"")
+        app = dash_app.create_app(workdir=None, discovery_root=str(tmp_path))
+        discovered = app.config["DASHBOARD_DISCOVERED_WORKDIRS"]
+        assert os.path.abspath(str(run)) in discovered
+        assert app.config["DASHBOARD_DISCOVERY_CWD"] == os.path.abspath(str(tmp_path))
+
+    def test_create_app_discovery_root_empty_raises(self, tmp_path) -> None:
+        empty = tmp_path / "empty"
+        empty.mkdir()
+        with pytest.raises(ValueError, match="No cryoDRGN analyzed"):
+            dash_app.create_app(workdir=None, discovery_root=str(empty))
+
+
 class TestActiveWorkdirAndResolveEpoch:
     def test_active_workdir_returns_dashboard_workdir(
         self, dashboard_workdir: str

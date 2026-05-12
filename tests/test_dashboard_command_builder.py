@@ -195,6 +195,48 @@ class TestDashboardCLI:
         dash_cli.main(ns)
         assert called["workdir"] == dashboard_workdir
         assert called["epoch"] == -1
+        assert called.get("discovery_root") is None
+
+    def test_parent_outdir_sets_discovery_mode(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        run = tmp_path / "run1"
+        (run / "analyze.0").mkdir(parents=True)
+        (run / "z.0.pkl").write_bytes(b"")
+        called: dict = {}
+
+        def fake_run_server(**kwargs) -> None:
+            called.update(kwargs)
+
+        monkeypatch.setattr(dash_app, "run_server", fake_run_server)
+        ns = self._parse([str(tmp_path), "--no-browser"])
+        dash_cli.main(ns)
+        assert called["workdir"] is None
+        assert called["discovery_root"] == os.path.abspath(str(tmp_path))
+
+    def test_single_child_outdir_passes_workdir_not_discovery(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        run = tmp_path / "run1"
+        (run / "analyze.0").mkdir(parents=True)
+        (run / "z.0.pkl").write_bytes(b"")
+        called: dict = {}
+
+        def fake_run_server(**kwargs) -> None:
+            called.update(kwargs)
+
+        monkeypatch.setattr(dash_app, "run_server", fake_run_server)
+        ns = self._parse([str(run), "--no-browser"])
+        dash_cli.main(ns)
+        assert called["workdir"] == os.path.abspath(str(run))
+        assert called.get("discovery_root") is None
+
+    def test_outdir_not_a_directory_raises(self, tmp_path) -> None:
+        f = tmp_path / "notadir"
+        f.write_text("x")
+        ns = self._parse([str(f), "--no-browser"])
+        with pytest.raises(ValueError, match="Not a directory"):
+            dash_cli.main(ns)
 
     def test_main_configures_logging_from_verbose(
         self, monkeypatch: pytest.MonkeyPatch

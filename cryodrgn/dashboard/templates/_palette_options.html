@@ -1,0 +1,20 @@
+{% macro continuous_palette_options(input_name) -%}
+  <label class="pairplot-palette-option"><input type="radio" name="{{ input_name }}" value="Viridis" checked/><span
+    class="pairplot-palette-select__swatch"
+    style="background:linear-gradient(90deg,#440154,#3b528b,#21918c,#5ec962,#fde725);"></span>Viridis</label>
+  <label class="pairplot-palette-option"><input type="radio" name="{{ input_name }}" value="Plasma"/><span
+    class="pairplot-palette-select__swatch"
+    style="background:linear-gradient(90deg,#0d0887,#7e03a8,#cc4778,#f89441,#f0f921);"></span>Plasma</label>
+  <label class="pairplot-palette-option"><input type="radio" name="{{ input_name }}" value="Inferno"/><span
+    class="pairplot-palette-select__swatch"
+    style="background:linear-gradient(90deg,#000004,#6f0918,#d04e3a,#fbc026,#fcffa4);"></span>Inferno</label>
+  <label class="pairplot-palette-option"><input type="radio" name="{{ input_name }}" value="Magma"/><span
+    class="pairplot-palette-select__swatch"
+    style="background:linear-gradient(90deg,#000004,#3b0f70,#8c2981,#de4968,#febb81);"></span>Magma</label>
+  <label class="pairplot-palette-option"><input type="radio" name="{{ input_name }}" value="Cividis"/><span
+    class="pairplot-palette-select__swatch"
+    style="background:linear-gradient(90deg,#00224e,#124176,#5c6d69,#bec290,#fde725);"></span>Cividis</label>
+  <label class="pairplot-palette-option"><input type="radio" name="{{ input_name }}" value="Turbo"/><span
+    class="pairplot-palette-select__swatch"
+    style="background:linear-gradient(90deg,#30123b,#4777ef,#1fa187,#ffbe32,#991200);"></span>Turbo</label>
+{%- endmacro %}

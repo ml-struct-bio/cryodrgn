@@ -35,6 +35,22 @@ def list_z_epochs(workdir: str) -> list[int]:
     return sorted(out)
 
 
+def discover_analyzed_workdirs(parent: str) -> list[str]:
+    """Direct subfolders of ``parent`` with at least one analyzed epoch (``z.N.pkl`` + ``analyze.N/``)."""
+    if not os.path.isdir(parent):
+        return []
+    out: list[str] = []
+    try:
+        names = sorted(os.listdir(parent), key=str.lower)
+    except OSError:
+        return []
+    for name in names:
+        path = os.path.join(parent, name)
+        if os.path.isdir(path) and list_z_epochs(path):
+            out.append(os.path.abspath(path))
+    return out
+
+
 @dataclass
 class DashboardExperiment:
     """Everything the dashboard needs for scatter / pair-grid / image preview."""

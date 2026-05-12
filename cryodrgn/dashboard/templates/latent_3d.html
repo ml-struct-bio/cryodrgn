@@ -370,6 +370,18 @@
     max-height: 100%;
     box-sizing: border-box;
   }
+  /* Same as pair plot: invert on footer row — 71% × chip width, 135% × chip height, centred */
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside #latent3d-color-discrete-switches.cryo-cc-discrete-switches--invert-footer-row.cryo-cc-discrete-switches--pair-2col .cryo-cc-discrete-cell--invert-footer {
+    grid-column: 1 / -1;
+    justify-self: center;
+    align-self: center;
+    width: calc(0.71 * var(--pair-discrete-cell-w, 5.5rem));
+    height: calc(1.35 * var(--pair-discrete-cell-h, 1.35rem));
+    min-height: calc(1.35 * var(--pair-discrete-cell-h, 1.35rem));
+    max-width: 100%;
+    box-sizing: border-box;
+    margin-top: 2px;
+  }
 </style>
 {% endblock %}
 {% block content %}
@@ -630,8 +642,20 @@
     }
   }
 
+  function syncLatent3dDiscreteInvertFooterMetrics() {
+    var sw = document.getElementById("latent3d-color-discrete-switches");
+    var disc = document.getElementById("latent3d-color-discrete-wrap");
+    if (!sw || !sw.classList.contains("cryo-color-discrete-switches--invert-footer-row")) return;
+    if (!disc || disc.hidden || !disc.classList.contains("cryo-cc-discrete-wrap--show")) return;
+    var probe = sw.querySelector(".cryo-cc-discrete-cell:not(.cryo-cc-discrete-cell--invert)");
+    if (!probe || probe.offsetWidth < 2 || probe.offsetHeight < 2) return;
+    sw.style.setProperty("--pair-discrete-cell-w", probe.offsetWidth + "px");
+    sw.style.setProperty("--pair-discrete-cell-h", probe.offsetHeight + "px");
+  }
+
   function syncLatent3dLegendMiddleWidth() {
     syncLatent3dDiscreteLegendTargetWidth();
+    syncLatent3dDiscreteInvertFooterMetrics();
     var panel = document.getElementById("latent3d-color-legend-panel");
     var sw = document.getElementById("latent3d-color-discrete-switches");
     var disc = document.getElementById("latent3d-color-discrete-wrap");
@@ -750,6 +774,7 @@
     thresholdModeCaption: document.getElementById("latent3d-color-threshold-mode-caption"),
     thresholdStatus: document.getElementById("latent3d-color-threshold-status"),
     discreteSwitches: document.getElementById("latent3d-color-discrete-switches"),
+    discreteInvertFooterRow: true,
     invertBtn: document.getElementById("latent3d-btn-discrete-invert"),
     vertical: true,
     histPlotVertical: true,

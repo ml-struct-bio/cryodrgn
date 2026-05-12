@@ -1937,7 +1937,6 @@
   var colorContinuousWrap = document.getElementById("color-continuous-hist-wrap");
   var colorDiscreteWrap = document.getElementById("color-discrete-wrap");
   var colorDiscreteSwitches = document.getElementById("color-discrete-switches");
-  var colorDiscreteActions = document.querySelector(".cryo-color-discrete-actions");
   var btnDiscreteInvertSelection = document.getElementById("btn-discrete-invert-selection");
   var btnCacheSelectionUncached = document.getElementById("btn-cache-selection-uncached");
   var btnClearImageCache = document.getElementById("btn-clear-image-cache");
@@ -1947,22 +1946,9 @@
   var colorThresholdStatus = document.getElementById("color-threshold-status");
   var scatterPaletteToggle = document.getElementById("scatter-palette-toggle");
   var scatterPaletteOptions = document.getElementById("scatter-palette-options");
-  var colorHistEventsWired = false;
   var colorThresholdLevel = null;
   var colorThresholdRange = null;
   var colorThresholdColorCol = null;
-  var colorHistHoverLevel = null;
-  var colorHistHoverRaf = null;
-  var colorViolinBaseShapes = [];
-  /** Last known colour-histogram x-axis extent (plot coords); used when relayout runs before Plotly exposes xaxis.range. */
-  var colorHistSavedXRange = null;
-  var colorHistPointerDown = false;
-  var colorHistDragMoved = false;
-  var colorHistDragStartLevel = null;
-  var colorHistDragStartClientX = null;
-  var colorHistDragPreview = null;
-  var colorHistSuppressClick = false;
-  var COLOR_HIST_DRAG_MIN_PX = 5;
   var explorerColorLegend = null;
   var explorerDiscreteLabelColors = {};
   var explorerCcLegendPrevMode = null;
@@ -3095,10 +3081,6 @@
     return "continuous";
   }
 
-  function formatColorThresholdValue(v) {
-    return CryoColorCovariateLegend.formatThresholdValue(v);
-  }
-
   function escapeHtmlText(s) {
     return String(s).replace(/[&<>"']/g, function(ch) {
       return {"&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;"}[ch];
@@ -3160,16 +3142,6 @@
       colorHistPanel.hidden = true;
       colorHistPanel.setAttribute("aria-hidden", "true");
     }
-    colorHistHoverLevel = null;
-    colorViolinBaseShapes = [];
-    colorHistSavedXRange = null;
-    colorHistPointerDown = false;
-    colorHistDragMoved = false;
-    colorHistDragStartLevel = null;
-    colorHistDragStartClientX = null;
-    colorHistDragPreview = null;
-    window.removeEventListener("mousemove", handleColorHistogramWindowMouseMove);
-    window.removeEventListener("mouseup", endColorHistogramDrag, true);
     if (colorThresholdStatus) colorThresholdStatus.textContent = "";
     if (colorContinuousWrap) colorContinuousWrap.hidden = false;
     if (colorDiscreteWrap) {
@@ -3321,7 +3293,7 @@
     if (!gd || !gd.data || !gd.data[0] || scatterTraceColorMode() !== "discrete") return;
     var keys = filter && Array.isArray(filter.keys) ? filter.keys : [];
     var keySet = new Set(keys.map(function(k) { return String(k); }));
-    clearScatterGeometricSelection();
+    clearScatterGeometricSelectionSuppressed();
     colorThresholdLevel = null;
     colorThresholdRange = null;
     colorThresholdColorCol = null;
@@ -3345,7 +3317,7 @@
     if (!filter || !items.length) return;
     cancelLassoSelectionDebounce();
     if (explorerColorLegend) explorerColorLegend.setDiscreteCheckedKeys([]);
-    clearScatterGeometricSelection();
+    clearScatterGeometricSelectionSuppressed();
     var body = {column: sc.value};
     var fallbackRows;
     if (filter.kind === "threshold") {
@@ -3378,11 +3350,6 @@
       return;
     }
     syncColorHistModeCheckboxCaption();
-    if (colorHistDiv && colorHistDiv.data) {
-      try {
-        relayoutColorHistogramGuides();
-      } catch (eRg) { /* ignore */ }
-    }
     fetch("{{ url_for('api_covariate_threshold_rows') }}", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
@@ -3409,17 +3376,8 @@
     }
   }
 
-  function snapshotColorHistSavedXRange() {
-    if (!colorHistDiv || !colorHistDiv._fullLayout || !colorHistDiv._fullLayout.xaxis) return;
-    var xr = colorHistDiv._fullLayout.xaxis.range;
-    if (xr && xr.length >= 2) {
-      colorHistSavedXRange = [Math.min(xr[0], xr[1]), Math.max(xr[0], xr[1])];
-    }
-  }
-
   function onExplorerContinuousHistogramLayout() {
     syncParticleExplorerRowExpandForColorHist();
-    snapshotColorHistSavedXRange();
   }
 
   function syncColorCovariateSidePanel() {
@@ -3438,9 +3396,6 @@
             useMaxChecked: colorHistModeCheckOn()
           });
         }
-        try {
-          if (colorHistDiv && colorHistDiv.data) relayoutColorHistogramGuides();
-        } catch (eSyncHist) { /* ignore */ }
       }).catch(function() { /* refresh failed */ });
     }
     syncParticleExplorerRowExpandForColorHist();
@@ -3468,587 +3423,21 @@
     colorHistModeCheckWasRange = rangeMode;
   }
 
-  function oneHistogramHighlightRect(xLoPlot, xHiPlot, bx0, bx1) {
-    var a = Math.min(bx0, bx1);
-    var b = Math.max(bx0, bx1);
-    var x0 = Math.max(xLoPlot, a);
-    var x1 = Math.min(xHiPlot, b);
-    if (!(x1 > x0)) return null;
-    return {
-      type: "rect",
-      xref: "x",
-      yref: "paper",
-      x0: x0,
-      x1: x1,
-      y0: 0,
-      y1: 1,
-      fillcolor: "rgba(196, 112, 58, 0.14)",
-      line: {width: 0},
-      layer: "above"
-    };
-  }
-
-  function colorHistogramSelectionHighlightRects(xRangeOpt) {
-    var rng = xRangeOpt;
-    if (!rng || rng.length < 2) {
-      if (colorHistDiv && colorHistDiv._fullLayout && colorHistDiv._fullLayout.xaxis) {
-        rng = colorHistDiv._fullLayout.xaxis.range;
-      }
-    }
-    if ((!rng || rng.length < 2) && colorHistSavedXRange && colorHistSavedXRange.length >= 2) {
-      rng = colorHistSavedXRange;
-    }
-    if (!rng || rng.length < 2) return [];
-    var xLoPlot = Math.min(rng[0], rng[1]);
-    var xHiPlot = Math.max(rng[0], rng[1]);
-    function rectPair(b0, b1) {
-      var r = oneHistogramHighlightRect(xLoPlot, xHiPlot, b0, b1);
-      return r ? [r] : [];
-    }
-    if (colorHistDragPreview != null && typeof colorHistDragPreview.lo === "number"
-        && typeof colorHistDragPreview.hi === "number") {
-      var dLo = Math.min(colorHistDragPreview.lo, colorHistDragPreview.hi);
-      var dHi = Math.max(colorHistDragPreview.lo, colorHistDragPreview.hi);
-      return rectPair(dLo, dHi);
-    }
-    if (colorThresholdColorCol !== sc.value) return [];
-    if (colorThresholdRange != null && typeof colorThresholdRange.lo === "number"
-        && typeof colorThresholdRange.hi === "number") {
-      var rLo = Math.min(colorThresholdRange.lo, colorThresholdRange.hi);
-      var rHi = Math.max(colorThresholdRange.lo, colorThresholdRange.hi);
-      var invert = colorHistModeCheckOn();
-      if (!invert) return rectPair(rLo, rHi);
-      var out = [];
-      var b1 = oneHistogramHighlightRect(xLoPlot, xHiPlot, xLoPlot, rLo);
-      var b2 = oneHistogramHighlightRect(xLoPlot, xHiPlot, rHi, xHiPlot);
-      if (b1) out.push(b1);
-      if (b2) out.push(b2);
-      return out;
-    }
-    if (colorThresholdLevel == null) return [];
-    var t = colorThresholdLevel;
-    var useMax = colorHistModeCheckOn();
-    var bx0 = useMax ? xLoPlot : Math.max(Math.min(t, xHiPlot), xLoPlot);
-    var bx1 = useMax ? Math.min(Math.max(t, xLoPlot), xHiPlot) : xHiPlot;
-    var br = oneHistogramHighlightRect(xLoPlot, xHiPlot, bx0, bx1);
-    return br ? [br] : [];
-  }
-
-  function colorHistogramGuideShapes(xRangeOpt) {
-    var shapes = colorViolinBaseShapes.slice();
-    var rects = colorHistogramSelectionHighlightRects(xRangeOpt);
-    for (var ri = 0; ri < rects.length; ri++) shapes.push(rects[ri]);
-    if (colorHistDragPreview != null && typeof colorHistDragPreview.lo === "number") {
-      var pLo = Math.min(colorHistDragPreview.lo, colorHistDragPreview.hi);
-      var pHi = Math.max(colorHistDragPreview.lo, colorHistDragPreview.hi);
-      shapes.push({
-        type: "line",
-        xref: "x",
-        yref: "paper",
-        x0: pLo,
-        x1: pLo,
-        y0: 0,
-        y1: 1,
-        line: {color: ACCENT, width: 2},
-        layer: "above"
-      });
-      shapes.push({
-        type: "line",
-        xref: "x",
-        yref: "paper",
-        x0: pHi,
-        x1: pHi,
-        y0: 0,
-        y1: 1,
-        line: {color: ACCENT, width: 2},
-        layer: "above"
-      });
-    } else if (colorThresholdColorCol === sc.value) {
-      if (colorThresholdRange != null && typeof colorThresholdRange.lo === "number") {
-        var eLo = Math.min(colorThresholdRange.lo, colorThresholdRange.hi);
-        var eHi = Math.max(colorThresholdRange.lo, colorThresholdRange.hi);
-        shapes.push({
-          type: "line",
-          xref: "x",
-          yref: "paper",
-          x0: eLo,
-          x1: eLo,
-          y0: 0,
-          y1: 1,
-          line: {color: ACCENT, width: 2},
-          layer: "above"
-        });
-        shapes.push({
-          type: "line",
-          xref: "x",
-          yref: "paper",
-          x0: eHi,
-          x1: eHi,
-          y0: 0,
-          y1: 1,
-          line: {color: ACCENT, width: 2},
-          layer: "above"
-        });
-      } else if (colorThresholdLevel != null) {
-        shapes.push({
-          type: "line",
-          xref: "x",
-          yref: "paper",
-          x0: colorThresholdLevel,
-          x1: colorThresholdLevel,
-          y0: 0,
-          y1: 1,
-          line: {color: ACCENT, width: 2},
-          layer: "above"
-        });
-      }
-    }
-    if (colorHistHoverLevel != null && !colorHistPointerDown) {
-      shapes.push({
-        type: "line",
-        xref: "x",
-        yref: "paper",
-        x0: colorHistHoverLevel,
-        x1: colorHistHoverLevel,
-        y0: 0,
-        y1: 1,
-        line: {color: "#243b53", width: 1.5, dash: "dot"},
-        layer: "above"
-      });
-    }
-    return shapes;
-  }
-
-  function colorHistogramActiveCovariateLabel() {
-    return covariateDisplayMap[sc.value] || sc.value;
-  }
-
-  function colorThresholdRangeInequalityPhrase(rLo, rHi) {
-    var lo = Math.min(rLo, rHi);
-    var hi = Math.max(rLo, rHi);
-    return formatColorThresholdValue(lo) + " <= " + colorHistogramActiveCovariateLabel()
-      + " <= " + formatColorThresholdValue(hi);
-  }
-
-  function colorHistogramRangeInequalityAnnotation(rLo, rHi) {
-    var lo = Math.min(rLo, rHi);
-    var hi = Math.max(rLo, rHi);
-    return {
-      xref: "x",
-      yref: "paper",
-      x: (lo + hi) * 0.5,
-      y: 0,
-      yanchor: "top",
-      text: colorThresholdRangeInequalityPhrase(rLo, rHi),
-      showarrow: false,
-      bgcolor: "rgba(255,255,255,0.94)",
-      bordercolor: "rgba(36,59,83,0.35)",
-      borderwidth: 1,
-      borderpad: 3,
-      font: {size: 10, color: "#243b53"}
-    };
-  }
-
-  function colorHistogramValueAnnotation(xVal) {
-    return {
-      xref: "x",
-      yref: "paper",
-      x: xVal,
-      y: 0,
-      yanchor: "top",
-      text: formatColorThresholdValue(xVal),
-      showarrow: false,
-      bgcolor: "rgba(255,255,255,0.94)",
-      bordercolor: "rgba(36,59,83,0.35)",
-      borderwidth: 1,
-      borderpad: 3,
-      font: {size: 10, color: "#243b53"}
-    };
-  }
-
-  function colorHistogramGuideAnnotations() {
-    if (colorHistDragPreview != null && typeof colorHistDragPreview.lo === "number"
-        && typeof colorHistDragPreview.hi === "number") {
-      return [colorHistogramRangeInequalityAnnotation(colorHistDragPreview.lo, colorHistDragPreview.hi)];
-    }
-    if (colorHistContinuousRangeModeActive() && colorThresholdRange != null
-        && typeof colorThresholdRange.lo === "number" && typeof colorThresholdRange.hi === "number") {
-      return [colorHistogramRangeInequalityAnnotation(colorThresholdRange.lo, colorThresholdRange.hi)];
-    }
-    if (colorThresholdLevel != null && colorThresholdColorCol === sc.value && colorThresholdRange == null) {
-      return [colorHistogramValueAnnotation(colorThresholdLevel)];
-    }
-    if (colorHistHoverLevel != null && !colorHistPointerDown) {
-      return [colorHistogramValueAnnotation(colorHistHoverLevel)];
-    }
-    return [];
-  }
-
-  function relayoutColorHistogramGuides() {
-    if (!colorHistDiv || !colorHistDiv.data) return;
-    try {
-      Plotly.relayout(colorHistDiv, {
-        shapes: colorHistogramGuideShapes(),
-        annotations: colorHistogramGuideAnnotations()
-      });
-      snapshotColorHistSavedXRange();
-    } catch (err) {}
-  }
-
   /**
    * Lasso/box selection invalidates color-threshold mode. Drop the threshold guide
    * and status text without rebuilding the violin (avoids O(n log n) histogram work).
    */
   function clearColorHistogramThresholdForGeometricSelection() {
-    var hadGuide = (colorThresholdLevel != null || colorThresholdRange != null)
-      && colorThresholdColorCol === sc.value;
     colorThresholdLevel = null;
     colorThresholdRange = null;
     colorThresholdColorCol = null;
-    colorHistDragPreview = null;
-    colorHistPointerDown = false;
-    colorHistDragMoved = false;
-    colorHistDragStartLevel = null;
-    colorHistDragStartClientX = null;
-    window.removeEventListener("mousemove", handleColorHistogramWindowMouseMove);
-    window.removeEventListener("mouseup", endColorHistogramDrag, true);
     if (explorerColorLegend) explorerColorLegend.clearThreshold();
     if (colorThresholdStatus) colorThresholdStatus.textContent = "";
     syncColorHistModeCheckboxCaption();
     if (explorerColorLegend) explorerColorLegend.setDiscreteCheckedKeys([]);
-    if (hadGuide && colorHistDiv && colorHistDiv.data) {
-      relayoutColorHistogramGuides();
-    }
   }
 
-  function scheduleColorHistogramGuideRelayout(level) {
-    colorHistHoverLevel = level;
-    if (colorHistHoverRaf != null) return;
-    colorHistHoverRaf = requestAnimationFrame(function() {
-      colorHistHoverRaf = null;
-      relayoutColorHistogramGuides();
-    });
-  }
 
-  function colorHistogramLevelFromPointerEvent(evt, opts) {
-    opts = opts || {};
-    var clamp = !!opts.clamp;
-    if (!colorHistDiv || !colorHistDiv._fullLayout) return null;
-    var xaxis = colorHistDiv._fullLayout.xaxis;
-    var sz = colorHistDiv._fullLayout._size;
-    if (!xaxis || !sz || typeof xaxis.p2c !== "function") return null;
-    var rect = colorHistDiv.getBoundingClientRect();
-    var px = evt.clientX - rect.left - sz.l;
-    if (clamp) {
-      if (sz.w <= 0) return null;
-      px = Math.max(0, Math.min(sz.w, px));
-    } else if (px < 0 || px > sz.w) {
-      return null;
-    }
-    var level = xaxis.p2c(px);
-    return typeof level === "number" && isFinite(level) ? level : null;
-  }
-
-  function handleColorHistogramMouseMove(evt) {
-    if (colorHistPointerDown) return;
-    scheduleColorHistogramGuideRelayout(colorHistogramLevelFromPointerEvent(evt));
-  }
-
-  function handleColorHistogramMouseLeave() {
-    if (colorHistPointerDown) return;
-    scheduleColorHistogramGuideRelayout(null);
-  }
-
-  function handleColorHistogramWindowMouseMove(evt) {
-    if (!colorHistPointerDown || colorHistDragStartLevel == null) return;
-    var level = colorHistogramLevelFromPointerEvent(evt, {clamp: true});
-    if (level == null) return;
-    colorHistDragMoved = true;
-    colorHistDragPreview = {
-      lo: colorHistDragStartLevel,
-      hi: level
-    };
-    relayoutColorHistogramGuides();
-  }
-
-  function endColorHistogramDrag(evt) {
-    window.removeEventListener("mousemove", handleColorHistogramWindowMouseMove);
-    window.removeEventListener("mouseup", endColorHistogramDrag, true);
-    if (!colorHistPointerDown) return;
-    colorHistPointerDown = false;
-    var appliedRange = false;
-    var pxSpan = 0;
-    if (colorHistDragStartClientX != null && evt && typeof evt.clientX === "number") {
-      pxSpan = Math.abs(evt.clientX - colorHistDragStartClientX);
-    }
-    var levelEnd = colorHistogramLevelFromPointerEvent(evt, {clamp: true});
-    if (colorHistDragMoved && levelEnd != null && pxSpan >= COLOR_HIST_DRAG_MIN_PX) {
-      applyColorRangeSelection(colorHistDragStartLevel, levelEnd);
-      appliedRange = true;
-      colorHistSuppressClick = true;
-    }
-    colorHistDragPreview = null;
-    colorHistDragStartLevel = null;
-    colorHistDragStartClientX = null;
-    colorHistDragMoved = false;
-    relayoutColorHistogramGuides();
-    if (!appliedRange) {
-      scheduleColorHistogramGuideRelayout(colorHistogramLevelFromPointerEvent(evt));
-    }
-  }
-
-  function handleColorHistogramMouseDown(evt) {
-    if (evt.button !== 0) return;
-    var level = colorHistogramLevelFromPointerEvent(evt);
-    if (level == null) return;
-    colorHistPointerDown = true;
-    colorHistDragMoved = false;
-    colorHistDragStartLevel = level;
-    colorHistDragStartClientX = evt.clientX;
-    colorHistDragPreview = null;
-    window.addEventListener("mousemove", handleColorHistogramWindowMouseMove);
-    window.addEventListener("mouseup", endColorHistogramDrag, true);
-    evt.preventDefault();
-  }
-
-  function colorThresholdDescription(nSelected, nTotal) {
-    if (colorThresholdColorCol !== sc.value) return "";
-    if (colorThresholdRange != null && typeof colorThresholdRange.lo === "number"
-        && typeof colorThresholdRange.hi === "number") {
-      var rl = Math.min(colorThresholdRange.lo, colorThresholdRange.hi);
-      var rh = Math.max(colorThresholdRange.lo, colorThresholdRange.hi);
-      var inv = colorHistModeCheckOn();
-      var phrase = colorThresholdRangeInequalityPhrase(rl, rh);
-      if (inv) {
-        return "Outside " + phrase;
-      }
-      return "Range " + phrase;
-    }
-    if (colorThresholdLevel == null) return "";
-    var op = colorHistModeCheckOn() ? "≤" : "≥";
-    return "Current threshold: " + op + " " + formatColorThresholdValue(colorThresholdLevel);
-  }
-
-  function quantileSorted(sorted, q) {
-    if (!sorted.length) return NaN;
-    var pos = (sorted.length - 1) * q;
-    var lo = Math.floor(pos);
-    var hi = Math.ceil(pos);
-    if (lo === hi) return sorted[lo];
-    var f = pos - lo;
-    return sorted[lo] * (1 - f) + sorted[hi] * f;
-  }
-
-  function violinDistribution(xs) {
-    var n = xs.length;
-    var xmin = Infinity, xmax = -Infinity;
-    for (var i = 0; i < n; i++) {
-      if (xs[i] < xmin) xmin = xs[i];
-      if (xs[i] > xmax) xmax = xs[i];
-    }
-    if (!isFinite(xmin) || !isFinite(xmax)) {
-      return {outlineX: [], outlineY: [], fillTraces: [], outlierX: [], outlierY: [], outlierColors: [], range: null};
-    }
-    var sorted = xs.slice().sort(function(a, b) { return a - b; });
-    var q1 = quantileSorted(sorted, 0.25);
-    var q3 = quantileSorted(sorted, 0.75);
-    var iqr = q3 - q1;
-    var loFence = q1 - 3.0 * iqr;
-    var hiFence = q3 + 3.0 * iqr;
-    var outlierX = [], outlierY = [], vals = [];
-    for (var oi = 0; oi < n; oi++) {
-      var xv = xs[oi];
-      if (iqr > 0 && (xv < loFence || xv > hiFence)) {
-        outlierX.push(xv);
-        outlierY.push(0);
-      } else {
-        vals.push(xv);
-      }
-    }
-    if (!vals.length) vals = xs.slice();
-    if (xmax <= xmin) {
-      var oneColor = CryoColorCovariateLegend.paletteScaleCSS(selectedScatterPalette(), 0.5);
-      var singleOutlierColors = [];
-      for (var soc = 0; soc < outlierX.length; soc++) singleOutlierColors.push(oneColor);
-      return {
-        outlineX: [xmin, xmin, xmin],
-        outlineY: [-0.38, 0.38, -0.38],
-        fillTraces: [{
-          type: "scatter",
-          mode: "lines",
-          x: [xmin - 0.5, xmin + 0.5, xmin + 0.5, xmin - 0.5, xmin - 0.5],
-          y: [-0.38, -0.38, 0.38, 0.38, -0.38],
-          fill: "toself",
-          fillcolor: oneColor,
-          line: {width: 0, color: oneColor},
-          hoverinfo: "skip",
-          showlegend: false
-        }],
-        outlierX: outlierX,
-        outlierY: outlierY,
-        outlierColors: singleOutlierColors,
-        range: [xmin - 0.6, xmax + 0.6]
-      };
-    }
-    var gridN = 96;
-    var span = xmax - xmin;
-    var mean = 0;
-    for (var mi = 0; mi < vals.length; mi++) mean += vals[mi];
-    mean /= vals.length;
-    var variance = 0;
-    for (var vi = 0; vi < vals.length; vi++) {
-      var dv = vals[vi] - mean;
-      variance += dv * dv;
-    }
-    var std = Math.sqrt(variance / Math.max(1, vals.length - 1));
-    var bandwidth = 1.06 * (std || span / 6) * Math.pow(vals.length, -0.2);
-    if (!isFinite(bandwidth) || bandwidth <= 0) bandwidth = span / 24;
-    bandwidth = Math.max(bandwidth, span / 200);
-    var gridX = [], dens = [], maxD = 0;
-    var invTwoBw2 = 1 / (2 * bandwidth * bandwidth);
-    for (var g = 0; g < gridN; g++) {
-      var gx = xmin + span * g / (gridN - 1);
-      var dsum = 0;
-      for (var k = 0; k < vals.length; k++) {
-        var dx = gx - vals[k];
-        dsum += Math.exp(-(dx * dx) * invTwoBw2);
-      }
-      var d = dsum / vals.length;
-      if (d > maxD) maxD = d;
-      gridX.push(gx);
-      dens.push(d);
-    }
-    var half = [];
-    for (var hi = 0; hi < dens.length; hi++) {
-      half.push(maxD > 0 ? 0.42 * dens[hi] / maxD : 0);
-    }
-    var outlineX = [], outlineY = [];
-    for (var ux = 0; ux < gridX.length; ux++) {
-      outlineX.push(gridX[ux]);
-      outlineY.push(half[ux]);
-    }
-    for (var lx = gridX.length - 1; lx >= 0; lx--) {
-      outlineX.push(gridX[lx]);
-      outlineY.push(-half[lx]);
-    }
-    outlineX.push(gridX[0]);
-    outlineY.push(half[0]);
-    var fillTraces = [];
-    var palName = selectedScatterPalette();
-    var outlierColors = [];
-    for (var oc = 0; oc < outlierX.length; oc++) {
-      outlierColors.push(CryoColorCovariateLegend.paletteScaleCSS(palName, (outlierX[oc] - xmin) / span));
-    }
-    for (var s = 0; s < gridX.length - 1; s++) {
-      var x0 = gridX[s], x1 = gridX[s + 1];
-      var y = Math.max(half[s], half[s + 1]);
-      if (y <= 0) continue;
-      var t = ((x0 + x1) * 0.5 - xmin) / span;
-      var fillColor = CryoColorCovariateLegend.paletteScaleCSS(palName, t);
-      fillTraces.push({
-        type: "scatter",
-        mode: "lines",
-        x: [x0, x1, x1, x0, x0],
-        y: [-y, -y, y, y, -y],
-        fill: "toself",
-        fillcolor: fillColor,
-        line: {width: 0, color: fillColor},
-        hoverinfo: "skip",
-        showlegend: false
-      });
-    }
-    var pad = span * 0.04;
-    return {
-      outlineX: outlineX,
-      outlineY: outlineY,
-      fillTraces: fillTraces,
-      outlierX: outlierX,
-      outlierY: outlierY,
-      outlierColors: outlierColors,
-      range: [xmin - pad, xmax + pad]
-    };
-  }
-
-  function renderColorHistogram() {
-    if (!colorHistPanel || !colorHistDiv) return;
-    if (gd && gd.data && gd.data[0] && scatterTraceColorMode() === "discrete") return;
-    var items = currentColorValueItems();
-    if (!items.length) {
-      hideColorHistogram();
-      return;
-    }
-    colorHistPanel.hidden = false;
-    colorHistPanel.setAttribute("aria-hidden", "false");
-    if (!colorHistEventsWired) {
-      colorHistEventsWired = true;
-      colorHistDiv.addEventListener("click", handleColorHistogramClick);
-      colorHistDiv.addEventListener("mousedown", handleColorHistogramMouseDown);
-      colorHistDiv.addEventListener("mousemove", handleColorHistogramMouseMove);
-      colorHistDiv.addEventListener("mouseleave", handleColorHistogramMouseLeave);
-    }
-    var xs = items.map(function(item) { return item.value; });
-    var violin = violinDistribution(xs);
-    colorViolinBaseShapes = [];
-    var colorColLabel = covariateDisplayMap[sc.value] || sc.value;
-    var layout = {
-      template: "plotly_white",
-      paper_bgcolor: "rgba(250,248,244,0)",
-      plot_bgcolor: "rgba(255,255,255,0.62)",
-      margin: {l: 42, r: 14, t: 4, b: 20},
-      height: 80,
-      dragmode: false,
-      showlegend: false,
-      font: {family: "Barlow, sans-serif", color: "#243b53", size: 11},
-      xaxis: {title: {text: "<b>" + escapeHtmlText(colorColLabel) + "</b>", standoff: 2, font: {size: 15.7, weight:
-        700}}, zeroline: false, fixedrange: true, range: violin.range},
-      yaxis: {visible: false, fixedrange: true, range: [-0.55, 0.55]},
-      shapes: colorHistogramGuideShapes(violin.range),
-      annotations: colorHistogramGuideAnnotations()
-    };
-    var data = violin.fillTraces.slice();
-    data.push(
-      {
-        type: "scatter",
-        mode: "lines",
-        x: violin.outlineX,
-        y: violin.outlineY,
-        line: {color: "rgba(36,59,83,0.72)", width: 1},
-        hoverinfo: "skip"
-      },
-      {
-        type: "scatter",
-        mode: "markers",
-        x: violin.outlierX,
-        y: violin.outlierY,
-        marker: {symbol: "circle-open", color: violin.outlierColors, size: 5.76, line: {color: violin.outlierColors,
-          width: 1.44}},
-        hovertemplate: colorColLabel + " %{x}<br>outlier<extra></extra>"
-      }
-    );
-    var opts = {
-      responsive: true,
-      displayModeBar: false,
-      doubleClick: false,
-      scrollZoom: false,
-      modeBarButtonsToRemove: ["zoom2d", "pan2d", "select2d", "lasso2d", "autoScale2d", "resetScale2d"]
-    };
-    try {
-      Plotly.react(colorHistDiv, data, layout, opts);
-    } catch (err) {
-      Plotly.newPlot(colorHistDiv, data, layout, opts);
-    }
-    if (colorThresholdStatus) {
-      var hasThresh = colorThresholdLevel != null && colorThresholdColorCol === sc.value;
-      var hasRange = colorThresholdRange != null && colorThresholdColorCol === sc.value;
-      if (hasThresh || hasRange) {
-        colorThresholdStatus.textContent = colorThresholdDescription(saveSelectionRows.length, items.length);
-      } else {
-        colorThresholdStatus.textContent = "no selection made!";
-      }
-    }
-    syncColorHistModeCheckboxCaption();
-    syncParticleExplorerRowExpandForColorHist();
-  }
 
   function traceCustomdataColorDisp(ti) {
     var cd = gd.data[0].customdata;
@@ -4505,6 +3894,19 @@
     }
   }
 
+  /**
+   * Clear geometric selections without allowing a follow-up ``plotly_deselect``
+   * to reset legend-driven threshold / range state.
+   */
+  function clearScatterGeometricSelectionSuppressed() {
+    var prevSuppress = suppressSelectionEvents;
+    suppressSelectionEvents = true;
+    clearScatterGeometricSelection();
+    setTimeout(function() {
+      suppressSelectionEvents = prevSuppress;
+    }, LASSO_SELECTION_DEBOUNCE_MS + 80);
+  }
+
   function applyPreselectedTraceIndices() {
     var meta = gd.layout && gd.layout.meta;
     var pre = meta && meta.cdrgn_preselected;
@@ -4916,10 +4318,7 @@
     }
     if (colorThresholdStatus) colorThresholdStatus.textContent = "";
     syncColorHistModeCheckboxCaption();
-    if (colorHistDiv && colorHistDiv.data) {
-      try { relayoutColorHistogramGuides(); } catch (e) {}
-    }
-    clearScatterGeometricSelection();
+    clearScatterGeometricSelectionSuppressed();
     applyRowsSelection([]);
     if (imagesViewEnabled && preloaded) {
       showRandomPreloaded();
@@ -4946,116 +4345,6 @@
     return rows;
   }
 
-  function applyColorThresholdSelection(level) {
-    var items = currentColorValueItems();
-    if (!items.length || typeof level !== "number" || !isFinite(level)) return;
-    cancelLassoSelectionDebounce();
-    if (explorerColorLegend) explorerColorLegend.setDiscreteCheckedKeys([]);
-    if (colorDiscreteWrap) {
-      colorDiscreteWrap.hidden = true;
-      colorDiscreteWrap.classList.remove("cryo-color-discrete-wrap--show");
-      colorDiscreteWrap.classList.remove("cryo-cc-discrete-wrap--show");
-    }
-    if (colorContinuousWrap) colorContinuousWrap.hidden = false;
-    clearScatterGeometricSelection();
-    var useMax = colorHistModeCheckOn();
-    colorThresholdRange = null;
-    colorThresholdLevel = level;
-    colorThresholdColorCol = sc.value;
-    syncColorHistModeCheckboxCaption();
-    if (colorHistDiv && colorHistDiv.data) {
-      try {
-        relayoutColorHistogramGuides();
-      } catch (eTh) { /* ignore */ }
-    }
-    fetch("{{ url_for('api_covariate_threshold_rows') }}", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        column: sc.value,
-        level: level,
-        use_max: useMax
-      })
-    })
-      .then(function(r) {
-        return r.json().then(function(j) { return { ok: r.ok, j: j }; });
-      })
-      .then(function(res) {
-        var rows = (res.ok && res.j && Array.isArray(res.j.rows))
-          ? res.j.rows
-          : rowsMatchingColorThresholdFromTrace(items, level, useMax);
-        applyRowsSelection(rows, "Color threshold");
-        syncColorCovariateSidePanel();
-      })
-      .catch(function() {
-        var rows = rowsMatchingColorThresholdFromTrace(items, level, useMax);
-        applyRowsSelection(rows, "Color threshold");
-        syncColorCovariateSidePanel();
-      });
-  }
-
-  function applyColorRangeSelection(lo, hi) {
-    var items = currentColorValueItems();
-    if (!items.length || typeof lo !== "number" || typeof hi !== "number"
-        || !isFinite(lo) || !isFinite(hi)) return;
-    cancelLassoSelectionDebounce();
-    if (explorerColorLegend) explorerColorLegend.setDiscreteCheckedKeys([]);
-    if (colorDiscreteWrap) {
-      colorDiscreteWrap.hidden = true;
-      colorDiscreteWrap.classList.remove("cryo-color-discrete-wrap--show");
-      colorDiscreteWrap.classList.remove("cryo-cc-discrete-wrap--show");
-    }
-    if (colorContinuousWrap) colorContinuousWrap.hidden = false;
-    clearScatterGeometricSelection();
-    var loN = Math.min(lo, hi);
-    var hiN = Math.max(lo, hi);
-    var invert = colorHistModeCheckOn();
-    colorThresholdLevel = null;
-    colorThresholdRange = { lo: loN, hi: hiN };
-    colorThresholdColorCol = sc.value;
-    syncColorHistModeCheckboxCaption();
-    if (colorHistDiv && colorHistDiv.data) {
-      try {
-        relayoutColorHistogramGuides();
-      } catch (eRng) { /* ignore */ }
-    }
-    fetch("{{ url_for('api_covariate_threshold_rows') }}", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        column: sc.value,
-        range_min: loN,
-        range_max: hiN,
-        invert_range: invert
-      })
-    })
-      .then(function(r) {
-        return r.json().then(function(j) { return { ok: r.ok, j: j }; });
-      })
-      .then(function(res) {
-        var rows = (res.ok && res.j && Array.isArray(res.j.rows))
-          ? res.j.rows
-          : rowsMatchingColorRangeFromTrace(items, loN, hiN, invert);
-        applyRowsSelection(rows, "Color threshold");
-        syncColorCovariateSidePanel();
-      })
-      .catch(function() {
-        var rows = rowsMatchingColorRangeFromTrace(items, loN, hiN, invert);
-        applyRowsSelection(rows, "Color threshold");
-        syncColorCovariateSidePanel();
-      });
-  }
-
-  function handleColorHistogramClick(evt) {
-    evt.preventDefault();
-    if (colorHistSuppressClick) {
-      colorHistSuppressClick = false;
-      return;
-    }
-    var level = colorHistogramLevelFromPointerEvent(evt);
-    if (level == null) return;
-    applyColorThresholdSelection(level);
-  }
 
   function queueHighlightRestyle(restyleData) {
     pendingHighlightRestyle = restyleData;
@@ -5489,11 +4778,6 @@
         colorThresholdColorCol = null;
         if (colorThresholdStatus) colorThresholdStatus.textContent = "";
         syncColorHistModeCheckboxCaption();
-        if (colorHistDiv && colorHistDiv.data) {
-          try {
-            relayoutColorHistogramGuides();
-          } catch (eHg) { /* ignore */ }
-        }
       }
       if (mode === "discrete") {
         setExplorerLegendDiscreteKeysForSelection();

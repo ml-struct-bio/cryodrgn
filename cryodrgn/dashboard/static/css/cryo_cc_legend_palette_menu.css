@@ -1,0 +1,156 @@
+/**
+ * Shared vertical "Choose palette" menu for continuous colour / histogram legends
+ * (particle explorer, pair grid, latent 3D).
+ *
+ * Markup:
+ * - Wrapper: .cryo-cc-legend-palette-shell.cryo-palette-select
+ * - Options: .cryo-cc-legend-palette-menu.cryo-palette-select__options (+ pairplot collapse class as needed)
+ */
+.cryo-cc-legend-palette-shell.cryo-palette-select {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  gap: 0;
+  grid-template-columns: unset !important;
+  grid-auto-flow: unset !important;
+}
+
+.cryo-palette-select__options.cryo-cc-legend-palette-menu.cryo-palette-select__options--collapsed,
+.cryo-palette-select__options.cryo-cc-legend-palette-menu.pairplot-palette-select__options--collapsed {
+  display: none !important;
+}
+
+.cryo-palette-select__options.cryo-cc-legend-palette-menu:not(.cryo-palette-select__options--collapsed):not(
+  .pairplot-palette-select__options--collapsed
+) {
+  visibility: visible;
+  pointer-events: auto;
+  display: flex !important;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 0;
+  row-gap: 0;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-height: min(55vh, 17rem);
+  overflow-x: hidden;
+  overflow-y: auto;
+  margin-top: 0.22rem;
+  padding: 0.42rem;
+  scrollbar-width: thin;
+  border: 1px solid rgba(36, 59, 83, 0.22);
+  border-radius: 6px;
+  background: rgba(250, 248, 244, 0.96);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  grid: none !important;
+  grid-auto-flow: unset !important;
+  grid-template-rows: unset !important;
+  column-gap: 0 !important;
+}
+
+.cryo-palette-select__options.cryo-cc-legend-palette-menu:not(.cryo-palette-select__options--collapsed):not(
+  .pairplot-palette-select__options--collapsed
+)
+  .cryo-palette-option,
+.cryo-palette-select__options.cryo-cc-legend-palette-menu:not(.cryo-palette-select__options--collapsed):not(
+  .pairplot-palette-select__options--collapsed
+)
+  .pairplot-palette-option {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding: 0.18rem 0.35rem;
+  box-sizing: border-box;
+  border: 1px solid rgba(36, 59, 83, 0.12);
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.55);
+  white-space: nowrap;
+  cursor: pointer;
+  font-weight: 500;
+  justify-content: flex-start;
+  color: var(--nav-bg, #243b53);
+}
+
+.cryo-palette-select__options.cryo-cc-legend-palette-menu:not(.cryo-palette-select__options--collapsed):not(
+  .pairplot-palette-select__options--collapsed
+)
+  .cryo-palette-option:hover,
+.cryo-palette-select__options.cryo-cc-legend-palette-menu:not(.cryo-palette-select__options--collapsed):not(
+  .pairplot-palette-select__options--collapsed
+)
+  .pairplot-palette-option:hover {
+  background: rgba(36, 59, 83, 0.06);
+}
+
+.cryo-palette-select__options.cryo-cc-legend-palette-menu:not(.cryo-palette-select__options--collapsed):not(
+  .pairplot-palette-select__options--collapsed
+)
+  .cryo-palette-option input[type="radio"],
+.cryo-palette-select__options.cryo-cc-legend-palette-menu:not(.cryo-palette-select__options--collapsed):not(
+  .pairplot-palette-select__options--collapsed
+)
+  .pairplot-palette-option input[type="radio"] {
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+.cryo-palette-select__options.cryo-cc-legend-palette-menu:not(.cryo-palette-select__options--collapsed):not(
+  .pairplot-palette-select__options--collapsed
+)
+  .cryo-palette-option
+  + .cryo-palette-option,
+.cryo-palette-select__options.cryo-cc-legend-palette-menu:not(.cryo-palette-select__options--collapsed):not(
+  .pairplot-palette-select__options--collapsed
+)
+  .pairplot-palette-option
+  + .pairplot-palette-option {
+  margin-top: -1px;
+}
+
+.cryo-palette-select__options.cryo-cc-legend-palette-menu:not(.cryo-palette-select__options--collapsed):not(
+  .pairplot-palette-select__options--collapsed
+)
+  .cryo-palette-option:first-of-type,
+.cryo-palette-select__options.cryo-cc-legend-palette-menu:not(.cryo-palette-select__options--collapsed):not(
+  .pairplot-palette-select__options--collapsed
+)
+  .pairplot-palette-option:first-of-type {
+  border-top-left-radius: 6px;
+  border-top-right-radius: 6px;
+}
+
+.cryo-palette-select__options.cryo-cc-legend-palette-menu:not(.cryo-palette-select__options--collapsed):not(
+  .pairplot-palette-select__options--collapsed
+)
+  .cryo-palette-option:last-of-type,
+.cryo-palette-select__options.cryo-cc-legend-palette-menu:not(.cryo-palette-select__options--collapsed):not(
+  .pairplot-palette-select__options--collapsed
+)
+  .pairplot-palette-option:last-of-type {
+  border-bottom-left-radius: 6px;
+  border-bottom-right-radius: 6px;
+}
+
+.cryo-palette-select__options.cryo-cc-legend-palette-menu:not(.cryo-palette-select__options--collapsed):not(
+  .pairplot-palette-select__options--collapsed
+)
+  .cryo-palette-select__swatch,
+.cryo-palette-select__options.cryo-cc-legend-palette-menu:not(.cryo-palette-select__options--collapsed):not(
+  .pairplot-palette-select__options--collapsed
+)
+  .pairplot-palette-select__swatch {
+  flex: 0 0 2.8rem;
+  height: 0.62rem;
+  border-radius: 999px;
+  border: 1px solid rgba(36, 59, 83, 0.16);
+}

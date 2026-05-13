@@ -343,7 +343,7 @@
     display: flex;
     flex-direction: column;
     align-self: stretch;
-    justify-content: center;
+    justify-content: flex-start;
     align-items: stretch;
   }
   .pairplot-color-legend-aside .cryo-cc-legend {
@@ -374,7 +374,8 @@
     color: var(--nav-bg, #243b53);
     margin: 0;
     max-width: 100%;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    min-width: 0;
   }
   .pairplot-color-legend-aside .cryo-cc-legend__heading .pair-picto {
     flex-shrink: 0;
@@ -390,8 +391,11 @@
   .pairplot-color-legend-aside .cryo-cc-legend__heading-text {
     font-weight: 700;
     color: var(--nav-bg, #243b53);
-    flex: 0 1 auto;
+    flex: 1 1 auto;
     min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .pairplot-color-legend-aside .cryo-cc-legend__filter-em {
     color: rgba(149, 87, 45, 0.92);
@@ -605,17 +609,20 @@
     box-sizing: border-box;
     min-width: 0;
   }
-  /* Invert / “no selection” on final grid row: 71% × chip width, 135% × chip height, centred across columns */
-  .pairplot-color-legend-aside #pair-color-discrete-switches.cryo-cc-discrete-switches--invert-footer-row.cryo-cc-discrete-switches--pair-2col .cryo-cc-discrete-cell--invert-footer {
+  /* Invert chip: bottom row, centred — wide/tall vs category chips so “Invert selection” type scales up (JS fits one line). */
+  .pairplot-color-legend-aside #pair-color-discrete-switches.cryo-color-discrete-switches--invert-footer-row.cryo-cc-discrete-switches--pair-2col .cryo-cc-discrete-cell--invert-footer {
     grid-column: 1 / -1;
     justify-self: center;
     align-self: center;
-    width: calc(0.71 * var(--pair-discrete-cell-w, 5.5rem));
-    height: calc(1.35 * var(--pair-discrete-cell-h, 1.35rem));
-    min-height: calc(1.35 * var(--pair-discrete-cell-h, 1.35rem));
+    width: min(100%, calc(1.78 * var(--pair-discrete-cell-w, 5.5rem)));
+    height: calc(1.24 * var(--pair-discrete-cell-h, 1.35rem));
+    min-height: calc(1.24 * var(--pair-discrete-cell-h, 1.35rem));
     max-width: 100%;
     box-sizing: border-box;
     margin-top: 2px;
+  }
+  .pairplot-color-legend-aside #pair-color-discrete-switches.cryo-color-discrete-switches--invert-footer-row .cryo-cc-discrete-cell--invert-footer .cryo-cc-discrete-invert-fitbox {
+    padding: 5%;
   }
   .pairplot-color-legend-aside .cryo-cc-discrete-cell {
     padding: 0;
@@ -673,17 +680,16 @@
     display: none !important;
   }
   #pair-color-discrete-switches .cryo-cc-discrete-cell--invert .cryo-cc-discrete-invert-fitbox .cryo-cc-discrete-switch-label {
-    white-space: normal;
-    overflow: visible;
-    text-overflow: unset;
-    overflow-wrap: normal;
-    word-break: normal;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     text-align: center;
     margin-left: auto;
     margin-right: auto;
     align-self: center;
     max-height: 100%;
     box-sizing: border-box;
+    line-height: 1.05;
   }
   @media (max-width: 900px) {
     .pairplot-color-legend-aside {
@@ -708,10 +714,10 @@
     <div class="cryo-dash-top">
       <a href="/">← Back</a>
     </div>
-    <p class="cryo-dash-lead">Each panel compares two latent coordinates. The diagonal shows a 2D embedding; one
-      triangle colours particles by a covariate; the other shows a light scatter or density pattern. Filter which
-      particles appear with the tall colour histogram (continuous covariates) or toggle switches (discrete);
-      the continuous palette lives in the drop-down below the histogram.</p>
+    <p class="cryo-dash-lead">Each panel square compares two latent z-space axes, with coloring according to the chosen
+      covariate in the squares below the diagonal. The diagonal panels show a 2D embedding across all z-space axes
+      colored by the given row/column z-latent-space axis. Filter particles shown across all panels using the
+      legend interface shown on the right.</p>
     <div class="card cryo-dash-controls" id="pair-controls-card">
       <fieldset>
         <legend>
@@ -805,7 +811,7 @@
           <div class="cryo-cc-legend__heading legend-row"
             title="Covariate colours in the legend; filtering applies to every square in the pair grid.">
             {{ picto_lower() }}
-            <span class="cryo-cc-legend__heading-text">Color legend<br/>and <span class="cryo-cc-legend__filter-em">filtering</span></span>
+            <span class="cryo-cc-legend__heading-text">Color legend and <span class="cryo-cc-legend__filter-em">filtering</span></span>
             {{ picto_filter_all_panels() }}
           </div>
           <div id="pair-color-continuous-wrap">
@@ -923,7 +929,7 @@
       "minmax(0," + sideW + "px) minmax(0,1fr) minmax(0," + legendW + "px)";
   }
 
-  /** Probe chip cell size so invert footer can use 71% × 135%. */
+  /** Probe chip cell size so invert footer can size vs `--pair-discrete-cell-*` (178% × 124%). */
   function syncPairDiscreteInvertFooterMetrics() {
     var sw = document.getElementById("pair-color-discrete-switches");
     var disc = document.getElementById("pair-color-discrete-wrap");

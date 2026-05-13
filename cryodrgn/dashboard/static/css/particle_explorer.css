@@ -24,6 +24,40 @@
     width: min(9rem, 90%);
     height: 4px;
   }
+  #montage-preload-overlay.cryo-plot-rendering-overlay--show {
+    overflow: hidden;
+    box-sizing: border-box;
+  }
+  #montage-preload-overlay.cryo-plot-rendering-overlay--show .cryo-plot-rendering-overlay__inner {
+    gap: 0.38rem;
+    max-width: 100%;
+    width: calc(100% - 0.5rem);
+    min-width: 0;
+    padding: 0 0.35rem;
+    box-sizing: border-box;
+    align-self: center;
+  }
+  #montage-preload-overlay.cryo-plot-rendering-overlay--show .cryo-plot-rendering-overlay__label {
+    font-size: calc(0.66rem * 1.43);
+    font-weight: 600;
+    line-height: 1.28;
+    letter-spacing: 0;
+    text-align: center;
+    max-width: 100%;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    hyphens: auto;
+    font-variant-numeric: tabular-nums;
+  }
+  #montage-preload-overlay.cryo-plot-rendering-overlay--show .cryo-plot-rendering-overlay__track {
+    width: min(7.5rem, 92%);
+    height: 3px;
+    flex-shrink: 0;
+  }
   .cryo-montage-cell {
     display: flex;
     flex-direction: column;
@@ -393,22 +427,16 @@
   .cryo-explorer-cache-load-progress-wrap[hidden] {
     display: none !important;
   }
-  .cryo-explorer-montage-group--image-cache-loading > legend {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-  }
-  .cryo-explorer-montage-group.cryo-explorer-montage-group--image-cache-loading {
-    position: relative;
-  }
   .cryo-explorer-montage-group--image-cache-loading .cryo-explorer-cache-load-body {
-    display: none;
+    opacity: 0.52;
+    pointer-events: none;
+    user-select: none;
+    transition: opacity 0.15s ease;
+  }
+  .cryo-explorer-montage-group--image-cache-loading .cryo-explorer-cache-load-progress-wrap {
+    margin-top: 0.42rem;
+    padding-top: 0.42rem;
+    border-top: 1px solid rgba(36, 59, 83, 0.12);
   }
   .cryo-explorer-cache-load-progress-heading {
     margin: 0 0 0.25rem;
@@ -460,6 +488,9 @@
     display: flex;
     align-items: center;
     align-self: center;
+  }
+  .cryo-dash-page--particle-explorer.cryo-dash-page--image-viewer .cryo-dash-montage {
+    scrollbar-gutter: stable;
   }
   .cryo-explorer-save-inverse-label {
     display: flex;

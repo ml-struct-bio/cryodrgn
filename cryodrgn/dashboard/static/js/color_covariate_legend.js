@@ -709,6 +709,8 @@
     this.getDiscreteColorOverrides = opts.getDiscreteColorOverrides || null;
     this.enableDiscreteColorPicker = opts.enableDiscreteColorPicker !== false;
     this.onDiscreteColorChange = opts.onDiscreteColorChange || null;
+    /** When set (3-D viewer), hide the legend panel entirely if no colour covariate — skip heading-only placeholder. */
+    this.hideLegendPanelWhenNoCovariate = opts.hideLegendPanelWhenNoCovariate === true;
     this.discreteChipMatplotlibBlend = opts.discreteChipMatplotlibBlend === true;
     this.discreteChipPlasticLabel = opts.discreteChipPlasticLabel !== false;
     this._discreteChipBlendAlpha = null;
@@ -1012,7 +1014,11 @@
     var self = this;
     var col = this.getColorColumn();
     if (!col || col === "none") {
-      this.showHeadingOnly();
+      if (this.hideLegendPanelWhenNoCovariate) {
+        this.hide();
+      } else {
+        this.showHeadingOnly();
+      }
       this.onModeChange(null);
       if (this.notifyOnRefresh && !suppressNotify) this._notify();
       if (typeof afterLayout === "function") {
@@ -2238,10 +2244,10 @@
       return;
     }
     label.style.fontSize = "";
-    var text = (label.textContent || "").replace(/\s+/g, " ").trim();
-    if (!text) return;
+    label.style.whiteSpace = "";
+    var raw = (label.textContent || "").replace(/\r/g, "").trim();
+    if (!raw) return;
 
-    var words = text.split(/\s+/).filter(Boolean);
     var cs = typeof window !== "undefined" && window.getComputedStyle
       ? window.getComputedStyle(label)
       : null;
@@ -2257,13 +2263,68 @@
     }
     document.body.appendChild(probe);
 
+    var padPx = 2;
+    var vertSlack = 6;
+
+    /* Pair plot / 3-D footer invert: one line, scale font to full phrase width × row height */
+    if (invertCell.classList.contains("cryo-cc-discrete-cell--invert-footer")) {
+      var slackF = 3;
+      label.style.whiteSpace = "nowrap";
+      var phrase = raw.replace(/\s+/g, " ").trim();
+      var loF = 5;
+      var hiF = 144;
+      var bestF = loF;
+      try {
+        while (loF <= hiF) {
+          var midF = (loF + hiF) >> 1;
+          label.style.fontSize = midF + "px";
+          probe.style.fontSize = midF + "px";
+          probe.textContent = phrase;
+          var wOkF = probe.offsetWidth <= innerW + padPx;
+          var hOkF = label.scrollHeight <= innerH - slackF;
+          if (wOkF && hOkF) {
+            bestF = midF;
+            loF = midF + 1;
+          } else {
+            hiF = midF - 1;
+          }
+        }
+        label.style.fontSize = bestF + "px";
+        while (bestF > 5 && label.scrollHeight > innerH - slackF) {
+          bestF -= 1;
+          label.style.fontSize = bestF + "px";
+        }
+        probe.style.fontSize = bestF + "px";
+        probe.textContent = phrase;
+        while (bestF > 5 && probe.offsetWidth > innerW + padPx) {
+          bestF -= 1;
+          label.style.fontSize = bestF + "px";
+          probe.style.fontSize = bestF + "px";
+        }
+      } finally {
+        if (probe.parentNode) probe.parentNode.removeChild(probe);
+      }
+      label.style.whiteSpace = "";
+      return;
+    }
+
+    var lines = raw.split("\n").map(function (ln) {
+      return ln.replace(/\s+/g, " ").trim();
+    }).filter(Boolean);
+    var words = [];
+    for (var li = 0; li < lines.length; li++) {
+      var parts = lines[li].split(/\s+/).filter(Boolean);
+      for (var pi = 0; pi < parts.length; pi++) {
+        words.push(parts[pi]);
+      }
+    }
+    if (!words.length) return;
+
     /* Multi-line: largest font so (a) every whole word fits inner width and (b) wrapped block fits box */
     var minPx = 5;
     var lo = minPx;
     var hi = 144;
     var best = lo;
-    var padPx = 2;
-    var vertSlack = 6;
     try {
       while (lo <= hi) {
         var mid = (lo + hi) >> 1;
@@ -2340,15 +2401,18 @@
   };
 
   CryoColorCovariateLegend.prototype._syncInvertBtn = function () {
-    if (!this.invertBtn || !this.discreteSwitches) return;
+    if (!this.discreteSwitches) return;
     var inputs = this.discreteSwitches.querySelectorAll("input[type=\"checkbox\"][data-cat-key]");
     var any = false;
     for (var i = 0; i < inputs.length; i++) {
       if (inputs[i].checked) { any = true; break; }
     }
+    var invertActivePhrase = "Invert selection";
     // Update original invert button (hidden but kept for accessibility/legacy)
-    this.invertBtn.disabled = !any;
-    this.invertBtn.textContent = any ? "Invert selection" : this.noDiscreteSelectionText;
+    if (this.invertBtn) {
+      this.invertBtn.disabled = !any;
+      this.invertBtn.textContent = any ? invertActivePhrase : this.noDiscreteSelectionText;
+    }
 
     // Update the invert cell in the grid
     var invertCell = this.discreteSwitches.querySelector(".cryo-cc-discrete-cell--invert");
@@ -2356,14 +2420,14 @@
       var invertLabel = invertCell.querySelector(".cryo-cc-discrete-switch-label");
       if (invertLabel) {
         invertLabel.textContent = any
-          ? "Invert selection"
+          ? invertActivePhrase
           : (this.noDiscreteSelectionText || "");
       }
       invertCell.classList.toggle("cryo-cc-discrete-cell--invert-idle", !any);
       invertCell.classList.toggle("cryo-cc-discrete-cell--invert-action", any);
       invertCell.setAttribute("role", any ? "button" : "status");
       invertCell.setAttribute("aria-disabled", any ? "false" : "true");
-      invertCell.setAttribute("aria-label", any ? "Invert selection" : (this.noDiscreteSelectionText || ""));
+      invertCell.setAttribute("aria-label", any ? invertActivePhrase : (this.noDiscreteSelectionText || ""));
       invertCell.tabIndex = any ? 0 : -1;
       if (any) {
         invertCell.removeAttribute("aria-live");

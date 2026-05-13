@@ -30,6 +30,44 @@
     width: min(9rem, 90%);
     height: 4px;
   }
+  /*
+   * base.html boosts overlay label/track size when ``--show`` — beats ``.cryo-montage-grid-wrap`` selectors.
+   * Keep preload copy inside the grid footprint so the montage column does not jump on load.
+   */
+  #montage-preload-overlay.cryo-plot-rendering-overlay--show {
+    overflow: hidden;
+    box-sizing: border-box;
+  }
+  #montage-preload-overlay.cryo-plot-rendering-overlay--show .cryo-plot-rendering-overlay__inner {
+    gap: 0.38rem;
+    max-width: 100%;
+    width: calc(100% - 0.5rem);
+    min-width: 0;
+    padding: 0 0.35rem;
+    box-sizing: border-box;
+    align-self: center;
+  }
+  #montage-preload-overlay.cryo-plot-rendering-overlay--show .cryo-plot-rendering-overlay__label {
+    font-size: calc(0.66rem * 1.43);
+    font-weight: 600;
+    line-height: 1.28;
+    letter-spacing: 0;
+    text-align: center;
+    max-width: 100%;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    hyphens: auto;
+    font-variant-numeric: tabular-nums;
+  }
+  #montage-preload-overlay.cryo-plot-rendering-overlay--show .cryo-plot-rendering-overlay__track {
+    width: min(7.5rem, 92%);
+    height: 3px;
+    flex-shrink: 0;
+  }
   .cryo-montage-cell {
     display: flex;
     flex-direction: column;
@@ -381,7 +419,7 @@
     width: min(100%, 18rem);
     margin-top: 0.35rem;
   }
-  /* While cache batches load: replace full "Load particle images…" fieldset body with progress */
+  /* While cache batches load: keep controls in flow so montage height / grid position stay stable */
   .cryo-explorer-cache-load-body {
     margin: 0;
     padding: 0;
@@ -396,22 +434,16 @@
   .cryo-explorer-cache-load-progress-wrap[hidden] {
     display: none !important;
   }
-  .cryo-explorer-montage-group--image-cache-loading > legend {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-  }
-  .cryo-explorer-montage-group.cryo-explorer-montage-group--image-cache-loading {
-    position: relative;
-  }
   .cryo-explorer-montage-group--image-cache-loading .cryo-explorer-cache-load-body {
-    display: none;
+    opacity: 0.52;
+    pointer-events: none;
+    user-select: none;
+    transition: opacity 0.15s ease;
+  }
+  .cryo-explorer-montage-group--image-cache-loading .cryo-explorer-cache-load-progress-wrap {
+    margin-top: 0.42rem;
+    padding-top: 0.42rem;
+    border-top: 1px solid rgba(36, 59, 83, 0.12);
   }
   .cryo-explorer-cache-load-progress-heading {
     margin: 0 0 0.25rem;
@@ -813,6 +845,10 @@
     margin-top: 0;
     box-sizing: border-box;
   }
+  /* Avoid grid width jumping when vertical overflow toggles the montage scrollbar */
+  .cryo-dash-page--particle-explorer.cryo-dash-page--image-viewer .cryo-dash-montage {
+    scrollbar-gutter: stable;
+  }
   .cryo-dash-page--particle-explorer
     .cryo-dash-montage:not(:has(> .cryo-color-hist-panel:not([hidden])))
     > #montage-actions.cryo-explorer-montage-actions {
@@ -1158,18 +1194,19 @@
       <a href="/">← Back</a>
     </div>
     <div class="cryo-dash-lead">
-      Select particle subset using either:
+      Select particles using either:
       <ul class="cryo-explorer-lead-list">
-        <li id="lead-mode-lasso">Lasso or box selection in the scatterplot</li>
-        <li id="lead-mode-threshold">Click the color histogram for a single threshold, or drag across it to select a value range,
-          when using a continuous color covariate like <code>znorm</code></li>
-        <li id="lead-mode-discrete">Toggling value filters when using a discrete color covariate like k-means labels</li>
+        <li id="lead-mode-lasso">Lasso or box selection in the scatterplot main panel</li>
+        <li id="lead-mode-threshold">Choose a continuous color scale like <code>znorm</code> and select a threshold
+          value or range in the histogram legend panel
+        <li id="lead-mode-discrete">Toggling value filters when using a discrete color covariate
+          like <code>kmeans labels</code></li>
       </ul>
       <p>Load particle images and generate volumes with or without a selection using the interface on the right.</p>
     </div>
     <div class="card cryo-dash-controls" id="scatter-controls-card">
       <fieldset>
-        <legend>Choose axes<br/>and point color scale</legend>
+        <legend>Choose plot axes<br/>and point color scale</legend>
         <label class="cryo-select-line" for="sx">Horizontal (X)</label>
         <select id="sx"></select>
         <label class="cryo-select-line" for="sy">Vertical (Y)</label>
@@ -1192,8 +1229,7 @@
       </div>
       <fieldset id="particle-sel-fieldset" disabled>
         <legend>Create indices file</legend>
-        <p class="cryo-dash-legend-note">Active after you select particles on the plot, with the color histogram, or
-          with discrete color toggles.</p>
+        <p class="cryo-dash-legend-note">Active once you make a particle selection.</p>
         <div class="cryo-explorer-save-btns">
           <button type="button" class="btn" id="save-indices-pkl">Save selection<br/>as
             <code>indices.pkl</code></button>
@@ -1469,14 +1505,13 @@
       <p id="image-grid-inactive-note"
         class="cryo-dash-legend-note"
         style="margin:0.22rem 0 0;"
-        hidden>Build image cache to populate grid</p>
+        hidden>Build an image cache to populate the grid</p>
       <div id="image-grid-menu-body" class="cryo-image-grid-menu-body" hidden>
         <div class="cryo-montage-grid-wrap">
           <div id="montage-grid" class="cryo-montage-grid"></div>
           <div id="montage-preload-overlay" class="cryo-plot-rendering-overlay" aria-hidden="true">
             <div class="cryo-plot-rendering-overlay__inner">
-              <span id="montage-preload-overlay-label" class="cryo-plot-rendering-overlay__label">Loading image
-                cache...</span>
+              <span id="montage-preload-overlay-label" class="cryo-plot-rendering-overlay__label">Loading image cache…</span>
               <div class="cryo-plot-rendering-overlay__track" role="progressbar" aria-valuetext="Loading image cache">
                 <div class="cryo-plot-rendering-overlay__indeterminate"></div>
               </div>
@@ -2476,7 +2511,7 @@
     var wrap = document.getElementById("cryo-explorer-cache-load-progress-wrap");
     var show = !imageCacheProgressEl.hidden;
     if (fs) fs.classList.toggle("cryo-explorer-montage-group--image-cache-loading", show);
-    if (body) body.setAttribute("aria-hidden", show ? "true" : "false");
+    if (body) body.removeAttribute("aria-hidden");
     if (wrap) {
       wrap.hidden = !show;
       wrap.setAttribute("aria-hidden", show ? "false" : "true");
@@ -2573,6 +2608,11 @@
       return Promise.resolve(null);
     }
 
+    /* Expand grid before overlay/progress so layout does not jump when the first chunk returns */
+    if (enableImages) {
+      setImageGridMenuOpen(true);
+    }
+
     var progressStartCount = cachedImageCount();
     var progressTotal = progressStartCount > 0
       ? Math.max(1, finalTarget - progressStartCount)
@@ -2580,6 +2620,14 @@
 
     function updateImageCacheChunkProgress() {
       var added = Math.max(0, cachedImageCount() - progressStartCount);
+      var pct = Math.round((added / progressTotal) * 100);
+      /* Full-screen montage overlay is visible — avoid also expanding the cache fieldset (small layout snap). */
+      if (montagePreloadOverlayIsShown() && montagePreloadOverlayLabel) {
+        montagePreloadOverlayLabel.textContent = overlayLabel.trim()
+          + "\n" + pct + "% · " + fmtInt(added) + "/" + fmtInt(progressTotal);
+        setImageCacheProgress(false);
+        return;
+      }
       setImageCacheProgress(true, added, progressTotal);
     }
 
@@ -2700,7 +2748,14 @@
       : (opts.fullLoad
         ? "Loading all " + fmtInt(plottedCap) + " plotted particle images..."
         : "Loading image cache...");
-    setMontagePreloadOverlay(true, overlayLabel);
+    if (opts.enableImages) {
+      setImageGridMenuOpen(true);
+    }
+    if (!montagePreloadOverlayIsShown()) {
+      setMontagePreloadOverlay(true, overlayLabel);
+    } else if (!opts.keepOverlayAfterSuccess && overlayLabel) {
+      setMontagePreloadOverlay(true, overlayLabel);
+    }
     syncImageCacheButton(true);
     var body = { x: xcol, y: ycol, cache_size: cacheSize };
     if (opts.delta) {

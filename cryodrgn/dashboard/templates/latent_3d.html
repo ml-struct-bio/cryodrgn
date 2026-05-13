@@ -13,6 +13,15 @@
   .cryo-dash-page--latent3d .cryo-dash-row.cryo-dash-row--plot-triple > .cryo-dash-side {
     margin-right: 1rem;
   }
+  /* No colour covariate: collapse third grid column (see ``syncLatent3dLegendGridColumn`` in page script). */
+  .cryo-dash-page--latent3d .cryo-dash-row.cryo-dash-row--plot-triple.cryo-dash-row--latent3d-no-color-legend {
+    grid-template-columns: minmax(0, 15fr) minmax(0, 85fr);
+  }
+  /* Page CSS ``display: flex`` beats the UA ``[hidden]`` rule — legend chrome stayed visible with ``hidden`` set. */
+  .cryo-dash-page--latent3d #latent3d-color-legend-panel[hidden],
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside[hidden] {
+    display: none !important;
+  }
   .cryo-dash-page--latent3d .latent3d-color-legend-aside {
     flex: 0 0 auto;
     width: 100%;
@@ -22,7 +31,7 @@
     flex-direction: column;
     align-items: stretch;
     align-self: stretch;
-    justify-content: center;
+    justify-content: flex-start;
     background: transparent;
     border: none;
     box-shadow: none;
@@ -194,23 +203,37 @@
     opacity: 0.45;
     pointer-events: none;
   }
-  .cryo-dash-page--latent3d .latent3d-color-legend-aside .pairplot-palette-select__title {
+  /* Continuous palette toggle — same glossy chip treatment as discrete “Invert selection”. */
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside #latent3d-palette-toggle.pairplot-palette-select__title {
     display: inline-flex;
     align-items: center;
     gap: 0.28rem;
     line-height: 1.05;
-    font-weight: 600;
     cursor: pointer;
-    border: 1px solid rgba(36, 59, 83, 0.14);
-    border-radius: 4px;
-    background: rgba(255, 255, 255, 0.6);
+    border-radius: 7px;
+    border: 1px solid rgba(36, 59, 83, 0.46);
+    background: linear-gradient(180deg, #f6f9fd 0%, #cdd9eb 42%, #b9c8df 58%, #e7eef8 100%);
+    box-shadow:
+      inset 0 2px 3px rgba(255, 255, 255, 0.92),
+      inset 0 -3px 10px rgba(36, 59, 83, 0.2),
+      0 4px 12px rgba(36, 59, 83, 0.22),
+      0 1px 2px rgba(255, 255, 255, 0.55);
     color: var(--nav-bg, #243b53);
-    padding: 0.18rem 0.34rem;
+    padding: 0.22rem 0.4rem;
     font: inherit;
-    font-weight: 600;
+    font-weight: 700;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.42);
   }
-  .cryo-dash-page--latent3d .latent3d-color-legend-aside .pairplot-palette-select__title:hover {
-    background: rgba(36, 59, 83, 0.06);
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside #latent3d-palette-toggle.pairplot-palette-select__title:hover {
+    filter: brightness(1.045);
+  }
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside #latent3d-palette-toggle.pairplot-palette-select__title:active {
+    transform: translateY(1px);
+    filter: brightness(0.97);
+  }
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside #latent3d-palette-toggle.pairplot-palette-select__title:focus-visible {
+    outline: 2px solid var(--accent, #c4703a);
+    outline-offset: 2px;
   }
   .cryo-dash-page--latent3d .latent3d-color-legend-aside .pairplot-palette-select__chevron {
     flex: 0 0 auto;
@@ -311,8 +334,31 @@
     box-sizing: border-box;
     min-width: 0;
   }
-  .cryo-dash-page--latent3d .cryo-cc-discrete-cell--plastic:not(.cryo-cc-discrete-cell--invert) {
+  /* Discrete category chips — same frame / hover / press as palette toggle (invert-action family). */
+  .cryo-dash-page--latent3d #latent3d-color-discrete-switches .cryo-cc-discrete-cell--plastic:not(.cryo-cc-discrete-cell--invert) {
     border-radius: 7px;
+    border-color: rgba(36, 59, 83, 0.46) !important;
+    box-shadow:
+      inset 0 2px 3px rgba(255, 255, 255, 0.92),
+      inset 0 -3px 10px rgba(36, 59, 83, 0.2),
+      0 4px 12px rgba(36, 59, 83, 0.22),
+      0 1px 2px rgba(255, 255, 255, 0.55);
+    cursor: pointer;
+    transition: filter 0.12s ease, transform 0.08s ease;
+  }
+  .cryo-dash-page--latent3d #latent3d-color-discrete-switches .cryo-cc-discrete-cell--plastic:not(.cryo-cc-discrete-cell--invert):hover {
+    filter: brightness(1.045);
+  }
+  .cryo-dash-page--latent3d #latent3d-color-discrete-switches .cryo-cc-discrete-cell--plastic:not(.cryo-cc-discrete-cell--invert):active {
+    transform: translateY(1px);
+    filter: brightness(0.97);
+  }
+  .cryo-dash-page--latent3d #latent3d-color-discrete-switches .cryo-cc-discrete-cell--plastic:not(.cryo-cc-discrete-cell--invert):focus-within {
+    outline: 2px solid var(--accent, #c4703a);
+    outline-offset: 2px;
+  }
+  .cryo-dash-page--latent3d #latent3d-color-discrete-switches .cryo-cc-discrete-cell--plastic:not(.cryo-cc-discrete-cell--invert) .cryo-cc-discrete-switch-label {
+    font-weight: 700;
   }
   .cryo-dash-page--latent3d .cryo-cc-discrete-switch {
     font-size: 0.62rem;
@@ -358,29 +404,31 @@
     display: none !important;
   }
   .cryo-dash-page--latent3d #latent3d-color-discrete-switches .cryo-cc-discrete-cell--invert .cryo-cc-discrete-invert-fitbox .cryo-cc-discrete-switch-label {
-    white-space: normal;
-    overflow: visible;
-    text-overflow: unset;
-    overflow-wrap: normal;
-    word-break: normal;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     text-align: center;
     margin-left: auto;
     margin-right: auto;
     align-self: center;
     max-height: 100%;
     box-sizing: border-box;
+    line-height: 1.05;
   }
-  /* Same as pair plot: invert on footer row — 71% × chip width, 135% × chip height, centred */
-  .cryo-dash-page--latent3d .latent3d-color-legend-aside #latent3d-color-discrete-switches.cryo-cc-discrete-switches--invert-footer-row.cryo-cc-discrete-switches--pair-2col .cryo-cc-discrete-cell--invert-footer {
+  /* Match pair plot invert footer — same enlarged chip so fitted label reads larger */
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside #latent3d-color-discrete-switches.cryo-color-discrete-switches--invert-footer-row.cryo-cc-discrete-switches--pair-2col .cryo-cc-discrete-cell--invert-footer {
     grid-column: 1 / -1;
     justify-self: center;
     align-self: center;
-    width: calc(0.71 * var(--pair-discrete-cell-w, 5.5rem));
-    height: calc(1.35 * var(--pair-discrete-cell-h, 1.35rem));
-    min-height: calc(1.35 * var(--pair-discrete-cell-h, 1.35rem));
+    width: min(100%, calc(1.78 * var(--pair-discrete-cell-w, 5.5rem)));
+    height: calc(1.24 * var(--pair-discrete-cell-h, 1.35rem));
+    min-height: calc(1.24 * var(--pair-discrete-cell-h, 1.35rem));
     max-width: 100%;
     box-sizing: border-box;
     margin-top: 2px;
+  }
+  .cryo-dash-page--latent3d #latent3d-color-discrete-switches.cryo-color-discrete-switches--invert-footer-row .cryo-cc-discrete-cell--invert-footer .cryo-cc-discrete-invert-fitbox {
+    padding: 5%;
   }
 </style>
 {% endblock %}
@@ -393,13 +441,10 @@
     </div>
     <p class="cryo-dash-lead">Each point is a particle in the space of three latent coordinates you choose (drag to
       rotate, scroll to zoom). Optional colour encodes another quantity from the analysis table. Use the histogram or
-      discrete toggles in the legend beside the plot to filter particles; the continuous palette lives in the drop-down
-      under the histogram.</p>
+      discrete toggles in the legend beside the plot to filter particles.</p>
     <div class="card cryo-dash-controls" id="latent3d-controls-card">
       <fieldset>
-        <legend>Latent axes</legend>
-        <p class="cryo-dash-legend-note" style="margin:0 0 0.35rem;">Pick three <strong>different</strong> coordinates
-          (z0, z1, …). The plot uses WebGL — &ldquo;Rendering…&rdquo; appears in the plot area while data loads.</p>
+        <legend>Choose 3D plot axes</legend>
         <label class="cryo-select-line" for="sx">First axis</label>
         <select id="sx"></select>
         <label class="cryo-select-line" for="sy">Second axis</label>
@@ -409,8 +454,6 @@
       </fieldset>
       <fieldset>
         <legend>Color scale</legend>
-        <p class="cryo-dash-legend-note" style="margin:0 0 0.35rem;">Optional point color from the analysis table (same
-          idea as the 2D scatter view).</p>
         <label class="cryo-select-line" for="sc">Color by</label>
         <select id="sc"><option value="none">None</option></select>
       </fieldset>
@@ -600,6 +643,20 @@
     });
   }
 
+  /** Hide legend aside & collapse grid column until a colour covariate is active and the legend panel is shown. */
+  function syncLatent3dLegendGridColumn() {
+    var row = document.querySelector(".cryo-dash-page--latent3d .cryo-dash-row--plot-triple");
+    var aside = document.querySelector(".cryo-dash-page--latent3d .latent3d-color-legend-aside");
+    var panel = document.getElementById("latent3d-color-legend-panel");
+    if (!row || !aside || !panel) return;
+    var hasCov = !!(sc.value && sc.value !== "none");
+    var panelShown = !panel.hidden && panel.getAttribute("aria-hidden") !== "true";
+    var showLegendColumn = hasCov && panelShown;
+    row.classList.toggle("cryo-dash-row--latent3d-no-color-legend", !showLegendColumn);
+    aside.hidden = !showLegendColumn;
+    aside.setAttribute("aria-hidden", showLegendColumn ? "false" : "true");
+  }
+
   var latent3dPaletteMenu = CryoColorCovariateLegend.wirePaletteSelect({
     toggle: latent3dPaletteToggle,
     options: latent3dPaletteOptions,
@@ -764,6 +821,7 @@
     discreteChipMatplotlibBlend: false,
     notifyOnRefresh: false,
     covariateDisplayMap: covariateDisplayMap,
+    hideLegendPanelWhenNoCovariate: true,
     getColorColumn: function() { return sc.value; },
     getPaletteName: selectedLatentPalette,
     panel: document.getElementById("latent3d-color-legend-panel"),
@@ -856,7 +914,9 @@
                 Plotly.Plots.resize(gd);
               } catch (e) {}
               syncLatent3dAsideLayout();
-              latent3dColorLegend.refresh({ suppressNotify: true });
+              latent3dColorLegend.refresh({ suppressNotify: true }).then(function() {
+                syncLatent3dLegendGridColumn();
+              });
             });
           })
           .catch(function(e) {
@@ -877,6 +937,7 @@
     latent3dColorLegend.refresh({
       suppressNotify: true,
       afterLayout: function() {
+        syncLatent3dLegendGridColumn();
         loadPlot();
       }
     });
@@ -911,6 +972,7 @@
     latent3dPlotStackObserver.observe(plotStack);
   }
   syncLatent3dPaletteFieldset();
+  syncLatent3dLegendGridColumn();
   syncControlsAlignment();
   syncLatent3dAsideLayout();
   loadPlot();

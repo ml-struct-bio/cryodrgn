@@ -1021,7 +1021,7 @@
     var wrap = document.getElementById("cryo-explorer-cache-load-progress-wrap");
     var show = !imageCacheProgressEl.hidden;
     if (fs) fs.classList.toggle("cryo-explorer-montage-group--image-cache-loading", show);
-    if (body) body.setAttribute("aria-hidden", show ? "true" : "false");
+    if (body) body.removeAttribute("aria-hidden");
     if (wrap) {
       wrap.hidden = !show;
       wrap.setAttribute("aria-hidden", show ? "false" : "true");
@@ -1077,7 +1077,14 @@
       : (opts.fullLoad
         ? "Loading all " + fmtInt(plottedCap) + " plotted particle images..."
         : "Loading image cache...");
-    setMontagePreloadOverlay(true, overlayLabel);
+    if (opts.enableImages) {
+      setImageGridMenuOpen(true);
+    }
+    if (!montagePreloadOverlayIsShown()) {
+      setMontagePreloadOverlay(true, overlayLabel);
+    } else if (!opts.keepOverlayAfterSuccess && overlayLabel) {
+      setMontagePreloadOverlay(true, overlayLabel);
+    }
     syncImageCacheButton(true);
     var body = { x: xcol, y: ycol, cache_size: cacheSize };
     if (opts.delta) {
@@ -1232,18 +1239,24 @@
 
   function loadAllImagesInChunks() {
     var total = scatterSubsetRowCount();
+    var overlayLabel = "Loading all " + fmtInt(total) + " plotted particle images...";
+    setImageGridMenuOpen(true);
     var progressStartCount = cachedImageCount();
     var progressTotal = progressStartCount > 0
       ? Math.max(1, total - progressStartCount)
       : Math.max(1, total);
     function updateImageCacheChunkProgress() {
       var added = Math.max(0, cachedImageCount() - progressStartCount);
+      var pct = Math.round((added / progressTotal) * 100);
+      if (montagePreloadOverlayIsShown() && montagePreloadOverlayLabel) {
+        montagePreloadOverlayLabel.textContent = overlayLabel.trim()
+          + "\n" + pct + "% · " + fmtInt(added) + "/" + fmtInt(progressTotal);
+        setImageCacheProgress(false);
+        return;
+      }
       setImageCacheProgress(true, added, progressTotal);
     }
-    setMontagePreloadOverlay(
-      true,
-      "Loading all " + fmtInt(total) + " plotted particle images..."
-    );
+    setMontagePreloadOverlay(true, overlayLabel);
     if (preloadStatus) preloadStatus.textContent = "";
     updateImageCacheChunkProgress();
     suppressPlotGridHighlights = true;

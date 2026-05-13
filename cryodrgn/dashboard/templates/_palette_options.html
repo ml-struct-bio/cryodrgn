@@ -1,20 +1,68 @@
-{% macro continuous_palette_options(input_name) -%}
-  <label class="pairplot-palette-option"><input type="radio" name="{{ input_name }}" value="Viridis" checked/><span
-    class="pairplot-palette-select__swatch"
+{# Shared continuous colour palettes for histogram / covariate legends (particle explorer, pair grid, latent 3D).
+   Omit Plasma & Inferno per product choice; gradients match explorer defaults. #}
+{% macro continuous_palette_options(
+  input_name,
+  label_class="pairplot-palette-option",
+  swatch_class="pairplot-palette-select__swatch"
+) -%}
+  <label class="{{ label_class }}"><input type="radio" name="{{ input_name }}" value="Viridis" checked/><span
+    class="{{ swatch_class }}"
     style="background:linear-gradient(90deg,#440154,#3b528b,#21918c,#5ec962,#fde725);"></span>Viridis</label>
-  <label class="pairplot-palette-option"><input type="radio" name="{{ input_name }}" value="Plasma"/><span
-    class="pairplot-palette-select__swatch"
-    style="background:linear-gradient(90deg,#0d0887,#7e03a8,#cc4778,#f89441,#f0f921);"></span>Plasma</label>
-  <label class="pairplot-palette-option"><input type="radio" name="{{ input_name }}" value="Inferno"/><span
-    class="pairplot-palette-select__swatch"
-    style="background:linear-gradient(90deg,#000004,#6f0918,#d04e3a,#fbc026,#fcffa4);"></span>Inferno</label>
-  <label class="pairplot-palette-option"><input type="radio" name="{{ input_name }}" value="Magma"/><span
-    class="pairplot-palette-select__swatch"
-    style="background:linear-gradient(90deg,#000004,#3b0f70,#8c2981,#de4968,#febb81);"></span>Magma</label>
-  <label class="pairplot-palette-option"><input type="radio" name="{{ input_name }}" value="Cividis"/><span
-    class="pairplot-palette-select__swatch"
-    style="background:linear-gradient(90deg,#00224e,#124176,#5c6d69,#bec290,#fde725);"></span>Cividis</label>
-  <label class="pairplot-palette-option"><input type="radio" name="{{ input_name }}" value="Turbo"/><span
-    class="pairplot-palette-select__swatch"
-    style="background:linear-gradient(90deg,#30123b,#4777ef,#1fa187,#ffbe32,#991200);"></span>Turbo</label>
+  <label class="{{ label_class }}"><input type="radio" name="{{ input_name }}" value="Magma"/><span
+    class="{{ swatch_class }}"
+    style="background:linear-gradient(90deg,#000004,#3b0f70,#8c2981,#de4968,#fe9f6d,#fcfdbf);"></span>Magma</label>
+  <label class="{{ label_class }}"><input type="radio" name="{{ input_name }}" value="Cividis"/><span
+    class="{{ swatch_class }}"
+    style="background:linear-gradient(90deg,#00224e,#30496c,#7b7c78,#c8b866,#fde725);"></span>Cividis</label>
+  <label class="{{ label_class }}"><input type="radio" name="{{ input_name }}" value="Turbo"/><span
+    class="{{ swatch_class }}"
+    style="background:linear-gradient(90deg,#30123b,#4662d7,#1ae4b6,#a4fc3c,#f98c0a,#7a0403);"></span>Turbo</label>
+  <label class="{{ label_class }}"><input type="radio" name="{{ input_name }}" value="Blues"/><span
+    class="{{ swatch_class }}"
+    style="background:linear-gradient(90deg,#f7fbff,#c6dbef,#6baed6,#2171b5,#08306b);"></span>Blues</label>
+  <label class="{{ label_class }}"><input type="radio" name="{{ input_name }}" value="Greens"/><span
+    class="{{ swatch_class }}"
+    style="background:linear-gradient(90deg,#f7fcf5,#c7e9c0,#74c476,#238b45,#00441b);"></span>Greens</label>
+  <label class="{{ label_class }}"><input type="radio" name="{{ input_name }}" value="Greys"/><span
+    class="{{ swatch_class }}"
+    style="background:linear-gradient(90deg,#ffffff,#d9d9d9,#969696,#525252,#000000);"></span>Greys</label>
+  <label class="{{ label_class }}"><input type="radio" name="{{ input_name }}" value="Oranges"/><span
+    class="{{ swatch_class }}"
+    style="background:linear-gradient(90deg,#fff5eb,#fdd0a2,#fd8d3c,#d94801,#7f2704);"></span>Oranges</label>
+  <label class="{{ label_class }}"><input type="radio" name="{{ input_name }}" value="Purples"/><span
+    class="{{ swatch_class }}"
+    style="background:linear-gradient(90deg,#fcfbfd,#dadaeb,#9e9ac8,#6a51a3,#3f007d);"></span>Purples</label>
+  <label class="{{ label_class }}"><input type="radio" name="{{ input_name }}" value="Reds"/><span
+    class="{{ swatch_class }}"
+    style="background:linear-gradient(90deg,#fff5f0,#fcbba1,#fb6a4a,#cb181d,#67000d);"></span>Reds</label>
+  <label class="{{ label_class }}"><input type="radio" name="{{ input_name }}" value="YlGnBu"/><span
+    class="{{ swatch_class }}"
+    style="background:linear-gradient(90deg,#ffffd9,#c7e9b4,#41b6c4,#2c7fb8,#081d58);"></span>YlGnBu</label>
+  <label class="{{ label_class }}"><input type="radio" name="{{ input_name }}" value="YlOrRd"/><span
+    class="{{ swatch_class }}"
+    style="background:linear-gradient(90deg,#ffffcc,#ffeda0,#feb24c,#f03b20,#800026);"></span>YlOrRd</label>
+  <label class="{{ label_class }}"><input type="radio" name="{{ input_name }}" value="RdBu"/><span
+    class="{{ swatch_class }}"
+    style="background:linear-gradient(90deg,#67001f,#d6604d,#f7f7f7,#4393c3,#053061);"></span>RdBu</label>
+  <label class="{{ label_class }}"><input type="radio" name="{{ input_name }}" value="Portland"/><span
+    class="{{ swatch_class }}"
+    style="background:linear-gradient(90deg,#0c3383,#0a88ba,#f2d338,#f28f38,#d91e1e);"></span>Portland</label>
+  <label class="{{ label_class }}"><input type="radio" name="{{ input_name }}" value="Jet"/><span
+    class="{{ swatch_class }}"
+    style="background:linear-gradient(90deg,#00007f,#0000ff,#00ffff,#ffff00,#ff0000,#7f0000);"></span>Jet</label>
+  <label class="{{ label_class }}"><input type="radio" name="{{ input_name }}" value="Hot"/><span
+    class="{{ swatch_class }}"
+    style="background:linear-gradient(90deg,#000000,#b00000,#ff8c00,#ffff66,#ffffff);"></span>Hot</label>
+  <label class="{{ label_class }}"><input type="radio" name="{{ input_name }}" value="Blackbody"/><span
+    class="{{ swatch_class }}"
+    style="background:linear-gradient(90deg,#000000,#5b0c6b,#b83289,#f26d4b,#f9f871);"></span>Blackbody</label>
+  <label class="{{ label_class }}"><input type="radio" name="{{ input_name }}" value="Electric"/><span
+    class="{{ swatch_class }}"
+    style="background:linear-gradient(90deg,#000000,#1e006d,#8d17a5,#d94fd5,#ffffff);"></span>Electric</label>
+  <label class="{{ label_class }}"><input type="radio" name="{{ input_name }}" value="Rainbow"/><span
+    class="{{ swatch_class }}"
+    style="background:linear-gradient(90deg,#6e40aa,#4776e6,#1ac7c2,#7bd94c,#f4d03f,#f25f5c);"></span>Rainbow</label>
+  <label class="{{ label_class }}"><input type="radio" name="{{ input_name }}" value="Earth"/><span
+    class="{{ swatch_class }}"
+    style="background:linear-gradient(90deg,#000082,#00b5c8,#7dbe42,#c8b64a,#8b4513);"></span>Earth</label>
 {%- endmacro %}

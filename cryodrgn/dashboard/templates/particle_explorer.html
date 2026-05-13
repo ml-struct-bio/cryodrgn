@@ -1,8 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Particle explorer · cryoDRGN{% endblock %}
 {% from "_macros.html" import nav_page_title_span %}
+{% from "_palette_options.html" import continuous_palette_options %}
 {% block nav_page_title %}{{ nav_page_title_span("Particle explorer") }}{% endblock %}
 {% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/cryo_cc_legend_palette_menu.css') }}"/>
 <style>
   .cryo-montage-grid {
     display: grid;
@@ -29,44 +31,6 @@
   .cryo-montage-grid-wrap .cryo-plot-rendering-overlay .cryo-plot-rendering-overlay__track {
     width: min(9rem, 90%);
     height: 4px;
-  }
-  /*
-   * base.html boosts overlay label/track size when ``--show`` — beats ``.cryo-montage-grid-wrap`` selectors.
-   * Keep preload copy inside the grid footprint so the montage column does not jump on load.
-   */
-  #montage-preload-overlay.cryo-plot-rendering-overlay--show {
-    overflow: hidden;
-    box-sizing: border-box;
-  }
-  #montage-preload-overlay.cryo-plot-rendering-overlay--show .cryo-plot-rendering-overlay__inner {
-    gap: 0.38rem;
-    max-width: 100%;
-    width: calc(100% - 0.5rem);
-    min-width: 0;
-    padding: 0 0.35rem;
-    box-sizing: border-box;
-    align-self: center;
-  }
-  #montage-preload-overlay.cryo-plot-rendering-overlay--show .cryo-plot-rendering-overlay__label {
-    font-size: calc(0.66rem * 1.43);
-    font-weight: 600;
-    line-height: 1.28;
-    letter-spacing: 0;
-    text-align: center;
-    max-width: 100%;
-    width: 100%;
-    min-width: 0;
-    box-sizing: border-box;
-    white-space: pre-line;
-    overflow-wrap: anywhere;
-    word-break: break-word;
-    hyphens: auto;
-    font-variant-numeric: tabular-nums;
-  }
-  #montage-preload-overlay.cryo-plot-rendering-overlay--show .cryo-plot-rendering-overlay__track {
-    width: min(7.5rem, 92%);
-    height: 3px;
-    flex-shrink: 0;
   }
   .cryo-montage-cell {
     display: flex;
@@ -345,6 +309,12 @@
     align-items: center;
     justify-content: center;
   }
+  .cryo-explorer-load-images-toolbar
+    .cryo-explorer-action-row__btn
+    #btn-expand-cache.btn.cryo-explorer-expand-cache-btn--compact {
+    font-size: 0.62rem;
+    line-height: 1.15;
+  }
   .cryo-explorer-cache-size-label {
     display: inline-flex;
     align-items: center;
@@ -419,7 +389,7 @@
     width: min(100%, 18rem);
     margin-top: 0.35rem;
   }
-  /* While cache batches load: keep controls in flow so montage height / grid position stay stable */
+  /* While cache batches load: replace full "Load particle images…" fieldset body with progress */
   .cryo-explorer-cache-load-body {
     margin: 0;
     padding: 0;
@@ -434,16 +404,22 @@
   .cryo-explorer-cache-load-progress-wrap[hidden] {
     display: none !important;
   }
-  .cryo-explorer-montage-group--image-cache-loading .cryo-explorer-cache-load-body {
-    opacity: 0.52;
-    pointer-events: none;
-    user-select: none;
-    transition: opacity 0.15s ease;
+  .cryo-explorer-montage-group--image-cache-loading > legend {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
-  .cryo-explorer-montage-group--image-cache-loading .cryo-explorer-cache-load-progress-wrap {
-    margin-top: 0.42rem;
-    padding-top: 0.42rem;
-    border-top: 1px solid rgba(36, 59, 83, 0.12);
+  .cryo-explorer-montage-group.cryo-explorer-montage-group--image-cache-loading {
+    position: relative;
+  }
+  .cryo-explorer-montage-group--image-cache-loading .cryo-explorer-cache-load-body {
+    display: none;
   }
   .cryo-explorer-cache-load-progress-heading {
     margin: 0 0 0.25rem;
@@ -780,6 +756,20 @@
   .cryo-palette-select.scatter-palette-radios--suppressed {
     display: none;
   }
+  /* Same rule as particle_explorer.css — inline block must not override hide (pane uses display:block). */
+  #color-hist-panel.cryo-explorer-discrete-hides-scatter-palette-radios #scatter-palette-radios.cryo-palette-select--options-pane {
+    display: none !important;
+  }
+  /* Range/histogram mode: collapsed “Choose palette” swatches still reserve height with visibility:hidden */
+  #color-hist-panel.cryo-explorer-continuous-palette-pane-collapsed
+    #scatter-palette-options.cryo-palette-select__options.cryo-palette-select__options--collapsed {
+    display: none !important;
+  }
+  #color-hist-panel.cryo-explorer-continuous-palette-pane-collapsed #scatter-palette-radios.cryo-palette-select--options-pane {
+    padding-top: 0;
+    border-top-width: 0;
+    border-top-color: transparent;
+  }
   .cryo-palette-option {
     flex: 0 0 auto;
     display: inline-flex;
@@ -814,17 +804,117 @@
     background: rgba(250, 248, 244, 0.78);
     box-sizing: border-box;
   }
-  .cryo-color-legend-region-heading {
+  .cryo-cc-legend-region-heading-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.42rem;
+    flex-wrap: wrap;
     margin: 0 0 0.28rem;
-    padding: 0;
+    min-width: 0;
+    line-height: 1.15;
     font-size: 0.82rem;
+  }
+  .cryo-cc-legend-region-heading-row .cryo-color-legend-region-heading {
+    margin: 0;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .cryo-explorer-scatter-palette-heading-toggle-host {
+    flex: 0 0 auto;
+    margin-left: auto;
+    align-self: center;
+  }
+  .cryo-explorer-scatter-palette-heading-toggle-host--suppressed {
+    display: none !important;
+  }
+  .cryo-explorer-scatter-palette-heading-toggle-host .cryo-palette-select__title {
+    margin: 0;
+    font-size: inherit;
+    line-height: 1.15;
+    white-space: nowrap;
+  }
+  #color-hist-panel .cryo-cc-legend-region-heading-row {
+    overflow: visible;
+  }
+  #color-hist-panel.cryo-color-hist-panel {
+    overflow: visible;
+  }
+  #color-hist-panel #scatter-palette-radios.cryo-explorer-scatter-palette-kit.cryo-palette-select.cryo-palette-select--options-pane {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    position: relative;
+    width: auto;
+    max-width: min(22rem, 94vw);
+    margin-top: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-top-width: 0;
+    border-top-color: transparent;
+  }
+  .cryo-palette-select.cryo-palette-select--options-pane {
+    display: block;
+    width: 100%;
+    margin-top: 0;
+    padding-top: 0.36rem;
+    border-top: 1px solid rgba(36, 59, 83, 0.1);
+  }
+  .cryo-color-legend-region-heading {
+    padding: 0;
+    font-size: inherit;
     font-weight: 700;
     letter-spacing: 0.02em;
     color: var(--nav-bg, #243b53);
-    line-height: 1.15;
+    line-height: inherit;
   }
   .cryo-color-legend-region-heading[hidden] {
     display: none !important;
+  }
+  #color-legend-region-invert-slot.cryo-cc-region-invert-slot {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+  }
+  #color-legend-region-invert-slot .cryo-cc-discrete-cell--invert-heading {
+    flex-shrink: 0;
+    border-radius: 7px;
+  }
+  #color-legend-region-invert-slot .cryo-cc-discrete-cell--invert-heading.cryo-cc-discrete-cell--invert-idle {
+    background: linear-gradient(152deg, #fff4f4 0%, #f0dede 40%, #e8cfcf 55%, #faf2f2 100%);
+    border: 1px solid rgba(120, 44, 44, 0.38);
+    box-shadow:
+      inset 0 2px 5px rgba(255, 255, 255, 0.75),
+      inset 0 -4px 11px rgba(90, 24, 24, 0.11),
+      0 1px 0 rgba(255, 255, 255, 0.45);
+  }
+  #color-legend-region-invert-slot .cryo-cc-discrete-cell--invert-heading.cryo-cc-discrete-cell--invert-action {
+    background: linear-gradient(175deg, #ffecec 0%, #eca9a9 44%, #d87373 58%, #f8dede 100%);
+    border: 1px solid rgba(94, 18, 18, 0.52);
+    box-shadow:
+      inset 0 2px 4px rgba(255, 255, 255, 0.55),
+      inset 0 -3px 10px rgba(62, 8, 8, 0.28),
+      0 4px 14px rgba(62, 8, 8, 0.28),
+      0 1px 2px rgba(255, 255, 255, 0.35);
+  }
+  #color-legend-region-invert-slot .cryo-cc-discrete-cell--invert-heading .cryo-cc-discrete-switch {
+    width: auto;
+    height: auto;
+    min-height: calc(0.765 * 1lh);
+    box-sizing: border-box;
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    padding: 0 !important;
+    border: none !important;
+    background: transparent !important;
+  }
+  #color-legend-region-invert-slot .cryo-cc-discrete-cell--invert-heading.cryo-cc-discrete-cell--invert-idle .cryo-cc-discrete-invert-fitbox .cryo-cc-discrete-switch-label {
+    color: #6f2828;
+  }
+  #color-legend-region-invert-slot .cryo-cc-discrete-cell--invert-heading.cryo-cc-discrete-cell--invert-action .cryo-cc-discrete-invert-fitbox .cryo-cc-discrete-switch-label {
+    color: #3f0808;
   }
   /* Right column: same horizontal band as #montage-actions (“Load particle images…”); histogram height unchanged (#color-hist 5rem). */
   .cryo-dash-page--particle-explorer .cryo-dash-montage > .cryo-color-hist-panel {
@@ -844,10 +934,6 @@
     margin-right: auto;
     margin-top: 0;
     box-sizing: border-box;
-  }
-  /* Avoid grid width jumping when vertical overflow toggles the montage scrollbar */
-  .cryo-dash-page--particle-explorer.cryo-dash-page--image-viewer .cryo-dash-montage {
-    scrollbar-gutter: stable;
   }
   .cryo-dash-page--particle-explorer
     .cryo-dash-montage:not(:has(> .cryo-color-hist-panel:not([hidden])))
@@ -917,76 +1003,6 @@
     gap: 1px 3px;
     margin: 0.05rem 0 0;
   }
-  /*
-   * Toggle legend (particle explorer): invert / “no selection” in its own right-hand column.
-   * Width & height use JS-measured category cells (--cryo-explorer-discrete-cell-*).
-   */
-  #color-discrete-switches.cryo-color-discrete-switches--invert-aside {
-    display: flex;
-    flex-direction: row;
-    align-items: stretch;
-    gap: 6px 8px;
-    margin: 0.05rem 0 0;
-  }
-  #color-discrete-switches.cryo-color-discrete-switches--invert-aside .cryo-cc-discrete-cells-wrap {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(5.5rem, 1fr));
-    align-items: stretch;
-    justify-content: start;
-    gap: 1px 3px;
-    flex: 1 1 auto;
-    min-width: 0;
-  }
-  #color-discrete-switches.cryo-color-discrete-switches--invert-aside .cryo-cc-discrete-invert-aside {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex: 0 0 auto;
-    align-self: stretch;
-  }
-  #color-discrete-switches.cryo-color-discrete-switches--invert-aside .cryo-cc-discrete-cell--invert.cryo-cc-discrete-cell--invert-aside {
-    box-sizing: border-box;
-    width: calc(0.83 * var(--cryo-explorer-discrete-cell-w, 5.5rem));
-    height: calc(1.53 * var(--cryo-explorer-discrete-cell-h, 2.25rem));
-    flex-shrink: 0;
-    margin: 0;
-    border-radius: 7px;
-  }
-  #color-discrete-switches.cryo-color-discrete-switches--invert-aside .cryo-cc-discrete-cell--invert-aside.cryo-cc-discrete-cell--invert-idle {
-    background: linear-gradient(152deg, #fff4f4 0%, #f0dede 40%, #e8cfcf 55%, #faf2f2 100%);
-    border: 1px solid rgba(120, 44, 44, 0.38);
-    box-shadow:
-      inset 0 2px 5px rgba(255, 255, 255, 0.75),
-      inset 0 -4px 11px rgba(90, 24, 24, 0.11),
-      0 1px 0 rgba(255, 255, 255, 0.45);
-  }
-  #color-discrete-switches.cryo-color-discrete-switches--invert-aside .cryo-cc-discrete-cell--invert-aside.cryo-cc-discrete-cell--invert-action {
-    background: linear-gradient(175deg, #ffecec 0%, #eca9a9 44%, #d87373 58%, #f8dede 100%);
-    border: 1px solid rgba(94, 18, 18, 0.52);
-    box-shadow:
-      inset 0 2px 4px rgba(255, 255, 255, 0.55),
-      inset 0 -3px 10px rgba(62, 8, 8, 0.28),
-      0 4px 14px rgba(62, 8, 8, 0.28),
-      0 1px 2px rgba(255, 255, 255, 0.35);
-  }
-  #color-discrete-switches.cryo-color-discrete-switches--invert-aside .cryo-cc-discrete-cell--invert-aside .cryo-cc-discrete-switch {
-    width: 100%;
-    height: 100%;
-    min-height: 0;
-    box-sizing: border-box;
-    display: inline-flex;
-    justify-content: center;
-    align-items: center;
-    padding: 0 !important;
-    border: none !important;
-    background: transparent !important;
-  }
-  #color-discrete-switches.cryo-color-discrete-switches--invert-aside .cryo-cc-discrete-cell--invert-aside.cryo-cc-discrete-cell--invert-idle .cryo-cc-discrete-invert-fitbox .cryo-cc-discrete-switch-label {
-    color: #6f2828;
-  }
-  #color-discrete-switches.cryo-color-discrete-switches--invert-aside .cryo-cc-discrete-cell--invert-aside.cryo-cc-discrete-cell--invert-action .cryo-cc-discrete-invert-fitbox .cryo-cc-discrete-switch-label {
-    color: #3f0808;
-  }
   #color-discrete-switches .cryo-cc-discrete-cell--invert .cryo-cc-discrete-invert-fitbox .cryo-cc-discrete-switch-label {
     white-space: normal;
     overflow: visible;
@@ -999,6 +1015,7 @@
     align-self: center;
     max-height: 100%;
     box-sizing: border-box;
+    font-weight: 700;
   }
   /* Discrete cell with corner buttons */
   #color-discrete-switches .cryo-cc-discrete-cell {
@@ -1190,23 +1207,19 @@
 <div class="cryo-dash-page cryo-dash-page--image-viewer cryo-dash-page--particle-explorer">
 <div class="cryo-dash-row">
   <div class="cryo-dash-side">
-    <div class="cryo-dash-top" style="margin-bottom:0.25rem;">
-      <a href="/">← Back</a>
-    </div>
     <div class="cryo-dash-lead">
-      Select particles using either:
+      Select particle subset using either:
       <ul class="cryo-explorer-lead-list">
-        <li id="lead-mode-lasso">Lasso or box selection in the scatterplot main panel</li>
-        <li id="lead-mode-threshold">Choose a continuous color scale like <code>znorm</code> and select a threshold
-          value or range in the histogram legend panel
-        <li id="lead-mode-discrete">Toggling value filters when using a discrete color covariate
-          like <code>kmeans labels</code></li>
+        <li id="lead-mode-lasso">Lasso or box selection in the scatterplot</li>
+        <li id="lead-mode-threshold">Click the color histogram for a single threshold, or drag across it to select a value range,
+          when using a continuous color covariate like <code>znorm</code></li>
+        <li id="lead-mode-discrete">Toggling value filters when using a discrete color covariate like k-means labels</li>
       </ul>
       <p>Load particle images and generate volumes with or without a selection using the interface on the right.</p>
     </div>
     <div class="card cryo-dash-controls" id="scatter-controls-card">
       <fieldset>
-        <legend>Choose plot axes<br/>and point color scale</legend>
+        <legend>Choose axes<br/>and point color scale</legend>
         <label class="cryo-select-line" for="sx">Horizontal (X)</label>
         <select id="sx"></select>
         <label class="cryo-select-line" for="sy">Vertical (Y)</label>
@@ -1229,7 +1242,8 @@
       </div>
       <fieldset id="particle-sel-fieldset" disabled>
         <legend>Create indices file</legend>
-        <p class="cryo-dash-legend-note">Active once you make a particle selection.</p>
+        <p class="cryo-dash-legend-note">Active after you select particles on the plot, with the color histogram, or
+          with discrete color toggles.</p>
         <div class="cryo-explorer-save-btns">
           <button type="button" class="btn" id="save-indices-pkl">Save selection<br/>as
             <code>indices.pkl</code></button>
@@ -1286,7 +1300,24 @@
 
   <aside class="cryo-dash-montage" aria-label="Particle preview">
     <div id="color-hist-panel" class="cryo-color-hist-panel" hidden aria-hidden="true">
-      <h3 id="color-legend-region-heading" class="cryo-color-legend-region-heading" hidden></h3>
+      <div class="cryo-cc-legend-region-heading-row">
+        <h3 id="color-legend-region-heading" class="cryo-color-legend-region-heading" hidden></h3>
+        <div id="color-legend-region-invert-slot" class="cryo-cc-region-invert-slot" hidden aria-hidden="true"></div>
+        <div id="scatter-palette-radios"
+          class="cryo-cc-legend-palette-shell cryo-explorer-scatter-palette-kit cryo-palette-select cryo-palette-select--options-pane scatter-palette-radios--suppressed cryo-explorer-scatter-palette-heading-toggle-host cryo-explorer-scatter-palette-heading-toggle-host--suppressed"
+          aria-label="Continuous color palette">
+          <button type="button" id="scatter-palette-toggle" class="cryo-palette-select__title" aria-expanded="false"
+            aria-controls="scatter-palette-options">
+            <span class="cryo-palette-select__chevron" aria-hidden="true">▶</span>
+            <span id="scatter-palette-toggle-label">Choose palette</span>
+          </button>
+          <div id="scatter-palette-options"
+            class="cryo-palette-select__options cryo-palette-select__options--collapsed cryo-cc-legend-palette-menu"
+            role="group">
+            {{ continuous_palette_options("scatter_palette", "cryo-palette-option", "cryo-palette-select__swatch") }}
+          </div>
+        </div>
+      </div>
       <div id="color-continuous-hist-wrap">
         <div id="color-hist"></div>
         <div class="cryo-color-hist-controls">
@@ -1306,87 +1337,6 @@
           </button>
         </div>
       </div>
-      <div id="scatter-palette-radios" class="cryo-palette-select scatter-palette-radios--suppressed"
-        aria-label="Continuous color palette">
-        <button type="button" id="scatter-palette-toggle" class="cryo-palette-select__title" aria-expanded="false"
-          aria-controls="scatter-palette-options">
-          <span class="cryo-palette-select__chevron" aria-hidden="true">▶</span>
-          <span id="scatter-palette-toggle-label">Choose<br/>palette</span>
-        </button>
-        <div id="scatter-palette-options" class="cryo-palette-select__options cryo-palette-select__options--collapsed">
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Viridis" checked/><span
-            class="cryo-palette-select__swatch"
-            style="background:linear-gradient(90deg,#440154,#3b528b,#21918c,#5ec962,#fde725);"></span>Viridis</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Plasma"/><span
-            class="cryo-palette-select__swatch"
-            style="background:linear-gradient(90deg,#0d0887,#7e03a8,#cc4778,#f89540,#f0f921);"></span>Plasma</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Inferno"/><span
-            class="cryo-palette-select__swatch"
-            style="background:linear-gradient(90deg,#000004,#420a68,#932667,#dd513a,#fca50a,#fcffa4);"></span>Inferno</l
-            abel>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Magma"/><span
-            class="cryo-palette-select__swatch"
-            style="background:linear-gradient(90deg,#000004,#3b0f70,#8c2981,#de4968,#fe9f6d,#fcfdbf);"></span>Magma</lab
-            el>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Cividis"/><span
-            class="cryo-palette-select__swatch"
-            style="background:linear-gradient(90deg,#00224e,#30496c,#7b7c78,#c8b866,#fde725);"></span>Cividis</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Turbo"/><span
-            class="cryo-palette-select__swatch"
-            style="background:linear-gradient(90deg,#30123b,#4662d7,#1ae4b6,#a4fc3c,#f98c0a,#7a0403);"></span>Turbo</lab
-            el>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Blues"/><span
-            class="cryo-palette-select__swatch"
-            style="background:linear-gradient(90deg,#f7fbff,#c6dbef,#6baed6,#2171b5,#08306b);"></span>Blues</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Greens"/><span
-            class="cryo-palette-select__swatch"
-            style="background:linear-gradient(90deg,#f7fcf5,#c7e9c0,#74c476,#238b45,#00441b);"></span>Greens</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Greys"/><span
-            class="cryo-palette-select__swatch"
-            style="background:linear-gradient(90deg,#ffffff,#d9d9d9,#969696,#525252,#000000);"></span>Greys</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Oranges"/><span
-            class="cryo-palette-select__swatch"
-            style="background:linear-gradient(90deg,#fff5eb,#fdd0a2,#fd8d3c,#d94801,#7f2704);"></span>Oranges</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Purples"/><span
-            class="cryo-palette-select__swatch"
-            style="background:linear-gradient(90deg,#fcfbfd,#dadaeb,#9e9ac8,#6a51a3,#3f007d);"></span>Purples</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Reds"/><span
-            class="cryo-palette-select__swatch"
-            style="background:linear-gradient(90deg,#fff5f0,#fcbba1,#fb6a4a,#cb181d,#67000d);"></span>Reds</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="YlGnBu"/><span
-            class="cryo-palette-select__swatch"
-            style="background:linear-gradient(90deg,#ffffd9,#c7e9b4,#41b6c4,#2c7fb8,#081d58);"></span>YlGnBu</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="YlOrRd"/><span
-            class="cryo-palette-select__swatch"
-            style="background:linear-gradient(90deg,#ffffcc,#ffeda0,#feb24c,#f03b20,#800026);"></span>YlOrRd</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="RdBu"/><span
-            class="cryo-palette-select__swatch"
-            style="background:linear-gradient(90deg,#67001f,#d6604d,#f7f7f7,#4393c3,#053061);"></span>RdBu</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Portland"/><span
-            class="cryo-palette-select__swatch"
-            style="background:linear-gradient(90deg,#0c3383,#0a88ba,#f2d338,#f28f38,#d91e1e);"></span>Portland</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Jet"/><span
-            class="cryo-palette-select__swatch"
-            style="background:linear-gradient(90deg,#00007f,#0000ff,#00ffff,#ffff00,#ff0000,#7f0000);"></span>Jet</label
-            >
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Hot"/><span
-            class="cryo-palette-select__swatch"
-            style="background:linear-gradient(90deg,#000000,#b00000,#ff8c00,#ffff66,#ffffff);"></span>Hot</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Blackbody"/><span
-            class="cryo-palette-select__swatch"
-            style="background:linear-gradient(90deg,#000000,#5b0c6b,#b83289,#f26d4b,#f9f871);"></span>Blackbody</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Electric"/><span
-            class="cryo-palette-select__swatch"
-            style="background:linear-gradient(90deg,#000000,#1e006d,#8d17a5,#d94fd5,#ffffff);"></span>Electric</label>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Rainbow"/><span
-            class="cryo-palette-select__swatch"
-            style="background:linear-gradient(90deg,#6e40aa,#4776e6,#1ac7c2,#7bd94c,#f4d03f,#f25f5c);"></span>Rainbow</l
-            abel>
-          <label class="cryo-palette-option"><input type="radio" name="scatter_palette" value="Earth"/><span
-            class="cryo-palette-select__swatch"
-            style="background:linear-gradient(90deg,#000082,#00b5c8,#7dbe42,#c8b64a,#8b4513);"></span>Earth</label>
-        </div>
-      </div>
     </div>
 
     <div id="montage-actions" class="cryo-explorer-montage-actions">
@@ -1395,7 +1345,7 @@
         <div id="cryo-explorer-cache-load-body" class="cryo-explorer-cache-load-body">
         <div class="cryo-explorer-load-images-toolbar">
           <label class="cryo-explorer-cache-size-label" for="montage-cache-size-input">
-            <span class="cryo-explorer-cache-size-label__text" id="montage-cache-size-label-text">New cache&#10;size</span>
+            <span class="cryo-explorer-cache-size-label__text" id="montage-cache-size-label-text">Cache size</span>
             <input
               type="number"
               id="montage-cache-size-input"
@@ -1409,10 +1359,10 @@
             />
           </label>
           <div class="cryo-explorer-action-row__btn">
-            <button type="button" class="btn btn-secondary" id="btn-expand-cache" disabled>Build new&#10;cache</button>
+            <button type="button" class="btn btn-secondary cryo-explorer-expand-cache-btn--compact" id="btn-expand-cache" disabled>Build new cache&#10;with {{ preload_image_limit }} images</button>
           </div>
           <div class="cryo-explorer-action-row__btn">
-            <button type="button" class="btn" id="btn-view-images" disabled>Load all&#10;{{ scatter_plotted_n }} images</button>
+            <button type="button" class="btn" id="btn-view-images" disabled>Load all images</button>
           </div>
         </div>
         <div class="cryo-explorer-cache-selection-row" aria-label="Selection cache actions">
@@ -1505,13 +1455,14 @@
       <p id="image-grid-inactive-note"
         class="cryo-dash-legend-note"
         style="margin:0.22rem 0 0;"
-        hidden>Build an image cache to populate the grid</p>
+        hidden>Build image cache to populate grid</p>
       <div id="image-grid-menu-body" class="cryo-image-grid-menu-body" hidden>
         <div class="cryo-montage-grid-wrap">
           <div id="montage-grid" class="cryo-montage-grid"></div>
           <div id="montage-preload-overlay" class="cryo-plot-rendering-overlay" aria-hidden="true">
             <div class="cryo-plot-rendering-overlay__inner">
-              <span id="montage-preload-overlay-label" class="cryo-plot-rendering-overlay__label">Loading image cache…</span>
+              <span id="montage-preload-overlay-label" class="cryo-plot-rendering-overlay__label">Loading image
+                cache...</span>
               <div class="cryo-plot-rendering-overlay__track" role="progressbar" aria-valuetext="Loading image cache">
                 <div class="cryo-plot-rendering-overlay__indeterminate"></div>
               </div>
@@ -2077,9 +2028,6 @@
   var overlay = document.getElementById("scatter-rendering-overlay");
   var scatterRenderingEverCompleted = false;
   var paletteFieldset = document.getElementById("scatter-palette-radios");
-  if (paletteFieldset && scatterPlotStack && scatterPlotStack.parentNode) {
-    scatterPlotStack.insertAdjacentElement("afterend", paletteFieldset);
-  }
   var plotStatus = document.getElementById("scatter-plot-status");
   var preloadStatus = document.getElementById("preload-status");
   var scatterPlotWatchdog = null;
@@ -2223,7 +2171,7 @@
   function syncMontageCacheSizeLabelEl() {
     var sp = document.getElementById("montage-cache-size-label-text");
     var inp = document.getElementById("montage-cache-size-input");
-    if (sp) sp.textContent = "New cache\nsize";
+    if (sp) sp.textContent = preloaded ? "New size" : "Cache size";
     if (inp) {
       inp.title = preloaded
         ? "Total cached images to grow toward (must be greater than the current cache; capped at plotted points)"
@@ -2394,7 +2342,8 @@
       return;
     }
     if (!preloaded) {
-      btnExpandCache.textContent = "Build new\ncache";
+      btnExpandCache.classList.add("cryo-explorer-expand-cache-btn--compact");
+      btnExpandCache.textContent = "Build new cache\nwith " + fmtInt(readMontageCacheSizeInput()) + " images";
       var capB = scatterSubsetRowCount();
       var canBuild = !!(totalParticles && plotHasScatterData() && capB > 0);
       btnExpandCache.disabled = !canBuild;
@@ -2406,9 +2355,10 @@
             + " thumbnails (see cache size).";
       return;
     }
+    btnExpandCache.classList.add("cryo-explorer-expand-cache-btn--compact");
     btnExpandCache.textContent = "Expand cache by\n" + fmtInt(Math.max(0,
       readMontageCacheSizeInput() - cachedImageCount()
-    )) + " images";
+    )) + " random images";
     var have = cachedImageCount();
     var want = readMontageCacheSizeInput();
     var cap = scatterSubsetRowCount();
@@ -2511,7 +2461,7 @@
     var wrap = document.getElementById("cryo-explorer-cache-load-progress-wrap");
     var show = !imageCacheProgressEl.hidden;
     if (fs) fs.classList.toggle("cryo-explorer-montage-group--image-cache-loading", show);
-    if (body) body.removeAttribute("aria-hidden");
+    if (body) body.setAttribute("aria-hidden", show ? "true" : "false");
     if (wrap) {
       wrap.hidden = !show;
       wrap.setAttribute("aria-hidden", show ? "false" : "true");
@@ -2608,11 +2558,6 @@
       return Promise.resolve(null);
     }
 
-    /* Expand grid before overlay/progress so layout does not jump when the first chunk returns */
-    if (enableImages) {
-      setImageGridMenuOpen(true);
-    }
-
     var progressStartCount = cachedImageCount();
     var progressTotal = progressStartCount > 0
       ? Math.max(1, finalTarget - progressStartCount)
@@ -2620,14 +2565,6 @@
 
     function updateImageCacheChunkProgress() {
       var added = Math.max(0, cachedImageCount() - progressStartCount);
-      var pct = Math.round((added / progressTotal) * 100);
-      /* Full-screen montage overlay is visible — avoid also expanding the cache fieldset (small layout snap). */
-      if (montagePreloadOverlayIsShown() && montagePreloadOverlayLabel) {
-        montagePreloadOverlayLabel.textContent = overlayLabel.trim()
-          + "\n" + pct + "% · " + fmtInt(added) + "/" + fmtInt(progressTotal);
-        setImageCacheProgress(false);
-        return;
-      }
       setImageCacheProgress(true, added, progressTotal);
     }
 
@@ -2748,14 +2685,7 @@
       : (opts.fullLoad
         ? "Loading all " + fmtInt(plottedCap) + " plotted particle images..."
         : "Loading image cache...");
-    if (opts.enableImages) {
-      setImageGridMenuOpen(true);
-    }
-    if (!montagePreloadOverlayIsShown()) {
-      setMontagePreloadOverlay(true, overlayLabel);
-    } else if (!opts.keepOverlayAfterSuccess && overlayLabel) {
-      setMontagePreloadOverlay(true, overlayLabel);
-    }
+    setMontagePreloadOverlay(true, overlayLabel);
     syncImageCacheButton(true);
     var body = { x: xcol, y: ycol, cache_size: cacheSize };
     if (opts.delta) {
@@ -3824,15 +3754,21 @@
   function clearScatterPlotWatchdog() {
     if (scatterPlotWatchdog) { clearTimeout(scatterPlotWatchdog); scatterPlotWatchdog = null; }
   }
-  function scatterColorByIsDiscrete() {
-    /* Matches ``scatter_json``: only ``labels`` uses ChimeraX discrete colors (no sequential palette). */
-    return sc.value === "labels";
-  }
-
   function discreteLegendWrapIsActive() {
     if (!colorDiscreteWrap) return false;
     return colorDiscreteWrap.classList.contains("cryo-cc-discrete-wrap--show")
       || colorDiscreteWrap.classList.contains("cryo-color-discrete-wrap--show");
+  }
+
+  /** True whenever the sequential palette UI is irrelevant (K-means, labels, …) — not only ``labels``. */
+  function scatterColorByIsDiscrete() {
+    if (discreteLegendWrapIsActive()) return true;
+    try {
+      if (gd && gd.data && gd.data[0]) {
+        return scatterTraceColorMode() === "discrete";
+      }
+    } catch (e) { /* ignore */ }
+    return sc.value === "labels";
   }
 
   function syncScatterLegendToggleCaption() {
@@ -3840,9 +3776,9 @@
     var labelSpan = document.getElementById("scatter-palette-toggle-label");
     if (labelSpan) {
       if (scatterColorByIsDiscrete()) {
-        labelSpan.innerHTML = "K-means<br/>legend";
+        labelSpan.textContent = "K-means legend";
       } else {
-        labelSpan.innerHTML = "Choose<br/>palette";
+        labelSpan.textContent = "Choose palette";
       }
     }
     scatterPaletteToggle.setAttribute(
@@ -3857,8 +3793,23 @@
     var hasColor = sc.value && sc.value !== "none";
     var suppress = rendering || !hasColor;
     paletteFieldset.classList.toggle("scatter-palette-radios--suppressed", suppress);
+    paletteFieldset.classList.toggle(
+      "cryo-explorer-scatter-palette-heading-toggle-host--suppressed",
+      suppress
+    );
     syncScatterLegendToggleCaption();
     syncScatterPaletteOptions();
+    if (colorHistPanel) {
+      colorHistPanel.classList.toggle(
+        "cryo-explorer-discrete-hides-scatter-palette-radios",
+        hasColor && !rendering && scatterColorByIsDiscrete()
+      );
+      var paletteExpanded = !!(scatterPaletteToggle && scatterPaletteToggle.getAttribute("aria-expanded") === "true");
+      colorHistPanel.classList.toggle(
+        "cryo-explorer-continuous-palette-pane-collapsed",
+        hasColor && !rendering && !scatterColorByIsDiscrete() && !paletteExpanded
+      );
+    }
   }
   function syncScatterPaletteOptions() {
     if (!scatterPaletteOptions || !paletteFieldset) return;
@@ -4806,7 +4757,7 @@
     thresholdModeCaption: colorHistModeCheckCaption,
     thresholdStatus: colorThresholdStatus,
     discreteSwitches: colorDiscreteSwitches,
-    discreteInvertAsideColumn: true,
+    invertHeadingSlotEl: document.getElementById("color-legend-region-invert-slot"),
     invertBtn: btnDiscreteInvertSelection,
     vertical: false,
     histPlotVertical: false,
@@ -4869,7 +4820,7 @@
     scatterPaletteToggle.addEventListener("click", function() {
       var expanded = scatterPaletteToggle.getAttribute("aria-expanded") === "true";
       scatterPaletteToggle.setAttribute("aria-expanded", expanded ? "false" : "true");
-      syncScatterPaletteOptions();
+      syncScatterPaletteFieldset();
     });
   }
   if (imageGridMenuToggle) {

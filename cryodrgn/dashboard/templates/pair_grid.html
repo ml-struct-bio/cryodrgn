@@ -96,6 +96,7 @@
 {% endmacro %}
 {% block title %}Latent pairs · cryoDRGN{% endblock %}
 {% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/cryo_cc_legend_palette_menu.css') }}"/>
 <style>
   .pairplot-viewport {
     --pairplot-max-h: min(90vh, calc(100svh - 6.5rem));
@@ -472,10 +473,6 @@
     flex-shrink: 0;
   }
   .pairplot-color-legend-aside #pairplot-palette-select {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: stretch;
-    gap: 0.45rem;
     width: 100%;
     max-width: 100%;
     margin-top: 0.35rem;
@@ -514,49 +511,6 @@
   }
   .pairplot-color-legend-aside .pairplot-palette-select__title[aria-expanded="true"] .pairplot-palette-select__chevron {
     transform: rotate(90deg);
-  }
-  .pairplot-color-legend-aside .pairplot-palette-select__options {
-    display: grid;
-    grid-auto-flow: column;
-    grid-template-rows: repeat(2, auto);
-    grid-auto-columns: max-content;
-    align-items: stretch;
-    column-gap: 0.35rem;
-    row-gap: 0.04rem;
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding: 0.04rem 0 0.22rem;
-    scrollbar-width: thin;
-  }
-  .pairplot-color-legend-aside .pairplot-palette-select__options--collapsed {
-    visibility: hidden;
-    pointer-events: none;
-  }
-  .pairplot-color-legend-aside .pairplot-palette-option {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.28rem;
-    padding: 0.18rem 0.35rem;
-    border: 1px solid rgba(36, 59, 83, 0.12);
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.55);
-    white-space: nowrap;
-    cursor: pointer;
-    font-weight: 500;
-  }
-  .pairplot-color-legend-aside .pairplot-palette-option:hover {
-    background: rgba(36, 59, 83, 0.06);
-  }
-  .pairplot-color-legend-aside .pairplot-palette-option input[type="radio"] {
-    margin: 0;
-    flex: 0 0 auto;
-  }
-  .pairplot-color-legend-aside .pairplot-palette-select__swatch {
-    flex: 0 0 2.8rem;
-    height: 0.62rem;
-    border-radius: 999px;
-    border: 1px solid rgba(36, 59, 83, 0.16);
   }
   .cryo-cc-legend-hist-ctrl label {
     display: inline-flex;
@@ -609,20 +563,27 @@
     box-sizing: border-box;
     min-width: 0;
   }
-  /* Invert chip: bottom row, centred — wide/tall vs category chips so “Invert selection” type scales up (JS fits one line). */
-  .pairplot-color-legend-aside #pair-color-discrete-switches.cryo-color-discrete-switches--invert-footer-row.cryo-cc-discrete-switches--pair-2col .cryo-cc-discrete-cell--invert-footer {
-    grid-column: 1 / -1;
-    justify-self: center;
-    align-self: center;
-    width: min(100%, calc(1.78 * var(--pair-discrete-cell-w, 5.5rem)));
-    height: calc(1.24 * var(--pair-discrete-cell-h, 1.35rem));
-    min-height: calc(1.24 * var(--pair-discrete-cell-h, 1.35rem));
-    max-width: 100%;
-    box-sizing: border-box;
-    margin-top: 2px;
+  .cryo-cc-discrete-toggle-heading-row {
+    display: none;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.42rem;
+    flex-wrap: wrap;
+    margin: 0 0 0.32rem;
+    min-width: 0;
+    line-height: 1.15;
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--nav-bg, #243b53);
+    flex-shrink: 0;
   }
-  .pairplot-color-legend-aside #pair-color-discrete-switches.cryo-color-discrete-switches--invert-footer-row .cryo-cc-discrete-cell--invert-footer .cryo-cc-discrete-invert-fitbox {
-    padding: 5%;
+  .cryo-cc-discrete-toggle-heading-row:not([hidden]) {
+    display: flex;
+  }
+  .cryo-cc-discrete-toggle-heading-text {
+    flex: 1 1 auto;
+    min-width: 0;
   }
   .pairplot-color-legend-aside .cryo-cc-discrete-cell {
     padding: 0;
@@ -679,7 +640,8 @@
   .cryo-cc-discrete-actions {
     display: none !important;
   }
-  #pair-color-discrete-switches .cryo-cc-discrete-cell--invert .cryo-cc-discrete-invert-fitbox .cryo-cc-discrete-switch-label {
+  /* Invert beside “toggle selection” title — slot styles from base `.cryo-cc-region-invert-slot` */
+  #pair-color-discrete-invert-slot .cryo-cc-discrete-cell--invert .cryo-cc-discrete-invert-fitbox .cryo-cc-discrete-switch-label {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -690,6 +652,7 @@
     max-height: 100%;
     box-sizing: border-box;
     line-height: 1.05;
+    font-weight: 700;
   }
   @media (max-width: 900px) {
     .pairplot-color-legend-aside {
@@ -711,9 +674,6 @@
 <div class="cryo-dash-page cryo-dash-page--pairplot">
 <div class="cryo-dash-row cryo-dash-row--plot-triple">
   <div class="cryo-dash-side">
-    <div class="cryo-dash-top">
-      <a href="/">← Back</a>
-    </div>
     <p class="cryo-dash-lead">Each panel square compares two latent z-space axes, with coloring according to the chosen
       covariate in the squares below the diagonal. The diagonal panels show a 2D embedding across all z-space axes
       colored by the given row/column z-latent-space axis. Filter particles shown across all panels using the
@@ -827,7 +787,7 @@
                   </label>
                   <span id="pair-color-threshold-status" class="status"></span>
                 </div>
-                <div id="pairplot-palette-select" class="pairplot-palette-select cryo-palette-select"
+                <div id="pairplot-palette-select" class="cryo-cc-legend-palette-shell pairplot-palette-select cryo-palette-select"
                   aria-label="Continuous color palette">
                   <button type="button" id="pair-palette-toggle" class="pairplot-palette-select__title cryo-palette-select__title"
                     aria-expanded="false" aria-controls="pair-palette-options">
@@ -835,7 +795,7 @@
                     <span>Choose<br/>palette</span>
                   </button>
                   <div id="pair-palette-options"
-                    class="pairplot-palette-select__options cryo-palette-select__options pairplot-palette-select__options--collapsed">
+                    class="cryo-cc-legend-palette-menu pairplot-palette-select__options cryo-palette-select__options pairplot-palette-select__options--collapsed">
                     {{ continuous_palette_options("pairplot_palette") }}
                   </div>
                 </div>
@@ -843,6 +803,10 @@
             </div>
           </div>
           <div id="pair-color-discrete-wrap">
+            <div id="pair-color-discrete-heading-row" class="cryo-cc-discrete-toggle-heading-row" hidden>
+              <span class="cryo-cc-discrete-toggle-heading-text">Toggle selection</span>
+              <div id="pair-color-discrete-invert-slot" class="cryo-cc-region-invert-slot" hidden aria-hidden="true"></div>
+            </div>
             <div id="pair-color-discrete-switches" class="cryo-cc-discrete-switches cryo-cc-discrete-switches--pair-2col"
               role="group" aria-label="Discrete colour filter"></div>
             <div class="cryo-cc-discrete-actions">
@@ -929,18 +893,6 @@
       "minmax(0," + sideW + "px) minmax(0,1fr) minmax(0," + legendW + "px)";
   }
 
-  /** Probe chip cell size so invert footer can size vs `--pair-discrete-cell-*` (178% × 124%). */
-  function syncPairDiscreteInvertFooterMetrics() {
-    var sw = document.getElementById("pair-color-discrete-switches");
-    var disc = document.getElementById("pair-color-discrete-wrap");
-    if (!sw || !sw.classList.contains("cryo-color-discrete-switches--invert-footer-row")) return;
-    if (!disc || disc.hidden || !disc.classList.contains("cryo-cc-discrete-wrap--show")) return;
-    var probe = sw.querySelector(".cryo-cc-discrete-cell:not(.cryo-cc-discrete-cell--invert)");
-    if (!probe || probe.offsetWidth < 2 || probe.offsetHeight < 2) return;
-    sw.style.setProperty("--pair-discrete-cell-w", probe.offsetWidth + "px");
-    sw.style.setProperty("--pair-discrete-cell-h", probe.offsetHeight + "px");
-  }
-
   function syncPairDiscreteLegendTargetWidth() {
     var panelLegend = document.getElementById("pair-color-legend-panel");
     var viewportCol = document.querySelector(".cryo-dash-page--pairplot .pairplot-viewport-col");
@@ -965,7 +917,6 @@
 
   function syncPairLegendMiddleWidth() {
     syncPairDiscreteLegendTargetWidth();
-    syncPairDiscreteInvertFooterMetrics();
     var panel = document.getElementById("pair-color-legend-panel");
     var sw = document.getElementById("pair-color-discrete-switches");
     var disc = document.getElementById("pair-color-discrete-wrap");
@@ -1050,7 +1001,8 @@
     thresholdModeCaption: document.getElementById("pair-color-threshold-mode-caption"),
     thresholdStatus: document.getElementById("pair-color-threshold-status"),
     discreteSwitches: document.getElementById("pair-color-discrete-switches"),
-    discreteInvertFooterRow: true,
+    invertHeadingSlotEl: document.getElementById("pair-color-discrete-invert-slot"),
+    invertHeadingRowEl: document.getElementById("pair-color-discrete-heading-row"),
     invertBtn: document.getElementById("pair-btn-discrete-invert"),
     discreteChipMatplotlibBlend: false,
     vertical: true,

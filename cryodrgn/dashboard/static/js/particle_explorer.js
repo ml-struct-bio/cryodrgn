@@ -587,9 +587,6 @@
   var overlay = document.getElementById("scatter-rendering-overlay");
   var scatterRenderingEverCompleted = false;
   var paletteFieldset = document.getElementById("scatter-palette-radios");
-  if (paletteFieldset && scatterPlotStack && scatterPlotStack.parentNode) {
-    scatterPlotStack.insertAdjacentElement("afterend", paletteFieldset);
-  }
   var plotStatus = document.getElementById("scatter-plot-status");
   var preloadStatus = document.getElementById("preload-status");
   var scatterPlotWatchdog = null;
@@ -733,7 +730,7 @@
   function syncMontageCacheSizeLabelEl() {
     var sp = document.getElementById("montage-cache-size-label-text");
     var inp = document.getElementById("montage-cache-size-input");
-    if (sp) sp.textContent = "New cache\nsize";
+    if (sp) sp.textContent = preloaded ? "New size" : "Cache size";
     if (inp) {
       inp.title = preloaded
         ? "Total cached images to grow toward (must be greater than the current cache; capped at plotted points)"
@@ -904,7 +901,9 @@
       return;
     }
     if (!preloaded) {
-      btnExpandCache.textContent = "Build new\ncache";
+      btnExpandCache.classList.add("cryo-explorer-expand-cache-btn--compact");
+      btnExpandCache.textContent = "Build new cache with\n" + fmtInt(readMontageCacheSizeInput())
+        + " images";
       var capB = scatterSubsetRowCount();
       var canBuild = !!(totalParticles && plotHasScatterData() && capB > 0);
       btnExpandCache.disabled = !canBuild;
@@ -916,9 +915,10 @@
             + " thumbnails (see cache size).";
       return;
     }
+    btnExpandCache.classList.add("cryo-explorer-expand-cache-btn--compact");
     btnExpandCache.textContent = "Expand cache by\n" + fmtInt(Math.max(0,
       readMontageCacheSizeInput() - cachedImageCount()
-    )) + " images";
+    )) + " random images";
     var have = cachedImageCount();
     var want = readMontageCacheSizeInput();
     var cap = scatterSubsetRowCount();
@@ -2583,15 +2583,21 @@
   function clearScatterPlotWatchdog() {
     if (scatterPlotWatchdog) { clearTimeout(scatterPlotWatchdog); scatterPlotWatchdog = null; }
   }
-  function scatterColorByIsDiscrete() {
-    /* Matches ``scatter_json``: only ``labels`` uses ChimeraX discrete colors (no sequential palette). */
-    return sc.value === "labels";
-  }
-
   function discreteLegendWrapIsActive() {
     if (!colorDiscreteWrap) return false;
     return colorDiscreteWrap.classList.contains("cryo-cc-discrete-wrap--show")
       || colorDiscreteWrap.classList.contains("cryo-color-discrete-wrap--show");
+  }
+
+  /** True whenever the sequential palette UI is irrelevant (K-means, labels, …) — not only ``labels``. */
+  function scatterColorByIsDiscrete() {
+    if (discreteLegendWrapIsActive()) return true;
+    try {
+      if (gd && gd.data && gd.data[0]) {
+        return scatterTraceColorMode() === "discrete";
+      }
+    } catch (e) { /* ignore */ }
+    return sc.value === "labels";
   }
 
   function syncScatterLegendToggleCaption() {
@@ -2599,9 +2605,9 @@
     var labelSpan = document.getElementById("scatter-palette-toggle-label");
     if (labelSpan) {
       if (scatterColorByIsDiscrete()) {
-        labelSpan.innerHTML = "K-means<br/>legend";
+        labelSpan.textContent = "K-means legend";
       } else {
-        labelSpan.innerHTML = "Choose<br/>palette";
+        labelSpan.textContent = "Choose palette";
       }
     }
     scatterPaletteToggle.setAttribute(
@@ -2616,8 +2622,24 @@
     var hasColor = sc.value && sc.value !== "none";
     var suppress = rendering || !hasColor;
     paletteFieldset.classList.toggle("scatter-palette-radios--suppressed", suppress);
+    paletteFieldset.classList.toggle(
+      "cryo-explorer-scatter-palette-heading-toggle-host--suppressed",
+      suppress
+    );
     syncScatterLegendToggleCaption();
     syncScatterPaletteOptions();
+    if (colorHistPanel) {
+      colorHistPanel.classList.toggle(
+        "cryo-explorer-discrete-hides-scatter-palette-radios",
+        hasColor && !rendering && scatterColorByIsDiscrete()
+      );
+      var paletteExpanded = !!(scatterPaletteToggle && scatterPaletteToggle.getAttribute("aria-expanded") === "true");
+      /* Range/histogram mode: collapsed palette keeps options in DOM with visibility:hidden — still eats layout height */
+      colorHistPanel.classList.toggle(
+        "cryo-explorer-continuous-palette-pane-collapsed",
+        hasColor && !rendering && !scatterColorByIsDiscrete() && !paletteExpanded
+      );
+    }
   }
   function syncScatterPaletteOptions() {
     if (!scatterPaletteOptions || !paletteFieldset) return;
@@ -3526,7 +3548,7 @@
     scatterPaletteToggle.addEventListener("click", function() {
       var expanded = scatterPaletteToggle.getAttribute("aria-expanded") === "true";
       scatterPaletteToggle.setAttribute("aria-expanded", expanded ? "false" : "true");
-      syncScatterPaletteOptions();
+      syncScatterPaletteFieldset();
     });
   }
   if (imageGridMenuToggle) {

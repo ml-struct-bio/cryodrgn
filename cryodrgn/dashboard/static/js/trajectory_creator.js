@@ -75,7 +75,28 @@
   var scatterPlotStack = document.getElementById("scatter-plot-stack");
   var plotlyStackEl = gd && gd.parentElement;
 
-  var TRAJ_PALETTE_KEYS = { Viridis: 1, Plasma: 1, Inferno: 1, Magma: 1, Cividis: 1, Turbo: 1 };
+  var TRAJ_PALETTE_KEYS = {
+    Viridis: 1,
+    Magma: 1,
+    Cividis: 1,
+    Turbo: 1,
+    Blues: 1,
+    Greens: 1,
+    Greys: 1,
+    Oranges: 1,
+    Purples: 1,
+    Reds: 1,
+    YlGnBu: 1,
+    YlOrRd: 1,
+    RdBu: 1,
+    Portland: 1,
+    Jet: 1,
+    Hot: 1,
+    Blackbody: 1,
+    Electric: 1,
+    Rainbow: 1,
+    Earth: 1,
+  };
   function selectedTrajPalette() {
     var r = document.querySelector("input[name=\"traj_palette\"]:checked");
     var v = r && r.value ? String(r.value) : "Viridis";

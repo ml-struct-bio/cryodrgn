@@ -2,7 +2,9 @@
  * Colour covariate histogram + discrete toggles shared by particle explorer,
  * pair-grid, and 3-D latent views. Continuous legends support click thresholds
  * and drag ranges; optional `histPlotVertical` swaps covariate onto y and
- * density onto x (pair-plot/3-D asides). Discrete colour picking uses one anchored
+ * density onto x (pair-plot/3-D asides). Shared vertical palette menu styling:
+ * ``static/css/cryo_cc_legend_palette_menu.css`` (classes ``cryo-cc-legend-palette-shell``
+ * on the select wrapper and ``cryo-cc-legend-palette-menu`` on the options pane). Discrete colour picking uses one anchored
  * panel (RGB sliders + hex field + Apply / Cancel) with no separate OS colour dialog;
  * Apply commits but leaves the panel open (Cancel, Escape, or outside click closes). Plastic styling for toggle chips is on by default
  * (`discreteChipPlasticLabel` opt-out). Optional `histVerticalMargins` shallow-
@@ -137,6 +139,7 @@
       + "margin:0 0.35rem 0 0;box-sizing:border-box;pointer-events:none;}"
       // Text label and count - readable on colored backgrounds
       + ".cryo-cc-discrete-switch-label{font-weight:600;font-size:0.7rem;line-height:1.1;}"
+      + ".cryo-cc-discrete-cell--invert .cryo-cc-discrete-invert-fitbox .cryo-cc-discrete-switch-label{font-weight:700;}"
       + ".cryo-cc-discrete-switch-count{font-size:0.6rem;line-height:1.1;}"
       // Legacy pick button (kept for backwards compatibility)
       + ".cryo-cc-discrete-pick-btn{display:inline-flex;align-items:center;justify-content:center;"
@@ -683,11 +686,16 @@
     this.thresholdModeCaption = opts.thresholdModeCaption || null;
     this.thresholdStatus = opts.thresholdStatus;
     this.discreteSwitches = opts.discreteSwitches;
-    /** When true, category cells stay in a wrapping grid and invert sits in a dedicated right column (particle explorer). */
-    this.discreteInvertAsideColumn = opts.discreteInvertAsideColumn === true;
-    /** When true, invert sits on its own final row spanning the toggle grid, centred (pair plot); ignored if aside column is on. */
+    this.invertHeadingSlotEl = opts.invertHeadingSlotEl || null;
+    this.invertHeadingRowEl = opts.invertHeadingRowEl || null;
+    /** When true, category cells stay in a wrapping grid and invert sits in a dedicated right column (legacy). Ignored when invertHeadingSlotEl is set. */
+    this.discreteInvertAsideColumn =
+      opts.discreteInvertAsideColumn === true && !this.invertHeadingSlotEl;
+    /** When true, invert sits on its own final row spanning the toggle grid (legacy). Ignored when invertHeadingSlotEl is set. */
     this.discreteInvertFooterRow =
-      opts.discreteInvertFooterRow === true && !this.discreteInvertAsideColumn;
+      opts.discreteInvertFooterRow === true
+      && !this.discreteInvertAsideColumn
+      && !this.invertHeadingSlotEl;
     this.invertBtn = opts.invertBtn;
     this.discreteCheckedDefault = opts.discreteCheckedDefault !== false;
     this.allDiscreteSelectedIsNull = opts.allDiscreteSelectedIsNull !== false;
@@ -767,6 +775,28 @@
     }
   }
 
+  CryoColorCovariateLegend.prototype._getInvertCell = function () {
+    if (!this.discreteSwitches) return null;
+    if (this.invertHeadingSlotEl) {
+      var inSlot =
+        this.invertHeadingSlotEl.querySelector('[data-invert-cell="true"]')
+        || this.invertHeadingSlotEl.querySelector(".cryo-cc-discrete-cell--invert");
+      if (inSlot) return inSlot;
+    }
+    return this.discreteSwitches.querySelector('[data-invert-cell="true"]')
+      || this.discreteSwitches.querySelector(".cryo-cc-discrete-cell--invert");
+  };
+
+  CryoColorCovariateLegend.prototype._clearInvertHeadingChrome = function () {
+    if (!this.invertHeadingSlotEl) return;
+    this.invertHeadingSlotEl.innerHTML = "";
+    this.invertHeadingSlotEl.hidden = true;
+    this.invertHeadingSlotEl.setAttribute("aria-hidden", "true");
+    if (this.invertHeadingRowEl) {
+      this.invertHeadingRowEl.hidden = true;
+    }
+  };
+
   CryoColorCovariateLegend.prototype._palette = function () {
     var n = this.getPaletteName ? this.getPaletteName() : "Viridis";
     return PALETTE_RGB[n] ? n : "Viridis";
@@ -792,6 +822,10 @@
     this._discreteChipBlendAlpha = null;
     this._discreteChipBlendBg = null;
     this._syncThresholdModeCaption();
+    if (this.discreteSwitches) {
+      this.discreteSwitches.innerHTML = "";
+    }
+    this._clearInvertHeadingChrome();
     this._updateRegionHeading();
   };
 
@@ -826,6 +860,10 @@
       this.discreteWrap.hidden = true;
       this.discreteWrap.classList.remove("cryo-cc-discrete-wrap--show");
     }
+    if (this.discreteSwitches) {
+      this.discreteSwitches.innerHTML = "";
+    }
+    this._clearInvertHeadingChrome();
     if (this.panel) {
       this.panel.hidden = false;
       this.panel.setAttribute("aria-hidden", "false");
@@ -1078,6 +1116,7 @@
           if (self.discreteSwitches) {
             self.discreteSwitches.innerHTML = "";
           }
+          self._clearInvertHeadingChrome();
           self._allCatKeys = [];
           if (
             preservedContinuousThreshold
@@ -1952,6 +1991,12 @@
       }
     }
     this.discreteSwitches.innerHTML = "";
+    if (this.invertHeadingSlotEl) {
+      this.invertHeadingSlotEl.innerHTML = "";
+    }
+    if (this.invertHeadingRowEl) {
+      this.invertHeadingRowEl.hidden = false;
+    }
     var cellsMount = this.discreteSwitches;
     var invertMount = this.discreteSwitches;
     if (this.discreteInvertAsideColumn) {
@@ -2172,7 +2217,13 @@
         }
       });
 
-      if (this.discreteInvertAsideColumn) {
+      if (this.invertHeadingSlotEl) {
+        invertCell.classList.add("cryo-cc-discrete-cell--invert-heading");
+        invertCell.hidden = true;
+        this.invertHeadingSlotEl.hidden = true;
+        this.invertHeadingSlotEl.setAttribute("aria-hidden", "true");
+        invertMount = this.invertHeadingSlotEl;
+      } else if (this.discreteInvertAsideColumn) {
         invertCell.classList.add("cryo-cc-discrete-cell--invert-aside");
       } else if (this.discreteInvertFooterRow) {
         invertCell.classList.add("cryo-cc-discrete-cell--invert-footer");
@@ -2219,7 +2270,7 @@
     this._invertTypographyFitScheduled = true;
     requestAnimationFrame(function () {
       self._invertTypographyFitScheduled = false;
-      var cell = self.discreteSwitches.querySelector(".cryo-cc-discrete-cell--invert");
+      var cell = self._getInvertCell();
       if (cell) self._fitInvertCellTypography(cell);
     });
   };
@@ -2228,6 +2279,20 @@
     var fitBox = invertCell.querySelector(".cryo-cc-discrete-invert-fitbox");
     var label = invertCell.querySelector(".cryo-cc-discrete-switch-label");
     if (!fitBox || !label) return;
+    if (
+      invertCell.classList.contains("cryo-cc-discrete-cell--invert-heading")
+      && invertCell.hidden
+    ) {
+      return;
+    }
+    /* Heading chip: sizing comes from CSS (auto width × title line-height); keep one readable line */
+    if (invertCell.classList.contains("cryo-cc-discrete-cell--invert-heading")) {
+      label.style.fontSize = "";
+      label.style.whiteSpace = "nowrap";
+      label.style.overflow = "";
+      label.style.textOverflow = "";
+      return;
+    }
     /* Content box inside padding — clientWidth/Height include padding, but text lays out in the inner box */
     var innerW = fitBox.clientWidth;
     var innerH = fitBox.clientHeight;
@@ -2407,35 +2472,82 @@
     for (var i = 0; i < inputs.length; i++) {
       if (inputs[i].checked) { any = true; break; }
     }
-    var invertActivePhrase = "Invert selection";
+    /** Verbal aria label (no ⇄ character); chip shows ⇄ beside phrase for visual invert cue */
+    var invertVerbPhrase = "Invert selection";
+    var invertDisplayed = invertVerbPhrase + " \u21c4";
+
     // Update original invert button (hidden but kept for accessibility/legacy)
     if (this.invertBtn) {
       this.invertBtn.disabled = !any;
-      this.invertBtn.textContent = any ? invertActivePhrase : this.noDiscreteSelectionText;
+      this.invertBtn.textContent = any ? invertDisplayed : "";
     }
 
-    // Update the invert cell in the grid
-    var invertCell = this.discreteSwitches.querySelector(".cryo-cc-discrete-cell--invert");
-    if (invertCell) {
-      var invertLabel = invertCell.querySelector(".cryo-cc-discrete-switch-label");
-      if (invertLabel) {
-        invertLabel.textContent = any
-          ? invertActivePhrase
-          : (this.noDiscreteSelectionText || "");
+    var invertCell = this._getInvertCell();
+    var headingInvert = !!(
+      invertCell
+      && invertCell.classList.contains("cryo-cc-discrete-cell--invert-heading")
+    );
+
+    if (invertCell && headingInvert) {
+      var hLabel = invertCell.querySelector(".cryo-cc-discrete-switch-label");
+      invertCell.hidden = !any;
+      if (this.invertHeadingSlotEl) {
+        this.invertHeadingSlotEl.hidden = !any;
+        this.invertHeadingSlotEl.setAttribute("aria-hidden", any ? "false" : "true");
       }
-      invertCell.classList.toggle("cryo-cc-discrete-cell--invert-idle", !any);
-      invertCell.classList.toggle("cryo-cc-discrete-cell--invert-action", any);
-      invertCell.setAttribute("role", any ? "button" : "status");
-      invertCell.setAttribute("aria-disabled", any ? "false" : "true");
-      invertCell.setAttribute("aria-label", any ? invertActivePhrase : (this.noDiscreteSelectionText || ""));
-      invertCell.tabIndex = any ? 0 : -1;
-      if (any) {
+      if (!any) {
+        if (hLabel) {
+          hLabel.textContent = "";
+        }
+        invertCell.classList.remove(
+          "cryo-cc-discrete-cell--invert-idle",
+          "cryo-cc-discrete-cell--invert-action"
+        );
+        invertCell.setAttribute("role", "presentation");
+        invertCell.setAttribute("aria-hidden", "true");
+        invertCell.removeAttribute("aria-label");
+        invertCell.removeAttribute("tabIndex");
         invertCell.removeAttribute("aria-live");
-      } else {
-        invertCell.setAttribute("aria-live", "polite");
+        return;
       }
+      invertCell.removeAttribute("aria-hidden");
+      if (hLabel) {
+        hLabel.textContent = invertDisplayed;
+      }
+      invertCell.classList.remove("cryo-cc-discrete-cell--invert-idle");
+      invertCell.classList.add("cryo-cc-discrete-cell--invert-action");
+      invertCell.setAttribute("role", "button");
+      invertCell.setAttribute("aria-disabled", "false");
+      invertCell.setAttribute("aria-label", invertVerbPhrase);
+      invertCell.removeAttribute("aria-live");
+      invertCell.tabIndex = 0;
       this.scheduleInvertTypographyFit();
+      return;
     }
+
+    if (!invertCell) return;
+
+    var invertLabel = invertCell.querySelector(".cryo-cc-discrete-switch-label");
+    if (invertLabel) {
+      invertLabel.textContent = any ? invertDisplayed : (this.noDiscreteSelectionText || "");
+    }
+    invertCell.classList.toggle("cryo-cc-discrete-cell--invert-idle", !any);
+    invertCell.classList.toggle("cryo-cc-discrete-cell--invert-action", any);
+    invertCell.hidden = false;
+    invertCell.removeAttribute("aria-hidden");
+    invertCell.setAttribute("role", any ? "button" : "status");
+    invertCell.setAttribute("aria-disabled", any ? "false" : "true");
+    invertCell.setAttribute(
+      "aria-label",
+      any ? invertVerbPhrase : (this.noDiscreteSelectionText || "")
+    );
+    invertCell.tabIndex = any ? 0 : -1;
+    if (any) {
+      invertCell.removeAttribute("aria-live");
+    } else {
+      invertCell.setAttribute("aria-live", "polite");
+    }
+    this.scheduleInvertTypographyFit();
   };
 
   CryoColorCovariateLegend.prototype.setDiscreteCheckedKeys = function (keys) {

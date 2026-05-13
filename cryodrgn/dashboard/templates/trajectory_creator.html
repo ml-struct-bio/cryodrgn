@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Trajectory creator · cryoDRGN{% endblock %}
 {% from "_macros.html" import nav_page_title_span %}
+{% from "_palette_options.html" import continuous_palette_options %}
 {% block nav_page_title %}{{ nav_page_title_span("Trajectory creator") }}{% endblock %}
 {% block head %}
 <style>
@@ -241,6 +242,16 @@
     cursor: pointer;
     margin: 0;
     font-weight: 500;
+  }
+  .cryo-palette-radios label input[type="radio"] {
+    margin: 0;
+    flex: 0 0 auto;
+  }
+  .cryo-palette-radios__swatch {
+    flex: 0 0 2.25rem;
+    height: 0.55rem;
+    border-radius: 999px;
+    border: 1px solid rgba(36, 59, 83, 0.16);
   }
   #traj-palette-radios.traj-palette-radios--suppressed {
     display: none;
@@ -503,9 +514,6 @@
 <div class="cryo-dash-page cryo-dash-page--image-viewer">
 <div class="cryo-dash-row">
   <div class="cryo-dash-side">
-    <div class="cryo-dash-top" style="margin-bottom:0.25rem;">
-      <a href="/">← Back</a>
-    </div>
     <div class="card cryo-dash-controls" id="scatter-controls-card">
       <fieldset>
         <legend>Choose axes</legend>
@@ -572,12 +580,7 @@
       aria-label="Continuous color palette">
       <legend>Palette (continuous color)</legend>
       <div class="cryo-palette-radios__row">
-        <label><input type="radio" name="traj_palette" value="Viridis" checked/> Viridis</label>
-        <label><input type="radio" name="traj_palette" value="Plasma"/> Plasma</label>
-        <label><input type="radio" name="traj_palette" value="Inferno"/> Inferno</label>
-        <label><input type="radio" name="traj_palette" value="Magma"/> Magma</label>
-        <label><input type="radio" name="traj_palette" value="Cividis"/> Cividis</label>
-        <label><input type="radio" name="traj_palette" value="Turbo"/> Turbo</label>
+        {{ continuous_palette_options("traj_palette", "traj-palette-radio", "cryo-palette-radios__swatch") }}
       </div>
     </fieldset>
   </div>
@@ -738,7 +741,28 @@
   var scatterPlotStack = document.getElementById("scatter-plot-stack");
   var plotlyStackEl = gd && gd.parentElement;
 
-  var TRAJ_PALETTE_KEYS = { Viridis: 1, Plasma: 1, Inferno: 1, Magma: 1, Cividis: 1, Turbo: 1 };
+  var TRAJ_PALETTE_KEYS = {
+    Viridis: 1,
+    Magma: 1,
+    Cividis: 1,
+    Turbo: 1,
+    Blues: 1,
+    Greens: 1,
+    Greys: 1,
+    Oranges: 1,
+    Purples: 1,
+    Reds: 1,
+    YlGnBu: 1,
+    YlOrRd: 1,
+    RdBu: 1,
+    Portland: 1,
+    Jet: 1,
+    Hot: 1,
+    Blackbody: 1,
+    Electric: 1,
+    Rainbow: 1,
+    Earth: 1,
+  };
   function selectedTrajPalette() {
     var r = document.querySelector("input[name=\"traj_palette\"]:checked");
     var v = r && r.value ? String(r.value) : "Viridis";

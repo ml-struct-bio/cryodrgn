@@ -339,6 +339,12 @@
     align-items: center;
     justify-content: center;
   }
+  .cryo-explorer-load-images-toolbar
+    .cryo-explorer-action-row__btn
+    #btn-expand-cache.btn.cryo-explorer-expand-cache-btn--compact {
+    font-size: 0.62rem;
+    line-height: 1.15;
+  }
   .cryo-explorer-cache-size-label {
     display: inline-flex;
     align-items: center;
@@ -774,7 +780,62 @@
     display: none;
   }
   .cryo-palette-select.scatter-palette-radios--suppressed {
-  display: none;
+    display: none;
+  }
+  .cryo-palette-select.cryo-palette-select--options-pane {
+    display: block;
+    width: 100%;
+    margin-top: 0;
+    padding-top: 0.36rem;
+    border-top: 1px solid rgba(36, 59, 83, 0.1);
+  }
+  /* Discrete colouring: palette radio block is unused — hide so no bordered gap under category toggles */
+  #color-hist-panel.cryo-explorer-discrete-hides-scatter-palette-radios #scatter-palette-radios.cryo-palette-select--options-pane {
+    display: none !important;
+  }
+  /* Range/histogram: collapsed palette keeps options visibility:hidden — still reserves swatch-grid height without this */
+  #color-hist-panel.cryo-explorer-continuous-palette-pane-collapsed
+    #scatter-palette-options.cryo-palette-select__options.cryo-palette-select__options--collapsed {
+    display: none !important;
+  }
+  #color-hist-panel.cryo-explorer-continuous-palette-pane-collapsed #scatter-palette-radios.cryo-palette-select--options-pane {
+    padding-top: 0;
+    border-top-width: 0;
+    border-top-color: transparent;
+  }
+  .cryo-explorer-scatter-palette-heading-toggle-host {
+    flex: 0 0 auto;
+    margin-left: auto;
+    align-self: center;
+  }
+  .cryo-explorer-scatter-palette-heading-toggle-host--suppressed {
+    display: none !important;
+  }
+  .cryo-explorer-scatter-palette-heading-toggle-host .cryo-palette-select__title {
+    margin: 0;
+    font-size: inherit;
+    line-height: 1.15;
+    white-space: nowrap;
+  }
+  #color-hist-panel .cryo-cc-legend-region-heading-row {
+    overflow: visible;
+  }
+  #color-hist-panel.cryo-color-hist-panel {
+    overflow: visible;
+  }
+  #color-hist-panel #scatter-palette-radios.cryo-explorer-scatter-palette-kit.cryo-palette-select.cryo-palette-select--options-pane {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    position: relative;
+    width: auto;
+    max-width: min(22rem, 94vw);
+    margin-top: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-top-width: 0;
+    border-top-color: transparent;
   }
   .cryo-palette-option {
     flex: 0 0 auto;
@@ -814,9 +875,6 @@
   .cryo-color-hist-panel[hidden] {
   display: none !important;
   }
-#scatter-palette-radios {
-  order: 2;
-}
   #color-hist {
     height: 5rem;
     width: 100%;
@@ -932,6 +990,7 @@
   padding: 0.25rem 0.55rem;
   font-size: 0.75rem;
   line-height: 1.2;
+  font-weight: 700;
 }
   .cryo-explorer-cache-selection-row {
     display: grid;

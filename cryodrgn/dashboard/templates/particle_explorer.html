@@ -527,13 +527,27 @@
   .cryo-image-grid-menu-body[hidden] {
     display: none !important;
   }
+  .cryo-image-grid-toolbar__controls[hidden] {
+    display: none !important;
+  }
   .cryo-image-grid-toolbar {
     display: flex;
     align-items: center;
     align-content: center;
     gap: 0.6rem;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     margin-top: 0.2rem;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+  .cryo-image-grid-toolbar__controls {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    min-width: 0;
   }
   .cryo-image-grid-size-inline {
     display: inline-flex;
@@ -542,11 +556,52 @@
     margin: 0;
     font-size: 0.82rem;
     color: var(--muted, #5c6b7a);
+    flex-shrink: 0;
   }
   .cryo-image-grid-size-inline select {
     width: 4.2rem;
     padding: 0.1rem 0.2rem;
     font-size: 0.82rem;
+    height: 1.65rem;
+    box-sizing: border-box;
+    line-height: 1.2;
+  }
+  /* Primary ``.btn`` (same accent as ``#btn-view-images``); compact to sit beside grid size. */
+  .cryo-image-grid-toolbar .cryo-image-grid-resample-btn.btn {
+    flex: 0 0 auto;
+    width: max-content;
+    max-width: min(22rem, 94vw);
+    height: 1.65rem;
+    min-height: 1.65rem;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    padding: 0.08rem 0.42rem;
+    border: none;
+    border-radius: 3px;
+    font-size: 0.72rem;
+    line-height: 1.06;
+    white-space: normal;
+    text-align: center;
+    cursor: pointer;
+  }
+  .cryo-image-grid-toolbar .cryo-image-grid-resample-btn.btn:disabled {
+    opacity: 0.48;
+    filter: grayscale(0.85);
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+  .cryo-image-grid-resample-btn__label {
+    display: block;
+    text-align: center;
+    line-height: 1.06;
+    font-weight: 600;
+    white-space: normal;
+    margin: 0;
+    padding: 0;
+    pointer-events: none;
   }
   #save-status {
     display: block;
@@ -1438,19 +1493,25 @@
           <span class="cryo-image-grid-menu-toggle__chev" aria-hidden="true">&#9656;</span>
           <span>Image grid</span>
         </button>
-        <label id="image-grid-size-inline" class="cryo-image-grid-size-inline" hidden>
-          Grid size
-          <select id="grid-size" disabled>
-            <option value="1">1 × 1</option>
-            <option value="2">2 × 2</option>
-            <option value="3" selected>3 × 3</option>
-            <option value="4">4 × 4</option>
-            <option value="5">5 × 5</option>
-            <option value="6">6 × 6</option>
-            <option value="7">7 × 7</option>
-            <option value="8">8 × 8</option>
-          </select>
-        </label>
+        <div id="image-grid-toolbar-controls" class="cryo-image-grid-toolbar__controls" hidden>
+          <label id="image-grid-size-inline" class="cryo-image-grid-size-inline">
+            Grid size
+            <select id="grid-size" disabled>
+              <option value="1">1 × 1</option>
+              <option value="2">2 × 2</option>
+              <option value="3" selected>3 × 3</option>
+              <option value="4">4 × 4</option>
+              <option value="5">5 × 5</option>
+              <option value="6">6 × 6</option>
+              <option value="7">7 × 7</option>
+              <option value="8">8 × 8</option>
+            </select>
+          </label>
+          <button type="button" id="btn-montage-resample-cache" class="btn cryo-image-grid-resample-btn"
+            aria-label="Resample images from cache" disabled>
+            <span class="cryo-image-grid-resample-btn__label">Resample images<br>from cache</span>
+          </button>
+        </div>
       </div>
       <p id="image-grid-inactive-note"
         class="cryo-dash-legend-note"
@@ -1529,7 +1590,9 @@
   var volumeStatusProgressEl = document.getElementById("volume-status-progress");
   var gridSizeSelect = document.getElementById("grid-size");
   var imageGridMenuToggle = document.getElementById("image-grid-menu-toggle");
-  var imageGridSizeInline = document.getElementById("image-grid-size-inline");
+  var imageGridToolbarControls = document.getElementById("image-grid-toolbar-controls");
+  var btnMontageResampleCache = document.getElementById("btn-montage-resample-cache");
+  var montageResampleFitTimer = null;
   var imageGridMenuBody = document.getElementById("image-grid-menu-body");
   var imageGridInactiveNote = document.getElementById("image-grid-inactive-note");
   var scatterControlsCard = document.getElementById("scatter-controls-card");
@@ -1556,7 +1619,7 @@
   function setImageGridMenuOpen(open) {
     var isOpen = !!open;
     if (imageGridMenuToggle) imageGridMenuToggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
-    if (imageGridSizeInline) imageGridSizeInline.hidden = !isOpen;
+    if (imageGridToolbarControls) imageGridToolbarControls.hidden = !isOpen;
     if (imageGridMenuBody) imageGridMenuBody.hidden = !isOpen;
     if (!isOpen) {
       updateMontage([]);
@@ -1564,12 +1627,67 @@
       showRandomPreloaded();
     }
     syncHighlightTraceAnnotations();
+    if (isOpen) {
+      requestAnimationFrame(function() {
+        requestAnimationFrame(syncMontageResampleFromCacheButton);
+      });
+    }
   }
 
   function syncImageGridInactiveNote() {
     if (!imageGridInactiveNote) return;
     var inactiveNoCache = !preloaded && !imagesViewEnabled;
     imageGridInactiveNote.hidden = !inactiveNoCache;
+  }
+
+  function montageResampleFromCachePool() {
+    if (!preloaded || !preloaded.traceMap || !preloaded.traceMap.length) return null;
+    return (activePool && activePool.length) ? activePool : preloaded.traceMap;
+  }
+
+  function fitMontageResampleCacheButtonFont() {
+    if (!btnMontageResampleCache || !imageGridToolbarControls || imageGridToolbarControls.hidden) return;
+    var label = btnMontageResampleCache.querySelector(".cryo-image-grid-resample-btn__label");
+    if (!label) return;
+    var bw = btnMontageResampleCache.clientWidth;
+    var bh = btnMontageResampleCache.clientHeight;
+    if (bw < 10 || bh < 10) return;
+    var inset = 0.04;
+    var maxW = bw * (1 - 2 * inset);
+    var maxH = bh * (1 - 2 * inset);
+    var lo = 4;
+    var hi = 80;
+    var best = lo;
+    while (lo <= hi) {
+      var mid = Math.floor((lo + hi) / 2);
+      label.style.fontSize = mid + "px";
+      if (label.scrollWidth <= maxW && label.scrollHeight <= maxH) {
+        best = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    label.style.fontSize = best + "px";
+  }
+
+  function syncMontageResampleFromCacheButton() {
+    if (!btnMontageResampleCache) return;
+    var pool = montageResampleFromCachePool();
+    var poolOk = !!(pool && pool.length);
+    btnMontageResampleCache.disabled = !!(gridSizeSelect && gridSizeSelect.disabled) || !poolOk;
+    if (!imageGridMenuIsOpen() || (imageGridToolbarControls && imageGridToolbarControls.hidden)) return;
+    requestAnimationFrame(function() {
+      requestAnimationFrame(fitMontageResampleCacheButtonFont);
+    });
+  }
+
+  function scheduleFitMontageResampleCacheButton() {
+    if (montageResampleFitTimer) clearTimeout(montageResampleFitTimer);
+    montageResampleFitTimer = setTimeout(function() {
+      montageResampleFitTimer = null;
+      fitMontageResampleCacheButtonFont();
+    }, 120);
   }
 
   function montageRowsOrderKey() {
@@ -1890,6 +2008,7 @@
     gridSize = parseInt(this.value) || 3;
     rebuildGrid();
     refillMontageForNewGridSize();
+    scheduleFitMontageResampleCacheButton();
   });
 
   function fillSelect(sel, includeNone) {
@@ -2452,6 +2571,7 @@
     syncClearCacheButton(loading);
     syncCacheSelectionUncachedButton();
     syncImageGridInactiveNote();
+    syncMontageResampleFromCacheButton();
   }
 
   function syncImageCacheLoadPanelVsProgress() {
@@ -3504,6 +3624,7 @@
       }
     }
     preloaded.traceMap = tm;
+    syncMontageResampleFromCacheButton();
   }
 
   function showRandomPreloaded() {
@@ -4282,6 +4403,7 @@
         setPreloadStatusCachedTotalOnly();
       }
       invalidateVolumeArtifacts();
+      syncMontageResampleFromCacheButton();
       return;
     }
 
@@ -4307,6 +4429,7 @@
     } else {
       invalidateVolumeArtifacts();
     }
+    syncMontageResampleFromCacheButton();
   }
 
   function clearExplorerSelection() {
@@ -4329,6 +4452,7 @@
     if (imagesViewEnabled && preloaded) {
       showRandomPreloaded();
     }
+    syncMontageResampleFromCacheButton();
   }
 
   function rowsMatchingColorThresholdFromTrace(items, level, useMax) {
@@ -4828,11 +4952,19 @@
       setImageGridMenuOpen(!imageGridMenuIsOpen());
     });
   }
+  if (btnMontageResampleCache) {
+    btnMontageResampleCache.addEventListener("click", function() {
+      if (btnMontageResampleCache.disabled) return;
+      showRandomPreloaded();
+    });
+  }
   updateParticleSelFieldset();
   if (showVolumeExplorer) syncVolumeExploreButtons();
   syncScatterControlsAlignment();
   equalizeMontageActionButtonWidths();
+  syncMontageResampleFromCacheButton();
   window.addEventListener("resize", equalizeMontageActionButtonWidths);
+  window.addEventListener("resize", scheduleFitMontageResampleCacheButton);
   syncScatterPaletteFieldset();
   initializeExplorerView();
 })();

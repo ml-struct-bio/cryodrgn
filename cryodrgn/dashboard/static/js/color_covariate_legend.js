@@ -720,6 +720,16 @@
     this.onDiscreteColorChange = opts.onDiscreteColorChange || null;
     /** When set (3-D viewer), hide the legend panel entirely if no colour covariate — skip heading-only placeholder. */
     this.hideLegendPanelWhenNoCovariate = opts.hideLegendPanelWhenNoCovariate === true;
+    // Some 3-D-ish interfaces don't pass this flag explicitly; detect by panel id to keep the UI empty until
+    // a colour covariate is chosen.
+    if (
+      !this.hideLegendPanelWhenNoCovariate
+      && typeof opts.hideLegendPanelWhenNoCovariate === "undefined"
+      && this.panel
+      && (this.panel.id === "latent3d-color-legend-panel" || this.panel.id === "color-hist-panel")
+    ) {
+      this.hideLegendPanelWhenNoCovariate = true;
+    }
     this.discreteChipMatplotlibBlend = opts.discreteChipMatplotlibBlend === true;
     this.discreteChipPlasticLabel = opts.discreteChipPlasticLabel !== false;
     this._discreteChipBlendAlpha = null;

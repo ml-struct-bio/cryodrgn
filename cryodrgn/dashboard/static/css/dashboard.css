@@ -30,13 +30,13 @@
       background: var(--nav-bg);
       color: #e8eef4;
       border-bottom: 3px solid var(--accent);
-      padding: 0.5rem 1.15rem;
+      padding: 0.4rem 1.15rem;
       /* auto | 1fr | auto — middle column fills remaining width so its start edge
          stays fixed for a given viewport; output-folder control stays pinned at left of middle. */
       display: grid;
       grid-template-columns: auto minmax(0, 1fr) auto;
       align-items: center;
-      gap: 0.35rem 1rem;
+      gap: 0.28rem 1rem;
     }
     .nav-left {
       display: flex;
@@ -79,10 +79,10 @@
       justify-content: center;
       flex-shrink: 0;
       align-self: flex-start;
-      font-size: calc(1.42rem * 0.81);
+      font-size: calc(1.42rem * 0.81 * 0.8);
       font-weight: 700;
       line-height: 1;
-      margin-right: calc(0.12rem * 0.81);
+      margin-right: calc(0.12rem * 0.81 * 0.8);
       margin-left: 0;
       transform: translateX(50%);
       opacity: 0.9;
@@ -114,8 +114,8 @@
       text-decoration: none;
       color: inherit;
       border-radius: 10px;
-      padding: 0.2rem 0.35rem 0.2rem 0.15rem;
-      margin: -0.2rem -0.35rem -0.2rem -0.15rem;
+      padding: 0.16rem 0.28rem 0.16rem 0.12rem;
+      margin: -0.16rem -0.28rem -0.16rem -0.12rem;
       transition:
         background 0.22s ease,
         box-shadow 0.28s cubic-bezier(0.22, 1, 0.36, 1);
@@ -139,10 +139,10 @@
         0 8px 28px rgba(0, 0, 0, 0.25);
     }
     .nav-logo-wrap {
-      width: min(4.85rem, 15vw);
-      height: min(4.85rem, 15vw);
-      min-width: 3.6rem;
-      min-height: 3.6rem;
+      width: min(3.88rem, 12vw);
+      height: min(3.88rem, 12vw);
+      min-width: 2.88rem;
+      min-height: 2.88rem;
       flex-shrink: 0;
       display: flex;
       align-items: center;
@@ -166,14 +166,77 @@
     .nav-brand-text {
       display: flex;
       flex-direction: column;
-      align-items: flex-start;
+      align-items: center;
       line-height: 1.15;
-      gap: 0.05rem;
+      gap: 0.04rem;
       transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
     }
     .nav a.nav-brand-link:hover .nav-brand-text,
     .nav a.nav-brand-link:focus-visible .nav-brand-text {
       transform: translateY(-2px);
+    }
+    .nav-brand-interface-title {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      white-space: nowrap;
+      line-height: 1.15;
+      transform: none;
+      margin-top: 0;
+    }
+    .nav-brand-interface-title:empty { display: none; }
+    .nav-brand-interface-title .nav-title-sep { display: none; }
+    .nav-brand-interface-title .nav-page-title {
+      display: inline-block;
+      position: relative;
+      color: rgba(248, 252, 255, 0.96);
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      text-transform: lowercase;
+      -webkit-text-stroke: 0.5px rgba(0, 0, 0, 0.85);
+      font-size: calc(0.95rem * 1.25 * 1.2 * 0.5184 * 0.8);
+      padding: 0;
+      margin: 0;
+      border-radius: 0;
+      border: 0;
+      background:
+        radial-gradient(
+          circle at 28% 24%,
+          rgba(255, 255, 255, 0.52) 0%,
+          rgba(255, 255, 255, 0.1) 42%,
+          rgba(255, 255, 255, 0) 62%
+        ),
+        linear-gradient(
+          155deg,
+          rgba(255, 255, 255, 0.28) 0%,
+          rgba(255, 255, 255, 0.07) 42%,
+          rgba(255, 255, 255, 0.03) 52%,
+          rgba(255, 255, 255, 0.12) 100%
+        );
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.38),
+        inset 0 -1px 0 rgba(20, 35, 52, 0.22),
+        0 1px 8px rgba(0, 0, 0, 0.12);
+      -webkit-backdrop-filter: blur(6px) saturate(1.1);
+      backdrop-filter: blur(6px) saturate(1.1);
+      text-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.28),
+        0 -1px 1px rgba(36, 59, 83, 0.11);
+      transition:
+        color 0.22s ease,
+        text-shadow 0.28s ease;
+      background: transparent;
+      box-shadow: none;
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+    .nav-brand-line1-row {
+      display: inline-flex;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 0.224rem 0.336rem;
+      margin-top: -0.024rem;
+      transform: translateY(-5%);
     }
     .nav-brand-line1,
     .nav-brand-line2 {
@@ -186,7 +249,7 @@
         opacity 0.22s ease;
     }
     .nav-brand-line1 {
-      font-size: calc(1.12rem * 1.2);
+      font-size: calc(1.12rem * 1.2 * 0.8);
     }
     .nav a.nav-brand-link:hover .nav-brand-line1,
     .nav a.nav-brand-link:focus-visible .nav-brand-line1 {
@@ -196,40 +259,52 @@
         0 0 2px rgba(255, 255, 255, 0.95);
     }
     .nav-brand-line2 {
-      font-size: calc(0.95rem * 1.25 * 1.2);
+      font-size: calc(0.98rem * 1.15 * 0.8);
       font-weight: 600;
       opacity: 0.92;
       position: relative;
-      padding-bottom: 3px;
+      padding-bottom: 0;
+      transform: translateY(10%);
+      margin-top: -0.0032rem;
     }
     .nav-brand-line2-main {
-      display: inline-block;
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.02rem;
       position: relative;
       color: rgba(248, 252, 255, 0.96);
       font-weight: 600;
       letter-spacing: 0.03em;
+      -webkit-text-stroke: 0.5px rgba(0, 0, 0, 0.85);
       padding: 0.1em 0.48em 0.12em;
-      margin: -0.04em 0;
-      border-radius: 7px;
-      border: 1px solid rgba(255, 255, 255, 0.36);
+      margin: 0;
+      border-radius: 5px;
+      border: 0;
       background:
+        radial-gradient(
+          circle at 28% 24%,
+          rgba(255, 255, 255, 0.52) 0%,
+          rgba(255, 255, 255, 0.1) 42%,
+          rgba(255, 255, 255, 0) 62%
+        ),
         linear-gradient(
           155deg,
-          rgba(255, 255, 255, 0.5) 0%,
-          rgba(255, 255, 255, 0.12) 42%,
-          rgba(255, 255, 255, 0.06) 52%,
-          rgba(255, 255, 255, 0.22) 100%
+          rgba(255, 255, 255, 0.28) 0%,
+          rgba(255, 255, 255, 0.07) 42%,
+          rgba(255, 255, 255, 0.03) 52%,
+          rgba(255, 255, 255, 0.12) 100%
         );
       box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.58),
-        inset 0 -1px 0 rgba(20, 35, 52, 0.35),
-        0 2px 12px rgba(0, 0, 0, 0.2),
-        0 0 0 1px rgba(20, 35, 52, 0.15);
-      -webkit-backdrop-filter: blur(12px) saturate(1.35);
-      backdrop-filter: blur(12px) saturate(1.35);
+        inset 0 1px 0 rgba(255, 255, 255, 0.38),
+        inset 0 -1px 0 rgba(20, 35, 52, 0.22),
+        0 1px 8px rgba(0, 0, 0, 0.12);
+      -webkit-backdrop-filter: blur(6px) saturate(1.1);
+      backdrop-filter: blur(6px) saturate(1.1);
       text-shadow:
-        0 1px 0 rgba(255, 255, 255, 0.4),
-        0 -1px 1px rgba(36, 59, 83, 0.18);
+        0 1px 0 rgba(255, 255, 255, 0.28),
+        0 -1px 1px rgba(36, 59, 83, 0.11);
       transition:
         background 0.28s ease,
         border-color 0.28s ease,
@@ -240,31 +315,63 @@
     .nav a.nav-brand-link:hover .nav-brand-line2-main,
     .nav a.nav-brand-link:focus-visible .nav-brand-line2-main {
       color: #fff;
-      border-color: rgba(255, 255, 255, 0.52);
       background:
+        radial-gradient(
+          circle at 28% 24%,
+          rgba(255, 255, 255, 0.58) 0%,
+          rgba(255, 255, 255, 0.12) 42%,
+          rgba(255, 255, 255, 0) 62%
+        ),
         linear-gradient(
           155deg,
-          rgba(255, 255, 255, 0.62) 0%,
-          rgba(255, 255, 255, 0.2) 38%,
-          rgba(255, 235, 215, 0.14) 52%,
-          rgba(255, 255, 255, 0.32) 100%
+          rgba(255, 255, 255, 0.38) 0%,
+          rgba(255, 255, 255, 0.12) 38%,
+          rgba(255, 235, 215, 0.08) 52%,
+          rgba(255, 255, 255, 0.18) 100%
         );
       box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.72),
-        inset 0 -1px 0 rgba(20, 35, 52, 0.28),
-        0 4px 22px rgba(0, 0, 0, 0.28),
-        0 0 0 1px rgba(196, 112, 58, 0.22),
-        0 0 32px rgba(255, 220, 195, 0.28);
+        inset 0 1px 0 rgba(255, 255, 255, 0.48),
+        inset 0 -1px 0 rgba(20, 35, 52, 0.21),
+        0 2px 14px rgba(0, 0, 0, 0.12);
       text-shadow:
-        0 1px 0 rgba(255, 255, 255, 0.55),
-        0 0 20px rgba(255, 248, 240, 0.45);
+        0 1px 0 rgba(255, 255, 255, 0.35),
+        0 -1px 1px rgba(36, 59, 83, 0.11);
+    }
+    .nav a.nav-brand-link:hover .nav-brand-interface-title .nav-page-title,
+    .nav a.nav-brand-link:focus-visible .nav-brand-interface-title .nav-page-title {
+      color: #fff;
+      background:
+        radial-gradient(
+          circle at 28% 24%,
+          rgba(255, 255, 255, 0.58) 0%,
+          rgba(255, 255, 255, 0.12) 42%,
+          rgba(255, 255, 255, 0) 62%
+        ),
+        linear-gradient(
+          155deg,
+          rgba(255, 255, 255, 0.38) 0%,
+          rgba(255, 255, 255, 0.12) 38%,
+          rgba(255, 235, 215, 0.08) 52%,
+          rgba(255, 255, 255, 0.18) 100%
+        );
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.48),
+        inset 0 -1px 0 rgba(20, 35, 52, 0.21),
+        0 2px 14px rgba(0, 0, 0, 0.12);
+      text-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.35),
+        0 -1px 1px rgba(36, 59, 83, 0.11);
+      background: transparent;
+      box-shadow: none;
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
     }
     .nav-brand-line2::after {
       content: "";
       position: absolute;
       left: 0;
       bottom: 0;
-      height: 2px;
+      height: 1px;
       width: 0;
       border-radius: 1px;
       background: linear-gradient(90deg, var(--accent, #c4703a), #f0b892);
@@ -285,7 +392,7 @@
       flex-direction: column;
       align-items: stretch;
       justify-content: center;
-      gap: 0.1rem;
+      gap: 0.08rem;
       min-width: 0;
       justify-self: stretch;
       text-align: center;
@@ -295,7 +402,7 @@
       display: grid;
       grid-template-columns: minmax(12.75rem, 19rem) minmax(0, 1fr);
       align-items: center;
-      gap: 0.65rem 0.9rem;
+      gap: 0.52rem 0.72rem;
       width: 100%;
       min-width: 0;
     }
@@ -312,13 +419,13 @@
       display: flex;
       flex-direction: column;
       align-items: stretch;
-      gap: 0.08rem;
+      gap: 0.064rem;
       box-sizing: border-box;
       width: min(calc(52rem * 1.2), calc(88vw * 1.2));
       max-width: min(calc(52rem * 1.2), calc(88vw * 1.2));
       /* ~20% wider; shift left so growth uses space toward the logo. */
       margin-left: clamp(-1rem, -5vw, -5.25rem);
-      font-size: 0.7rem;
+      font-size: 0.56rem;
       font-weight: 600;
       line-height: 1.22;
       opacity: 0.92;
@@ -339,12 +446,12 @@
       flex-direction: row;
       align-items: center;
       justify-content: flex-start;
-      gap: 0.45rem;
+      gap: 0.36rem;
       grid-column: 1;
       width: 100%;
       min-width: 0;
       max-width: 19rem;
-      font-size: 0.82rem;
+      font-size: 0.656rem;
       font-weight: 600;
       line-height: 1.22;
       opacity: 0.96;
@@ -353,7 +460,7 @@
     }
     .nav-workdir-field label {
       margin: 0;
-      font-size: 0.82rem;
+      font-size: 0.656rem;
       font-weight: 700;
       white-space: nowrap;
       flex-shrink: 0;
@@ -365,9 +472,9 @@
       background: rgba(255, 255, 255, 0.12);
       color: #e8eef4;
       border: 1px solid rgba(255, 255, 255, 0.28);
-      font-size: 0.8rem;
+      font-size: 0.64rem;
       font-weight: 600;
-      padding: 0.24rem 0.4rem;
+      padding: 0.192rem 0.32rem;
     }
     .nav-workdir-field select option {
       color: #1a2332;
@@ -378,13 +485,13 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 0.06rem;
+      gap: 0.048rem;
       line-height: 1.2;
-      font-size: 0.7rem;
-      max-height: min(5.75rem, 24vh);
+      font-size: 0.56rem;
+      max-height: min(4.6rem, 19.2vh);
       overflow-y: auto;
       overflow-x: hidden;
-      padding: 0.08rem 0;
+      padding: 0.064rem 0;
     }
     .nav-cmd-line {
       max-width: 100%;
@@ -420,12 +527,12 @@
     .nav-epoch {
       display: flex;
       align-items: center;
-      gap: 0.35rem;
+      gap: 0.28rem;
       flex-shrink: 0;
     }
     .nav-epoch label {
       margin: 0;
-      font-size: calc(1.36rem * 0.88);
+      font-size: calc(1.36rem * 0.88 * 1.13 * 0.8);
       font-weight: 600;
       opacity: 0.9;
     }
@@ -434,8 +541,8 @@
       min-width: 4rem;
       max-width: 7rem;
       margin: 0;
-      padding: 0.2rem 0.38rem;
-      font-size: calc(0.74rem * 1.2);
+      padding: 0.16rem 0.304rem;
+      font-size: calc(0.74rem * 1.2 * 1.13 * 0.8);
       font-weight: 700;
       background: rgba(255, 255, 255, 0.12);
       color: #e8eef4;
@@ -449,10 +556,10 @@
       display: flex;
       flex-direction: column;
       align-items: flex-end;
-      gap: 0.28rem;
+      gap: 0.224rem;
     }
     .nav-kmeans-row {
-      font-size: 0.68rem;
+      font-size: calc(0.68rem * 1.13 * 0.8);
       font-weight: 600;
       line-height: 1.2;
       opacity: 0.88;

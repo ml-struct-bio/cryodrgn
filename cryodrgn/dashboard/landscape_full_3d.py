@@ -1,0 +1,240 @@
+"""Dashboard support for the ``analyze_landscape_full`` 3D volume-landscapes view.
+
+Loads ``landscape.{epoch}/landscape_full`` pickles (``z.sampled.pkl``, ``ind.sampled.pkl``,
+``vol_pca_all.pkl``, …), builds the sampled ``plot_df`` used for colouring, and produces the
+Plotly JSON for the scatter (axes restricted to ``landscape_vol_PC*`` from ``vol_pca_all.pkl``).
+"""
+
+from __future__ import annotations
+
+import os
+import re
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+from cryodrgn import utils
+from cryodrgn.dashboard.column_names import VOL_LANDSCAPE_3D_PLOT_DF_ROW
+from cryodrgn.dashboard.covariate_labels import covariate_display_map
+from cryodrgn.dashboard.data import DashboardExperiment
+
+_LANDSCAPE_FULL_SUBDIR = "landscape_full"
+_LANDSCAPE_VOL_PC_COL_RE = re.compile(r"^landscape_vol_PC(\d+)$")
+
+LANDSCAPE_FULL_3D_LEAD_HTML = (
+    '<p class="cryo-dash-lead">Each point is one sampled particle from '
+    "<code>z.sampled.pkl</code> (with <code>ind.sampled.pkl</code>) produced by "
+    "<code>cryodrgn analyze_landscape_full</code> for this epoch. The three plot axes are "
+    "coordinates from <code>vol_pca_all.pkl</code> (volume PCA, shown as <code>landscape_vol_PC*</code>). "
+    "Optional colour uses the same analysis covariates as the particle 3D visualizer, plus other "
+    "full-landscape outputs when present (for example latent <code>z*</code> at the sample, "
+    "<code>landscape_vol_UMAP1</code>, or <code>landscape_vol_cluster</code>). Hover shows the "
+    "dataset index and the analysis-table row for that particle. This view is scatter-only — "
+    "no volume previews.</p>"
+)
+
+LANDSCAPE_FULL_3D_AXES_NOTE_HTML = (
+    '<p class="cryo-dash-legend-note" style="margin:0 0 0.35rem;">Pick three <strong>different</strong> volume PCA '
+    "columns from <code>vol_pca_all.pkl</code> (shown as <code>landscape_vol_PC*</code>). The plot uses WebGL — "
+    "&ldquo;Rendering…&rdquo; appears in the plot area while data loads.</p>"
+)
+
+LANDSCAPE_FULL_3D_LEGEND_CONTEXT_EXTRA: dict[str, str] = {
+    "scope": "landscape_full_sampled"
+}
+
+
+def landscape_full_outdir(workdir: str, epoch: int) -> str:
+    """Directory for ``analyze_landscape_full`` outputs (``landscape.N/landscape_full``)."""
+    return os.path.join(workdir, f"landscape.{int(epoch)}", _LANDSCAPE_FULL_SUBDIR)
+
+
+def landscape_full_ready(workdir: str, epoch: int) -> bool:
+    """True when ``z.sampled.pkl`` and ``ind.sampled.pkl`` exist for this epoch."""
+    d = landscape_full_outdir(workdir, int(epoch))
+    return os.path.isfile(os.path.join(d, "z.sampled.pkl")) and os.path.isfile(
+        os.path.join(d, "ind.sampled.pkl")
+    )
+
+
+def landscape_full_vol_pca_all_path(workdir: str, epoch: int) -> str:
+    """Path to ``vol_pca_all.pkl`` under ``landscape.{epoch}/landscape_full``."""
+    return os.path.join(landscape_full_outdir(workdir, int(epoch)), "vol_pca_all.pkl")
+
+
+def landscape_full_vol_pca_dim(workdir: str, epoch: int) -> int | None:
+    """Number of volume PCA columns in ``vol_pca_all.pkl``, or ``None`` if missing / invalid."""
+    p = landscape_full_vol_pca_all_path(workdir, int(epoch))
+    if not os.path.isfile(p):
+        return None
+    try:
+        v = np.asarray(utils.load_pkl(p), dtype=np.float64)
+    except Exception:
+        return None
+    if v.ndim != 2 or v.shape[1] < 1:
+        return None
+    return int(v.shape[1])
+
+
+def landscape_full_3d_ready(workdir: str, epoch: int) -> bool:
+    """True when sampled latents exist and ``vol_pca_all.pkl`` has at least three columns."""
+    if not landscape_full_ready(workdir, int(epoch)):
+        return False
+    n_pc = landscape_full_vol_pca_dim(workdir, int(epoch))
+    return n_pc is not None and n_pc >= 3
+
+
+def landscape_full_vol_pca_axis_columns(df: pd.DataFrame) -> list[str]:
+    """Sorted ``landscape_vol_PC*`` column names present in ``df`` (from ``vol_pca_all.pkl``)."""
+    found: list[tuple[int, str]] = []
+    for name in df.columns:
+        m = _LANDSCAPE_VOL_PC_COL_RE.fullmatch(str(name))
+        if m:
+            found.append((int(m.group(1)), str(name)))
+    found.sort(key=lambda t: t[0])
+    return [t[1] for t in found]
+
+
+def landscape_full_sampled_numeric_covariates(df: pd.DataFrame) -> list[str]:
+    """Numeric columns for the colour selector (excludes helpers)."""
+    skip = frozenset({"index", VOL_LANDSCAPE_3D_PLOT_DF_ROW})
+    return [c for c in df.select_dtypes(include=[np.number]).columns if c not in skip]
+
+
+def landscape_full_sampled_plot_df(exp: DashboardExperiment) -> pd.DataFrame:
+    """Merge ``ind.sampled.pkl`` / ``z.sampled.pkl`` with the analysis table plus volume covariates."""
+    outdir = landscape_full_outdir(exp.workdir, exp.epoch)
+    ind_path = os.path.join(outdir, "ind.sampled.pkl")
+    z_path = os.path.join(outdir, "z.sampled.pkl")
+    if not (os.path.isfile(ind_path) and os.path.isfile(z_path)):
+        raise FileNotFoundError(
+            f"Landscape full outputs missing under {outdir} "
+            "(expected ind.sampled.pkl and z.sampled.pkl from cryodrgn analyze_landscape_full)."
+        )
+
+    ind = np.asarray(utils.load_pkl(ind_path), dtype=np.int64)
+    z_s = np.asarray(utils.load_pkl(z_path), dtype=np.float64)
+    if z_s.ndim != 2:
+        raise ValueError("z.sampled.pkl must contain a 2-D array.")
+    if len(ind) != len(z_s):
+        raise ValueError("ind.sampled.pkl and z.sampled.pkl have different lengths.")
+    zdim = int(exp.z.shape[1])
+    if z_s.shape[1] != zdim:
+        raise ValueError(
+            f"z.sampled.pkl has width {z_s.shape[1]} but this run's z dimension is {zdim}."
+        )
+
+    n_full = len(exp.plot_df)
+    if ind.min() < 0 or ind.max() >= n_full:
+        raise ValueError(
+            "ind.sampled.pkl contains row indices outside the current analysis table."
+        )
+
+    base = exp.plot_df.iloc[ind].copy().reset_index(drop=True)
+    for i in range(zdim):
+        base[f"z{i}"] = z_s[:, i]
+
+    base[VOL_LANDSCAPE_3D_PLOT_DF_ROW] = ind.astype(np.int64, copy=False)
+
+    n_particles = n_full
+    vol_all_path = os.path.join(outdir, "vol_pca_all.pkl")
+    if os.path.isfile(vol_all_path):
+        v = np.asarray(utils.load_pkl(vol_all_path), dtype=np.float64)
+        if v.ndim == 2 and v.shape[0] == n_particles:
+            for j in range(v.shape[1]):
+                base[f"landscape_vol_PC{j + 1}"] = v[ind, j]
+
+    umap_path = os.path.join(outdir, "umap_vol_pca.pkl")
+    if os.path.isfile(umap_path):
+        u = np.asarray(utils.load_pkl(umap_path), dtype=np.float64)
+        if u.ndim == 2 and u.shape[0] == n_particles and u.shape[1] >= 2:
+            base["landscape_vol_UMAP1"] = u[ind, 0]
+            base["landscape_vol_UMAP2"] = u[ind, 1]
+
+    cl_path = os.path.join(outdir, "full_clustering", "cluster_labels.pkl")
+    if os.path.isfile(cl_path):
+        cl = np.asarray(utils.load_pkl(cl_path), dtype=np.int64)
+        if cl.shape[0] == n_particles:
+            base["landscape_vol_cluster"] = cl[ind]
+
+    return base
+
+
+def landscape_full_3d_scatter_plotly_json(
+    exp: DashboardExperiment,
+    *,
+    xcol: str,
+    ycol: str,
+    zcol: str,
+    color_col: str | None,
+    continuous_palette: str | None = None,
+    color_filter: dict[str, Any] | None = None,
+    discrete_label_colors: dict[str, str] | None = None,
+) -> str:
+    """Plotly figure JSON for the volume-landscape 3D scatter (volume PCA axes only)."""
+    from cryodrgn.dashboard.plots_scatter import scatter3d_z_json
+
+    sampled = landscape_full_sampled_plot_df(exp)
+    vol_axes = landscape_full_vol_pca_axis_columns(sampled)
+    if len(vol_axes) < 3:
+        raise ValueError(
+            "vol_pca_all.pkl must yield at least three landscape_vol_PC* columns in the sampled table."
+        )
+    ax_allow = frozenset(vol_axes)
+    return scatter3d_z_json(
+        exp,
+        xcol,
+        ycol,
+        zcol,
+        color_col,
+        continuous_palette=continuous_palette,
+        color_filter=color_filter,
+        discrete_label_colors=discrete_label_colors,
+        plot_df=sampled,
+        uirevision="scatter3d_z_landscape_full",
+        xyz_axes_allowed=ax_allow,
+    )
+
+
+def landscape_full_3d_latent_3d_template_kwargs(
+    exp: DashboardExperiment,
+    *,
+    scatter3d_url: str,
+) -> dict[str, Any]:
+    """Keyword arguments for ``latent_3d.html`` when the interface is fully available.
+
+    Raises ``FileNotFoundError``, ``ValueError``, or ``OSError`` if the sampled table cannot be built.
+    Raises ``ValueError`` if fewer than three volume PCA columns are present.
+    """
+    sampled = landscape_full_sampled_plot_df(exp)
+    vol_axes = landscape_full_vol_pca_axis_columns(sampled)
+    if len(vol_axes) < 3:
+        raise ValueError(
+            "Expected at least three columns in vol_pca_all.pkl (landscape_vol_PC1 …) "
+            "for this epoch."
+        )
+    dx, dy, dz = vol_axes[0], vol_axes[1], vol_axes[2]
+    cols = landscape_full_sampled_numeric_covariates(sampled)
+    return {
+        "page_title": "3D volume landscapes · cryoDRGN",
+        "nav_bar_title": "3D volume landscapes",
+        "lead_html": LANDSCAPE_FULL_3D_LEAD_HTML,
+        "axis_cols": vol_axes,
+        "axes_fieldset_legend": "Volume PCA axes",
+        "axes_fieldset_note_html": LANDSCAPE_FULL_3D_AXES_NOTE_HTML,
+        "numeric_cols": cols,
+        "covariate_display_map": covariate_display_map(cols),
+        "default_x": dx,
+        "default_y": dy,
+        "default_z": dz,
+        "scatter3d_url": scatter3d_url,
+        "legend_context_body_extra": LANDSCAPE_FULL_3D_LEGEND_CONTEXT_EXTRA,
+    }
+
+
+def landscape_full_3d_not_ready_template_kwargs(
+    exp_epoch: int, error_message: str = ""
+) -> dict[str, Any]:
+    """Keyword arguments for ``volume_landscape_3d_need_outputs.html``."""
+    return {"exp_epoch": int(exp_epoch), "error_message": error_message}

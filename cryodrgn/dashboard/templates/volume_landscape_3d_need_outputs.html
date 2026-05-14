@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% from "_macros.html" import nav_page_title_span %}
+{% block title %}3D volume landscapes · cryoDRGN{% endblock %}
+{% block nav_page_title %}{{ nav_page_title_span("3D volume landscapes") }}{% endblock %}
+{% block content %}
+<main class="cryo-dash-page" style="max-width: 48rem; margin: 2rem auto; padding: 0 1.25rem;">
+  <h1 style="font-size: 1.35rem; margin-bottom: 0.75rem;">3D volume landscapes</h1>
+  <p class="cryo-dash-lead">
+    This view needs <code>landscape.{{ exp_epoch }}/landscape_full/z.sampled.pkl</code>,
+    <code>ind.sampled.pkl</code>, and <code>vol_pca_all.pkl</code> with at least three PCA columns
+    (from <code>cryodrgn analyze_landscape_full</code> for the selected epoch).
+  </p>
+  {% if error_message %}
+  <p class="status cryo-status-error" style="margin-top: 1rem;">{{ error_message|e }}</p>
+  {% endif %}
+</main>
+{% endblock %}

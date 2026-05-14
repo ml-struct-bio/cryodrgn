@@ -20,6 +20,7 @@ import plotly.graph_objects as go
 from plotly.colors import sample_colorscale
 
 from cryodrgn import utils
+from cryodrgn.dashboard.covariate_labels import covariate_display_name
 from cryodrgn.dashboard.data import DashboardExperiment
 from cryodrgn.dashboard.particle_explorer import (
     ChimeraxViewTurn,
@@ -29,13 +30,16 @@ from cryodrgn.dashboard.particle_explorer import (
     mrc_to_rotating_gif,
     mrc_to_static_png,
 )
-from cryodrgn.dashboard.plots import (
-    _DASHBOARD_CREAM,
-    _PLOTLY_FONT,
+from cryodrgn.dashboard.palette_config import normalize_continuous_palette
+from cryodrgn.dashboard.plots_color_covariate import (
     _labels_colors_and_legend_items,
     _lower_legend_entry_label,
+)
+from cryodrgn.dashboard.plots_figure_utils import (
+    _DASHBOARD_CREAM,
+    _PLOTLY_FONT,
+    DASHBOARD_SCATTER_HOVERLABEL_FONT_SIZE,
     _plotly_to_json,
-    normalize_continuous_palette,
 )
 
 _LANDSCAPE_ANIM_LOCK = threading.Lock()
@@ -54,6 +58,8 @@ _PARTICLE_PC_COV_COL_RE = re.compile(r"^PC(\d+)$", re.IGNORECASE)
 # ChimeraX cost: cap how many volumes go into each animation style (extras subsampled).
 LANDSCAPE_ANIM_MAX_ROTATE = 5
 LANDSCAPE_ANIM_MAX_CYCLE = 50
+# Default ChimeraX rotation-frame count (sketch GIFs + vol-PCA ``generate_animations``).
+LANDSCAPE_SKETCH_GIF_FRAMES_DEFAULT = 20
 _LANDSCAPE_VIEW_ROTATION_AXES: tuple[str, ...] = ("x", "y", "z")
 
 
@@ -551,10 +557,7 @@ def landscape_volpca_scatter_figure(
         colors, _ = _labels_colors_and_legend_items(ser)
         marker = dict(size=9, opacity=0.75, color=colors)
         customdata = np.column_stack([vol_ids, states, train_idx_col])
-        hover = (
-            "vol %{customdata[0]} · training image %{customdata[2]} "
-            "· state %{customdata[1]}<extra></extra>"
-        )
+        hover = "volume: %{customdata[0]}<br>%{customdata[1]}<extra></extra>"
     elif (
         color_mode not in ("none", "state")
         and color_mode in df.columns
@@ -582,14 +585,22 @@ def landscape_volpca_scatter_figure(
         disp: list[Any] = []
         for i in range(n):
             if color_mode == "labels":
-                disp.append(_lower_legend_entry_label("labels", ser.iloc[i]))
+                raw = ser.iloc[i]
+                if pd.isna(raw):
+                    disp.append("(missing)")
+                else:
+                    disp.append(f"kmeans={_lower_legend_entry_label('labels', raw)}")
             else:
                 v = color_num.iloc[i]
+                lab_nm = covariate_display_name(color_mode)
                 if pd.isna(v):
-                    disp.append(None)
+                    disp.append(f"{lab_nm}: —")
                 else:
                     fv = float(v)
-                    disp.append(fv if np.isfinite(fv) else None)
+                    if np.isfinite(fv):
+                        disp.append(f"{lab_nm}: {fv:.5g}")
+                    else:
+                        disp.append(f"{lab_nm}: —")
         customdata = np.column_stack(
             [
                 np.asarray(vol_ids, dtype=np.int64),
@@ -597,16 +608,13 @@ def landscape_volpca_scatter_figure(
                 train_idx_col,
             ],
         )
-        hover = (
-            "vol %{customdata[0]} · training image %{customdata[2]} "
-            "· %{customdata[1]}<extra></extra>"
-        )
+        hover = "volume: %{customdata[0]}<br>%{customdata[1]}<extra></extra>"
     else:
         marker = dict(size=9, opacity=0.75, color="#4a5568")
         customdata = np.column_stack(
             [np.asarray(vol_ids, dtype=np.int64), train_idx_col],
         )
-        hover = "vol %{customdata[0]} · training image %{customdata[1]}<extra></extra>"
+        hover = "volume: %{customdata[0]}<extra></extra>"
 
     sketch_ids = [str(int(v)) for v in vol_ids]
 
@@ -620,6 +628,8 @@ def landscape_volpca_scatter_figure(
         marker=marker,
     )
     fig = go.Figure(sc)
+    hov_font = dict(_PLOTLY_FONT)
+    hov_font["size"] = DASHBOARD_SCATTER_HOVERLABEL_FONT_SIZE
     fig.update_layout(
         template="plotly_white",
         paper_bgcolor=_DASHBOARD_CREAM,
@@ -631,6 +641,7 @@ def landscape_volpca_scatter_figure(
         uirevision="vol_sketch_landscape",
         font=_PLOTLY_FONT,
         showlegend=False,
+        hoverlabel=dict(font=hov_font, align="left"),
     )
     return fig
 

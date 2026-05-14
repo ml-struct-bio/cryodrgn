@@ -13,6 +13,7 @@ import pandas as pd
 import plotly.graph_objects as go
 
 from cryodrgn.dashboard.column_names import VOL_LANDSCAPE_3D_PLOT_DF_ROW
+from cryodrgn.dashboard.covariate_labels import covariate_display_name
 from cryodrgn.dashboard.data import DashboardExperiment
 from cryodrgn.dashboard.palette_config import (
     mpl_cmap_for_palette,
@@ -23,6 +24,7 @@ from cryodrgn.dashboard.plots_color_covariate import (
     _discrete_legend_sort_tuple,
     _labels_colors_and_legend_items,
     _lower_color_series_is_discrete,
+    _lower_legend_entry_label,
     _scatter_discrete_marker_arrays,
     _stable_discrete_covariate_hex_map,
     discrete_category_counts_by_filter_key,
@@ -31,6 +33,7 @@ from cryodrgn.dashboard.plots_color_covariate import (
 from cryodrgn.dashboard.plots_figure_utils import (
     _DASHBOARD_CREAM,
     _PLOTLY_FONT,
+    DASHBOARD_SCATTER_HOVERLABEL_FONT_SIZE,
     _pair_grid_axis_lim_padded,
     _scatter3d_marker_size_opacity,
     _subsample,
@@ -38,6 +41,41 @@ from cryodrgn.dashboard.plots_figure_utils import (
     ezlab_matplotlib_rc,
     _plotly_to_json,
 )
+
+
+def _scatter_color_hover_texts(
+    sub: pd.DataFrame,
+    color_col: str,
+    *,
+    discrete_trace: bool,
+) -> list[str]:
+    """Per-point second line for scatter hover (covariate text; continuous uses ``name: value``)."""
+    ser = sub[color_col]
+    n = len(sub)
+    out: list[str] = []
+    if discrete_trace:
+        for i in range(n):
+            v = ser.iloc[i]
+            if pd.isna(v):
+                out.append("(missing)")
+            elif color_col == "labels":
+                out.append(f"kmeans={_lower_legend_entry_label('labels', v)}")
+            else:
+                out.append(str(v))
+    else:
+        cov_label = covariate_display_name(color_col)
+        color_num = cast(pd.Series, pd.to_numeric(ser, errors="coerce"))
+        for i in range(n):
+            v = color_num.iloc[i]
+            if pd.isna(v):
+                out.append(f"{cov_label}: —")
+            else:
+                fv = float(v)
+                if np.isfinite(fv):
+                    out.append(f"{cov_label}: {fv:.5g}")
+                else:
+                    out.append(f"{cov_label}: —")
+    return out
 
 
 def scatter_json(
@@ -101,6 +139,23 @@ def scatter_json(
     else:
         marker = dict(size=marker_size, opacity=0.35, color="#4a5568")
         customdata = np.column_stack([idx_arr, row_arr])
+
+    has_cov_color = bool(color_col and color_col != "none" and color_col in sub.columns)
+    # Scattergl (explorer default) does not reliably show ``hovertext`` in ``hovertemplate``;
+    # put the covariate line in ``customdata`` so the second line renders in WebGL too.
+    if has_cov_color:
+        cc = cast(str, color_col)
+        hov2 = np.asarray(
+            _scatter_color_hover_texts(sub, cc, discrete_trace=bool(discrete_trace)),
+            dtype=object,
+        ).reshape(-1, 1)
+        customdata = np.column_stack([customdata, hov2])
+        hover_kwargs: dict[str, Any] = dict(
+            hovertemplate="particle: %{customdata[0]}<br>%{customdata[3]}<extra></extra>",
+        )
+    else:
+        hover_kwargs = dict(hovertemplate="particle: %{customdata[0]}<extra></extra>")
+
     # Scattergl can leave Plotly.react() pending on some browsers/GPUs.
     trace_cls = go.Scattergl if use_webgl else go.Scatter
     sc = trace_cls(
@@ -108,8 +163,8 @@ def scatter_json(
         y=sub[ycol],
         mode="markers",
         customdata=customdata,
-        hovertemplate="row %{customdata[1]} · index %{customdata[0]}<extra></extra>",
         marker=marker,
+        **hover_kwargs,
     )
 
     xaxis_kw: dict[str, Any] = dict(title=xcol)
@@ -121,6 +176,8 @@ def scatter_json(
         yaxis_kw["showticklabels"] = False
         yaxis_kw["showgrid"] = False
 
+    hoverlabel_font = dict(_PLOTLY_FONT)
+    hoverlabel_font["size"] = DASHBOARD_SCATTER_HOVERLABEL_FONT_SIZE
     layout_kw: dict[str, Any] = dict(
         template="plotly_white",
         paper_bgcolor=_DASHBOARD_CREAM,
@@ -132,6 +189,7 @@ def scatter_json(
         uirevision="scatter",
         font=_PLOTLY_FONT,
         showlegend=False,
+        hoverlabel=dict(font=hoverlabel_font, align="left"),
     )
     layout_meta: dict[str, Any] = {}
     if preselect_plot_df_rows is not None:
@@ -301,19 +359,49 @@ def scatter3d_z_json(
         row_cd = np.asarray(sub[VOL_LANDSCAPE_3D_PLOT_DF_ROW], dtype=np.int64)
     else:
         row_cd = np.asarray(row_indices, dtype=np.int64)
+
+    has_cov_color = bool(color_col and color_col != "none" and color_col in sub.columns)
     if discrete_trace:
         fk_arr = np.asarray(fk_list, dtype=object)
         customdata = np.column_stack([idx_cd, row_cd, fk_arr])
+    elif has_cov_color:
+        n_sub = len(sub)
+        disp_cd = np.empty(n_sub, dtype=object)
+        color_num = cast(pd.Series, pd.to_numeric(sub[color_col], errors="coerce"))
+        for i in range(n_sub):
+            v = color_num.iloc[i]
+            if pd.isna(v):
+                disp_cd[i] = None
+            else:
+                fv = float(v)
+                disp_cd[i] = fv if np.isfinite(fv) else None
+        customdata = np.column_stack([idx_cd, row_cd, disp_cd])
     else:
         customdata = np.column_stack([idx_cd, row_cd])
+
+    if has_cov_color:
+        cc = cast(str, color_col)
+        hov2_3d = np.asarray(
+            _scatter_color_hover_texts(sub, cc, discrete_trace=bool(discrete_trace)),
+            dtype=object,
+        ).reshape(-1, 1)
+        customdata = np.column_stack([customdata, hov2_3d])
+        hover_kwargs_3d: dict[str, Any] = dict(
+            hovertemplate="particle: %{customdata[0]}<br>%{customdata[3]}<extra></extra>",
+        )
+    else:
+        hover_kwargs_3d = dict(
+            hovertemplate="particle: %{customdata[0]}<extra></extra>",
+        )
+
     sc = go.Scatter3d(
         x=sub[xcol],
         y=sub[ycol],
         z=sub[zcol],
         mode="markers",
         customdata=customdata,
-        hovertemplate="row %{customdata[1]} · index %{customdata[0]}<extra></extra>",
         marker=marker,
+        **hover_kwargs_3d,
     )
     transparent = "rgba(0,0,0,0)"
 
@@ -349,6 +437,8 @@ def scatter3d_z_json(
     if color_col and color_col != "none" and color_col in sub.columns:
         plot_meta["cdrgn_color_mode"] = "discrete" if discrete_trace else "continuous"
 
+    hoverlabel_font_3d = dict(_PLOTLY_FONT)
+    hoverlabel_font_3d["size"] = DASHBOARD_SCATTER_HOVERLABEL_FONT_SIZE
     fig = go.Figure(sc)
     fig.update_layout(
         template="plotly_white",
@@ -366,6 +456,7 @@ def scatter3d_z_json(
         uirevision=uirevision,
         font=_PLOTLY_FONT,
         meta=plot_meta,
+        hoverlabel=dict(font=hoverlabel_font_3d, align="left"),
     )
     return _plotly_to_json(fig)
 

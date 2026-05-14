@@ -29,8 +29,9 @@ LANDSCAPE_FULL_3D_LEAD_HTML = (
     "coordinates from <code>vol_pca_all.pkl</code> (volume PCA, shown as <code>landscape_vol_PC*</code>). "
     "Optional colour uses the same analysis covariates as the particle 3D visualizer, plus other "
     "full-landscape outputs when present (for example latent <code>z*</code> at the sample, "
-    "<code>landscape_vol_UMAP1</code>, or <code>landscape_vol_cluster</code>). Hover shows the "
-    "dataset index and the analysis-table row for that particle. This view is scatter-only — "
+    "<code>landscape_vol_UMAP1</code>, or <code>landscape_vol_cluster</code>). Hover shows "
+    "<code>particle: &lt;index&gt;</code> and the colour covariate when one is selected. "
+    "This view is scatter-only — "
     "no volume previews.</p>"
 )
 

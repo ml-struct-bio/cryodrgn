@@ -24,7 +24,8 @@ from cryodrgn.dashboard.context import (
 )
 from cryodrgn.dashboard.data import discover_analyzed_workdirs, list_z_epochs
 
-# Scatter caps: re-exported for tests that use ``from cryodrgn.dashboard import app`` (logic in route_helpers).
+# Scatter caps: re-exported for tests that
+# use ``from cryodrgn.dashboard import app`` (logic in route_helpers).
 from cryodrgn.dashboard.route_helpers import (
     _filter_ui_scatter_max_points,
     _particle_explorer_scatter_cap_from_env,

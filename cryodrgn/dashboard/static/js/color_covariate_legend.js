@@ -675,6 +675,7 @@
   function CryoColorCovariateLegend(opts) {
     this.legendContextUrl = opts.legendContextUrl;
     this.getLegendContextData = opts.getLegendContextData || null;
+    this.legendContextBodyExtra = opts.legendContextBodyExtra || null;
     this.covariateDisplayMap = opts.covariateDisplayMap || {};
     this.getColorColumn = opts.getColorColumn;
     this.getPaletteName = opts.getPaletteName;
@@ -1073,7 +1074,18 @@
       : fetch(this.legendContextUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ column: col })
+          body: JSON.stringify(
+            (function () {
+              var body = { column: col };
+              var bodyExtra = self.legendContextBodyExtra;
+              if (bodyExtra && typeof bodyExtra === "object") {
+                Object.keys(bodyExtra).forEach(function (k) {
+                  body[k] = bodyExtra[k];
+                });
+              }
+              return body;
+            })()
+          )
         }).then(function (r) {
           return r.json().then(function (j) { return { ok: r.ok, j: j }; });
         });

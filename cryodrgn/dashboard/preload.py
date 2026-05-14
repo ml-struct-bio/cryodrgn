@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from cryodrgn.dashboard.data import DashboardExperiment, particle_image_array
-from cryodrgn.dashboard.mpl_style import ezlab_matplotlib_rc
+from cryodrgn.dashboard.plots_figure_utils import ezlab_matplotlib_rc
 
 logger = logging.getLogger(__name__)
 

@@ -22,6 +22,9 @@ _PLOTLY_FONT = dict(
     size=13,
 )
 
+# Plotly ``layout.hoverlabel.font.size`` (px) for particle / volume sketch scatters.
+DASHBOARD_SCATTER_HOVERLABEL_FONT_SIZE = 10
+
 # Dashboard-only discrete palette for labels/k-means (kept out of non-dashboard tools).
 _DASHBOARD_CHIMERAX_COLORS: tuple[str, ...] = (
     "#949494",

@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% from "_palette_options.html" import continuous_palette_options %}
-{% block title %}3-D Latent Space Visualizer · cryoDRGN{% endblock %}
+{% block title %}{{ page_title }}{% endblock %}
 {% from "_macros.html" import nav_page_title_span %}
-{% block nav_page_title %}{{ nav_page_title_span("3D visualizer") }}{% endblock %}
+{% block nav_page_title %}{{ nav_page_title_span(nav_bar_title) }}{% endblock %}
 {% block head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/cryo_cc_legend_palette_menu.css') }}"/>
 <style>
@@ -353,15 +353,11 @@
 <div class="cryo-dash-page cryo-dash-page--latent3d">
 <div class="cryo-dash-row cryo-dash-row--plot-triple">
   <div class="cryo-dash-side">
-    <p class="cryo-dash-lead">Each point is a particle in the space of three latent coordinates you choose (drag to
-      rotate, scroll to zoom). Optional colour encodes another quantity from the analysis table. Use the histogram or
-      discrete toggles in the legend beside the plot to filter particles; the continuous palette lives in the drop-down
-      under the histogram.</p>
+    {{ lead_html | safe }}
     <div class="card cryo-dash-controls" id="latent3d-controls-card">
       <fieldset>
-        <legend>Latent axes</legend>
-        <p class="cryo-dash-legend-note" style="margin:0 0 0.35rem;">Pick three <strong>different</strong> coordinates
-          (z0, z1, …). The plot uses WebGL — &ldquo;Rendering…&rdquo; appears in the plot area while data loads.</p>
+        <legend>{{ axes_fieldset_legend }}</legend>
+        {{ axes_fieldset_note_html | safe }}
         <label class="cryo-select-line" for="sx">First axis</label>
         <select id="sx"></select>
         <label class="cryo-select-line" for="sy">Second axis</label>
@@ -453,25 +449,25 @@
 <script src="{{ url_for('static', filename='js/color_covariate_legend.js') }}"></script>
 <script>
 (function() {
-  var zcols = {{ z_cols | tojson }};
+  var axisCols = {{ axis_cols | tojson }};
   var cols = {{ numeric_cols | tojson }};
   var covariateDisplayMap = {{ covariate_display_map | tojson }};
   var dx = {{ default_x | tojson }};
   var dy = {{ default_y | tojson }};
   var dz = {{ default_z | tojson }};
 
-  function fillZSelect(sel, val) {
+  function fillAxisSelect(sel, val) {
     sel.innerHTML = "";
-    zcols.forEach(function(c) {
+    axisCols.forEach(function(c) {
       var o = document.createElement("option");
       o.value = c;
-      o.textContent = c;
+      o.textContent = covariateDisplayMap[c] || c;
       sel.appendChild(o);
     });
-    if (zcols.indexOf(val) >= 0) {
+    if (axisCols.indexOf(val) >= 0) {
       sel.value = val;
     } else {
-      sel.value = zcols[0];
+      sel.value = axisCols[0];
     }
   }
 
@@ -493,14 +489,15 @@
   var sy = document.getElementById("sy");
   var sz = document.getElementById("sz");
   var sc = document.getElementById("sc");
-  fillZSelect(sx, dx);
-  fillZSelect(sy, dy);
-  fillZSelect(sz, dz);
+  fillAxisSelect(sx, dx);
+  fillAxisSelect(sy, dy);
+  fillAxisSelect(sz, dz);
   fillColorSelect(sc);
 
   var gd = document.getElementById("latent3d");
-  var scatter3dUrl = "{{ url_for('api_scatter3d_z') }}";
+  var scatter3dUrl = {{ scatter3d_url | tojson }};
   var legendContextUrl = "{{ url_for('api_covariate_legend_context') }}";
+  var legendContextBodyExtra = {{ legend_context_body_extra | tojson }};
   var overlay = document.getElementById("latent3d-rendering-overlay");
   var latent3dRenderingEverCompleted = false;
   var latent3dPaletteSelect = document.getElementById("latent3d-palette-select");
@@ -715,9 +712,12 @@
 
   var latent3dColorLegend = new CryoColorCovariateLegend({
     legendContextUrl: legendContextUrl,
+    legendContextBodyExtra: legendContextBodyExtra,
     getDiscreteColorOverrides: function() { return latent3dDiscreteColorOverrides; },
     discreteChipMatplotlibBlend: false,
     notifyOnRefresh: false,
+    // Keep the heading ("Colour legend and filtering") hidden until a colour covariate is chosen.
+    hideLegendPanelWhenNoCovariate: true,
     covariateDisplayMap: covariateDisplayMap,
     getColorColumn: function() { return sc.value; },
     getPaletteName: selectedLatentPalette,

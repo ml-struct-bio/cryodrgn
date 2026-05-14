@@ -209,6 +209,7 @@
   {% set explorer_active = can_images and not command_builder_only %}
   {% set pair_active = not command_builder_only %}
   {% set latent3d_active = (zdim >= 3) and (not command_builder_only) %}
+  {% set vol_landscape_3d_active = landscape_full_3d_active and (not command_builder_only) %}
   {% set trajectory_active = show_trajectory_creator and not command_builder_only %}
   {% set landscape_card_active = landscape_volpca_active and not command_builder_only %}
 
@@ -236,6 +237,15 @@
     <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_3d.png') }}"/>
     <p>Interactive 3D scatter of three latent axes, with optional color from analysis columns when you have at least
       three <code>z</code> dimensions.</p>
+  </a>
+  {% endif %}
+  {% if vol_landscape_3d_active %}
+  <a class="landing-card landing-card-link" href="{{ url_for('landscape_full_3d_page') }}">
+    <h2 class="landing-card-title">3D volume landscapes</h2>
+    <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_3d.png') }}"/>
+    <p>3D scatter in <code>vol_pca_all.pkl</code> space for particles in <code>z.sampled.pkl</code> from
+      <code>cryodrgn analyze_landscape_full</code> for <strong>epoch {{ exp_epoch }}</strong>, with optional colour from
+      particle and landscape covariates (scatter only).</p>
   </a>
   {% endif %}
   {% if landscape_card_active %}
@@ -313,6 +323,22 @@
     {% else %}
     <p class="muted">Activate this interface by using a CUDA-enabled machine and loading a run with model weights for
       the selected epoch.</p>
+    {% endif %}
+  </article>
+  {% endif %}
+  {% if not vol_landscape_3d_active %}
+  <article class="landing-card landing-card--inactive">
+    <span class="landing-inactive-badge">Inactive</span>
+    <h2 class="landing-card-title">3D volume landscapes</h2>
+    <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_3d.png') }}"/>
+    <p>3D scatter in <code>vol_pca_all.pkl</code> space for <code>z.sampled.pkl</code> from
+      <code>cryodrgn analyze_landscape_full</code>, with colour from particle and landscape covariates (scatter only).</p>
+    {% if command_builder_only %}
+    <p class="muted">Activate this interface by running <code>cryodrgn dashboard &lt;outdir&gt;</code>.</p>
+    {% else %}
+    <p class="muted">Needs <code>landscape.{{ exp_epoch }}/landscape_full/z.sampled.pkl</code>,
+      <code>ind.sampled.pkl</code>, and <code>vol_pca_all.pkl</code> with at least three PCA columns. Run
+      <code>cryodrgn analyze_landscape_full &lt;outdir&gt; {{ exp_epoch }}</code> or switch epoch in the nav.</p>
     {% endif %}
   </article>
   {% endif %}

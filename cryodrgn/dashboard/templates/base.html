@@ -936,7 +936,8 @@
     }
     /*
      * Discrete covariate toggle legend — invert / “no selection” cell:
-     * idle = metallic label plaque; active = glossy button. Typography fills inner box with 7% inset (.cryo-cc-discrete-invert-fitbox).
+     * idle = metallic label plaque; active = glossy button. Typography fills inner box with
+     * 7% inset (.cryo-cc-discrete-invert-fitbox).
      */
     .cryo-cc-discrete-cell.cryo-cc-discrete-cell--invert {
       padding: 0;
@@ -1046,7 +1047,9 @@
       align-self: center;
       border-radius: 7px;
     }
-    .cryo-cc-region-invert-slot .cryo-cc-discrete-cell--invert-heading .cryo-cc-discrete-switch.cryo-cc-discrete-switch--invert {
+    .cryo-cc-region-invert-slot
+    .cryo-cc-discrete-cell--invert-heading
+    .cryo-cc-discrete-switch.cryo-cc-discrete-switch--invert {
       width: auto;
       height: auto;
       min-height: calc(0.792 * 1lh);
@@ -1061,7 +1064,10 @@
       max-width: 100%;
       padding: 0.18em 0.558em 0.216em;
     }
-    .cryo-cc-region-invert-slot .cryo-cc-discrete-cell--invert-heading .cryo-cc-discrete-invert-fitbox .cryo-cc-discrete-switch-label {
+    .cryo-cc-region-invert-slot
+    .cryo-cc-discrete-cell--invert-heading
+    .cryo-cc-discrete-invert-fitbox
+    .cryo-cc-discrete-switch-label {
       font-size: 0.9em;
       line-height: 1.2;
       width: auto;
@@ -1599,12 +1605,17 @@
           <span class="nav-brand-line1-row">
             <span class="nav-brand-line1">cryoDRGN</span>
             {% if cryodrgn_version_short %}
-            <span class="nav-brand-version nav-brand-version--inline" title="Dashboard: cryoDRGN {{ cryodrgn_version|e }}">v{{ cryodrgn_version_short|e }}</span>
+            <span
+              class="nav-brand-version nav-brand-version--inline"
+              title="Dashboard: cryoDRGN {{ cryodrgn_version|e }}"
+            >v{{ cryodrgn_version_short|e }}</span>
             {% endif %}
           </span>
           <span class="nav-brand-line2">
             <span class="nav-brand-line2-inner">
-              <span class="nav-brand-line2-main">dashboard<span class="nav-brand-interface-title">{% block nav_page_title %}{% endblock %}</span></span>
+              <span class="nav-brand-line2-main">dashboard<span
+                class="nav-brand-interface-title"
+              >{% block nav_page_title %}{% endblock %}</span></span>
             </span>
           </span>
         </span>
@@ -1635,7 +1646,9 @@
               <li role="presentation">
                 <button
                   type="button"
-                  class="nav-workdir-scroll-item cryo-dash-set-workdir{% if wd.value == selected_workdir %} nav-workdir-scroll-item--selected{% endif %}"
+                  class="nav-workdir-scroll-item cryo-dash-set-workdir{% if wd.value == selected_workdir %}
+                    nav-workdir-scroll-item--selected
+                  {% endif %}"
                   role="option"
                   {% if wd.value == selected_workdir %}aria-selected="true"{% else %}aria-selected="false"{% endif %}
                   data-workdir="{{ wd.value|e }}"
@@ -1703,10 +1716,17 @@
           {% if exp_epoch_output_stamp or exp_run_log_cryodrgn_version %}
           <div class="nav-epoch-meta">
             {% if exp_epoch_output_stamp %}
-            <span class="nav-epoch-stamp" {% if exp_epoch_output_stamp_title %}title="{{ exp_epoch_output_stamp_title|e }}"{% endif %}>analyze.{{ exp_epoch }} updated {{ exp_epoch_output_stamp|e }}</span>
+            <span class="nav-epoch-stamp"
+              {% if exp_epoch_output_stamp_title %}
+              title="{{ exp_epoch_output_stamp_title|e }}"
+              {% endif %}>analyze.{{ exp_epoch }}
+              updated {{ exp_epoch_output_stamp|e }}</span>
             {% endif %}
             {% if exp_run_log_cryodrgn_version %}
-            <span class="nav-epoch-runlog-version" {% if exp_run_log_cryodrgn_version_title %}title="{{ exp_run_log_cryodrgn_version_title|e }}"{% endif %}>trained with cryoDRGN v{{ exp_run_log_cryodrgn_version_short|e }}</span>
+            <span class="nav-epoch-runlog-version"
+              {% if exp_run_log_cryodrgn_version_title %}
+              title="{{ exp_run_log_cryodrgn_version_title|e }}"
+              {% endif %}>trained with cryoDRGN v{{ exp_run_log_cryodrgn_version_short|e }}</span>
             {% endif %}
           </div>
           {% endif %}

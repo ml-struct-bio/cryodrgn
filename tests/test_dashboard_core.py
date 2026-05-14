@@ -75,6 +75,7 @@ class TestDashboardPages:
             "/explorer",
             "/pairplot",
             "/latent-3d",
+            "/landscape-full-3d",
             "/trajectory",
             "/command-builder",
             "/landscape-volpca",
@@ -110,6 +111,29 @@ class TestDashboardScatterApis:
         r = flask_client.get("/api/scatter3d_z?x=z0&y=z1&z=z2&color=znorm")
         assert r.status_code == 200
         assert r.get_json()["data"]
+
+    def test_api_scatter3d_z_landscape_full_without_outputs_is_400(
+        self, flask_client
+    ) -> None:
+        r = flask_client.get(
+            "/api/scatter3d_z_landscape_full?x=z0&y=z1&z=z2&color=none"
+        )
+        assert r.status_code == 400
+        err = r.get_json().get("error", "")
+        assert (
+            "vol_pca" in err.lower()
+            or "landscape" in err.lower()
+            or "three" in err.lower()
+        )
+
+    def test_api_covariate_legend_context_landscape_scope_without_outputs_is_400(
+        self, flask_client
+    ) -> None:
+        r = flask_client.post(
+            "/api/covariate_legend_context",
+            json={"column": "z0", "scope": "landscape_full_sampled"},
+        )
+        assert r.status_code == 400
 
     def test_api_latent3d_preview_png(self, flask_client) -> None:
         r = flask_client.get("/api/latent3d_preview.png?x=z0&y=z1&z=z2&color=znorm")
@@ -632,6 +656,7 @@ class TestIndexTemplateNavLinks:
             "/command-builder",
         ):
             assert link in body, f"nav link {link!r} missing from /"
+        assert "3D volume landscapes" in body
         if explorer_volumes_eligible(dashboard_experiment):
             assert "/trajectory" in body, "nav link '/trajectory' missing from /"
         else:

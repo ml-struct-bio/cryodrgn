@@ -500,7 +500,8 @@ class TestApiCovariateThresholdRows:
 class TestApiExplorerVolumeMedia:
     def test_ineligible_returns_400(self, flask_client, monkeypatch) -> None:
         monkeypatch.setattr(
-            "cryodrgn.dashboard.app.explorer_volumes_eligible", lambda _e: False
+            "cryodrgn.dashboard.routes_explorer.explorer_volumes_eligible",
+            lambda _e: False,
         )
         r = flask_client.post(
             "/api/explorer_volume_media",
@@ -510,7 +511,8 @@ class TestApiExplorerVolumeMedia:
 
     def test_empty_rows_returns_400(self, flask_client, monkeypatch) -> None:
         monkeypatch.setattr(
-            "cryodrgn.dashboard.app.explorer_volumes_eligible", lambda _e: True
+            "cryodrgn.dashboard.routes_explorer.explorer_volumes_eligible",
+            lambda _e: True,
         )
         r = flask_client.post(
             "/api/explorer_volume_media",
@@ -520,7 +522,8 @@ class TestApiExplorerVolumeMedia:
 
     def test_bad_mode_returns_400(self, flask_client, monkeypatch) -> None:
         monkeypatch.setattr(
-            "cryodrgn.dashboard.app.explorer_volumes_eligible", lambda _e: True
+            "cryodrgn.dashboard.routes_explorer.explorer_volumes_eligible",
+            lambda _e: True,
         )
         r = flask_client.post(
             "/api/explorer_volume_media",
@@ -738,6 +741,61 @@ class TestParticleExplorerTemplateRegressions:
         assert "js/color_covariate_legend.js" in body
         assert "new CryoColorCovariateLegend" in body
         assert "function showGridHighlightsEnabled()" in body
+
+    def test_lasso_box_selection_union_and_deselect_preserves(
+        self, flask_client
+    ) -> None:
+        """Selection UX regression checks for disjoint lasso/box drags.
+
+        We can't run the browser JS here, so we assert the template contains
+        the key behaviours:
+        - lasso/box selections accumulate (union) across multiple drags
+        - Plotly deselect events do not wipe the stored selection
+          (only the explicit "Clear selection" button should do that)
+        - lasso/box accumulation only happens when the previous selection mode
+          was already geometric/``lasso`` (range/toggle selections overwrite)
+        """
+        r = flask_client.get("/explorer")
+        assert r.status_code == 200
+        body = r.get_data(as_text=True)
+
+        # Accumulation logic is guarded by "prevMode === 'lasso'" so lasso clears
+        # range/toggle selection instead of unioning with it.
+        assert 'prevMode === "lasso"' in body
+        assert "var mergedSet = new Set(baseRows);" in body
+        assert "accumulated union so both disjoint regions remain highlighted" in body
+
+        # Range/toggle selections overwrite the current selection (they don't
+        # accumulate with lasso drags).
+        assert "saveSelectionRows = Array.from(rowSet);" in body
+        assert 'statusPrefix === "Color threshold"' in body
+        assert 'statusPrefix === "Discrete"' in body
+
+        start = body.find('gd.on("plotly_deselect", function()')
+        assert start != -1, "missing plotly_deselect handler"
+        end = body.find('gd.addEventListener("mouseleave"', start)
+        assert end != -1 and end > start, "could not bound plotly_deselect block"
+        deselect_block = body[start:end]
+
+        assert (
+            'Keep the accumulated lasso/box selection unless the explicit "Clear selection"'
+            in deselect_block
+        )
+        # Previous behaviour wiped selection state here; we intentionally keep it.
+        assert "saveSelectionRows = []" not in deselect_block
+
+        # Explicit Clear selection button should still wipe the stored selection.
+        clear_start = body.find("function clearExplorerSelection()")
+        assert clear_start != -1, "missing clearExplorerSelection()"
+        clear_end = body.find(
+            "function rowsMatchingColorThresholdFromTrace", clear_start
+        )
+        assert (
+            clear_end != -1 and clear_end > clear_start
+        ), "could not bound clear block"
+        clear_block = body[clear_start:clear_end]
+        assert "clearScatterGeometricSelectionSuppressed();" in clear_block
+        assert "applyRowsSelection([]);" in clear_block
 
     def test_full_cache_load_suppresses_montage_and_plot_highlight_updates(
         self, flask_client

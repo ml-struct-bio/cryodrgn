@@ -1,0 +1,93 @@
+{# Particle explorer scatter region: left sidebar controls + Plotly scatter viewport. #}
+<div class="cryo-dash-side">
+    <div class="cryo-dash-lead">
+      Select particle subset using either:
+      <ul class="cryo-explorer-lead-list">
+        <li id="lead-mode-lasso">Lasso or box selection in the scatterplot</li>
+        <li id="lead-mode-threshold">Click the color histogram for a single threshold, or drag across it to select a
+          value range, when using a continuous color covariate like <code>znorm</code></li>
+        <li id="lead-mode-discrete">Toggling value filters when using a discrete color covariate like k-means
+          labels</li>
+      </ul>
+      <p>Load particle images and generate volumes with or without a selection using the interface on the right.</p>
+    </div>
+    <div class="card cryo-dash-controls" id="scatter-controls-card">
+      <fieldset>
+        <legend>Choose axes<br/>and point color scale</legend>
+        <label class="cryo-select-line" for="sx">Horizontal (X)</label>
+        <select id="sx"></select>
+        <label class="cryo-select-line" for="sy">Vertical (Y)</label>
+        <select id="sy"></select>
+        <label class="cryo-select-line" for="sc">Color by</label>
+        <select id="sc"><option value="none">None</option></select>
+      </fieldset>
+      <div id="sel-count-row" class="cryo-explorer-sel-count-row" role="status" aria-atomic="true">
+        <div class="cryo-explorer-sel-count-main-row">
+          <p id="sel-count" class="cryo-explorer-sel-count-text">Selected: 0/0 particles</p>
+          <div class="cryo-explorer-sel-pie-col" aria-hidden="true">
+            <div id="sel-pie" class="cryo-explorer-sel-pie" title=""></div>
+            <p id="sel-pie-pct" class="cryo-explorer-sel-pie-pct">0.0%</p>
+          </div>
+        </div>
+        <p id="sel-count-footnote" class="cryo-explorer-sel-count-footnote" hidden></p>
+      </div>
+      <div class="cryo-explorer-clear-selection">
+        <button type="button" class="btn btn-secondary" id="clear-explorer-selection" disabled>Clear selection</button>
+      </div>
+      <fieldset id="particle-sel-fieldset" disabled>
+        <legend>Create indices file</legend>
+        <p class="cryo-dash-legend-note">Active after you select particles on the plot, with the color histogram, or
+          with discrete color toggles.</p>
+        <div class="cryo-explorer-save-btns">
+          <button type="button" class="btn" id="save-indices-pkl">Save selection<br/>as
+            <code>indices.pkl</code></button>
+          <button type="button" class="btn btn-secondary" id="save-indices-custom">Save selection<br/>as…</button>
+        </div>
+        <label class="cryo-explorer-save-inverse-label" for="save-inverse">
+          <input type="checkbox" id="save-inverse"/>
+          <span>Also save inverse selection (<code>*_inverse.pkl</code>)</span>
+        </label>
+        <p id="save-status" class="status" style="margin:0.35rem 0 0;font-size:0.88rem;"></p>
+      </fieldset>
+    </div>
+    <div id="sel-file-browser-panel" class="cryo-traj-file-browser-panel" hidden aria-hidden="true">
+      <div class="cryo-file-browser">
+        <div class="cryo-file-browser-bar">
+          <button type="button" id="sel-fb-up" title="Parent directory">&#8593; Up</button>
+          <span class="cryo-file-browser-path" id="sel-fb-path"></span>
+          <button type="button" id="sel-fb-cancel">Cancel</button>
+        </div>
+        <ul class="cryo-file-browser-list" id="sel-fb-list"></ul>
+        <div class="cryo-file-browser-save-row">
+          <input
+            id="sel-fb-save-name"
+            class="cryo-file-browser-save-input"
+            type="text"
+            value="indices.pkl"
+            spellcheck="false"
+            aria-label="Selection filename"
+          />
+          <button type="button" id="sel-fb-save-btn" class="btn btn-secondary">Save here</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="cryo-dash-viewport--plotly">
+    <p id="scatter-plot-status" class="cryo-dash-legend-note cryo-particle-explorer-plot-status"
+      style="color:var(--accent,#c4703a);"></p>
+    <div class="cryo-plotly-stack" id="scatter-plot-stack">
+      <div id="scatter" class="cryo-plotly-graph-host"></div>
+      <div id="box-select-tooltip" class="cryo-box-select-tooltip" hidden></div>
+      <div id="scatter-rendering-overlay"
+        class="cryo-plot-rendering-overlay cryo-plot-rendering-overlay--show"
+        aria-hidden="false">
+        <div class="cryo-plot-rendering-overlay__inner">
+          <span class="cryo-plot-rendering-overlay__label">Rendering…</span>
+          <div class="cryo-plot-rendering-overlay__track" role="progressbar" aria-valuetext="Loading plot">
+            <div class="cryo-plot-rendering-overlay__indeterminate"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>

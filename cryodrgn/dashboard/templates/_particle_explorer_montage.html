@@ -1,0 +1,196 @@
+{# Particle explorer montage region: colour legend + montage actions + image grid. #}
+<aside class="cryo-dash-montage" aria-label="Particle preview">
+<div id="color-hist-panel" class="cryo-color-hist-panel" hidden aria-hidden="true">
+      <div class="cryo-cc-legend-region-heading-row">
+        <h3 id="color-legend-region-heading" class="cryo-color-legend-region-heading" hidden></h3>
+        <div id="color-legend-region-invert-slot" class="cryo-cc-region-invert-slot" hidden aria-hidden="true"></div>
+        <div id="scatter-palette-radios"
+          class="cryo-cc-legend-palette-shell cryo-explorer-scatter-palette-kit
+            cryo-palette-select cryo-palette-select--options-pane scatter-palette-radios--suppressed
+            cryo-explorer-scatter-palette-heading-toggle-host
+            cryo-explorer-scatter-palette-heading-toggle-host--suppressed"
+          aria-label="Continuous color palette">
+          <button type="button" id="scatter-palette-toggle" class="cryo-palette-select__title" aria-expanded="false"
+            aria-controls="scatter-palette-options">
+            <span class="cryo-palette-select__chevron" aria-hidden="true">▶</span>
+            <span id="scatter-palette-toggle-label">Choose palette</span>
+          </button>
+          <div id="scatter-palette-options"
+            class="cryo-palette-select__options cryo-palette-select__options--collapsed cryo-cc-legend-palette-menu"
+            role="group">
+            {{ continuous_palette_options("scatter_palette", "cryo-palette-option", "cryo-palette-select__swatch") }}
+          </div>
+        </div>
+      </div>
+      <div id="color-continuous-hist-wrap">
+        <div id="color-hist"></div>
+        <div class="cryo-color-hist-controls">
+          <label id="color-hist-mode-check-wrap" for="color-hist-mode-check">
+            <input type="checkbox" id="color-hist-mode-check"/>
+                    <span id="color-hist-mode-check-caption">Use as maximum (≤)</span>
+          </label>
+          <span id="color-threshold-status" class="status"></span>
+        </div>
+      </div>
+      <div id="color-discrete-wrap">
+        <div id="color-discrete-switches" class="cryo-color-discrete-switches" role="group"
+          aria-label="Discrete color filter"></div>
+        <div class="cryo-color-discrete-actions">
+          <button type="button" id="btn-discrete-invert-selection" class="btn btn-secondary" disabled>
+            no selection made!
+          </button>
+        </div>
+      </div>
+    </div>
+
+
+<div id="montage-actions" class="cryo-explorer-montage-actions">
+      <fieldset id="cryo-explorer-image-cache-fieldset" class="cryo-explorer-montage-group">
+        <legend>Load particle images into cache to display in grid</legend>
+        <div id="cryo-explorer-cache-load-body" class="cryo-explorer-cache-load-body">
+        <div class="cryo-explorer-load-images-toolbar">
+          <label class="cryo-explorer-cache-size-label" for="montage-cache-size-input">
+            <span class="cryo-explorer-cache-size-label__text" id="montage-cache-size-label-text">Cache size</span>
+            <input
+              type="number"
+              id="montage-cache-size-input"
+              name="montage_cache_size"
+              min="0"
+              step="{{ preload_cache_step }}"
+              inputmode="numeric"
+              value="{{ preload_image_limit }}"
+              max="{{ scatter_plotted_n }}"
+              title="Thumbnails to fetch when you build new cache, or expansion target size (capped at plotted points)"
+            />
+          </label>
+          <div class="cryo-explorer-action-row__btn">
+            <button type="button"
+              class="btn btn-secondary cryo-explorer-expand-cache-btn--compact"
+              id="btn-expand-cache"
+              disabled>Build new cache&#10;with {{ preload_image_limit }} images</button>
+          </div>
+          <div class="cryo-explorer-action-row__btn">
+            <button type="button" class="btn" id="btn-view-images" disabled>Load all images</button>
+          </div>
+        </div>
+        <div class="cryo-explorer-cache-selection-row" aria-label="Selection cache actions">
+          <button type="button" class="btn" id="btn-cache-selection-uncached" disabled
+            title="Select particles first.">
+            Add 0 selection images to cache
+          </button>
+          <span class="cryo-explorer-cache-selection-row__gap" aria-hidden="true"></span>
+          <button type="button"
+            class="btn btn-secondary cryo-explorer-cache-clear-btn"
+            id="btn-clear-image-cache"
+            disabled
+            title="Build new cache before you can clear one.">
+            Clear cache
+          </button>
+        </div>
+        <p id="preload-status" class="cryo-explorer-preload-status cryo-dash-legend-note"></p>
+        </div>
+        <div
+          id="cryo-explorer-cache-load-progress-wrap"
+          class="cryo-explorer-cache-load-progress-wrap"
+          hidden
+          aria-hidden="true">
+          <p class="cryo-explorer-cache-load-progress-heading">Loading particle images into cache…</p>
+          <div
+            id="image-cache-progress"
+            class="cryo-image-cache-progress"
+            role="progressbar"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="0"
+            aria-hidden="true"
+            hidden
+          >
+            <div class="cryo-image-cache-progress__track">
+              <div id="image-cache-progress-bar" class="cryo-image-cache-progress__bar"></div>
+            </div>
+            <span id="image-cache-progress-label" class="cryo-image-cache-progress__label">0%</span>
+          </div>
+        </div>
+      </fieldset>
+            {% if show_volume_explorer %}
+<fieldset class="cryo-explorer-montage-group">
+        <legend>Display reconstructed volumes</legend>
+      <div class="cryo-explorer-action-row">
+        <div class="cryo-explorer-action-row__btn">
+          <button type="button" class="btn btn-secondary" id="btn-volume-generate" disabled>Generate volumes</button>
+        </div>
+        <p class="cryo-explorer-action-row__hint cryo-dash-legend-note">
+          Use decoder to produce and display volumes for particles currently shown in grid.
+        </p>
+      </div>
+      <div class="cryo-explorer-action-row">
+        <div class="cryo-explorer-action-row__btn">
+          <button type="button" class="btn btn-secondary" id="btn-volume-animate" disabled>Animate volumes</button>
+        </div>
+        <p class="cryo-explorer-action-row__hint cryo-dash-legend-note">
+          Rotate currently displayed volumes.
+        </p>
+      </div>
+      <div class="cryo-volume-status-row" aria-live="polite">
+        <span id="volume-status" class="status" style="margin:0;"></span>
+        <div
+          id="volume-status-progress"
+          class="cryo-plot-rendering-overlay__track"
+          role="progressbar"
+          aria-valuetext="Generating volumes"
+          hidden
+        >
+          <div class="cryo-plot-rendering-overlay__indeterminate"></div>
+        </div>
+      </div>
+      </fieldset>
+      {% endif %}    </div>
+
+<div id="montage-inner" class="cryo-dash-montage-inner cryo-dash-montage-inner--disabled">
+      <div class="cryo-image-grid-toolbar">
+        <button type="button" id="image-grid-menu-toggle" class="cryo-image-grid-menu-toggle" aria-expanded="false"
+          aria-controls="image-grid-menu-body">
+          <span class="cryo-image-grid-menu-toggle__chev" aria-hidden="true">&#9656;</span>
+          <span>Image grid</span>
+        </button>
+        <div id="image-grid-toolbar-controls" class="cryo-image-grid-toolbar__controls" hidden>
+          <label id="image-grid-size-inline" class="cryo-image-grid-size-inline">
+            Grid size
+            <select id="grid-size" disabled>
+              <option value="1">1 × 1</option>
+              <option value="2">2 × 2</option>
+              <option value="3" selected>3 × 3</option>
+              <option value="4">4 × 4</option>
+              <option value="5">5 × 5</option>
+              <option value="6">6 × 6</option>
+              <option value="7">7 × 7</option>
+              <option value="8">8 × 8</option>
+            </select>
+          </label>
+          <button type="button" id="btn-montage-resample-cache" class="btn cryo-image-grid-resample-btn"
+            aria-label="Resample images from cache" disabled>
+            <span class="cryo-image-grid-resample-btn__label">Resample images<br>from cache</span>
+          </button>
+        </div>
+      </div>
+      <p id="image-grid-inactive-note"
+        class="cryo-dash-legend-note"
+        style="margin:0.22rem 0 0;"
+        hidden>Build image cache to populate grid</p>
+      <div id="image-grid-menu-body" class="cryo-image-grid-menu-body" hidden>
+        <div class="cryo-montage-grid-wrap">
+          <div id="montage-grid" class="cryo-montage-grid"></div>
+          <div id="montage-preload-overlay" class="cryo-plot-rendering-overlay" aria-hidden="true">
+            <div class="cryo-plot-rendering-overlay__inner">
+              <span id="montage-preload-overlay-label" class="cryo-plot-rendering-overlay__label">Loading image
+                cache...</span>
+              <div class="cryo-plot-rendering-overlay__track" role="progressbar" aria-valuetext="Loading image cache">
+                <div class="cryo-plot-rendering-overlay__indeterminate"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+</aside>

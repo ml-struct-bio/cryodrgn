@@ -72,7 +72,8 @@
 {% endmacro %}
 {# Full 4×4 grid — same layout as other pair-pictos; accents pair with .cryo-cc-legend__filter-em #}
 {% macro picto_filter_all_panels() %}
-<svg class="pair-picto pair-picto--filter-grid" width="32" height="32" viewBox="0 0 34 34" aria-hidden="true" focusable="false"
+<svg class="pair-picto pair-picto--filter-grid" width="32" height="32" viewBox="0 0 34 34"
+  aria-hidden="true" focusable="false"
   role="presentation">
   {% set soft = "#f6efea" %}
   {% set acc = "rgba(196, 112, 58, 0.42)" %}
@@ -641,7 +642,10 @@
     display: none !important;
   }
   /* Invert beside “toggle selection” title — slot styles from base `.cryo-cc-region-invert-slot` */
-  #pair-color-discrete-invert-slot .cryo-cc-discrete-cell--invert .cryo-cc-discrete-invert-fitbox .cryo-cc-discrete-switch-label {
+  #pair-color-discrete-invert-slot
+  .cryo-cc-discrete-cell--invert
+  .cryo-cc-discrete-invert-fitbox
+  .cryo-cc-discrete-switch-label {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -742,7 +746,11 @@
               <div class="pairplot-skel-edge-labels" id="pairplot-skel-edge-labels" aria-hidden="true"></div>
               {% for i in range(zdim) %}
               {% for j in range(zdim) %}
-              <div class="pairplot-skel-cell{% if i == j %} pairplot-skel-cell--diag{% endif %}" data-row="{{ i }}" data-col="{{ j }}" data-idx="{{ i * zdim + j }}">
+              <div
+                class="pairplot-skel-cell{% if i == j %} pairplot-skel-cell--diag{% endif %}"
+                data-row="{{ i }}"
+                data-col="{{ j }}"
+                data-idx="{{ i * zdim + j }}">
                 <div class="pairplot-skel-inner" aria-hidden="true">
                   <span class="pairplot-skel-text">Rendering…</span>
                   <div class="pairplot-skel-track">
@@ -771,7 +779,8 @@
           <div class="cryo-cc-legend__heading legend-row"
             title="Covariate colours in the legend; filtering applies to every square in the pair grid.">
             {{ picto_lower() }}
-            <span class="cryo-cc-legend__heading-text">Color legend and <span class="cryo-cc-legend__filter-em">filtering</span></span>
+            <span class="cryo-cc-legend__heading-text">Color legend and
+              <span class="cryo-cc-legend__filter-em">filtering</span></span>
             {{ picto_filter_all_panels() }}
           </div>
           <div id="pair-color-continuous-wrap">
@@ -787,15 +796,19 @@
                   </label>
                   <span id="pair-color-threshold-status" class="status"></span>
                 </div>
-                <div id="pairplot-palette-select" class="cryo-cc-legend-palette-shell pairplot-palette-select cryo-palette-select"
+                <div id="pairplot-palette-select"
+                  class="cryo-cc-legend-palette-shell pairplot-palette-select cryo-palette-select"
                   aria-label="Continuous color palette">
-                  <button type="button" id="pair-palette-toggle" class="pairplot-palette-select__title cryo-palette-select__title"
+                  <button type="button" id="pair-palette-toggle"
+                    class="pairplot-palette-select__title cryo-palette-select__title"
                     aria-expanded="false" aria-controls="pair-palette-options">
-                    <span class="pairplot-palette-select__chevron cryo-palette-select__chevron" aria-hidden="true">▶</span>
+                    <span class="pairplot-palette-select__chevron cryo-palette-select__chevron"
+                      aria-hidden="true">▶</span>
                     <span>Choose<br/>palette</span>
                   </button>
                   <div id="pair-palette-options"
-                    class="cryo-cc-legend-palette-menu pairplot-palette-select__options cryo-palette-select__options pairplot-palette-select__options--collapsed">
+                    class="cryo-cc-legend-palette-menu pairplot-palette-select__options
+                      cryo-palette-select__options pairplot-palette-select__options--collapsed">
                     {{ continuous_palette_options("pairplot_palette") }}
                   </div>
                 </div>
@@ -805,9 +818,15 @@
           <div id="pair-color-discrete-wrap">
             <div id="pair-color-discrete-heading-row" class="cryo-cc-discrete-toggle-heading-row" hidden>
               <span class="cryo-cc-discrete-toggle-heading-text">Toggle selection</span>
-              <div id="pair-color-discrete-invert-slot" class="cryo-cc-region-invert-slot" hidden aria-hidden="true"></div>
+              <div
+                id="pair-color-discrete-invert-slot"
+                class="cryo-cc-region-invert-slot"
+                hidden
+                aria-hidden="true"></div>
             </div>
-            <div id="pair-color-discrete-switches" class="cryo-cc-discrete-switches cryo-cc-discrete-switches--pair-2col"
+            <div
+              id="pair-color-discrete-switches"
+              class="cryo-cc-discrete-switches cryo-cc-discrete-switches--pair-2col"
               role="group" aria-label="Discrete colour filter"></div>
             <div class="cryo-cc-discrete-actions">
               <button type="button" id="pair-btn-discrete-invert" class="btn btn-secondary" disabled>
@@ -838,7 +857,10 @@
   var hasUmap = {{ has_umap | tojson }};
   var zdim = {{ zdim | int }};
   var pairplotObjectUrl = null;
-  /** When true, ignore naturalWidth/height so we size from pairplotFigAspect (avoids stale intrinsics after src change). */
+  /**
+   * When true, ignore naturalWidth/height so we size from pairplotFigAspect
+   * (avoids stale intrinsics after src change).
+   */
   var pairplotImgIntrinsicStale = false;
   var lastPayload = null;
   var placeholderCells = {{ skeleton_placeholder_cells | tojson }};
@@ -934,7 +956,11 @@
     } else {
       panel.style.removeProperty("--pair-legend-middle-w");
     }
-    if (typeof pairColorLegend !== "undefined" && pairColorLegend && typeof pairColorLegend.scheduleInvertTypographyFit === "function") {
+    if (
+      typeof pairColorLegend !== "undefined" &&
+      pairColorLegend &&
+      typeof pairColorLegend.scheduleInvertTypographyFit === "function"
+    ) {
       pairColorLegend.scheduleInvertTypographyFit();
     }
   }

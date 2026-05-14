@@ -4,21 +4,25 @@ from __future__ import annotations
 
 import os
 import re
-from collections.abc import Iterable
 from typing import Any
 
 import numpy as np
 from flask import jsonify, redirect, url_for
 
+from cryodrgn.dashboard.covariate_labels import (
+    covariate_display_map as _covariate_display_map,
+)
 from cryodrgn.dashboard.data import DashboardExperiment
 from cryodrgn.dashboard.particle_explorer import explorer_volumes_eligible
-from cryodrgn.dashboard.plots import normalize_continuous_palette
+from cryodrgn.dashboard.palette_config import normalize_continuous_palette
 from cryodrgn.dashboard.preload import DEFAULT_PRELOAD_IMAGE_LIMIT
 from cryodrgn.dashboard.trajectory import (
     direct_anchor_particle_indices_payload,
     has_pc_columns,
     has_umap_columns,
 )
+
+__all__ = ["_covariate_display_map"]
 
 _PAIR_DISCRETE_HEX6 = re.compile(r"^#[0-9a-fA-F]{6}$")
 
@@ -69,18 +73,6 @@ def _default_xy_cols(cols: list[str]) -> tuple[str, str]:
     x = "UMAP1" if "UMAP1" in cols else cols[0]
     y = "UMAP2" if "UMAP2" in cols else cols[min(1, len(cols) - 1)]
     return x, y
-
-
-def _covariate_display_name(name: str) -> str:
-    """Human-friendly covariate names in dashboard selectors."""
-    if name == "labels":
-        return "k-means labels"
-    return name
-
-
-def _covariate_display_map(names: Iterable[str]) -> dict[str, str]:
-    """Map column names to display strings for template covariate dropdowns."""
-    return {c: _covariate_display_name(c) for c in names}
 
 
 def _parse_preselect_rows_param(raw: str | None) -> tuple[list[int] | None, str | None]:

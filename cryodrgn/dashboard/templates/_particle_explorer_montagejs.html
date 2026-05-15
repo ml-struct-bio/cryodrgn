@@ -130,6 +130,41 @@
     };
   }
 
+  /** Parse ``rgb(r, g, b)`` from a CSS colour string. */
+  function parseRgbCssTriplet(css) {
+    var m = String(css || "").trim().match(/^rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)\s*$/i);
+    if (!m) return null;
+    return { r: +m[1], g: +m[2], b: +m[3] };
+  }
+
+  /** Pastel cell fill + readable annotation tints from a continuous-palette sample (same blend as discrete). */
+  function continuousMontageStylesFromT(t) {
+    var css = covariateScaleCSS(t);
+    var rgb = parseRgbCssTriplet(css);
+    if (!rgb) return { bg: css, covarColor: "", borderCss: css, idxColor: "" };
+    var r = rgb.r;
+    var g = rgb.g;
+    var b = rgb.b;
+    var towardWhite = 0.3;
+    var rf = Math.round(r * (1 - towardWhite) + 255 * towardWhite);
+    var gf = Math.round(g * (1 - towardWhite) + 255 * towardWhite);
+    var bf = Math.round(b * (1 - towardWhite) + 255 * towardWhite);
+    rf = Math.max(0, Math.min(255, rf));
+    gf = Math.max(0, Math.min(255, gf));
+    bf = Math.max(0, Math.min(255, bf));
+    var textDim = 0.46;
+    var rt = Math.max(0, Math.min(255, Math.round(r * textDim)));
+    var gt = Math.max(0, Math.min(255, Math.round(g * textDim)));
+    var bt = Math.max(0, Math.min(255, Math.round(b * textDim)));
+    var cov = "rgb(" + rt + "," + gt + "," + bt + ")";
+    return {
+      bg: "rgb(" + rf + "," + gf + "," + bf + ")",
+      covarColor: cov,
+      borderCss: css,
+      idxColor: cov
+    };
+  }
+
   function discreteMontageSortKey(ti) {
     var d = traceCustomdataColorDisp(ti);
     if (d == null) return { n: NaN, s: "" };
@@ -138,6 +173,163 @@
     var pn = parseFloat(sn);
     if (sn !== "" && isFinite(pn) && String(pn) === sn) return { n: pn, s: sn };
     return { n: NaN, s: sn };
+  }
+
+  /** Covariate colour for montage card border + scatter grid-letter marker outline (CSS colour string). */
+  function montageCovariateBorderCss(ti, colorMode, markerColors, cmin, cmax) {
+    if (!Array.isArray(markerColors) || ti < 0 || ti >= markerColors.length) return ACCENT;
+    if (colorMode === "discrete") {
+      var hx = markerColors[ti];
+      return typeof hx === "string" && hx.charAt(0) === "#" ? hx : String(hx || ACCENT);
+    }
+    var val = markerColors[ti];
+    var t = cmax > cmin && typeof val === "number" && isFinite(val)
+      ? (val - cmin) / (cmax - cmin)
+      : 0.5;
+    return covariateScaleCSS(t);
+  }
+
+  /**
+   * Grid-letter scatter overlay (trace 1): constant marker opacity; selection is shown only by filled vs hollow
+   * markers; each point keeps a covariate-coloured outline so hue is readable when unfilled.
+   * When no selection exists yet, every annotated grid point is drawn filled (same as “in selection”).
+   * (cryo-grid-highlight-marker-policy)
+   */
+  var GRID_HIGHLIGHT_CLEAR_FILL = "rgba(0,0,0,0)";
+  var GRID_HIGHLIGHT_LINE_WIDTH = 2.5;
+  var GRID_HIGHLIGHT_MARKER_OPACITY = 1;
+
+  /**
+   * Keep grid-letter trace (index 1) from inheriting scattergl selection dimming when trace 0 has
+   * ``selectedpoints`` — use SVG scatter + explicit ``unselected`` opacities (cryo-grid-highlight-no-dim).
+   */
+  function stampHighlightTraceAntiDim(restyleData) {
+    if (!restyleData) return;
+    restyleData.selectedpoints = [null];
+    restyleData["unselected.marker.opacity"] = [1];
+    restyleData["unselected.textfont.opacity"] = [1];
+  }
+
+  function nudgeHighlightTraceAfterScatterglSelectRestyle() {
+    if (!highlightTraceAdded || !gd || !gd.data || gd.data.length < 2) return;
+    try {
+      Plotly.restyle(
+        gd,
+        {
+          type: "scatter",
+          selectedpoints: [null],
+          "unselected.marker.opacity": [1],
+          "unselected.textfont.opacity": [1]
+        },
+        [1]
+      );
+    } catch (e) {
+      try {
+        Plotly.restyle(
+          gd,
+          {
+            selectedpoints: [null],
+            "unselected.marker.opacity": [1],
+            "unselected.textfont.opacity": [1]
+          },
+          [1]
+        );
+      } catch (e2) { /* ignore */ }
+    }
+  }
+
+  function appendGridHighlightMarkerRestyle(
+    restyleData,
+    nbs,
+    hasColor,
+    colorMode,
+    markerColors,
+    cmin,
+    cmax
+  ) {
+    var selRows = saveSelectionRows || [];
+    var treatAllGridPointsAsSelected = !selRows.length;
+    var selSet = treatAllGridPointsAsSelected ? null : new Set(selRows);
+    var fillColors = [];
+    var lineColors = [];
+    var textFontColors = [];
+    var multiGeom = committedScatterRegions && committedScatterRegions.length >= 2;
+    for (var hk = 0; hk < nbs.length; hk++) {
+      var tiH = nbs[hk].ti;
+      var rowH = nbs[hk].row;
+      var inSel = treatAllGridPointsAsSelected || (selSet && selSet.has(rowH));
+      var rIdxgeom = (!hasColor && multiGeom) ? selectionRegionIndexForRow(rowH) : -1;
+      var borderCss = hasColor
+        ? montageCovariateBorderCss(tiH, colorMode, markerColors, cmin, cmax)
+        : (rIdxgeom >= 0
+            ? SCATTER_REGION_GRID_HEX[rIdxgeom % SCATTER_REGION_GRID_HEX.length]
+            : ACCENT);
+      lineColors.push(borderCss);
+      if (!hasColor) {
+        if (multiGeom && rIdxgeom >= 0) {
+          var stRg = selectionRegionMontageStyles(rIdxgeom);
+          fillColors.push(inSel ? stRg.bg : GRID_HIGHLIGHT_CLEAR_FILL);
+          textFontColors.push(
+            inSel ? (stRg.covarColor || "#334155") : (stRg.covarColor || "#94a3b8")
+          );
+        } else {
+          fillColors.push(inSel ? ACCENT : GRID_HIGHLIGHT_CLEAR_FILL);
+          textFontColors.push(inSel ? "#fff" : "#cbd5e1");
+        }
+      } else if (colorMode === "discrete") {
+        fillColors.push(inSel ? String(markerColors[tiH]) : GRID_HIGHLIGHT_CLEAR_FILL);
+        textFontColors.push(inSel ? "#fff" : "#94a3b8");
+      } else {
+        fillColors.push(
+          inSel ? montageCovariateBorderCss(tiH, colorMode, markerColors, cmin, cmax) : GRID_HIGHLIGHT_CLEAR_FILL
+        );
+        textFontColors.push(inSel ? "#fff" : "#94a3b8");
+      }
+    }
+    restyleData["marker.color"] = [fillColors];
+    restyleData["marker.line.color"] = [lineColors];
+    restyleData["marker.line.width"] = [GRID_HIGHLIGHT_LINE_WIDTH];
+    restyleData["marker.opacity"] = [GRID_HIGHLIGHT_MARKER_OPACITY];
+    restyleData["textfont.color"] = [textFontColors];
+    stampHighlightTraceAntiDim(restyleData);
+  }
+
+  function montageItemsFromLastRows() {
+    var out = [];
+    if (!lastMontageRows || !lastMontageRows.length) return out;
+    for (var li = 0; li < lastMontageRows.length; li++) {
+      var it = montageItemForRow(lastMontageRows[li]);
+      if (it) out.push(it);
+    }
+    return out;
+  }
+
+  /**
+   * After lasso/threshold selection changes without replacing montage rows, keep grid-letter marker fill/hollow
+   * state in sync with ``saveSelectionRows``.
+   */
+  function refreshGridHighlightMarkerStylesFromLastRows() {
+    if (!highlightTraceAdded || !gd || !gd.data || !gd.data[0] || !gd.data[1]) return;
+    var items = montageItemsFromLastRows();
+    if (!items.length) return;
+    var markerColors = gd.data[0].marker ? gd.data[0].marker.color : null;
+    var colorCol = sc.value;
+    var hasColor = colorCol !== "none" && Array.isArray(markerColors);
+    var colorMode = hasColor ? scatterTraceColorMode() : "continuous";
+    var cmin = Infinity;
+    var cmax = -Infinity;
+    if (hasColor && colorMode === "continuous") {
+      for (var ci = 0; ci < markerColors.length; ci++) {
+        var vci = markerColors[ci];
+        if (typeof vci === "number" && isFinite(vci)) {
+          if (vci < cmin) cmin = vci;
+          if (vci > cmax) cmax = vci;
+        }
+      }
+    }
+    var patch = {};
+    appendGridHighlightMarkerRestyle(patch, items, hasColor, colorMode, markerColors, cmin, cmax);
+    queueHighlightRestyle(patch);
   }
 
   function buildTraceMap() {
@@ -152,6 +344,14 @@
     }
     preloaded.traceMap = tm;
     syncMontageResampleFromCacheButton();
+  }
+
+  /** Montage chip border: top stays thin; left, right, and bottom 50% thicker (3px vs 2px). */
+  function setMontageCellSelectionBorderStyle(cellEl, colorCss) {
+    cellEl.style.boxSizing = "border-box";
+    cellEl.style.borderStyle = "solid";
+    cellEl.style.borderColor = colorCss;
+    cellEl.style.borderWidth = "2px 3px 3px 3px";
   }
 
   function showRandomPreloaded() {
@@ -232,6 +432,8 @@
       if (i < nbs.length) {
         montageCells[i].img.src = nbs[i].src || "";
         montageCells[i].idx.textContent = "idx " + nbs[i].row;
+        montageCells[i].cell.classList.add("cryo-montage-cell--light");
+        if (montageCells[i].lbl) montageCells[i].lbl.style.color = "";
         if (hasColor) {
           var ti = nbs[i].ti;
           var dispVal = traceCustomdataColorDisp(ti);
@@ -249,37 +451,58 @@
             var hexCol = markerColors[ti];
             var dStyles = discreteLabelMontageStyles(String(hexCol));
             montageCells[i].cell.style.background = dStyles.bg;
+            setMontageCellSelectionBorderStyle(montageCells[i].cell, String(hexCol));
             montageCells[i].covar.style.color = dStyles.covarColor || "";
+            montageCells[i].idx.style.color = dStyles.covarColor || "";
           } else {
-            montageCells[i].covar.style.color = "";
-            var val = markerColors[ti];
-            var t = cmax > cmin && typeof val === "number" && isFinite(val)
-              ? (val - cmin) / (cmax - cmin)
+            var valC = markerColors[ti];
+            var tCell = cmax > cmin && typeof valC === "number" && isFinite(valC)
+              ? (valC - cmin) / (cmax - cmin)
               : 0.5;
-            montageCells[i].cell.style.background = covariateScaleCSS(t);
+            var cStyles = continuousMontageStylesFromT(tCell);
+            montageCells[i].cell.style.background = cStyles.bg;
+            setMontageCellSelectionBorderStyle(
+              montageCells[i].cell,
+              cStyles.borderCss || cStyles.bg
+            );
+            montageCells[i].covar.style.color = cStyles.covarColor || "";
+            montageCells[i].idx.style.color = cStyles.idxColor || cStyles.covarColor || "";
           }
         } else {
           montageCells[i].covar.textContent = "";
           montageCells[i].covar.style.color = "";
+          montageCells[i].idx.style.color = "";
           montageCells[i].cell.style.background = "";
+          var borderNoCov = ACCENT;
           if (imagesViewEnabled && preloaded && preloaded.traceMap && committedScatterRegions.length) {
             var ridxM = selectionRegionIndexForRow(nbs[i].row);
             if (ridxM >= 0) {
+              borderNoCov = SCATTER_REGION_GRID_HEX[
+                Math.max(0, ridxM) % SCATTER_REGION_GRID_HEX.length
+              ];
               var rsMont = selectionRegionMontageStyles(ridxM);
               montageCells[i].cell.style.background = rsMont.bg;
               montageCells[i].covar.style.color = rsMont.covarColor || "";
+              montageCells[i].idx.style.color = rsMont.covarColor || "";
               if (committedScatterRegions.length > 1) {
                 montageCells[i].covar.textContent = "Region " + (ridxM + 1);
               }
+              if (montageCells[i].lbl && committedScatterRegions.length >= 2) {
+                montageCells[i].lbl.style.color = rsMont.covarColor || "";
+              }
             }
           }
+          setMontageCellSelectionBorderStyle(montageCells[i].cell, borderNoCov);
         }
       } else {
         montageCells[i].img.src = "";
         montageCells[i].idx.textContent = "";
+        montageCells[i].idx.style.color = "";
         montageCells[i].covar.textContent = "";
         montageCells[i].covar.style.color = "";
         montageCells[i].cell.style.background = "";
+        montageCells[i].cell.style.border = "";
+        if (montageCells[i].lbl) montageCells[i].lbl.style.color = "";
       }
     }
     if (highlightTraceAdded && gd.data && gd.data[0]) {
@@ -297,21 +520,7 @@
         text: [txt],
         visible: [showPlotHighlights]
       };
-      if (hasColor) {
-        var colorVals = [];
-        for (var k = 0; k < nbs.length; k++) colorVals.push(markerColors[nbs[k].ti]);
-        restyleData["marker.color"] = [colorVals];
-        if (colorMode === "continuous") {
-          restyleData["marker.colorscale"] = [selectedScatterPalette()];
-          restyleData["marker.cmin"] = cmin;
-          restyleData["marker.cmax"] = cmax;
-        }
-        restyleData["marker.line.color"] = ["#fff"];
-        restyleData["marker.line.width"] = [1.5];
-      } else {
-        restyleData["marker.color"] = [ACCENT];
-        restyleData["marker.line.width"] = [0];
-      }
+      appendGridHighlightMarkerRestyle(restyleData, nbs, hasColor, colorMode, markerColors, cmin, cmax);
       queueHighlightRestyle(restyleData);
     }
     lastMontageRows = [];
@@ -606,16 +815,74 @@
     return prevPersisted.concat(cloneScatterSelectionShapes(fromPlotly));
   }
 
+  /**
+   * True for filled region overlays we draw on the scatter (``scatterRawSelectionToCommitShape``):
+   * named ``cdrgn_commit_shape_*``, or ``layer: "between"`` ``path``/``rect`` on the main ``x``/``y`` axes
+   * (the explorer does not use other ``between`` shapes on that subplot).
+   */
+  function shapeMatchesCryoCommittedScatterRegion(sh) {
+    if (!sh) return false;
+    var nm = String(sh.name || "");
+    if (nm.indexOf("cdrgn_commit_shape") === 0) return true;
+    if (sh.layer !== "between") return false;
+    if (sh.type !== "path" && sh.type !== "rect") return false;
+    var xr = String(sh.xref || "");
+    var yr = String(sh.yref || "");
+    var onAxes = (xr === "x" || (xr.length && xr.charAt(0) === "x"))
+      && (yr === "y" || (yr.length && yr.charAt(0) === "y"));
+    return onAxes;
+  }
+
   function scatterExplorerBaseShapes() {
     var raw = (gd && gd.layout && gd.layout.shapes) ? gd.layout.shapes : [];
     var out = [];
     for (var si = 0; si < raw.length; si++) {
       var sh = raw[si];
-      if (!sh || !sh.name || String(sh.name).indexOf("cdrgn_commit") !== 0) {
-        out.push(sh);
-      }
+      if (!sh) continue;
+      if (String(sh.name || "").indexOf("cdrgn_commit") === 0) continue;
+      if (shapeMatchesCryoCommittedScatterRegion(sh)) continue;
+      out.push(sh);
     }
     return out;
+  }
+
+  /**
+   * Drop transient scatter selection paths, explorer-committed region fills, and anything
+   * matching our committed overlay signature so ``layout.shapes`` cannot keep drawing after a clear.
+   */
+  function scatterExplorerShapesPurgeForGeometryClear(rawShapes) {
+    rawShapes = rawShapes || [];
+    var out = [];
+    for (var si = 0; si < rawShapes.length; si++) {
+      var sh = rawShapes[si];
+      if (!sh) continue;
+      if (String(sh.name || "").indexOf("cdrgn_commit") === 0) continue;
+      if (shapeMatchesCryoCommittedScatterRegion(sh)) continue;
+      var nm = String(sh.name || "");
+      if (!nm && (sh.type === "path" || sh.type === "rect")) {
+        var xr = String(sh.xref || "");
+        var yr = String(sh.yref || "");
+        var onAxes = (xr === "x" || (xr.length && xr.charAt(0) === "x"))
+          && (yr === "y" || (yr.length && yr.charAt(0) === "y"));
+        if (onAxes) continue;
+      }
+      out.push(sh);
+    }
+    return out;
+  }
+
+  /** Region count badges on the scatter (``cdrgn_commit_lbl_*`` or same styling without ``name``). */
+  function annotationMatchesCryoCommittedRegionLabel(an) {
+    if (!an) return false;
+    var nm = String(an.name || "");
+    if (nm.indexOf("cdrgn_commit_lbl_") === 0) return true;
+    if (an.showarrow) return false;
+    var fn = an.font && an.font.family;
+    if (!fn || String(fn).indexOf("Barlow") === -1) return false;
+    var sz = an.font && an.font.size;
+    if (Number(sz) !== 8 && String(sz) !== "8") return false;
+    if (an.bgcolor && an.xref === "x" && an.yref === "y") return true;
+    return false;
   }
 
   function scatterExplorerBaseAnnotations() {
@@ -623,9 +890,10 @@
     var out = [];
     for (var ai = 0; ai < raw.length; ai++) {
       var an = raw[ai];
-      if (!an || !an.name || String(an.name).indexOf("cdrgn_commit") !== 0) {
-        out.push(an);
-      }
+      if (!an) continue;
+      if (String(an.name || "").indexOf("cdrgn_commit") === 0) continue;
+      if (annotationMatchesCryoCommittedRegionLabel(an)) continue;
+      out.push(an);
     }
     return out;
   }
@@ -711,7 +979,8 @@
     var st = scatterRegionPlotStyle(idx);
     var base = {
       name: "cdrgn_commit_shape_" + idx,
-      layer: "above",
+      /* Draw selection fill between grid and traces so grid-letter markers stay visible on top. */
+      layer: "between",
       line: { color: st.line, width: 2.25, dash: "6 4" },
       fillcolor: st.fill,
       xref: raw.xref || "x",
@@ -730,15 +999,50 @@
   }
 
   /**
+   * Plotly.js can leave stale SVG shape nodes if ``shapes`` is only patched in place.
+   * Clear the array first, then apply the intended ``layout`` patch (Plotly 2.35.x CDN).
+   */
+  function plotlyRelayoutShapesHardReplaceThenPatch(layoutPatch) {
+    if (!gd || !layoutPatch) return;
+    try {
+      var cur = (gd.layout && gd.layout.shapes) ? gd.layout.shapes : [];
+      if (cur && cur.length) {
+        var patchDel = {};
+        for (var si = cur.length - 1; si >= 0; si--) {
+          patchDel["shapes[" + si + "]"] = null;
+        }
+        Plotly.relayout(gd, patchDel);
+      } else {
+        Plotly.relayout(gd, { shapes: [] });
+      }
+    } catch (e0) {
+      try { Plotly.relayout(gd, { shapes: [] }); } catch (e0b) { /* ignore */ }
+    }
+    try {
+      Plotly.relayout(gd, layoutPatch);
+    } catch (e1) {
+      try {
+        Plotly.relayout(gd, layoutPatch);
+      } catch (e2) { /* ignore */ }
+    }
+  }
+
+  /**
    * opts: optional ``clearSelections`` (boolean) — when true, clear Plotly ``layout.selections``.
    */
   function syncCommittedScatterRegionOverlays(opts) {
     if (!gd) return;
     opts = opts || {};
     var clearSel = !!opts.clearSelections;
-    var baseShapes = scatterExplorerBaseShapes();
-    var overlayShapes = [];
     var nReg = committedScatterRegions.length;
+    var baseShapes;
+    if (clearSel) {
+      var raw0 = (gd.layout && gd.layout.shapes) ? gd.layout.shapes.slice() : [];
+      baseShapes = scatterExplorerShapesPurgeForGeometryClear(raw0);
+    } else {
+      baseShapes = scatterExplorerBaseShapes();
+    }
+    var overlayShapes = [];
     for (var ri = 0; ri < nReg; ri++) {
       var sh = scatterRawSelectionToCommitShape(committedScatterRegions[ri].raw, ri);
       if (sh) overlayShapes.push(sh);
@@ -784,8 +1088,13 @@
     };
     if (clearSel) patch.selections = [];
     try {
-      Plotly.relayout(gd, patch);
+      if (clearSel) {
+        plotlyRelayoutShapesHardReplaceThenPatch(patch);
+      } else {
+        Plotly.relayout(gd, patch);
+      }
     } catch (e) { /* ignore */ }
+    nudgeHighlightTraceAfterScatterglSelectRestyle();
   }
 
   function scheduleCommittedScatterRegionOverlaySync() {
@@ -796,23 +1105,80 @@
     });
   }
 
+  var scatterglSelectionPaintFlushTok = 0;
+
+  /**
+   * Scattergl often keeps lasso/box selection paint until the drag layer resets.
+   * Nudge ``dragmode`` through ``false`` then back so the WebGL selection overlay is dropped.
+   */
+  function pulseScatterglDragmodeToFlushSelectionPaint() {
+    if (!gd || !gd.data || !gd.data[0] || gd.data[0].type !== "scattergl") return;
+    var dm = gd.layout && gd.layout.dragmode != null ? gd.layout.dragmode : "zoom";
+    try {
+      Plotly.relayout(gd, { selections: [], dragmode: false });
+      Plotly.relayout(gd, { dragmode: dm });
+    } catch (e) {
+      try {
+        Plotly.relayout(gd, { dragmode: "pan" });
+        Plotly.relayout(gd, { dragmode: dm });
+      } catch (e2) { /* ignore */ }
+    }
+    nudgeHighlightTraceAfterScatterglSelectRestyle();
+  }
+
+  /** After ``relayout``, scattergl may repaint the selection mask on the next tick — pulse a few times. */
+  function scheduleScatterglSelectionPaintFlushAfterClear() {
+    scatterglSelectionPaintFlushTok++;
+    var tok = scatterglSelectionPaintFlushTok;
+    function run() {
+      if (tok !== scatterglSelectionPaintFlushTok) return;
+      pulseScatterglDragmodeToFlushSelectionPaint();
+    }
+    window.requestAnimationFrame(function() {
+      window.requestAnimationFrame(function() {
+        run();
+        window.setTimeout(run, 0);
+        window.setTimeout(run, 95);
+        window.setTimeout(run, 210);
+        window.setTimeout(function() {
+          if (tok !== scatterglSelectionPaintFlushTok || !gd) return;
+          try {
+            if (Plotly.Plots && typeof Plotly.Plots.redraw === "function") {
+              Plotly.Plots.redraw(gd);
+            }
+          } catch (eR) { /* ignore */ }
+        }, 320);
+      });
+    });
+  }
+
   function clearScatterGeometricSelection() {
+    if (committedScatterOverlayRaf != null) {
+      cancelAnimationFrame(committedScatterOverlayRaf);
+      committedScatterOverlayRaf = null;
+    }
     committedScatterRegions = [];
     if (!gd) return;
+    var rawShapes = (gd.layout && gd.layout.shapes) ? gd.layout.shapes.slice() : [];
+    var basesh = scatterExplorerShapesPurgeForGeometryClear(rawShapes);
+    var annb = scatterExplorerBaseAnnotations();
+    var selRev = (gd.layout && gd.layout.selectionrevision != null
+      ? gd.layout.selectionrevision + 1
+      : Date.now());
     try {
-      Plotly.relayout(gd, {
+      plotlyRelayoutShapesHardReplaceThenPatch({
+        shapes: basesh,
+        annotations: annb,
         selections: [],
-        shapes: scatterExplorerBaseShapes(),
-        annotations: scatterExplorerBaseAnnotations(),
-        selectionrevision: (gd.layout && gd.layout.selectionrevision != null
-          ? gd.layout.selectionrevision + 1
-          : Date.now())
+        selectionrevision: selRev
       });
     } catch (e) {
       try {
         Plotly.relayout(gd, { selections: [], selectionrevision: Date.now() });
       } catch (e2) {}
     }
+    nudgeHighlightTraceAfterScatterglSelectRestyle();
+    scheduleScatterglSelectionPaintFlushAfterClear();
   }
 
   /**
@@ -837,6 +1203,7 @@
     } catch (err) {
       console.error(err);
     }
+    nudgeHighlightTraceAfterScatterglSelectRestyle();
   }
 
   function applySavedSelectionToCurrentTrace() {
@@ -847,6 +1214,8 @@
       try { Plotly.restyle(gd, { selectedpoints: [null] }, [0]); } catch (err) {}
       finally { endScatterSelectionRenderingOverlay(); }
       lassoSelectedRowSet = null;
+      nudgeHighlightTraceAfterScatterglSelectRestyle();
+      refreshGridHighlightMarkerStylesFromLastRows();
       return;
     }
     var rowSet = new Set(rows);
@@ -869,6 +1238,8 @@
       var r = cd[selected[si]][1];
       lassoSelectedRowSet.add(r);
     }
+    nudgeHighlightTraceAfterScatterglSelectRestyle();
+    refreshGridHighlightMarkerStylesFromLastRows();
   }
 
   /* ---------- highlight trace + montage grid coupling ---------- */
@@ -893,23 +1264,35 @@
       Plotly.restyle(gd, {
         mode: [showHighlights ? "markers+text" : "markers"],
         text: [text],
-        visible: [showHighlights]
+        visible: [showHighlights],
+        selectedpoints: [null],
+        "unselected.marker.opacity": [1],
+        "unselected.textfont.opacity": [1]
       }, [1]);
     } catch (err) {
       console.error(err);
     }
+    refreshGridHighlightMarkerStylesFromLastRows();
   }
 
   function ensureHighlightTrace() {
     if (highlightTraceAdded) return;
     highlightTraceAdded = true;
     Plotly.addTraces(gd, [{
+      type: "scatter",
       x: [], y: [],
       mode: showGridHighlightsOnPlot() ? "markers+text" : "markers",
       text: [],
       textposition: "middle center",
       textfont: {size: 9, color: "#fff", family: "Georgia, 'Times New Roman', serif"},
-      marker: {size: 15, color: "#c4703a", line: {width: 0}},
+      selectedpoints: null,
+      unselected: { marker: { opacity: 1 }, textfont: { opacity: 1 } },
+      marker: {
+        size: 15,
+        opacity: GRID_HIGHLIGHT_MARKER_OPACITY,
+        color: ACCENT,
+        line: {width: GRID_HIGHLIGHT_LINE_WIDTH, color: ACCENT}
+      },
       visible: showGridHighlightsOnPlot(),
       hoverinfo: "skip",
       showlegend: false
@@ -1142,7 +1525,7 @@
     return selected;
   }
 
-  function applyRowsSelection(rows, statusPrefix) {
+  function applyRowsSelection(rows, statusPrefix, holdSuppressMs) {
     rows = rows || [];
     cancelLassoSelectionDebounce();
     var rowSet = new Set(rows);
@@ -1166,12 +1549,16 @@
     } finally {
       endScatterSelectionRenderingOverlay();
     }
+    nudgeHighlightTraceAfterScatterglSelectRestyle();
     /* Legend-driven discrete/threshold restyles still emit plotly_selected after a tick; its
        debounced handler (200ms) would overwrite saveSelectionRows and clear toggle checkboxes
        unless we keep suppression past that window. */
     var suppressClearMs = 0;
     if (selectedTi.length && (statusPrefix === "Discrete" || statusPrefix === "Color threshold")) {
       suppressClearMs = LASSO_SELECTION_DEBOUNCE_MS + 100;
+    }
+    if (holdSuppressMs != null && isFinite(Number(holdSuppressMs))) {
+      suppressClearMs = Math.max(suppressClearMs, Number(holdSuppressMs));
     }
     setTimeout(function() { suppressSelectionEvents = false; }, suppressClearMs);
 
@@ -1226,10 +1613,17 @@
     }
     if (colorThresholdStatus) colorThresholdStatus.textContent = "";
     syncColorHistModeCheckboxCaption();
-    clearScatterGeometricSelectionSuppressed();
-    applyRowsSelection([]);
+    /* Empty rows first so deselect/selected handlers see no saved selection; hold ``suppress``
+       past the lasso debounce so a stale ``plotly_selected`` timer cannot re-commit regions. */
+    applyRowsSelection([], undefined, LASSO_SELECTION_DEBOUNCE_MS + 120);
+    clearScatterGeometricSelection();
+    syncCommittedScatterRegionOverlays({ clearSelections: true });
     if (imagesViewEnabled && preloaded) {
       showRandomPreloaded();
+    } else if (imagesViewEnabled && lastMontageRows.length) {
+      ensureHighlightTrace();
+      var pickedClearMontage = pickRandomMontageItemsFilled(neighborK);
+      if (pickedClearMontage.length) updateMontage(pickedClearMontage);
     }
     syncMontageResampleFromCacheButton();
   }
@@ -1263,6 +1657,7 @@
       var payload = pendingHighlightRestyle;
       pendingHighlightRestyle = null;
       if (!payload || !highlightTraceAdded || !gd.data || !gd.data[0]) return;
+      stampHighlightTraceAntiDim(payload);
       beginScatterSelectionRenderingOverlay();
       try {
         Plotly.restyle(gd, payload, [1]);
@@ -1546,6 +1941,7 @@
         } finally {
           endScatterSelectionRenderingOverlay();
         }
+        nudgeHighlightTraceAfterScatterglSelectRestyle();
         setTimeout(function() { suppressSelectionEvents = false; }, 0);
         if (scatterTraceColorMode() === "discrete") setExplorerLegendDiscreteKeysForSelection();
         if (imagesViewEnabled && preloaded && preloaded.traceMap) {
@@ -1619,6 +2015,7 @@
         } finally {
           endScatterSelectionRenderingOverlay();
         }
+        nudgeHighlightTraceAfterScatterglSelectRestyle();
         setTimeout(function() { suppressSelectionEvents = false; }, 0);
         syncCommittedScatterRegionOverlays({ clearSelections: false });
       }

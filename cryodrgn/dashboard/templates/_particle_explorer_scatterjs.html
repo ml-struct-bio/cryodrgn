@@ -429,23 +429,53 @@
     gridEl.innerHTML = "";
     gridEl.style.gridTemplateColumns = "repeat(" + gridSize + ", 1fr)";
     montageCells = [];
-    var labelSize = gridSize <= 3 ? "0.82rem" : gridSize <= 5 ? "0.65rem" : "0.52rem";
+    var metaBandRem = gridSize <= 3 ? 2.5 : gridSize <= 5 ? 2.12 : 1.78;
     var metaSize = gridSize <= 3 ? "0.52rem" : gridSize <= 5 ? "0.46rem" : "0.4rem";
+    function scaleRem(remCss, mult) {
+      var m = /^([\d.]+)rem$/.exec(String(remCss).trim());
+      if (!m) return remCss;
+      var v = parseFloat(m[1]) * mult;
+      return (Math.round(v * 1000) / 1000) + "rem";
+    }
+    var annSize = scaleRem(metaSize, 1.1);
     for (var i = 0; i < neighborK; i++) {
       var cell = document.createElement("div");
-      cell.className = "cryo-montage-cell";
+      cell.className = "cryo-montage-cell cryo-montage-cell--light";
 
-      var hdr = document.createElement("div");
-      hdr.className = "cryo-montage-header";
+      var meta = document.createElement("div");
+      meta.className = "cryo-montage-meta";
+      meta.style.boxSizing = "border-box";
+      meta.style.minHeight = metaBandRem + "rem";
+      meta.style.height = metaBandRem + "rem";
+
       var lbl = document.createElement("span");
       lbl.className = "cryo-montage-label";
       lbl.textContent = labels[i];
-      lbl.style.fontSize = labelSize;
+      lbl.style.lineHeight = "1";
+      lbl.style.display = "flex";
+      lbl.style.alignItems = "center";
+      lbl.style.height = "85%";
+      lbl.style.boxSizing = "border-box";
+      var letterFontRem = metaBandRem * 0.85 * 0.72;
+      lbl.style.fontSize = letterFontRem.toFixed(3) + "rem";
+      /* Nudge letter vs meta band: +11% letter height right, −20% up (letter height ≈ font-size rem). */
+      lbl.style.transform = "translate("
+        + (letterFontRem * 0.11).toFixed(4) + "rem,-"
+        + (letterFontRem * 0.20).toFixed(4) + "rem)";
+
+      var rightMeta = document.createElement("div");
+      rightMeta.className = "cryo-montage-meta-right";
       var covar = document.createElement("span");
       covar.className = "cryo-montage-covar";
-      covar.style.fontSize = metaSize;
-      hdr.appendChild(lbl);
-      hdr.appendChild(covar);
+      covar.style.fontSize = annSize;
+      var idxSpan = document.createElement("div");
+      idxSpan.className = "cryo-montage-idx";
+      idxSpan.style.fontSize = annSize;
+      rightMeta.appendChild(covar);
+      rightMeta.appendChild(idxSpan);
+
+      meta.appendChild(lbl);
+      meta.appendChild(rightMeta);
 
       var wrap = document.createElement("div");
       wrap.className = "cryo-montage-img-wrap";
@@ -453,18 +483,10 @@
       img.src = ""; img.alt = "";
       wrap.appendChild(img);
 
-      var ftr = document.createElement("div");
-      ftr.className = "cryo-montage-footer";
-      var idxSpan = document.createElement("span");
-      idxSpan.className = "cryo-montage-idx";
-      idxSpan.style.fontSize = metaSize;
-      ftr.appendChild(idxSpan);
-
-      cell.appendChild(hdr);
+      cell.appendChild(meta);
       cell.appendChild(wrap);
-      cell.appendChild(ftr);
       gridEl.appendChild(cell);
-      montageCells.push({img: img, idx: idxSpan, covar: covar, cell: cell});
+      montageCells.push({img: img, idx: idxSpan, covar: covar, cell: cell, lbl: lbl});
     }
   }
   rebuildGrid();

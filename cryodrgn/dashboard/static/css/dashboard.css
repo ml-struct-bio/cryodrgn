@@ -757,7 +757,8 @@
       align-items: stretch;
     }
     .cryo-dash-row.cryo-dash-row--plot-triple > .pairplot-color-legend-aside,
-    .cryo-dash-row.cryo-dash-row--plot-triple > .latent3d-color-legend-aside {
+    .cryo-dash-row.cryo-dash-row--plot-triple > .latent3d-color-legend-aside,
+    .cryo-dash-row.cryo-dash-row--plot-triple > .latent3d-volanim-aside {
       width: 100%;
       max-width: 100%;
       min-width: 0;

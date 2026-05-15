@@ -12,7 +12,10 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 
-from cryodrgn.dashboard.column_names import VOL_LANDSCAPE_3D_PLOT_DF_ROW
+from cryodrgn.dashboard.column_names import (
+    VOL_LANDSCAPE_3D_PLOT_DF_ROW,
+    VOL_LANDSCAPE_NEAREST_SKETCH_VOL,
+)
 from cryodrgn.dashboard.covariate_labels import covariate_display_name
 from cryodrgn.dashboard.data import DashboardExperiment
 from cryodrgn.dashboard.palette_config import (
@@ -394,6 +397,10 @@ def scatter3d_z_json(
             hovertemplate="particle: %{customdata[0]}<extra></extra>",
         )
 
+    if VOL_LANDSCAPE_NEAREST_SKETCH_VOL in sub.columns:
+        nv = np.asarray(sub[VOL_LANDSCAPE_NEAREST_SKETCH_VOL], dtype=np.int64)
+        customdata = np.column_stack([customdata, nv])
+
     sc = go.Scatter3d(
         x=sub[xcol],
         y=sub[ycol],
@@ -436,6 +443,8 @@ def scatter3d_z_json(
         ] = discrete_category_counts_by_filter_key(df_all, color_col)
     if color_col and color_col != "none" and color_col in sub.columns:
         plot_meta["cdrgn_color_mode"] = "discrete" if discrete_trace else "continuous"
+    if VOL_LANDSCAPE_NEAREST_SKETCH_VOL in sub.columns:
+        plot_meta["cdrgn_landscape_vol_animation"] = True
 
     hoverlabel_font_3d = dict(_PLOTLY_FONT)
     hoverlabel_font_3d["size"] = DASHBOARD_SCATTER_HOVERLABEL_FONT_SIZE

@@ -61,38 +61,61 @@
   .cryo-montage-cell {
     display: flex;
     flex-direction: column;
-    background: var(--accent, #c4703a);
     border-radius: 3px;
     overflow: hidden;
+    box-sizing: border-box;
   }
-  .cryo-montage-header {
+  .cryo-montage-cell.cryo-montage-cell--light {
+    background: var(--paper, #faf8f4);
+    padding: 2px 1px 1px 1px;
+    gap: 1px;
+  }
+  .cryo-montage-meta {
     display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    padding: 1px 4px;
-    min-height: 0;
-    line-height: 1.15;
-    text-shadow: 0 0 3px rgba(0,0,0,0.6);
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 1px;
+    flex-shrink: 0;
+    min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
+    padding-top: 0;
   }
-  .cryo-montage-label {
+  .cryo-montage-meta-right {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    text-align: right;
+    gap: 0;
+    align-self: center;
+  }
+  .cryo-montage-cell--light .cryo-montage-label {
+    flex: 0 0 auto;
     font-weight: 700;
-    color: #fff;
+    color: var(--nav-bg, #243b53);
     font-family: Georgia, "Times New Roman", serif;
     white-space: nowrap;
+    line-height: 1;
   }
-  .cryo-montage-covar {
+  .cryo-montage-cell--light .cryo-montage-covar,
+  .cryo-montage-cell--light .cryo-montage-idx {
     font-size: 0.52rem;
-    color: rgba(255,255,255,0.88);
+    color: var(--muted, #5c6b7a);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     font-variant-numeric: tabular-nums;
-    margin-left: 2px;
+    line-height: 1.15;
+    max-width: 100%;
   }
   .cryo-montage-img-wrap {
     position: relative;
     aspect-ratio: 1;
     flex: 1 1 auto;
+    margin: 0;
+    min-height: 0;
   }
   .cryo-montage-img-wrap img {
     width: 100%;
@@ -102,20 +125,6 @@
     object-fit: cover;
   }
   .cryo-montage-img-wrap img[src=""] { visibility: hidden; }
-  .cryo-montage-footer {
-    padding: 0 4px 1px;
-    line-height: 1.15;
-    min-height: 0;
-    text-shadow: 0 0 3px rgba(0,0,0,0.6);
-  }
-  .cryo-montage-idx {
-    font-size: 0.52rem;
-    color: rgba(255,255,255,0.88);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-variant-numeric: tabular-nums;
-  }
   .cryo-dash-montage-inner--disabled {
     opacity: 0.48;
   }

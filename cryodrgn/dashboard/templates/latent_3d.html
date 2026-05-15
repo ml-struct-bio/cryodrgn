@@ -5,6 +5,47 @@
 {% block nav_page_title %}{{ nav_page_title_span(nav_bar_title) }}{% endblock %}
 {% block head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/cryo_cc_legend_palette_menu.css') }}"/>
+{% if show_landscape_vol_animations %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/landscape_volpca.css') }}"/>
+<style>
+  /* Four columns: controls | plot | colour legend | volume / animations (right edge) */
+  .cryo-dash-page--latent3d .cryo-dash-row.cryo-dash-row--plot-triple.cryo-dash-row--latent3d-volanim {
+    grid-template-columns: minmax(0, 14fr) minmax(0, 50fr) minmax(0, 13fr) minmax(11.5rem, 17fr);
+    align-items: start;
+  }
+  .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim > .cryo-dash-side,
+  .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim > .cryo-dash-main,
+  .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim > .latent3d-volanim-aside,
+  .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim > .latent3d-color-legend-aside {
+    align-self: start;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-aside {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    min-width: 0;
+    max-width: 100%;
+    width: 100%;
+    box-sizing: border-box;
+    position: sticky;
+    top: 0.35rem;
+    z-index: 2;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card {
+    width: 100%;
+    max-width: min(100%, 22rem);
+    box-sizing: border-box;
+  }
+  @media (max-width: 900px) {
+    .cryo-dash-page--latent3d .cryo-dash-row.cryo-dash-row--plot-triple.cryo-dash-row--latent3d-volanim {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .cryo-dash-page--latent3d .latent3d-volanim-aside {
+      position: static;
+    }
+  }
+</style>
+{% endif %}
 <style>
   /* Plot | legend share a column boundary (no gap); keep space after controls only. */
   .cryo-dash-page--latent3d .cryo-dash-row.cryo-dash-row--plot-triple {
@@ -359,7 +400,7 @@
 {% endblock %}
 {% block content %}
 <div class="cryo-dash-page cryo-dash-page--latent3d">
-<div class="cryo-dash-row cryo-dash-row--plot-triple">
+<div class="cryo-dash-row cryo-dash-row--plot-triple{% if show_landscape_vol_animations %} cryo-dash-row--latent3d-volanim{% endif %}">
   <div class="cryo-dash-side">
     {{ lead_html | safe }}
     <div class="card cryo-dash-controls" id="latent3d-controls-card">
@@ -451,10 +492,90 @@
           </div>
         </div>
       </aside>
+{% if show_landscape_vol_animations %}
+    <aside class="latent3d-volanim-aside" aria-label="Volume GIF animations">
+      <div class="card volsketch-animate-card latent3d-volanim-card" id="l3dva-animate-panel">
+        <fieldset style="margin:0 0 0.65rem;">
+          <legend>Volume selection</legend>
+          <p class="cryo-dash-legend-note" style="margin:0 0 0.35rem;">Double-click a point to add or remove its nearest
+            k-means sketch volume. Lasso or box selection replaces the current selection, as does <strong>Choose volumes at
+              random</strong>.</p>
+          <p id="l3dva-sel-summary" class="status" style="margin:0 0 0.35rem;" role="status" aria-live="polite">No k-means
+            volumes selected</p>
+          <div class="volsketch-sel-indices-wrap">
+            <details class="volsketch-sel-indices-details" id="l3dva-sel-indices-details" hidden>
+              <summary class="volsketch-sel-indices-summary">
+                <span class="volsketch-sel-indices-chevron" aria-hidden="true"></span>
+                <span id="l3dva-sel-indices-summary-label" class="volsketch-sel-indices-summary-label"></span>
+                <span class="volsketch-sel-indices-summary-hint" aria-hidden="true">Tap to toggle</span>
+              </summary>
+              <ul id="l3dva-sel-indices-list" class="volsketch-sel-indices-list"
+                aria-label="Selected sketch volume indices"></ul>
+            </details>
+          </div>
+          <button type="button" class="btn" id="l3dva-clear-sel">Clear selection</button>
+        </fieldset>
+        <h3 style="margin:0 0 0.65rem;font-size:1.08rem;color:var(--nav-bg,#243b53);">Animations</h3>
+        <fieldset class="volsketch-gif-modes" style="margin:0 0 0.65rem;">
+          <legend>Animation output</legend>
+          <div class="volsketch-seg" role="radiogroup" aria-label="Animation output style">
+            <input type="radio" name="l3dva-gif-mode" id="l3dva-mode-cycle" value="cycle" checked />
+            <label for="l3dva-mode-cycle">Cycle</label>
+            <input type="radio" name="l3dva-gif-mode" id="l3dva-mode-rotate" value="rotate_each" />
+            <label for="l3dva-mode-rotate">Rotate</label>
+          </div>
+          <p id="l3dva-mode-desc" class="cryo-dash-legend-note"></p>
+        </fieldset>
+        <div id="l3dva-gif-frames-wrap" style="display:none;">
+          <label class="cryo-select-line" for="l3dva-gif-frames">GIF frames (rotation)</label>
+          <input id="l3dva-gif-frames" type="number" min="4" max="120" value="20" style="width:5rem"/>
+        </div>
+        <div class="volsketch-animate-status-row" aria-live="polite">
+          <span id="l3dva-animate-status" class="volsketch-animate-status-text"></span>
+          <div
+            id="l3dva-animate-progress"
+            class="cryo-plot-rendering-overlay__track"
+            role="progressbar"
+            aria-valuetext="Rendering GIFs"
+            hidden
+          >
+            <div class="cryo-plot-rendering-overlay__indeterminate"></div>
+          </div>
+        </div>
+        <div id="l3dva-preview-wrap" class="volsketch-preview-wrap" style="margin-top:0;">
+          <div id="l3dva-preview-grid" class="volsketch-preview-grid"></div>
+        </div>
+        <div class="volsketch-view-rotate-row l3dva-view-rotate-row is-disabled" aria-label="Rotate animation viewing angle"
+          title="Load an animation preview before rotating the view.">
+          <label for="l3dva-view-rotate-angle">
+            Degrees
+            <input id="l3dva-view-rotate-angle" type="number" step="1" value="15" />
+          </label>
+          <button type="button" class="btn" data-l3dva-view-axis="x">Rotate X</button>
+          <button type="button" class="btn" data-l3dva-view-axis="y">Rotate Y</button>
+          <button type="button" class="btn" data-l3dva-view-axis="z">Rotate Z</button>
+        </div>
+        <p id="l3dva-view-rotate-summary" class="volsketch-view-rotate-summary">ChimeraX view matrix: available after
+          animation loads.</p>
+        <p class="cryo-dash-legend-note" style="margin:0.5rem 0 0;">GIF previews update automatically a moment after you
+          change the selection (ChimeraX offscreen).</p>
+        <div class="cryo-explorer-save-btns" style="margin-top:0.55rem;">
+          <button type="button" class="btn btn--primary" id="l3dva-save-gif" disabled>Save GIFs to k-means
+            folder…</button>
+        </div>
+        <button type="button" class="btn" id="l3dva-random-sel" style="margin-top:1rem;width:100%;" disabled>
+          Choose volumes at random
+        </button>
+      </div>
+    </aside>
+{% endif %}
 </div>
 </div>
 
 <script src="{{ url_for('static', filename='js/color_covariate_legend.js') }}"></script>
+{% if show_landscape_vol_animations %}
+<script src="{{ url_for('static', filename='js/latent3d_landscape_vol_animations.js') }}"></script>
+{% endif %}
 <script>
 (function() {
   var axisCols = {{ axis_cols | tojson }};
@@ -504,6 +625,8 @@
 
   var gd = document.getElementById("latent3d");
   var scatter3dUrl = {{ scatter3d_url | tojson }};
+  var latent3dVolAnimApi = null;
+  var latent3dNeedVolAnimColorRefresh = false;
   var legendContextUrl = "{{ url_for('api_covariate_legend_context') }}";
   var legendContextBodyExtra = {{ legend_context_body_extra | tojson }};
   var overlay = document.getElementById("latent3d-rendering-overlay");
@@ -821,6 +944,14 @@
               } catch (e) {}
               syncLatent3dAsideLayout();
               latent3dColorLegend.refresh({ suppressNotify: true });
+              if (latent3dNeedVolAnimColorRefresh && latent3dVolAnimApi
+                  && typeof latent3dVolAnimApi.onColorOrPaletteChanged === "function") {
+                latent3dNeedVolAnimColorRefresh = false;
+                latent3dVolAnimApi.onColorOrPaletteChanged();
+              }
+              if (latent3dVolAnimApi && typeof latent3dVolAnimApi.afterPlotRedraw === "function") {
+                latent3dVolAnimApi.afterPlotRedraw();
+              }
             });
           })
           .catch(function(e) {
@@ -837,6 +968,7 @@
     s.addEventListener("change", loadPlot);
   });
   sc.addEventListener("change", function() {
+    latent3dNeedVolAnimColorRefresh = true;
     latent3dDiscreteColorOverrides = {};
     latent3dColorLegend.refresh({
       suppressNotify: true,
@@ -847,6 +979,7 @@
   });
   document.querySelectorAll("input[name=\"latent3d_palette\"]").forEach(function(inp) {
     inp.addEventListener("change", function() {
+      latent3dNeedVolAnimColorRefresh = true;
       latent3dColorLegend.refreshHistogramColors();
       loadPlot();
     });
@@ -877,6 +1010,15 @@
   syncLatent3dPaletteFieldset();
   syncControlsAlignment();
   syncLatent3dAsideLayout();
+{% if show_landscape_vol_animations %}
+  if (window.CryoLatent3dVolLandscapeAnim && typeof window.CryoLatent3dVolLandscapeAnim.boot === "function") {
+    latent3dVolAnimApi = window.CryoLatent3dVolLandscapeAnim.boot({
+      gd: gd,
+      getColorMode: function() { return sc.value; },
+      getPalette: selectedLatentPalette,
+    });
+  }
+{% endif %}
   loadPlot();
 })();
 </script>

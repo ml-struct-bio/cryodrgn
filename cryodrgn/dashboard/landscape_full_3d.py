@@ -15,7 +15,10 @@ import numpy as np
 import pandas as pd
 
 from cryodrgn import utils
-from cryodrgn.dashboard.column_names import VOL_LANDSCAPE_3D_PLOT_DF_ROW
+from cryodrgn.dashboard.column_names import (
+    VOL_LANDSCAPE_3D_PLOT_DF_ROW,
+    VOL_LANDSCAPE_NEAREST_SKETCH_VOL,
+)
 from cryodrgn.dashboard.covariate_labels import covariate_display_map
 from cryodrgn.dashboard.data import DashboardExperiment
 
@@ -30,9 +33,15 @@ LANDSCAPE_FULL_3D_LEAD_HTML = (
     "Optional colour uses the same analysis covariates as the particle 3D visualizer, plus other "
     "full-landscape outputs when present (for example latent <code>z*</code> at the sample, "
     "<code>landscape_vol_UMAP1</code>, or <code>landscape_vol_cluster</code>). Hover shows "
-    "<code>particle: &lt;index&gt;</code> and the colour covariate when one is selected. "
-    "This view is scatter-only — "
-    "no volume previews.</p>"
+    "<code>particle: &lt;index&gt;</code> and the colour covariate when one is selected.</p>"
+)
+
+LANDSCAPE_FULL_3D_LEAD_ANIMATIONS_NOTE_HTML = (
+    '<p class="cryo-dash-legend-note" style="margin:0.5rem 0 0;">When '
+    "<code>cryodrgn analyze_landscape</code> k-means sketch volumes exist for this epoch, "
+    "the <strong>Animations</strong> panel below maps each selected particle to the nearest sketch "
+    "volume in PCA space (same <code>vol_NNN.mrc</code> files as the sketched landscape explorer) "
+    "for ChimeraX GIF previews.</p>"
 )
 
 LANDSCAPE_FULL_3D_AXES_NOTE_HTML = (
@@ -98,8 +107,58 @@ def landscape_full_vol_pca_axis_columns(df: pd.DataFrame) -> list[str]:
 
 def landscape_full_sampled_numeric_covariates(df: pd.DataFrame) -> list[str]:
     """Numeric columns for the colour selector (excludes helpers)."""
-    skip = frozenset({"index", VOL_LANDSCAPE_3D_PLOT_DF_ROW})
+    skip = frozenset(
+        {"index", VOL_LANDSCAPE_3D_PLOT_DF_ROW, VOL_LANDSCAPE_NEAREST_SKETCH_VOL}
+    )
     return [c for c in df.select_dtypes(include=[np.number]).columns if c not in skip]
+
+
+def attach_landscape_nearest_sketch_vol_column(
+    exp: DashboardExperiment, base: pd.DataFrame
+) -> pd.DataFrame:
+    """Add ``VOL_LANDSCAPE_NEAREST_SKETCH_VOL`` when k-means sketch volumes exist (for GIF APIs)."""
+    if VOL_LANDSCAPE_NEAREST_SKETCH_VOL in base.columns:
+        return base
+    from cryodrgn.dashboard.landscape_volpca import (
+        kmeans_sorted_vol_indices,
+        landscape_analysis_ready,
+        landscape_dir_for_epoch,
+        load_vol_pca_matrix,
+        resolve_kmeans_sketch_bundle,
+    )
+
+    if not landscape_analysis_ready(exp.workdir, exp.epoch):
+        return base
+    landscape_dir = landscape_dir_for_epoch(exp.workdir, exp.epoch)
+    try:
+        k_sketch, kmeans_dir = resolve_kmeans_sketch_bundle(landscape_dir)
+    except FileNotFoundError:
+        return base
+    vol_pc_cols = landscape_full_vol_pca_axis_columns(base)
+    if not vol_pc_cols:
+        return base
+    centers = load_vol_pca_matrix(landscape_dir, k_sketch)
+    sorted_vols = kmeans_sorted_vol_indices(kmeans_dir)
+    n = int(centers.shape[0])
+    vol_ids = sorted_vols[:n] if len(sorted_vols) >= n else sorted_vols
+    if len(vol_ids) < n:
+        return base
+    d_plot = len(vol_pc_cols)
+    d_ctr = int(centers.shape[1])
+    d = min(d_plot, d_ctr)
+    if d < 1:
+        return base
+    use_cols = vol_pc_cols[:d]
+    x = base[use_cols].to_numpy(dtype=np.float64)
+    c = centers[:, :d].astype(np.float64)
+    xx = np.sum(x * x, axis=1, keepdims=True)
+    cc = np.sum(c * c, axis=1, keepdims=True).T
+    dist2 = xx + cc - 2.0 * (x @ c.T)
+    nearest_rows = np.argmin(dist2, axis=1).astype(np.int64)
+    nearest_vol = np.array([vol_ids[int(r)] for r in nearest_rows], dtype=np.int64)
+    out = base.copy()
+    out[VOL_LANDSCAPE_NEAREST_SKETCH_VOL] = nearest_vol
+    return out
 
 
 def landscape_full_sampled_plot_df(exp: DashboardExperiment) -> pd.DataFrame:
@@ -158,7 +217,7 @@ def landscape_full_sampled_plot_df(exp: DashboardExperiment) -> pd.DataFrame:
         if cl.shape[0] == n_particles:
             base["landscape_vol_cluster"] = cl[ind]
 
-    return base
+    return attach_landscape_nearest_sketch_vol_column(exp, base)
 
 
 def landscape_full_3d_scatter_plotly_json(

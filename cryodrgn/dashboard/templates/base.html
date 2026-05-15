@@ -915,7 +915,8 @@
       align-items: stretch;
     }
     .cryo-dash-row.cryo-dash-row--plot-triple > .pairplot-color-legend-aside,
-    .cryo-dash-row.cryo-dash-row--plot-triple > .latent3d-color-legend-aside {
+    .cryo-dash-row.cryo-dash-row--plot-triple > .latent3d-color-legend-aside,
+    .cryo-dash-row.cryo-dash-row--plot-triple > .latent3d-volanim-aside {
       width: 100%;
       max-width: 100%;
       min-width: 0;
@@ -931,6 +932,9 @@
     /* Top-align so discrete / continuous legends share the same anchor as the plot column
        (centering made tall landscape-full discrete panels sit higher than the latent-3D view). */
     .cryo-dash-row.cryo-dash-row--plot-triple > .latent3d-color-legend-aside {
+      justify-content: flex-start;
+    }
+    .cryo-dash-row.cryo-dash-row--plot-triple > .latent3d-volanim-aside {
       justify-content: flex-start;
     }
     .cryo-dash-row.cryo-dash-row--plot-triple > .pairplot-color-legend-aside .cryo-cc-legend,

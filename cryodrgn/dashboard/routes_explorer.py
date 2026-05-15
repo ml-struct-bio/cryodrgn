@@ -29,6 +29,7 @@ from cryodrgn.dashboard.context import (
 )
 from cryodrgn.dashboard.data import DashboardExperiment
 from cryodrgn.dashboard.landscape_full_3d import (
+    LANDSCAPE_FULL_3D_LEAD_ANIMATIONS_NOTE_HTML,
     landscape_full_3d_ready,
     landscape_full_ready,
     landscape_full_sampled_numeric_covariates,
@@ -511,11 +512,12 @@ def latent_3d_page():
         default_z="z2",
         scatter3d_url=url_for("api_scatter3d_z"),
         legend_context_body_extra=None,
+        show_landscape_vol_animations=False,
     )
 
 
 def landscape_full_3d_page():
-    """3-D scatter of sampled particles in ``vol_pca_all.pkl`` space; scatter only, no volume previews."""
+    """3-D scatter of sampled particles in ``vol_pca_all.pkl`` space (optional ChimeraX GIF previews)."""
     e: DashboardExperiment = g.dashboard_exp
     if not landscape_full_3d_ready(e.workdir, e.epoch):
         return render_template(
@@ -544,11 +546,15 @@ def landscape_full_3d_page():
         )
     dx, dy, dz = vol_axes[0], vol_axes[1], vol_axes[2]
     cols = landscape_full_sampled_numeric_covariates(sampled)
+    vol_anim = landscape_analysis_ready(e.workdir, e.epoch)
+    lead = _LEAD_LANDSCAPE_FULL_3D
+    if vol_anim:
+        lead = lead + LANDSCAPE_FULL_3D_LEAD_ANIMATIONS_NOTE_HTML
     return render_template(
         "latent_3d.html",
         page_title="3D volume landscapes · cryoDRGN",
         nav_bar_title="3D volume landscapes",
-        lead_html=_LEAD_LANDSCAPE_FULL_3D,
+        lead_html=lead,
         axis_cols=vol_axes,
         axes_fieldset_legend="Volume PCA axes",
         axes_fieldset_note_html=_LANDSCAPE_FULL_3D_AXES_NOTE,
@@ -559,6 +565,7 @@ def landscape_full_3d_page():
         default_z=dz,
         scatter3d_url=url_for("api_scatter3d_z_landscape_full"),
         legend_context_body_extra={"scope": "landscape_full_sampled"},
+        show_landscape_vol_animations=vol_anim,
     )
 
 

@@ -290,7 +290,20 @@
       selCountRowEl.setAttribute("aria-label", aria);
     }
     if (particleSelFs) particleSelFs.disabled = (n === 0);
-    if (clearExplorerSelectionBtn) clearExplorerSelectionBtn.disabled = (n === 0);
+    if (clearExplorerSelectionBtn) {
+      var nRegClear = 0;
+      try {
+        if (typeof committedScatterRegions !== "undefined" && committedScatterRegions && committedScatterRegions.length) {
+          nRegClear = committedScatterRegions.length;
+        }
+      } catch (eReg) { /* ignore */ }
+      var hasLegendFilter = colorThresholdLevel != null || colorThresholdRange != null;
+      var canClear = n > 0 || nRegClear > 0 || hasLegendFilter;
+      clearExplorerSelectionBtn.disabled = !canClear;
+      clearExplorerSelectionBtn.title = canClear
+        ? "Clear plot selection, geometric regions, and colour-threshold filters."
+        : "No selection or region filters to clear.";
+    }
     syncCacheSelectionUncachedButton();
     syncLeadSelectionModeHighlight();
   }
@@ -445,23 +458,25 @@
       var meta = document.createElement("div");
       meta.className = "cryo-montage-meta";
       meta.style.boxSizing = "border-box";
-      meta.style.minHeight = metaBandRem + "rem";
-      meta.style.height = metaBandRem + "rem";
+      meta.style.alignItems = "flex-start";
+      meta.style.gap = "0";
 
       var lbl = document.createElement("span");
       lbl.className = "cryo-montage-label";
-      lbl.textContent = labels[i];
+      var labStr = labels[i];
+      lbl.textContent = labStr;
       lbl.style.lineHeight = "1";
-      lbl.style.display = "flex";
-      lbl.style.alignItems = "center";
-      lbl.style.height = "85%";
+      lbl.style.display = "inline-flex";
+      lbl.style.alignItems = "flex-start";
+      lbl.style.alignSelf = "flex-start";
       lbl.style.boxSizing = "border-box";
-      var letterFontRem = metaBandRem * 0.85 * 0.72;
+      var letterSlotRem = metaBandRem * 0.85 * 0.72;
+      var letterFontRem = labStr.length <= 1
+        ? letterSlotRem
+        : letterSlotRem * Math.min(0.92, 1.22 / labStr.length);
       lbl.style.fontSize = letterFontRem.toFixed(3) + "rem";
-      /* Nudge letter vs meta band: +11% letter height right, −20% up (letter height ≈ font-size rem). */
-      lbl.style.transform = "translate("
-        + (letterFontRem * 0.11).toFixed(4) + "rem,-"
-        + (letterFontRem * 0.20).toFixed(4) + "rem)";
+      /* Small horizontal nudge so the serif cap lines up with the right-hand annotation block. */
+      lbl.style.transform = "translate(" + (letterFontRem * 0.11).toFixed(4) + "rem,0)";
 
       var rightMeta = document.createElement("div");
       rightMeta.className = "cryo-montage-meta-right";

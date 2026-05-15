@@ -2624,6 +2624,11 @@
     this._notify();
   };
 
+  /** SVG markup for the discrete-legend colour-wheel icon (particle explorer region chips, etc.). */
+  CryoColorCovariateLegend.discreteColorWheelSvgInnerHTML = function () {
+    return cryoDiscreteColorWheelSvg();
+  };
+
   CryoColorCovariateLegend.sortDiscreteKeys = sortDiscreteKeys;
   CryoColorCovariateLegend.paletteScaleCSS = paletteScaleCSS;
   CryoColorCovariateLegend.formatThresholdValue = formatThresholdValue;

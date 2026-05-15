@@ -41,14 +41,14 @@
   }
   .cryo-montage-cell.cryo-montage-cell--light {
     background: var(--paper, #faf8f4);
-    padding: 2px 1px 1px 1px;
-    gap: 1px;
+    padding: 1px;
+    gap: 0;
   }
   .cryo-montage-meta {
     display: flex;
     flex-direction: row;
     align-items: flex-start;
-    gap: 1px;
+    gap: 0;
     flex-shrink: 0;
     min-width: 0;
     width: 100%;
@@ -63,7 +63,6 @@
     align-items: flex-end;
     text-align: right;
     gap: 0;
-    align-self: center;
   }
   .cryo-montage-cell--light .cryo-montage-label {
     flex: 0 0 auto;
@@ -106,6 +105,10 @@
      state is indicated by fieldset opacity only. */
   fieldset#particle-sel-fieldset:disabled {
     opacity: 0.55;
+  }
+  #clear-explorer-selection:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
   }
   #scatter-controls-card {
     min-width: 0;
@@ -799,6 +802,128 @@
   .cryo-palette-select__options--collapsed {
     visibility: hidden;
     pointer-events: none;
+  }
+  /* HTML chips over scatter for multi-region lasso counts (+ solo / colour wheel). */
+  .cryo-scatter-region-chips-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    pointer-events: none;
+    overflow: visible;
+  }
+  .cryo-explorer-scatter-region-chip {
+    pointer-events: auto;
+    box-sizing: border-box;
+    border: none; /* base .cryo-cc-discrete-cell uses 1px transparent border */
+    width: max-content;
+    max-width: min(16rem, 92vw);
+    flex-shrink: 0;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  }
+  .cryo-explorer-scatter-region-chip__row {
+    display: inline-flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.48rem;
+    min-width: 0;
+    width: max-content;
+    max-width: min(16rem, 92vw);
+  }
+  .cryo-explorer-scatter-region-chip .cryo-cc-discrete-switch {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+  /* The chips render an empty (aria-hidden) label placeholder for spacing.
+     Collapse its vertical metrics so chip height is driven by the count text. */
+  .cryo-explorer-scatter-region-chip .cryo-cc-discrete-switch-label {
+    line-height: 0.45;
+  }
+  /* Tighten count line box so the chip can be shorter without resizing glyphs. */
+  .cryo-explorer-scatter-region-chip .cryo-cc-discrete-switch-count {
+    line-height: 0.52;
+  }
+  .cryo-explorer-scatter-region-chip .cryo-cc-discrete-wheel-slot {
+    width: 0.68rem;
+    height: 0.32rem; /* tighter: reduce top/bottom empty space */
+    overflow: visible;
+  }
+  .cryo-explorer-scatter-region-chip .cryo-cc-discrete-colorwheel-btn svg {
+    width: 0.56rem;
+    height: 0.56rem;
+    transform: scale(1.524); /* 27% * 1.20 (extra request) */
+    transform-origin: center;
+  }
+  .cryo-explorer-scatter-region-chip .cryo-cc-discrete-solo-btn {
+    width: 0.68rem;
+    height: 0.32rem; /* tighter: reduce top/bottom empty space */
+    font-size: 0.73152rem; /* 0.6096 * 1.20 */
+    overflow: visible;
+  }
+  .cryo-explorer-scatter-region-chip__actions {
+    display: inline-flex;
+    flex-direction: row;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0;
+    margin: 0;
+    padding: 0;
+    line-height: 0;
+  }
+  .cryo-explorer-scatter-region-chip__wheel-solo {
+    display: inline-flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 0;
+    margin: 0;
+    padding: 0;
+    line-height: 0;
+  }
+  .cryo-explorer-scatter-region-chip__wheel-solo .cryo-cc-discrete-solo-btn {
+    margin-left: 1px;
+  }
+  .cryo-explorer-scatter-region-chip__remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 0.68rem;
+    min-width: 0.68rem;
+    height: 0.32rem; /* tighter: reduce top/bottom empty space */
+    margin: 0 0 0 1px;
+    padding: 0;
+    border: none;
+    border-radius: 0.2rem;
+    background: transparent;
+    color: inherit;
+    font-size: 0; /* hide JS-provided ×; we render it via ::before for centring */
+    font-weight: 700;
+    cursor: pointer;
+    opacity: 0.72;
+    overflow: visible;
+    position: relative;
+  }
+  /* Render + centre the × glyph independently of font metrics/line-boxes. */
+  .cryo-explorer-scatter-region-chip__remove::before {
+    content: "×";
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.97536rem; /* 0.8128 * 1.20 */
+    font-weight: 700;
+    line-height: 1;
+    color: inherit;
+    pointer-events: none;
+  }
+  .cryo-explorer-scatter-region-chip__remove:hover {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.08);
+  }
+  .cryo-explorer-scatter-region-chip__remove:focus-visible {
+    outline: 2px solid var(--accent, #c4703a);
+    outline-offset: 1px;
   }
   .cryo-box-select-tooltip {
     position: absolute;

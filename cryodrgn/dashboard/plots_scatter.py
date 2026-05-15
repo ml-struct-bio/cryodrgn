@@ -644,7 +644,7 @@ def scatter3d_z_preview_png(
     return buf.getvalue()
 
 
-def scatter3d_landscape_full_discrete_level_png_bytes(
+def scatter3d_discrete_level_png_bytes(
     plot_df: pd.DataFrame,
     xcol: str,
     ycol: str,
@@ -653,18 +653,30 @@ def scatter3d_landscape_full_discrete_level_png_bytes(
     filter_key: str,
     *,
     discrete_label_colors: dict[str, str] | None,
-    xyz_axes_allowed: frozenset[str],
     scene_axis_titles: tuple[str, str, str],
+    exp: DashboardExperiment | None,
+    xyz_axes_allowed: frozenset[str] | None,
+    volume_landscape_marker_shrink: bool = False,
     elev: float = 22.0,
     azim: float = -65.0,
     dpi: int = 100,
 ) -> bytes:
     """One Matplotlib 3D frame: every row in a single discrete category (no subsampling).
 
-    Used for server-side discrete-level GIFs so the browser never has to ``toImage`` WebGL.
-    Axis limits match the colour-filtered Plotly scene (padded min/max on the full sampled table).
+    Used for server-side discrete-level GIFs. Axis limits use padded min/max on the full
+    ``plot_df`` (same idea as the colour-filtered Plotly scene).
+
+    Pass ``xyz_axes_allowed`` for volume-PCA landscape tables (with ``exp=None``), or
+    ``exp`` with ``xyz_axes_allowed=None`` for standard ``z*`` latent axes.
     """
-    _validate_three_xyz_allowed(plot_df, (xcol, ycol, zcol), xyz_axes_allowed)
+    if xyz_axes_allowed is not None:
+        _validate_three_xyz_allowed(plot_df, (xcol, ycol, zcol), xyz_axes_allowed)
+    else:
+        if exp is None:
+            raise ValueError(
+                "exp is required for latent-axis discrete PNG export when xyz_axes_allowed is unset."
+            )
+        _validate_three_latent_axes(exp, plot_df, (xcol, ycol, zcol))
     if not color_col or color_col == "none" or color_col not in plot_df.columns:
         raise ValueError("A discrete colour column is required for this export.")
     df_all = plot_df
@@ -690,7 +702,8 @@ def scatter3d_landscape_full_discrete_level_png_bytes(
 
     cap = max(len(df), 1)
     msize, mopacity = _scatter3d_marker_size_opacity(len(sub), point_cap=cap)
-    msize *= 1.0 - 0.31
+    if volume_landscape_marker_shrink:
+        msize *= 1.0 - 0.31
     mpl_marker_area = float(max(6.0, (msize * 2.2) ** 2))
 
     xs = sub[xcol].to_numpy(dtype=np.float64)
@@ -736,3 +749,37 @@ def scatter3d_landscape_full_discrete_level_png_bytes(
         plt.close(fig)
 
     return buf.getvalue()
+
+
+def scatter3d_landscape_full_discrete_level_png_bytes(
+    plot_df: pd.DataFrame,
+    xcol: str,
+    ycol: str,
+    zcol: str,
+    color_col: str,
+    filter_key: str,
+    *,
+    discrete_label_colors: dict[str, str] | None,
+    xyz_axes_allowed: frozenset[str],
+    scene_axis_titles: tuple[str, str, str],
+    elev: float = 22.0,
+    azim: float = -65.0,
+    dpi: int = 100,
+) -> bytes:
+    """Volume-landscape discrete frame (smaller markers); prefer :func:`scatter3d_discrete_level_png_bytes`."""
+    return scatter3d_discrete_level_png_bytes(
+        plot_df,
+        xcol,
+        ycol,
+        zcol,
+        color_col,
+        filter_key,
+        discrete_label_colors=discrete_label_colors,
+        scene_axis_titles=scene_axis_titles,
+        exp=None,
+        xyz_axes_allowed=xyz_axes_allowed,
+        volume_landscape_marker_shrink=True,
+        elev=elev,
+        azim=azim,
+        dpi=dpi,
+    )

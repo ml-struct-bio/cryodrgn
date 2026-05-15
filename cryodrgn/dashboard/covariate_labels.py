@@ -42,6 +42,8 @@ def covariate_display_name(name: str) -> str:
     """Human-friendly covariate names in dashboard selectors."""
     if name == "labels":
         return "k-means labels"
+    if name == "landscape_vol_cluster":
+        return "Vol cluster"
     m = re.fullmatch(r"landscape_vol_PC(\d+)", name)
     if m:
         return landscape_vol_pc_pretty_label(int(m.group(1)), None)

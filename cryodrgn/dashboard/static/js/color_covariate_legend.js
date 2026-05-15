@@ -650,6 +650,7 @@
     if (key === "__na__") return "(missing)";
     var disp = (displayMap && rawCol) ? String(displayMap[rawCol] || rawCol) : "";
     var rc = String(rawCol || "");
+    if (rc === "landscape_vol_cluster") return "Vol cluster=" + String(key);
     var isKmeans = /k[\s_-]*means/i.test(rc) || /k[\s_-]*means/i.test(disp) || /^labels$/i.test(rc);
     if (isKmeans) return "kmeans=" + String(key);
     return String(key);

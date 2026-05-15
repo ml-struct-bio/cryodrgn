@@ -57,6 +57,7 @@ from cryodrgn.dashboard.plots import (
     covariate_legend_context_payload,
     plot_df_color_filter_mask,
     plot_df_row_indices_for_explorer_scatter,
+    scatter3d_discrete_level_png_bytes,
     scatter3d_landscape_full_discrete_level_png_bytes,
     scatter3d_z_json,
     scatter3d_z_preview_png,
@@ -112,7 +113,7 @@ _LEAD_LATENT_3D = (
     '<p class="cryo-dash-lead">Each point is a particle in the space of three latent coordinates '
     "you choose (drag to rotate, scroll to zoom). Optional colour encodes another quantity from "
     "the analysis table. Use the histogram or discrete toggles in the legend beside the plot to "
-    "filter particles; the continuous palette lives in the drop-down under the histogram.</p>"
+    "filter particles.</p>"
 )
 
 _LATENT_3D_AXES_NOTE = (
@@ -525,7 +526,8 @@ def latent_3d_page():
         scatter3d_url=url_for("api_scatter3d_z"),
         legend_context_body_extra=None,
         show_landscape_vol_animations=False,
-        show_vol_landscape_quick_actions=False,
+        show_vol_landscape_quick_actions=True,
+        latent3d_discrete_gif_url=url_for("api_latent3d_discrete_gif"),
     )
 
 
@@ -581,6 +583,7 @@ def landscape_full_3d_page():
         legend_context_body_extra=LANDSCAPE_FULL_3D_LEGEND_CONTEXT_EXTRA,
         show_landscape_vol_animations=vol_anim,
         show_vol_landscape_quick_actions=True,
+        latent3d_discrete_gif_url=url_for("api_latent3d_landscape_full_discrete_gif"),
     )
 
 
@@ -911,6 +914,87 @@ def api_latent3d_landscape_full_discrete_gif():
         return jsonify(error=str(err)), 500
     except Exception as err:
         logger.exception("discrete-level landscape GIF assembly failed")
+        return jsonify(error=str(err)), 500
+
+    return jsonify(
+        gif_b64=base64.standard_b64encode(gif_bytes).decode("ascii"),
+    )
+
+
+def api_latent3d_discrete_gif():
+    """Discrete-level GIF for the standard 3D latent scatter (Matplotlib, parallel)."""
+    e: DashboardExperiment = g.dashboard_exp
+    zdim = int(e.z.shape[1])
+    if zdim < 3:
+        return jsonify(error="Need at least three latent dimensions (z0, z1, z2)."), 400
+
+    data = _request_json_dict()
+    keys_raw = data.get("discrete_keys")
+    if not isinstance(keys_raw, list) or len(keys_raw) == 0:
+        return jsonify(error="discrete_keys must be a non-empty list."), 400
+    keys = [str(x) for x in keys_raw]
+    if len(keys) > 120:
+        return jsonify(error="Too many discrete levels (max 120)."), 400
+
+    d0, d1, d2 = "z0", "z1", "z2"
+    xcol = str(data.get("x") or d0)
+    ycol = str(data.get("y") or d1)
+    zcol = str(data.get("z") or d2)
+    ccol = str(data.get("color") or "none")
+    plot_df = e.plot_df
+    for col, name in ((xcol, "x"), (ycol, "y"), (zcol, "z")):
+        if col not in plot_df.columns:
+            return jsonify(error=f"bad axis column {name!r}"), 400
+    if ccol == "none" or ccol not in plot_df.columns:
+        return jsonify(error="A discrete colour covariate is required."), 400
+    if not _lower_color_series_is_discrete(cast(pd.Series, plot_df[ccol])):
+        return jsonify(error="Colour column must be discrete for this export."), 400
+
+    discrete_label_colors = _parse_optional_discrete_label_colors(
+        data.get("discrete_label_colors")
+    )
+
+    dur_raw = data.get("frame_duration_ms", data.get("durations_ms", 960))
+
+    titles = (xcol, ycol, zcol)
+
+    def _png_b64_for_key(k: str) -> str:
+        png = scatter3d_discrete_level_png_bytes(
+            plot_df,
+            xcol,
+            ycol,
+            zcol,
+            ccol,
+            k,
+            discrete_label_colors=discrete_label_colors,
+            scene_axis_titles=titles,
+            exp=e,
+            xyz_axes_allowed=None,
+            volume_landscape_marker_shrink=False,
+        )
+        return base64.standard_b64encode(png).decode("ascii")
+
+    n_workers = min(max(1, os.cpu_count() or 4), len(keys), 16)
+    try:
+        with ThreadPoolExecutor(max_workers=n_workers) as pool:
+            png_b64_list = list(pool.map(_png_b64_for_key, keys))
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    except Exception as err:
+        logger.exception("discrete-level latent 3D GIF frame render failed")
+        return jsonify(error=str(err)), 500
+
+    if len(png_b64_list) < 2:
+        png_b64_list = png_b64_list + [png_b64_list[-1]]
+
+    try:
+        gif_bytes = png_base64_frames_to_gif_bytes(png_b64_list, durations_ms=dur_raw)
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    except RuntimeError as err:
+        return jsonify(error=str(err)), 500
+    except Exception as err:
+        logger.exception("discrete-level latent 3D GIF assembly failed")
         return jsonify(error=str(err)), 500
 
     return jsonify(

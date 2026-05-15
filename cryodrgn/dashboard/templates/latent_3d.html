@@ -35,6 +35,426 @@
     width: 100%;
     max-width: min(100%, 22rem);
     box-sizing: border-box;
+    /* ~10% smaller than default card copy + tighter leading (right-hand volume column only). */
+    font-size: 0.9em;
+    line-height: 1.22;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card fieldset legend {
+    line-height: 1.18;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .cryo-dash-legend-note {
+    line-height: 1.24;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .status {
+    line-height: 1.22;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .cryo-select-line {
+    line-height: 1.2;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-gif-mode-end-label {
+    line-height: 1.15;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .volsketch-view-rotate-summary {
+    line-height: 1.2;
+  }
+  /* Fixed preview footprint so the aside column does not grow when GIFs finish loading. */
+  .cryo-dash-page--latent3d #l3dva-preview-wrap {
+    width: 100%;
+    box-sizing: border-box;
+    min-height: 14.5rem;
+    max-height: 14.5rem;
+    display: flex;
+    flex-direction: column;
+    margin-top: 0.35rem !important;
+    margin-bottom: 0.4rem;
+    overflow: hidden;
+  }
+  .cryo-dash-page--latent3d #l3dva-preview-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.4rem;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .cryo-dash-page--latent3d #l3dva-preview-grid.volsketch-preview-grid--cycle {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cryo-dash-page--latent3d #l3dva-preview-grid figure {
+    margin: 0;
+    border: 1px solid rgba(36, 59, 83, 0.15);
+    border-radius: 4px;
+    overflow: hidden;
+    background: #fff;
+    min-width: 0;
+  }
+  .cryo-dash-page--latent3d #l3dva-preview-grid figcaption {
+    font-size: 0.65rem;
+    line-height: 1.15;
+    padding: 0.15rem 0.28rem;
+    color: var(--muted, #5c6b7a);
+    font-variant-numeric: tabular-nums;
+  }
+  .cryo-dash-page--latent3d #l3dva-preview-grid img {
+    width: 100%;
+    display: block;
+    vertical-align: middle;
+    background: #e8ecf1;
+  }
+  .cryo-dash-page--latent3d #l3dva-preview-grid .volsketch-anim-wrap {
+    position: relative;
+    display: block;
+    width: 100%;
+    line-height: 0;
+  }
+  /* landscape_volpca.css scopes these under .cryo-dash-page--volsketch — duplicate for the latent 3D right column. */
+  .cryo-dash-page--latent3d .latent3d-volanim-card .volsketch-sel-indices-wrap {
+    margin: 0 0 0.42rem;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .volsketch-sel-indices-details {
+    margin: 0;
+    border: 1px solid rgba(36, 59, 83, 0.2);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.88);
+    box-sizing: border-box;
+    min-width: 0;
+    max-width: 100%;
+    box-shadow: 0 1px 4px rgba(36, 59, 83, 0.07);
+    transition:
+      border-color 0.15s ease,
+      box-shadow 0.15s ease;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .volsketch-sel-indices-details:hover {
+    border-color: rgba(36, 59, 83, 0.32);
+    box-shadow: 0 2px 8px rgba(36, 59, 83, 0.1);
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .volsketch-sel-indices-details[hidden] {
+    display: none !important;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .volsketch-sel-indices-summary {
+    cursor: pointer;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 0.3rem 0.38rem;
+    align-items: start;
+    width: 100%;
+    box-sizing: border-box;
+    font-weight: 600;
+    font-size: 0.74rem;
+    line-height: 1.16;
+    padding: 0.36rem 0.48rem 0.36rem 0.4rem;
+    list-style: none;
+    user-select: none;
+    color: var(--nav-bg, #243b53);
+    border-radius: 5px;
+    transition: background 0.15s ease;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .volsketch-sel-indices-summary:hover {
+    background: rgba(196, 112, 58, 0.09);
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .volsketch-sel-indices-summary:focus-visible {
+    outline: 2px solid var(--accent, #c4703a);
+    outline-offset: 2px;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .volsketch-sel-indices-chevron {
+    grid-column: 1;
+    grid-row: 1;
+    display: block;
+    width: 0.52rem;
+    height: 0.52rem;
+    margin-top: 0.18em;
+    border-right: 2px solid rgba(36, 59, 83, 0.55);
+    border-bottom: 2px solid rgba(36, 59, 83, 0.55);
+    transform: rotate(-45deg) translateY(-0.05rem);
+    transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .volsketch-sel-indices-details[open] > .volsketch-sel-indices-summary
+    .volsketch-sel-indices-chevron {
+    transform: rotate(45deg) translateY(0.06rem);
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .volsketch-sel-indices-summary-label {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0;
+    text-align: left;
+    overflow-wrap: anywhere;
+    word-wrap: break-word;
+    hyphens: auto;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .volsketch-sel-indices-summary-hint {
+    grid-column: 3;
+    grid-row: 1;
+    justify-self: end;
+    max-width: 100%;
+    font-weight: 600;
+    font-size: 0.6rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: rgba(36, 59, 83, 0.48);
+    white-space: normal;
+    text-align: right;
+    line-height: 1.12;
+    overflow-wrap: anywhere;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .volsketch-sel-indices-summary::-webkit-details-marker {
+    display: none;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .volsketch-sel-indices-summary::marker {
+    content: "";
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .volsketch-sel-indices-details[open] > .volsketch-sel-indices-summary {
+    border-bottom: 1px solid rgba(36, 59, 83, 0.12);
+    border-radius: 5px 5px 0 0;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .volsketch-sel-indices-list {
+    margin: 0;
+    padding: 0.35rem 0.5rem 0.45rem 1.2rem;
+    max-height: 9rem;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.74rem;
+    line-height: 1.28;
+    color: var(--nav-bg, #243b53);
+  }
+  .cryo-dash-page--latent3d #l3dva-preview-grid .volsketch-gif-overlay {
+    position: absolute;
+    top: 0.28rem;
+    left: 0.28rem;
+    z-index: 1;
+    font-size: clamp(0.78rem, 2.4vw, 1.02rem);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: #1a1a1a;
+    line-height: 1.12;
+    padding: 0.14rem 0.38rem;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(55, 65, 81, 0.35);
+    pointer-events: none;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+    text-shadow:
+      0 1px 1px rgba(255, 255, 255, 0.5),
+      0 1px 2px rgba(0, 0, 0, 0.07);
+  }
+  .cryo-dash-page--latent3d #l3dva-preview-grid .volsketch-gif-overlay--on-tint {
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.32),
+      0 1px 3px rgba(0, 0, 0, 0.08),
+      0 1px 5px rgba(0, 0, 0, 0.04);
+    border-color: rgba(27, 31, 36, 0.22);
+    text-shadow:
+      0 0 1px rgba(255, 255, 255, 0.85),
+      0 1px 2px rgba(255, 255, 255, 0.45),
+      0 2px 3px rgba(0, 0, 0, 0.12);
+  }
+  .cryo-dash-page--latent3d #l3dva-preview-grid .volsketch-gif-overlay[hidden] {
+    display: none !important;
+  }
+  .cryo-dash-page--latent3d #l3dva-preview-grid .volsketch-gif-overlay--cov {
+    left: auto;
+    right: 0.28rem;
+    max-width: min(78%, calc(100% - 4.2rem));
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.08rem;
+    line-height: 1.12;
+    text-align: right;
+    overflow: hidden;
+    font-size: clamp(0.62rem, 1.9vw, 0.82rem);
+    padding: 0.11rem 0.3rem;
+  }
+  .cryo-dash-page--latent3d #l3dva-preview-grid .volsketch-gif-overlay--cov.volsketch-gif-overlay--on-tint .volsketch-gif-cov-var {
+    text-shadow:
+      0 0 2px rgba(255, 255, 248, 0.5),
+      0 1px 2px rgba(0, 0, 0, 0.1);
+    color: #141418;
+  }
+  .cryo-dash-page--latent3d #l3dva-preview-grid .volsketch-gif-overlay--cov.volsketch-gif-overlay--on-tint .volsketch-gif-cov-val {
+    text-shadow:
+      0 0 2px rgba(255, 255, 255, 0.55),
+      0 2px 3px rgba(0, 0, 0, 0.12);
+    color: #121217;
+  }
+  .cryo-dash-page--latent3d #l3dva-preview-grid .volsketch-gif-cov-var {
+    display: block;
+    max-width: 100%;
+    font-family: inherit;
+    font-size: 0.72em;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    line-height: 1.1;
+    color: rgba(26, 26, 26, 0.92);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cryo-dash-page--latent3d #l3dva-preview-grid .volsketch-gif-cov-var[hidden] {
+    display: none !important;
+  }
+  .cryo-dash-page--latent3d #l3dva-preview-grid .volsketch-gif-cov-val {
+    display: block;
+    max-width: 100%;
+    font-family:
+      ui-serif,
+      Charter,
+      "Iowan Old Style",
+      "Apple Garamond",
+      Georgia,
+      "Times New Roman",
+      serif;
+    font-size: 0.95em;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.08;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-gif-mode-fieldset.volsketch-gif-modes {
+    margin: 0;
+    padding: 0;
+    border: none;
+    min-width: 0;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-gif-mode-fieldset > legend {
+    padding: 0;
+    margin-bottom: 0.28rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    line-height: 1.16;
+    color: var(--nav-bg, #243b53);
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-gif-mode-switch-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    margin: 0.12rem 0 0;
+    flex-wrap: wrap;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-gif-mode-end-label {
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: var(--muted, #5c6b7a);
+    user-select: none;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-light-switch {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-light-switch input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+    margin: 0;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-light-switch-track {
+    display: block;
+    width: 2.45rem;
+    height: 1.28rem;
+    border-radius: 999px;
+    background: #b8c4d0;
+    border: 1px solid rgba(36, 59, 83, 0.25);
+    box-sizing: border-box;
+    transition: background 0.18s ease;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-light-switch-thumb {
+    display: block;
+    width: 1rem;
+    height: 1rem;
+    margin: 0.11rem;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    transition: transform 0.18s ease;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-light-switch input:checked + .l3dva-light-switch-track {
+    background: var(--nav-bg, #243b53);
+    border-color: rgba(36, 59, 83, 0.35);
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-light-switch input:checked + .l3dva-light-switch-track .l3dva-light-switch-thumb {
+    transform: translateX(1.12rem);
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-light-switch input:focus-visible + .l3dva-light-switch-track {
+    outline: 2px solid var(--nav-bg, #243b53);
+    outline-offset: 2px;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card #l3dva-mode-desc {
+    margin: 0.38rem 0 0;
+    line-height: 1.22;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-view-rotate-row.volsketch-view-rotate-row {
+    display: flex;
+    align-items: end;
+    gap: 0.38rem;
+    margin: 0.38rem 0 0;
+    min-width: 0;
+    transition: opacity 0.15s ease, filter 0.15s ease;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-view-rotate-row.volsketch-view-rotate-row.is-disabled {
+    opacity: 0.52;
+    filter: grayscale(0.25);
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-view-rotate-row.volsketch-view-rotate-row label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    margin: 0;
+    min-width: 4.5rem;
+    flex: 0 0 auto;
+    font-size: 0.68rem;
+    font-weight: 600;
+    line-height: 1.08;
+    color: var(--nav-bg, #243b53);
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-view-rotate-row.volsketch-view-rotate-row input {
+    width: 4.5rem;
+    padding-top: 0.24rem;
+    padding-bottom: 0.24rem;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-view-rotate-row.volsketch-view-rotate-row button {
+    flex: 1 1 0;
+    min-width: 0;
+    padding-left: 0.28rem;
+    padding-right: 0.28rem;
+    padding-top: 0.36rem;
+    padding-bottom: 0.36rem;
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card #l3dva-sel-summary {
+    font-variant-numeric: tabular-nums;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .volsketch-animate-status-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.38rem;
+    min-height: 1.1em;
+    margin: 0 0 0.35rem;
+    font-size: 0.9em;
+    line-height: 1.2;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .volsketch-animate-status-text {
+    font-weight: 600;
+    color: var(--nav-bg, #243b53);
+    margin: 0;
+    flex: 1 1 auto;
+    min-width: min(100%, 9rem);
+    line-height: 1.2;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .volsketch-animate-status-row .cryo-plot-rendering-overlay__track {
+    width: min(10rem, 100%);
+    flex: 0 0 auto;
   }
   @media (max-width: 900px) {
     .cryo-dash-page--latent3d .cryo-dash-row.cryo-dash-row--plot-triple.cryo-dash-row--latent3d-volanim {
@@ -96,13 +516,11 @@
     color: var(--nav-bg, #243b53);
     font-size: calc(0.82rem * 1.35 * 0.9 * 0.72);
   }
+  /* Keep “filtering” plain copy — same weight/colour as the rest of the 3D legend title. */
   .cryo-dash-page--latent3d .latent3d-color-legend-aside .cryo-cc-legend__filter-em {
-    color: rgba(149, 87, 45, 0.92);
-    font-weight: 600;
-    text-decoration: underline;
-    text-decoration-thickness: 1px;
-    text-decoration-color: rgba(196, 112, 58, 0.28);
-    text-underline-offset: 0.1em;
+    color: inherit;
+    font-weight: inherit;
+    text-decoration: none;
   }
   @media (max-width: 900px) {
     .cryo-dash-page--latent3d .cryo-dash-row.cryo-dash-row--plot-triple > .cryo-dash-side {
@@ -658,7 +1076,21 @@
           </div>
           <button type="button" class="btn" id="l3dva-clear-sel">Clear selection</button>
         </fieldset>
-        <h3 style="margin:0 0 0.65rem;font-size:1.08rem;color:var(--nav-bg,#243b53);">Animations</h3>
+        <div class="volsketch-animate-status-row" aria-live="polite">
+          <span id="l3dva-animate-status" class="volsketch-animate-status-text"></span>
+          <div
+            id="l3dva-animate-progress"
+            class="cryo-plot-rendering-overlay__track"
+            role="progressbar"
+            aria-valuetext="Rendering GIFs"
+            hidden
+          >
+            <div class="cryo-plot-rendering-overlay__indeterminate"></div>
+          </div>
+        </div>
+        <div id="l3dva-preview-wrap" class="volsketch-preview-wrap" style="margin-top:0;">
+          <div id="l3dva-preview-grid" class="volsketch-preview-grid"></div>
+        </div>
         <fieldset class="volsketch-gif-modes l3dva-gif-mode-fieldset" style="margin:0 0 0.65rem;">
           <legend>Animation output</legend>
           <div class="l3dva-gif-mode-switch-row" role="group" aria-label="Animation output style">
@@ -674,21 +1106,6 @@
         <div id="l3dva-gif-frames-wrap" style="display:none;">
           <label class="cryo-select-line" for="l3dva-gif-frames">GIF frames (rotation)</label>
           <input id="l3dva-gif-frames" type="number" min="4" max="120" value="20" style="width:5rem"/>
-        </div>
-        <div class="volsketch-animate-status-row" aria-live="polite">
-          <span id="l3dva-animate-status" class="volsketch-animate-status-text"></span>
-          <div
-            id="l3dva-animate-progress"
-            class="cryo-plot-rendering-overlay__track"
-            role="progressbar"
-            aria-valuetext="Rendering GIFs"
-            hidden
-          >
-            <div class="cryo-plot-rendering-overlay__indeterminate"></div>
-          </div>
-        </div>
-        <div id="l3dva-preview-wrap" class="volsketch-preview-wrap" style="margin-top:0;">
-          <div id="l3dva-preview-grid" class="volsketch-preview-grid"></div>
         </div>
         <div class="volsketch-view-rotate-row l3dva-view-rotate-row is-disabled" aria-label="Rotate animation viewing angle"
           title="Load an animation preview before rotating the view.">
@@ -1163,7 +1580,7 @@
     plotGifApi = window.CryoLatent3dPlotGif.boot({
       gd: gd,
       assembleUrl: {{ url_for('api_latent3d_plot_gif_from_png_frames') | tojson }},
-      discreteGifServerUrl: {{ url_for('api_latent3d_landscape_full_discrete_gif') | tojson }},
+      discreteGifServerUrl: {{ latent3d_discrete_gif_url | tojson }},
       sx: sx,
       sy: sy,
       sz: sz,

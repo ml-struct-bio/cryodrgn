@@ -397,6 +397,130 @@
     font-weight: 700;
   }
 </style>
+{% if show_vol_landscape_quick_actions %}
+<style>
+  .cryo-dash-page--latent3d .l3dva-quick-actions .l3dva-quick-actions-btns {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .cryo-dash-page--latent3d .l3dva-quick-actions .l3dva-quick-actions-inner {
+    width: 80%;
+    max-width: 100%;
+    margin: 0 auto;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .cryo-dash-page--latent3d .l3dva-quick-actions .l3dva-quick-actions-inner > .btn,
+  .cryo-dash-page--latent3d .l3dva-quick-actions .l3dva-quick-actions-inner > a.btn {
+    width: 100%;
+    box-sizing: border-box;
+    min-height: 2.55rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+  .cryo-dash-page--latent3d .l3d-gif-discrete-btn {
+    white-space: pre-line;
+    line-height: 1.28;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    min-height: 4.1rem;
+    padding-top: 0.45rem;
+    padding-bottom: 0.45rem;
+  }
+  .cryo-dash-page--latent3d .l3d-gif-discrete-btn:disabled {
+    opacity: 0.52;
+    cursor: not-allowed;
+    filter: grayscale(0.22);
+    box-shadow: none;
+  }
+  .l3d-discrete-gif-progress {
+    width: 100%;
+    margin-top: 0.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    align-items: stretch;
+    box-sizing: border-box;
+  }
+  .l3d-discrete-gif-progress[hidden] {
+    display: none !important;
+  }
+  .l3d-discrete-gif-progress__label {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--nav-bg, #243b53);
+    text-align: center;
+    line-height: 1.25;
+  }
+  .l3d-discrete-gif-progress .cryo-plot-rendering-overlay__track {
+    width: 100%;
+  }
+  .l3d-plot-gif-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 2147482000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    box-sizing: border-box;
+  }
+  .l3d-plot-gif-modal[hidden] {
+    display: none !important;
+  }
+  .l3d-plot-gif-modal__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(26, 32, 44, 0.45);
+    cursor: pointer;
+  }
+  .l3d-plot-gif-modal__dialog {
+    position: relative;
+    z-index: 1;
+    max-width: min(96vw, 42rem);
+    width: 100%;
+    max-height: min(92vh, 40rem);
+    overflow: auto;
+    background: #fffdf8;
+    border-radius: 10px;
+    box-shadow: 0 8px 32px rgba(36, 59, 83, 0.22);
+    padding: 1rem 1.1rem 1.15rem;
+    box-sizing: border-box;
+    border: 1px solid rgba(36, 59, 83, 0.14);
+  }
+  .l3d-plot-gif-modal__title {
+    margin: 0 0 0.65rem;
+    font-size: 1.12rem;
+    font-weight: 700;
+    color: var(--nav-bg, #243b53);
+  }
+  .l3d-plot-gif-modal__preview {
+    display: block;
+    width: 100%;
+    max-height: min(58vh, 22rem);
+    object-fit: contain;
+    margin: 0 auto 0.85rem;
+    border-radius: 6px;
+    background: rgba(250, 248, 244, 0.95);
+    border: 1px solid rgba(36, 59, 83, 0.1);
+    box-sizing: border-box;
+  }
+  .l3d-plot-gif-modal__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: flex-end;
+  }
+</style>
+{% endif %}
 {% endblock %}
 {% block content %}
 <div class="cryo-dash-page cryo-dash-page--latent3d">
@@ -421,6 +545,25 @@
         <label class="cryo-select-line" for="sc">Color by</label>
         <select id="sc"><option value="none">None</option></select>
       </fieldset>
+{% if show_vol_landscape_quick_actions | default(false) %}
+      <fieldset class="l3dva-quick-actions">
+        <legend>Quick actions</legend>
+        <div class="l3dva-quick-actions-btns">
+          <div class="l3dva-quick-actions-inner">
+            <button type="button" class="btn btn-secondary" id="l3d-gif-orbit-360" title="Full turn around the vertical direction in the view plane (orthogonal to your line of sight); saves as a GIF">
+              Create orbit<br/>animation
+            </button>
+            <button type="button" class="btn btn-secondary l3d-gif-discrete-btn" id="l3d-gif-discrete-levels" disabled title="Choose a discrete colour covariate to enable this animation.">Create<br/>colour covariate<br/>animation</button>
+          </div>
+          <div id="l3d-discrete-gif-progress" class="l3d-discrete-gif-progress" hidden aria-live="polite">
+            <span class="l3d-discrete-gif-progress__label">Building discrete GIF on the server…</span>
+            <div class="cryo-plot-rendering-overlay__track" role="progressbar" aria-valuetext="Building animated GIF">
+              <div class="cryo-plot-rendering-overlay__indeterminate"></div>
+            </div>
+          </div>
+        </div>
+      </fieldset>
+{% endif %}
       <p id="z3-axis-status" class="status"></p>
     </div>
   </div>
@@ -498,8 +641,8 @@
         <fieldset style="margin:0 0 0.65rem;">
           <legend>Volume selection</legend>
           <p class="cryo-dash-legend-note" style="margin:0 0 0.35rem;">Double-click a point to add or remove its nearest
-            k-means sketch volume. Lasso or box selection replaces the current selection, as does <strong>Choose volumes at
-              random</strong>.</p>
+            k-means sketch volume. Use toggle or histogram selection to select volumes based on color covariates, or
+            choose volumes at random.</p>
           <p id="l3dva-sel-summary" class="status" style="margin:0 0 0.35rem;" role="status" aria-live="polite">No k-means
             volumes selected</p>
           <div class="volsketch-sel-indices-wrap">
@@ -516,13 +659,15 @@
           <button type="button" class="btn" id="l3dva-clear-sel">Clear selection</button>
         </fieldset>
         <h3 style="margin:0 0 0.65rem;font-size:1.08rem;color:var(--nav-bg,#243b53);">Animations</h3>
-        <fieldset class="volsketch-gif-modes" style="margin:0 0 0.65rem;">
+        <fieldset class="volsketch-gif-modes l3dva-gif-mode-fieldset" style="margin:0 0 0.65rem;">
           <legend>Animation output</legend>
-          <div class="volsketch-seg" role="radiogroup" aria-label="Animation output style">
-            <input type="radio" name="l3dva-gif-mode" id="l3dva-mode-cycle" value="cycle" checked />
-            <label for="l3dva-mode-cycle">Cycle</label>
-            <input type="radio" name="l3dva-gif-mode" id="l3dva-mode-rotate" value="rotate_each" />
-            <label for="l3dva-mode-rotate">Rotate</label>
+          <div class="l3dva-gif-mode-switch-row" role="group" aria-label="Animation output style">
+            <span class="l3dva-gif-mode-end-label">Cycle</span>
+            <label class="l3dva-light-switch">
+              <input type="checkbox" id="l3dva-gif-mode-switch" aria-label="Rotate each volume (on) versus cycle volumes (off)"/>
+              <span class="l3dva-light-switch-track" aria-hidden="true"><span class="l3dva-light-switch-thumb"></span></span>
+            </label>
+            <span class="l3dva-gif-mode-end-label">Rotate</span>
           </div>
           <p id="l3dva-mode-desc" class="cryo-dash-legend-note"></p>
         </fieldset>
@@ -572,7 +717,24 @@
 </div>
 </div>
 
+{% if show_vol_landscape_quick_actions %}
+<div id="l3d-plot-gif-modal" class="l3d-plot-gif-modal" hidden aria-hidden="true" role="dialog" aria-labelledby="l3d-plot-gif-modal-title">
+  <div class="l3d-plot-gif-modal__backdrop" data-l3d-plot-gif-close="1" aria-label="Close preview"></div>
+  <div class="l3d-plot-gif-modal__dialog">
+    <h2 id="l3d-plot-gif-modal-title" class="l3d-plot-gif-modal__title">GIF preview</h2>
+    <img id="l3d-plot-gif-modal-preview" class="l3d-plot-gif-modal__preview" alt="Animated GIF preview"/>
+    <div class="l3d-plot-gif-modal__actions">
+      <button type="button" class="btn btn-secondary" data-l3d-plot-gif-close="1">Close</button>
+      <button type="button" class="btn btn--primary" id="l3d-plot-gif-modal-save">Save to file…</button>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <script src="{{ url_for('static', filename='js/color_covariate_legend.js') }}"></script>
+{% if show_vol_landscape_quick_actions %}
+<script src="{{ url_for('static', filename='js/latent3d_plot_gif.js') }}"></script>
+{% endif %}
 {% if show_landscape_vol_animations %}
 <script src="{{ url_for('static', filename='js/latent3d_landscape_vol_animations.js') }}"></script>
 {% endif %}
@@ -882,6 +1044,50 @@
     }
   });
 
+  function buildLatent3dPostPayload(extra) {
+    extra = extra || {};
+    var x = sx.value;
+    var y = sy.value;
+    var z = sz.value;
+    var c = sc.value;
+    var cf = null;
+    if (c !== "none") {
+      cf = Object.prototype.hasOwnProperty.call(extra, "color_filter")
+        ? extra.color_filter
+        : latent3dColorLegend.getFilterForApi();
+    }
+    var payload = {
+      x: x,
+      y: y,
+      z: z,
+      color: c,
+      palette: selectedLatentPalette(),
+      color_filter: cf || null
+    };
+    var hasOverrides = false;
+    for (var ko in latent3dDiscreteColorOverrides) {
+      if (Object.prototype.hasOwnProperty.call(latent3dDiscreteColorOverrides, ko)) {
+        hasOverrides = true;
+        break;
+      }
+    }
+    if (hasOverrides) {
+      payload.discrete_label_colors = latent3dDiscreteColorOverrides;
+    }
+    if (Array.isArray(extra.discrete_keys)) {
+      payload.discrete_keys = extra.discrete_keys;
+    }
+    if (extra.frame_duration_ms != null && extra.frame_duration_ms !== undefined) {
+      payload.frame_duration_ms = Number(extra.frame_duration_ms);
+    }
+    if (extra.discrete_level_gif_frame) {
+      payload.discrete_level_gif_frame = true;
+    }
+    return payload;
+  }
+
+  var plotGifApi = null;
+
   function loadPlot() {
     var x = sx.value;
     var y = sy.value;
@@ -891,78 +1097,86 @@
     if (x === y || x === z || y === z) {
       if (st) st.textContent = "Choose three different latent axes.";
       setRendering(false);
-      return;
+      return Promise.resolve();
     }
     if (st) st.textContent = "";
     setRendering(true);
-    var cf = c !== "none" ? latent3dColorLegend.getFilterForApi() : null;
-    var payload = {
-      x: x,
-      y: y,
-      z: z,
-      color: c,
-      palette: selectedLatentPalette(),
-      color_filter: cf || null
-    };
-    // Include discrete color overrides if any exist
-    var hasOverrides = false;
-    for (var k in latent3dDiscreteColorOverrides) {
-      if (Object.prototype.hasOwnProperty.call(latent3dDiscreteColorOverrides, k)) {
-        hasOverrides = true;
-        break;
-      }
-    }
-    if (hasOverrides) {
-      payload.discrete_label_colors = latent3dDiscreteColorOverrides;
-    }
-    requestAnimationFrame(function() {
+    var payload = buildLatent3dPostPayload({});
+    return new Promise(function(resolve, reject) {
       requestAnimationFrame(function() {
-        fetch(scatter3dUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
-        })
-          .then(function(r) {
-            return r.text().then(function(text) {
-              var j;
-              try { j = JSON.parse(text); }
-              catch (e) { throw new Error("API did not return JSON"); }
-              if (!r.ok) throw new Error(j.error || r.statusText);
-              return j;
+        requestAnimationFrame(function() {
+          fetch(scatter3dUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          })
+            .then(function(r) {
+              return r.text().then(function(text) {
+                var j;
+                try { j = JSON.parse(text); }
+                catch (e) { throw new Error("API did not return JSON"); }
+                if (!r.ok) throw new Error(j.error || r.statusText);
+                return j;
+              });
+            })
+            .then(function(fig) {
+              return Plotly.react(gd, fig.data, fig.layout, {responsive: true});
+            })
+            .then(function() {
+              latent3dRenderingEverCompleted = true;
+              setRendering(false);
+              syncControlsAlignment();
+              requestAnimationFrame(function() {
+                try {
+                  Plotly.Plots.resize(gd);
+                } catch (e) {}
+                syncLatent3dAsideLayout();
+                latent3dColorLegend.refresh({ suppressNotify: true });
+                if (plotGifApi && typeof plotGifApi.syncUi === "function") {
+                  plotGifApi.syncUi();
+                }
+                if (latent3dNeedVolAnimColorRefresh && latent3dVolAnimApi
+                    && typeof latent3dVolAnimApi.onColorOrPaletteChanged === "function") {
+                  latent3dNeedVolAnimColorRefresh = false;
+                  latent3dVolAnimApi.onColorOrPaletteChanged();
+                }
+                if (latent3dVolAnimApi && typeof latent3dVolAnimApi.afterPlotRedraw === "function") {
+                  latent3dVolAnimApi.afterPlotRedraw();
+                }
+                resolve();
+              });
+            })
+            .catch(function(e) {
+              console.error(e);
+              setRendering(false);
+              var st2 = document.getElementById("z3-axis-status");
+              if (st2) st2.textContent = e.message || "Could not draw plot.";
+              reject(e);
             });
-          })
-          .then(function(fig) {
-            return Plotly.react(gd, fig.data, fig.layout, {responsive: true});
-          })
-          .then(function() {
-            latent3dRenderingEverCompleted = true;
-            setRendering(false);
-            syncControlsAlignment();
-            requestAnimationFrame(function() {
-              try {
-                Plotly.Plots.resize(gd);
-              } catch (e) {}
-              syncLatent3dAsideLayout();
-              latent3dColorLegend.refresh({ suppressNotify: true });
-              if (latent3dNeedVolAnimColorRefresh && latent3dVolAnimApi
-                  && typeof latent3dVolAnimApi.onColorOrPaletteChanged === "function") {
-                latent3dNeedVolAnimColorRefresh = false;
-                latent3dVolAnimApi.onColorOrPaletteChanged();
-              }
-              if (latent3dVolAnimApi && typeof latent3dVolAnimApi.afterPlotRedraw === "function") {
-                latent3dVolAnimApi.afterPlotRedraw();
-              }
-            });
-          })
-          .catch(function(e) {
-            console.error(e);
-            setRendering(false);
-            var st2 = document.getElementById("z3-axis-status");
-            if (st2) st2.textContent = e.message || "Could not draw plot.";
-          });
+        });
       });
     });
   }
+
+{% if show_vol_landscape_quick_actions %}
+  if (window.CryoLatent3dPlotGif && typeof window.CryoLatent3dPlotGif.boot === "function") {
+    plotGifApi = window.CryoLatent3dPlotGif.boot({
+      gd: gd,
+      assembleUrl: {{ url_for('api_latent3d_plot_gif_from_png_frames') | tojson }},
+      discreteGifServerUrl: {{ url_for('api_latent3d_landscape_full_discrete_gif') | tojson }},
+      sx: sx,
+      sy: sy,
+      sz: sz,
+      sc: sc,
+      covariateDisplayMap: covariateDisplayMap,
+      buildPayload: buildLatent3dPostPayload,
+      statusEl: document.getElementById("z3-axis-status")
+    });
+    if (plotGifApi && typeof plotGifApi.syncUi === "function") {
+      plotGifApi.syncUi();
+    }
+  }
+{% endif %}
 
   [sx, sy, sz].forEach(function(s) {
     s.addEventListener("change", loadPlot);

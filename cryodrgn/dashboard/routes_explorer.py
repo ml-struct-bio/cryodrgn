@@ -7,6 +7,8 @@ import logging
 import os
 import pickle
 import time
+from concurrent.futures import ThreadPoolExecutor
+from typing import cast
 
 import numpy as np
 import pandas as pd
@@ -28,8 +30,10 @@ from cryodrgn.dashboard.context import (
     _request_json_dict,
 )
 from cryodrgn.dashboard.data import DashboardExperiment
+from cryodrgn.dashboard.covariate_labels import landscape_vol_pc_column_pretty_label
 from cryodrgn.dashboard.landscape_full_3d import (
-    LANDSCAPE_FULL_3D_LEAD_ANIMATIONS_NOTE_HTML,
+    LANDSCAPE_FULL_3D_LEAD_HTML,
+    LANDSCAPE_FULL_3D_LEGEND_CONTEXT_EXTRA,
     landscape_full_3d_ready,
     landscape_full_ready,
     landscape_full_sampled_numeric_covariates,
@@ -38,7 +42,10 @@ from cryodrgn.dashboard.landscape_full_3d import (
 )
 from cryodrgn.dashboard.landscape_volpca import (
     landscape_analysis_ready,
+    landscape_dir_for_epoch,
+    load_pca_explained_variance,
 )
+from cryodrgn.dashboard.plot_gif_utils import png_base64_frames_to_gif_bytes
 from cryodrgn.dashboard.particle_explorer import (
     DEFAULT_CHIMERAX_PARALLEL,
     DEFAULT_GIF_FRAMES,
@@ -50,10 +57,12 @@ from cryodrgn.dashboard.plots import (
     covariate_legend_context_payload,
     plot_df_color_filter_mask,
     plot_df_row_indices_for_explorer_scatter,
+    scatter3d_landscape_full_discrete_level_png_bytes,
     scatter3d_z_json,
     scatter3d_z_preview_png,
     scatter_json,
 )
+from cryodrgn.dashboard.plots_color_covariate import _lower_color_series_is_discrete
 from cryodrgn.dashboard.preload import (
     encode_particle_batch,
     explorer_cache_size_power10_step,
@@ -79,6 +88,26 @@ from cryodrgn.dashboard.route_helpers import (
 
 logger = logging.getLogger(__name__)
 
+
+def _scatter3d_no_subsample_for_discrete_gif_frame(
+    payload: dict, color_filter: dict | None
+) -> bool:
+    """Return True when the client is capturing one discrete level at a time for a GIF."""
+    if not payload.get("discrete_level_gif_frame"):
+        return False
+    if not color_filter or color_filter.get("kind") != "discrete":
+        return False
+    keys = color_filter.get("keys") or ()
+    return len(tuple(keys)) == 1
+
+
+def _landscape_full_vol_pc_explained_variance(
+    workdir: str, epoch: int
+) -> np.ndarray | None:
+    """Explained variance ratios from ``landscape.{epoch}/vol_pca_obj.pkl``, if present."""
+    return load_pca_explained_variance(landscape_dir_for_epoch(workdir, int(epoch)))
+
+
 _LEAD_LATENT_3D = (
     '<p class="cryo-dash-lead">Each point is a particle in the space of three latent coordinates '
     "you choose (drag to rotate, scroll to zoom). Optional colour encodes another quantity from "
@@ -86,26 +115,9 @@ _LEAD_LATENT_3D = (
     "filter particles; the continuous palette lives in the drop-down under the histogram.</p>"
 )
 
-_LEAD_LANDSCAPE_FULL_3D = (
-    '<p class="cryo-dash-lead">Each point is one sampled particle from '
-    "<code>z.sampled.pkl</code> (with <code>ind.sampled.pkl</code>) produced by "
-    "<code>cryodrgn analyze_landscape_full</code> for this epoch. The three plot axes are "
-    "coordinates from <code>vol_pca_all.pkl</code> (volume PCA, shown as <code>landscape_vol_PC*</code>). "
-    "Optional colour uses the same analysis covariates as the particle 3D visualizer, plus other "
-    "full-landscape outputs when present (for example latent <code>z*</code> at the sample, "
-    "<code>landscape_vol_UMAP1</code>, or <code>landscape_vol_cluster</code>). Hover shows the "
-    "dataset index and the analysis-table row for that particle. This view is scatter-only — "
-    "no volume previews.</p>"
-)
-
 _LATENT_3D_AXES_NOTE = (
     '<p class="cryo-dash-legend-note" style="margin:0 0 0.35rem;">Pick three <strong>different</strong> coordinates '
     "(z0, z1, …).</p>"
-)
-
-_LANDSCAPE_FULL_3D_AXES_NOTE = (
-    '<p class="cryo-dash-legend-note" style="margin:0 0 0.35rem;">Pick three <strong>different</strong> volume PCA '
-    "columns from <code>vol_pca_all.pkl</code> (shown as <code>landscape_vol_PC*</code>).</p>"
 )
 
 # ---------------------------------------------------------------------------
@@ -513,6 +525,7 @@ def latent_3d_page():
         scatter3d_url=url_for("api_scatter3d_z"),
         legend_context_body_extra=None,
         show_landscape_vol_animations=False,
+        show_vol_landscape_quick_actions=False,
     )
 
 
@@ -546,26 +559,28 @@ def landscape_full_3d_page():
         )
     dx, dy, dz = vol_axes[0], vol_axes[1], vol_axes[2]
     cols = landscape_full_sampled_numeric_covariates(sampled)
+    vol_evr = _landscape_full_vol_pc_explained_variance(e.workdir, e.epoch)
     vol_anim = landscape_analysis_ready(e.workdir, e.epoch)
-    lead = _LEAD_LANDSCAPE_FULL_3D
-    if vol_anim:
-        lead = lead + LANDSCAPE_FULL_3D_LEAD_ANIMATIONS_NOTE_HTML
     return render_template(
         "latent_3d.html",
         page_title="3D volume landscapes · cryoDRGN",
         nav_bar_title="3D volume landscapes",
-        lead_html=lead,
+        lead_html=LANDSCAPE_FULL_3D_LEAD_HTML,
         axis_cols=vol_axes,
         axes_fieldset_legend="Volume PCA axes",
-        axes_fieldset_note_html=_LANDSCAPE_FULL_3D_AXES_NOTE,
+        axes_fieldset_note_html="",
         numeric_cols=cols,
-        covariate_display_map=_covariate_display_map(cols),
+        covariate_display_map=_covariate_display_map(
+            cols,
+            vol_pc_explained_variance_ratio=vol_evr,
+        ),
         default_x=dx,
         default_y=dy,
         default_z=dz,
         scatter3d_url=url_for("api_scatter3d_z_landscape_full"),
-        legend_context_body_extra={"scope": "landscape_full_sampled"},
+        legend_context_body_extra=LANDSCAPE_FULL_3D_LEGEND_CONTEXT_EXTRA,
         show_landscape_vol_animations=vol_anim,
+        show_vol_landscape_quick_actions=True,
     )
 
 
@@ -588,6 +603,9 @@ def api_scatter3d_z():
             discrete_label_colors = _parse_optional_discrete_label_colors(
                 payload.get("discrete_label_colors")
             )
+            no_sub = _scatter3d_no_subsample_for_discrete_gif_frame(
+                payload, color_filter
+            )
             js = scatter3d_z_json(
                 e,
                 xcol,
@@ -597,6 +615,7 @@ def api_scatter3d_z():
                 continuous_palette=raw_palette,
                 color_filter=color_filter,
                 discrete_label_colors=discrete_label_colors,
+                no_subsample=no_sub,
             )
         except ValueError as err:
             return jsonify(error=str(err)), 400
@@ -656,6 +675,14 @@ def api_scatter3d_z_landscape_full():
         )
     ax_allow = frozenset(vol_axes)
     d0, d1, d2 = vol_axes[0], vol_axes[1], vol_axes[2]
+    evr = _landscape_full_vol_pc_explained_variance(e.workdir, e.epoch)
+
+    def _vol_landscape_scene_titles(xc: str, yc: str, zc: str) -> tuple[str, str, str]:
+        return (
+            landscape_vol_pc_column_pretty_label(xc, evr),
+            landscape_vol_pc_column_pretty_label(yc, evr),
+            landscape_vol_pc_column_pretty_label(zc, evr),
+        )
 
     color_filter = None
     if request.method == "POST":
@@ -673,6 +700,9 @@ def api_scatter3d_z_landscape_full():
             discrete_label_colors = _parse_optional_discrete_label_colors(
                 payload.get("discrete_label_colors")
             )
+            no_sub = _scatter3d_no_subsample_for_discrete_gif_frame(
+                payload, color_filter
+            )
             js = scatter3d_z_json(
                 e,
                 xcol,
@@ -685,6 +715,10 @@ def api_scatter3d_z_landscape_full():
                 plot_df=sampled,
                 uirevision="scatter3d_z_landscape_full",
                 xyz_axes_allowed=ax_allow,
+                scene_axis_titles=_vol_landscape_scene_titles(xcol, ycol, zcol),
+                vol_pc_explained_variance_ratio=evr,
+                volume_landscape_3d_style=True,
+                no_subsample=no_sub,
             )
         except ValueError as err:
             return jsonify(error=str(err)), 400
@@ -710,6 +744,9 @@ def api_scatter3d_z_landscape_full():
             plot_df=sampled,
             uirevision="scatter3d_z_landscape_full",
             xyz_axes_allowed=ax_allow,
+            scene_axis_titles=_vol_landscape_scene_titles(xcol, ycol, zcol),
+            vol_pc_explained_variance_ratio=evr,
+            volume_landscape_3d_style=True,
         )
     except ValueError as err:
         return jsonify(error=str(err)), 400
@@ -750,6 +787,135 @@ def api_latent3d_preview_png():
         logger.exception("3D latent preview PNG failed")
         return jsonify(error=str(err)), 500
     return Response(png, mimetype="image/png")
+
+
+def api_latent3d_plot_gif_from_png_frames():
+    """Assemble base64-encoded PNG frames into an animated GIF (browser-captured Plotly views)."""
+    _ = g.dashboard_exp
+    data = _request_json_dict()
+    frames = data.get("frames")
+    if not isinstance(frames, list):
+        return jsonify(error="frames must be a list of base64 PNG strings."), 400
+    str_frames = [str(x) for x in frames if isinstance(x, (str, bytes))]
+    if len(str_frames) != len(frames):
+        return jsonify(error="each frame must be a string."), 400
+    dur_raw = data.get("durations_ms", data.get("duration_ms", 100))
+    try:
+        gif_bytes = png_base64_frames_to_gif_bytes(str_frames, durations_ms=dur_raw)
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    except RuntimeError as err:
+        return jsonify(error=str(err)), 500
+    except Exception as err:
+        logger.exception("latent3d GIF assembly failed")
+        return jsonify(error=str(err)), 500
+    return jsonify(
+        gif_b64=base64.standard_b64encode(gif_bytes).decode("ascii"),
+    )
+
+
+def api_latent3d_landscape_full_discrete_gif():
+    """Discrete-level GIF via Matplotlib frames (parallel); avoids browser WebGL capture."""
+    e: DashboardExperiment = g.dashboard_exp
+    if not landscape_full_3d_ready(e.workdir, e.epoch):
+        return (
+            jsonify(
+                error=(
+                    f"Need landscape.{int(e.epoch)}/landscape_full/ with z.sampled.pkl, ind.sampled.pkl, "
+                    "and vol_pca_all.pkl (at least three PCA columns)."
+                )
+            ),
+            400,
+        )
+    try:
+        sampled = landscape_full_sampled_plot_df(e)
+    except (FileNotFoundError, ValueError, OSError) as err:
+        return jsonify(error=str(err)), 400
+
+    vol_axes = landscape_full_vol_pca_axis_columns(sampled)
+    if len(vol_axes) < 3:
+        return (
+            jsonify(
+                error="vol_pca_all.pkl must yield at least three landscape_vol_PC* columns in the sampled table."
+            ),
+            400,
+        )
+    ax_allow = frozenset(vol_axes)
+    d0, d1, d2 = vol_axes[0], vol_axes[1], vol_axes[2]
+    evr = _landscape_full_vol_pc_explained_variance(e.workdir, e.epoch)
+
+    def _scene_titles(xc: str, yc: str, zc: str) -> tuple[str, str, str]:
+        return (
+            landscape_vol_pc_column_pretty_label(xc, evr),
+            landscape_vol_pc_column_pretty_label(yc, evr),
+            landscape_vol_pc_column_pretty_label(zc, evr),
+        )
+
+    data = _request_json_dict()
+    keys_raw = data.get("discrete_keys")
+    if not isinstance(keys_raw, list) or len(keys_raw) == 0:
+        return jsonify(error="discrete_keys must be a non-empty list."), 400
+    keys = [str(x) for x in keys_raw]
+    if len(keys) > 120:
+        return jsonify(error="Too many discrete levels (max 120)."), 400
+
+    xcol = str(data.get("x") or d0)
+    ycol = str(data.get("y") or d1)
+    zcol = str(data.get("z") or d2)
+    ccol = str(data.get("color") or "none")
+    if ccol == "none" or ccol not in sampled.columns:
+        return jsonify(error="A discrete colour covariate is required."), 400
+    if not _lower_color_series_is_discrete(cast(pd.Series, sampled[ccol])):
+        return jsonify(error="Colour column must be discrete for this export."), 400
+
+    discrete_label_colors = _parse_optional_discrete_label_colors(
+        data.get("discrete_label_colors")
+    )
+
+    dur_raw = data.get("frame_duration_ms", data.get("durations_ms", 960))
+
+    titles = _scene_titles(xcol, ycol, zcol)
+
+    def _png_b64_for_key(k: str) -> str:
+        png = scatter3d_landscape_full_discrete_level_png_bytes(
+            sampled,
+            xcol,
+            ycol,
+            zcol,
+            ccol,
+            k,
+            discrete_label_colors=discrete_label_colors,
+            xyz_axes_allowed=ax_allow,
+            scene_axis_titles=titles,
+        )
+        return base64.standard_b64encode(png).decode("ascii")
+
+    n_workers = min(max(1, os.cpu_count() or 4), len(keys), 16)
+    try:
+        with ThreadPoolExecutor(max_workers=n_workers) as pool:
+            png_b64_list = list(pool.map(_png_b64_for_key, keys))
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    except Exception as err:
+        logger.exception("discrete-level landscape GIF frame render failed")
+        return jsonify(error=str(err)), 500
+
+    if len(png_b64_list) < 2:
+        png_b64_list = png_b64_list + [png_b64_list[-1]]
+
+    try:
+        gif_bytes = png_base64_frames_to_gif_bytes(png_b64_list, durations_ms=dur_raw)
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    except RuntimeError as err:
+        return jsonify(error=str(err)), 500
+    except Exception as err:
+        logger.exception("discrete-level landscape GIF assembly failed")
+        return jsonify(error=str(err)), 500
+
+    return jsonify(
+        gif_b64=base64.standard_b64encode(gif_bytes).decode("ascii"),
+    )
 
 
 def api_preview_montage():

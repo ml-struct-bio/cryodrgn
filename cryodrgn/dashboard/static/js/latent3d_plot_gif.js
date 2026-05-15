@@ -137,18 +137,6 @@
     return j;
   }
 
-  function fetchScatterFigure(url, payload) {
-    return fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    }).then(function(r) {
-      return r.text().then(function(text) {
-        return parseJsonResponse(r, text);
-      });
-    });
-  }
-
   function postAssembleGif(url, frames, durationsMs) {
     var body = { frames: frames, durations_ms: durationsMs };
     return fetch(url, {
@@ -264,14 +252,14 @@
 
   function boot(opts) {
     var gd = opts.gd;
-    var scatter3dUrl = opts.scatter3dUrl;
     var assembleUrl = opts.assembleUrl;
+    var discreteGifServerUrl = opts.discreteGifServerUrl || null;
     var sx = opts.sx;
     var sy = opts.sy;
     var sz = opts.sz;
     var sc = opts.sc;
+    var covariateDisplayMap = opts.covariateDisplayMap || {};
     var buildPayload = opts.buildPayload;
-    var loadPlot = opts.loadPlot;
     var statusEl = opts.statusEl;
 
     var btnOrbit = document.getElementById("l3d-gif-orbit-360");
@@ -279,6 +267,7 @@
     var modal = document.getElementById("l3d-plot-gif-modal");
     var imgEl = document.getElementById("l3d-plot-gif-modal-preview");
     var btnSave = document.getElementById("l3d-plot-gif-modal-save");
+    var discreteGifProgressEl = document.getElementById("l3d-discrete-gif-progress");
 
     var lastGifBlob = null;
     var lastSuggestedName = "cryodrgn_landscape_3d.gif";
@@ -301,9 +290,25 @@
       }
     }
 
+    function setDiscreteGifProgressVisible(visible) {
+      if (!discreteGifProgressEl) return;
+      discreteGifProgressEl.hidden = !visible;
+      discreteGifProgressEl.setAttribute("aria-busy", visible ? "true" : "false");
+    }
+
+    function discreteCovariateDisplayName() {
+      var col = sc.value;
+      if (!col || col === "none") return "";
+      if (Object.prototype.hasOwnProperty.call(covariateDisplayMap, col)) {
+        return String(covariateDisplayMap[col]);
+      }
+      return String(col);
+    }
+
     function syncDiscreteButton() {
       if (!btnDiscrete) return;
       var ok = false;
+      var legendTitle = "";
       try {
         var m = gd.layout && gd.layout.meta;
         ok = !!(
@@ -312,10 +317,27 @@
           && sc.value
           && sc.value !== "none"
         );
+        if (ok && m.cdrgn_color_legend && m.cdrgn_color_legend.title) {
+          legendTitle = String(m.cdrgn_color_legend.title);
+        }
       } catch (e) {
         ok = false;
       }
       btnDiscrete.disabled = !ok;
+      var mid;
+      if (!ok) {
+        mid = "colour covariate";
+      } else {
+        mid = legendTitle || discreteCovariateDisplayName() || "colour covariate";
+      }
+      btnDiscrete.textContent = "Create\n" + mid + "\nanimation";
+      var tip = ok
+        ? (
+          "Steps through each level of " + mid.replace(/"/g, "'")
+          + " on the server (parallel Matplotlib); axis limits match the plot; view is the default 3D angle."
+        )
+        : "Choose a discrete colour covariate to enable this animation.";
+      btnDiscrete.setAttribute("title", tip);
     }
 
     function runOrbitGif() {
@@ -390,8 +412,13 @@
     }
 
     function runDiscreteLevelsGif() {
+      if (!btnDiscrete || btnDiscrete.disabled) return;
       if (!axesOk()) {
         flashStatus("Choose three different axes before exporting a GIF.");
+        return;
+      }
+      if (!discreteGifServerUrl) {
+        flashStatus("Discrete-level GIF export is not available on this view.");
         return;
       }
       var keys = discreteKeysFromMeta();
@@ -400,46 +427,20 @@
         return;
       }
       setBusy(btnOrbit, btnDiscrete, true);
-      var frames = [];
-      var durs = [];
-      var chain = Promise.resolve();
-      for (var j = 0; j < keys.length; j++) {
-        (function(key) {
-          chain = chain
-            .then(function() {
-              var payload = buildPayload({ color_filter: { kind: "discrete", keys: [key] } });
-              return fetchScatterFigure(scatter3dUrl, payload);
-            })
-            .then(function(fig) {
-              return Plotly.react(gd, fig.data, fig.layout, { responsive: true });
-            })
-            .then(function() {
-              return waitFrames(3);
-            })
-            .then(function() {
-              return capturePngDataUrl(gd);
-            })
-            .then(function(dataUrl) {
-              frames.push(dataUrlToBareB64(dataUrl));
-              durs.push(DISCRETE_FRAME_MS);
-            });
-        })(keys[j]);
-      }
-      chain = chain
-        .then(function() {
-          return loadPlot();
-        })
-        .then(function() {
-          return waitFrames(4);
-        })
-        .then(function() {
-          if (frames.length < 2) {
-            while (frames.length < 2) {
-              frames.push(frames[frames.length - 1]);
-              durs.push(DISCRETE_FRAME_MS);
-            }
-          }
-          return postAssembleGif(assembleUrl, frames, durs);
+      setDiscreteGifProgressVisible(true);
+      var payload = buildPayload({
+        discrete_keys: keys,
+        frame_duration_ms: DISCRETE_FRAME_MS
+      });
+      fetch(discreteGifServerUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      })
+        .then(function(r) {
+          return r.text().then(function(text) {
+            return parseJsonResponse(r, text);
+          });
         })
         .then(function(res) {
           if (!res.gif_b64) throw new Error("Server did not return gif_b64.");
@@ -450,11 +451,13 @@
         .catch(function(err) {
           console.error(err);
           flashStatus(err.message || "Could not build discrete-level GIF.");
-          return loadPlot().catch(function() {});
         })
         .then(function() {
           clearBusy(btnOrbit, btnDiscrete);
           syncDiscreteButton();
+        })
+        .finally(function() {
+          setDiscreteGifProgressVisible(false);
         });
     }
 

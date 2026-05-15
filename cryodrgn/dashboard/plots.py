@@ -31,6 +31,7 @@ from cryodrgn.dashboard.plots_pair_grid import (
     pair_grid_skeleton_placeholder_layout,
 )
 from cryodrgn.dashboard.plots_scatter import (
+    scatter3d_landscape_full_discrete_level_png_bytes,
     scatter3d_z_json,
     scatter3d_z_preview_png,
     scatter_json,
@@ -53,6 +54,7 @@ __all__ = [
     "pair_grid_margin_fractions_for_js",
     "pair_grid_png",
     "pair_grid_skeleton_placeholder_layout",
+    "scatter3d_landscape_full_discrete_level_png_bytes",
     "scatter3d_z_json",
     "scatter3d_z_preview_png",
     "scatter_json",

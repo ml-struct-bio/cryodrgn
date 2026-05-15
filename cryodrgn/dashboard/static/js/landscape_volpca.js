@@ -779,9 +779,9 @@
       for (j = 0; j < nPc; j++) {
         var ox = document.createElement("option");
         ox.value = "pc:" + j;
-        var lab = "PC" + (j + 1);
+        var lab = "Vol PC" + (j + 1);
         if (evr && j < evr.length) {
-          lab += " (EV: " + (100 * Number(evr[j])).toFixed(1) + "%)";
+          lab += " (" + (100 * Number(evr[j])).toFixed(1) + "%)";
         }
         ox.textContent = lab;
         sel.appendChild(ox);

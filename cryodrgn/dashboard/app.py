@@ -76,6 +76,16 @@ _ROUTES = (
         ("GET", "POST"),
     ),
     ("/api/latent3d_preview.png", re.api_latent3d_preview_png, ("GET",)),
+    (
+        "/api/latent3d_plot_gif_from_png_frames",
+        re.api_latent3d_plot_gif_from_png_frames,
+        ("POST",),
+    ),
+    (
+        "/api/latent3d_landscape_full_discrete_gif",
+        re.api_latent3d_landscape_full_discrete_gif,
+        ("POST",),
+    ),
     ("/api/preview_montage", re.api_preview_montage, ("GET",)),
     ("/api/preload_images", re.api_preload_images, ("GET", "POST")),
     ("/pairplot", ra.pairplot_page, ("GET",)),

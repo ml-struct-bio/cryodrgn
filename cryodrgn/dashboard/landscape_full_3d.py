@@ -26,27 +26,8 @@ _LANDSCAPE_FULL_SUBDIR = "landscape_full"
 _LANDSCAPE_VOL_PC_COL_RE = re.compile(r"^landscape_vol_PC(\d+)$")
 
 LANDSCAPE_FULL_3D_LEAD_HTML = (
-    '<p class="cryo-dash-lead">Each point is one sampled particle from '
-    "<code>z.sampled.pkl</code> (with <code>ind.sampled.pkl</code>) produced by "
-    "<code>cryodrgn analyze_landscape_full</code> for this epoch. The three plot axes are "
-    "coordinates from <code>vol_pca_all.pkl</code> (volume PCA, shown as <code>landscape_vol_PC*</code>). "
-    "Optional colour uses the same analysis covariates as the particle 3D visualizer, plus other "
-    "full-landscape outputs when present (for example latent <code>z*</code> at the sample, "
-    "<code>landscape_vol_UMAP1</code>, or <code>landscape_vol_cluster</code>). Hover shows "
-    "<code>particle: &lt;index&gt;</code> and the colour covariate when one is selected.</p>"
-)
-
-LANDSCAPE_FULL_3D_LEAD_ANIMATIONS_NOTE_HTML = (
-    '<p class="cryo-dash-legend-note" style="margin:0.5rem 0 0;">When '
-    "<code>cryodrgn analyze_landscape</code> k-means sketch volumes exist for this epoch, "
-    "the <strong>Animations</strong> panel below maps each selected particle to the nearest sketch "
-    "volume in PCA space (same <code>vol_NNN.mrc</code> files as the sketched landscape explorer) "
-    "for ChimeraX GIF previews.</p>"
-)
-
-LANDSCAPE_FULL_3D_AXES_NOTE_HTML = (
-    '<p class="cryo-dash-legend-note" style="margin:0 0 0.35rem;">Pick three <strong>different</strong> volume PCA '
-    "columns from <code>vol_pca_all.pkl</code></p>"
+    '<p class="cryo-dash-lead">Use the interface on the right '
+    "to animate volumes chosen from the 3D plot.</p>"
 )
 
 LANDSCAPE_FULL_3D_LEGEND_CONTEXT_EXTRA: dict[str, str] = {
@@ -253,6 +234,7 @@ def landscape_full_3d_scatter_plotly_json(
         plot_df=sampled,
         uirevision="scatter3d_z_landscape_full",
         xyz_axes_allowed=ax_allow,
+        volume_landscape_3d_style=True,
     )
 
 
@@ -281,7 +263,6 @@ def landscape_full_3d_latent_3d_template_kwargs(
         "lead_html": LANDSCAPE_FULL_3D_LEAD_HTML,
         "axis_cols": vol_axes,
         "axes_fieldset_legend": "Volume PCA axes",
-        "axes_fieldset_note_html": LANDSCAPE_FULL_3D_AXES_NOTE_HTML,
         "numeric_cols": cols,
         "covariate_display_map": covariate_display_map(cols),
         "default_x": dx,
@@ -289,6 +270,7 @@ def landscape_full_3d_latent_3d_template_kwargs(
         "default_z": dz,
         "scatter3d_url": scatter3d_url,
         "legend_context_body_extra": LANDSCAPE_FULL_3D_LEGEND_CONTEXT_EXTRA,
+        "show_vol_landscape_quick_actions": True,
     }
 
 

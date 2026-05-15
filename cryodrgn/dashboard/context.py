@@ -155,6 +155,8 @@ EXP_REQUIRED_ENDPOINTS = frozenset(
         "api_scatter3d_z",
         "api_scatter3d_z_landscape_full",
         "api_latent3d_preview_png",
+        "api_latent3d_plot_gif_from_png_frames",
+        "api_latent3d_landscape_full_discrete_gif",
         "api_preview_montage",
         "api_preload_images",
         "pairplot_page",

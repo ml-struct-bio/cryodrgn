@@ -514,9 +514,9 @@ def landscape_volpca_scatter_figure(
         if kind == "pc":
             if index < 0 or index >= dim_local:
                 raise ValueError(f"PCA axis out of range (0..{dim_local - 1}).")
-            title = f"Volume PC{index + 1}"
+            title = f"Vol PC{index + 1}"
             if evr_local is not None and index < len(evr_local):
-                title += f" (EV: {100.0 * float(evr_local[index]):.1f}%)"
+                title += f" ({100.0 * float(evr_local[index]):.1f}%)"
             return pc_local[:, index], title
         if kind == "umap":
             if umap_local is None:

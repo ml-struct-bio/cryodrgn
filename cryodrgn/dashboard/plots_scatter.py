@@ -16,7 +16,10 @@ from cryodrgn.dashboard.column_names import (
     VOL_LANDSCAPE_3D_PLOT_DF_ROW,
     VOL_LANDSCAPE_NEAREST_SKETCH_VOL,
 )
-from cryodrgn.dashboard.covariate_labels import covariate_display_name
+from cryodrgn.dashboard.covariate_labels import (
+    covariate_display_name,
+    landscape_vol_pc_column_pretty_label,
+)
 from cryodrgn.dashboard.data import DashboardExperiment
 from cryodrgn.dashboard.palette_config import (
     mpl_cmap_for_palette,
@@ -51,6 +54,7 @@ def _scatter_color_hover_texts(
     color_col: str,
     *,
     discrete_trace: bool,
+    vol_pc_explained_variance_ratio: np.ndarray | None = None,
 ) -> list[str]:
     """Per-point second line for scatter hover (covariate text; continuous uses ``name: value``)."""
     ser = sub[color_col]
@@ -66,7 +70,12 @@ def _scatter_color_hover_texts(
             else:
                 out.append(str(v))
     else:
-        cov_label = covariate_display_name(color_col)
+        cov_label = landscape_vol_pc_column_pretty_label(
+            color_col,
+            vol_pc_explained_variance_ratio,
+        )
+        if cov_label == color_col:
+            cov_label = covariate_display_name(color_col)
         color_num = cast(pd.Series, pd.to_numeric(ser, errors="coerce"))
         for i in range(n):
             v = color_num.iloc[i]
@@ -253,12 +262,16 @@ def scatter3d_z_json(
     color_col: str | None,
     max_points: int = 120_000,
     *,
+    no_subsample: bool = False,
     plot_df: pd.DataFrame | None = None,
     continuous_palette: str | None = None,
     color_filter: dict[str, Any] | None = None,
     discrete_label_colors: dict[str, str] | None = None,
     uirevision: str = "scatter3d_z",
     xyz_axes_allowed: frozenset[str] | None = None,
+    scene_axis_titles: tuple[str, str, str] | None = None,
+    vol_pc_explained_variance_ratio: np.ndarray | None = None,
+    volume_landscape_3d_style: bool = False,
 ) -> str:
     """Interactive 3D scatter of three latent ``z*`` columns.
 
@@ -267,6 +280,18 @@ def scatter3d_z_json(
 
     When ``xyz_axes_allowed`` is set (e.g. volume PCA column names), ``xcol``/``ycol``/``zcol``
     must be three distinct members of that set instead of latent ``z*`` dimensions.
+
+    ``scene_axis_titles`` overrides Plotly scene axis titles (defaults to ``xcol``/``ycol``/``zcol``).
+
+    ``vol_pc_explained_variance_ratio`` improves hover and colour-legend titles for
+    ``landscape_vol_PC*`` covariates when present.
+
+    ``volume_landscape_3d_style`` tightens marker size, emboldens axis titles, and bumps
+    scene tick label size for the full-volume-landscape 3D view.
+
+    When ``no_subsample`` is true, every row in the (possibly colour-filtered) table is plotted
+    instead of capping at ``max_points`` — used for discrete-level GIF frames so rare categories
+    are not randomly thinned away.
     """
     plotly_cs = normalize_continuous_palette(continuous_palette)
     df_all = exp.plot_df if plot_df is None else plot_df
@@ -293,9 +318,12 @@ def scatter3d_z_json(
             raise ValueError("No particles match the current colour covariate filter.")
         df = df_all.loc[mask].reset_index(drop=True)
 
-    sub, row_indices = _subsample(df, max_points, seed=1)
-    cap = max_points if max_points is not None else max(len(sub), 1)
+    sub, row_indices = _subsample(df, None if no_subsample else max_points, seed=1)
+    cap = max(len(sub), 1) if no_subsample else max_points
     msize, mopacity = _scatter3d_marker_size_opacity(len(sub), point_cap=cap)
+    if volume_landscape_3d_style:
+        # 31% smaller glyphs vs the usual n-points curve (volume landscapes only).
+        msize *= 1.0 - 0.31
 
     discrete_trace = (
         color_col
@@ -324,9 +352,15 @@ def scatter3d_z_json(
             )
             counts_map = discrete_category_counts_by_filter_key(df_all, color_col)
             sort_keys = sorted(lookup_preview.keys(), key=_discrete_legend_sort_tuple)
+            color_legend_title = landscape_vol_pc_column_pretty_label(
+                color_col,
+                vol_pc_explained_variance_ratio,
+            )
+            if color_legend_title == color_col:
+                color_legend_title = covariate_display_name(color_col)
             legend_meta = {
                 "type": "discrete",
-                "title": color_col,
+                "title": color_legend_title,
                 "items": [
                     {
                         "label": k,
@@ -348,14 +382,23 @@ def scatter3d_z_json(
                 cmin, cmax = pinned_color_range
                 marker["cmin"] = cmin
                 marker["cmax"] = cmax
+            color_legend_title = landscape_vol_pc_column_pretty_label(
+                color_col,
+                vol_pc_explained_variance_ratio,
+            )
+            if color_legend_title == color_col:
+                color_legend_title = covariate_display_name(color_col)
             legend_meta = {
                 "type": "continuous",
-                "title": color_col,
+                "title": color_legend_title,
                 "min": cmin,
                 "max": cmax,
             }
     else:
         marker = dict(size=msize, opacity=mopacity, color="#4a5568")
+
+    # Plotly Scatter3d otherwise picks up a default marker outline in WebGL.
+    marker["line"] = dict(width=0)
 
     idx_cd = sub["index"].to_numpy()
     if VOL_LANDSCAPE_3D_PLOT_DF_ROW in sub.columns:
@@ -385,7 +428,12 @@ def scatter3d_z_json(
     if has_cov_color:
         cc = cast(str, color_col)
         hov2_3d = np.asarray(
-            _scatter_color_hover_texts(sub, cc, discrete_trace=bool(discrete_trace)),
+            _scatter_color_hover_texts(
+                sub,
+                cc,
+                discrete_trace=bool(discrete_trace),
+                vol_pc_explained_variance_ratio=vol_pc_explained_variance_ratio,
+            ),
             dtype=object,
         ).reshape(-1, 1)
         customdata = np.column_stack([customdata, hov2_3d])
@@ -448,20 +496,52 @@ def scatter3d_z_json(
 
     hoverlabel_font_3d = dict(_PLOTLY_FONT)
     hoverlabel_font_3d["size"] = DASHBOARD_SCATTER_HOVERLABEL_FONT_SIZE
+    x_title, y_title, z_title = (
+        scene_axis_titles if scene_axis_titles is not None else (xcol, ycol, zcol)
+    )
     fig = go.Figure(sc)
+    scene_kw: dict[str, Any] = dict(
+        aspectmode="data",
+        bgcolor="rgba(250,248,244,0.95)",
+    )
+    if volume_landscape_3d_style:
+        # Reference tick size 12px → +33%; layout font → +20% for titles (bold).
+        tick_px = 12.0 * (1.0 + 0.33)
+        title_px = float(_PLOTLY_FONT["size"]) * (1.0 + 0.20)
+        title_font = dict(
+            family=_PLOTLY_FONT["family"],
+            size=title_px,
+            color="#1a202c",
+            weight="bold",
+        )
+        tick_font = dict(
+            family=_PLOTLY_FONT["family"],
+            size=tick_px,
+            color="#4a5568",
+        )
+
+        def _scene_axis_vol_land(
+            axis_extra: dict[str, Any], title_text: str
+        ) -> dict[str, Any]:
+            d = dict(axis_extra)
+            d["tickfont"] = tick_font
+            d["title"] = dict(text=title_text, font=title_font)
+            return d
+
+        scene_kw["xaxis"] = _scene_axis_vol_land(scene_axes_extra["xaxis"], x_title)
+        scene_kw["yaxis"] = _scene_axis_vol_land(scene_axes_extra["yaxis"], y_title)
+        scene_kw["zaxis"] = _scene_axis_vol_land(scene_axes_extra["zaxis"], z_title)
+    else:
+        scene_kw["xaxis_title"] = x_title
+        scene_kw["yaxis_title"] = y_title
+        scene_kw["zaxis_title"] = z_title
+        scene_kw.update(scene_axes_extra)
     fig.update_layout(
         template="plotly_white",
         autosize=True,
         paper_bgcolor=_DASHBOARD_CREAM,
         margin=dict(l=0, r=0, t=0, b=0),
-        scene=dict(
-            xaxis_title=xcol,
-            yaxis_title=ycol,
-            zaxis_title=zcol,
-            aspectmode="data",
-            bgcolor="rgba(250,248,244,0.95)",
-            **scene_axes_extra,
-        ),
+        scene=scene_kw,
         uirevision=uirevision,
         font=_PLOTLY_FONT,
         meta=plot_meta,
@@ -548,6 +628,100 @@ def scatter3d_z_preview_png(
         ax.set_xlabel(xcol, fontsize=10)
         ax.set_ylabel(ycol, fontsize=10)
         ax.set_zlabel(zcol, fontsize=10)
+        ax.tick_params(axis="both", labelsize=7)
+        ax.view_init(elev=float(elev), azim=float(azim))
+        fig.tight_layout(pad=0.6)
+        buf = io.BytesIO()
+        fig.savefig(
+            buf,
+            format="png",
+            dpi=dpi,
+            facecolor=_DASHBOARD_CREAM,
+            bbox_inches="tight",
+        )
+        plt.close(fig)
+
+    return buf.getvalue()
+
+
+def scatter3d_landscape_full_discrete_level_png_bytes(
+    plot_df: pd.DataFrame,
+    xcol: str,
+    ycol: str,
+    zcol: str,
+    color_col: str,
+    filter_key: str,
+    *,
+    discrete_label_colors: dict[str, str] | None,
+    xyz_axes_allowed: frozenset[str],
+    scene_axis_titles: tuple[str, str, str],
+    elev: float = 22.0,
+    azim: float = -65.0,
+    dpi: int = 100,
+) -> bytes:
+    """One Matplotlib 3D frame: every row in a single discrete category (no subsampling).
+
+    Used for server-side discrete-level GIFs so the browser never has to ``toImage`` WebGL.
+    Axis limits match the colour-filtered Plotly scene (padded min/max on the full sampled table).
+    """
+    _validate_three_xyz_allowed(plot_df, (xcol, ycol, zcol), xyz_axes_allowed)
+    if not color_col or color_col == "none" or color_col not in plot_df.columns:
+        raise ValueError("A discrete colour column is required for this export.")
+    df_all = plot_df
+    if not _lower_color_series_is_discrete(df_all[color_col]):
+        raise ValueError(
+            "Colour column must be discrete for discrete-level GIF export."
+        )
+
+    color_filter: dict[str, Any] = {"kind": "discrete", "keys": [filter_key]}
+    mask = plot_df_color_filter_mask(df_all, color_col, color_filter)
+    if not bool(np.any(mask)):
+        raise ValueError(f"No particles match discrete level {filter_key!r}.")
+
+    df = df_all.loc[mask].reset_index(drop=True)
+    sub, _ = _subsample(df, None, seed=1)
+
+    lookup = _stable_discrete_covariate_hex_map(
+        df_all, color_col, discrete_label_colors
+    )
+    if filter_key not in lookup:
+        raise ValueError(f"Unknown discrete level {filter_key!r}.")
+    hex_c = lookup[filter_key]
+
+    cap = max(len(df), 1)
+    msize, mopacity = _scatter3d_marker_size_opacity(len(sub), point_cap=cap)
+    msize *= 1.0 - 0.31
+    mpl_marker_area = float(max(6.0, (msize * 2.2) ** 2))
+
+    xs = sub[xcol].to_numpy(dtype=np.float64)
+    ys = sub[ycol].to_numpy(dtype=np.float64)
+    zs = sub[zcol].to_numpy(dtype=np.float64)
+
+    xr = list(_pair_grid_axis_lim_padded(df_all[xcol]))
+    yr = list(_pair_grid_axis_lim_padded(df_all[ycol]))
+    zr = list(_pair_grid_axis_lim_padded(df_all[zcol]))
+
+    x_title, y_title, z_title = scene_axis_titles
+
+    with ezlab_matplotlib_rc():
+        fig = plt.figure(figsize=(5.2, 4.6), facecolor=_DASHBOARD_CREAM)
+        ax = fig.add_subplot(111, projection="3d", facecolor=_DASHBOARD_CREAM)
+        ax.scatter(
+            xs,
+            ys,
+            zs,
+            c=hex_c,
+            s=mpl_marker_area,
+            alpha=float(mopacity),
+            linewidths=0,
+            depthshade=True,
+        )
+        ax.set_xlim(xr)
+        ax.set_ylim(yr)
+        ax.set_zlim(zr)
+        ax.set_xlabel(x_title, fontsize=10)
+        ax.set_ylabel(y_title, fontsize=10)
+        ax.set_zlabel(z_title, fontsize=10)
         ax.tick_params(axis="both", labelsize=7)
         ax.view_init(elev=float(elev), azim=float(azim))
         fig.tight_layout(pad=0.6)

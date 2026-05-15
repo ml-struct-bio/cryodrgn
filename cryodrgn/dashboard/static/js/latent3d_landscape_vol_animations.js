@@ -293,6 +293,7 @@
     var selIndicesSummaryLabel = $("sel-indices-summary-label");
     var selIndicesList = $("sel-indices-list");
     var gifModeDescEl = $("mode-desc");
+    var gifModeSwitch = $("gif-mode-switch");
     var gifFrames = $("gif-frames");
     var gifFramesWrap = $("gif-frames-wrap");
     var previewGrid = $("preview-grid");
@@ -336,8 +337,8 @@
     }
 
     function currentGifMode() {
-      var el = document.querySelector('input[name="l3dva-gif-mode"]:checked');
-      return el ? el.value : "cycle";
+      if (!gifModeSwitch) return "cycle";
+      return gifModeSwitch.checked ? "rotate_each" : "cycle";
     }
 
     function syncGifModeDescription() {
@@ -549,9 +550,10 @@
       var n = xs.length;
       var cd = trace.customdata;
       if (!cd || cd.length !== n) return;
-      var baseSize = 9;
+      var ptScale = 1 - 0.31;
+      var baseSize = Math.max(2, 9 * ptScale);
       var baseOp = 0.75;
-      var hiSize = 11;
+      var hiSize = Math.max(3, 11 * ptScale);
       var hiOp = 0.86;
       var dimOp = 0.66;
       var hasSel = selectedVols.size > 0;
@@ -847,13 +849,13 @@
         });
     }
 
-    document.querySelectorAll('input[name="l3dva-gif-mode"]').forEach(function(radio) {
-      radio.addEventListener("change", function() {
+    if (gifModeSwitch) {
+      gifModeSwitch.addEventListener("change", function() {
         syncGifModeDescription();
         syncGifFramesVisibility();
         scheduleAutoGif("gif_mode");
       });
-    });
+    }
     if (gifFrames) {
       gifFrames.addEventListener("change", function() {
         scheduleAutoGif("gif_frames");

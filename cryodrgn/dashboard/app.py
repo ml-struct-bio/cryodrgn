@@ -15,6 +15,7 @@ from flask import Flask
 
 from cryodrgn.dashboard.context import (
     abbrev_middle,
+    nav_interface_title,
     api_set_epoch,
     api_set_workdir,
     bind_dashboard_exp,
@@ -126,6 +127,7 @@ def create_app(
         static_url_path="/static",
     )
     app.jinja_env.filters["abbrev_middle"] = abbrev_middle
+    app.jinja_env.filters["nav_interface_title"] = nav_interface_title
     app.config["PRELOAD_CPUS"] = max(1, cpus)
     app.secret_key = os.environ.get(
         "CRYODRGN_DASHBOARD_SECRET", "cryodrgn-dashboard-dev-key"

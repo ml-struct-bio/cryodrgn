@@ -99,13 +99,12 @@ _LEAD_LANDSCAPE_FULL_3D = (
 
 _LATENT_3D_AXES_NOTE = (
     '<p class="cryo-dash-legend-note" style="margin:0 0 0.35rem;">Pick three <strong>different</strong> coordinates '
-    "(z0, z1, …). The plot uses WebGL — &ldquo;Rendering…&rdquo; appears in the plot area while data loads.</p>"
+    "(z0, z1, …).</p>"
 )
 
 _LANDSCAPE_FULL_3D_AXES_NOTE = (
     '<p class="cryo-dash-legend-note" style="margin:0 0 0.35rem;">Pick three <strong>different</strong> volume PCA '
-    "columns from <code>vol_pca_all.pkl</code> (shown as <code>landscape_vol_PC*</code>). The plot uses WebGL — "
-    "&ldquo;Rendering…&rdquo; appears in the plot area while data loads.</p>"
+    "columns from <code>vol_pca_all.pkl</code> (shown as <code>landscape_vol_PC*</code>).</p>"
 )
 
 # ---------------------------------------------------------------------------
@@ -499,7 +498,7 @@ def latent_3d_page():
     cols = e.numeric_columns
     return render_template(
         "latent_3d.html",
-        page_title="3-D Latent Space Visualizer · cryoDRGN",
+        page_title="3D latent space visualizer · cryoDRGN",
         nav_bar_title="3D visualizer",
         lead_html=_LEAD_LATENT_3D,
         axis_cols=axis_cols,
@@ -595,7 +594,7 @@ def api_scatter3d_z():
         except ValueError as err:
             return jsonify(error=str(err)), 400
         except Exception as err:
-            logger.exception("3-D Latent Space Visualizer failed")
+            logger.exception("3D latent space visualizer failed")
             return jsonify(error=str(err)), 500
         return Response(js, mimetype="application/json")
 
@@ -617,7 +616,7 @@ def api_scatter3d_z():
     except ValueError as err:
         return jsonify(error=str(err)), 400
     except Exception as err:
-        logger.exception("3-D Latent Space Visualizer failed")
+        logger.exception("3D latent space visualizer failed")
         return jsonify(error=str(err)), 500
     return Response(js, mimetype="application/json")
 
@@ -741,7 +740,7 @@ def api_latent3d_preview_png():
     except ValueError as err:
         return jsonify(error=str(err)), 400
     except Exception as err:
-        logger.exception("3-D latent preview PNG failed")
+        logger.exception("3D latent preview PNG failed")
         return jsonify(error=str(err)), 500
     return Response(png, mimetype="image/png")
 

@@ -1,9 +1,11 @@
-"""Core dashboard smoke, context, session, and app-shell tests."""
+"""Core dashboard smoke, context, session, app-shell, and template-contract tests."""
 
 from __future__ import annotations
 
 import os
 import pickle
+import re
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -20,6 +22,7 @@ from cryodrgn.dashboard.context import (
     _run_log_cryodrgn_version,
     _workdir_options,
     abbrev_middle,
+    nav_interface_title,
     active_workdir,
     clear_experiment_caches,
     discover_cryodrgn_workdirs,
@@ -394,6 +397,19 @@ class TestAbbrevMiddle:
         assert abbrev_middle("abcdef", maxlen=3) == "abc"
 
 
+class TestNavInterfaceTitle:
+    def test_lowercase_and_3d_token(self) -> None:
+        assert nav_interface_title("3D Visualizer") == "3D visualizer"
+        assert nav_interface_title("PARTICLE explorer") == "particle explorer"
+
+    def test_hyphenated_three_d(self) -> None:
+        assert nav_interface_title("3-D latent space") == "3D latent space"
+
+    def test_empty(self) -> None:
+        assert nav_interface_title("") == ""
+        assert nav_interface_title(None) == ""
+
+
 class TestAbbrevMiddleToken:
     def test_short_unchanged(self) -> None:
         assert _abbrev_middle_token("short") == "short"
@@ -690,3 +706,79 @@ class TestCommandBuilderOnlyMode:
             r = client.get("/explorer", follow_redirects=False)
             assert r.status_code == 302
             assert r.headers["Location"].endswith("/")
+
+
+class TestDiscreteCovariateLegendContracts:
+    """Guards for discrete covariate toggle legends (CryoColorCovariateLegend hosts).
+
+    The pair-plot generator once advanced ``lastPayload`` before a new ``blob:`` PNG was
+    actually shown (manual ``el.onload()`` right after ``src`` while ``complete`` still
+    described the old bitmap), so the first discrete toggle looked like a no-op.
+    """
+
+    _REPO_ROOT = Path(__file__).resolve().parents[1]
+    _DASH_TEMPLATES = _REPO_ROOT / "cryodrgn" / "dashboard" / "templates"
+    _HOST_TEMPLATES = (
+        "pair_grid.html",
+        "latent_3d.html",
+        "_particle_explorer_montagejs.html",
+    )
+
+    def _read_template(self, rel: str) -> str:
+        p = self._DASH_TEMPLATES / rel
+        assert p.is_file(), f"missing template {p}"
+        return p.read_text(encoding="utf-8")
+
+    @pytest.mark.parametrize("rel", _HOST_TEMPLATES)
+    def test_discrete_legend_hosts_set_notify_on_refresh_false(self, rel: str) -> None:
+        """``refresh()`` must not fire ``onFilterChange``; hosts redraw via ``afterLayout`` / UI."""
+        text = self._read_template(rel)
+        marker = "new CryoColorCovariateLegend({"
+        starts = [m.start() for m in re.finditer(re.escape(marker), text)]
+        assert (
+            len(starts) == 1
+        ), f"{rel}: expected exactly one {marker!r}, got {len(starts)}"
+        pos = starts[0]
+        window = text[pos : pos + 30_000]
+        assert "notifyOnRefresh: false" in window, (
+            f"{rel}: CryoColorCovariateLegend options must set notifyOnRefresh: false "
+            "within ~30k chars of the constructor (avoids duplicate redraws vs lastPayload)."
+        )
+
+    @pytest.mark.parametrize("rel", _HOST_TEMPLATES)
+    def test_discrete_legend_hosts_wire_discrete_dom(self, rel: str) -> None:
+        text = self._read_template(rel)
+        assert "discreteSwitches:" in text
+        assert "discreteWrap:" in text
+
+    def test_pairplot_no_synthetic_img_onload_after_blob_src(self) -> None:
+        text = self._read_template("pair_grid.html")
+        bad = re.search(
+            r"el\.src\s*=\s*nextUrl\s*;[\s\S]{0,400}?"
+            r"el\.complete\s*&&\s*el\.naturalWidth[\s\S]{0,120}?"
+            r"el\.onload\s*\(\s*\)",
+            text,
+        )
+        assert bad is None, (
+            "pair_grid.html: do not synthesize img onload from complete/naturalWidth right "
+            "after assigning a new blob src — lastPayload can desync from the visible bitmap."
+        )
+
+    def test_color_covariate_legend_refresh_respects_notify_on_refresh(self) -> None:
+        js = (
+            self._REPO_ROOT
+            / "cryodrgn"
+            / "dashboard"
+            / "static"
+            / "js"
+            / "color_covariate_legend.js"
+        ).read_text(encoding="utf-8")
+        assert re.search(
+            r"if\s*\(\s*self\.notifyOnRefresh\s*&&\s*!\s*suppressNotify\s*\)\s*self\._notify\s*\(",
+            js,
+        ), "finishLegendLayout must keep notifyOnRefresh + suppressNotify guard"
+
+    def test_pairplot_draw_still_assigns_blob_src(self) -> None:
+        text = self._read_template("pair_grid.html")
+        assert "el.src = nextUrl" in text
+        assert "el.onload = function()" in text

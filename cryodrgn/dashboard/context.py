@@ -408,6 +408,21 @@ def abbrev_middle(text: object, maxlen: int = 30) -> str:
     return s[:left] + ell + s[-(inner - left) :]
 
 
+def nav_interface_title(text: object) -> str:
+    """Format the nav brand’s interface line (``dashboard · <title>``).
+
+    Lowercase the whole label, then normalise word-bounded ``3d`` / ``3-d`` to
+    ``3D`` so dimension wording stays readable while the rest stays quiet.
+    """
+    s = "" if text is None else str(text).strip()
+    if not s:
+        return ""
+    out = s.lower()
+    out = re.sub(r"\b3-d\b", "3d", out)
+    out = re.sub(r"\b3d\b", "3D", out)
+    return out
+
+
 def _cmd_argv_for_nav_display(cmd_parts: list[str]) -> list[str]:
     """Drop the filesystem path to the cryodrgn entrypoint; show ``cryodrgn <args>``."""
     if not cmd_parts:

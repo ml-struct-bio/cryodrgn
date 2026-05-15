@@ -211,7 +211,8 @@
       color: rgba(248, 252, 255, 0.96);
       font-weight: 600;
       letter-spacing: 0.03em;
-      text-transform: lowercase;
+      /* Casing comes from ``nav_interface_title`` in templates — avoid CSS lowercase, which
+         would render ``3D`` as ``3d``. */
       -webkit-text-stroke: 0.5px rgba(0, 0, 0, 0.85);
       font-size: calc(0.95rem * 1.25 * 1.2 * 0.5184 * 0.8);
       padding: 0;
@@ -309,26 +310,26 @@
       background:
         radial-gradient(
           circle at 28% 24%,
-          rgba(255, 255, 255, 0.48) 0%,
-          rgba(255, 255, 255, 0.09) 42%,
+          rgba(255, 255, 255, 0.52) 0%,
+          rgba(255, 255, 255, 0.1) 42%,
           rgba(255, 255, 255, 0) 62%
         ),
         linear-gradient(
           155deg,
-          rgba(255, 255, 255, 0.26) 0%,
-          rgba(255, 255, 255, 0.06) 42%,
-          rgba(255, 255, 255, 0.025) 52%,
-          rgba(255, 255, 255, 0.11) 100%
+          rgba(255, 255, 255, 0.28) 0%,
+          rgba(255, 255, 255, 0.07) 42%,
+          rgba(255, 255, 255, 0.03) 52%,
+          rgba(255, 255, 255, 0.12) 100%
         );
       box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.35),
+        inset 0 1px 0 rgba(255, 255, 255, 0.38),
         inset 0 -1px 0 rgba(20, 35, 52, 0.22),
-        0 1px 8px rgba(0, 0, 0, 0.11);
+        0 1px 8px rgba(0, 0, 0, 0.12);
       -webkit-backdrop-filter: blur(6px) saturate(1.1);
       backdrop-filter: blur(6px) saturate(1.1);
       text-shadow:
-        0 1px 0 rgba(255, 255, 255, 0.26),
-        0 -1px 1px rgba(36, 59, 83, 0.1);
+        0 1px 0 rgba(255, 255, 255, 0.28),
+        0 -1px 1px rgba(36, 59, 83, 0.11);
       transition:
         background 0.28s ease,
         border-color 0.28s ease,
@@ -342,24 +343,24 @@
       background:
         radial-gradient(
           circle at 28% 24%,
-          rgba(255, 255, 255, 0.54) 0%,
-          rgba(255, 255, 255, 0.11) 42%,
+          rgba(255, 255, 255, 0.58) 0%,
+          rgba(255, 255, 255, 0.12) 42%,
           rgba(255, 255, 255, 0) 62%
         ),
         linear-gradient(
           155deg,
-          rgba(255, 255, 255, 0.35) 0%,
-          rgba(255, 255, 255, 0.11) 38%,
-          rgba(255, 235, 215, 0.075) 52%,
-          rgba(255, 255, 255, 0.16) 100%
+          rgba(255, 255, 255, 0.38) 0%,
+          rgba(255, 255, 255, 0.12) 38%,
+          rgba(255, 235, 215, 0.08) 52%,
+          rgba(255, 255, 255, 0.18) 100%
         );
       box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.44),
+        inset 0 1px 0 rgba(255, 255, 255, 0.48),
         inset 0 -1px 0 rgba(20, 35, 52, 0.21),
-        0 2px 14px rgba(0, 0, 0, 0.11);
+        0 2px 14px rgba(0, 0, 0, 0.12);
       text-shadow:
-        0 1px 0 rgba(255, 255, 255, 0.32),
-        0 -1px 1px rgba(36, 59, 83, 0.1);
+        0 1px 0 rgba(255, 255, 255, 0.35),
+        0 -1px 1px rgba(36, 59, 83, 0.11);
     }
     .nav a.nav-brand-link:hover .nav-brand-interface-title .nav-page-title,
     .nav a.nav-brand-link:focus-visible .nav-brand-interface-title .nav-page-title {
@@ -921,9 +922,16 @@
       align-self: stretch;
       display: flex;
       flex-direction: column;
-      justify-content: center;
       align-items: stretch;
       box-sizing: border-box;
+    }
+    .cryo-dash-row.cryo-dash-row--plot-triple > .pairplot-color-legend-aside {
+      justify-content: center;
+    }
+    /* Top-align so discrete / continuous legends share the same anchor as the plot column
+       (centering made tall landscape-full discrete panels sit higher than the latent-3D view). */
+    .cryo-dash-row.cryo-dash-row--plot-triple > .latent3d-color-legend-aside {
+      justify-content: flex-start;
     }
     .cryo-dash-row.cryo-dash-row--plot-triple > .pairplot-color-legend-aside .cryo-cc-legend,
     .cryo-dash-row.cryo-dash-row--plot-triple > .latent3d-color-legend-aside .cryo-cc-legend {
@@ -936,8 +944,7 @@
     }
     /*
      * Discrete covariate toggle legend — invert / “no selection” cell:
-     * idle = metallic label plaque; active = glossy button. Typography fills inner box with
-     * 7% inset (.cryo-cc-discrete-invert-fitbox).
+     * idle = metallic label plaque; active = glossy button. Typography fills inner box with 7% inset (.cryo-cc-discrete-invert-fitbox).
      */
     .cryo-cc-discrete-cell.cryo-cc-discrete-cell--invert {
       padding: 0;
@@ -1047,9 +1054,7 @@
       align-self: center;
       border-radius: 7px;
     }
-    .cryo-cc-region-invert-slot
-    .cryo-cc-discrete-cell--invert-heading
-    .cryo-cc-discrete-switch.cryo-cc-discrete-switch--invert {
+    .cryo-cc-region-invert-slot .cryo-cc-discrete-cell--invert-heading .cryo-cc-discrete-switch.cryo-cc-discrete-switch--invert {
       width: auto;
       height: auto;
       min-height: calc(0.792 * 1lh);
@@ -1064,10 +1069,7 @@
       max-width: 100%;
       padding: 0.18em 0.558em 0.216em;
     }
-    .cryo-cc-region-invert-slot
-    .cryo-cc-discrete-cell--invert-heading
-    .cryo-cc-discrete-invert-fitbox
-    .cryo-cc-discrete-switch-label {
+    .cryo-cc-region-invert-slot .cryo-cc-discrete-cell--invert-heading .cryo-cc-discrete-invert-fitbox .cryo-cc-discrete-switch-label {
       font-size: 0.9em;
       line-height: 1.2;
       width: auto;
@@ -1605,17 +1607,12 @@
           <span class="nav-brand-line1-row">
             <span class="nav-brand-line1">cryoDRGN</span>
             {% if cryodrgn_version_short %}
-            <span
-              class="nav-brand-version nav-brand-version--inline"
-              title="Dashboard: cryoDRGN {{ cryodrgn_version|e }}"
-            >v{{ cryodrgn_version_short|e }}</span>
+            <span class="nav-brand-version nav-brand-version--inline" title="Dashboard: cryoDRGN {{ cryodrgn_version|e }}">v{{ cryodrgn_version_short|e }}</span>
             {% endif %}
           </span>
           <span class="nav-brand-line2">
             <span class="nav-brand-line2-inner">
-              <span class="nav-brand-line2-main">dashboard<span
-                class="nav-brand-interface-title"
-              >{% block nav_page_title %}{% endblock %}</span></span>
+              <span class="nav-brand-line2-main">dashboard<span class="nav-brand-interface-title">{% block nav_page_title %}{% endblock %}</span></span>
             </span>
           </span>
         </span>
@@ -1646,9 +1643,7 @@
               <li role="presentation">
                 <button
                   type="button"
-                  class="nav-workdir-scroll-item cryo-dash-set-workdir{% if wd.value == selected_workdir %}
-                    nav-workdir-scroll-item--selected
-                  {% endif %}"
+                  class="nav-workdir-scroll-item cryo-dash-set-workdir{% if wd.value == selected_workdir %} nav-workdir-scroll-item--selected{% endif %}"
                   role="option"
                   {% if wd.value == selected_workdir %}aria-selected="true"{% else %}aria-selected="false"{% endif %}
                   data-workdir="{{ wd.value|e }}"
@@ -1716,17 +1711,10 @@
           {% if exp_epoch_output_stamp or exp_run_log_cryodrgn_version %}
           <div class="nav-epoch-meta">
             {% if exp_epoch_output_stamp %}
-            <span class="nav-epoch-stamp"
-              {% if exp_epoch_output_stamp_title %}
-              title="{{ exp_epoch_output_stamp_title|e }}"
-              {% endif %}>analyze.{{ exp_epoch }}
-              updated {{ exp_epoch_output_stamp|e }}</span>
+            <span class="nav-epoch-stamp" {% if exp_epoch_output_stamp_title %}title="{{ exp_epoch_output_stamp_title|e }}"{% endif %}>analyze.{{ exp_epoch }} updated {{ exp_epoch_output_stamp|e }}</span>
             {% endif %}
             {% if exp_run_log_cryodrgn_version %}
-            <span class="nav-epoch-runlog-version"
-              {% if exp_run_log_cryodrgn_version_title %}
-              title="{{ exp_run_log_cryodrgn_version_title|e }}"
-              {% endif %}>trained with cryoDRGN v{{ exp_run_log_cryodrgn_version_short|e }}</span>
+            <span class="nav-epoch-runlog-version" {% if exp_run_log_cryodrgn_version_title %}title="{{ exp_run_log_cryodrgn_version_title|e }}"{% endif %}>trained with cryoDRGN v{{ exp_run_log_cryodrgn_version_short|e }}</span>
             {% endif %}
           </div>
           {% endif %}

@@ -1,5 +1,5 @@
 {# Reusable Jinja fragments for dashboard pages (import with ``from "_macros.html" import ...``). #}
 
 {% macro nav_page_title_span(page_title) -%}
-  <span class="nav-title-sep" aria-hidden="true">·</span><span class="nav-page-title">{{ page_title }}</span>
+  <span class="nav-title-sep" aria-hidden="true">·</span><span class="nav-page-title">{{ page_title|nav_interface_title }}</span>
 {%- endmacro %}

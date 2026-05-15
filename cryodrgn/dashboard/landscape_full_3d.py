@@ -37,8 +37,7 @@ LANDSCAPE_FULL_3D_LEAD_HTML = (
 
 LANDSCAPE_FULL_3D_AXES_NOTE_HTML = (
     '<p class="cryo-dash-legend-note" style="margin:0 0 0.35rem;">Pick three <strong>different</strong> volume PCA '
-    "columns from <code>vol_pca_all.pkl</code> (shown as <code>landscape_vol_PC*</code>). The plot uses WebGL — "
-    "&ldquo;Rendering…&rdquo; appears in the plot area while data loads.</p>"
+    "columns from <code>vol_pca_all.pkl</code></p>"
 )
 
 LANDSCAPE_FULL_3D_LEGEND_CONTEXT_EXTRA: dict[str, str] = {

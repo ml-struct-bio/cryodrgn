@@ -1017,6 +1017,8 @@
     legendContextUrl: legendContextUrl,
     getDiscreteColorOverrides: function() { return pairDiscreteColorOverrides; },
     covariateDisplayMap: covariateDisplayMap,
+    /** ``afterLayout`` / control handlers call ``draw()``; skip extra draws from ``refresh()`` completion. */
+    notifyOnRefresh: false,
     getColorColumn: function() { return checkedVal("color_cov"); },
     getPaletteName: function() { return checkedVal("pairplot_palette") || "Viridis"; },
     panel: document.getElementById("pair-color-legend-panel"),
@@ -1573,9 +1575,10 @@
             syncPairplotImgScale();
             syncSkeletonBounds();
             syncControlsAlignment(data.cells);
-            if (el.complete && el.naturalWidth) {
-              el.onload();
-            }
+            /* Do not call ``onload`` from ``complete``/``naturalWidth`` here — right after a new
+               ``blob:`` ``src`` those fields can still describe the *previous* image, so a manual
+               ``onload`` runs too early: ``lastPayload`` updates while the bitmap is stale, and the
+               next discrete toggle can look like a no-op (``dirtyIndices`` thinks nothing changed). */
           })
           .catch(function(e) {
             setPairLoading(false);

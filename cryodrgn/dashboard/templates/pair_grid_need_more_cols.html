@@ -1,12 +1,13 @@
 {% extends "base.html" %}
+{% from "_macros.html" import nav_page_title_span %}
 {% block title %}
-{% if kind == "z3" %}3-D Latent Space Visualizer · cryoDRGN{% else %}Pair grid · cryoDRGN{% endif %}
+{% if kind == "z3" %}3D latent space visualizer · cryoDRGN{% else %}Pair grid · cryoDRGN{% endif %}
 {% endblock %}
 {% block nav_page_title %}
 {% if kind == "z3" %}
-<span class="nav-page-title">3-D Latent Space Visualizer</span>
+{{ nav_page_title_span("3d latent space visualizer") }}
 {% else %}
-<span class="nav-page-title">Pairwise plot generator</span>
+{{ nav_page_title_span("Pairwise plot generator") }}
 {% endif %}
 {% endblock %}
 {% block content %}
@@ -15,7 +16,7 @@
 <p class="lead">The pairwise grid needs at least two latent coordinates. This reconstruction has
   <strong>{{ n }}</strong>.</p>
 {% elif kind == "z3" %}
-<p class="lead">The 3-D Latent Space Visualizer needs at least three latent coordinates. This reconstruction has
+<p class="lead">The 3D latent space visualizer needs at least three latent coordinates. This reconstruction has
   <strong>{{ n }}</strong>.</p>
 {% elif kind == "pca" %}
 <p class="lead">The diagonal embedding needs PCA components in the analysis table for this epoch.</p>

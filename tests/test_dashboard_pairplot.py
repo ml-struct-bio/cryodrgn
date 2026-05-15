@@ -18,6 +18,7 @@ from cryodrgn.dashboard.plots import (
     pair_grid_png,
     pair_grid_skeleton_placeholder_layout,
 )
+from cryodrgn.dashboard.plots_color_covariate import covariate_row_filter_key
 
 
 class TestDashboardPairPlot:
@@ -65,6 +66,25 @@ class TestDashboardPairPlot:
         )
         assert r.status_code == 200, r.get_json()
         assert r.get_json().get("png_b64")
+
+    def test_api_pairplot_accepts_discrete_color_filter(
+        self, flask_client, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        """First discrete selection must change the PNG (server path + client lastPayload sync)."""
+        s = dashboard_experiment.plot_df["labels"].dropna()
+        if s.nunique() < 2:
+            pytest.skip("fixture needs >=2 label values for discrete filter regression")
+        u = s.value_counts().index[-1]
+        fk = covariate_row_filter_key("labels", u)
+        base = {"color_col": "labels", "diagonal_emb": "umap", "upper_style": "scatter"}
+        r0 = flask_client.post("/api/pairplot", json=base)
+        r1 = flask_client.post(
+            "/api/pairplot",
+            json={**base, "color_filter": {"kind": "discrete", "keys": [fk]}},
+        )
+        assert r0.status_code == 200, r0.get_json()
+        assert r1.status_code == 200, r1.get_json()
+        assert r0.get_json().get("png_b64") != r1.get_json().get("png_b64")
 
     def test_pair_grid_png_is_deterministic(
         self, dashboard_experiment: DashboardExperiment

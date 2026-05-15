@@ -23,7 +23,7 @@
     flex-direction: column;
     align-items: stretch;
     align-self: stretch;
-    justify-content: center;
+    justify-content: flex-start;
     background: transparent;
     border: none;
     box-shadow: none;
@@ -82,12 +82,20 @@
     }
   }
   .cryo-dash-page--latent3d #latent3d-color-legend-panel {
-    width: 100%;
-    max-width: 100%;
-    margin-left: 0;
     box-sizing: border-box;
     /* Default continuous strip; overridden inline when discrete grid was measured (unused when stack is full-width). */
     --pair-legend-middle-w: min(5.25rem, 14vw);
+  }
+  .cryo-dash-page--latent3d #latent3d-color-legend-panel:not([hidden]) {
+    width: 90%;
+    max-width: 90%;
+    align-self: center;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .cryo-dash-page--latent3d #latent3d-color-legend-panel[hidden] {
+    /* ``[hidden]`` loses to ``.cryo-cc-legend { display: flex }`` on this page without an explicit rule. */
+    display: none !important;
   }
   .cryo-dash-page--latent3d #latent3d-color-continuous-wrap:not([hidden]) {
     display: flex;
@@ -187,9 +195,7 @@
     color: var(--nav-bg, #243b53);
     box-sizing: border-box;
   }
-  .cryo-dash-page--latent3d
-  .latent3d-color-legend-aside
-  #latent3d-palette-select.latent3d-palette-select--hidden-during-plot-render {
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside #latent3d-palette-select.latent3d-palette-select--hidden-during-plot-render {
     opacity: 0.45;
     pointer-events: none;
   }
@@ -216,10 +222,7 @@
     font-size: 0.7rem;
     transition: transform 0.12s ease;
   }
-  .cryo-dash-page--latent3d
-  .latent3d-color-legend-aside
-  .pairplot-palette-select__title[aria-expanded="true"]
-  .pairplot-palette-select__chevron {
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside .pairplot-palette-select__title[aria-expanded="true"] .pairplot-palette-select__chevron {
     transform: rotate(90deg);
   }
   #latent3d-color-continuous-wrap[hidden] {
@@ -251,7 +254,7 @@
     gap: 1px 2px;
     align-items: stretch;
     padding-right: 0;
-    /* --cryo-discrete-legend-w set from JS as 90% of 3-D plot stack width */
+    /* --cryo-discrete-legend-w set from JS as 90% of 3D plot stack width */
     width: var(--cryo-discrete-legend-w, 100%);
     max-width: 100%;
     margin-left: auto;
@@ -338,11 +341,7 @@
     flex: 1 1 auto;
     min-width: 0;
   }
-  .cryo-dash-page--latent3d
-  #latent3d-color-discrete-invert-slot
-  .cryo-cc-discrete-cell--invert
-  .cryo-cc-discrete-invert-fitbox
-  .cryo-cc-discrete-switch-label {
+  .cryo-dash-page--latent3d #latent3d-color-discrete-invert-slot .cryo-cc-discrete-cell--invert .cryo-cc-discrete-invert-fitbox .cryo-cc-discrete-switch-label {
     white-space: normal;
     overflow: visible;
     text-overflow: unset;
@@ -403,7 +402,7 @@
     </div>
       <aside class="latent3d-color-legend-aside" aria-label="Colour covariate filter">
         <div id="latent3d-color-legend-panel" class="cryo-cc-legend" hidden aria-hidden="true"
-          title="Covariate colours in the legend; filtering applies to the 3-D view.">
+          title="Covariate colours in the legend; filtering applies to the 3D view.">
           <div class="cryo-cc-legend__heading">
             <span id="latent3d-cc-legend-heading-title" class="cryo-cc-legend__heading-text">Colour legend and <span
               class="cryo-cc-legend__filter-em">filtering</span></span>
@@ -422,19 +421,15 @@
                   <span id="latent3d-color-threshold-status" class="status"></span>
                 </div>
                 <div id="latent3d-palette-select"
-                  class="cryo-cc-legend-palette-shell pairplot-palette-select cryo-palette-select
-                    latent3d-palette-select"
+                  class="cryo-cc-legend-palette-shell pairplot-palette-select cryo-palette-select latent3d-palette-select"
                   aria-label="Continuous color palette">
-                  <button type="button" id="latent3d-palette-toggle"
-                    class="pairplot-palette-select__title cryo-palette-select__title"
+                  <button type="button" id="latent3d-palette-toggle" class="pairplot-palette-select__title cryo-palette-select__title"
                     aria-expanded="false" aria-controls="latent3d-palette-options">
-                    <span class="pairplot-palette-select__chevron cryo-palette-select__chevron"
-                      aria-hidden="true">▶</span>
+                    <span class="pairplot-palette-select__chevron cryo-palette-select__chevron" aria-hidden="true">▶</span>
                     <span>Choose<br/>palette</span>
                   </button>
                   <div id="latent3d-palette-options"
-                    class="cryo-cc-legend-palette-menu pairplot-palette-select__options
-                      cryo-palette-select__options pairplot-palette-select__options--collapsed">
+                    class="cryo-cc-legend-palette-menu pairplot-palette-select__options cryo-palette-select__options pairplot-palette-select__options--collapsed">
                     {{ continuous_palette_options("latent3d_palette") }}
                   </div>
                 </div>
@@ -444,15 +439,9 @@
           <div id="latent3d-color-discrete-wrap">
             <div id="latent3d-color-discrete-heading-row" class="cryo-cc-discrete-toggle-heading-row" hidden>
               <span class="cryo-cc-discrete-toggle-heading-text">Toggle selection</span>
-              <div
-                id="latent3d-color-discrete-invert-slot"
-                class="cryo-cc-region-invert-slot"
-                hidden
-                aria-hidden="true"></div>
+              <div id="latent3d-color-discrete-invert-slot" class="cryo-cc-region-invert-slot" hidden aria-hidden="true"></div>
             </div>
-            <div
-              id="latent3d-color-discrete-switches"
-              class="cryo-cc-discrete-switches cryo-cc-discrete-switches--pair-2col"
+            <div id="latent3d-color-discrete-switches" class="cryo-cc-discrete-switches cryo-cc-discrete-switches--pair-2col"
               role="group" aria-label="Discrete colour filter"></div>
             <div class="cryo-cc-discrete-actions">
               <button type="button" id="latent3d-btn-discrete-invert" class="btn btn-secondary" disabled>
@@ -646,11 +635,7 @@
       panel.style.removeProperty("--pair-legend-middle-w");
     }
     scheduleLatent3dLegendHeadingTitleFit();
-    if (
-      typeof latent3dColorLegend !== "undefined" &&
-      latent3dColorLegend &&
-      typeof latent3dColorLegend.scheduleInvertTypographyFit === "function"
-    ) {
+    if (typeof latent3dColorLegend !== "undefined" && latent3dColorLegend && typeof latent3dColorLegend.scheduleInvertTypographyFit === "function") {
       latent3dColorLegend.scheduleInvertTypographyFit();
     }
   }
@@ -739,7 +724,7 @@
     getDiscreteColorOverrides: function() { return latent3dDiscreteColorOverrides; },
     discreteChipMatplotlibBlend: false,
     notifyOnRefresh: false,
-    // Keep the heading ("Colour legend and filtering") hidden until a colour covariate is chosen.
+    // Hide the whole legend panel until a colour covariate is chosen (see ``#latent3d-color-legend-panel[hidden]`` CSS).
     hideLegendPanelWhenNoCovariate: true,
     covariateDisplayMap: covariateDisplayMap,
     getColorColumn: function() { return sc.value; },

@@ -9,7 +9,6 @@ import os
 import pytest
 
 from cryodrgn.commands import dashboard as dash_cli, train_vae
-from cryodrgn.dashboard import app as dash_app
 from cryodrgn.dashboard.command_builder_cli_help import (
     help_map_from_command_py,
     load_cli_help_maps,
@@ -151,7 +150,7 @@ class TestDashboardCLI:
 
     def test_filter_max_points_sets_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("CRYODRGN_DASHBOARD_FILTER_MAX_POINTS", raising=False)
-        monkeypatch.setattr(dash_app, "run_server", lambda **kw: None)
+        monkeypatch.setattr(dash_cli, "run_server", lambda **kw: None)
         ns = self._parse(
             ["--filter-max", "123000", "--no-browser", "--command-builder"]
         )
@@ -161,7 +160,7 @@ class TestDashboardCLI:
     def test_builder_only_with_experiment_view_raises(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(dash_app, "run_server", lambda **kw: None)
+        monkeypatch.setattr(dash_cli, "run_server", lambda **kw: None)
         ns = self._parse(["--particle-selection", "--no-browser"])
         with pytest.raises(ValueError, match="need an output directory"):
             dash_cli.main(ns)
@@ -174,7 +173,7 @@ class TestDashboardCLI:
         def fake_run_server(**kwargs) -> None:
             called.update(kwargs)
 
-        monkeypatch.setattr(dash_app, "run_server", fake_run_server)
+        monkeypatch.setattr(dash_cli, "run_server", fake_run_server)
         ns = self._parse(["--command-builder", "--no-browser"])
         dash_cli.main(ns)
         assert called["workdir"] is None
@@ -190,7 +189,7 @@ class TestDashboardCLI:
         def fake_run_server(**kwargs) -> None:
             called.update(kwargs)
 
-        monkeypatch.setattr(dash_app, "run_server", fake_run_server)
+        monkeypatch.setattr(dash_cli, "run_server", fake_run_server)
         ns = self._parse([dashboard_workdir, "--no-browser"])
         dash_cli.main(ns)
         assert called["workdir"] == dashboard_workdir
@@ -208,7 +207,7 @@ class TestDashboardCLI:
         def fake_run_server(**kwargs) -> None:
             called.update(kwargs)
 
-        monkeypatch.setattr(dash_app, "run_server", fake_run_server)
+        monkeypatch.setattr(dash_cli, "run_server", fake_run_server)
         ns = self._parse([str(tmp_path), "--no-browser"])
         dash_cli.main(ns)
         assert called["workdir"] is None
@@ -225,7 +224,7 @@ class TestDashboardCLI:
         def fake_run_server(**kwargs) -> None:
             called.update(kwargs)
 
-        monkeypatch.setattr(dash_app, "run_server", fake_run_server)
+        monkeypatch.setattr(dash_cli, "run_server", fake_run_server)
         ns = self._parse([str(run), "--no-browser"])
         dash_cli.main(ns)
         assert called["workdir"] == os.path.abspath(str(run))
@@ -247,7 +246,7 @@ class TestDashboardCLI:
             called["verbosity"] = verbosity
 
         monkeypatch.setattr(dash_cli, "_configure_dashboard_logging", fake_cfg)
-        monkeypatch.setattr(dash_app, "run_server", lambda **kw: None)
+        monkeypatch.setattr(dash_cli, "run_server", lambda **kw: None)
         ns = self._parse(["--command-builder", "--no-browser", "-vv"])
         dash_cli.main(ns)
         assert called["verbosity"] == 2

@@ -1,17 +1,24 @@
-"""Core dashboard smoke, context, session, app-shell, and template-contract tests."""
+"""Core dashboard smoke, context, session, app-shell, template contracts, and small helpers."""
 
 from __future__ import annotations
 
+import base64
 import os
 import pickle
 import re
+import tempfile
+from io import BytesIO
 from pathlib import Path
 
 import numpy as np
 import pytest
 import yaml
+from PIL import Image
 
 from cryodrgn.dashboard import app as dash_app
+from cryodrgn.dashboard import column_names
+from cryodrgn.dashboard import covariate_labels
+from cryodrgn.dashboard import palette_config
 from cryodrgn.dashboard.context import (
     EXP_CACHE,
     PRELOAD_CACHE,
@@ -31,9 +38,19 @@ from cryodrgn.dashboard.context import (
 )
 from cryodrgn.dashboard.data import DashboardExperiment, list_z_epochs
 from cryodrgn.dashboard.particle_explorer import explorer_volumes_eligible
+from cryodrgn.dashboard.plot_gif_utils import png_base64_frames_to_gif_bytes
 from cryodrgn.dashboard.trajectory import _TRAJ_GRAPH_NEIGHBOR_CACHE
 
 ANALYZE_EPOCH = 2
+
+
+def _png_b64_rgb(
+    w: int = 8, h: int = 8, rgb: tuple[int, int, int] = (200, 30, 40)
+) -> str:
+    """Solid-colour PNG as standard base64 (GIF helpers + latent-3D GIF API tests)."""
+    buf = BytesIO()
+    Image.new("RGB", (w, h), rgb).save(buf, format="PNG")
+    return base64.standard_b64encode(buf.getvalue()).decode("ascii")
 
 
 class TestDashboardExperiment:
@@ -129,6 +146,23 @@ class TestDashboardScatterApis:
             or "three" in err.lower()
         )
 
+    def test_api_latent3d_landscape_full_discrete_gif_without_outputs_is_400(
+        self, flask_client
+    ) -> None:
+        r = flask_client.post(
+            "/api/latent3d_landscape_full_discrete_gif",
+            json={
+                "x": "z0",
+                "y": "z1",
+                "z": "z2",
+                "color": "labels",
+                "discrete_keys": ["0", "1"],
+            },
+        )
+        assert r.status_code == 400
+        err = (r.get_json() or {}).get("error", "")
+        assert "landscape" in err.lower() or "vol_pca" in err.lower()
+
     def test_api_covariate_legend_context_landscape_scope_without_outputs_is_400(
         self, flask_client
     ) -> None:
@@ -143,6 +177,30 @@ class TestDashboardScatterApis:
         assert r.status_code == 200
         # PNG magic bytes.
         assert r.data[:8] == b"\x89PNG\r\n\x1a\n"
+
+    def test_api_latent3d_plot_gif_from_png_frames(self, flask_client) -> None:
+        a = _png_b64_rgb(rgb=(10, 20, 30))
+        b = _png_b64_rgb(rgb=(200, 180, 40))
+        r = flask_client.post(
+            "/api/latent3d_plot_gif_from_png_frames",
+            json={"frames": [a, b], "durations_ms": [40, 80]},
+        )
+        assert r.status_code == 200, r.get_data(as_text=True)
+        js = r.get_json()
+        assert "gif_b64" in js
+        raw = base64.standard_b64decode(js["gif_b64"])
+        assert raw[:6] in (b"GIF87a", b"GIF89a")
+
+    def test_api_latent3d_discrete_gif_requires_discrete_keys(
+        self, flask_client
+    ) -> None:
+        r = flask_client.post(
+            "/api/latent3d_discrete_gif",
+            json={"x": "z0", "y": "z1", "z": "z2", "color": "labels"},
+        )
+        assert r.status_code == 400
+        err = (r.get_json() or {}).get("error", "")
+        assert "discrete_keys" in err.lower()
 
     def test_api_preview_montage(self, flask_client) -> None:
         r = flask_client.get("/api/preview_montage?rows=0,1,2,3")
@@ -184,6 +242,30 @@ class TestDashboardScatterApis:
         assert r.status_code == 200
         js = r.get_json()
         assert len(js["data"][0]["customdata"]) == 100
+
+
+class TestPlotGifUtils:
+    """``plot_gif_utils.png_base64_frames_to_gif_bytes`` (PNG-frame GIF assembly)."""
+
+    def test_png_base64_frames_to_gif_bytes_round_trip(self) -> None:
+        a = _png_b64_rgb(rgb=(200, 30, 40))
+        b = _png_b64_rgb(rgb=(30, 180, 60))
+        gif = png_base64_frames_to_gif_bytes([a, b], durations_ms=[50, 120])
+        assert gif[:6] in (b"GIF87a", b"GIF89a")
+        im = Image.open(BytesIO(gif))
+        assert im.n_frames >= 2
+        im.seek(1)
+
+    def test_png_base64_frames_requires_two_frames(self) -> None:
+        one = _png_b64_rgb()
+        with pytest.raises(ValueError, match="At least two"):
+            png_base64_frames_to_gif_bytes([one])
+
+    def test_png_base64_accepts_data_url_prefix(self) -> None:
+        raw = _png_b64_rgb()
+        framed = "data:image/png;base64," + raw
+        gif = png_base64_frames_to_gif_bytes([framed, raw], durations_ms=40)
+        assert len(gif) > 32
 
 
 class TestDashboardScatterCapHelpers:
@@ -782,3 +864,102 @@ class TestDiscreteCovariateLegendContracts:
         text = self._read_template("pair_grid.html")
         assert "el.src = nextUrl" in text
         assert "el.onload = function()" in text
+
+
+class TestDashboardModules:
+    """Imports, pure helpers, and landscape-full helpers (folded from ``test_dashboard_modules``)."""
+
+    def test_dashboard_import_order_avoids_plots_route_helpers_cycle(self) -> None:
+        """``route_helpers`` must not depend on ``plots`` (historical circular import)."""
+        import cryodrgn.dashboard.route_helpers as rh  # noqa: PLC0415
+
+        assert (
+            rh.normalize_continuous_palette
+            is palette_config.normalize_continuous_palette
+        )
+        import cryodrgn.dashboard.plots as plots  # noqa: PLC0415
+
+        assert plots.scatter_json is not None
+        import cryodrgn.dashboard.landscape_full_3d as lf3  # noqa: PLC0415
+
+        assert (
+            lf3.VOL_LANDSCAPE_3D_PLOT_DF_ROW
+            == column_names.VOL_LANDSCAPE_3D_PLOT_DF_ROW
+        )
+
+    def test_vol_landscape_plot_df_row_constant_matches_column_names(self) -> None:
+        assert column_names.VOL_LANDSCAPE_3D_PLOT_DF_ROW == "_dashboard_plot_df_row"
+
+    def test_covariate_display_name_landscape_vol_pc(self) -> None:
+        assert (
+            covariate_labels.covariate_display_name("landscape_vol_PC12") == "Vol PC12"
+        )
+
+    def test_covariate_display_name_landscape_vol_cluster(self) -> None:
+        assert (
+            covariate_labels.covariate_display_name("landscape_vol_cluster")
+            == "Vol cluster"
+        )
+
+    def test_landscape_vol_pc_pretty_label_with_variance(self) -> None:
+        evr = np.array([0.453, 0.12], dtype=np.float64)
+        assert (
+            covariate_labels.landscape_vol_pc_pretty_label(1, evr) == "Vol PC1 (45.3%)"
+        )
+        assert (
+            covariate_labels.landscape_vol_pc_pretty_label(2, evr) == "Vol PC2 (12.0%)"
+        )
+        assert covariate_labels.landscape_vol_pc_pretty_label(3, evr) == "Vol PC3"
+
+    def test_covariate_display_map_vol_pc_variance(self) -> None:
+        evr = np.array([0.1], dtype=np.float64)
+        m = covariate_labels.covariate_display_map(
+            ["landscape_vol_PC1", "z0"],
+            vol_pc_explained_variance_ratio=evr,
+        )
+        assert m["landscape_vol_PC1"] == "Vol PC1 (10.0%)"
+        assert m["z0"] == "z0"
+
+    @pytest.mark.parametrize(
+        "raw,expected",
+        [
+            (None, "Viridis"),
+            ("", "Viridis"),
+            ("viridis", "Viridis"),
+            ("PLASMA", "Plasma"),
+            ("not_a_real_palette", "Viridis"),
+        ],
+    )
+    def test_normalize_continuous_palette(self, raw: str | None, expected: str) -> None:
+        assert palette_config.normalize_continuous_palette(raw) == expected
+
+    def test_landscape_full_ready_false_without_outputs(self) -> None:
+        from cryodrgn.dashboard import landscape_full_3d  # noqa: PLC0415
+
+        with tempfile.TemporaryDirectory() as tmp:
+            assert not landscape_full_3d.landscape_full_ready(tmp, 0)
+            assert not landscape_full_3d.landscape_full_3d_ready(tmp, 0)
+
+    def test_landscape_full_numeric_covariates_skip_animation_helper_columns(
+        self,
+    ) -> None:
+        import pandas as pd
+
+        from cryodrgn.dashboard import landscape_full_3d as lf3
+        from cryodrgn.dashboard.column_names import (
+            VOL_LANDSCAPE_3D_PLOT_DF_ROW,
+            VOL_LANDSCAPE_NEAREST_SKETCH_VOL,
+        )
+
+        df = pd.DataFrame(
+            {
+                "index": [0, 1],
+                "landscape_vol_PC1": [0.0, 1.0],
+                VOL_LANDSCAPE_3D_PLOT_DF_ROW: [10, 11],
+                VOL_LANDSCAPE_NEAREST_SKETCH_VOL: [2, 3],
+            }
+        )
+        cols = lf3.landscape_full_sampled_numeric_covariates(df)
+        assert "landscape_vol_PC1" in cols
+        assert VOL_LANDSCAPE_NEAREST_SKETCH_VOL not in cols
+        assert VOL_LANDSCAPE_3D_PLOT_DF_ROW not in cols

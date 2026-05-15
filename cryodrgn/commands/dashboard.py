@@ -15,10 +15,13 @@ $ cryodrgn dashboard experiments/   # parent folder: discover analyzed run subfo
 
 from __future__ import annotations
 
+import os
 import argparse
 import logging
 import webbrowser
 from threading import Timer
+from cryodrgn.dashboard.data import list_z_epochs
+from cryodrgn.dashboard.app import run_server
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +65,6 @@ def _configure_dashboard_logging(verbosity: int) -> None:
 
 
 def add_args(parser: argparse.ArgumentParser) -> None:
-    import os
 
     parser.add_argument(
         "outdir",
@@ -151,9 +153,14 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         help="open the trajectory creator instead of the launch menu",
     )
     view.add_argument(
-        "--landscape-explorer",
+        "--sketch-explorer",
         action="store_true",
-        help="open the landscape explorer instead of the launch menu",
+        help="open the sketched landscape explorer instead of the launch menu",
+    )
+    view.add_argument(
+        "--landscape-three-dimensional",
+        action="store_true",
+        help="open the landscape 3D visualizer instead of the launch menu",
     )
 
     parser.add_argument(
@@ -181,10 +188,6 @@ def add_args(parser: argparse.ArgumentParser) -> None:
 
 
 def main(args: argparse.Namespace) -> None:
-    import os
-
-    from cryodrgn.dashboard.data import list_z_epochs
-
     _configure_dashboard_logging(args.verbose)
 
     if args.filter_max_points is not None:
@@ -208,7 +211,8 @@ def main(args: argparse.Namespace) -> None:
         "three_dimensional": "/latent-3d",
         "command_builder": "/command-builder",
         "trajectory_creator": "/trajectory",
-        "landscape_explorer": "/landscape-volpca",
+        "sketch_explorer": "/landscape-volpca",
+        "landscape_three_dimensional": "/landscape-full-3d",
     }
     experiment_views = set(view_paths) - {"command_builder"}
     if command_builder_only and any(getattr(args, f, False) for f in experiment_views):
@@ -227,8 +231,6 @@ def main(args: argparse.Namespace) -> None:
             webbrowser.open(f"http://{args.host}:{args.port}{initial_path}")
 
         Timer(1.0, _open).start()
-
-    from cryodrgn.dashboard.app import run_server
 
     if command_builder_only:
         if discovery_root is not None:

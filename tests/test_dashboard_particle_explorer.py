@@ -794,8 +794,30 @@ class TestParticleExplorerTemplateRegressions:
             clear_end != -1 and clear_end > clear_start
         ), "could not bound clear block"
         clear_block = body[clear_start:clear_end]
-        assert "clearScatterGeometricSelectionSuppressed();" in clear_block
-        assert "applyRowsSelection([]);" in clear_block
+        assert (
+            "applyRowsSelection([], undefined, LASSO_SELECTION_DEBOUNCE_MS + 120);"
+            in clear_block
+        )
+        assert "clearScatterGeometricSelection();" in clear_block
+        assert (
+            "syncCommittedScatterRegionOverlays({ clearSelections: true });"
+            in clear_block
+        )
+        assert "pickedClearMontage" in clear_block
+        assert "nRegClear" in body
+        assert (
+            "syncMontageResampleFromCacheButton();\n"
+            "    updateParticleSelFieldset();" in clear_block
+        )
+
+        # Scattergl can leave lasso/box paint until dragmode is nudged and transient shapes are stripped.
+        assert "pulseScatterglDragmodeToFlushSelectionPaint" in body
+        assert "scheduleScatterglSelectionPaintFlushAfterClear" in body
+        assert "scatterExplorerShapesPurgeForGeometryClear" in body
+        assert "shapeMatchesCryoCommittedScatterRegion" in body
+        assert "plotlyRelayoutShapesHardReplaceThenPatch" in body
+        assert "setMontageCellSelectionBorderStyle" in body
+        assert "2px 3px 3px 3px" in body
 
     def test_full_cache_load_suppresses_montage_and_plot_highlight_updates(
         self, flask_client
@@ -805,6 +827,96 @@ class TestParticleExplorerTemplateRegressions:
         body = r.get_data(as_text=True)
         assert "suppressMontageUpdate: true" in body
         assert "suppressPlotGridHighlights = true" in body
+
+    def test_grid_letter_highlights_constant_opacity_and_covariate_outline(
+        self, flask_client
+    ) -> None:
+        """Grid-letter overlay uses fixed marker opacity; selection is fill vs hollow only."""
+        r = flask_client.get("/explorer")
+        assert r.status_code == 200
+        body = r.get_data(as_text=True)
+        assert "cryo-grid-highlight-marker-policy" in body
+        assert "GRID_HIGHLIGHT_MARKER_OPACITY" in body
+        assert "appendGridHighlightMarkerRestyle" in body
+        assert "GRID_HIGHLIGHT_CLEAR_FILL" in body
+        assert "refreshGridHighlightMarkerStylesFromLastRows" in body
+        assert "treatAllGridPointsAsSelected" in body
+        assert "cryo-grid-highlight-no-dim" in body
+        assert 'type: "scatter"' in body
+        assert "multiGeom" in body
+        assert 'restyleData["textfont.color"]' in body
+
+    def test_committed_scatter_shapes_use_between_layer_for_grid_letters(
+        self, flask_client
+    ) -> None:
+        """Committed lasso/box fills use Plotly layer "between" so letter markers draw on top."""
+        r = flask_client.get("/explorer")
+        assert r.status_code == 200
+        body = r.get_data(as_text=True)
+        assert 'layer: "between"' in body
+        assert "CDRGN_COMMIT_REGION_LINE_WIDTH" in body
+
+    def test_multi_region_lasso_overlay_chips_solo_and_colour_wheel(
+        self, flask_client
+    ) -> None:
+        """Disjoint regions use HTML overlay chips with solo ``1`` + colour wheel (not Plotly text)."""
+        r = flask_client.get("/explorer")
+        assert r.status_code == 200
+        body = r.get_data(as_text=True)
+        assert 'id="scatter-region-chips-overlay"' in body
+        assert "soloCommittedScatterRegion" in body
+        assert "__cdrgnScatterRegion:" in body
+        assert "scatterRegionChipPointerDown" in body
+        assert "cryo-explorer-scatter-region-chip__actions" in body
+        assert "scheduleScatterRegionLabelChipsSync" in body
+        assert "removeCommittedScatterRegion" in body
+        assert "cryo-explorer-scatter-region-chip__remove" in body
+
+    def test_montage_cards_use_top_meta_band_and_tight_image_margins(
+        self, flask_client
+    ) -> None:
+        """Letter + covariate/idx top-aligned in ``cryo-montage-meta``; tight cell padding and zero gap to image."""
+        r = flask_client.get("/explorer")
+        assert r.status_code == 200
+        body = r.get_data(as_text=True)
+        assert "cryo-montage-meta" in body
+        assert "cryo-montage-meta-right" in body
+        assert "cryo-montage-cell--light" in body
+        assert 'className = "cryo-montage-meta"' in body
+        assert 'className = "cryo-montage-meta-right"' in body
+        assert (
+            "  .cryo-montage-img-wrap {\n"
+            "    position: relative;\n"
+            "    aspect-ratio: 1;\n"
+            "    flex: 1 1 auto;\n"
+            "    margin: 0;\n"
+            "    min-height: 0;\n"
+            "  }"
+        ) in body
+        assert (
+            "  .cryo-montage-cell.cryo-montage-cell--light {\n"
+            "    background: var(--paper, #faf8f4);\n"
+            "    padding: 1px;\n"
+            "    gap: 0;\n"
+            "  }"
+        ) in body
+        assert "cryo-montage-footer" not in body
+        assert (
+            "  .cryo-montage-meta {\n"
+            "    display: flex;\n"
+            "    flex-direction: row;\n"
+            "    align-items: flex-start;\n"
+        ) in body
+        assert "#clear-explorer-selection:disabled" in body
+        assert 'lbl.style.display = "inline-flex"' in body
+        assert 'lbl.style.alignSelf = "flex-start"' in body
+        assert "scaleRem(metaSize, 1.1)" in body
+        assert "continuousMontageStylesFromT" in body
+        assert "letterFontRem * 0.11" in body
+        assert "1.22 / labStr.length" in body
+        assert 'meta.style.alignItems = "flex-start"' in body
+        assert 'meta.style.gap = "0"' in body
+        assert "lbl: lbl" in body
 
 
 class TestPreloadDeltaResponses:

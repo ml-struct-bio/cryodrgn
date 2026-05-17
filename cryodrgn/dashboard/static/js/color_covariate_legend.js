@@ -1,676 +1,68 @@
 /**
- * Colour covariate histogram + discrete toggles shared by particle explorer,
- * pair-grid, and 3-D latent views. Continuous legends support click thresholds
- * and drag ranges; optional `histPlotVertical` swaps covariate onto y and
- * density onto x (pair-plot/3-D asides). Shared vertical palette menu styling:
- * ``static/css/cryo_cc_legend_palette_menu.css`` (classes ``cryo-cc-legend-palette-shell``
- * on the select wrapper and ``cryo-cc-legend-palette-menu`` on the options pane). Discrete colour picking uses one anchored
- * panel (RGB sliders + hex field + Apply / Cancel) with no separate OS colour dialog;
- * Apply commits but leaves the panel open (Cancel, Escape, or outside click closes). Plastic styling for toggle chips is on by default
- * (`discreteChipPlasticLabel` opt-out). Optional `histVerticalMargins` shallow-
- * merges into the vertical histogram layout margin. Panel `vertical` controls CSS layout class.
+ * Colour covariate histogram + discrete toggles (particle explorer, pair-grid, latent 3-D).
+ * Continuous legends support click thresholds and drag ranges; optional ``histPlotVertical`` swaps
+ * covariate onto y and density onto x. Discrete chip + popover styling lives in
+ * ``static/css/cryo_cc_legend_palette_menu.css`` alongside the vertical palette menu.
+ * Discrete colour picking uses one anchored panel (RGB sliders + hex + Apply / Cancel); Apply
+ * commits but leaves the panel open. Plastic toggle chips default on (``discreteChipPlasticLabel``
+ * opt-out). Optional ``histVerticalMargins`` shallow-merges into vertical histogram margins.
+ * Panel ``vertical`` toggles the ``cryo-cc-legend--vertical`` layout class.
+ * Pure helpers live in ``cryo_cc_legend_primitives.js`` (load first).
  */
 (function (global) {
   "use strict";
 
-  var PALETTE_RGB = {
-    Viridis: [[68, 1, 84], [72, 39, 119], [63, 74, 138], [49, 104, 142], [38, 130, 142], [31, 157, 138], [53, 183, 121], [109, 205, 89], [253, 231, 37]],
-    Plasma: [[13, 8, 135], [76, 2, 161], [126, 3, 168], [170, 35, 149], [204, 71, 120], [230, 108, 92], [248, 149, 64], [253, 197, 39], [240, 249, 33]],
-    Inferno: [[0, 0, 4], [41, 10, 108], [108, 2, 112], [187, 55, 84], [249, 142, 8], [252, 208, 74], [252, 254, 164]],
-    Magma: [[0, 0, 4], [59, 15, 112], [122, 4, 111], [203, 62, 65], [252, 141, 89], [252, 208, 136], [252, 253, 191]],
-    Cividis: [[0, 34, 78], [0, 57, 112], [68, 90, 129], [115, 128, 131], [159, 161, 135], [206, 186, 122], [253, 231, 37]],
-    Turbo: [[48, 18, 59], [61, 99, 221], [26, 152, 223], [25, 189, 114], [208, 230, 28], [250, 85, 8], [144, 12, 2]],
-    Blues: [[247, 251, 255], [198, 219, 239], [107, 174, 214], [33, 113, 181], [8, 48, 107]],
-    Greens: [[247, 252, 245], [199, 233, 192], [116, 196, 118], [35, 139, 69], [0, 68, 27]],
-    Greys: [[255, 255, 255], [217, 217, 217], [150, 150, 150], [82, 82, 82], [0, 0, 0]],
-    Oranges: [[255, 245, 235], [253, 208, 162], [253, 141, 60], [217, 72, 1], [127, 39, 4]],
-    Purples: [[252, 251, 253], [218, 218, 235], [158, 154, 200], [106, 81, 163], [63, 0, 125]],
-    Reds: [[255, 245, 240], [252, 187, 161], [251, 106, 74], [203, 24, 29], [103, 0, 13]],
-    YlGnBu: [[255, 255, 217], [199, 233, 180], [65, 182, 196], [44, 127, 184], [8, 29, 88]],
-    YlOrRd: [[255, 255, 204], [255, 237, 160], [254, 178, 76], [240, 59, 32], [128, 0, 38]],
-    RdBu: [[103, 0, 31], [214, 96, 77], [247, 247, 247], [67, 147, 195], [5, 48, 97]],
-    Portland: [[12, 51, 131], [10, 136, 186], [242, 211, 56], [242, 143, 56], [217, 30, 30]],
-    Jet: [[0, 0, 127], [0, 0, 255], [0, 255, 255], [255, 255, 0], [255, 0, 0], [127, 0, 0]],
-    Hot: [[0, 0, 0], [176, 0, 0], [255, 140, 0], [255, 255, 102], [255, 255, 255]],
-    Blackbody: [[0, 0, 0], [91, 12, 107], [184, 50, 137], [242, 109, 75], [249, 248, 113]],
-    Electric: [[0, 0, 0], [30, 0, 109], [141, 23, 165], [217, 79, 213], [255, 255, 255]],
-    Rainbow: [[110, 64, 170], [71, 118, 230], [26, 199, 194], [123, 217, 76], [244, 208, 63], [242, 95, 92]],
-    Earth: [[0, 0, 130], [0, 181, 200], [125, 190, 66], [200, 182, 74], [139, 69, 19]]
-  };
-
-  function injectCryoCcLegendStylesOnce() {
-    if (document.getElementById("cryo-cc-legend-dynamic-style")) {
-      return;
-    }
-    var st = document.createElement("style");
-    st.id = "cryo-cc-legend-dynamic-style";
-    st.textContent = ""
-      // Single flex row: [checkbox][gap][label stack][icons flush]; chip paint on .cryo-cc-discrete-cell
-      + ".cryo-cc-discrete-cell{box-sizing:border-box;min-width:0;padding:0;border-radius:2px;"
-      + "border:1px solid transparent;}"
-      + ".cryo-cc-discrete-switch{display:flex;flex-direction:row;flex-wrap:nowrap;align-items:center;"
-      + "gap:0;margin:0;padding:0;width:100%;min-width:0;"
-      + "cursor:default;user-select:none;border:none;background:transparent;border-radius:0;}"
-      + ".cryo-cc-discrete-switch > input[type=\"checkbox\"]{flex-shrink:0;margin:0 0.35rem 0 0;"
-      + "accent-color:#c4703a;cursor:pointer;width:0.62rem;height:0.62rem;}"
-      + ".cryo-cc-discrete-switch > label[for]{flex:1 1 auto;min-width:0;margin:0;padding:0;"
-      + "cursor:pointer;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;}"
-      + ".cryo-cc-discrete-switch-text{display:flex;flex-direction:column;align-items:flex-start;"
-      + "flex:1 1 auto;min-width:0;line-height:1;}"
-      + ".cryo-cc-discrete-cell-controls{display:flex;flex-direction:column;align-items:center;"
-      + "justify-content:center;gap:0;flex-shrink:0;margin:0;padding:0;line-height:0;}"
-      + ".cryo-cc-discrete-cell-controls--solo-only{justify-content:center;}"
-      // Colour wheel slot (native picker sits over the icon button)
-      + ".cryo-cc-discrete-wheel-slot{position:relative;flex-shrink:0;width:1rem;height:1rem;}"
-      + ".cryo-cc-discrete-native-color{position:absolute;inset:0;width:100%;height:100%;"
-      + "opacity:0;pointer-events:none;z-index:0;padding:0;border:none;margin:0;cursor:pointer;}"
-      + ".cryo-cc-discrete-colorwheel-btn{position:absolute;inset:0;"
-      + "display:inline-flex;align-items:center;justify-content:center;"
-      + "width:100%;height:100%;margin:0;padding:0;"
-      + "border:none;border-radius:999px;background:transparent;"
-      + "cursor:pointer;color:#243b53;line-height:0;z-index:2;}"
-      + ".cryo-cc-discrete-colorwheel-btn:focus-visible{outline:2px solid var(--accent,#c4703a);outline-offset:1px;}"
-      + ".cryo-cc-discrete-colorwheel-btn:hover{transform:scale(1.15);}"
-      + ".cryo-cc-discrete-colorwheel-btn svg{display:block;width:0.83rem;height:0.83rem;}"
-      // Solo \"1\" button — same column as wheel, vertically separated by flex layout
-      + ".cryo-cc-discrete-solo-btn{display:inline-flex;align-items:center;justify-content:center;"
-      + "flex-shrink:0;width:1rem;height:1rem;margin:0;padding:0;"
-      + "border:none;border-radius:2px;background:transparent;"
-      + "cursor:pointer;color:#1a2332;font-size:0.58rem;font-weight:900;"
-      + "font-family:Georgia,serif;font-style:italic;line-height:1;"
-      + "text-shadow:-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff,1px 1px 0 #fff,"
-      + "-1px 0 0 #fff,1px 0 0 #fff,0 -1px 0 #fff,0 1px 0 #fff,"
-      + "0 0 3px rgba(255,255,255,0.95);}"
-      + ".cryo-cc-discrete-solo-btn:focus-visible{outline:2px solid var(--accent,#c4703a);outline-offset:1px;}"
-      + ".cryo-cc-discrete-solo-btn:hover{color:#000;transform:scale(1.2);}"
-      // Invert chip matches data chips (paint applied via _applyDiscreteCellPaint)
-      + ".cryo-cc-discrete-cell--invert{cursor:pointer;transition:opacity 0.15s ease;padding:0;}"
-      + ".cryo-cc-discrete-cell--invert:hover{opacity:0.85;}"
-      + ".cryo-cc-discrete-cell--invert .cryo-cc-discrete-switch{cursor:inherit;}"
-      + ".cryo-cc-discrete-cell--plastic:not(.cryo-cc-discrete-cell--invert){"
-      + "position:relative;border-radius:7px;overflow:visible;"
-      + "box-shadow:"
-      + "inset 0 2px 3px rgba(255,255,255,0.68),"
-      + "inset 0 -3px 6px rgba(0,0,0,0.16),"
-      + "inset 0 0 0 1px rgba(255,255,255,0.28),"
-      + "0 2px 5px rgba(26,35,50,0.2);}"
-      + ".cryo-cc-discrete-color-popover{position:fixed;z-index:2147483646;"
-      + "background:var(--paper,#fafaf8);color:var(--nav-bg,#243b53);"
-      + "border:1px solid rgba(36,59,83,0.26);border-radius:10px;"
-      + "padding:0.65rem 0.72rem;box-shadow:0 14px 44px rgba(36,59,83,0.22);"
-      + "display:flex;flex-direction:column;gap:0.55rem;min-width:14.25rem;"
-      + "max-width:calc(100vw - 20px);}"
-      + ".cryo-cc-discrete-color-popover[hidden]{display:none!important;}"
-      + ".cryo-cc-discrete-color-popover-title{font-size:0.82rem;font-weight:700;"
-      + "letter-spacing:0.02em;color:#1a2332;margin:0;line-height:1.2;}"
-      + ".cryo-cc-discrete-color-popover-preview{width:100%;height:2.85rem;"
-      + "border-radius:8px;border:1px solid rgba(36,59,83,0.22);"
-      + "box-sizing:border-box;box-shadow:inset 0 1px 2px rgba(255,255,255,0.35);}"
-      + ".cryo-cc-discrete-color-popover-sliders{display:flex;flex-direction:column;"
-      + "gap:0.38rem;width:100%;}"
-      + ".cryo-cc-discrete-color-popover-slider-row{display:flex;align-items:center;"
-      + "gap:0.42rem;width:100%;min-width:0;}"
-      + ".cryo-cc-discrete-color-popover-slider-row label{flex:0 0 1.05rem;"
-      + "font-size:0.68rem;font-weight:800;color:#334e68;text-align:center;line-height:1;}"
-      + ".cryo-cc-discrete-color-popover-slider-row input[type=range]{flex:1 1 auto;"
-      + "min-width:0;height:0.42rem;accent-color:#c4703a;}"
-      + ".cryo-cc-discrete-color-popover-hex-row{display:flex;align-items:center;"
-      + "gap:0.45rem;width:100%;min-width:0;}"
-      + ".cryo-cc-discrete-color-popover-hex-row label{flex:0 0 auto;font-size:0.72rem;"
-      + "font-weight:700;color:#334e68;}"
-      + ".cryo-cc-discrete-color-popover-hex{flex:1 1 auto;min-width:0;font-family:ui-monospace,Menlo,Consolas,monospace;"
-      + "font-size:0.76rem;padding:0.28rem 0.38rem;border:1px solid rgba(36,59,83,0.22);"
-      + "border-radius:6px;background:#fff;color:#1a2332;box-sizing:border-box;}"
-      + ".cryo-cc-discrete-color-popover-actions{display:flex;justify-content:flex-end;"
-      + "gap:0.42rem;flex-wrap:wrap;padding-top:0.15rem;"
-      + "border-top:1px solid rgba(36,59,83,0.1);margin-top:0.05rem;}"
-      + ".cryo-cc-discrete-color-popover-apply,.cryo-cc-discrete-color-popover-cancel{"
-      + "font:inherit;font-size:0.78rem;font-weight:600;padding:0.32rem 0.72rem;"
-      + "border-radius:6px;cursor:pointer;line-height:1.2;"
-      + "touch-action:manipulation;}"
-      + ".cryo-cc-discrete-color-popover-apply{border:1px solid rgba(196,112,58,0.55);"
-      + "background:#c4703a;color:#fff;}"
-      + ".cryo-cc-discrete-color-popover-apply:hover{filter:brightness(1.05);}"
-      + ".cryo-cc-discrete-color-popover-cancel{border:1px solid rgba(36,59,83,0.28);"
-      + "background:rgba(255,255,255,0.95);color:#243b53;}"
-      + ".cryo-cc-discrete-color-popover-cancel:hover{background:#fff;"
-      + "border-color:rgba(36,59,83,0.4);}"
-      + ".cryo-cc-discrete-switch-checkbox-spacer{flex-shrink:0;width:0.62rem;height:0.62rem;"
-      + "margin:0 0.35rem 0 0;box-sizing:border-box;pointer-events:none;}"
-      // Text label and count - readable on colored backgrounds
-      + ".cryo-cc-discrete-switch-label{font-weight:600;font-size:0.7rem;line-height:1.1;}"
-      + ".cryo-cc-discrete-cell--invert .cryo-cc-discrete-invert-fitbox .cryo-cc-discrete-switch-label{font-weight:700;}"
-      + ".cryo-cc-discrete-switch-count{font-size:0.6rem;line-height:1.1;}"
-      // Legacy pick button (kept for backwards compatibility)
-      + ".cryo-cc-discrete-pick-btn{display:inline-flex;align-items:center;justify-content:center;"
-      + "flex-shrink:0;width:1.32rem;height:1.32rem;margin:0;padding:0;"
-      + "border:1px solid rgba(36,59,83,0.28);border-radius:999px;background:rgba(255,255,255,0.92);"
-      + "cursor:pointer;color:#243b53;line-height:0;"
-      + "touch-action:manipulation;transition:background 0.12s ease,border-color 0.12s ease;}"
-      + ".cryo-cc-discrete-pick-btn:focus-visible{outline:2px solid var(--accent,#c4703a);outline-offset:2px;}"
-      + ".cryo-cc-discrete-pick-btn:hover{border-color:rgba(36,59,83,0.45);background:#fff;"
-      + "box-shadow:0 1px 3px rgba(36,59,83,0.12);}"
-      + ".cryo-cc-discrete-pick-btn svg{display:block;width:0.92rem;height:0.92rem;}"
-      // RGB dialog styles (kept for backwards compatibility)
-      + ".cryo-cc-rgb-dialog-backdrop{position:fixed;inset:0;background:rgba(26,35,50,0.38);"
-      + "z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:1rem;}"
-      + ".cryo-cc-rgb-dialog{background:var(--paper,#fff);color:var(--nav-bg,#243b53);border-radius:8px;"
-      + "box-shadow:0 12px 40px rgba(36,59,83,0.22);padding:1rem 1.1rem;width:min(22rem,calc(100vw - 2rem));"
-      + "border:1px solid rgba(36,59,83,0.14);}"
-      + ".cryo-cc-rgb-dialog h3{margin:0 0 0.62rem;font-size:1.02rem;line-height:1.25;color:var(--nav-bg,#243b53);}"
-      + ".cryo-cc-rgb-row{display:flex;align-items:center;gap:0.5rem;margin:0 0 0.55rem;flex-wrap:wrap;}"
-      + ".cryo-cc-rgb-row label{font-size:0.82rem;font-weight:600;min-width:4.25rem;color:var(--nav-bg,#243b53);}"
-      + ".cryo-cc-rgb-row input[type=number]{width:4.75rem;font-size:0.88rem;padding:0.22rem 0.35rem;"
-      + "border:1px solid rgba(36,59,83,0.22);border-radius:4px;}"
-      + ".cryo-cc-rgb-colorwheel{width:3.05rem;height:2.05rem;padding:2px;"
-      + "border:1px solid rgba(36,59,83,0.26);border-radius:6px;cursor:pointer;background:#fff;"
-      + "touch-action:manipulation;}"
-      + ".cryo-cc-rgb-dialog-actions{display:flex;justify-content:flex-end;gap:0.48rem;"
-      + "flex-wrap:wrap;margin-top:0.82rem;padding-top:0.58rem;"
-      + "border-top:1px solid rgba(36,59,83,0.08);}";
-    document.head.appendChild(st);
+  var CCL = global.CryoCcLegendPrimitives;
+  if (!CCL) {
+    throw new Error("cryo_cc_legend_primitives.js must load before color_covariate_legend.js");
   }
+  var PALETTE_RGB = CCL.PALETTE_RGB;
+  var paletteScaleCSS = CCL.paletteScaleCSS;
+  var quantileSorted = CCL.quantileSorted;
+  var violinDistribution = CCL.violinDistribution;
+  var violinDistributionVerticalFromHorizontal = CCL.violinDistributionVerticalFromHorizontal;
+  var formatThresholdValue = CCL.formatThresholdValue;
+  var rangeInequalityPhrase = CCL.rangeInequalityPhrase;
+  var parseMarkerHexRgb = CCL.parseMarkerHexRgb;
+  var rgbChannelByte = CCL.rgbChannelByte;
+  var rgbToHex6 = CCL.rgbToHex6;
+  var discreteCardStyles = CCL.discreteCardStyles;
+  var discretePlotMatchedChipStyles = CCL.discretePlotMatchedChipStyles;
+  var normalizeDiscreteLegendHex = CCL.normalizeDiscreteLegendHex;
+  var discreteLegendRgbTuple = CCL.discreteLegendRgbTuple;
+  var cryoDiscreteColorWheelSvg = CCL.cryoDiscreteColorWheelSvg;
+  var formatDiscreteDatasetCount = CCL.formatDiscreteDatasetCount;
+  var discreteDisplayLabel = CCL.discreteDisplayLabel;
+  var sortDiscreteKeys = CCL.sortDiscreteKeys;
+  var discreteCategoryInputsFrom = CCL.discreteCategoryInputsFrom;
+  var fitInvertCellTypography = CCL.fitInvertCellTypography;
 
-  injectCryoCcLegendStylesOnce();
-
-  function normalizeDiscreteLegendHex(hex) {
-    if (hex == null) return "";
-    var s = String(hex).trim();
-    if (/^#[0-9a-fA-F]{6}$/.test(s)) {
-      return s.toLowerCase();
-    }
-    if (/^[0-9a-fA-F]{6}$/.test(s)) {
-      return ("#" + s).toLowerCase();
-    }
-    return "";
-  }
-
-  function discreteLegendRgbTuple(hexNorm) {
-    var h = normalizeDiscreteLegendHex(hexNorm);
-    if (!h || h.length !== 7) return { r: 0, g: 0, b: 0 };
-    return {
-      r: parseInt(h.slice(1, 3), 16),
-      g: parseInt(h.slice(3, 5), 16),
-      b: parseInt(h.slice(5, 7), 16)
+  /** Shared Plotly annotation chrome for histogram threshold / range callouts. */
+  function histGuideAnnotation(vertical, spec) {
+    var o = {
+      showarrow: false,
+      bgcolor: "rgba(255,255,255,0.94)",
+      bordercolor: "rgba(36,59,83,0.35)",
+      borderwidth: 1,
+      borderpad: 3,
+      font: { size: 10, color: "#243b53" },
+      text: spec.text
     };
-  }
-
-  function cryoDiscreteColorWheelSvg() {
-    // Rainbow-themed color wheel icon
-    return "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" aria-hidden=\"true\""
-      + " focusable=\"false\"><defs>"
-      + "<linearGradient id=\"cryo-cc-rainbow\" x1=\"0%\" y1=\"0%\" x2=\"100%\" y2=\"100%\">"
-      + "<stop offset=\"0%\" stop-color=\"#ff0000\"/>"
-      + "<stop offset=\"16%\" stop-color=\"#ff8000\"/>"
-      + "<stop offset=\"33%\" stop-color=\"#ffff00\"/>"
-      + "<stop offset=\"50%\" stop-color=\"#00ff00\"/>"
-      + "<stop offset=\"66%\" stop-color=\"#0080ff\"/>"
-      + "<stop offset=\"83%\" stop-color=\"#4000ff\"/>"
-      + "<stop offset=\"100%\" stop-color=\"#ff00ff\"/>"
-      + "</linearGradient></defs>"
-      + "<circle cx=\"12\" cy=\"12\" r=\"9\" stroke=\"rgba(36,59,83,0.35)\""
-      + " stroke-width=\"1.2\" fill=\"url(#cryo-cc-rainbow)\"/>"
-      + "<circle cx=\"12\" cy=\"12\" r=\"3.5\" fill=\"white\" opacity=\"0.9\"/>"
-      + "</svg>";
-  }
-
-  function createDiscreteRgbPopover() {
-    var backdrop = document.createElement("div");
-    backdrop.className = "cryo-cc-rgb-dialog-backdrop";
-    backdrop.hidden = true;
-    var dlg = document.createElement("div");
-    dlg.className = "cryo-cc-rgb-dialog";
-    dlg.setAttribute("role", "dialog");
-    dlg.setAttribute("aria-modal", "true");
-    var titleEl = document.createElement("h3");
-    dlg.appendChild(titleEl);
-
-    function numRow(txt, inp) {
-      var row = document.createElement("div");
-      row.className = "cryo-cc-rgb-row";
-      var lab = document.createElement("label");
-      lab.textContent = txt;
-      row.appendChild(lab);
-      row.appendChild(inp);
-      dlg.appendChild(row);
-      return inp;
-    }
-
-    var clr = document.createElement("input");
-    clr.type = "color";
-    clr.className = "cryo-cc-rgb-colorwheel";
-    clr.setAttribute("aria-label", "Colour wheel picker");
-    numRow("Preview", clr);
-
-    var rIn = document.createElement("input");
-    var gIn = document.createElement("input");
-    var bIn = document.createElement("input");
-    rIn.type = "number"; gIn.type = "number"; bIn.type = "number";
-    rIn.min = "0"; rIn.max = "255"; gIn.min = "0"; gIn.max = "255"; bIn.min = "0"; bIn.max = "255";
-    numRow("Red", rIn);
-    numRow("Green", gIn);
-    numRow("Blue", bIn);
-
-    var actions = document.createElement("div");
-    actions.className = "cryo-cc-rgb-dialog-actions";
-    var cancelBt = document.createElement("button");
-    cancelBt.type = "button";
-    cancelBt.className = "btn btn-secondary";
-    cancelBt.textContent = "Cancel";
-    var okBt = document.createElement("button");
-    okBt.type = "button";
-    okBt.className = "btn";
-    okBt.textContent = "Apply";
-    actions.appendChild(cancelBt);
-    actions.appendChild(okBt);
-    dlg.appendChild(actions);
-    backdrop.appendChild(dlg);
-    document.body.appendChild(backdrop);
-
-    function clampByte(v) {
-      var n = Math.round(Number(v));
-      if (!isFinite(n)) return 0;
-      return Math.max(0, Math.min(255, n));
-    }
-
-    function syncRgbFromClr() {
-      var hx = normalizeDiscreteLegendHex(clr.value || "#808080") || "#808080";
-      var t = discreteLegendRgbTuple(hx);
-      rIn.value = String(t.r);
-      gIn.value = String(t.g);
-      bIn.value = String(t.b);
-      clr.value = hx;
-    }
-
-    function syncClrFromRgb() {
-      var rs = clampByte(rIn.value).toString(16);
-      var gs = clampByte(gIn.value).toString(16);
-      var bs = clampByte(bIn.value).toString(16);
-      clr.value = "#"
-        + (rs.length === 1 ? "0" : "") + rs
-        + (gs.length === 1 ? "0" : "") + gs
-        + (bs.length === 1 ? "0" : "") + bs;
-    }
-
-    clr.addEventListener("input", function () { syncRgbFromClr(); });
-    rIn.addEventListener("input", function () { syncClrFromRgb(); });
-    gIn.addEventListener("input", function () { syncClrFromRgb(); });
-    bIn.addEventListener("input", function () { syncClrFromRgb(); });
-
-    var onCommit = null;
-    var trapKey = null;
-    function close() {
-      backdrop.hidden = true;
-      backdrop.setAttribute("aria-hidden", "true");
-      titleEl.textContent = "";
-      onCommit = null;
-      if (trapKey) {
-        document.removeEventListener("keydown", trapKey, true);
-        trapKey = null;
-      }
-    }
-
-    backdrop.addEventListener("click", function (ev) {
-      if (ev.target === backdrop) {
-        close();
-      }
-    });
-    cancelBt.addEventListener("click", function () { close(); });
-    okBt.addEventListener("click", function () {
-      syncClrFromRgb();
-      var hxFin = normalizeDiscreteLegendHex(clr.value);
-      if (onCommit && hxFin) {
-        onCommit(hxFin);
-      }
-      close();
-    });
-
-    function open(meta) {
-      meta = meta || {};
-      injectCryoCcLegendStylesOnce();
-      var start = normalizeDiscreteLegendHex(meta.initialHex || "#8899aa");
-      if (!start) start = "#8899aa";
-      titleEl.textContent = meta.title || "Choose RGB colour";
-      clr.value = start;
-      syncRgbFromClr();
-      dlg.setAttribute("aria-label", meta.title || "RGB colour picker");
-      onCommit = typeof meta.onCommit === "function" ? meta.onCommit : null;
-      backdrop.hidden = false;
-      backdrop.setAttribute("aria-hidden", "false");
-      try {
-        clr.focus();
-      } catch (fe) { /* ignore */ }
-      if (!trapKey) {
-        trapKey = function (kev) {
-          if (kev.key === "Escape") {
-            kev.preventDefault();
-            close();
-          }
-        };
-        document.addEventListener("keydown", trapKey, true);
-      }
-    }
-
-    return { open: open, close: close, element: backdrop };
-  }
-
-  var _cryoRgbPopoverInst = null;
-  function discreteRgbPopover() {
-    if (!_cryoRgbPopoverInst) _cryoRgbPopoverInst = createDiscreteRgbPopover();
-    return _cryoRgbPopoverInst;
-  }
-
-  function paletteScaleCSS(paletteName, t) {
-    t = Math.max(0, Math.min(1, t));
-    var pal = PALETTE_RGB[paletteName] || PALETTE_RGB.Viridis;
-    var n = pal.length - 1;
-    var i = Math.min(Math.floor(t * n), n - 1);
-    var f = t * n - i;
-    var a = pal[i];
-    var b = pal[i + 1];
-    return "rgb(" + Math.round(a[0] + (b[0] - a[0]) * f) + ","
-      + Math.round(a[1] + (b[1] - a[1]) * f) + ","
-      + Math.round(a[2] + (b[2] - a[2]) * f) + ")";
-  }
-
-  function formatThresholdValue(v) {
-    if (typeof v !== "number" || !isFinite(v)) return "";
-    var av = Math.abs(v);
-    if (av !== 0 && (av < 0.001 || av >= 10000)) return v.toExponential(3);
-    return String(Math.round(v * 1000) / 1000);
-  }
-
-  function rangeInequalityPhrase(lo, hi, label) {
-    return formatThresholdValue(Math.min(lo, hi)) + " <= " + label + " <= "
-      + formatThresholdValue(Math.max(lo, hi));
-  }
-
-  function quantileSorted(sorted, q) {
-    if (!sorted.length) return NaN;
-    var pos = (sorted.length - 1) * q;
-    var lo = Math.floor(pos);
-    var hi = Math.ceil(pos);
-    if (lo === hi) return sorted[lo];
-    var f = pos - lo;
-    return sorted[lo] * (1 - f) + sorted[hi] * f;
-  }
-
-  function violinDistribution(xs, paletteName) {
-    var n = xs.length;
-    var xmin = Infinity;
-    var xmax = -Infinity;
-    for (var i = 0; i < n; i++) {
-      if (xs[i] < xmin) xmin = xs[i];
-      if (xs[i] > xmax) xmax = xs[i];
-    }
-    if (!isFinite(xmin) || !isFinite(xmax)) {
-      return { outlineX: [], outlineY: [], fillTraces: [], range: [0, 1] };
-    }
-    var sorted = xs.slice().sort(function (a, b) { return a - b; });
-    var q1 = quantileSorted(sorted, 0.25);
-    var q3 = quantileSorted(sorted, 0.75);
-    var iqr = q3 - q1;
-    var loFence = q1 - 3.0 * iqr;
-    var hiFence = q3 + 3.0 * iqr;
-    var vals = [];
-    for (var oi = 0; oi < n; oi++) {
-      var xv = xs[oi];
-      if (iqr > 0 && (xv < loFence || xv > hiFence)) continue;
-      vals.push(xv);
-    }
-    if (!vals.length) vals = xs.slice();
-    if (xmax <= xmin) {
-      var oneColor = paletteScaleCSS(paletteName, 0.5);
-      return {
-        outlineX: [xmin, xmin, xmin],
-        outlineY: [-0.38, 0.38, -0.38],
-        fillTraces: [{
-          type: "scatter",
-          mode: "lines",
-          x: [xmin - 0.5, xmin + 0.5, xmin + 0.5, xmin - 0.5, xmin - 0.5],
-          y: [-0.38, -0.38, 0.38, 0.38, -0.38],
-          fill: "toself",
-          fillcolor: oneColor,
-          line: { width: 0, color: oneColor },
-          hoverinfo: "skip",
-          showlegend: false
-        }],
-        range: [xmin - 0.6, xmax + 0.6]
-      };
-    }
-    var gridN = 96;
-    var span = xmax - xmin;
-    var mean = 0;
-    for (var mi = 0; mi < vals.length; mi++) mean += vals[mi];
-    mean /= vals.length;
-    var variance = 0;
-    for (var vi = 0; vi < vals.length; vi++) {
-      var dv = vals[vi] - mean;
-      variance += dv * dv;
-    }
-    var std = Math.sqrt(variance / Math.max(1, vals.length - 1));
-    var bandwidth = 1.06 * (std || span / 6) * Math.pow(vals.length, -0.2);
-    if (!isFinite(bandwidth) || bandwidth <= 0) bandwidth = span / 24;
-    bandwidth = Math.max(bandwidth, span / 200);
-    var gridX = [];
-    var dens = [];
-    var maxD = 0;
-    var invTwoBw2 = 1 / (2 * bandwidth * bandwidth);
-    for (var g = 0; g < gridN; g++) {
-      var gx = xmin + span * g / (gridN - 1);
-      var dsum = 0;
-      for (var k = 0; k < vals.length; k++) {
-        var dx = gx - vals[k];
-        dsum += Math.exp(-(dx * dx) * invTwoBw2);
-      }
-      var d = dsum / vals.length;
-      if (d > maxD) maxD = d;
-      gridX.push(gx);
-      dens.push(d);
-    }
-    var half = [];
-    for (var hi = 0; hi < dens.length; hi++) {
-      half.push(maxD > 0 ? 0.42 * dens[hi] / maxD : 0);
-    }
-    var outlineX = [];
-    var outlineY = [];
-    for (var ux = 0; ux < gridX.length; ux++) {
-      outlineX.push(gridX[ux]);
-      outlineY.push(half[ux]);
-    }
-    for (var lx = gridX.length - 1; lx >= 0; lx--) {
-      outlineX.push(gridX[lx]);
-      outlineY.push(-half[lx]);
-    }
-    outlineX.push(gridX[0]);
-    outlineY.push(half[0]);
-    var fillTraces = [];
-    var palName = paletteName;
-    for (var s = 0; s < gridX.length - 1; s++) {
-      var x0 = gridX[s];
-      var x1 = gridX[s + 1];
-      var y = Math.max(half[s], half[s + 1]);
-      if (y <= 0) continue;
-      var t = ((x0 + x1) * 0.5 - xmin) / span;
-      var fillColor = paletteScaleCSS(palName, t);
-      fillTraces.push({
-        type: "scatter",
-        mode: "lines",
-        x: [x0, x1, x1, x0, x0],
-        y: [-y, -y, y, y, -y],
-        fill: "toself",
-        fillcolor: fillColor,
-        line: { width: 0, color: fillColor },
-        hoverinfo: "skip",
-        showlegend: false
-      });
-    }
-    var pad = span * 0.04;
-    return {
-      outlineX: outlineX,
-      outlineY: outlineY,
-      fillTraces: fillTraces,
-      range: [xmin - pad, xmax + pad]
-    };
-  }
-
-  /** Swap axes so covariate runs vertically (y) and density horizontally (x). */
-  function violinDistributionVerticalFromHorizontal(v) {
-    var fillTracesV = [];
-    for (var s = 0; s < v.fillTraces.length; s++) {
-      var t = v.fillTraces[s];
-      fillTracesV.push({
-        type: "scatter",
-        mode: "lines",
-        x: t.y.slice(),
-        y: t.x.slice(),
-        fill: t.fill,
-        fillcolor: t.fillcolor,
-        line: t.line,
-        hoverinfo: "skip",
-        showlegend: false
-      });
-    }
-    return {
-      outlineX: v.outlineY.slice(),
-      outlineY: v.outlineX.slice(),
-      fillTraces: fillTracesV,
-      range: v.range
-    };
-  }
-
-  /** Parse #rgb / #rrggbb → {r,g,b} or null. */
-  function parseMarkerHexRgb(hex) {
-    if (typeof hex !== "string") return null;
-    var h = hex.trim();
-    if (h.charAt(0) !== "#") return null;
-    h = h.slice(1);
-    var r;
-    var g;
-    var b;
-    if (h.length === 3) {
-      r = parseInt(h.charAt(0) + h.charAt(0), 16);
-      g = parseInt(h.charAt(1) + h.charAt(1), 16);
-      b = parseInt(h.charAt(2) + h.charAt(2), 16);
-    } else if (h.length === 6) {
-      r = parseInt(h.slice(0, 2), 16);
-      g = parseInt(h.slice(2, 4), 16);
-      b = parseInt(h.slice(4, 6), 16);
+    if (vertical) {
+      o.xref = "paper";
+      o.yref = "y";
+      o.x = 1;
+      o.xanchor = "right";
+      o.y = spec.yv;
+      o.yanchor = "middle";
     } else {
-      return null;
+      o.xref = "x";
+      o.yref = "paper";
+      o.x = spec.xh;
+      o.y = 0;
+      o.yanchor = "top";
     }
-    if (!isFinite(r) || !isFinite(g) || !isFinite(b)) return null;
-    return { r: r, g: g, b: b };
-  }
-
-  function rgbChannelByte(n) {
-    var x = Math.round(Number(n));
-    if (!isFinite(x)) return 0;
-    return Math.max(0, Math.min(255, x));
-  }
-
-  function rgbToHex6(r, g, b) {
-    function hb(v) {
-      var s = rgbChannelByte(v).toString(16);
-      return s.length === 1 ? "0" + s : s;
-    }
-    return ("#" + hb(r) + hb(g) + hb(b)).toLowerCase();
-  }
-
-  /**
-   * Pastel chip fill from legend hex (matches particle explorer montage chips) plus readable text.
-   */
-  function discreteCardStyles(hex) {
-    var rgb = parseMarkerHexRgb(hex);
-    if (!rgb) return { bg: "", borderColor: "", labelColor: "", countColor: "" };
-    var r = rgb.r;
-    var g = rgb.g;
-    var b = rgb.b;
-    var towardWhite = 0.3;
-    var rf = Math.round(r * (1 - towardWhite) + 255 * towardWhite);
-    var gf = Math.round(g * (1 - towardWhite) + 255 * towardWhite);
-    var bf = Math.round(b * (1 - towardWhite) + 255 * towardWhite);
-    rf = Math.max(0, Math.min(255, rf));
-    gf = Math.max(0, Math.min(255, gf));
-    bf = Math.max(0, Math.min(255, bf));
-    var textDim = 0.46;
-    var rt = Math.max(0, Math.min(255, Math.round(r * textDim)));
-    var gt = Math.max(0, Math.min(255, Math.round(g * textDim)));
-    var bt = Math.max(0, Math.min(255, Math.round(b * textDim)));
-    return {
-      bg: "rgb(" + rf + "," + gf + "," + bf + ")",
-      borderColor: "rgba(" + r + "," + g + "," + b + ",0.38)",
-      labelColor: "rgb(" + rt + "," + gt + "," + bt + ")",
-      countColor: "rgba(" + rt + "," + gt + "," + bt + ",0.88)"
-    };
-  }
-
-  /**
-   * Discrete chip fill matches plotted markers: optional blend over dashboard cream
-   * using the same alpha as matplotlib pair-grid lower-triangle scatter.
-   */
-  function discretePlotMatchedChipStyles(hex, blend, plastic) {
-    var rgb0 = parseMarkerHexRgb(hex);
-    if (!rgb0) return { bg: "", borderColor: "", labelColor: "", countColor: "" };
-    var r = rgb0.r;
-    var g = rgb0.g;
-    var b = rgb0.b;
-    if (blend && blend.alpha != null && blend.bgHex) {
-      var bgHx = normalizeDiscreteLegendHex(blend.bgHex) || blend.bgHex;
-      var bg = parseMarkerHexRgb(bgHx.charAt(0) === "#" ? bgHx : "#" + bgHx);
-      if (bg) {
-        var a = Number(blend.alpha);
-        if (isFinite(a)) {
-          a = Math.max(0, Math.min(1, a));
-          r = Math.round(r * a + bg.r * (1 - a));
-          g = Math.round(g * a + bg.g * (1 - a));
-          b = Math.round(b * a + bg.b * (1 - a));
-        }
-      }
-    }
-    var lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
-    var ba = plastic ? 0.58 : 0.48;
-    return {
-      bg: "rgb(" + r + "," + g + "," + b + ")",
-      borderColor: "rgba(" + r + "," + g + "," + b + "," + ba + ")",
-      labelColor: lum > 0.52 ? "#131820" : "#f8fafc",
-      countColor: lum > 0.52 ? "rgba(36,59,83,0.88)" : "rgba(248,250,252,0.82)"
-    };
-  }
-
-  /** Full-table counts shown on discrete covariate chips (not plotted subsample). */
-  function formatDiscreteDatasetCount(n) {
-    var v = Number(n);
-    if (!isFinite(v)) v = 0;
-    var nlab = v.toLocaleString("en-CA");
-    return nlab + " pts";
-  }
-
-  function discreteDisplayLabel(key, rawCol, displayMap) {
-    if (key === "__na__") return "(missing)";
-    var disp = (displayMap && rawCol) ? String(displayMap[rawCol] || rawCol) : "";
-    var rc = String(rawCol || "");
-    if (rc === "landscape_vol_cluster") return "Vol cluster=" + String(key);
-    var isKmeans = /k[\s_-]*means/i.test(rc) || /k[\s_-]*means/i.test(disp) || /^labels$/i.test(rc);
-    if (isKmeans) return "kmeans=" + String(key);
-    return String(key);
-  }
-
-  function sortDiscreteKeys(keys) {
-    var rest = keys.filter(function (k) { return k !== "__na__"; });
-    var allNum = rest.length > 0 && rest.every(function (k) {
-      var n = Number(k);
-      return isFinite(n) && String(n) === String(k).trim();
-    });
-    if (allNum) {
-      rest.sort(function (a, b) { return Number(a) - Number(b); });
-    } else {
-      rest.sort(function (a, b) {
-        return String(a).localeCompare(String(b), undefined, { numeric: true });
-      });
-    }
-    if (keys.indexOf("__na__") >= 0) rest.push("__na__");
-    return rest;
+    return o;
   }
 
   function CryoColorCovariateLegend(opts) {
@@ -690,10 +82,16 @@
     this.discreteSwitches = opts.discreteSwitches;
     this.invertHeadingSlotEl = opts.invertHeadingSlotEl || null;
     this.invertHeadingRowEl = opts.invertHeadingRowEl || null;
-    /** When true, category cells stay in a wrapping grid and invert sits in a dedicated right column (legacy). Ignored when invertHeadingSlotEl is set. */
+    /**
+     * When true, category cells wrap in a grid and invert sits in a dedicated right column
+     * (legacy). Ignored when invertHeadingSlotEl is set.
+     */
     this.discreteInvertAsideColumn =
       opts.discreteInvertAsideColumn === true && !this.invertHeadingSlotEl;
-    /** When true, invert sits on its own final row spanning the toggle grid (legacy). Ignored when invertHeadingSlotEl is set. */
+    /**
+     * When true, invert sits on its own final row spanning the toggle grid (legacy). Ignored when
+     * invertHeadingSlotEl is set or discreteInvertAsideColumn is true.
+     */
     this.discreteInvertFooterRow =
       opts.discreteInvertFooterRow === true
       && !this.discreteInvertAsideColumn
@@ -925,9 +323,7 @@
     }
     if (this._mode === "discrete") {
       var keys = [];
-      var inputs = this.discreteSwitches
-        ? this.discreteSwitches.querySelectorAll("input[type=\"checkbox\"][data-cat-key]:checked")
-        : [];
+      var inputs = discreteCategoryInputsFrom(this.discreteSwitches, true);
       for (var i = 0; i < inputs.length; i++) {
         var k = inputs[i].getAttribute("data-cat-key");
         if (k != null) keys.push(k);
@@ -1493,72 +889,20 @@
   };
 
   CryoColorCovariateLegend.prototype._valueAnnotation = function (value) {
-    if (this.histPlotVertical) {
-      return {
-        xref: "paper",
-        yref: "y",
-        x: 1,
-        xanchor: "right",
-        y: value,
-        yanchor: "middle",
-        text: formatThresholdValue(value),
-        showarrow: false,
-        bgcolor: "rgba(255,255,255,0.94)",
-        bordercolor: "rgba(36,59,83,0.35)",
-        borderwidth: 1,
-        borderpad: 3,
-        font: { size: 10, color: "#243b53" }
-      };
-    }
-    return {
-      xref: "x",
-      yref: "paper",
-      x: value,
-      y: 0,
-      yanchor: "top",
+    return histGuideAnnotation(this.histPlotVertical, {
       text: formatThresholdValue(value),
-      showarrow: false,
-      bgcolor: "rgba(255,255,255,0.94)",
-      bordercolor: "rgba(36,59,83,0.35)",
-      borderwidth: 1,
-      borderpad: 3,
-      font: { size: 10, color: "#243b53" }
-    };
+      yv: value,
+      xh: value
+    });
   };
 
   CryoColorCovariateLegend.prototype._rangeAnnotation = function (lo, hi) {
-    var text = rangeInequalityPhrase(lo, hi, this._activeColorLabel());
-    if (this.histPlotVertical) {
-      return {
-        xref: "paper",
-        yref: "y",
-        x: 1,
-        xanchor: "right",
-        y: (lo + hi) * 0.5,
-        yanchor: "middle",
-        text: text,
-        showarrow: false,
-        bgcolor: "rgba(255,255,255,0.94)",
-        bordercolor: "rgba(36,59,83,0.35)",
-        borderwidth: 1,
-        borderpad: 3,
-        font: { size: 10, color: "#243b53" }
-      };
-    }
-    return {
-      xref: "x",
-      yref: "paper",
-      x: (lo + hi) * 0.5,
-      y: 0,
-      yanchor: "top",
-      text: text,
-      showarrow: false,
-      bgcolor: "rgba(255,255,255,0.94)",
-      bordercolor: "rgba(36,59,83,0.35)",
-      borderwidth: 1,
-      borderpad: 3,
-      font: { size: 10, color: "#243b53" }
-    };
+    var mid = (lo + hi) * 0.5;
+    return histGuideAnnotation(this.histPlotVertical, {
+      text: rangeInequalityPhrase(lo, hi, this._activeColorLabel()),
+      yv: mid,
+      xh: mid
+    });
   };
 
   CryoColorCovariateLegend.prototype._relayoutHistGuides = function () {
@@ -2003,9 +1347,7 @@
     if (!this.discreteSwitches) return;
     var prevChecked = new Set();
     var prevKeySet = new Set();
-    var prevInputs = this.discreteSwitches.querySelectorAll(
-      "input[type=\"checkbox\"][data-cat-key]"
-    );
+    var prevInputs = discreteCategoryInputsFrom(this.discreteSwitches, false);
     for (var pi = 0; pi < prevInputs.length; pi++) {
       var pk = String(prevInputs[pi].getAttribute("data-cat-key"));
       prevKeySet.add(pk);
@@ -2299,152 +1641,7 @@
   };
 
   CryoColorCovariateLegend.prototype._fitInvertCellTypography = function (invertCell) {
-    var fitBox = invertCell.querySelector(".cryo-cc-discrete-invert-fitbox");
-    var label = invertCell.querySelector(".cryo-cc-discrete-switch-label");
-    if (!fitBox || !label) return;
-    if (
-      invertCell.classList.contains("cryo-cc-discrete-cell--invert-heading")
-      && invertCell.hidden
-    ) {
-      return;
-    }
-    /* Heading chip: sizing comes from CSS (auto width × title line-height); keep one readable line */
-    if (invertCell.classList.contains("cryo-cc-discrete-cell--invert-heading")) {
-      label.style.fontSize = "";
-      label.style.whiteSpace = "nowrap";
-      label.style.overflow = "";
-      label.style.textOverflow = "";
-      return;
-    }
-    /* Content box inside padding — clientWidth/Height include padding, but text lays out in the inner box */
-    var innerW = fitBox.clientWidth;
-    var innerH = fitBox.clientHeight;
-    if (typeof window !== "undefined" && window.getComputedStyle) {
-      var bxs = window.getComputedStyle(fitBox);
-      var pl = parseFloat(bxs.paddingLeft) || 0;
-      var pr = parseFloat(bxs.paddingRight) || 0;
-      var pt = parseFloat(bxs.paddingTop) || 0;
-      var pb = parseFloat(bxs.paddingBottom) || 0;
-      innerW -= pl + pr;
-      innerH -= pt + pb;
-    }
-    if (!(innerW > 2 && innerH > 2)) {
-      return;
-    }
-    label.style.fontSize = "";
-    label.style.whiteSpace = "";
-    var raw = (label.textContent || "").replace(/\r/g, "").trim();
-    if (!raw) return;
-
-    var cs = typeof window !== "undefined" && window.getComputedStyle
-      ? window.getComputedStyle(label)
-      : null;
-    var probe = document.createElement("span");
-    probe.setAttribute("aria-hidden", "true");
-    probe.style.cssText =
-      "visibility:hidden;position:absolute;left:-9999px;top:0;white-space:nowrap;padding:0;margin:0;";
-    if (cs) {
-      probe.style.fontFamily = cs.fontFamily;
-      probe.style.fontWeight = cs.fontWeight;
-      probe.style.fontStyle = cs.fontStyle;
-      probe.style.letterSpacing = cs.letterSpacing;
-    }
-    document.body.appendChild(probe);
-
-    var padPx = 2;
-    var vertSlack = 6;
-
-    /* Pair plot / 3-D footer invert: one line, scale font to full phrase width × row height */
-    if (invertCell.classList.contains("cryo-cc-discrete-cell--invert-footer")) {
-      var slackF = 3;
-      label.style.whiteSpace = "nowrap";
-      var phrase = raw.replace(/\s+/g, " ").trim();
-      var loF = 5;
-      var hiF = 144;
-      var bestF = loF;
-      try {
-        while (loF <= hiF) {
-          var midF = (loF + hiF) >> 1;
-          label.style.fontSize = midF + "px";
-          probe.style.fontSize = midF + "px";
-          probe.textContent = phrase;
-          var wOkF = probe.offsetWidth <= innerW + padPx;
-          var hOkF = label.scrollHeight <= innerH - slackF;
-          if (wOkF && hOkF) {
-            bestF = midF;
-            loF = midF + 1;
-          } else {
-            hiF = midF - 1;
-          }
-        }
-        label.style.fontSize = bestF + "px";
-        while (bestF > 5 && label.scrollHeight > innerH - slackF) {
-          bestF -= 1;
-          label.style.fontSize = bestF + "px";
-        }
-        probe.style.fontSize = bestF + "px";
-        probe.textContent = phrase;
-        while (bestF > 5 && probe.offsetWidth > innerW + padPx) {
-          bestF -= 1;
-          label.style.fontSize = bestF + "px";
-          probe.style.fontSize = bestF + "px";
-        }
-      } finally {
-        if (probe.parentNode) probe.parentNode.removeChild(probe);
-      }
-      label.style.whiteSpace = "";
-      return;
-    }
-
-    var lines = raw.split("\n").map(function (ln) {
-      return ln.replace(/\s+/g, " ").trim();
-    }).filter(Boolean);
-    var words = [];
-    for (var li = 0; li < lines.length; li++) {
-      var parts = lines[li].split(/\s+/).filter(Boolean);
-      for (var pi = 0; pi < parts.length; pi++) {
-        words.push(parts[pi]);
-      }
-    }
-    if (!words.length) return;
-
-    /* Multi-line: largest font so (a) every whole word fits inner width and (b) wrapped block fits box */
-    var minPx = 5;
-    var lo = minPx;
-    var hi = 144;
-    var best = lo;
-    try {
-      while (lo <= hi) {
-        var mid = (lo + hi) >> 1;
-        label.style.fontSize = mid + "px";
-        probe.style.fontSize = mid + "px";
-        var wordsFit = true;
-        for (var wi = 0; wi < words.length; wi++) {
-          probe.textContent = words[wi];
-          if (probe.offsetWidth > innerW + padPx) {
-            wordsFit = false;
-            break;
-          }
-        }
-        var fits =
-          wordsFit &&
-          label.scrollWidth <= innerW + padPx &&
-          label.scrollHeight <= innerH - vertSlack;
-        if (fits) {
-          best = mid;
-          lo = mid + 1;
-        } else {
-          hi = mid - 1;
-        }
-      }
-      label.style.fontSize = best + "px";
-      while (best > minPx && label.scrollHeight > innerH - vertSlack) {
-        best -= 1;
-        label.style.fontSize = best + "px";
-      }
-    } finally {
-      if (probe.parentNode) probe.parentNode.removeChild(probe);
-    }
+    fitInvertCellTypography(invertCell);
   };
 
   CryoColorCovariateLegend.prototype._discreteChipBlendForPaint = function () {
@@ -2490,7 +1687,7 @@
 
   CryoColorCovariateLegend.prototype._syncInvertBtn = function () {
     if (!this.discreteSwitches) return;
-    var inputs = this.discreteSwitches.querySelectorAll("input[type=\"checkbox\"][data-cat-key]");
+    var inputs = discreteCategoryInputsFrom(this.discreteSwitches, false);
     var any = false;
     for (var i = 0; i < inputs.length; i++) {
       if (inputs[i].checked) { any = true; break; }
@@ -2578,7 +1775,7 @@
     var keySet = new Set((keys || []).map(function (k) { return String(k); }));
     this._suppressDiscrete = true;
     try {
-      var inputs = this.discreteSwitches.querySelectorAll("input[type=\"checkbox\"][data-cat-key]");
+      var inputs = discreteCategoryInputsFrom(this.discreteSwitches, false);
       for (var i = 0; i < inputs.length; i++) {
         var k = inputs[i].getAttribute("data-cat-key");
         var checked = keySet.has(String(k));
@@ -2595,7 +1792,7 @@
     if (!this.discreteSwitches) return;
     this._suppressDiscrete = true;
     try {
-      var inputs = this.discreteSwitches.querySelectorAll("input[type=\"checkbox\"][data-cat-key]");
+      var inputs = discreteCategoryInputsFrom(this.discreteSwitches, false);
       for (var i = 0; i < inputs.length; i++) {
         inputs[i].checked = !inputs[i].checked;
         inputs[i].setAttribute("aria-checked", inputs[i].checked ? "true" : "false");
@@ -2611,7 +1808,7 @@
     if (!this.discreteSwitches) return;
     this._suppressDiscrete = true;
     try {
-      var inputs = this.discreteSwitches.querySelectorAll("input[type=\"checkbox\"][data-cat-key]");
+      var inputs = discreteCategoryInputsFrom(this.discreteSwitches, false);
       for (var i = 0; i < inputs.length; i++) {
         var k = inputs[i].getAttribute("data-cat-key");
         var checked = String(k) === String(soloKey);

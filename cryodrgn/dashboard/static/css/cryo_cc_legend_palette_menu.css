@@ -1,6 +1,6 @@
 /**
- * Shared vertical "Choose palette" menu for continuous colour / histogram legends
- * (particle explorer, pair grid, latent 3D).
+ * Shared colour-legend UI for dashboards: vertical "Choose palette" menu plus discrete
+ * covariate chip / popover styling used by ``color_covariate_legend.js`` / primitives.
  *
  * Markup:
  * - Wrapper: .cryo-cc-legend-palette-shell.cryo-palette-select
@@ -153,4 +153,474 @@
   height: 0.62rem;
   border-radius: 999px;
   border: 1px solid rgba(36, 59, 83, 0.16);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Discrete covariate legend (was injected from color_covariate_legend.js).   */
+/* -------------------------------------------------------------------------- */
+
+.cryo-cc-discrete-cell {
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 0;
+  border-radius: 2px;
+  border: 1px solid transparent;
+}
+
+.cryo-cc-discrete-switch {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  min-width: 0;
+  cursor: default;
+  user-select: none;
+  border: none;
+  background: transparent;
+  border-radius: 0;
+}
+
+.cryo-cc-discrete-switch > input[type="checkbox"] {
+  flex-shrink: 0;
+  margin: 0 0.35rem 0 0;
+  accent-color: #c4703a;
+  cursor: pointer;
+  width: 0.62rem;
+  height: 0.62rem;
+}
+
+.cryo-cc-discrete-switch > label[for] {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.cryo-cc-discrete-switch-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  flex: 1 1 auto;
+  min-width: 0;
+  line-height: 1;
+}
+
+.cryo-cc-discrete-cell-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0;
+  line-height: 0;
+}
+
+.cryo-cc-discrete-cell-controls--solo-only {
+  justify-content: center;
+}
+
+.cryo-cc-discrete-wheel-slot {
+  position: relative;
+  flex-shrink: 0;
+  width: 1rem;
+  height: 1rem;
+}
+
+.cryo-cc-discrete-native-color {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 0;
+  padding: 0;
+  border: none;
+  margin: 0;
+  cursor: pointer;
+}
+
+.cryo-cc-discrete-colorwheel-btn {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  color: #243b53;
+  line-height: 0;
+  z-index: 2;
+}
+
+.cryo-cc-discrete-colorwheel-btn:focus-visible {
+  outline: 2px solid var(--accent, #c4703a);
+  outline-offset: 1px;
+}
+
+.cryo-cc-discrete-colorwheel-btn:hover {
+  transform: scale(1.15);
+}
+
+.cryo-cc-discrete-colorwheel-btn svg {
+  display: block;
+  width: 0.83rem;
+  height: 0.83rem;
+}
+
+.cryo-cc-discrete-solo-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: transparent;
+  cursor: pointer;
+  color: #1a2332;
+  font-size: 0.58rem;
+  font-weight: 900;
+  font-family: Georgia, serif;
+  font-style: italic;
+  line-height: 1;
+  text-shadow:
+    -1px -1px 0 #fff,
+    1px -1px 0 #fff,
+    -1px 1px 0 #fff,
+    1px 1px 0 #fff,
+    -1px 0 0 #fff,
+    1px 0 0 #fff,
+    0 -1px 0 #fff,
+    0 1px 0 #fff,
+    0 0 3px rgba(255, 255, 255, 0.95);
+}
+
+.cryo-cc-discrete-solo-btn:focus-visible {
+  outline: 2px solid var(--accent, #c4703a);
+  outline-offset: 1px;
+}
+
+.cryo-cc-discrete-solo-btn:hover {
+  color: #000;
+  transform: scale(1.2);
+}
+
+.cryo-cc-discrete-cell--invert {
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+  padding: 0;
+}
+
+.cryo-cc-discrete-cell--invert:hover {
+  opacity: 0.85;
+}
+
+.cryo-cc-discrete-cell--invert .cryo-cc-discrete-switch {
+  cursor: inherit;
+}
+
+.cryo-cc-discrete-cell--plastic:not(.cryo-cc-discrete-cell--invert) {
+  position: relative;
+  border-radius: 7px;
+  overflow: visible;
+  box-shadow:
+    inset 0 2px 3px rgba(255, 255, 255, 0.68),
+    inset 0 -3px 6px rgba(0, 0, 0, 0.16),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.28),
+    0 2px 5px rgba(26, 35, 50, 0.2);
+}
+
+.cryo-cc-discrete-color-popover {
+  position: fixed;
+  z-index: 2147483646;
+  background: var(--paper, #fafaf8);
+  color: var(--nav-bg, #243b53);
+  border: 1px solid rgba(36, 59, 83, 0.26);
+  border-radius: 10px;
+  padding: 0.65rem 0.72rem;
+  box-shadow: 0 14px 44px rgba(36, 59, 83, 0.22);
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  min-width: 14.25rem;
+  max-width: calc(100vw - 20px);
+}
+
+.cryo-cc-discrete-color-popover[hidden] {
+  display: none !important;
+}
+
+.cryo-cc-discrete-color-popover-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #1a2332;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.cryo-cc-discrete-color-popover-preview {
+  width: 100%;
+  height: 2.85rem;
+  border-radius: 8px;
+  border: 1px solid rgba(36, 59, 83, 0.22);
+  box-sizing: border-box;
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.35);
+}
+
+.cryo-cc-discrete-color-popover-sliders {
+  display: flex;
+  flex-direction: column;
+  gap: 0.38rem;
+  width: 100%;
+}
+
+.cryo-cc-discrete-color-popover-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 0.42rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.cryo-cc-discrete-color-popover-slider-row label {
+  flex: 0 0 1.05rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: #334e68;
+  text-align: center;
+  line-height: 1;
+}
+
+.cryo-cc-discrete-color-popover-slider-row input[type="range"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 0.42rem;
+  accent-color: #c4703a;
+}
+
+.cryo-cc-discrete-color-popover-hex-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.cryo-cc-discrete-color-popover-hex-row label {
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #334e68;
+}
+
+.cryo-cc-discrete-color-popover-hex {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 0.76rem;
+  padding: 0.28rem 0.38rem;
+  border: 1px solid rgba(36, 59, 83, 0.22);
+  border-radius: 6px;
+  background: #fff;
+  color: #1a2332;
+  box-sizing: border-box;
+}
+
+.cryo-cc-discrete-color-popover-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.42rem;
+  flex-wrap: wrap;
+  padding-top: 0.15rem;
+  border-top: 1px solid rgba(36, 59, 83, 0.1);
+  margin-top: 0.05rem;
+}
+
+.cryo-cc-discrete-color-popover-apply,
+.cryo-cc-discrete-color-popover-cancel {
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.32rem 0.72rem;
+  border-radius: 6px;
+  cursor: pointer;
+  line-height: 1.2;
+  touch-action: manipulation;
+}
+
+.cryo-cc-discrete-color-popover-apply {
+  border: 1px solid rgba(196, 112, 58, 0.55);
+  background: #c4703a;
+  color: #fff;
+}
+
+.cryo-cc-discrete-color-popover-apply:hover {
+  filter: brightness(1.05);
+}
+
+.cryo-cc-discrete-color-popover-cancel {
+  border: 1px solid rgba(36, 59, 83, 0.28);
+  background: rgba(255, 255, 255, 0.95);
+  color: #243b53;
+}
+
+.cryo-cc-discrete-color-popover-cancel:hover {
+  background: #fff;
+  border-color: rgba(36, 59, 83, 0.4);
+}
+
+.cryo-cc-discrete-switch-checkbox-spacer {
+  flex-shrink: 0;
+  width: 0.62rem;
+  height: 0.62rem;
+  margin: 0 0.35rem 0 0;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+.cryo-cc-discrete-switch-label {
+  font-weight: 600;
+  font-size: 0.7rem;
+  line-height: 1.1;
+}
+
+.cryo-cc-discrete-cell--invert .cryo-cc-discrete-invert-fitbox .cryo-cc-discrete-switch-label {
+  font-weight: 700;
+}
+
+.cryo-cc-discrete-switch-count {
+  font-size: 0.6rem;
+  line-height: 1.1;
+}
+
+.cryo-cc-discrete-pick-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1.32rem;
+  height: 1.32rem;
+  margin: 0;
+  padding: 0;
+  border: 1px solid rgba(36, 59, 83, 0.28);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  cursor: pointer;
+  color: #243b53;
+  line-height: 0;
+  touch-action: manipulation;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.cryo-cc-discrete-pick-btn:focus-visible {
+  outline: 2px solid var(--accent, #c4703a);
+  outline-offset: 2px;
+}
+
+.cryo-cc-discrete-pick-btn:hover {
+  border-color: rgba(36, 59, 83, 0.45);
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(36, 59, 83, 0.12);
+}
+
+.cryo-cc-discrete-pick-btn svg {
+  display: block;
+  width: 0.92rem;
+  height: 0.92rem;
+}
+
+.cryo-cc-rgb-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(26, 35, 50, 0.38);
+  z-index: 2147483000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.cryo-cc-rgb-dialog {
+  background: var(--paper, #fff);
+  color: var(--nav-bg, #243b53);
+  border-radius: 8px;
+  box-shadow: 0 12px 40px rgba(36, 59, 83, 0.22);
+  padding: 1rem 1.1rem;
+  width: min(22rem, calc(100vw - 2rem));
+  border: 1px solid rgba(36, 59, 83, 0.14);
+}
+
+.cryo-cc-rgb-dialog h3 {
+  margin: 0 0 0.62rem;
+  font-size: 1.02rem;
+  line-height: 1.25;
+  color: var(--nav-bg, #243b53);
+}
+
+.cryo-cc-rgb-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.55rem;
+  flex-wrap: wrap;
+}
+
+.cryo-cc-rgb-row label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  min-width: 4.25rem;
+  color: var(--nav-bg, #243b53);
+}
+
+.cryo-cc-rgb-row input[type="number"] {
+  width: 4.75rem;
+  font-size: 0.88rem;
+  padding: 0.22rem 0.35rem;
+  border: 1px solid rgba(36, 59, 83, 0.22);
+  border-radius: 4px;
+}
+
+.cryo-cc-rgb-colorwheel {
+  width: 3.05rem;
+  height: 2.05rem;
+  padding: 2px;
+  border: 1px solid rgba(36, 59, 83, 0.26);
+  border-radius: 6px;
+  cursor: pointer;
+  background: #fff;
+  touch-action: manipulation;
+}
+
+.cryo-cc-rgb-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.48rem;
+  flex-wrap: wrap;
+  margin-top: 0.82rem;
+  padding-top: 0.58rem;
+  border-top: 1px solid rgba(36, 59, 83, 0.08);
 }

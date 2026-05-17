@@ -1538,7 +1538,12 @@
               });
             })
             .then(function(fig) {
-              return Plotly.react(gd, fig.data, fig.layout, {responsive: true});
+              return Plotly.react(gd, fig.data, fig.layout, {
+                responsive: true,
+                {% if show_landscape_vol_animations %}
+                doubleClick: false,
+                {% endif %}
+              });
             })
             .then(function() {
               latent3dRenderingEverCompleted = true;

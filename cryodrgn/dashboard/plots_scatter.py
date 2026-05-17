@@ -287,8 +287,9 @@ def scatter3d_z_json(
     ``vol_pc_explained_variance_ratio`` improves hover and colour-legend titles for
     ``landscape_vol_PC*`` covariates when present.
 
-    ``volume_landscape_3d_style`` tightens marker size, emboldens axis titles, and bumps
-    scene tick label size for the full-volume-landscape 3D view.
+    ``volume_landscape_3d_style`` tightens marker size (vs the usual n-points curve, then two
+    further ~13% steps for this 3D UI), emboldens axis titles, and bumps scene tick label size for the
+    full-volume-landscape 3D view.
 
     When ``no_subsample`` is true, every row in the (possibly colour-filtered) table is plotted
     instead of capping at ``max_points`` — used for discrete-level GIF frames so rare categories
@@ -323,8 +324,8 @@ def scatter3d_z_json(
     cap = max(len(sub), 1) if no_subsample else max_points
     msize, mopacity = _scatter3d_marker_size_opacity(len(sub), point_cap=cap)
     if volume_landscape_3d_style:
-        # 31% smaller glyphs vs the usual n-points curve (volume landscapes only).
-        msize *= 1.0 - 0.31
+        # ~31% smaller vs the usual n-points curve, then two ~13% reductions for this 3D UI.
+        msize *= (1.0 - 0.31) * (1.0 - 0.13) * (1.0 - 0.13)
 
     discrete_trace = (
         color_col

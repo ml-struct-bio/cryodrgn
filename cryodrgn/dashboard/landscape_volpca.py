@@ -62,6 +62,9 @@ LANDSCAPE_ANIM_MAX_CYCLE = 50
 LANDSCAPE_SKETCH_GIF_FRAMES_DEFAULT = 20
 _LANDSCAPE_VIEW_ROTATION_AXES: tuple[str, ...] = ("x", "y", "z")
 
+# Vol-PCA scatter marker size (legacy was 9); ~13% smaller for parity with recent 3D landscape tweaks.
+_VOLSKETCH_SCATTER_MARKER = float(9 * (1.0 - 0.13))
+
 
 def _sample_landscape_vols(vols: list[int], k: int, rng: random.Random) -> list[int]:
     """Up to ``k`` volumes without replacement; sorted ascending."""
@@ -555,7 +558,7 @@ def landscape_volpca_scatter_figure(
     if color_mode == "state" and states is not None:
         ser = pd.Series(states)
         colors, _ = _labels_colors_and_legend_items(ser)
-        marker = dict(size=9, opacity=0.75, color=colors)
+        marker = dict(size=_VOLSKETCH_SCATTER_MARKER, opacity=0.75, color=colors)
         customdata = np.column_stack([vol_ids, states, train_idx_col])
         hover = "volume: %{customdata[0]}<br>%{customdata[1]}<extra></extra>"
     elif (
@@ -573,10 +576,10 @@ def landscape_volpca_scatter_figure(
         ser = pd.Series(cov_vals)
         if color_mode == "labels":
             colors, _ = _labels_colors_and_legend_items(ser)
-            marker = dict(size=9, opacity=0.75, color=colors)
+            marker = dict(size=_VOLSKETCH_SCATTER_MARKER, opacity=0.75, color=colors)
         else:
             marker = dict(
-                size=9,
+                size=_VOLSKETCH_SCATTER_MARKER,
                 opacity=0.75,
                 color=ser,
                 colorscale=plotly_cs,
@@ -610,7 +613,7 @@ def landscape_volpca_scatter_figure(
         )
         hover = "volume: %{customdata[0]}<br>%{customdata[1]}<extra></extra>"
     else:
-        marker = dict(size=9, opacity=0.75, color="#4a5568")
+        marker = dict(size=_VOLSKETCH_SCATTER_MARKER, opacity=0.75, color="#4a5568")
         customdata = np.column_stack(
             [np.asarray(vol_ids, dtype=np.int64), train_idx_col],
         )
@@ -883,10 +886,15 @@ def generate_landscape_volume_animations(
             landscape_dir, kmeans_dir, k_sketch
         )
 
-    def _vol_fill(vol: int) -> str | None:
-        if vol_state_hex is None:
-            return None
-        return vol_state_hex.get(int(vol))
+    def _vol_chimerax_color(vol: int) -> str:
+        """Solid colour for ChimeraX ``volume color`` — align with scatter / preview badges."""
+        if vol_state_hex is not None:
+            h = vol_state_hex.get(int(vol))
+            if h:
+                return str(h)
+        if pcm != "none":
+            return str(hex_by_vol_anim.get(int(vol), "#4a5568"))
+        return "#4a5568"
 
     gif_frames = max(4, min(int(gif_frames), 120))
     chimerax_cpus = max(1, min(int(chimerax_cpus), 32))
@@ -910,7 +918,7 @@ def generate_landscape_volume_animations(
                 out_gif,
                 gif_frames=gif_frames,
                 ncpus=chimerax_cpus,
-                volume_color=_vol_fill(v),
+                volume_color=_vol_chimerax_color(v),
                 view_turns=view_turns,
                 report_view_matrix=view_matrix_text is None,
             )
@@ -963,7 +971,7 @@ def generate_landscape_volume_animations(
                         mp,
                         tmp,
                         dpi=100,
-                        volume_color=_vol_fill(v),
+                        volume_color=_vol_chimerax_color(v),
                         view_turns=view_turns,
                         report_view_matrix=view_matrix_text is None,
                     )

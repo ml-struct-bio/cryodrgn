@@ -275,6 +275,115 @@
     ),
   };
 
+  /** Preserve orbit, zoom, and axis box across ``Plotly.restyle`` when updating selection styling. */
+  function snapshotScatter3dSceneView(gd) {
+    try {
+      var scene = gd._fullLayout && gd._fullLayout.scene;
+      if (!scene) return null;
+      var snap = {};
+      if (scene.camera && typeof scene.camera === "object") {
+        snap.camera = JSON.parse(JSON.stringify(scene.camera));
+      }
+      function copyRange(axis) {
+        if (!axis || !axis.range || axis.range.length < 2) return null;
+        return [axis.range[0], axis.range[1]];
+      }
+      snap.xrange = copyRange(scene.xaxis);
+      snap.yrange = copyRange(scene.yaxis);
+      snap.zrange = copyRange(scene.zaxis);
+      return snap;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function restoreScatter3dSceneView(gd, snap) {
+    if (!snap || typeof Plotly === "undefined" || !Plotly.relayout) {
+      return Promise.resolve();
+    }
+    var patch = {};
+    if (snap.camera) patch["scene.camera"] = snap.camera;
+    if (snap.xrange) {
+      patch["scene.xaxis.range"] = snap.xrange;
+      patch["scene.xaxis.autorange"] = false;
+    }
+    if (snap.yrange) {
+      patch["scene.yaxis.range"] = snap.yrange;
+      patch["scene.yaxis.autorange"] = false;
+    }
+    if (snap.zrange) {
+      patch["scene.zaxis.range"] = snap.zrange;
+      patch["scene.zaxis.autorange"] = false;
+    }
+    if (!Object.keys(patch).length) return Promise.resolve();
+    return Plotly.relayout(gd, patch).catch(function() {});
+  }
+
+  function scheduleSceneRestore(gd, snap) {
+    requestAnimationFrame(function() {
+      restoreScatter3dSceneView(gd, snap);
+    });
+  }
+
+  function _hexToRgb(hex) {
+    var m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(hex || "").trim());
+    if (!m) return null;
+    var s = m[1];
+    if (s.length === 3) {
+      return {
+        r: parseInt(s[0] + s[0], 16),
+        g: parseInt(s[1] + s[1], 16),
+        b: parseInt(s[2] + s[2], 16),
+      };
+    }
+    return {
+      r: parseInt(s.slice(0, 2), 16),
+      g: parseInt(s.slice(2, 4), 16),
+      b: parseInt(s.slice(4, 6), 16),
+    };
+  }
+
+  function _parseRgbLike(s) {
+    var m = /^rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/i.exec(String(s || "").trim());
+    if (!m) return null;
+    return { r: +m[1], g: +m[2], b: +m[3] };
+  }
+
+  /** WCAG relative luminance in [0, 1]; unknown colours → 0.5 */
+  function _fillRelativeLuminance(css) {
+    var rgb = _hexToRgb(css) || _parseRgbLike(css);
+    if (!rgb) return 0.5;
+    function lin(u) {
+      u /= 255;
+      return u <= 0.03928 ? u / 12.92 : Math.pow((u + 0.055) / 1.055, 2.4);
+    }
+    var R = lin(rgb.r);
+    var G = lin(rgb.g);
+    var B = lin(rgb.b);
+    return 0.2126 * R + 0.7152 * G + 0.0722 * B;
+  }
+
+  /** Resolve plotted marker fill for trace index ``i`` (Plotly may expand colours on ``_fullData``). */
+  function markerFillCssAtIndex(trace, gd, i) {
+    var full = gd._fullData && gd._fullData[0];
+    var expanded = full && full.marker && full.marker.color;
+    if (Array.isArray(expanded) && expanded[i] != null && typeof expanded[i] === "string") {
+      return expanded[i];
+    }
+    var mk = trace.marker || {};
+    var mc = mk.color;
+    if (typeof mc === "string") return mc;
+    if (Array.isArray(mc) && mc[i] != null) {
+      if (typeof mc[i] === "string") return mc[i];
+    }
+    return "#4a5568";
+  }
+
+  /** Dark fills → light outline; light fills → dark outline (selection ring). */
+  function selectionOutlineColorForFill(fillCss) {
+    return _fillRelativeLuminance(fillCss) < 0.34 ? "#f1f5f9" : "#0f172a";
+  }
+
   function boot(cfg) {
     var gd = cfg.gd;
     var getColorMode = cfg.getColorMode;
@@ -306,6 +415,9 @@
 
     var META = null;
     var selectedVols = new Set();
+    /** Stable montage letter per k-means volume index while it stays selected (not re-sorted on add). */
+    var volMontageLabel = {};
+    var nextMontageLabelIdx = 0;
     var lastAnimToken = null;
     var lastBatchMode = null;
     var clickTimer = null;
@@ -502,7 +614,31 @@
       return a.slice(0, k);
     }
 
+    function syncStableSelectionLabels() {
+      if (!selectedVols.size) {
+        volMontageLabel = {};
+        nextMontageLabelIdx = 0;
+        return;
+      }
+      var k;
+      var toDrop = [];
+      for (k in volMontageLabel) {
+        if (!Object.prototype.hasOwnProperty.call(volMontageLabel, k)) continue;
+        var vk = parseInt(k, 10);
+        if (!selectedVols.has(vk)) toDrop.push(k);
+      }
+      for (var di = 0; di < toDrop.length; di++) {
+        delete volMontageLabel[toDrop[di]];
+      }
+      selectedVols.forEach(function(v) {
+        if (volMontageLabel[v] === undefined) {
+          volMontageLabel[v] = montageLabelAt(nextMontageLabelIdx++);
+        }
+      });
+    }
+
     function updateSelLabel() {
+      syncStableSelectionLabels();
       var arr = Array.from(selectedVols).sort(function(a, b) { return a - b; });
       var nTotal = META && META.n_volumes != null ? Number(META.n_volumes) : NaN;
       if (selSummaryEl) {
@@ -525,17 +661,17 @@
             "Selected volume indices (" + arr.length + ")"
           );
           var listParts = [];
-          arr.forEach(function(v, i) {
-            listParts.push(volFilenameIndex(v) + " (" + montageLabelAt(i) + ")");
+          arr.forEach(function(v) {
+            listParts.push(volFilenameIndex(v) + " (" + volMontageLabel[v] + ")");
           });
           var listLabel = listParts.join(", ");
           selIndicesList.setAttribute(
             "aria-label",
             "Selected sketch volume indices: " + listLabel
           );
-          arr.forEach(function(v, i) {
+          arr.forEach(function(v) {
             var li = document.createElement("li");
-            li.textContent = volFilenameIndex(v) + " (" + montageLabelAt(i) + ")";
+            li.textContent = volFilenameIndex(v) + " (" + volMontageLabel[v] + ")";
             selIndicesList.appendChild(li);
           });
         }
@@ -544,13 +680,14 @@
 
     function refreshSelectionHighlight() {
       if (!gd || !gd.data || !gd.data[0]) return;
+      syncStableSelectionLabels();
       var trace = gd.data[0];
       var xs = trace.x;
       if (!xs || !xs.length) return;
       var n = xs.length;
       var cd = trace.customdata;
       if (!cd || cd.length !== n) return;
-      var ptScale = 1 - 0.31;
+      var ptScale = (1 - 0.31) * (1 - 0.13) * (1 - 0.13);
       var baseSize = Math.max(2, 9 * ptScale);
       var baseOp = 0.75;
       var hiSize = Math.max(3, 11 * ptScale);
@@ -559,55 +696,65 @@
       var hasSel = selectedVols.size > 0;
       var sizes = new Array(n);
       var opacities = new Array(n);
-      var selIdx = [];
-      var sortedSel = Array.from(selectedVols).sort(function(a, b) { return a - b; });
-      var labelByVol = {};
-      for (var li = 0; li < sortedSel.length; li++) {
-        labelByVol[sortedSel[li]] = montageLabelAt(li);
-      }
+      var lineWidths = new Array(n);
+      var lineColors = new Array(n);
       var texts = new Array(n);
       for (var i = 0; i < n; i++) {
         var v = volIdAtPointIndex(gd, trace, i);
         var on = !isNaN(v) && selectedVols.has(v);
-        if (on) selIdx.push(i);
-        texts[i] = on ? labelByVol[v] : "";
+        texts[i] = on ? (volMontageLabel[v] || "") : "";
         if (on) {
           sizes[i] = hiSize;
           opacities[i] = hiOp;
+          lineWidths[i] = 1;
+          try {
+            lineColors[i] = selectionOutlineColorForFill(markerFillCssAtIndex(trace, gd, i));
+          } catch (e) {
+            lineColors[i] = "#0f172a";
+          }
         } else {
           sizes[i] = baseSize;
           opacities[i] = hasSel ? dimOp : baseOp;
+          lineWidths[i] = 0;
+          lineColors[i] = "rgba(0,0,0,0)";
         }
       }
-      var sp = selIdx.length ? selIdx : null;
       var tf = {
         size: 12,
         color: "#1a1a1a",
         family: "system-ui, Segoe UI, sans-serif",
       };
+      var snap = snapshotScatter3dSceneView(gd);
       var upd = {
         "marker.size": [sizes],
         "marker.opacity": [opacities],
-        selectedpoints: [sp],
-        mode: hasSel ? "markers+text" : "markers",
+        "marker.line.width": [lineWidths],
+        "marker.line.color": [lineColors],
+        mode: "markers+text",
         text: [texts],
         textposition: "top center",
         textfont: tf,
       };
-      Plotly.restyle(gd, upd, [0]).catch(function() {
-        Plotly.restyle(
-          gd,
-          {
-            "marker.size": [sizes],
-            "marker.opacity": [opacities],
-            mode: hasSel ? "markers+text" : "markers",
-            text: [texts],
-            textposition: "top center",
-            textfont: tf,
-          },
-          [0]
-        );
-      });
+      var fallback = {
+        "marker.size": [sizes],
+        "marker.opacity": [opacities],
+        "marker.line.width": [lineWidths],
+        "marker.line.color": [lineColors],
+        mode: "markers+text",
+        text: [texts],
+        textposition: "top center",
+        textfont: tf,
+      };
+      var p = Plotly.restyle(gd, upd, [0]);
+      if (p && typeof p.then === "function") {
+        p.catch(function() {
+          return Plotly.restyle(gd, fallback, [0]);
+        }).then(function() {
+          scheduleSceneRestore(gd, snap);
+        });
+      } else {
+        scheduleSceneRestore(gd, snap);
+      }
     }
 
     function toggleVol(v) {
@@ -811,7 +958,9 @@
           clearTimeout(clickTimer);
           clickTimer = null;
           clickLastVol = null;
-          toggleVol(v);
+          requestAnimationFrame(function() {
+            toggleVol(v);
+          });
           return;
         }
         clickLastVol = v;

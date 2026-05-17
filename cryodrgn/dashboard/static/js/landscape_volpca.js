@@ -81,6 +81,35 @@
     badge.classList.remove("volsketch-gif-overlay--on-tint");
   }
 
+  /** Keep pan/zoom across ``Plotly.restyle`` when selection styling updates (2-D scattergl). */
+  function snapshotVolsketchAxesView(gd) {
+    try {
+      var fl = gd._fullLayout;
+      if (!fl) return null;
+      function copyRange(axis) {
+        if (!axis || !axis.range || axis.range.length < 2) return null;
+        return [axis.range[0], axis.range[1]];
+      }
+      return {
+        xrange: copyRange(fl.xaxis),
+        yrange: copyRange(fl.yaxis),
+      };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function restoreVolsketchAxesView(gd, snap) {
+    if (!snap || typeof Plotly === "undefined" || !Plotly.relayout) {
+      return Promise.resolve();
+    }
+    var patch = {};
+    if (snap.xrange) patch["xaxis.range"] = snap.xrange;
+    if (snap.yrange) patch["yaxis.range"] = snap.yrange;
+    if (!Object.keys(patch).length) return Promise.resolve();
+    return Plotly.relayout(gd, patch).catch(function() {});
+  }
+
   /** In-dashboard labels only; GIF bytes on disk / save API stay unannotated. */
   function mountVolsketchPreviewOverlay(wrap, badge, covBadge, covVarEl, covValEl, img, spec) {
     wrap._volsketchCancelOverlay = null;
@@ -513,6 +542,60 @@
     return row.length ? parseInt(String(row[0]), 10) : NaN;
   }
 
+  function _hexToRgbVs(hex) {
+    var m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(hex || "").trim());
+    if (!m) return null;
+    var s = m[1];
+    if (s.length === 3) {
+      return {
+        r: parseInt(s[0] + s[0], 16),
+        g: parseInt(s[1] + s[1], 16),
+        b: parseInt(s[2] + s[2], 16),
+      };
+    }
+    return {
+      r: parseInt(s.slice(0, 2), 16),
+      g: parseInt(s.slice(2, 4), 16),
+      b: parseInt(s.slice(4, 6), 16),
+    };
+  }
+
+  function _parseRgbLikeVs(s) {
+    var m = /^rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/i.exec(String(s || "").trim());
+    if (!m) return null;
+    return { r: +m[1], g: +m[2], b: +m[3] };
+  }
+
+  function _fillRelLumVs(css) {
+    var rgb = _hexToRgbVs(css) || _parseRgbLikeVs(css);
+    if (!rgb) return 0.5;
+    function lin(u) {
+      u /= 255;
+      return u <= 0.03928 ? u / 12.92 : Math.pow((u + 0.055) / 1.055, 2.4);
+    }
+    var R = lin(rgb.r);
+    var G = lin(rgb.g);
+    var B = lin(rgb.b);
+    return 0.2126 * R + 0.7152 * G + 0.0722 * B;
+  }
+
+  function markerFillCssAtIndexVs(trace, gd, i) {
+    var full = gd._fullData && gd._fullData[0];
+    var expanded = full && full.marker && full.marker.color;
+    if (Array.isArray(expanded) && expanded[i] != null && typeof expanded[i] === "string") {
+      return expanded[i];
+    }
+    var mk = trace.marker || {};
+    var mc = mk.color;
+    if (typeof mc === "string") return mc;
+    if (Array.isArray(mc) && mc[i] != null && typeof mc[i] === "string") return mc[i];
+    return "#4a5568";
+  }
+
+  function selectionOutlineForFillVs(fillCss) {
+    return _fillRelLumVs(fillCss) < 0.34 ? "#f1f5f9" : "#0f172a";
+  }
+
   function refreshSelectionHighlight() {
     if (!gd || !gd.data || !gd.data[0]) return;
     var trace = gd.data[0];
@@ -522,15 +605,17 @@
     var hasIds = trace.ids && trace.ids.length === n;
     var cd = trace.customdata;
     if (!hasIds && (!cd || cd.length !== n)) return;
-    var baseSize = 9;
+    var mk = 9 * (1 - 0.13);
+    var baseSize = Math.max(2, mk);
+    var hiSize = Math.max(3, mk * (11 / 9));
     var baseOp = 0.75;
-    var hiSize = 11;
     var hiOp = 0.86;
     var dimOp = 0.66;
     var hasSel = selectedVols.size > 0;
     var sizes = new Array(n);
     var opacities = new Array(n);
-    var selIdx = [];
+    var lineWidths = new Array(n);
+    var lineColors = new Array(n);
     var sortedSel = Array.from(selectedVols).sort(function(a, b) { return a - b; });
     var labelByVol = {};
     for (var li = 0; li < sortedSel.length; li++) {
@@ -540,45 +625,58 @@
     for (var i = 0; i < n; i++) {
       var v = volIdAtPointIndex(trace, i);
       var on = !isNaN(v) && selectedVols.has(v);
-      if (on) selIdx.push(i);
       texts[i] = on ? labelByVol[v] : "";
       if (on) {
         sizes[i] = hiSize;
         opacities[i] = hiOp;
+        lineWidths[i] = 1;
+        lineColors[i] = selectionOutlineForFillVs(markerFillCssAtIndexVs(trace, gd, i));
       } else {
         sizes[i] = baseSize;
         opacities[i] = hasSel ? dimOp : baseOp;
+        lineWidths[i] = 0;
+        lineColors[i] = "rgba(0,0,0,0)";
       }
     }
-    var sp = selIdx.length ? selIdx : null;
     var tf = {
       size: 12,
       color: "#1a1a1a",
       family: "system-ui, Segoe UI, sans-serif",
     };
+    var snap = snapshotVolsketchAxesView(gd);
     var upd = {
       "marker.size": [sizes],
       "marker.opacity": [opacities],
-      selectedpoints: [sp],
-      mode: hasSel ? "markers+text" : "markers",
+      "marker.line.width": [lineWidths],
+      "marker.line.color": [lineColors],
+      mode: "markers+text",
       text: [texts],
       textposition: "top center",
       textfont: tf,
     };
-    Plotly.restyle(gd, upd, [0]).catch(function() {
-      Plotly.restyle(
-        gd,
-        {
-          "marker.size": [sizes],
-          "marker.opacity": [opacities],
-          mode: hasSel ? "markers+text" : "markers",
-          text: [texts],
-          textposition: "top center",
-          textfont: tf,
-        },
-        [0]
-      );
-    });
+    var fallback = {
+      "marker.size": [sizes],
+      "marker.opacity": [opacities],
+      "marker.line.width": [lineWidths],
+      "marker.line.color": [lineColors],
+      mode: "markers+text",
+      text: [texts],
+      textposition: "top center",
+      textfont: tf,
+    };
+    var p = Plotly.restyle(gd, upd, [0]);
+    function finishAxisRestore() {
+      return restoreVolsketchAxesView(gd, snap);
+    }
+    if (p && typeof p.then === "function") {
+      p.catch(function() {
+        return Plotly.restyle(gd, fallback, [0]);
+      }).then(function() {
+        requestAnimationFrame(finishAxisRestore);
+      });
+    } else {
+      requestAnimationFrame(finishAxisRestore);
+    }
   }
 
   function toggleVol(v) {
@@ -905,7 +1003,7 @@
         return r.json();
       })
       .then(function(fig) {
-        var plotOpts = { responsive: true, displayModeBar: true };
+        var plotOpts = { responsive: true, displayModeBar: true, doubleClick: false };
         var afterColor = !!scatterOpts.afterColorChange;
         var hasPlot = !!(gd && gd.data && gd.data.length);
         var prevSelections = null;

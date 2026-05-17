@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Headless capture: particle explorer (lasso + image cache), 3D latent view, pair-plot covariates.
+"""Headless capture: particle explorer (multi-lasso union + image cache), 3D latent view, pair-plot covariates.
 
 Uses a **50 ms** frame interval by default (~20 fps) for a slower, easier-to-follow GIF. Everything is
-written to **one** output GIF (default ``demo_animations/dashboard_interactions_demo.gif``), capped at **30 s** wall
-time. Pair-plot segments wait for the PNG grid to finish, then hold on the finished grid for the same
+written to **one** output GIF (default ``demo_animations/recorders/dashboard_interactions_demo.gif``), capped at **30 s** wall
+time. For **additive / multi-region lasso** behaviour on the particle explorer alone, run
+``python -m cryodrgn.dashboard.static.demo_animations.recorders.scripts.record_particle_explorer_multi_region_gif``.
+Pair-plot segments wait for the PNG grid to finish, then hold on the finished grid for the same
 duration as the preceding ``Rendering…`` clip (so the two read as equal-length halves of the update).
 
 Before each major interface segment, the recorder shows a short clip on the **launch hub** (hover +
@@ -24,12 +26,8 @@ Depends on the same setup as ``record_dashboard_demo_gif.py`` (playwright, pillo
 Example::
 
     PYTHONPATH=/path/to/cryodrgn_beta conda run -n cdrgn-4.2.0_py-3.13_beta \\
-        python -m cryodrgn.dashboard.record_dashboard_interactions_gif \\
+        python -m cryodrgn.dashboard.static.demo_animations.recorders.scripts.record_dashboard_interactions_gif \\
         /scratch/.../004_train-vae_1gpu_dim.1024/
-
-Or from the repo root (same entrypoint)::
-
-    python scripts/record_dashboard_interactions_gif.py /scratch/.../outdir/
 
 By default the script logs progress and elapsed time for slow steps. Pass ``-q`` / ``--quiet`` for
 minimal output (final ``Wrote …`` lines only, plus errors on stderr).
@@ -55,10 +53,12 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-# Repo root: …/cryodrgn/dashboard/this_file.py → parents[2] == checkout containing ``cryodrgn/``.
-REPO_ROOT = Path(__file__).resolve().parents[2]
+# Repo root: …/recorders/scripts/this_file.py → parents[6] == checkout containing ``cryodrgn/``.
+REPO_ROOT = Path(__file__).resolve().parents[6]
 # Default output directory for dashboard GIF recorders (``-o`` overrides per file).
 DEMO_ANIMATIONS_DIR = REPO_ROOT / "cryodrgn/dashboard/static/demo_animations"
+# Recorder outputs (GIFs from ``record_*_gif`` scripts) default here; shipped demos may stay in ``DEMO_ANIMATIONS_DIR``.
+DEMO_ANIMATIONS_RECORDERS_DIR = DEMO_ANIMATIONS_DIR / "recorders"
 FRAME_MS_DEFAULT = 50
 MAX_GIF_WALL_MS = 30_000
 # Pair-plot: poll while overlay/skeleton is up, then block until PNG is ready.
@@ -588,11 +588,14 @@ _HUB_CARD_TITLES: dict[str, str] = {
     "explorer": "Particle explorer",
     "latent_3d": "3D visualizer",
     "pairplot": "Pair-plot generator",
+    # Hub title for optional recorders / future clips (matches ``index.html``).
+    "landscape_full_3d": "3D volume landscapes",
 }
 _HUB_DIRECT_PATHS: dict[str, str] = {
     "explorer": "/explorer",
     "latent_3d": "/latent-3d",
     "pairplot": "/pairplot",
+    "landscape_full_3d": "/landscape-full-3d",
 }
 
 
@@ -673,7 +676,7 @@ def record_sequence(page, base: str, buf: FrameBuffer, *, log) -> None:
         }"""
         )
         # Freehand lasso path (Plotly closes the region on mouseup).
-        rel = [
+        rel_a = [
             (0.32, 0.48),
             (0.44, 0.38),
             (0.58, 0.42),
@@ -682,10 +685,28 @@ def record_sequence(page, base: str, buf: FrameBuffer, *, log) -> None:
             (0.38, 0.58),
             (0.30, 0.50),
         ]
-        page.mouse.move(box["x"] + w * rel[0][0], box["y"] + h * rel[0][1])
+        page.mouse.move(box["x"] + w * rel_a[0][0], box["y"] + h * rel_a[0][1])
         page.mouse.down()
-        for i in range(1, len(rel)):
-            page.mouse.move(box["x"] + w * rel[i][0], box["y"] + h * rel[i][1])
+        for i in range(1, len(rel_a)):
+            page.mouse.move(box["x"] + w * rel_a[i][0], box["y"] + h * rel_a[i][1])
+            time.sleep(buf.frame_ms / 1000.0)
+            buf.snap(page)
+        page.mouse.up()
+        buf.sleep_snap(page, 0.45)
+        # Second disjoint lasso while still in lasso mode — union with first selection
+        # (matches in-app ``plotly_selected`` merge in ``_particle_explorer_montagejs.html``).
+        rel_b = [
+            (0.66, 0.18),
+            (0.80, 0.16),
+            (0.88, 0.28),
+            (0.82, 0.38),
+            (0.68, 0.34),
+            (0.60, 0.24),
+        ]
+        page.mouse.move(box["x"] + w * rel_b[0][0], box["y"] + h * rel_b[0][1])
+        page.mouse.down()
+        for i in range(1, len(rel_b)):
+            page.mouse.move(box["x"] + w * rel_b[i][0], box["y"] + h * rel_b[i][1])
             time.sleep(buf.frame_ms / 1000.0)
             buf.snap(page)
         page.mouse.up()
@@ -696,18 +717,26 @@ def record_sequence(page, base: str, buf: FrameBuffer, *, log) -> None:
         "Particle explorer: preload image montage after View images (server decode + grid)",
         slow_note=True,
     ):
-        page.locator("#btn-view-images").click()
-        render_ms = max(1, int(buf.frame_ms * RENDER_POLL_FRAME_DURATION_MULT))
-        for step in range(MONTAGE_PRELOAD_MAX_FRAMES):
-            if page.evaluate(_montage_cache_ready_js()):
-                break
-            if step % RENDER_POLL_SNAPSHOT_STRIDE == 0:
-                buf.snap(page, duration_ms=render_ms)
-            time.sleep(buf.frame_ms / 1000.0)
-        try:
-            page.wait_for_function(_montage_cache_ready_js(), timeout=120_000)
-        except Exception:
-            pass
+        view_btn = page.locator("#btn-view-images")
+        if view_btn.count() and view_btn.is_enabled():
+            view_btn.click()
+            render_ms = max(1, int(buf.frame_ms * RENDER_POLL_FRAME_DURATION_MULT))
+            for step in range(MONTAGE_PRELOAD_MAX_FRAMES):
+                if page.evaluate(_montage_cache_ready_js()):
+                    break
+                if step % RENDER_POLL_SNAPSHOT_STRIDE == 0:
+                    buf.snap(page, duration_ms=render_ms)
+                time.sleep(buf.frame_ms / 1000.0)
+            try:
+                page.wait_for_function(_montage_cache_ready_js(), timeout=120_000)
+            except Exception:
+                pass
+        else:
+            log(
+                "Particle explorer: #btn-view-images disabled (build image cache first); "
+                "skipping montage preload clip"
+            )
+            buf.sleep_snap(page, 0.55)
 
     with _timed_step(
         log,
@@ -1069,7 +1098,7 @@ def main() -> int:
         "-o",
         "--output",
         type=Path,
-        default=DEMO_ANIMATIONS_DIR / "dashboard_interactions_demo.gif",
+        default=DEMO_ANIMATIONS_RECORDERS_DIR / "dashboard_interactions_demo.gif",
     )
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--conda-env", type=str, default=None)

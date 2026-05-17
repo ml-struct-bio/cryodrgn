@@ -21,8 +21,8 @@ import sys
 import time
 from pathlib import Path
 
-from cryodrgn.dashboard.record_dashboard_interactions_gif import (
-    DEMO_ANIMATIONS_DIR,
+from cryodrgn.dashboard.static.demo_animations.recorders.scripts.record_dashboard_interactions_gif import (
+    DEMO_ANIMATIONS_RECORDERS_DIR,
     PLOTLY_CDN_ROUTE_GLOB,
     PAIRPLOT_SNAP_MAX_STEPS,
     PAIRPLOT_WAIT_MS,
@@ -35,7 +35,7 @@ from cryodrgn.dashboard.record_dashboard_interactions_gif import (
     _wait_http,
     _wait_pairplot_ready,
 )
-from cryodrgn.dashboard.record_particle_explorer_actions_gif import (
+from cryodrgn.dashboard.static.demo_animations.recorders.scripts.record_particle_explorer_actions_gif import (
     CaptionedExplorerBuffer,
     extend_caption_segments_min_duration,
     normalize_frames_fixed_fps,
@@ -44,7 +44,7 @@ from cryodrgn.dashboard.record_particle_explorer_actions_gif import (
 )
 
 DEFAULT_CONDA_PREFIX = Path("/projects/CRYOEM/zhonglab/mg2332/conda_envs/cdrgn_beta")
-DEFAULT_OUTPUT = DEMO_ANIMATIONS_DIR / "pair_grid_actions_demo.gif"
+DEFAULT_OUTPUT = DEMO_ANIMATIONS_RECORDERS_DIR / "pair_grid_actions_demo.gif"
 _LOG_PREFIX = "[record-pairplot-actions-gif]"
 
 

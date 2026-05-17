@@ -335,9 +335,10 @@
     <h2 class="landing-card-title">Particle explorer</h2>
     <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_viewer.png') }}"/>
     <div class="landing-card-text-scroll" tabindex="0">
-      <p>Plot particles by model outputs such as UMAP embeddings of z-latent-space axes.<br /><br />
-             Use lasso selection to write <code>--ind</code> <code>.pkl</code> files, or
-             load image caches to view images across particle selections.</p>
+      <p>Plot dataset particles by model outputs such as z-latent-space dimensions or analysis covariates such as UMAP
+        embeddings.<br /><br />
+         Draw one or more lasso regions to combine disjoint neighbourhoods, save <code>--ind</code> <code>.pkl</code> files,
+         and optionally view dataset images or volume reconstructions for each particle.</p>
     </div>
   </a>
   {% endif %}
@@ -415,7 +416,7 @@
     <div class="landing-card-text-scroll" tabindex="0">
       <p>Plot dataset particles by model outputs such as z-latent-space dimensions or analysis covariates such as UMAP
         embeddings.<br /><br />
-         Use lasso selection to write <code>--ind</code> <code>.pkl</code> files.</p>
+         Draw one or more lasso regions to combine disjoint neighbourhoods, then save <code>--ind</code> <code>.pkl</code> files.</p>
       {% if command_builder_only %}
       <p class="muted">Activate this interface by running<br /><code>cryodrgn dashboard &lt;outdir&gt;</code>.</p>
       {% else %}

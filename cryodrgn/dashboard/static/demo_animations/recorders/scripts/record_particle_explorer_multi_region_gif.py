@@ -8,14 +8,14 @@ than the baseline recorder speed so selections read clearly on the GIF.
 
 Then **image cache** + **montage** as before.
 
-Same Playwright / Pillow stack; default output ``demo_animations/particle_explorer_multi_region_demo.gif``.
+Same Playwright / Pillow stack; default output ``demo_animations/recorders/particle_explorer_multi_region_demo.gif``.
 Default encoded length is longer (**32 s**) to cover cache + grid work.
 
 Example::
 
     PYTHONPATH=/path/to/cryodrgn_beta \\
       conda run -p …/cdrgn_beta --no-capture-output \\
-        python -m cryodrgn.dashboard.record_particle_explorer_multi_region_gif \\
+        python -m cryodrgn.dashboard.static.demo_animations.recorders.scripts.record_particle_explorer_multi_region_gif \\
         /path/to/train-vae_out/ \\
         --k-means-fit 37 --lasso-regions 3 \\
         --duration 36
@@ -31,8 +31,8 @@ import sys
 import time
 from pathlib import Path
 
-from cryodrgn.dashboard.record_dashboard_interactions_gif import (
-    DEMO_ANIMATIONS_DIR,
+from cryodrgn.dashboard.static.demo_animations.recorders.scripts.record_dashboard_interactions_gif import (
+    DEMO_ANIMATIONS_RECORDERS_DIR,
     PLOTLY_CDN_ROUTE_GLOB,
     REPO_ROOT,
     _chromium_launch_options,
@@ -44,7 +44,7 @@ from cryodrgn.dashboard.record_dashboard_interactions_gif import (
     _wait_http,
     _wait_scatter_ready,
 )
-from cryodrgn.dashboard.record_particle_explorer_actions_gif import (
+from cryodrgn.dashboard.static.demo_animations.recorders.scripts.record_particle_explorer_actions_gif import (
     CaptionedExplorerBuffer,
     _densify_lasso_rel,
     _snap_montage_load,
@@ -56,7 +56,9 @@ from cryodrgn.dashboard.record_particle_explorer_actions_gif import (
 )
 
 DEFAULT_CONDA_PREFIX = Path("/projects/CRYOEM/zhonglab/mg2332/conda_envs/cdrgn_beta")
-DEFAULT_OUTPUT = DEMO_ANIMATIONS_DIR / "particle_explorer_multi_region_demo.gif"
+DEFAULT_OUTPUT = (
+    DEMO_ANIMATIONS_RECORDERS_DIR / "particle_explorer_multi_region_demo.gif"
+)
 _LOG_PREFIX = "[record-particle-explorer-multi-region-gif]"
 
 
@@ -69,7 +71,8 @@ def _make_mr_logger(quiet: bool):
 
 
 # Plotly selection handler debounce (~200 ms) plus margin for chip overlay sync.
-_POST_LASSO_SETTLE_S = 0.42
+# Kept tight so longer montage/grid holds do not balloon total raw capture.
+_POST_LASSO_SETTLE_S = 0.24
 
 # Cursor moves along each lasso: 70% slower → speed × (1 − 0.70); stretch delays by 1/0.3.
 LASSO_DRAW_SLOWDOWN = 1.0 / (1.0 - 0.70)
@@ -472,6 +475,9 @@ def _lasso_polygon(
     time.sleep(_POST_LASSO_SETTLE_S)
 
 
+# Montage / grid dwells: first grid, menu, mid re-layout, final grid were scaled up earlier; this
+# pass multiplies those holds by **1.3** again. Intro, lasso pauses, post-lasso settle, union, cache
+# holds, montage poll budget, and tail are tightened to limit raw capture growth before normalization.
 def _image_cache_and_montage_clip(
     buf: CaptionedExplorerBuffer,
     page,
@@ -492,7 +498,7 @@ def _image_cache_and_montage_clip(
                 _wait_preload_overlay_clear(page, 360_000)
             except Exception:
                 pass
-        for _ in range(max(1, int(round(0.5 * 1000 / frame_ms)))):
+        for _ in range(max(1, int(round(0.10 * 1000 / frame_ms)))):
             buf.snap(page)
             time.sleep(frame_ms / 1000.0)
 
@@ -508,7 +514,7 @@ def _image_cache_and_montage_clip(
                 _wait_preload_overlay_clear(page, 360_000)
             except Exception:
                 pass
-        for _ in range(max(1, int(round(0.4 * 1000 / frame_ms)))):
+        for _ in range(max(1, int(round(0.09 * 1000 / frame_ms)))):
             buf.snap(page)
             time.sleep(frame_ms / 1000.0)
 
@@ -524,8 +530,9 @@ def _image_cache_and_montage_clip(
                 page.wait_for_function(_montage_cache_ready_js(), timeout=180_000)
             except Exception:
                 pass
-            _snap_montage_load(buf, page, frame_ms=frame_ms)
-            for _ in range(max(1, int(round(0.85 * 1000 / frame_ms)))):
+            _snap_montage_load(buf, page, frame_ms=frame_ms, max_polls=110)
+            # Grid dwells vs baseline actions recorder: earlier ×2 ×1.6, then ×1.3 again (this pass).
+            for _ in range(max(1, int(round(3.536 * 1000 / frame_ms)))):
                 buf.snap(page)
                 time.sleep(frame_ms / 1000.0)
             _stamp_step(
@@ -538,7 +545,7 @@ def _image_cache_and_montage_clip(
                 aria = toggle.get_attribute("aria-expanded") or "false"
                 if aria.strip().lower() == "false":
                     toggle.click()
-                    for _ in range(max(1, int(round(0.35 * 1000 / frame_ms)))):
+                    for _ in range(max(1, int(round(1.456 * 1000 / frame_ms)))):
                         buf.snap(page)
                         time.sleep(frame_ms / 1000.0)
             if gs.count() and gs.is_enabled():
@@ -558,11 +565,11 @@ def _image_cache_and_montage_clip(
                     page.wait_for_function(_montage_cache_ready_js(), timeout=120_000)
                 except Exception:
                     pass
-                for _ in range(max(1, int(round(0.45 * 1000 / frame_ms)))):
+                for _ in range(max(1, int(round(1.872 * 1000 / frame_ms)))):
                     buf.snap(page)
                     time.sleep(frame_ms / 1000.0)
-                _snap_montage_load(buf, page, frame_ms=frame_ms, max_polls=80)
-                for _ in range(max(1, int(round(1.0 * 1000 / frame_ms)))):
+                _snap_montage_load(buf, page, frame_ms=frame_ms, max_polls=42)
+                for _ in range(max(1, int(round(4.16 * 1000 / frame_ms)))):
                     buf.snap(page)
                     time.sleep(frame_ms / 1000.0)
         else:
@@ -594,7 +601,7 @@ def record_multi_region_sequence(
         f"Particle explorer — k-means with K={k_fit} on the visible scatter; "
         f"lasso {pick_n} separated clusters, then image cache + montage.",
     )
-    for _ in range(max(1, int(round(0.4 * 1000 / frame_ms)))):
+    for _ in range(max(1, int(round(0.06 * 1000 / frame_ms)))):
         buf.snap(page)
         time.sleep(frame_ms / 1000.0)
 
@@ -623,8 +630,8 @@ def record_multi_region_sequence(
     for idx, rel in enumerate(paths):
         box = _scatter_plot_box(page) or box
         _stamp_step(buf, captions[idx])
-        _lasso_polygon(page, box, rel, buf, frame_ms=frame_ms, intro_snaps=2)
-        hold = 0.55 if idx < len(paths) - 1 else 0.35
+        _lasso_polygon(page, box, rel, buf, frame_ms=frame_ms, intro_snaps=0)
+        hold = 0.24 if idx < len(paths) - 1 else 0.12
         for _ in range(max(1, int(round(hold * 1000 / frame_ms)))):
             buf.snap(page)
             time.sleep(frame_ms / 1000.0)
@@ -633,14 +640,14 @@ def record_multi_region_sequence(
         buf,
         "Union selection — region chips for each lasso; combined particles drive cache + grid below.",
     )
-    for _ in range(max(1, int(round(0.85 * 1000 / frame_ms)))):
+    for _ in range(max(1, int(round(0.12 * 1000 / frame_ms)))):
         buf.snap(page)
         time.sleep(frame_ms / 1000.0)
 
     _image_cache_and_montage_clip(buf, page, frame_ms=frame_ms, log=log)
 
     _stamp_step(buf, "Montage ready — thumbnails from the multi-cluster selection.")
-    for _ in range(max(1, int(round(0.65 * 1000 / frame_ms)))):
+    for _ in range(max(1, int(round(0.07 * 1000 / frame_ms)))):
         buf.snap(page)
         time.sleep(frame_ms / 1000.0)
 

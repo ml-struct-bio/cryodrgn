@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Headless GIF: particle explorer (lasso → cache → k-means → legend toggle → ``znorm`` histogram).
 
+For a **short demo of additive lasso** (several disjoint regions merged into one selection with
+per-region chips), use ``python -m cryodrgn.dashboard.static.demo_animations.recorders.scripts.record_particle_explorer_multi_region_gif``.
+
 Encodes ``duration`` × ``fps`` frames at ~``fps`` (default **16** s × **40** ⇒ **640** frames). GIF delay is centisecond-quantized, so
 per-frame delay alternates (e.g. **20** / **30** ms for 40 fps) so the average rate matches ``fps``
 and total playback matches ``duration``.
@@ -18,7 +21,7 @@ Example::
     PYTHONPATH=/path/to/cryodrgn_beta \\
       conda run -p /projects/CRYOEM/zhonglab/mg2332/conda_envs/cdrgn_beta \\
         --no-capture-output \\
-        python -m cryodrgn.dashboard.record_particle_explorer_actions_gif \\
+        python -m cryodrgn.dashboard.static.demo_animations.recorders.scripts.record_particle_explorer_actions_gif \\
         /scratch/gpfs/.../004_train-vae_1gpu_dim.1024/ \\
         -o particle_explorer_actions.gif \\
         --annotate-caption \\
@@ -38,8 +41,8 @@ import sys
 import time
 from pathlib import Path
 
-from cryodrgn.dashboard.record_dashboard_interactions_gif import (
-    DEMO_ANIMATIONS_DIR,
+from cryodrgn.dashboard.static.demo_animations.recorders.scripts.record_dashboard_interactions_gif import (
+    DEMO_ANIMATIONS_RECORDERS_DIR,
     PLOTLY_CDN_ROUTE_GLOB,
     REPO_ROOT,
     RENDER_POLL_FRAME_DURATION_MULT,
@@ -56,7 +59,7 @@ from cryodrgn.dashboard.record_dashboard_interactions_gif import (
 )
 
 DEFAULT_CONDA_PREFIX = Path("/projects/CRYOEM/zhonglab/mg2332/conda_envs/cdrgn_beta")
-DEFAULT_OUTPUT = DEMO_ANIMATIONS_DIR / "particle_explorer_actions_demo.gif"
+DEFAULT_OUTPUT = DEMO_ANIMATIONS_RECORDERS_DIR / "particle_explorer_actions_demo.gif"
 _LOG_PREFIX = "[record-particle-explorer-actions-gif]"
 
 

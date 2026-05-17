@@ -220,7 +220,7 @@
     <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_viewer.png') }}"/>
     <p>Plot dataset particles by model outputs such as z-latent-space dimensions or analysis covariates such as UMAP
       embeddings.<br /><br />
-       Use lasso selection to write <code>--ind</code> <code>.pkl</code> files,
+       Draw one or more lasso regions to combine disjoint neighbourhoods, save <code>--ind</code> <code>.pkl</code> files,
        and optionally view dataset images or volume reconstructions for each particle.</p>
   </a>
   {% endif %}
@@ -279,7 +279,7 @@
     <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_viewer.png') }}"/>
     <p>Plot dataset particles by model outputs such as z-latent-space dimensions or analysis covariates such as UMAP
       embeddings.<br /><br />
-       Use lasso selection to write <code>--ind</code> <code>.pkl</code> files.
+       Draw one or more lasso regions to combine disjoint neighbourhoods, then save <code>--ind</code> <code>.pkl</code> files.</p>
     {% if command_builder_only %}
     <p class="muted">Activate this interface by running <code>cryodrgn dashboard &lt;outdir&gt;</code>.</p>
     {% else %}

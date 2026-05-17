@@ -5,19 +5,20 @@ Uses the matplotlib ``Agg`` backend (no Tk window). Loads the same workspace as 
 (``analyze.{epoch}/umap.pkl``, k-means labels, …) via :func:`cryodrgn.commands.filter.prepare_filter_workspace`.
 
 Bootstrap (``CRYODRGN_FILTER_FORCE_TKAGG`` + ``Agg``) lives in
-:mod:`cryodrgn.dashboard._record_filter_selection_gif_bootstrap`, imported before :mod:`cryodrgn.commands.filter`.
+:mod:`cryodrgn.dashboard.static.demo_animations.recorders.scripts._record_filter_selection_gif_bootstrap`,
+imported before :mod:`cryodrgn.commands.filter`.
 
 Example::
 
     PYTHONPATH=/path/to/cryodrgn_beta \\
-        python -m cryodrgn.dashboard.record_filter_selection_gif \\
+        python -m cryodrgn.dashboard.static.demo_animations.recorders.scripts.record_filter_selection_gif \\
         /scratch/.../004_train-vae_1gpu_dim.1024/ \\
-        -o cryodrgn/dashboard/static/demo_animations/filter_selection_demo.gif
+        -o cryodrgn/dashboard/static/demo_animations/recorders/filter_selection_demo.gif
 """
 
 from __future__ import annotations
 
-import cryodrgn.dashboard._record_filter_selection_gif_bootstrap  # noqa: F401
+import cryodrgn.dashboard.static.demo_animations.recorders.scripts._record_filter_selection_gif_bootstrap  # noqa: F401
 
 import argparse
 import io
@@ -29,15 +30,17 @@ import numpy as np
 from matplotlib.figure import Figure
 
 from cryodrgn.commands.filter import SelectFromScatter, prepare_filter_workspace
-from cryodrgn.dashboard.record_dashboard_interactions_gif import DEMO_ANIMATIONS_DIR
-from cryodrgn.dashboard.record_particle_explorer_actions_gif import (
+from cryodrgn.dashboard.static.demo_animations.recorders.scripts.record_dashboard_interactions_gif import (
+    DEMO_ANIMATIONS_RECORDERS_DIR,
+)
+from cryodrgn.dashboard.static.demo_animations.recorders.scripts.record_particle_explorer_actions_gif import (
     _composite_fixed_footer_below,
     _max_footer_height_for_captions,
     normalize_frames_fixed_fps,
     save_pngs_duration_gif,
 )
 
-DEFAULT_OUTPUT = DEMO_ANIMATIONS_DIR / "filter_selection_demo.gif"
+DEFAULT_OUTPUT = DEMO_ANIMATIONS_RECORDERS_DIR / "filter_selection_demo.gif"
 
 # Match explorer caption band hue so plain padding above the footer isn’t visibly different.
 _FOOTER_TOP_RGB = (250, 248, 244)

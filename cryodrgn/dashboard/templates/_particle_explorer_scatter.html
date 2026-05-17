@@ -3,7 +3,8 @@
     <div class="cryo-dash-lead">
       Select particle subset using either:
       <ul class="cryo-explorer-lead-list">
-        <li id="lead-mode-lasso">Lasso or box selection in the scatterplot</li>
+        <li id="lead-mode-lasso">Successive lasso or box regions in the scatterplot (each new one adds
+          particles to the current selection; disjoint regions stay highlighted together with per-region chips)</li>
         <li id="lead-mode-threshold">Click the color histogram for a single threshold, or drag across it to select a
           value range, when using a continuous color covariate like <code>znorm</code></li>
         <li id="lead-mode-discrete">Toggling value filters when using a discrete color covariate like k-means

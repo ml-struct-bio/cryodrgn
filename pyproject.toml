@@ -49,8 +49,9 @@ dev = [
     "sphinx-rtd-theme",
     "twine"
 ]
-# Headless dashboard GIF capture (``record_dashboard_interactions_gif``): after install, run
-# ``playwright install chromium`` so the browser binary is available.
+# Headless dashboard GIF capture: install optional ``dashboard-gif`` deps, run
+# ``playwright install chromium``, then use ``python -m cryodrgn.dashboard.static.demo_animations.recorders.scripts.<module>``
+# or the ``cryodrgn-dashboard-record-*`` console scripts.
 dashboard-gif = [
     "playwright>=1.41.0",
     "pillow>=9.0.0",
@@ -59,6 +60,13 @@ dashboard-gif = [
 [project.scripts]
 cryodrgn = "cryodrgn.command_line:main_commands"
 cryodrgn_utils = "cryodrgn.command_line:util_commands"
+cryodrgn-dashboard-record-interactions = "cryodrgn.dashboard.static.demo_animations.recorders.scripts.record_dashboard_interactions_gif:main"
+cryodrgn-dashboard-record-explorer-actions = "cryodrgn.dashboard.static.demo_animations.recorders.scripts.record_particle_explorer_actions_gif:main"
+cryodrgn-dashboard-record-explorer-multi-region = "cryodrgn.dashboard.static.demo_animations.recorders.scripts.record_particle_explorer_multi_region_gif:main"
+cryodrgn-dashboard-record-filter-selection = "cryodrgn.dashboard.static.demo_animations.recorders.scripts.record_filter_selection_gif:main"
+cryodrgn-dashboard-record-pairplot-actions = "cryodrgn.dashboard.static.demo_animations.recorders.scripts.record_pairplot_actions_gif:main"
+cryodrgn-dashboard-record-latent3d-actions = "cryodrgn.dashboard.static.demo_animations.recorders.scripts.record_latent3d_actions_gif:main"
+cryodrgn-dashboard-record-landscape-volpca = "cryodrgn.dashboard.static.demo_animations.recorders.scripts.record_landscape_volpca_gif:main"
 
 [project.urls]
 "Homepage" = "https://github.com/zhonge/cryodrgn"
@@ -73,8 +81,9 @@ zip-safe = false
 [tool.setuptools.package-data]
 "cryodrgn.dashboard" = [
     "templates/*.html",
-    "static/*",
-    "static/demo_animations/*",
+    # One recursive glob for CSS/JS, shipped GIFs, and anything else under ``static/`` (replaces
+    # overlapping ``static/*`` + ``static/demo_animations/...`` entries).
+    "static/**/*",
 ]
 
 [tool.setuptools.packages.find]

@@ -153,7 +153,7 @@ def scatter_json(
         customdata = np.column_stack([idx_arr, row_arr])
 
     has_cov_color = bool(color_col and color_col != "none" and color_col in sub.columns)
-    # Scattergl (explorer default) does not reliably show ``hovertext`` in ``hovertemplate``;
+    # Scattergl does not reliably show ``hovertext`` in ``hovertemplate``;
     # put the covariate line in ``customdata`` so the second line renders in WebGL too.
     if has_cov_color:
         cc = cast(str, color_col)
@@ -168,7 +168,8 @@ def scatter_json(
     else:
         hover_kwargs = dict(hovertemplate="particle: %{customdata[0]}<extra></extra>")
 
-    # Scattergl can leave Plotly.react() pending on some browsers/GPUs.
+    # Scattergl can leave Plotly.react() pending on some GPUs; SVG Scatter is unusably slow
+    # at dashboard point caps (~1e5+). The explorer client uses ``plotly_afterplot`` plus a timeout.
     trace_cls = go.Scattergl if use_webgl else go.Scatter
     sc = trace_cls(
         x=sub[xcol],

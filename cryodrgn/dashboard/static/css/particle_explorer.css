@@ -843,37 +843,73 @@
     width: max-content;
     max-width: min(16rem, 92vw);
     flex-shrink: 0;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+    padding: 0;
+    margin: 0;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  /* Flatter “plastic” treatment than legend chips — shorter vertical silhouette, same glyph sizes. */
+  .cryo-dash-page--particle-explorer .cryo-explorer-scatter-region-chip.cryo-cc-discrete-cell--plastic {
+    border-radius: 6px;
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.28),
+      inset 0 -2px 3px rgba(0, 0, 0, 0.1),
+      0 1px 2px rgba(26, 35, 50, 0.12);
   }
   .cryo-explorer-scatter-region-chip__row {
+    /* cdrgn: chip row — count label vertically centered with action icons */
     display: inline-flex;
     flex-direction: row;
     align-items: center;
+    align-self: flex-start;
     justify-content: flex-start;
-    /* One clear band between count text and icon strip — much larger than gaps between icons. */
-    gap: 0.48rem;
+    gap: 0.26rem;
     min-width: 0;
     width: max-content;
     max-width: min(16rem, 92vw);
+    padding: 0.14rem 0.22rem 0.18rem 0.22rem;
+    margin: 0;
+    line-height: 0;
   }
   .cryo-explorer-scatter-region-chip .cryo-cc-discrete-switch {
     flex: 0 1 auto;
     min-width: 0;
+    line-height: 0;
+    align-items: center;
+    align-self: center;
   }
   /* The chips render an empty (aria-hidden) label placeholder for spacing.
      Collapse its vertical metrics so chip height is driven by the count text. */
   .cryo-explorer-scatter-region-chip .cryo-cc-discrete-switch-label {
-    line-height: 0.45;
+    line-height: 0;
+    max-height: 0;
+    overflow: hidden;
+    font-size: 0.7rem;
   }
   /* Tighten count line box so the chip can be shorter without resizing glyphs. */
   .cryo-explorer-scatter-region-chip .cryo-cc-discrete-switch-count {
-    line-height: 0.52;
+    font-size: 0.6rem;
+    line-height: 1;
   }
   /* Discrete legend uses 1rem icon boxes; shrink inside scatter chips so glyphs pack tight. */
   .cryo-explorer-scatter-region-chip .cryo-cc-discrete-wheel-slot {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     width: 0.68rem;
     height: 0.32rem; /* tighter: reduce top/bottom empty space */
     overflow: visible;
+  }
+  .cryo-explorer-scatter-region-chip .cryo-cc-discrete-colorwheel-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    margin: 0;
+    border: none;
+    background: transparent;
+    cursor: pointer;
   }
   .cryo-explorer-scatter-region-chip .cryo-cc-discrete-colorwheel-btn svg {
     width: 0.56rem;
@@ -886,6 +922,9 @@
     height: 0.32rem; /* tighter: reduce top/bottom empty space */
     font-size: 0.73152rem; /* 0.6096 * 1.20 */
     overflow: visible;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
   .cryo-explorer-scatter-region-chip__actions {
     display: inline-flex;
@@ -980,16 +1019,18 @@
     padding-top: 0.36rem;
     border-top: 1px solid rgba(36, 59, 83, 0.1);
   }
-  /* Discrete colouring: palette radio block is unused — hide so no bordered gap under category toggles */
-  #color-hist-panel.cryo-explorer-discrete-hides-scatter-palette-radios #scatter-palette-radios.cryo-palette-select--options-pane {
+  /* Discrete colouring: palette radio block is unused — hide so no bordered gap under toggles */
+  #color-hist-panel.cryo-explorer-discrete-hides-scatter-palette-radios
+    #scatter-palette-radios.cryo-palette-select--options-pane {
     display: none !important;
   }
-  /* Range/histogram: collapsed palette keeps options visibility:hidden — still reserves swatch-grid height without this */
+  /* Range/histogram: collapsed palette keeps options visibility:hidden — still reserves height */
   #color-hist-panel.cryo-explorer-continuous-palette-pane-collapsed
     #scatter-palette-options.cryo-palette-select__options.cryo-palette-select__options--collapsed {
     display: none !important;
   }
-  #color-hist-panel.cryo-explorer-continuous-palette-pane-collapsed #scatter-palette-radios.cryo-palette-select--options-pane {
+  #color-hist-panel.cryo-explorer-continuous-palette-pane-collapsed
+    #scatter-palette-radios.cryo-palette-select--options-pane {
     padding-top: 0;
     border-top-width: 0;
     border-top-color: transparent;
@@ -1014,7 +1055,8 @@
   #color-hist-panel.cryo-color-hist-panel {
     overflow: visible;
   }
-  #color-hist-panel #scatter-palette-radios.cryo-explorer-scatter-palette-kit.cryo-palette-select.cryo-palette-select--options-pane {
+  #color-hist-panel
+    #scatter-palette-radios.cryo-explorer-scatter-palette-kit.cryo-palette-select.cryo-palette-select--options-pane {
     display: flex;
     flex-direction: column;
     align-items: stretch;

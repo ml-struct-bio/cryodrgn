@@ -482,6 +482,11 @@ def api_scatter():
         except ValueError:
             pass
     try:
+        # WebGL trace (Scattergl) is required at explorer / filter caps: SVG Scatter
+        # cannot paint O(10^5) markers in reasonable time, so the plot stays blank and
+        # ``plotly_afterplot`` may never run before the UI looks hung. Hover text for
+        # coloured points is carried in ``customdata`` so Scattergl hovers still work
+        # (see ``scatter_json``). The dashboard JS also tolerates slow Scattergl.react.
         js = scatter_json(
             e,
             xcol,
@@ -489,7 +494,7 @@ def api_scatter():
             None if ccol == "none" else ccol,
             max_points=max_pts,
             preselect_plot_df_rows=preselect_rows,
-            use_webgl=False,
+            use_webgl=True,
             marker_size=marker_size,
             continuous_palette=request.args.get("palette"),
         )

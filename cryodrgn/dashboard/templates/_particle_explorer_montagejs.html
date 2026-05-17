@@ -249,7 +249,16 @@
   ) {
     var selRows = saveSelectionRows || [];
     var treatAllGridPointsAsSelected = !selRows.length;
-    var selSet = treatAllGridPointsAsSelected ? null : new Set(selRows);
+    var selSet = null;
+    if (!treatAllGridPointsAsSelected) {
+      selSet = new Set();
+      for (var sri = 0; sri < selRows.length; sri++) {
+        var sn = Number(selRows[sri]);
+        if (isFinite(sn)) selSet.add(sn);
+      }
+      if (!selSet.size) selSet = null;
+    }
+    var treatAll = !selSet;
     var fillColors = [];
     var lineColors = [];
     var textFontColors = [];
@@ -257,13 +266,14 @@
     for (var hk = 0; hk < nbs.length; hk++) {
       var tiH = nbs[hk].ti;
       var rowH = nbs[hk].row;
-      var inSel = treatAllGridPointsAsSelected || (selSet && selSet.has(rowH));
+      var rowN = Number(rowH);
+      var inSel = treatAll || (isFinite(rowN) && selSet.has(rowN));
       var rIdxgeom = (!hasColor && multiGeom) ? selectionRegionIndexForRow(rowH) : -1;
       var borderCss = hasColor
         ? montageCovariateBorderCss(tiH, colorMode, markerColors, cmin, cmax)
         : (rIdxgeom >= 0
-            ? SCATTER_REGION_GRID_HEX[rIdxgeom % SCATTER_REGION_GRID_HEX.length]
-            : ACCENT);
+            ? scatterRegionPlotStyle(rIdxgeom).line
+            : (multiGeom ? "#94a3b8" : ACCENT));
       lineColors.push(borderCss);
       if (!hasColor) {
         if (multiGeom && rIdxgeom >= 0) {
@@ -272,6 +282,9 @@
           textFontColors.push(
             inSel ? (stRg.covarColor || "#334155") : (stRg.covarColor || "#94a3b8")
           );
+        } else if (multiGeom && rIdxgeom < 0) {
+          fillColors.push(GRID_HIGHLIGHT_CLEAR_FILL);
+          textFontColors.push(inSel ? "#94a3b8" : "#cbd5e1");
         } else {
           fillColors.push(inSel ? ACCENT : GRID_HIGHLIGHT_CLEAR_FILL);
           textFontColors.push(inSel ? "#fff" : "#cbd5e1");
@@ -354,18 +367,120 @@
     cellEl.style.borderWidth = "2px 3px 3px 3px";
   }
 
+  /**
+   * Pick up to ``want`` cached scatter points: shuffle selected-in-cache first, then pad from the
+   * rest of the cache so the grid stays full when the selection has fewer cached thumbnails.
+   */
+  function pickMontageItemsSelectionFirstFromCache(want) {
+    if (!preloaded || !preloaded.traceMap || !preloaded.traceMap.length) return [];
+    var w = Math.floor(Number(want));
+    if (!isFinite(w) || w < 1) w = neighborK;
+    w = Math.min(w, neighborK, preloaded.traceMap.length);
+    var tm = preloaded.traceMap;
+    var rowSet = null;
+    if (saveSelectionRows && saveSelectionRows.length) {
+      rowSet = new Set();
+      for (var rs = 0; rs < saveSelectionRows.length; rs++) {
+        var rsn = Number(saveSelectionRows[rs]);
+        if (isFinite(rsn)) rowSet.add(rsn);
+      }
+      if (!rowSet.size) rowSet = null;
+    }
+    var primary = [];
+    if (rowSet && rowSet.size) {
+      for (var pi = 0; pi < tm.length; pi++) {
+        var rtm = Number(tm[pi].row);
+        if (isFinite(rtm) && rowSet.has(rtm)) primary.push(tm[pi]);
+      }
+      shuffleInPlace(primary);
+    }
+    var out = [];
+    var seen = new Set();
+    for (var a = 0; a < primary.length && out.length < w; a++) {
+      var rpa = Number(primary[a].row);
+      if (!isFinite(rpa) || seen.has(rpa)) continue;
+      seen.add(rpa);
+      out.push(primary[a]);
+    }
+    if (out.length < w) {
+      var fallback = tm.slice();
+      shuffleInPlace(fallback);
+      for (var b = 0; b < fallback.length && out.length < w; b++) {
+        var rfb = Number(fallback[b].row);
+        if (!isFinite(rfb) || seen.has(rfb)) continue;
+        seen.add(rfb);
+        out.push(fallback[b]);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Keep existing montage items (e.g. after axis reload) and top up to ``want`` using the same
+   * selection-first + cache-fill rule, without duplicating rows already in ``haveItems``.
+   */
+  function completeMontageItemsSelectionFirstPartial(haveItems, want) {
+    if (!preloaded || !preloaded.traceMap) return (haveItems || []).slice();
+    want = Math.min(Math.floor(Number(want)) || neighborK, neighborK, preloaded.traceMap.length);
+    var out = (haveItems || []).slice();
+    var seen = new Set();
+    for (var u = 0; u < out.length; u++) {
+      var ru = Number(out[u].row);
+      if (isFinite(ru)) seen.add(ru);
+    }
+    var rowSet = null;
+    if (saveSelectionRows && saveSelectionRows.length) {
+      rowSet = new Set();
+      for (var rs2 = 0; rs2 < saveSelectionRows.length; rs2++) {
+        var rsn2 = Number(saveSelectionRows[rs2]);
+        if (isFinite(rsn2)) rowSet.add(rsn2);
+      }
+      if (!rowSet.size) rowSet = null;
+    }
+    var primary = [];
+    if (rowSet && rowSet.size) {
+      for (var pi = 0; pi < preloaded.traceMap.length; pi++) {
+        var it = preloaded.traceMap[pi];
+        var rIt = Number(it.row);
+        if (isFinite(rIt) && rowSet.has(rIt) && !seen.has(rIt)) primary.push(it);
+      }
+      shuffleInPlace(primary);
+    }
+    for (var a = 0; a < primary.length && out.length < want; a++) {
+      var rpa2 = Number(primary[a].row);
+      if (!isFinite(rpa2)) continue;
+      seen.add(rpa2);
+      out.push(primary[a]);
+    }
+    if (out.length < want) {
+      var rest = [];
+      for (var ri = 0; ri < preloaded.traceMap.length; ri++) {
+        var it2 = preloaded.traceMap[ri];
+        var r2n = Number(it2.row);
+        if (!isFinite(r2n) || seen.has(r2n)) continue;
+        rest.push(it2);
+      }
+      shuffleInPlace(rest);
+      for (var b = 0; b < rest.length && out.length < want; b++) {
+        var rbn = Number(rest[b].row);
+        if (!isFinite(rbn)) continue;
+        seen.add(rbn);
+        out.push(rest[b]);
+      }
+    }
+    return out;
+  }
+
   function showRandomPreloaded() {
     if (!preloaded || !preloaded.traceMap) return;
-    /* Only sample from cached rows so the image grid never picks uncached (blank) cells. */
-    var pool = (activePool && activePool.length) ? activePool : preloaded.traceMap;
-    if (!pool.length) return;
-    var shuffled = pool.slice();
-    shuffleInPlace(shuffled);
-    updateMontage(shuffled.slice(0, Math.min(neighborK, shuffled.length)));
+    var items = pickMontageItemsSelectionFirstFromCache(neighborK);
+    if (!items.length) return;
+    updateMontage(items);
   }
 
   function updateMontage(nbs) {
     nbs = nbs.slice();
+    cancelPendingHighlightRestyle();
     if (!showGridHighlightsEnabled()) {
       nbs = [];
     }
@@ -428,6 +543,15 @@
         return a.row - b.row;
       });
     }
+    var selMem = null;
+    if (saveSelectionRows && saveSelectionRows.length) {
+      selMem = new Set();
+      for (var sm = 0; sm < saveSelectionRows.length; sm++) {
+        var snm = Number(saveSelectionRows[sm]);
+        if (isFinite(snm)) selMem.add(snm);
+      }
+      if (!selMem.size) selMem = null;
+    }
     for (var i = 0; i < montageCells.length; i++) {
       if (i < nbs.length) {
         montageCells[i].img.src = nbs[i].src || "";
@@ -477,9 +601,7 @@
           if (imagesViewEnabled && preloaded && preloaded.traceMap && committedScatterRegions.length) {
             var ridxM = selectionRegionIndexForRow(nbs[i].row);
             if (ridxM >= 0) {
-              borderNoCov = SCATTER_REGION_GRID_HEX[
-                Math.max(0, ridxM) % SCATTER_REGION_GRID_HEX.length
-              ];
+              borderNoCov = scatterRegionPlotStyle(ridxM).line;
               var rsMont = selectionRegionMontageStyles(ridxM);
               montageCells[i].cell.style.background = rsMont.bg;
               montageCells[i].covar.style.color = rsMont.covarColor || "";
@@ -490,12 +612,41 @@
               if (montageCells[i].lbl && committedScatterRegions.length >= 2) {
                 montageCells[i].lbl.style.color = rsMont.covarColor || "";
               }
+            } else if (committedScatterRegions.length > 1) {
+              borderNoCov = "#94a3b8";
+              montageCells[i].cell.style.background = "";
+              montageCells[i].covar.textContent = "";
+              montageCells[i].covar.style.color = "";
+              montageCells[i].idx.style.color = "#64748b";
+              if (montageCells[i].lbl) montageCells[i].lbl.style.color = "#64748b";
             }
           }
           setMontageCellSelectionBorderStyle(montageCells[i].cell, borderNoCov);
         }
+        var rowNj = Number(nbs[i].row);
+        var inScatterSel = !selMem || (isFinite(rowNj) && selMem.has(rowNj));
+        if (imagesViewEnabled && selMem) {
+          montageCells[i].img.style.opacity = inScatterSel ? "1" : "0.5";
+          if (!inScatterSel) {
+            setMontageCellSelectionBorderStyle(montageCells[i].cell, "#94a3b8");
+            if (montageCells[i].lbl) montageCells[i].lbl.style.color = "#64748b";
+            montageCells[i].idx.style.color = "#64748b";
+            if (hasColor) {
+              montageCells[i].covar.style.color = "#64748b";
+            }
+          } else if (montageCells[i].lbl && hasColor) {
+            montageCells[i].lbl.style.color = "";
+          } else {
+            if (montageCells[i].lbl && !hasColor && committedScatterRegions.length <= 1) {
+              montageCells[i].lbl.style.color = "";
+            }
+          }
+        } else {
+          montageCells[i].img.style.opacity = "";
+        }
       } else {
         montageCells[i].img.src = "";
+        montageCells[i].img.style.opacity = "";
         montageCells[i].idx.textContent = "";
         montageCells[i].idx.style.color = "";
         montageCells[i].covar.textContent = "";
@@ -555,31 +706,15 @@
         if (found) items.push(found);
       }
     }
-    var poolItems = (activePool && activePool.length) ? activePool : preloaded.traceMap;
-    if (items.length < want && poolItems.length) {
-      var used = new Set();
-      for (var u = 0; u < items.length; u++) used.add(items[u].row);
-      var extras = [];
-      for (var pi = 0; pi < poolItems.length; pi++) {
-        if (!used.has(poolItems[pi].row)) extras.push(poolItems[pi]);
-      }
-      for (var ei = extras.length - 1; ei > 0; ei--) {
-        var j = Math.floor(Math.random() * (ei + 1));
-        var tmp = extras[ei]; extras[ei] = extras[j]; extras[j] = tmp;
-      }
-      for (var k = 0; k < extras.length && items.length < want; k++) items.push(extras[k]);
-    }
+    items = completeMontageItemsSelectionFirstPartial(items, want);
     if (items.length) {
       updateMontage(items);
-    } else if (activePool && activePool.length >= neighborK) {
-      showRandomFromPool();
     } else {
       showRandomPreloaded();
     }
   }
 
-  /** After grid size change: keep current rows where possible; add more only from lasso pool if active, else full
-    cache. */
+  /** After grid size change: keep current rows where possible; top up from cache (selection-first when applicable). */
   function refillMontageForNewGridSize() {
     var want = neighborK;
     if (!preloaded || !preloaded.traceMap) {
@@ -589,11 +724,10 @@
       if (picked.length) updateMontage(picked);
       return;
     }
-    var poolItems = (activePool && activePool.length) ? activePool : preloaded.traceMap;
-    if (!poolItems.length) return;
+    if (!preloaded.traceMap.length) return;
     var byRow = new Map();
-    for (var pi = 0; pi < poolItems.length; pi++) {
-      byRow.set(poolItems[pi].row, poolItems[pi]);
+    for (var pi = 0; pi < preloaded.traceMap.length; pi++) {
+      byRow.set(preloaded.traceMap[pi].row, preloaded.traceMap[pi]);
     }
     var items = [];
     if (lastMontageRows && lastMontageRows.length) {
@@ -602,26 +736,11 @@
         if (it) items.push(it);
       }
     }
-    if (items.length < want) {
-      var used2 = new Set();
-      for (var u2 = 0; u2 < items.length; u2++) used2.add(items[u2].row);
-      var extras2 = [];
-      for (var ex = 0; ex < poolItems.length; ex++) {
-        if (!used2.has(poolItems[ex].row)) extras2.push(poolItems[ex]);
-      }
-      for (var ei2 = extras2.length - 1; ei2 > 0; ei2--) {
-        var j2 = Math.floor(Math.random() * (ei2 + 1));
-        var t2 = extras2[ei2]; extras2[ei2] = extras2[j2]; extras2[j2] = t2;
-      }
-      for (var kk = 0; kk < extras2.length && items.length < want; kk++) {
-        items.push(extras2[kk]);
-      }
-    }
+    items = completeMontageItemsSelectionFirstPartial(items, want);
     if (items.length) {
       updateMontage(items);
-    } else if (poolItems.length >= want) {
-      if (activePool && activePool.length) showRandomFromPool();
-      else showRandomPreloaded();
+    } else if (preloaded.traceMap.length >= want) {
+      showRandomPreloaded();
     }
   }
 
@@ -800,6 +919,18 @@
     return true;
   }
 
+  /** Drop consecutive duplicate shapes (Plotly sometimes re-emits an unchanged lasso path). */
+  function dedupeConsecutiveEqualScatterShapes(arr) {
+    if (!arr || !arr.length) return [];
+    var out = [cloneScatterSelectionShapes([arr[0]])[0]];
+    for (var i = 1; i < arr.length; i++) {
+      if (!scatterSelectionShapesEqual(arr[i], out[out.length - 1])) {
+        out.push(cloneScatterSelectionShapes([arr[i]])[0]);
+      }
+    }
+    return out;
+  }
+
   /**
    * Plotly may either append to ``layout.selections`` or replace it with the latest shape only.
    * Merge ``fromPlotly`` into ``prevPersisted`` so we keep every completed region on screen.
@@ -970,6 +1101,114 @@
     };
   }
 
+  /** Ray-cast ``(x,y)`` vs closed polygon (Plotly lasso ``path`` vertices in data space). */
+  function pointInPolygonXY(x, y, polyX, polyY) {
+    var n = polyX.length;
+    if (n < 3) return false;
+    var inside = false;
+    for (var i = 0, j = n - 1; i < n; j = i++) {
+      var xi = polyX[i], yi = polyY[i];
+      var xj = polyX[j], yj = polyY[j];
+      var dy = yj - yi;
+      if (Math.abs(dy) < 1e-12) continue;
+      if ((yi > y) === (yj > y)) continue;
+      var xinters = ((xj - xi) * (y - yi)) / dy + xi;
+      if (x < xinters) inside = !inside;
+    }
+    return inside;
+  }
+
+  /**
+   * Whether ``(xd,yd)`` lies inside a committed lasso/box shape (``layout.selections``-style).
+   */
+  function scatterRawShapeContainsDataXY(raw, xd, yd) {
+    if (!raw || !isFinite(xd) || !isFinite(yd)) return false;
+    if (raw.type === "rect" || (raw.x0 != null && raw.x1 != null && raw.y0 != null && raw.y1 != null)) {
+      var x0 = Number(raw.x0), x1 = Number(raw.x1), y0 = Number(raw.y0), y1 = Number(raw.y1);
+      if (!isFinite(x0 + x1 + y0 + y1)) return false;
+      var xmin = Math.min(x0, x1), xmax = Math.max(x0, x1);
+      var ymin = Math.min(y0, y1), ymax = Math.max(y0, y1);
+      return xd >= xmin && xd <= xmax && yd >= ymin && yd <= ymax;
+    }
+    if (raw.type === "path" && raw.path) {
+      var nums = String(raw.path).match(/-?\d*\.?\d+(?:e[-+]?\d+)?/gi);
+      if (!nums || nums.length < 6) return false;
+      var vx = [], vy = [];
+      for (var k = 0; k + 1 < nums.length; k += 2) {
+        var px = parseFloat(nums[k]), py = parseFloat(nums[k + 1]);
+        if (isFinite(px) && isFinite(py)) {
+          vx.push(px);
+          vy.push(py);
+        }
+      }
+      return pointInPolygonXY(xd, yd, vx, vy);
+    }
+    return false;
+  }
+
+  function traceIndexForPlotDfRow(row) {
+    if (!gd || !gd.data || !gd.data[0] || !gd.data[0].customdata) return -1;
+    var cd = gd.data[0].customdata;
+    var r = Number(row);
+    if (!isFinite(r)) return -1;
+    for (var i = 0; i < cd.length; i++) {
+      if (cd[i] && cd[i].length > 1 && Number(cd[i][1]) === r) return i;
+    }
+    return -1;
+  }
+
+  /**
+   * Fill ``committedScatterRegions[*].rows`` from ``saveSelectionRows`` + region geometry.
+   * Plotly merge logic only tags ``rowsSnap`` onto the last shape; without this, montage /
+   * grid-letter colours cannot resolve which region a particle belongs to after multi-lasso.
+   * Overlap: last region in array wins (same order as ``selectionRegionIndexForRow``).
+   */
+  function recomputeCommittedScatterRegionRowsFromGeometry() {
+    if (!gd || !gd.data || !gd.data[0] || !committedScatterRegions || !committedScatterRegions.length) {
+      return;
+    }
+    var rowsSel = saveSelectionRows && saveSelectionRows.length ? saveSelectionRows : [];
+    if (!rowsSel.length) return;
+    var nReg = committedScatterRegions.length;
+    var buckets = new Array(nReg);
+    for (var bi = 0; bi < nReg; bi++) {
+      buckets[bi] = [];
+    }
+    for (var si = 0; si < rowsSel.length; si++) {
+      var row = rowsSel[si];
+      var ti = traceIndexForPlotDfRow(row);
+      if (ti < 0) continue;
+      var xd = gd.data[0].x[ti];
+      var yd = gd.data[0].y[ti];
+      if (!isFinite(xd) || !isFinite(yd)) continue;
+      var lastHit = -1;
+      for (var ri = 0; ri < nReg; ri++) {
+        var raw = committedScatterRegions[ri].raw;
+        if (scatterRawShapeContainsDataXY(raw, xd, yd)) lastHit = ri;
+      }
+      if (lastHit >= 0) {
+        var rB = Number(row);
+        buckets[lastHit].push(isFinite(rB) ? rB : row);
+      }
+    }
+    for (var rj = 0; rj < nReg; rj++) {
+      committedScatterRegions[rj].rows = buckets[rj];
+      committedScatterRegions[rj].nParticles = buckets[rj].length;
+    }
+  }
+
+  /** Union of ``committedScatterRegions[*].rows`` after geometry bucketing (drops off-shape rows). */
+  function rowsUnionFromCommittedScatterRegions() {
+    if (!committedScatterRegions || !committedScatterRegions.length) return [];
+    var u = new Set();
+    for (var ri = 0; ri < committedScatterRegions.length; ri++) {
+      var rw = committedScatterRegions[ri].rows;
+      if (!rw || !rw.length) continue;
+      for (var j = 0; j < rw.length; j++) u.add(rw[j]);
+    }
+    return Array.from(u);
+  }
+
   function selectionRegionIndexForRow(row) {
     if (!committedScatterRegions.length) return -1;
     var r = Number(row);
@@ -978,17 +1217,15 @@
       var rs = committedScatterRegions[ri].rows;
       if (!rs || !rs.length) continue;
       for (var j = 0; j < rs.length; j++) {
-        if (rs[j] === r) return ri;
+        if (Number(rs[j]) === r) return ri;
       }
     }
     return -1;
   }
 
   function selectionRegionMontageStyles(regionIdx) {
-    var hex = SCATTER_REGION_GRID_HEX[
-      Math.max(0, regionIdx) % SCATTER_REGION_GRID_HEX.length
-    ];
-    return discreteLabelMontageStyles(hex);
+    var lineHex = scatterRegionPlotStyle(regionIdx).line;
+    return discreteLabelMontageStyles(lineHex);
   }
 
   /** Completed lasso/box overlay outline (~30% thinner than the prior 2.25px stroke). */
@@ -1106,17 +1343,21 @@
     if (!committedScatterRegions.length) return;
     if (regionIdx < 0 || regionIdx >= committedScatterRegions.length) return;
     var keep = committedScatterRegions[regionIdx];
-    var rows = (keep.rows && keep.rows.slice) ? keep.rows.slice() : [];
     var rawClone = cloneScatterSelectionShapes([keep.raw])[0];
     committedScatterRegions = [{
       raw: rawClone,
-      nParticles: keep.nParticles,
-      rows: rows,
+      nParticles: 0,
+      rows: [],
       labelX: keep.labelX,
       labelY: keep.labelY,
       colorHex: keep.colorHex
     }];
+    recomputeCommittedScatterRegionRowsFromGeometry();
+    var rows = (committedScatterRegions[0].rows && committedScatterRegions[0].rows.slice)
+      ? committedScatterRegions[0].rows.slice()
+      : [];
     applyRowsSelection(rows, "Lasso", LASSO_SELECTION_DEBOUNCE_MS + 120);
+    recomputeCommittedScatterRegionRowsFromGeometry();
     syncCommittedScatterRegionOverlays({ clearSelections: true });
   }
 
@@ -1129,6 +1370,7 @@
       syncCommittedScatterRegionOverlays({ clearSelections: true });
       return;
     }
+    recomputeCommittedScatterRegionRowsFromGeometry();
     var merged = new Set();
     for (var ri = 0; ri < committedScatterRegions.length; ri++) {
       var rs = committedScatterRegions[ri].rows;
@@ -1136,6 +1378,7 @@
       for (var rj = 0; rj < rs.length; rj++) merged.add(rs[rj]);
     }
     applyRowsSelection(Array.from(merged), "Lasso", LASSO_SELECTION_DEBOUNCE_MS + 120);
+    recomputeCommittedScatterRegionRowsFromGeometry();
     syncCommittedScatterRegionOverlays({ clearSelections: true });
   }
 
@@ -1445,7 +1688,11 @@
 
   /* ---------- highlight trace + montage grid coupling ---------- */
   function showGridHighlightsEnabled() {
-    return imageGridMenuIsOpen();
+    /* Image grid menu folded: still drive montage + A/B/… scatter markers when thumbnails are cached. */
+    return !!(
+      (imagesViewEnabled && preloaded && preloaded.traceMap && preloaded.traceMap.length)
+      || imageGridMenuIsOpen()
+    );
   }
 
   function showGridHighlightsOnPlot() {
@@ -1707,7 +1954,8 @@
         var p = ev.points[i];
         if (p.curveNumber !== 0) continue;
         if (p.customdata != null && p.customdata.length > 1) {
-          set.add(p.customdata[1]);
+          var rSnap = Number(p.customdata[1]);
+          if (isFinite(rSnap)) set.add(rSnap);
         }
       }
     }
@@ -1715,13 +1963,19 @@
   }
 
   function selectionRowsToTraceIndices(rows) {
-    var rowSet = new Set(rows || []);
+    rows = rows || [];
+    var rowSet = new Set();
+    for (var rti = 0; rti < rows.length; rti++) {
+      var rtv = Number(rows[rti]);
+      if (isFinite(rtv)) rowSet.add(rtv);
+    }
     var selected = [];
     if (!gd || !gd.data || !gd.data[0] || !gd.data[0].customdata) return selected;
     var cd = gd.data[0].customdata;
     for (var i = 0; i < cd.length; i++) {
       var row = cd[i] && cd[i].length > 1 ? cd[i][1] : null;
-      if (rowSet.has(row)) selected.push(i);
+      var rowN = row == null ? NaN : Number(row);
+      if (isFinite(rowN) && rowSet.has(rowN)) selected.push(i);
     }
     return selected;
   }
@@ -1787,6 +2041,8 @@
         showRandomFromPool();
       } else {
         invalidateVolumeArtifacts();
+        var fillSel = pickMontageItemsSelectionFirstFromCache(neighborK);
+        if (fillSel.length) updateMontage(fillSel);
       }
     } else if (lastMontageRows.length || montageDisplayMode === "volumes") {
       ensureHighlightTrace();
@@ -1852,7 +2108,24 @@
 
 
   function queueHighlightRestyle(restyleData) {
-    pendingHighlightRestyle = restyleData;
+    if (!restyleData) return;
+    /*
+     * A later call may enqueue only a styling "patch" (e.g.
+     * refreshGridHighlightMarkerStylesFromLastRows()) right after updateMontage()
+     * enqueued a full payload (including x/y positions).
+     *
+     * If we replaced pendingHighlightRestyle, we'd drop the x/y update and the
+     * highlighted points would no longer correspond to the image-grid rows.
+     */
+    if (highlightRestyleRaf != null && pendingHighlightRestyle) {
+      for (var k in restyleData) {
+        if (Object.prototype.hasOwnProperty.call(restyleData, k)) {
+          pendingHighlightRestyle[k] = restyleData[k];
+        }
+      }
+    } else {
+      pendingHighlightRestyle = restyleData;
+    }
     if (highlightRestyleRaf != null) return;
     highlightRestyleRaf = requestAnimationFrame(function() {
       highlightRestyleRaf = null;
@@ -1915,7 +2188,9 @@
   }
 
   function findKNearestInPool(px, py, k) {
-    var items = activePool || (preloaded && preloaded.traceMap) || [];
+    var items = (preloaded && preloaded.traceMap && preloaded.traceMap.length)
+      ? preloaded.traceMap
+      : (activePool || []);
     if (!items.length) return [];
     var xs = gd.data[0].x, ys = gd.data[0].y;
     var best = [];
@@ -2088,19 +2363,27 @@
         if (preloadStatus) setPreloadStatusCachedTotalOnly();
         return;
       }
-      var rowSet = new Set(saveSelectionRows);
+      var rowSet = new Set();
+      for (var rai = 0; rai < saveSelectionRows.length; rai++) {
+        var rv = Number(saveSelectionRows[rai]);
+        if (isFinite(rv)) rowSet.add(rv);
+      }
       activePool = preloaded.traceMap.filter(function(item) {
-        return rowSet.has(item.row);
+        return rowSet.has(Number(item.row));
       });
       lassoSelectedRowSet = new Set();
       for (var lp = 0; lp < activePool.length; lp++) {
-        lassoSelectedRowSet.add(activePool[lp].row);
+        lassoSelectedRowSet.add(Number(activePool[lp].row));
       }
       if (preloadStatus) {
         preloadStatus.textContent = formatCachedSelectionStatusCore(activePool.length) + ".";
       }
+      ensureHighlightTrace();
       if (activePool.length) {
         showRandomFromPool();
+      } else {
+        var fillLasso = pickMontageItemsSelectionFirstFromCache(neighborK);
+        if (fillLasso.length) updateMontage(fillLasso);
       }
     }
 
@@ -2109,6 +2392,10 @@
       clearColorHistogramThresholdForGeometricSelection();
       var snap = snapshotSelectedPoints(ev);
       var rowsSnap = snapshotRowsFromPoints(ev);
+      /* ``layout.selections`` is often cleared or replaced after ``Plotly.restyle(selectedpoints)``.
+         Snapshot synchronously on ``plotly_selected`` so the debounced merge still sees every
+         lasso/box geometry when appending a new region to an existing multi-region selection. */
+      var selectionsSnapshotForCommit = cloneScatterSelectionShapes(gd.layout && gd.layout.selections);
       var prevMode = activeSelectionMode || "";
       var baseRows = prevMode === "lasso" && saveSelectionRows && saveSelectionRows.length
         ? saveSelectionRows.slice()
@@ -2118,34 +2405,18 @@
       setActiveSelectionMode(willHaveSelection ? "lasso" : "");
       hideBoxSelectTooltip();
       cancelLassoSelectionDebounce();
-        lassoSelectionDebounceTimer = setTimeout(function() {
+      lassoSelectionDebounceTimer = setTimeout(function() {
         lassoSelectionDebounceTimer = null;
         var mergedSet = new Set(baseRows);
         for (var i = 0; i < rowsSnap.length; i++) mergedSet.add(rowsSnap[i]);
         saveSelectionRows = Array.from(mergedSet);
-        updateParticleSelFieldset();
-        // Plotly's lasso/box selection replaces "selectedpoints" each time; re-apply the
-        // accumulated union so both disjoint regions remain highlighted.
-        var selectedTi = selectionRowsToTraceIndices(saveSelectionRows);
-        suppressSelectionEvents = true;
-        beginScatterSelectionRenderingOverlay();
-        try {
-          Plotly.restyle(gd, { selectedpoints: [selectedTi.length ? selectedTi : null] }, [0]);
-        } catch (err) {
-          console.error(err);
-        } finally {
-          endScatterSelectionRenderingOverlay();
-        }
-        nudgeHighlightTraceAfterScatterglSelectRestyle();
-        setTimeout(function() { suppressSelectionEvents = false; }, 0);
-        if (scatterTraceColorMode() === "discrete") setExplorerLegendDiscreteKeysForSelection();
-        if (imagesViewEnabled && preloaded && preloaded.traceMap) {
-          applyLassoSelectionFromSnapshot();
-        }
         if (!saveSelectionRows.length) {
           clearScatterGeometricSelection();
+          setActiveSelectionMode("");
         } else {
-          var fromPlotly = cloneScatterSelectionShapes(gd.layout && gd.layout.selections);
+          var fromPlotly = selectionsSnapshotForCommit.length
+            ? selectionsSnapshotForCommit
+            : cloneScatterSelectionShapes(gd.layout && gd.layout.selections);
           var prevSnap = committedScatterRegions.map(function(r) {
             return {
               raw: cloneScatterSelectionShapes([r.raw])[0],
@@ -2156,9 +2427,11 @@
               colorHex: r.colorHex
             };
           });
-          var mergedRaw = mergePersistedScatterSelectionShapes(
-            prevSnap.map(function(s) { return s.raw; }),
-            fromPlotly
+          var mergedRaw = dedupeConsecutiveEqualScatterShapes(
+            mergePersistedScatterSelectionShapes(
+              prevSnap.map(function(s) { return s.raw; }),
+              fromPlotly
+            )
           );
           var uniqSnapCount = rowsSnap.length;
           committedScatterRegions = [];
@@ -2195,7 +2468,35 @@
               colorHex: colorHex
             });
           }
-          syncCommittedScatterRegionOverlays({ clearSelections: true });
+          recomputeCommittedScatterRegionRowsFromGeometry();
+          saveSelectionRows = rowsUnionFromCommittedScatterRegions();
+          if (!saveSelectionRows.length) {
+            clearScatterGeometricSelection();
+            setActiveSelectionMode("");
+          } else {
+            syncCommittedScatterRegionOverlays({ clearSelections: true });
+          }
+        }
+        updateParticleSelFieldset();
+        /* Re-apply accumulated union after region geometry is committed (restyle can clear ``layout.selections``). */
+        var selectedTi = selectionRowsToTraceIndices(saveSelectionRows);
+        suppressSelectionEvents = true;
+        beginScatterSelectionRenderingOverlay();
+        try {
+          Plotly.restyle(gd, { selectedpoints: [selectedTi.length ? selectedTi : null] }, [0]);
+        } catch (err) {
+          console.error(err);
+        } finally {
+          endScatterSelectionRenderingOverlay();
+        }
+        nudgeHighlightTraceAfterScatterglSelectRestyle();
+        setTimeout(function() { suppressSelectionEvents = false; }, 0);
+        if (scatterTraceColorMode() === "discrete") setExplorerLegendDiscreteKeysForSelection();
+        if (imagesViewEnabled && preloaded && preloaded.traceMap) {
+          applyLassoSelectionFromSnapshot();
+        }
+        if (lastMontageRows && lastMontageRows.length && highlightTraceAdded) {
+          refreshGridHighlightMarkerStylesFromLastRows();
         }
       }, LASSO_SELECTION_DEBOUNCE_MS);
     });
@@ -2224,13 +2525,7 @@
   }
 
   function showRandomFromPool() {
-    var pool = (activePool || (preloaded && preloaded.traceMap) || []).slice();
-    if (!pool.length) return;
-    for (var i = pool.length - 1; i > 0; i--) {
-      var j = Math.floor(Math.random() * (i + 1));
-      var tmp = pool[i]; pool[i] = pool[j]; pool[j] = tmp;
-    }
-    updateMontage(pool.slice(0, neighborK));
+    showRandomPreloaded();
   }
 
   function triggerRedraw(preserveSelectionAndMontage) {

@@ -218,25 +218,28 @@
   <a class="landing-card landing-card-link" href="{{ url_for('explorer') }}">
     <h2 class="landing-card-title">Particle explorer</h2>
     <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_viewer.png') }}"/>
-    <p>Plot dataset particles by model outputs such as z-latent-space dimensions or analysis covariates such as UMAP
-      embeddings.<br /><br />
-       Use lasso selection to write <code>--ind</code> <code>.pkl</code> files,
-       and optionally view dataset images or volume reconstructions for each particle.</p>
+    <p>Plot particles by model outputs such as UMAP embeddings of z-latent-space axes.<br /><br />
+       Use lasso selection to write <code>--ind</code> <code>.pkl</code> files, or load image caches to view images
+       across particle selections.</p>
   </a>
   {% endif %}
   {% if pair_active %}
   <a class="landing-card landing-card-link" href="{{ url_for('pairplot_page') }}">
     <h2 class="landing-card-title">Pair-plot generator</h2>
     <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_pair.png') }}"/>
-    <p>Grid of scatters across latent dimensions and embeddings (PCA / UMAP on the diagonal when available).</p>
+    <p>Plot particles across a grid of squares, one for each combination of z-latent-space axes.<br /><br />
+       Choose color covariates from model outputs and dataset attributes as well as different clustering methods
+       to display on the diagonal of the plot grid.</p>
   </a>
   {% endif %}
   {% if latent3d_active %}
   <a class="landing-card landing-card-link" href="{{ url_for('latent_3d_page') }}">
     <h2 class="landing-card-title">3D visualizer</h2>
     <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_3d.png') }}"/>
-    <p>Interactive 3D scatter of three latent axes, with optional color from analysis columns when you have at least
-      three <code>z</code> dimensions.</p>
+    <p>Interactive 3D scatterplot of three z-latent-space axes, with optional color from model
+       outputs and dataset attributes.
+      <br /><br />
+       Use the histogram or discrete toggles in the legend beside the plot to filter seen in plot.</p>
   </a>
   {% endif %}
   {% if vol_landscape_3d_active %}
@@ -244,8 +247,7 @@
     <h2 class="landing-card-title">3D volume landscapes</h2>
     <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_3d.png') }}"/>
     <p>3D scatter in <code>vol_pca_all.pkl</code> space for particles in <code>z.sampled.pkl</code> from
-      <code>cryodrgn analyze_landscape_full</code> for <strong>epoch {{ exp_epoch }}</strong>, with optional colour from
-      particle and landscape covariates (scatter only).</p>
+      <code>analyze_landscape_full</code> for <strong>epoch {{ exp_epoch }}</strong>.</p>
   </a>
   {% endif %}
   {% if landscape_card_active %}

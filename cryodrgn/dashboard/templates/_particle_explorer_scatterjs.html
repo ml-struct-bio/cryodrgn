@@ -107,7 +107,7 @@
 
   function montageResampleFromCachePool() {
     if (!preloaded || !preloaded.traceMap || !preloaded.traceMap.length) return null;
-    return (activePool && activePool.length) ? activePool : preloaded.traceMap;
+    return preloaded.traceMap;
   }
 
   function fitMontageResampleCacheButtonFont() {
@@ -866,21 +866,25 @@
   }
 
   function rowToTraceIndex(row) {
+    var want = Number(row);
+    if (!isFinite(want)) return -1;
     var cd = gd.data[0].customdata;
     for (var i = 0; i < cd.length; i++) {
-      if (cd[i][1] === row) return i;
+      if (Number(cd[i][1]) === want) return i;
     }
     return -1;
   }
 
   function montageItemForRow(r) {
-    var ti = rowToTraceIndex(r);
+    var rn = Number(r);
+    if (!isFinite(rn)) return null;
+    var ti = rowToTraceIndex(rn);
     if (ti < 0) return null;
     var src = "";
     if (preloaded && preloaded.rowToSrc) {
-      src = preloaded.rowToSrc.get(r) || "";
+      src = preloaded.rowToSrc.get(rn) || preloaded.rowToSrc.get(r) || "";
     }
-    return { ti: ti, row: r, src: src };
+    return { ti: ti, row: rn, src: src };
   }
 
   /** Random grid: prefer lasso/box selection, pad from full plot if needed. */

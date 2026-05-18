@@ -1653,6 +1653,19 @@
       gd: gd,
       getColorMode: function() { return sc.value; },
       getPalette: selectedLatentPalette,
+      setSelectionRendering: function(on) {
+        if (!overlay) return;
+        if (on) {
+          overlay.classList.add("cryo-plot-rendering-overlay--nonblocking");
+          overlay.classList.add("cryo-plot-rendering-overlay--show");
+          overlay.setAttribute("aria-hidden", "false");
+        } else {
+          overlay.classList.remove("cryo-plot-rendering-overlay--nonblocking");
+          overlay.classList.remove("cryo-plot-rendering-overlay--show");
+          overlay.setAttribute("aria-hidden", "true");
+        }
+        syncLatent3dPaletteFieldset();
+      }
     });
   }
 {% endif %}

@@ -285,8 +285,15 @@
         snap.camera = JSON.parse(JSON.stringify(scene.camera));
       }
       function copyRange(axis) {
-        if (!axis || !axis.range || axis.range.length < 2) return null;
-        return [axis.range[0], axis.range[1]];
+        if (!axis) return null;
+        if (axis.range && axis.range.length >= 2) {
+          return [axis.range[0], axis.range[1]];
+        }
+        try {
+          var rl = axis._rl;
+          if (rl && rl.length >= 2) return [rl[0], rl[1]];
+        } catch (e) { /* ignore */ }
+        return null;
       }
       snap.xrange = copyRange(scene.xaxis);
       snap.yrange = copyRange(scene.yaxis);
@@ -297,10 +304,20 @@
     }
   }
 
-  function restoreScatter3dSceneView(gd, snap) {
-    if (!snap || typeof Plotly === "undefined" || !Plotly.relayout) {
-      return Promise.resolve();
-    }
+  /** Merge pointerdown snapshot (pre Plotly double-click camera reset) with a live read. */
+  function mergeSnapsPreferPointerdown(pd, live) {
+    if (!pd || typeof pd !== "object") return live;
+    if (!live || typeof live !== "object") return pd;
+    return {
+      camera: pd.camera || live.camera,
+      xrange: pd.xrange || live.xrange,
+      yrange: pd.yrange || live.yrange,
+      zrange: pd.zrange || live.zrange,
+    };
+  }
+
+  function sceneRelayoutPatchFromSnap(snap) {
+    if (!snap) return {};
     var patch = {};
     if (snap.camera) patch["scene.camera"] = snap.camera;
     if (snap.xrange) {
@@ -315,13 +332,35 @@
       patch["scene.zaxis.range"] = snap.zrange;
       patch["scene.zaxis.autorange"] = false;
     }
+    return patch;
+  }
+
+  function restoreScatter3dSceneView(gd, snap) {
+    if (!snap || typeof Plotly === "undefined" || !Plotly.relayout) {
+      return Promise.resolve();
+    }
+    var patch = sceneRelayoutPatchFromSnap(snap);
     if (!Object.keys(patch).length) return Promise.resolve();
     return Plotly.relayout(gd, patch).catch(function() {});
   }
 
-  function scheduleSceneRestore(gd, snap) {
+  function scheduleSceneRestore(gd, snap, onDone) {
     requestAnimationFrame(function() {
-      restoreScatter3dSceneView(gd, snap);
+      var p = restoreScatter3dSceneView(gd, snap);
+      var chain = p && typeof p.then === "function" ? p.catch(function() {}) : Promise.resolve();
+      chain.then(function() {
+        requestAnimationFrame(function() {
+          var p2 = restoreScatter3dSceneView(gd, snap);
+          var chain2 = p2 && typeof p2.then === "function" ? p2.catch(function() {}) : Promise.resolve();
+          chain2.then(function() {
+            if (typeof onDone === "function") {
+              try {
+                onDone();
+              } catch (eDone) { /* ignore */ }
+            }
+          });
+        });
+      });
     });
   }
 
@@ -389,6 +428,9 @@
     var getColorMode = cfg.getColorMode;
     var getPalette = cfg.getPalette;
     var onAfterPlot = cfg.onAfterPlot;
+    var setSelectionRendering = typeof cfg.setSelectionRendering === "function"
+      ? cfg.setSelectionRendering
+      : null;
 
     var PREFIX = "l3dva-";
     function $(id) {
@@ -431,6 +473,28 @@
     var landscapeAnimInFlight = false;
     /** Plotly only defines ``gd.on`` after the graph div has been drawn once. */
     var plotEventsBound = false;
+    /** Scene snapshot from last ``pointerdown`` (capture); survives Plotly’s double-click camera reset. */
+    var volAnimPointerdownSnap = null;
+    var volAnimPointerdownAt = 0;
+    var volAnimSelOverlayDepth = 0;
+    function beginVolAnimSelectionOverlay() {
+      if (!setSelectionRendering) return;
+      volAnimSelOverlayDepth++;
+      if (volAnimSelOverlayDepth === 1) {
+        try {
+          setSelectionRendering(true);
+        } catch (eO) { /* ignore */ }
+      }
+    }
+    function endVolAnimSelectionOverlay() {
+      if (!setSelectionRendering) return;
+      volAnimSelOverlayDepth = Math.max(0, volAnimSelOverlayDepth - 1);
+      if (volAnimSelOverlayDepth === 0) {
+        try {
+          setSelectionRendering(false);
+        } catch (eO) { /* ignore */ }
+      }
+    }
 
     function teardownPreviews() {
       if (!previewGrid) return;
@@ -724,7 +788,15 @@
         color: "#1a1a1a",
         family: "system-ui, Segoe UI, sans-serif",
       };
-      var snap = snapshotScatter3dSceneView(gd);
+      var snapLive = snapshotScatter3dSceneView(gd);
+      var snap = snapLive;
+      if (
+        volAnimPointerdownSnap
+        && (Date.now() - volAnimPointerdownAt) < 550
+      ) {
+        snap = mergeSnapsPreferPointerdown(volAnimPointerdownSnap, snapLive);
+      }
+      var layoutPin = sceneRelayoutPatchFromSnap(snap);
       var upd = {
         "marker.size": [sizes],
         "marker.opacity": [opacities],
@@ -745,16 +817,28 @@
         textposition: "top center",
         textfont: tf,
       };
-      var p = Plotly.restyle(gd, upd, [0]);
-      if (p && typeof p.then === "function") {
-        p.catch(function() {
-          return Plotly.restyle(gd, fallback, [0]);
-        }).then(function() {
-          scheduleSceneRestore(gd, snap);
-        });
-      } else {
-        scheduleSceneRestore(gd, snap);
+      function finishSelectionRendering() {
+        endVolAnimSelectionOverlay();
       }
+      beginVolAnimSelectionOverlay();
+      var useUpdate = (
+        typeof Plotly !== "undefined"
+        && typeof Plotly.update === "function"
+        && Object.keys(layoutPin).length > 0
+      );
+      var p0 = useUpdate
+        ? Plotly.update(gd, upd, layoutPin, [0])
+        : Plotly.restyle(gd, upd, [0]);
+      var chain = p0 && typeof p0.then === "function"
+        ? p0.catch(function() {
+          return Plotly.restyle(gd, fallback, [0]);
+        })
+        : Promise.resolve();
+      chain.then(function() {
+        scheduleSceneRestore(gd, snap, finishSelectionRendering);
+      }).catch(function() {
+        scheduleSceneRestore(gd, snap, finishSelectionRendering);
+      });
     }
 
     function toggleVol(v) {
@@ -930,6 +1014,26 @@
       if (plotEventsBound) return;
       if (!gd || typeof gd.on !== "function") return;
       plotEventsBound = true;
+      function recordVolAnimPointerdownScene() {
+        try {
+          if (!layoutHasVolAnim(gd)) return;
+          volAnimPointerdownSnap = snapshotScatter3dSceneView(gd);
+          volAnimPointerdownAt = Date.now();
+        } catch (ePd) { /* ignore */ }
+      }
+      gd.addEventListener("pointerdown", recordVolAnimPointerdownScene, true);
+      gd.on("plotly_doubleclick", function() {
+        if (!layoutHasVolAnim(gd)) return;
+        var s = volAnimPointerdownSnap;
+        if (!s) return;
+        restoreScatter3dSceneView(gd, s);
+        requestAnimationFrame(function() {
+          restoreScatter3dSceneView(gd, s);
+          setTimeout(function() {
+            restoreScatter3dSceneView(gd, s);
+          }, 0);
+        });
+      });
       gd.on("plotly_selected", function(ev) {
         if (!ev || !ev.points || !ev.points.length) return;
         if (!layoutHasVolAnim(gd)) return;

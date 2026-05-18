@@ -451,13 +451,30 @@ def scatter3d_z_json(
         nv = np.asarray(sub[VOL_LANDSCAPE_NEAREST_SKETCH_VOL], dtype=np.int64)
         customdata = np.column_stack([customdata, nv])
 
+    # Match the volume-selection overlay (``latent3d_landscape_vol_animations.js``): keep
+    # ``markers+text`` from the first draw so the first selection only restyles marker/text
+    # fields — not ``mode`` — which avoids Plotly resetting orbit, zoom, or axis limits.
+    vol_landscape_sel_overlay = VOL_LANDSCAPE_NEAREST_SKETCH_VOL in sub.columns
+    n_pts = len(sub)
+    scatter3d_mode = "markers+text" if vol_landscape_sel_overlay else "markers"
+    scatter3d_extras: dict[str, Any] = {}
+    if vol_landscape_sel_overlay:
+        scatter3d_extras["text"] = [""] * n_pts
+        scatter3d_extras["textposition"] = "top center"
+        scatter3d_extras["textfont"] = dict(
+            size=12,
+            color="#1a1a1a",
+            family="system-ui, Segoe UI, sans-serif",
+        )
+
     sc = go.Scatter3d(
         x=sub[xcol],
         y=sub[ycol],
         z=sub[zcol],
-        mode="markers",
+        mode=scatter3d_mode,
         customdata=customdata,
         marker=marker,
+        **scatter3d_extras,
         **hover_kwargs_3d,
     )
     transparent = "rgba(0,0,0,0)"

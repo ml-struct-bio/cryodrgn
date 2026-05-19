@@ -211,9 +211,12 @@ class TestLandscapeVolpcaMetaAndScatter:
         assert m["ok"] is False
         assert "No landscape" in (m.get("error") or "")
 
-    def test_scatter_json_roundtrip(
+    def test_scatter_json_marker_size_matches_sketch_constant(
         self, experiment_landscape: DashboardExperiment
     ) -> None:
+        """Regression: vol-PCA scatter JSON round-trips and markers match ``_VOLSKETCH_SCATTER_MARKER``."""
+        from cryodrgn.dashboard import landscape_volpca as lv
+
         land = landscape_dir_for_epoch(
             experiment_landscape.workdir,
             _ANALYZE_EPOCH,
@@ -227,11 +230,15 @@ class TestLandscapeVolpcaMetaAndScatter:
             continuous_palette=None,
         )
         fig = json.loads(js)
-        assert "data" in fig and len(fig["data"]) == 1
         trace = fig["data"][0]
         assert trace["type"] == "scattergl"
         assert "ids" in trace
         assert len(trace["ids"]) == _LANDSCAPE_K
+        sz = trace["marker"]["size"]
+        assert float(sz) == pytest.approx(
+            float(lv._VOLSKETCH_SCATTER_MARKER), rel=0, abs=1e-9
+        )
+        assert float(sz) == pytest.approx(9.0 * (1.0 - 0.13) * 1.3, rel=0, abs=1e-9)
 
     def test_scatter_rejects_bad_axes(
         self, experiment_landscape: DashboardExperiment

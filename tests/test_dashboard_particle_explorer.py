@@ -647,6 +647,19 @@ class TestApiPreloadImages:
         )
         assert r.status_code == 400
 
+    def test_single_response_caps_thumbnail_batch_size(self, flask_client) -> None:
+        from cryodrgn.dashboard.preload import MAX_PRELOAD_IMAGES_PER_HTTP_RESPONSE
+
+        PRELOAD_CACHE.clear()
+        r = flask_client.post(
+            "/api/preload_images",
+            json={"x": "UMAP1", "y": "UMAP2", "cache_size": 5000},
+        )
+        assert r.status_code == 200
+        js = r.get_json()
+        assert len(js["rows"]) <= MAX_PRELOAD_IMAGES_PER_HTTP_RESPONSE
+        assert len(js["rows"]) == len(js["images"])
+
     def test_restrict_to_scatter_limits_pool(
         self,
         flask_client,
@@ -738,9 +751,22 @@ class TestParticleExplorerTemplateRegressions:
         assert 'id="btn-cache-selection-uncached"' in body
         assert "Add 0 selection images to cache" in body
         assert 'id="color-discrete-switches"' in body
+        assert "js/cryo_cc_legend_primitives.js" in body
         assert "js/color_covariate_legend.js" in body
+        p_idx = body.find("js/cryo_cc_legend_primitives.js")
+        c_idx = body.find("js/color_covariate_legend.js")
+        assert p_idx != -1 and c_idx != -1 and p_idx < c_idx
         assert "new CryoColorCovariateLegend" in body
         assert "function showGridHighlightsEnabled()" in body
+
+    def test_explorer_legend_static_assets_served_by_flask(self, flask_client) -> None:
+        """Wheel/sdist must ship nested ``static/js/*`` (``static/*`` alone omits them)."""
+        r_prim = flask_client.get("/static/js/cryo_cc_legend_primitives.js")
+        assert r_prim.status_code == 200, r_prim.status_code
+        assert b"CryoCcLegendPrimitives" in r_prim.data
+        r_leg = flask_client.get("/static/js/color_covariate_legend.js")
+        assert r_leg.status_code == 200, r_leg.status_code
+        assert b"CryoColorCovariateLegend" in r_leg.data
 
     def test_lasso_box_selection_union_and_deselect_preserves(
         self, flask_client
@@ -763,7 +789,7 @@ class TestParticleExplorerTemplateRegressions:
         # range/toggle selection instead of unioning with it.
         assert 'prevMode === "lasso"' in body
         assert "var mergedSet = new Set(baseRows);" in body
-        assert "accumulated union so both disjoint regions remain highlighted" in body
+        assert "Re-apply accumulated union after region geometry is committed" in body
 
         # Range/toggle selections overwrite the current selection (they don't
         # accumulate with lasso drags).
@@ -827,6 +853,52 @@ class TestParticleExplorerTemplateRegressions:
         body = r.get_data(as_text=True)
         assert "suppressMontageUpdate: true" in body
         assert "suppressPlotGridHighlights = true" in body
+        assert "IMAGE_CACHE_HTTP_CHUNK_MAX" in body
+        assert "preloadFetchErrorMessage" in body
+
+    def test_scatter_double_click_replaces_montage_slot_a_without_selection(
+        self, flask_client
+    ) -> None:
+        """Double-click assigns the particle to montage A and may grow the cache."""
+        r = flask_client.get("/explorer")
+        assert r.status_code == 200
+        body = r.get_data(as_text=True)
+        assert "handleScatterPointDoubleClick" in body
+        assert "replaceMontageSlotAt" in body
+        assert "paintMontageCellAtIndex" in body
+        assert "assignScatterRowToMontageSlotA" in body
+        assert "scatterBlockSingleClickUntil" in body
+        assert "montageResampleSuppressed" in body
+        assert "armMontageResampleSuppress" in body
+        lasso_snap = body.find("function applyLassoSelectionFromSnapshot()")
+        assert lasso_snap != -1
+        lasso_block = body[lasso_snap : lasso_snap + 1200]
+        assert "montageResampleSuppressed()" in lasso_block
+        assert "suppressMontageRefresh: true" in body
+        assert "updateMontageOrdered" in body
+        assert "suppressSelectionAfterScatterDoubleClick" in body
+        click_start = body.find('gd.on("plotly_click", function(ev)')
+        assert click_start != -1
+        click_block = body[click_start : click_start + 2200]
+        assert "handleScatterPointDoubleClick(pt)" in click_block
+        assert "updateMontage(nbs)" in click_block
+
+    def test_queue_highlight_restyle_merges_pending_xy_update_with_styling_patch(
+        self, flask_client
+    ) -> None:
+        """Regression test for montage cache resample drift.
+
+        `updateMontage()` enqueues a full grid-highlight restyle payload (x/y + styling).
+        A later call like `refreshGridHighlightMarkerStylesFromLastRows()` enqueues a
+        styling-only patch; if the pending payload is overwritten, the highlighted points
+        drift because the x/y update is dropped.
+        """
+        r = flask_client.get("/explorer")
+        assert r.status_code == 200
+        body = r.get_data(as_text=True)
+        assert "function queueHighlightRestyle(restyleData)" in body
+        assert "highlightRestyleRaf != null && pendingHighlightRestyle" in body
+        assert "pendingHighlightRestyle[k] = restyleData[k];" in body
 
     def test_grid_letter_highlights_constant_opacity_and_covariate_outline(
         self, flask_client
@@ -871,6 +943,111 @@ class TestParticleExplorerTemplateRegressions:
         assert "scheduleScatterRegionLabelChipsSync" in body
         assert "removeCommittedScatterRegion" in body
         assert "cryo-explorer-scatter-region-chip__remove" in body
+
+    def test_plotly_selected_commits_regions_before_montage_pool_refresh(
+        self, flask_client
+    ) -> None:
+        """Image cache + multi-lasso: rebuild ``committedScatterRegions`` before montage refresh.
+
+        ``updateMontage`` / ``appendGridHighlightMarkerRestyle`` read ``committedScatterRegions``;
+        ``applyLassoSelectionFromSnapshot`` must run only after
+        ``syncCommittedScatterRegionOverlays``, then grid-letter colours catch up via
+        ``refreshGridHighlightMarkerStylesFromLastRows``.
+        """
+        r = flask_client.get("/explorer")
+        assert r.status_code == 200
+        body = r.get_data(as_text=True)
+        start = body.find('gd.on("plotly_selected", function(ev)')
+        assert start != -1, "missing plotly_selected handler"
+        mid = body.find("lassoSelectionDebounceTimer = setTimeout(function()", start)
+        assert mid != -1, "missing debounced plotly_selected block"
+        end = body.find("}, LASSO_SELECTION_DEBOUNCE_MS);", mid)
+        assert end != -1 and end > mid, "could not bound plotly_selected debounce block"
+        debounce_block = body[mid:end]
+        sync_marker = "syncCommittedScatterRegionOverlays({ clearSelections: true });"
+        snap_marker = "applyLassoSelectionFromSnapshot();"
+        refresh_marker = "refreshGridHighlightMarkerStylesFromLastRows();"
+        pos_sync = debounce_block.find(sync_marker)
+        pos_snap = debounce_block.find(snap_marker)
+        pos_refresh = debounce_block.find(refresh_marker)
+        assert pos_sync != -1, debounce_block[:400]
+        assert pos_snap != -1
+        assert pos_refresh != -1
+        assert pos_sync < pos_snap < pos_refresh, (
+            "expected order: syncCommittedScatterRegionOverlays → "
+            "applyLassoSelectionFromSnapshot → refreshGridHighlightMarkerStylesFromLastRows"
+        )
+        assert "selectionsSnapshotForCommit" in body
+        assert "dedupeConsecutiveEqualScatterShapes" in body
+        pos_comment = debounce_block.find(
+            "Re-apply accumulated union after region geometry is committed"
+        )
+        pos_restyle = debounce_block.find(
+            "Plotly.restyle(gd, { selectedpoints: [selectedTi.length ? selectedTi : null] }, [0]);"
+        )
+        assert pos_comment != -1 and pos_restyle != -1
+        assert (
+            pos_sync < pos_comment < pos_restyle
+        ), "region overlays must sync before selectedpoints restyle (restyle can clear layout.selections)"
+
+    def test_multi_region_row_membership_recomputed_from_geometry(
+        self, flask_client
+    ) -> None:
+        """Each region's ``rows`` must follow lasso geometry, not only the last ``rowsSnap``."""
+        r = flask_client.get("/explorer")
+        assert r.status_code == 200
+        body = r.get_data(as_text=True)
+        assert "recomputeCommittedScatterRegionRowsFromGeometry" in body
+        assert "rowsUnionFromCommittedScatterRegions" in body
+        assert "scatterRawShapeContainsDataXY" in body
+        assert "pointInPolygonXY" in body
+        assert "traceIndexForPlotDfRow" in body
+
+    def test_multi_region_montage_and_grid_use_scatter_region_line_colour(
+        self, flask_client
+    ) -> None:
+        """Montage + grid-letter styling for no-covariate multi-region tracks ``scatterRegionPlotStyle``."""
+        r = flask_client.get("/explorer")
+        assert r.status_code == 200
+        body = r.get_data(as_text=True)
+        assert "function selectionRegionMontageStyles(regionIdx)" in body
+        assert "scatterRegionPlotStyle(regionIdx).line" in body
+        assert "discreteLabelMontageStyles(lineHex)" in body
+        assert "borderNoCov = scatterRegionPlotStyle(ridxM).line;" in body
+        assert "scatterRegionPlotStyle(rIdxgeom).line" in body
+        assert '(multiGeom ? "#94a3b8" : ACCENT)' in body
+
+    def test_scatter_region_overlay_chips_compact_vertical_css(
+        self, flask_client
+    ) -> None:
+        """Region count chips stay short while preserving count font + icon metrics."""
+        r = flask_client.get("/explorer")
+        assert r.status_code == 200
+        body = r.get_data(as_text=True)
+        assert (
+            ".cryo-dash-page--particle-explorer "
+            ".cryo-explorer-scatter-region-chip.cryo-cc-discrete-cell--plastic {"
+        ) in body
+        assert "inset 0 0 0 1px rgba(255, 255, 255, 0.28)" in body
+        assert ".cryo-explorer-scatter-region-chip__row" in body
+        assert (
+            "cdrgn: chip row — count label vertically centered with action icons"
+            in body
+        )
+        assert "padding: 0.14rem 0.22rem 0.18rem 0.22rem" in body
+        assert (
+            ".cryo-explorer-scatter-region-chip .cryo-cc-discrete-switch-label" in body
+        )
+        assert "max-height: 0" in body
+        assert "font-size: 0.7rem" in body
+        assert (
+            ".cryo-explorer-scatter-region-chip .cryo-cc-discrete-switch-count" in body
+        )
+        assert "font-size: 0.6rem" in body
+        assert "line-height: 1" in body
+        assert "transform: scale(1.524)" in body
+        assert "width: 0.56rem" in body
+        assert "height: 0.56rem" in body
 
     def test_montage_cards_use_top_meta_band_and_tight_image_margins(
         self, flask_client

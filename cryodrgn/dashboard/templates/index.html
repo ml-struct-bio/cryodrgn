@@ -283,7 +283,7 @@
       embeddings.<br /><br />
        Use lasso selection to write <code>--ind</code> <code>.pkl</code> files.
     {% if command_builder_only %}
-    <p class="muted">Activate this interface by running <code>cryodrgn dashboard &lt;outdir&gt;</code>.</p>
+    <p class="muted">Activate this interface by running<br /><code>cryodrgn dashboard &lt;outdir&gt;</code>.</p>
     {% else %}
     <p class="muted">Activate this interface by loading an output directory with single-particle image previews.</p>
     {% endif %}
@@ -295,7 +295,7 @@
     <h2 class="landing-card-title">Pair-plot generator</h2>
     <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_pair.png') }}"/>
     <p>Grid of scatters across latent dimensions and embeddings (PCA / UMAP on the diagonal when available).</p>
-    <p class="muted">Activate this interface by running <code>cryodrgn dashboard &lt;outdir&gt;</code>.</p>
+    <p class="muted">Activate this interface by running<br /><code>cryodrgn dashboard &lt;outdir&gt;</code>.</p>
   </article>
   {% endif %}
   {% if not latent3d_active %}
@@ -306,7 +306,7 @@
     <p>Interactive 3D scatter of three latent axes, with optional color from analysis columns when you have at least
       three <code>z</code> dimensions.</p>
     {% if command_builder_only %}
-    <p class="muted">Activate this interface by running <code>cryodrgn dashboard &lt;outdir&gt;</code>.</p>
+    <p class="muted">Activate this interface by running<br /><code>cryodrgn dashboard &lt;outdir&gt;</code>.</p>
     {% else %}
     <p class="muted">Activate this interface by loading a run with at least three latent dimensions (current:
       {{ zdim }}).</p>
@@ -321,10 +321,9 @@
     <p>Draw a line through the latent scatter to generate volumes along a trajectory — direct interpolation or
       nearest-neighbor mode — with ChimeraX previews.</p>
     {% if command_builder_only %}
-    <p class="muted">Activate this interface by running <code>cryodrgn dashboard &lt;outdir&gt;</code>.</p>
+    <p class="muted">Activate this interface by running<br /><code>cryodrgn dashboard &lt;outdir&gt;</code>.</p>
     {% else %}
-    <p class="muted">Activate this interface by using a CUDA-enabled machine and loading a run with model weights for
-      the selected epoch.</p>
+    <p class="muted">Activate this interface by running <code>dashboard</code> on a CUDA-enabled machine.</p>
     {% endif %}
   </article>
   {% endif %}
@@ -337,7 +336,9 @@
       <code>cryodrgn analyze_landscape_full</code>, with colour from particle and
       landscape covariates (scatter only).</p>
     {% if command_builder_only %}
-    <p class="muted">Activate this interface by running <code>cryodrgn dashboard &lt;outdir&gt;</code>.</p>
+    <p class="muted">Activate this interface by running<br /><code>cryodrgn dashboard &lt;outdir&gt;</code><br />on
+      an <code>outdir</code> for which<br /><code>cryodrgn analyze_landscape_full</code><br />
+      has been run for at least one epoch.</p>
     {% else %}
     <p class="muted">Needs <code>landscape.{{ exp_epoch }}/landscape_full/z.sampled.pkl</code>,
       <code>ind.sampled.pkl</code>, and <code>vol_pca_all.pkl</code> with at least three PCA columns. Run
@@ -353,8 +354,9 @@
     <p>Explore k-means sketch volumes in PCA space from <code>analyze_landscape</code>, select volumes, preview GIFs
       (cycle or rotate), and save under <code>landscape.N/kmeansK/</code>.</p>
     {% if command_builder_only %}
-    <p class="muted">Activate this interface by running <code>cryodrgn dashboard &lt;outdir&gt;</code>, then run
-      <code>cryodrgn analyze_landscape</code> for an epoch.</p>
+    <p class="muted">Activate this interface by running<br /><code>cryodrgn dashboard &lt;outdir&gt;</code><br />on
+      an <code>outdir</code> for which<br /><code>cryodrgn analyze_landscape</code><br />has been
+      run for at least one epoch.</p>
     {% else %}
     <p class="muted">No complete landscape output for <strong>epoch {{ exp_epoch }}</strong>
       (<code>landscape.{{ exp_epoch }}</code> with <code>vol_pca_*</code> and matching <code>kmeans*</code>).

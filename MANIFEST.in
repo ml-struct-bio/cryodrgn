@@ -1,1 +1,2 @@
 include cryodrgn/templates/*ipynb
+recursive-include cryodrgn/dashboard/static *

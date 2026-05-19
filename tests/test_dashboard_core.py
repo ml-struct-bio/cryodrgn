@@ -237,6 +237,26 @@ class TestDashboardScatterApis:
         js = r.get_json()
         assert len(js["data"][0]["customdata"]) == 100
 
+    @pytest.mark.parametrize(
+        "extra_query",
+        [
+            "explorer_scatter=1",
+            "filter_ui=1",
+            "",
+        ],
+    )
+    def test_api_scatter_main_trace_is_scattergl(
+        self, flask_client, extra_query: str
+    ) -> None:
+        """Browser scatter must use Plotly Scattergl — SVG Scatter does not scale to explorer caps."""
+        base = "x=UMAP1&y=UMAP2&color=labels"
+        q = f"{base}&{extra_query}" if extra_query else base
+        r = flask_client.get(f"/api/scatter?{q}")
+        assert r.status_code == 200, r.get_data(as_text=True)
+        js = r.get_json()
+        assert js["data"], js
+        assert js["data"][0].get("type") == "scattergl"
+
     def test_api_scatter_full_returns_entire_df(self, flask_client) -> None:
         r = flask_client.get("/api/scatter?x=UMAP1&y=UMAP2&color=none&full=1")
         assert r.status_code == 200
@@ -948,6 +968,7 @@ class TestDashboardModules:
         from cryodrgn.dashboard import landscape_full_3d as lf3
         from cryodrgn.dashboard.column_names import (
             VOL_LANDSCAPE_3D_PLOT_DF_ROW,
+            VOL_LANDSCAPE_IS_SKETCH_CENTROID,
             VOL_LANDSCAPE_NEAREST_SKETCH_VOL,
         )
 
@@ -962,4 +983,222 @@ class TestDashboardModules:
         cols = lf3.landscape_full_sampled_numeric_covariates(df)
         assert "landscape_vol_PC1" in cols
         assert VOL_LANDSCAPE_NEAREST_SKETCH_VOL not in cols
+        assert VOL_LANDSCAPE_IS_SKETCH_CENTROID not in cols
         assert VOL_LANDSCAPE_3D_PLOT_DF_ROW not in cols
+
+    def test_scatter3d_volume_landscape_style_scales_marker_size(
+        self, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        """Regression: 3D volume-landscape UI keeps glyphs smaller than the default n-curve (relative factor unchanged after dashboard glyph scale)."""
+        import json
+
+        from cryodrgn.dashboard.plots_scatter import scatter3d_z_json
+
+        base = json.loads(
+            scatter3d_z_json(
+                dashboard_experiment,
+                "z0",
+                "z1",
+                "z2",
+                None,
+                volume_landscape_3d_style=False,
+            )
+        )
+        vol = json.loads(
+            scatter3d_z_json(
+                dashboard_experiment,
+                "z0",
+                "z1",
+                "z2",
+                None,
+                volume_landscape_3d_style=True,
+            )
+        )
+        sz_b = base["data"][0]["marker"]["size"]
+        sz_v = vol["data"][0]["marker"]["size"]
+        assert isinstance(sz_b, (int, float))
+        assert isinstance(sz_v, (int, float))
+        factor = (1.0 - 0.31) * (1.0 - 0.13) ** 2 * 0.8 * 1.13
+        assert float(sz_v) == pytest.approx(float(sz_b) * factor, rel=1e-6, abs=1e-9)
+        assert float(sz_v) < float(sz_b)
+
+    def test_scatter3d_vol_landscape_overlay_trace_uses_markers_plus_text(
+        self, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        """3D volume-landscape GIF UI: trace starts as markers+text so selection restyle skips mode flip."""
+        import json
+
+        import numpy as np
+
+        from cryodrgn.dashboard.column_names import VOL_LANDSCAPE_NEAREST_SKETCH_VOL
+        from cryodrgn.dashboard.plots_scatter import scatter3d_z_json
+
+        e = dashboard_experiment
+        sub = e.plot_df.iloc[:40].copy()
+        sub[VOL_LANDSCAPE_NEAREST_SKETCH_VOL] = (
+            np.arange(len(sub), dtype=np.int64) % 3 + 1
+        )
+        allow = frozenset({"z0", "z1", "z2"})
+        js = scatter3d_z_json(
+            e,
+            "z0",
+            "z1",
+            "z2",
+            "none",
+            plot_df=sub,
+            xyz_axes_allowed=allow,
+            volume_landscape_3d_style=True,
+        )
+        fig = json.loads(js)
+        tr = fig["data"][0]
+        assert tr["mode"] == "markers+text"
+        assert tr["text"] == [""] * len(sub)
+        assert tr.get("textposition") == "middle center"
+        tf = tr.get("textfont") or {}
+        assert tf.get("size") == pytest.approx(36 * 0.8)
+        assert tf.get("color") == "#1a1a1a"
+        meta = (fig.get("layout") or {}).get("meta") or {}
+        assert meta.get("cdrgn_landscape_vol_animation") is True
+        assert meta.get("cdrgn_landscape_sketch_centroid_cd") is not True
+
+    def test_scatter3d_vol_landscape_sketch_centroid_customdata(
+        self, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        import json
+
+        import numpy as np
+
+        from cryodrgn.dashboard.column_names import (
+            VOL_LANDSCAPE_3D_PLOT_DF_ROW,
+            VOL_LANDSCAPE_IS_SKETCH_CENTROID,
+            VOL_LANDSCAPE_NEAREST_SKETCH_VOL,
+        )
+        from cryodrgn.dashboard.plots_scatter import scatter3d_z_json
+
+        e = dashboard_experiment
+        sub = e.plot_df.iloc[:40].copy()
+        sub[VOL_LANDSCAPE_3D_PLOT_DF_ROW] = np.arange(40, dtype=np.int64)
+        sub[VOL_LANDSCAPE_NEAREST_SKETCH_VOL] = (
+            np.arange(len(sub), dtype=np.int64) % 3 + 1
+        )
+        sub[VOL_LANDSCAPE_IS_SKETCH_CENTROID] = (
+            (np.arange(len(sub), dtype=np.int64) % 5 == 0)
+        ).astype(np.int64)
+        allow = frozenset({"z0", "z1", "z2"})
+        js = scatter3d_z_json(
+            e,
+            "z0",
+            "z1",
+            "z2",
+            "none",
+            plot_df=sub,
+            xyz_axes_allowed=allow,
+            volume_landscape_3d_style=True,
+        )
+        fig = json.loads(js)
+        meta = (fig.get("layout") or {}).get("meta") or {}
+        assert meta.get("cdrgn_landscape_sketch_centroid_cd") is True
+        row0 = fig["data"][0]["customdata"][0]
+        assert int(row0[-1]) in (1, 2, 3)
+        assert int(row0[-2]) in (0, 1)
+
+    def test_subsample_preserving_sketch_centroids_keeps_centroid_rows(self) -> None:
+        import numpy as np
+        import pandas as pd
+
+        from cryodrgn.dashboard.column_names import VOL_LANDSCAPE_IS_SKETCH_CENTROID
+        from cryodrgn.dashboard.plots_figure_utils import (
+            _subsample_preserving_sketch_centroids,
+        )
+
+        n = 200
+        cent = np.zeros(n, dtype=np.int64)
+        cent[[5, 42]] = 1
+        df = pd.DataFrame({VOL_LANDSCAPE_IS_SKETCH_CENTROID: cent})
+        sub, idx = _subsample_preserving_sketch_centroids(df, 20, seed=1)
+        assert len(sub) == 20
+        assert int(sub[VOL_LANDSCAPE_IS_SKETCH_CENTROID].sum()) == 2
+        assert 5 in idx and 42 in idx
+
+    def test_scatter3d_without_vol_overlay_trace_stays_markers_only(
+        self, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        import json
+
+        from cryodrgn.dashboard.plots_scatter import scatter3d_z_json
+
+        e = dashboard_experiment
+        sub = e.plot_df.iloc[:40].copy()
+        allow = frozenset({"z0", "z1", "z2"})
+        js = scatter3d_z_json(
+            e,
+            "z0",
+            "z1",
+            "z2",
+            "none",
+            plot_df=sub,
+            xyz_axes_allowed=allow,
+            volume_landscape_3d_style=True,
+        )
+        fig = json.loads(js)
+        tr = fig["data"][0]
+        assert tr["mode"] == "markers"
+        assert "text" not in tr
+        meta = (fig.get("layout") or {}).get("meta") or {}
+        assert meta.get("cdrgn_landscape_vol_animation") is not True
+
+    def test_latent_3d_vol_anim_wires_preview_loading_callback(self) -> None:
+        """ChimeraX runs use ``setPreviewAnimLoading`` on the preview stack; main ``setRendering`` is scatter reload only."""
+        root = Path(__file__).resolve().parents[1]
+        p = root / "cryodrgn" / "dashboard" / "templates" / "latent_3d.html"
+        text = p.read_text(encoding="utf-8")
+        assert "setPreviewAnimLoading:" in text
+        assert "reapplySelectionHighlightIfNeeded" in text
+        assert "l3dva-preview-anim-overlay" in text
+        assert "setRendering(on)" in text
+        assert "CryoLatent3dVolLandscapeAnim.boot" in text
+        vol_js = (
+            root
+            / "cryodrgn"
+            / "dashboard"
+            / "static"
+            / "js"
+            / "latent3d_landscape_vol_animations.js"
+        )
+        vol_text = vol_js.read_text(encoding="utf-8")
+        assert "referenceScatter3dBaseMarkerSize" in vol_text
+        assert "formatVolMontageLetterText" in vol_text
+        assert "<b><i>" in vol_text
+
+    def test_landscape_volpca_selection_sizes_respect_trace_marker(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        js = root / "cryodrgn" / "dashboard" / "static" / "js" / "landscape_volpca.js"
+        assert "referenceScatter3dBaseMarkerSize" in js.read_text(encoding="utf-8")
+
+    def test_latent_3d_loads_scatter3d_scene_module_before_vol_anim(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        text = (
+            root / "cryodrgn" / "dashboard" / "templates" / "latent_3d.html"
+        ).read_text(encoding="utf-8")
+        assert "plotly_scatter3d_scene.js" in text
+        assert "lastLatent3dPersistedSceneSnap" in text
+        assert "latent3dSceneSnapHasCamera" in text
+        assert "inset: 0" in text
+        assert "background: transparent" in text
+        p3 = text.index("plotly_scatter3d_scene.js")
+        assert p3 < text.index("(function() {")
+        js = (
+            root
+            / "cryodrgn"
+            / "dashboard"
+            / "static"
+            / "js"
+            / "plotly_scatter3d_scene.js"
+        )
+        assert js.is_file()
+        js_text = js.read_text(encoding="utf-8")
+        assert "CryoPlotlyScatter3dScene" in js_text
+        assert "applySnapshotToFigureLayout" in js_text
+        assert "sceneRelayoutPatchCameraOnly" in js_text
+        # Colour-covariate changes await legend ``refresh`` before vol-anim tail + scene restore.
+        assert "pRefresh" in text and "cRefresh.then" in text

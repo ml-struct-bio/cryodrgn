@@ -5,6 +5,52 @@
 {% block nav_page_title %}{{ nav_page_title_span(nav_bar_title) }}{% endblock %}
 {% block head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/cryo_cc_legend_palette_menu.css') }}"/>
+<style>
+  /* Full-plot frosted blur while the WebGL scatter redraws (axes / colour reload only) — no dark scrim. */
+  .cryo-dash-page--latent3d #latent3d-plot-stack {
+    position: relative;
+    min-height: 280px;
+  }
+  .cryo-dash-page--latent3d #latent3d-rendering-overlay.cryo-plot-rendering-overlay--show {
+    position: absolute;
+    inset: 0;
+    z-index: 6;
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    backdrop-filter: blur(14px) saturate(1.06);
+    -webkit-backdrop-filter: blur(14px) saturate(1.06);
+  }
+  .cryo-dash-page--latent3d #latent3d-rendering-overlay.cryo-plot-rendering-overlay--show .cryo-plot-rendering-overlay__inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.25rem;
+    padding: 2rem 2.5rem;
+    max-width: min(92%, 28rem);
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .cryo-dash-page--latent3d #latent3d-rendering-overlay.cryo-plot-rendering-overlay--show .cryo-plot-rendering-overlay__label {
+    font-size: clamp(1.45rem, 3.2vw, 2.35rem);
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: #1a202c;
+    text-shadow: 0 0 1px rgba(255, 255, 255, 0.95), 0 2px 18px rgba(255, 255, 255, 0.75);
+  }
+  .cryo-dash-page--latent3d #latent3d-rendering-overlay.cryo-plot-rendering-overlay--show .cryo-plot-rendering-overlay__track {
+    width: min(100%, 22rem);
+    height: 10px;
+    border-radius: 999px;
+    background: rgba(36, 59, 83, 0.12);
+    box-shadow: inset 0 0 0 1px rgba(36, 59, 83, 0.18);
+    overflow: hidden;
+  }
+  .cryo-dash-page--latent3d #latent3d-rendering-overlay.cryo-plot-rendering-overlay--show .cryo-plot-rendering-overlay__indeterminate {
+    height: 100%;
+  }
+</style>
 {% if show_landscape_vol_animations %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/landscape_volpca.css') }}"/>
 <style>
@@ -220,12 +266,60 @@
     line-height: 1.28;
     color: var(--nav-bg, #243b53);
   }
+  .cryo-dash-page--latent3d #l3dva-preview-wrap {
+    position: relative;
+    min-height: 5rem;
+  }
+  .cryo-dash-page--latent3d .l3dva-preview-anim-overlay {
+    display: none;
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    backdrop-filter: blur(12px) saturate(1.05);
+    -webkit-backdrop-filter: blur(12px) saturate(1.05);
+    border-radius: 5px;
+    box-shadow: inset 0 0 0 1px rgba(36, 59, 83, 0.08);
+  }
+  .cryo-dash-page--latent3d .l3dva-preview-anim-overlay.l3dva-preview-anim-overlay--show {
+    display: flex;
+  }
+  .cryo-dash-page--latent3d .l3dva-preview-anim-overlay__inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem 1.1rem;
+    max-width: min(96%, 14rem);
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .cryo-dash-page--latent3d .l3dva-preview-anim-overlay--show .cryo-plot-rendering-overlay__label {
+    font-size: clamp(0.95rem, 2.6vw, 1.25rem);
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: #1a202c;
+    text-shadow: 0 0 1px rgba(255, 255, 255, 0.95), 0 2px 12px rgba(255, 255, 255, 0.65);
+  }
+  .cryo-dash-page--latent3d .l3dva-preview-anim-overlay--show .cryo-plot-rendering-overlay__track {
+    width: min(100%, 12rem);
+    height: 8px;
+    border-radius: 999px;
+    background: rgba(36, 59, 83, 0.12);
+    box-shadow: inset 0 0 0 1px rgba(36, 59, 83, 0.18);
+    overflow: hidden;
+  }
+  .cryo-dash-page--latent3d .l3dva-preview-anim-overlay--show .cryo-plot-rendering-overlay__indeterminate {
+    height: 100%;
+  }
   .cryo-dash-page--latent3d #l3dva-preview-grid .volsketch-gif-overlay {
     position: absolute;
     top: 0.28rem;
     left: 0.28rem;
     z-index: 1;
-    font-size: clamp(0.78rem, 2.4vw, 1.02rem);
+    font-size: clamp(0.936rem, 2.88vw, 1.224rem);
     font-weight: 700;
     font-variant-numeric: tabular-nums;
     color: #1a1a1a;
@@ -1090,6 +1184,14 @@
         </div>
         <div id="l3dva-preview-wrap" class="volsketch-preview-wrap" style="margin-top:0;">
           <div id="l3dva-preview-grid" class="volsketch-preview-grid"></div>
+          <div id="l3dva-preview-anim-overlay" class="l3dva-preview-anim-overlay" aria-hidden="true">
+            <div class="l3dva-preview-anim-overlay__inner">
+              <span class="cryo-plot-rendering-overlay__label">Rendering…</span>
+              <div class="cryo-plot-rendering-overlay__track" role="progressbar" aria-valuetext="Loading volume animations">
+                <div class="cryo-plot-rendering-overlay__indeterminate"></div>
+              </div>
+            </div>
+          </div>
         </div>
         <fieldset class="volsketch-gif-modes l3dva-gif-mode-fieldset" style="margin:0 0 0.65rem;">
           <legend>Animation output</legend>
@@ -1150,6 +1252,7 @@
 
 <script src="{{ url_for('static', filename='js/cryo_cc_legend_primitives.js') }}"></script>
 <script src="{{ url_for('static', filename='js/color_covariate_legend.js') }}"></script>
+<script src="{{ url_for('static', filename='js/plotly_scatter3d_scene.js') }}"></script>
 {% if show_vol_landscape_quick_actions %}
 <script src="{{ url_for('static', filename='js/latent3d_plot_gif.js') }}"></script>
 {% endif %}
@@ -1210,7 +1313,12 @@
   var legendContextUrl = "{{ url_for('api_covariate_legend_context') }}";
   var legendContextBodyExtra = {{ legend_context_body_extra | tojson }};
   var overlay = document.getElementById("latent3d-rendering-overlay");
-  var latent3dRenderingEverCompleted = false;
+  var latent3dPreviewAnimOverlay = document.getElementById("l3dva-preview-anim-overlay");
+  function setLatent3dPreviewAnimLoading(on) {
+    if (!latent3dPreviewAnimOverlay) return;
+    latent3dPreviewAnimOverlay.classList.toggle("l3dva-preview-anim-overlay--show", !!on);
+    latent3dPreviewAnimOverlay.setAttribute("aria-hidden", on ? "false" : "true");
+  }
   var latent3dPaletteSelect = document.getElementById("latent3d-palette-select");
   var latent3dPaletteToggle = document.getElementById("latent3d-palette-toggle");
   var latent3dPaletteOptions = document.getElementById("latent3d-palette-options");
@@ -1218,6 +1326,33 @@
   var controlsCard = document.getElementById("latent3d-controls-card");
   var controlsSide = controlsCard ? controlsCard.closest(".cryo-dash-side") : null;
   var plotStack = document.getElementById("latent3d-plot-stack");
+  var P3S = window.CryoPlotlyScatter3dScene;
+  var latent3dScatterLoadGen = 0;
+  var lastLatent3dAxesKey = null;
+  /** Last scatter3d view with a usable ``camera.eye`` (orbit); updated on relayout / afterplot when idle. */
+  var lastLatent3dPersistedSceneSnap = null;
+
+  function latent3dSceneSnapHasCamera(snap) {
+    if (!snap || !snap.camera || typeof snap.camera !== "object") return false;
+    var eye = snap.camera.eye;
+    return !!(eye && typeof eye === "object");
+  }
+
+  function latent3dMaybePersistSceneFromPlot() {
+    requestAnimationFrame(function() {
+      try {
+        if (overlay && overlay.classList.contains("cryo-plot-rendering-overlay--show")) return;
+        if (!P3S || typeof P3S.snapshot !== "function" || !gd._fullLayout || !gd._fullLayout.scene) return;
+        var s = P3S.snapshot(gd);
+        if (latent3dSceneSnapHasCamera(s)) lastLatent3dPersistedSceneSnap = s;
+      } catch (eRel) { /* ignore */ }
+    });
+  }
+
+  if (gd && typeof gd.on === "function") {
+    gd.on("plotly_relayout", latent3dMaybePersistSceneFromPlot);
+    gd.on("plotly_afterplot", latent3dMaybePersistSceneFromPlot);
+  }
 
   function syncControlsAlignment() {
     if (!controlsCard || !controlsSide || !plotStack) return;
@@ -1397,15 +1532,7 @@
 
   function setRendering(on) {
     if (overlay) {
-      if (on) {
-        if (latent3dRenderingEverCompleted) {
-          overlay.classList.add("cryo-plot-rendering-overlay--nonblocking");
-        } else {
-          overlay.classList.remove("cryo-plot-rendering-overlay--nonblocking");
-        }
-      } else {
-        overlay.classList.remove("cryo-plot-rendering-overlay--nonblocking");
-      }
+      overlay.classList.remove("cryo-plot-rendering-overlay--nonblocking");
       overlay.classList.toggle("cryo-plot-rendering-overlay--show", on);
       overlay.setAttribute("aria-hidden", on ? "false" : "true");
     }
@@ -1511,12 +1638,43 @@
     var y = sy.value;
     var z = sz.value;
     var c = sc.value;
+    var axesKey = x + "\u0001" + y + "\u0001" + z;
+    var latent3dSameAxesAsLast = (
+      typeof lastLatent3dAxesKey === "string" && lastLatent3dAxesKey === axesKey
+    );
+    if (typeof lastLatent3dAxesKey === "string" && lastLatent3dAxesKey !== axesKey) {
+      lastLatent3dPersistedSceneSnap = null;
+    }
+    var sceneSnap = null;
+    if (
+      P3S && typeof P3S.snapshot === "function"
+      && gd && gd._fullLayout && gd._fullLayout.scene
+      && typeof lastLatent3dAxesKey === "string"
+      && lastLatent3dAxesKey === axesKey
+    ) {
+      var liveSnap = P3S.snapshot(gd);
+      sceneSnap = liveSnap;
+      if (
+        sceneSnap
+        && !latent3dSceneSnapHasCamera(sceneSnap)
+        && lastLatent3dPersistedSceneSnap
+        && latent3dSceneSnapHasCamera(lastLatent3dPersistedSceneSnap)
+      ) {
+        sceneSnap = {
+          camera: lastLatent3dPersistedSceneSnap.camera,
+          xrange: (liveSnap && liveSnap.xrange) || lastLatent3dPersistedSceneSnap.xrange,
+          yrange: (liveSnap && liveSnap.yrange) || lastLatent3dPersistedSceneSnap.yrange,
+          zrange: (liveSnap && liveSnap.zrange) || lastLatent3dPersistedSceneSnap.zrange,
+        };
+      }
+    }
     var st = document.getElementById("z3-axis-status");
     if (x === y || x === z || y === z) {
       if (st) st.textContent = "Choose three different latent axes.";
       setRendering(false);
       return Promise.resolve();
     }
+    var myGen = ++latent3dScatterLoadGen;
     if (st) st.textContent = "";
     setRendering(true);
     var payload = buildLatent3dPostPayload({});
@@ -1538,40 +1696,164 @@
               });
             })
             .then(function(fig) {
-              return Plotly.react(gd, fig.data, fig.layout, {
+              if (myGen !== latent3dScatterLoadGen) {
+                return Promise.resolve();
+              }
+              if (sceneSnap && P3S) {
+                if (
+                  latent3dSameAxesAsLast
+                  && typeof P3S.applySnapshotCameraOnlyToFigureLayout === "function"
+                ) {
+                  P3S.applySnapshotCameraOnlyToFigureLayout(fig, sceneSnap);
+                } else if (typeof P3S.applySnapshotToFigureLayout === "function") {
+                  P3S.applySnapshotToFigureLayout(fig, sceneSnap);
+                }
+              }
+              var pReact = Plotly.react(gd, fig.data, fig.layout, {
                 responsive: true,
                 {% if show_landscape_vol_animations %}
                 doubleClick: false,
                 {% endif %}
               });
+              var chainR = pReact && typeof pReact.then === "function"
+                ? pReact.catch(function() {})
+                : Promise.resolve();
+              return chainR.then(function() {
+                if (myGen !== latent3dScatterLoadGen) {
+                  return;
+                }
+                var pSel = Promise.resolve();
+                if (latent3dVolAnimApi
+                    && typeof latent3dVolAnimApi.reapplySelectionHighlightIfNeeded === "function") {
+                  pSel = latent3dVolAnimApi.reapplySelectionHighlightIfNeeded();
+                }
+                var cSel = pSel && typeof pSel.then === "function"
+                  ? pSel.catch(function() {})
+                  : Promise.resolve();
+                return cSel.then(function() {
+                if (myGen !== latent3dScatterLoadGen) {
+                  return;
+                }
+                if (!sceneSnap || !P3S) {
+                  return;
+                }
+                var pImm = latent3dSameAxesAsLast
+                    && typeof P3S.restoreCameraOnly === "function"
+                  ? P3S.restoreCameraOnly(gd, sceneSnap)
+                  : (typeof P3S.restore === "function" ? P3S.restore(gd, sceneSnap) : null);
+                var cImm = pImm && typeof pImm.then === "function"
+                  ? pImm.catch(function() {})
+                  : Promise.resolve();
+                return cImm.then(function() {
+                  if (myGen !== latent3dScatterLoadGen) {
+                    return;
+                  }
+                  if (latent3dSameAxesAsLast
+                      && typeof P3S.scheduleRestoreCameraOnly === "function") {
+                    return new Promise(function(res) {
+                      P3S.scheduleRestoreCameraOnly(gd, sceneSnap, res);
+                    });
+                  }
+                  if (typeof P3S.scheduleRestore === "function") {
+                    return new Promise(function(res) {
+                      P3S.scheduleRestore(gd, sceneSnap, res);
+                    });
+                  }
+                });
+                });
+              });
             })
             .then(function() {
-              latent3dRenderingEverCompleted = true;
-              setRendering(false);
+              if (myGen !== latent3dScatterLoadGen) {
+                return;
+              }
+              lastLatent3dAxesKey = axesKey;
               syncControlsAlignment();
               requestAnimationFrame(function() {
                 try {
                   Plotly.Plots.resize(gd);
                 } catch (e) {}
-                syncLatent3dAsideLayout();
-                latent3dColorLegend.refresh({ suppressNotify: true });
-                if (plotGifApi && typeof plotGifApi.syncUi === "function") {
-                  plotGifApi.syncUi();
+                function runLatent3dPostResizeTail() {
+                  syncLatent3dAsideLayout();
+                  // ``refresh`` returns a Promise (histogram fetch / Plotly draw). If we run the
+                  // vol-anim ``afterPlotRedraw`` chain before it settles, the aside can resize
+                  // afterward and Plotly's responsive autosize knocks the scatter3d camera back
+                  // to defaults — especially when the colour covariate changes.
+                  var pRefresh = latent3dColorLegend.refresh({ suppressNotify: true });
+                  var cRefresh = pRefresh && typeof pRefresh.then === "function"
+                    ? pRefresh.catch(function() {})
+                    : Promise.resolve();
+                  cRefresh.then(function() {
+                    requestAnimationFrame(function() {
+                      if (myGen !== latent3dScatterLoadGen) {
+                        resolve();
+                        return;
+                      }
+                      syncLatent3dAsideLayout();
+                      if (plotGifApi && typeof plotGifApi.syncUi === "function") {
+                        plotGifApi.syncUi();
+                      }
+                      if (latent3dNeedVolAnimColorRefresh && latent3dVolAnimApi
+                          && typeof latent3dVolAnimApi.onColorOrPaletteChanged === "function") {
+                        latent3dNeedVolAnimColorRefresh = false;
+                        latent3dVolAnimApi.onColorOrPaletteChanged();
+                      }
+                      if (latent3dVolAnimApi && typeof latent3dVolAnimApi.afterPlotRedraw === "function") {
+                        latent3dVolAnimApi.afterPlotRedraw();
+                      }
+                      function latent3dFinishScatterLoadPromise() {
+                        try {
+                          if (
+                            P3S && typeof P3S.snapshot === "function"
+                            && gd && gd._fullLayout && gd._fullLayout.scene
+                          ) {
+                            var sPost = P3S.snapshot(gd);
+                            if (latent3dSceneSnapHasCamera(sPost)) {
+                              lastLatent3dPersistedSceneSnap = sPost;
+                            }
+                          }
+                        } catch (ePost) { /* ignore */ }
+                        if (myGen === latent3dScatterLoadGen) {
+                          setRendering(false);
+                        }
+                        resolve();
+                      }
+                      if (sceneSnap && P3S) {
+                        if (latent3dSameAxesAsLast
+                            && typeof P3S.scheduleRestoreCameraOnly === "function") {
+                          P3S.scheduleRestoreCameraOnly(gd, sceneSnap, latent3dFinishScatterLoadPromise);
+                        } else if (typeof P3S.scheduleRestore === "function") {
+                          P3S.scheduleRestore(gd, sceneSnap, latent3dFinishScatterLoadPromise);
+                        } else {
+                          latent3dFinishScatterLoadPromise();
+                        }
+                      } else {
+                        latent3dFinishScatterLoadPromise();
+                      }
+                    });
+                  });
                 }
-                if (latent3dNeedVolAnimColorRefresh && latent3dVolAnimApi
-                    && typeof latent3dVolAnimApi.onColorOrPaletteChanged === "function") {
-                  latent3dNeedVolAnimColorRefresh = false;
-                  latent3dVolAnimApi.onColorOrPaletteChanged();
+                if (sceneSnap && P3S) {
+                  var prs = latent3dSameAxesAsLast
+                      && typeof P3S.restoreCameraOnly === "function"
+                    ? P3S.restoreCameraOnly(gd, sceneSnap)
+                    : (typeof P3S.restore === "function" ? P3S.restore(gd, sceneSnap) : null);
+                  var crs = prs && typeof prs.then === "function"
+                    ? prs.catch(function() {})
+                    : Promise.resolve();
+                  crs.then(function() {
+                    requestAnimationFrame(runLatent3dPostResizeTail);
+                  });
+                } else {
+                  requestAnimationFrame(runLatent3dPostResizeTail);
                 }
-                if (latent3dVolAnimApi && typeof latent3dVolAnimApi.afterPlotRedraw === "function") {
-                  latent3dVolAnimApi.afterPlotRedraw();
-                }
-                resolve();
               });
             })
             .catch(function(e) {
               console.error(e);
-              setRendering(false);
+              if (myGen === latent3dScatterLoadGen) {
+                setRendering(false);
+              }
               var st2 = document.getElementById("z3-axis-status");
               if (st2) st2.textContent = e.message || "Could not draw plot.";
               reject(e);
@@ -1653,19 +1935,7 @@
       gd: gd,
       getColorMode: function() { return sc.value; },
       getPalette: selectedLatentPalette,
-      setSelectionRendering: function(on) {
-        if (!overlay) return;
-        if (on) {
-          overlay.classList.add("cryo-plot-rendering-overlay--nonblocking");
-          overlay.classList.add("cryo-plot-rendering-overlay--show");
-          overlay.setAttribute("aria-hidden", "false");
-        } else {
-          overlay.classList.remove("cryo-plot-rendering-overlay--nonblocking");
-          overlay.classList.remove("cryo-plot-rendering-overlay--show");
-          overlay.setAttribute("aria-hidden", "true");
-        }
-        syncLatent3dPaletteFieldset();
-      }
+      setPreviewAnimLoading: setLatent3dPreviewAnimLoading
     });
   }
 {% endif %}
